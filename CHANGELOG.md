@@ -48,6 +48,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Checkpoints existierten in der Wildnis nicht (Parquet kam mit 0.9.8
   live); der Bruch ist defensiv im Code, nicht praktisch spuerbar.
 
+### Fixed
+
+- **Parquet — Single-File-Resume funktioniert jetzt** *(2026-06-09)* —
+  ein `--resume` eines Single-File-Parquet-Imports scheiterte bisher
+  immer mit `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT` (Exit 3), weil
+  der Erstlauf den Content-SHA-256 nicht persistierte (er wurde nur bei
+  `--resume` berechnet). Der Hash wird jetzt auch beim Erstlauf berechnet,
+  wenn ein Checkpoint-Verzeichnis aktiv ist (`--checkpoint-dir`), sodass
+  ein späterer `--resume` ihn validieren kann (`PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT`
+  bei geänderter Datei). Hinweis: derzeit nur mit explizitem
+  `--checkpoint-dir` voll wirksam (config-only `pipeline.checkpoint.directory`
+  ist Folge-Scope).
+
 ### Changed
 
 - **Parquet — Scope-/Versions-Korrektur: Cut A statt Cut B,

@@ -220,16 +220,13 @@ sind aber separate Plan-Closure-Docs.
 
 ### 3.4 Slice-Status (Stand 2026-06-09)
 
-Pflege diese Tabelle mit Commit-Ref pro Slice-Closure;
-**S9b** ist der letzte offene Punkt. S8 (S8f-Closeout 2026-06-09),
-**S9a-0** (Exit-Code-Vertrag, Produktiv-Vor-Slice), **S9a**
-(vier Test-Familien) und das daraus folgende **`--table-order`-Flag**
-sind alle abgeschlossen (direkt auf `develop`). S9a hat den
-`BUNDLE_ORDER_*`-Dead-Code-Befund aufgedeckt, der per `--table-order`-
-Flag (statt Code-Entfernung) aufgeloest wurde. Fuer S9b liegt ein
-Skeleton-Hand-off-Anker in `in-progress/`; ein Vor-Slice **S9b-0**
-(`PARQUET_SINGLE_FILE_* → Exit 4`, zweite Catch-Site) ist analog zu
-S9a-0 zu erwarten.
+**Alle Sub-Slices sind abgeschlossen** (direkt auf `develop`): S0..S8,
+S9a-0 + S9a (+ `--table-order`-Folge-Feature), S9b-0 + S9b. Damit ist die
+Cut-A-Code-Linie komplett. Offen ist nur noch der **Umbrella-Closure**
+(DoD §7): CHANGELOG `[0.9.8]`-Slice-Tabelle, Merge nach `develop`/Tag
+`v0.9.8` — siehe §7. Befunde aus S9: `BUNDLE_ORDER_*` war Dead-Code
+(→ `--table-order`-Flag), und Single-File-Resume war gebrochen
+(→ Content-Hash-Persistenz-Fix in `0d40fd47`).
 
 | Slice | Status | Commit-Ref | Closure-Doc |
 | ----- | ------ | ---------- | ----------- |
@@ -249,7 +246,8 @@ S9a-0 zu erwarten.
 | S9a-0 | closed | `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c) + `c66ba012` (d) + S9a-0.e-Closeout + S9a-0.f (Addendum: benannte Resume-Codes) | [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](../done/ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md) |
 | S9a   | closed | `31f1f6ef` (1 CLI-Preflight) + `f3d386ca` (2 Sniff) + `d3c286cf` (3 Resume) + `4c216b4f` (4 KV-Toleranz) | [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](../done/ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) |
 | `--table-order` (Folge-Feature aus S9a-Befund) | closed | `c687b47c` (Feature+Tests) + `1ddec02e` (Closure) | [`ImpPlan-0.9.8-table-order-cli-flag.md`](../done/ImpPlan-0.9.8-table-order-cli-flag.md) |
-| S9b   | offen (Skeleton) | —  | [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) |
+| S9b-0 | closed | `3306808e` (Single-File-Format-Codes → Exit 4) | (im S9b-Doc dokumentiert) |
+| S9b   | closed | `591493f3` (1 CLI-Preflight) + `0d40fd47` (3 Resume + Fix) + `038d735d` (4 KV-Toleranz); 2 adapter-gedeckt | [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](../done/ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) |
 
 Die `[Unreleased]`-Sektion in `CHANGELOG.md` bekommt erst
 beim Umbrella-Closure (DoD §7 Punkt 4) die vollstaendige

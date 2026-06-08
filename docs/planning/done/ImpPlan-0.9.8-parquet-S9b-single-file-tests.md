@@ -1,10 +1,33 @@
-# S9b — Single-File-Test-Familien (SKELETON)
+# S9b — Single-File-Test-Familien
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
 > §3 S9b).
 >
-> Status: **Skeleton — Pending S7/S8 completion**.
+> Status: **Closed (2026-06-09)** — direkt aus diesem Anker umgesetzt
+> (analog S9a). Commits auf `develop`:
+> - **S9b-0** `3306808e` — Single-File-Format-Codes → Exit 4
+>   (`PARQUET_SINGLE_FILE_TABLE_MISMATCH`/`…TABLE_REQUIRED`; Hook-Übersetzung
+>   via `PreflightExitException`, Infra aus S9a-0.a). `CONTENT_CHANGED`
+>   bleibt Exit 3 (Resume-Familie/Manager, User-Entscheid).
+> - **S9b.1** `591493f3` — CLI-Preflight-Codes end-to-end (Exit 4/2).
+> - **S9b.3 + Resume-Fix** `0d40fd47` — Zwei-Phasen Single-File-Resume.
+>   **Befund**: Single-File-Resume war produktiv gebrochen (Fresh-Run
+>   persistierte den `contentSha256` nicht, weil `computeContentSha256`
+>   nur bei `--resume` true war → jeder Resume fiel auf den Pre-AP8-Branch).
+>   Fix: Hash auch beim Checkpoint-aktiven Fresh-Run (`--checkpoint-dir`)
+>   berechnen. Danach Happy-Path (Exit 0) + `CONTENT_CHANGED` (Exit 3)
+>   end-to-end.
+> - **S9b.4** `038d735d` — DuckDB/Arrow-Single-File-KV-Toleranz (Kontrast
+>   zu S9a.4: Single-File **hat** Footer-KV, Fremd-Reader tolerieren ihn).
+> - **S9b.2** (Phase-1/2): bereits adapter-seitig durch
+>   `ParquetSingleFileRoundTripTest` gedeckt (phase1/phase2, Table-Precedence,
+>   Footer-Fallback, content-sha) + CLI-Ebene via S9b.1 — kein neues File.
+>
+> **Rest-Lücke (Folge-Scope):** nur per Config (`pipeline.checkpoint.directory`)
+> gesetztes Checkpoint-Dir ist im Resolver nicht sichtbar → Fresh-Run
+> berechnet dort den Hash nicht (Single-File-Resume nur mit `--checkpoint-dir`
+> voll wirksam). Doc nach `done/` migriert.
 >
 > Diese Datei ist ein Anker fuer die Folgeaufgaben, die in S6 und
 > S7 explizit an S9b uebergeben wurden. Der volle Implementierungs-
