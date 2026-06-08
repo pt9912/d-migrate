@@ -7,8 +7,9 @@
 > User-Entscheid (pt9912): **Flag bauen** statt Code entfernen, damit die
 > Codes erreichbar werden + Operatoren die Reihenfolge explizit steuern.
 >
-> Status: **Draft (2026-06-09)** — Mini-ImpPlan als Umsetzungshilfe. Eine
-> offene Reconciliation (§4) vor Implementierung.
+> Status: **Closed (2026-06-09)** — umgesetzt in `c687b47c` (Feature +
+> Tests, `make docker-check` grün). Reconciliation §4 entschieden (A).
+> CHANGELOG `### Added` ergänzt; Doc nach `done/` migriert.
 
 ---
 

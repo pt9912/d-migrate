@@ -109,6 +109,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--table-order`-Flag fuer `data import`** *(2026-06-09)* —
+  explizite Import-Reihenfolge fuer Directory-/Bundle-Quellen
+  (kommagetrennt, analog `--tables`). Beim Ordering **authoritative**
+  gegenueber dem `--schema`-FK-Topo-Sort: `--schema` validiert dann nur
+  noch (Praezedenz `--table-order` > Schema-Topo-Sort > Discovery).
+  Macht die Parquet-Bundle-Order-Codes (`BUNDLE_ORDER_DUPLICATE`/
+  `BUNDLE_ORDER_UNKNOWN_TABLE`/`BUNDLE_ORDER_INCOMPLETE`, Exit 5)
+  CLI-erreichbar. Usage-Fehler (`--table-order` auf stdin/single-file,
+  Konflikt mit `--table`, kaputte Syntax) → Exit 2.
 - **Parquet-Evaluierung — Stakeholder-Entscheid: Go fuer
   Cut B als 1.0.0** *(2026-06-05)* — alle fuenf offenen
   Punkte aus
