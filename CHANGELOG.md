@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Connection-/Streaming-Fehlern geteilt; der stderr-Code-Praefix
     unterscheidet. JSON/YAML/CSV/Single-File-Importe sind **nicht**
     betroffen.
+  - `--resume`-Abbrueche eines Bundle-Imports geben jetzt feldweise
+    benannte Codes statt einer generischen „fingerprint mismatch"-
+    Meldung (Exit 3 unveraendert): `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT`,
+    `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`, `BUNDLE_TABLE_ORDER_CHANGED`
+    (AP8 §8.4). Reine Diagnose-Verfeinerung — Skripte, die auf den
+    alten stderr-Text geprueft haben, muessen die neuen Codes lesen.
 - **Parquet — Pre-0.9.8-Bundle-Checkpoints sind nach 0.9.8 nicht
   mehr wiederaufnehmbar** *(2026-06-09, Parquet Cut A S8)* —
   Pre-0.9.8-Parquet-Checkpoints fuer **Bundle**-Importe sind nach

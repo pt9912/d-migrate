@@ -6,7 +6,18 @@
 >
 > Status: **Closed (2026-06-09)** — S9a-0.a/b/c/d/e durch, direkt auf
 > `develop`. Commits: `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c)
-> + `c66ba012` (d) + S9a-0.e-Closeout. Doc nach `done/` migriert.
+> + `c66ba012` (d) + S9a-0.e-Closeout + S9a-0.f (Addendum). Doc nach
+> `done/` migriert.
+>
+> **Addendum S9a-0.f (2026-06-09):** Nach dem S9a-Scoping (Familie 3)
+> ergänzt — `validateBundleResume` feldweise in die benannten
+> AP8-§8.4-Resume-Bruch-Codes gesplittet (Reihenfolge most-specific-first:
+> `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT` →
+> `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT` → `BUNDLE_TABLE_ORDER_CHANGED`),
+> Exit 3 unverändert, nur Diagnose/Mapping (keine Resume-Policy-Änderung;
+> `producerVersion` ist informativ §8.3 und nie ohne manifestSha256-
+> Änderung different). So testet S9a Familie 3 gegen die benannten Codes
+> statt gegen die frühere generische „fingerprint mismatch"-Sammelmeldung.
 >
 > **Anlass:** S9a-Scoping-Recherche (2026-06-09) hat aufgedeckt, dass
 > der in [`parquet-cli-wiring.md`](parquet-cli-wiring.md) §9
@@ -88,6 +99,7 @@ Port-Signal.
 | **S9a-0.c** | **Bundle-Resolver-Familie → Exit 5**: neue Exception in `:adapters:driven:formats-parquet`. Throw-Site ist **`ParquetBundlePreflight.applyFilterAndOrder`** (`ParquetBundlePreflight.kt:180-205`), nicht der dünne `ParquetBundleResolver`-Wrapper (`ParquetBundleAdapter.kt:50`, delegiert nur). Der Exception-Name folgt der Throw-Klasse (`ParquetBundlePreflightResolverException` o.ä.) — `…ResolverException` wäre irreführend, da der Resolver-Wrapper nicht wirft. Sie wirft die korrekten Codes (`BUNDLE_FILTER_UNKNOWN_TABLE`, `BUNDLE_ORDER_DUPLICATE`, `BUNDLE_ORDER_UNKNOWN_TABLE`, `BUNDLE_ORDER_INCOMPLETE`) statt `IllegalArgumentException("MANIFEST_FILE_MISSING…")`. CLI-Hook übersetzt → `PreflightExitException(5, …)`. | Adapter-Tests in `ParquetBundleResolverTest` auf die neuen Codes umgestellt/ergänzt; `make docker-check` grün. |
 | **S9a-0.d** *(umgesetzt)* | **Entschieden (§4.2):** `BUNDLE_SCHEMA_UNRESOLVED` = ehrliches N/A (kein erreichbarer Pfad; fehlendes Schema = `MANIFEST_*`-Vertragsbruch; Folge-Scope falls echter SchemaReader-Pfad kommt). `BUNDLE_TABLE_IMPORT_FAILED` = umgesetzt: `assessCompletion(isParquetBundle)` gibt für Bundle-Läufe `BUNDLE_TABLE_IMPORT_FAILED: table='…' cause='…'` aus (`error` + `failedFinish`), Exit 5 unverändert, generischer Pfad unberührt. | Entscheidung je Code dokumentiert; 2 neue `assessCompletion`-Tests (Bundle per-table + failed-finish); `make docker-test MODULES=":hexagon:application"` grün; `make docker-check` grün. |
 | **S9a-0.e** | KDoc-`DataImportRunner` Exit-Code-Doku auf die erweiterte Bedeutung bringen (4 = Connection **oder** Parquet-Format-Vertragsbruch; 5 = Streaming **oder** Bundle-Resolver/Iteration). CHANGELOG-Notiz (`### Changed`: Bundle-Preflight-Exit-Codes nach AP12 §9). Closure-Doc-Move + Umbrella-Update. | KDoc + CHANGELOG aktualisiert; Doc nach `done/`; Umbrella §3.4 um S9a-0-Zeile ergänzt. |
+| **S9a-0.f** *(Addendum, umgesetzt)* | `ImportCheckpointManager.validateBundleResume` feldweise gesplittet in die AP8-§8.4-Codes `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT` → `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT` → `BUNDLE_TABLE_ORDER_CHANGED` (most-specific-first), statt generischem „fingerprint mismatch". Exit 3 unverändert, nur Diagnose (`producerVersion` informativ, §8.3). Vorbedingung für S9a Familie 3 (CLI-Resume-Tests gegen benannte Codes). | 3 Manager-Tests (je Code) + bestehender Mismatch-Test umgestellt; `make docker-check` grün. |
 
 ---
 

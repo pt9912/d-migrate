@@ -161,13 +161,12 @@ vollen Plan ergaenzt.
   `BUNDLE_TABLE_IMPORT_FAILED` benannt, Resume-Codes → Exit 3.
   **Damit testet S9a gegen den korrigierten Vertrag** — die früheren
   IST-Warnungen in §2 („falls der Runner pauschal Exit 3 mappt …") sind
-  durch S9a-0 aufgelöst. **Rest-Lücke** (eigener Check in S9a): die
-  Resume-Codes `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`,
+  durch S9a-0 aufgelöst. Auch die drei Resume-Bruch-Codes
   `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT`,
-  `BUNDLE_TABLE_ORDER_CHANGED` existieren noch nicht als benannte Codes
-  (heute generischer Fingerprint-Mismatch → Exit 3); `BUNDLE_SCHEMA_UNRESOLVED`
-  ist bewusst N/A (S9a-0 §4.2). Pro Code in S9a entscheiden:
-  produktiver Test gegen vorhandenen Code, oder dokumentierter Folge-Scope.
+  `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`, `BUNDLE_TABLE_ORDER_CHANGED`
+  sind jetzt benannt (S9a-0.f-Addendum, feldweiser Split in
+  `validateBundleResume`, Exit 3) → S9a Familie 3 testet gegen diese
+  Codes. `BUNDLE_SCHEMA_UNRESOLVED` bleibt bewusst N/A (S9a-0 §4.2).
 
 ## 6. Naechste Schritte (bei Slice-Start)
 

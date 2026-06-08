@@ -243,7 +243,7 @@ Anker in `in-progress/`.
 | S6    | closed | `7759294d` (i) + `23377524` (ii) + `68d69350` (iii) + `988a41fb` (iv) + `7f79926d` (v) | [`ImpPlan-0.9.8-parquet-S6-cli-wiring.md`](../done/ImpPlan-0.9.8-parquet-S6-cli-wiring.md) |
 | S7    | closed | `34eea7ce` (S7-0) + `a0dc2c5b` (a) + `5ff17e6f` (b) + `2f9cc38a` (c) + `a25722e5` (d) + S7e-Closeout | [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](../done/ImpPlan-0.9.8-parquet-S7-end-to-end.md) |
 | S8    | closed | `df733244` (S8-0) + `a0b07d35` (S8a) + `3e3c1692` (S8b) + `d6be9cc9` (S8c) + `566cb4df` (S8d Re-Cut) + `a0e4da29` (S8e) + S8f-Closeout | [`ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`](../done/ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md) (v2) |
-| S9a-0 | closed | `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c) + `c66ba012` (d) + S9a-0.e-Closeout | [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](../done/ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md) |
+| S9a-0 | closed | `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c) + `c66ba012` (d) + S9a-0.e-Closeout + S9a-0.f (Addendum: benannte Resume-Codes) | [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](../done/ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md) |
 | S9a   | offen (Skeleton) | —  | [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) |
 | S9b   | offen (Skeleton) | —  | [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) |
 

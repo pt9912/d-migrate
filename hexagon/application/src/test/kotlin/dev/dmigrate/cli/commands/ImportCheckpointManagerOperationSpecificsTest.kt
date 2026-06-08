@@ -175,7 +175,11 @@ class ImportCheckpointManagerOperationSpecificsTest : FunSpec({
         check(result is ImportResumeResult.Ok) { "expected Ok, got $result; stderr=${stderr.lines}" }
     }
 
-    test("bundle resume fingerprint mismatch → Exit 3") {
+    // S9a-0.f (AP8 §8.4): feldweise benannte Resume-Bruch-Codes statt
+    // generischem Fingerprint-Mismatch. Reihenfolge formatVersion →
+    // manifestSha256 → tableOrder (most-specific-first).
+
+    test("bundle resume manifestSha256 mismatch → Exit 3 (BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT)") {
         val stderr = Capture()
         val differentFp = sampleBundleFingerprint.copy(manifestSha256 = "c".repeat(64))
         val store = RecordingStore(bundleManifest("op-bundle-fp", differentFp))
@@ -185,7 +189,33 @@ class ImportCheckpointManagerOperationSpecificsTest : FunSpec({
             inputCtx = bundleInputContext(),
         )
         result shouldBe ImportResumeResult.Exit(3)
-        stderr.lines.joinToString("\n") shouldContain "fingerprint mismatch"
+        stderr.lines.joinToString("\n") shouldContain "BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT"
+    }
+
+    test("bundle resume formatVersion mismatch → Exit 3 (BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT)") {
+        val stderr = Capture()
+        val differentFp = sampleBundleFingerprint.copy(formatVersion = "2")
+        val store = RecordingStore(bundleManifest("op-bundle-fmt", differentFp))
+        val result = importManager(stderr).resolveResumeContext(
+            request = requestWithResume("op-bundle-fmt").copy(checkpointDir = Files.createTempDirectory("ckpt-")),
+            checkpoint = ImportCheckpointContext(store, Files.createTempDirectory("ckpt-")),
+            inputCtx = bundleInputContext(),
+        )
+        result shouldBe ImportResumeResult.Exit(3)
+        stderr.lines.joinToString("\n") shouldContain "BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT"
+    }
+
+    test("bundle resume tableOrder mismatch → Exit 3 (BUNDLE_TABLE_ORDER_CHANGED)") {
+        val stderr = Capture()
+        val differentFp = sampleBundleFingerprint.copy(tableOrder = listOf("public.orders", "public.users"))
+        val store = RecordingStore(bundleManifest("op-bundle-order", differentFp))
+        val result = importManager(stderr).resolveResumeContext(
+            request = requestWithResume("op-bundle-order").copy(checkpointDir = Files.createTempDirectory("ckpt-")),
+            checkpoint = ImportCheckpointContext(store, Files.createTempDirectory("ckpt-")),
+            inputCtx = bundleInputContext(),
+        )
+        result shouldBe ImportResumeResult.Exit(3)
+        stderr.lines.joinToString("\n") shouldContain "BUNDLE_TABLE_ORDER_CHANGED"
     }
 
     test("bundle resume with non-bundle current run → Exit 3") {

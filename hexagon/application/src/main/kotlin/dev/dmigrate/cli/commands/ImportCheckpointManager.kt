@@ -168,10 +168,37 @@ internal class ImportCheckpointManager(
             )
             return ImportResumeResult.Exit(3)
         }
-        if (specifics.fingerprint != currentFingerprint) {
+        // S9a-0.f (AP8 §8.4): feldweiser Vergleich mit benannten Codes statt
+        // einer generischen Fingerprint-Mismatch-Meldung. Reihenfolge
+        // most-specific-first: formatVersion (fundamentale Inkompatibilitaet)
+        // → manifestSha256 (Manifest-Inhalt geaendert; deckt auch
+        // producerVersion ab, das laut §8.3 nur informativ ist und nie ohne
+        // manifestSha256-Aenderung differiert) → tableOrder (Resolver-/
+        // Override-Aenderung, kann ohne Manifest-Aenderung auftreten).
+        // Exit-Code 3 unveraendert — nur die Diagnose wird praeziser, keine
+        // Resume-Policy-Aenderung (jede Differenz lehnt weiterhin ab).
+        val expected = specifics.fingerprint
+        if (expected.formatVersion != currentFingerprint.formatVersion) {
             stderr(
-                "Error: Parquet bundle resume fingerprint mismatch " +
-                    "(manifest=${specifics.fingerprint}, current=$currentFingerprint); refuse to resume."
+                "Error: BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT: bundle formatVersion " +
+                    "changed since checkpoint (checkpoint=${expected.formatVersion}, " +
+                    "current=${currentFingerprint.formatVersion}); refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        if (expected.manifestSha256 != currentFingerprint.manifestSha256) {
+            stderr(
+                "Error: BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT: manifest.yaml changed since " +
+                    "checkpoint (checkpoint producerVersion=${expected.producerVersion}, " +
+                    "current producerVersion=${currentFingerprint.producerVersion}); refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        if (expected.tableOrder != currentFingerprint.tableOrder) {
+            stderr(
+                "Error: BUNDLE_TABLE_ORDER_CHANGED: resolved table order changed since checkpoint " +
+                    "(checkpoint=${expected.tableOrder}, current=${currentFingerprint.tableOrder}); " +
+                    "refuse to resume."
             )
             return ImportResumeResult.Exit(3)
         }
