@@ -221,12 +221,15 @@ sind aber separate Plan-Closure-Docs.
 ### 3.4 Slice-Status (Stand 2026-06-09)
 
 Pflege diese Tabelle mit Commit-Ref pro Slice-Closure;
-**S9a/S9b** sind die noch offenen Punkte. **S8 ist mit
-S8f-Closeout (2026-06-09) abgeschlossen** — S8-0/a/b/c/d/e/f
-durch (alle direkt auf `develop`, nicht mehr auf
-`feature/parquet-0.9.8`); S8d wurde als Re-Cut umgesetzt (kein
-Hash-Through-Plumbing). Fuer S9a/S9b liegen Skeleton-Hand-off-
-Anker in `in-progress/`.
+**S9b** ist der letzte offene Punkt. S8 (S8f-Closeout 2026-06-09),
+**S9a-0** (Exit-Code-Vertrag, Produktiv-Vor-Slice), **S9a**
+(vier Test-Familien) und das daraus folgende **`--table-order`-Flag**
+sind alle abgeschlossen (direkt auf `develop`). S9a hat den
+`BUNDLE_ORDER_*`-Dead-Code-Befund aufgedeckt, der per `--table-order`-
+Flag (statt Code-Entfernung) aufgeloest wurde. Fuer S9b liegt ein
+Skeleton-Hand-off-Anker in `in-progress/`; ein Vor-Slice **S9b-0**
+(`PARQUET_SINGLE_FILE_* → Exit 4`, zweite Catch-Site) ist analog zu
+S9a-0 zu erwarten.
 
 | Slice | Status | Commit-Ref | Closure-Doc |
 | ----- | ------ | ---------- | ----------- |
@@ -244,7 +247,8 @@ Anker in `in-progress/`.
 | S7    | closed | `34eea7ce` (S7-0) + `a0dc2c5b` (a) + `5ff17e6f` (b) + `2f9cc38a` (c) + `a25722e5` (d) + S7e-Closeout | [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](../done/ImpPlan-0.9.8-parquet-S7-end-to-end.md) |
 | S8    | closed | `df733244` (S8-0) + `a0b07d35` (S8a) + `3e3c1692` (S8b) + `d6be9cc9` (S8c) + `566cb4df` (S8d Re-Cut) + `a0e4da29` (S8e) + S8f-Closeout | [`ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`](../done/ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md) (v2) |
 | S9a-0 | closed | `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c) + `c66ba012` (d) + S9a-0.e-Closeout + S9a-0.f (Addendum: benannte Resume-Codes) | [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](../done/ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md) |
-| S9a   | offen (Skeleton) | —  | [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) |
+| S9a   | closed | `31f1f6ef` (1 CLI-Preflight) + `f3d386ca` (2 Sniff) + `d3c286cf` (3 Resume) + `4c216b4f` (4 KV-Toleranz) | [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](../done/ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) |
+| `--table-order` (Folge-Feature aus S9a-Befund) | closed | `c687b47c` (Feature+Tests) + `1ddec02e` (Closure) | [`ImpPlan-0.9.8-table-order-cli-flag.md`](../done/ImpPlan-0.9.8-table-order-cli-flag.md) |
 | S9b   | offen (Skeleton) | —  | [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) |
 
 Die `[Unreleased]`-Sektion in `CHANGELOG.md` bekommt erst

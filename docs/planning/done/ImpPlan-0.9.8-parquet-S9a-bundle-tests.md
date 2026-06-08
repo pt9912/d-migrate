@@ -1,13 +1,16 @@
 # S9a — Bundle-Test-Familien
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
 > §3 S9a).
 >
-> Status: **Umgesetzt (2026-06-09)** — die vier Test-Familien sind direkt
+> Status: **Closed (2026-06-09)** — die vier Test-Familien sind direkt
 > aus diesem (review-entzerrten) Anker implementiert, ohne separaten
 > Voll-ImpPlan (User-Entscheid: Test-Slice, Vertrag durch S9a-0 fertig).
-> Commits auf `develop`:
+> Doc nach `done/` migriert. Der S9a-Befund (`BUNDLE_ORDER_*` toter Code)
+> wurde durch das `--table-order`-Flag aufgeloest
+> ([`ImpPlan-0.9.8-table-order-cli-flag.md`](./ImpPlan-0.9.8-table-order-cli-flag.md),
+> `c687b47c`). Commits auf `develop`:
 > - `31f1f6ef` **Familie 1** (CLI-Preflight-Codes) +
 >   `f3d386ca` **Familie 2** (manifest.yaml-Sniff) →
 >   `DataImportRunnerParquetBundlePreflightTest` (`:adapters:driving:cli`)
@@ -47,7 +50,7 @@
 > Hand-off-Anker aus den vorherigen Slices nicht in deren
 > Folgeaufgaben-Sektionen verloren gehen. Spiegelbild zum
 > S9b-Skeleton (`6629e842`,
-> [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](./ImpPlan-0.9.8-parquet-S9b-single-file-tests.md)).
+> [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](../in-progress/ImpPlan-0.9.8-parquet-S9b-single-file-tests.md)).
 
 ---
 
@@ -208,7 +211,7 @@ werden beim vollen Ausbau ergaenzt.
   verifiziert (S8e). Die Bundle-Resume-Familie ist damit nicht mehr
   rein synthetisch.
 - ✅ **S9a-0 abgeschlossen** (2026-06-09, eigener Produktiv-Vor-Slice,
-  [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](../done/ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md)):
+  [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md)):
   der AP12-§9-Exit-Code-Vertrag ist hergestellt — `MANIFEST_*` → Exit 4,
   Bundle-Resolver-Familie (`BUNDLE_FILTER_UNKNOWN_TABLE`,
   `BUNDLE_ORDER_DUPLICATE/UNKNOWN_TABLE/INCOMPLETE`) → Exit 5,
