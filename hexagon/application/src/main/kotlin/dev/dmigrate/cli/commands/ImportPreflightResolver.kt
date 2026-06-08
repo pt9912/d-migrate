@@ -85,6 +85,13 @@ internal class ImportPreflightResolver(
             )
         } catch (e: OperationCancelledException) {
             throw e
+        } catch (e: PreflightExitException) {
+            // S9a-0 (AP12 §9): adapter-uebersetztes, exit-code-tragendes
+            // Preflight-Signal (MANIFEST_* → 4, Bundle-Resolver-Familie → 5).
+            // Muss VOR dem generischen RuntimeException-Catch stehen, sonst
+            // faellt es auf den Default-Exit-3-Pfad.
+            stderr("Error: ${e.message}")
+            return ImportPreflightResolution.Exit(e.exitCode)
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}")
             return ImportPreflightResolution.Exit(2)

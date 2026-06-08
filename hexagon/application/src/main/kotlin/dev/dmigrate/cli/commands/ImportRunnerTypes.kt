@@ -29,6 +29,30 @@ class ImportPreflightException(
     cause: Throwable? = null,
 ) : IllegalArgumentException(message, cause)
 
+/**
+ * S9a-0 (AP12 §9): port-seitiges, exit-code-tragendes Preflight-Signal.
+ *
+ * Adapter-spezifische Preflight-Exceptions (z.B.
+ * `ParquetBundlePreflightException` mit `MANIFEST_*` → Exit 4, und die
+ * Bundle-Resolver-Familie `BUNDLE_*` → Exit 5) leben im Adapter-Modul
+ * `:adapters:driven:formats-parquet` und sind dem `:hexagon:application`-Core
+ * unsichtbar (Hexagon-Regel). Der CLI-Hook (`:adapters:driving:cli`, sieht
+ * beide Welten) uebersetzt sie in dieses generische Signal; der
+ * [ImportPreflightResolver] mappt nur [exitCode] → `Exit`. So bleibt das
+ * Exit-Code-Wissen im Adapter, der Core parquet-frei (analog ADR-0006
+ * Wiring-Drift-Exception-Familie).
+ *
+ * [message] beginnt mit dem stabilen Fehlercode (`MANIFEST_*` / `BUNDLE_*`),
+ * damit Operatoren bei den (per AP12 §9 bewusst kollidierenden) Exit-Codes
+ * — 4 = Connection ODER Parquet-Format-Vertragsbruch; 5 = Streaming ODER
+ * Bundle-Resolver/Iteration — ueber den stderr-Praefix unterscheiden koennen.
+ */
+class PreflightExitException(
+    val exitCode: Int,
+    message: String,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
+
 // ─── Public DTOs ───────────────────────────────────────────────────
 
 data class SchemaPreflightResult(

@@ -285,6 +285,36 @@ class ImportPreflightResolverTest : FunSpec({
         }
     }
 
+    test("resolve maps PreflightExitException from hook to its carried exit code (S9a-0 AP12 §9)") {
+        // Der Core kennt die Parquet-Preflight-Exceptions nicht (Modulgrenze);
+        // der CLI-Hook uebersetzt sie in PreflightExitException(exitCode). Der
+        // Resolver muss exitCode 1:1 durchreichen — 4 fuer MANIFEST_*, 5 fuer
+        // die Bundle-Resolver-Familie. Hier mit einem Fake-Hook simuliert.
+        listOf(4, 5).forEach { code ->
+            val stderr = mutableListOf<String>()
+            val sourceFile = Files.createTempFile("dmigrate-import-preflight-exitcode-", ".parquet").also {
+                Files.writeString(it, "")
+            }
+            try {
+                val hook = hookWithResolveBeforeSchema { _, _, _ ->
+                    throw PreflightExitException(code, "MANIFEST_NOT_FOUND: simulated exit $code")
+                }
+
+                val result = resolver(
+                    stderr = stderr,
+                    inputResolutionHook = hook,
+                ).resolve(
+                    request(source = sourceFile.toString(), format = "parquet")
+                )
+
+                result shouldBe ImportPreflightResolution.Exit(code)
+                stderr.single() shouldContain "MANIFEST_NOT_FOUND"
+            } finally {
+                Files.deleteIfExists(sourceFile)
+            }
+        }
+    }
+
     test("resolve rethrows OperationCancelledException from phase1Hook (cancel pipeline)") {
         val stderr = mutableListOf<String>()
         val sourceFile = Files.createTempFile("dmigrate-import-preflight-cancel-", ".parquet").also {
