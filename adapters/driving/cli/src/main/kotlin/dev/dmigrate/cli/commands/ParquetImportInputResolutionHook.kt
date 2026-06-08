@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.parquet.preflight.ParquetBundlePreflightException
 import dev.dmigrate.format.parquet.preflight.ParquetBundleResolver
 import dev.dmigrate.format.parquet.preflight.ParquetSingleFileResolver
 import dev.dmigrate.streaming.ImportInput
@@ -50,12 +51,26 @@ class ParquetImportInputResolutionHook(
     ): ImportInput {
         if (format != DataExportFormat.PARQUET) return rawInput
         return when (rawInput) {
-            is ImportInput.Directory -> bundleResolver.resolve(
-                bundleRoot = rawInput.path,
-                tableFilter = rawInput.tableFilter,
-                tableOrder = rawInput.tableOrder,
-                verifyContentSha256 = computeContentSha256,
-            )
+            is ImportInput.Directory -> try {
+                bundleResolver.resolve(
+                    bundleRoot = rawInput.path,
+                    tableFilter = rawInput.tableFilter,
+                    tableOrder = rawInput.tableOrder,
+                    verifyContentSha256 = computeContentSha256,
+                )
+            } catch (e: ParquetBundlePreflightException) {
+                // S9a-0.b (AP12 §9): MANIFEST_* → Exit 4. Modulgrenze:
+                // ParquetBundlePreflightException ist dem :hexagon:application-
+                // Core unsichtbar; der Hook uebersetzt sie hier in das exit-
+                // code-tragende PreflightExitException, das der Resolver auf
+                // Exit 4 mappt. (Die Bundle-Resolver-Familie BUNDLE_* → Exit 5
+                // kommt mit S9a-0.c als eigene Exception.)
+                throw PreflightExitException(
+                    exitCode = 4,
+                    message = e.message ?: "MANIFEST_ERROR: parquet bundle preflight failed",
+                    cause = e,
+                )
+            }
             is ImportInput.SingleFile -> {
                 val explicitTable = rawInput.table
                     .takeUnless { it == UNRESOLVED_PARQUET_TABLE_SENTINEL }

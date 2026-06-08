@@ -11,6 +11,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeSameInstanceAs
 import java.io.ByteArrayInputStream
+import java.nio.file.Files
 import java.nio.file.Path
 
 class ParquetImportInputResolutionHookTest : FunSpec({
@@ -72,6 +73,26 @@ class ParquetImportInputResolutionHookTest : FunSpec({
         val result = hook.resolveBeforeSchema(resolved, DataExportFormat.PARQUET, computeContentSha256 = false)
 
         result shouldBeSameInstanceAs resolved
+    }
+
+    test("Parquet Directory mit fehlendem manifest.yaml → PreflightExitException(4) (S9a-0.b MANIFEST_* → Exit 4)") {
+        val dir = Files.createTempDirectory("parquet-hook-no-manifest-")
+        try {
+            // Leeres Verzeichnis → ParquetBundlePreflight wirft
+            // MANIFEST_NOT_FOUND; der Hook uebersetzt es in das exit-code-
+            // tragende PreflightExitException(4) (AP12 §9, Modulgrenze).
+            val ex = shouldThrow<PreflightExitException> {
+                hook.resolveBeforeSchema(
+                    ImportInput.Directory(path = dir),
+                    DataExportFormat.PARQUET,
+                    computeContentSha256 = false,
+                )
+            }
+            ex.exitCode shouldBe 4
+            ex.message!! shouldContain "MANIFEST_NOT_FOUND"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
     }
 
     test("Parquet + Stdin throws explicitly (Review-Finding I1 defense-in-depth)") {
