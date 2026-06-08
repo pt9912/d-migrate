@@ -4,7 +4,8 @@
 > ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
 > §3 S8).
 >
-> Status: In-progress (2026-06-09). Sub-Slices durch:
+> Status: **Closed** (S8f-Closeout 2026-06-09, Doc nach `done/`
+> migriert). Sub-Slices durch:
 > - `0df74427` ImpPlan v1 (Draft)
 > - `8cdae234` ImpPlan v2 — Plan-Review-Befunde eingearbeitet
 >   (drei parallele Multi-Angle-Reviews, zehn Drift-Korrekturen)
@@ -29,15 +30,19 @@
 >   (Selbstvergleich-No-Op vermieden), nur Kommentar-/KDoc-/Plan-
 >   Korrektur. `resumeExpectedSha256` bleibt im Runner `null`; der
 >   Cross-Run-Gate ist S8c. Siehe §1.5 + Header-Re-Cut-Block.
-> - S8e — Verifikations-Slice (kein Production-Code): zwei neue Tests
->   in `:adapters:driven:formats-parquet`, dass `--no-checkpoint`
+> - `a0e4da29` S8e — Verifikations-Slice (kein Production-Code): zwei
+>   neue Tests in `:adapters:driven:formats-parquet`, dass
+>   `--no-checkpoint`
 >   (`computeContentSha256 = false` / `verifyContentSha256 = false`)
 >   weder Single-File-`phase1` noch den Bundle-Per-Tabelle-SHA-
 >   Vergleich einen SHA-256-Compute ausloesen laesst. Die
 >   `--no-checkpoint`-Entscheidungsebene war schon in
 >   `ImportPreflightResolverTest` (`:hexagon:application`) getestet.
+> - `f112793e` S8f — CHANGELOG `### Breaking`-Sektion (Pre-0.9.8-
+>   Bundle-Checkpoint-Bruch) + Doc-Move nach `done/` + Umbrella
+>   §3.4 (S8 → closed) + S9a-Hand-off-Skeleton.
 >
-> Offen: S8f (CHANGELOG `### Breaking`-Sektion + Closure-Doc-Move).
+> S8 ist damit vollstaendig abgeschlossen (S8-0/a/b/c/d/e/f).
 >
 > **S8d-Re-Cut-Entscheid (2026-06-09, User pt9912):** Das urspruenglich
 > geplante Hash-Through-Plumbing (`resumeExpectedSha256` aus
@@ -85,14 +90,20 @@ Per Umbrella §3 S8-Cell und [`parquet-cli-wiring.md`](parquet-cli-wiring.md) §
 1. **`CheckpointOperationSpecifics`-Sealed-Subtypen** in
    `hexagon:ports-write/.../CheckpointManifest.kt` (heute Z. 156 nur
    das Interface ohne Subtypen):
-   - `BundleCheckpointSpecifics(bundleKind: String, fingerprint: BundleResumeFingerprint)`
-     gemaess AP9 §4.2 / §7.3. `bundleKind` literal `"parquet-bundle"`.
+   - `BundleCheckpointSpecifics(fingerprint: BundleResumeFingerprint)`
+     gemaess AP9 §4.2 / §7.3. **Umgesetzt**: `bundleKind` ist **kein**
+     Konstruktor-Parameter, sondern ein abgeleitetes
+     `override val bundleKind = BUNDLE_KIND` (Konstante
+     `"parquet-bundle"`) — der Diskriminator ist pro Subtyp fix, nicht
+     caller-geliefert.
      **Wichtig**: `BundleResumeFingerprint` existiert bereits in
      `hexagon/ports-write/.../ImportInput.kt:145` (vom S5a-Resolver-
      Pfad gespeist); S8 verwendet diesen Typ wieder, legt **keinen**
      duplizierten `BundleFingerprint` an.
-   - `SingleFileCheckpointSpecifics(bundleKind: String, contentSha256: String, table: String)`
-     gemaess AP11 §6.4. `bundleKind` literal `"parquet-single-file"`.
+   - `SingleFileCheckpointSpecifics(contentSha256: String, table: String)`
+     gemaess AP11 §6.4. `bundleKind` analog als abgeleitete Konstante
+     `"parquet-single-file"` (kein Konstruktor-Parameter); zusaetzlich
+     `init`-Validierung (contentSha256 = 64 Hex, table nicht blank).
    - Sealed-`when`-Sweep auf allen heutigen Konsumenten via
      `rg --type kotlin -n 'is CheckpointOperationSpecifics\.' .` und
      `rg --type kotlin -n 'when \(' . | grep -F 'operationSpecific'`
@@ -247,9 +258,9 @@ Folgeslices weiterlebt.
 
 | Sub-Slice | Inhalt | DoD |
 | --------- | ------ | --- |
-| **S8-0** | `CheckpointOperationSpecifics`-Sealed-Subtypen in `hexagon:ports-write/.../CheckpointManifest.kt`. `BundleCheckpointSpecifics(bundleKind, fingerprint: BundleResumeFingerprint)` und `SingleFileCheckpointSpecifics(bundleKind, contentSha256, table)`. **Kein** neuer `BundleFingerprint`-Typ — `BundleResumeFingerprint` aus `ImportInput.kt:145` wird wiederverwendet. Sealed-`when`-Sweep mit `rg`-Aufruf dokumentiert (Sweep-Zaehl leer; siehe §1.1). | Klassen existieren; `make docker-check` gruen; bestehende Tests gruen ohne Aenderung (kein heutiger Konsument). |
+| **S8-0** | `CheckpointOperationSpecifics`-Sealed-Subtypen in `hexagon:ports-write/.../CheckpointManifest.kt`. `BundleCheckpointSpecifics(fingerprint: BundleResumeFingerprint)` und `SingleFileCheckpointSpecifics(contentSha256, table)` (`bundleKind` jeweils als abgeleitete `BUNDLE_KIND`-Konstante, kein Konstruktor-Parameter). **Kein** neuer `BundleFingerprint`-Typ — `BundleResumeFingerprint` aus `ImportInput.kt:145` wird wiederverwendet. Sealed-`when`-Sweep mit `rg`-Aufruf dokumentiert (Sweep-Zaehl leer; siehe §1.1). | Klassen existieren; `make docker-check` gruen; bestehende Tests gruen ohne Aenderung (kein heutiger Konsument). |
 | **S8a** | `FileCheckpointStore.toMap`/`fromMap` mit `kind`-Diskriminator + Unknown-Kind-Fail-fast. **Persistenz from scratch** — heute steht `operationSpecific` weder in toMap noch in fromMap. Round-Trip-Test fuer beide Subtypen + Negative-Test fuer unbekanntes `kind`. | `make docker-test MODULES=":adapters:driven:streaming"` gruen; Round-Trip-Test fuer `BundleCheckpointSpecifics` und `SingleFileCheckpointSpecifics`; YAML-Bytes deterministisch (Schluessel-Reihenfolge `kind` zuerst). |
-| **S8b** | `InputContext`-Erweiterung um `bundleExpectedSha256ByTable` + `singleFileContentSha256` (beide mit `null`-Default). Befuellung in **`ImportPreflightValidator.resolveInputContext`** (Z. 80-132, nicht im Resolver — siehe §1.3 Klarstellung). Wert kommt aus `preparedImport.input` (`ResolvedBundle.tables[i].expectedSha256` bzw. `ResolvedSingleFile.contentSha256`). | `ImportPreflightValidatorTest` deckt beide neue Felder ab; bestehende `InputContext(...)`-Test-Konstruktoren bleiben kompatibel (default-Parameter); `make docker-test MODULES=":hexagon:application"` gruen. |
+| **S8b** | `InputContext`-Erweiterung um `bundleExpectedSha256ByTable` + `singleFileContentSha256` (beide mit `null`-Default). Befuellung in **`ImportPreflightValidator.resolveInputContext`** (Z. 80-132, nicht im Resolver — siehe §1.3 Klarstellung). Wert kommt aus `preparedImport.input` (`ResolvedBundle.tables[i].expectedSha256` bzw. `ResolvedSingleFile.contentSha256`). | `ImportPreflightValidatorInputContextTest` deckt beide neue Felder ab (5 Fälle: Bundle, SingleFile mit/ohne Hash, Nicht-Parquet, Stdin); bestehende `InputContext(...)`-Test-Konstruktoren bleiben kompatibel (default-Parameter); `make docker-test MODULES=":hexagon:application"` gruen. |
 | **S8c** | `ImportCheckpointManager.validateManifest` mit `validateBundleResume` + `validateSingleFileResume` + Pre-AP8-Branch. Einfuegung **nach** `inputFilesByTable`-Check (Z. 137), nicht davor — Diagnostik-Reihenfolge: input-File-Mismatch hat Vorrang. `writeInitialManifest` (Z. 171) **und** `saveManifest()` (Z. 231) reichen `operationSpecific` durch (beide Schreibpfade, sonst Early-Resume-Bug). | Manager-Tests decken (a) Bundle-OK, (b) Bundle-Pre-AP8-Bruch mit aktuellem Parquet-Bundle-Lauf, (c) Pre-AP8 + JSON/YAML/CSV-Lauf → OK-Pfad, (d) SingleFile-OK, (e) SingleFile-Hash-Mismatch; `make docker-test MODULES=":hexagon:application"` gruen. |
 | **S8d** | **Re-Cut 2026-06-09 — kein Hash-Through-Plumbing.** Statt `resumeExpectedSha256` aus `inputCtx.singleFileContentSha256` zu speisen (Selbstvergleich-No-Op, siehe §1.5), nur **Kommentar-/Doc-Korrektur**: der S6-TODO-Kommentar in `DataImportRunner.kt` und der KDoc in `ParquetImportInputResolutionHook.kt` werden auf „`resumeExpectedSha256` bleibt `null`; Cross-Run-Gate ist S8c" umgeschrieben; dieser Plan-Doc dokumentiert die Verwerfung + die Folge-Slice-Skizze. `resumeExpectedSha256` bleibt `null`. | Kommentare/KDoc korrigiert; Plan-Doc-Re-Cut dokumentiert; bestehende Hook-Tests (`ParquetImportInputResolutionHookTest`, decken Match-/Mismatch-Pfad isoliert bereits ab) bleiben gruen; `make docker-check` gruen (Kommentar-/MD-only, keine Verhaltensaenderung). |
 | **S8e** *(umgesetzt)* | **Verifikations-Slice** (kein neuer Production-Code): Die `--no-checkpoint`-Skip-Logik fuer Single-File-Phase-1 existiert seit S5b/S6 (`ImportPreflightResolver.kt:76-79` + `ParquetSingleFilePreflight.kt:99`). S8e fuegt **zwei Tests** hinzu (beide `:adapters:driven:formats-parquet`): (1) `ParquetSingleFilePreflight.phase1(computeContentSha256 = false)` liefert `contentSha256 = null` (Kontrast: `true` → 64-hex) → `ParquetSingleFileRoundTripTest`; (2) `ParquetBundleResolver.resolve(verifyContentSha256 = false)` resolved selbst eine nach dem Manifest manipulierte Datei ohne `MANIFEST_SHA256_MISMATCH`/Re-Compute → `ParquetBundleResolverTest` (Spiegel zum bestehenden Mismatch-Test). Die `--no-checkpoint`-**Entscheidungsebene** (`computeContentSha256 = false`) war bereits in `ImportPreflightResolverTest` (`:hexagon:application`) gedeckt. | `make docker-test MODULES=":hexagon:application :adapters:driven:formats-parquet :adapters:driving:cli"` gruen; `make docker-check` gruen; beide neuen Tests decken AP12 §7.1 (Single-File + Bundle `--no-checkpoint`) ab. |
@@ -267,7 +278,7 @@ make docker-test MODULES=":hexagon:ports-write"                    # S8-0
 make docker-test MODULES=":adapters:driven:streaming"              # S8a
 make docker-test MODULES=":hexagon:application"                    # S8b, S8c
 # S8d: Re-Cut (Kommentar-/Doc-only) — keine neuen Tests; `make docker-check` genuegt
-make docker-test MODULES=":hexagon:application :adapters:driving:cli"   # S8e
+make docker-test MODULES=":hexagon:application :adapters:driven:formats-parquet :adapters:driving:cli"   # S8e (beide neuen Tests in formats-parquet)
 ```
 
 Vor S8f: `make integration INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test"`
@@ -285,7 +296,7 @@ Pre-0.9.8-Checkpoints fuer JSON/YAML/CSV-Importe **muessen** weiter
 funktionieren — der `operationSpecific = null`-Branch in
 `validateManifest` darf nur dann `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`
 werfen, wenn der **aktuelle Lauf** Parquet-Bundle/Single-File ist.
-Test (`ImportCheckpointManagerPreAp8Test`):
+Test (`ImportCheckpointManagerOperationSpecificsTest`):
 
 - Pre-AP8-Manifest + JSON-Lauf → OK (Resume-Familie wie bisher).
 - Pre-AP8-Manifest + Parquet-Bundle-Lauf →
@@ -301,6 +312,11 @@ funktional erreichbar fuer reale Pre-0.9.8-Parquet-Checkpoints. S8c-
 Test fuer den Bundle-Pre-AP8-Branch muss den `optionsFingerprint`
 deshalb explizit gleichhalten (z.B. via Mock-Validator oder durch
 Fingerprint-Hash-Fixture), sonst landet er im falschen Exit-Code-Pfad.
+
+Umgesetzt in `ImportCheckpointManagerOperationSpecificsTest` (die
+Pre-AP8-Faelle „JSON-Lauf → OK" und „Parquet-Bundle-Lauf →
+`BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`" leben dort, nicht in
+einer separaten `…PreAp8Test`-Datei).
 
 ### 4.2 Detekt LongMethod
 
