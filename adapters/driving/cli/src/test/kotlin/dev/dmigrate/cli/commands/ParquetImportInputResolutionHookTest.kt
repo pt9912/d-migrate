@@ -1,8 +1,15 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.format.data.ChunkColumnSchema
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.SchemaOrigin
+import dev.dmigrate.format.parquet.ParquetChunkWriter
+import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
+import dev.dmigrate.streaming.BundleClosureContext
+import dev.dmigrate.streaming.BundleClosureTable
 import dev.dmigrate.streaming.BundleResumeFingerprint
 import dev.dmigrate.streaming.ImportInput
 import io.kotest.assertions.throwables.shouldThrow
@@ -13,6 +20,9 @@ import io.kotest.matchers.types.shouldBeSameInstanceAs
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 
 class ParquetImportInputResolutionHookTest : FunSpec({
 
@@ -21,6 +31,36 @@ class ParquetImportInputResolutionHookTest : FunSpec({
     // frueheren ParquetImportInputPhase{1,2}HookTest-Dateien.
 
     val hook = ParquetImportInputResolutionHook()
+
+    fun writeMinimalBundle(dir: Path) {
+        val usersSchema = ChunkSchema(
+            table = "users",
+            origin = SchemaOrigin.JDBC_METADATA,
+            columns = listOf(ChunkColumnSchema("id", false, NeutralType.BigInteger)),
+        )
+        Files.newOutputStream(dir.resolve("users.parquet")).use { out ->
+            ParquetChunkWriter(out).use { writer ->
+                writer.begin("users", usersSchema)
+                writer.write(
+                    DataChunk(
+                        table = "users", columns = emptyList(),
+                        rows = listOf(arrayOf<Any?>(1L)), chunkIndex = 0L,
+                    )
+                )
+                writer.end()
+            }
+        }
+        val fixedClock = Clock.fixed(Instant.parse("2026-06-06T11:00:00Z"), ZoneOffset.UTC)
+        ParquetBundleClosure(producerVersion = "0.9.8", manifestSha256 = false, clock = fixedClock)(
+            BundleClosureContext(
+                directory = dir,
+                format = DataExportFormat.PARQUET,
+                tables = listOf(
+                    BundleClosureTable("users", dir.resolve("users.parquet"), usersSchema, rowCount = 1),
+                ),
+            )
+        )
+    }
 
     // ── resolveBeforeSchema (frueher Phase-1) ─────────────────────
 
@@ -90,6 +130,27 @@ class ParquetImportInputResolutionHookTest : FunSpec({
             }
             ex.exitCode shouldBe 4
             ex.message!! shouldContain "MANIFEST_NOT_FOUND"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("Parquet Directory mit unbekanntem tableFilter → PreflightExitException(5) (S9a-0.c BUNDLE_* → Exit 5)") {
+        val dir = Files.createTempDirectory("parquet-hook-filter-unknown-")
+        try {
+            // Gueltiges Bundle, aber tableFilter referenziert eine nicht
+            // existierende Tabelle → ParquetBundleIterationException; der Hook
+            // uebersetzt die Iteration-Familie in PreflightExitException(5).
+            writeMinimalBundle(dir)
+            val ex = shouldThrow<PreflightExitException> {
+                hook.resolveBeforeSchema(
+                    ImportInput.Directory(path = dir, tableFilter = listOf("ghost")),
+                    DataExportFormat.PARQUET,
+                    computeContentSha256 = false,
+                )
+            }
+            ex.exitCode shouldBe 5
+            ex.message!! shouldContain "BUNDLE_FILTER_UNKNOWN_TABLE"
         } finally {
             dir.toFile().deleteRecursively()
         }

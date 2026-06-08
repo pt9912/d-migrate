@@ -184,24 +184,49 @@ class ParquetBundlePreflight {
     ): List<dev.dmigrate.format.parquet.manifest.ManifestTable> {
         val byTable = manifest.tables.associateBy { it.table }
         val filtered = if (tableFilter != null) {
+            // AP8 §5.2: BUNDLE_FILTER_UNKNOWN_TABLE (vormals faelschlich als
+            // MANIFEST_FILE_MISSING/IllegalArgumentException → Exit 2; jetzt
+            // eigene Iterator-/Filter-Familie → Exit 5 per AP12 §9).
             val missing = tableFilter.filterNot { it in byTable }
-            require(missing.isEmpty()) {
-                "MANIFEST_FILE_MISSING: tableFilter references unknown tables: ${missing.joinToString()}"
+            if (missing.isNotEmpty()) {
+                throw ParquetBundleIterationException(
+                    "BUNDLE_FILTER_UNKNOWN_TABLE: tableFilter references tables not in the manifest: " +
+                        missing.joinToString(),
+                )
             }
             tableFilter.mapNotNull { byTable[it] }
         } else {
             manifest.tables
         }
-        return if (tableOrder != null) {
-            val byName = filtered.associateBy { it.table }
-            val missing = tableOrder.filterNot { it in byName }
-            require(missing.isEmpty()) {
-                "MANIFEST_FILE_MISSING: tableOrder references unknown tables: ${missing.joinToString()}"
-            }
-            tableOrder.mapNotNull { byName[it] }
-        } else {
-            filtered
+        if (tableOrder == null) return filtered
+
+        // AP8 §5.2 / §5.1(b): tableOrder muss duplikatfrei sein, nur bekannte
+        // (gefilterte) Tabellen referenzieren und den gefilterten Bestand
+        // vollstaendig abdecken — ein partieller tableOrder ist ein Fehler,
+        // kein impliziter Anhang (sonst wuerden Tabellen still gedroppt).
+        val duplicate = tableOrder.groupingBy { it }.eachCount().entries
+            .firstOrNull { it.value > 1 }?.key
+        if (duplicate != null) {
+            throw ParquetBundleIterationException(
+                "BUNDLE_ORDER_DUPLICATE: tableOrder lists table '$duplicate' more than once.",
+            )
         }
+        val byName = filtered.associateBy { it.table }
+        val unknown = tableOrder.filterNot { it in byName }
+        if (unknown.isNotEmpty()) {
+            throw ParquetBundleIterationException(
+                "BUNDLE_ORDER_UNKNOWN_TABLE: tableOrder references tables not in the filtered " +
+                    "manifest set: " + unknown.joinToString(),
+            )
+        }
+        val uncovered = byName.keys.filterNot { it in tableOrder }
+        if (uncovered.isNotEmpty()) {
+            throw ParquetBundleIterationException(
+                "BUNDLE_ORDER_INCOMPLETE: tableOrder does not cover all tables (missing: " +
+                    uncovered.joinToString() + "). Combine --tables with --table-order to import a subset.",
+            )
+        }
+        return tableOrder.map { byName.getValue(it) }
     }
 
     private fun parseFormatVersion(version: String): Pair<Int, Int> {
@@ -242,4 +267,15 @@ class ParquetBundlePreflight {
  * Fehlercode (`MANIFEST_*`).
  */
 class ParquetBundlePreflightException(message: String, cause: Throwable? = null) :
+    RuntimeException(message, cause)
+
+/**
+ * AP8 §5.2 Iterator-/Filter-Fehlerklasse (Bundle-Resolver-Familie, CLI-Exit 5
+ * per AP12 §9). Bewusst getrennt von [ParquetBundlePreflightException]
+ * (Manifest-/Preflight-Fehler, Exit 4), damit der CLI-Hook beide Familien auf
+ * unterschiedliche Exit-Codes mappen kann. Die `message`-Zeile beginnt mit dem
+ * stabilen Code (`BUNDLE_FILTER_UNKNOWN_TABLE` / `BUNDLE_ORDER_DUPLICATE` /
+ * `BUNDLE_ORDER_UNKNOWN_TABLE` / `BUNDLE_ORDER_INCOMPLETE`).
+ */
+class ParquetBundleIterationException(message: String, cause: Throwable? = null) :
     RuntimeException(message, cause)

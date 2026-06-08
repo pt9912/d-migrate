@@ -204,4 +204,69 @@ class ParquetBundleResolverTest : FunSpec({
             dir.toFile().deleteRecursively()
         }
     }
+
+    // S9a-0.c (AP8 §5.2 / AP12 §9): Bundle-Resolver-/Iteration-Familie →
+    // ParquetBundleIterationException (CLI-Exit 5). Vormals warfen Filter/
+    // Order-Fehler faelschlich IllegalArgumentException("MANIFEST_FILE_MISSING…").
+
+    test("tableFilter mit unbekannter Tabelle → BUNDLE_FILTER_UNKNOWN_TABLE") {
+        val dir = Files.createTempDirectory("parquet-filter-unknown-")
+        try {
+            writeBundle(dir, sha256 = false)
+            val ex = shouldThrow<ParquetBundleIterationException> {
+                ParquetBundleResolver().resolve(bundleRoot = dir, tableFilter = listOf("ghost"))
+            }
+            ex.message!! shouldContain "BUNDLE_FILTER_UNKNOWN_TABLE"
+            ex.message!! shouldContain "ghost"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("tableOrder mit Duplikat → BUNDLE_ORDER_DUPLICATE") {
+        val dir = Files.createTempDirectory("parquet-order-dup-")
+        try {
+            writeBundle(dir, sha256 = false)
+            val ex = shouldThrow<ParquetBundleIterationException> {
+                ParquetBundleResolver().resolve(bundleRoot = dir, tableOrder = listOf("users", "users"))
+            }
+            ex.message!! shouldContain "BUNDLE_ORDER_DUPLICATE"
+            ex.message!! shouldContain "users"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("tableOrder mit unbekannter Tabelle → BUNDLE_ORDER_UNKNOWN_TABLE") {
+        val dir = Files.createTempDirectory("parquet-order-unknown-")
+        try {
+            writeBundle(dir, sha256 = false)
+            val ex = shouldThrow<ParquetBundleIterationException> {
+                ParquetBundleResolver().resolve(
+                    bundleRoot = dir,
+                    tableOrder = listOf("users", "orders", "ghost"),
+                )
+            }
+            ex.message!! shouldContain "BUNDLE_ORDER_UNKNOWN_TABLE"
+            ex.message!! shouldContain "ghost"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("partieller tableOrder → BUNDLE_ORDER_INCOMPLETE (kein stilles Droppen)") {
+        val dir = Files.createTempDirectory("parquet-order-incomplete-")
+        try {
+            writeBundle(dir, sha256 = false)
+            // Vor S9a-0.c hat `tableOrder.mapNotNull` die nicht-gelistete
+            // Tabelle 'orders' STILL gedroppt — jetzt ein harter Fehler.
+            val ex = shouldThrow<ParquetBundleIterationException> {
+                ParquetBundleResolver().resolve(bundleRoot = dir, tableOrder = listOf("users"))
+            }
+            ex.message!! shouldContain "BUNDLE_ORDER_INCOMPLETE"
+            ex.message!! shouldContain "orders"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
 })

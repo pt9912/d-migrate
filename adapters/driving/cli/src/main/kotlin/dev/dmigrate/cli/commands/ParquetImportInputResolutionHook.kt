@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.parquet.preflight.ParquetBundleIterationException
 import dev.dmigrate.format.parquet.preflight.ParquetBundlePreflightException
 import dev.dmigrate.format.parquet.preflight.ParquetBundleResolver
 import dev.dmigrate.format.parquet.preflight.ParquetSingleFileResolver
@@ -63,11 +64,20 @@ class ParquetImportInputResolutionHook(
                 // ParquetBundlePreflightException ist dem :hexagon:application-
                 // Core unsichtbar; der Hook uebersetzt sie hier in das exit-
                 // code-tragende PreflightExitException, das der Resolver auf
-                // Exit 4 mappt. (Die Bundle-Resolver-Familie BUNDLE_* → Exit 5
-                // kommt mit S9a-0.c als eigene Exception.)
+                // Exit 4 mappt.
                 throw PreflightExitException(
                     exitCode = 4,
                     message = e.message ?: "MANIFEST_ERROR: parquet bundle preflight failed",
+                    cause = e,
+                )
+            } catch (e: ParquetBundleIterationException) {
+                // S9a-0.c (AP12 §9): Bundle-Resolver-/Iteration-Familie
+                // (BUNDLE_FILTER_*/BUNDLE_ORDER_*) → Exit 5. Eigene Exception-
+                // Familie, damit sie sich vom MANIFEST_*-Preflight (Exit 4)
+                // trennen laesst.
+                throw PreflightExitException(
+                    exitCode = 5,
+                    message = e.message ?: "BUNDLE_ITERATION_ERROR: parquet bundle resolution failed",
                     cause = e,
                 )
             }
