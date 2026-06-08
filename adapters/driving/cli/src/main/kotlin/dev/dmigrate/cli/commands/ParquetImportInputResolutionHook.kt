@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.parquet.ParquetSingleFileTableMismatchException
+import dev.dmigrate.format.parquet.ParquetSingleFileTableRequiredException
 import dev.dmigrate.format.parquet.preflight.ParquetBundleIterationException
 import dev.dmigrate.format.parquet.preflight.ParquetBundlePreflightException
 import dev.dmigrate.format.parquet.preflight.ParquetBundleResolver
@@ -84,11 +86,29 @@ class ParquetImportInputResolutionHook(
             is ImportInput.SingleFile -> {
                 val explicitTable = rawInput.table
                     .takeUnless { it == UNRESOLVED_PARQUET_TABLE_SENTINEL }
-                singleFileResolver.phase1(
-                    path = rawInput.path,
-                    explicitTable = explicitTable,
-                    computeContentSha256 = computeContentSha256,
-                )
+                try {
+                    singleFileResolver.phase1(
+                        path = rawInput.path,
+                        explicitTable = explicitTable,
+                        computeContentSha256 = computeContentSha256,
+                    )
+                } catch (e: ParquetSingleFileTableMismatchException) {
+                    // S9b-0 (AP12 §9): Single-File-Format-Vertragsbruch → Exit 4
+                    // (analog S9a-0.b/Bundle). Modulgrenze: die Exception lebt
+                    // in :adapters:driven:formats-parquet; der Hook uebersetzt
+                    // sie ins exit-code-tragende PreflightExitException.
+                    throw PreflightExitException(
+                        exitCode = 4,
+                        message = e.message ?: "PARQUET_SINGLE_FILE_TABLE_MISMATCH",
+                        cause = e,
+                    )
+                } catch (e: ParquetSingleFileTableRequiredException) {
+                    throw PreflightExitException(
+                        exitCode = 4,
+                        message = e.message ?: "PARQUET_SINGLE_FILE_TABLE_REQUIRED",
+                        cause = e,
+                    )
+                }
             }
             is ImportInput.Stdin -> error(
                 "PARQUET_STDIN_NOT_SUPPORTED: Parquet single-file imports require " +

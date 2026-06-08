@@ -8,6 +8,7 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.SchemaOrigin
 import dev.dmigrate.format.parquet.ParquetChunkWriter
 import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
+import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter
 import dev.dmigrate.streaming.BundleClosureContext
 import dev.dmigrate.streaming.BundleClosureTable
 import dev.dmigrate.streaming.BundleResumeFingerprint
@@ -153,6 +154,69 @@ class ParquetImportInputResolutionHookTest : FunSpec({
             ex.message!! shouldContain "BUNDLE_FILTER_UNKNOWN_TABLE"
         } finally {
             dir.toFile().deleteRecursively()
+        }
+    }
+
+    // ── S9b-0: Single-File-Format-Codes (TABLE_*) → Exit 4 ──
+
+    fun writeSingleFile(path: Path, footerTable: String?) {
+        val schema = ChunkSchema(
+            table = footerTable ?: "ignored",
+            origin = SchemaOrigin.JDBC_METADATA,
+            columns = listOf(ChunkColumnSchema("id", false, NeutralType.BigInteger)),
+        )
+        val out = Files.newOutputStream(path)
+        val writer = if (footerTable != null) {
+            val provider = ParquetSingleFileManifestWriter(
+                producerVersion = "0.9.8",
+                clock = Clock.fixed(Instant.parse("2026-06-06T11:00:00Z"), ZoneOffset.UTC),
+            ).provider
+            ParquetChunkWriter(out, extraMetaDataProvider = provider)
+        } else {
+            ParquetChunkWriter(out)
+        }
+        writer.use { w ->
+            w.begin(schema.table, schema)
+            w.write(DataChunk(table = schema.table, columns = emptyList(), rows = listOf(arrayOf<Any?>(1L)), chunkIndex = 0L))
+            w.end()
+        }
+    }
+
+    test("Parquet SingleFile ohne Footer-Tabelle und ohne --table → PreflightExitException(4) (S9b-0 TABLE_REQUIRED)") {
+        val file = Files.createTempFile("parquet-hook-table-required-", ".parquet")
+        Files.deleteIfExists(file)
+        try {
+            writeSingleFile(file, footerTable = null)
+            val ex = shouldThrow<PreflightExitException> {
+                hook.resolveBeforeSchema(
+                    ImportInput.SingleFile(UNRESOLVED_PARQUET_TABLE_SENTINEL, file),
+                    DataExportFormat.PARQUET,
+                    computeContentSha256 = false,
+                )
+            }
+            ex.exitCode shouldBe 4
+            ex.message!! shouldContain "PARQUET_SINGLE_FILE_TABLE_REQUIRED"
+        } finally {
+            Files.deleteIfExists(file)
+        }
+    }
+
+    test("Parquet SingleFile: --table widerspricht Footer-Tabelle → PreflightExitException(4) (S9b-0 TABLE_MISMATCH)") {
+        val file = Files.createTempFile("parquet-hook-table-mismatch-", ".parquet")
+        Files.deleteIfExists(file)
+        try {
+            writeSingleFile(file, footerTable = "users")
+            val ex = shouldThrow<PreflightExitException> {
+                hook.resolveBeforeSchema(
+                    ImportInput.SingleFile("orders", file),
+                    DataExportFormat.PARQUET,
+                    computeContentSha256 = false,
+                )
+            }
+            ex.exitCode shouldBe 4
+            ex.message!! shouldContain "PARQUET_SINGLE_FILE_TABLE_MISMATCH"
+        } finally {
+            Files.deleteIfExists(file)
         }
     }
 
