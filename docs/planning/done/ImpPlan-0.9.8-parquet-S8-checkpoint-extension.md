@@ -1,7 +1,7 @@
 # S8 — Checkpoint-Erweiterung (Bundle + Single-File)
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
 > §3 S8).
 >
 > Status: In-progress (2026-06-09). Sub-Slices durch:
@@ -80,7 +80,7 @@
 
 ## 1. Scope
 
-Per Umbrella §3 S8-Cell und [`parquet-cli-wiring.md`](../done/parquet-cli-wiring.md) §7:
+Per Umbrella §3 S8-Cell und [`parquet-cli-wiring.md`](parquet-cli-wiring.md) §7:
 
 1. **`CheckpointOperationSpecifics`-Sealed-Subtypen** in
    `hexagon:ports-write/.../CheckpointManifest.kt` (heute Z. 156 nur
@@ -107,7 +107,7 @@ Per Umbrella §3 S8-Cell und [`parquet-cli-wiring.md`](../done/parquet-cli-wirin
    `:190`):
    - `toMap` schreibt unter Schluessel `"operationSpecific"` einen
      `Map<String, Any?>` mit `"kind"`-Diskriminator + Subtyp-Felder
-     (siehe [`parquet-cli-wiring.md`](../done/parquet-cli-wiring.md) §7.1 Beispiel).
+     (siehe [`parquet-cli-wiring.md`](parquet-cli-wiring.md) §7.1 Beispiel).
    - `fromMap` liest `kind` und instanziiert die passende Variante;
      unbekannter `kind`-Wert wirft eine `IllegalStateException` mit
      Error-Code `CHECKPOINT_OPERATION_SPECIFICS_UNKNOWN_KIND`
@@ -361,7 +361,7 @@ Bei S8f-Closeout:
    `docs/planning/done/ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`
    verschieben (`git mv`).
 2. Status-Tabelle in
-   [`parquet-productive-cut-a.md`](parquet-productive-cut-a.md) §3.4
+   [`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md) §3.4
    aktualisieren: S8 → closed mit Commit-Refs S8-0..S8f.
 3. `CHANGELOG.md` `[Unreleased]` um den Pre-AP8-Bruch-Eintrag
    ergaenzen.

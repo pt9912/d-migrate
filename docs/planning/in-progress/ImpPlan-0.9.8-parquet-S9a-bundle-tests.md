@@ -1,0 +1,136 @@
+# S9a — Bundle-Test-Familien (SKELETON)
+
+> Sub-Slice der Cut-A-Umsetzung
+> ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
+> §3 S9a).
+>
+> Status: **Skeleton — Pending S8 completion** (S8 ist mit S8f
+> geschlossen, siehe Umbrella §3.4 — dieser Anker ist damit
+> startbereit).
+>
+> Diese Datei ist ein Anker fuer die Folgeaufgaben, die in S5a, S6
+> und S7 explizit an S9a uebergeben wurden. Der volle Implementierungs-
+> plan (Sub-Slice-Schnitt, Code-Stellen, DoD-Detail, Test-Strategie)
+> wird geschrieben, wenn S9a in Angriff genommen wird — analog dem
+> Vorgehen bei S6 (ImpPlan-First → Review → Implementation).
+>
+> Diese Skeleton-Datei existiert ausschliesslich, damit die feinen
+> Hand-off-Anker aus den vorherigen Slices nicht in deren
+> Folgeaufgaben-Sektionen verloren gehen. Spiegelbild zum
+> S9b-Skeleton (`6629e842`,
+> [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](./ImpPlan-0.9.8-parquet-S9b-single-file-tests.md)).
+
+---
+
+## 1. Scope (Umbrella-Referenz)
+
+Per Umbrella §3 S9a-Cell
+(`parquet-productive-cut-a.md:213`):
+
+> Bundle-Tests: CLI-Preflight (Bundle-Codes), Format-Resolver
+> (`manifest.yaml`-Hook), Bundle-Resume-Familie, DuckDB-/Arrow-
+> Bundle-KV-Toleranz (AP12 §11).
+
+Vier Test-Familien, die in den vier betroffenen Modulen
+(`:hexagon:application`, `:adapters:driven:streaming`,
+`:adapters:driven:formats-parquet`, `:adapters:driving:cli`) gruen
+werden muessen.
+
+## 2. Hand-off-Anker aus vorherigen Slices
+
+### Aus S5a-ImpPlan (`ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md`)
+
+- **CLI-Preflight-Codes** fuer Bundle: die `MANIFEST_*`-Fehlerklassen
+  aus `ParquetBundlePreflight` (`ParquetBundlePreflightException`)
+  bekommen einen CLI-Test, der den exakten Exit-Code (vermutlich 3)
+  + die exakte stderr-Message verifiziert:
+  `MANIFEST_NOT_FOUND`, `MANIFEST_PARSE_ERROR`,
+  `MANIFEST_VERSION_INCOMPATIBLE`, `MANIFEST_TABLE_DUPLICATE`,
+  `MANIFEST_FILE_DUPLICATE`, `MANIFEST_FILE_MISSING`,
+  `MANIFEST_FILE_OUTSIDE_BUNDLE`, `MANIFEST_FILE_UNREFERENCED`,
+  `MANIFEST_SHA256_MISMATCH`, `MANIFEST_FIELD_INVALID`.
+  Heute sind diese nur als Adapter-Tests in
+  `ParquetBundleResolverTest`/`ParquetBundleClosureTest` gedeckt;
+  S9a verbreitert das auf CLI-Ebene (Exit-Code + stderr).
+- **Kollisionsschutz K1–K5** (AP7 §6.2): jeder Branch in
+  `runCollisionChecks` braucht einen produktiven Negativ-Test.
+
+### Aus S6-ImpPlan §5 (`ImpPlan-0.9.8-parquet-S6-cli-wiring.md`)
+
+- **Format-Resolver / `manifest.yaml`-Hook**: Directory-Sniff
+  (Bundle vs. Non-Bundle vs. Mixed-Directory), `--format parquet`
+  auf ein Verzeichnis mit/ohne `manifest.yaml`. Heute durch
+  Helper-Tests abgedeckt; S9a hebt das auf CLI-Ebene.
+- **tableFilter/tableOrder** auf Bundle-Ebene durch die CLI
+  (heute nur Adapter-Test in `ParquetBundleResolverTest`).
+
+### Aus S7-ImpPlan §7 (`ImpPlan-0.9.8-parquet-S7-end-to-end.md`)
+
+- **Bundle-Import gegen ECHTE Parquet-Files** (via
+  `ParquetChunkWriter` + `ParquetBundleClosure` provisioniert):
+  `Directory → ResolvedBundle`-Pfad des Phase-1-Hooks gegen
+  produktive Bytes, nicht nur gegen rekonstruierte DTOs.
+- **End-to-End**: `data import --format parquet --source <dir>` gegen
+  eine echte Tabelle (Bundle mit ≥2 Tabellen, tableOrder-Respekt) —
+  der **kleine** Smoke landet schon im S7-E2E
+  (`DataParquetRoundTripE2EPostgresTest`); S9a verbreitert das auf
+  alle Edge-Cases.
+
+### Aus S8 (`ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`)
+
+- **Volle Bundle-Resume-Familie** auf Basis des in S8 fertigen
+  Specifics-Plumbings:
+  - `BundleCheckpointSpecifics(fingerprint: BundleResumeFingerprint)`
+    persistiert/round-trippt (S8a) und wird vom
+    `ImportCheckpointManager.validateBundleResume` (S8c) geprueft.
+  - Resume-Exit-Codes produktiv testen:
+    `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT` (Pre-AP8-Manifest
+    × Parquet-Bundle-Lauf) und der Per-Tabelle-SHA-Pflicht-Pfad
+    (`BUNDLE_RESUME_REQUIRES_FILE_HASHES`, fehlender Hash im
+    Manifest → Exit 3).
+  - `--no-checkpoint` × Bundle: kein Per-Tabelle-SHA-Vergleich
+    (S8e hat den Adapter-Pfad `verifyContentSha256 = false` schon
+    abgedeckt; S9a hebt das auf CLI-/Resume-Ebene).
+
+## 3. Bewusst NICHT in S9a
+
+- **Keine Single-File-Tests** — gehoert zu S9b.
+- **Kein Production-Code** — S9a ist eine reine Test-Slice; sollte
+  die Implementierung ein Defizit aufdecken, faellt der Fix in
+  einen Review-Batch oder Mini-Slice und nicht in S9a selbst.
+- **Keine Cross-Driver-E2E** ueber das hinaus, was S7 bereits via
+  PG/Testcontainers liefert.
+
+## 4. Definition of Done (skeleton)
+
+Umbrella-DoD ist die Quelle:
+
+> Vier Test-Familien gruen via `make docker-test MODULES=":hexagon:application :adapters:driven:streaming :adapters:driven:formats-parquet :adapters:driving:cli"`
+> (Preflight/Resume in `hexagon:application`, Resolver in
+> `streaming`, KV-Toleranz in `formats-parquet`, CLI-Codes in
+> `cli`).
+
+Konkrete Belegbefehle, DoD-Cases und Test-Datei-Liste werden im
+vollen Plan ergaenzt.
+
+## 5. Vorbedingungen
+
+- ✅ **S7 abgeschlossen** (2026-06-08, siehe Umbrella §3.4):
+  Seekable-Dispatch produktiv, Bundle-Manifest wird produktiv
+  geschrieben.
+- ✅ **S8 abgeschlossen** (2026-06-09, S8f-Closeout):
+  `BundleCheckpointSpecifics` persistiert + round-trippt (S8a),
+  `validateBundleResume` aktiv (S8c), `--no-checkpoint`-Adapter-Pfad
+  verifiziert (S8e). Die Bundle-Resume-Familie ist damit nicht mehr
+  rein synthetisch.
+
+## 6. Naechste Schritte (bei Slice-Start)
+
+1. Diese Skeleton-Datei zum vollen ImpPlan ausbauen (Sub-Slice-
+   Schnitt, Test-Datei-Liste, DoD-Detail-Tabelle, Folgeaufgaben).
+2. Plan-Review-Zyklus analog S6/S7 (mehrere Runden gegen
+   Code-Realitaet).
+3. Implementierungs-Sub-Slices unter `fix(review)`/`feat(parquet)`-
+   Commit-Konvention.
+4. Plan-Doc nach `docs/planning/done/` migrieren + Umbrella §3.4-
+   Status-Tabelle aktualisieren.

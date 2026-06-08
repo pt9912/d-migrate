@@ -108,10 +108,15 @@ vollen Plan ergaenzt.
 - ✅ **S7 abgeschlossen** (2026-06-08, siehe Umbrella §3.4):
   Stopgap entfaellt, Seekable-Dispatch produktiv, Footer-KV +
   Bundle-Manifest werden produktiv geschrieben.
-- ⏳ **S8 ausstehend**: `SingleFileCheckpointSpecifics(contentSha256)`
-  persistiert, der Phase-2-Hook bekommt den echten Resume-Sha.
-  Solange S8 nicht durch ist, sind die Resume-Familien-Tests rein
-  synthetisch.
+- ✅ **S8 abgeschlossen** (2026-06-09, S8f-Closeout):
+  `SingleFileCheckpointSpecifics(contentSha256)` persistiert +
+  round-trippt (S8a), `validateSingleFileResume` ist der produktive
+  Cross-Run-Resume-Gate (S8c). **Hinweis (S8d-Re-Cut):** Der
+  Phase-2-Hook bekommt **nicht** den echten Resume-Sha — er bleibt
+  Pass-Through (`resumeExpectedSha256 = null`); der Hash-Vergleich
+  passiert im `ImportCheckpointManager` (S8c), nicht im Hook. Die
+  Single-File-Resume-Familien-Tests pruefen daher den Manager-Gate,
+  nicht einen Hook-Hash-Check.
 
 ## 6. Naechste Schritte (bei Slice-Start)
 

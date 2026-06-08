@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Parquet — Pre-0.9.8-Bundle-Checkpoints sind nach 0.9.8 nicht
+  mehr wiederaufnehmbar** *(2026-06-09, Parquet Cut A S8)* —
+  Pre-0.9.8-Parquet-Checkpoints fuer **Bundle**-Importe sind nach
+  0.9.8 nicht mehr wiederaufnehmbar (Fehlercode
+  `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`). Der
+  `ImportCheckpointManager` verlangt fuer einen Parquet-Bundle-Resume
+  jetzt den in 0.9.8 eingefuehrten `BundleCheckpointSpecifics`-
+  Resume-Fingerprint im Manifest; ein Manifest ohne diesen Block kann
+  einen laufenden Parquet-Bundle-Import nicht fortsetzen.
+  JSON/YAML/CSV-Checkpoints und Single-File-Importe ohne vorherigen
+  Checkpoint sind **nicht** betroffen. Pre-0.9.8-Parquet-Bundle-
+  Checkpoints existierten in der Wildnis nicht (Parquet kam mit 0.9.8
+  live); der Bruch ist defensiv im Code, nicht praktisch spuerbar.
+
 ### Changed
 
 - **Parquet — Scope-/Versions-Korrektur: Cut A statt Cut B,
