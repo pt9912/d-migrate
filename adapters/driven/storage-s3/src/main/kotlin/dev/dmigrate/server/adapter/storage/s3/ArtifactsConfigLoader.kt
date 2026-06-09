@@ -40,9 +40,19 @@ object ArtifactsConfigLoader {
             ?.let { parseYaml(it) }
             ?.let { it["artifacts"] as? Map<*, *> }
             ?: return ArtifactStorageConfig.File
+        val s3Block = artifacts["s3"] as? Map<*, *>
         return when (val store = (artifacts["store"] as? String)?.trim()?.lowercase() ?: "file") {
-            "file" -> ArtifactStorageConfig.File
-            "s3" -> ArtifactStorageConfig.S3(parseS3(artifacts["s3"] as? Map<*, *>))
+            "file" -> {
+                // Foot-Gun-Guard: ein `artifacts.s3`-Block ohne `store: s3`
+                // wuerde still ignoriert — lieber laut scheitern.
+                if (s3Block != null) {
+                    throw ArtifactsConfigException(
+                        "artifacts.s3 is set but artifacts.store is not 's3' — the s3 config would be ignored",
+                    )
+                }
+                ArtifactStorageConfig.File
+            }
+            "s3" -> ArtifactStorageConfig.S3(parseS3(s3Block))
             else -> throw ArtifactsConfigException("artifacts.store must be 'file' or 's3', was '$store'")
         }
     }
@@ -56,10 +66,23 @@ object ArtifactsConfigLoader {
         return S3StorageConfig(
             bucket = bucket,
             region = (s3["region"] as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_REGION,
-            endpoint = (s3["endpoint"] as? String)?.trim()?.takeIf { it.isNotEmpty() }?.let { URI.create(it) },
+            endpoint = (s3["endpoint"] as? String)?.trim()?.takeIf { it.isNotEmpty() }?.let { parseUri(it) },
             keyPrefix = (s3["prefix"] as? String)?.trim() ?: "",
-            pathStyle = s3["pathStyle"] as? Boolean ?: true,
+            pathStyle = parseOptionalBoolean(s3, "pathStyle") ?: true,
         )
+    }
+
+    private fun parseUri(raw: String): URI =
+        runCatching { URI.create(raw) }.getOrElse {
+            throw ArtifactsConfigException("artifacts.s3.endpoint is not a valid URI: '$raw'")
+        }
+
+    /** Strikter Boolean-Parse: ein gesetzter, aber nicht-boolescher Wert
+     *  (z. B. gequotetes `"false"`) wird NICHT still auf den Default geflippt. */
+    private fun parseOptionalBoolean(s3: Map<*, *>, key: String): Boolean? {
+        val raw = s3[key] ?: return null
+        return raw as? Boolean
+            ?: throw ArtifactsConfigException("artifacts.s3.$key must be a boolean (true/false), was '$raw'")
     }
 
     private fun parseYaml(path: Path): Map<*, *> {

@@ -99,4 +99,56 @@ class ArtifactsConfigLoaderTest : FunSpec({
             ArtifactsConfigLoader.load(yamlFile("artifacts:\n  store: gcs"))
         }
     }
+
+    test("invalid s3 endpoint URI -> ArtifactsConfigException (not raw IllegalArgumentException)") {
+        val path = yamlFile(
+            """
+            artifacts:
+              store: s3
+              s3:
+                bucket: "b"
+                endpoint: "ht tp://broken"
+            """,
+        )
+        shouldThrow<ArtifactsConfigException> { ArtifactsConfigLoader.load(path) }
+    }
+
+    test("non-boolean pathStyle (quoted string) -> error, not silent default") {
+        val path = yamlFile(
+            """
+            artifacts:
+              store: s3
+              s3:
+                bucket: "b"
+                pathStyle: "false"
+            """,
+        )
+        shouldThrow<ArtifactsConfigException> { ArtifactsConfigLoader.load(path) }
+    }
+
+    test("artifacts.s3 block present but store is not s3 -> error (foot-gun guard)") {
+        val withFile = yamlFile(
+            """
+            artifacts:
+              store: file
+              s3:
+                bucket: "b"
+            """,
+        )
+        shouldThrow<ArtifactsConfigException> { ArtifactsConfigLoader.load(withFile) }
+
+        val storeAbsent = yamlFile(
+            """
+            artifacts:
+              s3:
+                bucket: "b"
+            """,
+        )
+        shouldThrow<ArtifactsConfigException> { ArtifactsConfigLoader.load(storeAbsent) }
+    }
+
+    test("scalar / empty YAML root -> File") {
+        ArtifactsConfigLoader.load(yamlFile("just-a-scalar")) shouldBe ArtifactStorageConfig.File
+        ArtifactsConfigLoader.load(yamlFile("")) shouldBe ArtifactStorageConfig.File
+    }
 })
