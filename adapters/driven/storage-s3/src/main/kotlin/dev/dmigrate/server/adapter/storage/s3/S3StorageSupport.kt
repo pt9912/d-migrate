@@ -63,9 +63,15 @@ internal object S3StorageSupport {
      * oder out-of-bounds) und liefert den inklusiven S3-`Range`-Header — oder
      * `null`, wenn [length] == 0 (leerer Read, kein GET noetig).
      */
-    fun rangeHeader(offset: Long, length: Long, size: Long): String? {
+    /** Negativ-Validierung — VOR dem HeadObject, damit ungueltige Argumente
+     *  unabhaengig von der Existenz des Objekts mit IllegalArgumentException
+     *  scheitern (nicht mit not-found/IllegalStateException). */
+    fun requireNonNegativeRange(offset: Long, length: Long) {
         require(offset >= 0) { "offset must be >= 0, was $offset" }
         require(length >= 0) { "length must be >= 0, was $length" }
+    }
+
+    fun rangeHeader(offset: Long, length: Long, size: Long): String? {
         require(offset <= size) { "offset $offset out of bounds for size $size" }
         require(offset + length <= size) { "range [$offset, ${offset + length}) out of bounds for size $size" }
         return if (length == 0L) null else "bytes=$offset-${offset + length - 1}"

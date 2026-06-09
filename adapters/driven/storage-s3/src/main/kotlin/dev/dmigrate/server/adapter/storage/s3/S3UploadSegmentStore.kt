@@ -54,9 +54,14 @@ class S3UploadSegmentStore(
         val lock = locks[(key.hashCode() and Int.MAX_VALUE) % LOCK_STRIPES]
         lock.lock()
         try {
-            val existingSha = S3StorageSupport.head(s3, bucket, key)?.metadata()?.get("sha256")
+            // Existenz an `head != null` festmachen (nicht an der sha-Metadata),
+            // sonst wuerde ein vorhandenes Objekt OHNE sha256-Metadata still
+            // ueberschrieben statt als Conflict gemeldet — konsistent zu
+            // S3ArtifactContentStore.
+            val existing = S3StorageSupport.head(s3, bucket, key)
+            val existingSha = existing?.metadata()?.get("sha256").orEmpty()
             return when {
-                existingSha == null -> {
+                existing == null -> {
                     S3StorageSupport.putBody(s3, bucket, key, tmp, hashed.sizeBytes, metadataOf(segment, hashed.sha256))
                     WriteSegmentOutcome.Stored(segment.copy(segmentSha256 = hashed.sha256))
                 }
@@ -78,7 +83,8 @@ class S3UploadSegmentStore(
             UploadSegment(
                 uploadSessionId = uploadSessionId,
                 segmentIndex = index,
-                segmentOffset = head.metadata()["segment-offset"]?.toLongOrNull() ?: 0L,
+                segmentOffset = head.metadata()["segment-offset"]?.toLongOrNull()
+                    ?: error("segment $index of $uploadSessionId has no persisted segment-offset"),
                 sizeBytes = head.contentLength() ?: 0L,
                 segmentSha256 = head.metadata()["sha256"].orEmpty(),
             )
@@ -93,6 +99,7 @@ class S3UploadSegmentStore(
     ): InputStream {
         S3StorageSupport.requireSafeId(uploadSessionId, "uploadSessionId")
         S3StorageSupport.requireNonNegativeIndex(segmentIndex)
+        S3StorageSupport.requireNonNegativeRange(offset, length)
         val key = segmentKey(uploadSessionId, segmentIndex)
         val size = S3StorageSupport.head(s3, bucket, key)?.contentLength()
             ?: error("segment $segmentIndex of $uploadSessionId not found")
@@ -104,14 +111,19 @@ class S3UploadSegmentStore(
     override fun deleteAllForSession(uploadSessionId: String): Int {
         S3StorageSupport.requireSafeId(uploadSessionId, "uploadSessionId")
         val keys = listKeys(sessionPrefix(uploadSessionId))
+        var deleted = 0
         keys.chunked(DELETE_BATCH).forEach { batch ->
-            s3.deleteObjects { req ->
+            // Tatsaechlich geloeschte zaehlen: bei Teilfehlern listet S3 die
+            // betroffenen Keys in errors() (leer bei Erfolg) — nicht blind
+            // batch.size zurueckmelden.
+            val response = s3.deleteObjects { req ->
                 req.bucket(bucket).delete { del ->
                     del.objects(batch.map { ObjectIdentifier.builder().key(it).build() })
                 }
             }
+            deleted += batch.size - response.errors().size
         }
-        return keys.size
+        return deleted
     }
 
     private fun listKeys(prefix: String): List<String> {

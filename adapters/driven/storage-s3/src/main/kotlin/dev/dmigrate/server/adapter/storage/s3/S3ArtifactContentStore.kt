@@ -78,6 +78,7 @@ class S3ArtifactContentStore(
 
     override fun openRangeRead(artifactId: String, offset: Long, length: Long): InputStream {
         S3StorageSupport.requireSafeId(artifactId, "artifactId")
+        S3StorageSupport.requireNonNegativeRange(offset, length)
         val size = existingMeta(artifactId)?.sizeBytes ?: error("artifact $artifactId not found")
         val header = S3StorageSupport.rangeHeader(offset, length, size)
             ?: return ByteArrayInputStream(ByteArray(0))

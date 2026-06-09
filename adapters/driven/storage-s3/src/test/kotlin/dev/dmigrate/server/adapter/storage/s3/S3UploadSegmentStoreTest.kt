@@ -25,6 +25,7 @@ import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectResponse
+import software.amazon.awssdk.services.s3.model.S3Error
 import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.services.s3.model.S3Object
 import java.io.ByteArrayInputStream
@@ -168,5 +169,74 @@ class S3UploadSegmentStoreTest : FunSpec({
         val store = S3UploadSegmentStore(mockk<S3Client>(), "b")
         shouldThrow<IllegalArgumentException> { store.listSegments("a/b") }
         shouldThrow<IllegalArgumentException> { store.writeSegment(seg("u1", -1, 1), ByteArrayInputStream(byteArrayOf(1))) }
+    }
+
+    test("writeSegment writes the correct key and sha256/size/offset metadata") {
+        val s3 = mockk<S3Client>()
+        every { s3.headObject(any<Consumer<HeadObjectRequest.Builder>>()) } throws notFound()
+        val putSlot = slot<PutObjectRequest>()
+        every { s3.putObject(capture(putSlot), any<RequestBody>()) } returns PutObjectResponse.builder().build()
+        val payload = "seg".toByteArray()
+
+        S3UploadSegmentStore(s3, "b").writeSegment(seg("u1", 0, payload.size.toLong(), offset = 4), ByteArrayInputStream(payload))
+
+        putSlot.captured.key() shouldBe "segments/u1/0"
+        putSlot.captured.metadata()["sha256"] shouldBe sha256Hex(payload)
+        putSlot.captured.metadata()["size-bytes"] shouldBe payload.size.toString()
+        putSlot.captured.metadata()["segment-offset"] shouldBe "4"
+    }
+
+    test("writeSegment against an existing object lacking sha256 metadata returns Conflict (not overwrite)") {
+        val payload = "x".toByteArray()
+        val s3 = mockk<S3Client>()
+        every { s3.headObject(any<Consumer<HeadObjectRequest.Builder>>()) } returns
+            HeadObjectResponse.builder().metadata(emptyMap()).contentLength(payload.size.toLong()).build()
+
+        val outcome = S3UploadSegmentStore(s3, "b").writeSegment(seg("u1", 0, payload.size.toLong()), ByteArrayInputStream(payload))
+
+        val conflict = outcome.shouldBeInstanceOf<WriteSegmentOutcome.Conflict>()
+        conflict.existingSegmentSha256 shouldBe ""
+        conflict.attemptedSegmentSha256 shouldBe sha256Hex(payload)
+        verify(exactly = 0) { s3.putObject(any<PutObjectRequest>(), any<RequestBody>()) }
+    }
+
+    test("listSegments follows pagination across continuation tokens") {
+        val s3 = mockk<S3Client>()
+        every { s3.listObjectsV2(any<Consumer<ListObjectsV2Request.Builder>>()) } returnsMany listOf(
+            ListObjectsV2Response.builder().isTruncated(true).nextContinuationToken("tok")
+                .contents(S3Object.builder().key("segments/u1/0").build()).build(),
+            ListObjectsV2Response.builder().isTruncated(false)
+                .contents(S3Object.builder().key("segments/u1/1").build()).build(),
+        )
+        every { s3.headObject(any<Consumer<HeadObjectRequest.Builder>>()) } returns segHead("sha", 3, offset = 5)
+
+        val segments = S3UploadSegmentStore(s3, "b").listSegments("u1")
+
+        segments.map { it.segmentIndex } shouldBe listOf(0, 1)
+        verify(exactly = 2) { s3.listObjectsV2(any<Consumer<ListObjectsV2Request.Builder>>()) }
+    }
+
+    test("listSegments fails loud when a segment lacks the persisted offset") {
+        val s3 = mockk<S3Client>()
+        every { s3.listObjectsV2(any<Consumer<ListObjectsV2Request.Builder>>()) } returns
+            ListObjectsV2Response.builder().isTruncated(false)
+                .contents(S3Object.builder().key("segments/u1/0").build()).build()
+        every { s3.headObject(any<Consumer<HeadObjectRequest.Builder>>()) } returns
+            HeadObjectResponse.builder().metadata(mapOf("sha256" to "s")).contentLength(3).build()
+
+        shouldThrow<IllegalStateException> { S3UploadSegmentStore(s3, "b").listSegments("u1") }
+    }
+
+    test("deleteAllForSession counts actual deletions, subtracting per-key errors") {
+        val s3 = mockk<S3Client>()
+        every { s3.listObjectsV2(any<Consumer<ListObjectsV2Request.Builder>>()) } returns
+            ListObjectsV2Response.builder().isTruncated(false).contents(
+                S3Object.builder().key("segments/u1/0").build(),
+                S3Object.builder().key("segments/u1/1").build(),
+            ).build()
+        every { s3.deleteObjects(any<Consumer<DeleteObjectsRequest.Builder>>()) } returns
+            DeleteObjectsResponse.builder().errors(S3Error.builder().key("segments/u1/1").build()).build()
+
+        S3UploadSegmentStore(s3, "b").deleteAllForSession("u1") shouldBe 1
     }
 })
