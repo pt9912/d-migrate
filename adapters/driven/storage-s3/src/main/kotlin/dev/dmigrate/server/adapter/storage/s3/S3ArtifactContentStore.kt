@@ -3,7 +3,6 @@ package dev.dmigrate.server.adapter.storage.s3
 import dev.dmigrate.core.util.toHex
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
-import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload
@@ -17,7 +16,6 @@ import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 
 /**
@@ -41,7 +39,12 @@ class S3ArtifactContentStore(
     private val keyPrefix: String = "",
 ) : ArtifactContentStore {
 
-    private val keyLocks = ConcurrentHashMap<String, ReentrantLock>()
+    // Striped Locks (feste Groesse) statt einer Map<id, Lock>: serialisiert
+    // konkurrierende Writes desselben artifactId JVM-lokal, ohne pro Id einen
+    // Lock-Eintrag zu akkumulieren (sonst unbounded Heap-Wachstum bei vielen
+    // distinkten Ids). Kollisionen zweier Ids auf denselben Stripe sind
+    // harmlos (etwas mehr Kontention). Cross-JVM bleibt last-writer-wins (§6).
+    private val locks = Array(LOCK_STRIPES) { ReentrantLock() }
 
     override fun write(
         artifactId: String,
@@ -63,7 +66,7 @@ class S3ArtifactContentStore(
     }
 
     private fun storeOrResolve(artifactId: String, tmp: Path, hashed: Hashed): WriteArtifactOutcome {
-        val lock = keyLocks.computeIfAbsent(artifactId) { ReentrantLock() }
+        val lock = locks[(artifactId.hashCode() and Int.MAX_VALUE) % LOCK_STRIPES]
         lock.lock()
         try {
             val existing = headMeta(artifactId)
@@ -125,6 +128,7 @@ class S3ArtifactContentStore(
     private fun storeMultipart(key: String, tmp: Path, metadata: Map<String, String>) {
         val uploadId = s3.createMultipartUpload { it.bucket(bucket).key(key).metadata(metadata) }.uploadId()
         val parts = mutableListOf<CompletedPart>()
+        var completed = false
         try {
             Files.newInputStream(tmp).use { input ->
                 var partNumber = 1
@@ -144,9 +148,14 @@ class S3ArtifactContentStore(
                 it.bucket(bucket).key(key).uploadId(uploadId)
                     .multipartUpload(CompletedMultipartUpload.builder().parts(parts).build())
             }
-        } catch (failure: SdkException) {
-            runCatching { s3.abortMultipartUpload { it.bucket(bucket).key(key).uploadId(uploadId) } }
-            throw failure
+            completed = true
+        } finally {
+            // Bei JEDEM Fehler (SdkException, IOException beim Datei-Lesen, …)
+            // den angefangenen Upload abbrechen, sonst bleibt er server-seitig
+            // als verwaister Multipart-Upload haengen (Speicher/Kosten).
+            if (!completed) {
+                runCatching { s3.abortMultipartUpload { it.bucket(bucket).key(key).uploadId(uploadId) } }
+            }
         }
     }
 
@@ -176,10 +185,14 @@ class S3ArtifactContentStore(
     private fun keyFor(artifactId: String): String =
         if (keyPrefix.isEmpty()) artifactId else "${keyPrefix.trimEnd('/')}/$artifactId"
 
+    // Allowlist identisch zu storage-file PathSafety.ID_PATTERN — damit ein
+    // artifactId auf beiden Byte-Store-Backends gleich akzeptiert/abgelehnt
+    // wird und der S3-Key keine Sonder-/Control-Zeichen aufnehmen kann.
+    // (Gemeinsame Util-Extraktion mit S3.3, wenn der UploadSegmentStore der
+    // dritte Nutzer wird — ImpPlan §2.3.)
     private fun requireSafeId(artifactId: String) {
-        require(artifactId.isNotBlank()) { "artifactId must not be blank" }
-        require(!artifactId.contains('/') && !artifactId.contains("..")) {
-            "artifactId must not contain '/' or '..': $artifactId"
+        require(ID_PATTERN.matches(artifactId)) {
+            "artifactId '$artifactId' must match ${ID_PATTERN.pattern}"
         }
     }
 
@@ -187,6 +200,8 @@ class S3ArtifactContentStore(
     private data class Existing(val sha256: String, val sizeBytes: Long)
 
     private companion object {
+        val ID_PATTERN = Regex("[A-Za-z0-9_-]{1,128}")
+        const val LOCK_STRIPES = 64
         const val HTTP_NOT_FOUND = 404
         const val BUFFER_BYTES = 64 * 1024
         const val PART_SIZE_BYTES = 8 * 1024 * 1024

@@ -181,3 +181,13 @@ so gebaut werden — empirisch gegen SeaweedFS verifiziert:
 - Promotion `next/` → `in-progress/` bei S3.0-Start.
 - Erwaegung: das Footprint-Gate (S3.0) mit dem **1.0.0-Native-Image-Cut**
   buendeln, statt den Footprint zweimal zu messen (Roadmap-0.9.8-Hinweis).
+- **Review-Runde-1-Dispositionen (2026-06-09, konvergiert nach Runde 2):**
+  - gefixt: Striped-Locks (Memory-Leak), Multipart-Abort via finally
+    (Orphan-Uploads), `requireSafeId`-Allowlist (Parity zu File).
+  - **mit S3.3:** gemeinsame Byte-Store-Utils extrahieren (Streaming-Hash
+    `copyAndHash` + `requireSafeId`/`PathSafety`), wenn der `UploadSegmentStore`
+    der dritte Nutzer wird (ImpPlan §2.3-Schwelle).
+  - **eigener Refactor:** Byte-Store-Basis fuer die write-Outcome-Entscheidung
+    (Stored/AlreadyExists/Conflict), die File + S3 heute duplizieren.
+  - akzeptiert: Multipart-Part als 8-MiB-`ByteArray` (vertretbar), `delete`-
+    2-RTT + cross-JVM-last-writer-wins (dokumentiert §6).

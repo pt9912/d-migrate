@@ -14,6 +14,8 @@ import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.http.AbortableInputStream
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest
+import software.amazon.awssdk.services.s3.model.AbortMultipartUploadResponse
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest
@@ -199,5 +201,35 @@ class S3ArtifactContentStoreTest : FunSpec({
         shouldThrow<IllegalArgumentException> { store.exists("") }
         shouldThrow<IllegalArgumentException> { store.exists("a/b") }
         shouldThrow<IllegalArgumentException> { store.exists("..") }
+    }
+
+    test("write against an existing object lacking sha256 metadata returns Conflict with empty existing sha") {
+        val payload = "x".toByteArray()
+        val s3 = mockk<S3Client>()
+        every { s3.headObject(any<Consumer<HeadObjectRequest.Builder>>()) } returns
+            HeadObjectResponse.builder().metadata(emptyMap()).contentLength(payload.size.toLong()).build()
+
+        val outcome = S3ArtifactContentStore(s3, "b").write("dup", ByteArrayInputStream(payload), payload.size.toLong())
+
+        val conflict = outcome.shouldBeInstanceOf<WriteArtifactOutcome.Conflict>()
+        conflict.existingSha256 shouldBe ""
+        conflict.attemptedSha256 shouldBe sha256Hex(payload)
+    }
+
+    test("multipart aborts the upload and rethrows when a part upload fails") {
+        val s3 = mockk<S3Client>()
+        every { s3.headObject(any<Consumer<HeadObjectRequest.Builder>>()) } throws notFound()
+        every { s3.createMultipartUpload(any<Consumer<CreateMultipartUploadRequest.Builder>>()) } returns
+            CreateMultipartUploadResponse.builder().uploadId("u1").build()
+        every { s3.uploadPart(any<UploadPartRequest>(), any<RequestBody>()) } throws
+            S3Exception.builder().statusCode(500).build()
+        every { s3.abortMultipartUpload(any<Consumer<AbortMultipartUploadRequest.Builder>>()) } returns
+            AbortMultipartUploadResponse.builder().build()
+        val size = 9 * 1024 * 1024
+
+        shouldThrow<S3Exception> {
+            S3ArtifactContentStore(s3, "b").write("big", ByteArrayInputStream(ByteArray(size)), size.toLong())
+        }
+        verify(exactly = 1) { s3.abortMultipartUpload(any<Consumer<AbortMultipartUploadRequest.Builder>>()) }
     }
 })
