@@ -21,6 +21,16 @@ dependencies {
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 }
 
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(90)
+            }
+        }
+    }
+}
+
 configurations.all {
     // Eval §6 / S3.0-Gate: `url-connection-client` ist der gewaehlte
     // sync-Transport. Die Default-HTTP-Clients (Netty async, Apache sync)
