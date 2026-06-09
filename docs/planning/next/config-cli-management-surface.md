@@ -1,6 +1,6 @@
 # CLI-Verwaltungsoberfläche `config` (`config show` / `config credentials list` / `config credentials set`)
 
-**Status**: Entwurf (2026-06-09 — Scope aus cli-spec §6.7 + connection-config-spec §4 abgeleitet, Review-Findings eingearbeitet: Phase 1 nur `config show`, Secret-Management vollständig in Phase 2).
+**Status**: Entwurf (2026-06-09 — Scope aus cli-spec §6.7 + connection-config-spec §4 abgeleitet, Review-Findings eingearbeitet: Phase 1 nur `config show` nach Spec-Präzisierung, Secret-Management vollständig in Phase 2).
 
 **Trigger**: `spec/cli-spec.md` §6.7 spezifiziert drei `config`-Subkommandos
 (`config credentials set`, `config credentials list`, `config show`), die
@@ -18,14 +18,17 @@ und **keinen Lastenheft-Eintrag** tragen. Eine Konsistenzdurchsicht der
   AES-256-Store (`~/.d-migrate/credentials.enc` + `~/.d-migrate/master.key`,
   chmod 600).
 
-Daraus folgt: Es fehlt (a) die **CLI-Hülle** für `config show` über bereits
-gebauter Config-Pfad-/YAML-Mechanik und (b) ein eigener
-**Secret-Management-Slice** für `config credentials set/list` inklusive der
-noch offenen Credential-Stufen 2, 4 und 5.
+Daraus folgt: Es fehlt (a) der **CLI-Slice** für `config show` über bereits
+gebauter Config-Pfad-Mechanik plus generischem YAML-/Masking-Renderer und
+(b) ein eigener **Secret-Management-Slice** für `config credentials set/list`
+inklusive der noch offenen Credential-Stufen 2, 4 und 5.
 
-**Aktivierungsbedingung** (Move nach `in-progress/`): Phase 1 (§3) ist ohne
-Vorarbeit implementierbar und kann sofort starten. Phase 2 (§4) blockiert
-auf den Vorbedingungen in §6 (Spec-Klärung für `D_MIGRATE_DB_PASSWORD`,
+**Aktivierungsbedingung** (Move nach `in-progress/`): Phase 1 (§3) ist
+technisch ohne Secret-Vorarbeit implementierbar, darf aber erst als
+`config show`-Erfüllung gelten, wenn `cli-spec.md §6.7` den Phase-1-Vertrag
+explizit präzisiert („effektive Datei + erkennbare Runtime-Overrides" statt
+vollständigem Multi-Source-Merge). Phase 2 (§4) blockiert auf den
+Vorbedingungen in §6 (Spec-Klärung für `D_MIGRATE_DB_PASSWORD`,
 Lastenheft-Backfill „Secret-Management" + eingeplanter `/security-review`).
 
 ---
@@ -74,29 +77,45 @@ darf diese Trennung nicht aufweichen.
   Pfad; `ConnectionConfigParser` nur für Legacy-String-Form; für
   LF-012/LN-038-Map-Form `YamlConnectionReferenceLoader` bzw. eine neue
   adapter-neutrale Listen-API verwenden.
+- Für `config show` **nicht** `ConnectionConfigParser` zweckentfremden: der
+  Parser liest nur `database.connections`/Defaults und ignoriert Map-Form
+  absichtlich. Phase 1 braucht einen eigenen generischen
+  `ConfigDocumentLoader`/`ConfigShowRenderer` im CLI-Adapter, der die gesamte
+  YAML-Datei als AST lädt, Top-Level-Sections stabil rendert und rekursiv
+  maskiert.
 
-## 3. Phase 1 — CLI-Hülle über vorhandener Mechanik (keine Krypto)
+## 3. Phase 1 — `config show` über Config-Pfad + generischem Renderer (keine Krypto)
 
 Reiner „aufgeschobener Komfort": kein neuer Secret-Backend, kein
-Security-Review nötig, voll mit Bordmitteln umsetzbar.
+Krypto-Security-Review nötig; wegen Secret-Leak-Risiko ist aber ein
+verpflichtender Masking-Test-Gate Teil der Abnahme.
 
 ### 3.1 `config show [--section <s>]`
+- Vor Merge `cli-spec.md §6.7` präzisieren: Phase 1 zeigt die effektiv
+  aufgelöste Konfigurationsdatei nach CLI>ENV>Default-Pfadvertrag plus eine
+  kleine Provenienz-/Override-Zusammenfassung für erkennbare
+  `D_MIGRATE_*`-Runtime-Overrides. Ein vollständiger Multi-Source-Merge
+  (Defaults + Datei + ENV + Flags mit Provenienz pro Feld) bleibt ein eigener
+  späterer Slice und wird bis dahin **nicht** als geliefert markiert.
 - Effektiven Config-Pfad über die vorhandene CLI>ENV>Default-Logik
-  auflösen, `.d-migrate.yaml` parsen, Sektionen rendern
-  (`database`/`export`/`import`/`pipeline`/`incremental`/`ai`/`i18n`/`ddl`/
-  `documentation`/`logging`/`security`), **sensible Werte maskieren** als
-  `***` (Passwörter in URLs, `api_key`, `credentialRef`-Werte) gemäß §4.3.
+  auflösen, `.d-migrate.yaml` mit einem generischen YAML-AST-Loader parsen,
+  Top-Level-Sections rendern (`database`/`export`/`import`/`pipeline`/
+  `incremental`/`ai`/`i18n`/`ddl`/`documentation`/`logging`/`security` zuerst,
+  danach weitere valide Top-Level-Keys in Dateireihenfolge), **sensible Werte
+  rekursiv maskieren** als `***` gemäß §4.3.
+- Masking-Regeln: Passwort-Anteile in URLs über `LogScrubber.maskUrl()`;
+  Key-Namen mit `password`, `passwd`, `secret`, `token`, `api_key`, `apiKey`,
+  `credentialRef`, `access_key`, `private_key` werden unabhängig von der Tiefe
+  maskiert; unbekannte skalare Werte werden nicht expandiert. `${VAR}`-Werte
+  werden für `config show` nicht aufgelöst, sondern nur maskiert, wenn der
+  Feldname sensibel ist.
 - `--section` filtert auf einen Abschnitt.
 - Exit `0`; Exit `7` bei Config-Fehler; Exit `2` bei unbekanntem
   `--section`.
-- **Spec-Interpretationspunkt** „gemerged aus allen Quellen": Phase 1 zeigt
-  die effektive Datei und markiert erkennbare `D_MIGRATE_*`-ENV-Overrides.
-  Ein vollständiger Multi-Source-Merge (Defaults + Datei + ENV + Flags mit
-  Provenienz-Spalte) ist eine spätere Verfeinerung → in cli-spec §6.7
-  präzisieren, bevor gebaut wird.
 - **Akzeptanz**: Masking-Test (URL mit Passwort → `***`, kein Klartext in
-  Ausgabe), `--section database` zeigt nur DB-Block, unbekannte Section →
-  Exit 2.
+  Ausgabe), verschachtelte API-/Token-/CredentialRef-Felder werden maskiert,
+  Map-Form-Connections erscheinen ohne Secret-Material, `--section database`
+  zeigt nur DB-Block, unbekannte Section → Exit 2.
 
 ### 3.2 Nicht in Phase 1
 - `config credentials list` wird **nicht** als Config-Connection-Liste
@@ -114,6 +133,16 @@ Security-Review nötig, voll mit Bordmitteln umsetzbar.
   ersten `set`).
 - Port im Hexagon (`CredentialStorePort`: `put(name,user,password)` /
   `listNames()` / `resolve(name)`), Adapter als Implementierung.
+- Vor Implementierung den Store-Key-Vertrag festlegen: `name` muss eindeutig
+  ein Connection-Identifier sein, der entweder dem CLI-Alias aus
+  `database.connections.<name>` oder dem LF-012/LN-038-`connectionId`
+  entspricht. `database.default_source`/`default_target` werden zuerst auf
+  diesen Identifier aufgelöst und nicht als eigene Store-Keys verwendet.
+- Vor Implementierung den Merge-Vertrag festlegen: Store-Credentials ergänzen
+  nur fehlende Auth-Bestandteile einer bereits ausgewählten Verbindung
+  (Benutzer/Passwort bzw. Passwort, falls Benutzer anderweitig gesetzt ist)
+  und überschreiben keine expliziten Inline-URL-Credentials oder höher
+  priorisierten ENV-/`${VAR}`-/`credentialRef`-Secrets.
 - **Maskierung**: Passwörter/Keys nie in Logs (§4.3), auch nicht in
   Exceptions.
 
@@ -141,6 +170,11 @@ Security-Review nötig, voll mit Bordmitteln umsetzbar.
   LF-012/LN-038-Runner-Pfad (`ConnectionSecretResolver`) dürfen dabei nicht
   versehentlich vermischt werden; ggf. braucht es einen gemeinsamen Port oder
   eine explizite Adapter-Komposition.
+- Store-Lookups verwenden den normalisierten Connection-Identifier aus §4.1.
+  Akzeptanztests müssen mindestens abdecken: direkter Alias, Default-Source
+  auf Alias, LF-012-`connectionId`, Inline-URL mit vorhandenem Passwort (Store
+  wird nicht genutzt), URL ohne Passwort plus Store-Passwort, und fehlender
+  Store-Eintrag mit non-TTY-fail-closed.
 - **Trennungs-Invariante**: Store-Inhalte dürfen nicht in die
   MCP-Discovery-Oberfläche (LN-038) lecken — Regressions-Test, der
   `resources/list`/`*_list` gegen einen befüllten Store prüft.
@@ -151,8 +185,9 @@ Security-Review nötig, voll mit Bordmitteln umsetzbar.
 - „Geplant."-Marker in `cli-spec.md` §6.7 für die gelieferten Kommandos
   entfernen; `schema rollback`-Vorbild (Marker raus + Aufnahme in die
   Implementiert-Liste der Übersicht L7–10).
-- Nach Phase 1 nur `config show` als implementiert markieren; `config
-  credentials set/list` bleiben geplant.
+- Nach Phase 1 nur `config show` als implementiert markieren, wenn
+  `cli-spec.md §6.7` vorher auf den gelieferten Phase-1-Vertrag präzisiert
+  wurde; `config credentials set/list` bleiben geplant.
 - Nach Phase 2 `config credentials set/list` als implementiert markieren.
 - Top-Level `config` in §1.1 (L29) zur Implementiert-Liste der Commands
   ergänzen, sobald Phase 1 gemerged ist.
@@ -160,8 +195,19 @@ Security-Review nötig, voll mit Bordmitteln umsetzbar.
   nachziehen (was implementiert ist vs. offen).
 
 ## 6. Vorbedingungen
-- **Phase 1**: keine — sofort startbar.
+- **Phase 1**:
+  - **Spec-Präzisierung vor Merge**: `config show` ist in Phase 1 kein
+    vollständiger Multi-Source-Merge, sondern effektive Datei +
+    erkennbare Runtime-Overrides. Ohne diese Klarstellung bleibt der
+    bestehende cli-spec-Vertrag unerfüllt.
+  - **Generischer Config-Show-Loader**: eigener YAML-AST-Loader/Renderer
+    inklusive rekursiver Masking-Regeln; vorhandene Spezialparser reichen
+    dafür nicht.
 - **Phase 2**:
+  - **Store-Key-/Merge-Vertrag**: definieren, welcher Connection-Identifier
+    in `credentials.enc` gespeichert wird und wie Store-User/Pass in URLs
+    ohne bestehende Credentials eingefügt werden, ohne höher priorisierte
+    Secrets zu überschreiben.
   - **Spec-Klärung Stufe 2**: Semantik von `D_MIGRATE_DB_PASSWORD` festlegen
     (global vs. source/target-spezifisch, URL-Ergänzung vs. Override).
   - **Lastenheft-Backfill**: eigener LN-Eintrag „Secret-/Credential-Management"
@@ -173,8 +219,9 @@ Security-Review nötig, voll mit Bordmitteln umsetzbar.
     eingeplant *vor* Merge.
 
 ## 7. Offene Fragen / Entscheidungen
-1. Bedeutung von „gemerged aus allen Quellen" in `config show` (§3.1) —
-   effektive Datei + ENV-Marker (Phase 1) vs. voller Provenienz-Merge?
+1. Finales Spec-Wording für „gemerged aus allen Quellen" in `config show`
+   (§3.1) — Phase 1 explizit als effektive Datei + Runtime-Override-Hinweis
+   dokumentieren; voller Provenienz-Merge bleibt separater späterer Slice.
 2. Semantik von `D_MIGRATE_DB_PASSWORD` (Stufe 2): globale Fallback-Variable
    nach Spec-Text vs. getrennte Source-/Target-Variablen oder explizite
    `credentialRef`-Only-Strategie?
@@ -184,10 +231,12 @@ Security-Review nötig, voll mit Bordmitteln umsetzbar.
    eigenen AES-Store teils überflüssig — vor Phase-2-Aktivierung klären.
 4. Output-Format `config show`: YAML-Echo vs. normalisierte Tabelle;
    `--json` für Skripting?
+5. `config show`-Masking-Policy: exakte Liste sensibler Key-Namen und
+   Verhalten bei unbekannten Provider-spezifischen Secret-Feldern.
 
 ## 8. Empfohlener Schnitt
-Phase 1 als kleiner, risikoarmer `config show`-Slice zuerst (liefert sofort
-sichtbaren Nutzen über vorhandener Mechanik). Phase 2 erst nach
-Spec-Klärung, Lastenheft-Backfill und mit eingeplantem Security-Review — oder
-bewusst zurückstellen, falls Frage §7.3 zugunsten von
-`providerRef`/Keychain ausfällt.
+Phase 1 als kleiner, risikoarmer `config show`-Slice zuerst, aber mit
+vorgelagerter Spec-Präzisierung und eigenem generischem YAML-/Masking-Renderer.
+Phase 2 erst nach Store-Key-/Merge-Vertrag, Spec-Klärung,
+Lastenheft-Backfill und mit eingeplantem Security-Review — oder bewusst
+zurückstellen, falls Frage §7.3 zugunsten von `providerRef`/Keychain ausfällt.
