@@ -532,7 +532,7 @@ Closures).
 Entscheidungsvorlage fuer eine spaetere Vollumsetzung. Dies ist bewusst
 keine Lakehouse-Implementierung — Iceberg/Delta/Hudi bleiben ausserhalb
 des Scopes (siehe
-[`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md) §3.2).
+[`parquet-export-import-evaluation.md`](../done/parquet-export-import-evaluation.md) §3.2).
 (2) Object-Storage-ArtifactStore-Plan erstellt einen minimalen
 `ArtifactStore`-Port mit File-Referenz und S3-kompatibler Evaluierung,
 plus die Migrationsskizze fuer MCP-/REST-/gRPC-Jobvertraege auf

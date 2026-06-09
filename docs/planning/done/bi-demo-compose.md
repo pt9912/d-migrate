@@ -71,7 +71,7 @@
 >   Erweiterungen aus §8 an
 >   [`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)
 >   bzw.
->   [`parquet-export-import-evaluation.md`](../in-progress/parquet-export-import-evaluation.md);
+>   [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md);
 >   der MVP-Schnitt (BD.1-BD.5) kommt ohne diese aus.
 >
 > Referenzen:
@@ -79,7 +79,7 @@
 > - [`../in-progress/roadmap.md`](../in-progress/roadmap.md)
 > - [`orchestrator-examples.md`](../next/orchestrator-examples.md)
 > - [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)
-> - [`parquet-export-import-evaluation.md`](../in-progress/parquet-export-import-evaluation.md)
+> - [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md)
 > - [`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)
 > - [The Evolution of Business Intelligence: From Monolithic to Composable Architecture](https://www.pracdata.io/p/the-evolution-of-business-intelligence-stack)
 > - [Open Source Data Engineering Landscape 2025](https://www.pracdata.io/p/open-source-data-engineering-landscape-2025)
@@ -1345,7 +1345,7 @@ BD.1 (Compose+Healthchecks)
   geliefert, faellt BD.4 auf den `aws s3 cp`-Zwischenschritt
   zurueck (§5.3). Sobald geliefert, ist ein BD.6-Slice „Direkte
   s3://-Ausgabe nach SeaweedFS" sinnvoll.
-- **[`parquet-export-import-evaluation.md`](../in-progress/parquet-export-import-evaluation.md)**:
+- **[`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md)**:
   Parquet-Artifakte sind in §8 als spaetere Erweiterung gelistet;
   ein BD.7-Slice „Parquet-Demo gegen SeaweedFS" haengt direkt
   daran.
@@ -1405,7 +1405,7 @@ BD.1-BD.5-Scope):
   nicht geliefert ist, faellt der BI-Demo-Workflow auf den
   `aws s3 cp`-Zwischenschritt zurueck.
 - **Parquet-Demo gegen SeaweedFS** (§11 BD.7). Haengt an
-  [`parquet-export-import-evaluation.md`](../in-progress/parquet-export-import-evaluation.md).
+  [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md).
 - **Data-Quality-Dashboard in Metabase** (§11 BD.8). Haengt am
   Export-Format aus
   [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md).

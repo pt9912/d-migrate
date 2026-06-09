@@ -50,7 +50,7 @@
 > Hand-off-Anker aus den vorherigen Slices nicht in deren
 > Folgeaufgaben-Sektionen verloren gehen. Spiegelbild zum
 > S9b-Skeleton (`6629e842`,
-> [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](../in-progress/ImpPlan-0.9.8-parquet-S9b-single-file-tests.md)).
+> [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](ImpPlan-0.9.8-parquet-S9b-single-file-tests.md)).
 
 ---
 
