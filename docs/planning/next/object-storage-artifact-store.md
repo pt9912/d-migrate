@@ -215,7 +215,8 @@ Das einzig genuin offene Stueck. Diese Evaluierung ist der
 > `url-connection-client`** (Native-Image-first-class, Netty vermeidbar).
 > Der Fallback bleibt **innerhalb AWS SDK v2** (Transport-Wechsel
 > `apache-client`/CRT) — **kein** Vendor-Wechsel; MinIO-Client ist wegen
-> EOL + `UploadSegmentStore`-Multipart-Luecke disqualifiziert (Addendum §6).
+> **EOL + Native-Image** disqualifiziert (Addendum §6; funktional koennte
+> MinIO die Byte-Store-Ports erfuellen — Einzelobjekte je Segment).
 > Planungsgestuetzt — der Dependency-Lock erfolgt nach der empirischen
 > Validierung (Footprint/Native-Image/Multipart-5-MiB) im Addendum §8.
 
@@ -231,8 +232,10 @@ Die im Addendum bewerteten Achsen:
    - Kriterien: Footprint, Streaming-/Multipart-API-Fit gegen
      `ArtifactContentStore`/`UploadSegmentStore`, Credential-Provider-Modell,
      Native-Image-Tauglichkeit, Lizenz.
-2. **Multipart-Mapping.** `UploadSegmentStore`-Segmente ↔ S3-Multipart-Parts
-   (5-MiB-Mindest-Partgroesse beachten; `complete`-Reihenfolge + ETag-Sammlung).
+2. **Segment-/Multipart-Mapping.** `UploadSegmentStore`-Segmente =
+   **eigenstaendige S3-Objekte** (kein Multipart — Addendum §2). S3-Multipart
+   nur fuer `ArtifactContentStore.write` grosser Artefakte (> 5 GiB;
+   5-MiB-Mindest-Partgroesse, `complete`-Reihenfolge + ETag-Sammlung).
 3. **Range-Read.** `openRangeRead(offset, length)` ↔ S3 `Range`-Header.
 4. **Fehler-/Retry-Determinismus.** Partial Uploads, Timeouts, 5xx-Retry,
    Idempotenz gegen den bestehenden `AlreadyExists`/`Conflict`-Vertrag.
