@@ -6,7 +6,8 @@
 >
 > **Überblick**: Implementiert sind `schema validate`,
 > `schema generate`, `schema reverse`, `schema compare`, `schema migrate`,
-> `data export`, `data import`, `data transfer`, `export ...` sowie die
+> `schema rollback`, `data export`, `data import`, `data transfer`,
+> `export ...` sowie die
 > operativen `mcp`-Kommandos (`mcp serve`, `mcp approval-grant issue`,
 > `mcp cursor-key generate`/`validate`).
 >
@@ -1143,7 +1144,7 @@ Abgrenzung gegen `export flyway|liquibase|django|knex`: jene Tools-Adapter erzeu
 
 #### `schema rollback`
 
-Geplant. Validiert und führt das von `schema migrate --generate-rollback` erzeugte
+Validiert und führt das von `schema migrate --generate-rollback` erzeugte
 Down-SQL-Artefakt gegen eine Datenbank aus. Führt keine Live-Diff-Berechnung
 durch — der Down-Plan stammt aus dem zur Migration erzeugten Artefakt.
 
@@ -1431,7 +1432,7 @@ d-migrate data transfer --source staging --target local_pg \
 
 #### `data seed`
 
-Geplant. Generiert Testdaten und importiert sie.
+Geplant (LF-024, Milestone 1.3.0). Generiert Testdaten und importiert sie.
 
 ```
 d-migrate data seed --schema <path> --target <url>
@@ -1487,7 +1488,7 @@ auf MySQL/SQLite, ungueltiges `--format`, `--top-n` ausserhalb 1..1000),
 
 #### `transform procedure`
 
-Geplant. Transformiert Stored Procedures/Functions zwischen Dialekten.
+Geplant (LF-017). Transformiert Stored Procedures/Functions zwischen Dialekten.
 
 ```
 d-migrate transform procedure --source <path> --procedure <name> --ai-backend <provider>
@@ -1509,7 +1510,7 @@ Exit: `0` bei Erfolg, `6` bei KI-Fehlern.
 
 #### `generate procedure`
 
-Geplant. Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
+Geplant (LF-017). Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
 
 ```
 d-migrate generate procedure --source <path> --target <dialect>
@@ -1589,7 +1590,7 @@ Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
 #### `validate procedure`
 
-Geplant. Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
+Geplant (LN-034). Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
 
 ```
 d-migrate validate procedure --source <path> --target <url>
