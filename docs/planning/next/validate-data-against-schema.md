@@ -11,9 +11,13 @@ Aufgefallen bei der Referenz-/Provenienz-Durchsicht der „Geplant"-Marker am
 2026-06-09. Statt es als „nicht eingeplant" zu markieren oder zu entfernen,
 wird der Scope hier ausgearbeitet.
 
-**Aktivierungsbedingung** (Move nach `in-progress/`): Lastenheft-Backfill
-(neue `LF`-Kennung, siehe Vorbedingungen) **und** Klärung der offenen
-Designfrage Tabellen-Zuordnung.
+**Aktivierungsbedingung** (Move nach `in-progress/`): Klärung der offenen
+Designfrage Tabellen-Zuordnung. (Der Lastenheft-Backfill ist mit `LF-027`
+erledigt, siehe Vorbedingungen.)
+
+> Status-Update 2026-06-09: `LF-027` im Lastenheft angelegt; cli-spec-Marker
+> verweist als Markdown-Link mit Kennung darauf (Option C). Trigger-Absatz
+> beschreibt den ursprünglichen ankerlosen Zustand.
 
 ---
 
@@ -133,10 +137,11 @@ neutrale Spaltenregeln prüft.
 4. **Output-Format**: nur Text vs. zusätzlich `--json`.
 
 ## 6. Vorbedingungen
-- **Lastenheft-Backfill**: eigene `LF`-Kennung „Datenvalidierung gegen
-  Schema" — `validate data` hat heute keine Provenienz (genau der Befund,
-  der diesen Plan ausgelöst hat). Ohne Kennung bleibt der cli-spec-Marker
-  ankerlos.
+- **Lastenheft-Backfill erledigt**: `LF-027` „Datenvalidierung gegen Schema"
+  ist in [`lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)
+  angelegt; der cli-spec-Marker verweist als Markdown-Link mit Kennung darauf
+  (gate-geprüfter Pfad, stabile Kennung). Damit ist die fehlende Provenienz,
+  die diesen Plan ausgelöst hat, geschlossen.
 - **Designentscheidung Tabellen-Zuordnung** ([Offene Designfragen](#5-offene-designfragen), Frage 1) fixiert.
 - **v1-Scope festgeschrieben**: CHECK/FK entweder ausdrücklich out of scope
   oder mit eigener DB-freier Engine-Spezifikation versehen.

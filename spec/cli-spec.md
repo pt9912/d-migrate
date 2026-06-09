@@ -1575,7 +1575,7 @@ Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
 
 #### `validate data`
 
-Geplant. Validiert Daten gegen ein Schema.
+Geplant ([LF-027](./lastenheft-d-migrate.md)). Validiert Daten gegen ein Schema.
 
 ```
 d-migrate validate data --source <path> --schema <path>

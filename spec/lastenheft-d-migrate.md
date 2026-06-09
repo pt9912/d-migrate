@@ -249,6 +249,8 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 **LF-026** Das System kann Funktionen zur Datenmaskierung oder Pseudonymisierung für sensible Daten bereitstellen, um Datenschutzanforderungen zu erfüllen, insbesondere in Test- oder Entwicklungsumgebungen.
 
+**LF-027** Das System kann Datendateien (JSON/YAML/CSV) ohne Datenbankverbindung gegen eine Schemadefinition auf Konformität prüfen (Spaltenpräsenz, Typ, Nullability, Länge/Präzision) und einen Validierungsreport ausgeben. Weitergehende Prüfungen (CHECK-Constraints, Enum-/Custom-Type-Zugehörigkeit, FK-Referenzintegrität) sind optionale Ausbaustufen.
+
 
 ---
 
