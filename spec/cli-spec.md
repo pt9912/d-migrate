@@ -1575,18 +1575,27 @@ Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
 
 #### `validate data`
 
-Geplant ([LF-027](./lastenheft-d-migrate.md)). Validiert Daten gegen ein Schema.
+Geplant ([LF-027](./lastenheft-d-migrate.md)). Validiert eine Datendatei
+DB-frei gegen eine explizit gebundene Tabelle aus einer Schema-Definition.
+v1 prüft Spaltenpräsenz, Typ, Nullability und Länge/Präzision; CHECK, FK,
+Top-Level-Tabellenwrapper und headerlose CSV sind spätere Ausbaustufen.
 
 ```
-d-migrate validate data --source <path> --schema <path>
+d-migrate validate data --source <path> --schema <path> --table <name>
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `--source` | Ja | Pfad | Datendatei (JSON/YAML/CSV) |
 | `--schema` | Ja | Pfad | Schema-Definition |
+| `--table` | Ja | String | Schema-Tabelle, gegen die die Datendatei geprüft wird |
 
-Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
+Tabellenmatching: exakter Tabellenname gewinnt; sonst ist ein eindeutiger
+unqualifizierter Treffer erlaubt. Fehlende oder mehrdeutige Schema-Tabelle
+ist ein Validierungs-/Preflight-Fehler.
+
+Exit: `0` bei Erfolg, `2` bei ungültigen Flags, `3` bei
+Validierungsfehlern, `7` bei Parse-/I/O-Fehlern.
 
 #### `validate procedure`
 
