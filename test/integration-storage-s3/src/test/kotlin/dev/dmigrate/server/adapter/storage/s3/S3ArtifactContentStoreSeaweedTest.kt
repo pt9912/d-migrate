@@ -2,6 +2,7 @@ package dev.dmigrate.server.adapter.storage.s3
 
 import dev.dmigrate.server.ports.WriteArtifactOutcome
 import dev.dmigrate.server.ports.contract.ArtifactContentStoreContractTests
+import dev.dmigrate.server.ports.contract.UploadSegmentStoreContractTests
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -63,7 +64,15 @@ private fun freshStore(): S3ArtifactContentStore {
     return S3ArtifactContentStore(s3Client, bucket)
 }
 
+private fun freshSegmentStore(): S3UploadSegmentStore {
+    val bucket = "seg${bucketCounter.incrementAndGet()}"
+    s3Client.createBucket { it.bucket(bucket) }
+    return S3UploadSegmentStore(s3Client, bucket)
+}
+
 class S3ArtifactContentStoreSeaweedTest : ArtifactContentStoreContractTests({ freshStore() })
+
+class S3UploadSegmentStoreSeaweedTest : UploadSegmentStoreContractTests({ freshSegmentStore() })
 
 class S3ArtifactContentStoreMultipartTest : FunSpec({
     test("write eines > 8-MiB-Artefakts nimmt den Multipart-Pfad und round-trips") {
