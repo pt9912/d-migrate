@@ -121,9 +121,89 @@ so gebaut werden — empirisch gegen SeaweedFS verifiziert:
 | **S3.1 — Modul + Dependency + Config** | ✅ (2026-06-09) `storage-s3`-Modul + AWS-SDK-Dependency; `S3StorageConfig` (Credential-redigierter `toString`) + `S3ClientFactory` (gate-validierte Client-Config §2.4). `artifacts`-YAML-**Parser** folgt mit dem CLI-Wiring (S3.4). |
 | **S3.2 — `S3ArtifactContentStore`** | ✅ (2026-06-09) `write`/`openRangeRead`/`exists`/`delete`; SHA als `x-amz-meta-sha256` (+ `size-bytes`); `WriteArtifactOutcome` `Stored`/`SizeMismatch`/`AlreadyExists`/`Conflict` (HeadObject-Metadata + SHA-Vergleich); Range-Bounds-Validierung; Multipart-Pfad > 8 MiB (Abort-on-Failure); Per-Key-Lock. **Coverage:** mockk-Unit-Tests in-Modul (alle Branches, `koverVerify` 90% gruen) **+** Vertragssuite/Multipart vs SeaweedFS — **kein** Ledger-Exclude (der Coverage-`docker build`-Stage kann keine Testcontainers fahren, daher Unit-Tests in-Modul Pflicht). |
 | **S3.3 — `S3UploadSegmentStore`** | ✅ (2026-06-09) Segmente als Einzelobjekte (`segments/<session>/<index>`) mit `x-amz-meta-sha256`/`size-bytes`/`segment-offset`; `WriteSegmentOutcome` `Stored`/`AlreadyStored`/`Conflict`/`SizeMismatch`; `listSegments` rekonstruiert via HeadObject (sortiert nach Index); `listSegments`/`deleteAllForSession` **paginiert** (`isTruncated`/`continuationToken`, Batch-Delete 1000). Shared-Util-Extraktion erledigt: `S3StorageSupport` (Hash, ID/Range-Validierung, HeadObject-404, Single/Multipart-Put) — beide S3-Stores nutzen ihn (modul-lokal; core-Promotion vs. storage-file bleibt eigener Refactor). mockk-Unit-Tests + `UploadSegmentStoreContractTests` vs SeaweedFS gruen; koverVerify 90%. |
-| **S3.4 — Wiring + Retention** | `McpCliRuntimeWiring`-config-Branch (`artifacts.store: file\|s3`) + `artifacts`-YAML-Parser; S3-Orphan-Cleanup bzw. metadaten-getriebener Sweeper. |
+| **S3.4 — Wiring + Retention + E2E** | Config-getriebene Byte-Store-Auswahl im CLI-MCP-Wiring (`artifacts.store: file\|s3`) + `artifacts`-YAML-Parser + Retention-Anpassung + E2E. **Detailplan, Config-Schema und DoD-Checkboxen: Abschnitt 3.7.** |
 | **S3.5 — Testcontainers-IT (SeaweedFS)** | `GenericContainer("chrislusf/seaweedfs:4.31")`, `server -s3 -s3.config=…`, Port 8333, `s3.config`-Identity (bi-demo §5.3); die wiederverwendbaren **testFixtures-Vertragssuiten `ArtifactContentStoreContractTests` + `UploadSegmentStoreContractTests`** (aus `testImplementation(testFixtures(project(":hexagon:ports-common")))`) **subclassen** — exakt wie `FileBackedArtifactContentStoreTest` —, **nicht** eine eigene Suite nachbauen; + S3-spezifisch (Range, grosse Objekte/Multipart, Idempotenz, Pagination). `ArtifactContentStore`-Subclass ✅ (2026-06-09, S3.2 vorgezogen); `UploadSegmentStore`-Subclass folgt mit S3.3. **Plus E2E (nach S3.4):** voller CLI/MCP-Pfad (`mcp serve` mit `artifacts.store: s3` → `artifact_upload`/`data_import` → S3-Store → SeaweedFS), z. B. in `test/e2e-cli` oder einem eigenen Flow — vorher gibt es nichts End-to-End zu treiben (Store ist erst ab S3.4 verdrahtet). |
 | **S3.6 — Footprint-/Native-Image-Recheck + Closure** | Re-Messung gegen S3.0-Baseline; Doku/CHANGELOG; ImpPlan → `done/`. |
+
+### 3.7 S3.4 — Detailplan + DoD (Wiring + E2E)
+
+**Entscheidungen (Stand 2026-06-09):**
+
+- **Credentials:** env-only via `DefaultCredentialsProviderChain` — **keine**
+  Secrets in der `.d-migrate.yaml`. `artifacts.s3` traegt nur
+  `endpoint`/`bucket`/`region`/`prefix`/`pathStyle`; die Keys kommen aus
+  `AWS_*`-Env (analog BI-Demo).
+- **S3-Retention:** der file-spezifische `cleanupOrphans`-Sweep wird fuer
+  `store: s3` **uebersprungen** + dokumentiert (der Metadaten-`ArtifactStore`
+  ist im CLI ohnehin `InMemory` → Retention dort generell best-effort). Ein
+  echter S3-Prefix-Sweep ist ein Folge-Slice.
+- **E2E:** Wiring-Level-Integrationstest in **S3.4b**; voller
+  MCP-Protokoll-E2E separat in **S3.4c**.
+
+**Config-Schema (`.d-migrate.yaml`, neue Top-Level-Sektion):**
+
+```yaml
+artifacts:
+  store: s3            # file (Default) | s3
+  s3:
+    endpoint: "https://s3.example.com"   # optional; fehlt = echtes AWS
+    bucket: "d-migrate-artifacts"        # Pflicht bei store: s3
+    region: "eu-central-1"
+    prefix: "prod/"                      # optional
+    pathStyle: true                      # Default true (S3-kompatibel)
+```
+
+Keine Credentials im YAML — `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` aus
+der Env (`DefaultCredentialsProviderChain`).
+
+**S3.4a — `artifacts`-Config + YAML-Parser**
+
+Modell: `sealed interface ArtifactStorageConfig` mit `data object File` und
+`data class S3(val config: S3StorageConfig)`. Parser `ArtifactsConfigLoader`
+(snakeyaml, Muster `YamlConnectionReferenceLoader`): liest die
+`artifacts`-Map; `store` ∈ {file, s3}; bei `s3` ist `bucket` Pflicht (sonst
+Config-Fehler), endpoint/region/prefix/pathStyle optional. Fehlende
+`artifacts`-Sektion → `File` (rueckwaertskompatibel). Unbekannter
+`store`-Wert → harter Fehler.
+
+- [ ] `ArtifactStorageConfig` (sealed) im Modul `storage-s3`
+- [ ] `ArtifactsConfigLoader` + Validierung (bucket-Pflicht, unknown-store)
+- [ ] `cli`→`adapters:driven:storage-s3`-Dependency (`build.gradle.kts`)
+- [ ] Unit-Tests: file / s3-vollstaendig / fehlend→File / unknown-store→Fehler
+  / s3-ohne-bucket→Fehler; koverVerify
+
+**S3.4b — Wiring + Retention**
+
+`runtimeWiring` bekommt einen Parameter `artifacts: ArtifactStorageConfig =
+File`. Im `S3`-Branch: `val client = S3ClientFactory.create(cfg.config)`, dann
+`uploadSegmentStore = S3UploadSegmentStore(client, bucket, prefix)` +
+`artifactContentStore = S3ArtifactContentStore(client, bucket, prefix)`. Der
+**File**-Branch bleibt Bestand. Metadaten-Stores **und** der
+`assembledUploadPayloadFactory` (lokaler File-Spool) bleiben in **beiden**
+Branches unveraendert — S3 betrifft nur die zwei Byte-Stores.
+`McpServeWiring.build` parst `artifacts` aus `effectiveConnectionConfigPath`
+und reicht es an `runtimeWiring`. `McpServeRunner`: die file-`cleanupOrphans`-
+Aufrufe fuer segments/artifacts bei `store: s3` ueberspringen (der Sweep
+laeuft das lokale `stateDir` ab, das im s3-Modus nicht die Byte-Quelle ist);
+der assembly-Spool bleibt lokal → dessen Cleanup laeuft weiter. Logs +
+Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
+
+- [ ] `runtimeWiring`-Parameter + s3/file-Branch
+- [ ] `McpServeWiring` parst `artifacts` + reicht durch
+- [ ] `McpServeRunner`-Retention-Skip (segments/artifacts) bei s3; assembly bleibt
+- [ ] Wiring-Integrationstest vs SeaweedFS (s3-Config → S3-Stores →
+  write/read/delete-Round-Trip); koverVerify
+
+**S3.4c — E2E**
+
+- [ ] Voller `mcp serve`-Pfad (`artifacts.store: s3`) → `artifact_upload` /
+  `data_import` → S3-Store → SeaweedFS (`test/e2e-cli` oder eigener Flow)
+
+**S3.4-DoD (Gesamt)**
+
+- [ ] `artifacts.store: s3` selektiert die S3-Byte-Stores end-to-end;
+  Credentials erscheinen nicht in Logs/Reports
+- [ ] Unit + Wiring-Integration + E2E gruen; `koverVerify` 90 %; docker-check
 
 ---
 
