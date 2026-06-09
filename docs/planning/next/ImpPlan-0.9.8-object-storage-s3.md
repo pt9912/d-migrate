@@ -1,0 +1,161 @@
+# ImpPlan 0.9.8 — Object-Storage S3-Adapter (`adapters:driven:storage-s3`)
+
+> Dokumenttyp: Implementierungsplan (Bau-Slice)
+>
+> Status: **Entwurf (2026-06-09), not started.** Gate-first: S3.0
+> (§8-Validierung) entscheidet vor dem Dependency-Lock. Promotion
+> `next/` → `in-progress/` bei S3.0-Start.
+>
+> Referenzen:
+> [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
+> (Architektur/Reconciliation),
+> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) (Lib-Verdict +
+> §8-Gate), [`bi-demo-compose.md`](../done/bi-demo-compose.md) §5.3
+> (SeaweedFS-Setup).
+
+---
+
+## 1. Scope
+
+**In Scope:** S3-kompatible Implementierungen der **Byte-Layer**-Ports
+`ArtifactContentStore` + `UploadSegmentStore` in einem neuen Modul
+`adapters:driven:storage-s3`; config-getriebene Selektion im CLI-MCP-Wiring;
+Testcontainers-IT gegen SeaweedFS.
+
+**Nicht in Scope:**
+
+- Metadaten-`ArtifactStore` — bleibt wie heute (im CLI `InMemoryArtifactStore`,
+  `McpCliRuntimeWiring.kt:89`); S3 betrifft **nur** die zwei Byte-Stores.
+- `CheckpointStore`-Migration auf den ArtifactStore (Plan §5.2, eigener Slice).
+- Eigener S3-Server, GCS/Azure, Multi-Identity-IAM, Lifecycle-Policies.
+- `d-migrate data export s3://…`-Direktziele (separater CLI-Feature-Thread,
+  **nicht** der Byte-Store-Adapter).
+
+---
+
+## 2. Architektur
+
+### 2.1 Port-Mapping (Korrektur ggü. Eval §2)
+
+| Port-Operation | S3-Mapping |
+| -------------- | ---------- |
+| `ArtifactContentStore.write(id, in, sizeBytes)` | `PutObject` (Streaming-Body, `Content-Length = expectedSizeBytes`); SHA-256 **client-seitig** mitrechnen und als **User-Metadata `x-amz-meta-sha256` (+ `x-amz-meta-size-bytes`)** mitschreiben (S3-ETag ≠ SHA-256, daher nicht aus dem ETag ableitbar). Artefakte > 5 GiB (S3-Single-PUT-Limit) → intern S3-**Multipart** (`createMultipartUpload`/`uploadPart`/`completeMultipartUpload`). |
+| `openRangeRead(id, offset, length)` | `GetObject` + `Range`-Header |
+| `exists` / `delete` | `HeadObject` / `DeleteObject` |
+| `WriteArtifactOutcome.AlreadyExists`/`Conflict` | `HeadObject` liest die **`x-amz-meta-sha256`-User-Metadata** (+ Size) — **nicht** den ETag (MD5/Composite); SHA-Vergleich vor `PutObject` → `AlreadyExists` (gleich) / `Conflict` (abweichend). Analog zum File-Sidecar (`FileBackedArtifactContentStore.resolveExisting`). |
+| **`UploadSegmentStore`** — `writeSegment` / `listSegments` / `openSegmentRangeRead` / `deleteAllForSession` | **Jedes Segment = ein eigenstaendiges S3-Objekt** unter `upload-sessions/{sessionId}/{segmentIndex}`: `PutObject` je Segment, `GetObject`+`Range` für den Segment-Range-Read, `ListObjectsV2(prefix)`, `DeleteObjects(prefix)`. **Keine** S3-Multipart-Parts. |
+
+> **Eval-Korrektur (vor/mit dem Bau einzucheckenden Commit):**
+> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) §2 mappt
+> `UploadSegmentStore` faelschlich auf S3-Multipart und disqualifiziert
+> MinIO ueber fehlende public Multipart-Primitive (§3.2 + §4-Matrix-Zeile
+> „Port-Fit `UploadSegmentStore`"). Das ist falsch: `openSegmentRangeRead`
+> verlangt das Range-Lesen eines **bereits geschriebenen** Segments, und
+> S3-Multipart-Parts sind vor `CompleteMultipartUpload` **nicht** einzeln
+> GET-bar. Der Vertrag braucht einzeln les-/schreibbare Objekte, **kein**
+> Multipart. Damit erfuellt auch MinIOs `putObject`/`getObject(range)` den
+> Vertrag — die MinIO-Disqualifikation steht **allein** auf
+> **Governance/EOL** (korrekt) + **Native-Image** (korrekt), nicht auf dem
+> Multipart-Argument. Das **Verdict (AWS SDK v2) bleibt** unveraendert.
+> Zu korrigieren: Eval §2 (Mapping), §3.2 (MinIO-Multipart-Absatz),
+> §4-Matrix (Port-Fit-Zeile), §6 (Begruendung 3 nicht auf Multipart-Fit
+> stuetzen). Native S3-Multipart bleibt nur fuer `ArtifactContentStore.write`
+> grosser Artefakte relevant.
+
+### 2.2 Modul + Wiring
+
+- Neues Modul `adapters:driven:storage-s3` analog `storage-file`:
+  `api(project(":hexagon:ports-common"))` + AWS-SDK-Deps; `kover` minBound 90.
+  `settings.gradle.kts`: `include("adapters:driven:storage-s3")`.
+  Version `awsSdkVersion` in `gradle.properties` (kein Version-Catalog).
+- **Wiring-Punkt:** `McpCliRuntimeWiring.runtimeWiring` (`adapters/driving/cli/.../McpCliRuntimeWiring.kt:88-90`)
+  konstruiert heute hart `FileBackedUploadSegmentStore(stateDir)` +
+  `FileBackedArtifactContentStore(stateDir)`. Hier kommt der config-getriebene
+  Branch `artifacts.store: file | s3` → File-backed (Bestand) vs.
+  `S3ArtifactContentStore`/`S3UploadSegmentStore`. Config aus Eval §6
+  (`.d-migrate.yaml` `artifacts.s3.{endpoint,bucket,prefix,region,credentials}`).
+- **Retention/Cleanup:** `McpServeRunner.kt:235/244` ruft die
+  `FileBacked*.cleanupOrphans`-Companions. S3 braucht ein Aequivalent
+  (Prefix-Sweep) **oder** stuetzt sich auf den metadaten-getriebenen
+  `ArtifactStore.deleteExpiredRecords`-Sweeper (bevorzugt — siehe S3.4).
+
+### 2.3 SHA-256
+
+`StreamingHashWriter` ist `internal` zu `storage-file` → **nicht**
+moduluebergreifend nutzbar. Das S3-Modul rechnet SHA-256 selbst beim Upload
+(`DigestInputStream`/Tee in den `PutObject`-Body) und nutzt das geteilte
+`sha256Hex` aus `dev.dmigrate.core.util` (`HexEncoding.kt:28`, public — wie
+der File-Adapter) statt `MessageDigest`/`toHex` neu zu verdrahten. Der
+errechnete SHA wird als Objekt-User-Metadata persistiert (§2.1), damit der
+`HeadObject`-Idempotenz-Pfad ihn zurueckliest — der ETag taugt dafuer nicht.
+
+---
+
+## 3. Slice-Schnitt (gate-first)
+
+| Slice | Inhalt |
+| ----- | ------ |
+| **S3.0 — §8-Validierungs-Gate (Spike)** | **Vor** Dependency-Lock: (1) Footprint — Fat-JAR-Delta mit `s3` + `url-connection-client` (Default-Transports `exclude`d) gegen das S10b-/Distributions-Budget; (2) Native-Image-Smoke + **Body-Streaming**-Check (streamt `PutObject` bei gesetztem `Content-Length` statt vollzupuffern?); (3) Multipart-/Range-Compat gegen SeaweedFS-Container + ob SeaweedFS die **User-Metadata `x-amz-meta-*` bei `HeadObject`** korrekt zurueckgibt (Voraussetzung fuer den SHA-Idempotenz-Pfad, §2.1); (4) Idempotenz/Retry + `DefaultCredentialsProviderChain` gegen das `credentials.provider`-Schema. **Verdikt entscheidet:** AWS-SDK + `url-connection-client` locken — oder Ausweich-Transport (`apache-client`/CRT) bzw. Fallback (Eval §6). |
+| **S3.1 — Modul + Dependency + Config** | `storage-s3` anlegen; `awsSdkVersion` (gradle.properties) + settings-include; `artifacts`-Config-Typ + Parser + Credential-**Scrubbing** (gleiche Regeln wie DB-Verbindungen, 0.9.1-Haertung). |
+| **S3.2 — `S3ArtifactContentStore`** | `write`/`openRangeRead`/`exists`/`delete`; SHA als `x-amz-meta-sha256` schreiben; `WriteArtifactOutcome` inkl. `Stored`/`AlreadyExists`/`Conflict` (HeadObject-Metadata + SHA-Vergleich); Multipart-Pfad fuer > 5 GiB. |
+| **S3.3 — `S3UploadSegmentStore`** | Segmente als Einzelobjekte (§2.1) mit `x-amz-meta-sha256` je Segment; `WriteSegmentOutcome` **vollstaendig**: `Stored`/`AlreadyStored` (Idempotenz via Segment-Metadata) + `Conflict`/`SizeMismatch`. `listSegments`/`deleteAllForSession`: `ListObjectsV2`/`DeleteObjects` **paginieren** (1000-Key-Cap pro Response, `isTruncated`/`continuationToken`) — sonst stilles Abschneiden. |
+| **S3.4 — Wiring + Retention** | `McpCliRuntimeWiring`-config-Branch; S3-Orphan-Cleanup bzw. metadaten-getriebener Sweeper. |
+| **S3.5 — Testcontainers-IT (SeaweedFS)** | `GenericContainer("chrislusf/seaweedfs:4.31")`, `server -s3 -s3.config=…`, Port 8333, `s3.config`-Identity (bi-demo §5.3); die wiederverwendbaren **testFixtures-Vertragssuiten `ArtifactContentStoreContractTests` + `UploadSegmentStoreContractTests`** (aus `testImplementation(testFixtures(project(":hexagon:ports-common")))`) **subclassen** — exakt wie `FileBackedArtifactContentStoreTest` —, **nicht** eine eigene Suite nachbauen; + S3-spezifisch (Range, grosse Objekte/Multipart, Idempotenz, Pagination). |
+| **S3.6 — Footprint-/Native-Image-Recheck + Closure** | Re-Messung gegen S3.0-Baseline; Doku/CHANGELOG; ImpPlan → `done/`. |
+
+---
+
+## 4. Definition of Done
+
+1. Beide Byte-Stores erfuellen die Port-Vertraege gegen SeaweedFS-IT gruen
+   (MinIO/echtes S3 optional als Zweitprobe).
+2. Die testFixtures-Vertragssuiten `ArtifactContentStoreContractTests` +
+   `UploadSegmentStoreContractTests` sind gegen die S3-Impl subclassed und
+   gruen (inkl. der `Stored`/`AlreadyExists`/`Conflict`-Idempotenzfaelle).
+3. `artifacts.store: s3` waehlt im MCP-Wiring die S3-Stores; Credentials
+   erscheinen **nicht** in Logs/Reports.
+4. §8-Gate-Ergebnisse (S3.0) dokumentiert; Dependency final gelockt.
+5. `kover` ≥ 90 % im neuen Modul; `make docker-check` (Repo) gruen.
+6. **Eval-Addendum-Korrektur** (§2/§3.2/§4/§6, siehe §2.1) ist committet.
+
+---
+
+## 5. Bewusst NICHT in 0.9.8
+
+- Metadaten-`ArtifactStore`-Persistenz (bleibt wie heute).
+- `CheckpointStore`-auf-ArtifactStore.
+- GCS/Azure, Multi-Identity-IAM, Lifecycle-Policies, Server-seitige
+  Verschluesselung.
+- `data export s3://…`-CLI-Direktziele.
+
+---
+
+## 6. Risiken / offene Punkte
+
+- **Footprint/Native-Image** (Gate S3.0): kann einen Transport- oder
+  Lib-Wechsel erzwingen — deshalb gate-first, kein vorzeitiger Lock.
+- **SeaweedFS-Compat-Flaeche** enger als AWS (Range/ETag/Multipart) —
+  gegen das reale Demo-Ziel verifizieren, kein offizielles TC-Modul.
+- **`url-connection-client`-Body-Pufferung** — expliziter Gate-Check (S3.0/2).
+- **5-GiB-Single-PUT-Grenze** → Multipart-Pfad in S3.2 fuer grosse Artefakte
+  noetig (das ist die *einzige* Stelle, an der native S3-Multipart zaehlt).
+- **Kein atomares create-if-absent (Semantik-Abweichung):** der File-Adapter
+  garantiert „exactly-one-`Stored`" unter Concurrency via Per-Key-Lock +
+  `ATOMIC_MOVE`/create-new (`FileBackedArtifactContentStore`). S3/SeaweedFS
+  sind default **last-writer-wins**; atomares create-if-absent gibt es bei S3
+  erst neuerdings via `If-None-Match: *`, SeaweedFS-Support ist unklar. Die
+  Contract-Suite testet hier nur **sequenziell** → kein Contract-Blocker, aber
+  eine reale Semantik-Abweichung; im Gate (S3.0) gegen SeaweedFS pruefen.
+- **SeaweedFS-User-Metadata-Abhaengigkeit:** der ganze Idempotenz-Pfad
+  (`AlreadyExists`/`Conflict`) haengt daran, dass `HeadObject` die
+  `x-amz-meta-sha256`-Metadata zurueckgibt — Gate-Punkt in S3.0.
+
+---
+
+## 7. Folgeaufgaben
+
+- **Eval-Korrektur-Commit** (§2.1) — moeglichst vor S3.0, damit Plan und
+  Eval konsistent sind.
+- Promotion `next/` → `in-progress/` bei S3.0-Start.
+- Erwaegung: das Footprint-Gate (S3.0) mit dem **1.0.0-Native-Image-Cut**
+  buendeln, statt den Footprint zweimal zu messen (Roadmap-0.9.8-Hinweis).
