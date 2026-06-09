@@ -1611,7 +1611,7 @@ Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
 #### `config credentials set`
 
-Geplant. Speichert verschlüsselte Datenbank-Credentials.
+Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Speichert verschlüsselte Datenbank-Credentials.
 
 ```
 d-migrate config credentials set --name <connection> --user <user> --password <password>
@@ -1623,13 +1623,13 @@ d-migrate config credentials set --name <connection> --user <user> --password <p
 | `--user` | Ja | String | Benutzername |
 | `--password` | Ja | String | Passwort (wird interaktiv abgefragt wenn nicht angegeben) |
 
-Ergebnis: Credentials werden in `~/.d-migrate/credentials.enc` (AES-256) gespeichert. Details in der [Connection- und Konfigurationsspezifikation §4](./connection-config-spec.md#4-credential-management).
+Ergebnis: Credentials werden in `~/.d-migrate/credentials.enc` (AES-256) gespeichert. Details unter [Credential-Management](./connection-config-spec.md#4-credential-management).
 
 Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
 #### `config credentials list`
 
-Geplant. Listet gespeicherte Verbindungsnamen (ohne Passwörter).
+Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Listet gespeicherte Verbindungsnamen (ohne Passwörter).
 
 ```
 d-migrate config credentials list
@@ -1639,7 +1639,7 @@ Exit: `0` bei Erfolg.
 
 #### `config show`
 
-Geplant. Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
+Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
 
 ```
 d-migrate config show [--section <section>]
