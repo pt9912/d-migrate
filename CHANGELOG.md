@@ -122,6 +122,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet als Export-/Import-Format (Cut A, S0..S9b)**
+  *(2026-06-06–2026-06-08)* — `d-migrate data export --format parquet`
+  und `data import --format parquet` sind produktiv. Voller Vertrag
+  (AP13 §8 „Cut A"):
+  - **Reader/Writer**: `ParquetChunkReader`/`ParquetChunkWriter` +
+    `ParquetSeekableDataChunkReaderFactory` im Modul
+    `adapters:driven:formats-parquet`; neues `DataExportFormat.PARQUET`.
+    Die `Default…Factory` bleibt Parquet-/Hadoop-frei (Contract-Branch).
+  - **Bundle** (Multi-Tabelle): `manifest.yaml` + stabile Dateinamen
+    (`ParquetManifestWriter`); **Single-File**: Footer-KV
+    `d-migrate.manifest` mit Phase-1/2-Preflight.
+  - **CLI**: `--format parquet` fuer Im- und Export,
+    `CompositeDataChunkWriterFactory`-Wiring, Pfad-only/Stdin-Ablehnung;
+    **Checkpoint/Resume** fuer Bundle und Single-File; **DuckDB-/Arrow-
+    Interop** durch KV-Toleranz-Tests verifiziert.
+  - Abgrenzung: **keine** Lakehouse-Formate (Iceberg/Delta/Hudi);
+    Hadoop-Footprint-Minimierung ist 1.0.0-Folgeinput (S10a-Snapshot).
+
+  Per-Feature-Umbrella mit vollstaendiger Sub-Slice-Tabelle:
+  [`parquet-productive-cut-a.md`](docs/planning/in-progress/parquet-productive-cut-a.md)
+  §3.4. Slice-Lead-Commits in chronologischer Reihenfolge (Headline-Commit
+  pro Slice; vollstaendige Sub-Commit-Listen im Umbrella):
+
+| Datum | Commit | Slice |
+| ----- | ------ | ----- |
+| 2026-06-06 | `9c840986` | S0 — ChunkSchema/ChunkColumnSchema/SchemaOrigin |
+| 2026-06-06 | `7670a393` | S0b — JDBC→NeutralType-Mapping |
+| 2026-06-06 | `40d7c551` | S2 — SeekableDataChunkReaderFactory-Port |
+| 2026-06-06 | `2b5826d8` | S10a — Avro-Hygiene + Footprint-Inventar |
+| 2026-06-06 | `0a992c0c` | S3 — ParquetChunkReader/Writer (produktiv) |
+| 2026-06-06 | `9ba956ff` | S10b — Native-Image-Befund |
+| 2026-06-06 | `97c74757` | S3b — ParquetManifestWriter + Bundle-Closure |
+| 2026-06-06 | `28048ef2` | S4 — Single-File-Footer-KV (Phase 1/2) |
+| 2026-06-06 | `24cbf4c5` | S5a — ParquetBundlePreflight + Resolver |
+| 2026-06-06 | `4279c326` | S5b — ImportInput.ResolvedSingleFile |
+| 2026-06-07 | `7759294d` | S6 — CLI-Wiring Im-/Export (+ 4 Folge-Commits) |
+| 2026-06-07 | `34eea7ce` | S7 — End-to-End (+ Sub-Slices a–e) |
+| 2026-06-07 | `df733244` | S8 — Checkpoint-Erweiterung Bundle/Single-File |
+| 2026-06-08 | `7808968c` | S9a-0 — Exit-Code-Vertrag (AP12 §9) |
+| 2026-06-08 | `31f1f6ef` | S9a — Bundle-Tests (+ 3 Folge-Commits) |
+| 2026-06-08 | `c687b47c` | `--table-order`-Flag (S9a-Folge-Feature) |
+| 2026-06-08 | `3306808e` | S9b-0 — Single-File-Format-Codes → Exit 4 |
+| 2026-06-08 | `591493f3` | S9b — Single-File-Tests (+ Resume-Fix) |
+
 - **`--table-order`-Flag fuer `data import`** *(2026-06-09)* —
   explizite Import-Reihenfolge fuer Directory-/Bundle-Quellen
   (kommagetrennt, analog `--tables`). Beim Ordering **authoritative**

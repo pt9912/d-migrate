@@ -222,9 +222,13 @@ sind aber separate Plan-Closure-Docs.
 
 **Alle Sub-Slices sind abgeschlossen** (direkt auf `develop`): S0..S8,
 S9a-0 + S9a (+ `--table-order`-Folge-Feature), S9b-0 + S9b. Damit ist die
-Cut-A-Code-Linie komplett. Offen ist nur noch der **Umbrella-Closure**
-(DoD §7): CHANGELOG `[0.9.8]`-Slice-Tabelle, Merge nach `develop`/Tag
-`v0.9.8` — siehe §7. Befunde aus S9: `BUNDLE_ORDER_*` war Dead-Code
+Cut-A-Code-Linie komplett. Die CHANGELOG-Slice-Commit-Tabelle (DoD §7.4)
+ist 2026-06-09 unter `[Unreleased]` konsolidiert (Headline-`Added`-Eintrag
++ chronologische Tabelle); **noch nicht** auf `[0.9.8]` datiert. Offen
+bleibt damit nur die `[0.9.8]`-Datierung + Tag `v0.9.8` (DoD §7.5) — die
+jetzt **zusaetzlich** auf den 2026-06-09 in 0.9.8 vorgezogenen S3-Adapter
+warten (siehe Roadmap-0.9.8 + [`../next/object-storage-s3-eval.md`](../next/object-storage-s3-eval.md)).
+Tag-Schnitt erst, wenn Parquet **und** S3 drin sind. Befunde aus S9: `BUNDLE_ORDER_*` war Dead-Code
 (→ `--table-order`-Flag), und Single-File-Resume war gebrochen
 (→ Content-Hash-Persistenz-Fix in `0d40fd47`).
 
