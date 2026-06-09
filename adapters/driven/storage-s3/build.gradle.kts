@@ -18,6 +18,11 @@ dependencies {
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:url-connection-client")
 
+    // S3.4a: `artifacts`-Sektion der `.d-migrate.yaml` parsen. Dieselbe
+    // YAML-Toolchain wie JSON/YAML/CSV + connection-config — kein zweiter
+    // YAML-Stack, bereits im Distributions-Artefakt.
+    implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
+
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 }
 

@@ -166,11 +166,14 @@ Config-Fehler), endpoint/region/prefix/pathStyle optional. Fehlende
 `artifacts`-Sektion → `File` (rueckwaertskompatibel). Unbekannter
 `store`-Wert → harter Fehler.
 
-- [ ] `ArtifactStorageConfig` (sealed) im Modul `storage-s3`
-- [ ] `ArtifactsConfigLoader` + Validierung (bucket-Pflicht, unknown-store)
-- [ ] `cli`→`adapters:driven:storage-s3`-Dependency (`build.gradle.kts`)
-- [ ] Unit-Tests: file / s3-vollstaendig / fehlend→File / unknown-store→Fehler
-  / s3-ohne-bucket→Fehler; koverVerify
+- [x] `ArtifactStorageConfig` (sealed `File`/`S3`) im Modul `storage-s3`
+- [x] `ArtifactsConfigLoader` + Validierung (bucket-Pflicht, unknown-store,
+  fehlender s3-Block) + snakeyaml-Dependency (genutzt)
+- [x] Unit-Tests (9): file / s3-vollstaendig / s3-minimal / fehlend→File /
+  no-section→File / nonexistent→File / unknown-store→Fehler /
+  s3-ohne-bucket→Fehler / s3-ohne-Block→Fehler; koverVerify 90 %
+- `cli`→`storage-s3`-Dependency: in **S3.4b** (erst wenn das Wiring den Store
+  konsumiert — sonst unused dependency)
 
 **S3.4b — Wiring + Retention**
 
