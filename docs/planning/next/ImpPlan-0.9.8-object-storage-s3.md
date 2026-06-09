@@ -68,6 +68,11 @@ Testcontainers-IT gegen SeaweedFS.
   `api(project(":hexagon:ports-common"))` + AWS-SDK-Deps; `kover` minBound 90.
   `settings.gradle.kts`: `include("adapters:driven:storage-s3")`.
   Version `awsSdkVersion` in `gradle.properties` (kein Version-Catalog).
+  **Achtung (S3.0-Befund 2026-06-09):** der `deps`-Stage im `Dockerfile`
+  kopiert Build-Files per **verbosem Per-Modul-COPY-Block** — fuer ein neues
+  Modul **muss** dort eine `COPY …/storage-s3/build.gradle.kts …`-Zeile
+  ergaenzt werden, sonst werden die Deps im `deps`-Stage **still nicht**
+  aufgeloest (Footprint misst dann faelschlich 0). Erledigt.
 - **Wiring-Punkt:** `McpCliRuntimeWiring.runtimeWiring` (`adapters/driving/cli/.../McpCliRuntimeWiring.kt:88-90`)
   konstruiert heute hart `FileBackedUploadSegmentStore(stateDir)` +
   `FileBackedArtifactContentStore(stateDir)`. Hier kommt der config-getriebene
@@ -95,7 +100,7 @@ errechnete SHA wird als Objekt-User-Metadata persistiert (§2.1), damit der
 
 | Slice | Inhalt |
 | ----- | ------ |
-| **S3.0 — §8-Validierungs-Gate (Spike)** | **Vor** Dependency-Lock: (1) Footprint — Fat-JAR-Delta mit `s3` + `url-connection-client` (Default-Transports `exclude`d) gegen das S10b-/Distributions-Budget; (2) Native-Image-Smoke + **Body-Streaming**-Check (streamt `PutObject` bei gesetztem `Content-Length` statt vollzupuffern?); (3) Multipart-/Range-Compat gegen SeaweedFS-Container + ob SeaweedFS die **User-Metadata `x-amz-meta-*` bei `HeadObject`** korrekt zurueckgibt (Voraussetzung fuer den SHA-Idempotenz-Pfad, §2.1); (4) Idempotenz/Retry + `DefaultCredentialsProviderChain` gegen das `credentials.provider`-Schema. **Verdikt entscheidet:** AWS-SDK + `url-connection-client` locken — oder Ausweich-Transport (`apache-client`/CRT) bzw. Fallback (Eval §6). |
+| **S3.0 — §8-Validierungs-Gate (Spike)** | **Vor** Dependency-Lock: (1) Footprint — Fat-JAR-Delta mit `s3` + `url-connection-client` (Default-Transports `exclude`d) gegen das S10b-/Distributions-Budget; (2) Native-Image-Smoke + **Body-Streaming**-Check (streamt `PutObject` bei gesetztem `Content-Length` statt vollzupuffern?); (3) Multipart-/Range-Compat gegen SeaweedFS-Container + ob SeaweedFS die **User-Metadata `x-amz-meta-*` bei `HeadObject`** korrekt zurueckgibt (Voraussetzung fuer den SHA-Idempotenz-Pfad, §2.1); (4) Idempotenz/Retry + `DefaultCredentialsProviderChain` gegen das `credentials.provider`-Schema. **Verdikt entscheidet:** AWS-SDK + `url-connection-client` locken — oder Ausweich-Transport (`apache-client`/CRT) bzw. Fallback (Eval §6). **Teil-Ergebnis 2026-06-09:** (1) Footprint ✅ — AWS `s3` + `url-connection-client` loesen sauber auf (29 Jars / ~8,3 MB, **kein** Netty/Apache, keine Konflikte); (2) Native-Image **deferred → 1.0.0-Cut** (kein GraalVM); (3)/(4) offen (SeaweedFS-Testcontainers-IT). |
 | **S3.1 — Modul + Dependency + Config** | `storage-s3` anlegen; `awsSdkVersion` (gradle.properties) + settings-include; `artifacts`-Config-Typ + Parser + Credential-**Scrubbing** (gleiche Regeln wie DB-Verbindungen, 0.9.1-Haertung). |
 | **S3.2 — `S3ArtifactContentStore`** | `write`/`openRangeRead`/`exists`/`delete`; SHA als `x-amz-meta-sha256` schreiben; `WriteArtifactOutcome` inkl. `Stored`/`AlreadyExists`/`Conflict` (HeadObject-Metadata + SHA-Vergleich); Multipart-Pfad fuer > 5 GiB. |
 | **S3.3 — `S3UploadSegmentStore`** | Segmente als Einzelobjekte (§2.1) mit `x-amz-meta-sha256` je Segment; `WriteSegmentOutcome` **vollstaendig**: `Stored`/`AlreadyStored` (Idempotenz via Segment-Metadata) + `Conflict`/`SizeMismatch`. `listSegments`/`deleteAllForSession`: `ListObjectsV2`/`DeleteObjects` **paginieren** (1000-Key-Cap pro Response, `isTruncated`/`continuationToken`) — sonst stilles Abschneiden. |

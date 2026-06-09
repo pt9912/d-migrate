@@ -86,6 +86,7 @@ COPY --chown=gradle:gradle adapters/driven/connection-config/build.gradle.kts ad
 COPY --chown=gradle:gradle adapters/driven/integrations/build.gradle.kts adapters/driven/integrations/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/persistence-jdbc/build.gradle.kts adapters/driven/persistence-jdbc/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/storage-file/build.gradle.kts adapters/driven/storage-file/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/storage-s3/build.gradle.kts adapters/driven/storage-s3/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/streaming/build.gradle.kts adapters/driven/streaming/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/text-icu/build.gradle.kts adapters/driven/text-icu/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driving/cli/build.gradle.kts adapters/driving/cli/build.gradle.kts
