@@ -1,6 +1,7 @@
 # `validate data` — Datendatei gegen Schema-Definition validieren
 
-**Status**: Entwurf (2026-06-09 — Semantik geklärt, vorhandene Bausteine kartiert, Scope + offene Designfragen ausgearbeitet; bereit für Review).
+**Status**: Entwurf (2026-06-09 — Semantik geklärt, vorhandene Bausteine kartiert,
+Scope + offene Designfragen ausgearbeitet; bereit für Review).
 
 **Trigger**: `validate data` ist in [cli-spec.md](../../../spec/cli-spec.md) (Abschnitt
 `validate`) als bloßes „Geplant." spezifiziert — als einziges Kommando **ohne
@@ -22,12 +23,19 @@ DB-freie **Daten-gegen-Schema-Konformitätsprüfung**: Eine Datendatei
 (JSON/YAML/CSV) wird gegen eine neutrale Schema-Definition geprüft und ein
 Konformitäts-Report ausgegeben. Kein Datenbank-Zugriff, kein Import.
 
-Geprüft werden pro Datensatz gegen die Spaltendefinition der Zieltabelle:
+Zielbild: pro Datensatz gegen die Spaltendefinition der Zieltabelle prüfen:
 - Spalten-Präsenz (Pflichtspalten vorhanden, keine unbekannten Spalten)
-- Typ-Konformität (Wert passt zum Spaltentyp)
+- Typ-Konformität (Wert passt zum neutralen Spaltentyp)
 - Nullability (NOT-NULL nicht verletzt)
 - Länge/Präzision (z. B. `VARCHAR(n)`, `DECIMAL(p,s)`)
-- CHECK-Constraints und Enum-/Custom-Type-Zugehörigkeit
+- Enum-/Custom-Type-Zugehörigkeit, soweit die neutrale Schema-Definition
+  konkrete Werte oder prüfbare Metadaten enthält
+- CHECK-Constraints und FK-Referenzintegrität als spätere Ausbaustufe
+
+**v1-Untergrenze**: eine Datendatei gegen **eine** explizit gebundene Tabelle
+prüfen; verpflichtend sind Spalten-Präsenz, Typ-Konformität, Nullability und
+Länge/Präzision. CHECK/FK und ausdrucksbasierte Custom-Type-Prüfungen sind
+nicht Teil von v1.
 
 ## 2. Abgrenzung
 
@@ -42,16 +50,35 @@ Geprüft werden pro Datensatz gegen die Spaltendefinition der Zieltabelle:
 
 - **Schema laden**: `SchemaDefinition` (`hexagon/core/.../model/SchemaDefinition.kt`)
   + `JsonSchemaCodec` / `YamlSchemaCodec` (`adapters/driven/formats`).
-- **Daten lesen**: `JsonChunkReader`, `YamlEventCursor`, CSV-Reader und
+- **Daten streamen**: `DataChunkReaderFactory`, `JsonChunkReader`,
+  `YamlChunkReader`/`YamlEventCursor`, `CsvChunkReader` und
   `FormatReadOptions` aus `adapters/driven/formats/.../format/data`.
-- **Spalten-/Constraint-Logik**: `TargetColumn` + `schemaTargetValidator`
-  aus dem Import-Preflight; CHECK-Constraint-Auswertung aus dem
-  Migrate-Preflight (`CheckPreflightProbeRunner`-Umfeld) als Vorlage für die
-  Constraint-Engine.
+  Wichtig: `DataChunkReaderFactory.create(...)` braucht den Tabellennamen
+  bereits beim Reader-Bau. Die Tabellen-Zuordnung ist daher Voraussetzung für
+  das Einlesen, nicht erst für die Row-Engine.
+- **Neutrale Datenform**: `DataChunk` + `ColumnDescriptor` (`hexagon/core`)
+  und, wo vorhanden, `ChunkSchema`/`ChunkColumnSchema` (`ports-common`) als
+  JDBC-freie Daten-/Schemaoberfläche.
+- **Importpfad als fachliche Vorlage, nicht als direkte Engine**:
+  `ImportTableValidator`, `ImportTypeCompatibility`, `TargetColumn` und
+  `schemaTargetValidator` prüfen heute Schema-vs.-DB-Zielstruktur. Sie sind
+  JDBC-/Target-gekoppelt und dürfen für `validate data` nicht unverändert zur
+  DB-freien Row-Validierung werden. Wiederverwendbar sind die Testfälle,
+  Fehlermuster und ggf. extrahierbare, neutrale Teile.
+- **CSV-/Wert-Coercion**: `ValueDeserializer` dokumentiert die
+  Import-Coercion, ist aber über `JdbcTypeHint` JDBC-gekoppelt. Für
+  `validate data` braucht es eine `NeutralType`-basierte Coercion
+  (oder eine sauber extrahierte neutrale Schicht), damit CSV-Regeln
+  konsistent bleiben, ohne JDBC in den Validator zu ziehen.
+- **CHECK-Preflight**: `CheckPreflightProbeRunner`/`CheckPreflight*` ist ein
+  Live-DB-Probe (`SELECT count(*) ...`) für Migrationen. Das Umfeld ist keine
+  DB-freie Ausdrucks-Engine; für v1 nur als Reporting-/Gating-Vorlage nutzen,
+  CHECK-Auswertung selbst bleibt out of scope.
 
 Es fehlt: das `validate`-Command-Group-Wiring (heute registriert `Main.kt`
-nur `schema`/`data`/`export`/`mcp`) und eine **DB-freie** Row-Validierungs-
-Engine, die Datensätze gegen Spalten-Constraints prüft.
+nur `schema`/`data`/`export`/`mcp`), ein Tabellenbindungs-/Input-Topologie-
+Resolver und eine **DB-freie** Row-Validierungs-Engine, die Datensätze gegen
+neutrale Spaltenregeln prüft.
 
 ## 4. Scope-Skizze (Sub-Slices)
 
@@ -60,33 +87,49 @@ Engine, die Datensätze gegen Spalten-Constraints prüft.
    geplanten `validate procedure`, `LN-034`). Drei-Schicht-Muster (Command →
    Runner → Wiring, Runner/Wiring `internal`), wie
    [[cli-command-refactor-pattern]].
-2. **Schema + Daten einlesen** — Schema-Codec nach Endung/Format wählen,
-   Datendatei über die Format-Reader streamen (JSON/YAML/CSV), Encoding über
-   `EncodingDetector`.
-3. **Konformitäts-Engine (DB-frei)** — Präsenz, Typ, Nullability,
-   Länge/Präzision, CHECK, Custom-Type/Enum. Streaming, damit große Dateien
-   ohne Vollmaterialisierung prüfbar sind.
-4. **Report + Exit-Codes** — Report (Text; optional `--json` für Skripting)
+2. **Tabellenbindung + Input-Topologie** — vor jedem Reader-Bau entscheiden,
+   welche Schema-Tabelle geprüft wird. Empfohlener v1-Schnitt:
+   `--table <name>` als Pflichtflag. Ableitung aus Dateiname oder
+   Top-Level-Tabellenstruktur nur nach expliziter Spec-Entscheidung.
+3. **Schema + Daten einlesen** — Schema-Codec nach Endung/Format wählen,
+   Datendatei mit dem aufgelösten Tabellennamen über die Format-Reader
+   streamen (JSON/YAML/CSV), Encoding über `EncodingDetector`. Falls
+   Top-Level-Keys = Tabellennamen gewählt werden, ist dafür ein eigener
+   Resolver/Reader-Adapter nötig; die heutigen JSON/YAML-Reader erwarten
+   Top-Level-Sequenzen von Rows.
+4. **Konformitäts-Engine (DB-frei)** — v1: Präsenz, Typ, Nullability,
+   Länge/Präzision gegen `SchemaDefinition`/`NeutralType`, inkl.
+   NeutralType-basierter CSV-Coercion. Streaming, damit große Dateien ohne
+   Vollmaterialisierung prüfbar sind. CHECK/FK und ausdrucksbasierte
+   Custom-Type-Prüfung erst in späteren Slices.
+5. **Report + Exit-Codes** — Report (Text; optional `--json` für Skripting)
    mit Fundstellen (Zeile/Datensatz, Spalte, Regel). Exit `0` Erfolg, `3`
-   Validierungsfehler, `2` ungültige Flags, `7` Parse-/IO-Fehler (deckungs-
-   gleich mit dem cli-spec-Vertrag).
-5. **Doku-/Spec-Hygiene** — „Geplant."-Marker in cli-spec entfernen bzw. auf
-   die `LF`-Kennung umstellen (Markdown-Link/ID, keine §), Spec um die
-   geklärte Tabellen-Zuordnung (§-frei) ergänzen.
+   Validierungsfehler, `2` ungültige Flags, `7` Parse-/IO-Fehler. Die
+   command-spezifische cli-spec muss diese `2`/`7`-Erweiterung explizit
+   aufnehmen; aktuell nennt `validate data` nur `0`/`3`.
+6. **Doku-/Spec-Hygiene** — „Geplant."-Marker in cli-spec entfernen bzw. auf
+   die `LF`-Kennung umstellen (Markdown-Link/ID, ohne Paragraphzeichen),
+   Spec um Tabellenbindung, v1-Scope und Exit-Code-Vertrag ergänzen.
 
 ## 5. Offene Designfragen
-1. **Tabellen-Zuordnung (blockierend)**: Der Spec-Aufruf
+1. **Tabellen-Zuordnung (blockierend für Slice 2/3)**: Der Spec-Aufruf
    `validate data --source data.json --schema schema.yaml` nennt **keine
    Zieltabelle**, ein `SchemaDefinition` hat aber viele Tabellen. Optionen:
    neues `--table <name>`-Flag; Ableitung aus dem Dateinamen; oder die
    Datendatei trägt eine Tabellen-Struktur (Top-Level-Keys = Tabellennamen).
-   Muss vor Slice 3 entschieden und in der Spec fixiert werden.
-2. **Constraint-Tiefe in v1**: Spalten/Typ/Nullability/Länge sicher; CHECK
-   und FK fraglich. FK-Referenzintegrität braucht den vollen Datensatz (und
-   ggf. mehrere Tabellen) — Kandidat für „out of scope v1".
+   `--table` ist der kleinste v1-Schnitt, weil er mit den vorhandenen
+   Format-Readern kompatibel ist. Top-Level-Tabellenstruktur erfordert
+   zusätzliche Reader-/Resolver-Arbeit und darf nicht still als vorhandener
+   Reader-Vertrag angenommen werden.
+2. **Constraint-Tiefe nach v1**: Spalten/Typ/Nullability/Länge sind v1.
+   CHECK und FK bleiben out of scope, solange keine DB-freie
+   Ausdrucks-/Referenz-Engine spezifiziert ist. FK-Referenzintegrität braucht
+   außerdem den vollen Datensatz und ggf. mehrere Tabellen.
 3. **CSV-Typisierung**: CSV liefert nur Strings — Coercion-Regeln (wann gilt
-   `"42"` als gültiges `INTEGER`?) müssen definiert werden, konsistent zum
-   Import-Pfad.
+   `"42"` als gültiges `INTEGER`?) müssen `NeutralType`-basiert definiert
+   werden, konsistent zu den Import-Regeln, aber ohne `JdbcTypeHint`-Abhängigkeit.
+   `--csv-no-header` braucht zusätzlich einen Spaltenordnungs-Vertrag
+   (Schema-Reihenfolge vs. explizite Spaltenliste).
 4. **Output-Format**: nur Text vs. zusätzlich `--json`.
 
 ## 6. Vorbedingungen
@@ -95,11 +138,17 @@ Engine, die Datensätze gegen Spalten-Constraints prüft.
   der diesen Plan ausgelöst hat). Ohne Kennung bleibt der cli-spec-Marker
   ankerlos.
 - **Designentscheidung Tabellen-Zuordnung** ([Offene Designfragen](#5-offene-designfragen), Frage 1) fixiert.
-- Referenz-Stil beachten: keine §, nur Markdown-Links/`LF`-`LN`-Kennungen
+- **v1-Scope festgeschrieben**: CHECK/FK entweder ausdrücklich out of scope
+  oder mit eigener DB-freier Engine-Spezifikation versehen.
+- **Exit-Code-Vertrag nachgezogen**: command-spezifische cli-spec nennt neben
+  `0`/`3` auch `2` und `7`, wenn der Runner diese Pfade implementiert.
+- Referenz-Stil beachten: keine Paragraphzeichen, nur Markdown-Links/`LF`-`LN`-Kennungen
   ([[feedback-reference-style]]).
 
 ## 7. Empfohlener Schnitt
-Klein halten: v1 auf Spalten/Typ/Nullability/Länge gegen **eine** Tabelle
-(nach Klärung der [Tabellen-Zuordnung](#5-offene-designfragen)) begrenzen,
-CHECK/FK als spätere Erweiterung. Liefert
-schnell sichtbaren Nutzen und nutzt durchgängig vorhandene Bausteine.
+Klein halten: v1 auf `--table <name>` plus Spalten/Typ/Nullability/Länge
+gegen **eine** Tabelle begrenzen. JSON/YAML bleiben bei der vorhandenen
+Top-Level-Sequenz von Row-Objekten, CSV startet mit Header-CSV; `--csv-no-header`,
+Top-Level-Tabellenwrapper, CHECK und FK folgen als eigene Slices. Das liefert
+schnell sichtbaren Nutzen und nutzt vorhandene Reader, ohne JDBC-gekoppelte
+Importbausteine in eine DB-freie Engine zu ziehen.
