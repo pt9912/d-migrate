@@ -2,15 +2,15 @@
 
 > Dokumenttyp: Implementierungsplan (Bau-Slice)
 >
-> Status: **Entwurf (2026-06-09), not started.** Gate-first: S3.0
-> (§8-Validierung) entscheidet vor dem Dependency-Lock. Promotion
-> `next/` → `in-progress/` bei S3.0-Start.
+> Status: **In Progress (`in-progress/` seit 2026-06-09).** S3.0–S3.3
+> abgeschlossen (Gate GO; `S3StorageSupport` + `S3ArtifactContentStore` +
+> `S3UploadSegmentStore`, reviewt/konvergiert). Aktiv: S3.4 (Wiring + E2E).
 >
 > Referenzen:
 > [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
 > (Architektur/Reconciliation),
 > [`object-storage-s3-eval.md`](object-storage-s3-eval.md) (Lib-Verdict +
-> §8-Gate), [`bi-demo-compose.md`](../done/bi-demo-compose.md) §5.3
+> Validierungs-Gate), [`bi-demo-compose.md`](../done/bi-demo-compose.md)
 > (SeaweedFS-Setup).
 
 ---
@@ -178,7 +178,8 @@ so gebaut werden — empirisch gegen SeaweedFS verifiziert:
 
 - **Eval-Korrektur-Commit** (§2.1) — moeglichst vor S3.0, damit Plan und
   Eval konsistent sind.
-- Promotion `next/` → `in-progress/` bei S3.0-Start.
+- ✅ Promotion `next/` → `in-progress/` (2026-06-09, mit den drei
+  Track-Docs; externe Links nachgezogen).
 - Erwaegung: das Footprint-Gate (S3.0) mit dem **1.0.0-Native-Image-Cut**
   buendeln, statt den Footprint zweimal zu messen (Roadmap-0.9.8-Hinweis).
 - **Review-Runde-1-Dispositionen (2026-06-09, konvergiert nach Runde 2):**
