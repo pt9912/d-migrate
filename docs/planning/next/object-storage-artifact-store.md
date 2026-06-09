@@ -9,7 +9,8 @@
 > liegt nun als [`object-storage-s3-eval.md`](object-storage-s3-eval.md)
 > vor (Empfehlung: AWS SDK for Java v2 mit `url-connection-client`,
 > planungsgestuetzt — Dependency-Lock nach empirischer Validierung). Die
-> S3-Implementierung selbst ist Folge-Arbeit (Phase 4).
+> S3-Implementierung wurde 2026-06-09 in den 0.9.8-Scope vorgezogen
+> (vormals Phase 4), hinter dem §8-Gate + eigenem ImpPlan.
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`,
 > `spec/job-contract.md`, `spec/ki-mcp.md`, `spec/rest-service.md`,
@@ -205,7 +206,8 @@ Datenbankverbindungen (0.9.1-Security-Haertung).
 ## 8. Offene Evaluierung: S3-Adapter (0.9.8-Deliverable)
 
 Das einzig genuin offene Stueck. Diese Evaluierung ist der
-0.9.8-Eval-Beitrag; die Implementierung folgt in Phase 4.
+0.9.8-Eval-Beitrag; die Implementierung wurde 2026-06-09 ebenfalls in
+0.9.8 gezogen (hinter dem §8-Gate + eigenem ImpPlan).
 
 > **Erledigt (2026-06-09):** Die Evaluierung liegt als eigenes Addendum
 > [`object-storage-s3-eval.md`](object-storage-s3-eval.md) vor.
@@ -251,7 +253,7 @@ reproduzierbare Probe-Umgebung fuer die Eval.
 3. ✅ File-Implementierung als Referenz — `FileBackedArtifactContentStore` (0.9.6).
 4. ✅ S3-kompatible Implementierung evaluieren — Empfehlung AWS SDK v2,
    siehe [`object-storage-s3-eval.md`](object-storage-s3-eval.md);
-   Bau bleibt Phase 3/4 (eigener ImpPlan).
+   Bau 2026-06-09 in 0.9.8 vorgezogen, hinter §8-Gate + eigenem ImpPlan.
 5. ◐ Konfigurationsschema und Security-Regeln skizzieren — §6 (Entwurf steht).
 6. ⏳ Migration des MCP-/REST-/gRPC-Jobvertrags auf Artifact-Refs planen —
    MCP nutzt Refs bereits; REST (1.2.0) und gRPC (1.1.8) erben das Modell beim

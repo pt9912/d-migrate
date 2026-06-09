@@ -6,7 +6,8 @@
 > Status: **Empfehlung (planungsgestuetzt, 2026-06-09)** — Lib-Pick mit
 > Begruendung und Restrisiken. Dies ist der 0.9.8-Eval-Deliverable des
 > Object-Storage-Tracks. Die eigentliche Implementierung folgt als
-> eigener `ImpPlan` in Phase 3/4 (siehe Plan §8/§9); ein Dependency-Lock
+> eigener `ImpPlan` in 0.9.8 (2026-06-09 vorgezogen, vormals Phase 3/4;
+> siehe Plan §8/§9); ein Dependency-Lock
 > erfolgt erst nach der empirischen Validierung in §8.
 >
 > **Update (2026-06-09):** MinIO als Fallback verworfen — die
