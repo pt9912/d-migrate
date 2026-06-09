@@ -129,16 +129,18 @@ so gebaut werden — empirisch gegen SeaweedFS verifiziert:
 
 ## 4. Definition of Done
 
-1. Beide Byte-Stores erfuellen die Port-Vertraege gegen SeaweedFS-IT gruen
-   (MinIO/echtes S3 optional als Zweitprobe).
-2. Die testFixtures-Vertragssuiten `ArtifactContentStoreContractTests` +
-   `UploadSegmentStoreContractTests` sind gegen die S3-Impl subclassed und
-   gruen (inkl. der `Stored`/`AlreadyExists`/`Conflict`-Idempotenzfaelle).
-3. `artifacts.store: s3` waehlt im MCP-Wiring die S3-Stores; Credentials
-   erscheinen **nicht** in Logs/Reports.
-4. §8-Gate-Ergebnisse (S3.0) dokumentiert; Dependency final gelockt.
-5. `kover` ≥ 90 % im neuen Modul; `make docker-check` (Repo) gruen.
-6. **Eval-Addendum-Korrektur** (§2/§3.2/§4/§6, siehe §2.1) ist committet.
+- [x] Beide Byte-Stores erfuellen die Port-Vertraege gegen SeaweedFS-IT
+  gruen (MinIO/echtes S3 optional als Zweitprobe). — S3.2 + S3.3.
+- [x] Die testFixtures-Vertragssuiten `ArtifactContentStoreContractTests` +
+  `UploadSegmentStoreContractTests` sind gegen die S3-Impl subclassed und
+  gruen (inkl. der `Stored`/`AlreadyExists`/`Conflict`-Idempotenzfaelle).
+- [ ] `artifacts.store: s3` waehlt im MCP-Wiring die S3-Stores; Credentials
+  erscheinen **nicht** in Logs/Reports. — **offen (S3.4)**.
+- [x] Validierungs-Gate-Ergebnisse (S3.0) dokumentiert; Dependency final
+  gelockt (AWS SDK v2 + `url-connection-client` + WHEN_REQUIRED-Checksums).
+- [ ] `kover` ≥ 90 % im neuen Modul (✅ Modul-`koverVerify`) **und**
+  repo-weiter `make docker-check` gruen (Letzteres beim Slice-Closure).
+- [x] Eval-Addendum-Korrektur (siehe §2.1) ist committet.
 
 ---
 
