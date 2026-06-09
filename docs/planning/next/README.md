@@ -36,6 +36,7 @@ festgehalten.
 | Datei | Typ | Gegenstand |
 | ----- | --- | ---------- |
 | [`atomic-preserve-service-mode.md`](atomic-preserve-service-mode.md) | Next-Plan | Atomic-Preserve Service-Mode fuer MCP/REST/gRPC: Connection-Sub-Pool, Quota-Plumbing und Schema-Migrate-Handler-Skeleton; wartet auf einen realen Service-Mode-Konsumenten. |
+| [`config-cli-management-surface.md`](config-cli-management-surface.md) | Next-Plan | CLI-`config`-Kommandos (`show` / `credentials list` / `credentials set`): Phase 1 CLI-Huelle ueber vorhandener Connection-/Config-Mechanik, Phase 2 AES-256-Credential-Store (Stufe 4 der §4.1-Kette) mit Lastenheft-Backfill + Security-Review. |
 | [`mcp-schema-migrate-tool.md`](mcp-schema-migrate-tool.md) | Next-Plan | MCP-Tool-Vertrag fuer `schema_migrate` / `schema_migrate_start` mit Wire-Vertrag V1 und Sub-Slices F.1-F.5. |
 | [`migrations-ef-core-10.md`](migrations-ef-core-10.md) | Vorschlag | EF Core 10 als weiteres Migrations-Exportziel neben Flyway, Liquibase, Django und Knex.js. |
 | [`object-storage-artifact-store.md`](object-storage-artifact-store.md) | Architekturplan | Object-Storage-ArtifactStore fuer langlebige/grosse Artefakte, zuerst S3-kompatibel. |
