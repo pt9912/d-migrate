@@ -29,7 +29,7 @@ import java.time.Duration
  * S3.0-Gate-Spike (ImpPlan-0.9.8-object-storage-s3, Gate-Punkte 3+4).
  *
  * Validiert die SeaweedFS-S3-Kompatibilitaet als reales Demo-Ziel
- * (bi-demo-compose.md §5.3), bevor die produktiven Adapter (S3.2/S3.3)
+ * (bi-demo-compose.md), bevor die produktiven Adapter (S3.2/S3.3)
  * gebaut werden. Kein Adapter-Code — direkte AWS-SDK-v2-Aufrufe mit dem
  * gewaehlten `url-connection-client`-Transport. Die kritischen Fragen:
  *  - Liefert SeaweedFS User-Metadata (`x-amz-meta-sha256`) bei HeadObject
@@ -45,7 +45,7 @@ private const val SECRET_KEY = "spikesecret"
 
 // SeaweedFS lehnt Objekt-Operationen ohne `-s3.config`-Identity ab
 // ("Signed request requires setting up SeaweedFS S3 authentication",
-// bi-demo §5.3). Daher eine Demo-Identity zur Laufzeit injizieren.
+// bi-demo-compose.md). Daher eine Demo-Identity zur Laufzeit injizieren.
 private val S3_CONFIG = """
     {"identities":[{"name":"spike","credentials":[{"accessKey":"$ACCESS_KEY","secretKey":"$SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
 """.trimIndent()

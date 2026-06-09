@@ -4,7 +4,7 @@ import java.net.URI
 
 /**
  * Konfiguration des S3-Storage-Adapters (ImpPlan-0.9.8-object-storage-s3 S3.1;
- * `.d-migrate.yaml` `artifacts.s3.*`, Eval §6).
+ * `.d-migrate.yaml` `artifacts.s3.*`, object-storage-s3-eval.md).
  *
  * [accessKey]/[secretKey] sind optional: fehlen sie, nutzt [S3ClientFactory]
  * die `DefaultCredentialsProviderChain` (env/profile/IAM). [toString] redigiert

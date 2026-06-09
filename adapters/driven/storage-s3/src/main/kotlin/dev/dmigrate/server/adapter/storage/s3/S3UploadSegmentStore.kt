@@ -16,14 +16,14 @@ import java.util.concurrent.locks.ReentrantLock
  * S3-kompatible [UploadSegmentStore]-Impl (ImpPlan-0.9.8-object-storage-s3
  * S3.3). **Jedes Segment = ein eigenstaendiges S3-Objekt** unter
  * `<keyPrefix>/segments/<uploadSessionId>/<segmentIndex>` — kein S3-Multipart
- * (Eval §2: `openSegmentRangeRead` muss ein bereits geschriebenes Segment
+ * (object-storage-s3-eval.md: `openSegmentRangeRead` muss ein bereits geschriebenes Segment
  * range-lesen, Multipart-Parts sind das nicht).
  *
  * SHA-256, Groesse und `segmentOffset` werden als User-Metadata
  * (`x-amz-meta-sha256`/`-size-bytes`/`-segment-offset`) abgelegt, damit
  * [listSegments] die `UploadSegment`-Werte rekonstruieren kann. Geteilte
  * Primitive in [S3StorageSupport]. Concurrency wie [S3ArtifactContentStore]:
- * striped Lock pro `(session,index)`, JVM-lokal (Plan §6).
+ * striped Lock pro `(session,index)`, JVM-lokal (object-storage-artifact-store.md).
  */
 class S3UploadSegmentStore(
     private val s3: S3Client,

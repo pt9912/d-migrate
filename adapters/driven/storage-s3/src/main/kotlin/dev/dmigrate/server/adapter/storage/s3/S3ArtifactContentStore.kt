@@ -24,7 +24,7 @@ import java.util.concurrent.locks.ReentrantLock
  * desselben artifactId JVM-lokal. S3/SeaweedFS bieten kein atomares
  * create-if-absent (last-writer-wins) — die JVM-uebergreifende
  * „exactly-one-Stored"-Garantie des File-Adapters gibt es hier bewusst nicht
- * (Plan §6, sequenziell getestet).
+ * (object-storage-artifact-store.md, sequenziell getestet).
  */
 class S3ArtifactContentStore(
     private val s3: S3Client,

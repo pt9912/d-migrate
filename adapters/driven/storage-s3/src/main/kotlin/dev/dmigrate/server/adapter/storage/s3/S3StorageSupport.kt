@@ -16,7 +16,7 @@ import java.security.MessageDigest
 
 /**
  * Geteilte Byte-Store-Primitive der S3-Adapter ([S3ArtifactContentStore] +
- * [S3UploadSegmentStore], ImpPlan §7 „3. Nutzer"): Streaming-Hash, ID-/Range-
+ * [S3UploadSegmentStore], ImpPlan-0.9.8-object-storage-s3 „3. Nutzer"): Streaming-Hash, ID-/Range-
  * Validierung, HeadObject-404-Handling und der Single-/Multipart-Put inkl.
  * Abort-on-Failure. Modul-lokal (`internal`); die moduluebergreifende
  * Promotion nach `hexagon:core` (gegen `storage-file` PathSafety/

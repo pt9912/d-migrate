@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * S3.2/S3.5: die wiederverwendbare [ArtifactContentStoreContractTests]-Suite,
  * gegen [S3ArtifactContentStore] auf einem SeaweedFS-Testcontainer ausgefuehrt
- * (reales Demo-Ziel, bi-demo §5.3). Subclassing-Muster analog
+ * (reales Demo-Ziel, bi-demo-compose.md). Subclassing-Muster analog
  * `FileBackedArtifactContentStoreTest`. Der `S3Client` kommt aus
  * [S3ClientFactory] — so wird auch die gate-validierte Client-Config (S3.1)
  * mitgetestet. Jeder `factory()`-Aufruf bekommt einen frischen Bucket auf dem

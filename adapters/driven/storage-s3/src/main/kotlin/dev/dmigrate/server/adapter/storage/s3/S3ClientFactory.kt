@@ -11,8 +11,8 @@ import software.amazon.awssdk.services.s3.S3Configuration
 
 /**
  * Baut den `S3Client` nach der S3.0-gate-validierten Konfiguration
- * (ImpPlan §2.4):
- *  - `url-connection-client` (sync; kein Netty/Apache — Footprint, Eval §6),
+ * (ImpPlan-0.9.8-object-storage-s3, S3-Client-Konfiguration):
+ *  - `url-connection-client` (sync; kein Netty/Apache — Footprint, object-storage-s3-eval.md),
  *  - `requestChecksumCalculation`/`responseChecksumValidation = WHEN_REQUIRED`
  *    — **Pflicht**: AWS SDK v2 (>= 2.30) rechnet sonst per Default
  *    Integritaets-Checksums (aws-chunked), die SeaweedFS mit
