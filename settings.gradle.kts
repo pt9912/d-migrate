@@ -38,6 +38,7 @@ include("test:integration-sqlite")
 include("test:integration-server-state")
 include("test:integration-integrations")
 include("test:integration-persistence-jdbc")
+include("test:integration-storage-s3")
 include("test:e2e-cli")
 
 // Consumer integration probe (read-only surface verification)

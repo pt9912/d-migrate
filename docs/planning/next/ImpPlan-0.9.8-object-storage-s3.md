@@ -96,11 +96,28 @@ errechnete SHA wird als Objekt-User-Metadata persistiert (§2.1), damit der
 
 ---
 
+### 2.4 S3-Client-Konfiguration (S3.0-gate-validiert gegen SeaweedFS)
+
+Der produktive `S3Client` (Wiring S3.1/S3.4, genutzt von S3.2/S3.3) **muss**
+so gebaut werden — empirisch gegen SeaweedFS verifiziert:
+
+- `endpointOverride(<artifacts.s3.endpoint>)` + `S3Configuration.pathStyleAccessEnabled(true)`.
+- `httpClient(UrlConnectionHttpClient.create())` (Eval-Verdict; sync, kein Netty/Apache).
+- **`requestChecksumCalculation(WHEN_REQUIRED)` + `responseChecksumValidation(WHEN_REQUIRED)`**
+  — **Pflicht**: ohne das brechen **alle** Body-Operationen gegen SeaweedFS mit
+  `Content-Md5 not valid` (400), weil AWS SDK v2 >= 2.30 per Default
+  Integritaets-Checksums (aws-chunked) rechnet, die SeaweedFS nicht akzeptiert
+  (S3.0-Befund 2026-06-09).
+- Credentials aus `artifacts.s3.credentials` (`StaticCredentialsProvider`) bzw.
+  `DefaultCredentialsProviderChain`; Scrubbing wie DB-Verbindungen (0.9.1).
+
+---
+
 ## 3. Slice-Schnitt (gate-first)
 
 | Slice | Inhalt |
 | ----- | ------ |
-| **S3.0 — §8-Validierungs-Gate (Spike)** | **Vor** Dependency-Lock: (1) Footprint — Fat-JAR-Delta mit `s3` + `url-connection-client` (Default-Transports `exclude`d) gegen das S10b-/Distributions-Budget; (2) Native-Image-Smoke + **Body-Streaming**-Check (streamt `PutObject` bei gesetztem `Content-Length` statt vollzupuffern?); (3) Multipart-/Range-Compat gegen SeaweedFS-Container + ob SeaweedFS die **User-Metadata `x-amz-meta-*` bei `HeadObject`** korrekt zurueckgibt (Voraussetzung fuer den SHA-Idempotenz-Pfad, §2.1); (4) Idempotenz/Retry + `DefaultCredentialsProviderChain` gegen das `credentials.provider`-Schema. **Verdikt entscheidet:** AWS-SDK + `url-connection-client` locken — oder Ausweich-Transport (`apache-client`/CRT) bzw. Fallback (Eval §6). **Teil-Ergebnis 2026-06-09:** (1) Footprint ✅ — AWS `s3` + `url-connection-client` loesen sauber auf (29 Jars / ~8,3 MB, **kein** Netty/Apache, keine Konflikte); (2) Native-Image **deferred → 1.0.0-Cut** (kein GraalVM); (3)/(4) offen (SeaweedFS-Testcontainers-IT). |
+| **S3.0 — §8-Validierungs-Gate (Spike)** | **Vor** Dependency-Lock: (1) Footprint — Fat-JAR-Delta mit `s3` + `url-connection-client` (Default-Transports `exclude`d) gegen das S10b-/Distributions-Budget; (2) Native-Image-Smoke + **Body-Streaming**-Check (streamt `PutObject` bei gesetztem `Content-Length` statt vollzupuffern?); (3) Multipart-/Range-Compat gegen SeaweedFS-Container + ob SeaweedFS die **User-Metadata `x-amz-meta-*` bei `HeadObject`** korrekt zurueckgibt (Voraussetzung fuer den SHA-Idempotenz-Pfad, §2.1); (4) Idempotenz/Retry + `DefaultCredentialsProviderChain` gegen das `credentials.provider`-Schema. **Verdikt entscheidet:** AWS-SDK + `url-connection-client` locken — oder Ausweich-Transport (`apache-client`/CRT) bzw. Fallback (Eval §6). **Teil-Ergebnis 2026-06-09:** (1) Footprint ✅ — AWS `s3` + `url-connection-client` loesen sauber auf (29 Jars / ~8,3 MB, **kein** Netty/Apache, keine Konflikte); (2) Native-Image **deferred → 1.0.0-Cut** (kein GraalVM); (3) SeaweedFS-Compat ✅ — PutObject+`x-amz-meta-sha256`→HeadObject (Metadata kommt zurueck), Range-GET, Multipart (5-MiB-Part) gruen (`:test:integration-storage-s3` SeaweedFsS3SpikeTest); (4) Idempotenz-Basis ✅. **Befund:** AWS SDK v2 (>= 2.30) Default-Checksums brechen gegen SeaweedFS (`Content-Md5 not valid`, 400) → Client mit `requestChecksumCalculation`/`responseChecksumValidation = WHEN_REQUIRED` (siehe §2.4). **Gate-Verdikt: GO** — AWS SDK v2 + `url-connection-client` gelockt. |
 | **S3.1 — Modul + Dependency + Config** | `storage-s3` anlegen; `awsSdkVersion` (gradle.properties) + settings-include; `artifacts`-Config-Typ + Parser + Credential-**Scrubbing** (gleiche Regeln wie DB-Verbindungen, 0.9.1-Haertung). |
 | **S3.2 — `S3ArtifactContentStore`** | `write`/`openRangeRead`/`exists`/`delete`; SHA als `x-amz-meta-sha256` schreiben; `WriteArtifactOutcome` inkl. `Stored`/`AlreadyExists`/`Conflict` (HeadObject-Metadata + SHA-Vergleich); Multipart-Pfad fuer > 5 GiB. |
 | **S3.3 — `S3UploadSegmentStore`** | Segmente als Einzelobjekte (§2.1) mit `x-amz-meta-sha256` je Segment; `WriteSegmentOutcome` **vollstaendig**: `Stored`/`AlreadyStored` (Idempotenz via Segment-Metadata) + `Conflict`/`SizeMismatch`. `listSegments`/`deleteAllForSession`: `ListObjectsV2`/`DeleteObjects` **paginieren** (1000-Key-Cap pro Response, `isTruncated`/`continuationToken`) — sonst stilles Abschneiden. |
