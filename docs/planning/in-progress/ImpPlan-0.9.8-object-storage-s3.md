@@ -277,3 +277,59 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
     (Stored/AlreadyExists/Conflict), die File + S3 heute duplizieren.
   - akzeptiert: Multipart-Part als 8-MiB-`ByteArray` (vertretbar), `delete`-
     2-RTT + cross-JVM-last-writer-wins (dokumentiert §6).
+
+---
+
+## 8. Arbeitsstand / Handoff (Stand 2026-06-09 Abend)
+
+### Fertig + reviewt (auf `origin/develop`)
+
+- **S3.0** Gate — GO (Footprint ~8,3 MB; SeaweedFS-Compat; Native-Image
+  deferred → 1.0.0). Befund: AWS-SDK-Checksums `WHEN_REQUIRED` Pflicht.
+- **S3.1** `S3StorageConfig` + `S3ClientFactory` (gate-validierte Client-Config).
+- **S3.2** `S3ArtifactContentStore` — Unit (mockk) + SeaweedFS-Vertragssuite;
+  Review-Runde-1 konvergiert (Striped-Locks, Multipart-Abort-finally,
+  ID-Allowlist).
+- **S3.3** `S3UploadSegmentStore` + `S3StorageSupport`-Extraktion (geteilt von
+  beiden Stores); Review konvergiert (Foreign-Object→Conflict, Range-Ordering,
+  delete-count, offset-loud-fail).
+- **S3.4a** `ArtifactStorageConfig` (sealed) + `ArtifactsConfigLoader`
+  (snakeyaml) + 13 Tests; Review konvergiert (URI-Wrap, strikter pathStyle,
+  s3-Block-Foot-Gun-Guard, Skalar-Root-Test).
+
+### Ungepusht (lokal)
+
+- `930c529e` — S3.4a-Review-Robustheit (die 4 Loader-Nits). Nur dieser Commit
+  ist lokal voraus; harmlos, jederzeit pushbar.
+
+### OFFENER BLOCKER: SeaweedFS-Integration flaky in CI
+
+- **Symptom:** `S3UploadSegmentStoreSeaweedTest` — 3 Tests (`openSegmentRangeRead
+  length=0`, `… out-of-bounds`, `deleteAllForSession`) scheitern in CI mit
+  `S3Exception 500 "We encountered an internal error, please try again"` im
+  Setup-Write. **Lokal nicht reproduzierbar** (isolierter Lauf grün).
+- **Bereits versucht (reicht NICHT):** `S3ClientFactory` `maxAttempts=8`
+  (`dd306d86`) — CI-Lauf zeigt weiterhin Failure, `SDK Attempt Count: 8`.
+  Die 500er spannen über ~8 min → Retries überbrücken die Instabilität nicht.
+- **Root-Cause-Hypothese:** ein **geteilter** SeaweedFS-Container trägt die
+  kumulierte Last aller storage-s3-Specs (Content-Contract + 20-MiB-Multipart
+  + Segment-Contract); CI fährt zudem **alle** Integration-Module gleichzeitig
+  (JDBC-Container + SeaweedFS) → Runner-weite Ressourcen-Starvation → die
+  späteren (Segment-)Specs treffen den degradierten Container.
+- **Constraint:** das Vertragssuite-Subclass-Muster erzwingt einen geteilten
+  lazy-Container — ein sauberer Per-Spec-Container ist nicht trivial.
+
+### Entscheidung für morgen (A/B/C/D)
+
+- **A** SeaweedFS-Container mehr Memory + 20-MiB-Multipart-Test verkleinern
+  (klein, test-only; hilft nur bei Container-Memory-Limit).
+- **B** storage-s3-Integration in eigenen CI-Job isolieren (adressiert die
+  Cross-Modul-Contention — **empfohlen**, wahrscheinlich der echte Hebel).
+- **C** Kotest-Extension für frischen Container pro Spec (umgeht das
+  Subclass-Muster; bounded Intra-Modul-Akkumulation).
+- **D** flaky Integration temporär quarantänen (Flag) — unblockt CI, verschiebt.
+
+→ **Erst A/B/C/D entscheiden + Flakiness fixen**, dann **S3.4b** (Wiring:
+`McpCliRuntimeWiring`-Branch + cli→storage-s3-Dep + `McpServeRunner`-Retention-
+Skip; Detail in §3.7) und **S3.4c** (MCP-Protokoll-E2E). Lokale Verifikation
+deckt die CI-Last-Flakiness nicht ab — jede Fix-Iteration kostet einen CI-Lauf.
