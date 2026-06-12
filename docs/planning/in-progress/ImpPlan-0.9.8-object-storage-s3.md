@@ -218,14 +218,33 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
 
 **S3.4c — E2E**
 
-- [ ] Voller `mcp serve`-Pfad (`artifacts.store: s3`) → `artifact_upload` /
-  `data_import` → S3-Store → SeaweedFS (`test/e2e-cli` oder eigener Flow)
+- [x] Voller `mcp serve`-Pfad: `McpS3SubprocessE2ETest` (`test/e2e-cli`)
+  startet die ECHTE CLI als Kind-JVM (`--connection-config` mit
+  `artifacts.store: s3`, `AWS_*`-Credentials NUR aus der Env,
+  `--stdio-token-file` + `DMIGRATE_MCP_STDIO_TOKEN` fuer den
+  tools/call-Principal) gegen SeaweedFS: `artifact_upload_init` →
+  `artifact_upload` (final) → Finalize-Assembly liest das Segment aus S3
+  und persistiert das Artefakt nach S3 (Content-Round-Trip via GetObject
+  + `x-amz-meta-sha256`); Replay → `deduplicated=true`; State-Dir traegt
+  keine segment-/artifact-Verzeichnisse; stderr nennt endpoint/bucket,
+  nie Credentials; sauberer Exit (ownedResources-Close-Pfad).
+  **Bewusste Abweichungen:** (1) Single-Segment — die echte CLI laeuft
+  mit Default-Limits, nicht-finale Segmente muessten exakt 4 MiB sein;
+  Multi-Segment-S3-Verhalten decken Vertragssuite + Wiring-IT ab.
+  (2) Kein `data_import`-MCP-Szenario — das existiert auch fuer den
+  file-Store nicht (eigener Scope); die S3-Byte-Pfade (Segment-Write,
+  Segment-Read, Artefakt-Write/Head) sind durch den Upload-Flow
+  vollstaendig abgedeckt. SeaweedFS-Container-Setup jetzt geteilt via
+  storage-s3-testFixtures (`SeaweedTestSupport`); Subprocess-Plumbing
+  nach `RealCliSubprocess.kt` extrahiert (geteilt mit dem
+  Lifecycle-Smoke).
 
 **S3.4-DoD (Gesamt)**
 
-- [ ] `artifacts.store: s3` selektiert die S3-Byte-Stores end-to-end;
-  Credentials erscheinen nicht in Logs/Reports
-- [ ] Unit + Wiring-Integration + E2E gruen; `koverVerify` 90 %; docker-check
+- [x] `artifacts.store: s3` selektiert die S3-Byte-Stores end-to-end;
+  Credentials erscheinen nicht in Logs/Reports (E2E-Assert: stderr ohne
+  Access-/Secret-Key)
+- [x] Unit + Wiring-Integration + E2E gruen; `koverVerify` 90 %; docker-check
 
 ---
 

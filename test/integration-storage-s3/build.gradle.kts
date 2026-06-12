@@ -10,6 +10,9 @@
 
 dependencies {
     testImplementation(project(":adapters:driven:storage-s3"))
+    // SeaweedFS-Container-Setup (SeaweedTestSupport) aus den
+    // storage-s3-testFixtures — geteilt mit :test:e2e-cli (S3.4c).
+    testImplementation(testFixtures(project(":adapters:driven:storage-s3")))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports-common"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))

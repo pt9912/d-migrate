@@ -25,19 +25,19 @@ import java.time.Duration
  * praktisch unerschoepflich (Volumes sind sparse, kein realer
  * Disk-Verbrauch).
  */
-internal const val SEAWEED_TEST_ACCESS_KEY = "seaweedtestkey"
-internal const val SEAWEED_TEST_SECRET_KEY = "seaweedtestsecret"
+const val SEAWEED_TEST_ACCESS_KEY = "seaweedtestkey"
+const val SEAWEED_TEST_SECRET_KEY = "seaweedtestsecret"
 
 private val IDENTITY_CONFIG = """
     {"identities":[{"name":"test","credentials":[{"accessKey":"$SEAWEED_TEST_ACCESS_KEY","secretKey":"$SEAWEED_TEST_SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
 """.trimIndent()
 
-internal const val SEAWEED_S3_PORT = 8333
+const val SEAWEED_S3_PORT = 8333
 
-internal class SeaweedS3TestContainer :
+class SeaweedS3TestContainer :
     GenericContainer<SeaweedS3TestContainer>(DockerImageName.parse("chrislusf/seaweedfs:4.31"))
 
-internal fun newSeaweedS3Container(): SeaweedS3TestContainer =
+fun newSeaweedS3Container(): SeaweedS3TestContainer =
     SeaweedS3TestContainer()
         .withCopyToContainer(Transferable.of(IDENTITY_CONFIG), "/etc/seaweed/s3.json")
         .withCommand(
@@ -48,5 +48,5 @@ internal fun newSeaweedS3Container(): SeaweedS3TestContainer =
         .waitingFor(Wait.forListeningPort())
         .withStartupTimeout(Duration.ofSeconds(120))
 
-internal fun SeaweedS3TestContainer.s3Endpoint(): String =
+fun SeaweedS3TestContainer.s3Endpoint(): String =
     "http://$host:${getMappedPort(SEAWEED_S3_PORT)}"

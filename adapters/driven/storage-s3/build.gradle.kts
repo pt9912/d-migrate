@@ -9,6 +9,10 @@
 // S3.2 (`S3ArtifactContentStore`) und S3.3 (`S3UploadSegmentStore`).
 plugins {
     `java-library`
+    // S3.4c: testFixtures buendeln das SeaweedFS-Testcontainer-Setup
+    // (Image, Identity, Volume-Flags) fuer :test:integration-storage-s3
+    // und :test:e2e-cli — Kolokation beim S3-Adapter.
+    `java-test-fixtures`
 }
 
 dependencies {
@@ -24,6 +28,8 @@ dependencies {
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
 
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+
+    testFixturesApi("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
 }
 
 kover {
