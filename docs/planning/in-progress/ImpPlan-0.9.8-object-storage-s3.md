@@ -280,7 +280,7 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
 
 ---
 
-## 8. Arbeitsstand / Handoff (Stand 2026-06-09 Abend)
+## 8. Arbeitsstand / Handoff (Stand 2026-06-12)
 
 ### Fertig + reviewt (auf `origin/develop`)
 
@@ -297,39 +297,33 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
   (snakeyaml) + 13 Tests; Review konvergiert (URI-Wrap, strikter pathStyle,
   s3-Block-Foot-Gun-Guard, Skalar-Root-Test).
 
-### Ungepusht (lokal)
+### GELÖST (2026-06-12): SeaweedFS-CI-Blocker — Volume-Slot-Erschöpfung
 
-- `930c529e` — S3.4a-Review-Robustheit (die 4 Loader-Nits). Nur dieser Commit
-  ist lokal voraus; harmlos, jederzeit pushbar.
+- **Symptom (eskaliert ggü. 2026-06-09):** Lauf `27399045243` — ab dem ersten
+  500er failten **alle 13 Folgetests** durchgehend (`S3Exception 500 "We
+  encountered an internal error"`, `SDK Attempt Count: 8`), je ~4 min
+  Retry-Backoff → 1h-Joblaufzeit. Keine Erholung über ~50 min.
+- **Root Cause (lokal reproduziert, KEINE Flakiness):** SeaweedFS cappt die
+  Volume-Anzahl automatisch nach freiem Disk-Space des Hosts; jeder frische
+  Bucket (= Collection, Bucket-pro-Test via `freshStore()`) alloziert beim
+  ersten Write **7 Volumes** à `volumeSizeLimitMB` (weed-server-Default
+  1024 MB). CI-Runner mit wenig freiem Platz → Slots nach wenigen Buckets
+  erschöpft → jeder weitere Write 500, dauerhaft (Master-Log: `topo failed
+  to pick 1 from 0 node candidates`). Erklärt alle Befunde: lokal grün
+  (328 GB frei ≈ 330 Slots ≈ 47 Buckets; Repro-Skript schlug exakt bei
+  Bucket 47 fehl), variierende Failure-Anzahl in CI (3 vs. 13, je nach
+  freiem Runner-Disk), Retries wirkungslos, keine Erholung.
+- **Fix (test-only, validiert):** Container-Command beider Testcontainer-Defs
+  um `-master.volumeSizeLimitMB=64 -volume.max=10000` erweitert
+  (`S3ArtifactContentStoreSeaweedTest.kt`, `SeaweedFsS3SpikeTest.kt`).
+  Lokal 100 frische Buckets fehlerfrei; Volumes sind sparse, kein realer
+  Disk-Verbrauch. Achtung: `-volume.max=512` reichte NICHT (Fehler bei
+  Bucket 75 = 525 Volumes — 7 Volumes/Bucket einplanen).
+- Die früher erwogenen Optionen A/B/C/D (Memory/CI-Job-Split/Per-Spec-
+  Container/Quarantäne) sind damit **obsolet** — keine hätte die
+  Slot-Erschöpfung behoben.
 
-### OFFENER BLOCKER: SeaweedFS-Integration flaky in CI
-
-- **Symptom:** `S3UploadSegmentStoreSeaweedTest` — 3 Tests (`openSegmentRangeRead
-  length=0`, `… out-of-bounds`, `deleteAllForSession`) scheitern in CI mit
-  `S3Exception 500 "We encountered an internal error, please try again"` im
-  Setup-Write. **Lokal nicht reproduzierbar** (isolierter Lauf grün).
-- **Bereits versucht (reicht NICHT):** `S3ClientFactory` `maxAttempts=8`
-  (`dd306d86`) — CI-Lauf zeigt weiterhin Failure, `SDK Attempt Count: 8`.
-  Die 500er spannen über ~8 min → Retries überbrücken die Instabilität nicht.
-- **Root-Cause-Hypothese:** ein **geteilter** SeaweedFS-Container trägt die
-  kumulierte Last aller storage-s3-Specs (Content-Contract + 20-MiB-Multipart
-  + Segment-Contract); CI fährt zudem **alle** Integration-Module gleichzeitig
-  (JDBC-Container + SeaweedFS) → Runner-weite Ressourcen-Starvation → die
-  späteren (Segment-)Specs treffen den degradierten Container.
-- **Constraint:** das Vertragssuite-Subclass-Muster erzwingt einen geteilten
-  lazy-Container — ein sauberer Per-Spec-Container ist nicht trivial.
-
-### Entscheidung für morgen (A/B/C/D)
-
-- **A** SeaweedFS-Container mehr Memory + 20-MiB-Multipart-Test verkleinern
-  (klein, test-only; hilft nur bei Container-Memory-Limit).
-- **B** storage-s3-Integration in eigenen CI-Job isolieren (adressiert die
-  Cross-Modul-Contention — **empfohlen**, wahrscheinlich der echte Hebel).
-- **C** Kotest-Extension für frischen Container pro Spec (umgeht das
-  Subclass-Muster; bounded Intra-Modul-Akkumulation).
-- **D** flaky Integration temporär quarantänen (Flag) — unblockt CI, verschiebt.
-
-→ **Erst A/B/C/D entscheiden + Flakiness fixen**, dann **S3.4b** (Wiring:
-`McpCliRuntimeWiring`-Branch + cli→storage-s3-Dep + `McpServeRunner`-Retention-
-Skip; Detail in §3.7) und **S3.4c** (MCP-Protokoll-E2E). Lokale Verifikation
-deckt die CI-Last-Flakiness nicht ab — jede Fix-Iteration kostet einen CI-Lauf.
+→ Nach grünem CI-Lauf weiter mit **S3.4b** (Wiring: `McpCliRuntimeWiring`-
+Branch + cli→storage-s3-Dep + `McpServeRunner`-Retention-Skip; Detail in
+[Abschnitt 3.7](#37-s34--detailplan--dod-wiring--e2e)) und **S3.4c**
+(MCP-Protokoll-E2E).
