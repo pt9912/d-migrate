@@ -57,7 +57,12 @@ class SeaweedFsS3SpikeTest : FunSpec({
 
     val container = SeaweedContainer()
         .withCopyToContainer(Transferable.of(S3_CONFIG), "/etc/seaweed/s3.json")
-        .withCommand("server", "-dir=/data", "-s3", "-s3.config=/etc/seaweed/s3.json")
+        // Volume-Slot-Limits wie im Contract-Setup (S3ArtifactContentStoreSeaweedTest):
+        // verhindert Slot-Erschoepfung auf CI-Runnern mit wenig freiem Disk.
+        .withCommand(
+            "server", "-dir=/data", "-s3", "-s3.config=/etc/seaweed/s3.json",
+            "-master.volumeSizeLimitMB=64", "-volume.max=10000",
+        )
         .withExposedPorts(8333)
         .waitingFor(Wait.forListeningPort())
         .withStartupTimeout(Duration.ofSeconds(120))

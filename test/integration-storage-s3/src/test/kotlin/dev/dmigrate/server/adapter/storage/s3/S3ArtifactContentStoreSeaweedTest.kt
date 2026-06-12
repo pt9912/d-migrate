@@ -35,10 +35,20 @@ private val CT_CONFIG = """
     {"identities":[{"name":"ct","credentials":[{"accessKey":"$CT_ACCESS_KEY","secretKey":"$CT_SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
 """.trimIndent()
 
+// SeaweedFS cappt die Volume-Anzahl nach freiem Disk-Space, und jeder frische
+// Bucket (= Collection) alloziert beim ersten Write 7 Volumes a
+// volumeSizeLimitMB (Default 1 GiB). Bucket-pro-Test erschoepft auf
+// CI-Runnern mit wenig freiem Platz die Slots nach wenigen Tests -> dauerhafte
+// 500 InternalError ("topo failed to pick 1 from 0 node candidates"). Kleine
+// Volumes + explizites Maximum machen die Slots praktisch unerschoepflich
+// (Volumes sind sparse, kein realer Disk-Verbrauch).
 private val container: ContractSeaweed by lazy {
     ContractSeaweed()
         .withCopyToContainer(Transferable.of(CT_CONFIG), "/etc/seaweed/s3.json")
-        .withCommand("server", "-dir=/data", "-s3", "-s3.config=/etc/seaweed/s3.json")
+        .withCommand(
+            "server", "-dir=/data", "-s3", "-s3.config=/etc/seaweed/s3.json",
+            "-master.volumeSizeLimitMB=64", "-volume.max=10000",
+        )
         .withExposedPorts(8333)
         .waitingFor(Wait.forListeningPort())
         .withStartupTimeout(Duration.ofSeconds(120))
