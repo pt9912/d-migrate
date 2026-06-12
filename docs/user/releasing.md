@@ -713,10 +713,10 @@ Für jeden Release abhaken:
 ## 8. Referenzen
 
 - [`CHANGELOG.md`](../../CHANGELOG.md) — Keep-a-Changelog Format
-- [[`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)](../planning/in-progress/roadmap.md) — Milestone-Übersicht
+- [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) — Milestone-Übersicht
 - [`.github/workflows/build.yml`](../../.github/workflows/build.yml) — Build/Test/Coverage/Release-Assets-CI
 - [`.github/workflows/release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) — GitHub-Release + Homebrew-Tap-Publikation + macOS-Verify
 - [`.github/workflows/verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) — macOS-Verifikation der repo-lokalen Homebrew-Formula
-- [[`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)](../../packaging/homebrew/d-migrate.rb) — Homebrew-Formula-Template
+- [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) — Homebrew-Formula-Template
 - [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - [Semantic Versioning 2.0](https://semver.org/spec/v2.0.0.html)
