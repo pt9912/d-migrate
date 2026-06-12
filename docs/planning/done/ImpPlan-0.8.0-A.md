@@ -388,10 +388,10 @@ Mindestumfang:
    `spec/connection-config-spec.md`, `spec/architecture.md`,
    `docs/planning/implementation-plan-0.8.0.md` und `docs/planning/roadmap.md`.
 2. Abgleich gegen den realen Code-Iststand von:
-   - [Main.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
-   - [OutputFormatter.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/output/OutputFormatter.kt)
-   - [ProgressRenderer.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/output/ProgressRenderer.kt)
-   - [NamedConnectionResolver.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/NamedConnectionResolver.kt)
+   - [Main.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
+   - [OutputFormatter.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/output/OutputFormatter.kt)
+   - [ProgressRenderer.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/output/ProgressRenderer.kt)
+   - [NamedConnectionResolver.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/NamedConnectionResolver.kt)
 3. Spezieller Review auf drei kritische Punkte:
    - 0.8.0/0.9.0-Schnitt fuer `--lang`
    - Config-Prioritaet inkl. `--config`/`D_MIGRATE_CONFIG`

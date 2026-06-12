@@ -404,7 +404,7 @@ den Resolver einmalig anbinden koennen.
 
 Betroffene Stelle:
 
-- [Main.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
+- [Main.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
 
 Verbindliche Folge:
 

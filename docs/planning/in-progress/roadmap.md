@@ -241,7 +241,7 @@ JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 | Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                    | LF-010 | ✅      |
 | Test    | Phase G: Tests und Dokumentation (inkl. Unicode-Integrität)  | 8.5    | ✅      |
 
-**Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
+**Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem--2026-04-13) vorgezogen.)
 
 > Stand 2026-04-16: Phasen A–G umgesetzt — Spezifikationsbereinigung,
 > I18n-Runtime, ResourceBundles, ICU4J-Integration, Zeitzonen-/Format-
