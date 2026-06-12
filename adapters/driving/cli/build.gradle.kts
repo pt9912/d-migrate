@@ -71,6 +71,10 @@ dependencies {
     // uploads (`FileBackedUploadSegmentStore`) and artefact content
     // (`FileBackedArtifactContentStore`) under the resolved state dir.
     implementation(project(":adapters:driven:storage-file"))
+    // ImpPlan-0.9.8-object-storage-s3 S3.4b: `artifacts.store: s3` in der
+    // `.d-migrate.yaml` selektiert die S3-Byte-Stores im MCP-Wiring
+    // (ArtifactsConfigLoader + S3ClientFactory + die beiden S3-Stores).
+    implementation(project(":adapters:driven:storage-s3"))
     // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default metadata stores still come from
     // `:hexagon:ports-common` testFixtures, while `server.state.*`
     // opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.

@@ -10,8 +10,15 @@
 
 dependencies {
     testImplementation(project(":adapters:driven:storage-s3"))
+    testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports-common"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    // S3.4b: der Wiring-IT treibt den echten CLI-Composition-Root
+    // (McpCliRuntimeWiring) mit `artifacts.store: s3` gegen SeaweedFS.
+    // :adapters:driving:mcp liefert den Rueckgabetyp McpRuntimeWiring
+    // (cli haelt ihn nur als implementation).
+    testImplementation(project(":adapters:driving:cli"))
+    testImplementation(project(":adapters:driving:mcp"))
 
     // storage-s3 exponiert das AWS SDK nur als implementation; der Spike
     // ruft S3Client direkt, daher eigene testImplementation.

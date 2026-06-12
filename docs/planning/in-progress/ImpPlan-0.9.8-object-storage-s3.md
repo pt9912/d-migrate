@@ -191,11 +191,19 @@ laeuft das lokale `stateDir` ab, das im s3-Modus nicht die Byte-Quelle ist);
 der assembly-Spool bleibt lokal → dessen Cleanup laeuft weiter. Logs +
 Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
 
-- [ ] `runtimeWiring`-Parameter + s3/file-Branch
-- [ ] `McpServeWiring` parst `artifacts` + reicht durch
-- [ ] `McpServeRunner`-Retention-Skip (segments/artifacts) bei s3; assembly bleibt
-- [ ] Wiring-Integrationstest vs SeaweedFS (s3-Config → S3-Stores →
-  write/read/delete-Round-Trip); koverVerify
+- [x] `runtimeWiring`-Parameter + s3/file-Branch (+ cli→storage-s3-Dep)
+- [x] `artifacts`-Parse + Durchreichen — **bewusste Abweichung:** der Parse
+  sitzt im `McpServeRunner` (`parseArtifactsConfigOrExit`, ein Parse, ein
+  Fehlerpfad — der Runner braucht den Wert selbst fuer Sweep-Skip und
+  Start-State-Zeile) und wird an `McpServeWiring.build` → `runtimeWiring`
+  durchgereicht, statt in `McpServeWiring` erneut zu parsen
+- [x] `McpServeRunner`-Retention-Skip (segments/artifacts) bei s3; assembly
+  bleibt; Start-State-Zeile nennt endpoint/bucket, nie Credentials
+- [x] Wiring-Integrationstest vs SeaweedFS (`McpCliRuntimeWiringSeaweedTest`:
+  YAML → Loader → echter Composition-Root → write/read/delete-Round-Trip
+  inkl. prefix-Durchfluss). Dafuer ist `McpCliRuntimeWiring` jetzt public
+  (Signatur besteht nur aus public Typen; Runner/ServeWiring bleiben
+  internal); koverVerify
 
 **S3.4c — E2E**
 

@@ -114,6 +114,39 @@ class McpServeWiringTest : FunSpec({
             }
         }
 
+        test("artifacts.store=s3 flows through to S3-typed byte stores (S3.4b)") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-s3-")
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            try {
+                // Offline-safe: the startup sweeps of the retention /
+                // finalisation loops only walk the empty in-memory metadata
+                // stores — no S3 request is issued during build().
+                newWiring().build(
+                    config = McpServerConfig(),
+                    owner = owner,
+                    cursorKeyring = null,
+                    artifacts = dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig.S3(
+                        dev.dmigrate.server.adapter.storage.s3.S3StorageConfig(
+                            bucket = "wiring-bucket",
+                            endpoint = java.net.URI.create("http://localhost:1"),
+                        ),
+                    ),
+                ).use { wiring ->
+                    wiring.runtimeWiring.uploadSegmentStore
+                        .shouldBeInstanceOf<dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore>()
+                    wiring.runtimeWiring.artifactContentStore
+                        .shouldBeInstanceOf<dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore>()
+                }
+            } finally {
+                owner.cleanupIfOwned()
+                runCatching {
+                    Files.walk(stateDir)
+                        .sorted(Comparator.reverseOrder())
+                        .forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
         test("file-backed approval grant store gets used when configured") {
             val stateDir = Files.createTempDirectory("dmigrate-build-grants-")
             val grantsFile = Files.createTempFile("dmigrate-grants-build-", ".yaml")

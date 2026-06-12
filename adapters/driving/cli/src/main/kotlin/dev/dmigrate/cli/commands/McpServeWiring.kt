@@ -10,6 +10,7 @@ import dev.dmigrate.mcp.registry.McpCoreJobWorkerFactory
 import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.registry.OperationalMcpWiring
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
 import dev.dmigrate.server.application.artifact.ArtifactRetentionService
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
@@ -160,16 +161,24 @@ internal class McpServeWiring(
     private val serverStateFactory: ServerStateFactory = DefaultServerStateFactory(stderr),
 ) {
 
+    /**
+     * @param artifacts byte-store selection from the `artifacts` YAML
+     *  section, parsed once by [McpServeRunner.parseArtifactsConfigOrExit]
+     *  (the runner also needs it for the startup-sweep skip and the
+     *  start-state stderr line).
+     */
     fun build(
         config: McpServerConfig,
         owner: StateDirOwner,
         cursorKeyring: CursorKeyring?,
+        artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
     ): McpCliServerWiring {
         val phaseC = McpCliRuntimeWiring.runtimeWiring(
             stateDir = owner.resolved.path,
             connectionConfigPath = effectiveConnectionConfigPath,
             cursorKeyring = cursorKeyring,
             operationTimeout = config.operationTimeout,
+            artifacts = artifacts,
         )
         val state = resolveServerStateConfigOrExit() ?: return buildInMemory(config, owner, phaseC)
 
