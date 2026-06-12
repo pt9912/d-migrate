@@ -3,6 +3,7 @@ package dev.dmigrate.server.adapter.storage.s3
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.net.URI
 import java.nio.file.Files
@@ -150,5 +151,14 @@ class ArtifactsConfigLoaderTest : FunSpec({
     test("scalar / empty YAML root -> File") {
         ArtifactsConfigLoader.load(yamlFile("just-a-scalar")) shouldBe ArtifactStorageConfig.File
         ArtifactsConfigLoader.load(yamlFile("")) shouldBe ArtifactStorageConfig.File
+    }
+
+    test("malformed YAML -> ArtifactsConfigException (not raw snakeyaml exception)") {
+        // Dieser Loader laeuft als erster Parser im `mcp serve`-Startup —
+        // ein YAML-Syntaxfehler muss als Config-Fehler enden (Runner: Exit 2),
+        // nicht als ungefangener snakeyaml-Stacktrace (S3.4b-R1).
+        val path = yamlFile("artifacts: [unclosed")
+        val failure = shouldThrow<ArtifactsConfigException> { ArtifactsConfigLoader.load(path) }
+        failure.message shouldContain "failed to parse artifacts config"
     }
 })

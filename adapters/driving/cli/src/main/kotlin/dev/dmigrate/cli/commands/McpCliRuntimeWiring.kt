@@ -13,8 +13,6 @@ import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3ByteStores
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.core.principal.TenantId
-import dev.dmigrate.server.ports.ArtifactContentStore
-import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
 import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
@@ -99,12 +97,15 @@ object McpCliRuntimeWiring {
         artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
     ): McpRuntimeWiring {
         val quotaStore = InMemoryQuotaStore()
-        val (uploadSegmentStore, artifactContentStore) = byteStores(artifacts, stateDir)
+        val s3ByteStores = when (artifacts) {
+            is ArtifactStorageConfig.File -> null
+            is ArtifactStorageConfig.S3 -> S3ByteStores.create(artifacts.config)
+        }
         val baseWiring = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
-            uploadSegmentStore = uploadSegmentStore,
+            uploadSegmentStore = s3ByteStores?.uploadSegmentStore ?: FileBackedUploadSegmentStore(stateDir),
             artifactStore = InMemoryArtifactStore(),
-            artifactContentStore = artifactContentStore,
+            artifactContentStore = s3ByteStores?.artifactContentStore ?: FileBackedArtifactContentStore(stateDir),
             schemaStore = InMemorySchemaStore(),
             jobStore = InMemoryJobStore(),
             quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
@@ -113,6 +114,10 @@ object McpCliRuntimeWiring {
             operationTimeout = operationTimeout,
             auditSink = LoggingAuditSink(),
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
+            // Das S3-Buendel besitzt den geteilten Client; der Server-
+            // Lifecycle (McpServeWiring-CloseStack) schliesst ihn beim
+            // Shutdown ueber diesen Slot.
+            ownedResources = listOfNotNull(s3ByteStores),
         )
         val keyedWiring = cursorKeyring?.let { baseWiring.copy(cursorKeyring = it) } ?: baseWiring
         // LF-012 / LN-038: when a YAML config path is provided, wrap the
@@ -130,18 +135,6 @@ object McpCliRuntimeWiring {
             )
         } else {
             keyedWiring
-        }
-    }
-
-    private fun byteStores(
-        artifacts: ArtifactStorageConfig,
-        stateDir: Path,
-    ): Pair<UploadSegmentStore, ArtifactContentStore> = when (artifacts) {
-        is ArtifactStorageConfig.File ->
-            FileBackedUploadSegmentStore(stateDir) to FileBackedArtifactContentStore(stateDir)
-        is ArtifactStorageConfig.S3 -> {
-            val stores = S3ByteStores.create(artifacts.config)
-            stores.uploadSegmentStore to stores.artifactContentStore
         }
     }
 }

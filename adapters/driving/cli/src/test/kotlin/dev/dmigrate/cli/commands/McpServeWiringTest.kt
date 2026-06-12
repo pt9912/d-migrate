@@ -2,6 +2,10 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore
+import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -125,17 +129,17 @@ class McpServeWiringTest : FunSpec({
                     config = McpServerConfig(),
                     owner = owner,
                     cursorKeyring = null,
-                    artifacts = dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig.S3(
-                        dev.dmigrate.server.adapter.storage.s3.S3StorageConfig(
+                    artifacts = ArtifactStorageConfig.S3(
+                        S3StorageConfig(
                             bucket = "wiring-bucket",
                             endpoint = java.net.URI.create("http://localhost:1"),
                         ),
                     ),
                 ).use { wiring ->
                     wiring.runtimeWiring.uploadSegmentStore
-                        .shouldBeInstanceOf<dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore>()
+                        .shouldBeInstanceOf<S3UploadSegmentStore>()
                     wiring.runtimeWiring.artifactContentStore
-                        .shouldBeInstanceOf<dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore>()
+                        .shouldBeInstanceOf<S3ArtifactContentStore>()
                 }
             } finally {
                 owner.cleanupIfOwned()

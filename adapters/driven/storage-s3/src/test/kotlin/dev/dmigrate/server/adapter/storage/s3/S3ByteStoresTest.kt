@@ -11,7 +11,7 @@ import java.net.URI
  */
 class S3ByteStoresTest : FunSpec({
 
-    test("create builds both byte stores from a single config") {
+    test("create builds both byte stores from a single config; close releases the client") {
         val stores = S3ByteStores.create(
             S3StorageConfig(
                 bucket = "bundle-bucket",
@@ -22,5 +22,6 @@ class S3ByteStoresTest : FunSpec({
 
         stores.uploadSegmentStore.shouldBeInstanceOf<S3UploadSegmentStore>()
         stores.artifactContentStore.shouldBeInstanceOf<S3ArtifactContentStore>()
+        stores.close()
     }
 })

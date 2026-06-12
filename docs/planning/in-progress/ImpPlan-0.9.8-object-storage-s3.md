@@ -204,6 +204,17 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
   inkl. prefix-Durchfluss). Dafuer ist `McpCliRuntimeWiring` jetzt public
   (Signatur besteht nur aus public Typen; Runner/ServeWiring bleiben
   internal); koverVerify
+- [x] Review-Runde-1 konvergiert: (1) `ArtifactsConfigLoader` wrappt
+  Parse-/IO-Fehler in `ArtifactsConfigException` (kaputte YAML → Exit 2
+  statt rohem Stacktrace — der Loader laeuft als erster Parser im
+  Startup); (2) `storeId` auf `ArtifactStorageConfig` + exhaustives
+  `when` fuer den Sweep-Skip (keine hartkodierten s3-Meldungen);
+  (3) `S3ByteStores` besitzt den Client (`AutoCloseable`), neuer
+  genereller `McpRuntimeWiring.ownedResources`-Slot, CloseStacks in
+  `McpServeWiring` schliessen ihn beim Shutdown; (4) SeaweedFS-Container/
+  Identity/Volume-Flags einmalig in `SeaweedTestSupport`, sha256 via
+  `core.util.sha256Hex`; (5) Test-Stil-Nits (Imports statt FQN,
+  plain class statt data class)
 
 **S3.4c — E2E**
 

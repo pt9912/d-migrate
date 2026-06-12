@@ -6,14 +6,9 @@ import dev.dmigrate.server.ports.contract.UploadSegmentStoreContractTests
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.containers.wait.strategy.Wait
-import org.testcontainers.images.builder.Transferable
-import org.testcontainers.utility.DockerImageName
 import software.amazon.awssdk.services.s3.S3Client
 import java.io.ByteArrayInputStream
 import java.net.URI
-import java.time.Duration
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -23,45 +18,20 @@ import java.util.concurrent.atomic.AtomicInteger
  * `FileBackedArtifactContentStoreTest`. Der `S3Client` kommt aus
  * [S3ClientFactory] — so wird auch die gate-validierte Client-Config (S3.1)
  * mitgetestet. Jeder `factory()`-Aufruf bekommt einen frischen Bucket auf dem
- * geteilten Container (Test-Isolation).
+ * geteilten Container (Test-Isolation). Container-Setup: SeaweedTestSupport.
  */
 
-private class ContractSeaweed :
-    GenericContainer<ContractSeaweed>(DockerImageName.parse("chrislusf/seaweedfs:4.31"))
-
-private const val CT_ACCESS_KEY = "ctkey"
-private const val CT_SECRET_KEY = "ctsecret"
-private val CT_CONFIG = """
-    {"identities":[{"name":"ct","credentials":[{"accessKey":"$CT_ACCESS_KEY","secretKey":"$CT_SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
-""".trimIndent()
-
-// SeaweedFS cappt die Volume-Anzahl nach freiem Disk-Space, und jeder frische
-// Bucket (= Collection) alloziert beim ersten Write 7 Volumes a
-// volumeSizeLimitMB (Default 1 GiB). Bucket-pro-Test erschoepft auf
-// CI-Runnern mit wenig freiem Platz die Slots nach wenigen Tests -> dauerhafte
-// 500 InternalError ("topo failed to pick 1 from 0 node candidates"). Kleine
-// Volumes + explizites Maximum machen die Slots praktisch unerschoepflich
-// (Volumes sind sparse, kein realer Disk-Verbrauch).
-private val container: ContractSeaweed by lazy {
-    ContractSeaweed()
-        .withCopyToContainer(Transferable.of(CT_CONFIG), "/etc/seaweed/s3.json")
-        .withCommand(
-            "server", "-dir=/data", "-s3", "-s3.config=/etc/seaweed/s3.json",
-            "-master.volumeSizeLimitMB=64", "-volume.max=10000",
-        )
-        .withExposedPorts(8333)
-        .waitingFor(Wait.forListeningPort())
-        .withStartupTimeout(Duration.ofSeconds(120))
-        .apply { start() }
+private val container: SeaweedS3TestContainer by lazy {
+    newSeaweedS3Container().apply { start() }
 }
 
 private val s3Client: S3Client by lazy {
     S3ClientFactory.create(
         S3StorageConfig(
             bucket = "unused",
-            endpoint = URI.create("http://${container.host}:${container.getMappedPort(8333)}"),
-            accessKey = CT_ACCESS_KEY,
-            secretKey = CT_SECRET_KEY,
+            endpoint = URI.create(container.s3Endpoint()),
+            accessKey = SEAWEED_TEST_ACCESS_KEY,
+            secretKey = SEAWEED_TEST_SECRET_KEY,
         ),
     )
 }

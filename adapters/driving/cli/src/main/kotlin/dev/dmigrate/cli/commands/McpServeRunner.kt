@@ -257,8 +257,12 @@ internal class McpServeRunner(
         // S3.4b: with `artifacts.store: s3` the segment/artefact bytes live
         // in S3, not under the local state dir — the file sweeps would walk
         // a directory that is not the byte source. The assembly spool stays
-        // local in both modes, so its cleanup always runs.
-        val sweepFileByteStores = artifacts is ArtifactStorageConfig.File
+        // local in both modes, so its cleanup always runs. Exhaustive when:
+        // a future store variant must decide its sweep behavior explicitly.
+        val sweepFileByteStores = when (artifacts) {
+            is ArtifactStorageConfig.File -> true
+            is ArtifactStorageConfig.S3 -> false
+        }
         val segmentsRemoved = if (!sweepFileByteStores) 0 else try {
             FileBackedUploadSegmentStore.cleanupOrphans(owner.resolved.path, emptySet())
         } catch (failure: java.io.IOException) {
@@ -295,7 +299,7 @@ internal class McpServeRunner(
             } else {
                 "MCP startup sweep (state dir ${owner.resolved.path}): " +
                     "removed $spoolsRemoved assembly spool(s); " +
-                    "segment/artefact sweeps skipped (artifacts.store=s3)."
+                    "segment/artefact sweeps skipped (artifacts.store=${artifacts.storeId})."
             },
         )
     }

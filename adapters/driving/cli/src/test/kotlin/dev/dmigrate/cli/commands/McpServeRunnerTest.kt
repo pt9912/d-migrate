@@ -143,6 +143,21 @@ class McpServeRunnerTest : FunSpec({
             }
         }
 
+        test("malformed YAML exits 2 instead of leaking a raw snakeyaml exception (S3.4b-R1)") {
+            val configFile = Files.createTempFile("dmigrate-artifacts-broken-", ".yaml")
+            Files.writeString(configFile, "artifacts: [unclosed")
+            val (lines, sink) = stderrCapture()
+            try {
+                val ex = shouldThrow<McpServeExit> {
+                    newRunner(effectivePath = configFile, stderr = sink).parseArtifactsConfigOrExit()
+                }
+                ex.code shouldBe 2
+                lines.shouldContain("MCP server configuration is invalid:")
+            } finally {
+                Files.deleteIfExists(configFile)
+            }
+        }
+
         test("invalid artifacts config (s3 without bucket) exits 2 with stderr message") {
             val configFile = Files.createTempFile("dmigrate-artifacts-bad-", ".yaml")
             Files.writeString(

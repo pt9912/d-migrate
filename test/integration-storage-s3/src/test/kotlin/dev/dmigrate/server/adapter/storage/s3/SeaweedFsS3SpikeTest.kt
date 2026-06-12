@@ -1,11 +1,8 @@
 package dev.dmigrate.server.adapter.storage.s3
 
+import dev.dmigrate.core.util.sha256Hex
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.containers.wait.strategy.Wait
-import org.testcontainers.images.builder.Transferable
-import org.testcontainers.utility.DockerImageName
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation
@@ -22,8 +19,6 @@ import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.UploadPartRequest
 import java.net.URI
-import java.security.MessageDigest
-import java.time.Duration
 
 /**
  * S3.0-Gate-Spike (ImpPlan-0.9.8-object-storage-s3, Gate-Punkte 3+4).
@@ -35,47 +30,26 @@ import java.time.Duration
  *  - Liefert SeaweedFS User-Metadata (`x-amz-meta-sha256`) bei HeadObject
  *    zurueck? (Voraussetzung fuer den AlreadyExists/Conflict-Idempotenzpfad.)
  *  - Funktionieren Range-GET und Multipart (>= 5-MiB-Part) gegen SeaweedFS?
+ *
+ * Container-Setup (Image, Identity, Volume-Flags): SeaweedTestSupport.
  */
-private class SeaweedContainer :
-    GenericContainer<SeaweedContainer>(DockerImageName.parse("chrislusf/seaweedfs:4.31"))
-
 private const val BUCKET = "spike"
-private const val ACCESS_KEY = "spikekey"
-private const val SECRET_KEY = "spikesecret"
-
-// SeaweedFS lehnt Objekt-Operationen ohne `-s3.config`-Identity ab
-// ("Signed request requires setting up SeaweedFS S3 authentication",
-// bi-demo-compose.md). Daher eine Demo-Identity zur Laufzeit injizieren.
-private val S3_CONFIG = """
-    {"identities":[{"name":"spike","credentials":[{"accessKey":"$ACCESS_KEY","secretKey":"$SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
-""".trimIndent()
-
-private fun sha256(bytes: ByteArray): String =
-    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
 class SeaweedFsS3SpikeTest : FunSpec({
 
-    val container = SeaweedContainer()
-        .withCopyToContainer(Transferable.of(S3_CONFIG), "/etc/seaweed/s3.json")
-        // Volume-Slot-Limits wie im Contract-Setup (S3ArtifactContentStoreSeaweedTest):
-        // verhindert Slot-Erschoepfung auf CI-Runnern mit wenig freiem Disk.
-        .withCommand(
-            "server", "-dir=/data", "-s3", "-s3.config=/etc/seaweed/s3.json",
-            "-master.volumeSizeLimitMB=64", "-volume.max=10000",
-        )
-        .withExposedPorts(8333)
-        .waitingFor(Wait.forListeningPort())
-        .withStartupTimeout(Duration.ofSeconds(120))
+    val container = newSeaweedS3Container()
 
     lateinit var s3: S3Client
 
     beforeSpec {
         container.start()
         s3 = S3Client.builder()
-            .endpointOverride(URI.create("http://${container.host}:${container.getMappedPort(8333)}"))
+            .endpointOverride(URI.create(container.s3Endpoint()))
             .region(Region.US_EAST_1)
             .credentialsProvider(
-                StaticCredentialsProvider.create(AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY)),
+                StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(SEAWEED_TEST_ACCESS_KEY, SEAWEED_TEST_SECRET_KEY),
+                ),
             )
             .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
             // S3.0-Gate-Befund: AWS SDK v2 (>= 2.30) rechnet per Default
@@ -97,7 +71,7 @@ class SeaweedFsS3SpikeTest : FunSpec({
 
     test("Gate 3a: PutObject mit User-Metadata -> HeadObject liefert sha256 + Size zurueck") {
         val data = "hello-seaweed".toByteArray()
-        val sha = sha256(data)
+        val sha = sha256Hex(data)
         s3.putObject(
             PutObjectRequest.builder().bucket(BUCKET).key("art/meta")
                 .metadata(mapOf("sha256" to sha, "size-bytes" to data.size.toString())).build(),
@@ -148,7 +122,7 @@ class SeaweedFsS3SpikeTest : FunSpec({
 
     test("Gate 4: Re-PutObject mit gleichem sha256 -> HeadObject-Metadata stabil (Idempotenz-Basis)") {
         val data = "idempotent".toByteArray()
-        val sha = sha256(data)
+        val sha = sha256Hex(data)
         val request = PutObjectRequest.builder().bucket(BUCKET).key("art/idem")
             .metadata(mapOf("sha256" to sha)).build()
         s3.putObject(request, RequestBody.fromBytes(data))

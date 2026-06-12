@@ -217,7 +217,12 @@ internal class McpServeWiring(
                 runtimeWiring = phaseCWithJdbc,
                 aiWiring = phaseG,
                 components = components,
-                closeable = CloseStack(listOfNotNull(artifactRetention, finalisationTimeout, bundle.cleanup)),
+                // ownedResources (z. B. S3-Client-Buendel) zuletzt: erst
+                // Loops/DataSource stoppen, dann Adapter-Ressourcen freigeben.
+                closeable = CloseStack(
+                    listOfNotNull(artifactRetention, finalisationTimeout, bundle.cleanup) +
+                        phaseCWithJdbc.ownedResources,
+                ),
                 executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
                 executorShutdownTimeout = asyncCfg?.shutdownTimeout
                     ?: dev.dmigrate.server.application.job.JobExecutorConfig.Async.DEFAULT_SHUTDOWN_TIMEOUT,
@@ -229,7 +234,11 @@ internal class McpServeWiring(
                 try {
                     finalisationTimeout?.close()
                 } finally {
-                    bundle.cleanup.close()
+                    try {
+                        bundle.cleanup.close()
+                    } finally {
+                        runCatching { CloseStack(phaseC.ownedResources).close() }
+                    }
                 }
             }
             throw failure
@@ -260,7 +269,9 @@ internal class McpServeWiring(
             runtimeWiring = phaseC,
             aiWiring = phaseG,
             components = AiMcpRegistries.defaultComponents(phaseG, config.scopeMapping),
-            closeable = CloseStack(listOf(artifactRetention, finalisationTimeout)),
+            closeable = CloseStack(
+                listOf(artifactRetention, finalisationTimeout) + phaseC.ownedResources,
+            ),
         )
     }
 

@@ -7,7 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** Harte Konfig-Fehler in der `artifacts`-Sektion der `.d-migrate.yaml`. */
-class ArtifactsConfigException(message: String) : RuntimeException(message)
+class ArtifactsConfigException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
 /**
  * Liest die optionale `artifacts`-Sektion der `.d-migrate.yaml`
@@ -87,7 +87,19 @@ object ArtifactsConfigLoader {
 
     private fun parseYaml(path: Path): Map<*, *> {
         val settings = LoadSettings.builder().build()
-        val loaded = Files.newInputStream(path).use { Load(settings).loadFromInputStream(it) }
+        // Parse-/IO-Fehler als ArtifactsConfigException melden (Muster
+        // YamlConnectionReferenceLoader/McpServerStateConfigResolver):
+        // dieser Loader laeuft als erster Parser im `mcp serve`-Startup —
+        // eine kaputte YAML muss als Config-Fehler (Exit 2) enden, nicht
+        // als roher snakeyaml-Stacktrace.
+        val loaded = try {
+            Files.newInputStream(path).use { Load(settings).loadFromInputStream(it) }
+        } catch (failure: Exception) {
+            throw ArtifactsConfigException(
+                "failed to parse artifacts config at $path: ${failure.message ?: failure::class.simpleName}",
+                failure,
+            )
+        }
         return loaded as? Map<*, *> ?: emptyMap<Any?, Any?>()
     }
 }

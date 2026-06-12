@@ -7,6 +7,7 @@ import dev.dmigrate.mcp.cursor.CursorKey
 import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore
+import dev.dmigrate.server.adapter.storage.s3.S3ByteStores
 import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore
 import dev.dmigrate.server.core.principal.TenantId
@@ -66,6 +67,18 @@ class McpCliRuntimeWiringTest : FunSpec({
             // file-backed in s3 mode too.
             wiring.assembledUploadPayloadFactory
                 .shouldBeInstanceOf<FileSpoolAssembledUploadPayloadFactory>()
+            // The bundle owning the shared S3 client is exposed for the
+            // server lifecycle to close on shutdown (S3.4b-R1).
+            wiring.ownedResources.single().shouldBeInstanceOf<S3ByteStores>()
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    test("runtimeWiring with file default owns no closeable resources") {
+        val dir = Files.createTempDirectory("dmigrate-mcp-wiring-owned-")
+        try {
+            McpCliRuntimeWiring.runtimeWiring(stateDir = dir).ownedResources shouldBe emptyList()
         } finally {
             dir.deleteRecursively()
         }

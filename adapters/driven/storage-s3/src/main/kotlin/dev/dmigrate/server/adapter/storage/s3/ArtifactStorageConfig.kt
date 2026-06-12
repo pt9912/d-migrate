@@ -7,9 +7,16 @@ package dev.dmigrate.server.adapter.storage.s3
  */
 sealed interface ArtifactStorageConfig {
 
+    /** Der `artifacts.store`-YAML-Wert der Variante — fuer Diagnose-Meldungen. */
+    val storeId: String
+
     /** Dateibasierte Byte-Stores (Default, Bestandsverhalten). */
-    data object File : ArtifactStorageConfig
+    data object File : ArtifactStorageConfig {
+        override val storeId: String = "file"
+    }
 
     /** S3-kompatible Byte-Stores mit der gegebenen [config]. */
-    data class S3(val config: S3StorageConfig) : ArtifactStorageConfig
+    data class S3(val config: S3StorageConfig) : ArtifactStorageConfig {
+        override val storeId: String = "s3"
+    }
 }
