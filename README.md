@@ -105,8 +105,9 @@ See [Quick start](#quick-start) below for more concrete recipes.
   [`spec/`](spec/), [`README.md`](README.md), and
   [`CHANGELOG.md`](CHANGELOG.md) is validated against the file
   system on every CI run via
-  [`scripts/verify-doc-refs.sh`](scripts/verify-doc-refs.sh);
-  broken internal links break the build.
+  [d-check](https://github.com/pt9912/d-check) (digest-pinned
+  container image, configured in [`.d-check.yml`](.d-check.yml));
+  broken internal links and anchors break the build.
 - **Static-analysis gate**: Detekt plus a SOLID-suppression-gate
   ([`scripts/solid-suppression-gate.sh`](scripts/solid-suppression-gate.sh))
   — `@Suppress("LargeClass")` and friends are tracked in a ledger

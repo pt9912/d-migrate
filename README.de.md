@@ -114,8 +114,9 @@ Rezepte.
   [`docs/`](docs/), [`spec/`](spec/), [`README.md`](README.md) und
   [`CHANGELOG.md`](CHANGELOG.md) wird in jedem CI-Lauf gegen das
   Dateisystem geprüft via
-  [`scripts/verify-doc-refs.sh`](scripts/verify-doc-refs.sh);
-  kaputte interne Links brechen den Build.
+  [d-check](https://github.com/pt9912/d-check) (digest-gepinntes
+  Container-Image, Konfiguration in [`.d-check.yml`](.d-check.yml));
+  kaputte interne Links und Anker brechen den Build.
 - **Static-Analysis-Gate**: Detekt plus ein
   SOLID-Suppression-Gate
   ([`scripts/solid-suppression-gate.sh`](scripts/solid-suppression-gate.sh))
