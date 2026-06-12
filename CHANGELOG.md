@@ -122,6 +122,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **S3-kompatibler Object-Storage fuer die MCP-Byte-Stores (S3.0..S3.6)**
+  *(2026-06-09–2026-06-12)* — `mcp serve` kann Upload-Segmente und
+  Artefakt-Bytes statt im lokalen State-Dir in einem S3-kompatiblen
+  Object-Storage ablegen (AWS S3, SeaweedFS u. a.):
+  - **Adapter**: neues Modul `adapters:driven:storage-s3` mit
+    `S3ArtifactContentStore` + `S3UploadSegmentStore` (AWS SDK v2 mit
+    `url-connection-client`; SHA-256-Idempotenz via `x-amz-meta-sha256`,
+    Multipart-Pfad > 8 MiB, paginierte Listen-/Batch-Delete-Operationen,
+    Checksums `WHEN_REQUIRED` fuer SeaweedFS-Kompatibilitaet).
+  - **Konfiguration**: neue `artifacts`-Sektion der `.d-migrate.yaml`
+    (`store: file|s3`; bei `s3`: `endpoint`/`bucket`/`region`/`prefix`/
+    `pathStyle`). Credentials stehen NIE im YAML — sie kommen aus der
+    Env (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` via
+    `DefaultCredentialsProviderChain`); Logs/stderr nennen endpoint und
+    bucket, nie Credentials. Fehlende Sektion → file-backed (Default,
+    Bestandsverhalten unveraendert).
+  - **Wiring/Retention**: `artifacts.store: s3` selektiert die S3-Stores
+    im `mcp serve`-Pfad; der file-basierte Orphan-Sweep fuer
+    segments/artifacts wird uebersprungen (der lokale Assembly-Spool und
+    sein Cleanup bleiben). Der geteilte S3-Client wird beim Shutdown
+    ueber den neuen `McpRuntimeWiring.ownedResources`-Mechanismus
+    geschlossen.
+  - **Tests**: SeaweedFS-Vertragssuiten + Multipart-IT, Wiring-IT
+    (YAML → Composition-Root → Round-Trip) und MCP-Protokoll-E2E mit der
+    echten CLI als Subprozess (`McpS3SubprocessE2ETest`).
+  - **Footprint**: Release-JAR +8,02 MiB (AWS SDK, nur
+    `url-connection`-Transport — kein Netty/Apache aus dem SDK).
+
+  ImpPlan mit Slice-Tabelle und Bewusst-nicht-Scope:
+  [`ImpPlan-0.9.8-object-storage-s3.md`](docs/planning/done/ImpPlan-0.9.8-object-storage-s3.md).
+
 - **Parquet als Export-/Import-Format (Cut A, S0..S9b)**
   *(2026-06-06–2026-06-08)* — `d-migrate data export --format parquet`
   und `data import --format parquet` sind produktiv. Voller Vertrag

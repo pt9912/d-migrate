@@ -7,9 +7,9 @@
 > `S3UploadSegmentStore`, reviewt/konvergiert). Aktiv: S3.4 (Wiring + E2E).
 >
 > Referenzen:
-> [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
+> [`object-storage-artifact-store.md`](../in-progress/object-storage-artifact-store.md)
 > (Architektur/Reconciliation),
-> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) (Lib-Verdict +
+> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md) (Lib-Verdict +
 > Validierungs-Gate), [`bi-demo-compose.md`](../done/bi-demo-compose.md)
 > (SeaweedFS-Setup).
 
@@ -46,7 +46,7 @@ Testcontainers-IT gegen SeaweedFS.
 | **`UploadSegmentStore`** — `writeSegment` / `listSegments` / `openSegmentRangeRead` / `deleteAllForSession` | **Jedes Segment = ein eigenstaendiges S3-Objekt** unter `upload-sessions/{sessionId}/{segmentIndex}`: `PutObject` je Segment, `GetObject`+`Range` für den Segment-Range-Read, `ListObjectsV2(prefix)`, `DeleteObjects(prefix)`. **Keine** S3-Multipart-Parts. |
 
 > **Eval-Korrektur (vor/mit dem Bau einzucheckenden Commit):**
-> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) §2 mappt
+> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md) §2 mappt
 > `UploadSegmentStore` faelschlich auf S3-Multipart und disqualifiziert
 > MinIO ueber fehlende public Multipart-Primitive (§3.2 + §4-Matrix-Zeile
 > „Port-Fit `UploadSegmentStore`"). Das ist falsch: `openSegmentRangeRead`
@@ -123,7 +123,7 @@ so gebaut werden — empirisch gegen SeaweedFS verifiziert:
 | **S3.3 — `S3UploadSegmentStore`** | ✅ (2026-06-09) Segmente als Einzelobjekte (`segments/<session>/<index>`) mit `x-amz-meta-sha256`/`size-bytes`/`segment-offset`; `WriteSegmentOutcome` `Stored`/`AlreadyStored`/`Conflict`/`SizeMismatch`; `listSegments` rekonstruiert via HeadObject (sortiert nach Index); `listSegments`/`deleteAllForSession` **paginiert** (`isTruncated`/`continuationToken`, Batch-Delete 1000). Shared-Util-Extraktion erledigt: `S3StorageSupport` (Hash, ID/Range-Validierung, HeadObject-404, Single/Multipart-Put) — beide S3-Stores nutzen ihn (modul-lokal; core-Promotion vs. storage-file bleibt eigener Refactor). mockk-Unit-Tests + `UploadSegmentStoreContractTests` vs SeaweedFS gruen; koverVerify 90%. |
 | **S3.4 — Wiring + Retention + E2E** | Config-getriebene Byte-Store-Auswahl im CLI-MCP-Wiring (`artifacts.store: file\|s3`) + `artifacts`-YAML-Parser + Retention-Anpassung + E2E. **Detailplan, Config-Schema und DoD-Checkboxen: Abschnitt 3.7.** |
 | **S3.5 — Testcontainers-IT (SeaweedFS)** | `GenericContainer("chrislusf/seaweedfs:4.31")`, `server -s3 -s3.config=…`, Port 8333, `s3.config`-Identity (bi-demo §5.3); die wiederverwendbaren **testFixtures-Vertragssuiten `ArtifactContentStoreContractTests` + `UploadSegmentStoreContractTests`** (aus `testImplementation(testFixtures(project(":hexagon:ports-common")))`) **subclassen** — exakt wie `FileBackedArtifactContentStoreTest` —, **nicht** eine eigene Suite nachbauen; + S3-spezifisch (Range, grosse Objekte/Multipart, Idempotenz, Pagination). `ArtifactContentStore`-Subclass ✅ (2026-06-09, S3.2 vorgezogen); `UploadSegmentStore`-Subclass folgt mit S3.3. **Plus E2E (nach S3.4):** voller CLI/MCP-Pfad (`mcp serve` mit `artifacts.store: s3` → `artifact_upload`/`data_import` → S3-Store → SeaweedFS), z. B. in `test/e2e-cli` oder einem eigenen Flow — vorher gibt es nichts End-to-End zu treiben (Store ist erst ab S3.4 verdrahtet). |
-| **S3.6 — Footprint-/Native-Image-Recheck + Closure** | Re-Messung gegen S3.0-Baseline; Doku/CHANGELOG; ImpPlan → `done/`. |
+| **S3.6 — Footprint-/Native-Image-Recheck + Closure** | ✅ (2026-06-12) Re-Messung am realen Release-JAR (`release-assets`-Stage, HEAD vs. `fd4493b9` = letzter Commit vor der cli→storage-s3-Dependency): **+8,02 MiB** (8.412.770 Bytes; 139,8 → 147,8 MiB) — deckt sich mit der S3.0-Prognose ~8,3 MB. AWS-SDK-Transporte im JAR: **nur** `urlconnection` (kein SDK-Netty/Apache; die vorhandenen `io/netty`-/`org/apache/http`-Klassen stammen aus den Hadoop-Transitiven des Parquet-Tracks, 1.0.0-Cleanup-Item S10a). Native-Image-Recheck deferred → 1.0.0-Cut (S3.0-Entscheid, kein GraalVM in 0.9.8). CHANGELOG-Eintrag; ImpPlan → `done/`. |
 
 ### 3.7 S3.4 — Detailplan + DoD (Wiring + E2E)
 
@@ -255,12 +255,13 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
 - [x] Die testFixtures-Vertragssuiten `ArtifactContentStoreContractTests` +
   `UploadSegmentStoreContractTests` sind gegen die S3-Impl subclassed und
   gruen (inkl. der `Stored`/`AlreadyExists`/`Conflict`-Idempotenzfaelle).
-- [ ] `artifacts.store: s3` waehlt im MCP-Wiring die S3-Stores; Credentials
-  erscheinen **nicht** in Logs/Reports. — **offen (S3.4)**.
+- [x] `artifacts.store: s3` waehlt im MCP-Wiring die S3-Stores; Credentials
+  erscheinen **nicht** in Logs/Reports. — S3.4b/c (E2E-Assert: stderr ohne
+  Access-/Secret-Key).
 - [x] Validierungs-Gate-Ergebnisse (S3.0) dokumentiert; Dependency final
   gelockt (AWS SDK v2 + `url-connection-client` + WHEN_REQUIRED-Checksums).
-- [ ] `kover` ≥ 90 % im neuen Modul (✅ Modul-`koverVerify`) **und**
-  repo-weiter `make docker-check` gruen (Letzteres beim Slice-Closure).
+- [x] `kover` ≥ 90 % im neuen Modul (✅ Modul-`koverVerify`) **und**
+  repo-weiter `make docker-check` gruen (S3.6-Closure, 2026-06-12).
 - [x] Eval-Addendum-Korrektur (siehe §2.1) ist committet.
 
 ---
@@ -318,7 +319,7 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
 
 ---
 
-## 8. Arbeitsstand / Handoff (Stand 2026-06-12)
+## 8. Arbeitsstand / Handoff (Stand 2026-06-12 — TRACK ABGESCHLOSSEN)
 
 ### Fertig + reviewt (auf `origin/develop`)
 
@@ -334,6 +335,16 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
 - **S3.4a** `ArtifactStorageConfig` (sealed) + `ArtifactsConfigLoader`
   (snakeyaml) + 13 Tests; Review konvergiert (URI-Wrap, strikter pathStyle,
   s3-Block-Foot-Gun-Guard, Skalar-Root-Test).
+- **S3.4b** (`6924d3a3`) Wiring + Retention-Skip; Review-Runde-1
+  konvergiert (`669a7165`): Loader wrappt Parse-/IO-Fehler, `storeId` +
+  exhaustives when, `S3ByteStores` (AutoCloseable) + genereller
+  `McpRuntimeWiring.ownedResources`-Slot, `SeaweedTestSupport`-Dedup.
+- **S3.4c** (`2ff8839b`) MCP-Protokoll-E2E `McpS3SubprocessE2ETest`
+  (echte CLI als Kind-JVM gegen SeaweedFS; Abweichungen in
+  [Abschnitt 3.7](#37-s34--detailplan--dod-wiring--e2e) dokumentiert).
+  Damit auch **S3.5** vollständig (Vertragssuiten S3.2/S3.3 + E2E).
+- **S3.6** Footprint-Recheck (+8,02 MiB am Release-JAR, Details in der
+  Slice-Tabelle) + CHANGELOG + dieses Closure.
 
 ### GELÖST (2026-06-12): SeaweedFS-CI-Blocker — Volume-Slot-Erschöpfung
 
@@ -361,7 +372,7 @@ Start-State-stderr-Zeile nennen endpoint/bucket, **nie** Credentials.
   Container/Quarantäne) sind damit **obsolet** — keine hätte die
   Slot-Erschöpfung behoben.
 
-→ Nach grünem CI-Lauf weiter mit **S3.4b** (Wiring: `McpCliRuntimeWiring`-
-Branch + cli→storage-s3-Dep + `McpServeRunner`-Retention-Skip; Detail in
-[Abschnitt 3.7](#37-s34--detailplan--dod-wiring--e2e)) und **S3.4c**
-(MCP-Protokoll-E2E).
+→ **Track abgeschlossen (2026-06-12).** Alle Slices S3.0–S3.6 fertig,
+Definition of Done komplett (Abschnitt 4). Folgearbeiten (S3-Prefix-Sweep
+fuer Retention, Native-Image-Recheck im 1.0.0-Cut, Metadaten-Persistenz)
+sind in Abschnitt 5/7 festgehalten und bewusst NICHT Teil von 0.9.8.
