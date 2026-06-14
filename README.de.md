@@ -46,7 +46,7 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**0.9.7** (stabil, veröffentlicht 2026-06-02). Die aktuellen
+**0.9.8** (stabil, veröffentlicht 2026-06-14). Die aktuellen
 Fähigkeiten:
 
 - **Schema-Modell**: neutrales YAML-Schema mit 19 Typen +
@@ -75,10 +75,15 @@ Fähigkeiten:
   (`--spatial-profile`); View-Query-Transformation über Dialekte
   hinweg.
 - **Daten-Operationen**: streaming `data export` / `import` /
-  `transfer` (JSON / YAML / CSV) mit benannten Verbindungen,
-  UPSERT, Truncate, Trigger-Handling, Reseeding, inkrementellem
-  Export (`--since-column` / `--since`); `data profile` für
-  Datenstatistiken.
+  `transfer` (JSON / YAML / CSV / Parquet) mit benannten
+  Verbindungen, UPSERT, Truncate, Trigger-Handling, Reseeding,
+  inkrementellem Export (`--since-column` / `--since`);
+  `data profile` für Datenstatistiken.
+- **Parquet & Object-Storage** (0.9.8): `data export` / `import
+  --format parquet` für Bundle- (Multi-Table + `manifest.yaml`) und
+  Single-File-Layout (Footer-KV) mit Checkpoint/Resume und
+  `--table-order`; S3-kompatibler `ArtifactStore`
+  (`artifacts.store: s3`, AWS SDK v2) für Server-Mode-Artefakte.
 - **Integrationen**: `d-migrate export flyway|liquibase|django|knex`.
 - **MCP-Server** (`mcp serve --transport stdio|http`, MCP
   2025-11-25): read-only Tool-Oberfläche (`schema_validate`,
@@ -153,7 +158,7 @@ Rezepte.
 
 ## Status
 
-Stand **2026-06-02**:
+Stand **2026-06-14**:
 
 - **0.1.0–0.5.5 MVP** · `Released` (Apr 2026): YAML-Schema-Modell,
   Typsystem, DDL-Generierung, Datenexport, Datenimport,
@@ -187,10 +192,14 @@ Stand **2026-06-02**:
   Migration-Plan v1, Partial-Rollback v2, Rename-Overlays inkl.
   Dependency-Re-Projection, CHECK/EXCLUDE-Diffbarkeit mit
   Live-Data-Preflight.
-- **0.9.8 Analytics- und Storage-Anschluss (Evaluierungen +
-  BI-Demo)** · `Geplant`: Parquet-Evaluierung,
-  Object-Storage-`ArtifactStore`-Port, BI-Demo-Compose-Stack
-  (Postgres + Metabase + SeaweedFS).
+- **0.9.8 Analytics- und Storage-Anschluss (Parquet Cut A + S3-
+  ArtifactStore + BI-Demo)** · `Released` (2026-06-14): produktiver
+  Parquet `data export` / `import` (Bundle + Single-File,
+  Checkpoint/Resume, `--table-order`, Exit-Code-Vertrag);
+  S3-kompatibler `ArtifactStore` (AWS SDK v2 +
+  `url-connection-client`, `artifacts.store: s3`); BI-Demo-Compose-
+  Stack (Postgres + Metabase + SeaweedFS). Alle Closure-Plan-Docs in
+  [`docs/planning/done/`](docs/planning/done/).
 - **0.9.9 Dokumentation + Pilot-Validierung** · `Geplant`.
 - **1.0.0 Stable Release** · `Geplant`.
 
