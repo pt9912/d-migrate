@@ -773,6 +773,7 @@ d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch ü
 - [Schema-YAML-Referenz](../../spec/schema-reference.md) -- Kurzreferenz fuer das Schema-Format
 - [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md) -- Vollständige Typsystem-Referenz
 - [CLI-Spezifikation](../../spec/cli-spec.md) -- Alle Kommandos und Exit-Codes
+- [BI-Demo-Stack](../../examples/bi-demo/README.md) -- Analytics-Compose-Stack (Postgres + Metabase + SeaweedFS/S3) mit Parquet-Export in Object-Storage (0.9.8)
 - [Design-Dokument](../../spec/design.md) -- Architektur und Designentscheidungen
 - [Roadmap](../planning/in-progress/roadmap.md) -- Geplante Features und Meilensteine
 - [README (English)](../../README.md) -- Projektübersicht auf Englisch
