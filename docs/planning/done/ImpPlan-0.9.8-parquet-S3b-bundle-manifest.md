@@ -1,7 +1,7 @@
 # S3b — ParquetManifestWriter + Bundle-Closure-Hook
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S3b).
 >
 > Status: Closed (2026-06-06). Bundle-Export-Manifest-Pfad

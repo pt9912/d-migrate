@@ -1,7 +1,7 @@
 # S0b — JDBC-Mapping + Nullability-Resolver + DataChunkWriter-Migration
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S0b).
 >
 > Status: Closed (2026-06-06). Folgt auf S0 (Typanlage); macht

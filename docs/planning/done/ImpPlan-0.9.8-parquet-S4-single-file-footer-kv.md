@@ -1,7 +1,7 @@
 # S4 — ParquetSingleFileManifest{Writer,Reader} + Preflight Phase-1/2
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S4).
 >
 > Status: Closed (2026-06-06). Footer-KV `d-migrate.manifest`

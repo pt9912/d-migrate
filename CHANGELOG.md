@@ -111,7 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI-`--format parquet`, Dependency-Hygiene, Hadoop-
   Footprint-Inventar fuer 1.0.0-Input) laeuft als
   Per-Feature-Umbrella
-  [`parquet-productive-cut-a.md`](docs/planning/in-progress/parquet-productive-cut-a.md)
+  [`parquet-productive-cut-a.md`](docs/planning/done/parquet-productive-cut-a.md)
   unter `in-progress/`. Trigger sind vier Befunde aus
   Code-Sichtung 2026-06-06 (`DataExportFormat.kt:10` ohne
   `PARQUET`, `DataImportCommand.kt:41` `.choice("json", "yaml",
@@ -172,7 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Hadoop-Footprint-Minimierung ist 1.0.0-Folgeinput (S10a-Snapshot).
 
   Per-Feature-Umbrella mit vollstaendiger Sub-Slice-Tabelle:
-  [`parquet-productive-cut-a.md`](docs/planning/in-progress/parquet-productive-cut-a.md)
+  [`parquet-productive-cut-a.md`](docs/planning/done/parquet-productive-cut-a.md)
   §3.4. Slice-Lead-Commits in chronologischer Reihenfolge (Headline-Commit
   pro Slice; vollstaendige Sub-Commit-Listen im Umbrella):
 

@@ -1,7 +1,7 @@
 # S5a — ParquetBundlePreflight + Resolver + ImportInput.ResolvedBundle
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S5a).
 >
 > Status: Closed (2026-06-06). Bundle-Lese-Pfad bis zum

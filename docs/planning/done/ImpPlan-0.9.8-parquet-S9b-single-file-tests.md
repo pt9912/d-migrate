@@ -1,7 +1,7 @@
 # S9b — Single-File-Test-Familien
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S9b).
 >
 > Status: **Closed (2026-06-09)** — direkt aus diesem Anker umgesetzt

@@ -1,7 +1,7 @@
 # S5b — ImportInput.ResolvedSingleFile + Resolver-when-Zweig
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S5b).
 >
 > Status: Closed (2026-06-06). Analog zu S5a, aber fuer den

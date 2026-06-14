@@ -1,7 +1,7 @@
 # S7 — End-to-End-Integration Seekable-Pfad
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S7).
 >
 > Status: Closed (2026-06-08). Sieben Commits (ImpPlan +

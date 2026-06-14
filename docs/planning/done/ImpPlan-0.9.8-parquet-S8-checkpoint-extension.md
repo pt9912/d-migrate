@@ -1,7 +1,7 @@
 # S8 — Checkpoint-Erweiterung (Bundle + Single-File)
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S8).
 >
 > Status: **Closed** (S8f-Closeout 2026-06-09, Doc nach `done/`
@@ -377,7 +377,7 @@ Bei S8f-Closeout:
    `docs/planning/done/ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`
    verschieben (`git mv`).
 2. Status-Tabelle in
-   [`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md) §3.4
+   [`parquet-productive-cut-a.md`](parquet-productive-cut-a.md) §3.4
    aktualisieren: S8 → closed mit Commit-Refs S8-0..S8f.
 3. `CHANGELOG.md` `[Unreleased]` um den Pre-AP8-Bruch-Eintrag
    ergaenzen.

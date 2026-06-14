@@ -13,7 +13,7 @@
 > auf 0.9.8. Stakeholder-Entscheid 2026-06-05 (Commit
 > e7f3f714) bleibt im Log und ist bis §8 die normative
 > Aussage. Umsetzung laeuft als Per-Feature-Umbrella
-> [`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md).
+> [`parquet-productive-cut-a.md`](parquet-productive-cut-a.md).
 >
 > Referenzen: alle AP1-AP12-Sub-Docs
 > (`parquet-libraries.md`, `parquet-schema-source.md`,

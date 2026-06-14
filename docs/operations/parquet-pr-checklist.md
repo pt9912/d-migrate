@@ -2,7 +2,7 @@
 
 Pflicht-Checks vor jedem Merge auf `feature/parquet-0.9.8`
 (Umbrella
-[`parquet-productive-cut-a.md`](../planning/in-progress/parquet-productive-cut-a.md)
+[`parquet-productive-cut-a.md`](../planning/done/parquet-productive-cut-a.md)
 §5 PI-2).
 
 ## Sealed-`when`-Sweep

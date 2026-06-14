@@ -1,7 +1,7 @@
 # S3 — ParquetChunkReader/Writer + Factories + Enum-Erweiterung
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S3).
 >
 > Status: Closed (2026-06-06). Schwerster Slice — produktive

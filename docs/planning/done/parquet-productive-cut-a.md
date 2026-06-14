@@ -2,38 +2,41 @@
 
 > Dokumenttyp: Per-Feature-Umbrella-Plan (Implementation)
 >
-> Status: In Progress (Stand 2026-06-06) — Umbrella fuer den
-> produktiven Cut-A-Pfad. Plan-Doc-Phase (AP1-AP13) ist mit
-> ff617d05 nach `docs/planning/done/` migriert; diese
-> Closure deckt nur die Evaluierungsphase ab, nicht den Code.
+> Status: **Abgeschlossen (2026-06-14)** — nach `done/` verschoben; das
+> Endergebnis fasst die [Closure](#closure)-Sektion zusammen. Die
+> Cut-A-Code-Linie ist vollstaendig (Sub-Slices S0…S9b closed, §3.4). Die
+> beiden vormaligen DoD-Punkte #4 (CHANGELOG-`[0.9.8]`-Datierung) und #5
+> (Tag `v0.9.8`) sind **bewusst aus diesem Umbrella herausgenommen** und in
+> die milestone-weite 0.9.8-Release-Closure verschoben (Begruendung in der
+> Closure-Sektion). Vormals „In Progress (Stand 2026-06-06)".
 >
 > **Scope-/Versions-Korrektur 2026-06-06:** AP13 §5.2/§5.4/§7
 > hatten „Cut B (Bundle-only Pilot) als 1.0.0" empfohlen.
 > Stakeholder-Entscheid 2026-06-05 (Commit e7f3f714) folgte
 > dieser Empfehlung. Am 2026-06-06 wurde die Empfehlung durch
-> [`parquet-decision-template.md` §8](../done/parquet-decision-template.md)
+> [`parquet-decision-template.md` §8](parquet-decision-template.md)
 > superseded auf **Cut A (Voller Vertrag) als 0.9.8**;
 > Begruendung siehe dort §8.2.
 >
 > Referenz-Quellen (alle in `docs/planning/done/`):
-> [`parquet-export-import-evaluation.md`](../done/parquet-export-import-evaluation.md)
+> [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md)
 > (Hauptplan + Closure),
-> [`parquet-libraries.md`](../done/parquet-libraries.md)
+> [`parquet-libraries.md`](parquet-libraries.md)
 > (Bibliotheks-/Dependency-Skizze),
-> [`parquet-port-shape.md`](../done/parquet-port-shape.md)
+> [`parquet-port-shape.md`](parquet-port-shape.md)
 > (AP10 Reader-Port),
-> [`parquet-manifest-format.md`](../done/parquet-manifest-format.md)
+> [`parquet-manifest-format.md`](parquet-manifest-format.md)
 > (AP7 Bundle-Manifest),
-> [`parquet-directory-import.md`](../done/parquet-directory-import.md)
+> [`parquet-directory-import.md`](parquet-directory-import.md)
 > (AP8 Resolver),
-> [`parquet-import-input-dto.md`](../done/parquet-import-input-dto.md)
+> [`parquet-import-input-dto.md`](parquet-import-input-dto.md)
 > (AP9 DTO),
-> [`parquet-single-file-metadata.md`](../done/parquet-single-file-metadata.md)
+> [`parquet-single-file-metadata.md`](parquet-single-file-metadata.md)
 > (AP11 Footer-KV),
-> [`parquet-cli-wiring.md`](../done/parquet-cli-wiring.md)
+> [`parquet-cli-wiring.md`](parquet-cli-wiring.md)
 > (AP12 CLI-/Factory-Wiring, **§12 Implementierungsreihenfolge
 > ist bindender Sub-Slice-Plan**),
-> [`parquet-decision-template.md`](../done/parquet-decision-template.md)
+> [`parquet-decision-template.md`](parquet-decision-template.md)
 > (AP13; §8 ist die aktuelle normative Entscheidung).
 >
 > Branch: `feature/parquet-0.9.8`. Aufwand: Brutto 35-60 PT,
@@ -73,7 +76,7 @@ fuer die Sub-Slices**:
    `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataExportCommand.kt:35`
    erlaubt nur `.choice("json", "yaml", "csv").required()`.
    Die in
-   [`parquet-cli-wiring.md`](../done/parquet-cli-wiring.md)
+   [`parquet-cli-wiring.md`](parquet-cli-wiring.md)
    §4 geforderte Pfad-only/Stdin-Ablehnung fuer Parquet
    existiert in beiden Commands produktiv nicht.
 3. **Dependency-Aussage zu stark.** `parquet-avro`,
@@ -83,7 +86,7 @@ fuer die Sub-Slices**:
    `hadoop-common` und `hadoop-mapreduce-client-core`. Die
    Aussage „kein Avro-/Protobuf-Reflection-Pfad im
    Klassenpfad" in
-   [`parquet-libraries.md`](../done/parquet-libraries.md)
+   [`parquet-libraries.md`](parquet-libraries.md)
    §6 AP1.b (`parquet-libraries.md:344-347`) ist damit zu
    stark formuliert; sie meint korrekt „kein Avro-/
    Protobuf-Reflection-**Schreib**-Pfad", die Lese-/
@@ -95,7 +98,7 @@ fuer die Sub-Slices**:
 4. **Hadoop-Footprint im Default-JAR.** Der Runtime-Tree
    zieht weiterhin HDFS/YARN, Jersey, reload4j, Zookeeper
    und Netty-Pakete via Hadoop-Transitiven.
-   [`parquet-libraries.md`](../done/parquet-libraries.md)
+   [`parquet-libraries.md`](parquet-libraries.md)
    §8 nennt das als Folgeaufgabe. Cut A **inventarisiert**
    das in S10a (Footprint-Snapshot fuer 1.0.0-Input),
    minimiert aber **nicht** in 0.9.8 — Footprint-
@@ -115,14 +118,14 @@ benutzt.
 ## 2. Pre-Implementation-Aufgaben (aus AP13 §7, §8.5)
 
 Aus
-[`parquet-decision-template.md`](../done/parquet-decision-template.md)
+[`parquet-decision-template.md`](parquet-decision-template.md)
 §7 (⏳-Marker), in §8.5 fuer Cut A bestaetigt:
 
 1. **Engineering-Goal-Commit fuer Cut A** — Zeitbudget
    (Brutto 35-60 PT) und Reviewer-Verfuegbarkeit beim
    0.9.8-Sprint-Planning festlegen.
 2. **Sealed-`rg`-Sweep-Befehle** aus
-   [`parquet-decision-template.md`](../done/parquet-decision-template.md)
+   [`parquet-decision-template.md`](parquet-decision-template.md)
    §4.1 / AP12 §8 in die PR-Checkliste oder einen
    Tooling-Hook aufnehmen (`gradle assemble
    --warning-mode=fail` ist zusaetzlich, ersetzt den Sweep
@@ -151,14 +154,14 @@ Status-Header.
 ## 3. Sub-Slice-Plan (Cut A — Restrukturierung gegenueber AP12 §12)
 
 Die Reihenfolge folgt grundsaetzlich
-[`parquet-cli-wiring.md`](../done/parquet-cli-wiring.md)
+[`parquet-cli-wiring.md`](parquet-cli-wiring.md)
 §12, aber mit drei strukturellen Anpassungen gegenueber dem
 AP12-Vorschlag (Befund-Audit 2026-06-06):
 
 1. **S0 + S0b NEU vor S2** (Split eingefuehrt 2026-06-06,
    Befund-Audit waehrend der S0-Vorbereitung): AP2 selbst
    gibt die Reihenfolge AP2.a → AP2.b → AP2.c → AP2.d vor
-   ([`parquet-schema-source.md`](../done/parquet-schema-source.md)
+   ([`parquet-schema-source.md`](parquet-schema-source.md)
    §7); `ChunkColumnSchema.neutralType` ist non-null
    (§6.1). Ein einzelner S0-Slice, der gleichzeitig
    Typanlage und `begin`-Migration macht, wuerde
@@ -197,8 +200,8 @@ diesem Umbrella per Commit-Tabelle referenziert.
 
 | Slice | Inhalt | Definition of Done |
 | ----- | ------ | ------------------ |
-| **S0** | **AP2 ChunkSchema-Typ (nur AP2.a) + Dockerfile-Warmup-Fixup** ([`parquet-schema-source.md`](../done/parquet-schema-source.md) §6.1). `ChunkSchema` + `ChunkColumnSchema` + `SchemaOrigin` in `hexagon:ports-common` mit `neutralType: NeutralType` non-null (AP2 §6.1 bindend). `DataChunkWriter.begin(table, columns: List<ColumnDescriptor>)` bleibt **unveraendert** — die Migration ist S0b. **Zusaetzlich** Dockerfile-Warmup-Block (`Dockerfile:75-95`) um die fehlende COPY-Zeile `adapters/driven/formats-parquet/build.gradle.kts` ergaenzen — `settings.gradle.kts:24` listet das Modul, der Warmup-Layer hatte es bisher nicht, was alle `make docker-* MODULES=":adapters:driven:formats-parquet"`-Aufrufe spaeterer Slices (S10a/S3/S9a/S9b) brechen wuerde. | `ChunkSchema`/`ChunkColumnSchema`/`SchemaOrigin` existieren in `hexagon:ports-common`; **Dockerfile-Warmup enthaelt `formats-parquet`-Buildfile**; `make docker-check` (gesamtes Repo) gruen; `make docker-test MODULES=":adapters:driven:formats :adapters:driven:formats-parquet"` gruen (letzteres Spike-Tests; verifiziert Dockerfile-Fixup). |
-| **S0b** | **AP2.b/c-Mapping + DataChunkWriter.begin-Migration (AP2.d)**. JDBC→`NeutralType`-Mapping (AP2.b Mapping-Tabelle aus [`parquet-schema-source.md`](../done/parquet-schema-source.md) §8) plus Nullability-Resolver mit Provenance (AP2.c §9); `StreamingExporter`/`TableExporter` bauen `ChunkSchema` aus `ResultSetMetaData` + optional `SchemaReader` vor dem ersten Chunk; `DataChunkWriter.begin(table, columns: List<ColumnDescriptor>)` wandert auf `begin(table, schema: ChunkSchema)`; JSON/YAML/CSV-Writer lesen nur Name/Nullability aus `schema.columns` (Verhalten unveraendert). | Mapping-Tabelle + Resolver in `:adapters:driven:streaming` umgesetzt; `DataChunkWriter`/JSON/YAML/CSV migriert; alle bestehenden Tests gruen; `make docker-check` (gesamtes Repo) gruen; `make docker-test MODULES=":adapters:driven:formats :adapters:driven:streaming"` gruen. |
+| **S0** | **AP2 ChunkSchema-Typ (nur AP2.a) + Dockerfile-Warmup-Fixup** ([`parquet-schema-source.md`](parquet-schema-source.md) §6.1). `ChunkSchema` + `ChunkColumnSchema` + `SchemaOrigin` in `hexagon:ports-common` mit `neutralType: NeutralType` non-null (AP2 §6.1 bindend). `DataChunkWriter.begin(table, columns: List<ColumnDescriptor>)` bleibt **unveraendert** — die Migration ist S0b. **Zusaetzlich** Dockerfile-Warmup-Block (`Dockerfile:75-95`) um die fehlende COPY-Zeile `adapters/driven/formats-parquet/build.gradle.kts` ergaenzen — `settings.gradle.kts:24` listet das Modul, der Warmup-Layer hatte es bisher nicht, was alle `make docker-* MODULES=":adapters:driven:formats-parquet"`-Aufrufe spaeterer Slices (S10a/S3/S9a/S9b) brechen wuerde. | `ChunkSchema`/`ChunkColumnSchema`/`SchemaOrigin` existieren in `hexagon:ports-common`; **Dockerfile-Warmup enthaelt `formats-parquet`-Buildfile**; `make docker-check` (gesamtes Repo) gruen; `make docker-test MODULES=":adapters:driven:formats :adapters:driven:formats-parquet"` gruen (letzteres Spike-Tests; verifiziert Dockerfile-Fixup). |
+| **S0b** | **AP2.b/c-Mapping + DataChunkWriter.begin-Migration (AP2.d)**. JDBC→`NeutralType`-Mapping (AP2.b Mapping-Tabelle aus [`parquet-schema-source.md`](parquet-schema-source.md) §8) plus Nullability-Resolver mit Provenance (AP2.c §9); `StreamingExporter`/`TableExporter` bauen `ChunkSchema` aus `ResultSetMetaData` + optional `SchemaReader` vor dem ersten Chunk; `DataChunkWriter.begin(table, columns: List<ColumnDescriptor>)` wandert auf `begin(table, schema: ChunkSchema)`; JSON/YAML/CSV-Writer lesen nur Name/Nullability aus `schema.columns` (Verhalten unveraendert). | Mapping-Tabelle + Resolver in `:adapters:driven:streaming` umgesetzt; `DataChunkWriter`/JSON/YAML/CSV migriert; alle bestehenden Tests gruen; `make docker-check` (gesamtes Repo) gruen; `make docker-test MODULES=":adapters:driven:formats :adapters:driven:streaming"` gruen. |
 | S2 | **Port-only**: `SeekableDataChunkReaderFactory`-Port-Interface in `hexagon:ports-read` (AP10 §4, AP12 §5.3) **plus `ResolvedTableInput`-Sealed-Restrukturierung** (`adapters/driven/streaming/.../ResolvedTableInput.kt`): aus der heutigen `data class` werden `sealed class ResolvedTableInput` + `Stream` (Bestandsverhalten, `openInput`) + `Seekable` (AP10 §3.2 — Pfad + Footer-Metadaten). **Keine Default-Impl der `SeekableDataChunkReaderFactory`** in diesem Slice — die einzige produktive Impl ist `ParquetSeekableDataChunkReaderFactory` und wandert in S3 zusammen mit dem Reader. Default-Factories und JSON/YAML/CSV-Verbraucher konsumieren `.Stream`; `.Seekable`-Konsum kommt in S7. | Port existiert in `hexagon:ports-read` (keine Impl); `ResolvedTableInput`-Sealed-Struktur existiert; bestehende Stream-Konsumenten (`TableImporter` etc.) auf `.Stream`-Subtyp angepasst, Tests gruen. |
 | **S10a** | **Dependency-Hygiene + Footprint-Inventar** (siehe §4 unten) — Avro-Klemme aus Befund 3 nach Pfad A (Reject) **oder** Pfad B (akzeptierte Rest-Dependency) abschliessen; Footprint-Snapshot aus Befund 4 in `parquet-libraries.md` §8 als 1.0.0-Input zurueckspielen. **Keine** Excludes/Constraints fuer Hadoop-Footprint-Transitive (HDFS/YARN/Jersey/reload4j/Zookeeper/Netty) in 0.9.8; Avro-Excludes aus Pfad A sind davon **ausgenommen**. | Constraint-Block in `formats-parquet/build.gradle.kts` ist entweder nach Pfad A (`parquet-avro`/`parquet-protobuf` + `org.apache.avro:avro` rejecten, plus Excludes auf den Hadoop-Deps) oder nach Pfad B (nur `parquet-avro`/`parquet-protobuf` rejecten, `org.apache.avro:avro` mit `because(...)`-Dokumentation belassen) umgesetzt — nicht beides gemischt. Footprint-Inventar als 1.0.0-Input dokumentiert. Spike-Tests (AP3/AP4/AP5/AP6) gruen via `make docker-test MODULES=":adapters:driven:formats-parquet"`. |
 | S3 | `ParquetChunkReader` + `ParquetChunkWriter` produktiv (AP3-Spike-Linie + AP2 §6.1 + AP10 §3.3) plus **`ParquetChunkReaderFactory` + `ParquetChunkWriterFactory` + `ParquetSeekableDataChunkReaderFactory`** im Modul `adapters:driven:formats-parquet` (AP12 §5.2 bindend: `Default…Factory` bleibt Hadoop-/Parquet-frei) plus **`DataExportFormat.PARQUET`-Enum** plus **Contract-Branches in `DefaultDataChunkReaderFactory`/`WriterFactory`**: Reader-Seite `PARQUET -> error("DefaultDataChunkReaderFactory does not support Parquet; Parquet reads go through StreamingImporter's seekableReaderFactory (ParquetSeekableDataChunkReaderFactory)")` — Writer-Seite `PARQUET -> error("DefaultDataChunkWriterFactory does not support Parquet; use ParquetChunkWriterFactory via the CLI CompositeDataChunkWriterFactory")` — beide symmetrisch zu AP12 §5.2 `ParquetChunkWriterFactory.create`'s `require(format == PARQUET)`. Der Contract-Branch ist **keine Stopgap-Auslagerung an einen spaeteren Slice**, sondern dauerhafte Domain-Aussage: Default-Factory wird Parquet **nie** behandeln, der CLI-Composite (S6) routet `PARQUET` an die Parquet-Factory. Sealed-`when (format)`-Sweep aus AP12 §8 ist damit hier vollstaendig (Default-Factories + ggf. weitere `when (format)`-Stellen, die heute exhaustive sind). | Befund 1 (Enum) aufgeloest; produktive Reader/Writer-Klassen existieren neben dem AP3-Spike (siehe §3.3); Default-Factories haben den Contract-Branch, aber **keine** Parquet-/Hadoop-Imports oder -Dependencies (Beleg: `grep "parquet\|hadoop" adapters/driven/formats/build.gradle.kts` leer); `make docker-check` (gesamtes Repo) gruen; JSON/YAML/CSV-Tests bleiben gruen. |
@@ -224,34 +227,36 @@ sind aber separate Plan-Closure-Docs.
 S9a-0 + S9a (+ `--table-order`-Folge-Feature), S9b-0 + S9b. Damit ist die
 Cut-A-Code-Linie komplett. Die CHANGELOG-Slice-Commit-Tabelle (DoD §7.4)
 ist 2026-06-09 unter `[Unreleased]` konsolidiert (Headline-`Added`-Eintrag
-+ chronologische Tabelle); **noch nicht** auf `[0.9.8]` datiert. Offen
-bleibt damit nur die `[0.9.8]`-Datierung + Tag `v0.9.8` (DoD §7.5) — die
-jetzt **zusaetzlich** auf den 2026-06-09 in 0.9.8 vorgezogenen S3-Adapter
-warten (siehe Roadmap-0.9.8 + [`object-storage-s3-eval.md`](../done/object-storage-s3-eval.md)).
-Tag-Schnitt erst, wenn Parquet **und** S3 drin sind. Befunde aus S9: `BUNDLE_ORDER_*` war Dead-Code
++ chronologische Tabelle); **noch nicht** auf `[0.9.8]` datiert. Die
+`[0.9.8]`-Datierung + Tag `v0.9.8` sind **nicht mehr Teil dieses Umbrellas**
+(vormals DoD §7.4/§7.5, am 2026-06-14 herausgenommen): es sind
+milestone-weite Release-Aktionen, die Parquet **und** den inzwischen
+geschlossenen S3-Adapter
+([`object-storage-s3-eval.md`](object-storage-s3-eval.md), Track
+abgeschlossen 2026-06-12) gemeinsam abschliessen. Befunde aus S9: `BUNDLE_ORDER_*` war Dead-Code
 (→ `--table-order`-Flag), und Single-File-Resume war gebrochen
 (→ Content-Hash-Persistenz-Fix in `0d40fd47`).
 
 | Slice | Status | Commit-Ref | Closure-Doc |
 | ----- | ------ | ---------- | ----------- |
-| S0    | closed | `9c840986` | [`ImpPlan-0.9.8-parquet-S0-chunk-schema.md`](../done/ImpPlan-0.9.8-parquet-S0-chunk-schema.md) |
-| S0b   | closed | `7670a393` | [`ImpPlan-0.9.8-parquet-S0b-chunk-schema-migration.md`](../done/ImpPlan-0.9.8-parquet-S0b-chunk-schema-migration.md) |
-| S2    | closed | `40d7c551` | [`ImpPlan-0.9.8-parquet-S2-seekable-port.md`](../done/ImpPlan-0.9.8-parquet-S2-seekable-port.md) |
-| S10a  | closed | `2b5826d8` + `c6a09cae` (Befund-Korrektur) | [`ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md`](../done/ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md) |
-| S3    | closed | `0a992c0c` | [`ImpPlan-0.9.8-parquet-S3-parquet-reader-writer.md`](../done/ImpPlan-0.9.8-parquet-S3-parquet-reader-writer.md) |
-| S10b  | closed | `9ba956ff` | [`ImpPlan-0.9.8-parquet-S10b-native-image-finding.md`](../done/ImpPlan-0.9.8-parquet-S10b-native-image-finding.md) |
-| S3b   | closed | `97c74757` | [`ImpPlan-0.9.8-parquet-S3b-bundle-manifest.md`](../done/ImpPlan-0.9.8-parquet-S3b-bundle-manifest.md) |
-| S4    | closed | `28048ef2` | [`ImpPlan-0.9.8-parquet-S4-single-file-footer-kv.md`](../done/ImpPlan-0.9.8-parquet-S4-single-file-footer-kv.md) |
-| S5a   | closed | `24cbf4c5` | [`ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md`](../done/ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md) |
-| S5b   | closed | `4279c326` | [`ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md`](../done/ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md) |
-| S6    | closed | `7759294d` (i) + `23377524` (ii) + `68d69350` (iii) + `988a41fb` (iv) + `7f79926d` (v) | [`ImpPlan-0.9.8-parquet-S6-cli-wiring.md`](../done/ImpPlan-0.9.8-parquet-S6-cli-wiring.md) |
-| S7    | closed | `34eea7ce` (S7-0) + `a0dc2c5b` (a) + `5ff17e6f` (b) + `2f9cc38a` (c) + `a25722e5` (d) + S7e-Closeout | [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](../done/ImpPlan-0.9.8-parquet-S7-end-to-end.md) |
-| S8    | closed | `df733244` (S8-0) + `a0b07d35` (S8a) + `3e3c1692` (S8b) + `d6be9cc9` (S8c) + `566cb4df` (S8d Re-Cut) + `a0e4da29` (S8e) + S8f-Closeout | [`ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`](../done/ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md) (v2) |
-| S9a-0 | closed | `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c) + `c66ba012` (d) + S9a-0.e-Closeout + S9a-0.f (Addendum: benannte Resume-Codes) | [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](../done/ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md) |
-| S9a   | closed | `31f1f6ef` (1 CLI-Preflight) + `f3d386ca` (2 Sniff) + `d3c286cf` (3 Resume) + `4c216b4f` (4 KV-Toleranz) | [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](../done/ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) |
-| `--table-order` (Folge-Feature aus S9a-Befund) | closed | `c687b47c` (Feature+Tests) + `1ddec02e` (Closure) | [`ImpPlan-0.9.8-table-order-cli-flag.md`](../done/ImpPlan-0.9.8-table-order-cli-flag.md) |
+| S0    | closed | `9c840986` | [`ImpPlan-0.9.8-parquet-S0-chunk-schema.md`](ImpPlan-0.9.8-parquet-S0-chunk-schema.md) |
+| S0b   | closed | `7670a393` | [`ImpPlan-0.9.8-parquet-S0b-chunk-schema-migration.md`](ImpPlan-0.9.8-parquet-S0b-chunk-schema-migration.md) |
+| S2    | closed | `40d7c551` | [`ImpPlan-0.9.8-parquet-S2-seekable-port.md`](ImpPlan-0.9.8-parquet-S2-seekable-port.md) |
+| S10a  | closed | `2b5826d8` + `c6a09cae` (Befund-Korrektur) | [`ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md`](ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md) |
+| S3    | closed | `0a992c0c` | [`ImpPlan-0.9.8-parquet-S3-parquet-reader-writer.md`](ImpPlan-0.9.8-parquet-S3-parquet-reader-writer.md) |
+| S10b  | closed | `9ba956ff` | [`ImpPlan-0.9.8-parquet-S10b-native-image-finding.md`](ImpPlan-0.9.8-parquet-S10b-native-image-finding.md) |
+| S3b   | closed | `97c74757` | [`ImpPlan-0.9.8-parquet-S3b-bundle-manifest.md`](ImpPlan-0.9.8-parquet-S3b-bundle-manifest.md) |
+| S4    | closed | `28048ef2` | [`ImpPlan-0.9.8-parquet-S4-single-file-footer-kv.md`](ImpPlan-0.9.8-parquet-S4-single-file-footer-kv.md) |
+| S5a   | closed | `24cbf4c5` | [`ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md`](ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md) |
+| S5b   | closed | `4279c326` | [`ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md`](ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md) |
+| S6    | closed | `7759294d` (i) + `23377524` (ii) + `68d69350` (iii) + `988a41fb` (iv) + `7f79926d` (v) | [`ImpPlan-0.9.8-parquet-S6-cli-wiring.md`](ImpPlan-0.9.8-parquet-S6-cli-wiring.md) |
+| S7    | closed | `34eea7ce` (S7-0) + `a0dc2c5b` (a) + `5ff17e6f` (b) + `2f9cc38a` (c) + `a25722e5` (d) + S7e-Closeout | [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](ImpPlan-0.9.8-parquet-S7-end-to-end.md) |
+| S8    | closed | `df733244` (S8-0) + `a0b07d35` (S8a) + `3e3c1692` (S8b) + `d6be9cc9` (S8c) + `566cb4df` (S8d Re-Cut) + `a0e4da29` (S8e) + S8f-Closeout | [`ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`](ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md) (v2) |
+| S9a-0 | closed | `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c) + `c66ba012` (d) + S9a-0.e-Closeout + S9a-0.f (Addendum: benannte Resume-Codes) | [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md) |
+| S9a   | closed | `31f1f6ef` (1 CLI-Preflight) + `f3d386ca` (2 Sniff) + `d3c286cf` (3 Resume) + `4c216b4f` (4 KV-Toleranz) | [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) |
+| `--table-order` (Folge-Feature aus S9a-Befund) | closed | `c687b47c` (Feature+Tests) + `1ddec02e` (Closure) | [`ImpPlan-0.9.8-table-order-cli-flag.md`](ImpPlan-0.9.8-table-order-cli-flag.md) |
 | S9b-0 | closed | `3306808e` (Single-File-Format-Codes → Exit 4) | (im S9b-Doc dokumentiert) |
-| S9b   | closed | `591493f3` (1 CLI-Preflight) + `0d40fd47` (3 Resume + Fix) + `038d735d` (4 KV-Toleranz); 2 adapter-gedeckt | [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](../done/ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) |
+| S9b   | closed | `591493f3` (1 CLI-Preflight) + `0d40fd47` (3 Resume + Fix) + `038d735d` (4 KV-Toleranz); 2 adapter-gedeckt | [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) |
 
 Die `[Unreleased]`-Sektion in `CHANGELOG.md` bekommt erst
 beim Umbrella-Closure (DoD §7 Punkt 4) die vollstaendige
@@ -380,7 +385,7 @@ In-Scope (Befund 3):
     Reflection-Schreib-Pfad in d-migrate")` dokumentiert.
     Kein `rejectAll()` auf `org.apache.avro:avro`, kein
     Exclude.
-- [`parquet-libraries.md`](../done/parquet-libraries.md)
+- [`parquet-libraries.md`](parquet-libraries.md)
   §6 AP1.b (Zeilen 344-347) auf
   „kein Avro-/Protobuf-Reflection-**Schreib**-Pfad im
   Klassenpfad" verschaerfen und je nach gewaehltem Pfad
@@ -393,7 +398,7 @@ In-Scope (Befund 4 — nur Inventar):
 - Hadoop-Footprint-Transitive (HDFS, YARN, Jersey,
   reload4j, Zookeeper, Netty-Pakete) im `runtimeClasspath`
   inventarisieren — Snapshot in den S10a-Closure-Doc und in
-  [`parquet-libraries.md`](../done/parquet-libraries.md)
+  [`parquet-libraries.md`](parquet-libraries.md)
   §8 als 1.0.0-Input zurueckspielen.
 - **Keine** Excludes oder Constraints fuer diese
   Hadoop-**Footprint**-Transitiven (HDFS/YARN/Jersey/
@@ -410,10 +415,10 @@ DoD S10a:
   S10a-Closure-Doc begruendet (mit Verweis auf das
   AP3-Spike-Test-Ergebnis nach probeweisem Exclude).
   Build-Script und
-  [`parquet-libraries.md`](../done/parquet-libraries.md)
+  [`parquet-libraries.md`](parquet-libraries.md)
   §6 AP1.b sind konsistent auf dieselbe Wahl ausgerichtet.
 - Footprint-Snapshot existiert und ist in
-  [`parquet-libraries.md`](../done/parquet-libraries.md)
+  [`parquet-libraries.md`](parquet-libraries.md)
   §8 referenziert.
 - **Parquet-Pfad gruen** gegen den geschaerften Classpath:
   `make docker-test MODULES=":adapters:driven:formats-parquet"`
@@ -443,7 +448,7 @@ In-Scope:
   - im S10b-Closure-Doc (was lief, was scheiterte,
     welche Konfigurations-Stubs entstehen),
   - Rueckspiel nach
-    [`parquet-libraries.md`](../done/parquet-libraries.md)
+    [`parquet-libraries.md`](parquet-libraries.md)
     §8 als 1.0.0-Input (analog AP3-Befund-Rueckspiel
     `5ca1497f`).
 - **Keine** CI-Job-Definition fuer einen gruenen Native-
@@ -456,7 +461,7 @@ DoD S10b:
 - Befund-Doc existiert; Reachability-Loecher pro Klasse/
   Modul aufgelistet (oder leere Liste mit Beleg).
 - Rueckspiel-Commit in
-  [`parquet-libraries.md`](../done/parquet-libraries.md)
+  [`parquet-libraries.md`](parquet-libraries.md)
   §8 ist drin.
 - Wenn S10a Constraint-Aenderungen brachte: Beleg, ob das
   Native-Image-Verhalten dadurch besser/gleich/schlechter
@@ -477,7 +482,7 @@ Pflege diese Liste mit Datum + Commit-Ref pro Abschluss:
 - [x] **PI-4** Erster Implementierungs-Commit S0 (AP2.a
   `ChunkSchema`/`ChunkColumnSchema`/`SchemaOrigin` +
   Dockerfile-Warmup-Fixup) — 2026-06-06, siehe
-  [`ImpPlan-0.9.8-parquet-S0-chunk-schema.md`](../done/ImpPlan-0.9.8-parquet-S0-chunk-schema.md).
+  [`ImpPlan-0.9.8-parquet-S0-chunk-schema.md`](ImpPlan-0.9.8-parquet-S0-chunk-schema.md).
 
 ### 5.1 Engineering Goal (PI-1, 2026-06-06)
 
@@ -520,7 +525,7 @@ S5b, S6, S7, S8, S9a, S9b) landet als eigener PR auf
 ### 5.2 Sealed-`rg`-Sweep-Tooling (PI-2, 2026-06-06)
 
 Drei Artefakte tragen den Sweep aus AP13 §4.1
-([`parquet-decision-template.md`](../done/parquet-decision-template.md)
+([`parquet-decision-template.md`](parquet-decision-template.md)
 Zeilen 227-237):
 
 - `scripts/parquet-sealed-sweep.sh` — Shell-Script faehrt
@@ -580,15 +585,18 @@ Der Umbrella wandert nach `docs/planning/done/`, wenn:
    `build.gradle.kts:50`). **Befund 4 (Hadoop-Footprint)
    ist bewusst nicht „geschlossen", sondern per
    S10a-Snapshot in
-   [`parquet-libraries.md`](../done/parquet-libraries.md)
+   [`parquet-libraries.md`](parquet-libraries.md)
    §8 als 1.0.0-Folgeinput dokumentiert** — Minimierung
    ist 1.0.0-Aufgabe (AP13 §8.3).
-4. CHANGELOG-Entry `[0.9.8]` traegt die finale
-   Commit-Tabelle aller Slice-Commits in chronologischer
-   Reihenfolge — analog zur Closure-Konvention der
-   0.9.x-Aggregator-Plaene.
-5. `feature/parquet-0.9.8` ist nach `develop` gemerged; Tag
-   `v0.9.8` gesetzt.
+> **Herausgenommen (2026-06-14):** Die vormaligen DoD-Punkte #4
+> (CHANGELOG-`[0.9.8]`-Datierung mit finaler Slice-Commit-Tabelle) und #5
+> (Merge nach `develop` + Tag `v0.9.8`) sind **nicht** Teil dieser
+> Umbrella-Closure. Beide sind milestone-weite Release-Aktionen, die das
+> gesamte 0.9.8 (Parquet **+** S3-Adapter + atomic-preserve-Sub-Slices)
+> abschliessen — nicht parquet-spezifisch. Sie werden beim
+> 0.9.8-Release-Schnitt erledigt und sind dort (Roadmap-0.9.8 /
+> `CHANGELOG.md` `[Unreleased]`) verortet. Die drei verbleibenden Punkte
+> (1–3) sind erfuellt; siehe Closure-Sektion.
 
 ---
 
@@ -642,3 +650,52 @@ Closures wandern direkt nach
 `docs/planning/done/ImpPlan-0.9.8-parquet-S<N>-…md` und
 werden hier per Commit-Tabelle referenziert. Der Umbrella
 selbst bleibt bis Closure (§7) hier liegen.
+
+---
+
+## Closure
+
+> Verschoben nach `done/` am 2026-06-14. Diese Sektion fasst den Endstand
+> zusammen; der Plan-Korpus oben bleibt als historischer Umsetzungs-Kontext
+> erhalten.
+
+### Endstand
+
+Die produktive Parquet-Cut-A-Linie ist vollstaendig geliefert: alle
+Sub-Slices **S0, S0b, S2, S10a, S3, S10b, S3b, S4, S5a, S5b, S6, S7, S8,
+S9a, S9b** sind closed (§3.4-Tabelle, je eigenes Closure-Doc in `done/`),
+inklusive der Folge-Features `--table-order` und der
+S9a-0/S9b-0-Exit-Code-Vertraege. Reader-/Writer-Pfad, Bundle- und
+Single-File-Format, CLI-Wiring (Import + Export), Checkpoint/Resume und die
+Test-Familien stehen produktiv auf `develop`.
+
+### DoD §7 — Endstand
+
+| DoD | Inhalt | Stand |
+| --- | ------ | ----- |
+| 1 | Pre-Impl PI-1…PI-4 (§5) | ✅ |
+| 2 | Alle Sub-Slices S0…S9b closed | ✅ (§3.4) |
+| 3 | Befunde 1–3 geschlossen, Befund 4 → 1.0.0 vertagt | ✅ |
+| ~~4~~ | CHANGELOG-`[0.9.8]`-Datierung | → **herausgenommen** (Release-Level) |
+| ~~5~~ | Merge + Tag `v0.9.8` | → **herausgenommen** (Release-Level) |
+
+### Warum #4 und #5 herausgenommen sind
+
+Die CHANGELOG-`[0.9.8]`-Datierung und der Tag `v0.9.8` schliessen das
+**gesamte** 0.9.8 ab — Parquet **plus** den S3-Adapter (Track abgeschlossen
+2026-06-12, [`object-storage-s3-eval.md`](object-storage-s3-eval.md))
+plus die atomic-preserve-Sub-Slices. Sie sind damit **milestone-weite
+Release-Aktionen**, nicht parquet-spezifische Umbrella-Arbeit. Damit dieser
+Umbrella seinen tatsaechlichen Gegenstand — die Parquet-Cut-A-Code-Linie —
+sauber abschliesst, sind beide Punkte am 2026-06-14 aus der DoD entfernt und
+in die 0.9.8-Release-Closure verschoben (verortet in Roadmap-0.9.8 und der
+`[Unreleased]`-Sektion von `CHANGELOG.md`). In diesem Schritt wird **kein
+Tag** gesetzt.
+
+### Bewusst vertagt (nicht 0.9.8)
+
+- **Hadoop-Footprint-Minimierung** (Befund 4) — per S10a-Snapshot als
+  1.0.0-Input in [`parquet-libraries.md`](parquet-libraries.md) §8.
+- **Native-Image-Cut + Distributions-Cut** (Default-JAR vs.
+  `--parquet`-Variante) + Hadoop-API-Shim — 1.0.0 (§6).
+- **MCP-Spiegelung** des Bundle-/Single-File-Pfads — 1.0.0+ (§6).

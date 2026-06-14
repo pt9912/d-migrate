@@ -1,7 +1,7 @@
 # S6 — CLI-Wiring fuer Import und Export
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S6).
 >
 > Status: Closed (2026-06-07). Sechs Sub-Commits:

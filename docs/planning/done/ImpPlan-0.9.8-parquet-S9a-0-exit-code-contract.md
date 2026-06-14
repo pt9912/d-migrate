@@ -1,7 +1,7 @@
 # S9a-0 — AP12-§9-Exit-Code-Vertrag (Produktiv-Vor-Slice zu S9a)
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S9a).
 >
 > Status: **Closed (2026-06-09)** — S9a-0.a/b/c/d/e durch, direkt auf

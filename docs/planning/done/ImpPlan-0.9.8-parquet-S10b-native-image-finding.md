@@ -1,7 +1,7 @@
 # S10b — Native-Image-Befund (Sondierung)
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S10b / §4.2).
 >
 > Status: Closed (2026-06-06). Reine Befund-Erhebung **kein

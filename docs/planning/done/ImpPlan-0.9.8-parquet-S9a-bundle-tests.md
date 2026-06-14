@@ -1,7 +1,7 @@
 # S9a — Bundle-Test-Familien
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S9a).
 >
 > Status: **Closed (2026-06-09)** — die vier Test-Familien sind direkt

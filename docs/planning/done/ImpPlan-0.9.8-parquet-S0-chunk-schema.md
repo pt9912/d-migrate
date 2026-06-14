@@ -1,7 +1,7 @@
 # S0 — ChunkSchema-Typanlage + Dockerfile-Warmup-Fixup
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S0).
 >
 > Status: Closed (2026-06-06). Erster Implementierungs-Slice
