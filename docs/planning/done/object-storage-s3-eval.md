@@ -1,14 +1,17 @@
 # Entscheidungs-Addendum: S3-Client-Library fuer den Object-Storage-Adapter
 
 > Dokumenttyp: Entscheidungsvorlage (S3-Adapter-Evaluierung) zu
-> [`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md) §8
+> [`object-storage-artifact-store.md`](object-storage-artifact-store.md) §8
 >
-> Status: **Empfehlung (planungsgestuetzt, 2026-06-09)** — Lib-Pick mit
-> Begruendung und Restrisiken. Dies ist der 0.9.8-Eval-Deliverable des
-> Object-Storage-Tracks. Die eigentliche Implementierung folgt als
-> eigener `ImpPlan` in 0.9.8 (2026-06-09 vorgezogen, vormals Phase 3/4;
-> siehe Plan §8/§9); ein Dependency-Lock
-> erfolgt erst nach der empirischen Validierung in §8.
+> Status: **Abgeschlossen / Verdict gelockt (2026-06-14)** — nach `done/`
+> verschoben. Das Validierungs-Gate (Abschnitt 8) ist durch den S3.0-Gate
+> (GO) aufgeloest, und die Empfehlung aus Abschnitt 6 ist im gebauten Modul
+> gelockt: `software.amazon.awssdk:s3` + `url-connection-client`
+> (BOM 2.44.14, Default-Transports per `exclude` raus) in
+> `adapters:driven:storage-s3`. Endstand: Abschnitt 10. Implementierung
+> abgeschlossen 2026-06-12
+> ([`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md),
+> S3.0–S3.6). Vormals „Empfehlung (planungsgestuetzt, 2026-06-09)".
 >
 > **Update (2026-06-09):** MinIO als Fallback verworfen — die
 > Community-Edition ist seit 2026-02-12 archiviert/EOL (§3.2). Fallback
@@ -108,7 +111,7 @@ Retry-Determinismus** — nicht am reinen Funktions-Fit.
   Governance-Risiko des Parent-Projekts (keine aktive Issue-/PR-Review,
   Security-Fixes nur case-by-case). Community-Alternativen-Konsens:
   SeaweedFS/Ceph/Garage. **Im Projekt bereits vollzogen:** die BI-Demo hat
-  MinIO durch SeaweedFS ersetzt ([`bi-demo-compose.md`](../done/bi-demo-compose.md)
+  MinIO durch SeaweedFS ersetzt ([`bi-demo-compose.md`](bi-demo-compose.md)
   §5.3 + Risk #9 RESOLVED).
 - **S3-Kompatibilitaet:** auf S3-kompatible Stores ausgelegt; broad
   kompatibel, aber Sicht eines Vendors auf den S3-Vertrag.
@@ -216,7 +219,7 @@ S3-Multipart ist auf beiden Pfaden verfuegbar (sync `S3Client` bzw.
 
 **MinIO-Client ist kein tragfaehiger Fallback:** das Parent-Projekt ist
 seit 2026-02-12 archiviert/„no longer maintained" (§3.2; vgl.
-[`bi-demo-compose.md`](../done/bi-demo-compose.md) §5.3 + Risk #9, wo
+[`bi-demo-compose.md`](bi-demo-compose.md) §5.3 + Risk #9, wo
 SeaweedFS MinIO im Demo-Stack bereits abgeloest hat), dazu der
 Native-Image-Nachteil. Funktional **koennte** MinIO die Byte-Store-Ports
 erfuellen (Einzelobjekte, Korrektur §2) — die Disqualifikation ist rein
@@ -225,7 +228,7 @@ erfuellen (Einzelobjekte, Korrektur §2) — die Disqualifikation ist rein
 **Korroboration:** die BI-Demo standardisiert ihren S3-Client bereits auf den
 **AWS-Pfad** (`amazon/aws-cli` gegen SeaweedFS via `--endpoint-url`), nachdem
 sie `minio/mc` wegen des CE-Source-Only-Risikos verworfen hat
-([`bi-demo-compose.md`](../done/bi-demo-compose.md) §5.3) — dieselbe
+([`bi-demo-compose.md`](bi-demo-compose.md) §5.3) — dieselbe
 Client-Linie, die dieses Addendum fuer den Adapter empfiehlt.
 
 ---
@@ -239,7 +242,7 @@ Deps direkt im `build.gradle.kts` des neuen Moduls.
 - `software.amazon.awssdk:s3` + `software.amazon.awssdk:url-connection-client`,
   Default-Transports (`netty-nio-client`/`apache-client`) per `exclude` raus.
 - Test: **SeaweedFS** als primaeres IT-Ziel (demo-aligned —
-  [`bi-demo-compose.md`](../done/bi-demo-compose.md) §5.3:
+  [`bi-demo-compose.md`](bi-demo-compose.md) §5.3:
   `chrislusf/seaweedfs:4.31`, `server -s3 -s3.config=…`, S3-API auf Port
   8333, PutObject verlangt eine `s3.config`-Identity). Mangels offiziellem
   Testcontainers-Modul via `GenericContainer` + eigener Wait-Strategy
@@ -291,4 +294,32 @@ Erst nach 1–4 wird die Empfehlung in §6 zum bindenden Lock.
 - [MinIO Maintenance Mode — minio/minio #21714](https://github.com/minio/minio/issues/21714)
 - [MinIO removes management features from Community Edition — Blocks & Files](https://blocksandfiles.com/2025/06/19/minio-removes-management-features-from-basic-community-edition-object-storage-code/)
 - [MinIO in Maintenance Mode: Open Source Alternatives — InfoQ](https://www.infoq.com/news/2025/12/minio-s3-api-alternatives/)
-- Intern: [`bi-demo-compose.md`](../done/bi-demo-compose.md) §5.3 + Risk #9 — SeaweedFS-statt-MinIO-Entscheid + AWS-CLI-Client-Wahl
+- Intern: [`bi-demo-compose.md`](bi-demo-compose.md) §5.3 + Risk #9 — SeaweedFS-statt-MinIO-Entscheid + AWS-CLI-Client-Wahl
+
+---
+
+## 10. Lock-Bestaetigung (2026-06-14)
+
+> Verschoben nach `done/`. Das Verdict aus Abschnitt 6 ist umgesetzt und
+> gelockt; diese Sektion loest das Gate aus Abschnitt 8 auf.
+
+**Gelockte Dependency** (`adapters:driven:storage-s3/build.gradle.kts`):
+`software.amazon.awssdk:s3` + `software.amazon.awssdk:url-connection-client`
+(BOM `awsSdkVersion=2.44.14`), `netty-nio-client` und `apache-client` per
+`exclude` entfernt — exakt die Empfehlung aus Abschnitt 6.
+
+**Gate-Aufloesung (Abschnitt 8) durch den S3.0-Gate (GO) + S3.2–S3.6:**
+
+| Gate-Punkt (Abschnitt 8) | Ergebnis |
+| ------------------------ | -------- |
+| 1. Footprint-Messung | ✅ S3.0-Gate + S3.6-Recheck: **+8,02 MiB** am Release-JAR (innerhalb Budget) |
+| 2. Native-Image-Smoke **+ Body-Streaming** | ◐ Body-Streaming via `url-connection-client` bestaetigt; **Native-Image-Smoke bewusst → 1.0.0 vertagt** (S3.0-Gate; Distributions-Cut) |
+| 3. Grosse-Artefakt-Multipart vs. SeaweedFS | ✅ Multipart-Pfad (inkl. Abort-finally) in den S3.2-Vertragssuiten gegen SeaweedFS geuebt |
+| 4. Idempotenz/Retry + Credentials | ✅ `AlreadyExists`/`Conflict`-Semantik (S3.2/S3.3), Credential-Aufloesung via `ArtifactsConfigLoader` (S3.4a); S3.0-Befund: SDK-Checksums `WHEN_REQUIRED` Pflicht |
+
+**Fazit:** Die Empfehlung aus Abschnitt 6 ist der bindende Lock; nur der
+Native-Image-Recheck bleibt als 1.0.0-Folgearbeit offen (auch in der
+Architekturplan-Closure und im S3-ImpPlan, Abschnitt 5/7, verortet).
+Detail-Closure: [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md);
+Architektur-/Track-Closure:
+[`object-storage-artifact-store.md`](object-storage-artifact-store.md).

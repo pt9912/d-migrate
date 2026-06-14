@@ -501,7 +501,7 @@ Closures).
 | Arch    | ✅ Parquet: Manifest-Format fuer Multi-Table-Exports — produktiv: Bundle-Manifest (S3b) + Single-File-Footer-KV (S4)                                                                                | —      |
 | Docs    | ✅ Parquet: Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope ([`parquet-decision-template.md`](../done/parquet-decision-template.md))                                                                                                         | —      |
 | Arch    | ✅ Object-Storage: Artefakt-/Checkpoint-Pfade inventarisiert — `ArtifactContentStore`/`UploadSegmentStore`/`ArtifactStore`-Ports + File-Impl existieren bereits aus 0.9.6 ([`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md) §3)                           | —      |
-| Arch    | ✅ Object-Storage: S3-Client-Lib evaluiert + Config-/Security-Regeln skizziert + Job-Vertrag-Artifact-Ref-Migration geplant — Verdict **AWS SDK v2 + `url-connection-client`** ([`object-storage-s3-eval.md`](object-storage-s3-eval.md))         | —      |
+| Arch    | ✅ Object-Storage: S3-Client-Lib evaluiert + Config-/Security-Regeln skizziert + Job-Vertrag-Artifact-Ref-Migration geplant — Verdict **AWS SDK v2 + `url-connection-client`** ([`object-storage-s3-eval.md`](../done/object-storage-s3-eval.md))         | —      |
 | Formats | ✅ Object-Storage: S3-Adapter implementiert — Modul `adapters:driven:storage-s3` (`S3ArtifactContentStore` + `S3UploadSegmentStore`), AWS SDK v2 + `url-connection-client`, SeaweedFS-IT + MCP-E2E; `artifacts.store: s3` in der `.d-migrate.yaml`. **Abgeschlossen 2026-06-12** ([`ImpPlan-0.9.8-object-storage-s3.md`](../done/ImpPlan-0.9.8-object-storage-s3.md))         | —      |
 | Demo    | ✅ BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + SeaweedFS (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten           | —      |
 | Demo    | ✅ BI-Demo: Smoke-Script (`examples/bi-demo/scripts/smoke.sh`) fuer Start, Healthcheck und minimale Demo-Kommandos (Reverse, Profiling, Transfer)                                                                         | —      |
@@ -521,7 +521,7 @@ Closures).
 > siehe [`parquet-productive-cut-a.md`](parquet-productive-cut-a.md).
 > BI-Demo ist unter `examples/bi-demo/` geliefert; die Object-Storage-Eval
 > (Reconciliation + Verdict AWS SDK v2) ist abgeschlossen
-> ([`object-storage-s3-eval.md`](object-storage-s3-eval.md)).
+> ([`object-storage-s3-eval.md`](../done/object-storage-s3-eval.md)).
 > **Scope-Erweiterung 2026-06-09:** der S3-**Adapter** (Implementierung)
 > wurde bewusst in 0.9.8 gezogen (vormals Phase 3/4). Damit ist 0.9.8
 > **erst nach** dem S3-Bau + §8-Gate scope-complete; der Tag `v0.9.8`

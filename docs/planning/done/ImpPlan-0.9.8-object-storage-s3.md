@@ -9,7 +9,7 @@
 > Referenzen:
 > [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
 > (Architektur/Reconciliation),
-> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md) (Lib-Verdict +
+> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) (Lib-Verdict +
 > Validierungs-Gate), [`bi-demo-compose.md`](../done/bi-demo-compose.md)
 > (SeaweedFS-Setup).
 
@@ -46,7 +46,7 @@ Testcontainers-IT gegen SeaweedFS.
 | **`UploadSegmentStore`** — `writeSegment` / `listSegments` / `openSegmentRangeRead` / `deleteAllForSession` | **Jedes Segment = ein eigenstaendiges S3-Objekt** unter `upload-sessions/{sessionId}/{segmentIndex}`: `PutObject` je Segment, `GetObject`+`Range` für den Segment-Range-Read, `ListObjectsV2(prefix)`, `DeleteObjects(prefix)`. **Keine** S3-Multipart-Parts. |
 
 > **Eval-Korrektur (vor/mit dem Bau einzucheckenden Commit):**
-> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md) §2 mappt
+> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) §2 mappt
 > `UploadSegmentStore` faelschlich auf S3-Multipart und disqualifiziert
 > MinIO ueber fehlende public Multipart-Primitive (§3.2 + §4-Matrix-Zeile
 > „Port-Fit `UploadSegmentStore`"). Das ist falsch: `openSegmentRangeRead`

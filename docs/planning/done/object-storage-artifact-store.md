@@ -6,7 +6,7 @@
 > Endergebnis fasst die [Closure](#closure)-Sektion zusammen. Der gesamte
 > 0.9.8-relevante Scope ist geliefert: die S3-Adapter-Evaluierung
 > (Abschnitt 8) liegt als
-> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md)
+> [`object-storage-s3-eval.md`](object-storage-s3-eval.md)
 > vor (Verdict: AWS SDK for Java v2 mit `url-connection-client`), und die
 > S3-Implementierung ist mit
 > [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md)
@@ -216,7 +216,7 @@ Das einzig genuin offene Stueck. Diese Evaluierung ist der
 0.9.8 gezogen (hinter dem §8-Gate + eigenem ImpPlan).
 
 > **Erledigt (2026-06-09):** Die Evaluierung liegt als eigenes Addendum
-> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md) vor.
+> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) vor.
 > **Implementierung abgeschlossen (2026-06-12):**
 > [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md)
 > (S3.0–S3.6).
@@ -264,7 +264,7 @@ reproduzierbare Probe-Umgebung fuer die Eval.
 2. ✅ Minimalen Byte-Port entwerfen — `ArtifactContentStore` (0.9.6).
 3. ✅ File-Implementierung als Referenz — `FileBackedArtifactContentStore` (0.9.6).
 4. ✅ S3-kompatible Implementierung evaluieren — Empfehlung AWS SDK v2,
-   siehe [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md);
+   siehe [`object-storage-s3-eval.md`](object-storage-s3-eval.md);
    **Bau abgeschlossen 2026-06-12** (S3.0–S3.6,
    [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md)).
 5. ✅ Konfigurationsschema und Security-Regeln — der Abschnitt-6-Entwurf ist
@@ -328,7 +328,7 @@ inzwischen vollstaendig geliefert.
   (Subprocess); Footprint +8,02 MiB am Release-JAR.
 - Detail-Closure:
   [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md);
-  Verdict: [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md).
+  Verdict: [`object-storage-s3-eval.md`](object-storage-s3-eval.md).
 
 ### Bewusst vertagt (nicht 0.9.8)
 

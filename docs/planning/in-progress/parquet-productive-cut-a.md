@@ -227,7 +227,7 @@ ist 2026-06-09 unter `[Unreleased]` konsolidiert (Headline-`Added`-Eintrag
 + chronologische Tabelle); **noch nicht** auf `[0.9.8]` datiert. Offen
 bleibt damit nur die `[0.9.8]`-Datierung + Tag `v0.9.8` (DoD §7.5) — die
 jetzt **zusaetzlich** auf den 2026-06-09 in 0.9.8 vorgezogenen S3-Adapter
-warten (siehe Roadmap-0.9.8 + [`object-storage-s3-eval.md`](object-storage-s3-eval.md)).
+warten (siehe Roadmap-0.9.8 + [`object-storage-s3-eval.md`](../done/object-storage-s3-eval.md)).
 Tag-Schnitt erst, wenn Parquet **und** S3 drin sind. Befunde aus S9: `BUNDLE_ORDER_*` war Dead-Code
 (→ `--table-order`-Flag), und Single-File-Resume war gebrochen
 (→ Content-Hash-Persistenz-Fix in `0d40fd47`).
