@@ -7,7 +7,7 @@
 > `S3UploadSegmentStore`, reviewt/konvergiert). Aktiv: S3.4 (Wiring + E2E).
 >
 > Referenzen:
-> [`object-storage-artifact-store.md`](../in-progress/object-storage-artifact-store.md)
+> [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
 > (Architektur/Reconciliation),
 > [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md) (Lib-Verdict +
 > Validierungs-Gate), [`bi-demo-compose.md`](../done/bi-demo-compose.md)

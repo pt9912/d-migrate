@@ -500,7 +500,7 @@ Closures).
 | Formats | ✅ Parquet: Importpfad (`ParquetChunkReader`), chunk-weises Streaming und Schema-/Nullability-Erhalt — produktiv in Cut A S3/S7                                                             | —      |
 | Arch    | ✅ Parquet: Manifest-Format fuer Multi-Table-Exports — produktiv: Bundle-Manifest (S3b) + Single-File-Footer-KV (S4)                                                                                | —      |
 | Docs    | ✅ Parquet: Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope ([`parquet-decision-template.md`](../done/parquet-decision-template.md))                                                                                                         | —      |
-| Arch    | ✅ Object-Storage: Artefakt-/Checkpoint-Pfade inventarisiert — `ArtifactContentStore`/`UploadSegmentStore`/`ArtifactStore`-Ports + File-Impl existieren bereits aus 0.9.6 ([`object-storage-artifact-store.md`](object-storage-artifact-store.md) §3)                           | —      |
+| Arch    | ✅ Object-Storage: Artefakt-/Checkpoint-Pfade inventarisiert — `ArtifactContentStore`/`UploadSegmentStore`/`ArtifactStore`-Ports + File-Impl existieren bereits aus 0.9.6 ([`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md) §3)                           | —      |
 | Arch    | ✅ Object-Storage: S3-Client-Lib evaluiert + Config-/Security-Regeln skizziert + Job-Vertrag-Artifact-Ref-Migration geplant — Verdict **AWS SDK v2 + `url-connection-client`** ([`object-storage-s3-eval.md`](object-storage-s3-eval.md))         | —      |
 | Formats | ✅ Object-Storage: S3-Adapter implementiert — Modul `adapters:driven:storage-s3` (`S3ArtifactContentStore` + `S3UploadSegmentStore`), AWS SDK v2 + `url-connection-client`, SeaweedFS-IT + MCP-E2E; `artifacts.store: s3` in der `.d-migrate.yaml`. **Abgeschlossen 2026-06-12** ([`ImpPlan-0.9.8-object-storage-s3.md`](../done/ImpPlan-0.9.8-object-storage-s3.md))         | —      |
 | Demo    | ✅ BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + SeaweedFS (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten           | —      |
@@ -537,7 +537,7 @@ des Scopes (siehe
 `ArtifactStore`-Port mit File-Referenz und S3-kompatibler Evaluierung,
 plus die Migrationsskizze fuer MCP-/REST-/gRPC-Jobvertraege auf
 Artifact-Refs (siehe
-[`object-storage-artifact-store.md`](object-storage-artifact-store.md)).
+[`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md)).
 (3) BI-Demo-Umgebung unter `examples/bi-demo/` zeigt `d-migrate` in einem
 komponierbaren Analytics-Stack mit PostgreSQL, Metabase und SeaweedFS
 (S3-kompatibel) als gemeinsamem Object-Storage-Endpunkt — als

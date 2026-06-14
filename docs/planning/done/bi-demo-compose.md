@@ -69,7 +69,7 @@
 > Basisdemo komplett**. Für vollständige Demo-Story
 >   (`s3://`-Artifakt-Output, Parquet-Schritt) hängen einzelne
 >   Erweiterungen aus §8 an
->   [`object-storage-artifact-store.md`](../in-progress/object-storage-artifact-store.md)
+>   [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
 >   bzw.
 >   [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md);
 >   der MVP-Schnitt (BD.1-BD.5) kommt ohne diese aus.
@@ -80,7 +80,7 @@
 > - [`orchestrator-examples.md`](../next/orchestrator-examples.md)
 > - [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)
 > - [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md)
-> - [`object-storage-artifact-store.md`](../in-progress/object-storage-artifact-store.md)
+> - [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
 > - [The Evolution of Business Intelligence: From Monolithic to Composable Architecture](https://www.pracdata.io/p/the-evolution-of-business-intelligence-stack)
 > - [Open Source Data Engineering Landscape 2025](https://www.pracdata.io/p/open-source-data-engineering-landscape-2025)
 
@@ -643,7 +643,7 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
 Der erste Demo-Schnitt muss noch keine produktive S3-Integration in
 `d-migrate` voraussetzen. Solange der Object-Storage-ArtifactStore noch
 nicht implementiert ist
-([`object-storage-artifact-store.md`](../in-progress/object-storage-artifact-store.md)),
+([`object-storage-artifact-store.md`](object-storage-artifact-store.md)),
 kann das Smoke-Script Artefakte lokal erzeugen und sie mit dem
 `aws s3 cp`-Client (im `aws-tools`-Service, §5.3) in den Demo-Bucket
 kopieren. Sobald `d-migrate` `s3://`-Artefaktziele unterstuetzt, wird
@@ -1340,7 +1340,7 @@ BD.1 (Compose+Healthchecks)
 
 ## 11. Dependencies zu anderen Plaenen
 
-- **[`object-storage-artifact-store.md`](../in-progress/object-storage-artifact-store.md)**:
+- **[`object-storage-artifact-store.md`](object-storage-artifact-store.md)**:
   bringt nativen `s3://`-Artifakt-Output. Solange noch nicht
   geliefert, faellt BD.4 auf den `aws s3 cp`-Zwischenschritt
   zurueck (§5.3). Sobald geliefert, ist ein BD.6-Slice „Direkte
@@ -1401,7 +1401,7 @@ BD.1-BD.5-Scope):
   Folge-Slice in `:hexagon:profiling` (siehe
   [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)).
 - **Direkte `s3://`-Ausgabe aus `d-migrate`** (§11 BD.6). Solange
-  [`object-storage-artifact-store.md`](../in-progress/object-storage-artifact-store.md)
+  [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
   nicht geliefert ist, faellt der BI-Demo-Workflow auf den
   `aws s3 cp`-Zwischenschritt zurueck.
 - **Parquet-Demo gegen SeaweedFS** (§11 BD.7). Haengt an

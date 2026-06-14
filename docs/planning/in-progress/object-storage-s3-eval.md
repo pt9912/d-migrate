@@ -1,7 +1,7 @@
 # Entscheidungs-Addendum: S3-Client-Library fuer den Object-Storage-Adapter
 
 > Dokumenttyp: Entscheidungsvorlage (S3-Adapter-Evaluierung) zu
-> [`object-storage-artifact-store.md`](object-storage-artifact-store.md) §8
+> [`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md) §8
 >
 > Status: **Empfehlung (planungsgestuetzt, 2026-06-09)** — Lib-Pick mit
 > Begruendung und Restrisiken. Dies ist der 0.9.8-Eval-Deliverable des

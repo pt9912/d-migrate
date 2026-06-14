@@ -2,15 +2,19 @@
 
 > Dokumenttyp: Architektur- und Implementierungsplan
 >
-> Status: **Reconciled gegen 0.9.6-Code (2026-06-09)** — vormals
-> „Entwurf (2026-05-01)". Die Byte-/Metadaten-Store-Infrastruktur ist
-> mit dem MCP-Server (0.9.6) bereits ausgeliefert; offen bleibt allein
-> die S3-Adapter-Evaluierung (§8) als 0.9.8-Eval-Deliverable. Diese
-> liegt nun als [`object-storage-s3-eval.md`](object-storage-s3-eval.md)
-> vor (Empfehlung: AWS SDK for Java v2 mit `url-connection-client`,
-> planungsgestuetzt — Dependency-Lock nach empirischer Validierung). Die
-> S3-Implementierung wurde 2026-06-09 in den 0.9.8-Scope vorgezogen
-> (vormals Phase 4), hinter dem §8-Gate + eigenem ImpPlan.
+> Status: **Abgeschlossen (2026-06-14)** — nach `done/` verschoben; das
+> Endergebnis fasst die [Closure](#closure)-Sektion zusammen. Der gesamte
+> 0.9.8-relevante Scope ist geliefert: die S3-Adapter-Evaluierung
+> (Abschnitt 8) liegt als
+> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md)
+> vor (Verdict: AWS SDK for Java v2 mit `url-connection-client`), und die
+> S3-Implementierung ist mit
+> [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md)
+> **abgeschlossen 2026-06-12** (S3.0–S3.6, Footprint +8,02 MiB). Bewusst auf
+> Folge-Milestones vertagt: die Migration des REST-/gRPC-Jobvertrags auf
+> Artifact-Refs (Arbeitspaket 6, Abschnitt 9) → Trigger
+> [`rest-grpc-artifact-ref-inheritance.md`](../open/rest-grpc-artifact-ref-inheritance.md).
+> Vormals „Reconciled gegen 0.9.6-Code (2026-06-09)" / „Entwurf (2026-05-01)".
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`,
 > `spec/job-contract.md`, `spec/ki-mcp.md`, `spec/rest-service.md`,
@@ -87,12 +91,14 @@ Code-Namen.
 | SHA-256-Validierung und Groessenmetadaten | ✅ Teil des Vertrags: `WriteArtifactOutcome.Stored(sha256, sizeBytes)` + `SizeMismatch`/`Conflict`/`AlreadyExists` |
 | TTL/Retention-Metadaten | ✅ `ArtifactStore.deleteExpired`/`deleteExpiredRecords` + `expiresAt` auf dem Record + Quota-Sweeper (0.9.6 Phase F) |
 | Pfad-/Credential-Trennung von Job-IDs | ✅ opake Refs via `ServerResourceUri` (`dmigrate://tenants/{tenant}/artifacts/{id}`); keine lokalen Pfade nach aussen |
-| **S3-kompatible Implementierung** | ⏳ **fehlt** — nur File-Backed vorhanden; keine AWS-SDK-/MinIO-Dependency im Repo |
-| **MCP/REST/gRPC-Jobvertrag auf Artifact-Refs** | ◐ MCP nutzt `ServerResourceUri`-Refs bereits; REST/gRPC sind selbst noch ungebaut (1.2.0/1.1.8) — Migration ist dort mitzudenken, nicht hier zu erzwingen |
+| **S3-kompatible Implementierung** | ✅ **geliefert (2026-06-12)** — Modul `adapters:driven:storage-s3` (`S3ArtifactContentStore`/`S3UploadSegmentStore`), AWS SDK v2 + `url-connection-client`, SeaweedFS-Vertragssuiten gruen; Footprint +8,02 MiB ([`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md)) |
+| **MCP/REST/gRPC-Jobvertrag auf Artifact-Refs** | ◐ MCP nutzt `ServerResourceUri`-Refs bereits; REST/gRPC sind selbst noch ungebaut (1.2.0/1.1.8) — Migration ist dort mitzudenken, nicht hier zu erzwingen. Vertagt als Trigger [`rest-grpc-artifact-ref-inheritance.md`](../open/rest-grpc-artifact-ref-inheritance.md) |
 
 **Fazit:** Der Object-Storage-Track ist als *Infrastruktur* zu ~85 %
-durch 0.9.6 vorweggenommen. Das einzig genuin offene 0.9.8-relevante
-Stueck ist die **S3-Adapter-Evaluierung** (§8).
+durch 0.9.6 vorweggenommen. Das zuletzt offene 0.9.8-Stueck —
+S3-Adapter-Evaluierung (Abschnitt 8) **und** -Implementierung — ist seit
+2026-06-12 geliefert; das Endergebnis fasst die [Closure](#closure)-Sektion
+zusammen.
 
 ---
 
@@ -195,7 +201,7 @@ Datenbankverbindungen (0.9.1-Security-Haertung).
 | Kriterium | Stand |
 | --------- | ----- |
 | Port trennt fachliche Artifact-IDs von Speicherpfaden | ✅ `ServerResourceUri` opak/tenant-scoped |
-| File- und S3-Impl koennen denselben Vertrag erfuellen | ◐ Vertrag (`ArtifactContentStore`) steht; S3-Impl muss ihn noch erfuellen |
+| File- und S3-Impl koennen denselben Vertrag erfuellen | ✅ Vertrag (`ArtifactContentStore`) steht; S3-Impl erfuellt ihn — Vertragssuiten S3.2/S3.3 gegen SeaweedFS gruen |
 | Grosse Artefakte streamend lesbar/schreibbar | ✅ `InputStream`-basiert + `openRangeRead` + Multipart |
 | SHA-256-Pruefung Teil des Vertrags, nicht nur CLI-Detail | ✅ `WriteArtifactOutcome.Stored.sha256` + `Conflict` |
 | Plan klaert Versionierung von Checkpoints/Reports | ◐ Reports/Exports via `ArtifactKind`; Checkpoints bewusst separat (§5.2/§10) |
@@ -210,7 +216,10 @@ Das einzig genuin offene Stueck. Diese Evaluierung ist der
 0.9.8 gezogen (hinter dem §8-Gate + eigenem ImpPlan).
 
 > **Erledigt (2026-06-09):** Die Evaluierung liegt als eigenes Addendum
-> [`object-storage-s3-eval.md`](object-storage-s3-eval.md) vor.
+> [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md) vor.
+> **Implementierung abgeschlossen (2026-06-12):**
+> [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md)
+> (S3.0–S3.6).
 > **Empfehlung: AWS SDK for Java v2 (`software.amazon.awssdk:s3`) mit
 > `url-connection-client`** (Native-Image-first-class, Netty vermeidbar).
 > Der Fallback bleibt **innerhalb AWS SDK v2** (Transport-Wechsel
@@ -243,7 +252,7 @@ Die im Addendum bewerteten Achsen:
 
 **Liefergegenstand der Evaluierung:** ein Entscheidungs-Addendum (Lib-Pick +
 Begruendung + Risiken), analog
-[`parquet-decision-template.md`](../done/parquet-decision-template.md). Die
+[`parquet-decision-template.md`](parquet-decision-template.md). Die
 BI-Demo (`examples/bi-demo/`, SeaweedFS als S3-Ziel) liefert eine
 reproduzierbare Probe-Umgebung fuer die Eval.
 
@@ -255,12 +264,16 @@ reproduzierbare Probe-Umgebung fuer die Eval.
 2. ✅ Minimalen Byte-Port entwerfen — `ArtifactContentStore` (0.9.6).
 3. ✅ File-Implementierung als Referenz — `FileBackedArtifactContentStore` (0.9.6).
 4. ✅ S3-kompatible Implementierung evaluieren — Empfehlung AWS SDK v2,
-   siehe [`object-storage-s3-eval.md`](object-storage-s3-eval.md);
-   Bau 2026-06-09 in 0.9.8 vorgezogen, hinter §8-Gate + eigenem ImpPlan.
-5. ◐ Konfigurationsschema und Security-Regeln skizzieren — §6 (Entwurf steht).
-6. ⏳ Migration des MCP-/REST-/gRPC-Jobvertrags auf Artifact-Refs planen —
-   MCP nutzt Refs bereits; REST (1.2.0) und gRPC (1.1.8) erben das Modell beim
-   Bau dieser Services.
+   siehe [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md);
+   **Bau abgeschlossen 2026-06-12** (S3.0–S3.6,
+   [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md)).
+5. ✅ Konfigurationsschema und Security-Regeln — der Abschnitt-6-Entwurf ist
+   produktiv umgesetzt als `ArtifactStorageConfig` + `ArtifactsConfigLoader`
+   (S3.4a, snakeyaml); Credential-Scrubbing analog DB-Verbindungen aktiv.
+6. ⏳ **Vertagt (Folge-Milestones).** Migration des REST-/gRPC-Jobvertrags auf
+   Artifact-Refs — MCP nutzt Refs bereits; REST (1.2.0) und gRPC (1.1.8) erben
+   das Modell beim Bau dieser Services. Trigger:
+   [`rest-grpc-artifact-ref-inheritance.md`](../open/rest-grpc-artifact-ref-inheritance.md).
 
 ---
 
@@ -277,3 +290,55 @@ reproduzierbare Probe-Umgebung fuer die Eval.
 - Checkpoints brauchen staerkere Konsistenzannahmen als normale Reports.
   Deshalb bleiben sie bewusst auf dem separaten `CheckpointStore` und werden
   erst in einem eigenen Folge-Slice bewertet.
+
+---
+
+## Closure
+
+> Verschoben nach `done/` am 2026-06-14. Diese Sektion fasst den Endstand
+> zusammen; der Plan-Korpus oben bleibt als historischer Architektur-/
+> Reconciliation-Kontext erhalten.
+
+### Was dieser Plan erreicht hat
+
+Der Plan hat 2026-06-09 den urspruenglichen „ArtifactStore"-Entwurf
+(2026-05-01) gegen den real ausgelieferten 0.9.6-Code abgeglichen
+(Namens-Reconciliation, Abschnitt 3) und den verbleibenden offenen Scope
+auf **einen einzigen** Punkt eingeengt: den S3-Adapter. Dieser ist
+inzwischen vollstaendig geliefert.
+
+### Endstand der Arbeitspakete (Abschnitt 9)
+
+| AP | Gegenstand | Endstand |
+| -- | ---------- | -------- |
+| 1 | Artefakt-/Checkpoint-Pfade inventarisiert | ✅ 0.9.6 (Abschnitt 3) |
+| 2 | Byte-Port `ArtifactContentStore` | ✅ 0.9.6 |
+| 3 | File-Referenz-Impl | ✅ 0.9.6 |
+| 4 | S3-Impl evaluieren **+ bauen** | ✅ Verdict AWS SDK v2; Bau abgeschlossen 2026-06-12 (S3.0–S3.6) |
+| 5 | Config-Schema + Security | ✅ `ArtifactStorageConfig`/`ArtifactsConfigLoader` (S3.4a) |
+| 6 | REST/gRPC-Jobvertrag auf Artifact-Refs | ⏳ **vertagt** → Folge-Milestones (siehe unten) |
+
+### Geliefert (S3-Adapter, 2026-06-12)
+
+- Modul `adapters:driven:storage-s3` mit `S3ArtifactContentStore` +
+  `S3UploadSegmentStore` (AWS SDK for Java v2 + `url-connection-client`).
+- `artifacts.store: s3`-Konfiguration (Abschnitt-6-Schema) inkl.
+  MCP-Wiring und Credential-Scrubbing.
+- Vertragssuiten gegen SeaweedFS (Testcontainers) + MCP-Protokoll-E2E
+  (Subprocess); Footprint +8,02 MiB am Release-JAR.
+- Detail-Closure:
+  [`ImpPlan-0.9.8-object-storage-s3.md`](ImpPlan-0.9.8-object-storage-s3.md);
+  Verdict: [`object-storage-s3-eval.md`](../in-progress/object-storage-s3-eval.md).
+
+### Bewusst vertagt (nicht 0.9.8)
+
+- **REST-/gRPC-Jobvertrag auf Artifact-Refs (AP 6).** MCP nutzt die opaken
+  `ServerResourceUri`-Refs bereits; REST (1.2.0) und gRPC (1.1.8) existieren
+  noch nicht und erben das Modell erst beim Bau dieser Services. Diese Auflage
+  ist innerhalb 0.9.8 nicht schliessbar und als eigener Trigger festgehalten:
+  [`rest-grpc-artifact-ref-inheritance.md`](../open/rest-grpc-artifact-ref-inheritance.md).
+- **Weitere S3-Folgearbeiten** (Prefix-Sweep fuer Retention,
+  Native-Image-Recheck im 1.0.0-Cut, Metadaten-Persistenz) sind im S3-ImpPlan
+  (Abschnitt 5/7) verortet und ebenfalls nicht Teil von 0.9.8.
+- **CheckpointStore-Migration** bleibt wie in Abschnitt 5.2/10 begruendet ein
+  separater Folge-Slice.
