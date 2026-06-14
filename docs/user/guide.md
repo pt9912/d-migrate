@@ -719,6 +719,11 @@ unten:
 - SQLite: `BEGIN IMMEDIATE` (DB-weiter Write-Lock; xerial-spezifischer
   Lock-Wait per `setQueryTimeout`).
 
+Die maximale Lock-Wartezeit ist seit 0.9.8 über `--lock-timeout-ms <ms>`
+einstellbar (gültig 10–60000 ms). Läuft der Lock-Erwerb in den Timeout,
+bricht der Lauf kontrolliert mit einem `LockTimeout`-Ergebnis ab statt
+unbegrenzt zu warten.
+
 SQLite-Voraussetzung (`helper_table`-Modus):
 
 ```bash
