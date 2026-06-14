@@ -2,7 +2,7 @@
 
 > Dokumenttyp: Architektur- und Umsetzungsplan  
 > Status: Entwurf (2026-05-15, Review-Update 2026-06-03)  
-> Roadmap-Slot: Kandidat für 1.x (nicht Teil 0.9.x-Milestones)  
+> Roadmap-Slot: 1.1.0 (Phase 4 — entschieden 2026-06-14; nicht Teil 0.9.x-Milestones)  
 > Referenzen: `spec/architecture.md`, `spec/cli-spec.md`, `spec/connection-config-spec.md`, `docs/planning/in-progress/roadmap.md`
 
 ## Kurzfassung

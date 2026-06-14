@@ -623,6 +623,22 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 **Ziel**: Feature-Completeness und Ökosystem-Wachstum
 
+### Milestone 1.1.0 — Trino-Federation (read-first)
+
+| Bereich | Aufgabe                                                                                                                          | LF-Ref |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Adapter | Neues Modul `adapters:driven:driver-trino`: `DatabaseDialect.TRINO` + Alias `trino`, URL `trino://user@host:port/catalog/schema` | —      |
+| Adapter | Sealed `DialectConnectionContext` mit `TrinoConnectionContext` (Katalog, `httpScheme`, Session-Allowlist, Maskierung) — keine nullable `trino*`-Felder am generischen Port | —      |
+| Read    | Read-only Pipelines: `schema reverse`, `schema compare` (read-only Ziel-Pfad), `data export`, `data transfer` (nur Source); Phase 1 ist write-frei | —      |
+| Profil  | `adapters:driven:driver-trino-profiling` (fest verkabelt, Source-only) → `data profile --source trino://…`                       | —      |
+| Test    | `test:integration-trino` Smoke gegen Testcontainers (Tranche 2; Vollausbau Phase 2)                                              | —      |
+
+**Ergebnis**: d-migrate nutzt Trino als read-first Federation-Layer
+(Reverse, Compare, Export, Profiling über heterogene Kataloge) — **nicht**
+als OLTP-Migrationspfad. Schreibpfade, Transaktions-/MERGE-Semantik und
+`schema generate` bleiben ausserhalb Phase 1 (spaetere Phasen). Details und
+Tranchen-Schnitt: [`trino.md`](../next/trino.md).
+
 ### Milestone 1.1.8 — gRPC-API
 
 | Bereich | Aufgabe                                                                          | LF-Ref |
