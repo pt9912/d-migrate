@@ -13,10 +13,12 @@ import dev.dmigrate.streaming.checkpoint.CheckpointReference
 import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayInputStream
 import java.nio.charset.Charset
+import java.nio.file.Files
 import java.nio.file.Path
 
 class DataImportHelpersTest : FunSpec({
@@ -57,6 +59,7 @@ class DataImportHelpersTest : FunSpec({
         DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.json")) shouldBe "json"
         DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.yaml")) shouldBe "yaml"
         DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.csv")) shouldBe "csv"
+        DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.parquet")) shouldBe "parquet"
     }
 
     test("resolveFormat reports missing stdin format") {
@@ -73,6 +76,167 @@ class DataImportHelpersTest : FunSpec({
         stderr.single() shouldContain "--format is required"
     }
 
+    test("resolveFormat error message lists parquet as a supported format") {
+        val stderr = mutableListOf<String>()
+
+        val format = DataImportHelpers.resolveFormat(
+            request(source = "/tmp/no-ext"),
+            isStdin = false,
+            sourcePath = Path.of("/tmp/no-ext"),
+            stderr = { stderr += it },
+        )
+
+        format shouldBe null
+        stderr.single() shouldContain "json, yaml, csv, or parquet"
+    }
+
+    test("resolveFormat infers parquet from .parquet extension") {
+        val stderr = mutableListOf<String>()
+
+        val format = DataImportHelpers.resolveFormat(
+            request(source = "/tmp/users.parquet"),
+            isStdin = false,
+            sourcePath = Path.of("/tmp/users.parquet"),
+            stderr = { stderr += it },
+        )
+
+        format shouldBe dev.dmigrate.format.data.DataExportFormat.PARQUET
+        stderr.shouldBeEmpty()
+    }
+
+    test("resolveFormat infers parquet from directory with bundle-shaped manifest.yaml") {
+        val stderr = mutableListOf<String>()
+        val bundleDir = Files.createTempDirectory("parquet-bundle-")
+        try {
+            // Minimal bundle manifest with the two markers required by the
+            // false-positive-resistant sniffer (formatVersion + tables).
+            Files.writeString(
+                bundleDir.resolve("manifest.yaml"),
+                """
+                formatVersion: '1.0'
+                producer: d-migrate
+                tables:
+                  - table: users
+                    file: users.parquet
+                """.trimIndent()
+            )
+
+            val format = DataImportHelpers.resolveFormat(
+                request(source = bundleDir.toString()),
+                isStdin = false,
+                sourcePath = bundleDir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe dev.dmigrate.format.data.DataExportFormat.PARQUET
+            stderr.shouldBeEmpty()
+        } finally {
+            bundleDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("resolveFormat does not infer parquet from directory with non-parquet manifest.yaml (Helm-style)") {
+        val stderr = mutableListOf<String>()
+        val helmDir = Files.createTempDirectory("helm-like-")
+        try {
+            // Stray manifest.yaml without the bundle marker fields.
+            Files.writeString(
+                helmDir.resolve("manifest.yaml"),
+                "apiVersion: v2\nname: my-chart\nversion: 0.1.0\n"
+            )
+
+            val format = DataImportHelpers.resolveFormat(
+                request(source = helmDir.toString()),
+                isStdin = false,
+                sourcePath = helmDir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe null
+            stderr.single() shouldContain "Cannot detect format"
+        } finally {
+            helmDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("resolveFormat does not infer parquet from directory with empty manifest.yaml") {
+        val stderr = mutableListOf<String>()
+        val dir = Files.createTempDirectory("empty-manifest-")
+        try {
+            Files.writeString(dir.resolve("manifest.yaml"), "")
+
+            val format = DataImportHelpers.resolveFormat(
+                request(source = dir.toString()),
+                isStdin = false,
+                sourcePath = dir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe null
+            stderr.single() shouldContain "Cannot detect format"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("resolveFormat does not infer parquet from directory without manifest.yaml") {
+        val stderr = mutableListOf<String>()
+        val plainDir = Files.createTempDirectory("plain-dir-")
+        try {
+            val format = DataImportHelpers.resolveFormat(
+                request(source = plainDir.toString()),
+                isStdin = false,
+                sourcePath = plainDir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe null
+            stderr.single() shouldContain "Cannot detect format"
+        } finally {
+            plainDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("validateFormatPathRequirements rejects parquet with stdin source") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateFormatPathRequirements(
+            format = dev.dmigrate.format.data.DataExportFormat.PARQUET,
+            isStdin = true,
+            stderr = stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "stdin"
+        stderr.single() shouldContain "parquet"
+    }
+
+    test("validateFormatPathRequirements passes for parquet with a path source") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateFormatPathRequirements(
+            format = dev.dmigrate.format.data.DataExportFormat.PARQUET,
+            isStdin = false,
+            stderr = stderr::add,
+        )
+
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
+    test("validateFormatPathRequirements passes for non-parquet stdin source") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateFormatPathRequirements(
+            format = dev.dmigrate.format.data.DataExportFormat.JSON,
+            isStdin = true,
+            stderr = stderr::add,
+        )
+
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
     test("validateCliFlags rejects conflicting table selectors") {
         val stderr = mutableListOf<String>()
 
@@ -83,6 +247,101 @@ class DataImportHelpersTest : FunSpec({
 
         exit shouldBe 2
         stderr.single() shouldContain "mutually exclusive"
+    }
+
+    test("validateCliFlags rejects --table combined with --table-order") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request(table = "users").copy(tableOrder = listOf("users", "orders")),
+            stderr::add,
+        )
+        exit shouldBe 2
+        stderr.single() shouldContain "--table and --table-order are mutually exclusive"
+    }
+
+    test("validateCliFlags rejects --table-order on stdin import") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request(source = "-", table = null).copy(tableOrder = listOf("users", "orders")),
+            stderr::add,
+        )
+        exit shouldBe 2
+        stderr.single() shouldContain "--table-order is not supported for stdin"
+    }
+
+    test("validateCliFlags accepts --table-order with valid identifiers on directory source") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request(source = "/tmp/bundle", table = null).copy(tableOrder = listOf("public.users", "orders")),
+            stderr::add,
+        )
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
+    test("validateCliFlags rejects --no-checkpoint combined with --resume") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(resume = "run-123", noCheckpoint = true),
+            stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "--no-checkpoint and --resume are mutually exclusive"
+    }
+
+    test("validateCliFlags accepts --no-checkpoint alone") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(noCheckpoint = true),
+            stderr::add,
+        )
+
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
+    test("validateCliFlags rejects --no-checkpoint combined with --checkpoint-dir") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(noCheckpoint = true, checkpointDir = Path.of("/tmp/dummy")),
+            stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "--no-checkpoint and --checkpoint-dir are mutually exclusive"
+    }
+
+    test("resolveImportInput allows missing --table for Parquet single-file (sentinel placeholder)") {
+        val sourceFile = Path.of("/tmp/users.parquet")
+
+        val input = DataImportHelpers.resolveImportInput(
+            request(table = null, format = "parquet", source = sourceFile.toString()),
+            isStdin = false,
+            sourcePath = sourceFile,
+            stdinProvider = { ByteArrayInputStream("".toByteArray()) },
+            format = dev.dmigrate.format.data.DataExportFormat.PARQUET,
+        )
+
+        input shouldBe ImportInput.SingleFile(UNRESOLVED_PARQUET_TABLE_SENTINEL, sourceFile)
+    }
+
+    test("resolveImportInput keeps --table for non-Parquet single-file") {
+        val sourceFile = Path.of("/tmp/users.json")
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+            DataImportHelpers.resolveImportInput(
+                request(table = null, format = "json", source = sourceFile.toString()),
+                isStdin = false,
+                sourcePath = sourceFile,
+                stdinProvider = { ByteArrayInputStream("".toByteArray()) },
+                format = dev.dmigrate.format.data.DataExportFormat.JSON,
+            )
+        }
+        ex.message!! shouldContain "--table is required when importing from a single file"
+        ex.message!! shouldContain "not required for --format parquet"
     }
 
     test("validateCliFlags rejects resume on stdin import") {
@@ -104,7 +363,7 @@ class DataImportHelpersTest : FunSpec({
             request(schema = Path.of("/tmp/schema.yaml")),
             ImportInput.SingleFile("users", Path.of("/tmp/users.json")),
             format = dev.dmigrate.format.data.DataExportFormat.JSON,
-            schemaPreflight = { _, _, _ -> throw ImportPreflightException("schema mismatch") },
+            schemaPreflight = { _, _, _, _ -> throw ImportPreflightException("schema mismatch") },
             stderr = stderr::add,
         )
 
@@ -344,6 +603,81 @@ class DataImportHelpersTest : FunSpec({
             code = 5,
             message = "Error: Post-import finalization failed for table 'users': trigger re-enable failed. " +
                 "Data was committed - manual post-import fix may be needed.",
+        )
+    }
+
+    test("assessCompletion emits BUNDLE_TABLE_IMPORT_FAILED for parquet-bundle per-table error (S9a-0.d)") {
+        val assessment = ImportCompletionSupport.assessCompletion(
+            ImportResult(
+                tables = listOf(
+                    TableImportSummary(
+                        table = "orders",
+                        rowsInserted = 0,
+                        rowsUpdated = 0,
+                        rowsSkipped = 0,
+                        rowsUnknown = 0,
+                        rowsFailed = 1,
+                        chunkFailures = emptyList(),
+                        sequenceAdjustments = emptyList(),
+                        targetColumns = emptyList(),
+                        triggerMode = TriggerMode.FIRE,
+                        error = "FK violation",
+                        durationMs = 1,
+                    )
+                ),
+                totalRowsInserted = 0,
+                totalRowsUpdated = 0,
+                totalRowsSkipped = 0,
+                totalRowsUnknown = 0,
+                totalRowsFailed = 1,
+                durationMs = 1,
+            ),
+            isParquetBundle = true,
+        )
+
+        assessment shouldBe ImportCompletionAssessment.Exit(
+            code = 5,
+            message = "Error: BUNDLE_TABLE_IMPORT_FAILED: table='orders' cause='FK violation'",
+        )
+    }
+
+    test("assessCompletion emits BUNDLE_TABLE_IMPORT_FAILED for parquet-bundle failed finish (S9a-0.d)") {
+        val assessment = ImportCompletionSupport.assessCompletion(
+            ImportResult(
+                tables = listOf(
+                    TableImportSummary(
+                        table = "users",
+                        rowsInserted = 10,
+                        rowsUpdated = 0,
+                        rowsSkipped = 0,
+                        rowsUnknown = 0,
+                        rowsFailed = 0,
+                        chunkFailures = emptyList(),
+                        sequenceAdjustments = emptyList(),
+                        targetColumns = emptyList(),
+                        triggerMode = TriggerMode.FIRE,
+                        failedFinish = FailedFinishInfo(
+                            adjustments = emptyList(),
+                            causeMessage = "trigger re-enable failed",
+                            causeClass = "SQLException",
+                        ),
+                        durationMs = 1,
+                    )
+                ),
+                totalRowsInserted = 10,
+                totalRowsUpdated = 0,
+                totalRowsSkipped = 0,
+                totalRowsUnknown = 0,
+                totalRowsFailed = 0,
+                durationMs = 1,
+            ),
+            isParquetBundle = true,
+        )
+
+        assessment shouldBe ImportCompletionAssessment.Exit(
+            code = 5,
+            message = "Error: BUNDLE_TABLE_IMPORT_FAILED: table='users' cause='trigger re-enable failed' " +
+                "(post-import finalization; data was committed - manual fix may be needed)",
         )
     }
 

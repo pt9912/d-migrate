@@ -51,6 +51,34 @@ sealed class AtomicSequencePreserveResult {
      * diagnostic message.
      */
     data class Failed(val ref: SequenceObjectRef, val cause: Throwable) : AtomicSequencePreserveResult()
+
+    /**
+     * Service-Mode Sub-Slice E (2026-06-02): caller-requested
+     * cancellation observed via the optional
+     * [dev.dmigrate.core.cancel.CancellationToken] parameter of
+     * [AtomicSequencePreserveExecutor.execute]. The executor checks
+     * the token at three points: (a) pre-`BEGIN`, (b) post-probe /
+     * pre-protected-operations, (c) post-protected /
+     * pre-restore. On any positive check the transaction is rolled
+     * back so the dialect's lock is released (PG advisory-xact,
+     * MySQL row-lock, SQLite RESERVED).
+     *
+     * [refs] enumerates the sequences the executor was about to
+     * touch (in the canonical sort order). [reason] mirrors
+     * [dev.dmigrate.core.cancel.CancellationToken.cancellationReason]
+     * if the token carried one.
+     *
+     * CLI path: `SchemaMigrateRunner` defaults to
+     * `CancellationToken.none()`, so `Cancelled` is unreachable in
+     * the CLI today. The Service-Mode composition roots (Sub-Slice F
+     * + REST/gRPC follow-ups) thread a live token from the
+     * request-cancellation channel (MCP `job_cancel`, gRPC
+     * cancellation, REST disconnect-detect).
+     */
+    data class Cancelled(
+        val refs: List<SequenceObjectRef>,
+        val reason: String?,
+    ) : AtomicSequencePreserveResult()
 }
 
 /**

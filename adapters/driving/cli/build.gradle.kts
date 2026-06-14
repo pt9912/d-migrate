@@ -3,7 +3,6 @@ import org.gradle.api.GradleException
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
-import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.File
 import java.security.MessageDigest
 
@@ -50,6 +49,11 @@ dependencies {
     implementation(project(":adapters:driven:driver-sqlite"))
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:formats"))
+    // Parquet Cut A S6: CLI wires ParquetSeekableDataChunkReaderFactory into
+    // StreamingImporter and ParquetChunkWriterFactory into the export
+    // composite (AP12 §5.1, §5.2). CLI is the production consumer of
+    // Parquet; MCP stays parquet-free until a dedicated milestone.
+    implementation(project(":adapters:driven:formats-parquet"))
     implementation(project(":adapters:driven:integrations"))
     // LF-012 / LN-011 / LN-017 / LN-027: persistent MCP server-state adapters for production
     // metadata (IdempotencyStore, JobStore, JobStartTransaction, Quota).
@@ -67,6 +71,10 @@ dependencies {
     // uploads (`FileBackedUploadSegmentStore`) and artefact content
     // (`FileBackedArtifactContentStore`) under the resolved state dir.
     implementation(project(":adapters:driven:storage-file"))
+    // ImpPlan-0.9.8-object-storage-s3 S3.4b: `artifacts.store: s3` in der
+    // `.d-migrate.yaml` selektiert die S3-Byte-Stores im MCP-Wiring
+    // (ArtifactsConfigLoader + S3ClientFactory + die beiden S3-Stores).
+    implementation(project(":adapters:driven:storage-s3"))
     // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default metadata stores still come from
     // `:hexagon:ports-common` testFixtures, while `server.state.*`
     // opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.
@@ -83,13 +91,6 @@ dependencies {
     // ausgelagert (Phase C des Specs-Move).
 }
 
-tasks.named<ProcessResources>("processResources") {
-    filteringCharset = "UTF-8"
-    filesMatching("dmigrate-version.properties") {
-        expand("projectVersion" to project.version.toString())
-    }
-}
-
 tasks.named<Zip>("distZip") {
     archiveFileName.set(releaseZipName)
 }
@@ -100,6 +101,11 @@ tasks.named<Tar>("distTar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveFileName.set(releaseJarName)
+    // Parquet/Hadoop-Transitive bringen den Fat-Jar ueber das 65535-
+    // Entries-Limit des klassischen ZIP-Headers. Zip64 ist von JDK 7+
+    // out-of-the-box lesbar; kein Kompat-Risiko fuer unsere
+    // Java-17-Min-Baseline.
+    isZip64 = true
     manifest {
         attributes["Main-Class"] = application.mainClass.get()
     }

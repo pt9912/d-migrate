@@ -111,20 +111,22 @@ class PortsCommonTest : FunSpec({
 
     // ── DataExportFormat enum ─────────────────────────────────────────
 
-    test("DataExportFormat has three entries") {
-        DataExportFormat.entries.map { it.name } shouldBe listOf("JSON", "YAML", "CSV")
+    test("DataExportFormat has four entries") {
+        DataExportFormat.entries.map { it.name } shouldBe listOf("JSON", "YAML", "CSV", "PARQUET")
     }
 
     test("DataExportFormat valueOf round-trips") {
         DataExportFormat.valueOf("JSON") shouldBe DataExportFormat.JSON
         DataExportFormat.valueOf("YAML") shouldBe DataExportFormat.YAML
         DataExportFormat.valueOf("CSV") shouldBe DataExportFormat.CSV
+        DataExportFormat.valueOf("PARQUET") shouldBe DataExportFormat.PARQUET
     }
 
     test("DataExportFormat cliName properties") {
         DataExportFormat.JSON.cliName shouldBe "json"
         DataExportFormat.YAML.cliName shouldBe "yaml"
         DataExportFormat.CSV.cliName shouldBe "csv"
+        DataExportFormat.PARQUET.cliName shouldBe "parquet"
     }
 
     test("DataExportFormat fileExtensions properties") {

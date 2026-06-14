@@ -19,11 +19,23 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-mysql"))
     testImplementation(project(":adapters:driven:driver-sqlite"))
     testImplementation(project(":adapters:driven:formats"))
+    // S7-Review-Fix Finding 10: erlaubt dem DataParquetRoundTripE2EPostgresTest,
+    // den Footer-KV der exportierten Parquet-Datei via
+    // ParquetSingleFileManifestReader direkt zu inspizieren.
+    testImplementation(project(":adapters:driven:formats-parquet"))
     testImplementation(project(":adapters:driven:integrations"))
     testImplementation(project(":adapters:driven:persistence-jdbc"))
     testImplementation(project(":adapters:driven:streaming"))
     testImplementation(project(":adapters:driven:audit-logging"))
     testImplementation(project(":adapters:driven:storage-file"))
+    // S3.4c: MCP-Protokoll-E2E mit `artifacts.store: s3` gegen SeaweedFS —
+    // S3ClientFactory/S3StorageConfig fuer Bucket-Bootstrap + Asserts,
+    // testFixtures liefern das SeaweedFS-Container-Setup.
+    testImplementation(project(":adapters:driven:storage-s3"))
+    testImplementation(testFixtures(project(":adapters:driven:storage-s3")))
+    testImplementation(platform("software.amazon.awssdk:bom:${rootProject.properties["awsSdkVersion"]}"))
+    testImplementation("software.amazon.awssdk:s3")
+    testImplementation("software.amazon.awssdk:url-connection-client")
     testImplementation(project(":adapters:driven:connection-config"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 

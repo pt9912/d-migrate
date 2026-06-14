@@ -1,9 +1,11 @@
 package dev.dmigrate.format.report
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.driver.*
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Path
@@ -16,6 +18,15 @@ class TransformationReportWriterTest : FunSpec({
     fun schema(name: String = "Test", version: String = "1.0") =
         SchemaDefinition(name = name, version = version)
 
+    // Silent-Fallback-Guard: pinnt, dass :hexagon:core's
+    // dmigrate-version.properties auf dem formats-test-Classpath
+    // landet. Ohne diesen Guard würden die `generator:`-Assertions
+    // beide Seiten gegen denselben Singleton vergleichen und einen
+    // Resource-Klassenpfad-Bruch nicht bemerken.
+    test("VersionInfo.PRODUCT_VERSION resolves on the formats classpath") {
+        VersionInfo.PRODUCT_VERSION shouldNotBe "unknown"
+    }
+
     test("report contains source and target info") {
         val result = DdlResult(
             statements = listOf(DdlStatement("CREATE TABLE t (id INT);")),
@@ -26,7 +37,7 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "version: \"2.0\""
         report shouldContain "file: \"schema.yaml\""
         report shouldContain "dialect: postgresql"
-        report shouldContain "generator: \"d-migrate 0.9.7\""
+        report shouldContain "generator: \"d-migrate ${VersionInfo.PRODUCT_VERSION}\""
     }
 
     test("report uses supplied generatedAt timestamp") {
@@ -236,7 +247,7 @@ class TransformationReportWriterTest : FunSpec({
             mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.ACTION_REQUIRED,
         )
         report shouldContain "mysql_named_sequences: action_required"
-        report shouldContain "generator: \"d-migrate 0.9.7\""
+        report shouldContain "generator: \"d-migrate ${VersionInfo.PRODUCT_VERSION}\""
     }
 
     test("report without mysqlNamedSequenceMode omits field (postgresql)") {

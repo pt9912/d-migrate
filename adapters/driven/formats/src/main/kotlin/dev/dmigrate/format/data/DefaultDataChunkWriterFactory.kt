@@ -24,5 +24,16 @@ class DefaultDataChunkWriterFactory(
         DataExportFormat.JSON -> JsonChunkWriter(output, options, warningSink)
         DataExportFormat.YAML -> YamlChunkWriter(output, options, warningSink)
         DataExportFormat.CSV -> CsvChunkWriter(output, options, warningSink)
+        // S3 Contract-Branch (Parquet Cut A): dauerhafte Domain-
+        // Aussage, kein Stopgap. Der DefaultData…Factory bleibt
+        // Hadoop-/Parquet-frei (AP12 §5.2); im CLI-Wiring (S6)
+        // wird Parquet ueber den CompositeDataChunkWriterFactory
+        // an die ParquetChunkWriterFactory aus
+        // adapters:driven:formats-parquet geroutet. Ein hier
+        // ankommender PARQUET-Aufruf signalisiert ein Wiring-Fehler.
+        DataExportFormat.PARQUET -> error(
+            "DefaultDataChunkWriterFactory does not support Parquet; " +
+                "use ParquetChunkWriterFactory via the CLI CompositeDataChunkWriterFactory"
+        )
     }
 }

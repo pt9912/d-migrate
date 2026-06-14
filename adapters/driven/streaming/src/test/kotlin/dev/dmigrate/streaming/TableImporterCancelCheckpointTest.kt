@@ -48,7 +48,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
     ) = TableImportParams(
         pool = ImporterNoopConnectionPool,
         writer = FakeWriter(mapOf("users" to session)),
-        tableInput = ResolvedTableInput("users") { ByteArrayInputStream("[]".toByteArray()) },
+        tableInput = ResolvedTableInput.Stream("users") { ByteArrayInputStream("[]".toByteArray()) },
         format = DataExportFormat.JSON,
         options = ImportOptions(),
         config = PipelineConfig(chunkSize = 100),
@@ -64,7 +64,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
         val readerFactory = FakeReaderFactory(emptyMap())
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val source = TestCancellationTokenSource().also { it.cancelAfterCheckpoints(0) }
-        val importer = TableImporter(readerFactory) { _, _ -> }
+        val importer = TableImporter(readerFactory, onTableOpened = { _, _ -> })
 
         shouldThrow<OperationCancelledException> {
             importer.import(params(session, source.token))
@@ -81,7 +81,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
         //   #2 prepareImport — before readerFactory.create
         //   #3 prepareImport — before writer.openTable
         val source = TestCancellationTokenSource().also { it.cancelAfterCheckpoints(2) }
-        val importer = TableImporter(readerFactory) { _, _ -> }
+        val importer = TableImporter(readerFactory, onTableOpened = { _, _ -> })
 
         shouldThrow<OperationCancelledException> {
             importer.import(params(session, source.token))
@@ -109,7 +109,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
         //   #6 second skip pre-read
         //   #7 third skip pre-read — should THROW
         val source = TestCancellationTokenSource().also { it.cancelAfterCheckpoints(6) }
-        val importer = TableImporter(readerFactory) { _, _ -> }
+        val importer = TableImporter(readerFactory, onTableOpened = { _, _ -> })
 
         shouldThrow<OperationCancelledException> {
             importer.import(
@@ -139,7 +139,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
             }
         }
         val readerFactory2 = FakeReaderFactory(mapOf("users" to reader))
-        val importer = TableImporter(readerFactory2) { _, _ -> }
+        val importer = TableImporter(readerFactory2, onTableOpened = { _, _ -> })
 
         shouldThrow<OperationCancelledException> {
             importer.import(params(countingSession, source.token))
@@ -167,7 +167,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
                 return super.finishTable()
             }
         }
-        val importer = TableImporter(readerFactory) { _, _ -> }
+        val importer = TableImporter(readerFactory, onTableOpened = { _, _ -> })
 
         shouldThrow<OperationCancelledException> {
             importer.import(params(session, source.token))
@@ -179,7 +179,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
         val reader = FakeReader(header = listOf("id", "name"), chunks = chunks(2))
         val readerFactory = FakeReaderFactory(mapOf("users" to reader))
         val session = FakeTableImportSession(targetColumns = targetColumns)
-        val importer = TableImporter(readerFactory) { _, _ -> }
+        val importer = TableImporter(readerFactory, onTableOpened = { _, _ -> })
 
         val summary = importer.import(
             params(session, dev.dmigrate.core.cancel.CancellationToken.none()),

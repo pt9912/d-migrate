@@ -1,0 +1,157 @@
+# BI-Demo Compose-Stack — Spec: docs/planning/done/bi-demo-compose.md
+#
+# Aktuelle Services: postgres (+ sql/ initdb), seaweed-config
+# (one-shot), seaweed, seaweed-init (one-shot), metabase,
+# aws-tools (profile=tools). BD.4 ergaenzt optional einen
+# dmigrate-Container.
+
+services:
+  postgres:
+    image: postgres:17.10-trixie
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dmigrate -d dmigrate_demo"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  metabase:
+    image: metabase/metabase:v0.55.24.1
+    env_file:
+      - .env
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+    ports:
+      - "127.0.0.1:${METABASE_PORT}:3000"
+    volumes:
+      - metabase-data:/metabase-data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
+  seaweed-config:
+    image: amazon/aws-cli:2.34.61
+    env_file:
+      - .env
+    volumes:
+      - seaweed-config:/etc/seaweed
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -eu
+        esc_key="$${S3_ACCESS_KEY//\\/\\\\}"
+        esc_key="$${esc_key//\"/\\\"}"
+        esc_sec="$${S3_SECRET_KEY//\\/\\\\}"
+        esc_sec="$${esc_sec//\"/\\\"}"
+        cat > /etc/seaweed/s3.json <<EOF
+        {
+          "identities": [
+            {
+              "name": "demo",
+              "credentials": [
+                {
+                  "accessKey": "$$esc_key",
+                  "secretKey": "$$esc_sec"
+                }
+              ],
+              "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+            }
+          ]
+        }
+        EOF
+        chmod 444 /etc/seaweed/s3.json
+    restart: "no"
+
+  seaweed:
+    image: chrislusf/seaweedfs:4.31
+    depends_on:
+      seaweed-config:
+        condition: service_completed_successfully
+    command: server -dir=/data -s3 -s3.config=/etc/seaweed/s3.json
+    ports:
+      - "127.0.0.1:${S3_API_PORT}:8333"
+      - "127.0.0.1:${SEAWEED_MASTER_PORT}:9333"
+    volumes:
+      - seaweed-data:/data
+      - seaweed-config:/etc/seaweed:ro
+
+  seaweed-init:
+    image: amazon/aws-cli:2.34.61
+    depends_on:
+      - seaweed
+    env_file:
+      - .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -eu
+        until aws --endpoint-url http://seaweed:8333 s3api list-buckets > /dev/null 2>&1
+        do
+          echo 'waiting for seaweed s3…'
+          sleep 2
+        done
+        aws --endpoint-url http://seaweed:8333 \
+            s3api head-bucket --bucket "$${S3_BUCKET}" 2>/dev/null \
+          || aws --endpoint-url http://seaweed:8333 \
+            s3api create-bucket --bucket "$${S3_BUCKET}"
+    restart: "no"
+
+  dmigrate:
+    image: d-migrate:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    env_file:
+      - .env
+    environment:
+      D_MIGRATE_CONFIG: /work/.d-migrate.yaml
+    volumes:
+      - .:/work
+    working_dir: /work
+
+  aws-tools:
+    image: amazon/aws-cli:2.34.61
+    depends_on:
+      seaweed-init:
+        condition: service_completed_successfully
+    profiles: ["tools"]
+    env_file:
+      - .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -eu
+        exec aws --endpoint-url http://seaweed:8333 "$$@"
+      - bash
+    volumes:
+      - ./out:/work
+
+volumes:
+  postgres-data:
+  metabase-data:
+  seaweed-data:
+  seaweed-config:

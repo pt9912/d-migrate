@@ -16,6 +16,9 @@ import dev.dmigrate.mcp.server.validateForStdio
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayload
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
+import dev.dmigrate.server.adapter.storage.s3.ArtifactsConfigException
+import dev.dmigrate.server.adapter.storage.s3.ArtifactsConfigLoader
 import java.net.URI
 import java.nio.file.Path
 import java.time.Duration
@@ -94,6 +97,7 @@ internal class McpServeRunner(
         }
 
         val retention = parseRetentionOrExit()
+        val artifacts = parseArtifactsConfigOrExit()
         val cursorKeyring = parseCursorKeyringOrExit()
         rejectDevKeyringInProductionOrExit(cursorKeyring)
         val owner = resolveStateDirOrExit()
@@ -106,11 +110,11 @@ internal class McpServeRunner(
 
             val lock = acquireLockOrExit(owner)
             try {
-                runStartupSweepOrExit(owner, retention)
-                echoStartStateLine(owner)
+                runStartupSweepOrExit(owner, retention, artifacts)
+                echoStartStateLine(owner, artifacts)
                 when (options.transport) {
-                    "stdio" -> startStdio(config, owner, lock, cursorKeyring)
-                    "http" -> startHttp(config, owner, lock, cursorKeyring)
+                    "stdio" -> startStdio(config, owner, lock, cursorKeyring, artifacts)
+                    "http" -> startHttp(config, owner, lock, cursorKeyring, artifacts)
                     else -> error("transport check failed: ${options.transport}")
                 }
             } finally {
@@ -152,6 +156,21 @@ internal class McpServeRunner(
     fun parseRetentionOrExit(): RetentionPolicy = try {
         RetentionParser.resolve(cliOption = options.mcpStateOrphanRetention)
     } catch (failure: StateDirConfigError) {
+        stderr("MCP server configuration is invalid:")
+        stderr("  - ${failure.message}")
+        throw McpServeExit(2)
+    }
+
+    /**
+     * Parses the optional `artifacts` section of the connection-config
+     * YAML (ImpPlan-0.9.8-object-storage-s3 S3.4b). Single parse for the
+     * whole runner: the result drives the startup-sweep skip, the
+     * start-state stderr line and (via [McpServeWiring.build]) the
+     * byte-store selection in the runtime wiring.
+     */
+    fun parseArtifactsConfigOrExit(): ArtifactStorageConfig = try {
+        ArtifactsConfigLoader.load(effectiveConnectionConfigPath)
+    } catch (failure: ArtifactsConfigException) {
         stderr("MCP server configuration is invalid:")
         stderr("  - ${failure.message}")
         throw McpServeExit(2)
@@ -221,7 +240,11 @@ internal class McpServeRunner(
             }
         }
 
-    fun runStartupSweepOrExit(owner: StateDirOwner, retention: RetentionPolicy) {
+    fun runStartupSweepOrExit(
+        owner: StateDirOwner,
+        retention: RetentionPolicy,
+        artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
+    ) {
         if (retention is RetentionPolicy.Never) {
             stderr("MCP startup sweep skipped (retention=never) for state dir ${owner.resolved.path}.")
             return
@@ -231,7 +254,16 @@ internal class McpServeRunner(
             is RetentionPolicy.After -> retention.duration
             is RetentionPolicy.Never -> error("never branch handled above")
         }
-        val segmentsRemoved = try {
+        // S3.4b: with `artifacts.store: s3` the segment/artefact bytes live
+        // in S3, not under the local state dir — the file sweeps would walk
+        // a directory that is not the byte source. The assembly spool stays
+        // local in both modes, so its cleanup always runs. Exhaustive when:
+        // a future store variant must decide its sweep behavior explicitly.
+        val sweepFileByteStores = when (artifacts) {
+            is ArtifactStorageConfig.File -> true
+            is ArtifactStorageConfig.S3 -> false
+        }
+        val segmentsRemoved = if (!sweepFileByteStores) 0 else try {
             FileBackedUploadSegmentStore.cleanupOrphans(owner.resolved.path, emptySet())
         } catch (failure: java.io.IOException) {
             stderr(
@@ -240,7 +272,7 @@ internal class McpServeRunner(
             )
             throw McpServeExit(2)
         }
-        val artefactsRemoved = try {
+        val artefactsRemoved = if (!sweepFileByteStores) 0 else try {
             FileBackedArtifactContentStore.cleanupOrphans(owner.resolved.path, artefactRetention)
         } catch (failure: java.io.IOException) {
             stderr(
@@ -259,18 +291,35 @@ internal class McpServeRunner(
             throw McpServeExit(2)
         }
         stderr(
-            "MCP startup sweep (state dir ${owner.resolved.path}): " +
-                "removed $segmentsRemoved upload-segment session(s), " +
-                "$artefactsRemoved artefact file(s), " +
-                "$spoolsRemoved assembly spool(s).",
+            if (sweepFileByteStores) {
+                "MCP startup sweep (state dir ${owner.resolved.path}): " +
+                    "removed $segmentsRemoved upload-segment session(s), " +
+                    "$artefactsRemoved artefact file(s), " +
+                    "$spoolsRemoved assembly spool(s)."
+            } else {
+                "MCP startup sweep (state dir ${owner.resolved.path}): " +
+                    "removed $spoolsRemoved assembly spool(s); " +
+                    "segment/artefact sweeps skipped (artifacts.store=${artifacts.storeId})."
+            },
         )
     }
 
-    private fun echoStartStateLine(owner: StateDirOwner) {
+    fun echoStartStateLine(
+        owner: StateDirOwner,
+        artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
+    ) {
         val tag = if (owner.resolved.owned) "CLI-owned temporary" else "operator-supplied"
+        // S3.4b: name endpoint/bucket so operators can verify the byte
+        // target — never the credentials (they only exist in env anyway).
+        val byteBackend = when (artifacts) {
+            is ArtifactStorageConfig.File -> "byte content is file-backed"
+            is ArtifactStorageConfig.S3 ->
+                "byte content is S3-backed " +
+                    "(endpoint=${artifacts.config.endpoint ?: "aws"}, bucket=${artifacts.config.bucket})"
+        }
         stderr(
             "MCP state dir: ${owner.resolved.path} [$tag] — " +
-                "byte content is file-backed; LF-012 / LN-011 / LN-017 / LN-027 metadata uses server.state when configured.",
+                "$byteBackend; LF-012 / LN-011 / LN-017 / LN-027 metadata uses server.state when configured.",
         )
     }
 
@@ -279,8 +328,9 @@ internal class McpServeRunner(
         owner: StateDirOwner,
         lock: McpStateDirLock,
         cursorKeyring: CursorKeyring?,
+        artifacts: ArtifactStorageConfig,
     ) {
-        wiring.build(config, owner, cursorKeyring).use { runtime ->
+        wiring.build(config, owner, cursorKeyring, artifacts).use { runtime ->
             when (val outcome = McpServerBootstrap.startStdio(
                 config = config,
                 runtimeWiring = runtime.runtimeWiring,
@@ -303,8 +353,9 @@ internal class McpServeRunner(
         owner: StateDirOwner,
         lock: McpStateDirLock,
         cursorKeyring: CursorKeyring?,
+        artifacts: ArtifactStorageConfig,
     ) {
-        wiring.build(config, owner, cursorKeyring).use { runtime ->
+        wiring.build(config, owner, cursorKeyring, artifacts).use { runtime ->
             when (val outcome = McpServerBootstrap.startHttp(
                 config = config,
                 runtimeWiring = runtime.runtimeWiring,

@@ -2,9 +2,24 @@
 // ZERO external dependencies — only Kotlin stdlib (test fixtures may add
 // kotest for shared test helpers; see LF-012 / LN-011 / LN-017 / LN-027 cancel-contract fixture).
 
+import org.gradle.language.jvm.tasks.ProcessResources
+
 plugins {
     `java-library`
     `java-test-fixtures`
+}
+
+tasks.named<ProcessResources>("processResources") {
+    filteringCharset = "UTF-8"
+    // expand("projectVersion") liest project.version dynamisch, was Gradle
+    // ohne explizite Input-Property nicht in den Cache-Schlüssel aufnimmt.
+    // Ohne diese Zeile bleibt der Task UP-TO-DATE, wenn nur die Version
+    // wechselt (z. B. `-PreleaseVersion=…`), und liefert die alte
+    // gefilterte Datei aus dem Cache aus.
+    inputs.property("projectVersion", project.version.toString())
+    filesMatching("dmigrate-version.properties") {
+        expand("projectVersion" to project.version.toString())
+    }
 }
 
 dependencies {

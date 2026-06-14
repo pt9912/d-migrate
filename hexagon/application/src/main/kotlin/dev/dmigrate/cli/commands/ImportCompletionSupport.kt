@@ -12,23 +12,38 @@ internal sealed interface ImportCompletionAssessment {
 
 internal object ImportCompletionSupport {
 
-    fun assessCompletion(result: ImportResult): ImportCompletionAssessment {
+    /**
+     * @param isParquetBundle S9a-0.d (AP8 §7.3 / AP12 §9): bei einem
+     *   Parquet-Bundle-Lauf bekommt ein Per-Tabelle-Fehler den stabilen
+     *   Code `BUNDLE_TABLE_IMPORT_FAILED` (Exit 5 bleibt unveraendert).
+     *   Andere Quellen (JSON/YAML/CSV/Single-File) behalten die generische
+     *   Meldung. Der Code deckt den bestehenden, erreichbaren Fehlerpfad
+     *   ab (Tabelle scheitert in Reader/Writer/Commit/Finish) — er ist
+     *   keine defensive Platzhalter-Diagnose.
+     */
+    fun assessCompletion(result: ImportResult, isParquetBundle: Boolean = false): ImportCompletionAssessment {
         val failedTable = result.tables.firstOrNull { it.error != null }
         if (failedTable != null) {
-            return ImportCompletionAssessment.Exit(
-                code = 5,
-                message = "Error: Failed to import table '${failedTable.table}': ${failedTable.error}",
-            )
+            val message = if (isParquetBundle) {
+                "Error: BUNDLE_TABLE_IMPORT_FAILED: table='${failedTable.table}' " +
+                    "cause='${failedTable.error}'"
+            } else {
+                "Error: Failed to import table '${failedTable.table}': ${failedTable.error}"
+            }
+            return ImportCompletionAssessment.Exit(code = 5, message = message)
         }
 
         val failedFinish = result.tables.firstOrNull { it.failedFinish != null }
         if (failedFinish != null) {
-            return ImportCompletionAssessment.Exit(
-                code = 5,
-                message = "Error: Post-import finalization failed for table '${failedFinish.table}': " +
-                    "${failedFinish.failedFinish!!.causeMessage}. " +
-                    "Data was committed - manual post-import fix may be needed.",
-            )
+            val cause = failedFinish.failedFinish!!.causeMessage
+            val message = if (isParquetBundle) {
+                "Error: BUNDLE_TABLE_IMPORT_FAILED: table='${failedFinish.table}' cause='$cause' " +
+                    "(post-import finalization; data was committed - manual fix may be needed)"
+            } else {
+                "Error: Post-import finalization failed for table '${failedFinish.table}': " +
+                    "$cause. Data was committed - manual post-import fix may be needed."
+            }
+            return ImportCompletionAssessment.Exit(code = 5, message = message)
         }
 
         return ImportCompletionAssessment.Success
@@ -40,8 +55,9 @@ internal object ImportCompletionSupport {
         store: CheckpointStore?,
         operationId: String,
         stderr: (String) -> Unit,
+        isParquetBundle: Boolean = false,
     ): Int {
-        when (val assessment = assessCompletion(result)) {
+        when (val assessment = assessCompletion(result, isParquetBundle)) {
             is ImportCompletionAssessment.Exit -> {
                 stderr(assessment.message)
                 return assessment.code

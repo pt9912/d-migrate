@@ -10,6 +10,7 @@ import dev.dmigrate.driver.data.OnError
 import dev.dmigrate.driver.sqlite.SqliteDataWriter
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull

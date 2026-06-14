@@ -284,6 +284,27 @@ class CliDataExportTest : FunSpec({
         }
     }
 
+    // Parquet Cut A S6 (AP12 §4.1): Parquet braucht seekable Footer-Schreib-
+    // zugriff und kann damit nicht nach stdout schreiben.
+    test("--format parquet without --output → Exit 2 (stdout rejected)") {
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "parquet",
+                        "--tables", "users",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
     // ─── §6.17 Empty-Table contract via CLI ──────────────────────
 
     test("§6.17: empty table → JSON '[]'") {

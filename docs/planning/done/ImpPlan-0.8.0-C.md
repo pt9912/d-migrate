@@ -340,7 +340,7 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 - `docs/planning/ImpPlan-0.8.0-A.md`
 - `docs/planning/ImpPlan-0.8.0-B.md`
 - `spec/cli-spec.md`
-- [DataProfileCommand.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataProfileCommand.kt)
+- [DataProfileCommand.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataProfileCommand.kt)
 
 ---
 

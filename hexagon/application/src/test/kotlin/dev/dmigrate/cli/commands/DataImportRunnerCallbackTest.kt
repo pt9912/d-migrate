@@ -69,6 +69,8 @@ class DataImportRunnerCallbackTest : FunSpec({
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.Directory -> listOf("t1")
+            is dev.dmigrate.streaming.ImportInput.ResolvedBundle -> input.tables.map { it.table }
+            is dev.dmigrate.streaming.ImportInput.ResolvedSingleFile -> listOf(input.table)
         }
         val summaries = tables.map {
             TableImportSummary(
@@ -175,7 +177,7 @@ class DataImportRunnerCallbackTest : FunSpec({
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         writerLookup: (DatabaseDialect) -> DataWriter = { FakeDataWriter() },
-        schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
+        schemaPreflight: (Path, ImportInput, DataExportFormat, List<String>?) -> SchemaPreflightResult = { _, input, _, _ ->
             SchemaPreflightResult(input)
         },
         schemaTargetValidator:
@@ -191,6 +193,7 @@ class DataImportRunnerCallbackTest : FunSpec({
         checkpointStoreFactory: ((Path) -> dev.dmigrate.streaming.checkpoint.CheckpointStore)? = null,
         checkpointConfigResolver: (Path?) -> dev.dmigrate.streaming.CheckpointConfig? = { null },
         clock: () -> java.time.Instant = java.time.Instant::now,
+        inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
     ): DataImportRunner = DataImportRunner(
         targetResolver = targetResolver,
         urlParser = urlParser,
@@ -205,7 +208,24 @@ class DataImportRunnerCallbackTest : FunSpec({
         checkpointStoreFactory = checkpointStoreFactory,
         checkpointConfigResolver = checkpointConfigResolver,
         clock = clock,
+        inputResolutionHook = inputResolutionHook,
     )
+
+    fun resolutionHook(
+        resolveBeforeSchema: (ImportInput, DataExportFormat, Boolean) -> ImportInput = { raw, _, _ -> raw },
+        finalizeBeforePrepare: (ImportInput, String?) -> ImportInput = { input, _ -> input },
+    ): ImportInputResolutionHook = object : ImportInputResolutionHook {
+        override fun resolveBeforeSchema(
+            rawInput: ImportInput,
+            format: DataExportFormat,
+            computeContentSha256: Boolean,
+        ): ImportInput = resolveBeforeSchema(rawInput, format, computeContentSha256)
+
+        override fun finalizeBeforePrepare(
+            input: ImportInput,
+            resumeExpectedSha256: String?,
+        ): ImportInput = finalizeBeforePrepare(input, resumeExpectedSha256)
+    }
 
     // ─── Happy path (Exit 0) ──────────────────────────────────────
 
@@ -222,6 +242,8 @@ class DataImportRunnerCallbackTest : FunSpec({
                     is dev.dmigrate.streaming.ImportInput.Stdin -> input.table
                     is dev.dmigrate.streaming.ImportInput.SingleFile -> input.table
                     is dev.dmigrate.streaming.ImportInput.Directory -> "t1"
+                    is dev.dmigrate.streaming.ImportInput.ResolvedBundle -> input.tables.first().table
+                    is dev.dmigrate.streaming.ImportInput.ResolvedSingleFile -> input.table
                 }
                 val summary = TableImportSummary(
                     table = table, rowsInserted = 5, rowsUpdated = 0, rowsSkipped = 0,
@@ -537,6 +559,130 @@ class DataImportRunnerCallbackTest : FunSpec({
             Files.list(storeDir).use { it.toList() }
                 .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
                 .size shouldBe 0
+        }
+    }
+
+    // ─── Parquet Cut A S6: Phase-1/Phase-2-Hook-Verdrahtung ────────
+    // ──────────────────────────────────────────────────────────────
+
+    context("S6 Phase-2-Hook") {
+
+        test("Phase-2-Hook laeuft mit resumeExpectedSha256 = null und liefert finalen Input an Executor") {
+            val capturedHookCalls = mutableListOf<Pair<ImportInput, String?>>()
+            val capturedExecutorInputs = mutableListOf<ImportInput>()
+            val resolvedSingleFile = ImportInput.ResolvedSingleFile(
+                table = "users",
+                path = tempJsonFile,
+                schema = dev.dmigrate.format.data.ChunkSchema(
+                    table = "users",
+                    origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                    columns = emptyList(),
+                ),
+                contentSha256 = null,
+            )
+            val phase2 = resolutionHook(finalizeBeforePrepare = { input, expectedSha ->
+                capturedHookCalls += input to expectedSha
+                // Hook produces a new ResolvedSingleFile carrying the same path
+                resolvedSingleFile
+            })
+            val capturingExecutor: ImportExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
+                capturedExecutorInputs += ctx.input
+                successExecutor.execute(ctx, opts, resume, callbacks)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                importExecutor = capturingExecutor,
+                inputResolutionHook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            assertExit(exit, 0, stderr)
+            capturedHookCalls.single().let { (input, expected) ->
+                input shouldBe ImportInput.SingleFile("users", tempJsonFile)
+                expected shouldBe null
+            }
+            capturedExecutorInputs.single() shouldBe resolvedSingleFile
+        }
+
+        test("--no-checkpoint laesst den Phase-1-Hook computeContentSha256=false sehen und ruft den Store nicht") {
+            val capturedComputeSha = mutableListOf<Boolean>()
+            val phase1 = resolutionHook(resolveBeforeSchema = { raw, _, compute ->
+                capturedComputeSha += compute
+                raw
+            })
+            val storeFactoryCalls = java.util.concurrent.atomic.AtomicInteger(0)
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                inputResolutionHook = phase1,
+                checkpointStoreFactory = { _ ->
+                    storeFactoryCalls.incrementAndGet()
+                    error("checkpointStoreFactory must not be invoked when --no-checkpoint is active")
+                },
+                checkpointConfigResolver = { _ ->
+                    // Wenn der noCheckpoint-Pfad korrekt short-circuited,
+                    // bleibt auch dieser Resolver unangetastet. Deterministischer
+                    // Pfad statt Files.createTempDirectory verhindert Temp-Dir-
+                    // Leaks bei Test-Regressionen (Review-Finding G6).
+                    dev.dmigrate.streaming.CheckpointConfig(directory = Path.of("/never-used-by-no-checkpoint"))
+                },
+            )
+
+            val exit = runner.execute(request(format = "json").copy(noCheckpoint = true))
+
+            assertExit(exit, 0, stderr)
+            capturedComputeSha shouldBe listOf(false)
+            storeFactoryCalls.get() shouldBe 0
+        }
+
+        test("Phase-2-Hook-Wurf liefert Exit 3 und schlaegt stderr durch") {
+            val phase2 = resolutionHook(finalizeBeforePrepare = { _, _ ->
+                throw RuntimeException("PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT: mismatch")
+            })
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                inputResolutionHook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            exit shouldBe 3
+            stderr.joined() shouldContain "PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT"
+        }
+
+        test("Phase-2-Hook IllegalArgumentException liefert Exit 2 (CLI-Validierung)") {
+            val phase2 = resolutionHook(finalizeBeforePrepare = { _, _ ->
+                throw IllegalArgumentException("table 'orders' mismatch with --table override")
+            })
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                inputResolutionHook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            exit shouldBe 2
+            stderr.joined() shouldContain "table 'orders' mismatch"
+        }
+
+        test("Phase-2-Hook OperationCancelledException liefert CANCELLED_EXIT_CODE (130)") {
+            val phase2 = resolutionHook(finalizeBeforePrepare = { _, _ ->
+                throw dev.dmigrate.core.cancel.OperationCancelledException()
+            })
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                inputResolutionHook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            exit shouldBe DataImportRunner.CANCELLED_EXIT_CODE
+            stderr.lines.shouldBeEmpty()
         }
     }
 

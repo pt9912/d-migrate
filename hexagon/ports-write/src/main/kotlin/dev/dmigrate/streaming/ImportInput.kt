@@ -1,5 +1,6 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.format.data.ChunkSchema
 import java.io.InputStream
 import java.nio.file.Path
 
@@ -43,4 +44,108 @@ sealed class ImportInput {
         val tableFilter: List<String>? = null,
         val tableOrder: List<String>? = null,
     ) : ImportInput()
+
+    /**
+     * AP9 §4.1: Bereits aufgeloestes Bundle (Multi-Table-/Directory-
+     * Import mit verpflichtendem Bundle-Manifest, vgl. Parquet Cut A
+     * Umbrella §3 S5a). Bewusst Parquet-frei im Vertrag: der Port spricht
+     * nur "Bundle", der Adapter befuellt das mit format-spezifischer
+     * Information.
+     *
+     * - [bundleRoot]: Bundle-Wurzelverzeichnis (Pfad zur
+     *   `manifest.yaml`-tragenden Directory). Wird vom
+     *   `ImportPreflightValidator` als `inputPath`-Wert benutzt.
+     * - [tables]: effektive, vom Resolver (AP8 §4.4) aufgeloeste
+     *   Reihenfolge nach Filter/Order-Auswertung; Streaming-Layer
+     *   iteriert linear darueber.
+     * - [resumeFingerprint]: Pflicht, weil Bundle-Importe ohne
+     *   Fingerprint nicht resumable waeren (AP8 §8.1). Wird beim
+     *   Initial-Lauf bedingungslos persistiert.
+     */
+    data class ResolvedBundle(
+        val bundleRoot: Path,
+        val tables: List<ResolvedBundleTableBinding>,
+        val resumeFingerprint: BundleResumeFingerprint,
+    ) : ImportInput() {
+        companion object {
+            /**
+             * AP9 §4.1: Marker-Datei eines Bundle-Verzeichnisses.
+             * Geteilte Konstante zwischen Adapter (Writer/Reader/Preflight)
+             * und CLI-Helpers (Format-Inferenz), damit ein Rename nicht
+             * an drei Stellen lockstep gepflegt werden muss.
+             */
+            const val MANIFEST_FILE_NAME: String = "manifest.yaml"
+        }
+    }
+
+    /**
+     * AP11 §6.2 / AP12 §5.1: bereits aufgeloester Single-File-Import
+     * (Parquet mit Footer-KV `d-migrate.manifest` oder Footer-Fallback,
+     * vgl. Parquet Cut A Umbrella §3 S5b). Bewusst Parquet-frei im
+     * Vertrag — der CLI-Resolver (S6) baut das DTO nach dem
+     * `ParquetSingleFilePreflight.phase1/phase2`-Lauf.
+     *
+     * - [table]: vom Preflight aufgeloester Tabellenname (AP11 §5.5
+     *   Precedence: CLI `--table` vor Footer-KV).
+     * - [path]: absolute, normalisierte Datei-Path.
+     * - [schema]: bereits aufgeloestes `ChunkSchema` (entweder aus dem
+     *   Footer-KV oder aus dem Phase-2-Target-JDBC-Fallback).
+     * - [contentSha256]: SHA-256 ueber den vollstaendigen Datei-Bytestrom
+     *   fuer Resume-Konsistenz (AP11 §6.4); `null` wenn der Initial-Lauf
+     *   ohne Resume-Aktivierung lief.
+     */
+    data class ResolvedSingleFile(
+        val table: String,
+        val path: Path,
+        val schema: ChunkSchema,
+        val contentSha256: String? = null,
+        /**
+         * S6 Cut A / Review-Finding B2: gibt an, ob die Quell-Datei beim
+         * Phase-1-Lauf einen `d-migrate.manifest`-Footer-KV trug. Wird vom
+         * CLI-Phase-2-Hook gelesen (heute: nur an `ParquetSingleFilePreflight.phase2`
+         * durchgereicht). Der AP11 §5.3 Footer-Fallback-vs-Manifest-Pfad-
+         * Fix-up bleibt ein bewusster Carve-Out (S8 §4.5: offen fuer
+         * S9a/S9b-Test-Familien bzw. Cut B), nicht S8. Default `true`, damit
+         * bestehende Test-Konstruktoren ohne Aenderung weiter funktionieren —
+         * der CLI-Resolver setzt den echten Wert explizit.
+         */
+        val manifestPresent: Boolean = true,
+    ) : ImportInput()
 }
+
+/**
+ * AP9 §4.1: Pfad + Schema pro Tabelle in einem
+ * [ImportInput.ResolvedBundle]. Bewusst kein InputStream-Vertrag —
+ * Bundle-Reader sind seekbar (`parquet-libraries.md` §7.1).
+ *
+ * [expectedSha256] ist optionaler Manifest-`tables[].sha256`-Wert
+ * fuer die Live-Integritaetspruefung im AP7-Preflight. `null` bedeutet:
+ * Producer hat keinen Hash geschrieben, Live-Pruefung wird im
+ * Normal-Import geskippt. Beim `--resume`-Lauf ist der Hash dagegen
+ * Pflicht — der `ImportCheckpointManager` wirft sonst
+ * `BUNDLE_RESUME_REQUIRES_FILE_HASHES`.
+ */
+data class ResolvedBundleTableBinding(
+    val table: String,
+    val path: Path,
+    val schema: ChunkSchema,
+    val expectedSha256: String? = null,
+)
+
+/**
+ * AP9 §4.1: Fingerprint fuer den Checkpoint-Vergleich beim `--resume`.
+ * Wird vom CLI-Resolver aus dem aktuellen Bundle-Manifest gebaut und
+ * beim Initial-Lauf in `BundleCheckpointSpecifics` persistiert. Beim
+ * `--resume` vergleicht der `ImportCheckpointManager` die persistierten
+ * Werte gegen die frisch berechneten.
+ *
+ * `fileSha256ByTable` ist bewusst NICHT Teil des Fingerprints — die
+ * Per-Tabelle-Hashes leben im `manifest.yaml` und sind implizit durch
+ * [manifestSha256] abgedeckt (AP8 §8.2).
+ */
+data class BundleResumeFingerprint(
+    val manifestSha256: String,
+    val formatVersion: String,
+    val producerVersion: String,
+    val tableOrder: List<String>,
+)

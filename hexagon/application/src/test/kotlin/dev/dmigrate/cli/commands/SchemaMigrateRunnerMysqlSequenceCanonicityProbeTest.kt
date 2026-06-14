@@ -178,7 +178,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
                 probeInvocations.value++
                 cannedDeclarations
             },
-            executor = { _, _, segments, _ ->
+            executor = { _, _, segments, _, _ ->
                 val statements = segments.flatMap { it.statements }
                 ExecutionTrace(
                     executionStarted = true,
@@ -282,7 +282,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
                     ) = fakeRendered()
                 }
             },
-            executor = { _, _, _, _ -> error("executor MUST NOT run on a blocked render") },
+            executor = { _, _, _, _, _ -> error("executor MUST NOT run on a blocked render") },
             mysqlSequenceCanonicityProbe = { _, _, plan ->
                 val createSeqOp = plan.operations.filterIsInstance<DiffOperation.CreateSequence>().single()
                 listOf(
@@ -333,7 +333,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
         val runner = runnerWith(
             dialect = DatabaseDialect.MYSQL,
             probe = { _, _, _ -> error("permission denied for INFORMATION_SCHEMA.COLUMNS") },
-            executor = { _, _, _, _ ->
+            executor = { _, _, _, _, _ ->
                 executorCalls++
                 ExecutionTrace(executionStarted = true, executionCompleted = true)
             },
@@ -407,7 +407,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
                 probeInvocations++
                 emptyList()
             },
-            executor = { _, _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
+            executor = { _, _, _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
             capturedReport = capturedReport,
         )
         val request = SchemaMigrateRequest(
@@ -444,7 +444,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
                 probeInvocations++
                 emptyList()
             },
-            executor = { _, _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
+            executor = { _, _, _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
             capturedReport = capturedReport,
         )
         val request = SchemaMigrateRequest(

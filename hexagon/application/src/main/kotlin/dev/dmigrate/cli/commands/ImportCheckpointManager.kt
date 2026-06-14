@@ -4,12 +4,15 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.CheckpointConfig
 import dev.dmigrate.streaming.NoOpProgressReporter
 import dev.dmigrate.streaming.ProgressReporter
+import dev.dmigrate.streaming.checkpoint.BundleCheckpointSpecifics
 import dev.dmigrate.streaming.checkpoint.CheckpointManifest
+import dev.dmigrate.streaming.checkpoint.CheckpointOperationSpecifics
 import dev.dmigrate.streaming.checkpoint.CheckpointOperationType
 import dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus
 import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
 import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
+import dev.dmigrate.streaming.checkpoint.SingleFileCheckpointSpecifics
 import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import java.nio.file.Path
 import java.time.Instant
@@ -32,6 +35,21 @@ internal class ImportCheckpointManager(
 
     /** Merge CLI override and config default for checkpoint directory + store. */
     fun resolveCheckpointContext(request: DataImportRequest): ImportCheckpointContext? {
+        // Parquet Cut A S6 (AP12 §4.2) / Review-Finding F2: schaltet auf
+        // die sealed [CheckpointMode]-Sicht. `Disabled` kappt das Resolving
+        // vor der CheckpointConfig-Aufloesung; `Enabled` faehrt den
+        // bestehenden Pfad. Ein zukuenftiger `ReadOnly`-Modus wuerde
+        // hier zwingend einen eigenen Branch erfordern (sealed-when).
+        return when (val mode = request.checkpointMode) {
+            CheckpointMode.Disabled -> ImportCheckpointContext(store = null, dir = null)
+            is CheckpointMode.Enabled -> resolveEnabledCheckpointContext(request, mode)
+        }
+    }
+
+    private fun resolveEnabledCheckpointContext(
+        request: DataImportRequest,
+        @Suppress("UnusedPrivateMember") mode: CheckpointMode.Enabled,
+    ): ImportCheckpointContext? {
         val fromConfig: CheckpointConfig? = try {
             checkpointConfigResolver(request.cliConfigPath)
         } catch (e: Throwable) {
@@ -120,6 +138,150 @@ internal class ImportCheckpointManager(
                 return ImportResumeResult.Exit(3)
             }
         }
+        return validateOperationSpecific(manifest.operationSpecific, inputCtx)
+    }
+
+    /**
+     * S8c (AP9 §7.5 / AP11 §6.4 / Pre-AP8-Branch):
+     * vergleicht den persistierten Resume-Vertrag gegen den
+     * frisch berechneten [InputContext]. Wird **nach** allen
+     * generischen Vorpruefungen aufgerufen — input-file-Mismatch
+     * hat Vorrang fuer praezisere Diagnostik.
+     */
+    private fun validateOperationSpecific(
+        specifics: CheckpointOperationSpecifics?,
+        inputCtx: InputContext,
+    ): ImportResumeResult? = when (specifics) {
+        is BundleCheckpointSpecifics -> validateBundleResume(specifics, inputCtx)
+        is SingleFileCheckpointSpecifics -> validateSingleFileResume(specifics, inputCtx)
+        null -> validatePreAp8Compat(inputCtx)
+    }
+
+    private fun validateBundleResume(
+        specifics: BundleCheckpointSpecifics,
+        inputCtx: InputContext,
+    ): ImportResumeResult? {
+        val currentFingerprint = inputCtx.bundleResumeFingerprint ?: run {
+            stderr(
+                "Error: Checkpoint contains a parquet-bundle resume contract but the current run " +
+                    "is not a parquet-bundle import; refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        // S9a-0.f (AP8 §8.4): feldweiser Vergleich mit benannten Codes statt
+        // einer generischen Fingerprint-Mismatch-Meldung. Reihenfolge
+        // most-specific-first: formatVersion (fundamentale Inkompatibilitaet)
+        // → manifestSha256 (Manifest-Inhalt geaendert; deckt auch
+        // producerVersion ab, das laut §8.3 nur informativ ist und nie ohne
+        // manifestSha256-Aenderung differiert) → tableOrder (Resolver-/
+        // Override-Aenderung, kann ohne Manifest-Aenderung auftreten).
+        // Exit-Code 3 unveraendert — nur die Diagnose wird praeziser, keine
+        // Resume-Policy-Aenderung (jede Differenz lehnt weiterhin ab).
+        val expected = specifics.fingerprint
+        if (expected.formatVersion != currentFingerprint.formatVersion) {
+            stderr(
+                "Error: BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT: bundle formatVersion " +
+                    "changed since checkpoint (checkpoint=${expected.formatVersion}, " +
+                    "current=${currentFingerprint.formatVersion}); refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        if (expected.manifestSha256 != currentFingerprint.manifestSha256) {
+            stderr(
+                "Error: BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT: manifest.yaml changed since " +
+                    "checkpoint (checkpoint producerVersion=${expected.producerVersion}, " +
+                    "current producerVersion=${currentFingerprint.producerVersion}); refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        if (expected.tableOrder != currentFingerprint.tableOrder) {
+            stderr(
+                "Error: BUNDLE_TABLE_ORDER_CHANGED: resolved table order changed since checkpoint " +
+                    "(checkpoint=${expected.tableOrder}, current=${currentFingerprint.tableOrder}); " +
+                    "refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        val shaMap = inputCtx.bundleExpectedSha256ByTable.orEmpty()
+        val missing = shaMap.entries.firstOrNull { it.value == null }?.key
+        if (missing != null) {
+            // AP9 §7.5: BUNDLE_RESUME_REQUIRES_FILE_HASHES — pro-Tabelle-SHA
+            // ist beim Resume Pflicht; null vom Producer ist ein hartes Stop.
+            stderr(
+                "Error: Parquet bundle resume requires per-table sha256 in manifest.yaml, " +
+                    "but table '$missing' has no hash; refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        return null
+    }
+
+    private fun validateSingleFileResume(
+        specifics: SingleFileCheckpointSpecifics,
+        inputCtx: InputContext,
+    ): ImportResumeResult? {
+        val currentHash = inputCtx.singleFileContentSha256 ?: run {
+            stderr(
+                "Error: Checkpoint contains a parquet-single-file resume contract but the current " +
+                    "run did not compute a content sha256; refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        if (specifics.contentSha256 != currentHash) {
+            // AP11 §6.4: Content-Hash der Datei muss mit dem persistierten
+            // Hash uebereinstimmen, sonst koennte ein Producer-Re-Run mit
+            // gleicher Path-/Table-Identitaet still Daten ueberschreiben.
+            stderr(
+                "Error: Parquet single-file resume content sha256 mismatch; refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        val currentTable = inputCtx.effectiveTables.singleOrNull()
+        if (specifics.table != currentTable) {
+            stderr(
+                "Error: Parquet single-file resume table mismatch " +
+                    "(manifest='${specifics.table}', current='$currentTable'); refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        return null
+    }
+
+    private fun validatePreAp8Compat(inputCtx: InputContext): ImportResumeResult? {
+        // Pre-AP8-Checkpoint (kein operationSpecific) ist nur OK, wenn der
+        // aktuelle Lauf nicht Parquet-Bundle/Single-File ist —
+        // JSON/YAML/CSV-Importe sehen den Branch normal.
+        val isParquetRun = inputCtx.bundleExpectedSha256ByTable != null ||
+            inputCtx.singleFileContentSha256 != null ||
+            inputCtx.bundleResumeFingerprint != null
+        if (isParquetRun) {
+            // AP9: BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT — defensiver
+            // Code-Pfad fuer ein Manifest, das vor 0.9.8 geschrieben wurde
+            // und auf einen Parquet-Lauf resumed werden soll.
+            stderr(
+                "Error: Pre-0.9.8 checkpoint without bundle/single-file fingerprint cannot resume a " +
+                    "Parquet import; refuse to resume."
+            )
+            return ImportResumeResult.Exit(3)
+        }
+        return null
+    }
+
+    /**
+     * S8c (AP9 §4.2 / AP11 §6.4): leitet die Sealed-Variante aus dem
+     * [InputContext] ab. `writeInitialManifest` und `saveManifest`
+     * persistieren das Resultat in jedem Schreibpfad — sonst wuerden
+     * fruehe Resume-Versuche (vor erstem Chunk-Commit) auf den Pre-AP8-
+     * Branch fallen, obwohl der Lauf bereits Parquet ist.
+     */
+    private fun operationSpecificFrom(inputCtx: InputContext): CheckpointOperationSpecifics? {
+        inputCtx.bundleResumeFingerprint?.let { fingerprint ->
+            return BundleCheckpointSpecifics(fingerprint)
+        }
+        inputCtx.singleFileContentSha256?.let { hash ->
+            val table = inputCtx.effectiveTables.singleOrNull() ?: return null
+            return SingleFileCheckpointSpecifics(contentSha256 = hash, table = table)
+        }
         return null
     }
 
@@ -173,6 +335,7 @@ internal class ImportCheckpointManager(
                     resumeCtx.initialSlices[table] ?: CheckpointTableSlice(table = table, status = CheckpointSliceStatus.PENDING)
                 },
                 optionsFingerprint = inputCtx.fingerprint,
+                operationSpecific = operationSpecificFrom(inputCtx),
             ))
             null // success
         } catch (e: CheckpointStoreException) {
@@ -193,6 +356,9 @@ internal class ImportCheckpointManager(
         val effectiveTables = inputCtx.effectiveTables
         val inputFilesByTable = inputCtx.inputFilesByTable
         val fingerprint = inputCtx.fingerprint
+        // S8c: einmal pro Lauf berechnen — der Wert ist Lauf-Invariante,
+        // jeder saveManifest()-Call reicht denselben Subtyp durch.
+        val operationSpecific = operationSpecificFrom(inputCtx)
         val warningKeys = ConcurrentHashMap.newKeySet<String>()
 
         fun warnOnce(key: String, message: String) {
@@ -231,6 +397,7 @@ internal class ImportCheckpointManager(
                             )
                         },
                         optionsFingerprint = fingerprint,
+                        operationSpecific = operationSpecific,
                     )
                 )
             } catch (e: CheckpointStoreException) {

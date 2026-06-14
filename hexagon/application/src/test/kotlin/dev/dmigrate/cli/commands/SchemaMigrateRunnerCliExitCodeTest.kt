@@ -257,4 +257,28 @@ class SchemaMigrateRunnerCliExitCodeTest : FunSpec({
         capture["error:${sourcePath}"] shouldContain "Unknown --sqlite-named-sequences value"
         capture["error:${sourcePath}"] shouldContain "action_required, helper_table"
     }
+
+    test("Service-Mode Sub-Slice A: --lock-timeout-ms below 10 yields exit 2 with range hint") {
+        val (runner, capture) = captureRunner()
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            lockTimeoutMillis = 5L,
+        )
+        runner.execute(request) shouldBe 2
+        capture["error:${sourcePath}"] shouldContain "--lock-timeout-ms must be in [10, 60000]"
+    }
+
+    test("Service-Mode Sub-Slice A: --lock-timeout-ms above 60000 yields exit 2 with range hint") {
+        val (runner, capture) = captureRunner()
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            lockTimeoutMillis = 120_000L,
+        )
+        runner.execute(request) shouldBe 2
+        capture["error:${sourcePath}"] shouldContain "--lock-timeout-ms must be in [10, 60000]"
+    }
 })

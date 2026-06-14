@@ -248,4 +248,88 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             c.autoCommit shouldBe true
         }
     }
+
+    // ─── Service-Mode Sub-Slice E: Cancellation ─────────────────────
+
+    test("Cancelled: pre-BEGIN cancel short-circuits without opening a transaction") {
+        exec("DROP SEQUENCE IF EXISTS atom_seq_cancel_pre")
+        exec("CREATE SEQUENCE atom_seq_cancel_pre START WITH 1")
+        // Advance so probe would see a non-trivial last_value.
+        query("SELECT nextval('atom_seq_cancel_pre')")
+        query("SELECT nextval('atom_seq_cancel_pre')")
+        val initialLastValue = query("SELECT last_value FROM atom_seq_cancel_pre")
+
+        val ref = pgRef("atom_seq_cancel_pre")
+        val batch = AtomicSequencePreserveBatch(
+            requests = listOf(
+                AtomicSequencePreserveRequest(ref) { probe ->
+                    listOf("SELECT setval('atom_seq_cancel_pre', ${probe.value}, ${probe.isCalled})")
+                },
+            ),
+            protectedOperationIds = listOf(protectedOpId),
+            internalFollowUpIds = emptyList(),
+        )
+        val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
+        tokenSource.cancel("pre-BEGIN-test-cancel")
+
+        conn().use { c ->
+            c.autoCommit shouldBe true
+            val result = executor.execute(
+                connection = c,
+                batch = batch,
+                lockTimeoutMillis = 5_000,
+                cancellationToken = tokenSource.token,
+                executeProtectedOperations = { _, _ ->
+                    error("protected callback must not be reached after pre-BEGIN cancel")
+                },
+            )
+            result.shouldBeInstanceOf<AtomicSequencePreserveResult.Cancelled>()
+            result.reason shouldBe "pre-BEGIN-test-cancel"
+            result.refs shouldBe listOf(ref)
+            // Pre-BEGIN cancel: connection should be in its borrow-time
+            // autocommit state because the executor never touched it.
+            c.autoCommit shouldBe true
+        }
+        // Sequence completely untouched.
+        query("SELECT last_value FROM atom_seq_cancel_pre") shouldBe initialLastValue
+    }
+
+    test("Cancelled: cancel inside protected callback rolls back the transaction (PG nextval-bump persists per PG semantics)") {
+        exec("DROP SEQUENCE IF EXISTS atom_seq_cancel_mid")
+        exec("CREATE SEQUENCE atom_seq_cancel_mid START WITH 1")
+        query("SELECT nextval('atom_seq_cancel_mid')")
+        query("SELECT nextval('atom_seq_cancel_mid')")
+
+        val ref = pgRef("atom_seq_cancel_mid")
+        val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
+        val batch = AtomicSequencePreserveBatch(
+            requests = listOf(
+                AtomicSequencePreserveRequest(ref) { probe ->
+                    // This restore SHOULD never execute because we
+                    // cancel in the protected callback (checkpoint 3).
+                    error("renderRestore must not run after a post-protected cancel; probe=${probe.value}")
+                },
+            ),
+            protectedOperationIds = listOf(protectedOpId),
+            internalFollowUpIds = emptyList(),
+        )
+
+        conn().use { c ->
+            val result = executor.execute(
+                connection = c,
+                batch = batch,
+                lockTimeoutMillis = 5_000,
+                cancellationToken = tokenSource.token,
+                executeProtectedOperations = { protectedConn, _ ->
+                    protectedConn.createStatement().use { it.execute("SELECT nextval('atom_seq_cancel_mid')") }
+                    tokenSource.cancel("post-protected-test-cancel")
+                    AtomicProtectedExecutionResult.Succeeded(1)
+                },
+            )
+            result.shouldBeInstanceOf<AtomicSequencePreserveResult.Cancelled>()
+            result.reason shouldBe "post-protected-test-cancel"
+            result.refs shouldBe listOf(ref)
+            c.autoCommit shouldBe true
+        }
+    }
 })

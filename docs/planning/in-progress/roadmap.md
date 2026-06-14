@@ -241,7 +241,7 @@ JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 | Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                    | LF-010 | ✅      |
 | Test    | Phase G: Tests und Dokumentation (inkl. Unicode-Integrität)  | 8.5    | ✅      |
 
-**Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
+**Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem--2026-04-13) vorgezogen.)
 
 > Stand 2026-04-16: Phasen A–G umgesetzt — Spezifikationsbereinigung,
 > I18n-Runtime, ResourceBundles, ICU4J-Integration, Zeitzonen-/Format-
@@ -490,42 +490,66 @@ Closures).
 | Coverage/QA | MySQL-`AlterColumnNullability` ist als bewusster Blocker umgesetzt; Artifact-Compatibility (`UNKNOWN_FORMAT_VERSION` / `HASH_MISMATCH` / Secret-Scrubbing) + Overlay-Compatibility seit G-Slices vollstaendig gepinnt. **§11 DoD Box (a) Positiv+Blocker pro Workstream** ist ueber 22 Workstreams audit-sweep abgehakt (2026-05-19). **§11 DoD Box (b) Report-/Exit-Code-Erwartungen** ist mit Per-Exit-Code-Evidenz-Tabelle abgehakt (2026-05-19, alle sieben CLI-spec-Exit-Codes 0/2/3/4/5/7/8 pinned plus alle sieben primaryBlockedReason-Werte inkl. `OBJECT_RENAME_UNSUPPORTED` nach `PlannerBlockerClassifier`-Bridge). **§11 DoD Box (c) Rollback-Tests pro Workstream** ist mit Per-Workstream-Evidenz-Tabelle abgehakt (2026-05-19, 22 Workstreams; 15 Positiv-Down-Pfade + 5 NOT_REVERSIBLE-/ROLLBACK_NOT_POSSIBLE-Blocker-Pfade + 5 strukturelle Carve-outs wo der Blocker IST der Rollback-Vertrag, kein Rollback-Artefakt emittierbar). **§11 DoD ist damit komplett (a/b/c/d/e alle abgehakt).** **Quality-Coverage-Expansion** (Plan-Doc `docs/planning/done/quality-coverage-expansion-plan.md`) komplett 2026-05-31: Phasen A + A-Vervollst + Review-Fixes (`af59567d`/`2e62370c`/`9c369d94`), B + B-Vervollst (`3545b646`/`3ae1bb20`), C + C-MCP (`a2195313`/`1bea5bed`), D N=100/1000 (`67d93ef8`) am 2026-05-30 gelandet; Phase E in vier Sub-Slices nachgezogen — E-Scaffold (`27db7cf4`), E.1 Disposition-Vertrag (`648beec6`), E.2 TBD-Promotion auf `docs/planning/open/adapter-coverage-uplift.md` (`68f917f9`), E.3 Aggregat-Asymmetrie geschlossen (`b3b7105f`), E.3-Review-Fixes (`8ceb2653`); F als Closure (`<dieser Commit>`). Geliefert: `PerfMeasure`/`PerfReport`-Lib in `hexagon:profiling` mit drei Phase-A-Hotpaths (SchemaMigrateRenderPipeline / DiffPlanner / RollbackArtefactBuilder-Roundtrip) + Bestands-Migration formats/streaming, `test/cross-dialect-matrix`-Sweep mit 7 gepinnten + 15+ permanenten Carve-outs (alle mit `ownerTests`-Verifikation), `test/integration-concurrency`-Race-Reproducer fuer PG/MySQL/SQLite (`knownRace=true` Legacy-Gate), `test:e2e-cli`-OperationalHarness gegen file-SQLite via `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`-Override, `test/perf-large-schema`-Scales N=100/1000, Kover-Excludes-Ledger mit `Disposition`-Pflichtspalte (3-Wert-Vokabular + geschlossenes Token-Set fuer `permanent:` und `aggregate-carveout:`) und `make coverage-excludes-check` in `make docs-check`. D-N10k (N=10000 Nightly-Only) bleibt opt-in-Folge-Thema; `adapter-coverage-uplift` ist eigenes Folge-Plan-Doc in `open/`. | ✅ erledigt (2026-05-31) |
 | F.4 Renderer-Blocker-Bridge | `PlannerBlockerClassifier` mappt `DiffDiagnostic.code → MigrationBlockedReason`; PG/MySQL/SQLite-Renderer gruppieren planner-blockers per Reason; F.4-Mapper-Blocker surfacen jetzt als `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED` statt pauschal `DIALECT_UNSUPPORTED_OPERATION`. Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md` | ✅ erledigt (2026-05-19) |
 
-### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Evaluierungen + BI-Demo)
+### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Parquet Cut A + S3-Adapter + BI-Demo) ✅ (2026-06-14)
 
 | Bereich | Aufgabe                                                                                                                                                                          | LF-Ref |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Arch    | Parquet: JVM-Parquet-Bibliotheken gegen Lizenz, API und Streaming-Verhalten pruefen                                                                                              | —      |
-| Formats | Parquet: `ParquetChunkWriter`-Prototyp fuer `data export` mit minimalem Typmapping (Decimal, Temporal, Binary, UUID, JSON, Arrays, Geometry-Sidecar)                             | —      |
-| Test    | Parquet: Prototyp gegen DuckDB lesen lassen (`read_parquet`) und Typen inspizieren                                                                                               | —      |
-| Formats | Parquet: Importpfad (`ParquetChunkReader`) pruefen, chunk-weises Streaming und Schema-/Nullability-Erhalt validieren                                                             | —      |
-| Arch    | Parquet: Manifest-Format fuer Multi-Table-Exports skizzieren (stabile Dateinamen, Schema-Sidecar)                                                                                | —      |
-| Docs    | Parquet: Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope                                                                                                         | —      |
-| Arch    | Object-Storage: Bestehende Artefakt- und Checkpoint-Pfade inventarisieren, minimalen `ArtifactStore`-Port entwerfen, File-Implementierung als Referenz                           | —      |
-| Arch    | Object-Storage: S3-kompatible Implementierung evaluieren, Konfigurations-/Security-Regeln skizzieren, Migration des MCP-/REST-/gRPC-Jobvertrags auf Artifact-Refs planen         | —      |
-| Demo    | BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + MinIO (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten             | —      |
-| Demo    | BI-Demo: Smoke-Script fuer Start, Healthcheck und minimale Demo-Kommandos (Reverse, Profiling, Transfer)                                                                         | —      |
+| Arch    | ✅ Parquet: JVM-Parquet-Bibliotheken gegen Lizenz, API und Streaming-Verhalten geprueft (→ produktiv in Cut A)                                                                                              | —      |
+| Formats | ✅ Parquet: `ParquetChunkWriter` fuer `data export` mit Typmapping (Decimal, Temporal, Binary, UUID, JSON, Arrays, Geometry-Sidecar) — aus Prototyp produktiv in Cut A S3                             | —      |
+| Test    | ✅ Parquet: gegen DuckDB lesen (`read_parquet`) und Typen inspizieren — produktiv als DuckDB-/Arrow-KV-Toleranztests (S9a/S9b)                                                                                               | —      |
+| Formats | ✅ Parquet: Importpfad (`ParquetChunkReader`), chunk-weises Streaming und Schema-/Nullability-Erhalt — produktiv in Cut A S3/S7                                                             | —      |
+| Arch    | ✅ Parquet: Manifest-Format fuer Multi-Table-Exports — produktiv: Bundle-Manifest (S3b) + Single-File-Footer-KV (S4)                                                                                | —      |
+| Docs    | ✅ Parquet: Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope ([`parquet-decision-template.md`](../done/parquet-decision-template.md))                                                                                                         | —      |
+| Arch    | ✅ Object-Storage: Artefakt-/Checkpoint-Pfade inventarisiert — `ArtifactContentStore`/`UploadSegmentStore`/`ArtifactStore`-Ports + File-Impl existieren bereits aus 0.9.6 ([`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md) §3)                           | —      |
+| Arch    | ✅ Object-Storage: S3-Client-Lib evaluiert + Config-/Security-Regeln skizziert + Job-Vertrag-Artifact-Ref-Migration geplant — Verdict **AWS SDK v2 + `url-connection-client`** ([`object-storage-s3-eval.md`](../done/object-storage-s3-eval.md))         | —      |
+| Formats | ✅ Object-Storage: S3-Adapter implementiert — Modul `adapters:driven:storage-s3` (`S3ArtifactContentStore` + `S3UploadSegmentStore`), AWS SDK v2 + `url-connection-client`, SeaweedFS-IT + MCP-E2E; `artifacts.store: s3` in der `.d-migrate.yaml`. **Abgeschlossen 2026-06-12** ([`ImpPlan-0.9.8-object-storage-s3.md`](../done/ImpPlan-0.9.8-object-storage-s3.md))         | —      |
+| Demo    | ✅ BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + SeaweedFS (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten           | —      |
+| Demo    | ✅ BI-Demo: Smoke-Script (`examples/bi-demo/scripts/smoke.sh`) fuer Start, Healthcheck und minimale Demo-Kommandos (Reverse, Profiling, Transfer)                                                                         | —      |
+| Refactor| ✅ (2026-06-02) Atomic-Preserve Service-Mode Sub-Slice A: `SchemaMigrateRunner.lockTimeoutMillis`-Konstruktor-Parameter + `SchemaMigrateRequest.lockTimeoutMillis`-Per-Request-Override + CLI-Flag `--lock-timeout-ms` mit Validation [10, 60_000] + Test-Decorator-Workaround (Finding #6) aus MySQL/SQLite-Atomic-Preserve-IT entfernt. Plan-Doc: [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md) §5 A. | — |
+| Refactor| ✅ (2026-06-02) Atomic-Preserve Service-Mode Sub-Slice E: `AtomicSequencePreserveExecutor.execute()` lernt optionalen `cancellationToken: CancellationToken`-Parameter (Default `none()`); neuer `AtomicSequencePreserveResult.Cancelled`-Sealed-Variant; drei Cancel-Checkpoints pro Dialekt-Adapter (pre-BEGIN / post-probe / post-protected) mit Rollback-Vertrag; Lambda-Plumbing durch `SegmentAwareExecutorFn` / `SegmentAwareMigrationExecutor` / `AtomicSequencePreserveRunner`; 6 IT-Cancel-Tests (PG/MySQL/SQLite × {pre-BEGIN, cancel-in-callback}); CLI-Pfad regressionsfrei via `CancellationToken.none()`. Plan-Doc: [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md) §5 E. | — |
+| Refactor| ✅ (2026-06-02) Atomic-Preserve Service-Mode E-Follow-up: CLI SIGINT/SIGTERM → `CancellationToken.cancel()`-Bridge in `SchemaMigrateWiring.executeInternal` analog `McpServerLifecycle`-Pattern. Ctrl-C während `schema migrate --execute` triggert jetzt sauberen Rollback an einem der drei Atomic-Preserve-Checkpoints + Operator-stderr-Breadcrumb statt hartem JVM-Kill. | — |
+| Refactor| Atomic-Preserve Service-Mode Sub-Slice B (Idempotency-Hook): **Deferred — gefaltet in F**. Code-Audit 2026-06-02 ergab: CLI-Pfad hat keinen echten Replay-Wert (single-shot JVM); bestehender `IdempotencyStore` ist Job-Start-orientiert (`resultRef = Job-ID`, nicht `ExecutionTrace`). Wenn F gebaut wird, hängt der MCP-Handler den bestehenden Store direkt analog `data_transfer_start` ein. | — |
+| Refactor| Atomic-Preserve Service-Mode Sub-Slice C (Connection-Sub-Pool) + D (Quota-Plumbing) + F (`schema_migrate`-Handler-Skeleton): warten auf externen Trigger (MCP-Migrate-Tool / gRPC 1.1.8 / REST 1.2.0). Pure Server-Mode-Infrastruktur ohne CLI-Nutzen. Plan-Doc: [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md) §3.3. MCP-Tool-Plan 2026-06-03 nach `next/` promotet: [`../next/mcp-schema-migrate-tool.md`](../next/mcp-schema-migrate-tool.md) (Sub-Slices F.1-F.6, Wire-Vertrag V1). | — |
+
+> **Ist-Stand 0.9.8 (2026-06-09):** Der Parquet-Track ist über die
+> ursprüngliche Evaluierung hinausgewachsen — auf Basis der positiven
+> Entscheidungsvorlage wurde Parquet **produktiv als „Cut A"** umgesetzt
+> (Sub-Slices S0..S9b, alle closed auf `develop`): Reader-/Writer-Pfad,
+> Bundle- und Single-File-Format, CLI-Wiring, Checkpoint/Resume und die
+> Test-Familien sind vollständig. Der Parquet-Track-Closure
+> (CHANGELOG-`[0.9.8]`-Eintrag + DoD §7) ist sein einziger offener Punkt —
+> siehe [`parquet-productive-cut-a.md`](../done/parquet-productive-cut-a.md).
+> BI-Demo ist unter `examples/bi-demo/` geliefert; die Object-Storage-Eval
+> (Reconciliation + Verdict AWS SDK v2) ist abgeschlossen
+> ([`object-storage-s3-eval.md`](../done/object-storage-s3-eval.md)).
+> **Scope-Erweiterung 2026-06-09:** der S3-**Adapter** (Implementierung)
+> wurde bewusst in 0.9.8 gezogen (vormals Phase 3/4). Damit ist 0.9.8
+> **erst nach** dem S3-Bau + §8-Gate scope-complete; der Tag `v0.9.8`
+> wartet entsprechend (nicht nur auf den Parquet-Closure).
 
 **Ergebnis**: Drei verzahnte Anschluss-Tracks fuer Phase 4 vorbereitet.
 (1) Parquet-Evaluierung liefert Prototyp, DuckDB-Kompatibilitaetsbeleg und
 Entscheidungsvorlage fuer eine spaetere Vollumsetzung. Dies ist bewusst
 keine Lakehouse-Implementierung — Iceberg/Delta/Hudi bleiben ausserhalb
 des Scopes (siehe
-[`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md) §3.2).
+[`parquet-export-import-evaluation.md`](../done/parquet-export-import-evaluation.md) §3.2).
 (2) Object-Storage-ArtifactStore-Plan erstellt einen minimalen
 `ArtifactStore`-Port mit File-Referenz und S3-kompatibler Evaluierung,
 plus die Migrationsskizze fuer MCP-/REST-/gRPC-Jobvertraege auf
 Artifact-Refs (siehe
-[`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)).
+[`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md)).
 (3) BI-Demo-Umgebung unter `examples/bi-demo/` zeigt `d-migrate` in einem
-komponierbaren Analytics-Stack mit PostgreSQL, Metabase und MinIO als
-gemeinsamem Object-Storage-Endpunkt — als reproduzierbares Beispiel,
+komponierbaren Analytics-Stack mit PostgreSQL, Metabase und SeaweedFS
+(S3-kompatibel) als gemeinsamem Object-Storage-Endpunkt — als
+reproduzierbares Beispiel,
 nicht als Enterprise-BI-Plattform (siehe
-[`bi-demo-compose.md`](../next/bi-demo-compose.md)).
+[`bi-demo-compose.md`](../done/bi-demo-compose.md)).
 
 > Hinweis: Positive Parquet-Evaluierung fuehrt zu einem Folge-
 > Implementierungsmilestone in Phase 4 (vermutlich neben 1.6.0 Metadata
-> Catalog und Lakehouse Targets). Object-Storage- und BI-Demo-Plaene
-> bilden die Grundlage fuer Storage- und Showcase-Pfade ab Phase 3/4.
+> Catalog und Lakehouse Targets). Der Object-Storage-**S3-Adapter** wurde
+> dagegen 2026-06-09 in 0.9.8 vorgezogen (Scope-Entscheidung); die
+> BI-Demo-Plaene bleiben Grundlage fuer Showcase-Pfade ab Phase 3/4.
 
 ### Milestone 0.9.9 — Dokumentation und Pilot-Validierung
 
@@ -599,6 +623,22 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 **Ziel**: Feature-Completeness und Ökosystem-Wachstum
 
+### Milestone 1.1.0 — Trino-Federation (read-first)
+
+| Bereich | Aufgabe                                                                                                                          | LF-Ref |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Adapter | Neues Modul `adapters:driven:driver-trino`: `DatabaseDialect.TRINO` + Alias `trino`, URL `trino://user@host:port/catalog/schema` | —      |
+| Adapter | Sealed `DialectConnectionContext` mit `TrinoConnectionContext` (Katalog, `httpScheme`, Session-Allowlist, Maskierung) — keine nullable `trino*`-Felder am generischen Port | —      |
+| Read    | Read-only Pipelines: `schema reverse`, `schema compare` (read-only Ziel-Pfad), `data export`, `data transfer` (nur Source); Phase 1 ist write-frei | —      |
+| Profil  | `adapters:driven:driver-trino-profiling` (fest verkabelt, Source-only) → `data profile --source trino://…`                       | —      |
+| Test    | `test:integration-trino` Smoke gegen Testcontainers (Tranche 2; Vollausbau Phase 2)                                              | —      |
+
+**Ergebnis**: d-migrate nutzt Trino als read-first Federation-Layer
+(Reverse, Compare, Export, Profiling über heterogene Kataloge) — **nicht**
+als OLTP-Migrationspfad. Schreibpfade, Transaktions-/MERGE-Semantik und
+`schema generate` bleiben ausserhalb Phase 1 (spaetere Phasen). Details und
+Tranchen-Schnitt: [`trino.md`](../next/trino.md).
+
 ### Milestone 1.1.8 — gRPC-API
 
 | Bereich | Aufgabe                                                                          | LF-Ref |
@@ -657,7 +697,7 @@ programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 | ----------- | ----------------------------------------------------------------------------------------------- | ------ |
 | Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md) | —      |
 | Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../next/orchestrator-examples.md) | —      |
-| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../next/bi-demo-compose.md) | —      |
+| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../done/bi-demo-compose.md) | —      |
 
 ### Milestone 1.5.5 — KI-Integration
 
@@ -777,6 +817,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.52
-**Stand**: 2026-06-02
-**Status**: Milestone 0.1.0–0.9.7 abgeschlossen — 0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 veröffentlicht. Inhalte 0.9.7: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)**, **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)**, **SQLite-Trigger-Reverse-Read (Sub-Slices A–E)** und **MySQL-Routine-Identity-Reverse-Read** sind umgesetzt; **Quality-Coverage-Expansion** komplett 2026-05-31 (Phasen A/B/C/D am 2026-05-30, E in vier Sub-Slices + Review-Fixes am 2026-05-31, F als Closure): `PerfMeasure`-Lib + 3 Hotpath-PerfSpecs + Bestands-Migration, Cross-Dialekt-Matrix-Sweep mit 7 gepinnten + permanenten Carve-outs (Phase F2 ergaenzt um `Kind.REPORT`/`ROLLBACK`/`FILE_MODE`), PG/MySQL/SQLite Sequence-Preserve-Race-Reproducer, Operational-MCP-Harness gegen file-SQLite mit `schema_compare_start` + MCP `resources/read` (Phase F1), Large-Schema-Scales N=100/1000 mit `HeapDumpOnOutOfMemoryError`-jvmArgs (Phase F5), Kover-Excludes-Ledger mit Disposition-Pflichtspalte + geschlossenem Token-Vokabular + fail-closed-Gradle-Scanner auf unbekannte Selectoren (Phase F4) + Formats-PerfTest-Migration auf `PerfMeasure`/`PerfReport` (Phase F3). D-N10k (N=10000 Nightly) bleibt opt-in-Folge-Thema. **Atomic-Preserve-Folge-Slice** zur 0.9.7-`preserveCurrentValue`-Serie ist 2026-06-01 mit Phasen A + B + C + D + E komplett geliefert: Probe + Restore + protected DDL in einer einzigen Transaktion unter Per-Dialekt-Lock (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`), drei Cross-Plan-Deadlock-Tests pinnen die deterministische Lock-Reihenfolge, `supportsAtomicPreserveAllInPlan = true` pro Dialekt, Stage-AllInPlan-Gate, CHANGELOG + User-Guide + KDoc-Sync. Backlog-Tracker `docs/planning/in-progress/atomic-preserve-followups.md` mit allen 6 Code-Review-Findings + Dead-Code-Cleanup (Interface gelöscht, Adapter-Singletons live) ebenfalls abgehakt — wandert zusammen mit dem Plan-Doc zum 0.9.7-Release-Tag nach `done/`. Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Version**: 3.55
+**Stand**: 2026-06-14 (0.9.8 released — Parquet Cut A + S3-Adapter + BI-Demo; alle Closure-Docs nach done/)
+**Status**: Milestone 0.1.0–0.9.7 abgeschlossen — 0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 veröffentlicht. **0.9.8 ist am 2026-06-14 als `v0.9.8` veröffentlicht** — produktiver Parquet „Cut A" (Sub-Slices S0..S9b closed), S3-kompatibler `ArtifactStore` (Verdict AWS SDK v2 + `url-connection-client`), BI-Demo unter `examples/bi-demo/`, plus die 0.9.8-Refactor-Slices (Atomic-Preserve Service-Mode A+E+SIGINT-Bridge, [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)); alle Closure-Plan-Docs in `docs/planning/done/` (Umbrella [`parquet-productive-cut-a.md`](../done/parquet-productive-cut-a.md)). Develop wird mit dem Release auf die nächste SNAPSHOT-Version gebumpt. Inhalte 0.9.7: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)**, **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)**, **SQLite-Trigger-Reverse-Read (Sub-Slices A–E)** und **MySQL-Routine-Identity-Reverse-Read** sind umgesetzt; **Quality-Coverage-Expansion** komplett 2026-05-31 (Phasen A/B/C/D am 2026-05-30, E in vier Sub-Slices + Review-Fixes am 2026-05-31, F als Closure): `PerfMeasure`-Lib + 3 Hotpath-PerfSpecs + Bestands-Migration, Cross-Dialekt-Matrix-Sweep mit 7 gepinnten + permanenten Carve-outs (Phase F2 ergaenzt um `Kind.REPORT`/`ROLLBACK`/`FILE_MODE`), PG/MySQL/SQLite Sequence-Preserve-Race-Reproducer, Operational-MCP-Harness gegen file-SQLite mit `schema_compare_start` + MCP `resources/read` (Phase F1), Large-Schema-Scales N=100/1000 mit `HeapDumpOnOutOfMemoryError`-jvmArgs (Phase F5), Kover-Excludes-Ledger mit Disposition-Pflichtspalte + geschlossenem Token-Vokabular + fail-closed-Gradle-Scanner auf unbekannte Selectoren (Phase F4) + Formats-PerfTest-Migration auf `PerfMeasure`/`PerfReport` (Phase F3). D-N10k (N=10000 Nightly) bleibt opt-in-Folge-Thema. **Atomic-Preserve-Folge-Slice** zur 0.9.7-`preserveCurrentValue`-Serie ist 2026-06-01 mit Phasen A + B + C + D + E komplett geliefert: Probe + Restore + protected DDL in einer einzigen Transaktion unter Per-Dialekt-Lock (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`), drei Cross-Plan-Deadlock-Tests pinnen die deterministische Lock-Reihenfolge, `supportsAtomicPreserveAllInPlan = true` pro Dialekt, Stage-AllInPlan-Gate, CHANGELOG + User-Guide + KDoc-Sync. Backlog-Tracker `docs/planning/in-progress/atomic-preserve-followups.md` mit allen 6 Code-Review-Findings + Dead-Code-Cleanup (Interface gelöscht, Adapter-Singletons live) ebenfalls abgehakt — wandert zusammen mit dem Plan-Doc zum 0.9.7-Release-Tag nach `done/`. Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit Trino-Federation (1.1.0), gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

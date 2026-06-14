@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.migration.preserve
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
@@ -46,10 +47,25 @@ import java.sql.Connection
  */
 interface AtomicSequencePreserveExecutor {
 
+    /**
+     * Execute the batch under the dialect-specific lock + transaction.
+     *
+     * The [cancellationToken] (Service-Mode Sub-Slice E, 2026-06-02)
+     * is observed at three checkpoints: pre-`BEGIN`, post-probe /
+     * pre-protected-operations, and post-protected /
+     * pre-restore. A positive check rolls back the open transaction
+     * and returns [AtomicSequencePreserveResult.Cancelled]. The
+     * default [CancellationToken.none] keeps the CLI regression-free
+     * (no behaviour change without an injected token); composition
+     * roots that have a request-cancellation channel (MCP, REST,
+     * gRPC) thread a live token through the
+     * [dev.dmigrate.cli.commands.SegmentAwareExecutorFn] lambda.
+     */
     fun execute(
         connection: Connection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
+        cancellationToken: CancellationToken = CancellationToken.none(),
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult
 

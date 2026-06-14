@@ -4,6 +4,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.RoutineCapabilityConfigResolver
 import dev.dmigrate.cli.output.OutputFormatter
+import dev.dmigrate.core.cancel.CancellationTokenSource
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
@@ -19,6 +20,7 @@ import dev.dmigrate.format.overlay.MigrationOverlayJsonCodec
 import dev.dmigrate.format.overlay.MigrationOverlayJsonDecodeException
 import dev.dmigrate.text.icu.IcuUnicodeTextService
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.inputStream
 
 internal data class SchemaMigrateOptions(
@@ -43,13 +45,45 @@ internal data class SchemaMigrateOptions(
     val routineCapabilityFlags: List<String>,
     val strictGapOperations: Boolean,
     val sqliteNamedSequences: String?,
+    val lockTimeoutMs: Long?,
     val cliContext: CliContext,
     val configPath: Path?,
 )
 
 internal object SchemaMigrateWiring {
 
-    fun execute(options: SchemaMigrateOptions): Int {
+    fun execute(options: SchemaMigrateOptions): Int = executeInternal(options)
+
+    /**
+     * Service-Mode Sub-Slice E follow-up (2026-06-02): execute with
+     * injectable shutdown-hook seam. Production calls the parameter-
+     * less [execute] which delegates here; tests substitute
+     * [registerShutdownHook] / [unregisterShutdownHook] / [stderr]
+     * so they can drive the SIGINT path without poisoning the JVM-
+     * wide hook list.
+     *
+     * Lifecycle:
+     * 1. Create a [CancellationTokenSource] per call.
+     * 2. Register a shutdown hook that flips the token on SIGINT
+     *    (Ctrl-C) or SIGTERM. The hook emits an operator-visible
+     *    stderr breadcrumb so the user knows the runner is unwinding.
+     * 3. Pass the token to `SchemaMigrateRunner.execute(request, token)`;
+     *    the runner already observes it at its own checkpoints, and
+     *    `AtomicSequencePreserveExecutor` rolls back the open
+     *    transaction at its three cancel checkpoints (Sub-Slice E,
+     *    commit `7e6f39ae`).
+     * 4. In `finally`, unregister the hook if it did not fire — keeps
+     *    a long-lived JVM (tests, embedded scenarios) from
+     *    accumulating stale hooks. Fired hooks self-cleanup on JVM
+     *    exit; trying to remove them throws `IllegalStateException`
+     *    which we swallow.
+     */
+    internal fun executeInternal(
+        options: SchemaMigrateOptions,
+        registerShutdownHook: (Thread) -> Unit = { Runtime.getRuntime().addShutdownHook(it) },
+        unregisterShutdownHook: (Thread) -> Unit = ::defaultUnregisterShutdownHook,
+        stderr: (String) -> Unit = { System.err.println(it) },
+    ): Int {
         val formatter = OutputFormatter(options.cliContext, IcuUnicodeTextService())
         val validator = SchemaValidator()
         val loadedMigrationOverlays = loadMigrationOverlays(options.migrationOverlays)
@@ -81,6 +115,7 @@ internal object SchemaMigrateWiring {
             routineCapabilityResolver = routineCapabilityResolver::resolve,
             strictGapOperations = options.strictGapOperations,
             sqliteNamedSequences = options.sqliteNamedSequences,
+            lockTimeoutMillis = options.lockTimeoutMs,
         )
         val runner = SchemaMigrateRunner(
             fileLoader = { op ->
@@ -104,7 +139,37 @@ internal object SchemaMigrateWiring {
             renderReport = SchemaMigrateReportRenderer::render,
             printError = { msg, src -> formatter.printError(msg, src) },
         )
-        return runner.execute(request)
+        val tokenSource = CancellationTokenSource.create()
+        val hookFired = AtomicBoolean(false)
+        val hookThread = Thread(
+            {
+                if (hookFired.compareAndSet(false, true)) {
+                    tokenSource.cancel("operator-ctrl-c (SIGINT)")
+                    stderr("\n[d-migrate] Cancellation requested; rolling back atomic operations and exiting...")
+                }
+            },
+            "dmigrate-schema-migrate-cancel-hook",
+        )
+        registerShutdownHook(hookThread)
+        try {
+            return runner.execute(request, tokenSource.token)
+        } finally {
+            if (!hookFired.get()) {
+                runCatching { unregisterShutdownHook(hookThread) }
+            }
+        }
+    }
+
+    private fun defaultUnregisterShutdownHook(thread: Thread) {
+        try {
+            Runtime.getRuntime().removeShutdownHook(thread)
+        } catch (_: IllegalStateException) {
+            // JVM is already in shutdown — the hook either fired or
+            // is firing, nothing to remove.
+        } catch (_: IllegalArgumentException) {
+            // Hook was never actually registered (e.g. tests that
+            // inject a no-op registerShutdownHook).
+        }
     }
 
     private fun loadFromDb(

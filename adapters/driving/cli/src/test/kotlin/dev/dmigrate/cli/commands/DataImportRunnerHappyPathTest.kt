@@ -60,6 +60,8 @@ class DataImportRunnerHappyPathTest : FunSpec({
             is ImportInput.Stdin -> listOf(input.table)
             is ImportInput.SingleFile -> listOf(input.table)
             is ImportInput.Directory -> listOf("t1")
+            is ImportInput.ResolvedBundle -> input.tables.map { it.table }
+                    is ImportInput.ResolvedSingleFile -> listOf(input.table)
         }
         val summaries = tables.map {
             TableImportSummary(
@@ -165,7 +167,7 @@ class DataImportRunnerHappyPathTest : FunSpec({
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         writerLookup: (DatabaseDialect) -> DataWriter = { FakeDataWriter() },
-        schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
+        schemaPreflight: (Path, ImportInput, DataExportFormat, List<String>?) -> SchemaPreflightResult = { _, input, _, _ ->
             SchemaPreflightResult(input)
         },
         schemaTargetValidator:

@@ -142,6 +142,95 @@ class StreamingPortsTest : FunSpec({
         a shouldBe b
     }
 
+    test("ImportInput.ResolvedBundle carries bundleRoot, tables, fingerprint") {
+        val bundleRoot = Path.of("/tmp/bundle")
+        val schema = dev.dmigrate.format.data.ChunkSchema(
+            table = "users",
+            columns = listOf(
+                dev.dmigrate.format.data.ChunkColumnSchema(
+                    name = "id",
+                    nullable = false,
+                    neutralType = dev.dmigrate.core.model.NeutralType.Integer,
+                )
+            ),
+            origin = dev.dmigrate.format.data.SchemaOrigin.JDBC_METADATA,
+        )
+        val binding = ResolvedBundleTableBinding(
+            table = "users",
+            path = bundleRoot.resolve("users.parquet"),
+            schema = schema,
+            expectedSha256 = "abc",
+        )
+        val fingerprint = BundleResumeFingerprint(
+            manifestSha256 = "deadbeef",
+            formatVersion = "1.0",
+            producerVersion = "0.9.8",
+            tableOrder = listOf("users"),
+        )
+        val bundle = ImportInput.ResolvedBundle(
+            bundleRoot = bundleRoot,
+            tables = listOf(binding),
+            resumeFingerprint = fingerprint,
+        )
+        bundle.bundleRoot shouldBe bundleRoot
+        bundle.tables shouldBe listOf(binding)
+        bundle.resumeFingerprint shouldBe fingerprint
+        binding.expectedSha256 shouldBe "abc"
+        fingerprint.tableOrder shouldBe listOf("users")
+    }
+
+    test("ResolvedBundleTableBinding equality + default expectedSha256 null") {
+        val schema = dev.dmigrate.format.data.ChunkSchema(
+            table = "t",
+            columns = emptyList(),
+            origin = dev.dmigrate.format.data.SchemaOrigin.JDBC_METADATA,
+        )
+        val a = ResolvedBundleTableBinding("t", Path.of("/tmp/t.parquet"), schema)
+        val b = ResolvedBundleTableBinding("t", Path.of("/tmp/t.parquet"), schema, expectedSha256 = null)
+        a shouldBe b
+        a.expectedSha256 shouldBe null
+    }
+
+    test("BundleResumeFingerprint equality") {
+        val a = BundleResumeFingerprint("h", "1.0", "0.9.8", listOf("t"))
+        val b = BundleResumeFingerprint("h", "1.0", "0.9.8", listOf("t"))
+        a shouldBe b
+    }
+
+    test("ImportInput.ResolvedSingleFile carries table, path, schema, contentSha256") {
+        val schema = dev.dmigrate.format.data.ChunkSchema(
+            table = "orders",
+            columns = listOf(
+                dev.dmigrate.format.data.ChunkColumnSchema(
+                    name = "id",
+                    nullable = false,
+                    neutralType = dev.dmigrate.core.model.NeutralType.BigInteger,
+                )
+            ),
+            origin = dev.dmigrate.format.data.SchemaOrigin.JDBC_METADATA,
+        )
+        val path = Path.of("/tmp/orders.parquet")
+        val sf = ImportInput.ResolvedSingleFile(
+            table = "orders", path = path, schema = schema, contentSha256 = "abc",
+        )
+        sf.table shouldBe "orders"
+        sf.path shouldBe path
+        sf.schema shouldBe schema
+        sf.contentSha256 shouldBe "abc"
+    }
+
+    test("ImportInput.ResolvedSingleFile equality + default contentSha256 null") {
+        val schema = dev.dmigrate.format.data.ChunkSchema(
+            table = "t",
+            columns = emptyList(),
+            origin = dev.dmigrate.format.data.SchemaOrigin.JDBC_METADATA,
+        )
+        val a = ImportInput.ResolvedSingleFile("t", Path.of("/tmp/t.parquet"), schema)
+        val b = ImportInput.ResolvedSingleFile("t", Path.of("/tmp/t.parquet"), schema, contentSha256 = null)
+        a shouldBe b
+        a.contentSha256 shouldBe null
+    }
+
     test("ImportInput.SingleFile equality") {
         val a = ImportInput.SingleFile("t", Path.of("/tmp/a.json"))
         val b = ImportInput.SingleFile("t", Path.of("/tmp/a.json"))

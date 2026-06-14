@@ -84,7 +84,20 @@ internal class SchemaMigrateExecutionStage(
             // ExecutionTrace via the `IllegalStateException` catch below
             // instead of crashing the CLI with an uncaught exception.
             val segments = segmentForExecute(combined.statements, atomicBatch)
-            exec(dbOperand, request.cliConfigPath, segments, lockTimeoutMillis)
+            // Atomic-Preserve Service-Mode Sub-Slice A: per-request
+            // override wins over the constructor-supplied server
+            // default. CLI sets `request.lockTimeoutMillis` from the
+            // optional `--lock-timeout-ms` flag; `null` falls back to
+            // the constructor field (which defaults to
+            // DEFAULT_LOCK_TIMEOUT_MILLIS for the CLI wiring).
+            val effectiveLockTimeoutMs = request.lockTimeoutMillis ?: lockTimeoutMillis
+            // Service-Mode Sub-Slice E: forward the cancellation
+            // token down to the executor lambda so the dialect
+            // adapter can roll back the atomic transaction if the
+            // caller cancels. CLI passes `CancellationToken.none()`
+            // by default; MCP/REST/gRPC composition roots inject a
+            // live token from the request-cancellation channel.
+            exec(dbOperand, request.cliConfigPath, segments, effectiveLockTimeoutMs, cancellationToken)
                 .withG3Defaults(statementGroups)
         } catch (e: IllegalStateException) {
             // `segmentForExecute` contract violation — the atomic-

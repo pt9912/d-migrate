@@ -127,4 +127,77 @@ class SchemaRefImportPreflightAdapterTest : FunSpec({
         ex.message!! shouldContain "nullability mismatch"
         ex.message!! shouldContain "type mismatch"
     }
+
+    test("prepare topo-sorts ResolvedBundle tables via schema FK") {
+        val schemaFile = writeSchemaFile(
+            """
+            schema_format: "1.0"
+            name: "SchemaRefImport"
+            version: "1.0.0"
+            tables:
+              users:
+                columns:
+                  id:
+                    type: identifier
+              orders:
+                columns:
+                  id:
+                    type: identifier
+                  user_id:
+                    type: integer
+                    references:
+                      table: users
+                      column: id
+            """,
+        )
+        val bundleRoot = Files.createTempDirectory("mcp-bundle-")
+        val ordersPath = bundleRoot.resolve("orders.parquet").also { Files.writeString(it, "") }
+        val usersPath = bundleRoot.resolve("users.parquet").also { Files.writeString(it, "") }
+        try {
+            // Manifest-Reihenfolge (orders -> users) ist alphabetisch und
+            // bricht ohne Topo-Sort die FK-Reihenfolge.
+            val bundle = ImportInput.ResolvedBundle(
+                bundleRoot = bundleRoot,
+                tables = listOf(
+                    dev.dmigrate.streaming.ResolvedBundleTableBinding(
+                        table = "orders",
+                        path = ordersPath,
+                        schema = dev.dmigrate.format.data.ChunkSchema(
+                            table = "orders",
+                            origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                            columns = emptyList(),
+                        ),
+                    ),
+                    dev.dmigrate.streaming.ResolvedBundleTableBinding(
+                        table = "users",
+                        path = usersPath,
+                        schema = dev.dmigrate.format.data.ChunkSchema(
+                            table = "users",
+                            origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                            columns = emptyList(),
+                        ),
+                    ),
+                ),
+                resumeFingerprint = dev.dmigrate.streaming.BundleResumeFingerprint(
+                    manifestSha256 = "deadbeef",
+                    formatVersion = "1.0",
+                    producerVersion = "test",
+                    tableOrder = listOf("orders", "users"),
+                ),
+            )
+
+            val result = SchemaRefImportPreflightAdapter.prepare(
+                schemaPath = schemaFile,
+                schemaFormat = "yaml",
+                input = bundle,
+                format = DataExportFormat.PARQUET,
+            )
+
+            val resolved = result.input as ImportInput.ResolvedBundle
+            // FK fordert users vor orders.
+            resolved.tables.map { it.table } shouldBe listOf("users", "orders")
+        } finally {
+            cleanup(schemaFile, bundleRoot)
+        }
+    }
 })

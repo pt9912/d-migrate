@@ -10,6 +10,7 @@ import dev.dmigrate.mcp.registry.McpCoreJobWorkerFactory
 import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.registry.OperationalMcpWiring
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
 import dev.dmigrate.server.application.artifact.ArtifactRetentionService
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
@@ -160,16 +161,24 @@ internal class McpServeWiring(
     private val serverStateFactory: ServerStateFactory = DefaultServerStateFactory(stderr),
 ) {
 
+    /**
+     * @param artifacts byte-store selection from the `artifacts` YAML
+     *  section, parsed once by [McpServeRunner.parseArtifactsConfigOrExit]
+     *  (the runner also needs it for the startup-sweep skip and the
+     *  start-state stderr line).
+     */
     fun build(
         config: McpServerConfig,
         owner: StateDirOwner,
         cursorKeyring: CursorKeyring?,
+        artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
     ): McpCliServerWiring {
         val phaseC = McpCliRuntimeWiring.runtimeWiring(
             stateDir = owner.resolved.path,
             connectionConfigPath = effectiveConnectionConfigPath,
             cursorKeyring = cursorKeyring,
             operationTimeout = config.operationTimeout,
+            artifacts = artifacts,
         )
         val state = resolveServerStateConfigOrExit() ?: return buildInMemory(config, owner, phaseC)
 
@@ -208,7 +217,12 @@ internal class McpServeWiring(
                 runtimeWiring = phaseCWithJdbc,
                 aiWiring = phaseG,
                 components = components,
-                closeable = CloseStack(listOfNotNull(artifactRetention, finalisationTimeout, bundle.cleanup)),
+                // ownedResources (z. B. S3-Client-Buendel) zuletzt: erst
+                // Loops/DataSource stoppen, dann Adapter-Ressourcen freigeben.
+                closeable = CloseStack(
+                    listOfNotNull(artifactRetention, finalisationTimeout, bundle.cleanup) +
+                        phaseCWithJdbc.ownedResources,
+                ),
                 executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
                 executorShutdownTimeout = asyncCfg?.shutdownTimeout
                     ?: dev.dmigrate.server.application.job.JobExecutorConfig.Async.DEFAULT_SHUTDOWN_TIMEOUT,
@@ -220,7 +234,11 @@ internal class McpServeWiring(
                 try {
                     finalisationTimeout?.close()
                 } finally {
-                    bundle.cleanup.close()
+                    try {
+                        bundle.cleanup.close()
+                    } finally {
+                        runCatching { CloseStack(phaseC.ownedResources).close() }
+                    }
                 }
             }
             throw failure
@@ -251,7 +269,9 @@ internal class McpServeWiring(
             runtimeWiring = phaseC,
             aiWiring = phaseG,
             components = AiMcpRegistries.defaultComponents(phaseG, config.scopeMapping),
-            closeable = CloseStack(listOf(artifactRetention, finalisationTimeout)),
+            closeable = CloseStack(
+                listOf(artifactRetention, finalisationTimeout) + phaseC.ownedResources,
+            ),
         )
     }
 

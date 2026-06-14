@@ -176,7 +176,7 @@ class DataExportRunnerResumePart2Test : FunSpec({
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         readerLookup: (DatabaseDialect) -> DataReader = { FakeDataReader() },
         listerLookup: (DatabaseDialect) -> TableLister = { FakeTableLister() },
-        writerFactoryBuilder: () -> DataChunkWriterFactory = { FakeWriterFactory() },
+        writerFactoryBuilder: (dev.dmigrate.streaming.ExportOutput) -> DataChunkWriterFactory = { _ -> FakeWriterFactory() },
         collectWarnings: () -> List<String> = { emptyList() },
         exportExecutor: ExportExecutor = successExecutor,
         progressReporter: dev.dmigrate.streaming.ProgressReporter = dev.dmigrate.streaming.NoOpProgressReporter,

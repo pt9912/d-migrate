@@ -30,6 +30,11 @@ data class DataImportRequest(
     val schema: Path?,
     val table: String?,
     val tables: List<String>?,
+    /** Explizite Import-Reihenfolge (`--table-order`, nur Directory-Quelle).
+     *  Wenn gesetzt, ist sie beim Ordering authoritative: der Schema-FK-Topo-
+     *  Sort (`--schema`) wird uebersprungen, `--schema` validiert nur noch.
+     *  Praezedenz: `--table-order` > Schema-Topo-Sort > Discovery-Default. */
+    val tableOrder: List<String>? = null,
     val onError: String,
     val onConflict: String?,
     val triggerMode: String,
@@ -48,6 +53,12 @@ data class DataImportRequest(
     val resume: String? = null,
     /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
     val checkpointDir: Path? = null,
+    /** Parquet Cut A S6 (AP12 §4.2): disables checkpoint reads/writes for the
+     *  current run. Mutually exclusive with [resume] (Exit 2 in
+     *  `validateCliFlags`). When `true`, the Phase-1-Hook gets
+     *  `computeContentSha256 = false`, and the [ImportCheckpointManager]
+     *  returns a null store so the run never touches the on-disk manifest. */
+    val noCheckpoint: Boolean = false,
 )
 
 /**
@@ -60,9 +71,15 @@ data class DataImportRequest(
  * - 1 unexpected internal error
  * - 2 CLI validation error (incl. `--resume` on stdin import)
  * - 3 pre-flight failure (header/schema mismatch, strict trigger,
- *   semantically incompatible resume reference)
- * - 4 connection error
- * - 5 import streaming error (with --on-error abort) or post-chunk finalization
+ *   semantically incompatible resume reference; Parquet bundle/single-file
+ *   resume-contract mismatch — `BUNDLE_RESUME_*` / `BUNDLE_CHECKPOINT_MISSING_*`)
+ * - 4 connection error, OR — S9a-0 / AP12 §9 — Parquet format-contract
+ *   violation during preflight (`MANIFEST_*` bundle-manifest errors). The
+ *   exit code is intentionally shared; the stderr code prefix (`MANIFEST_*`
+ *   vs the connection error text) disambiguates.
+ * - 5 import streaming error (with --on-error abort) or post-chunk
+ *   finalization, OR — S9a-0 / AP12 §9 — Parquet bundle resolver/iteration
+ *   error (`BUNDLE_FILTER_*` / `BUNDLE_ORDER_*` / `BUNDLE_TABLE_IMPORT_FAILED`)
  * - 7 config / URL / registry error (incl. unreadable checkpoint file or
  *   unparseable manifest)
  */
@@ -71,8 +88,9 @@ class DataImportRunner(
     private val urlParser: (String) -> ConnectionConfig,
     private val poolFactory: (ConnectionConfig) -> ConnectionPool,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
-    private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
-        { _, input, _ -> SchemaPreflightResult(input) },
+    private val schemaPreflight:
+        (schemaPath: Path, input: ImportInput, format: DataExportFormat, explicitTableOrder: List<String>?) -> SchemaPreflightResult =
+        { _, input, _, _ -> SchemaPreflightResult(input) },
     private val schemaTargetValidator: (schema: SchemaDefinition, table: String, targetColumns: List<TargetColumn>) -> Unit =
         { _, _, _ -> },
     private val importExecutor: ImportExecutor,
@@ -89,6 +107,12 @@ class DataImportRunner(
     private val checkpointConfigResolver: (Path?) -> CheckpointConfig? = { null },
     /** Clock for manifest `createdAt`/`updatedAt`. Separately injectable for deterministic tests. */
     private val clock: () -> Instant = Instant::now,
+    /** Parquet Cut A S6 / Review-Finding F3: konsolidierter Hook mit zwei
+     *  Methoden (`resolveBeforeSchema`, `finalizeBeforePrepare`). Identity-
+     *  Default fuer Nicht-Parquet-Pfade; CLI verdrahtet die Parquet-
+     *  Implementierung. Ersetzt die in S6-iii eingefuehrten getrennten
+     *  ImportInputPhase1Hook/ImportInputPhase2Hook. */
+    private val inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
 ) {
     private val userFacingErrors = UserFacingErrors()
     private val userFacingStderr = userFacingErrors.stderrSink(stderr)
@@ -113,6 +137,7 @@ class DataImportRunner(
         schemaPreflight = schemaPreflight,
         stdinProvider = stdinProvider,
         stderr = userFacingStderr,
+        inputResolutionHook = inputResolutionHook,
     )
 
     private val executionPlanner = ImportExecutionPlanner(
@@ -175,6 +200,49 @@ class DataImportRunner(
         pool: ConnectionPool,
         cancellationToken: CancellationToken,
     ): Int {
+        // Parquet Cut A S6: Phase-2-Hook laeuft **vor** ImportExecutionPlanner.prepare,
+        // damit InputContext, Fingerprint, Resume-Context und Initialmanifest
+        // gegen den finalisierten Input rechnen.
+        //
+        // resumeExpectedSha256 bleibt bewusst `null` (S8d-Re-Cut 2026-06-09):
+        // Der produktive Cross-Run-Resume-Gate fuer Single-File-Parquet ist
+        // ImportCheckpointManager.validateSingleFileResume (S8c) — er vergleicht
+        // den im Checkpoint persistierten SingleFileCheckpointSpecifics.contentSha256
+        // gegen den frisch berechneten inputCtx.singleFileContentSha256. Den hier
+        // verfuegbaren input.contentSha256 als resumeExpectedSha256 zu reichen waere
+        // ein Selbstvergleich (gleiche Quelle auf beiden Seiten) — ein No-Op, der
+        // eine produktiv nicht existierende Sicherheitseigenschaft dokumentieren
+        // wuerde. Der echte erwartete Hash liegt im Resume-Manifest, das erst in
+        // prepare/resolveResumeContext geladen wird; ein non-null-Phase-2-Hash-
+        // Check braeuchte daher einen Orchestrierungs-Reorder (Manifest laden →
+        // Hash extrahieren → finalisieren → InputContext/Manifest/Callbacks auf
+        // finalem Input) und ist als eigener Folge-Slice zu planen, nicht hier.
+        //
+        // Exit-Code-Mapping (symmetrisch zu ImportPreflightResolver):
+        //  - OperationCancelledException wird re-thrown → outer
+        //    executeWithCancel-Catch → CANCELLED_EXIT_CODE (130).
+        //  - IllegalArgumentException → Exit 2 (Hook-Input-Validierung).
+        //  - Andere RuntimeException → Exit 3 (Preflight-Failure).
+        val finalizedInput = try {
+            inputResolutionHook.finalizeBeforePrepare(
+                input = context.preparedImport.input,
+                resumeExpectedSha256 = null,
+            )
+        } catch (e: OperationCancelledException) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            userFacingStderr("Error: ${e.message}")
+            return 2
+        } catch (e: RuntimeException) {
+            userFacingStderr("Error: ${e.message}")
+            return 3
+        }
+        // Review-Finding D3: Unconditional copy statt `===`-Identity-Check.
+        // Datenklassen-copy ist auf dem JVM-Hot-Path billig genug, dass die
+        // Micro-Optimierung den Wartungsoverhead nicht wert ist; ein zukunfts-
+        // sicherer Hook, der `input.copy(...)` zurueckliefert, landet dann nicht
+        // unbeabsichtigt im langsamen Pfad.
+        val preparedImport = context.preparedImport.copy(input = finalizedInput)
         val executionPlan = when (
             val result = executionPlanner.prepare(
                 request = request,
@@ -182,7 +250,7 @@ class DataImportRunner(
                 resolvedUrl = context.resolvedUrl,
                 charset = context.charset,
                 format = context.format,
-                preparedImport = context.preparedImport,
+                preparedImport = preparedImport,
             )
         ) {
             is ImportExecutionPlanResult.Ok -> result.value
@@ -192,7 +260,7 @@ class DataImportRunner(
             val r = streamingInvoker.execute(
                 context.format,
                 pool,
-                context.preparedImport,
+                preparedImport,
                 executionPlan,
                 cancellationToken,
             )
@@ -205,6 +273,9 @@ class DataImportRunner(
             result,
             executionPlan.checkpointStore,
             executionPlan.resumeContext.operationId,
+            // S9a-0.d (AP8 §7.3): Per-Tabelle-Fehler eines Bundle-Laufs
+            // bekommen den stabilen Code BUNDLE_TABLE_IMPORT_FAILED.
+            isParquetBundle = preparedImport.input is ImportInput.ResolvedBundle,
         )
     }
 
@@ -214,6 +285,7 @@ class DataImportRunner(
         result: ImportResult,
         store: CheckpointStore?,
         operationId: String,
+        isParquetBundle: Boolean,
     ): Int {
         return ImportCompletionSupport.finalizeAndReport(
             request = request,
@@ -221,6 +293,7 @@ class DataImportRunner(
             store = store,
             operationId = operationId,
             stderr = userFacingStderr,
+            isParquetBundle = isParquetBundle,
         )
     }
 

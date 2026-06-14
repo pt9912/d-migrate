@@ -47,7 +47,7 @@ object ImportOptionsFingerprint {
      * Source aufgeloest sind.
      */
     data class Input(
-        /** `"json"`/`"yaml"`/`"csv"` — lowercase. */
+        /** `"json"`/`"yaml"`/`"csv"`/`"parquet"` — lowercase (S6 Cut A: parquet ergaenzt). */
         val format: String,
         /** CLI-`--encoding`; `null` = Auto-Detect via BOM. */
         val encoding: String?,

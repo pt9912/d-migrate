@@ -25,11 +25,11 @@ import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.McpCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.cli.output.OutputFormatter
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
 import java.nio.file.Path
 import java.time.ZoneId
 import java.util.Locale
-import java.util.Properties
 
 data class CliContext(
     val outputFormat: String = "plain",
@@ -42,21 +42,7 @@ data class CliContext(
     val normalization: UnicodeNormalizationMode = ResolvedI18nSettings.DEFAULT.normalization,
 )
 
-private const val VERSION_RESOURCE = "dmigrate-version.properties"
-private const val VERSION_KEY = "version"
-private const val UNKNOWN_VERSION = "unknown"
-
-internal fun cliVersion(): String {
-    val properties = Properties()
-    val version = DMigrate::class.java.classLoader
-        .getResourceAsStream(VERSION_RESOURCE)
-        ?.use { input ->
-            properties.load(input)
-            properties.getProperty(VERSION_KEY)?.trim()
-        }
-        ?.takeUnless { it.isNullOrBlank() || '$' in it || '{' in it || '}' in it }
-    return version ?: UNKNOWN_VERSION
-}
+internal fun cliVersion(): String = VersionInfo.PRODUCT_VERSION
 
 class DMigrate(
     private val envLookup: (String) -> String? = System::getenv,

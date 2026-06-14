@@ -5,6 +5,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayInputStream
@@ -54,15 +55,33 @@ class ImportPreflightResolverTest : FunSpec({
         stderr: MutableList<String>,
         targetResolver: (target: String?, configPath: Path?) -> String = { target, _ -> target ?: error("expected target") },
         urlParser: (String) -> ConnectionConfig = { connectionConfig() },
-        schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
-            { _, input, _ -> SchemaPreflightResult(input) },
+        schemaPreflight:
+            (schemaPath: Path, input: ImportInput, format: DataExportFormat, explicitTableOrder: List<String>?) -> SchemaPreflightResult =
+            { _, input, _, _ -> SchemaPreflightResult(input) },
+        inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
     ) = ImportPreflightResolver(
         targetResolver = targetResolver,
         urlParser = urlParser,
         schemaPreflight = schemaPreflight,
         stdinProvider = { ByteArrayInputStream("[]".toByteArray()) },
         stderr = stderr::add,
+        inputResolutionHook = inputResolutionHook,
     )
+
+    fun hookWithResolveBeforeSchema(
+        resolve: (ImportInput, DataExportFormat, Boolean) -> ImportInput,
+    ): ImportInputResolutionHook = object : ImportInputResolutionHook {
+        override fun resolveBeforeSchema(
+            rawInput: ImportInput,
+            format: DataExportFormat,
+            computeContentSha256: Boolean,
+        ): ImportInput = resolve(rawInput, format, computeContentSha256)
+
+        override fun finalizeBeforePrepare(
+            input: ImportInput,
+            resumeExpectedSha256: String?,
+        ): ImportInput = input
+    }
 
     test("resolve returns preflight context for happy path") {
         val stderr = mutableListOf<String>()
@@ -110,7 +129,7 @@ class ImportPreflightResolverTest : FunSpec({
 
         val result = resolver(
             stderr = stderr,
-            schemaPreflight = { _, _, _ -> throw ImportPreflightException("schema mismatch") },
+            schemaPreflight = { _, _, _, _ -> throw ImportPreflightException("schema mismatch") },
         ).resolve(
             request(
                 source = sourceFile.toString(),
@@ -120,6 +139,205 @@ class ImportPreflightResolverTest : FunSpec({
 
         result shouldBe ImportPreflightResolution.Exit(3)
         stderr.single() shouldContain "schema mismatch"
+    }
+
+    test("resolve invokes phase1Hook with raw input and forwards its output") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-parquet-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            val schema = dev.dmigrate.format.data.ChunkSchema(
+                table = "users",
+                origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                columns = emptyList(),
+            )
+            val resolved = ImportInput.ResolvedSingleFile(
+                table = "users",
+                path = sourceFile,
+                schema = schema,
+                contentSha256 = null,
+            )
+            var capturedFormat: DataExportFormat? = null
+            var capturedComputeSha: Boolean? = null
+            val hook = hookWithResolveBeforeSchema { raw, format, compute ->
+                capturedFormat = format
+                capturedComputeSha = compute
+                // raw is the pre-hook ImportInput.SingleFile
+                raw shouldBe ImportInput.SingleFile("users", sourceFile)
+                resolved
+            }
+
+            val result = resolver(
+                stderr = stderr,
+                inputResolutionHook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet")
+            )
+
+            val context = (result as ImportPreflightResolution.Ok).value
+            context.format shouldBe DataExportFormat.PARQUET
+            context.preparedImport shouldBe SchemaPreflightResult(resolved)
+            capturedFormat shouldBe DataExportFormat.PARQUET
+            // Review-Finding E1: ohne --resume wird kein contentSha256 berechnet,
+            // auch wenn der Checkpoint-Store aktiv ist.
+            capturedComputeSha shouldBe false
+            stderr shouldBe emptyList()
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
+    }
+
+    test("resolve passes computeContentSha256 = true when --resume and not --no-checkpoint") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-resume-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            var capturedComputeSha: Boolean? = null
+            val hook = hookWithResolveBeforeSchema { raw, _, compute ->
+                capturedComputeSha = compute
+                raw
+            }
+
+            resolver(
+                stderr = stderr,
+                inputResolutionHook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet").copy(resume = "run-123")
+            )
+
+            capturedComputeSha shouldBe true
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
+    }
+
+    test("resolve passes computeContentSha256 = false to phase1Hook when --no-checkpoint is active") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-no-cp-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            var capturedComputeSha: Boolean? = null
+            val hook = hookWithResolveBeforeSchema { raw, _, compute ->
+                capturedComputeSha = compute
+                raw
+            }
+
+            resolver(
+                stderr = stderr,
+                inputResolutionHook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet").copy(noCheckpoint = true)
+            )
+
+            capturedComputeSha shouldBe false
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
+    }
+
+    test("resolve returns exit 3 when phase1Hook throws") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-parquet-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            val hook = hookWithResolveBeforeSchema { _, _, _ ->
+                throw RuntimeException("PARQUET_SINGLE_FILE_TABLE_REQUIRED: missing --table")
+            }
+
+            val result = resolver(
+                stderr = stderr,
+                inputResolutionHook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet")
+            )
+
+            result shouldBe ImportPreflightResolution.Exit(3)
+            stderr.single() shouldContain "PARQUET_SINGLE_FILE_TABLE_REQUIRED"
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
+    }
+
+    test("resolve returns exit 2 when phase1Hook throws IllegalArgumentException (CLI validation)") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-iae-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            val hook = hookWithResolveBeforeSchema { _, _, _ ->
+                throw IllegalArgumentException("invalid --table override 'order'")
+            }
+
+            val result = resolver(
+                stderr = stderr,
+                inputResolutionHook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet")
+            )
+
+            result shouldBe ImportPreflightResolution.Exit(2)
+            stderr.single() shouldContain "invalid --table override"
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
+    }
+
+    test("resolve maps PreflightExitException from hook to its carried exit code (S9a-0 AP12 §9)") {
+        // Der Core kennt die Parquet-Preflight-Exceptions nicht (Modulgrenze);
+        // der CLI-Hook uebersetzt sie in PreflightExitException(exitCode). Der
+        // Resolver muss exitCode 1:1 durchreichen — 4 fuer MANIFEST_*, 5 fuer
+        // die Bundle-Resolver-Familie. Hier mit einem Fake-Hook simuliert.
+        listOf(4, 5).forEach { code ->
+            val stderr = mutableListOf<String>()
+            val sourceFile = Files.createTempFile("dmigrate-import-preflight-exitcode-", ".parquet").also {
+                Files.writeString(it, "")
+            }
+            try {
+                val hook = hookWithResolveBeforeSchema { _, _, _ ->
+                    throw PreflightExitException(code, "MANIFEST_NOT_FOUND: simulated exit $code")
+                }
+
+                val result = resolver(
+                    stderr = stderr,
+                    inputResolutionHook = hook,
+                ).resolve(
+                    request(source = sourceFile.toString(), format = "parquet")
+                )
+
+                result shouldBe ImportPreflightResolution.Exit(code)
+                stderr.single() shouldContain "MANIFEST_NOT_FOUND"
+            } finally {
+                Files.deleteIfExists(sourceFile)
+            }
+        }
+    }
+
+    test("resolve rethrows OperationCancelledException from phase1Hook (cancel pipeline)") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-cancel-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            val hook = hookWithResolveBeforeSchema { _, _, _ ->
+                throw dev.dmigrate.core.cancel.OperationCancelledException()
+            }
+
+            io.kotest.assertions.throwables.shouldThrow<dev.dmigrate.core.cancel.OperationCancelledException> {
+                resolver(
+                    stderr = stderr,
+                    inputResolutionHook = hook,
+                ).resolve(
+                    request(source = sourceFile.toString(), format = "parquet")
+                )
+            }
+            stderr.shouldBeEmpty()
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
     }
 
     test("resolve returns exit 7 when target URL parsing fails") {

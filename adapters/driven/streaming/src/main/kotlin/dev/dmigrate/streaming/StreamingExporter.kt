@@ -93,6 +93,18 @@ class StreamingExporter(
          */
         onChunkProcessed: (TableChunkProgress) -> Unit = {},
         warningSink: (String) -> Unit = {},
+        /**
+         * Bundle-Closure-Hook (Parquet Cut A S3b, AP7 §10.1).
+         * Wird ausschliesslich am Ende einer
+         * [ExportOutput.FilePerTable]-Operation aufgerufen — nach
+         * dem Schliessen aller Pro-Tabelle-Writer und vor der
+         * Rueckgabe des [ExportResult]. Default: kein Hook.
+         *
+         * Format-Adapter (heute nur Parquet) verdrahten hier ihren
+         * Manifest-Writer; JSON/YAML/CSV-Pfade lassen den Default
+         * stehen — fuer sie gibt es kein Bundle-Konzept.
+         */
+        onBundleClosure: (BundleClosureContext) -> Unit = {},
     ): ExportResult {
         val discoveredTables = tables.ifEmpty { tableLister.listTables(pool) }
         // Skipped tables are not exported but count toward the total table count
@@ -126,13 +138,13 @@ class StreamingExporter(
                     val counting = CountingOutputStream(nonClosing)
                     val writer = writerFactory.create(format, counting, options)
                     try {
-                        val summary = tableExporter.export(TableExportParams(
+                        val result = tableExporter.export(TableExportParams(
                             pool, table, filter, config, writer, counting,
                             progressReporter, 1, 1,
                             resumeMarkers[table], onChunkProcessed, warningSink,
                         ))
-                        tableSummaries += summary
-                        onTableCompleted(summary)
+                        tableSummaries += result.summary
+                        onTableCompleted(result.summary)
                     } finally {
                         runCatching { writer.close() }
                         runCatching { System.out.flush() }
@@ -148,35 +160,37 @@ class StreamingExporter(
                 if (effectiveTables.isNotEmpty()) {
                     val table = effectiveTables.single()
                     exportToFile(output.path, format, options) { counting, writer ->
-                        val summary = tableExporter.export(TableExportParams(
+                        val result = tableExporter.export(TableExportParams(
                             pool, table, filter, config, writer, counting,
                             progressReporter, 1, 1,
                             resumeMarkers[table], onChunkProcessed, warningSink,
                         ))
-                        tableSummaries += summary
-                        onTableCompleted(summary)
+                        tableSummaries += result.summary
+                        onTableCompleted(result.summary)
                         totalBytes += counting.count
                     }
                 }
             }
 
             is ExportOutput.FilePerTable -> {
-                Files.createDirectories(output.directory)
-                val activeCount = discoveredTables.size
-                for ((index, table) in discoveredTables.withIndex()) {
-                    if (table in skippedTables) continue
-                    val path = output.directory.resolve(ExportOutput.fileNameFor(table, format))
-                    exportToFile(path, format, options) { counting, writer ->
-                        val summary = tableExporter.export(TableExportParams(
-                            pool, table, filter, config, writer, counting,
-                            progressReporter, index + 1, activeCount,
-                            resumeMarkers[table], onChunkProcessed, warningSink,
-                        ))
-                        tableSummaries += summary
-                        onTableCompleted(summary)
-                        totalBytes += counting.count
-                    }
-                }
+                totalBytes += exportFilePerTable(
+                    output = output,
+                    discoveredTables = discoveredTables,
+                    skippedTables = skippedTables,
+                    format = format,
+                    options = options,
+                    pool = pool,
+                    filter = filter,
+                    config = config,
+                    progressReporter = progressReporter,
+                    resumeMarkers = resumeMarkers,
+                    onChunkProcessed = onChunkProcessed,
+                    onTableCompleted = onTableCompleted,
+                    warningSink = warningSink,
+                    onBundleClosure = onBundleClosure,
+                    tableExporter = tableExporter,
+                    tableSummaries = tableSummaries,
+                )
             }
         }
 
@@ -189,6 +203,61 @@ class StreamingExporter(
             durationMs = durationMs,
             operationId = operationId,
         )
+    }
+
+    @Suppress("LongParameterList")
+    private fun exportFilePerTable(
+        output: ExportOutput.FilePerTable,
+        discoveredTables: List<String>,
+        skippedTables: Set<String>,
+        format: DataExportFormat,
+        options: ExportOptions,
+        pool: ConnectionPool,
+        filter: DataFilter?,
+        config: PipelineConfig,
+        progressReporter: ProgressReporter,
+        resumeMarkers: Map<String, ResumeMarker>,
+        onChunkProcessed: (TableChunkProgress) -> Unit,
+        onTableCompleted: (TableExportSummary) -> Unit,
+        warningSink: (String) -> Unit,
+        onBundleClosure: (BundleClosureContext) -> Unit,
+        tableExporter: TableExporter,
+        tableSummaries: MutableList<TableExportSummary>,
+    ): Long {
+        Files.createDirectories(output.directory)
+        val activeCount = discoveredTables.size
+        val bundleClosureTables = mutableListOf<BundleClosureTable>()
+        var totalBytes = 0L
+        for ((index, table) in discoveredTables.withIndex()) {
+            if (table in skippedTables) continue
+            val path = output.directory.resolve(ExportOutput.fileNameFor(table, format))
+            exportToFile(path, format, options) { counting, writer ->
+                val result = tableExporter.export(TableExportParams(
+                    pool, table, filter, config, writer, counting,
+                    progressReporter, index + 1, activeCount,
+                    resumeMarkers[table], onChunkProcessed, warningSink,
+                ))
+                tableSummaries += result.summary
+                onTableCompleted(result.summary)
+                totalBytes += counting.count
+                bundleClosureTables += BundleClosureTable(
+                    table = result.summary.table,
+                    file = path,
+                    schema = result.schema,
+                    rowCount = result.summary.rows,
+                )
+            }
+        }
+        if (bundleClosureTables.isNotEmpty()) {
+            onBundleClosure(
+                BundleClosureContext(
+                    directory = output.directory,
+                    format = format,
+                    tables = bundleClosureTables,
+                )
+            )
+        }
+        return totalBytes
     }
 
     private inline fun exportToFile(

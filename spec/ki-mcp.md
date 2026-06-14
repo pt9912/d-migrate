@@ -357,6 +357,37 @@ Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-
 
 ---
 
+### 6.2 Artefakt-Speicher-Backend (`artifacts.store`)
+
+Wo der MCP-Server die Artefakt-Bytes (DDL, Reports, Exporte, Upload-Inputs)
+ablegt, steuert der `artifacts`-Block der `.d-migrate.yaml`. Der Default ist
+ein lokaler Datei-Store; seit 0.9.8 ist alternativ ein S3-kompatibler
+Object-Storage waehlbar (AWS S3, MinIO, SeaweedFS, Ceph/RGW — alles ueber
+`endpoint`/`pathStyle`).
+
+```yaml
+artifacts:
+  store: s3                           # file (Default) | s3
+  s3:
+    bucket: "d-migrate-artifacts"     # Pflicht bei store: s3
+    endpoint: "https://s3.example.com" # optional; fehlt = echtes AWS
+    region: "eu-central-1"            # optional, Default us-east-1
+    prefix: "prod/"                   # optional, Default ""
+    pathStyle: true                   # optional, Default true (S3-kompatibel)
+```
+
+- `store` akzeptiert `file` oder `s3`; jeder andere Wert ist ein
+  Konfigurationsfehler.
+- `store: s3` verlangt einen `artifacts.s3`-Block mit mindestens `bucket`. Ein
+  `artifacts.s3`-Block **ohne** `store: s3` ist ein harter Fehler
+  (Foot-Gun-Guard), damit die S3-Config nicht still ignoriert wird.
+- **Credentials** stehen nicht in der Datei, sondern kommen aus der
+  AWS-SDK-Default-Chain (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, Profile,
+  IAM-Rolle) — kein Secret in `.d-migrate.yaml`.
+- Transport: AWS SDK for Java v2 mit `url-connection-client`. Die opaken
+  `dmigrate://…/artifacts/{id}`-Refs bleiben backend-unabhaengig — ob ein
+  Artefakt im Datei- oder S3-Store liegt, ist fuer Clients transparent.
+
 ## 7. Tool-Vertraege
 
 MCP-Tool-Inputs sollen klein, fachlich und agentenfreundlich sein.

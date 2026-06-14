@@ -1,6 +1,7 @@
 package dev.dmigrate.server.application.ai
 
 import dev.dmigrate.core.util.sha256Hex
+import dev.dmigrate.core.version.VersionInfo
 
 /**
  * LF-017 / LF-024 / LN-030 / LN-031— deterministischer Default-Provider.
@@ -10,7 +11,17 @@ import dev.dmigrate.core.util.sha256Hex
  * Akzeptanz aus LF-017 / LF-024 / LN-030 / LN-031:
  *
  * - liefert deterministische Ergebnisse (gleicher Request →
- *   gleicher Output, byte-identisch)
+ *   gleicher [AiProviderResult.Success.output] und
+ *   [AiProviderResult.Success.outputFingerprint], byte-identisch).
+ *   **Carve-Out**: [ProviderMeta.modelVersion] folgt seit der
+ *   Versions-Quelle-Zentralisierung (2026-06-03) der Tool-Release-
+ *   Version via [VersionInfo.PRODUCT_VERSION] statt einer festen
+ *   Konstante. Die Output-Determinismus-Akzeptanz ist davon
+ *   unberührt — `output` und `outputFingerprint` hängen nicht von
+ *   `modelVersion` ab. Konsumenten, die `ProviderMeta` (inkl.
+ *   `modelVersion`) in Idempotency-Keys oder Goldens aufnehmen,
+ *   müssen einen Release-Wechsel als legitimen Schlüsselwechsel
+ *   behandeln.
  * - kein Netzwerkzugriff (kein I/O über die JVM-Grenze hinaus)
  * - kein externes Secret (nur lokale Konstanten)
  * - kein Stacktrace-Leak (Failure-Pfad existiert nur über
@@ -82,7 +93,7 @@ class NoOpAiProvider(
 
     companion object {
         const val DEFAULT_PROVIDER_NAME: String = "noop"
-        const val DEFAULT_MODEL_VERSION: String = "0.9.7"
+        val DEFAULT_MODEL_VERSION: String get() = VersionInfo.PRODUCT_VERSION
         private const val SHORT_FP_LENGTH: Int = 16
     }
 }

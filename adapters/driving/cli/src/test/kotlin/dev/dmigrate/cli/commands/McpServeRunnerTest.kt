@@ -3,6 +3,8 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
@@ -112,6 +114,72 @@ class McpServeRunnerTest : FunSpec({
             ex.code shouldBe 2
             lines.shouldContain("MCP server configuration is invalid:")
             lines.any { it.startsWith("  - ") } shouldBe true
+        }
+    }
+
+    context("parseArtifactsConfigOrExit (S3.4b)") {
+        test("no connection-config path yields the file default") {
+            newRunner().parseArtifactsConfigOrExit() shouldBe ArtifactStorageConfig.File
+        }
+
+        test("artifacts.store=s3 yields the parsed S3 config") {
+            val configFile = Files.createTempFile("dmigrate-artifacts-s3-", ".yaml")
+            Files.writeString(
+                configFile,
+                """
+                artifacts:
+                  store: s3
+                  s3:
+                    endpoint: "http://seaweed.invalid:8333"
+                    bucket: "mcp-artifacts"
+                """.trimIndent(),
+            )
+            try {
+                val parsed = newRunner(effectivePath = configFile).parseArtifactsConfigOrExit()
+                parsed.shouldBeInstanceOf<ArtifactStorageConfig.S3>()
+                parsed.config.bucket shouldBe "mcp-artifacts"
+            } finally {
+                Files.deleteIfExists(configFile)
+            }
+        }
+
+        test("malformed YAML exits 2 instead of leaking a raw snakeyaml exception (S3.4b-R1)") {
+            val configFile = Files.createTempFile("dmigrate-artifacts-broken-", ".yaml")
+            Files.writeString(configFile, "artifacts: [unclosed")
+            val (lines, sink) = stderrCapture()
+            try {
+                val ex = shouldThrow<McpServeExit> {
+                    newRunner(effectivePath = configFile, stderr = sink).parseArtifactsConfigOrExit()
+                }
+                ex.code shouldBe 2
+                lines.shouldContain("MCP server configuration is invalid:")
+            } finally {
+                Files.deleteIfExists(configFile)
+            }
+        }
+
+        test("invalid artifacts config (s3 without bucket) exits 2 with stderr message") {
+            val configFile = Files.createTempFile("dmigrate-artifacts-bad-", ".yaml")
+            Files.writeString(
+                configFile,
+                """
+                artifacts:
+                  store: s3
+                  s3:
+                    endpoint: "http://seaweed.invalid:8333"
+                """.trimIndent(),
+            )
+            val (lines, sink) = stderrCapture()
+            try {
+                val ex = shouldThrow<McpServeExit> {
+                    newRunner(effectivePath = configFile, stderr = sink).parseArtifactsConfigOrExit()
+                }
+                ex.code shouldBe 2
+                lines.shouldContain("MCP server configuration is invalid:")
+                lines.joinToString("\n") shouldContain "artifacts.s3.bucket is required"
+            } finally {
+                Files.deleteIfExists(configFile)
+            }
         }
     }
 
@@ -255,6 +323,71 @@ class McpServeRunnerTest : FunSpec({
                 )
                 val joined = lines.joinToString("\n")
                 joined shouldContain "removed 0 upload-segment session(s)"
+            } finally {
+                Files.deleteIfExists(dir)
+            }
+        }
+
+        test("artifacts.store=s3 skips segment/artefact sweeps but keeps the assembly sweep (S3.4b)") {
+            val dir = Files.createTempDirectory("dmigrate-sweep-s3-")
+            // Stale local segment bytes: with store=s3 the state dir is not
+            // the byte source, so the sweep MUST NOT touch them.
+            val staleSegment = dir.resolve("segments/stale-session/0.bin")
+            Files.createDirectories(staleSegment.parent)
+            Files.writeString(staleSegment, "stale")
+            val owner = newRunner(McpServeOptions(mcpStateDir = dir)).resolveStateDirOrExit()
+            val (lines, sink) = stderrCapture()
+            try {
+                newRunner(stderr = sink).runStartupSweepOrExit(
+                    owner,
+                    RetentionPolicy.Immediate,
+                    ArtifactStorageConfig.S3(S3StorageConfig(bucket = "b")),
+                )
+                Files.exists(staleSegment) shouldBe true
+                val joined = lines.joinToString("\n")
+                joined shouldContain "segment/artefact sweeps skipped (artifacts.store=s3)"
+                joined shouldContain "assembly spool(s)"
+                joined shouldNotContain "upload-segment session(s)"
+            } finally {
+                runCatching { Files.walk(dir).sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+            }
+        }
+    }
+
+    context("echoStartStateLine") {
+        test("file default names file-backed byte content") {
+            val dir = Files.createTempDirectory("dmigrate-stateline-file-")
+            val owner = newRunner(McpServeOptions(mcpStateDir = dir)).resolveStateDirOrExit()
+            val (lines, sink) = stderrCapture()
+            try {
+                newRunner(stderr = sink).echoStartStateLine(owner)
+                lines.joinToString("\n") shouldContain "byte content is file-backed"
+            } finally {
+                Files.deleteIfExists(dir)
+            }
+        }
+
+        test("artifacts.store=s3 names endpoint and bucket, never credentials (S3.4b)") {
+            val dir = Files.createTempDirectory("dmigrate-stateline-s3-")
+            val owner = newRunner(McpServeOptions(mcpStateDir = dir)).resolveStateDirOrExit()
+            val (lines, sink) = stderrCapture()
+            try {
+                newRunner(stderr = sink).echoStartStateLine(
+                    owner,
+                    ArtifactStorageConfig.S3(
+                        S3StorageConfig(
+                            bucket = "mcp-artifacts",
+                            endpoint = URI.create("http://seaweed.invalid:8333"),
+                            accessKey = "super-secret-key",
+                            secretKey = "super-secret-value",
+                        ),
+                    ),
+                )
+                val joined = lines.joinToString("\n")
+                joined shouldContain "byte content is S3-backed"
+                joined shouldContain "endpoint=http://seaweed.invalid:8333"
+                joined shouldContain "bucket=mcp-artifacts"
+                joined shouldNotContain "super-secret"
             } finally {
                 Files.deleteIfExists(dir)
             }

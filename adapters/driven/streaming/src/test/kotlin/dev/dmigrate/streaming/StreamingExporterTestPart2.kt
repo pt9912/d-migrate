@@ -8,10 +8,12 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.ChunkSequence
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.TableLister
+import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.ExportOptions
+import dev.dmigrate.format.data.chunkSchemaOf
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -340,6 +342,12 @@ internal class FakeChunkSequence(private val chunks: List<DataChunk>) : ChunkSeq
     private var consumed = false
     private var closed = false
 
+    // S0b: ChunkSequence.schema (AP2 §6.4). Faken aus dem ersten Chunk
+    // (oder leer, falls keine Chunks vorhanden).
+    override val schema: ChunkSchema = chunks.firstOrNull()?.let {
+        chunkSchemaOf(it.table, it.columns)
+    } ?: chunkSchemaOf("?", emptyList())
+
     override fun iterator(): Iterator<DataChunk> {
         check(!consumed) { "ChunkSequence already consumed" }
         check(!closed) { "ChunkSequence is closed" }
@@ -378,7 +386,7 @@ internal class RecordingChunkWriterFactory : DataChunkWriterFactory {
         return object : DataChunkWriter {
             private var table: String = "?"
 
-            override fun begin(table: String, columns: List<ColumnDescriptor>) {
+            override fun begin(table: String, schema: ChunkSchema) {
                 this.table = table
                 if (events.lastOrNull() == "create:?") {
                     // Aktualisiere "create:?" auf "create:<table>"
@@ -440,7 +448,7 @@ internal class SpyOutputStream : OutputStream() {
 internal class RealStreamClosingChunkWriterFactory : DataChunkWriterFactory {
     override fun create(format: DataExportFormat, output: OutputStream, options: ExportOptions): DataChunkWriter {
         return object : DataChunkWriter {
-            override fun begin(table: String, columns: List<ColumnDescriptor>) {
+            override fun begin(table: String, schema: ChunkSchema) {
                 output.write("[\n".toByteArray())
             }
             override fun write(chunk: DataChunk) {
@@ -467,7 +475,7 @@ internal class FailingBeginChunkWriterFactory : DataChunkWriterFactory {
 
     override fun create(format: DataExportFormat, output: OutputStream, options: ExportOptions): DataChunkWriter {
         return object : DataChunkWriter {
-            override fun begin(table: String, columns: List<ColumnDescriptor>) {
+            override fun begin(table: String, schema: ChunkSchema) {
                 events += "begin-throw"
                 throw RuntimeException("begin failed for $table")
             }
@@ -494,7 +502,7 @@ internal class FailingWriteChunkWriterFactory : DataChunkWriterFactory {
 
     override fun create(format: DataExportFormat, output: OutputStream, options: ExportOptions): DataChunkWriter {
         return object : DataChunkWriter {
-            override fun begin(table: String, columns: List<ColumnDescriptor>) {
+            override fun begin(table: String, schema: ChunkSchema) {
                 events += "begin"
             }
             override fun write(chunk: DataChunk) {

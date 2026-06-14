@@ -1,10 +1,18 @@
 plugins {
     `java-library`
+    `java-test-fixtures`
 }
 
 dependencies {
     api(project(":hexagon:ports-common"))
     api(project(":hexagon:ports-read"))
+
+    // Parquet Cut A S0b (2026-06-06): testFixtures-Bruecke fuer den
+    // DataChunkWriter.begin-Vertragswechsel. Stellt eine
+    // begin(table, columns)-Extension bereit, die Bestandstests auf den
+    // neuen begin(table, schema)-Vertrag durchreicht.
+    testFixturesApi(project(":hexagon:ports-common"))
+    testFixturesApi(testFixtures(project(":hexagon:ports-common")))
 }
 
 kover {

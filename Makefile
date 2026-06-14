@@ -56,7 +56,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
 
 help:
 	@printf '%s\n' \
@@ -66,6 +66,7 @@ help:
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links and coverage docs' \
 		'  make solid-suppression-gate  Fail on SOLID detekt suppressions in production Kotlin sources' \
+		'  make parquet-sweep     Run the Parquet Cut-A sealed-when sweep (AP13 §4.1)' \
 		'  make gates            Run Docker check, coverage and docs gates' \
 		'  make ci               Run Docker build, coverage and docs gates' \
 		'  make ci-build         Run CI build tasks inside the Docker build stage' \
@@ -88,6 +89,13 @@ help:
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
 		'  make golden-update    Regenerate pinned tool-schema golden snapshots via Docker' \
 		'  make clean            Run Gradle clean' \
+		'' \
+		'BI-Demo (examples/bi-demo, Spec: docs/planning/in-progress/bi-demo-compose.md):' \
+		'  make bi-demo-pull     Pull pinned images (postgres + seaweed + aws-cli + metabase)' \
+		'  make bi-demo-up       Start the stack (creates .env from .env.example if missing)' \
+		'  make bi-demo-down     Stop containers (named volumes survive)' \
+		'  make bi-demo-purge    Stop containers and remove all named volumes' \
+		'  make bi-demo-smoke    End-to-end smoke (pull + up + d-migrate + S3-upload + verify)' \
 		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
@@ -116,14 +124,26 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
+# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.1.0, siehe
+# https://github.com/pt9912/d-check/releases/tag/v0.1.0); Konfiguration
+# in .d-check.yml. Ersetzt scripts/verify-doc-refs.sh (gelöscht).
+D_CHECK_IMAGE ?= ghcr.io/pt9912/d-check@sha256:5710b54bc4712af9769d7a820fd3fe62621451daeb43f3e9737b382099137b9e
+
 docs-check: coverage-excludes-check
-	./scripts/verify-doc-refs.sh
+	$(DOCKER) run --rm -v "$(CURDIR)":/repo:ro $(D_CHECK_IMAGE)
 
 coverage-excludes-check:
 	python3 ./scripts/verify-kover-excludes-ledger.py
 
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
+
+# Parquet Cut-A (0.9.8) — Sealed-when-Sweep aus AP13 §4.1.
+# Pflicht-Lauf vor jedem Parquet-PR-Merge auf
+# feature/parquet-0.9.8 (Umbrella PI-2 +
+# docs/operations/parquet-pr-checklist.md).
+parquet-sweep:
+	./scripts/parquet-sealed-sweep.sh
 
 gates: docker-check docker-coverage-gate docs-check
 
@@ -258,3 +278,34 @@ docker-full-gates: docker-gates integration
 
 clean:
 	$(GRADLE) clean
+
+# ── BI-Demo (examples/bi-demo) ─────────────────────────────────────
+#
+# Kapselt den langen `docker compose -f
+# examples/bi-demo/docker-compose.yml ...`-Pfad. Spec siehe
+# `docs/planning/in-progress/bi-demo-compose.md`. Voraussetzung
+# fuer den `dmigrate`-Service: einmaliger `make docker-build
+# IMAGE_TAG=dev` (baut das d-migrate:dev-Runtime-Image).
+BI_DEMO_COMPOSE := docker compose -f examples/bi-demo/docker-compose.yml
+
+bi-demo-env:
+	@if [ ! -f examples/bi-demo/.env ]; then \
+	  cp examples/bi-demo/.env.example examples/bi-demo/.env; \
+	  echo "[bi-demo] created examples/bi-demo/.env from .env.example"; \
+	fi
+	@mkdir -p examples/bi-demo/out
+
+bi-demo-pull: bi-demo-env
+	$(BI_DEMO_COMPOSE) pull
+
+bi-demo-up: bi-demo-env
+	$(BI_DEMO_COMPOSE) up -d
+
+bi-demo-down:
+	$(BI_DEMO_COMPOSE) down
+
+bi-demo-purge:
+	$(BI_DEMO_COMPOSE) down -v
+
+bi-demo-smoke:
+	./examples/bi-demo/scripts/smoke.sh

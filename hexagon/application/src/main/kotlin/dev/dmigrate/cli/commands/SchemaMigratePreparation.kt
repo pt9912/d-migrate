@@ -226,7 +226,27 @@ internal class SchemaMigratePreparation(
             )
             return 2
         }
+        // Atomic-Preserve Service-Mode Sub-Slice A: validate the
+        // optional per-request lock-timeout override. Range
+        // [LOCK_TIMEOUT_MIN_MS, LOCK_TIMEOUT_MAX_MS] mirrors the
+        // documented operator-budget bounds — values below 10 ms
+        // would race with executor setup overhead, values above
+        // 60 s exceed any reasonable Same-JVM operator wait.
+        request.lockTimeoutMillis?.let { ms ->
+            if (ms !in LOCK_TIMEOUT_MIN_MS..LOCK_TIMEOUT_MAX_MS) {
+                printError(
+                    "--lock-timeout-ms must be in [$LOCK_TIMEOUT_MIN_MS, $LOCK_TIMEOUT_MAX_MS], got $ms.",
+                    request.source,
+                )
+                return 2
+            }
+        }
         return null
+    }
+
+    companion object {
+        const val LOCK_TIMEOUT_MIN_MS: Long = 10L
+        const val LOCK_TIMEOUT_MAX_MS: Long = 60_000L
     }
 
     private fun collidesWithOperand(out: Path, vararg operands: Path): Boolean {

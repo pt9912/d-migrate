@@ -102,24 +102,10 @@ internal class ImportPreflightValidator(
                 }
                 else -> null
             }
-        val effectiveTables: List<String> = when (val input = preparedImport.input) {
-            is ImportInput.Stdin -> listOf(input.table)
-            is ImportInput.SingleFile -> listOf(input.table)
-            is ImportInput.Directory -> directoryScan!!.map { it.table }
-        }
-        val inputFilesByTable: Map<String, String> = directoryScan
-            ?.associate { it.table to it.fileName }
-            ?: emptyMap()
-        val inputTopology: String = when (preparedImport.input) {
-            is ImportInput.Stdin -> "stdin"
-            is ImportInput.SingleFile -> "single-file"
-            is ImportInput.Directory -> "directory"
-        }
-        val inputPath: String = when (val input = preparedImport.input) {
-            is ImportInput.Stdin -> "<stdin>"
-            is ImportInput.SingleFile -> input.path.toAbsolutePath().normalize().toString()
-            is ImportInput.Directory -> input.path.toAbsolutePath().normalize().toString()
-        }
+        val effectiveTables: List<String> = effectiveTablesFor(preparedImport.input, directoryScan)
+        val inputFilesByTable: Map<String, String> = inputFilesByTableFor(preparedImport.input, directoryScan)
+        val inputTopology: String = inputTopologyFor(preparedImport.input)
+        val inputPath: String = inputPathFor(preparedImport.input)
         val fingerprint = ImportOptionsFingerprint.compute(
             ImportOptionsFingerprint.Input(
                 format = request.format
@@ -142,6 +128,106 @@ internal class ImportPreflightValidator(
                 inputFilesByTable = inputFilesByTable,
             )
         )
-        return InputContextResult.Ok(InputContext(effectiveTables, inputFilesByTable, fingerprint))
+        return InputContextResult.Ok(
+            InputContext(
+                effectiveTables = effectiveTables,
+                inputFilesByTable = inputFilesByTable,
+                fingerprint = fingerprint,
+                bundleExpectedSha256ByTable = bundleExpectedSha256ByTableFor(preparedImport.input),
+                singleFileContentSha256 = singleFileContentSha256For(preparedImport.input),
+                bundleResumeFingerprint = bundleResumeFingerprintFor(preparedImport.input),
+            )
+        )
+    }
+
+    /**
+     * S8c (AP9 §4.2): leitet den Bundle-Resume-Fingerprint aus dem
+     * aufgeloesten [ImportInput.ResolvedBundle] ab. `null` fuer andere
+     * Quellen.
+     */
+    private fun bundleResumeFingerprintFor(input: ImportInput): dev.dmigrate.streaming.BundleResumeFingerprint? =
+        when (input) {
+            is ImportInput.ResolvedBundle -> input.resumeFingerprint
+            is ImportInput.ResolvedSingleFile,
+            is ImportInput.Stdin,
+            is ImportInput.SingleFile,
+            is ImportInput.Directory -> null
+        }
+
+    /**
+     * S8b (AP9 §7.5): leitet die Bundle-Per-Tabelle-SHA-Map aus dem
+     * aufgeloesten [ImportInput.ResolvedBundle] ab. Andere Quellen
+     * liefern `null` — der Pre-AP8-Branch im Checkpoint-Manager nutzt
+     * das als „Bundle-Lauf?"-Anker.
+     */
+    private fun bundleExpectedSha256ByTableFor(input: ImportInput): Map<String, String?>? =
+        when (input) {
+            is ImportInput.ResolvedBundle -> input.tables.associate { it.table to it.expectedSha256 }
+            is ImportInput.ResolvedSingleFile,
+            is ImportInput.Stdin,
+            is ImportInput.SingleFile,
+            is ImportInput.Directory -> null
+        }
+
+    /**
+     * S8b (AP11 §6.4): leitet den Single-File-Content-SHA aus dem
+     * aufgeloesten [ImportInput.ResolvedSingleFile] ab. `null` fuer
+     * andere Quellen oder bei `--no-checkpoint`/Fresh-Run (siehe
+     * `ImportPreflightResolver.kt:76-79`).
+     */
+    private fun singleFileContentSha256For(input: ImportInput): String? =
+        when (input) {
+            is ImportInput.ResolvedSingleFile -> input.contentSha256
+            is ImportInput.ResolvedBundle,
+            is ImportInput.Stdin,
+            is ImportInput.SingleFile,
+            is ImportInput.Directory -> null
+        }
+
+    private fun effectiveTablesFor(
+        input: ImportInput,
+        directoryScan: List<DirectoryImportScanner.ScannedTable>?,
+    ): List<String> = when (input) {
+        is ImportInput.Stdin -> listOf(input.table)
+        is ImportInput.SingleFile -> listOf(input.table)
+        is ImportInput.Directory -> directoryScan!!.map { it.table }
+        is ImportInput.ResolvedBundle -> input.tables.map { it.table }
+        is ImportInput.ResolvedSingleFile -> listOf(input.table)
+    }
+
+    private fun inputFilesByTableFor(
+        input: ImportInput,
+        directoryScan: List<DirectoryImportScanner.ScannedTable>?,
+    ): Map<String, String> = when (input) {
+        // Path.relativize(...).toString() benutzt den Plattform-Separator
+        // ("/" auf Linux, "\\" auf Windows). Der Wert fliesst in den
+        // Resume-Fingerprint und das persistierte Manifest, daher muessen
+        // wir auf einen plattformneutralen "/"-Separator normalisieren,
+        // sonst bricht jeder Cross-OS- oder Cross-Container-Resume
+        // (Review-Finding A2).
+        is ImportInput.ResolvedBundle -> input.tables.associate {
+            it.table to input.bundleRoot.relativize(it.path).invariantSeparators()
+        }
+        is ImportInput.ResolvedSingleFile -> mapOf(input.table to input.path.fileName.toString())
+        else -> directoryScan?.associate { it.table to it.fileName } ?: emptyMap()
+    }
+
+    private fun java.nio.file.Path.invariantSeparators(): String =
+        toString().replace('\\', '/')
+
+    private fun inputTopologyFor(input: ImportInput): String = when (input) {
+        is ImportInput.Stdin -> "stdin"
+        is ImportInput.SingleFile -> "single-file"
+        is ImportInput.Directory -> "directory"
+        is ImportInput.ResolvedBundle -> "bundle"
+        is ImportInput.ResolvedSingleFile -> "single-file"
+    }
+
+    private fun inputPathFor(input: ImportInput): String = when (input) {
+        is ImportInput.Stdin -> "<stdin>"
+        is ImportInput.SingleFile -> input.path.toAbsolutePath().normalize().toString()
+        is ImportInput.Directory -> input.path.toAbsolutePath().normalize().toString()
+        is ImportInput.ResolvedBundle -> input.bundleRoot.toAbsolutePath().normalize().toString()
+        is ImportInput.ResolvedSingleFile -> input.path.toAbsolutePath().normalize().toString()
     }
 }

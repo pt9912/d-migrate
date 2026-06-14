@@ -1,0 +1,47 @@
+name: BI-Demo Smoke (Best-Effort)
+
+# BD.5 — optionaler End-to-End-Smoke-Job.
+# Spec: docs/planning/done/bi-demo-compose.md §9 BD.5.
+#
+# Faehrt `make bi-demo-smoke` (komplettes Compose-Up + d-migrate
+# Reverse/Profile/Generate + S3-Upload). Der Metabase-Browser-
+# Schritt ist NICHT Teil der Pipeline — Metabase wird nur als
+# Container hochgefahren, nicht UI-getestet.
+#
+# Best-Effort: `continue-on-error: true`, damit Stack-Instabilitaeten
+# (Image-Pull-Timeouts, transiente Docker-Hub-Outages) den Hauptbuild
+# nicht rot machen. Schlaegt der Smoke fehl, wandert das ins
+# Job-Log, blockt aber keinen Merge.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'examples/bi-demo/**'
+      - 'Makefile'
+      - '.github/workflows/bi-demo-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run BI-Demo smoke (pull + up + d-migrate + S3)
+        run: make bi-demo-smoke
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make bi-demo-purge || true

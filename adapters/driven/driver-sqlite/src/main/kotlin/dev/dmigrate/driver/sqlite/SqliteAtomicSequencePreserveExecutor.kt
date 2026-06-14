@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
@@ -51,6 +52,7 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         connection: Connection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
+        cancellationToken: CancellationToken,
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult {
         require(lockTimeoutMillis > 0) {
@@ -71,6 +73,13 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         }
         AtomicSequencePreserveExecutor.requireOwnedConnection(connection)
 
+        // Service-Mode Sub-Slice E checkpoint 1 (pre-BEGIN IMMEDIATE):
+        // no transaction or `PRAGMA busy_timeout` override yet;
+        // short-circuit without touching the connection.
+        if (cancellationToken.isCancellationRequested) {
+            return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+        }
+
         val previousAutoCommit = connection.autoCommit
         val previousBusyTimeout = readBusyTimeout(connection)
         connection.autoCommit = true
@@ -85,7 +94,7 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
                     AtomicSequencePreserveResult.Failed(sortedRefs.first(), e)
                 }
             }
-            return runUnderLock(connection, sortedRequests, sortedRefs, batch, executeProtectedOperations)
+            return runUnderLock(connection, sortedRequests, sortedRefs, batch, executeProtectedOperations, cancellationToken)
         } finally {
             runCatching { applyBusyTimeout(connection, previousBusyTimeout) }
             runCatching { connection.autoCommit = previousAutoCommit }
@@ -98,6 +107,7 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         sortedRefs: List<SequenceObjectRef>,
         batch: AtomicSequencePreserveBatch,
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        cancellationToken: CancellationToken,
     ): AtomicSequencePreserveResult {
         val probeResults = mutableMapOf<SequenceObjectRef, SequenceCurrentValueProbeResult.Read>()
         for (request in sortedRequests) {
@@ -106,11 +116,27 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
                 return earlyExit
             }
         }
+        // Service-Mode Sub-Slice E checkpoint 2 (post-probe,
+        // pre-protected-operations): rollback releases the
+        // database-wide RESERVED lock acquired by BEGIN IMMEDIATE so
+        // other writers can proceed.
+        if (cancellationToken.isCancellationRequested) {
+            rollbackQuietly(connection)
+            return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+        }
         try {
             executeProtectedOperations(connection, batch.protectedOperationIds)
         } catch (e: Throwable) {
             rollbackQuietly(connection)
             return AtomicSequencePreserveResult.Failed(sortedRefs.last(), e)
+        }
+        // Service-Mode Sub-Slice E checkpoint 3 (post-protected,
+        // pre-restore): rollback undoes the protected-operation
+        // statements so `dmg_sequences` is unchanged after a
+        // caller-observed cancellation.
+        if (cancellationToken.isCancellationRequested) {
+            rollbackQuietly(connection)
+            return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
         }
         for (request in sortedRequests) {
             val probe = probeResults.getValue(request.sequenceRef)

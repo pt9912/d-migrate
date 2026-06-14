@@ -413,7 +413,7 @@ CREATE TABLE "orders" (
 
 ## Daten exportieren
 
-Tabellendaten können aus einer Datenbank in JSON, YAML oder CSV exportiert werden:
+Tabellendaten können aus einer Datenbank in JSON, YAML, CSV oder Parquet exportiert werden:
 
 ```bash
 # Eine Tabelle als JSON nach stdout
@@ -438,7 +438,7 @@ d-migrate data export --source staging --format json --tables orders \
 
 ## Daten importieren
 
-Daten aus JSON, YAML oder CSV können transaktional in eine Datenbank importiert werden:
+Daten aus JSON, YAML, CSV oder Parquet können transaktional in eine Datenbank importiert werden:
 
 ```bash
 # JSON-Datei importieren
@@ -471,6 +471,43 @@ d-migrate data export --source postgresql://localhost/source --format json \
 d-migrate data import --source ./transfer --target mysql://localhost/target \
     --format json --schema mein-schema.yaml --truncate
 ```
+
+## Parquet-Export und -Import
+
+`--format parquet` schreibt und liest Apache Parquet (spaltenorientiert,
+komprimiert) — geeignet für Analytics-/Lakehouse-Ziele (DuckDB, Arrow).
+Das Layout richtet sich nach dem Ausgabeziel:
+
+- **Bundle** — ein **Verzeichnis** mit einer Parquet-Datei pro Tabelle
+  plus `manifest.yaml` (Tabellen-Reihenfolge, Schema-Fingerprint,
+  optionale SHA-256-Summen). Für Multi-Table-Export/-Import.
+- **Single-File** — eine einzelne `.parquet`-Datei mit dem d-migrate-
+  Manifest in den Footer-Key-Values.
+
+```bash
+# Bundle-Export (Verzeichnis-Ziel → Bundle + manifest.yaml)
+d-migrate data export --source staging --format parquet \
+    --tables customers,orders --output ./export-parquet
+
+# Single-File-Export (.parquet-Ziel → Single-File)
+d-migrate data export --source staging --format parquet \
+    --tables orders --output orders.parquet
+
+# Bundle-Import (Verzeichnis-Quelle; Reihenfolge aus dem Manifest)
+d-migrate data import --source ./export-parquet --target mysql://localhost/target \
+    --format parquet --schema mein-schema.yaml
+```
+
+Parquet-spezifische Flags:
+
+- `--table-order t1,t2,…` — verbindliche Tabellen-Reihenfolge für Bundles
+  (Vorrang vor der FK-Topologie aus `--schema`).
+- `--manifest-sha256` — beim Bundle-Export je Tabelle eine SHA-256-Summe
+  ins `manifest.yaml` schreiben (Integritätsprüfung beim Import).
+
+`--resume` / `--checkpoint-dir` gelten für Parquet wie für die anderen
+Formate (Bundle und Single-File). Die Bundle-Preflight-Exit-Codes folgen
+dem Vertrag aus CHANGELOG `[0.9.8]`.
 
 ## CLI-Optionen
 
@@ -510,7 +547,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `--source`            | Connection-URL oder Name aus `.d-migrate.yaml` (Pflicht)  |
-| `--format`            | Ausgabeformat: `json`, `yaml`, `csv` (Pflicht)            |
+| `--format`            | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (Pflicht) |
 | `--output`, `-o`      | Ausgabedatei oder -verzeichnis (Standard: stdout)         |
 | `--tables`            | Nur diese Tabellen (kommasepariert)                       |
 | `--filter`            | Filter-DSL-Ausdruck (Vergleiche, IN, IS NULL, AND/OR/NOT, Funktionen) |
@@ -531,7 +568,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | --------------------- | --------------------------------------------------------- |
 | `--source`            | Datendatei oder -verzeichnis (Pflicht)                    |
 | `--target`            | Connection-URL oder Name aus `.d-migrate.yaml` (Pflicht)  |
-| `--format`            | Eingabeformat: `json`, `yaml`, `csv` (Pflicht)            |
+| `--format`            | Eingabeformat: `json`, `yaml`, `csv`, `parquet` (Pflicht) |
 | `--schema`            | Schema-Datei für Preflight-Validierung                    |
 | `--on-conflict`       | `abort` (Standard) oder `update` (UPSERT)                 |
 | `--truncate`          | Zieltabellen vor dem Import leeren                        |
@@ -682,6 +719,11 @@ unten:
 - SQLite: `BEGIN IMMEDIATE` (DB-weiter Write-Lock; xerial-spezifischer
   Lock-Wait per `setQueryTimeout`).
 
+Die maximale Lock-Wartezeit ist seit 0.9.8 über `--lock-timeout-ms <ms>`
+einstellbar (gültig 10–60000 ms). Läuft der Lock-Erwerb in den Timeout,
+bricht der Lauf kontrolliert mit einem `LockTimeout`-Ergebnis ab statt
+unbegrenzt zu warten.
+
 SQLite-Voraussetzung (`helper_table`-Modus):
 
 ```bash
@@ -736,6 +778,7 @@ d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch ü
 - [Schema-YAML-Referenz](../../spec/schema-reference.md) -- Kurzreferenz fuer das Schema-Format
 - [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md) -- Vollständige Typsystem-Referenz
 - [CLI-Spezifikation](../../spec/cli-spec.md) -- Alle Kommandos und Exit-Codes
+- [BI-Demo-Stack](../../examples/bi-demo/README.md) -- Analytics-Compose-Stack (Postgres + Metabase + SeaweedFS/S3) mit Parquet-Export in Object-Storage (0.9.8)
 - [Design-Dokument](../../spec/design.md) -- Architektur und Designentscheidungen
 - [Roadmap](../planning/in-progress/roadmap.md) -- Geplante Features und Meilensteine
 - [README (English)](../../README.md) -- Projektübersicht auf Englisch

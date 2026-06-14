@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
@@ -14,9 +15,11 @@ import java.nio.file.Path
 internal class ImportPreflightResolver(
     private val targetResolver: (target: String?, configPath: Path?) -> String,
     private val urlParser: (String) -> ConnectionConfig,
-    private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult,
+    private val schemaPreflight:
+        (schemaPath: Path, input: ImportInput, format: DataExportFormat, explicitTableOrder: List<String>?) -> SchemaPreflightResult,
     private val stdinProvider: () -> InputStream,
     private val stderr: (String) -> Unit,
+    private val inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
 ) {
 
     fun resolve(request: DataImportRequest): ImportPreflightResolution {
@@ -30,16 +33,84 @@ internal class ImportPreflightResolver(
         val format = DataImportHelpers.resolveFormat(request, isStdin, sourcePath, stderr)
             ?: return ImportPreflightResolution.Exit(2)
 
+        DataImportHelpers.validateFormatPathRequirements(format, isStdin, stderr)
+            ?.let { return ImportPreflightResolution.Exit(it) }
+
         if (sourcePath != null && !Files.exists(sourcePath)) {
             stderr("Error: Source path does not exist: $sourcePath")
             return ImportPreflightResolution.Exit(2)
         }
 
-        val importInput = try {
-            DataImportHelpers.resolveImportInput(request, isStdin, sourcePath, stdinProvider)
+        val rawInput = try {
+            DataImportHelpers.resolveImportInput(
+                request = request,
+                isStdin = isStdin,
+                sourcePath = sourcePath,
+                stdinProvider = stdinProvider,
+                format = format,
+            )
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}")
             return ImportPreflightResolution.Exit(2)
+        }
+
+        // Parquet Cut A S6: parquet-freier Phase-1-Hook. Die Identity-Default-
+        // Variante laesst nicht-Parquet-Pfade unveraendert; CLI verdrahtet
+        // den Parquet-Hook, der Directory→ResolvedBundle und
+        // SingleFile→ResolvedSingleFile transformiert.
+        //
+        // Review-Finding E1: SHA-256 nur berechnen, wenn der Lauf einen
+        // konkreten Resume-Anker hat (`--resume` gesetzt) UND der Checkpoint-
+        // Store nicht abgeschaltet ist (`--no-checkpoint` aus). Fresh imports
+        // sparen damit den vollen Bytestream-Read; die spaeter (S8) hinzu-
+        // kommende Resume-Hash-Verifikation bekommt den Wert nur, wenn er
+        // ueberhaupt verglichen wird.
+        //
+        // Exit-Code-Mapping (symmetrisch zu resolveImportInput):
+        //  - IllegalArgumentException → Exit 2 (CLI-Validierung des Hook-Inputs).
+        //  - OperationCancelledException wird REthrowed (Cancel-Pipeline → 130).
+        //  - Andere RuntimeException → Exit 3 (Preflight-Failure, z.B.
+        //    PARQUET_BUNDLE_MANIFEST_PARSE_ERROR).
+        // Review-Finding F2/E1: SHA-Berechnung nur wenn der Checkpoint-Modus
+        // Enabled UND ein Resume-Anker gesetzt ist. Sealed-when statt
+        // verkettete Boolean-Operationen.
+        // S9b-Fix (Single-File-Resume-Verdrahtung): den Content-Hash auch
+        // beim **Fresh-Run** berechnen, wenn ein Checkpoint-Store aktiv wird
+        // (`--checkpoint-dir` gesetzt). Sonst persistiert
+        // `operationSpecificFrom` mangels Hash KEIN SingleFileCheckpointSpecifics,
+        // und jeder spaetere `--resume` faellt auf den Pre-AP8-Branch
+        // (`BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`) statt
+        // `validateSingleFileResume`/`CONTENT_CHANGED` zu erreichen. Der
+        // Resume-Fall berechnet ihn ohnehin; die E1-Optimierung bleibt fuer
+        // checkpoint-lose Single-File-Importe erhalten.
+        // Bekannte Rest-Luecke: ein nur per Config (pipeline.checkpoint.directory)
+        // gesetztes Verzeichnis ist hier nicht sichtbar (der Resolver kennt nur
+        // den CLI-Override) — Folge-Scope, falls relevant.
+        val computeContentSha256 = when (val mode = request.checkpointMode) {
+            CheckpointMode.Disabled -> false
+            is CheckpointMode.Enabled -> mode.resume != null || request.checkpointDir != null
+        }
+        val importInput = try {
+            inputResolutionHook.resolveBeforeSchema(
+                rawInput = rawInput,
+                format = format,
+                computeContentSha256 = computeContentSha256,
+            )
+        } catch (e: OperationCancelledException) {
+            throw e
+        } catch (e: PreflightExitException) {
+            // S9a-0 (AP12 §9): adapter-uebersetztes, exit-code-tragendes
+            // Preflight-Signal (MANIFEST_* → 4, Bundle-Resolver-Familie → 5).
+            // Muss VOR dem generischen RuntimeException-Catch stehen, sonst
+            // faellt es auf den Default-Exit-3-Pfad.
+            stderr("Error: ${e.message}")
+            return ImportPreflightResolution.Exit(e.exitCode)
+        } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}")
+            return ImportPreflightResolution.Exit(2)
+        } catch (e: RuntimeException) {
+            stderr("Error: ${e.message}")
+            return ImportPreflightResolution.Exit(3)
         }
 
         val preparedImport = when (

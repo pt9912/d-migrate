@@ -20,7 +20,13 @@ import java.nio.charset.Charset
 internal class ExportPreflightValidator(
     private val readerLookup: (DatabaseDialect) -> DataReader,
     private val listerLookup: (DatabaseDialect) -> TableLister,
-    private val writerFactoryBuilder: () -> DataChunkWriterFactory,
+    /**
+     * S7-0: nimmt den aufgeloesten [ExportOutput] entgegen (Single-File vs.
+     * FilePerTable vs. Stdout). Implementierungen duerfen nur auf die
+     * Subklasse verzweigen, nicht auf den Pfad — siehe
+     * `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
+     */
+    private val writerFactoryBuilder: (ExportOutput) -> DataChunkWriterFactory,
     private val stderr: (String) -> Unit,
 ) {
 
@@ -102,7 +108,7 @@ internal class ExportPreflightValidator(
         return PreparedResult.Ok(ExportPreparedContext(
             reader = infra.reader, lister = infra.lister,
             tables = tables, output = output, options = options, filter = filter,
-            factory = writerFactoryBuilder(), fingerprint = fingerprint, primaryKeysByTable = pks,
+            factory = writerFactoryBuilder(output), fingerprint = fingerprint, primaryKeysByTable = pks,
         ))
     }
 

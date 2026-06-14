@@ -6,6 +6,7 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.sqlite.SqliteDataWriter
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 import dev.dmigrate.profiling.perf.PerfMeasure
 import dev.dmigrate.profiling.perf.PerfReport
 import io.kotest.core.NamedTag

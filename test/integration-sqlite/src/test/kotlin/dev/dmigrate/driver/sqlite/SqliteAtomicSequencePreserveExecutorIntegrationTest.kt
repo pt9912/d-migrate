@@ -249,4 +249,91 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             dbFile.deleteIfExists()
         }
     }
+
+    // ─── Service-Mode Sub-Slice E: Cancellation ─────────────────────
+
+    test("Cancelled: pre-BEGIN cancel short-circuits without acquiring RESERVED lock") {
+        val dbFile = Files.createTempFile("atomic-preserve-sqlite-cancel-pre-", ".db")
+        try {
+            bootstrapHelperTable(dbFile, mapOf("atom_seq_cancel_pre" to 142L))
+            val initialNextValue = queryNextValue(dbFile, "atom_seq_cancel_pre")
+            val ref = sqliteRef("atom_seq_cancel_pre")
+            val batch = AtomicSequencePreserveBatch(
+                requests = listOf(
+                    AtomicSequencePreserveRequest(ref) { probe ->
+                        listOf(
+                            "UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} " +
+                                "WHERE \"name\" = 'atom_seq_cancel_pre'",
+                        )
+                    },
+                ),
+                protectedOperationIds = listOf(protectedOpId),
+                internalFollowUpIds = emptyList(),
+            )
+            val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
+            tokenSource.cancel("pre-BEGIN-test-cancel")
+
+            openConnection(dbFile).use { c ->
+                val result = executor.execute(
+                    connection = c,
+                    batch = batch,
+                    lockTimeoutMillis = 5_000,
+                    cancellationToken = tokenSource.token,
+                    executeProtectedOperations = { _, _ ->
+                        error("protected callback must not be reached after pre-BEGIN cancel")
+                    },
+                )
+                result.shouldBeInstanceOf<AtomicSequencePreserveResult.Cancelled>()
+                result.reason shouldBe "pre-BEGIN-test-cancel"
+                result.refs shouldBe listOf(ref)
+            }
+            queryNextValue(dbFile, "atom_seq_cancel_pre") shouldBe initialNextValue
+        } finally {
+            dbFile.deleteIfExists()
+        }
+    }
+
+    test("Cancelled: cancel inside protected callback rolls back; helper-table next_value at probed snapshot") {
+        val dbFile = Files.createTempFile("atomic-preserve-sqlite-cancel-mid-", ".db")
+        try {
+            bootstrapHelperTable(dbFile, mapOf("atom_seq_cancel_mid" to 142L))
+            val initialNextValue = queryNextValue(dbFile, "atom_seq_cancel_mid")
+            val ref = sqliteRef("atom_seq_cancel_mid")
+            val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
+            val batch = AtomicSequencePreserveBatch(
+                requests = listOf(
+                    AtomicSequencePreserveRequest(ref) { _ ->
+                        error("renderRestore must not run after a post-protected cancel")
+                    },
+                ),
+                protectedOperationIds = listOf(protectedOpId),
+                internalFollowUpIds = emptyList(),
+            )
+
+            openConnection(dbFile).use { c ->
+                val result = executor.execute(
+                    connection = c,
+                    batch = batch,
+                    lockTimeoutMillis = 5_000,
+                    cancellationToken = tokenSource.token,
+                    executeProtectedOperations = { protectedConn, _ ->
+                        protectedConn.createStatement().use {
+                            it.execute("UPDATE \"dmg_sequences\" SET \"next_value\" = 999 WHERE \"name\" = 'atom_seq_cancel_mid'")
+                        }
+                        tokenSource.cancel("post-protected-test-cancel")
+                        AtomicProtectedExecutionResult.Succeeded(1)
+                    },
+                )
+                result.shouldBeInstanceOf<AtomicSequencePreserveResult.Cancelled>()
+                result.reason shouldBe "post-protected-test-cancel"
+                result.refs shouldBe listOf(ref)
+            }
+            // SQLite ROLLBACK undoes both the protected UPDATE and any
+            // RESERVED-lock side effect; next_value returns to the
+            // probed snapshot.
+            queryNextValue(dbFile, "atom_seq_cancel_mid") shouldBe initialNextValue
+        } finally {
+            dbFile.deleteIfExists()
+        }
+    }
 })

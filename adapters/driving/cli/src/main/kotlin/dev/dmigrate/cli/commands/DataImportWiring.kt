@@ -16,6 +16,7 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.SchemaCodec
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.format.parquet.ParquetSeekableDataChunkReaderFactory
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 import dev.dmigrate.streaming.CheckpointConfig
 import dev.dmigrate.streaming.ProgressReporter
@@ -31,6 +32,7 @@ internal data class DataImportOptions(
     val schema: Path?,
     val table: String?,
     val tables: List<String>?,
+    val tableOrder: List<String>? = null,
     val onError: String,
     val onConflict: String?,
     val triggerMode: String,
@@ -43,6 +45,7 @@ internal data class DataImportOptions(
     val chunkSize: Int,
     val resume: String?,
     val checkpointDir: Path?,
+    val noCheckpoint: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
 )
@@ -92,6 +95,7 @@ internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
             importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
                 val importer = StreamingImporter(
                     readerFactory = readerFactory,
+                    seekableReaderFactory = ParquetSeekableDataChunkReaderFactory(),
                     writerLookup = writerLookup,
                     onTableOpened = callbacks.onTableOpened,
                 )
@@ -136,6 +140,7 @@ internal object DataImportWiring {
             schema = options.schema,
             table = options.table,
             tables = options.tables,
+            tableOrder = options.tableOrder,
             onError = options.onError,
             onConflict = options.onConflict,
             triggerMode = options.triggerMode,
@@ -151,6 +156,7 @@ internal object DataImportWiring {
             noProgress = options.cliContext.noProgress,
             resume = options.resume,
             checkpointDir = options.checkpointDir,
+            noCheckpoint = options.noCheckpoint,
         )
         val runner = DataImportRunner(
             targetResolver = bundle.targetResolver,
@@ -163,6 +169,7 @@ internal object DataImportWiring {
             progressReporter = bundle.progressReporter,
             checkpointStoreFactory = bundle.checkpointStoreFactory,
             checkpointConfigResolver = bundle.checkpointConfigResolver,
+            inputResolutionHook = ParquetImportInputResolutionHook(),
         )
         return runner.execute(request)
     }

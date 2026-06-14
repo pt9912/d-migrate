@@ -9,6 +9,8 @@ import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.*
+import dev.dmigrate.format.data.ChunkSchema
+import dev.dmigrate.format.data.chunkSchemaOf
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
@@ -39,6 +41,7 @@ class DataTransferRunnerTest : FunSpec({
         override fun close() {}
     }
     class EmptyChunkSequence : ChunkSequence {
+        override val schema: ChunkSchema = chunkSchemaOf("?", emptyList())
         override fun iterator(): Iterator<DataChunk> = emptyList<DataChunk>().iterator()
         override fun close() {}
     }
@@ -326,6 +329,7 @@ class DataTransferRunnerTest : FunSpec({
             override val dialect = DatabaseDialect.SQLITE
             override fun streamTable(pool: ConnectionPool, table: String, filter: DataFilter?, chunkSize: Int): ChunkSequence {
                 return object : ChunkSequence {
+                    override val schema: ChunkSchema = chunkSchemaOf(chunk1.table, chunk1.columns)
                     override fun iterator() = listOf(chunk1, chunk2).iterator()
                     override fun close() {}
                 }
@@ -380,6 +384,7 @@ class DataTransferRunnerTest : FunSpec({
         val chunkReader = object : DataReader {
             override val dialect = DatabaseDialect.SQLITE
             override fun streamTable(pool: ConnectionPool, table: String, filter: DataFilter?, chunkSize: Int) = object : ChunkSequence {
+                override val schema: ChunkSchema = chunkSchemaOf(chunk.table, chunk.columns)
                 override fun iterator() = listOf(chunk).iterator()
                 override fun close() {}
             }

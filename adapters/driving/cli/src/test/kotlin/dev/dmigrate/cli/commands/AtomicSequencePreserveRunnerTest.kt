@@ -88,7 +88,7 @@ class AtomicSequencePreserveRunnerTest : FunSpec({
         val expectedResult = AtomicSequencePreserveResult.Applied(emptyList())
         val capturedTimeout = slot<Long>()
         every {
-            fakeExecutor.execute(any(), any(), capture(capturedTimeout), any())
+            fakeExecutor.execute(any(), any(), capture(capturedTimeout), any(), any())
         } returns expectedResult
 
         val dispatcherCalls = mutableListOf<DatabaseDialect>()
@@ -119,7 +119,7 @@ class AtomicSequencePreserveRunnerTest : FunSpec({
         val fakeExecutor = mockk<AtomicSequencePreserveExecutor>(relaxed = true)
         val capturedTimeout = slot<Long>()
         every {
-            fakeExecutor.execute(any(), any(), capture(capturedTimeout), any())
+            fakeExecutor.execute(any(), any(), capture(capturedTimeout), any(), any())
         } returns AtomicSequencePreserveResult.Applied(emptyList())
 
         AtomicSequencePreserveRunner.execute(
@@ -151,7 +151,7 @@ class AtomicSequencePreserveRunnerTest : FunSpec({
             val conn = mockk<Connection>(relaxed = true)
             val acquired = fakeAcquireFor(DatabaseDialect.SQLITE, conn)
             val fakeExecutor = mockk<AtomicSequencePreserveExecutor>(relaxed = true)
-            every { fakeExecutor.execute(any(), any(), any(), any()) } returns expected
+            every { fakeExecutor.execute(any(), any(), any(), any(), any()) } returns expected
 
             val result = AtomicSequencePreserveRunner.execute(
                 target = target,
@@ -170,7 +170,7 @@ class AtomicSequencePreserveRunnerTest : FunSpec({
         val acquired = fakeAcquireFor(DatabaseDialect.POSTGRESQL, conn)
         val fakeExecutor = mockk<AtomicSequencePreserveExecutor>(relaxed = true)
         every {
-            fakeExecutor.execute(any(), any(), any(), any())
+            fakeExecutor.execute(any(), any(), any(), any(), any())
         } throws RuntimeException("executor crashed")
 
         shouldThrow<RuntimeException> {

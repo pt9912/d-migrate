@@ -115,6 +115,16 @@ data class McpRuntimeWiring(
     val assembledUploadPayloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
 
     /**
+     * Resources owned by adapters that were constructed INTO this wiring
+     * (e.g. the shared S3 client behind the S3 byte stores, S3.4b). The
+     * wiring itself never closes them — the server lifecycle that built
+     * the wiring (`McpServeWiring`/`McpCliServerWiring`) adds them to its
+     * close stack and releases them on shutdown. File-backed and
+     * in-memory adapters own nothing; the default stays empty.
+     */
+    val ownedResources: List<AutoCloseable> = emptyList(),
+
+    /**
      * LF-012 / LN-038: store backing `profile_list`. No LF-012 / LN-038 tool emits
      * profile records yet (LF-012 / LN-038 start tools will), so the
      * default is the no-op [EmptyProfileStore]. Integration tests

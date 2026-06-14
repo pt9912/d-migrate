@@ -281,7 +281,12 @@ private fun runAtomicSegmentAgainstPool(
             AtomicProtectedExecutionResult.Succeeded(statementsExecuted = protectedStatements.size)
         }
     val result = pool.borrow().use { conn ->
-        atomicExecutor.execute(conn, segment.batch, lockTimeoutMillis, executeProtectedOps)
+        atomicExecutor.execute(
+            connection = conn,
+            batch = segment.batch,
+            lockTimeoutMillis = lockTimeoutMillis,
+            executeProtectedOperations = executeProtectedOps,
+        )
     }
     return mapAtomicResultToTrace(result, segment)
 }
@@ -321,6 +326,18 @@ private fun mapAtomicResultToTrace(
         transactionRolledBack = true,
         executionError = "Atomic preserve failed for ${result.ref.name}: " +
             (result.cause.message ?: result.cause::class.java.simpleName),
+        recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
+    )
+    // Service-Mode Sub-Slice E (2026-06-02): test-fixture mirror of
+    // SegmentAwareMigrationExecutor's Cancelled branch.
+    is AtomicSequencePreserveResult.Cancelled -> ExecutionTrace(
+        executionStarted = true,
+        executionCompleted = false,
+        statementsAttempted = 0,
+        transactionRolledBack = true,
+        executionError = "Atomic preserve cancelled" +
+            (result.reason?.let { " ($it)" } ?: "") +
+            ": " + result.refs.joinToString(", ") { it.name },
         recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
     )
 }

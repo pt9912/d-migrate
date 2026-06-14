@@ -5,10 +5,16 @@ import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayloadFactory
 import dev.dmigrate.mcp.cursor.CursorKey
 import dev.dmigrate.mcp.cursor.CursorKeyring
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore
+import dev.dmigrate.server.adapter.storage.s3.S3ByteStores
+import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore
 import dev.dmigrate.server.core.principal.TenantId
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import java.net.URI
 import java.nio.file.Files
 import kotlin.io.path.deleteRecursively
 
@@ -37,6 +43,42 @@ class McpCliRuntimeWiringTest : FunSpec({
             val wiring = McpCliRuntimeWiring.runtimeWiring(stateDir = dir)
             wiring.assembledUploadPayloadFactory
                 .shouldBeInstanceOf<FileSpoolAssembledUploadPayloadFactory>()
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    test("runtimeWiring with artifacts.store=s3 selects the S3 byte stores (S3.4b)") {
+        val dir = Files.createTempDirectory("dmigrate-mcp-wiring-s3-")
+        try {
+            // Client construction is offline — no S3 endpoint is contacted
+            // until a store operation runs (round-trip lives in
+            // :test:integration-storage-s3 against SeaweedFS).
+            val wiring = McpCliRuntimeWiring.runtimeWiring(
+                stateDir = dir,
+                artifacts = ArtifactStorageConfig.S3(
+                    S3StorageConfig(bucket = "wiring-bucket", endpoint = URI.create("http://localhost:1")),
+                ),
+            )
+
+            wiring.uploadSegmentStore.shouldBeInstanceOf<S3UploadSegmentStore>()
+            wiring.artifactContentStore.shouldBeInstanceOf<S3ArtifactContentStore>()
+            // The assembly spool is a local streaming concern and MUST stay
+            // file-backed in s3 mode too.
+            wiring.assembledUploadPayloadFactory
+                .shouldBeInstanceOf<FileSpoolAssembledUploadPayloadFactory>()
+            // The bundle owning the shared S3 client is exposed for the
+            // server lifecycle to close on shutdown (S3.4b-R1).
+            wiring.ownedResources.single().shouldBeInstanceOf<S3ByteStores>()
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    test("runtimeWiring with file default owns no closeable resources") {
+        val dir = Files.createTempDirectory("dmigrate-mcp-wiring-owned-")
+        try {
+            McpCliRuntimeWiring.runtimeWiring(stateDir = dir).ownedResources shouldBe emptyList()
         } finally {
             dir.deleteRecursively()
         }

@@ -1,6 +1,7 @@
 package dev.dmigrate.format.report
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.MysqlNamedSequenceMode
@@ -50,7 +51,7 @@ class TransformationReportWriter {
         appendLine("target:")
         appendLine("  dialect: $dialect")
         if (!deterministic) appendLine("  generated_at: \"${generatedAt ?: Instant.now()}\"")
-        appendLine("  generator: \"d-migrate 0.9.7\"")
+        appendLine("  generator: \"d-migrate ${VersionInfo.PRODUCT_VERSION}\"")
         if (mysqlNamedSequenceMode != null) appendLine("  mysql_named_sequences: ${mysqlNamedSequenceMode.cliName}")
         if (sqliteNamedSequenceMode != null) appendLine("  sqlite_named_sequences: ${sqliteNamedSequenceMode.cliName}")
         if (splitMode != null) appendLine("  split_mode: $splitMode")

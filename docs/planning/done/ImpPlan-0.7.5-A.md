@@ -293,7 +293,7 @@ fuer spaetere Phasen verbindlich festgelegt:
 
 Direkte Referenzbasis:
 
-- [Main.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
+- [Main.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
 
 ### A.6 Doku-Luecke fuer `data profile` festhalten
 
@@ -327,7 +327,7 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 - `docs/planning/roadmap.md`
 - `spec/profiling.md`
 - `spec/cli-spec.md`
-- [Main.kt](/Development/d-migrate/adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
+- [Main.kt](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)
 
 ---
 

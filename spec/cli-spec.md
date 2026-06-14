@@ -4,7 +4,18 @@
 
 > Dokumenttyp: Spezifikation / Referenz
 >
-> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0, 0.9.6 `--deterministic`), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose und `source_operand`/`target_operand`), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse mit `W116`, 0.9.6 `--name`/`--version`) und `data transfer` (0.6.0). Seit 0.9.6 zusätzlich `mcp serve`, `mcp approval-grant issue` und `mcp cursor-key generate`/`validate`.
+> **Überblick**: Implementiert sind `schema validate`,
+> `schema generate`, `schema reverse`, `schema compare`, `schema migrate`,
+> `schema rollback`, `data export`, `data import`, `data transfer`,
+> `export ...` sowie die
+> operativen `mcp`-Kommandos (`mcp serve`, `mcp approval-grant issue`,
+> `mcp cursor-key generate`/`validate`).
+>
+> **Ausblick**: Geplant sind weitere CLI-Oberflächen fuer
+> Transformations-Workflows und ggf. eigene Service-Mode-Adapter fuer
+> langlaufende Operationen. Transport- und Tool-spezifische MCP-Vertraege
+> stehen in [`spec/mcp-server.md`](./mcp-server.md) und
+> [`spec/ki-mcp.md`](./ki-mcp.md).
 
 ---
 
@@ -16,7 +27,7 @@
 d-migrate <command> <subcommand> [flags] [arguments]
 ```
 
-- **Commands**: Oberste Ebene — implementiert: `schema`, `data`, `export` (seit 0.7.0); geplant: `transform` (1.1.0)
+- **Commands**: Oberste Ebene — implementiert: `schema`, `data`, `export`, `mcp`; geplant: `transform`
 - **Subcommands**: Aktion innerhalb eines Commands (`schema validate`, `data export`)
 - **Flags**: Optionen mit `--` Präfix, Kurzform mit `-` (`--format json`, `-f json`)
 - **Arguments**: Positionelle Argumente (selten, nur wo eindeutig)
@@ -28,7 +39,7 @@ Diese Flags sind bei allen Kommandos verfügbar:
 | Flag | Kurzform | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` |
-| `--lang` | | String | (kein Default; Fallback-Kette siehe unten) | Sprachwahl fuer menschenlesbare Ausgaben (seit 0.9.0 aktiv, siehe `docs/planning/ImpPlan-0.9.0-A.md` §4.1/§4.2). Akzeptiert fuer 0.9.0 nur die gebundelten Produktsprachen `de` und `en` inkl. kanonisierbarer Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US`. Andere Werte fuehren zu Exit 2. Gewinnt gegen `D_MIGRATE_LANG`, `LC_ALL`/`LANG`, `i18n.default_locale` und System-Locale. Der generische Env-/Config-/System-Pfad bleibt toleranter und faellt fuer unbekannte Bundles weiterhin auf das englische Root-Bundle zurueck. |
+| `--lang` | | String | (kein Default; Fallback-Kette siehe unten) | Sprachwahl fuer menschenlesbare Ausgaben. Akzeptiert aktuell die gebundelten Produktsprachen `de` und `en` inkl. kanonisierbarer Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US`. Andere Werte fuehren zu Exit 2. Gewinnt gegen `D_MIGRATE_LANG`, `LC_ALL`/`LANG`, `i18n.default_locale` und System-Locale. Der generische Env-/Config-/System-Pfad bleibt toleranter und faellt fuer unbekannte Bundles weiterhin auf das englische Root-Bundle zurueck. |
 | `--output-format` | | String | `plain` | Ausgabeformat: `plain`, `json`, `yaml` |
 | `--verbose` | `-v` | Boolean | false | Erweiterte Ausgabe (DEBUG-Level) |
 | `--quiet` | `-q` | Boolean | false | Nur Fehler ausgeben |
@@ -40,7 +51,7 @@ Diese Flags sind bei allen Kommandos verfügbar:
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
 
-**`--lang`-Vertrag ab 0.9.0 (`docs/planning/ImpPlan-0.9.0-A.md` §4.1–§4.2)**:
+**`--lang`-Vertrag**:
 
 - Prioritaetskette: `--lang` > `D_MIGRATE_LANG` > `LC_ALL` > `LANG` > `i18n.default_locale` > System-Locale > Fallback `en`.
 - Unterstuetzte Produktsprachen sind aktuell `de` und `en`. Kanonisierbare Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US` werden akzeptiert und normalisiert.
@@ -131,7 +142,7 @@ Maschinenlesbare Ausgabe für CI/CD-Integration und Scripting:
 Vertragsregeln fuer strukturierte Ausgabe:
 
 - Feldnamen, Command-IDs, Statuswerte, Exit-Codes, Warning-/Error-Codes und vergleichbare API-artige Vertragsflaechen bleiben englisch und stabil.
-- Freie Fehlermeldungstexte in JSON/YAML bleiben fuer 0.8.0 ebenfalls englisch und stabil, bis ein explizit versionierter Gegenvertrag definiert ist.
+- Freie Fehlermeldungstexte in JSON/YAML bleiben ebenfalls englisch und stabil, bis ein expliziter Gegenvertrag definiert ist.
 - Lokalisiert werden duerfen nur menschenlesbare Plain-Text-Ausgaben auf stdout/stderr.
 
 ```json
@@ -287,15 +298,15 @@ Nicht-automatisch auflösbare Inkompatibilitäten. Der Prozess stoppt mit Hinwei
 | E120 | Unknown `geometry_type` value (schema validation) |
 | E121 | `srid` must be greater than 0 (schema validation) |
 
-### 4.7 Sequence-Cross-Dialect-Blocker (string codes, 0.9.7)
+### 4.7 Sequence-Cross-Dialect-Blocker (string codes)
 
 String-codierte Blocker-Diagnostiken aus dem Sequence-Render-Pfad
 (`schema migrate`). Sie ergänzen die E0xx-Kompatibilitätsfehler aus
 §4.6 um Codes, die spezifisch für den Cross-Dialect-Transfer von
 Sequenzen sind. Alle Codes mappen via `PlannerBlockerClassifier` auf
-genau ein `MigrationBlockedReason`; das Mapping ist Teil des
-0.9.7-Schirms (siehe `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`,
-sobald geschlossen) und der zugehörigen ADR `docs/adr/0003-cross-dialect-sequencing.md`.
+genau ein `MigrationBlockedReason`; das Mapping ist Teil des aktuellen
+Sequence-Migrationsvertrags und der zugehörigen ADR
+`docs/adr/0003-cross-dialect-sequencing.md`.
 
 | Code | Reason | Emittiert in | Bedeutung |
 |---|---|---|---|
@@ -303,11 +314,11 @@ sobald geschlossen) und der zugehörigen ADR `docs/adr/0003-cross-dialect-sequen
 | `SEQUENCE_PRESERVE_CONFIG_INVALID` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | `preserve_current_value`-Konfiguration (CLI/YAML) ist strukturell ungültig. |
 | `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | `preserve_current_value` verlangt `--execute` mit DB-Target; File-Mode blockiert vor Render. |
 | `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` | `DIALECT_UNSUPPORTED_OPERATION` | `SequencePreserveStage` | Ziel-Dialekt hat heute keine Sequence-Emulation (aktuell SQLite). Kein Operator-Eingriff löst das, bis die helper-table-Emulation landet. |
-| `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compat, 0.9.7 B.0)* | Per-Attribut-Mismatch im Cross-Dialect-Transfer (z. B. künftiger SQLite-Renderer ohne `cycle`-Support). Heute kein Renderer-Pfad — der OP-level-Block für SQLite bleibt `DIALECT_UNSUPPORTED_OPERATION`, weil `supportsNamedSequences=false`. |
-| `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compat, 0.9.7 B.0)* | PG-`OWNED BY` ist nicht im Target abbildbar. Heute kein Renderer-Pfad — der PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`, sodass owned sequences gar nicht ins neutrale Modell landen. Erst eine Neutralmodell-Erweiterung mit Ownership-Feld aktiviert die Emission. |
+| `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compatible)* | Per-Attribut-Mismatch im Cross-Dialect-Transfer (z. B. künftiger SQLite-Renderer ohne `cycle`-Support). Heute kein Renderer-Pfad — der OP-level-Block für SQLite bleibt `DIALECT_UNSUPPORTED_OPERATION`, weil `supportsNamedSequences=false`. |
+| `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compatible)* | PG-`OWNED BY` ist nicht im Target abbildbar. Heute kein Renderer-Pfad — der PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`, sodass owned sequences gar nicht ins neutrale Modell landen. Erst eine Neutralmodell-Erweiterung mit Ownership-Feld aktiviert die Emission. |
 
-`MYSQL_SEQUENCE_DRIFT_*` (E124-Familie aus Sub-Slice F der
-MySQL-Sequence-Drift-Check-Tranche) sind separat in §6.1 dokumentiert
+`MYSQL_SEQUENCE_DRIFT_*` (E124-Familie fuer MySQL-Sequence-Drift-Checks)
+sind separat in §6.1 dokumentiert
 und nicht Teil des Cross-Dialect-Capability-Vertrags.
 
 ---
@@ -350,7 +361,7 @@ Jede Fehlermeldung enthält:
 
 ### 6.1 schema
 
-#### `schema validate` ✅
+#### `schema validate`
 
 Validiert eine Schema-Definition.
 
@@ -364,7 +375,7 @@ d-migrate schema validate --source <path>
 
 Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
-#### `schema generate` ✅
+#### `schema generate`
 
 Generiert datenbankspezifisches DDL aus einer Schema-Definition.
 
@@ -416,17 +427,17 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - **`--output-format json`**: Action-required-Eintraege (`E052`-`E056`) erscheinen in `notes` und/oder `skipped_objects`, W120 in `notes`.
 - **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
 
-Sequence-spezifische Ausgaben (0.9.3, `--mysql-named-sequences`):
+Sequence-spezifische Ausgaben (`--mysql-named-sequences`):
 - **E056** (Sequence/Emulationsfall): Im `action_required`-Modus fuer uebersprungene Sequences und fuer Spalten mit `SequenceNextVal`-Default ohne Emulation.
 - **E122** (Legacy-Notation): Schema verwendet die abgekuendigte `nextval(...)`-Notation statt `default: { sequence_nextval: ... }`.
 - **E123** (Fehlende Sequence): `sequence_nextval` referenziert eine nicht definierte Sequence.
 - **E124** (Namenskollision): Ein neutrales Schema-Objekt kollidiert mit einem reservierten Support-Objektnamen (`dmg_sequences`, `dmg_nextval`, `dmg_setval`).
 - **W114** (Cache nicht emuliert): Sequence hat `cache`-Wert, der im `helper_table`-Modus nur als Metadatum gespeichert, aber nicht als Preallocation umgesetzt wird.
 - **W115** (Lossy Trigger-Semantik): `SequenceNextVal` auf einer Spalte nutzt MySQL-Trigger; explizites `NULL` wird wie ein ausgelassener Wert behandelt.
-- **W116** (Fehlende Support-Objekte): Sequence-Metadaten beim Reverse aus `dmg_sequences` rekonstruiert, aber erforderliche Support-Objekte (Routinen und/oder Trigger) fehlen oder sind nicht kanonisch. Die Sequence ist dann rekonstruierbar, aber nicht voll betriebsfaehig. `W116` erscheint als Reverse-Note auf Sequence- oder Spaltenebene. Bei `schema compare` bleibt `W116` eine operandseitige Diagnose: es erzeugt keinen eigenen Diff-Eintrag und beeinflusst den Exit-Code nicht (Exit folgt nur aus Validation oder echtem Schema-Diff). Aktiv seit 0.9.4.
+- **W116** (Fehlende Support-Objekte): Sequence-Metadaten beim Reverse aus `dmg_sequences` rekonstruiert, aber erforderliche Support-Objekte (Routinen und/oder Trigger) fehlen oder sind nicht kanonisch. Die Sequence ist dann rekonstruierbar, aber nicht voll betriebsfaehig. `W116` erscheint als Reverse-Note auf Sequence- oder Spaltenebene. Bei `schema compare` bleibt `W116` eine operandseitige Diagnose: es erzeugt keinen eigenen Diff-Eintrag und beeinflusst den Exit-Code nicht (Exit folgt nur aus Validation oder echtem Schema-Diff).
 - **W117** (Transaktionsgebundene Werte): Sequence-Werte im `helper_table`-Modus werden bei Rollback zurueckgerollt — anders als native PostgreSQL-Sequences.
 
-**`--deterministic`** (0.9.6): Macht den DDL- und Report-Output reproduzierbar.
+**`--deterministic`**: Macht den DDL- und Report-Output reproduzierbar.
 
 - Im DDL-Header wird die `-- Generated: <timestamp>`-Zeile weggelassen.
 - Wenn die Umgebungsvariable `SOURCE_DATE_EPOCH` (UNIX-Sekunden) gesetzt ist, gilt sie zusätzlich als fester Erzeugungszeitstempel für DDL-Header und den Sidecar-Report. Ein nicht-numerischer oder nicht in einen `Instant` parsbarer Wert führt zu **Exit 2**.
@@ -435,7 +446,7 @@ Sequence-spezifische Ausgaben (0.9.3, `--mysql-named-sequences`):
 
 `--deterministic` ist orthogonal zu `--split` und `--generate-rollback` und kann mit beiden kombiniert werden.
 
-**`--split`** (0.9.2): Steuert den DDL-Ausgabemodus.
+**`--split`**: Steuert den DDL-Ausgabemodus.
 
 | Modus | Verhalten |
 |---|---|
@@ -470,7 +481,7 @@ Einschränkungen für `--split pre-post`:
 
 **action_required-Objekte** (z.B. Functions mit anderem `source_dialect`, nicht unterstützte Sequences oder blockierte Spatial-Tabellen) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
 
-#### `schema reverse` *(0.6.0, umgesetzt)*
+#### `schema reverse`
 
 Reverse-Engineering einer bestehenden Datenbank ueber eine Live-Verbindung.
 
@@ -494,8 +505,8 @@ denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
 | `--include-functions` | Nein | Boolean | User-Defined Functions einschliessen |
 | `--include-triggers` | Nein | Boolean | Triggers einschliessen |
 | `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
-| `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults (seit 0.9.6) |
-| `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` (seit 0.9.6) |
+| `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults |
+| `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` |
 
 **Reverse-Ausgabe und Reverse-Report**:
 
@@ -529,31 +540,29 @@ Messages werden vor der Ausgabe zentral gescrubbt.
 | `4` | Verbindungs- oder DB-Metadatenfehler |
 | `7` | Config-Aufloesung, URL-Parse oder Dateischreibfehler |
 
-#### `schema compare` *(0.5.0 file-based, 0.6.0 mit DB-Operanden, umgesetzt)*
+#### `schema compare`
 
 Vergleicht zwei Schemata im neutralen Format und zeigt Unterschiede. Der
 Vergleich bleibt modellbasiert: beide Operanden werden vor dem Diff zu einer
 `SchemaDefinition` aufgelöst — Compare diffed keine SQL-Texte und führt keinen
 impliziten Migrationspfad ein.
 
-**Ist-Stand (0.5.0)**: Nur `file/file`-Vergleich implementiert.
-
-**0.6.0-Erweiterung**: Zusätzlich `file/db` und `db/db` über die neuen
-Operandpräfixe `file:` und `db:`.
+**Aktueller Operandumfang**: `file/file`, `file/db` und `db/db` über
+die Operandpräfixe `file:` und `db:`.
 
 ```
 d-migrate schema compare --source <operand> --target <operand>
 ```
 
-**Operand-Notation** (kanonisch ab 0.6.0):
+**Operand-Notation**:
 
 | Präfix | Bedeutung | Beispiel |
 |---|---|---|
 | `file:<path>` | Schema-Datei im neutralen Format | `file:schema.yaml` |
 | `db:<url-or-alias>` | Live-DB-Verbindung oder Named Connection | `db:postgresql://localhost/mydb` oder `db:staging` |
 
-Ohne Präfix wird der Operand als Dateipfad behandelt (Rückwärtskompatibilität
-mit 0.5.0). Named Connections werden im Compare-Pfad als `db:<alias>` notiert,
+Ohne Präfix wird der Operand als Dateipfad behandelt. Named Connections
+werden im Compare-Pfad als `db:<alias>` notiert,
 damit sie nicht mit Dateipfaden kollidieren.
 
 | Flag | Pflicht | Typ | Beschreibung |
@@ -568,7 +577,7 @@ damit sie nicht mit Dateipfaden kollidieren.
 - **`--output`**: Diff-Ergebnis in Datei statt stdout (Format folgt `--output-format`)
 - **`--output-format json|yaml`**: Diff als strukturiertes JSON bzw. YAML
 
-**Operandseitige Diagnose (seit 0.9.4)**: Wenn ein Operand ein `db:`-Reverse-Ergebnis ist, koennen operandseitige Notes und uebersprungene Objekte auftreten (z.B. `W116` bei fehlenden MySQL-Sequence-Supportobjekten). Diese Diagnose wird additiv im strukturierten Output transportiert:
+**Operandseitige Diagnose**: Wenn ein Operand ein `db:`-Reverse-Ergebnis ist, koennen operandseitige Notes und uebersprungene Objekte auftreten (z.B. `W116` bei fehlenden MySQL-Sequence-Supportobjekten). Diese Diagnose wird additiv im strukturierten Output transportiert:
 
 - `source_operand` und `target_operand` sind optionale Felder im JSON-/YAML-Dokument (nur gesetzt, wenn der jeweilige Operand Metadaten traegt)
 - Jedes Feld enthaelt:
@@ -589,17 +598,17 @@ damit sie nicht mit Dateipfaden kollidieren.
 **Beispiele**:
 
 ```bash
-# file/file (0.5.0-Verhalten, weiterhin gültig)
+# file/file
 d-migrate schema compare --source schema-v1.yaml --target schema-v2.yaml
 
-# file/db (0.6.0)
+# file/db
 d-migrate schema compare --source file:schema.yaml --target db:staging
 
-# db/db (0.6.0)
+# db/db
 d-migrate schema compare --source db:staging --target db:postgresql://localhost/prod
 ```
 
-#### `schema migrate` *(0.9.7 in Arbeit)*
+#### `schema migrate`
 
 Plant einen migrationsfähigen Operationsplan aus dem Diff zwischen Soll-
 und Ist-Schema und rendert dialektspezifisches Up-DDL — optional inklusive
@@ -611,7 +620,8 @@ d-migrate schema migrate --source <desired> --target <current> \
   [--generate-rollback --rollback-output <down.sql>] \
   [--plan-only] [--report <report.yaml>] \
   [--execute] [--allow-destructive] [--allow-extension-install] \
-  [--migration-overlay <overlay.json>]... [--dry-run]
+  [--migration-overlay <overlay.json>]... [--dry-run] \
+  [--lock-timeout-ms <ms>]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
@@ -626,6 +636,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--report` | Bedingt | Pfad | Strukturierter Plan-/Risiko-Report; **Pflicht bei `--execute`** |
 | `--plan-artefact` | Nein | Pfad | Signierter `migration-plan.v1`-JSON wird atomar an diesen Pfad geschrieben (additiv zu `--report`/`--output`/`--rollback-output`). Der Artefakt-Vertrag ist im Abschnitt **migration-plan.v1 Artefakt** unten beschrieben. Wird auch im `--plan-only`- und Exit-8-Pfad emittiert, sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler beendet mit Exit 7. |
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |
+| `--lock-timeout-ms` | Nein | Millisekunden | Atomic-Preserve Lock-Acquire-Budget fuer den `--execute`-Pfad. Default: `5000`. Gueltiger Bereich: `10` bis `60000`; Werte ausserhalb des Bereichs beenden den Lauf vor der Pipeline mit Exit `2` |
 | `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
 | `--allow-extension-install` | Nein | Boolean | PostgreSQL darf benoetigte `CREATE EXTENSION IF NOT EXISTS ...`-Prerequisites fuer extension-abhaengige Migrationen rendern; ohne Flag blockieren nicht verifizierte Extensions |
 | `--migration-overlay` | Nein | Pfad, wiederholbar | Versioniertes Migrations-Overlay-JSON nach `migration-overlay.v1`; vor dem Rendern gegen Quell-/Ziel-Fingerprint, Dialekt und `overlayHash` validiert |
@@ -635,7 +646,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--debug-body` | Nein | Boolean | **UNSAFE-Override** für die Display-/Diagnostic-Plane: Routine-Bodies erscheinen unmaskiert im Report und im `--output`-Artefakt (Default ist `bodyDisplay = SCRUBBED_ONLY` über `RoutineBodyScrubber.preview(...)`; das Artefakt enthält dann gescrubbten Body-Text, und der Report die `{sqlHash, sqlLength, scrubbedPreview, scrubbingApplied}`-Metadaten plus gescrubbtem `sql`-Feld). Execution-Plane (die Statements, die der `--execute`-Pfad gegen die DB schickt) bleibt unverändert mit Rohbody; das Display-Artefakt `--output` ist explizit eine Anzeige-/Diagnoseausgabe und folgt der Display-Plane-Regel. Für Pipelines, die das `--output`-Artefakt zur Re-Execution brauchen, MUSS `--debug-body` gesetzt werden. Logging-/Runner-Trace- und DB-Adapter-Pfade greifen den `RoutineBodyLogRedactor`-Hook, der den Flag berücksichtigt — ohne `--debug-body` wird kein unmaskierter Body in Diagnostic-Logs sichtbar. Nutzung nur in kontrollierter Debug-Session sinnvoll. |
 | `--routine-capability` | Nein | `<kind>:<key>=<value>[,<key>=<value>...]`, wiederholbar | Operator-Override fuer die Per-Routine-Kind-Capability von Stored Functions/Procedures. Erlaubte `<kind>`: `function`, `procedure`; erlaubte Keys: `enabled`, `minServerVersion`. Praezedenz, YAML-Aequivalent und Fehler-Routing siehe Abschnitt **Routine-Rendering** unten. |
 | `--strict-gap-operations` | Nein | Boolean | Blockt Operationen, die ueber einen Multi-Statement-Fallback mit Sichtbarkeitsluecke gerendert wuerden (heute: `ReplaceTrigger` via Drop+Create auf PostgreSQL < 14, MySQL und SQLite). Default `false` (lenient): der Pfad emittiert die Drop+Create-Statements und meldet die Luecke als `W_TRIGGER_REPLACE_GAP`-Warning im Report. Mit Flag wechselt der Renderer zu `MANUAL_ACTION_REQUIRED` (Exit `8`) und gibt keine Statements fuer die betroffene Operation aus. Wirkt allgemein auf `OperationRisk.hasGap = true`-Operationen; aktuell setzt nur der Trigger-Mapper diesen Flag. |
-| `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie fuer den `--execute`-Pfad (Default: `action_required`). Identisch zur gleichnamigen Option auf `schema generate`, aber hier auf der Migrate-Seite: nur mit `helper_table` aktiviert sich der `SequencePreserveStage`-Probe-Pfad fuer SQLite (`SqliteSequenceCurrentValueProbe` liest `dmg_sequences.next_value`); ohne Opt-in blockt jede `preserveCurrentValue`-Kandidat-Op vor der Probe-Connection mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (`primaryBlockedReason = MANUAL_ACTION_REQUIRED`). Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`. |
+| `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie fuer den `--execute`-Pfad (Default: `action_required`). Identisch zur gleichnamigen Option auf `schema generate`, aber hier auf der Migrate-Seite: nur mit `helper_table` aktiviert sich der `SequencePreserveStage`-Probe-Pfad fuer SQLite (`SqliteSequenceCurrentValueProbe` liest `dmg_sequences.next_value`); ohne Opt-in blockt jede `preserveCurrentValue`-Kandidat-Op vor der Probe-Connection mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (`primaryBlockedReason = MANUAL_ACTION_REQUIRED`). |
 
 Begriffe (vollständig in `spec/design.md`):
 
@@ -662,10 +673,9 @@ Routine-Rendering:
 
 - PostgreSQL rendert Routine-Replace fuer Functions und Procedures ueber `CREATE OR REPLACE`, sofern der jeweilige Body bekannt und der Dollar-Tag konfliktfrei ist.
 - MySQL-Familie unterscheidet Oracle MySQL und MariaDB. Der neutrale Datei-zu-Datei-Dialekt `mysql` verwendet Oracle-MySQL-Semantik: Stored-Routine-Replace darf kein `CREATE OR REPLACE` erzeugen und nutzt nur bei sicherem Dependency-Guard `DROP` + `CREATE`, sonst `MANUAL_ACTION_REQUIRED`. Bei Datei-zu-DB aktiviert ein live erkannter MariaDB-Vendor-String `CREATE OR REPLACE` fuer Functions/Procedures.
-- **MySQL Sequence Diff-Migration** *(E.3 Sub-Slices A–I,
-  2026-05-20)*: `schema migrate` rendert jetzt
+- **MySQL Sequence Diff-Migration**: `schema migrate` rendert
   `CreateSequence` / `AlterSequence` / `DropSequence` /
-  `RenameSequence` gegen die helper-table-Emulation aus 0.9.4
+  `RenameSequence` gegen die aktuelle helper-table-Emulation
   (`dmg_sequences` + `dmg_nextval` / `dmg_setval` + per-Spalte-
   Trigger). Mode-Gate: nur mit `--mysql-named-sequences
   helper_table` aktiv; im Default `action_required`-Modus blockt
@@ -680,8 +690,8 @@ Routine-Rendering:
       kollidiert eine Migration gegen eine DB, die bereits
       Helper-Objekte aus einem früheren Lauf trägt, nicht beim
       Bootstrap-Schritt. Spaltensignatur-Drift der bestehenden
-      `dmg_sequences` ist nicht abgesichert (Out-of-Scope dieses
-      Slice, siehe Folge-Plan). Anschließend
+      `dmg_sequences` ist nicht abgesichert; ein kuenftiger Drift-Check
+      soll das vor der Ausfuehrung blockieren. Anschließend
       `INSERT INTO dmg_sequences (...) VALUES (...)`. Wer mit
       `--generate-rollback` Up + Down erzeugt, sieht den
       Bootstrap-Block in beiden Artefakten — UP und DOWN tracken
@@ -692,8 +702,8 @@ Routine-Rendering:
       `before` und `after` unterscheiden (`increment_by`,
       `min_value`, `max_value`, `cycle_enabled`, `cache_size`);
       `start` / `next_value` (Laufzeitstatus) bleiben unangetastet
-      und sind Out-of-Scope für diesen Slice
-      (`preserveCurrentValue` ist ein eigener Cross-Dialect-Plan).
+      und werden nur ueber den separaten `preserveCurrentValue`-Pfad
+      behandelt.
     - `DropSequence` UP: `DROP TRIGGER IF EXISTS …` pro per-Spalte
       gebundenem Sequence-Trigger (aus `currentSchema` ermittelt
       durch `SequenceNextVal`-Default-Walk) + `DELETE FROM
@@ -717,7 +727,7 @@ Routine-Rendering:
       `UPDATE dmg_sequences SET name = …` plus
       `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (mit neuem
       Body-Literal `dmg_nextval('to')`) emittiert.
-    - **Spalten mit `SequenceNextVal`-Default** (Sub-Slice F):
+    - **Spalten mit `SequenceNextVal`-Default**:
       `CreateTable` / `AddColumn` / `AlterColumnDefault` mit
       `SequenceNextVal("...")`-Default werden nicht über
       `MysqlTypeMapper.toDefaultSql` geroutet (würde crashen),
@@ -741,32 +751,25 @@ Routine-Rendering:
       gleich), emittiert der Renderer keinen `UPDATE`, sondern
       einen INFO-severity-Diagnostic
       `MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP` mit Hinweis auf den
-      `preserveCurrentValue`-Folge-Slice. Die Op wird im Report
+      separaten `preserveCurrentValue`-Pfad. Die Op wird im Report
       als skipped + Info dokumentiert, ohne Migration-Blocker.
-  DELIMITER-Konvention *(Sub-Slice H, 2026-05-20)*:
+  DELIMITER-Konvention:
   Der `schema migrate --execute`-Pfad emittiert Routinen + Trigger
   **delimiterfrei** als ein einzelnes JDBC-Statement (BEGIN…END
   ist eine logische MySQL-Anweisung; die internen `;` sind Teil
   des Bodies). Der `schema generate --output file.sql`-Pfad
   wickelt die gleichen Templates mit `DELIMITER //…DELIMITER ;` für
-  mysql-CLI-Konsum. Vor Sub-Slice H emittierte der Diff-Pfad die
-  DELIMITER-gewickelte Variante — JDBC kennt `DELIMITER` nicht und
-  hätte mit `SQLException` abgelehnt; der Bug ist seit `d248cd11`
-  gefixt.
-  Out of scope dieses Slice (eigener Folge-Slice
-  `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`):
-  Live-DB-Drift-Check gegen bestehende `dmg_sequences`-Rows
+  mysql-CLI-Konsum.
+  Ausblick: Live-DB-Drift-Check gegen bestehende `dmg_sequences`-Rows
   (E124-Kollisionsprüfung gegen vorgefundene Werte und Trigger-
-  Body-Marker) — analog F.5 E.3's `CheckPreflightProbe` braucht
-  das einen separaten Probe-Adapter (Port + Adapter + Stage +
-  Gate + Renderer-Integration, 6 Sub-Slices). Der heutige Renderer
+  Body-Marker). Der aktuelle Renderer
   prüft nur die Mode-Gate-Bedingung (`E056`); die Bootstrap-
   Idempotenz (`CREATE TABLE IF NOT EXISTS` + `DROP FUNCTION IF
   EXISTS`) schützt vor wiederholten Migrations-Läufen, fängt aber
   keine Drift zwischen erwarteten und tatsächlichen Helper-Objekt-
   Definitionen. Solche Live-Inkonsistenzen führen heute zu
-  Runtime-Fehlern im `--execute`-Pfad; der Folge-Slice surfaceiert
-  sie als `E124`-Block.
+  Runtime-Fehlern im `--execute`-Pfad; ein kuenftiger Drift-Check soll
+  sie als `E124`-Block ausweisen.
 - Operatoren koennen die Defaults pro Routine-Kind ueberschreiben — via wiederholbarer `--routine-capability`-Flag oder via `.d-migrate.yaml`-Sektion `routineCapability:`. Format des YAML-Eintrags:
 
   ```yaml
@@ -787,10 +790,10 @@ Routine-Rendering:
 
   Praezedenz pro Routine-Kind: CLI > YAML > Dialekt-/Server-Version-Defaults. Das Merging ist **feldweise**: jedes der Felder `enabled` und `minServerVersion` wird einzeln aufgeloest. Eine CLI-Angabe wie `--routine-capability=function:minServerVersion=8.0.0` ohne `enabled` ist gueltig — `enabled` faellt dann auf den YAML-Eintrag oder, falls auch dieser keinen Wert traegt, auf den Dialekt-/Server-Version-Default zurueck. Eine fehlende Top-Level-Sektion ist gleichwertig mit "keine Override" und faellt komplett auf die Defaults zurueck. Pro `<kind>` ist maximal eine `--routine-capability`-Angabe erlaubt; doppelter Eintrag, unbekannter `<kind>`, unbekannter Key, unparsable `enabled` oder unparsable `minServerVersion` produzieren `EffectiveRoutineCapability.Invalid(reason)`, welches der MySQL-Renderer als `ROUTINE_CAPABILITY_CONFIG_INVALID` + `MANUAL_ACTION_REQUIRED` (Exit `8`) ausweist; der Reason landet als Suffix in der Diagnostik-Message. Identische Wirkung haben semantisch invalide YAML-Eintraege (z. B. unquoted Float `minServerVersion: 8.0` — SnakeYAML coerciert zu `Double`, der Parser verlangt einen quoted String wie `"8.0.0"`). Strukturell invalide YAML (`routineCapability: true`) blockiert frueher mit `ConfigResolveException`.
 
-Trigger-Rendering (0.9.7 E.2):
+Trigger-Rendering:
 
 - PostgreSQL rendert `CreateTrigger`/`ReplaceTrigger`/`DropTrigger` als native `CREATE TRIGGER ... EXECUTE FUNCTION <ref>;` / `DROP TRIGGER <name> ON <table>;`. Der Body **muss** eine strikte `[schema.]identifier([arg, ...])`-Funktionsreferenz sein — inline PL/pgSQL blockt der Renderer mit `TRIGGER_BODY_NOT_FUNCTION_REFERENCE` (Exit `8`). Replace nutzt natives `CREATE OR REPLACE TRIGGER` ab PG-14, sonst Drop+Create-Fallback.
-- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` waere die einzige zulaessige Qualifikation und ist ein Folge-Slice). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
+- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` bleibt geplant). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
 - SQLite rendert `CREATE TRIGGER ... BEGIN <body> END;` mit impliziter `FOR EACH ROW`-Orientierung; `DROP TRIGGER <name>;` mit bare Triggername (SQLite-Trigger sind global). Replace ist immer Drop+Create. Pre-Flight-Blocker: `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `SQLITE_TRIGGER_BODY_NOT_RENDERABLE` (`sourceDialect` ungleich `sqlite`). Trigger auf einer Tabelle, die ueber `AlterColumnType` / `AlterColumnNullability` / `AlterConstraint` einen Rebuild ausloest, werden von `SqliteRebuildPlanner` in den Rebuild-Block absorbiert; der Standalone-Renderer rendert nur Trigger ohne Rebuild-Betroffenheit.
 - **Gap-Vertrag**: jede Drop+Create-Replace traegt
   `OperationRisk.hasGap = true` und emittiert einen
@@ -802,14 +805,13 @@ Trigger-Rendering (0.9.7 E.2):
   hebt der Renderer-Pre-Emit-Guard die Operation auf
   `MANUAL_ACTION_REQUIRED` (Exit `8`) — keine Statements werden
   emittiert, kein Gap-Warning, statt dessen ein
-  `OPERATION_HAS_GAP_STRICT_BLOCKED`-Diagnostic. Architekturdetail in
-  `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`
-  (`TriggerPlanningContext`, `TriggerCapability`,
-  `TriggerPlanningContextFactory`).
+  `OPERATION_HAS_GAP_STRICT_BLOCKED`-Diagnostic. Die Capability-
+  Entscheidung liegt in `TriggerPlanningContext`,
+  `TriggerCapability` und `TriggerPlanningContextFactory`.
 - **Identitaets-Kollision**: zwei Trigger mit gleichem Namen auf verschiedenen Tabellen blockt der `TriggerNameCollisionDetector` mit `TRIGGER_NAME_COLLISION` (Exit `8`). Der Reader-Pfad konsultiert den Detektor vor der Map-Materialisierung; YAML-Files-mit-doppeltem-Map-Key blocken ueber Jacksons `FAIL_ON_READING_DUP_TREE_KEY` bereits im Codec.
 - Body-Sanitisation findet im Renderer **nicht** statt. Display-/Report-Plane scrubbt Trigger-Bodies ueber den gemeinsamen `RoutineBodyScrubber` (E.1) — `PASSWORD '...'`-Literale und andere bekannte Patterns sind im Report maskiert, im `--output`-Artefakt scrubbed und im Live-`--execute`-Pfad raw.
 
-Carve-outs aus E.2: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` bleiben Folge-Slices. `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ebenfalls Folge-Slice.
+Aktuell ausgeklammert: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` bleiben geplant. `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ist ebenfalls geplant.
 
 Report-Felder für Materialized Views:
 
@@ -820,13 +822,13 @@ Report-Felder für Materialized Views:
   `operationId`, `action`, `path`, `dialect`, `status`,
   `stalenessAfterUp`, `refreshSteps`, `locking`, `rollback` und das
   optionale `primaryBlockedReason` (`null` bei `status=READY`).
-- Plan-2 §8 D.3b Sub-Slice A — PostgreSQL Create/Drop sind diff-basiert
-  renderbar; das Vertrags-Mapping läuft wie folgt:
+- PostgreSQL Create/Drop sind diff-basiert renderbar; das Vertrags-Mapping
+  läuft wie folgt:
 
   | Op + Renderer-Ausgang | `status` | `stalenessAfterUp` | `refreshSteps` | `locking` | `rollback` |
   |---|---|---|---|---|---|
   | PG `CreateMaterializedView` rendert | `READY` | `FRESH_AFTER_INITIAL_REFRESH` | `[INITIAL_REFRESH_VIA_CREATE]` | `ACCESS_EXCLUSIVE` | `DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED` |
-  | PG `ReplaceMaterializedView` rendert (Sub-Slice B) | `READY` | `FRESH_AFTER_REPLACE_REFRESH` | `[DROP_CREATE_INITIAL_REFRESH]` | `ACCESS_EXCLUSIVE` | `SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED` |
+  | PG `ReplaceMaterializedView` rendert | `READY` | `FRESH_AFTER_REPLACE_REFRESH` | `[DROP_CREATE_INITIAL_REFRESH]` | `ACCESS_EXCLUSIVE` | `SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED` |
   | PG `DropMaterializedView` rendert, `query` bekannt | `READY` | `NOT_APPLICABLE_DROP` | `[]` | `ACCESS_EXCLUSIVE` | `SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED` |
   | MySQL/SQLite Create/Drop | `BLOCKED_DIALECT_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_DIALECT_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
   | Refresh-Contract verlangt `CONCURRENTLY` | `BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
@@ -917,10 +919,9 @@ Report-Felder für Rename-Projection (F.4):
   `diagnostics`, Operation-IDs oder Renderer-Nebenwirkungen. Das Feld ist
   der einzige verbindliche Carrier.
 
-Workflow für Renames jenseits von Tabelle/Spalte (F.4 routine-trigger-view-renames,
-2026-05-19):
+Workflow für Renames jenseits von Tabelle/Spalte:
 
-- Overlay-`objectType`-Whitelist ist seit 2026-05-18 erweitert auf
+- Overlay-`objectType`-Whitelist umfasst
   `{table, column, view, trigger, function, procedure, sequence}`.
   `materialized_view` bleibt blockiert (Materialized-View-Rename folgt
   einem eigenen D.3b-Vertrag).
@@ -950,15 +951,15 @@ Workflow für Renames jenseits von Tabelle/Spalte (F.4 routine-trigger-view-rena
     Namespace). Trigger, Function, Procedure haben kein
     `ALTER … RENAME` und fallen auf Drop+Create+`RenameProvenance`
     zurück, sofern beide Bodies bekannt und identisch sind; fehlender
-    Body oder Drift blockiert. Sequences fallen seit E.3 MySQL-
-    Sequence-Diff (2026-05-20) ebenfalls auf
+    Body oder Drift blockiert. Sequences fallen im MySQL-Sequence-Diff
+    ebenfalls auf
     Drop+Create+`RenameProvenance` zurück (helper-table-Emulation —
     siehe MySQL-Sequence-Diff-Block weiter unten).
   - **SQLite**: View und Trigger fallen immer auf
     Drop+Create+`RenameProvenance` zurück (kein natives Rename); gleiche
     Body-Bekanntheits-Regeln wie MySQL. Function/Procedure blockieren
-    (SQLite hat kein Routinen-Modell). Sequence-Rename bleibt blockiert
-    bis der E.3 SQLite-Sequence-Vertrag steht.
+    (SQLite hat kein Routinen-Modell). Sequence-Rename bleibt blockiert,
+    bis der SQLite-Sequence-Vertrag steht.
 - Sequence-Default-Reprojection: `RenameSequence(old → new)` schreibt
   `DefaultValue.SequenceNextVal("old")`-Referenzen in
   `CreateTable`/`AddColumn`/`AlterColumnDefault`-Ops desselben Plans
@@ -969,7 +970,7 @@ Workflow für Renames jenseits von Tabelle/Spalte (F.4 routine-trigger-view-rena
   brauchen keine textuelle Reprojection — PostgreSQL speichert
   `nextval('seq')`-Defaults als OID-Referenzen und folgt dem Rename
   automatisch.
-- Plan-Artefakt (`migration-plan.v1`) trägt seit 2026-05-19 ein
+- Plan-Artefakt (`migration-plan.v1`) trägt ein
   optionales `renameProjections[]`-Feld mit denselben Rename-Provenance-
   Informationen (`candidateId`, `objectType`, `from/toPath`,
   Overlay-Provenance, `renameOperationId` oder
@@ -1039,8 +1040,8 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
     `MANUAL_ACTION_REQUIRED`: konservative Heuristik findet im
     CHECK-Ausdruck Subquery-Marker (`SELECT`, `EXISTS`, `IN (...
     SELECT`). False positives sind moeglich (Spalte heisst
-    `selection_count`) — Operator kann den Slice via Out-of-Scope-
-    Workstream (Trigger-basierte-CHECK) loesen.
+    `selection_count`) — Operator kann die Constraint ueber einen
+    triggerbasierten CHECK-Ersatz loesen.
   - `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` →
     `MANUAL_ACTION_REQUIRED`: die EXCLUDE-Element-Whitelist
     akzeptiert bare oder quoted Identifier bzw. balancierte
@@ -1061,7 +1062,7 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
   (`OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT`), mehrdeutige
   Source-/Target-Namen (`OVERLAY_RENAME_MAPPING_AMBIGUOUS`),
   Case-Konflikt (`OVERLAY_RENAME_MAPPING_CASE_CONFLICT`), Chain-Rename
-  im selben Slice (`OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED`),
+  im selben Overlay (`OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED`),
   doppelter Eintrag (`OVERLAY_RENAME_MAPPING_DUPLICATE`) oder
   unfreigeschalteter `rename-mapping.objectType` ausserhalb der
   aktuellen Whitelist `{table, column, view, trigger, function,
@@ -1072,7 +1073,7 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
   als blockiert dokumentiert. Generische Overlay-Probleme ohne
   Rename-Bezug behalten `MANUAL_ACTION_REQUIRED`.
 
-**`migration-plan.v1`-Artefakt** *(F.4 Sub-Slice G.2, 2026-05-19)*:
+**`migration-plan.v1`-Artefakt**:
 
 Mit `--plan-artefact <path>` schreibt `schema migrate` einen signierten
 `migration-plan.v1`-JSON neben den anderen Artefakten. Das Feld ist
@@ -1141,7 +1142,7 @@ Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-p
 
 Abgrenzung gegen `export flyway|liquibase|django|knex`: jene Tools-Adapter erzeugen baseline-/full-state-Exports aus einem einzelnen Schema; `schema migrate` arbeitet diff-basiert (`current → desired`).
 
-#### `schema rollback` *(0.9.7 in Arbeit)*
+#### `schema rollback`
 
 Validiert und führt das von `schema migrate --generate-rollback` erzeugte
 Down-SQL-Artefakt gegen eine Datenbank aus. Führt keine Live-Diff-Berechnung
@@ -1170,11 +1171,11 @@ Neue Rollback-Artefakte verwenden `rollback-sql v2` mit
 `formatVersion=v2`. Der Kommentar-Metadatenblock enthält zusätzlich
 `statementIndex[]`, `rollbackComplete`, `partialRollback` und
 `skippedOperationIds[]`; jeder `statementIndex`-Eintrag beschreibt genau einen
-ausführbaren Body-Slice mit `index`, `operationIds`, `phase`,
+ausführbaren Body-Abschnitt mit `index`, `operationIds`, `phase`,
 `transactionScope`, Risiko-Feldern, `startInclusive`, `endExclusive` und
 `sha256`. Ranges beziehen sich auf UTF-8-Bytes des LF-normalisierten
 SQL-Bodys nach dem End-Delimiter. `schema rollback --execute` führt bei v2
-ausschließlich die validierten Body-Slices aus und darf Statements nicht per
+ausschließlich die validierten Body-Abschnitte aus und darf Statements nicht per
 Leerzeilen-Split rekonstruieren. Alte `rollback-sql v1`-Artefakte bleiben
 lesbar als Legacy-Pfad.
 
@@ -1202,9 +1203,9 @@ Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-p
 
 ### 6.2 data
 
-#### `data export` *(0.3.0, umgesetzt)*
+#### `data export`
 
-Streamt Tabellen aus einer Datenbank in JSON, YAML oder CSV. Pull-basiert,
+Streamt Tabellen aus einer Datenbank in JSON, YAML, CSV oder Parquet. Pull-basiert,
 chunk-weise — geeignet auch für Tabellen, die größer sind als der verfügbare
 Heap (Plan §2.1, §6.4).
 
@@ -1212,7 +1213,7 @@ Heap (Plan §2.1, §6.4).
 d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 ```
 
-**Auflösung von `--source`** (siehe §1.4 und `docs/planning/implementation-plan-0.3.0.md` §6.14):
+**Auflösung von `--source`** (siehe §1.4):
 
 - enthält der Wert `://`, wird er als vollständige Connection-URL behandelt
   und unverändert an den `ConnectionUrlParser` übergeben
@@ -1223,20 +1224,20 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Flag | Pflicht | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--source` | Ja | URL oder Name | — | Connection-URL oder Name aus `.d-migrate.yaml` |
-| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv` (kein Default — explizit setzen, §6.15) |
+| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (kein Default — explizit setzen, §6.15). Parquet schreibt je nach Ziel ein Bundle (Verzeichnis + `manifest.yaml`) oder Single-File; zusätzliche Parquet-Flags siehe CHANGELOG `[0.9.8]` |
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
-| `--filter` | Nein | String | — | Filter-DSL-Ausdruck (seit 0.9.3). Erlaubte Operatoren: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN (...)`, `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, Klammern. Erlaubte Funktionen: `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS`, `ROUND`, `COALESCE`. Arithmetik (`+`, `-`, `*`, `/`) und qualifizierte Identifier (`table.column`) sind zulaessig. Alle Literale werden als Bind-Parameter an JDBC gebunden. Rohes SQL wird nicht mehr akzeptiert — nicht DSL-konforme Eingaben enden mit Exit 2. |
+| `--filter` | Nein | String | — | Filter-DSL-Ausdruck. Erlaubte Operatoren: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN (...)`, `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, Klammern. Erlaubte Funktionen: `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS`, `ROUND`, `COALESCE`. Arithmetik (`+`, `-`, `*`, `/`) und qualifizierte Identifier (`table.column`) sind zulaessig. Alle Literale werden als Bind-Parameter an JDBC gebunden. Rohes SQL wird nicht mehr akzeptiert — nicht DSL-konforme Eingaben enden mit Exit 2. |
 | `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export (LF-013). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
 | `--since` | Nein | String | — | Untere Marker-Grenze für LF-013. Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
 | `--csv-delimiter` | Nein | Char | `,` | CSV-Spalten-Trennzeichen (genau ein Zeichen) |
-| `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op (seit 0.8.0). |
+| `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
-| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz (seit 0.9.0 produktiv, inkl. Mid-Table-Wiederaufnahme). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis endet der Aufruf mit Exit 7. Der Lauf uebernimmt `operationId` aus dem Manifest, skippt Tabellen mit Status `COMPLETED` und setzt unvollstaendige Tabellen fort. **Mid-Table (Phase C.2)**: ist `--since-column` gesetzt **und** hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; fehlt der PK, fallt der Lauf mit sichtbarem stderr-Hinweis auf C.1-Verhalten (Tabelle neu exportieren) zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei im Checkpoint-Verzeichnis geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume ignoriert den gespeicherten Marker und exportiert die Tabelle erneut von vorn (Mid-Table-Rebuild des Containers ist bewusst verschoben, siehe `docs/planning/ImpPlan-0.9.0-C2.md` §5.4). Kompatibilitaetsmismatch (Fingerprint inkl. PK-Signatur, Tabellenliste, Output-Modus, operationType; oder Manifest hat `resumePosition`, Request hat aber kein `--since-column`) → Exit 3. |
+| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz, inkl. Mid-Table-Wiederaufnahme. Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis endet der Aufruf mit Exit 7. Der Lauf uebernimmt `operationId` aus dem Manifest, skippt Tabellen mit Status `COMPLETED` und setzt unvollstaendige Tabellen fort. **Mid-Table**: ist `--since-column` gesetzt **und** hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; fehlt der PK, fallt der Lauf mit sichtbarem stderr-Hinweis auf Tabellen-Reexport zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei im Checkpoint-Verzeichnis geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume ignoriert den gespeicherten Marker und exportiert die Tabelle erneut von vorn. Kompatibilitaetsmismatch (Fingerprint inkl. PK-Signatur, Tabellenliste, Output-Modus, operationType; oder Manifest hat `resumePosition`, Request hat aber kein `--since-column`) → Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Output-Auflösung** (Plan §6.9):
@@ -1256,11 +1257,11 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Code | Trigger |
 |---|---|
 | `0` | Erfolg, alle Tabellen geschrieben |
-| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, nicht DSL-konformer `--filter`-Ausdruck (seit 0.9.3), unverträgliche `--output`/`--split-files`-Kombi, **oder `--resume` auf stdout-Export** (seit 0.9.0) |
-| `3` | Preflight-Fehler — seit 0.9.0: semantisch inkompatible Resume-Referenz (operationType-Mismatch, Fingerprint-Mismatch aus Format/Encoding/CSV-Optionen/Filter/`--since-*`/Tabellen-Reihenfolge/Output-Modus/Output-Pfad/PK-Signatur, Tabellenliste divergiert, oder Manifest hat `resumePosition` aber aktueller Request hat kein `--since-column`). Mapping ist symmetrisch zum Import-Preflight (§4.5) |
+| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, nicht DSL-konformer `--filter`-Ausdruck, unverträgliche `--output`/`--split-files`-Kombi, **oder `--resume` auf stdout-Export** |
+| `3` | Preflight-Fehler — semantisch inkompatible Resume-Referenz (operationType-Mismatch, Fingerprint-Mismatch aus Format/Encoding/CSV-Optionen/Filter/`--since-*`/Tabellen-Reihenfolge/Output-Modus/Output-Pfad/PK-Signatur, Tabellenliste divergiert, oder Manifest hat `resumePosition` aber aktueller Request hat kein `--since-column`). Mapping ist symmetrisch zum Import-Preflight (§4.5) |
 | `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
 | `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
-| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect); seit 0.9.0 zusaetzlich: `--resume` ohne konfiguriertes Checkpoint-Verzeichnis, Pfad ausserhalb des Checkpoint-Verzeichnisses, Checkpoint-Datei nicht gefunden, unlesbare Datei oder inkompatible `schemaVersion` |
+| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect, `--resume` ohne konfiguriertes Checkpoint-Verzeichnis, Pfad ausserhalb des Checkpoint-Verzeichnisses, Checkpoint-Datei nicht gefunden, unlesbare Datei oder inkompatible `schemaVersion`) |
 
 **Beispiele**:
 
@@ -1279,7 +1280,7 @@ d-migrate data export --source local_pg --format csv \
 d-migrate data export --source local_pg --format csv --tables customers \
     --csv-delimiter ';' --csv-bom --output customers.csv
 
-# Filter-DSL (seit 0.9.3 — alle Literale als Bind-Parameter)
+# Filter-DSL — alle Literale als Bind-Parameter
 d-migrate data export --source prod --format json --tables orders \
     --filter "created_at > '2026-01-01'" --output recent.json
 
@@ -1306,13 +1307,13 @@ d-migrate data export --source local_pg --format json \
 
 - `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
 - `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
-- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. Die Typisierung folgt dem 0.8.0-Phase-E-Vertrag (`docs/planning/ImpPlan-0.8.0-E.md` §4.5) und bleibt konservativ: ein Offset-haltiger ISO-String bleibt `OffsetDateTime` (§4.2), ein lokaler ISO-DateTime bleibt `LocalDateTime` (§4.3), ein ISO-Datum bleibt `LocalDate`, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String. Eine in der Konfiguration gesetzte `i18n.default_timezone` löst **keine** stille Zonierung eines lokalen Literals aus (§4.4).
+- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. Die Typisierung bleibt konservativ: ein Offset-haltiger ISO-String bleibt `OffsetDateTime`, ein lokaler ISO-DateTime bleibt `LocalDateTime`, ein ISO-Datum bleibt `LocalDate`, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String. Eine in der Konfiguration gesetzte `i18n.default_timezone` löst **keine** stille Zonierung eines lokalen Literals aus.
 - Wenn zusätzlich `--filter` gesetzt ist, werden beide Bedingungen intern als `DataFilter.Compound([ParameterizedClause(dsl), ParameterizedClause(since)])` kombiniert; der Reader bindet alle Parameter in stabiler Reihenfolge.
-- Seit 0.9.3 erzeugt `--filter` immer eine `ParameterizedClause` via DSL-Parser. Die M-R5-Einschraenkung (kein literales `?` in `--filter`) entfaellt, da keine rohen `WhereClause`-Fragmente mehr erzeugt werden.
+- `--filter` erzeugt immer eine `ParameterizedClause` via DSL-Parser. Literale `?` in `--filter` werden nicht als JDBC-Placeholder interpretiert, da keine rohen `WhereClause`-Fragmente erzeugt werden.
 
-#### `data import` *(0.4.0, umgesetzt)*
+#### `data import`
 
-Importiert Daten aus JSON, YAML oder CSV in eine Datenbank. Der Importpfad ist
+Importiert Daten aus JSON, YAML, CSV oder Parquet in eine Datenbank. Der Importpfad ist
 streaming-basiert, unterstützt Datei-, Verzeichnis- und stdin-Quellen und löst
 `--target` analog zu `data export` auch über benannte Verbindungen aus
 `.d-migrate.yaml` auf.
@@ -1325,7 +1326,7 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 |---|---|---|---|---|
 | `--target` | Nein | URL oder Name | `database.default_target` aus Config | Ziel-Datenbank als Connection-URL oder benannte Verbindung |
 | `--source` | Ja | Pfad, Verzeichnis oder `-` | — | Quelldatei, Quellverzeichnis oder stdin |
-| `--format` | Nein | String | Auto-Detection nach Dateiendung | Eingabeformat: `json`, `yaml`, `csv`; bei stdin Pflicht |
+| `--format` | Nein | String | Auto-Detection nach Dateiendung | Eingabeformat: `json`, `yaml`, `csv`, `parquet`; bei stdin Pflicht (Parquet: Bundle-Verzeichnis oder Single-File) |
 | `--schema` | Nein | Pfad | — | Schema-Datei für lokalen Preflight und Tabellen-Reihenfolge bei Verzeichnisimport |
 | `--table` | Nein | String | — | Zieltabelle; für stdin und Single-File-Import relevant |
 | `--tables` | Nein | Liste | alle | Kommaseparierte Import-Reihenfolge; nur für Verzeichnisquellen |
@@ -1335,23 +1336,23 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
 | `--disable-fk-checks` | Nein | Boolean | aus | FK-Checks während des Imports deaktivieren (dialektabhängig) |
 | `--reseed-sequences` / `--no-reseed-sequences` | Nein | Boolean | an | Identity-/Sequence-Reseed nach Import steuern |
-| `--encoding` | Nein | String | `auto` | Input-Encoding. Der Default-Pfad `auto` erkennt BOM-markierte UTF-Streams (UTF-8, UTF-16 BE/LE) und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird mit Exit 2 abgelehnt. Für Non-UTF-Encodings (`iso-8859-1`, `windows-1252`, …) muss der Wert explizit gesetzt werden — es gibt keine Heuristik-Erkennung. Siehe 0.8.0 Phase F (`docs/planning/ImpPlan-0.8.0-F.md` §4.2/§4.3). |
+| `--encoding` | Nein | String | `auto` | Input-Encoding. Der Default-Pfad `auto` erkennt BOM-markierte UTF-Streams (UTF-8, UTF-16 BE/LE) und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird mit Exit 2 abgelehnt. Für Non-UTF-Encodings (`iso-8859-1`, `windows-1252`, …) muss der Wert explizit gesetzt werden — es gibt keine Heuristik-Erkennung. |
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
-| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz (seit 0.9.0 produktiv). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis → Exit 7. **Preflight** prueft `operationType == IMPORT`, den Options-Fingerprint (Format, Encoding, CSV-Header/NULL, `--on-error`/`--on-conflict`/`--trigger-mode`/`--truncate`/`--disable-fk-checks`/`--reseed-sequences`/`chunk-size`, Tabellenliste in Reihenfolge, Input-Topologie, Input-Pfad, Ziel-Dialekt und Ziel-URL; fuer Directory-Importe zusaetzlich die `table -> inputFile`-Bindung) sowie die Tabellenlisten-Gleichheit. Inkompatible Referenzen → Exit 3. **Wiederaufnahme** setzt an committed Chunk-Grenzen an: bereits als `COMPLETED` markierte Tabellen werden uebersprungen; teilweise bestaetigte Tabellen lesen die bereits bestaetigten Chunks aus dem Reader (ohne Schreib-/Commit-Aktion) und starten am naechsten offenen Chunk. `--truncate` wird fuer teilweise bestaetigte Tabellen automatisch unterbunden (sonst gingen bestaetigte Zeilen verloren). `--on-error abort/skip/log` behaelt seine Semantik auch beim Resume; nur erfolgreich committete Chunks treiben den Checkpoint vorwaerts. `failedFinish` laesst die Tabelle als `FAILED` markiert (nicht still als `COMPLETED`). Directory-Importe verlangen zusaetzlich, dass die `table -> inputFile`-Bindung des Manifests mit dem aktuellen Directory-Scan uebereinstimmt — umbenannte, hinzugefuegte oder entfernte Dateien → Exit 3. |
+| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz. Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis → Exit 7. **Preflight** prueft `operationType == IMPORT`, den Options-Fingerprint (Format, Encoding, CSV-Header/NULL, `--on-error`/`--on-conflict`/`--trigger-mode`/`--truncate`/`--disable-fk-checks`/`--reseed-sequences`/`chunk-size`, Tabellenliste in Reihenfolge, Input-Topologie, Input-Pfad, Ziel-Dialekt und Ziel-URL; fuer Directory-Importe zusaetzlich die `table -> inputFile`-Bindung) sowie die Tabellenlisten-Gleichheit. Inkompatible Referenzen → Exit 3. **Wiederaufnahme** setzt an committed Chunk-Grenzen an: bereits als `COMPLETED` markierte Tabellen werden uebersprungen; teilweise bestaetigte Tabellen lesen die bereits bestaetigten Chunks aus dem Reader (ohne Schreib-/Commit-Aktion) und starten am naechsten offenen Chunk. `--truncate` wird fuer teilweise bestaetigte Tabellen automatisch unterbunden (sonst gingen bestaetigte Zeilen verloren). `--on-error abort/skip/log` behaelt seine Semantik auch beim Resume; nur erfolgreich committete Chunks treiben den Checkpoint vorwaerts. `failedFinish` laesst die Tabelle als `FAILED` markiert (nicht still als `COMPLETED`). Directory-Importe verlangen zusaetzlich, dass die `table -> inputFile`-Bindung des Manifests mit dem aktuellen Directory-Scan uebereinstimmt — umbenannte, hinzugefuegte oder entfernte Dateien → Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Exit-Codes**:
 
 - `0`: Erfolg
 - `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen (inkl. `--resume` auf stdin-Quelle; unsupported `--lang` an der Root-CLI)
-- `3`: Preflight-Fehler — Header-/Schema-Mismatch, strikter Trigger, und seit 0.9.0 semantisch inkompatible Resume-Referenz (`operationType`-Mismatch, Fingerprint-Mismatch, Tabellenlisten-Divergenz)
+- `3`: Preflight-Fehler — Header-/Schema-Mismatch, strikter Trigger und semantisch inkompatible Resume-Referenz (`operationType`-Mismatch, Fingerprint-Mismatch, Tabellenlisten-Divergenz)
 - `4`: Verbindungsfehler
 - `5`: Import-Fehler während Verarbeitung oder Commit
-- `7`: Konfigurations-, Parse- oder Datei-Fehler (inkl. unlesbare Checkpoint-Datei, ungueltiges Manifest, fehlende Datei, Pfad ausserhalb des Checkpoint-Verzeichnisses oder inkompatible `schemaVersion`, seit 0.9.0)
+- `7`: Konfigurations-, Parse- oder Datei-Fehler (inkl. unlesbare Checkpoint-Datei, ungueltiges Manifest, fehlende Datei, Pfad ausserhalb des Checkpoint-Verzeichnisses oder inkompatible `schemaVersion`)
 
-#### `data transfer` *(0.6.0, umgesetzt)*
+#### `data transfer`
 
 Direkter DB-zu-DB-Datentransfer ohne Zwischenformat. `data transfer` ist ein
 eigenständiger Datenpfad, kein umbenannter Export-/Import-Umweg — Daten werden
@@ -1372,7 +1373,7 @@ kanonisch beschrieben.
 | `--source` | Ja | URL oder Alias | — | Quell-Datenbank |
 | `--target` | Ja | URL oder Alias | — | Ziel-Datenbank |
 | `--tables` | Nein | Liste | alle | Kommaseparierte Tabellenliste |
-| `--filter` | Nein | String | — | Filter-DSL-Ausdruck fuer die Quellabfrage (seit 0.9.3). Gleiche DSL-Grammatik wie bei `data export --filter`. Alle Literale werden als Bind-Parameter an JDBC gebunden. |
+| `--filter` | Nein | String | — | Filter-DSL-Ausdruck fuer die Quellabfrage. Gleiche DSL-Grammatik wie bei `data export --filter`. Alle Literale werden als Bind-Parameter an JDBC gebunden. |
 | `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer (LF-013) |
 | `--since` | Nein | String | — | Untere Marker-Grenze (nur zusammen mit `--since-column`) |
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
@@ -1429,9 +1430,9 @@ d-migrate data transfer --source staging --target local_pg \
     --tables customers,orders,order_items
 ```
 
-#### `data seed` *(geplant: 1.3.0)*
+#### `data seed`
 
-Generiert Testdaten und importiert sie.
+Geplant (LF-024, Milestone 1.3.0). Generiert Testdaten und importiert sie.
 
 ```
 d-migrate data seed --schema <path> --target <url>
@@ -1485,9 +1486,9 @@ auf MySQL/SQLite, ungueltiges `--format`, `--top-n` ausserhalb 1..1000),
 
 ### 6.3 transform
 
-#### `transform procedure` *(geplant: 1.1.0)*
+#### `transform procedure`
 
-Transformiert Stored Procedures/Functions zwischen Dialekten.
+Geplant (LF-017). Transformiert Stored Procedures/Functions zwischen Dialekten.
 
 ```
 d-migrate transform procedure --source <path> --procedure <name> --ai-backend <provider>
@@ -1507,9 +1508,9 @@ Exit: `0` bei Erfolg, `6` bei KI-Fehlern.
 
 ### 6.4 generate
 
-#### `generate procedure` *(geplant: 1.1.0)*
+#### `generate procedure`
 
-Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
+Geplant (LF-017). Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
 
 ```
 d-migrate generate procedure --source <path> --target <dialect>
@@ -1523,7 +1524,7 @@ d-migrate generate procedure --source <path> --target <dialect>
 
 Exit: `0` bei Erfolg.
 
-### 6.5 export (Integrationen)
+### 6.5 export
 
 #### `export flyway` / `export liquibase` / `export django` / `export knex`
 
@@ -1560,7 +1561,7 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 `exports.down`) auf Basis des bestehenden full-state-`generateRollback()`-Pfads.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
 
-**Liquibase-Format (0.7.0)**: `export liquibase` erzeugt für 0.7.0 genau einen
+**Liquibase-Format**: `export liquibase` erzeugt genau einen
 versionierten XML-Changelog mit genau einem deterministischen `changeSet`.
 `changeSet.id` wird stabil aus Version, Slug und Dialekt abgeleitet,
 `changeSet.author` ist der feste Exporter-Wert `d-migrate`, und ein
@@ -1572,24 +1573,33 @@ Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
 
 ### 6.6 validate
 
-#### `validate data` *(geplant: 0.4.0)*
+#### `validate data`
 
-Validiert Daten gegen ein Schema.
+Geplant ([LF-027](./lastenheft-d-migrate.md)). Validiert eine Datendatei
+DB-frei gegen eine explizit gebundene Tabelle aus einer Schema-Definition.
+v1 prüft Spaltenpräsenz, Typ, Nullability und Länge/Präzision; CHECK, FK,
+Top-Level-Tabellenwrapper und headerlose CSV sind spätere Ausbaustufen.
 
 ```
-d-migrate validate data --source <path> --schema <path>
+d-migrate validate data --source <path> --schema <path> --table <name>
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `--source` | Ja | Pfad | Datendatei (JSON/YAML/CSV) |
 | `--schema` | Ja | Pfad | Schema-Definition |
+| `--table` | Ja | String | Schema-Tabelle, gegen die die Datendatei geprüft wird |
 
-Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
+Tabellenmatching: exakter Tabellenname gewinnt; sonst ist ein eindeutiger
+unqualifizierter Treffer erlaubt. Fehlende oder mehrdeutige Schema-Tabelle
+ist ein Validierungs-/Preflight-Fehler.
 
-#### `validate procedure` *(geplant: 1.1.0)*
+Exit: `0` bei Erfolg, `2` bei ungültigen Flags, `3` bei
+Validierungsfehlern, `7` bei Parse-/I/O-Fehlern.
 
-Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
+#### `validate procedure`
+
+Geplant (LN-034). Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
 
 ```
 d-migrate validate procedure --source <path> --target <url>
@@ -1608,9 +1618,9 @@ Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
 ### 6.7 config
 
-#### `config credentials set` *(geplant: 1.0.0)*
+#### `config credentials set`
 
-Speichert verschlüsselte Datenbank-Credentials.
+Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Speichert verschlüsselte Datenbank-Credentials.
 
 ```
 d-migrate config credentials set --name <connection> --user <user> --password <password>
@@ -1622,13 +1632,13 @@ d-migrate config credentials set --name <connection> --user <user> --password <p
 | `--user` | Ja | String | Benutzername |
 | `--password` | Ja | String | Passwort (wird interaktiv abgefragt wenn nicht angegeben) |
 
-Ergebnis: Credentials werden in `~/.d-migrate/credentials.enc` (AES-256) gespeichert. Details in der [Connection- und Konfigurationsspezifikation §4](./connection-config-spec.md#4-credential-management).
+Ergebnis: Credentials werden in `~/.d-migrate/credentials.enc` (AES-256) gespeichert. Details unter [Credential-Management](./connection-config-spec.md#4-credential-management).
 
 Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
-#### `config credentials list` *(geplant: 1.0.0)*
+#### `config credentials list`
 
-Listet gespeicherte Verbindungsnamen (ohne Passwörter).
+Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Listet gespeicherte Verbindungsnamen (ohne Passwörter).
 
 ```
 d-migrate config credentials list
@@ -1636,9 +1646,9 @@ d-migrate config credentials list
 
 Exit: `0` bei Erfolg.
 
-#### `config show` *(geplant: 1.0.0)*
+#### `config show`
 
-Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
+Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
 
 ```
 d-migrate config show [--section <section>]
@@ -1652,7 +1662,7 @@ Sensible Werte (Passwörter, API-Keys) werden maskiert als `***`.
 
 Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
-### 6.8 mcp *(0.9.6, umgesetzt)*
+### 6.8 mcp
 
 Stellt d-migrate als Model Context Protocol v1 Server bereit. Vollständige Tool-, Resource- und Prompt-Verträge stehen in [`spec/mcp-server.md`](./mcp-server.md) und [`spec/ki-mcp.md`](./ki-mcp.md). Dieser Abschnitt dokumentiert nur den CLI-Vertrag.
 
@@ -1755,14 +1765,14 @@ Erzeugt bzw. validiert YAML-Keyrings für die HMAC-Cursor von `mcp serve --curso
 
 ## 7. Fortschrittsanzeige
 
-### 7.1 Format (MVP 0.5.0)
+### 7.1 Format
 
 `data export` und `data import` emittieren waehrend des Laufs
 line-orientierte Fortschrittszeilen auf `stderr`. Die Anzeige ist
 deterministisch — es gibt keine Zeitschwelle und keine Cursor-Rewrites.
 
 Pro Event wird genau eine Zeile geschrieben. Es gibt zu jedem Zeitpunkt
-hoechstens eine aktive Tabelle (sequenzielle Verarbeitung in 0.5.0).
+hoechstens eine aktive Tabelle (sequenzielle Verarbeitung).
 
 Export-Beispiel:
 
@@ -1845,7 +1855,7 @@ Alternative: Umgebungsvariable `D_MIGRATE_DB_PASSWORD` oder Konfigurationsdatei.
 | Variable | Entspricht | Beschreibung |
 |---|---|---|
 | `D_MIGRATE_CONFIG` | `--config` | Pfad zur Konfigurationsdatei |
-| `D_MIGRATE_LANG` | `--lang` | Sprache. Seit 0.9.0 liegt `--lang` in der Prioritaet vor `D_MIGRATE_LANG`. Der generische Env-Pfad behaelt den toleranteren Vertrag (syntaktisch gueltige Locales → Root-Bundle-Fallback), waehrend `--lang` strikt auf gebundelte Produktsprachen beschraenkt ist. |
+| `D_MIGRATE_LANG` | `--lang` | Sprache. `--lang` liegt in der Prioritaet vor `D_MIGRATE_LANG`. Der generische Env-Pfad behaelt den toleranteren Vertrag (syntaktisch gueltige Locales → Root-Bundle-Fallback), waehrend `--lang` strikt auf gebundelte Produktsprachen beschraenkt ist. |
 | `D_MIGRATE_OUTPUT_FORMAT` | `--output-format` | Ausgabeformat |
 | `D_MIGRATE_NO_COLOR` | `--no-color` | Farbausgabe deaktivieren |
 | `D_MIGRATE_ASSUME_YES` | `--yes` | Bestätigungen überspringen |
@@ -1889,7 +1899,7 @@ cat schema.yaml | d-migrate schema validate --source -
 ```
 
 `-` als Pfad bedeutet stdin/stdout. Aktuell unterstützt von
-`schema validate`. Für `schema reverse` gibt es in 0.6.0 keinen
+`schema validate`. Für `schema reverse` gibt es keinen
 stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 
 ---
@@ -1903,6 +1913,9 @@ stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 
 ---
 
-**Version**: 1.7
-**Stand**: 2026-05-08
-**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0, 0.9.6 `--deterministic`), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse, 0.9.6 `--name`/`--version`) und `data transfer` (0.6.0) implementiert; `mcp serve`, `mcp approval-grant issue` und `mcp cursor-key generate`/`validate` (0.9.6, siehe §6.8 sowie [`spec/mcp-server.md`](./mcp-server.md) und [`spec/ki-mcp.md`](./ki-mcp.md))
+**Status**: Diese Referenz beschreibt den aktuellen CLI-Vertrag
+für `schema`, `data`, `export` und `mcp`.
+
+**Ausblick**: Neue CLI-Oberflächen werden als eigene Abschnitte ergänzt,
+sobald ihr Nutzervertrag feststeht. MCP-Tool-Verträge bleiben in
+[`spec/mcp-server.md`](./mcp-server.md) und [`spec/ki-mcp.md`](./ki-mcp.md).

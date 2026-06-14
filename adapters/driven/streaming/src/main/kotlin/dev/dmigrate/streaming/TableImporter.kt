@@ -13,10 +13,17 @@ import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 
 internal data class TableImportParams(
     val pool: ConnectionPool,
     val writer: DataWriter,
+    /**
+     * S7a: widened von [ResolvedTableInput.Stream] auf den Sealed-Parent.
+     * Der `TableImporter` dispatched intern zwischen Stream-
+     * (`DataChunkReaderFactory.create(InputStream)`) und Seekable-Pfad
+     * (`SeekableDataChunkReaderFactory.create(SeekableChunkSource)`).
+     */
     val tableInput: ResolvedTableInput,
     val format: DataExportFormat,
     val options: ImportOptions,
@@ -40,6 +47,13 @@ internal data class PreparedTableImport(
 internal open class TableImporter(
     private val readerFactory: DataChunkReaderFactory,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
+    /**
+     * S7a (Plan-Review-v4 Finding 2): hinten angehaengter Optional-Param,
+     * sodass bestehende positional Call-Sites (TableImporter-Tests, default
+     * TableImporter im StreamingImporter) ohne Aenderung weiterlaufen. Nur
+     * der Seekable-Dispatch-Pfad braucht eine non-null Factory.
+     */
+    private val seekableReaderFactory: SeekableDataChunkReaderFactory? = null,
 ) {
 
     open fun import(params: TableImportParams): TableImportSummary {
@@ -105,13 +119,34 @@ internal open class TableImporter(
         committedChunksOffset: Long,
     ): PreparedTableImport {
         params.cancellationToken.throwIfCancellationRequested()
-        val reader = readerFactory.create(
-            format = params.format,
-            input = params.tableInput.openInput(),
-            table = params.tableInput.table,
-            chunkSize = params.config.chunkSize,
-            options = params.readOptions,
-        )
+        // S7a Sealed-Dispatch: Stream nutzt readerFactory(InputStream), Seekable
+        // nutzt seekableReaderFactory(SeekableChunkSource + ChunkSchema). Elvis-
+        // Resolver fuer Seekable; aeusserer Pre-Stream-Check im StreamingImporter
+        // (S7b) faengt das frueher ab.
+        val reader = when (val ti = params.tableInput) {
+            is ResolvedTableInput.Stream -> readerFactory.create(
+                format = params.format,
+                input = ti.openInput(),
+                table = ti.table,
+                chunkSize = params.config.chunkSize,
+                options = params.readOptions,
+            )
+            is ResolvedTableInput.Seekable -> {
+                val factory = seekableReaderFactory ?: error(
+                    "TableImporter received ResolvedTableInput.Seekable but no " +
+                        "seekableReaderFactory was wired. Consumer should not produce " +
+                        "Seekable inputs without wiring it."
+                )
+                factory.create(
+                    format = params.format,
+                    source = ti.source,
+                    table = ti.table,
+                    schema = ti.schema,
+                    chunkSize = params.config.chunkSize,
+                    options = params.readOptions,
+                )
+            }
+        }
         params.cancellationToken.throwIfCancellationRequested()
         val session = params.writer.openTable(params.pool, params.tableInput.table, effectiveOptions)
         onTableOpened(params.tableInput.table, session.targetColumns)
@@ -135,9 +170,16 @@ internal open class TableImporter(
         session: TableImportSession,
         firstChunk: DataChunk?,
     ): ChunkContext {
+        // S7a (Plan-Review-v4 Finding 4): headerColumns ist nullable.
+        // Stream-Pfad zieht aus dem Reader (kann null sein), Seekable nimmt
+        // die Spalten direkt aus dem aufgeloesten Schema (immer non-null).
+        val headerColumns: List<String>? = when (val ti = params.tableInput) {
+            is ResolvedTableInput.Stream -> reader.headerColumns()
+            is ResolvedTableInput.Seekable -> ti.schema.columns.map { it.name }
+        }
         val bindingPlan = buildBindingPlan(
             table = params.tableInput.table,
-            headerColumns = reader.headerColumns(),
+            headerColumns = headerColumns,
             firstChunk = firstChunk,
             targetColumns = session.targetColumns,
         )

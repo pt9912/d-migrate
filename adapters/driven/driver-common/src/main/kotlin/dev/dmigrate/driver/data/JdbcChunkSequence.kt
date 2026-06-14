@@ -2,6 +2,9 @@ package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.format.data.ChunkColumnSchema
+import dev.dmigrate.format.data.ChunkSchema
+import dev.dmigrate.format.data.SchemaOrigin
 import org.slf4j.LoggerFactory
 import java.sql.Connection
 import java.sql.PreparedStatement
@@ -29,6 +32,49 @@ internal class JdbcChunkSequence(
     private val log = LoggerFactory.getLogger(JdbcChunkSequence::class.java)
     private var iteratorRequested = false
     private var closed = false
+
+    // AP2 §6.4 (Parquet Cut A S0b): ChunkSchema und ColumnDescriptor-Liste
+    // werden eagerly aus den ResultSetMetaData gezogen, weil das Schema
+    // VOR dem ersten Chunk verfuegbar sein muss (StreamingExporter ruft
+    // DataChunkWriter.begin(table, schema) vor dem ersten write).
+    private val columns: List<ColumnDescriptor>
+    override val schema: ChunkSchema
+
+    init {
+        val metadata = rs.metaData
+        val count = metadata.columnCount
+        val descriptors = ArrayList<ColumnDescriptor>(count)
+        val schemaColumns = ArrayList<ChunkColumnSchema>(count)
+        for (index in 1..count) {
+            val name = metadata.getColumnLabel(index)
+            val sqlTypeName = runCatching { metadata.getColumnTypeName(index) }.getOrNull()
+            val nullabilityRaw = metadata.isNullable(index)
+            val nullability = NullabilityResolver.resolve(nullabilityRaw)
+            val neutralType = JdbcToNeutralTypeMapper.map(
+                jdbcType = metadata.getColumnType(index),
+                sqlTypeName = sqlTypeName,
+                precision = runCatching { metadata.getPrecision(index) }.getOrNull(),
+                scale = runCatching { metadata.getScale(index) }.getOrNull(),
+                isAutoIncrement = runCatching { metadata.isAutoIncrement(index) }.getOrElse { false },
+            )
+            descriptors += ColumnDescriptor(
+                name = name,
+                nullable = nullability.nullable,
+                sqlTypeName = sqlTypeName,
+            )
+            schemaColumns += ChunkColumnSchema(
+                name = name,
+                nullable = nullability.nullable,
+                neutralType = neutralType,
+            )
+        }
+        columns = descriptors
+        schema = ChunkSchema(
+            table = table,
+            columns = schemaColumns,
+            origin = SchemaOrigin.JDBC_METADATA,
+        )
+    }
 
     override fun iterator(): Iterator<DataChunk> {
         check(!iteratorRequested) {
@@ -60,7 +106,6 @@ internal class JdbcChunkSequence(
     }
 
     private inner class JdbcChunkIterator : Iterator<DataChunk> {
-        private val columns: List<ColumnDescriptor> = readColumnMetadata()
         private val columnCount: Int = columns.size
         private var chunkIndex: Long = 0
         private var nextChunk: DataChunk? = null
@@ -109,20 +154,6 @@ internal class JdbcChunkSequence(
                 rows = rows,
                 chunkIndex = chunkIndex++,
             )
-        }
-
-        private fun readColumnMetadata(): List<ColumnDescriptor> {
-            val metadata = rs.metaData
-            val count = metadata.columnCount
-            val columns = ArrayList<ColumnDescriptor>(count)
-            for (index in 1..count) {
-                columns += ColumnDescriptor(
-                    name = metadata.getColumnLabel(index),
-                    nullable = metadata.isNullable(index) != java.sql.ResultSetMetaData.columnNoNulls,
-                    sqlTypeName = runCatching { metadata.getColumnTypeName(index) }.getOrNull(),
-                )
-            }
-            return columns
         }
     }
 }

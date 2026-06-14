@@ -60,6 +60,8 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
             is ImportInput.Stdin -> listOf(input.table)
             is ImportInput.SingleFile -> listOf(input.table)
             is ImportInput.Directory -> listOf("t1")
+            is ImportInput.ResolvedBundle -> input.tables.map { it.table }
+                    is ImportInput.ResolvedSingleFile -> listOf(input.table)
         }
         val summaries = tables.map {
             TableImportSummary(
@@ -162,7 +164,7 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         writerLookup: (DatabaseDialect) -> DataWriter = { FakeDataWriter() },
-        schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
+        schemaPreflight: (Path, ImportInput, DataExportFormat, List<String>?) -> SchemaPreflightResult = { _, input, _, _ ->
             SchemaPreflightResult(input)
         },
         schemaTargetValidator:
@@ -481,6 +483,8 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
                     is ImportInput.Stdin -> input.table
                     is ImportInput.SingleFile -> input.table
                     is ImportInput.Directory -> "users"
+                    is ImportInput.ResolvedBundle -> input.tables.first().table
+                    is ImportInput.ResolvedSingleFile -> input.table
                 }
                 callbacks.onTableOpened(
                     tableName,
@@ -558,6 +562,8 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
                     is ImportInput.Stdin -> listOf(input.table)
                     is ImportInput.SingleFile -> listOf(input.table)
                     is ImportInput.Directory -> emptyList()
+                    is ImportInput.ResolvedBundle -> input.tables.map { it.table }
+                    is ImportInput.ResolvedSingleFile -> listOf(input.table)
                 }
                 ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0, durationMs = 0)

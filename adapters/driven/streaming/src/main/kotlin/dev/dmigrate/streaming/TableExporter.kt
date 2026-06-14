@@ -28,6 +28,17 @@ internal data class TableExportParams(
     val warningSink: (String) -> Unit,
 )
 
+/**
+ * Internes Doppel-Resultat: die Public [TableExportSummary] fuer den
+ * [ExportResult]-Pfad plus das vom Reader gelieferte
+ * [dev.dmigrate.format.data.ChunkSchema] (oder `null` bei leeren Tabellen)
+ * fuer den Bundle-Closure-Hook (S3b Cut A).
+ */
+internal data class TableExportInternalResult(
+    val summary: TableExportSummary,
+    val schema: dev.dmigrate.format.data.ChunkSchema?,
+)
+
 internal class TableExporter(private val reader: DataReader) {
 
     private data class ChunkProgressContext(
@@ -37,7 +48,7 @@ internal class TableExporter(private val reader: DataReader) {
         var warningEmitted: Boolean = false,
     )
 
-    fun export(params: TableExportParams): TableExportSummary {
+    fun export(params: TableExportParams): TableExportInternalResult {
         val pool = params.pool; val table = params.table; val filter = params.filter
         val config = params.config; val writer = params.writer; val counting = params.counting
         val reporter = params.reporter; val ordinal = params.ordinal; val tableCount = params.tableCount
@@ -50,6 +61,7 @@ internal class TableExporter(private val reader: DataReader) {
         var chunks = 0L
         var error: String? = null
         var beginCalled = false
+        var capturedSchema: dev.dmigrate.format.data.ChunkSchema? = null
         val bytesBefore = counting.count
         var markerIdx: Int = -1
         var tieIdxs: IntArray = IntArray(0)
@@ -61,9 +73,10 @@ internal class TableExporter(private val reader: DataReader) {
                 reader.streamTable(pool, table, filter, config.chunkSize, resumeMarker)
             }
             sequence.use { seq ->
+                capturedSchema = seq.schema
                 for (chunk in seq) {
                     if (!beginCalled) {
-                        writer.begin(table, chunk.columns)
+                        writer.begin(table, seq.schema)
                         beginCalled = true
                         val indices = resolveMarkerIndices(resumeMarker, chunk.columns)
                         markerIdx = indices.first
@@ -101,13 +114,16 @@ internal class TableExporter(private val reader: DataReader) {
             status = status,
         ))
 
-        return TableExportSummary(
-            table = table,
-            rows = rows,
-            chunks = chunks,
-            bytes = counting.count - bytesBefore,
-            durationMs = durationMs,
-            error = error,
+        return TableExportInternalResult(
+            summary = TableExportSummary(
+                table = table,
+                rows = rows,
+                chunks = chunks,
+                bytes = counting.count - bytesBefore,
+                durationMs = durationMs,
+                error = error,
+            ),
+            schema = capturedSchema,
         )
     }
 

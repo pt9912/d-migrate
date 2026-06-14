@@ -8,6 +8,7 @@ import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 
 /**
  * Pull-basierter Streaming-Importer. Liest Chunks aus einem Reader und
@@ -15,9 +16,15 @@ import dev.dmigrate.format.data.FormatReadOptions
  *
  * Orchestriert Input-Aufloesung ([ImportInputResolver]), Per-Tabelle-Import
  * ([TableImporter]) und Result-Aggregation.
+ *
+ * Seekable-Pfad seit S7 (2026-06-08) produktiv via [TableImporter];
+ * Pre-Stream-Check unten ist die dritte von vier MCP-Parquet-
+ * Isolations-Linien, siehe
+ * `docs/adr/0007-mcp-parquet-isolation-defense-in-depth.md`.
  */
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
+    private val seekableReaderFactory: SeekableDataChunkReaderFactory? = null,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
 ) {
@@ -25,7 +32,11 @@ class StreamingImporter(
     /** Test seam: cancel-propagation tests swap this with a
      *  capturing override before invoking [import]. Production callers leave
      *  it at the default. */
-    internal var tableImporter: TableImporter = TableImporter(readerFactory, onTableOpened)
+    internal var tableImporter: TableImporter = TableImporter(
+        readerFactory = readerFactory,
+        onTableOpened = onTableOpened,
+        seekableReaderFactory = seekableReaderFactory,
+    )
 
     fun import(
         pool: ConnectionPool,
@@ -65,6 +76,15 @@ class StreamingImporter(
         for ((index, tableInput) in discoveredInputs.withIndex()) {
             cancellationToken.throwIfCancellationRequested()
             if (tableInput.table in skippedTables) continue
+            // Pre-Stream-Check (ADR-0007 Linie 3 / ADR-0006 Exception-Familie):
+            // null-Factory + Seekable-Input → Wiring-Drift, fail-fast.
+            if (tableInput is ResolvedTableInput.Seekable && seekableReaderFactory == null) {
+                error(
+                    "Seekable input requires seekableReaderFactory; " +
+                        "consumer should not produce ResolvedTableInput.Seekable " +
+                        "without wiring it (got Seekable input for table '${tableInput.table}')."
+                )
+            }
             val summary = tableImporter.import(TableImportParams(
                 pool = pool,
                 writer = writer,

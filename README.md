@@ -42,8 +42,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.7**
-(stable, released 2026-06-02). The current capabilities:
+d-migrate is a working production tool at version **0.9.8**
+(stable, released 2026-06-14). The current capabilities:
 
 - **Schema model**: neutral YAML schema with 19 types + Spatial
   Geometry; validator with 35+ error codes.
@@ -68,10 +68,15 @@ d-migrate is a working production tool at version **0.9.7**
 - **Spatial DDL**: PostGIS, MySQL native, SpatiaLite
   (`--spatial-profile`); view-query transformation across dialects.
 - **Data operations**: streaming `data export` / `import` /
-  `transfer` (JSON / YAML / CSV) with named connections, UPSERT,
-  truncate, trigger handling, reseeding, incremental export
+  `transfer` (JSON / YAML / CSV / Parquet) with named connections,
+  UPSERT, truncate, trigger handling, reseeding, incremental export
   (`--since-column` / `--since`); `data profile` for data
   statistics.
+- **Parquet & object storage** (0.9.8): `data export` / `import
+  --format parquet` for bundle (multi-table + `manifest.yaml`) and
+  single-file (footer-KV) layouts with checkpoint/resume and
+  `--table-order`; S3-compatible `ArtifactStore`
+  (`artifacts.store: s3`, AWS SDK v2) for server-mode artefacts.
 - **Integrations**: `d-migrate export flyway|liquibase|django|knex`.
 - **MCP server** (`mcp serve --transport stdio|http`, MCP
   2025-11-25): read-only tool surface (`schema_validate`,
@@ -105,8 +110,9 @@ See [Quick start](#quick-start) below for more concrete recipes.
   [`spec/`](spec/), [`README.md`](README.md), and
   [`CHANGELOG.md`](CHANGELOG.md) is validated against the file
   system on every CI run via
-  [`scripts/verify-doc-refs.sh`](scripts/verify-doc-refs.sh);
-  broken internal links break the build.
+  [d-check](https://github.com/pt9912/d-check) (digest-pinned
+  container image, configured in [`.d-check.yml`](.d-check.yml));
+  broken internal links and anchors break the build.
 - **Static-analysis gate**: Detekt plus a SOLID-suppression-gate
   ([`scripts/solid-suppression-gate.sh`](scripts/solid-suppression-gate.sh))
   — `@Suppress("LargeClass")` and friends are tracked in a ledger
@@ -140,42 +146,17 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 ## Status
 
-As of **2026-06-02**:
+The full release history (0.1.0–0.9.7) lives in
+[`CHANGELOG.md`](CHANGELOG.md). Current and upcoming milestones:
 
-- **0.1.0–0.5.5 MVP** · `Released` (Apr 2026): YAML schema model,
-  type system, DDL generation, data export, data import,
-  incremental pipelines, spatial types.
-- **0.6.0 Reverse engineering** · `Released` (2026-04-14).
-- **0.7.0 Tool integrations** · `Released` (2026-04-15): Flyway /
-  Liquibase / Django / Knex export.
-- **0.7.5 Data profiling** · `Released` (2026-04-15).
-- **0.8.0 Internationalisation** · `Released` (2026-04-16).
-- **0.9.0 Beta resilience + i18n CLI** · `Released` (2026-04-18).
-- **0.9.1 Library refactor + integration cut** · `Released`
-  (2026-04-19).
-- **0.9.2 DDL phases + import-friendly artefacts** · `Released`
-  (2026-04-19).
-- **0.9.3 Filter hardening + MySQL-sequence emulation (generator)** ·
-  `Released` (2026-04-20).
-- **0.9.4 MySQL-sequence reverse + compare** · `Released`
-  (2026-04-21).
-- **0.9.5 Quality refinement** · `Released` (2026-04-24).
-- **0.9.6 MCP server** · `Released` (2026-05-08): MCP 2025-11-25
-  with JWT-JWKS auth, idempotency, policy gates, JDBC persistence,
-  artefact stores, AI-adjacent tools.
-- **0.9.7 Refactoring + diff-based migration + SQLite-sequence
-  emulation + atomic-preserve** · `Released` (2026-06-02): 22
-  workstreams ✅, all closure plan-docs in
-  [`docs/planning/done/`](docs/planning/done/). Headline
-  capabilities: atomic `preserveCurrentValue` under per-dialect
-  lock (PG / MySQL / SQLite), SQLite-sequence-helper-table
-  emulation + reverse engineering, MySQL sequence drift check,
-  signed migration-plan v1, partial rollback v2, rename overlays
-  incl. dependency reprojection, CHECK / EXCLUDE diffability with
-  live-data preflight.
-- **0.9.8 Analytics + storage anchor (evaluations + BI demo)** ·
-  `Planned`: Parquet evaluation, object-storage `ArtifactStore`
-  port, BI-demo Compose stack (Postgres + Metabase + MinIO).
+- **0.9.8 Analytics + storage anchor (Parquet Cut A + S3
+  ArtifactStore + BI demo)** · `Released` (2026-06-14): productive
+  Parquet `data export` / `import` (bundle + single-file,
+  checkpoint/resume, `--table-order`, exit-code contract);
+  S3-compatible `ArtifactStore` (AWS SDK v2 +
+  `url-connection-client`, `artifacts.store: s3`); BI-demo Compose
+  stack (Postgres + Metabase + SeaweedFS). All closure plan-docs in
+  [`docs/planning/done/`](docs/planning/done/).
 - **0.9.9 Documentation + pilot validation** · `Planned`.
 - **1.0.0 Stable release** · `Planned`.
 

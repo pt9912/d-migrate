@@ -242,4 +242,88 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             after shouldBe before
         }
     }
+
+    // ─── Service-Mode Sub-Slice E: Cancellation ─────────────────────
+
+    test("Cancelled: pre-BEGIN cancel short-circuits without opening a transaction") {
+        bootstrapCanonical("atom_seq_cancel_pre")
+        exec("UPDATE `dmg_sequences` SET `next_value` = 142 WHERE `name` = 'atom_seq_cancel_pre'")
+        val initialNextValue = queryNextValue("atom_seq_cancel_pre")
+
+        val ref = mysqlRef("atom_seq_cancel_pre")
+        val batch = AtomicSequencePreserveBatch(
+            requests = listOf(
+                AtomicSequencePreserveRequest(ref) { probe ->
+                    listOf(
+                        "UPDATE `dmg_sequences` SET `next_value` = ${probe.value} " +
+                            "WHERE `name` = 'atom_seq_cancel_pre'",
+                    )
+                },
+            ),
+            protectedOperationIds = listOf(protectedOpId),
+            internalFollowUpIds = emptyList(),
+        )
+        val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
+        tokenSource.cancel("pre-BEGIN-test-cancel")
+
+        conn().use { c ->
+            val result = executor.execute(
+                connection = c,
+                batch = batch,
+                lockTimeoutMillis = 5_000,
+                cancellationToken = tokenSource.token,
+                executeProtectedOperations = { _, _ ->
+                    error("protected callback must not be reached after pre-BEGIN cancel")
+                },
+            )
+            result.shouldBeInstanceOf<AtomicSequencePreserveResult.Cancelled>()
+            result.reason shouldBe "pre-BEGIN-test-cancel"
+            result.refs shouldBe listOf(ref)
+        }
+        // Sequence completely untouched (no BEGIN, no UPDATE).
+        queryNextValue("atom_seq_cancel_pre") shouldBe initialNextValue
+    }
+
+    test("Cancelled: cancel inside protected callback rolls back; helper-table next_value at probed snapshot") {
+        bootstrapCanonical("atom_seq_cancel_mid")
+        exec("UPDATE `dmg_sequences` SET `next_value` = 142 WHERE `name` = 'atom_seq_cancel_mid'")
+        val initialNextValue = queryNextValue("atom_seq_cancel_mid")
+
+        val ref = mysqlRef("atom_seq_cancel_mid")
+        val tokenSource = dev.dmigrate.core.cancel.CancellationTokenSource.create()
+        val batch = AtomicSequencePreserveBatch(
+            requests = listOf(
+                AtomicSequencePreserveRequest(ref) { _ ->
+                    error("renderRestore must not run after a post-protected cancel")
+                },
+            ),
+            protectedOperationIds = listOf(protectedOpId),
+            internalFollowUpIds = emptyList(),
+        )
+
+        conn().use { c ->
+            val result = executor.execute(
+                connection = c,
+                batch = batch,
+                lockTimeoutMillis = 5_000,
+                cancellationToken = tokenSource.token,
+                executeProtectedOperations = { protectedConn, _ ->
+                    protectedConn.createStatement().use {
+                        it.execute("UPDATE `dmg_sequences` SET `next_value` = 999 WHERE `name` = 'atom_seq_cancel_mid'")
+                    }
+                    tokenSource.cancel("post-protected-test-cancel")
+                    AtomicProtectedExecutionResult.Succeeded(1)
+                },
+            )
+            result.shouldBeInstanceOf<AtomicSequencePreserveResult.Cancelled>()
+            result.reason shouldBe "post-protected-test-cancel"
+            result.refs shouldBe listOf(ref)
+        }
+        // MySQL ROLLBACK undoes the protected UPDATE on dmg_sequences;
+        // next_value returns to the probed snapshot, not the
+        // protected-op bump value (999) and not the restored value
+        // (also probed snapshot) — they coincide here because the
+        // rollback obviates both.
+        queryNextValue("atom_seq_cancel_mid") shouldBe initialNextValue
+    }
 })

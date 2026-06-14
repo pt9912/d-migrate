@@ -23,6 +23,19 @@ class DefaultDataChunkReaderFactory : DataChunkReaderFactory {
             DataExportFormat.JSON -> JsonChunkReader(input, table, chunkSize, options)
             DataExportFormat.YAML -> YamlChunkReader(input, table, chunkSize, options)
             DataExportFormat.CSV  -> CsvChunkReader(input, table, chunkSize, options)
+            // S3 Contract-Branch (Parquet Cut A): dauerhafte Domain-
+            // Aussage, kein Stopgap. Parquet liest seekbar ueber
+            // SeekableDataChunkReaderFactory in
+            // adapters:driven:formats-parquet — der DefaultData…Factory
+            // bleibt Hadoop-/Parquet-frei (AP12 §5.2). Der CLI-Pfad
+            // (S6) reicht Parquet an die separate Factory durch; ein
+            // hier ankommender PARQUET-Aufruf signalisiert ein
+            // Wiring-Fehler.
+            DataExportFormat.PARQUET -> error(
+                "DefaultDataChunkReaderFactory does not support Parquet; " +
+                    "Parquet reads go through StreamingImporter's " +
+                    "seekableReaderFactory (ParquetSeekableDataChunkReaderFactory)"
+            )
         }
     }
 }

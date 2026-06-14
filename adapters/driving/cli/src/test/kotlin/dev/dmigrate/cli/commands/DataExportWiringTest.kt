@@ -35,6 +35,7 @@ class DataExportWiringTest : FunSpec({
         nullString = "",
         resume = null,
         checkpointDir = null,
+        manifestSha256 = false,
         cliContext = CliContext(),
         configPath = null,
     )

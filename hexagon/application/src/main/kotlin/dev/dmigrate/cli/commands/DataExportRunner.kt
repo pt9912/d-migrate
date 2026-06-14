@@ -48,6 +48,15 @@ data class DataExportRequest(
     val resume: String? = null,
     /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
     val checkpointDir: Path? = null,
+    /**
+     * CLI-Flag `--manifest-sha256` (AP7 §5 / AP12 §4): wenn true, berechnet
+     * der Parquet-Bundle-Closure-Hook pro Tabelle einen SHA-256-Digest und
+     * traegt ihn in `manifest.yaml` ein. Standard `false` haelt Bundle-
+     * Exports schnell; bei sehr grossen Dateien spart das die zweite
+     * Lese-Passage. Wirkt nur fuer PARQUET-Bundles (Closure ignoriert
+     * andere Formate; Single-File hat keinen Closure-Hook).
+     */
+    val manifestSha256: Boolean = false,
 )
 
 /**
@@ -71,7 +80,14 @@ class DataExportRunner(
     private val poolFactory: (ConnectionConfig) -> ConnectionPool,
     private val readerLookup: (DatabaseDialect) -> DataReader,
     private val listerLookup: (DatabaseDialect) -> TableLister,
-    private val writerFactoryBuilder: () -> DataChunkWriterFactory,
+    /**
+     * S7-0: nimmt den aufgeloesten [ExportOutput] entgegen, damit der
+     * CLI-Composite-Builder zwischen Single-File-Modus (mit Footer-KV-Provider)
+     * und Bundle-Modus (ohne) unterscheiden kann (S4 §2.2-Invariante).
+     * Implementierungen duerfen nur auf die Subklasse verzweigen, nicht auf
+     * den Pfad — siehe `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
+     */
+    private val writerFactoryBuilder: (dev.dmigrate.streaming.ExportOutput) -> DataChunkWriterFactory,
     private val collectWarnings: () -> List<String>,
     private val exportExecutor: ExportExecutor,
     private val progressReporter: ProgressReporter = NoOpProgressReporter,
@@ -139,6 +155,21 @@ class DataExportRunner(
             userFacingStderr(
                 "Error: --resume is not supported for stdout export; " +
                     "set --output <file-or-dir> or drop --resume."
+            )
+            return 2
+        }
+        // AP12 §4.1 / Review-Finding F1: Capability-Check auf dem
+        // DataExportFormat-Enum statt PARQUET-hartkodiert. Neue
+        // seekable Formate (Arrow IPC/ORC) kommen ohne neuen Branch.
+        val parsedFormat = try {
+            dev.dmigrate.format.data.DataExportFormat.fromCli(request.format)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        if (parsedFormat?.requiresSeekableOutput == true && request.output == null) {
+            userFacingStderr(
+                "Error: --format ${parsedFormat.cliName} requires --output <file-or-dir>; " +
+                    "stdout is not supported for ${parsedFormat.cliName}."
             )
             return 2
         }

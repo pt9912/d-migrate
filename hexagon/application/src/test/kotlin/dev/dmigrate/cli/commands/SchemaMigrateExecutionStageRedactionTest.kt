@@ -61,7 +61,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
         // includes a credential-shaped literal. RoutineBodyLogRedactor
         // delegates to RoutineBodyScrubber which masks password=' ... '
         // patterns.
-        val executor: SegmentAwareExecutorFn = { _, _, _, _ ->
+        val executor: SegmentAwareExecutorFn = { _, _, _, _, _ ->
             throw RuntimeException(
                 "ERROR: syntax error at \"BEGIN\" in CREATE FUNCTION login() " +
                     "AS \$\$ password = 'hunter2-very-secret' \$\$",
@@ -85,7 +85,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
     }
 
     test("--debug-body bypasses redaction and emits raw driver message") {
-        val executor: SegmentAwareExecutorFn = { _, _, _, _ ->
+        val executor: SegmentAwareExecutorFn = { _, _, _, _, _ ->
             throw RuntimeException(
                 "ERROR in CREATE FUNCTION: password = 'hunter2-very-secret' invalid",
             )
@@ -103,7 +103,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
     }
 
     test("non-execute request returns null without touching the executor") {
-        val executor: SegmentAwareExecutorFn = { _, _, _, _ ->
+        val executor: SegmentAwareExecutorFn = { _, _, _, _, _ ->
             throw IllegalStateException("must not be called")
         }
         val trace = stage(executor).maybeExecute(

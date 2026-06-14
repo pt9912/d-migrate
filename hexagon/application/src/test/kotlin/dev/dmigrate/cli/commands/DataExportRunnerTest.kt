@@ -176,7 +176,7 @@ class DataExportRunnerTest : FunSpec({
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         readerLookup: (DatabaseDialect) -> DataReader = { FakeDataReader() },
         listerLookup: (DatabaseDialect) -> TableLister = { FakeTableLister() },
-        writerFactoryBuilder: () -> DataChunkWriterFactory = { FakeWriterFactory() },
+        writerFactoryBuilder: (dev.dmigrate.streaming.ExportOutput) -> DataChunkWriterFactory = { _ -> FakeWriterFactory() },
         collectWarnings: () -> List<String> = { emptyList() },
         exportExecutor: ExportExecutor = successExecutor,
         progressReporter: dev.dmigrate.streaming.ProgressReporter = dev.dmigrate.streaming.NoOpProgressReporter,
@@ -526,6 +526,15 @@ class DataExportRunnerTest : FunSpec({
         val runner = newRunner(stderr)
         runner.execute(request(sinceColumn = "bad column", since = "1")) shouldBe 2
         stderr.joined() shouldContain "--since-column value 'bad column' is not a valid identifier"
+    }
+
+    test("Exit 2: --format parquet rejects stdout output") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+
+        runner.execute(request(format = "parquet", output = null)) shouldBe 2
+
+        stderr.joined() shouldContain "--format parquet requires --output"
     }
 
     test("Exit 2: invalid --filter DSL throws FilterParseException at request construction") {

@@ -40,8 +40,9 @@ class DataImportCommand : CliktCommand(name = "import") {
 
     val format by option(
         "--format",
-        help = "Input format: json, yaml, csv (auto-detected from file extension if omitted)",
-    ).choice("json", "yaml", "csv")
+        help = "Input format: json, yaml, csv, parquet " +
+            "(auto-detected from file extension or directory manifest.yaml if omitted)",
+    ).choice("json", "yaml", "csv", "parquet")
 
     val schema by option(
         "--schema",
@@ -56,6 +57,13 @@ class DataImportCommand : CliktCommand(name = "import") {
     val tables by option(
         "--tables",
         help = "Comma-separated list of tables to import (directory source only)",
+    ).split(",")
+
+    val tableOrder by option(
+        "--table-order",
+        help = "Comma-separated explicit import order (directory source only). " +
+            "Authoritative over the --schema FK-topological sort; --schema then " +
+            "only validates. Must be a permutation of the imported tables.",
     ).split(",")
 
     val onError by option(
@@ -125,6 +133,14 @@ class DataImportCommand : CliktCommand(name = "import") {
             "from the config file when set.",
     ).path()
 
+    // Parquet Cut A S6 (AP12 §4.2): explizit Checkpoint-Persistenz fuer den
+    // aktuellen Lauf abschalten. Konfliktet mit --resume (Exit 2 in
+    // validateCliFlags). Implizit: Phase-1 berechnet keinen contentSha256.
+    val noCheckpoint by option(
+        "--no-checkpoint",
+        help = "Disable checkpoint reads/writes for this run. Mutually exclusive with --resume.",
+    ).flag()
+
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val exitCode = DataImportWiring.execute(
@@ -135,6 +151,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 schema = schema,
                 table = table,
                 tables = tables,
+                tableOrder = tableOrder,
                 onError = onError,
                 onConflict = onConflict,
                 triggerMode = triggerMode,
@@ -147,6 +164,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 chunkSize = chunkSize,
                 resume = resume,
                 checkpointDir = checkpointDir,
+                noCheckpoint = noCheckpoint,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

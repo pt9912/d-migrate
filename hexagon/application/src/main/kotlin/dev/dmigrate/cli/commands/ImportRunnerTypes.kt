@@ -29,6 +29,30 @@ class ImportPreflightException(
     cause: Throwable? = null,
 ) : IllegalArgumentException(message, cause)
 
+/**
+ * S9a-0 (AP12 §9): port-seitiges, exit-code-tragendes Preflight-Signal.
+ *
+ * Adapter-spezifische Preflight-Exceptions (z.B.
+ * `ParquetBundlePreflightException` mit `MANIFEST_*` → Exit 4, und die
+ * Bundle-Resolver-Familie `BUNDLE_*` → Exit 5) leben im Adapter-Modul
+ * `:adapters:driven:formats-parquet` und sind dem `:hexagon:application`-Core
+ * unsichtbar (Hexagon-Regel). Der CLI-Hook (`:adapters:driving:cli`, sieht
+ * beide Welten) uebersetzt sie in dieses generische Signal; der
+ * [ImportPreflightResolver] mappt nur [exitCode] → `Exit`. So bleibt das
+ * Exit-Code-Wissen im Adapter, der Core parquet-frei (analog ADR-0006
+ * Wiring-Drift-Exception-Familie).
+ *
+ * [message] beginnt mit dem stabilen Fehlercode (`MANIFEST_*` / `BUNDLE_*`),
+ * damit Operatoren bei den (per AP12 §9 bewusst kollidierenden) Exit-Codes
+ * — 4 = Connection ODER Parquet-Format-Vertragsbruch; 5 = Streaming ODER
+ * Bundle-Resolver/Iteration — ueber den stderr-Praefix unterscheiden koennen.
+ */
+class PreflightExitException(
+    val exitCode: Int,
+    message: String,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
+
 // ─── Public DTOs ───────────────────────────────────────────────────
 
 data class SchemaPreflightResult(
@@ -128,6 +152,29 @@ internal data class InputContext(
     val effectiveTables: List<String>,
     val inputFilesByTable: Map<String, String>,
     val fingerprint: String,
+    /**
+     * S8b (AP9 §7.5): per-Tabelle SHA-256-Map fuer Parquet-Bundle-
+     * Importe (Wert kann null sein, wenn der Producer den Hash nicht
+     * geschrieben hat — Live-Pruefung wird dann uebersprungen). `null`
+     * fuer Nicht-Bundle-Quellen, dient als „Parquet-Bundle-Lauf?"-
+     * Anker beim Pre-AP8-Branch in [ImportCheckpointManager].
+     */
+    val bundleExpectedSha256ByTable: Map<String, String?>? = null,
+    /**
+     * S8b (AP11 §6.4): Content-SHA-256 fuer Parquet-Single-File-
+     * Importe. `null` fuer Nicht-Single-File-Quellen oder bei
+     * `--no-checkpoint`/Fresh-Run (Hash wird erst beim `--resume`
+     * berechnet, siehe `ImportPreflightResolver.kt:76-79`).
+     */
+    val singleFileContentSha256: String? = null,
+    /**
+     * S8c (AP9 §4.2): Bundle-Resume-Fingerprint aus
+     * `ImportInput.ResolvedBundle.resumeFingerprint`. Wird beim
+     * Initial-Lauf in `BundleCheckpointSpecifics` persistiert und
+     * beim `--resume` gegen den frisch berechneten verglichen.
+     * `null` fuer Nicht-Bundle-Quellen.
+     */
+    val bundleResumeFingerprint: dev.dmigrate.streaming.BundleResumeFingerprint? = null,
 )
 
 internal sealed class InputContextResult {

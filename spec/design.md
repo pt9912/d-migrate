@@ -135,7 +135,7 @@ DDL-Ergebnis für `geometry` ist bewusst profilgesteuert (`postgis`, `native`,
 Reverse-Engineering (LF-004) erfolgt in 0.6.0 ausschließlich über
 Live-DB-Verbindungen. Ein DDL-Datei-Parser ist als späterer additiver
 Funktionsschnitt vorgesehen, gehört aber nicht zum 0.6.0-Mindestvertrag (siehe
-[Neutrales-Modell-Spezifikation §12](./neutral-model-spec.md#12-ddl-parser)).
+[Neutrales-Modell-Spezifikation §12](./neutral-model-spec.md#12-ddl-parser-späterer-milestone--nicht-teil-von-060)).
 
 1. **DB-Connection-basiert** *(0.6.0)*: `SchemaReader` liest Metadaten direkt
    aus der Datenbank via JDBC

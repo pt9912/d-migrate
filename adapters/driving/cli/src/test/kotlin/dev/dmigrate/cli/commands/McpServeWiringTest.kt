@@ -2,6 +2,10 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore
+import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -103,6 +107,39 @@ class McpServeWiringTest : FunSpec({
                     wiring.components shouldNotBe null
                     wiring.resourceStores shouldNotBe null
                     wiring.promptRegistry shouldNotBe null
+                }
+            } finally {
+                owner.cleanupIfOwned()
+                runCatching {
+                    Files.walk(stateDir)
+                        .sorted(Comparator.reverseOrder())
+                        .forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
+        test("artifacts.store=s3 flows through to S3-typed byte stores (S3.4b)") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-s3-")
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            try {
+                // Offline-safe: the startup sweeps of the retention /
+                // finalisation loops only walk the empty in-memory metadata
+                // stores — no S3 request is issued during build().
+                newWiring().build(
+                    config = McpServerConfig(),
+                    owner = owner,
+                    cursorKeyring = null,
+                    artifacts = ArtifactStorageConfig.S3(
+                        S3StorageConfig(
+                            bucket = "wiring-bucket",
+                            endpoint = java.net.URI.create("http://localhost:1"),
+                        ),
+                    ),
+                ).use { wiring ->
+                    wiring.runtimeWiring.uploadSegmentStore
+                        .shouldBeInstanceOf<S3UploadSegmentStore>()
+                    wiring.runtimeWiring.artifactContentStore
+                        .shouldBeInstanceOf<S3ArtifactContentStore>()
                 }
             } finally {
                 owner.cleanupIfOwned()

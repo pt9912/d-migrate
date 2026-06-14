@@ -88,6 +88,18 @@ class SchemaMigrateRunner(
     private val fingerprint: (SchemaDefinition) -> String = MigrationFingerprint::compute,
     private val clock: java.time.Clock = java.time.Clock.systemUTC(),
     private val createdByVersion: String = "d-migrate (dev)",
+    /**
+     * Atomic-Preserve Service-Mode Sub-Slice A: server-side default
+     * for the atomic-preserve lock-timeout budget (milliseconds).
+     * A per-request [SchemaMigrateRequest.lockTimeoutMillis], if
+     * set, wins over this default; otherwise this value is the
+     * effective budget. CLI wiring leaves this at the
+     * [SchemaMigrateExecutionStage.DEFAULT_LOCK_TIMEOUT_MILLIS]
+     * default; the constructor parameter exists so a future
+     * server/REST/gRPC composition root can plug its own server-
+     * level default in.
+     */
+    private val lockTimeoutMillis: Long = SchemaMigrateExecutionStage.DEFAULT_LOCK_TIMEOUT_MILLIS,
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
     private val userFacingPrintError = userFacingErrors.printError(printError)
@@ -129,6 +141,7 @@ class SchemaMigrateRunner(
         normalizer = normalizer,
         fingerprint = fingerprint,
         printError = userFacingPrintError,
+        lockTimeoutMillis = lockTimeoutMillis,
     )
 
     private val rollbackComposer = SchemaMigrateRollbackComposer(createdByVersion)
@@ -550,6 +563,20 @@ data class SchemaMigrateRequest(
      * Mirror of [sqliteNamedSequences]; same plumbing pattern.
      */
     val mysqlNamedSequences: String? = null,
+    /**
+     * Atomic-Preserve Service-Mode Sub-Slice A (plan-doc
+     * `docs/planning/in-progress/atomic-preserve-service-mode.md`):
+     * optional per-request override for the atomic-preserve
+     * lock-timeout budget (in milliseconds). When `null` (the
+     * default), the runner uses
+     * [SchemaMigrateExecutionStage.DEFAULT_LOCK_TIMEOUT_MILLIS]
+     * (or the constructor-supplied [SchemaMigrateRunner]
+     * `lockTimeoutMillis` for a server-side default override).
+     * Validated by [SchemaMigratePreparation.validateRequest] to be
+     * in `[10, 60_000]` if set; out-of-range values exit with 2
+     * before the pipeline runs.
+     */
+    val lockTimeoutMillis: Long? = null,
 )
 
 /**
@@ -901,6 +928,7 @@ typealias SegmentAwareExecutorFn = (
     configPath: Path?,
     segments: List<dev.dmigrate.driver.migration.preserve.ExecutableSegment>,
     lockTimeoutMillis: Long,
+    cancellationToken: CancellationToken,
 ) -> ExecutionTrace
 
 /**

@@ -5,6 +5,936 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.8] - 2026-06-14
+
+### Breaking
+
+- **Parquet — Bundle-Preflight-Exit-Codes folgen jetzt AP12 §9**
+  *(2026-06-09, Parquet Cut A S9a-0)* — die CLI-Exit-Codes fuer
+  Parquet-Bundle-Fehler entsprechen jetzt dem AP12-§9-Vertrag. Fuer
+  Skripte, die auf konkrete Exit-Codes pruefen, aendert sich:
+  - `MANIFEST_*`-Fehler (fehlendes/ungueltiges `manifest.yaml`,
+    SHA-256-Mismatch, Kollisionen) → **Exit 4** (vorher Exit 3).
+  - `tableFilter`/`tableOrder`-Fehler → **Exit 5** mit den stabilen
+    Codes `BUNDLE_FILTER_UNKNOWN_TABLE`, `BUNDLE_ORDER_DUPLICATE`,
+    `BUNDLE_ORDER_UNKNOWN_TABLE`, `BUNDLE_ORDER_INCOMPLETE` (vorher
+    Exit 2 mit irrefuehrendem Code `MANIFEST_FILE_MISSING`).
+  - Ein **partieller** `tableOrder` ist jetzt ein harter Fehler
+    (`BUNDLE_ORDER_INCOMPLETE`) statt stillschweigend nicht-gelistete
+    Tabellen zu droppen (Bugfix).
+  - Per-Tabelle-Importfehler eines Bundle-Laufs geben jetzt den
+    stabilen Code `BUNDLE_TABLE_IMPORT_FAILED: table='…' cause='…'`
+    aus (Exit 5 unveraendert). Die Exit-Codes 4/5 sind mit
+    Connection-/Streaming-Fehlern geteilt; der stderr-Code-Praefix
+    unterscheidet. JSON/YAML/CSV/Single-File-Importe sind **nicht**
+    betroffen.
+  - `--resume`-Abbrueche eines Bundle-Imports geben jetzt feldweise
+    benannte Codes statt einer generischen „fingerprint mismatch"-
+    Meldung (Exit 3 unveraendert): `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT`,
+    `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`, `BUNDLE_TABLE_ORDER_CHANGED`
+    (AP8 §8.4). Reine Diagnose-Verfeinerung — Skripte, die auf den
+    alten stderr-Text geprueft haben, muessen die neuen Codes lesen.
+- **Parquet — Pre-0.9.8-Bundle-Checkpoints sind nach 0.9.8 nicht
+  mehr wiederaufnehmbar** *(2026-06-09, Parquet Cut A S8)* —
+  Pre-0.9.8-Parquet-Checkpoints fuer **Bundle**-Importe sind nach
+  0.9.8 nicht mehr wiederaufnehmbar (Fehlercode
+  `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`). Der
+  `ImportCheckpointManager` verlangt fuer einen Parquet-Bundle-Resume
+  jetzt den in 0.9.8 eingefuehrten `BundleCheckpointSpecifics`-
+  Resume-Fingerprint im Manifest; ein Manifest ohne diesen Block kann
+  einen laufenden Parquet-Bundle-Import nicht fortsetzen.
+  JSON/YAML/CSV-Checkpoints und Single-File-Importe ohne vorherigen
+  Checkpoint sind **nicht** betroffen. Pre-0.9.8-Parquet-Bundle-
+  Checkpoints existierten in der Wildnis nicht (Parquet kam mit 0.9.8
+  live); der Bruch ist defensiv im Code, nicht praktisch spuerbar.
+
+### Fixed
+
+- **Parquet — Single-File-Resume funktioniert jetzt** *(2026-06-09)* —
+  ein `--resume` eines Single-File-Parquet-Imports scheiterte bisher
+  immer mit `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT` (Exit 3), weil
+  der Erstlauf den Content-SHA-256 nicht persistierte (er wurde nur bei
+  `--resume` berechnet). Der Hash wird jetzt auch beim Erstlauf berechnet,
+  wenn ein Checkpoint-Verzeichnis aktiv ist (`--checkpoint-dir`), sodass
+  ein späterer `--resume` ihn validieren kann (`PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT`
+  bei geänderter Datei). Hinweis: derzeit nur mit explizitem
+  `--checkpoint-dir` voll wirksam (config-only `pipeline.checkpoint.directory`
+  ist Folge-Scope).
+
+### Changed
+
+- **Parquet — Scope-/Versions-Korrektur: Cut A statt Cut B,
+  Ziel 0.9.8 statt 1.0.0** *(2026-06-06)* — AP13 §5.4 / §7
+  hatten am 2026-06-05 „Cut B (Bundle-only Pilot) als 1.0.0"
+  empfohlen; Stakeholder-Entscheid e7f3f714 folgte dieser
+  Empfehlung. Am 2026-06-06 wurde diese Empfehlung in
+  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
+  §8 superseded auf **Cut A (Voller Vertrag) als 0.9.8**.
+  Begruendung: Operator-Mehrwert (Spark-/Hive-/DuckDB-
+  Dateien direkt importieren) macht Cut B zu eng, sobald
+  der Bundle-Pfad steht; die Versionsabsenkung auf 0.9.8
+  macht den 1.0-Stamp explizit zum Engineering-Reife-Punkt
+  (Native-Image, Distributions-Cut, Hadoop-Footprint-
+  Minimierung) statt zum Feature-Vollstaendigkeits-Stamp.
+  Folge-Releases (AP13 §8.3): **1.0.0** = Native-Image-Cut
+  + Distributions-Cut (Default-JAR vs. `--parquet`-Variante)
+  + optionaler Hadoop-API-Shim + Hadoop-Footprint-
+  Minimierung (vormals 1.2.0-Scope plus §6.2-Distributions-
+  Frage plus der aus dem Umbrella herausgehaltene
+  Footprint-Cut); **1.0.0+ / spaeter** = MCP-Server-
+  Spiegelung; vormaliger 1.1.0-Single-File-Scope entfaellt
+  (Bestandteil von 0.9.8).
+- **Parquet-Plan-Doc nach `done/` migriert — nur
+  Evaluierungsphase abgeschlossen** *(2026-06-05)* —
+  per `in-progress/`-Konvention (ADR-0004) wandern
+  [`parquet-export-import-evaluation.md`](docs/planning/done/parquet-export-import-evaluation.md)
+  und alle zehn Sub-Docs (AP1-AP13) nach
+  `docs/planning/done/`, weil die **Evaluierungsphase**
+  abgeschlossen ist. Hauptplan
+  bekommt eine `## Closure (2026-06-05)`-Sektion mit
+  Commit-Tabelle aller 16 Parquet-Commits in
+  chronologischer Reihenfolge (a9bf941e Plan-Refresh, 4
+  Code-Spike-Commits AP3-AP6, 10 Sub-Doc-Commits AP7-AP13
+  inkl. AP10-Befund-Rueckspiel, 1 Stakeholder-Entscheid
+  e7f3f714), fuenf verbleibenden Pre-Implementation-
+  Aufgaben (Engineering-Goal, Native-Image-Smoketest,
+  Sealed-`rg`-Sweep, Branch-Anlage, erster Implementierungs-
+  Commit) und Folge-Threads. Cross-Verweise auf den alten
+  `in-progress/`-Pfad sind in CHANGELOG, Spec, Sub-Docs,
+  AP3-Spike-Tests und `gradle.properties` aktualisiert.
+  **Wichtig:** die Closure deckt die Plan-Doc-/Spike-Phase
+  ab, nicht den produktiven Code; der Spike unter
+  `adapters/driven/formats-parquet/src/main/kotlin/.../spike/`
+  bleibt, der produktive Pfad
+  (`SeekableDataChunkReaderFactory`, `SeekableChunkSource`,
+  `ParquetChunkReader`/`Writer`, `DataExportFormat.PARQUET`,
+  CLI-`--format parquet`, Dependency-Hygiene, Hadoop-
+  Footprint-Inventar fuer 1.0.0-Input) laeuft als
+  Per-Feature-Umbrella
+  [`parquet-productive-cut-a.md`](docs/planning/done/parquet-productive-cut-a.md)
+  unter `in-progress/`. Trigger sind vier Befunde aus
+  Code-Sichtung 2026-06-06 (`DataExportFormat.kt:10` ohne
+  `PARQUET`, `DataImportCommand.kt:41` `.choice("json", "yaml",
+  "csv")`, transitives `org.apache.avro:avro:1.9.2` ueber
+  Hadoop, restliche Hadoop-Transitive HDFS/YARN/Jersey/
+  reload4j/Zookeeper/Netty). Der Umbrella deckt nach AP13 §8
+  Cut A (Voll-Scope) ab.
+
+### Added
+
+- **S3-kompatibler Object-Storage fuer die MCP-Byte-Stores (S3.0..S3.6)**
+  *(2026-06-09–2026-06-12)* — `mcp serve` kann Upload-Segmente und
+  Artefakt-Bytes statt im lokalen State-Dir in einem S3-kompatiblen
+  Object-Storage ablegen (AWS S3, SeaweedFS u. a.):
+  - **Adapter**: neues Modul `adapters:driven:storage-s3` mit
+    `S3ArtifactContentStore` + `S3UploadSegmentStore` (AWS SDK v2 mit
+    `url-connection-client`; SHA-256-Idempotenz via `x-amz-meta-sha256`,
+    Multipart-Pfad > 8 MiB, paginierte Listen-/Batch-Delete-Operationen,
+    Checksums `WHEN_REQUIRED` fuer SeaweedFS-Kompatibilitaet).
+  - **Konfiguration**: neue `artifacts`-Sektion der `.d-migrate.yaml`
+    (`store: file|s3`; bei `s3`: `endpoint`/`bucket`/`region`/`prefix`/
+    `pathStyle`). Credentials stehen NIE im YAML — sie kommen aus der
+    Env (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` via
+    `DefaultCredentialsProviderChain`); Logs/stderr nennen endpoint und
+    bucket, nie Credentials. Fehlende Sektion → file-backed (Default,
+    Bestandsverhalten unveraendert).
+  - **Wiring/Retention**: `artifacts.store: s3` selektiert die S3-Stores
+    im `mcp serve`-Pfad; der file-basierte Orphan-Sweep fuer
+    segments/artifacts wird uebersprungen (der lokale Assembly-Spool und
+    sein Cleanup bleiben). Der geteilte S3-Client wird beim Shutdown
+    ueber den neuen `McpRuntimeWiring.ownedResources`-Mechanismus
+    geschlossen.
+  - **Tests**: SeaweedFS-Vertragssuiten + Multipart-IT, Wiring-IT
+    (YAML → Composition-Root → Round-Trip) und MCP-Protokoll-E2E mit der
+    echten CLI als Subprozess (`McpS3SubprocessE2ETest`).
+  - **Footprint**: Release-JAR +8,02 MiB (AWS SDK, nur
+    `url-connection`-Transport — kein Netty/Apache aus dem SDK).
+
+  ImpPlan mit Slice-Tabelle und Bewusst-nicht-Scope:
+  [`ImpPlan-0.9.8-object-storage-s3.md`](docs/planning/done/ImpPlan-0.9.8-object-storage-s3.md).
+
+- **Parquet als Export-/Import-Format (Cut A, S0..S9b)**
+  *(2026-06-06–2026-06-08)* — `d-migrate data export --format parquet`
+  und `data import --format parquet` sind produktiv. Voller Vertrag
+  (AP13 §8 „Cut A"):
+  - **Reader/Writer**: `ParquetChunkReader`/`ParquetChunkWriter` +
+    `ParquetSeekableDataChunkReaderFactory` im Modul
+    `adapters:driven:formats-parquet`; neues `DataExportFormat.PARQUET`.
+    Die `Default…Factory` bleibt Parquet-/Hadoop-frei (Contract-Branch).
+  - **Bundle** (Multi-Tabelle): `manifest.yaml` + stabile Dateinamen
+    (`ParquetManifestWriter`); **Single-File**: Footer-KV
+    `d-migrate.manifest` mit Phase-1/2-Preflight.
+  - **CLI**: `--format parquet` fuer Im- und Export,
+    `CompositeDataChunkWriterFactory`-Wiring, Pfad-only/Stdin-Ablehnung;
+    **Checkpoint/Resume** fuer Bundle und Single-File; **DuckDB-/Arrow-
+    Interop** durch KV-Toleranz-Tests verifiziert.
+  - Abgrenzung: **keine** Lakehouse-Formate (Iceberg/Delta/Hudi);
+    Hadoop-Footprint-Minimierung ist 1.0.0-Folgeinput (S10a-Snapshot).
+
+  Per-Feature-Umbrella mit vollstaendiger Sub-Slice-Tabelle:
+  [`parquet-productive-cut-a.md`](docs/planning/done/parquet-productive-cut-a.md)
+  §3.4. Slice-Lead-Commits in chronologischer Reihenfolge (Headline-Commit
+  pro Slice; vollstaendige Sub-Commit-Listen im Umbrella):
+
+| Datum | Commit | Slice |
+| ----- | ------ | ----- |
+| 2026-06-06 | `9c840986` | S0 — ChunkSchema/ChunkColumnSchema/SchemaOrigin |
+| 2026-06-06 | `7670a393` | S0b — JDBC→NeutralType-Mapping |
+| 2026-06-06 | `40d7c551` | S2 — SeekableDataChunkReaderFactory-Port |
+| 2026-06-06 | `2b5826d8` | S10a — Avro-Hygiene + Footprint-Inventar |
+| 2026-06-06 | `0a992c0c` | S3 — ParquetChunkReader/Writer (produktiv) |
+| 2026-06-06 | `9ba956ff` | S10b — Native-Image-Befund |
+| 2026-06-06 | `97c74757` | S3b — ParquetManifestWriter + Bundle-Closure |
+| 2026-06-06 | `28048ef2` | S4 — Single-File-Footer-KV (Phase 1/2) |
+| 2026-06-06 | `24cbf4c5` | S5a — ParquetBundlePreflight + Resolver |
+| 2026-06-06 | `4279c326` | S5b — ImportInput.ResolvedSingleFile |
+| 2026-06-07 | `7759294d` | S6 — CLI-Wiring Im-/Export (+ 4 Folge-Commits) |
+| 2026-06-07 | `34eea7ce` | S7 — End-to-End (+ Sub-Slices a–e) |
+| 2026-06-07 | `df733244` | S8 — Checkpoint-Erweiterung Bundle/Single-File |
+| 2026-06-08 | `7808968c` | S9a-0 — Exit-Code-Vertrag (AP12 §9) |
+| 2026-06-08 | `31f1f6ef` | S9a — Bundle-Tests (+ 3 Folge-Commits) |
+| 2026-06-08 | `c687b47c` | `--table-order`-Flag (S9a-Folge-Feature) |
+| 2026-06-08 | `3306808e` | S9b-0 — Single-File-Format-Codes → Exit 4 |
+| 2026-06-08 | `591493f3` | S9b — Single-File-Tests (+ Resume-Fix) |
+
+- **`--table-order`-Flag fuer `data import`** *(2026-06-09)* —
+  explizite Import-Reihenfolge fuer Directory-/Bundle-Quellen
+  (kommagetrennt, analog `--tables`). Beim Ordering **authoritative**
+  gegenueber dem `--schema`-FK-Topo-Sort: `--schema` validiert dann nur
+  noch (Praezedenz `--table-order` > Schema-Topo-Sort > Discovery).
+  Macht die Parquet-Bundle-Order-Codes (`BUNDLE_ORDER_DUPLICATE`/
+  `BUNDLE_ORDER_UNKNOWN_TABLE`/`BUNDLE_ORDER_INCOMPLETE`, Exit 5)
+  CLI-erreichbar. Usage-Fehler (`--table-order` auf stdin/single-file,
+  Konflikt mit `--table`, kaputte Syntax) → Exit 2.
+- **Parquet-Evaluierung — Stakeholder-Entscheid: Go fuer
+  Cut B als 1.0.0** *(2026-06-05)* — alle fuenf offenen
+  Punkte aus
+  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
+  §6 sind beantwortet (durchgaengig nach AP13-Empfehlung):
+  - **Release-Branch:** `feature/parquet-1.0` mit
+    Schritt-fuer-Schritt-Commits, Merge in `develop` nach
+    Schritt 9. Begruendung: Schritt 1 (Enum) ohne
+    Schritt 6 (CLI-Wiring) hat keinen Funktionsnutzen.
+  - **Distributions-Cut:** Parquet immer im Default-JAR
+    (1.0/1.1). Eine separate Variante wird im 1.2-Cut
+    zusammen mit Native-Image reevaluiert.
+  - **DuckDB-/Arrow-Tests:** bleiben `testImplementation`
+    plus CI-Smoke-Lauf (AP4/AP5/§11.4); kein Heraufstufen
+    zu Pflicht-Tests.
+  - **MCP-Server-Spiegelung:** nicht in 1.0.0; eine
+    MCP-Exposition von Parquet-Bundle-Export/-Import wird
+    fruehestens beim 1.1-Planning entschieden.
+  - **Hadoop-API-Shim:** Entscheid „eigener Shim vs.
+    `hadoop-common`-Subset pinnen" wird zusammen mit dem
+    1.2-Cut anhand der Native-Image-Smoketest-Daten
+    getroffen — kein harter Vorab-Termin, Datengrundlage
+    zuerst.
+
+  Damit ist die Bedingung „offene Punkte beantwortet" aus
+  AP13 §7 erfuellt; verbleibende Pre-Implementation-Schritte
+  (Engineering-Zeitbudget-Commit, Native-Image-Smoketest in
+  AP12-Schritt 3 verankern, Sealed-`rg`-Sweep in
+  PR-Checkliste) sind Engineering-Aufgaben beim
+  Cut-B-Start, keine offenen Entscheidungsfragen. Plan-Doc
+  und Sub-Docs wandern bei Cut-B-Start nach
+  `docs/planning/done/`.
+
+- **Parquet-Evaluierung — AP13 Entscheidungsvorlage**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
+  synthetisiert die AP1-AP12-Evaluierung in eine Go/No-Go-
+  Vorlage. **Damit ist die Plan-Doc-Phase abgeschlossen.**
+  Inhalt:
+  - Aufwandschaetzung pro AP12-Implementierungsschritt mit
+    Bundle-/Single-File-Split (elf Tabellen-Eintraege —
+    1, 2, 3, 3b neu fuer `ParquetManifestWriter` +
+    `StreamingExporter`-Bundle-Closure, 4, 5a Bundle, 5b
+    SingleFile, 6, 7, 8, 9a Bundle-Tests, 9b SingleFile-
+    Tests). Voll-Scope: 29.5-47 PT netto, 38-65 PT brutto
+    inkl. Review-Zyklen. **Cut B (Bundle-only): 20.5-32.5
+    PT netto, 27-45 PT brutto**. Plus Folgekosten:
+    5-15 PT Native-Image, 5-10 PT optionaler
+    Hadoop-API-Shim, 2-3 PT Doku.
+    Kalenderaufwand bei Vollzeit: Voll-Scope 8-15 Wochen,
+    Cut B 5-9 Wochen.
+  - Risiko-Gesamtbild in vier Gruppen:
+    - Wahrscheinlich-und-aufwaendig: Native-Image-Reachability,
+      Hadoop-Footprint im JAR, Sealed-Sweep-Vollstaendigkeit
+      (mit konkreten Lueckenkategorien — `else`-Zweige,
+      nicht-exhaustive `when` ohne Ausdruckszwang,
+      Reflection-/Service-Loader, Test-Code; `rg`-Sweep ist
+      Go-Bedingung, nicht durch `gradle assemble` ersetzbar).
+    - Wahrscheinlich-und-billig: CSV-Flag-Skript-Bruch,
+      Auto-Detection-Falle, pre-AP8-Checkpoint-Bruch.
+    - Unwahrscheinlich-aber-teuer: parquet-java 1.18-Wechsel
+      waehrend Umsetzung, CVE in parquet-hadoop.
+    - Akzeptierte Restrisiken: semantischer Schema-Drift,
+      Sealed-Modul-Lokalitaet, Single-File-Bundle-Manifest-
+      Asymmetrie.
+  - Drei gestaffelte Scope-Cuts mit klarer Empfehlung:
+    - **Cut A (1.0.0 voller Vertrag)** — alle neun Schritte;
+      maximaler Operator-Mehrwert, traegt die volle
+      Single-File-Phase-1/2-Komplexitaet im 1.0-Risiko.
+    - **Cut B (1.0.0 Bundle-Pilot, empfohlen)** —
+      Bundle-Export inklusive `ParquetManifestWriter` +
+      `StreamingExporter`-Bundle-Closure (Schritt 3b) +
+      Bundle-Import + Bundle-Resume, Single-File scheitert
+      mit `PARQUET_SINGLE_FILE_NOT_YET_SUPPORTED`;
+      `--no-checkpoint` nicht eingefuehrt. Folge-Release
+      1.1.0 (11-20 PT brutto) ergaenzt Single-File +
+      `--no-checkpoint`; 1.2.0 (10-25 PT) den
+      Native-Image-Cut + optionalen Hadoop-API-Shim.
+    - **Cut C (1.0.0 Bundle ohne Resume)** — schnellster
+      Pilot, aber Wertversprechen gegenueber
+      `pg_dump | psql` zu duenn; verworfen.
+  - Fuenf offene Punkte, die vor der Implementierung
+    geklaert sein muessen (Release-Branch-Strategie,
+    Gradle-Distributions-Cut, DuckDB-/Arrow-Test-Status in
+    CI, MCP-Server-Spiegelung, Hadoop-API-Shim-Folge-
+    Entscheidungsdatum).
+  - Empfehlung: **Go mit Cut B als 1.0.0**, unter den
+    Bedingungen: offene Punkte beantwortet,
+    Engineering-Goal committed, Native-Image-Smoketest in
+    Schritt 3 statt spaeter. Wenn No-Go: Plan-Doc und
+    Sub-Docs unveraendert nach
+    `docs/planning/done/`, Spike-Modul bleibt im Repo.
+
+- **Parquet-Evaluierung — AP12 CLI- und Factory-Wiring-Skizze**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-cli-wiring.md`](docs/planning/done/parquet-cli-wiring.md)
+  zieht alle AP1-AP11-Vorentscheidungen ins konkrete CLI- und
+  Wiring-Bild. Implementierungsfertiges Skelett, das nach AP13
+  (Entscheidungsvorlage) umgesetzt werden kann; trifft selbst
+  **keine neuen Architekturentscheidungen**, verteilt die
+  bestehenden auf die richtigen Code-Stellen.
+
+  Inhalt (Sektionen 3-12):
+  - `DataExportFormat.PARQUET` als additive Enum-Erweiterung;
+    Clikt-`--format`-Choice automatisch ueber `entries.map
+    { cliName }`.
+  - Neue Parquet-Flags: `--manifest-sha256` (Export, opt-in,
+    aktiviert AP7-Per-Datei-SHA-256), `--no-checkpoint`
+    (Import, schaltet die Single-File-Content-Hash-
+    Berechnung in `phase1` aus und unterdrueckt alle
+    `FileCheckpointStore`-Schreiboperationen). Konflikt
+    `--no-checkpoint` + `--resume <ref>` -> Exit 2
+    (`CHECKPOINT_OPTIONS_CONFLICT`).
+  - CSV-Flag-Ablehnung bei `--format parquet`
+    (`CSV_FLAG_INVALID_FOR_PARQUET`): nur bei explizit
+    gesetzten Flags, nicht bei Default-Werten. Dafuer wird
+    `--csv-null-string` auf nullable `String?` umgestellt
+    (kein `.default("")`-Maskerade-Problem); ein
+    `null -> ""`-Mapping passiert an genau einer Stelle im
+    `CsvChunkReader`/`Writer`-Konstruktor.
+    `--encoding` silent-ignored (Skript-Kompatibilitaet,
+    Schluesselargument: Shell-Skripte iterieren oft mehrere
+    Formate mit globalem `--encoding`).
+  - Format-Auto-Detection-Reihenfolge:
+    `--format` > Verzeichnis-`manifest.yaml` >
+    Endungs-Inferenz (`.parquet` neu in
+    `EXTENSION_FORMAT_MAP`).
+  - `--table`-Precedence fuer Single-File-Parquet aus
+    AP11 §5.5 (Mismatch- und Required-Fehler).
+  - Factory-Wiring: `DataImportWiring` instanziiert
+    `DefaultDataChunkReaderFactory()` und
+    `ParquetSeekableDataChunkReaderFactory()`,
+    `StreamingImporter`-Constructor bekommt
+    `seekableReaderFactory` als Pflichtparameter
+    (AP10-Befund-Rueckspiel).
+    `DefaultDataChunkWriterFactory` bekommt
+    `PARQUET -> ParquetChunkWriter(...)`-Zweig.
+  - Bundle-/Single-File-Adapter-CLI-Skelette:
+    `ParquetBundlePreflight.run(bundleRoot,
+    requireSha256Verify = !request.resume.isNullOrBlank())`
+    + `ParquetBundleResolver` + `ParquetBundleAdapter.
+    toResolvedBundle(resolver)`. Single-File bekommt einen
+    **zwei-phasigen** Preflight: Phase 1 in `resolveRequest`
+    (vor DB-Connect) liest Footer-KV und macht
+    Tabellen-Resolution; Phase 2 in `runImport`
+    (nach `connect()`) baut die `ChunkSchema` mit Live-
+    Target-Schema-Zugriff. Neuer port-eigener Sealed-Subtyp
+    `ImportInput.ResolvedSingleFile(table, path, schema,
+    expectedSha256, resumeFingerprint)` analog zu
+    AP9-`ResolvedBundle`; macht `ResolvedTableInput.Seekable`
+    aus dem `ImportInputResolver` ableitbar ohne neuen
+    Schema-Slot in `SchemaPreflightResult` /
+    `ImportExecutionContext`.
+  - Writer-Wiring: separate `ParquetChunkWriterFactory` im
+    Parquet-Adapter-Modul plus `CompositeDataChunkWriterFactory`
+    im CLI-Modul. `DefaultDataChunkWriterFactory` in
+    `adapters:driven:formats` bleibt Hadoop-frei; der
+    generische formats-Stack zieht den Parquet-Adapter nicht
+    transitiv.
+  - Checkpoint-Persistenz:
+    `FileCheckpointStore.toMap`/`fromMap` serialisiert
+    `operationSpecific` mit `kind`-Diskriminator
+    (`parquet-bundle` -> `BundleCheckpointSpecifics`,
+    `parquet-single-file` -> `SingleFileCheckpointSpecifics`).
+    Kein Schema-Versionsbump (Feld optional,
+    pre-AP8-Checkpoints fuer JSON/YAML/CSV bleiben
+    funktional). `ImportCheckpointManager.validateManifest`
+    bekommt zwei neue Validierungsmethoden
+    (`validateBundleResume`, `validateSingleFileResume`),
+    der heutige Pfad bleibt fuer `operationSpecific == null`
+    erhalten — bricht aber bei Parquet-Bundle- bzw.
+    Single-File-Resume strukturell mit
+    `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`.
+    `buildCallbacks`/`saveManifest` reicht den
+    Fingerprint bei jedem Update durch (AP9-Befund-
+    Rueckspiel).
+  - `InputContext` um `bundleExpectedSha256ByTable:
+    Map<String, String?>?` und `singleFileContentSha256:
+    String?` erweitert.
+  - Vollstaendige Sealed-Sweep-Liste fuer fuenf
+    Hierarchien (`ImportInput`, `SchemaOrigin`,
+    `SeekableChunkSource`, `CheckpointOperationSpecifics`,
+    `DataExportFormat`) mit konkretem `rg`-Suchmuster aus
+    AP9 §7.8 plus bekannten Stellen
+    (`ImportInputResolver`, `ImportPreflightValidator`
+    Z. 105/113/118).
+  - Exit-Code-Mapping fuer alle in AP7-AP11 definierten
+    Fehlerklassen, gruppiert in Familien
+    (Manifest/Bundle/Resume/SingleFile-Parquet/Reader/
+    Checkpoint/CLI-Flag) mit Begruendung pro Exit-Code-Wahl.
+  - Native-Image-Strategie: GraalVM-Reachability-Metadaten
+    sind Pflicht; eigener Hadoop-API-Shim (parquet-libraries.md
+    §8) ist erst nach GraalVM-Smoketest noetig — bis dahin
+    `hadoop-common`+`hadoop-mapreduce-client-core` belassen.
+    AP6-Befund `fs.file.impl.disable.cache=true` an genau
+    einer Stelle (`ParquetHadoopConfigBuilder`).
+  - Test-Strategie: sechs Pflicht-Familien (CLI-Preflight,
+    Format-Resolver mit `--format json`+`manifest.yaml`-
+    Vorrang, Resume-Akzeptanz, DuckDB-/Arrow-KV-Toleranz
+    erweitert die AP4/AP5-Linien, Sealed-Sweep als
+    Build-Zeit-Dokumentation).
+  - Bindender Implementierungsplan in neun entkoppelten
+    Schritten (Enum-Erweiterung > Port > Reader-/Writer-
+    Implementation > Single-File-Adapter > Bundle-Adapter
+    > CLI-Wiring > Resolver-Integration > Checkpoint >
+    Tests). Big-Bang-Commit explizit abgelehnt.
+
+  AP13 (Entscheidungsvorlage) entscheidet, welche der neun
+  Implementierungs-Schritte im 1.x-Cut zwingend sind.
+
+- **Parquet-Evaluierung — AP11 Single-File-Metadatenvertrag**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-single-file-metadata.md`](docs/planning/done/parquet-single-file-metadata.md)
+  fixiert den letzten Vertragspunkt vor AP12/AP13. Inhalt:
+  - Drei Optionen aus Hauptplan §6 verglichen
+    (Footer-KV vs. Sidecar vs. Footer-only); bindende Wahl
+    Option A — **Footer-Key-Value-Metadaten** mit Key
+    `d-migrate.manifest`. parquet-java 1.17.1 unterstuetzt das
+    verlaesslich via `withExtraMetaData`/`getKeyValueMetaData`
+    (`parquet-libraries.md` §3.1).
+  - Value-Format: UTF-8-YAML-Bytestrom als **strikte
+    Teilmenge** des AP7-Bundle-Manifests
+    (`parquet-manifest-format.md` §5). Genau ein
+    `tables[]`-Eintrag, ohne `file` (Datei kennt sich
+    selbst) und ohne `sha256` (Hash ueber den eigenen
+    Bytestrom inkl. Hash-Feld waere zirkulaer).
+  - Fremde Parquet-Dateien ohne `d-migrate.manifest`-Key
+    bleiben **lesbar als best-effort**: Reader baut die
+    `ChunkSchema` aus Footer-`MessageType` + Ziel-JDBC-
+    Schema; CLI-Warnung weist auf moeglichen Decimal-/
+    Temporal-Verlust hin. Damit kein Bruch mit Spark-/Hive-
+    erzeugten Parquet-Dateien.
+  - Sidecar (Option B) abgelehnt: bricht das Single-
+    Artefakt-Versprechen und fuehrt zwei parallele
+    Manifest-Vertraege ein. Footer-only (Option C) abgelehnt:
+    verletzt AP2 §4.4 (Schema-vor-Chunk).
+  - Stdin-Single-File-Import bleibt unzulaessig
+    (`parquet-libraries.md` §7); CLI-Preflight wirft
+    `PARQUET_STDIN_NOT_SUPPORTED` (AP12-Fehlercode).
+  - Code-Konsequenzen: neue Klassen
+    `ParquetSingleFileManifestWriter`/`Reader` plus
+    `ParquetSingleFilePreflight` im Parquet-Adapter. Der
+    Preflight ist die einzige Stelle mit Footer-Parsing —
+    der Streaming-Layer (`adapters:driven:streaming`)
+    bleibt parquet-frei und sieht nur die port-neutrale
+    `ResolvedTableInput.Seekable(table, source, schema,
+    expectedSha256)`-Variante (AP10 §5.4). Dadurch teilen
+    Bundle- und Single-File-Pfad denselben
+    `TableImporter`-Zweig.
+  - Tabellennamens-Aufloesung mit klarer Precedence:
+    `--table` gewinnt; bei vorhandenem Footer-KV +
+    Mismatch -> `PARQUET_SINGLE_FILE_TABLE_MISMATCH`; bei
+    `--table` fehlt + Footer-`tables[0].table` vorhanden
+    -> Footer-Wert wird mit `stderr`-Note uebernommen;
+    bei beidem fehlend -> `PARQUET_SINGLE_FILE_TABLE_REQUIRED`.
+    Die heutige `--table`-Pflicht fuer JSON/YAML/CSV-
+    Single-File bleibt unveraendert.
+  - Resume fuer Single-File: AP8 §8.1 verbietet Resume
+    ohne Datei-Hash. Da der Footer-KV keinen Hash tragen
+    kann (zirkulaer ueber den eigenen Bytestrom), wird der
+    SHA-256 ueber den **gesamten Dateibytestrom** im
+    Preflight berechnet und im Checkpoint via neuer
+    `SingleFileCheckpointSpecifics(bundleKind=
+    "parquet-single-file", contentSha256, table) :
+    CheckpointOperationSpecifics`-Variante persistiert.
+    Mismatch beim Resume ->
+    `PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT`.
+  - `parquet-manifest-format.md` §5.2 Korrektur:
+    `tables[].file` ist jetzt **bedingt** Pflicht — Pflicht
+    im Bundle-Manifest, optional im Single-File-Footer-KV.
+    Das macht das AP11-YAML zu einer konditionell strikten
+    Teilmenge des Bundle-YAML (ein Parser-Pfad,
+    Kontext-Validierungsregel statt zweites Schema).
+
+  Implementierungscode folgt nach AP12.
+
+- **Parquet-Evaluierung — AP10 Stream-vs-Datei-Portentscheidung**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-port-shape.md`](docs/planning/done/parquet-port-shape.md)
+  hebt die Vorentscheidung aus `parquet-libraries.md` §7 in eine
+  bindende Reader-Port-Skizze. Inhalt:
+  - Neuer Port `SeekableDataChunkReaderFactory` in
+    `hexagon:ports-read` parallel zur bestehenden
+    `DataChunkReaderFactory` — bewusst Format-agnostisch
+    (`PARQUET` heute, kuenftige seekable Formate ohne
+    Vertragsbruch). Kein vereinheitlichter Port, weil das
+    `InputStream`/`Path`-Variantenproblem dann den
+    Temp-Spool-Pfad wiedereroeffnen oder das schwaechere Schema-
+    Inferenz-Modell durchsetzen wuerde.
+  - `SeekableChunkSource` als sealed interface mit konkretem
+    `Local(path: Path)`-Subtyp; reine `InputStream`-Quellen sind
+    bewusst nicht Teil der Hierarchie (kein impliziter
+    Temp-Spool, `parquet-libraries.md` §7 Bullet 2).
+  - `ChunkSchema` ist Pflichtparameter der `create(...)`-Signatur;
+    der Reader vertraut dem Schema aus dem Bundle-Preflight und
+    rekonstruiert nicht aus dem Datei-Footer.
+  - Writer-Seite bleibt **unveraendert** stream-basiert; der
+    Parquet-Writer wraps den `OutputStream` intern in einen
+    `PositionOutputStream`/`OutputFile`-Adapter (stdout-tauglich).
+    Kein neuer Writer-Port.
+  - Default-Implementation `ParquetSeekableDataChunkReaderFactory`
+    lebt im `adapters:driven:formats-parquet`-Modul; nutzt
+    parquet-java 1.17.1 plus die Hadoop-API-via-LocalFileSystem-
+    Befunde aus §5.1/§7/§8. Bewusst `public class` (kein
+    `internal`), parallel zur Konvention von
+    `DefaultDataChunkReaderFactory`, damit CLI/MCP die Factory
+    direkt instanziieren koennen.
+  - Minimaler Footer-vs-ChunkSchema-Konsistenzcheck im Reader
+    (Spaltenanzahl + -namen) mit Fehler
+    `BUNDLE_SCHEMA_PARQUET_MISMATCH`; schliesst die Luecke, die
+    der opt-in AP7-Live-Hash nicht abdeckt. Vollstaendige
+    Typgleichheits-Pruefung bewusst nicht — akzeptiertes
+    Restrisiko (semantischer Drift).
+  - Sealed-Erweiterungsregel explizit: neue
+    `SeekableChunkSource`-Varianten kommen additiv ins
+    Port-Modul `hexagon:ports-read` und brechen
+    exhaustive `when`-Konsumenten bewusst. Externe Module
+    koennen die Sealed-Hierarchie nicht selbst erweitern;
+    das ist gewollt, weil ein offenes Interface den
+    InputStream-/Temp-Spool-Pfad wiedereroeffnen wuerde.
+  - Migrations-Analyse fuer sechs Module mit konkretem Sweep:
+    `StreamingImporter`-Constructor (Z. 21-28) bekommt die
+    zweite Factory-Referenz und reicht sie an den internen
+    `TableImporter` durch — Pflichtparameter (kein `null`-
+    Default), weil ein vergessenes Wiring bei `format=PARQUET`
+    zur Laufzeit eine schlecht diagnostizierbare NPE waere.
+    AP12 macht das Wiring.
+
+  Implementierungscode folgt nach AP12.
+
+- **Parquet-Evaluierung — AP9 Importpfad-Vertrag (bindende DTO-Wahl)**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-import-input-dto.md`](docs/planning/done/parquet-import-input-dto.md)
+  hebt die AP7-/AP8-Vorentscheidungen in die Implementierungs-
+  Entscheidung. Inhalt:
+  - Bindung auf neuen Sealed-Subtyp `ImportInput.ResolvedBundle`
+    statt Magic-Field-Erweiterung von `ImportInput.Directory`;
+    Kotlin-Skelett mit `ResolvedBundleTableBinding(table, path,
+    schema, expectedSha256)` und
+    `BundleResumeFingerprint(manifestSha256, formatVersion,
+    producerVersion, tableOrder)` in `hexagon:ports-write`.
+    Bewusst Parquet-frei im Vertrag — der Port spricht nur
+    „Bundle", Adapter befuellen format-spezifisch.
+  - Konkrete `BundleCheckpointSpecifics :
+    CheckpointOperationSpecifics`-Variante mit Pflichtfeld
+    `bundleKind: String` (z.B. `KIND_PARQUET = "parquet-bundle"`)
+    plus `fingerprint`. `bundleKind` ist der serialisierungs-
+    stabile YAML-Diskriminator; unbekannte Werte fuehren in
+    `fromMap` zu `CHECKPOINT_OPERATION_SPECIFICS_UNKNOWN_KIND`.
+  - Fingerprint-Konsistenz: `BundleResumeFingerprint.tableOrder`
+    wird im Translator aus `bindings.map { it.table }`
+    abgeleitet (nicht als separater Parameter angenommen);
+    damit koennen DTO-Order und Fingerprint-Order strukturell
+    nicht divergieren.
+  - Resume-Enforcement sitzt im `ImportCheckpointManager`, nicht
+    im DTO. `expectedSha256: String?` bleibt nullable
+    (Initial-Lauf ohne `--manifest-sha256` zulaessig); im
+    `--resume` prueft der Manager pro Tabelle und faellt sonst
+    auf `BUNDLE_RESUME_REQUIRES_FILE_HASHES`.
+  - `ImportCheckpointManager.buildCallbacks` / `saveManifest()`
+    muss `BundleCheckpointSpecifics` bei **jedem** Update
+    fortschreiben (heute baut `saveManifest()` ein neues
+    Manifest ohne `operationSpecific`-Feld, was den im
+    Initial-Lauf geschriebenen Fingerprint sofort
+    ueberschriebe). Fingerprint ist eine Bundle-Lauf-
+    Invariante.
+  - Sealed-Bruch ehrlich modelliert: `ImportPreflightValidator`
+    hat drei exhaustive `when (input)` (Z. 105-122,
+    `effectiveTables`/`inputTopology`/`inputPath`); AP12 muss
+    sie alle ergaenzen. DTO traegt deshalb `bundleRoot: Path`,
+    damit `inputPath` ohne externe Lookups ableitbar bleibt.
+    Sweep-Befehl als robustes `rg --type kotlin -n 'is
+    ImportInput\.' .` plus `rg --type kotlin -n 'when \(' . |
+    grep -F 'ImportInput'`; einfaches
+    `git grep "when.*ImportInput"` verfehlt Stellen wie
+    `when (val input = ctx.input) { is ImportInput.Stdin -> ... }`.
+  - Resume-Enforcement konkret verdrahtet:
+    `InputContext` (ImportRunnerTypes.kt:127) bekommt
+    `bundleExpectedSha256ByTable: Map<String, String?>?` — null
+    fuer JSON/YAML/CSV, Map mit Per-Tabellen-Hash-Status fuer
+    Bundles. `ImportCheckpointManager.validateManifest`
+    (Z. 93-124) erweitert um drei Bundle-Pruefungen:
+    `BundleCheckpointSpecifics`-Vorhandensein, Fingerprint-
+    Gleichheit, Per-Tabelle-Hash-Vorhandensein im Resume-Scope
+    (= IN_PROGRESS-Tabellen aus `tableSlices`). CLI-Resolver
+    aktiviert den AP7-Preflight-SHA256-Check beim `--resume`
+    zwangsweise (`requireSha256Verify = true`).
+  - AP7 `ResolvedParquetBundle`-DTO im Sub-Doc §4.4 mit
+    konkretem Mindestumfang skizziert
+    (`bundleRoot`, `manifestSha256`, `formatVersion`,
+    `producerVersion`, `schemaSource`, `tables`); diese
+    Adapter-internen Felder waren vorher implizit und werden
+    jetzt explizit referenzierbar gemacht (Translator-
+    Skelett §4.3 nutzt sie direkt).
+  - Adapter-Translator `ParquetBundleAdapter` im
+    `adapters:driven:formats-parquet`-Modul: einzige Stelle,
+    an der adapter-interne Manifest-Begriffe
+    (`ResolvedParquetBundle`, `schemaSource`, ...) auf
+    Port-Begriffe abgebildet werden.
+  - **Begleitentscheidung 1** (AP2-Erweiterung): `SchemaOrigin`-
+    Enum in
+    [`parquet-schema-source.md`](docs/planning/done/parquet-schema-source.md)
+    §4.4 um `MANIFEST_FALLBACK` erweitert (additiv,
+    `hexagon:ports-common`). Semantisch verschieden von `MERGED`
+    („aus mehreren Quellen kombiniert"); `MANIFEST_FALLBACK`
+    markiert best-effort-Manifest-Typen ohne SchemaReader-/
+    JDBC-Provenance.
+  - **Begleitentscheidung 2** (AP1-Aufraeumung):
+    [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+    §7.1 Bullet 4 finalisiert. Die urspruengliche AP1-Aussage
+    „`ImportInput.Directory` wird nicht ersetzt" ist praezisiert,
+    nicht verworfen: `Directory` bleibt fuer JSON/YAML/CSV und
+    fuer Single-File-Bundles (AP11) erhalten, Multi-Table-
+    Bundles mit verpflichtendem `manifest.yaml` laufen ueber
+    `ImportInput.ResolvedBundle`. Die Korrektur-Notiz aus dem
+    AP8-Commit ist damit obsolet und entfernt.
+  - Migrations-/Impact-Analyse fuer sieben Module
+    (`hexagon:ports-write`, `hexagon:ports-common`,
+    `adapters:driven:streaming`,
+    `adapters:driven:streaming/checkpoint`,
+    `hexagon:application`, `adapters:driven:formats-parquet`,
+    `adapters:driving:cli`). JSON/YAML/CSV-Pfade bleiben
+    funktional unveraendert (additives `is ResolvedBundle`).
+
+  Implementierungscode folgt nach AP12.
+
+- **Parquet-Evaluierung — AP8 manifestgebundene Directory-Import-
+  Aufloesung** *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-directory-import.md`](docs/planning/done/parquet-directory-import.md)
+  als Resolver-Skizze fuer Bundle-Importe. Inhalt:
+  - Aufloesungsmodell mit `ParquetBundleResolver`: Wrapper um
+    `ResolvedParquetBundle`, `resolve()` liefert eine
+    `List<ParquetTableBinding>` (kein one-shot `Iterable`, weil der
+    `StreamingImporter` `discoveredInputs.size` vor der
+    Per-Tabellen-Iteration braucht).
+  - Tabellenordnung primaer aus Manifest-`tables[]`-Reihenfolge,
+    optional von `tableOrder` aus `ImportInput` explizit
+    ueberschrieben (User > Producer). `tableFilter` ist Teilmenge
+    gegen Manifest-Bestand.
+  - `ChunkSchema`-Konstruktion pro Tabelle in drei Stufen
+    (Manifest-`neutralType` -> JDBC-Hint-Tupel -> `sqlTypeName`-
+    Heuristik -> `BUNDLE_SCHEMA_UNRESOLVED`); JDBC-Hints fliessen
+    NUR als Eingaben in die NeutralType-Ableitung ein und werden
+    nicht im neutralen `ChunkColumnSchema` persistiert (konsistent
+    mit `parquet-schema-source.md` §4.4).
+  - Strikte Mid-stream-Fehlerbehandlung
+    (`BUNDLE_TABLE_IMPORT_FAILED`): kein Skip-Modus, kein
+    Bundle-weiter Rollback (Atomic-Preserve ist Ziel-DB-Sache).
+  - Resume-Bedingung: erfordert manifestseitige Datei-Hashes
+    (`tables[].sha256`) fuer jede Tabelle im Resume-Scope; sonst
+    `BUNDLE_RESUME_REQUIRES_FILE_HASHES`. Begruendung: AP7 §7.1
+    laesst SHA-256 optional, ohne Hash kann eine Dateiaenderung
+    nicht erkannt werden. Resume macht zwei klar getrennte
+    Pruefungen: (P1) AP7-Preflight-SHA256 zwangsweise aktiv —
+    live-berechneter Datei-Digest gegen Manifest-`tables[].sha256`
+    erkennt Datei-Aenderungen als `MANIFEST_SHA256_MISMATCH`;
+    (P2) Checkpoint-Fingerprint (`manifestSha256`, `formatVersion`,
+    `producerVersion`, effektive `tableOrder`) erkennt Manifest-
+    Edits seit Checkpoint. `fileSha256ByTable` ist bewusst nicht
+    Teil des Checkpoints (redundant zu `manifestSha256`).
+  - Format-Autodetection: `data import --source <dir>` ohne
+    `--format` routet bei vorhandenem `manifest.yaml` automatisch
+    auf Parquet (`resolveFormat`-Hook vor
+    `inferFormatFromExtension`). Vorbedingung:
+    `DataExportFormat.PARQUET` muss eingefuehrt werden — heute
+    kennt der Enum nur JSON/YAML/CSV (AP12-Vorgriff, im Sub-Doc
+    explizit gemacht).
+  - Code-Konsequenzen: neuer port-eigener Subtyp
+    `ImportInput.ResolvedBundle` mit
+    `ResolvedBundleTableBinding(table, path, schema, expectedSha256)`
+    und `BundleResumeFingerprint` (`manifestSha256`,
+    `formatVersion`, `producerVersion`, `tableOrder`) — bewusst
+    Parquet-frei, damit `hexagon:ports-write` nicht von
+    `adapters:driven:formats-parquet` abhaengt. Adapter haelt sein
+    reichhaltigeres `ResolvedParquetBundle` intern und uebersetzt
+    am Port-Eintritt.
+  - Checkpoint-Persistenz (§10.5): neue konkrete Implementierung
+    `BundleCheckpointSpecifics : CheckpointOperationSpecifics`
+    wird im `hexagon:ports-write`-Modul gebraucht — bewusst
+    Parquet-frei im Klassennamen, konsistent zur §10.1-
+    Port-Sauberkeit; der YAML-`kind`-Diskriminator
+    `"parquet-bundle"` traegt den Adapter-Bezug.
+    `FileCheckpointStore` muss `operationSpecific` mit-serialisieren
+    (heute ignoriert), `ImportCheckpointManager.writeInitialManifest`
+    nimmt einen optionalen `BundleResumeFingerprint`-Parameter
+    durch — beides AP12-Wiring. Schema-Bump auf
+    `CURRENT_SCHEMA_VERSION=3` ist nicht noetig, weil das Feld
+    optional bleibt und pre-AP8-Checkpoints sich beim
+    Bundle-Resume strukturell mit dem neuen Code
+    `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT` abmelden
+    (eigener Code, nicht `BUNDLE_RESUME_REQUIRES_FILE_HASHES` —
+    das beschreibt das fehlende `tables[].sha256`, eine andere
+    Konstellation).
+  - `SchemaOrigin`-Mapping: AP2 §4.4 traegt heute nur
+    `JDBC_METADATA`/`SCHEMA_READER`/`MERGED`. Fuer
+    `schemaSource = manifest-fallback` ist `MERGED` semantisch
+    falsch (es bedeutet „aus mehreren Quellen kombiniert", nicht
+    „best-effort"). AP8 schlaegt eine vierte Variante
+    `MANIFEST_FALLBACK` vor; AP2 wird beim AP9-Abschluss
+    nachgezogen.
+
+  Bindende DTO-Wahl ist AP9; Implementierungscode folgt nach AP12.
+
+- **Parquet-Evaluierung — AP1 §7.1 ImportInput.Directory-Aussage
+  als ueberstimmt markiert** *(2026-06-05)* —
+  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+  §7.1 Bullet 4 traegt jetzt einen Korrektur-Hinweis: AP7 §10.2
+  und AP8 §10.1 empfehlen inzwischen einen neuen
+  `ImportInput.ResolvedBundle`-Subtyp statt der urspruenglich
+  geplanten Beibehaltung von `ImportInput.Directory`. Endgueltiger
+  Wortlaut wird beim AP9-Abschluss aufgeraeumt.
+
+- **Parquet-Evaluierung — AP7 Manifest-Format und Import-Preflight**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-manifest-format.md`](docs/planning/done/parquet-manifest-format.md)
+  als architektonische Skizze fuer Multi-Table-/Directory-Bundle-
+  Exporte. Inhalt:
+  - YAML-Schema von `manifest.yaml`: Pflichtfelder `formatVersion`,
+    `producer`, `producerVersion`, `exportedAt`, `schemaSource`,
+    `tables[].{table,file,columns}`; optionale Felder `rowCount`,
+    `sha256`, plus `NeutralType`-YAML-Repraesentation mit
+    `kind`-Diskriminator.
+  - Tabelle-zu-Datei-Aufloesung mit Default-Konvention
+    `<schema>.<table>.parquet` und Kollisionsschutz K1-K5 (doppelte
+    Tabelle/Datei, Pfadausbruch, fehlende und unreferenzierte
+    Dateien — letztere verhindern stillen Import laut Hauptplan §6).
+  - SHA-256-Verfahren als Opt-in: gehasht wird der fertige Parquet-
+    Bytestrom nach Writer-`close()`, Lowercase-Hex, kein Praefix.
+    Verifikation einmal im Preflight, nicht waehrend des Streamings.
+  - Formatversionierung `MAJOR.MINOR` mit Start bei `1.0`:
+    Major-Bump = inkompatibel und vom Reader abgelehnt; Minor-Bump
+    = additiv und mit Warnung tolerierbar.
+  - Preflight-Vertrag mit elf stabilen Fehlerklassen
+    (`MANIFEST_NOT_FOUND`, `MANIFEST_PARSE_ERROR`,
+    `MANIFEST_VERSION_INCOMPATIBLE`, `MANIFEST_FIELD_MISSING/INVALID`,
+    `MANIFEST_TABLE_DUPLICATE`, `MANIFEST_FILE_DUPLICATE/OUTSIDE_BUNDLE/MISSING/UNREFERENCED`,
+    `MANIFEST_SHA256_MISMATCH`).
+  - Konsequenzen: neue Klassen `ParquetBundleManifest`,
+    `ParquetManifestReader/Writer`, `ParquetBundlePreflight` im
+    `adapters:driven:formats-parquet`-Modul; Vorzugsoption fuer AP9
+    ist neuer `ResolvedParquetBundleInput`-Subtyp statt
+    Magic-Field-Erweiterung an `ImportInput.Directory`.
+
+  AP7-Vorentscheidungen werden in AP8 (Directory-Aufloesung) und AP9
+  (Importpfad-DTO) bestaetigt; Implementierungscode folgt nach AP12.
+
+- **Parquet-Evaluierung — AP6 Importpfad-Spike** *(2026-06-05)* —
+  neuer Test
+  [`ParquetSpikeImportPathTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeImportPathTest.kt)
+  und drei neue `ParquetSpike`-Funktionen demonstrieren am Spike-
+  Output, dass der Footer als Schema-Quelle reicht und dass sich
+  Spike-Rows ueber das neutrale `DataChunk`-Modell leiten lassen:
+  - `readSchemaFromFooter` mappt `MessageType`-Felder aus dem
+    `ParquetFileReader`-Footer zu
+    `dev.dmigrate.core.data.ColumnDescriptor`-Tupeln
+    (name/nullable/`sqlTypeName` als opaker Parquet-Originaltyp).
+  - `readAsChunk` kombiniert das mit `ParquetReader`-Rows zu einem
+    `dev.dmigrate.core.data.DataChunk` (chunkIndex=0; Multi-Chunk-
+    Akkumulation ist Sache des produktiven Adapters).
+  - `writeWithoutCrc` demonstriert die `.crc`-Sidecar-Mitigation
+    aus `parquet-libraries.md` §7 Variante (a) via
+    `fs.file.impl=RawLocalFileSystem`. AP6-Befund: in Hadoop 3.4.1
+    ist `fs.file.impl.disable.cache=true` als zweite Direktive
+    noetig, sonst haelt der `FileSystem`-Service-Loader-Cache die
+    `LocalFileSystem`-Default-Instanz vor und der Sidecar bleibt.
+
+- **Parquet-Evaluierung — AP5 Arrow-Metadateninspektion**
+  *(2026-06-05)* — neuer Test
+  [`ParquetSpikeArrowInspectTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeArrowInspectTest.kt)
+  im Spike-Modul. `parquet-arrow` 1.17.1 (ausschliesslich
+  `testImplementation`, an `parquetVersion` gekoppelt; bewusst nicht
+  `arrow-dataset` — vgl. `parquet-libraries.md` §3.4: JNI-frei,
+  kein produktiver Arrow-Pfad) liest den Datei-Footer ueber
+  `ParquetFileReader`, konvertiert das `MessageType` via
+  `SchemaConverter#fromParquet` zu einem Arrow `Schema` und der Test
+  verifiziert fuer die drei Spike-Spalten `Int(32, signed)`,
+  `Utf8`, `Bool` plus `isNullable=false`. Damit ist
+  Akzeptanzkriterium §7 Bullet 2 ("Beispiel-Export kann mit
+  Arrow-Werkzeugen oder Arrow-Java-Metadaten inspiziert werden")
+  abgehakt.
+
+- **Parquet-Evaluierung — AP4 DuckDB-Akzeptanzlauf** *(2026-06-05)* —
+  neuer Test
+  [`ParquetSpikeDuckDbReadTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeDuckDbReadTest.kt)
+  im Spike-Modul. DuckDB JDBC 1.5.3.0 (ausschliesslich
+  `testImplementation`, kein produktiver Pfad — vgl.
+  `parquet-libraries.md` §3.5) liest den GZIP-komprimierten
+  Spike-Output via `SELECT * FROM read_parquet(?)`, verifiziert den
+  Round-Trip aller drei Zeilen und meldet die Spalten als
+  `INTEGER`/`VARCHAR`/`BOOLEAN`. Damit ist Akzeptanzkriterium §7
+  Bullet 1 ("Beispiel-Export kann mit DuckDB gelesen werden") und
+  fuer das Spike-Schemafragment implizit Bullet 3
+  (Round-Trip-Typen) abgehakt. Hadoop bleibt bewusst auf 3.4.1:
+  parquet-hadoop 1.17.1 ist gegen Hadoop 3.3.0 (provided)
+  kompiliert, 3.5.0 ist ungetestete Kombination und lohnt sich
+  erst mit dem 1.18-Wechsel.
+
+### Changed
+
+- **Parquet-Evaluierung — `.crc`-Sidecar-Mitigation in §7
+  praezisiert** *(2026-06-05)* — AP6-Befund:
+  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+  §7 Bullet zum `.crc`-Sidecar ergaenzt. In Hadoop 3.4.1 reicht
+  `fs.file.impl=RawLocalFileSystem` allein nicht; ohne
+  `fs.file.impl.disable.cache=true` bedient der
+  `FileSystem`-Service-Loader-Cache den Writer aus einer
+  vorinstanziierten `LocalFileSystem` und der `.crc`-Sidecar bleibt.
+
+- **Parquet-Evaluierung — `iceberg-parquet` als bewusst
+  ausgeschlossener Kandidat dokumentiert** *(2026-06-05)* —
+  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+  §3.6 neu: `org.apache.iceberg:iceberg-parquet` ist ein Adapter
+  zwischen Iceberg-Tabellen und Parquet-Dateien (nutzt intern
+  `parquet-java`), nicht ein eigener Writer/Reader. Strukturell
+  ausgeschlossen, weil Iceberg/Delta/Hudi laut Hauptplan §3.2
+  Nicht-Scope und ein Lakehouse-Adapter laut §4 explizit in einen
+  spaeteren Folge-Schritt verschoben ist; nicht in die
+  Bewertungsmatrix §4 aufgenommen, weil der Ausschluss strukturell
+  und nicht kriteriumsgetrieben ist. Natuerlicher Hauptkandidat
+  fuer den spaeteren Lakehouse-Folgeplan.
+
+- **Parquet-Evaluierung — AP3-Spike-Befunde zurueckgespielt**
+  *(2026-06-05)* — die drei Befunde aus dem AP3-Round-Trip-Spike
+  (Commit `3b051ec`) sind aus dem Status-Header der Plan-Doc in die
+  AP1-Bibliothekssichtung verschoben und damit final dokumentiert:
+  - [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+    §5.1 (neu) — Hadoop-API-Kanal in 1.17.1 praezisiert
+    (Hadoop-`Path`+`Configuration`+`LocalFileSystem` rein NIO; die
+    `PlainParquetConfiguration`-/`LocalOutputFile`-Pfade kommen erst
+    mit 1.18+).
+  - §7 — `.crc`-Sidecar von Hadoop-`LocalFileSystem` als
+    Writer-Folgeentscheidung dokumentiert
+    (`RawLocalFileSystem` vs. aktives Aufraeumen; Stdout-Weg ueber
+    `PositionOutputStream` davon nicht betroffen).
+  - §8 — `hadoop-mapreduce-client-core:3.4.1` (mit denselben
+    Exclusions wie `hadoop-common`) als Reader-Compile-Dependency
+    nachgezogen, weil `ParquetReader.builder` ueber
+    `ParquetInputFormat extends FileInputFormat` MapReduce-Klassen
+    laedt.
+  - [`parquet-export-import-evaluation.md`](docs/planning/done/parquet-export-import-evaluation.md)
+    §8 Arbeitspaket 3 markiert AP3 als erledigt; Status-Block auf
+    Pointer nach `parquet-libraries.md` reduziert. Naechste
+    Arbeitspakete: AP4 (DuckDB-Akzeptanzlauf), AP5 (Arrow-Inspektion).
+
+### Added
+
+- **BI-Demo Compose-Stack** *(2026-06-04)* — vollstaendige
+  reproduzierbare Demo-Umgebung unter `examples/bi-demo/`, die
+  `d-migrate` in einen komponierbaren Analytics-Stack einbettet.
+  Sub-Slices BD.1-BD.5 nach Plan
+  [`docs/planning/done/bi-demo-compose.md`](docs/planning/done/bi-demo-compose.md):
+
+  - **BD.1** — Compose-Skeleton mit fuenf Services: Postgres
+    17.10, SeaweedFS 4.31 (S3-API-Server), `seaweed-config` +
+    `seaweed-init`-One-Shots (bash-Parameter-Expansion fuer
+    JSON-Safety der gerenderten `s3.json`), AWS-CLI 2.34.61 als
+    `aws-tools`-Service (Entrypoint-Wrapper mit
+    `--endpoint-url`-Default). Object-Storage von MinIO auf
+    SeaweedFS umgestellt (MinIO Community Edition 2025-Q3
+    archiviert), S3-Client von `minio/mc` auf `amazon/aws-cli`.
+    Healthcheck-Vertraege via `jq -s`-State-Pinnung (Compose
+    v2.24+ JSONL-Output-Konvention).
+  - **BD.2** — Demo-Schema mit fuenf Tabellen
+    (customers/products/orders/order_items/events;
+    50/30/500/1500/10000 Zeilen). Deterministischer Seed via
+    `setseed(0.42)` + `\set demo_start_date` +
+    `SET timezone='UTC'` +
+    `SET max_parallel_workers_per_gather=0`. Idempotenz
+    empirisch verifiziert via
+    `pg_dump | grep -v restrict | sha256sum`-Hash-Vergleich.
+  - **BD.3** — Metabase v0.55.24.1 als BI-Frontend mit
+    persistenter H2-Konfiguration im Named Volume; README
+    dokumentiert Erstkonfiguration + drei Beispiel-Fragen
+    (Umsatz/Tag, Bestellungen/Status, Top-Kunden).
+  - **BD.4** — `dmigrate`-Compose-Service (Image `d-migrate:dev`,
+    Profile=tools) +
+    [`examples/bi-demo/.d-migrate.yaml`](examples/bi-demo/.d-migrate.yaml)
+    mit zwei Named-Connections (Host-CLI + Container-CLI).
+    End-to-End-Workflow reverse/profile/generate gegen
+    Demo-Postgres + `aws s3 cp` zum S3-Bucket.
+  - **BD.5** —
+    [`examples/bi-demo/scripts/smoke.sh`](examples/bi-demo/scripts/smoke.sh)
+    fuer End-to-End-Smoke; Repo-Root-Makefile-Targets
+    `bi-demo-{env,pull,up,down,purge,smoke}` kapseln den
+    Compose-Pfad; optionaler
+    [`.github/workflows/bi-demo-smoke.yml`](.github/workflows/bi-demo-smoke.yml)
+    (Best-Effort, `continue-on-error: true`).
+
+  Verifiziert gegen Compose v5.1.4: postgres healthy,
+  seaweed-config/init exited(0), Metabase `/api/health` =
+  `{"status":"ok"}`, alle fuenf Tabellen reversed + profiled +
+  als DDL gerendert, fuenf BD.4-Warning-Codes im Profil-Report
+  (`CONTAINS_EMPTY_STRINGS`, `CONTAINS_BLANK_STRINGS`,
+  `POSSIBLE_PLACEHOLDER_VALUES`, `LOW_CARDINALITY`,
+  `DUPLICATE_VALUES`) + `numericStats.max=99999.99`-Outlier.
+
+### Fixed
+
+- **`ProfileReportWriter` JSON+YAML-Serializer-Bugs** *(2026-06-04)*
+  — zwei Befunde aus dem BD.4-Smoke (Stand 0.9.8-SNAPSHOT, in
+  BD.5-Review behoben):
+  - `renderTargetCompatibilityJson` haengte pro Feld einen
+    Extra-Quote an (`"INTEGER""`, `"50""`) durch fehlerhafte
+    Raw-String-Verkettung (5-fach-`"""`-Pattern, das Kotlin als
+    `"""`-open + content + `"""`-close + trail-`"` parst).
+    Rewrite mit klassischen Strings und `jsonStr()`-Helfer
+    eliminiert die Mehrdeutigkeit.
+  - `yamlStr` / `needsYamlQuoting` quotierte leere und
+    whitespace-only Strings nicht (`exampleInvalidValues:
+    [, customer10@..., ...]`), YAML-Parser brachen.
+    `isBlank()` und Edge-Whitespace-Check erzwingen jetzt das
+    Quoting.
+
+  Zwei neue Tests in `ProfileReportWriterTest` parsen die
+  gerenderten Outputs mit
+  `com.fasterxml.jackson.databind.ObjectMapper` bzw.
+  `com.fasterxml.jackson.dataformat.yaml.YAMLMapper` — vorher
+  liefen nur `shouldContain`-Substring-Checks, die den Bug nicht
+  fingen.
+
+### Changed
+
+- **`scripts/verify-doc-refs.sh`** *(2026-06-04)* — der awk-Filter
+  strippt jetzt Single-Backtick-Inline-Code-Spans bevor das
+  Markdown-Link-Pattern matched. Damit faengt der Doc-Link-Check
+  keine Regex-/Code-Beispiele mehr ein, die `](`-Patterns
+  innerhalb von Backticks enthalten (z. B. Kotlin-Raw-String-
+  Regex in `docs/planning/next/trino.md:461`).
+
 ## [0.9.7] - 2026-06-02
 
 ### Added

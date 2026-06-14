@@ -1,6 +1,7 @@
 package dev.dmigrate.driver
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.core.version.VersionInfo
 import java.time.Instant
 
 abstract class AbstractDdlGenerator(
@@ -172,7 +173,7 @@ abstract class AbstractDdlGenerator(
 
     // ── Shared logic ────────────────────────────
 
-    protected open fun getVersion(): String = "0.9.7"
+    protected open fun getVersion(): String = VersionInfo.PRODUCT_VERSION
 
     protected fun generateHeader(schema: SchemaDefinition, options: DdlGenerationOptions): List<DdlStatement> {
         val header = buildString {

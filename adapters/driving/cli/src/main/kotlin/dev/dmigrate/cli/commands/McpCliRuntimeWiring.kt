@@ -9,6 +9,8 @@ import dev.dmigrate.server.adapter.audit.logging.LoggingAuditSink
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayloadFactory
+import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
+import dev.dmigrate.server.adapter.storage.s3.S3ByteStores
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
@@ -24,7 +26,7 @@ import java.time.Duration
  * Production CLI wiring for `mcp serve` per LF-012 / LN-027 / LN-028 / LN-038
  * §6.21 + §6.22.
  *
- * Byte-Stores are file-backed under [stateDir]:
+ * Byte-Stores default to file-backed under [stateDir]:
  * - `FileBackedUploadSegmentStore(stateDir)` lays out segments under
  *   `<stateDir>/segments/<uploadSessionId>/...`.
  * - `FileBackedArtifactContentStore(stateDir)` lays out artefacts
@@ -37,7 +39,13 @@ import java.time.Duration
  *   would defeat the LF-010 / LF-013 / LN-009 / LN-011 heap guarantee — production CLI MUST
  *   inject the file-spool factory here.
  *
- * Both byte adapters create their own canonical sub-directories — no
+ * With `artifacts.store: s3` (ImpPlan-0.9.8-object-storage-s3 S3.4b) the
+ * two byte stores switch to the [S3ByteStores] pair on a shared,
+ * gate-validated client. Everything else — metadata stores AND the local
+ * assembly spool — is identical in both branches: S3 only replaces where
+ * segment/artifact bytes live.
+ *
+ * Both file byte adapters create their own canonical sub-directories — no
  * extra speaking sub-folder is interposed so the on-disk layout stays
  * stable at exactly `<stateDir>/segments/...`, `<stateDir>/artifacts/...`
  * and `<stateDir>/assembly/...`.
@@ -57,8 +65,13 @@ import java.time.Duration
  * the responsibility of `McpCommands` — this helper only constructs
  * the wiring from a state dir that the caller has already validated
  * and locked.
+ *
+ * Public (unlike the runner/wiring classes, whose signatures carry
+ * internal helper types): the signature is all-public types, and the
+ * S3.4b wiring integration test in `:test:integration-storage-s3`
+ * drives this real composition root against a SeaweedFS container.
  */
-internal object McpCliRuntimeWiring {
+object McpCliRuntimeWiring {
     /**
      * @param connectionConfigPath optional path to the project YAML
      *  carrying LF-012 / LN-038 connection references (LF-012 / LN-038).
@@ -81,13 +94,18 @@ internal object McpCliRuntimeWiring {
         tenantId: TenantId = TenantId("default"),
         cursorKeyring: CursorKeyring? = null,
         operationTimeout: Duration = Duration.ofMinutes(5),
+        artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
     ): McpRuntimeWiring {
         val quotaStore = InMemoryQuotaStore()
+        val s3ByteStores = when (artifacts) {
+            is ArtifactStorageConfig.File -> null
+            is ArtifactStorageConfig.S3 -> S3ByteStores.create(artifacts.config)
+        }
         val baseWiring = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
-            uploadSegmentStore = FileBackedUploadSegmentStore(stateDir),
+            uploadSegmentStore = s3ByteStores?.uploadSegmentStore ?: FileBackedUploadSegmentStore(stateDir),
             artifactStore = InMemoryArtifactStore(),
-            artifactContentStore = FileBackedArtifactContentStore(stateDir),
+            artifactContentStore = s3ByteStores?.artifactContentStore ?: FileBackedArtifactContentStore(stateDir),
             schemaStore = InMemorySchemaStore(),
             jobStore = InMemoryJobStore(),
             quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
@@ -96,6 +114,10 @@ internal object McpCliRuntimeWiring {
             operationTimeout = operationTimeout,
             auditSink = LoggingAuditSink(),
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
+            // Das S3-Buendel besitzt den geteilten Client; der Server-
+            // Lifecycle (McpServeWiring-CloseStack) schliesst ihn beim
+            // Shutdown ueber diesen Slot.
+            ownedResources = listOfNotNull(s3ByteStores),
         )
         val keyedWiring = cursorKeyring?.let { baseWiring.copy(cursorKeyring = it) } ?: baseWiring
         // LF-012 / LN-038: when a YAML config path is provided, wrap the

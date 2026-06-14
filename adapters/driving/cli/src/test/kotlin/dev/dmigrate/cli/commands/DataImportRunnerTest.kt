@@ -70,6 +70,8 @@ class DataImportRunnerTest : FunSpec({
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.Directory -> listOf("t1")
+            is dev.dmigrate.streaming.ImportInput.ResolvedBundle -> input.tables.map { it.table }
+            is dev.dmigrate.streaming.ImportInput.ResolvedSingleFile -> listOf(input.table)
         }
         val summaries = tables.map {
             TableImportSummary(
@@ -179,7 +181,7 @@ class DataImportRunnerTest : FunSpec({
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         writerLookup: (DatabaseDialect) -> DataWriter = { FakeDataWriter() },
-        schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
+        schemaPreflight: (Path, ImportInput, DataExportFormat, List<String>?) -> SchemaPreflightResult = { _, input, _, _ ->
             SchemaPreflightResult(input)
         },
         schemaTargetValidator:

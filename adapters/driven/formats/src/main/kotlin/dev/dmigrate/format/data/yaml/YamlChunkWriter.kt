@@ -2,6 +2,7 @@ package dev.dmigrate.format.data.yaml
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.SerializedValue
@@ -48,10 +49,13 @@ class YamlChunkWriter(
     private var beginCalled: Boolean = false
     private var closed: Boolean = false
 
-    override fun begin(table: String, columns: List<ColumnDescriptor>) {
+    override fun begin(table: String, schema: ChunkSchema) {
         check(!beginCalled) { "begin() called twice on the same YamlChunkWriter" }
         beginCalled = true
-        this.columns = columns
+        // AP2 §6.3: YAML liest aus schema.columns nur Name und Nullability.
+        this.columns = schema.columns.map {
+            ColumnDescriptor(name = it.name, nullable = it.nullable, sqlTypeName = null)
+        }
     }
 
     override fun write(chunk: DataChunk) {

@@ -194,7 +194,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, segments, _ ->
+            executor = { _, _, segments, _, _ ->
                 val statements = segments.flatMap { it.statements }
                 ExecutionTrace(
                     executionStarted = true,
@@ -245,7 +245,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _, _ ->
+            executor = { _, _, _, _, _ ->
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -324,7 +324,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _, _ ->
+            executor = { _, _, _, _, _ ->
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -410,7 +410,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _, _ ->
+            executor = { _, _, _, _, _ ->
                 ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
             },
             atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
@@ -477,7 +477,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _, _ ->
+            executor = { _, _, _, _, _ ->
                 executorCalled = true
                 ExecutionTrace(executionStarted = true, executionCompleted = true)
             },
