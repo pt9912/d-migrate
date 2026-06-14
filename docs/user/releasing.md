@@ -99,20 +99,21 @@ Temp-Pfade im Container gesetzt.
 ```bash
 make release-assets 2>&1 | tee /tmp/release-assets.log
 
-ls -1 ./release
-cat ./release/*.sha256
-java -jar ./release/*-all.jar --help
+ls -1 adapters/driving/cli/build/release
+cat adapters/driving/cli/build/release/*.sha256
+java -jar adapters/driving/cli/build/release/*-all.jar --help
 ```
 
 `make release-assets` baut das `release-assets`-Stage-Image
 (Default-Tag `d-migrate:release-assets`), erzeugt im Container die
 ZIP-/TAR-/Fat-JAR-/SHA256-Assets über
-`:adapters:driving:cli:assembleReleaseAssets` und kopiert sie nach
-`./release/` (Verzeichnis wird vorher geleert).
+`:adapters:driving:cli:assembleReleaseAssets` und extrahiert sie via
+`docker run … | tar xf -` nach `adapters/driving/cli/build/release/`
+(der `release-assets`-Stage tart genau dieses Verzeichnis).
 
 Wichtig:
 
-- `./release` ist nur der lokale Preflight-Ordner
+- `adapters/driving/cli/build/release` ist nur der lokale Preflight-Ordner
 - für den eigentlichen GitHub-Release werden später ausschließlich die Dateien
   aus dem grünen Workflow-Artefakt `release-assets` verwendet
 
@@ -452,7 +453,7 @@ java -jar ./release-assets/d-migrate-X.Y.Z-all.jar --help
 
 Wichtig:
 
-- `./release` aus Abschnitt 3.2 bleibt lokaler Preflight und ist nicht die
+- `adapters/driving/cli/build/release` aus Abschnitt 3.2 bleibt lokaler Preflight und ist nicht die
   Publish-Quelle
 - `gh release create` und `gh release upload` arbeiten nur mit
   `./release-assets/*`
@@ -663,7 +664,7 @@ Für jeden Release abhaken:
 - [ ] Alle Milestone-PRs gemerged
 - [ ] `IMAGE_TAG=pre-release make docker-build` grün
 - [ ] lokaler Asset-Preflight für `assembleReleaseAssets` grün
-- [ ] `./release` enthält ZIP, TAR, Fat JAR und SHA256
+- [ ] `adapters/driving/cli/build/release` enthält ZIP, TAR, Fat JAR und SHA256
 - [ ] Fat JAR aus dem lokalen Preflight startet mit `--help`
 - [ ] Smoke-Tests gegen Fixture-Schemas grün (generate, compare file/file)
 - [ ] DB-basierte Smoke-Tests grün (reverse, compare file/db + db/db, transfer)

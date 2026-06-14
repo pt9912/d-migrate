@@ -1205,7 +1205,7 @@ Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-p
 
 #### `data export`
 
-Streamt Tabellen aus einer Datenbank in JSON, YAML oder CSV. Pull-basiert,
+Streamt Tabellen aus einer Datenbank in JSON, YAML, CSV oder Parquet. Pull-basiert,
 chunk-weise — geeignet auch für Tabellen, die größer sind als der verfügbare
 Heap (Plan §2.1, §6.4).
 
@@ -1224,7 +1224,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Flag | Pflicht | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--source` | Ja | URL oder Name | — | Connection-URL oder Name aus `.d-migrate.yaml` |
-| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv` (kein Default — explizit setzen, §6.15) |
+| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (kein Default — explizit setzen, §6.15). Parquet schreibt je nach Ziel ein Bundle (Verzeichnis + `manifest.yaml`) oder Single-File; zusätzliche Parquet-Flags siehe CHANGELOG `[0.9.8]` |
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
 | `--filter` | Nein | String | — | Filter-DSL-Ausdruck. Erlaubte Operatoren: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN (...)`, `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, Klammern. Erlaubte Funktionen: `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS`, `ROUND`, `COALESCE`. Arithmetik (`+`, `-`, `*`, `/`) und qualifizierte Identifier (`table.column`) sind zulaessig. Alle Literale werden als Bind-Parameter an JDBC gebunden. Rohes SQL wird nicht mehr akzeptiert — nicht DSL-konforme Eingaben enden mit Exit 2. |
@@ -1313,7 +1313,7 @@ d-migrate data export --source local_pg --format json \
 
 #### `data import`
 
-Importiert Daten aus JSON, YAML oder CSV in eine Datenbank. Der Importpfad ist
+Importiert Daten aus JSON, YAML, CSV oder Parquet in eine Datenbank. Der Importpfad ist
 streaming-basiert, unterstützt Datei-, Verzeichnis- und stdin-Quellen und löst
 `--target` analog zu `data export` auch über benannte Verbindungen aus
 `.d-migrate.yaml` auf.
@@ -1326,7 +1326,7 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 |---|---|---|---|---|
 | `--target` | Nein | URL oder Name | `database.default_target` aus Config | Ziel-Datenbank als Connection-URL oder benannte Verbindung |
 | `--source` | Ja | Pfad, Verzeichnis oder `-` | — | Quelldatei, Quellverzeichnis oder stdin |
-| `--format` | Nein | String | Auto-Detection nach Dateiendung | Eingabeformat: `json`, `yaml`, `csv`; bei stdin Pflicht |
+| `--format` | Nein | String | Auto-Detection nach Dateiendung | Eingabeformat: `json`, `yaml`, `csv`, `parquet`; bei stdin Pflicht (Parquet: Bundle-Verzeichnis oder Single-File) |
 | `--schema` | Nein | Pfad | — | Schema-Datei für lokalen Preflight und Tabellen-Reihenfolge bei Verzeichnisimport |
 | `--table` | Nein | String | — | Zieltabelle; für stdin und Single-File-Import relevant |
 | `--tables` | Nein | Liste | alle | Kommaseparierte Import-Reihenfolge; nur für Verzeichnisquellen |

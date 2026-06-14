@@ -42,8 +42,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.7**
-(stable, released 2026-06-02). The current capabilities:
+d-migrate is a working production tool at version **0.9.8**
+(stable, released 2026-06-14). The current capabilities:
 
 - **Schema model**: neutral YAML schema with 19 types + Spatial
   Geometry; validator with 35+ error codes.
@@ -68,10 +68,15 @@ d-migrate is a working production tool at version **0.9.7**
 - **Spatial DDL**: PostGIS, MySQL native, SpatiaLite
   (`--spatial-profile`); view-query transformation across dialects.
 - **Data operations**: streaming `data export` / `import` /
-  `transfer` (JSON / YAML / CSV) with named connections, UPSERT,
-  truncate, trigger handling, reseeding, incremental export
+  `transfer` (JSON / YAML / CSV / Parquet) with named connections,
+  UPSERT, truncate, trigger handling, reseeding, incremental export
   (`--since-column` / `--since`); `data profile` for data
   statistics.
+- **Parquet & object storage** (0.9.8): `data export` / `import
+  --format parquet` for bundle (multi-table + `manifest.yaml`) and
+  single-file (footer-KV) layouts with checkpoint/resume and
+  `--table-order`; S3-compatible `ArtifactStore`
+  (`artifacts.store: s3`, AWS SDK v2) for server-mode artefacts.
 - **Integrations**: `d-migrate export flyway|liquibase|django|knex`.
 - **MCP server** (`mcp serve --transport stdio|http`, MCP
   2025-11-25): read-only tool surface (`schema_validate`,
@@ -141,7 +146,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 ## Status
 
-As of **2026-06-02**:
+As of **2026-06-14**:
 
 - **0.1.0–0.5.5 MVP** · `Released` (Apr 2026): YAML schema model,
   type system, DDL generation, data export, data import,
@@ -174,9 +179,14 @@ As of **2026-06-02**:
   signed migration-plan v1, partial rollback v2, rename overlays
   incl. dependency reprojection, CHECK / EXCLUDE diffability with
   live-data preflight.
-- **0.9.8 Analytics + storage anchor (evaluations + BI demo)** ·
-  `Planned`: Parquet evaluation, object-storage `ArtifactStore`
-  port, BI-demo Compose stack (Postgres + Metabase + SeaweedFS).
+- **0.9.8 Analytics + storage anchor (Parquet Cut A + S3
+  ArtifactStore + BI demo)** · `Released` (2026-06-14): productive
+  Parquet `data export` / `import` (bundle + single-file,
+  checkpoint/resume, `--table-order`, exit-code contract);
+  S3-compatible `ArtifactStore` (AWS SDK v2 +
+  `url-connection-client`, `artifacts.store: s3`); BI-demo Compose
+  stack (Postgres + Metabase + SeaweedFS). All closure plan-docs in
+  [`docs/planning/done/`](docs/planning/done/).
 - **0.9.9 Documentation + pilot validation** · `Planned`.
 - **1.0.0 Stable release** · `Planned`.
 
