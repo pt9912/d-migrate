@@ -10,6 +10,7 @@ import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainExactly
@@ -17,6 +18,11 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.maps.shouldNotContainKey
 import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
+import java.sql.Connection
 
 /**
  * 0.9.7 SQLite-Sequence Phase D unit coverage for
@@ -254,5 +260,86 @@ class SqliteSequenceReverseSupportTest : FunSpec({
         support.aggregateNotes(
             SqliteSequenceSupportSnapshot.absent(SupportTableState.NOT_FOUND),
         ) shouldBe emptyList<SchemaReadNote>()
+    }
+
+    // ── scanSequenceSupport (drives the private classify/pair logic) ──
+
+    fun triggerRow(name: String, table: String, sql: String, rowid: Long): Map<String, Any?> =
+        mapOf("name" to name, "tbl_name" to table, "sql" to sql, "rowid" to rowid)
+
+    fun scanWith(
+        exists: Boolean? = true,
+        shapeOk: Boolean = true,
+        seqRows: List<Map<String, Any?>> = listOf(row()),
+        triggerRows: List<Map<String, Any?>> = emptyList(),
+    ): SqliteSequenceSupportSnapshot {
+        mockkObject(SqliteMetadataQueries)
+        try {
+            val session = JdbcMetadataSession(mockk<Connection>(relaxed = true))
+            every { SqliteMetadataQueries.checkDmgSequencesTableExists(session) } returns exists
+            every { SqliteMetadataQueries.checkDmgSequencesShape(session) } returns shapeOk
+            every { SqliteMetadataQueries.listDmgSequencesRows(session) } returns seqRows
+            every { SqliteMetadataQueries.listTriggersWithRowid(session) } returns triggerRows
+            return support.scanSequenceSupport(session)
+        } finally {
+            unmockkObject(SqliteMetadataQueries)
+        }
+    }
+
+    fun canonicalBody(ofType: SqliteSequenceMarkerParser.ObjectType): String =
+        makeCanonicalBody("orders", "order_number", "order_seq", ofType)
+
+    test("scanSequenceSupport → NOT_ACCESSIBLE when table existence is unknown") {
+        scanWith(exists = null).supportTableState shouldBe SupportTableState.NOT_ACCESSIBLE
+    }
+
+    test("scanSequenceSupport → NOT_FOUND when the helper table is absent") {
+        scanWith(exists = false).supportTableState shouldBe SupportTableState.NOT_FOUND
+    }
+
+    test("scanSequenceSupport → INVALID_SHAPE when the shape check fails") {
+        scanWith(shapeOk = false).supportTableState shouldBe SupportTableState.INVALID_SHAPE
+    }
+
+    test("scanSequenceSupport classifies a canonical primary pair into one NONE pairing") {
+        val biName = SqliteSequenceNaming.beforeInsertTriggerName("orders", "order_number", "order_seq")
+        val aiName = SqliteSequenceNaming.afterInsertTriggerName("orders", "order_number", "order_seq")
+        val snapshot = scanWith(
+            triggerRows = listOf(
+                triggerRow(biName, "orders", canonicalBody(SqliteSequenceMarkerParser.ObjectType.BEFORE_INSERT), 10L),
+                triggerRow(aiName, "orders", canonicalBody(SqliteSequenceMarkerParser.ObjectType.AFTER_INSERT), 11L),
+            ),
+        )
+        snapshot.supportTableState shouldBe SupportTableState.AVAILABLE
+        snapshot.pairings shouldHaveSize 1
+        snapshot.pairings[0].sequenceName shouldBe "order_seq"
+        snapshot.pairings[0].diagnostic shouldBe PairingDiagnostic.NONE
+    }
+
+    test("scanSequenceSupport reports HALF_PAIR when only the before-insert trigger is present") {
+        val biName = SqliteSequenceNaming.beforeInsertTriggerName("orders", "order_number", "order_seq")
+        val snapshot = scanWith(
+            triggerRows = listOf(
+                triggerRow(biName, "orders", canonicalBody(SqliteSequenceMarkerParser.ObjectType.BEFORE_INSERT), 10L),
+            ),
+        )
+        snapshot.pairings shouldHaveSize 1
+        snapshot.pairings[0].diagnostic shouldBe PairingDiagnostic.HALF_PAIR
+    }
+
+    test("scanSequenceSupport flags MASKED_BY_USER_TRIGGER for a user BEFORE INSERT trigger created first") {
+        val biName = SqliteSequenceNaming.beforeInsertTriggerName("orders", "order_number", "order_seq")
+        val aiName = SqliteSequenceNaming.afterInsertTriggerName("orders", "order_number", "order_seq")
+        val userSql = "CREATE TRIGGER \"audit_before\" BEFORE INSERT ON \"orders\" " +
+            "FOR EACH ROW BEGIN SELECT 1; END;"
+        val snapshot = scanWith(
+            triggerRows = listOf(
+                triggerRow("audit_before", "orders", userSql, 5L),
+                triggerRow(biName, "orders", canonicalBody(SqliteSequenceMarkerParser.ObjectType.BEFORE_INSERT), 10L),
+                triggerRow(aiName, "orders", canonicalBody(SqliteSequenceMarkerParser.ObjectType.AFTER_INSERT), 11L),
+            ),
+        )
+        snapshot.pairings shouldHaveSize 1
+        snapshot.pairings[0].diagnostic shouldBe PairingDiagnostic.MASKED_BY_USER_TRIGGER
     }
 })
