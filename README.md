@@ -146,39 +146,9 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 ## Status
 
-As of **2026-06-14**:
+The full release history (0.1.0–0.9.7) lives in
+[`CHANGELOG.md`](CHANGELOG.md). Current and upcoming milestones:
 
-- **0.1.0–0.5.5 MVP** · `Released` (Apr 2026): YAML schema model,
-  type system, DDL generation, data export, data import,
-  incremental pipelines, spatial types.
-- **0.6.0 Reverse engineering** · `Released` (2026-04-14).
-- **0.7.0 Tool integrations** · `Released` (2026-04-15): Flyway /
-  Liquibase / Django / Knex export.
-- **0.7.5 Data profiling** · `Released` (2026-04-15).
-- **0.8.0 Internationalisation** · `Released` (2026-04-16).
-- **0.9.0 Beta resilience + i18n CLI** · `Released` (2026-04-18).
-- **0.9.1 Library refactor + integration cut** · `Released`
-  (2026-04-19).
-- **0.9.2 DDL phases + import-friendly artefacts** · `Released`
-  (2026-04-19).
-- **0.9.3 Filter hardening + MySQL-sequence emulation (generator)** ·
-  `Released` (2026-04-20).
-- **0.9.4 MySQL-sequence reverse + compare** · `Released`
-  (2026-04-21).
-- **0.9.5 Quality refinement** · `Released` (2026-04-24).
-- **0.9.6 MCP server** · `Released` (2026-05-08): MCP 2025-11-25
-  with JWT-JWKS auth, idempotency, policy gates, JDBC persistence,
-  artefact stores, AI-adjacent tools.
-- **0.9.7 Refactoring + diff-based migration + SQLite-sequence
-  emulation + atomic-preserve** · `Released` (2026-06-02): 22
-  workstreams ✅, all closure plan-docs in
-  [`docs/planning/done/`](docs/planning/done/). Headline
-  capabilities: atomic `preserveCurrentValue` under per-dialect
-  lock (PG / MySQL / SQLite), SQLite-sequence-helper-table
-  emulation + reverse engineering, MySQL sequence drift check,
-  signed migration-plan v1, partial rollback v2, rename overlays
-  incl. dependency reprojection, CHECK / EXCLUDE diffability with
-  live-data preflight.
 - **0.9.8 Analytics + storage anchor (Parquet Cut A + S3
   ArtifactStore + BI demo)** · `Released` (2026-06-14): productive
   Parquet `data export` / `import` (bundle + single-file,

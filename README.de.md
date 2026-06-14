@@ -158,40 +158,9 @@ Rezepte.
 
 ## Status
 
-Stand **2026-06-14**:
+Die vollständige Release-History (0.1.0–0.9.7) steht in
+[`CHANGELOG.md`](CHANGELOG.md). Aktuelles und kommende Milestones:
 
-- **0.1.0–0.5.5 MVP** · `Released` (Apr 2026): YAML-Schema-Modell,
-  Typsystem, DDL-Generierung, Datenexport, Datenimport,
-  inkrementelle Pipelines, Spatial-Typen.
-- **0.6.0 Reverse-Engineering** · `Released` (2026-04-14).
-- **0.7.0 Tool-Integrationen** · `Released` (2026-04-15): Flyway /
-  Liquibase / Django / Knex Export.
-- **0.7.5 Daten-Profiling** · `Released` (2026-04-15).
-- **0.8.0 Internationalisierung** · `Released` (2026-04-16).
-- **0.9.0 Beta-Resilienz + i18n-CLI** · `Released` (2026-04-18).
-- **0.9.1 Library-Refactor + Integrationsschnitt** · `Released`
-  (2026-04-19).
-- **0.9.2 DDL-Phasen + importfreundliche Artefakte** · `Released`
-  (2026-04-19).
-- **0.9.3 Filter-Härtung + MySQL-Sequence-Emulation (Generator)** ·
-  `Released` (2026-04-20).
-- **0.9.4 MySQL-Sequence Reverse + Compare** · `Released`
-  (2026-04-21).
-- **0.9.5 Qualitätsverbesserung** · `Released` (2026-04-24).
-- **0.9.6 MCP-Server** · `Released` (2026-05-08): MCP 2025-11-25
-  mit JWT-JWKS-Auth, Idempotency, Policy-Gates, JDBC-Persistenz,
-  Artefakt-Stores, KI-naher Tools.
-- **0.9.7 Refactoring + Diff-basierte Migrationen +
-  SQLite-Sequence-Emulation + Atomic-Preserve** · `Released`
-  (2026-06-02): 22 Workstreams ✅, alle Closure-Plan-Docs in
-  [`docs/planning/done/`](docs/planning/done/). Headline-
-  Capabilities: atomares `preserveCurrentValue` unter
-  Per-Dialekt-Lock (PG / MySQL / SQLite),
-  SQLite-Sequence-Helper-Table-Emulation +
-  Reverse-Engineering, MySQL-Sequence-Drift-Check, signiertes
-  Migration-Plan v1, Partial-Rollback v2, Rename-Overlays inkl.
-  Dependency-Re-Projection, CHECK/EXCLUDE-Diffbarkeit mit
-  Live-Data-Preflight.
 - **0.9.8 Analytics- und Storage-Anschluss (Parquet Cut A + S3-
   ArtifactStore + BI-Demo)** · `Released` (2026-06-14): produktiver
   Parquet `data export` / `import` (Bundle + Single-File,
