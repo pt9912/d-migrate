@@ -296,6 +296,14 @@ Datenbank erzeugen.
        --output schema.sql --generate-rollback
    ```
 
+3. Optional: **reproduzierbare** Ausgabe ohne Laufzeit-Timestamps in DDL und
+   Report (z. B. für Diffs/Reviews):
+
+   ```bash
+   d-migrate schema generate --source mein-schema.yaml --target postgresql \
+       --output schema.sql --deterministic
+   ```
+
 **Ergebnis:** Es entstehen `schema.sql` (das `CREATE`-Skript) und
 `schema.report.yaml` (ein Bericht über vorgenommene Übersetzungen). Mit
 `--generate-rollback` zusätzlich `schema.rollback.sql` mit den passenden
@@ -336,6 +344,16 @@ Leserechten auf die Tabellen und den Systemkatalog der Datenbank.
    ```bash
    d-migrate schema reverse --source postgresql://user@localhost/mydb \
        --output reversed-schema.yaml --include-all
+   ```
+
+   Statt `--include-all` lassen sich Objekttypen gezielt wählen, und der
+   Schemaname/-version überschreiben:
+
+   ```bash
+   d-migrate schema reverse --source postgresql://user@localhost/mydb \
+       --output reversed-schema.yaml \
+       --include-views --include-triggers --include-functions --include-procedures \
+       --name Webshop --version 2.0.0
    ```
 
 **Ergebnis:** `reversed-schema.yaml` enthält das neutrale Schema. Reverse-Schemas
@@ -486,6 +504,15 @@ das Ausführen brauchen Sie Schreibrechte auf der Datenbank.
 
    ```bash
    d-migrate schema rollback --source down.sql --target db:staging --execute
+   ```
+
+   Ist das Down-Artefakt bewusst nur **teilweise** (z. B. weil einzelne
+   Operationen nicht reversibel sind), verlangt der Lauf zusätzlich
+   `--allow-partial-rollback`:
+
+   ```bash
+   d-migrate schema rollback --source down.sql --target db:staging \
+       --execute --allow-partial-rollback
    ```
 
 **Ergebnis:** Die Datenbank entspricht nach Schritt 3 dem Soll-Schema. Das
@@ -737,7 +764,7 @@ Eignung einer Datenbank erstellen.
 
    ```bash
    d-migrate data profile --source meine-db --tables kunden --format yaml \
-       --output kunden-profil.yaml
+       --top-n 20 --output kunden-profil.yaml
    ```
 
 **Ergebnis:** `kunden-profil.yaml` enthält pro Tabelle die Zeilenzahl und pro
@@ -1313,6 +1340,37 @@ d-migrate mcp approval-grant issue \
 
 Der Client wiederholt den Aufruf mit dem ausgegebenen `approvalToken`. Volle
 Flag-Liste: [Anhang A.14](#a14-mcp-approval-grant-issue).
+
+Variante für einen **synchronen** `POLICY_REQUIRED`-Fall — Korrelation über
+`--approval-key`, eigenes Token mit fester Ablaufzeit und Audit-Provenienz:
+
+```bash
+d-migrate mcp approval-grant issue --file /etc/d-migrate/approval-grants.yaml \
+    --tenant <tenant> --caller <principal-id> --tool data_import_start \
+    --approval-request-id <id> --payload-fingerprint <fp> \
+    --approval-key <des wartenden Aufrufs> --scope <scope> \
+    --token appr_eigenes_token --expires-at 2026-07-01T00:00:00Z \
+    --issuer-fingerprint ops-team --grant-source manual-review
+# statt --expires-at alternativ: --ttl-seconds 600
+```
+
+#### Weitere Server-Optionen — mit Beispiel
+
+```bash
+# Auth per Token-Introspection (RFC 7662) statt JWKS; Origin-Allowlist;
+# persistentes State-Verzeichnis + Aufräum-Retention + Operations-Timeout
+d-migrate mcp serve --transport http --bind 0.0.0.0 --port 8080 \
+    --auth-mode jwt-introspection \
+    --issuer https://idp.example.com/ \
+    --introspection-url https://idp.example.com/oauth2/introspect \
+    --introspection-client-id d-migrate \
+    --introspection-client-secret "$IDP_SECRET" \
+    --audience d-migrate-mcp --public-base-url https://migrate.example.com \
+    --allow-origin https://app.example.com \
+    --mcp-state-dir /var/lib/d-migrate/mcp \
+    --mcp-state-orphan-retention 48h \
+    --operation-timeout-seconds 120
+```
 
 **Hinweise:**
 
