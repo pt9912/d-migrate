@@ -1251,7 +1251,7 @@ die CLI als MCP-Tools an:
 
 Welche Tools ein Aufrufer tatsächlich sieht, hängt von seinen Scopes ab
 (read-only vs. schreibend). Den vollständigen Katalog mit Ein-/Ausgabe-Verträgen
-beschreibt die [API-Referenz, Teil B](api-referenz.md#teil-b--mcp-server).
+beschreibt die [API-Referenz §4 (MCP)](api-referenz.md#4-mcp-server-referenz).
 
 **Vorgehen:** Wählen Sie einen der drei Betriebsmodi (A–C) und starten Sie den
 Server entsprechend:
@@ -1392,7 +1392,7 @@ d-migrate mcp serve --transport http --bind 0.0.0.0 --port 8080 \
 - **Sicherheit:** `--auth-mode disabled` nur lokal; im Netzbetrieb JWT + HTTPS.
   Verbindungen secret-frei über `--connection-config` referenzieren.
 - Alle Server-/Admin-Optionen: [Anhang A.13–A.16](#a13-mcp-serve). MCP-Protokoll,
-  Tool-Katalog und Resource-/Auth-Verträge: [API-Referenz, Teil B](api-referenz.md#teil-b--mcp-server);
+  Tool-Katalog und Resource-/Auth-Verträge: [API-Referenz §4 (MCP)](api-referenz.md#4-mcp-server-referenz);
   Betrieb und Härtung: [Administrationshandbuch](administrationshandbuch.md#6-mcp-server-betrieb).
 
 ### 3.16 Geodaten (Spatial) modellieren und übertragen
@@ -1808,8 +1808,9 @@ finden Sie in [Anhang A](#a1-globale-optionen). Die wichtigsten:
 ### 4.4 Sicherheit und Datenschutz
 
 - **Zugangsdaten** gehören nicht im Klartext in Skripte oder die
-  Versionsverwaltung. Nutzen Sie Umgebungsvariablen (`${…}`) in der
-  `.d-migrate.yaml` oder `D_MIGRATE_DB_PASSWORD`.
+  Versionsverwaltung. Hinterlegen Sie in der `.d-migrate.yaml` einen Platzhalter
+  `${VAR}`, den d-migrate aus der gleichnamigen Umgebungsvariable ersetzt
+  (`$${VAR}` bleibt literal).
 - **Exportierte Dateien** (JSON/CSV/Parquet) enthalten echte, möglicherweise
   personenbezogene Daten. Behandeln Sie sie wie die Datenbank selbst:
   Zugriffsschutz, sichere Ablage, Löschung nach Gebrauch.
@@ -1840,8 +1841,9 @@ Port in der URL.
 **Ursache:** Benutzername oder Passwort sind falsch.
 
 **Lösung:** Prüfen Sie die Zugangsdaten. Enthält das Passwort Sonderzeichen,
-müssen diese in der URL kodiert werden (z. B. `@` → `%40`) — oder geben Sie das
-Passwort über die Umgebungsvariable `D_MIGRATE_DB_PASSWORD` an.
+müssen diese in der URL kodiert werden (z. B. `@` → `%40`) — oder hinterlegen Sie
+das Passwort als `${VAR}` in einer benannten Verbindung der `.d-migrate.yaml`
+(wird aus der gleichnamigen Umgebungsvariable ersetzt).
 
 ### „Unknown database dialect 'xyz'"
 
@@ -1901,8 +1903,10 @@ Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
 benötigen Sie Java 21 oder neuer.
 
 **Wie gebe ich Passwörter sicher an?**
-Über Umgebungsvariablen in der `.d-migrate.yaml` (`${DB_PASSWORD}`) oder über
-`D_MIGRATE_DB_PASSWORD`. Vermeiden Sie Passwörter im Klartext in Skripten.
+Als `${VAR}`-Platzhalter in einer benannten Verbindung der `.d-migrate.yaml` —
+d-migrate ersetzt ihn aus der gleichnamigen Umgebungsvariable (z. B.
+`postgresql://app:${DB_PASSWORD}@…`, dann `export DB_PASSWORD=…`). Vermeiden Sie
+Passwörter im Klartext in Skripten.
 
 **Was ist der Unterschied zwischen `schema generate` und `schema migrate`?**
 `generate` erzeugt ein komplettes Schema von Grund auf. `migrate` überträgt nur
