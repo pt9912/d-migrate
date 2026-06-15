@@ -338,8 +338,59 @@ Leserechten auf die Tabellen und den Systemkatalog der Datenbank.
        --output reversed-schema.yaml --include-all
    ```
 
-**Ergebnis:** Die Datei `reversed-schema.yaml` enthält das neutrale Schema der
-Datenbank.
+**Ergebnis:** `reversed-schema.yaml` enthält das neutrale Schema. Reverse-Schemas
+tragen einen technischen Namen (Präfix `__dmigrate_reverse__:`) und die Version
+`0.0.0-reverse` — so bleiben sie auch ohne Sidecar als reverse-generiert
+erkennbar. Auszug aus einem PostgreSQL-Reverse mit Tabelle, Function, View und
+Trigger (`--include-all`):
+
+```yaml
+schema_format: 1.0
+name: __dmigrate_reverse__:postgresql:database=demo;schema=public
+version: 0.0.0-reverse
+tables:
+  customers:
+    columns:
+      email:
+        type: text
+        max_length: 254
+        required: true
+        unique: true
+      id:
+        type: identifier
+        auto_increment: true
+        required: true
+      name:
+        type: text
+        max_length: 100
+    primary_key:
+    - id
+functions:
+  touch_name():
+    returns:
+      type: trigger
+    language: PLPGSQL
+    deterministic: false
+    body: ' BEGIN NEW.name = trim(NEW.name); RETURN NEW; END; '
+    source_dialect: postgresql
+    security: invoker
+views:
+  active_customers:
+    query: |2-
+       SELECT id, email FROM customers WHERE name IS NOT NULL;
+    # columns / dependencies gekürzt
+    source_dialect: postgresql
+triggers:
+  customers::trg_touch_name:           # kanonischer Key: table::name
+    table: customers
+    event: update
+    timing: before
+    body: EXECUTE FUNCTION touch_name()
+    dependencies:
+      functions:
+      - touch_name
+    source_dialect: postgresql
+```
 
 **Hinweise:**
 
@@ -399,6 +450,29 @@ das Ausführen brauchen Sie Schreibrechte auf der Datenbank.
    ```
 
 2. Prüfen Sie `plan.yaml` (Risiken) und `up.sql` (die geplanten Anweisungen).
+   Beispiel — das Soll-Schema fügt der Tabelle `customers` die Spalte `name`
+   hinzu:
+
+   ```sql
+   -- up.sql
+   ALTER TABLE "customers" ADD COLUMN "name" VARCHAR(100) NOT NULL;
+   ```
+
+   ```yaml
+   # plan.yaml (Auszug)
+   status: ok
+   exitCode: 0
+   dialect: POSTGRESQL
+   summary:
+     operationsTotal: 1
+     statementsTotal: 1
+     destructiveCount: 0
+     manualActionCount: 0
+     planFullyRollbackable: true
+     planRequiresExclusiveAccess: true
+   blockers: []
+   diagnostics: []
+   ```
 
 3. Führen Sie die Migration aus. Ein Bericht ist dabei **Pflicht** (Nachweis):
 
@@ -428,6 +502,46 @@ Zustand.
 - Bei `file:`-Ziel (Datei-gegen-Datei) müssen Sie `--dialect` angeben, und
   `--execute` ist nicht möglich.
 
+**Weitere Optionen — jeweils mit Beispiel:**
+
+```bash
+# Nur Plan/Report ansehen (kein SQL), als YAML, plus signiertes Plan-Artefakt
+d-migrate schema migrate --source desired.yaml --target db:staging \
+    --plan-only --report-format yaml --report plan.yaml --plan-artefact plan.v1.json
+
+# Datei-gegen-Datei (Ziel ist eine Schema-Datei) — --dialect Pflicht, kein --execute
+d-migrate schema migrate --source desired.yaml --target file:current.yaml \
+    --dialect postgresql --output up.sql --report plan.yaml
+
+# Umbenennen statt Drop+Create (erhält Daten) — inline …
+d-migrate schema migrate --source desired.yaml --target db:staging --report plan.yaml \
+    --rename-table kunden:customers --rename-column customers.mail:customers.email
+# … oder artefaktstabil per Overlay-Datei
+d-migrate schema migrate --source desired.yaml --target db:staging --report plan.yaml \
+    --migration-overlay rename-overlay.json
+
+# Destruktive Operationen bewusst zulassen (z. B. Spalte entfernen)
+d-migrate schema migrate --source desired.yaml --target db:staging \
+    --execute --report plan.yaml --allow-destructive
+
+# PostgreSQL-Extension-Prerequisites rendern lassen (z. B. PostGIS)
+d-migrate schema migrate --source desired.yaml --target db:staging \
+    --execute --report plan.yaml --allow-extension-install
+
+# Sequenz-Laufwert erhalten: SQLite-Opt-in + Lock-Budget (Atomic-Preserve)
+d-migrate schema migrate --source desired.yaml --target db:staging \
+    --execute --report plan.yaml \
+    --sqlite-named-sequences helper_table --lock-timeout-ms 15000
+
+# Trigger-Replace mit Sichtbarkeitslücke hart blocken statt nur warnen
+d-migrate schema migrate --source desired.yaml --target db:staging \
+    --report plan.yaml --strict-gap-operations
+
+# Routine-Capability übersteuern und Routine-Bodies im Report sichtbar machen (UNSAFE)
+d-migrate schema migrate --source desired.yaml --target db:staging --report plan.yaml \
+    --routine-capability "function:enabled=true" --debug-body
+```
+
 ### 3.6 Daten sichern (Export)
 
 **Ziel:** Tabelleninhalte aus einer Datenbank in eine Datei schreiben (JSON,
@@ -455,6 +569,30 @@ YAML, CSV oder Parquet).
 - Nur Änderungen seit einem Zeitpunkt: `--since-column updated_at --since
   "2026-04-01T00:00:00"`.
 - Für sehr große Tabellen siehe [3.9](#39-sehr-große-datenmengen-übertragen-mit-wiederaufnahme).
+
+**Weitere Optionen — jeweils mit Beispiel:**
+
+```bash
+# Nur bestimmte Zeilen (Filter-DSL)
+d-migrate data export --source staging --format json --tables orders \
+    --filter "status = 'shipped' AND total > 100" --output orders.json
+
+# Nur Änderungen seit einem Zeitpunkt (inkrementell, LF-013)
+d-migrate data export --source staging --format json --tables orders \
+    --since-column updated_at --since "2026-04-01T00:00:00" --output delta.json
+
+# CSV fein steuern: Trennzeichen, BOM (Excel), ohne Kopfzeile, NULL-Text, Encoding
+d-migrate data export --source staging --format csv --tables orders --output orders.csv \
+    --csv-delimiter ";" --csv-bom --csv-no-header --null-string "NULL" --encoding utf-8
+
+# Chunk-Größe für sehr große Tabellen
+d-migrate data export --source staging --format json --tables orders \
+    --output orders.json --chunk-size 50000
+
+# Parquet-Bundle mit SHA-256 je Tabelle im Manifest
+d-migrate data export --source staging --format parquet --tables customers,orders \
+    --output ./export-parquet --manifest-sha256
+```
 
 ### 3.7 Daten in eine Datenbank laden (Import)
 
@@ -488,6 +626,39 @@ betroffene Verarbeitung abgebrochen, sodass keine halben Stände entstehen.
   `--split pre-post` ([3.2](#32-sql-für-eine-zieldatenbank-erzeugen)), spielen
   Sie zuerst `schema.pre-data.sql` ein, importieren dann die Daten und aktivieren
   zuletzt mit `schema.post-data.sql` die Trigger und Funktionen.
+
+**Weitere Optionen — jeweils mit Beispiel:**
+
+```bash
+# Aus stdin in eine bestimmte Tabelle (Format explizit)
+cat orders.json | d-migrate data import --source - --target staging \
+    --format json --table orders
+
+# Verzeichnis-Import: nur bestimmte Tabellen, feste Reihenfolge
+d-migrate data import --source ./export --target staging --schema mein-schema.yaml \
+    --tables customers,orders --table-order customers,orders
+
+# UPSERT + tolerant: Chunk-Fehler protokollieren statt abbrechen
+d-migrate data import --source orders.json --target staging --schema mein-schema.yaml \
+    --on-conflict update --on-error log
+
+# Zieltabelle leeren, Trigger feuern lassen, größere Chunks
+d-migrate data import --source orders.json --target staging --schema mein-schema.yaml \
+    --truncate --trigger-mode fire --chunk-size 50000
+
+# MySQL/SQLite: FK-Prüfung aussetzen; Identity/Sequenzen NICHT neu setzen
+# (Standard ist --reseed-sequences = an)
+d-migrate data import --source orders.csv --target staging --format csv \
+    --disable-fk-checks --no-reseed-sequences
+
+# CSV ohne Kopfzeile, eigene NULL-Darstellung, festes Encoding
+d-migrate data import --source orders.csv --target staging --format csv --table orders \
+    --csv-no-header --csv-null-string "NULL" --encoding iso-8859-1
+
+# Checkpoints für diesen Lauf abschalten
+d-migrate data import --source ./export --target staging --schema mein-schema.yaml \
+    --no-checkpoint
+```
 
 ### 3.8 Daten direkt von Datenbank zu Datenbank übertragen
 
@@ -1030,62 +1201,138 @@ zurück.
 ### 3.15 d-migrate als MCP-Server für KI-Agenten bereitstellen
 
 **Ziel:** d-migrate so starten, dass ein KI-Agent (z. B. ein Desktop-Assistent)
-die Schema- und Daten-Operationen über das MCP-Protokoll nutzen kann.
+die Schema- und Daten-Operationen über das **MCP-Protokoll** (Model Context
+Protocol) nutzen kann — der Agent ruft d-migrate-Werkzeuge auf, statt dass Sie
+die CLI selbst bedienen.
 
 **Voraussetzungen:** Ein MCP-fähiger Client. Für HTTP-Betrieb über das eigene
-Gerät hinaus zusätzlich ein OIDC-Identity-Provider (JWT).
+Gerät hinaus zusätzlich ein OIDC-Identity-Provider (JWT). Die Datenbank-
+Verbindungen, die der Agent nutzen darf, kommen aus einer Server-YAML
+(`--connection-config`, secret-frei über benannte Verbindungen).
 
-**Vorgehen — lokaler Client über stdio (ein Prozess pro Client):**
+**Was der Agent dann nutzen kann.** Der Server bietet dieselben Operationen wie
+die CLI als MCP-Tools an:
 
-1. Hinterlegen Sie ein Zugangstoken und starten Sie den Server:
+- **Schema:** `schema_validate`, `schema_compare`, `schema_generate`,
+  `schema_reverse`, `schema_format`, `schema_list`, `schema_metadata`,
+  `schema_staging_readonly`
+- **Daten:** `data_profile`, `data_type`, `data_import`, `data_transfer`
+- **Lang laufend als Job** (asynchron, Fortschritt per Job-Status):
+  `schema_reverse_start`, `schema_compare_start`, `data_export_start`,
+  `data_import_start`, `data_transfer_start`, `data_profile_start`
+- **Discovery:** `capabilities_list` sowie `resources/list` und `resources/read`
+
+Welche Tools ein Aufrufer tatsächlich sieht, hängt von seinen Scopes ab
+(read-only vs. schreibend). Den vollständigen Katalog mit Ein-/Ausgabe-Verträgen
+beschreibt die [API-Referenz, Teil B](api-referenz.md#teil-b--mcp-server).
+
+#### Variante A — lokaler Desktop-Client über stdio
+
+stdio ist der primäre lokale Pfad: ein Server-Prozess pro Client, der vom Client
+selbst gestartet wird.
+
+1. Hinterlegen Sie ein Zugangstoken (Token-Registry) und testen Sie den Start:
 
    ```bash
    export DMIGRATE_MCP_STDIO_TOKEN="tok_local_dev"
    d-migrate mcp serve --transport stdio --stdio-token-file ./stdio-tokens.yaml
    ```
 
-   Tragen Sie diesen Startbefehl in die MCP-Konfiguration Ihres Clients ein —
-   der Client startet den Server selbst.
+2. Tragen Sie **denselben** Startbefehl in die MCP-Konfiguration Ihres Clients
+   ein (Format clientabhängig; typisch ein `mcpServers`-Eintrag):
 
-**Vorgehen — lokaler HTTP-Server zum Ausprobieren:**
+   ```json
+   {
+     "mcpServers": {
+       "d-migrate": {
+         "command": "d-migrate",
+         "args": ["mcp", "serve", "--transport", "stdio",
+                  "--stdio-token-file", "/pfad/stdio-tokens.yaml",
+                  "--connection-config", "/pfad/.d-migrate.yaml"],
+         "env": { "DMIGRATE_MCP_STDIO_TOKEN": "tok_local_dev" }
+       }
+     }
+   }
+   ```
 
-1. Starten Sie den Server auf der Loopback-Adresse ohne Authentifizierung:
+**Ergebnis:** Der Client startet d-migrate als Unterprozess; der Agent sieht die
+oben genannten Tools. Der Server blockiert, bis stdin schließt (Client beendet).
+
+#### Variante B — lokaler HTTP-Server zum Ausprobieren
+
+1. Starten Sie den Server auf der Loopback-Adresse, Auth zum Testen aus:
 
    ```bash
    d-migrate mcp serve --transport http --bind 127.0.0.1 --port 8080 \
        --auth-mode disabled
    ```
 
-   `--auth-mode disabled` ist strikt auf `127.0.0.1`/`::1` beschränkt.
+**Ergebnis:** Auf stderr erscheint `MCP HTTP server listening on 127.0.0.1:8080`;
+der Server läuft bis `Strg+C`. `--auth-mode disabled` ist **strikt** auf
+`127.0.0.1`/`::1` beschränkt — ein Nicht-Loopback-`--bind` wird abgelehnt.
 
-**Ergebnis:** Der Server läuft und bietet dem Agenten die d-migrate-Werkzeuge
-(`schema_*`, `data_*`) an. Der stdio-Server blockiert, bis stdin schließt; der
-HTTP-Server bis `Strg+C`.
+#### Variante C — Produktivbetrieb über das Netzwerk (HTTP + JWT)
+
+1. Mit Authentifizierung und öffentlicher HTTPS-Basis-URL starten:
+
+   ```bash
+   d-migrate mcp serve --transport http --bind 0.0.0.0 --port 8080 \
+       --auth-mode jwt-jwks \
+       --issuer https://idp.example.com/ \
+       --jwks-url https://idp.example.com/.well-known/jwks.json \
+       --audience d-migrate-mcp \
+       --public-base-url https://migrate.example.com \
+       --connection-config /etc/d-migrate/server.yaml \
+       --cursor-keyring-file /etc/d-migrate/cursor-keyring.yaml \
+       --approval-grants-file /etc/d-migrate/approval-grants.yaml
+   ```
+
+**Ergebnis:** Jeder Request wird per `Authorization: Bearer …` gegen den Issuer
+geprüft. Ein Nicht-Loopback-`--bind` **verlangt** eine aktive Auth (sonst
+Abweisung). Härtung (Quotas, Rate-Limiting, Audit) im
+[Administrationshandbuch](administrationshandbuch.md#6-mcp-server-betrieb).
+
+#### Genehmigungspflichtige Jobs freigeben
+
+Schreibende Operationen können policy-bedingt eine **Freigabe** verlangen: Ein
+`*_start`-Tool antwortet dann mit `POLICY_REQUIRED` und nennt
+`approvalRequestId`, `payloadFingerprint` und die benötigten Scopes. Ein
+Operator stellt daraufhin einen Grant in den Freigabe-Store aus, den `mcp serve`
+über `--approval-grants-file` liest:
+
+```bash
+d-migrate mcp approval-grant issue \
+    --file /etc/d-migrate/approval-grants.yaml \
+    --tenant <tenant> --caller <principal-id> --tool data_import_start \
+    --approval-request-id <aus POLICY_REQUIRED> \
+    --payload-fingerprint <aus POLICY_REQUIRED> \
+    --idempotency-key <des wartenden Aufrufs> \
+    --scope <geforderter scope>
+# Ausgabe: approvalToken=appr_…  /  expiresAt=…
+```
+
+Der Client wiederholt den Aufruf mit dem ausgegebenen `approvalToken`. Volle
+Flag-Liste: [Anhang A.14](#a14-mcp-approval-grant-issue).
 
 **Hinweise:**
 
-- **Produktivbetrieb (über das Netzwerk):** Verwenden Sie `--auth-mode jwt-jwks`
-  mit `--issuer`, `--jwks-url`, `--audience` und `--public-base-url https://…`.
-  Ein Nicht-Loopback-`--bind` verlangt eingeschaltete Authentifizierung.
-- **Mehrinstanz-HTTP:** Erzeugen Sie ein Cursor-Keyring und übergeben es per
-  `--cursor-keyring-file`:
+- **Mehrinstanz-HTTP** braucht ein stabiles Cursor-Keyring (für HMAC-versiegelte
+  Cursor):
 
   ```bash
-  d-migrate mcp cursor-key generate --kid key-2026 > keyring.yaml
-  d-migrate mcp cursor-key validate --cursor-keyring-file keyring.yaml
+  d-migrate mcp cursor-key generate --kid key-2026 > cursor-keyring.yaml
+  d-migrate mcp cursor-key validate --cursor-keyring-file cursor-keyring.yaml
   ```
 
-- **Genehmigungspflichtige Jobs freigeben:** Wartet ein Job auf Freigabe
-  (`POLICY_REQUIRED`), stellen Sie mit `d-migrate mcp approval-grant issue …`
-  einen Grant in den `--approval-grants-file`-Store aus (siehe
-  [Anhang A.14](#a14-mcp-approval-grant-issue)).
 - **Zustand und Dateien:** `--mcp-state-dir` bestimmt, wo hochgeladene Inhalte
-  abgelegt werden; ohne Angabe ein temporäres, beim Stoppen gelöschtes
-  Verzeichnis.
-- Alle Optionen stehen in [Anhang A.13–A.16](#a13-mcp-serve). Das MCP-Protokoll,
-  der Tool-Katalog und die Resource-/Auth-Verträge stehen in der
-  [API-Referenz, Teil B](api-referenz.md#teil-b--mcp-server); Betrieb und
-  Härtung im [Administrationshandbuch](administrationshandbuch.md#6-mcp-server-betrieb).
+  und Artefakte abgelegt werden; ohne Angabe ein temporäres, beim Stoppen
+  gelöschtes Verzeichnis. `--mcp-state-orphan-retention` steuert das Aufräumen
+  verwaister Dateien beim Start (Standard 24h).
+- **Sicherheit:** `--auth-mode disabled` nur lokal; im Netzbetrieb JWT + HTTPS.
+  Verbindungen secret-frei über `--connection-config` referenzieren.
+- Alle Server-/Admin-Optionen: [Anhang A.13–A.16](#a13-mcp-serve). MCP-Protokoll,
+  Tool-Katalog und Resource-/Auth-Verträge: [API-Referenz, Teil B](api-referenz.md#teil-b--mcp-server);
+  Betrieb und Härtung: [Administrationshandbuch](administrationshandbuch.md#6-mcp-server-betrieb).
 
 ### 3.16 Geodaten (Spatial) modellieren und übertragen
 
@@ -1226,20 +1473,33 @@ einer DB per `schema reverse --include-triggers`/`--include-procedures`/
 
 **Vorgehen:**
 
-1. Beschreiben Sie das Objekt — der Rumpf (`body`) steht im Quell-Dialekt:
+1. Beschreiben Sie die Objekte — der Rumpf (`body`) steht im Quell-Dialekt,
+   den `source_dialect` benennt:
 
    ```yaml
+   functions:
+     order_count:
+       returns: { type: integer }
+       language: sql
+       body: "SELECT count(*) FROM orders;"
+       source_dialect: postgresql
+   procedures:
+     touch_order:
+       parameters: [ { name: p_id, type: integer, direction: in } ]
+       language: sql
+       body: "UPDATE orders SET updated_at = CURRENT_TIMESTAMP WHERE id = p_id;"
+       source_dialect: postgresql
    triggers:
-     trg_orders_updated_at:
+     trg_orders_touch:
        table: orders
        event: update
        timing: before
        for_each: row
-       body: "NEW.updated_at = CURRENT_TIMESTAMP;"
+       body: "SET NEW.updated_at = CURRENT_TIMESTAMP;"
        source_dialect: postgresql
    ```
 
-2. Erzeugen Sie das DDL mit `--split pre-post`, damit die Objekte in die
+2. Erzeugen Sie das DDL mit `--split pre-post`, damit Trigger/Routinen in die
    post-data-Phase kommen und einen Datenimport nicht stören:
 
    ```bash
@@ -1247,19 +1507,97 @@ einer DB per `schema reverse --include-triggers`/`--include-procedures`/
    ```
 
 **Ergebnis:** `pre-data` (Tabellen) und `post-data` (Trigger/Routinen) sind
-getrennt. Import-Reihenfolge: pre-data → Daten → post-data (siehe
-[3.7, Hinweise](#37-daten-in-eine-datenbank-laden-import)).
+getrennt (Import-Reihenfolge: pre-data → Daten → post-data, siehe
+[3.7, Hinweise](#37-daten-in-eine-datenbank-laden-import)). Der `source_dialect`
+entscheidet, ob ein Objekt sauber rendert oder blockiert.
+
+**PostgreSQL** (`source_dialect: postgresql` → sauber) — `schema.post-data.sql`:
+
+```sql
+CREATE OR REPLACE FUNCTION "order_count"() RETURNS INTEGER AS $$
+SELECT count(*) FROM orders;
+$$ LANGUAGE sql;
+
+CREATE OR REPLACE PROCEDURE "touch_order"("p_id" INTEGER) AS $$
+UPDATE orders SET updated_at = CURRENT_TIMESTAMP WHERE id = p_id;
+$$ LANGUAGE sql;
+
+-- Trigger = eigene Trigger-Funktion + CREATE TRIGGER
+CREATE OR REPLACE FUNCTION "trg_fn_trg_orders_touch"() RETURNS TRIGGER AS $$
+SET NEW.updated_at = CURRENT_TIMESTAMP;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "trg_orders_touch"
+    BEFORE UPDATE ON "orders"
+    FOR EACH ROW
+    EXECUTE FUNCTION "trg_fn_trg_orders_touch"();
+```
+
+**MySQL** (Objekte mit `source_dialect: mysql`, Body in MySQL-Syntax) — MySQL
+kapselt jedes Objekt in `DELIMITER`-Blöcke:
+
+```sql
+DELIMITER //
+CREATE FUNCTION `order_count`()
+RETURNS INTEGER
+BEGIN
+RETURN (SELECT count(*) FROM orders);
+END //
+DELIMITER ;
+
+DELIMITER //
+CREATE TRIGGER `trg_orders_touch`
+    BEFORE UPDATE ON `orders`
+    FOR EACH ROW
+BEGIN
+SET NEW.updated_at = NOW();
+END //
+DELIMITER ;
+```
+
+**SQLite** (`source_dialect: sqlite`) — Trigger werden unterstützt:
+
+```sql
+CREATE TRIGGER "trg_orders_touch"
+    AFTER UPDATE ON "orders"
+    FOR EACH ROW
+BEGIN
+UPDATE orders SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+```
+
+Functions und Procedures kennt SQLite **nicht** — sie werden übersprungen und im
+Report als **E054** vermerkt:
+
+```sql
+-- [E054] Function 'order_count' cannot be created via DDL in SQLite.
+-- Hint: Register custom functions programmatically via the SQLite C API or your application's SQLite driver.
+-- [E054] Procedure 'touch_order' cannot be created in SQLite.
+-- Hint: Implement procedure logic at the application level.
+```
+
+**Cross-Dialect** (Body in falschem `source_dialect`, z. B. PostgreSQL-Body →
+`--target mysql`): d-migrate übersetzt Routinen-Bodies **nicht** automatisch,
+überspringt das Objekt und schreibt einen **E053**-Hinweis statt DDL:
+
+```sql
+-- [E053] Trigger 'trg_orders_touch' was written for 'postgresql' and must be manually rewritten for MySQL.
+-- Hint: Rewrite the trigger body using MySQL-compatible syntax.
+```
 
 **Hinweise:**
 
-- **Cross-Dialect:** Der `body` ist Quell-Dialekt-SQL. Bei **gleichem**
-  Ziel-Dialekt wird er übernommen; bei Dialektwechsel sind nur einfache
-  Syntax-Transformationen automatisch. Komplexe Routinen müssen manuell
-  angepasst werden — nicht automatisch übersetzbare Inhalte melden **E053**.
-  (Das KI-gestützte `transform procedure` ist geplant, LF-017.)
+- **Body nicht auto-übersetzt:** Nur bei **passendem** `source_dialect` rendert
+  d-migrate sauber; sonst **E053** (manuell umschreiben). Einfache Transformationen
+  greifen, komplexe Bodies nicht. Das KI-gestützte `transform procedure` ist
+  geplant (LF-017).
+- **SQLite:** keine Stored Functions/Procedures (**E054**) — Logik gehört in die
+  Anwendung; Trigger sind unterstützt.
 - Ein Routine-Replace ohne bekannten alten Rumpf kann beim Rollback blockieren
   (siehe [3.5](#35-eine-schemaänderung-ausrollen-und-zurücknehmen)).
-- Vollständige Felder: [Anhang F.12](#f12-trigger) / [Anhang F.13](#f13-procedures-und-functions).
+- Reverse erfasst diese Objekte nur mit `--include-triggers`/`--include-procedures`/
+  `--include-functions` (oder `--include-all`). Vollständige Felder:
+  [Anhang F.12](#f12-trigger) / [Anhang F.13](#f13-procedures-und-functions).
 
 ### 3.19 Datenintegrität mit Constraints absichern
 
@@ -1611,6 +1949,9 @@ Fortschritt/Warnungen nach stderr.
 | `--include-all` | alle optionalen Objekttypen |
 | `--name` / `--version` | Name bzw. Version im erzeugten Schema überschreiben |
 
+> Beispiel einer erzeugten Schema-Datei (Tabelle + Function + View + Trigger):
+> siehe [3.3](#33-eine-bestehende-datenbank-übernehmen-reverse-engineering).
+
 #### A.6 `schema migrate`
 
 | Option | Beschreibung |
@@ -1636,6 +1977,9 @@ Fortschritt/Warnungen nach stderr.
 | `--strict-gap-operations` | Operationen mit Sichtbarkeitslücke blocken |
 | `--routine-capability` | Per-Routine-Capability-Override (wiederholbar) |
 | `--debug-body` | UNSAFE: unmaskierte Routine-Bodies im Report |
+
+> Beispiel-Ausgaben (`up.sql` + Plan-Report) eines Trockenlaufs: siehe
+> [3.5](#35-eine-schemaänderung-ausrollen-und-zurücknehmen).
 
 #### A.7 `schema rollback`
 
