@@ -15,12 +15,12 @@ Daten-Profiling ergänzt d-migrate um die Fähigkeit, relationale Datenbestände
 **Fachlicher Kontext im Migrationsprozess:**
 
 ```
-  ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+  ┌───────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
   │ Profiling │────▶│ Schema   │────▶│ DDL      │────▶│ Data     │────▶│ Data     │
   │ (NEU)     │     │ Validate │     │ Generate │     │ Export   │     │ Import   │
-  └──────────┘     └──────────┘     └──────────┘     └──────────┘     └──────────┘
+  └───────────┘     └──────────┘     └──────────┘     └──────────┘     └──────────┘
        ▲                                                                    │
-       │              Migrationsvorbereitung                                 │
+       │              Migrationsvorbereitung                                │
        └────────────────────────────────────────────────────────────────────┘
                               Feedback-Loop
 ```
@@ -82,15 +82,15 @@ d-migrate/
 
 Alle Profiling-Klassen liegen unter `dev.dmigrate.profiling.*`, analog zu den bestehenden Konventionen (`dev.dmigrate.core.*`, `dev.dmigrate.driver.*`):
 
-| Paket                                      | Inhalt                                                                                                                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Paket                                      | Inhalt                                                                                                                                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dev.dmigrate.profiling.model`             | `DatabaseProfile`, `TableProfile`, `ColumnProfile`, `NumericStats`, `TemporalStats`, `PatternStats`, `SpatialStats`, `BoundingBox`, `ValueFrequency`, `TargetTypeCompatibility`, `ProfileWarning` |
-| `dev.dmigrate.profiling.model.constraints` | `PrimaryKeyProfile`, `ForeignKeyProfile`, `UniqueConstraintProfile`                                                                                                |
-| `dev.dmigrate.profiling.types`             | `LogicalType`, `TargetLogicalType`, `Severity`, `WarningCode`                                                                                                      |
-| `dev.dmigrate.profiling.rules`             | `ColumnWarningRule`, `TableWarningRule`, `WarningEvaluator`                                                                                                        |
-| `dev.dmigrate.profiling.model.structural`  | `StructuralFinding`, `StructuralFindingKind`, `NormalizationProposal`, `ProposedEntity`, `ProposedLookup`, `UnpivotCandidate`                                      |
-| `dev.dmigrate.profiling.port`              | `SchemaIntrospectionPort`, `ProfilingDataPort`, `LogicalTypeResolverPort`                                                                                          |
-| `dev.dmigrate.profiling.service`           | `ProfileDatabaseService`, `ProfileTableService`, `QueryProfilingService`                                                                                           |
+| `dev.dmigrate.profiling.model.constraints` | `PrimaryKeyProfile`, `ForeignKeyProfile`, `UniqueConstraintProfile`                                                                                                                               |
+| `dev.dmigrate.profiling.types`             | `LogicalType`, `TargetLogicalType`, `Severity`, `WarningCode`                                                                                                                                     |
+| `dev.dmigrate.profiling.rules`             | `ColumnWarningRule`, `TableWarningRule`, `WarningEvaluator`                                                                                                                                       |
+| `dev.dmigrate.profiling.model.structural`  | `StructuralFinding`, `StructuralFindingKind`, `NormalizationProposal`, `ProposedEntity`, `ProposedLookup`, `UnpivotCandidate`                                                                     |
+| `dev.dmigrate.profiling.port`              | `SchemaIntrospectionPort`, `ProfilingDataPort`, `LogicalTypeResolverPort`                                                                                                                         |
+| `dev.dmigrate.profiling.service`           | `ProfileDatabaseService`, `ProfileTableService`, `QueryProfilingService`                                                                                                                          |
 
 ### 3.3 Wiederverwendung bestehender Infrastruktur
 
@@ -107,13 +107,13 @@ Die größte Integrationsersparnis liegt in der Wiederverwendung der bestehenden
 
 **Nicht wiederverwendbar** (muss neu implementiert werden):
 
-| Neue Komponente                                           | Grund                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Profiling-JDBC-Adapter für Aggregate-Queries              | Existiert nicht — `DataReader` streamt Zeilen, bietet aber keine Aggregat-/Profiling-Abfragen             |
-| Schema-Introspection-Projektion mit rohem `dbType`        | Das neutrale Reverse-Engineering-Modell reicht für Profiling nicht aus, weil deklarierte DB-Typen erhalten bleiben müssen |
-| `LogicalTypeResolver` pro Dialekt                         | Mapping von DB-Typen auf `LogicalType` — existiert nicht, da d-migrate mit `NeutralType` aus YAML arbeitet |
-| Warning-Rule-Engine                                       | Fachliche Regeln für Datenqualität sind ein neues Konzept                                                  |
-| Normalisierungsanalyse (FD-Discovery)                     | Functional-Dependency-Erkennung ist ein neues Konzept — kein bestehendes Pendant in d-migrate              |
+| Neue Komponente                                    | Grund                                                                                                                     |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Profiling-JDBC-Adapter für Aggregate-Queries       | Existiert nicht — `DataReader` streamt Zeilen, bietet aber keine Aggregat-/Profiling-Abfragen                             |
+| Schema-Introspection-Projektion mit rohem `dbType` | Das neutrale Reverse-Engineering-Modell reicht für Profiling nicht aus, weil deklarierte DB-Typen erhalten bleiben müssen |
+| `LogicalTypeResolver` pro Dialekt                  | Mapping von DB-Typen auf `LogicalType` — existiert nicht, da d-migrate mit `NeutralType` aus YAML arbeitet                |
+| Warning-Rule-Engine                                | Fachliche Regeln für Datenqualität sind ein neues Konzept                                                                 |
+| Normalisierungsanalyse (FD-Discovery)              | Functional-Dependency-Erkennung ist ein neues Konzept — kein bestehendes Pendant in d-migrate                             |
 
 Die Profiling-Introspection soll daher auf derselben JDBC-Metadatenbasis aufbauen wie das spätere Reverse-Engineering, aber nicht blind 1:1 das bestehende `SchemaReader`-Interface spiegeln: Profiling braucht zusätzlich den rohen Datenbanktyp (`dbType`) und weitere Profiling-spezifische Metadaten.
 
@@ -295,10 +295,10 @@ enum class StructuralFindingKind {
 
 **Erkennungslogik** (Kotlin Regex auf Spaltennamen, kein DB-Zugriff nötig):
 
-| Muster | Beispiel | Finding |
-| ------ | -------- | ------- |
-| `<prefix>_<N>` mit N = 1, 2, 3... | `Wert_1`, `Wert_2`, `Wert_3` | `REPEATED_COLUMN_GROUP` |
-| `<prefix><N>` ohne Trenner | `addr1`, `addr2`, `addr3` | `REPEATED_COLUMN_GROUP` |
+| Muster                                                    | Beispiel                                   | Finding                 |
+| --------------------------------------------------------- | ------------------------------------------ | ----------------------- |
+| `<prefix>_<N>` mit N = 1, 2, 3...                         | `Wert_1`, `Wert_2`, `Wert_3`               | `REPEATED_COLUMN_GROUP` |
+| `<prefix><N>` ohne Trenner                                | `addr1`, `addr2`, `addr3`                  | `REPEATED_COLUMN_GROUP` |
 | `<prefix>_<suffix>` mit gleichem Präfix und ≥ 3 Varianten | `phone_home`, `phone_work`, `phone_mobile` | `PARALLEL_COLUMN_GROUP` |
 
 **Beispiel-Ausgabe** (JSON):
@@ -323,21 +323,21 @@ Die namenbasierte Erkennung ist deterministisch und braucht keinen DB-Zugriff �
 
 **Deterministisch per Code möglich:**
 
-| Technik | Was sie erkennt | Beispiel |
-| ------- | --------------- | -------- |
-| Repeated-Column-Unpivot | `Wert_1`, `Wert_2`, `Wert_3` → Kindtabelle mit Laufnummer | Mechanisch, keine Semantik nötig |
-| Functional-Dependency-Discovery (FD) | Spalte A bestimmt Spalte B → eigene Entität | Algorithmen wie HyFD, TANE — arbeiten auf echten Daten |
-| Low-Cardinality-Extraktion | Spalte mit wenigen Werten → Lookup-Tabelle | `status` mit 3 Werten → `status`-Referenztabelle |
-| Kookkurrenz-Analyse | Spaltengruppen mit identischem Werteverlauf → gehören zusammen | `kunde_name` + `kunde_email` immer gleich bei gleichem `kunde_id` |
+| Technik                              | Was sie erkennt                                                | Beispiel                                                          |
+| ------------------------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Repeated-Column-Unpivot              | `Wert_1`, `Wert_2`, `Wert_3` → Kindtabelle mit Laufnummer      | Mechanisch, keine Semantik nötig                                  |
+| Functional-Dependency-Discovery (FD) | Spalte A bestimmt Spalte B → eigene Entität                    | Algorithmen wie HyFD, TANE — arbeiten auf echten Daten            |
+| Low-Cardinality-Extraktion           | Spalte mit wenigen Werten → Lookup-Tabelle                     | `status` mit 3 Werten → `status`-Referenztabelle                  |
+| Kookkurrenz-Analyse                  | Spaltengruppen mit identischem Werteverlauf → gehören zusammen | `kunde_name` + `kunde_email` immer gleich bei gleichem `kunde_id` |
 
 **Braucht LLM oder menschliche Bewertung (§10):**
 
-| Aspekt | Warum Code nicht reicht |
-| ------ | ----------------------- |
-| Entitäten benennen | Code erkennt die Gruppe `kunde_name, kunde_email, kunde_tel` — aber "Kunde" als Tabellenname ist Semantik |
-| Fachliche Bedeutung | Was bedeuten `Wert_1..3`? Messwerte, Preisstufen, Bewertungen? |
-| Beziehungstypen | 1:N oder M:N? Daten können es andeuten, aber nicht sicher entscheiden |
-| Mehrdeutige FDs | Bei unsauberen Daten: echte Abhängigkeit oder Zufall? |
+| Aspekt              | Warum Code nicht reicht                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| Entitäten benennen  | Code erkennt die Gruppe `kunde_name, kunde_email, kunde_tel` — aber "Kunde" als Tabellenname ist Semantik |
+| Fachliche Bedeutung | Was bedeuten `Wert_1..3`? Messwerte, Preisstufen, Bewertungen?                                            |
+| Beziehungstypen     | 1:N oder M:N? Daten können es andeuten, aber nicht sicher entscheiden                                     |
+| Mehrdeutige FDs     | Bei unsauberen Daten: echte Abhängigkeit oder Zufall?                                                     |
 
 Die Normalisierungsanalyse folgt dem zweistufigen Ansatz aus §10: Code liefert den strukturellen Vorschlag, LLM (optional) ergänzt Benennung und fachliche Einordnung.
 
@@ -386,7 +386,7 @@ Die Analyse ist optional und wird nur ausgeführt, wenn explizit angefordert (CL
 | `DATETIME`              | `datetime`, `time`                                |
 | `BINARY`                | `binary`                                          |
 | `JSON`                  | `json`, `array`                                   |
-| `GEOMETRY`              | `geometry`                                         |
+| `GEOMETRY`              | `geometry`                                        |
 | `UNKNOWN`               | (kein Mapping)                                    |
 
 `LogicalType` ist gröber, weil es den *beobachteten Dateninhalt* klassifiziert, nicht die *deklarierte Struktur*. Eine Spalte vom Typ `VARCHAR(36)` kann `LogicalType.STRING` sein, obwohl die Daten UUID-Muster zeigen — die `PatternStats` machen das sichtbar.
@@ -545,10 +545,10 @@ class WarningEvaluator(
 
 Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeResolverPort`. Die Schema-Introspection teilt sich die JDBC-Metadatenbasis mit dem Reverse-Engineering aus 0.6.0, liefert aber ein eigenes Profiling-Projektionsmodell (§5.1).
 
-| Dialekt    | Aggregate-Queries                   | Typ-Resolver                    |
-| ---------- | ----------------------------------- | ------------------------------- |
-| PostgreSQL | Standard-SQL-Aggregate + `pg_stats` | PG-Typen → `LogicalType`        |
-| MySQL      | Standard-SQL-Aggregate              | MySQL-Typen → `LogicalType`     |
+| Dialekt    | Aggregate-Queries                                                                  | Typ-Resolver                    |
+| ---------- | ---------------------------------------------------------------------------------- | ------------------------------- |
+| PostgreSQL | Standard-SQL-Aggregate + `pg_stats`                                                | PG-Typen → `LogicalType`        |
+| MySQL      | Standard-SQL-Aggregate                                                             | MySQL-Typen → `LogicalType`     |
 | SQLite     | Standard-SQL-Aggregate + Kotlin-Fallbacks für fehlende Funktionen (z. B. `stddev`) | SQLite Affinity → `LogicalType` |
 
 ### 6.2 Profilierungsablauf
@@ -643,16 +643,16 @@ Für SQLite gilt: `AVG`, `SUM`, `MIN`, `MAX` sind direkt verfügbar; Kennzahlen 
 d-migrate data profile [Optionen]
 ```
 
-| Flag       | Typ                   | Pflicht                | Beschreibung                               |
-| ---------- | --------------------- | ---------------------- | ------------------------------------------ |
-| `--source` | URL / Connection-Name | Ja                     | Quelldatenbank                             |
-| `--format` | `json` / `yaml`       | Nein (Default: `json`) | Ausgabeformat                              |
-| `--output` | Dateipfad             | Nein (Default: stdout) | Ausgabedatei                               |
-| `--tables` | Komma-Liste           | Nein (Default: alle)   | Einschränkung auf bestimmte Tabellen       |
-| `--schema` | String                | Nein                   | Datenbankschema (PostgreSQL)               |
-| `--top-n`  | Int                   | Nein (Default: 10)     | Anzahl Top-Values pro Spalte; steuert auch die sample-basierte `PatternStats`-Abdeckung |
-| `--query`  | SQL-String            | Nein                   | Einzelnes Query profilieren statt Tabellen |
-| `--analyze-normalization` | Flag       | Nein (Default: aus)    | FD-Discovery und Normalisierungsvorschläge aktivieren (§4.5) |
+| Flag                      | Typ                   | Pflicht                | Beschreibung                                                                            |
+| ------------------------- | --------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
+| `--source`                | URL / Connection-Name | Ja                     | Quelldatenbank                                                                          |
+| `--format`                | `json` / `yaml`       | Nein (Default: `json`) | Ausgabeformat                                                                           |
+| `--output`                | Dateipfad             | Nein (Default: stdout) | Ausgabedatei                                                                            |
+| `--tables`                | Komma-Liste           | Nein (Default: alle)   | Einschränkung auf bestimmte Tabellen                                                    |
+| `--schema`                | String                | Nein                   | Datenbankschema (PostgreSQL)                                                            |
+| `--top-n`                 | Int                   | Nein (Default: 10)     | Anzahl Top-Values pro Spalte; steuert auch die sample-basierte `PatternStats`-Abdeckung |
+| `--query`                 | SQL-String            | Nein                   | Einzelnes Query profilieren statt Tabellen                                              |
+| `--analyze-normalization` | Flag                  | Nein (Default: aus)    | FD-Discovery und Normalisierungsvorschläge aktivieren (§4.5)                            |
 
 `--query` ist exklusiv zu `--tables` und `--analyze-normalization`. `--schema` wirkt nur beim Tabellen-/Datenbank-Profiling, nicht im Query-Modus.
 
@@ -679,13 +679,13 @@ d-migrate data profile --source legacy-db --tables master_data --analyze-normali
 
 Folgt der bestehenden CLI-Matrix für Datenpfade:
 
-| Code | Bedeutung                                                |
-| ---- | -------------------------------------------------------- |
-| 0    | Profiling erfolgreich                                    |
-| 2    | CLI-Fehler (fehlende Flags, ungültige Optionen)          |
-| 4    | Verbindungsfehler (DB nicht erreichbar)                  |
+| Code | Bedeutung                                                                            |
+| ---- | ------------------------------------------------------------------------------------ |
+| 0    | Profiling erfolgreich                                                                |
+| 2    | CLI-Fehler (fehlende Flags, ungültige Optionen)                                      |
+| 4    | Verbindungsfehler (DB nicht erreichbar)                                              |
 | 5    | Profiling-Ausführung fehlgeschlagen (z. B. Query, Aggregate, Normalisierungsanalyse) |
-| 7    | Konfigurations-/URL-/Registry-Fehler                     |
+| 7    | Konfigurations-/URL-/Registry-Fehler                                                 |
 
 ---
 
@@ -706,17 +706,17 @@ RuntimeException
 
 ## 9. Teststrategie
 
-| Ebene                | Ziel                                                                      | Werkzeug                          |
-| -------------------- | ------------------------------------------------------------------------- | --------------------------------- |
-| **Unit (Domain)**    | `WarningEvaluator`, `ColumnWarningRule`, `TableWarningRule`, Typ-Resolver | JUnit 5 + Kotest Assertions       |
-| **Unit (Service)**   | Orchestrierungslogik, korrekte Port-Aufrufe                               | JUnit 5 + MockK                   |
-| **Integration (DB)** | SQLite-Adapter gegen echte In-Memory-DB                                   | JUnit 5 + SQLite `:memory:`       |
-| **Integration (DB)** | PostgreSQL/MySQL-Adapter                                                  | Testcontainers (PG 16, MySQL 8.0) |
-| **End-to-End**       | Komplette Pipeline: DB → Profil → JSON, CLI Round-Trip                    | JUnit 5 + Testdatenbank           |
+| Ebene                | Ziel                                                                      | Werkzeug                                                                                      |
+| -------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Unit (Domain)**    | `WarningEvaluator`, `ColumnWarningRule`, `TableWarningRule`, Typ-Resolver | JUnit 5 + Kotest Assertions                                                                   |
+| **Unit (Service)**   | Orchestrierungslogik, korrekte Port-Aufrufe                               | JUnit 5 + MockK                                                                               |
+| **Integration (DB)** | SQLite-Adapter gegen echte In-Memory-DB                                   | JUnit 5 + SQLite `:memory:`                                                                   |
+| **Integration (DB)** | PostgreSQL/MySQL-Adapter                                                  | Testcontainers (PG 16, MySQL 8.0)                                                             |
+| **End-to-End**       | Komplette Pipeline: DB → Profil → JSON, CLI Round-Trip                    | JUnit 5 + Testdatenbank                                                                       |
 | **Determinismus**    | Identische Eingabe → identische Ausgabe                                   | `java.time.Clock.fixed(...)` und deterministische Sortierung (`ORDER BY cnt DESC, value ASC`) |
-| **Strukturanalyse**  | Regex-Patterns für `REPEATED_COLUMN_GROUP`, `PARALLEL_COLUMN_GROUP`       | JUnit 5 (parametrisiert)          |
-| **Normalisierung**   | FD-Discovery, Lookup-Erkennung, Unpivot-Kandidaten                       | JUnit 5 + SQLite `:memory:`       |
-| **Spatial**          | Bounding Box, Geometry Types, SRID, Validierung                          | Testcontainers (PostGIS), SpatiaLite |
+| **Strukturanalyse**  | Regex-Patterns für `REPEATED_COLUMN_GROUP`, `PARALLEL_COLUMN_GROUP`       | JUnit 5 (parametrisiert)                                                                      |
+| **Normalisierung**   | FD-Discovery, Lookup-Erkennung, Unpivot-Kandidaten                        | JUnit 5 + SQLite `:memory:`                                                                   |
+| **Spatial**          | Bounding Box, Geometry Types, SRID, Validierung                           | Testcontainers (PostGIS), SpatiaLite                                                          |
 
 **Ziel**: >= 90% Testabdeckung pro Modul. I/O-Glue-Code wird über Port-Abstraktion testbar gemacht, nicht von der Coverage ausgenommen.
 
@@ -773,10 +773,10 @@ Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milest
 
 ## 12. Design-Entscheidungen
 
-| #   | Frage                                                            | Entscheidung                            | Begründung                                                                                                                  |
-| --- | ---------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Serialisierung: Jackson oder kotlinx.serialization?              | **Jackson**                             | Konsistenz mit bestehendem d-migrate; kein zweites Serialisierungs-Framework einführen                                      |
-| 2   | `LogicalType` als eigener Enum oder auf `NeutralType` mappen?    | **Eigener Enum**                        | Andere Granularität als `NeutralType` — klassifiziert beobachteten Dateninhalt, nicht deklarierte Struktur (§4.6)           |
-| 3   | Profiling als eigenes Gradle-Modul oder in `hexagon/core`?       | **Eigenes Modul** (`hexagon/profiling`) | Klare Abgrenzung; Core bleibt schlank; Profiling hat eigenes Domain-Modell und eigene Ports                                 |
-| 4   | LLM-Erweiterung in gleicher Phase oder bewusst getrennt?         | **Getrennt**                            | Kern-Profiling erst stabil und getestet, dann semantische Analyse als Aufbaustufe (§10)                                     |
-| 5   | `PatternStats`-Erkennung: SQL-basiert oder in Kotlin nach Fetch? | **Kotlin Regex auf Top-Values-Sample** | Portabler über alle Dialekte; SQLite hat kein natives REGEXP; die Statistik ist explizit sample-basiert und auf die durch `topValues` abgedeckten Zeilen begrenzt |
+| #   | Frage                                                            | Entscheidung                            | Begründung                                                                                                                                                        |
+| --- | ---------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Serialisierung: Jackson oder kotlinx.serialization?              | **Jackson**                             | Konsistenz mit bestehendem d-migrate; kein zweites Serialisierungs-Framework einführen                                                                            |
+| 2   | `LogicalType` als eigener Enum oder auf `NeutralType` mappen?    | **Eigener Enum**                        | Andere Granularität als `NeutralType` — klassifiziert beobachteten Dateninhalt, nicht deklarierte Struktur (§4.6)                                                 |
+| 3   | Profiling als eigenes Gradle-Modul oder in `hexagon/core`?       | **Eigenes Modul** (`hexagon/profiling`) | Klare Abgrenzung; Core bleibt schlank; Profiling hat eigenes Domain-Modell und eigene Ports                                                                       |
+| 4   | LLM-Erweiterung in gleicher Phase oder bewusst getrennt?         | **Getrennt**                            | Kern-Profiling erst stabil und getestet, dann semantische Analyse als Aufbaustufe (§10)                                                                           |
+| 5   | `PatternStats`-Erkennung: SQL-basiert oder in Kotlin nach Fetch? | **Kotlin Regex auf Top-Values-Sample**  | Portabler über alle Dialekte; SQLite hat kein natives REGEXP; die Statistik ist explizit sample-basiert und auf die durch `topValues` abgedeckten Zeilen begrenzt |
