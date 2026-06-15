@@ -28,6 +28,11 @@ dependencies {
     // Parquet Cut A S0b: DataChunkWriter.begin(table, columns)-Bridge-Extension.
     testImplementation(testFixtures(project(":hexagon:ports-write")))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+
+    // Vertrags-Guard: validiert ein Voll-Feature-Fixture gegen spec/schema.json
+    // (SchemaJsonContractTest), damit das handgepflegte JSON-Schema nicht hinter
+    // neutral-model-spec.md / dem Parser zurueckfaellt.
+    testImplementation("com.networknt:json-schema-validator:1.5.4")
 }
 
 kover {

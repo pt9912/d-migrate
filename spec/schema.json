@@ -97,7 +97,24 @@
           "type": "array",
           "items": { "$ref": "#/$defs/constraint" }
         },
-        "partitioning": { "$ref": "#/$defs/partitioning" }
+        "partitioning": { "$ref": "#/$defs/partitioning" },
+        "metadata": { "$ref": "#/$defs/tableMetadata" }
+      }
+    },
+    "tableMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Physische Tabellen-Metadaten (ab 0.6.0), primaer reverse-generiert",
+      "properties": {
+        "engine": {
+          "type": ["string", "null"],
+          "description": "MySQL-Tabellen-Engine (z.B. InnoDB)"
+        },
+        "without_rowid": {
+          "type": "boolean",
+          "default": false,
+          "description": "SQLite WITHOUT ROWID-Tabelle"
+        }
       }
     },
     "column": {
@@ -110,9 +127,9 @@
           "enum": [
             "identifier", "text", "char", "integer", "smallint", "biginteger",
             "float", "decimal", "boolean", "datetime", "date", "time",
-            "uuid", "json", "xml", "binary", "email", "enum", "array"
+            "uuid", "json", "xml", "binary", "email", "enum", "array", "geometry"
           ],
-          "description": "Einer der 18 neutralen Typen"
+          "description": "Einer der neutralen Typen (vollstaendige Liste: neutral-model-spec.md Abschnitt 3.1)"
         },
         "required": {
           "type": "boolean",
@@ -180,6 +197,20 @@
         "element_type": {
           "type": "string",
           "description": "Nur bei type: array (Pflicht)"
+        },
+        "geometry_type": {
+          "type": "string",
+          "enum": [
+            "geometry", "point", "linestring", "polygon",
+            "multipoint", "multilinestring", "multipolygon", "geometrycollection"
+          ],
+          "default": "geometry",
+          "description": "Nur bei type: geometry (Spatial, ab 0.5.5)"
+        },
+        "srid": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Nur bei type: geometry — Spatial Reference System Identifier (> 0)"
         },
         "references": { "$ref": "#/$defs/reference" }
       }
@@ -385,8 +416,23 @@
             "type": "array",
             "items": { "type": "string" }
           }
-        }
+        },
+        "projection_complete": {
+          "type": "boolean",
+          "default": true,
+          "description": "ab 0.6.0: nur serialisiert, wenn abweichend von true"
+        },
+        "table_projection_status": { "$ref": "#/$defs/projectionStatus" },
+        "column_projection_status": { "$ref": "#/$defs/projectionStatus" },
+        "routine_projection_status": { "$ref": "#/$defs/projectionStatus" }
       }
+    },
+    "projectionStatus": {
+      "type": "string",
+      "enum": [
+        "complete", "empty_verified", "incomplete_privilege",
+        "incomplete_object_missing", "unknown"
+      ]
     },
     "procedure": {
       "type": "object",
@@ -443,6 +489,24 @@
           "enum": ["on_demand", "on_commit"]
         },
         "query": { "type": "string" },
+        "columns": {
+          "type": "array",
+          "description": "Optionale sichtbare View-Signatur",
+          "items": {
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "type": { "type": "string" }
+                }
+              }
+            ]
+          }
+        },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }
       }
@@ -467,7 +531,10 @@
           "enum": ["row", "statement"],
           "default": "row"
         },
-        "condition": { "type": "string" },
+        "condition": {
+          "type": ["string", "null"],
+          "description": "Optionale WHEN-Bedingung; null bedeutet keine Bedingung"
+        },
         "body": { "type": "string" },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }
@@ -492,7 +559,12 @@
           "type": "boolean",
           "default": false
         },
-        "cache": { "type": "integer" }
+        "cache": { "type": "integer" },
+        "preserve_current_value": {
+          "type": "boolean",
+          "default": false,
+          "description": "0.9.7: Runtime-Wert ueber Migration retten (opt-in)"
+        }
       }
     }
   }
