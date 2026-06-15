@@ -124,10 +124,9 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.1.0, siehe
-# https://github.com/pt9912/d-check/releases/tag/v0.1.0); Konfiguration
-# in .d-check.yml. Ersetzt scripts/verify-doc-refs.sh (gelöscht).
-D_CHECK_IMAGE ?= ghcr.io/pt9912/d-check@sha256:5710b54bc4712af9769d7a820fd3fe62621451daeb43f3e9737b382099137b9e
+# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.9.0, siehe
+# https://github.com/pt9912/d-check/releases/tag/v0.9.0); 
+D_CHECK_IMAGE ?= ghcr.io/pt9912/d-check@sha256:5bccf9fb3d1c54639dec3a541771d2ea43db9a0c1c58c28b3f12f20d38133d1b
 
 docs-check: coverage-excludes-check
 	$(DOCKER) run --rm -v "$(CURDIR)":/repo:ro $(D_CHECK_IMAGE)
