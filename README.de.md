@@ -444,6 +444,11 @@ maßgeblich.
 Detaillierte Dokumentation findest du in [`docs/`](docs/) und
 [`spec/`](spec/):
 
+- [Dokumentationsübersicht](docs/user/README.md)
+  - [Anwenderhandbuch](docs/user/anwenderhandbuch.md)
+  - [Administrationshandbuch](docs/user/administrationshandbuch.md)
+  - [Migrations-Leitfaden](docs/user/migrations-leitfaden.md)
+  - [API-Referenz (CLI + MCP)](docs/user/api-referenz.md)
 - [Quick Start Guide (Deutsch)](docs/user/guide.md)
 - [Entwurf](spec/design.md) / [Architektur](spec/architecture.md)
 - [Schema-YAML-Referenz](spec/schema-reference.md)

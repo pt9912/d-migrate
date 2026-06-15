@@ -430,6 +430,11 @@ documents.
 Detailed documentation lives in [`docs/`](docs/) and
 [`spec/`](spec/):
 
+- [Documentation overview (German)](docs/user/README.md)
+  - [Anwenderhandbuch](docs/user/anwenderhandbuch.md)
+  - [Administrationshandbuch](docs/user/administrationshandbuch.md)
+  - [Migrations-Leitfaden](docs/user/migrations-leitfaden.md)
+  - [API-Referenz (CLI + MCP)](docs/user/api-referenz.md)
 - [Quick Start Guide (German)](docs/user/guide.md)
 - [Design](spec/design.md) /
   [Architecture](spec/architecture.md)
