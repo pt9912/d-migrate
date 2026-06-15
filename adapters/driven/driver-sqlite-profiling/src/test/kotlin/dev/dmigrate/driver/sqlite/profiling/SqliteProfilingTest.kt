@@ -27,6 +27,28 @@ private class InMemoryPool : ConnectionPool {
     override fun close() = realConn.close()
 }
 
+/**
+ * Modelliert einen HikariCP-Pool mit `maximumPoolSize=1` (SQLite-Default):
+ * Ein zweiter, gleichzeitiger [borrow] wird abgewiesen, statt eine zweite
+ * physische Verbindung zu öffnen. Reproduziert damit die Pool-Erschöpfung,
+ * die der [InMemoryPool] (gibt dieselbe Verbindung beliebig oft heraus) NICHT
+ * sichtbar macht — siehe Regressionstest für nested borrow in `topValues`.
+ */
+private class StrictSingleBorrowPool : ConnectionPool {
+    private val realConn = DriverManager.getConnection("jdbc:sqlite::memory:")
+    private var active = false
+    override val dialect = DatabaseDialect.SQLITE
+    override fun borrow(): Connection {
+        check(!active) { "pool exhausted (maximumPoolSize=1): a connection is already borrowed" }
+        active = true
+        return object : Connection by realConn {
+            override fun close() { active = false }
+        }
+    }
+    override fun activeConnections() = if (active) 1 else 0
+    override fun close() = realConn.close()
+}
+
 class SqliteProfilingTest : FunSpec({
 
     val pool = InMemoryPool()
@@ -196,5 +218,23 @@ class SqliteProfilingTest : FunSpec({
         }
         data.rowCount(pool, "unicode_test") shouldBe 1
         data.columnMetrics(pool, "unicode_test", "nаme", "TEXT").nonNullCount shouldBe 1
+    }
+
+    test("topValues borgt nur eine Connection — kein nested borrow bei Pool-Size 1 (Regression)") {
+        StrictSingleBorrowPool().use { strictPool ->
+            strictPool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("""CREATE TABLE single_conn (id INTEGER PRIMARY KEY, status TEXT)""")
+                    stmt.execute("""INSERT INTO single_conn (status) VALUES ('a'), ('b'), ('a')""")
+                }
+            }
+            // Vor dem Fix borgt topValues intern via rowCount(pool, ...) eine
+            // ZWEITE Connection und scheitert hier an der Pool-Size-1-Grenze
+            // (im Betrieb: HikariCP-Timeout „Connection is not available").
+            val top = data.topValues(strictPool, "single_conn", "status", 5, null)
+            top shouldHaveSize 2
+            top.first().value shouldBe "a"
+            top.first().count shouldBe 2
+        }
     }
 })

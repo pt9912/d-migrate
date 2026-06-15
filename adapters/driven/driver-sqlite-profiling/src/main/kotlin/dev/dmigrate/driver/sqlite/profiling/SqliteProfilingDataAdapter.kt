@@ -87,7 +87,9 @@ class SqliteProfilingDataAdapter(
         val t = qt(table, schema)
         val c = qi(column)
         return withJdbc(pool) { jdbc ->
-            val total = rowCount(pool, table, schema).toDouble()
+            // Zählung auf DERSELBEN geborgten Connection — kein zweiter
+            // rowCount(pool, ...)-borrow (sonst Pool-Erschöpfung bei size=1).
+            val total = (jdbc.querySingle("SELECT count(*) as cnt FROM $t")!!["cnt"] as Number).toLong().toDouble()
             if (total == 0.0) return@withJdbc emptyList()
             val rows = jdbc.queryList("""
                 SELECT $c as val, count(*) as cnt
