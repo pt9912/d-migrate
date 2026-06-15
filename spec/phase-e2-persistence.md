@@ -4,7 +4,7 @@
 > **Geltung**: Phase-E2 (`docs/planning/done/ImpPlan-0.9.6-E2.md`)
 > **Cross-Refs**:
 > [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Atomicity-Verträge der Ports;
-> [`spec/mcp-server.md`](./mcp-server.md) Phase-E-Sektion — Wire-Verträge;
+> [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge;
 > [`spec/hexagonal-port.md`](./hexagonal-port.md);
 > `docs/planning/done/ImpPlan-0.9.6-E2.md` §3–§9
 
@@ -360,5 +360,5 @@ Idempotency-Cleanup.
 - [Plan §4 Schema-Skizze](../docs/planning/done/ImpPlan-0.9.6-E2.md#4-schema-skizze-v1__phase_e_initialsql)
 - [Plan §6 SQL-Patterns pro Port](../docs/planning/done/ImpPlan-0.9.6-E2.md#6-sql-patterns-pro-port)
 - [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Port-Verträge (was muss atomar sein)
-- [`spec/mcp-server.md`](./mcp-server.md) Phase-E-Sektion — Wire-Verträge
+- [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge
 - [`spec/connection-config-spec.md`](./connection-config-spec.md) — Connection-Pool-Konfiguration

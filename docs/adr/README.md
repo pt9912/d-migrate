@@ -61,3 +61,5 @@ argumentiert werden.
 | 0005 | [`writerFactoryBuilder`-Invariante: Output-Mode statt Output-Pfad](0005-writerfactorybuilder-output-mode-invariant.md) | accepted |
 | 0006 | [Wiring-Drift-Exception-Familie: `IllegalStateException` als gemeinsamer Typ](0006-wiring-drift-exception-family.md) | accepted |
 | 0007 | [MCP-Parquet-Isolation: vier Verteidigungslinien](0007-mcp-parquet-isolation-defense-in-depth.md) | accepted |
+| 0008 | [MCP-Transport ohne SSE-/Server→Client-Push](0008-mcp-no-sse-push.md) | accepted |
+| 0009 | [MCP-Server als OAuth-Resource-Server (kein eigener Authorization Server, keine DCR)](0009-mcp-resource-server-no-auth-server.md) | accepted |

@@ -2,7 +2,7 @@
 
 > **Status**: aktiv (2026-05-05)
 > **Geltung**: Phase-E (`ImpPlan-0.9.6-E.md`)
-> **Cross-Refs**: [`spec/mcp-server.md`](./mcp-server.md) Phase-E-Sektion;
+> **Cross-Refs**: [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy";
 > [`spec/hexagonal-port.md`](./hexagonal-port.md);
 > `docs/planning/done/ImpPlan-0.9.6-E.md` §7.x
 
@@ -145,5 +145,5 @@ jeweiligen Abschnitt oben dokumentierten Race-Folgen.
 - [Plan §7.2 Job-Orchestrierung](../docs/planning/done/ImpPlan-0.9.6-E.md#72-ap-e2-job-orchestrierung-einfuehren)
 - [Plan §7.5 Genehmigten Retry atomar committen](../docs/planning/done/ImpPlan-0.9.6-E.md#75-ap-e5-genehmigten-retry-atomar-committen)
 - [Plan §7.9 Quotas, Rate Limits, Timeouts](../docs/planning/done/ImpPlan-0.9.6-E.md#79-ap-e9-quotas-rate-limits-und-timeouts)
-- [`spec/mcp-server.md` Phase-E-Sektion](./mcp-server.md)
+- [`spec/mcp-server.md` Abschnitt „Async-Jobs, Idempotency, Policy"](./mcp-server.md)
 - Persistente Implementoren siehe [`spec/phase-e2-persistence.md`](./phase-e2-persistence.md)
