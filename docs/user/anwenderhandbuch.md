@@ -1253,6 +1253,9 @@ Welche Tools ein Aufrufer tatsächlich sieht, hängt von seinen Scopes ab
 (read-only vs. schreibend). Den vollständigen Katalog mit Ein-/Ausgabe-Verträgen
 beschreibt die [API-Referenz, Teil B](api-referenz.md#teil-b--mcp-server).
 
+**Vorgehen:** Wählen Sie einen der drei Betriebsmodi (A–C) und starten Sie den
+Server entsprechend:
+
 #### Variante A — lokaler Desktop-Client über stdio
 
 stdio ist der primäre lokale Pfad: ein Server-Prozess pro Client, der vom Client
@@ -1938,7 +1941,7 @@ und der Tool-Katalog stehen in der [API-Referenz](api-referenz.md).
 | **Split-DDL (pre-data/post-data)** | Aufteilung des SQL in „erst Tabellen, dann Trigger/Funktionen", damit der Datenimport dazwischen passt. |
 | **Bundle / Manifest** | Beim Parquet-Export ein Ordner mit einer Datei pro Tabelle plus Inhaltsverzeichnis. |
 | **Checkpoint / Resume** | Zwischenstand eines langen Laufs, um ihn nach Abbruch fortzusetzen. |
-| **Named Connection** | Ein in `.d-migrate.yaml` hinterlegter Name für eine Datenbank-URL. |
+| **Benannte Verbindung** (Named Connection) | Ein in `.d-migrate.yaml` hinterlegter Name für eine Datenbank-URL. |
 | **Up-/Down-SQL** | Anweisungen, die eine Migration ausführen (Up) bzw. zurücknehmen (Down). |
 | **Exit-Code** | Rückgabewert eines Befehls; `0` bedeutet Erfolg. |
 
@@ -1999,7 +2002,7 @@ Fortschritt/Warnungen nach stderr.
 
 | Option | Beschreibung |
 | ------ | ------------ |
-| `--source` | Datenbank-URL oder Named Connection (Pflicht) |
+| `--source` | Datenbank-URL oder benannte Verbindung (Pflicht) |
 | `--output` | Ausgabe-Schemadatei (YAML/JSON) |
 | `--format` | `yaml` (Standard) oder `json` |
 | `--report` | Report-Datei |
@@ -2066,7 +2069,7 @@ Fortschritt/Warnungen nach stderr.
 
 | Option | Beschreibung |
 | ------ | ------------ |
-| `--source` | URL oder Named Connection (Pflicht) |
+| `--source` | URL oder benannte Verbindung (Pflicht) |
 | `--format` | `json`, `yaml`, `csv`, `parquet` (Pflicht) |
 | `-o`, `--output` | Datei oder Verzeichnis (Standard: stdout) |
 | `--tables` | Tabellen (kommasepariert; Standard: alle) |
@@ -2084,7 +2087,7 @@ Fortschritt/Warnungen nach stderr.
 | Option | Beschreibung |
 | ------ | ------------ |
 | `--source` | Datei, Verzeichnis oder `-` (stdin) (Pflicht) |
-| `--target` | URL oder Named Connection (Standard: `database.default_target`) |
+| `--target` | URL oder benannte Verbindung (Standard: `database.default_target`) |
 | `--format` | `json`/`yaml`/`csv`/`parquet` (sonst auto-erkannt) |
 | `--schema` | Schema-Datei für Validierung/Reihenfolge |
 | `--table` | Zieltabelle (Pflicht bei stdin/Single-File) |
@@ -2117,7 +2120,7 @@ Fortschritt/Warnungen nach stderr.
 
 | Option | Beschreibung |
 | ------ | ------------ |
-| `--source` | URL oder Named Connection (Pflicht) |
+| `--source` | URL oder benannte Verbindung (Pflicht) |
 | `--tables` | Tabellen (Standard: alle) |
 | `--schema` | Datenbankschema (nur PostgreSQL, Standard `public`) |
 | `--top-n` | häufigste Werte je Spalte (Standard 10, Max 1000) |
