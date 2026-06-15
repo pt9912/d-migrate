@@ -4,18 +4,11 @@
 
 > Dokumenttyp: Spezifikation / Referenz
 >
-> **Überblick**: Implementiert sind `schema validate`,
-> `schema generate`, `schema reverse`, `schema compare`, `schema migrate`,
-> `schema rollback`, `data export`, `data import`, `data transfer`,
-> `export ...` sowie die
-> operativen `mcp`-Kommandos (`mcp serve`, `mcp approval-grant issue`,
-> `mcp cursor-key generate`/`validate`).
->
-> **Ausblick**: Geplant sind weitere CLI-Oberflächen fuer
-> Transformations-Workflows und ggf. eigene Service-Mode-Adapter fuer
-> langlaufende Operationen. Transport- und Tool-spezifische MCP-Vertraege
-> stehen in [`spec/mcp-server.md`](./mcp-server.md) und
-> [`spec/ki-mcp.md`](./ki-mcp.md).
+> **Überblick**: Die CLI gliedert sich in die Kommandogruppen `schema`,
+> `data`, `export`, `transform` sowie die operativen `mcp`-Kommandos
+> (`mcp serve`, `mcp approval-grant issue`, `mcp cursor-key generate`/`validate`).
+> Transport- und Tool-spezifische MCP-Verträge stehen in
+> [`spec/mcp-server.md`](./mcp-server.md) und [`spec/ki-mcp.md`](./ki-mcp.md).
 
 ---
 
@@ -27,7 +20,7 @@
 d-migrate <command> <subcommand> [flags] [arguments]
 ```
 
-- **Commands**: Oberste Ebene — implementiert: `schema`, `data`, `export`, `mcp`; geplant: `transform`
+- **Commands**: Oberste Ebene — `schema`, `data`, `export`, `transform`, `mcp`
 - **Subcommands**: Aktion innerhalb eines Commands (`schema validate`, `data export`)
 - **Flags**: Optionen mit `--` Präfix, Kurzform mit `-` (`--format json`, `-f json`)
 - **Arguments**: Positionelle Argumente (selten, nur wo eindeutig)
@@ -793,7 +786,7 @@ Routine-Rendering:
 Trigger-Rendering:
 
 - PostgreSQL rendert `CreateTrigger`/`ReplaceTrigger`/`DropTrigger` als native `CREATE TRIGGER ... EXECUTE FUNCTION <ref>;` / `DROP TRIGGER <name> ON <table>;`. Der Body **muss** eine strikte `[schema.]identifier([arg, ...])`-Funktionsreferenz sein — inline PL/pgSQL blockt der Renderer mit `TRIGGER_BODY_NOT_FUNCTION_REFERENCE` (Exit `8`). Replace nutzt natives `CREATE OR REPLACE TRIGGER` ab PG-14, sonst Drop+Create-Fallback.
-- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` bleibt geplant). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
+- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` ist nicht abgedeckt). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
 - SQLite rendert `CREATE TRIGGER ... BEGIN <body> END;` mit impliziter `FOR EACH ROW`-Orientierung; `DROP TRIGGER <name>;` mit bare Triggername (SQLite-Trigger sind global). Replace ist immer Drop+Create. Pre-Flight-Blocker: `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `SQLITE_TRIGGER_BODY_NOT_RENDERABLE` (`sourceDialect` ungleich `sqlite`). Trigger auf einer Tabelle, die ueber `AlterColumnType` / `AlterColumnNullability` / `AlterConstraint` einen Rebuild ausloest, werden von `SqliteRebuildPlanner` in den Rebuild-Block absorbiert; der Standalone-Renderer rendert nur Trigger ohne Rebuild-Betroffenheit.
 - **Gap-Vertrag**: jede Drop+Create-Replace traegt
   `OperationRisk.hasGap = true` und emittiert einen
@@ -811,7 +804,7 @@ Trigger-Rendering:
 - **Identitaets-Kollision**: zwei Trigger mit gleichem Namen auf verschiedenen Tabellen blockt der `TriggerNameCollisionDetector` mit `TRIGGER_NAME_COLLISION` (Exit `8`). Der Reader-Pfad konsultiert den Detektor vor der Map-Materialisierung; YAML-Files-mit-doppeltem-Map-Key blocken ueber Jacksons `FAIL_ON_READING_DUP_TREE_KEY` bereits im Codec.
 - Body-Sanitisation findet im Renderer **nicht** statt. Display-/Report-Plane scrubbt Trigger-Bodies ueber den gemeinsamen `RoutineBodyScrubber` (E.1) — `PASSWORD '...'`-Literale und andere bekannte Patterns sind im Report maskiert, im `--output`-Artefakt scrubbed und im Live-`--execute`-Pfad raw.
 
-Aktuell ausgeklammert: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` bleiben geplant. `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ist ebenfalls geplant.
+Aktuell ausgeklammert: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` sind nicht abgedeckt. Eine `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ist nicht Teil des aktuellen Modells.
 
 Report-Felder für Materialized Views:
 
@@ -1432,7 +1425,7 @@ d-migrate data transfer --source staging --target local_pg \
 
 #### `data seed`
 
-Geplant (LF-024, Milestone 1.3.0). Generiert Testdaten und importiert sie.
+Generiert Testdaten und importiert sie.
 
 ```
 d-migrate data seed --schema <path> --target <url>
@@ -1488,7 +1481,7 @@ auf MySQL/SQLite, ungueltiges `--format`, `--top-n` ausserhalb 1..1000),
 
 #### `transform procedure`
 
-Geplant (LF-017). Transformiert Stored Procedures/Functions zwischen Dialekten.
+Transformiert Stored Procedures/Functions zwischen Dialekten.
 
 ```
 d-migrate transform procedure --source <path> --procedure <name> --ai-backend <provider>
@@ -1510,7 +1503,7 @@ Exit: `0` bei Erfolg, `6` bei KI-Fehlern.
 
 #### `generate procedure`
 
-Geplant (LF-017). Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
+Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
 
 ```
 d-migrate generate procedure --source <path> --target <dialect>
@@ -1575,7 +1568,7 @@ Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
 
 #### `validate data`
 
-Geplant ([LF-027](./lastenheft-d-migrate.md)). Validiert eine Datendatei
+Validiert eine Datendatei
 DB-frei gegen eine explizit gebundene Tabelle aus einer Schema-Definition.
 v1 prüft Spaltenpräsenz, Typ, Nullability und Länge/Präzision; CHECK, FK,
 Top-Level-Tabellenwrapper und headerlose CSV sind spätere Ausbaustufen.
@@ -1599,7 +1592,7 @@ Validierungsfehlern, `7` bei Parse-/I/O-Fehlern.
 
 #### `validate procedure`
 
-Geplant (LN-034). Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
+Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
 
 ```
 d-migrate validate procedure --source <path> --target <url>
@@ -1620,7 +1613,7 @@ Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
 #### `config credentials set`
 
-Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Speichert verschlüsselte Datenbank-Credentials.
+Speichert verschlüsselte Datenbank-Credentials.
 
 ```
 d-migrate config credentials set --name <connection> --user <user> --password <password>
@@ -1638,7 +1631,7 @@ Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
 #### `config credentials list`
 
-Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Listet gespeicherte Verbindungsnamen (ohne Passwörter).
+Listet gespeicherte Verbindungsnamen (ohne Passwörter).
 
 ```
 d-migrate config credentials list
@@ -1648,7 +1641,7 @@ Exit: `0` bei Erfolg.
 
 #### `config show`
 
-Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
+Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
 
 ```
 d-migrate config show [--section <section>]
