@@ -12,7 +12,7 @@ Statusüberblick.
 | **Anwenderhandbuch** | [`anwenderhandbuch.md`](anwenderhandbuch.md) | Endanwender (CLI-Workflows) | ✅ Entwurf (Review offen) |
 | **Administrationshandbuch** | [`administrationshandbuch.md`](administrationshandbuch.md) | Betrieb/Deployment | 🚧 Gerüst |
 | **Migrations-Leitfaden** | [`migrations-leitfaden.md`](migrations-leitfaden.md) | Migrations-Durchführende | 🚧 Gerüst |
-| **API-Referenz (CLI + MCP)** | [`api-referenz.md`](api-referenz.md) | Integratoren/Automatisierung | 🚧 Gerüst |
+| **API-Referenz (CLI + MCP)** | [`api-referenz.md`](api-referenz.md) | Integratoren/Automatisierung | ✅ Entwurf (Review offen) |
 
 ## Weitere Dokumente
 
