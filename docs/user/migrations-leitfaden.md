@@ -24,9 +24,13 @@ testbar. Format und Typsystem: [`spec/neutral-model-spec.md`](../../spec/neutral
 
 ### 1.2 Was d-migrate migriert
 
-- **Schema:** Tabellen, Spalten/Typen, Primär-/Fremdschlüssel, Constraints,
-  Indizes, Sequenzen, Views, sowie — soweit dialektübersetzbar — Trigger,
-  Functions und Procedures.
+- **Schema (Default beim Reverse):** Tabellen, Spalten/Typen, Primär-/
+  Fremdschlüssel, Constraints, Indizes, Sequenzen.
+- **Schema (opt-in):** Views, Trigger, Functions und Procedures erfasst
+  `schema reverse` **nur** mit den Flags `--include-views` / `--include-triggers`
+  / `--include-functions` / `--include-procedures` (oder `--include-all`).
+  **Ohne** diese Flags werden sie ohne Fehler **ausgelassen** (siehe
+  [§4.1](#4-schema-migration)).
 - **Daten:** zeilenweise streaming-basiert (export/import oder direkter
   DB-zu-DB-Transfer), inkl. inkrementeller und resume-fähiger Pfade.
 
@@ -75,7 +79,9 @@ testbar. Format und Typsystem: [`spec/neutral-model-spec.md`](../../spec/neutral
 `schema reverse` gegen die Quelle ausführen und das Ergebnis mit
 `schema validate` prüfen. Warnungen (z. B. nicht abbildbare Typen, fehlende
 Primärschlüssel **E008**) **vor** der Migration klären — sie sind die häufigste
-Ursache für spätere Import-Fehler.
+Ursache für spätere Import-Fehler. Enthält die Quelle Views/Trigger/Functions/
+Procedures, beim Reverse `--include-all` (oder die einzelnen `--include-*`-Flags)
+setzen — der Default-Reverse lässt sie still aus.
 
 ### 3.2 Verbindungen einrichten
 
@@ -97,7 +103,7 @@ dialektspezifische Lücken).
 
 | Schritt | Kommando (Details: [`guide.md`](guide.md), [API-Referenz §3](api-referenz.md#3-cli-referenz)) |
 | ------- | --------------------------------------------------------------------------------------------- |
-| **4.1 Reverse Engineering der Quelle** | `schema reverse` → neutrales Schema (YAML/JSON) |
+| **4.1 Reverse Engineering der Quelle** | `schema reverse` → neutrales Schema (YAML/JSON). **Default: nur Tabellen/Sequenzen/Constraints/Indizes** — Views/Trigger/Functions/Procedures per `--include-all` bzw. den einzelnen `--include-*`-Flags mitnehmen, sonst werden sie ohne Fehler ausgelassen. |
 | **4.2 Ziel-DDL generieren** | `schema generate --target <postgresql\|mysql\|sqlite>` |
 | **4.3 Split-DDL** | `schema generate --split pre-post` trennt **pre-data** (Tabellen, Sequenzen, Indizes, Constraints, einfache Views) von **post-data** (Trigger, Functions, Procedures, Views mit Routinen-Abhängigkeiten) |
 | **4.4 Verifikation** | `schema compare` Quelle↔Ziel (Exit `1` = Unterschiede gefunden) |
@@ -176,9 +182,12 @@ Voraussetzungen, Opt-in und Restrisiken (PG-`nextval`-Race) sind in
 
 Strukturelle Hüllen werden generiert; **Body-Logik** bei unterschiedlichen
 Dialekten nicht regelbasiert übersetzt → `action_required` (**E053**), siehe
-[§9](#9-stored-procedure-migration). Beim Datenimport stellt
-`--reseed-sequences` (Default) den korrekten Sequenz-Folgewert nach dem Laden
-ein; `--no-reseed-sequences` schaltet das ab.
+[§9](#9-stored-procedure-migration). **Wichtig:** `schema reverse` erfasst
+Trigger/Functions/Procedures (und Views) nur mit den `--include-*`-Flags
+(Default aus, siehe [§4.1](#4-schema-migration)) — sonst fehlen sie schon im
+neutralen Modell. Beim Datenimport stellt `--reseed-sequences` (Default) den
+korrekten Sequenz-Folgewert nach dem Laden ein; `--no-reseed-sequences`
+schaltet das ab.
 
 ### 6.4 Materialized Views
 
@@ -210,7 +219,7 @@ Hinweise unterscheiden sich. Vollständige, kopierbare Beispiele:
 [`guide.md`](guide.md).
 
 ```
-schema reverse  --source <QUELLE>           --output schema.yaml
+schema reverse  --source <QUELLE> --include-all --output schema.yaml  # ohne --include-all: Views/Trigger/Functions/Procedures werden still ausgelassen
 schema validate --source schema.yaml
 schema generate --source schema.yaml --target <ZIEL> --split pre-post --output ddl/
 # pre-data-DDL gegen das Ziel anwenden
@@ -291,6 +300,7 @@ lassen.
 ### 10.4 Checkliste für Pilot-Migrationen
 
 - [ ] Quelle reverse-engineert, `schema validate` ohne offene Errors.
+- [ ] Quelle enthält Views/Trigger/Functions/Procedures? Dann beim Reverse `--include-all`/`--include-*` gesetzt (Default lässt sie aus).
 - [ ] Typ-Mapping-Warnungen ([§6.5](#6-spezialfälle-und-stolpersteine)) gesichtet und akzeptiert/behoben.
 - [ ] pre-data angelegt, Daten geladen, post-data angelegt.
 - [ ] `schema compare` Quelle↔Ziel ohne unerwartete Unterschiede.

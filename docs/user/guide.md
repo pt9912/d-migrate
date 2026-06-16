@@ -528,6 +528,22 @@ dem Vertrag aus CHANGELOG `[0.9.8]`.
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
 
+### Optionen für `schema reverse`
+
+`schema reverse` liest standardmäßig **nur** Tabellen, Sequenzen, Constraints
+und Indizes. Views, Trigger, Functions und Stored Procedures sind **opt-in**:
+
+| Option                 | Wirkung                              |
+| ---------------------- | ------------------------------------ |
+| `--include-views`      | Views mitnehmen                      |
+| `--include-functions`  | User-Defined Functions mitnehmen     |
+| `--include-procedures` | Stored Procedures mitnehmen          |
+| `--include-triggers`   | Trigger mitnehmen                    |
+| `--include-all`        | alle optionalen Objekttypen mitnehmen |
+
+Ohne diese Flags werden die genannten Objekte **ohne Fehler ausgelassen** — für
+eine vollständige Migration siehe [Migrations-Leitfaden](migrations-leitfaden.md).
+
 ### Optionen für `schema generate`
 
 | Option                | Beschreibung                                              |
