@@ -551,16 +551,25 @@ nicht als Enterprise-BI-Plattform (siehe
 > dagegen 2026-06-09 in 0.9.8 vorgezogen (Scope-Entscheidung); die
 > BI-Demo-Plaene bleiben Grundlage fuer Showcase-Pfade ab Phase 3/4.
 
-### Milestone 0.9.9 — Dokumentation und Pilot-Validierung 🚧 (in Arbeit seit 2026-06-14)
+### Milestone 0.9.9 — Dokumentation und Pilot-Validierung 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16, nur Pilot-Validierung offen)
 
-| Bereich | Aufgabe                                   | LF-Ref |
-| ------- | ----------------------------------------- | ------ |
-| Docs    | Vollständiges Anwenderhandbuch            | —      |
-| Docs    | Administrationshandbuch                   | —      |
-| Docs    | Migrations-Leitfaden                      | —      |
-| Docs    | API-Dokumentation                         | —      |
-| QA      | Performance-Benchmarks dokumentiert       | —      |
-| QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
+> Status-Legende: ✅ erledigt · 🔮 geplant (späterer Milestone) · ⛔ ausstehend.
+
+| Bereich | Aufgabe | LF-Ref | Status |
+| ------- | ------- | ------ | ------ |
+| Docs    | [Vollständiges Anwenderhandbuch](../../user/anwenderhandbuch.md) | — | ✅ |
+| Docs    | [Administrationshandbuch](../../user/administrationshandbuch.md) | — | ✅ |
+| Docs    | [Migrations-Leitfaden](../../user/migrations-leitfaden.md) | — | ✅ |
+| Docs    | [API-Dokumentation](../../user/api-referenz.md) | — | ✅ |
+| QA      | [Performance-Benchmarks dokumentiert](../../operations/performance-benchmarks.md) | — | ✅¹ |
+| QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2 | ⛔² |
+
+¹ Methodik + aktuelle Budgets dokumentiert. Die acceptance-grade Benchmarks
+**LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
+🔮 1.0.0-QA-Ziele und noch nicht validiert.
+² Externe Validierung gegen reale Datenbestände steht aus — kein
+Selbst-Liefer-Item (kann später ein Code-Agent gegen Testdatenbanken fahren,
+siehe Kandidatenliste unten).
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
