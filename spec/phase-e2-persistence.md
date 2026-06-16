@@ -68,7 +68,7 @@ sie.
 
 ## 2. Schema und Flyway-Workflow
 
-### 2.1 Initial-Migration `V1__phase_e_initial.sql`
+### 2.1 Initial-Migration `V1__server_state_initial.sql`
 
 Fünf Tabellen, alle in einem Migration-Skript:
 
@@ -80,7 +80,7 @@ Fünf Tabellen, alle in einem Migration-Skript:
 | `quota_reservation_owners` | Owner-Tracking pro Quota-Reservation | `owner_id` |
 | `quota_counters` | Raw-Counter pro `QuotaKey` | `quota_key` (TEXT, JSON-serialisiert) |
 
-Vollständiges DDL in `adapters/driven/persistence-jdbc/src/main/resources/db/migration/V1__phase_e_initial.sql`. <!-- d-check:ignore (Zielbild: Phase-E2-Migration, noch nicht angelegt; ADR 0011) -->
+Vollständiges DDL in `adapters/driven/persistence-jdbc/src/main/resources/db/migration/V1__server_state_initial.sql`.
 Postgres-spezifisch: `JSONB`, `TIMESTAMPTZ`, partielle Indizes
 (`WHERE state = 'PENDING'`), `INSERT … ON CONFLICT … RETURNING`.
 
@@ -251,7 +251,7 @@ Für ein neues Backing:
    `MySqlTransactionRunner`); das Adapter-Modul gehört diesem Backing.
 3. Lass die fünf Contract-Test-Suiten (s.u.) gegen Testcontainers
    laufen.
-4. Schreibe ein `V1__phase_e_initial.sql` für deinen Dialekt; die
+4. Schreibe ein `V1__server_state_initial.sql` für deinen Dialekt; die
    semantischen Vorgaben sind Teil des Vertrags.
 
 **Pflicht-Contract-Tests**:
