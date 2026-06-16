@@ -3,4 +3,32 @@
 # Die Default-Scan-Wurzeln (docs/, spec/, Root-*.md) decken den
 # Alt-Tool-Umfang ab; `anchors` ist bewusste Mehr-Abdeckung
 # (Anker-Validierung, Bildreferenzen — das Alt-Tool prüfte beides nicht).
-modules: [links, anchors]
+modules: [links, anchors, matrix, hostpaths, spans]
+
+# matrix: mechanisiert die Referenz-Richtung (Stable Dependencies
+# Principle, konventionen.md "Referenz-Richtung (SDP)"): Spec-Straten
+# verweisen nie abwärts — weder auf ADRs noch auf Pläne/Slices/Roadmap —,
+# und Verweise auf überholte Stände (superseded/deprecated) sind verboten.
+# Provenance in Historie-/Versions-Sektionen ist ausgenommen (SDP-Regel 5).
+# Die semantischen Zellen der ADR-Zeile (ADR→Slice "Kontext vs.
+# Entscheidungsgrundlage") sind bewusst NICHT hier — sie sind laut
+# Regelwerk Reviewer-Sache, kein Linter (ein Token-grep würde
+# Verifikations-Zeiger falsch-positiv flaggen). Verweise: ADR 0004,
+# Regelwerk Modul 4 / konventionen.md "Referenz-Richtung (SDP)".
+matrix:
+  classes:
+    - name: spec
+      paths: ["spec/**"]
+    - name: adr
+      paths: ["docs/adr/[0-9]*.md"]
+    - name: plan
+      paths: ["docs/planning/**"]
+  rules:
+    - {from: spec, to: adr, allow: false}
+    - {from: spec, to: plan, allow: false}
+  status:
+    forbidden: [superseded, deprecated]
+  exclude-sections: [Historie, Geschichte, Versionierung, Changelog, Änderungshistorie]
+
+# hostpaths/spans: keine Konfiguration nötig; Probe 2026-06-16 je 0
+# Befunde (keine Maschinenpfad-Leaks, keine Span-Artefakte).

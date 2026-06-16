@@ -356,9 +356,6 @@ Idempotency-Cleanup.
 
 ## 6. Cross-Refs
 
-- [Plan §3 Architektur-Entscheidungen (E2)](../docs/planning/done/ImpPlan-0.9.6-E2.md#3-architektur-entscheidungen)
-- [Plan §4 Schema-Skizze](../docs/planning/done/ImpPlan-0.9.6-E2.md#4-schema-skizze-v1__phase_e_initialsql)
-- [Plan §6 SQL-Patterns pro Port](../docs/planning/done/ImpPlan-0.9.6-E2.md#6-sql-patterns-pro-port)
 - [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Port-Verträge (was muss atomar sein)
 - [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge
 - [`spec/connection-config-spec.md`](./connection-config-spec.md) — Connection-Pool-Konfiguration

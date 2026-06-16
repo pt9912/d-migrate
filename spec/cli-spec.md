@@ -1131,8 +1131,6 @@ internes `renameProvenance`-Metadatum (nicht im Artefakt seriell
 exponiert); die fuer Consumer verbindliche Quelle bleibt
 `renameProjections[]`.
 
-Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
-
 Abgrenzung gegen `export flyway|liquibase|django|knex`: jene Tools-Adapter erzeugen baseline-/full-state-Exports aus einem einzelnen Schema; `schema migrate` arbeitet diff-basiert (`current → desired`).
 
 #### `schema rollback`
@@ -1191,8 +1189,6 @@ Exit-Codes:
 | `5` | DDL-Ausführungsfehler nach Beginn von `--execute` |
 | `7` | Artefakt ungültig (Hash, Format, Pflichtfelder, fehlender Metadatenblock) |
 | `8` | Drift-, Dialekt- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, fehlendes `--allow-destructive`) |
-
-Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md §7.2`](../docs/planning/done/diffresult-migration-plan.md).
 
 ### 6.2 data
 

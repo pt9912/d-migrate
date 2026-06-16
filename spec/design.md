@@ -672,7 +672,6 @@ Datenfluss: `(current, desired) → SchemaComparator → SchemaDiff →
 DiffPlanner → DiffResult → MigrationDdlRenderer → MigrationDdlResult →
 SQL-Datei | DB-Execute`.
 
-Detaillierter Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
 CLI-Vertrag: [`spec/cli-spec.md §6.1 schema migrate / schema rollback`](./cli-spec.md).
 
 ---
@@ -830,9 +829,7 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Ausgabeformate, Kommando-Referenz
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
-- [Roadmap](../docs/planning/in-progress/roadmap.md) — Phasen, Milestones und Release-Planung
 - [Profiling](./profiling.md) — Design für deterministisches Datenbank-Profiling ab 0.7.5
-- [Beispiel: Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---
 

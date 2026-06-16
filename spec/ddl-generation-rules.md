@@ -568,8 +568,6 @@ MySQL: Gesteuert ueber `--mysql-named-sequences` (seit 0.9.3):
   - Cache-Warnung W114 (Preallocation nicht emuliert)
   - Transaktionswarnung W117 (Rollback retrahiert Inkremente)
 
-Details: [`mysql-sequence-emulation-plan.md`](../docs/planning/done/mysql-sequence-emulation-plan.md).
-
 SQLite: Keine nativen benannten Sequenzen. Standard ist `action_required`
 (E056-Skip). Mit `--sqlite-named-sequences helper_table` (0.9.7) wird die
 Emulation eingeschaltet:
@@ -609,8 +607,6 @@ Emulation eingeschaltet:
   modifiziert) oder W124 (User-BEFORE-INSERT-Trigger maskiert das
   Sequence-Trigger-Paar)
 
-Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md).
-
 > **Diff-Migrationen (Plan-2 §E.3)**: PostgreSQL rendert im
 > diffbasierten Migrationspfad deklarative `CREATE SEQUENCE`,
 > `ALTER SEQUENCE` und `DROP SEQUENCE`-Operationen fuer die neutralen
@@ -637,10 +633,7 @@ Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequ
 > der vor-Rename-Name). Ein fehlender `restoreValue` (typisch fuer
 > `CreateSequence` ohne deterministischen Vorzustand) surfaced als
 > `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`-Skip,
-> kein stiller `UPDATE`. Details siehe
-> [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md)
-> §6.2 und Phasen F/G, plus den 0.9.7-E.3-Folge-Slice
-> [`ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`](../docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md).
+> kein stiller `UPDATE`.
 
 ---
 
@@ -894,7 +887,7 @@ Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL
 
 **Strategie**:
 - **Wenn `source_dialect` = `target_dialect`**: Body wird 1:1 übernommen
-- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [design.md §4](./design.md#4-ki-integrations-design) und [Beispiel Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md))
+- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [design.md §4](./design.md#4-ki-integrations-design))
 - **Fallback ohne KI**: `action_required` (E053) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:

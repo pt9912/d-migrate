@@ -724,8 +724,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Separate Testsuites für jede Datenbankversion (PostgreSQL 12-16, MySQL 8.0-8.3)
 
 Weiterfuehrung: Eine konkrete, priorisierte Kandidatenliste fuer reale
-Beispiel- und Testdatenbanken ist in
-[`test-database-candidates.md`](../docs/planning/open/test-database-candidates.md) dokumentiert.
+Beispiel- und Testdatenbanken wird separat gepflegt.
 
 ### 8.7 Spezifische Testfälle für proprietäre Objekte
 
