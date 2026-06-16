@@ -259,10 +259,11 @@ internal class PostgresTableImportSession(
                 targetColumn.sqlTypeName.equals("xml", ignoreCase = true) ->
                 stmt.setObject(parameterIndex, pgObject("xml", value.toString()))
 
-            // I-04: benannte PG-Enum-Spalte → als PGobject mit dem Enum-Typ binden.
-            targetColumn.jdbcType == Types.OTHER &&
-                targetColumn.sqlTypeName != null &&
-                targetColumn.sqlTypeName in enumTypeNames ->
+            // I-04: benannte PG-Enum-Spalte. pgjdbc meldet sie als `VARCHAR` (nicht
+            // `OTHER`), unterschieden wird allein über den Typnamen. Built-ins werden
+            // vorab ausgeschlossen, damit für sie nicht der pg_enum-Katalog abgefragt
+            // wird; nur echte Nicht-Built-in-Namen konsultieren [enumTypeNames].
+            isEnumColumn(targetColumn) ->
                 stmt.setObject(parameterIndex, pgObject(targetColumn.sqlTypeName!!, value.toString()))
 
             targetColumn.jdbcType == Types.ARRAY && value is List<*> ->
@@ -290,6 +291,12 @@ internal class PostgresTableImportSession(
             this.value = value
         }
 
+    private fun isEnumColumn(targetColumn: TargetColumn): Boolean {
+        val typeName = targetColumn.sqlTypeName ?: return false
+        if (typeName.lowercase() in NON_ENUM_TYPE_NAMES) return false
+        return typeName in enumTypeNames
+    }
+
     private fun toWriteResult(counts: IntArray): WriteResult {
         var inserted = 0L
         var skipped = 0L
@@ -308,6 +315,27 @@ internal class PostgresTableImportSession(
             rowsUpdated = 0,
             rowsSkipped = skipped,
             rowsUnknown = unknown,
+        )
+    }
+
+    private companion object {
+        /**
+         * I-04: pgjdbc meldet echte Skalar-Spalten und Enum-Spalten beide mit
+         * `Types.VARCHAR`; unterschieden wird über den Typnamen. Bekannte Built-in-
+         * Typnamen werden vorab ausgeschlossen, damit für sie nicht der pg_enum-
+         * Katalog abgefragt wird (und Unit-Tests mit Mock-Verbindungen keine
+         * Katalogabfrage auslösen).
+         */
+        val NON_ENUM_TYPE_NAMES = setOf(
+            "varchar", "text", "bpchar", "char", "name", "citext",
+            "int2", "int4", "int8", "serial", "bigserial", "smallserial",
+            "float4", "float8", "numeric", "money",
+            "bool", "boolean", "date", "timestamp", "timestamptz",
+            "time", "timetz", "interval",
+            "uuid", "bytea", "json", "jsonb", "xml",
+            "inet", "cidr", "macaddr", "macaddr8",
+            "bit", "varbit",
+            "point", "line", "lseg", "box", "path", "polygon", "circle",
         )
     }
 }

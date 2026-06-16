@@ -56,6 +56,11 @@ class PostgresDataWriterIntegrationTest : FunSpec({
                 stmt.execute("CREATE TABLE writer_zero_chunk (id SERIAL PRIMARY KEY, label TEXT)")
                 stmt.execute("CREATE TABLE writer_upsert_target (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
                 stmt.execute("CREATE TABLE writer_no_pk (name TEXT NOT NULL)")
+                // I-04: benannter PG-Enum-Typ als Transfer-Ziel
+                stmt.execute("CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy')")
+                stmt.execute(
+                    "CREATE TABLE writer_enum_target (id SERIAL PRIMARY KEY, current_mood mood)"
+                )
             }
         }
     }
@@ -78,7 +83,8 @@ class PostgresDataWriterIntegrationTest : FunSpec({
                         writer_interval_target,
                         writer_zero_chunk,
                         writer_upsert_target,
-                        writer_no_pk
+                        writer_no_pk,
+                        writer_enum_target
                     RESTART IDENTITY
                     """.trimIndent()
                 )
@@ -297,6 +303,34 @@ class PostgresDataWriterIntegrationTest : FunSpec({
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true
                     rs.getString(1) shouldContain "1 day"
+                }
+            }
+        }
+    }
+
+    test("enum column transfer binds value via PGobject — I-04") {
+        writer.openTable(pool!!, "writer_enum_target", ImportOptions()).use { session ->
+            session.write(
+                chunk(
+                    table = "writer_enum_target",
+                    columnNames = listOf("id", "current_mood"),
+                    rows = listOf(arrayOf<Any?>(1L, "happy"), arrayOf<Any?>(2L, "sad")),
+                )
+            ).rowsInserted shouldBe 2
+            session.commitChunk()
+            session.finishTable()
+        }
+
+        pool!!.borrow().use { conn ->
+            conn.prepareStatement(
+                "SELECT id, current_mood::text FROM writer_enum_target ORDER BY id"
+            ).use { ps ->
+                ps.executeQuery().use { rs ->
+                    val rows = mutableListOf<Pair<Long, String>>()
+                    while (rs.next()) {
+                        rows += rs.getLong(1) to rs.getString(2)
+                    }
+                    rows shouldContainExactly listOf(1L to "happy", 2L to "sad")
                 }
             }
         }
