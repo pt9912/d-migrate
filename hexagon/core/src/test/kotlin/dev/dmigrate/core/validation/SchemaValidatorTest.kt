@@ -363,6 +363,46 @@ class SchemaValidatorTest : FunSpec({
         result.errors.none { it.code == "E009" } shouldBe true
     }
 
+    test("I-02: current_timestamp default valid on text column (SQLite text-timestamp)") {
+        val s = schema(tables = mapOf(
+            "events" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "created_at" to col(NeutralType.Text(), default = DefaultValue.FunctionCall("current_timestamp"))
+                ),
+                primaryKey = listOf("id")
+            )
+        ))
+        validator.validate(s).errors.none { it.code == "E009" } shouldBe true
+    }
+
+    test("I-02: string-literal default valid on temporal columns") {
+        val s = schema(tables = mapOf(
+            "items" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "d" to col(NeutralType.Date, default = DefaultValue.StringLiteral("2020-01-01")),
+                    "ts" to col(NeutralType.DateTime(), default = DefaultValue.StringLiteral("2020-01-01 00:00:00"))
+                ),
+                primaryKey = listOf("id")
+            )
+        ))
+        validator.validate(s).errors.none { it.code == "E009" } shouldBe true
+    }
+
+    test("I-02 guard: string-literal default on integer column still E009") {
+        val s = schema(tables = mapOf(
+            "items" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "n" to col(NeutralType.Integer, default = DefaultValue.StringLiteral("nope"))
+                ),
+                primaryKey = listOf("id")
+            )
+        ))
+        validator.validate(s).errors.any { it.code == "E009" } shouldBe true
+    }
+
     test("valid boolean default on boolean column") {
         val s = schema(tables = mapOf(
             "items" to table(
