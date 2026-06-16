@@ -576,7 +576,8 @@ Temporal-Defaults I-02, MySQL-Enum-Lowercasing I-03, Enum-Transfer-Cast I-04)
 plus 6 P2 (ungültige DDL). Entscheidung: in **0.9.9** beheben (nicht nach 1.0.0
 verschoben). **P1 vollständig behoben 2026-06-16** (Fix-Kern + Commits:
 [Report §6.2](pilot-validation-0.9.9.md); code-verifizierte Root-Causes §6.1);
-**P2 (I-05…I-10) stehen noch aus.**
+**P2 (I-05…I-10) stehen noch aus** — lokalisierte Ursachen + Fix-Plan je Bug
+im [P2-Tracker](pilot-blocker-p2-tracker.md).
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
