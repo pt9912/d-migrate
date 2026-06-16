@@ -292,6 +292,19 @@ Die P1-Blocker wurden gegen den Code gegengeprüft (Zeilennummern Stand develop
 - **I-04 — empirisch** (Laufzeit-SQL, nicht code-verifiziert): plausibel (PG
   lehnt `varchar`→`enum` ohne Cast ab; Exit 5 = MIGRATION_ERROR).
 
+### 6.2 Behebungsstatus P1 (0.9.9) — alle vier behoben
+
+| ID | Status | Commit(s) | Kern des Fixes |
+| -- | ------ | --------- | -------------- |
+| I-01 | ✅ behoben | `6f54145d` | `TransferTypeCompatibility` erlaubt jetzt die Tool-eigenen Cross-Dialect-Abbildungen (boolean→integral, Enum→Text, DateTime↔DateTime trotz tz-Flag); negative Guards bleiben (Text→Integer, Integer→Boolean inkompatibel). |
+| I-02 | ✅ behoben | `5a4fbc1b` | `isStringDefaultCompatible` akzeptiert Date/DateTime/Time; `isFunctionDefaultCompatible` lässt `current_timestamp` auch auf `Text` zu (SQLite). `CURRENT_DATE` war nie betroffen (Repro korrigiert). |
+| I-03 | ✅ behoben | `12d7dbdf` | `MysqlTypeMapping` parst Enum-Werte aus dem Original-Case-`columnType` statt aus der lowercased-Variante. |
+| I-04 | ✅ behoben | `1180e6ea`, `90f10c66` | Enum-Werte werden als `PGobject` mit dem Enum-Typ gebunden. **Korrektur zur empirischen Annahme:** pgjdbc meldet benannte Enum-Spalten als `Types.VARCHAR` (nicht `OTHER`); Erkennung daher über den Typnamen (`isEnumColumn`, Built-in-Ausschluss + `pg_enum`-Lookup). Mit Live-PostgreSQL-Testcontainers-Test belegt (reproduzierte zunächst exakt den Originalfehler). |
+
+Verifikation: betroffene Engine-Module über `make docker-test MODULES=…` grün;
+I-04 zusätzlich über `make integration` (`:test:integration-postgresql`, Live-
+PostgreSQL). Detekt sauber, keine `@Suppress`, je ein Regressionstest pro Fix.
+
 ---
 
 ## 7. Was korrekt funktioniert (verifiziert)

@@ -551,7 +551,7 @@ nicht als Enterprise-BI-Plattform (siehe
 > dagegen 2026-06-09 in 0.9.8 vorgezogen (Scope-Entscheidung); die
 > BI-Demo-Plaene bleiben Grundlage fuer Showcase-Pfade ab Phase 3/4.
 
-### Milestone 0.9.9 — Dokumentation, Pilot-Validierung und Blocker-Fixes 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16; Pilot-Vorfilter 2026-06-16 → P1/P2-Blocker werden in 0.9.9 behoben)
+### Milestone 0.9.9 — Dokumentation, Pilot-Validierung und Blocker-Fixes 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16; Pilot-Vorfilter 2026-06-16; P1-Blocker behoben 2026-06-16, P2 offen)
 
 > Status-Legende: ✅ erledigt · 🔮 geplant (späterer Milestone) · ⛔ ausstehend.
 
@@ -573,9 +573,10 @@ lief am 2026-06-16 ([Report](pilot-validation-0.9.9.md), Verdikt **nicht RC-reif
 die menschliche ≥5-Tester-Abnahme bleibt davon unberührt und steht weiter aus.
 ³ Der Vorfilter fand 4 P1-Blocker (Transfer-Preflight-Strictness I-01, E009-
 Temporal-Defaults I-02, MySQL-Enum-Lowercasing I-03, Enum-Transfer-Cast I-04)
-plus 6 P2 (ungültige DDL). Diese werden gemäß Entscheidung in **0.9.9** behoben
-(nicht nach 1.0.0 verschoben). Code-verifizierte Root-Causes:
-[Report §6.1](pilot-validation-0.9.9.md).
+plus 6 P2 (ungültige DDL). Entscheidung: in **0.9.9** beheben (nicht nach 1.0.0
+verschoben). **P1 vollständig behoben 2026-06-16** (Fix-Kern + Commits:
+[Report §6.2](pilot-validation-0.9.9.md); code-verifizierte Root-Causes §6.1);
+**P2 (I-05…I-10) stehen noch aus.**
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
