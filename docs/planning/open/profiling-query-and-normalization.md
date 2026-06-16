@@ -4,7 +4,7 @@
 > **Trigger:** `spec/profiling.md` §7.1 beschreibt die CLI-Flags `--query` und
 > `--analyze-normalization` als Teil des Zielbilds; Milestone 0.7.5 hat bewusst
 > nur den deterministischen Kern (DB-/Tabellen-Profiling) geliefert. Siehe
-> [`../done/implementation-plan-0.7.5.md`](../done/implementation-plan-0.7.5.md)
+> [`../done-archive/implementation-plan-0.7.5.md`](../done-archive/implementation-plan-0.7.5.md)
 > §3.2 / §4.1 — beide Flags sind dort explizit „bewusst nicht Teil von 0.7.5".
 > **Aktivierungsbedingung:** Sobald der Funktionsumfang für einen Milestone
 > priorisiert wird, wandert dieser Vorschlag nach `../next/` — **dort** mit
@@ -120,7 +120,7 @@ Identifier-Quoting-Stelle splicen). Stattdessen:
 
 - [`../../../spec/profiling.md`](../../../spec/profiling.md) §4.5 (Strukturanalyse),
   §7.1 (CLI), §10 (LLM — out of scope)
-- [`../done/implementation-plan-0.7.5.md`](../done/implementation-plan-0.7.5.md)
+- [`../done-archive/implementation-plan-0.7.5.md`](../done-archive/implementation-plan-0.7.5.md)
   §3.2 / §4.1 (Deferral)
 - [`../next/profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)
   (Report-Export, getrennter Plan)

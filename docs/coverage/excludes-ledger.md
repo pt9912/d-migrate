@@ -6,7 +6,7 @@
 This ledger lists every active Kover exclude from `build.gradle.kts`.
 Each row carries a `Disposition` that classifies the exclude according
 to Phase E of
-`docs/planning/done/quality-coverage-expansion-plan.md`.
+`docs/planning/done-archive/quality-coverage-expansion-plan.md`.
 
 ## Disposition vocabulary
 

@@ -2,7 +2,7 @@
 
 - **Status**: Draft (Trigger registriert, kein Scope-Schnitt)
 - **Trigger**: Sub-Slice E.2 des
-  [`quality-coverage-expansion-plan`](../done/quality-coverage-expansion-plan.md)
+  [`quality-coverage-expansion-plan`](../done-archive/quality-coverage-expansion-plan.md)
   hat 19 heutige Kover-Excludes auf Live-JDBC- bzw. Live-Streaming-
   Adapter-Glue identifiziert, die im
   [Excludes-Ledger](../../coverage/excludes-ledger.md) bisher nur als

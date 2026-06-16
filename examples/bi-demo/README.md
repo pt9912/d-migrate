@@ -5,7 +5,7 @@ komponierbaren Analytics-Stack einbettet — PostgreSQL als
 Datenquelle, SeaweedFS (S3-kompatibel) als Object-Storage,
 Metabase als BI-Frontend.
 
-Spec: [`docs/planning/done/bi-demo-compose.md`](../../docs/planning/done/bi-demo-compose.md)
+Spec: [`docs/planning/done-archive/bi-demo-compose.md`](../../docs/planning/done-archive/bi-demo-compose.md)
 
 ## Voraussetzungen
 
@@ -301,4 +301,4 @@ make bi-demo-purge && make bi-demo-up
 - BD.5 (Smoke-Script + Make-Targets + CI) — done
 
 Spec + Sub-Slice-Akzeptanzkriterien:
-[`bi-demo-compose.md`](../../docs/planning/done/bi-demo-compose.md)
+[`bi-demo-compose.md`](../../docs/planning/done-archive/bi-demo-compose.md)

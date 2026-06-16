@@ -14,12 +14,12 @@ informed: Sub-Slice-A/B/C-Reviewer; künftige Implementier des SQLite-Sequence-E
 PostgreSQL native DDL (E.3-Erstslice, done), MySQL
 `dmg_sequences`-Helper-Table-Emulation (Parallel-Plan, done),
 SQLite Rebuild-basierte Emulation (noch
-`docs/planning/done/sqlite-sequence-emulation-plan.md`) und
+`docs/planning/done-archive/sqlite-sequence-emulation-plan.md`) und
 das cross-dialect `preserveCurrentValue`-Follow-up (Parallel-Plan,
 done).
 
 Als das Umbrella-Plan-Doc
-(`docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`,
+(`docs/planning/done-archive/ImpPlan-0.9.7-cross-dialect-sequencing.md`,
 Closing in Sub-Slice E) Scope erreichte, waren drei der vier
 Slices bereits gemerged. Das Plan-Doc wandelte sich damit von
 "Upstream-Architektur für parallele Slices" zu "Retrofit-
@@ -181,14 +181,14 @@ Tranche CLI- / YAML-Overrides für Sequences einführt.
 ## Weitere Informationen
 
 - Umbrella-Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`
+  `docs/planning/done-archive/ImpPlan-0.9.7-cross-dialect-sequencing.md`
   (Closing in Sub-Slice E).
 - Parallele Slices, die diese ADR retroaktiv harmonisiert:
-  `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`,
-  `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`,
-  `docs/planning/done/mysql-sequence-emulation-plan.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`,
+  `docs/planning/done-archive/ImpPlan-0.9.7-sequence-preserve-current-value.md`,
+  `docs/planning/done-archive/mysql-sequence-emulation-plan.md`.
 - Offenes Follow-up, an das diese ADR explizit deferred:
-  `docs/planning/done/sqlite-sequence-emulation-plan.md`.
+  `docs/planning/done-archive/sqlite-sequence-emulation-plan.md`.
 - Verwandte Capability-Muster:
   `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/RoutineCapability.kt`,
   `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/TriggerCapability.kt`.

@@ -37,7 +37,7 @@ festgehalten.
   Aggregatoren und wandern nicht. Versions-spezifische Workstream-
   Aggregatoren (z. B.
   der 0.9.7-Aggregator
-  [`diffresult-migration-plan-2.md`](../done/diffresult-migration-plan-2.md),
+  [`diffresult-migration-plan-2.md`](../done-archive/diffresult-migration-plan-2.md),
   geschlossen 2026-06-02) wandern beim Milestone-Abschluss nach
   `../done/` und tragen dort eine `## Closure`-Sektion.
 
@@ -56,7 +56,7 @@ festgehalten.
 | Datei | Typ | Gegenstand |
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
-| [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. || [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](../done/ImpPlan-0.9.8-parquet-S7-end-to-end.md) | Per-Slice-ImpPlan | S7 End-to-End-Integration fuer den Seekable-Pfad: Stopgap-Removal, `SeekableDataChunkReaderFactory`-Dispatch, Footer-KV-/Bundle-Manifest-Wiring und PG/Testcontainers-Parquet-Roundtrip. |
-| [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](../done/ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) | Skeleton | S9a Bundle-Test-Familien; startbereit nach S7/S8, sammelt Hand-off-Anker fuer CLI-Preflight-Codes, Format-Resolver, Bundle-Resume und DuckDB-/Arrow-Bundle-KV-Toleranz. |
-| [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](../done/ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) | Skeleton | S9b Single-File-Test-Familien; startbereit nach S7/S8, sammelt Hand-off-Anker fuer CLI-Preflight-Codes, echte Parquet-Phase-1/2-Tests, Single-File-Resume und KV-Toleranz. |
-| [`ImpPlan-0.9.8-object-storage-s3.md`](../done/ImpPlan-0.9.8-object-storage-s3.md) | ImpPlan | Object-Storage S3-Adapter (`adapters:driven:storage-s3`): **abgeschlossen 2026-06-12** (S3.0-S3.6: Gate GO, beide Stores + Vertragssuiten, `artifacts`-Config + MCP-Wiring, Subprocess-E2E, Footprint +8,02 MiB). |
+| [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. || [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](../done-archive/ImpPlan-0.9.8-parquet-S7-end-to-end.md) | Per-Slice-ImpPlan | S7 End-to-End-Integration fuer den Seekable-Pfad: Stopgap-Removal, `SeekableDataChunkReaderFactory`-Dispatch, Footer-KV-/Bundle-Manifest-Wiring und PG/Testcontainers-Parquet-Roundtrip. |
+| [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](../done-archive/ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) | Skeleton | S9a Bundle-Test-Familien; startbereit nach S7/S8, sammelt Hand-off-Anker fuer CLI-Preflight-Codes, Format-Resolver, Bundle-Resume und DuckDB-/Arrow-Bundle-KV-Toleranz. |
+| [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](../done-archive/ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) | Skeleton | S9b Single-File-Test-Familien; startbereit nach S7/S8, sammelt Hand-off-Anker fuer CLI-Preflight-Codes, echte Parquet-Phase-1/2-Tests, Single-File-Resume und KV-Toleranz. |
+| [`ImpPlan-0.9.8-object-storage-s3.md`](../done-archive/ImpPlan-0.9.8-object-storage-s3.md) | ImpPlan | Object-Storage S3-Adapter (`adapters:driven:storage-s3`): **abgeschlossen 2026-06-12** (S3.0-S3.6: Gate GO, beide Stores + Vertragssuiten, `artifacts`-Config + MCP-Wiring, Subprocess-E2E, Footprint +8,02 MiB). |

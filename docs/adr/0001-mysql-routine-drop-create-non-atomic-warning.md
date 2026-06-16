@@ -120,7 +120,7 @@ Block-Pfaden — die Testsuite bestätigt den Vertrag direkt.
   Diagnostic; `MysqlDiffRenderContext.warning(...)` wurde dafür
   eingezogen und von Slice D.4 mitgenutzt.
 - Plan-Referenz:
-  `docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md`
+  `docs/planning/done-archive/ImpPlan-0.9.7-E.1-routine-migration.md`
   §3 Step 5.
 - Verwandte ADR: ADR-0002 dokumentiert die parallele Entscheidung
   zu `UNSAFE_DEPENDENCY_PAIR`.

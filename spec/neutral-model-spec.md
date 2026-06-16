@@ -162,7 +162,7 @@ DDL generiert, sondern als `action_required` gemeldet.
 `BIGSERIAL` und `BIGINT GENERATED ... AS IDENTITY` werden nicht durch
 `NeutralType.BigInteger` allein ausgedrueckt; sie brauchen ein separates
 Spaltenmetadatum fuer Generation/Identity. Der Modell-Vertrag ist im
-Follow-up `docs/planning/done/bigserial-neutral-identity-followup.md` als
+Follow-up `docs/planning/done-archive/bigserial-neutral-identity-followup.md` als
 `ColumnGeneration.Identity` festgelegt. `biginteger` ohne dieses Metadatum
 bleibt im Forward-Generate `BIGINT`.
 
@@ -794,7 +794,7 @@ aus dem Live-Target übernimmt:
 | SQLite (HELPER_TABLE-Mode, seit 0.9.7-E.3-Folge-Slice) | `UPDATE "dmg_sequences" SET "next_value" = <v> WHERE "name" = <key>;` (Up auf `applySequenceRef`, Down auf `probeSequenceRef`) | `SELECT "next_value", "managed_by", "format_version" FROM "dmg_sequences" WHERE "name" = <key>` |
 
 **Voraussetzungen** (gemäß
-`docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`):
+`docs/planning/done-archive/ImpPlan-0.9.7-sequence-preserve-current-value.md`):
 
 - `--execute` mit DB-Target. Die Probe braucht eine offene
   Connection; File-Mode emittiert `SEQUENCE_PRESERVE_NOT_RUN_POLICY`
@@ -840,10 +840,10 @@ Tranche kann Overlay-/CLI-Overrides ergänzen.
 
 **SQLite-Defaults (Reality-First, Stand 0.9.7)**: die
 SQLite-Sequence-Emulation aus
-`docs/planning/done/sqlite-sequence-emulation-plan.md` liefert seit
+`docs/planning/done-archive/sqlite-sequence-emulation-plan.md` liefert seit
 0.9.7 (Phasen A–E) eine vollständige `helper_table`-Variante; der
 0.9.7-E.3-Folge-Slice
-(`docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`)
+(`docs/planning/done-archive/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`)
 ergänzt den `preserveCurrentValue`-Pfad. Damit melden die SQLite-
 Capability-Defaults `supportsNamedSequences = true` und
 `supportsCurrentValuePreserve = true`. Der Default-Mode bleibt

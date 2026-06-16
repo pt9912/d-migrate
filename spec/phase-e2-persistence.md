@@ -1,12 +1,12 @@
 # Phase E2 — Persistente Server-State-Adapter (JDBC/Postgres)
 
 > **Status**: aktiv (2026-05-06)
-> **Geltung**: Phase-E2 (`docs/planning/done/ImpPlan-0.9.6-E2.md`)
+> **Geltung**: Phase-E2 (`docs/planning/done-archive/ImpPlan-0.9.6-E2.md`)
 > **Cross-Refs**:
 > [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Atomicity-Verträge der Ports;
 > [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge;
 > [`spec/hexagonal-port.md`](./hexagonal-port.md);
-> `docs/planning/done/ImpPlan-0.9.6-E2.md` §3–§9
+> `docs/planning/done-archive/ImpPlan-0.9.6-E2.md` §3–§9
 
 ## Warum dieses Dokument existiert
 

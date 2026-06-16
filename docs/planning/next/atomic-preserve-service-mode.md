@@ -1,7 +1,7 @@
 # Plan: Atomic-Preserve Service-Mode (MCP / REST / gRPC) — Sub-Slices C/D/F
 
 > **Status**: Next (2026-06-03 — Split aus
-> [`docs/planning/done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+> [`docs/planning/done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
 > als ADR-0004-strikte Aufteilung: A + E + SIGINT als Closure dort,
 > die offenen Sub-Slices C + D + F hier).
 >
@@ -35,7 +35,7 @@ Cross-JVM-Carve-Out (Atomic-Preserve §3.2, §6 Risk 8, §8.2)
    **vor** Pool-Exhaustion.
 3. **`schema_migrate_start`-Handler-Skeleton**, der C + D mit
    den in
-   [`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+   [`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
    bereits gelieferten A (Lock-Timeout-Tuning) und E (Cancellation-
    Token) komponiert.
 
@@ -62,7 +62,7 @@ Plan liefert die **JVM-seitigen Verträge**, die der MCP-Handler
 - **E-Follow-up** SIGINT-Bridge im CLI-Pfad (`73fb1f73`).
 - **B** Idempotency-Hook als eigenständiger Slice **deferred** —
   Wiring landet direkt im MCP-Handler von F (siehe
-  [`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+  [`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
   §3).
 
 ### 2.2 Reuse-Kandidaten für C/D/F
@@ -99,7 +99,7 @@ Lock-Garantie aber nicht.
 ### 3.3 CLI-Pfad bleibt regressionsfrei
 
 Genau wie A+E im CLI-Pfad transparent waren
-([`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)),
+([`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)),
 müssen C/D den bestehenden CLI-Pfad unverändert lassen — kein
 Sub-Pool-Override, kein Quota-Check (Default
 `InMemoryQuotaStore` mit `unlimited`).
@@ -320,20 +320,20 @@ implementierbar ohne C/D), dann F.3 (parallel zu C in
 
 ## 8. Verweise
 
-- [`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+- [`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
   — Closure für die gelieferten Sub-Slices A + E + SIGINT +
   B-Deferral.
 - [`mcp-schema-migrate-tool.md`](mcp-schema-migrate-tool.md) —
   MCP-Tool-Vertrag, der F konsumiert. Sub-Slices F.1-F.5 dort
   sind die MCP-seitigen Implementierungs-Stufen.
-- `docs/planning/done/sequence-preserve-atomic-lock-plan.md`
+- `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
   §3.2 Out-of-Scope, §6 Risiken Nr. 8, §7 Out-of-Scope-Folge-
   Themen, §8.2 Carve-outs.
-- `docs/planning/done/atomic-preserve-followups.md` §6 Offene
+- `docs/planning/done-archive/atomic-preserve-followups.md` §6 Offene
   Fragen + §8.3 Carve-outs.
-- `docs/planning/done/ImpPlan-0.9.6-F.md` — Policy-Gate-Pattern
+- `docs/planning/done-archive/ImpPlan-0.9.6-F.md` — Policy-Gate-Pattern
   für `data_transfer_start`, Referenz für F-Wiring.
-- `docs/planning/done/quality-coverage-expansion-plan.md` §3.2
+- `docs/planning/done-archive/quality-coverage-expansion-plan.md` §3.2
   + §9 — MCP-Migrate-Tool als neues Produkt-Thema.
 - [`docs/planning/in-progress/carveout.md`](../in-progress/carveout.md)
   §3 Sequence-Preserve / Atomic-Preserve + §7 Telemetry +

@@ -47,10 +47,10 @@ Beispiele:
 ## 3. Sequence-Preserve / Atomic-Preserve (0.9.7)
 
 Quelldokumente:
-- [`../done/sequence-preserve-atomic-lock-plan.md`](../done/sequence-preserve-atomic-lock-plan.md)
+- [`../done-archive/sequence-preserve-atomic-lock-plan.md`](../done-archive/sequence-preserve-atomic-lock-plan.md)
   §3.2 Out-of-Scope, §6 Risiken, §7 Out-of-Scope-Folge-Themen,
   §8.2 Carve-outs.
-- [`../done/atomic-preserve-followups.md`](../done/atomic-preserve-followups.md) §6 + §8.3.
+- [`../done-archive/atomic-preserve-followups.md`](../done-archive/atomic-preserve-followups.md) §6 + §8.3.
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
@@ -67,7 +67,7 @@ Quelldokumente:
 ## 4. SQLite-Sequence-Emulation (0.9.7)
 
 Quelldokument:
-[`../done/sqlite-sequence-emulation-plan.md`](../done/sqlite-sequence-emulation-plan.md).
+[`../done-archive/sqlite-sequence-emulation-plan.md`](../done-archive/sqlite-sequence-emulation-plan.md).
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
@@ -80,8 +80,8 @@ Quelldokument:
 ## 5. Diff-basierte Migrationen (Plan 2, 0.9.7)
 
 Quelldokumente:
-- [`../done/diffresult-migration-plan-2.md`](../done/diffresult-migration-plan-2.md) §14.3.
-- [`../done/quality-coverage-expansion-plan.md`](../done/quality-coverage-expansion-plan.md).
+- [`../done-archive/diffresult-migration-plan-2.md`](../done-archive/diffresult-migration-plan-2.md) §14.3.
+- [`../done-archive/quality-coverage-expansion-plan.md`](../done-archive/quality-coverage-expansion-plan.md).
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
@@ -94,7 +94,7 @@ Quelldokumente:
 ## 6. F.5 CHECK / EXCLUDE-Constraints (0.9.7)
 
 Quelldokument:
-[`../done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`](../done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md).
+[`../done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`](../done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md).
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
@@ -110,7 +110,7 @@ Quelldokument:
 | --------- | ------ | ---------------- | ------------ |
 | Produktives Metrics-/Tracing-Wiring außerhalb 0.9.7 | Provisional | Trigger: Telemetry-Adapter-Slice. Plan existiert in `next/`. | [`../next/telemetry-observability-port.md`](../next/telemetry-observability-port.md) |
 | MCP-Server-Last-Tests | Provisional | Trigger: eigene Last-Strategie, gehört zum `spec/mcp-server.md`-Vertrag. | `../../../spec/mcp-server.md` |
-| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Vorabklärung 2026-06-03 angelegt; same-day Promote nach `next/` mit Sub-Slice-Schnitt F.1-F.5 + Wire-Vertrag V1. Atomic-Preserve-Plan-Doc 2026-06-03 in next/ + done/ImpPlan-0.9.8-AE.md gesplittet. | [`../next/mcp-schema-migrate-tool.md`](../next/mcp-schema-migrate-tool.md), [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md), [`../done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md), quality-coverage-expansion-plan §3.2 + §9 |
+| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Vorabklärung 2026-06-03 angelegt; same-day Promote nach `next/` mit Sub-Slice-Schnitt F.1-F.5 + Wire-Vertrag V1. Atomic-Preserve-Plan-Doc 2026-06-03 in next/ + done-archive/ImpPlan-0.9.8-AE.md gesplittet. | [`../next/mcp-schema-migrate-tool.md`](../next/mcp-schema-migrate-tool.md), [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md), [`../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md), quality-coverage-expansion-plan §3.2 + §9 |
 | App-Layer-Replay für Concurrent-Writer-Tests | Permanent | Anwendungssache, nicht d-migrate-Scope. | quality-coverage-expansion-plan §9 |
 | Mutation-Testing (PIT/Stryker) | Provisional | Trigger: stabile Coverage-Baseline + konsolidierte Excludes. | quality-coverage-expansion-plan §9 |
 

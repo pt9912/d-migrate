@@ -7,7 +7,7 @@
 >
 > Hinweis: Ein öffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
 > nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
-> [`implementation-plan-0.9.1.md`](../planning/done/implementation-plan-0.9.1.md)
+> [`implementation-plan-0.9.1.md`](../planning/done-archive/implementation-plan-0.9.1.md)
 > beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
 >
 > **1.0.0-Artefaktklassifikation** (vorbereitet in 0.9.1 Phase G):
@@ -334,7 +334,7 @@ rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 
 Coverage-Breakdown auf Paketebene prüfen — Pakete unter 90% Line-Coverage
 identifizieren. Befehle und jq-Filter: siehe
-[`docs/planning/done/test-coverage.md`](../planning/done/test-coverage.md).
+[`docs/planning/done-archive/test-coverage.md`](../planning/done-archive/test-coverage.md).
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 

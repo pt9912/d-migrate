@@ -17,7 +17,7 @@ Markdown-Link, die in einen anderen Vertrag/Plan zeigen:
 
 | Referenz | Häufigkeit | vermutetes Ziel |
 | -------- | ---------- | --------------- |
-| `§12.13`–`§12.18` (`§12.14`, `§12.17`, `§12.12`, `§12.8`, `§12.7`, `§12.15`, `§12.18`, `§12.13`) | 12 | `docs/planning/done/ImpPlan-0.9.6-B.md` „Implementation Contracts" |
+| `§12.13`–`§12.18` (`§12.14`, `§12.17`, `§12.12`, `§12.8`, `§12.7`, `§12.15`, `§12.18`, `§12.13`) | 12 | `docs/planning/done-archive/ImpPlan-0.9.6-B.md` „Implementation Contracts" |
 | `§4.2`, `§4.3` | 3 | Auth-/Sicherheitsmodell (ImpPlan-B bzw. `ki-mcp.md`) |
 | `§5.5`, `§6.9`, `§6.11` | 3 | ImpPlan-B / `ki-mcp.md` |
 | `§8.3` | 1 | explizit `spec/ki-mcp.md` §8.3 (MIME-Allowlist) |
@@ -56,5 +56,5 @@ Aussage entsprechend korrigieren oder bestätigen. Nicht blind umschreiben.
 ## Referenzen
 
 - [`../../../spec/mcp-server.md`](../../../spec/mcp-server.md) — betroffenes Zielbild
-- [`../../../spec/ki-mcp.md`](../../../spec/ki-mcp.md), [`../done/ImpPlan-0.9.6-B.md`](../done/ImpPlan-0.9.6-B.md) — vermutete `§`-Ziele
+- [`../../../spec/ki-mcp.md`](../../../spec/ki-mcp.md), [`../done-archive/ImpPlan-0.9.6-B.md`](../done-archive/ImpPlan-0.9.6-B.md) — vermutete `§`-Ziele
 - [`../../adr/0004-documentation-and-planning-structure.md`](../../adr/0004-documentation-and-planning-structure.md)

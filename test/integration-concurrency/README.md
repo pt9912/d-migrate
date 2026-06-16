@@ -10,7 +10,7 @@ Plan-Docs:
   (Phasen A + B + C + D + E komplett 2026-06-01; in-progress bis
   zum 0.9.7-Release-Tag).
 - Ursprüngliche Coverage-Initiative:
-  [`quality-coverage-expansion-plan.md`](../../docs/planning/done/quality-coverage-expansion-plan.md)
+  [`quality-coverage-expansion-plan.md`](../../docs/planning/done-archive/quality-coverage-expansion-plan.md)
   §5.3 (Sub-Slice C).
 
 ## Status pro Dialekt *(seit 2026-06-01)*

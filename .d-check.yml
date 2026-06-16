@@ -3,6 +3,15 @@
 # Die Default-Scan-Wurzeln (docs/, spec/, Root-*.md) decken den
 # Alt-Tool-Umfang ab; `anchors` ist bewusste Mehr-Abdeckung
 # (Anker-Validierung, Bildreferenzen — das Alt-Tool prüfte beides nicht).
+
+# scan.ignore: eingefrorenes Done-Archiv aus dem Scan nehmen.
+# docs/planning/done-archive/ enthält abgeschlossene, kalt gestellte
+# Pläne (unveränderliche Historie); sie auf Referenz-Frische zu prüfen
+# wäre dauerhaftes Rauschen ohne Nutzen. docs/planning/done/ bleibt im
+# Scan (frisch abgeschlossen). Begründung: ADR 0010.
+scan:
+  ignore: ["docs/planning/done-archive/**"]
+
 modules: [links, anchors, matrix, hostpaths, spans]
 
 # matrix: mechanisiert die Referenz-Richtung (Stable Dependencies

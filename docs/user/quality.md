@@ -71,7 +71,7 @@ wird.
 Die Docker-Stages `coverage`, `coverage-json`, `coverage-verify` und
 `docker-coverage-modules-html` sind in der [README](../../README.md)
 beschrieben. Das erledigte Analyse-Dokument
-[`test-coverage.md`](../planning/done/test-coverage.md) enthaelt Befehle, um
+[`test-coverage.md`](../planning/done-archive/test-coverage.md) enthaelt Befehle, um
 Pakete und Klassen unterhalb der 90%-Grenze aus dem JSON-Report zu ermitteln.
 
 ### Tag-Steuerung
@@ -89,7 +89,7 @@ automatisch je nach Modus:
 Perf-Tests (`perf`-Tag) prüfen Memory-Budgets mit großen Fixtures
 (100 MB JSON, 100k YAML) und laufen nie automatisch. Ergebnisse und
 Entscheidungen sind im erledigten Planungsdokument
-[`0.4.0-phase-d-reorder.md`](../planning/done/0.4.0-phase-d-reorder.md)
+[`0.4.0-phase-d-reorder.md`](../planning/done-archive/0.4.0-phase-d-reorder.md)
 dokumentiert. Manueller Start:
 
 ```bash
