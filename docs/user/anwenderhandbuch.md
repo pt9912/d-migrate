@@ -585,7 +585,7 @@ YAML, CSV oder Parquet).
        --tables customers,orders --output ./export --split-files
    ```
 
-**Ergebnis:** Im Ordner `./export` liegt pro Tabelle eine CSV-Datei.
+**Ergebnis:** Im Ordner `./export` liegt pro Tabelle eine CSV-Datei. <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 
 **Hinweise:**
 
@@ -1789,7 +1789,7 @@ d-migrate verwendet genau **eine** Datei, in dieser Reihenfolge:
 
 1. die Datei aus `--config`
 2. der Pfad aus der Umgebungsvariable `D_MIGRATE_CONFIG`
-3. die Datei `./.d-migrate.yaml` im aktuellen Verzeichnis
+3. die Datei `./.d-migrate.yaml` im aktuellen Verzeichnis <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 
 Die vollständige Liste aller Konfigurationsfelder steht im
 [Administrationshandbuch](administrationshandbuch.md#3-konfiguration).

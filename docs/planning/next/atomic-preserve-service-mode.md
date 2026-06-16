@@ -2,7 +2,7 @@
 
 > **Status**: Next (2026-06-03 — Split aus
 > [`docs/planning/done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
-> als ADR-0004-strikte Aufteilung: A + E + SIGINT als Closure dort,
+> als [ADR-0004](../../adr/0004-documentation-and-planning-structure.md)-strikte Aufteilung: A + E + SIGINT als Closure dort,
 > die offenen Sub-Slices C + D + F hier).
 >
 > **Aktivierungsbedingung** (Move nach `in-progress/`): Mindestens
@@ -69,10 +69,10 @@ Plan liefert die **JVM-seitigen Verträge**, die der MCP-Handler
 
 | Vertrag | Bestehender Port / Adapter | Quelle |
 | ------- | -------------------------- | ------ |
-| Connection-Pool | `HikariConnectionPoolFactory` + `PoolSettings` | `adapters/driven/driver-common/.../connection/HikariConnectionPoolFactory.kt`; `hexagon/ports-common/.../driver/connection/PoolSettings.kt` |
-| Cancellation (data-Pfad) | `JobCancelHandler` + Worker-Cancel-Polling | `adapters/driving/mcp/.../registry/JobCancelHandler.kt` |
-| Quota / Rate-Limit | `QuotaStore` + `JdbcQuotaStore` + `QuotaReservationSweeper` | `hexagon/ports-common/.../server/ports/quota/QuotaStore.kt`; `JobQuotaScenarioTest.kt` |
-| Idempotency | `IdempotencyStore` + `JdbcIdempotencyStore` | `hexagon/ports-common/.../server/ports/IdempotencyStore.kt`; `adapters/driven/persistence-jdbc/.../idempotency/JdbcIdempotencyStore.kt` |
+| Connection-Pool | `HikariConnectionPoolFactory` + `PoolSettings` | `adapters/driven/driver-common/…/connection/HikariConnectionPoolFactory.kt`; `hexagon/ports-common/…/driver/connection/PoolSettings.kt` |
+| Cancellation (data-Pfad) | `JobCancelHandler` + Worker-Cancel-Polling | `adapters/driving/mcp/…/registry/JobCancelHandler.kt` |
+| Quota / Rate-Limit | `QuotaStore` + `JdbcQuotaStore` + `QuotaReservationSweeper` | `hexagon/ports-common/…/server/ports/quota/QuotaStore.kt`; `JobQuotaScenarioTest.kt` |
+| Idempotency | `IdempotencyStore` + `JdbcIdempotencyStore` | `hexagon/ports-common/…/server/ports/IdempotencyStore.kt`; `adapters/driven/persistence-jdbc/…/idempotency/JdbcIdempotencyStore.kt` |
 
 C/D/F komponieren diese Ports, statt parallele
 Implementierungen zu bauen.
@@ -140,9 +140,9 @@ Pool-Exhaustion blocken.
 
 **Betroffene Dateien**:
 
-- Neuer Port: `hexagon/ports-execute/.../MigratePoolFactory.kt`
+- Neuer Port: `hexagon/ports-execute/…/MigratePoolFactory.kt`
 - Neuer Adapter:
-  `adapters/driven/driver-common/.../connection/HikariMigratePoolAdapter.kt`
+  `adapters/driven/driver-common/…/connection/HikariMigratePoolAdapter.kt`
 - Wiring in `SchemaMigrateWiring.kt`
 
 **Dependencies**: keine.
@@ -184,11 +184,11 @@ Limit **vor** Pool-Exhaustion greift.
 
 **Betroffene Dateien**:
 
-- `hexagon/ports-common/.../server/ports/quota/QuotaStore.kt`
+- `hexagon/ports-common/…/server/ports/quota/QuotaStore.kt`
   (Erweiterung wenn nötig)
-- `hexagon/application/.../job/JobStartOrchestrator.kt`
+- `hexagon/application/…/job/JobStartOrchestrator.kt`
 - Neuer Test:
-  `hexagon/application/.../job/SchemaMigrateQuotaScenarioTest.kt`
+  `hexagon/application/…/job/SchemaMigrateQuotaScenarioTest.kt`
 
 **Dependencies**: C (Connection-Sub-Pool) — Quota schützt den
 Pool, also muss der Pool da sein.

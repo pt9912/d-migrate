@@ -140,7 +140,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
   in der Reihenfolge `i18n.default_timezone` → `ZoneId.systemDefault()` → `UTC`
   aufgelöst; UTC ist dabei der Safety-Net-Fallback, nicht der allgemeine
   Default. `TIMESTAMP` bleibt lokal ohne erfundene Zone, `TIMESTAMP WITH TIME
-  ZONE` bleibt offsethaltig (siehe `docs/planning/ImpPlan-0.8.0-E.md`)
+  ZONE` bleibt offsethaltig
 - Korrekte Konvertierung zwischen Zeitzonen bei Export/Import, aber nur über
   explizit aufgerufene Konvertierungs-APIs — keine stille Umdeutung lokaler
   Werte
@@ -607,7 +607,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Export/Import von 100.000 Datensätzen mit gemischten Zeichensätzen (Emoji, Sonderzeichen)
 - Korrekte Sortierung von mehrsprachigen Daten gemäß Locale
 - CLI-Ausgabe in mindestens 2 Sprachen (Deutsch, Englisch) mit korrekter Formatierung
-- Zeitzonen-Vertrag gemäß Phase E (`docs/planning/ImpPlan-0.8.0-E.md`): `TIMESTAMP` bleibt lokal, `TIMESTAMP WITH TIME ZONE` bleibt offsethaltig, Default-Zeitzone greift nur in expliziten Konvertierungen und folgt der Kette `i18n.default_timezone` → `ZoneId.systemDefault()` → `UTC` (Error-Fallback)
+- Zeitzonen-Vertrag: `TIMESTAMP` bleibt lokal, `TIMESTAMP WITH TIME ZONE` bleibt offsethaltig, Default-Zeitzone greift nur in expliziten Konvertierungen und folgt der Kette `i18n.default_timezone` → `ZoneId.systemDefault()` → `UTC` (Error-Fallback)
 
 ### 8.2 Performance-Tests
 

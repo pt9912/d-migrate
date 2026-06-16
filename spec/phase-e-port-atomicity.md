@@ -1,10 +1,9 @@
 # Phase E Port-Atomicity-Vertraege
 
 > **Status**: aktiv (2026-05-05)
-> **Geltung**: Phase-E (`ImpPlan-0.9.6-E.md`)
+> **Geltung**: Phase-E
 > **Cross-Refs**: [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy";
-> [`spec/hexagonal-port.md`](./hexagonal-port.md);
-> `docs/planning/done-archive/ImpPlan-0.9.6-E.md` §7.x
+> [`spec/hexagonal-port.md`](./hexagonal-port.md)
 
 ## Warum dieses Dokument existiert
 
@@ -30,7 +29,7 @@ durchlaufen MUSS.
 | Aspekt | Vertrag |
 |---|---|
 | **Operation** | `reserve(scope, payloadFingerprint, now)` |
-| **Garantie** | Plan §6.2: konkurrierende identische Reserves liefern genau **eines** `Reserved`-Outcome. Der Rest sieht `ExistingPending` mit derselben Lease. |
+| **Garantie** | Konkurrierende identische Reserves liefern genau **eines** `Reserved`-Outcome. Der Rest sieht `ExistingPending` mit derselben Lease. |
 | **Race-Folgen** | Ohne Atomicity koennte eine zweite Reserve einen Job parallel starten — sichtbar als doppeltes Idempotency-Outcome `COMMITTED` mit verschiedenen `resultRef`. |
 | **InMemory** | `ConcurrentHashMap.compute` |
 | **Production** | DB-`SELECT … FOR UPDATE` + `INSERT … ON CONFLICT DO NOTHING` oder gleichwertig |
@@ -41,7 +40,7 @@ durchlaufen MUSS.
 | Aspekt | Vertrag |
 |---|---|
 | **Operation** | `markAwaitingApproval(scope, now, challenge?)` |
-| **Garantie** | Plan §5.5 (Review-Fix #3): die `ApprovalChallenge` (approvalRequestId, requiredScopes, …) wird zusammen mit dem Statuswechsel `PENDING -> AWAITING_APPROVAL` durabel gespeichert. Spaetere `reserve()`-Calls liefern dieselbe Challenge im `AwaitingApproval`-Outcome zurueck. |
+| **Garantie** | Die `ApprovalChallenge` (approvalRequestId, requiredScopes, …) wird zusammen mit dem Statuswechsel `PENDING -> AWAITING_APPROVAL` durabel gespeichert. Spaetere `reserve()`-Calls liefern dieselbe Challenge im `AwaitingApproval`-Outcome zurueck. |
 | **Race-Folgen** | Ohne durable Challenge: Approved-Retry hat keine echte Anti-Replay-Bindung; ein Grant fuer eine alte/erneuerte `approvalRequestId` ist nicht unterscheidbar. |
 | **InMemory** | `Entry.challenge: ApprovalChallenge?` im selben Eintrag wie der Status. |
 | **Production** | DB-Spalte `awaiting_approval_challenge_json` o.Ae. ODER Foreign-Key auf eine separate Challenge-Tabelle. Atomar zum Statuswechsel. |
@@ -52,10 +51,10 @@ durchlaufen MUSS.
 | Aspekt | Vertrag |
 |---|---|
 | **Operation** | `commit(record, scope, now)` |
-| **Garantie** | Plan §7.2: `idempotencyStore.commit(scope, jobId)` UND `jobStore.save(record)` gehen **gemeinsam sichtbar** auf den jeweiligen Stores. Es darf kein Zustand entstehen, in dem die Idempotenz committed ist, der Job aber nicht (oder umgekehrt). |
+| **Garantie** | `idempotencyStore.commit(scope, jobId)` UND `jobStore.save(record)` gehen **gemeinsam sichtbar** auf den jeweiligen Stores. Es darf kein Zustand entstehen, in dem die Idempotenz committed ist, der Job aber nicht (oder umgekehrt). |
 | **Race-Folgen** | Halbzustand: ein Caller sieht `Idempotency=COMMITTED(jobId)` aber `jobStore.findById(jobId) == null`. Replays liefern `AlreadyStarted(jobId)` — Klient probiert Status-Get, bekommt `RESOURCE_NOT_FOUND`. |
-| **InMemory** | `synchronized(lock)` im `InMemoryJobStartTransaction.commit`; Idempotency-Commit ZUERST, dann Job-Save (Plan §7.2-Reihenfolge). |
-| **Production** | Eine **gemeinsame DB-Transaktion** ueber beide Tabellen. Plan §7.2 explizit: "wenn ein Backend keine gemeinsame Datenbanktransaktion bietet, muss der Adapter eine recoverable Saga oder gleichwertige atomare Primitive bereitstellen". |
+| **InMemory** | `synchronized(lock)` im `InMemoryJobStartTransaction.commit`; Idempotency-Commit ZUERST, dann Job-Save. |
+| **Production** | Eine **gemeinsame DB-Transaktion** ueber beide Tabellen. Der Vertrag verlangt explizit: "wenn ein Backend keine gemeinsame Datenbanktransaktion bietet, muss der Adapter eine recoverable Saga oder gleichwertige atomare Primitive bereitstellen". |
 | **Contract-Test** | `JobStartTransactionContractTests` — siehe `hexagon/ports-common/src/testFixtures` (Test "parallel commits yield exactly one Committed"; "rollback on save failure"). |
 
 ## 4. `OwnerAwareQuotaService.reserve` — Quota+OwnerStore-Kombi
@@ -63,7 +62,7 @@ durchlaufen MUSS.
 | Aspekt | Vertrag |
 |---|---|
 | **Operation** | `reserve(key, amount, ownerId, leaseExpiresAt, now)` |
-| **Garantie** | Plan §7.9 line 1280-1281 + Review-Fix #4: ein erfolgreicher `delegate.reserve` (Counter +1) MUSS zusammen mit `ownerStore.register(ownerId, …)` atomar sichtbar werden. Sonst kann ein JVM-Crash zwischen den beiden Schritten den Slot dauerhaft leaken — ohne Owner-Eintrag findet der Sweeper ihn nie. |
+| **Garantie** | Ein erfolgreicher `delegate.reserve` (Counter +1) MUSS zusammen mit `ownerStore.register(ownerId, …)` atomar sichtbar werden. Sonst kann ein JVM-Crash zwischen den beiden Schritten den Slot dauerhaft leaken — ohne Owner-Eintrag findet der Sweeper ihn nie. |
 | **Race-Folgen** | Slot-Leak: Counter steht permanent bei +1 ohne korrespondierenden Owner-Eintrag. Sweeper kann nicht refunden. |
 | **InMemory** | `synchronized(this)` im `OwnerAwareQuotaService.reserve` umfasst beide Schritte. Fuer JVM-Crash bietet InMemory keine Garantien (alles weg). |
 | **Production** | Gemeinsame DB-Transaktion ueber `quota_counters`-Tabelle und `quota_reservation_owners`-Tabelle. ODER Reserve-then-Rollback-Pattern: bei `register`-Fehler `delegate.refund` aufrufen. Letzteres ist anfaellig fuer Crash-zwischen-`reserve`-und-`register`; Volltransaktion ist die robuste Loesung. |
@@ -85,7 +84,7 @@ durchlaufen MUSS.
 | Aspekt | Vertrag |
 |---|---|
 | **Operation** | `transitionStatus(tenant, jobId, allowedFrom, transformer)` |
-| **Garantie** | Plan §7.2: atomare CAS gegen `allowedFromStatuses`; nur erfolgreich wenn der heutige Status erlaubt ist. Ergebnis `IllegalTransition(currentStatus)` bei Race. |
+| **Garantie** | Atomare CAS gegen `allowedFromStatuses`; nur erfolgreich wenn der heutige Status erlaubt ist. Ergebnis `IllegalTransition(currentStatus)` bei Race. |
 | **Race-Folgen** | Ohne CAS: zwei gleichzeitige Updates koennen den Job-Status von QUEUED→CANCELLED **und** QUEUED→RUNNING wettlaufen lassen; einer dieser Pfade laeuft mit veralteten Annahmen weiter. |
 | **InMemory** | `ConcurrentHashMap.compute` mit Status-Check im Closure. |
 | **Production** | DB-`UPDATE … WHERE status IN (…)` mit Affected-Rows-Check. |
@@ -112,11 +111,11 @@ jeweiligen Abschnitt oben dokumentierten Race-Folgen.
 
 | Port | Suite | Pfad |
 |---|---|---|
-| `IdempotencyStore` | `IdempotencyStoreContractTests` | `hexagon/ports-common/src/testFixtures/.../contract/IdempotencyStoreContractTests.kt` |
-| `JobStartTransaction` | `JobStartTransactionContractTests` | `hexagon/ports-common/src/testFixtures/.../contract/JobStartTransactionContractTests.kt` |
-| `JobStore` | `JobStoreContractTests` | `hexagon/ports-common/src/testFixtures/.../contract/JobStoreContractTests.kt` |
-| `QuotaStore` | `QuotaStoreContractTests` | `hexagon/ports-common/src/testFixtures/.../contract/QuotaStoreContractTests.kt` |
-| `QuotaReservationOwnerStore` | `QuotaReservationOwnerStoreContractTests` | `hexagon/application/src/test/.../quota/QuotaReservationOwnerStoreContractTests.kt` |
+| `IdempotencyStore` | `IdempotencyStoreContractTests` | `hexagon/ports-common/src/testFixtures/…/contract/IdempotencyStoreContractTests.kt` |
+| `JobStartTransaction` | `JobStartTransactionContractTests` | `hexagon/ports-common/src/testFixtures/…/contract/JobStartTransactionContractTests.kt` |
+| `JobStore` | `JobStoreContractTests` | `hexagon/ports-common/src/testFixtures/…/contract/JobStoreContractTests.kt` |
+| `QuotaStore` | `QuotaStoreContractTests` | `hexagon/ports-common/src/testFixtures/…/contract/QuotaStoreContractTests.kt` |
+| `QuotaReservationOwnerStore` | `QuotaReservationOwnerStoreContractTests` | `hexagon/application/src/test/…/quota/QuotaReservationOwnerStoreContractTests.kt` |
 
 ---
 
@@ -133,7 +132,7 @@ jeweiligen Abschnitt oben dokumentierten Race-Folgen.
   ohne anschliessenden `rowCount == 1`-Check uebersieht Race-Verlierer.
   Implementoren MUESSEN den Affected-Rows-Wert pruefen.
 - **JSON-Spalte fuer Idempotency-Challenge ohne Migration-Plan**:
-  Plan §5.5 fuegt das Feld neu ein; existierende Eintraege haben es
+  Das Feld wird neu eingefuehrt; existierende Eintraege haben es
   nicht. Migration: NULL-tolerant (Bestands-Eintraege liefern
   `challenge=null`, Approval-Retry faellt auf den E.6-(3a)-Workaround
   zurueck — dokumentiert).

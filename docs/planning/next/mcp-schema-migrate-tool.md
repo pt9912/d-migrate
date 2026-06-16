@@ -738,7 +738,7 @@ mit Title/Description/ErrorCodes versorgt.
 - `hexagon/core/src/test/kotlin/dev/dmigrate/server/core/error/ToolErrorEnvelopeTest.kt`
   (Pin auf 21 erhöhen)
 - `spec/mcp-server.md`, `spec/ki-mcp.md` (Code-Liste)
-- Neuer Test: `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/schema/SchemaMigrateStartSchemaTest.kt`
+- Neuer Test: `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/schema/SchemaMigrateStartSchemaTest.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 - Erweiterung an `McpToolsListContractTest.kt` (oder Pendant) für
   den `tools/list`-Vertrag.
 
@@ -795,10 +795,10 @@ NOT_IMPLEMENTED.
 
 **Betroffene Dateien**:
 - Neuer Handler:
-  `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt`
+  `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 - `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/OperationalMcpRegistries.kt`
 - Neuer Test:
-  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandlerTest.kt`
+  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandlerTest.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 
 **Dependencies**: F.1.
 
@@ -908,7 +908,7 @@ aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures mappen auf
 - [ ] `make ci` grün inkl. neuer Integrationstests pro Dialekt.
 
 **Betroffene Dateien**:
-- `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt`
+- `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 - Job-Worker-Wiring (Pool + Cancel + Apply-Sequenz)
 - IT-Tests pro Dialekt
 
@@ -956,7 +956,7 @@ pinnt das volle Vertragsbündel.
 
 **Betroffene Dateien**:
 - Neuer Test:
-  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/integration/McpSchemaMigrateStartScenarioTest.kt`
+  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/integration/McpSchemaMigrateStartScenarioTest.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 
 **Dependencies**: F.4.
 

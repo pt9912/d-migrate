@@ -11,7 +11,7 @@ und **keinen Lastenheft-Eintrag** tragen. Eine Konsistenzdurchsicht der
 
 - Die *zugrundeliegende* Connection-/Config-Mechanik ist implementiert und
   trägt LF-012 / LN-038: `ConnectionConfigParser`, `NamedConnectionResolver`
-  (`adapters/driving/cli/.../config/`), `EnvConnectionSecretResolver`,
+  (`adapters/driving/cli/…/config/`), `EnvConnectionSecretResolver`,
   `YamlConnectionReferenceLoader` (`adapters/driven/connection-config`).
 - `connection-config-spec.md §4` spezifiziert die Credential-Verwaltung
   vollständig: §4.1 eine **5-stufige Prioritätskette** und §4.2 den
@@ -61,7 +61,7 @@ darf diese Trennung nicht aufweichen.
 
 ## 2. Architektur-Einordnung (beide Phasen)
 
-- Neues Top-Level-`ConfigCommand` in `adapters/driving/cli/.../Main.kt:155`
+- Neues Top-Level-`ConfigCommand` in `adapters/driving/cli/…/Main.kt:155`
   registrieren (`buildRootCommand().subcommands(..., ConfigCommand())`), plus
   `ConfigCommands.kt`.
   - Phase 1 registriert nur `ConfigShowCommand()`.

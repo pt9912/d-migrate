@@ -5,7 +5,7 @@
 > Status: Entwurf fuer die kuenftige interne Service-Schnittstelle
 >
 > Referenzen: `spec/architecture.md`, `spec/cli-spec.md`,
-> `spec/job-contract.md`, `docs/planning/implementation-plan-0.9.1.md`
+> `spec/job-contract.md`
 
 ---
 

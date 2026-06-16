@@ -20,9 +20,9 @@ zwischen Single-File-Modus (mit `d-migrate.manifest`-Footer-KV-
 Provider) und Bundle-Modus (ohne Footer-KV; Manifest extern in
 `manifest.yaml`) unterscheiden — die S4 §2.2-Invariante verlangt
 genau diese Verzweigung. Konkretisiert wurde der Builder im
-CLI-Modul (`adapters/driving/cli/.../DataExportWiring.kt:buildWriterFactoryForOutput`)
+CLI-Modul (`adapters/driving/cli/…/DataExportWiring.kt:buildWriterFactoryForOutput`)
 und im Application-Modul-Konstruktor
-(`hexagon/application/.../DataExportRunner.kt:writerFactoryBuilder`).
+(`hexagon/application/…/DataExportRunner.kt:writerFactoryBuilder`).
 
 Im Multi-Angle-Review der S7-Serie tauchte folgende Asymmetrie auf:
 

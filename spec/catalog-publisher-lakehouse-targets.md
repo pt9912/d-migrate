@@ -3,11 +3,6 @@
 > Dokumenttyp: Architektur- und Integrationsplan
 >
 > Status: Entwurf (2026-05-01)
->
-> Referenzen: `docs/planning/in-progress/roadmap.md`,
-> `docs/planning/done-archive/parquet-export-import-evaluation.md`,
-> `docs/planning/next/object-storage-artifact-store.md`,
-> `docs/planning/next/profiling-data-quality-export.md`
 
 ---
 

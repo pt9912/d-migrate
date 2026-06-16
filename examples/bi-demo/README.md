@@ -290,7 +290,7 @@ make bi-demo-purge && make bi-demo-up
 | `bi-demo-up`        | `cp .env.example .env`, `mkdir -p out`, `docker compose ... up -d`                    |
 | `bi-demo-down`      | `docker compose -f examples/bi-demo/docker-compose.yml down`                          |
 | `bi-demo-purge`     | `docker compose -f examples/bi-demo/docker-compose.yml down -v`                       |
-| `bi-demo-smoke`     | `./examples/bi-demo/scripts/smoke.sh` (End-to-End-Smoke, siehe BD.5)                  |
+| `bi-demo-smoke`     | `./scripts/smoke.sh` (End-to-End-Smoke, siehe BD.5)                  |
 
 ## Slice-Status
 

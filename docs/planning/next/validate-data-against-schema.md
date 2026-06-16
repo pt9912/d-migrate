@@ -56,17 +56,17 @@ Unbekannte Eingangsspalten sind Fehler.
 - **`schema validate`** (implementiert, [cli-spec.md](../../../spec/cli-spec.md))
   prüft die *Schema-Datei selbst* auf Korrektheit — keine Daten.
 - **`data import`-Preflight** (`ImportPreflightValidator`,
-  `schemaTargetValidator` in `hexagon/application/.../cli/commands/`) prüft
+  `schemaTargetValidator` in `hexagon/application/…/cli/commands/`) prüft
   Spalten-Matching gegen ein Schema, aber im Kontext eines Live-DB-Imports.
   `validate data` ist die eigenständige, DB-freie Trockenvariante.
 
 ## 3. Vorhandene Bausteine (wiederverwenden, nicht duplizieren)
 
-- **Schema laden**: `SchemaDefinition` (`hexagon/core/.../model/SchemaDefinition.kt`)
+- **Schema laden**: `SchemaDefinition` (`hexagon/core/…/model/SchemaDefinition.kt`)
   + `JsonSchemaCodec` / `YamlSchemaCodec` (`adapters/driven/formats`).
 - **Daten streamen / Reader-Vorlagen**: `DataChunkReaderFactory`, `JsonChunkReader`,
   `YamlChunkReader`/`YamlEventCursor`, `CsvChunkReader` und
-  `FormatReadOptions` aus `adapters/driven/formats/.../format/data`.
+  `FormatReadOptions` aus `adapters/driven/formats/…/format/data`.
   Wichtig: `DataChunkReaderFactory.create(...)` braucht den Tabellennamen
   bereits beim Reader-Bau. Die Tabellen-Zuordnung ist daher Voraussetzung für
   das Einlesen, nicht erst für die Row-Engine. Die heutigen JSON-/YAML-Reader

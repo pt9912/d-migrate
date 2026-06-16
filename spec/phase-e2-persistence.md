@@ -1,12 +1,11 @@
 # Phase E2 — Persistente Server-State-Adapter (JDBC/Postgres)
 
 > **Status**: aktiv (2026-05-06)
-> **Geltung**: Phase-E2 (`docs/planning/done-archive/ImpPlan-0.9.6-E2.md`)
+> **Geltung**: Phase-E2
 > **Cross-Refs**:
 > [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Atomicity-Verträge der Ports;
 > [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge;
-> [`spec/hexagonal-port.md`](./hexagonal-port.md);
-> `docs/planning/done-archive/ImpPlan-0.9.6-E2.md` §3–§9
+> [`spec/hexagonal-port.md`](./hexagonal-port.md)
 
 ## Warum dieses Dokument existiert
 
@@ -30,8 +29,7 @@ Inhalt:
 
 ## 1. Modul-Layout & Komponenten
 
-Alles lebt im Adapter-Modul **`adapters/driven/persistence-jdbc`**
-(Plan §3.4):
+Alles lebt im Adapter-Modul **`adapters/driven/persistence-jdbc`**:
 
 | Komponente | Datei | Implementiert |
 |---|---|---|
@@ -82,7 +80,7 @@ Fünf Tabellen, alle in einem Migration-Skript:
 | `quota_reservation_owners` | Owner-Tracking pro Quota-Reservation | `owner_id` |
 | `quota_counters` | Raw-Counter pro `QuotaKey` | `quota_key` (TEXT, JSON-serialisiert) |
 
-Vollständiges DDL in `adapters/driven/persistence-jdbc/src/main/resources/db/migration/V1__phase_e_initial.sql`.
+Vollständiges DDL in `adapters/driven/persistence-jdbc/src/main/resources/db/migration/V1__phase_e_initial.sql`. <!-- d-check:ignore (Zielbild: Phase-E2-Migration, noch nicht angelegt; ADR 0011) -->
 Postgres-spezifisch: `JSONB`, `TIMESTAMPTZ`, partielle Indizes
 (`WHERE state = 'PENDING'`), `INSERT … ON CONFLICT … RETURNING`.
 
@@ -139,7 +137,7 @@ für jeden Vertrag gibt diese Sektion das konkrete SQL-Pattern.
 
 ### 3.1 IdempotencyStore.reserve — Recovery-CAS
 
-Plan §6.1. Hot-Path: `INSERT … ON CONFLICT DO NOTHING RETURNING`.
+Hot-Path: `INSERT … ON CONFLICT DO NOTHING RETURNING`.
 Recovery-Pfad: `SELECT … FOR UPDATE` + dispatch nach state +
 fingerprint, dann `UPDATE … WHERE state IN (...) AND expires_at <= ?`
 als CAS gegen abgelaufene Leases. Genau-eins-Sieger garantiert durch
@@ -147,7 +145,7 @@ PK-Lock + FOR-UPDATE-Row-Lock.
 
 ### 3.2 IdempotencyStore.commit + JobStore.save — gemeinsame TX
 
-Plan §3 + §6.5 + §6.7. `JdbcJobStartTransaction` wickelt beide
+`JdbcJobStartTransaction` wickelt beide
 Operationen in `JdbcTransactionRunner.inTransaction { conn -> … }` —
 shared `Connection`, ein Postgres-Commit. Bei Fehler in einer der beiden
 rollbackt Postgres beides; es entsteht **kein** sichtbarer Job ohne
@@ -155,20 +153,20 @@ matchenden COMMITTED-Idempotency-Eintrag.
 
 ### 3.3 JobStore.transitionStatus — Transformer + CAS
 
-Plan §6.7. `SELECT managed_job::text FOR UPDATE` → Status-Check →
+`SELECT managed_job::text FOR UPDATE` → Status-Check →
 `transformer(currentManagedJob)` → `UPDATE … WHERE tenant_id = ? AND
 job_id = ?`. NotFound/IllegalTransition/Applied unterscheidet der
 Adapter aus dem SELECT-Ergebnis vor dem UPDATE.
 
 ### 3.4 JobStore.markCancelRequested — First-Reason-Wins
 
-Plan §6.7 + §7.2. SELECT FOR UPDATE liest den vollen `cancelRequest`;
+SELECT FOR UPDATE liest den vollen `cancelRequest`;
 wenn `requested = true`, wird ohne UPDATE direkt `Applied(record)`
 zurückgegeben (Idempotenz: erste Reason/Source bleiben).
 
 ### 3.5 OwnerAwareQuotaService.reserve / release — Cross-Tabellen-TX
 
-Plan §6.8 + §6.9. `JdbcOwnerAwareQuotaService` überschreibt die 4
+`JdbcOwnerAwareQuotaService` überschreibt die 4
 Methoden der `open class OwnerAwareQuotaService` und wrappt jeden
 Aufruf in `inTransaction { conn -> … }`. Innerhalb der TX:
 
@@ -184,7 +182,7 @@ Aufruf in `inTransaction { conn -> … }`. Innerhalb der TX:
 
 ### 3.6 QuotaCounter — Limit-CAS im SQL
 
-Plan §6.8. Das Limit ist Argument, nicht Tabellen-Spalte — Limit-
+Das Limit ist Argument, nicht Tabellen-Spalte — Limit-
 Änderungen brauchen kein DDL. Der UPSERT prüft das Limit zweimal:
 
 ```sql
@@ -254,7 +252,7 @@ Für ein neues Backing:
 3. Lass die fünf Contract-Test-Suiten (s.u.) gegen Testcontainers
    laufen.
 4. Schreibe ein `V1__phase_e_initial.sql` für deinen Dialekt; die
-   semantischen Vorgaben aus Plan §4 sind Teil des Vertrags.
+   semantischen Vorgaben sind Teil des Vertrags.
 
 **Pflicht-Contract-Tests**:
 
@@ -266,7 +264,7 @@ Für ein neues Backing:
 - `QuotaReservationOwnerStoreContractTests` (`hexagon/application` testFixtures)
 
 Plus dialekt-spezifische Failure-Injection-Tests für den Crash-Window
-zwischen Owner-markX und Counter-Decrement (Plan §6.9 — Postgres-
+zwischen Owner-markX und Counter-Decrement (Postgres-
 Variante in `JdbcOwnerAwareQuotaServiceTest`).
 
 ---
@@ -276,8 +274,8 @@ Variante in `JdbcOwnerAwareQuotaServiceTest`).
 ### 5.1 Connection-Pool
 
 `JdbcTransactionRunner` borgt Connections aus einer
-`javax.sql.DataSource`. Production-Wiring nutzt HikariCP (siehe
-Plan §3.6). Dimensionierungs-Daumenregeln:
+`javax.sql.DataSource`. Production-Wiring nutzt HikariCP.
+Dimensionierungs-Daumenregeln:
 
 - `maximumPoolSize` ≥ erwartete tools/call-Concurrency × 2 (Dispatch-
   Pool + Sweeper + ad-hoc).
@@ -286,7 +284,7 @@ Plan §3.6). Dimensionierungs-Daumenregeln:
 - `idleTimeoutMs`/`maxLifetimeMs` < Postgres `idle_in_transaction_session_timeout`,
   sonst wird der Server die Connection killen.
 
-**Multi-Instance-Mode (Cluster)**: Out-of-scope für Phase E2 (Plan §9).
+**Multi-Instance-Mode (Cluster)**: Out-of-scope für Phase E2.
 Mehrere MCP-Server-Instanzen, die denselben Pool teilen, sind nicht
 verifiziert; insbesondere der `QuotaReservationSweeper` läuft in
 jeder Instanz und konkurriert auf den Owner-CAS — das ist sicher,
@@ -301,7 +299,7 @@ Häufigere Polls verbrauchen DB-CPU für eine fast-immer-leere Query
 
 Der Sweeper ist exactly-once durch `markRefundedOnConnection`-CAS;
 zwei Instanzen, die gleichzeitig sweepen, refunden jede Lease genau
-einmal (Plan §7.9 line 1310).
+einmal.
 
 ### 5.3 Backup
 
@@ -317,7 +315,7 @@ Key wiederholt, einen alten Job-Ref erhalten.
 
 ### 5.4 PostgreSQL-Versionen
 
-Plan §3.1 + §10 Q1: technische Mindestversion **PostgreSQL 14**;
+Technische Mindestversion **PostgreSQL 14**;
 empfohlen für neue Production-Deployments **PostgreSQL 16+**.
 PG 14 erreicht laut [PostgreSQL Versioning Policy](https://www.postgresql.org/support/versioning/)
 am 2026-11-12 EOL. Die Adapter-SQL nutzt nur Features, die in

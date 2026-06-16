@@ -1023,7 +1023,7 @@ data class DocumentationConfig(
 Architekturvertrag:
 
 - `defaultLocale` beschreibt den Produktdefault; Root-/Fallback-Bundle ist Englisch (`messages.properties`).
-- Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
+- Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`. <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 - `defaultTimezone` ist optional und wird durch `I18nSettingsResolver` in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) zu einer `ZoneId` aufgeloest; die aufgeloeste Zone greift nur in expliziten Konvertierungen, nicht als Serialisierungs-Offset fuer lokale Werte.
 - `--lang` ist ein CLI-Override: `--lang` hat Vorrang vor `D_MIGRATE_LANG` und ist strikt auf gebundelte Produktsprachen (`de`, `en`) beschraenkt.
 

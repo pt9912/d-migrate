@@ -325,7 +325,7 @@ ai:
 # ── Internationalisierung ──────────────────────
 i18n:
   default_locale: en                 # Sprache für CLI-Ausgaben
-  default_timezone: UTC              # Nur expliziter Zonierungs-Baustein (Phase E §4.4), kein Export-Default
+  default_timezone: UTC              # Nur expliziter Zonierungs-Baustein, kein Export-Default
   normalize_unicode: NFC             # Unicode-Normalisierung: NFC | NFD | NFKC | NFKD
 
 # Vertragsregeln:

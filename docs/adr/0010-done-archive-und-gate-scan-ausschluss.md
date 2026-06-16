@@ -11,7 +11,7 @@ informed: Plan-Doc-Autoren; Reviewer; d-check-Gate-Pflege
 ## Kontext und Problemstellung
 
 Mit der Adoption weiterer d-check-Module (`matrix`, `codepaths`, `ids`;
-Treiber-Plan `docs/planning/next/d-check-module-adoption.md`) wird der
+Treiber-Plan `docs/planning/done/d-check-module-adoption.md`) wird der
 `make docs-check`-Lauf über `docs/planning/` deutlich strenger:
 `codepaths` prüft Inline-Code-Pfade auf Existenz, `ids` die
 Kennungs-Verlinkung. `docs/planning/done/` trug zu diesem Zeitpunkt
@@ -80,4 +80,4 @@ Querverweis-Sweep wie die übrigen Lebenszyklus-Übergänge in ADR 0004.
 - [`ADR 0004`](0004-documentation-and-planning-structure.md) — Basis-Lebenszyklus.
 - [`docs/planning/done/README.md`](../planning/done/README.md) und
   [`docs/planning/done-archive/README.md`](../planning/done-archive/README.md) — operative Konvention pro Ordner.
-- Treiber: [`docs/planning/next/d-check-module-adoption.md`](../planning/next/d-check-module-adoption.md) (Entscheidung D3).
+- Treiber: [`docs/planning/done/d-check-module-adoption.md`](../planning/done/d-check-module-adoption.md) (Entscheidung D3).

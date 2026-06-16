@@ -82,7 +82,7 @@ automatisch je nach Modus:
 | Modus                | Befehl                                 | Tag-Filter             |
 | -------------------- | -------------------------------------- | ---------------------- |
 | Unit-Tests (Default) | `docker build .`                       | `!integration & !perf` |
-| Integration-Tests    | `./scripts/test-integration-docker.sh` | `!perf`                |
+| Integration-Tests    | `scripts/test-integration-docker.sh` | `!perf`                |
 | Perf-Tests (opt-in)  | `-Dkotest.tags=perf`                   | nur `perf`             |
 | Expliziter Filter    | `-Dkotest.tags='...'`                  | wie angegeben          |
 
@@ -104,7 +104,7 @@ Integrations-Tests (`integration`-Tag) benötigen Docker (Testcontainers)
 und laufen über das Skript:
 
 ```bash
-./scripts/test-integration-docker.sh
+scripts/test-integration-docker.sh
 ```
 
 Der Output wird zusätzlich in eine Log-Datei geschrieben

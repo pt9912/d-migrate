@@ -120,8 +120,7 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 `identifier` beschreibt im aktuellen neutralen Modell den bestehenden
 32-bit-Auto-Increment-Vertrag. PostgreSQL `BIGSERIAL` und
 `BIGINT GENERATED ... AS IDENTITY` brauchen zusaetzlich eine explizite
-Generierungssemantik an der Spalte; dieser Vertrag ist im Follow-up
-`docs/planning/done-archive/bigserial-neutral-identity-followup.md` als
+Generierungssemantik an der Spalte; dieser Vertrag ist als
 `ColumnGeneration.Identity` beschrieben. `biginteger` ohne dieses Metadatum
 bleibt `BIGINT`.
 
@@ -576,7 +575,7 @@ id,email,name
 1,kunde@example.de,Müller
 ```
 
-CSV-Export und -Import folgen dem 0.8.0-Phase-F-Vertrag (`docs/planning/ImpPlan-0.8.0-F.md`): Export nutzt `--encoding` (Default `utf-8`) und ein optionales `--csv-bom`, das genau ein BOM passend zum gewählten UTF-Encoding (UTF-8, UTF-16 BE/LE) schreibt; für Non-UTF-Encodings ist das Flag ein No-op. Import-Encoding wird per BOM-Sniffing (Default `--encoding auto`) für UTF-8 und UTF-16 BE/LE erkannt und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird als expliziter Fehler abgelehnt. Non-UTF-Encodings muss der Nutzer explizit setzen — es gibt keine heuristische Erkennung.
+Für CSV-Export und -Import gilt: Export nutzt `--encoding` (Default `utf-8`) und ein optionales `--csv-bom`, das genau ein BOM passend zum gewählten UTF-Encoding (UTF-8, UTF-16 BE/LE) schreibt; für Non-UTF-Encodings ist das Flag ein No-op. Import-Encoding wird per BOM-Sniffing (Default `--encoding auto`) für UTF-8 und UTF-16 BE/LE erkannt und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird als expliziter Fehler abgelehnt. Non-UTF-Encodings muss der Nutzer explizit setzen — es gibt keine heuristische Erkennung.
 
 **YAML** (für kleinere Datensätze / Konfiguration):
 ```yaml
@@ -598,9 +597,9 @@ exported_at: 2025-10-22T14:30:00Z
 ### 6.3 Dateiimport und Parsing
 
 - Dateiimporte validieren Daten vor dem Schreiben gegen das neutrale Schema.
-- Textformate verwenden standardmaessig UTF-8. Die BOM-Auto-Detection (Phase F §4.2, `docs/planning/ImpPlan-0.8.0-F.md`) ist strikt auf UTF-8 und UTF-16 BE/LE begrenzt; UTF-32-BOM wird explizit als Fehler abgelehnt, damit UTF-32-Daten nicht still als UTF-8 durchlaufen. Derselbe `EncodingDetector` wird importseitig konsistent fuer CSV, JSON und YAML genutzt.
-- Weitere Encodings wie ISO-8859-1 oder Windows-1252 sind explizit ueber `--encoding <charset>` konfigurierbar, damit Importe reproduzierbar bleiben; eine heuristische Encoding-Erkennung gibt es bewusst nicht (Phase F §4.3).
-- Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden. Der 0.8.0-Phase-E-Vertrag (`docs/planning/ImpPlan-0.8.0-E.md` §4.2/§4.3) verbietet dabei die stille Umdeutung zwischen lokalen und offsethaltigen Werten: `TIMESTAMP`-Spalten lehnen offsethaltige Strings ab, `TIMESTAMP WITH TIME ZONE` verlangt einen Offset-Anteil.
+- Textformate verwenden standardmaessig UTF-8. Die BOM-Auto-Detection ist strikt auf UTF-8 und UTF-16 BE/LE begrenzt; UTF-32-BOM wird explizit als Fehler abgelehnt, damit UTF-32-Daten nicht still als UTF-8 durchlaufen. Derselbe `EncodingDetector` wird importseitig konsistent fuer CSV, JSON und YAML genutzt.
+- Weitere Encodings wie ISO-8859-1 oder Windows-1252 sind explizit ueber `--encoding <charset>` konfigurierbar, damit Importe reproduzierbar bleiben; eine heuristische Encoding-Erkennung gibt es bewusst nicht.
+- Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden. Die stille Umdeutung zwischen lokalen und offsethaltigen Werten ist dabei verboten: `TIMESTAMP`-Spalten lehnen offsethaltige Strings ab, `TIMESTAMP WITH TIME ZONE` verlangt einen Offset-Anteil.
 - Der geplante Umgang mit Sequence-/Identity-/`AUTO_INCREMENT`-Folgezustand
   und Trigger-Verhalten beim Datenimport ist im Draft
   [design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
@@ -648,12 +647,12 @@ Warnung und erfordern explizite Bestätigung über `--allow-destructive`.
 **Begriffsabgrenzung** (verbindlich für `schema migrate`/`schema rollback`-
 Implementierung in 0.9.7):
 
-- **`SchemaDiff`** (`hexagon/core/.../diff/SchemaDiff.kt`) — *struktureller
+- **`SchemaDiff`** (`hexagon/core/…/diff/SchemaDiff.kt`) — *struktureller
   Unterschied* zwischen zwei Schemas. Symmetrisch in der Form, asymmetrisch
   in der Verwendung: `SchemaComparator.compare(left, right)` liefert
   added/removed/changed pro Objekttyp. Genutzt als Basis für `schema
   compare` und als Eingabe für die `DiffPlanner`-Pipeline.
-- **`DiffView`** (`hexagon/application/.../SchemaCompareProjection.kt`) —
+- **`DiffView`** (`hexagon/application/…/SchemaCompareProjection.kt`) —
   *stabiler, primitive-only Compare-Output* für die `schema compare`-
   Renderer (JSON/YAML/Plain). Reine Projektion ohne Geschäftslogik.
 - **`DiffResult`** *(0.9.7 in Arbeit)* — *migrationsfähiger
@@ -737,7 +736,7 @@ Hinweise:
 
 - 0.8.0 lieferte die technische Aufloesungs- und Bundle-Basis.
 - Seit 0.9.0 ist `--lang` als dokumentierte Override-Quelle produktiv: `--lang` sticht `D_MIGRATE_LANG`, der generische Env-Pfad bleibt tolerant (Root-Bundle-Fallback), waehrend `--lang` strikt auf gebundelte Produktsprachen (`de`, `en`) beschraenkt ist.
-- Die effektive Konfigurationsdatei wird nicht separat fuer i18n "geraten", sondern ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
+- Die effektive Konfigurationsdatei wird nicht separat fuer i18n "geraten", sondern ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`. <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 
 ### 9.3 Unicode-Verarbeitung
 
@@ -745,11 +744,11 @@ Hinweise:
 - Grapheme-aware String-Längenberechnung via ICU4J
 - Unicode-Normalisierung fuer NFC, NFD, NFKC und NFKD; Standardvergleich erfolgt auf NFC-normalisierten Werten
 - Unicode-Normalisierung ist Vergleichs-/Metadaten-Utility und keine stille Mutation von Export-/Import-/Transfer-Payloads
-- BOM-Erkennung und -Behandlung basiert auf dem seit 0.4.0 vorhandenen `EncodingDetector`-Unterbau und wird in 0.8.0 Phase F (`docs/planning/ImpPlan-0.8.0-F.md`) als Teil des I18n-Vertrags konsolidiert. Importseitig teilen CSV-, JSON- und YAML-Reader denselben Detector; BOM-Auto-Detection gilt fuer UTF-8 und UTF-16 BE/LE, UTF-32-BOM wird abgelehnt, und bei explizitem `--encoding` werden passende BOMs konsumiert, nicht passende im Stream belassen. Export-seitig schreibt `--csv-bom` genau ein zum `--encoding` passendes BOM (UTF-8/UTF-16 BE/LE) und ist fuer Non-UTF-Encodings ein No-op.
+- BOM-Erkennung und -Behandlung basiert auf dem seit 0.4.0 vorhandenen `EncodingDetector`-Unterbau und wird in 0.8.0 Phase F als Teil des I18n-Vertrags konsolidiert. Importseitig teilen CSV-, JSON- und YAML-Reader denselben Detector; BOM-Auto-Detection gilt fuer UTF-8 und UTF-16 BE/LE, UTF-32-BOM wird abgelehnt, und bei explizitem `--encoding` werden passende BOMs konsumiert, nicht passende im Stream belassen. Export-seitig schreibt `--csv-bom` genau ein zum `--encoding` passendes BOM (UTF-8/UTF-16 BE/LE) und ist fuer Non-UTF-Encodings ein No-op.
 
 ### 9.4 Internationale Datenformate
 
-- Temporale Werte folgen dem 0.8.0-Phase-E-Vertrag (`docs/planning/ImpPlan-0.8.0-E.md`):
+- Für temporale Werte gilt:
   ISO 8601 bleibt das einzige Standardformat, `OffsetDateTime` bleibt
   offsethaltig, `LocalDateTime` bleibt lokal ohne stille Umdeutung zu UTC
   oder JVM-Zone; `ZonedDateTime` wird im strukturierten Datenpfad

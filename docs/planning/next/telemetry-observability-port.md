@@ -470,7 +470,7 @@ adapters/driven/observability-jsonl
 Gradle-Wiring:
 
 1. `settings.gradle.kts` ergaenzt `include("adapters:driven:observability-jsonl")`.
-2. `adapters/driven/observability-jsonl/build.gradle.kts` haengt an
+2. `adapters/driven/observability-jsonl/build.gradle.kts` haengt an <!-- d-check:ignore (Zielbild: entsteht mit observability-jsonl-Modul; ADR 0011) -->
    `:hexagon:ports-common`.
 3. Der JSONL-Adapter bekommt eine eigene direkte Runtime-Dependency auf
    `com.dslplatform:dsl-json-java8` und verwendet DSL-JSONs Low-Level-

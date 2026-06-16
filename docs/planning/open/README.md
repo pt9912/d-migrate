@@ -31,7 +31,7 @@ festgehalten.
   `../in-progress/`.
 - Geliefert und geschlossen → `../done/`.
 - Verworfen / vollständig überholt → `docs/archive/` (existiert
-  bei Bedarf, siehe ADR-0004).
+  bei Bedarf, siehe [ADR-0004](../../adr/0004-documentation-and-planning-structure.md)).
 
 ## Bestand
 

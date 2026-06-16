@@ -572,7 +572,7 @@ SQLite: Keine nativen benannten Sequenzen. Standard ist `action_required`
 (E056-Skip). Mit `--sqlite-named-sequences helper_table` (0.9.7) wird die
 Emulation eingeschaltet:
 
-- `dmg_sequences`-Hilfstabelle (TEXT-/INTEGER-Spalten gemäß Plan §3.2:
+- `dmg_sequences`-Hilfstabelle (TEXT-/INTEGER-Spalten:
   `managed_by`, `format_version`, `name`, `next_value`,
   `last_returned_value`, `exhausted`, `increment_by`, `min_value`,
   `max_value`, `cycle_enabled`, `cache_size`)

@@ -563,8 +563,8 @@ die nächste beginnt.
 | `hexagon/ports/build.gradle.kts` | A |
 | `hexagon/application/build.gradle.kts` | A |
 | `adapters/driven/driver-common/build.gradle.kts` | A |
-| `hexagon/ports/.../DatabaseDriver.kt` | B |
-| `hexagon/ports/.../DatabaseDriverRegistry.kt` | B |
+| `hexagon/ports/…/DatabaseDriver.kt` | B |
+| `hexagon/ports/…/DatabaseDriverRegistry.kt` | B |
 
 ### 5.2 Verschobene Dateien (Auswahl — nur strukturrelevante)
 
@@ -585,7 +585,7 @@ die nächste beginnt.
 | `d-migrate-formats/**/DataChunkReaderFactory.kt` (Interface) | `hexagon/ports/**/` | B |
 | `d-migrate-formats/**/DataExportFormat.kt` (Enum) | `hexagon/ports/**/` | B |
 | `d-migrate-formats/**/ExportOptions.kt` | `hexagon/ports/**/` | B |
-| `d-migrate-formats/**/ImportOptions.kt` | `hexagon/ports/driver/data/` | B |
+| `d-migrate-formats/**/ImportOptions.kt` | `hexagon/ports/**/driver/data/` | B |
 | `d-migrate-cli/**/SchemaGenerateRunner.kt` | `hexagon/application/**/` | F |
 | `d-migrate-cli/**/DataExportRunner.kt` | `hexagon/application/**/` | F |
 | `d-migrate-driver-postgresql/**` | `adapters/driven/driver-postgresql/**` | E |

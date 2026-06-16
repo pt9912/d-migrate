@@ -15,7 +15,7 @@ informed: künftige Plan-Doc-Autoren; Reviewer, die einordnen wo ein Plan-Doc in
 dokumentierter Semantik. Bis 2026-05 hatte sich aus dieser
 Informalität konkrete Drift angesammelt:
 
-- `docs/planning/open/sqlite-sequence-emulation-plan.md` trug
+- `docs/planning/open/sqlite-sequence-emulation-plan.md` trug <!-- d-check:ignore (historischer Kontext, Stand 2026-05; Datei in done-archive/; ADR 0011) -->
   `Status: In Progress (2026-05-28)`, nachdem die Phasen B.0/B.1/B.2
   geliefert waren (Commits `48c7f01c` Phase B.0,
   `84ba7ab7` Phase B.1, `25f59f73` Phase B.2 Step 1, `09068f79`
@@ -24,7 +24,7 @@ Informalität konkrete Drift angesammelt:
   Trotz dieses Standes blieb die Datei in `open/`, weil der
   Ordnername "open" als "noch nicht abgeschlossen" gelesen wurde
   statt als "noch nicht angefangen".
-- `docs/planning/open/refactoring-cli-testability.md` trug
+- `docs/planning/open/refactoring-cli-testability.md` trug <!-- d-check:ignore (historischer Kontext, Stand 2026-05; Datei in done-archive/; ADR 0011) -->
   ähnlich `Status: Teilweise umgesetzt (McpServeCommand)` und saß
   trotzdem in `open/`.
 - Die übrigen 12 `open/`-Einträge waren ein Mix aus `Draft`,
@@ -217,7 +217,7 @@ Umbrella platziert wird.
      `planning/open/ImpPlan-*`-Pfade in Code-KDoc und
      Done-Plänen und landet diese ADR.
 - Verweise auf
-  `docs/planning/open/sqlite-sequence-emulation-plan.md` aus ADR-0003
+  `docs/planning/open/sqlite-sequence-emulation-plan.md` aus ADR-0003 <!-- d-check:ignore (historischer Kontext, Stand 2026-05; Datei in done-archive/; ADR 0011) -->
   wurden in Commit `457a54d9` auf den neuen `in-progress/`-Pfad
   umgesetzt. Das ist ein bewusstes Carve-out gegenüber der
   "ADRs sind nach Accepted immutable"-Regel: nur die

@@ -6,7 +6,6 @@
 >
 > Referenzen: `spec/architecture.md`, `spec/cli-spec.md`,
 > `spec/grpc-service.md`, `spec/job-contract.md`,
-> `docs/planning/implementation-plan-0.9.1.md`,
 > `spec/lastenheft-d-migrate.md` LF-022
 
 ---

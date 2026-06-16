@@ -108,12 +108,12 @@ java -jar adapters/driving/cli/build/release/*-all.jar --help
 (Default-Tag `d-migrate:release-assets`), erzeugt im Container die
 ZIP-/TAR-/Fat-JAR-/SHA256-Assets über
 `:adapters:driving:cli:assembleReleaseAssets` und extrahiert sie via
-`docker run … | tar xf -` nach `adapters/driving/cli/build/release/`
+`docker run … | tar xf -` nach `adapters/driving/cli/build/release/` <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
 (der `release-assets`-Stage tart genau dieses Verzeichnis).
 
 Wichtig:
 
-- `adapters/driving/cli/build/release` ist nur der lokale Preflight-Ordner
+- `adapters/driving/cli/build/release` ist nur der lokale Preflight-Ordner <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
 - für den eigentlichen GitHub-Release werden später ausschließlich die Dateien
   aus dem grünen Workflow-Artefakt `release-assets` verwendet
 
@@ -292,7 +292,7 @@ find . -type d -name "build" -prune -exec rm -rf {} +
 Hinweis: Diese Smokes prüfen nur, dass die CLI die erwarteten Artefakte
 erzeugt. Die echte Tool-Runtime-Validierung (Flyway→PostgreSQL,
 Liquibase→PostgreSQL, Django→SQLite, Knex→SQLite) wird über
-`./scripts/test-integration-docker.sh` als Integrations-Test-Matrix
+`scripts/test-integration-docker.sh` als Integrations-Test-Matrix
 ausgeführt. Flyway-Undo erfordert Flyway Teams/Enterprise und ist in den
 Smokes nur als Dateierzeugung, nicht als Runtime-Ausführung validiert.
 
@@ -453,7 +453,7 @@ java -jar ./release-assets/d-migrate-X.Y.Z-all.jar --help
 
 Wichtig:
 
-- `adapters/driving/cli/build/release` aus Abschnitt 3.2 bleibt lokaler Preflight und ist nicht die
+- `adapters/driving/cli/build/release` aus Abschnitt 3.2 bleibt lokaler Preflight und ist nicht die <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
   Publish-Quelle
 - `gh release create` und `gh release upload` arbeiten nur mit
   `./release-assets/*`
@@ -593,7 +593,7 @@ Danach:
 | [`CHANGELOG.md`](../../CHANGELOG.md)                    | Neuen leeren `## [Unreleased]`-Block einfügen                                                                                        |
 | [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)                 | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren                                                                  |
 | [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) | verifizierten URL-/SHA-Stand des zuletzt publizierten Releases nachziehen, falls die Formula erst nach dem Publish finalisiert wurde |
-| `docs/implementation-plan-X.Y.md` | Optional: neuen Plan für nächste Minor-Version anlegen                                                                               |
+| `docs/implementation-plan-<version>.md` | Optional: neuen Plan für nächste Minor-Version anlegen                                                                               |
 
 ```bash
 git add build.gradle.kts CHANGELOG.md docs/planning/in-progress/roadmap.md
@@ -664,7 +664,7 @@ Für jeden Release abhaken:
 - [ ] Alle Milestone-PRs gemerged
 - [ ] `IMAGE_TAG=pre-release make docker-build` grün
 - [ ] lokaler Asset-Preflight für `assembleReleaseAssets` grün
-- [ ] `adapters/driving/cli/build/release` enthält ZIP, TAR, Fat JAR und SHA256
+- [ ] `adapters/driving/cli/build/release` enthält ZIP, TAR, Fat JAR und SHA256 <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
 - [ ] Fat JAR aus dem lokalen Preflight startet mit `--help`
 - [ ] Smoke-Tests gegen Fixture-Schemas grün (generate, compare file/file)
 - [ ] DB-basierte Smoke-Tests grün (reverse, compare file/db + db/db, transfer)

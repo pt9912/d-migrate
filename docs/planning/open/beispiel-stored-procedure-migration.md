@@ -1,6 +1,6 @@
 # Beispiel: Stored Procedure Migration von PostgreSQL zu MySQL
 
-**Use Case**: UC-04 - KI-gestützte Stored Procedure Migration
+**Use Case**: [UC-04](../../../spec/lastenheft-d-migrate.md) - KI-gestützte Stored Procedure Migration
 **Szenario**: Ein Entwickler möchte eine Stored Procedure von PostgreSQL nach MySQL migrieren
 
 Status: Draft
@@ -314,7 +314,7 @@ Nach erfolgreicher Migration können weitere Schritte durchgeführt werden:
 - [Lastenheft d-migrate](../../../spec/lastenheft-d-migrate.md) - Vollständige Anforderungsspezifikation
 - **LF-004**: Reverse-Engineering von Datenbankstrukturen
 - **LF-017**: KI-gestützte Transformation von Stored Procedures
-- **UC-04**: KI-gestützte Stored Procedure Migration
+- **[UC-04](../../../spec/lastenheft-d-migrate.md)**: KI-gestützte Stored Procedure Migration
 - **LN-032 bis LN-036**: KI-Integration und Datenschutz-Anforderungen
 
 ---

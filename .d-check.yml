@@ -12,7 +12,7 @@
 scan:
   ignore: ["docs/planning/done-archive/**"]
 
-modules: [links, anchors, matrix, hostpaths, spans]
+modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids]
 
 # matrix: mechanisiert die Referenz-Richtung (Stable Dependencies
 # Principle, konventionen.md "Referenz-Richtung (SDP)"): Spec-Straten
@@ -41,3 +41,34 @@ matrix:
 
 # hostpaths/spans: keine Konfiguration nötig; Probe 2026-06-16 je 0
 # Befunde (keine Maschinenpfad-Leaks, keine Span-Artefakte).
+
+# codepaths: prüft Inline-Code-Repo-Pfade auf Existenz. scope auf docs/spec
+# (Root-*.md wie CHANGELOG ausgenommen — unveränderliche Historie). roots =
+# Repo-Pfad-Präfixe, gegen die wurzel-relative Pfade aufgelöst werden.
+# scope.ignore: Done-Archiv (ADR 0010) + reine Zukunfts-Adapter-Specs als
+# Sub-Area-Ausnahme mit Graduations-Trigger. Dauerhafte Nicht-Repo-Pfade
+# (Nutzer-CWD, Build-Ausgaben) tragen d-check:ignore-Marker. Begründung +
+# Konvention: ADR 0011.
+codepaths:
+  roots: [adapters, config, docs, examples, gradle, hexagon, ledger, packaging, scripts, spec, test]
+  scope:
+    roots: [docs, spec]
+    ignore:
+      - "docs/planning/done-archive/**"
+      - "spec/jsqlparser-adapter.md"   # Zielbild-Spec künftiger Adapter; Graduation bei Adapter-Bau (ADR 0011)
+      - "spec/grpc-service.md"         # Zielbild-Spec künftiger Adapter; Graduation bei Adapter-Bau (ADR 0011)
+      - "spec/rest-service.md"         # Zielbild-Spec künftiger Adapter; Graduation bei Adapter-Bau (ADR 0011)
+
+# ids: Kennungs-Verlinkungspflicht im Fließtext. Modell aus
+# `d-check --suggest-config` (Kennungen nur aus Definitions-Headings):
+# UC-NN aus dem Lastenheft, ADR-NNNN mit Ziel docs/adr/. Kein LF/LN-Mandat
+# (zu breites Hand-Muster, D2). scope wie codepaths (CHANGELOG/Archiv aus).
+ids:
+  scope:
+    roots: [docs, spec]
+    ignore: ["docs/planning/done-archive/**"]
+  patterns:
+    - regex: 'UC-\d+'
+      target: "spec/lastenheft-d-migrate.md"
+    - regex: 'ADR-\d{4}'
+      target: "docs/adr/"

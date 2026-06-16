@@ -93,7 +93,7 @@ Module-Erweiterungen:
 
 Trinos URL-Modell mit `catalog`+`schema` lässt sich nicht sauber auf das
 bestehende einfeldrige `database: String` von
-`hexagon/ports-common/.../ConnectionConfig.kt` mappen. Wir folgen daher dem
+`hexagon/ports-common/…/ConnectionConfig.kt` mappen. Wir folgen daher dem
 etablierten Muster für dialektspezifische Felder (siehe ADR-Memory
 `feedback_hexagon_dialect_context`): **keine nullable `trino*`-Felder am
 generischen Port**, sondern ein sealed Dialect-Context.
@@ -119,7 +119,7 @@ Diese Architekturentscheidung ist **DoD-Pflicht in Tranche 1a** (siehe §6).
 
 Der generische `JdbcUrlBuilder` merged `ConnectionConfig.params` roh in
 die JDBC-URL
-(`hexagon/ports-common/.../JdbcUrlBuilder.kt`). Trinos JDBC-Treiber
+(`hexagon/ports-common/…/JdbcUrlBuilder.kt`). Trinos JDBC-Treiber
 verlangt jedoch **case-sensitive** Property-Namen (`SSL` statt `ssl`,
 `SSLTrustStorePath` statt `trustStorePath`, `sessionProperties` als
 gemeinsame Map etc.). Ohne explizites Mapping würden korrekt
@@ -128,7 +128,7 @@ dokumentierte d-migrate-URLs vom Trino-Treiber ignoriert.
 **Pflicht-API-Erweiterung in ports-common / driver-common:**
 
 Die heutige Signatur `JdbcUrlBuilder.buildJdbcUrl(config): String`
-(`hexagon/ports-common/.../JdbcUrlBuilder.kt`) sowie der bestehende
+(`hexagon/ports-common/…/JdbcUrlBuilder.kt`) sowie der bestehende
 Hikari-Init in `HikariConnectionPoolFactory` (setzt nur `jdbcUrl`,
 `username`, `password`) reichen für Trino nicht aus, weil
 `accessToken`, `SSLTrustStorePassword`, `SSLKeyStorePassword` und
@@ -1255,7 +1255,7 @@ URL-Parsing/Capabilities von der Härtung in 1b.
   `trino: USAGE_ERROR: ...` (rein Source-only).
 - [ ] Source-only von `data profile` ist strukturell durchgesetzt: das
   Kommando hat per CLI-Spec keine `--target`-Option
-  (`adapters/driving/cli/.../DataProfileCommand.kt`). Tranche-1a-DoD
+  (`adapters/driving/cli/…/DataProfileCommand.kt`). Tranche-1a-DoD
   prüft, dass diese Eigenschaft per Test gegen die CLI-Definition
   reproduzierbar verifiziert wird (Snapshot-/CLI-Help-Test), damit eine
   spätere `--target`-Ergänzung nicht unbemerkt einen Trino-Schreibpfad
@@ -1399,7 +1399,7 @@ Voraussetzung: Tranche 2 vollständig abgeschlossen.
 - [ ] `schema compare --source file:... --target db:trino://...` veröffentlicht
   `metadata_coverage` nach Objektklasse.
 - [ ] **Default-Connector-Coverage-Map** (`iceberg`, `v1`) ist im
-  `driver-trino` mitgeliefert und greift, wenn `--target db:trino://.../iceberg/...`
+  `driver-trino` mitgeliefert und greift, wenn `--target db:trino://…/iceberg/...`
   verwendet wird. Andere Connectoren liefern für nicht-Basis-Klassen
   `missing`.
 - [ ] `schema compare` nutzt bei `metadata_coverage=missing` standardmäßig
