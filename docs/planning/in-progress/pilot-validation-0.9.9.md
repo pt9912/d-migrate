@@ -264,6 +264,34 @@ ungültige DDL-Generierung · **P3** = Doku/UX/kosmetisch.
 | **I-14** | **P3** | Identity-Spalte `required` asymmetrisch über Dialekte | PG SERIAL `required: true` vs. MySQL AUTO_INCREMENT `required: false` → unechte Round-Trip-Differenz. |
 | **I-15** | **P3** | Kosmetik | `schema compare` braucht `db:`-Präfix (reverse/transfer nehmen blanken Alias); `data profile` meldet `databaseProduct: "unknown"`. |
 
+### 6.1 Reviewer-Verifikation (Code-Gegenprüfung, 2026-06-16)
+
+Die P1-Blocker wurden gegen den Code gegengeprüft (Zeilennummern Stand develop
+2026-06-16):
+
+- **I-01 — bestätigt.** `TransferTypeCompatibility.isCompatible`
+  (`TransferTypeCompatibility.kt` Z. 8–19) erlaubt nur Int→BigInt,
+  SmallInt→integral, Identifier-Kompat, Text→Text, Char→Text — **kein**
+  Boolean↔Integer, **kein** DateTime-tz-Mismatch, **kein** Enum↔Text. Die
+  Tool-eigenen Cross-Dialect-Abbildungen fehlen in der Kompatibilitätsmatrix.
+- **I-03 — bestätigt.** `MysqlTypeMapping` (`MysqlTypeMapping.kt`) schreibt in
+  Z. 32 den gesamten `columnType` klein und extrahiert daraus in Z. 104/115 die
+  Enum-Werte → Werte kommen kleingeschrieben heraus. Fix: Enum-Werte aus dem
+  Original-Case-`columnType` parsen.
+- **I-02 — Bug real, Repro korrigiert.** `isFunctionDefaultCompatible`
+  (`SchemaColumnValidationRules.kt` Z. 290–294) lehnt `current_timestamp`
+  außerhalb DateTime/Date/Time ab → `text DEFAULT current_timestamp` → E009
+  (bestätigt; der SQLite-Round-Trip-Fall aus 5.5). **Aber** `CURRENT_DATE`
+  fällt auf `else -> true` und löst **kein** E009 aus — der ursprünglich
+  notierte Repro `date DEFAULT CURRENT_DATE` triggert den Defekt **nicht**.
+  Bestätigte Auslöser: (a) `current_timestamp` auf nicht-temporalem Typ (Z. 291);
+  (b) `StringLiteral`-Defaults auf Date/DateTime/Time, da
+  `isStringDefaultCompatible` (Z. 278–280) diese Typen nicht enthält —
+  vermutlich der echte `customer.create_date`-Auslöser. Der Fix muss diese
+  beiden Lücken treffen, nicht `CURRENT_DATE`.
+- **I-04 — empirisch** (Laufzeit-SQL, nicht code-verifiziert): plausibel (PG
+  lehnt `varchar`→`enum` ohne Cast ab; Exit 5 = MIGRATION_ERROR).
+
 ---
 
 ## 7. Was korrekt funktioniert (verifiziert)

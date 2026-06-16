@@ -551,7 +551,7 @@ nicht als Enterprise-BI-Plattform (siehe
 > dagegen 2026-06-09 in 0.9.8 vorgezogen (Scope-Entscheidung); die
 > BI-Demo-Plaene bleiben Grundlage fuer Showcase-Pfade ab Phase 3/4.
 
-### Milestone 0.9.9 — Dokumentation und Pilot-Validierung 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16, nur Pilot-Validierung offen)
+### Milestone 0.9.9 — Dokumentation, Pilot-Validierung und Blocker-Fixes 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16; Pilot-Vorfilter 2026-06-16 → P1/P2-Blocker werden in 0.9.9 behoben)
 
 > Status-Legende: ✅ erledigt · 🔮 geplant (späterer Milestone) · ⛔ ausstehend.
 
@@ -563,15 +563,19 @@ nicht als Enterprise-BI-Plattform (siehe
 | Docs    | [API-Dokumentation](../../user/api-referenz.md) | — | ✅ |
 | QA      | [Performance-Benchmarks dokumentiert](../../operations/performance-benchmarks.md) | — | ✅¹ |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2 | ⛔² |
+| QA      | [Pilot-Blocker beheben (P1/P2)](pilot-validation-0.9.9.md) | — | 🚧³ |
 
 ¹ Methodik + aktuelle Budgets dokumentiert. Die acceptance-grade Benchmarks
 **LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
 🔮 1.0.0-QA-Ziele und noch nicht validiert.
-² Externe Validierung gegen reale Datenbestände steht aus — kein
-Selbst-Liefer-Item. Ein Code-Agent kann einen Vor-Filter-Lauf gegen
-Testdatenbanken fahren ([Pilot-Validierungs-Playbook](../../operations/pilot-validation-playbook.md),
-Kandidaten siehe unten); die menschliche ≥5-Tester-Abnahme bleibt davon
-unberührt.
+² Der automatisierte Vorfilter ([Playbook](../../operations/pilot-validation-playbook.md))
+lief am 2026-06-16 ([Report](pilot-validation-0.9.9.md), Verdikt **nicht RC-reif**);
+die menschliche ≥5-Tester-Abnahme bleibt davon unberührt und steht weiter aus.
+³ Der Vorfilter fand 4 P1-Blocker (Transfer-Preflight-Strictness I-01, E009-
+Temporal-Defaults I-02, MySQL-Enum-Lowercasing I-03, Enum-Transfer-Cast I-04)
+plus 6 P2 (ungültige DDL). Diese werden gemäß Entscheidung in **0.9.9** behoben
+(nicht nach 1.0.0 verschoben). Code-verifizierte Root-Causes:
+[Report §6.1](pilot-validation-0.9.9.md).
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
