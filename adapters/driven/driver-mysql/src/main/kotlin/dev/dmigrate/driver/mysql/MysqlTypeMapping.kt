@@ -46,7 +46,7 @@ internal object MysqlTypeMapping {
             ?: mapStringTypes(dt, input.charMaxLen, input.tableName, input.colName)
             ?: mapNumericTypes(dt, input.numPrecision, input.numScale)
             ?: mapTemporalTypes(dt)
-            ?: mapSpecialTypes(dt, ct, input.tableName, input.colName)
+            ?: mapSpecialTypes(dt, ct, input.columnType, input.tableName, input.colName)
             ?: MappingResult(
                 NeutralType.Text(),
                 note = SchemaReadNote(
@@ -98,10 +98,18 @@ internal object MysqlTypeMapping {
         else -> null
     }
 
-    private fun mapSpecialTypes(dt: String, ct: String, tableName: String, colName: String): MappingResult? = when (dt) {
+    private fun mapSpecialTypes(
+        dt: String,
+        ct: String,
+        rawColumnType: String,
+        tableName: String,
+        colName: String,
+    ): MappingResult? = when (dt) {
         "json" -> MappingResult(NeutralType.Json)
         "blob", "mediumblob", "longblob", "tinyblob", "binary", "varbinary" -> MappingResult(NeutralType.Binary)
-        "enum" -> MappingResult(NeutralType.Enum(values = extractEnumValues(ct)))
+        // I-03: Enum-Werte aus dem Original-Case-columnType extrahieren, nicht aus
+        // dem für die Typ-Erkennung kleingeschriebenen `ct` (sonst Wert-Korruption).
+        "enum" -> MappingResult(NeutralType.Enum(values = extractEnumValues(rawColumnType)))
         "set" -> MappingResult(NeutralType.Text(), note = SchemaReadNote(
             severity = SchemaReadSeverity.ACTION_REQUIRED, code = "R320", objectName = "$tableName.$colName",
             message = "MySQL SET type '$ct' has no neutral equivalent — mapped to text",

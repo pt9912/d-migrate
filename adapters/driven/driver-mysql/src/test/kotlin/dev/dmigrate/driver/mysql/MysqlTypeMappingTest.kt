@@ -91,6 +91,11 @@ class MysqlTypeMappingTest : FunSpec({
         enumType.values shouldBe listOf("a", "b", "c")
     }
 
+    test("enum values preserve original case — I-03 regression") {
+        val result = map("enum", "enum('Yes','No','MAYBE')")
+        (result.type as NeutralType.Enum).values shouldBe listOf("Yes", "No", "MAYBE")
+    }
+
     // ── SET → Note ──────────────────────────────
 
     test("SET → Text with ACTION_REQUIRED") {
@@ -126,6 +131,10 @@ class MysqlTypeMappingTest : FunSpec({
 
     test("extractEnumValues parses values") {
         MysqlTypeMapping.extractEnumValues("enum('pending','shipped')") shouldBe listOf("pending", "shipped")
+    }
+
+    test("extractEnumValues preserves case — I-03") {
+        MysqlTypeMapping.extractEnumValues("ENUM('Active','Closed')") shouldBe listOf("Active", "Closed")
     }
 
     test("extractEnumValues empty") {
