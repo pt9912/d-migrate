@@ -568,8 +568,10 @@ nicht als Enterprise-BI-Plattform (siehe
 **LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
 🔮 1.0.0-QA-Ziele und noch nicht validiert.
 ² Externe Validierung gegen reale Datenbestände steht aus — kein
-Selbst-Liefer-Item (kann später ein Code-Agent gegen Testdatenbanken fahren,
-siehe Kandidatenliste unten).
+Selbst-Liefer-Item. Ein Code-Agent kann einen Vor-Filter-Lauf gegen
+Testdatenbanken fahren ([Pilot-Validierungs-Playbook](../../operations/pilot-validation-playbook.md),
+Kandidaten siehe unten); die menschliche ≥5-Tester-Abnahme bleibt davon
+unberührt.
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
