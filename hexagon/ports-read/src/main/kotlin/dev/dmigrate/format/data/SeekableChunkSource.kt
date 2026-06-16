@@ -4,7 +4,7 @@ import java.nio.file.Path
 
 /**
  * Quellabstraktion fuer den seekbaren Reader-Pfad (AP10 §3.2,
- * `docs/planning/done/parquet-port-shape.md`). Sealed mit
+ * `docs/planning/done-archive/parquet-port-shape.md`). Sealed mit
  * heute genau einem Subtyp [Local]; weitere Varianten
  * (Object-Storage, gemounteter Cache) erweitern die Hierarchie
  * additiv im selben Modul.

@@ -9,7 +9,7 @@ import java.security.MessageDigest
  *
  * Vor diesem Helper gab es im Repo elf Fundstellen mit vier
  * verschiedenen Schreibweisen. Konsolidiert via Code-Review zu AP 6.3
- * (0.9.6 Phase A). Details: `docs/planning/done/refactoring-sha256Hex.md`.
+ * (0.9.6 Phase A). Details: `docs/planning/done-archive/refactoring-sha256Hex.md`.
  */
 private val HEX_CHARS = "0123456789abcdef".toCharArray()
 

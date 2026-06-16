@@ -20,7 +20,7 @@ private val LargeSchemaTag = NamedTag("large-schema")
 /**
  * Phase D large-schema scale spec.
  *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.4 (Sub-Slice D).
  *
  * For each [Scale] the spec builds a synthetic mixed schema

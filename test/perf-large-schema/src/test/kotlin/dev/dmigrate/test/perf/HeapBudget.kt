@@ -6,7 +6,7 @@ import java.lang.management.MemoryType
 /**
  * Heap-peak budget for the large-schema scale tests.
  *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.4 — "Erste Wahl: `MemoryPoolMXBean.peakUsage` ueber alle
  * Heap-Pools mit explizitem `resetPeakUsage()` vor jedem Scale-Run
  * und einem GC-induzierten Snapshot direkt vor und nach dem Lauf."

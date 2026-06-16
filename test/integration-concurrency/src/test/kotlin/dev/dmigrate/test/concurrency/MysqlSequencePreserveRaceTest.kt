@@ -49,7 +49,7 @@ private val ConcurrencyTag = NamedTag("concurrency")
  * atomic transaction committed; the writer's subsequent advances
  * land on top.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.5.
  */
 class MysqlSequencePreserveRaceTest : FunSpec({

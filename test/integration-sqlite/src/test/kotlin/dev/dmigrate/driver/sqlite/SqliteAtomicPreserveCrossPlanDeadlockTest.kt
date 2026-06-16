@@ -40,7 +40,7 @@ import kotlin.io.path.deleteIfExists
  * outlasts the executor's budget, which is already covered by
  * [SqliteAtomicSequencePreserveExecutorIntegrationTest].
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase D ("Cross-Plan-Deadlock-Beweis pro Dialekt"); §4.3 für die
  * DB-weite Lock-Strategie.
  */

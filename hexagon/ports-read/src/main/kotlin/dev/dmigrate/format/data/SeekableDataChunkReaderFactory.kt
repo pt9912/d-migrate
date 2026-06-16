@@ -4,7 +4,7 @@ package dev.dmigrate.format.data
  * AP10: Erzeugt [DataChunkReader]-Instanzen fuer Formate, die
  * seekbaren Zugriff brauchen (Parquet-Footer und Row-Group-
  * Sprung). Parallel zur stream-basierten
- * [DataChunkReaderFactory] (`docs/planning/done/parquet-libraries.md`
+ * [DataChunkReaderFactory] (`docs/planning/done-archive/parquet-libraries.md`
  * §7.1).
  *
  * Aufrufer (TableImporter/CLI-Wiring nach AP12 §5.1) waehlen

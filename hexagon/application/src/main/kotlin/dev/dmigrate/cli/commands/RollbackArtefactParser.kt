@@ -9,7 +9,7 @@ import dev.dmigrate.driver.migration.TransactionScope
 
 /**
  * Strict parser for the `d-migrate rollback-sql` artefact per
- * `docs/planning/done/diffresult-migration-plan.md §7.3`.
+ * `docs/planning/done-archive/diffresult-migration-plan.md §7.3`.
  *
  * The input must contain exactly one delimited block:
  *

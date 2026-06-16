@@ -11,7 +11,7 @@ import java.util.Comparator
  * AP4-Akzeptanz: DuckDB liest den AP3-Spike-Parquet-Output.
  *
  * Bestaetigt das Akzeptanzkriterium aus
- * `docs/planning/done/parquet-export-import-evaluation.md` §7
+ * `docs/planning/done-archive/parquet-export-import-evaluation.md` §7
  * Bullet 1 ("Ein Beispiel-Export kann mit DuckDB gelesen werden") und
  * deckt fuer das Spike-Schema (int + UTF-8-string + boolean) implizit
  * Bullet 3 (verlustfreier Round-Trip fuer Kern-Datentypen) ab.

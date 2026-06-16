@@ -5,7 +5,7 @@ import java.sql.ResultSetMetaData
 /**
  * Loest die Nullability einer Spalte aus den vorhandenen
  * Quellen (JDBC-Metadaten + optional SchemaReader-Hint) per
- * AP2 §9 Resolver-Regeln (`docs/planning/done/parquet-schema-source.md`).
+ * AP2 §9 Resolver-Regeln (`docs/planning/done-archive/parquet-schema-source.md`).
  *
  * Eingabe-Form spiegelt `ResultSetMetaData.isNullable(i)`
  * (Werte `columnNoNulls=0`, `columnNullable=1`,

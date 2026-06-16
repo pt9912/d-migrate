@@ -28,7 +28,7 @@ import kotlin.io.path.createTempDirectory
 
 
 /**
- * F.4 — SQLite round-trip smoke (`docs/planning/done/diffresult-migration-plan.md §F.4`).
+ * F.4 — SQLite round-trip smoke (`docs/planning/done-archive/diffresult-migration-plan.md §F.4`).
  *
  * Two scenarios in one spec — the plan's two F.4 sub-bullets:
  *

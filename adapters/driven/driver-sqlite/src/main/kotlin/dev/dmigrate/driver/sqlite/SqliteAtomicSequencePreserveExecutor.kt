@@ -44,7 +44,7 @@ import java.sql.SQLException
  * connection that is not already inside a higher-level
  * transaction.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`.
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`.
  */
 class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
 

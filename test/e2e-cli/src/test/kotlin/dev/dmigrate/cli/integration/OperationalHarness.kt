@@ -23,7 +23,7 @@ import java.nio.file.Path
  * passed as the `components` override to
  * [dev.dmigrate.mcp.server.McpServerBootstrap.startStdio].
  *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.3 (Sub-Slice C-MCP).
  *
  * Differences vs the runtime-only [StdioHarness] (LF-012-E1):

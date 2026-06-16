@@ -6,7 +6,7 @@ import java.time.Instant
 /**
  * Datenklassen-Vertrag fuer `manifest.yaml` in einem Parquet-
  * Bundle (AP7 §5.1/§5.2,
- * `docs/planning/done/parquet-manifest-format.md`).
+ * `docs/planning/done-archive/parquet-manifest-format.md`).
  *
  * Producer-Seite (S3b): wird vom [ParquetManifestWriter] aus
  * dem Export-Lauf befuellt und serialisiert. Reader-Seite

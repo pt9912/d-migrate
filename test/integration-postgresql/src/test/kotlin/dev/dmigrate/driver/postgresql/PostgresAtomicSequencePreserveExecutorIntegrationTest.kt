@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
  * happy-path (single-seq + multi-seq batch) and the lock-timeout
  * race against a concurrent `nextval` holder.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase B DoD ("Executor-Tests mit echten Live-Containern
  * (Lock-Race-Reproduktion) für Single-Seq und Multi-Seq Batch inkl.
  * Timeout-Leckageprüfung").

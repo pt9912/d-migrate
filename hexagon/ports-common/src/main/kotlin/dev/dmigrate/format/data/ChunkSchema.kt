@@ -4,7 +4,7 @@ import dev.dmigrate.core.model.NeutralType
 
 /**
  * JDBC-neutrales Tabellenschema fuer Parquet Cut A (AP2,
- * `docs/planning/done/parquet-schema-source.md` §6.1).
+ * `docs/planning/done-archive/parquet-schema-source.md` §6.1).
  *
  * Wird vom `StreamingExporter` vor dem ersten Chunk pro
  * Tabelle erzeugt und an den [DataChunkWriter] uebergeben

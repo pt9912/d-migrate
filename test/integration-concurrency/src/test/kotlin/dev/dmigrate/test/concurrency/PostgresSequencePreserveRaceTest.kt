@@ -58,7 +58,7 @@ private val ConcurrencyTag = NamedTag("concurrency")
  *    the writer thread observed forward progress before the
  *    overwrite (writer wasn't blocked).
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.5 (race-test migration); §6 Risiko Nr. 8
  * (residual app-nextval race carve-out).
  */

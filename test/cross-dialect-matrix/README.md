@@ -9,7 +9,7 @@ Plan-Doc:
 §5.2, §6 (Sub-Slice B + B-Vervollständigung).
 
 Cross-criteria source:
-[diffresult-migration-plan-2.md](../../docs/planning/in-progress/diffresult-migration-plan-2.md)
+[diffresult-migration-plan-2.md](../../docs/planning/done-archive/diffresult-migration-plan-2.md)
 §11.2.
 
 ## Why this module exists

@@ -24,7 +24,7 @@ import kotlin.io.path.deleteIfExists
  * the first connection's RESERVED lock (a `:memory:` DB is private
  * to one connection and cannot reproduce the contention).
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase B DoD.
  */
 class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({

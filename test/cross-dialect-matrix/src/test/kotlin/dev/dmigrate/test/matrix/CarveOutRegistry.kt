@@ -18,12 +18,12 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *     dialect: postgresql
  *     kind: positive
  *     reason: rename-dependency-projection covered by F.4-renderer-blocker-bridge-tests
- *     planRef: docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md
+ *     planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md
  *   - workstream: D.3
  *     dialect: sqlite
  *     kind: positive
  *     reason: SQLite has no MATERIALIZED VIEW; blocker cell pins the contract
- *     planRef: docs/planning/done/diffresult-migration-plan-2.md §8 D.3b
+ *     planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.3b
  * ```
  *
  * Every carve-out entry must carry a `reason` and a `planRef` so a
@@ -31,7 +31,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  * to a pinned cell. Missing fields surface as a hard failure during
  * registry load — silent carve-outs are not allowed.
  *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.2 (carve-out-registry-mechanik).
  */
 internal class CarveOutRegistry private constructor(

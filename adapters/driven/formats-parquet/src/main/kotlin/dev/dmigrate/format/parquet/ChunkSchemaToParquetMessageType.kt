@@ -14,7 +14,7 @@ import org.apache.parquet.schema.Types
 /**
  * Konvertiert ein [ChunkSchema] in einen Parquet-[MessageType]
  * gemaess der AP2 §8 Mapping-Tabelle
- * (`docs/planning/done/parquet-schema-source.md`).
+ * (`docs/planning/done-archive/parquet-schema-source.md`).
  *
  * Bewusst pure Funktion ohne Seiteneffekt. Decimal-Physik
  * richtet sich nach Precision (INT32 bis 9, INT64 bis 18,

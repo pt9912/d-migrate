@@ -11,7 +11,7 @@ import java.sql.Connection
  * port that wraps Probe → protected sequence-bearing operations →
  * Restore in a single dialect-specific transaction.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §3.1 (in-scope contract) and §5 Phase B (port shape).
  *
  * Lifecycle inside [execute]:

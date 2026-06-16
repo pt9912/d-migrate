@@ -1,4 +1,4 @@
-# Spec: docs/planning/done/bi-demo-compose.md §5.5 + BD.1
+# Spec: docs/planning/done-archive/bi-demo-compose.md §5.5 + BD.1
 
 # Local env file with real (possibly customised) credentials.
 # Only `.env.example` is committed.

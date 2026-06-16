@@ -20,7 +20,7 @@ import java.sql.Connection
  * `AtomicPreserveSegment` and dispatches the work to the dialect-
  * specific [AtomicSequencePreserveExecutor].
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.4. The runner owns the connection
  * allocation per the plan-doc (`Connection-Allokation … ausschließlich
  * über SchemaMigrateWiring`); the C.3 segment-aware execute-runner

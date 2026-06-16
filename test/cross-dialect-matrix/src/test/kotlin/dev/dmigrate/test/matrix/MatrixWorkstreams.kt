@@ -2,7 +2,7 @@ package dev.dmigrate.test.matrix
 
 /**
  * Canonical list of the 22 workstreams from
- * `docs/planning/in-progress/diffresult-migration-plan-2.md` §4-§10
+ * `docs/planning/done-archive/diffresult-migration-plan-2.md` §4-§10
  * that the cross-dialect matrix must cover by B-Vervollständigung
  * (per the Sub-Slice B Akzeptanzkriterium in
  * `quality-coverage-expansion-plan.md` §7).

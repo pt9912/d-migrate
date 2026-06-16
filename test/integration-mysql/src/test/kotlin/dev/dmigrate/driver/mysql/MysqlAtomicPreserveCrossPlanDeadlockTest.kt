@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference
  * positive and negative smoke follow the same shape; MySQL's
  * `innodb_lock_wait_timeout` plays the role PG's `lock_timeout` plays.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase D ("Cross-Plan-Deadlock-Beweis pro Dialekt").
  */
 class MysqlAtomicPreserveCrossPlanDeadlockTest : FunSpec({

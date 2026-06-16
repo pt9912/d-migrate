@@ -43,7 +43,7 @@ import kotlin.io.path.createTempDirectory
  * Render's follow-up routing, or ExecutionStage's segment dispatch
  * surfaces here.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.5.
  */
 class PostgresSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({

@@ -45,7 +45,7 @@ internal typealias AtomicRunnerFn = (
  * runner that consumes a [List]&lt;[ExecutableSegment]&gt;, delegating
  * each segment to the right executor.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.3.
  *
  * Pre-C.1 the stage does not yet supply an [AtomicSequencePreserveBatch],

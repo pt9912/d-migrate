@@ -17,7 +17,7 @@ import java.io.OutputStream
  *
  * Folgt der AP3-Spike-Linie (parquet-java 1.17.1 + GZIP-Codec
  * ohne SNAPPY/ZSTD-Native-Libs,
- * `docs/planning/done/parquet-libraries.md` §5/§7) und erweitert
+ * `docs/planning/done-archive/parquet-libraries.md` §5/§7) und erweitert
  * den Spike um:
  *
  * - ChunkSchema-getriebenes Schema (AP2 §6.1) — der Writer ruft

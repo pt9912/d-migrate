@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BI-Demo End-to-End-Smoke (BD.5)
-# Spec: docs/planning/done/bi-demo-compose.md §9 BD.5
+# Spec: docs/planning/done-archive/bi-demo-compose.md §9 BD.5
 #
 # Faehrt den kompletten Demo-Ablauf:
 #   1. .env aus .env.example anlegen (falls noch nicht da)

@@ -44,7 +44,7 @@ DOCKER_TAG ?= $(IMAGE):dev-targeted
 # `perfGate` Gradle project property by the spec). Default false so
 # shared-CI runs only the runaway-Smoke guard and reports baseline
 # drift as diagnostic, per
-# `docs/planning/done/quality-coverage-expansion-plan.md` §5.1.
+# `docs/planning/done-archive/quality-coverage-expansion-plan.md` §5.1.
 PERF_GATE ?= false
 PERF_GATE_ARG = $(if $(filter true,$(PERF_GATE)),-PperfGate=true,)
 

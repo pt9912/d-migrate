@@ -21,7 +21,7 @@ private val PerfTag = NamedTag("perf")
  * [RollbackArtefactParser.parse] round-trip on a synthetic
  * 100-statement Down bundle.
  *
- * **Plan-Doc**: `docs/planning/done/quality-coverage-expansion-plan.md`
+ * **Plan-Doc**: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.1 / §6 (Sub-Slice A-Vervollständigung). Third consumer of
  * [PerfMeasure] / [PerfReport]. The round-trip is measured as one
  * unit (build → parse → assert Success) so the spec captures the

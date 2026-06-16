@@ -11,7 +11,7 @@ import java.util.Comparator
  * AP6-Spike-Verifikation: Importpfad-Bausteine.
  *
  * Belegt fuer
- * `docs/planning/done/parquet-export-import-evaluation.md`
+ * `docs/planning/done-archive/parquet-export-import-evaluation.md`
  * §8 Arbeitspaket 6 drei konkrete Eigenschaften am Spike-Output:
  *
  * 1. Der Parquet-Footer reicht als Schema-Quelle, um neutrale

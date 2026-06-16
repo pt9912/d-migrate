@@ -188,7 +188,7 @@ object PlannerBlockerClassifier {
      * Atomic-Preserve Phase A (2026-05-31): two BLOCKER codes
      * reserved for the upcoming execute-time atomic Probe + Restore
      * pipeline (Plan-Doc
-     * `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+     * `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
      * §3.1). Both classify as `MANUAL_ACTION_REQUIRED` because the
      * operator has a concrete remedy:
      *

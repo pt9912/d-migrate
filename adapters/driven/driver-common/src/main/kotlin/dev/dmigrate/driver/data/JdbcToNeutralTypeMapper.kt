@@ -6,7 +6,7 @@ import java.sql.Types
 
 /**
  * Mappt JDBC-Spaltentypen auf `NeutralType` per AP2 §8
- * Mapping-Tabelle (`docs/planning/done/parquet-schema-source.md`).
+ * Mapping-Tabelle (`docs/planning/done-archive/parquet-schema-source.md`).
  *
  * Reine Funktion ohne Seiteneffekt. Eingaben sind die vier
  * Felder, die `ResultSetMetaData` pro Spalte liefert:

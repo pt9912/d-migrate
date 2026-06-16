@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
  * [MysqlAtomicSequencePreserveExecutor]. Pins the four canonical
  * paths plus the timeout-leak guard required by plan §6 Risk 6.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase B DoD.
  */
 class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({

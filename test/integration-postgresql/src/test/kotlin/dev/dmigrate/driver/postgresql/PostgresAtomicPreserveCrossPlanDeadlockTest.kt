@@ -39,7 +39,7 @@ import java.util.concurrent.atomic.AtomicReference
  *   primitive can deadlock and therefore the executor's sort is the
  *   thing that closes it.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase D ("Cross-Plan-Deadlock-Beweis pro Dialekt").
  */
 class PostgresAtomicPreserveCrossPlanDeadlockTest : FunSpec({

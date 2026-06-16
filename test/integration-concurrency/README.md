@@ -6,7 +6,7 @@ Restore-Sequenz unter Concurrent Writers, alle gegen die produktiven
 
 Plan-Docs:
 - Atomic-Preserve-Refactor:
-  [`sequence-preserve-atomic-lock-plan.md`](../../docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md)
+  [`sequence-preserve-atomic-lock-plan.md`](../../docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md)
   (Phasen A + B + C + D + E komplett 2026-06-01; in-progress bis
   zum 0.9.7-Release-Tag).
 - Ursprüngliche Coverage-Initiative:

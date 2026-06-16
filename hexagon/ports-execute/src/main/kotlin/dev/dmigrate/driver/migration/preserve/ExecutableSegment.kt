@@ -11,7 +11,7 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
  * rendering output.
  *
  * Plan-Doc:
- * `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.2. The matching segmentation function
  * lives in [segmentForExecute].
  *

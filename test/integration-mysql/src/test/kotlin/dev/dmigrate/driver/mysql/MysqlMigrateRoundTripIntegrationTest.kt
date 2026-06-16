@@ -28,7 +28,7 @@ import kotlin.io.path.createTempDirectory
 
 
 /**
- * F.3 — MySQL round-trip smoke (`docs/planning/done/diffresult-migration-plan.md §F.3`).
+ * F.3 — MySQL round-trip smoke (`docs/planning/done-archive/diffresult-migration-plan.md §F.3`).
  *
  * Mirror of `PostgresMigrateRoundTripIntegrationTest` (F.2) for the
  * first reversible operation matrix per Plan §6.3 (AddColumn /

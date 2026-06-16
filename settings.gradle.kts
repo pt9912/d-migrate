@@ -45,13 +45,13 @@ include("test:e2e-cli")
 include("test:consumer-read-probe")
 
 // Cross-dialect regression matrix (file-mode sweep, no Testcontainers).
-// See docs/planning/done/quality-coverage-expansion-plan.md §5.2.
+// See docs/planning/done-archive/quality-coverage-expansion-plan.md §5.2.
 include("test:cross-dialect-matrix")
 
 // Sequence-Preserve race reproducers (Testcontainers PG/MySQL + file SQLite).
-// See docs/planning/done/quality-coverage-expansion-plan.md §5.3.
+// See docs/planning/done-archive/quality-coverage-expansion-plan.md §5.3.
 include("test:integration-concurrency")
 
 // Large-schema scale tests for the SchemaMigrateRenderPipeline.
-// See docs/planning/done/quality-coverage-expansion-plan.md §5.4.
+// See docs/planning/done-archive/quality-coverage-expansion-plan.md §5.4.
 include("test:perf-large-schema")
