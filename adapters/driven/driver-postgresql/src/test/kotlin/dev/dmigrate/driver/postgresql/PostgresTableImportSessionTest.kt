@@ -358,6 +358,31 @@ class PostgresTableImportSessionTest : FunSpec({
         session.close()
     }
 
+    test("enum target column bound as PGobject with enum type — I-04") {
+        val conn = mockConn()
+        val stmt = mockStmt()
+        every { conn.prepareStatement(any<String>()) } returns stmt
+        every { stmt.executeBatch() } returns intArrayOf(1)
+
+        val enumTargetColumns = listOf(
+            TargetColumn("id", nullable = false, jdbcType = Types.INTEGER, sqlTypeName = "int4"),
+            TargetColumn("mood", nullable = true, jdbcType = Types.OTHER, sqlTypeName = "mood"),
+        )
+        val enumColumns = listOf(
+            ColumnDescriptor("id", nullable = false, sqlTypeName = "int4"),
+            ColumnDescriptor("mood", nullable = true, sqlTypeName = "mood"),
+        )
+
+        val session = newSession(conn = conn, targetColumns = enumTargetColumns)
+        session.enumTypeNamesOverride = setOf("mood")
+        session.write(makeChunk(columns = enumColumns, rows = listOf(arrayOf(2, "happy"))))
+
+        verify {
+            stmt.setObject(2, match<PGobject> { it.type == "mood" && it.value == "happy" })
+        }
+        session.close()
+    }
+
     test("bindValue with generic type calls setObject") {
         val conn = mockConn()
         val stmt = mockStmt()

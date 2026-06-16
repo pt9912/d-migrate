@@ -27,6 +27,26 @@ internal class PostgresTableImportSession(
 
     private var triggersReenabled: Boolean = false
 
+    /**
+     * I-04: Namen der PostgreSQL-Enum-Typen im Ziel. Werte für solche Spalten
+     * werden als [PGobject] mit dem Enum-Typ gebunden — sonst lehnt PostgreSQL
+     * den `varchar`-Parameter ab (`column is of type X but expression is of type
+     * character varying`). Per Default lazy aus der Verbindung (pg_enum); für
+     * Tests über [enumTypeNamesOverride] setzbar (Seam, keine Live-DB nötig).
+     */
+    internal var enumTypeNamesOverride: Set<String>? = null
+    private val resolvedEnumTypeNames: Set<String> by lazy { loadEnumTypeNames() }
+    private val enumTypeNames: Set<String> get() = enumTypeNamesOverride ?: resolvedEnumTypeNames
+
+    private fun loadEnumTypeNames(): Set<String> =
+        conn.prepareStatement(
+            "SELECT DISTINCT t.typname FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid",
+        ).use { ps ->
+            ps.executeQuery().use { rs ->
+                buildSet { while (rs.next()) add(rs.getString(1)) }
+            }
+        }
+
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         val overridingSystemValue = if (importedTargetColumns.any { it.name in generatedAlwaysColumns }) {
             " OVERRIDING SYSTEM VALUE"
@@ -238,6 +258,12 @@ internal class PostgresTableImportSession(
             targetColumn.jdbcType == Types.OTHER &&
                 targetColumn.sqlTypeName.equals("xml", ignoreCase = true) ->
                 stmt.setObject(parameterIndex, pgObject("xml", value.toString()))
+
+            // I-04: benannte PG-Enum-Spalte → als PGobject mit dem Enum-Typ binden.
+            targetColumn.jdbcType == Types.OTHER &&
+                targetColumn.sqlTypeName != null &&
+                targetColumn.sqlTypeName in enumTypeNames ->
+                stmt.setObject(parameterIndex, pgObject(targetColumn.sqlTypeName!!, value.toString()))
 
             targetColumn.jdbcType == Types.ARRAY && value is List<*> ->
                 stmt.setArray(
