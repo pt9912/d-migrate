@@ -260,23 +260,30 @@ dmigrate://tenants/{tenantId}/connections/{connectionId}
 
 ### 4.5 Tool-Katalog
 
+Stand des Golden-Contracts (`tools/list`); die maßgebliche, aktuelle Zuordnung
+liefert `capabilities_list.scopeTable` zur Laufzeit.
+
 | Tool | Art | Scope | Zweck |
 | ---- | --- | ----- | ----- |
 | `capabilities_list` | sync | `dmigrate:read` | Server-/Tool-/Scope-Snapshot |
-| `schema_validate` / `schema_compare` / `schema_generate` / `schema_format` | sync | `dmigrate:read` | Schema prüfen/vergleichen/rendern/formatieren |
-| `schema_reverse` | sync | `dmigrate:read` | DB → neutrales Schema |
-| `schema_list` / `schema_metadata` / `schema_staging_readonly` | sync | `dmigrate:read` | Discovery/Metadaten/Staging (read-only) |
-| `data_profile` / `data_type` | sync | `dmigrate:read` | Profiling / Typauflösung |
-| `data_import` / `data_transfer` | sync | schreibend¹ | Daten laden/übertragen (policy-gesteuert) |
-| `schema_reverse_start` / `schema_compare_start` / `data_export_start` / `data_profile_start` | **async** | `dmigrate:job:start` | read-only Job starten |
-| `data_import_start` / `data_transfer_start` | **async** | schreibend¹ | schreibenden Job starten (idempotent, policy-gesteuert) |
-| `job_status_get` / `job_cancel` | sync | `dmigrate:read` / job-scope | Job-Status / Abbruch |
-| `artifact_upload_init` / `artifact_upload` / `artifact_upload_abort` | sync | upload-scope | Artefakt-Upload (Bytes als `contentBase64`) |
-| `procedure_transform_plan` / `procedure_transform_execute` / `testdata_plan` | sync | KI-scope | KI-gestützte Tools (Phase G) |
+| `schema_validate` / `schema_compare` / `schema_generate` | sync | `dmigrate:read` | Schema prüfen / vergleichen / rendern |
+| `schema_list` / `schema_staging_readonly` | sync | `dmigrate:read` | Schema-Discovery / read-only-Staging-Upload |
+| `profile_list` / `diff_list` / `job_list` / `artifact_list` / `artifact_chunk_get` | sync | `dmigrate:read` | Ressourcen auflisten / Artefakt-Chunk lesen |
+| `job_status_get` | sync | `dmigrate:read` | Job-Status |
+| `schema_reverse_start` / `schema_compare_start` / `data_profile_start` | **async** | `dmigrate:job:start` | read-only Job starten |
+| `data_import_start` / `data_transfer_start` | **async** | `dmigrate:data:write` | schreibenden Job starten (idempotent, policy-gesteuert) |
+| `job_cancel` | sync | `dmigrate:job:cancel` | Job abbrechen |
+| `artifact_upload_init` / `artifact_upload` | sync | `dmigrate:read`¹ | Upload-Session öffnen / Bytes senden (`contentBase64`) |
+| `artifact_upload_abort` | sync | `dmigrate:artifact:upload` | Upload-Session abbrechen |
+| `procedure_transform_plan` / `procedure_transform_execute` / `testdata_plan` / `testdata_execute` | sync | `dmigrate:ai:execute` | KI-gestützte Tools (Phase G) |
 
-¹ Der konkrete Schreib-Scope steht in `capabilities_list.scopeTable`.
-**Nicht implementiert:** SSE-Push / `notifications/*`, OAuth-Authorization-Server/DCR,
-`testdata_execute`.
+¹ Method-Level `dmigrate:read`, damit `schema_staging_readonly` ohne Write-Policy
+startbar ist; intent-abhängige Write-Gates greifen im Handler.
+
+**Nur als async `*_start`-Job (kein synchrones MCP-Tool):** `schema_reverse`,
+`data_profile`, `data_import`, `data_transfer`. **Kein MCP-Tool für Daten-Export**
+(nur CLI `data export`). **Nicht implementiert:** SSE-Push / `notifications/*`,
+OAuth-Authorization-Server/DCR (ADR 0008/0009).
 
 ### 4.6 Asynchrone Jobs
 
