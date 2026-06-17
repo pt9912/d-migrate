@@ -119,35 +119,47 @@ GRENZEN
 ### 4.1 Re-Run-Variante (Re-Validierung nach Fixes)
 
 Ist dies **nicht der Erstlauf**, sondern eine Re-Validierung nach Bugfixes,
-**existiert der Erst-Report bereits** unter
-`docs/planning/in-progress/pilot-validation-<version>.md`. Eine frische Instanz
-würde ihn sonst überschreiben. Für einen Re-Run daher:
+**existieren bereits ein oder mehrere Reports** (`pilot-validation-<version>.md`
+und ggf. `…-rerun.md`, `…-rerun2.md`, …). Eine frische Instanz würde sie sonst
+überschreiben. Für einen Re-Run daher:
 
-- Report in eine **neue** Datei schreiben:
-  `docs/planning/in-progress/pilot-validation-<version>-rerun.md`.
-- Die seit dem Erstlauf behobenen Blocker **gezielt gegen ihr Original-Repro**
-  nachprüfen, nicht nur die Standard-Szenarien.
+- Report in die **nächste freie** Datei schreiben — fortlaufendes Suffix
+  `-rerun`, `-rerun2`, … ; **keinen** Vorgänger-Report überschreiben.
+- Die behobenen Blocker **gezielt gegen ihr Original-Repro** (aus dem jüngsten
+  Vorgänger-Report) nachprüfen, nicht nur die Standard-Szenarien.
+- Bereits **getrackte** offene Befunde (`docs/planning/open/`) und dokumentierte
+  **Nicht-Ziele** (ADRs) nicht erneut als Bug melden.
 
 Dazu den folgenden Block dem Agent-Brief (Abschnitt 4) **voranstellen**:
 
 ```text
 RE-VALIDIERUNGSLAUF (nicht der Erstlauf)
-Dies ist ein Re-Run nach Bugfixes. Der Erst-Report liegt in
-docs/planning/in-progress/pilot-validation-<version>.md (NICHT überschreiben).
-Schreibe deinen Report in docs/planning/in-progress/pilot-validation-<version>-rerun.md.
+Dies ist ein Re-Run nach Bugfixes. Es existieren bereits ein oder mehrere
+Vorgänger-Reports unter docs/planning/in-progress/pilot-validation-<version>*.md
+(NICHT überschreiben). Schreibe deinen Report in die nächste freie Datei mit
+fortlaufendem Suffix: docs/planning/in-progress/pilot-validation-<version>-rerun[N].md.
 
-Die seit dem Erstlauf behobenen Blocker findest du im Erst-Report
-(Befunds-/Behebungsabschnitt) und ggf. im Blocker-Tracker
+Baue das Image aus develop (aktueller HEAD, --version → <version>-SNAPSHOT),
+NICHT GHCR :latest (das ist der letzte Release ohne die neuen Fixes).
+
+Die seit dem letzten Lauf behobenen Blocker findest du im jüngsten Vorgänger-
+Report (Befunds-/Behebungsabschnitt) und ggf. im Blocker-Tracker
 (docs/planning/in-progress/*-blocker-*-tracker.md).
 
 AUFTRAG ZUSÄTZLICH ZU DEN STANDARD-SZENARIEN
 - Verifiziere jeden behobenen Blocker explizit gegen sein Original-Repro aus dem
-  Erst-Report — erwartet: ehemals fehlschlagende Pfade laufen jetzt durch ODER
+  Vorgänger-Report — erwartet: ehemals fehlschlagende Pfade laufen jetzt durch ODER
   steigen sauber mit Note/Skip-Code aus (kein invalides DDL, kein stiller Abbruch).
 - Markiere je Blocker: BEHOBEN / TEILWEISE / REGRESSION / NEUER BEFUND.
-- Neue/P3-Befunde wie gehabt als priorisierte Issue-Liste.
-- Beachte bewusste Nicht-Ziele (z. B. ADRs, die Pfade als out of scope fixieren) —
-  diese sind KEINE Bugs.
+- Prüfe zusätzlich, dass früher behobene Blocker NICHT regressiert sind.
+- Neue/echte Befunde wie gehabt als priorisierte Issue-Liste.
+
+NICHT als Bug / NICHT als neuen Befund werten:
+- Befunde, die bereits als offene Folgearbeit getrackt sind
+  (docs/planning/open/ — z. B. P3-Restbefunde, Feature-Lücken): bekannt, nicht
+  erneut melden (höchstens Status bestätigen).
+- Dokumentierte Nicht-Ziele aus ADRs (z. B. „Bodies werden nicht transpiliert" →
+  E053/Skip ist korrekt; out-of-scope-Pfade): erwartetes Verhalten, kein Defekt.
 ```
 
 ## 5. Abnahme-Kriterien (Auftraggeber-Sicht)
