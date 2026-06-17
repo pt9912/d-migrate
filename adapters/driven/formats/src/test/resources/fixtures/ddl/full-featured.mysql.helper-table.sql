@@ -51,11 +51,11 @@ CREATE TABLE `orders` (
     CONSTRAINT `fk_composite` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
     PRIMARY KEY (`id`)
 )
+ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 PARTITION BY RANGE (`date`) (
     PARTITION `orders_2024` VALUES LESS THAN (2025-01-01),
     PARTITION `orders_2025` VALUES LESS THAN (2026-01-01)
-)
-ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- [W102] HASH index 'idx_customer' is not supported on InnoDB; converted to BTREE.
 -- Hint: InnoDB only supports BTREE indexes. The HASH index has been automatically converted.

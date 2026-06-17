@@ -1,12 +1,8 @@
--- [W111] View query may contain dialect-specific functions: CALC_TOTAL
--- Hint: Review and manually adjust if needed.
-CREATE VIEW IF NOT EXISTS "computed_view" AS
-SELECT id, calc_total(id) AS total FROM orders;
+-- [E053] View 'computed_view' body is not portable to SQLite (dialect-specific function(s): CALC_TOTAL); d-migrate does not translate view bodies between dialects.
+-- Hint: Rewrite the view body with SQLite-compatible syntax and re-run.
 
--- [W111] View query may contain dialect-specific functions: CALC_TOTAL
--- Hint: Review and manually adjust if needed.
-CREATE VIEW IF NOT EXISTS "heuristic_view" AS
-SELECT id, calc_total(id) FROM orders;
+-- [E053] View 'heuristic_view' body is not portable to SQLite (dialect-specific function(s): CALC_TOTAL); d-migrate does not translate view bodies between dialects.
+-- Hint: Rewrite the view body with SQLite-compatible syntax and re-run.
 
 CREATE VIEW IF NOT EXISTS "dependent_view" AS
 SELECT * FROM computed_view;
