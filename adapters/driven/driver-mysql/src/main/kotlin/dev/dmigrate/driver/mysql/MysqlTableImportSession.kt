@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.driver.data.JdbcArrayJsonEncoder
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TargetColumn
@@ -60,10 +61,13 @@ internal class MysqlTableImportSession(
     ) {
         importedTargetColumns.forEachIndexed { index, targetColumn ->
             val value = row[index]
-            if (value == null) {
-                stmt.setNull(index + 1, targetColumn.jdbcType)
-            } else {
-                stmt.setObject(index + 1, value)
+            when {
+                value == null -> stmt.setNull(index + 1, targetColumn.jdbcType)
+                // K1: a source array (e.g. PG text[]) targets a MySQL JSON column;
+                // binding the raw java.sql.Array makes the driver Java-serialise it
+                // (NotSerializableException). Materialise it as a JSON string.
+                value is java.sql.Array -> stmt.setObject(index + 1, JdbcArrayJsonEncoder.encode(value))
+                else -> stmt.setObject(index + 1, value)
             }
         }
     }
