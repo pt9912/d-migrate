@@ -1,14 +1,12 @@
 # Transfer-Preflight strukturell aus der Dialekt-Typ-Abbildung ableiten
 
-> **Status:** Vorabklärung (Draft mit Scope + offener Design-Entscheidung, 2026-06-17)
+> **Status:** GELIEFERT (2026-06-17) — D-1 entschieden (Option a). Closure s. u.
 > **Trigger:** Re-Run-2-Befund **M2 (P1)**
-> ([`../in-progress/pilot-validation-0.9.9-rerun2.md`](../in-progress/pilot-validation-0.9.9-rerun2.md)):
+> ([`pilot-validation-0.9.9-rerun2.md`](../in-progress/pilot-validation-0.9.9-rerun2.md)):
 > Die Transfer-Preflight blockt weiterhin tool-eigene Cross-Dialect-Abbildungen
 > (`Array(text)→Json` PG→MySQL, `Decimal→Float` →SQLite), obwohl I-01/N3 dieselbe
 > Klasse fallweise bereits geöffnet haben. Hand-gepflegte Fall-Liste hinkt
 > strukturell hinterher (Whack-a-Mole).
-> **Aktivierungsbedingung:** Design-Entscheidung D-1 (Port-Form, s. u.) ist zu
-> treffen, dann wandert der Eintrag nach `../next/` mit Phasenschnitt.
 
 ## Wurzel
 
@@ -85,3 +83,31 @@ text-Varianten gezielt zusammenfassen. Im Slice klären.
 - **M1 (P2, separat):** generierte Funktionsnamen mit Signatur-Suffix
   (`"last_updated()"`) — eigener Quick-Fix (Namens-Normalisierung), unabhängig
   von der Preflight-Struktur.
+
+## Closure (2026-06-17)
+
+**D-1 → Option (a) umgesetzt:** Der **Treiber** beantwortet die Kompatibilität,
+ohne den `TypeMapper` zu leaken.
+
+- `ports-common`: neuer Port `TransferTypeCompatibility` (fun interface) +
+  `StructuralTransferTypeCompatibility(typeMapper)` mit der Regel
+  `normalize(toSql(X)) == normalize(toSql(Y))`. `normalize` strippt Länge/
+  Präzision und faltet die String-Schreibweisen (`VARCHAR`/`CHAR`/`TEXT`).
+- `DatabaseDriver.transferCompatibility()` (Default = konservativ Typ-Gleichheit;
+  die 3 Treiber überschreiben strukturell mit ihrem `TypeMapper`).
+- `TransferPreflightPlanner.planTables(... , typeCompatibility)` nutzt die
+  Kompatibilität des **Ziel**-Treibers (`tgtDrv.transferCompatibility()`); die
+  alte Fall-Liste `cli/commands/TransferTypeCompatibility` ist entfernt.
+- **Gebundene, dialekt-agnostische Erlaubnisse** zusätzlich zur strukturellen
+  Regel (Wert-Ebene, nicht Typ-Form; verhindern Regression der I-01-Altfälle bei
+  PG/MySQL, wo die SQL-Schreibweisen je Integer-/Timestamp-Variante differieren):
+  Integer-Storage-Klassen (`SmallInt`/`Integer`/`BigInteger`/`Identifier`)
+  untereinander; `DateTime`↔`DateTime` (tz-Varianz). Das ist **kein**
+  Whack-a-Mole — diese Mengen sind endlich und wachsen nicht je Dialekt-Mapping.
+
+**Verifikation:** M2-Repros strukturell abgedeckt (MySQL `Array`/`Json`→`JSON`;
+SQLite `Decimal`/`Float`→`REAL`); N3/I-01 erhalten (Enum→Text, Temporal→Text,
+timestamptz→datetime, Integer-Widening). Negative Guards bleiben strukturell
+(`text→integer` inkompatibel). `docker-check` für ports-common/ports/application
++ alle drei Treiber grün (detekt + koverVerify). Live-Stichprobe folgt im
+nächsten Pilot-Re-Run.

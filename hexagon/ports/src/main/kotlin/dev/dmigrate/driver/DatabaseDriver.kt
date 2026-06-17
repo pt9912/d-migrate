@@ -13,7 +13,8 @@ import dev.dmigrate.driver.data.TableLister
  * [TypeMapper] is intentionally NOT exposed here — it is an internal
  * implementation detail of [DdlGenerator] (via AbstractDdlGenerator).
  * Consumers who obtain a [DdlGenerator] through [ddlGenerator] get
- * type-mapping implicitly.
+ * type-mapping implicitly; transfer compatibility is exposed structurally via
+ * [transferCompatibility] without leaking the mapper.
  */
 interface DatabaseDriver {
     val dialect: DatabaseDialect
@@ -24,6 +25,17 @@ interface DatabaseDriver {
     fun dataWriter(): DataWriter
     fun urlBuilder(): JdbcUrlBuilder
     fun schemaReader(): SchemaReader
+
+    /**
+     * Structural transfer-type compatibility for THIS dialect as a transfer
+     * **target** — derived from the dialect's own type mapping (see
+     * [StructuralTransferTypeCompatibility]), so it covers every tool-own
+     * cross-dialect mapping without a hand-maintained case list. The real drivers
+     * override this; the default is the conservative identity-only rule so a
+     * driver without a structural mapping never silently over-accepts.
+     */
+    fun transferCompatibility(): TransferTypeCompatibility =
+        TransferTypeCompatibility { source, target -> source == target }
 
     /**
      * Returns the driver's dialect-specific pre-generation validator,

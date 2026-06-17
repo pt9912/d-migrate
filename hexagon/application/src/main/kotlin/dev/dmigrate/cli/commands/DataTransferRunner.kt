@@ -112,7 +112,7 @@ class DataTransferRunner(
         } catch (e: Exception) { userFacingPrintError("Schema read: ${e.message}", srcRef); return 4 }
 
         val tables: List<String>
-        try { tables = preflightPlanner.planTables(request, srcSchema, tgtSchema) }
+        try { tables = preflightPlanner.planTables(request, srcSchema, tgtSchema, tgtDrv.transferCompatibility()) }
         catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
 
         val caps = DialectCapabilities.forDialect(tgtCfg.dialect)
