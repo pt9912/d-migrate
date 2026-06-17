@@ -1,9 +1,10 @@
 # P2-Pilot-Blocker — Arbeitstracker (0.9.9)
 
-Status: **offen** (P1 abgeschlossen 2026-06-16). Dieser Tracker bereitet den
-direkten Wiedereinstieg in den P2-Block vor: pro Bug die gegen den Code
-lokalisierte Ursache, eine Fix-Skizze, die Test-Strategie und das zu prüfende
-Modul.
+Status: **in Arbeit** (P1 abgeschlossen 2026-06-16; I-05+I-06 behoben
+2026-06-17, Commit `b9e6ab38`). Offen: I-07, I-08, I-09, I-10. Dieser Tracker
+bereitet den direkten Wiedereinstieg in den P2-Block vor: pro Bug die gegen den
+Code lokalisierte Ursache, eine Fix-Skizze, die Test-Strategie und das zu
+prüfende Modul.
 
 Quellen:
 [Pilot-Report](pilot-validation-0.9.9.md) (Symptome + Repro, Abschnitt 6) ·
@@ -21,7 +22,13 @@ Quellen:
 
 ---
 
-## I-05 — Domain `base_type` rendert neutralen Typnamen + falsche Präzision (P2)
+## I-05 — Domain `base_type` rendert neutralen Typnamen + falsche Präzision (P2) — BEHOBEN 2026-06-17
+
+> **Fix:** `b9e6ab38` (zusammen mit I-06). Domain-`baseType` wird im
+> Generate-Pfad jetzt über `typeMapper.toSql(NeutralType)` aufgelöst statt per
+> `baseType.uppercase()` (biginteger → BIGINT, decimal → DECIMAL(p,s)); rohe
+> SQL-Typstrings bleiben als Fallback unverändert. Regressionstests +
+> `docker-check`/Live-PG grün.
 
 **Symptom:** `CREATE DOMAIN … AS BIGINTEGER(64,0)` statt `AS BIGINT`. Der
 Spaltenpfad mappt korrekt; nur der Domain-Pfad umgeht den Typ-Mapper.
@@ -49,7 +56,13 @@ Renderpfad) → zusammen angehen.
 
 ---
 
-## I-06 — Domain-`check` doppelt gewrappt (P2)
+## I-06 — Domain-`check` doppelt gewrappt (P2) — BEHOBEN 2026-06-17
+
+> **Fix:** `b9e6ab38` (zusammen mit I-05). Reverse-Normalisierung
+> (`normalizeDomainCheck` in `PostgresSchemaStructureReaders.kt`) entfernt das
+> führende `CHECK`-Token + genau die umschließende äußere Klammer, sodass das
+> Modell nur das Prädikat hält und generate exakt einmal wrappt (idempotent).
+> Unit- + Live-PG-Round-Trip-Test (echter `pg_get_constraintdef`-Output) grün.
 
 **Symptom:** `CHECK (CHECK (((VALUE …))))` — reverse speichert den Check inkl.
 Wrapper, generate wrappt erneut → ungültiges DDL.
@@ -184,8 +197,8 @@ ein Parquet-Round-Trip-Test (Export→Import einer Timestamp-Spalte). **Modul:**
 
 ## Vorgeschlagene Reihenfolge
 
-1. **I-05 + I-06** (Domain-Renderpfad, gleiche Datei) — zusammen, ein Commit-Paar.
-2. **I-10** (Parquet-Timestamp) — isoliert, klar abgegrenzt, schneller Win.
+1. ~~**I-05 + I-06** (Domain-Renderpfad, gleiche Datei)~~ — ✅ behoben 2026-06-17 (`b9e6ab38`).
+2. **I-10** (Parquet-Timestamp) — isoliert, klar abgegrenzt, schneller Win. ← **nächster**
 3. **I-07** (Partition MySQL) — Skip/valide-DDL-Entscheidung + PK-Reihenfolge.
 4. **I-08** (Index TEXT-Präfix / GIST) — zwei Dialekte, je Sekundär-Note.
 5. **I-09** (View-Bodies) — Scope-Entscheidung (Skip vs. Übersetzung) zuerst
