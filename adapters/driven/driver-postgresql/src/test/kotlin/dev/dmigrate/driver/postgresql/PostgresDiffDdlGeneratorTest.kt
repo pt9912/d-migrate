@@ -483,6 +483,14 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         rDown.statements.single().sql shouldBe "DROP VIEW \"v_x\";"
     }
 
+    test("CreateView with non-portable cross-dialect body is blocked with E053 (I-09)") {
+        val v = ViewDefinition(query = "SELECT group_concat(`x`) FROM `t`", sourceDialect = "mysql")
+        val r = planAndUp(SchemaDiff(viewsAdded = listOf(dev.dmigrate.core.diff.NamedView("v_x", v))))
+        r.statements.none { it.sql.startsWith("CREATE VIEW") } shouldBe true
+        r.diagnostics.map { it.code } shouldContain "E053"
+        r.blockers.any { it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED } shouldBe true
+    }
+
     test("ReplaceView emits CREATE OR REPLACE in both directions, with target swap on Down") {
         val signature = listOf(ViewColumnDefinition("x", "integer"))
         val before = ViewDefinition(query = "SELECT 1 AS x", columns = signature)

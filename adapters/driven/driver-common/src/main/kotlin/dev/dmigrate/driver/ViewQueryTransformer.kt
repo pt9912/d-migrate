@@ -11,6 +11,33 @@ package dev.dmigrate.driver
  */
 class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
 
+    /** Result of [assessPortability]: whether a view body is safe to emit verbatim. */
+    data class ViewPortability(val portable: Boolean, val reason: String?)
+
+    /**
+     * Verdict on whether a view body can be emitted for [targetDialect] verbatim.
+     * d-migrate does not transpile view bodies across dialects (no SQL transpiler
+     * in 0.9.x), so a body carrying foreign identifier quoting or — for a
+     * cross-dialect source — dialect-specific functions is reported as
+     * non-portable. Callers skip such views with an E053 note instead of emitting
+     * DDL the target rejects (e.g. MySQL backticks or `group_concat` into PG).
+     */
+    fun assessPortability(query: String, sourceDialect: String?): ViewPortability {
+        val crossDialect = sourceDialect != null && sourceDialect != targetDialect.name.lowercase()
+        val markers = mutableListOf<String>()
+        // Backticks are MySQL-only quoting and are a hard syntax error in PG/SQLite.
+        if (targetDialect != DatabaseDialect.MYSQL && query.contains('`')) {
+            markers += "MySQL-style backtick quoting"
+        }
+        if (crossDialect) {
+            val unknown = detectUnknownFunctions(applyRules(ViewQueryTokenizer.tokenize(query)))
+            if (unknown.isNotEmpty()) {
+                markers += "dialect-specific function(s): ${unknown.joinToString(", ")}"
+            }
+        }
+        return ViewPortability(portable = markers.isEmpty(), reason = markers.joinToString("; ").ifEmpty { null })
+    }
+
     fun transform(query: String, sourceDialect: String?): Pair<String, List<TransformationNote>> {
         val notes = mutableListOf<TransformationNote>()
         val tokens = ViewQueryTokenizer.tokenize(query)

@@ -137,4 +137,35 @@ class ViewQueryTransformerTest : FunSpec({
         val (_, notes) = transformer.transform("SELECT IFNULL(a, b) FROM t", "mysql")
         notes.shouldBeEmpty()
     }
+
+    // ── Portability assessment (I-09) ───────────
+
+    test("assessPortability: backticks make a body non-portable to PostgreSQL") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        val verdict = transformer.assessPortability("SELECT `x` FROM `t`", "mysql")
+        verdict.portable shouldBe false
+        verdict.reason!! shouldContain "backtick"
+    }
+
+    test("assessPortability: cross-dialect unknown function is non-portable") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        val verdict = transformer.assessPortability("SELECT group_concat(name) FROM t", "mysql")
+        verdict.portable shouldBe false
+        verdict.reason!! shouldContain "GROUP_CONCAT"
+    }
+
+    test("assessPortability: plain cross-dialect SELECT is portable") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        transformer.assessPortability("SELECT id, name FROM users", "mysql").portable shouldBe true
+    }
+
+    test("assessPortability: same-dialect body is portable even with unknown functions") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        transformer.assessPortability("SELECT custom_fn(x) FROM t", "postgresql").portable shouldBe true
+    }
+
+    test("assessPortability: backticks are fine for a MySQL target") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        transformer.assessPortability("SELECT `x` FROM `t`", null).portable shouldBe true
+    }
 })

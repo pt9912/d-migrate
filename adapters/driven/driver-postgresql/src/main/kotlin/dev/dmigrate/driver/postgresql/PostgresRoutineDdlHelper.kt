@@ -28,6 +28,19 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
 
         val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        val portability = transformer.assessPortability(query, view.sourceDialect)
+        if (!portability.portable) {
+            val action = ManualActionRequired(
+                code = "E053", objectType = "view", objectName = name,
+                reason = "View '$name' body is not portable to PostgreSQL (${portability.reason}); " +
+                    "d-migrate does not translate view bodies between dialects.",
+                hint = "Rewrite the view body with PostgreSQL-compatible syntax and re-run.",
+                sourceDialect = view.sourceDialect,
+            )
+            skipped += action.toSkipped()
+            return actionRequired(action)
+        }
+
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
 
         return if (view.materialized) {

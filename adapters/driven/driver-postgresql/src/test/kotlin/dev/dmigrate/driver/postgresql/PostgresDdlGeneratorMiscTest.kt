@@ -243,7 +243,7 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
         ddl shouldContain "SELECT product_id, SUM(amount) FROM sales GROUP BY product_id"
     }
 
-    test("view with incompatible source_dialect is transformed best-effort and warns with W111") {
+    test("view with non-portable cross-dialect body is skipped with E053 (I-09)") {
         val s = schema(
             views = mapOf(
                 "mysql_view" to ViewDefinition(
@@ -254,11 +254,10 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
         )
         val result = generator.generate(s)
         val rendered = result.render()
-        rendered shouldContain "CREATE OR REPLACE VIEW \"mysql_view\" AS"
-        rendered shouldContain "SELECT IFNULL(x, 0) FROM t;"
-        rendered shouldContain "W111"
-        result.notes.any { it.code == "W111" && it.objectName == "view_query" } shouldBe true
-        result.skippedObjects.any { it.name == "mysql_view" } shouldBe false
+        // IFNULL is MySQL-only; a verbatim emit would be invalid PG DDL → skip.
+        rendered shouldNotContain "CREATE OR REPLACE VIEW \"mysql_view\""
+        result.notes.any { it.code == "E053" && it.objectName == "mysql_view" } shouldBe true
+        result.skippedObjects.any { it.name == "mysql_view" } shouldBe true
     }
 
     test("view without query is skipped") {

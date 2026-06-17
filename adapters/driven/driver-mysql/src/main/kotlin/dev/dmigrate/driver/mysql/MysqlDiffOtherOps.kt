@@ -3,8 +3,11 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlCheckEnforcementResolver
+import dev.dmigrate.driver.ViewQueryTransformer
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 import dev.dmigrate.driver.mysqlContext
@@ -263,6 +266,7 @@ internal object MysqlDiffOtherOps {
             ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};")
             return
         }
+        if (blockNonPortableView(op, op.view, name, ctx)) return
         ctx.emit(op, ctx.sql.createViewSql(name, op.view))
     }
 
@@ -273,7 +277,32 @@ internal object MysqlDiffOtherOps {
             blockMaterializedView(op, ctx, name)
             return
         }
+        if (blockNonPortableView(op, target, name, ctx)) return
         ctx.emit(op, ctx.sql.replaceViewSql(name, target))
+    }
+
+    /**
+     * I-09: cross-dialect view bodies MySQL cannot parse (foreign quoting /
+     * dialect-specific functions) are blocked with E053 instead of emitting
+     * invalid `CREATE VIEW` DDL. Returns true when the op was blocked.
+     */
+    private fun blockNonPortableView(
+        op: DiffOperation,
+        view: ViewDefinition,
+        name: String,
+        ctx: MysqlDiffRenderContext,
+    ): Boolean {
+        val query = view.query ?: return false
+        val verdict = ViewQueryTransformer(DatabaseDialect.MYSQL).assessPortability(query, view.sourceDialect)
+        if (verdict.portable) return false
+        ctx.skip(
+            op,
+            "View '$name' body is not portable to MySQL (${verdict.reason}); d-migrate does not " +
+                "translate view bodies between dialects. Rewrite the view for MySQL and re-run.",
+            code = "E053",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return true
     }
 
     fun renderDropView(op: DiffOperation.DropView, ctx: MysqlDiffRenderContext) {

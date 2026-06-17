@@ -464,7 +464,7 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         ddl shouldContain "CREATE INDEX \"idx_orders_cust_date\" ON \"orders\" (\"customer_id\", \"order_date\");"
     }
 
-    test("view with incompatible source_dialect is transformed best-effort and warns with W111") {
+    test("view with non-portable cross-dialect body is skipped with E053 (I-09)") {
         val s = schema(
             views = mapOf(
                 "mysql_view" to ViewDefinition(
@@ -475,11 +475,39 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         )
         val result = generator.generate(s)
         val rendered = result.render()
-        rendered shouldContain "CREATE OR REPLACE VIEW \"mysql_view\" AS"
-        rendered shouldContain "SELECT IFNULL(x, 0) FROM t;"
-        rendered shouldContain "W111"
-        result.notes.any { it.code == "W111" && it.objectName == "view_query" } shouldBe true
-        result.skippedObjects.any { it.name == "mysql_view" } shouldBe false
+        // IFNULL is a MySQL-only function (PG has COALESCE); emitting it verbatim
+        // would be invalid PG DDL, so the view is skipped, not emitted.
+        rendered shouldNotContain "CREATE OR REPLACE VIEW \"mysql_view\""
+        result.notes.any { it.code == "E053" && it.objectName == "mysql_view" } shouldBe true
+        result.skippedObjects.any { it.name == "mysql_view" } shouldBe true
+    }
+
+    test("view with MySQL backticks and group_concat is skipped with E053, not invalid DDL (I-09)") {
+        val s = schema(
+            views = mapOf(
+                "report" to ViewDefinition(
+                    query = "SELECT group_concat(`name`) FROM `app`.`users`",
+                    sourceDialect = "mysql"
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldNotContain "CREATE OR REPLACE VIEW \"report\""
+        result.notes.any { it.code == "E053" && it.objectName == "report" } shouldBe true
+    }
+
+    test("portable cross-dialect view (plain SELECT) is still emitted (I-09)") {
+        val s = schema(
+            views = mapOf(
+                "active_users" to ViewDefinition(
+                    query = "SELECT id, name FROM users WHERE active = TRUE",
+                    sourceDialect = "mysql"
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldContain "CREATE OR REPLACE VIEW \"active_users\" AS"
+        result.skippedObjects.any { it.name == "active_users" } shouldBe false
     }
 
     test("LIST partitioning generates FOR VALUES IN") {

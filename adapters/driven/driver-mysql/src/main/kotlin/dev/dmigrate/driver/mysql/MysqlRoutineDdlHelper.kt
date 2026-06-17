@@ -27,6 +27,20 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             return null
         }
 
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        val portability = transformer.assessPortability(query, view.sourceDialect)
+        if (!portability.portable) {
+            val action = ManualActionRequired(
+                code = "E053", objectType = "view", objectName = name,
+                reason = "View '$name' body is not portable to MySQL (${portability.reason}); " +
+                    "d-migrate does not translate view bodies between dialects.",
+                hint = "Rewrite the view body with MySQL-compatible syntax and re-run.",
+                sourceDialect = view.sourceDialect,
+            )
+            skipped += action.toSkipped()
+            return actionRequired(action)
+        }
+
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
             notes += TransformationNote(
@@ -38,7 +52,6 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             )
         }
 
-        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
         notes += queryNotes
 

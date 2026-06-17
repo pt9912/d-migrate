@@ -27,6 +27,20 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
             return null
         }
 
+        val transformer = ViewQueryTransformer(DatabaseDialect.SQLITE)
+        val portability = transformer.assessPortability(query, view.sourceDialect)
+        if (!portability.portable) {
+            val action = ManualActionRequired(
+                code = "E053", objectType = "view", objectName = name,
+                reason = "View '$name' body is not portable to SQLite (${portability.reason}); " +
+                    "d-migrate does not translate view bodies between dialects.",
+                hint = "Rewrite the view body with SQLite-compatible syntax and re-run.",
+                sourceDialect = view.sourceDialect,
+            )
+            skipped += action.toSkipped()
+            return actionRequired(action)
+        }
+
         // Materialized views are not supported in SQLite; emit as regular VIEW with warning
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
@@ -39,7 +53,6 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
             )
         }
 
-        val transformer = ViewQueryTransformer(DatabaseDialect.SQLITE)
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
         notes += queryNotes
 
