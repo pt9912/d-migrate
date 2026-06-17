@@ -1479,7 +1479,7 @@ SELECT AddGeometryColumn('places', 'area', 4326, 'POLYGON', 'XY');
 - PostGIS benötigt die PostGIS-Erweiterung in der Zieldatenbank (Hinweis
   `[I001]`); die SpatiaLite-`AddGeometryColumn()`-Aufrufe setzen die geladene
   SpatiaLite-Erweiterung voraus.
-- Erlaubte `geometry_type`-Werte und die 0.5.5-Grenzen stehen in
+- Erlaubte `geometry_type`-Werte und die Grenzen stehen in
   [Anhang F.4](#f4-spatial-typen); Profil-Details in
   [Anhang A.4](#a4-schema-generate).
 
@@ -2321,7 +2321,7 @@ Typ-spezifische Attribute:
 
 #### F.4 Spatial-Typen
 
-Der Typ `geometry` (ab 0.5.5) trägt zwei optionale Attribute:
+Der Typ `geometry` trägt zwei optionale Attribute:
 
 ```yaml
 columns:
@@ -2339,7 +2339,7 @@ Wie `geometry`-Spalten in DDL überführt werden, steuert `--spatial-profile`
 (`postgis`, `native`, `spatialite`, `none`) bei `schema generate`/`export`
 (siehe [Anhang A.4](#a4-schema-generate)).
 
-Nicht Teil von 0.5.5: `geography`, 3D-(`z`)/Mess-(`m`)-Koordinaten, Spatial-Index
+Nicht unterstützt: `geography`, 3D-(`z`)/Mess-(`m`)-Koordinaten, Spatial-Index
 als eigener Typ; `geometry` ist außerdem **nicht** als `array.element_type`
 zulässig.
 
