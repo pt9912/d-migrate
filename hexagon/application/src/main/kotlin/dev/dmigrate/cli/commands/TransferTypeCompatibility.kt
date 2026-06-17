@@ -22,8 +22,17 @@ internal class TransferTypeCompatibility {
         if (sourceType is NeutralType.BooleanType && isIntegralTargetType(targetType)) return true
         if (sourceType is NeutralType.Enum && targetType is NeutralType.Text) return true
         if (sourceType is NeutralType.DateTime && targetType is NeutralType.DateTime) return true
+        // N3: weitere tool-eigene Cross-Dialect-Abbildungen.
+        // PG-Named-Enum (values=null, refType=…) ↔ MySQL-Inline-Enum (values=[…],
+        // refType=null) ist derselbe logische Enum, vom Tool beim generate erzeugt.
+        if (sourceType is NeutralType.Enum && targetType is NeutralType.Enum) return true
+        // SQLite legt Temporal-Typen als TEXT ab (DateTime/Date/Time → Text).
+        if (isTemporalType(sourceType) && targetType is NeutralType.Text) return true
         return false
     }
+
+    private fun isTemporalType(type: NeutralType): Boolean =
+        type is NeutralType.DateTime || type is NeutralType.Date || type is NeutralType.Time
 
     private fun isIdentifierCompatible(source: NeutralType, target: NeutralType): Boolean {
         if (source !is NeutralType.Identifier) return false

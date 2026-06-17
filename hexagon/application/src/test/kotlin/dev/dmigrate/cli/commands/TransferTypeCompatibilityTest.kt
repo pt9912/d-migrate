@@ -33,6 +33,20 @@ class TransferTypeCompatibilityTest : FunSpec({
         ) shouldBe true
     }
 
+    // N3: PG-Named-Enum (values=null, refType=…) ↔ MySQL-Inline-Enum (values=[…])
+    test("PG named enum → MySQL inline enum is compatible — N3") {
+        compat.isCompatible(
+            col(NeutralType.Enum(values = null, refType = "mpaa_rating")),
+            col(NeutralType.Enum(values = listOf("G", "PG", "R"), refType = null)),
+        ) shouldBe true
+    }
+
+    test("datetime/date/time → text (SQLite temporal mapping) is compatible — N3") {
+        compat.isCompatible(col(NeutralType.DateTime(timezone = false)), col(NeutralType.Text())) shouldBe true
+        compat.isCompatible(col(NeutralType.Date), col(NeutralType.Text())) shouldBe true
+        compat.isCompatible(col(NeutralType.Time), col(NeutralType.Text())) shouldBe true
+    }
+
     test("text → integer remains incompatible (no over-permissiveness)") {
         compat.isCompatible(col(NeutralType.Text()), col(NeutralType.Integer)) shouldBe false
     }
