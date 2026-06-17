@@ -58,8 +58,16 @@ import dev.dmigrate.core.util.sha256Hex
  */
 object MigrationFingerprint {
 
-    /** Algorithm identifier folded into every projection. Bump on contract change. */
-    const val ALGORITHM: String = "schema-fingerprint-v1"
+    /**
+     * Algorithm identifier folded into every projection. Bump on contract change.
+     *
+     * v2: index columns now carry a MySQL prefix length (`IndexColumn.prefixLength`,
+     * read from `SUB_PART` on reverse). Projections that include a prefix index
+     * differ from v1; the bump signals the reverse-reader semantic change so
+     * v1-era rollback artefacts are recognised as a different algorithm version
+     * rather than silently mismatched.
+     */
+    const val ALGORITHM: String = "schema-fingerprint-v2"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP

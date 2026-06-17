@@ -25,7 +25,21 @@ class MigrationFingerprintTest : FunSpec({
     ) = SchemaDefinition(name = name, version = version, tables = tables, sequences = sequences)
 
     test("project starts with the algorithm identifier") {
-        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v1\n")
+        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v2\n")
+    }
+
+    test("index column prefix length is part of the fingerprint (prefix-length slice)") {
+        fun docs(prefix: Int?) = schema(
+            tables = mapOf(
+                "docs" to TableDefinition(
+                    columns = mapOf("body" to ColumnDefinition(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_body", columns = listOf(IndexColumn("body", prefixLength = prefix)))
+                    ),
+                )
+            )
+        )
+        MigrationFingerprint.compute(docs(null)) shouldNotBe MigrationFingerprint.compute(docs(100))
     }
 
     test("compute returns 64 hex chars (SHA-256)") {
@@ -133,8 +147,8 @@ class MigrationFingerprintTest : FunSpec({
         out shouldContain "unique=true"
     }
 
-    test("ALGORITHM constant is the version-1 string") {
-        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v1"
+    test("ALGORITHM constant is the version-2 string") {
+        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v2"
     }
 
     // ── Branch coverage for type / default / generation projections ──
