@@ -182,9 +182,10 @@ private fun parseIndexColumns(node: JsonNode?): List<IndexColumn> {
             columnNode.isObject -> IndexColumn(
                 name = columnNode.requiredText("name"),
                 direction = columnNode.optionalText("direction")?.toIndexSortDirection(),
+                prefixLength = columnNode.optionalInt("prefix_length"),
             )
             else -> throw IllegalArgumentException(
-                "Index columns must be strings or objects with 'name' and optional 'direction'"
+                "Index columns must be strings or objects with 'name', optional 'direction' and 'prefix_length'"
             )
         }
     }

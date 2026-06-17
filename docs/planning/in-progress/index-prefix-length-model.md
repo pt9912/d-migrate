@@ -1,8 +1,9 @@
 # Index-Präfixlänge als Modellfeld (`IndexColumn.prefixLength`)
 
-**Status**: Entwurf (2026-06-17 — Scope + Blast-Radius kartiert, Phasenschnitt
-und Akzeptanzkriterien ausgearbeitet; Review + Tiefenprüfung + Code-Verifikation
-eingearbeitet (D-1…D-6), umsetzungsreif).
+**Status**: In Arbeit (2026-06-17 — nach `in-progress/` verschoben, Phase 1
+aktiv). Scope + Blast-Radius kartiert, Phasenschnitt und Akzeptanzkriterien
+ausgearbeitet; Review + Tiefenprüfung + Code-Verifikation eingearbeitet
+(D-1…D-6).
 
 **Trigger**: P2-Pilot-Blocker **I-08** (MySQL: Index auf unbounded `TEXT`/`BLOB`
 ohne Präfixlänge → `ERROR 1170`). Beim Fix-Entwurf fiel auf, dass das Modell

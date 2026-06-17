@@ -68,6 +68,27 @@ class JsonSchemaCodecTest : FunSpec({
         schema.tables.getValue("orders").indices.single().where shouldBe "created_at IS NOT NULL"
     }
 
+    test("JSON round-trip preserves index column prefix_length") {
+        val json = """
+            {
+              "name": "App",
+              "version": "1.0",
+              "tables": {
+                "docs": {
+                  "columns": { "body": { "type": "text" } },
+                  "indices": [
+                    { "name": "idx_docs_body", "columns": [ { "name": "body", "prefix_length": 100 } ] }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+        val schema = jsonCodec.read(ByteArrayInputStream(json.toByteArray()))
+        schema.tables.getValue("docs").indices.single().columns.single() shouldBe
+            IndexColumn("body", prefixLength = 100)
+        jsonRoundTrip(schema) shouldBe schema
+    }
+
     // ── JSON Round-Trip ─────────────────────────
 
     test("JSON round-trip minimal schema") {

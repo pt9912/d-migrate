@@ -273,6 +273,11 @@
         "direction": {
           "type": "string",
           "enum": ["asc", "desc"]
+        },
+        "prefix_length": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "MySQL prefix-index key length (col(n)); omit to index the full column."
         }
       }
     },

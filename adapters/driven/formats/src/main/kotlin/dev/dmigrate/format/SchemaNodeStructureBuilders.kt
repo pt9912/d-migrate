@@ -163,12 +163,14 @@ private fun buildIndexColumns(
     val arrayNode = mapper.createArrayNode()
     for (column in columns) {
         val direction = column.direction
-        if (direction == null) {
+        val prefixLength = column.prefixLength
+        if (direction == null && prefixLength == null) {
             arrayNode.add(column.name)
         } else {
             val columnNode = mapper.createObjectNode()
             columnNode.put("name", column.name)
-            columnNode.put("direction", direction.name.lowercase())
+            if (direction != null) columnNode.put("direction", direction.name.lowercase())
+            if (prefixLength != null) columnNode.put("prefix_length", prefixLength)
             arrayNode.add(columnNode)
         }
     }

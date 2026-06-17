@@ -3,9 +3,18 @@ package dev.dmigrate.core.model
 data class IndexColumn(
     val name: String,
     val direction: IndexSortDirection? = null,
+    /**
+     * MySQL prefix-index key length (`col(n)`), e.g. for indexing the first `n`
+     * characters of a TEXT/BLOB column. Null = index the full column. PG/SQLite
+     * have no prefix-index concept and drop it (with a note) on generate.
+     */
+    val prefixLength: Int? = null,
 ) {
-    override fun toString(): String =
-        if (direction == null) name else "$name ${direction.name}"
+    override fun toString(): String = buildString {
+        append(name)
+        if (prefixLength != null) append("($prefixLength)")
+        if (direction != null) append(" ${direction.name}")
+    }
 }
 
 enum class IndexSortDirection {
