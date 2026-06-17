@@ -35,8 +35,9 @@ toSql(DateTime(tz=false))=="DATETIME"` usw. — ohne jede Einzelregel.
 ## Offene Design-Entscheidung
 
 **D-1 — Port-Form (application↔driver).** `DatabaseDriver` exponiert bewusst
-**keinen** `TypeMapper` (`hexagon/ports/.../DatabaseDriver.kt`, Doku: „TypeMapper
-is intentionally NOT exposed … internal detail of DdlGenerator"). Die Preflight
+**keinen** `TypeMapper` (`hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDriver.kt`,
+Doku: „TypeMapper is intentionally NOT exposed … internal detail of
+DdlGenerator"). Die Preflight
 sitzt in `hexagon/application` (`TransferPreflightPlanner`) und braucht die
 Ziel-Typ-Abbildung. Optionen:
 
