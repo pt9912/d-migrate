@@ -1,10 +1,10 @@
 # P2-Pilot-Blocker — Arbeitstracker (0.9.9)
 
 Status: **in Arbeit** (P1 abgeschlossen 2026-06-16; I-05+I-06 behoben
-2026-06-17, Commit `b9e6ab38`). Offen: I-07, I-08, I-09, I-10. Dieser Tracker
-bereitet den direkten Wiedereinstieg in den P2-Block vor: pro Bug die gegen den
-Code lokalisierte Ursache, eine Fix-Skizze, die Test-Strategie und das zu
-prüfende Modul.
+2026-06-17 `b9e6ab38`; I-10 behoben 2026-06-17 `a9ec0619`). Offen: I-07, I-08,
+I-09. Dieser Tracker bereitet den direkten Wiedereinstieg in den P2-Block vor:
+pro Bug die gegen den Code lokalisierte Ursache, eine Fix-Skizze, die
+Test-Strategie und das zu prüfende Modul.
 
 Quellen:
 [Pilot-Report](pilot-validation-0.9.9.md) (Symptome + Repro, Abschnitt 6) ·
@@ -169,7 +169,12 @@ SELECTs skippen). Ggf. eigener ADR, falls das ein dauerhaftes Nicht-Ziel wird.
 
 ---
 
-## I-10 — Parquet-Import scheitert an Timestamp-Spalten (P2)
+## I-10 — Parquet-Import scheitert an Timestamp-Spalten (P2) — BEHOBEN 2026-06-17
+
+> **Fix:** `a9ec0619`. `LocalDateTimeConverter` (TIMESTAMP) akzeptiert jetzt
+> `Instant` → `LocalDateTime@UTC`, `OffsetDateTimeConverter` (TIMESTAMPTZ) →
+> `OffsetDateTime@UTC`. Konverter-Unit-Tests + echter Parquet-Export→Import-
+> Round-Trip (Writer → Reader liefert Instant → ValueDeserializer) grün.
 
 **Symptom:** `data import --format parquet` → Exit 3 „column 'created_at'
 expects TIMESTAMP, got Instant". Blockiert Timestamp-Tabellen.
@@ -198,8 +203,8 @@ ein Parquet-Round-Trip-Test (Export→Import einer Timestamp-Spalte). **Modul:**
 ## Vorgeschlagene Reihenfolge
 
 1. ~~**I-05 + I-06** (Domain-Renderpfad, gleiche Datei)~~ — ✅ behoben 2026-06-17 (`b9e6ab38`).
-2. **I-10** (Parquet-Timestamp) — isoliert, klar abgegrenzt, schneller Win. ← **nächster**
-3. **I-07** (Partition MySQL) — Skip/valide-DDL-Entscheidung + PK-Reihenfolge.
+2. ~~**I-10** (Parquet-Timestamp)~~ — ✅ behoben 2026-06-17 (`a9ec0619`).
+3. **I-07** (Partition MySQL) — Skip/valide-DDL-Entscheidung + PK-Reihenfolge. ← **nächster**
 4. **I-08** (Index TEXT-Präfix / GIST) — zwei Dialekte, je Sekundär-Note.
 5. **I-09** (View-Bodies) — Scope-Entscheidung (Skip vs. Übersetzung) zuerst
    klären; potentiell ADR-relevant.
