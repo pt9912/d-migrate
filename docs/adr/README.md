@@ -63,3 +63,6 @@ argumentiert werden.
 | 0007 | [MCP-Parquet-Isolation: vier Verteidigungslinien](0007-mcp-parquet-isolation-defense-in-depth.md) | accepted |
 | 0008 | [MCP-Transport ohne SSE-/Server→Client-Push](0008-mcp-no-sse-push.md) | accepted |
 | 0009 | [MCP-Server als OAuth-Resource-Server (kein eigener Authorization Server, keine DCR)](0009-mcp-resource-server-no-auth-server.md) | accepted |
+| 0010 | [Eingefrorenes Done-Archiv (`done-archive/`) und d-check-Scan-Ausschluss](0010-done-archive-und-gate-scan-ausschluss.md) | accepted |
+| 0011 | [d-check-`codepaths`-Scope und dauerhafte Pfad-Ausnahmen](0011-d-check-codepaths-scope-und-dauerhafte-ausnahmen.md) | accepted |
+| 0012 | [Index-Präfixlänge nur auf Index-Spalten — PK-/Constraint-Spalten tragen keine Länge](0012-index-prefix-length-scope.md) | accepted |
