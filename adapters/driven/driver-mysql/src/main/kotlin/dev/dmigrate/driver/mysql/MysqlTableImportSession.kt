@@ -2,7 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.ImportOptions
-import dev.dmigrate.driver.data.JdbcArrayJsonEncoder
+import dev.dmigrate.driver.data.JdbcForeignValueNormalizer
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TargetColumn
@@ -61,13 +61,13 @@ internal class MysqlTableImportSession(
     ) {
         importedTargetColumns.forEachIndexed { index, targetColumn ->
             val value = row[index]
-            when {
-                value == null -> stmt.setNull(index + 1, targetColumn.jdbcType)
-                // K1: a source array (e.g. PG text[]) targets a MySQL JSON column;
-                // binding the raw java.sql.Array makes the driver Java-serialise it
-                // (NotSerializableException). Materialise it as a JSON string.
-                value is java.sql.Array -> stmt.setObject(index + 1, JdbcArrayJsonEncoder.encode(value))
-                else -> stmt.setObject(index + 1, value)
+            if (value == null) {
+                stmt.setNull(index + 1, targetColumn.jdbcType)
+            } else {
+                // K1/L1: a source-driver wrapper (PG text[] → JSON, pgjdbc PGobject
+                // like tsvector → its string) would otherwise be Java-serialised by
+                // MySQL Connector/J. Normalise to a bindable form first.
+                stmt.setObject(index + 1, JdbcForeignValueNormalizer.normalize(value))
             }
         }
     }

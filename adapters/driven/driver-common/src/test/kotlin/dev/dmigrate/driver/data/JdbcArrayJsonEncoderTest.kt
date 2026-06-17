@@ -25,7 +25,7 @@ class JdbcArrayJsonEncoderTest : FunSpec({
 })
 
 /** Minimal [java.sql.Array] whose [getArray] returns the supplied elements. */
-private class FakeSqlArray(private val elements: Array<out Any?>) : java.sql.Array {
+internal class FakeSqlArray(private val elements: Array<out Any?>) : java.sql.Array {
     override fun getArray(): Any = elements
     override fun getArray(map: MutableMap<String, Class<*>>?): Any = elements
     override fun getArray(index: Long, count: Int): Any = elements
