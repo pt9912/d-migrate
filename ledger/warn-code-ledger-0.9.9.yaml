@@ -1,0 +1,54 @@
+version: "0.9.9"
+entries:
+  # W112 — pre-existing MySQL RANGE-partition adjustment warning, never ledgered;
+  # backfilled in 0.9.9 alongside the new partition/index/prefix codes.
+  - code: W112
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/DdlGoldenMasterTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+  # W118 — I-07: AUTO_INCREMENT column moved to the front of a composite PK (ERROR 1075).
+  - code: W118
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlPrimaryKeyOrdering.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
+        path_type: production
+  # W123 — I-08: PG GIN/GIST index on a column without a default operator class.
+  - code: W123
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGeneratorIndexViewTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt"
+        path_type: production
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresIndexOpClass.kt"
+        path_type: production
+  # W125 — I-08: MySQL index on an unbounded TEXT/BLOB column without a prefix length (ERROR 1170).
+  - code: W125
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPrefix.kt"
+        path_type: production
+  # W126 — prefix-length slice: PG/SQLite drop a MySQL prefix length (full-column index instead).
+  - code: W126
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGeneratorIndexViewTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/IndexPrefixDropNote.kt"
+        path_type: production
