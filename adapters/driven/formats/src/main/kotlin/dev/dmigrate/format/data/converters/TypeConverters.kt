@@ -5,10 +5,12 @@ import dev.dmigrate.format.data.ConversionContext
 import dev.dmigrate.format.data.DeserializerHelpers
 import dev.dmigrate.format.data.TypeConverter
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.Base64
 import java.util.BitSet
 import java.util.UUID
@@ -172,6 +174,9 @@ internal object LocalTimeConverter : TypeConverter {
 internal object LocalDateTimeConverter : TypeConverter {
     override fun convert(ctx: ConversionContext, value: Any): LocalDateTime = when (value) {
         is LocalDateTime -> value
+        // Parquet liefert TIMESTAMP-Spalten als UTC-Instant (INT64 µs). Ein Instant ist
+        // UTC-normalisiert, daher als LocalDateTime@UTC zulässig (kein expliziter Offset).
+        is Instant -> LocalDateTime.ofInstant(value, ZoneOffset.UTC)
         is String -> {
             val trimmed = value.trim()
             if (DeserializerHelpers.hasOffsetOrZone(trimmed)) {
@@ -191,6 +196,9 @@ internal object LocalDateTimeConverter : TypeConverter {
 internal object OffsetDateTimeConverter : TypeConverter {
     override fun convert(ctx: ConversionContext, value: Any): OffsetDateTime = when (value) {
         is OffsetDateTime -> value
+        // Parquet liefert TIMESTAMP-WITH-TIME-ZONE-Spalten als UTC-Instant (INT64 µs);
+        // an UTC-Offset binden (der Instant trägt den Zeitpunkt, Offset ist UTC-normalisiert).
+        is Instant -> value.atOffset(ZoneOffset.UTC)
         is String -> OffsetDateTime.parse(value.trim())
         else -> throw ImportSchemaMismatchException(
             "column '${ctx.columnName}' expects TIMESTAMP WITH TIME ZONE, got ${value::class.simpleName}"

@@ -8,10 +8,12 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.math.BigDecimal
 import java.sql.Types
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.BitSet
 import java.util.Base64
 import java.util.UUID
@@ -274,6 +276,20 @@ class ValueDeserializerTest : FunSpec({
         val input = "2026-04-07T10:00:00+02:00"
         forCol(Types.TIMESTAMP_WITH_TIMEZONE).deserialize(tableName, "c", input) shouldBe
             OffsetDateTime.parse(input)
+    }
+
+    // I-10: Parquet liefert TIMESTAMP-Spalten als UTC-Instant (INT64 µs). Der
+    // Import-Konverter muss Instant akzeptieren statt mit "got Instant" abzubrechen.
+    test("TIMESTAMP: Instant is accepted and mapped to LocalDateTime at UTC (I-10)") {
+        val instant = Instant.parse("2026-04-07T10:00:00Z")
+        forCol(Types.TIMESTAMP).deserialize(tableName, "c", instant) shouldBe
+            LocalDateTime.ofInstant(instant, ZoneOffset.UTC)
+    }
+
+    test("TIMESTAMP WITH TIME ZONE: Instant is accepted and mapped to OffsetDateTime at UTC (I-10)") {
+        val instant = Instant.parse("2026-04-07T08:30:00Z")
+        forCol(Types.TIMESTAMP_WITH_TIMEZONE).deserialize(tableName, "c", instant) shouldBe
+            instant.atOffset(ZoneOffset.UTC)
     }
 
     // LF-006 / LN-022 / LN-023:
