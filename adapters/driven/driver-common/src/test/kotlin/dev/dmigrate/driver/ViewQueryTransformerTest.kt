@@ -184,4 +184,26 @@ class ViewQueryTransformerTest : FunSpec({
         val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
         transformer.assessPortability("SELECT FLOOR(x) FROM t", "mysql").portable shouldBe true
     }
+
+    test("assessPortability: PG :: cast is non-portable to MySQL (N4)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        val verdict = transformer.assessPortability("SELECT (x)::text FROM t", "postgresql")
+        verdict.portable shouldBe false
+        verdict.reason!! shouldContain "::"
+    }
+
+    test("assessPortability: PG || concat is non-portable to MySQL (N4)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        transformer.assessPortability("SELECT a || b FROM t", "postgresql").portable shouldBe false
+    }
+
+    test("assessPortability: same-dialect MySQL || (logical OR) stays portable (N4)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        transformer.assessPortability("SELECT a FROM t WHERE x || y", "mysql").portable shouldBe true
+    }
+
+    test("assessPortability: :: inside a string literal does not trip the MySQL check (N4)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        transformer.assessPortability("SELECT 'a::b' AS x FROM t", "mysql").portable shouldBe true
+    }
 })

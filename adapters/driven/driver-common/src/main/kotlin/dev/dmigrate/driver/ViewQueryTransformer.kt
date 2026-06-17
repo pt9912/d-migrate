@@ -36,6 +36,17 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         ) {
             markers += "MySQL-style backtick quoting"
         }
+        // N4: PostgreSQL/SQLite cast `::` and concat `||` are not portable to MySQL.
+        // Checked on a code-only view (string literals blanked) so `::`/`||` inside
+        // a literal is ignored. `::` is always a syntax error in MySQL; `||` is
+        // valid there as logical OR, so it is only flagged for a cross-dialect body.
+        if (targetDialect == DatabaseDialect.MYSQL) {
+            val codeOnly = tokens.joinToString("") {
+                if (it.type == ViewQueryTokenType.STRING) " " else it.text
+            }
+            if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
+            if (crossDialect && codeOnly.contains("||")) markers += "PostgreSQL/SQLite-style concatenation (||)"
+        }
         if (crossDialect) {
             val unknown = detectUnknownFunctions(applyRules(tokens))
             if (unknown.isNotEmpty()) {
