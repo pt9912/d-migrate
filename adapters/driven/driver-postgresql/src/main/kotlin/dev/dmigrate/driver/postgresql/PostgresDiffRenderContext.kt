@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -288,6 +289,17 @@ internal class PostgresDiffRenderContext(
         val schema = if (direction == PostgresRenderDirection.UP) desiredSchema else currentSchema
         val columns = schema?.tables?.get(table)?.columns.orEmpty()
         return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
+    }
+
+    /**
+     * I-08: first GIN/GIST-indexed column whose type has no default operator
+     * class in PostgreSQL (e.g. a tsvector column degraded to text on reverse),
+     * or null when the index is renderable. PG rejects `USING gist (text_col)`.
+     */
+    fun indexColumnMissingOpClass(table: String, index: IndexDefinition): String? {
+        val schema = if (direction == PostgresRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return PostgresIndexOpClass.missingOpClassColumn(index) { columns[it]?.type }
     }
 
     fun toResult(diff: DiffResult): MigrationDdlResult {

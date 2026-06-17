@@ -163,6 +163,7 @@ internal object PostgresDiffOtherOps {
             return
         }
         if (!guardSpatialIndex(op, op.index, ctx, table)) return
+        if (!guardIndexOpClass(op, op.index, ctx, table)) return
         // CREATE INDEX (non-CONCURRENTLY): SHARE lock — writes block,
         // reads proceed. Plan-2 §A.1.
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
@@ -172,10 +173,34 @@ internal object PostgresDiffOtherOps {
         val table = op.objectRef.path[0]
         if (ctx.direction == PostgresRenderDirection.DOWN) {
             if (!guardSpatialIndex(op, op.index, ctx, table)) return
+            if (!guardIndexOpClass(op, op.index, ctx, table)) return
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
             return
         }
         ctx.emit(op, "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};")
+    }
+
+    /**
+     * I-08: block a GIN/GIST index whose column type has no default operator
+     * class (e.g. tsvector degraded to text) instead of emitting invalid
+     * `USING gist (text_col)` DDL. Returns false (and blocks) when unrenderable.
+     */
+    private fun guardIndexOpClass(
+        op: DiffOperation,
+        index: IndexDefinition,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+    ): Boolean {
+        val offending = ctx.indexColumnMissingOpClass(table, index) ?: return true
+        ctx.skip(
+            op,
+            "Operation ${op.id} creates a ${index.type.name} index on `$table`.`$offending`, but that " +
+                "column type has no default ${index.type.name} operator class in PostgreSQL " +
+                "(e.g. a tsvector column degraded to text). Restore the type or add an operator class.",
+            code = "INDEX_OPCLASS_MISSING",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return false
     }
 
     private fun guardSpatialIndex(

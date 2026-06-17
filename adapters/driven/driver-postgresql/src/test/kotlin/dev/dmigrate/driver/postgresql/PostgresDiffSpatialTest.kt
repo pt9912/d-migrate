@@ -195,6 +195,20 @@ class PostgresDiffSpatialTest : FunSpec({
         codes.toSet().size shouldBe 3
     }
 
+    test("GIST index on a text column is blocked — no operator class (I-08)") {
+        val before = TableDefinition(columns = mapOf("body" to ColumnDefinition(NeutralType.Text())))
+        val index = IndexDefinition(name = "idx_docs_body", columns = listOf(IndexColumn("body")), type = IndexType.GIST)
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("docs" to before))
+        val desired = emptySchema().copy(tables = mapOf("docs" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "docs", indicesAdded = listOf(index))))
+        val r = planAndUp(diff, current = current, desired = desired)
+
+        r.isBlocked shouldBe true
+        r.statements.none { it.sql.contains("USING GIST") } shouldBe true
+        r.diagnostics.any { it.code == "INDEX_OPCLASS_MISSING" } shouldBe true
+    }
+
     test("§C.2: PostgreSQL GIST index on geometry column renders with verified PostGIS") {
         val before = TableDefinition(
             columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),

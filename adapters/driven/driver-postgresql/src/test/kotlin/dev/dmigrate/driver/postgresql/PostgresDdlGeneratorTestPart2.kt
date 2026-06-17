@@ -510,6 +510,46 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         result.skippedObjects.any { it.name == "active_users" } shouldBe false
     }
 
+    test("GIST index on a text column is skipped with W123 — no default operator class (I-08)") {
+        val s = schema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_docs_body",
+                            columns = listOf(IndexColumn("body")),
+                            type = IndexType.GIST,
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldNotContain "USING GIST"
+        result.notes.any { it.code == "W123" && it.objectName == "idx_docs_body" } shouldBe true
+    }
+
+    test("GIN index on a jsonb column is still emitted — has default operator class (I-08)") {
+        val s = schema(
+            tables = mapOf(
+                "events" to table(
+                    columns = mapOf("payload" to col(NeutralType.Json)),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_events_payload",
+                            columns = listOf(IndexColumn("payload")),
+                            type = IndexType.GIN,
+                        )
+                    )
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "USING GIN"
+        ddl shouldContain "idx_events_payload"
+    }
+
     test("LIST partitioning generates FOR VALUES IN") {
         val s = schema(tables = mapOf(
             "events" to table(

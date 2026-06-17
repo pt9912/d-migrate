@@ -192,10 +192,34 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
         val generatedNames = generatedIndexNames(tableName, table.indices)
-        return table.indices.mapIndexed { position, index -> generateIndex(tableName, index, generatedNames[position]) }
+        return table.indices.mapIndexed { position, index ->
+            generateIndex(tableName, index, generatedNames[position], table.columns)
+        }
     }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement {
+    private fun generateIndex(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+        columns: Map<String, ColumnDefinition>,
+    ): DdlStatement {
+        PostgresIndexOpClass.missingOpClassColumn(index) { columns[it]?.type }?.let { offending ->
+            return DdlStatement(
+                "",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = "W123",
+                        objectName = indexName,
+                        message = "${index.type.name} index '$indexName' on column '$offending' was skipped: " +
+                            "the column type has no default ${index.type.name} operator class in PostgreSQL " +
+                            "(e.g. a tsvector column degraded to text on reverse).",
+                        hint = "Restore the original column type, or add the required operator class " +
+                            "(e.g. via the pg_trgm extension) and create the index manually.",
+                    )
+                )
+            )
+        }
         val cols = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")
@@ -218,6 +242,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             append(quoteIdentifier(column.name))
             if (direction != null) append(" ${direction.name}")
         }
+
 
     private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
         val baseNames = indices.map { index ->
