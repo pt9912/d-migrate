@@ -58,13 +58,14 @@ private fun readPostgresTable(
 
         val required = (row["is_nullable"] as String) == "NO"
         val unique = if (isPrimaryKeyColumn) false else columnName in singleColumnUnique
-        val defaultValue = if (
-            isPrimaryKeyColumn &&
-            PostgresTypeMapping.isSerialDefault(row["column_default"] as? String)
-        ) {
-            null
-        } else {
-            PostgresTypeMapping.parseDefault(row["column_default"] as? String)
+        val colDefault = row["column_default"] as? String
+        val defaultValue = when {
+            // Serial PK: the autoincrement/identity carries the default.
+            isPrimaryKeyColumn && PostgresTypeMapping.isSerialDefault(colDefault) -> null
+            // N5: a non-PK `nextval` default is a named-sequence reference, not identity.
+            PostgresTypeMapping.isSerialDefault(colDefault) ->
+                PostgresTypeMapping.sequenceNameFromNextval(colDefault)?.let { DefaultValue.SequenceNextVal(it) }
+            else -> PostgresTypeMapping.parseDefault(colDefault)
         }
 
         columns[columnName] = ColumnDefinition(

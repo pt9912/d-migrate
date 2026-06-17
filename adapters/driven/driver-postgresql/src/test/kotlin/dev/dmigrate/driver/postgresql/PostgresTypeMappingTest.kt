@@ -34,6 +34,20 @@ class PostgresTypeMappingTest : FunSpec({
 
     test("integer") { map("integer").type shouldBe NeutralType.Integer }
     test("bigint") { map("bigint").type shouldBe NeutralType.BigInteger }
+
+    // N5: nextval default is identity only for a serial PK, not a non-PK reference
+    test("non-PK bigint with nextval default → BigInteger, no identity (N5)") {
+        val r = map("bigint", udtName = "int8", isPk = false, colDefault = "nextval('s'::regclass)")
+        r.type shouldBe NeutralType.BigInteger
+        r.generation.shouldBeNull()
+    }
+    test("PK bigint with nextval default stays identity (N5 regression guard)") {
+        val r = map("bigint", udtName = "int8", isPk = true, colDefault = "nextval('s'::regclass)")
+        (r.generation != null) shouldBe true
+    }
+    test("sequenceNameFromNextval strips schema and quotes (N5)") {
+        PostgresTypeMapping.sequenceNameFromNextval("nextval('public.my_seq'::regclass)") shouldBe "my_seq"
+    }
     test("smallint") { map("smallint").type shouldBe NeutralType.SmallInt }
     test("boolean") { map("boolean").type shouldBe NeutralType.BooleanType }
     test("text") { map("text").type shouldBe NeutralType.Text() }

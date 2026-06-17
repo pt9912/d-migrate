@@ -35,7 +35,10 @@ internal object PostgresTypeMapping {
         val dt = input.dataType.lowercase()
         val udt = input.udtName.lowercase()
 
-        val isGenerated = input.isIdentity || isSerialDefault(input.colDefault)
+        // N5: a `nextval` default is identity/serial ONLY for a true IDENTITY
+        // column or a serial PK. A non-PK `DEFAULT nextval('s')` is a named-
+        // sequence reference (→ SequenceNextVal default), not an identity column.
+        val isGenerated = input.isIdentity || (isSerialDefault(input.colDefault) && input.isPkCol)
         if (isGenerated && (udt == "int8" || dt == "bigint")) {
             return MappingResult(
                 NeutralType.BigInteger,
@@ -150,6 +153,13 @@ internal object PostgresTypeMapping {
     fun isSerialDefault(default: String?): Boolean {
         if (default == null) return false
         return default.lowercase().contains("nextval(")
+    }
+
+    /** N5: the bare sequence name out of `nextval('schema.seq'::regclass)`, or null. */
+    fun sequenceNameFromNextval(default: String?): String? {
+        val raw = Regex("""nextval\('([^']+)'""", RegexOption.IGNORE_CASE)
+            .find(default ?: return null)?.groupValues?.get(1) ?: return null
+        return raw.substringAfterLast('.').removeSurrounding("\"")
     }
 
     fun parseDefault(raw: String?): DefaultValue? {
