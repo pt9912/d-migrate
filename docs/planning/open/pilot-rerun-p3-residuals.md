@@ -1,12 +1,13 @@
-# Pilot-Re-Run-P3-Restbefunde (N7, N8)
+# Pilot-Re-Run-P3-Restbefunde (N7, N8, K2)
 
 > **Status:** Sammlung/Tracker (2026-06-17)
-> **Trigger:** Der 0.9.9-Re-Validierungslauf
-> ([`../in-progress/pilot-validation-0.9.9-rerun.md`](../in-progress/pilot-validation-0.9.9-rerun.md))
-> deckte nach Behebung der P1/P2-Blocker (N1–N6, alle gefixt) zwei **P3**-Befunde
-> auf. Beide sind nicht RC-blockierend; einer ist eine Feature-Lücke, der andere
-> braucht generatorweiten State — daher hier getrackt statt in der engen Fix-Runde
-> mitgezogen.
+> **Trigger:** Die 0.9.9-Re-Validierungsläufe
+> ([`../in-progress/pilot-validation-0.9.9-rerun.md`](../in-progress/pilot-validation-0.9.9-rerun.md),
+> [`../in-progress/pilot-validation-0.9.9-rerun3.md`](../in-progress/pilot-validation-0.9.9-rerun3.md))
+> deckten nach Behebung der P1/P2-Blocker drei **P3**-Befunde auf (N7, N8 aus
+> Re-Run 1; K2 aus Re-Run 3). Keiner ist RC-blockierend; es sind Feature-Lücken
+> bzw. generatorweite/Ordnungs-Themen — daher hier getrackt statt in den engen
+> Fix-Runden mitgezogen.
 > **Aktivierungsbedingung:** vor 1.0.0 nacharbeiten oder bewusst nach 1.0.x
 > verschieben; bei Aufnahme wandert der Eintrag nach `../next/`.
 
@@ -37,8 +38,26 @@ deterministisch je Reset) oder einen Schema-Vorpass, der kollidierende explizite
 Namen tabellen-präfigiert. Beides berührt die Generator-Orchestrierung und
 Golden-Master — eigener, fokussierter Slice (Achtung: Golden-Churn).
 
-## Abgrenzung (bereits gefixt, Re-Run)
+## K2 — `--include-all`-Routinen nicht topologisch geordnet (P3)
 
-Die P1/P2-Befunde des Re-Runs sind erledigt: N1 (CURRENT_DATE-Default), N3
-(Preflight Enum/Temporal), N2 (PG-Partition leer), N4 (View `::`/`||`→MySQL),
-N5 (Nicht-PK-nextval), N6 (Trigger-Action-Body) — Commits auf `develop`.
+**Repro:** `--include-all` emittiert die SQL-Funktion `film_in_stock`
+(`LANGUAGE sql`) **vor** der von ihr referenzierten `inventory_in_stock` →
+`CREATE`-Fehler. Zusätzlich: `RETURN NEXT` ohne `RETURNS SETOF`.
+
+**Ursache/Richtung:** PG validiert `LANGUAGE sql`-Funktions-Bodies **bei `CREATE`**
+(anders als plpgsql, dessen Body ein nicht geprüfter String ist) — die
+emittierte Routine-Reihenfolge muss daher Funktion→Funktion-Abhängigkeiten
+respektieren. Es braucht eine **topologische Routinen-Ordnung** (analog
+`sortTablesByDependency` für FK-Kanten), gespeist aus Routine-Dependency-Kanten;
+plus korrekte `RETURNS SETOF`-Ableitung bei `RETURN NEXT`. Vorbestehend, nur
+`--include-all`, gleiche `--include-all`-Residualklasse wie N7/N8 — eigener,
+fokussierter Slice (Reverse-Dependency-Extraktion + Emissions-Sortierung).
+
+## Abgrenzung (bereits gefixt)
+
+Alle P1/P2-Befunde der vier Pilot-Läufe sind erledigt (Commits auf `develop`):
+Erstlauf I-01…I-10; Re-Run 1 N1 (CURRENT_DATE), N3 (Preflight Enum/Temporal),
+N2 (PG-Partition leer), N4 (View `::`/`||`→MySQL), N5 (Nicht-PK-nextval),
+N6 (Trigger-Action-Body); Re-Run 2 M2 (Preflight strukturell), M1 (Routinen-
+Namen ohne Signatur-Suffix); Re-Run 3 K1 (PG-Array→MySQL-JSON-Wertkonverter).
+Offen sind nur noch die P3-Reste oben (N7, N8, K2).
