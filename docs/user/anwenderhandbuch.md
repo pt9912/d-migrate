@@ -2409,7 +2409,7 @@ custom_types:
 | `min_value`, `max_value` | — | Grenzen |
 | `cycle` | false | Neustart nach `max_value` |
 | `cache` | — | vorausberechnete Werte |
-| `preserve_current_value` | false | Laufzeitwert über Migration retten (0.9.7) — siehe [3.12](#312-sequenzenautowerte-korrekt-mitnehmen) |
+| `preserve_current_value` | false | Laufzeitwert über Migration retten — siehe [3.12](#312-sequenzenautowerte-korrekt-mitnehmen) |
 
 #### F.11 Views
 
