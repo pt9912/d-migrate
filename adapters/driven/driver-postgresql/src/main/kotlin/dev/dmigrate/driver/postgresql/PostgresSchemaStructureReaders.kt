@@ -173,7 +173,7 @@ internal fun readPostgresCustomTypes(
             baseType = PostgresTypeMapping.mapParamType(baseType),
             precision = (row["numeric_precision"] as? Number)?.toInt(),
             scale = (row["numeric_scale"] as? Number)?.toInt(),
-            check = row["check_clause"] as? String,
+            check = normalizeDomainCheck(row["check_clause"] as? String),
         )
     }
 
@@ -194,4 +194,38 @@ internal fun readPostgresCustomTypes(
     }
 
     return result
+}
+
+/**
+ * `pg_get_constraintdef` liefert den vollständigen Domain-Check inkl. Hülle, z. B.
+ * `CHECK ((VALUE > 0))`. Das Modell soll nur das Prädikat halten, damit die
+ * Generate-Seite genau einmal `CHECK (...)` wrappt (sonst entsteht
+ * `CHECK (CHECK (...))`). Entfernt das führende `CHECK`-Token und – falls die
+ * äußerste Klammer das gesamte Prädikat umschließt – genau dieses eine Klammerpaar.
+ */
+internal fun normalizeDomainCheck(raw: String?): String? {
+    if (raw == null) return null
+    var s = raw.trim()
+    if (s.regionMatches(0, "CHECK", 0, 5, ignoreCase = true)) {
+        s = s.substring(5).trim()
+        if (s.startsWith("(") && outerParenSpansWhole(s)) {
+            s = s.substring(1, s.length - 1).trim()
+        }
+    }
+    return s.ifEmpty { null }
+}
+
+/** True, wenn die öffnende Klammer an Index 0 erst am letzten Zeichen geschlossen wird. */
+private fun outerParenSpansWhole(s: String): Boolean {
+    var depth = 0
+    for ((i, c) in s.withIndex()) {
+        when (c) {
+            '(' -> depth++
+            ')' -> {
+                depth--
+                if (depth == 0) return i == s.length - 1
+            }
+        }
+    }
+    return false
 }

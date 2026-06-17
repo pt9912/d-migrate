@@ -272,6 +272,81 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         ddl shouldNotContain "CHECK"
     }
 
+    test("domain neutral base_type maps through type mapper (I-05)") {
+        val s = schema(
+            customTypes = mapOf(
+                "big_id" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN,
+                    baseType = "biginteger",
+                    precision = 64,
+                    scale = 0,
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE DOMAIN \"big_id\" AS BIGINT;"
+        ddl shouldNotContain "BIGINTEGER"
+    }
+
+    test("domain neutral base_type names each map to a valid SQL type (I-05)") {
+        val expectations = mapOf(
+            "integer" to "INTEGER",
+            "smallint" to "SMALLINT",
+            "boolean" to "BOOLEAN",
+            "float" to "DOUBLE PRECISION",
+            "text" to "TEXT",
+            "uuid" to "UUID",
+            "json" to "JSONB",
+            "xml" to "XML",
+            "binary" to "BYTEA",
+            "date" to "DATE",
+            "time" to "TIME",
+        )
+        expectations.forEach { (neutralName, expectedSql) ->
+            val s = schema(
+                customTypes = mapOf(
+                    "d_$neutralName" to CustomTypeDefinition(
+                        kind = CustomTypeKind.DOMAIN,
+                        baseType = neutralName,
+                    )
+                )
+            )
+            val ddl = generator.generate(s).render()
+            ddl shouldContain "CREATE DOMAIN \"d_$neutralName\" AS $expectedSql;"
+        }
+    }
+
+    test("domain decimal base_type keeps precision and scale (I-05)") {
+        val s = schema(
+            customTypes = mapOf(
+                "money" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN,
+                    baseType = "decimal",
+                    precision = 12,
+                    scale = 2,
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE DOMAIN \"money\" AS DECIMAL(12,2);"
+        ddl shouldNotContain "DECIMAL(DECIMAL"
+    }
+
+    test("domain CHECK predicate is wrapped exactly once (I-06)") {
+        val s = schema(
+            customTypes = mapOf(
+                "positive" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN,
+                    baseType = "biginteger",
+                    check = "(VALUE > 0)",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE DOMAIN \"positive\" AS BIGINT CHECK ((VALUE > 0));"
+        ddl shouldNotContain "CHECK (CHECK"
+    }
+
     test("index name is auto-generated when not provided") {
         val s = schema(
             tables = mapOf(

@@ -456,7 +456,12 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             val domain = result.schema.customTypes["positive_int"]!!
             domain.kind shouldBe CustomTypeKind.DOMAIN
             domain.baseType shouldBe "integer"
-            domain.check shouldNotBe null
+            // I-06: pg_get_constraintdef liefert die volle CHECK-Hülle; das Modell
+            // hält nur das normalisierte Prädikat, damit generate genau einmal wrappt.
+            val check = domain.check
+            check shouldNotBe null
+            check!!.uppercase() shouldNotContain "CHECK"
+            check shouldContain "VALUE > 0"
         }
     }
 

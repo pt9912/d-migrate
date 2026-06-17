@@ -376,6 +376,36 @@ class PostgresSchemaReaderTest : FunSpec({
         composite.fields!!.mapShouldHaveSize(2)
     }
 
+    test("domain check_clause is normalized to bare predicate (I-06)") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
+            mapOf("typname" to "positive", "base_type" to "int8", "numeric_precision" to 64,
+                "numeric_scale" to 0, "domain_default" to null, "check_clause" to "CHECK ((VALUE > 0))"),
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+
+        val domain = result.schema.customTypes["positive"]!!
+        domain.kind shouldBe CustomTypeKind.DOMAIN
+        domain.check shouldBe "(VALUE > 0)"
+    }
+
+    test("normalizeDomainCheck strips one CHECK wrapper and is idempotent (I-06)") {
+        val once = normalizeDomainCheck("CHECK ((VALUE > 0))")
+        once shouldBe "(VALUE > 0)"
+        // Re-applying must not strip further parentheses (round-trip stable).
+        normalizeDomainCheck(once) shouldBe "(VALUE > 0)"
+        normalizeDomainCheck(null).shouldBeNull()
+    }
+
+    test("normalizeDomainCheck keeps predicate with multiple paren groups intact (I-06)") {
+        normalizeDomainCheck("CHECK ((VALUE > 0) AND (VALUE < 100))") shouldBe
+            "(VALUE > 0) AND (VALUE < 100)"
+    }
+
     test("read includes procedures with OUT parameters") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns listOf(
