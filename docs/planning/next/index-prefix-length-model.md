@@ -1,7 +1,8 @@
 # Index-Präfixlänge als Modellfeld (`IndexColumn.prefixLength`)
 
 **Status**: Entwurf (2026-06-17 — Scope + Blast-Radius kartiert, Phasenschnitt
-und Akzeptanzkriterien ausgearbeitet; bereit für Review).
+und Akzeptanzkriterien ausgearbeitet; Review + Tiefenprüfung eingearbeitet
+(D-1…D-5), umsetzungsreif).
 
 **Trigger**: P2-Pilot-Blocker **I-08** (MySQL: Index auf unbounded `TEXT`/`BLOB`
 ohne Präfixlänge → `ERROR 1170`). Beim Fix-Entwurf fiel auf, dass das Modell
@@ -17,6 +18,14 @@ Commit gemäß [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.
 > **Status-Update 2026-06-17 (Review):** D-1, D-2, D-3 entschieden (siehe
 > Abschnitt 6). Sequenz festgelegt: **P2-Rest (I-07, I-09, I-08-PG) zuerst**,
 > diese Modellscheibe danach als eigener Slice (Abschnitt 8, Variante 2).
+>
+> **Status-Update 2026-06-17 (Review-Tiefenprüfung):** D-2 um einen
+> Kompatibilitätsteil erweitert — die Fingerprint-Formatänderung invalidiert
+> auch feldseitige Rollback-Artefakte, nicht nur Test-Goldens (`ALGORITHM`-Bump
+> nötig). Neu: **D-4** (PRIMARY-KEY-/Constraint-Präfixlängen explizit out of
+> scope) und **D-5** (`IndexColumn.toString()` nimmt Präfix auf). Scope-
+> Abschnitte, Blast-Radius, Phasen und Akzeptanzkriterien entsprechend
+> nachgezogen.
 
 ---
 
@@ -62,6 +71,9 @@ kann beim Generate nicht erzeugt werden.
 - Serialisierung (JSON-Schema-Format) + `spec/schema.json`-Vertrag.
 - Round-Trip-Stabilität: Canonical-Payload + Migration-Fingerprint + Comparator.
 - Regressionstests je betroffenem Modul + Live-MySQL-Round-Trip.
+- **UNIQUE-Indizes** automatisch abgedeckt: MySQL-Reverse mappt sie auf
+  `IndexDefinition(unique=true)` (nicht auf `ConstraintDefinition`), sie laufen
+  also durch `IndexColumn` und erben `prefixLength`.
 
 ### 3.2 Out of Scope
 
@@ -71,21 +83,28 @@ kann beim Generate nicht erzeugt werden.
 - Funktions-/Expression-Indizes (PG) — separater Gegenstand.
 - Automatische **Wahl** einer Präfixlänge, wenn keine vorliegt (bleibt Skip+Note;
   kein Raten — vgl. Sitzungsentscheid gegen Option B).
+- **PRIMARY-KEY-/Constraint-Präfixlängen** (`PRIMARY KEY (col(100))`,
+  `UNIQUE KEY uk (col(255))` als *Constraint*). PK liegt als
+  `TableDefinition.primaryKey: List<String>`, Constraints als
+  `ConstraintDefinition.columns: List<String>` — beide können keine Länge tragen.
+  Bewusst draußen, eigener Slice (Begründung → **D-4**). UNIQUE als *Index* ist
+  dagegen abgedeckt (3.1).
 
 ## 4. Blast-Radius (kartiert 2026-06-17)
 
 | Bereich | Datei(en) | Änderung |
 | --- | --- | --- |
-| Modell | `hexagon/core/.../model/IndexDefinition.kt` | Feld `prefixLength` + ggf. `toString` |
-| Reverse-Projektion | `adapters/driven/driver-common/.../metadata/MetadataProjections.kt` | `IndexProjection.prefixLengths` parallele Liste; `indexColumns`-Getter |
+| Modell | `hexagon/core/.../model/IndexDefinition.kt` | Feld `prefixLength` + `toString` mit Präfix (D-5) |
+| Reverse-Projektion | `adapters/driven/driver-common/.../metadata/MetadataProjections.kt` | `IndexProjection.prefixLengths` (zu `indexColumns` index-parallel — Ausrichtung wahren); `indexColumns`-Getter |
 | Reverse MySQL | `.../driver-mysql/.../MysqlMetadataQueries.kt` | `SUB_PART` in `listIndices`-SELECT + Mapping |
 | Reverse PG/SQLite | `.../driver-postgresql/...`, `.../driver-sqlite/...` | keine Quelle → `null` (kein Präfix-Konzept) |
-| Generate MySQL | `.../driver-mysql/.../MysqlIndexPartitionDdlHelper.kt` (`renderIndexColumn`) + `MysqlDiffSqlBuilders.kt` | `col(n)` rendern; ohne Länge bei TEXT/BLOB → Skip+Note (I-08) |
-| Generate PG | `.../driver-postgresql/.../PostgresDdlGenerator.kt` (`renderIndexColumn`) + `PostgresDiffSqlBuilders.kt` | Länge verwerfen + Note |
-| Generate SQLite | `.../driver-sqlite/.../SqliteTableDdlSupport.kt` + `SqliteDiffSqlBuilders.kt` | Länge verwerfen + Note |
+| Generate MySQL | `.../driver-mysql/.../MysqlIndexPartitionDdlHelper.kt` (`renderIndexColumn`) + `MysqlDiffSqlBuilders.kt` | `col(n)` rendern; ohne Länge bei TEXT/BLOB → `SkippedObject` + `TransformationNote` (WARNING) (I-08) |
+| Generate PG | `.../driver-postgresql/.../PostgresDdlGenerator.kt` (`renderIndexColumn`) + `PostgresDiffSqlBuilders.kt` | Länge verwerfen + `TransformationNote` (INFO) |
+| Generate SQLite | `.../driver-sqlite/.../SqliteTableDdlSupport.kt` + `SqliteDiffSqlBuilders.kt` | Länge verwerfen + `TransformationNote` (INFO) |
 | Serialisierung | `adapters/driven/formats/.../SchemaNodeStructureBuilders.kt` + `SchemaNodeStructureParsers.kt` | `prefix_length` schreiben/lesen (erzwingt Objektform) |
 | Vertrag | `spec/schema.json` (`$defs/indexColumn`) | `prefix_length` (integer, `minimum: 1`) |
-| Round-Trip | `hexagon/core/.../diff/migration/CanonicalPayload.kt` + `MigrationFingerprint.kt` | Spalten als `name(prefix)` rendern (D-2) |
+| Round-Trip | `hexagon/core/.../diff/migration/CanonicalPayload.kt` + `MigrationFingerprint.kt` | Spalten als `name[:dir][(prefix)]` rendern (D-2) |
+| Fingerprint-Kompat | `hexagon/application/.../RollbackArtefactBuilder.kt` (`FINGERPRINT_ALGORITHM`) + `.../diff/migration/MigrationFingerprint.kt` (`ALGORITHM`) | `ALGORITHM`-Tag bumpen — Projektion ändert sich, feldseitige Rollback-Artefakte werden inkompatibel (D-2) |
 | Diff | `hexagon/core/.../diff/TableComparator.kt` | greift über Data-Class-Gleichheit automatisch; `indexKey` ggf. ergänzen |
 | Validierung | `hexagon/core/.../validation/SchemaStructureValidationRules.kt` | optional: `prefixLength >= 1` |
 | CLI-Anzeige | `adapters/driving/cli/.../SchemaCompareHelpers.kt` | optional: Präfix in Diff-Ausgabe zeigen |
@@ -103,13 +122,17 @@ kann beim Generate nicht erzeugt werden.
   füllen. Tests: Reader-Unit + Live-MySQL (`integration-mysql`): Tabelle mit
   `INDEX (body(100))` reversen → `prefixLength == 100`.
 - **Phase 3 — Generate MySQL.** `col(n)` rendern (Create- und Diff-Pfad). Ohne
-  Länge bei TEXT/BLOB → Skip+Note (**das ist der I-08-MySQL-Kern**). Tests:
-  Generator-Unit + Live-MySQL-Round-Trip (Reverse→Generate→akzeptiert).
+  Länge bei TEXT/BLOB → `SkippedObject` + `TransformationNote` (WARNING) (**das
+  ist der I-08-MySQL-Kern**). Tests: Generator-Unit + Live-MySQL-Round-Trip
+  (Reverse→Generate→akzeptiert).
 - **Phase 4 — Generate PG + SQLite.** Präfixlänge verwerfen + Note (Voll-Index
   bleibt gültig). Tests: Generator-Unit je Dialekt.
 - **Phase 5 — Round-Trip-Härtung.** Canonical-Payload + Fingerprint um Präfix
-  ergänzen (D-2), Comparator-/`indexKey`-Check. Tests: Fingerprint-Stabilität,
-  Diff erkennt Präfixänderung als „changed".
+  **und Richtung** ergänzen (D-2), Comparator-/`indexKey`-Check,
+  `MigrationFingerprint.ALGORITHM`/`FINGERPRINT_ALGORITHM` bumpen + Release-Notes-
+  Eintrag (breaking change). Tests: Fingerprint-Stabilität, Diff erkennt
+  Präfixänderung als „changed", Rollback-Artefakt mit altem Algorithmus-Tag wird
+  klar abgelehnt (kein stiller Drift-Fehlalarm).
 
 ## 6. Designentscheidungen (entschieden 2026-06-17)
 
@@ -120,10 +143,41 @@ kann beim Generate nicht erzeugt werden.
   indizieren den vollen Wert ohnehin. Skip wäre unnötiger Funktionsverlust.
 - **D-2 — Canonical-Payload/Fingerprint → ENTSCHIEDEN: Präfix UND Richtung
   aufnehmen.** Spalten werden als `name[:dir][(prefix)]` gerendert. Heute trägt
-  `CanonicalPayload.index()` keines von beidem; für Präfix-Round-Trip muss die
-  Länge rein, und die Richtung wird in derselben Phase mitgenommen (latente
-  Lücke). Konsequenz: bestehende Golden-Fingerprints werden in Phase 5 bewusst
-  neu gezogen (dokumentierter Rebaseline-Schritt, nicht stillschweigend).
+  `CanonicalPayload.index()` keines von beidem (rendert nur `it.name`); für
+  Präfix-Round-Trip muss die Länge rein, und die Richtung wird in derselben Phase
+  mitgenommen (latente Lücke). Konsequenz: bestehende Golden-Fingerprints werden
+  in Phase 5 bewusst neu gezogen (dokumentierter Rebaseline-Schritt, nicht
+  stillschweigend).
+
+  **Kompatibilität (wichtig):** Der Migration-Fingerprint ist kein reines
+  Test-Artefakt. `MigrationFingerprint.compute` speist `currentFingerprint`/
+  `desiredFingerprint` (Migrationsreports), die `postUpFingerprint`/
+  `allowedPostUpFingerprints`-Metadaten in `--rollback-output`-Artefakten
+  (`RollbackArtefactBuilder`) sowie den Post-`--execute`-Compare und die
+  `schema rollback`-Drift-Checks (`SchemaMigrateRunner`). Eine Projektions-
+  änderung verändert den Hash **jedes Schemas mit gerichtetem Index** — auch
+  ohne Präfix. Folge über die Versionsgrenze: ein von der alten Version
+  erzeugtes Rollback-Artefakt trägt `allowedPostUpFingerprints` nach altem
+  Schema; die neue Version rechnet neu → Drift-Check schlägt fehl / Artefakt
+  wird abgelehnt. Daher in Phase 5: `MigrationFingerprint.ALGORITHM` (im Artefakt
+  als `FINGERPRINT_ALGORITHM`) **mitbumpen**, damit die neue Version altes
+  Projektionsformat erkennt und klar fehlschlägt statt stillen Drift zu melden;
+  Eintrag in den Release-Notes als breaking change.
+- **D-4 — PRIMARY-KEY-/Constraint-Präfixlängen → ENTSCHIEDEN: out of scope.**
+  PK liegt als `TableDefinition.primaryKey: List<String>`, UNIQUE-/FK-Constraints
+  als `ConstraintDefinition.columns: List<String>` — beide können keine
+  Präfixlänge tragen. MySQL erlaubt zwar `PRIMARY KEY (col(100))`, doch das
+  verlangt ein eigenes Modell-Refactoring (String-Liste → strukturierte Spalten)
+  mit eigenem Serialisierungs-/Fingerprint-Delta und gehört in einen separaten
+  Slice. UNIQUE als *Index* (MySQL-Reverse → `IndexDefinition(unique=true)`) ist
+  hier abgedeckt, UNIQUE als *Constraint* nicht. Ein präfigierter PK verliert bis
+  dahin seine Länge (bekannte Einschränkung — als eigener Eintrag im
+  Folge-/P2-Tracker zu führen).
+- **D-5 — `IndexColumn.toString()` → ENTSCHIEDEN: Präfix aufnehmen.** Heute
+  rendert toString `name` bzw. `name DIR`. Mit dem neuen Feld nimmt toString die
+  Präfixlänge mit auf (z. B. `name(255)` / `name(255) DIR`), damit kein
+  toString-Konsument die Länge still verschluckt. `CanonicalPayload` rendert
+  weiterhin explizit über Feldzugriff (nicht via toString) und bleibt unberührt.
 - **D-3 — Reverse-Quelle PG/SQLite → ENTSCHIEDEN: `null` ist korrekt.** Beide
   kennen kein Präfix-Index-Konzept; es gibt keinen verdeckten Pfad. PG-
   Expression-/Operator-Class-Indizes sind ein separater Gegenstand.
@@ -139,6 +193,11 @@ kann beim Generate nicht erzeugt werden.
   Beispiel-Schemata mit Präfixlänge.
 - Eine reine Präfixänderung erscheint im Diff als „changed" und verändert den
   Migration-Fingerprint deterministisch.
+- `MigrationFingerprint.ALGORITHM`/`FINGERPRINT_ALGORITHM` ist gebumpt; ein
+  Rollback-Artefakt mit altem Algorithmus-Tag wird von der neuen Version klar
+  abgelehnt (kein stiller Drift-Fehlalarm); Release-Notes nennen den
+  Fingerprint-Bruch.
+- Präfigierter PRIMARY KEY ist **nicht** Teil der Akzeptanz (out of scope, D-4).
 - `make docker-check` für alle berührten Module grün (inkl. `koverVerify`),
   Live-MySQL-Integration grün.
 
