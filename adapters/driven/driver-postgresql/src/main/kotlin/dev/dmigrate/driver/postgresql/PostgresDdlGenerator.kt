@@ -104,15 +104,30 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             columnLines += "PRIMARY KEY ($pkCols)"
         }
 
+        // N2: PostgreSQL has no default partition — a `PARTITION BY` parent
+        // without child partitions accepts no rows ("no partition of relation
+        // found for row"). Emit partitioning only when child partitions exist;
+        // otherwise fall back to a plain table and flag it (like MySQL's E055).
+        val partitioning = table.partitioning
+        val emitPartitioning = partitioning != null && partitioning.partitions.isNotEmpty()
+        if (partitioning != null && !emitPartitioning) {
+            notes += TransformationNote(
+                type = NoteType.ACTION_REQUIRED,
+                code = "E055",
+                objectName = name,
+                message = "${partitioning.type.name} partitioning of table '$name' has no child partitions; " +
+                    "PostgreSQL would reject every insert. Created as a plain (non-partitioned) table.",
+                hint = "Define the partition boundaries (PARTITION OF …) or remove the partitioning configuration.",
+            )
+        }
+
         // Build CREATE TABLE
         val tableSql = buildString {
             append("CREATE TABLE ${quoteIdentifier(name)} (\n")
             append(columnLines.joinToString(",\n") { "    $it" })
             append("\n)")
-            // Partitioning
-            val partitioning = table.partitioning
-            if (partitioning != null) {
-                val key = partitioning.key.joinToString(", ") { quoteIdentifier(it) }
+            if (emitPartitioning) {
+                val key = partitioning!!.key.joinToString(", ") { quoteIdentifier(it) }
                 append(" PARTITION BY ${partitioning.type.name} ($key)")
             }
             append(";")
@@ -120,9 +135,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         statements += DdlStatement(tableSql, notes)
 
         // Sub-partitions
-        val partitioning = table.partitioning
-        if (partitioning != null) {
-            for (partition in partitioning.partitions) {
+        if (emitPartitioning) {
+            for (partition in partitioning!!.partitions) {
                 statements += generatePartitionStatement(name, partition, partitioning.type)
             }
         }

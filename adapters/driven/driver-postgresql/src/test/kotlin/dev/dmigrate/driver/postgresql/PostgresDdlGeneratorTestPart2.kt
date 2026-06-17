@@ -485,6 +485,23 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         ddl shouldContain "events_eu"
     }
 
+    test("empty partition list falls back to a plain table with E055 (N2)") {
+        val s = schema(tables = mapOf(
+            "events" to table(
+                columns = mapOf("id" to col(NeutralType.Integer), "region" to col(NeutralType.Text(50))),
+                primaryKey = listOf("id", "region"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE,
+                    key = listOf("region"),
+                    partitions = emptyList()
+                )
+            )
+        ))
+        val result = generator.generate(s)
+        result.render() shouldNotContain "PARTITION BY"
+        result.notes.any { it.code == "E055" && it.objectName == "events" } shouldBe true
+    }
+
     test("HASH partitioning generates FOR VALUES WITH") {
         val s = schema(tables = mapOf(
             "logs" to table(
