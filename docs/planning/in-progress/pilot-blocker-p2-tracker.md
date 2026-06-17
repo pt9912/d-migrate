@@ -1,10 +1,12 @@
 # P2-Pilot-Blocker — Arbeitstracker (0.9.9)
 
-Status: **in Arbeit** (P1 abgeschlossen 2026-06-16; I-05+I-06 behoben
-2026-06-17 `b9e6ab38`; I-10 behoben 2026-06-17 `a9ec0619`). Offen: I-07, I-08,
-I-09. Dieser Tracker bereitet den direkten Wiedereinstieg in den P2-Block vor:
-pro Bug die gegen den Code lokalisierte Ursache, eine Fix-Skizze, die
-Test-Strategie und das zu prüfende Modul.
+Status: **fast abgeschlossen** (P1 fertig 2026-06-16). P2 behoben 2026-06-17:
+I-05+I-06 `b9e6ab38`, I-10 `a9ec0619`, I-07 `dcd527f9`, I-09 `38814a50`,
+I-08-PG `22041167`. **Einzig offen:** der MySQL-Teil von I-08 (TEXT/BLOB-
+Präfixlänge) — verlagert in
+[`../next/index-prefix-length-model.md`](../next/index-prefix-length-model.md)
+als eigener Slice. Dieser Tracker hält pro Bug Ursache, Fix-Skizze,
+Test-Strategie und Modul.
 
 Quellen:
 [Pilot-Report](pilot-validation-0.9.9.md) (Symptome + Repro, Abschnitt 6) ·
@@ -113,7 +115,17 @@ Partitionen → valide Reihenfolge). **Modul:** `:adapters:driven:driver-mysql`.
 
 ---
 
-## I-08 — Index auf typ-inkompatibler Spalte → ungültiges DDL ohne Sekundärwarnung (P2)
+## I-08 — Index auf typ-inkompatibler Spalte → ungültiges DDL ohne Sekundärwarnung (P2) — PG BEHOBEN 2026-06-17, MySQL VERLAGERT
+
+> **PG-Teil behoben:** `22041167`. GIN/GIST-Index ohne Default-Operator-Class
+> (z. B. tsvector→text degradiert) wird im Generate-Pfad mit W123-Note
+> übersprungen und im Diff-Pfad mit `INDEX_OPCLASS_MISSING` blockiert (geteilter
+> Helfer `PostgresIndexOpClass`).
+> **MySQL-Teil verlagert** in
+> [`../next/index-prefix-length-model.md`](../next/index-prefix-length-model.md):
+> TEXT/BLOB-Index ohne Präfixlänge (ERROR 1170) wird dort über das
+> round-trip-fähige Modellfeld `IndexColumn.prefixLength` gelöst statt eine Länge
+> zu raten (Option-C-Entscheidung 2026-06-17).
 
 **Symptom:** MySQL: Index auf unbounded `TEXT` ohne Präfixlänge (ERROR 1170).
 PG: GIST-Index auf `tsvector`→text-degradierter Spalte (kein Operator-Class).
@@ -139,7 +151,15 @@ GIST auf text-degradiert → Skip/Note). **Module:**
 
 ---
 
-## I-09 — View-Bodies als rohes Quell-Dialekt-SQL ins Ziel-DDL (P2)
+## I-09 — View-Bodies als rohes Quell-Dialekt-SQL ins Ziel-DDL (P2) — BEHOBEN 2026-06-17
+
+> **Fix:** `38814a50`. `ViewQueryTransformer.assessPortability` erkennt nicht
+> portierbare Cross-Dialect-Bodies (MySQL-Backticks für PG/SQLite-Ziele;
+> cross-dialect unbekannte Funktionen wie `group_concat`/`IFNULL`). Verdrahtet in
+> beiden Pfaden, alle Dialekte: Generate (RoutineDdlHelper) → E053-Skip; Diff
+> (DiffOtherOps) → E053-Block. Kein SQL-Transpiler (analog Trigger/Funktionen).
+> **Offen (Folge):** ggf. ADR „View-Bodies werden nicht transpiliert" als
+> dauerhaftes Nicht-Ziel.
 
 **Symptom:** MySQL→PG: Backticks + `schema.tabelle` + `group_concat` →
 `syntax error at or near "."`. `W111` warnt, aber das DDL ist nicht parsebar
@@ -204,10 +224,9 @@ ein Parquet-Round-Trip-Test (Export→Import einer Timestamp-Spalte). **Modul:**
 
 1. ~~**I-05 + I-06** (Domain-Renderpfad, gleiche Datei)~~ — ✅ behoben 2026-06-17 (`b9e6ab38`).
 2. ~~**I-10** (Parquet-Timestamp)~~ — ✅ behoben 2026-06-17 (`a9ec0619`).
-3. **I-07** (Partition MySQL) — Skip/valide-DDL-Entscheidung + PK-Reihenfolge. ← **nächster**
-4. **I-08** (Index TEXT-Präfix / GIST) — zwei Dialekte, je Sekundär-Note.
-5. **I-09** (View-Bodies) — Scope-Entscheidung (Skip vs. Übersetzung) zuerst
-   klären; potentiell ADR-relevant.
+3. ~~**I-07** (Partition MySQL)~~ — ✅ behoben 2026-06-17 (`dcd527f9`).
+4. **I-08** — ✅ PG behoben (`22041167`); MySQL-Teil verlagert nach `../next/index-prefix-length-model.md`.
+5. ~~**I-09** (View-Bodies)~~ — ✅ behoben 2026-06-17 (`38814a50`).
 
 ## Verifikations-Rezept (pro Fix)
 
