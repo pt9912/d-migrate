@@ -168,4 +168,20 @@ class ViewQueryTransformerTest : FunSpec({
         val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
         transformer.assessPortability("SELECT `x` FROM `t`", null).portable shouldBe true
     }
+
+    test("assessPortability: dialect alias 'postgres' is not treated as cross-dialect (M1)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        // Were 'postgres' judged foreign, custom_fn would be flagged; the alias must resolve to PG.
+        transformer.assessPortability("SELECT custom_fn(x) FROM t", "postgres").portable shouldBe true
+    }
+
+    test("assessPortability: a backtick inside a string literal does not trip the PG check (M2)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        transformer.assessPortability("SELECT 'a`b' AS x FROM t", "postgresql").portable shouldBe true
+    }
+
+    test("assessPortability: MySQL+PG-portable FLOOR is not flagged cross-dialect (M3)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        transformer.assessPortability("SELECT FLOOR(x) FROM t", "mysql").portable shouldBe true
+    }
 })

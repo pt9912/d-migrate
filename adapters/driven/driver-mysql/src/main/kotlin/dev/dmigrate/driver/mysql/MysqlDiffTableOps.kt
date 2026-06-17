@@ -45,7 +45,17 @@ internal object MysqlDiffTableOps {
             lines += "    " + ctx.sql.columnLine(colName, col)
         }
         if (op.table.primaryKey.isNotEmpty()) {
-            lines += "    PRIMARY KEY (" + op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) } + ")"
+            // I-07: an AUTO_INCREMENT column must lead a composite PK (ERROR 1075).
+            val ordered = MysqlPrimaryKeyOrdering.autoIncrementFirst(op.table.primaryKey, op.table.columns)
+            ordered.reordered?.let { moved ->
+                ctx.warning(
+                    op,
+                    "AUTO_INCREMENT column '$moved' was moved to the front of the composite PRIMARY KEY " +
+                        "of '$tableName' because MySQL requires it to be the leading key column (ERROR 1075).",
+                    code = "W118",
+                )
+            }
+            lines += "    PRIMARY KEY (" + ordered.columns.joinToString(", ") { ctx.sql.quote(it) } + ")"
         }
         for (c in op.table.constraints.sortedBy { it.name }) {
             ctx.sql.constraintLine(c)?.let { lines += "    $it" }

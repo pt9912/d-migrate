@@ -144,26 +144,19 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         table: TableDefinition,
         notes: MutableList<TransformationNote>,
     ): List<String> {
-        val pk = table.primaryKey
-        if (pk.size < 2) return pk
-        val autoIncCol = pk.firstOrNull { col -> table.columns[col]?.let(::isAutoIncrementColumn) == true }
-            ?: return pk
-        if (pk.first() == autoIncCol) return pk
-        notes += TransformationNote(
-            type = NoteType.WARNING,
-            code = "W118",
-            objectName = "$tableName.$autoIncCol",
-            message = "AUTO_INCREMENT column '$autoIncCol' was moved to the front of the composite " +
-                "PRIMARY KEY because MySQL requires it to be the leading key column (ERROR 1075).",
-            hint = "Verify the primary key column order is acceptable for your access patterns.",
-        )
-        return listOf(autoIncCol) + pk.filterNot { it == autoIncCol }
+        val result = MysqlPrimaryKeyOrdering.autoIncrementFirst(table.primaryKey, table.columns)
+        result.reordered?.let { moved ->
+            notes += TransformationNote(
+                type = NoteType.WARNING,
+                code = "W118",
+                objectName = "$tableName.$moved",
+                message = "AUTO_INCREMENT column '$moved' was moved to the front of the composite " +
+                    "PRIMARY KEY because MySQL requires it to be the leading key column (ERROR 1075).",
+                hint = "Verify the primary key column order is acceptable for your access patterns.",
+            )
+        }
+        return result.columns
     }
-
-    private fun isAutoIncrementColumn(col: ColumnDefinition): Boolean =
-        (col.generation is ColumnGeneration.Identity &&
-            (col.type is NeutralType.Integer || col.type is NeutralType.BigInteger)) ||
-            (col.type is NeutralType.Identifier && (col.type as NeutralType.Identifier).autoIncrement)
 
     private val columnConstraintHelper = MysqlColumnConstraintHelper(
         ::quoteIdentifier, typeMapper, ::columnSql, ::referentialActionSql,

@@ -23,14 +23,21 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
      * DDL the target rejects (e.g. MySQL backticks or `group_concat` into PG).
      */
     fun assessPortability(query: String, sourceDialect: String?): ViewPortability {
-        val crossDialect = sourceDialect != null && sourceDialect != targetDialect.name.lowercase()
+        // Normalise via DatabaseDialect so aliases ("postgres"/"pg"/"maria"/…) are
+        // not mistaken for a foreign dialect; unparseable values stay conservative.
+        val crossDialect = sourceDialect != null &&
+            runCatching { DatabaseDialect.fromString(sourceDialect) }.getOrNull() != targetDialect
+        val tokens = ViewQueryTokenizer.tokenize(query)
         val markers = mutableListOf<String>()
         // Backticks are MySQL-only quoting and are a hard syntax error in PG/SQLite.
-        if (targetDialect != DatabaseDialect.MYSQL && query.contains('`')) {
+        // Checked on the token stream so a backtick inside a string literal is ignored.
+        if (targetDialect != DatabaseDialect.MYSQL &&
+            tokens.any { it.type == ViewQueryTokenType.WORD && it.text.startsWith("`") }
+        ) {
             markers += "MySQL-style backtick quoting"
         }
         if (crossDialect) {
-            val unknown = detectUnknownFunctions(applyRules(ViewQueryTokenizer.tokenize(query)))
+            val unknown = detectUnknownFunctions(applyRules(tokens))
             if (unknown.isNotEmpty()) {
                 markers += "dialect-specific function(s): ${unknown.joinToString(", ")}"
             }
@@ -183,12 +190,30 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
 
     private val allKnown = transparentFunctions + sqlKeywords
 
+    /**
+     * Scalar/aggregate functions that are spelled and behave identically in
+     * MySQL and PostgreSQL. Treated as known for those targets so a portable
+     * cross-dialect view (e.g. `SELECT FLOOR(x)`) is not falsely flagged as
+     * non-portable. NOT applied to SQLite, where several of these require the
+     * optional math extension — keeping the SQLite verdict conservative.
+     */
+    private val mysqlPostgresPortableFunctions = setOf(
+        "FLOOR", "CEIL", "CEILING", "MOD", "POWER", "SQRT", "SIGN", "EXP", "LN", "LOG",
+        "GREATEST", "LEAST", "LTRIM", "RTRIM",
+    )
+
+    private fun knownFunctions(): Set<String> = when (targetDialect) {
+        DatabaseDialect.MYSQL, DatabaseDialect.POSTGRESQL -> allKnown + mysqlPostgresPortableFunctions
+        DatabaseDialect.SQLITE -> allKnown
+    }
+
     private fun detectUnknownFunctions(tokens: List<ViewQueryToken>): List<String> {
+        val known = knownFunctions()
         val unknown = mutableListOf<String>()
         for ((index, token) in tokens.withIndex()) {
             if (token.type != ViewQueryTokenType.WORD) continue
             val next = tokens.drop(index + 1).firstOrNull { it.type != ViewQueryTokenType.WS }
-            if (next?.type == ViewQueryTokenType.LPAREN && token.text.uppercase() !in allKnown) {
+            if (next?.type == ViewQueryTokenType.LPAREN && token.text.uppercase() !in known) {
                 unknown += token.text.uppercase()
             }
         }

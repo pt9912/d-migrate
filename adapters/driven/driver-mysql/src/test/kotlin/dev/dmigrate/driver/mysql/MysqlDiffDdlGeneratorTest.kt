@@ -60,6 +60,19 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         sql shouldContainStr "PRIMARY KEY (`id`)"
     }
 
+    test("CreateTable reorders non-leading AUTO_INCREMENT to front of composite PK (I-07 H1)") {
+        val t = TableDefinition(
+            columns = mapOf(
+                "order_id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+            ),
+            primaryKey = listOf("order_id", "id"),
+        )
+        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("line_items", t))))
+        r.statements.first().sql shouldContainStr "PRIMARY KEY (`id`, `order_id`)"
+        r.diagnostics.any { it.code == "W118" } shouldBe true
+    }
+
     test("DropTable in down direction yields ROLLBACK_NOT_POSSIBLE") {
         val r = planAndDown(SchemaDiff(tablesRemoved = listOf(NamedTable("legacy", TableDefinition()))))
         r.primaryBlockedReason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE

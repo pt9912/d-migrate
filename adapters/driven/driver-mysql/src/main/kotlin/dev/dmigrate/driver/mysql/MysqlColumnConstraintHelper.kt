@@ -31,7 +31,7 @@ internal class MysqlColumnConstraintHelper(
     }
 
     private fun supportsIdentityGeneration(type: NeutralType): Boolean =
-        type is NeutralType.Integer || type is NeutralType.BigInteger
+        MysqlPrimaryKeyOrdering.supportsIdentityGeneration(type)
 
     private fun columnAutoIncrement(colName: String, col: ColumnDefinition): String {
         val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(col.type))
