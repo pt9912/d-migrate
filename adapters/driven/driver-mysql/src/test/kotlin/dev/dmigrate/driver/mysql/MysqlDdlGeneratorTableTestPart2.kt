@@ -90,7 +90,10 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         ddl shouldContain "PARTITION `p2024` VALUES LESS THAN ('2025-01-01')"
         ddl shouldContain "PARTITION `p2025` VALUES LESS THAN ('2026-01-01')"
         ddl shouldContain "PARTITION `p_max` VALUES LESS THAN (MAXVALUE)"
-        ddl shouldContain "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+        // I-07: table options precede partition options (MySQL grammar); the
+        // statement terminates after the partition clause, not after ENGINE.
+        ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE (`event_date`)"
+        ddl shouldContain "VALUES LESS THAN (MAXVALUE)\n);"
     }
 
     test("UNIQUE constraint generates CONSTRAINT ... UNIQUE (columns)") {

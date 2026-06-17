@@ -105,7 +105,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         // Primary key
         if (table.primaryKey.isNotEmpty()) {
-            val pkCols = table.primaryKey.joinToString(", ") { quoteIdentifier(it) }
+            val pkCols = orderPkAutoIncrementFirst(name, table, notes)
+                .joinToString(", ") { quoteIdentifier(it) }
             columnLines += "PRIMARY KEY ($pkCols)"
         }
 
@@ -114,19 +115,55 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             append("CREATE TABLE ${quoteIdentifier(name)} (\n")
             append(columnLines.joinToString(",\n") { "    $it" })
             append("\n)")
-            // Partitioning (inline in CREATE TABLE for MySQL)
+            // Table options precede partition options per the MySQL grammar:
+            //   CREATE TABLE ... (defs) [table_options] [partition_options]
+            append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
             val partitioning = table.partitioning
             if (partitioning != null) {
-                append("\n")
-                append(indexPartitionHelper.generatePartitionClause(partitioning, notes))
+                val clause = indexPartitionHelper.generatePartitionClause(partitioning, notes)
+                if (clause.isNotBlank()) {
+                    append("\n")
+                    append(clause)
+                }
             }
-            append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;")
+            append(";")
         }
         notes += sequenceSupport.drainPendingNotes()
         statements += DdlStatement(tableSql, notes)
 
         return statements
     }
+
+    /**
+     * MySQL requires an AUTO_INCREMENT column to be the leading column of a key
+     * (ERROR 1075). When a composite PRIMARY KEY contains an AUTO_INCREMENT
+     * column that is not first, reorder it to the front and flag the change.
+     */
+    private fun orderPkAutoIncrementFirst(
+        tableName: String,
+        table: TableDefinition,
+        notes: MutableList<TransformationNote>,
+    ): List<String> {
+        val pk = table.primaryKey
+        if (pk.size < 2) return pk
+        val autoIncCol = pk.firstOrNull { col -> table.columns[col]?.let(::isAutoIncrementColumn) == true }
+            ?: return pk
+        if (pk.first() == autoIncCol) return pk
+        notes += TransformationNote(
+            type = NoteType.WARNING,
+            code = "W118",
+            objectName = "$tableName.$autoIncCol",
+            message = "AUTO_INCREMENT column '$autoIncCol' was moved to the front of the composite " +
+                "PRIMARY KEY because MySQL requires it to be the leading key column (ERROR 1075).",
+            hint = "Verify the primary key column order is acceptable for your access patterns.",
+        )
+        return listOf(autoIncCol) + pk.filterNot { it == autoIncCol }
+    }
+
+    private fun isAutoIncrementColumn(col: ColumnDefinition): Boolean =
+        (col.generation is ColumnGeneration.Identity &&
+            (col.type is NeutralType.Integer || col.type is NeutralType.BigInteger)) ||
+            (col.type is NeutralType.Identifier && (col.type as NeutralType.Identifier).autoIncrement)
 
     private val columnConstraintHelper = MysqlColumnConstraintHelper(
         ::quoteIdentifier, typeMapper, ::columnSql, ::referentialActionSql,

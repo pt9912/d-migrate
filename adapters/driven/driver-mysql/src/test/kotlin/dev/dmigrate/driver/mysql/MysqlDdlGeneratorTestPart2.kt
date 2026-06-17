@@ -321,8 +321,10 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
         ddl shouldContain "PARTITION `p2024` VALUES LESS THAN ('2025-01-01')"
         ddl shouldContain "PARTITION `p2025` VALUES LESS THAN ('2026-01-01')"
         ddl shouldContain "PARTITION `p_max` VALUES LESS THAN (MAXVALUE)"
-        // Partitioning appears before ENGINE clause
-        ddl shouldContain "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+        // I-07: table options precede partition options (MySQL grammar); the
+        // statement terminates after the partition clause, not after ENGINE.
+        ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE (`event_date`)"
+        ddl shouldContain "VALUES LESS THAN (MAXVALUE)\n);"
     }
 
     // ── Additional edge case tests ──────────────────────────────
@@ -581,6 +583,89 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
         ddl shouldContain "PARTITION BY LIST (`region`)"
         ddl shouldContain "PARTITION `p_us` VALUES IN ('US', 'CA')"
         ddl shouldContain "PARTITION `p_eu` VALUES IN ('DE', 'FR', 'UK')"
+    }
+
+    // ── I-07: invalid partition / PK ordering ───────────────────
+
+    test("empty RANGE partition list is skipped with E055, not a bare PARTITION BY (I-07)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "events" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "event_date" to col(NeutralType.Date, required = true)
+                    ),
+                    primaryKey = listOf("id"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("event_date"),
+                        partitions = emptyList()
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+        val ddl = result.render()
+
+        ddl shouldNotContain "PARTITION BY"
+        ddl shouldContain "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+        result.notes.any { it.code == "E055" && it.type == NoteType.ACTION_REQUIRED } shouldBe true
+    }
+
+    test("empty LIST partition list is skipped with E055 (I-07)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "regional_data" to table(
+                    columns = mapOf("id" to col(NeutralType.Identifier(autoIncrement = true))),
+                    primaryKey = listOf("id"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.LIST,
+                        key = listOf("region"),
+                        partitions = emptyList()
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+
+        result.render() shouldNotContain "PARTITION BY"
+        result.notes.any { it.code == "E055" } shouldBe true
+    }
+
+    test("composite PK moves non-leading AUTO_INCREMENT column to front with W118 (I-07)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "line_items" to table(
+                    columns = mapOf(
+                        "order_id" to col(NeutralType.BigInteger, required = true),
+                        "id" to col(NeutralType.Identifier(autoIncrement = true))
+                    ),
+                    primaryKey = listOf("order_id", "id")
+                )
+            )
+        )
+        val result = generator.generate(schema)
+
+        result.render() shouldContain "PRIMARY KEY (`id`, `order_id`)"
+        result.notes.any { it.code == "W118" && it.objectName == "line_items.id" } shouldBe true
+    }
+
+    test("composite PK with leading AUTO_INCREMENT stays unchanged (no W118) (I-07)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "events" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "event_date" to col(NeutralType.Date, required = true)
+                    ),
+                    primaryKey = listOf("id", "event_date")
+                )
+            )
+        )
+        val result = generator.generate(schema)
+
+        result.render() shouldContain "PRIMARY KEY (`id`, `event_date`)"
+        result.notes.none { it.code == "W118" } shouldBe true
     }
 
 })

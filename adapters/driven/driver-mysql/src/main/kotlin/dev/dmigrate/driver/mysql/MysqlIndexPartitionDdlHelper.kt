@@ -18,6 +18,25 @@ internal class MysqlIndexPartitionDdlHelper(
         partitioning: PartitionConfig,
         notes: MutableList<TransformationNote>,
     ): String {
+        // RANGE/LIST partitioning requires at least one partition definition.
+        // An empty list would render as a bare `PARTITION BY RANGE (key)` which
+        // MySQL rejects — drop partitioning and flag it instead of emitting
+        // broken DDL. (HASH defaults to a single partition and stays valid.)
+        if (partitioning.partitions.isEmpty() &&
+            (partitioning.type == PartitionType.RANGE || partitioning.type == PartitionType.LIST)
+        ) {
+            notes += TransformationNote(
+                type = NoteType.ACTION_REQUIRED,
+                code = "E055",
+                objectName = partitioning.key.joinToString(","),
+                message = "${partitioning.type.name} partitioning requires at least one partition, " +
+                    "but the definition is empty; partitioning was skipped for this table.",
+                hint = "Add explicit partition boundaries (e.g. PARTITION p0 VALUES LESS THAN (...)) " +
+                    "or remove the partitioning configuration.",
+            )
+            return ""
+        }
+
         if (partitioning.type == PartitionType.RANGE) {
             notes += TransformationNote(
                 type = NoteType.WARNING,
