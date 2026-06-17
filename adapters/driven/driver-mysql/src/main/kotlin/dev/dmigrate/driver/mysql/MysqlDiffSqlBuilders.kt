@@ -105,7 +105,9 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             ""
         }
         val cols = idx.columns.joinToString(", ") { col ->
-            quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
+            quote(col.name) +
+                (col.prefixLength?.let { "($it)" } ?: "") +
+                (col.direction?.let { " ${it.name}" } ?: "")
         }
         val name = effectiveIndexName(table, idx)
         return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)}$using ($cols);"

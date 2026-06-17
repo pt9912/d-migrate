@@ -323,4 +323,22 @@ class SqliteDdlGeneratorTest : FunSpec({
 
     // ── 11. GIN/GIST/BRIN indices emit W102 warning ─────────────────
 
+    test("index prefix length is dropped with W126 note in SQLite (prefix-length slice)") {
+        val s = schema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_docs_body", columns = listOf(IndexColumn("body", prefixLength = 100)))
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.statements.any {
+            it.sql.trim() == "CREATE INDEX \"idx_docs_body\" ON \"docs\" (\"body\");"
+        } shouldBe true
+        result.notes.any { it.code == "W126" && it.objectName == "idx_docs_body" } shouldBe true
+    }
+
 })

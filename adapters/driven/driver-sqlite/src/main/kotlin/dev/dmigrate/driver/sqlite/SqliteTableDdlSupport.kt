@@ -172,7 +172,7 @@ internal class SqliteTableDdlSupport(
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
-        return DdlStatement(sql)
+        return DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)"))
     }
 
     private fun renderIndexColumn(column: IndexColumn): String =

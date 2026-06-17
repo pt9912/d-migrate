@@ -668,4 +668,50 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
         result.notes.none { it.code == "W118" } shouldBe true
     }
 
+    // ── I-08 / prefix-length slice ──────────────────────────────
+
+    test("index with prefix length renders col(n) in MySQL") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_docs_body", columns = listOf(IndexColumn("body", prefixLength = 100)))
+                    )
+                )
+            )
+        )
+        generator.generate(schema).render() shouldContain "CREATE INDEX `idx_docs_body` ON `docs` (`body`(100));"
+    }
+
+    test("index on unbounded TEXT without a prefix length is skipped with W125 (I-08)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_docs_body", columns = listOf(IndexColumn("body")))
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+        result.render() shouldNotContain "INDEX `idx_docs_body` ON"
+        result.notes.any { it.code == "W125" && it.objectName == "idx_docs_body" } shouldBe true
+    }
+
+    test("index on bounded VARCHAR without a prefix length is emitted normally (I-08)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "users" to table(
+                    columns = mapOf("name" to col(NeutralType.Text(maxLength = 100))),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_users_name", columns = listOf(IndexColumn("name")))
+                    )
+                )
+            )
+        )
+        generator.generate(schema).render() shouldContain "CREATE INDEX `idx_users_name` ON `users` (`name`);"
+    }
+
 })

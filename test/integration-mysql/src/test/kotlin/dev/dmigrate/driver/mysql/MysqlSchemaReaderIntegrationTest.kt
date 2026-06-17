@@ -72,6 +72,14 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                 stmt.execute("CREATE INDEX idx_orders_customer ON orders (customer_id)")
 
                 stmt.execute("""
+                    CREATE TABLE docs (
+                        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        body TEXT NOT NULL,
+                        INDEX idx_docs_body (body(100))
+                    ) ENGINE=InnoDB
+                """)
+
+                stmt.execute("""
                     CREATE VIEW active_orders AS
                     SELECT o.*, c.name AS customer_name
                     FROM orders o JOIN customers c ON o.customer_id = c.id
@@ -221,6 +229,16 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                     it.references!!.columns == listOf("id") &&
                     it.references!!.onDelete == ReferentialAction.CASCADE
             } shouldBe true
+        }
+    }
+
+    // ── Prefix index (prefix-length slice) ──────
+
+    test("prefix index reads SUB_PART into IndexColumn.prefixLength") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val idx = result.schema.tables.getValue("docs").indices.single { it.name == "idx_docs_body" }
+            idx.columns.single() shouldBe IndexColumn("body", prefixLength = 100)
         }
     }
 

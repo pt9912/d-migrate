@@ -118,7 +118,7 @@ object MysqlMetadataQueries {
     fun listIndices(session: JdbcOperations, schemaName: String, table: String): List<IndexProjection> {
         val rows = session.queryList(
             """
-            SELECT index_name, column_name, non_unique, seq_in_index, index_type, collation
+            SELECT index_name, column_name, non_unique, seq_in_index, index_type, collation, sub_part
             FROM information_schema.statistics
             WHERE table_schema = ? AND table_name = ?
               AND index_name != 'PRIMARY'
@@ -126,14 +126,16 @@ object MysqlMetadataQueries {
             """.trimIndent(), schemaName, table,
         )
         return rows.groupBy { it["index_name"] as String }.map { (name, idxRows) ->
+            val ordered = idxRows.sortedBy { (it["seq_in_index"] as Number).toInt() }
             IndexProjection(
                 name = name,
-                columns = idxRows.sortedBy { (it["seq_in_index"] as Number).toInt() }
-                    .map { it["column_name"] as String },
+                columns = ordered.map { it["column_name"] as String },
                 isUnique = (idxRows.first()["non_unique"] as Number).toInt() == 0,
                 type = idxRows.first()["index_type"] as? String,
-                directions = idxRows.sortedBy { (it["seq_in_index"] as Number).toInt() }
-                    .map { row -> if ((row["collation"] as? String) == "D") IndexSortDirection.DESC else null },
+                directions = ordered.map { row ->
+                    if ((row["collation"] as? String) == "D") IndexSortDirection.DESC else null
+                },
+                prefixLengths = ordered.map { (it["sub_part"] as? Number)?.toInt() },
             )
         }
     }

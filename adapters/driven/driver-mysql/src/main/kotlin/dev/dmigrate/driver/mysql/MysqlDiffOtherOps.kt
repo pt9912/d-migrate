@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.DatabaseDialect
@@ -219,6 +220,7 @@ internal object MysqlDiffOtherOps {
             blockSpatialIndex(op, ctx, table)
             return
         }
+        if (blockMissingPrefix(op, op.index, ctx, table)) return
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
     }
 
@@ -229,10 +231,32 @@ internal object MysqlDiffOtherOps {
                 blockSpatialIndex(op, ctx, table)
                 return
             }
+            if (blockMissingPrefix(op, op.index, ctx, table)) return
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             return
         }
         ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
+    }
+
+    /**
+     * I-08: block an index on an unbounded TEXT/BLOB column without a prefix
+     * length (ERROR 1170) instead of emitting invalid DDL. Returns true if blocked.
+     */
+    private fun blockMissingPrefix(
+        op: DiffOperation,
+        index: IndexDefinition,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+    ): Boolean {
+        val offending = ctx.indexColumnNeedingPrefix(table, index) ?: return false
+        ctx.skip(
+            op,
+            "Operation ${op.id} indexes TEXT/BLOB column `$table`.`$offending` without a prefix length; " +
+                "MySQL requires one (e.g. `$offending(255)`, ERROR 1170). Add a prefix length and re-run.",
+            code = "INDEX_PREFIX_MISSING",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return true
     }
 
     private fun blockSpatialIndex(op: DiffOperation, ctx: MysqlDiffRenderContext, table: String) {

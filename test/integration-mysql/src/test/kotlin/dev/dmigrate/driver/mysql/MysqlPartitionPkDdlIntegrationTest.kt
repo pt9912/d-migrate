@@ -1,6 +1,8 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
@@ -104,5 +106,27 @@ class MysqlPartitionPkDdlIntegrationTest : FunSpec({
             ),
         )
         executeDdl(schema) // without the reorder this fails with ERROR 1075
+    }
+
+    test("prefix index DDL (col(n)) on a TEXT column is accepted by MySQL (I-08)") {
+        val schema = SchemaDefinition(
+            name = "s", version = "1.0",
+            tables = mapOf(
+                "docs" to TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                        "body" to ColumnDefinition(type = NeutralType.Text(), required = true),
+                    ),
+                    primaryKey = listOf("id"),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_docs_body",
+                            columns = listOf(IndexColumn("body", prefixLength = 100)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        executeDdl(schema) // `body`(100) prefix index — without the length this fails with ERROR 1170
     }
 })

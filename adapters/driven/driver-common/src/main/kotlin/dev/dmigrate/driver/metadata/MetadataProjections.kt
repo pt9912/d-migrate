@@ -49,9 +49,13 @@ data class IndexProjection(
     val type: String? = null,
     val directions: List<IndexSortDirection?> = emptyList(),
     val where: String? = null,
+    /** MySQL `SUB_PART` per column (prefix-index key length); index-parallel to [columns]. */
+    val prefixLengths: List<Int?> = emptyList(),
 ) {
     val indexColumns: List<IndexColumn>
-        get() = columns.mapIndexed { index, column -> IndexColumn(column, directions.getOrNull(index)) }
+        get() = columns.mapIndexed { index, column ->
+            IndexColumn(column, directions.getOrNull(index), prefixLengths.getOrNull(index))
+        }
 }
 
 data class ConstraintProjection(

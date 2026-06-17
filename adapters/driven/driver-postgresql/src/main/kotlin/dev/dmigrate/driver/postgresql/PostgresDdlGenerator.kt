@@ -233,7 +233,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
-        return DdlStatement(sql)
+        return DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "PostgreSQL", "left(col, n)"))
     }
 
     private fun renderIndexColumn(column: IndexColumn): String =

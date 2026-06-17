@@ -211,6 +211,16 @@ internal class MysqlDiffRenderContext(
     }
 
     /**
+     * I-08: first index column that renders to an unbounded TEXT/BLOB but carries
+     * no prefix length (cannot be indexed without a key length, ERROR 1170), or null.
+     */
+    fun indexColumnNeedingPrefix(table: String, index: IndexDefinition): String? {
+        val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return MysqlIndexPrefix.columnNeedingPrefix(index) { columns[it]?.type }
+    }
+
+    /**
      * E.3 MySQL Sequence-Diff Sub-Slice B: bootstrap-once tracker for
      * `dmg_sequences` + `dmg_nextval` / `dmg_setval` infrastructure
      * emission. Lives on the per-direction render context so UP and
