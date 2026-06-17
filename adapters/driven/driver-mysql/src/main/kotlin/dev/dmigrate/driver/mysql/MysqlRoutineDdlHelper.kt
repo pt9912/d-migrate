@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
@@ -64,7 +65,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return functions.mapNotNull { (name, fn) -> generateFunction(name, fn, skipped) }
+        return functions.mapNotNull { (key, fn) -> generateFunction(ObjectKeyCodec.routineName(key), fn, skipped) }
     }
 
     private fun generateFunction(
@@ -126,7 +127,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return procedures.mapNotNull { (name, proc) -> generateProcedure(name, proc, skipped) }
+        return procedures.mapNotNull { (key, proc) -> generateProcedure(ObjectKeyCodec.routineName(key), proc, skipped) }
     }
 
     private fun generateProcedure(

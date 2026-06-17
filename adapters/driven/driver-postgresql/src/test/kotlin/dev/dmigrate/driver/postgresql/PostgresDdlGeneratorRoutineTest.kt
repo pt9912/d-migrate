@@ -84,6 +84,24 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         ddl shouldContain "LANGUAGE plpgsql;"
     }
 
+    test("routine-key map entry emits the bare function name, not the signature suffix (M1)") {
+        val s = schema(
+            functions = mapOf(
+                // Reverse keys routines canonically as `name(params)` for overload
+                // uniqueness; the emitted DDL name must be the bare `last_updated`.
+                "last_updated()" to FunctionDefinition(
+                    returns = ReturnType(type = "trigger"),
+                    language = "plpgsql",
+                    body = "BEGIN NEW.last_update = now(); RETURN NEW; END;",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE OR REPLACE FUNCTION \"last_updated\"("
+        ddl shouldNotContain "\"last_updated()\""
+    }
+
     test("function with non-postgresql source_dialect is skipped with E053") {
         val s = schema(
             functions = mapOf(

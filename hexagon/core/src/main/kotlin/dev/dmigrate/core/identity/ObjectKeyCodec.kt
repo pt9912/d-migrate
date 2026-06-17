@@ -69,6 +69,16 @@ object ObjectKeyCodec {
     }
 
     /**
+     * The bare routine name for a key, used as the emitted DDL identifier. Returns
+     * the decoded name for a canonical routine key (`name(params)`), or the key
+     * unchanged when it is not in routine-key form (e.g. a hand-authored schema
+     * that keys a routine by its plain name). Never emits the `(params)` suffix as
+     * part of the name — that would produce an unreferenceable `"name()"` routine.
+     */
+    fun routineName(key: String): String =
+        runCatching { parseRoutineKey(key).first }.getOrDefault(key)
+
+    /**
      * Build the canonical key for a trigger.
      *
      * Format: `table::name`
