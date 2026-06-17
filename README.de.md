@@ -46,8 +46,17 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**0.9.8** (stabil, veröffentlicht 2026-06-14). Die aktuellen
-Fähigkeiten:
+**0.9.8** (stabil, veröffentlicht 2026-06-14).
+
+> **In Entwicklung (`develop`, 0.9.9):** Eine mehrrundige
+> End-to-End-Pilot-Validierung (PostgreSQL / MySQL / SQLite gegen
+> Pagila/Sakila) hat die Cross-Dialect-Daten- und DDL-Treue
+> gehärtet — alle gemeldeten P1/P2-Cross-Dialect-Blocker sind
+> behoben (Transfer-Preflight strukturell aus der Ziel-Typ-Abbildung,
+> Array-/`tsvector`-Wertbindung, `CURRENT_DATE`-Defaults,
+> View-Portabilität, Routinen-Emission u. a.). Siehe `CHANGELOG.md`.
+
+Die aktuellen Fähigkeiten:
 
 - **Schema-Modell**: neutrales YAML-Schema mit 19 Typen +
   Spatial-Geometry; Validator mit 35+ Fehlercodes.

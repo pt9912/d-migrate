@@ -43,7 +43,17 @@ stacks.
 ## What can I run today?
 
 d-migrate is a working production tool at version **0.9.8**
-(stable, released 2026-06-14). The current capabilities:
+(stable, released 2026-06-14).
+
+> **In development (`develop`, 0.9.9):** a multi-round end-to-end
+> pilot validation (PostgreSQL / MySQL / SQLite against
+> Pagila/Sakila) has hardened cross-dialect data and DDL fidelity —
+> all reported P1/P2 cross-dialect blockers are fixed (transfer
+> preflight derived structurally from the target type mapping,
+> array/`tsvector` value binding, `CURRENT_DATE` defaults, view
+> portability, routine emission, and more). See `CHANGELOG.md`.
+
+The current capabilities:
 
 - **Schema model**: neutral YAML schema with 19 types + Spatial
   Geometry; validator with 35+ error codes.

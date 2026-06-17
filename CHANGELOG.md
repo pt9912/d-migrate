@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 0.9.9 — Cross-Dialect-Datentreue-Härtung (in Entwicklung)
+
+Eine mehrrundige End-to-End-Pilot-Validierung (PostgreSQL / MySQL / SQLite gegen
+Pagila/Sakila, fünf Läufe) hat Cross-Dialect-Happy-Path-Defekte aufgedeckt, die
+erst sichtbar wurden, nachdem die jeweils vorgelagerten Blocker behoben waren.
+Alle gemeldeten P1/P2-Cross-Dialect-Befunde sind behoben; die verbleibenden
+Restpunkte sind P3 und in `docs/planning/open/pilot-rerun-p3-residuals.md`
+getrackt.
+
+#### Added
+
+- **Strukturelle Transfer-Preflight** — Typ-Kompatibilität wird aus der
+  Ziel-Dialekt-Typ-Abbildung abgeleitet (`normalize(toSql(X)) == normalize(toSql(Y))`)
+  statt aus einer hand-gepflegten Fall-Liste; deckt jede tool-eigene
+  Cross-Dialect-Abbildung per Konstruktion ab. Neuer Treiber-Port
+  `DatabaseDriver.transferCompatibility()`.
+- **`CURRENT_DATE` / `CURRENT_TIME`** als Funktions-Defaults über alle Dialekte
+  (PG/SQLite `CURRENT_DATE`, MySQL `(CURRENT_DATE)`).
+- **Index-Präfixlängen** (`IndexColumn.prefixLength`) round-trip-fähig: MySQL
+  `SUB_PART`-Reverse → `col(n)`-Generate; PG/SQLite verwerfen mit Hinweis.
+
+#### Fixed
+
+- **Transfer-Datentreue PG → MySQL**: PG-`text[]` → MySQL-`JSON` (Wert als
+  JSON-Array gebunden) und pgjdbc-`PGobject` (z. B. `tsvector`) → String-Bind
+  statt Java-Serialisierung.
+- **Transfer-Preflight** akzeptiert tool-eigene Mappings (bool→INTEGER,
+  Enum↔Enum, Temporal→Text, timestamptz→DATETIME, Array→JSON, Decimal→REAL)
+  statt strikter Neutraltyp-Gleichheit.
+- **DDL-Generierung Cross-Dialect**: PG-Partition ohne Kind-Partitionen → plain
+  Table + `E055`; nicht-portierbare View-Bodies (Backticks, `::`/`||`,
+  dialektspezifische Funktionen) → `E053`-Skip statt invalidem DDL; MySQL
+  AUTO_INCREMENT-PK-Reihenfolge; GIN/GIST-Index ohne Default-Opclass → `W123`-Skip.
+- **Reverse-Engineering**: Nicht-PK-`nextval`-Spalte als Named-Sequence statt
+  Identity; MySQL-ENUM-Werte case-erhaltend; Routinen-Namen ohne Signatur-Suffix;
+  PG-Trigger-Action-Statement (`EXECUTE FUNCTION …`) nicht als plpgsql-Body
+  gewrappt; PG-Domain-Render über die Ziel-Typ-Abbildung.
+- **Parquet-Import**: Timestamp (`INT64`-µs / `Instant`) → `LocalDateTime` /
+  `OffsetDateTime`.
+- **Validierung**: Temporal-/Funktions-Defaults auf Date/DateTime/Time/Text
+  korrekt akzeptiert.
+
 ## [0.9.8] - 2026-06-14
 
 ### Breaking
