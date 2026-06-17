@@ -106,6 +106,14 @@ class MysqlTypeMapperTest : FunSpec({
         mapper.toDefaultSql(DefaultValue.BooleanLiteral(false), NeutralType.BooleanType) shouldBe "0"
     }
 
+    test("FunctionCall current_date renders parenthesised CURRENT_DATE (N1)") {
+        mapper.toDefaultSql(DefaultValue.FunctionCall("current_date"), NeutralType.Date) shouldBe "(CURRENT_DATE)"
+    }
+
+    test("FunctionCall current_time renders parenthesised CURRENT_TIME (N1)") {
+        mapper.toDefaultSql(DefaultValue.FunctionCall("current_time"), NeutralType.Time) shouldBe "(CURRENT_TIME)"
+    }
+
     test("FunctionCall gen_uuid contains UUID") {
         mapper.toDefaultSql(DefaultValue.FunctionCall("gen_uuid"), NeutralType.Uuid) shouldContain "UUID"
     }

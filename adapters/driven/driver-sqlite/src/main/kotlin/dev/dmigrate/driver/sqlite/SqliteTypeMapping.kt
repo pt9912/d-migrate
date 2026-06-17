@@ -120,6 +120,8 @@ internal object SqliteTypeMapping {
             trimmed.contains("datetime(", ignoreCase = true) ||
                 trimmed.equals("CURRENT_TIMESTAMP", ignoreCase = true) ->
                 DefaultValue.FunctionCall("current_timestamp")
+            trimmed.equals("CURRENT_DATE", ignoreCase = true) -> DefaultValue.FunctionCall("current_date")
+            trimmed.equals("CURRENT_TIME", ignoreCase = true) -> DefaultValue.FunctionCall("current_time")
             else -> DefaultValue.StringLiteral(trimmed)
         }
     }

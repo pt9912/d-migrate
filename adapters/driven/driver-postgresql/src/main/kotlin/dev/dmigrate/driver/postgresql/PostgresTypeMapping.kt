@@ -155,14 +155,12 @@ internal object PostgresTypeMapping {
     fun parseDefault(raw: String?): DefaultValue? {
         if (raw == null) return null
         val trimmed = raw.trim()
+        parseFunctionDefault(trimmed)?.let { return it }
         return when {
             trimmed.equals("NULL", ignoreCase = true) -> null
             trimmed.startsWith("nextval(") -> null
             trimmed.equals("true", ignoreCase = true) -> DefaultValue.BooleanLiteral(true)
             trimmed.equals("false", ignoreCase = true) -> DefaultValue.BooleanLiteral(false)
-            trimmed.equals("CURRENT_TIMESTAMP", ignoreCase = true) ||
-                trimmed.equals("now()", ignoreCase = true) -> DefaultValue.FunctionCall("current_timestamp")
-            trimmed.equals("gen_random_uuid()", ignoreCase = true) -> DefaultValue.FunctionCall("gen_uuid")
             trimmed.startsWith("'") && trimmed.contains("'::") -> {
                 val value = trimmed.substringAfter("'").substringBefore("'::")
                 DefaultValue.StringLiteral(value.replace("''", "'"))
@@ -183,6 +181,16 @@ internal object PostgresTypeMapping {
             }
             else -> DefaultValue.FunctionCall(trimmed)
         }
+    }
+
+    /** Recognised PostgreSQL function/keyword defaults, normalised to canonical names. */
+    private fun parseFunctionDefault(trimmed: String): DefaultValue.FunctionCall? = when {
+        trimmed.equals("CURRENT_TIMESTAMP", ignoreCase = true) ||
+            trimmed.equals("now()", ignoreCase = true) -> DefaultValue.FunctionCall("current_timestamp")
+        trimmed.equals("CURRENT_DATE", ignoreCase = true) -> DefaultValue.FunctionCall("current_date")
+        trimmed.equals("CURRENT_TIME", ignoreCase = true) -> DefaultValue.FunctionCall("current_time")
+        trimmed.equals("gen_random_uuid()", ignoreCase = true) -> DefaultValue.FunctionCall("gen_uuid")
+        else -> null
     }
 
     fun mapParamType(pgType: String): String = when (pgType.lowercase()) {

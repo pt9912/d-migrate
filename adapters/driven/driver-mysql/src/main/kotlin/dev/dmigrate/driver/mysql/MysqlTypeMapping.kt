@@ -135,6 +135,12 @@ internal object MysqlTypeMapping {
             trimmed.equals("NULL", ignoreCase = true) -> null
             trimmed == "CURRENT_TIMESTAMP" || trimmed == "current_timestamp()" ->
                 DefaultValue.FunctionCall("current_timestamp")
+            trimmed.equals("CURRENT_DATE", ignoreCase = true) ||
+                trimmed.equals("curdate()", ignoreCase = true) ||
+                trimmed.equals("current_date()", ignoreCase = true) -> DefaultValue.FunctionCall("current_date")
+            trimmed.equals("CURRENT_TIME", ignoreCase = true) ||
+                trimmed.equals("curtime()", ignoreCase = true) ||
+                trimmed.equals("current_time()", ignoreCase = true) -> DefaultValue.FunctionCall("current_time")
             trimmed == "1" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(true)
             trimmed == "0" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(false)
             trimmed.startsWith("'") && trimmed.endsWith("'") ->

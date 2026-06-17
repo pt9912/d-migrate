@@ -36,6 +36,8 @@ class SqliteTypeMapper : TypeMapper {
         is DefaultValue.BooleanLiteral -> if (default.value) "1" else "0"
         is DefaultValue.FunctionCall -> when (default.name) {
             "current_timestamp" -> "(datetime('now'))"
+            "current_date" -> "CURRENT_DATE"
+            "current_time" -> "CURRENT_TIME"
             "gen_uuid" -> "(" +
                 "lower(hex(randomblob(4)))||'-'||" +
                 "lower(hex(randomblob(2)))||'-4'||" +

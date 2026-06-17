@@ -296,6 +296,11 @@ internal object SchemaColumnValidationRules {
         "current_timestamp" ->
             type is NeutralType.DateTime || type is NeutralType.Date ||
                 type is NeutralType.Time || type is NeutralType.Text
+        // N1: CURRENT_DATE / CURRENT_TIME als Funktions-Default.
+        "current_date" ->
+            type is NeutralType.Date || type is NeutralType.DateTime || type is NeutralType.Text
+        "current_time" ->
+            type is NeutralType.Time || type is NeutralType.DateTime || type is NeutralType.Text
         "gen_uuid" -> type is NeutralType.Uuid
         else -> true
     }

@@ -39,6 +39,10 @@ class MysqlTypeMapper : TypeMapper {
         is DefaultValue.BooleanLiteral -> if (default.value) "1" else "0"
         is DefaultValue.FunctionCall -> when (default.name) {
             "current_timestamp" -> "CURRENT_TIMESTAMP"
+            // MySQL allows non-CURRENT_TIMESTAMP function defaults only as a
+            // parenthesised expression (8.0.13+); a bare CURRENT_DATE is ERROR 1067.
+            "current_date" -> "(CURRENT_DATE)"
+            "current_time" -> "(CURRENT_TIME)"
             "gen_uuid" -> "(UUID())"
             else -> "${default.name}()"
         }

@@ -47,6 +47,8 @@ class PostgresTypeMapper : TypeMapper {
         is DefaultValue.BooleanLiteral -> if (default.value) "TRUE" else "FALSE"
         is DefaultValue.FunctionCall -> when (default.name) {
             "current_timestamp" -> "CURRENT_TIMESTAMP"
+            "current_date" -> "CURRENT_DATE"
+            "current_time" -> "CURRENT_TIME"
             "gen_uuid" -> "gen_random_uuid()"
             else -> "${default.name}()"
         }

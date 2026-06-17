@@ -163,6 +163,12 @@ class PostgresTypeMappingTest : FunSpec({
             DefaultValue.FunctionCall("current_timestamp")
     }
     test("parseDefault now()") { PostgresTypeMapping.parseDefault("now()") shouldBe DefaultValue.FunctionCall("current_timestamp") }
+    test("parseDefault CURRENT_DATE (N1)") {
+        PostgresTypeMapping.parseDefault("CURRENT_DATE") shouldBe DefaultValue.FunctionCall("current_date")
+    }
+    test("parseDefault CURRENT_TIME (N1)") {
+        PostgresTypeMapping.parseDefault("CURRENT_TIME") shouldBe DefaultValue.FunctionCall("current_time")
+    }
     test("parseDefault gen_random_uuid()") {
         PostgresTypeMapping.parseDefault("gen_random_uuid()") shouldBe
             DefaultValue.FunctionCall("gen_uuid")

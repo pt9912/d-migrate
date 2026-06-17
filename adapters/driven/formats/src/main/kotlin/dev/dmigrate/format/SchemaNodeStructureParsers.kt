@@ -97,10 +97,11 @@ private fun parseDefault(node: JsonNode?): DefaultValue? {
     }
 }
 
+private val KNOWN_FUNCTION_DEFAULTS = setOf("current_timestamp", "current_date", "current_time", "gen_uuid")
+
 private fun parseScalarDefault(text: String): DefaultValue =
     when {
-        text == "current_timestamp" -> DefaultValue.FunctionCall("current_timestamp")
-        text == "gen_uuid" -> DefaultValue.FunctionCall("gen_uuid")
+        text in KNOWN_FUNCTION_DEFAULTS -> DefaultValue.FunctionCall(text)
         text.matches(Regex("""^nextval\(.+\)$""", RegexOption.IGNORE_CASE)) ->
             DefaultValue.FunctionCall(text)
         else -> DefaultValue.StringLiteral(text)

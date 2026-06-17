@@ -89,6 +89,23 @@ class JsonSchemaCodecTest : FunSpec({
         jsonRoundTrip(schema) shouldBe schema
     }
 
+    test("default current_date parses as a function call, not a string literal (N1)") {
+        val json = """
+            {
+              "name": "App",
+              "version": "1.0",
+              "tables": {
+                "t": { "columns": { "d": { "type": "date", "default": "current_date" } } }
+              }
+            }
+        """.trimIndent()
+        val schema = jsonCodec.read(ByteArrayInputStream(json.toByteArray()))
+        schema.tables.getValue("t").columns.getValue("d").default shouldBe
+            DefaultValue.FunctionCall("current_date")
+        // round-trips back to the same function call (was the N1 regression: → StringLiteral)
+        jsonRoundTrip(schema) shouldBe schema
+    }
+
     // ── JSON Round-Trip ─────────────────────────
 
     test("JSON round-trip minimal schema") {
