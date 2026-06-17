@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.*
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 
 class PostgresDdlGeneratorRoutineTest : FunSpec({
 
@@ -153,6 +154,29 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         ddl shouldContain "AFTER INSERT ON \"orders\""
         ddl shouldContain "FOR EACH ROW"
         ddl shouldContain "EXECUTE FUNCTION \"trg_fn_audit_orders\"();"
+    }
+
+    test("trigger whose body is an EXECUTE FUNCTION action references the function directly (N6)") {
+        val s = schema(
+            tables = mapOf(
+                "film" to table(columns = mapOf("id" to col(NeutralType.Integer)))
+            ),
+            triggers = mapOf(
+                "last_updated" to TriggerDefinition(
+                    table = "film",
+                    event = TriggerEvent.UPDATE,
+                    timing = TriggerTiming.BEFORE,
+                    forEach = TriggerForEach.ROW,
+                    sourceDialect = "postgresql",
+                    body = "EXECUTE FUNCTION last_updated()"
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        // No wrapper function around the action statement (was the N6 invalid `AS $$ EXECUTE … $$`).
+        ddl shouldNotContain "CREATE OR REPLACE FUNCTION \"trg_fn_last_updated\""
+        ddl shouldContain "CREATE TRIGGER \"last_updated\""
+        ddl shouldContain "EXECUTE FUNCTION last_updated();"
     }
 
     test("trigger with WHEN condition") {

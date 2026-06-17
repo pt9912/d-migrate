@@ -191,15 +191,25 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             return listOf(actionRequired(action))
         }
 
-        val funcName = "trg_fn_${name}"
         val statements = mutableListOf<DdlStatement>()
 
-        val funcSql = buildString {
-            append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(funcName)}() RETURNS TRIGGER AS \$\$\n")
-            append(body)
-            append("\n\$\$ LANGUAGE plpgsql;")
+        // N6: the PG reverse stores `information_schema.triggers.action_statement`
+        // (`EXECUTE FUNCTION fn()`) as the body — that is the trigger's action
+        // clause, not a plpgsql body. Reference the existing function directly
+        // then; only a real plpgsql body gets wrapped in a CREATE FUNCTION.
+        val actionClause = if (isExecuteActionStatement(body)) {
+            body.trim().trimEnd(';')
+        } else {
+            val funcName = "trg_fn_${name}"
+            statements += DdlStatement(
+                buildString {
+                    append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(funcName)}() RETURNS TRIGGER AS \$\$\n")
+                    append(body)
+                    append("\n\$\$ LANGUAGE plpgsql;")
+                }
+            )
+            "EXECUTE FUNCTION ${quoteIdentifier(funcName)}()"
         }
-        statements += DdlStatement(funcSql)
 
         val timing = trigger.timing.name
         val event = trigger.event.name
@@ -211,10 +221,14 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             if (trigger.condition != null) {
                 append("\n    WHEN (${trigger.condition})")
             }
-            append("\n    EXECUTE FUNCTION ${quoteIdentifier(funcName)}();")
+            append("\n    $actionClause;")
         }
         statements += DdlStatement(triggerSql)
 
         return statements
     }
+
+    /** N6: true when the body is already a PG trigger action (`EXECUTE FUNCTION/PROCEDURE …`). */
+    private fun isExecuteActionStatement(body: String): Boolean =
+        body.trimStart().matches(Regex("(?is)^EXECUTE\\s+(FUNCTION|PROCEDURE)\\s+.+"))
 }
