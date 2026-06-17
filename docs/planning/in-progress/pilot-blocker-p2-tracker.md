@@ -1,11 +1,11 @@
 # P2-Pilot-Blocker — Arbeitstracker (0.9.9)
 
-Status: **fast abgeschlossen** (P1 fertig 2026-06-16). P2 behoben 2026-06-17:
-I-05+I-06 `b9e6ab38`, I-10 `a9ec0619`, I-07 `dcd527f9`, I-09 `38814a50`,
-I-08-PG `22041167`. **Einzig offen:** der MySQL-Teil von I-08 (TEXT/BLOB-
-Präfixlänge) — verlagert in
-[`../next/index-prefix-length-model.md`](../next/index-prefix-length-model.md)
-als eigener Slice. Dieser Tracker hält pro Bug Ursache, Fix-Skizze,
+Status: **ABGESCHLOSSEN 2026-06-17.** Alle P2-Blocker behoben: I-05+I-06
+`b9e6ab38`, I-10 `a9ec0619`, I-07 `dcd527f9`, I-09 `38814a50`, I-08-PG
+`22041167`. Der **MySQL-Teil von I-08** (TEXT/BLOB-Präfixlänge) wurde über die
+Präfixlängen-Modellscheibe geliefert
+([`../done/index-prefix-length-model.md`](../done/index-prefix-length-model.md),
+Phase 3, Commit `c52efd06`). Dieser Tracker hält pro Bug Ursache, Fix-Skizze,
 Test-Strategie und Modul.
 
 Quellen:
@@ -121,11 +121,11 @@ Partitionen → valide Reihenfolge). **Modul:** `:adapters:driven:driver-mysql`.
 > (z. B. tsvector→text degradiert) wird im Generate-Pfad mit W123-Note
 > übersprungen und im Diff-Pfad mit `INDEX_OPCLASS_MISSING` blockiert (geteilter
 > Helfer `PostgresIndexOpClass`).
-> **MySQL-Teil verlagert** in
-> [`../next/index-prefix-length-model.md`](../next/index-prefix-length-model.md):
-> TEXT/BLOB-Index ohne Präfixlänge (ERROR 1170) wird dort über das
-> round-trip-fähige Modellfeld `IndexColumn.prefixLength` gelöst statt eine Länge
-> zu raten (Option-C-Entscheidung 2026-06-17).
+> **MySQL-Teil GELIEFERT** über
+> [`../done/index-prefix-length-model.md`](../done/index-prefix-length-model.md)
+> (Phase 3, `c52efd06`): `IndexColumn.prefixLength` (round-trip-fähig via
+> `SUB_PART`) rendert `col(n)`; TEXT/BLOB ohne Länge → Skip (W125) / Block
+> (`INDEX_PREFIX_MISSING`) statt Raten. Live-MySQL-Round-Trip grün.
 
 **Symptom:** MySQL: Index auf unbounded `TEXT` ohne Präfixlänge (ERROR 1170).
 PG: GIST-Index auf `tsvector`→text-degradierter Spalte (kein Operator-Class).
@@ -225,7 +225,7 @@ ein Parquet-Round-Trip-Test (Export→Import einer Timestamp-Spalte). **Modul:**
 1. ~~**I-05 + I-06** (Domain-Renderpfad, gleiche Datei)~~ — ✅ behoben 2026-06-17 (`b9e6ab38`).
 2. ~~**I-10** (Parquet-Timestamp)~~ — ✅ behoben 2026-06-17 (`a9ec0619`).
 3. ~~**I-07** (Partition MySQL)~~ — ✅ behoben 2026-06-17 (`dcd527f9`).
-4. **I-08** — ✅ PG behoben (`22041167`); MySQL-Teil verlagert nach `../next/index-prefix-length-model.md`.
+4. **I-08** — ✅ PG behoben (`22041167`); MySQL-Teil geliefert via `../done/index-prefix-length-model.md` (`c52efd06`).
 5. ~~**I-09** (View-Bodies)~~ — ✅ behoben 2026-06-17 (`38814a50`).
 
 ## Verifikations-Rezept (pro Fix)

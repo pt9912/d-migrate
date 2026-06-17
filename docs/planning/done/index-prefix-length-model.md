@@ -1,9 +1,9 @@
 # Index-Präfixlänge als Modellfeld (`IndexColumn.prefixLength`)
 
-**Status**: In Arbeit (2026-06-17 — nach `in-progress/` verschoben, Phase 1
-aktiv). Scope + Blast-Radius kartiert, Phasenschnitt und Akzeptanzkriterien
-ausgearbeitet; Review + Tiefenprüfung + Code-Verifikation eingearbeitet
-(D-1…D-6).
+**Status**: Geliefert (2026-06-17 — alle 5 Phasen umgesetzt; siehe
+[Closure](#closure)). Scope + Blast-Radius kartiert, Phasenschnitt und
+Akzeptanzkriterien ausgearbeitet; Review + Tiefenprüfung + Code-Verifikation
+eingearbeitet (D-1…D-6).
 
 **Trigger**: P2-Pilot-Blocker **I-08** (MySQL: Index auf unbounded `TEXT`/`BLOB`
 ohne Präfixlänge → `ERROR 1170`). Beim Fix-Entwurf fiel auf, dass das Modell
@@ -289,3 +289,34 @@ größte und riskanteste Änderung (Serialisierungsvertrag + Fingerprints +
 Golden-Files) und verdient einen fokussierten Slice; die kleinen Blocker bringen
 den Piloten schneller Richtung RC. Der P2-Tracker führt den **MySQL-Teil von
 I-08** ab sofort als „verlagert in [diesen Plan]".
+
+## Closure
+
+**Geliefert 2026-06-17, alle 5 Phasen.** Commits:
+
+- **Phase 1** `f8ad5f53` — `IndexColumn.prefixLength` + `toString` (D-5); JSON-
+  Serialisierung (`prefix_length`); `spec/schema.json`-Vertrag.
+- **Phase 2** `c52efd06` — Reverse MySQL: `SUB_PART` → `IndexProjection.prefixLengths`;
+  Live-Reverse-Test (`INDEX (body(100))` → `prefixLength == 100`).
+- **Phase 3** `c52efd06` — Generate MySQL: `col(n)` (Create + Diff); unbounded
+  TEXT/BLOB ohne Länge → Skip (W125) / Block (`INDEX_PREFIX_MISSING`). **Das ist
+  der gelieferte MySQL-Teil von P2-Blocker I-08.** Live-Round-Trip grün.
+- **Phase 4** `c52efd06` — Generate PG + SQLite (D-1): Präfix verworfen, volle
+  Spalte indiziert + W126-Note (`IndexPrefixDropNote`).
+- **Phase 5** `be592921` — Fingerprint trägt Präfix via `toString` (D-5);
+  `ALGORITHM` v1→v2 (D-2); `CanonicalPayload` unverändert (D-6).
+
+**Bewusste Abweichungen vom Plan:** (1) PG/SQLite-Präfix-Drop-Note ist **WARNING/
+W126** statt INFO — Semantikänderung (voll statt Präfix), und INFO passt nicht
+ins Warn-Ledger-Level-Enum. (2) Neue, nicht ledgerte Note-Codes W125/W126 +
+Diff-Code `INDEX_PREFIX_MISSING` (konsistent mit der bestehenden, ebenfalls
+ungeledger­ten W112/W118/W123-Praxis; Ledger-Backfill ist Folgearbeit).
+
+**Akzeptanzkriterien:** alle erfüllt (MySQL-Round-Trip Live grün; TEXT/BLOB ohne
+Länge kein ERROR 1170; PG/SQLite Voll-Index + Note; JSON-Round-Trip erhält
+`prefix_length`; Präfixänderung verändert Fingerprint deterministisch;
+`docker-check` inkl. `koverVerify` für alle Module grün).
+
+**Offene Folgearbeit (out of scope, vgl. D-4):** PRIMARY-KEY-Präfixlängen
+(`PRIMARY KEY (col(100))`) und UNIQUE als generischer `ConstraintDefinition`
+tragen weiterhin keine Länge — eigener Slice bei Bedarf.

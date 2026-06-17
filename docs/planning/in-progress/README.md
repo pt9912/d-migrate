@@ -56,7 +56,6 @@ festgehalten.
 | Datei | Typ | Gegenstand |
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
-| [`index-prefix-length-model.md`](index-prefix-length-model.md) | Slice (in Arbeit) | `IndexColumn.prefixLength` als Modellfeld: MySQL-Praefix-Index (`col(n)`) round-trip-faehig via `SUB_PART`, Cross-Dialect (PG/SQLite verwerfen+Note). Loest den MySQL-Teil von P2-Blocker I-08. Aktiviert 2026-06-17 (Phase 1). |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. || [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](../done-archive/ImpPlan-0.9.8-parquet-S7-end-to-end.md) | Per-Slice-ImpPlan | S7 End-to-End-Integration fuer den Seekable-Pfad: Stopgap-Removal, `SeekableDataChunkReaderFactory`-Dispatch, Footer-KV-/Bundle-Manifest-Wiring und PG/Testcontainers-Parquet-Roundtrip. |
 | [`ImpPlan-0.9.8-parquet-S9a-bundle-tests.md`](../done-archive/ImpPlan-0.9.8-parquet-S9a-bundle-tests.md) | Skeleton | S9a Bundle-Test-Familien; startbereit nach S7/S8, sammelt Hand-off-Anker fuer CLI-Preflight-Codes, Format-Resolver, Bundle-Resume und DuckDB-/Arrow-Bundle-KV-Toleranz. |
 | [`ImpPlan-0.9.8-parquet-S9b-single-file-tests.md`](../done-archive/ImpPlan-0.9.8-parquet-S9b-single-file-tests.md) | Skeleton | S9b Single-File-Test-Familien; startbereit nach S7/S8, sammelt Hand-off-Anker fuer CLI-Preflight-Codes, echte Parquet-Phase-1/2-Tests, Single-File-Resume und KV-Toleranz. |
