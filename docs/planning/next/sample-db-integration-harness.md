@@ -1,11 +1,13 @@
 # Plan: Sample-DB-E2E-Harness (docker-compose + Scripts)
 
 > Dokumenttyp: Umsetzungsplan (Slice)
-> Status: Entwurf (2026-06-18, Review- + Design-Update 2026-06-18). Phase 0
-> (Sourcing **und** Mechanik) via [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
+> Status: In Arbeit (2026-06-18). **Phase 0 + Phase 1 (Pagila/PG) erledigt**;
+> Dialekt-/Spatial-Matrix dokumentiert (MySQL/SQLite/PostGIS/Spatialite geplant,
+> Bau folgt). Sourcing **und** Mechanik via [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
 > entschieden (supersedet ADR 0013).
-> Roadmap-Slot: Phase 1–2 (Smoke/Compatibility) = Test-Infrastruktur; Phase 3
-> (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC, LF 8.1/8.2) = eigener Folge-Slice**.
+> Roadmap-Slot: Phase 1–2b (Smoke/Compatibility, inkl. SQLite) = Test-Infrastruktur;
+> Phase 3 (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC, LF 8.1/8.2) und Phase 5
+> (Spatial: PostGIS/Spatialite) = eigene Folge-Slices**.
 > Referenzen: [`../open/test-database-candidates.md`](../open/test-database-candidates.md)
 > (Kandidaten-Katalog), [`../../operations/pilot-validation-playbook.md`](../../operations/pilot-validation-playbook.md)
 > (Szenarien-Vorlage), [bi-demo](../../../examples/bi-demo/README.md) (Harness-Muster),
@@ -31,11 +33,34 @@ Zielschema → `data transfer` → `schema compare`. Schließt die Lücke
   **SHA256-verifizierten** Dumps in einen gitignored Cache (auch in
   `.dockerignore`). Kein Dump im Repo. Employees nur opt-in/nightly.
 
+## Dialekt-/Spatial-Matrix (Abdeckungsziel)
+
+d-migrate unterstützt drei Dialekte (postgresql, mysql, sqlite) und vier
+Spatial-Profile (`postgis`, `native`, `spatialite`, `none`). Der Harness deckt
+diese Matrix **schrittweise** ab — derselbe `examples/sample-db/`-Ordner, je Ziel
+ein compose-Service (SQLite/Spatialite brauchen **keinen** — sie sind dateibasiert),
+ein gepinnter Sample und eine eigene `expected/`-Baseline; `smoke.sh` parametrisiert
+über Dialekt/Profil.
+
+| Ziel | Sample (Kandidat) | Server | Phase | Status |
+|---|---|---|---|---|
+| PostgreSQL | Pagila | postgres | 1 | ✅ erledigt |
+| MySQL | Sakila | mysql | 2 | geplant |
+| SQLite | Chinook | — (Datei) | 2b | geplant |
+| PostGIS | Spatial-Sample | PostGIS-Image | 5 | geplant |
+| Spatialite | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
+
+Jeder neue Dialekt deckt **eigene** Round-Trip-Defekte auf (wie PG → F1–F3,
+[`../open/sample-db-roundtrip-findings.md`](../open/sample-db-roundtrip-findings.md));
+Breite kostet daher Fix-Arbeit. Bau-Reihenfolge/-Zeitpunkt steuert die Roadmap —
+heute (2026-06-18) **nur dokumentiert**, Bau folgt.
+
 ## Slice-Grenze (DoD-Boundary)
 
-**Dieser Slice = Phase 0–3.** Phase 4 (TPC, LF 8.1/8.2) ist ein separater
-1.0.0-QA-Slice (Forward-Pointer). Fertig, wenn Phase 1+2 als CI-Smoke (und lokal)
-grün laufen und Phase 3 (Scale) als opt-in/nightly verfügbar ist.
+**Dieser Slice = Phase 0–3 (inkl. 2b SQLite).** Phase 4 (TPC, LF 8.1/8.2) **und
+Phase 5 (Spatial: PostGIS/Spatialite)** sind separate Folge-Slices
+(Forward-Pointer). Fertig, wenn Phase 1+2(+2b) als CI-Smoke (und lokal) grün laufen
+und Phase 3 (Scale) als opt-in/nightly verfügbar ist.
 
 ## Objekt-Scope der Assertion (in-scope vs. erwarteter Skip)
 
@@ -73,12 +98,22 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   Quelle** geprüft (Pagila PG→MySQL, Sakila MySQL→PG) — *kein* direkter
   Pagila↔Sakila-Vergleich. Fokus: TINYINT(1)↔BOOLEAN, Enum-Case, FK-Graphen,
   erwartete E053/W-Notes.
+- **Phase 2b — SQLite-Round-Trip (Chinook).** **Kein** Server — die CLI arbeitet
+  gegen eine bind-gemountete `.db`-Datei. Sample: Chinook (klein, FK-reich). Deckt
+  die SQLite-Eigenheiten ab (Named-Sequence `helper_table`, EXCLUDE blockiert,
+  AUTOINCREMENT, schema-globaler Trigger-Namensraum). Eigene `expected/`-Baseline.
 - **Phase 3 — Scale (Employees/MySQL).** Streaming/Chunking/Resume; **opt-in/nightly**.
   **Achtung:** es gibt heute keinen `schedule:`/`cron:`-Workflow — Phase 3 legt
   entweder einen scheduled Workflow an (eigenes Arbeitspaket) oder bleibt reines
   opt-in-`make`-Target, **nicht** im PR-Gate.
 - **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice
   (LF 8.1/8.2), nur Forward-Pointer.
+- **Phase 5 — Spatial (PostGIS + Spatialite).** Eigener Folge-Slice (wie Phase 4,
+  nicht in der Phase-0–3-Grenze). PostGIS = postgres-Superset-Image + Spatial-
+  Sample; Spatialite = `mod_spatialite` im CLI-Image + Spatial-Sample. Testet
+  `--spatial-profile postgis|spatialite` end-to-end (Geometrie-/Geographie-Typen,
+  räumliche GiST/R-Tree-Indizes). Sample-Kandidat + Pinning noch offen → Vorarbeit
+  im Kandidaten-Katalog [`../open/test-database-candidates.md`](../open/test-database-candidates.md).
 
 ## CI-Laufzeit-Budget
 
@@ -107,9 +142,17 @@ Stichproben-Zeilenzahlen Quelle = Ziel; **läuft lokal *und* im CI-Workflow grü
 Quelle abgenommen; erwartete E053/W-Notes gegen Baseline gepinnt;
 TINYINT(1)↔BOOLEAN + Enum-Case datenbelegt.
 
+**Phase 2b (SQLite):** Chinook gegen eine `.db`-Datei reverse/validate/generate;
+SQLite-Eigenheiten (helper_table-Sequenzen, EXCLUDE-Block, AUTOINCREMENT) gegen
+eigene Baseline gepinnt; Daten-Zeilenzahlen Quelle = Ziel.
+
 **Phase 3 (Scale):** Employees-Transfer mit Resume nach simulierter Unterbrechung;
 Chunking belegt; Gating (scheduled Workflow oder opt-in-Target) dokumentiert;
 **nicht** im PR-Gate.
+
+**Phase 5 (Spatial):** in eigenem Folge-Slice — `--spatial-profile postgis` und
+`spatialite` end-to-end gegen je eigene Baseline; Geometrie-Typen + räumliche
+Indizes datenbelegt.
 
 **Übergreifend:** kein Dump im Repo (Cache gitignored + dockerignored);
 `make docs-check` grün.
