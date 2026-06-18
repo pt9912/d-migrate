@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.model.AggregateDefinition
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.DefaultValue
@@ -214,7 +215,7 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         result.statements.none { it.sql.contains("CREATE TABLE \"geo\"") } shouldBe true
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "views", "functions", "aggregates", "procedures", "triggers",
         )
     }
 
@@ -235,7 +236,7 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:geo", "indices:geo",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "views", "functions", "aggregates", "procedures", "triggers",
         )
     }
 
@@ -305,6 +306,7 @@ internal fun schema(
     functions: Map<String, FunctionDefinition> = emptyMap(),
     procedures: Map<String, ProcedureDefinition> = emptyMap(),
     triggers: Map<String, TriggerDefinition> = emptyMap(),
+    aggregates: Map<String, AggregateDefinition> = emptyMap(),
 ) = SchemaDefinition(
     name = "Test",
     version = "1.0.0",
@@ -313,6 +315,7 @@ internal fun schema(
     functions = functions,
     procedures = procedures,
     triggers = triggers,
+    aggregates = aggregates,
 )
 
 internal fun table(vararg cols: Pair<String, ColumnDefinition>) = TableDefinition(
@@ -431,6 +434,14 @@ internal class TestDdlGenerator(
         callOrder += "functions"
         functionOrder += functions.keys
         return functions.keys.map { DdlStatement("CREATE FUNCTION \"$it\"();") }
+    }
+
+    override fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> {
+        callOrder += "aggregates"
+        return aggregates.keys.map { DdlStatement("CREATE AGGREGATE \"$it\"();") }
     }
 
     override fun generateProcedures(

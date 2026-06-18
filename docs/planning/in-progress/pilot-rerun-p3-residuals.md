@@ -24,6 +24,23 @@ kein Modell-Typ `AggregateDefinition`). Das ist eine **echte Feature-Erweiterung
 eigener Slice. Bis dahin: dokumentierte Lücke (Views, die Custom-Aggregate nutzen,
 brauchen manuelle Nacharbeit).
 
+**✅ BEHOBEN (2026-06-18) — inkl. voller MySQL-Form (User-Entscheidung).** Neuer
+neutraler Modelltyp `AggregateDefinition` (`SchemaDefinition.aggregates`) trägt
+**zwei Formen**: PG-SQL-definiert (`SFUNC`/`STYPE`/`FINALFUNC`/…) und MySQL-Loadable-
+UDF (`RETURNS`/`SONAME`). Serialisierung (build/parse) round-trip-fähig.
+- **PG-Reverse** liest `pg_aggregate` (+ pg_proc/format_type) → `AggregateDefinition`;
+  **PG-Generate** emittiert `CREATE AGGREGATE name(types) (SFUNC=…, STYPE=…, …)`.
+- **MySQL-Reverse** liest `mysql.func` (`type='aggregate'`, best-effort bei fehlender
+  Berechtigung); **MySQL-Generate** emittiert `CREATE AGGREGATE FUNCTION … RETURNS …
+  SONAME '…'`. Beide Generatoren sind **form-bewusst**: emittieren nur die passende
+  Form, sonst E053-Skip (SQL-Aggregat ↔ Loadable-UDF sind nicht auto-übersetzbar).
+  SQLite: E054-Skip (kein DDL-Aggregat; Runtime-Registrierung).
+- **Tests:** Unit (Generate je Dialekt, MySQL-Reverse-Mapping via Mock, Serialisierungs-
+  Round-Trip beider Formen, driver-common-Orchestrierung) + **Live-PG-Integrationstest**
+  (echtes `CREATE AGGREGATE` → Reverse) + MySQL-Integrations-Resilienztest. Modell als
+  DTO in core-Kover-Exclude+Ledger. Naht: redundanter `sortViewsByDependencies`-Delegate
+  entfernt, um detekt-`TooManyFunctions` ohne `@Suppress` einzuhalten.
+
 ## N8 — Index-Namens-Kollision MySQL→PG (P3)
 
 **Repro:** MySQL erlaubt denselben Index-Namen (`idx_fk_address_id`) auf mehreren

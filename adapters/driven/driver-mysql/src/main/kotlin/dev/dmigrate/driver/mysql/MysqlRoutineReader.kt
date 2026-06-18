@@ -106,6 +106,12 @@ internal class MysqlRoutineReader {
     private companion object {
         private val TABLE_REFERENCE_PATTERN = Regex("""\b(?:FROM|JOIN)\s+\w""", RegexOption.IGNORE_CASE)
         private val FUNCTION_CALL_PATTERN = Regex("""(?i)\b([`A-Za-z_][`A-Za-z0-9_$.]*)\s*\(""")
+
+        // N7: mysql.func.ret return-type codes (MySQL UDF Item_result).
+        const val RET_STRING = 0
+        const val RET_REAL = 1
+        const val RET_INTEGER = 2
+        const val RET_DECIMAL = 5
     }
 
     fun readFunctions(
@@ -142,6 +148,36 @@ internal class MysqlRoutineReader {
             )
         }
         return result
+    }
+
+    /**
+     * N7: MySQL loadable-UDF aggregates from the legacy `mysql.func`
+     * registry (`type = 'aggregate'`). Best-effort: a restricted role
+     * without SELECT on `mysql.func` yields an empty map rather than
+     * failing the whole reverse. UDFs are server-global (not schema-scoped).
+     */
+    fun readAggregates(session: JdbcOperations): Map<String, AggregateDefinition> {
+        val rows = runCatching {
+            session.queryList("SELECT name, ret, dl FROM mysql.func WHERE type = 'aggregate' ORDER BY name")
+        }.getOrDefault(emptyList())
+        val result = LinkedHashMap<String, AggregateDefinition>()
+        for (row in rows) {
+            val name = row["name"] as? String ?: continue
+            result[name] = AggregateDefinition(
+                returnType = mysqlUdfReturnType(row["ret"]),
+                library = row["dl"] as? String,
+                sourceDialect = "mysql",
+            )
+        }
+        return result
+    }
+
+    private fun mysqlUdfReturnType(ret: Any?): String = when ((ret as? Number)?.toInt()) {
+        RET_STRING -> "STRING"
+        RET_REAL -> "REAL"
+        RET_INTEGER -> "INTEGER"
+        RET_DECIMAL -> "DECIMAL"
+        else -> "STRING"
     }
 
     fun readProcedures(

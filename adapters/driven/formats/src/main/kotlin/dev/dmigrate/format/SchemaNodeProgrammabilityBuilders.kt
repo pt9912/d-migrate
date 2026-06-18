@@ -181,6 +181,31 @@ internal fun buildSequences(
     return node
 }
 
+internal fun buildAggregates(
+    mapper: ObjectMapper,
+    aggregates: Map<String, AggregateDefinition>,
+): ObjectNode {
+    val node = mapper.createObjectNode()
+    for ((name, definition) in aggregates.entries.sortedBy { it.key }) {
+        val aggregateNode = mapper.createObjectNode()
+        if (definition.inputTypes.isNotEmpty()) {
+            val types = mapper.createArrayNode()
+            definition.inputTypes.forEach { types.add(it) }
+            aggregateNode.set<ArrayNode>("input_types", types)
+        }
+        if (definition.stateType != null) aggregateNode.put("state_type", definition.stateType)
+        if (definition.transitionFunction != null) aggregateNode.put("transition_function", definition.transitionFunction)
+        if (definition.finalFunction != null) aggregateNode.put("final_function", definition.finalFunction)
+        if (definition.initialCondition != null) aggregateNode.put("initial_condition", definition.initialCondition)
+        if (definition.sortOperator != null) aggregateNode.put("sort_operator", definition.sortOperator)
+        if (definition.returnType != null) aggregateNode.put("return_type", definition.returnType)
+        if (definition.library != null) aggregateNode.put("library", definition.library)
+        if (definition.sourceDialect != null) aggregateNode.put("source_dialect", definition.sourceDialect)
+        node.set<ObjectNode>(name, aggregateNode)
+    }
+    return node
+}
+
 private fun buildDependencies(
     mapper: ObjectMapper,
     dependencies: DependencyInfo,

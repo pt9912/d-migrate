@@ -87,6 +87,33 @@ internal fun readPostgresFunctions(
     return result
 }
 
+internal fun readPostgresAggregates(
+    session: JdbcOperations,
+    schema: String,
+): Map<String, AggregateDefinition> {
+    val rows = PostgresMetadataQueries.listAggregates(session, schema)
+    val result = LinkedHashMap<String, AggregateDefinition>()
+    for (row in rows) {
+        val name = row["name"] as String
+        val inputTypes = (row["input_args"] as? String)
+            .orEmpty()
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        // Keyed by bare name (overloaded aggregates are rare); the generator
+        // re-derives the emitted name via ObjectKeyCodec.routineName.
+        result[name] = AggregateDefinition(
+            inputTypes = inputTypes,
+            stateType = (row["state_type"] as? String).orEmpty(),
+            transitionFunction = (row["transition_function"] as? String).orEmpty(),
+            finalFunction = row["final_function"] as? String,
+            initialCondition = row["initial_condition"] as? String,
+            sourceDialect = "postgresql",
+        )
+    }
+    return result
+}
+
 internal fun readPostgresProcedures(
     session: JdbcOperations,
     schema: String,

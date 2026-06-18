@@ -75,6 +75,9 @@ object PostgresMetadataQueries {
     fun listFunctions(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
         PostgresProgrammabilityMetadataQueries.listFunctions(session, schemaName)
 
+    fun listAggregates(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
+        PostgresProgrammabilityMetadataQueries.listAggregates(session, schemaName)
+
     fun listProcedures(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
         PostgresProgrammabilityMetadataQueries.listProcedures(session, schemaName)
 

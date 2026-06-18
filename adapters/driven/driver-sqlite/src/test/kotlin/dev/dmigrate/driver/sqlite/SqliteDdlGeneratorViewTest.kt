@@ -18,7 +18,8 @@ class SqliteDdlGeneratorViewTest : FunSpec({
         views: Map<String, ViewDefinition> = emptyMap(),
         functions: Map<String, FunctionDefinition> = emptyMap(),
         procedures: Map<String, ProcedureDefinition> = emptyMap(),
-        triggers: Map<String, TriggerDefinition> = emptyMap()
+        triggers: Map<String, TriggerDefinition> = emptyMap(),
+        aggregates: Map<String, AggregateDefinition> = emptyMap()
     ) = SchemaDefinition(
         name = "test-schema",
         version = "1.0.0",
@@ -28,7 +29,8 @@ class SqliteDdlGeneratorViewTest : FunSpec({
         views = views,
         functions = functions,
         procedures = procedures,
-        triggers = triggers
+        triggers = triggers,
+        aggregates = aggregates
     )
 
     test("view produces CREATE VIEW IF NOT EXISTS without OR REPLACE") {
@@ -94,5 +96,18 @@ class SqliteDdlGeneratorViewTest : FunSpec({
         val result = generator.generate(s)
 
         result.skippedObjects.any { it.type == "view" && it.name == "empty_view" } shouldBe true
+    }
+
+    test("user-defined aggregate is skipped with E054 in SQLite (N7)") {
+        val s = schema(
+            aggregates = mapOf(
+                "group_concat" to AggregateDefinition(stateType = "internal", transitionFunction = "tf"),
+            ),
+        )
+        val result = generator.generate(s)
+        result.render() shouldNotContain "CREATE AGGREGATE"
+        result.skippedObjects.any {
+            it.type == "aggregate" && it.name == "group_concat" && it.code == "E054"
+        } shouldBe true
     }
 })

@@ -110,6 +110,48 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         return DdlStatement(sql)
     }
 
+    // ── Aggregates (N7) ──────────────────────────
+
+    fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> =
+        aggregates.mapNotNull { (key, aggregate) ->
+            generateAggregate(ObjectKeyCodec.routineName(key), aggregate, skipped)
+        }
+
+    private fun generateAggregate(
+        name: String,
+        aggregate: AggregateDefinition,
+        skipped: MutableList<SkippedObject>,
+    ): DdlStatement? {
+        if (!aggregate.isSqlDefined) {
+            val action = ManualActionRequired(
+                code = "E053", objectType = "aggregate", objectName = name,
+                reason = "Aggregate '$name' is not a PostgreSQL SQL-defined aggregate (e.g. a MySQL " +
+                    "loadable native UDF) and cannot be emitted as CREATE AGGREGATE.",
+                hint = "Re-implement '$name' as a PostgreSQL aggregate with SQL/plpgsql transition functions.",
+                sourceDialect = aggregate.sourceDialect,
+            )
+            skipped += action.toSkipped()
+            return actionRequired(action)
+        }
+        val args = if (aggregate.inputTypes.isEmpty()) "*" else aggregate.inputTypes.joinToString(", ") { it.uppercase() }
+        val clauses = buildList {
+            add("SFUNC = ${aggregate.transitionFunction}")
+            add("STYPE = ${aggregate.stateType}")
+            if (aggregate.finalFunction != null) add("FINALFUNC = ${aggregate.finalFunction}")
+            if (aggregate.initialCondition != null) add("INITCOND = '${aggregate.initialCondition}'")
+            if (aggregate.sortOperator != null) add("SORTOP = ${aggregate.sortOperator}")
+        }
+        val sql = buildString {
+            append("CREATE AGGREGATE ${quoteIdentifier(name)}($args) (\n")
+            append(clauses.joinToString(",\n") { "    $it" })
+            append("\n);")
+        }
+        return DdlStatement(sql)
+    }
+
     // ── Procedures ───────────────────────────────
 
     fun generateProcedures(

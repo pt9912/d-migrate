@@ -106,4 +106,27 @@ class MysqlRoutineReaderTest : FunSpec({
         proc.definer shouldBe "'alice'@'%'"
         proc.sqlMode shouldBe "ANSI_QUOTES"
     }
+
+    // ── readAggregates: mysql.func loadable UDFs (N7) ──
+
+    test("readAggregates maps mysql.func aggregate rows (ret code → return type, dl → library)") {
+        every { jdbc.queryList(match { it.contains("mysql.func") }) } returns listOf(
+            mapOf("name" to "my_agg", "ret" to 0, "dl" to "udf_agg.so"),
+            mapOf("name" to "sum_agg", "ret" to 2, "dl" to "udf_agg.so"),
+        )
+        val result = reader.readAggregates(jdbc)
+        result.size shouldBe 2
+        result["my_agg"]!!.returnType shouldBe "STRING"
+        result["my_agg"]!!.library shouldBe "udf_agg.so"
+        result["my_agg"]!!.sourceDialect shouldBe "mysql"
+        result["my_agg"]!!.isLoadableUdf shouldBe true
+        result["sum_agg"]!!.returnType shouldBe "INTEGER"
+    }
+
+    test("readAggregates is best-effort: a mysql.func access error yields an empty map") {
+        every {
+            jdbc.queryList(match { it.contains("mysql.func") })
+        } throws RuntimeException("SELECT command denied to user for table 'func'")
+        reader.readAggregates(jdbc) shouldBe emptyMap()
+    }
 })

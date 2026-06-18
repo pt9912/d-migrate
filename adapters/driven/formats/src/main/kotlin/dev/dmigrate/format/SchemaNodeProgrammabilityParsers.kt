@@ -119,6 +119,21 @@ internal fun parseSequences(node: JsonNode?): Map<String, SequenceDefinition> =
         )
     }
 
+internal fun parseAggregates(node: JsonNode?): Map<String, AggregateDefinition> =
+    parseNamedObjectMap(node) { childNode ->
+        AggregateDefinition(
+            inputTypes = childNode["input_types"]?.toStringList() ?: emptyList(),
+            stateType = childNode.optionalText("state_type"),
+            transitionFunction = childNode.optionalText("transition_function"),
+            finalFunction = childNode.optionalText("final_function"),
+            initialCondition = childNode.optionalText("initial_condition"),
+            sortOperator = childNode.optionalText("sort_operator"),
+            returnType = childNode.optionalText("return_type"),
+            library = childNode.optionalText("library"),
+            sourceDialect = childNode.optionalText("source_dialect"),
+        )
+    }
+
 private fun parseDependencies(node: JsonNode?): DependencyInfo? {
     if (node == null || !node.isObject) return null
     val columns = mutableMapOf<String, List<String>>()

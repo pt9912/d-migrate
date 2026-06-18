@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.model.AggregateDefinition
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintReferenceDefinition
@@ -76,6 +77,17 @@ class AbstractDdlGeneratorTest : FunSpec({
         )
         gen.generate(schema)
         (gen.functionOrder.indexOf("callee") < gen.functionOrder.indexOf("caller")) shouldBe true
+    }
+
+    test("aggregates are emitted via generateAggregates, after functions (N7)") {
+        val gen = TestDdlGenerator()
+        val schema = schema(
+            functions = linkedMapOf("f" to FunctionDefinition(body = "BEGIN END;", sourceDialect = "postgresql")),
+            aggregates = linkedMapOf("agg" to AggregateDefinition(stateType = "internal", transitionFunction = "f")),
+        )
+        gen.generate(schema)
+        ("aggregates" in gen.callOrder) shouldBe true
+        (gen.callOrder.indexOf("functions") < gen.callOrder.indexOf("aggregates")) shouldBe true
     }
 
     test("circular function call dependencies fall back to original order with W128 (K2)") {
@@ -165,7 +177,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t", "indices:t",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "views", "functions", "aggregates", "procedures", "triggers",
         )
     }
 
@@ -268,7 +280,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "views", "functions", "aggregates", "procedures", "triggers",
         )
         result.notes.any { it.code == "E055" && it.blocksTable && it.objectName == "t" } shouldBe true
         result.skippedObjects shouldContainExactly listOf(

@@ -129,6 +129,29 @@ internal object PostgresProgrammabilityMetadataQueries {
         )
     }
 
+    // N7: user-defined aggregates from pg_aggregate. The state type is the
+    // internal accumulator (`STYPE`); transition/final function names come
+    // from pg_proc; a NULL final_function (LEFT JOIN miss) means no FINALFUNC.
+    fun listAggregates(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
+        return session.queryList(
+            """
+            SELECT p.proname AS name,
+                   pg_catalog.pg_get_function_identity_arguments(p.oid) AS input_args,
+                   pg_catalog.format_type(a.aggtranstype, NULL) AS state_type,
+                   tf.proname AS transition_function,
+                   ff.proname AS final_function,
+                   a.agginitval AS initial_condition
+            FROM pg_catalog.pg_aggregate a
+            JOIN pg_catalog.pg_proc p ON p.oid = a.aggfnoid
+            JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+            JOIN pg_catalog.pg_proc tf ON tf.oid = a.aggtransfn
+            LEFT JOIN pg_catalog.pg_proc ff ON ff.oid = a.aggfinalfn
+            WHERE n.nspname = ?
+            ORDER BY p.proname
+            """.trimIndent(), schemaName,
+        )
+    }
+
     fun listProcedures(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """

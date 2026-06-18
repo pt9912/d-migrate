@@ -221,6 +221,33 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         return statements
     }
 
+    // ── Aggregates (N7) ──────────────────────────
+
+    override fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>
+    ): List<DdlStatement> = aggregates.map { (name, aggregate) ->
+        if (aggregate.isLoadableUdf) {
+            // MySQL loadable native UDF aggregate (compiled C in a shared library).
+            val returns = (aggregate.returnType ?: "STRING").uppercase()
+            DdlStatement(
+                "CREATE AGGREGATE FUNCTION ${quoteIdentifier(name)} RETURNS $returns SONAME '${aggregate.library}';"
+            )
+        } else {
+            // A SQL-defined (e.g. PostgreSQL) aggregate cannot be mechanically
+            // translated to MySQL's loadable-UDF mechanism.
+            val action = ManualActionRequired(
+                code = "E053", objectType = "aggregate", objectName = name,
+                reason = "Aggregate '$name' is SQL-defined and cannot be auto-translated to MySQL: MySQL user " +
+                    "aggregates are loadable native UDFs (CREATE AGGREGATE FUNCTION … SONAME).",
+                hint = "Re-implement '$name' as a MySQL loadable aggregate UDF, or express the aggregation " +
+                    "in application code / built-in functions.",
+            )
+            skipped += action.toSkipped()
+            DdlStatement("", notes = listOf(action.toNote()))
+        }
+    }
+
     // ── Procedures ───────────────────────────────
 
     override fun generateProcedures(

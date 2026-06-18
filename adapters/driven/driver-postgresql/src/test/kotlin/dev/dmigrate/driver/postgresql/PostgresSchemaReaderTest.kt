@@ -59,6 +59,8 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("pg_depend") && it.contains("pg_proc") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
+        // N7: user-defined aggregates from pg_aggregate.
+        every { jdbc.queryList(match { it.contains("pg_aggregate") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
         // E.1 Slice D.2: trigger ↔ function edges via pg_trigger.tgfoid → pg_proc.oid.

@@ -343,6 +343,15 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         return routineHelper.generateFunctions(functions, skipped)
     }
 
+    // ── Aggregates (N7) ──────────────────────────
+
+    override fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>
+    ): List<DdlStatement> {
+        return routineHelper.generateAggregates(aggregates, skipped)
+    }
+
     // ── Procedures ───────────────────────────────
 
     override fun generateProcedures(

@@ -19,7 +19,8 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         views: Map<String, ViewDefinition> = emptyMap(),
         functions: Map<String, FunctionDefinition> = emptyMap(),
         procedures: Map<String, ProcedureDefinition> = emptyMap(),
-        triggers: Map<String, TriggerDefinition> = emptyMap()
+        triggers: Map<String, TriggerDefinition> = emptyMap(),
+        aggregates: Map<String, AggregateDefinition> = emptyMap()
     ) = SchemaDefinition(
         name = name,
         version = version,
@@ -29,7 +30,8 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         views = views,
         functions = functions,
         procedures = procedures,
-        triggers = triggers
+        triggers = triggers,
+        aggregates = aggregates
     )
 
     fun table(
@@ -384,6 +386,42 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         result.render() shouldContain "FUNCTION \"ping\""
         result.render() shouldContain "FUNCTION \"pong\""
         result.notes.any { it.code == "W128" && it.objectName == "functions" } shouldBe true
+    }
+
+    test("user-defined aggregate generates CREATE AGGREGATE (N7)") {
+        val s = schema(
+            aggregates = mapOf(
+                "group_concat" to AggregateDefinition(
+                    inputTypes = listOf("text"),
+                    stateType = "internal",
+                    transitionFunction = "group_concat_transfn",
+                    finalFunction = "group_concat_finalfn",
+                    initialCondition = "",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE AGGREGATE \"group_concat\"(TEXT) ("
+        ddl shouldContain "SFUNC = group_concat_transfn"
+        ddl shouldContain "STYPE = internal"
+        ddl shouldContain "FINALFUNC = group_concat_finalfn"
+        ddl shouldContain "INITCOND = ''"
+    }
+
+    test("MySQL loadable-UDF aggregate cannot be emitted by PostgreSQL — skipped with E053 (N7)") {
+        val s = schema(
+            aggregates = mapOf(
+                // MySQL loadable-UDF form (library/returns, no SQL transition fn):
+                // PostgreSQL has no way to emit it as CREATE AGGREGATE.
+                "custom_agg" to AggregateDefinition(
+                    returnType = "STRING", library = "udf_agg.so", sourceDialect = "mysql",
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldNotContain "CREATE AGGREGATE \"custom_agg\""
+        result.notes.any { it.code == "E053" && it.objectName == "custom_agg" } shouldBe true
     }
 
     test("plpgsql body with RETURN NEXT yields RETURNS SETOF (K2)") {

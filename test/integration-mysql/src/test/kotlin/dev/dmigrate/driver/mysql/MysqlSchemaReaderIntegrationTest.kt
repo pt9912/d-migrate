@@ -138,6 +138,21 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
+    // ── Aggregates (N7) ─────────────────────────
+
+    test("reverse is resilient to mysql.func access restrictions — aggregates best-effort (N7)") {
+        // A real loadable-UDF aggregate needs a compiled `.so` on the server
+        // (infeasible in a vanilla container), and the test role has no
+        // privilege on `mysql.func`. readAggregates is best-effort: the live
+        // reverse must still succeed and yield no aggregates rather than
+        // failing the whole read. The happy-path ret→type / dl→library mapping
+        // is covered by MysqlRoutineReaderTest (mocked mysql.func rows).
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeFunctions = true))
+            result.schema.aggregates shouldBe emptyMap()
+        }
+    }
+
     // ── Tables with engine ──────────────────────
 
     test("reads tables with engine metadata") {

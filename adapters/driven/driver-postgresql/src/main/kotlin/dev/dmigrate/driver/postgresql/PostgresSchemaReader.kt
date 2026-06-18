@@ -36,6 +36,9 @@ class PostgresSchemaReader(
             readPostgresExtensionNotes(session, notes)
             val views = if (options.includeViews) readPostgresViews(session, schema) else emptyMap()
             val functions = if (options.includeFunctions) readPostgresFunctions(session, schema) else emptyMap()
+            // N7: user-defined aggregates are routine-like; gate them with the
+            // same flag as functions (they reference transition/final functions).
+            val aggregates = if (options.includeFunctions) readPostgresAggregates(session, schema) else emptyMap()
             val procedures = if (options.includeProcedures) readPostgresProcedures(session, schema) else emptyMap()
             val triggers = if (options.includeTriggers) readPostgresTriggers(session, schema) else emptyMap()
 
@@ -49,6 +52,7 @@ class PostgresSchemaReader(
                 functions = functions,
                 procedures = procedures,
                 triggers = triggers,
+                aggregates = aggregates,
             )
 
             return SchemaReadResult(schema = schemaDef, notes = notes, skippedObjects = skipped)

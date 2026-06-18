@@ -26,5 +26,6 @@ internal object SchemaNodeParser {
         views = parseViews(root["views"]),
         triggers = parseTriggers(root["triggers"]),
         sequences = parseSequences(root["sequences"]),
+        aggregates = parseAggregates(root["aggregates"]),
     )
 }

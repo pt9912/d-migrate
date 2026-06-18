@@ -73,7 +73,7 @@ abstract class AbstractDdlGenerator(
         }
 
         // ─── Views (split into PRE_DATA / POST_DATA) ───────────
-        val sortedViews = sortViewsByDependencies(schema.views)
+        val sortedViews = DdlGenerationSupport.sortViewsByDependencies(schema.views)
         statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
 
         val globalNotes = mutableListOf<TransformationNote>()
@@ -97,6 +97,12 @@ abstract class AbstractDdlGenerator(
         val sortedFunctions = DdlGenerationSupport.sortFunctionsByDependencies(schema.functions)
         statements += sortedFunctions.notes.map { DdlStatement("", notes = listOf(it)) }.withPhase(DdlPhase.POST_DATA)
         statements += generateFunctions(sortedFunctions.sorted, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        preSkipCount = skipped.size
+        // N7: user-defined aggregates depend on their transition/final
+        // functions, so emit them after the functions block (POST_DATA).
+        statements += generateAggregates(schema.aggregates, skipped).withPhase(DdlPhase.POST_DATA)
         tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
         preSkipCount = skipped.size
@@ -133,6 +139,7 @@ abstract class AbstractDdlGenerator(
     abstract fun handleCircularReferences(edges: List<CircularFkEdge>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateViews(views: Map<String, ViewDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateFunctions(functions: Map<String, FunctionDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
+    abstract fun generateAggregates(aggregates: Map<String, AggregateDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateProcedures(procedures: Map<String, ProcedureDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
@@ -238,7 +245,4 @@ abstract class AbstractDdlGenerator(
 
     protected fun topologicalSort(tables: Map<String, TableDefinition>): TopologicalSortResult =
         DdlGenerationSupport.topologicalSort(tables)
-
-    protected fun sortViewsByDependencies(views: Map<String, ViewDefinition>): ViewSortResult =
-        DdlGenerationSupport.sortViewsByDependencies(views)
 }

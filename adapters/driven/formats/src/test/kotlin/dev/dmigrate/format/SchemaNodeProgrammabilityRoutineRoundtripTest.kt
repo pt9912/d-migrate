@@ -1,6 +1,7 @@
 package dev.dmigrate.format
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.dmigrate.core.model.AggregateDefinition
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ProcedureDefinition
@@ -67,6 +68,53 @@ class SchemaNodeProgrammabilityRoutineRoundtripTest : FunSpec({
         parsed.definer shouldBe "owner_role"
         parsed.searchPath shouldContainExactly listOf("public")
         parsed.sqlMode shouldBe "ANSI"
+    }
+
+    test("AggregateDefinition roundtrip preserves all CREATE AGGREGATE attrs (N7)") {
+        val aggregate = AggregateDefinition(
+            inputTypes = listOf("text"),
+            stateType = "internal",
+            transitionFunction = "group_concat_transfn",
+            finalFunction = "group_concat_finalfn",
+            initialCondition = "init_val",
+            sortOperator = "<",
+            sourceDialect = "postgresql",
+        )
+        val schema = SchemaDefinition(name = "App", version = "1", aggregates = mapOf("group_concat" to aggregate))
+        val parsed = roundtrip(schema).aggregates["group_concat"]!!
+        parsed.inputTypes shouldContainExactly listOf("text")
+        parsed.stateType shouldBe "internal"
+        parsed.transitionFunction shouldBe "group_concat_transfn"
+        parsed.finalFunction shouldBe "group_concat_finalfn"
+        parsed.initialCondition shouldBe "init_val"
+        parsed.sortOperator shouldBe "<"
+        parsed.sourceDialect shouldBe "postgresql"
+    }
+
+    test("MySQL loadable-UDF AggregateDefinition roundtrips (return type + library) (N7)") {
+        val aggregate = AggregateDefinition(
+            returnType = "STRING",
+            library = "udf_agg.so",
+            sourceDialect = "mysql",
+        )
+        val schema = SchemaDefinition(name = "App", version = "1", aggregates = mapOf("my_agg" to aggregate))
+        val parsed = roundtrip(schema).aggregates["my_agg"]!!
+        parsed.returnType shouldBe "STRING"
+        parsed.library shouldBe "udf_agg.so"
+        parsed.sourceDialect shouldBe "mysql"
+        parsed.isLoadableUdf shouldBe true
+        parsed.stateType shouldBe null
+    }
+
+    test("aggregate without optional attrs roundtrips with nulls/empties (N7)") {
+        val aggregate = AggregateDefinition(stateType = "numeric", transitionFunction = "sum_tf")
+        val schema = SchemaDefinition(name = "App", version = "1", aggregates = mapOf("mysum" to aggregate))
+        val parsed = roundtrip(schema).aggregates["mysum"]!!
+        parsed.stateType shouldBe "numeric"
+        parsed.transitionFunction shouldBe "sum_tf"
+        parsed.finalFunction shouldBe null
+        parsed.inputTypes shouldContainExactly emptyList()
+        parsed.sourceDialect shouldBe null
     }
 
     test("absent identity attrs roundtrip as null (terse legacy schema files keep their shape)") {

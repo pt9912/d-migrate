@@ -123,6 +123,7 @@ Permanent reference tokens:
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedTrigger` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedView` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.ValueChange` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.AggregateDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ColumnDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ConstraintDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ConstraintReferenceDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |

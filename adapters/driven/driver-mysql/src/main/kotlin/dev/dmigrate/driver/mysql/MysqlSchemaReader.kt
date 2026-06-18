@@ -36,6 +36,8 @@ class MysqlSchemaReader(
             }
             val views = if (options.includeViews) routineReader.readViews(session, metaDb, visibleFunctionNames) else emptyMap()
             val functions = if (options.includeFunctions) routineReader.readFunctions(session, metaDb) else emptyMap()
+            // N7: MySQL loadable-UDF aggregates (server-global, from mysql.func).
+            val aggregates = if (options.includeFunctions) routineReader.readAggregates(session) else emptyMap()
             val procedures = if (options.includeProcedures) routineReader.readProcedures(session, metaDb) else emptyMap()
             val triggers = if (options.includeTriggers) routineReader.readTriggers(session, metaDb) else emptyMap()
 
@@ -62,6 +64,7 @@ class MysqlSchemaReader(
                 procedures = procedures,
                 triggers = filteredTriggers,
                 sequences = d2Result.sequences,
+                aggregates = aggregates,
             )
 
             // E.1 Slice C.2: best-effort server-version probe.

@@ -153,6 +153,10 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
                     BEFORE INSERT ON customers
                     FOR EACH ROW EXECUTE FUNCTION trg_fn()
                 """)
+
+                // User-defined aggregate (N7) — uses the built-in int4pl
+                // transition function so the fixture is self-contained.
+                stmt.execute("CREATE AGGREGATE my_sum(integer) (SFUNC = int4pl, STYPE = integer, INITCOND = '0')")
             }
         }
         pool.close()
@@ -182,6 +186,21 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             scope["dialect"] shouldBe "postgresql"
             scope["database"] shouldBe "dmigrate_test"
             scope["schema"] shouldNotBe null
+        }
+    }
+
+    // ── Aggregates (N7) ─────────────────────────
+
+    test("reads user-defined aggregates from pg_aggregate (N7)") {
+        pool().use { pool ->
+            val aggregate = reader.read(pool).schema.aggregates["my_sum"]
+            aggregate shouldNotBe null
+            aggregate!!.stateType shouldBe "integer"
+            aggregate.transitionFunction shouldBe "int4pl"
+            aggregate.initialCondition shouldBe "0"
+            aggregate.inputTypes shouldBe listOf("integer")
+            aggregate.sourceDialect shouldBe "postgresql"
+            aggregate.isSqlDefined shouldBe true
         }
     }
 
