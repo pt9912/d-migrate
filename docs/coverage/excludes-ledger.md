@@ -92,6 +92,7 @@ Permanent reference tokens:
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataImportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataProfileCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataTransferCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DefaultMcpServeLauncher*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Blocking in-process MCP server start + retention/finalisation sweep loops; covered via `:test:integration-server-state`. Extracted as an injectable seam from `McpServeRunner` to de-flake cli koverVerify (multi-threaded coverage registration under `org.gradle.parallel`). |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DefaultServerStateFactory*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Hikari/Flyway/Postgres default factory; covered via integration and fake factory unit paths. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommandsKt*` | `permanent: cli-command-shell-pattern` | Command helper shell for Clikt dispatch. |
@@ -101,6 +102,8 @@ Permanent reference tokens:
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportLiquibaseCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportParams*` | `permanent: cli-command-shell-pattern` | Private parameter carrier for excluded command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.JdbcMigrationExecutor*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | JDBC execution helper; integration-bound. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.McpCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell (mcp parent); subcommand wiring only. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.McpServeCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; option parsing + McpServeOptions mapping, logic in McpServeRunner/DefaultMcpServeLauncher. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.MigrateRendererRegistry*` | `permanent: thin-dispatch-table` | Thin renderer dispatch table. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCompareCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
