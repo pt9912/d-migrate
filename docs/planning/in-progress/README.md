@@ -57,8 +57,8 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
+| [`pilot-rerun-p3-residuals.md`](pilot-rerun-p3-residuals.md) | Sammlung/Tracker (in Umsetzung) | P3-Restbefunde der 0.9.9-Re-Runs — N7 (Custom-Aggregat-Reverse), N8 (PG schema-globale Index-Namen-Dedup), K2 (Routinen-Topologie fuer `--include-all`). Fuer 1.0.0 aufgenommen (2026-06-18); wandert nach `../done/`, sobald alle drei Slices geliefert sind. |
 
 > Der Pilot-Validierungszyklus 0.9.9 ist abgeschlossen — alle fuenf Reports
 > (Erstlauf, Re-Run 1-4) und der P2-Tracker liegen in `../done-archive/`
-> (rerun4 mit Closure-Nachtrag). Offene P3-Restbefunde (N7/N8/K2):
-> [`../open/pilot-rerun-p3-residuals.md`](../open/pilot-rerun-p3-residuals.md).
+> (rerun4 mit Closure-Nachtrag).

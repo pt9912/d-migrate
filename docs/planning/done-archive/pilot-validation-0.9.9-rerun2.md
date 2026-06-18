@@ -87,7 +87,7 @@ Container im selben Docker-Netz, `/work`-Mount.
   Zusätzlich Regressions-Sweep I-01…I-10.
 - **Bewusste Nicht-Ziele — nicht als Bug gewertet:** N7 (Custom-Aggregat von
   reverse nicht erfasst) und N8 (MySQL→PG Index-Namens-Kollision) sind als P3 in
-  [`pilot-rerun-p3-residuals.md`](../open/pilot-rerun-p3-residuals.md) getrackt;
+  [`pilot-rerun-p3-residuals.md`](../in-progress/pilot-rerun-p3-residuals.md) getrackt;
   View-/Function-/Trigger-Body-Transpilation ist ein Nicht-Ziel (`E053`-Skip ist
   korrekt); PK-/Constraint-Präfixlängen sind out of scope
   ([ADR 0012](../../adr/0012-index-prefix-length-scope.md)).
@@ -202,13 +202,13 @@ sauber. Vor dem 1.0.0-RC bleibt im Kern **ein** strukturell wichtiger Punkt:
    `--include-all`-relevant).
 
 N7/N8 bleiben bewusst als P3 offen
-([`pilot-rerun-p3-residuals.md`](../open/pilot-rerun-p3-residuals.md)).
+([`pilot-rerun-p3-residuals.md`](../in-progress/pilot-rerun-p3-residuals.md)).
 
 ---
 
 ## 12. Verwandte Dokumente
 
-- [Erstlauf](pilot-validation-0.9.9.md) · [Re-Run 1](pilot-validation-0.9.9-rerun.md) · [P2-Blocker-Tracker](pilot-blocker-p2-tracker.md) · [P3-Restbefunde](../open/pilot-rerun-p3-residuals.md)
+- [Erstlauf](pilot-validation-0.9.9.md) · [Re-Run 1](pilot-validation-0.9.9-rerun.md) · [P2-Blocker-Tracker](pilot-blocker-p2-tracker.md) · [P3-Restbefunde](../in-progress/pilot-rerun-p3-residuals.md)
 - [Migrations-Leitfaden](../../user/migrations-leitfaden.md) · [`guide.md`](../../user/guide.md) · [API-Referenz](../../user/api-referenz.md) · [`spec/cli-spec.md`](../../../spec/cli-spec.md)
 - [ADR 0004](../../adr/0004-documentation-and-planning-structure.md) · [ADR 0012](../../adr/0012-index-prefix-length-scope.md) · [Pilot-Validierungs-Playbook](../../operations/pilot-validation-playbook.md)
 - [Test-Database-Candidates](../open/test-database-candidates.md)

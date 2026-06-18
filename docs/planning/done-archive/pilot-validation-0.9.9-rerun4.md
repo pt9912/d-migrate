@@ -88,7 +88,7 @@ selben Docker-Netz, `/work`-Mount.
 - **Regression datenbelegt:** Zeilenzahlen + Stichproben je Pfad; M2-Gegenprobe
   explizit; M1 + N6 am Pagila-`last_updated`-Pfad.
 - **Bewusste Nicht-Ziele — nicht als Bug gewertet:** K2 (Routinen-Ordering), N7,
-  N8 (P3-Tracker [`pilot-rerun-p3-residuals.md`](../open/pilot-rerun-p3-residuals.md));
+  N8 (P3-Tracker [`pilot-rerun-p3-residuals.md`](../in-progress/pilot-rerun-p3-residuals.md));
   View-/Function-/Trigger-Body-Transpilation (`E053`-Skip korrekt);
   PK-/Constraint-Präfixlängen ([ADR 0012](../../adr/0012-index-prefix-length-scope.md)).
 
@@ -209,7 +209,7 @@ N1–N6, M1, M2, K1) sind behoben. **Ein** neuer P2 bleibt:
    zu prüfen, ob andere PG-Extension-Typen denselben Pfad nehmen.)
 
 P3 bleibt bewusst offen (K2/N7/N8,
-[`pilot-rerun-p3-residuals.md`](../open/pilot-rerun-p3-residuals.md)). Mit L1
+[`pilot-rerun-p3-residuals.md`](../in-progress/pilot-rerun-p3-residuals.md)). Mit L1
 geschlossen wäre kein P1/P2-Cross-Dialect-Befund aus allen fünf Pilot-Läufen mehr
 offen.
 
@@ -235,7 +235,7 @@ der Report nach `done-archive/` (Pilot-Validierungszyklus 0.9.9 abgeschlossen).
 
 ## 12. Verwandte Dokumente
 
-- [Erstlauf](pilot-validation-0.9.9.md) · [Re-Run 1](pilot-validation-0.9.9-rerun.md) · [Re-Run 2](pilot-validation-0.9.9-rerun2.md) · [Re-Run 3](pilot-validation-0.9.9-rerun3.md) · [P3-Restbefunde](../open/pilot-rerun-p3-residuals.md)
+- [Erstlauf](pilot-validation-0.9.9.md) · [Re-Run 1](pilot-validation-0.9.9-rerun.md) · [Re-Run 2](pilot-validation-0.9.9-rerun2.md) · [Re-Run 3](pilot-validation-0.9.9-rerun3.md) · [P3-Restbefunde](../in-progress/pilot-rerun-p3-residuals.md)
 - [Migrations-Leitfaden](../../user/migrations-leitfaden.md) · [`guide.md`](../../user/guide.md) · [API-Referenz](../../user/api-referenz.md) · [`spec/cli-spec.md`](../../../spec/cli-spec.md)
 - [ADR 0004](../../adr/0004-documentation-and-planning-structure.md) · [ADR 0012](../../adr/0012-index-prefix-length-scope.md) · [Pilot-Validierungs-Playbook](../../operations/pilot-validation-playbook.md)
 - [Test-Database-Candidates](../open/test-database-candidates.md)

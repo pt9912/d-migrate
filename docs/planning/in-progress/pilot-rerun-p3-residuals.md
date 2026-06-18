@@ -1,6 +1,6 @@
 # Pilot-Re-Run-P3-Restbefunde (N7, N8, K2)
 
-> **Status:** Sammlung/Tracker (erstellt 2026-06-17, Stand 2026-06-18 — Pilot-Zyklus abgeschlossen)
+> **Status:** In Umsetzung (aufgenommen 2026-06-18) — N7, N8, K2 werden für 1.0.0 implementiert. Pilot-Zyklus 0.9.9 abgeschlossen (alle P1/P2 behoben). Wandert nach `../done/` mit Closure, sobald alle drei Slices geliefert sind.
 > **Trigger:** Die 0.9.9-Re-Validierungsläufe
 > ([`../done-archive/pilot-validation-0.9.9-rerun.md`](../done-archive/pilot-validation-0.9.9-rerun.md),
 > [`../done-archive/pilot-validation-0.9.9-rerun3.md`](../done-archive/pilot-validation-0.9.9-rerun3.md))
@@ -8,8 +8,8 @@
 > Re-Run 1; K2 aus Re-Run 3). Keiner ist RC-blockierend; es sind Feature-Lücken
 > bzw. generatorweite/Ordnungs-Themen — daher hier getrackt statt in den engen
 > Fix-Runden mitgezogen.
-> **Aktivierungsbedingung:** vor 1.0.0 nacharbeiten oder bewusst nach 1.0.x
-> verschieben; bei Aufnahme wandert der Eintrag nach `../next/`.
+> **Disposition (2026-06-18):** Für 1.0.0 aufgenommen und direkt in Umsetzung
+> (User-Entscheidung) — daher in `in-progress/`. Fortschritt je Befund unten.
 
 ## N7 — Benutzerdefiniertes Aggregat wird von reverse nicht erfasst (P3, Feature)
 
