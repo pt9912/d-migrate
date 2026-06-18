@@ -92,7 +92,11 @@ abstract class AbstractDdlGenerator(
 
         // ─── POST_DATA ───────────────────────────────────────────
         preSkipCount = skipped.size
-        statements += generateFunctions(schema.functions, skipped).withPhase(DdlPhase.POST_DATA)
+        // K2: emit functions in call-dependency order (callee before caller)
+        // so PostgreSQL's CREATE-time body validation does not hit forward refs.
+        val sortedFunctions = DdlGenerationSupport.sortFunctionsByDependencies(schema.functions)
+        statements += sortedFunctions.notes.map { DdlStatement("", notes = listOf(it)) }.withPhase(DdlPhase.POST_DATA)
+        statements += generateFunctions(sortedFunctions.sorted, skipped).withPhase(DdlPhase.POST_DATA)
         tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
         preSkipCount = skipped.size

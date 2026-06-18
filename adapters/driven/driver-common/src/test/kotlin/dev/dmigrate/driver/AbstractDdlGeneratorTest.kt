@@ -66,6 +66,31 @@ class AbstractDdlGeneratorTest : FunSpec({
         (gen.tableOrder.indexOf("users") < gen.tableOrder.indexOf("orders")) shouldBe true
     }
 
+    test("functions are emitted callee-before-caller by inferred call edges (K2)") {
+        val gen = TestDdlGenerator()
+        val schema = schema(
+            functions = linkedMapOf(
+                "caller" to FunctionDefinition(body = "BEGIN RETURN callee(); END;", sourceDialect = "postgresql"),
+                "callee" to FunctionDefinition(body = "BEGIN RETURN 1; END;", sourceDialect = "postgresql"),
+            ),
+        )
+        gen.generate(schema)
+        (gen.functionOrder.indexOf("callee") < gen.functionOrder.indexOf("caller")) shouldBe true
+    }
+
+    test("circular function call dependencies fall back to original order with W128 (K2)") {
+        val gen = TestDdlGenerator()
+        val schema = schema(
+            functions = linkedMapOf(
+                "ping" to FunctionDefinition(body = "BEGIN RETURN pong(); END;", sourceDialect = "postgresql"),
+                "pong" to FunctionDefinition(body = "BEGIN RETURN ping(); END;", sourceDialect = "postgresql"),
+            ),
+        )
+        val result = gen.generate(schema)
+        gen.functionOrder shouldContainExactly listOf("ping", "pong")
+        result.notes.any { it.code == "W128" && it.objectName == "functions" } shouldBe true
+    }
+
     test("topologicalSort orders composite FK constraints before their dependents") {
         val gen = TestDdlGenerator()
         val schema = schema(

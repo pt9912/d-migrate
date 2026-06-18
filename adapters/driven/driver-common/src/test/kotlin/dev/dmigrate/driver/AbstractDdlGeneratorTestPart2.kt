@@ -345,6 +345,7 @@ internal class TestDdlGenerator(
     val callOrder = mutableListOf<String>()
     val tableOrder = mutableListOf<String>()
     val viewOrder = mutableListOf<String>()
+    val functionOrder = mutableListOf<String>()
     val circularEdges = mutableListOf<CircularFkEdge>()
     val deferredForeignKeys = mutableListOf<DeferredForeignKey>()
 
@@ -428,6 +429,7 @@ internal class TestDdlGenerator(
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         callOrder += "functions"
+        functionOrder += functions.keys
         return functions.keys.map { DdlStatement("CREATE FUNCTION \"$it\"();") }
     }
 

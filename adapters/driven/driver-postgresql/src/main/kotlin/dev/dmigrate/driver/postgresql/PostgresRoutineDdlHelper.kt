@@ -93,8 +93,12 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
         val returns = fn.returns?.let {
             val type = it.type.uppercase()
-            val params = if (it.precision != null) "(${it.precision}${if (it.scale != null) ",${it.scale}" else ""})" else ""
-            " RETURNS $type$params"
+            val precision = if (it.precision != null) "(${it.precision}${if (it.scale != null) ",${it.scale}" else ""})" else ""
+            // K2: a plpgsql body using `RETURN NEXT` / `RETURN QUERY` is
+            // set-returning; emit SETOF so the CREATE matches the body (the
+            // reverse return-type projection does not carry the set flag).
+            val setof = if (!type.contains("SETOF") && isSetReturningBody(body)) "SETOF " else ""
+            " RETURNS $setof$type$precision"
         } ?: ""
         val language = fn.language ?: "plpgsql"
 
@@ -232,4 +236,8 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
     /** N6: true when the body is already a PG trigger action (`EXECUTE FUNCTION/PROCEDURE …`). */
     private fun isExecuteActionStatement(body: String): Boolean =
         body.trimStart().matches(Regex("(?is)^EXECUTE\\s+(FUNCTION|PROCEDURE)\\s+.+"))
+
+    /** K2: true when a plpgsql body returns a set (`RETURN NEXT` / `RETURN QUERY`). */
+    private fun isSetReturningBody(body: String): Boolean =
+        Regex("(?i)\\bRETURN\\s+(NEXT|QUERY)\\b").containsMatchIn(body)
 }

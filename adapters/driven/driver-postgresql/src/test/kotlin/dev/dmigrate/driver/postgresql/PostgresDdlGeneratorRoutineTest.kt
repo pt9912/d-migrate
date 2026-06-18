@@ -339,4 +339,81 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         ddl shouldContain "INOUT \"a\" INTEGER"
         ddl shouldContain "INOUT \"b\" INTEGER"
     }
+
+    test("functions are emitted in call-dependency order — callee before caller (K2)") {
+        // Map insertion order puts the CALLER first; PostgreSQL validates
+        // `LANGUAGE sql` bodies at CREATE, so the callee must be emitted
+        // first. The generator infers the call edge from the body.
+        val s = schema(
+            functions = linkedMapOf(
+                "film_in_stock" to FunctionDefinition(
+                    parameters = listOf(ParameterDefinition(name = "p_film_id", type = "INTEGER")),
+                    returns = ReturnType(type = "INTEGER"),
+                    language = "sql",
+                    body = "SELECT inventory_id FROM inventory WHERE inventory_in_stock(inventory_id);",
+                    sourceDialect = "postgresql",
+                ),
+                "inventory_in_stock" to FunctionDefinition(
+                    parameters = listOf(ParameterDefinition(name = "p_inventory_id", type = "INTEGER")),
+                    returns = ReturnType(type = "BOOLEAN"),
+                    language = "sql",
+                    body = "SELECT true;",
+                    sourceDialect = "postgresql",
+                ),
+            )
+        )
+        val ddl = generator.generate(s).render()
+        (ddl.indexOf("FUNCTION \"inventory_in_stock\"") < ddl.indexOf("FUNCTION \"film_in_stock\"")) shouldBe true
+    }
+
+    test("circular function call dependency falls back to original order with W128 (K2)") {
+        val s = schema(
+            functions = linkedMapOf(
+                "ping" to FunctionDefinition(
+                    returns = ReturnType(type = "INTEGER"), language = "sql",
+                    body = "SELECT pong();", sourceDialect = "postgresql",
+                ),
+                "pong" to FunctionDefinition(
+                    returns = ReturnType(type = "INTEGER"), language = "sql",
+                    body = "SELECT ping();", sourceDialect = "postgresql",
+                ),
+            )
+        )
+        val result = generator.generate(s)
+        // Both are still emitted (not dropped); the cycle is surfaced, not silent.
+        result.render() shouldContain "FUNCTION \"ping\""
+        result.render() shouldContain "FUNCTION \"pong\""
+        result.notes.any { it.code == "W128" && it.objectName == "functions" } shouldBe true
+    }
+
+    test("plpgsql body with RETURN NEXT yields RETURNS SETOF (K2)") {
+        val s = schema(
+            functions = mapOf(
+                "list_ids" to FunctionDefinition(
+                    returns = ReturnType(type = "integer"),
+                    language = "plpgsql",
+                    body = "BEGIN\n  RETURN NEXT 1;\n  RETURN NEXT 2;\nEND;",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "RETURNS SETOF INTEGER"
+    }
+
+    test("scalar plpgsql body (RETURN NEW) does NOT get SETOF (K2)") {
+        val s = schema(
+            functions = mapOf(
+                "touch" to FunctionDefinition(
+                    returns = ReturnType(type = "trigger"),
+                    language = "plpgsql",
+                    body = "BEGIN NEW.updated = now(); RETURN NEW; END;",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "RETURNS TRIGGER"
+        ddl shouldNotContain "SETOF"
+    }
 })

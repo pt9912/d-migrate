@@ -62,6 +62,18 @@ plus korrekte `RETURNS SETOF`-Ableitung bei `RETURN NEXT`. Vorbestehend, nur
 `--include-all`, gleiche `--include-all`-Residualklasse wie N7/N8 — eigener,
 fokussierter Slice (Reverse-Dependency-Extraktion + Emissions-Sortierung).
 
+**✅ BEHOBEN (2026-06-18).** `DdlGenerationSupport.sortFunctionsByDependencies`
+ordnet Funktionen vor der Emission topologisch (Callee vor Caller);
+`AbstractDdlGenerator.generate()` wendet es dialekt-übergreifend an. Die
+Funktion→Funktion-Kanten werden **zur Generate-Zeit aus den Bodies inferiert**
+(Aufruf-Form `callee(`), analog zur bestehenden View-Query-Inferenz — die
+Reverse-Reader befüllen `DependencyInfo.functions` nicht. Zyklen fallen mit
+**W128** auf die Original-Reihenfolge zurück. `RETURNS SETOF` wird in
+`PostgresRoutineDdlHelper` aus `RETURN NEXT`/`RETURN QUERY` im Body abgeleitet.
+Tests: driver-common (Ordering + Zyklus/W128 über `TestDdlGenerator.functionOrder`)
+und driver-postgresql (Ordering, Zyklus, SETOF, Negativ-Fall `RETURN NEW`). Kein
+Golden-Churn (keine Cross-Funktions-Aufrufkanten in den Fixtures).
+
 ## Abgrenzung (bereits gefixt)
 
 Alle P1/P2-Befunde der **fünf** Pilot-Läufe sind erledigt (Commits auf `develop`):
