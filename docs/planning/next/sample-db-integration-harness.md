@@ -1,136 +1,112 @@
-# Plan: Automatisierter Sample-DB-Integrationstest-Harness
+# Plan: Sample-DB-E2E-Harness (docker-compose + Scripts)
 
 > Dokumenttyp: Umsetzungsplan (Slice)
-> Status: Entwurf (2026-06-18, Review-Update 2026-06-18). Phase 0 (Sourcing) via
-> [ADR 0013](../../adr/0013-sample-db-sourcing.md) entschieden 2026-06-18.
+> Status: Entwurf (2026-06-18, Review- + Design-Update 2026-06-18). Phase 0
+> (Sourcing **und** Mechanik) via [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
+> entschieden (supersedet ADR 0013).
 > Roadmap-Slot: Phase 1–2 (Smoke/Compatibility) = Test-Infrastruktur; Phase 3
-> (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC) ist ein eigener Folge-Slice**
-> (deckt **LF 8.1** 1 Mio. Datensätze / **LF 8.2** 1000 Tabellen < 30 s ab — heute
-> 🔮 in der Roadmap), kein Teil dieses Slice.
+> (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC, LF 8.1/8.2) = eigener Folge-Slice**.
 > Referenzen: [`../open/test-database-candidates.md`](../open/test-database-candidates.md)
 > (Kandidaten-Katalog), [`../../operations/pilot-validation-playbook.md`](../../operations/pilot-validation-playbook.md)
-> (Szenarien-Vorlage), ADR 0004 (Planning-Struktur), ADR 0012 (Index-Präfix-Scope,
-> Beispiel einer bewussten Round-Trip-Lücke).
+> (Szenarien-Vorlage), [bi-demo](../../../examples/bi-demo/README.md) (Harness-Muster),
+> ADR 0014 (Sourcing + Mechanik), ADR 0004 (Planning-Struktur).
 
 ## Ziel
 
 Die im Pilot bewährten Sample-DBs (Pagila, Sakila; Employees für Scale) als
-**reproduzierbare CI-Integrationstests** operationalisieren: Container starten →
-Dump laden → `reverse` → `validate` → `generate --split` → Zielschema anlegen →
-`data transfer` → `schema compare`. Schließt die Lücke „Smoke/Compatibility liefen
-bisher nur ad-hoc im Pilot, nicht automatisiert".
+**reproduzierbare End-to-End-Tests gegen das echte CLI** operationalisieren:
+Container hoch → Dump laden → `reverse` → `validate` → `generate --split` →
+Zielschema → `data transfer` → `schema compare`. Schließt die Lücke
+„Smoke/Compatibility liefen bisher nur ad-hoc im Pilot, nicht automatisiert".
+
+## Design (ADR 0014)
+
+- **Mechanik = docker-compose + bash-Scripts + echtes `d-migrate:dev`-Image**,
+  exakt das Muster von `examples/bi-demo/` — **kein** Testcontainers, **kein**
+  Gradle-Testmodul. Läuft **lokal** (`make sample-db-smoke`) *und* in CI (Workflow
+  analog `bi-demo-smoke.yml`).
+- **Platzierung = `examples/sample-db/`** (Geschwister von bi-demo), kein neuer <!-- d-check:ignore (geplanter Harness-Ordner, existiert noch nicht; ADR 0011) -->
+  Root. `test/` bleibt Gradle-Modulen vorbehalten.
+- **Sourcing = On-Demand-Fetch**: ein Script lädt die **gepinnten**,
+  **SHA256-verifizierten** Dumps in einen gitignored Cache (auch in
+  `.dockerignore`). Kein Dump im Repo. Employees nur opt-in/nightly.
 
 ## Slice-Grenze (DoD-Boundary)
 
-**Dieser Slice umfasst Phase 0–3.** Phase 4 (TPC-H/-DS-Performance, LF 8.1/8.2)
-ist ein **separater 1.0.0-QA-Slice** und hier nur als Forward-Pointer geführt.
-Der Slice ist *fertig*, wenn Phase 1+2 als PR-Gate-Integrationstests grün laufen
-und Phase 3 (Scale) als opt-in/nightly verfügbar ist.
-
-## Pivotale Design-Entscheidung — Dump-Sourcing (ADR-würdig, Phase 0)
-
-Die Sample-Dumps sind externe Artefakte. Optionen mit echten Trade-offs:
-
-| Option | Reproduzierbar/offline | Footprint | Lizenz-Sorgfalt | CI-Determinismus |
-| ------ | ---------------------- | --------- | --------------- | ---------------- |
-| **A — vendoren** (Test-Ressource, Testcontainers `withInitScript`) | ✅ | ⚠️ Repo wächst (Pagila/Sakila klein; Employees groß) | Dump + Lizenz mitcheckbar | ✅ |
-| **B — zur Testzeit von URL laden** | ❌ (Netz nötig) | ✅ keiner | nur Verweis | ❌ Flaky / offline-Build bricht |
-| **C — Hybrid** | teils | gemischt | gemischt | teils |
-
-**Entschieden in [ADR 0013](../../adr/0013-sample-db-sourcing.md):** **A für
-Pagila/Sakila** (vendored, gepinnt, offline-fähig → PR-Gate), **C für Employees**
-(on-demand/nightly, nicht eingecheckt — Footprint + CC-BY-SA). Zwingend: **gepinnte
-Quelle** (Commit-SHA/Release-Tag, nicht `main` wie im Katalog).
-
-**Lizenz-Hinweis (Grund für den Hybrid-Schnitt):** Employees (`datacharmer/test_db`)
-steht unter **CC-BY-SA** (Attribution + Share-Alike) — Vendoren erfordert
-Attribution und vergrößert das Repo deutlich; daher on-demand/nightly statt
-eingecheckt. Pagila/Sakila-Lizenzen (PostgreSQL- bzw. Sakila/BSD-nah) im
-Sourcing-ADR konkret festhalten.
+**Dieser Slice = Phase 0–3.** Phase 4 (TPC, LF 8.1/8.2) ist ein separater
+1.0.0-QA-Slice (Forward-Pointer). Fertig, wenn Phase 1+2 als CI-Smoke (und lokal)
+grün laufen und Phase 3 (Scale) als opt-in/nightly verfügbar ist.
 
 ## Objekt-Scope der Assertion (in-scope vs. erwarteter Skip)
 
-Pagila/Sakila enthalten **mehr als Tabellen** (Views, Funktionen, Trigger). Ein
-Cross-Dialect-Round-Trip erzeugt reihenweise **legitime** `E053`/`W`-Notes
-(View-Bodies nicht transpiliert — I-09-Klasse, Sequence-Emulation, Präfixlängen).
-„`schema compare` clean" ist daher die **falsche** Erwartung.
+Pagila/Sakila enthalten Views/Funktionen/Trigger; Cross-Dialect-Round-Trips
+erzeugen reihenweise **legitime** `E053`/`W`-Notes. „`schema compare` clean" ist
+daher die falsche Erwartung.
 
 - **In-scope (muss round-trippen):** Tabellen, Spalten/Typen, PK/FK/UNIQUE/CHECK,
   Indizes, Daten (Zeilenzahl + Stichprobe), Sequenzen.
-- **Erwarteter Skip (mit dokumentierter Note):** Views/Funktionen/Trigger bei
-  Cross-Dialect (`E053`), dialekt-spezifische Index-/Constraint-Grenzen
-  (`W103`/`E056`/`W123`/…), Präfixlängen auf PK/Constraint (ADR 0012-Lücke).
+- **Erwarteter Skip (mit Note):** Views/Funktionen/Trigger bei Cross-Dialect
+  (`E053`), dialekt-spezifische Index-/Constraint-Grenzen (`W103`/`E056`/`W123`),
+  Präfixlängen auf PK/Constraint (ADR 0012-Lücke).
 
-→ **Kernarbeitspaket: ein gepinnter Expected-Result-Baseline (Golden) je
-Sample-DB** — die erwarteten Notes/Skips/Diffs, nicht „0 Diffs". Das ist der
-eigentliche Aufwand und die laufende Wartungslast (Golden-Churn bei
-Generator-Änderungen), nicht das Laden.
+→ **Kernarbeitspaket: ein gepinnter Expected-Result-Baseline je Sample-DB** (die
+erwarteten Exit-Codes/Notes/Skips). **Weil der Harness lokal läuft, wird die
+Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
 
 ## Scope-Skizze (Phasen)
 
-- **Phase 0 — Sourcing-ADR. ✅ ERLEDIGT 2026-06-18** ([ADR 0013](../../adr/0013-sample-db-sourcing.md)):
-  Pagila/Sakila vendored (gepinnt), Employees on-demand/nightly; gepinnte Quellen
-  Pflicht; Lizenz-Vermerke (Pagila, Sakila, Employees CC-BY-SA).
-- **Phase 1 — Smoke (Pagila/PG).** Neues, noch zu erstellendes Test-Modul
-  `test/sample-db-matrix` <!-- d-check:ignore (geplantes Test-Modul, existiert noch nicht; ADR 0011) -->
-  **analog `test/integration-postgresql`** (Testcontainers + Dump-Load via
-  `withInitScript`) — **nicht** als Erweiterung von `test/cross-dialect-matrix`
-  (das läuft synthetisch im File-Mode ohne Live-Container, falsches Paradigma).
-  Pagila laden → reverse → validate (0 Errors) → generate split pre/post → neues
-  PG-Schema → transfer → `schema compare` gegen Expected-Baseline.
-- **Phase 2 — Compatibility (Cross-Dialect je DB).** **Jede** Sample-DB wird
-  cross-dialect transferiert und **gegen ihre eigene Quelle** geprüft (Pagila
-  PG→MySQL, Sakila MySQL→PG) — *kein* direkter Pagila↔Sakila-Vergleich (andere
-  Schemata). Fokus: TINYINT(1)↔BOOLEAN, Enum-Case, FK-Graphen, erwartete E053/W-
-  Notes je Expected-Baseline.
-- **Phase 3 — Scale (Employees/MySQL).** Streaming/Chunking/Resume gegen größeres
-  Volumen. **Achtung — kein Nightly-CI-Mechanismus vorhanden** (es gibt keinen
-  `schedule:`/`cron:`-Workflow; „nightly" existiert heute nur als Konvention um
-  `make docker-perf`). Phase 3 muss daher entweder (a) einen **scheduled
-  CI-Workflow neu anlegen** (eigenes Arbeitspaket) **oder** (b) ehrlich als reines
-  **opt-in `make`-Target** geführt werden, nicht CI-gegated.
-- **Phase 4 — Performance (TPC-H/-DS).** **Eigener 1.0.0-QA-Folge-Slice** für
-  LF 8.1/8.2 — hier nur Forward-Pointer, nicht Teil dieses Slice.
+- **Phase 0 — Sourcing + Mechanik. ✅ ERLEDIGT 2026-06-18**
+  ([ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)).
+- **Phase 1 — Smoke (Pagila/PG).** Neuer Harness-Ordner `examples/sample-db/` <!-- d-check:ignore (geplanter Harness-Ordner, existiert noch nicht; ADR 0011) -->
+  analog `examples/bi-demo/`: ein `docker-compose.yml` (postgres), ein Fetch-Script
+  (Pagila gepinnt → Cache, SHA256) und ein Smoke-Script (echtes CLI: Dump laden →
+  reverse → validate (0 Errors) → generate split pre/post → Zielschema → transfer
+  → `schema compare` gegen Expected-Baseline). `make sample-db-smoke` + CI-Workflow
+  analog `bi-demo-smoke.yml`.
+- **Phase 2 — Compatibility (Cross-Dialect je DB).** mysql-Service ergänzen;
+  Sakila laden; **jede** DB cross-dialect transferiert und **gegen ihre eigene
+  Quelle** geprüft (Pagila PG→MySQL, Sakila MySQL→PG) — *kein* direkter
+  Pagila↔Sakila-Vergleich. Fokus: TINYINT(1)↔BOOLEAN, Enum-Case, FK-Graphen,
+  erwartete E053/W-Notes.
+- **Phase 3 — Scale (Employees/MySQL).** Streaming/Chunking/Resume; **opt-in/nightly**.
+  **Achtung:** es gibt heute keinen `schedule:`/`cron:`-Workflow — Phase 3 legt
+  entweder einen scheduled Workflow an (eigenes Arbeitspaket) oder bleibt reines
+  opt-in-`make`-Target, **nicht** im PR-Gate.
+- **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice
+  (LF 8.1/8.2), nur Forward-Pointer.
 
 ## CI-Laufzeit-Budget
 
-Die `Integration Tests`-Workflow läuft heute ~12 min. Voller Daten-Transfer +
-Zeilenzahl-Check auf Pagila/Sakila kostet zusätzlich. Schnitt:
-
-- **PR-Gate (Phase 1/2):** Schema-Smoke + Stichproben-Zeilenzahlen (begrenztes
-  Volumen), Ziel < ~3 min Zusatzlast.
-- **Voller Daten-Transfer / große Row-Counts / Scale (Phase 3):** opt-in/nightly,
-  nicht im PR-Gate.
+- **PR-Gate (Phase 1/2):** Schema-Smoke + Stichproben-Zeilenzahlen, Ziel < ~3 min
+  Zusatzlast; Fetch über Actions-Cache (gekeyt auf Pin) → Download nur bei
+  Cache-Miss.
+- **Voller Daten-Transfer / Scale (Phase 3):** opt-in/nightly, nicht im PR-Gate.
 
 ## Vorbedingungen
 
-- Sourcing-ADR (Phase 0) entschieden; Quellen gepinnt.
-- Vorhanden: Testcontainers-Infra (`integration-postgresql`/`-mysql` als Vorlage),
-  `-PintegrationTests`-Gating, `make docker-perf`-Muster (opt-in), Szenarien-
-  Vorlage im Pilot-Validierungs-Playbook.
-- **Nicht vorhanden (Phase 3):** ein scheduled/nightly CI-Workflow — ggf. erst zu
-  bauen (siehe Phase 3).
+- ADR 0014 (entschieden).
+- Vorhanden: `examples/bi-demo/` als Harness-Muster, `make docker-build` (CLI-Image),
+  docker compose, Pilot-Szenarien-Vorlage.
+- **Nicht vorhanden (Phase 3):** ein scheduled/nightly CI-Workflow — ggf. zu bauen.
 
 ## Akzeptanzkriterien (je Phase)
 
-**Phase 0:** ADR `accepted`; Sourcing-Strategie + gepinnte Quellen + Footprint-
-Budget + Lizenz-Vermerke festgeschrieben.
+**Phase 0:** ADR 0014 `accepted` (Sourcing + Mechanik + Platzierung festgeschrieben). ✅
 
-**Phase 1 (Pagila Smoke):** Container startet + Pagila deterministisch geladen
-(offline-fähig bei vendored); reverse/validate ohne offene Errors; generate
-split; `schema compare` == Expected-Baseline (keine *unerklärten* Diffs);
-Stichproben-Zeilenzahlen Quelle = Ziel; läuft im `Integration Tests`-PR-Gate
-grün; Zusatzlaufzeit im Budget.
+**Phase 1 (Pagila Smoke):** `make sample-db-smoke` lädt Pagila in den Cache
+(gepinnt, SHA256), fährt compose hoch, reverse/validate ohne offene Errors,
+generate split, `schema compare` == Expected-Baseline (keine *unerklärten* Diffs),
+Stichproben-Zeilenzahlen Quelle = Ziel; **läuft lokal *und* im CI-Workflow grün**.
 
 **Phase 2 (Compatibility):** Pagila PG→MySQL und Sakila MySQL→PG je gegen eigene
-Quelle abgenommen; erwartete E053/W-Notes gegen Expected-Baseline gepinnt;
+Quelle abgenommen; erwartete E053/W-Notes gegen Baseline gepinnt;
 TINYINT(1)↔BOOLEAN + Enum-Case datenbelegt.
 
-**Phase 3 (Scale):** Employees-Transfer mit Resume nach simulierter
-Unterbrechung; Chunking-Pfad belegt; Gating-Mechanismus (scheduled Workflow
-oder opt-in-Target) dokumentiert und grün; **nicht** im PR-Gate.
+**Phase 3 (Scale):** Employees-Transfer mit Resume nach simulierter Unterbrechung;
+Chunking belegt; Gating (scheduled Workflow oder opt-in-Target) dokumentiert;
+**nicht** im PR-Gate.
 
-**Übergreifend:** koverVerify-neutral (reiner Testcode, kein `main`-Modul);
+**Übergreifend:** kein Dump im Repo (Cache gitignored + dockerignored);
 `make docs-check` grün.
 
 ## Nicht-Ziel
@@ -138,3 +114,4 @@ oder opt-in-Target) dokumentiert und grün; **nicht** im PR-Gate.
 - Ersatz der menschlichen ≥5-Tester-Pilotabnahme (LF 9.2) — bleibt separat.
 - TPC-Benchmarks (Phase 4 = eigener Slice).
 - Direkter Pagila↔Sakila-Schemavergleich (unterschiedliche Schemata).
+- Testcontainers/Gradle-Testmodul (verworfen zugunsten compose/Scripts, ADR 0014).

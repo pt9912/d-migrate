@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0014
 date: 2026-06-18
 decision-makers: pt9912
 consulted: docs/planning/next/sample-db-integration-harness.md (Phase 0), docs/planning/open/test-database-candidates.md
@@ -7,6 +7,13 @@ informed: CI (Integration Tests / nightly), Test-Infrastruktur, Repo-Footprint-P
 ---
 
 # Sample-DB-Sourcing: Pagila/Sakila vendoren, Employees on-demand — Quellen gepinnt
+
+> **Superseded von [ADR 0014](0014-sample-db-harness-fetch-and-compose.md) (2026-06-18):**
+> Das Sourcing wurde noch am selben Tag — vor jeder Implementierung — auf
+> **On-Demand-Fetch in einen gitignored `.cache`** (statt Vendoren) gedreht, und
+> die Harness-Mechanik auf **docker-compose + Scripts** (statt Testcontainers),
+> weil das lokal *und* in CI läuft und keinen Repo-Footprint erzeugt. Dieses ADR
+> (Vendoren) ist damit überholt; die Entscheidung gilt nur historisch.
 
 ## Kontext und Problemstellung
 
