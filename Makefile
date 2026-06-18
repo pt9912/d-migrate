@@ -1,3 +1,12 @@
+# Fail-closed pipes: ohne pipefail ist der Exit einer Pipe der des LETZTEN
+# Glieds — `docker run … | tar`/`| jq` (golden-update, release-assets,
+# coverage-modules-html, coverage-gate) würde einen `docker run`-Fehler
+# verschlucken und den Target fälschlich grün melden. bash + pipefail schließt
+# das. Bewusst OHNE -e/-u, um die Semantik bestehender Mehrzeilen-Rezepte nicht
+# zu ändern.
+SHELL := bash
+.SHELLFLAGS := -o pipefail -c
+
 GRADLE ?= ./gradlew
 DOCKER ?= docker
 
