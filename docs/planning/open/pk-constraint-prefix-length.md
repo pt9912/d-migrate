@@ -14,6 +14,7 @@
 > der heute beim Round-Trip verloren geht und beim Regenerieren `ERROR 1170`
 > auslösen kann), wandert dieser Eintrag nach `../next/` — dort mit Phasenschnitt
 > und Akzeptanzkriterien.
+> **Disposition 2026-06-18:** für 1.0.x vorgesehen (nicht in 0.9.9; ADR 0012 bleibt in Kraft).
 
 ## Gegenstand
 
