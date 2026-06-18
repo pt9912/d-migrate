@@ -38,6 +38,15 @@ deterministisch je Reset) oder einen Schema-Vorpass, der kollidierende explizite
 Namen tabellen-präfigiert. Beides berührt die Generator-Orchestrierung und
 Golden-Master — eigener, fokussierter Slice (Achtung: Golden-Churn).
 
+**✅ BEHOBEN (2026-06-18).** Neue Klasse `PostgresIndexNameAllocator` trägt den
+schema-globalen Namens-State; `PostgresDdlGenerator.generate()` ruft `reset()` je
+Lauf, `generateIndices` delegiert an `namesFor(...)`. Kollidierende Namen werden
+deterministisch (`_2`, `_3`, …) disambiguiert; eine Umbenennung wird mit **W127**
+gemeldet (nicht still). Regressionstests in `PostgresDdlGeneratorIndexViewTest`
+(Cross-Table-Kollision + Per-Run-Reset). Kein Golden-Churn (keine Intra-Datei-
+Index-Namen-Duplikate in den PG-Goldens). Aufteilung in eine Helper-Klasse statt
+`@Suppress`, um die detekt-`TooManyFunctions`-Schwelle einzuhalten.
+
 ## K2 — `--include-all`-Routinen nicht topologisch geordnet (P3)
 
 **Repro:** `--include-all` emittiert die SQL-Funktion `film_in_stock`

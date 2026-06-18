@@ -114,4 +114,53 @@ class PostgresDdlGeneratorIndexViewTest : FunSpec({
         result.render() shouldNotContain "body(100)"
         result.notes.any { it.code == "W126" && it.objectName == "idx_docs_body" } shouldBe true
     }
+
+    test("duplicate explicit index name across tables is disambiguated schema-globally with W127 (N8)") {
+        // MySQL allows the same index name on several tables (per-table
+        // namespace); PostgreSQL index names are schema-global. The second
+        // occurrence must be renamed, not emitted verbatim (else
+        // "relation \"idx_fk_address_id\" already exists").
+        val s = schema(
+            tables = mapOf(
+                "address" to table(
+                    columns = mapOf("address_id" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_fk_address_id", columns = listOf(IndexColumn("address_id")))
+                    )
+                ),
+                "customer" to table(
+                    columns = mapOf("address_id" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_fk_address_id", columns = listOf(IndexColumn("address_id")))
+                    )
+                ),
+            )
+        )
+        val result = generator.generate(s)
+        val ddl = result.render()
+        // First occurrence keeps the name; the colliding one is suffixed.
+        ddl shouldContain "\"idx_fk_address_id\""
+        ddl shouldContain "\"idx_fk_address_id_2\""
+        // Exactly two distinct index names, one per table.
+        Regex("CREATE INDEX \"idx_fk_address_id(_2)?\"").findAll(ddl).count() shouldBe 2
+        // The rename is surfaced, not silent (objectName is the final name,
+        // so this holds regardless of which table is emitted first).
+        result.notes.any { it.code == "W127" && it.objectName == "idx_fk_address_id_2" } shouldBe true
+    }
+
+    test("schema-global index-name registry resets between generate() runs (N8)") {
+        val s = schema(
+            tables = mapOf(
+                "t" to table(
+                    columns = mapOf("c" to col(NeutralType.Text())),
+                    indices = listOf(IndexDefinition(name = "idx_c", columns = listOf(IndexColumn("c"))))
+                )
+            )
+        )
+        generator.generate(s).render() shouldContain "CREATE INDEX \"idx_c\" ON \"t\""
+        // A second run of the same schema must not keep suffixing.
+        val second = generator.generate(s).render()
+        second shouldContain "CREATE INDEX \"idx_c\" ON \"t\""
+        second shouldNotContain "idx_c_2"
+    }
 })

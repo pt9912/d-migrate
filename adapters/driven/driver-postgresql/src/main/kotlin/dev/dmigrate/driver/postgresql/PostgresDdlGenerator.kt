@@ -20,6 +20,18 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         referentialActionSql = ::referentialActionSql,
     )
 
+    // N8: index names are schema-global in PostgreSQL; the allocator
+    // disambiguates cross-table collisions and is reset per generate() run.
+    private val indexNameAllocator = PostgresIndexNameAllocator()
+
+    override fun generate(
+        schema: SchemaDefinition,
+        options: DdlGenerationOptions,
+    ): DdlResult {
+        indexNameAllocator.reset()
+        return super.generate(schema, options)
+    }
+
     // ── Quoting ──────────────────────────────────
 
     override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
@@ -205,7 +217,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     // ── Indices ──────────────────────────────────
 
     override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
-        val generatedNames = generatedIndexNames(tableName, table.indices)
+        val generatedNames = indexNameAllocator.namesFor(tableName, table.indices)
         return table.indices.mapIndexed { position, index ->
             generateIndex(tableName, index, generatedNames[position], table.columns)
         }
@@ -247,7 +259,19 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
-        return DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "PostgreSQL", "left(col, n)"))
+        val notes = IndexPrefixDropNote.forDialect(index, indexName, "PostgreSQL", "left(col, n)").toMutableList()
+        if (index.name != null && index.name != indexName) {
+            notes += TransformationNote(
+                type = NoteType.WARNING,
+                code = "W127",
+                objectName = indexName,
+                message = "Index '${index.name}' on table '$tableName' was renamed to '$indexName' to keep " +
+                    "index names unique within the PostgreSQL schema (MySQL allows the same index name on " +
+                    "several tables; PostgreSQL index names are schema-global).",
+                hint = "Rename the source index if a specific PostgreSQL name is required.",
+            )
+        }
+        return DdlStatement(sql, notes)
     }
 
     private fun renderIndexColumn(column: IndexColumn): String =
@@ -257,35 +281,6 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             if (direction != null) append(" ${direction.name}")
         }
 
-
-    private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
-        val baseNames = indices.map { index ->
-            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
-        }
-        val baseCounts = baseNames.groupingBy { it }.eachCount()
-        val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()
-        return indices.mapIndexed { position, index ->
-            index.name ?: disambiguateGeneratedIndexName(baseNames[position], index, baseCounts.getValue(baseNames[position]), used)
-        }
-    }
-
-    private fun disambiguateGeneratedIndexName(
-        baseName: String,
-        index: IndexDefinition,
-        baseCount: Int,
-        used: MutableMap<String, Int>,
-    ): String {
-        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDisambiguationSuffix(index)}"
-        val seen = used.getOrDefault(candidate, 0)
-        used[candidate] = seen + 1
-        return if (seen == 0) candidate else "${candidate}_${seen + 1}"
-    }
-
-    private fun indexDisambiguationSuffix(index: IndexDefinition): String {
-        val directionPart = index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
-        val wherePart = index.where?.let { "_where_${Integer.toUnsignedString(it.hashCode(), 36)}" }.orEmpty()
-        return "$directionPart$wherePart"
-    }
 
     // ── Circular FK references ───────────────────
 
