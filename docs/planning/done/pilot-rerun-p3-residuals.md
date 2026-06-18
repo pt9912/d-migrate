@@ -1,6 +1,6 @@
 # Pilot-Re-Run-P3-Restbefunde (N7, N8, K2)
 
-> **Status:** In Umsetzung (aufgenommen 2026-06-18) — N7, N8, K2 werden für 1.0.0 implementiert. Pilot-Zyklus 0.9.9 abgeschlossen (alle P1/P2 behoben). Wandert nach `../done/` mit Closure, sobald alle drei Slices geliefert sind.
+> **Status:** ABGESCHLOSSEN 2026-06-18 — N7, N8, K2 alle drei geliefert (CI grün: Build & Test, Integration Tests, docs-check). Closure am Ende. Pilot-Zyklus 0.9.9 abgeschlossen (alle P1/P2 behoben).
 > **Trigger:** Die 0.9.9-Re-Validierungsläufe
 > ([`../done-archive/pilot-validation-0.9.9-rerun.md`](../done-archive/pilot-validation-0.9.9-rerun.md),
 > [`../done-archive/pilot-validation-0.9.9-rerun3.md`](../done-archive/pilot-validation-0.9.9-rerun3.md))
@@ -8,8 +8,8 @@
 > Re-Run 1; K2 aus Re-Run 3). Keiner ist RC-blockierend; es sind Feature-Lücken
 > bzw. generatorweite/Ordnungs-Themen — daher hier getrackt statt in den engen
 > Fix-Runden mitgezogen.
-> **Disposition (2026-06-18):** Für 1.0.0 aufgenommen und direkt in Umsetzung
-> (User-Entscheidung) — daher in `in-progress/`. Fortschritt je Befund unten.
+> **Disposition (2026-06-18):** Für 1.0.0 aufgenommen, direkt umgesetzt und
+> geliefert (User-Entscheidung). Closure unten; abgelegt in `done/`.
 
 ## N7 — Benutzerdefiniertes Aggregat wird von reverse nicht erfasst (P3, Feature)
 
@@ -100,4 +100,18 @@ N6 (Trigger-Action-Body); Re-Run 2 M2 (Preflight strukturell), M1 (Routinen-
 Namen ohne Signatur-Suffix); Re-Run 3 K1 (PG-Array→MySQL-JSON-Wertkonverter);
 Re-Run 4 L1 (pgjdbc-`PGobject`→String-Form im MySQL-Bind-Pfad, `c8115fc7`).
 Der Pilot-Validierungszyklus 0.9.9 ist abgeschlossen; alle fünf Reports liegen
-in `../done-archive/`. Offen sind nur noch die P3-Reste oben (N7, N8, K2).
+in `../done-archive/`.
+
+## Closure (2026-06-18)
+
+Alle drei P3-Restbefunde sind geliefert und CI-verifiziert (Build & Test +
+Integration Tests + docs-check grün auf `develop`):
+
+| Befund | Commit | Kern |
+| ------ | ------ | ---- |
+| **N8** | `8c610743` | PG schema-globale Index-Namen-Deduplizierung (`PostgresIndexNameAllocator`, W127-Rename-Note). |
+| **K2** | `20ec6565` | Topologische Funktions-Ordnung (`DdlGenerationSupport.sortFunctionsByDependencies`, Body-Inferenz, W128-Zyklus-Fallback) + `RETURNS SETOF`-Ableitung. |
+| **N7** | `b1d9531c` | Benutzerdefinierte Aggregate — `AggregateDefinition` (PG-SQL-Form + MySQL-Loadable-UDF-Form), Reverse (`pg_aggregate` / `mysql.func`) + Generate (`CREATE AGGREGATE` / `CREATE AGGREGATE FUNCTION … SONAME`), form-bewusst; Live-PG-Integrationstest. |
+
+Damit ist der gesamte Pilot-Folgebacklog (P1/P2 + P3) der fünf 0.9.9-Läufe
+abgearbeitet. Dieser Tracker wandert nach `../done/`.

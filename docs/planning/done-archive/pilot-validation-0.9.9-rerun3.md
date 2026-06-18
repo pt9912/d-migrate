@@ -82,7 +82,7 @@ selben Docker-Netz, `/work`-Mount.
   **M1 + N6 kombiniert** am schärfsten Pfad (Pagila `last_updated`-Trigger +
   Funktion) geprüft.
 - **Bewusste Nicht-Ziele — nicht als Bug gewertet:** N7/N8 (P3-Tracker
-  [`pilot-rerun-p3-residuals.md`](../in-progress/pilot-rerun-p3-residuals.md)),
+  [`pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)),
   View-/Function-/Trigger-Body-Transpilation (`E053`-Skip ist korrekt),
   PK-/Constraint-Präfixlängen ([ADR 0012](../../adr/0012-index-prefix-length-scope.md)).
 
@@ -212,7 +212,7 @@ volle Cross-Dialect-Datentreue bleibt **ein** P2:
    bei `RETURN NEXT` (nur `--include-all`).
 
 N7/N8 bleiben bewusst als P3 offen
-([`pilot-rerun-p3-residuals.md`](../in-progress/pilot-rerun-p3-residuals.md)). Mit K1
+([`pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)). Mit K1
 geschlossen wäre kein P1/P2-Cross-Dialect-Befund aus den vier Pilot-Läufen mehr
 offen.
 
@@ -220,7 +220,7 @@ offen.
 
 ## 12. Verwandte Dokumente
 
-- [Erstlauf](pilot-validation-0.9.9.md) · [Re-Run 1](pilot-validation-0.9.9-rerun.md) · [Re-Run 2](pilot-validation-0.9.9-rerun2.md) · [P3-Restbefunde](../in-progress/pilot-rerun-p3-residuals.md)
+- [Erstlauf](pilot-validation-0.9.9.md) · [Re-Run 1](pilot-validation-0.9.9-rerun.md) · [Re-Run 2](pilot-validation-0.9.9-rerun2.md) · [P3-Restbefunde](../done/pilot-rerun-p3-residuals.md)
 - [Migrations-Leitfaden](../../user/migrations-leitfaden.md) · [`guide.md`](../../user/guide.md) · [API-Referenz](../../user/api-referenz.md) · [`spec/cli-spec.md`](../../../spec/cli-spec.md)
 - [ADR 0004](../../adr/0004-documentation-and-planning-structure.md) · [ADR 0012](../../adr/0012-index-prefix-length-scope.md) · [Pilot-Validierungs-Playbook](../../operations/pilot-validation-playbook.md)
 - [Test-Database-Candidates](../open/test-database-candidates.md)
