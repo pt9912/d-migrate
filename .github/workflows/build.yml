@@ -73,6 +73,23 @@ jobs:
           path: adapters/driving/cli/build/release/*
           retention-days: 14
 
+  docs-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Verify Kover excludes ledger and Markdown links
+        # Fail-closed Doku-Gate, das bisher nur lokal (`make gates`/`make ci`)
+        # lief und daher in CI nicht erzwungen war:
+        #  - verify-kover-excludes-ledger.py: jeder Kover-Exclude MUSS in
+        #    docs/coverage/excludes-ledger.md registriert sein.
+        #  - d-check (öffentliches ghcr.io/pt9912/d-check-Image): Markdown-
+        #    Link-/Anker-/Kennungs-Validierung über docs/ + spec/.
+        # Spiegelt `make docs-check` 1:1; kein ghcr-Login nötig (Image public).
+        run: make docs-check
+
   docker:
     needs: build
     runs-on: ubuntu-latest
