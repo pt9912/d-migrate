@@ -1,7 +1,8 @@
 # Plan: Automatisierter Sample-DB-Integrationstest-Harness
 
 > Dokumenttyp: Umsetzungsplan (Slice)
-> Status: Entwurf (2026-06-18, Review-Update 2026-06-18)
+> Status: Entwurf (2026-06-18, Review-Update 2026-06-18). Phase 0 (Sourcing) via
+> [ADR 0013](../../adr/0013-sample-db-sourcing.md) entschieden 2026-06-18.
 > Roadmap-Slot: Phase 1–2 (Smoke/Compatibility) = Test-Infrastruktur; Phase 3
 > (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC) ist ein eigener Folge-Slice**
 > (deckt **LF 8.1** 1 Mio. Datensätze / **LF 8.2** 1000 Tabellen < 30 s ab — heute
@@ -36,9 +37,10 @@ Die Sample-Dumps sind externe Artefakte. Optionen mit echten Trade-offs:
 | **B — zur Testzeit von URL laden** | ❌ (Netz nötig) | ✅ keiner | nur Verweis | ❌ Flaky / offline-Build bricht |
 | **C — Hybrid** | teils | gemischt | gemischt | teils |
 
-**Empfehlung:** **A für Pagila/Sakila**, **C für Employees**. Zwingend in **jeder**
-Variante: **gepinnte Quelle** (Commit-SHA/Release-Tag, nicht `main` wie im
-Katalog) — sonst ist auch der Download nicht reproduzierbar.
+**Entschieden in [ADR 0013](../../adr/0013-sample-db-sourcing.md):** **A für
+Pagila/Sakila** (vendored, gepinnt, offline-fähig → PR-Gate), **C für Employees**
+(on-demand/nightly, nicht eingecheckt — Footprint + CC-BY-SA). Zwingend: **gepinnte
+Quelle** (Commit-SHA/Release-Tag, nicht `main` wie im Katalog).
 
 **Lizenz-Hinweis (Grund für den Hybrid-Schnitt):** Employees (`datacharmer/test_db`)
 steht unter **CC-BY-SA** (Attribution + Share-Alike) — Vendoren erfordert
@@ -66,9 +68,9 @@ Generator-Änderungen), nicht das Laden.
 
 ## Scope-Skizze (Phasen)
 
-- **Phase 0 — Sourcing-ADR.** Vendoren-vs-Download-Policy, gepinnte Quellen,
-  Footprint-Budget, Lizenz-Vermerke (Pagila, Sakila, Employees CC-BY-SA).
-  Voraussetzung für jeden Code.
+- **Phase 0 — Sourcing-ADR. ✅ ERLEDIGT 2026-06-18** ([ADR 0013](../../adr/0013-sample-db-sourcing.md)):
+  Pagila/Sakila vendored (gepinnt), Employees on-demand/nightly; gepinnte Quellen
+  Pflicht; Lizenz-Vermerke (Pagila, Sakila, Employees CC-BY-SA).
 - **Phase 1 — Smoke (Pagila/PG).** Neues, noch zu erstellendes Test-Modul
   `test/sample-db-matrix` <!-- d-check:ignore (geplantes Test-Modul, existiert noch nicht; ADR 0011) -->
   **analog `test/integration-postgresql`** (Testcontainers + Dump-Load via

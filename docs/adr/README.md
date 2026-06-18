@@ -66,3 +66,4 @@ argumentiert werden.
 | 0010 | [Eingefrorenes Done-Archiv (`done-archive/`) und d-check-Scan-Ausschluss](0010-done-archive-und-gate-scan-ausschluss.md) | accepted |
 | 0011 | [d-check-`codepaths`-Scope und dauerhafte Pfad-Ausnahmen](0011-d-check-codepaths-scope-und-dauerhafte-ausnahmen.md) | accepted |
 | 0012 | [Index-Präfixlänge nur auf Index-Spalten — PK-/Constraint-Spalten tragen keine Länge](0012-index-prefix-length-scope.md) | accepted |
+| 0013 | [Sample-DB-Sourcing: Pagila/Sakila vendoren, Employees on-demand — Quellen gepinnt](0013-sample-db-sourcing.md) | accepted |
