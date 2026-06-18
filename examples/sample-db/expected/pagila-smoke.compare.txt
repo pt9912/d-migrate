@@ -1,0 +1,59 @@
+Schema Compare: pagila_pg <-> pagila_target
+
+Status: DIFFERENT
+
+Summary: 37 change(s)
+  Tables changed:  1
+  Views removed:   3
+  Functions changed: 3
+  Triggers added:  15
+  Triggers removed: 15
+
+Tables:
+  ~ film:
+      - index film_fulltext_idx [gist]
+
+Views:
+  - actor_info
+  - film_list
+  - nicer_but_slower_film_list
+
+Functions:
+  ~ _group_concat(in:text,in:text)
+  ~ last_day(in:timestamptz)
+  ~ rewards_report(in:integer,in:decimal)
+
+Triggers:
+  + actor::actor%3A%3Alast_updated
+  + address::address%3A%3Alast_updated
+  + category::category%3A%3Alast_updated
+  + city::city%3A%3Alast_updated
+  + country::country%3A%3Alast_updated
+  + customer::customer%3A%3Alast_updated
+  + film::film%3A%3Afilm_fulltext_trigger
+  + film::film%3A%3Alast_updated
+  + film_actor::film_actor%3A%3Alast_updated
+  + film_category::film_category%3A%3Alast_updated
+  + inventory::inventory%3A%3Alast_updated
+  + language::language%3A%3Alast_updated
+  + rental::rental%3A%3Alast_updated
+  + staff::staff%3A%3Alast_updated
+  + store::store%3A%3Alast_updated
+  - actor::last_updated
+  - address::last_updated
+  - category::last_updated
+  - city::last_updated
+  - country::last_updated
+  - customer::last_updated
+  - film::film_fulltext_trigger
+  - film::last_updated
+  - film_actor::last_updated
+  - film_category::last_updated
+  - inventory::last_updated
+  - language::last_updated
+  - rental::last_updated
+  - staff::last_updated
+  - store::last_updated
+
+Operand (source): pagila_pg
+  warning [R301] film.fulltext: Unknown PostgreSQL type 'tsvector' (udt: tsvector) mapped to text

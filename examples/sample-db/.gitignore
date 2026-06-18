@@ -1,0 +1,13 @@
+# Plan: docs/planning/next/sample-db-integration-harness.md
+# ADR: docs/adr/0014-sample-db-harness-fetch-and-compose.md
+
+# Local env file with (possibly customised) test credentials.
+.env
+
+# On-demand-gefetchte Dumps — NIE eingecheckt (ADR 0014: Footprint
+# null, keine Redistribution). fetch-dumps.sh legt sie hier ab.
+.cache/
+
+# CLI-Artefakte des Smoke-Workflows (reverse/generate/compare).
+out/*
+!out/.gitkeep

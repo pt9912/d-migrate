@@ -1,0 +1,60 @@
+# Expected-Result-Baseline — Pagila/PostgreSQL Smoke (Phase 1)
+
+> Plan: [`../../../docs/planning/next/sample-db-integration-harness.md`](../../../docs/planning/next/sample-db-integration-harness.md)
+> · Stand: 2026-06-18 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`)
+
+Diese Datei erklärt **jeden** in `pagila-smoke.compare.txt` gepinnten
+Schema-Diff. Die Baseline ist *nicht* „0 Diffs" — ein Cross-/Round-Trip über
+das neutrale Schema-Modell erzeugt **legitime, erklärbare** Abweichungen. Green
+heißt: `schema compare` == diese Baseline, **keine unerklärten** Diffs. Schrumpft
+der Diff (z. B. nachdem ein Defekt unten behoben ist), ist das ein *gutes* Rot —
+dann Baseline + diese Erklärung aktualisieren.
+
+## Harter, deterministischer Kern (kein Diff)
+
+- `schema validate`: **0 Errors**.
+- `schema generate`: genau **2 Notes** — `E055` (leere RANGE-Partition `payment`)
+  + `W123` (gist-Index auf tsvector→text).
+- **Daten round-trippen vollständig**: Zeilenzahlen Quelle == Ziel für **alle 22
+  Tabellen** (inkl. der 7 `payment_p2022_*`-Partitionskinder).
+
+## Gepinnte Schema-Diffs (37) — je Klasse erklärt
+
+### A. `film.film_fulltext_idx [gist]` entfernt (1) — fundamentale Grenze
+Pagilas `film.fulltext` ist `tsvector`; beim Reverse degradiert der Typ zu `text`
+(R301), wodurch der gist-Index keine Default-Operator-Klasse mehr hat und beim
+Generate übersprungen wird (`W123`). Kein Defekt — eine bewusste, gemeldete
+Grenze. Eine ADR „tsvector/Volltext-Round-Trip" könnte das künftig adressieren.
+
+### B. 3 Views entfernt (`actor_info`, `film_list`, `nicer_but_slower_film_list`) — Ordering-Defekt (K2-Klasse)
+Alle drei rufen das Aggregat `group_concat(...)` auf. Das generierte `post-data`
+emittiert diese Views **vor** der `CREATE AGGREGATE group_concat`-Definition →
+beim Anwenden scheitern genau diese drei (`function group_concat(text) does not
+exist`). Es ist ein **Dependency-Ordering-Defekt** der Programmability-Emission
+(Views vor den von ihnen aufgerufenen Routinen/Aggregaten), gleiche Klasse wie der
+P3-Residual **K2** (`--include-all`-Routinen-Ordering). Siehe
+[`../../../docs/planning/open/sample-db-roundtrip-findings.md`](../../../docs/planning/open/sample-db-roundtrip-findings.md).
+
+### C. 3 Funktionen „changed" (`_group_concat`, `last_day`, `rewards_report`) — Attribut-Verlust
+Body identisch, aber der Round-Trip verliert Funktions-**Attribute**:
+Parameternamen werden synthetisch (`p1`/`p2` statt Original), und die
+Volatilitäts-/Strictness-Marker (`IMMUTABLE`, `STRICT`) fehlen im Ziel. Echter
+Fidelity-Defekt der Funktions-Reverse/Generate-Kette (neu durch den Harness
+aufgedeckt). Siehe Findings-Doc.
+
+### D. 15 Trigger „added" + 15 „removed" (30) — Trigger-Namens-Defekt (M1-Klasse)
+Dieselben 15 Trigger, aber unterschiedlich **benannt**: Quelle trägt den echten
+PG-Namen (`last_updated`, mehrfach über Tabellen — in PG zulässig), das Ziel trägt
+den Modell-**Composite-Key** als literalen Namen (`actor::last_updated`,
+`address::last_updated`, …). Der Composite-Key (nötig, weil `last_updated` über
+Tabellen nicht eindeutig ist) leckt in den emittierten `CREATE TRIGGER`-Namen —
+gleiche Klasse wie **M1** (Routinen-Name vs. Key-Signatur). Echter Defekt. Siehe
+Findings-Doc.
+
+## Pflege
+
+- Baseline neu pinnen: `expected/pagila-smoke.compare.txt` löschen und
+  `make sample-db-smoke` einmal laufen lassen (bootstrap), Ergebnis prüfen,
+  committen.
+- Jede Diff-Änderung **muss** hier erklärt werden — ein unerklärter Diff ist der
+  Grund, warum der Smoke rot wird.

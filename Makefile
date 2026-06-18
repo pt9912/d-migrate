@@ -56,7 +56,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke
 
 help:
 	@printf '%s\n' \
@@ -96,6 +96,13 @@ help:
 		'  make bi-demo-down     Stop containers (named volumes survive)' \
 		'  make bi-demo-purge    Stop containers and remove all named volumes' \
 		'  make bi-demo-smoke    End-to-end smoke (pull + up + d-migrate + S3-upload + verify)' \
+		'' \
+		'Sample-DB-Harness (examples/sample-db, Plan: docs/planning/next/sample-db-integration-harness.md):' \
+		'  make sample-db-fetch  Fetch pinned + SHA256-verified dumps into gitignored .cache/' \
+		'  make sample-db-up     Start postgres (source + target DB)' \
+		'  make sample-db-smoke  Full E2E: load -> reverse/validate/generate -> transfer -> compare vs baseline' \
+		'  make sample-db-down   Stop containers (named volume survives)' \
+		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
@@ -308,3 +315,27 @@ bi-demo-purge:
 
 bi-demo-smoke:
 	./examples/bi-demo/scripts/smoke.sh
+
+# ── Sample-DB-Harness (examples/sample-db) ─────────────────────────
+#
+# Reproduzierbarer E2E-Smoke gegen das echte d-migrate:dev-CLI mit
+# gepinnten Sample-DBs (Phase 1: Pagila/PG-Round-Trip). Plan:
+# docs/planning/next/sample-db-integration-harness.md. Sourcing/Mechanik:
+# docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
+# einmaliger `make docker-build IMAGE_TAG=dev`.
+SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
+
+sample-db-fetch:
+	./examples/sample-db/scripts/fetch-dumps.sh
+
+sample-db-up:
+	$(SAMPLE_DB_COMPOSE) up -d postgres
+
+sample-db-down:
+	$(SAMPLE_DB_COMPOSE) down
+
+sample-db-purge:
+	$(SAMPLE_DB_COMPOSE) down -v
+
+sample-db-smoke:
+	./examples/sample-db/scripts/smoke.sh

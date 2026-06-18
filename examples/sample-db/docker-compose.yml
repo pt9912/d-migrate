@@ -1,0 +1,43 @@
+# Sample-DB-Harness Compose-Stack — Plan: docs/planning/next/sample-db-integration-harness.md
+# Sourcing/Mechanik-Entscheidung: docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Phase 1 (Pagila/PG-Smoke): ein postgres-Service mit zwei Datenbanken
+#   - pagila         (Quelle, vom gefetchten Dump geladen)
+#   - pagila_target  (leeres Round-Trip-Ziel)
+# Der dmigrate-Service (echtes d-migrate:dev-CLI-Image) läuft nur unter
+# `--profile tools` (kein Auto-Start bei `up`). Voraussetzung:
+# einmaliger `make docker-build IMAGE_TAG=dev`.
+
+services:
+  postgres:
+    image: postgres:17.10-trixie
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_PG_PORT}:5432"
+    volumes:
+      - sample-db-pg-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  dmigrate:
+    image: d-migrate:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    env_file:
+      - .env
+    environment:
+      D_MIGRATE_CONFIG: /work/.d-migrate.yaml
+    volumes:
+      - .:/work
+    working_dir: /work
+
+volumes:
+  sample-db-pg-data:

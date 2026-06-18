@@ -25,7 +25,7 @@ Zielschema → `data transfer` → `schema compare`. Schließt die Lücke
   exakt das Muster von `examples/bi-demo/` — **kein** Testcontainers, **kein**
   Gradle-Testmodul. Läuft **lokal** (`make sample-db-smoke`) *und* in CI (Workflow
   analog `bi-demo-smoke.yml`).
-- **Platzierung = `examples/sample-db/`** (Geschwister von bi-demo), kein neuer <!-- d-check:ignore (geplanter Harness-Ordner, existiert noch nicht; ADR 0011) -->
+- **Platzierung = `examples/sample-db/`** (Geschwister von bi-demo), kein neuer
   Root. `test/` bleibt Gradle-Modulen vorbehalten.
 - **Sourcing = On-Demand-Fetch**: ein Script lädt die **gepinnten**,
   **SHA256-verifizierten** Dumps in einen gitignored Cache (auch in
@@ -57,12 +57,17 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
 
 - **Phase 0 — Sourcing + Mechanik. ✅ ERLEDIGT 2026-06-18**
   ([ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)).
-- **Phase 1 — Smoke (Pagila/PG).** Neuer Harness-Ordner `examples/sample-db/` <!-- d-check:ignore (geplanter Harness-Ordner, existiert noch nicht; ADR 0011) -->
-  analog `examples/bi-demo/`: ein `docker-compose.yml` (postgres), ein Fetch-Script
-  (Pagila gepinnt → Cache, SHA256) und ein Smoke-Script (echtes CLI: Dump laden →
-  reverse → validate (0 Errors) → generate split pre/post → Zielschema → transfer
-  → `schema compare` gegen Expected-Baseline). `make sample-db-smoke` + CI-Workflow
-  analog `bi-demo-smoke.yml`.
+- **Phase 1 — Smoke (Pagila/PG). ✅ ERLEDIGT 2026-06-18.** Harness-Ordner
+  `examples/sample-db/` analog `examples/bi-demo/`: `docker-compose.yml` (postgres
+  mit Quell- + Ziel-DB), `examples/sample-db/scripts/fetch-dumps.sh` (Pagila auf
+  Commit-SHA gepinnt, SHA256-verifiziert → `.cache/`),
+  `examples/sample-db/scripts/smoke.sh` (echtes CLI: Dump laden →
+  reverse `--include-all` → validate (0 Errors) → generate `--split pre-post
+  --deterministic` → Zielschema → `data transfer` → `schema compare` gegen die
+  gepinnte Baseline `expected/`). `make sample-db-smoke` + CI-Workflow
+  `sample-db-smoke.yml`. **Lokal zweifach grün (deterministisch); Baseline lokal
+  gepinnt + je Diff-Klasse erklärt** (`expected/pagila-smoke.md`). Der Erstlauf hat
+  echte Round-Trip-Defekte aufgedeckt → [`../open/sample-db-roundtrip-findings.md`](../open/sample-db-roundtrip-findings.md).
 - **Phase 2 — Compatibility (Cross-Dialect je DB).** mysql-Service ergänzen;
   Sakila laden; **jede** DB cross-dialect transferiert und **gegen ihre eigene
   Quelle** geprüft (Pagila PG→MySQL, Sakila MySQL→PG) — *kein* direkter
