@@ -551,7 +551,7 @@ nicht als Enterprise-BI-Plattform (siehe
 > dagegen 2026-06-09 in 0.9.8 vorgezogen (Scope-Entscheidung); die
 > BI-Demo-Plaene bleiben Grundlage fuer Showcase-Pfade ab Phase 3/4.
 
-### Milestone 0.9.9 — Dokumentation, Pilot-Validierung und Blocker-Fixes 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16; Pilot-Vorfilter 2026-06-16; P1-Blocker behoben 2026-06-16, P2 offen)
+### Milestone 0.9.9 — Dokumentation, Pilot-Validierung und Blocker-Fixes 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16; Pilot-Vorfilter 2026-06-16; alle Pilot-Blocker P1/P2/P3 behoben bis 2026-06-18 — offen nur die menschliche ≥5-Tester-Abnahme)
 
 > Status-Legende: ✅ erledigt · 🔮 geplant (späterer Milestone) · ⛔ ausstehend.
 
@@ -563,7 +563,7 @@ nicht als Enterprise-BI-Plattform (siehe
 | Docs    | [API-Dokumentation](../../user/api-referenz.md) | — | ✅ |
 | QA      | [Performance-Benchmarks dokumentiert](../../operations/performance-benchmarks.md) | — | ✅¹ |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2 | ⛔² |
-| QA      | [Pilot-Blocker beheben (P1/P2)](../done-archive/pilot-validation-0.9.9.md) | — | 🚧³ |
+| QA      | [Pilot-Blocker beheben (P1/P2/P3)](../done-archive/pilot-validation-0.9.9.md) | — | ✅³ |
 
 ¹ Methodik + aktuelle Budgets dokumentiert. Die acceptance-grade Benchmarks
 **LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
@@ -574,10 +574,13 @@ die menschliche ≥5-Tester-Abnahme bleibt davon unberührt und steht weiter aus
 ³ Der Vorfilter fand 4 P1-Blocker (Transfer-Preflight-Strictness I-01, E009-
 Temporal-Defaults I-02, MySQL-Enum-Lowercasing I-03, Enum-Transfer-Cast I-04)
 plus 6 P2 (ungültige DDL). Entscheidung: in **0.9.9** beheben (nicht nach 1.0.0
-verschoben). **P1 vollständig behoben 2026-06-16** (Fix-Kern + Commits:
-[Report §6.2](../done-archive/pilot-validation-0.9.9.md); code-verifizierte Root-Causes §6.1);
-**P2 (I-05…I-10) stehen noch aus** — lokalisierte Ursachen + Fix-Plan je Bug
-im [P2-Tracker](../done-archive/pilot-blocker-p2-tracker.md).
+verschoben). **Alle behoben & CI-grün:** P1 am 2026-06-16, P2 (I-05…I-10) am
+2026-06-17; fünf Re-Validierungsläufe legten weitere P1/P2 frei (N1–N6, M2, M1,
+K1, L1) — ebenfalls behoben. Die drei P3-Restbefunde (N7 Custom-Aggregate, N8
+Index-Namen-Kollision, K2 Routinen-Ordering) sind am 2026-06-18 geliefert
+([`pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)); alle fünf
+Pilot-Reports + der [P2-Tracker](../done-archive/pilot-blocker-p2-tracker.md)
+liegen unter `../done-archive/`. **Kein P1/P2/P3-Cross-Dialect-Befund mehr offen.**
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
