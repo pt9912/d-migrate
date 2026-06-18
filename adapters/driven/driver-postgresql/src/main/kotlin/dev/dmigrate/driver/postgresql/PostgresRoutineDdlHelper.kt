@@ -212,10 +212,17 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
     }
 
     private fun generateTrigger(
-        name: String,
+        key: String,
         trigger: TriggerDefinition,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
+        // F1 (docs/planning/open/sample-db-roundtrip-findings.md): PostgreSQL has a
+        // per-table trigger namespace, so emit the BARE trigger name — not the
+        // canonical `table::name` key, which would round-trip `last_updated` into a
+        // literal trigger named `users::last_updated`. The key disambiguates
+        // identically-named triggers across tables in the model; it must not leak
+        // into the emitted identifier.
+        val name = ObjectKeyCodec.triggerName(key)
         val body = trigger.body
         if (body == null) {
             val action = ManualActionRequired(
@@ -247,7 +254,10 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         val actionClause = if (isExecuteActionStatement(body)) {
             body.trim().trimEnd(';')
         } else {
-            val funcName = "trg_fn_${name}"
+            // Keyed on the full canonical key (sanitised to a valid identifier)
+            // so inline-body trigger functions stay globally unique across tables
+            // that share a bare trigger name.
+            val funcName = "trg_fn_" + key.replace(Regex("[^A-Za-z0-9_]"), "_")
             statements += DdlStatement(
                 buildString {
                     append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(funcName)}() RETURNS TRIGGER AS \$\$\n")

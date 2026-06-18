@@ -14,15 +14,30 @@ Belegt durch die gepinnte Baseline `examples/sample-db/expected/pagila-smoke.com
 und erklärt in `examples/sample-db/expected/pagila-smoke.md`. Die **Daten**
 round-trippen vollständig; die Diffs sind allesamt **Schema/Programmability**.
 
-## F1 — Trigger-Namens-Defekt (M1-Klasse) · zu beheben
+## F1 — Trigger-Namens-Defekt (M1-Klasse) · GENERATE-Pfad BEHOBEN 2026-06-18
 
-`CREATE TRIGGER` emittiert den Modell-**Composite-Key** als literalen Trigger-
-Namen: Ziel trägt `actor::last_updated` statt `last_updated`. Der Key (nötig, weil
-`last_updated` über Tabellen nicht eindeutig ist) leckt in den DDL-Namen — exakt
-die Klasse, die **M1** für Routinen gelöst hat (`ObjectKeyCodec.routineName(key)`
-+ RoutineDdlHelper). Fix-Richtung: analoger `ObjectKeyCodec.triggerName(key)`,
-sodass der Trigger mit seinem **bloßen** Namen generiert wird. 15/15 Pagila-Trigger
-betroffen.
+`CREATE TRIGGER` emittierte den Modell-**Composite-Key** als literalen Trigger-
+Namen: Ziel trug `actor::last_updated` statt `last_updated`. Der Key (nötig, weil
+`last_updated` über Tabellen nicht eindeutig ist) leckte in den DDL-Namen — exakt
+die Klasse, die **M1** für Routinen gelöst hat.
+
+**Behoben (Generate-Pfad):** neuer `ObjectKeyCodec.triggerName(key)` (dekodiert
+den bloßen Namen, Fallback = Key bei Nicht-`table::name`-Form);
+`PostgresRoutineDdlHelper.generateTrigger` emittiert nun den bloßen Namen (PG hat
+einen **per-Tabelle**-Trigger-Namensraum), der synthetische Trigger-Funktionsname
+bleibt am vollen Key eindeutig verankert. Regressionstest in
+`PostgresRoutineDdlHelperTest`. Harness-belegt: die 30 Trigger-Diffs (15 added +
+15 removed) verschwanden, Baseline 37 → 8 Changes.
+
+**Hinweis (per-Dialekt):** MySQL/SQLite haben einen **schema-globalen** Trigger-
+Namensraum — dort ist der disambiguierte Name nötig; der Fix ist daher
+PG-spezifisch.
+
+**Offen (Restfläche):** der Diff-/Migrate-Pfad (`schema migrate`,
+`PostgresTriggerDdlHelper.emitCreate/emitDrop`) nutzt weiterhin
+`op.objectRef.rootName` (= Key) als Trigger-Namen. Gleiche Wurzel, aber separate
+Fläche mit eigenen Golden-Tests — nicht vom Phase-1-Harness (`schema generate`)
+verifizierbar, daher als eigener Fix-Slice mit Diff-Pfad-Test nachzuziehen.
 
 ## F2 — Programmability-Ordering: Views vor Routinen/Aggregaten (K2-Klasse) · zu beheben
 
@@ -44,6 +59,17 @@ fehlen im Ziel (Body identisch). Betrifft reverse (Capture) **und** generate
 `rewards_report`). Fix-Richtung: Funktions-Modell um Parameternamen +
 Volatilitäts-/Strictness-Marker erweitern, in reverse befüllen, in generate
 emittieren.
+
+## F4 — Multi-Event-Trigger nicht modelliert (neu) · zu beheben
+
+Erst nach dem F1-Fix sichtbar geworden (war vorher hinter dem Namens-Diff
+verborgen): Pagilas `film_fulltext_trigger` feuert auf `BEFORE INSERT OR UPDATE`,
+das Ziel nur auf `BEFORE UPDATE`. Ursache: das Modell-Enum `TriggerEvent`
+(`INSERT | UPDATE | DELETE`) trägt **genau ein** Event, keine Event-**Menge** —
+`INSERT OR UPDATE` kollabiert auf ein Event. Fix-Richtung: Trigger-Modell auf eine
+Event-Menge (`Set<TriggerEvent>` o. ä.) erweitern, in reverse (alle Dialekte)
+befüllen, in generate als `INSERT OR UPDATE …` emittieren. Betrifft Modell +
+reverse + generate + Serialisierung (vergleichbarer Umfang wie F3).
 
 ## Fundamentale Grenzen (kein Defekt — bewusst, gemeldet)
 

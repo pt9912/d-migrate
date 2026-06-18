@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SkippedObject
@@ -8,6 +9,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 
 class PostgresRoutineDdlHelperTest : FunSpec({
 
@@ -175,6 +177,32 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         result[1].sql shouldContain "AFTER INSERT ON \"users\""
         result[1].sql shouldContain "FOR EACH ROW"
         result[1].sql shouldContain "EXECUTE FUNCTION \"trg_fn_audit_insert\"()"
+        skipped.shouldBeEmpty()
+    }
+
+    test("generateTriggers emits the bare trigger name for a canonical table::name key (F1)") {
+        // Pagila keeps `last_updated` on many tables; the model keys them
+        // `table::last_updated` for uniqueness, but PostgreSQL's per-table
+        // trigger namespace means the emitted identifier must be the bare
+        // `last_updated`, not the canonical key `users::last_updated`.
+        val triggers = mapOf(
+            ObjectKeyCodec.triggerKey("users", "last_updated") to TriggerDefinition(
+                table = "users",
+                event = TriggerEvent.UPDATE,
+                timing = TriggerTiming.BEFORE,
+                forEach = TriggerForEach.ROW,
+                body = "EXECUTE FUNCTION last_updated()"
+            )
+        )
+        val skipped = mutableListOf<SkippedObject>()
+
+        val result = helper.generateTriggers(triggers, skipped)
+
+        result shouldHaveSize 1
+        result[0].sql shouldContain "CREATE TRIGGER \"last_updated\""
+        result[0].sql shouldNotContain "users::last_updated"
+        result[0].sql shouldContain "BEFORE UPDATE ON \"users\""
+        result[0].sql shouldContain "EXECUTE FUNCTION last_updated()"
         skipped.shouldBeEmpty()
     }
 

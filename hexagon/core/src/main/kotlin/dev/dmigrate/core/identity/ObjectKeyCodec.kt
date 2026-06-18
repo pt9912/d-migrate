@@ -94,4 +94,16 @@ object ObjectKeyCodec {
         require(sep >= 0) { "Invalid trigger key: $key" }
         return decode(key.substring(0, sep)) to decode(key.substring(sep + 2))
     }
+
+    /**
+     * The bare trigger name for a key, used as the emitted DDL identifier on
+     * dialects with a per-table trigger namespace (PostgreSQL). Returns the
+     * decoded name component of a canonical trigger key (`table::name`), or the
+     * key unchanged when it is not in trigger-key form (e.g. a hand-authored
+     * schema that keys a trigger by its plain name). Never emits the `table::`
+     * prefix as part of the name — that would round-trip `last_updated` into a
+     * literal trigger named `actor::last_updated`.
+     */
+    fun triggerName(key: String): String =
+        runCatching { parseTriggerKey(key).second }.getOrDefault(key)
 }

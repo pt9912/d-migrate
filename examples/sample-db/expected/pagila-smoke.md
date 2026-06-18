@@ -18,7 +18,7 @@ dann Baseline + diese Erklärung aktualisieren.
 - **Daten round-trippen vollständig**: Zeilenzahlen Quelle == Ziel für **alle 22
   Tabellen** (inkl. der 7 `payment_p2022_*`-Partitionskinder).
 
-## Gepinnte Schema-Diffs (37) — je Klasse erklärt
+## Gepinnte Schema-Diffs (8) — je Klasse erklärt
 
 ### A. `film.film_fulltext_idx [gist]` entfernt (1) — fundamentale Grenze
 Pagilas `film.fulltext` ist `tsvector`; beim Reverse degradiert der Typ zu `text`
@@ -42,14 +42,14 @@ Volatilitäts-/Strictness-Marker (`IMMUTABLE`, `STRICT`) fehlen im Ziel. Echter
 Fidelity-Defekt der Funktions-Reverse/Generate-Kette (neu durch den Harness
 aufgedeckt). Siehe Findings-Doc.
 
-### D. 15 Trigger „added" + 15 „removed" (30) — Trigger-Namens-Defekt (M1-Klasse)
-Dieselben 15 Trigger, aber unterschiedlich **benannt**: Quelle trägt den echten
-PG-Namen (`last_updated`, mehrfach über Tabellen — in PG zulässig), das Ziel trägt
-den Modell-**Composite-Key** als literalen Namen (`actor::last_updated`,
-`address::last_updated`, …). Der Composite-Key (nötig, weil `last_updated` über
-Tabellen nicht eindeutig ist) leckt in den emittierten `CREATE TRIGGER`-Namen —
-gleiche Klasse wie **M1** (Routinen-Name vs. Key-Signatur). Echter Defekt. Siehe
-Findings-Doc.
+### D. 1 Trigger `~ film::film_fulltext_trigger` — Multi-Event nicht modelliert (F4)
+**F1 (Trigger-Naming) ist behoben** (Generate-Pfad): 14 der 15 Trigger round-trippen
+jetzt mit ihrem **bloßen** Namen (`last_updated` mehrfach über Tabellen — in PG
+zulässig) statt des Modell-Composite-Keys; die 30 Trigger-Diffs (15 added + 15
+removed) sind verschwunden. Der **eine** verbliebene Diff ist ein *anderer* Defekt:
+Quelle feuert `BEFORE INSERT OR UPDATE`, Ziel nur `BEFORE UPDATE` — das Modell-Enum
+`TriggerEvent` trägt genau **ein** Event, keine Event-**Menge**, also kollabiert
+`INSERT OR UPDATE` auf ein Event. Neu aufgedeckt → **F4** in der Findings-Doc.
 
 ## Pflege
 
