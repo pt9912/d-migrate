@@ -164,3 +164,10 @@ Datensaetze operationalisiert werden:
 Diese Kombination deckt kleine bis mittlere Smoke-/Kompatibilitaetstests
 sowie einen ersten groesseren Datenpfad ab, ohne die Komplexitaet eines
 formalen Benchmark-Sets zu frueh in den Testaufbau zu ziehen.
+
+> **Operationalisierung (Stand 2026-06-18):** Pagila/Sakila sind im 0.9.9-Pilot
+> real genutzt (ad-hoc), aber noch **nicht** in der automatisierten CI-Suite
+> (die nutzt synthetische Fixtures); Employees ist noch nicht geladen. Der
+> Umsetzungsplan fuer einen automatisierten Sample-DB-Integrationstest-Harness
+> liegt in [`../next/sample-db-integration-harness.md`](../next/sample-db-integration-harness.md)
+> (Smoke/Compatibility = Test-Infra; Scale/Performance = 1.0.0-QA, LF 8.1/8.2).
