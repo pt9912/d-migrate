@@ -1,6 +1,6 @@
 # Pilot-Re-Run-P3-Restbefunde (N7, N8, K2)
 
-> **Status:** Sammlung/Tracker (2026-06-17)
+> **Status:** Sammlung/Tracker (erstellt 2026-06-17, Stand 2026-06-18 — Pilot-Zyklus abgeschlossen)
 > **Trigger:** Die 0.9.9-Re-Validierungsläufe
 > ([`../done-archive/pilot-validation-0.9.9-rerun.md`](../done-archive/pilot-validation-0.9.9-rerun.md),
 > [`../done-archive/pilot-validation-0.9.9-rerun3.md`](../done-archive/pilot-validation-0.9.9-rerun3.md))
@@ -55,9 +55,11 @@ fokussierter Slice (Reverse-Dependency-Extraktion + Emissions-Sortierung).
 
 ## Abgrenzung (bereits gefixt)
 
-Alle P1/P2-Befunde der vier Pilot-Läufe sind erledigt (Commits auf `develop`):
+Alle P1/P2-Befunde der **fünf** Pilot-Läufe sind erledigt (Commits auf `develop`):
 Erstlauf I-01…I-10; Re-Run 1 N1 (CURRENT_DATE), N3 (Preflight Enum/Temporal),
 N2 (PG-Partition leer), N4 (View `::`/`||`→MySQL), N5 (Nicht-PK-nextval),
 N6 (Trigger-Action-Body); Re-Run 2 M2 (Preflight strukturell), M1 (Routinen-
-Namen ohne Signatur-Suffix); Re-Run 3 K1 (PG-Array→MySQL-JSON-Wertkonverter).
-Offen sind nur noch die P3-Reste oben (N7, N8, K2).
+Namen ohne Signatur-Suffix); Re-Run 3 K1 (PG-Array→MySQL-JSON-Wertkonverter);
+Re-Run 4 L1 (pgjdbc-`PGobject`→String-Form im MySQL-Bind-Pfad, `c8115fc7`).
+Der Pilot-Validierungszyklus 0.9.9 ist abgeschlossen; alle fünf Reports liegen
+in `../done-archive/`. Offen sind nur noch die P3-Reste oben (N7, N8, K2).
