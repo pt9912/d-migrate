@@ -57,4 +57,8 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`pilot-validation-0.9.9-rerun4.md`](pilot-validation-0.9.9-rerun4.md) | Pilot-Re-Validierungs-Report | Aktueller (fuenfter) E2E-Re-Validierungslauf als Breiten-Proxy fuer LF 9.2; bleibt hier bis Re-Run 5 den Pilot-Zyklus schliesst. Vorgaenger-Reports (Erstlauf, Re-Run 1-3) und der abgeschlossene P2-Tracker liegen in `../done-archive/`; die P3-Restbefunde (N7/N8/K2) in [`../open/pilot-rerun-p3-residuals.md`](../open/pilot-rerun-p3-residuals.md). |
+
+> Der Pilot-Validierungszyklus 0.9.9 ist abgeschlossen — alle fuenf Reports
+> (Erstlauf, Re-Run 1-4) und der P2-Tracker liegen in `../done-archive/`
+> (rerun4 mit Closure-Nachtrag). Offene P3-Restbefunde (N7/N8/K2):
+> [`../open/pilot-rerun-p3-residuals.md`](../open/pilot-rerun-p3-residuals.md).
