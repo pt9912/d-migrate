@@ -10,7 +10,7 @@ Test-Strategie und Modul.
 
 Quellen:
 [Pilot-Report](pilot-validation-0.9.9.md) (Symptome + Repro, Abschnitt 6) ·
-[Roadmap-Milestone 0.9.9](roadmap.md).
+[Roadmap-Milestone 0.9.9](../in-progress/roadmap.md).
 
 > **Zeilennummern** sind Stand `develop` 2026-06-16 und können nach Edits
 > driften — vor dem Fix kurz gegenprüfen. P1-Vorgehen war: Ursache verifizieren →

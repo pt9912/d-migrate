@@ -2,8 +2,8 @@
 
 > **Status:** Sammlung/Tracker (2026-06-17)
 > **Trigger:** Die 0.9.9-Re-Validierungsläufe
-> ([`../in-progress/pilot-validation-0.9.9-rerun.md`](../in-progress/pilot-validation-0.9.9-rerun.md),
-> [`../in-progress/pilot-validation-0.9.9-rerun3.md`](../in-progress/pilot-validation-0.9.9-rerun3.md))
+> ([`../done-archive/pilot-validation-0.9.9-rerun.md`](../done-archive/pilot-validation-0.9.9-rerun.md),
+> [`../done-archive/pilot-validation-0.9.9-rerun3.md`](../done-archive/pilot-validation-0.9.9-rerun3.md))
 > deckten nach Behebung der P1/P2-Blocker drei **P3**-Befunde auf (N7, N8 aus
 > Re-Run 1; K2 aus Re-Run 3). Keiner ist RC-blockierend; es sind Feature-Lücken
 > bzw. generatorweite/Ordnungs-Themen — daher hier getrackt statt in den engen

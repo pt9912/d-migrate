@@ -563,21 +563,21 @@ nicht als Enterprise-BI-Plattform (siehe
 | Docs    | [API-Dokumentation](../../user/api-referenz.md) | — | ✅ |
 | QA      | [Performance-Benchmarks dokumentiert](../../operations/performance-benchmarks.md) | — | ✅¹ |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2 | ⛔² |
-| QA      | [Pilot-Blocker beheben (P1/P2)](pilot-validation-0.9.9.md) | — | 🚧³ |
+| QA      | [Pilot-Blocker beheben (P1/P2)](../done-archive/pilot-validation-0.9.9.md) | — | 🚧³ |
 
 ¹ Methodik + aktuelle Budgets dokumentiert. Die acceptance-grade Benchmarks
 **LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
 🔮 1.0.0-QA-Ziele und noch nicht validiert.
 ² Der automatisierte Vorfilter ([Playbook](../../operations/pilot-validation-playbook.md))
-lief am 2026-06-16 ([Report](pilot-validation-0.9.9.md), Verdikt **nicht RC-reif**);
+lief am 2026-06-16 ([Report](../done-archive/pilot-validation-0.9.9.md), Verdikt **nicht RC-reif**);
 die menschliche ≥5-Tester-Abnahme bleibt davon unberührt und steht weiter aus.
 ³ Der Vorfilter fand 4 P1-Blocker (Transfer-Preflight-Strictness I-01, E009-
 Temporal-Defaults I-02, MySQL-Enum-Lowercasing I-03, Enum-Transfer-Cast I-04)
 plus 6 P2 (ungültige DDL). Entscheidung: in **0.9.9** beheben (nicht nach 1.0.0
 verschoben). **P1 vollständig behoben 2026-06-16** (Fix-Kern + Commits:
-[Report §6.2](pilot-validation-0.9.9.md); code-verifizierte Root-Causes §6.1);
+[Report §6.2](../done-archive/pilot-validation-0.9.9.md); code-verifizierte Root-Causes §6.1);
 **P2 (I-05…I-10) stehen noch aus** — lokalisierte Ursachen + Fix-Plan je Bug
-im [P2-Tracker](pilot-blocker-p2-tracker.md).
+im [P2-Tracker](../done-archive/pilot-blocker-p2-tracker.md).
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.

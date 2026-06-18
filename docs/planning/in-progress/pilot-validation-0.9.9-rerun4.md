@@ -5,8 +5,8 @@
 > **Art:** Automatisierte End-to-End-**Re-Validierung** (fünfter Lauf) als
 > Breiten-Proxy für die Pilotanwender-Tests (Lastenheft 9.2), Vorbereitung
 > 1.0.0-RC. Vorgänger (NICHT überschrieben):
-> [Erstlauf](pilot-validation-0.9.9.md), [Re-Run 1](pilot-validation-0.9.9-rerun.md),
-> [Re-Run 2](pilot-validation-0.9.9-rerun2.md), [Re-Run 3](pilot-validation-0.9.9-rerun3.md).
+> [Erstlauf](../done-archive/pilot-validation-0.9.9.md), [Re-Run 1](../done-archive/pilot-validation-0.9.9-rerun.md),
+> [Re-Run 2](../done-archive/pilot-validation-0.9.9-rerun2.md), [Re-Run 3](../done-archive/pilot-validation-0.9.9-rerun3.md).
 > Verbindlicher Rahmen: [Migrations-Leitfaden](../../user/migrations-leitfaden.md),
 > [`guide.md`](../../user/guide.md), [API-Referenz](../../user/api-referenz.md),
 > [`spec/cli-spec.md`](../../../spec/cli-spec.md). Ablage gemäß
@@ -217,7 +217,7 @@ offen.
 
 ## 12. Verwandte Dokumente
 
-- [Erstlauf](pilot-validation-0.9.9.md) · [Re-Run 1](pilot-validation-0.9.9-rerun.md) · [Re-Run 2](pilot-validation-0.9.9-rerun2.md) · [Re-Run 3](pilot-validation-0.9.9-rerun3.md) · [P3-Restbefunde](../open/pilot-rerun-p3-residuals.md)
+- [Erstlauf](../done-archive/pilot-validation-0.9.9.md) · [Re-Run 1](../done-archive/pilot-validation-0.9.9-rerun.md) · [Re-Run 2](../done-archive/pilot-validation-0.9.9-rerun2.md) · [Re-Run 3](../done-archive/pilot-validation-0.9.9-rerun3.md) · [P3-Restbefunde](../open/pilot-rerun-p3-residuals.md)
 - [Migrations-Leitfaden](../../user/migrations-leitfaden.md) · [`guide.md`](../../user/guide.md) · [API-Referenz](../../user/api-referenz.md) · [`spec/cli-spec.md`](../../../spec/cli-spec.md)
 - [ADR 0004](../../adr/0004-documentation-and-planning-structure.md) · [ADR 0012](../../adr/0012-index-prefix-length-scope.md) · [Pilot-Validierungs-Playbook](../../operations/pilot-validation-playbook.md)
 - [Test-Database-Candidates](../open/test-database-candidates.md)

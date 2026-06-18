@@ -2,7 +2,7 @@
 
 > **Status:** GELIEFERT (2026-06-17) — D-1 entschieden (Option a). Closure s. u.
 > **Trigger:** Re-Run-2-Befund **M2 (P1)**
-> ([`pilot-validation-0.9.9-rerun2.md`](../in-progress/pilot-validation-0.9.9-rerun2.md)):
+> ([`pilot-validation-0.9.9-rerun2.md`](../done-archive/pilot-validation-0.9.9-rerun2.md)):
 > Die Transfer-Preflight blockt weiterhin tool-eigene Cross-Dialect-Abbildungen
 > (`Array(text)→Json` PG→MySQL, `Decimal→Float` →SQLite), obwohl I-01/N3 dieselbe
 > Klasse fallweise bereits geöffnet haben. Hand-gepflegte Fall-Liste hinkt
