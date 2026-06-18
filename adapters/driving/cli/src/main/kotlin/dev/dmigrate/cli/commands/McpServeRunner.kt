@@ -69,9 +69,12 @@ internal class McpServeRunner(
     private val stderr: (String) -> Unit,
     private val effectiveConnectionConfigPath: Path?,
     private val cliVersionProvider: () -> String = ::cliVersion,
-    private val wiring: McpServeWiring = McpServeWiring(
-        effectiveConnectionConfigPath = effectiveConnectionConfigPath,
-        approvalGrantsFile = options.approvalGrantsFile,
+    private val launcher: McpServeLauncher = DefaultMcpServeLauncher(
+        wiring = McpServeWiring(
+            effectiveConnectionConfigPath = effectiveConnectionConfigPath,
+            approvalGrantsFile = options.approvalGrantsFile,
+            stderr = stderr,
+        ),
         stderr = stderr,
     ),
 ) {
@@ -112,11 +115,7 @@ internal class McpServeRunner(
             try {
                 runStartupSweepOrExit(owner, retention, artifacts)
                 echoStartStateLine(owner, artifacts)
-                when (options.transport) {
-                    "stdio" -> startStdio(config, owner, lock, cursorKeyring, artifacts)
-                    "http" -> startHttp(config, owner, lock, cursorKeyring, artifacts)
-                    else -> error("transport check failed: ${options.transport}")
-                }
+                launcher.launch(options.transport, config, owner, lock, cursorKeyring, artifacts)
             } finally {
                 lock.close()
             }
@@ -323,6 +322,56 @@ internal class McpServeRunner(
         )
     }
 
+}
+
+/**
+ * Seam for the transport-specific server start. The default
+ * implementation opens the real runtime ([McpServeWiring.build]) and
+ * blocks in [McpServerBootstrap] / [McpServerLifecycle] until stdin
+ * closes (stdio) or SIGINT (HTTP). Injecting it keeps [McpServeRunner]'s
+ * lifecycle orchestration deterministically unit-coverable while the
+ * blocking, multi-threaded server start stays out of the unit-coverage
+ * gate (real coverage in :test:integration-server-state).
+ */
+internal interface McpServeLauncher {
+    fun launch(
+        transport: String,
+        config: McpServerConfig,
+        owner: StateDirOwner,
+        lock: McpStateDirLock,
+        cursorKeyring: CursorKeyring?,
+        artifacts: ArtifactStorageConfig,
+    )
+}
+
+/**
+ * Default [McpServeLauncher]: builds the runtime wiring and starts the
+ * blocking stdio/HTTP server. It is lifecycle-bound and multi-threaded
+ * (the in-process server plus the retention/finalisation sweep loops),
+ * so it is excluded from the cli unit-coverage gate — real coverage
+ * lives in :test:integration-server-state. [McpServeRunner] takes it as
+ * an injectable collaborator; unit tests substitute a fake.
+ */
+internal class DefaultMcpServeLauncher(
+    private val wiring: McpServeWiring,
+    private val stderr: (String) -> Unit,
+) : McpServeLauncher {
+
+    override fun launch(
+        transport: String,
+        config: McpServerConfig,
+        owner: StateDirOwner,
+        lock: McpStateDirLock,
+        cursorKeyring: CursorKeyring?,
+        artifacts: ArtifactStorageConfig,
+    ) {
+        when (transport) {
+            "stdio" -> startStdio(config, owner, lock, cursorKeyring, artifacts)
+            "http" -> startHttp(config, owner, lock, cursorKeyring, artifacts)
+            else -> error("transport check failed: $transport")
+        }
+    }
+
     private fun startStdio(
         config: McpServerConfig,
         owner: StateDirOwner,
@@ -366,7 +415,7 @@ internal class McpServeRunner(
             )) {
                 is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
                 is McpStartOutcome.Started -> {
-                    stderr("MCP HTTP server listening on ${options.bind}:${outcome.handle.boundPort}")
+                    stderr("MCP HTTP server listening on ${config.bindAddress}:${outcome.handle.boundPort}")
                     McpServerLifecycle.run(outcome.handle, lock, owner)
                 }
             }

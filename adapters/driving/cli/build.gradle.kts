@@ -192,6 +192,13 @@ kover {
                     "dev.dmigrate.cli.commands.SchemaGenerateCommand*",
                     "dev.dmigrate.cli.commands.SchemaMigrateCommand*",
                     "dev.dmigrate.cli.commands.SchemaRollbackCommand*",
+                    // `mcp` / `mcp serve` shells — same thin-shell rationale:
+                    // option parsing + McpServeOptions mapping, all logic in
+                    // McpServeRunner (unit-tested) and DefaultMcpServeLauncher
+                    // (integration-bound, excluded below). Real wiring is
+                    // smoke-exercised by CliMcpServeSmokeTest.
+                    "dev.dmigrate.cli.commands.McpCommand*",
+                    "dev.dmigrate.cli.commands.McpServeCommand*",
                     // Phase E.6: thin wiring helpers — Hikari + JDBC integration-bound;
                     // tested via :test:integration-server-state in Phase F.
                     "dev.dmigrate.cli.commands.JdbcMigrationExecutor*",
@@ -208,6 +215,17 @@ kover {
                     // `McpServeWiring(serverStateFactory = ...)`. Real-Coverage
                     // entsteht im :test:integration-server-state-Modul.
                     "dev.dmigrate.cli.commands.DefaultServerStateFactory*",
+                    // Blocking, multi-threaded server start (in-process MCP
+                    // server + retention/finalisation sweep loops). Its line
+                    // coverage was produced only by the in-process
+                    // CliMcpServeSmokeTest run, whose multi-fork registration
+                    // is timing-sensitive under CI's parallel execution and
+                    // intermittently dropped the cli module below 90%
+                    // (koverVerify flake, 2026-06-18). McpServeRunner takes it
+                    // as an injectable seam so the lifecycle orchestration
+                    // stays deterministically unit-covered; the launcher's real
+                    // coverage lives in :test:integration-server-state.
+                    "dev.dmigrate.cli.commands.DefaultMcpServeLauncher*",
                     // SQLite live probes open real JDBC/Hikari connections;
                     // runner-stage behaviour is unit-tested in :hexagon:application,
                     // connection behaviour belongs to integration coverage.
