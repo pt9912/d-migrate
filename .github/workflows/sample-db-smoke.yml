@@ -1,7 +1,7 @@
 name: Sample-DB Smoke (Best-Effort)
 
 # Phase-1-E2E-Smoke: Pagila/PG-Round-Trip gegen das echte d-migrate:dev-CLI.
-# Plan: docs/planning/next/sample-db-integration-harness.md
+# Plan: docs/planning/in-progress/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Faehrt `make sample-db-smoke` (fetch gepinnter Dump -> compose up ->

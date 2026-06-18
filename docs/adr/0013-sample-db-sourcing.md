@@ -18,7 +18,7 @@ informed: CI (Integration Tests / nightly), Test-Infrastruktur, Repo-Footprint-P
 ## Kontext und Problemstellung
 
 Der geplante Sample-DB-Integrationstest-Harness
-([`sample-db-integration-harness.md`](../planning/next/sample-db-integration-harness.md))
+([`sample-db-integration-harness.md`](../planning/in-progress/sample-db-integration-harness.md))
 lädt externe Beispieldatenbanken (Pagila, Sakila, Employees) in Container und
 fährt reverse → generate → transfer → compare. Die Dumps sind **externe
 Artefakte**; wie sie in die CI kommen, hat echte Trade-offs:

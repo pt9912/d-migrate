@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — Phase 1 Smoke (Pagila / PostgreSQL Round-Trip)
-# Plan: docs/planning/next/sample-db-integration-harness.md
+# Plan: docs/planning/in-progress/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Echter End-to-End-CLI-Lauf gegen das d-migrate:dev-Image:
@@ -112,7 +112,7 @@ $COMPOSE run --rm dmigrate data transfer --source pagila_pg --target pagila_targ
 grep -q "Transfer complete" /tmp/sample-db-xfer.log || fail "transfer did not complete"
 
 log "applying post-data DDL (FK/index/constraint/trigger/routine)..."
-# F2 (docs/planning/open/sample-db-roundtrip-findings.md) fixed the
+# F2 (docs/planning/in-progress/sample-db-roundtrip-findings.md) fixed the
 # programmability ordering (functions/aggregates are now emitted before the views
 # that call them), so post-data must apply CLEANLY under ON_ERROR_STOP=1.
 psql_db pagila_target 1 < "$OUT_DIR/pagila.post-data.sql" > /tmp/sample-db-post.log 2>&1 \

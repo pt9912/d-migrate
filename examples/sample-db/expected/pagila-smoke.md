@@ -1,6 +1,6 @@
 # Expected-Result-Baseline — Pagila/PostgreSQL Smoke (Phase 1)
 
-> Plan: [`../../../docs/planning/next/sample-db-integration-harness.md`](../../../docs/planning/next/sample-db-integration-harness.md)
+> Plan: [`../../../docs/planning/in-progress/sample-db-integration-harness.md`](../../../docs/planning/in-progress/sample-db-integration-harness.md)
 > · Stand: 2026-06-18 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`)
 
 Diese Datei erklärt **jeden** in `pagila-smoke.compare.txt` gepinnten
@@ -35,7 +35,7 @@ scheiterten beim Anwenden (`function group_concat(text) does not exist`).
 **F2** sortiert die Programmability nun in Abhängigkeitsreihenfolge (Views **nach**
 den von ihnen aufgerufenen Routinen/Aggregaten); die drei Views round-trippen
 vollständig. Details + Verbleibendes siehe
-[`../../../docs/planning/open/sample-db-roundtrip-findings.md`](../../../docs/planning/open/sample-db-roundtrip-findings.md).
+[`../../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
 
 ### C. 3 Funktionen „changed" (`_group_concat`, `last_day`, `rewards_report`) — Attribut-Verlust
 Body identisch, aber der Round-Trip verliert Funktions-**Attribute**:

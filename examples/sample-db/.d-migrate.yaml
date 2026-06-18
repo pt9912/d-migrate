@@ -1,5 +1,5 @@
 # Sample-DB-Harness Connection-Config
-# Plan: docs/planning/next/sample-db-integration-harness.md
+# Plan: docs/planning/in-progress/sample-db-integration-harness.md
 #
 # Container-Pfad: der dmigrate-Service erreicht postgres über das
 # Compose-Netz (Service-DNS `postgres`, Container-Port 5432).

@@ -6,7 +6,7 @@ docker-compose + bash-Scripts gegen das lokal gebaute `d-migrate:dev`-Image,
 exakt analog [`../bi-demo/`](../bi-demo/README.md) — **kein** Testcontainers,
 **kein** Gradle-Testmodul. Läuft **lokal *und* in CI**.
 
-- Plan: [`../../docs/planning/next/sample-db-integration-harness.md`](../../docs/planning/next/sample-db-integration-harness.md)
+- Plan: [`../../docs/planning/in-progress/sample-db-integration-harness.md`](../../docs/planning/in-progress/sample-db-integration-harness.md)
 - Sourcing/Mechanik-ADR: [`../../docs/adr/0014-sample-db-harness-fetch-and-compose.md`](../../docs/adr/0014-sample-db-harness-fetch-and-compose.md)
 
 ## Sourcing (ADR 0014)
@@ -61,5 +61,5 @@ Stack bleibt nach dem Lauf stehen (Inspektion); Ports binden nur an `127.0.0.1`.
 
 Der Erstlauf hat echte Round-Trip-Defekte aufgedeckt (Trigger-Naming, Funktions-
 Attribute, Programmability-Ordering) — getrackt in
-[`../../docs/planning/open/sample-db-roundtrip-findings.md`](../../docs/planning/open/sample-db-roundtrip-findings.md).
+[`../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
 Genau dafür gibt es den Harness.

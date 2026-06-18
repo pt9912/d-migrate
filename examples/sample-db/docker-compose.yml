@@ -1,4 +1,4 @@
-# Sample-DB-Harness Compose-Stack — Plan: docs/planning/next/sample-db-integration-harness.md
+# Sample-DB-Harness Compose-Stack — Plan: docs/planning/in-progress/sample-db-integration-harness.md
 # Sourcing/Mechanik-Entscheidung: docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Phase 1 (Pagila/PG-Smoke): ein postgres-Service mit zwei Datenbanken

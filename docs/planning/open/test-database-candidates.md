@@ -169,5 +169,5 @@ formalen Benchmark-Sets zu frueh in den Testaufbau zu ziehen.
 > real genutzt (ad-hoc), aber noch **nicht** in der automatisierten CI-Suite
 > (die nutzt synthetische Fixtures); Employees ist noch nicht geladen. Der
 > Umsetzungsplan fuer einen automatisierten Sample-DB-Integrationstest-Harness
-> liegt in [`../next/sample-db-integration-harness.md`](../next/sample-db-integration-harness.md)
+> liegt in [`../in-progress/sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md)
 > (Smoke/Compatibility = Test-Infra; Scale/Performance = 1.0.0-QA, LF 8.1/8.2).

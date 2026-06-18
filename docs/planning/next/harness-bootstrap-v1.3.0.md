@@ -4,7 +4,7 @@
 > Status: Entwurf (2026-06-18). Scope skizziert, **noch keine aktive
 > Slice-Arbeit** im Code.
 > Priorität: **hinter** dem Sample-DB-Harness
-> ([`sample-db-integration-harness.md`](sample-db-integration-harness.md)) — bewusst
+> ([`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md)) — bewusst
 > nachgeordnet (User-Entscheidung 2026-06-18).
 > Auslöser: Regelwerk-Versionssprung **v1.2.0 → v1.3.0** (2026-06-18,
 > User-bestätigt). Methodik-Quelle ist extern (`pt9912/ai-harness-course`,

@@ -1,7 +1,7 @@
 # Sample-DB-Round-Trip-Findings (Pagila/PG, Phase 1)
 
 > Status: Sammlung/Tracker (2026-06-18)
-> Trigger: Der neue Sample-DB-Harness ([`../next/sample-db-integration-harness.md`](../next/sample-db-integration-harness.md))
+> Trigger: Der neue Sample-DB-Harness ([`sample-db-integration-harness.md`](sample-db-integration-harness.md))
 > hat beim **Erstlauf** (Pagila PG→PG-Round-Trip) echte Fidelity-Defekte
 > aufgedeckt, die im synthetischen Cross-Dialect-Matrix-Modus bisher nicht
 > sichtbar waren.
