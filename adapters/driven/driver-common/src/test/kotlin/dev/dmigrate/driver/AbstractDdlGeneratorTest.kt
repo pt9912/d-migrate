@@ -177,7 +177,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t", "indices:t",
-            "circular", "views", "views", "functions", "aggregates", "procedures", "triggers",
+            "circular", "views", "functions", "aggregates", "procedures", "views", "triggers",
         )
     }
 
@@ -280,7 +280,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t",
-            "circular", "views", "views", "functions", "aggregates", "procedures", "triggers",
+            "circular", "views", "functions", "aggregates", "procedures", "views", "triggers",
         )
         result.notes.any { it.code == "E055" && it.blocksTable && it.objectName == "t" } shouldBe true
         result.skippedObjects shouldContainExactly listOf(

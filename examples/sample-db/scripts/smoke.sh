@@ -112,15 +112,12 @@ $COMPOSE run --rm dmigrate data transfer --source pagila_pg --target pagila_targ
 grep -q "Transfer complete" /tmp/sample-db-xfer.log || fail "transfer did not complete"
 
 log "applying post-data DDL (FK/index/constraint/trigger/routine)..."
-# Bewusst OHNE ON_ERROR_STOP: die 3 group_concat-Views scheitern
-# einzeln (Ordering-Defekt, K2-Klasse — siehe expected/pagila-smoke.md);
-# alles übrige muss anwendbar bleiben.
-psql_db pagila_target 0 < "$OUT_DIR/pagila.post-data.sql" > /tmp/sample-db-post.log 2>&1 || true
-post_errs=$(grep -c "^ERROR" /tmp/sample-db-post.log || true)
-unexpected=$(grep "^ERROR" /tmp/sample-db-post.log | grep -vc "group_concat(text) does not exist" || true)
-[ "$unexpected" = "0" ] || { grep "^ERROR" /tmp/sample-db-post.log; fail "unexpected post-data error(s)"; }
-[ "$post_errs" = "3" ] || fail "expected exactly 3 known post-data errors (group_concat ordering), got $post_errs"
-log "post-data applied (3 known group_concat ordering errors as expected)"
+# F2 (docs/planning/open/sample-db-roundtrip-findings.md) fixed the
+# programmability ordering (functions/aggregates are now emitted before the views
+# that call them), so post-data must apply CLEANLY under ON_ERROR_STOP=1.
+psql_db pagila_target 1 < "$OUT_DIR/pagila.post-data.sql" > /tmp/sample-db-post.log 2>&1 \
+    || { tail -20 /tmp/sample-db-post.log; fail "post-data apply failed (expected clean after F2 ordering fix)"; }
+log "post-data applied cleanly"
 
 # --- 7. Daten-Zeilenzahlen Quelle == Ziel (alle Tabellen) ----------
 log "verifying row-count parity (source == target) for all tables..."

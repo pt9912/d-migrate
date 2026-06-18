@@ -39,16 +39,22 @@ PG-spezifisch.
 Fläche mit eigenen Golden-Tests — nicht vom Phase-1-Harness (`schema generate`)
 verifizierbar, daher als eigener Fix-Slice mit Diff-Pfad-Test nachzuziehen.
 
-## F2 — Programmability-Ordering: Views vor Routinen/Aggregaten (K2-Klasse) · zu beheben
+## F2 — Programmability-Ordering: Views vor Routinen/Aggregaten (K2-Klasse) · BEHOBEN 2026-06-18
 
-Das `post-data` emittiert Views **vor** der `CREATE AGGREGATE group_concat`-/
-`CREATE FUNCTION`-Definition, die sie aufrufen → die 3 group_concat-Views scheitern
-beim Anwenden (`function group_concat(text) does not exist`). Gleiche Klasse wie
-der bereits getrackte P3-Residual **K2** (`--include-all`-Routinen-Ordering,
-[`../done/pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)). Fix-
-Richtung: Programmability topologisch sortieren (Views **nach** den von ihnen
-referenzierten Routinen/Aggregaten); die vorhandene `sortFunctionsByDependencies`
-in `DdlGenerationSupport` auf View→Routine-Kanten ausweiten.
+Das `post-data` emittierte Views **vor** der `CREATE AGGREGATE group_concat`-/
+`CREATE FUNCTION`-Definition, die sie aufrufen → die 3 group_concat-Views
+scheiterten beim Anwenden (`function group_concat(text) does not exist`). Gleiche
+Klasse wie der P3-Residual **K2** (`--include-all`-Routinen-Ordering,
+[`../done/pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)).
+
+**Behoben:** in `AbstractDdlGenerator.generate()` werden die POST_DATA-Views nun
+**nach** functions/aggregates/procedures emittiert (statt davor). Eine View wird
+bei CREATE validiert und referenziert üblicherweise die Routinen/Aggregate, also
+müssen diese zuerst stehen. Regressionstest in `AbstractDdlGeneratorTestPart2`
+(„post-data view is emitted AFTER the function it references"); die callOrder-
+Erwartungen in `AbstractDdlGeneratorTest(+Part2)` + die Golden-Master
+`view-function-deps.{postgresql,mysql,sqlite}.post-data.sql` nachgezogen.
+Harness-belegt: `post-data` wendet sauber an (ON_ERROR_STOP=1), Baseline 8 → 5.
 
 ## F3 — Funktions-Attribut-Verlust (neu) · zu beheben
 

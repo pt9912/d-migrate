@@ -2,20 +2,14 @@ Schema Compare: pagila_pg <-> pagila_target
 
 Status: DIFFERENT
 
-Summary: 8 change(s)
+Summary: 5 change(s)
   Tables changed:  1
-  Views removed:   3
   Functions changed: 3
   Triggers changed: 1
 
 Tables:
   ~ film:
       - index film_fulltext_idx [gist]
-
-Views:
-  - actor_info
-  - film_list
-  - nicer_but_slower_film_list
 
 Functions:
   ~ _group_concat(in:text,in:text)

@@ -17,8 +17,10 @@ dann Baseline + diese Erklärung aktualisieren.
   + `W123` (gist-Index auf tsvector→text).
 - **Daten round-trippen vollständig**: Zeilenzahlen Quelle == Ziel für **alle 22
   Tabellen** (inkl. der 7 `payment_p2022_*`-Partitionskinder).
+- **post-data wendet sauber an** (ON_ERROR_STOP=1, 0 Fehler) — seit F2 (Programmability
+  in Abhängigkeitsreihenfolge: Funktionen/Aggregate vor den Views, die sie aufrufen).
 
-## Gepinnte Schema-Diffs (8) — je Klasse erklärt
+## Gepinnte Schema-Diffs (5) — je Klasse erklärt
 
 ### A. `film.film_fulltext_idx [gist]` entfernt (1) — fundamentale Grenze
 Pagilas `film.fulltext` ist `tsvector`; beim Reverse degradiert der Typ zu `text`
@@ -26,13 +28,13 @@ Pagilas `film.fulltext` ist `tsvector`; beim Reverse degradiert der Typ zu `text
 Generate übersprungen wird (`W123`). Kein Defekt — eine bewusste, gemeldete
 Grenze. Eine ADR „tsvector/Volltext-Round-Trip" könnte das künftig adressieren.
 
-### B. 3 Views entfernt (`actor_info`, `film_list`, `nicer_but_slower_film_list`) — Ordering-Defekt (K2-Klasse)
-Alle drei rufen das Aggregat `group_concat(...)` auf. Das generierte `post-data`
-emittiert diese Views **vor** der `CREATE AGGREGATE group_concat`-Definition →
-beim Anwenden scheitern genau diese drei (`function group_concat(text) does not
-exist`). Es ist ein **Dependency-Ordering-Defekt** der Programmability-Emission
-(Views vor den von ihnen aufgerufenen Routinen/Aggregaten), gleiche Klasse wie der
-P3-Residual **K2** (`--include-all`-Routinen-Ordering). Siehe
+### B. 3 Views (`actor_info`, `film_list`, `nicer_but_slower_film_list`) — ✅ BEHOBEN (F2), kein Diff mehr
+Diese Views rufen das Aggregat `group_concat(...)` auf und wurden im `post-data`
+früher **vor** der `CREATE AGGREGATE group_concat`-Definition emittiert → sie
+scheiterten beim Anwenden (`function group_concat(text) does not exist`).
+**F2** sortiert die Programmability nun in Abhängigkeitsreihenfolge (Views **nach**
+den von ihnen aufgerufenen Routinen/Aggregaten); die drei Views round-trippen
+vollständig. Details + Verbleibendes siehe
 [`../../../docs/planning/open/sample-db-roundtrip-findings.md`](../../../docs/planning/open/sample-db-roundtrip-findings.md).
 
 ### C. 3 Funktionen „changed" (`_group_concat`, `last_day`, `rewards_report`) — Attribut-Verlust
