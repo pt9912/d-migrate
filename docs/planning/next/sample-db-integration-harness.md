@@ -37,8 +37,9 @@ geladen, nicht vendored, wegen Footprint). Entscheidung gehört in einen
 
 - **Phase 0 — Sourcing-ADR.** Vendoren-vs-Download-Policy, Footprint-Budget,
   Lizenz-Vermerke (Pagila, Sakila, Employees). Voraussetzung für jeden Code.
-- **Phase 1 — Smoke (Pagila/PG).** Neues Test-Modul (z. B. `test/sample-db-matrix`,
-  gegated `-PintegrationTests`) oder Erweiterung `test/cross-dialect-matrix`.
+- **Phase 1 — Smoke (Pagila/PG).** Neues, noch zu erstellendes Test-Modul
+  `test/sample-db-matrix` <!-- d-check:ignore (geplantes Test-Modul, existiert noch nicht; ADR 0011) -->
+  (gegated `-PintegrationTests`) oder Erweiterung des bestehenden `test/cross-dialect-matrix`.
   Pagila laden → reverse → validate (0 Errors) → generate split pre/post → neues
   PG-Schema → transfer → `schema compare` clean.
 - **Phase 2 — Compatibility (Sakila/MySQL + Cross-DB).** Sakila-Lauf analog;
