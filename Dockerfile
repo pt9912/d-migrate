@@ -129,7 +129,7 @@ RUN gradle --no-daemon detektBaseline --continue || true
 RUN find /src -name "detekt-baseline.xml" -not -path "/src/build/*" \
       -printf '%P\n' | tar cf /src/detekt-baselines.tar -C /src -T -
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/detekt-baselines.tar"]
 
 # ---- Stage: golden-update --------------------------------------------------
@@ -157,7 +157,7 @@ RUN gradle --no-daemon \
 RUN find /src -path "*/src/test/resources/golden/*" -type f \
       -printf '%P\n' | tar cf /src/goldens.tar -C /src -T -
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/goldens.tar"]
 
 # ---- Stage: detekt ---------------------------------------------------------
@@ -184,7 +184,7 @@ FROM compile AS jib-image-tar
 
 RUN gradle --no-daemon :adapters:driving:cli:jibBuildTar
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/jib-image.tar"]
 
 # ---- Stage 1c: coverage modules HTML --------------------------------------
@@ -217,7 +217,7 @@ RUN gradle --no-daemon ${COVERAGE_MODULES_HTML_TASKS}
 RUN find /src -path "*/build/reports/kover/html/*" -type f \
       -printf '%P\n' | tar cf /src/coverage-modules-html.tar -C /src -T -
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/coverage-modules-html.tar"]
 
 # ---- Stage 1d: release assets ---------------------------------------------
@@ -232,7 +232,7 @@ RUN if [ -n "${RELEASE_VERSION}" ]; then \
     fi
 RUN tar cf /src/release-assets.tar -C /src adapters/driving/cli/build/release
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/release-assets.tar"]
 
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
@@ -297,7 +297,7 @@ COPY --from=coverage-build /src/build/reports/kover/html/ /srv/coverage/
 
 EXPOSE 8080
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (serves coverage HTML locally in CI), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (serves coverage HTML locally in CI), never a published runtime image
 ENTRYPOINT ["python3", "-m", "http.server", "8080", "--directory", "/srv/coverage"]
 
 # ---- Stage 6: coverage-json ------------------------------------------------
@@ -309,7 +309,7 @@ WORKDIR /srv/coverage-json
 
 COPY --from=coverage-build /src/build/reports/kover/report.json /srv/coverage-json/report.json
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (cats a coverage report to stdout), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a coverage report to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/srv/coverage-json/report.json"]
 
 # ---- Stage 6b: coverage-modules --------------------------------------------
@@ -385,7 +385,7 @@ COPY scripts/kover-modules-summary.py /usr/local/bin/kover-modules-summary.py
 # use-defused-xml-parse).
 RUN pip install --no-cache-dir defusedxml
 
-# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint -- ephemeral CI helper stage (prints a coverage summary), never a published runtime image
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (prints a coverage summary), never a published runtime image
 ENTRYPOINT ["python3", "/usr/local/bin/kover-modules-summary.py", "/reports"]
 
 # ---- Stage 7: runtime ------------------------------------------------------

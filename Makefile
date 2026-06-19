@@ -150,17 +150,24 @@ docs-check: coverage-excludes-check
 coverage-excludes-check:
 	python3 ./scripts/verify-kover-excludes-ledger.py
 
-# Statische Sicherheitsanalyse via semgrep (Community-Auto-Regeln). `--error`
-# macht es zu einem Gate (Exit != 0 bei Findings). Bewusst akzeptierte Befunde
-# sind inline via `# nosemgrep: <rule-id>` annotiert (Begruendung am Fundort).
-# Hinweis: `--config auto` laedt Regeln zur Laufzeit aus der Registry — der Lauf
-# ist daher nicht voll hermetisch (Regel-Updates koennen neue Findings bringen).
-# Image ueberschreibbar/pinbar via SEMGREP_IMAGE.
-SEMGREP_IMAGE ?= semgrep/semgrep
+# Statische Sicherheitsanalyse via semgrep — hermetisches Gate:
+#  - gepinntes Regelset, on-demand gecacht (config/semgrep/, statt `--config auto`).
+#    Upstream ist LGPL-2.1 + Commons Clause → NICHT vendored, sondern per
+#    scripts/fetch-semgrep-rules.sh gepinnt+SHA256-verifiziert geholt (gitignored).
+#  - Image per Digest gepinnt (SEMGREP_IMAGE),
+#  - Scan offline (`--network none`, `--metrics off`) → reproduzierbar.
+# Bewusst akzeptierte Befunde sind inline via `# nosemgrep: <rule-id>` annotiert
+# (Begruendung am Fundort). Regel-/Image-Updates kommen als bewusster Pin-Bump,
+# nie als spontaner Gate-Bruch. Image + Regeln werden beim Erstlauf gezogen (Pull/
+# Fetch laufen ueber Host/Daemon, nicht den `--network none`-Scan-Container).
+SEMGREP_IMAGE ?= semgrep/semgrep@sha256:c180f0c93a17b420c0af5006214a29d3c747c5459c732b740191adf657dd0068
 
-semgrep:
-	$(DOCKER) run --rm -v "$(CURDIR)":/src:ro $(SEMGREP_IMAGE) \
-	  semgrep scan --config auto --error /src
+semgrep-rules-fetch:
+	./scripts/fetch-semgrep-rules.sh
+
+semgrep: semgrep-rules-fetch
+	$(DOCKER) run --rm --network none -v "$(CURDIR)":/src:ro $(SEMGREP_IMAGE) \
+	  semgrep scan --config /src/config/semgrep --error --metrics off /src
 
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
@@ -172,7 +179,7 @@ solid-suppression-gate:
 parquet-sweep:
 	./scripts/parquet-sealed-sweep.sh
 
-gates: docker-check docker-coverage-gate docs-check
+gates: docker-check docker-coverage-gate docs-check semgrep
 
 ci: ci-build docs-check
 
@@ -299,7 +306,7 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
 
-docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke
+docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke semgrep
 
 docker-full-gates: docker-gates integration
 

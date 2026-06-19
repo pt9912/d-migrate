@@ -47,6 +47,10 @@ dist/
 examples/**/.cache/
 examples/**/out/
 
+# Cached semgrep rules — fetched on demand (LGPL-2.1 + Commons Clause), never
+# vendored, never in the build context.
+config/semgrep/*.yml
+
 
 docs/
 spec/*
