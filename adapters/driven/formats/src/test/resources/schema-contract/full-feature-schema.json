@@ -97,6 +97,8 @@
       "returns": { "type": "decimal", "precision": 10, "scale": 2 },
       "language": "plpgsql",
       "deterministic": false,
+      "volatility": "immutable",
+      "strict": true,
       "body": "BEGIN RETURN 0; END;",
       "dependencies": { "tables": ["orders"] },
       "source_dialect": "postgresql"

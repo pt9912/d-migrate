@@ -72,6 +72,44 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         skipped.shouldBeEmpty()
     }
 
+    test("generateFunctions emits volatility, STRICT and SECURITY DEFINER (F3)") {
+        val functions = mapOf(
+            "last_day" to FunctionDefinition(
+                body = "SELECT 1",
+                language = "sql",
+                parameters = listOf(ParameterDefinition("p1", "timestamptz")),
+                volatility = FunctionVolatility.IMMUTABLE,
+                strict = true,
+                security = RoutineSecurity.DEFINER,
+            )
+        )
+        val skipped = mutableListOf<SkippedObject>()
+
+        val result = helper.generateFunctions(functions, skipped)
+
+        result shouldHaveSize 1
+        result[0].sql shouldContain "\$\$ LANGUAGE sql IMMUTABLE STRICT SECURITY DEFINER;"
+        skipped.shouldBeEmpty()
+    }
+
+    test("generateFunctions emits STABLE but omits the VOLATILE default (F3)") {
+        val functions = mapOf(
+            "f_stable" to FunctionDefinition(body = "SELECT 1", language = "sql",
+                volatility = FunctionVolatility.STABLE),
+            "f_volatile" to FunctionDefinition(body = "SELECT 1", language = "sql",
+                volatility = FunctionVolatility.VOLATILE),
+        )
+        val skipped = mutableListOf<SkippedObject>()
+
+        val result = helper.generateFunctions(functions, skipped)
+
+        val stableSql = result.first { it.sql.contains("\"f_stable\"") }.sql
+        val volatileSql = result.first { it.sql.contains("\"f_volatile\"") }.sql
+        stableSql shouldContain "\$\$ LANGUAGE sql STABLE;"
+        volatileSql shouldContain "\$\$ LANGUAGE sql;"
+        volatileSql shouldNotContain "VOLATILE"
+    }
+
     test("generateFunctions with null body produces action-required note") {
         val functions = mapOf(
             "missing_fn" to FunctionDefinition(body = null)

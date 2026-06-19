@@ -102,10 +102,25 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         } ?: ""
         val language = fn.language ?: "plpgsql"
 
+        // F3 (docs/planning/in-progress/sample-db-roundtrip-findings.md): emit the
+        // function's observable contract that the reverse captures but generate
+        // previously dropped — volatility, strictness, and SECURITY DEFINER. Each
+        // is omitted when it equals the PostgreSQL default (VOLATILE / CALLED ON
+        // NULL INPUT / SECURITY INVOKER) so single-attribute functions stay clean.
+        val attributes = buildString {
+            when (fn.volatility) {
+                FunctionVolatility.IMMUTABLE -> append(" IMMUTABLE")
+                FunctionVolatility.STABLE -> append(" STABLE")
+                FunctionVolatility.VOLATILE, null -> {}
+            }
+            if (fn.strict == true) append(" STRICT")
+            if (fn.security == RoutineSecurity.DEFINER) append(" SECURITY DEFINER")
+        }
+
         val sql = buildString {
             append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(name)}($params)$returns AS \$\$\n")
             append(body)
-            append("\n\$\$ LANGUAGE $language;")
+            append("\n\$\$ LANGUAGE $language$attributes;")
         }
         return DdlStatement(sql)
     }

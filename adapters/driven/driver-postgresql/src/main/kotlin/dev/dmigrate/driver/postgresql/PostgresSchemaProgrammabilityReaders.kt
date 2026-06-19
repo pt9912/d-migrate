@@ -82,6 +82,9 @@ internal fun readPostgresFunctions(
             definer = identity?.definer,
             searchPath = identity?.searchPath,
             sqlMode = null,
+            // F3: volatility + strictness from pg_proc.provolatile/proisstrict.
+            volatility = identity?.volatility,
+            strict = identity?.strict,
         )
     }
     return result
@@ -156,6 +159,9 @@ private data class ResolvedRoutineIdentity(
     val security: RoutineSecurity?,
     val definer: String?,
     val searchPath: List<String>?,
+    // F3: function volatility + strictness (functions only; procedures ignore them).
+    val volatility: FunctionVolatility?,
+    val strict: Boolean,
 )
 
 private fun routineIdentity(
@@ -173,6 +179,8 @@ private fun routineIdentity(
         security = if (attrs.securityDefiner) RoutineSecurity.DEFINER else RoutineSecurity.INVOKER,
         definer = attrs.definer.takeIf { attrs.securityDefiner },
         searchPath = attrs.searchPath,
+        volatility = attrs.volatility,
+        strict = attrs.strict,
     )
 }
 

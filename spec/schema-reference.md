@@ -235,6 +235,8 @@ functions:
       scale: 2
     language: plpgsql
     deterministic: false       # Fuer MySQL: DETERMINISTIC / NOT DETERMINISTIC
+    volatility: immutable      # PostgreSQL: immutable | stable | volatile
+    strict: true               # PostgreSQL: STRICT / RETURNS NULL ON NULL INPUT
     body: |
       BEGIN RETURN 0; END;
     dependencies:

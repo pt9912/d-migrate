@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.model.FunctionVolatility
 import dev.dmigrate.driver.metadata.JdbcOperations
 
 internal object PostgresProgrammabilityMetadataQueries {
@@ -278,7 +279,9 @@ internal object PostgresProgrammabilityMetadataQueries {
                    p.oid AS routine_oid,
                    p.prosecdef AS security_definer,
                    r.rolname AS definer,
-                   p.proconfig AS config
+                   p.proconfig AS config,
+                   p.provolatile AS volatility,
+                   p.proisstrict AS strict
             FROM pg_proc p
             JOIN pg_namespace n ON n.oid = p.pronamespace AND n.nspname = ?
             LEFT JOIN pg_roles r ON r.oid = p.proowner
@@ -298,6 +301,10 @@ internal object PostgresProgrammabilityMetadataQueries {
                 securityDefiner = securityDefiner,
                 definer = definer,
                 searchPath = searchPath,
+                // F3: pg_proc.provolatile is a single char (i/s/v); proisstrict
+                // a boolean. Both are part of the function's observable contract.
+                volatility = parseVolatility(row["volatility"]),
+                strict = (row["strict"] as? Boolean) == true,
             )
         }
         return grouped
@@ -461,7 +468,18 @@ internal data class RoutineIdentityAttributes(
     val securityDefiner: Boolean,
     val definer: String?,
     val searchPath: List<String>?,
+    // F3: PostgreSQL function volatility + strictness from pg_proc.
+    val volatility: FunctionVolatility? = null,
+    val strict: Boolean = false,
 )
+
+/** F3: maps `pg_proc.provolatile` (`i`/`s`/`v`) to the neutral model enum. */
+private fun parseVolatility(value: Any?): FunctionVolatility? = when ((value as? String)?.lowercase()) {
+    "i" -> FunctionVolatility.IMMUTABLE
+    "s" -> FunctionVolatility.STABLE
+    "v" -> FunctionVolatility.VOLATILE
+    else -> null
+}
 
 private class MutableRoutineRelationDependencies {
     val tables = linkedSetOf<String>()

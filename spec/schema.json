@@ -475,6 +475,15 @@
         },
         "language": { "type": "string" },
         "deterministic": { "type": "boolean" },
+        "volatility": {
+          "type": "string",
+          "enum": ["immutable", "stable", "volatile"],
+          "description": "PostgreSQL-Funktionsvolatilität (provolatile)"
+        },
+        "strict": {
+          "type": "boolean",
+          "description": "PostgreSQL STRICT / RETURNS NULL ON NULL INPUT"
+        },
         "body": { "type": "string" },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }

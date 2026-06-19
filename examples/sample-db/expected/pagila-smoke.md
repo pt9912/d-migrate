@@ -1,7 +1,8 @@
 # Expected-Result-Baseline — Pagila/PostgreSQL Smoke (Phase 1)
 
 > Plan: [`../../../docs/planning/in-progress/sample-db-integration-harness.md`](../../../docs/planning/in-progress/sample-db-integration-harness.md)
-> · Stand: 2026-06-19 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F4 behoben → 4 Diffs)
+> · Stand: 2026-06-19 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F2/F3/F4 behoben → **1 Diff**:
+> nur noch die fundamentale tsvector/gist-Grenze)
 
 Diese Datei erklärt **jeden** in `pagila-smoke.compare.txt` gepinnten
 Schema-Diff. Die Baseline ist *nicht* „0 Diffs" — ein Cross-/Round-Trip über
@@ -20,7 +21,7 @@ dann Baseline + diese Erklärung aktualisieren.
 - **post-data wendet sauber an** (ON_ERROR_STOP=1, 0 Fehler) — seit F2 (Programmability
   in Abhängigkeitsreihenfolge: Funktionen/Aggregate vor den Views, die sie aufrufen).
 
-## Gepinnte Schema-Diffs (4) — je Klasse erklärt
+## Gepinnte Schema-Diffs (1) — je Klasse erklärt
 
 ### A. `film.film_fulltext_idx [gist]` entfernt (1) — fundamentale Grenze
 Pagilas `film.fulltext` ist `tsvector`; beim Reverse degradiert der Typ zu `text`
@@ -37,12 +38,17 @@ den von ihnen aufgerufenen Routinen/Aggregaten); die drei Views round-trippen
 vollständig. Details + Verbleibendes siehe
 [`../../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
 
-### C. 3 Funktionen „changed" (`_group_concat`, `last_day`, `rewards_report`) — Attribut-Verlust
-Body identisch, aber der Round-Trip verliert Funktions-**Attribute**:
-Parameternamen werden synthetisch (`p1`/`p2` statt Original), und die
-Volatilitäts-/Strictness-Marker (`IMMUTABLE`, `STRICT`) fehlen im Ziel. Echter
-Fidelity-Defekt der Funktions-Reverse/Generate-Kette (neu durch den Harness
-aufgedeckt). Siehe Findings-Doc.
+### C. 3 Funktionen (`_group_concat`, `last_day`, `rewards_report`) — ✅ BEHOBEN (F3), kein Diff mehr
+Der Round-Trip verlor Funktions-**Attribute**, die der Reverse erfasst, generate
+aber nicht emittierte: Volatilität (`_group_concat`/`last_day` `IMMUTABLE`),
+Strictness (`last_day` `STRICT`) und `SECURITY DEFINER` (`rewards_report`). Quelle
+war IMMUTABLE/DEFINER, das Ziel fiel auf VOLATILE/INVOKER zurück → `deterministic`-
+bzw. `security`-Diff. **F3** erweitert das Modell um `volatility`/`strict` (Reverse
+aus `pg_proc.provolatile`/`proisstrict`), und generate emittiert nun
+Volatilität + `STRICT` + `SECURITY DEFINER`; alle drei round-trippen vollständig.
+Die synthetischen `p1`/`p2` waren **kein** Diff (PG-unnamed-Params haben echt keine
+Namen — beide Seiten synthetisieren gleich). Details siehe
+[`../../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
 
 ### D. Trigger `film::film_fulltext_trigger` — ✅ BEHOBEN (F4), kein Diff mehr
 **F1 (Trigger-Naming) ist behoben** (Generate-Pfad): alle 15 Trigger round-trippen

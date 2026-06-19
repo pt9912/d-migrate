@@ -3,6 +3,7 @@ package dev.dmigrate.format
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.dmigrate.core.model.AggregateDefinition
 import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.FunctionVolatility
 import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReturnType
@@ -50,6 +51,19 @@ class SchemaNodeProgrammabilityRoutineRoundtripTest : FunSpec({
         // Existing fields still survive.
         parsed.language shouldBe "plpgsql"
         parsed.body shouldBe "BEGIN RETURN amount * 1.2; END"
+    }
+
+    test("FunctionDefinition roundtrip preserves volatility and strict (F3)") {
+        val fn = FunctionDefinition(
+            body = "SELECT 1",
+            language = "sql",
+            volatility = FunctionVolatility.IMMUTABLE,
+            strict = true,
+        )
+        val schema = SchemaDefinition(name = "App", version = "1", functions = mapOf("f" to fn))
+        val parsed = roundtrip(schema).functions["f"]!!
+        parsed.volatility shouldBe FunctionVolatility.IMMUTABLE
+        parsed.strict shouldBe true
     }
 
     test("ProcedureDefinition roundtrip preserves security/definer/searchPath/sqlMode") {

@@ -56,15 +56,44 @@ Erwartungen in `AbstractDdlGeneratorTest(+Part2)` + die Golden-Master
 `view-function-deps.{postgresql,mysql,sqlite}.post-data.sql` nachgezogen.
 Harness-belegt: `post-data` wendet sauber an (ON_ERROR_STOP=1), Baseline 8 → 5.
 
-## F3 — Funktions-Attribut-Verlust (neu) · zu beheben
+## F3 — Funktions-Attribut-Verlust · BEHOBEN 2026-06-19
 
-Der Funktions-Round-Trip verliert Attribute: Parameternamen werden synthetisch
-(`p1`/`p2` statt Original) und Volatilität/Strictness (`IMMUTABLE`, `STRICT`)
-fehlen im Ziel (Body identisch). Betrifft reverse (Capture) **und** generate
-(Emit). Drei Pagila-Funktionen betroffen (`_group_concat`, `last_day`,
-`rewards_report`). Fix-Richtung: Funktions-Modell um Parameternamen +
-Volatilitäts-/Strictness-Marker erweitern, in reverse befüllen, in generate
-emittieren.
+Der Funktions-Round-Trip verlor Attribute, die der Reverse **erfasst**, generate
+aber **nicht emittierte**. Datenbelegt an drei Pagila-Funktionen:
+- `_group_concat` (`LANGUAGE sql IMMUTABLE`) — Volatilität fiel auf VOLATILE →
+  `deterministic`-Diff.
+- `last_day` (`LANGUAGE sql IMMUTABLE STRICT`) — Volatilität (Diff) + Strictness
+  (gar nicht erfasst, daher kein Diff, aber realer Fidelity-Verlust).
+- `rewards_report` (`LANGUAGE plpgsql SECURITY DEFINER`) — `security` **war** im
+  Modell, wurde aber nie emittiert → Ziel INVOKER → `security`-Diff.
+
+**Klarstellung:** die synthetischen `p1`/`p2` sind **kein** Diff — PG-unnamed-Params
+(`$1`/`$2`) haben echt keine Namen, beide Seiten synthetisieren identisch und
+matchen. Der Tracker hatte das überzeichnet.
+
+**Behoben (alle Ebenen, PG):**
+- **Modell:** `FunctionDefinition.volatility: FunctionVolatility?`
+  (`IMMUTABLE`/`STABLE`/`VOLATILE`) + `strict: Boolean?`
+  (`hexagon/core/src/main/kotlin/dev/dmigrate/core/model/FunctionDefinition.kt`);
+  `security`/`definer` waren bereits da.
+- **Reverse:** `listRoutineIdentityAttributes` liest nun `pg_proc.provolatile`
+  (`i`/`s`/`v`) + `proisstrict`; der Reader befüllt `volatility`/`strict`.
+- **Generate:** `PostgresRoutineDdlHelper.generateFunction` hängt nach `LANGUAGE`
+  `IMMUTABLE`/`STABLE` (VOLATILE = Default, ausgelassen) + `STRICT` (wenn strict) +
+  `SECURITY DEFINER` (wenn security == DEFINER) an.
+- **Serialisierung + Spec:** `volatility`/`strict` serialisiert; `spec/schema.json`
+  (function: `volatility`-Enum + `strict`) + `schema-reference.md` + Contract-Fixture.
+- **Regressionstests:** PG-Reverse-Capture (provolatile/proisstrict),
+  PG-Generate-Emit (`IMMUTABLE STRICT SECURITY DEFINER`, STABLE, VOLATILE-Auslassung),
+  Serialisierungs-Round-Trip.
+
+Harness-belegt: die 3 Funktions-Diffs verschwinden, Baseline schrumpft **4 → 1**
+(verbleibend nur die fundamentale tsvector/gist-Grenze, kein Bug).
+
+**Offene Restfläche (nicht F3-blockierend, kein Pagila-Vorkommen):** `search_path`
+auf SECURITY-DEFINER-Funktionen ist im Modell erfasst, wird aber von generate noch
+nicht emittiert; ebenso fehlen `security`/`definer`/`search_path`/`sql_mode` in der
+`schema.json`-`function`-Definition (vorbestehender Spec-Drift).
 
 ## F4 — Multi-Event-Trigger nicht modelliert · BEHOBEN 2026-06-19
 

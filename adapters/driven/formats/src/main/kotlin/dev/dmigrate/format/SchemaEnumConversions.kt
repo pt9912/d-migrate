@@ -55,6 +55,13 @@ internal fun String.toParameterDirection(): ParameterDirection = when (lowercase
     else -> throw IllegalArgumentException("Unknown parameter direction: $this")
 }
 
+internal fun String.toFunctionVolatility(): FunctionVolatility = when (lowercase()) {
+    "immutable" -> FunctionVolatility.IMMUTABLE
+    "stable" -> FunctionVolatility.STABLE
+    "volatile" -> FunctionVolatility.VOLATILE
+    else -> throw IllegalArgumentException("Unknown function volatility: $this")
+}
+
 internal fun String.toTriggerEvent(): TriggerEvent = when (lowercase()) {
     "insert" -> TriggerEvent.INSERT
     "update" -> TriggerEvent.UPDATE

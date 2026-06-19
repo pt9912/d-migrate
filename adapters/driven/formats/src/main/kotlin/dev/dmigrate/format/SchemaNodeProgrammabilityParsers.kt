@@ -34,6 +34,9 @@ internal fun parseFunctions(node: JsonNode?): Map<String, FunctionDefinition> =
             definer = childNode.optionalText("definer"),
             searchPath = childNode["search_path"]?.toStringListOrNull(),
             sqlMode = childNode.optionalText("sql_mode"),
+            // F3: PostgreSQL volatility + strictness.
+            volatility = childNode.optionalText("volatility")?.toFunctionVolatility(),
+            strict = childNode.optionalBool("strict"),
         )
     }
 

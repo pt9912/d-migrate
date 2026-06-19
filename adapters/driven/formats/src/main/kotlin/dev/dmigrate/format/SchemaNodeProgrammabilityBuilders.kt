@@ -45,6 +45,9 @@ internal fun buildFunctions(
         }
         if (definition.language != null) functionNode.put("language", definition.language)
         if (definition.deterministic != null) functionNode.put("deterministic", definition.deterministic!!)
+        // F3: PostgreSQL volatility + strictness — written only when captured.
+        if (definition.volatility != null) functionNode.put("volatility", definition.volatility!!.name.lowercase())
+        if (definition.strict != null) functionNode.put("strict", definition.strict!!)
         if (definition.body != null) functionNode.put("body", definition.body)
         if (definition.dependencies != null) {
             functionNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))

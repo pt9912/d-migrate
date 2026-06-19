@@ -278,6 +278,12 @@ class PostgresSchemaReaderTest : FunSpec({
             mapOf("parameter_name" to "b", "data_type" to "integer", "udt_name" to "int4",
                 "parameter_mode" to "IN", "ordinal_position" to 2),
         )
+        // F3: pg_proc identity projection now also carries provolatile/proisstrict.
+        every { jdbc.queryList(match { it.contains("provolatile") }, any()) } returns listOf(
+            mapOf("routine_name" to "add_numbers", "routine_oid" to 1L,
+                "security_definer" to false, "definer" to null, "config" to null,
+                "volatility" to "i", "strict" to true),
+        )
 
         val result = reader.read(pool, SchemaReadOptions(includeViews = false,
             includeProcedures = false, includeTriggers = false))
@@ -289,6 +295,9 @@ class PostgresSchemaReaderTest : FunSpec({
         func.parameters[0].direction shouldBe ParameterDirection.IN
         func.returns.shouldNotBeNull()
         func.deterministic shouldBe true
+        // F3: volatility + strictness captured from pg_proc.
+        func.volatility shouldBe FunctionVolatility.IMMUTABLE
+        func.strict shouldBe true
         func.sourceDialect shouldBe "postgresql"
     }
 
