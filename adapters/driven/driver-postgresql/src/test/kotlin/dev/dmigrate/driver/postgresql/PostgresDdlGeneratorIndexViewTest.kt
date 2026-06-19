@@ -82,6 +82,23 @@ class PostgresDdlGeneratorIndexViewTest : FunSpec({
         result.notes.any { it.code == "W123" && it.objectName == "idx_docs_body" } shouldBe true
     }
 
+    test("GIST index on a fulltext (tsvector) column is emitted — has default operator class (ADR 0015)") {
+        val s = schema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.FullText)),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_docs_ft", columns = listOf(IndexColumn("body")), type = IndexType.GIST)
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldContain "USING GIST"
+        result.render() shouldContain "tsvector"
+        result.notes.any { it.code == "W123" } shouldBe false
+    }
+
     test("GIN index on a jsonb column is still emitted — has default operator class (I-08)") {
         val s = schema(
             tables = mapOf(

@@ -127,7 +127,8 @@
           "enum": [
             "identifier", "text", "char", "integer", "smallint", "biginteger",
             "float", "decimal", "boolean", "datetime", "date", "time",
-            "uuid", "json", "xml", "binary", "email", "enum", "array", "geometry"
+            "uuid", "json", "xml", "binary", "email", "enum", "array", "geometry",
+            "fulltext"
           ],
           "description": "Einer der neutralen Typen (vollstaendige Liste: neutral-model-spec.md Abschnitt 3.1)"
         },

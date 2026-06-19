@@ -1,6 +1,8 @@
 # Sample-DB-Round-Trip-Findings (Pagila/PG, Phase 1)
 
-> Status: Sammlung/Tracker (2026-06-18)
+> Status: **ABGESCHLOSSEN** (2026-06-19) — alle Befunde behoben: F1/F2/F4 + F3 +
+> die ehemalige tsvector/gist-„Grenze" (ADR 0015). Pagila/PG-Round-Trip =
+> `Status: IDENTICAL` (0 Diffs, 37 → 0).
 > Trigger: Der neue Sample-DB-Harness ([`sample-db-integration-harness.md`](sample-db-integration-harness.md))
 > hat beim **Erstlauf** (Pagila PG→PG-Round-Trip) echte Fidelity-Defekte
 > aufgedeckt, die im synthetischen Cross-Dialect-Matrix-Modus bisher nicht
@@ -129,9 +131,20 @@ Event-**Menge**; (2) der PG-Reverse keyte `result[key] = …` je
 Harness-belegt: der `~ film::film_fulltext_trigger`-Diff verschwindet, Baseline
 schrumpft 5 → 4 Changes (verbleibend: 1 Tabelle/gist-Grenze + 3 Funktionen/F3).
 
+## Ehemalige „fundamentale Grenze" — BEHOBEN via ADR 0015 (2026-06-19)
+
+- **tsvector→text** (R301) → gist-Index entfällt (W123). War als fundamentale
+  Grenze gemeldet — bis [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)
+  `tsvector` als first-class neutralen Typ `fulltext` modellierte (kein
+  Native-Passthrough; auf Hinweis zu „typ-spezifischen Attributen" + SQLite FTS5).
+  Reverse `tsvector`→`fulltext`, generate `fulltext`→`tsvector`, GiST-Op-Class
+  erkennt `tsvector_ops` → Spalte **und** Index round-trippen; R301/W123 entfallen.
+  Cross-Dialect-Volltext (SQLite FTS5 / MySQL FULLTEXT = strukturelle Mechanismen)
+  ist als Provisional-Carve-Out getrackt ([`carveout.md`](carveout.md) §8).
+  **Damit ist der Pagila/PG-Round-Trip auf `Status: IDENTICAL` (0 Diffs).**
+
 ## Fundamentale Grenzen (kein Defekt — bewusst, gemeldet)
 
-- **tsvector→text** (R301) → gist-Index entfällt (W123). Kandidat für eine ADR
-  „Volltext/tsvector-Round-Trip", kein Bug.
 - **Leere RANGE-Partition** `payment` → als plain Tabelle erzeugt (E055).
-  Daten-/dump-abhängige Eigenheit dieses Pagila-Dumps, korrekt gemeldet.
+  Daten-/dump-abhängige Eigenheit dieses Pagila-Dumps, korrekt gemeldet (1 Note,
+  kein Schema-Diff).

@@ -26,6 +26,17 @@ sealed class NeutralType {
         val geometryType: GeometryType = GeometryType.GEOMETRY,
         val srid: Int? = null,
     ) : NeutralType()
+
+    /**
+     * ADR 0015: PostgreSQL full-text search vector (`tsvector`). A first-class
+     * neutral type — abstracted in the model, NOT a passed-through dialect type
+     * string. Parameterless on purpose: the `tsvector` column carries no
+     * modifiers; the text-search configuration belongs to the populating
+     * trigger/function, not the column type. PostgreSQL round-trips it as
+     * `tsvector` (and its GiST index survives); other dialects degrade it to
+     * text with a note.
+     */
+    data object FullText : NeutralType()
 }
 
 enum class FloatPrecision { SINGLE, DOUBLE }

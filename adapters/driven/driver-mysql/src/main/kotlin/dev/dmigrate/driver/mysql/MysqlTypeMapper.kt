@@ -7,18 +7,27 @@ import dev.dmigrate.driver.TypeMapper
 class MysqlTypeMapper : TypeMapper {
     override val dialect = DatabaseDialect.MYSQL
 
+    // Parametric/decision-bearing types stay here; parameterless literals go to
+    // [simpleToSql] to keep each dispatch under the cyclomatic complexity limit.
     override fun toSql(type: NeutralType): String = when (type) {
-        is NeutralType.Identifier -> "INT NOT NULL AUTO_INCREMENT"
         is NeutralType.Text -> if (type.maxLength != null) "VARCHAR(${type.maxLength})" else "TEXT"
         is NeutralType.Char -> "CHAR(${type.length})"
-        is NeutralType.Integer -> "INT"
-        is NeutralType.SmallInt -> "SMALLINT"
-        is NeutralType.BigInteger -> "BIGINT"
         is NeutralType.Float -> when (type.floatPrecision) {
             FloatPrecision.SINGLE -> "FLOAT"
             FloatPrecision.DOUBLE -> "DOUBLE"
         }
         is NeutralType.Decimal -> "DECIMAL(${type.precision},${type.scale})"
+        is NeutralType.Email -> "VARCHAR(${NeutralType.Email.MAX_LENGTH})"
+        is NeutralType.Enum -> "TEXT" // Actual ENUM handled inline during table generation
+        is NeutralType.Geometry -> type.geometryType.schemaName.uppercase()
+        else -> simpleToSql(type)
+    }
+
+    private fun simpleToSql(type: NeutralType): String = when (type) {
+        is NeutralType.Identifier -> "INT NOT NULL AUTO_INCREMENT"
+        is NeutralType.Integer -> "INT"
+        is NeutralType.SmallInt -> "SMALLINT"
+        is NeutralType.BigInteger -> "BIGINT"
         is NeutralType.BooleanType -> "TINYINT(1)"
         is NeutralType.DateTime -> "DATETIME"
         is NeutralType.Date -> "DATE"
@@ -27,10 +36,13 @@ class MysqlTypeMapper : TypeMapper {
         is NeutralType.Json -> "JSON"
         is NeutralType.Xml -> "TEXT"
         is NeutralType.Binary -> "BLOB"
-        is NeutralType.Email -> "VARCHAR(${NeutralType.Email.MAX_LENGTH})"
-        is NeutralType.Enum -> "TEXT" // Actual ENUM handled inline during table generation
         is NeutralType.Array -> "JSON"
-        is NeutralType.Geometry -> type.geometryType.schemaName.uppercase()
+        // ADR 0015: MySQL's full-text search is a FULLTEXT *index* on a regular
+        // TEXT/CHAR column, not a precomputed-vector column type. The column
+        // degrades to TEXT here; emitting the matching FULLTEXT index is a
+        // future cross-dialect slice.
+        is NeutralType.FullText -> "TEXT"
+        else -> error("simpleToSql called for a parametric NeutralType: $type")
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {

@@ -164,4 +164,8 @@ class MysqlTypeMapperTest : FunSpec({
     test("geometry geometrycollection maps to GEOMETRYCOLLECTION") {
         mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("geometrycollection"))) shouldBe "GEOMETRYCOLLECTION"
     }
+
+    test("fulltext degrades to TEXT (ADR 0015 — MySQL FULLTEXT is an index, not a column type)") {
+        mapper.toSql(NeutralType.FullText) shouldBe "TEXT"
+    }
 })

@@ -100,6 +100,12 @@ internal object ChunkSchemaToParquetMessageType {
                 .`as`(LogicalTypeAnnotation.stringType())
                 .named(column.name)
 
+            // ADR 0015: FullText (tsvector) — its value is a string; store as
+            // STRING(UTF-8), like Xml.
+            is NeutralType.FullText -> Types.primitive(PrimitiveTypeName.BINARY, repetition)
+                .`as`(LogicalTypeAnnotation.stringType())
+                .named(column.name)
+
             // Enum: AP2 §8 nennt ENUM mit STRING-Fallback. Wir nehmen
             // ENUM, der ENUM-Annotation-Pfad ist parquet-java-nativ
             // vorhanden; Werte-Liste/refType reisen im Manifest mit.

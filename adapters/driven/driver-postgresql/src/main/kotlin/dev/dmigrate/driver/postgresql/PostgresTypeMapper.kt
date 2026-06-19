@@ -7,17 +7,27 @@ import dev.dmigrate.driver.TypeMapper
 class PostgresTypeMapper : TypeMapper {
     override val dialect = DatabaseDialect.POSTGRESQL
 
+    // Parametric/decision-bearing types stay here; parameterless literals are
+    // delegated to [simpleToSql] to keep each dispatch under the cyclomatic
+    // complexity limit (mirrors the simpleNeutralType split in MigrationFingerprint).
     override fun toSql(type: NeutralType): String = when (type) {
         is NeutralType.Identifier -> if (type.autoIncrement) "SERIAL" else "INTEGER"
         is NeutralType.Text -> if (type.maxLength != null) "VARCHAR(${type.maxLength})" else "TEXT"
         is NeutralType.Char -> "CHAR(${type.length})"
+        is NeutralType.Float -> floatToSql(type)
+        is NeutralType.Decimal -> "DECIMAL(${type.precision},${type.scale})"
+        is NeutralType.DateTime -> if (type.timezone) "TIMESTAMP WITH TIME ZONE" else "TIMESTAMP"
+        is NeutralType.Enum -> "TEXT"
+        is NeutralType.Array -> "${toSql(resolveElementType(type.elementType))}[]"
+        is NeutralType.Geometry -> geometryToSql(type)
+        else -> simpleToSql(type)
+    }
+
+    private fun simpleToSql(type: NeutralType): String = when (type) {
         is NeutralType.Integer -> "INTEGER"
         is NeutralType.SmallInt -> "SMALLINT"
         is NeutralType.BigInteger -> "BIGINT"
-        is NeutralType.Float -> floatToSql(type)
-        is NeutralType.Decimal -> "DECIMAL(${type.precision},${type.scale})"
         is NeutralType.BooleanType -> "BOOLEAN"
-        is NeutralType.DateTime -> if (type.timezone) "TIMESTAMP WITH TIME ZONE" else "TIMESTAMP"
         is NeutralType.Date -> "DATE"
         is NeutralType.Time -> "TIME"
         is NeutralType.Uuid -> "UUID"
@@ -25,9 +35,9 @@ class PostgresTypeMapper : TypeMapper {
         is NeutralType.Xml -> "XML"
         is NeutralType.Binary -> "BYTEA"
         is NeutralType.Email -> "VARCHAR(${NeutralType.Email.MAX_LENGTH})"
-        is NeutralType.Enum -> "TEXT"
-        is NeutralType.Array -> "${toSql(resolveElementType(type.elementType))}[]"
-        is NeutralType.Geometry -> geometryToSql(type)
+        // ADR 0015: full-text vector round-trips as PostgreSQL's native tsvector.
+        is NeutralType.FullText -> "tsvector"
+        else -> error("simpleToSql called for a parametric NeutralType: $type")
     }
 
     private fun floatToSql(type: NeutralType.Float): String = when (type.floatPrecision) {

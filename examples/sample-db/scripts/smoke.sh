@@ -94,12 +94,13 @@ for f in pagila.pre-data.sql pagila.post-data.sql pagila.report.yaml; do
     [ -s "$OUT_DIR/$f" ] || fail "empty generate artifact: $f"
 done
 # Erwartete generate-Notes (Pagila/PG): genau E055 (leere RANGE-Partition
-# payment) + W123 (gist auf tsvector->text). Abweichung = Regression.
+# payment). Seit ADR 0015 ist tsvector ein first-class fulltext-Typ → der
+# gist-Index round-trippt, W123 entfaellt. Abweichung = Regression.
 grep -q "code: E055" "$OUT_DIR/pagila.report.yaml" || fail "expected note E055 missing"
-grep -q "code: W123" "$OUT_DIR/pagila.report.yaml" || fail "expected note W123 missing"
+grep -q "code: W123" "$OUT_DIR/pagila.report.yaml" && fail "unexpected W123 — fulltext gist should round-trip (ADR 0015)"
 note_count=$(grep -cE "^  - type:" "$OUT_DIR/pagila.report.yaml")
-[ "$note_count" = "2" ] || fail "expected exactly 2 generate notes, got $note_count"
-log "generate OK (notes E055+W123 as expected)"
+[ "$note_count" = "1" ] || fail "expected exactly 1 generate note (E055), got $note_count"
+log "generate OK (note E055 as expected; no W123 since ADR 0015)"
 
 # --- 6. Zielschema aufbauen + Daten transferieren ------------------
 log "resetting target DB + applying pre-data DDL..."

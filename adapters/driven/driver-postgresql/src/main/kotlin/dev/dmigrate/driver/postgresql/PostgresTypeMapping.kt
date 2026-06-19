@@ -119,6 +119,9 @@ internal object PostgresTypeMapping {
         "json", "jsonb" -> MappingResult(NeutralType.Json)
         "xml" -> MappingResult(NeutralType.Xml)
         "bytea" -> MappingResult(NeutralType.Binary)
+        // ADR 0015: tsvector is a first-class neutral FullText type — captured
+        // faithfully instead of degrading to text (R301).
+        "tsvector" -> MappingResult(NeutralType.FullText)
         "user-defined" -> mapUserDefined(udt, tableName, colName)
         "array" -> MappingResult(NeutralType.Array(mapArrayElementType(udt.removePrefix("_"))))
         else -> null

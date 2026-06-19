@@ -40,7 +40,8 @@
         "status": { "type": "enum", "ref_type": "order_status", "default": "pending" },
         "priority": { "type": "enum", "values": ["low", "high"] },
         "tags": { "type": "array", "element_type": "text" },
-        "location": { "type": "geometry", "geometry_type": "point", "srid": 4326 }
+        "location": { "type": "geometry", "geometry_type": "point", "srid": 4326 },
+        "search": { "type": "fulltext" }
       },
       "primary_key": ["id"],
       "indices": [

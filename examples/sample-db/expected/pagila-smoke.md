@@ -1,33 +1,40 @@
 # Expected-Result-Baseline — Pagila/PostgreSQL Smoke (Phase 1)
 
 > Plan: [`../../../docs/planning/in-progress/sample-db-integration-harness.md`](../../../docs/planning/in-progress/sample-db-integration-harness.md)
-> · Stand: 2026-06-19 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F2/F3/F4 behoben → **1 Diff**:
-> nur noch die fundamentale tsvector/gist-Grenze)
+> · Stand: 2026-06-19 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F1–F4 + ADR 0015
+> behoben → **0 Diffs**, `Status: IDENTICAL`)
 
-Diese Datei erklärt **jeden** in `pagila-smoke.compare.txt` gepinnten
-Schema-Diff. Die Baseline ist *nicht* „0 Diffs" — ein Cross-/Round-Trip über
-das neutrale Schema-Modell erzeugt **legitime, erklärbare** Abweichungen. Green
-heißt: `schema compare` == diese Baseline, **keine unerklärten** Diffs. Schrumpft
-der Diff (z. B. nachdem ein Defekt unten behoben ist), ist das ein *gutes* Rot —
-dann Baseline + diese Erklärung aktualisieren.
+Der Pagila/PostgreSQL-Round-Trip ist jetzt **vollständig verlustfrei**:
+`schema compare` meldet `Status: IDENTICAL` (keine Schema-Diffs). Die Baseline
+`pagila-smoke.compare.txt` pinnt genau dieses `IDENTICAL`. Green heißt:
+`schema compare` == diese Baseline. Die Abschnitte unten dokumentieren die
+**fünf** Round-Trip-Defekte (F1–F4 + die tsvector/gist-Grenze), die der Harness
+nacheinander aufdeckte und die alle behoben sind — der historische Weg von
+37 → 0 Diffs. Taucht je wieder ein Diff auf, ist das ein echter Regressions-
+Befund; dann Ursache beheben (nicht die Baseline „weich" pinnen).
 
 ## Harter, deterministischer Kern (kein Diff)
 
 - `schema validate`: **0 Errors**.
-- `schema generate`: genau **2 Notes** — `E055` (leere RANGE-Partition `payment`)
-  + `W123` (gist-Index auf tsvector→text).
+- `schema generate`: genau **1 Note** — `E055` (leere RANGE-Partition `payment`).
+  (Das frühere `W123` (gist auf tsvector→text) entfällt seit ADR 0015 — siehe A.)
 - **Daten round-trippen vollständig**: Zeilenzahlen Quelle == Ziel für **alle 22
   Tabellen** (inkl. der 7 `payment_p2022_*`-Partitionskinder).
 - **post-data wendet sauber an** (ON_ERROR_STOP=1, 0 Fehler) — seit F2 (Programmability
   in Abhängigkeitsreihenfolge: Funktionen/Aggregate vor den Views, die sie aufrufen).
 
-## Gepinnte Schema-Diffs (1) — je Klasse erklärt
+## Behobene Round-Trip-Defekte (0 Diffs) — je Klasse erklärt
 
-### A. `film.film_fulltext_idx [gist]` entfernt (1) — fundamentale Grenze
-Pagilas `film.fulltext` ist `tsvector`; beim Reverse degradiert der Typ zu `text`
-(R301), wodurch der gist-Index keine Default-Operator-Klasse mehr hat und beim
-Generate übersprungen wird (`W123`). Kein Defekt — eine bewusste, gemeldete
-Grenze. Eine ADR „tsvector/Volltext-Round-Trip" könnte das künftig adressieren.
+### A. `film.film_fulltext_idx [gist]` — ✅ BEHOBEN (ADR 0015), kein Diff mehr
+Pagilas `film.fulltext` ist `tsvector`; früher degradierte der Reverse den Typ zu
+`text` (R301), wodurch der gist-Index keine Default-Operator-Klasse mehr hatte und
+beim Generate übersprungen wurde (`W123`). War als „fundamentale Grenze" gemeldet —
+bis [ADR 0015](../../../docs/adr/0015-fulltext-tsvector-neutral-type.md) `tsvector`
+als **first-class neutralen Typ** `fulltext` modellierte (kein Native-Passthrough).
+Jetzt: reverse `tsvector`→`fulltext`, generate `fulltext`→`tsvector`, die GiST-Op-
+Class erkennt `tsvector_ops` → Spalte **und** Index round-trippen; R301/W123 entfallen.
+Cross-Dialect (MySQL/SQLite) degradiert `fulltext` weiter zu `text` (Carve-Out, da
+FTS5/FULLTEXT strukturell andere Mechanismen sind).
 
 ### B. 3 Views (`actor_info`, `film_list`, `nicer_but_slower_film_list`) — ✅ BEHOBEN (F2), kein Diff mehr
 Diese Views rufen das Aggregat `group_concat(...)` auf und wurden im `post-data`

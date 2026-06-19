@@ -52,6 +52,11 @@ class PostgresTypeMappingTest : FunSpec({
     test("boolean") { map("boolean").type shouldBe NeutralType.BooleanType }
     test("text") { map("text").type shouldBe NeutralType.Text() }
     test("uuid") { map("uuid").type shouldBe NeutralType.Uuid }
+    test("tsvector maps to FullText, not text+R301 (ADR 0015)") {
+        val r = map("tsvector")
+        r.type shouldBe NeutralType.FullText
+        r.note shouldBe null
+    }
     test("jsonb") { map("jsonb").type shouldBe NeutralType.Json }
     test("json") { map("json").type shouldBe NeutralType.Json }
     test("xml") { map("xml").type shouldBe NeutralType.Xml }

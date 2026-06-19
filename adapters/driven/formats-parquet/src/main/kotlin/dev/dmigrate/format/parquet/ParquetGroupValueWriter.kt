@@ -42,7 +42,7 @@ internal object ParquetGroupValueWriter {
             is NeutralType.Decimal ->
                 writeDecimal(group, columnName, neutralType.precision, neutralType.scale, value)
             is NeutralType.Text, is NeutralType.Email, is NeutralType.Char,
-            is NeutralType.Xml ->
+            is NeutralType.Xml, is NeutralType.FullText ->
                 group.append(columnName, value.toString())
             is NeutralType.Binary -> group.append(columnName, Binary.fromConstantByteArray(asByteArray(value)))
             is NeutralType.Date -> group.append(columnName, asEpochDays(value))

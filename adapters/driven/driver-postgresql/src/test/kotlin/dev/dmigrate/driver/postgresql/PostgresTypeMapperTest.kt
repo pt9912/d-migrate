@@ -190,6 +190,10 @@ class PostgresTypeMapperTest : FunSpec({
         )) shouldBe "geometry(GeometryCollection, 4326)"
     }
 
+    test("FullText maps to tsvector (ADR 0015)") {
+        mapper.toSql(NeutralType.FullText) shouldBe "tsvector"
+    }
+
     test("FunctionCall unknown renders with parentheses") {
         mapper.toDefaultSql(DefaultValue.FunctionCall("custom_fn"), NeutralType.Text()) shouldBe "custom_fn()"
     }

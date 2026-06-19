@@ -28,6 +28,12 @@ class SqliteTypeMapper : TypeMapper {
         is NeutralType.Enum -> "TEXT" // CHECK constraint added during table generation
         is NeutralType.Array -> "TEXT"
         is NeutralType.Geometry -> "GEOMETRY" // Not used inline; SpatiaLite uses AddGeometryColumn()
+        // ADR 0015: SQLite's full-text search is FTS5 — a *virtual table*
+        // (`CREATE VIRTUAL TABLE … USING fts5(…)`) that indexes source text,
+        // NOT a column type. Bridging a tsvector column to FTS5 is a structural
+        // transform (separate virtual table + sync triggers) and belongs to a
+        // future cross-dialect slice; at the column level we degrade to TEXT.
+        is NeutralType.FullText -> "TEXT"
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {

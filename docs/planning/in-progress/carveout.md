@@ -116,7 +116,20 @@ Quelldokument:
 
 ---
 
-## 8. Lifecycle und Pflege
+## 8. Volltext-Spaltentyp `fulltext` (ADR 0015, 0.9.9)
+
+Quelldokument:
+[`../../adr/0015-fulltext-tsvector-neutral-type.md`](../../adr/0015-fulltext-tsvector-neutral-type.md)
+(Abschnitt „Abgrenzung").
+
+| Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
+| --------- | ------ | ---------------- | ------------ |
+| Strukturelle Cross-Dialect-Volltext-Übersetzung (SQLite FTS5 / MySQL FULLTEXT) | Provisional | SQLite-FTS5 ist eine **virtuelle Tabelle**, MySQL-FULLTEXT ein **Index** — beide sind ein *struktureller* Umbau (Spalte → separate Tabelle/Index + Sync-Trigger), keine Typ-↔-Typ-Abbildung. Bis dahin degradiert der `fulltext`-Spaltentyp cross-dialect zu `text`. **Trigger:** Cross-Dialect-Phase des Sample-DB-Harness (Phase 2/2b) bzw. eigener Volltext-Struktur-Slice (eigene ADR). | ADR 0015 Abgrenzung |
+| Weitere PG-only-Typen first-class (`inet`, `cidr`, `tsquery`, Ranges, `ltree`, …) | Provisional | ADR 0015 deckt **nur** Volltext-Vektoren ab; jeder weitere native Typ ist eine eigene first-class-Entscheidung. Bis dahin degradieren sie zu `text` + `R301`. **Trigger:** konkreter Fidelity-Bedarf (z. B. ein neues Sample-DB-Finding). | ADR 0015 Abgrenzung |
+
+---
+
+## 9. Lifecycle und Pflege
 
 - **Neuer Carve-Out** → in das passende §3-§7 (oder neuen
   Abschnitt) als Zeile aufnehmen; Status setzen; Plan-Doc-Ref
@@ -125,7 +138,7 @@ Quelldokument:
 - **Promotion** (Provisional → Plan-Slice): Status auf
   **Promoted** setzen, `Plan-Doc-Ref`-Spalte auf den neuen
   Slice umbiegen. Zeile bleibt für die Audit-Spur.
-- **Resolution** (Permanent → Resolved): in §9 Resolved
+- **Resolution** (Permanent → Resolved): in §10 Resolved
   verschieben mit Datum und Release-Bezug.
 - **Konvention für Quelldokumente**: jeder Carve-Out-Block in
   einem Plan-Doc sollte einen Link zurück auf die passende
@@ -134,6 +147,6 @@ Quelldokument:
 
 ---
 
-## 9. Resolved
+## 10. Resolved
 
 *(noch leer — wird beim ersten Carve-Out-Resolve gefüllt)*

@@ -153,10 +153,17 @@ Jeder Spaltentyp im neutralen Modell wird pro Zieldatenbank in den passenden nat
 | `enum`        | CREATE TYPE ... ENUM    | ENUM(...)             | TEXT + CHECK                      |
 | `array`       | type[]                  | JSON                  | TEXT (JSON)                       |
 | `geometry`    | geometry(type, srid) *  | POINT / POLYGON / ... | AddGeometryColumn() *             |
+| `fulltext`    | tsvector                | TEXT **               | TEXT **                           |
 
 \* Spatial-Mapping haengt vom gewaehlten `--spatial-profile` ab. Details in
 `spec/ddl-generation-rules.md`. Bei Profil `none` wird die Spalte nicht als
 DDL generiert, sondern als `action_required` gemeldet.
+
+\*\* `fulltext` (PostgreSQL `tsvector`) ist ein first-class neutraler Volltext-Such-
+Vektor (parameterlos). PostgreSQL round-trippt ihn als `tsvector` (inkl. GiST-Index).
+MySQL/SQLite haben Volltext nur strukturell anders (MySQL `FULLTEXT`-Index, SQLite
+`FTS5`-virtuelle Tabelle), nicht als Spaltentyp — dort degradiert die Spalte zu
+`TEXT`; die strukturelle Übersetzung ist ein eigener Folge-Slice.
 
 `identifier` ist der aktuelle 32-bit-Auto-Increment-Vertrag. PostgreSQL
 `BIGSERIAL` und `BIGINT GENERATED ... AS IDENTITY` werden nicht durch

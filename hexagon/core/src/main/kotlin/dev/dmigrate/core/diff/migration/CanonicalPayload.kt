@@ -143,6 +143,7 @@ internal object CanonicalPayload {
         NeutralType.Xml -> "xml"
         NeutralType.Binary -> "binary"
         NeutralType.Email -> "email"
+        NeutralType.FullText -> "fulltext"
         else -> error("simpleNeutralType called for non-simple variant: $t")
     }
 

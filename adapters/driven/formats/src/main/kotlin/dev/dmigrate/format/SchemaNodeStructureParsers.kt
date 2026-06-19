@@ -36,6 +36,8 @@ private fun parseColumn(node: JsonNode): ColumnDefinition = ColumnDefinition(
     generation = parseGeneration(node["generation"]),
 )
 
+// Parametric types (reading extra attributes) stay here; parameterless names go
+// to [parseSimpleNeutralType] to keep each dispatch under the complexity limit.
 private fun parseNeutralType(node: JsonNode): NeutralType {
     val typeName = node.requiredText("type")
     return when (typeName) {
@@ -44,9 +46,6 @@ private fun parseNeutralType(node: JsonNode): NeutralType {
         )
         "text" -> NeutralType.Text(maxLength = node.optionalInt("max_length"))
         "char" -> NeutralType.Char(length = node.requiredInt("length"))
-        "integer" -> NeutralType.Integer
-        "smallint" -> NeutralType.SmallInt
-        "biginteger" -> NeutralType.BigInteger
         "float" -> NeutralType.Float(
             floatPrecision = when (node.optionalText("float_precision")) {
                 "single" -> FloatPrecision.SINGLE
@@ -57,17 +56,9 @@ private fun parseNeutralType(node: JsonNode): NeutralType {
             precision = node.requiredInt("precision"),
             scale = node.requiredInt("scale"),
         )
-        "boolean" -> NeutralType.BooleanType
         "datetime" -> NeutralType.DateTime(
             timezone = node.boolOrDefault("timezone", false)
         )
-        "date" -> NeutralType.Date
-        "time" -> NeutralType.Time
-        "uuid" -> NeutralType.Uuid
-        "json" -> NeutralType.Json
-        "xml" -> NeutralType.Xml
-        "binary" -> NeutralType.Binary
-        "email" -> NeutralType.Email
         "enum" -> NeutralType.Enum(
             values = node["values"]?.toStringList(),
             refType = node.optionalText("ref_type"),
@@ -79,8 +70,24 @@ private fun parseNeutralType(node: JsonNode): NeutralType {
             geometryType = GeometryType.of(node.optionalText("geometry_type")),
             srid = node.optionalInt("srid"),
         )
-        else -> throw IllegalArgumentException("Unknown type: $typeName")
+        else -> parseSimpleNeutralType(typeName)
     }
+}
+
+private fun parseSimpleNeutralType(typeName: String): NeutralType = when (typeName) {
+    "integer" -> NeutralType.Integer
+    "smallint" -> NeutralType.SmallInt
+    "biginteger" -> NeutralType.BigInteger
+    "boolean" -> NeutralType.BooleanType
+    "date" -> NeutralType.Date
+    "time" -> NeutralType.Time
+    "uuid" -> NeutralType.Uuid
+    "json" -> NeutralType.Json
+    "xml" -> NeutralType.Xml
+    "binary" -> NeutralType.Binary
+    "email" -> NeutralType.Email
+    "fulltext" -> NeutralType.FullText
+    else -> throw IllegalArgumentException("Unknown type: $typeName")
 }
 
 private fun parseDefault(node: JsonNode?): DefaultValue? {

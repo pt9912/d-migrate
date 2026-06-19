@@ -47,6 +47,21 @@ class YamlSchemaCodecTestPart2 : FunSpec({
         result.isValid shouldBe true
     }
 
+    test("fulltext column round-trips through the YAML codec (ADR 0015)") {
+        val schema = SchemaDefinition(
+            name = "FT", version = "1",
+            tables = mapOf(
+                "docs" to TableDefinition(columns = mapOf("body" to ColumnDefinition(type = NeutralType.FullText))),
+            ),
+        )
+        val out = java.io.ByteArrayOutputStream()
+        codec.write(out, schema)
+        val yaml = out.toString(Charsets.UTF_8.name())
+        yaml shouldContain "type: fulltext"
+        val parsed = codec.read(yaml.byteInputStream())
+        parsed.tables["docs"]!!.columns["body"]!!.type shouldBe NeutralType.FullText
+    }
+
     test("unknown geometry_type is read losslessly and triggers E120 in validator") {
         val schema = loadFixture("invalid/E120_invalid_geometry_type.yaml")
         val loc = schema.tables["places"]!!.columns["location"]!!

@@ -1,13 +1,4 @@
 Schema Compare: pagila_pg <-> pagila_target
 
-Status: DIFFERENT
-
-Summary: 1 change(s)
-  Tables changed:  1
-
-Tables:
-  ~ film:
-      - index film_fulltext_idx [gist]
-
-Operand (source): pagila_pg
-  warning [R301] film.fulltext: Unknown PostgreSQL type 'tsvector' (udt: tsvector) mapped to text
+Status: IDENTICAL
+No differences found.

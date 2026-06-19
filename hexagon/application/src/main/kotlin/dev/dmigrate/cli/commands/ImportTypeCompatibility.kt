@@ -39,6 +39,7 @@ internal object ImportTypeCompatibility {
             is NeutralType.Enum -> isEnumCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Array -> jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
             is NeutralType.Geometry -> true
+            is NeutralType.FullText -> true
         }
     }
 
@@ -158,5 +159,6 @@ internal object ImportTypeCompatibility {
         is NeutralType.Enum -> "enum/text-compatible type"
         is NeutralType.Array -> "array-compatible type"
         is NeutralType.Geometry -> "geometry-compatible type"
+        is NeutralType.FullText -> "text-compatible type"
     }
 }
