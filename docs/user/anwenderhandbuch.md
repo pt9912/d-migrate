@@ -76,12 +76,20 @@ Damit Sie kürzere Befehle schreiben können, richten Sie einen Alias ein, der
 das aktuelle Verzeichnis in den Container einhängt:
 
 ```bash
-alias d-migrate='docker run --rm -v "$(pwd)":/work -w /work ghcr.io/pt9912/d-migrate:latest'
+alias d-migrate='docker run --rm --user "$(id -u):$(id -g)" -v "$(pwd)":/work -w /work ghcr.io/pt9912/d-migrate:latest'
 ```
 
 Alle weiteren Beispiele in diesem Handbuch verwenden den Befehl `d-migrate`.
 Weitere Installationswege (Release-Download, Homebrew, Bauen aus dem Quellcode)
 stehen im [Administrationshandbuch](administrationshandbuch.md#2-deployment).
+
+> **Hinweis (Docker und Schreibrechte):** Das Image läuft als **non-root**
+> Benutzer. Damit Befehle, die Dateien in Ihr Verzeichnis schreiben
+> (`schema generate --output …`, `schema reverse --output …`, `data transfer` in
+> Datei-Ziele), die Ausgabe mit Ihrer Benutzer-Kennung ablegen können, enthält
+> der Alias oben `--user "$(id -u):$(id -g)"`. Ohne diesen Zusatz schlägt das
+> Schreiben in ein eingehängtes Host-Verzeichnis mit „permission denied" fehl.
+> Reine Lesebefehle (`schema validate`, `schema compare`) funktionieren auch ohne.
 
 > **Hinweis (Docker und `localhost`):** Innerhalb des Containers verweist
 > `localhost` auf den Container selbst, nicht auf Ihren Rechner. Läuft die
