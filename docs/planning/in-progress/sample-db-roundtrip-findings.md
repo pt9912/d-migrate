@@ -78,7 +78,7 @@ Event-**Menge**; (2) der PG-Reverse keyte `result[key] = …` je
 
 **Behoben (alle Ebenen):**
 - **Modell:** `TriggerDefinition.event: TriggerEvent` → `events: Set<TriggerEvent>`
-  (`hexagon/core/.../model/TriggerDefinition.kt`); exakter, nicht-lossiger
+  (`hexagon/core/src/main/kotlin/dev/dmigrate/core/model/TriggerDefinition.kt`); exakter, nicht-lossiger
   Sekundär-Konstruktor `(event: TriggerEvent)` → `setOf(event)` für den
   Single-Event-Normalfall; `canonicalOrder()` + `toSqlEventClause()`-Helfer
   (Enum-Ordinal-Reihenfolge → deterministisches `INSERT OR UPDATE`). `TriggerDiff`,
