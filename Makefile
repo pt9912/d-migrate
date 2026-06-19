@@ -150,6 +150,18 @@ docs-check: coverage-excludes-check
 coverage-excludes-check:
 	python3 ./scripts/verify-kover-excludes-ledger.py
 
+# Statische Sicherheitsanalyse via semgrep (Community-Auto-Regeln). `--error`
+# macht es zu einem Gate (Exit != 0 bei Findings). Bewusst akzeptierte Befunde
+# sind inline via `# nosemgrep: <rule-id>` annotiert (Begruendung am Fundort).
+# Hinweis: `--config auto` laedt Regeln zur Laufzeit aus der Registry — der Lauf
+# ist daher nicht voll hermetisch (Regel-Updates koennen neue Findings bringen).
+# Image ueberschreibbar/pinbar via SEMGREP_IMAGE.
+SEMGREP_IMAGE ?= semgrep/semgrep
+
+semgrep:
+	$(DOCKER) run --rm -v "$(CURDIR)":/src:ro $(SEMGREP_IMAGE) \
+	  semgrep scan --config auto --error /src
+
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
 

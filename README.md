@@ -238,6 +238,20 @@ docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest \
   data transfer --source sourcedb --target targetdb --tables users,orders
 ```
 
+#### Docker / Volumes — running as non-root
+
+The published image runs as a **non-root** user (`uid 10001`). Read-only commands
+(`validate`, `compare`) work as shown above. Commands that **write** into a
+bind-mounted host directory (`reverse --output`, `generate` to a file, `data
+transfer` to file targets) need the mount to be writable by the container user —
+add `--user "$(id -u):$(id -g)"` so output lands with your host ownership:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
+  ghcr.io/pt9912/d-migrate:latest \
+  schema reverse --source mydb --output /work/reverse.yaml
+```
+
 ### GitHub Release assets
 
 Published releases ship ZIP, TAR, and a fat JAR on the
