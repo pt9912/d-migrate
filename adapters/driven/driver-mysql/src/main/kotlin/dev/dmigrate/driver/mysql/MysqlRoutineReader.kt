@@ -229,12 +229,17 @@ internal class MysqlRoutineReader {
             val key = ObjectKeyCodec.triggerKey(table, name)
             result[key] = TriggerDefinition(
                 table = table,
-                event = when ((row["event_manipulation"] as String).uppercase()) {
-                    "INSERT" -> TriggerEvent.INSERT
-                    "UPDATE" -> TriggerEvent.UPDATE
-                    "DELETE" -> TriggerEvent.DELETE
-                    else -> TriggerEvent.INSERT
-                },
+                // MySQL triggers fire on exactly one DML event — the grammar
+                // has no multi-event (`INSERT OR UPDATE`) form — so the neutral
+                // model carries a single-element event set here (F4).
+                events = setOf(
+                    when ((row["event_manipulation"] as String).uppercase()) {
+                        "INSERT" -> TriggerEvent.INSERT
+                        "UPDATE" -> TriggerEvent.UPDATE
+                        "DELETE" -> TriggerEvent.DELETE
+                        else -> TriggerEvent.INSERT
+                    },
+                ),
                 timing = when ((row["action_timing"] as String).uppercase()) {
                     "BEFORE" -> TriggerTiming.BEFORE
                     "AFTER" -> TriggerTiming.AFTER

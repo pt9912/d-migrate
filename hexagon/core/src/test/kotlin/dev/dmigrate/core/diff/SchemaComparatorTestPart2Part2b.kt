@@ -267,6 +267,35 @@ class SchemaComparatorTestPart2Part2b : FunSpec({
         diff.triggersChanged[0].timing.shouldNotBeNull()
     }
 
+    test("trigger multi-event set is order-independent - reversed order is not a change (F4)") {
+        fun ft(events: Set<TriggerEvent>) = schema(
+            tables = mapOf("film" to table(columns = mapOf("id" to col()))),
+            triggers = mapOf(
+                "ft" to TriggerDefinition(table = "film", events = events, timing = TriggerTiming.BEFORE),
+            ),
+        )
+        val diff = comparator.compare(
+            ft(setOf(TriggerEvent.INSERT, TriggerEvent.UPDATE)),
+            ft(setOf(TriggerEvent.UPDATE, TriggerEvent.INSERT)),
+        )
+        diff.triggersChanged shouldHaveSize 0
+    }
+
+    test("trigger with a different events set is a change (F4)") {
+        fun ft(events: Set<TriggerEvent>) = schema(
+            tables = mapOf("film" to table(columns = mapOf("id" to col()))),
+            triggers = mapOf(
+                "ft" to TriggerDefinition(table = "film", events = events, timing = TriggerTiming.BEFORE),
+            ),
+        )
+        val diff = comparator.compare(
+            ft(setOf(TriggerEvent.INSERT, TriggerEvent.UPDATE)),
+            ft(setOf(TriggerEvent.UPDATE)),
+        )
+        diff.triggersChanged shouldHaveSize 1
+        diff.triggersChanged[0].event.shouldNotBeNull()
+    }
+
     // ===========================================
     // LF-015: Canonical key identity
     // ===========================================

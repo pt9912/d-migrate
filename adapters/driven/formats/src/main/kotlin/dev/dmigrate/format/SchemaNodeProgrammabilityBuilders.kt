@@ -145,7 +145,18 @@ internal fun buildTriggers(
         val triggerNode = mapper.createObjectNode()
         if (definition.description != null) triggerNode.put("description", definition.description)
         triggerNode.put("table", definition.table)
-        triggerNode.put("event", definition.event.name.lowercase())
+        // F4: a single-event trigger keeps the scalar `event:` form (the
+        // dominant case, byte-identical to pre-F4 output); a multi-event
+        // trigger (PostgreSQL `INSERT OR UPDATE …`) serialises as a
+        // canonical-order list under the same `event` key.
+        val canonicalEvents = definition.events.canonicalOrder()
+        if (canonicalEvents.size == 1) {
+            triggerNode.put("event", canonicalEvents.single().name.lowercase())
+        } else {
+            val events = mapper.createArrayNode()
+            canonicalEvents.forEach { events.add(it.name.lowercase()) }
+            triggerNode.set<ArrayNode>("event", events)
+        }
         triggerNode.put("timing", definition.timing.name.lowercase())
         if (definition.forEach != TriggerForEach.ROW) {
             triggerNode.put("for_each", definition.forEach.name.lowercase())

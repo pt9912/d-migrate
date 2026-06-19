@@ -130,6 +130,17 @@
       "body": "NEW.updated_at = CURRENT_TIMESTAMP;",
       "dependencies": { "tables": ["orders"] },
       "source_dialect": "postgresql"
+    },
+    "trg_orders_fulltext": {
+      "description": "Multi-Event-Trigger (F4): INSERT OR UPDATE",
+      "table": "orders",
+      "event": ["insert", "update"],
+      "timing": "before",
+      "for_each": "row",
+      "condition": null,
+      "body": "tsvector_update_trigger(tsv, 'pg_catalog.english', title)",
+      "dependencies": { "tables": ["orders"] },
+      "source_dialect": "postgresql"
     }
   },
   "sequences": {

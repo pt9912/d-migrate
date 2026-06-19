@@ -445,7 +445,7 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             val trg = result.schema.triggers[expectedKey]!!
             trg.table shouldBe "customers"
             trg.timing shouldBe TriggerTiming.BEFORE
-            trg.event shouldBe TriggerEvent.INSERT
+            trg.events shouldBe setOf(TriggerEvent.INSERT)
         }
     }
 

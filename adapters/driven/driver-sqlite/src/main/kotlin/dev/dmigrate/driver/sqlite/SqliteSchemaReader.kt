@@ -188,7 +188,11 @@ class SqliteSchemaReader : SchemaReader {
             val key = ObjectKeyCodec.triggerKey(table, name)
             result[key] = TriggerDefinition(
                 table = table,
-                event = parsed.event,
+                // SQLite triggers fire on exactly one event ({DELETE|INSERT|
+                // UPDATE}); the grammar has no multi-event form, so the parser
+                // yields a single event that the neutral model wraps as a
+                // one-element set (F4).
+                events = setOf(parsed.event),
                 timing = parsed.timing,
                 forEach = parsed.forEach,
                 condition = parsed.condition,

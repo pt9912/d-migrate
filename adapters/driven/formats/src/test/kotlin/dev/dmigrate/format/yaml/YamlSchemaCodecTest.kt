@@ -252,13 +252,13 @@ class YamlSchemaCodecTest : FunSpec({
         schema.triggers shouldHaveSize 2
         val trg = schema.triggers["trg_updated"]!!
         trg.table shouldBe "orders"
-        trg.event shouldBe TriggerEvent.UPDATE
+        trg.events shouldBe setOf(TriggerEvent.UPDATE)
         trg.timing shouldBe TriggerTiming.BEFORE
         trg.forEach shouldBe TriggerForEach.ROW
         trg.condition shouldBe "OLD.status != NEW.status"
         trg.body shouldNotBe null
         val trgInsert = schema.triggers["trg_insert"]!!
-        trgInsert.event shouldBe TriggerEvent.INSERT
+        trgInsert.events shouldBe setOf(TriggerEvent.INSERT)
         trgInsert.timing shouldBe TriggerTiming.AFTER
         trgInsert.forEach shouldBe TriggerForEach.STATEMENT
 

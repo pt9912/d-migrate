@@ -66,16 +66,39 @@ fehlen im Ziel (Body identisch). Betrifft reverse (Capture) **und** generate
 Volatilitäts-/Strictness-Marker erweitern, in reverse befüllen, in generate
 emittieren.
 
-## F4 — Multi-Event-Trigger nicht modelliert (neu) · zu beheben
+## F4 — Multi-Event-Trigger nicht modelliert · BEHOBEN 2026-06-19
 
 Erst nach dem F1-Fix sichtbar geworden (war vorher hinter dem Namens-Diff
 verborgen): Pagilas `film_fulltext_trigger` feuert auf `BEFORE INSERT OR UPDATE`,
-das Ziel nur auf `BEFORE UPDATE`. Ursache: das Modell-Enum `TriggerEvent`
-(`INSERT | UPDATE | DELETE`) trägt **genau ein** Event, keine Event-**Menge** —
-`INSERT OR UPDATE` kollabiert auf ein Event. Fix-Richtung: Trigger-Modell auf eine
-Event-Menge (`Set<TriggerEvent>` o. ä.) erweitern, in reverse (alle Dialekte)
-befüllen, in generate als `INSERT OR UPDATE …` emittieren. Betrifft Modell +
-reverse + generate + Serialisierung (vergleichbarer Umfang wie F3).
+das Ziel nur auf `BEFORE UPDATE`. Ursache (zwei Ebenen): (1) das Modell-Enum
+`TriggerEvent` (`INSERT | UPDATE | DELETE`) trug **genau ein** Event, keine
+Event-**Menge**; (2) der PG-Reverse keyte `result[key] = …` je
+`information_schema.triggers`-Zeile — die liefert **eine Zeile pro Event**, also
+überschrieb die UPDATE-Zeile die INSERT-Zeile, statt zu aggregieren.
+
+**Behoben (alle Ebenen):**
+- **Modell:** `TriggerDefinition.event: TriggerEvent` → `events: Set<TriggerEvent>`
+  (`hexagon/core/.../model/TriggerDefinition.kt`); exakter, nicht-lossiger
+  Sekundär-Konstruktor `(event: TriggerEvent)` → `setOf(event)` für den
+  Single-Event-Normalfall; `canonicalOrder()` + `toSqlEventClause()`-Helfer
+  (Enum-Ordinal-Reihenfolge → deterministisches `INSERT OR UPDATE`). `TriggerDiff`,
+  `SchemaComparator` (Set-Gleichheit = reihenfolge-unabhängig), `MigrationFingerprint`
+  nachgezogen.
+- **Reverse:** PG aggregiert die mehreren Zeilen pro `(table, name)`-Key zur
+  Event-Menge (Ursachenfix); MySQL/SQLite bleiben Single-Event (Grammatik kennt
+  kein Multi-Event) und wrappen in Singleton-Set.
+- **Generate + Diff-Emit (je 3 Dialekte):** `events.toSqlEventClause()` emittiert
+  PG `BEFORE INSERT OR UPDATE`; MySQL/SQLite unverändert für Single-Event (foreign
+  Multi-Event ist ohnehin per `E053` gegated).
+- **Serialisierung + Spec:** Schlüssel `event` ist nun **skalar-oder-array**
+  (`spec/schema.json` `oneOf`); Builder schreibt Skalar bei Single (Null-Churn auf
+  bestehenden Goldens) / Array bei Multi, Parser liest beides + Legacy-Skalar.
+- **Regressionstests:** PG-Reverse-Aggregation (`PostgresSchemaReaderTriggerTest`),
+  PG generate+diff Multi-Event-Emit, Serialisierungs-Round-Trip (multi-Array +
+  single-Skalar-Garantie), Comparator-Set-Gleichheit, Core-Modell-Helfer.
+
+Harness-belegt: der `~ film::film_fulltext_trigger`-Diff verschwindet, Baseline
+schrumpft 5 → 4 Changes (verbleibend: 1 Tabelle/gist-Grenze + 3 Funktionen/F3).
 
 ## Fundamentale Grenzen (kein Defekt — bewusst, gemeldet)
 

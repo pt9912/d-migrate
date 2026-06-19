@@ -317,7 +317,7 @@ class MysqlSchemaReaderTest : FunSpec({
         result.schema.triggers.mapShouldHaveSize(1)
         val trigger = result.schema.triggers.values.first()
         trigger.table shouldBe "users"
-        trigger.event shouldBe TriggerEvent.UPDATE
+        trigger.events shouldBe setOf(TriggerEvent.UPDATE)
         trigger.timing shouldBe TriggerTiming.BEFORE
         trigger.sourceDialect shouldBe "mysql"
         // E.1 Slice D.3: the trigger's owning table is surfaced as
@@ -582,7 +582,7 @@ class MysqlSchemaReaderTest : FunSpec({
             includeFunctions = false, includeProcedures = false))
 
         val trigger = result.schema.triggers.values.first()
-        trigger.event shouldBe TriggerEvent.DELETE
+        trigger.events shouldBe setOf(TriggerEvent.DELETE)
         trigger.forEach shouldBe TriggerForEach.STATEMENT
     }
 

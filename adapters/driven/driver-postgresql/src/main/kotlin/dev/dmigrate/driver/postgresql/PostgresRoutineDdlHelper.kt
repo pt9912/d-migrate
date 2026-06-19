@@ -269,7 +269,10 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
 
         val timing = trigger.timing.name
-        val event = trigger.event.name
+        // F4: emit the full event set in canonical order — a multi-event
+        // trigger renders `BEFORE INSERT OR UPDATE`, a single event `BEFORE
+        // UPDATE`. PostgreSQL is the only dialect with multi-event triggers.
+        val event = trigger.events.toSqlEventClause()
         val forEach = trigger.forEach.name
         val triggerSql = buildString {
             append("CREATE TRIGGER ${quoteIdentifier(name)}\n")

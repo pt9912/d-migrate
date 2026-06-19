@@ -83,6 +83,21 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         sql.shouldNotContain("EXECUTE PROCEDURE")
     }
 
+    test("CreateTrigger Up emits a multi-event trigger as `INSERT OR UPDATE` in canonical order (F4)") {
+        // Pass the events UPDATE-first to prove the diff renderer emits them
+        // in canonical enum order (INSERT before UPDATE), not iteration order.
+        val multi = sampleTrigger.copy(events = setOf(TriggerEvent.UPDATE, TriggerEvent.INSERT))
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", multi)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to multi)),
+            diff,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements.single().sql.shouldContain("BEFORE INSERT OR UPDATE")
+    }
+
     test("CreateTrigger renders WHEN clause when condition is set") {
         val withWhen = sampleTrigger.copy(condition = "NEW.amount > 100")
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", withWhen)))
@@ -103,7 +118,7 @@ class PostgresTriggerDdlHelperTest : FunSpec({
     test("CreateTrigger Up emits AFTER/INSTEAD OF/DELETE/UPDATE keyword combinations") {
         val instead = sampleTrigger.copy(
             timing = TriggerTiming.INSTEAD_OF,
-            event = TriggerEvent.UPDATE,
+            events = setOf(TriggerEvent.UPDATE),
         )
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", instead)))
         val plan = planner.plan(SchemaDefinition(name = "App", version = "1"), schemaWith(mapOf("audit_log" to instead)), diff)

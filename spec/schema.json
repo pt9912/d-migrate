@@ -524,8 +524,22 @@
         "description": { "type": "string" },
         "table": { "type": "string" },
         "event": {
-          "type": "string",
-          "enum": ["insert", "update", "delete"]
+          "description": "Ein einzelnes DML-Event (Skalar) oder — für Multi-Event-Trigger wie PostgreSQLs INSERT OR UPDATE — eine nicht-leere Menge von Events (Array)",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["insert", "update", "delete"]
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["insert", "update", "delete"]
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          ]
         },
         "timing": {
           "type": "string",

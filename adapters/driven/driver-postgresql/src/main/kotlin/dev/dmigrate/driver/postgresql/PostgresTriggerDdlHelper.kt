@@ -2,9 +2,9 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.TriggerDefinition
-import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
+import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -212,7 +212,7 @@ internal object PostgresTriggerDdlHelper {
         if (orReplace) append("OR REPLACE ")
         append("TRIGGER ").append(ctx.sql.quote(triggerName)).append('\n')
         append("    ").append(trigger.timing.toSqlKeyword())
-            .append(' ').append(trigger.event.toSqlKeyword()).append('\n')
+            .append(' ').append(trigger.events.toSqlEventClause()).append('\n')
         append("    ON ").append(ctx.sql.quote(trigger.table)).append('\n')
         append("    FOR EACH ").append(trigger.forEach.toSqlKeyword()).append('\n')
         trigger.condition?.takeIf { it.isNotBlank() }?.let { cond ->
@@ -277,8 +277,6 @@ internal object PostgresTriggerDdlHelper {
         TriggerTiming.AFTER -> "AFTER"
         TriggerTiming.INSTEAD_OF -> "INSTEAD OF"
     }
-
-    private fun TriggerEvent.toSqlKeyword(): String = name
 
     private fun TriggerForEach.toSqlKeyword(): String = name
 

@@ -1,7 +1,7 @@
 # Expected-Result-Baseline — Pagila/PostgreSQL Smoke (Phase 1)
 
 > Plan: [`../../../docs/planning/in-progress/sample-db-integration-harness.md`](../../../docs/planning/in-progress/sample-db-integration-harness.md)
-> · Stand: 2026-06-18 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`)
+> · Stand: 2026-06-19 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F4 behoben → 4 Diffs)
 
 Diese Datei erklärt **jeden** in `pagila-smoke.compare.txt` gepinnten
 Schema-Diff. Die Baseline ist *nicht* „0 Diffs" — ein Cross-/Round-Trip über
@@ -20,7 +20,7 @@ dann Baseline + diese Erklärung aktualisieren.
 - **post-data wendet sauber an** (ON_ERROR_STOP=1, 0 Fehler) — seit F2 (Programmability
   in Abhängigkeitsreihenfolge: Funktionen/Aggregate vor den Views, die sie aufrufen).
 
-## Gepinnte Schema-Diffs (5) — je Klasse erklärt
+## Gepinnte Schema-Diffs (4) — je Klasse erklärt
 
 ### A. `film.film_fulltext_idx [gist]` entfernt (1) — fundamentale Grenze
 Pagilas `film.fulltext` ist `tsvector`; beim Reverse degradiert der Typ zu `text`
@@ -44,14 +44,18 @@ Volatilitäts-/Strictness-Marker (`IMMUTABLE`, `STRICT`) fehlen im Ziel. Echter
 Fidelity-Defekt der Funktions-Reverse/Generate-Kette (neu durch den Harness
 aufgedeckt). Siehe Findings-Doc.
 
-### D. 1 Trigger `~ film::film_fulltext_trigger` — Multi-Event nicht modelliert (F4)
-**F1 (Trigger-Naming) ist behoben** (Generate-Pfad): 14 der 15 Trigger round-trippen
-jetzt mit ihrem **bloßen** Namen (`last_updated` mehrfach über Tabellen — in PG
-zulässig) statt des Modell-Composite-Keys; die 30 Trigger-Diffs (15 added + 15
-removed) sind verschwunden. Der **eine** verbliebene Diff ist ein *anderer* Defekt:
-Quelle feuert `BEFORE INSERT OR UPDATE`, Ziel nur `BEFORE UPDATE` — das Modell-Enum
-`TriggerEvent` trägt genau **ein** Event, keine Event-**Menge**, also kollabiert
-`INSERT OR UPDATE` auf ein Event. Neu aufgedeckt → **F4** in der Findings-Doc.
+### D. Trigger `film::film_fulltext_trigger` — ✅ BEHOBEN (F4), kein Diff mehr
+**F1 (Trigger-Naming) ist behoben** (Generate-Pfad): alle 15 Trigger round-trippen
+mit ihrem **bloßen** Namen (`last_updated` mehrfach über Tabellen — in PG zulässig)
+statt des Modell-Composite-Keys; die 30 Trigger-Diffs (15 added + 15 removed) sind
+verschwunden. Der danach verbliebene **eine** Diff war ein *anderer* Defekt: Quelle
+feuerte `BEFORE INSERT OR UPDATE`, Ziel nur `BEFORE UPDATE` — das Modell-Enum
+`TriggerEvent` trug genau **ein** Event, und der PG-Reverse überschrieb je
+`information_schema.triggers`-Zeile (eine Zeile **pro** Event) statt zu aggregieren.
+**F4** modelliert nun eine Event-**Menge** (`Set<TriggerEvent>`), aggregiert die
+Reverse-Zeilen und emittiert `INSERT OR UPDATE` in kanonischer Reihenfolge; der
+Trigger round-trippt vollständig. Details siehe
+[`../../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
 
 ## Pflege
 

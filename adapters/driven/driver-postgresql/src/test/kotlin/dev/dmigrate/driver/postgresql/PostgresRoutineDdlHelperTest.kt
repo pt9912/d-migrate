@@ -180,6 +180,28 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         skipped.shouldBeEmpty()
     }
 
+    test("generateTriggers emits a multi-event trigger as `INSERT OR UPDATE` in canonical order (F4)") {
+        // Pagila's film_fulltext_trigger fires `BEFORE INSERT OR UPDATE`.
+        // The events set is passed UPDATE-first to prove emission follows the
+        // canonical enum order (INSERT before UPDATE), not iteration order.
+        val triggers = mapOf(
+            ObjectKeyCodec.triggerKey("film", "film_fulltext_trigger") to TriggerDefinition(
+                table = "film",
+                events = setOf(TriggerEvent.UPDATE, TriggerEvent.INSERT),
+                timing = TriggerTiming.BEFORE,
+                forEach = TriggerForEach.ROW,
+                body = "EXECUTE FUNCTION film_fulltext_update()",
+            )
+        )
+        val skipped = mutableListOf<SkippedObject>()
+
+        val result = helper.generateTriggers(triggers, skipped)
+
+        result shouldHaveSize 1
+        result[0].sql shouldContain "BEFORE INSERT OR UPDATE ON \"film\""
+        skipped.shouldBeEmpty()
+    }
+
     test("generateTriggers emits the bare trigger name for a canonical table::name key (F1)") {
         // Pagila keeps `last_updated` on many tables; the model keys them
         // `table::last_updated` for uniqueness, but PostgreSQL's per-table

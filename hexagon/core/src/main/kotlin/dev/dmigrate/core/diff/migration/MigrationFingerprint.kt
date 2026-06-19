@@ -16,6 +16,7 @@ import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
+import dev.dmigrate.core.model.canonicalOrder
 import dev.dmigrate.core.util.sha256Hex
 
 /**
@@ -241,7 +242,7 @@ object MigrationFingerprint {
         for ((name, trg) in trs.entries.sortedBy { it.key }) {
             sb.append("trigger=").append(name)
                 .append(SEP).append("table=").append(trg.table)
-                .append(SEP).append("event=").append(trg.event.name)
+                .append(SEP).append("event=").append(trg.events.canonicalOrder().joinToString(",") { it.name })
                 .append(SEP).append("timing=").append(trg.timing.name)
                 .append(SEP).append("for_each=").append(trg.forEach.name)
                 .append(SEP).append("condition=").append(trg.condition ?: "")

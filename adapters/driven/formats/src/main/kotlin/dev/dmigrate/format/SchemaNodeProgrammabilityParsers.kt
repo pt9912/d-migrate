@@ -95,7 +95,7 @@ internal fun parseTriggers(node: JsonNode?): Map<String, TriggerDefinition> =
         TriggerDefinition(
             description = childNode.optionalText("description"),
             table = childNode.requiredText("table"),
-            event = childNode.requiredText("event").toTriggerEvent(),
+            events = parseTriggerEvents(childNode),
             timing = childNode.requiredText("timing").toTriggerTiming(),
             forEach = childNode.optionalText("for_each")?.toTriggerForEach() ?: TriggerForEach.ROW,
             condition = childNode.optionalText("condition"),
@@ -104,6 +104,23 @@ internal fun parseTriggers(node: JsonNode?): Map<String, TriggerDefinition> =
             sourceDialect = childNode.optionalText("source_dialect"),
         )
     }
+
+/**
+ * F4: the `event` field is scalar-or-array. A scalar (`event: insert`) is a
+ * single-event trigger; an array (`event: [insert, update]`) is a multi-event
+ * trigger (PostgreSQL `INSERT OR UPDATE …`). The scalar form keeps existing
+ * single-event schema files reading unchanged.
+ */
+private fun parseTriggerEvents(node: JsonNode): Set<TriggerEvent> {
+    val eventNode = node["event"] ?: throw IllegalArgumentException("Missing required field: event")
+    val events = if (eventNode.isArray) {
+        eventNode.map { it.asText().toTriggerEvent() }
+    } else {
+        listOf(eventNode.asText().toTriggerEvent())
+    }
+    require(events.isNotEmpty()) { "Trigger field 'event' must list at least one event" }
+    return events.toSet()
+}
 
 internal fun parseSequences(node: JsonNode?): Map<String, SequenceDefinition> =
     parseNamedObjectMap(node) { childNode ->

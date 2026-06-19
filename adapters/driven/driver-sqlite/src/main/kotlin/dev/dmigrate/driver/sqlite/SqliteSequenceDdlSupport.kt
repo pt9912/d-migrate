@@ -183,7 +183,7 @@ internal class SqliteSequenceDdlSupport {
         // line 644-647 ("ohne OF-Einschraenkung: immer W122")
         // approves the conservative path.
         val hasUpdateTrigger = schema?.triggers?.values?.any {
-            it.table == tableName && it.event == dev.dmigrate.core.model.TriggerEvent.UPDATE
+            it.table == tableName && dev.dmigrate.core.model.TriggerEvent.UPDATE in it.events
         } == true
         if (hasUpdateTrigger) {
             pendingSequenceNotes += TransformationNote(

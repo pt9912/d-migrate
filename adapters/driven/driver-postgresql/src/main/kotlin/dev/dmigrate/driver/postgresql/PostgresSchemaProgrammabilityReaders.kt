@@ -240,15 +240,29 @@ internal fun readPostgresTriggers(
         val name = row["trigger_name"] as String
         val table = row["event_object_table"] as String
         val key = ObjectKeyCodec.triggerKey(table, name)
+        val event = when ((row["event_manipulation"] as String).uppercase()) {
+            "INSERT" -> TriggerEvent.INSERT
+            "UPDATE" -> TriggerEvent.UPDATE
+            "DELETE" -> TriggerEvent.DELETE
+            else -> TriggerEvent.INSERT
+        }
+        // F4 (docs/planning/in-progress/sample-db-roundtrip-findings.md):
+        // information_schema.triggers surfaces one row per event, so a
+        // `BEFORE INSERT OR UPDATE` trigger arrives as multiple rows sharing
+        // the same (table, name) key. Merge their events into the set instead
+        // of letting the last row overwrite the first — the previous
+        // `result[key] = …` collapsed multi-event triggers to a single event
+        // on round-trip. Timing/forEach/condition/body are identical across
+        // the per-event rows, so the first row's values stay authoritative.
+        val existing = result[key]
+        if (existing != null) {
+            result[key] = existing.copy(events = existing.events + event)
+            continue
+        }
         val functionDeps = triggerFunctions[TriggerKey(table = table, name = name)].orEmpty()
         result[key] = TriggerDefinition(
             table = table,
-            event = when ((row["event_manipulation"] as String).uppercase()) {
-                "INSERT" -> TriggerEvent.INSERT
-                "UPDATE" -> TriggerEvent.UPDATE
-                "DELETE" -> TriggerEvent.DELETE
-                else -> TriggerEvent.INSERT
-            },
+            events = setOf(event),
             timing = when ((row["action_timing"] as String).uppercase()) {
                 "BEFORE" -> TriggerTiming.BEFORE
                 "AFTER" -> TriggerTiming.AFTER

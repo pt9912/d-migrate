@@ -201,7 +201,7 @@ class SchemaNodeParserTest : FunSpec({
         view.dependencies!!.columns.getValue("orders") shouldContainExactly listOf("id")
 
         val trigger = schema.triggers.getValue("orders_audit")
-        trigger.event shouldBe TriggerEvent.UPDATE
+        trigger.events shouldBe setOf(TriggerEvent.UPDATE)
         trigger.timing shouldBe TriggerTiming.AFTER
         trigger.forEach shouldBe TriggerForEach.STATEMENT
         trigger.sourceDialect shouldBe "mysql"

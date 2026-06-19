@@ -2,10 +2,9 @@ Schema Compare: pagila_pg <-> pagila_target
 
 Status: DIFFERENT
 
-Summary: 5 change(s)
+Summary: 4 change(s)
   Tables changed:  1
   Functions changed: 3
-  Triggers changed: 1
 
 Tables:
   ~ film:
@@ -15,9 +14,6 @@ Functions:
   ~ _group_concat(in:text,in:text)
   ~ last_day(in:timestamptz)
   ~ rewards_report(in:integer,in:decimal)
-
-Triggers:
-  ~ film::film_fulltext_trigger
 
 Operand (source): pagila_pg
   warning [R301] film.fulltext: Unknown PostgreSQL type 'tsvector' (udt: tsvector) mapped to text

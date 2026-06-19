@@ -313,7 +313,7 @@ class SqliteSchemaReaderTest : FunSpec({
             val triggers = reader.read(pool, SchemaReadOptions(includeTriggers = true)).schema.triggers
             val trg = triggers.values.single()
             trg.timing shouldBe TriggerTiming.AFTER
-            trg.event shouldBe TriggerEvent.INSERT
+            trg.events shouldBe setOf(TriggerEvent.INSERT)
             trg.table shouldBe "t"
             // Renderer always appends `;\nEND;`, so the parser must not store
             // the trailing `;` of its own — otherwise round-trip render
@@ -356,7 +356,7 @@ class SqliteSchemaReaderTest : FunSpec({
             "CREATE TRIGGER trg AFTER UPDATE OF a, b ON t BEGIN SELECT 1; END",
         ) { pool ->
             val result = reader.read(pool, SchemaReadOptions(includeTriggers = true))
-            result.schema.triggers.values.single().event shouldBe TriggerEvent.UPDATE
+            result.schema.triggers.values.single().events shouldBe setOf(TriggerEvent.UPDATE)
             val r213 = result.notes.single { it.code == "R213" }
             r213.severity shouldBe SchemaReadSeverity.WARNING
             r213.objectName shouldBe "trg"

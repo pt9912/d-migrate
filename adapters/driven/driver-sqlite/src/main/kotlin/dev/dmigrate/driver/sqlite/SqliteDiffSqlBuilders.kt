@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
+import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 
@@ -118,7 +119,9 @@ internal class SqliteDiffSqlBuilders {
         val body = trigger.body ?: return null
         if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") return null
         val timing = trigger.timing.name
-        val event = trigger.event.name
+        // F4: single-event sets render as a bare keyword (SQLite has no
+        // multi-event trigger grammar); foreign triggers are rejected upstream.
+        val event = trigger.events.toSqlEventClause()
         val forEach = trigger.forEach.name
         // E.2 review follow-up: deduplicate the trailing `;` — readers
         // may or may not include it on the body, but the BEGIN..END

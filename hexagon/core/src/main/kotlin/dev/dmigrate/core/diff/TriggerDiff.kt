@@ -10,7 +10,7 @@ data class NamedTrigger(val name: String, val definition: TriggerDefinition)
 data class TriggerDiff(
     val name: String,
     val table: ValueChange<String>? = null,
-    val event: ValueChange<TriggerEvent>? = null,
+    val event: ValueChange<Set<TriggerEvent>>? = null,
     val timing: ValueChange<TriggerTiming>? = null,
     val forEach: ValueChange<TriggerForEach>? = null,
     val condition: ValueChange<String?>? = null,

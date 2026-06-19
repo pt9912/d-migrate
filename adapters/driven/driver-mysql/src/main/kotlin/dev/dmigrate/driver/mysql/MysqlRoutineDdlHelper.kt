@@ -210,7 +210,10 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
         }
 
         val timing = trigger.timing.name
-        val event = trigger.event.name
+        // F4: single-event sets render as a bare keyword (MySQL has no
+        // multi-event trigger grammar); foreign multi-event triggers are
+        // already gated by the E053 source-dialect skip above.
+        val event = trigger.events.toSqlEventClause()
         val forEach = trigger.forEach.name
 
         val sql = buildString {

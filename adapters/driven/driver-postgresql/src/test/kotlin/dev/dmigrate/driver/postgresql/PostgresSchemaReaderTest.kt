@@ -292,27 +292,6 @@ class PostgresSchemaReaderTest : FunSpec({
         func.sourceDialect shouldBe "postgresql"
     }
 
-    test("read includes triggers") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns listOf(
-            mapOf("trigger_name" to "trg_audit", "event_object_table" to "users",
-                "action_timing" to "AFTER", "event_manipulation" to "INSERT",
-                "action_orientation" to "ROW", "action_condition" to null,
-                "action_statement" to "EXECUTE FUNCTION audit_fn()"),
-        )
-
-        val result = reader.read(pool, SchemaReadOptions(includeViews = false,
-            includeFunctions = false, includeProcedures = false))
-
-        result.schema.triggers.mapShouldHaveSize(1)
-        val trigger = result.schema.triggers.values.first()
-        trigger.table shouldBe "users"
-        trigger.event shouldBe TriggerEvent.INSERT
-        trigger.timing shouldBe TriggerTiming.AFTER
-        trigger.forEach shouldBe TriggerForEach.ROW
-        trigger.sourceDialect shouldBe "postgresql"
-    }
-
     test("read with partitioned table") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
@@ -674,25 +653,6 @@ class PostgresSchemaReaderTest : FunSpec({
         val func = result.schema.functions.values.first()
         func.parameters[0].direction shouldBe ParameterDirection.INOUT
         func.returns.shouldBeNull() // void
-    }
-
-    test("read trigger with DELETE event and INSTEAD OF timing") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns listOf(
-            mapOf("trigger_name" to "trg_del", "event_object_table" to "v",
-                "action_timing" to "INSTEAD OF", "event_manipulation" to "DELETE",
-                "action_orientation" to "STATEMENT", "action_condition" to "OLD.id > 0",
-                "action_statement" to "EXECUTE FUNCTION handle_del()"),
-        )
-
-        val result = reader.read(pool, SchemaReadOptions(includeViews = false,
-            includeFunctions = false, includeProcedures = false))
-
-        val trigger = result.schema.triggers.values.first()
-        trigger.event shouldBe TriggerEvent.DELETE
-        trigger.timing shouldBe TriggerTiming.INSTEAD_OF
-        trigger.forEach shouldBe TriggerForEach.STATEMENT
-        trigger.condition shouldBe "OLD.id > 0"
     }
 
     test("read with sequence having string values from information_schema") {

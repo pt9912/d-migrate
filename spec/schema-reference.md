@@ -285,7 +285,9 @@ kompatibel ist. Projection-Status-Felder in `dependencies` nutzen die Werte
 triggers:
   trg_updated_at:
     table: orders              # Pflicht: Zieltabelle
-    event: update              # insert | update | delete
+    event: update              # insert | update | delete (Skalar) …
+    # … oder Liste für Multi-Event-Trigger (PostgreSQL INSERT OR UPDATE):
+    # event: [insert, update]
     timing: before             # before | after | instead_of
     for_each: row              # row | statement
     condition: "OLD.x != NEW.x"  # Optional: WHEN-Bedingung

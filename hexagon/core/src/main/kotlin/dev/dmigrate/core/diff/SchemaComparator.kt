@@ -236,7 +236,7 @@ class SchemaComparator {
         val diff = TriggerDiff(
             name = name,
             table = valueChangeOrNull(left.table, right.table),
-            event = valueChangeOrNull(left.event, right.event),
+            event = valueChangeOrNull(left.events, right.events),
             timing = valueChangeOrNull(left.timing, right.timing),
             forEach = valueChangeOrNull(left.forEach, right.forEach),
             condition = valueChangeOrNull(left.condition, right.condition),
