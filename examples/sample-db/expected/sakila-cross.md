@@ -23,8 +23,8 @@ nicht-übersetzbare Objekte.**
 
 | Code | `code:`-Zeilen | distinkt | Klasse | Erklärung |
 |---|---|---|---|---|
-| `E053` | 32 | **16 Objekte** | Programmability-Skip | **3 Trigger** (`ins/upd/del_film`) + **6 Routinen** (3 Prozeduren + 3 Funktionen) + **7 Views** — Cross-Dialect können MySQL-Bodies nicht nach PG übersetzt werden; d-migrate transpiliert Trigger-/Routinen-/View-Rümpfe bewusst **nicht** zwischen Dialekten. Jedes Objekt = 1 Skip + 1 Note. |
-| `W127` | 6 | 6 Views | View-Body nicht portierbar | Zusätzliche Warnung: Views nutzen MySQL-Backtick-Quoting bzw. `GROUP_CONCAT`/`IF`. |
+| `E053` | 32 | **16 Objekte** | Programmability-Skip | **7 Views** + **3 Funktionen** + **3 Prozeduren** + **3 Trigger** (`ins/upd/del_film`) — Cross-Dialect können MySQL-Bodies nicht nach PG übersetzt werden (Backtick-Quoting, `GROUP_CONCAT`/`IF`, prozedurale Syntax); d-migrate transpiliert View-/Routinen-/Trigger-Rümpfe bewusst **nicht** zwischen Dialekten. Jedes Objekt = 1 `skipped_objects:`-Eintrag + 1 `notes:`-Erklärung. |
+| `W127` | 6 | 6 Indizes | Index-Rename (kein Skip) | MySQL erlaubt gleiche Index-Namen je Tabelle; PG-Index-Namen sind schema-global → `idx_fk_*` → `idx_fk_*_2`/`_3`. Die Indizes werden **erfolgreich emittiert**, nur umbenannt. |
 
 Die hohe Zahl spiegelt **Sakilas Programmability-Reichtum** (16 Objekte) × Dialekt-
 wechsel × Doppel-Listung — **kein Defekt**, sondern die korrekte, transparente

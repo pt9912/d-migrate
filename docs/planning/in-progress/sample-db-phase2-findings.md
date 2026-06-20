@@ -59,13 +59,15 @@ Skipped-Objects**, alle erwartet. Die gepinnte Baseline zählt `code:`-Zeilen ü
 1 strukturierter `skipped_objects:`-Eintrag + 1 `notes:`-Erklärung). **Real sind
 es 16 distinkte nicht-übersetzbare Objekte:**
 
-- **16× Objekte (E053)** — Programmability-Skips: **3 Trigger** (`ins/upd/del_film`),
-  **6 Routinen** (3 Prozeduren + 3 Funktionen), **7 Views**. Cross-Dialect können
-  MySQL-Bodies nicht nach PG übersetzt werden; d-migrate transpiliert Trigger-/
-  Routinen-/View-Rümpfe bewusst nicht zwischen Dialekten (bekannte ADR-Folgearbeit
-  „View-Bodies nicht transpiliert", I-09).
-- **6× W127** — zusätzliche View-Body-Portabilitätswarnung (MySQL-Backtick-Quoting,
-  `GROUP_CONCAT`/`IF`).
+- **16× Objekte (E053)** — Programmability-Skips: **7 Views** + **3 Funktionen** +
+  **3 Prozeduren** + **3 Trigger** (`ins/upd/del_film`). Cross-Dialect können
+  MySQL-Bodies nicht nach PG übersetzt werden (Backtick-Quoting, `GROUP_CONCAT`/
+  `IF`, prozedurale Syntax); d-migrate transpiliert View-/Routinen-/Trigger-Rümpfe
+  bewusst nicht zwischen Dialekten (bekannte ADR-Folgearbeit „View-Bodies nicht
+  transpiliert", I-09).
+- **6× W127** — **Index-Renames** (kein Skip): MySQL erlaubt gleiche Index-Namen je
+  Tabelle, PG ist schema-global → `idx_fk_*` → `idx_fk_*_2`/`_3`. Die Indizes
+  werden erfolgreich emittiert, nur umbenannt (das ist der N8-Mechanismus).
 
 Kein Bug — die korrekte, transparente Cross-Dialect-Meldung (Sakila ist
 programmability-reich; Phase 1 Pagila/PG-PG war `IDENTICAL`, weil same-dialect
