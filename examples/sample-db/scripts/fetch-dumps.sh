@@ -57,8 +57,19 @@ SAKILA_DATA_URL="$SAKILA_BASE/mysql-sakila-insert-data.sql"
 SAKILA_DATA_SHA256="353ef858e4d2d1a60549969283434da15b905aef3ca7099d82b649b75f8de99f"
 SAKILA_DATA_DEST="$CACHE_DIR/sakila-data.sql"
 
+# --- Chinook (SQLite) — Phase 2b ----------------------------------
+# lerocha/chinook-database liefert eine fertige SQLite-Binärdatei
+# (Chinook_Sqlite.sqlite, Schema + Daten). Kein Server — die CLI
+# arbeitet direkt gegen die bind-gemountete .db-Datei.
+CHINOOK_REPO="lerocha/chinook-database"
+CHINOOK_COMMIT="7f67772503d71ba90f19283c38e93923addb43fa"
+CHINOOK_URL="https://raw.githubusercontent.com/${CHINOOK_REPO}/${CHINOOK_COMMIT}/ChinookDatabase/DataSources/Chinook_Sqlite.sqlite"
+CHINOOK_SHA256="7651ba378ac2fcd0dfc3c66fb101f7a7eed3ba39a612ec642b96e20702061f15"
+CHINOOK_DEST="$CACHE_DIR/chinook.db"
+
 mkdir -p "$CACHE_DIR"
 fetch_one "pagila"        "$PAGILA_URL"        "$PAGILA_DEST"        "$PAGILA_SHA256"
 fetch_one "sakila-schema" "$SAKILA_SCHEMA_URL" "$SAKILA_SCHEMA_DEST" "$SAKILA_SCHEMA_SHA256"
 fetch_one "sakila-data"   "$SAKILA_DATA_URL"   "$SAKILA_DATA_DEST"   "$SAKILA_DATA_SHA256"
+fetch_one "chinook"       "$CHINOOK_URL"       "$CHINOOK_DEST"       "$CHINOOK_SHA256"
 log "done."

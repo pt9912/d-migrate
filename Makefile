@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke
 
 help:
 	@printf '%s\n' \
@@ -112,6 +112,7 @@ help:
 		'  make sample-db-smoke  Full E2E (Phase 1, Pagila/PG round-trip): load -> reverse/validate/generate -> transfer -> compare vs baseline' \
 		'  make sample-db-cross-smoke  Cross-Dialect (Phase 2, Sakila MySQL->PG): reverse/validate/generate -> transfer -> parity + type conversions' \
 		'  make sample-db-cross-smoke-pg2my  Cross-Dialect (Phase 2, Pagila PG->MySQL): symmetrischer Flow -> parity + type conversions' \
+		'  make sample-db-sqlite-smoke  SQLite round-trip (Phase 2b, Chinook): serverless .db -> reverse/validate/generate/transfer -> parity + precision' \
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
@@ -375,3 +376,6 @@ sample-db-cross-smoke:
 
 sample-db-cross-smoke-pg2my:
 	./examples/sample-db/scripts/smoke-cross-pg2my.sh
+
+sample-db-sqlite-smoke:
+	./examples/sample-db/scripts/smoke-sqlite.sh

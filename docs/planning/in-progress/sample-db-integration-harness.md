@@ -46,7 +46,7 @@ ein gepinnter Sample und eine eigene `expected/`-Baseline; `smoke.sh` parametris
 |---|---|---|---|---|
 | PostgreSQL | Pagila | postgres | 1 | ✅ erledigt |
 | MySQL | Sakila | mysql | 2 | ✅ erledigt (Sakila MySQL→PG + Pagila PG→MySQL beide grün) |
-| SQLite | Chinook | — (Datei) | 2b | geplant |
+| SQLite | Chinook | — (Datei) | 2b | ✅ erledigt (Round-Trip grün, Parität 11/11) |
 | PostGIS | Spatial-Sample | PostGIS-Image | 5 | geplant |
 | Spatialite | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
 
@@ -110,10 +110,15 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   [`sample-db-phase2-findings.md`](sample-db-phase2-findings.md). *Kein* direkter
   Pagila↔Sakila-Vergleich. **Offen (Folge-Slices, nicht Phase-2-blockierend):**
   Y1-Fix, Partitions-Hierarchie (löst P2-pg2my).
-- **Phase 2b — SQLite-Round-Trip (Chinook).** **Kein** Server — die CLI arbeitet
-  gegen eine bind-gemountete `.db`-Datei. Sample: Chinook (klein, FK-reich). Deckt
-  die SQLite-Eigenheiten ab (Named-Sequence `helper_table`, EXCLUDE blockiert,
-  AUTOINCREMENT, schema-globaler Trigger-Namensraum). Eigene `expected/`-Baseline.
+- **Phase 2b — SQLite-Round-Trip (Chinook). ✅ ERLEDIGT (2026-06-20).** **Kein**
+  Server — die CLI arbeitet via `docker run` (Host-User) gegen eine bind-gemountete
+  `.db`-Datei; `sqlite3` baut das Zielschema. Sample: Chinook
+  (`lerocha/chinook-database@7f677725`, SHA256-gepinnt, 11 Tabellen, FK-reich).
+  `smoke-sqlite.sh` + `make sample-db-sqlite-smoke` + CI. **Same-Dialect-Round-Trip
+  deterministisch grün:** Parität 11/11, `Decimal(10,2)→REAL` ohne Datenverlust
+  datenbelegt (Track.UnitPrice-Summe 3680.97), Notes gepinnt
+  (`expected/chinook-sqlite.*`: W200×3 generate + R201 reverse, beide SQLite-Typ-
+  Affinität, kein Defekt). **Keine** Fidelity-Findings — sauberer Round-Trip.
 - **Phase 3 — Scale (Employees/MySQL).** Streaming/Chunking/Resume; **opt-in/nightly**.
   **Achtung:** es gibt heute keinen `schedule:`/`cron:`-Workflow — Phase 3 legt
   entweder einen scheduled Workflow an (eigenes Arbeitspaket) oder bleibt reines
