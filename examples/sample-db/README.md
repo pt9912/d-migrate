@@ -61,5 +61,5 @@ Stack bleibt nach dem Lauf stehen (Inspektion); Ports binden nur an `127.0.0.1`.
 
 Der Erstlauf hat echte Round-Trip-Defekte aufgedeckt (Trigger-Naming, Funktions-
 Attribute, Programmability-Ordering) — getrackt in
-[`../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
+[`../../docs/planning/done/sample-db-roundtrip-findings.md`](../../docs/planning/done/sample-db-roundtrip-findings.md).
 Genau dafür gibt es den Harness.

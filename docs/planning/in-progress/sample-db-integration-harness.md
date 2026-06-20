@@ -51,7 +51,7 @@ ein gepinnter Sample und eine eigene `expected/`-Baseline; `smoke.sh` parametris
 | Spatialite | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
 
 Jeder neue Dialekt deckt **eigene** Round-Trip-Defekte auf (wie PG → F1–F3,
-[`sample-db-roundtrip-findings.md`](sample-db-roundtrip-findings.md));
+[`sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md));
 Breite kostet daher Fix-Arbeit. Bau-Reihenfolge/-Zeitpunkt steuert die Roadmap —
 heute (2026-06-18) **nur dokumentiert**, Bau folgt.
 
@@ -92,7 +92,7 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   gepinnte Baseline `expected/`). `make sample-db-smoke` + CI-Workflow
   `sample-db-smoke.yml`. **Lokal zweifach grün (deterministisch); Baseline lokal
   gepinnt + je Diff-Klasse erklärt** (`expected/pagila-smoke.md`). Der Erstlauf hat
-  echte Round-Trip-Defekte aufgedeckt → [`sample-db-roundtrip-findings.md`](sample-db-roundtrip-findings.md).
+  echte Round-Trip-Defekte aufgedeckt → [`sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md).
 - **Phase 2 — Compatibility (Cross-Dialect je DB).** mysql-Service ergänzen;
   Sakila laden; **jede** DB cross-dialect transferiert und **gegen ihre eigene
   Quelle** geprüft (Pagila PG→MySQL, Sakila MySQL→PG) — *kein* direkter

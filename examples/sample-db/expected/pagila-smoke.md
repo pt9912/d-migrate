@@ -43,7 +43,7 @@ scheiterten beim Anwenden (`function group_concat(text) does not exist`).
 **F2** sortiert die Programmability nun in Abhängigkeitsreihenfolge (Views **nach**
 den von ihnen aufgerufenen Routinen/Aggregaten); die drei Views round-trippen
 vollständig. Details + Verbleibendes siehe
-[`../../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
+[`../../../docs/planning/done/sample-db-roundtrip-findings.md`](../../../docs/planning/done/sample-db-roundtrip-findings.md).
 
 ### C. 3 Funktionen (`_group_concat`, `last_day`, `rewards_report`) — ✅ BEHOBEN (F3), kein Diff mehr
 Der Round-Trip verlor Funktions-**Attribute**, die der Reverse erfasst, generate
@@ -55,7 +55,7 @@ aus `pg_proc.provolatile`/`proisstrict`), und generate emittiert nun
 Volatilität + `STRICT` + `SECURITY DEFINER`; alle drei round-trippen vollständig.
 Die synthetischen `p1`/`p2` waren **kein** Diff (PG-unnamed-Params haben echt keine
 Namen — beide Seiten synthetisieren gleich). Details siehe
-[`../../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
+[`../../../docs/planning/done/sample-db-roundtrip-findings.md`](../../../docs/planning/done/sample-db-roundtrip-findings.md).
 
 ### D. Trigger `film::film_fulltext_trigger` — ✅ BEHOBEN (F4), kein Diff mehr
 **F1 (Trigger-Naming) ist behoben** (Generate-Pfad): alle 15 Trigger round-trippen
@@ -68,7 +68,7 @@ feuerte `BEFORE INSERT OR UPDATE`, Ziel nur `BEFORE UPDATE` — das Modell-Enum
 **F4** modelliert nun eine Event-**Menge** (`Set<TriggerEvent>`), aggregiert die
 Reverse-Zeilen und emittiert `INSERT OR UPDATE` in kanonischer Reihenfolge; der
 Trigger round-trippt vollständig. Details siehe
-[`../../../docs/planning/in-progress/sample-db-roundtrip-findings.md`](../../../docs/planning/in-progress/sample-db-roundtrip-findings.md).
+[`../../../docs/planning/done/sample-db-roundtrip-findings.md`](../../../docs/planning/done/sample-db-roundtrip-findings.md).
 
 ## Pflege
 

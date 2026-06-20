@@ -3,7 +3,7 @@
 > Status: **ABGESCHLOSSEN** (2026-06-19) — alle Befunde behoben: F1/F2/F4 + F3 +
 > die ehemalige tsvector/gist-„Grenze" (ADR 0015). Pagila/PG-Round-Trip =
 > `Status: IDENTICAL` (0 Diffs, 37 → 0).
-> Trigger: Der neue Sample-DB-Harness ([`sample-db-integration-harness.md`](sample-db-integration-harness.md))
+> Trigger: Der neue Sample-DB-Harness ([`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
 > hat beim **Erstlauf** (Pagila PG→PG-Round-Trip) echte Fidelity-Defekte
 > aufgedeckt, die im synthetischen Cross-Dialect-Matrix-Modus bisher nicht
 > sichtbar waren.
@@ -47,7 +47,7 @@ Das `post-data` emittierte Views **vor** der `CREATE AGGREGATE group_concat`-/
 `CREATE FUNCTION`-Definition, die sie aufrufen → die 3 group_concat-Views
 scheiterten beim Anwenden (`function group_concat(text) does not exist`). Gleiche
 Klasse wie der P3-Residual **K2** (`--include-all`-Routinen-Ordering,
-[`../done/pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)).
+[`pilot-rerun-p3-residuals.md`](pilot-rerun-p3-residuals.md)).
 
 **Behoben:** in `AbstractDdlGenerator.generate()` werden die POST_DATA-Views nun
 **nach** functions/aggregates/procedures emittiert (statt davor). Eine View wird
@@ -140,11 +140,45 @@ schrumpft 5 → 4 Changes (verbleibend: 1 Tabelle/gist-Grenze + 3 Funktionen/F3)
   Reverse `tsvector`→`fulltext`, generate `fulltext`→`tsvector`, GiST-Op-Class
   erkennt `tsvector_ops` → Spalte **und** Index round-trippen; R301/W123 entfallen.
   Cross-Dialect-Volltext (SQLite FTS5 / MySQL FULLTEXT = strukturelle Mechanismen)
-  ist als Provisional-Carve-Out getrackt ([`carveout.md`](carveout.md) §8).
+  ist als Provisional-Carve-Out getrackt ([`carveout.md`](../in-progress/carveout.md) §8).
   **Damit ist der Pagila/PG-Round-Trip auf `Status: IDENTICAL` (0 Diffs).**
 
 ## Fundamentale Grenzen (kein Defekt — bewusst, gemeldet)
 
 - **Leere RANGE-Partition** `payment` → als plain Tabelle erzeugt (E055).
   Daten-/dump-abhängige Eigenheit dieses Pagila-Dumps, korrekt gemeldet (1 Note,
-  kein Schema-Diff).
+  kein Schema-Diff). Die zugrunde liegende Reverse-Lücke (Kind-Partitionen +
+  Grenzen werden nicht rekonstruiert) ist als Folge-Slice getrackt →
+  [`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md)
+  (LN-008-Teillücke).
+
+## Closure
+
+> Abgeschlossen 2026-06-19, nach `done/` verschoben 2026-06-20 (Per-Slice-Tracker;
+> [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)-Lebenszyklus).
+
+**Geliefert.** Alle vom Phase-1-Harness (Pagila PG→PG-Round-Trip) aufgedeckten
+Fidelity-Defekte sind behoben, je mit Regressionstest und harness-belegt: F1
+(Trigger-Naming, Generate-Pfad), F2 (Programmability-Ordering Views nach
+Routinen), F3 (Funktions-Attribut-Verlust: Volatilität/Strictness/Security), F4
+(Multi-Event-Trigger als Event-Menge). Die ehemals als „fundamentale Grenze"
+gemeldete tsvector/gist-Lücke wurde via [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)
+strukturell aufgelöst (`fulltext` als first-class neutraler Typ). **Ergebnis:
+Pagila/PG-Round-Trip = `Status: IDENTICAL` (0 Diffs, 37 → 0).** Die gepinnte
+Baseline `examples/sample-db/expected/pagila-smoke.*` ist entsprechend
+geschrumpft.
+
+**Offene Folge-Slices (Forward-Pointer, nicht in dieser Closure).**
+
+- **F1-Restfläche (Diff-/Migrate-Pfad):** `schema migrate`
+  (`PostgresTriggerDdlHelper.emitCreate/emitDrop`) nutzt weiterhin
+  `op.objectRef.rootName` (= Composite-Key) als Trigger-Namen. Separate Fläche mit
+  eigenen Golden-Tests, vom Phase-1-Harness (`schema generate`) nicht
+  verifizierbar → eigener Fix-Slice mit Diff-Pfad-Test.
+- **F3-Restfläche (Spec-Drift):** `search_path` auf SECURITY-DEFINER-Funktionen
+  ist im Modell erfasst, wird von generate aber nicht emittiert; ebenso fehlen
+  `security`/`definer`/`search_path`/`sql_mode` in der `schema.json`-`function`-
+  Definition.
+
+**Bleibende fundamentale Grenze (kein Defekt):** leere RANGE-Partition `payment`
+→ plain Tabelle (E055), dump-abhängig, korrekt gemeldet.
