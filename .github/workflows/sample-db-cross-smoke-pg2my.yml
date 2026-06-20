@@ -1,0 +1,45 @@
+name: Sample-DB Cross-Dialect Smoke PG→MySQL (Best-Effort)
+
+# Phase-2-Cross-Dialect-Smoke: Pagila PostgreSQL -> MySQL gegen das echte
+# d-migrate:dev-CLI (symmetrisch zu sample-db-cross-smoke.yml = MySQL->PG).
+# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Findings: docs/planning/in-progress/sample-db-phase2-findings.md (Flow B)
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-cross-smoke-pg2my` (fetch gepinnter Pagila-Dump ->
+# postgres + mysql up -> reverse/validate/generate --target mysql -> data transfer
+# PG->MySQL -> Per-Tabelle-Paritaet + Typ-Konvertierungs-Stichproben gegen die
+# gepinnte Notes-Baseline examples/sample-db/expected/pagila-cross.notes.txt).
+#
+# Best-Effort: continue-on-error, damit transiente Netz-/Docker-Hub-
+# Instabilitaeten den Hauptbuild nicht rot machen.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'examples/sample-db/**'
+      - 'Makefile'
+      - '.github/workflows/sample-db-cross-smoke-pg2my.yml'
+
+jobs:
+  cross-smoke-pg2my:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB cross-dialect smoke (Pagila PG -> MySQL)
+        run: make sample-db-cross-smoke-pg2my
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true

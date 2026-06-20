@@ -1,16 +1,20 @@
-# Sample-DB-Cross-Dialect-Findings (Sakila MySQL→PG, Phase 2)
+# Sample-DB-Cross-Dialect-Findings (Phase 2)
 
-> Status: **In Arbeit** (2026-06-20). Erstlauf Sakila MySQL→PG durchgeführt;
-> Zeilen-Parität 16/16, drei Typ-Konvertierungen datenbelegt korrekt, **ein**
-> Daten-Fidelity-Defekt (Y1, YEAR) entdeckt.
+> Status: **In Arbeit** (2026-06-20). **Beide** Flows durchgeführt:
+> Sakila MySQL→PG (Parität 16/16, 1 Defekt Y1) **und** Pagila PG→MySQL
+> (Parität 22/22, 1 Defekt = Partition-Duplikation, datenbelegt Finding D).
 > Trigger: Phase 2 des Sample-DB-Harness
 > ([`sample-db-integration-harness.md`](sample-db-integration-harness.md)) fährt
-> erstmals einen **echten Cross-Dialect-Transfer** (nicht Same-Dialect-Round-Trip
+> erstmals **echte Cross-Dialect-Transfers** (nicht Same-Dialect-Round-Trip
 > wie Phase 1). Wie erwartet („jeder neue Dialekt deckt eigene Defekte auf")
-> bringt MySQL→PG eigene Befunde.
+> bringt jede Richtung eigene Befunde.
 > Aktivierungsbedingung: jeder echte Defekt unten wird als eigener Fix-Slice nach
 > `../next/` gehoben und behoben (je mit Regressionstest); danach Baseline
 > `examples/sample-db/expected/` neu pinnen.
+
+---
+
+# Flow A — Sakila MySQL→PG
 
 Quelle: Sakila (`jOOQ/sakila@e089a5b1`, MySQL), Ziel: PostgreSQL. Flow:
 `reverse sakila_my --include-all` → `validate` (0 Errors) → `generate --target
@@ -72,3 +76,58 @@ es 16 distinkte nicht-übersetzbare Objekte:**
 Kein Bug — die korrekte, transparente Cross-Dialect-Meldung (Sakila ist
 programmability-reich; Phase 1 Pagila/PG-PG war `IDENTICAL`, weil same-dialect
 keine Body-Übersetzung braucht). Detail-Aufschlüsselung: `expected/sakila-cross.md`.
+
+---
+
+# Flow B — Pagila PG→MySQL
+
+Quelle: Pagila (PostgreSQL), Ziel: MySQL. Flow: `reverse pagila_pg --include-all`
+→ `validate` (0 Errors) → `generate --target mysql --split pre-post` → pre-data auf
+`pagila_target` (MySQL) → `data transfer pagila_pg → pagila_my_target`. **Parität
+22/22 Tabellen.**
+
+## Datenbelegt KORREKT (keine Defekte)
+
+| PG-Typ | Spalte | MySQL-Ergebnis | Beleg |
+|---|---|---|---|
+| `boolean` | `customer.activebool` | `tinyint(1)` | `count(*) FILTER (WHERE activebool)` PG 599 == MySQL `SUM` 599 |
+| `text[]` (ARRAY) | `film.special_features` | `json` | PG `{"Deleted Scenes","Behind the Scenes"}` → MySQL `["Deleted Scenes", "Behind the Scenes"]` (gültiges JSON-Array; `JdbcForeignValueNormalizer` aus L1/K1) |
+| `tsvector` (R301→fulltext) | `film.fulltext` | `text` | alle 1000 Filme befüllt; `film_id=1` Länge 139, `'academi':1 'battl':15…` identisch zum PG-tsvector-String |
+| `timestamptz` (W100) | `rental.last_update` | `datetime` | `2022-02-15 21:30:53+00` → `2022-02-15 21:30:53` (tz weg = W100, erwartet; Wert erhalten) |
+
+## P2-pg2my — Partition-Daten-Duplikation (Daten-Defekt) · OFFEN, getrackt im Partitions-Plan
+
+Pagilas `payment` ist range-partitioniert (Parent + 7 Kinder `payment_p2022_01..07`).
+Der Reverse modelliert sie als „partitionsloser Parent (plain, E055) + 7 lose
+Standalone-Tabellen" — und der Transfer befüllt **beide**:
+
+- MySQL `payment` (plain): **16049** Zeilen (aus PG-Parent, der alle Kind-Zeilen aggregiert)
+- MySQL `payment_p2022_01..07` zusammen: **16049** Zeilen (aus den PG-Standalone-Kindern)
+- **Gesamt 32098 statt 16049 — die Zahlungsdaten liegen physisch doppelt.**
+
+Die Per-Tabelle-Parität (16049==16049, 723==723) bemerkt es **nicht**. Das ist
+**kein neuer Befund**, sondern der **datenbelegte Beweis von Finding D** aus
+[`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md)
+(AP5). **Kein eigener neuer Slice** — dort getrackt; die Auflösung kommt mit der
+Partitions-Hierarchie-Rekonstruktion (AP2 entfernt die Kinder aus der
+Top-Level-Liste → Transfer befüllt nur noch den Parent). Bis dahin gilt: der
+PG→MySQL-Smoke prüft **Per-Tabelle-Parität** und meldet die Duplikation als NOTE.
+
+## Erwartete Cross-Dialect-Notes (kein Defekt — Baseline-pinnbar)
+
+`generate --target mysql` meldet (PG-Features, die MySQL nicht 1:1 darstellt) —
+alle erwartet:
+
+| Code | `code:`-Zeilen | Klasse |
+|---|---|---|
+| `E053` | 62 (31 distinkt ×2) | Programmability-Skips (PG-Trigger/Funktionen/Views, Body nicht nach MySQL übersetzbar) |
+| `E056` | 26 | PG-Sequenzen ohne MySQL-`helper_table`-Modus nicht darstellbar (`actor_actor_id_seq` …) |
+| `W100` | 24 | `timestamptz` → MySQL `DATETIME` (kein tz) |
+| `W118` | 8 | `AUTO_INCREMENT`-Spalte an den Anfang des Composite-PK gezogen (MySQL-Pflicht) |
+| `W125` | 3 | Index auf `TEXT`/`BLOB`-Spalte ohne Präfixlänge übersprungen (I-08-Klasse) |
+| `E055` | 1 | Leere RANGE-Partition `payment` → plain Tabelle (= Partitions-Grenze, siehe P2-pg2my) |
+| `W102` | 1 | GiST-Index `film_fulltext_idx` in MySQL nicht unterstützt, übersprungen (koppelt an Volltext-Carveout §8) |
+| `W103` | 1 | Materialized View → reguläre View |
+
+Kein Bug — die korrekte, transparente Cross-Dialect-Degradation (PG ist
+feature-reicher als MySQL).

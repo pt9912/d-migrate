@@ -45,7 +45,7 @@ ein gepinnter Sample und eine eigene `expected/`-Baseline; `smoke.sh` parametris
 | Ziel | Sample (Kandidat) | Server | Phase | Status |
 |---|---|---|---|---|
 | PostgreSQL | Pagila | postgres | 1 | ✅ erledigt |
-| MySQL | Sakila | mysql | 2 | 🚧 in Arbeit (Sakila MySQL→PG grün; Pagila PG→MySQL offen) |
+| MySQL | Sakila | mysql | 2 | ✅ erledigt (Sakila MySQL→PG + Pagila PG→MySQL beide grün) |
 | SQLite | Chinook | — (Datei) | 2b | geplant |
 | PostGIS | Spatial-Sample | PostGIS-Image | 5 | geplant |
 | Spatialite | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
@@ -93,17 +93,23 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   `sample-db-smoke.yml`. **Lokal zweifach grün (deterministisch); Baseline lokal
   gepinnt + je Diff-Klasse erklärt** (`expected/pagila-smoke.md`). Der Erstlauf hat
   echte Round-Trip-Defekte aufgedeckt → [`sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md).
-- **Phase 2 — Compatibility (Cross-Dialect je DB). 🚧 IN ARBEIT (2026-06-20).**
+- **Phase 2 — Compatibility (Cross-Dialect je DB). ✅ ERLEDIGT (2026-06-20).**
   mysql-Service (`mysql:8.4`) + Sakila-Pin (`jOOQ/sakila@e089a5b1`, SHA256) +
-  PG `sakila_target`/MySQL `pagila_target` ergänzt; `smoke-cross.sh` +
-  `make sample-db-cross-smoke` + CI-Workflow. **Sakila MySQL→PG grün:** Zeilen-
-  Parität 16/16, TINYINT(1)→boolean / ENUM→text / SET→text datenbelegt korrekt,
-  38 Notes (32× E053 + 6× W127) als Baseline gepinnt (`expected/sakila-cross.*`).
-  Erstlauf deckte **ein** Fidelity-Finding auf — Y1 (YEAR-Wert-Korruption,
-  `yearIsDateType`), getrackt in
-  [`sample-db-phase2-findings.md`](sample-db-phase2-findings.md).
-  **Offen:** Pagila PG→MySQL (symmetrischer zweiter Flow) + Y1-Fix-Slice.
-  *Kein* direkter Pagila↔Sakila-Vergleich.
+  PG `sakila_target`/MySQL `pagila_target` ergänzt. **Beide Flows deterministisch
+  grün, je gegen eigene Quelle, je eigene gepinnte Baseline:**
+  - **Sakila MySQL→PG** (`smoke-cross.sh`, `make sample-db-cross-smoke`):
+    Parität 16/16, TINYINT(1)→boolean / ENUM→text / SET→text datenbelegt,
+    Notes gepinnt (`expected/sakila-cross.*`). Finding **Y1** (YEAR-Wert-Korruption,
+    `yearIsDateType`).
+  - **Pagila PG→MySQL** (`smoke-cross-pg2my.sh`, `make sample-db-cross-smoke-pg2my`):
+    Parität 22/22, boolean→TINYINT(1) / text[]→JSON / tsvector→text /
+    timestamptz→DATETIME datenbelegt, Notes gepinnt (`expected/pagila-cross.*`).
+    Finding **P2-pg2my** = datenbelegter Beweis von Partitions-Finding D (payment
+    doppelt: 32098 vs 16049).
+  Beide CI-Workflows (`sample-db-cross-smoke*.yml`). Findings in
+  [`sample-db-phase2-findings.md`](sample-db-phase2-findings.md). *Kein* direkter
+  Pagila↔Sakila-Vergleich. **Offen (Folge-Slices, nicht Phase-2-blockierend):**
+  Y1-Fix, Partitions-Hierarchie (löst P2-pg2my).
 - **Phase 2b — SQLite-Round-Trip (Chinook).** **Kein** Server — die CLI arbeitet
   gegen eine bind-gemountete `.db`-Datei. Sample: Chinook (klein, FK-reich). Deckt
   die SQLite-Eigenheiten ab (Named-Sequence `helper_table`, EXCLUDE blockiert,

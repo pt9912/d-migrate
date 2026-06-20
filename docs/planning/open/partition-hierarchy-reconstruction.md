@@ -201,12 +201,17 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   sie auch im Transfer weg. Damit gilt der Vertrag **automatisch**: der Parent ist
   die einzige Transfer-Einheit, PG routet INSERTs deklarativ in die Kinder, SELECT
   am Parent liefert alle Kind-Zeilen — kein Doppeltransfer, kein Datenverlust.
-  **Motivation (latenter Defekt heute):** aktuell enumeriert der Transfer alle 8
-  plain Tabellen (Parent + 7 Kinder); `SELECT * FROM payment` (Partition-Parent in
-  der Quelle) liefert **alle** Kind-Zeilen, *zusätzlich* liefert jeder Kind-SELECT
-  seine — die Zeilen landen also doppelt im Ziel (einmal im geflachten Parent,
-  einmal in den Kind-Tabellen). Die Per-Tabelle-Zeilen-Parität bemerkt das
-  **nicht**. Übrig bleibt **ein Verifikationstest**, der genau das prüft:
+  **Motivation (latenter Defekt — DATENBELEGT 2026-06-20):** aktuell enumeriert
+  der Transfer alle 8 plain Tabellen (Parent + 7 Kinder); `SELECT * FROM payment`
+  (Partition-Parent in der Quelle) liefert **alle** Kind-Zeilen, *zusätzlich*
+  liefert jeder Kind-SELECT seine — die Zeilen landen also doppelt im Ziel (einmal
+  im geflachten Parent, einmal in den Kind-Tabellen). **Belegt durch den
+  Sample-DB-Harness Phase 2 (Pagila PG→MySQL):** im MySQL-Ziel hat `payment`
+  (plain) **16049** Zeilen **und** die 7 Kinder `payment_p2022_01..07` zusammen
+  **16049** — Gesamt **32098 statt 16049** (Faktor 2). Die Per-Tabelle-Parität
+  (16049==16049, 723==723) bemerkt es **nicht** (wie hier vorhergesagt). Tracker:
+  [`../in-progress/sample-db-phase2-findings.md`](../in-progress/sample-db-phase2-findings.md)
+  (P2-pg2my). Übrig bleibt **ein Verifikationstest**, der genau das prüft:
   Parent-Routing für Read **und** Write, **und Nicht-Duplikation** (Gesamtzeilen
   im Ziel == Quelle, nicht 2×) — nicht nur Per-Tabelle-Parität.
 - **AP6 — Cross-Dialect (MySQL ist *nicht* Greenfield).** Der MySQL-Generate-Pfad
