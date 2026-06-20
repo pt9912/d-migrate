@@ -48,6 +48,13 @@ services:
 
   dmigrate:
     image: d-migrate:dev
+    # Das Image läuft als non-root (uid 10001). Damit es in das gemountete
+    # Host-Verzeichnis (out/) schreiben kann, läuft der Container als der
+    # aufrufende Host-User — die smoke-Skripte exportieren
+    # SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)". Fallback 0:0 (root) für
+    # manuelle `docker compose run` ohne gesetzte Variable. Vgl. die --user-Note
+    # im Anwenderhandbuch (docs/user/anwenderhandbuch.md).
+    user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
     depends_on:
       postgres:
         condition: service_healthy

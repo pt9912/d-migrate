@@ -40,12 +40,13 @@ echter Fix, der sie schrumpft → bewusst neu pinnen).
 | `ENUM(...)` | `film.rating` | `text` (R301) | Verteilung identisch (order-unabhängig als `rating=count`-Paare; **ENUM sortiert nach Deklarations-Ordinal, `text` lexikalisch** — daher Schlüssel-Wert-Vergleich, nicht positionell) |
 | `SET(...)` | `film.special_features` | `text` (R320) | `film_id=1` beidseitig `Deleted Scenes,Behind the Scenes` |
 
-## Bekanntes Finding (nicht baseline-blockierend)
+## Behobenes Finding
 
-- **Y1 — YEAR-Wert-Korruption.** `film.release_year` (MySQL `YEAR`) wird beim
-  Transfer zu `2006-01-01 +00` statt `2006` (Connector/J `yearIsDateType`-Default).
-  Der Smoke meldet das als **NOTE** (nicht als Fehler) und verweist auf den
-  Tracker. Details + Fix-Hypothese:
+- **Y1 — YEAR-Wert-Korruption · ✅ behoben (2026-06-20).** `film.release_year`
+  (MySQL `YEAR`) wurde beim Transfer zu `2006-01-01 +00` statt `2006`
+  (Connector/J `yearIsDateType`-Default). Fix: `yearIsDateType=false` in
+  `MysqlJdbcUrlBuilder`. Der Smoke prüft `release_year` jetzt mit **harter
+  Assertion** (round-trippt `2006`) als Regressionsschutz. Details:
   [`../../../docs/planning/in-progress/sample-db-phase2-findings.md`](../../../docs/planning/in-progress/sample-db-phase2-findings.md).
 
 ## Pflege

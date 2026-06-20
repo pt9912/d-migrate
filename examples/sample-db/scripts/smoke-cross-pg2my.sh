@@ -47,6 +47,11 @@ set -a; . "$EXAMPLES_DIR/.env"; set +a
 : "${POSTGRES_USER:?POSTGRES_USER not set}"
 : "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD not set}"
 
+# Das d-migrate:dev-Image läuft als non-root (uid 10001); damit es in das
+# gemountete out/ schreiben kann, läuft der dmigrate-Container als Host-User
+# (vom compose `user:`-Feld konsumiert). Sonst: "Failed to write schema".
+export SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)"
+
 "$SCRIPT_DIR/fetch-dumps.sh"
 
 mysql_root() { $COMPOSE exec -T mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N "$@" 2>/dev/null; }

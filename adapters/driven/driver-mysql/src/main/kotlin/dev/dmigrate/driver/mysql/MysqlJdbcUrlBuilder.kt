@@ -16,6 +16,13 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilder
  * - `allowPublicKeyRetrieval` wird **nicht** implizit aktiviert.
  *   Falls ein Non-TLS-Setup mit `caching_sha2_password` es benötigt, muss der
  *   Parameter explizit über `ConnectionConfig.params` gesetzt werden.
+ *
+ * Fidelity-by-default:
+ * - `yearIsDateType=false` — Connector/J liefert `YEAR`-Spalten sonst als
+ *   `java.sql.Date` (`2006` → `2006-01-01`), was beim Daten-Transfer den Jahres-
+ *   wert korrumpiert (Finding Y1, sample-db-phase2-findings.md). Mit `false`
+ *   kommt `YEAR` als numerischer Wert (`2006`) zurück. Betrifft **nur** `YEAR`,
+ *   nicht `DATE`/`DATETIME`/`TIMESTAMP`.
  */
 class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
 
@@ -26,6 +33,7 @@ class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
     override fun defaultParams(): Map<String, String> = mapOf(
         "useCursorFetch" to "true",
         "rewriteBatchedStatements" to "true",
+        "yearIsDateType" to "false",
     )
 
     override fun baseJdbcUrl(config: ConnectionConfig): String {

@@ -42,6 +42,11 @@ fi
 set -a; . "$EXAMPLES_DIR/.env"; set +a
 : "${POSTGRES_USER:?POSTGRES_USER not set}"
 
+# Das d-migrate:dev-Image läuft als non-root (uid 10001); damit es in das
+# gemountete out/ schreiben kann, läuft der dmigrate-Container als Host-User
+# (vom compose `user:`-Feld konsumiert). Sonst: "Failed to write schema".
+export SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)"
+
 "$SCRIPT_DIR/fetch-dumps.sh"
 
 # psql helper inside the postgres service (unix-socket -> trust)

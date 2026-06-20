@@ -47,6 +47,11 @@ set -a; . "$EXAMPLES_DIR/.env"; set +a
 : "${POSTGRES_USER:?POSTGRES_USER not set}"
 : "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD not set}"
 
+# Das d-migrate:dev-Image läuft als non-root (uid 10001); damit es in das
+# gemountete out/ schreiben kann, läuft der dmigrate-Container als Host-User
+# (vom compose `user:`-Feld konsumiert). Sonst: "Failed to write schema".
+export SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)"
+
 "$SCRIPT_DIR/fetch-dumps.sh"
 
 mysql_root() { $COMPOSE exec -T mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N "$@" 2>/dev/null; }
@@ -159,14 +164,13 @@ pg_sf=$(pg_val "SELECT special_features FROM film WHERE film_id=1")
 [ "$my_sf" = "$pg_sf" ] || fail "SET->text mismatch: special_features src=$my_sf dst=$pg_sf"
 log "  SET->text OK (special_features identical)"
 
-# Y1 (bekanntes Finding): YEAR-Wert-Korruption — NOTE, kein Fehler.
+# YEAR-Wert-Treue (Y1 behoben via yearIsDateType=false, MysqlJdbcUrlBuilder):
+# release_year muss round-trippen — MySQL YEAR 2006 -> PG text '2006', NICHT
+# '2006-01-01'. Harte Assertion = Regressionsschutz gegen Y1.
 my_year=$(my_val "SELECT release_year FROM sakila.film WHERE film_id=1;")
 pg_year=$(pg_val "SELECT release_year FROM film WHERE film_id=1")
-if [ "$my_year" != "$pg_year" ]; then
-    note "Y1 (known finding): YEAR value src='$my_year' -> dst='$pg_year' (yearIsDateType). See sample-db-phase2-findings.md."
-else
-    note "Y1 appears FIXED (YEAR value '$my_year' round-trips) — update sample-db-phase2-findings.md + this check."
-fi
+[ "$my_year" = "$pg_year" ] || fail "YEAR value corruption (Y1 regression): src='$my_year' dst='$pg_year' — expected identical (yearIsDateType=false)."
+log "  YEAR->text OK (release_year '$my_year' round-trips; Y1 fixed)"
 
-log "SUCCESS — Sakila MySQL->PG cross-dialect smoke passed (parity + conversions; Y1 tracked)."
+log "SUCCESS — Sakila MySQL->PG cross-dialect smoke passed (parity + conversions incl. Y1)."
 log "stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."

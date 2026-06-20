@@ -33,27 +33,26 @@ sakila_my → sakila_pg_target`.
 Äquivalent); die **Werte** round-trippen vollständig. Zeilen-Parität über **alle
 16 Tabellen** Quelle == Ziel.
 
-## Y1 — YEAR-Wert-Korruption (Daten-Defekt) · OFFEN
+## Y1 — YEAR-Wert-Korruption (Daten-Defekt) · ✅ BEHOBEN (2026-06-20)
 
 `film.release_year` ist MySQL `YEAR` (R301 → `text` im Ziel, Typ-Degradation
-erwartet). Aber der **Wert** wird korrumpiert:
+erwartet). Der **Wert** wurde korrumpiert:
 
 - MySQL: `release_year = 2006`
-- PG (Ziel): `release_year = '2006-01-01 +00'`
+- PG (Ziel, vor Fix): `release_year = '2006-01-01 +00'`
 
-**Ursache:** `MysqlJdbcUrlBuilder.defaultParams()`
-(`adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlJdbcUrlBuilder.kt`,
-`defaultParams()`) setzt `yearIsDateType` **nicht**. Connector/J-Default ist `yearIsDateType=true` →
-`YEAR`-Spalten kommen als `java.sql.Date` (`2006` → `2006-01-01`) zurück; beim
-Transfer in die `text`-Zielspalte wird das Datum (mit tz-Artefakt) stringifiziert.
-Das ist **unabhängig** von der Typ-Degradation: selbst als `text` müsste der Wert
-`2006` sein, nicht `2006-01-01 +00`.
+**Ursache:** `MysqlJdbcUrlBuilder.defaultParams()` setzte `yearIsDateType` nicht.
+Connector/J-Default ist `yearIsDateType=true` → `YEAR`-Spalten kommen als
+`java.sql.Date` (`2006` → `2006-01-01`) zurück; beim Transfer in die
+`text`-Zielspalte wird das Datum (mit tz-Artefakt) stringifiziert. Unabhängig von
+der Typ-Degradation: selbst als `text` muss der Wert `2006` sein.
 
-**Fix-Hypothese (gescopt, eigener Slice):** `yearIsDateType=false` in
-`MysqlJdbcUrlBuilder.defaultParams()` → Connector/J liefert `YEAR` als Short/Int →
-Wert `2006`. Braucht: d-migrate:dev-Rebuild, Re-Run, **Regressionstest** im
-driver-mysql-Modul (YEAR-Lesewert), Verifikation gegen bestehende YEAR-Pfade.
-Nicht als Mid-Stream-Drive-by ohne Test — eigener Fix-Slice analog Phase-1-F1–F4.
+**Behoben:** `yearIsDateType=false` in `MysqlJdbcUrlBuilder.defaultParams()`
+(betrifft **nur** `YEAR`, nicht `DATE`/`DATETIME`/`TIMESTAMP`) → Connector/J
+liefert `YEAR` als numerischen Wert (`2006`). Regressionstest in
+`MysqlJdbcUrlBuilderTest` (URL trägt `yearIsDateType=false` + User-Override).
+Harness-belegt: `smoke-cross.sh` prüft jetzt mit **harter Assertion**
+(`YEAR->text OK (release_year '2006' round-trips)`) statt NOTE — Regressionsschutz.
 
 ## Erwartete Cross-Dialect-Notes (kein Defekt — Baseline-pinnbar)
 
