@@ -1791,6 +1791,21 @@ database:
 Danach genügt `--source staging`. Passwörter geben Sie sicher über
 Umgebungsvariablen (`${…}`) an.
 
+**Unterstützte URL-Formen** — allgemein
+`<dialekt>://[benutzer[:passwort]@]host[:port]/datenbank[?parameter]`:
+
+```yaml
+database:
+  connections:
+    pg:     "postgresql://user:${PG_PW}@host:5432/db"   # Aliase: postgres, pg
+    my:     "mysql://user:${MY_PW}@host:3306/db"         # Aliase: maria, mariadb
+    lokal:  "sqlite:///pfad/zur/datei.db"                # oder sqlite::memory:
+```
+
+Die vollständige Liste der Parameter (SSL, Timeouts, Zeichensatz, Port-Defaults)
+und der Dialekt-Aliase steht im
+[Administrationshandbuch](administrationshandbuch.md#41-connection-url-format-und-aliase).
+
 ### 4.2 Welche Konfigurationsdatei gilt?
 
 d-migrate verwendet genau **eine** Datei, in dieser Reihenfolge:
