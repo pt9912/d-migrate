@@ -42,8 +42,8 @@ Normalfall (Pagila `payment`).
   (Name + `from`/`to`/`values` als Strings) in
   [`hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt)
   und `partitioning.partitions` in
-  [`spec/schema.json`](../../../spec/schema.json) (`partitions` mit `from`/`to`/
-  `values` als **Strings**, `spec/schema.json:335`). **Bei der empfohlenen
+  [`spec/schema.json`](../../../spec/schema.json) (`partitions` mit `from`/`to`
+  als **Strings**, `values` als **String-Array**, `spec/schema.json:335`). **Bei der empfohlenen
   strukturierten Variante (AP1a) zieht die Serialisierung mit** (`schema.json` +
   `schema-reference.md`) — dann ist „bereits da" nur die opake Form. Das ist ein
   **Bruch einer bereits ausgelieferten Serialisierungs-Form** (String-Grenzen →
@@ -102,7 +102,14 @@ nebenbei:
   Reverse + Compare), aber die einzige Variante, die zur Hausregel passt. **Der
   MySQL-Generate-Anteil ist real, nicht hypothetisch** — der Pfad existiert und
   müsste mit umgebaut werden (sonst wird der Aufwand der empfohlenen Variante zu
-  niedrig angesetzt).
+  niedrig angesetzt). **Gegengewicht:** die strukturierte Variante **löst das
+  Encoding-Identitäts-Risiko (den „Linchpin") weitgehend auf** — Zahlen
+  vergleichen sich als Zahlen (HASH `modulus`/`remainder`), Sentinels als
+  Enum-Werte, und die Cast-/Casing-/Whitespace-Strip-Fragilität kollabiert zu
+  einem *einmaligen* Parse in typisierte Felder. Bei der opaken Variante ist
+  byte-identisches Re-Encoding auf beiden Seiten das ganze Spiel. Der Linchpin ist
+  also **ein Preis des opaken Wegs, kein inhärentes Risiko** — ein zusätzliches
+  Argument für strukturiert.
 
 **Verbindung zu AP6 (Cross-Dialect):** genau dieser opake String ist die
 Cross-Dialect-Hürde, nicht nur die Generate-Form. PG-`FROM/TO` lässt sich nur
@@ -142,18 +149,31 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   Parent (`partitions`) führen — sonst erscheint jedes Kind doppelt (einmal als
   Partition, einmal als eigenständige Tabelle, wie heute). Die Kinder sind nach
   AP2 **nicht mehr im Top-Level-Schema** (weder DDL noch Modell-Tabellenliste).
-- **AP2a — Per-Partition-Index/FK-Konsolidierung (eigenes Risiko, nicht „nur ein
-  Detail").** Jedes der 7 Pagila-Kinder trägt im Reverse ~3 Indizes + 3 FKs
-  (`idx_fk_payment_p2022_01_customer_id`, `payment_p2022_01_customer_id_idx`,
-  `*_customer_id_fkey`/`_rental_id_fkey`/`_staff_id_fkey`) → **≈42 Objekte**. PG
-  legt die Kind-Backing-Indizes **automatisch** an, wenn der Index am Parent
-  definiert ist — die per-Kind-Objekte dürfen nach AP2 also **nicht** standalone
-  emittiert werden, sonst Doppel-Emit/Konflikt. Zu entscheiden: speichert das
-  Modell nur den Parent-Index und **verwirft** die Kind-Backing-Namen, oder hält
-  es sie und dedupliziert beim Generate? **Diese Dedup speist denselben
-  Set-Vergleich wie die Bounds (AP4)** — inkonsistente Behandlung erzeugt erneut
-  falsch-positive Diffs. Mindestens benanntes Risiko, evtl. eigenes Sub-AP beim
-  Move.
+- **AP2a — Per-Partition-Index/FK-Vererbung — Pflicht-Sub-Slice (drei
+  Behandlungsklassen, nicht binär).** Jedes der 7 Pagila-Kinder trägt ~3 Indizes
+  + 3 FKs → **≈42 Objekte**, aber sie sind **keine einheitliche Klasse**. Drei
+  Behandlungen:
+  - **parent-propagiert** → verwerfen & neu propagieren (PG legt das Kind-Backing
+    automatisch an, wenn der Index am Parent definiert ist).
+  - **kind-lokal** → **muss erhalten bleiben.** Wird es als „Backing-Name"
+    verworfen, geht es still verloren — genau die Fidelity-Verlustklasse, die
+    dieser Slice beseitigen soll.
+  - **FK** → Parent-Deklaration verifizieren (Pagila deklariert FKs am Parent →
+    PG 11+ propagiert → Kind-Kopien leiten sich neu ab; *als verifizierte Annahme*
+    behandeln, nicht durch Auslassen unterstellen).
+  **Pagila macht das scharf:** der Parent `payment` hat **gar keine** Indizes
+  (Quelle deklariert `idx_fk_payment_p2022_NN_*` und `payment_p2022_NN_*_idx`
+  **pro Kind**, `pagila.sql:47739ff`) → in diesem Dump ist **jeder** Kind-Index
+  *kind-lokal*; ein „nur Parent behalten"-Modell verlöre **alle**.
+  **Reverse-Konsequenz:** `relispartition`/`pg_class` allein unterscheidet die
+  Klassen nicht — die pg_index-Zeilen sehen identisch aus. Es braucht eine
+  **Index-Vererbungs-Abfrage** (`pg_inherits` über die Index-OIDs, `inhparent`
+  zeigt auf den Parent-Index) und für Constraints `pg_constraint.conparentid`.
+  AP1s „`pg_inherits` über Tabellen" ist **notwendig, aber nicht hinreichend**.
+  **Modell-Konsequenz:** kind-lokale Objekte brauchen einen Platz (per-Partition-
+  Index/FK-Listen), sonst kollidiert „Kinder verschwinden aus dem Top-Level" (AP2)
+  mit „kind-lokal muss erhalten bleiben". Diese Dedup/Klassifikation speist
+  denselben Set-Vergleich wie die Bounds (AP4).
 - **AP3 — Generate verifizieren (kein Neubau).** Das `PARTITION OF`-Emit
   existiert (oben). AP3 prüft nur, dass das von AP1 befüllte Modell sauber
   durchläuft, und schließt etwaige Lücken (z. B. Default-Partition, Sub-
@@ -193,7 +213,8 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   **existiert bereits**: `MysqlIndexPartitionDdlHelper.generatePartitionClause`
   emittiert `PARTITION BY RANGE (key) (PARTITION p0 VALUES LESS THAN (…))` und
   konsumiert **dieselben** `PartitionDefinition`-Felder (RANGE: `partition.to`;
-  LIST: `partition.values`) plus E055 bei leerer Liste und W112. Zwei Folgen:
+  LIST: `partition.values`) plus E055 (nur bei leerer RANGE-/LIST-Liste; HASH
+  bleibt mit Default-Partition gültig) und W112 (RANGE-only). Zwei Folgen:
   - **Verlustbehaftete Abbildung = semantischer Carve-Out (ADR-pflichtig), nicht
     nur Syntax.** PG-RANGE hat `from`+`to` (Lücken erlaubt); MySQL-RANGE kennt nur
     `VALUES LESS THAN` (obere Grenze) und setzt Kontiguität voraus — der Helfer
@@ -209,6 +230,11 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
 
 ## Kopplung (Reihenfolge ist nicht beliebig)
 
+- **AP1a ist das *erste* Gate (Upstream von AP1/AP3/AP4/AP6).** Die
+  Repräsentations-Wahl der ADR (opak vs. strukturiert) muss **vor** AP1/AP4
+  fallen, weil sie bestimmt, was „ein kanonisches Encoding" überhaupt bedeutet —
+  sie verändert die Form, die Reverse erzeugt, Generate (PG **und** MySQL)
+  emittiert und Comparator vergleicht. Erst danach sind AP1/AP4 sauber schneidbar.
 - **AP1 ⇄ AP2 — *harter* Generate-Fehler, nicht nur ein Diff (AP2 ist faktisch
   Teil von AP1).** Befüllt AP1 die `partitions`-Liste, **ohne** dass AP2 die
   Kinder aus der Top-Level-Liste entfernt, emittiert Generate den Kind-Namen
@@ -229,7 +255,14 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
 - **Reverse-Capture:** `PartitionConfig.partitions` wird für RANGE/LIST/HASH
   befüllt (pg_inherits + `relpartbound`-Parsing) — Unit-Test je Strategie; das
   `from`-Encoding für HASH (`MODULUS/REMAINDER`) ist als Modellvertrag getestet
-  (AP1a).
+  (AP1a). **Kanonische RANGE-Fixture = der echte Trigger-Fall:** Pagilas
+  `payment_date` ist `timestamp with time zone`, die Grenzen rendern als
+  `FROM ('2022-02-01 00:00:00+00'::timestamp with time zone)` — übt
+  Cast-Stripping **und** tz-Handling zugleich.
+- **Kind-lokaler Index überlebt den Round-Trip (AP2a):** ein explizit
+  kind-lokaler Index (Pagilas `idx_fk_payment_p2022_NN_*`, der im Dump **nicht**
+  vom Parent propagiert) ist nach dem Round-Trip noch da — direkter Test gegen die
+  „still verworfen"-Falle.
 - **Comparator beweist Treue (negativ):** ein Partitionsunterschied (Kind
   hinzugefügt/entfernt, Grenze geändert, Strategie/Schlüssel geändert) **lässt
   `schema compare` fehlschlagen** (Exit DIFFERENT). Der heutige Test

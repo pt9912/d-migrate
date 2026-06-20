@@ -189,5 +189,9 @@ geschrumpft.
   `security`/`definer`/`search_path`/`sql_mode` in der `schema.json`-`function`-
   Definition.
 
-**Bleibende fundamentale Grenze (kein Defekt):** leere RANGE-Partition `payment`
-→ plain Tabelle (E055), dump-abhängig, korrekt gemeldet.
+**Bleibender Reverse-Capture-Defekt (siehe Erratum oben):** `payment` →
+plain Tabelle (E055), weil die Kind-Partitionen nicht rekonstruiert werden. Das
+ist ein **systematischer Fidelity-Defekt**, nicht „kein Defekt / dump-abhängig"
+(die frühere Etikettierung ist via Erratum zurückgezogen); nur der
+E055-*Generate*-Fallback selbst ist korrekt. Folge-Slice:
+[`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md).
