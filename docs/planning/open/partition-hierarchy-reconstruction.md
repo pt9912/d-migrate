@@ -3,11 +3,18 @@
 > **Status:** Vorabklärung (Trigger, 2026-06-20)
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
 > für die range-partitionierte `payment`-Tabelle und erzeugt sie als plain
-> (nicht partitionierte) Tabelle — gemeldet als bewusste „fundamentale Grenze"
+> (nicht partitionierte) Tabelle —
 > in [`../done/sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md).
 > Ursache: der PG-Reverse erfasst nur *Strategie + Schlüssel* der
 > Partitionierung, nie die Kind-Partitionen — `PartitionConfig.partitions`
 > bleibt leer (`partitioning != null && partitions.isEmpty()` → E055-Fallback).
+> **Korrektur des Findings-Labels (supersedes):** Das Findings-Doc nennt das eine
+> „leere RANGE-Partition / dump-abhängige Eigenheit / kein Defekt" — das ist
+> **unpräzise**. Die 7 Kinder **existieren vollständig in der Quelle** (sie werden
+> nur als Standalone-Tabellen statt unter dem Parent geführt); der Verlust der
+> Partitions-Hierarchie ist ein **systematischer Reverse-Capture-Fidelity-Defekt**,
+> nicht dump-abhängig. Nur der E055-*Generate*-Fallback selbst bleibt korrekt
+> (sichere Reaktion auf eine leere Liste). Erratum im Findings-Doc gesetzt.
 > **Bezug (Anforderung):** **LN-008** „Partitionierung für große Tabellen"
 > ([`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md):
 > automatische Erkennung/Verarbeitung partitionierter Tabellen, Partition by
@@ -70,7 +77,7 @@ nächsten Knackpunkt gekoppelt.
 `PartitionDefinition.from`/`to`/`values` tragen heute **rohe PG-SQL-Fragmente**
 (`'2022-01-01'`, `MINVALUE`, `MODULUS 4, REMAINDER 0`): Generate konkateniert
 sie ungeparst ins DDL, abgesichert nur durch `validatePartitionBound` gegen
-`;`/`--`/`*` (`PostgresDdlGenerator.kt:207-215`). Das kollidiert **frontal** mit
+`;`/`--`/`/*` (`PostgresDdlGenerator.kt:207-215`). Das kollidiert **frontal** mit
 der Hausregel „**kein Native-Passthrough im neutralen Modell**" — `NeutralType`
 reicht keine rohen Dialekt-Strings durch, PG-only-Strukturen werden first-class
 modelliert (Präzedenz: `tsvector`→`fulltext` in
@@ -127,6 +134,18 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   Parent (`partitions`) führen — sonst erscheint jedes Kind doppelt (einmal als
   Partition, einmal als eigenständige Tabelle, wie heute). Die Kinder sind nach
   AP2 **nicht mehr im Top-Level-Schema** (weder DDL noch Modell-Tabellenliste).
+- **AP2a — Per-Partition-Index/FK-Konsolidierung (eigenes Risiko, nicht „nur ein
+  Detail").** Jedes der 7 Pagila-Kinder trägt im Reverse ~3 Indizes + 3 FKs
+  (`idx_fk_payment_p2022_01_customer_id`, `payment_p2022_01_customer_id_idx`,
+  `*_customer_id_fkey`/`_rental_id_fkey`/`_staff_id_fkey`) → **≈42 Objekte**. PG
+  legt die Kind-Backing-Indizes **automatisch** an, wenn der Index am Parent
+  definiert ist — die per-Kind-Objekte dürfen nach AP2 also **nicht** standalone
+  emittiert werden, sonst Doppel-Emit/Konflikt. Zu entscheiden: speichert das
+  Modell nur den Parent-Index und **verwirft** die Kind-Backing-Namen, oder hält
+  es sie und dedupliziert beim Generate? **Diese Dedup speist denselben
+  Set-Vergleich wie die Bounds (AP4)** — inkonsistente Behandlung erzeugt erneut
+  falsch-positive Diffs. Mindestens benanntes Risiko, evtl. eigenes Sub-AP beim
+  Move.
 - **AP3 — Generate verifizieren (kein Neubau).** Das `PARTITION OF`-Emit
   existiert (oben). AP3 prüft nur, dass das von AP1 befüllte Modell sauber
   durchläuft, und schließt etwaige Lücken (z. B. Default-Partition, Sub-
@@ -154,8 +173,14 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   sie auch im Transfer weg. Damit gilt der Vertrag **automatisch**: der Parent ist
   die einzige Transfer-Einheit, PG routet INSERTs deklarativ in die Kinder, SELECT
   am Parent liefert alle Kind-Zeilen — kein Doppeltransfer, kein Datenverlust.
-  Übrig bleibt **ein Verifikationstest** (Parent-Routing für Read **und** Write,
-  Zeilen-Parität am Parent), kein neuer Enumerations-Mechanismus.
+  **Motivation (latenter Defekt heute):** aktuell enumeriert der Transfer alle 8
+  plain Tabellen (Parent + 7 Kinder); `SELECT * FROM payment` (Partition-Parent in
+  der Quelle) liefert **alle** Kind-Zeilen, *zusätzlich* liefert jeder Kind-SELECT
+  seine — die Zeilen landen also doppelt im Ziel (einmal im geflachten Parent,
+  einmal in den Kind-Tabellen). Die Per-Tabelle-Zeilen-Parität bemerkt das
+  **nicht**. Übrig bleibt **ein Verifikationstest**, der genau das prüft:
+  Parent-Routing für Read **und** Write, **und Nicht-Duplikation** (Gesamtzeilen
+  im Ziel == Quelle, nicht 2×) — nicht nur Per-Tabelle-Parität.
 - **AP6 — Cross-Dialect-Abgrenzung.** MySQL nutzt **inline** definierte
   Partitionen (`PARTITION BY RANGE (…) (PARTITION p0 VALUES LESS THAN …)`) statt
   separater `CREATE TABLE … PARTITION OF` — andere Generate-Form, eigener
@@ -165,12 +190,20 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
 
 ## Kopplung (Reihenfolge ist nicht beliebig)
 
-AP1 und AP4 **müssen zusammen landen**: macht man den Comparator partitions-
-bewusst (AP4), **bevor** der Reverse die Partitionen erfasst (AP1), bekäme der
-Pagila-Round-Trip plötzlich einen Partitions-Diff (Quelle modelliert RANGE,
-Ziel — als plain Tabelle erzeugt — nicht) und die bestehende
-`IDENTICAL`-Baseline bricht. Erst Reverse-Capture stellt beide Seiten gleich,
-dann ist der partitions-bewusste Vergleich grün.
+- **AP1 ⇄ AP2 — *harter* Generate-Fehler, nicht nur ein Diff (AP2 ist faktisch
+  Teil von AP1).** Befüllt AP1 die `partitions`-Liste, **ohne** dass AP2 die
+  Kinder aus der Top-Level-Liste entfernt, emittiert Generate den Kind-Namen
+  **zweimal**: einmal als `CREATE TABLE payment_p2022_01 PARTITION OF payment …`
+  (aus `partitions`) und einmal als `CREATE TABLE payment_p2022_01 (…)` (aus der
+  Top-Level-Tabelle) → **doppelter Relationsname → `relation already exists`**,
+  der ganze Generate-Lauf scheitert. AP1 und AP2 sind daher untrennbar; AP2 ist
+  kein eigener Slice, sondern die zweite Hälfte von AP1.
+- **AP1 ⇄ AP4 — Baseline-Bruch.** Macht man den Comparator partitions-bewusst
+  (AP4), **bevor** der Reverse die Partitionen erfasst (AP1), bekäme der
+  Pagila-Round-Trip plötzlich einen Partitions-Diff (Quelle modelliert RANGE,
+  Ziel — als plain Tabelle erzeugt — nicht) und die bestehende
+  `IDENTICAL`-Baseline bricht. Erst Reverse-Capture stellt beide Seiten gleich,
+  dann ist der partitions-bewusste Vergleich grün.
 
 ## Akzeptanzkriterien (Skizze — schärfen beim Move nach `next/`)
 
@@ -183,7 +216,8 @@ dann ist der partitions-bewusste Vergleich grün.
   `schema compare` fehlschlagen** (Exit DIFFERENT). Der heutige Test
   „partitioning changes do not produce diff" ist umgedreht.
 - **Pagila/PG-Round-Trip:** `payment` als echte RANGE-Partition mit ihren 7
-  Kindern emittiert; **kein** `E055` mehr; Zeilen-Parität (am Parent); und
+  Kindern emittiert; **kein** `E055` mehr; Zeilen-Parität **und Nicht-Duplikation**
+  (Gesamtzeilen im Ziel == Quelle, nicht 2× — siehe AP5); und
   `schema compare` IDENTICAL — *jetzt aussagekräftig*, weil der Comparator
   partitions-bewusst ist **und** der Reverse die Partitionen auf beiden Seiten
   herstellt (Kopplung oben).
@@ -199,11 +233,12 @@ dann ist der partitions-bewusste Vergleich grün.
 - **Default-Partition** (`… DEFAULT`): **harte Ja/Nein-Entscheidung beim Move
   nach `next/`** — nicht „falls trivial" offenlassen (sonst entsteht später ein
   bedingter else-/Stopgap-Zweig im Code statt einer sauberen Scope-Grenze).
-- **Index-/Constraint-/PK-Propagation am Parent:** nach AP2 trägt der Parent die
-  volle Spalten-/Index-/Constraint-Menge; PG verlangt, dass der **Primary Key
-  einer partitionierten Tabelle den Partitionsschlüssel enthält**. Die
-  Reverse-Erfassung muss PK/Indizes am Parent (nicht an den Kindern) führen —
-  sonst schlägt das Generate fehl. (Modellierungsdetail, kein eigener Slice.)
+- **PK-Propagation am Parent:** PG verlangt, dass der **Primary Key einer
+  partitionierten Tabelle den Partitionsschlüssel enthält**. Für Pagila **schon
+  erfüllt** — der Parent-PK ist `[payment_date, payment_id]`, enthält den
+  Schlüssel `payment_date`; hier also kein Risiko. Der allgemeine Constraint gilt
+  weiter (andere Tabellen). Die **Index-/FK-Konsolidierung** ist *nicht*
+  abgegrenzt — sie ist echtes Arbeitspaket (AP2a).
 - HASH ist **nicht** abgegrenzt: das Generate emittiert es bereits — der Reverse
   muss es nur (im kanonischen Encoding, AP1a) erfassen.
 

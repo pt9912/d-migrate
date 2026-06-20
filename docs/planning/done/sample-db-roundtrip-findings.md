@@ -152,6 +152,15 @@ schrumpft 5 → 4 Changes (verbleibend: 1 Tabelle/gist-Grenze + 3 Funktionen/F3)
   [`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md)
   (LN-008-Teillücke).
 
+  > **Erratum (2026-06-20):** Die Etikettierung „leere RANGE-Partition /
+  > dump-abhängig / kein Defekt" oben ist **unpräzise**. Die 7 Kinder existieren
+  > vollständig in der Quelle (sie werden nur als Standalone-Tabellen geführt);
+  > der Verlust der Partitions-Hierarchie beim Round-Trip ist ein
+  > **systematischer Reverse-Capture-Fidelity-Defekt**, nicht dump-abhängig.
+  > Korrekt ist nur, dass der E055-*Generate*-Fallback (plain Tabelle bei leerer
+  > Partitionsliste) eine sichere Reaktion ist. Vollständige Analyse + Folge-Slice:
+  > [`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md).
+
 ## Closure
 
 > Abgeschlossen 2026-06-19, nach `done/` verschoben 2026-06-20 (Per-Slice-Tracker;
