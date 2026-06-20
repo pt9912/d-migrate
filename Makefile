@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke
 
 help:
 	@printf '%s\n' \
@@ -109,7 +109,8 @@ help:
 		'Sample-DB-Harness (examples/sample-db, Plan: docs/planning/next/sample-db-integration-harness.md):' \
 		'  make sample-db-fetch  Fetch pinned + SHA256-verified dumps into gitignored .cache/' \
 		'  make sample-db-up     Start postgres (source + target DB)' \
-		'  make sample-db-smoke  Full E2E: load -> reverse/validate/generate -> transfer -> compare vs baseline' \
+		'  make sample-db-smoke  Full E2E (Phase 1, Pagila/PG round-trip): load -> reverse/validate/generate -> transfer -> compare vs baseline' \
+		'  make sample-db-cross-smoke  Cross-Dialect (Phase 2, Sakila MySQL->PG): reverse/validate/generate -> transfer -> parity + type conversions' \
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
@@ -367,3 +368,6 @@ sample-db-purge:
 
 sample-db-smoke:
 	./examples/sample-db/scripts/smoke.sh
+
+sample-db-cross-smoke:
+	./examples/sample-db/scripts/smoke-cross.sh

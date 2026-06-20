@@ -2,7 +2,10 @@
 --
 -- Läuft einmalig beim ersten Volume-Init des postgres-Service
 -- (docker-entrypoint-initdb.d), als POSTGRES_USER gegen POSTGRES_DB.
--- Legt die zwei Round-Trip-Datenbanken an; befüllt werden sie erst
+-- Legt die Round-Trip-Datenbanken an; befüllt werden sie erst
 -- vom Smoke-Skript (Dump-Load in pagila, Transfer nach pagila_target).
+-- sakila_target ist das PG-Ziel für den Cross-Dialect-Flow Sakila MySQL→PG
+-- (Phase 2).
 CREATE DATABASE pagila;
 CREATE DATABASE pagila_target;
+CREATE DATABASE sakila_target;

@@ -25,6 +25,27 @@ services:
       retries: 12
       start_period: 10s
 
+  # Phase 2 (Cross-Dialect): MySQL-Service mit zwei Datenbanken
+  #   - sakila          (Quelle, vom gefetchten Dump geladen)
+  #   - pagila_target   (leeres Ziel für Pagila PG→MySQL)
+  # MYSQL_DATABASE legt sakila an + grantet MYSQL_USER; sql-mysql/ legt
+  # pagila_target nach + grantet. Nur bei Phase-2-Läufen hochgefahren.
+  mysql:
+    image: mysql:8.4
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_MYSQL_PORT}:3306"
+    volumes:
+      - sample-db-mysql-data:/var/lib/mysql
+      - ./sql-mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 18
+      start_period: 20s
+
   dmigrate:
     image: d-migrate:dev
     depends_on:
@@ -41,3 +62,4 @@ services:
 
 volumes:
   sample-db-pg-data:
+  sample-db-mysql-data:

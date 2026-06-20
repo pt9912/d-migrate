@@ -43,6 +43,22 @@ fetch_one() {
     log "$name: fetched + SHA256-verified -> $dest"
 }
 
+# --- Sakila (MySQL) — Phase 2 ------------------------------------
+# jOOQ/sakila liefert das MySQL-Sakila als Schema- + Daten-Datei
+# getrennt (DELIMITER-Routinen im Schema, große INSERTs in den Daten).
+# Beide auf denselben Commit-SHA gepinnt.
+SAKILA_REPO="jOOQ/sakila"
+SAKILA_COMMIT="e089a5b1ec9af0df7a9c6a5d47d49fa1736a4e84"
+SAKILA_BASE="https://raw.githubusercontent.com/${SAKILA_REPO}/${SAKILA_COMMIT}/mysql-sakila-db"
+SAKILA_SCHEMA_URL="$SAKILA_BASE/mysql-sakila-schema.sql"
+SAKILA_SCHEMA_SHA256="f2c41c3bf6d6c239941b4f98fb37afad21f6be12b82bf586202529a793ccc2ee"
+SAKILA_SCHEMA_DEST="$CACHE_DIR/sakila-schema.sql"
+SAKILA_DATA_URL="$SAKILA_BASE/mysql-sakila-insert-data.sql"
+SAKILA_DATA_SHA256="353ef858e4d2d1a60549969283434da15b905aef3ca7099d82b649b75f8de99f"
+SAKILA_DATA_DEST="$CACHE_DIR/sakila-data.sql"
+
 mkdir -p "$CACHE_DIR"
-fetch_one "pagila" "$PAGILA_URL" "$PAGILA_DEST" "$PAGILA_SHA256"
+fetch_one "pagila"        "$PAGILA_URL"        "$PAGILA_DEST"        "$PAGILA_SHA256"
+fetch_one "sakila-schema" "$SAKILA_SCHEMA_URL" "$SAKILA_SCHEMA_DEST" "$SAKILA_SCHEMA_SHA256"
+fetch_one "sakila-data"   "$SAKILA_DATA_URL"   "$SAKILA_DATA_DEST"   "$SAKILA_DATA_SHA256"
 log "done."

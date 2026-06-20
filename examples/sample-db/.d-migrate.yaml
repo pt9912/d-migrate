@@ -7,5 +7,10 @@
 
 database:
   connections:
+    # Phase 1 (Pagila/PG-Round-Trip)
     pagila_pg: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/pagila"
     pagila_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/pagila_target"
+    # Phase 2 (Cross-Dialect) — mysql-Service über Compose-DNS `mysql:3306`
+    sakila_my: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/sakila"
+    pagila_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/pagila_target"
+    sakila_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/sakila_target"
