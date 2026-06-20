@@ -42,9 +42,13 @@ Normalfall (Pagila `payment`).
   (Name + `from`/`to`/`values` als Strings) in
   [`hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt)
   und `partitioning.partitions` in
-  [`spec/schema.json`](../../../spec/schema.json). **Bei der empfohlenen
+  [`spec/schema.json`](../../../spec/schema.json) (`partitions` mit `from`/`to`/
+  `values` als **Strings**, `spec/schema.json:335`). **Bei der empfohlenen
   strukturierten Variante (AP1a) zieht die Serialisierung mit** (`schema.json` +
-  `schema-reference.md`) — dann ist „bereits da" nur die opake Form.
+  `schema-reference.md`) — dann ist „bereits da" nur die opake Form. Das ist ein
+  **Bruch einer bereits ausgelieferten Serialisierungs-Form** (String-Grenzen →
+  typisierte Grenzen) mit Contract-Fixture-/Golden-Churn; weil `spec/` Zielbild
+  ist, vertretbar, aber in der ADR zu flaggen.
 - **Generate ist bereits implementiert (inkl. Tests):**
   `PostgresDdlGenerator.kt` iteriert über `partitioning.partitions` (Zeilen
   149–154) und emittiert je Kind `CREATE TABLE … PARTITION OF … FOR VALUES
@@ -93,8 +97,12 @@ nebenbei:
 - **Strukturiert modellieren** (regelkonform, empfohlen): `PartitionDefinition`
   trägt typisierte Grenzen (z. B. RANGE: `from`/`to` als Wertlisten/Sentinels
   `MINVALUE`/`MAXVALUE`; HASH: `modulus`/`remainder` als Zahlen; LIST: Wertliste).
-  Mehr Arbeit (Modell + Generate + Serialisierung + Reverse + Compare), aber die
-  einzige Variante, die zur Hausregel passt.
+  Mehr Arbeit (Modell + Generate **PG `PostgresDdlGenerator` *und* MySQL
+  `MysqlIndexPartitionDdlHelper.generatePartitionClause`** + Serialisierung +
+  Reverse + Compare), aber die einzige Variante, die zur Hausregel passt. **Der
+  MySQL-Generate-Anteil ist real, nicht hypothetisch** — der Pfad existiert und
+  müsste mit umgebaut werden (sonst wird der Aufwand der empfohlenen Variante zu
+  niedrig angesetzt).
 
 **Verbindung zu AP6 (Cross-Dialect):** genau dieser opake String ist die
 Cross-Dialect-Hürde, nicht nur die Generate-Form. PG-`FROM/TO` lässt sich nur
@@ -181,12 +189,23 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   **nicht**. Übrig bleibt **ein Verifikationstest**, der genau das prüft:
   Parent-Routing für Read **und** Write, **und Nicht-Duplikation** (Gesamtzeilen
   im Ziel == Quelle, nicht 2×) — nicht nur Per-Tabelle-Parität.
-- **AP6 — Cross-Dialect-Abgrenzung.** MySQL nutzt **inline** definierte
-  Partitionen (`PARTITION BY RANGE (…) (PARTITION p0 VALUES LESS THAN …)`) statt
-  separater `CREATE TABLE … PARTITION OF` — andere Generate-Form, eigener
-  Sub-Scope oder Mapping. SQLite kennt keine Partitionierung → `E055` bleibt
-  (bereits so). Cross-Dialect-Transfer PG-deklarativ → MySQL-inline ist ein
-  struktureller Umbau (vgl. Volltext-Carve-Out-Muster).
+- **AP6 — Cross-Dialect (MySQL ist *nicht* Greenfield).** Der MySQL-Generate-Pfad
+  **existiert bereits**: `MysqlIndexPartitionDdlHelper.generatePartitionClause`
+  emittiert `PARTITION BY RANGE (key) (PARTITION p0 VALUES LESS THAN (…))` und
+  konsumiert **dieselben** `PartitionDefinition`-Felder (RANGE: `partition.to`;
+  LIST: `partition.values`) plus E055 bei leerer Liste und W112. Zwei Folgen:
+  - **Verlustbehaftete Abbildung = semantischer Carve-Out (ADR-pflichtig), nicht
+    nur Syntax.** PG-RANGE hat `from`+`to` (Lücken erlaubt); MySQL-RANGE kennt nur
+    `VALUES LESS THAN` (obere Grenze) und setzt Kontiguität voraus — der Helfer
+    **verwirft `from` für RANGE schon heute** (Z. 61). Dieser Informationsverlust
+    ist eine bewusste Entscheidung (analog zum Volltext-Muster), die die ADR
+    benennen muss, kein reines Generate-Form-Detail.
+  - **MySQL-Reverse ist genauso partitions-blind wie PG** (kein MySQL-Reader
+    befüllt `partitioning.partitions`; nur `MysqlDdlGenerator` konsumiert es). „PG
+    zuerst" rechtfertigt die Abgrenzung — aber ein vollständiger Cross-Dialect-
+    Round-Trip braucht **dieselbe AP1-Klasse Arbeit für MySQL** (eigener Reverse-
+    Capture). Das ist der eigentliche AP6-Scope, nicht „nur Generate-Mapping".
+  - SQLite kennt keine Partitionierung → `E055` bleibt (bereits so).
 
 ## Kopplung (Reihenfolge ist nicht beliebig)
 
@@ -215,6 +234,11 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   hinzugefügt/entfernt, Grenze geändert, Strategie/Schlüssel geändert) **lässt
   `schema compare` fehlschlagen** (Exit DIFFERENT). Der heutige Test
   „partitioning changes do not produce diff" ist umgedreht.
+- **Encoding-Identität Reverse↔Generate (der Linchpin):** ein Round-Trip-Test
+  beweist, dass das vom Reverse erzeugte Bound-Encoding **identisch** zu dem von
+  Generate erwarteten/emittierten ist. Das ist der eigentliche Schutz gegen
+  false-positive-Comparator-Diffs (AP1a) — als **eigenes** Kriterium, nicht nur
+  Prosa, weil das Doc es selbst als größtes Risiko führt.
 - **Pagila/PG-Round-Trip:** `payment` als echte RANGE-Partition mit ihren 7
   Kindern emittiert; **kein** `E055` mehr; Zeilen-Parität **und Nicht-Duplikation**
   (Gesamtzeilen im Ziel == Quelle, nicht 2× — siehe AP5); und
