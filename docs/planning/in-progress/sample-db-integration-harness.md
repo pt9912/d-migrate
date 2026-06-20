@@ -1,9 +1,11 @@
 # Plan: Sample-DB-E2E-Harness (docker-compose + Scripts)
 
 > Dokumenttyp: Umsetzungsplan (Slice)
-> Status: In Arbeit (2026-06-18). **Phase 0 + Phase 1 (Pagila/PG) erledigt**;
-> Dialekt-/Spatial-Matrix dokumentiert (MySQL/SQLite/PostGIS/Spatialite geplant,
-> Bau folgt). Sourcing **und** Mechanik via [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
+> Status: In Arbeit (Stand 2026-06-20). **Phase 0/1/2/2b erledigt** (Pagila/PG-
+> Round-Trip, Sakila MySQL→PG + Pagila PG→MySQL cross-dialect, Chinook/SQLite-
+> Round-Trip — je grün, je gepinnte Baseline). **Offen: Phase 3 (Scale, opt-in/
+> nightly).** PostGIS/Spatialite (Phase 5) = eigene Folge-Slices. Sourcing **und**
+> Mechanik via [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
 > entschieden (supersedet ADR 0013).
 > Roadmap-Slot: Phase 1–2b (Smoke/Compatibility, inkl. SQLite) = Test-Infrastruktur;
 > Phase 3 (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC, LF 8.1/8.2) und Phase 5
@@ -107,7 +109,7 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
     Finding **P2-pg2my** = datenbelegter Beweis von Partitions-Finding D (payment
     doppelt: 32098 vs 16049).
   Beide CI-Workflows (`sample-db-cross-smoke*.yml`). Findings in
-  [`sample-db-phase2-findings.md`](sample-db-phase2-findings.md). *Kein* direkter
+  [`sample-db-phase2-findings.md`](../done/sample-db-phase2-findings.md). *Kein* direkter
   Pagila↔Sakila-Vergleich. **Offen (Folge-Slices, nicht Phase-2-blockierend):**
   Y1-Fix, Partitions-Hierarchie (löst P2-pg2my).
 - **Phase 2b — SQLite-Round-Trip (Chinook). ✅ ERLEDIGT (2026-06-20).** **Kein**

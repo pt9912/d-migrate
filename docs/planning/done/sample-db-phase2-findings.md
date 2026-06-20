@@ -1,10 +1,12 @@
 # Sample-DB-Cross-Dialect-Findings (Phase 2)
 
-> Status: **In Arbeit** (2026-06-20). **Beide** Flows durchgeführt:
-> Sakila MySQL→PG (Parität 16/16, 1 Defekt Y1) **und** Pagila PG→MySQL
-> (Parität 22/22, 1 Defekt = Partition-Duplikation, datenbelegt Finding D).
+> Status: **Abschlussreif** (2026-06-20). **Beide** Flows durchgeführt:
+> Sakila MySQL→PG (Parität 16/16; Defekt **Y1 BEHOBEN** `c9401b6f`) **und**
+> Pagila PG→MySQL (Parität 22/22; Partition-Duplikation = datenbelegter Finding D,
+> getrackt im Partitions-Plan, kein eigener Slice). **Alle Phase-2-Findings gelöst
+> oder ausgelagert** → 2026-06-20 nach `done/` verschoben (ADR 0004-Lebenszyklus).
 > Trigger: Phase 2 des Sample-DB-Harness
-> ([`sample-db-integration-harness.md`](sample-db-integration-harness.md)) fährt
+> ([`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md)) fährt
 > erstmals **echte Cross-Dialect-Transfers** (nicht Same-Dialect-Round-Trip
 > wie Phase 1). Wie erwartet („jeder neue Dialekt deckt eigene Defekte auf")
 > bringt jede Richtung eigene Befunde.
@@ -130,3 +132,31 @@ alle erwartet:
 
 Kein Bug — die korrekte, transparente Cross-Dialect-Degradation (PG ist
 feature-reicher als MySQL).
+
+## Closure
+
+> Abgeschlossen + nach `done/` verschoben 2026-06-20
+> ([`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)-Lebenszyklus;
+> Präzedenz: der Phase-1-Findings-Tracker
+> [`sample-db-roundtrip-findings.md`](sample-db-roundtrip-findings.md) wanderte
+> ebenso nach `done/`, als seine Fidelity-Arbeit schloss — unabhängig vom Umbrella,
+> der für Phase 3 in `in-progress/` bleibt).
+
+**Geliefert.** Beide Cross-Dialect-Flows der Phase 2 durchgeführt, je gegen eigene
+Quelle, je deterministisch grün mit gepinnter Baseline:
+- **Sakila MySQL→PG** — Parität 16/16; Konvertierungen TINYINT(1)→boolean /
+  ENUM→text / SET→text datenbelegt. Aufgedeckter Defekt **Y1** (YEAR-Wert-
+  Korruption) **behoben** (`c9401b6f`, `yearIsDateType=false` + Regressionstest +
+  harte Harness-Assertion).
+- **Pagila PG→MySQL** — Parität 22/22; boolean→TINYINT(1) / text[]→JSON /
+  tsvector→text / timestamptz→DATETIME datenbelegt.
+
+**Ausgelagert (kein eigener Slice hier).** **P2-pg2my** (Partition-Daten-
+Duplikation, payment 32098 vs 16049) ist der datenbelegte Beweis von **Finding D**
+in [`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md)
+— Auflösung kommt mit der Partitions-Hierarchie-Rekonstruktion (AP2). Bis dahin
+prüft der PG→MySQL-Smoke Per-Tabelle-Parität und meldet die Duplikation als NOTE.
+
+**Damit alle Phase-2-Findings gelöst oder ausgelagert.** Der Harness-Umbrella
+([`../in-progress/sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
+bleibt in `in-progress/` (Phase 3 Scale offen).

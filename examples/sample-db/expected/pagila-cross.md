@@ -47,7 +47,7 @@ Abweichung von der Zahl = Regression (oder ein echter Fix → bewusst neu pinnen
   **Finding D** in
   [`../../../docs/planning/open/partition-hierarchy-reconstruction.md`](../../../docs/planning/open/partition-hierarchy-reconstruction.md);
   Auflösung kommt mit der Partitions-Hierarchie-Rekonstruktion (AP2). Details:
-  [`../../../docs/planning/in-progress/sample-db-phase2-findings.md`](../../../docs/planning/in-progress/sample-db-phase2-findings.md).
+  [`../../../docs/planning/done/sample-db-phase2-findings.md`](../../../docs/planning/done/sample-db-phase2-findings.md).
 
 ## Pflege
 

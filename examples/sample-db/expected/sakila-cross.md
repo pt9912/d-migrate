@@ -47,7 +47,7 @@ echter Fix, der sie schrumpft → bewusst neu pinnen).
   (Connector/J `yearIsDateType`-Default). Fix: `yearIsDateType=false` in
   `MysqlJdbcUrlBuilder`. Der Smoke prüft `release_year` jetzt mit **harter
   Assertion** (round-trippt `2006`) als Regressionsschutz. Details:
-  [`../../../docs/planning/in-progress/sample-db-phase2-findings.md`](../../../docs/planning/in-progress/sample-db-phase2-findings.md).
+  [`../../../docs/planning/done/sample-db-phase2-findings.md`](../../../docs/planning/done/sample-db-phase2-findings.md).
 
 ## Pflege
 

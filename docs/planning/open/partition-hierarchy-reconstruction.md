@@ -210,7 +210,7 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   (plain) **16049** Zeilen **und** die 7 Kinder `payment_p2022_01..07` zusammen
   **16049** — Gesamt **32098 statt 16049** (Faktor 2). Die Per-Tabelle-Parität
   (16049==16049, 723==723) bemerkt es **nicht** (wie hier vorhergesagt). Tracker:
-  [`../in-progress/sample-db-phase2-findings.md`](../in-progress/sample-db-phase2-findings.md)
+  [`../done/sample-db-phase2-findings.md`](../done/sample-db-phase2-findings.md)
   (P2-pg2my). Übrig bleibt **ein Verifikationstest**, der genau das prüft:
   Parent-Routing für Read **und** Write, **und Nicht-Duplikation** (Gesamtzeilen
   im Ziel == Quelle, nicht 2×) — nicht nur Per-Tabelle-Parität.
