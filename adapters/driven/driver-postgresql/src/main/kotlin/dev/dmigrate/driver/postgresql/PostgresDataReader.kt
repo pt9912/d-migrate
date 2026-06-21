@@ -32,4 +32,13 @@ class PostgresDataReader : AbstractJdbcDataReader() {
 
     /** PostgreSQL braucht zwingend `setAutoCommit(false)` für Cursor-Streaming. */
     override val needsAutoCommitFalse: Boolean = true
+
+    /**
+     * VA1b (Spatial-Slice): PostGIS-Geometriespalten auf dem Read-Pfad als
+     * kanonisches **EWKB** projizieren. EWKB trägt die SRID im Format selbst —
+     * dadurch ist der exportierte Binärwert dialekt-unabhängig und SRID-erhaltend.
+     */
+    override val supportsGeometryRead: Boolean = true
+
+    override fun geometryReadExpression(quotedColumn: String): String = "ST_AsEWKB($quotedColumn)"
 }

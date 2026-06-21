@@ -1,6 +1,8 @@
 package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.DataFilter
+import dev.dmigrate.core.model.GeometryType
+import java.sql.ResultSetMetaData
 
 /**
  * Ergebnis von [AbstractJdbcDataReader.buildSelectQuery]: das finale
@@ -18,6 +20,14 @@ data class SelectQuery(val sql: String, val params: List<Any?>)
  * trägt seine positional gebundenen Werte mit.
  */
 internal data class WhereFragment(val sql: String, val params: List<Any?>)
+
+/**
+ * VA1b (Spatial-Slice): eine Spalte aus der Metadaten-Vorabfrage —
+ * Name (in DB-Reihenfolge) + ob es eine Geometriespalte ist. Letzteres
+ * wird typeName-basiert ermittelt (wie VA1a, [GeometryType.KNOWN_VALUES]),
+ * damit die Read-Projektion Geometriespalten dialekt-spezifisch wrappen kann.
+ */
+data class ProbedColumn(val name: String, val isGeometry: Boolean)
 
 internal object JdbcSelectQuerySupport {
 
@@ -51,6 +61,47 @@ internal object JdbcSelectQuerySupport {
     ): String {
         val columns = collectColumnSubset(filter)
         return if (columns == null) "*" else columns.joinToString(", ") { quoteIdentifier(it) }
+    }
+
+    /**
+     * VA1b: liest aus [ResultSetMetaData] die Spaltennamen (in Reihenfolge) und
+     * markiert jede als Geometrie, wenn ihr `getColumnTypeName` in
+     * [GeometryType.KNOWN_VALUES] liegt (case-insensitiv, wie VA1a). Pure Funktion
+     * über die Metadaten — die Query-Ausführung liegt im Reader (Glue).
+     */
+    fun probedColumnsFromMetaData(metaData: ResultSetMetaData): List<ProbedColumn> {
+        val count = metaData.columnCount
+        val cols = ArrayList<ProbedColumn>(count)
+        for (i in 1..count) {
+            val name = metaData.getColumnLabel(i)
+            val typeName = runCatching { metaData.getColumnTypeName(i) }.getOrNull()?.lowercase()
+            cols += ProbedColumn(name, typeName != null && typeName in GeometryType.KNOWN_VALUES)
+        }
+        return cols
+    }
+
+    /**
+     * VA1b: geometrie-bewusste Projektion. Wird nur gebraucht, wenn die
+     * Vorabfrage mindestens eine Geometriespalte gefunden hat. Geometriespalten
+     * werden via [geometryExpression] gewrappt (z. B. `ST_AsEWKB("g") AS "g"`),
+     * alle anderen bleiben unverändert. Respektiert einen
+     * [DataFilter.ColumnSubset] (dessen Spalten-Reihenfolge, wie [projection]);
+     * ohne Subset gilt die DB-Spaltenreihenfolge aus [probedColumns]. Das Alias
+     * (`AS <col>`) erhält den ursprünglichen Spaltennamen, damit der Chunk-Header
+     * im Haupt-Stream identisch bleibt.
+     */
+    fun geometryAwareProjection(
+        filter: DataFilter?,
+        probedColumns: List<ProbedColumn>,
+        quoteIdentifier: (String) -> String,
+        geometryExpression: (String) -> String,
+    ): String {
+        val isGeometryByName = probedColumns.associate { it.name to it.isGeometry }
+        val names = collectColumnSubset(filter) ?: probedColumns.map { it.name }
+        return names.joinToString(", ") { name ->
+            val quoted = quoteIdentifier(name)
+            if (isGeometryByName[name] == true) "${geometryExpression(quoted)} AS $quoted" else quoted
+        }
     }
 
     /**

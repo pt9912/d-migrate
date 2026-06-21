@@ -37,4 +37,14 @@ class MysqlDataReader : AbstractJdbcDataReader() {
 
     /** Konsistenter Snapshot über den Stream hinweg. */
     override val needsAutoCommitFalse: Boolean = true
+
+    /**
+     * VA1b (Spatial-Slice): MySQL-native Geometriespalten auf dem Read-Pfad als
+     * kanonisches **WKB** projizieren (`ST_AsBinary`, OGC-Standard). MySQL kennt
+     * kein EWKB — die SRID wird hier nicht mitkodiert; SRID-Erhalt ist Sache des
+     * Reverse-Pfads (VA2) bzw. des Ziel-Bindings (VA1c).
+     */
+    override val supportsGeometryRead: Boolean = true
+
+    override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
 }
