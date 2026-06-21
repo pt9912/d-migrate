@@ -5,8 +5,8 @@
 > die **gesamte Slice-Grenze (Phase 0–3) ist DoD-komplett**. Pagila/PG-Round-Trip,
 > Sakila MySQL→PG + Pagila PG→MySQL cross-dialect, Chinook/SQLite-Round-Trip,
 > **Employees-Scale (export-resume + Chunking + Dual-Target-Import MySQL+PG)** —
-> je grün, je gepinnte Baseline. PostGIS/Spatialite (Phase 5) + TPC (Phase 4) =
-> eigene Folge-Slices. Phase-2-Folgebefund **Y1 behoben** (`c9401b6f`); Phase-3-
+> je grün, je gepinnte Baseline. Spatial (Phase 5: PostGIS + MySQL native +
+> Spatialite) + TPC (Phase 4) = eigene Folge-Slices. Phase-2-Folgebefund **Y1 behoben** (`c9401b6f`); Phase-3-
 > Folgebefund **S1 behoben** (PK-Nullability-Preflight,
 > [`../done/sample-db-phase3-findings.md`](../done/sample-db-phase3-findings.md));
 > Harness-Review-Härtungen getrackt in
@@ -17,7 +17,7 @@
 > (Link-Sweep README/Makefile/Workflows) — separater Schritt.
 > Roadmap-Slot: Phase 1–2b (Smoke/Compatibility, inkl. SQLite) = Test-Infrastruktur;
 > Phase 3 (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC, LF 8.1/8.2) und Phase 5
-> (Spatial: PostGIS/Spatialite) = eigene Folge-Slices**.
+> (Spatial: PostGIS + MySQL native + Spatialite) = eigene Folge-Slices**.
 > Referenzen: [`../open/test-database-candidates.md`](../open/test-database-candidates.md)
 > (Kandidaten-Katalog), [`../../operations/pilot-validation-playbook.md`](../../operations/pilot-validation-playbook.md)
 > (Szenarien-Vorlage), [bi-demo](../../../examples/bi-demo/README.md) (Harness-Muster),
@@ -52,13 +52,20 @@ ein compose-Service (SQLite/Spatialite brauchen **keinen** — sie sind dateibas
 ein gepinnter Sample und eine eigene `expected/`-Baseline; `smoke.sh` parametrisiert
 über Dialekt/Profil.
 
-| Ziel | Sample (Kandidat) | Server | Phase | Status |
+| Ziel (Dialekt + Spatial-Profil) | Sample (Kandidat) | Server | Phase | Status |
 |---|---|---|---|---|
-| PostgreSQL | Pagila | postgres | 1 | ✅ erledigt |
-| MySQL | Sakila | mysql | 2 | ✅ erledigt (Sakila MySQL→PG + Pagila PG→MySQL beide grün) |
-| SQLite | Chinook | — (Datei) | 2b | ✅ erledigt (Round-Trip grün, Parität 11/11) |
-| PostGIS | Spatial-Sample | PostGIS-Image | 5 | geplant |
-| Spatialite | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
+| PostgreSQL (`none`) | Pagila | postgres | 1 | ✅ erledigt |
+| MySQL (`none`) | Sakila | mysql | 2 | ✅ erledigt (Sakila MySQL→PG + Pagila PG→MySQL beide grün) |
+| SQLite (`none`) | Chinook | — (Datei) | 2b | ✅ erledigt (Round-Trip grün, Parität 11/11) |
+| PostgreSQL + **`postgis`** | Spatial-Sample | PostGIS-Image | 5 | geplant |
+| MySQL + **`native`** (GEOMETRY/POINT/… + SRID) | Spatial-Sample | mysql | 5 | geplant |
+| SQLite + **`spatialite`** | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
+
+**Vollständigkeit:** Alle **drei** Dialekte haben ein Spatial-Profil (PG→`postgis`,
+MySQL→`native`, SQLite→`spatialite`) — alle drei sind im Code implementiert
+(`SpatialProfile.defaultFor`/`allowedFor`, `NeutralType.Geometry`). Phase 5 deckt
+daher **drei** Round-Trips **plus** Cross-Dialect-Spatial-Transfers (z. B.
+PostGIS→MySQL native, MySQL native→Spatialite) ab — nicht nur PostGIS+Spatialite.
 
 Jeder neue Dialekt deckt **eigene** Round-Trip-Defekte auf (wie PG → F1–F3,
 [`sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md));
@@ -151,12 +158,21 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   Scope: nur Daten (Tabellen+PK via pre-data); FKs/Views (post-data) = Phase-2-Domäne.
 - **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice
   (LF 8.1/8.2), nur Forward-Pointer.
-- **Phase 5 — Spatial (PostGIS + Spatialite).** Eigener Folge-Slice (wie Phase 4,
-  nicht in der Phase-0–3-Grenze). PostGIS = postgres-Superset-Image + Spatial-
-  Sample; Spatialite = `mod_spatialite` im CLI-Image + Spatial-Sample. Testet
-  `--spatial-profile postgis|spatialite` end-to-end (Geometrie-/Geographie-Typen,
-  räumliche GiST/R-Tree-Indizes). Sample-Kandidat + Pinning noch offen → Vorarbeit
-  im Kandidaten-Katalog [`../open/test-database-candidates.md`](../open/test-database-candidates.md).
+- **Phase 5 — Spatial (PostGIS + MySQL native + Spatialite).** Eigener Folge-Slice
+  (wie Phase 4, nicht in der Phase-0–3-Grenze). Deckt **alle drei** Spatial-Profile
+  end-to-end ab — eines je Dialekt:
+  - **`postgis`** (PostgreSQL) = postgres-Superset-Image (`postgis/postgis`) + Spatial-Sample.
+  - **`native`** (MySQL) = mysql-Service (Spatial ist eingebaut, **keine** Extension
+    nötig); `GEOMETRY/POINT/POLYGON/…` + `SRID` (MySQL 8.0+). **Im Code bereits
+    implementiert** (`MysqlTypeMapping`/`MysqlColumnConstraintHelper`).
+  - **`spatialite`** (SQLite) = `mod_spatialite` im CLI-Image + Spatial-Sample.
+  Testet `--spatial-profile postgis|native|spatialite` end-to-end (Geometrie-/
+  Geographie-Typen, räumliche GiST/R-Tree-/SpatiaLite-Indizes) — **plus
+  Cross-Dialect-Spatial** (z. B. PostGIS→MySQL native, MySQL native→Spatialite).
+  **Achtung Spatialite:** das CLI-Runtime-Image (eclipse-temurin) enthält heute
+  **kein** `mod_spatialite` → eigenes Vorarbeitspaket (Image-Erweiterung +
+  Extension-Loading im sqlite-Treiber). Sample-Kandidat + Pinning noch offen →
+  Vorarbeit im Kandidaten-Katalog [`../open/test-database-candidates.md`](../open/test-database-candidates.md).
 
 ## CI-Laufzeit-Budget
 
@@ -196,9 +212,10 @@ Unterbrechung** (Mid-Stream-`docker kill` + `--resume`); **Chunking belegt**
 (nightly `cron` + `workflow_dispatch`), **nicht** im PR-Gate. Dual-Target-Parität
 (MySQL+PG) + `SUM(salary)`-Checksumme datenbelegt.
 
-**Phase 5 (Spatial):** in eigenem Folge-Slice — `--spatial-profile postgis` und
-`spatialite` end-to-end gegen je eigene Baseline; Geometrie-Typen + räumliche
-Indizes datenbelegt.
+**Phase 5 (Spatial):** in eigenem Folge-Slice — `--spatial-profile postgis`,
+**`native` (MySQL)** und `spatialite` end-to-end gegen je eigene Baseline (alle
+drei Dialekt-Spatial-Pfade) + mindestens ein Cross-Dialect-Spatial-Transfer;
+Geometrie-Typen (inkl. SRID) + räumliche Indizes datenbelegt.
 
 **Übergreifend:** kein Dump im Repo (Cache gitignored + dockerignored);
 `make docs-check` grün.
