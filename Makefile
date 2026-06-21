@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke
 
 help:
 	@printf '%s\n' \
@@ -114,6 +114,7 @@ help:
 		'  make sample-db-cross-smoke-pg2my  Cross-Dialect (Phase 2, Pagila PG->MySQL): symmetrischer Flow -> parity + type conversions' \
 		'  make sample-db-sqlite-smoke  SQLite round-trip (Phase 2b, Chinook): serverless .db -> reverse/validate/generate/transfer -> parity + precision' \
 		'  make sample-db-scale-smoke  Scale (Phase 3, Employees) opt-in/nightly: export-resume + chunking + dual-target import (MySQL+PG) parity' \
+		'  make sample-db-spatial-smoke  Spatial (Phase 5, VA1-Live-Smoke): geometry value round-trip PG->PG + MySQL->MySQL (+ native-point check)' \
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
@@ -387,3 +388,9 @@ sample-db-sqlite-smoke:
 # oder im scheduled Workflow .github/workflows/sample-db-scale.yml.
 sample-db-scale-smoke:
 	./examples/sample-db/scripts/smoke-scale.sh
+
+# Phase 5 (Spatial) — VA1-Live-Smoke: postgis + mysql up, Geometrie-Wert-Transfer
+# PG->PG und MySQL->MySQL (inkl. native-PG-point-Gegenprobe). Verifiziert die
+# Spatial-VA1-Kette live gegen echte DBs. Voraussetzung: docker-build IMAGE_TAG=dev.
+sample-db-spatial-smoke:
+	./examples/sample-db/scripts/smoke-spatial.sh

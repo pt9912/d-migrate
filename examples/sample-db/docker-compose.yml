@@ -53,6 +53,26 @@ services:
       retries: 18
       start_period: 20s
 
+  # Phase 5 (Spatial, VA1-Live-Smoke): PostGIS-Superset-Image für den
+  # PG-Geometrie-Round-Trip. Eigener Service/Volume/Port neben dem reinen
+  # postgres-Service (Phase 1/2). DBs (geo_pg_src/geo_pg_target) legt
+  # sql-postgis/ an; CREATE EXTENSION postgis + Tabellen macht smoke-spatial.sh.
+  postgis:
+    image: postgis/postgis:16-3.4
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_POSTGIS_PORT}:5432"
+    volumes:
+      - sample-db-postgis-data:/var/lib/postgresql/data
+      - ./sql-postgis:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
   dmigrate:
     image: d-migrate:dev
     # Das Image läuft als non-root (uid 10001). Damit es in das gemountete
@@ -77,3 +97,4 @@ services:
 volumes:
   sample-db-pg-data:
   sample-db-mysql-data:
+  sample-db-postgis-data:

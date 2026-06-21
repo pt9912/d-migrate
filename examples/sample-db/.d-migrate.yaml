@@ -20,3 +20,9 @@ database:
     employees_my: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/employees"
     employees_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/employees_my_target"
     employees_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/employees_pg_target"
+    # Phase 5 (Spatial, VA1-Live-Smoke) — PostGIS via postgis-Service, MySQL native
+    # via mysql-Service. Quell-/Ziel-DBs legt smoke-spatial.sh an (idempotent).
+    postgis_geo_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/geo_pg_src"
+    postgis_geo_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/geo_pg_target"
+    geo_my_src: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_src"
+    geo_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_target"
