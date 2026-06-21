@@ -43,6 +43,24 @@ internal object PostgresTableMetadataQueries {
         )
     }
 
+    /**
+     * VA2 (Spatial): PostGIS-Geometriespalten der Tabelle mit Subtyp + SRID aus
+     * dem `geometry_columns`-View. Der `to_regclass`-Guard liefert leer (statt zu
+     * werfen + die Lese-Transaktion zu aborten), wenn PostGIS/der View fehlt.
+     */
+    fun listGeometryColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
+        val viewPresent = session.queryList("SELECT to_regclass('geometry_columns') AS r")
+            .firstOrNull()?.get("r") != null
+        if (!viewPresent) return emptyList()
+        return session.queryList(
+            """
+            SELECT f_geometry_column, type, srid
+            FROM geometry_columns
+            WHERE f_table_schema = ? AND f_table_name = ?
+            """.trimIndent(), schemaName, table,
+        )
+    }
+
     fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> {
         return session.queryList(
             """

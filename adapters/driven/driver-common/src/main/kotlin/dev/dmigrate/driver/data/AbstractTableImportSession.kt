@@ -50,8 +50,9 @@ abstract class AbstractTableImportSession(
      * `"ST_GeomFromWKB"` (PostGIS/MySQL). Ist er gesetzt, wrappt [valuePlaceholder]
      * Geometrie-Zielspalten als `<ctor>(?)` statt `?`; der gebundene Wert bleibt
      * das WKB-`byte[]` aus dem Read-Pfad (VA1b). Default `null` → kein Wrapping
-     * (SQLite/SpatiaLite folgt mit VA4). Die SRID wird hier nicht mitgegeben
-     * (`<ctor>(?)` → SRID 0); SRID-Erhalt ist Sache des Reverse-Pfads (VA2).
+     * (SQLite/SpatiaLite folgt mit VA4). VA2: trägt die Ziel-Spalte eine SRID
+     * ([TargetColumn.srid]), wird sie als `<ctor>(?, srid)` mitgegeben, sonst
+     * `<ctor>(?)` (→ SRID 0); beide Formen gelten für PostGIS und MySQL.
      */
     protected open val geometryBindConstructor: String? = null
 
@@ -255,14 +256,18 @@ abstract class AbstractTableImportSession(
     }
 
     /**
-     * VA1c: liefert den VALUES-Platzhalter für eine Zielspalte — `?` normal, bzw.
+     * VA1c/VA2: liefert den VALUES-Platzhalter für eine Zielspalte — `?` normal, bzw.
      * `<geometryBindConstructor>(?)` für Geometrie-Zielspalten (typeName in
-     * [GeometryType.KNOWN_VALUES], wie VA1a/VA1b). Die Bind-Position bleibt ein `?`
+     * [GeometryType.KNOWN_VALUES], wie VA1a/VA1b). Trägt die Zielspalte eine SRID,
+     * wird sie als zweites Konstruktor-Argument mitgegeben (`<ctor>(?, srid)`), damit
+     * das Ziel die SRID nicht auf 0 fallen lässt. Die Bind-Position bleibt ein `?`
      * pro Spalte; [bindRow] bindet weiterhin genau einen Wert (das WKB-`byte[]`).
      */
     protected fun valuePlaceholder(column: TargetColumn): String {
         val constructor = geometryBindConstructor
-        return if (constructor != null && isGeometryColumn(column)) "$constructor(?)" else "?"
+        if (constructor == null || !isGeometryColumn(column)) return "?"
+        val srid = column.srid
+        return if (srid != null) "$constructor(?, $srid)" else "$constructor(?)"
     }
 
     /** VA1c: ob die Zielspalte eine WKB-Geometriespalte ist (dialekt-bewusst). */

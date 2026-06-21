@@ -25,6 +25,9 @@ internal object MysqlTypeMapping {
         val numScale: Int?,
         val tableName: String,
         val colName: String,
+        // VA2 (Spatial): SRID-Constraint einer Geometriespalte aus
+        // information_schema.columns.srs_id; null, wenn keine SRID gesetzt ist.
+        val srsId: Int? = null,
     )
 
     fun mapColumn(input: ColumnInput): MappingResult {
@@ -46,7 +49,7 @@ internal object MysqlTypeMapping {
             ?: mapStringTypes(dt, input.charMaxLen, input.tableName, input.colName)
             ?: mapNumericTypes(dt, input.numPrecision, input.numScale)
             ?: mapTemporalTypes(dt)
-            ?: mapSpecialTypes(dt, ct, input.columnType, input.tableName, input.colName)
+            ?: mapSpecialTypes(dt, ct, input.columnType, input.tableName, input.colName, input.srsId)
             ?: MappingResult(
                 NeutralType.Text(),
                 note = SchemaReadNote(
@@ -104,6 +107,7 @@ internal object MysqlTypeMapping {
         rawColumnType: String,
         tableName: String,
         colName: String,
+        srsId: Int?,
     ): MappingResult? = when (dt) {
         "json" -> MappingResult(NeutralType.Json)
         "blob", "mediumblob", "longblob", "tinyblob", "binary", "varbinary" -> MappingResult(NeutralType.Binary)
@@ -116,7 +120,7 @@ internal object MysqlTypeMapping {
             hint = "Review and convert to enum or text with application-level validation",
         ))
         "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection" ->
-            MappingResult(NeutralType.Geometry(geometryType = GeometryType.of(dt)))
+            MappingResult(NeutralType.Geometry(geometryType = GeometryType.of(dt), srid = srsId))
         else -> null
     }
 

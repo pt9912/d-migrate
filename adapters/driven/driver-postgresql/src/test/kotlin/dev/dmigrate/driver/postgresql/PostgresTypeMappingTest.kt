@@ -156,6 +156,19 @@ class PostgresTypeMappingTest : FunSpec({
         result.note!!.code shouldBe "R401"
     }
 
+    test("VA2: geometry subtype + SRID carried from geometry_columns") {
+        val result = PostgresTypeMapping.mapUserDefined("geometry", "t", "c", geometrySubtype = "Point", geometrySrid = 4326)
+        val geom = result.type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.of("point")
+        geom.srid shouldBe 4326
+    }
+
+    test("VA2: geometry with no SRID defaults to GEOMETRY/null") {
+        val geom = PostgresTypeMapping.mapUserDefined("geometry", "t", "c").type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.GEOMETRY
+        geom.srid.shouldBeNull()
+    }
+
     test("custom enum → Enum refType") {
         val result = PostgresTypeMapping.mapUserDefined("order_status", "t", "c")
         (result.type as NeutralType.Enum).refType shouldBe "order_status"

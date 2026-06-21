@@ -10,7 +10,10 @@
 > ChunkSchema trägt echt `Geometry`). **VA1-Live-Smoke grün** (`smoke-spatial.sh`,
 > vorgezogenes 5a/5b): Point+Polygon round-trippen verlustfrei PG→PG (PostGIS) **und**
 > MySQL→MySQL (native), native PG point unbeschadet. Kanonisches Format = **WKB**.
-> Offen: VA2 (SRID-Reverse), VA3–VA5, volle Sub-Slices 5a–5d (mit gepinntem Sample).
+> **VA2 (SRID-Reverse + Daten-Bind mit Ziel-SRID) implementiert + LIVE-VERIFIZIERT**:
+> Reverse liest SRID/Subtyp (PG `geometry_columns`, MySQL `SRS_ID`), Bind nutzt
+> `ST_GeomFromWKB(?, srid)`; Smoke-Abschnitt SRID 4326 grün PG→PG **und** MySQL→MySQL
+> (`ST_SRID=4326`, Wert identisch). Offen: VA3–VA5, volle Sub-Slices 5a–5d (mit gepinntem Sample).
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
@@ -95,12 +98,25 @@ nicht bloße Harness-Verkabelung.
   Polygon round-trippen verlustfrei PG→PG und MySQL→MySQL (`ST_AsText`-Gleichheit +
   `ST_IsValid`), native PG point unbeschadet (R1). Damit ist VA1 als Geometrie-
   Wert-Transfer bestätigt; offen bleibt **SRID** (VA2) + Spatial-Indizes (VA3/VA4).
-- **VA2 — PG- *und MySQL*-Reverse SRID/Subtyp-Capture.** `PostgresTypeMapping`
-  (liefert bare `Geometry()`) **und** `MysqlTypeMapping` (baut `Geometry` ohne
-  `srid`) müssen SRID + Geometrie-Subtyp lesen (PG: `geometry_columns`/`Find_SRID`;
-  MySQL: `information_schema`-SRS_ID). Sonst SRID=0/Subtyp=GEOMETRY →
-  **False-Green-Risiko** (vgl. F1-Muster). Voraussetzung für ehrliche
-  SRID-Erhalt-Assertions auf **beiden** Quellrichtungen.
+- **VA2 — PG- *und MySQL*-Reverse SRID/Subtyp-Capture + Daten-Bind mit Ziel-SRID.
+  ✅ ERLEDIGT + LIVE-VERIFIZIERT.** Zwei Teile:
+  - **VA2a Reverse.** `PostgresTypeMapping` und `MysqlTypeMapping` lesen jetzt SRID +
+    Geometrie-Subtyp. PG: `PostgresTableMetadataQueries.listGeometryColumns`
+    (`geometry_columns`-View mit `to_regclass`-Guard, liefert ohne PostGIS leer) →
+    `ColumnInput.geometrySubtype`/`geometrySrid`. MySQL:
+    `information_schema.columns.srs_id` → `ColumnInput.srsId`. Beide setzen
+    `NeutralType.Geometry(geometryType, srid)`; SRID 0 → `null` (= unconstrained,
+    konsistent über beide Dialekte). Die Generate-Seite rendert die SRID bereits aus
+    `Geometry.srid` (`PostgresTypeMapper.geometryToSql`, `MysqlColumnConstraintHelper`).
+  - **VA2b Daten-Bind mit Ziel-SRID.** `TargetColumn.srid` neu; die DataWriter
+    reichern Geometrie-Zielspalten aus dem Ziel-Katalog an (PG `geometry_columns`,
+    MySQL `SRS_ID`). `AbstractTableImportSession.valuePlaceholder` bindet dann
+    `ST_GeomFromWKB(?, srid)` statt `ST_GeomFromWKB(?)` — sonst würde ein SRID-0-WKB
+    in eine SRID-beschränkte Spalte am PG-typmod bzw. MySQL-`ER_WRONG_SRID` scheitern.
+  - **Live-Beleg** (`smoke-spatial.sh`, neuer Abschnitt SRID 4326): PG
+    `geometry(Point,4326)` und MySQL `POINT SRID 4326 NOT NULL` round-trippen
+    gleich-dialektisch; `ST_SRID(target)=4326` und Wert identisch. Damit ist
+    False-Green (SRID=0/Subtyp=GEOMETRY) ausgeschlossen.
 - **VA3 — MySQL SPATIAL-Index modellieren** (neutrales Index-Modell + Emit statt
   `blockSpatialIndex`). Nur falls „SPATIAL-Index belegt" als Kriterium bleibt.
 - **VA4 — SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`/`RecoverGeometry-

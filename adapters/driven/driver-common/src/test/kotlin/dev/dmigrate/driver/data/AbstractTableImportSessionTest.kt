@@ -465,6 +465,38 @@ class AbstractTableImportSessionTest : FunSpec({
         )
         s.testBuildInsertSql(targets) shouldBe "INSERT INTO t (id, g) VALUES (?, ST_GeomFromWKB(?))"
     }
+
+    // ── VA2 (Spatial): SRID is carried into the geometry constructor ────
+    val sridGeomCol = TargetColumn("g", nullable = true, jdbcType = Types.OTHER, sqlTypeName = "geometry", srid = 4326)
+    val sridPointCol = TargetColumn("p", nullable = true, jdbcType = Types.BINARY, sqlTypeName = "POINT", srid = 3857)
+
+    test("VA2: with an SRID the geometry constructor takes a second srid argument") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        s.testValuePlaceholder(sridGeomCol) shouldBe "ST_GeomFromWKB(?, 4326)"
+        s.testValuePlaceholder(sridPointCol) shouldBe "ST_GeomFromWKB(?, 3857)"
+        // no SRID → no second argument (SRID 0)
+        s.testValuePlaceholder(geomCol) shouldBe "ST_GeomFromWKB(?)"
+    }
+
+    test("VA2: SRID on a non-geometry column is ignored (plain ?)") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        val plainWithSrid = TargetColumn("name", nullable = true, jdbcType = Types.VARCHAR, sqlTypeName = "varchar", srid = 4326)
+        s.testValuePlaceholder(plainWithSrid) shouldBe "?"
+    }
+
+    test("VA2: SRID is ignored without a geometryBindConstructor") {
+        val s = session(geometryBindCtor = null)
+        s.testValuePlaceholder(sridGeomCol) shouldBe "?"
+    }
+
+    test("VA2: buildInsertSql inlines the SRID at the geometry position") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        val targets = listOf(
+            TargetColumn("id", nullable = false, jdbcType = Types.INTEGER, sqlTypeName = "int4"),
+            sridGeomCol,
+        )
+        s.testBuildInsertSql(targets) shouldBe "INSERT INTO t (id, g) VALUES (?, ST_GeomFromWKB(?, 4326))"
+    }
 })
 
 /**

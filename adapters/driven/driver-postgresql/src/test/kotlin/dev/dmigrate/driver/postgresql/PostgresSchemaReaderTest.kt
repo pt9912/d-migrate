@@ -73,6 +73,10 @@ class PostgresSchemaReaderTest : FunSpec({
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
         every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns columns
+        // VA2: geometry_columns probe — no PostGIS view present by default.
+        every { jdbc.queryList(match { it.contains("to_regclass('geometry_columns')") }) } returns
+            listOf(mapOf("r" to null))
+        every { jdbc.queryList(match { it.contains("FROM geometry_columns") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("contype = 'p'") }, any(), any()) } returns
             pkColumns.map { mapOf("column_name" to it) }
         every { jdbc.queryList(match { it.contains("contype = 'f'") }, any(), any()) } returns emptyList()

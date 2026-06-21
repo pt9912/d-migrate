@@ -46,7 +46,7 @@ object MysqlMetadataQueries {
             """
             SELECT column_name, data_type, column_type, is_nullable,
                    column_default, ordinal_position, extra,
-                   character_maximum_length, numeric_precision, numeric_scale
+                   character_maximum_length, numeric_precision, numeric_scale, srs_id
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position

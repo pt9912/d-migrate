@@ -75,6 +75,9 @@ class MysqlDataWriterTest : FunSpec({
             every { md.getColumnType(pos) } returns col.jdbcType
             every { md.getColumnTypeName(pos) } returns (col.sqlTypeName ?: "INT")
         }
+
+        // VA2: SRID enrichment reads information_schema.columns; default = no SRID rows.
+        every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns emptyList()
     }
 
     /**

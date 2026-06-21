@@ -58,6 +58,11 @@ class PostgresDataWriterTest : FunSpec({
         every {
             conn.prepareStatement("SELECT * FROM ${table.quotedPath()} LIMIT 0")
         } returns ps
+
+        // VA2: SRID enrichment probes geometry_columns; default = no PostGIS view.
+        every { jdbc.queryList(match { it.contains("to_regclass('geometry_columns')") }) } returns
+            listOf(mapOf("r" to null))
+        every { jdbc.queryList(match { it.contains("FROM geometry_columns") }, any(), any()) } returns emptyList()
     }
 
     /**

@@ -33,6 +33,16 @@ private fun readPostgresTable(
 
     val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromConstraints(uniqueConstraints)
 
+    // VA2 (Spatial): PostGIS-Subtyp + SRID je Geometriespalte (leer ohne PostGIS).
+    // srid 0 (= keine SRID) → null, damit das Modell sauber bleibt.
+    val geometryColumns = PostgresMetadataQueries.listGeometryColumns(session, schema, tableName)
+        .associate { gc ->
+            (gc["f_geometry_column"] as String) to Pair(
+                gc["type"] as? String,
+                (gc["srid"] as? Number)?.toInt()?.takeIf { it != 0 },
+            )
+        }
+
     val columns = LinkedHashMap<String, ColumnDefinition>()
     for (row in columnRows) {
         val columnName = row["column_name"] as String
@@ -52,6 +62,8 @@ private fun readPostgresTable(
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
                 tableName = tableName,
                 colName = columnName,
+                geometrySubtype = geometryColumns[columnName]?.first,
+                geometrySrid = geometryColumns[columnName]?.second,
             )
         )
         if (mapping.note != null) notes += mapping.note

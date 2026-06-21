@@ -16,6 +16,7 @@ class MysqlTypeMappingTest : FunSpec({
         charMaxLen: Int? = null,
         numP: Int? = null,
         numS: Int? = null,
+        srsId: Int? = null,
     ) = MysqlTypeMapping.mapColumn(
         MysqlTypeMapping.ColumnInput(
             dataType = dataType,
@@ -26,6 +27,7 @@ class MysqlTypeMappingTest : FunSpec({
             numScale = numS,
             tableName = "t",
             colName = "c",
+            srsId = srsId,
         ),
     )
 
@@ -116,6 +118,23 @@ class MysqlTypeMappingTest : FunSpec({
     test("geometry → Geometry") {
         val result = map("geometry")
         (result.type is NeutralType.Geometry) shouldBe true
+    }
+
+    test("VA2: geometry subtype is captured from data_type") {
+        val result = map("polygon")
+        (result.type as NeutralType.Geometry).geometryType shouldBe GeometryType.of("polygon")
+    }
+
+    test("VA2: srs_id is carried into the geometry SRID") {
+        val result = map("point", srsId = 4326)
+        val geom = result.type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.of("point")
+        geom.srid shouldBe 4326
+    }
+
+    test("VA2: geometry without srs_id has null SRID") {
+        val geom = map("geometry").type as NeutralType.Geometry
+        geom.srid.shouldBeNull()
     }
 
     // ── Unknown ─────────────────────────────────

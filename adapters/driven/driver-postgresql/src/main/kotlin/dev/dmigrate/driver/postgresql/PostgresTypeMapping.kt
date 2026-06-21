@@ -29,6 +29,10 @@ internal object PostgresTypeMapping {
         val numScale: Int?,
         val tableName: String,
         val colName: String,
+        // VA2 (Spatial): aus geometry_columns gelesener PostGIS-Subtyp (POINT/…)
+        // + SRID einer `geometry`-Spalte; null, wenn keine PostGIS-Geometrie.
+        val geometrySubtype: String? = null,
+        val geometrySrid: Int? = null,
     )
 
     fun mapColumn(input: ColumnInput): MappingResult {
@@ -59,7 +63,7 @@ internal object PostgresTypeMapping {
             ?: mapStringTypes(dt, input.charMaxLen)
             ?: mapNumericTypes(dt, input.numPrecision, input.numScale)
             ?: mapTemporalTypes(dt)
-            ?: mapSpecialTypes(dt, udt, input.tableName, input.colName)
+            ?: mapSpecialTypes(dt, udt, input.tableName, input.colName, input.geometrySubtype, input.geometrySrid)
             ?: MappingResult(
                 type = NeutralType.Text(),
                 note = SchemaReadNote(
@@ -114,7 +118,14 @@ internal object PostgresTypeMapping {
         else -> null
     }
 
-    private fun mapSpecialTypes(dt: String, udt: String, tableName: String, colName: String): MappingResult? = when (dt) {
+    private fun mapSpecialTypes(
+        dt: String,
+        udt: String,
+        tableName: String,
+        colName: String,
+        geometrySubtype: String?,
+        geometrySrid: Int?,
+    ): MappingResult? = when (dt) {
         "uuid" -> MappingResult(NeutralType.Uuid)
         "json", "jsonb" -> MappingResult(NeutralType.Json)
         "xml" -> MappingResult(NeutralType.Xml)
@@ -122,14 +133,24 @@ internal object PostgresTypeMapping {
         // ADR 0015: tsvector is a first-class neutral FullText type — captured
         // faithfully instead of degrading to text (R301).
         "tsvector" -> MappingResult(NeutralType.FullText)
-        "user-defined" -> mapUserDefined(udt, tableName, colName)
+        "user-defined" -> mapUserDefined(udt, tableName, colName, geometrySubtype, geometrySrid)
         "array" -> MappingResult(NeutralType.Array(mapArrayElementType(udt.removePrefix("_"))))
         else -> null
     }
 
-    fun mapUserDefined(udtName: String, tableName: String, colName: String): MappingResult {
+    fun mapUserDefined(
+        udtName: String,
+        tableName: String,
+        colName: String,
+        geometrySubtype: String? = null,
+        geometrySrid: Int? = null,
+    ): MappingResult {
         if (udtName == "geometry") return MappingResult(
-            type = NeutralType.Geometry(),
+            // VA2: Subtyp + SRID aus geometry_columns (null → GEOMETRY / keine SRID).
+            type = NeutralType.Geometry(
+                geometryType = GeometryType.of(geometrySubtype),
+                srid = geometrySrid,
+            ),
             note = SchemaReadNote(
                 severity = SchemaReadSeverity.INFO,
                 code = "R401",

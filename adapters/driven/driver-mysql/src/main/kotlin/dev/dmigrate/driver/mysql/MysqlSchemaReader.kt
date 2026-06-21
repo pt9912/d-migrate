@@ -167,6 +167,7 @@ class MysqlSchemaReader(
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
                 tableName = displayName,
                 colName = colName,
+                srsId = (row["srs_id"] as? Number)?.toInt()?.takeIf { it != 0 },
             ))
             if (mapping.note != null) notes += mapping.note
             val neutralType = mapping.type
