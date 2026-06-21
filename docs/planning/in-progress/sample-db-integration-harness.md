@@ -1,11 +1,15 @@
 # Plan: Sample-DB-E2E-Harness (docker-compose + Scripts)
 
 > Dokumenttyp: Umsetzungsplan (Slice)
-> Status: In Arbeit (Stand 2026-06-20). **Phase 0/1/2/2b erledigt** (Pagila/PG-
+> Status: In Arbeit (Stand 2026-06-21). **Phase 0/1/2/2b erledigt** (Pagila/PG-
 > Round-Trip, Sakila MySQL→PG + Pagila PG→MySQL cross-dialect, Chinook/SQLite-
 > Round-Trip — je grün, je gepinnte Baseline). **Offen: Phase 3 (Scale, opt-in/
-> nightly).** PostGIS/Spatialite (Phase 5) = eigene Folge-Slices. Sourcing **und**
-> Mechanik via [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
+> nightly)** — einziger offener Punkt innerhalb der Slice-Grenze. PostGIS/Spatialite
+> (Phase 5) = eigene Folge-Slices. Phase-2-Folgebefund **Y1 behoben** (`c9401b6f`);
+> Harness-Review-Härtungen getrackt in
+> [`../next/sample-db-harness-review-followups.md`](../next/sample-db-harness-review-followups.md).
+> Sourcing **und** Mechanik via
+> [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
 > entschieden (supersedet ADR 0013).
 > Roadmap-Slot: Phase 1–2b (Smoke/Compatibility, inkl. SQLite) = Test-Infrastruktur;
 > Phase 3 (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC, LF 8.1/8.2) und Phase 5
@@ -102,7 +106,8 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   - **Sakila MySQL→PG** (`smoke-cross.sh`, `make sample-db-cross-smoke`):
     Parität 16/16, TINYINT(1)→boolean / ENUM→text / SET→text datenbelegt,
     Notes gepinnt (`expected/sakila-cross.*`). Finding **Y1** (YEAR-Wert-Korruption,
-    `yearIsDateType`).
+    `yearIsDateType`) **BEHOBEN `c9401b6f`** (YEAR round-trippt '2006', jetzt harte
+    Assertion in `smoke-cross.sh` statt Note).
   - **Pagila PG→MySQL** (`smoke-cross-pg2my.sh`, `make sample-db-cross-smoke-pg2my`):
     Parität 22/22, boolean→TINYINT(1) / text[]→JSON / tsvector→text /
     timestamptz→DATETIME datenbelegt, Notes gepinnt (`expected/pagila-cross.*`).
@@ -110,8 +115,10 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
     doppelt: 32098 vs 16049).
   Beide CI-Workflows (`sample-db-cross-smoke*.yml`). Findings in
   [`sample-db-phase2-findings.md`](../done/sample-db-phase2-findings.md). *Kein* direkter
-  Pagila↔Sakila-Vergleich. **Offen (Folge-Slices, nicht Phase-2-blockierend):**
-  Y1-Fix, Partitions-Hierarchie (löst P2-pg2my).
+  Pagila↔Sakila-Vergleich. **Offen (Folge-Slice, nicht Phase-2-blockierend):**
+  Partitions-Hierarchie (löst P2-pg2my) →
+  [`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md).
+  (Y1-Fix **erledigt** `c9401b6f`.)
 - **Phase 2b — SQLite-Round-Trip (Chinook). ✅ ERLEDIGT (2026-06-20).** **Kein**
   Server — die CLI arbeitet via `docker run` (Host-User) gegen eine bind-gemountete
   `.db`-Datei; `sqlite3` baut das Zielschema. Sample: Chinook
