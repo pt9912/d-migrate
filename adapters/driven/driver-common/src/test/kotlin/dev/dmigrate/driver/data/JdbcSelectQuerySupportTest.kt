@@ -13,7 +13,7 @@ import io.kotest.matchers.shouldBe
 class JdbcSelectQuerySupportTest : FunSpec({
 
     val quote: (String) -> String = { "\"${it.replace("\"", "\"\"")}\"" }
-    val geomExpr: (String) -> String = { "ST_AsEWKB($it)" }
+    val geomExpr: (String) -> String = { "ST_AsBinary($it)" }
 
     test("geometryAwareProjection wraps only geometry columns, preserves DB order") {
         val probed = listOf(
@@ -22,7 +22,7 @@ class JdbcSelectQuerySupportTest : FunSpec({
             ProbedColumn("name", isGeometry = false),
         )
         JdbcSelectQuerySupport.geometryAwareProjection(null, probed, quote, geomExpr) shouldBe
-            "\"id\", ST_AsEWKB(\"geom\") AS \"geom\", \"name\""
+            "\"id\", ST_AsBinary(\"geom\") AS \"geom\", \"name\""
     }
 
     test("geometryAwareProjection respects ColumnSubset order and wraps geometry within it") {
@@ -33,7 +33,7 @@ class JdbcSelectQuerySupportTest : FunSpec({
         )
         val filter = DataFilter.ColumnSubset(listOf("geom", "id"))
         JdbcSelectQuerySupport.geometryAwareProjection(filter, probed, quote, geomExpr) shouldBe
-            "ST_AsEWKB(\"geom\") AS \"geom\", \"id\""
+            "ST_AsBinary(\"geom\") AS \"geom\", \"id\""
     }
 
     test("geometryAwareProjection ColumnSubset excluding the geometry column emits no wrapper") {
@@ -53,6 +53,6 @@ class JdbcSelectQuerySupportTest : FunSpec({
             ProbedColumn("b", isGeometry = true),
         )
         JdbcSelectQuerySupport.geometryAwareProjection(null, probed, quote, geomExpr) shouldBe
-            "ST_AsEWKB(\"a\") AS \"a\", ST_AsEWKB(\"b\") AS \"b\""
+            "ST_AsBinary(\"a\") AS \"a\", ST_AsBinary(\"b\") AS \"b\""
     }
 })

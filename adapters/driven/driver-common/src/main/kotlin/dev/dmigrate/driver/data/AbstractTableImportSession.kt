@@ -3,6 +3,7 @@ package dev.dmigrate.driver.data
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
+import dev.dmigrate.core.model.GeometryType
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.util.concurrent.Executor
@@ -43,6 +44,17 @@ abstract class AbstractTableImportSession(
 
     /** Build the dialect-specific INSERT / UPSERT SQL for the given columns. */
     protected abstract fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String
+
+    /**
+     * VA1c (Spatial-Slice): dialekt-spezifischer SQL-Konstruktor, der einen
+     * gebundenen WKB-Wert in eine Geometriespalte umwandelt — z. B.
+     * `"ST_GeomFromWKB"` (PostGIS/MySQL). Ist er gesetzt, wrappt [valuePlaceholder]
+     * Geometrie-Zielspalten als `<ctor>(?)` statt `?`; der gebundene Wert bleibt
+     * das WKB-`byte[]` aus dem Read-Pfad (VA1b). Default `null` → kein Wrapping
+     * (SQLite/SpatiaLite folgt mit VA4). Die SRID wird hier nicht mitgegeben
+     * (`<ctor>(?)` → SRID 0); SRID-Erhalt ist Sache des Reverse-Pfads (VA2).
+     */
+    protected open val geometryBindConstructor: String? = null
 
     /** Execute a chunk of rows using the dialect-specific conflict strategy. */
     protected abstract fun executeChunk(
@@ -232,6 +244,22 @@ abstract class AbstractTableImportSession(
                 )
             }
         }
+    }
+
+    /**
+     * VA1c: liefert den VALUES-Platzhalter für eine Zielspalte — `?` normal, bzw.
+     * `<geometryBindConstructor>(?)` für Geometrie-Zielspalten (typeName in
+     * [GeometryType.KNOWN_VALUES], wie VA1a/VA1b). Die Bind-Position bleibt ein `?`
+     * pro Spalte; [bindRow] bindet weiterhin genau einen Wert (das WKB-`byte[]`).
+     */
+    protected fun valuePlaceholder(column: TargetColumn): String {
+        val constructor = geometryBindConstructor
+        return if (constructor != null && isGeometryColumn(column)) "$constructor(?)" else "?"
+    }
+
+    private fun isGeometryColumn(column: TargetColumn): Boolean {
+        val typeName = column.sqlTypeName?.lowercase()
+        return typeName != null && typeName in GeometryType.KNOWN_VALUES
     }
 
     protected fun validateRowWidths(chunk: DataChunk, columnCount: Int) {

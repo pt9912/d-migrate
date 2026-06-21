@@ -47,6 +47,11 @@ internal class PostgresTableImportSession(
             }
         }
 
+    // VA1c: PostGIS-Geometriespalten beim INSERT aus WKB konstruieren.
+    // ST_GeomFromWKB akzeptiert plain WKB (von ST_AsBinary, VA1b) — auch das von
+    // einer MySQL-Quelle gelesene WKB; SRID 0 (SRID-Erhalt via VA2).
+    override val geometryBindConstructor: String? = "ST_GeomFromWKB"
+
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         val overridingSystemValue = if (importedTargetColumns.any { it.name in generatedAlwaysColumns }) {
             " OVERRIDING SYSTEM VALUE"
@@ -130,7 +135,7 @@ internal class PostgresTableImportSession(
         overridingSystemValue: String,
     ): String {
         val columnList = importedTargetColumns.joinToString(", ") { quotePostgresIdentifier(it.name) }
-        val placeholders = importedTargetColumns.joinToString(", ") { "?" }
+        val placeholders = importedTargetColumns.joinToString(", ") { valuePlaceholder(it) }
         val baseInsert =
             "INSERT INTO ${qualifiedTable.quotedPath()} ($columnList)$overridingSystemValue VALUES ($placeholders)"
         return when (options.onConflict) {
@@ -223,7 +228,7 @@ internal class PostgresTableImportSession(
             ""
         }
         val columnList = importedTargetColumns.joinToString(", ") { quotePostgresIdentifier(it.name) }
-        val singleRow = "(${importedTargetColumns.joinToString(", ") { "?" }})"
+        val singleRow = "(${importedTargetColumns.joinToString(", ") { valuePlaceholder(it) }})"
         val allRows = (1..rowCount).joinToString(", ") { singleRow }
         val baseInsert =
             "INSERT INTO ${qualifiedTable.quotedPath()} " +

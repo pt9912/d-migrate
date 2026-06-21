@@ -24,6 +24,11 @@ internal class MysqlTableImportSession(
 
     private var discardConnection: Boolean = false
 
+    // VA1c: MySQL-native Geometriespalten beim INSERT aus WKB konstruieren
+    // (ST_GeomFromWKB, OGC-Standard; das WKB stammt von ST_AsBinary, VA1b).
+    // SRID 0 (SRID-Erhalt via VA2).
+    override val geometryBindConstructor: String? = "ST_GeomFromWKB"
+
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         if (importedTargetColumns.isEmpty()) {
             return when (options.onConflict) {
@@ -35,7 +40,7 @@ internal class MysqlTableImportSession(
         }
 
         val columnList = importedTargetColumns.joinToString(", ") { quoteMysqlIdentifier(it.name) }
-        val placeholders = importedTargetColumns.joinToString(", ") { "?" }
+        val placeholders = importedTargetColumns.joinToString(", ") { valuePlaceholder(it) }
         val baseInsert =
             "INTO ${qualifiedTable.quotedPath()} ($columnList) VALUES ($placeholders)"
         return when (options.onConflict) {

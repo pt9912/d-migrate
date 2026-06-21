@@ -35,10 +35,13 @@ class PostgresDataReader : AbstractJdbcDataReader() {
 
     /**
      * VA1b (Spatial-Slice): PostGIS-Geometriespalten auf dem Read-Pfad als
-     * kanonisches **EWKB** projizieren. EWKB trägt die SRID im Format selbst —
-     * dadurch ist der exportierte Binärwert dialekt-unabhängig und SRID-erhaltend.
+     * kanonisches **WKB** projizieren (`ST_AsBinary`, OGC-Standard). Bewusst NICHT
+     * EWKB: EWKB trägt zwar die SRID, ist aber **nicht cross-dialect-tauglich**
+     * (MySQL `ST_GeomFromWKB` versteht das EWKB-SRID-Flag nicht). Das Transfer-
+     * Format ist damit einheitlich WKB für PG **und** MySQL; SRID-Erhalt läuft
+     * separat über den Reverse-Pfad (VA2) und das Ziel-Binding (VA1c).
      */
     override val supportsGeometryRead: Boolean = true
 
-    override fun geometryReadExpression(quotedColumn: String): String = "ST_AsEWKB($quotedColumn)"
+    override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
 }
