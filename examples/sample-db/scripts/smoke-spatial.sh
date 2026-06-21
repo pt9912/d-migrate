@@ -14,6 +14,10 @@
 #      werden. VA2: zusätzlich eine geometry(Point,4326)-Spalte — SRID muss erhalten
 #      bleiben (Bind als ST_GeomFromWKB(?, 4326), sonst typmod-Reject).
 #   2. MySQL→MySQL (native): dito; VA2 mit POINT SRID 4326 (sonst ER_WRONG_SRID).
+#   3. Cross-Dialect PG↔MySQL (VA2-X1): SRID 4326 mit asymmetrischen Koordinaten;
+#      SEMANTISCHER Vergleich (ST_Longitude/ST_Latitude bzw. ST_X/ST_Y), weil ein
+#      Achsentausch bei gleicher ST_AsText-Ausgabe sonst False-Green bliebe. Beleg,
+#      dass `axis-order=long-lat` (MySQL Read+Bind) WKB OGC-konform hält.
 #
 # Kein externes Sample (winzige WKT-Inserts inline) — bewusst minimal; das volle
 # 5a/5b mit gepinntem Spatial-Sample (VA5) folgt. Voraussetzung am Host: docker,
@@ -66,6 +70,11 @@ wait_healthy mysql 180
 # Geometrie-Sample (WKT) — bewusst exakt darstellbare Integer-Koordinaten.
 PT="POINT(1 2)"
 POLY="POLYGON((0 0,4 0,4 4,0 4,0 0))"
+
+# VA2-X1 (Cross-Dialect-Achsen): asymmetrische, exakt-in-double darstellbare
+# Koordinaten (11.5 = 23/2, 48.25 = 193/4), damit ein Achsentausch sichtbar wird
+# und Float-Stringvergleiche entfallen. München-artig: long=11.5, lat=48.25.
+X_LONG="11.5"; X_LAT="48.25"
 
 # ─── 1. PG→PG (PostGIS) ────────────────────────────────────────────
 log "[pg] preparing PostGIS source + target (geometry + native point)..."
@@ -166,5 +175,33 @@ mv_d=$(my_val geo_my_target "SELECT ST_AsText(g) FROM geo4326 WHERE id=1;")
 [ "$mv_s" = "$mv_d" ] || fail "[my] SRID geometry value mismatch: src='$mv_s' dst='$mv_d'"
 log "[my] SRID 4326 round-trip OK (value='$mv_d', SRID=$msrid_d) — VA2 confirmed"
 
-log "SUCCESS — VA1+VA2 live-verified: geometry value + SRID round-trip PG→PG and MySQL→MySQL; native PG point unaffected (R1)."
+# ─── 3. Cross-Dialect SRID 4326 (VA2-X1: Achsenreihenfolge) ─────────
+# PostGIS schreibt/liest WKB in OGC-X/Y (long-lat); MySQL nutzt für 4326 ohne
+# Korrektur lat-long → ein Cross-Dialect-Transfer vertauschte sonst die Achsen,
+# bei *gleicher* ST_AsText-Ausgabe (False-Green). Daher SEMANTISCHER Vergleich
+# über ST_Longitude/ST_Latitude bzw. ST_X/ST_Y. `--tables geo4326` grenzt auf die
+# eine SRID-Tabelle ein (sonst zöge der Whole-Schema-Transfer pgnative/
+# spatial_ref_sys mit, die im jeweils anderen Dialekt fehlen).
+
+log "[xd] PG→MySQL: long=$X_LONG lat=$X_LAT (München-artig)..."
+psql_pg geo_pg_src -c "TRUNCATE geo4326;
+    INSERT INTO geo4326 VALUES (1, ST_SetSRID(ST_MakePoint($X_LONG,$X_LAT),4326));" > /dev/null
+$COMPOSE run --rm dmigrate data transfer --source postgis_geo_src --target geo_my_target \
+    --tables geo4326 --truncate > /tmp/spatial-xd-pg2my.log 2>&1 \
+    || { cat /tmp/spatial-xd-pg2my.log; fail "[xd] PG→MySQL transfer failed"; }
+xd1=$(my_val geo_my_target "SELECT ROUND(ST_Longitude(g),4)=$X_LONG AND ROUND(ST_Latitude(g),4)=$X_LAT AND ST_SRID(g)=4326 FROM geo4326 WHERE id=1;")
+[ "$xd1" = "1" ] || fail "[xd] PG→MySQL axis/SRID wrong: got long=$(my_val geo_my_target "SELECT ST_Longitude(g) FROM geo4326 WHERE id=1;") lat=$(my_val geo_my_target "SELECT ST_Latitude(g) FROM geo4326 WHERE id=1;") (expected long=$X_LONG lat=$X_LAT)"
+log "[xd] PG→MySQL OK — long=$X_LONG/lat=$X_LAT erhalten, keine Achsenvertauschung"
+
+log "[xd] MySQL→PG: lat=$X_LAT long=$X_LONG (MySQL lat-long order)..."
+mysql_root geo_my_src -e "TRUNCATE geo4326;
+    INSERT INTO geo4326 VALUES (1, ST_GeomFromText('POINT($X_LAT $X_LONG)',4326));" || fail "[xd] MySQL insert failed"
+$COMPOSE run --rm dmigrate data transfer --source geo_my_src --target postgis_geo_target \
+    --tables geo4326 --truncate > /tmp/spatial-xd-my2pg.log 2>&1 \
+    || { cat /tmp/spatial-xd-my2pg.log; fail "[xd] MySQL→PG transfer failed"; }
+xd2=$(pg_val geo_pg_target "SELECT round(ST_X(g)::numeric,4)=$X_LONG AND round(ST_Y(g)::numeric,4)=$X_LAT AND ST_SRID(g)=4326 FROM geo4326 WHERE id=1")
+[ "$xd2" = "t" ] || fail "[xd] MySQL→PG axis/SRID wrong: got x_long=$(pg_val geo_pg_target "SELECT ST_X(g) FROM geo4326 WHERE id=1") y_lat=$(pg_val geo_pg_target "SELECT ST_Y(g) FROM geo4326 WHERE id=1") (expected long=$X_LONG lat=$X_LAT)"
+log "[xd] MySQL→PG OK — x/long=$X_LONG, y/lat=$X_LAT erhalten, keine Achsenvertauschung"
+
+log "SUCCESS — VA1+VA2+VA2-X1 live-verified: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (SRID 4326, korrekte Achsenreihenfolge); native PG point unaffected (R1)."
 log "stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."

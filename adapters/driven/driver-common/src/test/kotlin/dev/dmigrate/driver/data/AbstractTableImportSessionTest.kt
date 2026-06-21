@@ -93,6 +93,7 @@ class AbstractTableImportSessionTest : FunSpec({
         closePreFinallyAction: (() -> Unit)? = null,
         closeFinallyAction: (() -> Unit)? = null,
         geometryBindCtor: String? = null,
+        geometryBindOpts: String? = null,
     ) = TestTableImportSession(
         conn = conn,
         savedAutoCommit = true,
@@ -105,6 +106,7 @@ class AbstractTableImportSessionTest : FunSpec({
         closePreFinallyAction = closePreFinallyAction,
         closeFinallyAction = closeFinallyAction,
         geometryBindCtor = geometryBindCtor,
+        geometryBindOpts = geometryBindOpts,
     )
 
     // ── write ──────────────────────────────────────────────
@@ -497,6 +499,17 @@ class AbstractTableImportSessionTest : FunSpec({
         )
         s.testBuildInsertSql(targets) shouldBe "INSERT INTO t (id, g) VALUES (?, ST_GeomFromWKB(?, 4326))"
     }
+
+    // ── VA2-X1 (Cross-Dialect): axis-order options after the SRID ───────
+    test("VA2-X1: geometryBindOptions are appended after the SRID") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB", geometryBindOpts = "'axis-order=long-lat'")
+        s.testValuePlaceholder(sridGeomCol) shouldBe "ST_GeomFromWKB(?, 4326, 'axis-order=long-lat')"
+    }
+
+    test("VA2-X1: options are NOT appended without an SRID (no anchor argument)") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB", geometryBindOpts = "'axis-order=long-lat'")
+        s.testValuePlaceholder(geomCol) shouldBe "ST_GeomFromWKB(?)"
+    }
 })
 
 /**
@@ -516,11 +529,13 @@ internal class TestTableImportSession(
     private val closePreFinallyAction: (() -> Unit)? = null,
     private val closeFinallyAction: (() -> Unit)? = null,
     geometryBindCtor: String? = null,
+    geometryBindOpts: String? = null,
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
     var reseedThrows: Throwable? = null
 
     override val geometryBindConstructor: String? = geometryBindCtor
+    override val geometryBindOptions: String? = geometryBindOpts
 
     // MySQL-artige Erkennung (alle OGC-Namen), damit die VA1c-Tests sowohl
     // "geometry" als auch Subtypen wie "POINT" abdecken.

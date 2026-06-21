@@ -44,10 +44,18 @@ class MysqlDataReader : AbstractJdbcDataReader() {
      * kanonisches **WKB** projizieren (`ST_AsBinary`, OGC-Standard). MySQL kennt
      * kein EWKB — die SRID wird hier nicht mitkodiert; SRID-Erhalt ist Sache des
      * Reverse-Pfads (VA2) bzw. des Ziel-Bindings (VA1c).
+     *
+     * VA2-X1 (Cross-Dialect-Achsenreihenfolge): `axis-order=long-lat` erzwingt OGC-
+     * X/Y-Reihenfolge im WKB. Ohne diese Option nutzt MySQL für geografische SRS
+     * (z. B. 4326) die SRS-definierte **lat-long**-Reihenfolge — PostGIS schreibt/
+     * liest aber **long-lat**. Ein Cross-Dialect-Transfer vertauschte sonst die
+     * Achsen (datenbelegt: München → vertauscht), bei gleicher `ST_AsText`-Ausgabe
+     * (False-Green). Bei SRID 0 (kartesisch) ist die Option unschädlich (no-op).
      */
     override val supportsGeometryRead: Boolean = true
 
-    override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
+    override fun geometryReadExpression(quotedColumn: String): String =
+        "ST_AsBinary($quotedColumn, 'axis-order=long-lat')"
 
     /**
      * MySQL hat keine nativen Nicht-Spatial-Typen namens point/polygon/…: alle

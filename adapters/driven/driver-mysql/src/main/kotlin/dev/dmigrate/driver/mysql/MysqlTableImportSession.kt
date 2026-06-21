@@ -27,8 +27,13 @@ internal class MysqlTableImportSession(
 
     // VA1c: MySQL-native Geometriespalten beim INSERT aus WKB konstruieren
     // (ST_GeomFromWKB, OGC-Standard; das WKB stammt von ST_AsBinary, VA1b).
-    // SRID 0 (SRID-Erhalt via VA2).
+    // SRID-Erhalt via VA2 (ST_GeomFromWKB(?, srid)).
     override val geometryBindConstructor: String? = "ST_GeomFromWKB"
+
+    // VA2-X1: bei gesetzter SRID den WKB in OGC-X/Y (long-lat) interpretieren —
+    // sonst nähme MySQL für geografische SRS (4326) die lat-long-Reihenfolge und
+    // vertauschte die Achsen gegenüber PostGIS. Symmetrisch zum Read (MysqlDataReader).
+    override val geometryBindOptions: String? = "'axis-order=long-lat'"
 
     // MySQL hat keine nativen Nicht-Spatial-point/polygon-Typen → alle OGC-Namen.
     override fun isGeometryTypeName(typeNameLower: String): Boolean =

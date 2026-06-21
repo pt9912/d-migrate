@@ -65,6 +65,17 @@ abstract class AbstractTableImportSession(
      */
     protected open fun isGeometryTypeName(typeNameLower: String): Boolean = false
 
+    /**
+     * VA2-X1 (Cross-Dialect-Achsenreihenfolge): zusätzliche Konstruktor-Argumente
+     * nach der SRID, z. B. MySQLs `"'axis-order=long-lat'"`, damit der gebundene
+     * WKB in OGC-X/Y-Reihenfolge interpretiert wird (PostGIS-kompatibel). Wird von
+     * [valuePlaceholder] **nur** angehängt, wenn eine SRID vorliegt
+     * (`<ctor>(?, srid, <options>)`) — ohne SRID gibt es kein Argument, an das die
+     * Optionen syntaktisch andocken könnten. Default `null` → keine Optionen
+     * (PostGIS liest/schreibt nativ OGC X/Y und braucht keine).
+     */
+    protected open val geometryBindOptions: String? = null
+
     /** Execute a chunk of rows using the dialect-specific conflict strategy. */
     protected abstract fun executeChunk(
         importedTargetColumns: List<TargetColumn>,
@@ -266,8 +277,9 @@ abstract class AbstractTableImportSession(
     protected fun valuePlaceholder(column: TargetColumn): String {
         val constructor = geometryBindConstructor
         if (constructor == null || !isGeometryColumn(column)) return "?"
-        val srid = column.srid
-        return if (srid != null) "$constructor(?, $srid)" else "$constructor(?)"
+        val srid = column.srid ?: return "$constructor(?)"
+        val options = geometryBindOptions
+        return if (options != null) "$constructor(?, $srid, $options)" else "$constructor(?, $srid)"
     }
 
     /** VA1c: ob die Zielspalte eine WKB-Geometriespalte ist (dialekt-bewusst). */

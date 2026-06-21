@@ -13,7 +13,11 @@
 > **VA2 (SRID-Reverse + Daten-Bind mit Ziel-SRID) implementiert + LIVE-VERIFIZIERT**:
 > Reverse liest SRID/Subtyp (PG `geometry_columns`, MySQL `SRS_ID`), Bind nutzt
 > `ST_GeomFromWKB(?, srid)`; Smoke-Abschnitt SRID 4326 grün PG→PG **und** MySQL→MySQL
-> (`ST_SRID=4326`, Wert identisch). Offen: VA3–VA5, volle Sub-Slices 5a–5d (mit gepinntem Sample).
+> (`ST_SRID=4326`, Wert identisch). **VA2-X1 (Cross-Dialect-Achsenreihenfolge) BEHOBEN
+> + LIVE-VERIFIZIERT**: Cross-Dialect-Smoke fand Achsentausch (PostGIS long-lat vs
+> MySQL lat-long bei SRID 4326, False-Green bei `ST_AsText`); Fix = MySQL durchgängig
+> `axis-order=long-lat` (Read+Bind), `[xd]`-Smoke grün beidseitig (semantischer
+> Vergleich). Offen: VA3–VA5, volle Sub-Slices 5a–5d (mit gepinntem Sample).
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
@@ -117,6 +121,20 @@ nicht bloße Harness-Verkabelung.
     `geometry(Point,4326)` und MySQL `POINT SRID 4326 NOT NULL` round-trippen
     gleich-dialektisch; `ST_SRID(target)=4326` und Wert identisch. Damit ist
     False-Green (SRID=0/Subtyp=GEOMETRY) ausgeschlossen.
+  - **VA2-X1 Cross-Dialect-Achsenreihenfolge. ✅ ERLEDIGT + LIVE-VERIFIZIERT.**
+    Der Cross-Dialect-Smoke deckte einen **Datenkorruptions-Bug** auf: PostGIS
+    schreibt/liest WKB in OGC-X/Y (long-lat), MySQL nutzt für geografische SRS
+    (4326) **lat-long** — ein PG↔MySQL-Transfer vertauschte die Achsen (datenbelegt:
+    München → Indischer Ozean), **bei gleicher `ST_AsText`-Ausgabe** (deshalb wäre ein
+    naiver Textvergleich False-Green). Fix: MySQL nutzt durchgängig
+    `axis-order=long-lat` — Read `ST_AsBinary(col, 'axis-order=long-lat')`
+    (`MysqlDataReader`), Bind `ST_GeomFromWKB(?, srid, 'axis-order=long-lat')` via
+    neuem `geometryBindOptions`-Hook (`AbstractTableImportSession` +
+    `MysqlTableImportSession`). Damit ist WKB durchgängig OGC-long-lat = PostGIS-
+    kompatibel; SRID 0 unschädlich (no-op). PostGIS braucht keine Änderung. Beleg:
+    `smoke-spatial.sh`-Abschnitt `[xd]` mit asymmetrischen Koordinaten und
+    **semantischem** Vergleich (`ST_Longitude/ST_Latitude` bzw. `ST_X/ST_Y`), grün
+    in beiden Richtungen.
 - **VA3 — MySQL SPATIAL-Index modellieren** (neutrales Index-Modell + Emit statt
   `blockSpatialIndex`). Nur falls „SPATIAL-Index belegt" als Kriterium bleibt.
 - **VA4 — SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`/`RecoverGeometry-
