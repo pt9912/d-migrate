@@ -63,6 +63,10 @@ nicht bloße Harness-Verkabelung.
     analog dem K1/L1-Muster (`JdbcForeignValueNormalizer`).
   - **VA1d Preflight:** `ImportTypeCompatibility.isTypeCompatible(Geometry)` mappt
     heute unbedingt auf `true` → auf echte Ziel-Geometrie-Kompatibilität härten.
+    **Achtung Reichweite:** die Klasse liegt in `hexagon/application` und greift für
+    **alle** Importe — die Härtung muss `Geometry→Geometry` verlangen, aber
+    `Geometry→Text` als **bewusste** Degradation (mit Note) erhalten, sonst
+    Regression gegen den heutigen Text-Fallback (VA1a).
   Ohne VA1 kein einziger Spatial-Round-Trip (auch nicht gleich-dialektisch).
 - **VA2 — PG- *und MySQL*-Reverse SRID/Subtyp-Capture.** `PostgresTypeMapping`
   (liefert bare `Geometry()`) **und** `MysqlTypeMapping` (baut `Geometry` ohne
@@ -75,7 +79,9 @@ nicht bloße Harness-Verkabelung.
 - **VA4 — SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`/`RecoverGeometry-
   Column`) **+** `mod_spatialite` in der runtime-Dockerfile-Stage **+** Extension-
   Loading im sqlite-Treiber (`enableLoadExtension(true)` + `load_extension`), nur
-  aktiv bei `--spatial-profile spatialite`.
+  aktiv bei `--spatial-profile spatialite`. Dabei den **bestehenden** deklarativen
+  `requireExtension`/`ExtensionAvailabilityStatus`-Gate (`SqliteDiffRenderContext`)
+  nutzen statt einen parallelen Mechanismus zu bauen.
 - **VA5 — Spatial-Sample-Portabilitäts-Spike + Katalog-Eintrag** (siehe unten).
 
 ## Scope-Skizze (Harness-Sub-Slices, je nach VA)

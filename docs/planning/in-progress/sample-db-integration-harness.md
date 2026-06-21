@@ -66,7 +66,7 @@ MySQL→`native`, SQLite→`spatialite`); die **DDL-Typ-Abbildung + Profil-Polic
 implementiert (`SpatialProfile.defaultFor`/`allowedFor`, `NeutralType.Geometry`).
 **Aber** der Spatial-*Datenpfad* (Wert-Transfer), die *Spatial-Indizes* und das
 *SRID-Reverse* sind **noch nicht** implementiert — siehe Slice
-[`../next/spatial-harness-slice.md`](../next/spatial-harness-slice.md) (VA1–VA4).
+[`../next/spatial-harness-slice.md`](../next/spatial-harness-slice.md) (VA1–VA5).
 Phase 5 deckt daher **drei** Round-Trips **plus** Cross-Dialect-Spatial-Transfers
 (z. B. PostGIS→MySQL native, MySQL native→Spatialite) ab — nach Implementierung
 der Vorarbeitspakete, nicht nur durch Harness-Verkabelung.
@@ -174,7 +174,7 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   - **`native`** (MySQL) = mysql-Service (Spatial ist eingebaut, **keine** Extension
     nötig); `GEOMETRY/POINT/POLYGON/…` + `SRID` (MySQL 8.0+). DDL-Typ-Abbildung im
     Code (`MysqlTypeMapping`/`MysqlColumnConstraintHelper`); Wert-Transfer +
-    SPATIAL-Index + SRID-Reverse noch offen (Slice-VA1–VA3).
+    SPATIAL-Index + SRID-Reverse noch offen (Slice-VA1–VA5).
   - **`spatialite`** (SQLite) = `mod_spatialite` im CLI-Image + Spatial-Sample.
   Testet `--spatial-profile postgis|native|spatialite` end-to-end (Geometrie-/
   Geographie-Typen, räumliche GiST/R-Tree-/SpatiaLite-Indizes) — **plus

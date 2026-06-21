@@ -112,12 +112,13 @@ schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
    Import < 200 s); exakter Pfad festnageln (`data transfer --chunk-size` **vs.**
    `data export`→`import --resume`); **plus** Resume nach Abbruch **bei ~50 %**
    (LF-8.2-Wortlaut; Phase 3 bricht heute beim ersten Checkpoint ab, also < 50 %).
-   Doku-Sync: `performance-benchmarks.md` **und** der Umbrella-Plan
-   (`sample-db-integration-harness.md`, „LF 8.1 ≈ durch Phase 3 erbracht") auf
-   „Verlustfreiheit plausibilisiert, gemessene Abnahme offen" nachziehen.
+   Doku-Sync: `performance-benchmarks.md` auf „Verlustfreiheit durch Phase 3
+   plausibilisiert, gemessene Abnahme offen" nachziehen (der Umbrella-Plan ist
+   bereits angeglichen).
 - **4d — LF 8.2 DDL-1000-Gate aktivieren/stabilisieren.** Das **bestehende** 30-s-
    Baseline-Gate verlässlich grün stellen (nicht neu einführen); 4×n-Diff-vs-reiner-
-   DDL-Pfad entscheiden. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
+   DDL-Pfad entscheiden; dabei die irreführende „5×n"-KDoc in `LargeSchemaScaleSpec.kt`
+   auf „4×n + 1" korrigieren. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
 - **4e — (optional) TPC-DS** als zweite, komplexere Workload.
 
 **Reihenfolge-Gate:** 4c/4d (harte Zeit-Budgets) dürfen **erst nach** Festlegung der
