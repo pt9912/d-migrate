@@ -62,10 +62,14 @@ ein gepinnter Sample und eine eigene `expected/`-Baseline; `smoke.sh` parametris
 | SQLite + **`spatialite`** | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
 
 **Vollständigkeit:** Alle **drei** Dialekte haben ein Spatial-Profil (PG→`postgis`,
-MySQL→`native`, SQLite→`spatialite`) — alle drei sind im Code implementiert
-(`SpatialProfile.defaultFor`/`allowedFor`, `NeutralType.Geometry`). Phase 5 deckt
-daher **drei** Round-Trips **plus** Cross-Dialect-Spatial-Transfers (z. B.
-PostGIS→MySQL native, MySQL native→Spatialite) ab — nicht nur PostGIS+Spatialite.
+MySQL→`native`, SQLite→`spatialite`); die **DDL-Typ-Abbildung + Profil-Policy** sind
+implementiert (`SpatialProfile.defaultFor`/`allowedFor`, `NeutralType.Geometry`).
+**Aber** der Spatial-*Datenpfad* (Wert-Transfer), die *Spatial-Indizes* und das
+*SRID-Reverse* sind **noch nicht** implementiert — siehe Slice
+[`../next/spatial-harness-slice.md`](../next/spatial-harness-slice.md) (VA1–VA4).
+Phase 5 deckt daher **drei** Round-Trips **plus** Cross-Dialect-Spatial-Transfers
+(z. B. PostGIS→MySQL native, MySQL native→Spatialite) ab — nach Implementierung
+der Vorarbeitspakete, nicht nur durch Harness-Verkabelung.
 
 Jeder neue Dialekt deckt **eigene** Round-Trip-Defekte auf (wie PG → F1–F3,
 [`sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md));
@@ -158,8 +162,9 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   Scope: nur Daten (Tabellen+PK via pre-data); FKs/Views (post-data) = Phase-2-Domäne.
 - **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice (LF 8.1/8.2)
   → **geschnitten** in [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md)
-  (Sourcing/Workload/Methodik dort; LF 8.1 ≈ durch Phase 3 erbracht, LF 8.2 = N=1000-
-  Verschärfung, TPC = realistische Workload).
+  (Sourcing/Workload/Methodik dort; LF-8.1-Verlustfreiheit durch Phase 3
+  **plausibilisiert**, gemessene Abnahme — inkl. LF-8.2-Zeitbudgets — offen;
+  TPC = realistische Workload).
 - **Phase 5 — Spatial (PostGIS + MySQL native + Spatialite).** Eigener Folge-Slice
   → **geschnitten** in [`../next/spatial-harness-slice.md`](../next/spatial-harness-slice.md)
   (3 Profile + Cross-Dialect; externes gepinntes Spatial-Sample; Spatialite-Vorarbeit).
@@ -167,8 +172,9 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   end-to-end ab — eines je Dialekt:
   - **`postgis`** (PostgreSQL) = postgres-Superset-Image (`postgis/postgis`) + Spatial-Sample.
   - **`native`** (MySQL) = mysql-Service (Spatial ist eingebaut, **keine** Extension
-    nötig); `GEOMETRY/POINT/POLYGON/…` + `SRID` (MySQL 8.0+). **Im Code bereits
-    implementiert** (`MysqlTypeMapping`/`MysqlColumnConstraintHelper`).
+    nötig); `GEOMETRY/POINT/POLYGON/…` + `SRID` (MySQL 8.0+). DDL-Typ-Abbildung im
+    Code (`MysqlTypeMapping`/`MysqlColumnConstraintHelper`); Wert-Transfer +
+    SPATIAL-Index + SRID-Reverse noch offen (Slice-VA1–VA3).
   - **`spatialite`** (SQLite) = `mod_spatialite` im CLI-Image + Spatial-Sample.
   Testet `--spatial-profile postgis|native|spatialite` end-to-end (Geometrie-/
   Geographie-Typen, räumliche GiST/R-Tree-/SpatiaLite-Indizes) — **plus

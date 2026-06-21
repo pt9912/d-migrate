@@ -65,10 +65,12 @@ Query-Engine: gemessen wird **Transfer-Durchsatz + DDL-Zeit**, nicht TPC-Query-L
 - `performance-benchmarks.md` (Methodik + Lückenanalyse). Phase-0–3-Harness-Muster.
 
 **Review-Caveat (Mess-Last):** der N=1000-Smoke baut ein **gemischtes** Schema
-(`tables=n, sequences=n, views=n, triggers=n` ≈ 5×n Objekte) und misst den
-**Diff-Planner + PG-Diff-Renderer**, nicht reine „1000-Tabellen-DDL-Generierung".
-Vor der LF-8.2-Abnahme ist festzulegen, ob dieser 5×n-Diff-Pfad gilt (großzügig)
-oder ein schmaler reiner Generate-Pfad gebraucht wird.
+(`tables=n, sequences=n, views=n, triggers=n` + **1** geteilte Trigger-Funktion =
+**4×n + 1** Objekte; die ältere KDoc-Angabe „5×n" zählt fälschlich `n` Funktionen)
+und misst den **Diff-Planner + PG-Diff-Renderer** (`SchemaComparator` → `DiffPlanner`
+→ `PostgresDiffDdlGenerator`), nicht reine „1000-Tabellen-DDL-Generierung". Vor der
+LF-8.2-Abnahme ist festzulegen, ob dieser 4×n-Diff-Pfad gilt (großzügig) oder ein
+schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
 
 ## Offene Grundentscheidungen (vor dem Bau)
 
@@ -79,9 +81,14 @@ oder ein schmaler reiner Generate-Pfad gebraucht wird.
    + Extension-Version + Output-Format (CSV/Parquet, Spaltenreihenfolge, Float-
    Formatierung). Auflösungs-Optionen (in 4a zu entscheiden):
    - **(a) Generieren → einmal als Dump auf externen Mirror → wie Pagila/Sakila
-     SHA256-pinnen** (de facto „gepinnter Datensatz"; ADR 0014-konform).
+     SHA256-pinnen** (de facto „gepinnter Datensatz"; ADR 0014-konform). **Default-
+     Empfehlung** — robust gegen Generator-Drift.
    - **(b) Generator-Version + Extension-Version + Output-Format pinnen + den
      erzeugten Output-SHA256 als Baseline** (Generator-Determinismus CI-verifiziert).
+     **Caveat:** DuckDB-`tpch`-Output ist über DuckDB-Patch-Versionen/Plattformen
+     **nicht** garantiert byte-stabil (Float-Repräsentation, Sortier-/Encoding-
+     Ordering, Parquet-Encoding) → ein gepinnter Output-SHA256 kann beim nächsten
+     DuckDB-Bump brechen, obwohl die Daten „dieselben" sind. Fragiler als (a).
    Abweichung vom Standard-Pin-Muster → ggf. **ADR-Delegation** (permanente
    Ausnahme gehört in ein ADR, nicht in den Slice-Plan).
 2. **Lizenz (Review-Caveat).** TPC stellt `dbgen`/`dsdgen` unter **TPC-EULA** (kein
@@ -103,11 +110,19 @@ oder ein schmaler reiner Generate-Pfad gebraucht wird.
 - **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
    Verlustfreiheit (LF 8.1) **und** getrennte Zeit-Budgets (LF 8.2: Export < 100 s,
    Import < 200 s); exakter Pfad festnageln (`data transfer --chunk-size` **vs.**
-   `data export`→`import --resume`); `performance-benchmarks.md` aktualisieren.
+   `data export`→`import --resume`); **plus** Resume nach Abbruch **bei ~50 %**
+   (LF-8.2-Wortlaut; Phase 3 bricht heute beim ersten Checkpoint ab, also < 50 %).
+   Doku-Sync: `performance-benchmarks.md` **und** der Umbrella-Plan
+   (`sample-db-integration-harness.md`, „LF 8.1 ≈ durch Phase 3 erbracht") auf
+   „Verlustfreiheit plausibilisiert, gemessene Abnahme offen" nachziehen.
 - **4d — LF 8.2 DDL-1000-Gate aktivieren/stabilisieren.** Das **bestehende** 30-s-
-   Baseline-Gate verlässlich grün stellen (nicht neu einführen); 5×n-vs-reiner-DDL-
-   Pfad entscheiden. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
+   Baseline-Gate verlässlich grün stellen (nicht neu einführen); 4×n-Diff-vs-reiner-
+   DDL-Pfad entscheiden. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
 - **4e — (optional) TPC-DS** als zweite, komplexere Workload.
+
+**Reihenfolge-Gate:** 4c/4d (harte Zeit-Budgets) dürfen **erst nach** Festlegung der
+normierten Mess-Umgebung (siehe Vorbedingungen) greifen — sonst sind die Budgets
+auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen.
 
 ## Vorbedingungen
 
@@ -129,8 +144,15 @@ oder ein schmaler reiner Generate-Pfad gebraucht wird.
 - **Gating:** opt-in/nightly (wie Phase 3), **nicht** im PR-Gate (Laufzeit/Volumen).
 - **Übergreifend:** kein Dump im Repo; `make docs-check` grün.
 
-## Nicht-Ziel
+## Nicht-Ziel (Scope-Grenze der LF-8.2-Abnahme)
 
+- **Weitere LF-8.2-Skalierungskriterien sind NICHT Teil dieses Slices** und gehören
+  in eigene Slices / ADR-Delegation: „Export von 10 Mio ohne Out-of-Memory",
+  „Parallele Verarbeitung: ≥5× Speedup bei 8 Kernen", „inkrementelle Migration 1000
+  Tabellen < 1 h", „Partitionierte Tabelle: 100-Partitionen-Export parallel". Dieser
+  Slice trägt nur: Verlustfreiheit (LF 8.1) + Export/Import-Zeit-Budgets +
+  DDL-1000-<30 s + Resume-bei-50 % (LF 8.2). So bleibt sichtbar, dass die **formale
+  LF-8.2-Abnahme insgesamt** noch weitere Bausteine braucht.
 - Spatial (Phase 5, eigener Slice).
 - TPC-Query-Performance-Benchmarking (d-migrate transferiert Daten/Schema; gemessen
   wird Transfer/DDL, nicht TPC-Query-Latenz).
