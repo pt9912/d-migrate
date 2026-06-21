@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.data.AbstractJdbcDataReader
@@ -47,4 +48,11 @@ class MysqlDataReader : AbstractJdbcDataReader() {
     override val supportsGeometryRead: Boolean = true
 
     override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
+
+    /**
+     * MySQL hat keine nativen Nicht-Spatial-Typen namens point/polygon/…: alle
+     * OGC-Geometrie-Typnamen sind echte, WKB-fähige Spatial-Typen.
+     */
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower in GeometryType.KNOWN_VALUES
 }

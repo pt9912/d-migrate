@@ -52,6 +52,9 @@ internal class PostgresTableImportSession(
     // einer MySQL-Quelle gelesene WKB; SRID 0 (SRID-Erhalt via VA2).
     override val geometryBindConstructor: String? = "ST_GeomFromWKB"
 
+    // Nur PostGIS-`geometry` (NICHT die nativen PG-Typen point/polygon/…).
+    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
+
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         val overridingSystemValue = if (importedTargetColumns.any { it.name in generatedAlwaysColumns }) {
             " OVERRIDING SYSTEM VALUE"
@@ -248,6 +251,14 @@ internal class PostgresTableImportSession(
         }
 
         when {
+            // VA1c/W1: WKB-Geometriespalte. Explizit als bytea binden (setBytes),
+            // nicht via setObject-Default — `ST_GeomFromWKB(?)` erwartet bytea, und
+            // setBytes ist pgjdbc-versionsunabhängig. MUSS vor dem Enum-Zweig
+            // stehen (geometry ist OTHER + nicht-well-known → würde sonst dort als
+            // Enum-pgObject(value.toString()) landen).
+            isGeometryColumn(targetColumn) && value is ByteArray ->
+                stmt.setBytes(parameterIndex, value)
+
             targetColumn.jdbcType == Types.OTHER &&
                 targetColumn.sqlTypeName.equals("json", ignoreCase = true) ->
                 stmt.setObject(parameterIndex, pgObject("json", value.toString()))

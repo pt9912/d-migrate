@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.JdbcForeignValueNormalizer
@@ -28,6 +29,10 @@ internal class MysqlTableImportSession(
     // (ST_GeomFromWKB, OGC-Standard; das WKB stammt von ST_AsBinary, VA1b).
     // SRID 0 (SRID-Erhalt via VA2).
     override val geometryBindConstructor: String? = "ST_GeomFromWKB"
+
+    // MySQL hat keine nativen Nicht-Spatial-point/polygon-Typen → alle OGC-Namen.
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower in GeometryType.KNOWN_VALUES
 
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         if (importedTargetColumns.isEmpty()) {
@@ -66,13 +71,16 @@ internal class MysqlTableImportSession(
     ) {
         importedTargetColumns.forEachIndexed { index, targetColumn ->
             val value = row[index]
-            if (value == null) {
-                stmt.setNull(index + 1, targetColumn.jdbcType)
-            } else {
+            when {
+                value == null -> stmt.setNull(index + 1, targetColumn.jdbcType)
+                // VA1c/W2: WKB-Geometriespalte explizit als Binär binden, damit
+                // ST_GeomFromWKB(?) das WKB-BLOB sicher erhält (statt setObject-Default).
+                isGeometryColumn(targetColumn) && value is ByteArray ->
+                    stmt.setBytes(index + 1, value)
                 // K1/L1: a source-driver wrapper (PG text[] → JSON, pgjdbc PGobject
                 // like tsvector → its string) would otherwise be Java-serialised by
                 // MySQL Connector/J. Normalise to a bindable form first.
-                stmt.setObject(index + 1, JdbcForeignValueNormalizer.normalize(value))
+                else -> stmt.setObject(index + 1, JdbcForeignValueNormalizer.normalize(value))
             }
         }
     }

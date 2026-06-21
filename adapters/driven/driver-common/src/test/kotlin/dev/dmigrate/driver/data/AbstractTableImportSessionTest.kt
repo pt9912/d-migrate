@@ -3,6 +3,7 @@ package dev.dmigrate.driver.data
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
+import dev.dmigrate.core.model.GeometryType
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -488,6 +489,11 @@ internal class TestTableImportSession(
     var reseedThrows: Throwable? = null
 
     override val geometryBindConstructor: String? = geometryBindCtor
+
+    // MySQL-artige Erkennung (alle OGC-Namen), damit die VA1c-Tests sowohl
+    // "geometry" als auch Subtypen wie "POINT" abdecken.
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower in GeometryType.KNOWN_VALUES
 
     fun testRecordCleanupFailure(t: Throwable) = recordCleanupFailure(t)
 

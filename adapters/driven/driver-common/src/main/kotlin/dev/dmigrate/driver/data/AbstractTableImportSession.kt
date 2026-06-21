@@ -3,7 +3,6 @@ package dev.dmigrate.driver.data
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
-import dev.dmigrate.core.model.GeometryType
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.util.concurrent.Executor
@@ -55,6 +54,15 @@ abstract class AbstractTableImportSession(
      * (`<ctor>(?)` → SRID 0); SRID-Erhalt ist Sache des Reverse-Pfads (VA2).
      */
     protected open val geometryBindConstructor: String? = null
+
+    /**
+     * VA1 (Spatial-Slice): **dialekt-bewusste** Erkennung, ob ein (lowercase)
+     * Ziel-`sqlTypeName` eine WKB-fähige Geometriespalte bezeichnet. Default
+     * `false`. PostGIS überschreibt mit nur `"geometry"` (NICHT die nativen
+     * PG-Typen point/polygon/…); MySQL mit allen OGC-Namen. Steuert, ob
+     * [valuePlaceholder] die Spalte mit [geometryBindConstructor] wrappt.
+     */
+    protected open fun isGeometryTypeName(typeNameLower: String): Boolean = false
 
     /** Execute a chunk of rows using the dialect-specific conflict strategy. */
     protected abstract fun executeChunk(
@@ -257,9 +265,10 @@ abstract class AbstractTableImportSession(
         return if (constructor != null && isGeometryColumn(column)) "$constructor(?)" else "?"
     }
 
-    private fun isGeometryColumn(column: TargetColumn): Boolean {
+    /** VA1c: ob die Zielspalte eine WKB-Geometriespalte ist (dialekt-bewusst). */
+    protected fun isGeometryColumn(column: TargetColumn): Boolean {
         val typeName = column.sqlTypeName?.lowercase()
-        return typeName != null && typeName in GeometryType.KNOWN_VALUES
+        return typeName != null && isGeometryTypeName(typeName)
     }
 
     protected fun validateRowWidths(chunk: DataChunk, columnCount: Int) {

@@ -1,7 +1,6 @@
 package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.model.FloatPrecision
-import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.NeutralType
 import java.sql.Types
 
@@ -39,17 +38,11 @@ internal object JdbcToNeutralTypeMapper {
 
         val typeNameLower = sqlTypeName?.lowercase()
 
-        // VA1a (Spatial-Slice): Geometrie wird über den dialektspezifischen
-        // Typnamen erkannt, NICHT über den JDBC-Code — PostGIS meldet
-        // Types.OTHER, MySQL Types.BINARY für dieselbe logische Geometriespalte.
-        // Ohne diese Erkennung trügen Chunk-/Parquet-Schema-Header Text bzw.
-        // Binary statt Geometry (False-Green). SRID bleibt hier null:
-        // ResultSetMetaData trägt sie nicht; SRID-Capture ist der Schema-
-        // Reverse-Pfad (VA2).
-        if (typeNameLower != null && typeNameLower in GeometryType.KNOWN_VALUES) {
-            return NeutralType.Geometry(geometryType = GeometryType.of(typeNameLower))
-        }
-
+        // Geometrie wird NICHT hier (dialekt-blind) erkannt: native PG-Typen
+        // (point/polygon/line/…) heißen genauso wie OGC-Geometrie-Subtypen, sind
+        // aber kein WKB. Die Geometrie-Markierung kommt dialekt-bewusst aus der
+        // Metadaten-Vorabfrage (probedColumns, VA1b) und überschreibt das Mapping
+        // im ChunkSchema (JdbcChunkSequence). Hier nur das reine JDBC-Mapping.
         return mapByJdbcType(jdbcType, typeNameLower, precision, scale)
     }
 

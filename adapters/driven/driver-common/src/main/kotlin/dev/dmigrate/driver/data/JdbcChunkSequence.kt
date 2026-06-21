@@ -2,6 +2,7 @@ package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.data.ChunkColumnSchema
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.SchemaOrigin
@@ -27,6 +28,14 @@ internal class JdbcChunkSequence(
     private val conn: Connection,
     private val savedAutoCommit: Boolean,
     private val chunkSize: Int,
+    /**
+     * VA1b/R2: Spaltennamen, die der Reader vorab dialekt-bewusst als
+     * WKB-Geometrie erkannt hat. Sie werden im ChunkSchema als
+     * [NeutralType.Geometry] ausgewiesen — sonst trüge der Header `Binary`,
+     * weil die gewrappte `ST_AsBinary(col)`-Projektion als JDBC-Typ bytea/blob
+     * meldet. Leer (Default) → reines JDBC-Mapping wie bisher.
+     */
+    private val geometryColumns: Set<String> = emptySet(),
 ) : ChunkSequence {
 
     private val log = LoggerFactory.getLogger(JdbcChunkSequence::class.java)
@@ -50,13 +59,20 @@ internal class JdbcChunkSequence(
             val sqlTypeName = runCatching { metadata.getColumnTypeName(index) }.getOrNull()
             val nullabilityRaw = metadata.isNullable(index)
             val nullability = NullabilityResolver.resolve(nullabilityRaw)
-            val neutralType = JdbcToNeutralTypeMapper.map(
-                jdbcType = metadata.getColumnType(index),
-                sqlTypeName = sqlTypeName,
-                precision = runCatching { metadata.getPrecision(index) }.getOrNull(),
-                scale = runCatching { metadata.getScale(index) }.getOrNull(),
-                isAutoIncrement = runCatching { metadata.isAutoIncrement(index) }.getOrElse { false },
-            )
+            val neutralType = if (name in geometryColumns) {
+                // VA1b/R2: dialekt-bewusst geprobte Geometriespalte. Der gewrappte
+                // ST_AsBinary(col) meldet bytea/blob → würde sonst auf Binary
+                // mappen; die echte Quelltyp-Info aus der Vorabfrage gewinnt.
+                NeutralType.Geometry()
+            } else {
+                JdbcToNeutralTypeMapper.map(
+                    jdbcType = metadata.getColumnType(index),
+                    sqlTypeName = sqlTypeName,
+                    precision = runCatching { metadata.getPrecision(index) }.getOrNull(),
+                    scale = runCatching { metadata.getScale(index) }.getOrNull(),
+                    isAutoIncrement = runCatching { metadata.isAutoIncrement(index) }.getOrElse { false },
+                )
+            }
             descriptors += ColumnDescriptor(
                 name = name,
                 nullable = nullability.nullable,

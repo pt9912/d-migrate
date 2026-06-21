@@ -1,7 +1,6 @@
 package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.DataFilter
-import dev.dmigrate.core.model.GeometryType
 import java.sql.ResultSetMetaData
 
 /**
@@ -23,9 +22,11 @@ internal data class WhereFragment(val sql: String, val params: List<Any?>)
 
 /**
  * VA1b (Spatial-Slice): eine Spalte aus der Metadaten-Vorabfrage —
- * Name (in DB-Reihenfolge) + ob es eine Geometriespalte ist. Letzteres
- * wird typeName-basiert ermittelt (wie VA1a, [GeometryType.KNOWN_VALUES]),
- * damit die Read-Projektion Geometriespalten dialekt-spezifisch wrappen kann.
+ * Name (in DB-Reihenfolge) + ob es eine WKB-fähige Geometriespalte ist.
+ * Letzteres wird **dialekt-bewusst** ermittelt (vom Treiber injizierte
+ * `isGeometryTypeName`-Funktion), damit native PG-Typen (point/polygon/…),
+ * die wie OGC-Subtypen heißen aber kein WKB sind, NICHT fälschlich gewrappt
+ * werden.
  */
 data class ProbedColumn(val name: String, val isGeometry: Boolean)
 
@@ -65,17 +66,22 @@ internal object JdbcSelectQuerySupport {
 
     /**
      * VA1b: liest aus [ResultSetMetaData] die Spaltennamen (in Reihenfolge) und
-     * markiert jede als Geometrie, wenn ihr `getColumnTypeName` in
-     * [GeometryType.KNOWN_VALUES] liegt (case-insensitiv, wie VA1a). Pure Funktion
-     * über die Metadaten — die Query-Ausführung liegt im Reader (Glue).
+     * markiert jede als Geometrie, wenn [isGeometryTypeName] für ihren (lowercase)
+     * `getColumnTypeName` `true` liefert. Die Erkennung ist **dialekt-bewusst** —
+     * der Treiber injiziert sie (PG: nur `geometry`; MySQL: alle OGC-Subtypen),
+     * damit native PG-Typen nicht fälschlich als WKB-Geometrie gelten. Pure
+     * Funktion über die Metadaten — die Query-Ausführung liegt im Reader (Glue).
      */
-    fun probedColumnsFromMetaData(metaData: ResultSetMetaData): List<ProbedColumn> {
+    fun probedColumnsFromMetaData(
+        metaData: ResultSetMetaData,
+        isGeometryTypeName: (String) -> Boolean,
+    ): List<ProbedColumn> {
         val count = metaData.columnCount
         val cols = ArrayList<ProbedColumn>(count)
         for (i in 1..count) {
             val name = metaData.getColumnLabel(i)
             val typeName = runCatching { metaData.getColumnTypeName(i) }.getOrNull()?.lowercase()
-            cols += ProbedColumn(name, typeName != null && typeName in GeometryType.KNOWN_VALUES)
+            cols += ProbedColumn(name, typeName != null && isGeometryTypeName(typeName))
         }
         return cols
     }

@@ -39,7 +39,7 @@ internal object ImportTypeCompatibility {
             NeutralType.Binary -> isStructuredFamilyCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Enum -> isEnumCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Array -> jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
-            is NeutralType.Geometry -> isGeometryCompatible(jdbcType, sqlTypeName)
+            is NeutralType.Geometry -> isGeometryCompatible(sqlTypeName)
             is NeutralType.FullText -> true
         }
     }
@@ -120,16 +120,18 @@ internal object ImportTypeCompatibility {
         jdbcType == Types.SQLXML || sqlTypeName == "XML" || jdbcType in setOf(Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
 
     /**
-     * VA1d (Spatial-Slice): eine Geometrie-Quellspalte ist kompatibel mit einem
-     * Geometrie-Ziel (typeName in [GeometryType.KNOWN_VALUES] — der verlustfreie
-     * WKB-Round-Trip via VA1b/VA1c) ODER mit einem Text-Ziel (bewusste WKT-/Text-
-     * Degradation, wie sie das `none`-Spatial-Profil und der frühere Text-Fallback
-     * erzeugen). Andere Ziele (Integer, Binary, …) sind NICHT mehr kompatibel —
-     * vorher winkte `Geometry -> true` jedes Ziel durch (False-Green-Risiko).
+     * VA1d (Spatial-Slice): eine Geometrie-Quellspalte ist kompatibel **nur** mit
+     * einem Geometrie-Ziel (typeName in [GeometryType.KNOWN_VALUES] — der
+     * verlustfreie WKB-Round-Trip via VA1b/VA1c). Andere Ziele sind inkompatibel —
+     * vorher winkte `Geometry -> true` jedes Ziel durch (False-Green).
+     * **Bewusst NICHT** Geometry→Text: der Wertpfad (VA1b) liefert WKB-`byte[]`,
+     * kein WKT; ein WKB-`byte[]` in eine Text-Spalte ergäbe Binärmüll. Ein klarer
+     * Preflight-Fehler ist ehrlicher als stiller Datenmüll. (Eine echte WKT-
+     * Degradation für Text-Ziele bräuchte einen ziel-bewussten Read-Pfad — eigene
+     * Folgearbeit, nicht VA1.)
      */
-    private fun isGeometryCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
-        sqlTypeName.lowercase() in GeometryType.KNOWN_VALUES ||
-            isTextCompatible(jdbcType, sqlTypeName)
+    private fun isGeometryCompatible(sqlTypeName: String): Boolean =
+        sqlTypeName.lowercase() in GeometryType.KNOWN_VALUES
 
     private fun isEnumCompatible(type: NeutralType.Enum, jdbcType: Int, sqlTypeName: String): Boolean {
         val ref = type.refType?.uppercase()

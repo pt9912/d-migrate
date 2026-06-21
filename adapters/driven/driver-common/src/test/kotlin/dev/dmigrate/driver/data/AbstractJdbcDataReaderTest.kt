@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.DataFilter
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -457,6 +458,16 @@ class AbstractJdbcDataReaderTest : FunSpec({
         row[2] shouldBe "616263"
     }
 
+    test("VA1b/R2: geometry column carries neutralType Geometry in the chunk schema") {
+        createGeoTable()
+        geomReader.streamTable(pool, "geo", chunkSize = 100).use { seq ->
+            val gCol = seq.schema.columns.single { it.name == "g" }
+            // R2: trotz gewrapptem hex(g) (das als JDBC-Typ nicht "geometry" meldet)
+            // trägt der Header dank probedColumns NeutralType.Geometry.
+            gCol.neutralType shouldBe NeutralType.Geometry()
+        }
+    }
+
     test("VA1b: tables without geometry are unaffected by a geometry-capable reader") {
         // The probe finds no geometry column → projection stays "*", values raw.
         val chunk = geomReader.streamTable(pool, "items", chunkSize = 100).toList().single()
@@ -510,6 +521,7 @@ private class GeometryTestJdbcReader : AbstractJdbcDataReader() {
     override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
     override val needsAutoCommitFalse: Boolean = false
     override val supportsGeometryRead: Boolean = true
+    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
     override fun geometryReadExpression(quotedColumn: String): String = "hex($quotedColumn)"
 }
 
@@ -519,4 +531,5 @@ private class DefaultGeomExprReader : AbstractJdbcDataReader() {
     override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
     override val needsAutoCommitFalse: Boolean = false
     override val supportsGeometryRead: Boolean = true
+    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
 }

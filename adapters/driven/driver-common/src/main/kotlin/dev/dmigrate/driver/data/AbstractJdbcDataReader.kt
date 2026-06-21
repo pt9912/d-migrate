@@ -58,6 +58,16 @@ abstract class AbstractJdbcDataReader : DataReader {
      */
     protected open fun geometryReadExpression(quotedColumn: String): String = quotedColumn
 
+    /**
+     * VA1 (Spatial-Slice): **dialekt-bewusste** Erkennung, ob ein (lowercase)
+     * `getColumnTypeName` eine WKB-fähige Geometriespalte bezeichnet. Default
+     * `false`. PostGIS überschreibt mit nur `"geometry"` — NICHT die nativen
+     * PG-Typen `point`/`polygon`/`line`/`box`/`path`/`circle`/`lseg`, die genauso
+     * heißen wie OGC-Subtypen, aber kein WKB sind (sonst würde `ST_AsBinary` sie
+     * fälschlich wrappen → Query-Fehler). MySQL überschreibt mit allen OGC-Namen.
+     */
+    protected open fun isGeometryTypeName(typeNameLower: String): Boolean = false
+
     final override fun streamTable(
         pool: ConnectionPool,
         table: String,
@@ -127,6 +137,11 @@ abstract class AbstractJdbcDataReader : DataReader {
                 conn = conn,
                 savedAutoCommit = savedAutoCommit,
                 chunkSize = chunkSize,
+                // VA1b/R2: die gewrappte Geometriespalte meldet als JDBC-Typ
+                // bytea/blob; ohne diese Liste trüge der Chunk-Header `Binary`
+                // statt `Geometry`. Die dialekt-bewusste Markierung aus der
+                // Vorabfrage überschreibt das im ChunkSchema.
+                geometryColumns = probedColumns.filter { it.isGeometry }.mapTo(HashSet()) { it.name },
             )
         } catch (t: Throwable) {
             // Cleanup bei Setup-Fehler — nicht den ChunkSequence-Lifecycle aufrufen,
@@ -270,7 +285,7 @@ abstract class AbstractJdbcDataReader : DataReader {
     private fun probeColumns(conn: Connection, table: String): List<ProbedColumn> =
         conn.prepareStatement("SELECT * FROM ${quoteTablePath(table)} WHERE 1 = 0").use { ps ->
             ps.executeQuery().use { rs ->
-                JdbcSelectQuerySupport.probedColumnsFromMetaData(rs.metaData)
+                JdbcSelectQuerySupport.probedColumnsFromMetaData(rs.metaData, ::isGeometryTypeName)
             }
         }
 
