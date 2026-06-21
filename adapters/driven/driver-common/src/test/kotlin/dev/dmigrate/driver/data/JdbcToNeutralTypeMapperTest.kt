@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.model.FloatPrecision
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.NeutralType
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -93,8 +94,34 @@ class JdbcToNeutralTypeMapperTest : FunSpec({
         JdbcToNeutralTypeMapper.map(Types.OTHER, "json", null, null) shouldBe NeutralType.Json
         JdbcToNeutralTypeMapper.map(Types.OTHER, "jsonb", null, null) shouldBe NeutralType.Json
         JdbcToNeutralTypeMapper.map(Types.OTHER, "xml", null, null) shouldBe NeutralType.Xml
-        JdbcToNeutralTypeMapper.map(Types.OTHER, "geometry", null, null) shouldBe NeutralType.Text()
         JdbcToNeutralTypeMapper.map(Types.OTHER, null, null, null) shouldBe NeutralType.Text()
+    }
+
+    // VA1a (Spatial-Slice): Geometrie wird typeName-basiert erkannt, unabhängig
+    // vom JDBC-Code — PostGIS meldet Types.OTHER+"geometry", MySQL
+    // Types.BINARY+"GEOMETRY" für dieselbe logische Geometriespalte.
+    test("geometry via sqlTypeName -> Geometry, unabhängig vom JDBC-Code") {
+        // PostGIS: Types.OTHER + "geometry" (vorher fälschlich Text)
+        JdbcToNeutralTypeMapper.map(Types.OTHER, "geometry", null, null) shouldBe
+            NeutralType.Geometry(geometryType = GeometryType.of("geometry"))
+        // MySQL: Types.BINARY + "GEOMETRY" (vorher fälschlich Binary); case-insensitiv
+        JdbcToNeutralTypeMapper.map(Types.BINARY, "GEOMETRY", null, null) shouldBe
+            NeutralType.Geometry(geometryType = GeometryType.of("geometry"))
+        // Subtypen bleiben erhalten
+        JdbcToNeutralTypeMapper.map(Types.OTHER, "point", null, null) shouldBe
+            NeutralType.Geometry(geometryType = GeometryType.of("point"))
+        JdbcToNeutralTypeMapper.map(Types.BINARY, "Polygon", null, null) shouldBe
+            NeutralType.Geometry(geometryType = GeometryType.of("polygon"))
+        JdbcToNeutralTypeMapper.map(Types.OTHER, "multilinestring", null, null) shouldBe
+            NeutralType.Geometry(geometryType = GeometryType.of("multilinestring"))
+        // SRID wird hier nicht abgeleitet (Schema-Reverse-Pfad, VA2)
+        JdbcToNeutralTypeMapper.map(Types.OTHER, "geometry", null, null) shouldBe
+            NeutralType.Geometry(geometryType = GeometryType.GEOMETRY, srid = null)
+    }
+
+    test("nicht-geometrischer BINARY-Typname bleibt Binary (keine False-Positives)") {
+        JdbcToNeutralTypeMapper.map(Types.BINARY, "VARBINARY", null, null) shouldBe NeutralType.Binary
+        JdbcToNeutralTypeMapper.map(Types.BINARY, "BLOB", null, null) shouldBe NeutralType.Binary
     }
 
     test("Unbekannte JDBC-Typen fallen auf Text zurueck") {
