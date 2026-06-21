@@ -135,6 +135,14 @@ nicht bloße Harness-Verkabelung.
     `smoke-spatial.sh`-Abschnitt `[xd]` mit asymmetrischen Koordinaten und
     **semantischem** Vergleich (`ST_Longitude/ST_Latitude` bzw. `ST_X/ST_Y`), grün
     in beiden Richtungen.
+  - **Projizierte/kartesische SRS (EPSG:25832 ETRS89/UTM32N „Rechtswert/Hochwert",
+    EPSG:3857 Web Mercator). ✅ LIVE-VERIFIZIERT, kein Code nötig.** Anders als bei
+    geografischen SRS gibt es hier keine lat-long-vs-long-lat-Frage — beide Dialekte
+    nutzen (E,N)=(X,Y), und `axis-order=long-lat` ist bei projizierten/kartesischen
+    SRS ein no-op (empirisch: MySQL 8.4 wirft **keinen** Fehler, anders als die Doku
+    nahelegt). Cross-Dialect PG↔MySQL transferiert Rechtswert/Hochwert beidseitig
+    verlustfrei (`smoke-spatial.sh` `xd_projected_roundtrip`, semantisch via
+    `ST_X/ST_Y`). Damit deckt der Smoke geografische **und** projizierte SRS ab.
 - **VA3 — MySQL SPATIAL-Index modellieren** (neutrales Index-Modell + Emit statt
   `blockSpatialIndex`). Nur falls „SPATIAL-Index belegt" als Kriterium bleibt.
 - **VA4 — SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`/`RecoverGeometry-
