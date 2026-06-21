@@ -182,7 +182,7 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         r.statements[1].sql shouldContainStr "AddGeometryColumn('places', 'shape', 0, 'GEOMETRY', 'XY')"
     }
 
-    test("§C.2: SQLite index on geometry column is blocked") {
+    test("§C.2: SQLite geometry index blocks without SpatiaLite profile") {
         val before = TableDefinition(
             columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
         )
@@ -195,8 +195,36 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
 
         r.statements.shouldBeEmpty()
         r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        r.diagnostics.single { it.code == "SPATIAL_INDEX_UNSUPPORTED" }
-            .message shouldContainStr "spatial-index metadata"
+        r.diagnostics.single { it.code == "SPATIAL_PROFILE_REQUIRED" }
+    }
+
+    test("VA4: SQLite geometry index renders as CreateSpatialIndex under SpatiaLite") {
+        val before = TableDefinition(
+            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val index = IndexDefinition(name = "idx_places_shape", columns = listOf(IndexColumn("shape")))
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("places" to before))
+        val desired = emptySchema().copy(tables = mapOf("places" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "places", indicesAdded = listOf(index))))
+        val r = planAndUp(
+            diff,
+            current = current,
+            desired = desired,
+            options = DdlGenerationOptions(
+                spatialProfile = SpatialProfile.SPATIALITE,
+                extensionAvailability = listOf(
+                    ExtensionAvailabilityDeclaration(
+                        dialect = "sqlite",
+                        extension = "spatialite",
+                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                    ),
+                ),
+            ),
+        )
+
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContainStr "CreateSpatialIndex('places', 'shape')"
     }
 
     test("DropColumn renders DROP COLUMN") {

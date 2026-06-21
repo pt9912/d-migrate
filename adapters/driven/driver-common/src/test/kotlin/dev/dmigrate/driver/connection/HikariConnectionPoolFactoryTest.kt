@@ -231,6 +231,31 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         ) shouldBe "PRAGMA busy_timeout = 5000"
     }
 
+    // ─── VA4: opt-in SpatiaLite ──────────────────────────────────
+    test("isSpatialiteRequested is true for SQLite with ?spatialite truthy") {
+        for (v in listOf("true", "1", "on", "yes", "TRUE", "On")) {
+            HikariConnectionPoolFactory.isSpatialiteRequested(
+                memoryConfig(mapOf("spatialite" to v)),
+            ) shouldBe true
+        }
+    }
+
+    test("isSpatialiteRequested is false without the flag or when not truthy") {
+        HikariConnectionPoolFactory.isSpatialiteRequested(memoryConfig()) shouldBe false
+        HikariConnectionPoolFactory.isSpatialiteRequested(
+            memoryConfig(mapOf("spatialite" to "false")),
+        ) shouldBe false
+    }
+
+    test("isSpatialiteRequested is false for non-SQLite dialects") {
+        val pg = ConnectionConfig(
+            dialect = DatabaseDialect.POSTGRESQL, host = "h", port = 5432,
+            database = "db", user = null, password = null,
+            params = mapOf("spatialite" to "true"),
+        )
+        HikariConnectionPoolFactory.isSpatialiteRequested(pg) shouldBe false
+    }
+
     test("connectionInitSqlFor returns null for statementTimeoutMs == 0 (disabled)") {
         HikariConnectionPoolFactory.connectionInitSqlFor(
             DatabaseDialect.POSTGRESQL, 0,

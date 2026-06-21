@@ -24,6 +24,9 @@
 #      liefert `type: spatial`, generate emittiert MySQL `SPATIAL INDEX` und
 #      cross-dialect PostGIS `USING GIST`; das angewandte MySQL-DDL erzeugt real
 #      einen SPATIAL-Index (information_schema.statistics.index_type=SPATIAL).
+#   5. SpatiaLite (VA4-Kern): `schema generate --spatial-profile spatialite` emittiert
+#      AddGeometryColumn(SRID/Subtyp) + CreateSpatialIndex; mod_spatialite ist im Image
+#      (`?spatialite=true` lädt es). Voller migrate--execute-Round-Trip = 5d-Folgearbeit.
 #
 # Kein externes Sample (winzige WKT-Inserts inline) — bewusst minimal; das volle
 # 5a/5b mit gepinntem Spatial-Sample (VA5) folgt. Voraussetzung am Host: docker,
@@ -298,5 +301,34 @@ idx_type=$(my_val va3_idx_target "SELECT DISTINCT index_type FROM information_sc
 [ "$idx_type" = "SPATIAL" ] || fail "[idx] applied index is not SPATIAL (got '$idx_type')"
 log "[idx] apply OK — real SPATIAL index exists in target catalog — VA3 confirmed"
 
-log "SUCCESS — VA1+VA2+VA2-X1+VA3 live-verified: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (geografisch 4326 long-lat-korrekt + projiziert EPSG:25832/3857/31466 Rechtswert/Hochwert, inkl. GK mit gedrehter AXIS-Deklaration); MySQL SPATIAL-Index reverse→generate→apply (cross-dialect → PostGIS USING GIST); native PG point unaffected (R1)."
+# ─── 5. SpatiaLite generate (VA4-Kern, SQLite) ─────────────────────
+# Belegt VA4 reproduzierbar: `schema generate --spatial-profile spatialite` emittiert
+# AddGeometryColumn (mit SRID/Subtyp) + CreateSpatialIndex; ohne das Profil bleibt
+# der Geometrie-Index geblockt. mod_spatialite ist im dmigrate-Image installiert und
+# wird per `?spatialite=true` geladen (Connection-Beleg). Der volle migrate--execute-
+# Round-Trip (Index real in der .db) folgt mit den 5d-Befunden InitSpatialMetaData +
+# Diff-CreateTable-Spatial-Index (docs/planning/open/spatialite-migrate-roundtrip.md).
+log "[lite] schema generate --spatial-profile spatialite..."
+cat > "$EXAMPLES_DIR/.cache/va4-schema.yaml" <<'YAML'
+name: "va4 spatialite"
+version: "1.0.0"
+tables:
+  places:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      name: { type: text, max_length: 64 }
+      shape: { type: geometry, geometry_type: point, srid: 4326 }
+    indices:
+      - { name: idx_places_shape, columns: [shape], type: spatial }
+YAML
+$COMPOSE run --rm dmigrate schema generate --source /work/.cache/va4-schema.yaml \
+    --target sqlite --spatial-profile spatialite --deterministic --output /work/.cache/va4-lite.sql \
+    > /tmp/va4-gen.log 2>&1 || { cat /tmp/va4-gen.log; fail "[lite] generate spatialite failed"; }
+grep -qi "AddGeometryColumn('places', 'shape', 4326, 'POINT'" "$EXAMPLES_DIR/.cache/va4-lite.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/va4-lite.sql"; fail "[lite] DDL missing AddGeometryColumn(... 4326, POINT)"; }
+grep -qi "CreateSpatialIndex('places', 'shape')" "$EXAMPLES_DIR/.cache/va4-lite.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/va4-lite.sql"; fail "[lite] DDL missing CreateSpatialIndex"; }
+log "[lite] generate OK — AddGeometryColumn(SRID 4326, POINT) + CreateSpatialIndex (VA4)"
+
+log "SUCCESS — VA1+VA2+VA2-X1+VA3 live-verified + VA4 generate-verified: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (geografisch 4326 long-lat-korrekt + projiziert EPSG:25832/3857/31466 Rechtswert/Hochwert, inkl. GK mit gedrehter AXIS-Deklaration); MySQL SPATIAL-Index reverse→generate→apply (cross-dialect → PostGIS USING GIST); SpatiaLite generate AddGeometryColumn+CreateSpatialIndex; native PG point unaffected (R1)."
 log "stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."

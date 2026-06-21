@@ -220,6 +220,17 @@ internal class SqliteDiffRenderContext(
     }
 
     /**
+     * VA4: erste Geometriespalte, die [index] indiziert (für `CreateSpatialIndex`,
+     * das genau eine Geometriespalte adressiert), oder null. Schema-Auswahl wie
+     * [indexTouchesGeometry] (gewünschtes Schema UP, aktuelles DOWN).
+     */
+    fun geometryIndexColumn(table: String, index: IndexDefinition): String? {
+        val schema = if (direction == SqliteRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return index.columnNames.firstOrNull { name -> columns[name]?.type is NeutralType.Geometry }
+    }
+
+    /**
      * Emits a single statement attached to a *set* of operation IDs.
      * Used by the RebuildTable pipeline where one rebuild covers
      * multiple business operations on the same table.

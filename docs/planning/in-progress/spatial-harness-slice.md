@@ -21,7 +21,12 @@
 > `IndexType.SPATIAL`+`SPGIST`; MySQL `SPATIAL INDEX` reverse/generate/diff (Block raus),
 > PostGIS `USING GIST`/`SPGIST` (kein `USING SPATIAL`), B-Tree-auf-Geometrie bleibt
 > geblockt; `[idx]`-Smoke grün (reverse→generate→apply, realer SPATIAL-Index im Katalog).
-> Offen: VA4 (SpatiaLite-Index), VA5 (Sample-Pin), volle Sub-Slices 5a–5d.
+> **VA4 (SQLite/SpatiaLite) KERN ERLEDIGT**: SQLite `CreateSpatialIndex` (Block raus),
+> `mod_spatialite` im Image + opt-in `?spatialite=true`-Loading, `migrate --spatial-profile`;
+> `[lite]`-generate live-verifiziert (`AddGeometryColumn`+`CreateSpatialIndex`). Voller
+> SpatiaLite-`migrate --execute`-Round-Trip = 5d-Folgearbeit (2 Restbefunde:
+> `InitSpatialMetaData`, Diff-`CreateTable`-Index → [`open/spatialite-migrate-roundtrip.md`](../open/spatialite-migrate-roundtrip.md)).
+> Offen: VA5 (Sample-Pin), volle Sub-Slices 5a–5d.
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
@@ -57,10 +62,10 @@ Generierung fehlen — Phase 5 muss sie zuerst bauen.
 | **Geometrie-WERT-Bindung** (`data transfer`/`export`/`import`) | ❌ **fehlt** | `--spatial-profile` **nicht** auf `DataTransferCommand`/`DataImportCommand`; kein WKB/WKT-Konverter (vgl. `JdbcForeignValueNormalizer`); kein dialekt-spezifisches Geometrie-Binding in den `*TableImportSession` |
 | Import-Preflight für Geometrie | ⚠️ **permissiv** | `ImportTypeCompatibility` → `Geometry -> true` (bedingungslos; winkt auch Geometrie→Nicht-Geometrie durch) |
 | **MySQL SPATIAL-Index** | ✅ **VA3** | `IndexType.SPATIAL`; Reverse + `CREATE SPATIAL INDEX`-Emit (Block entfernt) |
-| **SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`) | ❌ **aktiv geblockt** | `SqliteDiffSimpleOps.blockSpatialIndex` |
-| **PG-Reverse SRID/Subtyp-Capture** | ❌ **fehlt** | `PostgresTypeMapping.kt:132` liefert bare `NeutralType.Geometry()` |
-| **MySQL-Reverse SRID-Capture** | ❌ **fehlt** | `MysqlTypeMapping` baut `Geometry(geometryType=…)` **ohne** `srid` |
-| `mod_spatialite` im CLI-Image + Extension-Loading | ❌ **fehlt** | Dockerfile runtime-Stage (`eclipse-temurin`); kein `enableLoadExtension`/`load_extension` |
+| **SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`) | ✅ **VA4** | `SqliteDiffSimpleOps.createSpatialIndex` + FULL-Generate `spatialIndexStatement` (Block raus) |
+| **PG-Reverse SRID/Subtyp-Capture** | ✅ **VA2** | `geometry_columns` → `geometrySubtype`/`geometrySrid` |
+| **MySQL-Reverse SRID-Capture** | ✅ **VA2** | `information_schema.columns.srs_id` → `ColumnInput.srsId` |
+| `mod_spatialite` im CLI-Image + Extension-Loading | ✅ **VA4** | Dockerfile-runtime `libsqlite3-mod-spatialite`; opt-in `?spatialite=true` → `load_extension` |
 
 → **Konsequenz:** „Geometrie-Werte round-trippen" und „räumlicher Index belegt" sind
 mit dem heutigen Code **nicht erfüllbar** — sie sind Implementierungs-Vorarbeit,
@@ -174,12 +179,28 @@ nicht bloße Harness-Verkabelung.
     `schema reverse` (`type: spatial`) → `schema generate` MySQL (`SPATIAL INDEX`) +
     PostGIS (`USING GIST`) → angewandtes MySQL-DDL erzeugt real einen Index mit
     `information_schema.statistics.index_type = SPATIAL`.
-- **VA4 — SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`/`RecoverGeometry-
-  Column`) **+** `mod_spatialite` in der runtime-Dockerfile-Stage **+** Extension-
-  Loading im sqlite-Treiber (`enableLoadExtension(true)` + `load_extension`), nur
-  aktiv bei `--spatial-profile spatialite`. Dabei den **bestehenden** deklarativen
-  `requireExtension`/`ExtensionAvailabilityStatus`-Gate (`SqliteDiffRenderContext`)
-  nutzen statt einen parallelen Mechanismus zu bauen.
+- **VA4 — SQLite/SpatiaLite. ✅ KERN ERLEDIGT (generate live-verifiziert);** voller
+  `migrate --execute`-Round-Trip = 5d-Folgearbeit.
+  - **Spatial-Index:** SQLite emittiert `CreateSpatialIndex`/`DisableSpatialIndex`
+    statt zu blocken (Diff `renderAddIndex`/`renderDropIndex` + FULL-Generate
+    `generateIndices`/`spatialIndexStatement`); der „index-on-geometry"-Tabellenblock
+    (E052) entfällt. Nur unter `--spatial-profile spatialite` + verfügbarer Extension.
+  - **mod_spatialite:** in der runtime-Dockerfile-Stage installiert
+    (`libsqlite3-mod-spatialite`); **opt-in Extension-Loading** per Connection-Param
+    `?spatialite=true` → `enable_load_extension` + `SELECT load_extension('mod_spatialite')`
+    (`HikariConnectionPoolFactory.isSpatialiteRequested`); ohne Flag SQLite unverändert.
+  - **migrate-Verkabelung:** `schema migrate --spatial-profile` neu (analog generate,
+    durch die ganze Kette); die SpatiaLite-Extension-Verfügbarkeit wird aus der Ziel-
+    `?spatialite=true`-Connection als `VERIFIED_PRESENT` abgeleitet (hebt das
+    `requireExtension`-`EXTENSION_DEPENDENCY_UNKNOWN` auf).
+  - **Live-Beleg** (`smoke-spatial.sh` `[lite]`): `schema generate --spatial-profile
+    spatialite` emittiert `AddGeometryColumn(..., 4326, 'POINT', 'XY')` +
+    `CreateSpatialIndex`; mod_spatialite lädt gegen `?spatialite=true`.
+  - **Offen (5d):** voller `migrate --execute`-Round-Trip — zwei Restbefunde in
+    [`open/spatialite-migrate-roundtrip.md`](../open/spatialite-migrate-roundtrip.md):
+    (1) `InitSpatialMetaData()`-Bootstrap fehlt vor dem ersten `AddGeometryColumn`;
+    (2) Diff-`CreateTable` rendert den Geometrie-Index als normalen `CREATE INDEX`
+    statt `CreateSpatialIndex`.
 - **VA5 — Spatial-Sample-Portabilitäts-Spike + Katalog-Eintrag** (siehe unten).
 
 ## Scope-Skizze (Harness-Sub-Slices, je nach VA)

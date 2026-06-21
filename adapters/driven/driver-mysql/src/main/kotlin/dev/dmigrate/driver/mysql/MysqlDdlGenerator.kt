@@ -176,7 +176,11 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         constraint: ConstraintDefinition, notes: MutableList<TransformationNote>,
     ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes)
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> =
         indexPartitionHelper.generateIndices(tableName, table)
 
     // ── Circular FK references ───────────────────

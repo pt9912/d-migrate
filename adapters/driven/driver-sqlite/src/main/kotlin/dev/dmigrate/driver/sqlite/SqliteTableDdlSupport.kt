@@ -53,9 +53,13 @@ internal class SqliteTableDdlSupport(
         return statements
     }
 
-    fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
+    fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> =
         generatedIndexNames(tableName, table.indices).mapIndexedNotNull { position, indexName ->
-            generateIndex(tableName, table.indices[position], indexName)
+            generateIndex(tableName, table.indices[position], indexName, table.columns, options)
         }
 
     private fun checkSpatialMetadataBlocks(
@@ -79,12 +83,8 @@ internal class SqliteTableDdlSupport(
                 )
             }
         }
-        for (index in table.indices) {
-            val blockingColumn = index.columnNames.firstOrNull { it in geometryColumnNames }
-            if (blockingColumn != null) {
-                return blockTableForSpatialMetadata(name, blockingColumn, "index on geometry column")
-            }
-        }
+        // VA4: ein Index auf einer Geometriespalte blockt die Tabelle NICHT mehr —
+        // er wird separat als SpatiaLite `CreateSpatialIndex` emittiert (generateIndices).
         return null
     }
 
@@ -141,7 +141,19 @@ internal class SqliteTableDdlSupport(
             )
         }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement? {
+    private fun generateIndex(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+        columns: Map<String, ColumnDefinition>,
+        options: DdlGenerationOptions,
+    ): DdlStatement? {
+        // VA4: ein Index auf einer Geometriespalte → SpatiaLite `CreateSpatialIndex`
+        // (R*Tree). Nur unter `--spatial-profile spatialite`; sonst geskippt mit Note.
+        val geometryColumn = index.columnNames.firstOrNull { columns[it]?.type is NeutralType.Geometry }
+        if (geometryColumn != null) {
+            return spatialIndexStatement(tableName, geometryColumn, indexName, options)
+        }
         if (index.type != IndexType.BTREE) {
             return DdlStatement(
                 "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",
@@ -173,6 +185,36 @@ internal class SqliteTableDdlSupport(
             append(";")
         }
         return DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)"))
+    }
+
+    /**
+     * VA4: SpatiaLite `CreateSpatialIndex` für einen Geometrie-Index. Ohne
+     * `--spatial-profile spatialite` wird er übersprungen (Note), da der Spatial-
+     * Index die SpatiaLite-Extension + Geometrie-Metadaten voraussetzt.
+     */
+    private fun spatialIndexStatement(
+        tableName: String,
+        geometryColumn: String,
+        indexName: String,
+        options: DdlGenerationOptions,
+    ): DdlStatement {
+        if (options.spatialProfile != SpatialProfile.SPATIALITE) {
+            return DdlStatement(
+                "-- Index ${quoteIdentifier(indexName)} skipped: geometry index requires --spatial-profile spatialite",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = "SPATIAL_PROFILE_REQUIRED",
+                        objectName = indexName,
+                        message = "Spatial index '$indexName' on table '$tableName' requires the SpatiaLite profile.",
+                        hint = "Re-run schema generate with --spatial-profile spatialite to emit CreateSpatialIndex.",
+                    )
+                ),
+            )
+        }
+        val escapedTable = tableName.replace("'", "''")
+        val escapedColumn = geometryColumn.replace("'", "''")
+        return DdlStatement("SELECT CreateSpatialIndex('$escapedTable', '$escapedColumn');")
     }
 
     private fun renderIndexColumn(column: IndexColumn): String =

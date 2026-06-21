@@ -416,7 +416,11 @@ internal class TestDdlGenerator(
         return if (emitBlankSequence) listOf(DdlStatement("   ")) else emptyList()
     }
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> {
         callOrder += "indices:$tableName"
         return emptyList()
     }

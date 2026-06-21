@@ -82,8 +82,12 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
     ): List<DdlStatement> =
         tableSupport.generateTable(name, table, schema, deferredFks, deferredConstraints, options)
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
-        tableSupport.generateIndices(tableName, table)
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> =
+        tableSupport.generateIndices(tableName, table, options)
 
     override fun handleCircularReferences(
         edges: List<CircularFkEdge>,

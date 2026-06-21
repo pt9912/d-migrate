@@ -177,11 +177,15 @@ internal object SqliteDiffSimpleOps {
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
+            if (ctx.indexTouchesGeometry(table, op.index)) {
+                disableSpatialIndex(op, ctx, table, op.index)
+                return
+            }
             ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
             return
         }
         if (ctx.indexTouchesGeometry(table, op.index)) {
-            blockSpatialIndex(op, ctx, table)
+            createSpatialIndex(op, ctx, table, op.index)
             return
         }
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
@@ -191,10 +195,14 @@ internal object SqliteDiffSimpleOps {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             if (ctx.indexTouchesGeometry(table, op.index)) {
-                blockSpatialIndex(op, ctx, table)
+                createSpatialIndex(op, ctx, table, op.index)
                 return
             }
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
+            return
+        }
+        if (ctx.indexTouchesGeometry(table, op.index)) {
+            disableSpatialIndex(op, ctx, table, op.index)
             return
         }
         ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
@@ -284,9 +292,8 @@ internal object SqliteDiffSimpleOps {
         table.constraints.firstConstraintGeometryColumn(geometryColumnNames)?.let { column ->
             return "table-level constraint references geometry column `$column`"
         }
-        table.indices.firstIndexGeometryColumn(geometryColumnNames)?.let { column ->
-            return "index references geometry column `$column`"
-        }
+        // VA4: ein Index auf einer Geometriespalte blockt nicht mehr — er wird als
+        // SpatiaLite `CreateSpatialIndex` emittiert (createSpatialIndex/renderAddIndex).
         return null
     }
 
@@ -300,9 +307,6 @@ internal object SqliteDiffSimpleOps {
 
     private fun List<ConstraintDefinition>.firstConstraintGeometryColumn(geometryColumnNames: Set<String>): String? =
         firstNotNullOfOrNull { constraint -> constraint.columns.orEmpty().firstOrNull { it in geometryColumnNames } }
-
-    private fun List<IndexDefinition>.firstIndexGeometryColumn(geometryColumnNames: Set<String>): String? =
-        firstNotNullOfOrNull { index -> index.columnNames.firstOrNull { it in geometryColumnNames } }
 
     private fun blockSpatialMetadata(
         op: DiffOperation,
@@ -318,14 +322,32 @@ internal object SqliteDiffSimpleOps {
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 
-    private fun blockSpatialIndex(op: DiffOperation, ctx: SqliteDiffRenderContext, table: String) {
-        ctx.skip(
-            op,
-            "Operation ${op.id} targets an index on a geometry column in `$table`. SpatiaLite spatial " +
-                "indexes require explicit spatial-index metadata not represented by the neutral index model.",
-            code = "SPATIAL_INDEX_UNSUPPORTED",
-        )
-        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+    /**
+     * VA4: ein Index auf einer Geometriespalte → SpatiaLite `CreateSpatialIndex`
+     * (R*Tree), statt zu blocken. Nur unter `--spatial-profile spatialite` +
+     * verfügbarer Extension (`guardSpatiaLite`).
+     */
+    private fun createSpatialIndex(
+        op: DiffOperation,
+        ctx: SqliteDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        if (!guardSpatiaLite(op, ctx, "spatial index on `$table`")) return
+        val geomColumn = ctx.geometryIndexColumn(table, index) ?: return
+        ctx.emit(op, "SELECT CreateSpatialIndex('${table.sqlString()}', '${geomColumn.sqlString()}');")
+    }
+
+    /** VA4: Gegenstück zu [createSpatialIndex] für den DOWN/Drop-Pfad. */
+    private fun disableSpatialIndex(
+        op: DiffOperation,
+        ctx: SqliteDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        if (!guardSpatiaLite(op, ctx, "spatial index drop on `$table`")) return
+        val geomColumn = ctx.geometryIndexColumn(table, index) ?: return
+        ctx.emit(op, "SELECT DisableSpatialIndex('${table.sqlString()}', '${geomColumn.sqlString()}');")
     }
 
     private fun addGeometryColumnSql(table: String, column: String, definition: ColumnDefinition): String {

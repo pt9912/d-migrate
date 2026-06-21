@@ -86,6 +86,18 @@ internal class SqliteCapabilityDdlSupport(
                 }
             }
         }
+        // VA4: SpatiaLite-Spatial-Index invertieren (Rollback-Symmetrie zum
+        // FULL-Generate-`CreateSpatialIndex`).
+        if (sql.startsWith("SELECT CreateSpatialIndex(", ignoreCase = true)) {
+            val argsStart = sql.indexOf('(') + 1
+            val argsEnd = sql.lastIndexOf(')')
+            if (argsStart > 0 && argsEnd > argsStart) {
+                val args = sql.substring(argsStart, argsEnd).split(',').map { it.trim() }
+                if (args.size >= 2) {
+                    return DdlStatement("SELECT DisableSpatialIndex(${args[0]}, ${args[1]});")
+                }
+            }
+        }
         return null
     }
 

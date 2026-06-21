@@ -400,6 +400,15 @@ LABEL org.opencontainers.image.title="d-migrate" \
 
 WORKDIR /opt/d-migrate
 
+# VA4 (Spatial): SpatiaLite-Extension für das SQLite-`spatialite`-Profil. Wird zur
+# Laufzeit NUR geladen, wenn eine Connection sie per `?spatialite=true` anfordert
+# (`SELECT load_extension('mod_spatialite')`); ohne das Flag bleibt SQLite unberührt.
+# Das Ubuntu-Noble-Paket stellt `/usr/lib/<triplet>/mod_spatialite.so` bereit, das
+# `load_extension('mod_spatialite')` über den Standard-Library-Pfad findet.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libsqlite3-mod-spatialite \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install the distribution produced by the `application` plugin.
 COPY --from=build /src/adapters/driving/cli/build/install/d-migrate/ /opt/d-migrate/
 

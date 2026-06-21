@@ -28,6 +28,8 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             "mysql" to DatabaseDialect.MYSQL,
             "sqlite" to DatabaseDialect.SQLITE,
         )
+    val spatialProfile by option("--spatial-profile",
+        help = "Spatial type handling profile (postgis, native, spatialite, none)")
     val output by option("--output", help = "Up-SQL output file").path()
     val rollbackOutput by option("--rollback-output", help = "Down-SQL output file").path()
     val report by option("--report", help = "Report output file (required with --execute)").path()
@@ -105,6 +107,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
                 source = source,
                 target = target,
                 dialect = dialectFlag,
+                spatialProfile = spatialProfile,
                 output = output,
                 rollbackOutput = rollbackOutput,
                 report = report,

@@ -11,10 +11,13 @@ import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.sqliteContext
+import dev.dmigrate.driver.ExtensionAvailabilityDeclaration
+import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.RoutineCapabilityDefaults
+import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
@@ -346,8 +349,12 @@ internal class SchemaMigrateRenderPipeline(
             )
             DatabaseDialect.POSTGRESQL -> DdlDialectContext.None
         }
+        // VA4: `--spatial-profile` (z. B. spatialite) hat Vorrang; null → Default.
+        val spatialProfile = request.spatialProfile?.let { SpatialProfile.fromCliName(it) }
+            ?: SpatialProfilePolicy.defaultFor(dialect)
         return DdlGenerationOptions(
-            spatialProfile = SpatialProfilePolicy.defaultFor(dialect),
+            spatialProfile = spatialProfile,
+            extensionAvailability = spatialiteExtensionDeclarations(dialect, spatialProfile, request.target),
             executionMode = if (request.execute) ExecutionMode.EXECUTE else ExecutionMode.STANDALONE,
             checkPreflights = checkDeclarations,
             extensionInstallPolicy = if (request.allowExtensionInstall) {
@@ -358,6 +365,45 @@ internal class SchemaMigrateRenderPipeline(
             strictGapOperations = request.strictGapOperations,
             dialectContext = dialectContext,
         )
+    }
+
+    /**
+     * VA4: leitet die SpatiaLite-Extension-Verfügbarkeit aus der Ziel-Connection ab.
+     * Trägt die Ziel-URL `?spatialite=true`, lädt der Connect `mod_spatialite` (sonst
+     * scheitert er) — die Extension ist damit verifiziert verfügbar, und der
+     * `requireExtension`-Gate (sonst EXTENSION_DEPENDENCY_UNKNOWN) wird aufgehoben.
+     * Greift nur bei SQLite + `--spatial-profile spatialite`.
+     */
+    private fun spatialiteExtensionDeclarations(
+        dialect: DatabaseDialect,
+        spatialProfile: SpatialProfile,
+        target: String,
+    ): List<ExtensionAvailabilityDeclaration> =
+        if (dialect == DatabaseDialect.SQLITE &&
+            spatialProfile == SpatialProfile.SPATIALITE &&
+            targetRequestsSpatialite(target)
+        ) {
+            listOf(
+                ExtensionAvailabilityDeclaration(
+                    dialect = "sqlite",
+                    extension = "spatialite",
+                    status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                ),
+            )
+        } else {
+            emptyList()
+        }
+
+    /** Ob die Ziel-URL einen truthy `spatialite`-Query-Param trägt (vgl. HikariConnectionPoolFactory). */
+    private fun targetRequestsSpatialite(target: String): Boolean {
+        val query = target.substringAfter('?', "")
+        if (query.isEmpty()) return false
+        return query.split('&').any { pair ->
+            val key = pair.substringBefore('=')
+            val value = pair.substringAfter('=', "")
+            key.equals("spatialite", ignoreCase = true) &&
+                value.lowercase() in setOf("true", "1", "on", "yes")
+        }
     }
 
     private fun renderUp(

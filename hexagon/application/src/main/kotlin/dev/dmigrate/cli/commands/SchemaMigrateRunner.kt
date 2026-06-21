@@ -469,6 +469,14 @@ data class SchemaMigrateRequest(
      * DB-target dialect are present, they must match (Exit 2).
      */
     val dialect: DatabaseDialect? = null,
+    /**
+     * VA4: optionales Spatial-Profil (`postgis`/`native`/`spatialite`/`none`),
+     * verdrahtet von `schema migrate --spatial-profile` (analog `schema generate`).
+     * `null` → dialekt-Default ([SpatialProfilePolicy.defaultFor]); ein gesetzter
+     * Wert (z. B. `spatialite`) schaltet die Geometrie-DDL für `migrate`/`--execute`
+     * frei. CLI-String, im Renderer über [SpatialProfile.fromCliName] aufgelöst.
+     */
+    val spatialProfile: String? = null,
     val output: Path? = null,
     val report: Path? = null,
     val rollbackOutput: Path? = null,

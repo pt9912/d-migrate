@@ -216,7 +216,11 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     // ── Indices ──────────────────────────────────
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> {
         val generatedNames = indexNameAllocator.namesFor(tableName, table.indices)
         return table.indices.mapIndexed { position, index ->
             generateIndex(tableName, index, generatedNames[position], table.columns)

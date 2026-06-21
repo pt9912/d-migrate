@@ -49,7 +49,7 @@ abstract class AbstractDdlGenerator(
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
             if (name in blockedTables) continue
-            statements += generateIndices(name, table)
+            statements += generateIndices(name, table, options)
         }
 
         preSkipCount = skipped.size
@@ -140,7 +140,11 @@ abstract class AbstractDdlGenerator(
     ): List<DdlStatement>
     abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
     abstract fun generateSequences(schema: SchemaDefinition, skipped: MutableList<SkippedObject>): List<DdlStatement>
-    abstract fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement>
+    abstract fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions = DdlGenerationOptions(),
+    ): List<DdlStatement>
     abstract fun handleCircularReferences(edges: List<CircularFkEdge>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateViews(views: Map<String, ViewDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateFunctions(functions: Map<String, FunctionDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
