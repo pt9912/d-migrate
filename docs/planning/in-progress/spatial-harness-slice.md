@@ -231,8 +231,10 @@ Katalog ergänzen + Kandidat fixieren + pinnen.
 
 - Phase 0–3-Harness-Muster (compose + Scripts + gepinnte Baseline) — **vorhanden**.
 - DDL-Typ-Abbildung + Profil-Policy + `NeutralType.Geometry` — **vorhanden**.
-- `postgis/postgis`-Image (5a) — Pull genügt.
-- **Code-Lücken (VA1–VA4)** — **zu bauen** (siehe oben).
+- `postgis/postgis`-Image (5a) — Pull genügt (im compose bereits verdrahtet).
+- **VA1 (Wert-Transfer), VA2 (SRID + Achsen-X1), VA3 (Index)** — **erledigt + live-verifiziert**;
+  **VA4 (SQLite/SpatiaLite)** — **Kern erledigt** (generate live), voller `migrate`-
+  Round-Trip = 5d-Folgearbeit ([`open/spatialite-migrate-roundtrip.md`](../open/spatialite-migrate-roundtrip.md)).
 - Spatial-Sample-Pin (VA5) — **zu entscheiden**.
 
 ## Akzeptanzkriterien (realistisch, nach Review)

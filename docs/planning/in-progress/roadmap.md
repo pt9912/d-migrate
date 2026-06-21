@@ -564,6 +564,7 @@ nicht als Enterprise-BI-Plattform (siehe
 | QA      | [Performance-Benchmarks dokumentiert](../../operations/performance-benchmarks.md) | — | ✅¹ |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2 | ⛔² |
 | QA      | [Pilot-Blocker beheben (P1/P2/P3)](../done-archive/pilot-validation-0.9.9.md) | — | ✅³ |
+| QA      | Sample-DB-E2E-Harness (Phase 0–3 DoD; Phase 5 Spatial in Arbeit) | — | 🚧⁴ |
 
 ¹ Methodik + aktuelle Budgets dokumentiert. Die acceptance-grade Benchmarks
 **LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
@@ -581,6 +582,19 @@ Index-Namen-Kollision, K2 Routinen-Ordering) sind am 2026-06-18 geliefert
 ([`pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)); alle fünf
 Pilot-Reports + der [P2-Tracker](../done-archive/pilot-blocker-p2-tracker.md)
 liegen unter `../done-archive/`. **Kein P1/P2/P3-Cross-Dialect-Befund mehr offen.**
+
+⁴ docker-compose-basierter E2E-Smoke-Harness (`examples/sample-db/`, [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md));
+ergänzende QA-Infrastruktur, **kein** RC-Gate-Kriterium. **Phase 0–3 DoD-komplett
+(2026-06-21):** Pagila/PG-Round-Trip IDENTICAL (0 Diffs), Cross-Dialect Sakila
+MySQL→PG + Pagila PG→MySQL, Chinook/SQLite-Round-Trip, Employees-Scale
+(export-`--resume` + Chunking, Dual-Target). **Phase 5 Spatial in Arbeit
+(2026-06-21):** VA1 (Geometrie-Wert-Transfer als WKB), VA2 (SRID-Reverse + Daten-Bind
+mit Ziel-SRID + Cross-Dialect-Achsenreihenfolge `axis-order=long-lat`), VA3 (räumliche
+Indizes — MySQL `SPATIAL INDEX`, PostGIS `GiST`/`SP-GiST`) erledigt + live-verifiziert;
+VA4 (SQLite/SpatiaLite-Index + `mod_spatialite`) Kern erledigt (generate live), voller
+`migrate`-Round-Trip als 5d-Folgearbeit; offen VA5 (Spatial-Sample-Pin) + Sub-Slices
+5a–5d. Slice-Docs: [`sample-db-integration-harness.md`](sample-db-integration-harness.md),
+[`spatial-harness-slice.md`](spatial-harness-slice.md).
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
