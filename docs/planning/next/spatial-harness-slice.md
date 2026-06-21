@@ -1,104 +1,112 @@
 # Plan: Sample-DB-Harness Phase 5 — Spatial (PostGIS + MySQL native + Spatialite)
 
 > Dokumenttyp: Next-Plan (Folge-Slice von [`../in-progress/sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
-> Status: Entwurf (2026-06-21). Scope ausgearbeitet, **Bau folgt**; zwei
-> Entscheidungen vorab zu treffen (Spatial-Sample-Pin, Spatialite-Extension-Mechanik).
-> Trigger: Slice-Grenze Phase 0–3 ist DoD-komplett; Phase 5 ist ein ausgegliederter
-> Folge-Slice. Review-Befund 2026-06-21: die ursprüngliche Phase-5-Skizze
-> („PostGIS + Spatialite") hatte das **MySQL-`native`-Profil vergessen**.
+> Status: Entwurf, **überarbeitet nach Plan-Review (2026-06-21)**. Scope ausgearbeitet,
+> **Bau folgt**. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
+> „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
+> und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
+> Profil-Policy und PG-GIST-Gate sind implementiert. Phase 5 = **implementieren + absichern**.
+> Trigger: Slice-Grenze Phase 0–3 ist DoD-komplett; Phase 5 ist ausgegliederter Folge-Slice.
+> Review-Befund 2026-06-21 (a): die ursprüngliche Skizze hatte das **MySQL-`native`-Profil
+> vergessen**; (b) der Slice unterschätzte den Implementierungsumfang (siehe „Code-Lücken").
 > Referenzen: ADR 0014 (Harness-Mechanik), ADR 0004 (Planning-Struktur),
 > ADR 0015 (NeutralType-Präzedenz, kein Native-Passthrough),
-> [`../open/test-database-candidates.md`](../open/test-database-candidates.md)
-> (Kandidaten-Katalog). Nicht-blockierend für 1.0.0 (Spatial ist Zusatz-Abdeckung).
+> [`../open/test-database-candidates.md`](../open/test-database-candidates.md) (Kandidaten-Katalog).
+> Nicht-blockierend für 1.0.0 (Spatial ist Zusatz-Abdeckung).
 
 ## Ziel
 
-Den im Code bereits implementierten Spatial-Support **end-to-end gegen das echte
-CLI** absichern — analog zu Phase 1–3, aber für **alle drei** Dialekt-Spatial-
-Profile **plus** Cross-Dialect-Spatial. d-migrate kennt
-`--spatial-profile postgis|native|spatialite|none` (auf `schema generate` und
-`data export`) und modelliert Geometrie als first-class `NeutralType.Geometry`
-(parameterloser Native-Passthrough-Verzicht, ADR 0015-Muster).
+Spatial-Round-Trips end-to-end gegen das echte CLI absichern — für **alle drei**
+Dialekt-Spatial-Profile (`postgis`/`native`/`spatialite`) **plus** Cross-Dialect-
+Spatial. d-migrate kennt `--spatial-profile postgis|native|spatialite|none` (auf
+`schema generate` und `data export`) und modelliert Geometrie als first-class
+`NeutralType.Geometry` (ADR 0015-Muster). **Aber:** der *Daten*-Transfer-Pfad und
+die Spatial-Index-Generierung fehlen — Phase 5 muss sie zuerst bauen.
 
-## Spatial-Profil-Matrix (eines je Dialekt)
+## Was ist implementiert vs. Code-Lücken (Review-verifiziert)
 
-| Dialekt | Profil | Server/Engine | Code-Status | Image-Arbeit? |
-|---|---|---|---|---|
-| PostgreSQL | `postgis` | `postgis/postgis`-Image | implementiert (`PostgresTypeMapping`, `PostgresIndexOpClass` GIST) | nein (DB-Image) |
-| MySQL | `native` | `mysql:8.4` (Spatial **eingebaut**) | implementiert (`MysqlTypeMapping`, `MysqlColumnConstraintHelper` GEOMETRY+SRID) | nein |
-| SQLite | `spatialite` | `mod_spatialite` (Loadable-Extension) | DDL implementiert (`SqliteDiffSimpleOps` SpatiaLite-Guards) | **ja** (CLI-Image + Extension-Loading) |
+| Baustein | Status | Beleg |
+|---|---|---|
+| `SpatialProfile`-Enum + Policy (`defaultFor`/`allowedFor`) | ✅ implementiert | `DdlGenerationOptions.kt` |
+| PG `geometry(Subtype,srid)`-DDL + GIST-Gate | ✅ implementiert | `PostgresTypeMapper.kt`, `PostgresIndexOpClass.kt` |
+| MySQL `GEOMETRY/POINT/…`-DDL + SRID-**Kommentar-Hint** | ✅ teilweise | `MysqlColumnConstraintHelper.kt` (`/*!80003 SRID … */` + Warnung W120) |
+| SQLite SpatiaLite `AddGeometryColumn`-DDL | ✅ teilweise | `SqliteDiffSimpleOps.kt` |
+| **Geometrie-WERT-Transfer** (`data transfer`/`export`/`import`) | ❌ **fehlt** | `--spatial-profile` **nicht** auf `DataTransferCommand`/`DataImportCommand`; kein WKB/WKT-Konverter (vgl. `JdbcForeignValueNormalizer`) |
+| **MySQL SPATIAL-Index** | ❌ **aktiv geblockt** | `MysqlDiffOtherOps.blockSpatialIndex` → `SPATIAL_INDEX_UNSUPPORTED` |
+| **SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`) | ❌ **aktiv geblockt** | `SqliteDiffSimpleOps.blockSpatialIndex` |
+| **PG-Reverse SRID/Subtyp-Capture** | ❌ **fehlt** | `PostgresTypeMapping.kt:132` liefert bare `NeutralType.Geometry()` |
+| `mod_spatialite` im CLI-Image + Extension-Loading | ❌ **fehlt** | Dockerfile runtime-Stage (`eclipse-temurin`); kein `enableLoadExtension`/`load_extension` |
 
-Belege: `SpatialProfile.defaultFor` (PG→POSTGIS, MySQL→NATIVE, SQLite→NONE) +
-`allowedFor` (PG→{POSTGIS,NONE}, MySQL→{NATIVE,NONE}, SQLite→{SPATIALITE,NONE}).
+→ **Konsequenz:** „Geometrie-Werte round-trippen" und „räumlicher Index belegt" sind
+mit dem heutigen Code **nicht erfüllbar** — sie sind Implementierungs-Vorarbeit,
+nicht bloße Harness-Verkabelung.
 
-## Scope-Skizze (Sub-Slices)
+## Code-Vorarbeitspakete (vor den Harness-Sub-Slices)
 
-- **5a — PostGIS Round-Trip (PG).** compose-Service `postgis/postgis` (PG-Superset);
-  Spatial-Sample laden → `reverse` → `validate` → `generate --target postgresql
-  --spatial-profile postgis` → Zielschema → `data transfer` → Geometrie-Parität
-  (Zeilen + Stichprobe via `ST_AsText`/`ST_Equals`) + räumlicher GIST-Index belegt.
-- **5b — MySQL native Round-Trip (MySQL).** Bestehender `mysql:8.4`-Service (Spatial
-  eingebaut, **keine** Extension); `generate --target mysql --spatial-profile native`;
-  `GEOMETRY/POINT/POLYGON` + `SRID` (MySQL 8.0+) datenbelegt; SPATIAL-Index belegt.
-- **5c — Cross-Dialect Spatial.** Mindestens **PostGIS → MySQL native** (Geometrie-
-  Werte round-trippen über Dialektgrenze; SRID-Erhalt; erwartete Notes gepinnt).
-  Optional MySQL native → PostGIS als Gegenprobe.
-- **5d — Spatialite (SQLite). VORARBEIT-abhängig.** Erst das Vorarbeitspaket (siehe
-  unten), dann: `.db` mit `mod_spatialite` → `generate --spatial-profile spatialite`
-  → Round-Trip + Cross-Dialect (PostGIS/MySQL native → Spatialite). SpatiaLite-
-  Geometrie-Metadaten (`geometry_columns`) + R-Tree-Index belegt.
+- **VA1 — Geometrie-Wert-Transfer auf dem Datenpfad.** `--spatial-profile` auf
+  `data transfer`/`export`/`import`; Read-Projektion (`ST_AsEWKB`/`ST_AsText`) +
+  Bind-Seite (`ST_GeomFromWKB`/`ST_GeomFromText`) **mit SRID-Erhalt**, analog dem
+  K1/L1-Muster (`JdbcForeignValueNormalizer`). Ohne VA1 kein einziger Spatial-
+  Round-Trip (auch nicht gleich-dialektisch).
+- **VA2 — PG-Reverse SRID/Subtyp-Capture.** `PostgresTypeMapping` muss SRID +
+  Geometrie-Subtyp lesen (sonst SRID=0/Subtyp=GEOMETRY → **False-Green-Risiko**,
+  vgl. F1-Muster). Voraussetzung für ehrliche SRID-Erhalt-Assertions.
+- **VA3 — MySQL SPATIAL-Index modellieren** (neutrales Index-Modell + Emit statt
+  `blockSpatialIndex`). Nur falls „SPATIAL-Index belegt" als Kriterium bleibt.
+- **VA4 — SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`/`RecoverGeometry-
+  Column`) **+** `mod_spatialite` in der runtime-Dockerfile-Stage **+** Extension-
+  Loading im sqlite-Treiber (`enableLoadExtension(true)` + `load_extension`), nur
+  aktiv bei `--spatial-profile spatialite`.
+- **VA5 — Spatial-Sample-Portabilitäts-Spike + Katalog-Eintrag** (siehe unten).
 
-### Vorarbeitspaket (Blocker für 5d): mod_spatialite
+## Scope-Skizze (Harness-Sub-Slices, je nach VA)
 
-Das CLI-Runtime-Image (`eclipse-temurin:21-jre-noble`) enthält **kein**
-`mod_spatialite`, und der sqlite-Treiber lädt **keine** Extension. Vor 5d:
+- **5a — PostGIS Round-Trip (PG).** *braucht VA1, VA2.* `postgis/postgis`-Service;
+  reverse/validate/generate `--spatial-profile postgis` → transfer → Geometrie-
+  Wert-Parität (`ST_Equals`/`ST_AsText`) + SRID-Erhalt + GIST-Index.
+- **5b — MySQL native Round-Trip (MySQL).** *braucht VA1 (+ VA3 falls Index-Kriterium).*
+  `mysql:8.4` (Spatial eingebaut, **keine** Extension); `--spatial-profile native`;
+  `GEOMETRY` + SRID datenbelegt.
+- **5c — Cross-Dialect Spatial.** *braucht VA1, VA2.* mind. PostGIS → MySQL native
+  (Wert + SRID round-trippen; Notes gepinnt). Optional Gegenrichtung.
+- **5d — Spatialite (SQLite).** *braucht VA4 (+ VA1).* `.db` mit `mod_spatialite`;
+  `--spatial-profile spatialite`; Round-Trip + ein Cross-Dialect-Transfer.
 
-1. **Image:** `libsqlite3-mod-spatialite` (o. ä.) in die `runtime`-Dockerfile-Stage.
-2. **Treiber:** Extension-Loading im sqlite-Adapter (`enableLoadExtension(true)` +
-   `SELECT load_extension('mod_spatialite')`) — nur aktiv, wenn
-   `--spatial-profile spatialite`. **Offen:** ob das ein eigenständiges CLI-/Treiber-
-   Feature ist oder im Harness-Connect-Pfad sitzt → eigener Sub-Entwurf.
+## Spatial-Sample (extern gepinnt, ADR 0014) — Portabilität ist das Risiko
 
-## Spatial-Sample (extern gepinnt, ADR 0014)
-
-**Entscheidung getroffen:** externes, auf Commit-SHA + SHA256 gepinntes Sample
-(kein Dump im Repo), wie Pagila/Sakila/Chinook. Für Spatial gibt es kein
-kanonisches Pagila — Kandidaten (im Kandidaten-Katalog zu ergänzen + zu pinnen):
-
-- **PostGIS-Workshop „nyc"** (`postgis.net`/GitHub-Mirror): klein, klassisch,
-  als SQL-Dump; PG/PostGIS-nativ — Cross-Dialect-Portabilität prüfen.
-- **Natural Earth** (Teilmenge, GeoPackage/Shapefile): dialekt-neutraler, aber
-  Lade-Pipeline (ogr2ogr) sperriger.
-- **Klein-kuratiert mit WKT** (falls kein externes Sample alle drei Dialekte sauber
-  bedient): als *letzte* Option — widerspricht aber der getroffenen Externe-Pin-
-  Entscheidung, daher nur wenn extern nicht tragfähig.
-
-→ **Erstes Arbeitspaket: Kandidat fixieren + pinnen + im Katalog dokumentieren.**
+**Entscheidung:** externes, auf Commit-SHA + SHA256 gepinntes Sample. **Review-Caveat:**
+ein **einziges** Sample, das über **alle drei** Dialekte sauber lädt, ist
+unwahrscheinlich — PostGIS-`nyc` ist PG/PostGIS-nativ (nutzt `geometry`,
+`spatial_ref_sys`, PostGIS-Funktionen), Natural Earth braucht eine `ogr2ogr`-
+Pipeline. **VA5 = Portabilitäts-Spike VOR der Pin-Entscheidung**; realistisches
+Ergebnis ist eher **ein Sample pro Dialekt** oder ein klein-kuratiertes WKT-Sample.
+Der Kandidaten-Katalog hat **heute keinen** Spatial-Eintrag → erstes Arbeitspaket:
+Katalog ergänzen + Kandidat fixieren + pinnen.
 
 ## Vorbedingungen
 
 - Phase 0–3-Harness-Muster (compose + Scripts + gepinnte Baseline) — **vorhanden**.
-- CLI `--spatial-profile`, `NeutralType.Geometry`, PG/MySQL-Spatial-DDL — **vorhanden**.
+- DDL-Typ-Abbildung + Profil-Policy + `NeutralType.Geometry` — **vorhanden**.
 - `postgis/postgis`-Image (5a) — Pull genügt.
-- **Offen:** Spatial-Sample-Pin (5a–5d); `mod_spatialite`-Image + Extension-Loading (5d).
+- **Code-Lücken (VA1–VA4)** — **zu bauen** (siehe oben).
+- Spatial-Sample-Pin (VA5) — **zu entscheiden**.
 
-## Akzeptanzkriterien (je Profil)
+## Akzeptanzkriterien (realistisch, nach Review)
 
-- **5a/5b:** Round-Trip je Dialekt grün; Geometrie-Werte round-trippen (Stichprobe
-  über `ST_AsText`/`ST_Equals` bzw. MySQL-`ST_*`); SRID erhalten; räumlicher Index
-  vorhanden; Zeilen-Parität Quelle == Ziel == gepinnte Baseline.
-- **5c:** mindestens ein Cross-Dialect-Spatial-Transfer datenbelegt (Werte + SRID);
-  erwartete Degradations-/Dialekt-Notes gegen Baseline gepinnt.
-- **5d:** Spatialite-Round-Trip + ein Cross-Dialect-Transfer; `mod_spatialite` im
-  Image; Extension-Loading nur bei `--spatial-profile spatialite`.
-- **Gating:** wie Phase 1/2 PR-Gate, **falls** CI-Laufzeit < ~3 min/Profil; sonst
-  opt-in wie Phase 3. Pro Profil ein `make sample-db-spatial-*`-Target + Workflow.
-- **Übergreifend:** kein Dump im Repo (Cache gitignored + dockerignored);
-  `make docs-check` grün.
+- **VA1:** Geometrie-Wert-Round-Trip (gleich-dialektisch) datenbelegt grün, SRID
+  erhalten; Typ-Kompatibilitäts-Preflight erkennt Geometrie auf dem Datenpfad.
+- **5a/5b:** Round-Trip je Dialekt grün; Geometrie-Werte round-trippen (`ST_*`-
+  Stichprobe); Zeilen-Parität Quelle == Ziel == Baseline. SRID-Erhalt **nur**, wenn
+  VA2 erbracht. Index-Kriterium **nur**, wenn VA3 (MySQL) erbracht — sonst als
+  erwartete `SPATIAL_INDEX_UNSUPPORTED`-Note pinnen, nicht als Erfolg.
+- **5c:** mind. ein Cross-Dialect-Spatial-Transfer datenbelegt (Wert + SRID); Notes gepinnt.
+- **5d:** Spatialite-Round-Trip; `mod_spatialite` im Image; Extension-Loading nur
+  bei `--spatial-profile spatialite`; Index-Kriterium nur, wenn VA4-Index erbracht.
+- **Gating:** PR-Gate **falls** CI-Laufzeit < ~3 min/Profil, sonst opt-in (wie Phase 3).
+- **Übergreifend:** kein Dump im Repo; `make docs-check` grün.
 
 ## Nicht-Ziel
 
 - TPC/Performance (Phase 4, eigener Slice).
-- `--spatial-profile none`-Degradation (bereits durch Phase 1/2 abgedeckt, wo
-  Geometrie zu Text/Blob fällt — kein eigenes Spatial-Sample nötig).
-- Geographie-spezifische Funktionsabdeckung über Typ-/Index-Round-Trip hinaus.
+- `--spatial-profile none`-Degradation (durch Phase 1/2 abgedeckt).
+- Geographie-Funktionsabdeckung über Typ-/Wert-/Index-Round-Trip hinaus.
