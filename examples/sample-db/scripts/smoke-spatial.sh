@@ -241,6 +241,14 @@ log "[xd] MySQL→PG OK — x/long=$X_LONG, y/lat=$X_LAT erhalten, keine Achsenv
 # Projizierte/kartesische SRS (Rechtswert/Hochwert). Beide Richtungen, semantisch.
 xd_projected_roundtrip 25832 691000 5334000   # ETRS89/UTM32N (München, Meter)
 xd_projected_roundtrip 3857  1283000 6126000  # WGS84 Web Mercator (München, Meter)
+# Gauß-Krüger Zone 2 (DHDN): MySQLs Definition deklariert die Achsen historisch
+# als AXIS["X",NORTH]/AXIS["Y",EAST] (Hochwert/Rechtswert). Empirisch dreht MySQL
+# aber NUR geografische SRS — projizierte (auch GK) bleiben X/Y=(erste,zweite), also
+# kein Tausch und WKB-byte-identisch zu PostGIS. Dieser Fall sichert das ab.
+xd_projected_roundtrip 31466 2580000 5680000  # DHDN/GK Zone 2 (R=2580000, H=5680000)
+# Hinweis: EPSG:4937 (ETRS89 3D-geographic) ist in MySQL 8.4 NICHT registriert
+# (ST_SPATIAL_REFERENCE_SYSTEMS), eine POINT SRID 4937-Spalte ist nicht anlegbar →
+# Cross-Dialect-Transfer nach MySQL scheitert sauber. 2D-Alternative: EPSG:4258.
 
-log "SUCCESS — VA1+VA2+VA2-X1 live-verified: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (geografisch SRID 4326 mit korrekter Achsenreihenfolge + projiziert EPSG:25832/3857 Rechtswert/Hochwert); native PG point unaffected (R1)."
+log "SUCCESS — VA1+VA2+VA2-X1 live-verified: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (geografisch 4326 long-lat-korrekt + projiziert EPSG:25832/3857/31466 Rechtswert/Hochwert, inkl. GK mit gedrehter AXIS-Deklaration); native PG point unaffected (R1)."
 log "stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."
