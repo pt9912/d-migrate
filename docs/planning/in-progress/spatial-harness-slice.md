@@ -2,8 +2,9 @@
 
 > Dokumenttyp: In-Progress-Plan (Folge-Slice von [`sample-db-integration-harness.md`](sample-db-integration-harness.md))
 > Status: **In Arbeit** (seit 2026-06-21; nach `in-progress/` verschoben, ADR 0004,
-> mit dem ersten Implementierungs-Commit). **VA1a erledigt** (`cfb7ab78` —
-> Geometrie-Erkennung im Read-Pfad); übrige Vorarbeitspakete + Sub-Slices offen.
+> mit dem ersten Implementierungs-Commit). **VA1a + VA1b erledigt**
+> (`cfb7ab78` Geometrie-Erkennung im Read-Pfad, `0c6ee1d7` geometrie-bewusste
+> Read-Projektion); offen: VA1c/VA1d, VA2–VA5, Sub-Slices 5a–5d.
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
@@ -57,10 +58,12 @@ nicht bloße Harness-Verkabelung.
     `NeutralType.Geometry` — unabhängig vom JDBC-Code (PG `OTHER`+"geometry", MySQL
     `BINARY`+"GEOMETRY"). SRID bleibt null (Read-Pfad trägt sie nicht → VA2).
     Regressionstest in `JdbcToNeutralTypeMapperTest`.
-  - **VA1b Read-Projektion:** typ-bewusstes **per-Spalten-Wrapping** im
-    treiberspezifischen `buildSelectQuery`-Override (Geometriespalten via Metadaten
-    erkennen, dann `ST_AsEWKB(col) AS col`) — die Projektion kennt heute keine
-    Neutral-Typen, daher ist eine Metadaten-Vorabfrage nötig (kein simpler Konverter).
+  - **VA1b Read-Projektion. ✅ ERLEDIGT (`0c6ee1d7`).** `AbstractJdbcDataReader`
+    macht für Treiber mit `supportsGeometryRead` eine Metadaten-Vorabfrage
+    (`SELECT * … WHERE 1 = 0`), erkennt Geometriespalten und wrappt sie via
+    `geometryReadExpression(col) AS col`: PG `ST_AsEWKB` (EWKB+SRID), MySQL
+    `ST_AsBinary` (WKB). Ohne Geometrie bleibt die Projektion `*` (kein Delta).
+    SQLite aus → VA4. Pure Helfer + E2E-Test (sqlite-jdbc, declared-type GEOMETRY).
   - **VA1c Bind:** **dialekt-spezifisches** Geometrie-Binding in den
     `*TableImportSession` (PostGIS-EWKB ≠ MySQL-WKB ≠ SpatiaLite-BLOB; z. B.
     `ST_GeomFromWKB`/`ST_GeomFromText`/`GeomFromWKB(?,srid)`) **mit SRID-Erhalt**,
