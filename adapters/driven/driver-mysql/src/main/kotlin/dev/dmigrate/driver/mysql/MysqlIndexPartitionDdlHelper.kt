@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexType
@@ -99,10 +100,18 @@ internal class MysqlIndexPartitionDdlHelper(
             )
         }
 
+        // VA3: ein Index auf einer Geometriespalte → MySQL `SPATIAL INDEX`, egal mit
+        // welcher neutralen Zugriffsmethode er hereinkommt (GIST/SP-GiST/BRIN/SPATIAL;
+        // MySQL kennt nur SPATIAL). Vor dem Prefix-/when-Pfad, da Geometrie keine
+        // Prefix-Länge trägt.
+        if (index.columnNames.any { columns[it]?.type is NeutralType.Geometry }) {
+            return spatialIndexStatement(tableName, index, indexName)
+        }
+
         // I-08: an unbounded TEXT/BLOB column needs a prefix length in MySQL
         // (ERROR 1170). When none is carried, the index cannot be rendered as
         // valid DDL — skip it with a note rather than guess a length. Only the
-        // emitted BTREE/HASH types are affected; GIN/GIST/BRIN are skipped below.
+        // emitted BTREE/HASH types are affected; GIN/GIST/BRIN/SP-GiST are skipped below.
         val emitsBtree = index.type == IndexType.BTREE || index.type == IndexType.HASH
         val missingPrefix = if (emitsBtree) MysqlIndexPrefix.columnNeedingPrefix(index) { columns[it]?.type } else null
         missingPrefix?.let { offending ->
@@ -124,7 +133,18 @@ internal class MysqlIndexPartitionDdlHelper(
         val columnsSql = index.columns.joinToString(", ") { renderIndexColumn(it) }
 
         return when (index.type) {
-            IndexType.GIN, IndexType.GIST, IndexType.BRIN -> {
+            // VA3: räumlicher Index → natives `CREATE SPATIAL INDEX` (Spalten ohne
+            // Prefix/Richtung; MySQL erlaubt SPATIAL nur auf NOT-NULL-Geometrie).
+            IndexType.SPATIAL -> {
+                val spatialCols = index.columns.joinToString(", ") { quoteIdentifier(it.name) }
+                DdlStatement(
+                    "CREATE SPATIAL INDEX ${quoteIdentifier(indexName)} " +
+                        "ON ${quoteIdentifier(tableName)} ($spatialCols);",
+                )
+            }
+            IndexType.GIN, IndexType.GIST, IndexType.BRIN, IndexType.SPGIST -> {
+                // Erreicht nur Nicht-Geometrie-Spalten; Geometrie ist oben als
+                // SPATIAL abgefangen. Diese PG-Zugriffsmethoden kennt MySQL nicht.
                 DdlStatement(
                     "",
                     listOf(
@@ -169,6 +189,32 @@ internal class MysqlIndexPartitionDdlHelper(
                 DdlStatement(sql)
             }
         }
+    }
+
+    /**
+     * VA3: natives MySQL `CREATE SPATIAL INDEX` für einen Index auf einer
+     * Geometriespalte (Spalten ohne Prefix/Richtung). MySQL verlangt dafür eine
+     * NOT-NULL-Geometriespalte (als INFO-Note vermerkt).
+     */
+    private fun spatialIndexStatement(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+    ): DdlStatement {
+        val spatialCols = index.columns.joinToString(", ") { quoteIdentifier(it.name) }
+        return DdlStatement(
+            "CREATE SPATIAL INDEX ${quoteIdentifier(indexName)} " +
+                "ON ${quoteIdentifier(tableName)} ($spatialCols);",
+            listOf(
+                TransformationNote(
+                    type = NoteType.INFO,
+                    code = "SPATIAL_INDEX_REQUIRES_NOT_NULL",
+                    objectName = indexName,
+                    message = "Index '$indexName' on a geometry column emitted as MySQL SPATIAL INDEX.",
+                    hint = "MySQL requires the geometry column to be NOT NULL for a SPATIAL INDEX.",
+                )
+            ),
+        )
     }
 
     private fun renderIndexColumn(column: IndexColumn): String =

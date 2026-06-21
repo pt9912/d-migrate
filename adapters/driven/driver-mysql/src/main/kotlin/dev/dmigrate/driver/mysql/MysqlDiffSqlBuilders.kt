@@ -95,9 +95,16 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
     }
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {
+        // VA3: räumlicher Index → `CREATE SPATIAL INDEX` (kein UNIQUE/USING, keine
+        // Prefix-Länge/Richtung; MySQL erlaubt SPATIAL nur auf NOT-NULL-Geometrie).
+        if (idx.type == IndexType.SPATIAL) {
+            val spatialCols = idx.columns.joinToString(", ") { quote(it.name) }
+            return "CREATE SPATIAL INDEX ${quote(effectiveIndexName(table, idx))} " +
+                "ON ${quote(table)} ($spatialCols);"
+        }
         val unique = if (idx.unique) "UNIQUE " else ""
         val using = if (idx.type != IndexType.BTREE && idx.type != IndexType.HASH) {
-            // MySQL only natively supports BTREE/HASH; FULLTEXT / SPATIAL not modelled here.
+            // MySQL only natively supports BTREE/HASH; FULLTEXT not modelled here.
             ""
         } else if (idx.type == IndexType.HASH) {
             " USING HASH"

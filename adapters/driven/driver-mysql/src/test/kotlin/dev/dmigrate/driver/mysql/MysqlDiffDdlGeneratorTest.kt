@@ -101,7 +101,7 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         r.spatialProfile shouldBe "NATIVE"
     }
 
-    test("§C.2: MySQL index on geometry column is blocked") {
+    test("VA3: MySQL index on geometry column is emitted as SPATIAL INDEX") {
         val before = TableDefinition(
             columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
         )
@@ -112,10 +112,10 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "places", indicesAdded = listOf(index))))
         val r = planAndUp(diff, current, desired)
 
-        r.statements.shouldBeEmpty()
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        r.diagnostics.single { it.code == "SPATIAL_INDEX_UNSUPPORTED" }
-            .message shouldContainStr "SPATIAL INDEX"
+        val sql = r.statements.single().sql
+        sql shouldContainStr "CREATE SPATIAL INDEX `idx_places_shape`"
+        sql shouldContainStr "ON `places` (`shape`)"
+        r.diagnostics.single { it.code == "SPATIAL_INDEX_REQUIRES_NOT_NULL" }
     }
 
     test("AlterColumnType safe cast: MODIFY COLUMN clause; unsafe cast blocks") {

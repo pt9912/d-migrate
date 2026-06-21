@@ -33,5 +33,27 @@ data class IndexDefinition(
 }
 
 enum class IndexType {
-    BTREE, HASH, GIN, GIST, BRIN
+    BTREE, HASH, GIN, GIST, BRIN,
+
+    /**
+     * VA3: PostgreSQL/PostGIS SP-GiST-Zugriffsmethode (`USING SPGIST`).
+     * SP-GiST = „Space-Partitioned Generalized Search Tree" — generische Indexierung
+     * mehrdimensionaler Typen über partitionierte Suchbäume (Quad-Tree, k-d-Tree,
+     * Radix-Tree/Trie); Alternative zu [GIST] für homogene/„Spaghetti"-Geometrien.
+     * Eigener neutraler Typ (statt Verlust → [BTREE] beim Reverse). Cross-Dialect ohne
+     * SP-GiST-Pendant (MySQL/SpatiaLite) wird ein SP-GiST-Geometrie-Index auf den
+     * dortigen einzigen räumlichen Indextyp normalisiert.
+     */
+    SPGIST,
+
+    /**
+     * VA3 (Spatial-Slice): neutraler räumlicher Index auf einer Geometriespalte für
+     * Dialekte ohne Zugriffsmethoden-Wahl. Generate: MySQL `SPATIAL INDEX`, PostGIS
+     * `USING GIST` (Default-Spatial-AM), SpatiaLite (VA4) `CreateSpatialIndex`.
+     * Reverse: MySQL `index_type=SPATIAL` liefert ihn direkt; PostGIS modelliert
+     * seinen Geometrie-Index methoden-genau als [GIST]/[SPGIST]/[BRIN] — beide
+     * Generate-Pfade erkennen den räumlichen Fall zusätzlich spaltenbasiert
+     * (`indexTouchesGeometry`/`referencesGeometry`).
+     */
+    SPATIAL
 }

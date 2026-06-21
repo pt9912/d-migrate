@@ -200,6 +200,8 @@ class MysqlSchemaReader(
                     columns = idx.indexColumns,
                     type = when (idx.type?.uppercase()) {
                         "HASH" -> IndexType.HASH
+                        // VA3: MySQL meldet räumliche Indizes als index_type=SPATIAL.
+                        "SPATIAL" -> IndexType.SPATIAL
                         else -> IndexType.BTREE
                     },
                     unique = idx.isUnique,

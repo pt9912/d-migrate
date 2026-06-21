@@ -76,7 +76,9 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {
         val unique = if (idx.unique) "UNIQUE " else ""
-        val using = if (idx.type != IndexType.BTREE) " USING ${idx.type.name}" else ""
+        // VA3: der neutrale räumliche Index (SPATIAL) wird in PostGIS als GIST-
+        // Zugriffsmethode emittiert (PostgreSQL kennt kein `USING SPATIAL`).
+        val using = if (idx.type != IndexType.BTREE) " USING ${pgAccessMethod(idx.type)}" else ""
         val cols = idx.columns.joinToString(", ") { col ->
             quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
         }

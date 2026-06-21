@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -26,10 +27,6 @@ internal object MysqlDiffTableOps {
         val tableName = op.objectRef.rootName
         if (ctx.direction == MysqlRenderDirection.DOWN) {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
-            return
-        }
-        if (op.table.indices.any { it.referencesGeometry(op.table) }) {
-            blockSpatialIndex(op, ctx, tableName)
             return
         }
         // E.3 Sub-Slice F: if any column carries a SequenceNextVal
@@ -67,7 +64,20 @@ internal object MysqlDiffTableOps {
         }
         ctx.emit(op, text)
         for (idx in op.table.indices) {
-            ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+            // VA3: ein Index auf eine Geometriespalte → MySQL SPATIAL INDEX (statt
+            // die ganze Tabelle zu blocken). Normalisiert auch dialektfremde Typen
+            // (z. B. PostGIS-GIST) spaltenbasiert auf SPATIAL.
+            if (idx.referencesGeometry(op.table)) {
+                ctx.emit(op, ctx.sql.createIndexSql(tableName, idx.copy(type = IndexType.SPATIAL)))
+                ctx.info(
+                    op,
+                    "Index on a geometry column of `$tableName` emitted as MySQL SPATIAL INDEX; " +
+                        "MySQL requires the geometry column to be NOT NULL.",
+                    "SPATIAL_INDEX_REQUIRES_NOT_NULL",
+                )
+            } else {
+                ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+            }
         }
         // Now that the table exists, emit one BEFORE INSERT trigger
         // per `SequenceNextVal`-defaulted column. The trigger calls
@@ -272,14 +282,4 @@ internal object MysqlDiffTableOps {
 
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
         columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
-
-    private fun blockSpatialIndex(op: DiffOperation, ctx: MysqlDiffRenderContext, tableName: String) {
-        ctx.skip(
-            op,
-            "Operation ${op.id} would create table `$tableName` with an index on a geometry column. " +
-                "MySQL requires SPATIAL INDEX semantics, which the neutral index model cannot express yet.",
-            code = "SPATIAL_INDEX_UNSUPPORTED",
-        )
-        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-    }
 }

@@ -2,7 +2,6 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintType
-import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -27,8 +26,10 @@ internal object PostgresDiffTableOps {
         ) {
             return
         }
+        // VA3: GiST/SP-GiST/BRIN (PG-eigen) UND SPATIAL (neutral) sind gültige
+        // PostGIS-Spatial-Indizes; B-Tree/HASH/GIN auf Geometrie werden geblockt.
         val unsupportedSpatialIndex = op.table.indices.firstOrNull { idx ->
-            idx.referencesGeometry(op.table) && idx.type != IndexType.GIST
+            idx.referencesGeometry(op.table) && !pgSupportsGeometryIndex(idx.type)
         }
         if (unsupportedSpatialIndex != null) {
             blockSpatialIndex(op, ctx, tableName, unsupportedSpatialIndex.type.name)

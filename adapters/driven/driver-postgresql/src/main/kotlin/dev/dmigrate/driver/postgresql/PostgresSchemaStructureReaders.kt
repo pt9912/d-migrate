@@ -104,6 +104,8 @@ private fun readPostgresTable(
                 "gin" -> IndexType.GIN
                 "gist" -> IndexType.GIST
                 "brin" -> IndexType.BRIN
+                // VA3: SP-GiST methoden-genau erfassen (vorher → BTREE-Verlust).
+                "spgist" -> IndexType.SPGIST
                 else -> IndexType.BTREE
             },
             unique = index.isUnique,

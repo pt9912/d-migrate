@@ -17,7 +17,11 @@
 > + LIVE-VERIFIZIERT**: Cross-Dialect-Smoke fand Achsentausch (PostGIS long-lat vs
 > MySQL lat-long bei SRID 4326, False-Green bei `ST_AsText`); Fix = MySQL durchgängig
 > `axis-order=long-lat` (Read+Bind), `[xd]`-Smoke grün beidseitig (semantischer
-> Vergleich). Offen: VA3–VA5, volle Sub-Slices 5a–5d (mit gepinntem Sample).
+> Vergleich). **VA3 (räumliche Indizes) implementiert + LIVE-VERIFIZIERT**:
+> `IndexType.SPATIAL`+`SPGIST`; MySQL `SPATIAL INDEX` reverse/generate/diff (Block raus),
+> PostGIS `USING GIST`/`SPGIST` (kein `USING SPATIAL`), B-Tree-auf-Geometrie bleibt
+> geblockt; `[idx]`-Smoke grün (reverse→generate→apply, realer SPATIAL-Index im Katalog).
+> Offen: VA4 (SpatiaLite-Index), VA5 (Sample-Pin), volle Sub-Slices 5a–5d.
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
@@ -52,7 +56,7 @@ Generierung fehlen — Phase 5 muss sie zuerst bauen.
 | **Geometrie-Erkennung im Read-Pfad** | ❌ **fehlt** (→ Text) | `JdbcToNeutralTypeMapper.mapOther` fällt für Geometrie auf `NeutralType.Text` (AP3-TODO) → Chunk-/Parquet-Header trägt Text statt Geometry |
 | **Geometrie-WERT-Bindung** (`data transfer`/`export`/`import`) | ❌ **fehlt** | `--spatial-profile` **nicht** auf `DataTransferCommand`/`DataImportCommand`; kein WKB/WKT-Konverter (vgl. `JdbcForeignValueNormalizer`); kein dialekt-spezifisches Geometrie-Binding in den `*TableImportSession` |
 | Import-Preflight für Geometrie | ⚠️ **permissiv** | `ImportTypeCompatibility` → `Geometry -> true` (bedingungslos; winkt auch Geometrie→Nicht-Geometrie durch) |
-| **MySQL SPATIAL-Index** | ❌ **aktiv geblockt** | `MysqlDiffOtherOps.blockSpatialIndex` → `SPATIAL_INDEX_UNSUPPORTED` |
+| **MySQL SPATIAL-Index** | ✅ **VA3** | `IndexType.SPATIAL`; Reverse + `CREATE SPATIAL INDEX`-Emit (Block entfernt) |
 | **SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`) | ❌ **aktiv geblockt** | `SqliteDiffSimpleOps.blockSpatialIndex` |
 | **PG-Reverse SRID/Subtyp-Capture** | ❌ **fehlt** | `PostgresTypeMapping.kt:132` liefert bare `NeutralType.Geometry()` |
 | **MySQL-Reverse SRID-Capture** | ❌ **fehlt** | `MysqlTypeMapping` baut `Geometry(geometryType=…)` **ohne** `srid` |
@@ -152,8 +156,24 @@ nicht bloße Harness-Verkabelung.
     nicht anlegbar, Cross-Dialect-Transfer nach MySQL scheitert sauber (kein stiller
     Verlust); 2D-Alternative EPSG:4258. Damit deckt der Smoke geografische **und**
     projizierte SRS (inkl. gedrehter GK-Achsen) ab.
-- **VA3 — MySQL SPATIAL-Index modellieren** (neutrales Index-Modell + Emit statt
-  `blockSpatialIndex`). Nur falls „SPATIAL-Index belegt" als Kriterium bleibt.
+- **VA3 — Räumliche Indizes modellieren. ✅ ERLEDIGT + LIVE-VERIFIZIERT.**
+  Neutrales Index-Modell + Emit statt `blockSpatialIndex`.
+  - **Modell:** `IndexType.SPATIAL` (neutraler räumlicher Index für Dialekte ohne
+    Methodenwahl) **+ `IndexType.SPGIST`** (PostGIS SP-GiST, vorher Reverse-Verlust
+    → BTREE). Spec `schema.json`-Enum + YAML-Codec erweitert.
+  - **MySQL:** Reverse `index_type=SPATIAL` → `SPATIAL`; Generate/Diff emittiert
+    `CREATE SPATIAL INDEX` (Block entfernt in `MysqlDiffOtherOps`/`MysqlDiffTableOps`/
+    `MysqlIndexPartitionDdlHelper`); jeder Geometrie-Index (egal welche neutrale AM)
+    wird spaltenbasiert auf SPATIAL normalisiert. INFO-Note: SPATIAL braucht NOT NULL.
+  - **PostGIS:** Reverse `gist→GIST`, `spgist→SPGIST`, `brin→BRIN`; Generate via
+    `pgAccessMethod` (SPATIAL→`USING GIST`, SPGIST→`USING SPGIST`, …). `USING SPATIAL`
+    existiert **nicht** in PostgreSQL (empirisch + Doku-belegt) → Mapping zwingend.
+    Erlaubte räumliche Methoden = GiST/SP-GiST/BRIN/SPATIAL (`pgSupportsGeometryIndex`);
+    B-Tree auf Geometrie bleibt geblockt (nur Equality/Sortierung, nicht räumlich).
+  - **Live-Beleg** (`smoke-spatial.sh` `[idx]`): echte MySQL `SPATIAL INDEX` →
+    `schema reverse` (`type: spatial`) → `schema generate` MySQL (`SPATIAL INDEX`) +
+    PostGIS (`USING GIST`) → angewandtes MySQL-DDL erzeugt real einen Index mit
+    `information_schema.statistics.index_type = SPATIAL`.
 - **VA4 — SQLite SpatiaLite Spatial-Index** (`CreateSpatialIndex`/`RecoverGeometry-
   Column`) **+** `mod_spatialite` in der runtime-Dockerfile-Stage **+** Extension-
   Loading im sqlite-Treiber (`enableLoadExtension(true)` + `load_extension`), nur

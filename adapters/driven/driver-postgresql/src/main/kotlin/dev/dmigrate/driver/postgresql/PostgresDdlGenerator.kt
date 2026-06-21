@@ -251,9 +251,9 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
             append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
-            // Omit USING for BTREE since it's the default
+            // Omit USING for BTREE since it's the default. VA3: SPATIAL → GIST.
             if (index.type != IndexType.BTREE) {
-                append(" USING ${index.type.name}")
+                append(" USING ${pgAccessMethod(index.type)}")
             }
             append(" ($cols)")
             if (index.where != null) append(" WHERE ${index.where}")

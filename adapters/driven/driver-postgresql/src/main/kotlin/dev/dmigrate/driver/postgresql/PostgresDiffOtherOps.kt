@@ -5,7 +5,6 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.IndexDefinition
-import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.DatabaseDialect
@@ -210,7 +209,9 @@ internal object PostgresDiffOtherOps {
         table: String,
     ): Boolean {
         if (!ctx.indexTouchesGeometry(table, index)) return true
-        if (index.type != IndexType.GIST) {
+        // VA3: GiST/SP-GiST/BRIN und der neutrale SPATIAL-Typ sind gültige räumliche
+        // PostGIS-Methoden; B-Tree/HASH/GIN nicht (nur Equality/Sortierung).
+        if (!pgSupportsGeometryIndex(index.type)) {
             ctx.skip(
                 op,
                 "Operation ${op.id} targets a geometry-column index on `$table`, but index type " +

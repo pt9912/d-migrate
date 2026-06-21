@@ -20,6 +20,10 @@
 #      dass `axis-order=long-lat` (MySQL Read+Bind) WKB OGC-konform hält. Zusätzlich
 #      projizierte/kartesische SRS EPSG:25832 (ETRS89/UTM32N, Rechtswert/Hochwert)
 #      und EPSG:3857 (Web Mercator): kein Achsenproblem (E,N=X,Y), axis-order no-op.
+#   4. Spatial-Index (VA3): MySQL `SPATIAL INDEX` reverse→generate→apply; reverse
+#      liefert `type: spatial`, generate emittiert MySQL `SPATIAL INDEX` und
+#      cross-dialect PostGIS `USING GIST`; das angewandte MySQL-DDL erzeugt real
+#      einen SPATIAL-Index (information_schema.statistics.index_type=SPATIAL).
 #
 # Kein externes Sample (winzige WKT-Inserts inline) — bewusst minimal; das volle
 # 5a/5b mit gepinntem Spatial-Sample (VA5) folgt. Voraussetzung am Host: docker,
@@ -250,5 +254,49 @@ xd_projected_roundtrip 31466 2580000 5680000  # DHDN/GK Zone 2 (R=2580000, H=568
 # (ST_SPATIAL_REFERENCE_SYSTEMS), eine POINT SRID 4937-Spalte ist nicht anlegbar →
 # Cross-Dialect-Transfer nach MySQL scheitert sauber. 2D-Alternative: EPSG:4258.
 
-log "SUCCESS — VA1+VA2+VA2-X1 live-verified: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (geografisch 4326 long-lat-korrekt + projiziert EPSG:25832/3857/31466 Rechtswert/Hochwert, inkl. GK mit gedrehter AXIS-Deklaration); native PG point unaffected (R1)."
+# ─── 4. Spatial-Index reverse→generate→apply (VA3) ─────────────────
+# Belegt VA3 gegen echte DBs: MySQL-`SPATIAL INDEX` wird reverse-t (→ type: spatial),
+# nach MySQL als `SPATIAL INDEX` und cross-dialect nach PostGIS als `USING GIST`
+# generiert, und das MySQL-DDL angewandt erzeugt real einen SPATIAL-Index im Katalog.
+log "[idx] preparing dedicated MySQL DB with a SPATIAL INDEX..."
+mysql_root -e "
+  DROP DATABASE IF EXISTS va3_idx_src;    CREATE DATABASE va3_idx_src;
+  DROP DATABASE IF EXISTS va3_idx_target; CREATE DATABASE va3_idx_target;
+  GRANT ALL PRIVILEGES ON va3_idx_src.*    TO '${MYSQL_USER}'@'%';
+  GRANT ALL PRIVILEGES ON va3_idx_target.* TO '${MYSQL_USER}'@'%';
+  FLUSH PRIVILEGES;" || fail "[idx] db setup failed"
+# SPATIAL INDEX erfordert eine NOT-NULL-Geometriespalte.
+mysql_root va3_idx_src -e "CREATE TABLE places (id INT PRIMARY KEY, shape POINT NOT NULL, SPATIAL INDEX sidx_shape (shape));" \
+    || fail "[idx] create places failed"
+
+MYURL_SRC="mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/va3_idx_src"
+mkdir -p "$EXAMPLES_DIR/.cache"
+
+log "[idx] schema reverse (va3_idx_src)..."
+$COMPOSE run --rm dmigrate schema reverse --source "$MYURL_SRC" --output /work/.cache/va3.yaml \
+    > /tmp/va3-reverse.log 2>&1 || { cat /tmp/va3-reverse.log; fail "[idx] reverse failed"; }
+grep -q "type: spatial" "$EXAMPLES_DIR/.cache/va3.yaml" \
+    || { cat "$EXAMPLES_DIR/.cache/va3.yaml"; fail "[idx] reverse did not capture index as type: spatial"; }
+log "[idx] reverse OK — MySQL SPATIAL index captured as 'type: spatial'"
+
+log "[idx] schema generate → MySQL (SPATIAL INDEX) + PostgreSQL (USING GIST)..."
+$COMPOSE run --rm dmigrate schema generate --source /work/.cache/va3.yaml --target mysql \
+    --spatial-profile native --deterministic --output /work/.cache/va3-my.sql \
+    > /tmp/va3-gen-my.log 2>&1 || { cat /tmp/va3-gen-my.log; fail "[idx] generate mysql failed"; }
+grep -qi "SPATIAL INDEX" "$EXAMPLES_DIR/.cache/va3-my.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/va3-my.sql"; fail "[idx] MySQL DDL missing SPATIAL INDEX"; }
+$COMPOSE run --rm dmigrate schema generate --source /work/.cache/va3.yaml --target postgresql \
+    --spatial-profile postgis --deterministic --output /work/.cache/va3-pg.sql \
+    > /tmp/va3-gen-pg.log 2>&1 || { cat /tmp/va3-gen-pg.log; fail "[idx] generate pg failed"; }
+grep -qiE "USING GIST" "$EXAMPLES_DIR/.cache/va3-pg.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/va3-pg.sql"; fail "[idx] PG DDL missing USING GIST"; }
+log "[idx] generate OK — MySQL 'SPATIAL INDEX' + cross-dialect PostGIS 'USING GIST'"
+
+log "[idx] apply MySQL DDL → va3_idx_target, verify index_type=SPATIAL in catalog..."
+mysql_root va3_idx_target < "$EXAMPLES_DIR/.cache/va3-my.sql" || fail "[idx] applying generated MySQL DDL failed"
+idx_type=$(my_val va3_idx_target "SELECT DISTINCT index_type FROM information_schema.statistics WHERE table_schema='va3_idx_target' AND table_name='places' AND index_name='sidx_shape';")
+[ "$idx_type" = "SPATIAL" ] || fail "[idx] applied index is not SPATIAL (got '$idx_type')"
+log "[idx] apply OK — real SPATIAL index exists in target catalog — VA3 confirmed"
+
+log "SUCCESS — VA1+VA2+VA2-X1+VA3 live-verified: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (geografisch 4326 long-lat-korrekt + projiziert EPSG:25832/3857/31466 Rechtswert/Hochwert, inkl. GK mit gedrehter AXIS-Deklaration); MySQL SPATIAL-Index reverse→generate→apply (cross-dialect → PostGIS USING GIST); native PG point unaffected (R1)."
 log "stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."

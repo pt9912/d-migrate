@@ -17,6 +17,8 @@ internal fun String.toIndexType(): IndexType = when (lowercase()) {
     "gin" -> IndexType.GIN
     "gist" -> IndexType.GIST
     "brin" -> IndexType.BRIN
+    "spgist" -> IndexType.SPGIST
+    "spatial" -> IndexType.SPATIAL
     else -> throw IllegalArgumentException("Unknown index type: $this")
 }
 

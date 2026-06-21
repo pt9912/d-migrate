@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.DatabaseDialect
@@ -217,7 +218,7 @@ internal object MysqlDiffOtherOps {
             return
         }
         if (ctx.indexTouchesGeometry(table, op.index)) {
-            blockSpatialIndex(op, ctx, table)
+            emitSpatialIndex(op, ctx, table, op.index)
             return
         }
         if (blockMissingPrefix(op, op.index, ctx, table)) return
@@ -228,7 +229,7 @@ internal object MysqlDiffOtherOps {
         val table = op.objectRef.path[0]
         if (ctx.direction == MysqlRenderDirection.DOWN) {
             if (ctx.indexTouchesGeometry(table, op.index)) {
-                blockSpatialIndex(op, ctx, table)
+                emitSpatialIndex(op, ctx, table, op.index)
                 return
             }
             if (blockMissingPrefix(op, op.index, ctx, table)) return
@@ -259,14 +260,26 @@ internal object MysqlDiffOtherOps {
         return true
     }
 
-    private fun blockSpatialIndex(op: DiffOperation, ctx: MysqlDiffRenderContext, table: String) {
-        ctx.skip(
+    /**
+     * VA3: ein Index auf eine Geometriespalte wird als nativer MySQL `SPATIAL INDEX`
+     * emittiert (nicht mehr geblockt). Der Index kann als [IndexType.SPATIAL] (MySQL-
+     * Reverse) oder dialektfremd (z. B. PostGIS-`GIST`) hereinkommen — die
+     * spaltenbasierte Erkennung (`indexTouchesGeometry`) normalisiert beide auf
+     * SPATIAL. MySQL verlangt dafür eine NOT-NULL-Geometriespalte (Hinweis als Note).
+     */
+    private fun emitSpatialIndex(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        ctx.emit(op, ctx.sql.createIndexSql(table, index.copy(type = IndexType.SPATIAL)))
+        ctx.info(
             op,
-            "Operation ${op.id} targets an index on a geometry column in `$table`. MySQL requires " +
-                "SPATIAL INDEX semantics, which the neutral index model cannot express yet.",
-            code = "SPATIAL_INDEX_UNSUPPORTED",
+            "Index on a geometry column in `$table` emitted as MySQL SPATIAL INDEX; " +
+                "MySQL requires the geometry column to be NOT NULL.",
+            "SPATIAL_INDEX_REQUIRES_NOT_NULL",
         )
-        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 
     fun renderCreateCustomType(op: DiffOperation.CreateCustomType, ctx: MysqlDiffRenderContext) {
