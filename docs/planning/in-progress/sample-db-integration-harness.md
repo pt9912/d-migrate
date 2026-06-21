@@ -156,9 +156,13 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   `required || in primaryKey`, Regressionstest) →
   [`../done/sample-db-phase3-findings.md`](../done/sample-db-phase3-findings.md).
   Scope: nur Daten (Tabellen+PK via pre-data); FKs/Views (post-data) = Phase-2-Domäne.
-- **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice
-  (LF 8.1/8.2), nur Forward-Pointer.
+- **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice (LF 8.1/8.2)
+  → **geschnitten** in [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md)
+  (Sourcing/Workload/Methodik dort; LF 8.1 ≈ durch Phase 3 erbracht, LF 8.2 = N=1000-
+  Verschärfung, TPC = realistische Workload).
 - **Phase 5 — Spatial (PostGIS + MySQL native + Spatialite).** Eigener Folge-Slice
+  → **geschnitten** in [`../next/spatial-harness-slice.md`](../next/spatial-harness-slice.md)
+  (3 Profile + Cross-Dialect; externes gepinntes Spatial-Sample; Spatialite-Vorarbeit).
   (wie Phase 4, nicht in der Phase-0–3-Grenze). Deckt **alle drei** Spatial-Profile
   end-to-end ab — eines je Dialekt:
   - **`postgis`** (PostgreSQL) = postgres-Superset-Image (`postgis/postgis`) + Spatial-Sample.
