@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.data.TargetColumn
 import java.sql.Types
@@ -38,7 +39,7 @@ internal object ImportTypeCompatibility {
             NeutralType.Binary -> isStructuredFamilyCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Enum -> isEnumCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Array -> jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
-            is NeutralType.Geometry -> true
+            is NeutralType.Geometry -> isGeometryCompatible(jdbcType, sqlTypeName)
             is NeutralType.FullText -> true
         }
     }
@@ -117,6 +118,18 @@ internal object ImportTypeCompatibility {
 
     private fun isXmlCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
         jdbcType == Types.SQLXML || sqlTypeName == "XML" || jdbcType in setOf(Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
+
+    /**
+     * VA1d (Spatial-Slice): eine Geometrie-Quellspalte ist kompatibel mit einem
+     * Geometrie-Ziel (typeName in [GeometryType.KNOWN_VALUES] — der verlustfreie
+     * WKB-Round-Trip via VA1b/VA1c) ODER mit einem Text-Ziel (bewusste WKT-/Text-
+     * Degradation, wie sie das `none`-Spatial-Profil und der frühere Text-Fallback
+     * erzeugen). Andere Ziele (Integer, Binary, …) sind NICHT mehr kompatibel —
+     * vorher winkte `Geometry -> true` jedes Ziel durch (False-Green-Risiko).
+     */
+    private fun isGeometryCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
+        sqlTypeName.lowercase() in GeometryType.KNOWN_VALUES ||
+            isTextCompatible(jdbcType, sqlTypeName)
 
     private fun isEnumCompatible(type: NeutralType.Enum, jdbcType: Int, sqlTypeName: String): Boolean {
         val ref = type.refType?.uppercase()

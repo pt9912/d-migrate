@@ -200,9 +200,20 @@ class ImportTypeCompatibilityTest : FunSpec({
     }
 
     context("Geometry") {
-        test("always compatible") {
+        test("VA1d: compatible with a geometry target (WKB round-trip)") {
             assertCompat(NeutralType.Geometry(), col(Types.OTHER, "GEOMETRY"), true)
+            assertCompat(NeutralType.Geometry(), col(Types.BINARY, "POINT"), true) // subtype, case-insensitive
+            assertCompat(NeutralType.Geometry(), col(Types.OTHER, "geometry"), true)
+        }
+        test("VA1d: compatible with a text target (deliberate WKT/text degradation)") {
             assertCompat(NeutralType.Geometry(), col(Types.VARCHAR), true)
+            assertCompat(NeutralType.Geometry(), col(Types.LONGVARCHAR), true)
+            assertCompat(NeutralType.Geometry(), col(Types.OTHER, "TEXT"), true)
+        }
+        test("VA1d: NOT compatible with unrelated targets (no longer always-true)") {
+            assertCompat(NeutralType.Geometry(), col(Types.INTEGER), false)
+            assertCompat(NeutralType.Geometry(), col(Types.BINARY), false) // plain binary, not geometry
+            assertCompat(NeutralType.Geometry(), col(Types.TIMESTAMP), false)
         }
     }
 
