@@ -9,4 +9,11 @@
 CREATE DATABASE IF NOT EXISTS pagila_target
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 GRANT ALL PRIVILEGES ON pagila_target.* TO 'dmigrate'@'%';
+-- Phase 3 (Scale): MySQL-Ziel für den Employees-Round-Trip. Die Quell-DB
+-- `employees` wird vom Dump-Loader (employees.sql: DROP/CREATE) angelegt;
+-- der Scale-Smoke grantet sie danach an dmigrate. Hier nur das Ziel.
+CREATE DATABASE IF NOT EXISTS employees_my_target
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON employees_my_target.* TO 'dmigrate'@'%';
+GRANT ALL PRIVILEGES ON employees.* TO 'dmigrate'@'%';
 FLUSH PRIVILEGES;

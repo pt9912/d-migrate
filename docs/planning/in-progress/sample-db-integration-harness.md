@@ -1,16 +1,20 @@
 # Plan: Sample-DB-E2E-Harness (docker-compose + Scripts)
 
 > Dokumenttyp: Umsetzungsplan (Slice)
-> Status: In Arbeit (Stand 2026-06-21). **Phase 0/1/2/2b erledigt** (Pagila/PG-
-> Round-Trip, Sakila MySQL→PG + Pagila PG→MySQL cross-dialect, Chinook/SQLite-
-> Round-Trip — je grün, je gepinnte Baseline). **Offen: Phase 3 (Scale, opt-in/
-> nightly)** — einziger offener Punkt innerhalb der Slice-Grenze. PostGIS/Spatialite
-> (Phase 5) = eigene Folge-Slices. Phase-2-Folgebefund **Y1 behoben** (`c9401b6f`);
+> Status: **Abschlussreif** (Stand 2026-06-21). **Phase 0/1/2/2b/3 erledigt** —
+> die **gesamte Slice-Grenze (Phase 0–3) ist DoD-komplett**. Pagila/PG-Round-Trip,
+> Sakila MySQL→PG + Pagila PG→MySQL cross-dialect, Chinook/SQLite-Round-Trip,
+> **Employees-Scale (export-resume + Chunking + Dual-Target-Import MySQL+PG)** —
+> je grün, je gepinnte Baseline. PostGIS/Spatialite (Phase 5) + TPC (Phase 4) =
+> eigene Folge-Slices. Phase-2-Folgebefund **Y1 behoben** (`c9401b6f`); Phase-3-
+> Folgebefund **S1 behoben** (PK-Nullability-Preflight,
+> [`../done/sample-db-phase3-findings.md`](../done/sample-db-phase3-findings.md));
 > Harness-Review-Härtungen getrackt in
 > [`../next/sample-db-harness-review-followups.md`](../next/sample-db-harness-review-followups.md).
 > Sourcing **und** Mechanik via
 > [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
-> entschieden (supersedet ADR 0013).
+> entschieden (supersedet ADR 0013). **Folge-Hygiene:** Slice nach `done/` heben
+> (Link-Sweep README/Makefile/Workflows) — separater Schritt.
 > Roadmap-Slot: Phase 1–2b (Smoke/Compatibility, inkl. SQLite) = Test-Infrastruktur;
 > Phase 3 (Scale) = 1.0.0-QA. **Phase 4 (Performance/TPC, LF 8.1/8.2) und Phase 5
 > (Spatial: PostGIS/Spatialite) = eigene Folge-Slices**.
@@ -63,10 +67,10 @@ heute (2026-06-18) **nur dokumentiert**, Bau folgt.
 
 ## Slice-Grenze (DoD-Boundary)
 
-**Dieser Slice = Phase 0–3 (inkl. 2b SQLite).** Phase 4 (TPC, LF 8.1/8.2) **und
-Phase 5 (Spatial: PostGIS/Spatialite)** sind separate Folge-Slices
-(Forward-Pointer). Fertig, wenn Phase 1+2(+2b) als CI-Smoke (und lokal) grün laufen
-und Phase 3 (Scale) als opt-in/nightly verfügbar ist.
+**Dieser Slice = Phase 0–3 (inkl. 2b SQLite). ✅ DoD-ERFÜLLT (2026-06-21).** Phase 4
+(TPC, LF 8.1/8.2) **und Phase 5 (Spatial: PostGIS/Spatialite)** sind separate
+Folge-Slices (Forward-Pointer). DoD: Phase 1+2(+2b) laufen als CI-Smoke (und lokal)
+grün **und** Phase 3 (Scale) ist als opt-in/nightly verfügbar — beides erfüllt.
 
 ## Objekt-Scope der Assertion (in-scope vs. erwarteter Skip)
 
@@ -128,10 +132,23 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   datenbelegt (Track.UnitPrice-Summe 3680.97), Notes gepinnt
   (`expected/chinook-sqlite.*`: W200×3 generate + R201 reverse, beide SQLite-Typ-
   Affinität, kein Defekt). **Keine** Fidelity-Findings — sauberer Round-Trip.
-- **Phase 3 — Scale (Employees/MySQL).** Streaming/Chunking/Resume; **opt-in/nightly**.
-  **Achtung:** es gibt heute keinen `schedule:`/`cron:`-Workflow — Phase 3 legt
-  entweder einen scheduled Workflow an (eigenes Arbeitspaket) oder bleibt reines
-  opt-in-`make`-Target, **nicht** im PR-Gate.
+- **Phase 3 — Scale (Employees). ✅ ERLEDIGT (2026-06-21).** Employees-Dataset
+  (`datacharmer/test_db@e324b561`, ~4 Mio Zeilen, 6 Basis-Tabellen, SHA256-gepinnt,
+  nur `FETCH_EMPLOYEES=1`). Übt den **datei-basierten** `data export`→`import`-Pfad
+  (der **einzige** mit `--resume`; der direkte `data transfer` hat nur `--chunk-size`):
+  `smoke-scale.sh` lädt Employees → reverse/validate → `data export json --split-files
+  --chunk-size 5000` mit **Mid-Stream-Interruption** (`docker kill` beim ersten
+  persistierten Checkpoint) + `--resume <operationId>` → **ein** Bundle in **zwei**
+  Ziele importieren (`employees_my_target` MySQL-Round-Trip **und** `employees_pg_target`
+  PG-Cross-Dialect). **Deterministisch grün:** Resume vollendet alle 6 Tabellen-
+  Dateien; Zeilen-Parität Quelle == Ziel == gepinnte Baseline je Ziel;
+  `SUM(salary)=181480757419` round-trippt exakt. `make sample-db-scale-smoke` +
+  scheduled Workflow `sample-db-scale.yml` (`workflow_dispatch` + nightly `cron`,
+  **kein** push/PR-Trigger → **nicht** im PR-Gate). Aufgedeckter + behobener Defekt
+  **S1** (PK-Nullability-Preflight: `ImportTableValidator` rechnet jetzt
+  `required || in primaryKey`, Regressionstest) →
+  [`../done/sample-db-phase3-findings.md`](../done/sample-db-phase3-findings.md).
+  Scope: nur Daten (Tabellen+PK via pre-data); FKs/Views (post-data) = Phase-2-Domäne.
 - **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice
   (LF 8.1/8.2), nur Forward-Pointer.
 - **Phase 5 — Spatial (PostGIS + Spatialite).** Eigener Folge-Slice (wie Phase 4,
@@ -172,9 +189,12 @@ TINYINT(1)↔BOOLEAN + Enum-Case datenbelegt.
 SQLite-Eigenheiten (helper_table-Sequenzen, EXCLUDE-Block, AUTOINCREMENT) gegen
 eigene Baseline gepinnt; Daten-Zeilenzahlen Quelle = Ziel.
 
-**Phase 3 (Scale):** Employees-Transfer mit Resume nach simulierter Unterbrechung;
-Chunking belegt; Gating (scheduled Workflow oder opt-in-Target) dokumentiert;
-**nicht** im PR-Gate.
+**Phase 3 (Scale): ✅** Employees export→import mit **Resume nach simulierter
+Unterbrechung** (Mid-Stream-`docker kill` + `--resume`); **Chunking belegt**
+(`--chunk-size 5000` gegen 2,84 Mio salaries); **Gating: beides** — opt-in
+`make sample-db-scale-smoke` **und** scheduled Workflow `sample-db-scale.yml`
+(nightly `cron` + `workflow_dispatch`), **nicht** im PR-Gate. Dual-Target-Parität
+(MySQL+PG) + `SUM(salary)`-Checksumme datenbelegt.
 
 **Phase 5 (Spatial):** in eigenem Folge-Slice — `--spatial-profile postgis` und
 `spatialite` end-to-end gegen je eigene Baseline; Geometrie-Typen + räumliche

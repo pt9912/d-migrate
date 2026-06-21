@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke
 
 help:
 	@printf '%s\n' \
@@ -106,13 +106,14 @@ help:
 		'  make bi-demo-purge    Stop containers and remove all named volumes' \
 		'  make bi-demo-smoke    End-to-end smoke (pull + up + d-migrate + S3-upload + verify)' \
 		'' \
-		'Sample-DB-Harness (examples/sample-db, Plan: docs/planning/next/sample-db-integration-harness.md):' \
+		'Sample-DB-Harness (examples/sample-db, Plan: docs/planning/in-progress/sample-db-integration-harness.md):' \
 		'  make sample-db-fetch  Fetch pinned + SHA256-verified dumps into gitignored .cache/' \
 		'  make sample-db-up     Start postgres (source + target DB)' \
 		'  make sample-db-smoke  Full E2E (Phase 1, Pagila/PG round-trip): load -> reverse/validate/generate -> transfer -> compare vs baseline' \
 		'  make sample-db-cross-smoke  Cross-Dialect (Phase 2, Sakila MySQL->PG): reverse/validate/generate -> transfer -> parity + type conversions' \
 		'  make sample-db-cross-smoke-pg2my  Cross-Dialect (Phase 2, Pagila PG->MySQL): symmetrischer Flow -> parity + type conversions' \
 		'  make sample-db-sqlite-smoke  SQLite round-trip (Phase 2b, Chinook): serverless .db -> reverse/validate/generate/transfer -> parity + precision' \
+		'  make sample-db-scale-smoke  Scale (Phase 3, Employees) opt-in/nightly: export-resume + chunking + dual-target import (MySQL+PG) parity' \
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
@@ -351,7 +352,7 @@ bi-demo-smoke:
 #
 # Reproduzierbarer E2E-Smoke gegen das echte d-migrate:dev-CLI mit
 # gepinnten Sample-DBs (Phase 1: Pagila/PG-Round-Trip). Plan:
-# docs/planning/next/sample-db-integration-harness.md. Sourcing/Mechanik:
+# docs/planning/in-progress/sample-db-integration-harness.md. Sourcing/Mechanik:
 # docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
@@ -379,3 +380,10 @@ sample-db-cross-smoke-pg2my:
 
 sample-db-sqlite-smoke:
 	./examples/sample-db/scripts/smoke-sqlite.sh
+
+# Phase 3 (Scale, Employees) — opt-in/nightly, NICHT im PR-Gate. Lädt das
+# große Employees-Dataset (FETCH_EMPLOYEES=1, ~165 MiB), übt export-resume +
+# Chunking + Dual-Target-Import (MySQL + PG). Laufzeit/Volumen → nur lokal
+# oder im scheduled Workflow .github/workflows/sample-db-scale.yml.
+sample-db-scale-smoke:
+	./examples/sample-db/scripts/smoke-scale.sh

@@ -14,3 +14,9 @@ database:
     sakila_my: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/sakila"
     pagila_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/pagila_target"
     sakila_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/sakila_target"
+    # Phase 3 (Scale, Employees) — MySQL-Quelle + MySQL- und PG-Ziel.
+    # Die DBs legt der Scale-Smoke selbst an (idempotent), da initdb nur
+    # bei frischem Volume läuft.
+    employees_my: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/employees"
+    employees_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/employees_my_target"
+    employees_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/employees_pg_target"

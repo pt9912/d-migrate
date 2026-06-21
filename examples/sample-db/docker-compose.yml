@@ -30,6 +30,12 @@ services:
   #   - pagila_target   (leeres Ziel für Pagila PG→MySQL)
   # MYSQL_DATABASE legt sakila an + grantet MYSQL_USER; sql-mysql/ legt
   # pagila_target nach + grantet. Nur bei Phase-2-Läufen hochgefahren.
+  #
+  # Phase 3 (Scale): das Employees-Dataset (employees.sql + load_*.dump)
+  # wird read-only nach /sample-cache gemountet, damit der Smoke-Loader
+  # `mysql < employees.sql` mit cwd=/sample-cache/employees ausführen kann
+  # (employees.sql `source`t die Dumps mit relativen Pfaden). Quell-/Ziel-
+  # DBs (employees, employees_my_target) legt der Scale-Smoke selbst an.
   mysql:
     image: mysql:8.4
     env_file:
@@ -39,6 +45,7 @@ services:
     volumes:
       - sample-db-mysql-data:/var/lib/mysql
       - ./sql-mysql:/docker-entrypoint-initdb.d:ro
+      - ./.cache:/sample-cache:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 5s

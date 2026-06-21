@@ -27,6 +27,17 @@ class ImportTableValidatorTest : FunSpec({
             tables = tables.mapValues { (_, cols) -> TableDefinition(columns = cols) },
         )
 
+    fun schemaWithPk(
+        table: String,
+        columns: Map<String, ColumnDefinition>,
+        primaryKey: List<String>,
+    ): SchemaDefinition =
+        SchemaDefinition(
+            name = "S",
+            version = "1",
+            tables = mapOf(table to TableDefinition(columns = columns, primaryKey = primaryKey)),
+        )
+
     test("happy path: all columns match nullability and type") {
         val schema = schemaWith(
             "users",
@@ -134,6 +145,42 @@ class ImportTableValidatorTest : FunSpec({
         }
         ex.message!! shouldContain "schema requires NULLABLE"
         ex.message!! shouldContain "target is NOT NULL"
+    }
+
+    // Regression (Sample-DB Phase 3, Employees): reverse omits `required` for
+    // PK columns, but the DB forces them NOT NULL via the PK clause. The
+    // preflight must treat PK membership as effectively NOT NULL, so a schema
+    // d-migrate reversed + generated itself round-trips on import.
+    test("PK column without explicit required matches a NOT NULL target") {
+        val schema = schemaWithPk(
+            "employees",
+            mapOf(
+                "emp_no" to ColumnDefinition(NeutralType.Identifier(), required = false),
+                "first_name" to ColumnDefinition(NeutralType.Text(), required = true),
+            ),
+            primaryKey = listOf("emp_no"),
+        )
+        val targets = listOf(
+            TargetColumn("emp_no", nullable = false, jdbcType = Types.INTEGER),
+            TargetColumn("first_name", nullable = false, jdbcType = Types.VARCHAR),
+        )
+        ImportTableValidator.validateTargetTable(schema, "employees", targets)
+    }
+
+    test("composite-PK columns without explicit required match NOT NULL targets") {
+        val schema = schemaWithPk(
+            "salaries",
+            mapOf(
+                "emp_no" to ColumnDefinition(NeutralType.Identifier(), required = false),
+                "from_date" to ColumnDefinition(NeutralType.Date, required = false),
+            ),
+            primaryKey = listOf("emp_no", "from_date"),
+        )
+        val targets = listOf(
+            TargetColumn("emp_no", nullable = false, jdbcType = Types.INTEGER),
+            TargetColumn("from_date", nullable = false, jdbcType = Types.DATE),
+        )
+        ImportTableValidator.validateTargetTable(schema, "salaries", targets)
     }
 
     test("type mismatch reported with describe() label") {

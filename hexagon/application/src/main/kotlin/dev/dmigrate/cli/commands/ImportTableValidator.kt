@@ -47,10 +47,19 @@ object ImportTableValidator {
         val mismatches = buildList {
             for ((columnName, schemaColumn) in schemaTable.columns) {
                 val targetColumn = targetByName.getValue(columnName)
-                if (schemaColumn.required == targetColumn.nullable) {
+                // A primary-key column is implicitly NOT NULL in every supported
+                // dialect — the DB enforces it via the PK clause even when the
+                // column is declared without NOT NULL. The neutral model leaves
+                // `required` unset for PK columns (reverse omits it; the DDL
+                // generators rely on the PK clause), so the effective constraint
+                // is `required OR part of the primary key`. Without this, a schema
+                // d-migrate reversed + generated itself would be rejected here
+                // because the reverse-read target column reports NOT NULL.
+                val schemaRequired = schemaColumn.required || columnName in schemaTable.primaryKey
+                if (schemaRequired == targetColumn.nullable) {
                     add(
                         "column '$columnName' nullability mismatch: schema requires " +
-                            "${if (schemaColumn.required) "NOT NULL" else "NULLABLE"} but target is " +
+                            "${if (schemaRequired) "NOT NULL" else "NULLABLE"} but target is " +
                             "${if (targetColumn.nullable) "NULLABLE" else "NOT NULL"}"
                     )
                 }

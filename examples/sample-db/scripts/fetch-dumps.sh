@@ -67,9 +67,46 @@ CHINOOK_URL="https://raw.githubusercontent.com/${CHINOOK_REPO}/${CHINOOK_COMMIT}
 CHINOOK_SHA256="7651ba378ac2fcd0dfc3c66fb101f7a7eed3ba39a612ec642b96e20702061f15"
 CHINOOK_DEST="$CACHE_DIR/chinook.db"
 
+# --- Employees (MySQL) — Phase 3 (Scale) --------------------------
+# datacharmer/test_db: das klassische große Employees-Beispiel (~4 Mio
+# Zeilen, 6 Tabellen). employees.sql enthält das DDL UND `source
+# load_*.dump`-Direktiven mit RELATIVEN Pfaden — deshalb landen alle
+# Dateien zusammen in .cache/employees/, und der Loader im Smoke-Skript
+# führt mysql mit cwd=.cache/employees aus. Jede Datei auf denselben
+# Commit-SHA gepinnt + SHA256-verifiziert.
+EMP_REPO="datacharmer/test_db"
+EMP_COMMIT="e324b56193ca506ab7cc1ab143a9153d8c4535d7"
+EMP_BASE="https://raw.githubusercontent.com/${EMP_REPO}/${EMP_COMMIT}"
+EMP_DIR="$CACHE_DIR/employees"
+# Datei -> SHA256 (am Pin-Commit berechnet). load_salaries* sind die
+# Volumen-Treiber für den Scale-/Resume-Test.
+EMP_FILES="\
+employees.sql:cfe3f89f7b21326c516ba65d253e35e795877e9bb60c388520d915f348403a9a
+load_departments.dump:2271cfef20852e395ec72ce269a119b2c799a973a9277c971409ea53d5a17cfa
+load_dept_emp.dump:52cc6dbc1b139254533264bd5d44a6012377f34ecf1eef693ddfb349aeb40ed6
+load_dept_manager.dump:d9cff691f09f2399f5490e435deb8c932946246aaf483b8f1cbef0bc556aa1dc
+load_employees.dump:ba004ebc5fcdad59544fd8ced262d1793ca02c7936c5d7668a355c6a683d6fa8
+load_salaries1.dump:aa485ea7b1553f1660d6db5a93e9ede0a0c182cb923f9471a39594f7ca967c5b
+load_salaries2.dump:cad589bff736cb575358d7806e4e4a13e28a2e9c714c2fb51fbe4db74a5706fa
+load_salaries3.dump:75fc473d2472341fbfd635d6f4853c63645051829a9c7a1a18ee819fe5816f45
+load_titles.dump:dcd382989c46719e1e216ffef4919483f0f71d52da517c37c22d39cdaf9bc044"
+
 mkdir -p "$CACHE_DIR"
 fetch_one "pagila"        "$PAGILA_URL"        "$PAGILA_DEST"        "$PAGILA_SHA256"
 fetch_one "sakila-schema" "$SAKILA_SCHEMA_URL" "$SAKILA_SCHEMA_DEST" "$SAKILA_SCHEMA_SHA256"
 fetch_one "sakila-data"   "$SAKILA_DATA_URL"   "$SAKILA_DATA_DEST"   "$SAKILA_DATA_SHA256"
 fetch_one "chinook"       "$CHINOOK_URL"       "$CHINOOK_DEST"       "$CHINOOK_SHA256"
+
+# Employees nur fetchen, wenn angefordert (Phase 3 ist opt-in/nightly —
+# kein PR-Gate). `FETCH_EMPLOYEES=1 ./fetch-dumps.sh` oder der
+# Scale-Smoke setzt die Variable selbst.
+if [ "${FETCH_EMPLOYEES:-0}" = "1" ]; then
+    mkdir -p "$EMP_DIR"
+    while IFS=: read -r f sha; do
+        [ -n "$f" ] || continue
+        fetch_one "employees/$f" "$EMP_BASE/$f" "$EMP_DIR/$f" "$sha"
+    done <<EOF
+$EMP_FILES
+EOF
+fi
 log "done."
