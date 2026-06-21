@@ -2,9 +2,11 @@
 
 > Dokumenttyp: In-Progress-Plan (Folge-Slice von [`sample-db-integration-harness.md`](sample-db-integration-harness.md))
 > Status: **In Arbeit** (seit 2026-06-21; nach `in-progress/` verschoben, ADR 0004,
-> mit dem ersten Implementierungs-Commit). **VA1a + VA1b erledigt**
-> (`cfb7ab78` Geometrie-Erkennung im Read-Pfad, `0c6ee1d7` geometrie-bewusste
-> Read-Projektion); offen: VA1c/VA1d, VA2–VA5, Sub-Slices 5a–5d.
+> mit dem ersten Implementierungs-Commit). **VA1a + VA1b + VA1c erledigt**
+> (`cfb7ab78` Geometrie-Erkennung, `0c6ee1d7`+`961d919e` Read-Projektion als plain
+> WKB, `961d919e` Geometrie-Bind im Import via `ST_GeomFromWKB`); kanonisches
+> Transfer-Format = **WKB** (verlustfrei, cross-dialect). Offen: VA1d, VA2–VA5,
+> Sub-Slices 5a–5d.
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
@@ -58,16 +60,20 @@ nicht bloße Harness-Verkabelung.
     `NeutralType.Geometry` — unabhängig vom JDBC-Code (PG `OTHER`+"geometry", MySQL
     `BINARY`+"GEOMETRY"). SRID bleibt null (Read-Pfad trägt sie nicht → VA2).
     Regressionstest in `JdbcToNeutralTypeMapperTest`.
-  - **VA1b Read-Projektion. ✅ ERLEDIGT (`0c6ee1d7`).** `AbstractJdbcDataReader`
-    macht für Treiber mit `supportsGeometryRead` eine Metadaten-Vorabfrage
-    (`SELECT * … WHERE 1 = 0`), erkennt Geometriespalten und wrappt sie via
-    `geometryReadExpression(col) AS col`: PG `ST_AsEWKB` (EWKB+SRID), MySQL
-    `ST_AsBinary` (WKB). Ohne Geometrie bleibt die Projektion `*` (kein Delta).
-    SQLite aus → VA4. Pure Helfer + E2E-Test (sqlite-jdbc, declared-type GEOMETRY).
-  - **VA1c Bind:** **dialekt-spezifisches** Geometrie-Binding in den
-    `*TableImportSession` (PostGIS-EWKB ≠ MySQL-WKB ≠ SpatiaLite-BLOB; z. B.
-    `ST_GeomFromWKB`/`ST_GeomFromText`/`GeomFromWKB(?,srid)`) **mit SRID-Erhalt**,
-    analog dem K1/L1-Muster (`JdbcForeignValueNormalizer`).
+  - **VA1b Read-Projektion. ✅ ERLEDIGT (`0c6ee1d7`, Format-Korrektur `961d919e`).**
+    `AbstractJdbcDataReader` macht für Treiber mit `supportsGeometryRead` eine
+    Metadaten-Vorabfrage (`SELECT * … WHERE 1 = 0`), erkennt Geometriespalten und
+    wrappt sie via `geometryReadExpression(col) AS col`: PG **und** MySQL
+    `ST_AsBinary` (**plain WKB**). Bewusst **kein** EWKB — EWKB ist nicht
+    cross-dialect-tauglich (MySQL versteht das SRID-Flag nicht); WKB ist das
+    einheitliche, verlustfreie Format, SRID separat (VA2). Ohne Geometrie bleibt die
+    Projektion `*` (kein Delta). SQLite aus → VA4. Pure Helfer + E2E-Test (sqlite-jdbc).
+  - **VA1c Bind. ✅ ERLEDIGT (`961d919e`).** `AbstractTableImportSession.valuePlaceholder`
+    wrappt Geometrie-Zielspalten als `<geometryBindConstructor>(?)` statt `?`; PG +
+    MySQL → `ST_GeomFromWKB` (akzeptiert plain WKB von VA1b, auch cross-dialect).
+    Das WKB-`byte[]` wird normal gebunden (PG bytea / MySQL blob); SRID 0 → VA2.
+    Alle Placeholder-Stellen umgestellt; SQLite kein Konstruktor → VA4. Gewählt:
+    **WKB + SRID** (verlustfrei) statt WKT (PostGIS-dokumentierter Float-Verlust).
   - **VA1d Preflight:** `ImportTypeCompatibility.isTypeCompatible(Geometry)` mappt
     heute unbedingt auf `true` → auf echte Ziel-Geometrie-Kompatibilität härten.
     **Achtung Reichweite:** die Klasse liegt in `hexagon/application` und greift für
