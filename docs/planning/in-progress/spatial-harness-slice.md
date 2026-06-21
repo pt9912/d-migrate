@@ -2,11 +2,14 @@
 
 > Dokumenttyp: In-Progress-Plan (Folge-Slice von [`sample-db-integration-harness.md`](sample-db-integration-harness.md))
 > Status: **In Arbeit** (seit 2026-06-21; nach `in-progress/` verschoben, ADR 0004,
-> mit dem ersten Implementierungs-Commit). **VA1 KOMPLETT (a–d)**: `cfb7ab78`
-> Erkennung, `0c6ee1d7`+`961d919e` Read-Projektion (plain WKB), `961d919e`
-> Geometrie-Bind (`ST_GeomFromWKB`), `ca0afc26` Preflight-Härtung. Kanonisches
-> Transfer-Format = **WKB** (verlustfrei, cross-dialect); nur unit-/SQLite-getestet,
-> Live-DB-Verifikation offen. Offen: VA2–VA5, Sub-Slices 5a–5d.
+> mit dem ersten Implementierungs-Commit). **VA1 (a–d) implementiert + code-review-
+> gehärtet** (`25efa6b5`): `cfb7ab78` Erkennung, `0c6ee1d7`+`961d919e` Read-Projektion
+> (plain WKB), `961d919e` Geometrie-Bind (`ST_GeomFromWKB`), `ca0afc26` Preflight.
+> **Zwei Review-Bugs behoben:** dialekt-bewusste Erkennung (native PG-`point`/`polygon`
+> nicht mehr fälschlich gewrappt) + ChunkSchema trägt echt `Geometry` (über
+> `probedColumns`). Kanonisches Format = **WKB** (verlustfrei, cross-dialect).
+> **Noch NICHT live-verifiziert** (nur unit/SQLite) — der VA1-Live-Smoke (vorgezogenes
+> 5a/5b) ist das nächste Gate. Offen: Live-Smoke, VA2–VA5, Sub-Slices 5a–5d.
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
@@ -55,11 +58,13 @@ nicht bloße Harness-Verkabelung.
 
 - **VA1 — Geometrie-Wert-Transfer auf dem Datenpfad.** Mehr als ein Konverter —
   vier Teilstücke:
-  - **VA1a Erkennung. ✅ ERLEDIGT (`cfb7ab78`).** `JdbcToNeutralTypeMapper` erkennt
-    Geometrie jetzt typeName-basiert (via `GeometryType.KNOWN_VALUES`/`of()`) als
-    `NeutralType.Geometry` — unabhängig vom JDBC-Code (PG `OTHER`+"geometry", MySQL
-    `BINARY`+"GEOMETRY"). SRID bleibt null (Read-Pfad trägt sie nicht → VA2).
-    Regressionstest in `JdbcToNeutralTypeMapperTest`.
+  - **VA1a Erkennung. ✅ ERLEDIGT (`cfb7ab78`, Review-Härtung `25efa6b5`).** Geometrie
+    wird **dialekt-bewusst** erkannt (`isGeometryTypeName`-Hook): PostgreSQL nur
+    `geometry` (NICHT die nativen PG-Typen point/polygon/line/box/path/circle/lseg —
+    die heißen wie OGC-Subtypen, sind aber kein WKB), MySQL alle OGC-Namen, SQLite
+    aus. Die Markierung sitzt in den `probedColumns` der Vorabfrage und fließt sowohl
+    in die Projektion (VA1b) als auch ins ChunkSchema (`neutralType=Geometry`, R2) —
+    der ursprüngliche dialekt-blinde Mapper-Branch ist entfernt. SRID null → VA2.
   - **VA1b Read-Projektion. ✅ ERLEDIGT (`0c6ee1d7`, Format-Korrektur `961d919e`).**
     `AbstractJdbcDataReader` macht für Treiber mit `supportsGeometryRead` eine
     Metadaten-Vorabfrage (`SELECT * … WHERE 1 = 0`), erkennt Geometriespalten und
@@ -80,10 +85,14 @@ nicht bloße Harness-Verkabelung.
     (bewusste WKT-/Text-Degradation); andere Ziele (Integer/Binary/Temporal) sind
     inkompatibel. `Geometry→Text` bewusst erhalten (keine Regression gegen den
     `none`-Profil-/Text-Fallback). Test differenziert (Geometrie/Text/inkompatibel).
-  **✅ VA1 KOMPLETT (a–d):** der Geometrie-Wert läuft verlustfrei als WKB von der
-  Quelle (VA1a Erkennung + VA1b Read-Projektion) bis in die Ziel-Geometriespalte
-  (VA1c Bind), Preflight gehärtet (VA1d). Nur unit-/SQLite-getestet — Live-DB-
-  Verifikation (echtes PostGIS/MySQL) steht aus (Sub-Slices 5a–5c).
+  **VA1 (a–d) implementiert + code-review-gehärtet (`25efa6b5`):** der Geometrie-Wert
+  läuft als plain WKB von der Quelle (VA1a dialekt-bewusste Erkennung + VA1b
+  Read-Projektion `ST_AsBinary`) bis in die Ziel-Geometriespalte (VA1c Bind
+  `ST_GeomFromWKB` + explizites `setBytes`), Preflight nur Geometry→Geometry (VA1d).
+  Zwei Review-Bugs behoben (native-PG-Typen, ChunkSchema-Header). **Aber nur unit-/
+  SQLite-getestet — die Live-DB-Verifikation (echtes PostGIS/MySQL) ist das nächste
+  Gate** (vorgezogener VA1-Live-Smoke, dann Sub-Slices 5a–5c); erst danach gilt VA1
+  als bestätigt.
 - **VA2 — PG- *und MySQL*-Reverse SRID/Subtyp-Capture.** `PostgresTypeMapping`
   (liefert bare `Geometry()`) **und** `MysqlTypeMapping` (baut `Geometry` ohne
   `srid`) müssen SRID + Geometrie-Subtyp lesen (PG: `geometry_columns`/`Find_SRID`;
