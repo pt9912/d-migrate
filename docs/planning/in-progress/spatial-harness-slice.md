@@ -1,8 +1,10 @@
 # Plan: Sample-DB-Harness Phase 5 — Spatial (PostGIS + MySQL native + Spatialite)
 
-> Dokumenttyp: Next-Plan (Folge-Slice von [`../in-progress/sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
-> Status: Entwurf, **überarbeitet nach Plan-Review (2026-06-21)**. Scope ausgearbeitet,
-> **Bau folgt**. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
+> Dokumenttyp: In-Progress-Plan (Folge-Slice von [`sample-db-integration-harness.md`](sample-db-integration-harness.md))
+> Status: **In Arbeit** (seit 2026-06-21; nach `in-progress/` verschoben, ADR 0004,
+> mit dem ersten Implementierungs-Commit). **VA1a erledigt** (`cfb7ab78` —
+> Geometrie-Erkennung im Read-Pfad); übrige Vorarbeitspakete + Sub-Slices offen.
+> Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
 > und die Spatial-*Indizes* sind im Code **nicht** vorhanden; nur DDL-Typ-Abbildung,
 > Profil-Policy und PG-GIST-Gate sind implementiert. Phase 5 = **implementieren + absichern**.
@@ -50,9 +52,11 @@ nicht bloße Harness-Verkabelung.
 
 - **VA1 — Geometrie-Wert-Transfer auf dem Datenpfad.** Mehr als ein Konverter —
   vier Teilstücke:
-  - **VA1a Erkennung:** `JdbcToNeutralTypeMapper.mapOther` muss Geometrie
-    dialektspezifisch (via `sqlTypeName`) als `NeutralType.Geometry` erkennen statt
-    auf `Text` zu fallen (sonst trägt der Chunk-/Parquet-Header Text → False-Green).
+  - **VA1a Erkennung. ✅ ERLEDIGT (`cfb7ab78`).** `JdbcToNeutralTypeMapper` erkennt
+    Geometrie jetzt typeName-basiert (via `GeometryType.KNOWN_VALUES`/`of()`) als
+    `NeutralType.Geometry` — unabhängig vom JDBC-Code (PG `OTHER`+"geometry", MySQL
+    `BINARY`+"GEOMETRY"). SRID bleibt null (Read-Pfad trägt sie nicht → VA2).
+    Regressionstest in `JdbcToNeutralTypeMapperTest`.
   - **VA1b Read-Projektion:** typ-bewusstes **per-Spalten-Wrapping** im
     treiberspezifischen `buildSelectQuery`-Override (Geometriespalten via Metadaten
     erkennen, dann `ST_AsEWKB(col) AS col`) — die Projektion kennt heute keine
