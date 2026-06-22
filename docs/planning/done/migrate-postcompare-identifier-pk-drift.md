@@ -1,6 +1,7 @@
 # `migrate --execute` Post-Compare-Drift bei **implizitem** `identifier`-PK (dialektneutral)
 
-> Status: Vorabklärung · Severity **P2** (Korrektheitsdefekt der CLI-Exit-Semantik:
+> Status: **DONE** (implementiert + live-verifiziert 2026-06-22; Closure am Ende).
+> Severity **P2** (Korrektheitsdefekt der CLI-Exit-Semantik:
 >   `migrate --execute` meldet Exit 5 auf einem spec-VALIDEN Schema).
 > Entdeckt 2026-06-22 beim 5d-SpatiaLite-Live-Apply (zuerst auf SQLite beobachtet),
 >   der Defekt ist aber **dialektneutral** (siehe Befund).
@@ -135,9 +136,40 @@ faktisch beantwortet: die Inkonsistenz liegt im Fingerprint, nicht in den Schema
 eine Pflicht zu explizitem `primary_key` würde der Spec widersprechen. Bei Slice-Start
 nur noch ratifizieren.
 
-## Umgehung im 5d-Smoke (bis dahin)
+## Closure (2026-06-22)
 
-`examples/sample-db/scripts/smoke-spatial.sh` Abschnitt `[lite]` toleriert den
-Prozess-Exit (`|| true`) und prüft den **Report** (`status: ok`, kein
-`executionError`) sowie den **Reverse**-Round-Trip (Geometrie + SRID + Spatial-Index,
-Metatabellen gefiltert) — die für 5d relevanten Aussagen.
+**Fix 1 — `identifier`→PK-Kanonisierung im Fingerprint (der Tracker-Kern).**
+`MigrationFingerprint` projiziert den PK jetzt als *effektiven* Wert: bei leerem
+`primary_key` **und genau einer** `identifier`-Spalte wird diese als PK abgeleitet
+(`effectivePrimaryKey`), sonst leer (mehrere `identifier`-Spalten bleiben ambig →
+kein abgeleiteter PK). Algorithmus auf **`schema-fingerprint-v3`** gebumpt (Vertrag).
+Dialektneutral (core); verifiziert: nicht-spatiales `widgets`-Schema mit implizitem
+`identifier`-PK → `migrate --execute` Exit 0; Negativfälle (mehrere `identifier`,
+abweichende/Composite-PK) bleiben distinkt (Unit-Tests in `MigrationFingerprintTest`).
+
+**Fix 2 — SpatiaLite-Reverse-Objekt-Filter (beim 5d-Live-Apply entdeckt, separat).**
+Der `[lite]`-Live-Apply zeigte: der Fingerprint-PK war NICHT die einzige Drift-Quelle
+bei einer Geometrie-Tabelle. Der migrate-Post-Compare re-introspektiert das Ziel und
+zog SpatiaLite-**interne Objekte** als User-Objekte ein — die Integritäts-/Sync-Trigger
+auf der User-Tabelle (`gg[iu]_`/`gi[iud]_`/`tm[iud]_`) und die System-Views
+(`vector_layers*`, `geom_cols_ref_sys`, `spatial_ref_sys_all`). Der SQLite-Reverse
+filtert sie nun (`SqliteSchemaReader.readTriggers`/`readViews` +
+`SqliteTypeMapping.isSpatiaLiteGeometryTrigger`/erweitertes Meta-Objekt-Set),
+quell-validiert gegen SpatiaLite `src/spatialite/dbobj_scopes.c`
+(`scope_is_internal_table`/`scope_is_geometry_trigger`). Erweitert SQLite-Befund 3a
+(Metatabellen-Filter) auf Trigger + Views.
+
+**Closure-Kriterien (beobachtbar).**
+1. `make sample-db-spatial-smoke` grün — `[lite]`: `migrate --execute` endet jetzt mit
+   **Exit 0** (status ok), kein Post-Compare-Drift; der Smoke **asserted** Exit 0
+   (Regressionsschutz, kein `|| true` mehr).
+2. Modul-Checks grün: `:hexagon:core:check` (Fingerprint v3 + Tests),
+   `:adapters:driven:driver-sqlite:check` (Reverse-Filter).
+
+**Lerneintrag.**
+- *Geschärfte Regel:* `identifier` trägt PK-Semantik (Spec 13.1) — der Fingerprint
+  muss das kanonisieren, nicht die Schemas explizites `primary_key` erzwingen.
+- *Neuer Sensor:* `[lite]`-Exit-0-Assert im Spatial-Smoke (Regressionsschutz).
+- *Quell-Verankerung:* SpatiaLite-interne Objekte werden gegen `dbobj_scopes.c`
+  klassifiziert; Voll-Taxonomie (raster/topology/network/wms) als künftige Erweiterung
+  notiert (plain `InitSpatialMetaData` erzeugt sie nicht).

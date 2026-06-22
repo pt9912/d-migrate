@@ -173,8 +173,8 @@ internal class SchemaMigrateExecutionStage(
         } else {
             printError(
                 "Post-execute compare detected drift; the target does not match the desired schema. " +
-                    "Per Plan §F.5.g no automatic recovery rollback artefact will be emitted on drift — " +
-                    "operator must inspect the target manually before deciding on rollback.",
+                    "No automatic recovery rollback artefact is emitted on drift — " +
+                    "inspect the target manually before deciding on rollback.",
                 request.target,
             )
             PostCompareOutcome.Drift(observed)

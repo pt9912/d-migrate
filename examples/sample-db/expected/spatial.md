@@ -34,7 +34,7 @@
   Compare-Drift), weil der Fingerprint `identifier`→`primary_key` asymmetrisch
   normalisiert (nur bei Schemas OHNE explizites `primary_key`; mit `primary_key: [id]`
   Exit 0) — **pre-existing, nicht-spatial** (auch ohne Geometrie reproduzierbar,
-  `docs/planning/open/migrate-postcompare-identifier-pk-drift.md`). Die Migration
+  `docs/planning/done/migrate-postcompare-identifier-pk-drift.md`). Die Migration
   selbst ist `status: ok`; der Smoke prüft daher den Report, nicht den Prozess-Exit.
 - **PostGIS-nyc (`[pg-nyc]`):** `postgis/postgis` enthält kein `shp2pgsql`/`ogr2ogr`;
   der gepinnte `gdal`-Service lädt die Shapefile. Der PG-Reverse schließt

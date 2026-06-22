@@ -67,8 +67,18 @@ object MigrationFingerprint {
      * differ from v1; the bump signals the reverse-reader semantic change so
      * v1-era rollback artefacts are recognised as a different algorithm version
      * rather than silently mismatched.
+     *
+     * v3: the primary key is projected as its **effective** value — an implicit,
+     * `identifier`-typed PK is canonicalised to the same projection as an explicit
+     * `primary_key`. Rationale: `spec/neutral-model-spec.md` 13.1 defines a PK as
+     * "explicit OR via the `identifier` type", so a desired schema that omits
+     * `primary_key` (PK only implicit via `identifier`) is semantically identical to
+     * the reverse, which always materialises `primaryKey = [<col>]`. Without this,
+     * `migrate --execute` reported a spurious post-compare drift (Exit 5) on a
+     * spec-valid identifier-only schema — dialect-neutral
+     * (`docs/planning/done/migrate-postcompare-identifier-pk-drift.md`).
      */
-    const val ALGORITHM: String = "schema-fingerprint-v2"
+    const val ALGORITHM: String = "schema-fingerprint-v3"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -138,7 +148,7 @@ object MigrationFingerprint {
                     .append(SEP).append("generation=").append(generation(col.generation))
                     .append('\n')
             }
-            sb.append("  primary_key=").append(table.primaryKey.joinToString(",")).append('\n')
+            sb.append("  primary_key=").append(effectivePrimaryKey(table).joinToString(",")).append('\n')
             sb.append("  indices[").append(table.indices.size).append("]\n")
             for (idx in table.indices.sortedWith(indexOrder)) {
                 sb.append("    index=").append(idx.name ?: "")
@@ -163,6 +173,26 @@ object MigrationFingerprint {
 
     private val indexOrder = compareBy<IndexDefinition> { it.name ?: "" }
         .thenBy { it.columns.joinToString(",") }
+
+    /**
+     * v3 canonicalisation: the *effective* primary key. An explicit `primary_key`
+     * wins as-is. Otherwise the PK is derived from an `identifier`-typed column
+     * (`spec/neutral-model-spec.md` 13.1 — `identifier` carries PK semantics), so a
+     * desired schema that omits `primary_key` hashes identically to the reverse,
+     * which always materialises the PK explicitly.
+     *
+     * Precise rule — derive ONLY when there is **exactly one** `identifier` column
+     * and `primaryKey` is empty. Multiple `identifier` columns make the implicit PK
+     * **ambiguous**; we must NOT invent one (the schemas should still drift). An
+     * explicit `primary_key` that diverges from the `identifier` column is left
+     * untouched (non-empty → used verbatim), so divergent/composite PKs keep
+     * producing distinct projections.
+     */
+    private fun effectivePrimaryKey(table: TableDefinition): List<String> {
+        if (table.primaryKey.isNotEmpty()) return table.primaryKey
+        val identifierColumns = table.columns.entries.filter { it.value.type is NeutralType.Identifier }
+        return if (identifierColumns.size == 1) listOf(identifierColumns.first().key) else emptyList()
+    }
 
     // ── Views ───────────────────────────────────────────────────────
 

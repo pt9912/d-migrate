@@ -299,5 +299,5 @@ PR-Gate schlank; der Slice ist ergänzende QA-Infrastruktur (kein RC-Kriterium).
   Tabellen nie trafen. Lehre: ein echtes, gepinntes Sample findet Reverse-Bugs, die
   Inline-Fixtures verstecken.
 - *Benannte Folgearbeit (nicht-spatial, getrackt):*
-  [`../open/migrate-postcompare-identifier-pk-drift.md`](../open/migrate-postcompare-identifier-pk-drift.md)
+  [`migrate-postcompare-identifier-pk-drift.md`](migrate-postcompare-identifier-pk-drift.md)
   (SQLite `migrate --execute` Post-Compare-Drift Exit 5).

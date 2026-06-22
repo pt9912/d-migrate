@@ -109,6 +109,10 @@ $COMPOSE up -d postgis mysql
 wait_healthy postgis 120
 wait_healthy mysql 180
 
+# .cache früh anlegen — mehrere Abschnitte schreiben Reverse-/Generate-Artefakte
+# dorthin; ein frischer Checkout (oder ein `git clean`) hat das gitignorte .cache nicht.
+mkdir -p "$EXAMPLES_DIR/.cache"
+
 # Geometrie-Sample (WKT) — bewusst exakt darstellbare Integer-Koordinaten.
 PT="POINT(1 2)"
 POLY="POLYGON((0 0,4 0,4 4,0 4,0 0))"
@@ -361,14 +365,11 @@ log "[lite] generate OK — AddGeometryColumn(SRID 4326, POINT) + CreateSpatialI
 #     (geometry_columns.spatial_index_enabled=1), nicht als generischer CREATE INDEX.
 #   Befund 3 — Reverse rekonstruiert Geometrie+SRID+Spatial-Index und filtert ALLE
 #     SpatiaLite-Metatabellen + R*Tree-Schattentabellen heraus (nur `places` bleibt).
-# HINWEIS: SQLite `migrate --execute` endet hier mit Exit 5 (Post-Execute-Compare-Drift),
-# weil va4-apply-schema.yaml den PK nur implizit über `identifier` trägt (KEIN explizites
-# `primary_key`) und der Fingerprint diese `identifier`→`primary_key`-Äquivalenz nicht
-# kanonisiert — ein PRE-EXISTING, NICHT-spatialer SQLite-Befund (mit explizitem
-# `primary_key: [id]` ist es Exit 0; auch ohne Geometrie reproduzierbar,
-# docs/planning/open/migrate-postcompare-identifier-pk-drift.md). Wir prüfen die
-# Ausführung daher über den Report (status ok, kein executionError), nicht über den
-# Prozess-Exit.
+# `va4-apply-schema.yaml` trägt den PK nur implizit über `identifier` (KEIN explizites
+# `primary_key`). Seit dem v3-Fingerprint-Fix (MigrationFingerprint kanonisiert die
+# `identifier`→PK-Äquivalenz, docs/planning/done/migrate-postcompare-identifier-pk-drift.md)
+# endet `migrate --execute` hier mit **Exit 0** — kein Post-Compare-Drift mehr. Dieser
+# Abschnitt ist damit der Regressionsschutz gegen ein Wieder-Auftreten der Drift.
 log "[lite] migrate --execute --spatial-profile spatialite gegen frische .db..."
 rm -f "$EXAMPLES_DIR"/.cache/va4-apply.db "$EXAMPLES_DIR"/.cache/va4-apply.db-wal "$EXAMPLES_DIR"/.cache/va4-apply.db-shm
 cat > "$EXAMPLES_DIR/.cache/va4-apply-schema.yaml" <<'YAML'
@@ -386,12 +387,14 @@ YAML
 $COMPOSE run --rm dmigrate schema migrate --execute --spatial-profile spatialite \
     --source /work/.cache/va4-apply-schema.yaml \
     --target "db:sqlite:///work/.cache/va4-apply.db?spatialite=true" \
-    --report /work/.cache/va4-apply.report.yaml > /tmp/va4-apply.log 2>&1 || true
+    --report /work/.cache/va4-apply.report.yaml > /tmp/va4-apply.log 2>&1
+mig_exit=$?
+[ "$mig_exit" = "0" ] || { cat /tmp/va4-apply.log; fail "[lite] migrate --execute Exit $mig_exit (erwartet 0 — implizite-identifier-PK-Drift zurück?)"; }
 grep -q '"status": "ok"' "$EXAMPLES_DIR/.cache/va4-apply.report.yaml" 2>/dev/null \
     || { cat /tmp/va4-apply.log; fail "[lite] migrate execution status not ok"; }
 grep -q '"executionError":null' "$EXAMPLES_DIR/.cache/va4-apply.report.yaml" \
     || { cat "$EXAMPLES_DIR/.cache/va4-apply.report.yaml"; fail "[lite] migrate reported an execution error"; }
-log "[lite] migrate executed cleanly (report status ok, no executionError)"
+log "[lite] migrate executed cleanly (Exit 0, status ok — implizite identifier-PK-Drift behoben)"
 
 log "[lite] reverse of migrated .db (Befund 3)..."
 $COMPOSE run --rm dmigrate schema reverse \

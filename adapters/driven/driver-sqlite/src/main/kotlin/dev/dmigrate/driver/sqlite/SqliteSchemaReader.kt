@@ -204,6 +204,9 @@ class SqliteSchemaReader : SchemaReader {
         val viewEntries = SqliteMetadataQueries.listViews(session)
         val result = LinkedHashMap<String, ViewDefinition>()
         for ((name, sql) in viewEntries) {
+            // VA4/5d Befund 3 (Views): SpatiaLite-System-Views (vector_layers*,
+            // geom_cols_ref_sys, spatial_ref_sys_all) ausschließen — sonst False-Drift.
+            if (SqliteTypeMapping.isSpatiaLiteMetaTable(name)) continue
             val query = sql?.let { SqliteTypeMapping.extractViewQuery(it) }
             result[name] = ViewDefinition(query = query, sourceDialect = "sqlite")
         }
@@ -219,7 +222,17 @@ class SqliteSchemaReader : SchemaReader {
         for (row in triggerRows) {
             val name = row["name"] as String
             val table = row["tbl_name"] as String
+            // VA4/5d Befund 3 (Trigger): `InitSpatialMetaData()` legt zahlreiche
+            // Integritäts-Trigger AUF den SpatiaLite-Metatabellen an (geometry_columns*,
+            // views_/virts_geometry_columns, spatial_ref_sys). Diese Tabellen werden
+            // bereits aus dem Reverse gefiltert (S101) — ihre Trigger müssen ebenso raus,
+            // sonst referenzieren sie nicht-existente Tabellen (E018) und treiben einen
+            // False-Drift im migrate-Post-Compare.
+            if (SqliteTypeMapping.isSpatiaLiteMetaTable(table)) continue
             val sql = row["sql"] as? String ?: continue
+            // SpatiaLite-Integritäts-/Spatial-Index-Trigger auf der User-Tabelle
+            // (gg*/gi*/tm*) ebenfalls ausschließen — siehe isSpatiaLiteGeometryTrigger.
+            if (SqliteTypeMapping.isSpatiaLiteGeometryTrigger(name, sql)) continue
             val parsed = SqliteTriggerSqlParser.parse(sql, name)
             notes += parsed.notes
             // Schema-qualified names (R212) are rejected — no TriggerDefinition

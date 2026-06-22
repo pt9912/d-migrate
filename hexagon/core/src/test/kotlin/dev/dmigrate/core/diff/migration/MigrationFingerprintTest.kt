@@ -25,7 +25,58 @@ class MigrationFingerprintTest : FunSpec({
     ) = SchemaDefinition(name = name, version = version, tables = tables, sequences = sequences)
 
     test("project starts with the algorithm identifier") {
-        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v2\n")
+        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v3\n")
+    }
+
+    // v3: identifier-implied PK canonicalisation
+    // (docs/planning/done/migrate-postcompare-identifier-pk-drift.md)
+
+    test("implicit identifier PK fingerprints identically to explicit primary_key") {
+        // Soll: PK nur implizit über `identifier` (kein primary_key) — wie ein
+        // hand-/CLI-Schema. Reverse: PK explizit materialisiert. Müssen gleich hashen.
+        val implicit = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "label" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )))
+        val explicit = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "label" to ColumnDefinition(NeutralType.Text()),
+            ),
+            primaryKey = listOf("id"),
+        )))
+        MigrationFingerprint.compute(implicit) shouldBe MigrationFingerprint.compute(explicit)
+        MigrationFingerprint.project(implicit) shouldContain "primary_key=id\n"
+    }
+
+    test("ambiguous: multiple identifier columns without primary_key do NOT derive a PK") {
+        val twoIds = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "a" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "b" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+            ),
+        )))
+        // Keine implizite PK abgeleitet → leer; unterscheidet sich von explizitem PK.
+        MigrationFingerprint.project(twoIds) shouldContain "primary_key=\n"
+        val explicitA = schema(tables = mapOf("t" to TableDefinition(
+            columns = twoIds.tables.getValue("t").columns,
+            primaryKey = listOf("a"),
+        )))
+        MigrationFingerprint.compute(twoIds) shouldNotBe MigrationFingerprint.compute(explicitA)
+    }
+
+    test("explicit PK diverging from the identifier column stays distinct (no false match)") {
+        val pkOnOther = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "code" to ColumnDefinition(NeutralType.Text()),
+            ),
+            primaryKey = listOf("code"),
+        )))
+        // Nicht-leerer PK wird verbatim genutzt → NICHT auf `id` kanonisiert.
+        MigrationFingerprint.project(pkOnOther) shouldContain "primary_key=code\n"
     }
 
     test("index column prefix length is part of the fingerprint (prefix-length slice)") {
@@ -148,7 +199,7 @@ class MigrationFingerprintTest : FunSpec({
     }
 
     test("ALGORITHM constant is the version-2 string") {
-        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v2"
+        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v3"
     }
 
     // ── Branch coverage for type / default / generation projections ──

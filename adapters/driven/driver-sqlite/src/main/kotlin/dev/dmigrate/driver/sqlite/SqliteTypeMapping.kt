@@ -178,6 +178,13 @@ internal object SqliteTypeMapping {
     // TABLEs → bereits über [isVirtualTable] (S100) ausgeschlossen; die R*Tree-Index-
     // Schattentabellen `idx_<t>_<col>_{node,parent,rowid}` filtert der SchemaReader aus
     // `geometry_columns.spatial_index_enabled`.
+    // Quell-validiert gegen SpatiaLite `src/spatialite/dbobj_scopes.c`
+    // (`scope_is_internal_table`/`scope_is_geometry_trigger`). Diese Liste deckt die
+    // von **plain** `InitSpatialMetaData()` angelegten Metadaten-Objekte ab (das, was
+    // der Harness + ein typischer Spatial-Reverse erzeugen). SpatiaLites Voll-Taxonomie
+    // umfasst zusätzlich Advanced-Feature-Tabellen (raster_coverages*, topologies/
+    // networks, vector_coverages*, wms_*, stored_procedures/variables) — die entstehen
+    // nur über separate Init-Funktionen; bei Bedarf hier ergänzen.
     private val SPATIALITE_META_TABLES = setOf(
         "geometry_columns",
         "geometry_columns_auth",
@@ -197,10 +204,40 @@ internal object SqliteTypeMapping {
         "spatialite_history",
         "sql_statements_log",
         "data_licenses",
+        // SpatiaLite-System-VIEWS (InitSpatialMetaData) — gleiches Namens-Filter-Set
+        // (sqlite_master teilt den Namensraum für Tabellen + Views).
+        "geom_cols_ref_sys",
+        "spatial_ref_sys_all",
+        "vector_layers",
+        "vector_layers_auth",
+        "vector_layers_field_infos",
+        "vector_layers_statistics",
     )
 
+    /** SpatiaLite-internes Metadaten-Objekt (Tabelle ODER View) — name-basiert. */
     fun isSpatiaLiteMetaTable(name: String): Boolean =
         name.lowercase() in SPATIALITE_META_TABLES
+
+    // VA4/5d Befund 3 (Trigger): `AddGeometryColumn`/`CreateSpatialIndex` legen auf der
+    // USER-Tabelle Integritäts-/Sync-Trigger an: `gg[iud]_` (Geometrie-Constraint),
+    // `gi[iud]_` (R*Tree-Spatial-Index-Sync), `tm[iud]_` (geometry_columns_time-Pflege).
+    // Sie sind SpatiaLite-intern und dürfen nicht als User-Trigger reverse-engineered
+    // werden (sonst False-Drift im migrate-Post-Compare). Die Trigger AUF den
+    // Metatabellen fängt bereits [isSpatiaLiteMetaTable].
+    private val SPATIALITE_TRIGGER_PREFIXES = listOf(
+        "ggi_", "ggu_", "ggd_", "gii_", "giu_", "gid_", "tmi_", "tmu_", "tmd_",
+    )
+    private val SPATIALITE_TRIGGER_BODY_MARKERS =
+        Regex("GeometryConstraints|RTreeAlign|DisableSpatialIndex", RegexOption.IGNORE_CASE)
+
+    /** True für SpatiaLite-generierte Geometrie-/Spatial-Index-Trigger auf User-Tabellen.
+     *  Namens-Präfix deckt alle (auch `gid_`, das nur die R*Tree-Tabelle referenziert);
+     *  der Body-Marker fängt zusätzlich abweichend benannte SpatiaLite-Trigger ab. */
+    fun isSpatiaLiteGeometryTrigger(name: String, triggerSql: String): Boolean {
+        val n = name.lowercase()
+        return SPATIALITE_TRIGGER_PREFIXES.any { n.startsWith(it) } ||
+            SPATIALITE_TRIGGER_BODY_MARKERS.containsMatchIn(triggerSql)
+    }
 
     fun extractViewQuery(createSql: String): String? {
         val idx = createSql.indexOf(" AS ", ignoreCase = true)
