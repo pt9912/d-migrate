@@ -24,7 +24,8 @@ private val LargeSchemaTag = NamedTag("large-schema")
  * §5.4 (Sub-Slice D).
  *
  * For each [Scale] the spec builds a synthetic mixed schema
- * (tables + sequences + views + functions + triggers) via
+ * (4×n + 1: n tables + n sequences + n views + n triggers + 1 shared
+ * trigger function — NOT 5×n; the triggers share a single function) via
  * [LargeSchemaGenerator], runs the full
  * `current=empty → desired=schema` planner + PostgreSQL renderer
  * pipeline, and asserts both the wall-clock smoke budget
@@ -89,9 +90,9 @@ class LargeSchemaScaleSpec : FunSpec({
          *
          * Smoke budgets are deliberately generous — the synthetic
          * schemas exercise the full planner + renderer chain for
-         * 5×n objects (tables + sequences + views + functions +
-         * triggers), and the cold-CI JIT warmup adds substantial
-         * tail latency to the first iterations.
+         * 4×n + 1 objects (n tables + n sequences + n views + n
+         * triggers + 1 shared trigger function), and the cold-CI JIT
+         * warmup adds substantial tail latency to the first iterations.
          */
         internal data class Scale(
             val n: Int,
