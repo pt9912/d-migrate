@@ -568,7 +568,12 @@ nicht als Enterprise-BI-Plattform (siehe
 
 ¹ Methodik + aktuelle Budgets dokumentiert. Die acceptance-grade Benchmarks
 **LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
-🔮 1.0.0-QA-Ziele und noch nicht validiert.
+🔮 1.0.0-QA-Ziele und noch nicht validiert. Der Phase-4-Folge-Slice
+([`tpc-performance-slice.md`](../next/tpc-performance-slice.md)) hat seine
+Decision-Blocker geklärt (Stand 2026-06-22): Workload-Sourcing in
+[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) (accepted, DuckDB-`tpch`),
+normierte Mess-Umgebung in [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md)
+(proposed); Bau folgt.
 ² Der automatisierte Vorfilter ([Playbook](../../operations/pilot-validation-playbook.md))
 lief am 2026-06-16 ([Report](../done-archive/pilot-validation-0.9.9.md), Verdikt **nicht RC-reif**);
 die menschliche ≥5-Tester-Abnahme bleibt davon unberührt und steht weiter aus.

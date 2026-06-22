@@ -13,6 +13,27 @@
 > [`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)
 > (Abnahmekriterien 8.1/8.2). Nicht-blockierend für 1.0.0-Funktionalität; QA-Abnahme-Ziel.
 
+## Stand & Wiedereinstieg (2026-06-22)
+
+**Decision-Blocker aufgelöst — Bau noch nicht begonnen.**
+
+- **Sourcing/Lizenz (Blocker 1+2):** entschieden →
+  [ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) **accepted**: Tool
+  **A — DuckDB-`tpch`** (LTS 1.4.5, Core-Extension MIT, Generator-Pin statt Dump).
+- **Normierte Mess-Umgebung (Blocker 3):** Grundrichtung entschieden →
+  [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md) **proposed**
+  (Container-Caps + Acceptance-Tier + Kalibrierungs-Guard). **Offene Parameter bis
+  `accepted`:** konkrete Caps, Kalibrierungs-Op + Toleranzband, Warmup-/Iterations-Zahlen
+  (K/M), designierter Nightly-Runner.
+
+**Hier weitermachen — zwei unabhängige Stränge:**
+
+1. **ADR 0018 ratifizieren:** die 4 offenen Parameter konkretisieren (analog zur
+   0017-Vorbereitung) → `accepted`. Voraussetzung für die **harten** 4c-/4d-Budgets.
+2. **Umsetzung beginnen (ohne ADR 0018 möglich):** 4a (DuckDB-Loader-Container analog
+   `gdal` verdrahten, SF-Config + `dbgen`) + 4b (TPC-H-Schema-Round-Trip) + synthetisches
+   4d-DDL-Gate sind unabhängig von Blocker 3 baubar.
+
 ## Ziel
 
 Realistische, großvolumige **Benchmark-Workloads** (TPC-H und/oder TPC-DS) gegen
