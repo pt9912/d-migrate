@@ -171,7 +171,7 @@ ausgegliedert; löst Detekt-`TooManyFunctions` ohne `@Suppress`).
 - *Benannte Spec-/Code-Lücke (Review-Fund, NICHT spatial):* `migrate --execute` gegen
   SQLite meldet stets Post-Compare-Drift (Exit 5) wegen `identifier`→`primary_key`-
   Fingerprint-Asymmetrie → eigene Folge-Slice
-  [`open/sqlite-migrate-postcompare-identifier-drift.md`](../open/sqlite-migrate-postcompare-identifier-drift.md).
+  [`open/migrate-postcompare-identifier-pk-drift.md`](../open/migrate-postcompare-identifier-pk-drift.md).
 - *Bekannte Grenzen (bewusst außerhalb 5d):* nur R*Tree (`spatial_index_enabled = 1`);
   MbrCache (2) wird nicht modelliert. `schema generate`-Standalone-DDL trägt das
   Bootstrap (noch) nicht (ADR 0016). Composite-Index mit Geometriespalte folgt der

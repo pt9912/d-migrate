@@ -366,7 +366,7 @@ log "[lite] generate OK — AddGeometryColumn(SRID 4326, POINT) + CreateSpatialI
 # `primary_key`) und der Fingerprint diese `identifier`→`primary_key`-Äquivalenz nicht
 # kanonisiert — ein PRE-EXISTING, NICHT-spatialer SQLite-Befund (mit explizitem
 # `primary_key: [id]` ist es Exit 0; auch ohne Geometrie reproduzierbar,
-# docs/planning/open/sqlite-migrate-postcompare-identifier-drift.md). Wir prüfen die
+# docs/planning/open/migrate-postcompare-identifier-pk-drift.md). Wir prüfen die
 # Ausführung daher über den Report (status ok, kein executionError), nicht über den
 # Prozess-Exit.
 log "[lite] migrate --execute --spatial-profile spatialite gegen frische .db..."
