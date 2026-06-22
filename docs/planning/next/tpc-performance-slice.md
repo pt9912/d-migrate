@@ -155,7 +155,11 @@ auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen.
   benchmarks.md` hält fest, dass eine definierte Hardware-/Container-Umgebung fehlt
   und geteilte CI-Runner nur diagnostisch geprüft werden. Harte LF-8.2-Budgets
   brauchen ein fixiertes Runner-/Container-Sizing + Warmup-/Iterations-Vertrag —
-  **vor** dem Versprechen harter Budgets festzulegen.
+  **vor** dem Versprechen harter Budgets festzulegen. **Grundrichtung entschieden in
+  [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md)** (proposed):
+  Container-Caps-Referenz + Acceptance-Tier + Kalibrierungs-Guard; offen bleiben nur
+  die konkreten Parameter (Caps, Kalibrierungs-Op/Toleranz, K/M, Nightly-Runner) bis
+  `accepted`.
 - Sourcing-/Pin-/Lizenz-Entscheidung (4a) — **zu treffen**.
 
 ## Akzeptanzkriterien
