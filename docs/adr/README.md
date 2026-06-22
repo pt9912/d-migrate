@@ -68,3 +68,6 @@ argumentiert werden.
 | 0012 | [Index-Präfixlänge nur auf Index-Spalten — PK-/Constraint-Spalten tragen keine Länge](0012-index-prefix-length-scope.md) | accepted |
 | 0013 | [Sample-DB-Sourcing: Pagila/Sakila vendoren, Employees on-demand — Quellen gepinnt](0013-sample-db-sourcing.md) | superseded by ADR-0014 |
 | 0014 | [Sample-DB-Harness: On-Demand-Fetch + docker-compose/Scripts](0014-sample-db-harness-fetch-and-compose.md) | accepted |
+| 0015 | [Volltext-Spalten (PostgreSQL `tsvector`) als first-class neutraler Typ](0015-fulltext-tsvector-neutral-type.md) | accepted |
+| 0016 | [SpatiaLite-Metadaten-Bootstrap im Migrate-Diff-Pfad (`InitSpatialMetaData`)](0016-spatialite-metadata-bootstrap.md) | accepted |
+| 0017 | [Phase-4-Benchmark-Workload: Generator-Tool pinnen statt statischem Dump](0017-tpc-benchmark-workload-sourcing.md) | proposed |

@@ -96,8 +96,13 @@ schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
      **nicht** garantiert byte-stabil (Float-Repräsentation, Sortier-/Encoding-
      Ordering, Parquet-Encoding) → ein gepinnter Output-SHA256 kann beim nächsten
      DuckDB-Bump brechen, obwohl die Daten „dieselben" sind. Fragiler als (a).
-   Abweichung vom Standard-Pin-Muster → ggf. **ADR-Delegation** (permanente
-   Ausnahme gehört in ein ADR, nicht in den Slice-Plan).
+   Abweichung vom Standard-Pin-Muster → **ADR-Delegation erfolgt**: Entscheidung +
+   Tool-Optionen (A DuckDB-`tpch` MIT / B HammerDB-TPROC-H GPL-als-Container / C
+   schlanke SQL-Generierung) + Pin-Mechanik + Lizenz-Analyse stehen jetzt in
+   **[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** (proposed;
+   Empfehlung: A). Kern-Entscheidung dort: **Generator-Tool + Config pinnen statt
+   statischem Dump** (analog gepinntem `gdal`-Loader), Verlustfreiheit per-Lauf
+   (LF 8.5 SHA-256) statt Baseline-Dump.
 2. **Lizenz (Review-Caveat).** TPC stellt `dbgen`/`dsdgen` unter **TPC-EULA** (kein
    OSS); abgeleitete TPC-Daten unterliegen Branding-/Redistributions-Bedingungen
    (vgl. semgrep-Gate: LGPL/Commons-Clause durfte nicht ins MIT-Repo). Der ADR 0014-
@@ -110,8 +115,10 @@ schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
 
 ## Scope-Skizze (Sub-Slices)
 
-- **4a — Sourcing + Pin-Vertrag.** Generator/Quelle + ADR 0014-konforme Pin-Strategie
-   (oben) entscheiden + im Kandidaten-Katalog dokumentieren; Lizenz prüfen.
+- **4a — Sourcing + Pin-Vertrag.** Tool-Wahl (A/B/C) + Pin-Mechanik + Lizenz-Freigabe
+   aus **[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** ratifizieren
+   (Empfehlung: A DuckDB-`tpch`, MIT, leicht, echtes TPC-H-Schema) + im Kandidaten-
+   Katalog dokumentieren. Generator-Tool + Config gepinnt (kein Dump im Repo).
 - **4b — Schema-Round-Trip-Korrektheit.** TPC-H-Schema reverse/validate/generate/
    transfer (wie Phase 1/2) — Korrektheit vor Messung.
 - **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
