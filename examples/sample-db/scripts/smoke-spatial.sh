@@ -361,9 +361,11 @@ log "[lite] generate OK — AddGeometryColumn(SRID 4326, POINT) + CreateSpatialI
 #     (geometry_columns.spatial_index_enabled=1), nicht als generischer CREATE INDEX.
 #   Befund 3 — Reverse rekonstruiert Geometrie+SRID+Spatial-Index und filtert ALLE
 #     SpatiaLite-Metatabellen + R*Tree-Schattentabellen heraus (nur `places` bleibt).
-# HINWEIS: SQLite `migrate --execute` endet mit Exit 5 (Post-Execute-Compare-Drift),
-# weil der Fingerprint `identifier`→`primary_key` asymmetrisch normalisiert — ein
-# PRE-EXISTING, NICHT-spatialer SQLite-Befund (auch ohne Geometrie reproduzierbar,
+# HINWEIS: SQLite `migrate --execute` endet hier mit Exit 5 (Post-Execute-Compare-Drift),
+# weil va4-apply-schema.yaml den PK nur implizit über `identifier` trägt (KEIN explizites
+# `primary_key`) und der Fingerprint diese `identifier`→`primary_key`-Äquivalenz nicht
+# kanonisiert — ein PRE-EXISTING, NICHT-spatialer SQLite-Befund (mit explizitem
+# `primary_key: [id]` ist es Exit 0; auch ohne Geometrie reproduzierbar,
 # docs/planning/open/sqlite-migrate-postcompare-identifier-drift.md). Wir prüfen die
 # Ausführung daher über den Report (status ok, kein executionError), nicht über den
 # Prozess-Exit.
