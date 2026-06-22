@@ -25,11 +25,18 @@ Das Lastenheft trennt zwei Ebenen; der ältere „LF 8.1/8.2"-Sammelbegriff vers
 
 - **LF 8.1 — Funktionale Tests** (Verlustfreiheit, **kein** Zeitbudget). Relevant:
   „Export und Re-Import von **mindestens 1 Million Datensätzen ohne Datenverlust**".
+  **Verifikationsmethode (LF 8.5 Datenintegritätstests, gebunden an LN-009/010/011):**
+  das Lastenheft schreibt einen **Byte-für-Byte-Vergleich (SHA-256-Hash)** der 1-Mio-
+  Export/Import-Daten vor — strenger als Phase 3 (nur Zeilen-Parität + `SUM(salary)`-
+  Checksumme). 4c muss diese Methode übernehmen (oder ein Surrogat ausdrücklich
+  begründen). LF 8.5 nennt zusätzlich NULL-/Unicode-/BLOB-Integrität — eigener Scope.
 - **LF 8.2 — Performance-Tests** (Zeit/Skalierung). Relevant u. a.:
   „DDL-Generierung für 100 Tabellen in unter 5 s", „Export von 1 Mio in unter
   **100 s**", „Import von 1 Mio in unter **200 s**", „DDL-Generierung für 1.000
-  Tabellen in unter **30 s**", „Export von 10 Mio ohne Out-of-Memory",
-  „Checkpoint/Resume: erfolgreicher Wiederanlauf nach simuliertem Abbruch bei 50 %".
+  Tabellen in unter **30 s**" (= nummerierte Anforderung **LN-004**, „Schemas mit
+  >1.000 Tabellen"; auch in den Abnahmekriterien), „Export von 10 Mio ohne
+  Out-of-Memory", „Checkpoint/Resume: erfolgreicher Wiederanlauf nach simuliertem
+  Abbruch bei 50 %".
 
 **Was Phase 3 (Employees-Scale) bereits belegt — und was nicht:**
 - ✅ Verlustfreiheit (LF 8.1): ~4 Mio Zeilen export→import, Zeilen-Parität +
@@ -108,18 +115,27 @@ schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
 - **4b — Schema-Round-Trip-Korrektheit.** TPC-H-Schema reverse/validate/generate/
    transfer (wie Phase 1/2) — Korrektheit vor Messung.
 - **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
-   Verlustfreiheit (LF 8.1) **und** getrennte Zeit-Budgets (LF 8.2: Export < 100 s,
-   Import < 200 s); exakter Pfad festnageln (`data transfer --chunk-size` **vs.**
-   `data export`→`import --resume`); **plus** Resume nach Abbruch **bei ~50 %**
-   (LF-8.2-Wortlaut; Phase 3 bricht heute beim ersten Checkpoint ab, also < 50 %).
-   Doku-Sync: `performance-benchmarks.md` auf „Verlustfreiheit durch Phase 3
-   plausibilisiert, gemessene Abnahme offen" nachziehen (der Umbrella-Plan ist
+   Verlustfreiheit (LF 8.1) **per LF-8.5-Methode** — **Byte-für-Byte-/SHA-256-Vergleich**
+   der Export/Import-Daten (NICHT nur Zeilen-Parität + Checksumme wie Phase 3; ein
+   Surrogat wäre ausdrücklich zu begründen) — **und** getrennte Zeit-Budgets (LF 8.2:
+   Export < 100 s, Import < 200 s); exakter Pfad festnageln (`data transfer
+   --chunk-size` **vs.** `data export`→`import --resume`); **plus** Resume nach Abbruch
+   **bei ~50 %** (LF-8.2-Wortlaut; Phase 3 bricht heute beim ersten Checkpoint ab,
+   also < 50 %). Doku-Sync: `performance-benchmarks.md` auf „Verlustfreiheit durch
+   Phase 3 plausibilisiert, gemessene Abnahme offen" nachziehen (der Umbrella-Plan ist
    bereits angeglichen).
-- **4d — LF 8.2 DDL-1000-Gate aktivieren/stabilisieren.** Das **bestehende** 30-s-
-   Baseline-Gate verlässlich grün stellen (nicht neu einführen); 4×n-Diff-vs-reiner-
-   DDL-Pfad entscheiden; dabei die irreführende „5×n"-KDoc in `LargeSchemaScaleSpec.kt`
-   auf „4×n + 1" korrigieren. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
+- **4d — LF 8.2 / LN-004 DDL-1000-Gate aktivieren/stabilisieren.** Das **bestehende**
+   30-s-Baseline-Gate (= **LN-004** „>1.000 Tabellen … unter 30 s") verlässlich grün
+   stellen (nicht neu einführen); 4×n-Diff-vs-reiner-DDL-Pfad entscheiden; dabei die
+   irreführende „5×n"-KDoc in `LargeSchemaScaleSpec.kt` auf „4×n + 1" korrigieren.
+   **Das LF-8.2-Kriterium „100 Tabellen < 5 s" ist bereits gedeckt** — die existierende
+   N=100-Baseline (`renderBaselineMs=2_000` = 2 s) liegt darunter; nur als Gate
+   bestätigen, kein neuer Bau. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
 - **4e — (optional) TPC-DS** als zweite, komplexere Workload.
+
+Jeder Sub-Slice (4a–4e) graduiert bei Aktivierung als **eigener** `in-progress/`-Slice
+mit eigener DoD (Modul 5) — dieser `next/`-Entwurf ist der Umbrella, nicht eine
+einzelne lieferbare Einheit.
 
 **Reihenfolge-Gate:** 4c/4d (harte Zeit-Budgets) dürfen **erst nach** Festlegung der
 normierten Mess-Umgebung (siehe Vorbedingungen) greifen — sonst sind die Budgets
@@ -138,10 +154,12 @@ auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen.
 ## Akzeptanzkriterien
 
 - **4b:** TPC-H-Schema round-trippt grün (Parität + erwartete Notes gepinnt).
-- **4c:** Verlustfreiheit (LF 8.1) **gemessen** belegt; Export-/Import-Zeit getrennt
-  unter den LF-8.2-Budgets (< 100 s / < 200 s) in der normierten Umgebung;
-  `performance-benchmarks.md` aktualisiert.
-- **4d:** N=1000-DDL < 30 s als hartes Gate (LF 8.2) in der normierten Umgebung.
+- **4c:** Verlustfreiheit (LF 8.1) **gemessen** belegt **per LF-8.5-Methode**
+  (Byte-für-Byte-/SHA-256-Vergleich der Export/Import-Daten, nicht nur Zeilen-Parität);
+  Export-/Import-Zeit getrennt unter den LF-8.2-Budgets (< 100 s / < 200 s) in der
+  normierten Umgebung; Resume nach Abbruch bei ~50 %; `performance-benchmarks.md` aktualisiert.
+- **4d:** N=1000-DDL < 30 s als hartes Gate (**LF 8.2 / LN-004**) in der normierten
+  Umgebung; N=100-DDL < 5 s (LF 8.2) als Gate bestätigt (bereits durch die N=100-Baseline gedeckt).
 - **Gating:** opt-in/nightly (wie Phase 3), **nicht** im PR-Gate (Laufzeit/Volumen).
 - **Übergreifend:** kein Dump im Repo; `make docs-check` grün.
 
