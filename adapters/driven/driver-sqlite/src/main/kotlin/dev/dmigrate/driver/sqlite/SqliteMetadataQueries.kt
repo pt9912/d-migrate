@@ -5,6 +5,19 @@ import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.*
 
 /**
+ * VA4/5d Befund 3: one SpatiaLite `geometry_columns` registry row, reduced to the
+ * two facts the neutral reverse path cannot recover from `PRAGMA table_info`/
+ * `sqlite_master` alone: the [srid] (null = unconstrained, mirrors PG/MySQL VA2)
+ * and whether an R*Tree [spatialIndexEnabled] spatial index backs the column.
+ */
+data class SqliteGeometryColumn(
+    val table: String,
+    val column: String,
+    val srid: Int?,
+    val spatialIndexEnabled: Boolean,
+)
+
+/**
  * Shared JDBC metadata queries for SQLite.
  *
  * Operates on an already-borrowed connection via [JdbcMetadataSession].
@@ -130,6 +143,35 @@ object SqliteMetadataQueries {
             "SELECT rowid, name, tbl_name, sql FROM sqlite_master " +
                 "WHERE type = 'trigger' ORDER BY rowid"
         )
+    }
+
+    /**
+     * VA4/5d Befund 3: read the SpatiaLite `geometry_columns` registry so the
+     * reverse path can recover the SRID (lost via `PRAGMA table_info`, which only
+     * yields the declared geometry subtype) and the spatial-index flag (the R*Tree
+     * index is a virtual table, not a `sqlite_master` `type='index'` row).
+     *
+     * Guarded: a non-SpatiaLite database has no `geometry_columns` table, so the
+     * query throws and we return an empty list (= "no SpatiaLite metadata"). The
+     * extension need not be loaded — `geometry_columns` is a plain table once
+     * `InitSpatialMetaData()` has run.
+     */
+    fun listGeometryColumns(session: JdbcMetadataSession): List<SqliteGeometryColumn> = try {
+        session.queryList(
+            "SELECT f_table_name, f_geometry_column, srid, spatial_index_enabled " +
+                "FROM geometry_columns",
+        ).mapNotNull { row ->
+            val table = row["f_table_name"] as? String ?: return@mapNotNull null
+            val column = row["f_geometry_column"] as? String ?: return@mapNotNull null
+            SqliteGeometryColumn(
+                table = table,
+                column = column,
+                srid = (row["srid"] as? Number)?.toInt()?.takeIf { it > 0 },
+                spatialIndexEnabled = ((row["spatial_index_enabled"] as? Number)?.toInt() ?: 0) == 1,
+            )
+        }
+    } catch (_: Exception) {
+        emptyList()
     }
 
     /** Get the CREATE TABLE SQL for a table. */

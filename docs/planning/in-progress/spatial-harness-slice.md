@@ -21,11 +21,14 @@
 > `IndexType.SPATIAL`+`SPGIST`; MySQL `SPATIAL INDEX` reverse/generate/diff (Block raus),
 > PostGIS `USING GIST`/`SPGIST` (kein `USING SPATIAL`), B-Tree-auf-Geometrie bleibt
 > geblockt; `[idx]`-Smoke grün (reverse→generate→apply, realer SPATIAL-Index im Katalog).
-> **VA4 (SQLite/SpatiaLite) KERN ERLEDIGT**: SQLite `CreateSpatialIndex` (Block raus),
-> `mod_spatialite` im Image + opt-in `?spatialite=true`-Loading, `migrate --spatial-profile`;
-> `[lite]`-generate live-verifiziert (`AddGeometryColumn`+`CreateSpatialIndex`). Voller
-> SpatiaLite-`migrate --execute`-Round-Trip = 5d-Folgearbeit (2 Restbefunde:
-> `InitSpatialMetaData`, Diff-`CreateTable`-Index → [`open/spatialite-migrate-roundtrip.md`](../open/spatialite-migrate-roundtrip.md)).
+> **VA4 (SQLite/SpatiaLite) KOMPLETT ERLEDIGT + LIVE-VERIFIZIERT (2026-06-22)**: SQLite
+> `CreateSpatialIndex` (Block raus), `mod_spatialite` im Image + opt-in
+> `?spatialite=true`-Loading, `migrate --spatial-profile`. **5d voll umgesetzt:** alle drei
+> Restbefunde behoben (Befund 1 `InitSpatialMetaData()`-Bootstrap im Diff-Renderpfad +
+> ADR 0016, Befund 2 CreateTable-Geometrie-Index→`CreateSpatialIndex`, Befund 3 Reverse
+> liest SRID + `spatial_index_enabled` + filtert Metatabellen/R*Tree-Schatten). `[lite]`-Apply
+> live: `migrate --execute` legt Geometrie + R*Tree-Index real an, Reverse rekonstruiert
+> verlustfrei. Closure → [`done/spatialite-migrate-roundtrip.md`](../done/spatialite-migrate-roundtrip.md).
 > Offen: VA5 (Sample-Pin), volle Sub-Slices 5a–5d.
 > Scope dreirundig review-gehärtet. **Wichtigste Review-Korrektur:** Phase 5 ist **kein reiner
 > „Absicherungs"-Slice** — der Spatial-Datenpfad (Geometrie-*Werte* transferieren)
@@ -179,8 +182,8 @@ nicht bloße Harness-Verkabelung.
     `schema reverse` (`type: spatial`) → `schema generate` MySQL (`SPATIAL INDEX`) +
     PostGIS (`USING GIST`) → angewandtes MySQL-DDL erzeugt real einen Index mit
     `information_schema.statistics.index_type = SPATIAL`.
-- **VA4 — SQLite/SpatiaLite. ✅ KERN ERLEDIGT (generate live-verifiziert);** voller
-  `migrate --execute`-Round-Trip = 5d-Folgearbeit.
+- **VA4 — SQLite/SpatiaLite. ✅ KOMPLETT ERLEDIGT + LIVE-VERIFIZIERT (2026-06-22);**
+  inkl. vollem `migrate --execute`-Round-Trip (5d).
   - **Spatial-Index:** SQLite emittiert `CreateSpatialIndex`/`DisableSpatialIndex`
     statt zu blocken (Diff `renderAddIndex`/`renderDropIndex` + FULL-Generate
     `generateIndices`/`spatialIndexStatement`); der „index-on-geometry"-Tabellenblock
@@ -193,14 +196,18 @@ nicht bloße Harness-Verkabelung.
     durch die ganze Kette); die SpatiaLite-Extension-Verfügbarkeit wird aus der Ziel-
     `?spatialite=true`-Connection als `VERIFIED_PRESENT` abgeleitet (hebt das
     `requireExtension`-`EXTENSION_DEPENDENCY_UNKNOWN` auf).
-  - **Live-Beleg** (`smoke-spatial.sh` `[lite]`): `schema generate --spatial-profile
-    spatialite` emittiert `AddGeometryColumn(..., 4326, 'POINT', 'XY')` +
-    `CreateSpatialIndex`; mod_spatialite lädt gegen `?spatialite=true`.
-  - **Offen (5d):** voller `migrate --execute`-Round-Trip — zwei Restbefunde in
-    [`open/spatialite-migrate-roundtrip.md`](../open/spatialite-migrate-roundtrip.md):
-    (1) `InitSpatialMetaData()`-Bootstrap fehlt vor dem ersten `AddGeometryColumn`;
-    (2) Diff-`CreateTable` rendert den Geometrie-Index als normalen `CREATE INDEX`
-    statt `CreateSpatialIndex`.
+  - **5d ERLEDIGT** (alle drei Restbefunde behoben, Closure
+    [`done/spatialite-migrate-roundtrip.md`](../done/spatialite-migrate-roundtrip.md)):
+    (1) `InitSpatialMetaData()`-Bootstrap als deterministisch-geguardetes Statement im
+    Diff-Renderpfad vor dem ersten `AddGeometryColumn` (ADR 0016);
+    (2) Diff-`CreateTable` routet den Geometrie-Index über `CreateSpatialIndex`;
+    (3) Reverse liest `geometry_columns` (SRID + `spatial_index_enabled`), rekonstruiert
+    `IndexType.SPATIAL` und filtert SpatiaLite-Metatabellen + R*Tree-Schatten.
+  - **Live-Beleg** (`smoke-spatial.sh` `[lite]`): `schema generate` emittiert
+    `AddGeometryColumn(..., 4326, 'POINT', 'XY')` + `CreateSpatialIndex`; **`migrate
+    --execute`** legt gegen eine frische `?spatialite=true`-`.db` Geometrie + R*Tree-
+    Spatial-Index real an, und **Reverse** rekonstruiert sie verlustfrei (SRID 4326 +
+    `type: spatial`, Metatabellen gefiltert).
 - **VA5 — Spatial-Sample-Portabilitäts-Spike + Katalog-Eintrag** (siehe unten).
 
 ## Scope-Skizze (Harness-Sub-Slices, je nach VA)
@@ -233,8 +240,8 @@ Katalog ergänzen + Kandidat fixieren + pinnen.
 - DDL-Typ-Abbildung + Profil-Policy + `NeutralType.Geometry` — **vorhanden**.
 - `postgis/postgis`-Image (5a) — Pull genügt (im compose bereits verdrahtet).
 - **VA1 (Wert-Transfer), VA2 (SRID + Achsen-X1), VA3 (Index)** — **erledigt + live-verifiziert**;
-  **VA4 (SQLite/SpatiaLite)** — **Kern erledigt** (generate live), voller `migrate`-
-  Round-Trip = 5d-Folgearbeit ([`open/spatialite-migrate-roundtrip.md`](../open/spatialite-migrate-roundtrip.md)).
+  **VA4 (SQLite/SpatiaLite)** — **komplett erledigt + live-verifiziert** (inkl. vollem
+  `migrate --execute`-Round-Trip 5d; Closure [`done/spatialite-migrate-roundtrip.md`](../done/spatialite-migrate-roundtrip.md)).
 - Spatial-Sample-Pin (VA5) — **zu entscheiden**.
 
 ## Akzeptanzkriterien (realistisch, nach Review)

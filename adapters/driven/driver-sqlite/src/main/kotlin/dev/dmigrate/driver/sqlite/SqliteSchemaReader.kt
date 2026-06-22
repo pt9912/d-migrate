@@ -30,6 +30,18 @@ class SqliteSchemaReader : SchemaReader {
 
             // Tables
             val tableEntries = SqliteMetadataQueries.listAllTableEntries(session)
+            // VA4/5d Befund 3: SpatiaLite-Registry lesen (leer ohne SpatiaLite) —
+            // liefert SRID (sonst via PRAGMA table_info verloren) + Spatial-Index-Flag.
+            val geometryColumns = SqliteMetadataQueries.listGeometryColumns(session)
+            val geometryByTable = geometryColumns.groupBy { it.table.lowercase() }
+            // Befund 3a: die R*Tree-Schattentabellen `idx_<t>_<col>_{node,parent,rowid}`
+            // sind reguläre Tabellen (kein VIRTUAL TABLE, keine Metatabellen-Familie) →
+            // explizit ausschließen. Die Haupt-VirtualTable `idx_<t>_<col>` fängt
+            // bereits [SqliteTypeMapping.isVirtualTable] (S100).
+            val rtreeShadowTables = geometryColumns.filter { it.spatialIndexEnabled }.flatMap {
+                val base = "idx_${it.table}_${it.column}".lowercase()
+                listOf("${base}_node", "${base}_parent", "${base}_rowid")
+            }.toSet()
             val tables = LinkedHashMap<String, TableDefinition>()
 
             for ((tableName, createSql) in tableEntries) {
@@ -41,7 +53,9 @@ class SqliteSchemaReader : SchemaReader {
                     )
                     continue
                 }
-                if (SqliteTypeMapping.isSpatiaLiteMetaTable(tableName)) {
+                if (SqliteTypeMapping.isSpatiaLiteMetaTable(tableName) ||
+                    tableName.lowercase() in rtreeShadowTables
+                ) {
                     skipped += SkippedObject(
                         type = "TABLE", name = tableName,
                         reason = "SpatiaLite metadata table",
@@ -49,7 +63,10 @@ class SqliteSchemaReader : SchemaReader {
                     )
                     continue
                 }
-                tables[tableName] = readTable(session, tableName, createSql, notes)
+                tables[tableName] = readTable(
+                    session, tableName, createSql,
+                    geometryByTable[tableName.lowercase()].orEmpty(), notes,
+                )
             }
 
             // Views
@@ -89,6 +106,7 @@ class SqliteSchemaReader : SchemaReader {
         session: JdbcMetadataSession,
         tableName: String,
         createSql: String,
+        geometryColumns: List<SqliteGeometryColumn>,
         notes: MutableList<SchemaReadNote>,
     ): TableDefinition {
         val columns = SqliteMetadataQueries.listColumns(session, tableName)
@@ -100,6 +118,8 @@ class SqliteSchemaReader : SchemaReader {
         val isWithoutRowid = SqliteTypeMapping.hasWithoutRowid(createSql)
 
         val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices)
+        // VA4/5d Befund 3: SpatiaLite-Registry-Eintrag pro Spalte (case-insensitiv).
+        val geometryByColumn = geometryColumns.associateBy { it.column.lowercase() }
 
         val columnDefs = LinkedHashMap<String, ColumnDefinition>()
         for (col in columns) {
@@ -109,7 +129,12 @@ class SqliteSchemaReader : SchemaReader {
 
             val mapping = SqliteTypeMapping.mapColumn(col.dataType, isAutoInc, tableName, col.name)
             if (mapping.note != null) notes += mapping.note
-            val neutralType = mapping.type
+            // Befund 3: die SRID steht NICHT in PRAGMA table_info (nur der Subtyp),
+            // sondern in geometry_columns — sonst käme der Round-Trip mit SRID 0 zurück.
+            val neutralType = mapping.type.let { t ->
+                val srid = geometryByColumn[col.name.lowercase()]?.srid
+                if (t is NeutralType.Geometry && srid != null) t.copy(srid = srid) else t
+            }
 
             // PK-implicit required/unique is NOT duplicated on column level
             val required = if (isPkCol) false else !col.isNullable
@@ -147,12 +172,29 @@ class SqliteSchemaReader : SchemaReader {
                 )
             }
 
+        // VA4/5d Befund 3b: der SpatiaLite-Spatial-Index ist eine R*Tree-VirtualTable
+        // + das Flag geometry_columns.spatial_index_enabled — KEIN sqlite_master
+        // type='index'-Eintrag, also unsichtbar für PRAGMA index_list (regularIndices).
+        // Aus dem Flag den neutralen IndexType.SPATIAL rekonstruieren, damit der
+        // Round-Trip den räumlichen Index nicht verliert.
+        val spatialIndices = geometryColumns.filter { it.spatialIndexEnabled }.mapNotNull { gc ->
+            val colName = columnDefs.keys.firstOrNull { it.equals(gc.column, ignoreCase = true) }
+                ?: return@mapNotNull null
+            // Index-Name aus dem aufgelösten colName (echte Spaltenschreibweise), nicht aus
+            // der geometry_columns-Registry-Schreibweise — sonst Casing-Drift im Round-Trip.
+            IndexDefinition(
+                name = "idx_${tableName}_${colName}",
+                columns = listOf(IndexColumn(colName)),
+                type = IndexType.SPATIAL,
+            )
+        }
+
         val metadata = if (isWithoutRowid) TableMetadata(withoutRowid = true) else null
 
         return TableDefinition(
             columns = columnDefs,
             primaryKey = pkColumns,
-            indices = regularIndices,
+            indices = regularIndices + spatialIndices,
             constraints = constraints,
             metadata = metadata,
         )

@@ -168,12 +168,35 @@ internal object SqliteTypeMapping {
     fun hasWithoutRowid(createSql: String): Boolean =
         createSql.contains("WITHOUT ROWID", ignoreCase = true)
 
+    // VA4/5d Befund 3a: vollständige, EXAKTE Liste der von `InitSpatialMetaData()`
+    // angelegten SpatiaLite-Metatabellen (Stand mod_spatialite 5.x, live verifiziert).
+    // Bewusst KEIN Präfix-Matching (`startsWith`) — das würde echte User-Tabellen wie
+    // `geometry_columns_backup` oder `spatial_ref_sys_history` fälschlich als Metatabelle
+    // verwerfen (stiller Datenverlust). Die sicherere Fehlerrichtung ist Unter-Match: eine
+    // versions-neue Metatabelle leckt sichtbar in den Reverse-Output, statt User-Daten
+    // still zu schlucken. `SpatialIndex`/`ElementaryGeometries`/`KNN`/`KNN2` sind VIRTUAL
+    // TABLEs → bereits über [isVirtualTable] (S100) ausgeschlossen; die R*Tree-Index-
+    // Schattentabellen `idx_<t>_<col>_{node,parent,rowid}` filtert der SchemaReader aus
+    // `geometry_columns.spatial_index_enabled`.
     private val SPATIALITE_META_TABLES = setOf(
-        "geometry_columns", "spatial_ref_sys", "views_geometry_columns",
-        "virts_geometry_columns", "geometry_columns_auth",
-        "geometry_columns_field_infos", "geometry_columns_statistics",
-        "geometry_columns_time", "spatial_ref_sys_aux",
-        "spatialite_history", "sql_statements_log",
+        "geometry_columns",
+        "geometry_columns_auth",
+        "geometry_columns_field_infos",
+        "geometry_columns_statistics",
+        "geometry_columns_time",
+        "views_geometry_columns",
+        "views_geometry_columns_auth",
+        "views_geometry_columns_field_infos",
+        "views_geometry_columns_statistics",
+        "virts_geometry_columns",
+        "virts_geometry_columns_auth",
+        "virts_geometry_columns_field_infos",
+        "virts_geometry_columns_statistics",
+        "spatial_ref_sys",
+        "spatial_ref_sys_aux",
+        "spatialite_history",
+        "sql_statements_log",
+        "data_licenses",
     )
 
     fun isSpatiaLiteMetaTable(name: String): Boolean =

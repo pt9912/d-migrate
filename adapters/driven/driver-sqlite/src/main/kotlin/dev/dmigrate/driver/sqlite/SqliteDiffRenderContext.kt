@@ -45,6 +45,15 @@ internal class SqliteDiffRenderContext(
      * re-emit the bootstrap statement.
      */
     var bootstrapEmitted: Boolean = false
+
+    /**
+     * VA4/5d Befund 1: flips to `true` once the SpatiaLite metadata bootstrap
+     * (`SELECT CASE WHEN CheckSpatialMetaData() = 0 THEN InitSpatialMetaData() END;`)
+     * has been emitted in the current (UP) direction, so it is emitted at most once
+     * before the first `AddGeometryColumn`. Separate from [bootstrapEmitted] (the
+     * `dmg_sequences` helper) — the two bootstraps are independent.
+     */
+    var spatialMetadataBootstrapEmitted: Boolean = false
     private val skipped = mutableSetOf<String>()
     private val manualActions = mutableSetOf<String>()
     private val destructive = mutableSetOf<String>()

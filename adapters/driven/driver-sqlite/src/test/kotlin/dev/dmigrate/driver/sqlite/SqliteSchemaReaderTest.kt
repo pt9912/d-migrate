@@ -483,6 +483,35 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    // ── 5d Befund 3: SRID + Spatial-Index aus geometry_columns ──
+
+    test("5d Befund 3: reverse recovers SRID + spatial index and filters R*Tree shadow tables") {
+        withDb(
+            "CREATE TABLE places (id INTEGER PRIMARY KEY, shape POINT)",
+            // SpatiaLite-Registry als reine Tabelle simuliert — keine Extension nötig.
+            "CREATE TABLE geometry_columns (f_table_name TEXT, f_geometry_column TEXT, " +
+                "geometry_type INTEGER, coord_dimension INTEGER, srid INTEGER, spatial_index_enabled INTEGER)",
+            "INSERT INTO geometry_columns VALUES ('places', 'shape', 1, 2, 4326, 1)",
+            "CREATE TABLE spatial_ref_sys (srid INTEGER PRIMARY KEY, auth_name TEXT)",
+            "CREATE TABLE spatialite_history (event_id INTEGER PRIMARY KEY)",
+            // R*Tree-Schattentabellen des Spatial-Index (reguläre Tabellen).
+            "CREATE TABLE idx_places_shape_node (nodeno INTEGER PRIMARY KEY, data BLOB)",
+            "CREATE TABLE idx_places_shape_parent (nodeno INTEGER PRIMARY KEY, parentnode INTEGER)",
+            "CREATE TABLE idx_places_shape_rowid (rowid INTEGER PRIMARY KEY, nodeno INTEGER)",
+        ) { pool ->
+            val result = reader.read(pool)
+            // Nur die User-Tabelle überlebt — Metatabellen + R*Tree-Shadows sind raus.
+            result.schema.tables.keys shouldBe setOf("places")
+            // SRID aus geometry_columns (PRAGMA table_info trägt sie nicht).
+            val shape = result.schema.tables["places"]!!.columns["shape"]!!.type
+            (shape is NeutralType.Geometry) shouldBe true
+            (shape as NeutralType.Geometry).srid shouldBe 4326
+            // Spatial-Index aus spatial_index_enabled rekonstruiert (nicht via sqlite_master).
+            val spatialIdx = result.schema.tables["places"]!!.indices.single { it.type == IndexType.SPATIAL }
+            spatialIdx.columnNames shouldBe listOf("shape")
+        }
+    }
+
     // ── Ownership: connection returned after read ──
 
     test("read completes successfully and returns result") {
