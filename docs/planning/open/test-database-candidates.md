@@ -82,6 +82,43 @@ Empfohlene Nutzung:
 
 ---
 
+### 2.4 Spatial-Samples (Phase 5)
+
+Spatial deckt **Korrektheit** ab (Geometrie-/SRID-/Index-Fidelitaet), nicht
+Volumen — daher ein Hybrid aus einem echten PostGIS-Sample (PG-Realismus) und
+einem kuratierten WKT-Sample (portabel ueber alle Dialekte).
+
+**(a) PostGIS nyc (echtes Workshop-Sample) — 5a, PostgreSQL/PostGIS.**
+
+- URL: `https://s3.amazonaws.com/s3.cleverelephant.ca/postgis-workshop-2020.zip`
+  (offizielles „Introduction to PostGIS"-Workshop-Bundle, postgis.net)
+- SHA256: `373cab8cf4004d92bb77fbbe496fe7b683969a3f9b5be19225935287d8497a85`
+- Datenbanktyp: PostgreSQL/PostGIS; Format: **Shapefiles**
+- Inhalt: `nyc_neighborhoods` (129 MultiPolygons, **EPSG:26918** NAD83/UTM18N),
+  `nyc_streets`, `nyc_subway_stations`, `nyc_census_blocks`.
+- Lade-Mechanik: `postgis/postgis` hat **kein** `shp2pgsql`/`ogr2ogr` → der
+  gepinnte `gdal`-Compose-Service (`ghcr.io/osgeo/gdal:ubuntu-small-3.13.1`)
+  laedt die Shapefile per `ogr2ogr` in die PostGIS-Quelle (legt auto. einen
+  GIST-Index an).
+- Pin/Fetch: `fetch-dumps.sh` (`FETCH_NYC=1`, ~22 MB, opt-in, kein PR-Gate).
+- Nutzung: 5a PostGIS-Round-Trip (`smoke-spatial.sh` `[pg-nyc]`): reverse →
+  validate → generate `--spatial-profile postgis` → transfer; Paritaet (Zeilen +
+  Flaechen-Checksumme), SRID-Erhalt, GIST-Index.
+
+**(b) Kuratiertes WKT-Sample — 5b/5c/5d, alle Dialekte.**
+
+- Quelle: **inline in `examples/sample-db/scripts/smoke-spatial.sh`** (versioniert
+  im Repo, kein externer Pin noetig) — Point + Polygon, geografisch (EPSG:4326)
+  und projiziert (EPSG:25832/3857/31466, inkl. gedrehter Gauss-Krueger-Achsen).
+- Warum kuratiert: ein einzelnes echtes Sample laedt nicht portabel ueber PG +
+  MySQL + SpatiaLite; exakt-in-double darstellbare WKT-Koordinaten machen
+  Achsen-/SRID-Fehler datenbelegt sichtbar (semantischer Vergleich statt
+  `ST_AsText`).
+- Nutzung: 5b (MySQL native GEOMETRY+SRID), 5c (Cross-Dialect PG↔MySQL,
+  axis-order), 5d (SpatiaLite migrate-Round-Trip).
+
+---
+
 ## 3. Weitere sinnvolle Kandidaten
 
 ### 3.1 PostgreSQL-Sample-Databases Uebersicht

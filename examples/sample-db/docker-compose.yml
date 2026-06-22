@@ -73,6 +73,21 @@ services:
       retries: 12
       start_period: 10s
 
+  # Phase 5 (Spatial, 5a): Shapefile-Loader für das gepinnte PostGIS-nyc-Sample.
+  # postgis/postgis enthält KEIN shp2pgsql/ogr2ogr — daher ein dedizierter,
+  # gepinnter GDAL-Container, der die nyc-Shapefiles per ogr2ogr über das
+  # Compose-Netz in die postgis-Quelle lädt (nur on-demand via `compose run gdal`,
+  # FETCH_NYC=1 + smoke-spatial.sh). Kein Auto-Start (profile tools).
+  gdal:
+    image: ghcr.io/osgeo/gdal:ubuntu-small-3.13.1
+    user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
+    profiles: ["tools"]
+    env_file:
+      - .env
+    volumes:
+      - .:/work
+    working_dir: /work
+
   dmigrate:
     image: d-migrate:dev
     # Das Image läuft als non-root (uid 10001). Damit es in das gemountete

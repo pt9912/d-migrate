@@ -385,5 +385,78 @@ if grep -qE "geometry_columns|spatial_ref_sys|spatialite_history|idx_places_shap
 fi
 log "[lite] migrate→reverse round-trip OK — geometry+SRID 4326+spatial index recovered, metadata filtered (5d Befund 1/2/3)"
 
+# ─── 6. PostGIS nyc Round-Trip (5a, ECHTES Sample, opt-in FETCH_NYC=1) ──
+# Belegt 5a gegen das gepinnte, ECHTE „Introduction to PostGIS"-Workshop-Sample
+# (nyc_neighborhoods: 129 MultiPolygons, EPSG:26918 NAD83/UTM18N). postgis/postgis
+# hat kein shp2pgsql/ogr2ogr → der gepinnte gdal-Service lädt die Shapefile per
+# ogr2ogr über das Compose-Netz in die Quelle (legt auto. einen GIST-Index an).
+# Dann der volle d-migrate-Pfad: reverse → validate → generate --spatial-profile
+# postgis → angewandtes DDL (Zielschema) → data transfer → Parität (Zeilen +
+# Flächen-Checksumme), SRID 26918 erhalten, GIST-Index im Ziel. Opt-in (~22 MB
+# Fetch, kein PR-Gate) wie Phase 3 Scale: `FETCH_NYC=1 make sample-db-spatial-smoke`.
+if [ "${FETCH_NYC:-0}" = "1" ]; then
+    log "[pg-nyc] fetching pinned nyc workshop sample (opt-in)..."
+    FETCH_NYC=1 "$SCRIPT_DIR/fetch-dumps.sh" > /tmp/nyc-fetch.log 2>&1 \
+        || { cat /tmp/nyc-fetch.log; fail "[pg-nyc] nyc fetch failed"; }
+    [ -f "$EXAMPLES_DIR/.cache/nyc/nyc_neighborhoods.shp" ] \
+        || fail "[pg-nyc] nyc_neighborhoods.shp missing after fetch"
+
+    log "[pg-nyc] (re)create dedicated nyc_src/nyc_target databases + PostGIS..."
+    psql_pg geo_pg_src -c "DROP DATABASE IF EXISTS nyc_src" -c "CREATE DATABASE nyc_src" \
+        -c "DROP DATABASE IF EXISTS nyc_target" -c "CREATE DATABASE nyc_target" >/dev/null \
+        || fail "[pg-nyc] nyc db (re)create failed"
+    for db in nyc_src nyc_target; do
+        psql_pg "$db" -c "CREATE EXTENSION IF NOT EXISTS postgis" >/dev/null
+    done
+
+    log "[pg-nyc] ogr2ogr load nyc_neighborhoods → nyc_src (MultiPolygon, EPSG:26918)..."
+    $COMPOSE run --rm gdal ogr2ogr -f PostgreSQL \
+        "PG:host=postgis port=5432 dbname=nyc_src user=${POSTGRES_USER} password=${POSTGRES_PASSWORD}" \
+        /work/.cache/nyc/nyc_neighborhoods.shp -nln nyc_neighborhoods -nlt PROMOTE_TO_MULTI \
+        -lco GEOMETRY_NAME=geom -lco FID=gid > /tmp/nyc-ogr.log 2>&1 \
+        || { cat /tmp/nyc-ogr.log; fail "[pg-nyc] ogr2ogr load failed"; }
+    src_rows=$(pg_val nyc_src "SELECT count(*) FROM nyc_neighborhoods")
+    [ "$src_rows" = "129" ] || fail "[pg-nyc] source row count $src_rows (expected 129)"
+
+    log "[pg-nyc] schema reverse → validate → generate --spatial-profile postgis..."
+    $COMPOSE run --rm dmigrate schema reverse --source nyc_pg_src \
+        --output /work/.cache/nyc.reverse.yaml > /tmp/nyc-rev.log 2>&1 \
+        || { cat /tmp/nyc-rev.log; fail "[pg-nyc] reverse failed"; }
+    grep -q "geometry_type: multipolygon" "$EXAMPLES_DIR/.cache/nyc.reverse.yaml" \
+        || { cat "$EXAMPLES_DIR/.cache/nyc.reverse.yaml"; fail "[pg-nyc] reverse lost multipolygon"; }
+    grep -q "srid: 26918" "$EXAMPLES_DIR/.cache/nyc.reverse.yaml" \
+        || fail "[pg-nyc] reverse lost SRID 26918"
+    $COMPOSE run --rm dmigrate schema validate --source /work/.cache/nyc.reverse.yaml \
+        > /tmp/nyc-val.log 2>&1 || { cat /tmp/nyc-val.log; fail "[pg-nyc] validate failed"; }
+    $COMPOSE run --rm dmigrate schema generate --source /work/.cache/nyc.reverse.yaml \
+        --target postgresql --spatial-profile postgis --deterministic \
+        --output /work/.cache/nyc.gen.sql > /tmp/nyc-gen.log 2>&1 \
+        || { cat /tmp/nyc-gen.log; fail "[pg-nyc] generate failed"; }
+    grep -qiE "USING GIST" "$EXAMPLES_DIR/.cache/nyc.gen.sql" \
+        || { cat "$EXAMPLES_DIR/.cache/nyc.gen.sql"; fail "[pg-nyc] generated DDL missing USING GIST"; }
+
+    log "[pg-nyc] apply generated DDL → nyc_target, then data transfer..."
+    psql_pg nyc_target < "$EXAMPLES_DIR/.cache/nyc.gen.sql" > /tmp/nyc-apply.log 2>&1 \
+        || { cat /tmp/nyc-apply.log; fail "[pg-nyc] applying generated DDL failed"; }
+    $COMPOSE run --rm dmigrate data transfer --source nyc_pg_src --target nyc_pg_target \
+        --tables nyc_neighborhoods --truncate > /tmp/nyc-transfer.log 2>&1 \
+        || { cat /tmp/nyc-transfer.log; fail "[pg-nyc] transfer failed"; }
+
+    # Parität: Zeilen + SRID + Geometrie-Werte (Flächen-Checksumme src==target) + GIST.
+    tgt_rows=$(pg_val nyc_target "SELECT count(*) FROM nyc_neighborhoods")
+    [ "$tgt_rows" = "129" ] || fail "[pg-nyc] target row count $tgt_rows (expected 129)"
+    tgt_srid=$(pg_val nyc_target "SELECT DISTINCT ST_SRID(geom) FROM nyc_neighborhoods")
+    [ "$tgt_srid" = "26918" ] || fail "[pg-nyc] target SRID $tgt_srid (expected 26918)"
+    src_area=$(pg_val nyc_src    "SELECT round(sum(ST_Area(geom))) FROM nyc_neighborhoods")
+    tgt_area=$(pg_val nyc_target "SELECT round(sum(ST_Area(geom))) FROM nyc_neighborhoods")
+    [ -n "$tgt_area" ] && [ "$src_area" = "$tgt_area" ] \
+        || fail "[pg-nyc] geometry area checksum mismatch: src=$src_area tgt=$tgt_area"
+    gist=$(pg_val nyc_target "SELECT count(*) FROM pg_indexes WHERE tablename='nyc_neighborhoods' AND indexdef ILIKE '%gist%'")
+    [ "${gist:-0}" -ge 1 ] || fail "[pg-nyc] no GIST index on target nyc_neighborhoods"
+    log "[pg-nyc] OK — 129 MultiPolygons round-tripped (SRID 26918 erhalten, Flächen-Checksumme $tgt_area gleich, GIST-Index belegt) — 5a confirmed (echtes nyc-Sample)"
+else
+    log "[pg-nyc] SKIP (5a) — set FETCH_NYC=1 to run the real pinned nyc PostGIS round-trip (~22 MB fetch)"
+fi
+
 log "SUCCESS — VA1+VA2+VA2-X1+VA3 live-verified + VA4/5d full round-trip: geometry value + SRID round-trip PG→PG, MySQL→MySQL UND cross-dialect PG↔MySQL (geografisch 4326 long-lat-korrekt + projiziert EPSG:25832/3857/31466 Rechtswert/Hochwert, inkl. GK mit gedrehter AXIS-Deklaration); MySQL SPATIAL-Index reverse→generate→apply (cross-dialect → PostGIS USING GIST); SpatiaLite migrate --execute legt Geometrie+R*Tree-Spatial-Index real an (Bootstrap InitSpatialMetaData) und reverse rekonstruiert sie verlustfrei (Metatabellen gefiltert); native PG point unaffected (R1)."
 log "stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."

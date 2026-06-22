@@ -26,3 +26,7 @@ database:
     postgis_geo_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/geo_pg_target"
     geo_my_src: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_src"
     geo_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_target"
+    # 5a (echtes PostGIS-nyc): dedizierte DBs, damit der Reverse (kein --tables-Filter)
+    # nur nyc_neighborhoods sieht — keine Kollision mit den geo_pg_*-Tabellen oben.
+    nyc_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/nyc_src"
+    nyc_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/nyc_target"

@@ -91,6 +91,18 @@ load_salaries2.dump:cad589bff736cb575358d7806e4e4a13e28a2e9c714c2fb51fbe4db74a57
 load_salaries3.dump:75fc473d2472341fbfd635d6f4853c63645051829a9c7a1a18ee819fe5816f45
 load_titles.dump:dcd382989c46719e1e216ffef4919483f0f71d52da517c37c22d39cdaf9bc044"
 
+# --- PostGIS nyc (PostgreSQL/PostGIS) — Phase 5 (5a, Spatial) -----
+# Offizielles „Introduction to PostGIS"-Workshop-Sample (postgis.net),
+# auf S3 gehostet. Enthält die echten nyc-Shapefiles; 5a lädt
+# nyc_neighborhoods (MultiPolygon, EPSG:26918) per ogr2ogr (gdal-Service)
+# in die postgis-Quelle — postgis/postgis hat KEIN shp2pgsql/ogr2ogr.
+# Opt-in (~22 MB, kein PR-Gate): `FETCH_NYC=1 ./fetch-dumps.sh` oder der
+# Spatial-Smoke setzt die Variable selbst. Gepinnt per URL + SHA256.
+NYC_URL="https://s3.amazonaws.com/s3.cleverelephant.ca/postgis-workshop-2020.zip"
+NYC_SHA256="373cab8cf4004d92bb77fbbe496fe7b683969a3f9b5be19225935287d8497a85"
+NYC_ZIP="$CACHE_DIR/postgis-workshop-2020.zip"
+NYC_DIR="$CACHE_DIR/nyc"
+
 mkdir -p "$CACHE_DIR"
 fetch_one "pagila"        "$PAGILA_URL"        "$PAGILA_DEST"        "$PAGILA_SHA256"
 fetch_one "sakila-schema" "$SAKILA_SCHEMA_URL" "$SAKILA_SCHEMA_DEST" "$SAKILA_SCHEMA_SHA256"
@@ -108,5 +120,15 @@ if [ "${FETCH_EMPLOYEES:-0}" = "1" ]; then
     done <<EOF
 $EMP_FILES
 EOF
+fi
+
+# nyc nur fetchen, wenn angefordert (5a ist opt-in; ~22 MB Zip + Shapefiles).
+if [ "${FETCH_NYC:-0}" = "1" ]; then
+    fetch_one "postgis-nyc" "$NYC_URL" "$NYC_ZIP" "$NYC_SHA256"
+    command -v unzip >/dev/null 2>&1 || fail "unzip not found (needed to extract nyc shapefiles)"
+    mkdir -p "$NYC_DIR"
+    unzip -o -j "$NYC_ZIP" 'postgis-workshop/data/nyc_neighborhoods.*' -d "$NYC_DIR" >/dev/null \
+        || fail "postgis-nyc: unzip of nyc_neighborhoods shapefile failed"
+    log "postgis-nyc: nyc_neighborhoods.{shp,shx,dbf,prj} extracted -> $NYC_DIR"
 fi
 log "done."

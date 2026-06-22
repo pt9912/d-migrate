@@ -16,6 +16,15 @@ internal object PostgresTableMetadataQueries {
             FROM information_schema.tables
             WHERE table_schema = ?
               AND table_type = 'BASE TABLE'
+              -- 5a: Extension-eigene Tabellen ausschließen (z. B. PostGIS
+              -- `spatial_ref_sys`). Sie liegen zwar im User-Schema, gehören
+              -- aber der Extension (pg_depend.deptype = 'e') und würden sonst
+              -- als User-Tabellen reverse-engineered + im Ziel-DDL kollidieren.
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_depend d
+                WHERE d.deptype = 'e'
+                  AND d.objid = to_regclass(quote_ident(table_schema) || '.' || quote_ident(table_name))::oid
+              )
             ORDER BY table_name
             """.trimIndent(), schemaName,
         ).map { row ->
