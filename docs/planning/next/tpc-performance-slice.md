@@ -88,21 +88,18 @@ schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
    + Extension-Version + Output-Format (CSV/Parquet, Spaltenreihenfolge, Float-
    Formatierung). Auflösungs-Optionen (in 4a zu entscheiden):
    - **(a) Generieren → einmal als Dump auf externen Mirror → wie Pagila/Sakila
-     SHA256-pinnen** (de facto „gepinnter Datensatz"; ADR 0014-konform). **Default-
-     Empfehlung** — robust gegen Generator-Drift.
-   - **(b) Generator-Version + Extension-Version + Output-Format pinnen + den
-     erzeugten Output-SHA256 als Baseline** (Generator-Determinismus CI-verifiziert).
-     **Caveat:** DuckDB-`tpch`-Output ist über DuckDB-Patch-Versionen/Plattformen
-     **nicht** garantiert byte-stabil (Float-Repräsentation, Sortier-/Encoding-
-     Ordering, Parquet-Encoding) → ein gepinnter Output-SHA256 kann beim nächsten
-     DuckDB-Bump brechen, obwohl die Daten „dieselben" sind. Fragiler als (a).
-   Abweichung vom Standard-Pin-Muster → **ADR-Delegation erfolgt**: Entscheidung +
-   Tool-Optionen (A DuckDB-`tpch` MIT / B HammerDB-TPROC-H GPL-als-Container / C
-   schlanke SQL-Generierung) + Pin-Mechanik + Lizenz-Analyse stehen jetzt in
-   **[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** (proposed;
-   Empfehlung: A). Kern-Entscheidung dort: **Generator-Tool + Config pinnen statt
-   statischem Dump** (analog gepinntem `gdal`-Loader), Verlustfreiheit per-Lauf
-   (LF 8.5 SHA-256) statt Baseline-Dump.
+     SHA256-pinnen** (de facto „gepinnter Datensatz"; ADR 0014-konform).
+   - **(b) Generator-Tool + Config pinnen, kein Dump-SHA256** — Reproduzierbarkeit aus
+     gepinntem Tool + Config, Verlustfreiheit **per-Lauf** verifiziert (LF 8.5 SHA-256
+     Quelle↔Ziel). Vermeidet die Output-Byte-Stabilitäts-Falle (DuckDB-`tpch`-Output
+     ist über Patch-Versionen/Plattformen nicht byte-stabil; ein gepinnter Output-
+     SHA256 bräche beim nächsten DuckDB-Bump).
+   Abweichung vom Standard-Pin-Muster → **ADR-Delegation erfolgt + ratifiziert**:
+   **[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** (accepted)
+   wählt **(b): Generator-Tool + Config pinnen statt statischem Dump** (analog
+   gepinntem `gdal`-Loader), Tool **A — DuckDB-`tpch`** (LTS 1.4.5, Core-Extension
+   MIT, SF-konfigurierbar). B (HammerDB GPL-als-Container) / C (schlanke SQL-
+   Generierung) bleiben dokumentierte Fallbacks.
 2. **Lizenz (Review-Caveat).** TPC stellt `dbgen`/`dsdgen` unter **TPC-EULA** (kein
    OSS); abgeleitete TPC-Daten unterliegen Branding-/Redistributions-Bedingungen
    (vgl. semgrep-Gate: LGPL/Commons-Clause durfte nicht ins MIT-Repo). Der ADR 0014-
@@ -115,10 +112,12 @@ schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
 
 ## Scope-Skizze (Sub-Slices)
 
-- **4a — Sourcing + Pin-Vertrag.** Tool-Wahl (A/B/C) + Pin-Mechanik + Lizenz-Freigabe
-   aus **[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** ratifizieren
-   (Empfehlung: A DuckDB-`tpch`, MIT, leicht, echtes TPC-H-Schema) + im Kandidaten-
-   Katalog dokumentieren. Generator-Tool + Config gepinnt (kein Dump im Repo).
+- **4a — Sourcing + Pin-Vertrag.** Tool-Wahl + Pin-Mechanik + Lizenz **ratifiziert in
+   [ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** (accepted; A
+   DuckDB-`tpch`, LTS 1.4.5, Core-Extension MIT, echtes TPC-H-Schema). 4a **setzt um**:
+   DuckDB `1.4.5` in Digest-gepinntem Image (analog `gdal`-Loader) verdrahten, SF-Config
+   + `dbgen`-Aufruf, im Kandidaten-Katalog dokumentieren. Generator-Tool + Config
+   gepinnt (kein Dump im Repo).
 - **4b — Schema-Round-Trip-Korrektheit.** TPC-H-Schema reverse/validate/generate/
    transfer (wie Phase 1/2) — Korrektheit vor Messung.
 - **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
@@ -160,7 +159,8 @@ auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen.
   Container-Caps-Referenz + Acceptance-Tier + Kalibrierungs-Guard; offen bleiben nur
   die konkreten Parameter (Caps, Kalibrierungs-Op/Toleranz, K/M, Nightly-Runner) bis
   `accepted`.
-- Sourcing-/Pin-/Lizenz-Entscheidung (4a) — **zu treffen**.
+- Sourcing-/Pin-/Lizenz-Entscheidung (4a) — **entschieden** ([ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)
+  accepted: A DuckDB-`tpch`, LTS 1.4.5, MIT). Bleibt: Umsetzung in 4a.
 
 ## Akzeptanzkriterien
 

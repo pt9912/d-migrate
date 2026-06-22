@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-22
 decision-makers: pt9912
 consulted: docs/planning/next/tpc-performance-slice.md (Phase 4), docs/adr/0014-sample-db-harness-fetch-and-compose.md (Pin-Vertrag), spec/lastenheft-d-migrate.md (LF 8.1/8.2/8.5), "Postgres test data generation 101" (Kaarel Moppel, pgDay Nordic 2025 — Landschaft Testdaten-Generierung), TPC-Council/HammerDB (Kandidat-Tool)
@@ -8,12 +8,12 @@ informed: examples/sample-db, docs/operations/performance-benchmarks.md
 
 # Phase-4-Benchmark-Workload: Generator-Tool pinnen statt statischem Dump
 
-> **Status: proposed (Entwurf/Vorlage).** Offene Felder unten sind vor `accepted`
-> zu entscheiden. Begleitet den Slice
+> **Status: accepted (ratifiziert 2026-06-22).** Tool-Wahl **A (DuckDB-`tpch`)**;
+> konkrete Pin-Werte unter „Ratifizierte Entscheidung". Begleitet den Slice
 > [`../planning/next/tpc-performance-slice.md`](../planning/next/tpc-performance-slice.md)
 > (Sub-Slice 4a) und löst dessen Sourcing-/Pin-/Lizenz-Blocker. **Blocker 3
 > (normierte Mess-Umgebung) ist NICHT Teil dieser ADR** — er betrifft die Mess-
-> *Methodik*, nicht das Sourcing.
+> *Methodik*, nicht das Sourcing (siehe [ADR 0018](0018-normalized-perf-measurement-environment.md)).
 
 ## Kontext und Problemstellung
 
@@ -48,7 +48,7 @@ PostGIS-nyc-Sample (Phase 5). Konkret:
 - **Abweichung von ADR 0014** (Daten-Artefakt-Pin → Generator-Tool-Pin) ist die
   bewusst delegierte permanente Ausnahme, die diese ADR trägt (Modul 7).
 
-## Tool-Optionen (ZU ENTSCHEIDEN — Sub-Slice 4a)
+## Tool-Optionen (entschieden: A — DuckDB-`tpch`)
 
 | Option | Was | Lizenz | Schema-Realismus | Gewicht | Caveat |
 |---|---|---|---|---|---|
@@ -77,14 +77,31 @@ ist (GPL dann als *gepinnter Loader-Container*, Daten on-demand — sauber gegen
   externer Tool-Container wie `gdal`). HammerDB nutzt **TPROC-C/TPROC-H** (TPC-
   abgeleitet, bewusst umbenannt, ohne TPC-Audit/Branding-Bindung).
 
-## Offene Felder (vor `accepted`)
+## Ratifizierte Entscheidung (A — ratifiziert 2026-06-22)
 
-1. **Tool-Wahl A/B/C** (Empfehlung A).
-2. **Pin-Mechanik je Tool:** (A) DuckDB-Version + Extension-Version + SF; (B) HammerDB
-   Image-Digest/Release-Tag (v5.0) + Config.
-3. **Lizenz-Freigabe** der gewählten Option (A unkritisch; B GPL-als-Container-Stance
-   bestätigen).
-4. **Blocker 3 — normierte Mess-Umgebung** (separat; gatet die harten 4c/4d-Budgets).
+Konkrete Werte der gewählten **Option A**:
+
+1. **Tool-Wahl: A (DuckDB-`tpch`).** Begründung siehe Empfehlung oben (MIT, echtes
+   TPC-H-Schema, leichtgewichtig). B/C bleiben dokumentierte Fallbacks.
+2. **Pin-Mechanik (A):**
+   - **DuckDB-Version: LTS-Linie „Andium" 1.4.x, gepinnt auf konkreten Release-Tag
+     1.4.5** (Stand 2026-06-17). LTS gewählt — bugfix-only, langfristig vergleichbares
+     Benchmark-Ergebnis (gegenüber der schnelleren Stable-Linie 1.5.x).
+   - **Extension-Version: keine separate.** `tpch` ist eine **Core-Extension** (mit
+     DuckDB ausgeliefert/autoloaded) — die gepinnte DuckDB-Version fixiert die
+     Extension implizit.
+   - **Pin-Träger:** exakter Versions-Pin in einem Digest-gepinnten Basis-Image (analog
+     zum `gdal`-Loader-Container, Phase 5) — z. B. `duckdb==1.4.5` (PyPI, exakt) oder
+     das CLI-Release `v1.4.5` + SHA256. (Konkretes Trägerformat in 4a.)
+   - **Workload-Config:** Scale-Factor als Harness-Parameter. **SF=1 ≈ 8,6 Mio Zeilen**
+     (lineitem ~6 Mio) ⇒ erfüllt LF-8.1 „1 Mio+"; größere Abnahme-SF konfigurierbar.
+     Speicher-schonende Stufengenerierung via `dbgen(sf=N, children=C, step=S)`.
+3. **Lizenz-Freigabe (A):** Core-Extension unter **MIT** (DuckDB-Lizenz), lokal
+   generiert, nichts eingecheckt/publiziert → unkritisch; keine TPC-EULA-/Branding-
+   Bindung (kein Audit-Anspruch, siehe Nicht-Ziele im Slice).
+4. **Blocker 3 — normierte Mess-Umgebung:** in
+   [ADR 0018](0018-normalized-perf-measurement-environment.md) entschieden (separat;
+   gatet die harten 4c/4d-Budgets). **Nicht Teil dieser ADR.**
 
 ## Konsequenzen
 
