@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — VA1+VA2-Live-Smoke (Spatial, vorgezogenes 5a/5b)
-# Plan: docs/planning/in-progress/spatial-harness-slice.md
+# Plan: docs/planning/done/spatial-harness-slice.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Verifiziert die Spatial-Kette (Geometrie-WERT- + SRID-Transfer) LIVE gegen echtes
@@ -216,6 +216,29 @@ mv_s=$(my_val geo_my_src "SELECT ST_AsText(g) FROM geo4326 WHERE id=1;")
 mv_d=$(my_val geo_my_target "SELECT ST_AsText(g) FROM geo4326 WHERE id=1;")
 [ "$mv_s" = "$mv_d" ] || fail "[my] SRID geometry value mismatch: src='$mv_s' dst='$mv_d'"
 log "[my] SRID 4326 round-trip OK (value='$mv_d', SRID=$msrid_d) — VA2 confirmed"
+
+# 5b-Formalisierung: nicht nur transfer, sondern der volle Schema-Tool-Pfad —
+# reverse → validate → generate --spatial-profile native — belegt, dass d-migrate
+# MySQL-native Geometrie-DDL (GEOMETRY/POINT + SRID) erzeugt (nicht nur Werte transferiert).
+log "[my] schema reverse → validate → generate --spatial-profile native (5b)..."
+$COMPOSE run --rm dmigrate schema reverse --source geo_my_src \
+    --output /work/.cache/geo-my.reverse.yaml > /tmp/my-rev.log 2>&1 \
+    || { cat /tmp/my-rev.log; fail "[my] reverse failed"; }
+grep -q "geometry_type: point" "$EXAMPLES_DIR/.cache/geo-my.reverse.yaml" \
+    || { cat "$EXAMPLES_DIR/.cache/geo-my.reverse.yaml"; fail "[my] reverse lost point geometry"; }
+grep -q "srid: 4326" "$EXAMPLES_DIR/.cache/geo-my.reverse.yaml" \
+    || fail "[my] reverse lost SRID 4326"
+$COMPOSE run --rm dmigrate schema validate --source /work/.cache/geo-my.reverse.yaml \
+    > /tmp/my-val.log 2>&1 || { cat /tmp/my-val.log; fail "[my] validate failed"; }
+$COMPOSE run --rm dmigrate schema generate --source /work/.cache/geo-my.reverse.yaml \
+    --target mysql --spatial-profile native --deterministic \
+    --output /work/.cache/geo-my.gen.sql > /tmp/my-gen.log 2>&1 \
+    || { cat /tmp/my-gen.log; fail "[my] generate failed"; }
+grep -qiE "\bGEOMETRY\b|\bPOINT\b" "$EXAMPLES_DIR/.cache/geo-my.gen.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/geo-my.gen.sql"; fail "[my] generated DDL missing native geometry type"; }
+grep -qiE "SRID 4326|/\*!80003 SRID 4326" "$EXAMPLES_DIR/.cache/geo-my.gen.sql" \
+    || { cat "$EXAMPLES_DIR/.cache/geo-my.gen.sql"; fail "[my] generated DDL missing SRID 4326"; }
+log "[my] generate OK — native GEOMETRY/POINT + SRID 4326 DDL (5b formalized)"
 
 # ─── 3. Cross-Dialect SRID 4326 (VA2-X1: Achsenreihenfolge) ─────────
 # PostGIS schreibt/liest WKB in OGC-X/Y (long-lat); MySQL nutzt für 4326 ohne

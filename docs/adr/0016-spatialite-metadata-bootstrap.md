@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-22
 decision-makers: pt9912
-consulted: docs/planning/in-progress/spatial-harness-slice.md (VA4/5d), spec/neutral-model-spec.md (Geometrie-/Spatial-Profil-Modell), docs/adr/0014-sample-db-harness-fetch-and-compose.md (Harness, der den Befund aufdeckte)
+consulted: docs/planning/done/spatial-harness-slice.md (VA4/5d), spec/neutral-model-spec.md (Geometrie-/Spatial-Profil-Modell), docs/adr/0014-sample-db-harness-fetch-and-compose.md (Harness, der den Befund aufdeckte)
 informed: adapters/driven/driver-sqlite, examples/sample-db/scripts/smoke-spatial.sh
 ---
 
@@ -11,7 +11,7 @@ informed: adapters/driven/driver-sqlite, examples/sample-db/scripts/smoke-spatia
 ## Kontext und Problemstellung
 
 Der vorgezogene Live-Apply-Round-Trip der Spatial-Slice (VA4/5d,
-[`spatial-harness-slice.md`](../planning/in-progress/spatial-harness-slice.md))
+[`spatial-harness-slice.md`](../planning/done/spatial-harness-slice.md))
 deckte auf: `schema migrate --execute --spatial-profile spatialite` gegen eine
 **frische** `.db` scheitert. Eine neue SQLite-Datei hat keine SpatiaLite-
 Metatabellen (`geometry_columns`, `spatial_ref_sys`); das vom Renderer emittierte

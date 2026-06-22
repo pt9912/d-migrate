@@ -3,7 +3,7 @@
 > Status: **DONE** (implementiert + live-verifiziert 2026-06-22; Closure unten).
 >   Vorgeschichte: Vorabklärung → review-gehärtet 2026-06-22 (Befund 3 ergänzt, Befund
 >   1/2 mit Code-Stelle + Entscheidungsempfehlung geschärft, Akzeptanz um Reverse erweitert).
-> Trigger: VA4 (SQLite/SpatiaLite, [`spatial-harness-slice.md`](../in-progress/spatial-harness-slice.md)) —
+> Trigger: VA4 (SQLite/SpatiaLite, [`spatial-harness-slice.md`](spatial-harness-slice.md)) —
 >   beim vorgezogenen Live-Apply-Round-Trip aufgedeckt.
 > Bezug (normativer Anker): das technische
 >   Geometrie-/Spatial-Profil-Modell in [`spec/neutral-model-spec.md`](../../../spec/neutral-model-spec.md)

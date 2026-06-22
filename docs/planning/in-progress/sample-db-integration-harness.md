@@ -66,7 +66,7 @@ MySQL→`native`, SQLite→`spatialite`); die **DDL-Typ-Abbildung + Profil-Polic
 implementiert (`SpatialProfile.defaultFor`/`allowedFor`, `NeutralType.Geometry`).
 **Aber** der Spatial-*Datenpfad* (Wert-Transfer), die *Spatial-Indizes* und das
 *SRID-Reverse* sind **noch nicht** implementiert — siehe Slice
-[`spatial-harness-slice.md`](spatial-harness-slice.md) (VA1–VA5).
+[`spatial-harness-slice.md`](../done/spatial-harness-slice.md) (VA1–VA5).
 Phase 5 deckt daher **drei** Round-Trips **plus** Cross-Dialect-Spatial-Transfers
 (z. B. PostGIS→MySQL native, MySQL native→Spatialite) ab — nach Implementierung
 der Vorarbeitspakete, nicht nur durch Harness-Verkabelung.
@@ -166,7 +166,7 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   **plausibilisiert**, gemessene Abnahme — inkl. LF-8.2-Zeitbudgets — offen;
   TPC = realistische Workload).
 - **Phase 5 — Spatial (PostGIS + MySQL native + Spatialite).** Eigener Folge-Slice
-  → **geschnitten** in [`spatial-harness-slice.md`](spatial-harness-slice.md)
+  → **geschnitten** in [`spatial-harness-slice.md`](../done/spatial-harness-slice.md)
   (3 Profile + Cross-Dialect; externes gepinntes Spatial-Sample; Spatialite-Vorarbeit).
   (wie Phase 4, nicht in der Phase-0–3-Grenze). Deckt **alle drei** Spatial-Profile
   end-to-end ab — eines je Dialekt:

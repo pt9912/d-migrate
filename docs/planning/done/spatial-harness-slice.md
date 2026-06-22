@@ -1,8 +1,8 @@
 # Plan: Sample-DB-Harness Phase 5 — Spatial (PostGIS + MySQL native + Spatialite)
 
-> Dokumenttyp: In-Progress-Plan (Folge-Slice von [`sample-db-integration-harness.md`](sample-db-integration-harness.md))
-> Status: **In Arbeit** (seit 2026-06-21; nach `in-progress/` verschoben, ADR 0004,
-> mit dem ersten Implementierungs-Commit). **VA1 (a–d) implementiert, code-review-
+> Dokumenttyp: Done-Plan (Folge-Slice von [`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
+> Status: **DONE — Phase 5 komplett, live-verifiziert (2026-06-22; Closure am Ende).**
+> Vorgeschichte (in Arbeit seit 2026-06-21). **VA1 (a–d) implementiert, code-review-
 > gehärtet (`25efa6b5`) + LIVE-VERIFIZIERT (`3e57769f`)**: `cfb7ab78` Erkennung,
 > `0c6ee1d7`+`961d919e` Read-Projektion (plain WKB), `961d919e` Geometrie-Bind
 > (`ST_GeomFromWKB`), `ca0afc26` Preflight. **Zwei Review-Bugs behoben** (dialekt-
@@ -263,3 +263,41 @@ Katalog ergänzen + Kandidat fixieren + pinnen.
 - TPC/Performance (Phase 4, eigener Slice).
 - `--spatial-profile none`-Degradation (durch Phase 1/2 abgedeckt).
 - Geographie-Funktionsabdeckung über Typ-/Wert-/Index-Round-Trip hinaus.
+
+## Closure (2026-06-22)
+
+**Phase 5 vollständig + live-verifiziert.** Alle Vorarbeitspakete und Sub-Slices erbracht:
+
+| Einheit | Beleg |
+|---|---|
+| VA1 (Geometrie-Wert-Transfer, WKB) | `3e57769f` + Smoke `[pg]`/`[my]` |
+| VA2 (SRID-Reverse + Bind + Achsen-X1 + projizierte SRS) | `3f9877b0`/`b4e01196` + `[xd]` |
+| VA3 (räumliche Indizes MySQL/PostGIS) | `268c7d2d` + `[idx]` |
+| VA4 + 5d (SpatiaLite, voller `migrate --execute`) | `13b1b7bf` + ADR 0016 + `[lite]`; Closure [`spatialite-migrate-roundtrip.md`](spatialite-migrate-roundtrip.md) |
+| VA5 (Sample-Pins: echtes nyc + kuratiertes WKT) | `fetch-dumps.sh` + Katalog `2.4` |
+| **5a** (echtes PostGIS-nyc, EPSG:26918) | `f4189cf9` + `[pg-nyc]`: 129 MultiPolygons, SRID + Flächen-Checksumme + GIST |
+| **5b** (MySQL native: reverse→generate + transfer) | `[my]`: GEOMETRY/POINT + SRID 4326 |
+| **5c** (Cross-Dialect PG↔MySQL) | `[xd]`: Wert + SRID + axis-order, projizierte SRS |
+
+**Closure-Kriterien (beobachtbar).**
+1. `FETCH_NYC=1 make sample-db-spatial-smoke` grün (Exit 0) — alle Abschnitte
+   `[pg]`/`[my]`/`[xd]`/`[idx]`/`[lite]`/`[pg-nyc]`; gepinnte Erwartungen in
+   [`../../../examples/sample-db/expected/spatial.md`](../../../examples/sample-db/expected/spatial.md).
+2. Modul-Checks grün: `driver-sqlite:check`, `driver-postgresql:check`; `make docs-check` grün.
+
+**Gating-Entscheidung.** Wie Phase 3 (Scale): **opt-in/nightly, kein PR-Gate** — der
+Spatial-Smoke braucht den Compose-Stack (postgis+mysql) + das gdal-Loader-Image; das
+echte nyc-Sample ist zusätzlich `FETCH_NYC=1`-gated (~22 MB Fetch). Damit bleibt das
+PR-Gate schlank; der Slice ist ergänzende QA-Infrastruktur (kein RC-Kriterium).
+
+**Lerneintrag.**
+- *Neue Sensoren:* `[pg-nyc]`/`[lite]`-Apply + 5b-reverse→generate in `smoke-spatial.sh`;
+  gepinntes `expected/spatial.md`.
+- *Geschärfte Regeln:* ADR 0016 (SpatiaLite-Bootstrap im Diff-Renderpfad); PG-Reverse
+  schließt Extension-eigene Objekte aus (`pg_depend`, PG-Pendant zu SQLite-Befund 3a) —
+  der **reale** nyc-Datenpfad deckte diesen Bug auf, den kuratierte/manuell gebaute
+  Tabellen nie trafen. Lehre: ein echtes, gepinntes Sample findet Reverse-Bugs, die
+  Inline-Fixtures verstecken.
+- *Benannte Folgearbeit (nicht-spatial, getrackt):*
+  [`../open/sqlite-migrate-postcompare-identifier-drift.md`](../open/sqlite-migrate-postcompare-identifier-drift.md)
+  (SQLite `migrate --execute` Post-Compare-Drift Exit 5).

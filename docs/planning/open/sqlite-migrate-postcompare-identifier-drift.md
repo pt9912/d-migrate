@@ -2,7 +2,7 @@
 
 > Status: Vorabklärung (entdeckt 2026-06-22 beim 5d-SpatiaLite-Live-Apply)
 > Trigger: SpatiaLite-`migrate --execute`-Round-Trip (VA4/5d,
->   [`spatial-harness-slice.md`](../in-progress/spatial-harness-slice.md)).
+>   [`spatial-harness-slice.md`](../done/spatial-harness-slice.md)).
 > Bezug: technisches Migrate-Verhalten; betrifft `spec/cli-spec.md` (Exit-Codes
 >   `migrate --execute`).
 > **Nicht-spatial, pre-existing** — NICHT von der Spatial-Slice verursacht; hier nur

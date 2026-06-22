@@ -587,14 +587,17 @@ liegen unter `../done-archive/`. **Kein P1/P2/P3-Cross-Dialect-Befund mehr offen
 ergänzende QA-Infrastruktur, **kein** RC-Gate-Kriterium. **Phase 0–3 DoD-komplett
 (2026-06-21):** Pagila/PG-Round-Trip IDENTICAL (0 Diffs), Cross-Dialect Sakila
 MySQL→PG + Pagila PG→MySQL, Chinook/SQLite-Round-Trip, Employees-Scale
-(export-`--resume` + Chunking, Dual-Target). **Phase 5 Spatial in Arbeit
-(2026-06-21):** VA1 (Geometrie-Wert-Transfer als WKB), VA2 (SRID-Reverse + Daten-Bind
+(export-`--resume` + Chunking, Dual-Target). **Phase 5 Spatial KOMPLETT
+(2026-06-22):** VA1 (Geometrie-Wert-Transfer als WKB), VA2 (SRID-Reverse + Daten-Bind
 mit Ziel-SRID + Cross-Dialect-Achsenreihenfolge `axis-order=long-lat`), VA3 (räumliche
-Indizes — MySQL `SPATIAL INDEX`, PostGIS `GiST`/`SP-GiST`) erledigt + live-verifiziert;
-VA4 (SQLite/SpatiaLite-Index + `mod_spatialite`) Kern erledigt (generate live), voller
-`migrate`-Round-Trip als 5d-Folgearbeit; offen VA5 (Spatial-Sample-Pin) + Sub-Slices
-5a–5d. Slice-Docs: [`sample-db-integration-harness.md`](sample-db-integration-harness.md),
-[`spatial-harness-slice.md`](spatial-harness-slice.md).
+Indizes — MySQL `SPATIAL INDEX`, PostGIS `GiST`/`SP-GiST`), VA4 (SQLite/SpatiaLite inkl.
+vollem `migrate --execute`-Round-Trip, ADR 0016), VA5 (Sample-Pins) und die Sub-Slices
+**5a** (echtes PostGIS-nyc, EPSG:26918, via gepinntem gdal-Loader), **5b** (MySQL native),
+**5c** (Cross-Dialect), **5d** (SpatiaLite) — alle live-verifiziert (`make
+sample-db-spatial-smoke`, nyc opt-in `FETCH_NYC=1`). Begleitend gefixt: PG-Reverse
+schließt Extension-Objekte aus (`pg_depend`). Slice-Docs:
+[`sample-db-integration-harness.md`](sample-db-integration-harness.md),
+[`spatial-harness-slice.md`](../done/spatial-harness-slice.md).
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
