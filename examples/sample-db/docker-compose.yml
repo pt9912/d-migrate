@@ -150,6 +150,16 @@ services:
       - .:/work
     working_dir: /work
 
+  # #2 Tool-Vergleich (intern, Sanity-Check): gepinntes pgloader als OSS-Migrations-Peer
+  # für den PG->PG-Durchsatz-Vergleich (docs/planning/open/tool-comparison.md). Tag
+  # v3.6.7 per DIGEST gepinnt — NICHT :latest (= unfertiger Rewrite-Branch laut Recherche).
+  # Gecappter Client (2 CPU/4 GB) wie dmigrate-capped, fairer Vergleich. profile tools.
+  pgloader:
+    image: dimitri/pgloader@sha256:d29ea680cf1aaaf7269690a922dd69167567b91b35e9c48a0b54a99cef96c0ed
+    cpus: 2
+    mem_limit: 4g
+    profiles: ["tools"]
+
 volumes:
   sample-db-pg-data:
   sample-db-mysql-data:

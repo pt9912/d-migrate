@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tool-compare
 
 help:
 	@printf '%s\n' \
@@ -118,6 +118,7 @@ help:
 		'  make sample-db-tpch-gen  TPC-H (Phase 4, 4a Sourcing) opt-in: pinned DuckDB generates the TPC-H workload offline into .cache/tpch/ (SF=0.01 default)' \
 		'  make sample-db-tpch-smoke  TPC-H (Phase 4, 4b Round-Trip) opt-in: reverse/validate/generate/transfer PG->PG + parity (8 tables + DECIMAL checksum)' \
 		'  make sample-db-tpch-perf  TPC-H (Phase 4, 4c Volume) opt-in: export->import >=1M under caps 2cpu/4g; canonical-SHA256 losslessness (hard) + throughput (diagnostic) + resume' \
+		'  make sample-db-tool-compare  TPC-H PG->PG throughput sanity-check (internal): COPY ceiling vs d-migrate vs pgloader, same workload/caps (diagnostic, NOT an audit benchmark)' \
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
@@ -419,3 +420,10 @@ sample-db-tpch-smoke:
 # Runner) + Resume nach Mid-Stream-Abbruch. Kalibrier-Guard + Nightly-Hart-Gate = Teil 2.
 sample-db-tpch-perf:
 	./examples/sample-db/scripts/smoke-tpch-perf.sh
+
+# Phase 4 (#2 Tool-Vergleich) — opt-in, NICHT im PR-Gate, INTERNER Sanity-Check (kein
+# Audit-Benchmark). Bewegt dieselbe TPC-H-Workload PG->PG mit COPY (native Decke),
+# d-migrate (CSV, gecappt) und pgloader (gepinnt, gecappt); rows/s + Anteil COPY-Decke.
+# WITH_PGLOADER=0 lässt pgloader weg. Doku: docs/planning/open/tool-comparison.md.
+sample-db-tool-compare:
+	./examples/sample-db/scripts/smoke-tool-compare.sh

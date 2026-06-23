@@ -77,10 +77,35 @@ managed/proprietärer Produkte** (SCT + DMS).
 - **Unsere 4c-Zahlen (~216k/~78k rows/s) sind diagnostisch** (Off-Spec-Host, ohne
   designierten Runner). **Nicht** mit Fremdzahlen vergleichbar.
 
-→ **#2 (offen, empfohlen):** der einzige saubere Speed-Vergleich = **COPY (Decke) + pgloader
-(Peer)** im selben Harness, identische TPC-H-Workload + Caps 2 CPU/4 GB, **nur Durchsatz**
-(nicht Feature-Parität), gerahmt als **interner Sanity-Check**. Ergebnis: d-migrates rows/s
-als Anteil der COPY-Decke + Hinweis auf die Allein-Features.
+→ **#2 ERLEDIGT** — siehe nächster Abschnitt (`make sample-db-tool-compare`).
+
+## #2 Head-to-Head — Ergebnis (intern, DIAGNOSTISCH)
+
+PG→PG-Move derselben TPC-H-Workload (SF=0.2, ~1,73 Mio Zeilen) auf demselben Host,
+Format **CSV für alle** (d-migrate-JSON-Overhead bewusst neutralisiert), Skript
+`examples/sample-db/scripts/smoke-tool-compare.sh`:
+
+| Tool | Durchsatz (rows/s) | Anteil COPY-Zeit |
+|---|---|---|
+| **COPY/`\copy`** (native Decke) | ~787k export / ~460k import | 100 % (Basis) |
+| **pgloader** v3.6.7 (direct, gecappt) | ~169k (direkt) | **~171 %** (~1,7×) |
+| **d-migrate** (export→import CSV, gecappt) | ~232k export / **~86k import** | **~463 %** (~4,6×) |
+
+**Ehrliche Lesart:**
+- d-migrate liegt in **gleicher Größenordnung**, aber **~2,7× langsamer als pgloader** und
+  ~4,6× COPY. Der Abstand liegt vor allem im **Import** (~86k vs. COPY ~460k = ~5,4×) —
+  Row-Binding + Typ-Behandlung + Validierung gegen COPY-Bulk. Export ~3,4× COPY.
+- pgloader ist nah an der Decke (es schreibt intern via COPY) + trägt nur Migrations-
+  Tool-Overhead; es bietet aber **keine** Verlustfreiheits-Verifikation, **kein** Resume,
+  **keine** Cross-Dialect-Typ-Konversion (siehe Matrix) — d-migrate tauscht Roh-Durchsatz
+  gegen genau diese Fähigkeiten.
+- **Optimierungs-Headroom:** der Import-Pfad ist der klare Hebel.
+
+**Methodik-Caveats (Pflicht-Kontext):** Off-Spec-Host → **diagnostisch**, kein
+Audit-Wert; der **Server (postgres) ist für ALLE ungecappt**, nur der Client (d-migrate/
+pgloader) läuft unter Caps 2 CPU/4 GB → gemessen wird der **Tool-Overhead über der
+COPY-Decke**, keine kontrollierte Per-Komponenten-Messung. COPY hat keinen separaten
+Client. Auf einem designierten Runner re-messen für belastbare Relativwerte.
 
 ## Lizenz-Landschaft (Positionierungs-Punkt)
 
