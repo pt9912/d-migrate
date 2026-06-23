@@ -5,7 +5,9 @@
 > ADR: [0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) (accepted, Tool A
 > DuckDB-`tpch`) · [0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
 > (Fetch/Compose-Mechanik, Pin-Disziplin).
-> Status: **in Arbeit** — Pins verifiziert + Generierung live belegt; Verdrahtung folgt.
+> Status: **abgeschlossen + live verifiziert (2026-06-23)** — `make sample-db-tpch-gen`
+> grün (SF=0.01: 8 Tabellen, `lineitem` 60175, offline im `network_mode: none`-Loader),
+> `make docs-check` grün. Commit `2dd3f56e`. Folge: 4b (Laden + Round-Trip).
 
 ## Ziel (Slice-Grenze)
 
@@ -66,16 +68,16 @@ PG/MySQL-abbildbar (`BIGINT`/`INTEGER`/`VARCHAR`/`DECIMAL(15,2)`/`DATE`) — Vor
 
 ## Definition of Done (Modul 5)
 
-- [ ] `FETCH_TPCH=1 make sample-db-tpch-gen` holt CLI+Extension SHA256-verifiziert
+- [x] `FETCH_TPCH=1 make sample-db-tpch-gen` holt CLI+Extension SHA256-verifiziert
       (Cache-Hit idempotent), nichts davon im Repo (`.cache/` gitignored).
-- [ ] Generierung läuft **offline** (`--network none` im Loader) und erzeugt das
+- [x] Generierung läuft **offline** (`--network none` im Loader) und erzeugt das
       TPC-H-Schema (8 Tabellen) + Daten bei konfigurierbarem `SF`.
-- [ ] Form-Assertion grün: 8 Tabellen, `lineitem`-Zeilen == erwarteter SF-Wert
+- [x] Form-Assertion grün: 8 Tabellen, `lineitem`-Zeilen == erwarteter SF-Wert
       (SF=0.01 → 60175).
-- [ ] Im Kandidaten-Katalog (`docs/planning/open/test-database-candidates.md`)
+- [x] Im Kandidaten-Katalog (`docs/planning/open/test-database-candidates.md`)
       dokumentiert (Pins, SF, offline-Mechanik).
-- [ ] ADR 0017 Punkt 2 (Extension-Pin) korrigiert.
-- [ ] Opt-in/nightly, **nicht** im PR-Gate; `make docs-check` grün.
+- [x] ADR 0017 Punkt 2 (Extension-Pin) korrigiert.
+- [x] Opt-in/nightly, **nicht** im PR-Gate; `make docs-check` grün.
 
 ## Nicht in 4a (Folge-Slices)
 

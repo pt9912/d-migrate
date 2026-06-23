@@ -93,7 +93,7 @@ Konkrete Werte der gewählten **Option A**:
      nach (scheitert unter `--network none`). Daher wird die **`tpch.duckdb_extension`
      (v1.4.5/linux_amd64) per SHA256 mitgepinnt** und offline aus Datei `LOAD`-ed; erst
      damit ist die Generierung hermetisch. Konkrete Pins + Live-Beleg:
-     [4a-Slice](../planning/in-progress/tpc-4a-sourcing-slice.md).
+     [4a-Slice](../planning/done/tpc-4a-sourcing-slice.md).
    - **Pin-Träger:** exakter Versions-Pin in einem Digest-gepinnten Basis-Image (analog
      zum `gdal`-Loader-Container, Phase 5) — z. B. `duckdb==1.4.5` (PyPI, exakt) oder
      das CLI-Release `v1.4.5` + SHA256. (Konkretes Trägerformat in 4a.)

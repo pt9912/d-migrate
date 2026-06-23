@@ -27,10 +27,13 @@
   Median, designierter `perf-acceptance.yml`-Nightly-Runner). **Damit sind die harten
   4c-/4d-Budgets entsperrt.**
 
-**Hier weitermachen — der Decision-Strang ist abgeschlossen, es bleibt der Bau:**
+**Hier weitermachen — Decision-Strang + 4a-Sourcing abgeschlossen, es bleibt der Round-Trip + die Messung:**
 
-- **4a** (DuckDB-Loader-Container analog `gdal` verdrahten, SF-Config + `dbgen`) + **4b**
-  (TPC-H-Schema-Round-Trip) — Korrektheit vor Messung, unabhängig baubar.
+- **4a — ERLEDIGT** ([done/tpc-4a-sourcing-slice.md](../done/tpc-4a-sourcing-slice.md),
+  Commit `2dd3f56e`): gepinnter DuckDB-`tpch`-Generator erzeugt die TPC-H-Workload
+  offline + reproduzierbar (`make sample-db-tpch-gen`, kein Dump im Repo). Nächster Bau:
+  **4b** (TPC-H in eine Quell-DB laden + reverse/validate/generate/transfer —
+  Korrektheit vor Messung).
 - **4d** (synthetisches DDL-1000-Gate) + **4c** (Volumen-Abnahme): Spec/Infrastruktur
   baubar; die **harten Acceptance-Gates** assertieren nun gemäß ADR 0018 (Referenz-Caps
   + Kalibrierungs-Guard) auf dem designierten Nightly-Runner.
@@ -124,12 +127,15 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
 
 ## Scope-Skizze (Sub-Slices)
 
-- **4a — Sourcing + Pin-Vertrag.** Tool-Wahl + Pin-Mechanik + Lizenz **ratifiziert in
+- **4a — Sourcing + Pin-Vertrag — ERLEDIGT**
+   ([done/tpc-4a-sourcing-slice.md](../done/tpc-4a-sourcing-slice.md)). Tool-Wahl +
+   Pin-Mechanik + Lizenz **ratifiziert in
    [ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** (accepted; A
-   DuckDB-`tpch`, LTS 1.4.5, Core-Extension MIT, echtes TPC-H-Schema). 4a **setzt um**:
-   DuckDB `1.4.5` in Digest-gepinntem Image (analog `gdal`-Loader) verdrahten, SF-Config
-   + `dbgen`-Aufruf, im Kandidaten-Katalog dokumentieren. Generator-Tool + Config
-   gepinnt (kein Dump im Repo).
+   DuckDB-`tpch`, LTS 1.4.5, MIT). Umgesetzt: gepinntes DuckDB-CLI v1.4.5 **+
+   mitgepinnte `tpch`-Extension** (4a-Befund: nicht im CLI gebündelt → ADR 0017 Punkt 2
+   korrigiert) in digest-gepinntem `debian-slim`-Loader, SF-Config + `dbgen`,
+   `network_mode: none` (hermetisch), im Kandidaten-Katalog dokumentiert. Generator-Tool
+   + Config gepinnt, kein Dump im Repo.
 - **4b — Schema-Round-Trip-Korrektheit.** TPC-H-Schema reverse/validate/generate/
    transfer (wie Phase 1/2) — Korrektheit vor Messung.
 - **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
