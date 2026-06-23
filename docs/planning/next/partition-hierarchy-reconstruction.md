@@ -1,6 +1,8 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
-> **Status:** Vorabklärung (Trigger, 2026-06-20)
+> **Status:** next/-Slice — **graduiert 2026-06-23** (aus `open/`). Gate-Entscheidung =
+> [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (proposed):
+> **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
 > für die range-partitionierte `payment`-Tabelle und erzeugt sie als plain
 > (nicht partitionierte) Tabelle —
@@ -20,13 +22,13 @@
 > automatische Erkennung/Verarbeitung partitionierter Tabellen, Partition by
 > RANGE/HASH/LIST). Heute nur **teilweise** abgedeckt: Strategie/Schlüssel
 > round-trippen, die Hierarchie nicht.
-> **Aktivierungsbedingung:** Sobald ein Pilot-/Anwenderfall echte Partitions-
-> Treue braucht (oder die Sample-DB-Cross-Dialect-Phase einen partition-
-> getriebenen Fidelity-Bedarf aufdeckt), wandert dieser Eintrag nach
-> `../next/` — dort mit Phasenschnitt, eigener ADR und Akzeptanzkriterien.
-> **Disposition (2026-06-20):** nicht in 0.9.9; Performance-Aspekte von LN-008
-> (Export/Import pro Partition, parallele Verarbeitung) gehören zur
-> Performance-Phase (1.0.x / Phase 4), die reine Schema-Treue kann früher.
+> **Graduierung (2026-06-23):** nach `next/` gehoben + Gate-ADR 0019 geschrieben. Sie
+> löst den zentralen Fork (Repräsentation) → **strukturiert**; die „Offenen Entscheidungen"
+> unten sind in ADR 0019 aufgelöst (DEFAULT in-Scope, Sub-Partition out, Performance-
+> Transfer out, **PG-Reverse zuerst + MySQL-Generate-Consume in dieser Scheibe**,
+> MySQL-Reverse als Folge-Slice). Arbeitspakete + Kopplung + Akzeptanz unten.
+> **Nächster Bau-Schritt: ADR 0019 ratifizieren → AP1+AP2 (PG-Reverse-Capture).**
+> Performance-Aspekte von LN-008 (per-Partition-Transfer, parallel) bleiben Performance-Phase.
 
 ## Gegenstand
 
@@ -304,7 +306,12 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
 - HASH ist **nicht** abgegrenzt: das Generate emittiert es bereits — der Reverse
   muss es nur (im kanonischen Encoding, AP1a) erfassen.
 
-## Offene Entscheidungen (für die ADR beim Move)
+## Entschieden in ADR 0019 (war: Offene Entscheidungen für die ADR)
+
+> **Alle hier genannten Punkte sind in
+> [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (proposed)
+> aufgelöst** — die Darstellung unten bleibt als Begründungs-Kontext.
+
 
 - **`PartitionDefinition`-Repräsentation (der zentrale Entscheid):** opake
   Dialekt-Strings festschreiben vs. typisierte Grenzen — siehe den Abschnitt

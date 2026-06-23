@@ -108,7 +108,7 @@ Standalone-Tabellen" — und der Transfer befüllt **beide**:
 
 Die Per-Tabelle-Parität (16049==16049, 723==723) bemerkt es **nicht**. Das ist
 **kein neuer Befund**, sondern der **datenbelegte Beweis von Finding D** aus
-[`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md)
+[`../next/partition-hierarchy-reconstruction.md`](../next/partition-hierarchy-reconstruction.md)
 (AP5). **Kein eigener neuer Slice** — dort getrackt; die Auflösung kommt mit der
 Partitions-Hierarchie-Rekonstruktion (AP2 entfernt die Kinder aus der
 Top-Level-Liste → Transfer befüllt nur noch den Parent). Bis dahin gilt: der
@@ -153,7 +153,7 @@ Quelle, je deterministisch grün mit gepinnter Baseline:
 
 **Ausgelagert (kein eigener Slice hier).** **P2-pg2my** (Partition-Daten-
 Duplikation, payment 32098 vs 16049) ist der datenbelegte Beweis von **Finding D**
-in [`../open/partition-hierarchy-reconstruction.md`](../open/partition-hierarchy-reconstruction.md)
+in [`../next/partition-hierarchy-reconstruction.md`](../next/partition-hierarchy-reconstruction.md)
 — Auflösung kommt mit der Partitions-Hierarchie-Rekonstruktion (AP2). Bis dahin
 prüft der PG→MySQL-Smoke Per-Tabelle-Parität und meldet die Duplikation als NOTE.
 
