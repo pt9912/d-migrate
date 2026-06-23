@@ -1,0 +1,127 @@
+# Slice: TPC Sub-Slice 4c — Volumen-Abnahme (gemessen, LF 8.1 + 8.2)
+
+> Dokumenttyp: in-progress-Slice — **Plan-Entwurf, Review offen** (graduiert aus dem
+> Umbrella [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md),
+> Sub-Slice 4c). Baut auf [4a](../done/tpc-4a-sourcing-slice.md) (Generator) +
+> [4b](../done/tpc-4b-roundtrip-slice.md) (Korrektheit).
+> ADR: [0018](../../adr/0018-normalized-perf-measurement-environment.md) (normierte
+> Mess-Umgebung) · [0017](../../adr/0017-tpc-benchmark-workload-sourcing.md).
+> **Status: Teil 1 (Mess-Kern) gebaut + live verifiziert** (`make sample-db-tpch-perf`,
+> SF=0.2 → 1,73 Mio: Verlustfreiheit hart per kanonischem SHA-256, Durchsatz diagnostisch
+> unter Caps 2 CPU/4 GB, Resume nach Mid-Stream-Abbruch). **Teil 2** (Kalibrier-Guard +
+> Referenz-Median + `perf-acceptance.yml`-Hart-Gate + ADR 0018-Substrat-Ergänzung) braucht
+> einen designierten Runner → bleibt in `in-progress/` offen.
+
+## Ziel + LF-Kriterien
+
+Die **gemessene** Volumen-Abnahme über 4b hinaus:
+- **LF 8.1 / 8.5 — Verlustfreiheit** ≥ 1 Mio Datensätze Export+Re-Import, verifiziert per
+  **SHA-256-Inhalts-Vergleich** (strenger als Phase-3-Zeilen-Parität + Einzel-Summe).
+- **LF 8.2 — Zeit/Durchsatz:** Export 1 Mio < 100 s, Import 1 Mio < 200 s.
+- **LF 8.2 — Resume:** erfolgreicher Wiederanlauf nach Abbruch **bei ~50 %**.
+
+## Spike-Befunde (2026-06-23, live, grundieren den Plan)
+
+1. **`data export` ist deterministisch bei statischer Quelle** — zweimaliger Export von
+   `tpch_pg_src.lineitem` ist byte-identisch (SHA `601a11d5…`).
+2. **Aber der Round-Trip ist NICHT byte-stabil:** der Ziel-Export (`tpch_pg_target` nach
+   4b-Transfer) weicht ab (SHA `31bbaccf…`) — die **Spaltenreihenfolge ist nach
+   reverse→generate vertauscht** (Quelle `l_orderkey,l_partkey,…`; Ziel `l_comment,…`).
+   → **Die literale „Byte-für-Byte-Hash der Exportdatei"-Methode (so im Umbrella-Plan
+   formuliert) würde einen KORREKTEN Transfer fälschlich als verlustig melden (False-FAIL).**
+3. **Nebenbefund (eigenes Ticket-Kandidat):** Spaltenreihenfolge überlebt reverse→generate
+   nicht. Für relationale Korrektheit **kosmetisch** (Werte/Spalten unverändert, nur
+   Ordinalposition), aber relevant für jede byte-basierte Prüfung. Separat zu bewerten,
+   **nicht** 4c-blockierend.
+
+## Festgenagelte Design-Entscheidungen
+
+- **Pfad: `data export` → `data import`** (nicht `data transfer`). Begründung: nur der
+  datei-basierte Pfad hat `--resume` (live aus `--help` bestätigt) **und** trennt Export-
+  und Import-Zeit (LF 8.2 nennt beide separat). `data transfer` hat nur `--chunk-size`.
+- **Verlustfreiheit (LF 8.5) = kanonischer Inhalts-SHA-256, NICHT roher Datei-Hash**
+  (Spike-Befund 2). Pro Tabelle ein **spalten-namens-geordneter + zeilen-sortierter**
+  Hash (psql-seitig: `\copy (SELECT <cols ORDER BY name> FROM t ORDER BY 1..n) TO STDOUT`
+  | `sha256sum`), Quelle vs. Ziel. Invariant gegen physische Spalten-/Zeilen-Reihenfolge,
+  sensibel für **jede** Zellabweichung. **Live validiert:** Quelle `tpch.lineitem` und das
+  spalten-physisch vertauschte `tpch_target.lineitem` ergeben denselben kanonischen Hash
+  `b0913f4c…`; der rohe Datei-Hash wich ab. Das ist die faithful-Realisierung der
+  LF-8.5-Absicht; die literale Datei-Byte-Lesart ist selbst bei korrektem Transfer
+  unmöglich. **Umbrella-4c korrigiert (R4);** ADR 0017 nennt „SHA-256 Quelle↔Ziel"
+  (Inhalts-, nicht Datei-Byte-Vergleich) → konsistent, keine ADR-Änderung nötig.
+- **Budgets als Durchsatz (skaleninvariant):** Export ≥ **10 000 Sätze/s** (= LN-002 →
+  1 Mio/100 s), Import ≥ **5 000 Sätze/s** (= LN-003 → 1 Mio/200 s). Entkoppelt die
+  Abnahme von der exakten SF und bindet sie an die nummerierten LN-Anforderungen.
+- **Scale:** SF konfigurierbar; **Default ≥ 1 Mio Zeilen** (SF=0.2 → `lineitem` ~1,2 Mio).
+  Der „echte" Nightly-Lauf kann SF=1 (~6 Mio `lineitem`, ~1 GB) fahren.
+- **Resume bei ~50 %:** Export mit `--split-files --chunk-size`, Mid-Stream-Abbruch
+  (`docker kill`) **nahe der Hälfte** der Chunks (Phase 3 bricht beim ERSTEN Checkpoint
+  ab = < 50 %; 4c muss gezielter bei ~50 % treffen), dann `--resume <operationId>`.
+- **Container-Caps:** Mess-Lauf unter `--cpus=2 --memory=4g` (ADR 0018).
+
+## Offene Entscheidungen / Risiken (Review-Input erbeten)
+
+1. **Kalibrier-Substrat-Lücke (architektonisch).** ADR 0018 definiert die Kalibrier-Op als
+   `diff-planner`-**JVM-Hotpath** (`PerfMeasure`/Kotest). 4c misst aber **CLI/Bash**
+   Export/Import — die teilen kein Mess-Substrat. **Vorschlag:** einen **CLI-Kalibrier-
+   Proxy** im d-migrate-Image (z. B. `schema generate` auf einem synthetischen
+   100-Tabellen-Schema, getimt) als Host-Speed-Referenz nutzen, statt den JVM-Hotpath.
+   → braucht eine **ADR 0018-Ergänzung** („Kalibrier-Op je Mess-Substrat: JVM-Tier =
+   diff-planner-Hotpath; CLI-Tier = generate-Proxy"). **Entscheidung: Proxy bauen +
+   ADR 0018 ergänzen?**
+2. **Referenz-Median-Henne-Ei.** Der Kalibrier-Guard braucht einen auf dem designierten
+   Runner gepinnten Referenzwert (ADR 0018). Den gibt es noch nicht. **Vorschlag:** der
+   erste Nightly-Lauf erfasst + pinnt ihn (Bootstrap), bis dahin läuft 4c **diagnostisch**.
+3. **Diagnostisch vs. hart in dieser Sandbox.** Absolute Zeit-Budgets sind hier **nicht**
+   abnehmbar (Off-Spec-Host → Kalibrier-Guard → diagnostisch). Hier verifizierbar:
+   Mechanik (getimter Export/Import, kanonischer SHA-256, Resume@50%, Caps, Kalibrier-
+   Messung). Hart erst auf `perf-acceptance.yml`.
+
+## Scoping: was hier verifizierbar ist vs. nur authored
+
+| Baustein | Hier (Sandbox) | Designierter Runner |
+|---|---|---|
+| Getimter Export/Import + Durchsatz | ✅ diagnostisch gemessen | hart asserriert (PERF_GATE) |
+| Kanonischer SHA-256 (Verlustfreiheit) | ✅ hart (host-unabhängig) | ✅ hart |
+| Resume @ ~50 % | ✅ hart | ✅ hart |
+| Container-Caps 2CPU/4GB | ✅ angewandt | ✅ angewandt |
+| Kalibrier-Guard (Proxy) | ✅ Mechanik, Referenz lokal | ✅ Referenz gepinnt |
+| `perf-acceptance.yml`-Nightly | authored (nicht lauffähig hier) | ✅ trägt das harte Gate |
+
+## Build-Schritte (nach Plan-Freigabe)
+
+1. (falls 1 bestätigt) ADR 0018 um Kalibrier-Substrat-Tier ergänzen.
+2. `smoke-tpch-perf.sh`: generate (≥1 Mio) → load → **getimter** `data export` (Durchsatz)
+   → **getimter** `data import` in frische Ziel-DB → kanonischer SHA-256 Quelle==Ziel →
+   Resume@50%-Abschnitt → Kalibrier-Proxy + Host-Ratio → diagnostisch/hart je `PERF_GATE`.
+3. Caps-Wrapper (`--cpus=2 --memory=4g`) für den Mess-Container.
+4. `make sample-db-tpch-perf` (opt-in) + `.github/workflows/perf-acceptance.yml` (Nightly).
+5. Doku-Sync `performance-benchmarks.md` (Acceptance-Tier + Referenz-Umgebung) +
+   Umbrella-4c + `expected/tpch.md`.
+
+## Definition of Done (Modul 5)
+
+**Teil 1 (Mess-Kern) — live verifiziert `make sample-db-tpch-perf` (SF=0.2, 1,73 Mio):**
+- [x] Verlustfreiheit ≥ 1 Mio per **kanonischem SHA-256** Quelle==Ziel (hart, host-unabh.;
+      alle 8 Tabellen identisch).
+- [x] Export/Import getrennt getimt unter Caps; Durchsatz vs. LN-002/003 (hier
+      diagnostisch: Export ~216k/s, Import ~78k/s, beide ≫ Budget; hart nur PERF_GATE+Runner).
+- [x] Resume nach **Mid-Stream-Abbruch** + `--resume` → vollständiger, verlustfreier
+      Export (Abbruchpunkt host-abhängig ~70 %, Band [25,90] belegt mid-stream; ehrlich
+      berichtet statt „~50 %" behauptet).
+- [x] Mess-Lauf unter Caps 2CPU/4GB (`dmigrate-capped`, cgroup-verifiziert 2.0 CPU/4 GiB).
+- [x] `perf-acceptance.yml`-Nightly authored (diagnostisch); `make sample-db-tpch-perf`.
+- [x] Opt-in, **nicht** im PR-Gate; `make docs-check` grün; `expected/tpch.md` gepinnt.
+
+**Teil 2 (designierter Runner) — offen:**
+- [ ] Kalibrier-Guard (CLI-Proxy, JVM↔CLI-Substrat-Lücke) + ADR 0018-Ergänzung.
+- [ ] Referenz-Median auf dem designierten Runner erfasst + gepinnt.
+- [ ] `perf-acceptance.yml` auf `PERF_GATE=true` (hartes Absolut-Zeit-Gate).
+- [ ] `performance-benchmarks.md` um das Acceptance-Tier ergänzt.
+
+## Nicht-Ziele
+
+- Cross-Dialect-Volumen (PG→MySQL/SQLite) + die weiteren LF-8.2-Skalierungskriterien
+  (10 Mio OOM, 5×-Parallel-Speedup, inkrementell 1000 Tab. < 1 h) — eigene Slices.
+- Der DDL-1000-< 30 s-Teil = **4d** (synthetisch, nicht TPC).
+- Spaltenreihenfolge-Fidelity (Nebenbefund 3) — separate Bewertung.

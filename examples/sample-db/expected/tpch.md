@@ -41,3 +41,31 @@
   vom Host in den psql-stdin (kein Volume-Mount).
 - **Geltungsbereich:** 4b ist Korrektheit. Die gemessene Volumen-/DDL-Abnahme (Zeit-
   Budgets, DDL-1000 < 30 s) ist 4c/4d unter der normierten Mess-Umgebung (ADR 0018).
+
+## Volumen-Abnahme (4c Mess-Kern, `smoke-tpch-perf.sh`)
+
+Datei-basierter `data export` → `data import` (≥ 1 Mio, SF=0.2 default → ~1,73 Mio Zeilen)
+unter Container-Caps **2 CPU/4 GB** (`dmigrate-capped`).
+
+| Kriterium | Erwartung | Modus |
+|---|---|---|
+| Verlustfreiheit (LF 8.1/8.5) | **kanonischer Inhalts-SHA-256** je Tabelle Quelle == Re-Import (alle 8) | **HART** (host-unabhängig) |
+| Export-Durchsatz (LF 8.2/LN-002) | ≥ 10 000 Sätze/s (= 1 Mio < 100 s) | diagnostisch (hart nur `PERF_GATE=true` + Runner) |
+| Import-Durchsatz (LF 8.2/LN-003) | ≥ 5 000 Sätze/s (= 1 Mio < 200 s) | diagnostisch |
+| Resume (LF 8.2) | Mid-Stream-Abbruch + `--resume` → vollständiger, verlustfreier Export | **HART** |
+
+### Nicht offensichtliche Notizen (4c, gepinnt)
+
+- **Kanonischer Hash statt roher Datei-Byte-Vergleich.** Der LF-8.5-„Byte-für-Byte"-
+  Vergleich auf der **rohen Exportdatei** ist untauglich — der Round-Trip ist nicht
+  byte-stabil (`schema reverse` alphabetisiert die Spalten, Ordinalreihenfolge geht
+  verloren; siehe [`reverse-column-ordinal-order.md`](../../../docs/planning/open/reverse-column-ordinal-order.md)).
+  Der kanonische Hash (spalten-namens-geordnet + zeilen-sortiert) ist order-invariant
+  + zellgenau und realisiert die LF-8.5-Absicht faithful.
+- **Resume-Abbruchpunkt host-abhängig.** Der Smoke zielt auf ~50 %, der erste
+  resumebare Checkpoint erscheint aber (Checkpoint-Flush-Latenz) auf schnellen Hosts
+  erst später (~70 %). Der tatsächliche %-Wert wird berichtet; ein Band [25 %, 90 %]
+  belegt „echt mid-stream". Der Beleg ist Resume-Vollständigkeit, nicht der exakte Punkt.
+- **Diagnostisch vs. hart.** Absolute Durchsatz-Budgets gelten nur auf der normierten
+  Umgebung (ADR 0018). Hier/Off-Spec: nur berichtet. Hart-Gate + Kalibrier-Guard +
+  designierter Nightly-Runner (`perf-acceptance.yml`) = **4c-Teil-2**.

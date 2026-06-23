@@ -145,23 +145,25 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
    8 Tabellen zeilen-identisch, `DECIMAL`-Werttransfer verlustfrei, 0 generate-Notes.
    Bewusst FK-/PK-frei (kein eingechecktes TPC-Artefakt; constraint-reiche Round-Trips =
    Phase 1/2). Cross-Dialect/PK-FK-Anreicherung außerhalb der Korrektheits-Grenze.
-- **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
-   Verlustfreiheit (LF 8.1) **per LF-8.5-Methode** — **Byte-für-Byte-/SHA-256-Vergleich**
-   der Export/Import-Daten (NICHT nur Zeilen-Parität + Checksumme wie Phase 3).
-   **Wovon der SHA-256 gebildet wird, hängt am Dialekt-Paar und ist hier festzunageln:**
-   bei **Gleich-Dialekt-Round-Trip** (z. B. PG→PG) trägt der literale Byte-für-Byte-Hash
-   der exportierten Daten (Export → Import → Re-Export, Hash-Gleichheit). Bei
-   **Cross-Dialect** ist byte-identisch Quelle↔Ziel *per Design unmöglich* (die Typ-/
-   Encoding-Normierung ist genau das Produkt) → dort ein **definiertes kanonisches
-   Surrogat** (normalisierte Wert-Serialisierung vor dem Hash) ausdrücklich begründen.
-   (Abgleich: ADR 0017 nennt „SHA-256 Quelle↔Ziel" verkürzt für „per-Lauf statt gegen
-   Dump" — die *präzise* Methode pinnt dieses 4c, nicht die ADR.) **Plus** getrennte
-   Zeit-Budgets (LF 8.2: Export < 100 s, Import < 200 s); exakter Pfad festnageln
-   (`data transfer --chunk-size` **vs.** `data export`→`import --resume`); **plus**
-   Resume nach Abbruch **bei ~50 %** (LF-8.2-Wortlaut; Phase 3 bricht heute beim ersten
-   Checkpoint ab, also < 50 %). Doku-Sync: `performance-benchmarks.md` auf
-   „Verlustfreiheit durch Phase 3 plausibilisiert, gemessene Abnahme offen" nachziehen
-   (der Umbrella-Plan ist bereits angeglichen).
+- **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen) — IN ARBEIT (Mess-Kern)**
+   ([in-progress/tpc-4c-volume-acceptance-slice.md](../in-progress/tpc-4c-volume-acceptance-slice.md)).
+   ≥ 1-Mio-Export/Re-Import. Verlustfreiheit (LF 8.1) **per LF-8.5-Methode = kanonischer
+   Inhalts-SHA-256** (spalten-namens-geordnet + zeilen-sortiert) Quelle == Ziel — strenger
+   als Phase-3-Zeilen-Parität, host-unabhängig hart. **Korrektur (4c-Spike 2026-06-23):**
+   der ursprünglich hier gedachte *literale* Byte-für-Byte-Hash der Exportdatei
+   (Export→Import→Re-Export) ist untauglich — der Round-Trip ist NICHT byte-stabil
+   (reverse→generate vertauscht die Spaltenreihenfolge), ein **korrekter** Transfer fiele
+   sonst fälschlich durch (False-FAIL). Der kanonische Hash ist invariant gegen Spalten-/
+   Zeilen-Order und realisiert die LF-8.5-Absicht faithful. **Pfad festgenagelt:
+   `data export` → `data import`** (einziger mit `--resume` + getrennten Export/Import-
+   Zeiten; `data transfer` hat nur `--chunk-size`). **Plus** Zeit-Budgets als Durchsatz
+   (Export ≥ 10k/s = LN-002 → 1 Mio/100 s; Import ≥ 5k/s = LN-003 → 1 Mio/200 s), unter
+   Caps 2 CPU/4 GB (ADR 0018). **Plus** Resume nach Abbruch **bei ~50 %** (chunk-count-
+   basiert; Phase 3 bricht beim ersten Checkpoint ab, also < 50 %). **Scope-Split:**
+   Mess-Kern (kanonischer SHA-256 hart, Durchsatz diagnostisch, Resume@50%, Caps) = Teil 1;
+   Kalibrier-Guard + Referenz-Median + `perf-acceptance.yml`-Hart-Gate = Teil 2 (braucht
+   designierten Runner; Kalibrier-Substrat-Lücke JVM↔CLI offen). Doku-Sync:
+   `performance-benchmarks.md` auf „gemessene Abnahme: Mess-Kern da, Hart-Gate Teil 2".
 - **4d — LF 8.2 / LN-004 DDL-1000-Gate aktivieren/stabilisieren.** Das **bestehende**
    30-s-Baseline-Gate (= **LN-004** „>1.000 Tabellen … unter 30 s") verlässlich grün
    stellen (nicht neu einführen); 4×n-Diff-vs-reiner-DDL-Pfad entscheiden. (Die früher
@@ -202,11 +204,13 @@ Vorbedingung ist mit ADR 0018 `accepted` nun erfüllt.)
 ## Akzeptanzkriterien
 
 - **4b:** TPC-H-Schema round-trippt grün (Parität + erwartete Notes gepinnt).
-- **4c:** Verlustfreiheit (LF 8.1) **gemessen** belegt **per LF-8.5-Methode**
-  (Byte-für-Byte-/SHA-256-Vergleich der Export/Import-Daten, nicht nur Zeilen-Parität;
-  Methode je Dialekt-Paar — Gleich-Dialekt literal, Cross-Dialect kanonisches Surrogat);
-  Export-/Import-Zeit getrennt unter den LF-8.2-Budgets (< 100 s / < 200 s) in der
-  normierten Umgebung; Resume nach Abbruch bei ~50 %; `performance-benchmarks.md` aktualisiert.
+- **4c:** Verlustfreiheit (LF 8.1) **gemessen** belegt **per LF-8.5-Methode = kanonischer
+  Inhalts-SHA-256** (spalten-namens-geordnet + zeilen-sortiert, Quelle == Ziel; nicht nur
+  Zeilen-Parität wie Phase 3). Der *literale* Datei-Byte-Hash ist untauglich — der
+  Round-Trip ist nicht byte-stabil (Spaltenreihenfolge, 4c-Spike); der kanonische Hash ist
+  order-invariant + zellgenau. Export-/Import-Durchsatz getrennt vs. LN-002/003 (≥ 10k/s /
+  ≥ 5k/s = 1 Mio < 100 s / < 200 s) unter Caps 2 CPU/4 GB; Resume bei ~50 %;
+  `performance-benchmarks.md` aktualisiert. **Hartes Zeit-Gate = Teil 2** (designierter Runner).
 - **4d:** N=1000-DDL < 30 s als hartes Gate (**LF 8.2 / LN-004**) in der normierten
   Umgebung; N=100-DDL < 5 s (LF 8.2) als Gate bestätigt (bereits durch die N=100-Baseline gedeckt).
 - **Gating:** opt-in/nightly (wie Phase 3), **nicht** im PR-Gate (Laufzeit/Volumen).

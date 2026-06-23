@@ -35,3 +35,5 @@ database:
     # (runtime-generierte DuckDB-schema.sql + CSVs, kein TPC-Artefakt im Repo).
     tpch_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch"
     tpch_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch_target"
+    # 4c (Volumen-Abnahme): dedizierte Re-Import-Ziel-DB, getrennt vom 4b-Ziel.
+    tpch_perf_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch_perf_target"

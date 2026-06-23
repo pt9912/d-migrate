@@ -1,0 +1,48 @@
+name: Perf Acceptance — TPC-H Volume (4c, Nightly / opt-in)
+
+# Phase-4-Volumen-Abnahme (4c Mess-Kern): datei-basierter data export -> import
+# der TPC-H-Workload (>= 1 Mio Zeilen) unter Container-Caps 2 CPU/4 GB.
+# Slice: docs/planning/in-progress/tpc-4c-volume-acceptance-slice.md
+# ADR:   docs/adr/0018-normalized-perf-measurement-environment.md
+#
+# Was HART laeuft (host-unabhaengig): Verlustfreiheit per kanonischem Inhalts-
+# SHA-256 (Quelle == Re-Import) + Resume nach Mid-Stream-Abbruch.
+# Was DIAGNOSTISCH laeuft: Export/Import-Durchsatz vs LN-002/003 (>= 10k/5k Saetze/s).
+#
+# *** TEIL-2-VORBEHALT (bewusst) ***
+# Dieser Workflow setzt NOCH NICHT `PERF_GATE=true`. Das harte Absolut-Zeit-Gate
+# braucht erst die normierte Mess-Umgebung aus ADR 0018, die als 4c-Teil-2 folgt:
+#   - Kalibrier-Guard (CLI-Proxy, Off-Spec-Host -> Rueckfall auf diagnostisch),
+#   - auf dem designierten Runner einmalig erfasster + gepinnter Referenz-Median.
+# Ohne diesen Guard wuerde ein langsamer/lauter GitHub-Runner das Durchsatz-Budget
+# false-failen. Bis dahin: Nightly-Smoke (diagnostisch), continue-on-error.
+# Aktivierung Teil-2: `make sample-db-tpch-perf PERF_GATE=true` hier eintragen,
+# sobald Kalibrier-Guard + Referenz-Median stehen.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Taeglich 04:47 UTC (versetzt gegen den 03:17-Scale-Job, Runner-Spitzen meiden).
+    - cron: '47 4 * * *'
+
+jobs:
+  tpch-perf:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run TPC-H volume acceptance (Mess-Kern, diagnostic)
+        # SF=0.2 -> ~1.7 Mio Zeilen (>= LF-8.1-1-Mio-Schwelle). Kein PERF_GATE (Teil 2).
+        run: make sample-db-tpch-perf
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true
