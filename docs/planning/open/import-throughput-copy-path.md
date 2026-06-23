@@ -108,6 +108,24 @@ SQL-Funktions-Wrapping" allein ist **notwendig, aber nicht hinreichend**.
   Abstand Richtung pgloader (~1,7×). Spatial-Workloads behalten den INSERT-Pfad (oder Staging) —
   dort ist die Typ-Treue wichtiger als der Speed.
 
+## Orthogonale Achse: Parallelität (bewusst außerhalb dieses Tickets)
+
+Beide Hebel oben — Schritt 0 (`reWriteBatchedInserts`) und der COPY-Pfad — beschleunigen
+einen **einzelnen** Import-Stream (Protokoll-Effizienz pro Strom). Eine davon unabhängige
+Achse ist **paralleler Import**: mehrere gleichzeitige Verbindungen/Streams (eine je Tabelle;
+oder eine große Tabelle chunk-partitioniert über N Streams). Beide Achsen multiplizieren sich.
+
+Bewusst **nicht** in diesem Ticket, weil eigene Korrektheits-/Architektur-Fragen:
+- **FK-/Ladereihenfolge** über gleichzeitig geladene Tabellen (referenzielle Integrität).
+- **Globaler `triggersDisabled`-Zustand** und Connection-Pool-Dimensionierung.
+- **Decke ist die Ziel-Instanz:** Importer-seitige Parallelität ist durch die vertikale
+  Kapazität der **einen** Ziel-PG-Instanz (CPU/IO/WAL) begrenzt — ab einem Punkt bringt ein
+  weiterer Stream nichts mehr. Protokoll-Effizienz (dieses Ticket) senkt die Arbeit pro Zeile
+  und bleibt darum auch unter dieser Decke wirksam.
+
+Falls Volumen-Migrationen das rechtfertigen, als **eigenes** Ticket führen — nicht in den
+COPY-Fast-Path mischen.
+
 ## Scope-Hinweis
 
 Nicht LF-blockierend (Korrektheit/Verlustfreiheit unverändert). Aktivieren, wenn
