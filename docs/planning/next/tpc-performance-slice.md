@@ -31,8 +31,10 @@
 1. **ADR 0018 ratifizieren:** die 4 offenen Parameter konkretisieren (analog zur
    0017-Vorbereitung) → `accepted`. Voraussetzung für die **harten** 4c-/4d-Budgets.
 2. **Umsetzung beginnen (ohne ADR 0018 möglich):** 4a (DuckDB-Loader-Container analog
-   `gdal` verdrahten, SF-Config + `dbgen`) + 4b (TPC-H-Schema-Round-Trip) + synthetisches
-   4d-DDL-Gate sind unabhängig von Blocker 3 baubar.
+   `gdal` verdrahten, SF-Config + `dbgen`) + 4b (TPC-H-Schema-Round-Trip) sind unabhängig
+   von Blocker 3 baubar. Auch die **4d-Spec/Infrastruktur** (synthetisches DDL-Gate) ist
+   ohne ADR 0018 baubar — nur das **harte Acceptance-Gate** (DDL-1000 < 30 s als Fehler)
+   *greift* erst mit ADR 0018 `accepted` (siehe Reihenfolge-Gate weiter unten).
 
 ## Ziel
 
@@ -52,12 +54,13 @@ Das Lastenheft trennt zwei Ebenen; der ältere „LF 8.1/8.2"-Sammelbegriff vers
   Checksumme). 4c muss diese Methode übernehmen (oder ein Surrogat ausdrücklich
   begründen). LF 8.5 nennt zusätzlich NULL-/Unicode-/BLOB-Integrität — eigener Scope.
 - **LF 8.2 — Performance-Tests** (Zeit/Skalierung). Relevant u. a.:
-  „DDL-Generierung für 100 Tabellen in unter 5 s", „Export von 1 Mio in unter
-  **100 s**", „Import von 1 Mio in unter **200 s**", „DDL-Generierung für 1.000
-  Tabellen in unter **30 s**" (= nummerierte Anforderung **LN-004**, „Schemas mit
-  >1.000 Tabellen"; auch in den Abnahmekriterien), „Export von 10 Mio ohne
-  Out-of-Memory", „Checkpoint/Resume: erfolgreicher Wiederanlauf nach simuliertem
-  Abbruch bei 50 %".
+  „DDL-Generierung für 100 Tabellen in unter 5 s" (= **LN-001**), „Export von 1 Mio in
+  unter **100 s**", „Import von 1 Mio in unter **200 s**" (entsprechen den Durchsatz-
+  Anforderungen **LN-002** ≥ 10 000 Sätze/s → 1 Mio/100 s bzw. **LN-003** ≥ 5 000
+  Sätze/s → 1 Mio/200 s), „DDL-Generierung für 1.000 Tabellen in unter **30 s**"
+  (= nummerierte Anforderung **LN-004**, „Schemas mit >1.000 Tabellen"; auch in den
+  Abnahmekriterien), „Export von 10 Mio ohne Out-of-Memory", „Checkpoint/Resume:
+  erfolgreicher Wiederanlauf nach simuliertem Abbruch bei 50 %".
 
 **Was Phase 3 (Employees-Scale) bereits belegt — und was nicht:**
 - ✅ Verlustfreiheit (LF 8.1): ~4 Mio Zeilen export→import, Zeilen-Parität +
@@ -94,41 +97,30 @@ Query-Engine: gemessen wird **Transfer-Durchsatz + DDL-Zeit**, nicht TPC-Query-L
 
 **Review-Caveat (Mess-Last):** der N=1000-Smoke baut ein **gemischtes** Schema
 (`tables=n, sequences=n, views=n, triggers=n` + **1** geteilte Trigger-Funktion =
-**4×n + 1** Objekte; die ältere KDoc-Angabe „5×n" zählt fälschlich `n` Funktionen)
+**4×n + 1** Objekte; die KDoc in `LargeSchemaScaleSpec.kt` ist seit `6040d763`
+entsprechend korrigiert — die frühere „5×n"-Angabe zählte fälschlich `n` Funktionen)
 und misst den **Diff-Planner + PG-Diff-Renderer** (`SchemaComparator` → `DiffPlanner`
 → `PostgresDiffDdlGenerator`), nicht reine „1000-Tabellen-DDL-Generierung". Vor der
 LF-8.2-Abnahme ist festzulegen, ob dieser 4×n-Diff-Pfad gilt (großzügig) oder ein
 schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
 
-## Offene Grundentscheidungen (vor dem Bau)
+## Grundentscheidungen
 
-1. **Sourcing + ADR 0014-Pin-Vertrag (Review-Blocker).** ADR 0014 verlangt eine auf
-   Commit-SHA/Release gepinnte, **SHA256-verifizierte** Quelle, kein Dump im Repo.
-   Ein **Generator** (DuckDB `tpch`/`tpcds`-Extension, `dbgen`/`dsdgen`) erzeugt
-   **keinen** byte-identischen gepinnten Dump — der SHA256 hängt dann an Generator-
-   + Extension-Version + Output-Format (CSV/Parquet, Spaltenreihenfolge, Float-
-   Formatierung). Auflösungs-Optionen (in 4a zu entscheiden):
-   - **(a) Generieren → einmal als Dump auf externen Mirror → wie Pagila/Sakila
-     SHA256-pinnen** (de facto „gepinnter Datensatz"; ADR 0014-konform).
-   - **(b) Generator-Tool + Config pinnen, kein Dump-SHA256** — Reproduzierbarkeit aus
-     gepinntem Tool + Config, Verlustfreiheit **per-Lauf** verifiziert (LF 8.5 SHA-256
-     Quelle↔Ziel). Vermeidet die Output-Byte-Stabilitäts-Falle (DuckDB-`tpch`-Output
-     ist über Patch-Versionen/Plattformen nicht byte-stabil; ein gepinnter Output-
-     SHA256 bräche beim nächsten DuckDB-Bump).
-   Abweichung vom Standard-Pin-Muster → **ADR-Delegation erfolgt + ratifiziert**:
-   **[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)** (accepted)
-   wählt **(b): Generator-Tool + Config pinnen statt statischem Dump** (analog
-   gepinntem `gdal`-Loader), Tool **A — DuckDB-`tpch`** (LTS 1.4.5, Core-Extension
-   MIT, SF-konfigurierbar). B (HammerDB GPL-als-Container) / C (schlanke SQL-
-   Generierung) bleiben dokumentierte Fallbacks.
-2. **Lizenz (Review-Caveat).** TPC stellt `dbgen`/`dsdgen` unter **TPC-EULA** (kein
-   OSS); abgeleitete TPC-Daten unterliegen Branding-/Redistributions-Bedingungen
-   (vgl. semgrep-Gate: LGPL/Commons-Clause durfte nicht ins MIT-Repo). Der ADR 0014-
-   Pfad „nichts einchecken, On-Demand-Fetch" entschärft Redistribution — Argument für
-   Fetch statt Vendoring. DuckDB-`tpch`-Extension ist MIT (generiert lokal), die
-   *Daten-Schema-Definition* stammt aber aus TPC → in 4a prüfen.
-3. **Workload:** TPC-H (8 Tabellen) zuerst; TPC-DS (24) optional als zweiter Sub-Slice.
-4. **Scale-Factor:** Smoke (SF ~0.01) für CI-Funktionsnachweis vs. Abnahme (SF 1 ≈
+**Entschieden (ADR 0017, accepted — Sourcing + Lizenz).** Der Pin-Vertrag aus ADR 0014
+(Commit-SHA/Release + SHA256, kein Dump im Repo) lässt sich auf **generierte** TPC-Daten
+nicht 1:1 anwenden — ein Generator-Output ist über Versionen/Plattformen nicht byte-stabil.
+[ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) löst das per **Generator-Tool
++ Config pinnen statt statischem Dump** (analog gepinntem `gdal`-Loader), Tool **A —
+DuckDB-`tpch`** (LTS 1.4.5, Core-Extension MIT, SF-konfigurierbar); Verlustfreiheit wird
+**per-Lauf** verifiziert (LF 8.5), nicht gegen einen Baseline-Dump. Lizenz unkritisch:
+MIT-Extension, lokal generiert, nichts eingecheckt/publiziert → keine TPC-EULA-/Branding-
+Bindung. B (HammerDB GPL-als-Container) / C (schlanke SQL-Generierung) bleiben dokumentierte
+Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md).
+
+**Noch offen (in 4a/4e festzunageln):**
+
+1. **Workload:** TPC-H (8 Tabellen) zuerst; TPC-DS (24) optional als zweiter Sub-Slice (4e).
+2. **Scale-Factor:** Smoke (SF ~0.01) für CI-Funktionsnachweis vs. Abnahme (SF 1 ≈
    1 GB / ~6 Mio `lineitem`-Zeilen) für die Volumen-Schwellen.
 
 ## Scope-Skizze (Sub-Slices)
@@ -143,21 +135,32 @@ schmaler reiner Generate-Pfad für genau 1000 Tabellen gebraucht wird.
    transfer (wie Phase 1/2) — Korrektheit vor Messung.
 - **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
    Verlustfreiheit (LF 8.1) **per LF-8.5-Methode** — **Byte-für-Byte-/SHA-256-Vergleich**
-   der Export/Import-Daten (NICHT nur Zeilen-Parität + Checksumme wie Phase 3; ein
-   Surrogat wäre ausdrücklich zu begründen) — **und** getrennte Zeit-Budgets (LF 8.2:
-   Export < 100 s, Import < 200 s); exakter Pfad festnageln (`data transfer
-   --chunk-size` **vs.** `data export`→`import --resume`); **plus** Resume nach Abbruch
-   **bei ~50 %** (LF-8.2-Wortlaut; Phase 3 bricht heute beim ersten Checkpoint ab,
-   also < 50 %). Doku-Sync: `performance-benchmarks.md` auf „Verlustfreiheit durch
-   Phase 3 plausibilisiert, gemessene Abnahme offen" nachziehen (der Umbrella-Plan ist
-   bereits angeglichen).
+   der Export/Import-Daten (NICHT nur Zeilen-Parität + Checksumme wie Phase 3).
+   **Wovon der SHA-256 gebildet wird, hängt am Dialekt-Paar und ist hier festzunageln:**
+   bei **Gleich-Dialekt-Round-Trip** (z. B. PG→PG) trägt der literale Byte-für-Byte-Hash
+   der exportierten Daten (Export → Import → Re-Export, Hash-Gleichheit). Bei
+   **Cross-Dialect** ist byte-identisch Quelle↔Ziel *per Design unmöglich* (die Typ-/
+   Encoding-Normierung ist genau das Produkt) → dort ein **definiertes kanonisches
+   Surrogat** (normalisierte Wert-Serialisierung vor dem Hash) ausdrücklich begründen.
+   (Abgleich: ADR 0017 nennt „SHA-256 Quelle↔Ziel" verkürzt für „per-Lauf statt gegen
+   Dump" — die *präzise* Methode pinnt dieses 4c, nicht die ADR.) **Plus** getrennte
+   Zeit-Budgets (LF 8.2: Export < 100 s, Import < 200 s); exakter Pfad festnageln
+   (`data transfer --chunk-size` **vs.** `data export`→`import --resume`); **plus**
+   Resume nach Abbruch **bei ~50 %** (LF-8.2-Wortlaut; Phase 3 bricht heute beim ersten
+   Checkpoint ab, also < 50 %). Doku-Sync: `performance-benchmarks.md` auf
+   „Verlustfreiheit durch Phase 3 plausibilisiert, gemessene Abnahme offen" nachziehen
+   (der Umbrella-Plan ist bereits angeglichen).
 - **4d — LF 8.2 / LN-004 DDL-1000-Gate aktivieren/stabilisieren.** Das **bestehende**
    30-s-Baseline-Gate (= **LN-004** „>1.000 Tabellen … unter 30 s") verlässlich grün
-   stellen (nicht neu einführen); 4×n-Diff-vs-reiner-DDL-Pfad entscheiden; dabei die
-   irreführende „5×n"-KDoc in `LargeSchemaScaleSpec.kt` auf „4×n + 1" korrigieren.
-   **Das LF-8.2-Kriterium „100 Tabellen < 5 s" ist bereits gedeckt** — die existierende
-   N=100-Baseline (`renderBaselineMs=2_000` = 2 s) liegt darunter; nur als Gate
-   bestätigen, kein neuer Bau. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
+   stellen (nicht neu einführen); 4×n-Diff-vs-reiner-DDL-Pfad entscheiden. (Die früher
+   hier gelistete „5×n"-KDoc-Korrektur ist **erledigt**, Commit `6040d763`.) Doku-Sync:
+   die Scale-Tabelle in `performance-benchmarks.md` führt bislang nur die Smoke-Budgets —
+   beim Aktivieren des harten Gates die Baseline-Spalte (`renderBaselineMs`) nachtragen
+   und den Ausblick (Abnahme-Lücke) von „gemessene Abnahme steht noch aus" auf
+   „30-s-Baseline kodiert, hart nur im Acceptance-Tier" schärfen.
+   **Das LF-8.2-Kriterium „100 Tabellen < 5 s" (= LN-001) ist bereits gedeckt** — die
+   existierende N=100-Baseline (`renderBaselineMs=2_000` = 2 s) liegt darunter; nur als
+   Gate bestätigen, kein neuer Bau. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
 - **4e — (optional) TPC-DS** als zweite, komplexere Workload.
 
 Jeder Sub-Slice (4a–4e) graduiert bei Aktivierung als **eigener** `in-progress/`-Slice
@@ -187,7 +190,8 @@ auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen.
 
 - **4b:** TPC-H-Schema round-trippt grün (Parität + erwartete Notes gepinnt).
 - **4c:** Verlustfreiheit (LF 8.1) **gemessen** belegt **per LF-8.5-Methode**
-  (Byte-für-Byte-/SHA-256-Vergleich der Export/Import-Daten, nicht nur Zeilen-Parität);
+  (Byte-für-Byte-/SHA-256-Vergleich der Export/Import-Daten, nicht nur Zeilen-Parität;
+  Methode je Dialekt-Paar — Gleich-Dialekt literal, Cross-Dialect kanonisches Surrogat);
   Export-/Import-Zeit getrennt unter den LF-8.2-Budgets (< 100 s / < 200 s) in der
   normierten Umgebung; Resume nach Abbruch bei ~50 %; `performance-benchmarks.md` aktualisiert.
 - **4d:** N=1000-DDL < 30 s als hartes Gate (**LF 8.2 / LN-004**) in der normierten
