@@ -11,7 +11,8 @@
 
 ## Ursache (code-verifiziert 2026-06-23)
 
-`adapters/driven/driver-postgresql/.../PostgresTableImportSession.kt` schreibt den
+`adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTableImportSession.kt`
+schreibt den
 **Default-Import-Pfad** (`OnConflict.ABORT`/`SKIP`) über **Einzelzeilen-Prepared-`INSERT`**:
 `buildColumnInsert` erzeugt `INSERT INTO … (cols) VALUES (<placeholders>)` mit **genau einer**
 Werte-Zeile, `executeInsertChunk` bindet jede Zeile und feuert `addBatch` / `executeBatch`.

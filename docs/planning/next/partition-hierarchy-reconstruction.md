@@ -1,7 +1,7 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
 > **Status:** next/-Slice — **graduiert 2026-06-23** (aus `open/`). Gate-Entscheidung =
-> [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (proposed):
+> [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
 > für die range-partitionierte `payment`-Tabelle und erzeugt sie als plain
@@ -309,7 +309,7 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
 ## Entschieden in ADR 0019 (war: Offene Entscheidungen für die ADR)
 
 > **Alle hier genannten Punkte sind in
-> [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (proposed)
+> [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted)
 > aufgelöst** — die Darstellung unten bleibt als Begründungs-Kontext.
 
 

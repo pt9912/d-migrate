@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-23
 decision-makers: pt9912
 consulted: docs/planning/next/partition-hierarchy-reconstruction.md, docs/adr/0015-fulltext-tsvector-neutral-type.md (neutrales-Modell-Präzedenz), spec/neutral-model-spec.md, spec/lastenheft-d-migrate.md (LN-008)
@@ -8,9 +8,9 @@ informed: hexagon/core (PartitionConfig, TableDiff), adapters/driven/driver-post
 
 # Partitions-Hierarchie: strukturierte `PartitionDefinition` statt opaker Dialekt-Strings
 
-> **Status: proposed.** Gate-Entscheidung (AP1a) für den Slice
+> **Status: accepted (ratifiziert 2026-06-23).** Gate-Entscheidung (AP1a) für den Slice
 > [`../planning/next/partition-hierarchy-reconstruction.md`](../planning/next/partition-hierarchy-reconstruction.md).
-> **Empfehlung: strukturiert.** Konkrete Modellform unter „Entscheidung".
+> **Gewählt: strukturierte `PartitionDefinition`.** Konkrete Modellform unter „Entscheidung".
 
 ## Kontext und Problemstellung
 

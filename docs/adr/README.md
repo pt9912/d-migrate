@@ -72,4 +72,4 @@ argumentiert werden.
 | 0016 | [SpatiaLite-Metadaten-Bootstrap im Migrate-Diff-Pfad (`InitSpatialMetaData`)](0016-spatialite-metadata-bootstrap.md) | accepted |
 | 0017 | [Phase-4-Benchmark-Workload: Generator-Tool pinnen statt statischem Dump](0017-tpc-benchmark-workload-sourcing.md) | accepted |
 | 0018 | [Normierte Mess-Umgebung für die LF-8.2-Performance-Abnahme](0018-normalized-perf-measurement-environment.md) | accepted |
-| 0019 | [Partitions-Hierarchie: strukturierte `PartitionDefinition` statt opaker Dialekt-Strings](0019-partition-hierarchy-structured-representation.md) | proposed |
+| 0019 | [Partitions-Hierarchie: strukturierte `PartitionDefinition` statt opaker Dialekt-Strings](0019-partition-hierarchy-structured-representation.md) | accepted |
