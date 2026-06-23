@@ -511,8 +511,8 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
                     type = PartitionType.HASH,
                     key = listOf("id"),
                     partitions = listOf(
-                        PartitionDefinition(name = "logs_p0", from = "MODULUS 4, REMAINDER 0"),
-                        PartitionDefinition(name = "logs_p1", from = "MODULUS 4, REMAINDER 1")
+                        PartitionDefinition(name = "logs_p0", modulus = 4, remainder = 0),
+                        PartitionDefinition(name = "logs_p1", modulus = 4, remainder = 1)
                     )
                 )
             )

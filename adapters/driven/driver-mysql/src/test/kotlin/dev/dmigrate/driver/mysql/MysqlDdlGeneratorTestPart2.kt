@@ -305,9 +305,9 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
                         type = PartitionType.RANGE,
                         key = listOf("event_date"),
                         partitions = listOf(
-                            PartitionDefinition(name = "p2024", to = "'2025-01-01'"),
-                            PartitionDefinition(name = "p2025", to = "'2026-01-01'"),
-                            PartitionDefinition(name = "p_max", to = "MAXVALUE")
+                            PartitionDefinition(name = "p2024", to = listOf(PartitionBound.Value("'2025-01-01'"))),
+                            PartitionDefinition(name = "p2025", to = listOf(PartitionBound.Value("'2026-01-01'"))),
+                            PartitionDefinition(name = "p_max", to = listOf(PartitionBound.MaxValue))
                         )
                     )
                 )

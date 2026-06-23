@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -81,9 +82,9 @@ class MysqlPartitionPkDdlIntegrationTest : FunSpec({
                         type = PartitionType.RANGE,
                         key = listOf("region_id"),
                         partitions = listOf(
-                            PartitionDefinition(name = "p_low", to = "10"),
-                            PartitionDefinition(name = "p_mid", to = "20"),
-                            PartitionDefinition(name = "p_max", to = "MAXVALUE"),
+                            PartitionDefinition(name = "p_low", to = listOf(PartitionBound.Value("10"))),
+                            PartitionDefinition(name = "p_mid", to = listOf(PartitionBound.Value("20"))),
+                            PartitionDefinition(name = "p_max", to = listOf(PartitionBound.MaxValue)),
                         ),
                     ),
                 ),

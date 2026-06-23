@@ -182,21 +182,27 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     ): DdlStatement {
         val sql = buildString {
             append("CREATE TABLE ${quoteIdentifier(partition.name)} PARTITION OF ${quoteIdentifier(parentTable)}")
-            when (type) {
+            if (partition.isDefault) {
+                append(" DEFAULT")
+            } else when (type) {
                 PartitionType.RANGE -> {
-                    val from = validatePartitionBound(partition.from, "FROM", partition.name)
-                    val to = validatePartitionBound(partition.to, "TO", partition.name)
+                    val from = renderRangeBounds(partition.from, "FROM", partition.name)
+                    val to = renderRangeBounds(partition.to, "TO", partition.name)
                     append(" FOR VALUES FROM ($from) TO ($to)")
                 }
                 PartitionType.LIST -> {
-                    val vals = partition.values?.onEach {
-                        validatePartitionBound(it, "IN", partition.name)
-                    }?.joinToString(", ") ?: ""
+                    val vals = partition.values.orEmpty()
+                        .joinToString(", ") { validatePartitionLiteral(it, "IN", partition.name) }
                     append(" FOR VALUES IN ($vals)")
                 }
                 PartitionType.HASH -> {
-                    val from = validatePartitionBound(partition.from, "WITH", partition.name)
-                    append(" FOR VALUES WITH ($from)")
+                    val modulus = requireNotNull(partition.modulus) {
+                        "HASH partition '${partition.name}' must have a modulus"
+                    }
+                    val remainder = requireNotNull(partition.remainder) {
+                        "HASH partition '${partition.name}' must have a remainder"
+                    }
+                    append(" FOR VALUES WITH (MODULUS $modulus, REMAINDER $remainder)")
                 }
             }
             append(";")
@@ -204,10 +210,23 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         return DdlStatement(sql)
     }
 
-    private fun validatePartitionBound(value: String?, clause: String, partitionName: String): String {
-        requireNotNull(value) {
-            "Partition '$partitionName' $clause bound must not be null"
+    private fun renderRangeBounds(
+        bounds: List<PartitionBound>?,
+        clause: String,
+        partitionName: String
+    ): String {
+        requireNotNull(bounds) { "Partition '$partitionName' $clause bound must not be null" }
+        require(bounds.isNotEmpty()) { "Partition '$partitionName' $clause bound must not be empty" }
+        return bounds.joinToString(", ") { bound ->
+            when (bound) {
+                PartitionBound.MinValue -> "MINVALUE"
+                PartitionBound.MaxValue -> "MAXVALUE"
+                is PartitionBound.Value -> validatePartitionLiteral(bound.literal, clause, partitionName)
+            }
         }
+    }
+
+    private fun validatePartitionLiteral(value: String, clause: String, partitionName: String): String {
         require(!value.contains(';') && !value.contains("--") && !value.contains("/*")) {
             "Partition '$partitionName' $clause bound contains unsafe characters: $value"
         }

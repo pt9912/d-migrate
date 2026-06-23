@@ -65,7 +65,7 @@ class SchemaNodeParserTest : FunSpec({
                     "type": "range",
                     "key": ["id"],
                     "partitions": [
-                      { "name": "p0", "from": "0", "to": "100" }
+                      { "name": "p0", "from": ["0"], "to": ["100"] }
                     ]
                   },
                   "metadata": {

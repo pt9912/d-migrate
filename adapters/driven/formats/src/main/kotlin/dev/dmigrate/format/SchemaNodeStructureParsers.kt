@@ -230,12 +230,21 @@ private fun parsePartitioning(node: JsonNode?): PartitionConfig? {
         partitions = node["partitions"]?.map { childNode ->
             PartitionDefinition(
                 name = childNode.requiredText("name"),
-                from = childNode.optionalText("from"),
-                to = childNode.optionalText("to"),
+                isDefault = childNode.boolOrDefault("default", false),
+                from = childNode["from"]?.toStringList()?.map { it.toPartitionBound() },
+                to = childNode["to"]?.toStringList()?.map { it.toPartitionBound() },
                 values = childNode["values"]?.toStringList(),
+                modulus = childNode["modulus"]?.takeIf { it.isNumber }?.asInt(),
+                remainder = childNode["remainder"]?.takeIf { it.isNumber }?.asInt(),
             )
         } ?: emptyList(),
     )
+}
+
+private fun String.toPartitionBound(): PartitionBound = when (uppercase()) {
+    "MINVALUE" -> PartitionBound.MinValue
+    "MAXVALUE" -> PartitionBound.MaxValue
+    else -> PartitionBound.Value(this)
 }
 
 internal fun parseCustomTypes(node: JsonNode?): Map<String, CustomTypeDefinition> =

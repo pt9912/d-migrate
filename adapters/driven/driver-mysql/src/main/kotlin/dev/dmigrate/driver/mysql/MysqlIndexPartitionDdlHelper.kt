@@ -5,7 +5,9 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlStatement
@@ -59,7 +61,9 @@ internal class MysqlIndexPartitionDdlHelper(
                         buildString {
                             append("    PARTITION ${quoteIdentifier(partition.name)}")
                             when (partitioning.type) {
-                                PartitionType.RANGE -> append(" VALUES LESS THAN (${partition.to})")
+                                // MySQL-RANGE kennt nur die Obergrenze (VALUES LESS THAN);
+                                // `from` wird verworfen (semantischer Carve-Out, ADR 0019).
+                                PartitionType.RANGE -> append(" VALUES LESS THAN (${renderMysqlUpperBound(partition)})")
                                 PartitionType.LIST -> {
                                     val values = partition.values?.joinToString(", ") ?: ""
                                     append(" VALUES IN ($values)")
@@ -72,6 +76,19 @@ internal class MysqlIndexPartitionDdlHelper(
                 append("\n)")
             }
         }
+    }
+
+    /** MySQL-RANGE-Obergrenze aus dem strukturierten `to`-Bound-Tupel (ADR 0019).
+     *  DEFAULT-/leere Grenze → `MAXVALUE` (MySQL-Catch-all). */
+    private fun renderMysqlUpperBound(partition: PartitionDefinition): String {
+        if (partition.isDefault) return "MAXVALUE"
+        return partition.to.orEmpty().joinToString(", ") { bound ->
+            when (bound) {
+                PartitionBound.MaxValue -> "MAXVALUE"
+                PartitionBound.MinValue -> "MINVALUE"
+                is PartitionBound.Value -> bound.literal
+            }
+        }.ifEmpty { "MAXVALUE" }
     }
 
     fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =

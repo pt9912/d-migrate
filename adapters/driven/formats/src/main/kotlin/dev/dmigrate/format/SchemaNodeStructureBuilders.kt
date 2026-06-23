@@ -219,14 +219,32 @@ private fun buildPartitioning(mapper: ObjectMapper, partitioning: PartitionConfi
         for (partition in partitioning.partitions) {
             val partitionNode = mapper.createObjectNode()
             partitionNode.put("name", partition.name)
-            if (partition.from != null) partitionNode.put("from", partition.from)
-            if (partition.to != null) partitionNode.put("to", partition.to)
+            if (partition.isDefault) partitionNode.put("default", true)
+            if (partition.from != null) partitionNode.set<ArrayNode>("from", boundArray(mapper, partition.from!!))
+            if (partition.to != null) partitionNode.set<ArrayNode>("to", boundArray(mapper, partition.to!!))
             if (!partition.values.isNullOrEmpty()) {
                 partitionNode.set<ArrayNode>("values", stringArray(mapper, partition.values!!))
             }
+            partition.modulus?.let { partitionNode.put("modulus", it) }
+            partition.remainder?.let { partitionNode.put("remainder", it) }
             partitionsNode.add(partitionNode)
         }
         node.set<ArrayNode>("partitions", partitionsNode)
     }
     return node
+}
+
+/** RANGE-Bound-Tupel als String-Array serialisieren (Sentinels als `MINVALUE`/`MAXVALUE`). */
+private fun boundArray(mapper: ObjectMapper, bounds: List<PartitionBound>): ArrayNode {
+    val arr = mapper.createArrayNode()
+    for (bound in bounds) {
+        arr.add(
+            when (bound) {
+                PartitionBound.MinValue -> "MINVALUE"
+                PartitionBound.MaxValue -> "MAXVALUE"
+                is PartitionBound.Value -> bound.literal
+            }
+        )
+    }
+    return arr
 }

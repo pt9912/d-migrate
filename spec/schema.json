@@ -340,12 +340,28 @@
             "additionalProperties": false,
             "properties": {
               "name": { "type": "string" },
-              "from": { "type": "string" },
-              "to": { "type": "string" },
+              "default": {
+                "type": "boolean",
+                "default": false,
+                "description": "DEFAULT-Partition (Catch-all); schliesst from/to/values/modulus aus"
+              },
+              "from": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "RANGE untere Grenze (Bound-Tupel; Sentinels MINVALUE/MAXVALUE)"
+              },
+              "to": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "RANGE obere Grenze (Bound-Tupel; Sentinels MINVALUE/MAXVALUE)"
+              },
               "values": {
                 "type": "array",
-                "items": { "type": "string" }
-              }
+                "items": { "type": "string" },
+                "description": "LIST-Werte"
+              },
+              "modulus": { "type": "integer", "description": "HASH-Modulus" },
+              "remainder": { "type": "integer", "description": "HASH-Remainder" }
             }
           }
         }

@@ -158,9 +158,11 @@ tables:
       type: range              # range | hash | list
       key: [spalte]
       partitions:
+        # RANGE: from/to als Bound-Tupel (Sentinels MINVALUE/MAXVALUE);
+        # HASH: modulus/remainder; LIST: values; DEFAULT-Partition: default: true
         - name: part_2025
-          from: "2025-01-01"
-          to: "2026-01-01"
+          from: ["2025-01-01"]
+          to: ["2026-01-01"]
 ```
 
 ---

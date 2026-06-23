@@ -189,7 +189,7 @@ class YamlSchemaCodecTest : FunSpec({
         orders.partitioning!!.key shouldBe listOf("date")
         orders.partitioning!!.partitions shouldHaveSize 2
         orders.partitioning!!.partitions[0].name shouldBe "orders_2024"
-        orders.partitioning!!.partitions[0].from shouldBe "2024-01-01"
+        orders.partitioning!!.partitions[0].from shouldBe listOf(PartitionBound.Value("2024-01-01"))
         orders.constraints shouldHaveSize 3
         orders.constraints[2].type shouldBe ConstraintType.FOREIGN_KEY
         orders.constraints[2].references shouldNotBe null
