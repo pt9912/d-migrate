@@ -93,7 +93,6 @@ log "schema reverse..."
 $COMPOSE run --rm dmigrate schema reverse --source tpch_pg_src \
     --output /work/out/tpch.reverse.yaml > /dev/null || fail "reverse failed"
 [ -s "$OUT_DIR/tpch.reverse.yaml" ] || fail "empty reverse.yaml"
-rev_tables=$(grep -cE "^  [a-z_]+:$" "$OUT_DIR/tpch.reverse.yaml" || true)
 # Form-Beleg: alle 8 Tabellennamen + die kennzeichnenden TPC-H-Typen erfasst.
 for t in $tables; do
     grep -qE "^  $t:$" "$OUT_DIR/tpch.reverse.yaml" || fail "reverse missing table $t"
@@ -141,6 +140,12 @@ log "verifying row-count parity (source == target) for all 8 tables..."
 mismatch=0
 for t in $tables; do
     s=$(count_rows tpch "$t"); d=$(count_rows tpch_target "$t")
+    # Guard gegen False-Green: count_rows schluckt Query-Fehler (2>/dev/null) und
+    # liefert dann "" — ohne diesen Check wäre ""=="" eine bestandene Parität. Alle
+    # TPC-H-Tabellen sind nicht leer (kleinste: region=5), also ist ein nicht-
+    # numerischer oder 0-Quellwert ein echter Fehler, kein Erfolg.
+    case "$s" in ''|*[!0-9]*) fail "source count for '$t' not numeric ('$s') — query failed?";; esac
+    [ "$s" -gt 0 ] || fail "source table '$t' unexpectedly empty"
     if [ "$s" != "$d" ]; then printf '[tpch-rt]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
 done
 [ "$mismatch" = "0" ] || fail "row-count parity violated"
@@ -149,8 +154,11 @@ done
 # (faengt stille Praezisions-/Rundungsverluste im Transfer).
 sum_src=$(psql_db tpch        0 -tAc "SELECT sum(l_extendedprice) FROM lineitem" | tr -d '[:space:]')
 sum_dst=$(psql_db tpch_target 0 -tAc "SELECT sum(l_extendedprice) FROM lineitem" | tr -d '[:space:]')
-[ -n "$sum_dst" ] && [ "$sum_src" = "$sum_dst" ] \
-    || fail "DECIMAL checksum mismatch: src=$sum_src dst=$sum_dst"
+# Beide Seiten müssen einen echten numerischen Wert tragen (sonst False-Green bei
+# zwei leeren Ergebnissen), danach exakte Gleichheit.
+case "$sum_src" in ''|*[!0-9.]*) fail "source checksum not numeric ('$sum_src') — query failed?";; esac
+case "$sum_dst" in ''|*[!0-9.]*) fail "target checksum not numeric ('$sum_dst') — query failed?";; esac
+[ "$sum_src" = "$sum_dst" ] || fail "DECIMAL checksum mismatch: src=$sum_src dst=$sum_dst"
 log "parity OK (8 tables row-identical; lineitem sum(l_extendedprice)=$sum_dst identical)"
 
 log "SUCCESS — TPC-H schema round-trips correctly PG->PG (4b): 8 tables reverse/validate/generate/transfer, types + DECIMAL values preserved. Volume measurement is 4c/4d."

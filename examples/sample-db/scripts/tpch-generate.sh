@@ -62,6 +62,7 @@ ddl_count=$(grep -ic "CREATE TABLE" "$OUT/schema.sql" 2>/dev/null || true)
 [ "$ddl_count" = "8" ] || { cat "$OUT/schema.sql"; fail "expected 8 CREATE TABLE in schema.sql, got $ddl_count"; }
 [ -f "$OUT/load.sql" ] || fail "load.sql missing"
 
+[ -f "$OUT/lineitem.csv" ] || fail "lineitem.csv missing after generation"
 li_rows=$(( $(wc -l < "$OUT/lineitem.csv") - 1 ))   # minus header row
 [ "$li_rows" -gt 0 ] || fail "lineitem has no data rows"
 # Bei der Default-SF 0.01 ist dbgen deterministisch -> harte Zeilen-Pin als

@@ -156,6 +156,8 @@ if [ "${FETCH_TPCH:-0}" = "1" ]; then
         || fail "tpch: unzip of duckdb cli failed"
     gunzip -kf "$TPCH_DIR/tpch.duckdb_extension.gz" \
         || fail "tpch: gunzip of tpch extension failed"
+    [ -f "$TPCH_DIR/duckdb" ]                || fail "tpch: duckdb binary not found after unzip"
+    [ -f "$TPCH_DIR/tpch.duckdb_extension" ] || fail "tpch: extension not found after gunzip"
     chmod +x "$TPCH_DIR/duckdb"
     log "tpch: duckdb v1.4.5 CLI + tpch extension ready (offline-capable) -> $TPCH_DIR"
 fi
