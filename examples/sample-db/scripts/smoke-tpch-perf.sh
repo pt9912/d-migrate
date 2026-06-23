@@ -135,12 +135,18 @@ RCHUNK=1000   # feine Resume-Granularität. Hinweis: der TATSÄCHLICHE Abbruchpu
               # echten %-Wert und belegen „mid-stream" per Band [25,90] statt „~50%" zu behaupten.
 RUN_NAME="tpch-perf-resume-export"
 REXPORT_H="$OUT_DIR/tpch-resume-export"; RCKPT_H="$OUT_DIR/tpch-resume-ckpt"
+# Sicherheitsnetz: den benannten Resume-Container bei JEDEM Exit aufräumen (auch bei
+# fail/SIGINT zwischen Start und regulärem rm) — sonst verwaist er.
+trap 'docker rm -f "$RUN_NAME" >/dev/null 2>&1 || true' EXIT
 rm -rf "$REXPORT_H" "$RCKPT_H"; docker rm -f "$RUN_NAME" >/dev/null 2>&1 || true
 total_chunks=0
 for t in $tables; do n=$(PGq tpch "SELECT count(*) FROM $t"); total_chunks=$(( total_chunks + (n + RCHUNK - 1)/RCHUNK )); done
 half=$(( total_chunks / 2 )); [ "$half" -ge 1 ] || half=1
 log "expected ~$total_chunks chunks (chunk=$RCHUNK); abort at >= $half (~50%)"
-sum_chunks() { grep -hoE 'chunksProcessed: [0-9]+' "$RCKPT_H"/*.checkpoint.yaml 2>/dev/null | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}'; }
+# Hinweis (set -euo pipefail!): solange noch KEIN Checkpoint existiert, matcht grep
+# nichts → unter pipefail exit≠0. Ohne `|| true` würde die standalone-Zuweisung
+# `cur=$(sum_chunks)` per set -e das Skript stumm killen. awk gibt immer >= "0" aus.
+sum_chunks() { grep -hoE 'chunksProcessed: [0-9]+' "$RCKPT_H"/*.checkpoint.yaml 2>/dev/null | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}' || true; }
 
 $COMPOSE run --rm --name "$RUN_NAME" -T dmigrate-capped data export \
     --source tpch_pg_src --format json --split-files \
@@ -150,8 +156,9 @@ RUN_PID=$!
 deadline=$(( $(date +%s) + 300 )); killed=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
     kill -0 "$RUN_PID" 2>/dev/null || { log "export finished before ~50% abort (host too fast for chunk=$RCHUNK)"; break; }
-    if [ "$(sum_chunks)" -ge "$half" ]; then
-        log "abort threshold (~50%) reached at $(sum_chunks)/$total_chunks chunks — interrupting export"
+    cur=$(sum_chunks)
+    if [ "$cur" -ge "$half" ]; then
+        log "abort threshold (~50%) reached at $cur/$total_chunks chunks — interrupting export"
         docker kill "$RUN_NAME" >/dev/null 2>&1 || true; killed=1; break
     fi
     sleep 0.2
@@ -177,18 +184,20 @@ $COMPOSE run --rm --name "$RUN_NAME" -T dmigrate-capped data export \
     || { cat /tmp/tpch-resume-2.log; fail "resume export failed"; }
 for t in $tables; do [ -s "$REXPORT_H/$t.json" ] || fail "resume: missing/empty export file $t.json"; done
 
-# Vollständigkeit + Verlustfreiheit nach Resume: importieren + Zeilen-Parität == Quelle.
-log "verifying resumed export is COMPLETE (import + row parity vs source)..."
+# Vollständigkeit + Verlustfreiheit nach Resume: importieren + KANONISCHER HASH ==
+# Quelle. Stärker als Zeilen-Parität — fängt auch Wert-Korruption/Duplikate bei
+# GLEICHER Zeilenzahl, was genau das Resume-Risiko ist (re-export ab Checkpoint).
+log "verifying resumed export is COMPLETE + lossless (import + canonical SHA-256 vs source)..."
 PGq postgres "DROP DATABASE IF EXISTS tpch_perf_target WITH (FORCE)" >/dev/null; PGq postgres "CREATE DATABASE tpch_perf_target" >/dev/null
 $COMPOSE exec -T postgres psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d tpch_perf_target < "$TPCH/schema.sql" >/dev/null || fail "resume target schema failed"
 $COMPOSE run --rm dmigrate data import --target tpch_perf_target --source /work/out/tpch-resume-export --format json > /tmp/tpch-resume-imp.log 2>&1 \
     || { tail -8 /tmp/tpch-resume-imp.log; fail "resume import failed"; }
 for t in $tables; do
-    s=$(PGq tpch "SELECT count(*) FROM $t"); d=$(PGq tpch_perf_target "SELECT count(*) FROM $t")
-    case "$s" in ''|*[!0-9]*) fail "resume parity: src count $t invalid ('$s')";; esac
-    [ "$s" = "$d" ] || fail "resume INCOMPLETE for $t: src=$s resumed=$d"
+    hs=$(canon tpch "$t"); ht=$(canon tpch_perf_target "$t")
+    case "$hs" in ''|*[!0-9a-f]*) fail "resume: src hash $t invalid ('$hs') — query failed?";; esac
+    [ "$hs" = "$ht" ] || fail "resume LOSSY/INCOMPLETE for $t: src=$hs resumed=$ht"
 done
-log "resume OK — mid-stream abort at ~${abort_pct}% (LF 8.2 target ~50%, actual point is host-dependent via checkpoint-flush latency), --resume produced a COMPLETE export (all 8 tables row-identical to source)"
+log "resume OK — mid-stream abort at ~${abort_pct}% (LF 8.2 target ~50%, actual point is host-dependent via checkpoint-flush latency), --resume produced a COMPLETE + lossless export (all 8 tables canonical SHA-256 identical to source)"
 
 log "SUCCESS (Mess-Kern) — losslessness HARD + throughput (diagnostic, under caps 2cpu/4g) + resume-after-mid-stream-abort verified."
 log "4c-Teil-2 (designierter Runner): calibration-guard + reference-median + perf-acceptance.yml hard-gate."
