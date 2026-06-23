@@ -87,9 +87,13 @@ Konkrete Werte der gewählten **Option A**:
    - **DuckDB-Version: LTS-Linie „Andium" 1.4.x, gepinnt auf konkreten Release-Tag
      1.4.5** (Stand 2026-06-17). LTS gewählt — bugfix-only, langfristig vergleichbares
      Benchmark-Ergebnis (gegenüber der schnelleren Stable-Linie 1.5.x).
-   - **Extension-Version: keine separate.** `tpch` ist eine **Core-Extension** (mit
-     DuckDB ausgeliefert/autoloaded) — die gepinnte DuckDB-Version fixiert die
-     Extension implizit.
+   - **Extension-Version: separat zu pinnen** (Korrektur 4a, 2026-06-23). Anders als
+     hier ursprünglich angenommen ist `tpch` **nicht** im CLI-Binary gebündelt — das
+     v1.4.5-CLI lädt die Extension beim ersten `CALL dbgen` von `extensions.duckdb.org`
+     nach (scheitert unter `--network none`). Daher wird die **`tpch.duckdb_extension`
+     (v1.4.5/linux_amd64) per SHA256 mitgepinnt** und offline aus Datei `LOAD`-ed; erst
+     damit ist die Generierung hermetisch. Konkrete Pins + Live-Beleg:
+     [4a-Slice](../planning/in-progress/tpc-4a-sourcing-slice.md).
    - **Pin-Träger:** exakter Versions-Pin in einem Digest-gepinnten Basis-Image (analog
      zum `gdal`-Loader-Container, Phase 5) — z. B. `duckdb==1.4.5` (PyPI, exakt) oder
      das CLI-Release `v1.4.5` + SHA256. (Konkretes Trägerformat in 4a.)

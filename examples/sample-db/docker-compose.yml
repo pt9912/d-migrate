@@ -88,6 +88,25 @@ services:
       - .:/work
     working_dir: /work
 
+  # Phase 4 (Performance, 4a): TPC-H-Generator. ADR 0017 pinnt das GENERATOR-
+  # Tool statt eines Dumps. Das gepinnte DuckDB-CLI v1.4.5 + tpch-Extension
+  # (fetch-dumps.sh FETCH_TPCH=1 -> .cache/tpch-tool/) erzeugen die TPC-H-
+  # Workload OFFLINE — kein DuckDB-Image nötig: der digest-gepinnte
+  # debian-slim-Container liefert nur die glibc-Laufzeit, das Tool ist das
+  # gepinnte Binary (analog gdal-Loader). `network_mode: none` erzwingt die
+  # Hermetizität (die tpch-Extension ist mitgepinnt, kein Laufzeit-Download).
+  # Nur on-demand (profile tools), via scripts/tpch-generate.sh.
+  duckdb:
+    image: debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
+    user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
+    profiles: ["tools"]
+    network_mode: "none"
+    env_file:
+      - .env
+    volumes:
+      - .:/work
+    working_dir: /work
+
   dmigrate:
     image: d-migrate:dev
     # Das Image läuft als non-root (uid 10001). Damit es in das gemountete

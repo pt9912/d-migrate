@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen
 
 help:
 	@printf '%s\n' \
@@ -115,6 +115,7 @@ help:
 		'  make sample-db-sqlite-smoke  SQLite round-trip (Phase 2b, Chinook): serverless .db -> reverse/validate/generate/transfer -> parity + precision' \
 		'  make sample-db-scale-smoke  Scale (Phase 3, Employees) opt-in/nightly: export-resume + chunking + dual-target import (MySQL+PG) parity' \
 		'  make sample-db-spatial-smoke  Spatial (Phase 5, VA1-Live-Smoke): geometry value round-trip PG->PG + MySQL->MySQL (+ native-point check)' \
+		'  make sample-db-tpch-gen  TPC-H (Phase 4, 4a Sourcing) opt-in: pinned DuckDB generates the TPC-H workload offline into .cache/tpch/ (SF=0.01 default)' \
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
@@ -394,3 +395,10 @@ sample-db-scale-smoke:
 # Spatial-VA1-Kette live gegen echte DBs. Voraussetzung: docker-build IMAGE_TAG=dev.
 sample-db-spatial-smoke:
 	./examples/sample-db/scripts/smoke-spatial.sh
+
+# Phase 4 (Performance, 4a Sourcing) — opt-in, NICHT im PR-Gate. Pinnt das
+# DuckDB-CLI v1.4.5 + tpch-Extension (FETCH_TPCH=1, ~50 MiB) und generiert die
+# TPC-H-Workload (8 Tabellen) OFFLINE in einem digest-gepinnten Loader; kein
+# Dump im Repo. SF konfigurierbar (Default 0.01): `SF=0.1 make sample-db-tpch-gen`.
+sample-db-tpch-gen:
+	./examples/sample-db/scripts/tpch-generate.sh

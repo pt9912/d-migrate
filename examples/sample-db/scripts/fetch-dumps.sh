@@ -103,6 +103,20 @@ NYC_SHA256="373cab8cf4004d92bb77fbbe496fe7b683969a3f9b5be19225935287d8497a85"
 NYC_ZIP="$CACHE_DIR/postgis-workshop-2020.zip"
 NYC_DIR="$CACHE_DIR/nyc"
 
+# --- TPC-H Generator (DuckDB) — Phase 4 (4a, Performance) ----------
+# ADR 0017: Generator-TOOL pinnen statt Dump (kein Daten-Dump im Repo).
+# Gepinnt werden das DuckDB-CLI v1.4.5 (linux-amd64) UND die tpch-Extension:
+# letztere ist NICHT im CLI-Binary gebündelt — ohne Pin lädt DuckDB sie beim
+# ersten `CALL dbgen` von extensions.duckdb.org nach (scheitert offline; 4a-
+# Befund, ADR 0017 Punkt 2 korrigiert). Mit beiden gepinnt generiert dbgen voll
+# offline. Opt-in (~50 MB): `FETCH_TPCH=1 ./fetch-dumps.sh` oder der
+# tpch-Generierungs-Smoke (make sample-db-tpch-gen) setzt die Variable selbst.
+TPCH_CLI_URL="https://github.com/duckdb/duckdb/releases/download/v1.4.5/duckdb_cli-linux-amd64.zip"
+TPCH_CLI_SHA256="ff4ef9ec59fe3e1a1f3dd1004c6218d1fd59c0533c185c968c4403fd0240d02b"
+TPCH_EXT_URL="https://extensions.duckdb.org/v1.4.5/linux_amd64/tpch.duckdb_extension.gz"
+TPCH_EXT_SHA256="56256ba742be9b2800c89ffedb4409946aaa2514d95e07288bb5cf6b88e45014"
+TPCH_DIR="$CACHE_DIR/tpch-tool"
+
 mkdir -p "$CACHE_DIR"
 fetch_one "pagila"        "$PAGILA_URL"        "$PAGILA_DEST"        "$PAGILA_SHA256"
 fetch_one "sakila-schema" "$SAKILA_SCHEMA_URL" "$SAKILA_SCHEMA_DEST" "$SAKILA_SCHEMA_SHA256"
@@ -130,5 +144,19 @@ if [ "${FETCH_NYC:-0}" = "1" ]; then
     unzip -o -j "$NYC_ZIP" 'postgis-workshop/data/nyc_neighborhoods.*' -d "$NYC_DIR" >/dev/null \
         || fail "postgis-nyc: unzip of nyc_neighborhoods shapefile failed"
     log "postgis-nyc: nyc_neighborhoods.{shp,shx,dbf,prj} extracted -> $NYC_DIR"
+fi
+
+# TPC-H Generator-Tool nur fetchen, wenn angefordert (Phase 4 ist opt-in/nightly).
+if [ "${FETCH_TPCH:-0}" = "1" ]; then
+    mkdir -p "$TPCH_DIR"
+    fetch_one "tpch-duckdb-cli" "$TPCH_CLI_URL" "$TPCH_DIR/duckdb_cli.zip"           "$TPCH_CLI_SHA256"
+    fetch_one "tpch-extension"  "$TPCH_EXT_URL" "$TPCH_DIR/tpch.duckdb_extension.gz" "$TPCH_EXT_SHA256"
+    command -v unzip >/dev/null 2>&1 || fail "unzip not found (needed to extract duckdb cli)"
+    unzip -o "$TPCH_DIR/duckdb_cli.zip" -d "$TPCH_DIR" >/dev/null \
+        || fail "tpch: unzip of duckdb cli failed"
+    gunzip -kf "$TPCH_DIR/tpch.duckdb_extension.gz" \
+        || fail "tpch: gunzip of tpch extension failed"
+    chmod +x "$TPCH_DIR/duckdb"
+    log "tpch: duckdb v1.4.5 CLI + tpch extension ready (offline-capable) -> $TPCH_DIR"
 fi
 log "done."
