@@ -13,28 +13,27 @@
 > [`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)
 > (Abnahmekriterien 8.1/8.2). Nicht-blockierend für 1.0.0-Funktionalität; QA-Abnahme-Ziel.
 
-## Stand & Wiedereinstieg (2026-06-22)
+## Stand & Wiedereinstieg (2026-06-23)
 
-**Decision-Blocker aufgelöst — Bau noch nicht begonnen.**
+**Beide Decision-Blocker aufgelöst — Bau noch nicht begonnen.**
 
 - **Sourcing/Lizenz (Blocker 1+2):** entschieden →
   [ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) **accepted**: Tool
   **A — DuckDB-`tpch`** (LTS 1.4.5, Core-Extension MIT, Generator-Pin statt Dump).
-- **Normierte Mess-Umgebung (Blocker 3):** Grundrichtung entschieden →
-  [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md) **proposed**
-  (Container-Caps + Acceptance-Tier + Kalibrierungs-Guard). **Offene Parameter bis
-  `accepted`:** konkrete Caps, Kalibrierungs-Op + Toleranzband, Warmup-/Iterations-Zahlen
-  (K/M), designierter Nightly-Runner.
+- **Normierte Mess-Umgebung (Blocker 3):** **entschieden + ratifiziert** →
+  [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md) **accepted**
+  (Container-Caps **2 CPU/4 GB** + Acceptance-Tier + Kalibrierungs-Guard; ratifizierte
+  Parameter: `diff-planner` als Kalibrier-Op ±25 %, Acceptance-Mess-Vertrag K=1/M=3 auf
+  Median, designierter `perf-acceptance.yml`-Nightly-Runner). **Damit sind die harten
+  4c-/4d-Budgets entsperrt.**
 
-**Hier weitermachen — zwei unabhängige Stränge:**
+**Hier weitermachen — der Decision-Strang ist abgeschlossen, es bleibt der Bau:**
 
-1. **ADR 0018 ratifizieren:** die 4 offenen Parameter konkretisieren (analog zur
-   0017-Vorbereitung) → `accepted`. Voraussetzung für die **harten** 4c-/4d-Budgets.
-2. **Umsetzung beginnen (ohne ADR 0018 möglich):** 4a (DuckDB-Loader-Container analog
-   `gdal` verdrahten, SF-Config + `dbgen`) + 4b (TPC-H-Schema-Round-Trip) sind unabhängig
-   von Blocker 3 baubar. Auch die **4d-Spec/Infrastruktur** (synthetisches DDL-Gate) ist
-   ohne ADR 0018 baubar — nur das **harte Acceptance-Gate** (DDL-1000 < 30 s als Fehler)
-   *greift* erst mit ADR 0018 `accepted` (siehe Reihenfolge-Gate weiter unten).
+- **4a** (DuckDB-Loader-Container analog `gdal` verdrahten, SF-Config + `dbgen`) + **4b**
+  (TPC-H-Schema-Round-Trip) — Korrektheit vor Messung, unabhängig baubar.
+- **4d** (synthetisches DDL-1000-Gate) + **4c** (Volumen-Abnahme): Spec/Infrastruktur
+  baubar; die **harten Acceptance-Gates** assertieren nun gemäß ADR 0018 (Referenz-Caps
+  + Kalibrierungs-Guard) auf dem designierten Nightly-Runner.
 
 ## Ziel
 
@@ -169,7 +168,8 @@ einzelne lieferbare Einheit.
 
 **Reihenfolge-Gate:** 4c/4d (harte Zeit-Budgets) dürfen **erst nach** Festlegung der
 normierten Mess-Umgebung (siehe Vorbedingungen) greifen — sonst sind die Budgets
-auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen.
+auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen. (Diese
+Vorbedingung ist mit ADR 0018 `accepted` nun erfüllt.)
 
 ## Vorbedingungen
 
@@ -178,11 +178,11 @@ auf geteilter CI flaky oder müssen so locker sein, dass sie nichts abnehmen.
   benchmarks.md` hält fest, dass eine definierte Hardware-/Container-Umgebung fehlt
   und geteilte CI-Runner nur diagnostisch geprüft werden. Harte LF-8.2-Budgets
   brauchen ein fixiertes Runner-/Container-Sizing + Warmup-/Iterations-Vertrag —
-  **vor** dem Versprechen harter Budgets festzulegen. **Grundrichtung entschieden in
-  [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md)** (proposed):
-  Container-Caps-Referenz + Acceptance-Tier + Kalibrierungs-Guard; offen bleiben nur
-  die konkreten Parameter (Caps, Kalibrierungs-Op/Toleranz, K/M, Nightly-Runner) bis
-  `accepted`.
+  **vor** dem Versprechen harter Budgets festzulegen. **Ratifiziert in
+  [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md)** (accepted):
+  Container-Caps-Referenz **2 CPU/4 GB** + Acceptance-Tier + Kalibrierungs-Guard
+  (`diff-planner` ±25 %) + Mess-Vertrag K=1/M=3 + designierter `perf-acceptance.yml`-
+  Nightly-Runner — **erfüllt**.
 - Sourcing-/Pin-/Lizenz-Entscheidung (4a) — **entschieden** ([ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md)
   accepted: A DuckDB-`tpch`, LTS 1.4.5, MIT). Bleibt: Umsetzung in 4a.
 

@@ -573,7 +573,7 @@ nicht als Enterprise-BI-Plattform (siehe
 Decision-Blocker geklärt (Stand 2026-06-22): Workload-Sourcing in
 [ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) (accepted, DuckDB-`tpch`),
 normierte Mess-Umgebung in [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md)
-(proposed); Bau folgt.
+(accepted, Caps 2 CPU/4 GB + Acceptance-Tier + Kalibrierungs-Guard); Bau folgt.
 ² Der automatisierte Vorfilter ([Playbook](../../operations/pilot-validation-playbook.md))
 lief am 2026-06-16 ([Report](../done-archive/pilot-validation-0.9.9.md), Verdikt **nicht RC-reif**);
 die menschliche ≥5-Tester-Abnahme bleibt davon unberührt und steht weiter aus.

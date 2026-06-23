@@ -112,13 +112,14 @@ hier noch **nicht** abgebildet:
   die 8.2-Schwelle. Die strengere Abnahme-Messung steht noch aus.
 
 Beide Abnahme-Budgets brauchen eine **definierte Mess-Umgebung** — eine absolute
-Wandzeit-Schwelle ist nur auf fixierter Kapazität sinnvoll. Die Grundrichtung dafür
-ist in [ADR 0018](../adr/0018-normalized-perf-measurement-environment.md) (proposed)
-entschieden: ein drittes **Acceptance-Tier** (LF-8.2-Absolutbudgets) zusätzlich zum
+Wandzeit-Schwelle ist nur auf fixierter Kapazität sinnvoll. Das ist in
+[ADR 0018](../adr/0018-normalized-perf-measurement-environment.md) (accepted)
+ratifiziert: ein drittes **Acceptance-Tier** (LF-8.2-Absolutbudgets) zusätzlich zum
 hier beschriebenen Smoke/Baseline-Zwei-Budget-Modell, gemessen unter einer
-**Container-Caps-Referenz** (`--cpus`/`--memory`) auf einem designierten Nightly-Runner,
-mit **Kalibrierungs-Guard** (Off-Spec-Host → Rückfall auf diagnostisch). Dieser
-Abschnitt wird beim Bau des Acceptance-Tiers um die ratifizierten Parameter ergänzt.
+**Container-Caps-Referenz** (`--cpus=2`/`--memory=4g`) auf einem designierten
+Nightly-Runner, mit **Kalibrierungs-Guard** (Off-Spec-Host → Rückfall auf diagnostisch).
+Dieser Abschnitt wird beim Bau des Acceptance-Tiers um die konkreten Mess-Tabellen
+ergänzt.
 
 Diese beiden Benchmarks (und die SHA-256-Integritätsverifikation, LF/LN-009)
 werden mit dem 1.0.0-RC-Zyklus nachgezogen; die Roadmap-1.0.0-Tabelle in
