@@ -149,7 +149,7 @@ schrumpft 5 → 4 Changes (verbleibend: 1 Tabelle/gist-Grenze + 3 Funktionen/F3)
   Daten-/dump-abhängige Eigenheit dieses Pagila-Dumps, korrekt gemeldet (1 Note,
   kein Schema-Diff). Die zugrunde liegende Reverse-Lücke (Kind-Partitionen +
   Grenzen werden nicht rekonstruiert) ist als Folge-Slice getrackt →
-  [`../next/partition-hierarchy-reconstruction.md`](../next/partition-hierarchy-reconstruction.md)
+  [`../in-progress/partition-hierarchy-reconstruction.md`](../in-progress/partition-hierarchy-reconstruction.md)
   (LN-008-Teillücke).
 
   > **Erratum (2026-06-20):** Die Etikettierung „leere RANGE-Partition /
@@ -159,7 +159,7 @@ schrumpft 5 → 4 Changes (verbleibend: 1 Tabelle/gist-Grenze + 3 Funktionen/F3)
   > **systematischer Reverse-Capture-Fidelity-Defekt**, nicht dump-abhängig.
   > Korrekt ist nur, dass der E055-*Generate*-Fallback (plain Tabelle bei leerer
   > Partitionsliste) eine sichere Reaktion ist. Vollständige Analyse + Folge-Slice:
-  > [`../next/partition-hierarchy-reconstruction.md`](../next/partition-hierarchy-reconstruction.md).
+  > [`../in-progress/partition-hierarchy-reconstruction.md`](../in-progress/partition-hierarchy-reconstruction.md).
 
 ## Closure
 
@@ -194,4 +194,4 @@ plain Tabelle (E055), weil die Kind-Partitionen nicht rekonstruiert werden. Das
 ist ein **systematischer Fidelity-Defekt**, nicht „kein Defekt / dump-abhängig"
 (die frühere Etikettierung ist via Erratum zurückgezogen); nur der
 E055-*Generate*-Fallback selbst ist korrekt. Folge-Slice:
-[`../next/partition-hierarchy-reconstruction.md`](../next/partition-hierarchy-reconstruction.md).
+[`../in-progress/partition-hierarchy-reconstruction.md`](../in-progress/partition-hierarchy-reconstruction.md).

@@ -1,6 +1,7 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
-> **Status:** next/-Slice — **graduiert 2026-06-23** (aus `open/`). Gate-Entscheidung =
+> **Status:** in-progress/-Slice — **graduiert 2026-06-23** (aus `open/`), **AP1a
+> implementiert + verifiziert grün** (Commit `021c0ce2`). Gate-Entscheidung =
 > [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
@@ -27,8 +28,53 @@
 > unten sind in ADR 0019 aufgelöst (DEFAULT in-Scope, Sub-Partition out, Performance-
 > Transfer out, **PG-Reverse zuerst + MySQL-Generate-Consume in dieser Scheibe**,
 > MySQL-Reverse als Folge-Slice). Arbeitspakete + Kopplung + Akzeptanz unten.
-> **Nächster Bau-Schritt: ADR 0019 ratifizieren → AP1+AP2 (PG-Reverse-Capture).**
 > Performance-Aspekte von LN-008 (per-Partition-Transfer, parallel) bleiben Performance-Phase.
+
+## Stand & Wiedereinstieg (EOD 2026-06-23)
+
+**Erledigt heute — AP1a (Modell-Gate), Commit `021c0ce2`, docker-verifiziert grün
+(compile + alle Tests + detekt):**
+
+- **Modell** ([`hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt)):
+  `sealed interface PartitionBound { MinValue; MaxValue; Value(literal) }`;
+  `PartitionDefinition` jetzt strukturiert — `from`/`to: List<PartitionBound>?` (RANGE-Tupel
+  + Sentinels), `modulus`/`remainder: Int?` (HASH), `isDefault: Boolean` (DEFAULT),
+  `values` (LIST) unverändert.
+- **PG-Generate** ([`PostgresDdlGenerator.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt)):
+  `generatePartitionStatement` rendert strukturierte Bounds (`renderRangeBounds`),
+  `DEFAULT`, HASH aus `modulus`/`remainder`; Literal-Guard `validatePartitionLiteral` erhalten.
+- **MySQL-Generate** ([`MysqlIndexPartitionDdlHelper.kt`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt)):
+  `VALUES LESS THAN` aus dem `to`-Tupel (`renderMysqlUpperBound`); `from` verworfen
+  (Carve-Out, ADR 0019); `isDefault → MAXVALUE`.
+- **Serialisierung** ([`SchemaNodeStructureBuilders.kt`](../../../adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaNodeStructureBuilders.kt) /
+  [`SchemaNodeStructureParsers.kt`](../../../adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaNodeStructureParsers.kt)):
+  `from`/`to` als String-Array (Sentinels `MINVALUE`/`MAXVALUE`), `modulus`/`remainder`/`default`.
+  `spec/schema.json` + `spec/schema-reference.md` nachgezogen.
+- **DDL byte-identisch** (Goldens unverändert) — AP1a ändert nur die *interne* Repräsentation,
+  nicht die emittierte DDL. 8 Test-Konstruktions-Sites + 3 Fixtures auf strukturierte Form,
+  MaxLineLength sauber umgebrochen (kein `@Suppress`).
+
+**Morgen hier weiter — AP1 + AP2 (PG-Reverse-Capture; befüllt jetzt die Struktur):**
+
+1. **AP1 — Kinder + Grenzen lesen.**
+   [`PostgresTableMetadataQueries.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTableMetadataQueries.kt)
+   (`getPartitionInfo`) um eine `pg_inherits`-Kind-Abfrage erweitern; je Kind
+   `pg_get_expr(c.relpartbound, c.oid)` lesen und in
+   [`PostgresSchemaStructureReaders.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresSchemaStructureReaders.kt)
+   (`readPostgresPartitioning`) ins strukturierte `PartitionBound`-Modell **parsen/normalisieren**
+   (Typ-Casts strippen — `'…'::timestamptz` → Literal —, `MINVALUE`/`MAXVALUE` → Sentinels,
+   `MODULUS m, REMAINDER n` → Ints, `DEFAULT` → `isDefault`). **Das ist der vom Ticket
+   markierte Bug-Hotspot** (Bound-Parser) — sorgfältig + Unit-Tests gegen echte
+   `pg_get_expr`-Strings.
+2. **AP2 — Doppel-Emit vermeiden.** `relispartition`-Kinder aus der Top-Level-Tabellenliste
+   entfernen (sonst `relation already exists` beim Generate; AP1/AP2 sind untrennbar, ADR 0019).
+3. **Live-Verifikation:** Pagila-`payment`-Round-Trip (`make sample-db-smoke`) — kein `E055`
+   mehr, 7 Kinder als echte Partition, Transfer **ohne** Zeilen-Duplikation (16049, nicht 32098).
+
+**Danach (eigene Increments, Reihenfolge gekoppelt):** AP2a (Index/FK-Vererbung via
+`pg_inherits`/`conparentid`), AP3 (Generate-Verifikation), **AP4 (Comparator partitions-bewusst —
+erst *nach* AP1, sonst bricht die `IDENTICAL`-Baseline)**, AP5 (Transfer-Nicht-Duplikations-Test),
+AP6 (Cross-Dialect/MySQL-Reverse, eigener Folge-Slice).
 
 ## Gegenstand
 
