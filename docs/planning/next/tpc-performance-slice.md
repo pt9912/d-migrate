@@ -165,17 +165,16 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
    Kalibrier-Guard + Referenz-Median + `perf-acceptance.yml`-Hart-Gate = Teil 2 (braucht
    designierten Runner; Kalibrier-Substrat-Lücke JVM↔CLI offen). Doku-Sync:
    `performance-benchmarks.md` auf „gemessene Abnahme: Mess-Kern da, Hart-Gate Teil 2".
-- **4d — LF 8.2 / LN-004 DDL-1000-Gate aktivieren/stabilisieren.** Das **bestehende**
-   30-s-Baseline-Gate (= **LN-004** „>1.000 Tabellen … unter 30 s") verlässlich grün
-   stellen (nicht neu einführen); 4×n-Diff-vs-reiner-DDL-Pfad entscheiden. (Die früher
-   hier gelistete „5×n"-KDoc-Korrektur ist **erledigt**, Commit `6040d763`.) Doku-Sync:
-   die Scale-Tabelle in `performance-benchmarks.md` führt bislang nur die Smoke-Budgets —
-   beim Aktivieren des harten Gates die Baseline-Spalte (`renderBaselineMs`) nachtragen
-   und den Ausblick (Abnahme-Lücke) von „gemessene Abnahme steht noch aus" auf
-   „30-s-Baseline kodiert, hart nur im Acceptance-Tier" schärfen.
-   **Das LF-8.2-Kriterium „100 Tabellen < 5 s" (= LN-001) ist bereits gedeckt** — die
-   existierende N=100-Baseline (`renderBaselineMs=2_000` = 2 s) liegt darunter; nur als
-   Gate bestätigen, kein neuer Bau. Synthetisch, **nicht** TPC — ggf. eigener Mini-Slice.
+- **4d — LF 8.2 / LN-004 DDL-1000-Gate — ERLEDIGT**
+   ([done/tpc-4d-ddl-1000-slice.md](../done/tpc-4d-ddl-1000-slice.md)). Datenbefund: das
+   bestehende 4×n-N=1000-„30-s-Gate" war auf LN-004 **fehl-gemappt** — es misst 4001
+   gemischte Objekte (~52 s), nicht „1.000 Tabellen". Faithful LN-004-Gate ergänzt
+   (`ddl-1000-tables-ln004`, reine 1000 Tabellen): **1,7 s ≪ 30 s → LN-004 erfüllt** (hart
+   grün unter `PERF_GATE`). 4×n-Baseline 30 s → 90 s korrigiert (Regressions-Guard, kein
+   LF-Budget) → Modul `PERF_GATE`-fähig. **LN-001** („100 Tab < 5 s") via N=100 (0,4 s)
+   gedeckt. Doku-Sync §4 erledigt. Super-linear-Skalierung als Ticket notiert
+   ([`open/large-schema-superlinear-scaling.md`](../open/large-schema-superlinear-scaling.md)).
+   Synthetisch, **nicht** TPC. (Die „5×n"-KDoc-Korrektur war bereits in `6040d763`.)
 - **4e — (optional) TPC-DS** als zweite, komplexere Workload.
 
 Jeder Sub-Slice (4a–4e) graduiert bei Aktivierung als **eigener** `in-progress/`-Slice

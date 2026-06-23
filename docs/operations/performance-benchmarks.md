@@ -58,11 +58,20 @@ Der Scale-Spec (`test/perf-large-schema`) baut synthetische gemischte Schemas
 `current=leer → desired=schema` Planner+PostgreSQL-Renderer-Pipeline gegen ein
 Zeit- **und** Heap-Budget:
 
-| Scale | Zeit-Budget (Smoke) | Heap-Budget |
-| ----- | ------------------- | ----------- |
-| N = 100 | 30 s | 256 MB |
-| N = 1000 | 120 s | 1024 MB |
-| N = 10000 | 🔮 zurückgestellt (Nightly-Opt-in, eigener Spec) |  |
+| Hotpath / Scale | Smoke | Baseline (`PERF_GATE`) | Heap | Bedeutung |
+| --- | --- | --- | --- | --- |
+| `large-schema-render-n100` (4×n, 401 Obj) | 30 s | 2 s | 256 MB | Stress; LN-001 (100 Tab < 5 s) gedeckt (~0,4 s) |
+| `large-schema-render-n1000` (4×n, 4001 Obj) | 120 s | 90 s | 1024 MB | umfassender Stress-Guard (~52 s, super-linear), **nicht** LN-004 |
+| `ddl-1000-tables-ln004` (reine 1000 Tab) | 120 s | **30 s** | 1024 MB | **LN-004** „1000 Tab < 30 s" — faithful, **~1,7 s ≪ 30 s** |
+| N = 10000 | 🔮 zurückgestellt (Nightly-Opt-in, eigener Spec) | | | |
+
+Der gemischte 4×n-Scale (`large-schema-render-n*`) misst 4×n+1 Objekte (Tabellen +
+Sequenzen + Views + Trigger + 1 Funktion) **inkl. Dependency-Topologie** — ein
+umfassender Stress-Check, **nicht** die literale LN-004-Metrik. LN-004 („1.000 Tabellen")
+deckt der separate `ddl-1000-tables-ln004`-Hotpath (reine Tabellen-DDL) faithful ab; er
+liegt mit ~1,7 s host-robust unter den 30 s. Das N=1000-4×n-Baseline (90 s) ist ein
+großzügiger Regressions-Guard (die Pipeline skaliert super-linear, siehe
+[`../planning/open/large-schema-superlinear-scaling.md`](../planning/open/large-schema-superlinear-scaling.md)).
 
 Opt-in-Lauf:
 
@@ -100,16 +109,17 @@ sie. Hintergrund zur Tag-Steuerung: [`../user/quality.md`](../user/quality.md).
 
 ## 8. Abnahme-Lücke und Ausblick
 
-Die formalen **Abnahme-Benchmarks aus dem Lastenheft** sind 1.0.0-QA-Ziele und
-hier noch **nicht** abgebildet:
+Die formalen **Abnahme-Benchmarks aus dem Lastenheft** (1.0.0-QA-Ziele) sind
+inzwischen als opt-in/nightly-Mess-Kern gebaut:
 
-- 🔮 **LF 8.1** — „1 Mio. Datensätze Export/Import ohne Datenverlust": es gibt
-  heute **keinen** Datenvolumen-Test in dieser Größe (die Format-/Streaming-Specs
-  prüfen konstanten Speicher gegen 100-MB-Fixtures, nicht 1 Mio. Zeilen
-  end-to-end).
-- 🔮 **LF 8.2** — „DDL-Generierung 1 000 Tabellen **< 30 s**": das N=1000-Scale
-  läuft heute mit einem **Smoke-Budget von ≤ 120 s**, also bewusst lockerer als
-  die 8.2-Schwelle. Die strengere Abnahme-Messung steht noch aus.
+- ✅ **LF 8.1** — „1 Mio. Datensätze Export/Import ohne Datenverlust": gemessen durch
+  den TPC-H-Volumen-Mess-Kern (4c, `make sample-db-tpch-perf`, ≥ 1 Mio) — **Verlustfreiheit
+  HART** per kanonischem Inhalts-SHA-256 (host-unabhängig), Durchsatz kalibrier-guarded
+  (siehe „LF-8.1-Mess-Kern" oben).
+- ✅ **LF 8.2 / LN-004** — „DDL-Generierung 1 000 Tabellen **< 30 s**": faithful gemessen
+  (`ddl-1000-tables-ln004`, **~1,7 s ≪ 30 s**, hart unter `PERF_GATE`; 4d). Das frühere
+  N=1000-4×n-„Gate" war auf LN-004 fehl-gemappt (misst 4001 gemischte Objekte ~52 s) —
+  korrigiert (4×n-Baseline → 90 s Regressions-Guard).
 
 Beide Abnahme-Budgets brauchen eine **definierte Mess-Umgebung** — eine absolute
 Wandzeit-Schwelle ist nur auf fixierter Kapazität sinnvoll. Das ist in
