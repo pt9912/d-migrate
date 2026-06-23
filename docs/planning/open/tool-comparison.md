@@ -10,12 +10,12 @@
 
 ## Kernaussage
 
-d-migrate ist **nicht „noch ein Migrationstool"**, sondern kombiniert **Cross-Dialect-
-Schema-Konversion + Datenmigration mit Typ-Konversion + Diff-basierte DDL-Planung +
-Resume + beweisbare Verlustfreiheits-Verifikation in einem selbst-gehosteten OSS-CLI**.
-Das ist die eigentliche Lücke der Landschaft: Einzeltools decken **Teilbereiche** gut ab,
-aber **keines** ist sauber als *wiederholbare, überprüfbare Cross-Dialect-Migrations-
-Pipeline* gebaut. AWS erreicht die Fläche nur mit **zwei** managed Produkten (SCT + DMS).
+d-migrate ist **nicht „noch ein Migrationstool"**, sondern eine **wiederholbare,
+überprüfbare Cross-Dialect-Migrations-Pipeline**: Schema-Konversion, Datenmigration mit
+Typ-Konversion, Diff-basierte DDL-Planung, resumierbare Ausführung und **kanonische**
+Verlustfreiheits-Verifikation in **einem selbst-gehosteten OSS-CLI**. Einzeltools decken
+Teilbereiche gut ab; AWS erreicht die Breite nur durch die **Kombination zweier
+managed/proprietärer Produkte** (SCT + DMS).
 
 ## Legende
 
@@ -32,10 +32,25 @@ Pipeline* gebaut. AWS erreicht die Fläche nur mit **zwei** managed Produkten (S
 |---|---|---|---|---|---|---|---|---|
 | **Cross-Dialect Schema-Konversion** | ✅ Matrix | ◐ nur Ziel PG | ✅ (SCT, sehr breit) | ❌ single-dialect | ❌ | ◐ nur Ziel PG | ❌ | ❌ |
 | **Cross-Dialect Daten + Typ-Konversion** | ✅ Kern | ◐ nur Ziel PG | ✅ (DMS) | ❌ | ❌ | ◐ nur Ziel PG | ❌ | ❌ |
-| **Diff→DDL-Generierung** | ✅ DiffPlanner | ❌ one-shot | ❌ one-shot | ✅ declarative | ◐ imperativ; Diff teils paid | ❌ | ❌ | ❌ |
+| **Diff→DDL-Generierung** | ✅ DiffPlanner | ❌ one-shot | ❌ one-shot | ✅ declarative | ◐ imperativ; Diff/Generate Enterprise | ❌ | ❌ | ❌ |
 | **Verlustfreiheits-Verifikation** | ✅ kanon. SHA-256 | ✅ TEST_COUNT/TEST_DATA | ✅ row/hash (DMS) | ❌ | ❌ | ❌ | ◐ nur count | ❌ |
-| **Resume nach Abbruch** | ✅ chunk/checkpoint | ❌ | ◐ task-resume; kein determ. Chunk-Resume | — | — | ❌ repeatable/reload, kein echtes Resume | ❌ | ❌ Migration-Resume; nur Recovery |
-| **Self-hosted OSS-CLI** | ✅ | ✅ GPL | ❌ managed/proprietär | ◐ Apache-2 CE + EULA/Pro | ◐ Flyway OSS; Liquibase 5 FSL | ✅ | ✅ PostgreSQL-nativ | ✅ BSD |
+| **Resume nach Abbruch** | ✅ chunk/checkpoint | ❌ | ◐ task-/table-level restart; kein determ. Chunk-Resume | — | — | ❌ repeatable/reload, kein echtes Resume | ❌ | ❌ Migration-Resume; nur Recovery |
+| **Self-hosted OSS-CLI** | ✅ | ✅ GPL | ❌ managed/proprietär | ◐ Apache-2 CE + EULA/Pro | ◐ Flyway OSS; Liquibase 5 FSL | ✅ | ✅ PostgreSQL-native Primitive | ✅ BSD |
+
+## Hinweise zur Matrix (Präzisierung für kritische Leser)
+
+- **Verlustfreiheit ist nicht gleich Verlustfreiheit — drei Stufen.** `count` (grobe
+  Vollständigkeit) < `row/hash` (Integritätsprüfung mit **tool-/dialekt-spezifischer**
+  Semantik, braucht meist PK/Unique) < **kanonischer Hash** (migrationsstabil,
+  **typ-normalisiert über Dialekte hinweg**). d-migrates Differenzierer ist die
+  **kanonische Normalisierung**, nicht „ein Hash": die drei ✅ in der Verifikations-Zeile
+  sind **nicht** gleichwertig. AWS DMS' `row/hash` (DBMS_CRYPTO/pgcrypto) ist eine echte
+  Integritätsprüfung, aber ohne dialekt-übergreifenden Normalisierungs-Vertrag.
+- **AWS-DMS-Resume — widersprüchliche Doku.** Die AWS-**CLI**-Doku sagt, `resume-processing`
+  lade bei Full Load teilweise/noch-nicht-geladene Tabellen neu; die DMS-**API**-Referenz
+  sagt, `resume-processing` sei für Full-Load **nicht** anwendbar (teilweise geladene
+  Tabellen nicht fortsetzbar). **Beides bestätigt** den Positionierungs-Punkt: **kein
+  deterministisches Chunk-Resume** wie bei d-migrate — nur task-/table-level restart.
 
 ## Pro-Achse-Einordnung (wo der Vergleich fair ist — und wo er bricht)
 
@@ -70,10 +85,10 @@ als Anteil der COPY-Decke + Hinweis auf die Allein-Features.
 ## Lizenz-Landschaft (Positionierungs-Punkt)
 
 Die OSS-Migrations-Tooling-Landschaft fragmentiert: **Liquibase Community 5.0+ → FSL-1.1**
-(Apache-2.0 erst 2 Jahre nach Release), **Atlas**-Standardbinary EULA-gated (nur die CE
-ist Apache-2.0), **Bytebase** spaltet MIT-Kern von proprietärem Enterprise; **Flyway
-Community** bleibt sauber Apache-2.0. Ein permissiv lizenziertes d-migrate ist gegenüber
-mehreren davon differenziert.
+(Apache-2.0 erst 2 Jahre nach Release), **Atlas** (CE ist Apache-2.0; das Standardbinary/
+Open Edition ist EULA-gated, Pro-Features lizenzpflichtig), **Bytebase** spaltet MIT-Kern
+von proprietärem Enterprise; **Flyway Community** bleibt sauber Apache-2.0. Ein permissiv
+lizenziertes d-migrate ist gegenüber mehreren davon differenziert.
 
 ## Quellen (load-bearing, Auswahl)
 
