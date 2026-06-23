@@ -27,13 +27,16 @@
   Median, designierter `perf-acceptance.yml`-Nightly-Runner). **Damit sind die harten
   4c-/4d-Budgets entsperrt.**
 
-**Hier weitermachen — Decision-Strang + 4a-Sourcing abgeschlossen, es bleibt der Round-Trip + die Messung:**
+**Hier weitermachen — Decision-Strang + 4a-Sourcing + 4b-Round-Trip abgeschlossen, es bleibt die Messung:**
 
 - **4a — ERLEDIGT** ([done/tpc-4a-sourcing-slice.md](../done/tpc-4a-sourcing-slice.md),
   Commit `2dd3f56e`): gepinnter DuckDB-`tpch`-Generator erzeugt die TPC-H-Workload
-  offline + reproduzierbar (`make sample-db-tpch-gen`, kein Dump im Repo). Nächster Bau:
-  **4b** (TPC-H in eine Quell-DB laden + reverse/validate/generate/transfer —
-  Korrektheit vor Messung).
+  offline + reproduzierbar (`make sample-db-tpch-gen`, kein Dump im Repo).
+- **4b — ERLEDIGT** ([done/tpc-4b-roundtrip-slice.md](../done/tpc-4b-roundtrip-slice.md)):
+  TPC-H round-trippt korrekt PG→PG (`make sample-db-tpch-smoke`) — reverse/validate/
+  generate/transfer, 8 Tabellen zeilen-identisch + DECIMAL-Werttransfer verlustfrei.
+  Bewusst FK-/PK-frei (kein eingechecktes TPC-Artefakt). **Nächster Bau: 4c/4d** (gemessene
+  Abnahme).
 - **4d** (synthetisches DDL-1000-Gate) + **4c** (Volumen-Abnahme): Spec/Infrastruktur
   baubar; die **harten Acceptance-Gates** assertieren nun gemäß ADR 0018 (Referenz-Caps
   + Kalibrierungs-Guard) auf dem designierten Nightly-Runner.
@@ -136,8 +139,12 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
    korrigiert) in digest-gepinntem `debian-slim`-Loader, SF-Config + `dbgen`,
    `network_mode: none` (hermetisch), im Kandidaten-Katalog dokumentiert. Generator-Tool
    + Config gepinnt, kein Dump im Repo.
-- **4b — Schema-Round-Trip-Korrektheit.** TPC-H-Schema reverse/validate/generate/
-   transfer (wie Phase 1/2) — Korrektheit vor Messung.
+- **4b — Schema-Round-Trip-Korrektheit — ERLEDIGT**
+   ([done/tpc-4b-roundtrip-slice.md](../done/tpc-4b-roundtrip-slice.md)). TPC-H-Schema
+   reverse/validate/generate/transfer PG→PG (wie Phase 1/2), `make sample-db-tpch-smoke`:
+   8 Tabellen zeilen-identisch, `DECIMAL`-Werttransfer verlustfrei, 0 generate-Notes.
+   Bewusst FK-/PK-frei (kein eingechecktes TPC-Artefakt; constraint-reiche Round-Trips =
+   Phase 1/2). Cross-Dialect/PK-FK-Anreicherung außerhalb der Korrektheits-Grenze.
 - **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen).** 1-Mio-(bzw. SF-1-)Export/Import:
    Verlustfreiheit (LF 8.1) **per LF-8.5-Methode** — **Byte-für-Byte-/SHA-256-Vergleich**
    der Export/Import-Daten (NICHT nur Zeilen-Parität + Checksumme wie Phase 3).

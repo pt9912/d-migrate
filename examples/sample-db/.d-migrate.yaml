@@ -30,3 +30,8 @@ database:
     # nur nyc_neighborhoods sieht — keine Kollision mit den geo_pg_*-Tabellen oben.
     nyc_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/nyc_src"
     nyc_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/nyc_target"
+    # Phase 4 (TPC-H, 4b Round-Trip) — postgres-Service. Quell-/Ziel-DBs legt
+    # smoke-tpch.sh an (idempotent); die TPC-H-Tabellen kommen aus dem 4a-Generator
+    # (runtime-generierte DuckDB-schema.sql + CSVs, kein TPC-Artefakt im Repo).
+    tpch_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch"
+    tpch_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch_target"

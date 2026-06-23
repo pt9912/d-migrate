@@ -137,8 +137,9 @@ analog zum gepinnten `gdal`-Loader, aber als gepinntes Binary statt fremdem Imag
 - Scale-Factor konfigurierbar: SF=0.01 (Default, CI-Funktionsnachweis: `lineitem`
   = 60175 Zeilen) bis SF=1 (~6 Mio `lineitem`, Volumen-Abnahme in 4c).
 - Pin/Fetch: `fetch-dumps.sh` (`FETCH_TPCH=1`, ~50 MB, opt-in, kein PR-Gate).
-- Nutzung: 4a Sourcing-Beleg (`make sample-db-tpch-gen`); das Laden in eine Quell-DB
-  + reverse/validate/generate/transfer ist 4b.
+- Nutzung: 4a Sourcing-Beleg (`make sample-db-tpch-gen`); **4b Round-Trip-Korrektheit
+  ERLEDIGT** (`make sample-db-tpch-smoke`: PG→PG reverse/validate/generate/transfer,
+  8 Tabellen Parität + DECIMAL-Checksumme; FK-/PK-frei). Gemessene Abnahme = 4c/4d.
 - Lizenz: DuckDB-`tpch`-Extension **MIT**, lokal generiert, nichts eingecheckt/
   publiziert → keine TPC-EULA-/Branding-Bindung (ADR 0017).
 

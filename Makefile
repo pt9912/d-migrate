@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke
 
 help:
 	@printf '%s\n' \
@@ -116,6 +116,7 @@ help:
 		'  make sample-db-scale-smoke  Scale (Phase 3, Employees) opt-in/nightly: export-resume + chunking + dual-target import (MySQL+PG) parity' \
 		'  make sample-db-spatial-smoke  Spatial (Phase 5, VA1-Live-Smoke): geometry value round-trip PG->PG + MySQL->MySQL (+ native-point check)' \
 		'  make sample-db-tpch-gen  TPC-H (Phase 4, 4a Sourcing) opt-in: pinned DuckDB generates the TPC-H workload offline into .cache/tpch/ (SF=0.01 default)' \
+		'  make sample-db-tpch-smoke  TPC-H (Phase 4, 4b Round-Trip) opt-in: reverse/validate/generate/transfer PG->PG + parity (8 tables + DECIMAL checksum)' \
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
@@ -402,3 +403,10 @@ sample-db-spatial-smoke:
 # Dump im Repo. SF konfigurierbar (Default 0.01): `SF=0.1 make sample-db-tpch-gen`.
 sample-db-tpch-gen:
 	./examples/sample-db/scripts/tpch-generate.sh
+
+# Phase 4 (Performance, 4b Round-Trip) — opt-in, NICHT im PR-Gate. Generiert die
+# TPC-H-Workload (4a) und fährt den vollen Korrektheits-Round-Trip PG->PG:
+# reverse/validate/generate/transfer + Parität (8 Tabellen + DECIMAL-Checksumme).
+# Voraussetzung: lokales d-migrate:dev (`make docker-build IMAGE_TAG=dev`).
+sample-db-tpch-smoke:
+	./examples/sample-db/scripts/smoke-tpch.sh
