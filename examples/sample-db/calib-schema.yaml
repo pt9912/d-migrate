@@ -1,0 +1,102 @@
+schema_format: "1.0"
+# Kalibrier-Schema für die normierte Mess-Umgebung (ADR 0018, 4c Teil 2).
+# Bewusst GENERISCH (nicht TPC — kein eingechecktes Benchmark-Artefakt), fix +
+# deterministisch. `schema generate` darauf fährt SchemaComparator -> DiffPlanner
+# -> Renderer = den diff-planner-Hotpath, den ADR 0018 als Kalibrier-Op nennt,
+# über die CLI. Die Laufzeit (unter Caps 2 CPU/4 GB) misst die Host-Geschwindigkeit;
+# ihr Verhältnis zum gepinnten Referenz-Median ergibt den Off-Spec-Guard.
+# NICHT inhaltlich anfassen ohne Referenz-Median neu zu pinnen (würde driften).
+name: "calibration"
+version: "1.0.0"
+encoding: "utf-8"
+
+custom_types:
+  order_status:
+    kind: enum
+    values: [pending, processing, shipped, delivered, cancelled]
+
+tables:
+  suppliers:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      name: { type: text, max_length: 120, required: true }
+      country: { type: text, max_length: 2 }
+    primary_key: [id]
+    indices:
+      - { name: idx_suppliers_name, columns: [name], type: btree }
+
+  categories:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      label: { type: text, max_length: 80, required: true, unique: true }
+      parent_id:
+        type: integer
+        references: { table: categories, column: id, on_delete: set_null }
+    primary_key: [id]
+
+  customers:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      email: { type: text, max_length: 254, required: true, unique: true }
+      name: { type: text, max_length: 100, required: true }
+      metadata: { type: json }
+      created_at: { type: datetime, timezone: true, default: current_timestamp }
+    primary_key: [id]
+    indices:
+      - { name: idx_customers_email, columns: [email], type: btree }
+
+  products:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      sku: { type: text, max_length: 40, required: true, unique: true }
+      name: { type: text, max_length: 160, required: true }
+      category_id:
+        type: integer
+        references: { table: categories, column: id, on_delete: restrict }
+      supplier_id:
+        type: integer
+        references: { table: suppliers, column: id, on_delete: restrict }
+      price: { type: decimal, precision: 10, scale: 2, required: true }
+    primary_key: [id]
+    indices:
+      - { name: idx_products_category, columns: [category_id], type: btree }
+      - { name: idx_products_supplier, columns: [supplier_id], type: btree }
+    constraints:
+      - { name: chk_price_positive, type: check, expression: "price >= 0" }
+
+  orders:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      customer_id:
+        type: integer
+        required: true
+        references: { table: customers, column: id, on_delete: restrict }
+      order_date: { type: datetime, required: true }
+      total_amount: { type: decimal, precision: 12, scale: 2 }
+      status: { type: enum, ref_type: order_status, default: "pending" }
+      notes: { type: text }
+    primary_key: [id]
+    indices:
+      - { name: idx_orders_customer_date, columns: [customer_id, order_date], type: btree }
+    constraints:
+      - { name: chk_total_positive, type: check, expression: "total_amount >= 0" }
+
+  order_items:
+    columns:
+      id: { type: identifier, auto_increment: true }
+      order_id:
+        type: integer
+        required: true
+        references: { table: orders, column: id, on_delete: cascade }
+      product_id:
+        type: integer
+        required: true
+        references: { table: products, column: id, on_delete: restrict }
+      quantity: { type: integer, required: true }
+      unit_price: { type: decimal, precision: 10, scale: 2, required: true }
+    primary_key: [id]
+    indices:
+      - { name: idx_order_items_order, columns: [order_id], type: btree }
+      - { name: idx_order_items_product, columns: [product_id], type: btree }
+    constraints:
+      - { name: chk_quantity_positive, type: check, expression: "quantity > 0" }

@@ -91,6 +91,21 @@ Zwei-Budget-Modell (KEINE dedizierte Hardware-Beschaffung):
    „gleiche Maschinenklasse" von „off-spec/laut"; Startband, nach beobachteter
    Nightly-Streuung per Pin-Bump nachjustierbar. Die Kalibrier-Op läuft mit K=2/M=5
    (billig, stabiler Median).
+
+   **Ergänzung (4c Teil 2, 2026-06-23) — Kalibrier-Op je Mess-Substrat.** Die
+   ursprüngliche Formulierung („`DiffPlanner.plan` via `PerfMeasure`") setzt das
+   **JVM-Tier** voraus (Kotest-Perf-Specs wie `LargeSchemaScaleSpec`). Die
+   4c-Volumen-Abnahme misst aber im **CLI-Tier** (Bash/Docker `data export`→`import`),
+   das kein `PerfMeasure` teilt. Auflösung: im CLI-Tier ist die Kalibrier-Op
+   **derselbe diff-planner-Hotpath, nur CLI-invokiert** — `schema generate` gegen ein
+   fixes generisches Schema (`examples/sample-db/calib-schema.yaml`) fährt
+   SchemaComparator→DiffPlanner→Renderer. Sie trägt zusätzlich den **JVM-Startup**,
+   den die gemessenen CLI-Ops (export/import) ebenfalls zahlen → repräsentativ fürs
+   CLI-Substrat. Stabilität live belegt (~8 % Streuung über 5 Läufe unter Caps),
+   komfortabel unter dem ±25 %-Band. Referenz-Median bleibt **runner-spezifisch
+   gepinnt** (`CALIB_REFERENCE_MS`); ohne Pin läuft das CLI-Tier im **Bootstrap**
+   (diagnostisch, meldet den Median zum Pinnen). Damit ist die Substrat-Lücke
+   geschlossen, ohne die JVM-Tier-Definition zu ändern.
 3. **Mess-Vertrag des Acceptance-Tiers: K=1 Warmup + M=3 gemessen, Gate auf Median,
    `p95` im Report.** Bewusste, hier dokumentierte Abweichung vom `PerfMeasure`-Default
    5/20 (dessen KDoc einen Begründungs-Vermerk verlangt — diese ADR ist er): die

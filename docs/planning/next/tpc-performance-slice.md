@@ -145,8 +145,9 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
    8 Tabellen zeilen-identisch, `DECIMAL`-Werttransfer verlustfrei, 0 generate-Notes.
    Bewusst FK-/PK-frei (kein eingechecktes TPC-Artefakt; constraint-reiche Round-Trips =
    Phase 1/2). Cross-Dialect/PK-FK-Anreicherung außerhalb der Korrektheits-Grenze.
-- **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen) — IN ARBEIT (Mess-Kern)**
-   ([in-progress/tpc-4c-volume-acceptance-slice.md](../in-progress/tpc-4c-volume-acceptance-slice.md)).
+- **4c — LF 8.1 + 8.2 Volumen-Abnahme (gemessen) — Mess-Kern + Kalibrier-Guard GEBAUT**
+   (operativer Runner-Pin offen;
+   [in-progress/tpc-4c-volume-acceptance-slice.md](../in-progress/tpc-4c-volume-acceptance-slice.md)).
    ≥ 1-Mio-Export/Re-Import. Verlustfreiheit (LF 8.1) **per LF-8.5-Methode = kanonischer
    Inhalts-SHA-256** (spalten-namens-geordnet + zeilen-sortiert) Quelle == Ziel — strenger
    als Phase-3-Zeilen-Parität, host-unabhängig hart. **Korrektur (4c-Spike 2026-06-23):**

@@ -118,8 +118,17 @@ ratifiziert: ein drittes **Acceptance-Tier** (LF-8.2-Absolutbudgets) zusätzlich
 hier beschriebenen Smoke/Baseline-Zwei-Budget-Modell, gemessen unter einer
 **Container-Caps-Referenz** (`--cpus=2`/`--memory=4g`) auf einem designierten
 Nightly-Runner, mit **Kalibrierungs-Guard** (Off-Spec-Host → Rückfall auf diagnostisch).
-Dieser Abschnitt wird beim Bau des Acceptance-Tiers um die konkreten Mess-Tabellen
-ergänzt.
+
+**LF-8.1-Mess-Kern gebaut (4c Teil 1+2, opt-in/nightly).** `make sample-db-tpch-perf`
+(`examples/sample-db/scripts/smoke-tpch-perf.sh`, Workflow `.github/workflows/perf-acceptance.yml`)
+fährt den datei-basierten `data export`→`import` der TPC-H-Workload (≥ 1 Mio) unter den
+Referenz-Caps: **Verlustfreiheit HART** per kanonischem Inhalts-SHA-256 (host-unabhängig),
+**Durchsatz** vs. LN-002/003 **kalibrier-guarded** (diff-planner-CLI-Op als Host-Speed-
+Referenz; hart nur bei `PERF_GATE=true` + host-in-band, sonst diagnostisch), **Resume**
+nach Mid-Stream-Abbruch. Slice:
+[`../planning/in-progress/tpc-4c-volume-acceptance-slice.md`](../planning/in-progress/tpc-4c-volume-acceptance-slice.md).
+Offen (operativ): einen Nightly-Runner designieren + `CALIB_REFERENCE_MS` darauf pinnen,
+dann ist das absolute Zeit-Gate live. Die DDL-1000-< 30-s-Schwelle (LN-004) bleibt 4d.
 
 Diese beiden Benchmarks (und die SHA-256-Integritätsverifikation, LF/LN-009)
 werden mit dem 1.0.0-RC-Zyklus nachgezogen; die Roadmap-1.0.0-Tabelle in

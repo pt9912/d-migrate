@@ -35,6 +35,13 @@ PERF_GATE="${PERF_GATE:-false}"
 EXPORT_MIN_RPS=10000   # LN-002 → 1 Mio / 100 s
 IMPORT_MIN_RPS=5000    # LN-003 → 1 Mio / 200 s
 MIN_ROWS=1000000       # LF 8.1 „mindestens 1 Million"
+# Kalibrier-Guard (ADR 0018, 4c Teil 2): die diff-planner-CLI-Op (schema generate)
+# misst die Host-Geschwindigkeit; Drift > Toleranz gegen den gepinnten Referenz-
+# Median -> Off-Spec -> Hart-Gate fällt auf diagnostisch zurück.
+CALIB_TOLERANCE_PCT="${CALIB_TOLERANCE_PCT:-25}"
+CALIB_ITER="${CALIB_ITER:-5}"
+CALIB_REFERENCE_MS="${CALIB_REFERENCE_MS:-}"   # leer -> Bootstrap-Modus (diagnostisch)
+HOST_OK=0                                       # vom Kalibrier-Guard gesetzt
 
 log()  { printf '[tpch-perf] %s\n' "$*"; }
 fail() { printf '[tpch-perf] FAIL: %s\n' "$*" >&2; exit 1; }
@@ -114,12 +121,47 @@ for t in $tables; do
 done
 log "losslessness OK — all 8 tables canonical SHA-256 identical (LF 8.1/8.5, host-independent HARD)"
 
-# --- 5. Durchsatz-Budgets: diagnostisch, hart nur unter PERF_GATE --
+# --- 4.5 Kalibrier-Guard (ADR 0018, 4c Teil 2) ---------------------
+# Misst die Host-Geschwindigkeit über den diff-planner-Hotpath via CLI
+# (`schema generate` = SchemaComparator→DiffPlanner→Renderer, ADR-0018-Kalibrier-Op,
+# nur CLI-invokiert). Median aus CALIB_ITER Läufen unter denselben Caps. Ohne
+# gepinnten Referenz-Median: Bootstrap (diagnostisch). Drift > Toleranz: Off-Spec
+# → Hart-Gate fällt auf diagnostisch (kein False-Fail auf fremder Hardware).
+calibrate() {
+    local i t0 t1 mss=""
+    for i in $(seq 1 "$CALIB_ITER"); do
+        t0=$(date +%s%3N)
+        $COMPOSE run --rm dmigrate-capped schema generate --source /work/calib-schema.yaml \
+            --target postgresql --deterministic --output /work/out/calib.sql >/tmp/tpch-calib.log 2>&1 \
+            || { tail -5 /tmp/tpch-calib.log; fail "calibration op (schema generate) failed"; }
+        t1=$(date +%s%3N); mss="$mss $((t1-t0))"
+    done
+    echo $mss | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}'
+}
+log "calibration — diff-planner CLI op under caps, ${CALIB_ITER}x median..."
+CALIB_MS=$(calibrate)
+num "$CALIB_MS" || fail "calibration produced no numeric median ('$CALIB_MS')"
+if [ -z "$CALIB_REFERENCE_MS" ]; then
+    log "calibration BOOTSTRAP: median=${CALIB_MS} ms — no CALIB_REFERENCE_MS pinned. On the designated runner pin CALIB_REFERENCE_MS=${CALIB_MS} (under these caps) to arm the hard gate; until then DIAGNOSTIC."
+else
+    ratio=$(( CALIB_MS * 100 / CALIB_REFERENCE_MS ))
+    drift=$(( ratio > 100 ? ratio - 100 : 100 - ratio ))
+    if [ "$drift" -le "$CALIB_TOLERANCE_PCT" ]; then
+        HOST_OK=1
+        log "calibration OK: median=${CALIB_MS} ms vs ref=${CALIB_REFERENCE_MS} ms (drift ${drift}% <= ${CALIB_TOLERANCE_PCT}%) — host in band; hard gate armed if PERF_GATE=true"
+    else
+        log "calibration OFF-SPEC: median=${CALIB_MS} ms vs ref=${CALIB_REFERENCE_MS} ms (drift ${drift}% > ${CALIB_TOLERANCE_PCT}%) — hard gate -> DIAGNOSTIC fallback (ADR 0018)"
+    fi
+fi
+
+# --- 5. Durchsatz-Budgets: hart nur unter PERF_GATE UND host-in-band -
 gate() {  # gate <name> <actual_rps> <min_rps>
     local name="$1" act="$2" min="$3"
     if [ "$act" -ge "$min" ]; then log "throughput $name OK (${act} >= ${min} rows/s)"; return 0; fi
-    [ "$PERF_GATE" = "true" ] && fail "throughput $name ${act} < ${min} rows/s (PERF_GATE hard gate)"
-    log "throughput $name DIAGNOSTIC: ${act} < ${min} rows/s — below budget, but no PERF_GATE / Off-Spec-Host -> not failed (ADR 0018)"
+    if [ "$PERF_GATE" = "true" ] && [ "$HOST_OK" = "1" ]; then
+        fail "throughput $name ${act} < ${min} rows/s (hard gate: PERF_GATE + host in calibration band)"
+    fi
+    log "throughput $name DIAGNOSTIC: ${act} < ${min} rows/s — not failed (PERF_GATE=$PERF_GATE, host_ok=$HOST_OK; ADR 0018 calibration guard)"
 }
 gate export "$exp_rps" "$EXPORT_MIN_RPS"
 gate import "$imp_rps" "$IMPORT_MIN_RPS"
@@ -199,6 +241,6 @@ for t in $tables; do
 done
 log "resume OK — mid-stream abort at ~${abort_pct}% (LF 8.2 target ~50%, actual point is host-dependent via checkpoint-flush latency), --resume produced a COMPLETE + lossless export (all 8 tables canonical SHA-256 identical to source)"
 
-log "SUCCESS (Mess-Kern) — losslessness HARD + throughput (diagnostic, under caps 2cpu/4g) + resume-after-mid-stream-abort verified."
-log "4c-Teil-2 (designierter Runner): calibration-guard + reference-median + perf-acceptance.yml hard-gate."
+log "SUCCESS — losslessness + resume HARD (host-independent); throughput calibration-guarded (hard when PERF_GATE=true + host in band, else diagnostic), all under caps 2cpu/4g."
+log "Operational follow-up: designate a nightly runner + pin CALIB_REFERENCE_MS on it (from a bootstrap run) to arm the absolute-time gate (perf-acceptance.yml)."
 log "stack is up; clean up with 'make sample-db-down' / 'make sample-db-purge'."

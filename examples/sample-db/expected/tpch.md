@@ -66,6 +66,13 @@ unter Container-Caps **2 CPU/4 GB** (`dmigrate-capped`).
   resumebare Checkpoint erscheint aber (Checkpoint-Flush-Latenz) auf schnellen Hosts
   erst später (~70 %). Der tatsächliche %-Wert wird berichtet; ein Band [25 %, 90 %]
   belegt „echt mid-stream". Der Beleg ist Resume-Vollständigkeit, nicht der exakte Punkt.
-- **Diagnostisch vs. hart.** Absolute Durchsatz-Budgets gelten nur auf der normierten
-  Umgebung (ADR 0018). Hier/Off-Spec: nur berichtet. Hart-Gate + Kalibrier-Guard +
-  designierter Nightly-Runner (`perf-acceptance.yml`) = **4c-Teil-2**.
+- **Kalibrier-Guard (Teil 2, gebaut).** Vor den Durchsatz-Gates misst der Smoke die
+  Host-Geschwindigkeit über den **diff-planner-Hotpath via CLI** (`schema generate` auf
+  `calib-schema.yaml`, 5× Median unter Caps; ADR 0018-Ergänzung). Ohne gepinnten
+  `CALIB_REFERENCE_MS` → **Bootstrap** (meldet den Median, bleibt diagnostisch). Mit
+  Referenz: Drift ≤ 25 % → in band → Hart-Gate möglich; Drift > 25 % → **Off-Spec →
+  Rückfall auf diagnostisch** (kein False-Fail). Das harte Durchsatz-Gate greift nur bei
+  `PERF_GATE=true` **UND** host-in-band.
+- **Operativer Rest (kein Code):** einen designierten Nightly-Runner festlegen +
+  `CALIB_REFERENCE_MS` darauf pinnen (aus einem Bootstrap-Lauf) — dann ist
+  `perf-acceptance.yml` hart. Verlustfreiheit + Resume sind ohnehin host-unabhängig hart.

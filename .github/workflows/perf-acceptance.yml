@@ -9,15 +9,18 @@ name: Perf Acceptance — TPC-H Volume (4c, Nightly / opt-in)
 # SHA-256 (Quelle == Re-Import) + Resume nach Mid-Stream-Abbruch.
 # Was DIAGNOSTISCH laeuft: Export/Import-Durchsatz vs LN-002/003 (>= 10k/5k Saetze/s).
 #
-# *** TEIL-2-VORBEHALT (bewusst) ***
-# Dieser Workflow setzt NOCH NICHT `PERF_GATE=true`. Das harte Absolut-Zeit-Gate
-# braucht erst die normierte Mess-Umgebung aus ADR 0018, die als 4c-Teil-2 folgt:
-#   - Kalibrier-Guard (CLI-Proxy, Off-Spec-Host -> Rueckfall auf diagnostisch),
-#   - auf dem designierten Runner einmalig erfasster + gepinnter Referenz-Median.
-# Ohne diesen Guard wuerde ein langsamer/lauter GitHub-Runner das Durchsatz-Budget
-# false-failen. Bis dahin: Nightly-Smoke (diagnostisch), continue-on-error.
-# Aktivierung Teil-2: `make sample-db-tpch-perf PERF_GATE=true` hier eintragen,
-# sobald Kalibrier-Guard + Referenz-Median stehen.
+# *** GATE-MODUS (ADR 0018 Kalibrier-Guard, 4c Teil 2) ***
+# `PERF_GATE=true` ist gesetzt, aber der Kalibrier-Guard macht das SICHER: ohne
+# gepinnten `CALIB_REFERENCE_MS` laeuft die Kalibrierung im BOOTSTRAP (host_ok=0)
+# -> das Durchsatz-Gate bleibt diagnostisch (kein False-Fail auf einem variablen
+# GitHub-Runner). Der Lauf MELDET den Kalibrier-Median zum Pinnen.
+#
+# HART SCHARF STELLEN (sobald ein designierter Runner feststeht):
+#   1. Einen Bootstrap-Lauf auf diesem Runner fahren, den gemeldeten Median ablesen.
+#   2. `CALIB_REFERENCE_MS=<median>` als Repo-/Env-Variable hier injizieren.
+#   Liegt die Kalibrierung dann im +-25%-Band, greift das Hart-Gate; off-spec ->
+#   automatischer Rueckfall auf diagnostisch. Verlustfreiheit (kanon. SHA-256) +
+#   Resume sind ohnehin host-unabhaengig HART.
 
 on:
   workflow_dispatch:
@@ -39,9 +42,13 @@ jobs:
       - name: Build d-migrate:dev runtime image
         run: make docker-build IMAGE_TAG=dev
 
-      - name: Run TPC-H volume acceptance (Mess-Kern, diagnostic)
-        # SF=0.2 -> ~1.7 Mio Zeilen (>= LF-8.1-1-Mio-Schwelle). Kein PERF_GATE (Teil 2).
-        run: make sample-db-tpch-perf
+      - name: Run TPC-H volume acceptance (calibration-guarded)
+        # SF=0.2 -> ~1.7 Mio Zeilen (>= LF-8.1-1-Mio-Schwelle). PERF_GATE=true ist durch
+        # den Kalibrier-Guard abgesichert: ohne CALIB_REFERENCE_MS -> Bootstrap ->
+        # diagnostisch (kein False-Fail). Repo-Variable CALIB_REFERENCE_MS scharf stellen.
+        env:
+          CALIB_REFERENCE_MS: ${{ vars.CALIB_REFERENCE_MS }}
+        run: make sample-db-tpch-perf PERF_GATE=true
 
       - name: Cleanup (best-effort)
         if: always()

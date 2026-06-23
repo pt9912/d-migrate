@@ -6,11 +6,12 @@
 > [4b](../done/tpc-4b-roundtrip-slice.md) (Korrektheit).
 > ADR: [0018](../../adr/0018-normalized-perf-measurement-environment.md) (normierte
 > Mess-Umgebung) · [0017](../../adr/0017-tpc-benchmark-workload-sourcing.md).
-> **Status: Teil 1 (Mess-Kern) gebaut + live verifiziert** (`make sample-db-tpch-perf`,
-> SF=0.2 → 1,73 Mio: Verlustfreiheit hart per kanonischem SHA-256, Durchsatz diagnostisch
-> unter Caps 2 CPU/4 GB, Resume nach Mid-Stream-Abbruch). **Teil 2** (Kalibrier-Guard +
-> Referenz-Median + `perf-acceptance.yml`-Hart-Gate + ADR 0018-Substrat-Ergänzung) braucht
-> einen designierten Runner → bleibt in `in-progress/` offen.
+> **Status: Teil 1 (Mess-Kern) + Teil 2 (Kalibrier-Guard-Mechanik) gebaut + live
+> verifiziert** (`make sample-db-tpch-perf`, SF=0.2 → 1,73 Mio: Verlustfreiheit + Resume
+> hart, Durchsatz kalibrier-guarded, alles unter Caps 2 CPU/4 GB; scharf-gestellter
+> in-band-Lauf grün). **Bleibt in `in-progress/`** wegen des **operativen Rests** (kein
+> Code): einen Nightly-Runner designieren + `CALIB_REFERENCE_MS` darauf pinnen, dann ist
+> das absolute Zeit-Gate live.
 
 ## Ziel + LF-Kriterien
 
@@ -113,11 +114,19 @@ Die **gemessene** Volumen-Abnahme über 4b hinaus:
 - [x] `perf-acceptance.yml`-Nightly authored (diagnostisch); `make sample-db-tpch-perf`.
 - [x] Opt-in, **nicht** im PR-Gate; `make docs-check` grün; `expected/tpch.md` gepinnt.
 
-**Teil 2 (designierter Runner) — offen:**
-- [ ] Kalibrier-Guard (CLI-Proxy, JVM↔CLI-Substrat-Lücke) + ADR 0018-Ergänzung.
-- [ ] Referenz-Median auf dem designierten Runner erfasst + gepinnt.
-- [ ] `perf-acceptance.yml` auf `PERF_GATE=true` (hartes Absolut-Zeit-Gate).
-- [ ] `performance-benchmarks.md` um das Acceptance-Tier ergänzt.
+**Teil 2 (Kalibrier-Guard-Mechanik) — gebaut + verifiziert:**
+- [x] Kalibrier-Guard: diff-planner-CLI-Op (`schema generate` auf `calib-schema.yaml`,
+      5× Median unter Caps, ±25 %-Band, Off-Spec → diagnostisch). Logik (Bootstrap/
+      in-band/off-spec) + scharf-gestellte Integration (in-band armed, drift 3 %) live grün.
+- [x] **JVM↔CLI-Substrat-Lücke geschlossen** ohne fremden Proxy: dieselbe diff-planner-
+      Op, nur CLI-invokiert → ADR 0018 entsprechend ergänzt.
+- [x] `perf-acceptance.yml` auf `PERF_GATE=true` (guard-abgesichert: ohne Referenz →
+      Bootstrap → diagnostisch; kein False-Fail).
+- [x] `performance-benchmarks.md` auf den gebauten Mess-Kern + Guard nachgezogen.
+
+**Operativer Rest (kein Code, braucht echten Runner):**
+- [ ] Nightly-Runner designieren + `CALIB_REFERENCE_MS` darauf pinnen (Bootstrap-Lauf)
+      → absolutes Zeit-Gate live. Verlustfreiheit + Resume sind ohnehin host-unabh. hart.
 
 ## Nicht-Ziele
 
