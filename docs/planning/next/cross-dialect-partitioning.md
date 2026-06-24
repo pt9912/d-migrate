@@ -9,9 +9,13 @@
 > partitions-bewussten Comparator/Fingerprint geliefert. Der MySQL-Pfad konsumiert das
 > Modell heute **nur teilweise** und es gibt **keinen** MySQL-Reverse — ein voller
 > Cross-Dialect-Round-Trip fehlt.
-> **Aktivierungsbedingung:** wenn Cross-Dialect-Partitionierung (PG↔MySQL) priorisiert wird.
-> *(Annahme — beim Move nach `in-progress/` mit `make sample-db-cross-smoke-pg2my` belegen:*
-> *der PG→MySQL-Round-Trip bricht vermutlich an genau diesen Lücken.)*
+> **Aktivierung (2026-06-24): priorisiert + Prämisse belegt.** `make sample-db-cross-smoke-pg2my`
+> bricht datenbelegt — generierte MySQL-DDL invalid (`PARTITION BY RANGE (datetime_col)` +
+> tz-behaftetes Literal `'…+00'`), Notes-Baseline veraltet (`E055` weg, `W112` neu).
+> **Gate-ADR geschrieben (proposed):** [ADR 0020](../../adr/0020-cross-dialect-partitioning-mysql.md) —
+> fixiert die Mapping-Entscheide (RANGE→`RANGE COLUMNS`, Temporal-Literal-Normalisierung→W129,
+> HASH, LIST-`DEFAULT`, Index-Heben, MySQL→PG). **Muss accepted sein, bevor AP6.2/AP6.3 codiert werden.**
+> Der Slice wandert nach `in-progress/`, sobald der erste Implementierungs-Commit (AP6.2) landet.
 
 ## Ziel
 
