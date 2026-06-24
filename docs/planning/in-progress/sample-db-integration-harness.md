@@ -132,7 +132,7 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   [`sample-db-phase2-findings.md`](../done/sample-db-phase2-findings.md). *Kein* direkter
   Pagila↔Sakila-Vergleich. **Offen (Folge-Slice, nicht Phase-2-blockierend):**
   Partitions-Hierarchie (löst P2-pg2my) →
-  [`../in-progress/partition-hierarchy-reconstruction.md`](../in-progress/partition-hierarchy-reconstruction.md).
+  [`../done/partition-hierarchy-reconstruction.md`](../done/partition-hierarchy-reconstruction.md).
   (Y1-Fix **erledigt** `c9401b6f`.)
 - **Phase 2b — SQLite-Round-Trip (Chinook). ✅ ERLEDIGT (2026-06-20).** **Kein**
   Server — die CLI arbeitet via `docker run` (Host-User) gegen eine bind-gemountete

@@ -2,14 +2,14 @@
 status: accepted
 date: 2026-06-23
 decision-makers: pt9912
-consulted: docs/planning/in-progress/partition-hierarchy-reconstruction.md, docs/adr/0015-fulltext-tsvector-neutral-type.md (neutrales-Modell-Präzedenz), spec/neutral-model-spec.md, spec/lastenheft-d-migrate.md (LN-008)
+consulted: docs/planning/done/partition-hierarchy-reconstruction.md, docs/adr/0015-fulltext-tsvector-neutral-type.md (neutrales-Modell-Präzedenz), spec/neutral-model-spec.md, spec/lastenheft-d-migrate.md (LN-008)
 informed: hexagon/core (PartitionConfig, TableDiff), adapters/driven/driver-postgresql, adapters/driven/driver-mysql, examples/sample-db (Pagila-Round-Trip)
 ---
 
 # Partitions-Hierarchie: strukturierte `PartitionDefinition` statt opaker Dialekt-Strings
 
 > **Status: accepted (ratifiziert 2026-06-23).** Gate-Entscheidung (AP1a) für den Slice
-> [`../planning/in-progress/partition-hierarchy-reconstruction.md`](../planning/in-progress/partition-hierarchy-reconstruction.md).
+> [`../planning/done/partition-hierarchy-reconstruction.md`](../planning/done/partition-hierarchy-reconstruction.md).
 > **Gewählt: strukturierte `PartitionDefinition`.** Konkrete Modellform unter „Entscheidung".
 
 ## Kontext und Problemstellung
