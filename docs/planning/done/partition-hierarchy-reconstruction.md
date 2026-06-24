@@ -1,9 +1,10 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
-> **Status:** in-progress/-Slice — **graduiert 2026-06-23** (aus `open/`), **alle IN-SCOPE-
-> Arbeitspakete fertig + grün (2026-06-24): AP1a (`021c0ce2`) + AP1/AP2 + AP4 + Review-Härtung +
+> **Status: Geliefert (2026-06-24).** PG-first-Scheibe komplett — **alle IN-SCOPE-
+> Arbeitspakete fertig + grün: AP1a (`021c0ce2`) + AP1/AP2 + AP4 + Review-Härtung (2 Runden) +
 > AP2a + AP3** (docker-`check`, live `make sample-db-smoke`, live `make integration`).
-> **Offen nur AP6 (Cross-Dialect) = eigener Folge-Slice (ADR 0019).** Gate-Entscheidung =
+> **AP6 (Cross-Dialect) ist als eigener Folge-Slice ausgegliedert:**
+> [`../next/cross-dialect-partitioning.md`](../next/cross-dialect-partitioning.md). Gate-Entscheidung =
 > [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
@@ -140,13 +141,24 @@ grün UND live (`make sample-db-smoke`, Exit 0, 3 Indizes von payment_p2022_01 n
   Wegwerf-Schema re-appliziert (Defekt würde werfen). Integration-Test in
   `PostgresSchemaReaderIntegrationTest`.
 
-**IN-SCOPE-ARBEITSPAKETE KOMPLETT** (AP1a/AP1/AP2/AP2a/AP3/AP4; AP5 = Transfer-Nicht-Duplikation
-automatisch via AP2 + per Smoke-Parität belegt). **AP6 (Cross-Dialect) ist laut
-[ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) ein eigener Folge-Slice:**
-MySQL-RANGE-Mapping (`UNIX_TIMESTAMP`/`RANGE COLUMNS`; timestamptz-Grenzen) + MySQL-Reverse-Capture;
-bricht aktuell `sample-db-cross-smoke-pg2my` (MySQL-Literal-Guard ist seit Review-Härtung schon da).
-Sub-Partitionierung bleibt OUT (ADR 0019). → Diese Scheibe ist bereit zur Graduierung nach `done/`,
-sobald AP6 als eigener Slice geschnitten ist.
+**Erledigt 2026-06-24 — Review-Härtung Runde 2 (AP2a, Code-Review-Befund):**
+`comparePartitioning` verglich die kind-lokalen Partition-Indizes ordnungs-SENSITIV
+(data-class-`List`-Gleichheit) — Widerspruch zum Top-Level-Index-Vergleich und zum
+sortierten Fingerprint. Behoben (`1b75560d`): Indizes via `indexKey` kanonisiert vor dem
+Set-Vergleich (`canonicalPartitions`); geteilter `appendIndex`-Fingerprint-Helfer (DRY,
+byte-identisch). Test „index ORDER does not matter".
+
+## Abschluss
+
+**IN-SCOPE-ARBEITSPAKETE KOMPLETT** (AP1a/AP1/AP2/AP2a/AP3/AP4 + 2 Review-Runden; AP5 =
+Transfer-Nicht-Duplikation automatisch via AP2 + per Smoke-Parität belegt). Sub-Partitionierung
+bleibt OUT (ADR 0019). Diese Scheibe ist nach `done/` graduiert (2026-06-24).
+
+**AP6 (Cross-Dialect) ist als eigener Folge-Slice ausgegliedert** (laut
+[ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md)):
+[`../next/cross-dialect-partitioning.md`](../next/cross-dialect-partitioning.md) — MySQL-Reverse-Capture,
+verlustbehaftetes RANGE-Mapping (ADR-pflichtig), MySQL-Generate für `partition.indices` (Review-Befund),
+voller Cross-Dialect-Round-Trip.
 
 ## Gegenstand
 
