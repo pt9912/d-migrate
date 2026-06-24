@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
 
 internal class MysqlIndexPartitionDdlHelper(
@@ -65,7 +66,9 @@ internal class MysqlIndexPartitionDdlHelper(
                                 // `from` wird verworfen (semantischer Carve-Out, ADR 0019).
                                 PartitionType.RANGE -> append(" VALUES LESS THAN (${renderMysqlUpperBound(partition)})")
                                 PartitionType.LIST -> {
-                                    val values = partition.values?.joinToString(", ") ?: ""
+                                    val values = partition.values
+                                        ?.joinToString(", ") { PartitionLiteralGuard.ensureSafe(it, partition.name) }
+                                        ?: ""
                                     append(" VALUES IN ($values)")
                                 }
                                 PartitionType.HASH -> Unit
@@ -86,7 +89,7 @@ internal class MysqlIndexPartitionDdlHelper(
             when (bound) {
                 PartitionBound.MaxValue -> "MAXVALUE"
                 PartitionBound.MinValue -> "MINVALUE"
-                is PartitionBound.Value -> bound.literal
+                is PartitionBound.Value -> PartitionLiteralGuard.ensureSafe(bound.literal, partition.name)
             }
         }.ifEmpty { "MAXVALUE" }
     }

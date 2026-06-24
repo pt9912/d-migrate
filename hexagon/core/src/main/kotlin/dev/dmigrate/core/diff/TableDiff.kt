@@ -19,7 +19,7 @@ data class TableDiff(
     val constraintsRemoved: List<ConstraintDefinition> = emptyList(),
     val constraintsChanged: List<ValueChange<ConstraintDefinition>> = emptyList(),
     val metadata: ValueChange<TableMetadata?>? = null,
-    // AP4 (ADR 0019): Partitionierungs-Diff (Strategie/Schlüssel/Partitionsmenge).
+    // AP4 (ADR 0019): partitioning diff (strategy / key / set of child partitions).
     val partitioning: ValueChange<PartitionConfig?>? = null,
 ) {
     fun hasChanges(): Boolean =

@@ -26,6 +26,10 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ParameterDefinition
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -36,6 +40,8 @@ import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.ViewDefinition
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 
 /**
@@ -65,6 +71,31 @@ class OperationMapperCoverageTest : FunSpec({
         result.operations.filterIsInstance<DiffOperation.CreateCustomType>().size shouldBe 1
         result.operations.filterIsInstance<DiffOperation.DropCustomType>().size shouldBe 1
         result.operations.filterIsInstance<DiffOperation.AlterCustomType>().size shouldBe 1
+    }
+
+    test("partitioning-only change emits a WARNING diagnostic and no operation") {
+        val unpart = TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())))
+        val part = unpart.copy(
+            partitioning = PartitionConfig(
+                PartitionType.RANGE, listOf("id"),
+                partitions = listOf(PartitionDefinition(
+                    name = "p0", from = listOf(PartitionBound.MinValue), to = listOf(PartitionBound.Value("100")),
+                )),
+            ),
+        )
+        val current = emptySchema().copy(tables = mapOf("t" to unpart))
+        val desired = emptySchema().copy(tables = mapOf("t" to part))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(TableDiff(name = "t", partitioning = ValueChange(null, part.partitioning))),
+        )
+
+        val result = planner.plan(current, desired, diff)
+
+        result.diagnostics.map { it.code } shouldContain "PARTITIONING_CHANGE_NOT_APPLIED"
+        result.diagnostics.single { it.code == "PARTITIONING_CHANGE_NOT_APPLIED" }
+            .severity shouldBe DiffDiagnostic.Severity.WARNING
+        // The partitioning change yields no DiffOperation (can't ALTER partitioning in place).
+        result.operations.shouldBeEmpty()
     }
 
     test("custom-type changed without matching definitions is silently skipped") {

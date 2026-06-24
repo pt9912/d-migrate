@@ -15,14 +15,14 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 
 /**
- * AP4 (ADR 0019): partitions-bewusster Comparator. Der frühere Test
- * „partitioning changes do not produce diff" ist **umgedreht** — ein Unterschied
- * in Strategie, Schlüssel oder Kind-Partitionsmenge erzeugt jetzt einen Diff
- * (`schema compare` → DIFFERENT). Kind-Partitionen werden als **Menge**
- * verglichen (reihenfolge-unabhängig).
+ * AP4 (ADR 0019): partition-aware comparator. The former test
+ * "partitioning changes do not produce diff" is **inverted** — a difference in
+ * strategy, key or the set of child partitions now produces a diff
+ * (`schema compare` → DIFFERENT). Child partitions are compared as a **set**
+ * (order-independent).
  *
- * Eigene Spec (nicht in SchemaComparatorTest), um die LargeClass-Schwelle nicht
- * zu reißen — echte Aufteilung statt `@Suppress`.
+ * A dedicated spec (split out of SchemaComparatorTest) to stay under the
+ * LargeClass threshold — a real split instead of `@Suppress`.
  */
 class SchemaComparatorPartitioningTest : FunSpec({
 

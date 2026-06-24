@@ -245,6 +245,22 @@ class MigrationFingerprintTest : FunSpec({
         projectWith(children.reversed()) shouldBe out
     }
 
+    test("null vs empty bound list project differently (agrees with comparator)") {
+        fun projectFrom(from: List<PartitionBound>?) = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("c" to ColumnDefinition(NeutralType.Integer)),
+                partitioning = PartitionConfig(
+                    PartitionType.RANGE, listOf("c"),
+                    listOf(PartitionDefinition(name = "p", from = from, to = listOf(PartitionBound.Value("1")))),
+                ),
+            ),
+        )))
+        // null -> "from=", empty list -> "from=<empty>"; the comparator treats
+        // null != emptyList, so the fingerprint must not collapse them.
+        projectFrom(null) shouldNotBe projectFrom(emptyList())
+        projectFrom(emptyList()) shouldContain "from=<empty>"
+    }
+
     test("HASH partition projects modulus and remainder") {
         val out = MigrationFingerprint.project(schema(tables = mapOf(
             "t" to TableDefinition(

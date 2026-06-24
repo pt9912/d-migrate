@@ -304,8 +304,28 @@ internal object OperationMapper {
             mapTableConstraints(changed, ops)
             mapTableIndices(changed, ops)
             mapTablePrimaryKey(changed, ops)
+            mapTablePartitioning(changed, diagnostics)
         }
         return fold.absorbedViews
+    }
+
+    /**
+     * A table's partitioning cannot be altered in place (there is no
+     * `ALTER TABLE … PARTITION BY` round-trip), so the comparator-detected
+     * partitioning change (ADR 0019) has no [DiffOperation] counterpart. Without
+     * a diagnostic the change would be silently absent from the plan; emit a
+     * WARNING so the operator knows a detected difference was not applied (the
+     * post-`--execute` drift check then confirms it as residual).
+     */
+    private fun mapTablePartitioning(table: TableDiff, diagnostics: MutableList<DiffDiagnostic>) {
+        if (table.partitioning == null) return
+        diagnostics += DiffDiagnostic(
+            code = "PARTITIONING_CHANGE_NOT_APPLIED",
+            message = "Table '${table.name}': a partitioning change was detected but not emitted as a " +
+                "migration operation — a table's partitioning cannot be altered in place. Recreate the " +
+                "table with the desired partitioning manually if the change must be applied.",
+            severity = DiffDiagnostic.Severity.WARNING,
+        )
     }
 
     /**

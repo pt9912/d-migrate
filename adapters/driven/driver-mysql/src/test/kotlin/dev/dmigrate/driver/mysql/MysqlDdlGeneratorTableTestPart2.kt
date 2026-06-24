@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -94,6 +95,28 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         // statement terminates after the partition clause, not after ENGINE.
         ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE (`event_date`)"
         ddl shouldContain "VALUES LESS THAN (MAXVALUE)\n);"
+    }
+
+    test("partition bound with unsafe characters is rejected (guard parity with PostgreSQL)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "events" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "event_date" to col(NeutralType.Date, required = true)
+                    ),
+                    primaryKey = listOf("id", "event_date"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("event_date"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "evil", to = listOf(PartitionBound.Value("'x'); DROP TABLE t--")))
+                        )
+                    )
+                )
+            )
+        )
+        shouldThrow<IllegalArgumentException> { generator.generate(schema) }
     }
 
     test("UNIQUE constraint generates CONSTRAINT ... UNIQUE (columns)") {

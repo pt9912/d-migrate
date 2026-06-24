@@ -78,12 +78,11 @@ internal class TableComparator {
     // ── Partitioning (AP4, ADR 0019) ──────────────
 
     /**
-     * Vergleicht die Partitionierung zweier Tabellen. Strategie und Schlüssel
-     * (geordnet — die Spaltenreihenfolge des Partitionsschlüssels ist semantisch)
-     * müssen gleich sein, die **Kind-Partitionen als Menge** (reihenfolge-
-     * unabhängig, da Reverse sie nach `relname` und Generate sie nach Listen-
-     * position emittiert). Die Set-Gleichheit setzt das *eine kanonische* Bound-
-     * Encoding voraus (AP1a/AP1) — sonst false-positive-Diffs.
+     * Compares the partitioning of two tables. Strategy and key (ordered — the
+     * partition-key column order is semantic) must be equal, and the **child
+     * partitions as a set** (order-independent: the reverse reader emits them by
+     * `relname`, the generator by list position). Set equality relies on the
+     * *single canonical* bound encoding (AP1/AP1a) — otherwise false-positive diffs.
      */
     private fun comparePartitioning(
         left: PartitionConfig?,

@@ -192,7 +192,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
                 }
                 PartitionType.LIST -> {
                     val vals = partition.values.orEmpty()
-                        .joinToString(", ") { validatePartitionLiteral(it, "IN", partition.name) }
+                        .joinToString(", ") { PartitionLiteralGuard.ensureSafe(it, partition.name) }
                     append(" FOR VALUES IN ($vals)")
                 }
                 PartitionType.HASH -> {
@@ -221,16 +221,9 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             when (bound) {
                 PartitionBound.MinValue -> "MINVALUE"
                 PartitionBound.MaxValue -> "MAXVALUE"
-                is PartitionBound.Value -> validatePartitionLiteral(bound.literal, clause, partitionName)
+                is PartitionBound.Value -> PartitionLiteralGuard.ensureSafe(bound.literal, partitionName)
             }
         }
-    }
-
-    private fun validatePartitionLiteral(value: String, clause: String, partitionName: String): String {
-        require(!value.contains(';') && !value.contains("--") && !value.contains("/*")) {
-            "Partition '$partitionName' $clause bound contains unsafe characters: $value"
-        }
-        return value
     }
 
     // ── Indices ──────────────────────────────────

@@ -198,21 +198,36 @@ object MigrationFingerprint {
                 .append(SEP).append("default=").append(part.isDefault)
                 .append(SEP).append("from=").append(bounds(part.from))
                 .append(SEP).append("to=").append(bounds(part.to))
-                .append(SEP).append("values=").append(part.values?.joinToString(",") ?: "")
+                .append(SEP).append("values=")
+                .append(part.values?.let { if (it.isEmpty()) EMPTY_LIST_MARKER else it.joinToString(",") } ?: "")
                 .append(SEP).append("modulus=").append(part.modulus ?: "")
                 .append(SEP).append("remainder=").append(part.remainder ?: "")
                 .append('\n')
         }
     }
 
-    private fun bounds(list: List<PartitionBound>?): String =
-        list?.joinToString(",") { bound ->
+    /**
+     * A null bound list (non-RANGE strategies have no `from`/`to`) projects to
+     * the empty string; an *explicitly empty* list projects to [EMPTY_LIST_MARKER].
+     * The comparator distinguishes `null` from `[]` via data-class equality, so the
+     * fingerprint must too — otherwise a partition-only difference could be
+     * DIFFERENT to `schema compare` yet identical to the drift check. The empty
+     * case is unreachable from the reverse reader (RANGE always yields non-empty
+     * bounds), so no real partition's projection changes.
+     */
+    private fun bounds(list: List<PartitionBound>?): String = when {
+        list == null -> ""
+        list.isEmpty() -> EMPTY_LIST_MARKER
+        else -> list.joinToString(",") { bound ->
             when (bound) {
                 PartitionBound.MinValue -> "MINVALUE"
                 PartitionBound.MaxValue -> "MAXVALUE"
                 is PartitionBound.Value -> bound.literal
             }
-        } ?: ""
+        }
+    }
+
+    private const val EMPTY_LIST_MARKER = "<empty>"
 
     private val indexOrder = compareBy<IndexDefinition> { it.name ?: "" }
         .thenBy { it.columns.joinToString(",") }
