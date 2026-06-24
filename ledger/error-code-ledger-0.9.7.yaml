@@ -49,6 +49,16 @@ entries:
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceEmulationTemplates.kt"
         path_type: production
 
+  # E061 — AP6.2/ADR 0020: non-UTC timezone offset on a partition bound; stripping would shift the boundary.
+  - code: E061
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+
   - code: E124
     level: error
     status: active

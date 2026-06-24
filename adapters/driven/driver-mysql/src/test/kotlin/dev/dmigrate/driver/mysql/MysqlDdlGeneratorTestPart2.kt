@@ -317,13 +317,13 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "PARTITION BY RANGE (`event_date`)"
+        ddl shouldContain "PARTITION BY RANGE COLUMNS (`event_date`)"
         ddl shouldContain "PARTITION `p2024` VALUES LESS THAN ('2025-01-01')"
         ddl shouldContain "PARTITION `p2025` VALUES LESS THAN ('2026-01-01')"
         ddl shouldContain "PARTITION `p_max` VALUES LESS THAN (MAXVALUE)"
         // I-07: table options precede partition options (MySQL grammar); the
         // statement terminates after the partition clause, not after ENGINE.
-        ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE (`event_date`)"
+        ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE COLUMNS (`event_date`)"
         ddl shouldContain "VALUES LESS THAN (MAXVALUE)\n);"
     }
 
@@ -580,7 +580,7 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "PARTITION BY LIST (`region`)"
+        ddl shouldContain "PARTITION BY LIST COLUMNS (`region`)"
         ddl shouldContain "PARTITION `p_us` VALUES IN ('US', 'CA')"
         ddl shouldContain "PARTITION `p_eu` VALUES IN ('DE', 'FR', 'UK')"
     }

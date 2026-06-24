@@ -21,6 +21,7 @@ internal class MysqlIndexPartitionDdlHelper(
 
     fun generatePartitionClause(
         partitioning: PartitionConfig,
+        columns: Map<String, ColumnDefinition>,
         notes: MutableList<TransformationNote>,
     ): String {
         // RANGE/LIST partitioning requires at least one partition definition.
@@ -47,14 +48,24 @@ internal class MysqlIndexPartitionDdlHelper(
                 type = NoteType.WARNING,
                 code = "W112",
                 objectName = partitioning.key.joinToString(","),
-                message = "RANGE partition expressions may need manual adjustment for MySQL (e.g., wrapping date columns with YEAR()).",
-                hint = "Review the partition key expressions and adjust for MySQL-specific syntax if needed.",
+                message = "PostgreSQL RANGE has lower+upper bounds; MySQL RANGE COLUMNS keeps only the " +
+                    "upper bound (VALUES LESS THAN), so the partition's `from` bound is dropped.",
+                hint = "Verify the partitions are contiguous (MySQL RANGE assumes no gaps).",
             )
         }
 
+        // §1/§4 (ADR 0020): RANGE/LIST → `… COLUMNS(key)` so date/datetime/string keys take
+        // literal bounds directly (plain RANGE/LIST would require an integer expression).
+        val mysqlMethod = when (partitioning.type) {
+            PartitionType.RANGE -> "RANGE COLUMNS"
+            PartitionType.LIST -> "LIST COLUMNS"
+            PartitionType.HASH -> "HASH"
+        }
+        val keyTypes = partitioning.key.map { columns[it]?.type }
         val key = partitioning.key.joinToString(", ") { quoteIdentifier(it) }
+        val emittedCodes = mutableSetOf<String>()
         return buildString {
-            append("PARTITION BY ${partitioning.type.name} ($key)")
+            append("PARTITION BY $mysqlMethod ($key)")
             if (partitioning.partitions.isNotEmpty()) {
                 append(" (\n")
                 append(
@@ -62,13 +73,14 @@ internal class MysqlIndexPartitionDdlHelper(
                         buildString {
                             append("    PARTITION ${quoteIdentifier(partition.name)}")
                             when (partitioning.type) {
-                                // MySQL-RANGE kennt nur die Obergrenze (VALUES LESS THAN);
-                                // `from` wird verworfen (semantischer Carve-Out, ADR 0019).
-                                PartitionType.RANGE -> append(" VALUES LESS THAN (${renderMysqlUpperBound(partition)})")
+                                PartitionType.RANGE ->
+                                    append(" VALUES LESS THAN (${renderMysqlUpperBound(partition, keyTypes, notes, emittedCodes)})")
                                 PartitionType.LIST -> {
-                                    val values = partition.values
-                                        ?.joinToString(", ") { PartitionLiteralGuard.ensureSafe(it, partition.name) }
-                                        ?: ""
+                                    val temporal = keyTypes.firstOrNull() is NeutralType.DateTime
+                                    val values = partition.values?.joinToString(", ") {
+                                        val safe = PartitionLiteralGuard.ensureSafe(it, partition.name)
+                                        if (temporal) normalizeTemporalBound(safe, partition.name, notes, emittedCodes) else safe
+                                    } ?: ""
                                     append(" VALUES IN ($values)")
                                 }
                                 PartitionType.HASH -> Unit
@@ -81,17 +93,68 @@ internal class MysqlIndexPartitionDdlHelper(
         }
     }
 
-    /** MySQL-RANGE-Obergrenze aus dem strukturierten `to`-Bound-Tupel (ADR 0019).
-     *  DEFAULT-/leere Grenze → `MAXVALUE` (MySQL-Catch-all). */
-    private fun renderMysqlUpperBound(partition: PartitionDefinition): String {
+    /** MySQL-RANGE-Obergrenze aus dem strukturierten `to`-Bound-Tupel (ADR 0019/0020).
+     *  DEFAULT-/leere Grenze → `MAXVALUE`; Temporal-Grenzen werden auf UTC normalisiert. */
+    private fun renderMysqlUpperBound(
+        partition: PartitionDefinition,
+        keyTypes: List<NeutralType?>,
+        notes: MutableList<TransformationNote>,
+        emittedCodes: MutableSet<String>,
+    ): String {
         if (partition.isDefault) return "MAXVALUE"
-        return partition.to.orEmpty().joinToString(", ") { bound ->
+        return partition.to.orEmpty().mapIndexed { i, bound ->
             when (bound) {
                 PartitionBound.MaxValue -> "MAXVALUE"
                 PartitionBound.MinValue -> "MINVALUE"
-                is PartitionBound.Value -> PartitionLiteralGuard.ensureSafe(bound.literal, partition.name)
+                is PartitionBound.Value -> {
+                    val safe = PartitionLiteralGuard.ensureSafe(bound.literal, partition.name)
+                    if (keyTypes.getOrNull(i) is NeutralType.DateTime)
+                        normalizeTemporalBound(safe, partition.name, notes, emittedCodes)
+                    else safe
+                }
             }
-        }.ifEmpty { "MAXVALUE" }
+        }.joinToString(", ").ifEmpty { "MAXVALUE" }
+    }
+
+    /**
+     * §2 (ADR 0020): PG-timestamptz-Grenze (`'…+00'`) → MySQL-DATETIME-Literal. Ein
+     * **UTC**-Offset wird entfernt (instant-erhaltend) → W129. Ein **Nicht-UTC**-Offset würde
+     * die Grenze beim bloßen Strippen verschieben → `action_required` (E061), kein stiller Shift.
+     */
+    private fun normalizeTemporalBound(
+        literal: String,
+        partitionName: String,
+        notes: MutableList<TransformationNote>,
+        emittedCodes: MutableSet<String>,
+    ): String {
+        val match = TZ_OFFSET.find(literal) ?: return literal
+        val offset = match.groupValues[1]
+        if (offset !in UTC_OFFSETS && emittedCodes.add("E061")) {
+            notes += TransformationNote(
+                type = NoteType.ACTION_REQUIRED,
+                code = "E061",
+                objectName = partitionName,
+                message = "Partition '$partitionName' bound carries a non-UTC timezone offset '$offset'; " +
+                    "stripping it for MySQL DATETIME would shift the boundary.",
+                hint = "Re-read the source with the session time zone set to UTC, or convert the bound to UTC.",
+            )
+        } else if (offset in UTC_OFFSETS && emittedCodes.add("W129")) {
+            notes += TransformationNote(
+                type = NoteType.WARNING,
+                code = "W129",
+                objectName = partitionName,
+                message = "PostgreSQL timestamptz partition bounds normalized to UTC (timezone suffix " +
+                    "removed) for MySQL DATETIME, which has no time zone.",
+                hint = "Ensure the source data is stored/interpreted as UTC.",
+            )
+        }
+        return literal.take(match.range.first) + "'"
+    }
+
+    private companion object {
+        /** Trailing tz offset (`+00`, `-05:00`, …) right before the closing quote of a literal. */
+        val TZ_OFFSET = Regex("([+-]\\d{2}(?::?\\d{2})?)'\\s*$")
+        val UTC_OFFSETS = setOf("+00", "+0000", "+00:00", "-00", "-0000", "-00:00")
     }
 
     fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =

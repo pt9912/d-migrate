@@ -20,8 +20,8 @@ ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- [W100] DATETIME with timezone on column 'date' mapped to DATETIME in MySQL which does not support time zones.
 -- Hint: Store timezone information in a separate column or use UTC consistently.
--- [W112] RANGE partition expressions may need manual adjustment for MySQL (e.g., wrapping date columns with YEAR()).
--- Hint: Review the partition key expressions and adjust for MySQL-specific syntax if needed.
+-- [W112] PostgreSQL RANGE has lower+upper bounds; MySQL RANGE COLUMNS keeps only the upper bound (VALUES LESS THAN), so the partition's `from` bound is dropped.
+-- Hint: Verify the partitions are contiguous (MySQL RANGE assumes no gaps).
 -- [E056] Sequence-based default on 'invoice_number' requires --mysql-named-sequences helper_table to generate support objects.
 -- Hint: Add --mysql-named-sequences helper_table to enable sequence emulation.
 CREATE TABLE `orders` (
@@ -40,7 +40,7 @@ CREATE TABLE `orders` (
     PRIMARY KEY (`id`)
 )
 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-PARTITION BY RANGE (`date`) (
+PARTITION BY RANGE COLUMNS (`date`) (
     PARTITION `orders_2024` VALUES LESS THAN (2025-01-01),
     PARTITION `orders_2025` VALUES LESS THAN (2026-01-01)
 );

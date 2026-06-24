@@ -87,14 +87,62 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "PARTITION BY RANGE (`event_date`)"
+        ddl shouldContain "PARTITION BY RANGE COLUMNS (`event_date`)"
         ddl shouldContain "PARTITION `p2024` VALUES LESS THAN ('2025-01-01')"
         ddl shouldContain "PARTITION `p2025` VALUES LESS THAN ('2026-01-01')"
         ddl shouldContain "PARTITION `p_max` VALUES LESS THAN (MAXVALUE)"
         // I-07: table options precede partition options (MySQL grammar); the
         // statement terminates after the partition clause, not after ENGINE.
-        ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE (`event_date`)"
+        ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE COLUMNS (`event_date`)"
         ddl shouldContain "VALUES LESS THAN (MAXVALUE)\n);"
+    }
+
+    test("timestamptz RANGE bound is normalized to UTC for MySQL DATETIME (W129, AP6.2)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "payment" to table(
+                    columns = mapOf(
+                        "payment_date" to col(NeutralType.DateTime(timezone = true), required = true)
+                    ),
+                    primaryKey = listOf("payment_date"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("payment_date"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2022-02-01 00:00:00+00'")))
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        ddl shouldContain "PARTITION BY RANGE COLUMNS (`payment_date`)"
+        ddl shouldContain "VALUES LESS THAN ('2022-02-01 00:00:00')"
+        ddl shouldNotContain "00:00:00+00"
+        result.notes.any { it.code == "W129" } shouldBe true
+    }
+
+    test("non-UTC timezone offset on a partition bound emits E061 action_required (AP6.2)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "payment" to table(
+                    columns = mapOf(
+                        "payment_date" to col(NeutralType.DateTime(timezone = true), required = true)
+                    ),
+                    primaryKey = listOf("payment_date"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("payment_date"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2022-02-01 00:00:00+02'")))
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+        result.notes.find { it.code == "E061" }!!.type shouldBe NoteType.ACTION_REQUIRED
     }
 
     test("partition bound with unsafe characters is rejected (guard parity with PostgreSQL)") {
@@ -345,7 +393,7 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "PARTITION BY LIST (`region`)"
+        ddl shouldContain "PARTITION BY LIST COLUMNS (`region`)"
         ddl shouldContain "PARTITION `p_us` VALUES IN ('US', 'CA')"
         ddl shouldContain "PARTITION `p_eu` VALUES IN ('DE', 'FR', 'UK')"
     }

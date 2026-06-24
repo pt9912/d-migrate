@@ -120,7 +120,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
             val partitioning = table.partitioning
             if (partitioning != null) {
-                val clause = indexPartitionHelper.generatePartitionClause(partitioning, notes)
+                val clause = indexPartitionHelper.generatePartitionClause(partitioning, table.columns, notes)
                 if (clause.isNotBlank()) {
                     append("\n")
                     append(clause)
