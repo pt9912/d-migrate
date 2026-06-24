@@ -83,6 +83,13 @@ internal class TableComparator {
      * partitions as a set** (order-independent: the reverse reader emits them by
      * `relname`, the generator by list position). Set equality relies on the
      * *single canonical* bound encoding (AP1/AP1a) — otherwise false-positive diffs.
+     *
+     * Within each partition the **child-local indices are likewise order-
+     * independent** (AP2a): they are canonicalised by [indexKey] before the set
+     * comparison, so a reordered-but-equal index set is not a diff. This matches
+     * the order-independent top-level index comparison and the sorted fingerprint
+     * projection — without it the comparator and the post-`--execute` drift check
+     * would disagree on a reordered index set.
      */
     private fun comparePartitioning(
         left: PartitionConfig?,
@@ -93,10 +100,16 @@ internal class TableComparator {
             left == null || right == null -> false
             else -> left.type == right.type &&
                 left.key == right.key &&
-                left.partitions.toSet() == right.partitions.toSet()
+                canonicalPartitions(left) == canonicalPartitions(right)
         }
         return if (equivalent) null else ValueChange(left, right)
     }
+
+    /** Partitions as a set, each with its child-local indices in canonical order. */
+    private fun canonicalPartitions(config: PartitionConfig): Set<PartitionDefinition> =
+        config.partitions.map { partition ->
+            partition.copy(indices = partition.indices.sortedBy { indexKey(it) })
+        }.toSet()
 
     // ── Columns ───────────────────────────────────
 

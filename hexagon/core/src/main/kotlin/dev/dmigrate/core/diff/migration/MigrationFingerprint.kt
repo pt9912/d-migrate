@@ -164,14 +164,7 @@ object MigrationFingerprint {
             }
             sb.append("  primary_key=").append(effectivePrimaryKey(table).joinToString(",")).append('\n')
             sb.append("  indices[").append(table.indices.size).append("]\n")
-            for (idx in table.indices.sortedWith(indexOrder)) {
-                sb.append("    index=").append(idx.name ?: "")
-                    .append(SEP).append("columns=").append(idx.columns.joinToString(","))
-                    .append(SEP).append("type=").append(idx.type.name)
-                    .append(SEP).append("unique=").append(idx.unique)
-                    .append(SEP).append("where=").append(idx.where ?: "")
-                    .append('\n')
-            }
+            for (idx in table.indices.sortedWith(indexOrder)) appendIndex(sb, "    ", "index", idx)
             sb.append("  constraints[").append(table.constraints.size).append("]\n")
             for (c in table.constraints.sortedBy { it.name }) {
                 sb.append("    constraint=").append(c.name)
@@ -211,16 +204,19 @@ object MigrationFingerprint {
             // v5/AP2a: child-local indices, same shape as the table-level index
             // projection, sorted by the shared indexOrder (declaration order is
             // not semantic). Lets the fingerprint agree with the comparator,
-            // which compares partition.indices structurally.
-            for (idx in part.indices.sortedWith(indexOrder)) {
-                sb.append("      partition_index=").append(idx.name ?: "")
-                    .append(SEP).append("columns=").append(idx.columns.joinToString(","))
-                    .append(SEP).append("type=").append(idx.type.name)
-                    .append(SEP).append("unique=").append(idx.unique)
-                    .append(SEP).append("where=").append(idx.where ?: "")
-                    .append('\n')
-            }
+            // which compares partition.indices as a set.
+            for (idx in part.indices.sortedWith(indexOrder)) appendIndex(sb, "      ", "partition_index", idx)
         }
+    }
+
+    /** Shared index projection — same field shape for table-level and partition-local indices. */
+    private fun appendIndex(sb: StringBuilder, indent: String, label: String, idx: IndexDefinition) {
+        sb.append(indent).append(label).append('=').append(idx.name ?: "")
+            .append(SEP).append("columns=").append(idx.columns.joinToString(","))
+            .append(SEP).append("type=").append(idx.type.name)
+            .append(SEP).append("unique=").append(idx.unique)
+            .append(SEP).append("where=").append(idx.where ?: "")
+            .append('\n')
     }
 
     /**

@@ -111,6 +111,23 @@ class SchemaComparatorPartitioningTest : FunSpec({
             .tablesChanged.single().partitioning.shouldNotBeNull()
     }
 
+    test("child-local partition index ORDER does not matter (set equality, AP2a)") {
+        fun withIndices(vararg names: String) = rangeOnCreatedAt.copy(
+            partitions = listOf(
+                rangePart("p2022_01", "'2022-01-01'", "'2022-02-01'").copy(
+                    indices = names.map { IndexDefinition(name = it, columns = listOf(IndexColumn("created_at"))) },
+                ),
+                rangePart("p2022_02", "'2022-02-01'", "'2022-03-01'"),
+            ),
+        )
+        // Same index SET, different declaration order → not a diff (matches the
+        // sorted fingerprint, so compare and the drift check agree).
+        comparator.compare(
+            partitioned(withIndices("idx_a", "idx_b")),
+            partitioned(withIndices("idx_b", "idx_a")),
+        ).isEmpty() shouldBe true
+    }
+
     test("child partition order does not matter (set equality)") {
         val reordered = rangeOnCreatedAt.copy(partitions = rangeOnCreatedAt.partitions.reversed())
         comparator.compare(partitioned(rangeOnCreatedAt), partitioned(reordered))
