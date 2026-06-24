@@ -29,8 +29,18 @@
 > befüllt (skip via E055/E062 lässt Tabelle unpartitioniert → FK bleibt gültig). Ledger E065; 5 Unit-Tests +
 > **deckte invalides DDL im `full-featured`-Golden auf** (`orders` war partitioniert UND trug 2 FKs → Goldens
 > regeneriert: FKs jetzt korrekt verworfen statt invalides DDL gepinnt).
-> **Offen:** **AP6.4** Cross-Smoke-Notes-Baseline neu pinnen + grün (+ Live-Apply-Beweis),
-> **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
+> **AP6.4 (Cross-Smoke PG→MySQL) erledigt + GRÜN**: `make sample-db-cross-smoke-pg2my` live grün, der
+> **End-to-End-Live-Apply-Beweis**. `payment` round-trippt als EINE partitionierte MySQL-Tabelle —
+> **16049 Zeilen** (= Quelle, keine Duplikation; war 32098), 7 MySQL-Partitionen, 0 Kind-Tabellen, 0 FKs.
+> Harness-Gates mitgezogen: tgt_tables 22→15 logisch (Kinder gefiltert), Parity-Loop schließt Kinder aus,
+> alter P2-Duplikations-NOTE → hartes Partitions-Integritäts-Gate. Notes-Baseline neu gepinnt
+> (`E055` weg; `W112`/`W129` neu; `W100` 24→17, `W118` 8→1 — 7 Kind-Duplikate entfallen); AP6.3 Index-Heben
+> feuert live (`PARTITION_INDEX_LIFTED`). `expected/pagila-cross.md` aktualisiert (Finding P2-pg2my → gelöst).
+> **Offen:** **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
+> **Folge (klein, neu durch AP6.4 belegt):** **kind-lokale FK-Constraints erfassen+melden** — pagila
+> deklariert payments FKs auf den Kindern (PG erlaubt das); AP2a erfasst kind-lokale Indizes, aber keine
+> kind-lokalen FKs → sie fallen still weg (MySQL-Ergebnis korrekt, da FKs dort ohnehin verboten; nur die
+> E065-Transparenz fehlt für diesen Fall).
 > Mini-Folgen: spec/ledger.md-Summary-Sync (W125–W131, E061–E065); LIST-`DEFAULT`-**Preflight** (§4, Transfer-Seite —
 > die Generate-Note E063 ist da, die Preflight-Integration noch nicht).
 > **Trigger:** Die PG-first-Scheibe hat das strukturierte `PartitionDefinition`-Modell,

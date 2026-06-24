@@ -11,14 +11,18 @@
 #
 # Gepinnt:
 #   - generate-Notes == Baseline (PG-Features, die MySQL nicht 1:1 trägt)
-#   - Per-Tabelle-Parität Quelle == Ziel (22 Tabellen)
+#   - Per-Tabelle-Parität Quelle == Ziel (logische Tabellen; Partitionskinder
+#     zählen nicht separat — payment ist EINE partitionierte MySQL-Tabelle)
 #   - Typ-Konvertierungen datenbelegt (boolean→tinyint(1), text[]→json,
 #     tsvector→text, timestamptz→datetime/W100)
+#   - Partitions-Integrität: payment round-trippt als EINE RANGE-COLUMNS-Tabelle,
+#     keine Kind-Duplikation, alle Zeilen vorhanden
 #
-# Bekanntes Finding P2-pg2my (Partition-Daten-Duplikation: payment liegt im Ziel
-# doppelt, weil der Reverse Parent + Kinder als lose Tabellen modelliert) wird als
-# NOTE gemeldet, nicht als Fehler — getrackt in partition-hierarchy-reconstruction.md
-# (Finding D) bzw. sample-db-phase2-findings.md.
+# AP1/AP2 (PG-Partition-Reverse) + AP6 (Cross-Dialect-Generate) lösten das frühere
+# Finding P2-pg2my (Partition-Daten-Duplikation): der Reverse modelliert payment als
+# partitionierten Parent + Kind-Partitionen (nicht mehr als lose Tabellen), MySQL-
+# Generate emittiert `PARTITION BY RANGE COLUMNS` mit UTC-normalisierten Grenzen
+# (W112/W129) und überspringt die FKs der partitionierten Tabelle (E065, ADR 0020 §5).
 #
 # Voraussetzung am Host: docker, docker compose, lokal gebautes d-migrate:dev-Image.
 
@@ -82,7 +86,12 @@ psql_t postgres 1 -c "DROP DATABASE IF EXISTS pagila WITH (FORCE)" -c "CREATE DA
 psql_t pagila 1 < "$EXAMPLES_DIR/.cache/pagila.sql" > /dev/null || fail "pagila dump load failed"
 src_tables=$(pg_val "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")
 [ "$src_tables" = "22" ] || fail "expected 22 source tables, got $src_tables"
-log "pagila loaded ($src_tables tables)"
+# Logical tables = base tables that are NOT partition children. The partitioned
+# `payment` parent counts once; its 7 children are partitions, not separate tables.
+# AP2 reverse-filters the children and AP6 MySQL-generate emits payment as ONE
+# partitioned table, so the MySQL target has this many base tables (not 22).
+logical_tables=$(pg_val "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND NOT c.relispartition")
+log "pagila loaded ($src_tables raw tables; $logical_tables logical, partition children excluded)"
 
 # --- 3. reverse --include-all (PG-Quelle) --------------------------
 log "schema reverse pagila_pg --include-all..."
@@ -121,7 +130,7 @@ log "resetting target DB pagila_target (MySQL) + applying pre-data DDL..."
 mysql_root -e "DROP DATABASE IF EXISTS pagila_target; CREATE DATABASE pagila_target CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL ON pagila_target.* TO '${MYSQL_USER}'@'%'; FLUSH PRIVILEGES;"
 mysql_root pagila_target < "$OUT_DIR/pagila.my.pre-data.sql" || fail "pre-data apply failed"
 tgt_tables=$(my_val "SELECT count(*) FROM information_schema.tables WHERE table_schema='pagila_target' AND table_type='BASE TABLE';")
-[ "$tgt_tables" = "22" ] || fail "expected 22 target tables after pre-data, got $tgt_tables"
+[ "$tgt_tables" = "$logical_tables" ] || fail "expected $logical_tables target tables after pre-data (payment partitioned, children not separate), got $tgt_tables"
 
 log "data transfer pagila_pg -> pagila_my_target..."
 $COMPOSE run --rm dmigrate data transfer --source pagila_pg --target pagila_my_target --truncate \
@@ -136,9 +145,9 @@ while IFS= read -r t; do
     s=$(pg_val "SELECT count(*) FROM \"$t\"")
     d=$(my_val "SELECT count(*) FROM pagila_target.\`$t\`;")
     if [ "$s" != "$d" ]; then printf '[cross-pg2my]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
-done < <(psql_t pagila 0 -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1")
+done < <(psql_t pagila 0 -tAc "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND NOT c.relispartition ORDER BY 1")
 [ "$mismatch" = "0" ] || fail "per-table row-count parity violated"
-log "per-table parity OK (all $src_tables tables)"
+log "per-table parity OK (all $logical_tables logical tables; payment compared as a whole)"
 
 # --- 8. Schlüssel-Typ-Konvertierungen datenbelegt ------------------
 log "verifying critical cross-dialect type conversions..."
@@ -162,14 +171,21 @@ ft_empty=$(my_val "SELECT COUNT(*) FROM pagila_target.film WHERE \`fulltext\` IS
 [ "$ft_empty" = "0" ] || fail "tsvector->text: $ft_empty film rows have empty fulltext"
 log "  tsvector->text OK (all film.fulltext populated)"
 
-# --- 9. P2-pg2my (bekanntes Finding): Partition-Daten-Duplikation --
-pay_parent=$(my_val "SELECT COUNT(*) FROM pagila_target.payment;")
-pay_children=$(my_val "SELECT IFNULL(SUM(c),0) FROM (SELECT COUNT(*) c FROM pagila_target.payment_p2022_01 UNION ALL SELECT COUNT(*) FROM pagila_target.payment_p2022_02 UNION ALL SELECT COUNT(*) FROM pagila_target.payment_p2022_03 UNION ALL SELECT COUNT(*) FROM pagila_target.payment_p2022_04 UNION ALL SELECT COUNT(*) FROM pagila_target.payment_p2022_05 UNION ALL SELECT COUNT(*) FROM pagila_target.payment_p2022_06 UNION ALL SELECT COUNT(*) FROM pagila_target.payment_p2022_07) x;")
-if [ "$pay_parent" -gt 0 ] && [ "$pay_children" -gt 0 ]; then
-    note "P2-pg2my (known finding D): payment data duplicated — parent='$pay_parent' + children='$pay_children' (total $((pay_parent + pay_children)) vs source $pay_parent). See partition-hierarchy-reconstruction.md."
-else
-    note "P2-pg2my appears resolved (parent=$pay_parent, children=$pay_children) — update partition plan + this check."
-fi
+# --- 9. Partitions-Integrität (AP1/AP2 + AP6): payment round-trippt als EINE
+#        partitionierte MySQL-Tabelle — alle Zeilen, keine Kind-Duplikation. -----
+log "verifying partition integrity (payment as one partitioned MySQL table)..."
+pay_src=$(pg_val "SELECT count(*) FROM payment")
+pay_dst=$(my_val "SELECT COUNT(*) FROM pagila_target.payment;")
+[ "$pay_src" = "$pay_dst" ] || fail "payment row count mismatch: src=$pay_src dst=$pay_dst (duplication regression?)"
+pay_parts=$(my_val "SELECT COUNT(*) FROM information_schema.partitions WHERE table_schema='pagila_target' AND table_name='payment' AND partition_name IS NOT NULL;")
+[ "${pay_parts:-0}" -ge 1 ] || fail "payment is not partitioned in MySQL target (expected RANGE COLUMNS partitions, got ${pay_parts:-0})"
+# The former loose-table children must NOT exist as separate tables (no duplication).
+child_tables=$(my_val "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='pagila_target' AND table_name LIKE 'payment\\_p2022\\_%';")
+[ "${child_tables:-0}" = "0" ] || fail "partition children leaked as separate tables ($child_tables) — duplication regression"
+# FKs on the partitioned table are skipped (E065, ADR 0020 §5) → none on payment.
+pay_fks=$(my_val "SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema='pagila_target' AND table_name='payment' AND constraint_type='FOREIGN KEY';")
+[ "${pay_fks:-0}" = "0" ] || fail "partitioned payment has $pay_fks foreign keys — MySQL forbids FKs on partitioned tables (E065 carve-out broke)"
+log "  partition integrity OK (payment: $pay_dst rows across $pay_parts MySQL partitions, 0 child tables, 0 FKs)"
 
-log "SUCCESS — Pagila PG->MySQL cross-dialect smoke passed (per-table parity + conversions; P2-pg2my tracked)."
+log "SUCCESS — Pagila PG->MySQL cross-dialect smoke passed (per-table parity + conversions + partition integrity)."
 log "stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."
