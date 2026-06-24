@@ -107,6 +107,19 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                     FOR EACH ROW
                     SET NEW.created_at = NOW()
                 """)
+
+                // AP6.1 (ADR 0020): RANGE COLUMNS partitioned table (same form AP6.2 generates)
+                // so the reverse capture is exercised against real information_schema.PARTITIONS.
+                stmt.execute("""
+                    CREATE TABLE ap61_events (
+                        id INT NOT NULL,
+                        event_date DATETIME NOT NULL,
+                        PRIMARY KEY (id, event_date)
+                    ) PARTITION BY RANGE COLUMNS (event_date) (
+                        PARTITION p2024 VALUES LESS THAN ('2025-01-01 00:00:00'),
+                        PARTITION p_max VALUES LESS THAN (MAXVALUE)
+                    )
+                """)
             }
         }
         pool.close()
@@ -400,6 +413,21 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             reader.read(pool)
             val result2 = reader.read(pool)
             result2.schema.tables shouldContainKey "customers"
+        }
+    }
+
+    // ── Partitioning: RANGE COLUMNS reverse capture (AP6.1) ──
+
+    test("reverse captures RANGE COLUMNS partitioning from information_schema.PARTITIONS") {
+        pool().use { pool ->
+            val partitioning = reader.read(pool).schema.tables["ap61_events"]!!.partitioning!!
+            partitioning.type shouldBe PartitionType.RANGE
+            partitioning.key shouldBe listOf("event_date")
+            partitioning.partitions.map { it.name } shouldBe listOf("p2024", "p_max")
+            // Upper bound (to) captured; no lower bound (MySQL stores none — AP6.5 reconstructs).
+            partitioning.partitions[0].from.shouldBeNull()
+            (partitioning.partitions[0].to!!.single() as PartitionBound.Value).literal shouldContain "2025-01-01"
+            partitioning.partitions[1].to shouldBe listOf(PartitionBound.MaxValue)
         }
     }
 })

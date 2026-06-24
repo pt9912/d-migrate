@@ -41,6 +41,25 @@ object MysqlMetadataQueries {
         return row?.get("engine") as? String
     }
 
+    /**
+     * AP6.1 (ADR 0020): Partitionen einer Tabelle aus `information_schema.PARTITIONS`.
+     * Nur echte Partitionen (`partition_name IS NOT NULL`), keine Sub-Partitionen
+     * (Sub-Partitionierung ist OUT). Geordnet nach Ordinal für Determinismus.
+     */
+    fun listPartitions(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
+        return session.queryList(
+            """
+            SELECT partition_name, partition_method, partition_expression,
+                   partition_description, partition_ordinal_position
+            FROM information_schema.partitions
+            WHERE table_schema = ? AND table_name = ?
+              AND partition_name IS NOT NULL
+              AND subpartition_name IS NULL
+            ORDER BY partition_ordinal_position
+            """.trimIndent(), schemaName, table,
+        )
+    }
+
     fun listColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
         return session.queryList(
             """

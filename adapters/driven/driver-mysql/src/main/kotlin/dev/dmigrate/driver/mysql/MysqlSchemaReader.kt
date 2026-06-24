@@ -217,6 +217,8 @@ class MysqlSchemaReader(
             indices = indexDefs,
             constraints = constraints,
             metadata = metadata,
+            // AP6.1 (ADR 0020): Partitionierung aus information_schema.PARTITIONS.
+            partitioning = MysqlPartitionReader.read(session, database, metaTable),
         )
     }
 }

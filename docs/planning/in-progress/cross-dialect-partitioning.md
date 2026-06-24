@@ -10,10 +10,14 @@
 > eingearbeitet). **AP6.2 Teil 1 erledigt** (MySQL-Generate): RANGE/LIST → `… COLUMNS(key)`,
 > Temporal-Literal-UTC-Normalisierung (W129) + Nicht-UTC-`action_required` (E061), W112-Text
 > auf `from`-Verwurf umgestellt; Ledger W129/E061 (YAML) eingetragen; Unit-Tests grün.
+> **AP6.1 erledigt** (MySQL-Reverse): `MysqlPartitionReader` + `listPartitions`-Query
+> (`information_schema.PARTITIONS`) erfasst RANGE (`to`)/LIST (`values`)/HASH (benannt); Spaltenschlüssel
+> aus PARTITION_EXPRESSION (Backticks gestrippt); Unit-Tests + Live-Integration (MySQL-Testcontainer) grün.
 > **Offen — AP6.2 Teil 2:** DECIMAL/FLOAT/Ausdruck-Schlüssel skip+Note (§1), LIST-`DEFAULT` →
-> `action_required`+Preflight (§4), HASH-Platzierungs-Note (§3). **AP6.1** MySQL-Reverse,
+> `action_required`+Preflight (§4), HASH-Platzierungs-Note (§3).
 > **AP6.3** Index-Heben (nicht-unique heben / UNIQUE skip), **AP6.4** Cross-Smoke-Notes-Baseline
-> neu pinnen + grün, **AP6.5** MySQL→PG. spec/ledger.md-Summary-Sync (W125–W129) als Mini-Folge.
+> neu pinnen + grün, **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
+> spec/ledger.md-Summary-Sync (W125–W129) als Mini-Folge.
 > **Trigger:** Die PG-first-Scheibe hat das strukturierte `PartitionDefinition`-Modell,
 > den PG-Reverse-Capture (Kinder + Grenzen + kind-lokale Indizes) und den
 > partitions-bewussten Comparator/Fingerprint geliefert. Der MySQL-Pfad konsumiert das

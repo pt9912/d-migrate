@@ -51,6 +51,8 @@ class MysqlSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("constraint_name = 'PRIMARY'") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("referential_constraints") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns emptyList()
+        // AP6.1: information_schema.partitions — non-partitioned by default.
+        every { jdbc.queryList(match { it.contains("information_schema.partitions") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc.querySingle(match { it.contains("engine") }, any(), any()) } returns null
     }
@@ -636,6 +638,8 @@ class MysqlSchemaReaderTest : FunSpec({
         )
         every { jdbc2.queryList(match { it.contains("referential_constraints") }, any(), any()) } returns emptyList()
         every { jdbc2.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns emptyList()
+        // AP6.1: information_schema.partitions — non-partitioned by default.
+        every { jdbc2.queryList(match { it.contains("information_schema.partitions") }, any(), any()) } returns emptyList()
         every { jdbc2.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc2.querySingle(match { it.contains("engine") }, any(), any()) } returns null
         every { jdbc2.queryList(match { it.contains("information_schema.views") }, any()) } returns emptyList()
