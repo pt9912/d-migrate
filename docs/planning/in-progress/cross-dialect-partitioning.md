@@ -1,9 +1,19 @@
 # Cross-Dialect-Partitionierung (AP6 — MySQL-Reverse/-Generate + Cross-Dialect-Mapping)
 
-> **Status:** Vorschlag (Scope ausgearbeitet, noch nicht aktiv). Folge-Slice der
-> graduierten [Partitions-Hierarchie-Rekonstruktion](../done/partition-hierarchy-reconstruction.md)
+> **Status:** in-progress/-Slice (AP6.2 angefangen). Folge-Slice der graduierten
+> [Partitions-Hierarchie-Rekonstruktion](../done/partition-hierarchy-reconstruction.md)
 > (PG-first), gemäß [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md),
 > Punkt 3+4 (Cross-Dialect-Form-Divergenz + MySQL-Reverse als eigener Slice).
+>
+> **Stand & Wiedereinstieg (2026-06-24):** Gate-ADR
+> [ADR 0020](../../adr/0020-cross-dialect-partitioning-mysql.md) **accepted** (Review-Runde
+> eingearbeitet). **AP6.2 Teil 1 erledigt** (MySQL-Generate): RANGE/LIST → `… COLUMNS(key)`,
+> Temporal-Literal-UTC-Normalisierung (W129) + Nicht-UTC-`action_required` (E061), W112-Text
+> auf `from`-Verwurf umgestellt; Ledger W129/E061 (YAML) eingetragen; Unit-Tests grün.
+> **Offen — AP6.2 Teil 2:** DECIMAL/FLOAT/Ausdruck-Schlüssel skip+Note (§1), LIST-`DEFAULT` →
+> `action_required`+Preflight (§4), HASH-Platzierungs-Note (§3). **AP6.1** MySQL-Reverse,
+> **AP6.3** Index-Heben (nicht-unique heben / UNIQUE skip), **AP6.4** Cross-Smoke-Notes-Baseline
+> neu pinnen + grün, **AP6.5** MySQL→PG. spec/ledger.md-Summary-Sync (W125–W129) als Mini-Folge.
 > **Trigger:** Die PG-first-Scheibe hat das strukturierte `PartitionDefinition`-Modell,
 > den PG-Reverse-Capture (Kinder + Grenzen + kind-lokale Indizes) und den
 > partitions-bewussten Comparator/Fingerprint geliefert. Der MySQL-Pfad konsumiert das

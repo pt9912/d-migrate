@@ -1,17 +1,17 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-24
 decision-makers: pt9912
-consulted: docs/planning/next/cross-dialect-partitioning.md (AP6-Slice), docs/adr/0019-partition-hierarchy-structured-representation.md, docs/adr/0015-fulltext-tsvector-neutral-type.md (Carve-Out-Präzedenz), spec/ledger.md
+consulted: docs/planning/in-progress/cross-dialect-partitioning.md (AP6-Slice), docs/adr/0019-partition-hierarchy-structured-representation.md, docs/adr/0015-fulltext-tsvector-neutral-type.md (Carve-Out-Präzedenz), spec/ledger.md
 informed: adapters/driven/driver-mysql (Generate + Reverse), examples/sample-db (Pagila-Cross-Smoke pg2my)
 ---
 
 # Cross-Dialect-Partitionierung PG↔MySQL: Mapping-Entscheide (AP6)
 
-> **Status: proposed.** Gate-ADR für den Slice
-> [`../planning/next/cross-dialect-partitioning.md`](../planning/next/cross-dialect-partitioning.md)
-> (AP6). Muss **accepted** sein, bevor AP6.2/AP6.3 codiert werden. Aufbauend auf der
-> Modellform aus [ADR 0019](0019-partition-hierarchy-structured-representation.md).
+> **Status: accepted (ratifiziert 2026-06-24, Review-Runde eingearbeitet).** Gate-ADR für den
+> Slice [`../planning/in-progress/cross-dialect-partitioning.md`](../planning/in-progress/cross-dialect-partitioning.md)
+> (AP6). Aufbauend auf der Modellform aus
+> [ADR 0019](0019-partition-hierarchy-structured-representation.md).
 
 ## Kontext und Problemstellung
 
