@@ -1,9 +1,9 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
-> **Status:** in-progress/-Slice — **graduiert 2026-06-23** (aus `open/`), **AP1a
-> (`021c0ce2`) + AP1/AP2 + AP4 + Review-Härtung + AP2a (kind-lokale Partition-Indizes)
-> implementiert + grün (docker-`check` UND live `make sample-db-smoke`, 2026-06-24)**.
-> Offen: AP3/AP6. Gate-Entscheidung =
+> **Status:** in-progress/-Slice — **graduiert 2026-06-23** (aus `open/`), **alle IN-SCOPE-
+> Arbeitspakete fertig + grün (2026-06-24): AP1a (`021c0ce2`) + AP1/AP2 + AP4 + Review-Härtung +
+> AP2a + AP3** (docker-`check`, live `make sample-db-smoke`, live `make integration`).
+> **Offen nur AP6 (Cross-Dialect) = eigener Folge-Slice (ADR 0019).** Gate-Entscheidung =
 > [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
@@ -128,9 +128,25 @@ grün UND live (`make sample-db-smoke`, Exit 0, 3 Indizes von payment_p2022_01 n
   (Fassade unter Funktions-Limit); Partition-Reader-Tests → eigene `PostgresSchemaReaderPartitionTest`
   (LargeClass).
 
-**Danach (eigene Increments):** AP3 (Generate-Verifikation / DEFAULT-Partition explizit testen),
-AP6 (Cross-Dialect: MySQL-RANGE-Mapping `UNIX_TIMESTAMP`/`RANGE COLUMNS` + MySQL-Reverse;
-bricht aktuell `sample-db-cross-smoke-pg2my`). Sub-Partitionierung bleibt OUT (ADR 0019).
+**Erledigt 2026-06-24 — AP3 (Generate-Verifikation, kein Neubau), `:driver-postgresql:check` grün
++ Live-Integration gegen echtes PG (`make integration`, BUILD SUCCESSFUL):**
+
+- **Unit:** PG-Generate emittiert die **DEFAULT-Partition** als `CREATE TABLE … PARTITION OF …
+  DEFAULT;` (war ungetestet; RANGE/LIST/HASH waren es). Test in eigener
+  `PostgresDdlGeneratorPartitionTest` (LargeClass-Split, kein @Suppress).
+- **Live (Testcontainers, echtes PG):** LIST-partitionierte Tabelle mit explizitem Kind +
+  DEFAULT-Partition + kind-lokalem Index reverst korrekt (isDefault/values/Index erfasst, Kinder
+  nicht Top-Level), UND das reverse-Modell **generiert sauber** — die erzeugte DDL wird in ein
+  Wegwerf-Schema re-appliziert (Defekt würde werfen). Integration-Test in
+  `PostgresSchemaReaderIntegrationTest`.
+
+**IN-SCOPE-ARBEITSPAKETE KOMPLETT** (AP1a/AP1/AP2/AP2a/AP3/AP4; AP5 = Transfer-Nicht-Duplikation
+automatisch via AP2 + per Smoke-Parität belegt). **AP6 (Cross-Dialect) ist laut
+[ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) ein eigener Folge-Slice:**
+MySQL-RANGE-Mapping (`UNIX_TIMESTAMP`/`RANGE COLUMNS`; timestamptz-Grenzen) + MySQL-Reverse-Capture;
+bricht aktuell `sample-db-cross-smoke-pg2my` (MySQL-Literal-Guard ist seit Review-Härtung schon da).
+Sub-Partitionierung bleibt OUT (ADR 0019). → Diese Scheibe ist bereit zur Graduierung nach `done/`,
+sobald AP6 als eigener Slice geschnitten ist.
 
 ## Gegenstand
 
