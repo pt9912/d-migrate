@@ -17,9 +17,16 @@
 > skip+`action_required` (E062, §1/§3); HASH-Platzierungs-Note (W130, §3); LIST-`DEFAULT` →
 > verworfen + `action_required` (E063 Transfer-Datenverlust, §4); Ledger E062/E063/W130; 4 Unit-Tests.
 > Helper refactored (skipNote/partitionDiagnostics/effectivePartitions/renderPartition gegen LongMethod).
-> **Offen:** **AP6.3** Index-Heben (nicht-unique heben / UNIQUE skip), **AP6.4** Cross-Smoke-Notes-Baseline
-> neu pinnen + grün (+ Live-Apply-Beweis), **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
-> Mini-Folgen: spec/ledger.md-Summary-Sync (W125–W130); LIST-`DEFAULT`-**Preflight** (§4, Transfer-Seite —
+> **AP6.3 (Index-Heben) erledigt** (§5): kind-lokale Indizes werden nicht mehr still verworfen —
+> nicht-unique auf die Tabelle **gehoben** (dedupliziert nach Spalten/Typ, N Partitionen → 1 Index;
+> Namenskollision → eindeutiger Name + W131; INFO `PARTITION_INDEX_LIFTED` je gehobenem Index);
+> **UNIQUE** kind-lokal → NICHT gehoben, skip + `action_required` (E064: invalides DDL ohne
+> Partitionsschlüssel + partition-lokale≠globale Eindeutigkeit). Ledger E064/W131; 3 Unit-Tests.
+> **Offen:** **AP6.3-FK** FK-Carve-Out auf partitionierter Tabelle (ADR §5 Teil 2 — MySQL/InnoDB
+> unterstützt keine FKs auf partitionierten Tabellen; 3 Emissionspfade inkl. zirkulärer ALTER, eigene
+> kleine Scheibe), **AP6.4** Cross-Smoke-Notes-Baseline neu pinnen + grün (+ Live-Apply-Beweis),
+> **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
+> Mini-Folgen: spec/ledger.md-Summary-Sync (W125–W131); LIST-`DEFAULT`-**Preflight** (§4, Transfer-Seite —
 > die Generate-Note E063 ist da, die Preflight-Integration noch nicht).
 > **Trigger:** Die PG-first-Scheibe hat das strukturierte `PartitionDefinition`-Modell,
 > den PG-Reverse-Capture (Kinder + Grenzen + kind-lokale Indizes) und den

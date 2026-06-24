@@ -219,10 +219,95 @@ internal class MysqlIndexPartitionDdlHelper(
         val UTC_OFFSETS = setOf("+00", "+0000", "+00:00", "-00", "-0000", "-00:00")
     }
 
-    fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
-        generatedIndexNames(tableName, table.indices).mapIndexedNotNull { position, indexName ->
-            generateIndex(tableName, table.indices[position], indexName, table.columns)
+    fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
+        val lift = liftPartitionIndices(tableName, table)
+        val allIndices = table.indices + lift.indices
+        val statements = generatedIndexNames(tableName, allIndices).mapIndexedNotNull { position, indexName ->
+            generateIndex(tableName, allIndices[position], indexName, table.columns)
         }
+        // Lift notes (E064 unique-skip, W131 rename, INFO lifted) carry on a note-only statement.
+        return if (lift.notes.isEmpty()) statements else statements + DdlStatement("", lift.notes)
+    }
+
+    private class LiftedIndices(
+        val indices: List<IndexDefinition>,
+        val notes: List<TransformationNote>,
+    )
+
+    /**
+     * §5 (ADR 0020): MySQL teilt Indizes über **alle** Partitionen — PG-kind-lokale Indizes
+     * (`PartitionDefinition.indices`) müssen auf die Tabelle **gehoben** werden statt still verworfen:
+     * - **Nicht-unique** → heben, dedupliziert nach Spalten/Typ (N Partitionen tragen denselben Index →
+     *   genau einer); Namenskollision mit einem Tabellen-Index → eindeutiger Name + W131; INFO je gehobenem Index.
+     * - **UNIQUE/PK-artig** → NICHT heben, skip + `action_required` (E064): eine gehobene UNIQUE ohne alle
+     *   Partitionsschlüssel-Spalten ergäbe invalides MySQL-DDL, und partition-lokale ≠ globale Eindeutigkeit.
+     */
+    private fun liftPartitionIndices(tableName: String, table: TableDefinition): LiftedIndices {
+        val childLocal = table.partitioning?.partitions?.flatMap { it.indices }.orEmpty()
+        if (childLocal.isEmpty()) return LiftedIndices(emptyList(), emptyList())
+        val notes = mutableListOf<TransformationNote>()
+        val lifted = mutableListOf<IndexDefinition>()
+        val seenSignatures = table.indices.mapTo(mutableSetOf()) { indexSignature(it) }
+        val usedNames = table.indices.mapNotNullTo(mutableSetOf()) { it.name }
+        for (index in childLocal) {
+            if (index.unique) {
+                notes += uniqueSkipNote(index, tableName)
+                continue
+            }
+            if (!seenSignatures.add(indexSignature(index))) continue
+            val renamed = uniqueLiftName(index, usedNames, tableName, notes)
+            renamed.name?.let { usedNames += it }
+            lifted += renamed
+            notes += liftedInfoNote(renamed, tableName)
+        }
+        return LiftedIndices(lifted, notes)
+    }
+
+    /** Identität für die Lift-Deduplikation: Spalten (Name/Prefix/Richtung) + Typ + Unique, **ohne** Name. */
+    private fun indexSignature(index: IndexDefinition): String =
+        "${index.type}|${index.unique}|" + index.columns.joinToString(",") { it.toString() }
+
+    private fun generatedIndexName(index: IndexDefinition, tableName: String): String =
+        index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+
+    /** Kollidiert der (explizite) Name eines gehobenen Index, eindeutig suffigieren + W131. Generierte Namen: weiter unten disambiguiert. */
+    private fun uniqueLiftName(
+        index: IndexDefinition,
+        used: Set<String>,
+        tableName: String,
+        notes: MutableList<TransformationNote>,
+    ): IndexDefinition {
+        val name = index.name ?: return index
+        if (name !in used) return index
+        var suffix = 2
+        while ("${name}_$suffix" in used) suffix++
+        val renamed = "${name}_$suffix"
+        notes += TransformationNote(
+            type = NoteType.WARNING, code = "W131", objectName = renamed,
+            message = "Lifted partition-local index '$name' was renamed to '$renamed' because that name " +
+                "already exists on table '$tableName' (MySQL shares indexes across all partitions).",
+            hint = "Verify the renamed index is acceptable, or rename the source index.",
+        )
+        return index.copy(name = renamed)
+    }
+
+    private fun uniqueSkipNote(index: IndexDefinition, tableName: String): TransformationNote =
+        TransformationNote(
+            type = NoteType.ACTION_REQUIRED, code = "E064", objectName = generatedIndexName(index, tableName),
+            message = "UNIQUE partition-local index '${generatedIndexName(index, tableName)}' cannot be lifted " +
+                "to MySQL: a unique key on a partitioned table must include every partition-key column, and " +
+                "partition-local uniqueness is not global uniqueness; lifting it would emit invalid DDL or " +
+                "change semantics. The index was skipped.",
+            hint = "Add the partition-key columns to the unique index, or enforce uniqueness in the application.",
+        )
+
+    private fun liftedInfoNote(index: IndexDefinition, tableName: String): TransformationNote =
+        TransformationNote(
+            type = NoteType.INFO, code = "PARTITION_INDEX_LIFTED", objectName = generatedIndexName(index, tableName),
+            message = "Partition-local index '${generatedIndexName(index, tableName)}' was lifted to a " +
+                "table-level index because MySQL shares indexes across all partitions (no per-partition indexes).",
+            hint = "The index now covers all partitions; it is a non-unique performance index, so coverage only widens.",
+        )
 
     private fun generateIndex(
         tableName: String,

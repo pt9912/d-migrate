@@ -70,3 +70,12 @@ entries:
     evidence_paths:
       - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
         path_type: production
+  # W131 — AP6.3/ADR 0020 §5: lifted partition-local index renamed due to a name collision with an existing table index.
+  - code: W131
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlPartitionIndexLiftTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production

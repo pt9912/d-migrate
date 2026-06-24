@@ -79,6 +79,17 @@ entries:
       - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
         path_type: production
 
+  # E064 — AP6.3/ADR 0020 §5: UNIQUE child-local partition index cannot be lifted to MySQL
+  # (would need every partition-key column / partition-local ≠ global uniqueness) → skipped.
+  - code: E064
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlPartitionIndexLiftTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+
   - code: E124
     level: error
     status: active
