@@ -120,6 +120,15 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                         PARTITION p_max VALUES LESS THAN (MAXVALUE)
                     )
                 """)
+
+                // AP6.5 (ADR 0020 §6): HASH table — MySQL names children p0..p3 with no
+                // modulus/remainder; the reverse must synthesize modulus=4, remainder=ordinal.
+                stmt.execute("""
+                    CREATE TABLE ap65_hash (
+                        id INT NOT NULL,
+                        PRIMARY KEY (id)
+                    ) PARTITION BY HASH (id) PARTITIONS 4
+                """)
             }
         }
         pool.close()
@@ -416,18 +425,33 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // ── Partitioning: RANGE COLUMNS reverse capture (AP6.1) ──
+    // ── Partitioning: RANGE COLUMNS reverse capture (AP6.1) + from reconstruction (AP6.5) ──
 
-    test("reverse captures RANGE COLUMNS partitioning from information_schema.PARTITIONS") {
+    test("reverse captures RANGE COLUMNS partitioning + reconstructs from bounds (AP6.1/AP6.5)") {
         pool().use { pool ->
             val partitioning = reader.read(pool).schema.tables["ap61_events"]!!.partitioning!!
             partitioning.type shouldBe PartitionType.RANGE
             partitioning.key shouldBe listOf("event_date")
             partitioning.partitions.map { it.name } shouldBe listOf("p2024", "p_max")
-            // Upper bound (to) captured; no lower bound (MySQL stores none — AP6.5 reconstructs).
-            partitioning.partitions[0].from.shouldBeNull()
             (partitioning.partitions[0].to!!.single() as PartitionBound.Value).literal shouldContain "2025-01-01"
             partitioning.partitions[1].to shouldBe listOf(PartitionBound.MaxValue)
+            // AP6.5: from reconstructed from contiguity — first = MINVALUE, next = previous upper.
+            partitioning.partitions[0].from shouldBe listOf(PartitionBound.MinValue)
+            (partitioning.partitions[1].from!!.single() as PartitionBound.Value).literal shouldContain "2025-01-01"
+        }
+    }
+
+    // ── Partitioning: HASH reverse — modulus/remainder synthesis (AP6.5) ──
+
+    test("reverse captures HASH partitioning + synthesizes modulus/remainder (AP6.5)") {
+        pool().use { pool ->
+            val partitioning = reader.read(pool).schema.tables["ap65_hash"]!!.partitioning!!
+            partitioning.type shouldBe PartitionType.HASH
+            partitioning.key shouldBe listOf("id")
+            partitioning.partitions.size shouldBe 4
+            // MySQL `PARTITIONS 4` → PG modulus=4, remainder = ordinal index for each child.
+            partitioning.partitions.map { it.modulus } shouldBe listOf(4, 4, 4, 4)
+            partitioning.partitions.map { it.remainder } shouldBe listOf(0, 1, 2, 3)
         }
     }
 })

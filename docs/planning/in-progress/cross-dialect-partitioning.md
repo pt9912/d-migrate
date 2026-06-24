@@ -36,11 +36,18 @@
 > alter P2-Duplikations-NOTE → hartes Partitions-Integritäts-Gate. Notes-Baseline neu gepinnt
 > (`E055` weg; `W112`/`W129` neu; `W100` 24→17, `W118` 8→1 — 7 Kind-Duplikate entfallen); AP6.3 Index-Heben
 > feuert live (`PARTITION_INDEX_LIFTED`). `expected/pagila-cross.md` aktualisiert (Finding P2-pg2my → gelöst).
-> **Offen:** **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
-> **Folge (klein, neu durch AP6.4 belegt):** **kind-lokale FK-Constraints erfassen+melden** — pagila
-> deklariert payments FKs auf den Kindern (PG erlaubt das); AP2a erfasst kind-lokale Indizes, aber keine
-> kind-lokalen FKs → sie fallen still weg (MySQL-Ergebnis korrekt, da FKs dort ohnehin verboten; nur die
-> E065-Transparenz fehlt für diesen Fall).
+> **AP6.5 (MySQL→PG-Richtung) erledigt** (ADR §6): `MysqlPartitionReader` hebt MySQLs knappere native
+> Form ins **vollständige** neutrale Modell (`reconstructNeutralBounds`): RANGE-`from` aus der Kontiguität
+> (`fromₙ = toₙ₋₁`, erstes `from = MINVALUE`, arität-treu); HASH `modulus = n`/`remainder = Ordinalindex`
+> aus `PARTITIONS n`; LIST trägt `values` schon. So generiert der bestehende PG-Generator unverändert
+> valides PG-DDL (`FOR VALUES FROM (MINVALUE) TO …`, `WITH (MODULUS n, REMAINDER i)`). Reader-Unit-Tests
+> aktualisiert + Live-Integration (echtes MySQL: RANGE-`from` + HASH-`PARTITIONS 4`→modulus/remainder) +
+> PG-Round-Trip-Generate-Tests (rekonstruierte Form → valides PG-DDL). tz-Verlust nicht invertierbar
+> (UTC-Annahme dokumentiert, kein Raten).
+> **Damit ist AP6 codeseitig komplett.** **Offene Folgen (klein, nicht AP6-blockierend):**
+> **(a)** kind-lokale FK-Constraints erfassen+melden — pagila deklariert payments FKs auf den Kindern
+> (PG erlaubt das); AP2a erfasst kind-lokale Indizes, aber keine kind-lokalen FKs → sie fallen still weg
+> (MySQL-Ergebnis korrekt, da FKs dort ohnehin verboten; nur die E065-Transparenz fehlt für diesen Fall).
 > Mini-Folgen: spec/ledger.md-Summary-Sync (W125–W131, E061–E065); LIST-`DEFAULT`-**Preflight** (§4, Transfer-Seite —
 > die Generate-Note E063 ist da, die Preflight-Integration noch nicht).
 > **Trigger:** Die PG-first-Scheibe hat das strukturierte `PartitionDefinition`-Modell,

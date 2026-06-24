@@ -9,11 +9,14 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 /**
  * AP6.1 (ADR 0020): MySQL-Reverse-Capture der Partitionierung aus
  * `information_schema.PARTITIONS`. Erfasst die **MySQL-native** Form:
- * - RANGE: `PARTITION_DESCRIPTION` = `VALUES LESS THAN`-Obergrenze → `to` (kein `from`;
- *   MySQL-RANGE ist kontiguierlich, die untere Grenze wird nicht gespeichert — die
- *   `from`-Rekonstruktion für PG-Ziele ist AP6.5).
+ * - RANGE: `PARTITION_DESCRIPTION` = `VALUES LESS THAN`-Obergrenze → `to`.
  * - LIST: `PARTITION_DESCRIPTION` = `VALUES IN`-Liste → `values`.
- * - HASH: keine Grenze; nur benannte Kinder (modulus/remainder-Rekonstruktion = AP6.5).
+ * - HASH: keine Grenze; nur benannte Kinder.
+ *
+ * **AP6.5 (ADR 0020 §6):** MySQL speichert die native Form verlustarm, aber knapper als PG;
+ * der Reader hebt sie ins **vollständige** neutrale Modell, das die volle PG-Semantik trägt
+ * (`reconstructNeutralBounds`): RANGE-`from` aus der Kontiguität, HASH-`modulus`/`remainder`
+ * aus `PARTITIONS n`. So generiert der bestehende PG-Generator unverändert valides PG-DDL.
  *
  * Der Parser (Klammer-/Quote-bewusstes Top-Level-Splitting) ist der Hotspot —
  * analog zum PG-`PostgresPartitionBoundParser`, aber für MySQLs `information_schema`-Form.
@@ -32,7 +35,34 @@ internal object MysqlPartitionReader {
         }
         val key = parseKey(rows.first()["partition_expression"] as? String)
         val partitions = rows.mapNotNull { row -> parsePartition(row, type) }
-        return PartitionConfig(type = type, key = key, partitions = partitions)
+        return PartitionConfig(type = type, key = key, partitions = reconstructNeutralBounds(partitions, type))
+    }
+
+    /**
+     * AP6.5 (ADR 0020 §6): MySQLs knappere native Form ins vollständige neutrale Modell heben.
+     * - RANGE: `from` aus der Kontiguität (`fromₙ = toₙ₋₁`, erstes `from = MINVALUE`).
+     * - HASH: `modulus = n`, `remainder = Ordinalindex` (MySQL `PARTITIONS n` verteilt selbst).
+     * - LIST: trägt seine `values` bereits vollständig.
+     * Der tz-Verlust aus AP6.2 ist nicht invertierbar (MySQL `DATETIME` hat die Zone nie
+     * gespeichert) — die Grenzen bleiben wie reverse-erfasst (UTC-Annahme, kein Raten).
+     */
+    private fun reconstructNeutralBounds(
+        partitions: List<PartitionDefinition>,
+        type: PartitionType,
+    ): List<PartitionDefinition> = when (type) {
+        PartitionType.RANGE -> reconstructRangeFrom(partitions)
+        PartitionType.HASH -> partitions.mapIndexed { i, p -> p.copy(modulus = partitions.size, remainder = i) }
+        PartitionType.LIST -> partitions
+    }
+
+    /** `fromₙ = toₙ₋₁`; das erste `from` = `MINVALUE` je Schlüsselspalte (Arität aus `to`). */
+    private fun reconstructRangeFrom(partitions: List<PartitionDefinition>): List<PartitionDefinition> {
+        var prevUpper: List<PartitionBound>? = null
+        return partitions.map { p ->
+            val from = prevUpper ?: p.to?.map { PartitionBound.MinValue } ?: listOf(PartitionBound.MinValue)
+            prevUpper = p.to ?: prevUpper
+            p.copy(from = from)
+        }
     }
 
     /** `PARTITION_EXPRESSION` (`` `payment_date` `` bzw. `` `a`,`b` ``) → Spaltenliste (Backticks gestrippt). */

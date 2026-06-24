@@ -154,4 +154,67 @@ class PostgresDdlGeneratorPartitionTest : FunSpec({
         ddl shouldContain "CREATE TABLE \"events_rest\" PARTITION OF \"events\" DEFAULT;"
     }
 
+    // ── AP6.5 (ADR 0020 §6): a MySQL-reverse-shaped model — `from` reconstructed from
+    //    contiguity (first = MINVALUE), HASH modulus/remainder synthesized — generates
+    //    valid PG DDL. Mirrors what MysqlPartitionReader produces (round-trip MySQL→PG). ──
+
+    test("MySQL-reconstructed RANGE model (first from = MINVALUE) generates valid PG FROM/TO (AP6.5)") {
+        val s = schema(
+            tables = mapOf(
+                "payment" to table(
+                    columns = mapOf(
+                        "payment_id" to col(NeutralType.Integer),
+                        "payment_date" to col(NeutralType.DateTime(timezone = true)),
+                    ),
+                    primaryKey = listOf("payment_id", "payment_date"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("payment_date"),
+                        partitions = listOf(
+                            PartitionDefinition(
+                                name = "p1",
+                                from = listOf(PartitionBound.MinValue),
+                                to = listOf(PartitionBound.Value("'2022-02-01 00:00:00'")),
+                            ),
+                            PartitionDefinition(
+                                name = "p_max",
+                                from = listOf(PartitionBound.Value("'2022-02-01 00:00:00'")),
+                                to = listOf(PartitionBound.MaxValue),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "PARTITION BY RANGE (\"payment_date\")"
+        ddl shouldContain "CREATE TABLE \"p1\" PARTITION OF \"payment\" FOR VALUES FROM (MINVALUE) TO ('2022-02-01 00:00:00');"
+        ddl shouldContain "CREATE TABLE \"p_max\" PARTITION OF \"payment\" FOR VALUES FROM ('2022-02-01 00:00:00') TO (MAXVALUE);"
+    }
+
+    test("MySQL-reconstructed HASH model (modulus/remainder) generates valid PG WITH clause (AP6.5)") {
+        val s = schema(
+            tables = mapOf(
+                "data" to table(
+                    columns = mapOf("id" to col(NeutralType.Integer)),
+                    primaryKey = listOf("id"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.HASH,
+                        key = listOf("id"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "p0", modulus = 4, remainder = 0),
+                            PartitionDefinition(name = "p1", modulus = 4, remainder = 1),
+                            PartitionDefinition(name = "p2", modulus = 4, remainder = 2),
+                            PartitionDefinition(name = "p3", modulus = 4, remainder = 3),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "PARTITION BY HASH (\"id\")"
+        ddl shouldContain "CREATE TABLE \"p0\" PARTITION OF \"data\" FOR VALUES WITH (MODULUS 4, REMAINDER 0);"
+        ddl shouldContain "CREATE TABLE \"p3\" PARTITION OF \"data\" FOR VALUES WITH (MODULUS 4, REMAINDER 3);"
+    }
+
 })

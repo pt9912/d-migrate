@@ -28,7 +28,7 @@ class MysqlPartitionReaderTest : FunSpec({
         MysqlPartitionReader.read(jdbc, "db", "users").shouldBeNull()
     }
 
-    test("RANGE COLUMNS partitions captured as upper bounds (to), MAXVALUE as sentinel") {
+    test("RANGE COLUMNS: upper bounds (to) captured, from reconstructed from contiguity (AP6.5)") {
         stubPartitions(listOf(
             mapOf("partition_name" to "p1", "partition_method" to "RANGE COLUMNS",
                 "partition_expression" to "`payment_date`",
@@ -42,8 +42,10 @@ class MysqlPartitionReaderTest : FunSpec({
         config.key shouldBe listOf("payment_date")
         config.partitions[0].name shouldBe "p1"
         config.partitions[0].to shouldBe listOf(PartitionBound.Value("'2022-02-01 00:00:00'"))
-        config.partitions[0].from.shouldBeNull() // MySQL stores no lower bound (AP6.5 reconstructs)
+        // AP6.5: first from = MINVALUE; the next from = the previous upper bound.
+        config.partitions[0].from shouldBe listOf(PartitionBound.MinValue)
         config.partitions[1].to shouldBe listOf(PartitionBound.MaxValue)
+        config.partitions[1].from shouldBe listOf(PartitionBound.Value("'2022-02-01 00:00:00'"))
     }
 
     test("LIST COLUMNS partitions captured as values") {
@@ -57,7 +59,7 @@ class MysqlPartitionReaderTest : FunSpec({
         config.partitions.single().values shouldBe listOf("'eu'", "'de'")
     }
 
-    test("HASH partitions captured as named children (no bounds)") {
+    test("HASH partitions: named children → modulus/remainder synthesized (AP6.5)") {
         stubPartitions(listOf(
             mapOf("partition_name" to "p0", "partition_method" to "HASH",
                 "partition_expression" to "`id`", "partition_description" to null,
@@ -71,9 +73,14 @@ class MysqlPartitionReaderTest : FunSpec({
         config.partitions.map { it.name } shouldBe listOf("p0", "p1")
         config.partitions[0].to.shouldBeNull()
         config.partitions[0].values.shouldBeNull()
+        // AP6.5: MySQL `PARTITIONS 2` → PG modulus=2, remainder = ordinal index.
+        config.partitions[0].modulus shouldBe 2
+        config.partitions[0].remainder shouldBe 0
+        config.partitions[1].modulus shouldBe 2
+        config.partitions[1].remainder shouldBe 1
     }
 
-    test("multi-column partition key strips backticks and splits") {
+    test("multi-column partition key strips backticks, splits, and reconstructs arity-matched from (AP6.5)") {
         stubPartitions(listOf(
             mapOf("partition_name" to "p1", "partition_method" to "RANGE COLUMNS",
                 "partition_expression" to "`a`,`b`",
@@ -82,5 +89,7 @@ class MysqlPartitionReaderTest : FunSpec({
         val config = MysqlPartitionReader.read(jdbc, "db", "t")!!
         config.key shouldBe listOf("a", "b")
         config.partitions.single().to shouldBe listOf(PartitionBound.Value("10"), PartitionBound.Value("'x'"))
+        // First from = MINVALUE per key column (arity 2).
+        config.partitions.single().from shouldBe listOf(PartitionBound.MinValue, PartitionBound.MinValue)
     }
 })
