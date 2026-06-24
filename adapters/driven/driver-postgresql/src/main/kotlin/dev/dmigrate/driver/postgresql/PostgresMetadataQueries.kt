@@ -48,11 +48,8 @@ object PostgresMetadataQueries {
     fun listSequences(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
         PostgresTableMetadataQueries.listSequences(session, schemaName)
 
-    fun getPartitionInfo(session: JdbcOperations, schemaName: String, table: String): Map<String, Any?>? =
-        PostgresTableMetadataQueries.getPartitionInfo(session, schemaName, table)
-
-    fun listPartitionChildren(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> =
-        PostgresTableMetadataQueries.listPartitionChildren(session, schemaName, table)
+    // Partitions-Abfragen liegen in PostgresPartitionMetadataQueries (eigene Domäne,
+    // ADR 0019) — der Reverse-Reader ruft sie dort direkt, nicht über diese Fassade.
 
     fun listInstalledExtensions(session: JdbcOperations): List<String> =
         PostgresTableMetadataQueries.listInstalledExtensions(session)

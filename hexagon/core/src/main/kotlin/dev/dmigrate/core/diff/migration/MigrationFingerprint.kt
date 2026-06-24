@@ -86,8 +86,13 @@ object MigrationFingerprint {
      * check agree — otherwise a partition-only difference would be DIFFERENT to
      * `schema compare` yet identical to the fingerprint. Child partitions are sorted
      * by name (set equality — declaration order is not semantic).
+     *
+     * v5: child-local partition indices are now projected too (AP2a). The reverse
+     * reader captures indices defined directly on a partition (not parent-propagated)
+     * and the comparator compares them structurally, so the fingerprint includes them
+     * for the same comparator/drift agreement reason as v4.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v4"
+    const val ALGORITHM: String = "schema-fingerprint-v5"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -203,6 +208,18 @@ object MigrationFingerprint {
                 .append(SEP).append("modulus=").append(part.modulus ?: "")
                 .append(SEP).append("remainder=").append(part.remainder ?: "")
                 .append('\n')
+            // v5/AP2a: child-local indices, same shape as the table-level index
+            // projection, sorted by the shared indexOrder (declaration order is
+            // not semantic). Lets the fingerprint agree with the comparator,
+            // which compares partition.indices structurally.
+            for (idx in part.indices.sortedWith(indexOrder)) {
+                sb.append("      partition_index=").append(idx.name ?: "")
+                    .append(SEP).append("columns=").append(idx.columns.joinToString(","))
+                    .append(SEP).append("type=").append(idx.type.name)
+                    .append(SEP).append("unique=").append(idx.unique)
+                    .append(SEP).append("where=").append(idx.where ?: "")
+                    .append('\n')
+            }
         }
     }
 

@@ -94,7 +94,19 @@ private fun readPostgresTable(
     constraints += SchemaReaderUtils.buildMultiColumnUniqueFromConstraints(uniqueConstraints)
     constraints += SchemaReaderUtils.buildCheckConstraints(checkConstraints)
 
-    val indices = indexRows.map { index ->
+    val indices = mapPostgresIndices(indexRows)
+
+    return TableDefinition(
+        columns = columns,
+        primaryKey = primaryKeyColumns,
+        indices = indices,
+        constraints = constraints,
+        partitioning = readPostgresPartitioning(session, schema, tableName),
+    )
+}
+
+private fun mapPostgresIndices(indexRows: List<dev.dmigrate.driver.metadata.IndexProjection>): List<IndexDefinition> =
+    indexRows.map { index ->
         IndexDefinition(
             name = index.name,
             columns = index.indexColumns,
@@ -113,21 +125,12 @@ private fun readPostgresTable(
         )
     }
 
-    return TableDefinition(
-        columns = columns,
-        primaryKey = primaryKeyColumns,
-        indices = indices,
-        constraints = constraints,
-        partitioning = readPostgresPartitioning(session, schema, tableName),
-    )
-}
-
 private fun readPostgresPartitioning(
     session: JdbcOperations,
     schema: String,
     tableName: String,
 ): PartitionConfig? {
-    val info = PostgresMetadataQueries.getPartitionInfo(session, schema, tableName)
+    val info = PostgresPartitionMetadataQueries.getPartitionInfo(session, schema, tableName)
         ?: return null
     val strategy = when (info["partstrat"] as? String) {
         "r" -> PartitionType.RANGE
@@ -143,13 +146,33 @@ private fun readPostgresPartitioning(
     }
     // AP1 (ADR 0019): Kind-Partitionen + Grenzen erfassen; die rohe
     // `FOR VALUES`-Klausel ins strukturierte Modell parsen/normalisieren.
-    val partitions = PostgresMetadataQueries.listPartitionChildren(session, schema, tableName)
+    // AP2a: je Kind die kind-lokalen Indizes mitführen (parent-propagierte raus).
+    val partitions = PostgresPartitionMetadataQueries.listPartitionChildren(session, schema, tableName)
         .mapNotNull { row ->
             val name = row["partition_name"] as? String ?: return@mapNotNull null
             val boundExpr = row["bound_expr"] as? String ?: return@mapNotNull null
             PostgresPartitionBoundParser.parse(name, boundExpr, strategy)
+                .copy(indices = readPartitionLocalIndices(session, schema, name))
         }
     return PartitionConfig(type = strategy, key = key, partitions = partitions)
+}
+
+/**
+ * AP2a (ADR 0019): die **kind-lokalen** Indizes einer Partition. [listIndices]
+ * schließt PK-/Unique-Constraint-Backings bereits aus; davon ziehen wir die
+ * **parent-propagierten** ab (Index-Vererbung via `pg_inherits`), sodass nur
+ * Indizes bleiben, die direkt auf dem Kind definiert wurden. Nach Name sortiert
+ * für ein deterministisches Encoding (Comparator/Fingerprint vergleichen Mengen).
+ */
+private fun readPartitionLocalIndices(
+    session: JdbcOperations,
+    schema: String,
+    partitionName: String,
+): List<IndexDefinition> {
+    val inherited = PostgresPartitionMetadataQueries.listInheritedIndexNames(session, schema, partitionName).toSet()
+    val local = PostgresMetadataQueries.listIndices(session, schema, partitionName)
+        .filter { it.name !in inherited }
+    return mapPostgresIndices(local).sortedBy { it.name ?: "" }
 }
 
 internal fun readPostgresSequences(

@@ -361,7 +361,12 @@
                 "description": "LIST-Werte"
               },
               "modulus": { "type": "integer", "description": "HASH-Modulus" },
-              "remainder": { "type": "integer", "description": "HASH-Remainder" }
+              "remainder": { "type": "integer", "description": "HASH-Remainder" },
+              "indices": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/index" },
+                "description": "Kind-lokale Indizes der Partition (nicht vom Parent propagiert)"
+              }
             }
           }
         }

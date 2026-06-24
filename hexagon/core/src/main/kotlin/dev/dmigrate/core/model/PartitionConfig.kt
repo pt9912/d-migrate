@@ -32,6 +32,11 @@ sealed interface PartitionBound {
  * - LIST: [values] als kanonisierte Literal-Liste.
  * - HASH: [modulus]/[remainder] als Zahlen.
  * - [isDefault]: die DEFAULT-Partition (Catch-all); schließt die anderen Grenzen aus.
+ * - [indices]: **kind-lokale** Indizes (AP2a). Nur Indizes, die direkt auf dem Kind
+ *   definiert sind, nicht die vom Parent propagierten (PG legt deren Kind-Backing
+ *   beim Apply des Parent-Index automatisch an). Sonst gingen kind-lokale Indizes
+ *   beim Round-Trip still verloren (Fidelity-Verlust). Parent-Indizes/-Constraints
+ *   und FKs bleiben am Parent und propagieren von dort.
  */
 data class PartitionDefinition(
     val name: String,
@@ -41,4 +46,5 @@ data class PartitionDefinition(
     val values: List<String>? = null,
     val modulus: Int? = null,
     val remainder: Int? = null,
+    val indices: List<IndexDefinition> = emptyList(),
 )

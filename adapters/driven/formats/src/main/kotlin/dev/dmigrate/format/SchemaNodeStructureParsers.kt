@@ -236,6 +236,7 @@ private fun parsePartitioning(node: JsonNode?): PartitionConfig? {
                 values = childNode["values"]?.toStringList(),
                 modulus = childNode["modulus"]?.takeIf { it.isNumber }?.asInt(),
                 remainder = childNode["remainder"]?.takeIf { it.isNumber }?.asInt(),
+                indices = parseIndices(childNode["indices"]),
             )
         } ?: emptyList(),
     )

@@ -234,9 +234,19 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
         val generatedNames = indexNameAllocator.namesFor(tableName, table.indices)
-        return table.indices.mapIndexed { position, index ->
+        val parentIndices = table.indices.mapIndexed { position, index ->
             generateIndex(tableName, index, generatedNames[position], table.columns)
         }
+        // AP2a: kind-lokale Indizes je Partition — auf der Partitionstabelle
+        // erzeugt (Partitionen erben die Spalten des Parents). Im selben
+        // Index-Phasenlauf wie die Top-Level-Indizes, damit die Tabellen schon stehen.
+        val partitionIndices = table.partitioning?.partitions.orEmpty().flatMap { partition ->
+            val names = indexNameAllocator.namesFor(partition.name, partition.indices)
+            partition.indices.mapIndexed { position, index ->
+                generateIndex(partition.name, index, names[position], table.columns)
+            }
+        }
+        return parentIndices + partitionIndices
     }
 
     private fun generateIndex(

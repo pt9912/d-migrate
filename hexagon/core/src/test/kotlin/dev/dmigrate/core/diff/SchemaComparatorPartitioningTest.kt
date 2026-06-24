@@ -1,6 +1,8 @@
 package dev.dmigrate.core.diff
 
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
@@ -93,6 +95,19 @@ class SchemaComparatorPartitioningTest : FunSpec({
             partitions = rangeOnCreatedAt.partitions + rangePart("p2022_03", "'2022-03-01'", "'2022-04-01'"),
         )
         comparator.compare(partitioned(rangeOnCreatedAt), partitioned(extra))
+            .tablesChanged.single().partitioning.shouldNotBeNull()
+    }
+
+    test("changed child-local partition index produces a diff (AP2a)") {
+        val withIdx = rangeOnCreatedAt.copy(
+            partitions = listOf(
+                rangePart("p2022_01", "'2022-01-01'", "'2022-02-01'").copy(
+                    indices = listOf(IndexDefinition(name = "idx_p01", columns = listOf(IndexColumn("created_at")))),
+                ),
+                rangePart("p2022_02", "'2022-02-01'", "'2022-03-01'"),
+            ),
+        )
+        comparator.compare(partitioned(rangeOnCreatedAt), partitioned(withIdx))
             .tablesChanged.single().partitioning.shouldNotBeNull()
     }
 

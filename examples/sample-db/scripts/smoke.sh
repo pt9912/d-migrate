@@ -137,6 +137,20 @@ done < <(psql_db pagila 0 -tAc "SELECT tablename FROM pg_tables WHERE schemaname
 [ "$mismatch" = "0" ] || fail "row-count parity violated"
 log "row-count parity OK (all $src_tables tables)"
 
+# --- 7b. AP2a: kind-lokale Partition-Indizes überleben den Round-Trip ----
+# Pagila deklariert die FK-Backing-Indizes (idx_fk_payment_p2022_NN_*) PRO KIND
+# (der Parent payment hat keine) → sie sind kind-lokal. Vor AP2a gingen sie beim
+# Round-Trip still verloren; jetzt müssen sie auf dem Ziel-Kind wieder da sein.
+# (Der `schema compare` unten beweist das zusätzlich strukturell, da der Comparator
+# seit AP4/AP2a partition.indices vergleicht — dieser Check macht es explizit.)
+idx_count() { psql_db "$1" 0 -tAc \
+    "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='payment_p2022_01' AND indexname NOT LIKE '%_pkey'" \
+    | tr -d '[:space:]'; }
+src_idx=$(idx_count pagila); dst_idx=$(idx_count pagila_target)
+[ "${src_idx:-0}" -gt 0 ] || fail "expected child-local indices on source payment_p2022_01, got '$src_idx'"
+[ "$src_idx" = "$dst_idx" ] || fail "AP2a: child-local index count mismatch on payment_p2022_01: src=$src_idx dst=$dst_idx"
+log "AP2a: child-local indices survived round-trip ($src_idx on payment_p2022_01)"
+
 # --- 8. schema compare gegen gepinnte Baseline ---------------------
 log "schema compare pagila_pg <-> pagila_target..."
 $COMPOSE run --rm dmigrate schema compare --source db:pagila_pg --target db:pagila_target \

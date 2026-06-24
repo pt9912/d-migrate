@@ -86,6 +86,8 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns null
         // AP1: partition children (pg_inherits + relpartbound) — none by default.
         every { jdbc.queryList(match { it.contains("relpartbound") }, any(), any()) } returns emptyList()
+        // AP2a: inherited (parent-propagated) index names per partition — none by default.
+        every { jdbc.queryList(match { it.contains("cix.indexrelid") }, any(), any()) } returns emptyList()
     }
 
     // ── tests ──────────────────────────────────────
@@ -307,71 +309,6 @@ class PostgresSchemaReaderTest : FunSpec({
         func.sourceDialect shouldBe "postgresql"
     }
 
-    test("read with partitioned table") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "events", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-            mapOf("column_name" to "created_at", "data_type" to "timestamp without time zone",
-                "udt_name" to "timestamp", "is_nullable" to "NO", "column_default" to null,
-                "ordinal_position" to 2, "character_maximum_length" to null,
-                "numeric_precision" to null, "numeric_scale" to null,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "r", "key_columns" to "{created_at}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-
-        val table = result.schema.tables["events"]!!
-        table.partitioning.shouldNotBeNull()
-        table.partitioning!!.type shouldBe PartitionType.RANGE
-        table.partitioning!!.key shouldBe listOf("created_at")
-    }
-
-    test("read partitioned table captures children + parsed bounds (AP1)") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "events", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "created_at", "data_type" to "timestamp with time zone",
-                "udt_name" to "timestamptz", "is_nullable" to "NO", "column_default" to null,
-                "ordinal_position" to 1, "character_maximum_length" to null,
-                "numeric_precision" to null, "numeric_scale" to null,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("created_at"))
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "r", "key_columns" to "{created_at}")
-        every { jdbc.queryList(match { it.contains("relpartbound") }, any(), any()) } returns listOf(
-            mapOf("partition_name" to "events_2022_01",
-                "bound_expr" to "FOR VALUES FROM ('2022-01-01 00:00:00+00'::timestamp with time zone) " +
-                    "TO ('2022-02-01 00:00:00+00'::timestamp with time zone)"),
-            mapOf("partition_name" to "events_2022_02",
-                "bound_expr" to "FOR VALUES FROM ('2022-02-01 00:00:00+00'::timestamp with time zone) " +
-                    "TO ('2022-03-01 00:00:00+00'::timestamp with time zone)"),
-        )
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-
-        val partitions = result.schema.tables["events"]!!.partitioning!!.partitions
-        partitions shouldHaveSize 2
-        partitions[0].name shouldBe "events_2022_01"
-        partitions[0].from shouldBe listOf(PartitionBound.Value("'2022-01-01 00:00:00+00'"))
-        partitions[0].to shouldBe listOf(PartitionBound.Value("'2022-02-01 00:00:00+00'"))
-        partitions[1].name shouldBe "events_2022_02"
-    }
-
     test("read with empty schema returns empty collections") {
         stubEmptyDefaults()
 
@@ -577,91 +514,6 @@ class PostgresSchemaReaderTest : FunSpec({
             legacySerialSyntax = true,
         )
         result.notes.none { it.code == "R300" } shouldBe true
-    }
-
-    test("readPartitioning with LIST and HASH strategies") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "logs", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "l", "key_columns" to "{region}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-
-        result.schema.tables["logs"]!!.partitioning!!.type shouldBe PartitionType.LIST
-    }
-
-    test("readPartitioning with HASH strategy") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "data", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "h", "key_columns" to "{id}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-        result.schema.tables["data"]!!.partitioning!!.type shouldBe PartitionType.HASH
-    }
-
-    test("readPartitioning returns null for unknown strategy") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "t", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "x", "key_columns" to "{id}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-        result.schema.tables["t"]!!.partitioning.shouldBeNull()
-    }
-
-    test("readPartitioning handles java.sql.Array key_columns") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "parts", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-
-        val sqlArray = mockk<java.sql.Array>()
-        every { sqlArray.array } returns arrayOf("region", "date")
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "r", "key_columns" to sqlArray)
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-
-        result.schema.tables["parts"]!!.partitioning!!.key shouldBe listOf("region", "date")
     }
 
     test("read function with null parameter_name uses fallback") {

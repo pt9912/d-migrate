@@ -244,14 +244,14 @@ class PostgresMetadataQueriesTest : FunSpec({
     test("getPartitionInfo returns partition map") {
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
             mapOf("partstrat" to "r", "key_columns" to "{created_at}")
-        val result = PostgresMetadataQueries.getPartitionInfo(jdbc, "public", "events")
+        val result = PostgresPartitionMetadataQueries.getPartitionInfo(jdbc, "public", "events")
         result.shouldNotBeNull()
         result["partstrat"] shouldBe "r"
     }
 
     test("getPartitionInfo returns null for non-partitioned table") {
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns null
-        PostgresMetadataQueries.getPartitionInfo(jdbc, "public", "users").shouldBeNull()
+        PostgresPartitionMetadataQueries.getPartitionInfo(jdbc, "public", "users").shouldBeNull()
     }
 
     // ── listPartitionChildren (AP1) ─────────────────
@@ -263,7 +263,7 @@ class PostgresMetadataQueriesTest : FunSpec({
             mapOf("partition_name" to "events_2022_01", "bound_expr" to "FOR VALUES FROM (0) TO (100)"),
             mapOf("partition_name" to "events_2022_02", "bound_expr" to "FOR VALUES FROM (100) TO (200)"),
         )
-        val rows = PostgresMetadataQueries.listPartitionChildren(jdbc, "public", "events")
+        val rows = PostgresPartitionMetadataQueries.listPartitionChildren(jdbc, "public", "events")
         rows shouldHaveSize 2
         rows[0]["partition_name"] shouldBe "events_2022_01"
         rows[0]["bound_expr"] shouldBe "FOR VALUES FROM (0) TO (100)"
@@ -272,8 +272,18 @@ class PostgresMetadataQueriesTest : FunSpec({
     test("listPartitionChildren restricts to declarative partitions via relispartition") {
         val captured = slot<String>()
         every { jdbc.queryList(capture(captured), any(), any()) } returns emptyList()
-        PostgresMetadataQueries.listPartitionChildren(jdbc, "public", "events")
+        PostgresPartitionMetadataQueries.listPartitionChildren(jdbc, "public", "events")
         captured.captured shouldContain "relispartition"
+    }
+
+    // ── listInheritedIndexNames (AP2a) ──────────────
+
+    test("listInheritedIndexNames returns parent-propagated index names") {
+        every {
+            jdbc.queryList(match { it.contains("pg_inherits") && it.contains("cix.indexrelid") }, any(), any())
+        } returns listOf(mapOf("index_name" to "events_parent_idx"))
+        PostgresPartitionMetadataQueries.listInheritedIndexNames(jdbc, "public", "events_2022_01") shouldBe
+            listOf("events_parent_idx")
     }
 
     // ── listTableRefs excludes partition children (AP2) ──

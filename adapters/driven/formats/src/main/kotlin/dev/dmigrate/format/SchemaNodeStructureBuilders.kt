@@ -227,6 +227,10 @@ private fun buildPartitioning(mapper: ObjectMapper, partitioning: PartitionConfi
             }
             partition.modulus?.let { partitionNode.put("modulus", it) }
             partition.remainder?.let { partitionNode.put("remainder", it) }
+            // AP2a: kind-lokale Indizes der Partition.
+            if (partition.indices.isNotEmpty()) {
+                partitionNode.set<ArrayNode>("indices", buildIndices(mapper, partition.indices))
+            }
             partitionsNode.add(partitionNode)
         }
         node.set<ArrayNode>("partitions", partitionsNode)

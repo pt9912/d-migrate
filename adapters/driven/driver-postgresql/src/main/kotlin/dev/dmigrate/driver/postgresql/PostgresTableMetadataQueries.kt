@@ -240,44 +240,6 @@ internal object PostgresTableMetadataQueries {
         )
     }
 
-    fun getPartitionInfo(session: JdbcOperations, schemaName: String, table: String): Map<String, Any?>? {
-        return session.querySingle(
-            """
-            SELECT pt.partstrat, array_agg(a.attname ORDER BY pos.n) AS key_columns
-            FROM pg_partitioned_table pt
-            JOIN pg_class c ON c.oid = pt.partrelid
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            CROSS JOIN LATERAL unnest(pt.partattrs) WITH ORDINALITY AS pos(attnum, n)
-            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = pos.attnum
-            WHERE n.nspname = ? AND c.relname = ?
-            GROUP BY pt.partstrat
-            """.trimIndent(), schemaName, table,
-        )
-    }
-
-    /**
-     * AP1 (ADR 0019): die Kind-Partitionen eines partitionierten Parents über
-     * `pg_inherits` finden und je Kind die rohe `FOR VALUES`-Klausel
-     * (`pg_get_expr(relpartbound, …)`) liefern. Das Parsen/Normalisieren der
-     * Klausel ins strukturierte Modell übernimmt [PostgresPartitionBoundParser].
-     * `relispartition` grenzt deklarative Partitionen gegen Legacy-Inheritance ab.
-     */
-    fun listPartitionChildren(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
-        return session.queryList(
-            """
-            SELECT c.relname AS partition_name,
-                   pg_get_expr(c.relpartbound, c.oid) AS bound_expr
-            FROM pg_inherits i
-            JOIN pg_class c ON c.oid = i.inhrelid
-            JOIN pg_class p ON p.oid = i.inhparent
-            JOIN pg_namespace n ON n.oid = p.relnamespace
-            WHERE n.nspname = ? AND p.relname = ?
-              AND c.relispartition
-            ORDER BY c.relname
-            """.trimIndent(), schemaName, table,
-        )
-    }
-
     fun listInstalledExtensions(session: JdbcOperations): List<String> {
         return session.queryList(
             "SELECT extname FROM pg_extension WHERE extname != 'plpgsql' ORDER BY extname"

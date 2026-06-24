@@ -29,7 +29,7 @@ class MigrationFingerprintTest : FunSpec({
     ) = SchemaDefinition(name = name, version = version, tables = tables, sequences = sequences)
 
     test("project starts with the algorithm identifier") {
-        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v4\n")
+        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v5\n")
     }
 
     // v3: identifier-implied PK canonicalisation
@@ -202,8 +202,26 @@ class MigrationFingerprintTest : FunSpec({
         out shouldContain "unique=true"
     }
 
-    test("ALGORITHM constant is the version-4 string") {
-        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v4"
+    test("ALGORITHM constant is the version-5 string") {
+        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v5"
+    }
+
+    test("child-local partition indices are projected (AP2a)") {
+        val out = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("c" to ColumnDefinition(NeutralType.Integer)),
+                partitioning = PartitionConfig(
+                    PartitionType.RANGE, listOf("c"),
+                    listOf(PartitionDefinition(
+                        name = "p1",
+                        to = listOf(PartitionBound.Value("1")),
+                        indices = listOf(IndexDefinition(name = "idx_p1_c", columns = listOf(IndexColumn("c")))),
+                    )),
+                ),
+            ),
+        )))
+        out shouldContain "partition_index=idx_p1_c"
+        out shouldContain "unique=false"
     }
 
     // v4: partitioning is projected (AP4 / ADR 0019).

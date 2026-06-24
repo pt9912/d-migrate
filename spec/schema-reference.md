@@ -166,6 +166,11 @@ tables:
         - name: part_2025
           from: ["2025-01-01"]
           to: ["2026-01-01"]
+          # Kind-lokale Indizes (nur direkt auf der Partition definierte; vom
+          # Parent propagierte Indizes/Constraints/FKs bleiben am Parent).
+          indices:
+            - name: idx_part_2025_col
+              columns: [col]
 ```
 
 ---
