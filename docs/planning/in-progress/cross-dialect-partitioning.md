@@ -22,11 +22,16 @@
 > Namenskollision → eindeutiger Name + W131; INFO `PARTITION_INDEX_LIFTED` je gehobenem Index);
 > **UNIQUE** kind-lokal → NICHT gehoben, skip + `action_required` (E064: invalides DDL ohne
 > Partitionsschlüssel + partition-lokale≠globale Eindeutigkeit). Ledger E064/W131; 3 Unit-Tests.
-> **Offen:** **AP6.3-FK** FK-Carve-Out auf partitionierter Tabelle (ADR §5 Teil 2 — MySQL/InnoDB
-> unterstützt keine FKs auf partitionierten Tabellen; 3 Emissionspfade inkl. zirkulärer ALTER, eigene
-> kleine Scheibe), **AP6.4** Cross-Smoke-Notes-Baseline neu pinnen + grün (+ Live-Apply-Beweis),
+> **AP6.3-FK (FK-Carve-Out) erledigt** (ADR §5 Teil 2): MySQL/InnoDB unterstützt keine FKs auf
+> partitionierten Tabellen (beide Richtungen) — FK auf/zu einer **tatsächlich** partitionierten Tabelle
+> übersprungen + `action_required` (E065) über **alle drei** Emissionspfade (Inline-Ref, explizite
+> FOREIGN_KEY-Constraint, zirkulärer ALTER). „Tatsächlich" = `partitionedTables`-Set während `generateTable`
+> befüllt (skip via E055/E062 lässt Tabelle unpartitioniert → FK bleibt gültig). Ledger E065; 5 Unit-Tests +
+> **deckte invalides DDL im `full-featured`-Golden auf** (`orders` war partitioniert UND trug 2 FKs → Goldens
+> regeneriert: FKs jetzt korrekt verworfen statt invalides DDL gepinnt).
+> **Offen:** **AP6.4** Cross-Smoke-Notes-Baseline neu pinnen + grün (+ Live-Apply-Beweis),
 > **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
-> Mini-Folgen: spec/ledger.md-Summary-Sync (W125–W131); LIST-`DEFAULT`-**Preflight** (§4, Transfer-Seite —
+> Mini-Folgen: spec/ledger.md-Summary-Sync (W125–W131, E061–E065); LIST-`DEFAULT`-**Preflight** (§4, Transfer-Seite —
 > die Generate-Note E063 ist da, die Preflight-Integration noch nicht).
 > **Trigger:** Die PG-first-Scheibe hat das strukturierte `PartitionDefinition`-Modell,
 > den PG-Reverse-Capture (Kinder + Grenzen + kind-lokale Indizes) und den

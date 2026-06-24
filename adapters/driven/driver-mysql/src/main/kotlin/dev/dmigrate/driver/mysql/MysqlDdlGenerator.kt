@@ -11,7 +11,17 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     private val sequenceSupport = MysqlSequenceDdlSupport(::quoteIdentifier)
     private val indexPartitionHelper = MysqlIndexPartitionDdlHelper(::quoteIdentifier)
 
+    /**
+     * Tables that end up **actually partitioned** in the emitted DDL — filled during
+     * [generateTable], consumed by the FK paths and [handleCircularReferences]. MySQL/InnoDB
+     * forbids foreign keys touching a partitioned table in **either** direction (ADR 0020 §5),
+     * so such FKs are skipped + flagged (E065). "Actually partitioned" ≠ "partitioning configured":
+     * a config that is skipped (E055/E062) leaves a plain table whose FKs stay valid.
+     */
+    private val partitionedTables = mutableSetOf<String>()
+
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        partitionedTables.clear()
         sequenceSupport.beginRun(schema, options)
         return sequenceSupport.finalizeResult(super.generate(schema, options))
     }
@@ -74,6 +84,16 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         val notes = mutableListOf<TransformationNote>()
         val columnLines = mutableListOf<String>()
 
+        // Compute the partition clause up front so the FK paths below can see whether the table
+        // is actually partitioned (MySQL forbids FKs on partitioned tables, ADR 0020 §5). Its
+        // diagnostics are merged back below (before the drain), preserving the original note order.
+        val partitionNotes = mutableListOf<TransformationNote>()
+        val partitionClause = table.partitioning
+            ?.let { indexPartitionHelper.generatePartitionClause(it, table.columns, partitionNotes) }
+            .orEmpty()
+        val isPartitioned = partitionClause.isNotBlank()
+        if (isPartitioned) partitionedTables += name
+
         // Columns
         for ((colName, col) in table.columns) {
             columnLines += generateColumnSql(colName, col, schema, name, notes)
@@ -94,12 +114,22 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             val ref = col.references ?: continue
             if ((name to colName) in deferredFks) continue
             val fkName = "fk_${name}_${colName}"
+            if (isPartitioned || ref.table in partitionedTables) {
+                notes += partitionedFkSkipNote(fkName, name)
+                continue
+            }
             columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
         }
 
         // Explicit constraints
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
+            if (constraint.type == ConstraintType.FOREIGN_KEY &&
+                (isPartitioned || constraint.references?.table in partitionedTables)
+            ) {
+                notes += partitionedFkSkipNote(constraint.name, name)
+                continue
+            }
             generateConstraintClause(constraint, notes)?.let { columnLines += it }
         }
 
@@ -118,16 +148,13 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             // Table options precede partition options per the MySQL grammar:
             //   CREATE TABLE ... (defs) [table_options] [partition_options]
             append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
-            val partitioning = table.partitioning
-            if (partitioning != null) {
-                val clause = indexPartitionHelper.generatePartitionClause(partitioning, table.columns, notes)
-                if (clause.isNotBlank()) {
-                    append("\n")
-                    append(clause)
-                }
+            if (partitionClause.isNotBlank()) {
+                append("\n")
+                append(partitionClause)
             }
             append(";")
         }
+        notes += partitionNotes
         notes += sequenceSupport.drainPendingNotes()
         statements += DdlStatement(tableSql, notes)
 
@@ -183,6 +210,20 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     ): List<DdlStatement> =
         indexPartitionHelper.generateIndices(tableName, table)
 
+    /**
+     * §5 (ADR 0020): MySQL/InnoDB supports no foreign keys on partitioned tables in either
+     * direction. A FK declared on — or referencing — a partitioned table is skipped + flagged.
+     */
+    private fun partitionedFkSkipNote(fkName: String, tableName: String): TransformationNote =
+        TransformationNote(
+            type = NoteType.ACTION_REQUIRED,
+            code = "E065",
+            objectName = fkName,
+            message = "Foreign key '$fkName' on partitioned table '$tableName' was skipped: MySQL/InnoDB " +
+                "does not support foreign keys on partitioned tables (in either direction).",
+            hint = "Enforce referential integrity in the application, or do not partition the table.",
+        )
+
     // ── Circular FK references ───────────────────
 
     override fun handleCircularReferences(
@@ -190,6 +231,10 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return edges.map { edge ->
+            // ADR 0020 §5: drop a deferred/circular FK that touches a partitioned table (either end).
+            if (edge.fromTable in partitionedTables || edge.toTable in partitionedTables) {
+                return@map DdlStatement("", listOf(partitionedFkSkipNote(edge.constraintName, edge.fromTable)))
+            }
             val sql = buildString {
                 append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD CONSTRAINT ${quoteIdentifier(edge.constraintName)}")
                 append(" FOREIGN KEY (${edge.fromColumns.joinToString(", ") { quoteIdentifier(it) }})")
