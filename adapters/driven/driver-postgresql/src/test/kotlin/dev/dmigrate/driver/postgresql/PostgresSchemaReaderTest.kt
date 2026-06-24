@@ -84,6 +84,8 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("pg_index") }, any(), any()) } returns emptyList()
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns null
+        // AP1: partition children (pg_inherits + relpartbound) — none by default.
+        every { jdbc.queryList(match { it.contains("relpartbound") }, any(), any()) } returns emptyList()
     }
 
     // ── tests ──────────────────────────────────────
@@ -333,6 +335,41 @@ class PostgresSchemaReaderTest : FunSpec({
         table.partitioning.shouldNotBeNull()
         table.partitioning!!.type shouldBe PartitionType.RANGE
         table.partitioning!!.key shouldBe listOf("created_at")
+    }
+
+    test("read partitioned table captures children + parsed bounds (AP1)") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "events", "table_schema" to "public", "table_type" to "BASE TABLE"),
+        )
+        stubTableQueries(listOf(
+            mapOf("column_name" to "created_at", "data_type" to "timestamp with time zone",
+                "udt_name" to "timestamptz", "is_nullable" to "NO", "column_default" to null,
+                "ordinal_position" to 1, "character_maximum_length" to null,
+                "numeric_precision" to null, "numeric_scale" to null,
+                "is_identity" to "NO", "identity_generation" to null),
+        ), listOf("created_at"))
+        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
+            mapOf("partstrat" to "r", "key_columns" to "{created_at}")
+        every { jdbc.queryList(match { it.contains("relpartbound") }, any(), any()) } returns listOf(
+            mapOf("partition_name" to "events_2022_01",
+                "bound_expr" to "FOR VALUES FROM ('2022-01-01 00:00:00+00'::timestamp with time zone) " +
+                    "TO ('2022-02-01 00:00:00+00'::timestamp with time zone)"),
+            mapOf("partition_name" to "events_2022_02",
+                "bound_expr" to "FOR VALUES FROM ('2022-02-01 00:00:00+00'::timestamp with time zone) " +
+                    "TO ('2022-03-01 00:00:00+00'::timestamp with time zone)"),
+        )
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+
+        val partitions = result.schema.tables["events"]!!.partitioning!!.partitions
+        partitions shouldHaveSize 2
+        partitions[0].name shouldBe "events_2022_01"
+        partitions[0].from shouldBe listOf(PartitionBound.Value("'2022-01-01 00:00:00+00'"))
+        partitions[0].to shouldBe listOf(PartitionBound.Value("'2022-02-01 00:00:00+00'"))
+        partitions[1].name shouldBe "events_2022_02"
     }
 
     test("read with empty schema returns empty collections") {

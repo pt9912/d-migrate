@@ -1,8 +1,9 @@
 # Expected-Result-Baseline — Pagila/PostgreSQL Smoke (Phase 1)
 
 > Plan: [`../../../docs/planning/in-progress/sample-db-integration-harness.md`](../../../docs/planning/in-progress/sample-db-integration-harness.md)
-> · Stand: 2026-06-19 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F1–F4 + ADR 0015
-> behoben → **0 Diffs**, `Status: IDENTICAL`)
+> · Stand: 2026-06-24 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F1–F4 + ADR 0015
+> behoben → **0 Diffs**, `Status: IDENTICAL`; AP1/AP2 ADR 0019: `payment` als echte
+> RANGE-Partition, `E055` entfällt → **0 generate-Notes**)
 
 Der Pagila/PostgreSQL-Round-Trip ist jetzt **vollständig verlustfrei**:
 `schema compare` meldet `Status: IDENTICAL` (keine Schema-Diffs). Die Baseline
@@ -16,12 +17,25 @@ Befund; dann Ursache beheben (nicht die Baseline „weich" pinnen).
 ## Harter, deterministischer Kern (kein Diff)
 
 - `schema validate`: **0 Errors**.
-- `schema generate`: genau **1 Note** — `E055` (leere RANGE-Partition `payment`).
-  (Das frühere `W123` (gist auf tsvector→text) entfällt seit ADR 0015 — siehe A.)
-- **Daten round-trippen vollständig**: Zeilenzahlen Quelle == Ziel für **alle 22
-  Tabellen** (inkl. der 7 `payment_p2022_*`-Partitionskinder).
+- `schema generate`: **0 Notes**. Seit AP1/AP2 ([ADR 0019](../../../docs/adr/0019-partition-hierarchy-structured-representation.md))
+  erfasst der PG-Reverse die 7 `payment`-Kind-Partitionen → `payment` round-trippt
+  als **echte RANGE-Partition** (`PARTITION BY RANGE … PARTITION OF …`); der frühere
+  `E055` (leere RANGE-Partition) **entfällt**. Das `W123` (gist auf tsvector→text)
+  entfiel bereits seit ADR 0015 — siehe A.
+- **Daten round-trippen vollständig + ohne Duplikation**: Zeilenzahlen Quelle == Ziel
+  für **alle 22 Tabellen** (inkl. der 7 `payment_p2022_*`-Partitionskinder). Die
+  Per-Kind-Parität (`payment_p2022_NN` Quelle == Ziel) beweist zugleich, dass der
+  **Bound-Parser** (AP1) die Grenzen korrekt rekonstruiert — sonst würde PG die
+  INSERTs in falsche Kinder routen (oder mit „no partition found" abbrechen).
 - **post-data wendet sauber an** (ON_ERROR_STOP=1, 0 Fehler) — seit F2 (Programmability
   in Abhängigkeitsreihenfolge: Funktionen/Aggregate vor den Views, die sie aufrufen).
+
+> **Bekannte Folgearbeit (AP2a, nicht RC-blockierend):** die **kind-lokalen** Indizes
+> der Partitionskinder (`idx_fk_payment_p2022_NN_*`) werden in dieser Scheibe noch
+> **nicht** mit-erfasst — die Kinder werden ohne ihre lokalen Indizes emittiert. Der
+> `schema compare` bleibt trotzdem `IDENTICAL`, weil die Kinder auf **beiden** Seiten
+> aus der Top-Level-Liste entfernt sind (AP2) und der Comparator heute partitions-blind
+> ist (AP4). Per-Partition-Index/FK-Vererbung ist als AP2a getrackt.
 
 ## Behobene Round-Trip-Defekte (0 Diffs) — je Klasse erklärt
 

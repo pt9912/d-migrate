@@ -10,8 +10,10 @@ import io.kotest.matchers.maps.shouldHaveSize as mapShouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 
 class PostgresMetadataQueriesTest : FunSpec({
 
@@ -250,6 +252,37 @@ class PostgresMetadataQueriesTest : FunSpec({
     test("getPartitionInfo returns null for non-partitioned table") {
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns null
         PostgresMetadataQueries.getPartitionInfo(jdbc, "public", "users").shouldBeNull()
+    }
+
+    // ── listPartitionChildren (AP1) ─────────────────
+
+    test("listPartitionChildren returns name + raw bound clause per child") {
+        every {
+            jdbc.queryList(match { it.contains("pg_inherits") && it.contains("relpartbound") }, any(), any())
+        } returns listOf(
+            mapOf("partition_name" to "events_2022_01", "bound_expr" to "FOR VALUES FROM (0) TO (100)"),
+            mapOf("partition_name" to "events_2022_02", "bound_expr" to "FOR VALUES FROM (100) TO (200)"),
+        )
+        val rows = PostgresMetadataQueries.listPartitionChildren(jdbc, "public", "events")
+        rows shouldHaveSize 2
+        rows[0]["partition_name"] shouldBe "events_2022_01"
+        rows[0]["bound_expr"] shouldBe "FOR VALUES FROM (0) TO (100)"
+    }
+
+    test("listPartitionChildren restricts to declarative partitions via relispartition") {
+        val captured = slot<String>()
+        every { jdbc.queryList(capture(captured), any(), any()) } returns emptyList()
+        PostgresMetadataQueries.listPartitionChildren(jdbc, "public", "events")
+        captured.captured shouldContain "relispartition"
+    }
+
+    // ── listTableRefs excludes partition children (AP2) ──
+
+    test("listTableRefs query filters out relispartition children") {
+        val captured = slot<String>()
+        every { jdbc.queryList(capture(captured), any()) } returns emptyList()
+        PostgresMetadataQueries.listTableRefs(jdbc, "public")
+        captured.captured shouldContain "relispartition"
     }
 
     // ── listInstalledExtensions ─────────────────────

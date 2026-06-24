@@ -1,7 +1,8 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
 > **Status:** in-progress/-Slice — **graduiert 2026-06-23** (aus `open/`), **AP1a
-> implementiert + verifiziert grün** (Commit `021c0ce2`). Gate-Entscheidung =
+> (`021c0ce2`) + AP1/AP2 (PG-Reverse-Capture, 2026-06-24) implementiert + grün
+> (docker-`check` UND live `make sample-db-smoke`)**. Gate-Entscheidung =
 > [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
@@ -30,9 +31,9 @@
 > MySQL-Reverse als Folge-Slice). Arbeitspakete + Kopplung + Akzeptanz unten.
 > Performance-Aspekte von LN-008 (per-Partition-Transfer, parallel) bleiben Performance-Phase.
 
-## Stand & Wiedereinstieg (EOD 2026-06-23)
+## Stand & Wiedereinstieg (Stand 2026-06-24)
 
-**Erledigt heute — AP1a (Modell-Gate), Commit `021c0ce2`, docker-verifiziert grün
+**Erledigt 2026-06-23 — AP1a (Modell-Gate), Commit `021c0ce2`, docker-verifiziert grün
 (compile + alle Tests + detekt):**
 
 - **Modell** ([`hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionConfig.kt)):
@@ -54,27 +55,46 @@
   nicht die emittierte DDL. 8 Test-Konstruktions-Sites + 3 Fixtures auf strukturierte Form,
   MaxLineLength sauber umgebrochen (kein `@Suppress`).
 
-**Morgen hier weiter — AP1 + AP2 (PG-Reverse-Capture; befüllt jetzt die Struktur):**
+**Erledigt 2026-06-24 — AP1 + AP2 (PG-Reverse-Capture), docker-verifiziert grün
+(`:driver-postgresql:check` = compile + Tests + detekt + koverVerify) UND live
+end-to-end (`make sample-db-smoke`, Exit 0):**
 
-1. **AP1 — Kinder + Grenzen lesen.**
-   [`PostgresTableMetadataQueries.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTableMetadataQueries.kt)
-   (`getPartitionInfo`) um eine `pg_inherits`-Kind-Abfrage erweitern; je Kind
-   `pg_get_expr(c.relpartbound, c.oid)` lesen und in
-   [`PostgresSchemaStructureReaders.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresSchemaStructureReaders.kt)
-   (`readPostgresPartitioning`) ins strukturierte `PartitionBound`-Modell **parsen/normalisieren**
-   (Typ-Casts strippen — `'…'::timestamptz` → Literal —, `MINVALUE`/`MAXVALUE` → Sentinels,
-   `MODULUS m, REMAINDER n` → Ints, `DEFAULT` → `isDefault`). **Das ist der vom Ticket
-   markierte Bug-Hotspot** (Bound-Parser) — sorgfältig + Unit-Tests gegen echte
-   `pg_get_expr`-Strings.
-2. **AP2 — Doppel-Emit vermeiden.** `relispartition`-Kinder aus der Top-Level-Tabellenliste
-   entfernen (sonst `relation already exists` beim Generate; AP1/AP2 sind untrennbar, ADR 0019).
-3. **Live-Verifikation:** Pagila-`payment`-Round-Trip (`make sample-db-smoke`) — kein `E055`
-   mehr, 7 Kinder als echte Partition, Transfer **ohne** Zeilen-Duplikation (16049, nicht 32098).
+1. **AP1 — Kinder + Grenzen lesen.** Neue Query `listPartitionChildren`
+   ([`PostgresTableMetadataQueries.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTableMetadataQueries.kt))
+   über `pg_inherits` (+ `c.relispartition`-Guard), je Kind
+   `pg_get_expr(c.relpartbound, c.oid)`. Neuer **Bound-Parser**
+   ([`PostgresPartitionBoundParser.kt`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresPartitionBoundParser.kt)) —
+   quote-/klammer-bewusster Scanner: strippt nachgestellte `::typ`-Casts auf Top-Level,
+   kanonisiert `MINVALUE`/`MAXVALUE` → Sentinels, RANGE-`FROM/TO`-Tupel,
+   LIST-`IN`, HASH-`WITH (modulus/remainder)` → Ints, `DEFAULT` → `isDefault`.
+   `readPostgresPartitioning` befüllt jetzt `partitions`. **15 Parser-Unit-Tests**
+   (inkl. Pagila-timestamptz-Cast, mehrspaltige Tupel, numeric(10,2)-Cast-mit-Klammer,
+   escaptes Quote, Sentinel-im-Tupel).
+2. **AP2 — Doppel-Emit vermeiden.** `relispartition`-Filter in `listTableRefs`
+   (`to_regclass`-NOT-EXISTS, Stil wie der Extension-Filter). Deckt **zugleich AP5**:
+   Schema-Reader **und** `PostgresTableLister`/Transfer teilen dieselbe Query → Kinder
+   sind auch aus der Transfer-Enumeration weg, kein Doppeltransfer.
+3. **Live-Verifikation grün** (PG→PG Pagila): reverse erfasst 7 Kinder mit korrekt
+   gestrippten Grenzen (`'2022-01-01 00:00:00+00'`); generate **0 Notes** (kein E055);
+   post-data sauber; **Per-Kind-Parität** src==tgt (723/2401/2713/2547/2677/2654/2334 →
+   Bound-Routing korrekt); **keine Duplikation** (payment total 16049, nicht 32098);
+   `schema compare` **IDENTICAL** (Baseline gehalten). Harness-Gate + `pagila-smoke.md`
+   auf „0 Notes" nachgezogen.
 
-**Danach (eigene Increments, Reihenfolge gekoppelt):** AP2a (Index/FK-Vererbung via
-`pg_inherits`/`conparentid`), AP3 (Generate-Verifikation), **AP4 (Comparator partitions-bewusst —
-erst *nach* AP1, sonst bricht die `IDENTICAL`-Baseline)**, AP5 (Transfer-Nicht-Duplikations-Test),
-AP6 (Cross-Dialect/MySQL-Reverse, eigener Folge-Slice).
+**Bekannte Kopplung (jetzt scharf):** AP1/AP2 ändert auch den **Cross-Dialect**-Pfad —
+der MySQL-Generate konsumiert jetzt befüllte `partitions` und emittiert für Pagila eine
+MySQL-RANGE-Partition mit timestamptz-Grenzen (`VALUES LESS THAN ('…+00')`, W112), die
+MySQL ablehnt (RANGE braucht Integer-Ausdruck, z. B. `UNIX_TIMESTAMP()`/`RANGE COLUMNS`).
+Das ist **AP6**-Gebiet (eigener Folge-Slice) und betrifft nur das separate
+`sample-db-cross-smoke-pg2my`-Target; **kein** Ad-hoc-Stopgap (Hausregel „No-Carveouts").
+Der PG→PG-Smoke (Akzeptanz dieser Scheibe) ist davon unberührt.
+
+**Danach (eigene Increments, Reihenfolge gekoppelt):** **AP4 (Comparator partitions-bewusst —
+jetzt entkoppelt, da AP1 beide Seiten gleichstellt; macht den `IDENTICAL`-Beweis erst
+aussagekräftig)**, AP2a (kind-lokale Index/FK-Vererbung via `pg_inherits` über Index-OIDs /
+`conparentid` — heute gehen kind-lokale Indizes der Kinder noch verloren, vom Comparator
+aber unbemerkt), AP3 (Generate-Verifikation/DEFAULT-Partition), AP6 (Cross-Dialect:
+MySQL-RANGE-Mapping + MySQL-Reverse, eigener Folge-Slice).
 
 ## Gegenstand
 

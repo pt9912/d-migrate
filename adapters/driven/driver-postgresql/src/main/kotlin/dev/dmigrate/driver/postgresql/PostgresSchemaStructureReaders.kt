@@ -141,7 +141,15 @@ private fun readPostgresPartitioning(
         is String -> keyColumns.removeSurrounding("{", "}").split(",")
         else -> emptyList()
     }
-    return PartitionConfig(type = strategy, key = key)
+    // AP1 (ADR 0019): Kind-Partitionen + Grenzen erfassen; die rohe
+    // `FOR VALUES`-Klausel ins strukturierte Modell parsen/normalisieren.
+    val partitions = PostgresMetadataQueries.listPartitionChildren(session, schema, tableName)
+        .mapNotNull { row ->
+            val name = row["partition_name"] as? String ?: return@mapNotNull null
+            val boundExpr = row["bound_expr"] as? String ?: return@mapNotNull null
+            PostgresPartitionBoundParser.parse(name, boundExpr, strategy)
+        }
+    return PartitionConfig(type = strategy, key = key, partitions = partitions)
 }
 
 internal fun readPostgresSequences(

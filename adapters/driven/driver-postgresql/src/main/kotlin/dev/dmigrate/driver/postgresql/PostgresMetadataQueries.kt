@@ -51,6 +51,9 @@ object PostgresMetadataQueries {
     fun getPartitionInfo(session: JdbcOperations, schemaName: String, table: String): Map<String, Any?>? =
         PostgresTableMetadataQueries.getPartitionInfo(session, schemaName, table)
 
+    fun listPartitionChildren(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> =
+        PostgresTableMetadataQueries.listPartitionChildren(session, schemaName, table)
+
     fun listInstalledExtensions(session: JdbcOperations): List<String> =
         PostgresTableMetadataQueries.listInstalledExtensions(session)
 

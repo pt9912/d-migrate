@@ -98,14 +98,15 @@ $COMPOSE run --rm dmigrate schema generate --source /work/out/pagila.reverse.yam
 for f in pagila.pre-data.sql pagila.post-data.sql pagila.report.yaml; do
     [ -s "$OUT_DIR/$f" ] || fail "empty generate artifact: $f"
 done
-# Erwartete generate-Notes (Pagila/PG): genau E055 (leere RANGE-Partition
-# payment). Seit ADR 0015 ist tsvector ein first-class fulltext-Typ → der
-# gist-Index round-trippt, W123 entfaellt. Abweichung = Regression.
-grep -q "code: E055" "$OUT_DIR/pagila.report.yaml" || fail "expected note E055 missing"
+# Erwartete generate-Notes (Pagila/PG): seit AP1/AP2 (ADR 0019) erfasst der
+# PG-Reverse die 7 payment-Kind-Partitionen → payment round-trippt als ECHTE
+# RANGE-Partition, der frühere E055 (leere RANGE-Partition) entfaellt. tsvector
+# ist seit ADR 0015 first-class → kein W123. Erwartung: 0 Notes. Abweichung = Regression.
+grep -q "code: E055" "$OUT_DIR/pagila.report.yaml" && fail "unexpected E055 — payment should round-trip as a real RANGE partition (AP1/AP2, ADR 0019)"
 grep -q "code: W123" "$OUT_DIR/pagila.report.yaml" && fail "unexpected W123 — fulltext gist should round-trip (ADR 0015)"
-note_count=$(grep -cE "^  - type:" "$OUT_DIR/pagila.report.yaml")
-[ "$note_count" = "1" ] || fail "expected exactly 1 generate note (E055), got $note_count"
-log "generate OK (note E055 as expected; no W123 since ADR 0015)"
+note_count=$(grep -cE "^  - type:" "$OUT_DIR/pagila.report.yaml" || true)
+[ "$note_count" = "0" ] || fail "expected 0 generate notes after AP1/AP2 (ADR 0019), got $note_count"
+log "generate OK (no E055 — payment round-trips as real partition; no W123 since ADR 0015)"
 
 # --- 6. Zielschema aufbauen + Daten transferieren ------------------
 log "resetting target DB + applying pre-data DDL..."
