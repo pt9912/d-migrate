@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.TableMetadata
 
 data class TableDiff(
@@ -18,6 +19,8 @@ data class TableDiff(
     val constraintsRemoved: List<ConstraintDefinition> = emptyList(),
     val constraintsChanged: List<ValueChange<ConstraintDefinition>> = emptyList(),
     val metadata: ValueChange<TableMetadata?>? = null,
+    // AP4 (ADR 0019): Partitionierungs-Diff (Strategie/Schlüssel/Partitionsmenge).
+    val partitioning: ValueChange<PartitionConfig?>? = null,
 ) {
     fun hasChanges(): Boolean =
         columnsAdded.isNotEmpty() ||
@@ -30,5 +33,6 @@ data class TableDiff(
             constraintsAdded.isNotEmpty() ||
             constraintsRemoved.isNotEmpty() ||
             constraintsChanged.isNotEmpty() ||
-            metadata != null
+            metadata != null ||
+            partitioning != null
 }

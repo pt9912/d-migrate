@@ -6,6 +6,10 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -25,7 +29,7 @@ class MigrationFingerprintTest : FunSpec({
     ) = SchemaDefinition(name = name, version = version, tables = tables, sequences = sequences)
 
     test("project starts with the algorithm identifier") {
-        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v3\n")
+        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v4\n")
     }
 
     // v3: identifier-implied PK canonicalisation
@@ -198,8 +202,61 @@ class MigrationFingerprintTest : FunSpec({
         out shouldContain "unique=true"
     }
 
-    test("ALGORITHM constant is the version-2 string") {
-        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v3"
+    test("ALGORITHM constant is the version-4 string") {
+        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v4"
+    }
+
+    // v4: partitioning is projected (AP4 / ADR 0019).
+
+    test("non-partitioned table projects partitioning=none") {
+        val out = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier()))),
+        )))
+        out shouldContain "partitioning=none"
+    }
+
+    test("partitioned table projects strategy, key and child bounds; order-independent") {
+        val children = listOf(
+            PartitionDefinition(
+                name = "p1",
+                from = listOf(PartitionBound.MinValue),
+                to = listOf(PartitionBound.Value("'2022-02-01'")),
+            ),
+            PartitionDefinition(
+                name = "p2",
+                from = listOf(PartitionBound.Value("'2022-02-01'")),
+                to = listOf(PartitionBound.MaxValue),
+            ),
+        )
+        fun projectWith(parts: List<PartitionDefinition>) = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("created_at" to ColumnDefinition(NeutralType.DateTime())),
+                partitioning = PartitionConfig(PartitionType.RANGE, listOf("created_at"), parts),
+            ),
+        )))
+
+        val out = projectWith(children)
+        out shouldContain "partitioning=RANGE"
+        out shouldContain "key=created_at"
+        out shouldContain "partition=p1"
+        out shouldContain "from=MINVALUE"
+        out shouldContain "to=MAXVALUE"
+        // Children sorted by name → declaration order does not affect the projection.
+        projectWith(children.reversed()) shouldBe out
+    }
+
+    test("HASH partition projects modulus and remainder") {
+        val out = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())),
+                partitioning = PartitionConfig(
+                    PartitionType.HASH, listOf("id"),
+                    listOf(PartitionDefinition(name = "h0", modulus = 4, remainder = 1)),
+                ),
+            ),
+        )))
+        out shouldContain "modulus=4"
+        out shouldContain "remainder=1"
     }
 
     // ── Branch coverage for type / default / generation projections ──

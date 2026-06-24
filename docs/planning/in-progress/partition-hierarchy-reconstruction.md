@@ -1,8 +1,9 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
 > **Status:** in-progress/-Slice — **graduiert 2026-06-23** (aus `open/`), **AP1a
-> (`021c0ce2`) + AP1/AP2 (PG-Reverse-Capture, 2026-06-24) implementiert + grün
-> (docker-`check` UND live `make sample-db-smoke`)**. Gate-Entscheidung =
+> (`021c0ce2`) + AP1/AP2 (PG-Reverse-Capture) + AP4 (Comparator partitions-bewusst)
+> implementiert + grün (docker-`check` UND live `make sample-db-smoke`, 2026-06-24)**.
+> Offen: AP2a/AP3/AP6. Gate-Entscheidung =
 > [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
@@ -89,12 +90,30 @@ Das ist **AP6**-Gebiet (eigener Folge-Slice) und betrifft nur das separate
 `sample-db-cross-smoke-pg2my`-Target; **kein** Ad-hoc-Stopgap (Hausregel „No-Carveouts").
 Der PG→PG-Smoke (Akzeptanz dieser Scheibe) ist davon unberührt.
 
-**Danach (eigene Increments, Reihenfolge gekoppelt):** **AP4 (Comparator partitions-bewusst —
-jetzt entkoppelt, da AP1 beide Seiten gleichstellt; macht den `IDENTICAL`-Beweis erst
-aussagekräftig)**, AP2a (kind-lokale Index/FK-Vererbung via `pg_inherits` über Index-OIDs /
-`conparentid` — heute gehen kind-lokale Indizes der Kinder noch verloren, vom Comparator
-aber unbemerkt), AP3 (Generate-Verifikation/DEFAULT-Partition), AP6 (Cross-Dialect:
-MySQL-RANGE-Mapping + MySQL-Reverse, eigener Folge-Slice).
+**Erledigt 2026-06-24 — AP4 (Comparator partitions-bewusst), docker-`:hexagon:core:check`
+grün UND live re-verifiziert (`make sample-db-smoke`, Exit 0, compare IDENTICAL):**
+
+- **`TableDiff`** ([`TableDiff.kt`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/TableDiff.kt))
+  trägt jetzt `partitioning: ValueChange<PartitionConfig?>?` + in `hasChanges()`.
+- **`TableComparator.comparePartitioning`**: Strategie + Schlüssel (geordnet) gleich UND
+  Kind-Partitionen als **Menge** (`partitions.toSet()`, reihenfolge-unabhängig) → sonst Diff.
+  Set-Gleichheit setzt das *eine* kanonische Bound-Encoding (AP1/AP1a) voraus.
+- **Test umgedreht:** „partitioning changes do not produce diff" entfernt; neue eigene Spec
+  [`SchemaComparatorPartitioningTest.kt`](../../../hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/SchemaComparatorPartitioningTest.kt)
+  (7 Fälle: none→RANGE, Strategie, Schlüssel, geänderte Grenze, hinzugefügtes Kind → DIFFERENT;
+  Reihenfolge egal + identisch → kein Diff). Eigene Datei = echte Aufteilung gegen LargeClass
+  (kein `@Suppress`, [[feedback-no-suppress-for-size]]).
+- **`MigrationFingerprint` auf `schema-fingerprint-v4`** gebumpt: projiziert jetzt
+  Partitionierung (Strategie/Schlüssel/Kinder nach Name sortiert + Bounds im kanonischen
+  Encoding), damit Comparator und Post-`--execute`-Drift-Check übereinstimmen. `spec/schema-reference.md`
+  nachgezogen (zeitlose Vergleichs-Notiz, kein Abwärtsverweis).
+- **Linchpin live bewiesen:** der Round-Trip bleibt `IDENTICAL` *jetzt aussagekräftig* — der
+  Comparator prüft die Bound-Strings, und Source-↔Target-Reverse sind byte-identisch.
+
+**Danach (eigene Increments):** AP2a (kind-lokale Index/FK-Vererbung via `pg_inherits` über
+Index-OIDs / `conparentid` — heute gehen kind-lokale Indizes der Kinder noch verloren, vom
+Comparator unbemerkt da Kinder nicht Top-Level), AP3 (Generate-Verifikation/DEFAULT-Partition),
+AP6 (Cross-Dialect: MySQL-RANGE-Mapping + MySQL-Reverse, eigener Folge-Slice).
 
 ## Gegenstand
 

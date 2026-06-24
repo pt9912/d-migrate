@@ -54,6 +54,7 @@ internal class TableComparator {
         val constraintDiffs = compareConstraints(leftNorm, rightNorm)
         val metadataDiff = if (left.metadata == right.metadata) null
             else ValueChange(left.metadata, right.metadata)
+        val partitioningDiff = comparePartitioning(left.partitioning, right.partitioning)
 
         val diff = TableDiff(
             name = name,
@@ -68,9 +69,34 @@ internal class TableComparator {
             constraintsRemoved = constraintDiffs.removed,
             constraintsChanged = constraintDiffs.changed,
             metadata = metadataDiff,
+            partitioning = partitioningDiff,
         )
 
         return if (diff.hasChanges()) diff else null
+    }
+
+    // ── Partitioning (AP4, ADR 0019) ──────────────
+
+    /**
+     * Vergleicht die Partitionierung zweier Tabellen. Strategie und Schlüssel
+     * (geordnet — die Spaltenreihenfolge des Partitionsschlüssels ist semantisch)
+     * müssen gleich sein, die **Kind-Partitionen als Menge** (reihenfolge-
+     * unabhängig, da Reverse sie nach `relname` und Generate sie nach Listen-
+     * position emittiert). Die Set-Gleichheit setzt das *eine kanonische* Bound-
+     * Encoding voraus (AP1a/AP1) — sonst false-positive-Diffs.
+     */
+    private fun comparePartitioning(
+        left: PartitionConfig?,
+        right: PartitionConfig?,
+    ): ValueChange<PartitionConfig?>? {
+        val equivalent = when {
+            left == null && right == null -> true
+            left == null || right == null -> false
+            else -> left.type == right.type &&
+                left.key == right.key &&
+                left.partitions.toSet() == right.partitions.toSet()
+        }
+        return if (equivalent) null else ValueChange(left, right)
     }
 
     // ── Columns ───────────────────────────────────

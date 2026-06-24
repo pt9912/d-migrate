@@ -157,6 +157,9 @@ tables:
     partitioning:
       type: range              # range | hash | list
       key: [spalte]
+      # Partitionierung ist vergleichs- und fingerprint-relevant: `schema compare`
+      # meldet Unterschiede in Strategie, Schlüssel und Kind-Partitionen (kindweise
+      # als Menge — die Reihenfolge der Kinder ist nicht signifikant).
       partitions:
         # RANGE: from/to als Bound-Tupel (Sentinels MINVALUE/MAXVALUE);
         # HASH: modulus/remainder; LIST: values; DEFAULT-Partition: default: true

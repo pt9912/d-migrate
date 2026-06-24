@@ -9,6 +9,8 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -77,8 +79,15 @@ object MigrationFingerprint {
      * `migrate --execute` reported a spurious post-compare drift (Exit 5) on a
      * spec-valid identifier-only schema — dialect-neutral
      * (`docs/planning/done/migrate-postcompare-identifier-pk-drift.md`).
+     *
+     * v4: table partitioning is now projected (strategy, key, child partitions with
+     * their structured bounds). AP4/ADR 0019 makes `SchemaComparator` partition-aware;
+     * the fingerprint must follow so the comparator and the post-`--execute` drift
+     * check agree — otherwise a partition-only difference would be DIFFERENT to
+     * `schema compare` yet identical to the fingerprint. Child partitions are sorted
+     * by name (set equality — declaration order is not semantic).
      */
-    const val ALGORITHM: String = "schema-fingerprint-v3"
+    const val ALGORITHM: String = "schema-fingerprint-v4"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -168,8 +177,42 @@ object MigrationFingerprint {
                     .append(c.references?.let { "${it.table}[${it.columns.joinToString(",")}]" } ?: "")
                     .append('\n')
             }
+            appendPartitioning(sb, table.partitioning)
         }
     }
+
+    // v4: project partitioning (strategy, key, child partitions). Children are
+    // sorted by name (set equality, ADR 0019); bounds render in the same canonical
+    // encoding the reverse parser / generator share, so an unchanged partitioned
+    // table hashes identically across a round-trip.
+    private fun appendPartitioning(sb: StringBuilder, partitioning: PartitionConfig?) {
+        if (partitioning == null) {
+            sb.append("  partitioning=none\n")
+            return
+        }
+        sb.append("  partitioning=").append(partitioning.type.name)
+            .append(SEP).append("key=").append(partitioning.key.joinToString(","))
+            .append(SEP).append("partitions[").append(partitioning.partitions.size).append("]\n")
+        for (part in partitioning.partitions.sortedBy { it.name }) {
+            sb.append("    partition=").append(part.name)
+                .append(SEP).append("default=").append(part.isDefault)
+                .append(SEP).append("from=").append(bounds(part.from))
+                .append(SEP).append("to=").append(bounds(part.to))
+                .append(SEP).append("values=").append(part.values?.joinToString(",") ?: "")
+                .append(SEP).append("modulus=").append(part.modulus ?: "")
+                .append(SEP).append("remainder=").append(part.remainder ?: "")
+                .append('\n')
+        }
+    }
+
+    private fun bounds(list: List<PartitionBound>?): String =
+        list?.joinToString(",") { bound ->
+            when (bound) {
+                PartitionBound.MinValue -> "MINVALUE"
+                PartitionBound.MaxValue -> "MAXVALUE"
+                is PartitionBound.Value -> bound.literal
+            }
+        } ?: ""
 
     private val indexOrder = compareBy<IndexDefinition> { it.name ?: "" }
         .thenBy { it.columns.joinToString(",") }
