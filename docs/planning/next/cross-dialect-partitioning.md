@@ -1,4 +1,4 @@
-# Cross-Dialect-Partitionierung (AP6 — MySQL-Reverse + verlustbehaftetes RANGE-Mapping)
+# Cross-Dialect-Partitionierung (AP6 — MySQL-Reverse/-Generate + Cross-Dialect-Mapping)
 
 > **Status:** Vorschlag (Scope ausgearbeitet, noch nicht aktiv). Folge-Slice der
 > graduierten [Partitions-Hierarchie-Rekonstruktion](../done/partition-hierarchy-reconstruction.md)
@@ -9,56 +9,89 @@
 > partitions-bewussten Comparator/Fingerprint geliefert. Der MySQL-Pfad konsumiert das
 > Modell heute **nur teilweise** und es gibt **keinen** MySQL-Reverse — ein voller
 > Cross-Dialect-Round-Trip fehlt.
-> **Aktivierungsbedingung:** wenn Cross-Dialect-Partitionierung (PG↔MySQL) priorisiert
-> wird; aktuell bricht `make sample-db-cross-smoke-pg2my` an genau diesen Lücken.
+> **Aktivierungsbedingung:** wenn Cross-Dialect-Partitionierung (PG↔MySQL) priorisiert wird.
+> *(Annahme — beim Move nach `in-progress/` mit `make sample-db-cross-smoke-pg2my` belegen:*
+> *der PG→MySQL-Round-Trip bricht vermutlich an genau diesen Lücken.)*
 
 ## Ziel
 
-Ein partitioniertes Schema verlustarm zwischen PostgreSQL und MySQL round-trippen:
-MySQL-Partitionen **reverse-erfassen** (heute partitions-blind) und MySQL-**Generate**
-das strukturierte Modell vollständig konsumieren lassen — inkl. der bewussten,
-ADR-pflichtigen Verlustpunkte beim RANGE-Mapping.
+Ein partitioniertes Schema verlustarm **in beide Richtungen** zwischen PostgreSQL und
+MySQL round-trippen: MySQL-Partitionen **reverse-erfassen** (heute partitions-blind),
+MySQL-**Generate** das strukturierte Modell für **alle drei Strategien** konsumieren
+lassen, und die bewussten Cross-Dialect-Verlust-/Transformationspunkte **strukturiert
+entscheiden** (eine ADR, analog fulltext/geometry).
+
+## Eine ADR für die Cross-Dialect-Carve-Outs
+
+Alle verlustbehafteten/transformierenden Mapping-Entscheide dieses Slices gehören in
+**eine** AP6-ADR (Carve-Out = strukturierte Entscheidung mit ADR-Präzedenz, nicht
+„entweder/oder im Code" — projekteigene „No-Carveouts"-Linie, vgl. das fulltext-/geometry-Muster).
+Sie deckt: RANGE-Datums-Wrapper + `from`-Verwurf (AP6.2), HASH-Form-Divergenz (AP6.2/AP6.5),
+LIST-`DEFAULT`-ohne-MySQL-Pendant (AP6.2), Partition-Index-Abbildung (AP6.3), und die
+**Note-/Ledger-Codes** (unten). Diese ADR ist Voraussetzung, bevor AP6.2/AP6.3 codiert werden.
 
 ## Arbeitspakete
 
-- **AP6.1 — MySQL-Reverse-Capture der Partitionen (dieselbe AP1-Klasse Arbeit für MySQL).**
+- **AP6.1 — MySQL-Reverse-Capture der Partitionen (alle Strategien; dieselbe AP1-Klasse Arbeit).**
   Kein MySQL-Reader befüllt heute `PartitionConfig.partitions` (nur `MysqlDdlGenerator`
   konsumiert es). MySQL exponiert Partitionen über `information_schema.PARTITIONS`
   (PARTITION_NAME, PARTITION_METHOD, PARTITION_EXPRESSION, PARTITION_DESCRIPTION,
-  SUBPARTITION_*). Strategie/Schlüssel + Kind-Grenzen ins strukturierte Modell heben —
-  analog zum PG-`PostgresPartitionBoundParser`, aber für MySQLs `VALUES LESS THAN`/
-  `VALUES IN`-Form. Bound-Parser/Normalisierer ist auch hier der Hotspot.
+  SUBPARTITION_*). Strategie/Schlüssel + Kind-Grenzen für **RANGE/LIST/HASH** ins
+  strukturierte Modell heben — analog zum PG-`PostgresPartitionBoundParser`, aber für MySQLs
+  `VALUES LESS THAN`/`VALUES IN`/`PARTITIONS n`-Form. Bound-Parser/Normalisierer = Hotspot.
 
-- **AP6.2 — Verlustbehaftetes RANGE-Mapping (semantischer Carve-Out, ADR-pflichtig).**
-  PG-RANGE hat `from`+`to` (Lücken erlaubt); MySQL-RANGE kennt nur `VALUES LESS THAN`
-  (Obergrenze, Kontiguität) — der `from`-Anteil wird verworfen (heute schon, per W112).
-  **Zusätzlich:** MySQL-RANGE auf einer Datums-/Zeitspalte braucht einen **Integer-Ausdruck**
-  (`UNIX_TIMESTAMP(col)` / `TO_DAYS(col)` / `YEAR(col)`) oder `RANGE COLUMNS(col)` — eine rohe
-  timestamptz-Grenze wie Pagilas `'2022-02-01 00:00:00+00'` lehnt MySQL ab. Dieser Mapping-
-  Entscheid (welche Wrapper-Funktion bzw. `RANGE COLUMNS`) ist die eigentliche Designarbeit
-  und braucht eine **eigene ADR** (analog fulltext/geometry-Carve-Out-Muster).
+- **AP6.2 — Cross-Dialect-Generate-Divergenz PG→MySQL (alle Strategien).** Der MySQL-Generate
+  existiert (`MysqlIndexPartitionDdlHelper`), aber die Form-Divergenz ist je Strategie verschieden:
+  - **RANGE:** (a) PG hat `from`+`to` (Lücken erlaubt), MySQL nur `VALUES LESS THAN` (Obergrenze,
+    Kontiguität) → `from`-**Verwurf** (heute schon). (b) MySQL-RANGE auf Datums-/Zeitspalte braucht
+    einen **Integer-Ausdruck** (`UNIX_TIMESTAMP(col)`/`TO_DAYS(col)`/`YEAR(col)`) **oder**
+    `RANGE COLUMNS(col)` — eine rohe timestamptz-Grenze (`'2022-02-01 00:00:00+00'`) lehnt MySQL ab.
+    Das ist eine **Transformation**, kein Verwurf (anderer Verlust-Typ → eigener Note-Code, s. u.).
+  - **LIST:** nahe an PG (`VALUES IN`), **aber** PGs `DEFAULT`-Partition hat **kein** MySQL-LIST-Pendant
+    (MySQL kennt keinen LIST-Catch-all) → Carve-Out/Note.
+  - **HASH:** **echte Divergenz.** PG-HASH ist `modulus`/`remainder` **pro Kind**; MySQL-HASH ist
+    ausdrucks-+anzahlbasiert (`PARTITION BY HASH(expr) PARTITIONS n`, MySQL verteilt selbst). N PG-Kinder
+    (modulus=N) → MySQL `PARTITIONS N`; die per-Kind-`remainder` entfällt. → ADR-Carve-Out.
 
-- **AP6.3 — MySQL-Generate emittiert `partition.indices` (Review-Befund AP2a).**
-  `MysqlIndexPartitionDdlHelper` iteriert heute nur `table.indices` und **verwirft die
-  kind-lokalen Partition-Indizes still** — PG→MySQL verlöre sie. MySQL teilt Indizes über
-  alle Partitionen (kein per-Partition-Index wie PG), also ist die Abbildung selbst ein
-  Carve-Out: kind-lokale Indizes müssen entweder auf den Parent gehoben oder per Note
-  gemeldet werden. (SQLite verwirft via `E055` die ganze Partitionierung → dort moot.)
+- **AP6.3 — MySQL-Generate für `partition.indices` (Folgebefund aus dem AP2a-Review).** *(AP2a selbst —
+  Fingerprint-/Comparator-Bewusstsein der kind-lokalen Indizes — ist geliefert; offen ist nur der MySQL-
+  Generate.)* `MysqlIndexPartitionDdlHelper` iteriert nur `table.indices` und **verwirft die kind-lokalen
+  Partition-Indizes still**. MySQL teilt Indizes über alle Partitionen (kein per-Partition-Index wie PG),
+  also ist die Abbildung ein Carve-Out: kind-lokale Indizes **auf den Parent heben** *oder* per Note melden —
+  **die AP6-ADR entscheidet welches** (nicht offen lassen). (SQLite verwirft via `E055` die ganze
+  Partitionierung → dort moot.)
 
-- **AP6.4 — Voller Cross-Dialect-Round-Trip + Harness.** `sample-db-cross-smoke-pg2my`
-  grün bekommen (PG→MySQL) und ein MySQL→PG-Pendant; Comparator/Fingerprint sind seit der
-  PG-Scheibe bereits partitions-bewusst.
+- **AP6.4 — PG→MySQL-Round-Trip + Harness.** `make sample-db-cross-smoke-pg2my` grün bekommen;
+  Comparator/Fingerprint sind seit der PG-Scheibe bereits partitions-bewusst. Baselines neu pinnen + erklären.
+
+- **AP6.5 — MySQL→PG-Richtung (Rück-Mapping-Semantik).** Spiegelbild zu AP6.2: MySQLs kontiguierliche
+  `VALUES LESS THAN` müssen in PGs `from`/`to`-Paare **rekonstruiert** werden (`fromₙ = toₙ₋₁`, erstes
+  `from = MINVALUE`); HASH `PARTITIONS n` → `modulus=n, remainder=0..n-1` synthetisieren; LIST nahe.
+  Der Datums-Wrapper ist hier rückzugewinnen (oder per Note als nicht-invertierbar zu markieren).
+
+## Note-/Ledger-Codes (Teil der AP6-ADR)
+
+- `from`-Verwurf bei RANGE: heute **W112** (RANGE-Anpassung). **W112 ist ledger-rückständig** —
+  vgl. [`../done/index-prefix-length-model.md`](../done/index-prefix-length-model.md) — also Ledger-Eintrag
+  in [`spec/ledger.md`](../../../spec/ledger.md) (führt W100–W112) nachziehen.
+- Datums-Wrapper-**Transformation** (UNIX_TIMESTAMP/TO_DAYS/RANGE COLUMNS): semantisch **anderer** Verlust
+  als W112 (Transformation statt Verwurf) → wahrscheinlich **neuer W-Code** + Ledger-Eintrag. Die AP6-ADR
+  entscheidet, ob ein neuer Code nötig ist.
+- LIST-`DEFAULT`-Verlust + Partition-Index-Abbildung: Note-Code je nach ADR-Entscheid (AP6.2/AP6.3).
 
 ## Akzeptanzkriterien (Skizze — schärfen beim Move nach `in-progress/`)
 
-- MySQL-Reverse befüllt `partitions` für RANGE/LIST/HASH (Unit-Test je Strategie + Live).
-- PG→MySQL: eine RANGE-partitionierte Tabelle (Pagila `payment`) erzeugt **gültiges**
-  MySQL-DDL (Integer-Wrapper bzw. `RANGE COLUMNS`), wendet sauber an, Zeilen-Parität +
-  Nicht-Duplikation; der Verlust (`from` verworfen, Datums-Wrapper) ist per Note (W112 o. ä.)
-  gemeldet und in einer ADR begründet.
-- Kind-lokale Indizes (AP6.3) gehen nicht **still** verloren — entweder abgebildet oder
-  per Note gemeldet.
-- `make sample-db-cross-smoke-pg2my` grün; Baselines neu gepinnt + erklärt.
+- **AP6-ADR akzeptiert**, bevor AP6.2/AP6.3 codiert werden (RANGE-Wrapper, HASH-Divergenz, LIST-DEFAULT,
+  Index-Abbildung, Note-/Ledger-Codes entschieden).
+- **Reverse (AP6.1):** MySQL-Reverse befüllt `partitions` für **RANGE/LIST/HASH** (Unit-Test je Strategie + Live).
+- **Generate PG→MySQL (AP6.2):** je Strategie gültiges MySQL-DDL, das sauber anwendet —
+  RANGE (Integer-Wrapper bzw. `RANGE COLUMNS`), LIST (inkl. DEFAULT-Carve-Out gemeldet), HASH
+  (`PARTITIONS n`); jeder Verlust/Transformation per Note gemeldet + in der ADR begründet.
+- **Index (AP6.3):** kind-lokale Indizes gehen **nicht still** verloren — abgebildet **oder** per Note.
+- **Round-Trip PG→MySQL (AP6.4):** Pagila `payment`, Zeilen-Parität + Nicht-Duplikation;
+  `make sample-db-cross-smoke-pg2my` grün, Baselines erklärt.
+- **MySQL→PG (AP6.5):** eine MySQL-RANGE-Tabelle reverst, generiert valides PG-DDL mit rekonstruierten
+  `from`/`to`-Paaren; HASH `PARTITIONS n` → modulus/remainder; Round-Trip belegt.
 
 ## Abgrenzung / Nicht-Ziel
 
@@ -70,6 +103,6 @@ ADR-pflichtigen Verlustpunkte beim RANGE-Mapping.
 
 - Gate-ADR der Modellform: [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md).
 - Vorläufer-Scheibe (PG-first, geliefert): [`../done/partition-hierarchy-reconstruction.md`](../done/partition-hierarchy-reconstruction.md).
+- Note-/Fehler-Ledger: [`spec/ledger.md`](../../../spec/ledger.md).
 - Anforderung **LN-008** „Partitionierung für große Tabellen"
-  ([`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)) —
-  Cross-Dialect-Teil.
+  ([`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)) — Cross-Dialect-Teil.
