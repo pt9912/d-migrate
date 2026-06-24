@@ -1,9 +1,9 @@
 # Volle Partitions-Hierarchie-Rekonstruktion (PG zuerst)
 
 > **Status:** in-progress/-Slice — **graduiert 2026-06-23** (aus `open/`), **AP1a
-> (`021c0ce2`) + AP1/AP2 (PG-Reverse-Capture) + AP4 (Comparator partitions-bewusst)
+> (`021c0ce2`) + AP1/AP2 + AP4 + Review-Härtung + AP2a (kind-lokale Partition-Indizes)
 > implementiert + grün (docker-`check` UND live `make sample-db-smoke`, 2026-06-24)**.
-> Offen: AP2a/AP3/AP6. Gate-Entscheidung =
+> Offen: AP3/AP6. Gate-Entscheidung =
 > [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
@@ -110,10 +110,27 @@ grün UND live re-verifiziert (`make sample-db-smoke`, Exit 0, compare IDENTICAL
 - **Linchpin live bewiesen:** der Round-Trip bleibt `IDENTICAL` *jetzt aussagekräftig* — der
   Comparator prüft die Bound-Strings, und Source-↔Target-Reverse sind byte-identisch.
 
-**Danach (eigene Increments):** AP2a (kind-lokale Index/FK-Vererbung via `pg_inherits` über
-Index-OIDs / `conparentid` — heute gehen kind-lokale Indizes der Kinder noch verloren, vom
-Comparator unbemerkt da Kinder nicht Top-Level), AP3 (Generate-Verifikation/DEFAULT-Partition),
-AP6 (Cross-Dialect: MySQL-RANGE-Mapping + MySQL-Reverse, eigener Folge-Slice).
+**Erledigt 2026-06-24 — AP2a (kind-lokale Partition-Indizes), `:core/:driver-postgresql/:formats:check`
+grün UND live (`make sample-db-smoke`, Exit 0, 3 Indizes von payment_p2022_01 namensgleich überlebt):**
+
+- **Modell:** `PartitionDefinition.indices: List<IndexDefinition>` (kind-lokal).
+- **Reverse-Klassifikation:** neue Query `listInheritedIndexNames` (Index-Vererbung via
+  `pg_inherits` über Index-OIDs) trennt parent-propagiert von kind-lokal; nur kind-lokale
+  erfasst (`readPartitionLocalIndices`, nach Name sortiert). `mapPostgresIndices` extrahiert
+  + geteilt. **FKs/PK bleiben am Parent + propagieren** (live verifiziert: `_pkey` propagiert,
+  nicht dupliziert) → kein per-Kind-FK-Capture nötig.
+- **Generate:** `generateIndices` emittiert kind-lokale Indizes auf der Partitionstabelle.
+- **Serialisierung** (`indices` im Partition-Node), `spec/schema.json` (`#/$defs/index`) +
+  `schema-reference` + Contract-Fixture nachgezogen.
+- **Fingerprint → `schema-fingerprint-v5`** (Partition-Indizes projiziert; Comparator vergleicht
+  sie strukturell). Comparator/Drift-Check stimmen überein.
+- **Refactor (detekt, kein @Suppress):** Partition-Queries → eigenes `PostgresPartitionMetadataQueries`
+  (Fassade unter Funktions-Limit); Partition-Reader-Tests → eigene `PostgresSchemaReaderPartitionTest`
+  (LargeClass).
+
+**Danach (eigene Increments):** AP3 (Generate-Verifikation / DEFAULT-Partition explizit testen),
+AP6 (Cross-Dialect: MySQL-RANGE-Mapping `UNIX_TIMESTAMP`/`RANGE COLUMNS` + MySQL-Reverse;
+bricht aktuell `sample-db-cross-smoke-pg2my`). Sub-Partitionierung bleibt OUT (ADR 0019).
 
 ## Gegenstand
 
