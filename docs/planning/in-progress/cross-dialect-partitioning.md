@@ -13,11 +13,14 @@
 > **AP6.1 erledigt** (MySQL-Reverse): `MysqlPartitionReader` + `listPartitions`-Query
 > (`information_schema.PARTITIONS`) erfasst RANGE (`to`)/LIST (`values`)/HASH (benannt); Spaltenschlüssel
 > aus PARTITION_EXPRESSION (Backticks gestrippt); Unit-Tests + Live-Integration (MySQL-Testcontainer) grün.
-> **Offen — AP6.2 Teil 2:** DECIMAL/FLOAT/Ausdruck-Schlüssel skip+Note (§1), LIST-`DEFAULT` →
-> `action_required`+Preflight (§4), HASH-Platzierungs-Note (§3).
-> **AP6.3** Index-Heben (nicht-unique heben / UNIQUE skip), **AP6.4** Cross-Smoke-Notes-Baseline
-> neu pinnen + grün, **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
-> spec/ledger.md-Summary-Sync (W125–W129) als Mini-Folge.
+> **AP6.2 Teil 2 erledigt** (Generate-Carve-Outs): DECIMAL/FLOAT/Nicht-Integer-HASH-Schlüssel →
+> skip+`action_required` (E062, §1/§3); HASH-Platzierungs-Note (W130, §3); LIST-`DEFAULT` →
+> verworfen + `action_required` (E063 Transfer-Datenverlust, §4); Ledger E062/E063/W130; 4 Unit-Tests.
+> Helper refactored (skipNote/partitionDiagnostics/effectivePartitions/renderPartition gegen LongMethod).
+> **Offen:** **AP6.3** Index-Heben (nicht-unique heben / UNIQUE skip), **AP6.4** Cross-Smoke-Notes-Baseline
+> neu pinnen + grün (+ Live-Apply-Beweis), **AP6.5** MySQL→PG (`from`/modulus aus AP6.1-Capture rekonstruieren).
+> Mini-Folgen: spec/ledger.md-Summary-Sync (W125–W130); LIST-`DEFAULT`-**Preflight** (§4, Transfer-Seite —
+> die Generate-Note E063 ist da, die Preflight-Integration noch nicht).
 > **Trigger:** Die PG-first-Scheibe hat das strukturierte `PartitionDefinition`-Modell,
 > den PG-Reverse-Capture (Kinder + Grenzen + kind-lokale Indizes) und den
 > partitions-bewussten Comparator/Fingerprint geliefert. Der MySQL-Pfad konsumiert das

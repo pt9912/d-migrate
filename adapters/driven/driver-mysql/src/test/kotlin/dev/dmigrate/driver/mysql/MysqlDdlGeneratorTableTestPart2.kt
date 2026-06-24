@@ -145,6 +145,77 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         result.notes.find { it.code == "E061" }!!.type shouldBe NoteType.ACTION_REQUIRED
     }
 
+    test("DECIMAL partition key is unsupported by RANGE COLUMNS → E062 skip (AP6.2 §1)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("amount" to col(NeutralType.Decimal(10, 2), required = true)),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("amount"),
+                    partitions = listOf(PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("100")))),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        result.notes.find { it.code == "E062" }!!.type shouldBe NoteType.ACTION_REQUIRED
+        result.render() shouldNotContain "PARTITION BY"
+    }
+
+    test("HASH on an integer key emits PARTITION BY HASH + W130 placement note (AP6.2 §3)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("id" to col(NeutralType.Integer, required = true)),
+                primaryKey = listOf("id"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.HASH, key = listOf("id"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p0", modulus = 2, remainder = 0),
+                        PartitionDefinition(name = "p1", modulus = 2, remainder = 1),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        ddl shouldContain "PARTITION BY HASH (`id`)"
+        ddl shouldContain "PARTITION `p0`"
+        result.notes.any { it.code == "W130" } shouldBe true
+    }
+
+    test("HASH on a non-integer key is unsupported → E062 skip (AP6.2 §3)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("name" to col(NeutralType.Text(50), required = true)),
+                partitioning = PartitionConfig(
+                    type = PartitionType.HASH, key = listOf("name"),
+                    partitions = listOf(PartitionDefinition(name = "p0", modulus = 1, remainder = 0)),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        result.notes.any { it.code == "E062" } shouldBe true
+        result.render() shouldNotContain "PARTITION BY HASH"
+    }
+
+    test("LIST DEFAULT partition is dropped with E063 data-loss note (AP6.2 §4)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("region" to col(NeutralType.Text(10), required = true)),
+                partitioning = PartitionConfig(
+                    type = PartitionType.LIST, key = listOf("region"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p_eu", values = listOf("'eu'")),
+                        PartitionDefinition(name = "p_rest", isDefault = true),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        result.notes.find { it.code == "E063" }!!.type shouldBe NoteType.ACTION_REQUIRED
+        ddl shouldContain "PARTITION `p_eu` VALUES IN ('eu')"
+        ddl shouldNotContain "p_rest"
+    }
+
     test("partition bound with unsafe characters is rejected (guard parity with PostgreSQL)") {
         val schema = emptySchema(
             tables = mapOf(

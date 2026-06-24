@@ -24,73 +24,135 @@ internal class MysqlIndexPartitionDdlHelper(
         columns: Map<String, ColumnDefinition>,
         notes: MutableList<TransformationNote>,
     ): String {
-        // RANGE/LIST partitioning requires at least one partition definition.
-        // An empty list would render as a bare `PARTITION BY RANGE (key)` which
-        // MySQL rejects — drop partitioning and flag it instead of emitting
-        // broken DDL. (HASH defaults to a single partition and stays valid.)
-        if (partitioning.partitions.isEmpty() &&
-            (partitioning.type == PartitionType.RANGE || partitioning.type == PartitionType.LIST)
-        ) {
-            notes += TransformationNote(
-                type = NoteType.ACTION_REQUIRED,
-                code = "E055",
-                objectName = partitioning.key.joinToString(","),
-                message = "${partitioning.type.name} partitioning requires at least one partition, " +
-                    "but the definition is empty; partitioning was skipped for this table.",
-                hint = "Add explicit partition boundaries (e.g. PARTITION p0 VALUES LESS THAN (...)) " +
-                    "or remove the partitioning configuration.",
-            )
-            return ""
-        }
+        val keyTypes = partitioning.key.map { columns[it]?.type }
+        skipNote(partitioning, keyTypes)?.let { notes += it; return "" }
+        notes += partitionDiagnostics(partitioning)
+        val emitPartitions = effectivePartitions(partitioning, notes)
+        // LIST that filtered down to nothing (only DEFAULT existed) → nothing valid to emit.
+        if (emitPartitions.isEmpty() && partitioning.type != PartitionType.HASH) return ""
 
-        if (partitioning.type == PartitionType.RANGE) {
-            notes += TransformationNote(
-                type = NoteType.WARNING,
-                code = "W112",
-                objectName = partitioning.key.joinToString(","),
-                message = "PostgreSQL RANGE has lower+upper bounds; MySQL RANGE COLUMNS keeps only the " +
-                    "upper bound (VALUES LESS THAN), so the partition's `from` bound is dropped.",
-                hint = "Verify the partitions are contiguous (MySQL RANGE assumes no gaps).",
-            )
-        }
-
-        // §1/§4 (ADR 0020): RANGE/LIST → `… COLUMNS(key)` so date/datetime/string keys take
-        // literal bounds directly (plain RANGE/LIST would require an integer expression).
+        // §1/§4: RANGE/LIST → `… COLUMNS(key)` so date/datetime/string keys take literal bounds directly.
         val mysqlMethod = when (partitioning.type) {
             PartitionType.RANGE -> "RANGE COLUMNS"
             PartitionType.LIST -> "LIST COLUMNS"
             PartitionType.HASH -> "HASH"
         }
-        val keyTypes = partitioning.key.map { columns[it]?.type }
         val key = partitioning.key.joinToString(", ") { quoteIdentifier(it) }
         val emittedCodes = mutableSetOf<String>()
         return buildString {
             append("PARTITION BY $mysqlMethod ($key)")
-            if (partitioning.partitions.isNotEmpty()) {
+            if (emitPartitions.isNotEmpty()) {
                 append(" (\n")
-                append(
-                    partitioning.partitions.joinToString(",\n") { partition ->
-                        buildString {
-                            append("    PARTITION ${quoteIdentifier(partition.name)}")
-                            when (partitioning.type) {
-                                PartitionType.RANGE ->
-                                    append(" VALUES LESS THAN (${renderMysqlUpperBound(partition, keyTypes, notes, emittedCodes)})")
-                                PartitionType.LIST -> {
-                                    val temporal = keyTypes.firstOrNull() is NeutralType.DateTime
-                                    val values = partition.values?.joinToString(", ") {
-                                        val safe = PartitionLiteralGuard.ensureSafe(it, partition.name)
-                                        if (temporal) normalizeTemporalBound(safe, partition.name, notes, emittedCodes) else safe
-                                    } ?: ""
-                                    append(" VALUES IN ($values)")
-                                }
-                                PartitionType.HASH -> Unit
-                            }
-                        }
-                    }
-                )
+                append(emitPartitions.joinToString(",\n") {
+                    renderPartition(it, partitioning.type, keyTypes, notes, emittedCodes)
+                })
                 append("\n)")
             }
         }
+    }
+
+    /**
+     * Wenn die Partitionierung **ganz** verworfen werden muss, die zugehörige
+     * `action_required`-Note (sonst null): leere RANGE/LIST (E055; MySQL lehnt
+     * bare `PARTITION BY` ab) oder nicht abbildbarer Schlüsseltyp (E062, ADR 0020 §1/§3 —
+     * RANGE/LIST COLUMNS brauchen INT/DATE/DATETIME/CHAR, HASH einen Integer).
+     */
+    private fun skipNote(partitioning: PartitionConfig, keyTypes: List<NeutralType?>): TransformationNote? {
+        val objectName = partitioning.key.joinToString(",")
+        if (partitioning.partitions.isEmpty() &&
+            (partitioning.type == PartitionType.RANGE || partitioning.type == PartitionType.LIST)
+        ) {
+            return TransformationNote(
+                type = NoteType.ACTION_REQUIRED, code = "E055", objectName = objectName,
+                message = "${partitioning.type.name} partitioning requires at least one partition, " +
+                    "but the definition is empty; partitioning was skipped for this table.",
+                hint = "Add explicit partition boundaries or remove the partitioning configuration.",
+            )
+        }
+        val unsupported = when (partitioning.type) {
+            PartitionType.RANGE, PartitionType.LIST -> keyTypes.any { it is NeutralType.Decimal || it is NeutralType.Float }
+            PartitionType.HASH -> keyTypes.any { !isIntegerKey(it) }
+        }
+        if (unsupported) {
+            return TransformationNote(
+                type = NoteType.ACTION_REQUIRED, code = "E062", objectName = objectName,
+                message = "${partitioning.type.name} partition key type is not supported by MySQL " +
+                    "(RANGE/LIST COLUMNS need INT/DATE/DATETIME/CHAR; HASH needs an integer key); " +
+                    "partitioning was skipped for this table.",
+                hint = "Repartition on a supported key type, or remove the partitioning configuration.",
+            )
+        }
+        return null
+    }
+
+    /** Diagnostische Notes für eine emittierte Partitionierung (ADR 0020): W112 (`from`-Verwurf), W130 (HASH-Platzierung). */
+    private fun partitionDiagnostics(partitioning: PartitionConfig): List<TransformationNote> {
+        val objectName = partitioning.key.joinToString(",")
+        return when (partitioning.type) {
+            PartitionType.RANGE -> listOf(TransformationNote(
+                type = NoteType.WARNING, code = "W112", objectName = objectName,
+                message = "PostgreSQL RANGE has lower+upper bounds; MySQL RANGE COLUMNS keeps only the " +
+                    "upper bound (VALUES LESS THAN), so the partition's `from` bound is dropped.",
+                hint = "Verify the partitions are contiguous (MySQL RANGE assumes no gaps).",
+            ))
+            PartitionType.HASH -> listOf(TransformationNote(
+                type = NoteType.WARNING, code = "W130", objectName = objectName,
+                message = "PostgreSQL and MySQL hash functions differ; partition count and names are " +
+                    "preserved, but rows may land in different partitions after import.",
+                hint = "No data loss (parent routing); placement differs from the source.",
+            ))
+            PartitionType.LIST -> emptyList()
+        }
+    }
+
+    /**
+     * §4 (ADR 0020): MySQL-LIST hat keinen `DEFAULT`-Catch-all. Eine DEFAULT-Partition wird
+     * verworfen — **Transfer-Datenverlust** (E063), da ihre Zeilen in MySQL keine Ziel-Partition haben.
+     */
+    private fun effectivePartitions(
+        partitioning: PartitionConfig,
+        notes: MutableList<TransformationNote>,
+    ): List<PartitionDefinition> {
+        if (partitioning.type == PartitionType.LIST && partitioning.partitions.any { it.isDefault }) {
+            notes += TransformationNote(
+                type = NoteType.ACTION_REQUIRED, code = "E063", objectName = partitioning.key.joinToString(","),
+                message = "LIST DEFAULT partition has no MySQL equivalent and was dropped; rows that fell " +
+                    "into it have no target partition in MySQL and would be rejected on transfer (data loss).",
+                hint = "Replace the DEFAULT partition with explicit LIST values, or migrate those rows separately.",
+            )
+            return partitioning.partitions.filter { !it.isDefault }
+        }
+        return partitioning.partitions
+    }
+
+    private fun renderPartition(
+        partition: PartitionDefinition,
+        type: PartitionType,
+        keyTypes: List<NeutralType?>,
+        notes: MutableList<TransformationNote>,
+        emittedCodes: MutableSet<String>,
+    ): String = buildString {
+        append("    PARTITION ${quoteIdentifier(partition.name)}")
+        when (type) {
+            PartitionType.RANGE ->
+                append(" VALUES LESS THAN (${renderMysqlUpperBound(partition, keyTypes, notes, emittedCodes)})")
+            PartitionType.LIST -> {
+                val temporal = keyTypes.firstOrNull() is NeutralType.DateTime
+                val values = partition.values?.joinToString(", ") {
+                    val safe = PartitionLiteralGuard.ensureSafe(it, partition.name)
+                    if (temporal) normalizeTemporalBound(safe, partition.name, notes, emittedCodes) else safe
+                } ?: ""
+                append(" VALUES IN ($values)")
+            }
+            PartitionType.HASH -> Unit
+        }
+    }
+
+    /** Integer-coercible key (MySQL HASH/KEY require it). */
+    private fun isIntegerKey(type: NeutralType?): Boolean = when (type) {
+        is NeutralType.Identifier, NeutralType.Integer, NeutralType.SmallInt,
+        NeutralType.BigInteger, NeutralType.BooleanType -> true
+        else -> false
     }
 
     /** MySQL-RANGE-Obergrenze aus dem strukturierten `to`-Bound-Tupel (ADR 0019/0020).

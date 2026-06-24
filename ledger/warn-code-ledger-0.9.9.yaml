@@ -61,3 +61,12 @@ entries:
     evidence_paths:
       - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
         path_type: production
+  # W130 — AP6.2/ADR 0020: PG↔MySQL HASH placement differs (MySQL re-hashes; count/names kept, no data loss).
+  - code: W130
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
