@@ -114,3 +114,13 @@ Konkrete Werte der gewählten **Option A**:
 - Reproduzierbarkeit über gepinntes Tool + Config statt Daten-SHA256 — bewusste,
   hier dokumentierte ADR-0014-Abweichung.
 - Kein Benchmark-Dump im Repo; Verlustfreiheit per-Lauf (LF 8.5) verifiziert.
+
+## Nachtrag (2026-06-25): TPC-DS (`tpcds`-Extension)
+
+Der optionale Sub-Slice 4e (TPC-DS, 24 Tabellen) wendet **dieselbe** hier getroffene
+Entscheidung auf die **`tpcds`-Core-Extension** an: dieselbe Tool-Familie (DuckDB), dieselbe
+**MIT**-Lizenz, derselbe Pin-Mechanismus (CLI v1.4.5 + separat SHA256-gepinnte
+`tpcds.duckdb_extension`, nicht im CLI gebündelt → offline aus Datei `LOAD`-ed). `CALL
+dsdgen(sf=N)` statt `dbgen`. Das ist **keine neue Grundsatzentscheidung**, nur die Anwendung
+von Punkt 1–3 auf die zweite Workload — daher als Nachtrag statt eigener ADR. Geliefert +
+live-verifiziert: [`../planning/done/tpc-4e-tpcds-slice.md`](../planning/done/tpc-4e-tpcds-slice.md).

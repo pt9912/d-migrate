@@ -37,3 +37,8 @@ database:
     tpch_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch_target"
     # 4c (Volumen-Abnahme): dedizierte Re-Import-Ziel-DB, getrennt vom 4b-Ziel.
     tpch_perf_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch_perf_target"
+    # Phase 4 (TPC-DS, optionaler 4e Round-Trip) — postgres-Service. Quell-/Ziel-DBs legt
+    # smoke-tpcds.sh an (idempotent); die 24 TPC-DS-Tabellen kommen aus dem 4e-Generator
+    # (runtime-generierte DuckDB-schema.sql + CSVs, kein TPC-Artefakt im Repo).
+    tpcds_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpcds"
+    tpcds_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpcds_target"

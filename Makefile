@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tool-compare
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 help:
 	@printf '%s\n' \
@@ -420,6 +420,17 @@ sample-db-tpch-smoke:
 # Runner) + Resume nach Mid-Stream-Abbruch. Kalibrier-Guard + Nightly-Hart-Gate = Teil 2.
 sample-db-tpch-perf:
 	./examples/sample-db/scripts/smoke-tpch-perf.sh
+
+# Phase 4 (optionaler Sub-Slice 4e) — TPC-DS-Generierung (24 Tabellen) offline aus
+# gepinntem DuckDB + tpcds-Extension. Opt-in, NICHT im PR-Gate.
+sample-db-tpcds-gen:
+	./examples/sample-db/scripts/tpcds-generate.sh
+
+# Phase 4 (optionaler Sub-Slice 4e) — TPC-DS Round-Trip-Korrektheit PG->PG:
+# reverse/validate/generate/transfer + Parität (24 Tabellen + DECIMAL-Checksumme).
+# Opt-in, NICHT im PR-Gate. Voraussetzung: lokales d-migrate:dev (`make docker-build IMAGE_TAG=dev`).
+sample-db-tpcds-smoke:
+	./examples/sample-db/scripts/smoke-tpcds.sh
 
 # Phase 4 (#2 Tool-Vergleich) — opt-in, NICHT im PR-Gate, INTERNER Sanity-Check (kein
 # Audit-Benchmark). Bewegt dieselbe TPC-H-Workload PG->PG mit COPY (native Decke),

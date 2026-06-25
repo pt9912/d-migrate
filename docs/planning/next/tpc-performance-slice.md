@@ -15,6 +15,10 @@
 
 ## Stand & Wiedereinstieg (2026-06-23)
 
+> **Update 2026-06-25: ALLE Sub-Slices 4a–4e geliefert + graduiert** (4a/4b/4c/4d/4e in `done/`;
+> 4c-Hart-Gate-Arming = Ops-Carve-Out, sonst alles live-grün). Das Umbrella ist damit
+> **graduierungsreif** — der untenstehende „Bau folgt"-Strang ist historisch.
+
 **Beide Decision-Blocker aufgelöst — Bau noch nicht begonnen.**
 
 - **Sourcing/Lizenz (Blocker 1+2):** entschieden →
@@ -175,7 +179,12 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
    gedeckt. Doku-Sync §4 erledigt. Super-linear-Skalierung als Ticket notiert
    ([`open/large-schema-superlinear-scaling.md`](../open/large-schema-superlinear-scaling.md)).
    Synthetisch, **nicht** TPC. (Die „5×n"-KDoc-Korrektur war bereits in `6040d763`.)
-- **4e — (optional) TPC-DS** als zweite, komplexere Workload.
+- **4e — (optional) TPC-DS — ERLEDIGT + live-verifiziert**
+   ([done/tpc-4e-tpcds-slice.md](../done/tpc-4e-tpcds-slice.md), 2026-06-25). Zweite,
+   komplexere Workload (24 Tabellen) als Round-Trip-Korrektheit PG→PG: gepinnter
+   DuckDB-`tpcds`-Generator (ADR 0017-Mechanik, MIT, offline), `make sample-db-tpcds-smoke`
+   reverse/validate/generate/transfer — 24 Tabellen zeilen-identisch + DECIMAL-Werttransfer
+   (`store_sales.ss_net_paid`) verlustfrei, 0 generate-Notes. Bewusst FK-/PK-frei (wie 4b).
 
 Jeder Sub-Slice (4a–4e) graduiert bei Aktivierung als **eigener** `in-progress/`-Slice
 mit eigener DoD (Modul 5) — dieser `next/`-Entwurf ist der Umbrella, nicht eine

@@ -117,6 +117,13 @@ TPCH_EXT_URL="https://extensions.duckdb.org/v1.4.5/linux_amd64/tpch.duckdb_exten
 TPCH_EXT_SHA256="56256ba742be9b2800c89ffedb4409946aaa2514d95e07288bb5cf6b88e45014"
 TPCH_DIR="$CACHE_DIR/tpch-tool"
 
+# TPC-DS (optional, Sub-Slice 4e): dieselbe gepinnte DuckDB-CLI-Linie, aber die
+# eigene tpcds-Core-Extension (MIT, separat gepinnt — gleiche ADR-0017-Mechanik
+# wie tpch: Extension nicht im CLI gebündelt, daher datei-`LOAD` + offline).
+TPCDS_EXT_URL="https://extensions.duckdb.org/v1.4.5/linux_amd64/tpcds.duckdb_extension.gz"
+TPCDS_EXT_SHA256="cda2f5029bdec5d4b33f8aaa195c715798a51972ded3c8204ab446ce526031fa"
+TPCDS_DIR="$CACHE_DIR/tpcds-tool"
+
 mkdir -p "$CACHE_DIR"
 fetch_one "pagila"        "$PAGILA_URL"        "$PAGILA_DEST"        "$PAGILA_SHA256"
 fetch_one "sakila-schema" "$SAKILA_SCHEMA_URL" "$SAKILA_SCHEMA_DEST" "$SAKILA_SCHEMA_SHA256"
@@ -160,5 +167,21 @@ if [ "${FETCH_TPCH:-0}" = "1" ]; then
     [ -f "$TPCH_DIR/tpch.duckdb_extension" ] || fail "tpch: extension not found after gunzip"
     chmod +x "$TPCH_DIR/duckdb"
     log "tpch: duckdb v1.4.5 CLI + tpch extension ready (offline-capable) -> $TPCH_DIR"
+fi
+
+# TPC-DS Generator-Tool nur fetchen, wenn angefordert (optional 4e, opt-in/nightly).
+if [ "${FETCH_TPCDS:-0}" = "1" ]; then
+    mkdir -p "$TPCDS_DIR"
+    fetch_one "tpcds-duckdb-cli" "$TPCH_CLI_URL"  "$TPCDS_DIR/duckdb_cli.zip"            "$TPCH_CLI_SHA256"
+    fetch_one "tpcds-extension"  "$TPCDS_EXT_URL" "$TPCDS_DIR/tpcds.duckdb_extension.gz" "$TPCDS_EXT_SHA256"
+    command -v unzip >/dev/null 2>&1 || fail "unzip not found (needed to extract duckdb cli)"
+    unzip -o "$TPCDS_DIR/duckdb_cli.zip" -d "$TPCDS_DIR" >/dev/null \
+        || fail "tpcds: unzip of duckdb cli failed"
+    gunzip -kf "$TPCDS_DIR/tpcds.duckdb_extension.gz" \
+        || fail "tpcds: gunzip of tpcds extension failed"
+    [ -f "$TPCDS_DIR/duckdb" ]                 || fail "tpcds: duckdb binary not found after unzip"
+    [ -f "$TPCDS_DIR/tpcds.duckdb_extension" ] || fail "tpcds: extension not found after gunzip"
+    chmod +x "$TPCDS_DIR/duckdb"
+    log "tpcds: duckdb v1.4.5 CLI + tpcds extension ready (offline-capable) -> $TPCDS_DIR"
 fi
 log "done."
