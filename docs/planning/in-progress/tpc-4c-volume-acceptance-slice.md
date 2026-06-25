@@ -124,9 +124,10 @@ Die **gemessene** Volumen-Abnahme über 4b hinaus:
       Bootstrap → diagnostisch; kein False-Fail).
 - [x] `performance-benchmarks.md` auf den gebauten Mess-Kern + Guard nachgezogen.
 
-**Operativer Rest (kein Code, braucht echten Runner):**
-- [ ] Nightly-Runner designieren + `CALIB_REFERENCE_MS` darauf pinnen (Bootstrap-Lauf)
-      → absolutes Zeit-Gate live. Verlustfreiheit + Resume sind ohnehin host-unabh. hart.
+**Operativer Rest (kein Code mehr — reine Repo-Variablen, braucht einen stabilen Runner):**
+- [ ] Stabilen Runner designieren (Repo-Variable `PERF_RUNNER`) + `CALIB_REFERENCE_MS` aus
+      einem Bootstrap-Lauf darauf pinnen → absolutes Zeit-Gate live. Schritt-für-Schritt im
+      Runbook unten. Verlustfreiheit + Resume sind ohnehin host-unabhängig hart.
 
 ## Nicht-Ziele
 
@@ -134,3 +135,29 @@ Die **gemessene** Volumen-Abnahme über 4b hinaus:
   (10 Mio OOM, 5×-Parallel-Speedup, inkrementell 1000 Tab. < 1 h) — eigene Slices.
 - Der DDL-1000-< 30 s-Teil = **4d** (synthetisch, nicht TPC).
 - Spaltenreihenfolge-Fidelity (Nebenbefund 3) — separate Bewertung.
+
+## Runbook: Hart-Gate scharf stellen (Operator)
+
+Die Mechanik ist vollständig gebaut; das absolute Durchsatz-Gate (LF 8.2) live zu schalten
+ist **reine Ops** — zwei Repo-Variablen, **kein Code-Edit**. Verlustfreiheit (kanonischer
+SHA-256) und Resume laufen ohnehin host-unabhängig **hart**, unabhängig von diesen Schritten.
+
+1. **Stabilen Runner designieren.** Repo-Variable `PERF_RUNNER` auf das Label eines Runners
+   mit **stabiler Hardware** setzen (self-hosted oder dediziert):
+   `gh variable set PERF_RUNNER --body "<runner-label>"`.
+   Der Default `ubuntu-latest` ist *variable* Hardware → der Kalibrier-Guard hält das Gate
+   dort by-design diagnostisch (kein verlässlicher Zeit-Bezug). Für Mehr-Label-Runner ein
+   eindeutiges Einzel-Label vergeben oder `runs-on` direkt setzen.
+2. **Bootstrap-Lauf** auf diesem Runner: `gh workflow run perf-acceptance.yml` (oder den
+   Nightly abwarten). Solange `CALIB_REFERENCE_MS` leer ist, läuft die Kalibrierung im
+   Bootstrap und das Log meldet die Zeile
+   `calibration BOOTSTRAP: median=<N> ms — … pin CALIB_REFERENCE_MS=<N> (under these caps) …`.
+   `<N>` ablesen.
+3. **Referenz pinnen:** `gh variable set CALIB_REFERENCE_MS --body "<N>"`.
+   Ab dem nächsten Lauf: Kalibrier-Median im ±25 %-Band → Host in-band → mit `PERF_GATE=true`
+   greift das **Hart-Gate** (Export <100 s / Import <200 s je 1 Mio, ADR 0018). Off-Spec
+   (Drift > 25 %, z. B. Runner ausgetauscht) → automatischer Rückfall auf diagnostisch
+   (kein False-Fail). Nach einem Hardware-Wechsel Schritt 2–3 wiederholen (neu kalibrieren).
+
+Damit ist der „operative Rest" auf zwei `gh variable set`-Aufrufe rund um **einen**
+Bootstrap-Lauf reduziert — danach ist tpc-4c graduierungsreif.

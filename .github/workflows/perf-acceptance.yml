@@ -15,9 +15,12 @@ name: Perf Acceptance — TPC-H Volume (4c, Nightly / opt-in)
 # -> das Durchsatz-Gate bleibt diagnostisch (kein False-Fail auf einem variablen
 # GitHub-Runner). Der Lauf MELDET den Kalibrier-Median zum Pinnen.
 #
-# HART SCHARF STELLEN (sobald ein designierter Runner feststeht):
-#   1. Einen Bootstrap-Lauf auf diesem Runner fahren, den gemeldeten Median ablesen.
-#   2. `CALIB_REFERENCE_MS=<median>` als Repo-/Env-Variable hier injizieren.
+# HART SCHARF STELLEN (sobald ein designierter Runner feststeht) — beides reine
+# Repo-Variablen, KEIN Code-Edit (Runbook: tpc-4c-volume-acceptance-slice.md):
+#   1. Repo-Variable `PERF_RUNNER` auf das Label des stabilen Runners setzen (default
+#      `ubuntu-latest` = variable Hardware -> Gate bleibt by-design diagnostisch).
+#   2. Einen Bootstrap-Lauf auf diesem Runner fahren, den gemeldeten Median ablesen.
+#   3. Repo-Variable `CALIB_REFERENCE_MS=<median>` setzen.
 #   Liegt die Kalibrierung dann im +-25%-Band, greift das Hart-Gate; off-spec ->
 #   automatischer Rueckfall auf diagnostisch. Verlustfreiheit (kanon. SHA-256) +
 #   Resume sind ohnehin host-unabhaengig HART.
@@ -30,7 +33,8 @@ on:
 
 jobs:
   tpch-perf:
-    runs-on: ubuntu-latest
+    # Designierter Runner per Repo-Variable; default ubuntu-latest (variabel -> diagnostisch).
+    runs-on: ${{ vars.PERF_RUNNER || 'ubuntu-latest' }}
     continue-on-error: true
     timeout-minutes: 45
     steps:
