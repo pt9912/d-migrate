@@ -36,7 +36,10 @@ jobs:
     # Designierter Runner per Repo-Variable; default ubuntu-latest (variabel -> diagnostisch).
     runs-on: ${{ vars.PERF_RUNNER || 'ubuntu-latest' }}
     continue-on-error: true
-    timeout-minutes: 45
+    # Geteiltes Budget mit build(~15 min) + run-step(35) + collect/cleanup/upload(~10) +
+    # Reserve. Muss > Summe sein, damit der Step-Timeout (35) die bindende Schranke ist,
+    # nicht das Job-Limit (sonst kein Collect/Upload). Start-Budget, im Lauf zu validieren.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -46,14 +49,49 @@ jobs:
       - name: Build d-migrate:dev runtime image
         run: make docker-build IMAGE_TAG=dev
 
+      # Stale /tmp/tpch-*.log eines früh abgebrochenen Laufs auf einem REUSED
+      # (self-hosted) Runner gezielt entfernen, damit der Collect-Step sie nicht
+      # fälschlich einsammelt. Auf GitHub-gehosteten (ephemeren) Runnern no-op.
+      - name: Clean stale perf logs
+        shell: bash
+        run: rm -f /tmp/tpch-*.log
+
       - name: Run TPC-H volume acceptance (calibration-guarded)
         # SF=0.2 -> ~1.7 Mio Zeilen (>= LF-8.1-1-Mio-Schwelle). PERF_GATE=true ist durch
         # den Kalibrier-Guard abgesichert: ohne CALIB_REFERENCE_MS -> Bootstrap ->
         # diagnostisch (kein False-Fail). Repo-Variable CALIB_REFERENCE_MS scharf stellen.
+        # `shell: bash` -> bash -eo pipefail: der make-Exit überlebt das `tee` (Default
+        # `bash -e` hätte kein pipefail -> ein erfolgreiches tee maskiert ein fehlgeschlagenes make).
+        shell: bash
+        timeout-minutes: 35
         env:
           CALIB_REFERENCE_MS: ${{ vars.CALIB_REFERENCE_MS }}
-        run: make sample-db-tpch-perf PERF_GATE=true
+        run: make sample-db-tpch-perf PERF_GATE=true 2>&1 | tee perf-acceptance-run.log
 
-      - name: Cleanup (best-effort)
+      # Artefakt-Quellen in EIN Staging-Verzeichnis kopieren (sauberer flacher Wurzel-
+      # Pfad im Artefakt; sonst mischt upload-artifact /tmp/… mit Workspace-Pfaden).
+      # Vor dem Cleanup, damit ein zäher Upload den Container-Cleanup nicht verdrängt.
+      - name: Collect perf artifacts
         if: always()
+        shell: bash
+        run: |
+          mkdir -p perf-acceptance-artifact
+          cp -f perf-acceptance-run.log perf-acceptance-artifact/ 2>/dev/null || true
+          cp -f /tmp/tpch-*.log perf-acceptance-artifact/ 2>/dev/null || true
+          cp -f examples/sample-db/out/tpch-perf-summary.env perf-acceptance-artifact/ 2>/dev/null || true
+
+      - name: Cleanup (best-effort, bounded)
+        if: always()
+        timeout-minutes: 5   # ein hängendes `down -v` darf den Upload nicht aushungern
         run: make sample-db-purge || true
+
+      - name: Upload perf results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          # run_attempt im Namen: github.run_id bleibt bei Re-runs gleich, upload-artifact
+          # verlangt eindeutige Namen (ohne overwrite) -> sonst Kollision.
+          name: tpch-perf-${{ github.run_id }}-${{ github.run_attempt }}
+          path: perf-acceptance-artifact/
+          retention-days: 30
+          if-no-files-found: warn

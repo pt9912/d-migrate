@@ -161,7 +161,7 @@ Baseline lokal ermittelt und gepinnt** — kein mehrrundiger CI-Zyklus.
   [`../done/sample-db-phase3-findings.md`](../done/sample-db-phase3-findings.md).
   Scope: nur Daten (Tabellen+PK via pre-data); FKs/Views (post-data) = Phase-2-Domäne.
 - **Phase 4 — Performance (TPC-H/-DS).** Eigener 1.0.0-QA-Folge-Slice (LF 8.1/8.2)
-  → **geschnitten** in [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md)
+  → **geschnitten** in [`../done/tpc-performance-slice.md`](../done/tpc-performance-slice.md)
   (Sourcing/Workload/Methodik dort; LF-8.1-Verlustfreiheit durch Phase 3
   **plausibilisiert**, gemessene Abnahme — inkl. LF-8.2-Zeitbudgets — offen;
   TPC = realistische Workload).

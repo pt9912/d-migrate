@@ -238,3 +238,21 @@ Vorbedingung ist mit ADR 0018 `accepted` nun erfüllt.)
 - TPC-Query-Performance-Benchmarking (d-migrate transferiert Daten/Schema; gemessen
   wird Transfer/DDL, nicht TPC-Query-Latenz).
 - Wettbewerbs-/Veröffentlichungs-taugliche TPC-Audit-Zahlen.
+
+## Closure (2026-06-25)
+
+**Phase 4 (TPC) komplett — alle Sub-Slices 4a–4e geliefert → Umbrella graduiert nach `done/`.**
+
+- **4a** Sourcing (gepinnter DuckDB-`tpch`-Generator) — [`tpc-4a-sourcing-slice.md`](tpc-4a-sourcing-slice.md).
+- **4b** Schema-Round-Trip PG→PG (8 Tabellen) — [`tpc-4b-roundtrip-slice.md`](tpc-4b-roundtrip-slice.md).
+- **4c** Volumen-Abnahme (Mess-Kern + Kalibrier-Guard; Hart-Gate-Arming = Ops-Carve-Out) —
+  [`tpc-4c-volume-acceptance-slice.md`](tpc-4c-volume-acceptance-slice.md). Ergebnis-Artefakt
+  (CI-Upload + `summary.env`) nachgeliefert: [`tpch-perf-result-artifact.md`](tpch-perf-result-artifact.md).
+- **4d** LN-004 DDL-1000-Gate (1,7 s ≪ 30 s) — [`tpc-4d-ddl-1000-slice.md`](tpc-4d-ddl-1000-slice.md).
+- **4e** TPC-DS-Round-Trip (24 Tabellen) — [`tpc-4e-tpcds-slice.md`](tpc-4e-tpcds-slice.md).
+
+Verlustfreiheit + Resume host-unabhängig hart; Durchsatz/DDL kalibrier-guarded (hart auf einem
+designierten Runner). Sourcing per ADR 0017, Mess-Umgebung per ADR 0018. **Einzig offen:** der
+operative 4c-Runner-Pin (Carve-Out im [`../in-progress/carveout.md`](../in-progress/carveout.md)-Tracker).
+Die weiteren LF-8.2-Skalierungskriterien (10 Mio OOM, 5×-Parallel, inkrementell 1000 Tab. < 1 h)
+bleiben — wie oben abgegrenzt — eigene Slices.

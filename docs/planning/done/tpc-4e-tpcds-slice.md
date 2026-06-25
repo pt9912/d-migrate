@@ -1,7 +1,7 @@
 # Slice: TPC Sub-Slice 4e — TPC-DS-Workload (Round-Trip-Korrektheit)
 
 > Dokumenttyp: Done-Plan (optionaler Sub-Slice des Umbrellas
-> [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md), Phase 4).
+> [`../done/tpc-performance-slice.md`](../done/tpc-performance-slice.md), Phase 4).
 > ADR: [0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) (Sourcing/Lizenz —
 > Mechanik auf die `tpcds`-Extension angewandt), [0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
 > (Harness). Aufbauend auf [4a](tpc-4a-sourcing-slice.md)/[4b](tpc-4b-roundtrip-slice.md).
@@ -61,6 +61,6 @@ deterministisch): `store_sales` = **28810 Zeilen**.
 
 ## Bezug
 
-- Umbrella: [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md) (Phase 4).
+- Umbrella: [`../done/tpc-performance-slice.md`](../done/tpc-performance-slice.md) (Phase 4).
 - Sourcing/Lizenz: [ADR 0017](../../adr/0017-tpc-benchmark-workload-sourcing.md).
 - Erwartungs-Pin: [`../../../examples/sample-db/expected/tpcds.md`](../../../examples/sample-db/expected/tpcds.md).

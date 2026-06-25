@@ -1,6 +1,8 @@
 # Perf-Acceptance-Ergebnisse als CI-Artefakt sichern (TPC-H 4c Nightly)
 
-> **Status:** Plan-Entwurf, Review-Runde 1 + 2 eingearbeitet (2026-06-24).
+> **Status: GELIEFERT (2026-06-25) → graduiert nach done/.** Teil A + Teil B (Variante 1)
+> umgesetzt + live-verifiziert; Closure am Ende. Plan-Historie (Review-Runde 1 + 2 + 3) folgt.
+> Plan-Entwurf, Review-Runde 1 + 2 eingearbeitet (2026-06-24).
 > Runde 1 — `shell: bash`/`pipefail` (High), Step-`timeout-minutes` < Job-Limit (Med),
 > Trap-Komposition mit dem vorhandenen EXIT-Handler Z. 182 (Med),
 > `CALIB_MS`/`CALIB_REFERENCE_CANDIDATE_MS` statt `CALIB_REFERENCE_MS` (Low),
@@ -246,3 +248,26 @@ gebraucht wird.
   pro-Lauf + retention-begrenzt, kein Repo-Stand.
 - Die übrigen `perf`-Hotpaths (`make docker-perf`, JVM-`PerfReport`-JSONs unter `build/`) —
   separates Thema; dieses Ticket betrifft nur den TPC-H-4c-Nightly.
+
+## Closure (2026-06-25)
+
+**Geliefert (Variante 1 — End-Writer) + live-verifiziert.**
+
+- **Teil B** (`smoke-tpch-perf.sh`): `summary()` schreibt `out/tpch-perf-summary.env`
+  (gitignored) am Lauf-Ende; neues `CALIB_STATUS` (BOOTSTRAP|IN_BAND|OFF_SPEC) trennt die
+  `HOST_OK=0`-Mehrdeutigkeit. Re-Verify-Lauf (`make sample-db-tpch-perf`, SF=0.2 → 1731999
+  Zeilen) grün: `CALIB_MS=1662`, `CALIB_REFERENCE_CANDIDATE_MS=1662`, `CALIB_STATUS=BOOTSTRAP`,
+  `HOST_OK=0`, `EXPORT_RPS=173199`, `IMPORT_RPS=66615`, `TOTAL_ROWS=1731999`, `PERF_GATE=false`,
+  `RESULT=SUCCESS`. Damit funktioniert das Runner-Pinnen ohne Log-Grep
+  (`CALIB_REFERENCE_CANDIDATE_MS` ablesen → Repo-Variable `CALIB_REFERENCE_MS` setzen).
+- **Teil A** (`perf-acceptance.yml`): Job-`timeout-minutes` 45→60; Steps **Clean stale →
+  Run (`shell: bash` + `tee` + `timeout-minutes: 35`) → Collect (Staging-Dir) → Cleanup
+  (bounded `timeout-minutes: 5`) → Upload (`@v6`, `if: always()`, Name mit `run_attempt`,
+  30 Tage)**. YAML-validiert (Actions-Steps lokal nicht ausführbar — inhärent).
+- **Doku-Sync:** `performance-benchmarks.md` §5 (Reports) auf das CI-Artefakt nachgezogen.
+- **Offene Entscheidung aufgelöst:** Variante 1 (Empfehlung des Tickets) — der Fehlerfall ist
+  durch das hochgeladene Log abgedeckt; `RESULT` unter Variante 1 konstant `SUCCESS`.
+
+Verbleibend ist allein der ohnehin getrackte 4c-**Ops-Rest** (stabilen Runner designieren +
+`CALIB_REFERENCE_MS` pinnen — Carve-Out im [`carveout.md`](../in-progress/carveout.md)-Tracker);
+dieses Artefakt macht genau dessen Bootstrap-Median-Ablesen self-service.

@@ -85,6 +85,15 @@ make docker-perf MODULES=":test:perf-large-schema"
 ein **Laufzeit-Artefakt**, kein eingecheckter Stand. Es dient dem
 Nightly-/Trend-Vergleich, nicht als veröffentlichte Benchmark-Zahl.
 
+**TPC-H-4c-Nightly (`perf-acceptance.yml`):** der Volumen-Abnahme-Lauf sichert seine
+Ergebnisse als **abrufbares CI-Artefakt** (`tpch-perf-<run_id>-<run_attempt>`,
+`if: always()`, 30 Tage) — das volle Lauf-Log (`tee`) **plus** ein maschinenlesbares
+`tpch-perf-summary.env` (`CALIB_MS`/`CALIB_REFERENCE_CANDIDATE_MS`, `CALIB_STATUS`
+[`BOOTSTRAP|IN_BAND|OFF_SPEC`], `HOST_OK`, `EXPORT_RPS`, `IMPORT_RPS`, `TOTAL_ROWS`,
+`PERF_GATE`, `RESULT`). Damit funktioniert das Runner-Pinnen (Bootstrap-Median →
+`CALIB_REFERENCE_MS`) ohne Log-Grep. Weiterhin kein **eingecheckter** Zahlenstand
+(pro-Lauf + retention-begrenzt, keine publizierte Benchmark-Zahl).
+
 ## 6. Ausführen (`make docker-perf`)
 
 | Aufruf | Wirkung |

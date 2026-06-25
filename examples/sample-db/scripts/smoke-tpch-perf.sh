@@ -42,9 +42,33 @@ CALIB_TOLERANCE_PCT="${CALIB_TOLERANCE_PCT:-25}"
 CALIB_ITER="${CALIB_ITER:-5}"
 CALIB_REFERENCE_MS="${CALIB_REFERENCE_MS:-}"   # leer -> Bootstrap-Modus (diagnostisch)
 HOST_OK=0                                       # vom Kalibrier-Guard gesetzt
+CALIB_STATUS=BOOTSTRAP                          # BOOTSTRAP|IN_BAND|OFF_SPEC (trennscharf; HOST_OK=0 ist mehrdeutig)
 
 log()  { printf '[tpch-perf] %s\n' "$*"; }
 fail() { printf '[tpch-perf] FAIL: %s\n' "$*" >&2; exit 1; }
+
+# Maschinenlesbares Lauf-Summary (gitignored out/) — damit das Runner-Pinnen ohne
+# Log-Grep funktioniert (perf-acceptance.yml lädt es als Artefakt hoch). Variante 1
+# (End-Writer): wird nur im Erfolgsfall geschrieben → RESULT konstant SUCCESS; der
+# Fehlerfall wird allein durch das hochgeladene Lauf-Log abgedeckt (Ticket
+# tpch-perf-result-artifact.md). CALIB_REFERENCE_CANDIDATE_MS = gemessener Median
+# dieses Laufs (Pin-Kandidat) — bewusst NICHT als CALIB_REFERENCE_MS benannt, damit
+# ein `source` den gepinnten Input nicht überschreibt.
+summary() {
+    local f="$OUT_DIR/tpch-perf-summary.env"
+    {
+        printf 'CALIB_MS=%s\n'                     "$CALIB_MS"
+        printf 'CALIB_REFERENCE_CANDIDATE_MS=%s\n' "$CALIB_MS"
+        printf 'CALIB_STATUS=%s\n'                 "$CALIB_STATUS"
+        printf 'HOST_OK=%s\n'                      "$HOST_OK"
+        printf 'EXPORT_RPS=%s\n'                   "$exp_rps"
+        printf 'IMPORT_RPS=%s\n'                   "$imp_rps"
+        printf 'TOTAL_ROWS=%s\n'                   "$total_rows"
+        printf 'PERF_GATE=%s\n'                    "$PERF_GATE"
+        printf 'RESULT=SUCCESS\n'
+    } > "$f"
+    log "summary -> out/tpch-perf-summary.env (CALIB_REFERENCE_CANDIDATE_MS=$CALIB_MS, CALIB_STATUS=$CALIB_STATUS, HOST_OK=$HOST_OK)"
+}
 
 if [ ! -f "$EXAMPLES_DIR/.env" ]; then cp "$EXAMPLES_DIR/.env.example" "$EXAMPLES_DIR/.env"; fi
 # shellcheck disable=SC1091
@@ -147,9 +171,10 @@ else
     ratio=$(( CALIB_MS * 100 / CALIB_REFERENCE_MS ))
     drift=$(( ratio > 100 ? ratio - 100 : 100 - ratio ))
     if [ "$drift" -le "$CALIB_TOLERANCE_PCT" ]; then
-        HOST_OK=1
+        HOST_OK=1; CALIB_STATUS=IN_BAND
         log "calibration OK: median=${CALIB_MS} ms vs ref=${CALIB_REFERENCE_MS} ms (drift ${drift}% <= ${CALIB_TOLERANCE_PCT}%) — host in band; hard gate armed if PERF_GATE=true"
     else
+        CALIB_STATUS=OFF_SPEC
         log "calibration OFF-SPEC: median=${CALIB_MS} ms vs ref=${CALIB_REFERENCE_MS} ms (drift ${drift}% > ${CALIB_TOLERANCE_PCT}%) — hard gate -> DIAGNOSTIC fallback (ADR 0018)"
     fi
 fi
@@ -241,6 +266,7 @@ for t in $tables; do
 done
 log "resume OK — mid-stream abort at ~${abort_pct}% (LF 8.2 target ~50%, actual point is host-dependent via checkpoint-flush latency), --resume produced a COMPLETE + lossless export (all 8 tables canonical SHA-256 identical to source)"
 
+summary
 log "SUCCESS — losslessness + resume HARD (host-independent); throughput calibration-guarded (hard when PERF_GATE=true + host in band, else diagnostic), all under caps 2cpu/4g."
 log "Operational follow-up: designate a nightly runner + pin CALIB_REFERENCE_MS on it (from a bootstrap run) to arm the absolute-time gate (perf-acceptance.yml)."
 log "stack is up; clean up with 'make sample-db-down' / 'make sample-db-purge'."

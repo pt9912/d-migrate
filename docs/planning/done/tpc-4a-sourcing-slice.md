@@ -1,7 +1,7 @@
 # Slice: TPC Sub-Slice 4a — Sourcing + Pin-Vertrag (DuckDB-`tpch`-Generator)
 
 > Dokumenttyp: in-progress-Slice (graduiert aus dem Umbrella
-> [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md), Sub-Slice 4a).
+> [`../done/tpc-performance-slice.md`](../done/tpc-performance-slice.md), Sub-Slice 4a).
 > ADR: [0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) (accepted, Tool A
 > DuckDB-`tpch`) · [0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
 > (Fetch/Compose-Mechanik, Pin-Disziplin).

@@ -10,7 +10,7 @@ informed: examples/sample-db, docs/operations/performance-benchmarks.md
 
 > **Status: accepted (ratifiziert 2026-06-22).** Tool-Wahl **A (DuckDB-`tpch`)**;
 > konkrete Pin-Werte unter „Ratifizierte Entscheidung". Begleitet den Slice
-> [`../planning/next/tpc-performance-slice.md`](../planning/next/tpc-performance-slice.md)
+> [`../planning/done/tpc-performance-slice.md`](../planning/done/tpc-performance-slice.md)
 > (Sub-Slice 4a) und löst dessen Sourcing-/Pin-/Lizenz-Blocker. **Blocker 3
 > (normierte Mess-Umgebung) ist NICHT Teil dieser ADR** — er betrifft die Mess-
 > *Methodik*, nicht das Sourcing (siehe [ADR 0018](0018-normalized-perf-measurement-environment.md)).

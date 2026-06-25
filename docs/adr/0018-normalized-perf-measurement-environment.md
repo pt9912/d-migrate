@@ -10,7 +10,7 @@ informed: test/perf-large-schema (LargeSchemaScaleSpec), hexagon/profiling (Perf
 
 > **Status: accepted (ratifiziert 2026-06-23).** Die zuvor offenen Parameter sind unten
 > unter „Ratifizierte Parameter" konkretisiert. Löst **Blocker 3** des TPC-Slice
-> [`../planning/next/tpc-performance-slice.md`](../planning/next/tpc-performance-slice.md);
+> [`../planning/done/tpc-performance-slice.md`](../planning/done/tpc-performance-slice.md);
 > entsperrt die harten 4c/4d-Zeit-Budgets.
 
 ## Kontext und Problemstellung

@@ -1,7 +1,7 @@
 # Slice: TPC Sub-Slice 4b — Schema-Round-Trip-Korrektheit (TPC-H)
 
 > Dokumenttyp: abgeschlossener Slice (graduiert aus dem Umbrella
-> [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md), Sub-Slice 4b).
+> [`../done/tpc-performance-slice.md`](../done/tpc-performance-slice.md), Sub-Slice 4b).
 > Baut auf [4a](tpc-4a-sourcing-slice.md) (gepinnter DuckDB-`tpch`-Generator).
 > ADR: [0017](../../adr/0017-tpc-benchmark-workload-sourcing.md) ·
 > [0014](../../adr/0014-sample-db-harness-fetch-and-compose.md).

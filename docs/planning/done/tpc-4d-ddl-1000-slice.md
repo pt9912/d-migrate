@@ -1,7 +1,7 @@
 # Slice: TPC Sub-Slice 4d — LN-004 DDL-1000-Gate (synthetisch, nicht TPC)
 
 > Dokumenttyp: abgeschlossener Slice (aus dem Umbrella
-> [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md), Sub-Slice 4d).
+> [`../done/tpc-performance-slice.md`](../done/tpc-performance-slice.md), Sub-Slice 4d).
 > **Status: abgeschlossen + live verifiziert (2026-06-23).** LN-004 erfüllt, Gate grün
 > unter `PERF_GATE=true`.
 

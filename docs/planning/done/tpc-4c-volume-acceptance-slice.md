@@ -1,7 +1,7 @@
 # Slice: TPC Sub-Slice 4c — Volumen-Abnahme (gemessen, LF 8.1 + 8.2)
 
 > Dokumenttyp: in-progress-Slice — **Plan-Entwurf, Review offen** (graduiert aus dem
-> Umbrella [`../next/tpc-performance-slice.md`](../next/tpc-performance-slice.md),
+> Umbrella [`../done/tpc-performance-slice.md`](../done/tpc-performance-slice.md),
 > Sub-Slice 4c). Baut auf [4a](../done/tpc-4a-sourcing-slice.md) (Generator) +
 > [4b](../done/tpc-4b-roundtrip-slice.md) (Korrektheit).
 > ADR: [0018](../../adr/0018-normalized-perf-measurement-environment.md) (normierte
@@ -181,4 +181,4 @@ Public-/Solo-Projekt ohne bestehende Self-hosted-Infra ist der ROI eines dedizie
 solange der Durchsatz nightly **sichtbar** gemessen wird (Regressionen fallen auf, nur ohne Gate-Fail).
 
 Separater operativer Follow-up (Ergebnisse als CI-Artefakt):
-[`../open/tpch-perf-result-artifact.md`](../open/tpch-perf-result-artifact.md).
+[`../done/tpch-perf-result-artifact.md`](../done/tpch-perf-result-artifact.md).
