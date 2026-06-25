@@ -38,7 +38,7 @@ Das bestehende N=1000-4×n-„30-s-Gate" war auf LN-004 **fehl-gemappt**: es mis
 N=100 (401 Obj) ~385 ms vs. N=1000 (4001 Obj) ~52 s ≈ **136× für 10× Objekte** — stark
 super-linear, vermutlich O(n²) in der Dependency-Auflösung (Views/Trigger → Tabellen/
 Funktion). Reine Tabellen (1,7 s/1000) skalieren ~linear. Eigenes Ticket:
-[`../open/large-schema-superlinear-scaling.md`](../open/large-schema-superlinear-scaling.md).
+[`../done/large-schema-superlinear-scaling.md`](../done/large-schema-superlinear-scaling.md).
 Nicht 4d-blockierend (LN-004 ist erfüllt).
 
 ## Definition of Done (Modul 5)

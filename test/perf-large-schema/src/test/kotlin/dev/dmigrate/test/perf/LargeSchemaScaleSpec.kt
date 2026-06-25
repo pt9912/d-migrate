@@ -37,8 +37,8 @@ private val LargeSchemaTag = NamedTag("large-schema")
  * matching the Phase-A contract.
  *
  * Scales pinned in Sub-Slice D:
- *   - N=100  (renderSmokeMaxMs = 30 s, maxHeapMb = 256)
- *   - N=1000 (renderSmokeMaxMs = 120 s, maxHeapMb = 1024)
+ *   - N=100  (renderSmokeMaxMs = 10 s, maxHeapMb = 256)
+ *   - N=1000 (renderSmokeMaxMs = 30 s, maxHeapMb = 1024)
  *
  * N=10000 is deferred to Sub-Slice D-N10k as a nightly-only
  * opt-in (separate spec class so the standard `make docker-perf`
@@ -126,13 +126,17 @@ class LargeSchemaScaleSpec : FunSpec({
 
         // Der gemischte 4×n-Scale ist ein UMFASSENDER Stress-Check (Tabellen +
         // Sequenzen + Views + Trigger + Dependency-Topologie), NICHT die LN-004-Metrik
-        // („1.000 Tabellen") — die deckt der separate `ddl-1000-tables-ln004`-Test ab
-        // (reine Tabellen, ~1,7 s ≪ 30 s). Das 4×n skaliert super-linear
-        // (N=100 ~0,4 s vs. N=1000 ~50 s); das N=1000-Baseline ist deshalb ein
-        // großzügiger Regressions-Guard (90 s, Smoke 120 s), kein LF-Abnahmebudget.
+        // („1.000 Tabellen") — die deckt der separate `ddl-1000-tables-ln004`-Test ab.
+        // Früher skalierte das 4×n stark super-linear (N=100 ~0,4 s vs. N=1000 ~52 s) wegen
+        // eines kubischen `TopologicalSorter` (pro Schritt voller `remaining`-Scan + `List`-
+        // `in` + Re-Sort). Seit der Kahn-/PriorityQueue-Linearisierung (2026-06-25,
+        // `open/large-schema-superlinear-scaling.md`) ist es linearithmisch — gemessen kalt
+        // N=100 ~0,2 s, N=1000 ~0,13 s, ln004 ~0,02 s. Die Budgets sind entsprechend
+        // gestrafft (Baseline = nightly-Erwartung, Smoke = Runaway-Guard mit Headroom für
+        // kalte-CI-JIT-Tails), kein LF-Abnahmebudget (LN-004 = separater Test).
         internal val SCALES: List<Scale> = listOf(
-            Scale(n = 100, renderSmokeMaxMs = 30_000L, renderBaselineMs = 2_000L, maxHeapMb = 256L),
-            Scale(n = 1000, renderSmokeMaxMs = 120_000L, renderBaselineMs = 90_000L, maxHeapMb = 1024L),
+            Scale(n = 100, renderSmokeMaxMs = 10_000L, renderBaselineMs = 2_000L, maxHeapMb = 256L),
+            Scale(n = 1000, renderSmokeMaxMs = 30_000L, renderBaselineMs = 5_000L, maxHeapMb = 1024L),
         )
 
         /**

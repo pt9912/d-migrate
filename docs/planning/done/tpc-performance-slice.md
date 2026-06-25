@@ -177,7 +177,7 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
    grün unter `PERF_GATE`). 4×n-Baseline 30 s → 90 s korrigiert (Regressions-Guard, kein
    LF-Budget) → Modul `PERF_GATE`-fähig. **LN-001** („100 Tab < 5 s") via N=100 (0,4 s)
    gedeckt. Doku-Sync §4 erledigt. Super-linear-Skalierung als Ticket notiert
-   ([`open/large-schema-superlinear-scaling.md`](../open/large-schema-superlinear-scaling.md)).
+   ([`done/large-schema-superlinear-scaling.md`](../done/large-schema-superlinear-scaling.md)).
    Synthetisch, **nicht** TPC. (Die „5×n"-KDoc-Korrektur war bereits in `6040d763`.)
 - **4e — (optional) TPC-DS — ERLEDIGT + live-verifiziert**
    ([done/tpc-4e-tpcds-slice.md](../done/tpc-4e-tpcds-slice.md), 2026-06-25). Zweite,

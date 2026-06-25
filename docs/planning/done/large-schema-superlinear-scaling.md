@@ -1,6 +1,8 @@
 # Große gemischte Schemas: Diff-/Render-Pipeline skaliert super-linear
 
-> **Status:** Vorabklärung (Trigger, 2026-06-23)
+> **Status: BEHOBEN (2026-06-25) → graduiert nach done/.** Ursache = kubischer
+> `TopologicalSorter`; linearisiert (Kahn + PriorityQueue). Resolution am Ende.
+> Vorabklärung (Trigger, 2026-06-23)
 > **Trigger:** Beim TPC-4d-Bau (DDL-1000-Gate) zeigte der `LargeSchemaScaleSpec`-
 > 4×n-Scale eine **stark super-lineare** Laufzeit: N=100 (401 Objekte) ~385 ms vs.
 > N=1000 (4001 Objekte) ~52 s — **≈ 136× für die 10-fache Objektzahl** (cold, 1
@@ -39,3 +41,33 @@ n Views/Trigger auf Tabellen/Funktionen referenzieren (`SchemaComparator` / `Dif
 Profilen + ggf. den quadratischen Schritt linearisieren (z. B. Map-Lookup statt Liste
 für Dependency-Auflösung). Aktivieren, wenn ein reales großes Schema (oder ein
 Performance-Ziel für Programmability-lastige Migrationen) es erfordert.
+
+## Resolution (2026-06-25)
+
+**Ursache lokalisiert + behoben — keine O(n²)/O(n³)-Skalierung mehr.** Der einzige
+Aufrufer in `DiffPlanner` reicht **alle** Diff-Operationen (bei N=1000: 4001) durch
+`TopologicalSorter.sort` — und dessen Implementierung war **kubisch**:
+
+- die `while`-Schleife rechnete **pro Schritt** `remaining.filter { op !in result && … }` —
+  `op !in result` ist ein **`List`**-`in`-Lookup (O(n)) **innerhalb** eines Filters (O(n))
+  **innerhalb** der Schleife (O(n)) → O(n³);
+- zusätzlich `sortInPlace(ready)` **pro Schritt** → O(n²·log n).
+
+**Fix:** korrektes Kahn-Verfahren mit In-Grad-Zähler + Rückwärtskanten-Map + einer nach
+`stableOrder` geordneten `PriorityQueue` als Bereit-Frontier → **O((V+E)·log V)**. Die
+Auswahlreihenfolge ist **identisch** (stabile Total-Ordnung über die eindeutige `id`),
+daher unveränderte DDL-Ausgabe; `TopologicalSorterTest` + alle DiffPlanner-/Comparator-Tests
+grün (`:hexagon:core:check`).
+
+**Gemessen** (`make docker-perf MODULES=":test:perf-large-schema"`, kalt, 1 Iteration):
+
+| Scale | vorher | nachher | Faktor |
+|-------|--------|---------|--------|
+| N=100 (401 Obj) | ~385 ms | ~198 ms | ~2× |
+| **N=1000 (4001 Obj)** | **~52 460 ms** | **~133 ms** | **~390×** |
+| ln004 (1000 reine Tab.) | ~1 711 ms | ~19 ms | ~90× |
+
+Auch der reine-Tabellen-Pfad lief durch denselben Sorter (daher die ~90× dort). Die
+4×n-Budgets in `LargeSchemaScaleSpec.kt` sind entsprechend gestrafft (N=1000 Smoke
+120 s→30 s, Baseline 90 s→5 s; N=100 Smoke 30 s→10 s) — der „großzügige 90-s-Guard wegen
+Super-Linearität" entfällt. Hypothese (O(n²) in der Dependency-Auflösung) bestätigt + erledigt.

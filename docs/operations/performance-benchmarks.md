@@ -60,8 +60,8 @@ Zeit- **und** Heap-Budget:
 
 | Hotpath / Scale | Smoke | Baseline (`PERF_GATE`) | Heap | Bedeutung |
 | --- | --- | --- | --- | --- |
-| `large-schema-render-n100` (4×n, 401 Obj) | 30 s | 2 s | 256 MB | Stress; LN-001 (100 Tab < 5 s) gedeckt (~0,4 s) |
-| `large-schema-render-n1000` (4×n, 4001 Obj) | 120 s | 90 s | 1024 MB | umfassender Stress-Guard (~52 s, super-linear), **nicht** LN-004 |
+| `large-schema-render-n100` (4×n, 401 Obj) | 10 s | 2 s | 256 MB | Stress; LN-001 (100 Tab < 5 s) gedeckt (~0,2 s) |
+| `large-schema-render-n1000` (4×n, 4001 Obj) | 30 s | 5 s | 1024 MB | umfassender Stress-Guard (~0,13 s nach Sorter-Linearisierung), **nicht** LN-004 |
 | `ddl-1000-tables-ln004` (reine 1000 Tab) | 120 s | **30 s** | 1024 MB | **LN-004** „1000 Tab < 30 s" — faithful, **~1,7 s ≪ 30 s** |
 | N = 10000 | 🔮 zurückgestellt (Nightly-Opt-in, eigener Spec) | | | |
 
@@ -69,9 +69,10 @@ Der gemischte 4×n-Scale (`large-schema-render-n*`) misst 4×n+1 Objekte (Tabell
 Sequenzen + Views + Trigger + 1 Funktion) **inkl. Dependency-Topologie** — ein
 umfassender Stress-Check, **nicht** die literale LN-004-Metrik. LN-004 („1.000 Tabellen")
 deckt der separate `ddl-1000-tables-ln004`-Hotpath (reine Tabellen-DDL) faithful ab; er
-liegt mit ~1,7 s host-robust unter den 30 s. Das N=1000-4×n-Baseline (90 s) ist ein
-großzügiger Regressions-Guard (die Pipeline skaliert super-linear, siehe
-[`../planning/open/large-schema-superlinear-scaling.md`](../planning/open/large-schema-superlinear-scaling.md)).
+liegt mit ~1,7 s host-robust unter den 30 s. Das N=1000-4×n-Baseline ist seit der
+Linearisierung des (vormals kubischen) `TopologicalSorter` auf **5 s** gestrafft — die
+Pipeline skaliert jetzt linearithmisch (N=1000-4×n ~0,13 s gemessen statt ~52 s), siehe
+[`../planning/done/large-schema-superlinear-scaling.md`](../planning/done/large-schema-superlinear-scaling.md).
 
 Opt-in-Lauf:
 
@@ -127,8 +128,9 @@ inzwischen als opt-in/nightly-Mess-Kern gebaut:
   (siehe „LF-8.1-Mess-Kern" oben).
 - ✅ **LF 8.2 / LN-004** — „DDL-Generierung 1 000 Tabellen **< 30 s**": faithful gemessen
   (`ddl-1000-tables-ln004`, **~1,7 s ≪ 30 s**, hart unter `PERF_GATE`; 4d). Das frühere
-  N=1000-4×n-„Gate" war auf LN-004 fehl-gemappt (misst 4001 gemischte Objekte ~52 s) —
-  korrigiert (4×n-Baseline → 90 s Regressions-Guard).
+  N=1000-4×n-„Gate" war auf LN-004 fehl-gemappt (misst 4001 gemischte Objekte) — korrigiert
+  (eigener faithful LN-004-Test) und seit der `TopologicalSorter`-Linearisierung von ~52 s auf
+  ~0,13 s beschleunigt (4×n-Baseline → 5 s Regressions-Guard).
 
 Beide Abnahme-Budgets brauchen eine **definierte Mess-Umgebung** — eine absolute
 Wandzeit-Schwelle ist nur auf fixierter Kapazität sinnvoll. Das ist in
