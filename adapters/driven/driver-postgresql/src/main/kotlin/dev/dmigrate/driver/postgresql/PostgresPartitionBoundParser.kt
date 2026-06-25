@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
+import dev.dmigrate.driver.PartitionBoundScanner
 
 /**
  * Parst die von `pg_get_expr(pg_class.relpartbound, …)` gelieferte
@@ -50,8 +51,8 @@ internal object PostgresPartitionBoundParser {
         val (toInner, _) = parenGroup(expr, toKw, name)
         return PartitionDefinition(
             name = name,
-            from = splitTopLevel(fromInner).map { it.toBound() },
-            to = splitTopLevel(toInner).map { it.toBound() },
+            from = PartitionBoundScanner.splitTopLevel(fromInner).map { it.toBound() },
+            to = PartitionBoundScanner.splitTopLevel(toInner).map { it.toBound() },
         )
     }
 
@@ -59,7 +60,7 @@ internal object PostgresPartitionBoundParser {
         val (inner, _) = parenGroup(expr, 0, name)
         return PartitionDefinition(
             name = name,
-            values = splitTopLevel(inner).map { stripCast(it) },
+            values = PartitionBoundScanner.splitTopLevel(inner).map { stripCast(it) },
         )
     }
 
@@ -67,7 +68,7 @@ internal object PostgresPartitionBoundParser {
         val (inner, _) = parenGroup(expr, 0, name)
         var modulus: Int? = null
         var remainder: Int? = null
-        for (part in splitTopLevel(inner)) {
+        for (part in PartitionBoundScanner.splitTopLevel(inner)) {
             val tokens = part.trim().split(WHITESPACE)
             if (tokens.size < 2) continue
             when (tokens[0].lowercase()) {
@@ -112,31 +113,6 @@ internal object PostgresPartitionBoundParser {
             i++
         }
         error("partition '$name' bound has unbalanced parentheses: $s")
-    }
-
-    /** Komma-Trennung auf Top-Level (respektiert Quotes + Klammern/Brackets). */
-    private fun splitTopLevel(s: String): List<String> {
-        val parts = mutableListOf<String>()
-        val token = StringBuilder()
-        var depth = 0
-        var inQuote = false
-        for (c in s) {
-            when {
-                c == '\'' -> { inQuote = !inQuote; token.append(c) }
-                inQuote -> token.append(c)
-                c == '(' || c == '[' -> { depth++; token.append(c) }
-                c == ')' || c == ']' -> { depth--; token.append(c) }
-                c == ',' && depth == 0 -> { parts.addTrimmed(token); token.clear() }
-                else -> token.append(c)
-            }
-        }
-        parts.addTrimmed(token)
-        return parts
-    }
-
-    private fun MutableList<String>.addTrimmed(token: StringBuilder) {
-        val trimmed = token.toString().trim()
-        if (trimmed.isNotEmpty()) add(trimmed)
     }
 
     /**

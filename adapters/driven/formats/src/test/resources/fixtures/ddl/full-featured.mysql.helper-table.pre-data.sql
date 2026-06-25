@@ -55,8 +55,8 @@ CREATE TABLE `orders` (
 )
 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 PARTITION BY RANGE COLUMNS (`date`) (
-    PARTITION `orders_2024` VALUES LESS THAN (2025-01-01),
-    PARTITION `orders_2025` VALUES LESS THAN (2026-01-01)
+    PARTITION `orders_2024` VALUES LESS THAN ('2025-01-01'),
+    PARTITION `orders_2025` VALUES LESS THAN ('2026-01-01')
 );
 
 -- [W102] HASH index 'idx_customer' is not supported on InnoDB; converted to BTREE.

@@ -70,6 +70,20 @@ class MysqlPartitionIndexLiftTest : FunSpec({
         ddl shouldNotContain "INDEX `events_uq`"
     }
 
+    test("partition-local partial indices differing only in WHERE are not collapsed (AP6-review #8)") {
+        // Same columns/type/unique, different predicate → distinct indices. The lift signature must
+        // include `where`, else they collapse to one (only one survives the dedup). Both are partial
+        // → both get an E057 skip note; without the fix only one name would appear.
+        val a = IndexDefinition(
+            name = "idx_a", columns = listOf(IndexColumn("payload")), where = "payload IS NOT NULL",
+        )
+        val b = IndexDefinition(
+            name = "idx_b", columns = listOf(IndexColumn("payload")), where = "payload = ''",
+        )
+        val result = generator.generate(schemaOf(rangeTable(partitionIndices = listOf(a, b))))
+        result.notes.filter { it.code == "E057" }.map { it.objectName }.toSet() shouldBe setOf("idx_a", "idx_b")
+    }
+
     test("lifted index whose name collides with a table index is renamed + W131") {
         val tableIdx = IndexDefinition(name = "dup_idx", columns = listOf(IndexColumn("id")))
         // Different signature (different column) but the same name → collision after lifting.

@@ -163,9 +163,10 @@ tables:
       partitions:
         # RANGE: from/to als Bound-Tupel (Sentinels MINVALUE/MAXVALUE);
         # HASH: modulus/remainder; LIST: values; DEFAULT-Partition: default: true
+        # Literale tragen ihr SQL-Quoting (`'2025-01-01'`) — identisch für alle Ziel-Dialekte.
         - name: part_2025
-          from: ["2025-01-01"]
-          to: ["2026-01-01"]
+          from: ["'2025-01-01'"]
+          to: ["'2026-01-01'"]
           # Kind-lokale Indizes (nur direkt auf der Partition definierte; vom
           # Parent propagierte Indizes/Constraints/FKs bleiben am Parent).
           indices:

@@ -101,11 +101,11 @@ tables:
       key: [date]
       partitions:
         - name: orders_2024
-          from: ["2024-01-01"]
-          to: ["2025-01-01"]
+          from: ["'2024-01-01'"]
+          to: ["'2025-01-01'"]
         - name: orders_2025
-          from: ["2025-01-01"]
-          to: ["2026-01-01"]
+          from: ["'2025-01-01'"]
+          to: ["'2026-01-01'"]
 
 procedures:
   update_status:

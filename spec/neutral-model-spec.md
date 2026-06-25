@@ -352,12 +352,13 @@ tables:
       type: range                        # range | hash | list
       key: [order_date]
       partitions:
+        # Bound-Literale tragen ihr SQL-Quoting (`'2024-01-01'`) — identisch für alle Dialekte.
         - name: orders_2024
-          from: "2024-01-01"
-          to: "2025-01-01"
+          from: ["'2024-01-01'"]
+          to: ["'2025-01-01'"]
         - name: orders_2025
-          from: "2025-01-01"
-          to: "2026-01-01"
+          from: ["'2025-01-01'"]
+          to: ["'2026-01-01'"]
 
     # ── Tabellen-Metadaten (optional, ab 0.6.0) ───
     metadata:

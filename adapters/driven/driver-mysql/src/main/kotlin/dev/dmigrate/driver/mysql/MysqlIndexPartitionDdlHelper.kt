@@ -11,6 +11,7 @@ import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlStatement
+import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
@@ -18,6 +19,9 @@ import dev.dmigrate.driver.TransformationNote
 internal class MysqlIndexPartitionDdlHelper(
     private val quoteIdentifier: (String) -> String,
 ) {
+
+    /** Wert-Seite der Partitionsgrenzen (Temporal-Normalisierung/Quoting) — eigene Verantwortung. */
+    private val boundRenderer = MysqlPartitionBoundRenderer()
 
     fun generatePartitionClause(
         partitioning: PartitionConfig,
@@ -58,36 +62,40 @@ internal class MysqlIndexPartitionDdlHelper(
      * RANGE/LIST COLUMNS brauchen INT/DATE/DATETIME/CHAR, HASH einen Integer).
      */
     private fun skipNote(partitioning: PartitionConfig, keyTypes: List<NeutralType?>): TransformationNote? {
-        val objectName = partitioning.key.joinToString(",")
+        val objectName = partitionObjectName(partitioning)
         if (partitioning.partitions.isEmpty() &&
             (partitioning.type == PartitionType.RANGE || partitioning.type == PartitionType.LIST)
         ) {
-            return TransformationNote(
-                type = NoteType.ACTION_REQUIRED, code = "E055", objectName = objectName,
-                message = "${partitioning.type.name} partitioning requires at least one partition, " +
+            return ManualActionRequired(
+                code = "E055", objectType = "partitioning", objectName = objectName,
+                reason = "${partitioning.type.name} partitioning requires at least one partition, " +
                     "but the definition is empty; partitioning was skipped for this table.",
                 hint = "Add explicit partition boundaries or remove the partitioning configuration.",
-            )
+            ).toNote()
         }
         val unsupported = when (partitioning.type) {
             PartitionType.RANGE, PartitionType.LIST -> keyTypes.any { it is NeutralType.Decimal || it is NeutralType.Float }
             PartitionType.HASH -> keyTypes.any { !isIntegerKey(it) }
         }
         if (unsupported) {
-            return TransformationNote(
-                type = NoteType.ACTION_REQUIRED, code = "E062", objectName = objectName,
-                message = "${partitioning.type.name} partition key type is not supported by MySQL " +
+            return ManualActionRequired(
+                code = "E062", objectType = "partitioning", objectName = objectName,
+                reason = "${partitioning.type.name} partition key type is not supported by MySQL " +
                     "(RANGE/LIST COLUMNS need INT/DATE/DATETIME/CHAR; HASH needs an integer key); " +
                     "partitioning was skipped for this table.",
                 hint = "Repartition on a supported key type, or remove the partitioning configuration.",
-            )
+            ).toNote()
         }
         return null
     }
 
+    /** Stabiler `objectName` für partitions-bezogene Notes: die Schlüsselspalten als CSV. */
+    private fun partitionObjectName(partitioning: PartitionConfig): String =
+        partitioning.key.joinToString(",")
+
     /** Diagnostische Notes für eine emittierte Partitionierung (ADR 0020): W112 (`from`-Verwurf), W130 (HASH-Platzierung). */
     private fun partitionDiagnostics(partitioning: PartitionConfig): List<TransformationNote> {
-        val objectName = partitioning.key.joinToString(",")
+        val objectName = partitionObjectName(partitioning)
         return when (partitioning.type) {
             PartitionType.RANGE -> listOf(TransformationNote(
                 type = NoteType.WARNING, code = "W112", objectName = objectName,
@@ -114,12 +122,12 @@ internal class MysqlIndexPartitionDdlHelper(
         notes: MutableList<TransformationNote>,
     ): List<PartitionDefinition> {
         if (partitioning.type == PartitionType.LIST && partitioning.partitions.any { it.isDefault }) {
-            notes += TransformationNote(
-                type = NoteType.ACTION_REQUIRED, code = "E063", objectName = partitioning.key.joinToString(","),
-                message = "LIST DEFAULT partition has no MySQL equivalent and was dropped; rows that fell " +
+            notes += ManualActionRequired(
+                code = "E063", objectType = "partition", objectName = partitionObjectName(partitioning),
+                reason = "LIST DEFAULT partition has no MySQL equivalent and was dropped; rows that fell " +
                     "into it have no target partition in MySQL and would be rejected on transfer (data loss).",
                 hint = "Replace the DEFAULT partition with explicit LIST values, or migrate those rows separately.",
-            )
+            ).toNote()
             return partitioning.partitions.filter { !it.isDefault }
         }
         return partitioning.partitions
@@ -137,10 +145,14 @@ internal class MysqlIndexPartitionDdlHelper(
             PartitionType.RANGE ->
                 append(" VALUES LESS THAN (${renderMysqlUpperBound(partition, keyTypes, notes, emittedCodes)})")
             PartitionType.LIST -> {
-                val temporal = keyTypes.firstOrNull() is NeutralType.DateTime
+                // §4 (#4): Nur eine **einspaltige** LIST mit Temporal-Schlüssel trägt skalare
+                // Temporal-Werte, die normalisiert/quotiert werden. Eine mehrspaltige LIST
+                // (LIST COLUMNS(a,b)) trägt Tupel-Werte ((a,b)) — die werden nicht
+                // wert-normalisiert (Konsistenz mit dem RANGE-Pfad, der per Ordinal prüft).
+                val temporalKey = keyTypes.singleOrNull()?.takeIf { boundRenderer.isTemporal(it) }
                 val values = partition.values?.joinToString(", ") {
                     val safe = PartitionLiteralGuard.ensureSafe(it, partition.name)
-                    if (temporal) normalizeTemporalBound(safe, partition.name, notes, emittedCodes) else safe
+                    boundRenderer.renderColumnBoundLiteral(safe, temporalKey, partition.name, notes, emittedCodes)
                 } ?: ""
                 append(" VALUES IN ($values)")
             }
@@ -170,53 +182,10 @@ internal class MysqlIndexPartitionDdlHelper(
                 PartitionBound.MinValue -> "MINVALUE"
                 is PartitionBound.Value -> {
                     val safe = PartitionLiteralGuard.ensureSafe(bound.literal, partition.name)
-                    if (keyTypes.getOrNull(i) is NeutralType.DateTime)
-                        normalizeTemporalBound(safe, partition.name, notes, emittedCodes)
-                    else safe
+                    boundRenderer.renderColumnBoundLiteral(safe, keyTypes.getOrNull(i), partition.name, notes, emittedCodes)
                 }
             }
         }.joinToString(", ").ifEmpty { "MAXVALUE" }
-    }
-
-    /**
-     * §2 (ADR 0020): PG-timestamptz-Grenze (`'…+00'`) → MySQL-DATETIME-Literal. Ein
-     * **UTC**-Offset wird entfernt (instant-erhaltend) → W129. Ein **Nicht-UTC**-Offset würde
-     * die Grenze beim bloßen Strippen verschieben → `action_required` (E061), kein stiller Shift.
-     */
-    private fun normalizeTemporalBound(
-        literal: String,
-        partitionName: String,
-        notes: MutableList<TransformationNote>,
-        emittedCodes: MutableSet<String>,
-    ): String {
-        val match = TZ_OFFSET.find(literal) ?: return literal
-        val offset = match.groupValues[1]
-        if (offset !in UTC_OFFSETS && emittedCodes.add("E061")) {
-            notes += TransformationNote(
-                type = NoteType.ACTION_REQUIRED,
-                code = "E061",
-                objectName = partitionName,
-                message = "Partition '$partitionName' bound carries a non-UTC timezone offset '$offset'; " +
-                    "stripping it for MySQL DATETIME would shift the boundary.",
-                hint = "Re-read the source with the session time zone set to UTC, or convert the bound to UTC.",
-            )
-        } else if (offset in UTC_OFFSETS && emittedCodes.add("W129")) {
-            notes += TransformationNote(
-                type = NoteType.WARNING,
-                code = "W129",
-                objectName = partitionName,
-                message = "PostgreSQL timestamptz partition bounds normalized to UTC (timezone suffix " +
-                    "removed) for MySQL DATETIME, which has no time zone.",
-                hint = "Ensure the source data is stored/interpreted as UTC.",
-            )
-        }
-        return literal.take(match.range.first) + "'"
-    }
-
-    private companion object {
-        /** Trailing tz offset (`+00`, `-05:00`, …) right before the closing quote of a literal. */
-        val TZ_OFFSET = Regex("([+-]\\d{2}(?::?\\d{2})?)'\\s*$")
-        val UTC_OFFSETS = setOf("+00", "+0000", "+00:00", "-00", "-0000", "-00:00")
     }
 
     fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
@@ -263,9 +232,14 @@ internal class MysqlIndexPartitionDdlHelper(
         return LiftedIndices(lifted, notes)
     }
 
-    /** Identität für die Lift-Deduplikation: Spalten (Name/Prefix/Richtung) + Typ + Unique, **ohne** Name. */
+    /**
+     * Identität für die Lift-Deduplikation: Spalten (Name/Prefix/Richtung) + Typ + Unique + `where`,
+     * **ohne** Name. Schließt `where` ein, damit zwei partition-lokale Partial-Indizes, die sich nur
+     * im Prädikat unterscheiden, nicht zu einem kollabieren (AP6-Review P3 #8 — konsistent mit
+     * `TableComparator.indexKey`).
+     */
     private fun indexSignature(index: IndexDefinition): String =
-        "${index.type}|${index.unique}|" + index.columns.joinToString(",") { it.toString() }
+        "${index.type}|${index.unique}|${index.where.orEmpty()}|" + index.columns.joinToString(",") { it.toString() }
 
     private fun generatedIndexName(index: IndexDefinition, tableName: String): String =
         index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
@@ -291,15 +265,17 @@ internal class MysqlIndexPartitionDdlHelper(
         return index.copy(name = renamed)
     }
 
-    private fun uniqueSkipNote(index: IndexDefinition, tableName: String): TransformationNote =
-        TransformationNote(
-            type = NoteType.ACTION_REQUIRED, code = "E064", objectName = generatedIndexName(index, tableName),
-            message = "UNIQUE partition-local index '${generatedIndexName(index, tableName)}' cannot be lifted " +
+    private fun uniqueSkipNote(index: IndexDefinition, tableName: String): TransformationNote {
+        val name = generatedIndexName(index, tableName)
+        return ManualActionRequired(
+            code = "E064", objectType = "index", objectName = name,
+            reason = "UNIQUE partition-local index '$name' cannot be lifted " +
                 "to MySQL: a unique key on a partitioned table must include every partition-key column, and " +
                 "partition-local uniqueness is not global uniqueness; lifting it would emit invalid DDL or " +
                 "change semantics. The index was skipped.",
             hint = "Add the partition-key columns to the unique index, or enforce uniqueness in the application.",
-        )
+        ).toNote()
+    }
 
     private fun liftedInfoNote(index: IndexDefinition, tableName: String): TransformationNote =
         TransformationNote(
@@ -458,9 +434,8 @@ internal class MysqlIndexPartitionDdlHelper(
 
 
     private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
-        val baseNames = indices.map { index ->
-            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
-        }
+        // #13: single source of truth for the base name (shared with generatedIndexName).
+        val baseNames = indices.map { generatedIndexName(it, tableName) }
         val baseCounts = baseNames.groupingBy { it }.eachCount()
         val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()
         return indices.mapIndexed { position, index ->

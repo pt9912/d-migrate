@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
+import dev.dmigrate.driver.PartitionBoundScanner
 import dev.dmigrate.driver.metadata.JdbcOperations
 
 /**
@@ -18,8 +19,9 @@ import dev.dmigrate.driver.metadata.JdbcOperations
  * (`reconstructNeutralBounds`): RANGE-`from` aus der Kontiguität, HASH-`modulus`/`remainder`
  * aus `PARTITIONS n`. So generiert der bestehende PG-Generator unverändert valides PG-DDL.
  *
- * Der Parser (Klammer-/Quote-bewusstes Top-Level-Splitting) ist der Hotspot —
- * analog zum PG-`PostgresPartitionBoundParser`, aber für MySQLs `information_schema`-Form.
+ * Das Top-Level-Splitting teilt sich den [PartitionBoundScanner] mit dem PG-Parser
+ * (`PostgresPartitionBoundParser`) — beide Formen sind dieselbe Klammer-/Quote-bewusste
+ * Komma-Trennung (AP6-Review P3 #9).
  */
 internal object MysqlPartitionReader {
 
@@ -33,7 +35,14 @@ internal object MysqlPartitionReader {
             method.contains("HASH") || method.contains("KEY") -> PartitionType.HASH
             else -> return null
         }
-        val key = parseKey(rows.first()["partition_expression"] as? String)
+        // §6/#6: Nur **spaltenbasierte** Partitionierung ist verlustfrei ins neutrale Modell
+        // (Spaltenliste als `key`) abbildbar. Eine funktions-/ausdrucksbasierte Form
+        // (`PARTITION BY RANGE (YEAR(order_date))` → expression `year(\`order_date\`)`) hat im
+        // neutralen Modell keinen Ausdruck-Schlüssel; sie als Spalte zu erfassen ergäbe einen
+        // Müll-Key (`RANGE COLUMNS (\`year(order_date)\`)`). Solche Tabellen werden daher NICHT
+        // als partitioniert erfasst (kein Falsch-Round-Trip). d-migrate-eigene Tabellen nutzen
+        // immer die COLUMNS-Form und sind nicht betroffen.
+        val key = parseColumnKey(rows.first()["partition_expression"] as? String) ?: return null
         val partitions = rows.mapNotNull { row -> parsePartition(row, type) }
         return PartitionConfig(type = type, key = key, partitions = reconstructNeutralBounds(partitions, type))
     }
@@ -55,20 +64,42 @@ internal object MysqlPartitionReader {
         PartitionType.LIST -> partitions
     }
 
-    /** `fromₙ = toₙ₋₁`; das erste `from` = `MINVALUE` je Schlüsselspalte (Arität aus `to`). */
+    /**
+     * `fromₙ = toₙ₋₁`; das erste `from` = `MINVALUE` je Schlüsselspalte (Arität aus `to`).
+     *
+     * Eine Partition ohne `to` ist aus validem MySQL nicht erreichbar (RANGE liefert immer
+     * eine `VALUES LESS THAN`-Obergrenze, mittiges `MAXVALUE` ist verboten). Träfe sie doch
+     * auf, wird `prevUpper` **nicht** fortgetragen (das ergäbe eine überlappende `from`),
+     * sondern auf `null` zurückgesetzt, sodass die nächste Partition wieder mit `MINVALUE`
+     * beginnt — defensiv konsistent statt still überlappend (AP6-Review P3 #15).
+     */
     private fun reconstructRangeFrom(partitions: List<PartitionDefinition>): List<PartitionDefinition> {
         var prevUpper: List<PartitionBound>? = null
         return partitions.map { p ->
             val from = prevUpper ?: p.to?.map { PartitionBound.MinValue } ?: listOf(PartitionBound.MinValue)
-            prevUpper = p.to ?: prevUpper
+            prevUpper = p.to
             p.copy(from = from)
         }
     }
 
-    /** `PARTITION_EXPRESSION` (`` `payment_date` `` bzw. `` `a`,`b` ``) → Spaltenliste (Backticks gestrippt). */
-    private fun parseKey(expression: String?): List<String> {
-        if (expression.isNullOrBlank()) return emptyList()
-        return splitTopLevel(expression).map { it.trim().removeSurrounding("`") }
+    /**
+     * `PARTITION_EXPRESSION` (`` `payment_date` `` bzw. `` `a`,`b` ``) → Spaltenliste
+     * (Backticks gestrippt). Gibt `null` zurück, wenn der Ausdruck **keine reine Spaltenliste**
+     * ist (z. B. `year(\`order_date\`)`) — diese funktions-basierte Form ist nicht ins
+     * neutrale Spalten-Modell abbildbar (#6).
+     */
+    private fun parseColumnKey(expression: String?): List<String>? {
+        if (expression.isNullOrBlank()) return null
+        val parts = PartitionBoundScanner.splitTopLevel(expression).map { it.trim() }
+        if (parts.isEmpty() || parts.any { !isPlainColumnRef(it) }) return null
+        return parts.map { it.removeSurrounding("`") }
+    }
+
+    /** Eine einfache Spaltenreferenz: `` `name` `` oder `name` — kein Funktionsaufruf/Ausdruck. */
+    private fun isPlainColumnRef(token: String): Boolean = when {
+        token.startsWith("`") -> token.endsWith("`") && token.length >= 2 &&
+            !token.substring(1, token.length - 1).contains('`')
+        else -> token.isNotEmpty() && token.none { it == '(' || it == ')' || it.isWhitespace() }
     }
 
     private fun parsePartition(row: Map<String, Any?>, type: PartitionType): PartitionDefinition? {
@@ -76,7 +107,10 @@ internal object MysqlPartitionReader {
         val description = (row["partition_description"] as? String)?.trim()
         return when (type) {
             PartitionType.RANGE -> PartitionDefinition(name = name, to = parseRangeUpperBound(description))
-            PartitionType.LIST -> PartitionDefinition(name = name, values = description?.let { splitTopLevel(it) })
+            PartitionType.LIST -> PartitionDefinition(
+                name = name,
+                values = description?.let { PartitionBoundScanner.splitTopLevel(it) },
+            )
             PartitionType.HASH -> PartitionDefinition(name = name)
         }
     }
@@ -84,34 +118,9 @@ internal object MysqlPartitionReader {
     /** `VALUES LESS THAN`-Wert(e): `MAXVALUE` → Sentinel, sonst Literal; mehrspaltig = Tupel. */
     private fun parseRangeUpperBound(description: String?): List<PartitionBound>? {
         if (description.isNullOrBlank()) return null
-        return splitTopLevel(description).map { value ->
+        return PartitionBoundScanner.splitTopLevel(description).map { value ->
             if (value.equals("MAXVALUE", ignoreCase = true)) PartitionBound.MaxValue
             else PartitionBound.Value(value)
         }
-    }
-
-    /** Komma-Trennung auf Top-Level (respektiert `'`-/`` ` ``-Quotes + Klammern). */
-    private fun splitTopLevel(s: String): List<String> {
-        val parts = mutableListOf<String>()
-        val token = StringBuilder()
-        var depth = 0
-        var quote: Char? = null
-        for (c in s) {
-            when {
-                quote != null -> { token.append(c); if (c == quote) quote = null }
-                c == '\'' || c == '`' -> { quote = c; token.append(c) }
-                c == '(' -> { depth++; token.append(c) }
-                c == ')' -> { depth--; token.append(c) }
-                c == ',' && depth == 0 -> { parts.addTrimmed(token); token.clear() }
-                else -> token.append(c)
-            }
-        }
-        parts.addTrimmed(token)
-        return parts
-    }
-
-    private fun MutableList<String>.addTrimmed(token: StringBuilder) {
-        val trimmed = token.toString().trim()
-        if (trimmed.isNotEmpty()) add(trimmed)
     }
 }

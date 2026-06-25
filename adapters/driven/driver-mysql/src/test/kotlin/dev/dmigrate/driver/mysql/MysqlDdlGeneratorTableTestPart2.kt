@@ -145,6 +145,112 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         result.notes.find { it.code == "E061" }!!.type shouldBe NoteType.ACTION_REQUIRED
     }
 
+    test("date-only RANGE bound on a DATETIME key keeps the full date (no phantom tz offset, AP6-review #1)") {
+        // Regression: the old offset regex ate the '-DD' of a date-only bound as a fake timezone,
+        // silently shifting the partition boundary ('2022-02-01' -> '2022-02') + a bogus E061.
+        val schema = emptySchema(tables = mapOf(
+            "payment" to table(
+                columns = mapOf("payment_date" to col(NeutralType.DateTime(timezone = true), required = true)),
+                primaryKey = listOf("payment_date"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("payment_date"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p_feb", to = listOf(PartitionBound.Value("'2022-02-01'"))),
+                        PartitionDefinition(name = "p_leap", to = listOf(PartitionBound.Value("'2024-02-29'"))),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        ddl shouldContain "VALUES LESS THAN ('2022-02-01')"
+        ddl shouldContain "VALUES LESS THAN ('2024-02-29')"
+        ddl shouldNotContain "('2022-02')"
+        result.notes.none { it.code == "E061" } shouldBe true
+    }
+
+    test("an already-quoted temporal RANGE bound is emitted once, not double-quoted (contract, AP6-review #3/C)") {
+        // The model carries the SQL quotes (fixture/spec contract, identical for both dialects); the
+        // generator emits them verbatim and must NOT re-quote — a date-only bound has no tz to strip.
+        val schema = emptySchema(tables = mapOf(
+            "events" to table(
+                columns = mapOf("event_date" to col(NeutralType.Date, required = true)),
+                primaryKey = listOf("event_date"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("event_date"),
+                    partitions = listOf(PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2025-01-01'")))),
+                ),
+            ),
+        ))
+        val ddl = generator.generate(schema).render()
+        ddl shouldContain "VALUES LESS THAN ('2025-01-01')"
+        ddl shouldNotContain "''2025-01-01''"
+    }
+
+    test("non-UTC RANGE bound is kept unchanged (no silent shift) and reported per partition (AP6-review #2)") {
+        val schema = emptySchema(tables = mapOf(
+            "payment" to table(
+                columns = mapOf("payment_date" to col(NeutralType.DateTime(timezone = true), required = true)),
+                primaryKey = listOf("payment_date"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("payment_date"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2022-02-01 00:00:00+02'"))),
+                        PartitionDefinition(name = "p2", to = listOf(PartitionBound.Value("'2022-03-01 00:00:00+02'"))),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        // Boundary kept verbatim — fails loudly instead of placing rows in the wrong partition.
+        ddl shouldContain "'2022-02-01 00:00:00+02'"
+        // Reported per partition, not deduped table-wide (the second one no longer leaks silently).
+        result.notes.filter { it.code == "E061" }.size shouldBe 2
+    }
+
+    test("single-column temporal LIST values route through tz-normalization (AP6-review #4)") {
+        // The #4 fix is about routing: a single-column temporal LIST normalizes each scalar value
+        // (here: UTC offset stripped for MySQL DATETIME), whereas a multi-column tuple does not.
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("d" to col(NeutralType.DateTime(timezone = true), required = true)),
+                primaryKey = listOf("d"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.LIST, key = listOf("d"),
+                    partitions = listOf(PartitionDefinition(
+                        name = "p", values = listOf("'2022-02-01 00:00:00+00'", "'2022-06-01 00:00:00+00'"),
+                    )),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        result.render() shouldContain "VALUES IN ('2022-02-01 00:00:00', '2022-06-01 00:00:00')"
+        result.notes.any { it.code == "W129" } shouldBe true
+    }
+
+    test("multi-column LIST tuple with a temporal first column is left intact, not scalar-normalized (AP6-review #4)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf(
+                    "d" to col(NeutralType.DateTime(timezone = true), required = true),
+                    "region" to col(NeutralType.Char(2), required = true),
+                ),
+                primaryKey = listOf("d", "region"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.LIST, key = listOf("d", "region"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p", values = listOf("('2022-02-01 00:00:00+00', 'eu')")),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        // The whole tuple is emitted verbatim; a tuple is never treated as a scalar temporal literal.
+        result.render() shouldContain "VALUES IN (('2022-02-01 00:00:00+00', 'eu'))"
+        result.notes.none { it.code == "W129" || it.code == "E061" } shouldBe true
+    }
+
     test("DECIMAL partition key is unsupported by RANGE COLUMNS → E062 skip (AP6.2 §1)") {
         val schema = emptySchema(tables = mapOf(
             "t" to table(

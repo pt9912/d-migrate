@@ -80,6 +80,29 @@ class MysqlPartitionReaderTest : FunSpec({
         config.partitions[1].remainder shouldBe 1
     }
 
+    test("function-based (non-COLUMNS) RANGE partitioning is not captured (AP6-review #6)") {
+        // PARTITION BY RANGE (YEAR(order_date)) → expression year(`order_date`); not a plain column
+        // list, so it must NOT be reverse-captured as `RANGE COLUMNS (`year(order_date)`)` (garbage key).
+        stubPartitions(listOf(
+            mapOf("partition_name" to "p2022", "partition_method" to "RANGE",
+                "partition_expression" to "year(`order_date`)",
+                "partition_description" to "2023", "partition_ordinal_position" to 1L),
+        ))
+        MysqlPartitionReader.read(jdbc, "db", "orders").shouldBeNull()
+    }
+
+    test("bare RANGE on a plain column (no function) is still captured as a column key (AP6-review #6)") {
+        stubPartitions(listOf(
+            mapOf("partition_name" to "p1", "partition_method" to "RANGE",
+                "partition_expression" to "`id`",
+                "partition_description" to "100", "partition_ordinal_position" to 1L),
+        ))
+        val config = MysqlPartitionReader.read(jdbc, "db", "t")!!
+        config.type shouldBe PartitionType.RANGE
+        config.key shouldBe listOf("id")
+        config.partitions.single().to shouldBe listOf(PartitionBound.Value("100"))
+    }
+
     test("multi-column partition key strips backticks, splits, and reconstructs arity-matched from (AP6.5)") {
         stubPartitions(listOf(
             mapOf("partition_name" to "p1", "partition_method" to "RANGE COLUMNS",

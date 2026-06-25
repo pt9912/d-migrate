@@ -69,10 +69,10 @@
         "key": ["created_at"],
         "partitions": [
           {
-            "name": "orders_2024", "from": ["2024-01-01"], "to": ["2025-01-01"],
+            "name": "orders_2024", "from": ["'2024-01-01'"], "to": ["'2025-01-01'"],
             "indices": [ { "name": "idx_orders_2024_status", "columns": ["status"] } ]
           },
-          { "name": "orders_2025", "from": ["2025-01-01"], "to": ["2026-01-01"] }
+          { "name": "orders_2025", "from": ["'2025-01-01'"], "to": ["'2026-01-01'"] }
         ]
       },
       "metadata": { "engine": "InnoDB", "without_rowid": false }

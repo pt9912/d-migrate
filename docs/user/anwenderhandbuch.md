@@ -1723,7 +1723,7 @@ nennt).
          type: range
          key: [ordered_at]
          partitions:
-           - { name: orders_2025, from: "2025-01-01", to: "2026-01-01" }
+           - { name: orders_2025, from: ["'2025-01-01'"], to: ["'2026-01-01'"] }
    ```
 
 **Ergebnis:** Partitionierungs-DDL für Ziele, die das Konzept unterstützen.

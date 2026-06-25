@@ -63,6 +63,52 @@
 > HASH, LIST-`DEFAULT`, Index-Heben, MySQL→PG). **Muss accepted sein, bevor AP6.2/AP6.3 codiert werden.**
 > Der Slice wandert nach `in-progress/`, sobald der erste Implementierungs-Commit (AP6.2) landet.
 
+## Review-Härtung (Runde 1, 2026-06-25)
+
+Multi-Winkel-Code-Review der AP6-Range (`3f5427dc..HEAD`) + ein hoch-Recall-Re-Review des Fixes.
+Alle P1/P2 und die abbildbaren P3 sind behoben (Build grün: Tests + Detekt + koverVerify für
+driver-common/driver-mysql/driver-postgresql/formats).
+
+- **P1 #1 (Phantom-tz-Offset):** Die alte, unverankerte Offset-Regex fraß das `-TT` einer Datumsgrenze
+  als Zeitzone (`'2022-02-01'` → `'2022-02'`) und verschob still Partitionsgrenzen. Ersetzt durch eine
+  **strukturierte, verankerte** Zerlegung (`MysqlPartitionBoundRenderer`): ein Offset wird nur erkannt,
+  wenn ihm eine Zeitkomponente vorausgeht.
+- **P2 #2 (Non-UTC):** Grenze bleibt jetzt **unverändert** (kein stiller Shift) und wird **pro Partition**
+  als E061 gemeldet (statt tabellenweit dedupliziert).
+- **P2 #3 (unquotierte Temporal-Grenzen):** Wurzel war die Fixture `full-featured.yaml` (betraf **beide**
+  Dialekt-Goldens — PG `FOR VALUES FROM (2024-01-01)` ist Integer-Arithmetik). Bounds in Fixture, JSON-
+  Contract-Fixture, Spec-Beispielen ([schema-reference](../../../spec/schema-reference.md),
+  [neutral-model-spec](../../../spec/neutral-model-spec.md)) und [Anwenderhandbuch](../../user/anwenderhandbuch.md)
+  quotiert; 6 Goldens regeneriert. **Vertrag:** Bound-Literale tragen ihr SQL-Quoting im Modell
+  (identisch für alle Dialekte) — der Generator quotet **nicht** defensiv (siehe Re-Review C).
+- **P2 #4 (LIST-Temporal):** Normalisierung nur für **einspaltige** LIST-Schlüssel (mehrspaltige Tupel
+  bleiben intakt) statt `firstOrNull()`.
+- **P2 #6 (funktions-basierte MySQL-Partitionierung):** `parseColumnKey` erkennt Nicht-Spalten-Ausdrücke
+  (`YEAR(d)`) und erfasst die Partitionierung **nicht** (kein Müll-Key) statt `RANGE COLUMNS (\`year(d)\`)`.
+- **P3 erledigt:** #8 (`indexSignature` schließt `where` ein), #9 (gemeinsamer `PartitionBoundScanner` in
+  driver-common — PG- + MySQL-Parser teilen ihn), #10 (`ManualActionRequired`-Factory für E055/E061–E064),
+  #11 (typisierte Temporal-Behandlung als eigene Klasse — zugleich Detekt-Split), #13 (Namens-/`objectName`-
+  Dedup), #15 (`reconstructRangeFrom` defensiver Pfad explizit), #14 (Coverage für alle neuen Zweige).
+
+**Re-Review-Befunde (zusätzlich, behoben):**
+- **A — Spec/Doku-Drift:** Die Partitions-Beispiele in Spec/Handbuch zeigten unquotierte Bounds (für PG
+  ohnehin invalides DDL). Quotiert + Listen-Form vereinheitlicht.
+- **C — PG/MySQL-Quoting-Asymmetrie:** Defensives Quoting nur auf MySQL-Seite hätte dieselbe Definition
+  für MySQL valide, für PG invalide gemacht (per-dialect drift). Entfernt → beide Dialekte verlassen sich
+  auf den Modell-Vertrag (oben).
+- **B — Regex-Härtung:** `Z` (Zulu = UTC) und Kleinbuchstabe-`t`-Trenner werden jetzt als gültige
+  ISO-8601-Formen erkannt/normalisiert.
+
+**Bewusst dokumentiert, kein Code-Change:**
+- **#5** (`renderMysqlUpperBound` indiziert `keyTypes` per `to`-Ordinal): per Modell-Vertrag korrekt (das
+  `to`-Tupel ist je Schlüsselspalte in Schlüssel-Reihenfolge); `getOrNull` bleibt defensiv.
+- **#7** (Reverse-Rekonstruktion bricht **Cross-Dialect**-Fingerprint-Gleichheit): Cross-Dialect-Fingerprint-
+  Gleichheit ist **kein Ziel** (Typen/DEFAULT-Verwurf/tz-Normalisierung divergieren ohnehin). Same-Dialect-
+  Round-Trips bleiben konsistent (beide Seiten durchlaufen dieselbe Rekonstruktion).
+- **#12** (Partitions-Bewusstsein im gemeinsamen `AbstractDdlGenerator` statt MySQL-`partitionedTables`-
+  Seitenkanal): größeres Altitude-Refactoring → eigenes Ticket
+  [`../open/partition-generator-shared-awareness.md`](../open/partition-generator-shared-awareness.md).
+
 ## Ziel
 
 Ein partitioniertes Schema verlustarm **in beide Richtungen** zwischen PostgreSQL und
