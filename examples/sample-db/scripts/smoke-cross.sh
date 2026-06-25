@@ -131,14 +131,25 @@ grep -q "Transfer complete" /tmp/cross-xfer.log || fail "transfer did not comple
 # --- 7. Zeilen-Parität Quelle == Ziel (alle Tabellen) --------------
 log "verifying row-count parity (source == target) for all tables..."
 mismatch=0
+compared=0
+# F1: list tables into a variable FIRST — process substitution `< <(…)` does not
+# propagate the generator's exit (even under pipefail), so a failed list query would
+# run the loop 0× and falsely log "parity OK" without comparing anything. The bare
+# assignment aborts on a generator error (|| fail); the compared-count assertion below
+# is the second guard against the 0-iteration false-green.
+src_table_list=$(mysql_root -e "SELECT table_name FROM information_schema.tables WHERE table_schema='sakila' AND table_type='BASE TABLE' ORDER BY table_name;") \
+    || fail "could not list source tables for parity"
+[ -n "$src_table_list" ] || fail "source table list for parity is empty"
 while IFS= read -r t; do
     [ -n "$t" ] || continue
     s=$(my_val "SELECT count(*) FROM sakila.\`$t\`;")
     d=$(pg_val "SELECT count(*) FROM \"$t\"")
     if [ "$s" != "$d" ]; then printf '[cross]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
-done < <(mysql_root -e "SELECT table_name FROM information_schema.tables WHERE table_schema='sakila' AND table_type='BASE TABLE' ORDER BY table_name;")
+    compared=$((compared + 1))
+done <<< "$src_table_list"
 [ "$mismatch" = "0" ] || fail "row-count parity violated"
-log "row-count parity OK (all $src_tables tables)"
+[ "$compared" = "$src_tables" ] || fail "parity compared $compared tables, expected $src_tables (generator-swallow guard)"
+log "row-count parity OK (all $compared tables)"
 
 # --- 8. Schlüssel-Typ-Konvertierungen datenbelegt ------------------
 log "verifying critical cross-dialect type conversions..."

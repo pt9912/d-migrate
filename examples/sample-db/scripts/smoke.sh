@@ -129,13 +129,27 @@ log "post-data applied cleanly"
 # --- 7. Daten-Zeilenzahlen Quelle == Ziel (alle Tabellen) ----------
 log "verifying row-count parity (source == target) for all tables..."
 mismatch=0
+compared=0
+# F1: list tables into a variable FIRST — process substitution `< <(…)` does not
+# propagate the generator's exit (even under pipefail), so a failed list query would
+# run the loop 0× and falsely log "parity OK" without comparing anything. The bare
+# assignment aborts on a generator error (|| fail); the compared-count guard below
+# kills the 0-iteration false-green. Lower bound (not == src_tables): the loop lists
+# pg_tables (relkind 'r', includes partition children, excludes the parent) while
+# src_tables counts information_schema BASE TABLE — different filters, so an exact
+# match would risk a false red. The log now prints the actually-compared count.
+src_table_list=$(psql_db pagila 0 -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1") \
+    || fail "could not list source tables for parity"
+[ -n "$src_table_list" ] || fail "source table list for parity is empty"
 while IFS= read -r t; do
     [ -n "$t" ] || continue
     s=$(count_rows pagila "$t"); d=$(count_rows pagila_target "$t")
     if [ "$s" != "$d" ]; then printf '[smoke]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
-done < <(psql_db pagila 0 -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1")
+    compared=$((compared + 1))
+done <<< "$src_table_list"
 [ "$mismatch" = "0" ] || fail "row-count parity violated"
-log "row-count parity OK (all $src_tables tables)"
+[ "$compared" -gt 0 ] || fail "parity compared 0 tables (generator-swallow guard)"
+log "row-count parity OK (all $compared tables)"
 
 # --- 7b. AP2a: kind-lokale Partition-Indizes überleben den Round-Trip ----
 # Pagila deklariert die FK-Backing-Indizes (idx_fk_payment_p2022_NN_*) PRO KIND

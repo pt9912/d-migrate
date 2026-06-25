@@ -94,20 +94,35 @@ sqlite3 "$TGT_DB" < "$OUT_DIR/chinook.gen.post-data.sql" || fail "post-data appl
 # --- 5. Zeilen-Parität Quelle == Ziel (alle Tabellen) --------------
 log "verifying row-count parity (source == target)..."
 mismatch=0
+compared=0
+# F1: list tables into a variable FIRST — process substitution `< <(…)` does not
+# propagate the generator's exit (even under pipefail), so a failed list query would
+# run the loop 0× and falsely log "parity OK" without comparing anything. The bare
+# assignment aborts on a generator error (|| fail); the compared-count assertion below
+# is the second guard against the 0-iteration false-green.
+src_table_list=$(sqlite3 "$SRC_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;") \
+    || fail "could not list source tables for parity"
+[ -n "$src_table_list" ] || fail "source table list for parity is empty"
 while IFS= read -r t; do
     [ -n "$t" ] || continue
     s=$(sqlite3 "$SRC_DB" "SELECT count(*) FROM \"$t\";")
     d=$(sqlite3 "$TGT_DB" "SELECT count(*) FROM \"$t\";")
     if [ "$s" != "$d" ]; then printf '[sqlite]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
-done < <(sqlite3 "$SRC_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+    compared=$((compared + 1))
+done <<< "$src_table_list"
 [ "$mismatch" = "0" ] || fail "row-count parity violated"
-log "row-count parity OK (all $src_tables tables)"
+[ "$compared" = "$src_tables" ] || fail "parity compared $compared tables, expected $src_tables (generator-swallow guard)"
+log "row-count parity OK (all $compared tables)"
 
-# --- 6. Decimal(10,2)->REAL ohne Datenverlust (W200, datenbelegt) --
-log "verifying Decimal->REAL precision (no data loss for 2-decimal prices)..."
+# --- 6. Track.UnitPrice (NUMERIC(10,2)->REAL, W200) Wert-Round-Trip-Stichprobe ----
+# F3 (ehrliche Benennung): SQLite legt NUMERIC wie REAL als float8 ab — diese SUM-
+# Stichprobe belegt den **Wert-Round-Trip** der W200-betroffenen Spalte, kann aber per
+# Konstruktion KEINEN Decimal->REAL-Präzisionsverlust fangen (beide Seiten float8,
+# identische Bitmuster). Groben Zeilen-/Wertverlust deckt bereits die Paritäts-Prüfung ab.
+log "verifying Track.UnitPrice value round-trip (NUMERIC->REAL, W200; SUM sample)..."
 src_sum=$(sqlite3 "$SRC_DB" "SELECT ROUND(SUM(UnitPrice),2) FROM Track;")
 tgt_sum=$(sqlite3 "$TGT_DB" "SELECT ROUND(SUM(UnitPrice),2) FROM Track;")
-[ "$src_sum" = "$tgt_sum" ] || fail "Decimal->REAL precision loss: Track.UnitPrice sum src=$src_sum dst=$tgt_sum"
-log "  Decimal->REAL OK (Track.UnitPrice sum $src_sum round-trips exactly)"
+[ "$src_sum" = "$tgt_sum" ] || fail "Track.UnitPrice value round-trip mismatch: sum src=$src_sum dst=$tgt_sum"
+log "  Track.UnitPrice value round-trip OK (SUM $src_sum identical; NUMERIC<->REAL is float8, no precision delta to catch)"
 
-log "SUCCESS — Chinook SQLite round-trip smoke passed (parity + precision)."
+log "SUCCESS — Chinook SQLite round-trip smoke passed (parity + value round-trip)."

@@ -140,14 +140,25 @@ grep -q "Transfer complete" /tmp/cross-pg2my-xfer.log || fail "transfer did not 
 # --- 7. Per-Tabelle-Zeilen-Parität ---------------------------------
 log "verifying per-table row-count parity (source == target)..."
 mismatch=0
+compared=0
+# F1: list tables into a variable FIRST — process substitution `< <(…)` does not
+# propagate the generator's exit (even under pipefail), so a failed list query would
+# run the loop 0× and falsely log "parity OK" without comparing anything. The bare
+# assignment aborts on a generator error (|| fail); the compared-count assertion below
+# is the second guard against the 0-iteration false-green.
+src_table_list=$(psql_t pagila 0 -tAc "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND NOT c.relispartition ORDER BY 1") \
+    || fail "could not list source tables for parity"
+[ -n "$src_table_list" ] || fail "source table list for parity is empty"
 while IFS= read -r t; do
     [ -n "$t" ] || continue
     s=$(pg_val "SELECT count(*) FROM \"$t\"")
     d=$(my_val "SELECT count(*) FROM pagila_target.\`$t\`;")
     if [ "$s" != "$d" ]; then printf '[cross-pg2my]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
-done < <(psql_t pagila 0 -tAc "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND NOT c.relispartition ORDER BY 1")
+    compared=$((compared + 1))
+done <<< "$src_table_list"
 [ "$mismatch" = "0" ] || fail "per-table row-count parity violated"
-log "per-table parity OK (all $logical_tables logical tables; payment compared as a whole)"
+[ "$compared" = "$logical_tables" ] || fail "parity compared $compared tables, expected $logical_tables (generator-swallow guard)"
+log "per-table parity OK (all $compared logical tables; payment compared as a whole)"
 
 # --- 8. Schlüssel-Typ-Konvertierungen datenbelegt ------------------
 log "verifying critical cross-dialect type conversions..."

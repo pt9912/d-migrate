@@ -10,7 +10,7 @@
 > Folgebefund **S1 behoben** (PK-Nullability-Preflight,
 > [`../done/sample-db-phase3-findings.md`](../done/sample-db-phase3-findings.md));
 > Harness-Review-Härtungen getrackt in
-> [`../next/sample-db-harness-review-followups.md`](../next/sample-db-harness-review-followups.md).
+> [`../done/sample-db-harness-review-followups.md`](../done/sample-db-harness-review-followups.md).
 > Sourcing **und** Mechanik via
 > [ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)
 > entschieden (supersedet ADR 0013). **Folge-Hygiene:** Slice nach `done/` heben
@@ -257,6 +257,6 @@ gegen eine gepinnte Baseline grün (lokal + CI-Workflow):
 mit nur noch operativem Rest (Nightly-Runner-Pin).
 
 **Nicht-blockierende Folge-Härtung:** Bash-Robustheit (F1 False-Green) →
-[`../next/sample-db-harness-review-followups.md`](../next/sample-db-harness-review-followups.md).
+[`../done/sample-db-harness-review-followups.md`](../done/sample-db-harness-review-followups.md).
 
 Übergreifend: kein Dump im Repo (gitignored + dockerignored); `make docs-check` grün.
