@@ -57,19 +57,18 @@ ein gepinnter Sample und eine eigene `expected/`-Baseline; `smoke.sh` parametris
 | PostgreSQL (`none`) | Pagila | postgres | 1 | ✅ erledigt |
 | MySQL (`none`) | Sakila | mysql | 2 | ✅ erledigt (Sakila MySQL→PG + Pagila PG→MySQL beide grün) |
 | SQLite (`none`) | Chinook | — (Datei) | 2b | ✅ erledigt (Round-Trip grün, Parität 11/11) |
-| PostgreSQL + **`postgis`** | Spatial-Sample | PostGIS-Image | 5 | geplant |
-| MySQL + **`native`** (GEOMETRY/POINT/… + SRID) | Spatial-Sample | mysql | 5 | geplant |
-| SQLite + **`spatialite`** | Spatial-Sample | — (`mod_spatialite` im CLI-Image) | 5 | geplant |
+| PostgreSQL + **`postgis`** | PostGIS-nyc (gepinnt) | PostGIS-Image | 5 | ✅ erledigt (VA1–VA5, 5a echtes nyc EPSG:26918) |
+| MySQL + **`native`** (GEOMETRY/POINT/… + SRID) | kuratiertes WKT/WKB | mysql | 5 | ✅ erledigt (SPATIAL-Index reverse, SRID-Round-Trip) |
+| SQLite + **`spatialite`** | kuratiertes WKT | — (`mod_spatialite` im CLI-Image) | 5 | ✅ erledigt (voller `migrate --execute`-Round-Trip, 5d) |
 
-**Vollständigkeit:** Alle **drei** Dialekte haben ein Spatial-Profil (PG→`postgis`,
-MySQL→`native`, SQLite→`spatialite`); die **DDL-Typ-Abbildung + Profil-Policy** sind
-implementiert (`SpatialProfile.defaultFor`/`allowedFor`, `NeutralType.Geometry`).
-**Aber** der Spatial-*Datenpfad* (Wert-Transfer), die *Spatial-Indizes* und das
-*SRID-Reverse* sind **noch nicht** implementiert — siehe Slice
-[`spatial-harness-slice.md`](../done/spatial-harness-slice.md) (VA1–VA5).
-Phase 5 deckt daher **drei** Round-Trips **plus** Cross-Dialect-Spatial-Transfers
-(z. B. PostGIS→MySQL native, MySQL native→Spatialite) ab — nach Implementierung
-der Vorarbeitspakete, nicht nur durch Harness-Verkabelung.
+**Vollständigkeit (geliefert):** Alle **drei** Dialekte haben ein Spatial-Profil
+(PG→`postgis`, MySQL→`native`, SQLite→`spatialite`); DDL-Typ-Abbildung + Profil-Policy
+(`SpatialProfile.defaultFor`/`allowedFor`, `NeutralType.Geometry`) **und** der
+Spatial-*Datenpfad* (WKB-Wert-Transfer), die *Spatial-Indizes* und das *SRID-Reverse* sind
+implementiert + live-verifiziert — Slice
+[`spatial-harness-slice.md`](../done/spatial-harness-slice.md) (VA1–VA5 + 5a–5d, graduiert
+2026-06-22). Phase 5 deckt **drei** Round-Trips **plus** Cross-Dialect-Spatial-Transfers
+(PostGIS→MySQL native, MySQL native→SpatiaLite) ab; `make sample-db-spatial-smoke`.
 
 Jeder neue Dialekt deckt **eigene** Round-Trip-Defekte auf (wie PG → F1–F3,
 [`sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md));
@@ -222,10 +221,12 @@ Unterbrechung** (Mid-Stream-`docker kill` + `--resume`); **Chunking belegt**
 (nightly `cron` + `workflow_dispatch`), **nicht** im PR-Gate. Dual-Target-Parität
 (MySQL+PG) + `SUM(salary)`-Checksumme datenbelegt.
 
-**Phase 5 (Spatial):** in eigenem Folge-Slice — `--spatial-profile postgis`,
-**`native` (MySQL)** und `spatialite` end-to-end gegen je eigene Baseline (alle
-drei Dialekt-Spatial-Pfade) + mindestens ein Cross-Dialect-Spatial-Transfer;
-Geometrie-Typen (inkl. SRID) + räumliche Indizes datenbelegt.
+**Phase 5 (Spatial): ✅** in eigenem Folge-Slice
+[`spatial-harness-slice.md`](../done/spatial-harness-slice.md) **geliefert** (graduiert
+2026-06-22) — `--spatial-profile postgis`, **`native` (MySQL)** und `spatialite` end-to-end
+gegen je eigene Baseline (alle drei Dialekt-Spatial-Pfade) + Cross-Dialect-Spatial-Transfer;
+Geometrie-Typen (inkl. SRID) + räumliche Indizes datenbelegt (VA1–VA5 + 5a–5d).
+`make sample-db-spatial-smoke`.
 
 **Übergreifend:** kein Dump im Repo (Cache gitignored + dockerignored);
 `make docs-check` grün.
