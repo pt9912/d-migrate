@@ -3,7 +3,7 @@ name: Sample-DB Scale Smoke (Nightly / opt-in)
 # Phase-3-Scale-Smoke: großvolumiger Streaming-/Chunking-/Resume-Test mit dem
 # Employees-Dataset (datacharmer/test_db, ~4 Mio Zeilen) gegen das echte
 # d-migrate:dev-CLI.
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Faehrt `make sample-db-scale-smoke` (fetch gepinntes Employees-Dataset ->

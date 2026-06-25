@@ -1,6 +1,6 @@
 # Plan: Sample-DB-Harness Phase 5 — Spatial (PostGIS + MySQL native + Spatialite)
 
-> Dokumenttyp: Done-Plan (Folge-Slice von [`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
+> Dokumenttyp: Done-Plan (Folge-Slice von [`sample-db-integration-harness.md`](../done/sample-db-integration-harness.md))
 > Status: **DONE — Phase 5 komplett, live-verifiziert (2026-06-22; Closure am Ende).**
 > Vorgeschichte (in Arbeit seit 2026-06-21). **VA1 (a–d) implementiert, code-review-
 > gehärtet (`25efa6b5`) + LIVE-VERIFIZIERT (`3e57769f`)**: `cfb7ab78` Erkennung,

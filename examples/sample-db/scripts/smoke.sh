@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — Phase 1 Smoke (Pagila / PostgreSQL Round-Trip)
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Echter End-to-End-CLI-Lauf gegen das d-migrate:dev-Image:

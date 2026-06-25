@@ -1,4 +1,4 @@
--- Sample-DB-Harness MySQL initdb — Plan: docs/planning/in-progress/sample-db-integration-harness.md
+-- Sample-DB-Harness MySQL initdb — Plan: docs/planning/done/sample-db-integration-harness.md
 --
 -- Läuft einmalig beim ersten Volume-Init des mysql-Service
 -- (docker-entrypoint-initdb.d), als root.

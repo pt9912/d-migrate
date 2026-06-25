@@ -106,7 +106,7 @@ help:
 		'  make bi-demo-purge    Stop containers and remove all named volumes' \
 		'  make bi-demo-smoke    End-to-end smoke (pull + up + d-migrate + S3-upload + verify)' \
 		'' \
-		'Sample-DB-Harness (examples/sample-db, Plan: docs/planning/in-progress/sample-db-integration-harness.md):' \
+		'Sample-DB-Harness (examples/sample-db, Plan: docs/planning/done/sample-db-integration-harness.md):' \
 		'  make sample-db-fetch  Fetch pinned + SHA256-verified dumps into gitignored .cache/' \
 		'  make sample-db-up     Start postgres (source + target DB)' \
 		'  make sample-db-smoke  Full E2E (Phase 1, Pagila/PG round-trip): load -> reverse/validate/generate -> transfer -> compare vs baseline' \
@@ -357,7 +357,7 @@ bi-demo-smoke:
 #
 # Reproduzierbarer E2E-Smoke gegen das echte d-migrate:dev-CLI mit
 # gepinnten Sample-DBs (Phase 1: Pagila/PG-Round-Trip). Plan:
-# docs/planning/in-progress/sample-db-integration-harness.md. Sourcing/Mechanik:
+# docs/planning/done/sample-db-integration-harness.md. Sourcing/Mechanik:
 # docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml

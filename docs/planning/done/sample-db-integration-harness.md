@@ -236,3 +236,27 @@ Geometrie-Typen (inkl. SRID) + räumliche Indizes datenbelegt.
 - TPC-Benchmarks (Phase 4 = eigener Slice).
 - Direkter Pagila↔Sakila-Schemavergleich (unterschiedliche Schemata).
 - Testcontainers/Gradle-Testmodul (verworfen zugunsten compose/Scripts, ADR 0014).
+
+## Closure (2026-06-25)
+
+**Phase 0–3 DoD-komplett (Stand 2026-06-21) → graduiert nach `done/`.** Geliefert und je
+gegen eine gepinnte Baseline grün (lokal + CI-Workflow):
+
+- **Phase 0** — ADR 0014 accepted (Sourcing + Mechanik + Platzierung).
+- **Phase 1** — Pagila PG-Round-Trip (`make sample-db-smoke`) inkl. F1–F4-Fidelity-Fixes →
+  [`sample-db-roundtrip-findings.md`](sample-db-roundtrip-findings.md).
+- **Phase 2/2b** — Pagila PG→MySQL + Sakila MySQL→PG (Cross-Dialect) + Chinook/SQLite →
+  [`sample-db-phase2-findings.md`](sample-db-phase2-findings.md).
+- **Phase 3 (Scale)** — Employees export→import mit Resume (Mid-Stream-Abbruch) + Chunking +
+  Dual-Target-Parität (MySQL+PG), scheduled Workflow `sample-db-scale.yml` →
+  [`sample-db-phase3-findings.md`](sample-db-phase3-findings.md).
+
+**Folge-Slices (eigene, geliefert):** Phase 5 (Spatial: PostGIS + MySQL native + SpatiaLite) →
+[`spatial-harness-slice.md`](spatial-harness-slice.md); Phase 4 (TPC) → eigene Slices, davon
+[`../in-progress/tpc-4c-volume-acceptance-slice.md`](../in-progress/tpc-4c-volume-acceptance-slice.md)
+mit nur noch operativem Rest (Nightly-Runner-Pin).
+
+**Nicht-blockierende Folge-Härtung:** Bash-Robustheit (F1 False-Green) →
+[`../next/sample-db-harness-review-followups.md`](../next/sample-db-harness-review-followups.md).
+
+Übergreifend: kein Dump im Repo (gitignored + dockerignored); `make docs-check` grün.

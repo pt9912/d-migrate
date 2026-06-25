@@ -5,7 +5,7 @@
 > Trigger: `/code-review` auf den Sample-DB-Harness-Diff (Phase 2/2b, Session
 > 2026-06-20). Drei verifizierte Bash-Robustheits-Befunde; F1 ist der einzige
 > fixwürdige (False-Green), F2/F3 optional.
-> Referenzen: [`../in-progress/sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md)
+> Referenzen: [`../done/sample-db-integration-harness.md`](../done/sample-db-integration-harness.md)
 > (Umbrella), ADR 0014 (Harness-Mechanik), ADR 0004 (Planning-Struktur).
 > Nicht-blockierend für den Harness selbst (Phase 0/1/2/2b sind grün); dies ist
 > eine Stärkung der Verifikations-*Schärfe*.

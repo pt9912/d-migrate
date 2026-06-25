@@ -3,7 +3,7 @@
 > Status: **ABGESCHLOSSEN** (2026-06-19) — alle Befunde behoben: F1/F2/F4 + F3 +
 > die ehemalige tsvector/gist-„Grenze" (ADR 0015). Pagila/PG-Round-Trip =
 > `Status: IDENTICAL` (0 Diffs, 37 → 0).
-> Trigger: Der neue Sample-DB-Harness ([`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
+> Trigger: Der neue Sample-DB-Harness ([`sample-db-integration-harness.md`](../done/sample-db-integration-harness.md))
 > hat beim **Erstlauf** (Pagila PG→PG-Round-Trip) echte Fidelity-Defekte
 > aufgedeckt, die im synthetischen Cross-Dialect-Matrix-Modus bisher nicht
 > sichtbar waren.

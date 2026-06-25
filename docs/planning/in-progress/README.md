@@ -57,7 +57,10 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`sample-db-integration-harness.md`](sample-db-integration-harness.md) | Umsetzungsplan (Slice) | Sample-DB-E2E-Harness (`examples/sample-db/`). Phase 0+1 (Pagila/PG-Round-Trip) erledigt inkl. F1–F4-Fidelity-Fixes (Tracker geschlossen → [`../done/sample-db-roundtrip-findings.md`](../done/sample-db-roundtrip-findings.md)); **aktiv: Phase 2 (MySQL/Sakila)**. Phase 2b (SQLite), 3 (Scale), 5 (Spatial) geplant. |
+
+> Der Sample-DB-E2E-Harness-Slice (`examples/sample-db/`) ist Phase 0–3 DoD-komplett
+> und nach [`../done/sample-db-integration-harness.md`](../done/sample-db-integration-harness.md)
+> graduiert (2026-06-25); Phase 4/5 als eigene Slices geliefert.
 
 > Der Pilot-Validierungszyklus 0.9.9 ist abgeschlossen — alle fuenf Reports
 > (Erstlauf, Re-Run 1-4) und der P2-Tracker liegen in `../done-archive/`

@@ -1,6 +1,6 @@
 # Expected-Result-Baseline — Pagila/PostgreSQL Smoke (Phase 1)
 
-> Plan: [`../../../docs/planning/in-progress/sample-db-integration-harness.md`](../../../docs/planning/in-progress/sample-db-integration-harness.md)
+> Plan: [`../../../docs/planning/done/sample-db-integration-harness.md`](../../../docs/planning/done/sample-db-integration-harness.md)
 > · Stand: 2026-06-24 (lokal ermittelt, d-migrate `0.9.9-SNAPSHOT`; F1–F4 + ADR 0015
 > behoben → **0 Diffs**, `Status: IDENTICAL`; AP1/AP2 ADR 0019: `payment` als echte
 > RANGE-Partition, `E055` entfällt → **0 generate-Notes**)

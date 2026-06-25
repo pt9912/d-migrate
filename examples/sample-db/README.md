@@ -6,7 +6,7 @@ das lokal gebaute `d-migrate:dev`-Image, exakt analog
 [`../bi-demo/`](../bi-demo/README.md) — **kein** Testcontainers, **kein**
 Gradle-Testmodul. Läuft **lokal *und* in CI**.
 
-- Plan: [`../../docs/planning/in-progress/sample-db-integration-harness.md`](../../docs/planning/in-progress/sample-db-integration-harness.md)
+- Plan: [`../../docs/planning/done/sample-db-integration-harness.md`](../../docs/planning/done/sample-db-integration-harness.md)
 - Sourcing/Mechanik-ADR: [`../../docs/adr/0014-sample-db-harness-fetch-and-compose.md`](../../docs/adr/0014-sample-db-harness-fetch-and-compose.md)
 
 ## Phasen & Make-Targets

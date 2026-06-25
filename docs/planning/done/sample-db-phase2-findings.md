@@ -6,7 +6,7 @@
 > getrackt im Partitions-Plan, kein eigener Slice). **Alle Phase-2-Findings gelöst
 > oder ausgelagert** → 2026-06-20 nach `done/` verschoben (ADR 0004-Lebenszyklus).
 > Trigger: Phase 2 des Sample-DB-Harness
-> ([`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md)) fährt
+> ([`sample-db-integration-harness.md`](../done/sample-db-integration-harness.md)) fährt
 > erstmals **echte Cross-Dialect-Transfers** (nicht Same-Dialect-Round-Trip
 > wie Phase 1). Wie erwartet („jeder neue Dialekt deckt eigene Defekte auf")
 > bringt jede Richtung eigene Befunde.
@@ -158,5 +158,5 @@ in [`partition-hierarchy-reconstruction.md`](partition-hierarchy-reconstruction.
 prüft der PG→MySQL-Smoke Per-Tabelle-Parität und meldet die Duplikation als NOTE.
 
 **Damit alle Phase-2-Findings gelöst oder ausgelagert.** Der Harness-Umbrella
-([`../in-progress/sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
+([`../done/sample-db-integration-harness.md`](../done/sample-db-integration-harness.md))
 bleibt in `in-progress/` (Phase 3 Scale offen).

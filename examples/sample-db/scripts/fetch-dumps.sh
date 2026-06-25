@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — On-Demand-Dump-Fetch
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Lädt die GEPINNTEN, SHA256-verifizierten Sample-DB-Dumps in einen

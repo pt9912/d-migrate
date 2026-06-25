@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — Phase 2b SQLite-Round-Trip (Chinook)
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # SQLite hat KEINEN Server — die CLI arbeitet gegen eine bind-gemountete

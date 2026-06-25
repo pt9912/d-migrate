@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — Phase 3 Scale-Smoke (Employees/MySQL, opt-in/nightly)
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Großvolumiger Streaming-/Chunking-/Resume-Test gegen das echte CLI mit dem

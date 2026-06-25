@@ -1,7 +1,7 @@
 # Sample-DB-Scale-Findings (Phase 3, Employees)
 
 > Status: **Abschlussreif**. Phase 3 des Sample-DB-Harness
-> ([`sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
+> ([`sample-db-integration-harness.md`](../done/sample-db-integration-harness.md))
 > fährt erstmals den **datei-basierten `data export`→`import`-Pfad** (statt des
 > direkten `data transfer` aus Phase 1/2), weil **nur** dieser Pfad `--resume`
 > unterstützt. Dataset: Employees (`datacharmer/test_db@e324b561`, ~4 Mio Zeilen,

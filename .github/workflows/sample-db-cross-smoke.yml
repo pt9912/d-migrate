@@ -2,7 +2,7 @@ name: Sample-DB Cross-Dialect Smoke (Best-Effort)
 
 # Phase-2-Cross-Dialect-Smoke: Sakila MySQL -> PostgreSQL gegen das echte
 # d-migrate:dev-CLI.
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # Findings: docs/planning/in-progress/sample-db-phase2-findings.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #

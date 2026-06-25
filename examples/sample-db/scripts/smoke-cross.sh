@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — Phase 2 Cross-Dialect-Smoke (Sakila MySQL → PostgreSQL)
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 # Findings: docs/planning/in-progress/sample-db-phase2-findings.md
 #

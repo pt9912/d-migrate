@@ -2,7 +2,7 @@ name: Sample-DB Cross-Dialect Smoke PG→MySQL (Best-Effort)
 
 # Phase-2-Cross-Dialect-Smoke: Pagila PostgreSQL -> MySQL gegen das echte
 # d-migrate:dev-CLI (symmetrisch zu sample-db-cross-smoke.yml = MySQL->PG).
-# Plan: docs/planning/in-progress/sample-db-integration-harness.md
+# Plan: docs/planning/done/sample-db-integration-harness.md
 # Findings: docs/planning/in-progress/sample-db-phase2-findings.md (Flow B)
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #

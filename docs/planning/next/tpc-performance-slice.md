@@ -1,6 +1,6 @@
 # Plan: Sample-DB-Harness Phase 4 — Performance (TPC-H/-DS, LF 8.1/8.2)
 
-> Dokumenttyp: Next-Plan (Folge-Slice von [`../in-progress/sample-db-integration-harness.md`](../in-progress/sample-db-integration-harness.md))
+> Dokumenttyp: Next-Plan (Folge-Slice von [`../done/sample-db-integration-harness.md`](../done/sample-db-integration-harness.md))
 > Status: Entwurf, **überarbeitet nach Plan-Review (2026-06-21)**. Scope ausgearbeitet,
 > **Bau folgt**. **Wichtigste Review-Korrekturen:** (a) LF-Zuordnung gegen den echten
 > Lastenheft-Wortlaut präzisiert; (b) „LF 8.1 durch Phase 3 erbracht" zurückgenommen

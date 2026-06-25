@@ -601,7 +601,7 @@ vollem `migrate --execute`-Round-Trip, ADR 0016), VA5 (Sample-Pins) und die Sub-
 **5c** (Cross-Dialect), **5d** (SpatiaLite) — alle live-verifiziert (`make
 sample-db-spatial-smoke`, nyc opt-in `FETCH_NYC=1`). Begleitend gefixt: PG-Reverse
 schließt Extension-Objekte aus (`pg_depend`). Slice-Docs:
-[`sample-db-integration-harness.md`](sample-db-integration-harness.md),
+[`sample-db-integration-harness.md`](../done/sample-db-integration-harness.md),
 [`spatial-harness-slice.md`](../done/spatial-harness-slice.md).
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
