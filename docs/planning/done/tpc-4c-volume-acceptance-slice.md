@@ -161,3 +161,24 @@ SHA-256) und Resume laufen ohnehin host-unabhängig **hart**, unabhängig von di
 
 Damit ist der „operative Rest" auf zwei `gh variable set`-Aufrufe rund um **einen**
 Bootstrap-Lauf reduziert — danach ist tpc-4c graduierungsreif.
+
+## Closure (2026-06-25)
+
+**Mess-Kern (Teil 1) + Kalibrier-Guard (Teil 2) gebaut + live-verifiziert → graduiert nach `done/`.**
+
+- **Verlustfreiheit** (LF 8.1/8.5, kanonischer SHA-256 Quelle==Re-Import) und **Resume** nach
+  Mid-Stream-Abbruch laufen **host-unabhängig hart** (`make sample-db-tpch-perf`, SF=0.2 → 1,73 Mio
+  Zeilen, unter Caps 2 CPU/4 GB).
+- **Durchsatz (LF 8.2)** ist kalibrier-guarded: auf dem variablen `ubuntu-latest`-CI-Runner
+  **diagnostisch** (per Design, kein False-Fail). Das **absolute Zeit-Gate** wird hart, sobald ein
+  stabiler Runner designiert ist — beides reine Repo-Variablen (`PERF_RUNNER`, `CALIB_REFERENCE_MS`),
+  Schritt-für-Schritt im Runbook oben.
+
+**Bewusste Entscheidung (Option C, 2026-06-25):** `ubuntu-latest` bleibt diagnostisch; das Hart-Gate-
+Arming ist ein reiner Ops-Schritt (kein Code) und als Provisional-Carve-Out mit Trigger verfolgt
+([`carveout.md`](../in-progress/carveout.md), Sektion „TPC-Performance-Abnahme"). Begründung: für ein
+Public-/Solo-Projekt ohne bestehende Self-hosted-Infra ist der ROI eines dedizierten Runners gering,
+solange der Durchsatz nightly **sichtbar** gemessen wird (Regressionen fallen auf, nur ohne Gate-Fail).
+
+Separater operativer Follow-up (Ergebnisse als CI-Artefakt):
+[`../open/tpch-perf-result-artifact.md`](../open/tpch-perf-result-artifact.md).

@@ -2,7 +2,7 @@ name: Perf Acceptance — TPC-H Volume (4c, Nightly / opt-in)
 
 # Phase-4-Volumen-Abnahme (4c Mess-Kern): datei-basierter data export -> import
 # der TPC-H-Workload (>= 1 Mio Zeilen) unter Container-Caps 2 CPU/4 GB.
-# Slice: docs/planning/in-progress/tpc-4c-volume-acceptance-slice.md
+# Slice: docs/planning/done/tpc-4c-volume-acceptance-slice.md
 # ADR:   docs/adr/0018-normalized-perf-measurement-environment.md
 #
 # Was HART laeuft (host-unabhaengig): Verlustfreiheit per kanonischem Inhalts-

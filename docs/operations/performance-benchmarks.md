@@ -136,7 +136,7 @@ Referenz-Caps: **Verlustfreiheit HART** per kanonischem Inhalts-SHA-256 (host-un
 **Durchsatz** vs. LN-002/003 **kalibrier-guarded** (diff-planner-CLI-Op als Host-Speed-
 Referenz; hart nur bei `PERF_GATE=true` + host-in-band, sonst diagnostisch), **Resume**
 nach Mid-Stream-Abbruch. Slice:
-[`../planning/in-progress/tpc-4c-volume-acceptance-slice.md`](../planning/in-progress/tpc-4c-volume-acceptance-slice.md).
+[`../planning/done/tpc-4c-volume-acceptance-slice.md`](../planning/done/tpc-4c-volume-acceptance-slice.md).
 Offen (operativ): einen Nightly-Runner designieren + `CALIB_REFERENCE_MS` darauf pinnen,
 dann ist das absolute Zeit-Gate live. Die DDL-1000-< 30-s-Schwelle (LN-004) bleibt 4d.
 

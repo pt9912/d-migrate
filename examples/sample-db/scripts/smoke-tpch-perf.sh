@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — Phase 4 Volumen-Abnahme Mess-Kern (4c, Teil 1)
-# Slice: docs/planning/in-progress/tpc-4c-volume-acceptance-slice.md
+# Slice: docs/planning/done/tpc-4c-volume-acceptance-slice.md
 # ADR:   docs/adr/0018-normalized-perf-measurement-environment.md · 0017
 #
 # Misst die TPC-H-Volumen-Abnahme (LF 8.1/8.2/8.5) über den datei-basierten

@@ -13,7 +13,7 @@
 > nicht bindend) (High), Cleanup-Step eigenes `timeout-minutes: 5` gegen hängendes
 > `down -v` (Med), Artefaktname `+run_attempt` gegen Re-run-Kollision (Med), Pre-Run-Clean
 > `/tmp/tpch-*.log` gegen Staleness auf reused Runner (Med).
-> **Typ:** operativer Follow-up zur [4c-Slice](../in-progress/tpc-4c-volume-acceptance-slice.md)
+> **Typ:** operativer Follow-up zur [4c-Slice](../done/tpc-4c-volume-acceptance-slice.md)
 > (Punkt „Operativer Rest" — Nightly-Runner designieren + `CALIB_REFERENCE_MS` pinnen).
 > **Trigger:** Frage „wo werden die Perf-Ergebnisse abgelegt?" — Antwort: **nirgends**.
 > Sie existieren ausschließlich im flüchtigen GitHub-Actions-Job-Log. Das macht den

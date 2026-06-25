@@ -253,7 +253,7 @@ gegen eine gepinnte Baseline grün (lokal + CI-Workflow):
 
 **Folge-Slices (eigene, geliefert):** Phase 5 (Spatial: PostGIS + MySQL native + SpatiaLite) →
 [`spatial-harness-slice.md`](spatial-harness-slice.md); Phase 4 (TPC) → eigene Slices, davon
-[`../in-progress/tpc-4c-volume-acceptance-slice.md`](../in-progress/tpc-4c-volume-acceptance-slice.md)
+[`../done/tpc-4c-volume-acceptance-slice.md`](../done/tpc-4c-volume-acceptance-slice.md)
 mit nur noch operativem Rest (Nightly-Runner-Pin).
 
 **Nicht-blockierende Folge-Härtung:** Bash-Robustheit (F1 False-Green) →
