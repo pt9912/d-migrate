@@ -2,7 +2,7 @@
 
 > **Status:** Vorabklärung (Trigger, 2026-06-25)
 > **Trigger:** AP6-Review-Härtung (Befund #12, Altitude). Beim Cross-Dialect-Partitionierungs-Slice
-> ([`../in-progress/cross-dialect-partitioning.md`](../in-progress/cross-dialect-partitioning.md))
+> ([`../done/cross-dialect-partitioning.md`](../done/cross-dialect-partitioning.md))
 > fiel auf, dass der MySQL-Generator das „ist-partitioniert"-Wissen über einen **mutierbaren
 > Seitenkanal** trägt.
 > **Bezug (Anforderung):** keine harte LF-Anforderung; reine interne Code-Altitude (Wartbarkeit,
@@ -43,7 +43,7 @@ einer partitionierten Tabelle, beide Richtungen + zirkulärer ALTER). Das Set wi
 
 ## Bezug
 
-- Auslöser-Slice: [`../in-progress/cross-dialect-partitioning.md`](../in-progress/cross-dialect-partitioning.md)
+- Auslöser-Slice: [`../done/cross-dialect-partitioning.md`](../done/cross-dialect-partitioning.md)
   (Review-Härtung Runde 1, Befund #12).
 - ADR der Modellform: [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md),
   [ADR 0020](../../adr/0020-cross-dialect-partitioning-mysql.md).

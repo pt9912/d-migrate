@@ -202,3 +202,34 @@ LIST-`DEFAULT`-ohne-MySQL-Pendant (AP6.2), Partition-Index-Abbildung (AP6.3), un
 - Note-/Fehler-Ledger: [`spec/ledger.md`](../../../spec/ledger.md).
 - Anforderung **LN-008** „Partitionierung für große Tabellen"
   ([`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)) — Cross-Dialect-Teil.
+
+## Closure (2026-06-25)
+
+**AP6 codeseitig komplett + review-gehärtet (Runde 1) → graduiert nach `done/`.** Geliefert:
+AP6.1 (MySQL-Reverse RANGE/LIST/HASH), AP6.2 (Generate inkl. Temporal-UTC-Normalisierung,
+Carve-Outs E062/E063/W130), AP6.3 (kind-lokale Index-Heben + FK-Carve-Out E064/E065),
+AP6.4 (Cross-Smoke PG→MySQL live grün, 16049 Zeilen, Partitions-Integritäts-Gate),
+AP6.5 (MySQL→PG-Rückrichtung, `reconstructNeutralBounds`). Gate-ADR
+[ADR 0020](../../adr/0020-cross-dialect-partitioning-mysql.md) accepted; Ledger E061–E065 /
+W129–W131 (YAML + `spec/ledger.md`-Summary).
+
+**Review-Härtung Runde 1** (Commit `7b3cc641`): siehe gleichnamige Sektion oben — alle 15
+Erstbefunde + 3 Re-Review-Befunde (Spec-Drift, PG/MySQL-Quoting-Asymmetrie, Regex-Härtung)
+behoben; strukturierte Temporal-Behandlung (`MysqlPartitionBoundRenderer`), gemeinsamer
+`PartitionBoundScanner` (driver-common), Quoting-Vertrag „Modell trägt Quotes" (dialekt-identisch).
+Full-Repo-Build grün (Tests + Detekt + Kover), `docs-check` grün.
+
+**Bewusst als eigene Sub-Slices geschnitten** (nicht AP6-blockierend, im
+[`carveout.md`](../in-progress/carveout.md)-Tracker, Sektion „Cross-Dialect-Partitionierung",
+mit Trigger verfolgt):
+- **Kind-lokale FK-Transparenz (E065)** — braucht FK-Feld auf `PartitionDefinition` +
+  Ergänzung von [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) +
+  [ADR 0020](../../adr/0020-cross-dialect-partitioning-mysql.md) + Reverse-Erfassung.
+- **LIST-`DEFAULT`-Transfer-Preflight** — Generate-Note E063 flaggt bereits laut; ein
+  Transfer-Zeit-Preflight (spiegelt `CheckPreflight`) ist ein eigenes Slice.
+- **Gemeinsames Partitions-Bewusstsein im `AbstractDdlGenerator`** (statt MySQL-
+  `partitionedTables`-Seitenkanal) → [`../open/partition-generator-shared-awareness.md`](../open/partition-generator-shared-awareness.md).
+
+**Verbleibende Mini-Hygiene** (kein eigener Slice): kind-lokale FKs sind in pagila auf den
+Kindern deklariert — der Cross-Smoke ist davon nicht betroffen (MySQL verbietet FKs auf
+partitionierten Tabellen ohnehin).

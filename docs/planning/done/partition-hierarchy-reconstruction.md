@@ -4,7 +4,7 @@
 > Arbeitspakete fertig + grün: AP1a (`021c0ce2`) + AP1/AP2 + AP4 + Review-Härtung (2 Runden) +
 > AP2a + AP3** (docker-`check`, live `make sample-db-smoke`, live `make integration`).
 > **AP6 (Cross-Dialect) ist als eigener Folge-Slice ausgegliedert:**
-> [`../in-progress/cross-dialect-partitioning.md`](../in-progress/cross-dialect-partitioning.md). Gate-Entscheidung =
+> [`cross-dialect-partitioning.md`](cross-dialect-partitioning.md). Gate-Entscheidung =
 > [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) (accepted):
 > **strukturierte** `PartitionDefinition`.
 > **Trigger:** Der Pagila/PG-Round-Trip des Sample-DB-Harness meldet `E055`
@@ -156,7 +156,7 @@ bleibt OUT (ADR 0019). Diese Scheibe ist nach `done/` graduiert (2026-06-24).
 
 **AP6 (Cross-Dialect) ist als eigener Folge-Slice ausgegliedert** (laut
 [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md)):
-[`../in-progress/cross-dialect-partitioning.md`](../in-progress/cross-dialect-partitioning.md) — MySQL-Reverse-Capture,
+[`cross-dialect-partitioning.md`](cross-dialect-partitioning.md) — MySQL-Reverse-Capture,
 verlustbehaftetes RANGE-Mapping (ADR-pflichtig), MySQL-Generate für `partition.indices` (Review-Befund),
 voller Cross-Dialect-Round-Trip.
 

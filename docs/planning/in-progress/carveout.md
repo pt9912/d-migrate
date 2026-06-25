@@ -129,7 +129,19 @@ Quelldokument:
 
 ---
 
-## 9. Lifecycle und Pflege
+## 9. Cross-Dialect-Partitionierung (ADR 0020, 0.9.9)
+
+Quelldokument: [`../done/cross-dialect-partitioning.md`](../done/cross-dialect-partitioning.md)
+(Review-Härtung Runde 1 — bewusst nicht in den AP6-Abschluss gezogen, beide sind eigene Sub-Slices).
+
+| Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
+| --------- | ------ | ---------------- | ------------ |
+| Kind-lokale FK-Constraints round-trippen (E065-Transparenz) | Provisional | PG erlaubt FKs direkt auf Kind-Partitionen (z. B. Pagila-`payment`-Kinder); `PartitionDefinition` trägt heute **kein** FK-Feld → kind-lokale FKs fallen beim Reverse still weg. Das MySQL-**Ergebnis** bleibt korrekt (FKs auf partitionierten Tabellen dort ohnehin verboten, E065), nur die Transparenz für *kind-lokale* FKs fehlt. **Trigger:** Cross-Dialect-Fidelity-Bedarf; braucht FK-Feld auf `PartitionDefinition` + Ergänzung von [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) + [ADR 0020](../../adr/0020-cross-dialect-partitioning-mysql.md) + Reverse-Erfassung. | [`../done/cross-dialect-partitioning.md`](../done/cross-dialect-partitioning.md) |
+| LIST-`DEFAULT`-Transfer-Preflight | Provisional | Eine PG-LIST-`DEFAULT`-Partition hat kein MySQL-Pendant; die Generate-Note **E063** flaggt den Verwurf bereits laut (`action_required`, „Transfer-Datenverlust"). Eine zusätzliche Transfer-Zeit-Preflight (Zeilen zählen, die in die DEFAULT-Partition fielen) fehlt. **Trigger:** dediziertes Transfer-Preflight-Slice (spiegelt `CheckPreflight`: planner→runner→renderer→report). | [`../done/cross-dialect-partitioning.md`](../done/cross-dialect-partitioning.md) |
+
+---
+
+## 10. Lifecycle und Pflege
 
 - **Neuer Carve-Out** → in das passende §3-§7 (oder neuen
   Abschnitt) als Zeile aufnehmen; Status setzen; Plan-Doc-Ref
@@ -138,7 +150,7 @@ Quelldokument:
 - **Promotion** (Provisional → Plan-Slice): Status auf
   **Promoted** setzen, `Plan-Doc-Ref`-Spalte auf den neuen
   Slice umbiegen. Zeile bleibt für die Audit-Spur.
-- **Resolution** (Permanent → Resolved): in §10 Resolved
+- **Resolution** (Permanent → Resolved): in §11 Resolved
   verschieben mit Datum und Release-Bezug.
 - **Konvention für Quelldokumente**: jeder Carve-Out-Block in
   einem Plan-Doc sollte einen Link zurück auf die passende
@@ -147,6 +159,6 @@ Quelldokument:
 
 ---
 
-## 10. Resolved
+## 11. Resolved
 
 *(noch leer — wird beim ersten Carve-Out-Resolve gefüllt)*

@@ -46,6 +46,7 @@ neuen Version.
 | E058 | SQLite-helper_table: externe Objekte referenzieren `dmg_sequences`; Rollback-Preflight bricht ab (ab 0.9.7) |
 | E059 | SQLite-helper_table: Sequence-backed column im PRIMARY KEY (ab 0.9.7) |
 | E060 | Split-Diagnostik (Phasenkonflikt); SQLite-helper_table-Rollback zusätzlich: ATTACHed Datenbanken detektiert (ab 0.9.7) |
+| E061 - E065 | Cross-Dialect-Partitionierung PG↔MySQL (ADR 0020): Non-UTC-Grenze (Shift), nicht abbildbarer Schlüsseltyp, LIST-DEFAULT-Verwurf (Transfer-Verlust), nicht hebbarer UNIQUE-Partition-Index, FK auf partitionierter Tabelle (ab 0.9.9) |
 | E120 - E121 | Erweiterte Validierung (Trigger, Views) |
 | E122 - E123 | Sequence-Default-Validierung (ab 0.9.3) |
 | E124 | Support-Namenskollision (ab 0.9.3) |
@@ -60,6 +61,8 @@ neuen Version.
 | W122 | SQLite-helper_table: AFTER-INSERT-Sequence-Trigger feuert UPDATE auf Zieltabelle (ab 0.9.7) |
 | W123 | SQLite-helper_table-Rollback: ATTACHed Datenbanken detektiert (ab 0.9.7) |
 | W124 | SQLite-helper_table-Reverse: User-BEFORE-INSERT-Trigger maskiert kanonisches `_bi`-Paar (ab 0.9.7) |
+| W125 - W126 | Index-Präfixlängen: MySQL-Index auf TEXT/BLOB ohne Präfix übersprungen; PG/SQLite verwerfen eine MySQL-Präfixlänge (Voll-Spalten-Index, ab 0.9.9) |
+| W129 - W131 | Cross-Dialect-Partitionierung PG↔MySQL (ADR 0020): timestamptz→UTC-Normalisierung, HASH-Platzierungsdivergenz, gehobener Partition-Index umbenannt (ab 0.9.9) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige
