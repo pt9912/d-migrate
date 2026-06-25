@@ -107,7 +107,7 @@ driver-common/driver-mysql/driver-postgresql/formats).
   Round-Trips bleiben konsistent (beide Seiten durchlaufen dieselbe Rekonstruktion).
 - **#12** (Partitions-Bewusstsein im gemeinsamen `AbstractDdlGenerator` statt MySQL-`partitionedTables`-
   Seitenkanal): größeres Altitude-Refactoring → eigenes Ticket
-  [`../open/partition-generator-shared-awareness.md`](../open/partition-generator-shared-awareness.md).
+  [`../done/partition-generator-shared-awareness.md`](../done/partition-generator-shared-awareness.md).
 
 ## Ziel
 
@@ -228,7 +228,7 @@ mit Trigger verfolgt):
 - **LIST-`DEFAULT`-Transfer-Preflight** — Generate-Note E063 flaggt bereits laut; ein
   Transfer-Zeit-Preflight (spiegelt `CheckPreflight`) ist ein eigenes Slice.
 - **Gemeinsames Partitions-Bewusstsein im `AbstractDdlGenerator`** (statt MySQL-
-  `partitionedTables`-Seitenkanal) → [`../open/partition-generator-shared-awareness.md`](../open/partition-generator-shared-awareness.md).
+  `partitionedTables`-Seitenkanal) → [`../done/partition-generator-shared-awareness.md`](../done/partition-generator-shared-awareness.md).
 
 **Verbleibende Mini-Hygiene** (kein eigener Slice): kind-lokale FKs sind in pagila auf den
 Kindern deklariert — der Cross-Smoke ist davon nicht betroffen (MySQL verbietet FKs auf

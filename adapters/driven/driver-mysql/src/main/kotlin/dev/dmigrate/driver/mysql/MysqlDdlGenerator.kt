@@ -12,19 +12,39 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     private val indexPartitionHelper = MysqlIndexPartitionDdlHelper(::quoteIdentifier)
 
     /**
-     * Tables that end up **actually partitioned** in the emitted DDL — filled during
-     * [generateTable], consumed by the FK paths and [handleCircularReferences]. MySQL/InnoDB
-     * forbids foreign keys touching a partitioned table in **either** direction (ADR 0020 §5),
-     * so such FKs are skipped + flagged (E065). "Actually partitioned" ≠ "partitioning configured":
-     * a config that is skipped (E055/E062) leaves a plain table whose FKs stay valid.
+     * Tables that end up **actually partitioned** in the emitted DDL — computed **once,
+     * order-independent** from the schema (see [computePartitionedTables]) before any table is
+     * emitted, then consumed read-only by the FK paths and [handleCircularReferences].
+     * MySQL/InnoDB forbids foreign keys touching a partitioned table in **either** direction
+     * (ADR 0020 §5), so such FKs are skipped + flagged (E065). "Actually partitioned" ≠
+     * "partitioning configured": a config that is skipped (E055/E062) leaves a plain table whose
+     * FKs stay valid. Previously this was a mutable set filled during emission — an order-dependent
+     * side-channel (an FK referencing a not-yet-emitted partitioned table could be misread). Now
+     * it is a full snapshot taken up front, so emission order no longer matters.
      */
-    private val partitionedTables = mutableSetOf<String>()
+    private var partitionedTables: Set<String> = emptySet()
 
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
-        partitionedTables.clear()
+        partitionedTables = computePartitionedTables(schema)
         sequenceSupport.beginRun(schema, options)
         return sequenceSupport.finalizeResult(super.generate(schema, options))
     }
+
+    /**
+     * The set of tables whose partitioning is **actually emitted** (not skipped via E055/E062, not
+     * filtered to an empty LIST). Mirrors [generateTable]'s emit decision exactly by calling the same
+     * [MysqlIndexPartitionDdlHelper.generatePartitionClause] with a **throwaway** note sink — the
+     * real notes are produced during emission, so this discards its diagnostic output and keeps only
+     * the emit-or-not signal. Kept MySQL-local on purpose: only MySQL/InnoDB forbids FKs on
+     * partitioned tables (PostgreSQL allows them; SQLite has no partitioning), so there is no
+     * PG/SQLite consumer to share a generic abstraction with — hoisting it would be premature.
+     */
+    private fun computePartitionedTables(schema: SchemaDefinition): Set<String> =
+        schema.tables.filterValues { table ->
+            table.partitioning?.let {
+                indexPartitionHelper.generatePartitionClause(it, table.columns, mutableListOf()).isNotBlank()
+            } ?: false
+        }.keys.toSet()
 
     // ── SequenceNextVal interception (§4.6) ──────
 
@@ -91,8 +111,9 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         val partitionClause = table.partitioning
             ?.let { indexPartitionHelper.generatePartitionClause(it, table.columns, partitionNotes) }
             .orEmpty()
-        val isPartitioned = partitionClause.isNotBlank()
-        if (isPartitioned) partitionedTables += name
+        // Order-independent: read the up-front snapshot (== partitionClause.isNotBlank() here, since
+        // both come from the same generatePartitionClause logic) rather than mutating a side-channel.
+        val isPartitioned = name in partitionedTables
 
         // Columns
         for ((colName, col) in table.columns) {
