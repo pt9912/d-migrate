@@ -74,8 +74,10 @@ managed/proprietärer Produkte** (SCT + DMS).
 - **Daten-Lade-Zahlen sind nicht cross-tool vergleichbar:** pgloaders offizielle Zahl ist
   selbst-disclaimt („don't read too much into the numbers"); COPY-Zahlen stammen von viel
   größeren Maschinen oder sind abgeleitet; pg_bulkload nennt Sekunden, keine rows/s.
-- **Unsere 4c-Zahlen (~216k/~78k rows/s) sind diagnostisch** (Off-Spec-Host, ohne
-  designierten Runner). **Nicht** mit Fremdzahlen vergleichbar.
+- **Unsere 4c-Zahlen (JSON-Pfad, ~247k export / ~157k import rows/s nach Schritt 0 + COPY,
+  Stand 2026-06-25) sind diagnostisch** (Off-Spec-Host, ohne designierten Runner). **Nicht**
+  mit Fremdzahlen vergleichbar. (Der CSV-basierte #2-Vergleich unten misst dieselbe Workload
+  mit neutralisiertem JSON-Overhead.)
 
 → **#2 ERLEDIGT** — siehe nächster Abschnitt (`make sample-db-tool-compare`).
 
@@ -83,23 +85,38 @@ managed/proprietärer Produkte** (SCT + DMS).
 
 PG→PG-Move derselben TPC-H-Workload (SF=0.2, ~1,73 Mio Zeilen) auf demselben Host,
 Format **CSV für alle** (d-migrate-JSON-Overhead bewusst neutralisiert), Skript
-`examples/sample-db/scripts/smoke-tool-compare.sh`:
+`examples/sample-db/scripts/smoke-tool-compare.sh`. **Neumessung 2026-06-25** nach
+Schritt 0 (`reWriteBatchedInserts`) + COPY-Bulk-Fast-Path
+([`import-throughput-copy-path.md`](../done/import-throughput-copy-path.md)):
 
 | Tool | Durchsatz (rows/s) | Anteil COPY-Zeit |
 |---|---|---|
-| **COPY/`\copy`** (native Decke) | ~787k export / ~460k import | 100 % (Basis) |
-| **pgloader** v3.6.7 (direct, gecappt) | ~169k (direkt) | **~171 %** (~1,7×) |
-| **d-migrate** (export→import CSV, gecappt) | ~232k export / **~86k import** | **~463 %** (~4,6×) |
+| **COPY/`\copy`** (native Decke) | ~803k export / ~493k import | 100 % (Basis) |
+| **pgloader** v3.6.7 (direct, gecappt) | ~172k (direkt) | **~177 %** (~1,8×) |
+| **d-migrate** (export→import CSV, gecappt) | ~241k export / **~174k import** | **~302 %** (~3,0×) |
+
+> Der d-migrate-**Import** sprang gegenüber der Erstmessung **~86k → ~174k rows/s (~2,0×)**
+> (Schritt 0 + COPY); der Abstand zur COPY-Decke beim Import schrumpfte von ~5,4× auf ~2,8×,
+> der Gesamt-Abstand von ~4,6× auf ~3,0×. COPY-Decke/pgloader sind unverändert (gleiche Tools),
+> die Schwankung ggü. der Erstmessung ist Host-Rauschen (diagnostisch).
 
 **Ehrliche Lesart:**
-- d-migrate liegt in **gleicher Größenordnung**, aber **~2,7× langsamer als pgloader** und
-  ~4,6× COPY. Der Abstand liegt vor allem im **Import** (~86k vs. COPY ~460k = ~5,4×) —
-  Row-Binding + Typ-Behandlung + Validierung gegen COPY-Bulk. Export ~3,4× COPY.
+- d-migrate liegt in **gleicher Größenordnung**, jetzt **~1,7× langsamer als pgloader** (vorher
+  ~2,7×) und **~3,0× COPY** (vorher ~4,6×). Der frühere klare Engpass **Import** ist mit
+  Schritt 0 + COPY auf **~2,8× COPY** (~174k vs. ~493k) gefallen — Row-Binding/Typ-Behandlung
+  weicht für wrapping-freie Skalar-Tabellen dem nativen COPY-Bulk.
+- **Inversion:** Der Import (~2,8× Decke) liegt jetzt **näher** an der Decke als der **Export**
+  (~3,3× Decke, unverändert — der Export-Pfad wurde nicht angefasst). Der dominierende
+  Rest-Abstand ist damit nicht mehr das Import-Protokoll, sondern die **zwei-Pass-Datei-
+  Architektur** (export→Datei→import, zwei Durchläufe + Datei-I/O) gegenüber pgloaders
+  Einzel-Pass-Direkt-Stream.
 - pgloader ist nah an der Decke (es schreibt intern via COPY) + trägt nur Migrations-
   Tool-Overhead; es bietet aber **keine** Verlustfreiheits-Verifikation, **kein** Resume,
   **keine** Cross-Dialect-Typ-Konversion (siehe Matrix) — d-migrate tauscht Roh-Durchsatz
   gegen genau diese Fähigkeiten.
-- **Optimierungs-Headroom:** der Import-Pfad ist der klare Hebel.
+- **Verbleibender Optimierungs-Headroom** (eigene Tickets, nicht mehr der Import-Pfad an sich):
+  Einzel-Pass/Parallelität ([`import-throughput-parallel.md`](import-throughput-parallel.md))
+  und COPY für weitere Typen ([`import-throughput-binary-copy.md`](import-throughput-binary-copy.md)).
 
 **Methodik-Caveats (Pflicht-Kontext):** Off-Spec-Host → **diagnostisch**, kein
 Audit-Wert; der **Server (postgres) ist für ALLE ungecappt**, nur der Client (d-migrate/
