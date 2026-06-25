@@ -26,8 +26,17 @@ class PostgresJdbcUrlBuilderTest : FunSpec({
         builder.dialect shouldBe DatabaseDialect.POSTGRESQL
     }
 
-    test("defaultParams contains ApplicationName=d-migrate") {
-        builder.defaultParams() shouldBe mapOf("ApplicationName" to "d-migrate")
+    test("defaultParams contains ApplicationName + reWriteBatchedInserts") {
+        builder.defaultParams() shouldBe mapOf(
+            "ApplicationName" to "d-migrate",
+            // Import-Durchsatz (Schritt 0): pgjdbc bündelt Batch-INSERTs zu Multi-Row;
+            // Pendant zu MySQLs rewriteBatchedStatements (done/import-throughput-copy-path.md).
+            "reWriteBatchedInserts" to "true",
+        )
+    }
+
+    test("buildJdbcUrl injects reWriteBatchedInserts=true by default") {
+        builder.buildJdbcUrl(cfg()) shouldContain "reWriteBatchedInserts=true"
     }
 
     test("baseJdbcUrl with explicit port") {

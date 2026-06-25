@@ -1,6 +1,8 @@
 # Import-Durchsatz: pgjdbc-Batch-Rewrite + COPY-Bulk-Pfad (PostgreSQL)
 
-> **Status:** Vorabklärung (Trigger, 2026-06-23)
+> **Status:** Schritt 0 (pgjdbc-Batch-Rewrite) **ERLEDIGT + gemessen (2026-06-25): Import
+> ~66,6k → ~115,5k rows/s (~1,73×), verlustfrei.** Der **COPY-Bulk-Pfad** (zweiter Hebel)
+> bleibt **offen** (größerer Lift mit Korrektheits-Sperren + Architektur-Naht). Trigger 2026-06-23.
 > **Trigger:** Der #2-Tool-Vergleich (`make sample-db-tool-compare`,
 > [`tool-comparison.md`](tool-comparison.md)) zeigte d-migrates PG→PG-**Import** bei
 > ~86k rows/s vs. die COPY-Decke ~460k rows/s — **~5,4×** langsamer (Export nur ~3,4×).
@@ -43,6 +45,15 @@ schlicht.
   nicht umschreiben kann, fallen sicher auf den normalen Batch zurück (kein Korrektheitsrisiko).
 - Erwartung: typischerweise 2–3× auf dem Batch-INSERT — **erst messen**, dann entscheiden,
   wie viel COPY-Aufwand der *verbleibende* Abstand noch rechtfertigt.
+
+**✅ ERLEDIGT (2026-06-25).** `reWriteBatchedInserts=true` in
+`PostgresJdbcUrlBuilder.defaultParams()` ergänzt (Pendant zu MySQLs bereits gesetztem
+`rewriteBatchedStatements=true`); Unit-Test (`PostgresJdbcUrlBuilderTest`) + Full-Build grün.
+**Gemessen** (`make sample-db-tpch-perf`, SF=0.2 → 1 731 999 Zeilen, Caps 2 CPU/4 GB):
+Import **~66 615 → ~115 466 rows/s (~1,73×)** (Import-Zeit 26 s → 15 s); Verlustfreiheit
+unverändert HART (kanonischer SHA-256 identisch). Export unbeeinflusst (~247k/s, erwartet —
+der Param wirkt nur auf Batch-INSERTs). **Verbleibender Abstand zur COPY-Decke (~460k/s)** ist
+der Spielraum, den der COPY-Pfad unten adressiert.
 
 ## COPY-Bulk-Pfad — der zweite Hebel (mit echter Einschränkung)
 
