@@ -195,7 +195,7 @@ internal class PostgresTableImportSession(
             bindRow(stmt, importedTargetColumns, row)
             stmt.addBatch()
         }
-        return toWriteResult(stmt.executeBatch())
+        return toWriteResult(stmt.executeBatch(), options.onConflict)
     }
 
     private fun executeUpsertChunk(
@@ -328,15 +328,22 @@ internal class PostgresTableImportSession(
         return typeName in enumTypeNames
     }
 
-    private fun toWriteResult(counts: IntArray): WriteResult {
+    private fun toWriteResult(counts: IntArray, onConflict: OnConflict): WriteResult {
         var inserted = 0L
         var skipped = 0L
         var unknown = 0L
 
         for (count in counts) {
-            when (count) {
-                Statement.SUCCESS_NO_INFO -> unknown++
-                0 -> skipped++
+            when {
+                // `reWriteBatchedInserts=true` (PostgresJdbcUrlBuilder) lässt pgjdbc
+                // Mehrzeilen-Batches serverseitig zu einem Multi-Row-INSERT zusammenfassen und
+                // meldet dann SUCCESS_NO_INFO je Batch-Element statt einer Zeilenzahl. Unter
+                // ABORT fügt jede Zeile ein (ein Konflikt würde werfen, nicht stumm überspringen)
+                // → als eingefügt zählen. Unter SKIP (ON CONFLICT DO NOTHING) ist Einfügen vs.
+                // Überspringen aus SUCCESS_NO_INFO nicht rekonstruierbar → ehrlich als unknown.
+                count == Statement.SUCCESS_NO_INFO ->
+                    if (onConflict == OnConflict.ABORT) inserted++ else unknown++
+                count == 0 -> skipped++
                 else -> inserted += count.toLong()
             }
         }

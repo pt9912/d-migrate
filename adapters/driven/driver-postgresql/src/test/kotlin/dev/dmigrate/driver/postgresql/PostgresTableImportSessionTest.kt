@@ -522,13 +522,29 @@ class PostgresTableImportSessionTest : FunSpec({
         session.close()
     }
 
-    test("toWriteResult handles SUCCESS_NO_INFO") {
+    test("ABORT + SUCCESS_NO_INFO (reWriteBatchedInserts) counts as inserted, not unknown") {
+        // pgjdbc mit reWriteBatchedInserts=true meldet SUCCESS_NO_INFO je Batch-Element.
+        // Unter ABORT fügt jede Zeile ein (ein Konflikt würde werfen) → als eingefügt zählen.
         val conn = mockConn()
         val stmt = mockStmt()
         every { conn.prepareStatement(any<String>()) } returns stmt
         every { stmt.executeBatch() } returns intArrayOf(Statement.SUCCESS_NO_INFO, Statement.SUCCESS_NO_INFO)
 
-        val session = newSession(conn = conn)
+        val session = newSession(conn = conn, options = ImportOptions(onConflict = OnConflict.ABORT))
+        val result = session.write(makeChunk(rows = listOf(arrayOf(1, "Alice"), arrayOf(2, "Bob"))))
+
+        result.rowsInserted shouldBe 2
+        result.rowsUnknown shouldBe 0
+        session.close()
+    }
+
+    test("SKIP + SUCCESS_NO_INFO stays unknown (insert vs DO-NOTHING-skip not recoverable)") {
+        val conn = mockConn()
+        val stmt = mockStmt()
+        every { conn.prepareStatement(any<String>()) } returns stmt
+        every { stmt.executeBatch() } returns intArrayOf(Statement.SUCCESS_NO_INFO, Statement.SUCCESS_NO_INFO)
+
+        val session = newSession(conn = conn, options = ImportOptions(onConflict = OnConflict.SKIP))
         val result = session.write(makeChunk(rows = listOf(arrayOf(1, "Alice"), arrayOf(2, "Bob"))))
 
         result.rowsUnknown shouldBe 2

@@ -57,6 +57,17 @@ unverändert HART (kanonischer SHA-256 identisch). Export unbeeinflusst (~247k/s
 der Param wirkt nur auf Batch-INSERTs). **Verbleibender Abstand zur COPY-Decke (~460k/s)** ist
 der Spielraum, den der COPY-Pfad unten adressiert.
 
+**Accounting-Nachzug (2026-06-25, via PG-Integrationstests aufgedeckt):** Mit
+`reWriteBatchedInserts=true` fasst pgjdbc Mehrzeilen-Batches zu einem Multi-Row-INSERT zusammen
+und meldet `Statement.SUCCESS_NO_INFO` je Batch-Element statt einer Zeilenzahl. Das alte
+`toWriteResult` zählte das als `unknown` → `rowsInserted=0` für ≥2-Zeilen-Chunks auf dem
+INSERT-Pfad (nicht COPY-fähige Typen wie Enum). Fix: unter `ABORT` zählt `SUCCESS_NO_INFO` als
+eingefügt (ein Konflikt würde werfen, nicht stumm überspringen), unter `SKIP` bleibt es ehrlich
+`unknown` (Einfügen vs. DO-NOTHING-Skip nicht rekonstruierbar). Reine Zähl-Korrektheit; die
+4c-SHA-256-Verlustfreiheit war nie betroffen (sie prüft persistierte Daten, nicht die
+gemeldete Zeilenzahl) — genau deshalb fiel es erst in den `rowsInserted`-Assertions der
+Integrationstests auf.
+
 ## COPY-Bulk-Pfad — der zweite Hebel (mit echter Einschränkung)
 
 Der weitergehende Hebel ist ein **COPY-Protokoll-Pfad** (PostgreSQL: pgjdbc
