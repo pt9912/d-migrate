@@ -16,7 +16,7 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilder
  *   (im MySQL-Builder bereits gesetzt); für PG fehlte es. `bindRow`/`valuePlaceholder`
  *   bleiben unberührt (Geometrie-Wrap/JSON/Enum/Array erhalten); Shapes, die pgjdbc nicht
  *   umschreiben kann (z. B. `RETURNING` im UPSERT-Pfad), fallen sicher auf den normalen
- *   Batch zurück — kein Korrektheitsrisiko (siehe `docs/planning/open/import-throughput-copy-path.md`,
+ *   Batch zurück — kein Korrektheitsrisiko (siehe `docs/planning/done/import-throughput-copy-path.md`,
  *   Schritt 0).
  *
  * **Bootstrap**: Wird via [PostgresDriver.register] in der globalen

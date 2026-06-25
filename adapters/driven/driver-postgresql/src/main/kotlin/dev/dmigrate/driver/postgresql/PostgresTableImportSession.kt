@@ -6,6 +6,7 @@ import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.WriteResult
+import org.postgresql.PGConnection
 import org.postgresql.util.PGobject
 import java.sql.Connection
 import java.sql.PreparedStatement
@@ -74,7 +75,21 @@ internal class PostgresTableImportSession(
         rows: List<Array<Any?>>,
     ): WriteResult = when (options.onConflict) {
         OnConflict.UPDATE -> executeUpsertChunk(importedTargetColumns, rows)
-        else -> executeInsertChunk(importedTargetColumns, rows)
+        // ABORT: COPY-Bulk-Fast-Path, wenn sicher (echte PGConnection für copyAPI + alle harten
+        // Sperren via PostgresCopyFastPath.isEligible) — sonst der Batch-INSERT-Pfad.
+        OnConflict.ABORT ->
+            if (conn.isWrapperFor(PGConnection::class.java) &&
+                PostgresCopyFastPath.isEligible(
+                    importedTargetColumns, generatedAlwaysColumns,
+                    isGeometry = { isGeometryColumn(it) }, isEnum = { isEnumColumn(it) },
+                )
+            ) {
+                PostgresCopyFastPath.execute(conn, qualifiedTable.quotedPath(), importedTargetColumns, rows)
+            } else {
+                executeInsertChunk(importedTargetColumns, rows)
+            }
+        // SKIP = ON CONFLICT DO NOTHING — COPY kennt kein ON CONFLICT → Batch-INSERT.
+        OnConflict.SKIP -> executeInsertChunk(importedTargetColumns, rows)
     }
 
     override fun bindRow(

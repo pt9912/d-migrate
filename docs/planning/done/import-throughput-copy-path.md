@@ -1,10 +1,12 @@
 # Import-Durchsatz: pgjdbc-Batch-Rewrite + COPY-Bulk-Pfad (PostgreSQL)
 
-> **Status:** Schritt 0 (pgjdbc-Batch-Rewrite) **ERLEDIGT + gemessen (2026-06-25): Import
-> ~66,6k → ~115,5k rows/s (~1,73×), verlustfrei.** Der **COPY-Bulk-Pfad** (zweiter Hebel)
-> bleibt **offen** (größerer Lift mit Korrektheits-Sperren + Architektur-Naht). Trigger 2026-06-23.
+> **Status: BEIDE HEBEL ERLEDIGT + live gemessen (2026-06-25) — Ticket geschlossen.**
+> Schritt 0 (pgjdbc-Batch-Rewrite): Import ~66,6k → ~115,5k rows/s (~1,73×), verlustfrei.
+> COPY-Bulk-Fast-Path (zweiter Hebel): Import ~115,5k → **~157,5k rows/s (~1,36× ggü.
+> Schritt 0; ~2,36× ggü. Ur-Baseline ~66,6k)**, Verlustfreiheit HART (kanonischer SHA-256
+> aller 8 Tabellen quell-identisch), alle vier Korrektheits-Sperren abgedeckt. Trigger 2026-06-23.
 > **Trigger:** Der #2-Tool-Vergleich (`make sample-db-tool-compare`,
-> [`tool-comparison.md`](tool-comparison.md)) zeigte d-migrates PG→PG-**Import** bei
+> [`tool-comparison.md`](../open/tool-comparison.md)) zeigte d-migrates PG→PG-**Import** bei
 > ~86k rows/s vs. die COPY-Decke ~460k rows/s — **~5,4×** langsamer (Export nur ~3,4×).
 > Gesamt ~4,6× COPY-Zeit, ~2,7× pgloader. Der Import ist der klare Optimierungs-Hebel.
 > **Bezug:** keine harte LF-Anforderung verletzt (Verlustfreiheit + Korrektheit sind ok);
@@ -90,7 +92,54 @@ folgenden Bedingungen erfüllt sind — sonst bleibt der INSERT-/Staging-Pfad:
 Das Prädikat in der Lösungsskizze muss diese Sperren mit abdecken — „keine Spalte braucht ein
 SQL-Funktions-Wrapping" allein ist **notwendig, aber nicht hinreichend**.
 
-## Lösungsskizze (zu entscheiden)
+## ✅ ERLEDIGT (2026-06-25): COPY-Fast-Path (Lösungsskizze 1 + Stream aus In-Memory-Chunk)
+
+Umgesetzt wurde **Lösungsskizze 1** (COPY-Fast-Path für wrapping-freie Tabellen) mit dem
+**In-Memory-Chunk-Stream** aus Skizze 3 (`CopyManager.copyIn(Reader)` über einen
+`StringReader`) — **kein** Staging (Skizze 2) und **kein** neuer abstrakter Dialekt-Hook:
+der Pfad sitzt PG-lokal im bereits existierenden `executeChunk`-Override, der Rückfall ist der
+bestehende `executeInsertChunk`. Format: **COPY TEXT** (`FORMAT text`), nicht binär — der
+NULL-Marker `\N` ist eindeutig und die kanonische Text-Repräsentation der erlaubten Skalartypen
+ist gültiges PG-Input.
+
+**Code** (alle `internal`, PG-lokal):
+- `PostgresCopyFastPath` — Gate (`isEligible`) + `execute` (`COPY … FROM STDIN WITH (FORMAT text)`).
+- `PostgresCopyText` — reiner COPY-TEXT-Encoder (isoliert unit-getestet; der korrektheits-
+  kritische Teil — ein Kodierfehler wäre stille Datenkorruption).
+- `PostgresTableImportSession.executeChunk` — Dispatch: `ABORT` + echte PGConnection
+  (`isWrapperFor(PGConnection)`) + `isEligible` → COPY, sonst INSERT.
+
+**Konservatives Eignungs-Gate** (`isEligible`) — deckt alle vier harten Sperren ab:
+1. **Nur `OnConflict.ABORT`** — `UPDATE`/`SKIP` bleiben per Dispatch auf dem INSERT-Pfad. ✅
+2. **Keine `GENERATED ALWAYS`-Spalte** — über `generatedAlwaysColumns` ausgeschlossen. ✅
+3. **Gröberes Accounting akzeptiert** — `copyIn`-Zeilenzahl → `rowsInserted`. ✅
+4. **Trigger-Semantik identisch** — der Import deaktiviert Trigger via
+   `ALTER TABLE … DISABLE TRIGGER USER` (engine-level): deaktivierte Trigger feuern weder bei
+   INSERT noch bei COPY, aktivierte feuern bei COPY per-row genau wie bei INSERT → keine
+   Divergenz INSERT↔COPY, also keine zusätzliche Sperre nötig. ✅
+
+Zusätzlich (über das Skizzen-Prädikat hinaus, konservativ): nur eine **Allowlist eindeutig
+COPY-TEXT-sicherer Skalartypen** (`COPY_TEXT_SAFE_JDBC_TYPES`: int/decimal/float/bool/char/
+varchar/date/time/timestamp). Geometrie (SQL-Wrap), Enum, Array, json/jsonb, interval, xml,
+bytea bleiben bewusst auf dem INSERT-Pfad — eine spätere Erweiterung (EWKB-Hex für Geometrie,
+COPY-Text für json/array) ist möglich, aber nicht nötig für den häufigen Fall. Das
+`isWrapperFor(PGConnection)`-Gate hält außerdem Mock-Tests sauber auf dem INSERT-Pfad und
+aktiviert COPY nur gegen eine echte pgjdbc-Verbindung.
+
+**Messung** (`make sample-db-tpch-perf`, SF=0.2 → 1 731 999 Zeilen, Caps 2 CPU/4 GB; TPC-H ist
+rein wrapping-frei → COPY greift für alle 8 Tabellen): Import **~115,5k → ~157,5k rows/s
+(~1,36×)** (Import-Zeit 15 s → 11 s); **Verlustfreiheit HART** unverändert (kanonischer SHA-256
+aller 8 Tabellen quell-identisch); Resume weiter komplett + verlustfrei; Export unbeeinflusst
+(~247k/s). Unit grün (`:adapters:driven:driver-postgresql:check` — Encoder + Routing-Tests +
+Regression + Detekt + Kover ≥90 %).
+
+**Abstand zur ~460k/s-COPY-Decke:** Die Decke ist roher `\copy` aus CSV (kein JSON-Parse, keine
+JVM-Chunk-Pipeline). Unser Import ist Datei-JSON → Parse → Encode → COPY; der verbleibende
+Abstand ist die JSON-/Pipeline-Arbeit pro Zeile, nicht mehr das INSERT-Protokoll. Weitere
+Hebel (binäres COPY, paralleler Import — siehe „Orthogonale Achse" unten) sind eigene Tickets,
+nicht Teil dieses.
+
+## Lösungsskizze (zu entscheiden) — historischer Entscheidungs-Kontext
 
 1. **COPY-Fast-Path für wrapping-freie Tabellen/Läufe** (der häufige Fall — z. B. TPC-H:
    nur `BIGINT`/`INT`/`VARCHAR`/`DECIMAL`/`DATE`, kein Geometrie-Wrap). Pro Tabelle/Lauf
