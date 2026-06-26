@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -38,7 +39,7 @@ internal object MysqlDiffTableOps {
             return
         }
         val lines = mutableListOf<String>()
-        for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             lines += "    " + ctx.sql.columnLine(colName, col)
         }
         if (op.table.primaryKey.isNotEmpty()) {
@@ -104,7 +105,7 @@ internal object MysqlDiffTableOps {
         table: TableDefinition,
     ): List<Pair<String, DefaultValue.SequenceNextVal>> {
         val result = mutableListOf<Pair<String, DefaultValue.SequenceNextVal>>()
-        for ((name, col) in table.columns.entries.sortedBy { it.key }) {
+        for ((name, col) in table.columns.inOrdinalOrder()) {
             val seq = col.default as? DefaultValue.SequenceNextVal ?: continue
             result += name to seq
         }

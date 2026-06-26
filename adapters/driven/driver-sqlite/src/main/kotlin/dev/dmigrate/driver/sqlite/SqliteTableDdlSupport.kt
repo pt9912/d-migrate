@@ -100,7 +100,7 @@ internal class SqliteTableDdlSupport(
         val lines = mutableListOf<String>()
         val normalColumns = table.columns.filter { it.value.type !is NeutralType.Geometry }
         val effectiveColumns = if (isSpatiaLite) normalColumns else table.columns
-        for ((columnName, column) in effectiveColumns) {
+        for ((columnName, column) in effectiveColumns.inOrdinalOrder()) {
             lines += columnConstraintHelper.generateColumnSql(columnName, column, schema, name, notes, deferredFks)
         }
         for (constraint in table.constraints) {

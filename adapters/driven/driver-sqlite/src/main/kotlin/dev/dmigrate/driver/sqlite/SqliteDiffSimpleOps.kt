@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -40,7 +41,7 @@ internal object SqliteDiffSimpleOps {
             SqliteSpatialDiffOps.blockSpatialMetadata(op, ctx, tableName, "geometry-only table requires a non-spatial base column")
             return
         }
-        for ((colName, col) in effectiveColumns.entries.sortedBy { it.key }) {
+        for ((colName, col) in effectiveColumns.inOrdinalOrder()) {
             lines += "    " + ctx.sql.columnLine(colName, col)
         }
         if (op.table.primaryKey.isNotEmpty()) {
@@ -55,7 +56,7 @@ internal object SqliteDiffSimpleOps {
             append("\n);")
         }
         ctx.emit(op, text)
-        for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             if (col.type is NeutralType.Geometry) {
                 SqliteSpatialDiffOps.ensureSpatialMetadataBootstrap(op, ctx)
                 ctx.emit(op, SqliteSpatialDiffOps.addGeometryColumnSql(tableName, colName, col))

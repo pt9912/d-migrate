@@ -89,13 +89,13 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             )
         }
 
-        // Columns
-        for ((colName, col) in table.columns) {
+        // Columns — physische Ordinalreihenfolge (siehe inOrdinalOrder).
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             columnLines += generateColumnSql(colName, col, schema, name)
         }
 
         // Inline foreign key constraints (non-circular, from column references)
-        for ((colName, col) in table.columns) {
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             val ref = col.references ?: continue
             if (options.deferForeignKeys) continue
             if ((name to colName) in deferredFks) continue

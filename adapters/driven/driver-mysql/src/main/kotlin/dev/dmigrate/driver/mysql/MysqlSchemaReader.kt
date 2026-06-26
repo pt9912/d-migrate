@@ -184,6 +184,8 @@ class MysqlSchemaReader(
                 unique = unique,
                 default = defaultVal,
                 generation = mapping.generation,
+                // information_schema.columns.ordinal_position ist 1-basiert + dicht.
+                ordinal = (row["ordinal_position"] as? Number)?.toInt(),
             )
         }
 

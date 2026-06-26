@@ -115,8 +115,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         // both come from the same generatePartitionClause logic) rather than mutating a side-channel.
         val isPartitioned = name in partitionedTables
 
-        // Columns
-        for ((colName, col) in table.columns) {
+        // Columns — physische Ordinalreihenfolge (siehe inOrdinalOrder).
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             columnLines += generateColumnSql(colName, col, schema, name, notes)
             // C3: Warn when datetime with timezone is mapped to DATETIME (no TZ support in MySQL)
             if (col.type is NeutralType.DateTime && (col.type as NeutralType.DateTime).timezone) {
@@ -131,7 +131,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         }
 
         // Inline foreign key constraints (non-circular, from column references)
-        for ((colName, col) in table.columns) {
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             val ref = col.references ?: continue
             if ((name to colName) in deferredFks) continue
             val fkName = "fk_${name}_${colName}"

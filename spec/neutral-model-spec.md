@@ -103,7 +103,7 @@ SchemaDefinition
 ├── tables
 │   └── TableDefinition
 │       ├── columns
-│       │   └── ColumnDefinition (name, type, required, unique, default, references, typ-spezifische Attribute)
+│       │   └── ColumnDefinition (name, type, ordinal, required, unique, default, references, typ-spezifische Attribute)
 │       ├── primary_key
 │       ├── indices
 │       │   └── IndexDefinition (name, columns, type, unique)
@@ -365,6 +365,12 @@ tables:
       engine: InnoDB                     # MySQL-Tabellen-Engine (InnoDB, MyISAM, etc.)
       without_rowid: false               # SQLite WITHOUT ROWID-Tabelle
 ```
+
+Jede Spalte traegt optional ein `ordinal` (1-basierte physische Position der Quelle).
+Reverse befuellt es; Serialisierung und DDL-Generierung emittieren die Spalten in
+Ordinalreihenfolge, sodass die Quell-Spaltenreihenfolge ueber den Round-Trip erhalten
+bleibt. Fehlt `ordinal` (hand-authored), gilt die Reihenfolge im Dokument. `ordinal` ist
+bewusst nicht Teil von `schema compare` (eine reine Umsortierung ist kein Migrationsschritt).
 
 ### 4.2 Tabellen-Metadaten
 

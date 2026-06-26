@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.TypeMapper
 
@@ -27,7 +28,9 @@ internal class PostgresTypeSequenceDdlSupport(
             }
             CustomTypeKind.COMPOSITE -> {
                 val fields = typeDef.fields ?: return emptyList()
-                val fieldsSql = fields.entries.joinToString(",\n    ") { (fieldName, col) ->
+                // Composite-Felder in physischer Ordinalreihenfolge (ADR 0021: einheitlich
+                // über alle DDL-Generate-Pfade), konsistent mit der Serialisierung.
+                val fieldsSql = fields.inOrdinalOrder().joinToString(",\n    ") { (fieldName, col) ->
                     "${quoteIdentifier(fieldName)} ${typeMapper.toSql(col.type)}"
                 }
                 listOf(DdlStatement("CREATE TYPE ${quoteIdentifier(name)} AS (\n    $fieldsSql\n);"))

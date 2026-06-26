@@ -132,6 +132,11 @@
           ],
           "description": "Einer der neutralen Typen (vollstaendige Liste: neutral-model-spec.md Abschnitt 3.1)"
         },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Physische Spaltenposition (1-basiert) aus der Quelle. Erhaelt die Ordinalreihenfolge ueber Reverse/Generate. Optional; fehlt bei hand-authored Schemata (dann gilt die Reihenfolge im Dokument)."
+        },
         "required": {
           "type": "boolean",
           "default": false,

@@ -74,7 +74,10 @@ internal fun buildColumns(
     columns: Map<String, ColumnDefinition>,
 ): ObjectNode {
     val node = mapper.createObjectNode()
-    for ((name, column) in columns.entries.sortedBy { it.key }) {
+    // Spalten in physischer Reihenfolge (Ordinal) statt alphabetisch — die übrigen
+    // Map-Felder (Tabellen, Custom-Types) bleiben für deterministischen Output nach
+    // Name sortiert. Das explizite `ordinal` je Spalte sichert die Reihenfolge robust ab.
+    for ((name, column) in columns.inOrdinalOrder()) {
         node.set<ObjectNode>(name, buildColumn(mapper, column))
     }
     return node
@@ -83,6 +86,7 @@ internal fun buildColumns(
 private fun buildColumn(mapper: ObjectMapper, column: ColumnDefinition): ObjectNode {
     val node = mapper.createObjectNode()
     buildNeutralType(node, column.type)
+    if (column.ordinal != null) node.put("ordinal", column.ordinal)
     if (column.required) node.put("required", true)
     if (column.unique) node.put("unique", true)
     if (column.default != null) buildDefault(node, column.default!!)

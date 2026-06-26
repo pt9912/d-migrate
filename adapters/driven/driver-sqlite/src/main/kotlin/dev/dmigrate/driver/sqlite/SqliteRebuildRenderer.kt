@@ -9,6 +9,7 @@ import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -502,7 +503,7 @@ internal class SqliteRebuildRenderer(
 
     private fun buildCreateTempSql(tempName: String, target: TableDefinition): String {
         val lines = mutableListOf<String>()
-        for ((colName, col) in target.columns.entries.sortedBy { it.key }) {
+        for ((colName, col) in target.columns.inOrdinalOrder()) {
             lines += "    " + sql.columnLine(colName, col)
         }
         if (target.primaryKey.isNotEmpty()) {

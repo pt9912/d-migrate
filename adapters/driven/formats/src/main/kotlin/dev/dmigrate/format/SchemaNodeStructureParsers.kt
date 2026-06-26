@@ -34,6 +34,7 @@ private fun parseColumn(node: JsonNode): ColumnDefinition = ColumnDefinition(
     default = parseDefault(node["default"]),
     references = parseReference(node["references"]),
     generation = parseGeneration(node["generation"]),
+    ordinal = node.optionalInt("ordinal"),
 )
 
 // Parametric types (reading extra attributes) stay here; parameterless names go

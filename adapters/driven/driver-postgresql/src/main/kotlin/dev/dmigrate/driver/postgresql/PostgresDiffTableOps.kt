@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
@@ -37,7 +38,7 @@ internal object PostgresDiffTableOps {
         }
         if (blockUnsupportedExcludeOpClassInTable(op, ctx, tableName)) return
         val lines = mutableListOf<String>()
-        for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             lines += "    " + ctx.sql.columnLine(colName, col)
         }
         if (op.table.primaryKey.isNotEmpty()) {

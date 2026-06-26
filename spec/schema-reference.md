@@ -64,6 +64,7 @@ sequences: {}                  # Sequenzen
 columns:
   <spaltenname>:
     type: <typ>                # Pflicht: einer der 18 neutralen Typen
+    ordinal: 1                 # physische Spaltenposition (1-basiert); optional
     required: true             # NOT NULL (Default: false)
     unique: true               # UNIQUE-Constraint (Default: false)
     default: <wert>            # Default-Wert (Literal, Zahl, Boolean oder Funktion)
@@ -94,6 +95,13 @@ columns:
       on_delete: restrict      # restrict | cascade | set_null | set_default | no_action
       on_update: cascade       # (gleiche Optionen)
 ```
+
+`ordinal` ist die 1-basierte physische Spaltenposition der Quelle. Reverse befuellt
+es; Serialisierung und DDL-Generierung emittieren Spalten in dieser Reihenfolge, sodass
+die Quell-Spaltenreihenfolge ueber den Round-Trip erhalten bleibt. In hand-authored
+Schemata ist `ordinal` optional — fehlt es, gilt die Reihenfolge der Spalten im Dokument.
+`ordinal` ist bewusst **kein** Bestandteil von `schema compare` (eine reine Umsortierung
+ist kein Migrationsschritt).
 
 `generation` ist mit `default` gegenseitig ausgeschlossen. Ein
 `generation.sequence_name` beschreibt eine an die Spalte gebundene

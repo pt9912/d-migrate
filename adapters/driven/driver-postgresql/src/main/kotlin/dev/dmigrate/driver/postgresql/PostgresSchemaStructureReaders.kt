@@ -86,6 +86,9 @@ private fun readPostgresTable(
             unique = unique,
             default = defaultValue,
             generation = mapping.generation,
+            // information_schema.columns.ordinal_position ist 1-basiert + dicht (Drop-Lücken
+            // bereits aufgelöst) — die physische Spaltenreihenfolge der Quelle.
+            ordinal = (row["ordinal_position"] as? Number)?.toInt(),
         )
     }
 
@@ -226,11 +229,14 @@ internal fun readPostgresCustomTypes(
     val compositeRows = PostgresMetadataQueries.listCompositeTypes(session, schema)
     for ((typeName, fieldRows) in compositeRows.groupBy { it["typname"] as String }) {
         val fields = LinkedHashMap<String, ColumnDefinition>()
-        for (fieldRow in fieldRows.sortedBy { (it["attnum"] as Number).toInt() }) {
+        // attnum trägt Drop-Lücken — daher 1-basierter Laufindex über die nach attnum
+        // sortierten Felder als dichte physische Feldposition.
+        for ((fieldIndex, fieldRow) in fieldRows.sortedBy { (it["attnum"] as Number).toInt() }.withIndex()) {
             val fieldName = fieldRow["attname"] as String
             val columnType = fieldRow["column_type"] as? String ?: "text"
             fields[fieldName] = ColumnDefinition(
                 type = PostgresTypeMapping.mapCompositeFieldType(columnType),
+                ordinal = fieldIndex + 1,
             )
         }
         result[typeName] = CustomTypeDefinition(

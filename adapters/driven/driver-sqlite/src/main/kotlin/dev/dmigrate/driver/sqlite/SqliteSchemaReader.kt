@@ -145,6 +145,9 @@ class SqliteSchemaReader : SchemaReader {
                 required = required,
                 unique = unique,
                 default = SqliteTypeMapping.parseDefault(col.columnDefault),
+                // PRAGMA table_info.cid ist 0-basiert; +1 für 1-basierte Ordinale
+                // konsistent zu PG/MySQL (information_schema.ordinal_position).
+                ordinal = col.ordinalPosition + 1,
             )
         }
 
