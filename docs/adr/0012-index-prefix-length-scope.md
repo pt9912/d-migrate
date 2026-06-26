@@ -70,7 +70,7 @@ Begründung:
 
 Sobald ein Pilot- oder Anwenderfall Präfixlängen in `PRIMARY KEY`/Constraints
 benötigt, aktiviert der Trigger
-[`pk-constraint-prefix-length.md`](../planning/open/pk-constraint-prefix-length.md)
+[`pk-constraint-prefix-length.md`](../planning/next/pk-constraint-prefix-length.md)
 einen Folge-Slice: strukturierte Spalten-Einträge (Name + optionale Länge) für
 `primaryKey`/`ConstraintDefinition.columns`, durchgezogen über Serialisierung,
 Vergleich, Fingerprint und alle Dialekte.
