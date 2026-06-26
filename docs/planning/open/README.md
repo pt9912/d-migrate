@@ -37,7 +37,7 @@ festgehalten.
 
 | Datei | Typ | Gegenstand |
 | ----- | --- | ---------- |
-| [`adapter-coverage-uplift.md`](adapter-coverage-uplift.md) | Draft | Folge-Plan zu Quality-Coverage Phase E.2: Scope-Schnitt fuer heutige Kover-Excludes auf Live-JDBC- und Streaming-Adapter-Glue fehlt noch. |
+| [`adapter-coverage-uplift.md`](adapter-coverage-uplift.md) | Draft mit Scope | Folge-Plan zu Quality-Coverage Phase E.2: **Design-Spike erledigt** (Per-Modul-Split-Plan, Strategie durchgaengig Split/Refactor, Phasen P0-P4 + Akzeptanz). next/-faehig; bleibt in open/ wegen 22 Ledger-/Archiv-Referenzen auf diesen Pfad. |
 | [`beispiel-stored-procedure-migration.md`](beispiel-stored-procedure-migration.md) | Worked Example | Beispiel fuer KI-gestuetzte Stored-Procedure-Migration von PostgreSQL nach MySQL. |
 | [`cli-unimplemented-commands.md`](cli-unimplemented-commands.md) | Sammlung/Tracker | In `cli-spec.md` (Zielbild) beschriebene, aber noch nicht in der CLI registrierte Befehle (`transform procedure`, `generate procedure`, `data seed`, `validate data/procedure`, `config …`) + offene Trigger-Erweiterungen — Spec ↔ Requirement ↔ Milestone. |
 | [`d-browser-integration-coupling-assessment.md`](d-browser-integration-coupling-assessment.md) | Vorabklaerung | Bewertung sichtbarer Kopplungen zwischen `d-browser` und `d-migrate` vor einem dedizierten `source-d-migrate`-Adapter. |
