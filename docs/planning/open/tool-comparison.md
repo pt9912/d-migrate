@@ -115,7 +115,7 @@ Schritt 0 (`reWriteBatchedInserts`) + COPY-Bulk-Fast-Path
   **keine** Cross-Dialect-Typ-Konversion (siehe Matrix) — d-migrate tauscht Roh-Durchsatz
   gegen genau diese Fähigkeiten.
 - **Verbleibender Optimierungs-Headroom** (eigene Tickets, nicht mehr der Import-Pfad an sich):
-  Einzel-Pass/Parallelität ([`import-throughput-parallel.md`](import-throughput-parallel.md))
+  Einzel-Pass/Parallelität ([`import-throughput-parallel.md`](../next/import-throughput-parallel.md))
   und COPY für weitere Typen ([`import-throughput-binary-copy.md`](import-throughput-binary-copy.md)).
 
 **Methodik-Caveats (Pflicht-Kontext):** Off-Spec-Host → **diagnostisch**, kein
