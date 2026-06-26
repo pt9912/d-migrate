@@ -48,8 +48,8 @@ Die Ordinaldaten liegen also am Reader-Rand bereits vor.
 
 | Bereich | Datei | Änderung |
 |---------|-------|----------|
-| Modell | `hexagon/core/.../model/ColumnDefinition.kt` | `ordinal: Int? = null` |
-| Modell | `hexagon/core/.../model/` (neu/Helper) | `Map<String,ColumnDefinition>.inOrdinalOrder()` (stabil, nullsLast) |
+| Modell | `ColumnDefinition.kt` | `ordinal: Int? = null` |
+| Modell | `ColumnDefinition.kt` (Helper) | `Map<String,ColumnDefinition>.inOrdinalOrder()` (stabil, nullsLast) |
 | Reverse | `PostgresSchemaStructureReaders.kt` | 1-basierter Laufindex (Tabellenspalten + Composite-Felder) |
 | Reverse | `MysqlSchemaReader.kt` | 1-basierter Laufindex |
 | Reverse | `SqliteSchemaReader.kt` | 1-basierter Laufindex |
@@ -58,7 +58,7 @@ Die Ordinaldaten liegen also am Reader-Rand bereits vor.
 | Generate | `PostgresDdlGenerator.kt`, `MysqlDdlGenerator.kt` | Spalten-/Inline-FK-Loops → `inOrdinalOrder()` |
 | Generate | `PostgresDiffTableOps.kt`, `MysqlDiffTableOps.kt` | CREATE TABLE: `sortedBy{it.key}` → `inOrdinalOrder()` |
 | Generate | SQLite-Pfade (`SqliteDiffSimpleOps`, `SqliteTableDdlSupport`, `SqliteRebuildRenderer`/`-Planner`) | auf `inOrdinalOrder()` |
-| Generate | `PostgresTypeSequenceDdlSupport` (Composite `CREATE TYPE … AS (…)`) | auf `inOrdinalOrder()` — **Review-Nachtrag**, schließt ADR-0021-„Single Source of Truth" |
+| Generate | `PostgresTypeSequenceDdlSupport.kt` (Composite `CREATE TYPE … AS (…)`) | auf `inOrdinalOrder()` — **Review-Nachtrag**, schließt die „Single Source of Truth"-Zusage aus [ADR 0021](../../adr/0021-column-ordinal-fidelity.md) |
 | Schema | `spec/schema.json` | `ordinal` (optional integer) auf column-def (deckt Composite-`fields` via `$ref` ab) |
 | Spec | `spec/neutral-model-spec.md`, `spec/schema-reference.md` | `ordinal`-Feld dokumentieren |
 | ADR | `docs/adr/0021-column-ordinal-fidelity.md` | Entscheidung + Hybrid-Begründung (de) |
