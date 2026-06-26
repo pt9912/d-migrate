@@ -14,6 +14,11 @@
 > einzelnen Streams als Ziel überschreiten **und** die unten genannten
 > Korrektheitsfragen für ein konkretes Szenario geklärt werden können. Dann
 > wandert der Eintrag mit ausgearbeitetem Scope nach `../next/`.
+>
+> Status-Update 2026-06-26: **Design-Spike erledigt** (siehe Abschnitt unten) — die
+> drei Korrektheitsfragen sind am Code beantwortet, ein gestufter Slice-Zuschnitt liegt
+> vor (Schicht-paralleler Tabellen-Import zuerst, Chunk-Parallelität vertagt). Es fehlt
+> nur noch der **Volumen-Trigger**; dann ist Schnitt (1) `next/`-fähig.
 
 ---
 
@@ -60,3 +65,88 @@ FK-/Trigger-/Sättigungs-Fragen für genau dieses Szenario beantwortet sind.
 - Mess-Substrat (Vorher/Nachher unter Caps): die 4c-Harness
   (`make sample-db-tpch-perf`,
   [`tpc-4c-volume-acceptance-slice.md`](../done/tpc-4c-volume-acceptance-slice.md)).
+
+---
+
+## Design-Spike (2026-06-26): Antworten auf die offenen Fragen
+
+> Kein Code. Beantwortet die drei Korrektheits-/Architektur-Fragen am echten Code-Stand,
+> als Vorbedingung für einen späteren Slice. Befunde direkt verifiziert.
+
+### Heutiger Import (Ist-Stand)
+
+- **Strikt sequenziell, ein Stream.** `TransferExecutor` iteriert Tabellen in einer nackten
+  `for`-Schleife; keine Threads/Coroutines/Pools im Import-Pfad (`StreamingImporter`,
+  `TableImporter`).
+- **Topologische Tabellenordnung.** `TransferPreflightPlanner.planTables` → `topoSort` →
+  `sortTablesByDependency` (Kahn, `TableDependencySort.kt`) sortiert Eltern vor Kinder aus den
+  FK-Kanten des **Zielschemas**; Zyklen werden abgewiesen, Self-Edges gefiltert.
+- **FK live erzwungen.** PG **verbietet** generisches FK-Abschalten:
+  `PostgresDataWriter` wirft bei `disableFkChecks` `UnsupportedOperationException`
+  („use schema ordering or DEFERRABLE constraints instead"). Die referenzielle Integrität
+  hängt heute **vollständig an der topologischen Reihenfolge** + Per-Chunk-Commit.
+- **Pro Tabelle eine Connection** (`pool.borrow()` in `*DataWriter`), Per-Chunk-Commit
+  (`AbstractTableImportSession.commitChunk`). Hikari-Default `maximumPoolSize=10`; SQLite
+  hart auf 1 (`HikariConnectionPoolFactory`).
+- **Chunking** offset/limit-basiert (`JdbcChunkSequence`), Resume über **kumulativen**
+  Per-Tabelle-Marker (`ResumeMarker`/`CheckpointManifest`) + sequenzielles Chunk-Skipping.
+
+### Q1 — FK-/Ladereihenfolge über gleichzeitige Streams
+
+**Antwort: Tabellen-granulare Parallelität in Abhängigkeits-Schichten ist FK-sicher — ohne
+FK-Abschalten.** Kahn liefert die Tabellen bereits in „Wellen": alle aktuell in-degree-0-Knoten
+bilden eine **Schicht (Antikette)**, die untereinander **keine** FK-Beziehung hat (sonst lägen
+sie in verschiedenen Schichten). Damit:
+
+- Schichten laufen **sequenziell** (Eltern-Schicht vollständig committed vor Kind-Schicht →
+  Elternzeilen existieren → Kind-Inserts bestehen, FK **enforced**, kein PG-Workaround nötig).
+- Tabellen **innerhalb** einer Schicht laufen **gleichzeitig** (keine gegenseitige FK).
+- Kleine, lokale Erweiterung: `sortTablesByDependency` statt flacher Liste **Schichten**
+  emittieren (Kahn-Runden gruppieren). Self-referenzielle Tabellen bleiben Single-Stream.
+
+Alternativen (nicht nötig für den ersten Schnitt, dokumentiert): `DEFERRABLE INITIALLY DEFERRED`
+oder `session_replication_role = replica` (PG, **verbindungs-scoped**, aber Superuser/Replikations-
+Recht) würden auch Cross-Schicht-Parallelität erlauben — höheres Korrektheits-/Rechte-Risiko.
+
+### Q2 — `triggersDisabled`-Scope + Pool-Dimensionierung
+
+**Befund (Scope je Dialekt):**
+
+| Dialekt | Mechanismus | Scope | Multi-Stream |
+|---|---|---|---|
+| PG | `ALTER TABLE … DISABLE TRIGGER USER` (`PostgresSchemaSync`, eigene Txn, sofort committed) | **katalog-global** (alle Verbindungen) | nur sicher bei **tabellen-exklusivem** Besitz |
+| MySQL | `SET FOREIGN_KEY_CHECKS=0` | **Session** (eine Verbindung) | sicher |
+| SQLite | `PRAGMA foreign_keys=OFF` | Verbindung | sicher (aber Pool=1 → ohnehin kein Parallel-Write) |
+
+**Antwort:** Der PG-Trigger-Disable ist katalog-global, aber **pro Tabelle**. Bei
+**tabellen-granularer** Parallelität besitzt genau **ein** Stream eine Tabelle → dessen
+disable/enable betrifft nur diese Tabelle → **kein Konflikt**. Der Konflikt entsteht erst, wenn
+**zwei Streams dieselbe Tabelle** anfassen (= Intra-Tabellen-/Chunk-Parallelität): dann müsste
+der Trigger-Lifecycle **koordiniert** werden (einmal disable vor allen Streams, einmal enable
+nach allen). → Spricht dafür, Chunk-Parallelität zu vertagen.
+
+**Pool:** Parallelitätsgrad `P` braucht `≥ P` Connections + Reserve (Metadaten/Cleanup); Default 10
+trägt kleine `P`, sonst konfigurierbar hochsetzen. **Nested-Borrow-Falle** beachten (ein Orchestrator
+darf nicht innerhalb eines geborgten Borrows erneut borgen). SQLite bleibt `P=1` (Single-Writer).
+
+### Q3 — Sättigungsdecke der Ziel-Instanz
+
+**Antwort:** Importer-seitige Parallelität skaliert nur bis zur vertikalen Kapazität der **einen**
+Ziel-Instanz (CPU/IO/WAL). `P` daher **konfigurierbar + gedeckelt** (Vorschlag Default
+`min(Schichtbreite, Pool, kleiner Cap z. B. 4–8)`), und gegen die **4c-Harness**
+(`make sample-db-tpch-perf`, Caps 2 CPU/4 GB aus [ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md))
+empirisch messen — jenseits der Sättigung bringt ein weiterer Stream nichts; die Protokoll-Effizienz
+(COPY-Ticket) bleibt darunter wirksam.
+
+### Ergebnis: gestufter Slice-Zuschnitt
+
+1. **Schicht-paralleler Tabellen-Import (erster, sicherer Schnitt).** Kahn-Schichten; Tabellen je
+   Schicht bis Grad `P` gleichzeitig; FK enforced (kein PG-Disable); PG-Trigger-Disable sicher,
+   da Tabelle = ein Stream; Pool `≥ P`; SQLite ausgenommen; `P` gedeckelt + 4c-gemessen.
+2. **Intra-Tabellen-/Chunk-Parallelität (vertagter Folge-Sub-Slice).** Durch das **kumulative**
+   Resume-Marker-Modell + offset-Chunking **blockiert**: bräuchte PK-Range-/Keyset-Chunking +
+   **Per-Stream**-Resume-State + koordinierten Trigger-Lifecycle. Eigener, größerer Slice.
+
+Damit sind die drei Korrektheitsfragen beantwortet; der erste Schnitt (1) ist scope-reif und
+**next/-fähig**, sobald ein konkretes Volumen-Szenario den Trigger setzt. (2) bleibt ausdrücklich
+nachgelagert.
