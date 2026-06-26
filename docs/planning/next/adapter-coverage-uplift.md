@@ -1,11 +1,11 @@
 # Adapter-Coverage-Uplift (Folge-Plan zu Phase E.2)
 
-- **Status**: Draft mit Scope (Design-Spike erledigt 2026-06-26): Per-Modul-Split-Plan
-  (Strategie durchgängig Split/Refactor), Phasen P0–P4 + Per-Modul-Akzeptanzkriterien —
-  damit **next/-fähig**. Bleibt aber bewusst in `open/`: 22 `excludes-ledger.md`-Einträge
-  plus eingefrorene `done-archive/`-Historie referenzieren genau diesen `open/`-Pfad; der
-  physische Move nach `next/` erfolgt mit dem Implementierungs-Slice, der diese
-  Ledger-Einträge ohnehin auflöst.
+- **Status**: Draft mit Scope (nach `next/` promotet 2026-06-26). Design-Spike erledigt:
+  Per-Modul-Split-Plan (Strategie durchgängig Split/Refactor), Phasen P0–P4 +
+  Per-Modul-Akzeptanzkriterien. Die 22 `excludes-ledger.md`-`refactor-plan`-Einträge zeigen
+  jetzt auf diesen `next/`-Pfad; eingefrorene `done-archive/`-Historie bleibt unangetastet
+  (beschreibt E.2s damalige Promotion nach `open/`). Aktiv erst beim ersten
+  Implementierungs-Commit.
 - **Trigger**: Sub-Slice E.2 des
   [`quality-coverage-expansion-plan`](../done-archive/quality-coverage-expansion-plan.md)
   hat 19 heutige Kover-Excludes auf Live-JDBC- bzw. Live-Streaming-

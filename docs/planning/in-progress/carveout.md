@@ -85,7 +85,7 @@ Quelldokumente:
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
-| `adapter-coverage-uplift` Folge-Slice | Promoted | Phase E.2 hat ihn als eigenständigen Plan-Doc-Trigger ausgegliedert. | [`../open/adapter-coverage-uplift.md`](../open/adapter-coverage-uplift.md) |
+| `adapter-coverage-uplift` Folge-Slice | Promoted | Phase E.2 hat ihn als eigenständigen Plan-Doc-Trigger ausgegliedert; Spike erledigt, jetzt in `next/`. | [`../next/adapter-coverage-uplift.md`](../next/adapter-coverage-uplift.md) |
 | D-N10k Perf-Sweep (N=10000, Nightly-Only) | Provisional | Trigger: dedizierter Nightly-Perf-Runner mit höherem Budget. Bis dahin opt-in. | quality-coverage-expansion-plan §9 |
 | Phase H des ersten Plan-Docs nicht re-planen | Permanent | SQLite-Rebuild-Vertrag ist im Phase-H-Closure (Plan 1) abgeschlossen; nicht duplizieren. | diffresult-migration-plan-2 §2 |
 
