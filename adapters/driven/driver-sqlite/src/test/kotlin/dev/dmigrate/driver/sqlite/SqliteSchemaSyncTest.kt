@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import io.kotest.assertions.throwables.shouldThrow
@@ -64,7 +65,7 @@ class SqliteSchemaSyncTest : FunSpec({
                 stmt.execute("INSERT INTO sync_autoinc (id, name) VALUES (7, 'manual')")
             }
 
-            val adjustments = schemaSync.reseedGenerators(conn, "sync_autoinc", idColumn)
+            val adjustments = schemaSync.reseedGenerators(JdbcDatabaseConnection(conn), "sync_autoinc", idColumn)
 
             adjustments.single().column shouldBe "id"
             adjustments.single().sequenceName shouldBe null
@@ -82,7 +83,7 @@ class SqliteSchemaSyncTest : FunSpec({
 
     test("no adjustment for table without autoincrement") {
         pool.borrow().asJdbc().use { conn ->
-            schemaSync.reseedGenerators(conn, "sync_plain_pk", idColumn) shouldBe emptyList()
+            schemaSync.reseedGenerators(JdbcDatabaseConnection(conn), "sync_plain_pk", idColumn) shouldBe emptyList()
         }
     }
 

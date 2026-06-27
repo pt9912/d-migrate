@@ -588,7 +588,7 @@ class PostgresTableImportSessionTest : FunSpec({
         result.adjustments shouldHaveSize 1
         result.adjustments[0].newValue shouldBe 43
 
-        verify { sync.reseedGenerators(conn, "public.users", any()) }
+        verify { sync.reseedGenerators(any(), "public.users", any()) }
         session.close()
     }
 

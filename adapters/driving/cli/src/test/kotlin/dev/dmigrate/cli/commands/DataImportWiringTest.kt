@@ -333,7 +333,7 @@ private class FakeImportWriter(
 ) : DataWriter {
     override fun schemaSync(): SchemaSync = object : SchemaSync {
         override fun reseedGenerators(
-            conn: Connection,
+            conn: DatabaseConnection,
             table: String,
             importedColumns: List<ColumnDescriptor>,
         ): List<SequenceAdjustment> = emptyList()

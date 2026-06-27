@@ -3,16 +3,18 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.SequenceAdjustment
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 
 class SqliteSchemaSync : SchemaSync {
 
     override fun reseedGenerators(
-        conn: Connection,
+        conn: DatabaseConnection,
         table: String,
         importedColumns: List<ColumnDescriptor>,
     ): List<SequenceAdjustment> = reseedGenerators(
-        conn = conn,
+        conn = conn.asJdbc(),
         table = table,
         importedColumns = importedColumns,
         truncatePerformed = false,

@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
@@ -66,11 +67,11 @@ class PostgresDataWriter(
             when (options.triggerMode) {
                 TriggerMode.FIRE -> Unit
                 TriggerMode.STRICT -> {
-                    sync.assertNoUserTriggers(conn, table)
+                    sync.assertNoUserTriggers(JdbcDatabaseConnection(conn), table)
                     conn.commit()
                 }
                 TriggerMode.DISABLE -> {
-                    sync.disableTriggers(conn, table)
+                    sync.disableTriggers(JdbcDatabaseConnection(conn), table)
                     triggersDisabled = true
                 }
             }
@@ -92,7 +93,7 @@ class PostgresDataWriter(
             }
             return session
         } catch (t: Throwable) {
-            t.runSuppressing { if (triggersDisabled) sync.enableTriggers(conn, table) }
+            t.runSuppressing { if (triggersDisabled) sync.enableTriggers(JdbcDatabaseConnection(conn), table) }
             t.runSuppressing { conn.rollback() }
             t.runSuppressing { if (savedAutoCommit != null) conn.autoCommit = savedAutoCommit }
             t.runSuppressing { conn.close() }

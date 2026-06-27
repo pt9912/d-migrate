@@ -10,6 +10,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.mockk.*
 import java.sql.Connection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 
 class PostgresSchemaSyncTest : FunSpec({
 
@@ -23,7 +24,7 @@ class PostgresSchemaSyncTest : FunSpec({
     // ── reseedGenerators ───────────────────────────
 
     test("reseedGenerators with empty columns returns empty") {
-        sync.reseedGenerators(conn, "public.users", emptyList()).shouldBeEmpty()
+        sync.reseedGenerators(JdbcDatabaseConnection(conn), "public.users", emptyList()).shouldBeEmpty()
     }
 
     test("reseedGenerators adjusts sequence for serial column") {
@@ -35,7 +36,7 @@ class PostgresSchemaSyncTest : FunSpec({
             mapOf("setval" to 42L)
 
         val cols = listOf(ColumnDescriptor("id", nullable = false))
-        val result = sync.reseedGenerators(conn, "public.users", cols)
+        val result = sync.reseedGenerators(JdbcDatabaseConnection(conn), "public.users", cols)
 
         result shouldHaveSize 1
         result[0].table shouldBe "public.users"
@@ -49,7 +50,7 @@ class PostgresSchemaSyncTest : FunSpec({
             mapOf("pg_get_serial_sequence" to null)
 
         val cols = listOf(ColumnDescriptor("name", nullable = true))
-        sync.reseedGenerators(conn, "public.users", cols).shouldBeEmpty()
+        sync.reseedGenerators(JdbcDatabaseConnection(conn), "public.users", cols).shouldBeEmpty()
     }
 
     test("reseedGenerators skips column with null max value") {
@@ -59,7 +60,7 @@ class PostgresSchemaSyncTest : FunSpec({
             mapOf("max_val" to null)
 
         val cols = listOf(ColumnDescriptor("id", nullable = false))
-        sync.reseedGenerators(conn, "public.users", cols).shouldBeEmpty()
+        sync.reseedGenerators(JdbcDatabaseConnection(conn), "public.users", cols).shouldBeEmpty()
     }
 
     test("reseedGenerators handles multiple columns") {
@@ -73,7 +74,7 @@ class PostgresSchemaSyncTest : FunSpec({
             mapOf("setval" to 10L)
 
         val cols = listOf(ColumnDescriptor("id", nullable = false), ColumnDescriptor("counter", nullable = false))
-        val result = sync.reseedGenerators(conn, "public.t", cols)
+        val result = sync.reseedGenerators(JdbcDatabaseConnection(conn), "public.t", cols)
 
         result shouldHaveSize 1
         result[0].column shouldBe "id"
@@ -85,7 +86,7 @@ class PostgresSchemaSyncTest : FunSpec({
         every { conn.autoCommit } returns true
         every { jdbc.execute(match { it.contains("DISABLE TRIGGER USER") }) } returns 0
 
-        sync.disableTriggers(conn, "public.users")
+        sync.disableTriggers(JdbcDatabaseConnection(conn), "public.users")
 
         verify { jdbc.execute(match { it.contains("DISABLE TRIGGER USER") }) }
         verify { conn.commit() }
@@ -95,7 +96,7 @@ class PostgresSchemaSyncTest : FunSpec({
         every { conn.autoCommit } returns true
         every { jdbc.execute(match { it.contains("ENABLE TRIGGER USER") }) } returns 0
 
-        sync.enableTriggers(conn, "public.users")
+        sync.enableTriggers(JdbcDatabaseConnection(conn), "public.users")
 
         verify { jdbc.execute(match { it.contains("ENABLE TRIGGER USER") }) }
         verify { conn.commit() }
@@ -106,7 +107,7 @@ class PostgresSchemaSyncTest : FunSpec({
         every { jdbc.execute(any()) } throws RuntimeException("DDL failed")
 
         shouldThrow<RuntimeException> {
-            sync.disableTriggers(conn, "public.users")
+            sync.disableTriggers(JdbcDatabaseConnection(conn), "public.users")
         }.message shouldBe "DDL failed"
 
         verify { conn.rollback() }
@@ -125,7 +126,7 @@ class PostgresSchemaSyncTest : FunSpec({
 
         every { jdbc.querySingle(match { it.contains("pg_trigger") }, any(), any()) } returns null
 
-        sync.assertNoUserTriggers(conn, "public.users")
+        sync.assertNoUserTriggers(JdbcDatabaseConnection(conn), "public.users")
     }
 
     test("assertNoUserTriggers throws when trigger exists") {
@@ -140,7 +141,7 @@ class PostgresSchemaSyncTest : FunSpec({
             mapOf("tgname" to "trg_audit")
 
         val ex = shouldThrow<IllegalStateException> {
-            sync.assertNoUserTriggers(conn, "public.users")
+            sync.assertNoUserTriggers(JdbcDatabaseConnection(conn), "public.users")
         }
         ex.message shouldContain "trg_audit"
         ex.message shouldContain "triggerMode=strict"

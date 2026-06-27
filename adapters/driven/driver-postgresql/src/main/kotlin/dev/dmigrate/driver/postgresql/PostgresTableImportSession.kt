@@ -8,6 +8,7 @@ import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.WriteResult
 import org.postgresql.PGConnection
 import org.postgresql.util.PGobject
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.Statement
@@ -103,12 +104,12 @@ internal class PostgresTableImportSession(
     }
 
     override fun reseedSequences(): List<SequenceAdjustment> =
-        schemaSync.reseedGenerators(conn, table, importedColumns.orEmpty())
+        schemaSync.reseedGenerators(JdbcDatabaseConnection(conn), table, importedColumns.orEmpty())
 
     override fun finishDialectCleanup(): Throwable? =
         if (triggersDisabled && !triggersReenabled) {
             runCatching {
-                schemaSync.enableTriggers(conn, table)
+                schemaSync.enableTriggers(JdbcDatabaseConnection(conn), table)
                 triggersReenabled = true
             }.exceptionOrNull()
         } else {
@@ -118,7 +119,7 @@ internal class PostgresTableImportSession(
     override fun closePreFinally() {
         if (triggersDisabled && !triggersReenabled) {
             runCatching {
-                schemaSync.enableTriggers(conn, table)
+                schemaSync.enableTriggers(JdbcDatabaseConnection(conn), table)
                 triggersReenabled = true
             }.onFailure(::recordCleanupFailure)
         }
