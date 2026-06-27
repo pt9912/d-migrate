@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 help:
 	@printf '%s\n' \
@@ -180,6 +180,23 @@ semgrep: semgrep-rules-fetch
 
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
+
+# ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer für
+# große mechanische Umbauten (Signatur-/Rename über viele Call-Sites), wo Regex an
+# Strings/Kommentaren/Formatvarianten scheitert (memory feedback_syntax_aware_refactor).
+# Hermetische Stage (Dockerfile `ast-grep`), offline ausgeführt. Beispiele:
+#   make ast-grep ARGS='run -p "$$P.borrow()" -l kotlin adapters hexagon'        # Suche
+#   make ast-grep ARGS='run -p "X" -r "Y" -l kotlin --update-all adapters'       # Rewrite
+# Read-write-Mount (für --update-all) + Host-User-Mapping (Datei-Ownership);
+# --network none, da ast-grep nach Install offline arbeitet.
+AST_GREP_IMAGE ?= d-migrate-ast-grep
+
+ast-grep-build:
+	$(DOCKER) build --target ast-grep -t $(AST_GREP_IMAGE) .
+
+ast-grep: ast-grep-build
+	$(DOCKER) run --rm --network none --user "$$(id -u):$$(id -g)" \
+	  -v "$(CURDIR)":/repo $(AST_GREP_IMAGE) $(ARGS)
 
 # Parquet Cut-A (0.9.8) — Sealed-when-Sweep aus AP13 §4.1.
 # Pflicht-Lauf vor jedem Parquet-PR-Merge auf

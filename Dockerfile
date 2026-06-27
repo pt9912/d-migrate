@@ -429,3 +429,19 @@ VOLUME ["/work"]
 USER dmigrate
 ENTRYPOINT ["d-migrate"]
 CMD ["--help"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer.
+# Hermetisch im Projekt-Muster (vgl. semgrep/d-check): eigene Stage, offline via
+# `make ast-grep` ausgeführt. Schließt die Methodik-Lücke aus
+# `memory: feedback_syntax_aware_refactor` — Regex sieht Strings/Kommentare/
+# Formatvarianten nicht, ein AST schon. `ast-grep` unterstützt Kotlin built-in
+# (`-l kotlin`). Entrypoint = `ast-grep`; das Repo wird unter /repo gemountet.
+#
+# Version gepinnt (Hermetik-Vertrag, vgl. SEMGREP_IMAGE-Digest). TODO: node-Image
+# zusätzlich per Digest pinnen, sobald ein Build den Digest bestätigt.
+FROM node:22-bookworm-slim AS ast-grep
+RUN npm install -g @ast-grep/cli@0.44.0 \
+    && npm cache clean --force
+WORKDIR /repo
+ENTRYPOINT ["ast-grep"]
