@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-27
 decision-makers: pt9912
 consulted: spec/hexagonal-port.md (D4-Soll "DatabaseConnection"), spec/architecture.md (Schicht-/Abhängigkeitsregeln), spec/phase-e-port-atomicity.md (backend-neutrale Atomicity-Ports)
@@ -8,9 +8,9 @@ informed: hexagon/ports-common, hexagon/ports-execute, adapters/driven/driver-co
 
 # Ports-Schicht ohne `java.sql`: neutrale `DatabaseConnection`-Abstraktion statt durchgereichter JDBC-Connection
 
-> **Status: proposed.** Die Grundsatzentscheidung (Ports JDBC-frei) steht; der hier
-> vorgeschlagene Mechanismus ist zur Ratifizierung gedacht. Die Umsetzung samt Phasen liegt
-> im Slice [`../planning/next/ports-jdbc-entkopplung.md`](../planning/next/ports-jdbc-entkopplung.md).
+> **Status: accepted (2026-06-27).** Mechanismus **Option A** (neutrales `DatabaseConnection`,
+> JDBC-Impl im Adapter) ratifiziert. Die Umsetzung samt Phasen liegt im Slice
+> [`../planning/next/ports-jdbc-entkopplung.md`](../planning/next/ports-jdbc-entkopplung.md).
 
 ## Kontext und Problemstellung
 

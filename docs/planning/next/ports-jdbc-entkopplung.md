@@ -2,7 +2,7 @@
 
 > **Status:** Draft mit Scope (Entwurf, 2026-06-27). Aktiv (→ `../in-progress/`) beim ersten
 > Implementierungs-Commit. **Entscheidungsgrundlage:**
-> [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) (proposed — vor Baubeginn ratifizieren).
+> [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) (accepted, Option A).
 
 ## 1. Ziel
 
@@ -91,8 +91,8 @@ Sobald der Code JDBC-frei ist, die Doku-Lage bereinigen (war Auslöser dieses Sl
 
 ## 7. Vorbedingungen
 
-- [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) **accepted** (derzeit proposed) — die
-  Abstraktionsform (`DatabaseConnection`) und Option-A-Entscheidung müssen stehen, bevor P1 startet.
+- [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) **accepted** (Option A, 2026-06-27) — die
+  Abstraktionsform (`DatabaseConnection`) steht; P1 kann starten.
 
 ## 8. Bezug
 

@@ -75,4 +75,4 @@ argumentiert werden.
 | 0019 | [Partitions-Hierarchie: strukturierte `PartitionDefinition` statt opaker Dialekt-Strings](0019-partition-hierarchy-structured-representation.md) | accepted |
 | 0020 | [Cross-Dialect-Partitionierung PG↔MySQL: Mapping-Entscheide (AP6)](0020-cross-dialect-partitioning-mysql.md) | accepted |
 | 0021 | [Spalten-Ordinalreihenfolge erhalten (Hybrid: geordnete Serialisierung + explizites `ordinal`)](0021-column-ordinal-fidelity.md) | accepted |
-| 0022 | [Ports-Schicht ohne `java.sql`: neutrale `DatabaseConnection`-Abstraktion](0022-ports-jdbc-entkopplung.md) | proposed |
+| 0022 | [Ports-Schicht ohne `java.sql`: neutrale `DatabaseConnection`-Abstraktion](0022-ports-jdbc-entkopplung.md) | accepted |
