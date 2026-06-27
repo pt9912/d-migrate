@@ -112,7 +112,7 @@ Quelldokument:
 | MCP-Server-Last-Tests | Provisional | Trigger: eigene Last-Strategie, gehört zum `spec/mcp-server.md`-Vertrag. | `../../../spec/mcp-server.md` |
 | MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Vorabklärung 2026-06-03 angelegt; same-day Promote nach `next/` mit Sub-Slice-Schnitt F.1-F.5 + Wire-Vertrag V1. Atomic-Preserve-Plan-Doc 2026-06-03 in next/ + done-archive/ImpPlan-0.9.8-AE.md gesplittet. | [`../next/mcp-schema-migrate-tool.md`](../next/mcp-schema-migrate-tool.md), [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md), [`../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md), quality-coverage-expansion-plan §3.2 + §9 |
 | App-Layer-Replay für Concurrent-Writer-Tests | Permanent | Anwendungssache, nicht d-migrate-Scope. | quality-coverage-expansion-plan §9 |
-| Mutation-Testing (PIT/Stryker) | Provisional | Trigger: stabile Coverage-Baseline + konsolidierte Excludes. | quality-coverage-expansion-plan §9 |
+| Mutation-Testing (PIT) | Promoted | Trigger (stabile Coverage-Baseline + konsolidierte Excludes) 2026-06-27 **erfüllt** (Kover-90-%-Per-Modul-Gate, 251 ledger-dokumentierte Excludes). Scope-Entwurf (Draft, Vorschlags-Altitude) in `open/`; noch nicht nach `next/` priorisiert. | [`../open/mutation-testing-pit.md`](../open/mutation-testing-pit.md) |
 
 ---
 
