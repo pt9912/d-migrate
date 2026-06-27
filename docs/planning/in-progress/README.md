@@ -57,7 +57,7 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`ports-jdbc-entkopplung.md`](ports-jdbc-entkopplung.md) | Aktiver Per-Slice-ImpPlan | `java.sql` aus `ports-common`/`ports-execute`/`ports-write` entfernen (ADR 0022, neutrales `DatabaseConnection`). P1 erledigt (Typ + JDBC-Impl + Test); P2-P5 offen. |
+| [`ports-jdbc-entkopplung.md`](ports-jdbc-entkopplung.md) | Aktiver Per-Slice-ImpPlan | `java.sql` aus `ports-common`/`ports-execute`/`ports-write` entfernen (ADR 0022, neutrales `DatabaseConnection`). P1+P2 erledigt (neutraler Typ; `borrow()` umgestellt, ports-common java.sql-frei); P3-P5 offen. |
 
 > Der Sample-DB-E2E-Harness-Slice (`examples/sample-db/`) ist Phase 0–3 DoD-komplett
 > und nach [`../done/sample-db-integration-harness.md`](../done/sample-db-integration-harness.md)

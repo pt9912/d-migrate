@@ -3,10 +3,18 @@
 > **Status:** In Progress (2026-06-27). **Entscheidungsgrundlage:**
 > [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) (accepted, Option A).
 >
-> **Phasen-Fortschritt:** **P1 erledigt** — neutrales `DatabaseConnection` in
-> `hexagon:ports-common` + `JdbcDatabaseConnection`/`asJdbc` in `driver-common` + Kotest-Test
-> gegen echte SQLite-Connection; `docker-check` beider Module grün (frischer Compile, Test,
-> Detekt, Kover ≥ 90 %). Additiv, keine Signaturänderung. **P2–P5 offen.**
+> **Phasen-Fortschritt:** **P1 + P2 erledigt.** P1: neutrales `DatabaseConnection` in
+> `hexagon:ports-common` + `JdbcDatabaseConnection`/`asJdbc` in `driver-common` + Kotest-Test.
+> **P2 (`d5b20a40`):** `ConnectionPool.borrow(): DatabaseConnection`; HikariConnectionPool wrappt,
+> ~24 Konsumenten unwrappen via `asJdbc()`, ~50 Test-Fake-Pools (override/mockk-Stubs/echte-Conn)
+> umgestellt; `hexagon:ports-common` ist **java.sql-frei**. `MigrationExecutorTestSupport`
+> (testFixtures ohne driver-common-Pfad) unwrappt **reflektiv** (Präzedenz `JdbcForeignValueNormalizer`,
+> kein build.gradle-Dep — offline-Build kann keine Dependency-Neuauflösung). `docker-check` über 13
+> Module grün (Compile/Test/Detekt/Kover ≥ 90 %). **P3–P5 offen.**
+> *Methodik-Nachtrag:* Der Umbau lief via Regex/perl + Build-Netz und deckte iterativ
+> String-/Kommentar-/mockk-DSL-Fehlalarme auf; syntax-bewusst (ast-grep/comby/Tree-sitter) wäre
+> sauberer gewesen, ist aber in der offline-Umgebung nicht verfügbar. Für P3/P4 entsprechend
+> diszipliniert (Strings/Kommentare/mockk-DSL vorab ausschließen).
 >
 > **Scope-Korrektur (2026-06-27, P1-Review):** `ports-write` (`SchemaSync`,
 > `TriggerManagement`) leakt `java.sql.Connection` ebenfalls und ist von ADR 0022 (Punkt 1)
