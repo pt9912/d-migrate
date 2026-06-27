@@ -188,7 +188,9 @@ solid-suppression-gate:
 #
 # Quoting: ARGS wird via $(value ARGS) UNEXPANDIERT an die Shell gereicht (make frisst
 # `$P` sonst als $(P)). Es bleibt EINE Ebene: die ast-grep-Metavariable `$P` gegen die
-# Shell schützen — `\$P` (in Doppel-Quotes) oder '$P' (Single-Quotes). Beispiele:
+# Shell schützen — `\$P` (in Doppel-Quotes) oder '$P' (Single-Quotes).
+# ACHTUNG: NICHT `$$P` — die Shell liest `$$` als Prozess-ID (PID), nicht als `$`.
+# Beispiele:
 #   make ast-grep ARGS='run -p "\$P.borrow()" -l kotlin adapters hexagon'        # Suche
 #   make ast-grep ARGS='run -p "\$A.foo(\$B)" -r "\$A.bar(\$B)" -l kotlin --update-all adapters'  # Rewrite
 # Read-write-Mount (für --update-all) + Host-User-Mapping (Datei-Ownership);
