@@ -29,10 +29,12 @@ import java.sql.SQLException
  *   wird via TimerTask + `KILL QUERY` umgesetzt und greift auf jeder
  *   Query-Art, sofern der Connection-User entsprechende Privilegien hat.
  *
- * Die Bench nutzt deshalb einen 2-Wege-Cross-Join über
+ * Die Bench nutzt deshalb einen 3-Wege-Cross-Join über
  * `information_schema.columns`, der MySQL zur echten Row-Materialisierung
  * zwingt — sowohl `MAX_EXECUTION_TIME` als auch `setQueryTimeout` feuern
- * hier zuverlässig.
+ * hier zuverlässig. Die Kardinalität ist kubisch in der Spaltenzahl, also
+ * weit jenseits des 5s-Budgets auf beliebiger Hardware (der frühere 2-Wege-
+ * Join war nur quadratisch und lief auf schneller Hardware < 5s durch).
  */
 class E07MysqlTimeoutBench : FunSpec({
 
@@ -42,12 +44,20 @@ class E07MysqlTimeoutBench : FunSpec({
         .withUsername("dmigrate")
         .withPassword("dmigrate")
 
-    /** 2-way cross join — produces millions of intermediate rows that MySQL
-     *  must enumerate before COUNT can return. Reliably > 5s on CI. */
+    /** 3-way cross join — the row count is cubic in the (hardware-independent)
+     *  information_schema.columns cardinality, so MySQL must enumerate billions
+     *  of intermediate rows before COUNT can return: far longer than the 5s
+     *  budget on any machine. The 2-way variant was only quadratic and finished
+     *  < 5s on fast local hardware, letting the timeout slip (timeout never
+     *  fired → no SQLException). The query is KILLed at the timeout and never
+     *  fully materialises the product, so a bigger join is strictly safer; both
+     *  MAX_EXECUTION_TIME and setQueryTimeout still fire (unlike SLEEP/BENCHMARK,
+     *  which MAX_EXECUTION_TIME exempts). */
     val longSelect = """
         SELECT COUNT(*)
         FROM information_schema.columns t1,
-             information_schema.columns t2
+             information_schema.columns t2,
+             information_schema.columns t3
     """.trimIndent()
 
     beforeSpec {
