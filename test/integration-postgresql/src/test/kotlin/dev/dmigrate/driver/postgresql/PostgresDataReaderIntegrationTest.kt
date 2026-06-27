@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -61,7 +63,7 @@ class PostgresDataReaderIntegrationTest : FunSpec({
         pool = p
 
         // Schema setup
-        p.borrow().use { conn ->
+        p.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT)")
                 stmt.execute("CREATE TABLE empty_table (id SERIAL PRIMARY KEY, label TEXT)")
@@ -176,7 +178,7 @@ class PostgresDataReaderIntegrationTest : FunSpec({
         (builder is PostgresJdbcUrlBuilder) shouldBe true
 
         // Verify via PostgreSQL system view that the application_name made it through
-        pool().borrow().use { conn ->
+        pool().borrow().asJdbc().use { conn ->
             conn.prepareStatement(
                 "SELECT application_name FROM pg_stat_activity WHERE pid = pg_backend_pid()"
             ).use { ps ->

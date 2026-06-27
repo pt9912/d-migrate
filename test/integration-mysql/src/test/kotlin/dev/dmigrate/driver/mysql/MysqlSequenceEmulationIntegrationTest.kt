@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
 import dev.dmigrate.core.model.*
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.cli.commands.DiffView
@@ -129,7 +131,9 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
     fun readLiveMysqlOperand(reference: String = "db:seqtest"): ResolvedSchemaOperand {
         val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
             override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun borrow() = JdbcDatabaseConnection(
+                DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+            )
             override fun activeConnections() = 0
             override fun close() {}
         }
@@ -295,7 +299,9 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         // Now reverse-read the database and verify sequence reconstruction.
         val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
             override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun borrow() = JdbcDatabaseConnection(
+                DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+            )
             override fun activeConnections() = 0
             override fun close() {}
         }
@@ -327,7 +333,9 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         // The reverse should reflect the current next_value as start.
         val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
             override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun borrow() = JdbcDatabaseConnection(
+                DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+            )
             override fun activeConnections() = 0
             override fun close() {}
         }
@@ -342,7 +350,9 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
     test("reverse with includeTriggers=false still reconstructs SequenceNextVal") {
         val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
             override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun borrow() = JdbcDatabaseConnection(
+                DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+            )
             override fun activeConnections() = 0
             override fun close() {}
         }
@@ -366,7 +376,9 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
     test("reverse: support trigger not visible in user triggers") {
         val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
             override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun borrow() = JdbcDatabaseConnection(
+                DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+            )
             override fun activeConnections() = 0
             override fun close() {}
         }

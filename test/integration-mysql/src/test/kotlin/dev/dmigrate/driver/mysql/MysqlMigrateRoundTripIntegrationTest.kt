@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.cli.commands.ResolvedSchemaOperand
 import dev.dmigrate.cli.commands.SchemaMigrateRequest
 import dev.dmigrate.cli.commands.SchemaMigrateRunner
@@ -201,7 +203,7 @@ class MysqlMigrateRoundTripIntegrationTest : FunSpec({
 })
 
 private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             for (sql in sqls) stmt.execute(sql)
         }

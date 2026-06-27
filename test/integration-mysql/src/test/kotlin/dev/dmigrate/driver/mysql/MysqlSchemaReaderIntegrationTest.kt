@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
@@ -44,7 +46,7 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
         val pool = HikariConnectionPoolFactory.create(config)
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("""
                     CREATE TABLE customers (

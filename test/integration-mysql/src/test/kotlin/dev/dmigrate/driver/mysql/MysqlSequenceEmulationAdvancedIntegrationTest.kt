@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
 import dev.dmigrate.core.model.*
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.cli.commands.DiffView
@@ -140,7 +142,9 @@ class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
     fun readLiveMysqlOperand(reference: String = "db:seqtest"): ResolvedSchemaOperand {
         val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
             override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun borrow() = JdbcDatabaseConnection(
+                DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+            )
             override fun activeConnections() = 0
             override fun close() {}
         }
@@ -313,7 +317,9 @@ class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
 
             val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
                 override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-                override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+                override fun borrow() = JdbcDatabaseConnection(
+                    DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+                )
                 override fun activeConnections() = 0
                 override fun close() {}
             }
@@ -535,7 +541,9 @@ class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
 
             val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
                 override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
-                override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+                override fun borrow() = JdbcDatabaseConnection(
+                    DriverManager.getConnection(container.jdbcUrl, container.username, container.password),
+                )
                 override fun activeConnections() = 0
                 override fun close() {}
             }

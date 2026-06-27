@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -55,7 +57,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
         val p = HikariConnectionPoolFactory.create(cfg)
         pool = p
 
-        p.borrow().use { conn ->
+        p.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, " +
@@ -174,7 +176,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
         // Verify via SHOW SESSION VARIABLES that the connection uses the cursor
         // Mode is communicated via the JDBC param, not a server-visible setting,
         // but we can at least verify the connection accepts the parameter without errors.
-        pool().borrow().use { conn ->
+        pool().borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT 1").use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true

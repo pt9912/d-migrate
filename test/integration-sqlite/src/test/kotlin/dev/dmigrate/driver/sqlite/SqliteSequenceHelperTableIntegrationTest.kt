@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
@@ -277,7 +279,7 @@ private fun isCommentOnly(sql: String): Boolean =
     }
 
 private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             for (sql in sqls) {
                 try {
@@ -294,7 +296,7 @@ private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
 }
 
 private inline fun <reified T> readScalar(pool: ConnectionPool, query: String): T {
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             stmt.executeQuery(query).use { rs ->
                 check(rs.next()) { "empty result for query: $query" }

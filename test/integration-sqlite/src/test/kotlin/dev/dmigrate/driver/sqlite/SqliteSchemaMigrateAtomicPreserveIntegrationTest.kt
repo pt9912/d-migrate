@@ -1,5 +1,9 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+import dev.dmigrate.driver.connection.DatabaseConnection
+
 import dev.dmigrate.cli.commands.ResolvedSchemaOperand
 import dev.dmigrate.cli.commands.SchemaMigrateRequest
 import dev.dmigrate.cli.commands.SchemaMigrateRunner
@@ -76,7 +80,7 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         // set is required because the diff renderer emits
         // `UPDATE … SET "increment_by" = …` etc. — a stripped-down
         // schema would surface as `SQLITE_ERROR: no such column`.
-        pool.borrow().use { c ->
+        pool.borrow().asJdbc().use { c ->
             c.autoCommit = true
             c.createStatement().use { stmt ->
                 stmt.execute("DROP TABLE IF EXISTS \"dmg_sequences\"")
@@ -115,7 +119,7 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
     }
 
     fun nextValueOf(name: String): Long {
-        pool.borrow().use { c ->
+        pool.borrow().asJdbc().use { c ->
             c.createStatement().use { s ->
                 s.executeQuery("SELECT \"next_value\" FROM \"dmg_sequences\" WHERE \"name\" = '$name'").use { rs ->
                     rs.next() shouldBe true
@@ -147,21 +151,18 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
     fun freshConnExecutor(): AtomicSequencePreserveExecutor = object : AtomicSequencePreserveExecutor {
         private val real = SqliteAtomicSequencePreserveExecutor()
         override fun execute(
-            connection: Connection,
+            connection: DatabaseConnection,
             batch: AtomicSequencePreserveBatch,
             lockTimeoutMillis: Long,
             cancellationToken: dev.dmigrate.core.cancel.CancellationToken,
-            executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+            executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         ): AtomicSequencePreserveResult =
             rawConnection().use { freshConn ->
                 freshConn.autoCommit = true
-                real.execute(
-                    connection = freshConn,
-                    batch = batch,
-                    lockTimeoutMillis = lockTimeoutMillis,
-                    cancellationToken = cancellationToken,
-                    executeProtectedOperations = executeProtectedOperations,
-                )
+                real.execute(connection = JdbcDatabaseConnection(freshConn), batch = batch,
+                lockTimeoutMillis = lockTimeoutMillis,
+                cancellationToken = cancellationToken,
+                executeProtectedOperations = executeProtectedOperations,)
             }
     }
 
@@ -337,11 +338,11 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         val throwingExecutor = object : AtomicSequencePreserveExecutor {
             private val real = SqliteAtomicSequencePreserveExecutor()
             override fun execute(
-                connection: Connection,
+                connection: DatabaseConnection,
                 batch: AtomicSequencePreserveBatch,
                 lockTimeoutMillis: Long,
                 cancellationToken: dev.dmigrate.core.cancel.CancellationToken,
-                executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+                executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
             ): AtomicSequencePreserveResult = real.execute(
                 connection = connection,
                 batch = batch,

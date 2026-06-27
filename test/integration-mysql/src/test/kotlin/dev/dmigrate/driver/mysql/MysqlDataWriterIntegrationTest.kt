@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import com.mysql.cj.conf.PropertyKey
 import com.mysql.cj.jdbc.JdbcConnection
 import dev.dmigrate.core.data.ColumnDescriptor
@@ -47,7 +49,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
             )
         )
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "CREATE TABLE writer_users (" +
@@ -112,7 +114,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
     }
 
     beforeTest {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("SET FOREIGN_KEY_CHECKS = 0")
                 stmt.execute("DELETE FROM writer_users")
@@ -145,7 +147,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
     )
 
     fun lowerCaseTableNames(): Int =
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("SELECT @@lower_case_table_names").use { rs ->
                     rs.next() shouldBe true
@@ -183,7 +185,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
             )
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id, name FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val rows = mutableListOf<Pair<Int, String>>()
@@ -219,7 +221,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val ids = mutableListOf<Int>()
@@ -265,7 +267,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val ids = mutableListOf<Int>()
@@ -307,7 +309,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
     }
 
     test("onConflict update upserts rows and reports inserted vs updated") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO writer_upsert_target (id, name) VALUES (1, 'old')")
             }

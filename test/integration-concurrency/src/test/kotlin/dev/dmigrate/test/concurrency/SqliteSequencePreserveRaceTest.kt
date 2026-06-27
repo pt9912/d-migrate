@@ -1,5 +1,7 @@
 package dev.dmigrate.test.concurrency
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -116,7 +118,7 @@ class SqliteSequencePreserveRaceTest : FunSpec({
         val advancesAtLockEnd = java.util.concurrent.atomic.AtomicInteger(-1)
 
         openConnection(url).use { atomicConn ->
-            val result = executor.execute(atomicConn, batch, lockTimeoutMillis = 30_000L) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(atomicConn), batch, lockTimeoutMillis = 30_000L) { _, _ ->
                 // The SQLite executor has already issued BEGIN
                 // IMMEDIATE before this callback runs; the RESERVED
                 // lock is held until commit. Any writer UPDATE on a
@@ -125,8 +127,7 @@ class SqliteSequencePreserveRaceTest : FunSpec({
                 advancesAtLockStart.set(writerAdvancesDone.get())
                 Thread.sleep(lockWindowSleepMillis)
                 advancesAtLockEnd.set(writerAdvancesDone.get())
-                AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
-            }
+                AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0) }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
         }
 

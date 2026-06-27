@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -59,7 +61,7 @@ class E07PostgresTimeoutBench : FunSpec({
         HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 30_000)).use { pool ->
             val start = System.nanoTime()
             val ex = shouldThrow<SQLException> {
-                pool.borrow().use { conn ->
+                pool.borrow().asJdbc().use { conn ->
                     conn.prepareStatement("SELECT pg_sleep(60)").executeQuery()
                 }
             }
@@ -74,7 +76,7 @@ class E07PostgresTimeoutBench : FunSpec({
     test("Cleanup: pool returns connection after timeout, healthy SELECT works") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 30_000)).use { pool ->
             shouldThrow<SQLException> {
-                pool.borrow().use { conn ->
+                pool.borrow().asJdbc().use { conn ->
                     conn.prepareStatement("SELECT pg_sleep(60)").executeQuery()
                 }
             }
@@ -82,7 +84,7 @@ class E07PostgresTimeoutBench : FunSpec({
             // bookkeeping is async — accept <= 1.
             pool.activeConnections() shouldBeLessThanOrEqual 1
 
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.executeQuery("SELECT 1").use { rs ->
                         rs.next() shouldBe true
@@ -95,7 +97,7 @@ class E07PostgresTimeoutBench : FunSpec({
 
     test("Default timeout (30000) does not break a fast SELECT 1") {
         HikariConnectionPoolFactory.create(cfg()).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.executeQuery("SELECT 1").use { rs ->
                         rs.next() shouldBe true

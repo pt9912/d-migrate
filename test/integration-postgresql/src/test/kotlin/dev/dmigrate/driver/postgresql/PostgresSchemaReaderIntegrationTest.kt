@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
@@ -42,7 +44,7 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             password = "dmigrate",
         )
         val pool = HikariConnectionPoolFactory.create(config)
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 // Extension (covers SchemaReader extension note loop)
                 stmt.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
@@ -596,7 +598,7 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             )
             val ddl = PostgresDdlGenerator().generate(minimal)
             ddl.render() shouldContain "DEFAULT"
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.execute("DROP SCHEMA IF EXISTS ap3_rt CASCADE")
                     stmt.execute("CREATE SCHEMA ap3_rt")

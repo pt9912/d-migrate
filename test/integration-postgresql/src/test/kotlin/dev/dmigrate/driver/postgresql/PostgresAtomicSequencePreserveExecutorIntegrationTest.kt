@@ -1,5 +1,9 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -82,13 +86,13 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         )
 
         conn().use { c ->
-            val result = executor.execute(c, batch, lockTimeoutMillis = 5_000) { protectedConn, ops ->
+            val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 5_000) { protectedConn, ops ->
                 ops shouldBe listOf(protectedOpId)
                 // Protected op: bump the sequence further so the
                 // *restore* statement undoes the advance and pins
                 // the probed value back. After commit the next
                 // `nextval` returns `probedValue + increment`.
-                protectedConn.createStatement().use { s ->
+                protectedConn.asJdbc().createStatement().use { s ->
                     s.execute("SELECT nextval('atom_seq_a')")
                 }
                 AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 1)
@@ -130,7 +134,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         )
 
         conn().use { c ->
-            val result = executor.execute(c, batch, lockTimeoutMillis = 5_000) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 5_000) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
             }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
@@ -153,7 +157,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             internalFollowUpIds = emptyList(),
         )
         conn().use { c ->
-            val result = executor.execute(c, batch, lockTimeoutMillis = 1_000) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 1_000) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(0)
             }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.NotFound>()
@@ -205,7 +209,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                 internalFollowUpIds = emptyList(),
             )
             conn().use { c ->
-                val result = executor.execute(c, batch, lockTimeoutMillis = 500) { _, _ ->
+                val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 500) { _, _ ->
                     AtomicProtectedExecutionResult.Succeeded(0)
                 }
                 result.shouldBeInstanceOf<AtomicSequencePreserveResult.LockTimeout>()
@@ -238,7 +242,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         )
         conn().use { c ->
             c.autoCommit shouldBe true
-            val result = executor.execute(c, batch, lockTimeoutMillis = 5_000) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 5_000) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(0)
             }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
@@ -275,7 +279,7 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         conn().use { c ->
             c.autoCommit shouldBe true
             val result = executor.execute(
-                connection = c,
+                connection = JdbcDatabaseConnection(c),
                 batch = batch,
                 lockTimeoutMillis = 5_000,
                 cancellationToken = tokenSource.token,
@@ -316,12 +320,12 @@ class PostgresAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
 
         conn().use { c ->
             val result = executor.execute(
-                connection = c,
+                connection = JdbcDatabaseConnection(c),
                 batch = batch,
                 lockTimeoutMillis = 5_000,
                 cancellationToken = tokenSource.token,
                 executeProtectedOperations = { protectedConn, _ ->
-                    protectedConn.createStatement().use { it.execute("SELECT nextval('atom_seq_cancel_mid')") }
+                    protectedConn.asJdbc().createStatement().use { it.execute("SELECT nextval('atom_seq_cancel_mid')") }
                     tokenSource.cancel("post-protected-test-cancel")
                     AtomicProtectedExecutionResult.Succeeded(1)
                 },

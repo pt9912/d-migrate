@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.DatabaseDialect
@@ -43,7 +45,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             )
         )
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("CREATE TABLE writer_users (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
                 stmt.execute(
@@ -72,7 +74,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
     }
 
     beforeTest {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     """
@@ -129,7 +131,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             )
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id, name FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val rows = mutableListOf<Pair<Long, String>>()
@@ -166,7 +168,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val ids = mutableListOf<Long>()
@@ -212,7 +214,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val ids = mutableListOf<Long>()
@@ -246,7 +248,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO writer_identity_always (name) VALUES ('next')")
             }
@@ -275,7 +277,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT payload::text FROM writer_jsonb_target").use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true
@@ -298,7 +300,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT span::text FROM writer_interval_target").use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true
@@ -321,7 +323,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement(
                 "SELECT id, current_mood::text FROM writer_enum_target ORDER BY id"
             ).use { ps ->
@@ -337,7 +339,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
     }
 
     test("onConflict update upserts rows and reports inserted vs updated") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO writer_upsert_target (id, name) VALUES (1, 'old')")
             }
@@ -365,7 +367,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id, name FROM writer_upsert_target ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val rows = mutableListOf<Pair<Long, String>>()
@@ -403,7 +405,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
     }
 
     test("truncate deletes pre-existing rows before import") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("INSERT INTO writer_users (id, name) VALUES (?, ?)").use { ps ->
                 ps.setInt(1, 99)
                 ps.setString(2, "pre-existing")
@@ -423,7 +425,7 @@ class PostgresDataWriterIntegrationTest : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id, name FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val rows = mutableListOf<Pair<Int, String>>()

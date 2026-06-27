@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql.profiling
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -49,7 +51,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
             params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
         val pool = HikariConnectionPoolFactory.create(config)
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("""
                     CREATE TABLE users (
@@ -184,7 +186,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
 
     test("security: table with embedded backtick is profiled safely") {
         pool().use { p ->
-            p.borrow().createStatement().use { stmt ->
+            p.borrow().asJdbc().createStatement().use { stmt ->
                 stmt.execute("CREATE TABLE `my``table` (`col``1` TEXT, `val` INT)")
                 stmt.execute("INSERT INTO `my``table` VALUES ('a', 1)")
             }
@@ -196,7 +198,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
 
     test("security: table named with reserved word is profiled safely") {
         pool().use { p ->
-            p.borrow().createStatement().use { stmt ->
+            p.borrow().asJdbc().createStatement().use { stmt ->
                 stmt.execute("CREATE TABLE `select` (`where` TEXT, `from` INT)")
                 stmt.execute("INSERT INTO `select` VALUES ('x', 42)")
             }
@@ -208,7 +210,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
 
     test("security: semicolon-injection attempt does not corrupt database") {
         pool().use { p ->
-            p.borrow().createStatement().use { stmt ->
+            p.borrow().asJdbc().createStatement().use { stmt ->
                 stmt.execute("CREATE TABLE `users; DROP TABLE users --` (`id` INT)")
                 stmt.execute("INSERT INTO `users; DROP TABLE users --` VALUES (1)")
             }

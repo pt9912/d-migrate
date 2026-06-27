@@ -1,5 +1,9 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -99,8 +103,8 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                 internalFollowUpIds = listOf("op-atom_seq_a"),
             )
             openConnection(dbFile).use { c ->
-                val result = executor.execute(c, batch, lockTimeoutMillis = 5_000) { protectedConn, _ ->
-                    protectedConn.createStatement().use { s ->
+                val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 5_000) { protectedConn, _ ->
+                    protectedConn.asJdbc().createStatement().use { s ->
                         s.execute("UPDATE \"dmg_sequences\" SET \"next_value\" = 999 WHERE \"name\" = 'atom_seq_a'")
                     }
                     AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 1)
@@ -136,7 +140,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                 internalFollowUpIds = listOf("op-multi"),
             )
             openConnection(dbFile).use { c ->
-                val result = executor.execute(c, batch, lockTimeoutMillis = 5_000) { _, _ ->
+                val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 5_000) { _, _ ->
                     AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
                 }
                 result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
@@ -162,7 +166,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                 internalFollowUpIds = emptyList(),
             )
             openConnection(dbFile).use { c ->
-                val result = executor.execute(c, batch, lockTimeoutMillis = 1_000) { _, _ ->
+                val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 1_000) { _, _ ->
                     AtomicProtectedExecutionResult.Succeeded(0)
                 }
                 result.shouldBeInstanceOf<AtomicSequencePreserveResult.NotFound>()
@@ -194,7 +198,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                         internalFollowUpIds = emptyList(),
                     )
                     openConnection(dbFile).use { c ->
-                        val result = executor.execute(c, batch, lockTimeoutMillis = 200) { _, _ ->
+                        val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 200) { _, _ ->
                             AtomicProtectedExecutionResult.Succeeded(0)
                         }
                         result.shouldBeInstanceOf<AtomicSequencePreserveResult.LockTimeout>()
@@ -234,7 +238,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                     }
                 }
                 before shouldBe 7777L
-                val result = executor.execute(c, batch, lockTimeoutMillis = 1_000) { _, _ ->
+                val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 1_000) { _, _ ->
                     AtomicProtectedExecutionResult.Succeeded(0)
                 }
                 result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
@@ -275,7 +279,7 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
 
             openConnection(dbFile).use { c ->
                 val result = executor.execute(
-                    connection = c,
+                    connection = JdbcDatabaseConnection(c),
                     batch = batch,
                     lockTimeoutMillis = 5_000,
                     cancellationToken = tokenSource.token,
@@ -312,12 +316,12 @@ class SqliteAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
 
             openConnection(dbFile).use { c ->
                 val result = executor.execute(
-                    connection = c,
+                    connection = JdbcDatabaseConnection(c),
                     batch = batch,
                     lockTimeoutMillis = 5_000,
                     cancellationToken = tokenSource.token,
                     executeProtectedOperations = { protectedConn, _ ->
-                        protectedConn.createStatement().use {
+                        protectedConn.asJdbc().createStatement().use {
                             it.execute("UPDATE \"dmg_sequences\" SET \"next_value\" = 999 WHERE \"name\" = 'atom_seq_cancel_mid'")
                         }
                         tokenSource.cancel("post-protected-test-cancel")

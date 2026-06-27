@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import com.mysql.cj.conf.PropertyKey
 import com.mysql.cj.jdbc.JdbcConnection
 import dev.dmigrate.core.data.ColumnDescriptor
@@ -47,7 +49,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
             )
         )
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "CREATE TABLE writer_users (" +
@@ -112,7 +114,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
     }
 
     beforeTest {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("SET FOREIGN_KEY_CHECKS = 0")
                 stmt.execute("DELETE FROM writer_users")
@@ -145,7 +147,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
     )
 
     fun lowerCaseTableNames(): Int =
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("SELECT @@lower_case_table_names").use { rs ->
                     rs.next() shouldBe true
@@ -158,7 +160,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
 
 
     test("onConflict skip reports inserted vs skipped") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO writer_upsert_target (id, name) VALUES (1, 'existing')")
             }
@@ -238,7 +240,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("SELECT @@FOREIGN_KEY_CHECKS").use { rs ->
                     rs.next() shouldBe true
@@ -249,7 +251,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
     }
 
     test("onConflict update counts updates for conflicts on secondary unique keys") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "INSERT INTO writer_unique_target (id, email, name) VALUES (1, 'a@example.com', 'old')"
@@ -276,7 +278,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id, email, name FROM writer_unique_target").use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true
@@ -289,7 +291,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
     }
 
     test("rewriteBatchedStatements is enabled for writer connection") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             val unwrapped = conn.unwrap(JdbcConnection::class.java)
             unwrapped.propertySet
                 .getBooleanProperty(PropertyKey.rewriteBatchedStatements)
@@ -341,7 +343,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
 
     test("truncate deletes pre-existing rows before import") {
         // Seed pre-existing data
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("INSERT INTO writer_users (id, name) VALUES (?, ?)").use { ps ->
                 ps.setInt(1, 99)
                 ps.setString(2, "pre-existing")
@@ -361,7 +363,7 @@ class MysqlDataWriterIntegrationTestPart2 : FunSpec({
             session.finishTable()
         }
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id, name FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val rows = mutableListOf<Pair<Int, String>>()

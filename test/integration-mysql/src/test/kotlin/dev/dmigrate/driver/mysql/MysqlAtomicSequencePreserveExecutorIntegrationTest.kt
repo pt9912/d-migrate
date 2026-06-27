@@ -1,5 +1,9 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.core.model.SchemaDefinition
@@ -109,10 +113,10 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
         )
 
         conn().use { c ->
-            val result = executor.execute(c, batch, lockTimeoutMillis = 5_000) { protectedConn, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 5_000) { protectedConn, _ ->
                 // Protected op: advance the helper-table further so
                 // the *restore* statement undoes the advance.
-                protectedConn.createStatement().use { s ->
+                protectedConn.asJdbc().createStatement().use { s ->
                     s.execute("UPDATE `dmg_sequences` SET `next_value` = 999 WHERE `name` = 'atom_seq_a'")
                 }
                 AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 1)
@@ -144,7 +148,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             internalFollowUpIds = emptyList(),
         )
         conn().use { c ->
-            val result = executor.execute(c, batch, lockTimeoutMillis = 1_000) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 1_000) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(0)
             }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.NotFound>()
@@ -192,7 +196,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
             conn().use { c ->
                 // 1 s is the MySQL minimum; the holder above blocks
                 // us, so we time out and surface LockTimeout.
-                val result = executor.execute(c, batch, lockTimeoutMillis = 1_000) { _, _ ->
+                val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 1_000) { _, _ ->
                     AtomicProtectedExecutionResult.Succeeded(0)
                 }
                 result.shouldBeInstanceOf<AtomicSequencePreserveResult.LockTimeout>()
@@ -230,7 +234,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
                     rs.next(); rs.getLong(1)
                 }
             }
-            val result = executor.execute(c, batch, lockTimeoutMillis = 1_000) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(c), batch, lockTimeoutMillis = 1_000) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(0)
             }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
@@ -268,7 +272,7 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
 
         conn().use { c ->
             val result = executor.execute(
-                connection = c,
+                connection = JdbcDatabaseConnection(c),
                 batch = batch,
                 lockTimeoutMillis = 5_000,
                 cancellationToken = tokenSource.token,
@@ -303,12 +307,12 @@ class MysqlAtomicSequencePreserveExecutorIntegrationTest : FunSpec({
 
         conn().use { c ->
             val result = executor.execute(
-                connection = c,
+                connection = JdbcDatabaseConnection(c),
                 batch = batch,
                 lockTimeoutMillis = 5_000,
                 cancellationToken = tokenSource.token,
                 executeProtectedOperations = { protectedConn, _ ->
-                    protectedConn.createStatement().use {
+                    protectedConn.asJdbc().createStatement().use {
                         it.execute("UPDATE `dmg_sequences` SET `next_value` = 999 WHERE `name` = 'atom_seq_cancel_mid'")
                     }
                     tokenSource.cancel("post-protected-test-cancel")

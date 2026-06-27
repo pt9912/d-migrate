@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
@@ -57,7 +59,7 @@ class MysqlPartitionPkDdlIntegrationTest : FunSpec({
 
     fun executeDdl(schema: SchemaDefinition) {
         val ddl = generator.generate(schema)
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 for (s in ddl.statements) {
                     if (s.sql.isNotBlank()) stmt.execute(s.sql)
