@@ -7,6 +7,8 @@ import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -71,13 +73,13 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
         internalFollowUpIds = emptyList(),
     )
 
-    val succeedProtected = { _: Connection, _: List<*> ->
+    val succeedProtected = { _: DatabaseConnection, _: List<*> ->
         AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
     }
 
     test("applied: BEGIN IMMEDIATE → probe Read → protected ops → restore → COMMIT") {
         val result = executor.execute(
-            connection = conn,
+            connection = JdbcDatabaseConnection(conn),
             batch = batchFor(),
             lockTimeoutMillis = 5_000L,
             executeProtectedOperations = { c, ids -> succeedProtected(c, ids) },
@@ -87,7 +89,7 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
 
     test("probe NotFound when the helper-table row is absent → NotFound + rollback") {
         val result = executor.execute(
-            connection = conn,
+            connection = JdbcDatabaseConnection(conn),
             batch = batchFor("absent_seq"),
             lockTimeoutMillis = 5_000L,
             executeProtectedOperations = { c, ids -> succeedProtected(c, ids) },
@@ -97,7 +99,7 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
 
     test("protected-operation exception → Failed with rollback") {
         val result = executor.execute(
-            connection = conn,
+            connection = JdbcDatabaseConnection(conn),
             batch = batchFor(),
             lockTimeoutMillis = 5_000L,
             executeProtectedOperations = { _, _ -> throw IllegalStateException("boom") },
@@ -109,7 +111,7 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
         val source = CancellationTokenSource.create()
         source.cancel("test-cancel")
         val result = executor.execute(
-            connection = conn,
+            connection = JdbcDatabaseConnection(conn),
             batch = batchFor(),
             lockTimeoutMillis = 5_000L,
             cancellationToken = source.token,
@@ -124,7 +126,7 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
             blocker.autoCommit = true
             blocker.createStatement().use { it.execute("BEGIN IMMEDIATE") }
             val result = executor.execute(
-                connection = conn,
+                connection = JdbcDatabaseConnection(conn),
                 batch = batchFor(),
                 lockTimeoutMillis = 100L,
                 executeProtectedOperations = { c, ids -> succeedProtected(c, ids) },
@@ -138,7 +140,7 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
 
     test("empty batch short-circuits to Applied before the owner check") {
         val result = executor.execute(
-            connection = conn,
+            connection = JdbcDatabaseConnection(conn),
             batch = AtomicSequencePreserveBatch(
                 requests = emptyList(),
                 protectedOperationIds = emptyList(),
@@ -153,7 +155,7 @@ class SqliteAtomicSequencePreserveExecutorTest : FunSpec({
     test("non-positive lockTimeoutMillis is rejected") {
         shouldThrow<IllegalArgumentException> {
             executor.execute(
-                connection = conn,
+                connection = JdbcDatabaseConnection(conn),
                 batch = batchFor(),
                 lockTimeoutMillis = 0L,
                 executeProtectedOperations = { c, ids -> succeedProtected(c, ids) },

@@ -2,6 +2,8 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.ProtectedOperationId
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.MigrationExecutionStatementGroup
@@ -12,7 +14,6 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import dev.dmigrate.driver.migration.preserve.ExecutableSegment
 import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import java.nio.file.Path
-import java.sql.Connection
 
 /**
  * Functional signature of the plain-segment executor — same shape as
@@ -35,7 +36,7 @@ internal typealias AtomicRunnerFn = (
     target: CompareOperand.Database,
     configPath: Path?,
     batch: AtomicSequencePreserveBatch,
-    executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+    executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     lockTimeoutMillis: Long,
     cancellationToken: CancellationToken,
 ) -> AtomicSequencePreserveResult
@@ -140,8 +141,9 @@ internal object SegmentAwareMigrationExecutor {
         val protectedStatements = segment.statements.filter { stmt ->
             stmt.operationIds.none { it in followUpIds }
         }
-        val executeProtectedOps: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
-            { connection, _ ->
+        val executeProtectedOps: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
+            { databaseConnection, _ ->
+                val connection = databaseConnection.asJdbc()
                 for (stmt in protectedStatements) {
                     connection.createStatement().use { it.execute(stmt.sql) }
                 }
@@ -225,7 +227,7 @@ internal object SegmentAwareMigrationExecutor {
         target: CompareOperand.Database,
         configPath: Path?,
         batch: AtomicSequencePreserveBatch,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         lockTimeoutMillis: Long,
         cancellationToken: CancellationToken,
     ): AtomicSequencePreserveResult = AtomicSequencePreserveRunner.execute(

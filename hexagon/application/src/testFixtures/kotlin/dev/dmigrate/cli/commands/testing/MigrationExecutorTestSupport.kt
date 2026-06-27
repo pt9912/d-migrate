@@ -285,16 +285,17 @@ private fun runAtomicSegmentAgainstPool(
     val protectedStatements = segment.statements.filter { stmt ->
         stmt.operationIds.none { it in followUpIds }
     }
-    val executeProtectedOps: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
-        { connection, _ ->
+    val executeProtectedOps: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
+        { databaseConnection, _ ->
+            val connection = databaseConnection.jdbc()
             for (stmt in protectedStatements) {
                 connection.createStatement().use { it.execute(stmt.sql) }
             }
             AtomicProtectedExecutionResult.Succeeded(statementsExecuted = protectedStatements.size)
         }
-    val result = pool.borrow().jdbc().use { conn ->
+    val result = pool.borrow().use { handle ->
         atomicExecutor.execute(
-            connection = conn,
+            connection = handle,
             batch = segment.batch,
             lockTimeoutMillis = lockTimeoutMillis,
             executeProtectedOperations = executeProtectedOps,

@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment
@@ -212,7 +213,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             atomicRunner = { _, _, _, executeProtectedOps, _, _ ->
                 // Invoke the runner-built callback against our mocked
                 // connection to verify the filter.
-                val result = executeProtectedOps(conn, segment.batch.protectedOperationIds)
+                val result = executeProtectedOps(JdbcDatabaseConnection(conn), segment.batch.protectedOperationIds)
                 result shouldBe AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 1)
                 AtomicSequencePreserveResult.Applied(listOf(pgSeq))
             },

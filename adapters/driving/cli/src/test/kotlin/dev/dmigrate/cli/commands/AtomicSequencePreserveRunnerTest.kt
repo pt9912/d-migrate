@@ -16,6 +16,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import dev.dmigrate.driver.connection.DatabaseConnection
 import java.sql.Connection
 
 /**
@@ -40,7 +41,7 @@ class AtomicSequencePreserveRunnerTest : FunSpec({
         protectedOperationIds = emptyList(),
         internalFollowUpIds = emptyList(),
     )
-    val noopExecuteProtectedOps: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
+    val noopExecuteProtectedOps: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
         { _, _ -> AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0) }
 
     fun fakeAcquireFor(dialect: DatabaseDialect, conn: Connection): AtomicSequencePreserveRunner.AcquiredPool {

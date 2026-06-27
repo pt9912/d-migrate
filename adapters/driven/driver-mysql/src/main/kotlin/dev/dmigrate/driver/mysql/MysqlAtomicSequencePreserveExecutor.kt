@@ -10,6 +10,9 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 import java.sql.SQLException
 
@@ -56,11 +59,11 @@ import java.sql.SQLException
 class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
 
     override fun execute(
-        connection: Connection,
+        connection: DatabaseConnection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
         cancellationToken: CancellationToken,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult {
         require(lockTimeoutMillis > 0) {
             "lockTimeoutMillis must be > 0, was $lockTimeoutMillis"
@@ -81,49 +84,50 @@ class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
             return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
         }
 
-        val previousAutoCommit = connection.autoCommit
-        val previousLockWaitTimeout = readLockWaitTimeout(connection)
-        applyLockWaitTimeout(connection, ceilDivToSeconds(lockTimeoutMillis))
-        connection.autoCommit = false
+        val jdbc = connection.asJdbc()
+        val previousAutoCommit = jdbc.autoCommit
+        val previousLockWaitTimeout = readLockWaitTimeout(jdbc)
+        applyLockWaitTimeout(jdbc, ceilDivToSeconds(lockTimeoutMillis))
+        jdbc.autoCommit = false
         try {
             val probeResults = mutableMapOf<SequenceObjectRef, SequenceCurrentValueProbeResult.Read>()
             for (request in sortedRequests) {
                 val ref = request.sequenceRef
-                lockAndProbe(connection, ref, probeResults)?.let { earlyExit -> return earlyExit }
+                lockAndProbe(jdbc, ref, probeResults)?.let { earlyExit -> return earlyExit }
             }
             // Service-Mode Sub-Slice E checkpoint 2: rollback
             // releases the `SELECT … FOR UPDATE` row-locks acquired
             // above on `dmg_sequences`.
             if (cancellationToken.isCancellationRequested) {
-                runCatching { connection.rollback() }
+                runCatching { jdbc.rollback() }
                 return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
             }
-            runProtected(connection, batch.protectedOperationIds, executeProtectedOperations, sortedRefs)
+            runProtected(jdbc, batch.protectedOperationIds, executeProtectedOperations, sortedRefs)
                 ?.let { earlyExit -> return earlyExit }
             // Service-Mode Sub-Slice E checkpoint 3: rollback undoes
             // the protected-operation statements so `dmg_sequences`
             // and any sequence-bearing tables are unchanged after
             // the caller-observed cancellation.
             if (cancellationToken.isCancellationRequested) {
-                runCatching { connection.rollback() }
+                runCatching { jdbc.rollback() }
                 return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
             }
             for (request in sortedRequests) {
-                restore(connection, request, probeResults.getValue(request.sequenceRef))
+                restore(jdbc, request, probeResults.getValue(request.sequenceRef))
                     ?.let { earlyExit -> return earlyExit }
             }
-            connection.commit()
+            jdbc.commit()
             return AtomicSequencePreserveResult.Applied(sortedRefs)
         } catch (e: Throwable) {
-            runCatching { connection.rollback() }
+            runCatching { jdbc.rollback() }
             return AtomicSequencePreserveResult.Failed(sortedRefs.first(), e)
         } finally {
             // `SET SESSION` persists across the transaction — restore
             // the prior value so the next pool borrow inherits clean
             // state, matching the plan-doc §6 Risk-6 mitigation
             // ("Session-Timeout-Leak").
-            runCatching { applyLockWaitTimeout(connection, previousLockWaitTimeout) }
-            runCatching { connection.autoCommit = previousAutoCommit }
+            runCatching { applyLockWaitTimeout(jdbc, previousLockWaitTimeout) }
+            runCatching { jdbc.autoCommit = previousAutoCommit }
         }
     }
 
@@ -198,11 +202,11 @@ class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
     private fun runProtected(
         connection: Connection,
         protectedOperationIds: List<ProtectedOperationId>,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         sortedRefs: List<SequenceObjectRef>,
     ): AtomicSequencePreserveResult? {
         return try {
-            executeProtectedOperations(connection, protectedOperationIds)
+            executeProtectedOperations(JdbcDatabaseConnection(connection), protectedOperationIds)
             null
         } catch (e: Throwable) {
             connection.rollback()

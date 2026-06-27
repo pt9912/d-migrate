@@ -3,6 +3,7 @@ package dev.dmigrate.driver.migration.preserve
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
+import dev.dmigrate.driver.connection.DatabaseConnection
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -87,14 +88,14 @@ class AtomicSequencePreserveContractTest : FunSpec({
     }
 
     test("requireOwnedConnection accepts an autocommit=true connection") {
-        val owned = mockk<java.sql.Connection>(relaxed = true)
+        val owned = mockk<DatabaseConnection>(relaxed = true)
         every { owned.autoCommit } returns true
         // Should not throw.
         AtomicSequencePreserveExecutor.requireOwnedConnection(owned)
     }
 
     test("requireOwnedConnection throws IllegalStateException for an enclosing transaction") {
-        val enclosed = mockk<java.sql.Connection>(relaxed = true)
+        val enclosed = mockk<DatabaseConnection>(relaxed = true)
         every { enclosed.autoCommit } returns false
         val ex = shouldThrow<IllegalStateException> {
             AtomicSequencePreserveExecutor.requireOwnedConnection(enclosed)

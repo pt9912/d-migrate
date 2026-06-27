@@ -5,19 +5,18 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
-import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.ConnectionUrlParser
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import java.nio.file.Path
-import java.sql.Connection
 
 /**
  * Atomic-Preserve Phase C.4 (2026-06-01): CLI-side runner that
- * allocates a dedicated, owned JDBC [Connection] for an
+ * allocates a dedicated, owned [DatabaseConnection] for an
  * `AtomicPreserveSegment` and dispatches the work to the dialect-
  * specific [AtomicSequencePreserveExecutor].
  *
@@ -60,7 +59,7 @@ internal object AtomicSequencePreserveRunner {
         target: CompareOperand.Database,
         configPath: Path?,
         batch: AtomicSequencePreserveBatch,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS,
         cancellationToken: CancellationToken = CancellationToken.none(),
         dispatcher: (DatabaseDialect) -> AtomicSequencePreserveExecutor =
@@ -73,8 +72,8 @@ internal object AtomicSequencePreserveRunner {
         val acquired = acquireConnection(target, configPath)
         val executor = dispatcher(acquired.dialect)
         return acquired.pool.use { pool ->
-            pool.borrow().asJdbc().use { conn ->
-                executor.execute(conn, batch, lockTimeoutMillis, cancellationToken, executeProtectedOperations)
+            pool.borrow().use { handle ->
+                executor.execute(handle, batch, lockTimeoutMillis, cancellationToken, executeProtectedOperations)
             }
         }
     }

@@ -4,7 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
-import java.sql.Connection
+import dev.dmigrate.driver.connection.DatabaseConnection
 
 /**
  * Atomic-Preserve Phase B (2026-05-31): execute-time orchestration
@@ -62,11 +62,11 @@ interface AtomicSequencePreserveExecutor {
      * [dev.dmigrate.cli.commands.SegmentAwareExecutorFn] lambda.
      */
     fun execute(
-        connection: Connection,
+        connection: DatabaseConnection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
         cancellationToken: CancellationToken = CancellationToken.none(),
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult
 
     companion object {
@@ -86,7 +86,7 @@ interface AtomicSequencePreserveExecutor {
          * `Failed` would let the runner translate it into a planner
          * blocker, masking the real wiring problem.
          */
-        fun requireOwnedConnection(connection: Connection) {
+        fun requireOwnedConnection(connection: DatabaseConnection) {
             check(connection.autoCommit) {
                 "AtomicSequencePreserveExecutor requires an owned, " +
                     "non-enclosed connection (autoCommit=true at " +
