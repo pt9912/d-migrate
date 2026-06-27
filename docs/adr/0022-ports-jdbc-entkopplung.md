@@ -10,7 +10,7 @@ informed: hexagon/ports-common, hexagon/ports-execute, adapters/driven/driver-co
 
 > **Status: accepted (2026-06-27).** Mechanismus **Option A** (neutrales `DatabaseConnection`,
 > JDBC-Impl im Adapter) ratifiziert. Die Umsetzung samt Phasen liegt im Slice
-> [`../planning/next/ports-jdbc-entkopplung.md`](../planning/next/ports-jdbc-entkopplung.md).
+> [`../planning/in-progress/ports-jdbc-entkopplung.md`](../planning/in-progress/ports-jdbc-entkopplung.md).
 
 ## Kontext und Problemstellung
 

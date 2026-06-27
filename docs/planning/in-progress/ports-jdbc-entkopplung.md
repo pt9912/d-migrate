@@ -1,8 +1,12 @@
 # Ports-JDBC-Entkopplung: `java.sql` aus `ports-common`/`ports-execute` entfernen
 
-> **Status:** Draft mit Scope (Entwurf, 2026-06-27). Aktiv (→ `../in-progress/`) beim ersten
-> Implementierungs-Commit. **Entscheidungsgrundlage:**
+> **Status:** In Progress (2026-06-27). **Entscheidungsgrundlage:**
 > [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) (accepted, Option A).
+>
+> **Phasen-Fortschritt:** **P1 erledigt** — neutrales `DatabaseConnection` in
+> `hexagon:ports-common` + `JdbcDatabaseConnection`/`asJdbc` in `driver-common` + Kotest-Test
+> gegen echte SQLite-Connection; `docker-check` beider Module grün (frischer Compile, Test,
+> Detekt, Kover ≥ 90 %). Additiv, keine Signaturänderung. **P2–P4 offen.**
 
 ## 1. Ziel
 
