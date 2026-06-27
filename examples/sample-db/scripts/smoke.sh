@@ -54,7 +54,11 @@ psql_db() {  # psql_db <db> <on_error_stop:0|1> [extra psql args...]
     local db="$1" oes="$2"; shift 2
     $COMPOSE exec -T postgres psql -v ON_ERROR_STOP="$oes" -U "$POSTGRES_USER" -d "$db" "$@"
 }
-count_rows() { psql_db "$1" 0 -tAc "SELECT count(*) FROM \"$2\"" 2>/dev/null | tr -d '[:space:]'; }
+# `</dev/null`: count_rows läuft in der `while read … done <<< "$list"`-Paritätsschleife;
+# `docker compose exec` (in psql_db) würde sonst das Here-String von stdin schlucken und die
+# Schleife nach der 1. Iteration abbrechen (False-Green — bisher als „all 1 tables" maskiert).
+# psql_db selbst behält stdin (Pre-Data-DDL via `< *.sql`) — Redirektion daher nur hier.
+count_rows() { psql_db "$1" 0 -tAc "SELECT count(*) FROM \"$2\"" </dev/null 2>/dev/null | tr -d '[:space:]'; }
 
 # --- 1. Stack hoch + healthy ---------------------------------------
 log "starting postgres..."

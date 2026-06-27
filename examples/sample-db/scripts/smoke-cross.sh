@@ -56,8 +56,12 @@ export SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)"
 
 mysql_root() { $COMPOSE exec -T mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N "$@" 2>/dev/null; }
 psql_t()     { $COMPOSE exec -T postgres psql -v ON_ERROR_STOP="$2" -U "$POSTGRES_USER" -d "$1" "${@:3}"; }
-pg_val()     { $COMPOSE exec -T postgres psql -U "$POSTGRES_USER" -d sakila_target -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
-my_val()     { mysql_root -e "$1" | tr -d '[:space:]'; }
+# `</dev/null` ist kein Schmuck: diese Value-Helfer laufen in `while read … done <<< "$list"`-
+# Schleifen; `docker compose exec` würde sonst das Here-String der Schleife von stdin schlucken
+# und nach der 1. Iteration abbrechen (False-Green / Generator-Schluck, vgl. F1). mysql_root/psql_t
+# behalten stdin (Dump-Load via `< dump.sql`) — daher die Redirektion nur hier, nicht dort.
+pg_val()     { $COMPOSE exec -T postgres psql -U "$POSTGRES_USER" -d sakila_target -tAc "$1" </dev/null 2>/dev/null | tr -d '[:space:]'; }
+my_val()     { mysql_root -e "$1" </dev/null | tr -d '[:space:]'; }
 
 wait_healthy() {  # wait_healthy <service> <timeout_s>
     local svc="$1" to="$2" deadline st
