@@ -56,4 +56,4 @@ und **nicht** betroffen.
 - Neutrales-Modell-Vertrag: [`../../../spec/neutral-model-spec.md`](../../../spec/neutral-model-spec.md).
 - Carve-Out-Tracker: [`../in-progress/carveout.md`](../in-progress/carveout.md), Abschnitt 8.
 - Strukturell verwandter (eigener) Slice:
-  [`fulltext-structural-cross-dialect.md`](fulltext-structural-cross-dialect.md).
+  [`../next/fulltext-structural-cross-dialect.md`](../next/fulltext-structural-cross-dialect.md).
