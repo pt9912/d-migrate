@@ -1,4 +1,4 @@
-# Ports-JDBC-Entkopplung: `java.sql` aus `ports-common`/`ports-execute` entfernen
+# Ports-JDBC-Entkopplung: `java.sql` aus `ports-common`/`ports-execute`/`ports-write` entfernen
 
 > **Status:** In Progress (2026-06-27). **Entscheidungsgrundlage:**
 > [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) (accepted, Option A).
@@ -6,14 +6,20 @@
 > **Phasen-Fortschritt:** **P1 erledigt** — neutrales `DatabaseConnection` in
 > `hexagon:ports-common` + `JdbcDatabaseConnection`/`asJdbc` in `driver-common` + Kotest-Test
 > gegen echte SQLite-Connection; `docker-check` beider Module grün (frischer Compile, Test,
-> Detekt, Kover ≥ 90 %). Additiv, keine Signaturänderung. **P2–P4 offen.**
+> Detekt, Kover ≥ 90 %). Additiv, keine Signaturänderung. **P2–P5 offen.**
+>
+> **Scope-Korrektur (2026-06-27, P1-Review):** `ports-write` (`SchemaSync`,
+> `TriggerManagement`) leakt `java.sql.Connection` ebenfalls und ist von ADR 0022 (Punkt 1)
+> mitgemeint — als eigene Phase P4 nachgezogen; die Fitness-Function (jetzt P5) auf `hexagon/ports*`
+> deckte die Lücke auf (hätte sonst dort failed).
 
 ## 1. Ziel
 
-Die Hexagon-Ports-Schicht von JDBC befreien: `hexagon:ports-common` und `hexagon:ports-execute`
-exponieren heute `java.sql.Connection`; nach diesem Slice tun sie es nicht mehr. JDBC lebt nur
-noch in den Adaptern. Umgesetzt über das neutrale `DatabaseConnection` (ADR 0022), das das in
-`spec/hexagonal-port.md` (D4) ursprünglich vorgesehene Soll endlich realisiert.
+Die Hexagon-Ports-Schicht von JDBC befreien: `hexagon:ports-common`, `hexagon:ports-execute` **und
+`hexagon:ports-write`** exponieren heute `java.sql.Connection`; nach diesem Slice tun sie es nicht
+mehr. JDBC lebt nur noch in den Adaptern. Umgesetzt über das neutrale `DatabaseConnection`
+(ADR 0022), das das in `spec/hexagonal-port.md` (D4) ursprünglich vorgesehene Soll endlich
+realisiert.
 
 ## 2. Hintergrund (Ist-Stand im Code)
 
@@ -26,6 +32,13 @@ noch in den Adaptern. Umgesetzt über das neutrale `DatabaseConnection` (ADR 002
   nimmt eine `Connection`, fährt BEGIN/COMMIT/ROLLBACK (über `autoCommit`), führt gerenderte
   Statements aus und resettet Session-Settings im `finally`. `requireOwnedConnection(connection)`
   prüft `autoCommit`. Der Contract-Test mockt heute `mockk<java.sql.Connection>`.
+- **Leak 3 — Write-Ports (Signatur-Parameter):** in `hexagon:ports-write` nehmen
+  [`SchemaSync.kt`](../../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/driver/data/SchemaSync.kt)
+  (`conn: Connection`) und
+  [`TriggerManagement.kt`](../../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/driver/data/TriggerManagement.kt)
+  (`disableTriggers`/`assertNoUserTriggers`/`enableTriggers(conn: Connection, …)`) eine rohe
+  `java.sql.Connection`. Vom P1-Review aufgedeckt; ADR 0022 (Punkt 1) listet `-write` mit.
+  (`ports-read`/`ports` sind bereits JDBC-frei — geprüft.)
 - **`ConnectionPool` ist Vertragswährung** der Datenports — `SchemaReader`/`DataReader`/
   `DataWriter`/`TableLister` nehmen alle `pool: ConnectionPool`. Darum wird der Pool **nicht**
   verlagert, sondern nur sein Rückgabetyp neutralisiert (ADR 0022, Option B verworfen).
@@ -37,7 +50,7 @@ noch in den Adaptern. Umgesetzt über das neutrale `DatabaseConnection` (ADR 002
 - Neues `DatabaseConnection`-Interface in `hexagon:ports-common` (minimale Fähigkeiten).
 - `JdbcDatabaseConnection`-Adapter (Hikari-Wrapper) in `adapters/driven/driver-common`.
 - Signatur-Umstellung `ConnectionPool.borrow()` + `AtomicSequencePreserveExecutor` (+ Callback +
-  `requireOwnedConnection`).
+  `requireOwnedConnection`) + `SchemaSync`/`TriggerManagement` (`ports-write`).
 - Adapter-Konsumenten an das Unwrap im Adapter umstellen; Contract-Tests umstellen.
 - Architektur-Fitness-Function, die `java.sql` in `hexagon/ports*` künftig verbietet.
 
@@ -62,16 +75,21 @@ noch in den Adaptern. Umgesetzt über das neutrale `DatabaseConnection` (ADR 002
   (`mockk<java.sql.Connection>` → `mockk<DatabaseConnection>`). **DoD:**
   `grep -r "java.sql" hexagon/ports-execute/src` leer; Contract-Test grün; Verhalten unverändert
   (BEGIN/COMMIT/ROLLBACK-Pfade, Lock-Timeout-`finally`, Owned-Connection-Check).
-- **P4 — Verriegeln (Fitness-Function).** Eine Detekt-`ForbiddenImport`-Regel (oder ein
+- **P4 — Write-Ports umstellen.** `SchemaSync` und `TriggerManagement` (`hexagon:ports-write`) von
+  `java.sql.Connection` auf `DatabaseConnection` umstellen; die Implementierungen (driver-`*`)
+  unwrappen via `asJdbc()`, die Aufrufer reichen das neutrale Handle. **DoD:**
+  `grep -r "java.sql" hexagon/ports-write/src` leer; Build + betroffene Adapter-/Tests grün;
+  Verhalten unverändert.
+- **P5 — Verriegeln (Fitness-Function).** Eine Detekt-`ForbiddenImport`-Regel (oder ein
   `consumer-read-probe`-artiger Test), die `java.sql.*` in `hexagon/ports*` als Verstoß meldet —
-  damit der Leak nicht zurückkehrt. **DoD:** Regel aktiv, Gate grün; ein bewusst eingefügter
-  Test-Verstoß failt.
+  damit der Leak nicht zurückkehrt. Greift erst grün, wenn P2–P4 alle Ports gesäubert haben.
+  **DoD:** Regel aktiv, Gate grün; ein bewusst eingefügter Test-Verstoß failt.
 
 ## 5. Akzeptanzkriterien
 
-- `grep -rl "java.sql" hexagon/ports-common hexagon/ports-execute` ist **leer** (main **und**
-  test).
-- Build, Detekt, Kover (≥ 90 % pro Modul) grün; die Architektur-Fitness-Function (P4) grün und
+- `grep -rl "java.sql" hexagon/ports-common hexagon/ports-execute hexagon/ports-write` ist **leer**
+  (main **und** test); allgemeiner: `hexagon/ports*` ist JDBC-frei.
+- Build, Detekt, Kover (≥ 90 % pro Modul) grün; die Architektur-Fitness-Function (P5) grün und
   scharf.
 - Hikari-`close()`-zurück-in-den-Pool-Semantik nachweislich erhalten (P1-Test).
 - `AtomicSequencePreserveContractTest` grün; **kein** Verhaltenswechsel im Atomic-Preserve-Pfad.
