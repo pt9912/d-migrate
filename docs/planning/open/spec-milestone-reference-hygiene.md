@@ -56,7 +56,16 @@ Treffer pro Datei (Rohzählung inkl. Falsch-Positiver — vor Bewertung):
 | `spec/schema-reference.md` | 2 | `seit 0.9.3 … E122` — Verhaltensänderung, Wortlaut prüfen |
 | `spec/lastenheft-d-migrate.md` | 5 | **legitim** — Anforderungsdoku MIT Milestone-Roadmap (deren Zweck); Treffer sind überw. Abschnittsnummern (`4.1.1`) |
 | `spec/catalog-publisher-lakehouse-targets.md` | 1 | `Akzeptanzkriterien für 1.6.0` — Future-Milestone-Spec, vermutl. legitim |
-| weitere (architecture, cli-spec, hexagonal-port, shadow-migration, datasketches, phase-e2, design-import-…) | je 1–4 | einzeln prüfen |
+| weitere (architecture, cli-spec, shadow-migration, datasketches, design-import-…) | je 1–4 | einzeln prüfen |
+
+> **Teil-erledigt (2026-06-27, via ADR 0022):** drei Docs der Phase-E-Familie bereinigt —
+> `hexagonal-port.md` und `phase-e2-persistence.md` (phasen-/plan-benannte Nicht-Zielbild-Docs) als
+> gelieferte Pläne nach [`../done-archive/`](../done-archive/) verschoben; `phase-e-port-atomicity.md`
+> (Zielbild-**Vertrag**, kein Plan) **de-phast** → umbenannt nach `spec/port-atomicity.md`,
+> Status/Geltung-Header und „Phase E"-Erwähnungen im Body entfernt. Alle drei aus der Liste entfernt.
+> **Nachklang für diesen Tracker:** verbleibende Phase-E-Provenienz in den Labels von `spec/ki-mcp.md`
+> und `spec/job-contract.md` („Phase-E2"-/„Phase-E"-Cross-Ref-Überschriften) sowie in
+> `docs/operations/job-executor.md` als Familie auflösen.
 
 > Die Zählungen sind eine Roh-`grep`-Stichprobe (`X.Y.Z` / `Phase N` /
 > `Milestone`) **inklusive** Falsch-Positiver (Abschnittsnummern wie `4.1.1`,

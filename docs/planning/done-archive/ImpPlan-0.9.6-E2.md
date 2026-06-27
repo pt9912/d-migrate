@@ -9,7 +9,7 @@
 > Quota-Counter-UPSERT, Spec-Section-Refs, Tx-Primitive-Lokalisierung).
 > **Positionierung**: nach Phase E, **vor** Phase F (`ImpPlan-0.9.6-F.md`,
 > Datenoperationen) — siehe § 0 zur Begründung.
-> **Referenz**: `spec/phase-e-port-atomicity.md` (§§ 1–6 + § E + Cross-Refs);
+> **Referenz**: `spec/port-atomicity.md` (§§ 1–6 + § E + Cross-Refs);
 > `docs/planning/done-archive/ImpPlan-0.9.6-E.md`;
 > `docs/planning/done-archive/ImpPlan-0.9.6-F.md`;
 > `hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/IdempotencyStore.kt`;
@@ -27,7 +27,7 @@
 E2 ist ein **Sub-Plan zu Phase E**, kein neuer Hauptphasen-Slot.
 Begründung:
 
-- Der Atomicity-Vertrag (`spec/phase-e-port-atomicity.md`) ist in
+- Der Atomicity-Vertrag (`spec/port-atomicity.md`) ist in
   Phase E entstanden; das Re-Review hat aufgedeckt, dass die
   persistente Implementierung des Vertrags fehlt.
 - Phase F (Datenoperationen) und Phase G bauen auf Phase-E-Ports auf
@@ -44,7 +44,7 @@ Final-entscheidung beim Owner — siehe § 10 Q6.
 
 ## 1. Ziel
 
-Aus dem Phase-E-Re-Review: `spec/phase-e-port-atomicity.md` dokumentiert
+Aus dem Phase-E-Re-Review: `spec/port-atomicity.md` dokumentiert
 für jeden atomicity-relevanten Port, **was** persistent atomar passieren
 muss, lässt aber **wie** unbeantwortet — der Satz „persistente Backings
 müssen ein gemeinsames Transaktions-Primitive bereitstellen" ist eine
@@ -56,7 +56,7 @@ Phase E2 schließt die Lücke mit:
    level Port — Begründung in § 3.5)
 2. einem persistenten Adapter-Modul `adapters/driven/persistence-jdbc`
 3. JDBC/Postgres-Implementierungen für die fünf atomicity-relevanten
-   Phase-E-Ports — die vier aus `spec/phase-e-port-atomicity.md`
+   Phase-E-Ports — die vier aus `spec/port-atomicity.md`
    §§ 1-6 PLUS `IdempotencyStore.reserveInitResume` (Phase-C-Pfad,
    gleiche Tabelle ist nicht ausreichend, siehe § 4.1.bis):
    - `IdempotencyStore` (regular + InitResume-Pfad)
@@ -66,7 +66,7 @@ Phase E2 schließt die Lücke mit:
    - `QuotaService` + `QuotaReservationOwnerStore`
 4. Flyway-Initial-Migration (V1) für das Server-State-Schema
 5. Contract-Test-Lauf gegen Testcontainers-Postgres → die Atomicity-
-   Verträge aus `spec/phase-e-port-atomicity.md` §§ 1–6 sind
+   Verträge aus `spec/port-atomicity.md` §§ 1–6 sind
    **ausführbar verifiziert**, nicht nur dokumentiert.
 
 Out: Cluster-/Multi-Instance-Mode, LISTEN/NOTIFY, Schema-Sharding,
@@ -74,7 +74,7 @@ Online-Migration aus existierenden InMemory-Deployments.
 
 ## 2. Motivation
 
-`spec/phase-e-port-atomicity.md` § 3 beschreibt z.B.:
+`spec/port-atomicity.md` § 3 beschreibt z.B.:
 
 > `IdempotencyStore.commit` und `JobStore.save` MÜSSEN gemeinsam
 > sichtbar werden.
@@ -363,10 +363,10 @@ CREATE TABLE quota_counters (
 | **E2.3** | `JdbcIdempotencyStore` — regulärer Idempotency-Pfad ohne `reserveInitResume`: `reserve`, `markAwaitingApproval`, `claimApproved`, `commit`, `deny`, `markFailed`, `cleanupExpired` mit konkreten SQL-Patterns aus § 6 | `IdempotencyStoreContractTests` grün gegen Postgres (inkl. Recovery-Tests für expired PENDING/AWAITING_APPROVAL-Leases); `markAwaitingApproval`-Challenge-Roundtrip-Test grün; Approval-Lease wird beim Übergang nach AWAITING_APPROVAL auf `now + awaitingApprovalSeconds` verlängert |
 | **E2.4** | `JdbcIdempotencyStore.reserveInitResume`-Pfad gegen `init_resume_reservations` (separate Methode/Helper, keine Misch-Logik mit § 6.1) | Init-Resume-Contract-Suite (`ReadOnlyInitResumeContractTests` o.ä. — Name verifizieren in E2.4-Start) grün gegen Postgres |
 | **E2.5** | `JdbcJobStore` (CRUD, Pagination, `transitionStatus` mit `transformer` + `NotFound`/`IllegalTransition`-Diskriminierung, `markCancelRequested`-CAS) | `JobStoreContractTests` grün; insbesondere die Contract-Tests, die `IllegalTransition.currentStatus` lesen, müssen passen |
-| **E2.6** | `JdbcJobStartTransaction` — komponiert E2.3+E2.5 in einer DB-TX über `JdbcTransactionRunner` | `JobStartTransactionContractTests` grün (inkl. parallel-commit-Test); Atomicity-Vertrag aus `spec/phase-e-port-atomicity.md` § 3 ausführbar verifiziert |
+| **E2.6** | `JdbcJobStartTransaction` — komponiert E2.3+E2.5 in einer DB-TX über `JdbcTransactionRunner` | `JobStartTransactionContractTests` grün (inkl. parallel-commit-Test); Atomicity-Vertrag aus `spec/port-atomicity.md` § 3 ausführbar verifiziert |
 | **E2.7** | `JdbcQuotaService` (Counter-UPSERT mit Limit-Check § 6.8) + `JdbcQuotaReservationOwnerStore` (markX-CAS § 6.9) + JDBC-Variante des `OwnerAwareQuotaService`-Wirings. Owner-aware `reserve`, `releaseForOwner`, `refundForOwner` und Sweeper-Refund laufen als gemeinsame DB-TX über Owner-Status + Counter. | (a) `QuotaStoreContractTests` aus `hexagon/ports-common/src/testFixtures/.../contract/QuotaStoreContractTests.kt` grün. (b) `QuotaReservationOwnerStoreContractTests` grün gegen Postgres. (c) `OwnerAwareQuotaService`-Atomicity-Tests (Reserve+Register, Double-Release, Double-Refund) laufen gegen das JDBC-Wiring grün. (d) Crash-Window-Test/Failure-Injection: Exception zwischen Owner-markX und Counter-Decrement rollbackt beides |
 | **E2.8** | Neues Integration-Modul `test/integration-server-state` für End-to-End-Tests gegen Postgres-Wiring (Job-Start → Dispatch → Cancel → Quota-Refund-Cycle); Sweeper findet orphane Owner-Einträge. Phase-E-Akzeptanz-Fixtures werden parametrisierbar wiederverwendet (kein Copy/Paste). Docker/Postgres-Isolation via Testcontainers bleibt im neuen Modul | Modul baut; E2E-Suite grün; `QuotaReservationSweeper` exactly-once-refunded gegen Postgres |
-| **E2.9** | Doku: `spec/phase-e2-persistence.md` — Implementor-Guide für andere Backings (MySQL/SQLite-Skizze als Folge), Flyway-Workflow, Operations-Hinweise (Backup, Connection-Limits); Cross-Refs in `spec/phase-e-port-atomicity.md` § Cross-Refs ergänzt | Doku reviewed; Spec-Cross-Ref-Eintrag „Persistente Implementoren siehe phase-e2-persistence.md" |
+| **E2.9** | Doku: `spec/phase-e2-persistence.md` — Implementor-Guide für andere Backings (MySQL/SQLite-Skizze als Folge), Flyway-Workflow, Operations-Hinweise (Backup, Connection-Limits); Cross-Refs in `spec/port-atomicity.md` § Cross-Refs ergänzt | Doku reviewed; Spec-Cross-Ref-Eintrag „Persistente Implementoren siehe phase-e2-persistence.md" |
 
 Schätzung: E2.1–E2.7 je ~1 Sub-Commit-Zyklus wie Phase-E-APs;
 E2.8+E2.9 zusammen ein größerer Zyklus. Gesamt ~9–11 Commits.
@@ -698,13 +698,13 @@ Phase E2 gilt als done, wenn:
    `QuotaReservationOwnerStoreContractTests` inkl. parallel-markX;
    `OwnerAwareQuotaService`-Atomicity inkl. Rollback zwischen Owner-
    markX und Counter-Decrement);
-2. ✅ die Atomicity-Tests aus `spec/phase-e-port-atomicity.md` § E
+2. ✅ die Atomicity-Tests aus `spec/port-atomicity.md` § E
    sind ausführbar gegen das JDBC-Wiring;
 3. ✅ Phase-E §7.x-Akzeptanz-Pins (E.9 (3/3), E.10) laufen end-to-end
    gegen das JDBC-Wiring;
 4. ✅ Coverage-Schwelle 90% pro Modul (mit `kover-CI-Flake`-Toleranz);
 5. ✅ `spec/phase-e2-persistence.md` reviewed,
-   `spec/phase-e-port-atomicity.md § Cross-Refs` erweitert um
+   `spec/port-atomicity.md § Cross-Refs` erweitert um
    „Persistente Implementoren siehe phase-e2-persistence.md";
 6. ✅ Plan-Move nach `docs/planning/done-archive/ImpPlan-0.9.6-E2.md`;
    `roadmap.md` aktualisiert.

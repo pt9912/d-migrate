@@ -1,7 +1,8 @@
 # Ports-JDBC-Entkopplung: `java.sql` aus `ports-common`/`ports-execute`/`ports-write` entfernen
 
-> **Status:** In Progress (2026-06-27). **Entscheidungsgrundlage:**
+> **Status:** Done — graduiert (2026-06-27). **Entscheidungsgrundlage:**
 > [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) (accepted, Option A).
+> P1–P5 geliefert + Doku-Folgearbeit (Abschnitt 6) erledigt; siehe Closure am Ende.
 >
 > **Phasen-Fortschritt: P1–P5 KOMPLETT.** `hexagon:ports*` ist **java.sql-frei** (Gate P5
 > grün). P1 neutrales `DatabaseConnection`; **P2 (`d5b20a40`)** `ConnectionPool.borrow()`
@@ -12,7 +13,9 @@
 > `MigrationExecutorTestSupport` (testFixtures ohne driver-common-Pfad) **reflektiv** (Präzedenz
 > `JdbcForeignValueNormalizer`, kein build.gradle-Dep — offline-Build kann keine
 > Dependency-Neuauflösung). Alle `docker-check`-Läufe grün (Compile/Test/Detekt/Kover ≥ 90 %).
-> **Offen: nur die Doku-Folgearbeit (Abschnitt 6).**
+> **Doku-Folgearbeit (Abschnitt 6) erledigt** — Zielbild-Regel in `architecture.md`; beide
+> gelieferten Pläne (`hexagonal-port.md`, `phase-e2-persistence.md`) nach `done-archive/`; Live-Refs
+> nachgezogen (Handbuch-Flyway-Inhalt **inline** statt Link).
 > *Methodik-Nachtrag:* P2 lief via Regex/perl + Build-Netz und deckte iterativ String-/Kommentar-/
 > mockk-DSL-Fehlalarme auf. Daraus entstand die hermetische **ast-grep-Stage** (`make ast-grep`,
 > `feedback_syntax_aware_refactor`); P3/P4 entsprechend syntax-diszipliniert.
@@ -27,8 +30,8 @@
 Die Hexagon-Ports-Schicht von JDBC befreien: `hexagon:ports-common`, `hexagon:ports-execute` **und
 `hexagon:ports-write`** exponieren heute `java.sql.Connection`; nach diesem Slice tun sie es nicht
 mehr. JDBC lebt nur noch in den Adaptern. Umgesetzt über das neutrale `DatabaseConnection`
-(ADR 0022), das das in `spec/hexagonal-port.md` (D4) ursprünglich vorgesehene Soll endlich
-realisiert.
+(ADR 0022), das das ursprünglich unter D4 (Strukturplan, inzwischen archiviert) vorgesehene Soll
+endlich realisiert.
 
 ## 2. Hintergrund (Ist-Stand im Code)
 
@@ -105,20 +108,37 @@ realisiert.
 - `DatabaseConnection` trägt nur die benötigten Operationen (Review-Leitplanke gegen Leaky
   Abstraction, ADR 0022).
 
-## 6. Doku-Folgearbeit (nach dem Code-Fix, nicht Teil der Phasen)
+## 6. Doku-Folgearbeit (nach dem Code-Fix, nicht Teil der Phasen) — ERLEDIGT (2026-06-27)
 
-Sobald der Code JDBC-frei ist, die Doku-Lage bereinigen (war Auslöser dieses Slice):
+War Auslöser dieses Slice; alle drei Schritte umgesetzt:
 
-1. Die Zielbild-Regel „Ports exponieren kein `java.sql`; JDBC nur in Adaptern" in
-   [`../../../spec/architecture.md`](../../../spec/architecture.md) verankern (an die Modul-
-   Regel; **ohne** Abwärtsverweis auf die ADR — SDP).
-2. [`../../../spec/hexagonal-port.md`](../../../spec/hexagonal-port.md) (gelieferter Überführungs-
-   plan; D1/D2/D5/D7-Lücken sind gebaut) nach `../done-archive/` verschieben — die überholte
-   `java.sql`-in-Ports-Erlaubnis (Z. 100, 252) **nicht** ins Zielbild übernehmen. Eingehende
-   Verweise nachziehen (u. a. [`../open/spec-milestone-reference-hygiene.md`](../open/spec-milestone-reference-hygiene.md),
-   `spec/phase-e-port-atomicity.md`).
-3. [`../../../spec/phase-e2-persistence.md`](../../../spec/phase-e2-persistence.md) (zweite
-   `java.sql`-Fundstelle, phasen-benannt) gleich mit-triagieren.
+1. ✅ Zielbild-Regel „Ports exponieren kein `java.sql`; JDBC nur in Adaptern" in
+   [`../../../spec/architecture.md`](../../../spec/architecture.md) verankert (eigener Unterblock
+   bei den Modul-Regeln; als **Architektur-Fitness-Function** ausgewiesen, da `java.sql` JDK-intern
+   ist; **ohne** Abwärtsverweis auf die ADR — SDP).
+2. ✅ Der gelieferte Überführungsplan (D1–D9 aufgelöst) nach
+   [`../done-archive/hexagonal-port.md`](../done-archive/hexagonal-port.md) verschoben (Archiv-Banner;
+   die überholte `java.sql`-in-Ports-Notiz **nicht** ins Zielbild übernommen).
+3. ✅ Der Implementor-Plan zur Server-State-Persistenz — Triage: phasen-benanntes
+   Implementor-Dokument, **kein Zielbild**; gemäß der ADR-Abgrenzung (Nicht-Ziele) als gelieferter
+   Plan archiviert nach
+   [`../done-archive/phase-e2-persistence.md`](../done-archive/phase-e2-persistence.md) (Archiv-Banner).
+   Die java.sql-Zeile dort war bereits konform („kein `java.sql` in `hexagon:*`").
+
+**Eingehende Verweise nachgezogen** — präzisiert durch die d-check-Referenz-Matrix:
+- `spec/`-Docs dürfen **nicht** nach planning zeigen (matrix-forbidden) → in `spec/port-atomicity.md`
+  (Header-Cross-Ref entfernt), `spec/ki-mcp.md`, `spec/job-contract.md` die Archiv-Links **gedroppt**,
+  Implementor-Verweis stattdessen auf das Code-Modul `adapters/driven/persistence-jdbc`.
+- `docs/`-Docs dürfen nach `done-archive/` zeigen → `docs/operations/job-executor.md` (×2) umgebogen.
+- `docs/user/administrationshandbuch.md` **self-contained** gemacht: Flyway-Workflow und
+  Backup-Hinweise (vormals `§5.3`-Verweis) **inline** statt Link ([[Referenz-Stil]]).
+- Verschobene Dateien: interne spec-Links auf Aufwärts-Pfade (`../../../spec/…`).
+
+**Zusätzlich de-phast** (Folge-Erkenntnis im Review): der Port-Atomicity-Vertrag ist Zielbild
+(kein Plan), trug aber Phasen-Naming → umbenannt nach
+[`../../../spec/port-atomicity.md`](../../../spec/port-atomicity.md), Status/Geltung-Header und
+„Phase E"-Body-Erwähnungen entfernt. Restschuld (Phase-E-Provenienz in `ki-mcp`/`job-contract`-Labels)
+beim Hygiene-Tracker ([`../open/spec-milestone-reference-hygiene.md`](../open/spec-milestone-reference-hygiene.md)).
 
 ## 7. Vorbedingungen
 
@@ -128,6 +148,25 @@ Sobald der Code JDBC-frei ist, die Doku-Lage bereinigen (war Auslöser dieses Sl
 ## 8. Bezug
 
 - ADR: [0022](../../adr/0022-ports-jdbc-entkopplung.md).
-- D4-Soll + Steady-State: [`../../../spec/hexagonal-port.md`](../../../spec/hexagonal-port.md),
-  [`../../../spec/architecture.md`](../../../spec/architecture.md).
-- Backend-Neutralitäts-Intention: [`../../../spec/phase-e-port-atomicity.md`](../../../spec/phase-e-port-atomicity.md).
+- D4-Soll (Historie, archiviert): [`../done-archive/hexagonal-port.md`](../done-archive/hexagonal-port.md);
+  Steady-State-Zielbild: [`../../../spec/architecture.md`](../../../spec/architecture.md).
+- Backend-Neutralitäts-Intention: [`../../../spec/port-atomicity.md`](../../../spec/port-atomicity.md).
+
+## Closure (2026-06-27)
+
+**Code (P1–P5):** `hexagon:ports-common`/`-read`/`-write`/`-execute` sind java.sql-frei; neutrales
+`DatabaseConnection` (ports-common), `JdbcDatabaseConnection` + `asJdbc()` (driver-common),
+Fitness-Function-Gate `scripts/ports-jdbc-free-gate.sh` (in `gates`). E2E live-validiert: Integration
+PG/SQLite voll grün, MySQL 140/140; Sample-DB-Smokes PG/SQLite/Cross MySQL→PG/Cross PG→MySQL grün.
+Zwei dabei aufgedeckte **Harness**-Bugs (kein Refactor-Regress) mitgefixt: E07-Timeout-Bench
+(3-Wege-Cross-Join, `753bfca9`) und stdin-Drain in 3 Parity-Skripten (`</dev/null`).
+
+**Doku-Folgearbeit (Abschnitt 6):** erledigt — Zielbild-Regel in
+[`spec/architecture.md`](../../../spec/architecture.md); beide gelieferten Pläne nach `done-archive/`
+([`hexagonal-port.md`](../done-archive/hexagonal-port.md),
+[`phase-e2-persistence.md`](../done-archive/phase-e2-persistence.md)); Live-Refs nachgezogen, Handbuch
+self-contained (Flyway-/Backup-Inhalt inline). Zusätzlich der Port-Atomicity-Vertrag **de-phast**
+(umbenannt nach `spec/port-atomicity.md`, Phasen-Naming raus). **Restschuld am Hygiene-Tracker
+[`../open/spec-milestone-reference-hygiene.md`](../open/spec-milestone-reference-hygiene.md):** die
+verbleibende Phase-E-Provenienz in den Labels von `ki-mcp`/`job-contract` (und
+`docs/operations/job-executor.md`) als Familie auflösen.

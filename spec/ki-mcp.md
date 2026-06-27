@@ -1004,4 +1004,4 @@ und Audit-Anforderungen einer autonomen KI-Nutzung zu verwischen.
 - Phase-E Job-Executor (Pool-Sizing, Saturation-Diagnose, Sync-vs-Async-Tradeoffs):
   [`docs/operations/job-executor.md`](../docs/operations/job-executor.md)
 - Phase-E2 persistente Server-State-Adapter (Schema, Flyway, Backup,
-  Connection-Limits): [`spec/phase-e2-persistence.md`](./phase-e2-persistence.md)
+  Connection-Limits): Adapter-Modul `adapters/driven/persistence-jdbc`

@@ -398,11 +398,20 @@ Heute: secret-freies MCP-`tools/call`-Audit (genau ein Event pro Aufruf, siehe
 ### 10.1 Upgrades und Versionswechsel
 
 d-migrate ist zustandslos pro CLI-Lauf; ein Upgrade ist ein Austausch des Images
-bzw. Artefakts. Für den MCP-Server mit JDBC-backed Server-State gilt der
-Flyway-Workflow aus [`phase-e2-persistence.md`](../../spec/phase-e2-persistence.md):
-der Operator führt die Migration vor dem Server-Start aus; bei Schema-Drift
-schlägt der Bootstrap fehl (kein stilles Auto-Migrate in Production). Beim
-Versionswechsel die [Änderungshistorie](../../CHANGELOG.md) auf Vertrags-/
+bzw. Artefakts. Für den MCP-Server mit JDBC-backed Server-State gilt ein expliziter
+Flyway-Workflow:
+
+- **Production:** Die Schema-Migration ist ein eigener Ops-Schritt **vor** dem
+  Server-Start — der Operator ruft `JdbcMigrationRunner(dataSource).migrate()` aus
+  einem Deployment-Script bzw. Ops-Job gegen die Server-State-DB auf. Der Server
+  migriert **nicht** automatisch beim Start; bei Schema-Drift schlägt der Bootstrap
+  fehl (`validate()` beim Start — kein stilles Auto-Migrate in Production).
+- **Dev/Test:** opt-in über `server.state.migrations.auto = true`; der Bootstrap ruft
+  `migrate()` dann selbst.
+- Die Schema-History liegt in der dedizierten Tabelle `flyway_phase_e_history`, sodass
+  das Server-State-Schema von etwaigen Co-Mietern derselben DB getrennt bleibt.
+
+Beim Versionswechsel die [Änderungshistorie](../../CHANGELOG.md) auf Vertrags-/
 Flag-Änderungen prüfen.
 
 ### 10.2 Rollback-Szenarien
@@ -417,10 +426,11 @@ Migrationen erzeugen optional ein Rollback-Artefakt (`--generate-rollback`).
   reguläre Datei-Backup aufnehmen.
 - **S3-Store:** Bucket-Versionierung/Lifecycle des Object-Storage nutzen;
   Credentials kommen aus der AWS-SDK-Chain, liegen also nicht im Backup.
-- **JDBC-Server-State:** die Phase-E-Tabellen sind klein; Standard-DB-Backup
-  reicht. Wichtig: Idempotency-COMMITTED-Einträge dienen als Wire-Replay-Cache —
-  ein Restore muss die Retention-Spalte einbeziehen
-  ([`phase-e2-persistence.md`](../../spec/phase-e2-persistence.md) §5.3).
+- **JDBC-Server-State:** die Phase-E-Tabellen sind klein (Owner-Counts skalieren mit
+  aktiven Jobs, Idempotency-Einträge mit Retry-Volumen); Standard-DB-Backup reicht
+  (`pg_dump --schema=public` oder kontinuierliche WAL-Archivierung). Wichtig:
+  Idempotency-COMMITTED-Einträge dienen als Wire-Replay-Cache — ein Restore muss die
+  Retention-Spalte einbeziehen.
 
 ---
 

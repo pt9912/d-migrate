@@ -1,5 +1,12 @@
 # Plan: Hexagonale Modulstruktur
 
+> **Archiviert (2026-06-27).** Gelieferter Überführungsplan — die Modulstruktur ist
+> umgesetzt (D1–D9 aufgelöst). Verschoben aus `spec/` nach `done-archive/` im Zuge von
+> [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md) (Ports ohne `java.sql`): die hier
+> festgehaltene Ist/Soll-Momentaufnahme — inkl. der überholten `java.sql`-in-Ports-Notiz —
+> ist **kein Zielbild**. Das Architektur-Zielbild lebt in
+> [`spec/architecture.md`](../../../spec/architecture.md). Nur als Historie erhalten.
+
 > **Ziel**: Die flache Modulstruktur in eine hexagonale Verzeichnishierarchie
 > überführen, sodass Architektur und Dateisystem übereinstimmen. Gradle erzwingt
 > die Abhängigkeitsrichtung zur Compile-Zeit.

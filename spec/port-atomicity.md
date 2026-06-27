@@ -1,22 +1,19 @@
-# Phase E Port-Atomicity-Vertraege
+# Port-Atomicity-Vertraege
 
-> **Status**: aktiv (2026-05-05)
-> **Geltung**: Phase-E
-> **Cross-Refs**: [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy";
-> [`spec/hexagonal-port.md`](./hexagonal-port.md)
+> **Cross-Refs**: [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy"
 
 ## Warum dieses Dokument existiert
 
-Phase E erweitert mehrere Hexagon-Ports um Operationen, deren
+Mehrere Hexagon-Ports tragen Operationen, deren
 Korrektheit unter Concurrency und Crash-Recovery direkt von
 Atomarem-Sequenzieren abhaengt. Die in-process [InMemoryStores][1]
 benutzen `synchronized`-Bloecke und `ConcurrentHashMap.compute`-CAS, um
 diese Eigenschaften zu erreichen — eine **persistente** Implementation
 (JDBC-Backend, Redis, etc.) muss aequivalente Atomicity-Primitive
-liefern, sonst entstehen die in den jeweiligen Plan-Abschnitten
-beschriebenen Race-Conditions.
+liefern, sonst entstehen die unten je Vertrag beschriebenen
+Race-Conditions.
 
-Dieses Dokument listet die Phase-E-kritischen Atomicity-Vertraege und
+Dieses Dokument listet die kritischen Atomicity-Vertraege dieser Ports und
 verlinkt zu den `*ContractTests`-Suiten, die jeden Implementor
 durchlaufen MUSS.
 
@@ -106,7 +103,7 @@ class MyDbBackedJobStartTransactionContractTest :
 ```
 
 Die Suiten muessen unveraendert durchlaufen, sonst ist die
-Implementation **nicht** Phase-E-konform und fuehrt zu den im
+Implementation **nicht** vertragskonform und fuehrt zu den im
 jeweiligen Abschnitt oben dokumentierten Race-Folgen.
 
 | Port | Suite | Pfad |
@@ -142,4 +139,4 @@ jeweiligen Abschnitt oben dokumentierten Race-Folgen.
 ## Cross-Refs
 
 - [`spec/mcp-server.md` Abschnitt „Async-Jobs, Idempotency, Policy"](./mcp-server.md)
-- Persistente Implementoren siehe [`spec/phase-e2-persistence.md`](./phase-e2-persistence.md)
+- Persistente Implementoren: Adapter-Modul `adapters/driven/persistence-jdbc`

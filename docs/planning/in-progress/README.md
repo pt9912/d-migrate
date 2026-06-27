@@ -57,13 +57,7 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`ports-jdbc-entkopplung.md`](ports-jdbc-entkopplung.md) | Aktiver Per-Slice-ImpPlan | `java.sql` aus `ports-common`/`ports-execute`/`ports-write` entfernen (ADR 0022, neutrales `DatabaseConnection`). P1-P5 komplett (hexagon:ports* java.sql-frei, Gate aktiv); nur Doku-Folgearbeit offen. |
 
-> Der Sample-DB-E2E-Harness-Slice (`examples/sample-db/`) ist Phase 0–3 DoD-komplett
-> und nach [`../done/sample-db-integration-harness.md`](../done/sample-db-integration-harness.md)
-> graduiert (2026-06-25); Phase 4/5 als eigene Slices geliefert.
-
-> Der Pilot-Validierungszyklus 0.9.9 ist abgeschlossen — alle fuenf Reports
-> (Erstlauf, Re-Run 1-4) und der P2-Tracker liegen in `../done-archive/`
-> (rerun4 mit Closure-Nachtrag). Die P3-Restbefunde (N7/N8/K2) sind erledigt
-> ([`../done/pilot-rerun-p3-residuals.md`](../done/pilot-rerun-p3-residuals.md)).
+Derzeit keine aktiven Per-Slice-ImpPlans in `in-progress/` — graduierte/geschlossene
+Slices stehen unter `../done/` bzw. `../done-archive/` (mit eigener `## Closure`-Sektion),
+nicht als Verweis hier.

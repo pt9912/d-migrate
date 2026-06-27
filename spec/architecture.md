@@ -135,6 +135,16 @@ d-migrate/
 - Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`)
 - Treiber-Kernmodule hängen **nicht** von `hexagon:profiling` ab; Profiling-Adapter sind optionale Zusatzmodule
 
+Zusätzlich, durch eine **Architektur-Fitness-Function** (Gate) statt durch Gradle garantiert — denn
+`java.sql` ist JDK-intern und ließe sich nicht über Modul-Abhängigkeiten ausschließen:
+- Die **Ports-Schicht** (`hexagon:ports-*`) exponiert in ihren Signaturen **kein `java.sql`**; JDBC
+  (Treiber-Technologie) lebt ausschließlich in den Adaptern. Ein neutrales
+  `DatabaseConnection`-Handle in `hexagon:ports-common` trägt die von den Ports benötigten
+  Fähigkeiten (Pool-Rückgabe via `AutoCloseable`, Transaktions-Lebenszyklus, Ausführung bereits
+  gerenderter Statements, Session-Reset); die JDBC-gebundene Implementierung (`JdbcDatabaseConnection`,
+  Wrapper um die Hikari-Connection) liegt in `adapters:driven:driver-common`, wo die Adapter sie zur
+  realen Connection auspacken.
+
 ---
 
 ## 2. Modul-Struktur

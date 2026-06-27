@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-27
 decision-makers: pt9912
-consulted: spec/hexagonal-port.md (D4-Soll "DatabaseConnection"), spec/architecture.md (Schicht-/Abhängigkeitsregeln), spec/phase-e-port-atomicity.md (backend-neutrale Atomicity-Ports)
+consulted: docs/planning/done-archive/hexagonal-port.md (D4-Soll "DatabaseConnection"), spec/architecture.md (Schicht-/Abhängigkeitsregeln), spec/port-atomicity.md (backend-neutrale Atomicity-Ports)
 informed: hexagon/ports-common, hexagon/ports-execute, adapters/driven/driver-common
 ---
 
@@ -10,7 +10,7 @@ informed: hexagon/ports-common, hexagon/ports-execute, adapters/driven/driver-co
 
 > **Status: accepted (2026-06-27).** Mechanismus **Option A** (neutrales `DatabaseConnection`,
 > JDBC-Impl im Adapter) ratifiziert. Die Umsetzung samt Phasen liegt im Slice
-> [`../planning/in-progress/ports-jdbc-entkopplung.md`](../planning/in-progress/ports-jdbc-entkopplung.md).
+> [`../planning/done/ports-jdbc-entkopplung.md`](../planning/done/ports-jdbc-entkopplung.md).
 
 ## Kontext und Problemstellung
 
@@ -24,9 +24,10 @@ Die Hexagon-Ports-Schicht exponiert an zwei Stellen den JDBC-Typ `java.sql.Conne
   (`hexagon/ports-execute/src/main/kotlin/dev/dmigrate/driver/migration/preserve/AtomicSequencePreserveExecutor.kt`).
 
 Das verletzt das hexagonale Grundprinzip — **Ports sind neutrale Verträge, Technologie lebt in
-den Adaptern** — und weicht vom ursprünglichen Entwurf ab: `spec/hexagonal-port.md` nannte unter
-D4 einen neutralen `DatabaseConnection` als **Soll**; der Code divergierte (bewusst, aber ohne
-Zielbild-Deckung) zu `ConnectionPool`/`java.sql.Connection`.
+den Adaptern** — und weicht vom ursprünglichen Entwurf ab: der gelieferte Strukturplan
+(`docs/planning/done-archive/hexagonal-port.md`) nannte unter D4 einen neutralen
+`DatabaseConnection` als **Soll**; der Code divergierte (bewusst, aber ohne Zielbild-Deckung) zu
+`ConnectionPool`/`java.sql.Connection`.
 
 Zwei Beobachtungen schärfen das Bild:
 
@@ -36,11 +37,13 @@ Zwei Beobachtungen schärfen das Bild:
    (BEGIN/COMMIT/ROLLBACK über `autoCommit`, Ausführung gerenderter Statements, Session-Reset im
    `finally`). Die Abstraktion muss also für den Pool nur ein opakes Handle, für den Executor eine
    minimale Fähigkeits-Schnittstelle sein.
-2. **Es gibt keine Zielbild-Deckung für den Status quo.** Die einzige Spec-Aussage, die
-   `java.sql` in den Ports *erlaubt*, steht in `spec/hexagonal-port.md` (einem gelieferten
-   Überführungs**plan** mit Ist/Soll-Momentaufnahme, kein Zielbild) und in
-   `spec/phase-e2-persistence.md`. Das Zielbild `spec/architecture.md` schweigt dazu. Eine
-   Momentaufnahme kann kein Zielbild sein; die „Erlaubnis" trägt daher nicht.
+2. **Es gibt keine Zielbild-Deckung für den Status quo.** Die einzige Aussage, die
+   `java.sql` in den Ports *erlaubt*, stand in zwei gelieferten **Plänen** mit Ist/Soll-
+   Momentaufnahme (kein Zielbild) — seither als solche nach
+   `docs/planning/done-archive/hexagonal-port.md` und
+   `docs/planning/done-archive/phase-e2-persistence.md` archiviert. Das Zielbild
+   `spec/architecture.md` schwieg dazu (verankert die Regel nun explizit). Eine Momentaufnahme
+   kann kein Zielbild sein; die „Erlaubnis" trug daher nicht.
 
 ## Entscheidung
 
@@ -79,7 +82,7 @@ neutralisiert (siehe verworfene Option B).
 **Positiv:**
 - Die Ports werden technologie-neutral und ohne JDBC testbar — ein echter Hexagon-Vertrag, kein
   durchgereichter Treiber-Typ. Der `AtomicSequencePreserveExecutor` wird so backend-neutral, wie es
-  die Port-Idee vorsieht (vgl. `spec/phase-e-port-atomicity.md`, das persistente Nicht-JDBC-Backends
+  die Port-Idee vorsieht (vgl. `spec/port-atomicity.md`, das persistente Nicht-JDBC-Backends
   als möglichen Implementor benennt).
 - Der Code richtet sich am dokumentierten D4-Soll aus, statt davon abzuweichen.
 
@@ -98,5 +101,6 @@ neutralisiert (siehe verworfene Option B).
 - **Keine zweite (Nicht-JDBC-)Implementierung** in diesem Schritt — nur die JDBC-Impl, aber so
   geschnitten, dass eine Nicht-JDBC-Impl möglich wird.
 - **Doku-Folgearbeit** (die Zielbild-Regel in `spec/architecture.md` verankern;
-  `spec/hexagonal-port.md` + `spec/phase-e2-persistence.md` als gelieferte Pläne archivieren) ist im
-  Slice bzw. Tracker geführt, **nicht** Teil dieser ADR.
+  die zwei gelieferten Pläne nach `docs/planning/done-archive/hexagonal-port.md` und
+  `docs/planning/done-archive/phase-e2-persistence.md` archivieren) ist im Slice bzw. Tracker
+  geführt, **nicht** Teil dieser ADR.

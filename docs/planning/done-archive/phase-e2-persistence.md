@@ -1,17 +1,23 @@
 # Phase E2 — Persistente Server-State-Adapter (JDBC/Postgres)
 
-> **Status**: aktiv (2026-05-06)
-> **Geltung**: Phase-E2
+> **Archiviert (2026-06-27).** Gelieferter Implementor-Plan des
+> `adapters/driven/persistence-jdbc`-Adapters. Verschoben aus `spec/` nach `done-archive/`
+> im Zuge von [ADR 0022](../../adr/0022-ports-jdbc-entkopplung.md): ein phasen-benanntes
+> Implementierungs-Dokument ist **kein Zielbild**. Operative Referenz-Inhalte (Schema,
+> Flyway-Workflow, Connection-Limits) bleiben hier als Historie erhalten; die Verträge leben
+> in [`spec/port-atomicity.md`](../../../spec/port-atomicity.md) und
+> [`spec/mcp-server.md`](../../../spec/mcp-server.md).
+> **Geltung**: Phase-E2 (geliefert)
 > **Cross-Refs**:
-> [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Atomicity-Verträge der Ports;
-> [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge;
+> [`spec/port-atomicity.md`](../../../spec/port-atomicity.md) — Atomicity-Verträge der Ports;
+> [`spec/mcp-server.md`](../../../spec/mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge;
 > [`spec/hexagonal-port.md`](./hexagonal-port.md)
 
 ## Warum dieses Dokument existiert
 
 Phase E2 liefert die ersten persistenten Implementor-Adapter für die
 fünf Phase-E-kritischen Server-State-Ports. Während
-[`phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) **WAS**
+[`port-atomicity.md`](../../../spec/port-atomicity.md) **WAS**
 atomar passieren muss spezifiziert, beschreibt dieses Dokument **WIE**
 der Postgres-Adapter es realisiert — und gibt Folge-Implementoren
 (MySQL, SQLite, eventuell verteilte Backends) das Grundgerüst.
@@ -132,7 +138,7 @@ zweiten Read-Pfad für alte Records.
 
 ## 3. Realisierung der Atomicity-Verträge
 
-Querverweis auf [`phase-e-port-atomicity.md`](./phase-e-port-atomicity.md):
+Querverweis auf [`port-atomicity.md`](../../../spec/port-atomicity.md):
 für jeden Vertrag gibt diese Sektion das konkrete SQL-Pattern.
 
 ### 3.1 IdempotencyStore.reserve — Recovery-CAS
@@ -354,6 +360,6 @@ Idempotency-Cleanup.
 
 ## 6. Cross-Refs
 
-- [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Port-Verträge (was muss atomar sein)
-- [`spec/mcp-server.md`](./mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge
-- [`spec/connection-config-spec.md`](./connection-config-spec.md) — Connection-Pool-Konfiguration
+- [`spec/port-atomicity.md`](../../../spec/port-atomicity.md) — Port-Verträge (was muss atomar sein)
+- [`spec/mcp-server.md`](../../../spec/mcp-server.md) Abschnitt „Async-Jobs, Idempotency, Policy" — Wire-Verträge
+- [`spec/connection-config-spec.md`](../../../spec/connection-config-spec.md) — Connection-Pool-Konfiguration
