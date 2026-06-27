@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
@@ -28,7 +29,7 @@ class SqliteDataWriter : DataWriter {
                 "the Runner should have validated this via DialectCapabilities"
         }
 
-        val conn = pool.borrow()
+        val conn = pool.borrow().asJdbc()
         val sync = SqliteSchemaSync()
         val qualified = parseSqliteQualifiedTableName(table)
         var savedAutoCommit: Boolean? = null

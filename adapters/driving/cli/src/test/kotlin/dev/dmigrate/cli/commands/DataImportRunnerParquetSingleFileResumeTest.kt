@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.SchemaSync
@@ -23,7 +24,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
-import java.sql.Connection
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -42,7 +42,7 @@ class DataImportRunnerParquetSingleFileResumeTest : FunSpec({
     class FakeConnectionPool(
         override val dialect: DatabaseDialect = DatabaseDialect.SQLITE,
     ) : ConnectionPool {
-        override fun borrow(): Connection = error("borrow() must not be called")
+        override fun borrow(): DatabaseConnection = error("borrow() must not be called")
         override fun activeConnections(): Int = 0
         override fun close() {}
     }

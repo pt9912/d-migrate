@@ -4,6 +4,7 @@ import dev.dmigrate.cli.commands.ExecutionTrace
 import dev.dmigrate.cli.commands.MigrationStreamClassifier
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment
@@ -14,6 +15,17 @@ import dev.dmigrate.driver.migration.preserve.ExecutableSegment
 import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import java.sql.Connection
 import java.sql.SQLException
+
+/**
+ * Test-only Unwrap des neutralen [DatabaseConnection] auf die JDBC-[Connection]
+ * (ADR 0022). Die produktive Erweiterung `asJdbc()` lebt in
+ * `:adapters:driven:driver-common`, das die `hexagon:application`-testFixtures-
+ * Schicht aus Layering-Gründen NICHT auf dem Compile-Pfad trägt. Wie
+ * `JdbcForeignValueNormalizer` (pgjdbc `PGobject`) wird der Zugriff daher
+ * **reflektiv** gelöst — kein Compile-Dependency auf den Adapter.
+ */
+private fun DatabaseConnection.jdbc(): Connection =
+    javaClass.getMethod("getConnection").invoke(this) as Connection
 
 /**
  * Test-only mirror of the production `JdbcMigrationExecutor.runAll`
@@ -57,7 +69,7 @@ fun executeAgainstPool(
     if (statements.isEmpty()) {
         return ExecutionTrace(executionStarted = true, executionCompleted = true)
     }
-    return pool.borrow().use { conn ->
+    return pool.borrow().jdbc().use { conn ->
         if (MigrationStreamClassifier.streamOwnsTransaction(statements)) {
             runStreamOwnedTransaction(conn, statements)
         } else {
@@ -280,7 +292,7 @@ private fun runAtomicSegmentAgainstPool(
             }
             AtomicProtectedExecutionResult.Succeeded(statementsExecuted = protectedStatements.size)
         }
-    val result = pool.borrow().use { conn ->
+    val result = pool.borrow().jdbc().use { conn ->
         atomicExecutor.execute(
             connection = conn,
             batch = segment.batch,

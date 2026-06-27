@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -50,7 +51,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
                 password = null,
             )
         )
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, qty INTEGER)")
                 stmt.execute("CREATE TABLE empty (id INTEGER PRIMARY KEY, label TEXT)")
@@ -312,7 +313,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
     test("LF-008 / LF-009 / LF-013 ResumeMarker with duplicate marker values: tie-breaker resumes precisely") {
         // Insert two rows sharing the same qty to stress the lexicographic
         // tie-breaker path.
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO items (id, name, qty) VALUES (6, 'item-6', 30)")
                 stmt.execute("INSERT INTO items (id, name, qty) VALUES (7, 'item-7', 30)")
@@ -436,7 +437,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
     val geomReader = GeometryTestJdbcReader()
 
     fun createGeoTable() {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { st ->
                 // SQLite ist typ-flexibel: der declared type "GEOMETRY" sorgt
                 // dafür, dass getColumnTypeName "GEOMETRY" liefert → VA1a erkennt

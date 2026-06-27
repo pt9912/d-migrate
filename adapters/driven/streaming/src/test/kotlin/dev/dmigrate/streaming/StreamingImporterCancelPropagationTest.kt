@@ -6,6 +6,7 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
@@ -22,7 +23,6 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.io.InputStream
 import java.nio.file.Files
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -35,7 +35,7 @@ class StreamingImporterCancelPropagationTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = error("unused")
+        override fun borrow(): DatabaseConnection = error("unused")
         override fun activeConnections() = 0
         override fun close() {}
     }

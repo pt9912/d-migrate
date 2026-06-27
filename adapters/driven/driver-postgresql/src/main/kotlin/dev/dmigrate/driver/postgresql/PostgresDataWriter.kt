@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
@@ -33,7 +34,7 @@ class PostgresDataWriter(
                     "use schema ordering or DEFERRABLE constraints instead"
             )
         }
-        val conn = pool.borrow()
+        val conn = pool.borrow().asJdbc()
         val jdbc = jdbcFactory(conn)
         val sync = PostgresSchemaSync(jdbcFactory)
         val qualified = parseQualifiedTableName(table)

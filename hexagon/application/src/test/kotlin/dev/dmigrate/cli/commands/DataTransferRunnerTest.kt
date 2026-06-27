@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.*
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.chunkSchemaOf
@@ -17,7 +18,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Path
-import java.sql.Connection
 
 class DataTransferRunnerTest : FunSpec({
 
@@ -36,7 +36,7 @@ class DataTransferRunnerTest : FunSpec({
     val fakeCfg = ConnectionConfig(DatabaseDialect.SQLITE, "h", null, "d", null, null)
     val fakePool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }
@@ -224,7 +224,7 @@ class DataTransferRunnerTest : FunSpec({
         var sourceClosed = false
         val sourcePool = object : ConnectionPool {
             override val dialect = DatabaseDialect.SQLITE
-            override fun borrow(): Connection = throw UnsupportedOperationException()
+            override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
             override fun activeConnections() = 0
             override fun close() {
                 sourceClosed = true
@@ -232,7 +232,7 @@ class DataTransferRunnerTest : FunSpec({
         }
         val targetPool = object : ConnectionPool {
             override val dialect = DatabaseDialect.SQLITE
-            override fun borrow(): Connection = throw UnsupportedOperationException()
+            override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
             override fun activeConnections() = 0
             override fun close() {
                 throw RuntimeException("close failed")

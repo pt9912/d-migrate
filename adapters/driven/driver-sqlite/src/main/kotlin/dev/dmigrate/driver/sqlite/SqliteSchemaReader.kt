@@ -5,6 +5,7 @@ import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import dev.dmigrate.driver.sqlite.parser.SqliteTriggerSqlParser
@@ -24,7 +25,7 @@ class SqliteSchemaReader : SchemaReader {
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             val session = JdbcMetadataSession(conn)
             val schema = "main"
 

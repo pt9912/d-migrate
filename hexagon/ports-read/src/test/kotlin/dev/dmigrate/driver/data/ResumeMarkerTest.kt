@@ -6,6 +6,7 @@ import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.format.data.ChunkColumnSchema
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.SchemaOrigin
@@ -124,7 +125,7 @@ class ResumeMarkerTest : FunSpec({
 
 private object DummyPool : ConnectionPool {
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
-    override fun borrow(): java.sql.Connection =
+    override fun borrow(): DatabaseConnection =
         throw UnsupportedOperationException("test fake")
     override fun activeConnections(): Int = 0
     override fun close() {}

@@ -2,6 +2,9 @@ package dev.dmigrate.driver.sqlite.profiling
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
@@ -20,9 +23,9 @@ import java.sql.DriverManager
 private class InMemoryPool : ConnectionPool {
     private val realConn = DriverManager.getConnection("jdbc:sqlite::memory:")
     override val dialect = DatabaseDialect.SQLITE
-    override fun borrow(): Connection = object : Connection by realConn {
+    override fun borrow(): DatabaseConnection = JdbcDatabaseConnection(object : Connection by realConn {
         override fun close() { /* no-op — keep in-memory DB alive */ }
-    }
+    })
     override fun activeConnections() = 0
     override fun close() = realConn.close()
 }
@@ -38,12 +41,12 @@ private class StrictSingleBorrowPool : ConnectionPool {
     private val realConn = DriverManager.getConnection("jdbc:sqlite::memory:")
     private var active = false
     override val dialect = DatabaseDialect.SQLITE
-    override fun borrow(): Connection {
+    override fun borrow(): DatabaseConnection {
         check(!active) { "pool exhausted (maximumPoolSize=1): a connection is already borrowed" }
         active = true
-        return object : Connection by realConn {
+        return JdbcDatabaseConnection(object : Connection by realConn {
             override fun close() { active = false }
-        }
+        })
     }
     override fun activeConnections() = if (active) 1 else 0
     override fun close() = realConn.close()
@@ -57,7 +60,7 @@ class SqliteProfilingTest : FunSpec({
     val resolver = SqliteLogicalTypeResolver()
 
     beforeSpec {
-        pool.borrow().createStatement().use { stmt ->
+        pool.borrow().asJdbc().createStatement().use { stmt ->
             stmt.execute("""
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,7 +182,7 @@ class SqliteProfilingTest : FunSpec({
     // problematic names to prove the quoting hardening works end-to-end.
 
     test("security: table with embedded double-quote is profiled safely") {
-        pool.borrow().createStatement().use { stmt ->
+        pool.borrow().asJdbc().createStatement().use { stmt ->
             stmt.execute("""CREATE TABLE "my""table" ("col""1" TEXT, "val" INTEGER)""")
             stmt.execute("""INSERT INTO "my""table" VALUES ('a', 1)""")
         }
@@ -190,7 +193,7 @@ class SqliteProfilingTest : FunSpec({
     }
 
     test("security: table named with reserved word is profiled safely") {
-        pool.borrow().createStatement().use { stmt ->
+        pool.borrow().asJdbc().createStatement().use { stmt ->
             stmt.execute("""CREATE TABLE "select" ("where" TEXT, "from" INTEGER)""")
             stmt.execute("""INSERT INTO "select" VALUES ('x', 42)""")
         }
@@ -201,7 +204,7 @@ class SqliteProfilingTest : FunSpec({
     }
 
     test("security: table with semicolon-injection attempt is profiled safely") {
-        pool.borrow().createStatement().use { stmt ->
+        pool.borrow().asJdbc().createStatement().use { stmt ->
             stmt.execute("""CREATE TABLE "users; DROP TABLE users --" ("id" INTEGER)""")
             stmt.execute("""INSERT INTO "users; DROP TABLE users --" VALUES (1)""")
         }
@@ -212,7 +215,7 @@ class SqliteProfilingTest : FunSpec({
 
     test("security: column with Unicode homoglyph is profiled safely") {
         // Cyrillic 'а' (U+0430) looks like Latin 'a' but is a different character
-        pool.borrow().createStatement().use { stmt ->
+        pool.borrow().asJdbc().createStatement().use { stmt ->
             stmt.execute("""CREATE TABLE "unicode_test" ("nаme" TEXT, "vаlue" INTEGER)""")
             stmt.execute("""INSERT INTO "unicode_test" VALUES ('test', 1)""")
         }
@@ -222,7 +225,7 @@ class SqliteProfilingTest : FunSpec({
 
     test("topValues borgt nur eine Connection — kein nested borrow bei Pool-Size 1 (Regression)") {
         StrictSingleBorrowPool().use { strictPool ->
-            strictPool.borrow().use { conn ->
+            strictPool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.execute("""CREATE TABLE single_conn (id INTEGER PRIMARY KEY, status TEXT)""")
                     stmt.execute("""INSERT INTO single_conn (status) VALUES ('a'), ('b'), ('a')""")

@@ -6,6 +6,9 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldContainKey
@@ -20,7 +23,7 @@ class SqliteSchemaReaderTest : FunSpec({
 
     fun pool(conn: Connection) = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = conn
+        override fun borrow(): DatabaseConnection = JdbcDatabaseConnection(conn)
         override fun activeConnections(): Int = 1
         override fun close() {}
     }
@@ -399,7 +402,7 @@ class SqliteSchemaReaderTest : FunSpec({
             val url = "jdbc:sqlite:${tmp.toAbsolutePath()}"
             val filePool = object : ConnectionPool {
                 override val dialect = DatabaseDialect.SQLITE
-                override fun borrow(): Connection = DriverManager.getConnection(url)
+                override fun borrow(): DatabaseConnection = JdbcDatabaseConnection(DriverManager.getConnection(url))
                 override fun activeConnections(): Int = 0
                 override fun close() {}
             }
@@ -516,7 +519,7 @@ class SqliteSchemaReaderTest : FunSpec({
 
     test("read completes successfully and returns result") {
         // Verifies the reader borrows and returns the connection within
-        // pool.borrow().use { } — if it leaked, the in-memory DB would
+        // pool.borrow().asJdbc().use { } — if it leaked, the in-memory DB would
         // be inaccessible. A successful read is the ownership proof.
         withDb("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)") { pool ->
             val result = reader.read(pool)

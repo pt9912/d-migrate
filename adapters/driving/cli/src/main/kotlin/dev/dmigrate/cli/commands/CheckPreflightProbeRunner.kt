@@ -1,4 +1,5 @@
 package dev.dmigrate.cli.commands
+import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.diff.migration.DiffResult
@@ -44,7 +45,7 @@ internal object CheckPreflightProbeRunner {
         }
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->
-            p.borrow().use { conn -> dispatch(conn, dialect, plan) }
+            p.borrow().asJdbc().use { conn -> dispatch(conn, dialect, plan) }
         }
     }
 

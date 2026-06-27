@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.TableLister
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 
@@ -17,7 +18,7 @@ class SqliteTableLister : TableLister {
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
 
     override fun listTables(pool: ConnectionPool): List<String> {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             val session = JdbcMetadataSession(conn)
             return SqliteMetadataQueries.listTableRefs(session).map { it.name }
         }

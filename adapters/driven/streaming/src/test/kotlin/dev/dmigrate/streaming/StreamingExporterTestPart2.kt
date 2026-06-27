@@ -5,6 +5,7 @@ import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.ChunkSequence
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.TableLister
@@ -23,7 +24,6 @@ import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import java.io.OutputStream
 import java.nio.file.Files
-import java.sql.Connection
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.readText
 
@@ -288,7 +288,7 @@ class StreamingExporterTestPart2 : FunSpec({
 
 internal object NoopConnectionPool : ConnectionPool {
     override val dialect = DatabaseDialect.SQLITE
-    override fun borrow(): Connection = error("FakeDataReader does not call pool.borrow()")
+    override fun borrow(): DatabaseConnection = error("FakeDataReader does not call pool.borrow()")
     override fun activeConnections(): Int = 0
     override fun close() = Unit
 }

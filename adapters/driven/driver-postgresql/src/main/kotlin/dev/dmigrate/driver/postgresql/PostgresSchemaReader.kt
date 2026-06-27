@@ -5,6 +5,7 @@ import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
@@ -24,7 +25,7 @@ class PostgresSchemaReader(
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             val session = jdbcFactory(conn)
             val schema = currentSchema(conn)
             val database = conn.catalog ?: "unknown"

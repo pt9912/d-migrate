@@ -2,6 +2,7 @@ package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -106,7 +107,7 @@ abstract class AbstractJdbcDataReader : DataReader {
         require(chunkSize > 0) { "chunkSize must be > 0, got $chunkSize" }
 
         // Connection borgen — alles weitere muss bei Exception aufgeräumt werden
-        val conn = pool.borrow()
+        val conn = pool.borrow().asJdbc()
         var savedAutoCommit: Boolean? = null
         var stmt: PreparedStatement? = null
         var rs: ResultSet? = null

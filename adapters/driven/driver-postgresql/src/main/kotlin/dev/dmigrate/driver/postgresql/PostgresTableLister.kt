@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.TableLister
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
@@ -21,7 +22,7 @@ class PostgresTableLister(
     override val dialect: DatabaseDialect = DatabaseDialect.POSTGRESQL
 
     override fun listTables(pool: ConnectionPool): List<String> {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             val schema = currentSchema(conn)
             val session = jdbcFactory(conn)
             return PostgresMetadataQueries.listTableRefs(session, schema).map { it.name }

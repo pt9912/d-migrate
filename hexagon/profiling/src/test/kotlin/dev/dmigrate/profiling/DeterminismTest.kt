@@ -2,6 +2,7 @@ package dev.dmigrate.profiling
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.model.ColumnProfile
 import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.profiling.model.TableProfile
@@ -16,7 +17,6 @@ import dev.dmigrate.profiling.service.ProfileDatabaseService
 import dev.dmigrate.profiling.types.LogicalType
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import java.sql.Connection
 
 /**
  * Explicit determinism contract tests for the profiling pipeline.
@@ -26,7 +26,7 @@ class DeterminismTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.POSTGRESQL
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

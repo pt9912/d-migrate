@@ -1,4 +1,5 @@
 package dev.dmigrate.driver.metadata
+import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -45,7 +46,7 @@ class JdbcMetadataSessionTimeoutTest : FunSpec({
 
     test("queryList without params runs through the timeout-decorated createStatement") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 7_000)).use { pool ->
-            pool.borrow().use { decorated ->
+            pool.borrow().asJdbc().use { decorated ->
                 val capturing = CapturingConnection(decorated)
                 val session = JdbcMetadataSession(capturing)
                 session.queryList("SELECT 1 AS x") // implicit Map result
@@ -57,7 +58,7 @@ class JdbcMetadataSessionTimeoutTest : FunSpec({
 
     test("queryList with params runs through the timeout-decorated prepareStatement") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 4_000)).use { pool ->
-            pool.borrow().use { decorated ->
+            pool.borrow().asJdbc().use { decorated ->
                 val capturing = CapturingConnection(decorated)
                 val session = JdbcMetadataSession(capturing)
                 session.queryList("SELECT ? AS x", 42)
@@ -69,7 +70,7 @@ class JdbcMetadataSessionTimeoutTest : FunSpec({
 
     test("querySingle without params runs through the decorator") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 9_000)).use { pool ->
-            pool.borrow().use { decorated ->
+            pool.borrow().asJdbc().use { decorated ->
                 val capturing = CapturingConnection(decorated)
                 JdbcMetadataSession(capturing).querySingle("SELECT 1 AS x")
                 capturing.statements.all { it.queryTimeout == 9 } shouldBe true
@@ -79,7 +80,7 @@ class JdbcMetadataSessionTimeoutTest : FunSpec({
 
     test("execute(sql) runs through the decorator") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 11_000)).use { pool ->
-            pool.borrow().use { decorated ->
+            pool.borrow().asJdbc().use { decorated ->
                 decorated.createStatement().use { it.execute("CREATE TABLE t (id INTEGER)") }
                 val capturing = CapturingConnection(decorated)
                 JdbcMetadataSession(capturing).execute("INSERT INTO t (id) VALUES (1)")
@@ -91,7 +92,7 @@ class JdbcMetadataSessionTimeoutTest : FunSpec({
 
     test("executeBatch runs through the decorator") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 13_000)).use { pool ->
-            pool.borrow().use { decorated ->
+            pool.borrow().asJdbc().use { decorated ->
                 decorated.createStatement().use { it.execute("CREATE TABLE t (id INTEGER)") }
                 val capturing = CapturingConnection(decorated)
                 JdbcMetadataSession(capturing).executeBatch(
@@ -106,7 +107,7 @@ class JdbcMetadataSessionTimeoutTest : FunSpec({
 
     test("statementTimeoutMs == 0 leaves all metadata-session statements with no timeout") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 0)).use { pool ->
-            pool.borrow().use { decorated ->
+            pool.borrow().asJdbc().use { decorated ->
                 val capturing = CapturingConnection(decorated)
                 JdbcMetadataSession(capturing).queryList("SELECT 1")
                 capturing.statements.all { it.queryTimeout == 0 } shouldBe true

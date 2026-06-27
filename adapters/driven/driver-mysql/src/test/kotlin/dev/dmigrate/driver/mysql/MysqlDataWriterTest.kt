@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.TargetColumn
@@ -33,7 +34,7 @@ class MysqlDataWriterTest : FunSpec({
     fun buildMocks(): TestMocks {
         val conn = mockk<Connection>(relaxUnitFun = true)
         val pool = mockk<ConnectionPool> {
-            every { borrow() } returns conn
+            every { borrow() } returns JdbcDatabaseConnection(conn)
         }
         val jdbc = mockk<JdbcOperations>(relaxUnitFun = true)
         val jdbcFactory: (Connection) -> JdbcOperations = { jdbc }

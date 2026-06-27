@@ -5,6 +5,7 @@ import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
@@ -37,7 +38,7 @@ class SqliteDataWriterTest : FunSpec({
             )
         )
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "CREATE TABLE writer_users (" +
@@ -120,7 +121,7 @@ class SqliteDataWriterTest : FunSpec({
             )
         }
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id, name FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val rows = mutableListOf<Pair<Int, String>>()
@@ -156,7 +157,7 @@ class SqliteDataWriterTest : FunSpec({
             session.finishTable()
         }
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val ids = mutableListOf<Int>()
@@ -202,7 +203,7 @@ class SqliteDataWriterTest : FunSpec({
             session.finishTable()
         }
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.prepareStatement("SELECT id FROM writer_users ORDER BY id").use { ps ->
                 ps.executeQuery().use { rs ->
                     val ids = mutableListOf<Int>()
@@ -222,7 +223,7 @@ class SqliteDataWriterTest : FunSpec({
     }
 
     test("onConflict update upserts rows and reports inserted vs updated") {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO writer_upsert_target (id, name) VALUES (1, 'old')")
             }
@@ -263,7 +264,7 @@ class SqliteDataWriterTest : FunSpec({
     }
 
     test("onConflict skip reports inserted vs skipped") {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO writer_upsert_target (id, name) VALUES (1, 'existing')")
             }
@@ -343,7 +344,7 @@ class SqliteDataWriterTest : FunSpec({
             session.finishTable()
         }
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("PRAGMA foreign_keys").use { rs ->
                     rs.next() shouldBe true

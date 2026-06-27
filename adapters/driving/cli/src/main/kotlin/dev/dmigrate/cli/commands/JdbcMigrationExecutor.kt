@@ -1,4 +1,5 @@
 package dev.dmigrate.cli.commands
+import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.driver.connection.ConnectionUrlParser
@@ -79,7 +80,7 @@ internal object JdbcMigrationExecutor {
         }
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->
-            p.borrow().use { conn ->
+            p.borrow().asJdbc().use { conn ->
                 runAll(conn, statements)
             }
         }

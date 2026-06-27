@@ -4,6 +4,7 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import io.kotest.assertions.throwables.shouldThrow
@@ -33,7 +34,7 @@ class SqliteSchemaSyncTest : FunSpec({
             )
         )
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "CREATE TABLE sync_autoinc (" +
@@ -58,7 +59,7 @@ class SqliteSchemaSyncTest : FunSpec({
     val idColumn = listOf(ColumnDescriptor("id", nullable = false))
 
     test("reseed autoincrement table updates next generated value") {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO sync_autoinc (id, name) VALUES (7, 'manual')")
             }
@@ -80,13 +81,13 @@ class SqliteSchemaSyncTest : FunSpec({
     }
 
     test("no adjustment for table without autoincrement") {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             schemaSync.reseedGenerators(conn, "sync_plain_pk", idColumn) shouldBe emptyList()
         }
     }
 
     test("truncate empty autoincrement table clears sqlite_sequence") {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO sync_autoinc (id, name) VALUES (5, 'manual')")
                 stmt.execute("DELETE FROM sync_autoinc")

@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql.profiling
 
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.profiling.port.ColumnSchema
@@ -18,7 +19,7 @@ class MysqlSchemaIntrospectionAdapter(
     )
 
     private inline fun <T> withJdbc(pool: ConnectionPool, block: (JdbcOperations) -> T): T =
-        pool.borrow().use { conn -> block(jdbcFactory(conn)) }
+        pool.borrow().asJdbc().use { conn -> block(jdbcFactory(conn)) }
 
     private fun schemaPredicate(column: String, schema: String?): SchemaPredicate =
         if (schema == null) {

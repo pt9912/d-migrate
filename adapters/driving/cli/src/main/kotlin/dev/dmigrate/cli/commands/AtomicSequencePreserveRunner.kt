@@ -5,6 +5,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
@@ -72,7 +73,7 @@ internal object AtomicSequencePreserveRunner {
         val acquired = acquireConnection(target, configPath)
         val executor = dispatcher(acquired.dialect)
         return acquired.pool.use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 executor.execute(conn, batch, lockTimeoutMillis, cancellationToken, executeProtectedOperations)
             }
         }

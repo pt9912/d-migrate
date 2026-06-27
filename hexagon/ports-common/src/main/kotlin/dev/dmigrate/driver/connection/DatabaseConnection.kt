@@ -3,7 +3,7 @@ package dev.dmigrate.driver.connection
 /**
  * Neutrales Verbindungs-Handle der Ports-Schicht (ADR 0022).
  *
- * Ersetzt die bis dahin durchgereichte `java.sql.Connection` in den Port-Signaturen
+ * Ersetzt die bis dahin durchgereichte JDBC-`Connection` in den Port-Signaturen
  * ([ConnectionPool.borrow] und dem `AtomicSequencePreserveExecutor`), damit
  * `hexagon:ports-*` JDBC-frei bleibt — Technologie lebt in den Adaptern.
  *

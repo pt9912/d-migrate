@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.TargetColumn
@@ -142,7 +143,7 @@ class PostgresDataWriterTest : FunSpec({
         every { conn.catalog } returns "testdb"
 
         pool = mockk<ConnectionPool>()
-        every { pool.borrow() } returns conn
+        every { pool.borrow() } returns JdbcDatabaseConnection(conn)
 
         jdbc = mockk<JdbcOperations>()
     }

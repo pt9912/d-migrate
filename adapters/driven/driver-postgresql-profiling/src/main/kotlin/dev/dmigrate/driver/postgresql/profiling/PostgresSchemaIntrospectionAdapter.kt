@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql.profiling
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.profiling.port.ColumnSchema
@@ -17,7 +18,7 @@ class PostgresSchemaIntrospectionAdapter(
     private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
 
     private inline fun <T> withJdbc(pool: ConnectionPool, block: (JdbcOperations) -> T): T =
-        pool.borrow().use { conn -> block(jdbcFactory(conn)) }
+        pool.borrow().asJdbc().use { conn -> block(jdbcFactory(conn)) }
 
     override fun listTables(pool: ConnectionPool, schema: String?): List<TableSchema> =
         withJdbc(pool) { jdbc ->

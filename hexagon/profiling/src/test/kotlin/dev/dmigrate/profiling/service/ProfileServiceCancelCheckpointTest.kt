@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.cancel.TestCancellationTokenSource
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.model.TargetTypeCompatibility
 import dev.dmigrate.profiling.model.ValueFrequency
@@ -18,7 +19,6 @@ import dev.dmigrate.profiling.types.TargetLogicalType
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -35,7 +35,7 @@ class ProfileServiceCancelCheckpointTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

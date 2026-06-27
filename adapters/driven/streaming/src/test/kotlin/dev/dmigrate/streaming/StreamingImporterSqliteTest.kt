@@ -3,6 +3,7 @@ package dev.dmigrate.streaming
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
@@ -40,7 +41,7 @@ class StreamingImporterSqliteTest : FunSpec({
                 password = null,
             )
         )
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "CREATE TABLE test_users (" +
@@ -71,7 +72,7 @@ class StreamingImporterSqliteTest : FunSpec({
 
     fun queryAllUsers(pool: ConnectionPool): List<Triple<Long, String, Double?>> {
         val rows = mutableListOf<Triple<Long, String, Double?>>()
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery("SELECT id, name, score FROM test_users ORDER BY id").use { rs ->
                     while (rs.next()) {
@@ -135,7 +136,7 @@ class StreamingImporterSqliteTest : FunSpec({
     }
 
     test("sqlite importer reports skipped rows for onConflict skip") {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO test_users (id, name, score) VALUES (1, 'existing', 1.0)")
             }
@@ -170,7 +171,7 @@ class StreamingImporterSqliteTest : FunSpec({
     }
 
     test("sqlite importer reports updated rows for onConflict update") {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO test_users (id, name, score) VALUES (1, 'old', 1.0)")
             }
@@ -249,7 +250,7 @@ class StreamingImporterSqliteTest : FunSpec({
             summary.sequenceAdjustments.single().column shouldBe "id"
             summary.sequenceAdjustments.single().newValue shouldBe 51L
 
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.execute("INSERT INTO test_users (name, score) VALUES ('auto', 0.0)")
                 }

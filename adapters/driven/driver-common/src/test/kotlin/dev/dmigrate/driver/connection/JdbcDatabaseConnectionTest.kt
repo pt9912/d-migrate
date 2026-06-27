@@ -31,11 +31,14 @@ class JdbcDatabaseConnectionTest : FunSpec({
 
     test("close delegiert an die gewrappte Connection") {
         val delegate = openSqlite()
-        delegate.isClosed shouldBe false
-        // Delegation ist hier physisch sichtbar (isClosed). Bei einer Hikari-Connection
-        // ist genau diese Delegation die Pool-Rückgabe (close() schließt nicht physisch).
-        JdbcDatabaseConnection(delegate).close()
-        delegate.isClosed shouldBe true
+        try {
+            // Delegation ist hier physisch sichtbar (isClosed). Bei einer Hikari-Connection
+            // ist genau diese Delegation die Pool-Rückgabe (close() schließt nicht physisch).
+            JdbcDatabaseConnection(delegate).close()
+            delegate.isClosed shouldBe true
+        } finally {
+            if (!delegate.isClosed) delegate.close()
+        }
     }
 
     test("asJdbc liefert die gewrappte Connection zurück") {

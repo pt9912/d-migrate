@@ -210,7 +210,7 @@ private class HikariConnectionPool(
     private val networkTimeoutMs: Int,
 ) : ConnectionPool {
 
-    override fun borrow(): Connection {
+    override fun borrow(): DatabaseConnection {
         val raw = dataSource.connection
         if (networkTimeoutMs > 0) {
             try {
@@ -222,7 +222,7 @@ private class HikariConnectionPool(
                 // statement-level timeouts still bound query duration.
             }
         }
-        return TimeoutDecoratedConnection(raw, statementTimeoutSeconds)
+        return JdbcDatabaseConnection(TimeoutDecoratedConnection(raw, statementTimeoutSeconds))
     }
 
     override fun activeConnections(): Int {

@@ -1,4 +1,5 @@
 package dev.dmigrate.driver.connection
+import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.driver.DatabaseDialect
 import io.kotest.core.spec.style.FunSpec
@@ -35,7 +36,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
     test("create / borrow / close lifecycle works") {
         HikariConnectionPoolFactory.create(memoryConfig()).use { pool ->
             pool.dialect shouldBe DatabaseDialect.SQLITE
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn shouldNotBe null
                 conn.isClosed shouldBe false
                 conn.createStatement().use { stmt ->
@@ -51,7 +52,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         HikariConnectionPoolFactory.create(memoryConfig()).use { pool ->
             // Vorher: 0 active
             pool.activeConnections() shouldBe 0
-            val conn = pool.borrow()
+            val conn = pool.borrow().asJdbc()
             try {
                 pool.activeConnections() shouldBeGreaterThanOrEqual 1
             } finally {
@@ -70,10 +71,10 @@ class HikariConnectionPoolFactoryTest : FunSpec({
     test("borrowed connection.close() returns to pool — not physically closed") {
         HikariConnectionPoolFactory.create(memoryConfig()).use { pool ->
             // Erste borrow
-            val first = pool.borrow()
+            val first = pool.borrow().asJdbc()
             first.close()  // gibt zurück
             // Zweite borrow sollte funktionieren (poolSize=1 für SQLite)
-            pool.borrow().use { second ->
+            pool.borrow().asJdbc().use { second ->
                 second.createStatement().use { stmt ->
                     stmt.executeQuery("SELECT 42").use { rs ->
                         rs.next() shouldBe true
@@ -88,7 +89,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
 
     test("SQLite default foreign_keys=true is enforced") {
         HikariConnectionPoolFactory.create(memoryConfig()).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.executeQuery("PRAGMA foreign_keys").use { rs ->
                         rs.next() shouldBe true
@@ -104,7 +105,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         // Wir prüfen, dass die URL-Konstruktion den Parameter mitgibt — der echte
         // Effekt wird mit einer File-DB verifiziert.
         HikariConnectionPoolFactory.create(memoryConfig()).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.executeQuery("PRAGMA journal_mode").use { rs ->
                         rs.next() shouldBe true
@@ -121,7 +122,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         HikariConnectionPoolFactory
             .create(memoryConfig(mapOf("foreign_keys" to "false")))
             .use { pool ->
-                pool.borrow().use { conn ->
+                pool.borrow().asJdbc().use { conn ->
                     conn.createStatement().use { stmt ->
                         stmt.executeQuery("PRAGMA foreign_keys").use { rs ->
                             rs.next() shouldBe true
@@ -145,7 +146,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
 
         // Factory muss die URL korrekt re-encoden, sonst wirft der JDBC-Treiber
         HikariConnectionPoolFactory.create(parsed).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.isClosed shouldBe false
             }
         }
@@ -158,7 +159,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
             // Wir können nicht direkt an HikariCP.maximumPoolSize ran, aber wir prüfen,
             // dass der Pool als SQLite-Pool funktioniert ohne Pool-Size-Konflikte
             pool.dialect shouldBe DatabaseDialect.SQLITE
-            pool.borrow().use { it.isClosed shouldBe false }
+            pool.borrow().asJdbc().use { it.isClosed shouldBe false }
         }
     }
 
@@ -276,7 +277,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         // that is already a multiple of 1000 (`30_000`) so both layers agree.
         val cfg = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 30_000))
         HikariConnectionPoolFactory.create(cfg).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
                         rs.next() shouldBe true
@@ -306,7 +307,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         // statementTimeoutMs = 4500 → ceil(4.5) = 5 seconds
         val cfg = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 4_500))
         HikariConnectionPoolFactory.create(cfg).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt -> stmt.queryTimeout shouldBe 5 }
                 conn.prepareStatement("SELECT 1").use { stmt -> stmt.queryTimeout shouldBe 5 }
             }
@@ -316,7 +317,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
     test("borrow with statementTimeoutMs = 0 leaves no queryTimeout on borrowed statements") {
         val cfg = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 0))
         HikariConnectionPoolFactory.create(cfg).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt -> stmt.queryTimeout shouldBe 0 }
                 conn.prepareStatement("SELECT 1").use { stmt -> stmt.queryTimeout shouldBe 0 }
             }
@@ -330,7 +331,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         // usable, regardless of network-timeout support.
         val cfg = memoryConfig().copy(pool = PoolSettings(networkTimeoutMs = 12_000))
         HikariConnectionPoolFactory.create(cfg).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     val rs = stmt.executeQuery("SELECT 1")
                     rs.next() shouldBe true
@@ -352,7 +353,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         val withoutInit = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 0))
 
         val driverDefault = HikariConnectionPoolFactory.create(withoutInit).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
                         rs.next() shouldBe true
@@ -363,7 +364,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         }
         driverDefault shouldNotBe ourValue
         HikariConnectionPoolFactory.create(withInit).use { pool ->
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
                         rs.next() shouldBe true

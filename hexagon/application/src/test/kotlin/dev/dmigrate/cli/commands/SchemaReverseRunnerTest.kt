@@ -4,12 +4,12 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Path
-import java.sql.Connection
 
 class SchemaReverseRunnerTest : FunSpec({
 
@@ -25,7 +25,7 @@ class SchemaReverseRunnerTest : FunSpec({
     val fakeConfig = ConnectionConfig(DatabaseDialect.SQLITE, "localhost", null, "test", null, null)
     val fakePool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

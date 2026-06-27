@@ -9,6 +9,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.SchemaSync
@@ -350,7 +351,7 @@ private class FakeImportPool(
 ) : ConnectionPool {
     var closed = false
 
-    override fun borrow(): Connection = throw UnsupportedOperationException("not used by wiring test")
+    override fun borrow(): DatabaseConnection = throw UnsupportedOperationException("not used by wiring test")
 
     override fun activeConnections() = 0
 

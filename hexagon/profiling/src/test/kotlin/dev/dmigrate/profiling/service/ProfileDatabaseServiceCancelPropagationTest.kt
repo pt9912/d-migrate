@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.CancellationTokenSource
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.model.TableProfile
 import dev.dmigrate.profiling.port.ColumnSchema
@@ -14,7 +15,6 @@ import dev.dmigrate.profiling.port.TableSchema
 import dev.dmigrate.profiling.types.LogicalType
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import java.sql.Connection
 
 /**
  * LF-012 / LN-011 / LN-017 / LN-027 propagation guard: a token passed to [ProfileDatabaseService.profile]
@@ -25,7 +25,7 @@ class ProfileDatabaseServiceCancelPropagationTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

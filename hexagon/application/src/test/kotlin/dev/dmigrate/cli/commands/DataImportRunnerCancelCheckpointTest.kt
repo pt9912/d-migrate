@@ -5,6 +5,7 @@ import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.streaming.ImportInput
@@ -12,7 +13,6 @@ import dev.dmigrate.streaming.ImportResult
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
-import java.sql.Connection
 
 /**
  * LF-012 / LN-011 / LN-017 / LN-027: Cancel inside the import runner must surface as exit 130 —
@@ -24,7 +24,7 @@ class DataImportRunnerCancelCheckpointTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = error("unused")
+        override fun borrow(): DatabaseConnection = error("unused")
         override fun activeConnections() = 0
         override fun close() = Unit
     }

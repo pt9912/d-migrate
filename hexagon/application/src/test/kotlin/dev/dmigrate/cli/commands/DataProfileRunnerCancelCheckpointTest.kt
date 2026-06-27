@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.cancel.TestCancellationTokenSource
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.port.ColumnMetrics
 import dev.dmigrate.profiling.port.ColumnSchema
@@ -14,7 +15,6 @@ import dev.dmigrate.profiling.types.LogicalType
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.file.Path
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -27,7 +27,7 @@ class DataProfileRunnerCancelCheckpointTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

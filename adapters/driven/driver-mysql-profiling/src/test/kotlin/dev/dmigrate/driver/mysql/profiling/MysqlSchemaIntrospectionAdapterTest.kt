@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql.profiling
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -17,7 +18,7 @@ class MysqlSchemaIntrospectionAdapterTest : FunSpec({
     val conn = mockk<Connection>()
     val pool = mockk<ConnectionPool> {
         every { dialect } returns DatabaseDialect.MYSQL
-        every { borrow() } returns conn
+        every { borrow() } returns JdbcDatabaseConnection(conn)
     }
     every { conn.close() } returns Unit
 
