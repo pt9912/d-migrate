@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ports-jdbc-free-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 help:
 	@printf '%s\n' \
@@ -181,6 +181,10 @@ semgrep: semgrep-rules-fetch
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
 
+# Architektur-Fitness-Function (ADR 0022): hexagon:ports* ist java.sql-frei.
+ports-jdbc-free-gate:
+	./scripts/ports-jdbc-free-gate.sh
+
 # ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer für
 # große mechanische Umbauten (Signatur-/Rename über viele Call-Sites), wo Regex an
 # Strings/Kommentaren/Formatvarianten scheitert (memory feedback_syntax_aware_refactor).
@@ -211,7 +215,7 @@ ast-grep: ast-grep-build
 parquet-sweep:
 	./scripts/parquet-sealed-sweep.sh
 
-gates: docker-check docker-coverage-gate docs-check semgrep
+gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate
 
 ci: ci-build docs-check
 
