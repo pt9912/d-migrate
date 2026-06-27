@@ -184,9 +184,13 @@ solid-suppression-gate:
 # ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer für
 # große mechanische Umbauten (Signatur-/Rename über viele Call-Sites), wo Regex an
 # Strings/Kommentaren/Formatvarianten scheitert (memory feedback_syntax_aware_refactor).
-# Hermetische Stage (Dockerfile `ast-grep`), offline ausgeführt. Beispiele:
-#   make ast-grep ARGS='run -p "$$P.borrow()" -l kotlin adapters hexagon'        # Suche
-#   make ast-grep ARGS='run -p "X" -r "Y" -l kotlin --update-all adapters'       # Rewrite
+# Hermetische Stage (Dockerfile `ast-grep`), offline ausgeführt.
+#
+# Quoting: ARGS wird via $(value ARGS) UNEXPANDIERT an die Shell gereicht (make frisst
+# `$P` sonst als $(P)). Es bleibt EINE Ebene: die ast-grep-Metavariable `$P` gegen die
+# Shell schützen — `\$P` (in Doppel-Quotes) oder '$P' (Single-Quotes). Beispiele:
+#   make ast-grep ARGS='run -p "\$P.borrow()" -l kotlin adapters hexagon'        # Suche
+#   make ast-grep ARGS='run -p "\$A.foo(\$B)" -r "\$A.bar(\$B)" -l kotlin --update-all adapters'  # Rewrite
 # Read-write-Mount (für --update-all) + Host-User-Mapping (Datei-Ownership);
 # --network none, da ast-grep nach Install offline arbeitet.
 AST_GREP_IMAGE ?= d-migrate-ast-grep
@@ -196,7 +200,7 @@ ast-grep-build:
 
 ast-grep: ast-grep-build
 	$(DOCKER) run --rm --network none --user "$$(id -u):$$(id -g)" \
-	  -v "$(CURDIR)":/repo $(AST_GREP_IMAGE) $(ARGS)
+	  -v "$(CURDIR)":/repo $(AST_GREP_IMAGE) $(value ARGS)
 
 # Parquet Cut-A (0.9.8) — Sealed-when-Sweep aus AP13 §4.1.
 # Pflicht-Lauf vor jedem Parquet-PR-Merge auf
