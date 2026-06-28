@@ -40,6 +40,17 @@ internal class SqliteColumnConstraintHelper(
                 hint = "Store as TEXT if exact decimal precision is required."
             )
         }
+        if (type is NeutralType.FullText) {
+            // ADR 0015: full-text degrades to a plain TEXT column cross-dialect;
+            // SQLite full-text search is an FTS5 virtual table, not a column type.
+            notes += TransformationNote(
+                type = NoteType.WARNING, code = "W132", objectName = "$tableName.$colName",
+                message = "Full-text column '$colName' degraded to TEXT; " +
+                    "SQLite full-text search is an FTS5 virtual table, not a column type.",
+                hint = "To restore full-text search, create an FTS5 virtual table over the source " +
+                    "text with sync triggers; structural cross-dialect translation is a future slice."
+            )
+        }
         return generateDefaultColumn(colName, col, schema, tableName, deferredFks)
     }
 

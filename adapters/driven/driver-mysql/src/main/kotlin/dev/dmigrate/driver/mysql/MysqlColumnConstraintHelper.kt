@@ -27,6 +27,7 @@ internal class MysqlColumnConstraintHelper(
             columnAutoIncrement(colName, col)
         col.type is NeutralType.Enum -> columnEnum(tableName, colName, col, schema)
         col.type is NeutralType.Geometry -> columnGeometry(colName, col, notes)
+        col.type is NeutralType.FullText -> columnFullText(tableName, colName, col, schema, notes)
         else -> columnSql(tableName, colName, col, schema)
     }
 
@@ -103,6 +104,26 @@ internal class MysqlColumnConstraintHelper(
         }
         if (col.required) parts += "NOT NULL"
         return parts.joinToString(" ")
+    }
+
+    // ADR 0015: cross-dialect, a full-text column degrades to a plain TEXT
+    // column (MySQL has no full-text vector type). The note points at the
+    // manual FULLTEXT-index path; structural translation is a future slice.
+    private fun columnFullText(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        schema: SchemaDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String {
+        notes += TransformationNote(
+            type = NoteType.WARNING, code = "W132", objectName = colName,
+            message = "Full-text column '$colName' degraded to TEXT; " +
+                "MySQL has no full-text vector column type.",
+            hint = "To restore full-text search, add a FULLTEXT index over the source text " +
+                "column(s); structural cross-dialect translation is a future slice.",
+        )
+        return columnSql(tableName, colName, col, schema)
     }
 
     fun buildForeignKeyClause(

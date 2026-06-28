@@ -1,11 +1,11 @@
 # Strukturelle Cross-Dialect-Volltext-Übersetzung (FTS5 / FULLTEXT)
 
-> **Status:** Draft mit Scope (Entwurf, 2026-06-27). Aus dem `open/`-Vorschlag nach `next/`
-> gehoben — Phasen + Akzeptanzkriterien ausgearbeitet ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
-> Aktiv (→ `../in-progress/`) beim ersten Implementierungs-Commit, der sich auf diesen Plan beruft.
+> **Status:** In Progress (2026-06-28). **P0 erledigt** (Cross-Dialect-Degradierungs-Note
+> W132, MySQL + SQLite); P1–P5 offen. Phasen + Akzeptanzkriterien ausgearbeitet
+> ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
 > **Herkunft:** Carve-Out aus [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)
 > (Abschnitt „Abgrenzung"), getrackt in
-> [`../in-progress/carveout.md`](../in-progress/carveout.md), Abschnitt 8.
+> [`carveout.md`](carveout.md), Abschnitt 8.
 
 ## 1. Ziel
 
@@ -102,10 +102,11 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
 
 ## 5. Phasen (Reihenfolge: klein/risikoarm → strukturell)
 
-- **P0 — Vorab-Fix Degradierungs-Note.** Der stumme `FullText → TEXT`-Abfall in MySQL/SQLite
-  bekommt eine explizite Degradierungs-Note mit Hinweis auf den manuellen FTS5-/FULLTEXT-Pfad.
-  Unabhängig vom strukturellen Rest auslieferbar. **DoD:** Cross-Dialect-`generate` einer
-  `fulltext`-Spalte emittiert die Note; Unit-Test; Build grün.
+- **P0 — Vorab-Fix Degradierungs-Note. ✅ ERLEDIGT 2026-06-28.** Der stumme
+  `FullText → TEXT`-Abfall in MySQL/SQLite emittiert jetzt eine explizite
+  Degradierungs-Note (**W132**) mit Hinweis auf den manuellen FTS5-/FULLTEXT-Pfad.
+  **DoD erfüllt:** Cross-Dialect-`generate` einer `fulltext`-Spalte emittiert W132;
+  Unit-Tests (MySQL + SQLite); Build grün; W132 in beiden Ledgern registriert.
 - **P1 — ADR + Modell.** Slice-ADR schreiben (Entscheidungen Abschnitt 4 ratifizieren).
   Modell: `IndexType.FULLTEXT`; `fulltext`-Trägerschaft der `sourceColumns`/`textSearchConfig`;
   Serialisierung (YAML-Codec) + `spec/neutral-model-spec.md`-Sync. **DoD:** ADR accepted; Modell
@@ -148,6 +149,6 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
 
 ## 8. Bezug
 
-- Carve-Out-Tracker: [`../in-progress/carveout.md`](../in-progress/carveout.md), Abschnitt 8.
+- Carve-Out-Tracker: [`carveout.md`](carveout.md), Abschnitt 8.
 - Verwandter Trigger-Watch (degradierende PG-only-Typen):
   [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md).

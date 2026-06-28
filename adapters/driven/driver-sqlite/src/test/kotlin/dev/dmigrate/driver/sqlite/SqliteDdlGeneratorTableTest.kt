@@ -338,6 +338,27 @@ class SqliteDdlGeneratorTableTest : FunSpec({
         } shouldBe true
     }
 
+    test("fulltext column degrades to TEXT with W132 degradation warning") {
+        val s = schema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "body" to col(NeutralType.FullText, required = true)
+                    ),
+                    primaryKey = listOf("id")
+                )
+            )
+        )
+        val result = generator.generate(s)
+        val sql = result.tableSql()
+
+        sql shouldContain "\"body\" TEXT NOT NULL"
+        result.notes.any {
+            it.code == "W132" && it.objectName == "docs.body" && it.hint?.contains("FTS5") == true
+        } shouldBe true
+    }
+
     test("boolean column with default true renders DEFAULT 1") {
         val s = schema(
             tables = mapOf(
