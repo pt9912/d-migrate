@@ -1,7 +1,8 @@
 # Strukturelle Cross-Dialect-Volltext-Übersetzung (FTS5 / FULLTEXT)
 
-> **Status:** In Progress (2026-06-28). **P0 erledigt** (Cross-Dialect-Degradierungs-Note
-> W132, MySQL + SQLite); P1–P5 offen. Phasen + Akzeptanzkriterien ausgearbeitet
+> **Status:** In Progress (2026-06-28). **P0+P1 erledigt** (P0: Degradierungs-Note W132;
+> P1: ADR 0025 accepted + Modell `IndexType.FULLTEXT` + `textSearchConfig`); P2–P5 offen.
+> Phasen + Akzeptanzkriterien ausgearbeitet
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
 > **Herkunft:** Carve-Out aus [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)
 > (Abschnitt „Abgrenzung"), getrackt in
@@ -107,10 +108,13 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   Degradierungs-Note (**W132**) mit Hinweis auf den manuellen FTS5-/FULLTEXT-Pfad.
   **DoD erfüllt:** Cross-Dialect-`generate` einer `fulltext`-Spalte emittiert W132;
   Unit-Tests (MySQL + SQLite); Build grün; W132 in beiden Ledgern registriert.
-- **P1 — ADR + Modell.** Slice-ADR schreiben (Entscheidungen Abschnitt 4 ratifizieren).
-  Modell: `IndexType.FULLTEXT`; `fulltext`-Trägerschaft der `sourceColumns`/`textSearchConfig`;
-  Serialisierung (YAML-Codec) + `spec/neutral-model-spec.md`-Sync. **DoD:** ADR accepted; Modell
-  + Serialisierung round-trippen durch YAML; schema.json-Contract grün.
+- **P1 — ADR + Modell. ✅ ERLEDIGT 2026-06-28.**
+  [ADR 0025](../../adr/0025-fulltext-source-columns-as-index.md) accepted (Quellspalten am
+  `IndexType.FULLTEXT`-Index, **nicht** am Typ — `FullText` bleibt parameterlos). Modell:
+  `IndexType.FULLTEXT` + optionales `IndexDefinition.textSearchConfig`; YAML-Codec
+  (Serialize/Parse) + `spec/neutral-model-spec.md` + `spec/schema.json` synchron.
+  **DoD erfüllt:** ADR accepted; YAML-Round-Trip-Test grün; schema.json-Contract-Fixture
+  (fulltext-Index) validiert; Build grün.
 - **P2 — PG-Reverse-Anreicherung.** `tsvector_update_trigger`-Body (und Generated-Column-
   Expression) parsen → `sourceColumns` + Config füllen; nicht-parsebar → Fallback + Note.
   **DoD:** PG-Reverse von Pagila `film` erfasst `fulltext` + Quelltext-Spalten (`title`,

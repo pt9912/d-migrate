@@ -155,6 +155,7 @@ private fun buildIndices(
         if (index.type != IndexType.BTREE) node.put("type", index.type.name.lowercase())
         if (index.unique) node.put("unique", true)
         if (index.where != null) node.put("where", index.where)
+        if (index.textSearchConfig != null) node.put("text_search_config", index.textSearchConfig)
         arrayNode.add(node)
     }
     return arrayNode

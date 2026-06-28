@@ -126,6 +126,39 @@ class YamlSchemaCodecTest : FunSpec({
         codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
     }
 
+    test("fulltext index round-trips with type and text_search_config") {
+        val schema = SchemaDefinition(
+            name = "Test",
+            version = "1.0",
+            tables = mapOf(
+                "film" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier()),
+                        "title" to ColumnDefinition(type = NeutralType.Text()),
+                        "description" to ColumnDefinition(type = NeutralType.Text()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_film_fulltext",
+                            columns = listOf(IndexColumn("title"), IndexColumn("description")),
+                            type = IndexType.FULLTEXT,
+                            textSearchConfig = "english",
+                        )
+                    ),
+                )
+            ),
+        )
+        val out = ByteArrayOutputStream()
+
+        codec.write(out, schema)
+
+        val yaml = out.toString(Charsets.UTF_8)
+        yaml shouldContain "fulltext"
+        yaml shouldContain "text_search_config"
+        yaml shouldContain "english"
+        codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
+    }
+
     test("parse all-types schema covers pre-0.5.5 neutral types (geometry tested separately in spatial.yaml)") {
         val schema = loadFixture("schemas/all-types.yaml")
         val cols = schema.tables["type_test"]!!.columns

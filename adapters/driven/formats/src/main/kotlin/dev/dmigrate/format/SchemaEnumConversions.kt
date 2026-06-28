@@ -19,6 +19,7 @@ internal fun String.toIndexType(): IndexType = when (lowercase()) {
     "brin" -> IndexType.BRIN
     "spgist" -> IndexType.SPGIST
     "spatial" -> IndexType.SPATIAL
+    "fulltext" -> IndexType.FULLTEXT
     else -> throw IllegalArgumentException("Unknown index type: $this")
 }
 

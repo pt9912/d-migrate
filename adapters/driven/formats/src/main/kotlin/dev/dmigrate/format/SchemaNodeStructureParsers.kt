@@ -179,6 +179,7 @@ private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
             type = childNode.optionalText("type")?.toIndexType() ?: IndexType.BTREE,
             unique = childNode.boolOrDefault("unique", false),
             where = childNode.optionalText("where"),
+            textSearchConfig = childNode.optionalText("text_search_config"),
         )
     }
 }

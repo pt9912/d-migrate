@@ -260,14 +260,19 @@
         },
         "type": {
           "type": "string",
-          "enum": ["btree", "hash", "gin", "gist", "brin", "spgist", "spatial"],
+          "enum": ["btree", "hash", "gin", "gist", "brin", "spgist", "spatial", "fulltext"],
           "default": "btree"
         },
         "unique": {
           "type": "boolean",
           "default": false
         },
-        "where": { "type": "string", "minLength": 1 }
+        "where": { "type": "string", "minLength": 1 },
+        "text_search_config": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text-search configuration of a fulltext index (e.g. english); derived from the PG tsvector trigger (ADR 0025)."
+        }
       }
     },
     "indexColumn": {

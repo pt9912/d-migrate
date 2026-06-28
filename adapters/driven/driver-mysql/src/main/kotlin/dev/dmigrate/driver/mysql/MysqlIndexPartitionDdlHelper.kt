@@ -394,6 +394,16 @@ internal class MysqlIndexPartitionDdlHelper(
                 }
                 DdlStatement(sql)
             }
+            // ADR 0025: Volltext-Index → natives MySQL `CREATE FULLTEXT INDEX` über die
+            // Quelltext-Spalten (ohne Prefix/Richtung); MySQL-FULLTEXT kennt keine
+            // Text-Search-Config, daher wird `textSearchConfig` hier nicht emittiert.
+            IndexType.FULLTEXT -> {
+                val ftCols = index.columns.joinToString(", ") { quoteIdentifier(it.name) }
+                DdlStatement(
+                    "CREATE FULLTEXT INDEX ${quoteIdentifier(indexName)} " +
+                        "ON ${quoteIdentifier(tableName)} ($ftCols);",
+                )
+            }
         }
     }
 

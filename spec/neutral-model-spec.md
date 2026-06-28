@@ -327,7 +327,7 @@ tables:
           - customer_id
           - name: order_date
             direction: desc              # optional: asc | desc
-        type: btree                      # btree | hash | gin | gist | brin
+        type: btree                      # btree | hash | gin | gist | brin | spgist | spatial | fulltext
         unique: false
       - name: idx_orders_status
         columns: [status]
@@ -336,6 +336,10 @@ tables:
         columns: [customer_id]
         unique: true
         where: "is_archived = false"     # Partial-Index-Praedikat, Raw-SQL
+      - name: idx_film_fulltext
+        columns: [title, description]    # Quelltext-Spalten
+        type: fulltext
+        text_search_config: english      # optional: Text-Search-Config eines Volltext-Index
 
     # ── Constraints ──────────────────
     constraints:

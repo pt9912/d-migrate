@@ -27,6 +27,12 @@ data class IndexDefinition(
     val type: IndexType = IndexType.BTREE,
     val unique: Boolean = false,
     val where: String? = null,
+    /**
+     * Text-Search-Konfiguration eines [IndexType.FULLTEXT]-Index (z. B. `english`),
+     * beim PG-Reverse aus dem `tsvector`-Trigger / der Generated-Expression abgeleitet
+     * (ADR 0025). Null für alle anderen Indextypen.
+     */
+    val textSearchConfig: String? = null,
 ) {
     val columnNames: List<String>
         get() = columns.map { it.name }
@@ -55,5 +61,14 @@ enum class IndexType {
      * Generate-Pfade erkennen den räumlichen Fall zusätzlich spaltenbasiert
      * (`indexTouchesGeometry`/`referencesGeometry`).
      */
-    SPATIAL
+    SPATIAL,
+
+    /**
+     * Volltext-Index über Quelltext-Spalten (ADR 0025). Generate: MySQL
+     * `CREATE FULLTEXT INDEX`, SQLite FTS5-Virtual-Table + Sync-Trigger, PostgreSQL
+     * Expansion zu `tsvector`-Spalte + Trigger + GiST-Index. Trägt die optionale
+     * Text-Search-Konfiguration über [IndexDefinition.textSearchConfig]; der
+     * `tsvector`-Spaltentyp selbst bleibt parameterloser [NeutralType.FullText] (ADR 0015).
+     */
+    FULLTEXT
 }

@@ -176,6 +176,33 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
         result.notes.filter { it.objectName == "idx_products_sku" }.shouldBeEmpty()
     }
 
+    test("FULLTEXT index emits CREATE FULLTEXT INDEX over the source columns") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "film" to table(
+                    columns = mapOf(
+                        "title" to col(NeutralType.Text(maxLength = 255), required = true),
+                        "description" to col(NeutralType.Text())
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_film_fulltext",
+                            columns = listOf("title", "description").map(::IndexColumn),
+                            type = IndexType.FULLTEXT,
+                            textSearchConfig = "english",
+                        )
+                    )
+                )
+            )
+        )
+
+        val result = generator.generate(schema)
+        val ddl = result.render()
+
+        ddl shouldContain "CREATE FULLTEXT INDEX `idx_film_fulltext` ON `film` (`title`, `description`);"
+        result.notes.filter { it.objectName == "idx_film_fulltext" }.shouldBeEmpty()
+    }
+
     test("unique BTREE index generates CREATE UNIQUE INDEX") {
         val schema = emptySchema(
             tables = mapOf(
