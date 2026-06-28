@@ -149,12 +149,18 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.9.0, siehe
-# https://github.com/pt9912/d-check/releases/tag/v0.9.0); 
-D_CHECK_IMAGE ?= ghcr.io/pt9912/d-check@sha256:5bccf9fb3d1c54639dec3a541771d2ea43db9a0c1c58c28b3f12f20d38133d1b
+# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.29.0, siehe
+# https://github.com/pt9912/d-check/releases/tag/v0.29.0). Die doc-*-Targets
+# (doc-check/-trace/-complete/-doctor/-repair/-help) kommen aus d-check.mk,
+# erzeugt via `docker run --rm ghcr.io/pt9912/d-check:v0.29.0 --print-mk`; der
+# Image-Pin lebt dort. DCHECK_DIGEST MUSS vor dem include stehen — die .mk
+# wertet den Digest beim Parsen aus (ifeq → DCHECK_REF).
+DCHECK_DIGEST = sha256:07994926987a92b863a5f54eeb7668654c08e1be958be425da4bdb7712c002c2
+include d-check.mk
 
-docs-check: coverage-excludes-check
-	$(DOCKER) run --rm -v "$(CURDIR)":/repo:ro $(D_CHECK_IMAGE)
+# docs-check bleibt die Schirm-ID (gates/ci hängen daran): aggregiert d-checks
+# doc-check (Docker-Befund-Gate) plus das projekt-lokale Kover-Excludes-Ledger.
+docs-check: doc-check coverage-excludes-check
 
 coverage-excludes-check:
 	python3 ./scripts/verify-kover-excludes-ledger.py
