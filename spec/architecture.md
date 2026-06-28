@@ -145,6 +145,14 @@ Zusätzlich, durch eine **Architektur-Fitness-Function** (Gate) statt durch Grad
   Wrapper um die Hikari-Connection) liegt in `adapters:driven:driver-common`, wo die Adapter sie zur
   realen Connection auspacken.
 
+### 1.3 Leitprinzipien
+
+- **Database-Agnostic First**: Alle internen Datenstrukturen sind datenbankunabhängig; datenbankspezifisches Verhalten lebt ausschließlich in austauschbaren Adaptern.
+- **Convention over Configuration**: Sinnvolle Defaults überall, explizite Konfiguration nur wo nötig.
+- **Streaming by Default**: Datenverarbeitung ist grundsätzlich streaming-basiert (beliebig große Datenmengen).
+- **Fail-Safe**: Standardmäßig transaktionale Verarbeitung ohne stillschweigende Teilmigrationen; Best-Effort nur explizit konfigurierbar.
+- **Privacy by Design**: Lokale Verarbeitung als Standard, externe APIs nur opt-in.
+
 ---
 
 ## 2. Modul-Struktur
@@ -1121,6 +1129,12 @@ suspend fun <T> withRetry(
 - Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil: Feldnamen, Codes und freie Fehlermeldungstexte bleiben englisch, lokalisiert werden nur menschenlesbare Plain-Text-Ausgaben.
 - Optionale Validierungsbausteine fuer E.164-Telefonnummern bleiben ein Erweiterungspfad und gehoeren nicht zum Mindestvertrag.
 
+### 4.6 Versionierung und Kompatibilität
+
+- **Schema-Format**: rückwärtskompatibel für 2 Major-Versionen.
+- **CLI-Argumente**: deprecated Flags bleiben 2 Minor-Versionen erhalten.
+- **Export-Formate**: stabile Formate ab 1.0; JSON/YAML versionieren Metadaten im Dokument, CSV optional über Sidecar-Datei.
+
 ---
 
 ## 5. Build und Distribution
@@ -1312,7 +1326,7 @@ adapters/driven/formats/src/test/resources/fixtures/
 ### 8.2 Neuen KI-Provider hinzufügen
 
 ```
-1. Interface AiProvider implementieren
+1. `AiProviderPort` implementieren (`hexagon/application/ai/`)
 2. HTTP-Client oder lokales Adapter-Protokoll für Provider-API ergänzen
 3. Konfiguration in AiBackendConfig ergänzen
 4. ServiceLoader-Registrierung für JVM/Docker oder Native-Build-Profil erweitern
@@ -1373,9 +1387,7 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ## Verwandte Dokumentation
 
-- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
-- [Design](./design.md) — Design-Philosophie, Datenflüsse, CLI, Fehlerbehandlung
-- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
+- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Ausgabeformate, Kommando-Referenz
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema

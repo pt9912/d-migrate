@@ -6,7 +6,7 @@ Scope + offene Designfragen ausgearbeitet; bereit für Review).
 **Trigger**: `validate data` ist in [cli-spec.md](../../../spec/cli-spec.md) (Abschnitt
 `validate`) als bloßes „Geplant." spezifiziert — als einziges Kommando **ohne
 jeden Anker**: kein `LF`/`LN`, keine Roadmap, kein normativer Spec-Abschnitt
-(nur Verwendungsbeispiele in `cli-spec.md` und `spec/design.md`), kein Code.
+(nur Verwendungsbeispiele in `cli-spec.md` und `docs/archive/design.md`), kein Code.
 Aufgefallen bei der Referenz-/Provenienz-Durchsicht der „Geplant"-Marker am
 2026-06-09. Statt es als „nicht eingeplant" zu markieren oder zu entfernen,
 wird der Scope hier ausgearbeitet.

@@ -5,7 +5,7 @@
 > fuenftes Exportziel neben Flyway, Liquibase, Django und Knex.js.
 >
 > Dieses Dokument beschreibt den Vorschlag fuer den EF-Core-10-Pfad. Bis zur
-> Implementierung bleiben `spec/cli-spec.md`, `spec/design.md` und
+> Implementierung bleiben `spec/cli-spec.md`, `docs/archive/design.md` und
 > `spec/architecture.md` die massgeblichen Quellen fuer den produktiven
 > Nutzervertrag.
 
@@ -328,7 +328,7 @@ Nach der Implementierung muessen mindestens folgende regulaeren Dokumente
 aktualisiert werden:
 
 - `spec/cli-spec.md`
-- `spec/design.md`
+- `docs/archive/design.md`
 - `spec/architecture.md`
 - ggf. `spec/lastenheft-d-migrate.md`
 
@@ -396,7 +396,7 @@ heuristisch nachzubauen.
 ## 13. Referenzen
 
 - Lokaler Projektkontext: `spec/cli-spec.md`
-- Lokaler Projektkontext: `spec/design.md`
+- Lokaler Projektkontext: `docs/archive/design.md`
 - Lokaler Projektkontext:
   `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/ExportCommands.kt`
 - Lokaler Projektkontext:

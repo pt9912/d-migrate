@@ -887,7 +887,7 @@ Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL
 
 **Strategie**:
 - **Wenn `source_dialect` = `target_dialect`**: Body wird 1:1 übernommen
-- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [design.md §4](./design.md#4-ki-integrations-design))
+- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [ki-mcp.md](./ki-mcp.md))
 - **Fallback ohne KI**: `action_required` (E053) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
@@ -1553,9 +1553,7 @@ Notes und `skipped_objects` tragen im Split-Modus optional ein `phase`-Feld
 
 ## Verwandte Dokumentation
 
-- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typsystem §3, Validierung §13, Transformationshinweise §11
-- [Design](./design.md) — Domänenmodell §2, Rollback §7
-- [Architektur](./architecture.md) — TypeMapper §3.4, SchemaWriter §3.1
+- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typsystem §3, Validierung §13, Transformationshinweise §11- [Architektur](./architecture.md) — TypeMapper §3.4, SchemaWriter §3.1
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes
 
 ---

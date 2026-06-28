@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-28
 decision-makers: pt9912
-consulted: spec/neutral-model-spec.md (§12 DDL-Parser-Zielbild), spec/design.md (Reverse-Eingabepfade)
+consulted: spec/neutral-model-spec.md (§12 DDL-Parser-Zielbild), docs/archive/design.md (Reverse-Eingabepfade)
 informed: spec/cli-spec.md (schema reverse), docs/planning/in-progress/roadmap.md
 ---
 
@@ -93,7 +93,7 @@ es ist verschoben, nicht verworfen.
 - **Folgearbeit (Sub-Slice
   [`spec-milestone-hygiene-slice.md`](../planning/done/spec-milestone-hygiene-slice.md),
   WP1):** §12-Heading/Hinweis/Status-Footer entstempeln (Anker wird zu
-  `#12-ddl-parser`), das DDL-Parser-Echo in `spec/design.md` entstempeln und den
+  `#12-ddl-parser`), das DDL-Parser-Echo in `docs/archive/design.md` entstempeln und den
   bestehenden Peer-Link auf den neuen §12-Anker nachziehen, den additiven
   Schnitt in der Roadmap führen.
 

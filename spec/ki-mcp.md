@@ -4,7 +4,7 @@
 >
 > Status: Entwurf fuer die kuenftige KI-Schnittstelle
 >
-> Referenzen: `spec/architecture.md`, `spec/design.md`,
+> Referenzen: `spec/architecture.md`,
 > `spec/job-contract.md`, `spec/lastenheft-d-migrate.md`
 
 ---
@@ -287,8 +287,8 @@ Policy, Prompt-Hygiene und Audit abgesichert:
 | `procedure_transform_execute` | KI-gestuetzte Transformation mit Audit-Trail | bestaetigungspflichtig / policy-gesteuert |
 | `testdata_plan` | Testdatengenerierung aus Schema und Regeln planen | policy-gesteuert |
 
-Diese Tools muessen strikt an die in `spec/design.md` beschriebene
-Provider- und Audit-Strategie gekoppelt sein.
+Diese Tools muessen strikt an die Provider- und Audit-Strategie (§8)
+gekoppelt sein.
 Dafuer ist mindestens ein adapterneutraler KI-/Testdaten-Port
 mit `NoOp`- oder lokaler Provider-Implementierung noetig. Externe
 Provider sind optional und brauchen explizite Konfiguration,
@@ -605,7 +605,7 @@ Der MCP-Adapter muss verhindern, dass:
 - sensible SQL-, DDL- oder Prozedurtexte ohne Audit an externe Modelle gehen
 
 Lokale Modelle (`Ollama`, `LM Studio`) bleiben fuer sensible KI-Pfade die
-bevorzugte Option, analog zu `spec/design.md`.
+bevorzugte Option.
 
 ### 8.3 Artefakt-Upload-Vertrag
 
@@ -820,7 +820,7 @@ Jede MCP-Aktion sollte nachvollziehbar sein:
 - mit welchem Ergebnis
 - bei KI-Transformationen: welches Modell, welcher Provider, welche Version
 
-Fuer KI-generierte Inhalte gilt derselbe Audit-Trail wie im Design-Dokument:
+Fuer KI-generierte Inhalte gilt folgender Audit-Trail:
 
 - Quelle
 - Zwischenformat

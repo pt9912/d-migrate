@@ -71,7 +71,7 @@ verboten — auch nicht als „siehe Roadmap"-Hinweis.
       drei `(geplant)`-Subheadings, §13.4 `(ab 0.5.5)`, §14.2 `(ab 0.6.0)`/
       `(späterer Milestone)`, Status-Footer). Anker jetzt `#12-ddl-parser`.
       **Kein** Link auf ADR 0023 (SDP-konform). **2026-06-28.**
-- [x] `spec/design.md` DDL-Parser-Echo (§2.3) entstempelt; Peer-Link auf neuen
+- [x] `docs/archive/design.md` DDL-Parser-Echo (§2.3) entstempelt; Peer-Link auf neuen
       §12-Anker nachgezogen (Spec→Spec). **2026-06-28.**
 
 ### WP2 — De-Stamp gebauter Features → zeitlos
@@ -113,7 +113,7 @@ Ist/Soll-Overview heraus (superseded by `architecture.md §3.3`, das die als
 „Soll" markierte Pipeline bereits real trägt). Statt In-Place-De-Ist wird
 `design.md` **retired** — ein eigenes Content-Migrations-Vorhaben (einzigartiges
 §4 KI-Design folden, ~20 Live-Links umbiegen, `git mv` nach `docs/archive/`):
-→ [`../next/design-md-retire.md`](../next/design-md-retire.md). **Nicht** Teil
+→ [`design-md-retire.md`](design-md-retire.md). **Nicht** Teil
 dieses Slice. Die in WP1 an `design.md §2.3` gemachten Edits wandern mit ins
 Archiv (DDL-Parser-Zielbild lebt ohnehin in `neutral-model-spec.md §12`).
 
@@ -194,7 +194,7 @@ Beispiel `1.0.0`, `0.0.0-reverse`, Lastenheft, `design.md`).
 pt9912) bestätigt → Graduierung.
 
 **Ausgegliederte Folgearbeit (eigene Tracker):** `design.md`-Retire
-([`../next/design-md-retire.md`](../next/design-md-retire.md)); Spec→ADR/Plan-
+([`design-md-retire.md`](design-md-retire.md)); Spec→ADR/Plan-
 Abwärts-Refs + d-check-Härtung
 ([`../open/spec-adr-downref-hygiene.md`](../open/spec-adr-downref-hygiene.md));
 Phase-E/F-Familie (Umbrella-Nachklang); Lastenheft-Roadmap (separater Scope).

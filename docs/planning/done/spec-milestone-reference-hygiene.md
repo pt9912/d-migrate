@@ -54,7 +54,7 @@ Treffer pro Datei (Rohzählung inkl. Falsch-Positiver — vor Bewertung):
 | --- | --- | --- |
 | `spec/neutral-model-spec.md` | 19 | viele `ab 0.5.5`/`Phase 1` — **Triage** |
 | `spec/ddl-generation-rules.md` | 19 | `Milestone 0.5.5`/`Phase 1`/`nicht Teil von 0.5.5` — **Triage** |
-| `spec/design.md` | 18 | gemischt (Roadmap-Kontext vs. Provenienz) — **Triage** |
+| `docs/archive/design.md` | 18 | gemischt (Roadmap-Kontext vs. Provenienz) — **Triage** |
 | `spec/ledger.md` | 16 | überw. **legitim** (Ledger sind per Minor-Version versioniert) + einige `ab 0.9.7`-Provenienz |
 | `spec/ki-mcp.md` | 21 | **Triage** (ImpPlan-B/Phasen-Reste, vgl. mcp-Hygiene-Tracker) |
 | `spec/rest-service.md` / `spec/grpc-service.md` | 5 / 3 | `Phase 1/2/3`-Implementierungs-Phasing — **Triage** |
@@ -110,6 +110,6 @@ abzüglich Engine-Fakten/versionierter Dateinamen/Beispiele/Lastenheft/`design.m
 `make docs-check` grün.
 
 **In eigene Tracker abgegrenzt:** `design.md`-Retire
-([`../next/design-md-retire.md`](../next/design-md-retire.md)); Spec→ADR/Plan-
+([`design-md-retire.md`](design-md-retire.md)); Spec→ADR/Plan-
 Abwärts-Refs ([`../open/spec-adr-downref-hygiene.md`](../open/spec-adr-downref-hygiene.md));
 Phase-E/F-Cross-Ref-Familie; Lastenheft-Roadmap.

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-28
 decision-makers: pt9912
-consulted: spec/design.md (Ist/Soll-Mix), docs/planning/in-progress/roadmap.md (Milestone-Ist), CHANGELOG.md
+consulted: docs/archive/design.md (Ist/Soll-Mix), docs/planning/in-progress/roadmap.md (Milestone-Ist), CHANGELOG.md
 informed: spec/ (alle Zielbild-Verträge), docs/adr/0004-documentation-and-planning-structure.md
 ---
 
@@ -19,7 +19,7 @@ informed: spec/ (alle Zielbild-Verträge), docs/adr/0004-documentation-and-plann
 
 Das Regelwerk-Prinzip ist eindeutig: **Specs sind Zielbilder** (Stable
 Dependencies Principle — die stabilste Schicht trägt keine Status-/Phasen-
-/Versions-Provenienz). In der Praxis vermischte `spec/design.md` jedoch
+/Versions-Provenienz). In der Praxis vermischte `docs/archive/design.md` jedoch
 Zielbild und Ist: das Dokument war als **Living Design** mit expliziten
 „Heutiger Ist-Zustand" ↔ „Soll-Zustand (spätere Milestones)"-Kontrastpaaren
 gebaut.
@@ -69,7 +69,7 @@ Lücke füllte `design.md` informell.
 `roadmap.md` (✅), `CHANGELOG.md`, ADRs und Code/Tests gelesen. `spec/` bleibt
 reines Zielbild.
 
-Konsequenz für `spec/design.md`: Bei der Umsetzung stellte sich `design.md` als
+Konsequenz für `docs/archive/design.md`: Bei der Umsetzung stellte sich `design.md` als
 **veralteter, redundanter** Living-Ist/Soll-Overview heraus (superseded by
 `architecture.md §3.3`, das die als „Soll" markierte Pipeline bereits real
 trägt). Statt In-Place-De-Ist wird `design.md` daher **retired**; sein
@@ -96,7 +96,7 @@ gilt Option 1 ohne neuen Doc-Typ.
 - **Preis:** Es gibt keinen zusammenhängenden Prosa-Überblick der „heutigen
   Architektur"; er ist aus roadmap-✅ + Code zu rekonstruieren.
 - **Folgearbeit:** `design.md` retiren (eigener Sub-Slice
-  [`design-md-retire.md`](../planning/next/design-md-retire.md)); der
+  [`design-md-retire.md`](../planning/done/design-md-retire.md)); der
   Milestone-Hygiene-Slice bereinigt nur die verbleibenden Zielbild-Verträge.
   Das Lastenheft trägt dieselbe Provenienz-Schuld; seine Bereinigung ist
   separat zu schneiden, nicht in diesem Slice.

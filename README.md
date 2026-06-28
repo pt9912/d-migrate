@@ -473,8 +473,7 @@ Detailed documentation lives in [`docs/`](docs/) and
   - [Migrations-Leitfaden](docs/user/migrations-leitfaden.md)
   - [API-Referenz (CLI + MCP)](docs/user/api-referenz.md)
 - [Quick Start Guide (German)](docs/user/guide.md)
-- [Design](spec/design.md) /
-  [Architecture](spec/architecture.md)
+- [Architecture](spec/architecture.md)
 - [Schema YAML reference](spec/schema-reference.md)
 - [Neutral model specification](spec/neutral-model-spec.md)
 - [CLI specification](spec/cli-spec.md)

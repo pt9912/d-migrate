@@ -488,7 +488,7 @@ Detaillierte Dokumentation findest du in [`docs/`](docs/) und
   - [Migrations-Leitfaden](docs/user/migrations-leitfaden.md)
   - [API-Referenz (CLI + MCP)](docs/user/api-referenz.md)
 - [Quick Start Guide (Deutsch)](docs/user/guide.md)
-- [Entwurf](spec/design.md) / [Architektur](spec/architecture.md)
+- [Architektur](spec/architecture.md)
 - [Schema-YAML-Referenz](spec/schema-reference.md)
 - [Neutrale Modell-Spezifikation](spec/neutral-model-spec.md)
 - [CLI-Spezifikation](spec/cli-spec.md)

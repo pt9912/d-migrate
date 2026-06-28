@@ -641,7 +641,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--strict-gap-operations` | Nein | Boolean | Blockt Operationen, die ueber einen Multi-Statement-Fallback mit Sichtbarkeitsluecke gerendert wuerden (heute: `ReplaceTrigger` via Drop+Create auf PostgreSQL < 14, MySQL und SQLite). Default `false` (lenient): der Pfad emittiert die Drop+Create-Statements und meldet die Luecke als `W_TRIGGER_REPLACE_GAP`-Warning im Report. Mit Flag wechselt der Renderer zu `MANUAL_ACTION_REQUIRED` (Exit `8`) und gibt keine Statements fuer die betroffene Operation aus. Wirkt allgemein auf `OperationRisk.hasGap = true`-Operationen; aktuell setzt nur der Trigger-Mapper diesen Flag. |
 | `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie fuer den `--execute`-Pfad (Default: `action_required`). Identisch zur gleichnamigen Option auf `schema generate`, aber hier auf der Migrate-Seite: nur mit `helper_table` aktiviert sich der `SequencePreserveStage`-Probe-Pfad fuer SQLite (`SqliteSequenceCurrentValueProbe` liest `dmg_sequences.next_value`); ohne Opt-in blockt jede `preserveCurrentValue`-Kandidat-Op vor der Probe-Connection mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (`primaryBlockedReason = MANUAL_ACTION_REQUIRED`). |
 
-Begriffe (vollständig in `spec/design.md`):
+Begriffe:
 
 - **`SchemaDiff`** — struktureller Unterschied zwischen zwei Schemas
 - **`DiffView`** — stabile, primitive-only Compare-Ausgabe für `schema compare`
@@ -1894,8 +1894,6 @@ stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 ---
 
 ## Verwandte Dokumentation
-
-- [Design](./design.md) — CLI-Design §5, Fehlerbehandlung §8
 - [Architektur](./architecture.md) — CLI-Modul, Clikt-Framework
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Schema-Validierungsregeln §13
 - [Lastenheft](./lastenheft-d-migrate.md) — LF-012 (CLI), LN-015 (Dokumentation), LN-016 (Fehlermeldungen)

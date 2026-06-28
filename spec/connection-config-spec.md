@@ -496,9 +496,7 @@ Bedeutung der Flags.
 
 ## Verwandte Dokumentation
 
-- [CLI-Spezifikation](./cli-spec.md) — Kommandos, Flags, Exit-Codes
-- [Design](./design.md) — Konfigurationshierarchie §5.3, KI-Datenschutz §4.3
-- [Architektur](./architecture.md) — HikariCP §5.2, DmigrateConfig §4.1, Sicherheit §4.3
+- [CLI-Spezifikation](./cli-spec.md) — Kommandos, Flags, Exit-Codes- [Architektur](./architecture.md) — HikariCP §5.2, DmigrateConfig §4.1, Sicherheit §4.3
 - [Lastenheft](./lastenheft-d-migrate.md) — LN-025 (Credentials), LN-026 (Verschlüsselung), LN-032 (KI-Datenschutz)
 
 ---

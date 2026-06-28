@@ -8,9 +8,10 @@
 # docs/planning/done-archive/ enthält abgeschlossene, kalt gestellte
 # Pläne (unveränderliche Historie); sie auf Referenz-Frische zu prüfen
 # wäre dauerhaftes Rauschen ohne Nutzen. docs/planning/done/ bleibt im
-# Scan (frisch abgeschlossen). Begründung: ADR 0010.
+# Scan (frisch abgeschlossen). Begründung: ADR 0010. docs/archive/ (kalt
+# gestellte/retirete Artefakte wie das retirete design.md) ebenso ausgenommen.
 scan:
-  ignore: ["docs/planning/done-archive/**"]
+  ignore: ["docs/planning/done-archive/**", "docs/archive/**"]
 
 modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids]
 

@@ -1347,9 +1347,7 @@ einer ganzen Tabelle blockiert, ist eine separate Generatorwirkung.
 
 ## Verwandte Dokumentation
 
-- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation (LF-001 bis LF-004)
-- [Design](./design.md) — Design-Philosophie, Streaming-Pipeline, KI-Integration
-- [Architektur](./architecture.md) — Modul-Struktur, TypeMapper-Implementierung, Driver-SPI
+- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation (LF-001 bis LF-004)- [Architektur](./architecture.md) — Modul-Struktur, TypeMapper-Implementierung, Driver-SPI
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes, Kommando-Referenz
 

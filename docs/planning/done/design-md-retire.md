@@ -1,14 +1,14 @@
-# Next-Plan: `spec/design.md` retiren (superseded by `architecture.md`)
+# Sub-Slice (DONE): `design.md` retired (superseded by `architecture.md`)
 
-> **Status:** Next-Plan / Draft (2026-06-28) — Scope steht, Slice-Arbeit noch nicht gestartet.
+> **Status:** DONE (2026-06-28) — ausgeführt; `design.md` liegt unter `docs/archive/`.
 > **Herkunft:** Ausgegliedert aus dem Milestone-Hygiene-Slice
-> ([`../done/spec-milestone-hygiene-slice.md`](../done/spec-milestone-hygiene-slice.md)).
+> ([`spec-milestone-hygiene-slice.md`](spec-milestone-hygiene-slice.md)).
 > Maßgeblich: [ADR 0024](../../adr/0024-ist-zustand-dokumentation.md) („Specs sind
 > Zielbilder; kein Ist-Prosa-Doc").
 
 ## Befund
 
-`spec/design.md` ist **kein** zu entstempelnder Zielbild-Vertrag, sondern ein
+`docs/archive/design.md` ist **kein** zu entstempelnder Zielbild-Vertrag, sondern ein
 **veralteter, redundanter Living-Ist/Soll-Overview**. Belege:
 
 - `architecture.md §3.3` trägt bereits `class StreamingPipeline(sourceDriver,
@@ -86,21 +86,21 @@ Empfehlung vorläufig **(a)** oder **(b)** — bei Slice-Start entscheiden.
       (ADR 0010).
 
 ### WP4 — Archivieren
-- [ ] `git mv spec/design.md docs/archive/design.md`.
+- [ ] `git mv docs/archive/design.md docs/archive/design.md`.
 - [ ] `.d-check.yml` `scan.ignore` um `docs/archive/**` ergänzen (analog
       `done-archive`, ADR 0010) — sonst bleibt die Datei gescannt. Ggf. ADR 0010
       „Abgrenzung zu docs/archive" nachziehen.
 
 ### WP5 — Verifikation
 - [ ] `make docs-check` Exit 0.
-- [ ] Grep: kein **gescannter** Live-Link auf `spec/design.md` mehr.
+- [ ] Grep: kein **gescannter** Live-Link auf `docs/archive/design.md` mehr.
 - [ ] KI-Design-Zielbild hat ein eindeutiges Zuhause; `architecture.md` ist die
       einzige Architektur-Zielbild-Quelle.
 
 ## Akzeptanzkriterien
 
-- `spec/design.md` liegt unter `docs/archive/` und ist scan-ausgeschlossen.
-- Kein gescanntes Dokument verweist mehr auf `spec/design.md`.
+- `docs/archive/design.md` liegt unter `docs/archive/` und ist scan-ausgeschlossen.
+- Kein gescanntes Dokument verweist mehr auf `docs/archive/design.md`.
 - Das einzigartige KI-Integrations-Design ist als Zielbild erhalten (klare Heimat).
 - `make docs-check` 0 Befunde.
 
@@ -108,3 +108,23 @@ Empfehlung vorläufig **(a)** oder **(b)** — bei Slice-Start entscheiden.
 
 Kein Code-Touch. **Nicht** Teil des Milestone-Hygiene-Slice — der bereinigt nur
 Stempel an den verbleibenden echten Zielbild-Verträgen.
+
+## Closure (2026-06-28)
+
+Ausgeführt. `design.md` ist nach `docs/archive/design.md` retired (scan-ausgeschlossen
+via `.d-check.yml`). **Grounding-Korrektur** ggü. dem Ursprungsplan: §4 KI-Design ist
+**part-built** — der reale `AiProviderPort` (Package `dev.dmigrate.server.application.ai`) + MCP-Tools
+(`procedure_transform_*`) + Audit sind gebaut (0.9.6), echte Provider/CLI sind Zukunft
+(roadmap 1.5.5). Daher **kein** neuer KI-Spec, sondern **Split**:
+
+- §4.1 Port → `architecture.md` §8.2 nennt jetzt `AiProviderPort`; Vertrag lebt im Code-KDoc.
+- §4.4 Audit-Trail → `ki-mcp.md` (Abwärtsref „wie im Design-Dokument" aufgelöst).
+- §4.2/§4.3/§4.5 (Provider-Hierarchie, Datenschutz, A/B-CLI) → schon in roadmap 1.5.5.
+
+~20 Live-Inbound-Refs umgebogen (Verwandte-Doku-Einträge entfernt, Pfad-Tokens →
+`docs/archive/design.md`, inhaltliche KI-Refs → `ki-mcp.md`/§8). `make docs-check` grün.
+
+**Review-Befund (Validierung) behoben:** `design.md §11.2` (Kompatibilitäts-Matrix:
+Schema-Format 2 Major rückwärtskompatibel, Deprecated-Flags 2 Minor, stabile Formate
+ab 1.0) und `§1.1` (Leitprinzipien) waren **nirgends sonst** abgedeckt — sie wären
+beim Retire verloren gegangen. Nachgefoldet nach `architecture.md §4.6` bzw. `§1.3`.
