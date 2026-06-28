@@ -2,6 +2,12 @@
 
 > **Status:** In Progress (2026-06-28). **P0+P1 erledigt** (P0: Degradierungs-Note W132;
 > P1: ADR 0025 accepted + Modell `IndexType.FULLTEXT` + `textSearchConfig`); P2–P5 offen.
+> **Nächster Schritt (P2 — Resume):** den `tsvector_update_trigger`-Body (bzw. eine
+> `GENERATED … AS (to_tsvector(…))`-Expression) in `PostgresSchemaProgrammabilityReaders`
+> parsen → einen `IndexType.FULLTEXT`-Index mit `columns`=Quellspalten + `textSearchConfig`
+> synthetisieren; die `tsvector`-Spalte bleibt parameterloser `FullText`. Ist-Stand-Pointer
+> in Abschnitt 2, DoD in Abschnitt 5/P2 (PG-Reverse Pagila `film` erfasst `title`/`description`
+> + `english`; PG→PG-Round-Trip bleibt 0 Diffs).
 > Phasen + Akzeptanzkriterien ausgearbeitet
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
 > **Herkunft:** Carve-Out aus [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)
