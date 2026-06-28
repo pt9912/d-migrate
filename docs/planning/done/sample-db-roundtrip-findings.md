@@ -150,7 +150,7 @@ schrumpft 5 → 4 Changes (verbleibend: 1 Tabelle/gist-Grenze + 3 Funktionen/F3)
   kein Schema-Diff). Die zugrunde liegende Reverse-Lücke (Kind-Partitionen +
   Grenzen werden nicht rekonstruiert) ist als Folge-Slice getrackt →
   [`partition-hierarchy-reconstruction.md`](partition-hierarchy-reconstruction.md)
-  (LN-008-Teillücke).
+  ([`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008)-Teillücke).
 
   > **Erratum (2026-06-20):** Die Etikettierung „leere RANGE-Partition /
   > dump-abhängig / kein Defekt" oben ist **unpräzise**. Die 7 Kinder existieren

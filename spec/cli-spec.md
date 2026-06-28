@@ -1216,8 +1216,8 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
 | `--filter` | Nein | String | — | Filter-DSL-Ausdruck. Erlaubte Operatoren: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN (...)`, `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, Klammern. Erlaubte Funktionen: `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS`, `ROUND`, `COALESCE`. Arithmetik (`+`, `-`, `*`, `/`) und qualifizierte Identifier (`table.column`) sind zulaessig. Alle Literale werden als Bind-Parameter an JDBC gebunden. Rohes SQL wird nicht mehr akzeptiert — nicht DSL-konforme Eingaben enden mit Exit 2. |
-| `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export (LF-013). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
-| `--since` | Nein | String | — | Untere Marker-Grenze für LF-013. Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
+| `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export ([`LF-013`](lastenheft-d-migrate.md#lf-013)). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
+| `--since` | Nein | String | — | Untere Marker-Grenze für [`LF-013`](lastenheft-d-migrate.md#lf-013). Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
@@ -1291,7 +1291,7 @@ d-migrate data export --source local_pg --format json \
     --output ./full-dump --split-files
 ```
 
-**LF-013: Inkrementeller Export via `--since-column` / `--since`**
+**[`LF-013`](lastenheft-d-migrate.md#lf-013): Inkrementeller Export via `--since-column` / `--since`**
 
 - `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
 - `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
@@ -1362,7 +1362,7 @@ kanonisch beschrieben.
 | `--target` | Ja | URL oder Alias | — | Ziel-Datenbank |
 | `--tables` | Nein | Liste | alle | Kommaseparierte Tabellenliste |
 | `--filter` | Nein | String | — | Filter-DSL-Ausdruck fuer die Quellabfrage. Gleiche DSL-Grammatik wie bei `data export --filter`. Alle Literale werden als Bind-Parameter an JDBC gebunden. |
-| `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer (LF-013) |
+| `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer ([`LF-013`](lastenheft-d-migrate.md#lf-013)) |
 | `--since` | Nein | String | — | Untere Marker-Grenze (nur zusammen mit `--since-column`) |
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Handling: `fire`, `disable`, `strict` |
@@ -1893,9 +1893,9 @@ stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 ---
 
 ## Verwandte Dokumentation
-- [Architektur](./architecture.md) — CLI-Modul, Clikt-Framework
+
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Schema-Validierungsregeln §13
-- [Lastenheft](./lastenheft-d-migrate.md) — LF-012 (CLI), LN-015 (Dokumentation), LN-016 (Fehlermeldungen)
+- [Lastenheft](./lastenheft-d-migrate.md) — [`LF-012`](lastenheft-d-migrate.md#lf-012) (CLI), [`LN-015`](lastenheft-d-migrate.md#ln-015) (Dokumentation), [`LN-016`](lastenheft-d-migrate.md#ln-016) (Fehlermeldungen)
 
 ---
 

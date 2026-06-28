@@ -16,7 +16,7 @@ informed: test/perf-large-schema (LargeSchemaScaleSpec), hexagon/profiling (Perf
 ## Kontext und Problemstellung
 
 LF 8.2 nennt **absolute Wandzeiten** („Export 1 Mio < 100 s", „Import 1 Mio < 200 s",
-„DDL-Generierung 1.000 Tabellen < 30 s" = LN-004) — aber **keine Hardware**. Eine
+„DDL-Generierung 1.000 Tabellen < 30 s" = [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004)) — aber **keine Hardware**. Eine
 absolute Zahl ist nur auf einer **definierten** Umgebung sinnvoll: auf wechselnden,
 geteilten CI-Runnern ist sie entweder flaky (schneller vs. langsamer Runner) oder so
 locker, dass sie nichts abnimmt.
@@ -71,7 +71,7 @@ Zwei-Budget-Modell (KEINE dedizierte Hardware-Beschaffung):
    aktuell 4 vCPU/16 GB) — dieselben Caps reproduzieren auf beiden, da der Host stets
    ≥ Caps ist. Bewusst konservativ niedrig: ein engerer Cap macht das Absolutbudget
    **strenger** (kein False-Pass auf dickem Host) und bleibt auf bescheidener Hardware
-   nachfahrbar. `4g` gibt Headroom über das JVM-Heap-Budget; **die LN-004-Grenze
+   nachfahrbar. `4g` gibt Headroom über das JVM-Heap-Budget; **die [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004)-Grenze
    „max. 2 GB für Schema-Operationen" wird davon nicht berührt** — sie betrifft den
    Heap-Arbeitssatz, der separat und strenger durch das bestehende Heap-Budget
    (N=1000 ≤ 1024 MB) erzwungen wird, nicht den Container-Gesamtspeicher (JVM-Non-Heap

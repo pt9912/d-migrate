@@ -200,7 +200,7 @@ LIST-`DEFAULT`-ohne-MySQL-Pendant (AP6.2), Partition-Index-Abbildung (AP6.3), un
 - Gate-ADR der Modellform: [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md).
 - Vorläufer-Scheibe (PG-first, geliefert): [`../done/partition-hierarchy-reconstruction.md`](../done/partition-hierarchy-reconstruction.md).
 - Note-/Fehler-Ledger: [`spec/ledger.md`](../../../spec/ledger.md).
-- Anforderung **LN-008** „Partitionierung für große Tabellen"
+- Anforderung **[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008)** „Partitionierung für große Tabellen"
   ([`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)) — Cross-Dialect-Teil.
 
 ## Closure (2026-06-25)

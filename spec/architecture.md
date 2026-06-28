@@ -1067,7 +1067,7 @@ Architekturvertrag:
 - **Framework**: SLF4J + Logback
 - **Strukturiertes Logging**: JSON-Format für maschinelle Auswertung
 - **Audit-Log**: Separate Datei für alle DB-verändernden Operationen
-- **KI-Audit-Log**: Archivierung von Quell-/Zielcode und Metadaten aller KI-Transformationen (LN-030, LN-031)
+- **KI-Audit-Log**: Archivierung von Quell-/Zielcode und Metadaten aller KI-Transformationen ([`LN-030`](lastenheft-d-migrate.md#ln-030), [`LN-031`](lastenheft-d-migrate.md#ln-031))
 - **Sensible Daten**: Passwörter und API-Keys werden NICHT geloggt
 
 ### 4.3 Sicherheit
@@ -1387,7 +1387,8 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ## Verwandte Dokumentation
 
-- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
+- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
+- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Ausgabeformate, Kommando-Referenz
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema

@@ -187,7 +187,7 @@ Sonderzeichen in der URL müssen URL-encoded werden (`@`→`%40`, `:`→`%3A`,
 Passwörter und API-Keys werden in Logs/Audit **maskiert** (`***`); secret-freie
 Connection-Refs werden ohne URL/Passwort projiziert.
 
-> 🔮 **Geplant (1.0.0-RC, LN-025):** verschlüsselter Credential-Store
+> 🔮 **Geplant (1.0.0-RC, [`LN-025`](../../spec/lastenheft-d-migrate.md#ln-025)):** verschlüsselter Credential-Store
 > (`~/.d-migrate/credentials.enc`, AES-256) mit `config credentials set|list`
 > und die Umgebungsvariable `D_MIGRATE_DB_PASSWORD`. Die `config`-Command-Gruppe
 > und `D_MIGRATE_DB_PASSWORD` sind **noch nicht** implementiert; die Beschreibung
@@ -381,14 +381,14 @@ Versionskontrolle ausschließen.
 
 SSL-Parameter werden heute über die Connection-URL gesetzt (z. B.
 `?ssl=verify-full`/`sslmode`), dialektspezifisch.
-🔮 **Geplant (1.0.0-RC, LN-026):** durchgängig erzwungenes TLS/SSL für alle
+🔮 **Geplant (1.0.0-RC, [`LN-026`](../../spec/lastenheft-d-migrate.md#ln-026)):** durchgängig erzwungenes TLS/SSL für alle
 DB-Verbindungen.
 
 ### 9.4 Audit-Logging
 
 Heute: secret-freies MCP-`tools/call`-Audit (genau ein Event pro Aufruf, siehe
 [§6.6](#6-mcp-server-betrieb)).
-🔮 **Geplant (1.0.0-RC, LN-027):** Audit-Logging **aller** Operationen
+🔮 **Geplant (1.0.0-RC, [`LN-027`](../../spec/lastenheft-d-migrate.md#ln-027)):** Audit-Logging **aller** Operationen
 (CLI + Server) als durchgängiges Feature.
 
 ---

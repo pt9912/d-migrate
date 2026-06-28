@@ -293,7 +293,7 @@ lassen.
 
 ### 10.3 SHA-256-Verifikation
 
-> 🔮 **Geplant (1.0.0-RC, LN-009):** durchgängige SHA-256-Verifikation der
+> 🔮 **Geplant (1.0.0-RC, [`LN-009`](../../spec/lastenheft-d-migrate.md#ln-009)):** durchgängige SHA-256-Verifikation der
 > Datenintegrität über den Transfer hinweg. Heute erfolgt die Abnahme über
 > Schema-Compare und Zeilen-/Stichprobenvergleich.
 

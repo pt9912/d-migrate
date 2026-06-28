@@ -6,7 +6,7 @@
 >
 > Dieses Dokument beschreibt den geplanten Umgang mit datenbankeigenen
 > Sequenz- und Trigger-Mechanismen beim Datenimport. Es konkretisiert
-> [LF-010](./lastenheft-d-migrate.md), ist aber noch
+> [LF-010](./lastenheft-d-migrate.md#lf-010), ist aber noch
 > kein final freigegebener Implementierungsvertrag.
 
 ---

@@ -90,7 +90,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 #### 4.1.1 Schema-Verwaltung
 
-**LF-001** Das System muss Datenbankstrukturen in einem neutralen Format definieren können
+<a id="lf-001"></a>**LF-001** Das System muss Datenbankstrukturen in einem neutralen Format definieren können
 - Tabellenstrukturen
 - Datentypen
 - Beziehungen zwischen Tabellen
@@ -98,12 +98,12 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Indizes
 - Andere datenbankeigene Objekte (z.B. Stored Procedures, Funktionen, Trigger, Views)
 
-**LF-002** Das System muss definierte Strukturen validieren können
+<a id="lf-002"></a>**LF-002** Das System muss definierte Strukturen validieren können
 - Syntaktische Korrektheit
 - Referenzielle Integrität
 - Typkompatibilität
 
-**LF-003** Das System muss aus neutralen Definitionen datenbankspezifische Strukturen und Objekte erzeugen können für:
+<a id="lf-003"></a>**LF-003** Das System muss aus neutralen Definitionen datenbankspezifische Strukturen und Objekte erzeugen können für:
 - PostgreSQL (Version 12+)
 - MySQL (Version 8.0+)
 - SQLite (Version 3.30+)
@@ -112,7 +112,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
   - MySQL über native Spatial Data Types (`GEOMETRY`, `POINT`, `LINESTRING`, `POLYGON`)
   - SQLite über SpatiaLite (`GEOMETRY`, `POINT`, `LINESTRING`, `POLYGON`), sofern die Erweiterung im Zielsystem verfügbar ist
 
-**LF-004** Das System muss aus datenbankspezifischen Strukturen und Objekten (SQL-Skripten oder Datenbankschema-Abfragen) ein neutrales Format erzeugen können.
+<a id="lf-004"></a>**LF-004** Das System muss aus datenbankspezifischen Strukturen und Objekten (SQL-Skripten oder Datenbankschema-Abfragen) ein neutrales Format erzeugen können.
 - Unterstützung für Reverse-Engineering von SQL-DDL-Statements (z. B. CREATE TABLE, ALTER TABLE, CREATE PROCEDURE, CREATE FUNCTION, CREATE TRIGGER, CREATE VIEW)
 - Extraktion von Tabellen, Datentypen, Constraints, Indizes, Beziehungen und anderen datenbankeigenen Objekten
 - Kompatibilität mit den in LF-003 genannten Datenbanksystemen
@@ -120,7 +120,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 #### 4.1.2 Internationalisierung und Zeichensätze
 
-**LF-005** Das System muss Unicode und internationale Zeichensätze vollständig unterstützen
+<a id="lf-005"></a>**LF-005** Das System muss Unicode und internationale Zeichensätze vollständig unterstützen
 - UTF-8 als Standard-Encoding für alle Konfigurationsdateien und Schema-Definitionen
 - Korrekte Verarbeitung von Unicode-Zeichen in Tabellen-, Spalten- und Constraint-Namen
 - Unterstützung für nicht-lateinische Schriftzeichen (Kyrillisch, Arabisch, Chinesisch, Japanisch, etc.)
@@ -128,14 +128,14 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Erhalt von Encoding-Informationen bei Export/Import
 - Validierung und Normalisierung von Unicode-Strings (NFC, NFD, NFKC, NFKD)
 
-**LF-006** Das System muss mehrsprachige Benutzerinteraktion unterstützen
+<a id="lf-006"></a>**LF-006** Das System muss mehrsprachige Benutzerinteraktion unterstützen
 - Mehrsprachige Fehlermeldungen und Statusmeldungen (mindestens Deutsch, Englisch)
 - Erweiterbare Lokalisierungsarchitektur für weitere Sprachen
 - Sprachauswahl über Umgebungsvariable (LANG, LC_ALL) oder Konfiguration
 - Lokalisierte Datumsformate, Zahlenformate und Währungen
 - Mehrsprachige CLI-Hilfe und Dokumentation
 
-**LF-007** Das System muss internationale Datenformate korrekt verarbeiten
+<a id="lf-007"></a>**LF-007** Das System muss internationale Datenformate korrekt verarbeiten
 - Zeitzonen-Awareness für TIMESTAMP-Felder: die effektive Default-Zeitzone wird
   in der Reihenfolge `i18n.default_timezone` → `ZoneId.systemDefault()` → `UTC`
   aufgelöst; UTC ist dabei der Safety-Net-Fallback, nicht der allgemeine
@@ -152,18 +152,18 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 #### 4.1.3 Datenverwaltung
 
-**LF-008** Das System muss Daten aus Datenbanken exportieren können
+<a id="lf-008"></a>**LF-008** Das System muss Daten aus Datenbanken exportieren können
 - Vollständiger Export von Tabellen
 - Selektiver Export mit Filterkriterien
 - Erhaltung von Datentypen und Beziehungen
 - Korrekte Behandlung von Unicode-Daten (UTF-8, UTF-16, etc.)
 
-**LF-009** Das System muss Daten in verschiedene Formate exportieren können:
+<a id="lf-009"></a>**LF-009** Das System muss Daten in verschiedene Formate exportieren können:
 - JSON (für Systemintegration, UTF-8 encoded)
 - YAML (für Konfigurationsverwaltung, UTF-8 encoded)
 - CSV (für Analyse-Tools, mit konfigurierbarem Encoding und BOM-Unterstützung)
 
-**LF-010** Das System muss Daten aus Dateien in Datenbanken importieren können
+<a id="lf-010"></a>**LF-010** Das System muss Daten aus Dateien in Datenbanken importieren können
 - Validierung gegen Schema-Definition
 - Fehlerbehandlung bei ungültigen Daten
 - Transaktionale Verarbeitung
@@ -175,14 +175,14 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 #### 4.1.4 Integrationsfähigkeit
 
-**LF-011** Das System muss Migrationsdateien für bestehende Tools erzeugen können:
+<a id="lf-011"></a>**LF-011** Das System muss Migrationsdateien für bestehende Tools erzeugen können:
 - Flyway-kompatible SQL-Skripte
 - Liquibase-Changesets
 - Django-Migrations
 - Knex.js-Migrationsdateien
 - Diese Integrationen sind optionale Ausgabepfade und dürfen keine Voraussetzung für die Kernfunktionen des Systems sein
 
-**LF-012** Das System muss über eine Kommandozeilen-Schnittstelle verfügen
+<a id="lf-012"></a>**LF-012** Das System muss über eine Kommandozeilen-Schnittstelle verfügen
 - Alle Funktionen müssen per CLI erreichbar sein
 - Batch-Verarbeitung muss möglich sein
 - Integration in CI/CD-Pipelines
@@ -190,18 +190,18 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 ### 4.2 Sollkriterien
 (Hinweis: Eine Priorisierung dieser Kriterien wird in der weiteren Projektplanung erfolgen, z.B. mittels MoSCoW-Methode.)
 
-**LF-013** Das System sollte inkrementelle Exports/Imports unterstützen
+<a id="lf-013"></a>**LF-013** Das System sollte inkrementelle Exports/Imports unterstützen
 
-**LF-014** Das System sollte Migrations-Rollback unterstützen
+<a id="lf-014"></a>**LF-014** Das System sollte Migrations-Rollback unterstützen
 
-**LF-015** Das System sollte Schema-Vergleiche zwischen verschiedenen Umgebungen ermöglichen
+<a id="lf-015"></a>**LF-015** Das System sollte Schema-Vergleiche zwischen verschiedenen Umgebungen ermöglichen
 
-**LF-016** Das System sollte automatische Dokumentationsgenerierung unterstützen
+<a id="lf-016"></a>**LF-016** Das System sollte automatische Dokumentationsgenerierung unterstützen
 - Mehrsprachige Dokumentation (mindestens Deutsch, Englisch)
 - Export in verschiedene Formate (HTML, PDF, Markdown)
 - Generierung von ER-Diagrammen mit Unicode-Labels
 
-**LF-017** Das System sollte die Evaluierung und den optionalen Einsatz von KI-Modellen zur Transformation von Stored Procedures und anderen datenbankeigenen Objekten unterstützen
+<a id="lf-017"></a>**LF-017** Das System sollte die Evaluierung und den optionalen Einsatz von KI-Modellen zur Transformation von Stored Procedures und anderen datenbankeigenen Objekten unterstützen
 - Transformation in ein abstraktes, textbasiertes Zwischenformat (Markdown mit strukturierten Code-Blöcken)
 - Unterstützung für verschiedene LLM-Backends:
   - **Externe APIs**: OpenAI GPT-4/GPT-4o, Anthropic Claude 3.5, xAI Grok, Google Gemini
@@ -216,25 +216,25 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 ### 4.3 Kannkriterien
 (Hinweis: Eine Priorisierung dieser Kriterien wird in der weiteren Projektplanung erfolgen, z.B. mittels MoSCoW-Methode.)
 
-**LF-018** Das System kann eine grafische Benutzeroberfläche für Schema-Design bereitstellen
+<a id="lf-018"></a>**LF-018** Das System kann eine grafische Benutzeroberfläche für Schema-Design bereitstellen
 - Mehrsprachige Benutzeroberfläche
 - Bidirektionale Text-Unterstützung (RTL für Arabisch, Hebräisch)
 
-**LF-019** Das System kann weitere Datenbanksysteme unterstützen (Oracle, MS SQL Server)
+<a id="lf-019"></a>**LF-019** Das System kann weitere Datenbanksysteme unterstützen (Oracle, MS SQL Server)
 - Inklusive deren spezifischer Kollations- und Encoding-Einstellungen
 - Die Unterstützung muss über eigene, austauschbare Reader-, Mapper- und Generator-Komponenten realisierbar sein
 
-**LF-020** Das System kann Schema-Optimierungsvorschläge generieren
+<a id="lf-020"></a>**LF-020** Das System kann Schema-Optimierungsvorschläge generieren
 
-**LF-021** Das System kann Daten anonymisieren/pseudonymisieren beim Export
+<a id="lf-021"></a>**LF-021** Das System kann Daten anonymisieren/pseudonymisieren beim Export
 - Unicode-Aware-Anonymisierung (z.B. Ersetzung kyrillischer Namen durch andere kyrillische Namen)
 
-**LF-022** Das System kann eine REST-API für Remote-Zugriff bereitstellen
+<a id="lf-022"></a>**LF-022** Das System kann eine REST-API für Remote-Zugriff bereitstellen
 - Content-Negotiation für verschiedene Sprachen (Accept-Language Header)
 
-**LF-023** Das System kann die Erzeugung von Docker-Images unterstützen, die eine vordefinierte Datenbankstruktur und Testdaten enthalten, um Testumgebungen schnell bereitzustellen.
+<a id="lf-023"></a>**LF-023** Das System kann die Erzeugung von Docker-Images unterstützen, die eine vordefinierte Datenbankstruktur und Testdaten enthalten, um Testumgebungen schnell bereitzustellen.
 
-**LF-024** Das System kann die algorithmische Generierung von Testdaten unterstützen, basierend auf Schemadefinitionen und optionalen Regeln
+<a id="lf-024"></a>**LF-024** Das System kann die algorithmische Generierung von Testdaten unterstützen, basierend auf Schemadefinitionen und optionalen Regeln
 - **Regelbasierte Generierung**: Faker-Libraries (Python Faker, JavaScript Faker) für deterministische Testdaten
 - **KI-gestützte Generierung (optional)**:
   - Verwendung von LLMs zur Generierung kontextrelevanter, realistischer Testdaten
@@ -245,11 +245,11 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Seed-basierte Reproduzierbarkeit für deterministische Tests
 - Unterstützung für mehrsprachige Testdaten (Namen, Adressen, etc. in verschiedenen Sprachen)
 
-**LF-025** Das System kann die Unterstützung für Teil-Replikationen von Daten bieten, um nur spezifische Datensätze oder Tabellen zu migrieren oder zu synchronisieren.
+<a id="lf-025"></a>**LF-025** Das System kann die Unterstützung für Teil-Replikationen von Daten bieten, um nur spezifische Datensätze oder Tabellen zu migrieren oder zu synchronisieren.
 
-**LF-026** Das System kann Funktionen zur Datenmaskierung oder Pseudonymisierung für sensible Daten bereitstellen, um Datenschutzanforderungen zu erfüllen, insbesondere in Test- oder Entwicklungsumgebungen.
+<a id="lf-026"></a>**LF-026** Das System kann Funktionen zur Datenmaskierung oder Pseudonymisierung für sensible Daten bereitstellen, um Datenschutzanforderungen zu erfüllen, insbesondere in Test- oder Entwicklungsumgebungen.
 
-**LF-027** Das System kann Datendateien (JSON/YAML/CSV) ohne Datenbankverbindung gegen eine Schemadefinition auf Konformität prüfen (Spaltenpräsenz inkl. Default-/Generated-Spalten-Semantik, Typ, Nullability, Länge/Präzision) und einen Validierungsreport ausgeben. Weitergehende Prüfungen (CHECK-Constraints, Enum-/Custom-Type-Zugehörigkeit, FK-Referenzintegrität) sind optionale Ausbaustufen.
+<a id="lf-027"></a>**LF-027** Das System kann Datendateien (JSON/YAML/CSV) ohne Datenbankverbindung gegen eine Schemadefinition auf Konformität prüfen (Spaltenpräsenz inkl. Default-/Generated-Spalten-Semantik, Typ, Nullability, Länge/Präzision) und einen Validierungsreport ausgeben. Weitergehende Prüfungen (CHECK-Constraints, Enum-/Custom-Type-Zugehörigkeit, FK-Referenzintegrität) sind optionale Ausbaustufen.
 
 
 ---
@@ -260,186 +260,186 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 #### 5.1.1 Performance
 
-**LN-001** DDL-Generierung muss innerhalb von 5 Sekunden erfolgen (für Schemas bis 100 Tabellen)
+<a id="ln-001"></a>**LN-001** DDL-Generierung muss innerhalb von 5 Sekunden erfolgen (für Schemas bis 100 Tabellen)
 
-**LN-002** Datenexport muss mindestens 10.000 Datensätze pro Sekunde verarbeiten können
+<a id="ln-002"></a>**LN-002** Datenexport muss mindestens 10.000 Datensätze pro Sekunde verarbeiten können
 
-**LN-003** Import-Performance muss mindestens 5.000 Datensätze pro Sekunde betragen
+<a id="ln-003"></a>**LN-003** Import-Performance muss mindestens 5.000 Datensätze pro Sekunde betragen
 
 #### 5.1.2 Skalierbarkeit
 
-**LN-004** Das System muss Schemas mit mehr als 1.000 Tabellen verarbeiten können
+<a id="ln-004"></a>**LN-004** Das System muss Schemas mit mehr als 1.000 Tabellen verarbeiten können
 - DDL-Generierung für 1.000 Tabellen in unter 30 Sekunden
 - Parallele Verarbeitung von mindestens 10 Tabellen gleichzeitig
 - Speicher-effiziente Verarbeitung (max. 2 GB RAM für Schema-Operationen)
 
-**LN-005** Das System muss sehr große Datenmengen (>10 TB) verarbeiten können
+<a id="ln-005"></a>**LN-005** Das System muss sehr große Datenmengen (>10 TB) verarbeiten können
 - Streaming-basierter Export ohne vollständiges Laden in den Speicher
 - Chunk-basierte Verarbeitung mit konfigurierbarer Batch-Größe (Standard: 10.000 Datensätze)
 - Progress-Tracking und Resume-Capability bei Unterbrechungen
 
-**LN-006** Das System muss inkrementelle Migrationen unterstützen
+<a id="ln-006"></a>**LN-006** Das System muss inkrementelle Migrationen unterstützen
 - Identifikation geänderter Datensätze seit letzter Migration
 - Inkrementelle Migration für Datenbanken mit >1.000 Tabellen in unter 1 Stunde
 - Delta-basierte Updates statt vollständiger Re-Migration
 
-**LN-007** Das System muss parallele Verarbeitung unterstützen
+<a id="ln-007"></a>**LN-007** Das System muss parallele Verarbeitung unterstützen
 - Paralleler Export/Import mehrerer Tabellen (konfigurierbar, Standard: CPU-Kerne)
 - Thread-sichere Operationen bei konkurrierenden Zugriffen
 - Automatische Lastverteilung basierend auf Tabellengröße
 
-**LN-008** Das System muss Partitionierung für große Tabellen unterstützen
+<a id="ln-008"></a>**LN-008** Das System muss Partitionierung für große Tabellen unterstützen
 - Automatische Erkennung und Verarbeitung partitionierter Tabellen
 - Export/Import pro Partition für bessere Performance
 - Parallele Verarbeitung verschiedener Partitionen
 
 #### 5.1.3 Zuverlässigkeit
 
-**LN-009** Datenverlust bei Import/Export-Vorgängen muss ausgeschlossen sein
+<a id="ln-009"></a>**LN-009** Datenverlust bei Import/Export-Vorgängen muss ausgeschlossen sein
 
-**LN-010** Transaktionale Konsistenz muss gewährleistet sein
+<a id="ln-010"></a>**LN-010** Transaktionale Konsistenz muss gewährleistet sein
 
-**LN-011** Fehlerhafte Operationen dürfen keine inkonsistenten Zustände hinterlassen
+<a id="ln-011"></a>**LN-011** Fehlerhafte Operationen dürfen keine inkonsistenten Zustände hinterlassen
 
-**LN-012** Automatische Checkpoint-Erstellung bei langen Operationen (alle 10.000 Datensätze oder alle 5 Minuten)
+<a id="ln-012"></a>**LN-012** Automatische Checkpoint-Erstellung bei langen Operationen (alle 10.000 Datensätze oder alle 5 Minuten)
 
-**LN-013** Atomare Rollback-Fähigkeit auf Checkpoint-Ebene bei Fehlern
+<a id="ln-013"></a>**LN-013** Atomare Rollback-Fähigkeit auf Checkpoint-Ebene bei Fehlern
 
 #### 5.1.4 Benutzbarkeit
 
-**LN-014** Installation und Erstkonfiguration darf maximal 30 Minuten dauern
+<a id="ln-014"></a>**LN-014** Installation und Erstkonfiguration darf maximal 30 Minuten dauern
 
-**LN-015** Kommandos müssen selbsterklärend und dokumentiert sein
+<a id="ln-015"></a>**LN-015** Kommandos müssen selbsterklärend und dokumentiert sein
 
-**LN-016** Fehlermeldungen müssen aussagekräftig und handlungsorientiert sein
+<a id="ln-016"></a>**LN-016** Fehlermeldungen müssen aussagekräftig und handlungsorientiert sein
 
-**LN-017** Progress-Anzeige mit Zeitschätzung für alle lang laufenden Operationen (>10 Sekunden)
+<a id="ln-017"></a>**LN-017** Progress-Anzeige mit Zeitschätzung für alle lang laufenden Operationen (>10 Sekunden)
 
 #### 5.1.5 Kompatibilität
 
-**LN-018** Das System muss auf allen gängigen Betriebssystemen lauffähig sein
+<a id="ln-018"></a>**LN-018** Das System muss auf allen gängigen Betriebssystemen lauffähig sein
 
-**LN-019** Integration in bestehende CI/CD-Pipelines muss möglich sein
+<a id="ln-019"></a>**LN-019** Integration in bestehende CI/CD-Pipelines muss möglich sein
 
-**LN-020** Bestehende Schema-Definitionen (SQL) müssen importierbar sein
+<a id="ln-020"></a>**LN-020** Bestehende Schema-Definitionen (SQL) müssen importierbar sein
 
 #### 5.1.6 Internationalisierung und Lokalisierung
 
-**LN-021** Das System muss vollständige Unicode-Unterstützung gewährleisten
+<a id="ln-021"></a>**LN-021** Das System muss vollständige Unicode-Unterstützung gewährleisten
 - Keine Datenverluste bei Verarbeitung von Unicode-Zeichen
 - Korrekte String-Längenberechnung (grapheme-aware, nicht byte-basiert)
 - Unterstützung für Emoji und Sonderzeichen (Unicode 15.0+)
 
-**LN-022** Das System muss Lokalisierungsstandards einhalten
+<a id="ln-022"></a>**LN-022** Das System muss Lokalisierungsstandards einhalten
 - ICU (International Components for Unicode) für Sortierung und Vergleiche
 - CLDR (Common Locale Data Repository) für Datums-, Zahlen- und Währungsformate
 - gettext oder ähnliche I18n-Frameworks für Übersetzungen
 
-**LN-023** Fehlermeldungen und Logging müssen internationalisiert sein
+<a id="ln-023"></a>**LN-023** Fehlermeldungen und Logging müssen internationalisiert sein
 - Strukturierte Log-Ausgabe mit lokalisierbaren Message-Keys
 - Trennung von technischen Details (immer Englisch) und Benutzermeldungen (lokalisiert)
 - Fallback auf Englisch bei fehlenden Übersetzungen
 
-**LN-024** Die Performance darf durch Unicode-Verarbeitung nicht signifikant beeinträchtigt werden
+<a id="ln-024"></a>**LN-024** Die Performance darf durch Unicode-Verarbeitung nicht signifikant beeinträchtigt werden
 - String-Operationen maximal 20% langsamer als ASCII-only
 - Effiziente UTF-8 Encoding/Decoding
 
 ### 5.2 Sicherheitsanforderungen
 
-**LN-025** Datenbankzugangsdaten müssen verschlüsselt gespeichert werden
+<a id="ln-025"></a>**LN-025** Datenbankzugangsdaten müssen verschlüsselt gespeichert werden
 
-**LN-026** Verbindungen zu Datenbanken müssen verschlüsselt erfolgen können
+<a id="ln-026"></a>**LN-026** Verbindungen zu Datenbanken müssen verschlüsselt erfolgen können
 
-**LN-027** Audit-Logging aller durchgeführten Operationen
+<a id="ln-027"></a>**LN-027** Audit-Logging aller durchgeführten Operationen
 
-**LN-028** Rollenbasierte Zugriffskontrolle für administrative Funktionen
+<a id="ln-028"></a>**LN-028** Rollenbasierte Zugriffskontrolle für administrative Funktionen
 
-**LN-029** Bei Nutzung externer KI-APIs müssen API-Keys sicher gespeichert werden (verschlüsselt, nie in Logs)
+<a id="ln-029"></a>**LN-029** Bei Nutzung externer KI-APIs müssen API-Keys sicher gespeichert werden (verschlüsselt, nie in Logs)
 
-**LN-030** KI-generierter Code muss als solcher gekennzeichnet werden (Metadaten, Kommentare)
+<a id="ln-030"></a>**LN-030** KI-generierter Code muss als solcher gekennzeichnet werden (Metadaten, Kommentare)
 
-**LN-031** Bei KI-gestützten Transformationen müssen Quell- und Zielcode für Auditing verfügbar bleiben
+<a id="ln-031"></a>**LN-031** Bei KI-gestützten Transformationen müssen Quell- und Zielcode für Auditing verfügbar bleiben
 
 ### 5.3 KI-Integration und Datenschutz
 
-**LN-032** Das System muss eine klare Konfiguration für KI-Backends ermöglichen
+<a id="ln-032"></a>**LN-032** Das System muss eine klare Konfiguration für KI-Backends ermöglichen
 - Auswahl zwischen externen APIs und lokalen Modellen
 - Transparente Angabe, wohin Daten gesendet werden
 - Opt-in für externe APIs (kein automatisches Senden an Cloud-Services)
 
-**LN-033** Für datenschutzkritische Umgebungen muss der Betrieb ohne externe KI-APIs möglich sein
+<a id="ln-033"></a>**LN-033** Für datenschutzkritische Umgebungen muss der Betrieb ohne externe KI-APIs möglich sein
 - Vollständige Funktionalität mit lokalen Modellen (Ollama, LM Studio)
 - Keine Telemetrie an externe Services
 - Offline-Betrieb muss möglich sein
 
-**LN-034** KI-Transformationen müssen validierbar sein
+<a id="ln-034"></a>**LN-034** KI-Transformationen müssen validierbar sein
 - Automatische Syntax-Prüfung des generierten Codes
 - Optional: Semantische Äquivalenzprüfung durch Testausführung
 - Diff-Ansicht zwischen Original und transformiertem Code
 
-**LN-035** Performance-Anforderungen für KI-Operationen
+<a id="ln-035"></a>**LN-035** Performance-Anforderungen für KI-Operationen
 - Timeout-Konfiguration für API-Calls (Standard: 30 Sekunden)
 - Retry-Mechanismus bei temporären Fehlern (max. 3 Versuche)
 - Fallback auf regelbasierte Generierung bei KI-Ausfall (für LF-024)
 - Caching von häufigen Transformationen zur Kostenreduktion
 
-**LN-036** Modell-Auswahl und Versionierung
+<a id="ln-036"></a>**LN-036** Modell-Auswahl und Versionierung
 - Dokumentation der verwendeten Modellversion in Metadaten
 - Konfigurierbare Modell-Parameter (Temperatur, Max-Tokens)
 - A/B-Testing-Fähigkeit für verschiedene Modelle
 
 ### 5.4 Wartbarkeit und Erweiterbarkeit
 
-**LN-037** Modularer Aufbau für unabhängige Weiterentwicklung
+<a id="ln-037"></a>**LN-037** Modularer Aufbau für unabhängige Weiterentwicklung
 
-**LN-038** Dokumentierte Schnittstellen für Erweiterungen
+<a id="ln-038"></a>**LN-038** Dokumentierte Schnittstellen für Erweiterungen
 
-**LN-039** Versionierung aller Schema-Definitionen
+<a id="ln-039"></a>**LN-039** Versionierung aller Schema-Definitionen
 
-**LN-040** Rückwärtskompatibilität für mindestens 2 Hauptversionen
+<a id="ln-040"></a>**LN-040** Rückwärtskompatibilität für mindestens 2 Hauptversionen
 
-**LN-041** Plugin-Architektur für KI-Backends
+<a id="ln-041"></a>**LN-041** Plugin-Architektur für KI-Backends
 - Einfache Integration neuer LLM-Provider ohne Core-Änderungen
 - Standardisierte Schnittstelle für alle KI-Provider
 - Community-Beiträge für neue Modell-Integrationen
 
-**LN-042** Lokalisierungserweiterbarkeit
+<a id="ln-042"></a>**LN-042** Lokalisierungserweiterbarkeit
 - Einfache Hinzufügung neuer Sprachen durch Community
 - Standardisierte Translation-Dateien (z.B. gettext .po/.pot)
 - Dokumentierter Übersetzungsprozess
 
 ### 5.5 Testbarkeit
 
-**LN-043** Das System muss umfassend testbar sein
+<a id="ln-043"></a>**LN-043** Das System muss umfassend testbar sein
 - Dependency Injection für einfaches Mocking von Datenbankverbindungen
 - Klare Trennung von Business-Logik und Infrastruktur-Code
 - Deterministisches Verhalten bei gleichen Eingaben (keine versteckten Seiteneffekte)
 - Test-Hooks für Timing-kritische Operationen
 
-**LN-044** Automatisierte Tests müssen effizient ausführbar sein
+<a id="ln-044"></a>**LN-044** Automatisierte Tests müssen effizient ausführbar sein
 - Unit-Tests: Vollständige Testsuite in unter 2 Minuten
 - Integration-Tests: Vollständige Testsuite in unter 15 Minuten
 - Parallele Testausführung ohne Race-Conditions
 - Isolierte Tests ohne gegenseitige Abhängigkeiten
 
-**LN-045** Test-Coverage muss messbar und überprüfbar sein
+<a id="ln-045"></a>**LN-045** Test-Coverage muss messbar und überprüfbar sein
 - Code-Coverage-Reports in CI/CD-Pipeline
 - Mindestens 80% Line-Coverage für kritische Module
 - 100% Coverage für Datentyp-Konvertierungen
 - Branch-Coverage für Error-Handling-Pfade
 
-**LN-046** Property-Based Testing für Robustheit
+<a id="ln-046"></a>**LN-046** Property-Based Testing für Robustheit
 - Unterstützung für Hypothesis (Python) oder fast-check (JavaScript)
 - Automatische Testfall-Generierung für Schema-Parsing
 - Shrinking bei Testfehlern zur Ursachenfindung
 
-**LN-047** Test-Daten und Fixtures müssen wartbar sein
+<a id="ln-047"></a>**LN-047** Test-Daten und Fixtures müssen wartbar sein
 - Versionierung von Test-Fixtures in Git
 - Automatische Generierung repräsentativer Test-Schemas
 - Reproduzierbare Test-Datenbanken via Docker Compose
 - Anonymisierte Produktions-Dumps als Test-Daten (optional)
 
-**LN-048** Integrationstests mit echten Datenbanken
+<a id="ln-048"></a>**LN-048** Integrationstests mit echten Datenbanken
 - Docker-basierte Test-Datenbanken für alle unterstützten Systeme
 - Automatisches Cleanup nach Testausführung
 - Unterstützung für lokale und CI-Umgebungen

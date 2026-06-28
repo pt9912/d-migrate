@@ -9,7 +9,7 @@
 > Iteration, ungecappt). Reine Tabellen skalieren dagegen ~linear (1000 Tabellen
 > ~1,7 s). Die Blow-up-Quelle ist also der **gemischte** Anteil: Views + Trigger +
 > deren **Dependency-Topologie** (Views→Tabellen, Trigger→Funktion/Tabelle).
-> **Bezug:** keine harte LF-Anforderung (LN-004 „1000 Tabellen" ist mit ~1,7 s erfüllt);
+> **Bezug:** keine harte LF-Anforderung ([`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004) „1000 Tabellen" ist mit ~1,7 s erfüllt);
 > relevant für reale Schemas mit vielen Views/Triggern + die Mess-Stabilität.
 
 ## Beleg (live, 2026-06-23, `make docker-perf MODULES=":test:perf-large-schema"`)
@@ -31,7 +31,7 @@ n Views/Trigger auf Tabellen/Funktionen referenzieren (`SchemaComparator` / `Dif
 
 ## Auswirkung / Einordnung
 
-- **Nicht LF-blockierend:** LN-004 (1000 Tabellen) ist erfüllt; 1000 Views+Trigger ist
+- **Nicht LF-blockierend:** [`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004) (1000 Tabellen) ist erfüllt; 1000 Views+Trigger ist
   ein ungewöhnlich großes Programmability-Volumen.
 - Aber: reale große Schemas mit vielen Views/Triggern träfen die Super-Linearität;
   und der 4×n-N=1000-Stress-Guard musste deshalb großzügig (90 s) gesetzt werden.

@@ -57,7 +57,6 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-
 Derzeit keine aktiven Per-Slice-ImpPlans in `in-progress/` — graduierte/geschlossene
 Slices stehen unter `../done/` bzw. `../done-archive/` (mit eigener `## Closure`-Sektion),
 nicht als Verweis hier.

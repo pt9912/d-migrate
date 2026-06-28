@@ -111,5 +111,5 @@ abzüglich Engine-Fakten/versionierter Dateinamen/Beispiele/Lastenheft/`design.m
 
 **In eigene Tracker abgegrenzt:** `design.md`-Retire
 ([`design-md-retire.md`](design-md-retire.md)); Spec→ADR/Plan-
-Abwärts-Refs ([`../open/spec-adr-downref-hygiene.md`](../open/spec-adr-downref-hygiene.md));
+Abwärts-Refs ([`spec-adr-downref-hygiene.md`](spec-adr-downref-hygiene.md));
 Phase-E/F-Cross-Ref-Familie; Lastenheft-Roadmap.

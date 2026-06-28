@@ -1553,7 +1553,7 @@ Notes und `skipped_objects` tragen im Split-Modus optional ein `phase`-Feld
 
 ## Verwandte Dokumentation
 
-- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typsystem §3, Validierung §13, Transformationshinweise §11- [Architektur](./architecture.md) — TypeMapper §3.4, SchemaWriter §3.1
+- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typsystem §3, Validierung §13, Transformationshinweise §11
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes
 
 ---

@@ -81,7 +81,7 @@ verboten — auch nicht als „siehe Roadmap"-Hinweis.
       `reserved_only`-Option, Status-Footer; Engine-Fakten (`3.x`/`8.x`) unangetastet. **2026-06-28.**
 - [x] `connection-config-spec.md`: Abwärts-Zeiger auf `implementation-plan-0.9.6`
       gekappt, Wert `≤30s` behalten. **2026-06-28.**
-- [x] `design-import-sequences-triggers.md`: `Milestone 0.4.0` raus, `LF-010` behalten. **2026-06-28.**
+- [x] `design-import-sequences-triggers.md`: `Milestone 0.4.0` raus, [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) behalten. **2026-06-28.**
 - [x] `ki-mcp.md` (`660`): Upload-Body-Vertrag zeitlos (`nicht Teil des MCP-Vertrags`). **2026-06-28.**
 - [x] `profiling.md`: Header zu Zielbild, `481`/`546`/`770` Milestone-Refs entstempelt
       (Zielbild-kompatibel, bleibt in `spec/`). **2026-06-28.**
@@ -105,7 +105,7 @@ einem zu engen Grep (`ab X.Y.Z`/`Milestone`/`Phase`) und unterzählte. Ein volle
 - `ki-mcp:718` „seit Phase F" + §12 `Phase-E`/`Phase-E2`-Cross-Refs → Phase-Familie
   (Nachklang im Umbrella-Tracker).
 - `ddl-generation` `Plan-2 §F.5`/`§E.3` → Spec→Plan-Abwärts-Refs →
-  [`../open/spec-adr-downref-hygiene.md`](../open/spec-adr-downref-hygiene.md).
+  [`spec-adr-downref-hygiene.md`](spec-adr-downref-hygiene.md).
 
 ### WP2b — `design.md` → ausgegliedert in eigenen Retire-Sub-Slice
 Bei der Analyse stellte sich `design.md` als **veralteter, redundanter** Living-
@@ -196,5 +196,5 @@ pt9912) bestätigt → Graduierung.
 **Ausgegliederte Folgearbeit (eigene Tracker):** `design.md`-Retire
 ([`design-md-retire.md`](design-md-retire.md)); Spec→ADR/Plan-
 Abwärts-Refs + d-check-Härtung
-([`../open/spec-adr-downref-hygiene.md`](../open/spec-adr-downref-hygiene.md));
+([`spec-adr-downref-hygiene.md`](spec-adr-downref-hygiene.md));
 Phase-E/F-Familie (Umbrella-Nachklang); Lastenheft-Roadmap (separater Scope).

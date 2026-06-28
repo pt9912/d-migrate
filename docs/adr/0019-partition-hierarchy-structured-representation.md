@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-23
 decision-makers: pt9912
-consulted: docs/planning/done/partition-hierarchy-reconstruction.md, docs/adr/0015-fulltext-tsvector-neutral-type.md (neutrales-Modell-Präzedenz), spec/neutral-model-spec.md, spec/lastenheft-d-migrate.md (LN-008)
+consulted: docs/planning/done/partition-hierarchy-reconstruction.md, docs/adr/0015-fulltext-tsvector-neutral-type.md (neutrales-Modell-Präzedenz), spec/neutral-model-spec.md, spec/lastenheft-d-migrate.md ([`LN-008`](../../spec/lastenheft-d-migrate.md#ln-008))
 informed: hexagon/core (PartitionConfig, TableDiff), adapters/driven/driver-postgresql, adapters/driven/driver-mysql, examples/sample-db (Pagila-Round-Trip)
 ---
 
@@ -21,7 +21,7 @@ Eltern-Tabelle (z. B. Pagila `payment`, RANGE) round-trippt als „partitionslos
 7 lose Basistabellen", der Generate-Pfad fällt auf **E055** zurück (plain Tabelle), und
 der Daten-Transfer **dupliziert** sogar Zeilen (Parent-SELECT + Kind-SELECTs; datenbelegt
 32098 statt 16049). Das ist ein **systematischer Reverse-Fidelity-Defekt** und deckt
-**LN-008** („Partitionierung für große Tabellen") nur teilweise ab.
+**[`LN-008`](../../spec/lastenheft-d-migrate.md#ln-008)** („Partitionierung für große Tabellen") nur teilweise ab.
 
 Generate (PG **und** MySQL) konsumiert bereits eine `partitions`-Liste; der Comparator ist
 **partitions-blind** (`TableDiff` hat kein Partitionsfeld; ein Test fixiert „partitioning
@@ -100,7 +100,7 @@ ziehen nach. Bewusste, getestete Bestandsänderung — hier sanktioniert.
   Flag — geringe Mehrkosten, vermeidet genau den bedingten else-/Stopgap-Zweig, den das
   Ticket warnt. (Pagila nutzt es nicht; trotzdem first-class, kein Carve-Out.)
 - **Sub-Partitionierung: OUT** (Partitionen von Partitionen) — eigener Slice.
-- **Per-Partition-Performance-Transfer (paralleler Export/Import): OUT** — LN-008-
+- **Per-Partition-Performance-Transfer (paralleler Export/Import): OUT** — [`LN-008`](../../spec/lastenheft-d-migrate.md#ln-008)-
   Performance-Teil, Performance-Phase. Die *Korrektheit* (Parent-Routing,
   Nicht-Duplikation) ist hier drin.
 

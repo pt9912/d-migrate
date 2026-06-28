@@ -149,13 +149,13 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.29.0, siehe
-# https://github.com/pt9912/d-check/releases/tag/v0.29.0). Die doc-*-Targets
+# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.30.0, siehe
+# https://github.com/pt9912/d-check/releases/tag/v0.30.0). Die doc-*-Targets
 # (doc-check/-trace/-complete/-doctor/-repair/-help) kommen aus d-check.mk,
-# erzeugt via `docker run --rm ghcr.io/pt9912/d-check:v0.29.0 --print-mk`; der
+# erzeugt via `docker run --rm ghcr.io/pt9912/d-check:v0.30.0 --print-mk`; der
 # Image-Pin lebt dort. DCHECK_DIGEST MUSS vor dem include stehen — die .mk
 # wertet den Digest beim Parsen aus (ifeq → DCHECK_REF).
-DCHECK_DIGEST = sha256:07994926987a92b863a5f54eeb7668654c08e1be958be425da4bdb7712c002c2
+DCHECK_DIGEST = sha256:92a6327d50d9496c02f3b6a5cb6d45f721a44e5bb8a9b6b30acfc52e91ab2220
 include d-check.mk
 
 # docs-check bleibt die Schirm-ID (gates/ci hängen daran): aggregiert d-checks

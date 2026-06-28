@@ -6,7 +6,7 @@
 >
 > Referenzen: `spec/architecture.md`, `spec/cli-spec.md`,
 > `spec/grpc-service.md`, `spec/job-contract.md`,
-> `spec/lastenheft-d-migrate.md` LF-022
+> `spec/lastenheft-d-migrate.md` [`LF-022`](lastenheft-d-migrate.md#lf-022)
 
 ---
 
@@ -86,7 +86,7 @@ würde sonst in alle Service-Schnittstellen kopiert.
   `application/octet-stream`)
 - strukturierte Antworten bleiben sprachstabil englisch, analog zur CLI
 - menschenlesbare Texte können per `Accept-Language` lokalisiert werden
-  (LF-022)
+  ([`LF-022`](lastenheft-d-migrate.md#lf-022))
 
 ### 3.3 Synchron vs. asynchron
 

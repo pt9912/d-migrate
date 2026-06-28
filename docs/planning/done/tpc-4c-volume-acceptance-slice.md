@@ -50,8 +50,8 @@ Die **gemessene** Volumen-Abnahme über 4b hinaus:
   LF-8.5-Absicht; die literale Datei-Byte-Lesart ist selbst bei korrektem Transfer
   unmöglich. **Umbrella-4c korrigiert (R4);** ADR 0017 nennt „SHA-256 Quelle↔Ziel"
   (Inhalts-, nicht Datei-Byte-Vergleich) → konsistent, keine ADR-Änderung nötig.
-- **Budgets als Durchsatz (skaleninvariant):** Export ≥ **10 000 Sätze/s** (= LN-002 →
-  1 Mio/100 s), Import ≥ **5 000 Sätze/s** (= LN-003 → 1 Mio/200 s). Entkoppelt die
+- **Budgets als Durchsatz (skaleninvariant):** Export ≥ **10 000 Sätze/s** (= [`LN-002`](../../../spec/lastenheft-d-migrate.md#ln-002) →
+  1 Mio/100 s), Import ≥ **5 000 Sätze/s** (= [`LN-003`](../../../spec/lastenheft-d-migrate.md#ln-003) → 1 Mio/200 s). Entkoppelt die
   Abnahme von der exakten SF und bindet sie an die nummerierten LN-Anforderungen.
 - **Scale:** SF konfigurierbar; **Default ≥ 1 Mio Zeilen** (SF=0.2 → `lineitem` ~1,2 Mio).
   Der „echte" Nightly-Lauf kann SF=1 (~6 Mio `lineitem`, ~1 GB) fahren.
@@ -105,7 +105,7 @@ Die **gemessene** Volumen-Abnahme über 4b hinaus:
 **Teil 1 (Mess-Kern) — live verifiziert `make sample-db-tpch-perf` (SF=0.2, 1,73 Mio):**
 - [x] Verlustfreiheit ≥ 1 Mio per **kanonischem SHA-256** Quelle==Ziel (hart, host-unabh.;
       alle 8 Tabellen identisch).
-- [x] Export/Import getrennt getimt unter Caps; Durchsatz vs. LN-002/003 (hier
+- [x] Export/Import getrennt getimt unter Caps; Durchsatz vs. [`LN-002`](../../../spec/lastenheft-d-migrate.md#ln-002)/003 (hier
       diagnostisch: Export ~216k/s, Import ~78k/s, beide ≫ Budget; hart nur PERF_GATE+Runner).
 - [x] Resume nach **Mid-Stream-Abbruch** + `--resume` → vollständiger, verlustfreier
       Export (Abbruchpunkt host-abhängig ~70 %, Band [25,90] belegt mid-stream; ehrlich

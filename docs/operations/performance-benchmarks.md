@@ -60,14 +60,14 @@ Zeit- **und** Heap-Budget:
 
 | Hotpath / Scale | Smoke | Baseline (`PERF_GATE`) | Heap | Bedeutung |
 | --- | --- | --- | --- | --- |
-| `large-schema-render-n100` (4×n, 401 Obj) | 10 s | 2 s | 256 MB | Stress; LN-001 (100 Tab < 5 s) gedeckt (~0,2 s) |
-| `large-schema-render-n1000` (4×n, 4001 Obj) | 30 s | 5 s | 1024 MB | umfassender Stress-Guard (~0,13 s nach Sorter-Linearisierung), **nicht** LN-004 |
-| `ddl-1000-tables-ln004` (reine 1000 Tab) | 120 s | **30 s** | 1024 MB | **LN-004** „1000 Tab < 30 s" — faithful, **~1,7 s ≪ 30 s** |
+| `large-schema-render-n100` (4×n, 401 Obj) | 10 s | 2 s | 256 MB | Stress; [`LN-001`](../../spec/lastenheft-d-migrate.md#ln-001) (100 Tab < 5 s) gedeckt (~0,2 s) |
+| `large-schema-render-n1000` (4×n, 4001 Obj) | 30 s | 5 s | 1024 MB | umfassender Stress-Guard (~0,13 s nach Sorter-Linearisierung), **nicht** [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004) |
+| `ddl-1000-tables-ln004` (reine 1000 Tab) | 120 s | **30 s** | 1024 MB | **[`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004)** „1000 Tab < 30 s" — faithful, **~1,7 s ≪ 30 s** |
 | N = 10000 | 🔮 zurückgestellt (Nightly-Opt-in, eigener Spec) | | | |
 
 Der gemischte 4×n-Scale (`large-schema-render-n*`) misst 4×n+1 Objekte (Tabellen +
 Sequenzen + Views + Trigger + 1 Funktion) **inkl. Dependency-Topologie** — ein
-umfassender Stress-Check, **nicht** die literale LN-004-Metrik. LN-004 („1.000 Tabellen")
+umfassender Stress-Check, **nicht** die literale [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004)-Metrik. [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004) („1.000 Tabellen")
 deckt der separate `ddl-1000-tables-ln004`-Hotpath (reine Tabellen-DDL) faithful ab; er
 liegt mit ~1,7 s host-robust unter den 30 s. Das N=1000-4×n-Baseline ist seit der
 Linearisierung des (vormals kubischen) `TopologicalSorter` auf **5 s** gestrafft — die
@@ -126,10 +126,10 @@ inzwischen als opt-in/nightly-Mess-Kern gebaut:
   den TPC-H-Volumen-Mess-Kern (4c, `make sample-db-tpch-perf`, ≥ 1 Mio) — **Verlustfreiheit
   HART** per kanonischem Inhalts-SHA-256 (host-unabhängig), Durchsatz kalibrier-guarded
   (siehe „LF-8.1-Mess-Kern" oben).
-- ✅ **LF 8.2 / LN-004** — „DDL-Generierung 1 000 Tabellen **< 30 s**": faithful gemessen
+- ✅ **LF 8.2 / [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004)** — „DDL-Generierung 1 000 Tabellen **< 30 s**": faithful gemessen
   (`ddl-1000-tables-ln004`, **~1,7 s ≪ 30 s**, hart unter `PERF_GATE`; 4d). Das frühere
-  N=1000-4×n-„Gate" war auf LN-004 fehl-gemappt (misst 4001 gemischte Objekte) — korrigiert
-  (eigener faithful LN-004-Test) und seit der `TopologicalSorter`-Linearisierung von ~52 s auf
+  N=1000-4×n-„Gate" war auf [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004) fehl-gemappt (misst 4001 gemischte Objekte) — korrigiert
+  (eigener faithful [`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004)-Test) und seit der `TopologicalSorter`-Linearisierung von ~52 s auf
   ~0,13 s beschleunigt (4×n-Baseline → 5 s Regressions-Guard).
 
 Beide Abnahme-Budgets brauchen eine **definierte Mess-Umgebung** — eine absolute
@@ -144,14 +144,14 @@ Nightly-Runner, mit **Kalibrierungs-Guard** (Off-Spec-Host → Rückfall auf dia
 (`examples/sample-db/scripts/smoke-tpch-perf.sh`, Workflow `.github/workflows/perf-acceptance.yml`)
 fährt den datei-basierten `data export`→`import` der TPC-H-Workload (≥ 1 Mio) unter den
 Referenz-Caps: **Verlustfreiheit HART** per kanonischem Inhalts-SHA-256 (host-unabhängig),
-**Durchsatz** vs. LN-002/003 **kalibrier-guarded** (diff-planner-CLI-Op als Host-Speed-
+**Durchsatz** vs. [`LN-002`](../../spec/lastenheft-d-migrate.md#ln-002)/003 **kalibrier-guarded** (diff-planner-CLI-Op als Host-Speed-
 Referenz; hart nur bei `PERF_GATE=true` + host-in-band, sonst diagnostisch), **Resume**
 nach Mid-Stream-Abbruch. Slice:
 [`../planning/done/tpc-4c-volume-acceptance-slice.md`](../planning/done/tpc-4c-volume-acceptance-slice.md).
 Offen (operativ): einen Nightly-Runner designieren + `CALIB_REFERENCE_MS` darauf pinnen,
-dann ist das absolute Zeit-Gate live. Die DDL-1000-< 30-s-Schwelle (LN-004) bleibt 4d.
+dann ist das absolute Zeit-Gate live. Die DDL-1000-< 30-s-Schwelle ([`LN-004`](../../spec/lastenheft-d-migrate.md#ln-004)) bleibt 4d.
 
-Diese beiden Benchmarks (und die SHA-256-Integritätsverifikation, LF/LN-009)
+Diese beiden Benchmarks (und die SHA-256-Integritätsverifikation, LF/[`LN-009`](../../spec/lastenheft-d-migrate.md#ln-009))
 werden mit dem 1.0.0-RC-Zyklus nachgezogen; die Roadmap-1.0.0-Tabelle in
 [`../planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) führt
 die QA-Abnahmeziele.

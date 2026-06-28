@@ -57,17 +57,17 @@ Das Lastenheft trennt zwei Ebenen; der ältere „LF 8.1/8.2"-Sammelbegriff vers
 
 - **LF 8.1 — Funktionale Tests** (Verlustfreiheit, **kein** Zeitbudget). Relevant:
   „Export und Re-Import von **mindestens 1 Million Datensätzen ohne Datenverlust**".
-  **Verifikationsmethode (LF 8.5 Datenintegritätstests, gebunden an LN-009/010/011):**
+  **Verifikationsmethode (LF 8.5 Datenintegritätstests, gebunden an [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009)/010/011):**
   das Lastenheft schreibt einen **Byte-für-Byte-Vergleich (SHA-256-Hash)** der 1-Mio-
   Export/Import-Daten vor — strenger als Phase 3 (nur Zeilen-Parität + `SUM(salary)`-
   Checksumme). 4c muss diese Methode übernehmen (oder ein Surrogat ausdrücklich
   begründen). LF 8.5 nennt zusätzlich NULL-/Unicode-/BLOB-Integrität — eigener Scope.
 - **LF 8.2 — Performance-Tests** (Zeit/Skalierung). Relevant u. a.:
-  „DDL-Generierung für 100 Tabellen in unter 5 s" (= **LN-001**), „Export von 1 Mio in
+  „DDL-Generierung für 100 Tabellen in unter 5 s" (= **[`LN-001`](../../../spec/lastenheft-d-migrate.md#ln-001)**), „Export von 1 Mio in
   unter **100 s**", „Import von 1 Mio in unter **200 s**" (entsprechen den Durchsatz-
-  Anforderungen **LN-002** ≥ 10 000 Sätze/s → 1 Mio/100 s bzw. **LN-003** ≥ 5 000
+  Anforderungen **[`LN-002`](../../../spec/lastenheft-d-migrate.md#ln-002)** ≥ 10 000 Sätze/s → 1 Mio/100 s bzw. **[`LN-003`](../../../spec/lastenheft-d-migrate.md#ln-003)** ≥ 5 000
   Sätze/s → 1 Mio/200 s), „DDL-Generierung für 1.000 Tabellen in unter **30 s**"
-  (= nummerierte Anforderung **LN-004**, „Schemas mit >1.000 Tabellen"; auch in den
+  (= nummerierte Anforderung **[`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004)**, „Schemas mit >1.000 Tabellen"; auch in den
   Abnahmekriterien), „Export von 10 Mio ohne Out-of-Memory", „Checkpoint/Resume:
   erfolgreicher Wiederanlauf nach simuliertem Abbruch bei 50 %".
 
@@ -162,20 +162,20 @@ Fallbacks. Vollständige Begründung + verworfene Optionen: [ADR 0017](../../adr
    Zeilen-Order und realisiert die LF-8.5-Absicht faithful. **Pfad festgenagelt:
    `data export` → `data import`** (einziger mit `--resume` + getrennten Export/Import-
    Zeiten; `data transfer` hat nur `--chunk-size`). **Plus** Zeit-Budgets als Durchsatz
-   (Export ≥ 10k/s = LN-002 → 1 Mio/100 s; Import ≥ 5k/s = LN-003 → 1 Mio/200 s), unter
+   (Export ≥ 10k/s = [`LN-002`](../../../spec/lastenheft-d-migrate.md#ln-002) → 1 Mio/100 s; Import ≥ 5k/s = [`LN-003`](../../../spec/lastenheft-d-migrate.md#ln-003) → 1 Mio/200 s), unter
    Caps 2 CPU/4 GB (ADR 0018). **Plus** Resume nach Abbruch **bei ~50 %** (chunk-count-
    basiert; Phase 3 bricht beim ersten Checkpoint ab, also < 50 %). **Scope-Split:**
    Mess-Kern (kanonischer SHA-256 hart, Durchsatz diagnostisch, Resume@50%, Caps) = Teil 1;
    Kalibrier-Guard + Referenz-Median + `perf-acceptance.yml`-Hart-Gate = Teil 2 (braucht
    designierten Runner; Kalibrier-Substrat-Lücke JVM↔CLI offen). Doku-Sync:
    `performance-benchmarks.md` auf „gemessene Abnahme: Mess-Kern da, Hart-Gate Teil 2".
-- **4d — LF 8.2 / LN-004 DDL-1000-Gate — ERLEDIGT**
+- **4d — LF 8.2 / [`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004) DDL-1000-Gate — ERLEDIGT**
    ([done/tpc-4d-ddl-1000-slice.md](../done/tpc-4d-ddl-1000-slice.md)). Datenbefund: das
-   bestehende 4×n-N=1000-„30-s-Gate" war auf LN-004 **fehl-gemappt** — es misst 4001
-   gemischte Objekte (~52 s), nicht „1.000 Tabellen". Faithful LN-004-Gate ergänzt
-   (`ddl-1000-tables-ln004`, reine 1000 Tabellen): **1,7 s ≪ 30 s → LN-004 erfüllt** (hart
+   bestehende 4×n-N=1000-„30-s-Gate" war auf [`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004) **fehl-gemappt** — es misst 4001
+   gemischte Objekte (~52 s), nicht „1.000 Tabellen". Faithful [`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004)-Gate ergänzt
+   (`ddl-1000-tables-ln004`, reine 1000 Tabellen): **1,7 s ≪ 30 s → [`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004) erfüllt** (hart
    grün unter `PERF_GATE`). 4×n-Baseline 30 s → 90 s korrigiert (Regressions-Guard, kein
-   LF-Budget) → Modul `PERF_GATE`-fähig. **LN-001** („100 Tab < 5 s") via N=100 (0,4 s)
+   LF-Budget) → Modul `PERF_GATE`-fähig. **[`LN-001`](../../../spec/lastenheft-d-migrate.md#ln-001)** („100 Tab < 5 s") via N=100 (0,4 s)
    gedeckt. Doku-Sync §4 erledigt. Super-linear-Skalierung als Ticket notiert
    ([`done/large-schema-superlinear-scaling.md`](../done/large-schema-superlinear-scaling.md)).
    Synthetisch, **nicht** TPC. (Die „5×n"-KDoc-Korrektur war bereits in `6040d763`.)
@@ -217,10 +217,10 @@ Vorbedingung ist mit ADR 0018 `accepted` nun erfüllt.)
   Inhalts-SHA-256** (spalten-namens-geordnet + zeilen-sortiert, Quelle == Ziel; nicht nur
   Zeilen-Parität wie Phase 3). Der *literale* Datei-Byte-Hash ist untauglich — der
   Round-Trip ist nicht byte-stabil (Spaltenreihenfolge, 4c-Spike); der kanonische Hash ist
-  order-invariant + zellgenau. Export-/Import-Durchsatz getrennt vs. LN-002/003 (≥ 10k/s /
+  order-invariant + zellgenau. Export-/Import-Durchsatz getrennt vs. [`LN-002`](../../../spec/lastenheft-d-migrate.md#ln-002)/003 (≥ 10k/s /
   ≥ 5k/s = 1 Mio < 100 s / < 200 s) unter Caps 2 CPU/4 GB; Resume bei ~50 %;
   `performance-benchmarks.md` aktualisiert. **Hartes Zeit-Gate = Teil 2** (designierter Runner).
-- **4d:** N=1000-DDL < 30 s als hartes Gate (**LF 8.2 / LN-004**) in der normierten
+- **4d:** N=1000-DDL < 30 s als hartes Gate (**LF 8.2 / [`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004)**) in der normierten
   Umgebung; N=100-DDL < 5 s (LF 8.2) als Gate bestätigt (bereits durch die N=100-Baseline gedeckt).
 - **Gating:** opt-in/nightly (wie Phase 3), **nicht** im PR-Gate (Laufzeit/Volumen).
 - **Übergreifend:** kein Dump im Repo; `make docs-check` grün.
@@ -248,7 +248,7 @@ Vorbedingung ist mit ADR 0018 `accepted` nun erfüllt.)
 - **4c** Volumen-Abnahme (Mess-Kern + Kalibrier-Guard; Hart-Gate-Arming = Ops-Carve-Out) —
   [`tpc-4c-volume-acceptance-slice.md`](tpc-4c-volume-acceptance-slice.md). Ergebnis-Artefakt
   (CI-Upload + `summary.env`) nachgeliefert: [`tpch-perf-result-artifact.md`](tpch-perf-result-artifact.md).
-- **4d** LN-004 DDL-1000-Gate (1,7 s ≪ 30 s) — [`tpc-4d-ddl-1000-slice.md`](tpc-4d-ddl-1000-slice.md).
+- **4d** [`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004) DDL-1000-Gate (1,7 s ≪ 30 s) — [`tpc-4d-ddl-1000-slice.md`](tpc-4d-ddl-1000-slice.md).
 - **4e** TPC-DS-Round-Trip (24 Tabellen) — [`tpc-4e-tpcds-slice.md`](tpc-4e-tpcds-slice.md).
 
 Verlustfreiheit + Resume host-unabhängig hart; Durchsatz/DDL kalibrier-guarded (hart auf einem

@@ -21,7 +21,7 @@
 > Partitions-Hierarchie ist ein **systematischer Reverse-Capture-Fidelity-Defekt**,
 > nicht dump-abhängig. Nur der E055-*Generate*-Fallback selbst bleibt korrekt
 > (sichere Reaktion auf eine leere Liste). Erratum im Findings-Doc gesetzt.
-> **Bezug (Anforderung):** **LN-008** „Partitionierung für große Tabellen"
+> **Bezug (Anforderung):** **[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008)** „Partitionierung für große Tabellen"
 > ([`../../../spec/lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md):
 > automatische Erkennung/Verarbeitung partitionierter Tabellen, Partition by
 > RANGE/HASH/LIST). Heute nur **teilweise** abgedeckt: Strategie/Schlüssel
@@ -31,7 +31,7 @@
 > unten sind in ADR 0019 aufgelöst (DEFAULT in-Scope, Sub-Partition out, Performance-
 > Transfer out, **PG-Reverse zuerst + MySQL-Generate-Consume in dieser Scheibe**,
 > MySQL-Reverse als Folge-Slice). Arbeitspakete + Kopplung + Akzeptanz unten.
-> Performance-Aspekte von LN-008 (per-Partition-Transfer, parallel) bleiben Performance-Phase.
+> Performance-Aspekte von [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) (per-Partition-Transfer, parallel) bleiben Performance-Phase.
 
 ## Stand & Wiedereinstieg (Stand 2026-06-24)
 
@@ -417,12 +417,12 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   herstellt (Kopplung oben).
 - **Cross-Dialect-Abgrenzung dokumentiert** (MySQL-inline als eigener Sub-Scope
   oder mitgeliefert; SQLite E055 unverändert).
-- **LN-008-Abdeckungsgrad** (Schema-Treue vs. Performance-Teil) dokumentiert.
+- **[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008)-Abdeckungsgrad** (Schema-Treue vs. Performance-Teil) dokumentiert.
 
 ## Abgrenzung / Nicht-Ziel (erste Scheibe)
 
 - **Export/Import pro Partition + parallele Verarbeitung** (Performance-Teil von
-  LN-008) — eigener Slice, eher Performance-Phase (1.0.x / Phase 4).
+  [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008)) — eigener Slice, eher Performance-Phase (1.0.x / Phase 4).
 - **Sub-Partitionierung** (Partitionen von Partitionen).
 - **Default-Partition** (`… DEFAULT`): **harte Ja/Nein-Entscheidung beim Move
   nach `next/`** — nicht „falls trivial" offenlassen (sonst entsteht später ein
@@ -458,5 +458,5 @@ nur „sauberer", sondern **Voraussetzung** für AP6.
   geometry-/fulltext-Muster für dialekt-spezifische Strukturen.
 - **Daten-Transfer-Strategie:** für die *Korrektheit* aufgelöst (Parent-Routing,
   Nebeneffekt von AP2 — siehe AP5). Offen bleibt nur die *Performance*-Variante
-  (paralleler per-Partition-Transfer) — die gehört zum LN-008-Performance-Teil
+  (paralleler per-Partition-Transfer) — die gehört zum [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008)-Performance-Teil
   (Abgrenzung) und nicht in diese Scheibe.

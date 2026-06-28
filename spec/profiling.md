@@ -478,7 +478,7 @@ interface LogicalTypeResolverPort {
 }
 ```
 
-**Hinweis**: `SchemaIntrospectionPort` baut auf denselben JDBC-Metadaten-Bausteinen auf wie das Reverse-Engineering (LF-004). Eine reine 1:1-Delegation auf `SchemaReader` reicht aber nicht aus, solange Profiling zusätzlich rohe DB-Typen (`dbType`) und Profiling-spezifische Metadaten braucht.
+**Hinweis**: `SchemaIntrospectionPort` baut auf denselben JDBC-Metadaten-Bausteinen auf wie das Reverse-Engineering ([`LF-004`](lastenheft-d-migrate.md#lf-004)). Eine reine 1:1-Delegation auf `SchemaReader` reicht aber nicht aus, solange Profiling zusätzlich rohe DB-Typen (`dbType`) und Profiling-spezifische Metadaten braucht.
 
 ### 5.2 Services
 
@@ -767,7 +767,7 @@ Adapter-Implementierungen (OpenAI, Ollama, Mock) folgen dem bestehenden Muster u
 
 ## 11. Einordnung in die Roadmap
 
-Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (LF-004): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling soll daher auf derselben JDBC-Metadatenbasis aufsetzen wie `SchemaReader`, aber ein eigenes Projektionsmodell für rohe DB-Typen und Profiling-spezifische Metadaten bereitstellen.
+Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** ([`LF-004`](lastenheft-d-migrate.md#lf-004)): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling soll daher auf derselben JDBC-Metadatenbasis aufsetzen wie `SchemaReader`, aber ein eigenes Projektionsmodell für rohe DB-Typen und Profiling-spezifische Metadaten bereitstellen.
 
 ---
 

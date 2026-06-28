@@ -30,12 +30,12 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 | ------- | ------------------------------------------------------ | ------ | ------ |
 | Build   | Gradle Multi-Module Setup (core, cli, formats)         | —      | ✅      |
 | Build   | CI/CD-Pipeline mit GitHub Actions (Build, Test, Kover) | —      | ✅      |
-| Core    | Neutrales Schema-Modell (Kotlin Data Classes)          | LF-001 | ✅      |
-| Core    | YAML-Parser für Schema-Definitionen                    | LF-001 | ✅      |
-| Core    | Basis-Validierung (E001-E018, W001)                    | LF-002 | ✅      |
-| CLI     | Clikt-basiertes CLI-Grundgerüst                        | LF-012 | ✅      |
-| CLI     | `d-migrate schema validate` Kommando                   | LF-002 | ✅      |
-| Test    | Kotest Setup, 83 Tests, Kover Coverage >= 90%          | LN-043 | ✅      |
+| Core    | Neutrales Schema-Modell (Kotlin Data Classes)          | [`LF-001`](../../../spec/lastenheft-d-migrate.md#lf-001) | ✅      |
+| Core    | YAML-Parser für Schema-Definitionen                    | [`LF-001`](../../../spec/lastenheft-d-migrate.md#lf-001) | ✅      |
+| Core    | Basis-Validierung (E001-E018, W001)                    | [`LF-002`](../../../spec/lastenheft-d-migrate.md#lf-002) | ✅      |
+| CLI     | Clikt-basiertes CLI-Grundgerüst                        | [`LF-012`](../../../spec/lastenheft-d-migrate.md#lf-012) | ✅      |
+| CLI     | `d-migrate schema validate` Kommando                   | [`LF-002`](../../../spec/lastenheft-d-migrate.md#lf-002) | ✅      |
+| Test    | Kotest Setup, 83 Tests, Kover Coverage >= 90%          | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) | ✅      |
 
 **Ergebnis**: Schema-Dateien können geladen und validiert werden.
 
@@ -43,19 +43,19 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 | Bereich | Aufgabe                                             | LF-Ref | Status |
 | ------- | --------------------------------------------------- | ------ | ------ |
-| Core    | TypeMapper-Interface und Basislogik                 | LF-003 | ✅      |
-| Core    | AbstractDdlGenerator mit topologischer Sortierung   | LF-003 | ✅      |
-| Core    | ViewQueryTransformer (17 SQL-Funktionen)            | LF-003 | ✅      |
-| Driver  | PostgreSQL-Treiber: DDL-Generierung                 | LF-003 | ✅      |
-| Driver  | MySQL-Treiber: DDL-Generierung                      | LF-003 | ✅      |
-| Driver  | SQLite-Treiber: DDL-Generierung                     | LF-003 | ✅      |
-| CLI     | `d-migrate schema generate --target <db>`           | LF-003 | ✅      |
-| CLI     | `--output`, `--generate-rollback`, `--report` Flags | LF-003 | ✅      |
-| CLI     | TransformationReportWriter (YAML-Sidecar)           | LF-003 | ✅      |
-| Test    | TypeMapper-Tests (100% Coverage, 3 Dialekte)        | LN-045 | ✅      |
-| Test    | DdlGenerator Unit-Tests (44+53+57 Tests)            | LN-043 | ✅      |
-| Test    | Golden-Master-Tests (4 Schemas × 3 Dialekte = 12)   | LN-043 | ✅      |
-| Test    | 374 Tests gesamt, Coverage >= 90%                   | LN-045 | ✅      |
+| Core    | TypeMapper-Interface und Basislogik                 | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| Core    | AbstractDdlGenerator mit topologischer Sortierung   | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| Core    | ViewQueryTransformer (17 SQL-Funktionen)            | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| Driver  | PostgreSQL-Treiber: DDL-Generierung                 | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| Driver  | MySQL-Treiber: DDL-Generierung                      | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| Driver  | SQLite-Treiber: DDL-Generierung                     | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| CLI     | `d-migrate schema generate --target <db>`           | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| CLI     | `--output`, `--generate-rollback`, `--report` Flags | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| CLI     | TransformationReportWriter (YAML-Sidecar)           | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
+| Test    | TypeMapper-Tests (100% Coverage, 3 Dialekte)        | [`LN-045`](../../../spec/lastenheft-d-migrate.md#ln-045) | ✅      |
+| Test    | DdlGenerator Unit-Tests (44+53+57 Tests)            | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) | ✅      |
+| Test    | Golden-Master-Tests (4 Schemas × 3 Dialekte = 12)   | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) | ✅      |
+| Test    | 374 Tests gesamt, Coverage >= 90%                   | [`LN-045`](../../../spec/lastenheft-d-migrate.md#ln-045) | ✅      |
 
 **Ergebnis**: Aus YAML-Schemas wird datenbankspezifisches DDL generiert.
 
@@ -63,15 +63,15 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 | Bereich | Aufgabe                                                          | LF-Ref | Status |
 | ------- | ---------------------------------------------------------------- | ------ | ------ |
-| Core    | Streaming-Pipeline (pull-basiert, chunk-weise)                   | LN-005 | ✅      |
-| Driver  | JDBC-basierter DataReader (ResultSet-Streaming, PG/MySQL/SQLite) | LF-008 | ✅      |
+| Core    | Streaming-Pipeline (pull-basiert, chunk-weise)                   | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | ✅      |
+| Driver  | JDBC-basierter DataReader (ResultSet-Streaming, PG/MySQL/SQLite) | [`LF-008`](../../../spec/lastenheft-d-migrate.md#lf-008) | ✅      |
 | Driver  | Connection-Management mit HikariCP + ConnectionUrlParser         | —      | ✅      |
-| Formats | JSON-Codec (DSL-JSON statt Jackson — Performance)                | LF-009 | ✅      |
-| Formats | YAML-Codec (SnakeYAML Engine)                                    | LF-009 | ✅      |
-| Formats | CSV-Codec (uniVocity-parsers, mit Encoding/BOM/Delimiter)        | LF-009 | ✅      |
-| CLI     | `d-migrate data export` Kommando                                 | LF-008 | ✅      |
+| Formats | JSON-Codec (DSL-JSON statt Jackson — Performance)                | [`LF-009`](../../../spec/lastenheft-d-migrate.md#lf-009) | ✅      |
+| Formats | YAML-Codec (SnakeYAML Engine)                                    | [`LF-009`](../../../spec/lastenheft-d-migrate.md#lf-009) | ✅      |
+| Formats | CSV-Codec (uniVocity-parsers, mit Encoding/BOM/Delimiter)        | [`LF-009`](../../../spec/lastenheft-d-migrate.md#lf-009) | ✅      |
+| CLI     | `d-migrate data export` Kommando                                 | [`LF-008`](../../../spec/lastenheft-d-migrate.md#lf-008) | ✅      |
 | CLI     | `NamedConnectionResolver` (`.d-migrate.yaml`, `${ENV_VAR}`)      | —      | ✅      |
-| Test    | Export-Tests gegen Testcontainers (PostgreSQL 16, MySQL 8.0)     | LN-048 | ✅      |
+| Test    | Export-Tests gegen Testcontainers (PostgreSQL 16, MySQL 8.0)     | [`LN-048`](../../../spec/lastenheft-d-migrate.md#ln-048) | ✅      |
 
 **Ergebnis**: Daten können aus PostgreSQL, MySQL und SQLite streamingbasiert
 in JSON, YAML oder CSV exportiert werden — chunk-weise, ohne die Tabelle in
@@ -83,35 +83,35 @@ den Speicher zu laden. CLI mit Named Connections, Roh-WHERE-Filter,
 
 | Bereich | Aufgabe                                                                                      | LF-Ref |
 | ------- | -------------------------------------------------------------------------------------------- | ------ |
-| Core    | Transaktionale Import-Logik (Chunk-basiert)                                                  | LN-010 |
-| Driver  | JDBC-basierter DataWriter (Batch-Insert)                                                     | LF-010 |
-| Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import                                | LF-010 |
-| Driver  | Dialektspezifisches Trigger-Handling beim Import                                             | LF-010 |
-| Formats | Deserialisierung aus JSON/YAML/CSV (Streaming-Reader)                                        | LF-010 |
-| Core    | Validierung gegen Schema-Definition beim Import (Target-Schema autoritativ)                  | LF-010 |
-| Core    | Encoding-Unterstützung: BOM-Detection für UTF-8/UTF-16, alle anderen via `--encoding`-Flag   | LF-010 |
-| CLI     | `d-migrate data import` Kommando                                                             | LF-010 |
-| Core    | Inkrementeller **Export** über explizite Marker-Spalte (`--since-column`, `--since`)         | LF-013 |
-| CLI     | `--incremental` Flag für `data export`; idempotenter Import via `--on-conflict update`       | LF-013 |
-| Test    | Round-Trip-Tests (Export → Import → Vergleich)                                               | LN-043 |
-| Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten                                    | LN-043 |
-| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → idempotenter Import → Vergleich) | LN-043 |
+| Core    | Transaktionale Import-Logik (Chunk-basiert)                                                  | [`LN-010`](../../../spec/lastenheft-d-migrate.md#ln-010) |
+| Driver  | JDBC-basierter DataWriter (Batch-Insert)                                                     | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) |
+| Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import                                | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) |
+| Driver  | Dialektspezifisches Trigger-Handling beim Import                                             | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) |
+| Formats | Deserialisierung aus JSON/YAML/CSV (Streaming-Reader)                                        | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) |
+| Core    | Validierung gegen Schema-Definition beim Import (Target-Schema autoritativ)                  | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) |
+| Core    | Encoding-Unterstützung: BOM-Detection für UTF-8/UTF-16, alle anderen via `--encoding`-Flag   | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) |
+| CLI     | `d-migrate data import` Kommando                                                             | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) |
+| Core    | Inkrementeller **Export** über explizite Marker-Spalte (`--since-column`, `--since`)         | [`LF-013`](../../../spec/lastenheft-d-migrate.md#lf-013) |
+| CLI     | `--incremental` Flag für `data export`; idempotenter Import via `--on-conflict update`       | [`LF-013`](../../../spec/lastenheft-d-migrate.md#lf-013) |
+| Test    | Round-Trip-Tests (Export → Import → Vergleich)                                               | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) |
+| Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten                                    | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) |
+| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → idempotenter Import → Vergleich) | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) |
 
 **Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert. Inkrementell
 ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
 Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
-> **Begründung der LF-013-Vorverlegung von 0.9.0 nach 0.4.0**: Inkrementeller
+> **Begründung der [`LF-013`](../../../spec/lastenheft-d-migrate.md#lf-013)-Vorverlegung von 0.9.0 nach 0.4.0**: Inkrementeller
 > Export/Import gehört semantisch zum Daten-Pfad, nicht zur Beta-Reife.
-> Sobald `data import` (LF-010) steht, ist die nötige Schreib-Infrastruktur
+> Sobald `data import` ([`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010)) steht, ist die nötige Schreib-Infrastruktur
 > vorhanden; die einfache Variante `--since-column updated_at --since
 > "<timestamp>"` braucht weder Auto-Discovery noch einen vollständigen
-> `SchemaReader` (LF-004 → 0.6.0). Eine spätere Erweiterung um automatische
+> `SchemaReader` ([`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) → 0.6.0). Eine spätere Erweiterung um automatische
 > Marker-Spalten-Erkennung kann in 0.6.0 nachgezogen werden, ohne den
 > 0.4.0-CLI-Vertrag zu brechen. Die ursprüngliche Einordnung in 0.9.0
-> hätte LF-013 künstlich zurückgehalten, obwohl die fachlichen
-> Voraussetzungen schon mit 0.4.0 erfüllt sind. Checkpoint/Resume (LN-012)
+> hätte [`LF-013`](../../../spec/lastenheft-d-migrate.md#lf-013) künstlich zurückgehalten, obwohl die fachlichen
+> Voraussetzungen schon mit 0.4.0 erfüllt sind. Checkpoint/Resume ([`LN-012`](../../../spec/lastenheft-d-migrate.md#ln-012))
 > bleibt in 0.9.0 — Inkrement und Checkpoint sind technisch unabhängig
 > (Inkrement kennzeichnet *was* exportiert wird, Checkpoint *wo* der
 > Export aufgesetzt hat).
@@ -120,17 +120,17 @@ implementation-plan-0.4.0.md §6.12.
 
 | Bereich | Aufgabe                                                         | LF-Ref |
 | ------- | --------------------------------------------------------------- | ------ |
-| Core    | Schema-Diff-Engine (Vergleich zweier Schemas, file-based MVP)   | LF-015 |
-| CLI     | `d-migrate schema compare` Kommando (Datei-zu-Datei, MVP-Slice) | LF-015 |
-| CLI     | Fortschrittsanzeige für lange Operationen                       | LN-017 |
+| Core    | Schema-Diff-Engine (Vergleich zweier Schemas, file-based MVP)   | [`LF-015`](../../../spec/lastenheft-d-migrate.md#lf-015) |
+| CLI     | `d-migrate schema compare` Kommando (Datei-zu-Datei, MVP-Slice) | [`LF-015`](../../../spec/lastenheft-d-migrate.md#lf-015) |
+| CLI     | Fortschrittsanzeige für lange Operationen                       | [`LN-017`](../../../spec/lastenheft-d-migrate.md#ln-017) |
 | Docs    | Anwenderhandbuch (Basis)                                        | —      |
 | Docs    | CLI-Referenz                                                    | —      |
 | Build   | GitHub Releases (Fat JAR)                                       | —      |
 | Build   | Homebrew-Formula (Basis)                                        | —      |
-| QA      | Code-Coverage >= 80%                                            | LN-045 |
+| QA      | Code-Coverage >= 80%                                            | [`LN-045`](../../../spec/lastenheft-d-migrate.md#ln-045) |
 
 **Ergebnis**: Öffentliches MVP-Release. Early Adopters können Schema-Verwaltung
-und Daten-Export/Import nutzen. LF-015 ist in 0.5.0 bewusst nur teilweise
+und Daten-Export/Import nutzen. [`LF-015`](../../../spec/lastenheft-d-migrate.md#lf-015) ist in 0.5.0 bewusst nur teilweise
 abgedeckt: `schema compare` vergleicht zwei neutrale Schema-Dateien; der volle
 Vergleich zwischen Umgebungen bzw. Datenbanken folgt in 0.6.0.
 
@@ -140,16 +140,16 @@ Detaillierter Plan: [implementation-plan-0.5.0.md](../done-archive/implementatio
 
 | Bereich | Aufgabe                                                                              | LF-Ref |
 | ------- | ------------------------------------------------------------------------------------ | ------ |
-| Core    | Neutraler Typ `geometry` mit `geometry_type` und `srid`                              | LF-003 |
-| Core    | Spatial-Profil als Generator-Option (`postgis`, `native`, `spatialite`, `none`)      | LF-003 |
-| Core    | Validierungsregeln und Hinweis-Codes `E120`, `E121`, `W120`, `E052`                  | LF-002 |
-| Driver  | PostgreSQL/PostGIS: `geometry(<type>, <srid>)`-Mapping                               | LF-003 |
-| Driver  | MySQL: native Spatial Types (`POINT`, `POLYGON`, `MULTIPOLYGON`, ...)                | LF-003 |
-| Driver  | SQLite/SpatiaLite: `AddGeometryColumn(...)`-Strategie                                | LF-003 |
-| Core    | Erweiterte Typen im neutralen Modell: JSON, Arrays, Binary, UUID                     | LF-001 |
-| CLI     | `--spatial-profile` Option für `schema generate`                                     | LF-003 |
-| Test    | Golden-Master-Tests: `spatial.{postgresql,mysql,sqlite}.sql`                         | LN-043 |
-| Test    | Negativtests für ungültige `geometry_type`/`srid` und Profil-Mismatches              | LN-043 |
+| Core    | Neutraler Typ `geometry` mit `geometry_type` und `srid`                              | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) |
+| Core    | Spatial-Profil als Generator-Option (`postgis`, `native`, `spatialite`, `none`)      | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) |
+| Core    | Validierungsregeln und Hinweis-Codes `E120`, `E121`, `W120`, `E052`                  | [`LF-002`](../../../spec/lastenheft-d-migrate.md#lf-002) |
+| Driver  | PostgreSQL/PostGIS: `geometry(<type>, <srid>)`-Mapping                               | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) |
+| Driver  | MySQL: native Spatial Types (`POINT`, `POLYGON`, `MULTIPOLYGON`, ...)                | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) |
+| Driver  | SQLite/SpatiaLite: `AddGeometryColumn(...)`-Strategie                                | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) |
+| Core    | Erweiterte Typen im neutralen Modell: JSON, Arrays, Binary, UUID                     | [`LF-001`](../../../spec/lastenheft-d-migrate.md#lf-001) |
+| CLI     | `--spatial-profile` Option für `schema generate`                                     | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) |
+| Test    | Golden-Master-Tests: `spatial.{postgresql,mysql,sqlite}.sql`                         | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) |
+| Test    | Negativtests für ungültige `geometry_type`/`srid` und Profil-Mismatches              | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) |
 | Docs    | CR `docs/planning/done-archive/change-request-spatial-types.md` in den Status _Approved_ überführen        | —      |
 | Docs    | `spec/neutral-model-spec.md` und `spec/ddl-generation-rules.md` um Spatial erweitern | —      |
 
@@ -167,21 +167,21 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](../done-archive/
 
 | Bereich | Aufgabe                                                                             | LF-Ref |
 | ------- | ----------------------------------------------------------------------------------- | ------ |
-| Driver  | SchemaReader: Tabellen, Spalten, Constraints aus DB extrahieren                     | LF-004 |
-| Driver  | SchemaReader: Indizes, Sequences, Custom Types                                      | LF-004 |
-| Driver  | SchemaReader: Stored Procedures, Functions, Triggers, Views                         | LF-004 |
-| Driver  | PostgreSQL-spezifisch: Extensions, JSONB, Array-Typen                               | LF-004 |
-| Driver  | MySQL-spezifisch: Engine, AUTO_INCREMENT, SET-Typen                                 | LF-004 |
-| Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                                    | LF-004 |
-| CLI     | `d-migrate schema reverse --source <db-url>`                                        | LF-004 |
-| CLI     | `schema compare` gegen Umgebungen/DBs auf Basis von `SchemaReader` vervollständigen | LF-015 |
-| Core    | `StreamingTransfer`-Orchestrator: DB-zu-DB-Streaming ohne Zwischenformat            | LF-025 |
-| CLI     | `d-migrate data transfer --source <url> --target <url>` Kommando                    | LF-025 |
+| Driver  | SchemaReader: Tabellen, Spalten, Constraints aus DB extrahieren                     | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) |
+| Driver  | SchemaReader: Indizes, Sequences, Custom Types                                      | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) |
+| Driver  | SchemaReader: Stored Procedures, Functions, Triggers, Views                         | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) |
+| Driver  | PostgreSQL-spezifisch: Extensions, JSONB, Array-Typen                               | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) |
+| Driver  | MySQL-spezifisch: Engine, AUTO_INCREMENT, SET-Typen                                 | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) |
+| Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                                    | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) |
+| CLI     | `d-migrate schema reverse --source <db-url>`                                        | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) |
+| CLI     | `schema compare` gegen Umgebungen/DBs auf Basis von `SchemaReader` vervollständigen | [`LF-015`](../../../spec/lastenheft-d-migrate.md#lf-015) |
+| Core    | `StreamingTransfer`-Orchestrator: DB-zu-DB-Streaming ohne Zwischenformat            | [`LF-025`](../../../spec/lastenheft-d-migrate.md#lf-025) |
+| CLI     | `d-migrate data transfer --source <url> --target <url>` Kommando                    | [`LF-025`](../../../spec/lastenheft-d-migrate.md#lf-025) |
 | Docs    | Beispiel-Projekte (E-Commerce-Schema)                                               | —      |
 | Test    | Reverse-Engineering gegen komplexe Test-Schemas                                     | 8.4    |
 
 **Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt
-werden. Damit wird auch LF-015 vervollständigt: Vergleiche sind dann nicht nur
+werden. Damit wird auch [`LF-015`](../../../spec/lastenheft-d-migrate.md#lf-015) vervollständigt: Vergleiche sind dann nicht nur
 Datei-zu-Datei, sondern zwischen Umgebungen bzw. Datenbanken möglich.
 
 `data transfer` nutzt den `SchemaReader` für automatische FK-Reihenfolge und
@@ -189,20 +189,20 @@ streamt Daten direkt von `DataReader` zu `DataWriter` — ohne Serialisierung
 in ein Zwischenformat. Unterstützt `--tables`, `--filter`, `--truncate`,
 `--on-conflict update`, `--since-column`/`--since` und `--trigger-mode` analog
 zu den bestehenden Export-/Import-Flags. Grundlage für die Teil-Replikation
-(LF-025) in 1.4.0; dort kommen Datenmaskierung und selektive Datensatzfilter
+([`LF-025`](../../../spec/lastenheft-d-migrate.md#lf-025)) in 1.4.0; dort kommen Datenmaskierung und selektive Datensatzfilter
 hinzu.
 
 ### Milestone 0.7.0 — Tool-Integrationen ✅ (2026-04-15)
 
 | Bereich     | Aufgabe                                                 | LF-Ref | Status |
 | ----------- | ------------------------------------------------------- | ------ | ------ |
-| Core        | Phase A: DDL-Header-Determinismus, Adapter-Grundlagen   | LF-011 | ✅      |
-| Core        | Phase B: Migrations-Bundle, Identitaet, Exportvertrag   | LF-011 | ✅      |
-| Integration | Phase C: Tool-Adapter (Flyway, Liquibase, Django, Knex) | LF-011 | ✅      |
-| CLI         | Phase D: CLI- und Runner-Pfad fuer Tool-Export          | LF-011 | ✅      |
-| Test        | Phase E: Runtime-Validierung gegen echte Tool-Projekte  | LF-011 | ✅      |
-| Docs        | Phase F: Release-Dokumentation und Smoke-Tests          | LF-011 | ✅      |
-| Core        | Migrations-Rollback-Generierung                         | LF-014 | ✅      |
+| Core        | Phase A: DDL-Header-Determinismus, Adapter-Grundlagen   | [`LF-011`](../../../spec/lastenheft-d-migrate.md#lf-011) | ✅      |
+| Core        | Phase B: Migrations-Bundle, Identitaet, Exportvertrag   | [`LF-011`](../../../spec/lastenheft-d-migrate.md#lf-011) | ✅      |
+| Integration | Phase C: Tool-Adapter (Flyway, Liquibase, Django, Knex) | [`LF-011`](../../../spec/lastenheft-d-migrate.md#lf-011) | ✅      |
+| CLI         | Phase D: CLI- und Runner-Pfad fuer Tool-Export          | [`LF-011`](../../../spec/lastenheft-d-migrate.md#lf-011) | ✅      |
+| Test        | Phase E: Runtime-Validierung gegen echte Tool-Projekte  | [`LF-011`](../../../spec/lastenheft-d-migrate.md#lf-011) | ✅      |
+| Docs        | Phase F: Release-Dokumentation und Smoke-Tests          | [`LF-011`](../../../spec/lastenheft-d-migrate.md#lf-011) | ✅      |
+| Core        | Migrations-Rollback-Generierung                         | [`LF-014`](../../../spec/lastenheft-d-migrate.md#lf-014) | ✅      |
 | Test        | Generierte Migrations-Skripte ausführen und validieren  | 8.6    | ✅      |
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
@@ -213,11 +213,11 @@ hinzu.
 | --------- | ----------------------------------------------------------------------- | ------ | ------ |
 | Profiling | Phase A: Modulgeruest und Scope                                         | —      | ✅      |
 | Profiling | Phase B: Domaenenmodell, Typen und Rule-Engine                          | —      | ✅      |
-| Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                  | LF-004 | ✅      |
+| Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                  | [`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004) | ✅      |
 | Profiling | Phase D: Services und Runner                                            | —      | ✅      |
 | CLI       | Phase E: `d-migrate data profile` Kommando                              | —      | ✅      |
 | Docs      | Phase F: Doku, Smokes und Release-Pfade                                 | —      | ✅      |
-| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E | LN-043 | ✅      |
+| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E | [`LN-043`](../../../spec/lastenheft-d-migrate.md#ln-043) | ✅      |
 
 **Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
 Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
@@ -234,11 +234,11 @@ JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 | Bereich | Aufgabe                                                      | LF-Ref | Status |
 | ------- | ------------------------------------------------------------ | ------ | ------ |
 | Docs    | Phase A: Spezifikationsbereinigung und Scope-Fixierung       | —      | ✅      |
-| i18n    | Phase B: I18n-Runtime und Config-Resolution                  | LF-006 | ✅      |
-| i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben       | LN-023 | ✅      |
-| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung          | LF-005 | ✅      |
-| Core    | Phase E: Zeitzonen- und Format-Policy (TemporalFormatPolicy) | LF-007 | ✅      |
-| Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                    | LF-010 | ✅      |
+| i18n    | Phase B: I18n-Runtime und Config-Resolution                  | [`LF-006`](../../../spec/lastenheft-d-migrate.md#lf-006) | ✅      |
+| i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben       | [`LN-023`](../../../spec/lastenheft-d-migrate.md#ln-023) | ✅      |
+| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung          | [`LF-005`](../../../spec/lastenheft-d-migrate.md#lf-005) | ✅      |
+| Core    | Phase E: Zeitzonen- und Format-Policy (TemporalFormatPolicy) | [`LF-007`](../../../spec/lastenheft-d-migrate.md#lf-007) | ✅      |
+| Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                    | [`LF-010`](../../../spec/lastenheft-d-migrate.md#lf-010) | ✅      |
 | Test    | Phase G: Tests und Dokumentation (inkl. Unicode-Integrität)  | 8.5    | ✅      |
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem--2026-04-13) vorgezogen.)
@@ -253,8 +253,8 @@ JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 
 | Bereich | Aufgabe                                                               | LF-Ref | Status |
 | ------- | --------------------------------------------------------------------- | ------ | ------ |
-| Core    | Checkpoint/Resume für langläufige Operationen                         | LN-012 | ✅      |
-| CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu) | LF-006 | ✅      |
+| Core    | Checkpoint/Resume für langläufige Operationen                         | [`LN-012`](../../../spec/lastenheft-d-migrate.md#ln-012) | ✅      |
+| CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu) | [`LF-006`](../../../spec/lastenheft-d-migrate.md#lf-006) | ✅      |
 
 **Zielbild nach Abschluss von 0.9.0**: Langläufige Export-/Import-
 Operationen sind unterbrechbar und können wieder aufgesetzt werden; die in
@@ -281,7 +281,7 @@ Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
 > (`docs/planning/done-archive/ImpPlan-0.9.0-A.md` §4.4). `data transfer` erhaelt in 0.9.0
 > kein Resume; ein entsprechender Scope wird spaeter bewertet.
 
-> Hinweis: LF-013 (Inkrementeller Export/Import) wurde nach 0.4.0 vorverlegt
+> Hinweis: [`LF-013`](../../../spec/lastenheft-d-migrate.md#lf-013) (Inkrementeller Export/Import) wurde nach 0.4.0 vorverlegt
 > — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.9** ausgelagert,
 > damit dieser Milestone klein und fokussiert bleibt.
 
@@ -319,7 +319,7 @@ Vertrag festschreibt.
 | Bereich | Aufgabe                                                                                                                              | LF-Ref | Status |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------ | ------ |
 | Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data` (AP 6.1)                                                                  | —      | ✅      |
-| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single\|pre-post`) (AP 6.2)                                                    | LF-003 | ✅      |
+| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single\|pre-post`) (AP 6.2)                                                    | [`LF-003`](../../../spec/lastenheft-d-migrate.md#lf-003) | ✅      |
 | Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten) (AP 6.3)                    | —      | ✅      |
 | CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld (AP 6.4)                                   | —      | ✅      |
 | Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe (AP 6.4)                                              | —      | ✅      |
@@ -421,7 +421,7 @@ kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | Refactor | ✅ (2026-05-08) ICU4J hinter einen Hexagon-Port — `hexagon:application` haengt nicht mehr direkt von `com.ibm.icu:icu4j` ab; Unicode-Normalisierung und Grapheme-Counting laufen ueber adapterneutrale Abstraktion. Details: [`refactoring-icu4j.md`](../done-archive/refactoring-icu4j.md)                                | —      |
 | Refactor | ✅ (2026-05-09) SHA-256 / Hex-Encoding konsolidiert — `ByteArray.toHex()` + `sha256Hex(...)` in `hexagon/core/…/util/HexEncoding.kt`; alle ~20 Fundstellen migriert (urspruenglich 11 + 8 mcp-Handler). Details: [`refactoring-sha256Hex.md`](../done-archive/refactoring-sha256Hex.md) | —      |
-| Hardening | ✅ (2026-05-09) RFC-7662 Client-Auth fuer Token-Introspection — `--introspection-client-id`/`--introspection-client-secret` setzen jetzt einen RFC 6749 §2.3.1 Basic-`Authorization`-Header am Introspection-POST; `McpServerConfig.validate()` lehnt XOR-Konfiguration (nur eins von beiden) ab. | LN-025, LN-028 |
+| Hardening | ✅ (2026-05-09) RFC-7662 Client-Auth fuer Token-Introspection — `--introspection-client-id`/`--introspection-client-secret` setzen jetzt einen RFC 6749 §2.3.1 Basic-`Authorization`-Header am Introspection-POST; `McpServerConfig.validate()` lehnt XOR-Konfiguration (nur eins von beiden) ab. | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025), [`LN-028`](../../../spec/lastenheft-d-migrate.md#ln-028) |
 | Hardening | ✅ (2026-05-09) Idempotenter Replay fuer read-only Schema-Staging-Uploads — `UploadSessionStore.findActiveSchemaStagingByChecksum(...)`-Vertrag plus In-Memory-Impl; `ArtifactUploadInitHandler` foldet same-checksum Retries auf die Bestands-Session, ohne neue Quota-Reservierungen. AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`. | —      |
 | Docs    | ✅ (2026-05-09) Migrate Phase A: Spezifikations- und Namensbereinigung — `spec/cli-spec.md` §6.1 schema migrate/rollback voll spezifiziert, Exit-Code `8 = MIGRATION_BLOCKED` ergaenzt; `docs/archive/design.md` §7.2 mit DiffResult-Glossar; `SchemaComparator.DiffResult<N,D>` → `CollectionDiff<N,D>`; CHECK/EXCLUDE-Constraint-Detector als Phase-A-Entscheidung im Plan-Doc | —      |
 | Core    | ✅ (2026-05-09) Migrate Phase B: Core-Vertrag — `DiffResult` / `DiffOperation` (31 Subtypen) / `DiffObjectRef` / `DiffPhase` / `Reversibility` / `OperationRisks` / `OperationIdFactory` (Slice 1); `ReverseMarkerNormalizer` + `MigrationFingerprint` v1 (Slice 2). `hexagon:core` 94.4%. | —      |
@@ -628,16 +628,16 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 | Bereich   | Aufgabe                                              | LF-Ref |
 | --------- | ---------------------------------------------------- | ------ |
-| Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | LN-005 |
-| Streaming | Parallele Tabellenverarbeitung (Coroutines)          | LN-007 |
-| Streaming | Partitionierte Tabellen: paralleler Export/Import    | LN-008 |
-| Core      | SHA-256-Verifikation für Datenintegrität             | LN-009 |
-| Core      | Atomare Rollbacks auf Checkpoint-Ebene               | LN-013 |
-| Security  | Verschlüsselte Credential-Speicherung (AES-256)      | LN-025 |
-| Security  | TLS/SSL für alle DB-Verbindungen                     | LN-026 |
-| Security  | Audit-Logging aller Operationen                      | LN-027 |
-| QA        | Property-Based Testing (Jqwik)                       | LN-046 |
-| QA        | Performance-Regression-Tests                         | LN-044 |
+| Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) |
+| Streaming | Parallele Tabellenverarbeitung (Coroutines)          | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) |
+| Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) |
+| Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) |
+| Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) |
+| Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) |
+| Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) |
+| Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) |
+| QA        | Property-Based Testing (Jqwik)                       | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) |
+| QA        | Performance-Regression-Tests                         | [`LN-044`](../../../spec/lastenheft-d-migrate.md#ln-044) |
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,
@@ -710,13 +710,13 @@ Import, Transfer. (Aus `grpc-service.md` ausgegliedert, ADR 0024.)
 
 | Bereich | Aufgabe                                                                                          | LF-Ref |
 | ------- | ------------------------------------------------------------------------------------------------ | ------ |
-| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                          | LF-022 |
-| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | LF-022 |
-| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                    | LF-022 |
-| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                   | LF-022 |
-| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)     | LF-022 |
-| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis               | LF-022 |
-| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                          | LF-022 |
+| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                          | [`LF-022`](../../../spec/lastenheft-d-migrate.md#lf-022) |
+| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | [`LF-022`](../../../spec/lastenheft-d-migrate.md#lf-022) |
+| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                    | [`LF-022`](../../../spec/lastenheft-d-migrate.md#lf-022) |
+| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                   | [`LF-022`](../../../spec/lastenheft-d-migrate.md#lf-022) |
+| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)     | [`LF-022`](../../../spec/lastenheft-d-migrate.md#lf-022) |
+| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis               | [`LF-022`](../../../spec/lastenheft-d-migrate.md#lf-022) |
+| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                          | [`LF-022`](../../../spec/lastenheft-d-migrate.md#lf-022) |
 
 **Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
 programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
@@ -732,11 +732,11 @@ KI-nahe Endpunkte nur bei echtem Bedarf. (Aus `rest-service.md` ausgegliedert, A
 
 | Bereich | Aufgabe                                                 | LF-Ref |
 | ------- | ------------------------------------------------------- | ------ |
-| Core    | Regelbasierte Testdaten-Generierung (Faker-Integration) | LF-024 |
-| AI      | KI-gestützte Testdaten-Generierung (optional)           | LF-024 |
-| Core    | Seed-basierte Reproduzierbarkeit                        | LF-024 |
-| Core    | Mehrsprachige Testdaten (Namen, Adressen, etc.)         | LF-024 |
-| CLI     | `d-migrate data seed` Kommando                          | LF-024 |
+| Core    | Regelbasierte Testdaten-Generierung (Faker-Integration) | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) |
+| AI      | KI-gestützte Testdaten-Generierung (optional)           | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) |
+| Core    | Seed-basierte Reproduzierbarkeit                        | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) |
+| Core    | Mehrsprachige Testdaten (Namen, Adressen, etc.)         | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) |
+| CLI     | `d-migrate data seed` Kommando                          | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) |
 
 **Ergebnis**: Automatische Generierung realistischer Testdaten.
 
@@ -744,10 +744,10 @@ KI-nahe Endpunkte nur bei echtem Bedarf. (Aus `rest-service.md` ausgegliedert, A
 
 | Bereich | Aufgabe                                                  | LF-Ref         |
 | ------- | -------------------------------------------------------- | -------------- |
-| Core    | Datenmaskierung / Pseudonymisierung beim Export          | LF-021, LF-026 |
-| Core    | Teil-Replikation (selektive Tabellen/Datensätze)         | LF-025         |
-| Core    | Automatische Dokumentationsgenerierung (ER-Diagramme)    | LF-016         |
-| Build   | Docker-Images mit vordefinierter DB-Struktur + Testdaten | LF-023         |
+| Core    | Datenmaskierung / Pseudonymisierung beim Export          | [`LF-021`](../../../spec/lastenheft-d-migrate.md#lf-021), [`LF-026`](../../../spec/lastenheft-d-migrate.md#lf-026) |
+| Core    | Teil-Replikation (selektive Tabellen/Datensätze)         | [`LF-025`](../../../spec/lastenheft-d-migrate.md#lf-025)         |
+| Core    | Automatische Dokumentationsgenerierung (ER-Diagramme)    | [`LF-016`](../../../spec/lastenheft-d-migrate.md#lf-016)         |
+| Build   | Docker-Images mit vordefinierter DB-Struktur + Testdaten | [`LF-023`](../../../spec/lastenheft-d-migrate.md#lf-023)         |
 
 ### Milestone 1.5.0 — Oekosystem-Integrationen
 
@@ -761,21 +761,21 @@ KI-nahe Endpunkte nur bei echtem Bedarf. (Aus `rest-service.md` ausgegliedert, A
 
 | Bereich | Aufgabe                                                                                                                   | LF-Ref         |
 | ------- | ------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| AI      | AiProvider-Interface und Plugin-System                                                                                    | LF-017, LN-041 |
-| AI      | OllamaProvider (lokale Modelle)                                                                                           | LF-017         |
-| AI      | OpenAiProvider (GPT-4)                                                                                                    | LF-017         |
-| AI      | AnthropicProvider (Claude)                                                                                                | LF-017         |
-| AI      | XaiProvider (Grok), GoogleProvider (Gemini)                                                                               | LF-017         |
-| AI      | RuleBasedProvider (Fallback ohne KI)                                                                                      | LN-035         |
-| AI      | Stored Procedure → Markdown-Zwischenformat                                                                                | LF-017         |
-| AI      | Markdown-Zwischenformat → Ziel-DB-Code                                                                                    | LF-017         |
+| AI      | AiProvider-Interface und Plugin-System                                                                                    | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017), [`LN-041`](../../../spec/lastenheft-d-migrate.md#ln-041) |
+| AI      | OllamaProvider (lokale Modelle)                                                                                           | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
+| AI      | OpenAiProvider (GPT-4)                                                                                                    | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
+| AI      | AnthropicProvider (Claude)                                                                                                | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
+| AI      | XaiProvider (Grok), GoogleProvider (Gemini)                                                                               | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
+| AI      | RuleBasedProvider (Fallback ohne KI)                                                                                      | [`LN-035`](../../../spec/lastenheft-d-migrate.md#ln-035)         |
+| AI      | Stored Procedure → Markdown-Zwischenformat                                                                                | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
+| AI      | Markdown-Zwischenformat → Ziel-DB-Code                                                                                    | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
 | AI      | SemanticAnalysisPort und strukturierte Profiling-Contracts fuer semantische Analyse                                       | —              |
 | AI      | Semantische Profiling-Vorschlaege fuer Mapping, Transformation und Normalisierung auf Basis verdichteter Profil-Summaries | —              |
-| AI      | Datenschutz: prefer_local, allow_external Flags                                                                           | LN-032, LN-033 |
-| AI      | Caching häufiger Transformationen                                                                                         | LN-035         |
-| CLI     | `d-migrate transform procedure` Kommando                                                                                  | LF-017         |
-| CLI     | `d-migrate generate procedure` Kommando                                                                                   | LF-017         |
-| QA      | Semantische Äquivalenzprüfung (Testausführung)                                                                            | LN-034         |
+| AI      | Datenschutz: prefer_local, allow_external Flags                                                                           | [`LN-032`](../../../spec/lastenheft-d-migrate.md#ln-032), [`LN-033`](../../../spec/lastenheft-d-migrate.md#ln-033) |
+| AI      | Caching häufiger Transformationen                                                                                         | [`LN-035`](../../../spec/lastenheft-d-migrate.md#ln-035)         |
+| CLI     | `d-migrate transform procedure` Kommando                                                                                  | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
+| CLI     | `d-migrate generate procedure` Kommando                                                                                   | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)         |
+| QA      | Semantische Äquivalenzprüfung (Testausführung)                                                                            | [`LN-034`](../../../spec/lastenheft-d-migrate.md#ln-034)         |
 
 **Ergebnis**: KI-gestützte Migration von Stored Procedures zwischen Datenbanken.
 Zusätzlich wird die gemeinsame KI-Provider-Infrastruktur für opt-in
@@ -799,7 +799,7 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 | Bereich | Aufgabe                                     | LF-Ref |
 | ------- | ------------------------------------------- | ------ |
-| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support) | LF-019 |
+| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support) | [`LF-019`](../../../spec/lastenheft-d-migrate.md#lf-019) |
 | Test    | Cross-DB-Tests mit 4 Datenbanksystemen      | 8.7    |
 
 **Ergebnis**: Unterstützung für MS SQL Server als viertes relationales
@@ -809,8 +809,8 @@ Datenbanksystem.
 
 | Bereich | Aufgabe                                                  | LF-Ref |
 | ------- | -------------------------------------------------------- | ------ |
-| Driver  | Oracle-Treiber (JDBC, PL/SQL-Support)                    | LF-019 |
-| Core    | Erweitertes Typsystem für Oracle/MSSQL-spezifische Typen | LF-019 |
+| Driver  | Oracle-Treiber (JDBC, PL/SQL-Support)                    | [`LF-019`](../../../spec/lastenheft-d-migrate.md#lf-019) |
+| Core    | Erweitertes Typsystem für Oracle/MSSQL-spezifische Typen | [`LF-019`](../../../spec/lastenheft-d-migrate.md#lf-019) |
 | Test    | Cross-DB-Tests mit 5 Datenbanksystemen                   | 8.7    |
 
 **Ergebnis**: Unterstützung für die 5 wichtigsten relationalen Datenbanken.
@@ -819,9 +819,9 @@ Datenbanksystem.
 
 | Bereich   | Aufgabe                                        | LF-Ref |
 | --------- | ---------------------------------------------- | ------ |
-| GUI       | Grafische Benutzeroberfläche für Schema-Design | LF-018 |
-| Core      | Schema-Optimierungsvorschläge                  | LF-020 |
-| Core      | Rollenbasierte Zugriffskontrolle               | LN-028 |
+| GUI       | Grafische Benutzeroberfläche für Schema-Design | [`LF-018`](../../../spec/lastenheft-d-migrate.md#lf-018) |
+| Core      | Schema-Optimierungsvorschläge                  | [`LF-020`](../../../spec/lastenheft-d-migrate.md#lf-020) |
+| Core      | Rollenbasierte Zugriffskontrolle               | [`LN-028`](../../../spec/lastenheft-d-migrate.md#ln-028) |
 | Community | LTS-Support für 1.x-Linie (24 Monate)          | —      |
 
 **Ergebnis**: Feature-Complete, Enterprise-ready, aktive Community.

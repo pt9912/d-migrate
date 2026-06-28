@@ -7,7 +7,7 @@
 # Für strikte Reproduzierbarkeit den Digest aus den Release-Notes pinnen —
 # direkt über DCHECK_IMAGE oder bequemer über DCHECK_DIGEST (sticht den Tag):
 #   DCHECK_DIGEST = sha256:<digest>
-DCHECK_IMAGE ?= ghcr.io/pt9912/d-check:v0.29.0
+DCHECK_IMAGE ?= ghcr.io/pt9912/d-check:v0.30.0
 DCHECK_DIGEST ?=
 # TRACE_FLAGS: optionale Flags für die RTM-Targets (z. B. --json).
 TRACE_FLAGS ?=

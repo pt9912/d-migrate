@@ -1,7 +1,7 @@
 # Spec-Hygiene: Spec→ADR-Abwärts-Verweise + Gate-Mechanisierung
 
-> **Status:** Bestands-Schuld **behoben** (2026-06-28); offen nur noch die
-> bewusst zurückgestellte `.d-check.yml`-Härtung.
+> **Status:** In Progress (2026-06-28) — Bestands-Schuld behoben (commit `419762da`);
+> jetzt aktiv: `.d-check.yml`-Gate-Härtung (`matrix`/`ids`).
 > **Trigger:** Beim Milestone-Hygiene-Slice
 > ([`../done/spec-milestone-hygiene-slice.md`](../done/spec-milestone-hygiene-slice.md))
 > bekräftigte der Maintainer das Ziel **„Specs verweisen NIE auf ADRs"**. Dabei
@@ -10,7 +10,7 @@
 > **Aktivierungsbedingung:** Bei Aufnahme nach `../in-progress/`; klein genug für
 > einen direkten Commit. Verwandt:
 > [`spec-milestone-reference-hygiene.md`](../done/spec-milestone-reference-hygiene.md),
-> [`mcp-server-spec-hygiene-residuals.md`](mcp-server-spec-hygiene-residuals.md).
+> [`mcp-server-spec-hygiene-residuals.md`](../open/mcp-server-spec-hygiene-residuals.md).
 
 ## Maßgebliche Regel
 
@@ -29,21 +29,38 @@ Docs machen es auch" ist **kein** Argument (Ist-Stand, kein Prinzip).
 
 Re-Scan-Beleg: `grep -rnE 'docs/adr|ADR[ -]?[0-9]{3,4}|docs/planning|Plan-[0-9]' spec/` liefert leer; `make docs-check` grün.
 
-## Gate-Mechanisierung (`.d-check.yml`) — **bewusst zurückgestellt**
+## Gate-Mechanisierung (`.d-check.yml`) — ✅ umgesetzt 2026-06-28
 
-> „d-check machen wir später." (Maintainer, 2026-06-28)
+d-check auf **v0.30.0** gehoben (Makefile-Digest + `d-check.mk`). Empirisch (Wegwerf-
+Test-Spec) validiert, was gegatet ist:
 
-Lücke der heutigen `matrix`: sie verbietet `spec→adr` und `spec→plan`, aber
-**link-/token-basiert** — bare Pfade (cli-spec:302) und Textnennungen
-(`ledger`, `architecture`) rutschen durch. Kandidaten bei Aktivierung:
+| Regression-Vektor in einer Spec | Modul | gefangen? |
+| --- | --- | --- |
+| Markdown-Link `[ADR 0020](../adr/…)` | `matrix` (`spec→adr` allow:false) | ✅ `matrix-forbidden` |
+| Text-Nennung „ADR 0020" | — | ❌ review-pflichtig |
+| Inline-Code `` `ADR 0021` `` | — | ❌ review-pflichtig |
+| bare Pfad `` `docs/adr/0003-…` `` | — | ❌ **Rest-Lücke** |
 
-- `ids`-Pattern realistisch + spec-sicher: `ADR-\d{4}` → `ADR[ -]\d{3,4}`,
-  `spec/**` aus dem `ids`-Scope nehmen (in Specs gilt: **keine** ADR-Refs, das
-  ist `matrix`-Sache, keine Link-Pflicht).
-- Prüfen, ob d-check Richtungs-Erkennung über bare Pfade/Text unterstützt
-  (Config gibt es nicht her — ggf. Tool-Feature oder Review-Sache).
-- Reihenfolge: die vier Befunde sind **behoben** (2026-06-28); die Regel kann nun
-  geschärft werden, ohne dass das Gate an Bestands-Schuld bricht.
+**Prinzipieller Schutz = `matrix` (Link-Vektor).** Ein zwischenzeitlich getestetes
+`ids`-ADR-Broadening (`ADR[ -]\d{3,4}` + `link-policy: always`) fängt zwar Text-/
+Inline-Nennungen, wurde aber **verworfen**: es ist genau das „zu breite Hand-Muster",
+das die D2-Entscheidung bewusst ausschloss. Das `ids`-Modell bleibt **schmal**
+(`ADR-\d{4}`, kein Broadening); `link-policy: always` gilt konsistent für alle
+Patterns (UC/ADR/LF-LN — Inline-Code auch link-pflichtig).
+
+**Rest-Lücke (Tool-Limit, nicht config-fixbar — Handbuch-bestätigt):** Die `matrix`
+erkennt nur Markdown-Links, nicht bare Inline-Code-Pfade — auch in v0.30.0. Der
+`docs/adr/…`-Pfad-Vektor (cli-spec:302-Stil) und der Spec→**Plan**-Inline-Vektor
+(`docs/planning/…`, `Plan-N`) bleiben **review-pflichtig**; die Plan-**Link**-Form
+fängt `matrix`. v0.30.0-Neuerung `direction: no-downward` ist klassen**intern** —
+für unseren klassen**übergreifenden** Fall nicht einschlägig.
+
+## Closure (2026-06-28)
+
+Beide Teile erledigt: Bestands-Schuld behoben (commit `419762da`) + Gate-Stand
+geklärt — `matrix` (Link-Vektor) ist der prinzipielle Schutz, das `ids`-ADR-Broadening
+wurde als D2-Verstoß verworfen, d-check auf v0.30.0 gebumpt. Die Rest-Lücke (bare-Pfad / Spec→Plan-
+Inline) ist dokumentiertes Tool-Limit, review-pflichtig — keine offene Config-Arbeit.
 
 ## Abgrenzung
 

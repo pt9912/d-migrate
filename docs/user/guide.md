@@ -567,7 +567,7 @@ eine vollständige Migration siehe [Migrations-Leitfaden](migrations-leitfaden.m
 | `--output`, `-o`      | Ausgabedatei oder -verzeichnis (Standard: stdout)         |
 | `--tables`            | Nur diese Tabellen (kommasepariert)                       |
 | `--filter`            | Filter-DSL-Ausdruck (Vergleiche, IN, IS NULL, AND/OR/NOT, Funktionen) |
-| `--since-column`      | Marker-Spalte für inkrementellen Export (LF-013)          |
+| `--since-column`      | Marker-Spalte für inkrementellen Export ([`LF-013`](../../spec/lastenheft-d-migrate.md#lf-013))          |
 | `--since`             | Untere Grenze für `--since-column`                        |
 | `--split-files`       | Eine Datei pro Tabelle in `--output <dir>`                |
 | `--chunk-size`        | Rows pro Streaming-Chunk (Standard: 10000)                |

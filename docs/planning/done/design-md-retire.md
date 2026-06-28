@@ -27,7 +27,7 @@ de-Ist-en. Das ist ein Content-Migrations-Vorhaben, kein simpler `git mv`.
 ## Kernfrage (zuerst klären): Heimat des KI-Integrations-Designs
 
 `design.md §4 KI-Integrations-Design` (Provider-Abstraktion, Provider-Hierarchie,
-Datenschutz-Strategie, KI-Audit-Trail LN-030/031, A/B-Testing LN-036) ist
+Datenschutz-Strategie, KI-Audit-Trail [`LN-030`](../../../spec/lastenheft-d-migrate.md#ln-030)/031, A/B-Testing [`LN-036`](../../../spec/lastenheft-d-migrate.md#ln-036)) ist
 **einzigartig** — `architecture.md` hat **keine** KI-Integrations-Sektion (nur
 §8.2 „Neuen KI-Provider hinzufügen" = Erweiterbarkeit). Abhängig davon:
 `ki-mcp.md` (3 Verweise) und `ddl-generation-rules.md:890`

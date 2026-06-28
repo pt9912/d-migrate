@@ -20,15 +20,22 @@ modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids]
 # verweisen nie abwärts — weder auf ADRs noch auf Pläne/Slices/Roadmap —,
 # und Verweise auf überholte Stände (superseded/deprecated) sind verboten.
 # Provenance in Historie-/Versions-Sektionen ist ausgenommen (SDP-Regel 5).
-# Die semantischen Zellen der ADR-Zeile (ADR→Slice "Kontext vs.
-# Entscheidungsgrundlage") sind bewusst NICHT hier — sie sind laut
-# Regelwerk Reviewer-Sache, kein Linter (ein Token-grep würde
-# Verifikations-Zeiger falsch-positiv flaggen). Verweise: ADR 0004,
-# Regelwerk Modul 4 / konventionen.md "Referenz-Richtung (SDP)".
+# ADR→Slice/Plan abwärts ist bewusst KEINE Regel: laut Regelwerk
+# (konventionen.md, Zeile "Referenz-Richtung (SDP)") sind "Abwärts-/
+# Seitwärts-Verweise Kontext, keine Spezifikation" = erlaubt (consulted:/
+# Slice-Provenienz). Hart erzwungen ist nur der Spec-Abwärts-Bann oben
+# (konventionen.md, Zeile "Cross-Reference-Trigger": Spec→ADR existiert
+# nicht im bindenden Text, auch nicht als Quellen-Spalte). Eine adr→plan-
+# Regel flaggte nur legitime Provenienz (Probe 2026-06-28: 19 Refs/14 ADRs).
 matrix:
   classes:
     - name: spec
       paths: ["spec/**"]
+      # Spec-interne Straten (konventionen.md "Spec-Straten": Rang Vertrag › Technik › Sicht;
+      # architecture.md = Sicht = unterste Schicht). [^a] = alle Specs außer architecture
+      # (einzige a*-Datei) → Technik-Schicht (Rang 1); architecture explizit als Rang 2 = Sicht.
+      order: ["spec/lastenheft-d-migrate.md", "spec/[^a]*.md", "spec/architecture.md"]   # Rang 0 Vertrag (Lastenheft), Rang 1 Technik (Topical, Peers), Rang 2 Sicht (architecture)
+      direction: no-downward
     - name: adr
       paths: ["docs/adr/[0-9]*.md"]
     - name: plan
@@ -62,14 +69,20 @@ codepaths:
 
 # ids: Kennungs-Verlinkungspflicht im Fließtext. Modell aus
 # `d-check --suggest-config` (Kennungen nur aus Definitions-Headings):
-# UC-NN aus dem Lastenheft, ADR-NNNN mit Ziel docs/adr/. Kein LF/LN-Mandat
-# (zu breites Hand-Muster, D2). scope wie codepaths (CHANGELOG/Archiv aus).
+# UC-NN aus dem Lastenheft, ADR-NNNN mit Ziel docs/adr/. LF/LN-Mandat aktiv
+# (D2 revidiert 2026-06-28 — LF/LN müssen aufs Lastenheft verlinkt sein).
+# scope wie codepaths (CHANGELOG/Archiv aus).
 ids:
   scope:
     roots: [docs, spec]
-    ignore: ["docs/planning/done-archive/**"]
+    ignore: ["docs/planning/done-archive/**", "docs/archive/**"]
   patterns:
     - regex: 'UC-\d+'
       target: "spec/lastenheft-d-migrate.md"
+      link-policy: always
     - regex: 'ADR-\d{4}'
       target: "docs/adr/"
+      link-policy: always
+    - regex: 'L[FN]-\d{3}'
+      target: "spec/lastenheft-d-migrate.md"
+      link-policy: always

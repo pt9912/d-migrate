@@ -15,9 +15,9 @@ wird der Scope hier ausgearbeitet.
 Vorbedingungen sind in diesem Plan fixiert; der Move erfolgt erst mit dem
 ersten Implementierungs-Commit gemäß
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md).
-Der Lastenheft-Backfill ist mit `LF-027` erledigt, siehe Vorbedingungen.
+Der Lastenheft-Backfill ist mit [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) erledigt, siehe Vorbedingungen.
 
-> Status-Update 2026-06-09: `LF-027` im Lastenheft angelegt; cli-spec-Marker
+> Status-Update 2026-06-09: [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) im Lastenheft angelegt; cli-spec-Marker
 > verweist als Markdown-Link mit Kennung darauf (Option C). Trigger-Absatz
 > beschreibt den ursprünglichen ankerlosen Zustand.
 
@@ -106,7 +106,7 @@ Row-Validierungs-Engine, die Datensätze gegen neutrale Spaltenregeln prüft.
 
 1. **`validate`-Command-Group + Wiring** — `ValidateCommand` als Top-Level in
    `Main.kt` registrieren, mit `ValidateDataCommand` (und später dem schon
-   geplanten `validate procedure`, `LN-034`). Drei-Schicht-Muster (Command →
+   geplanten `validate procedure`, [`LN-034`](../../../spec/lastenheft-d-migrate.md#ln-034)). Drei-Schicht-Muster (Command →
    Runner → Wiring, Runner/Wiring `internal`), analog zu
    [`SchemaCommands.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCommands.kt)
    und
@@ -161,7 +161,7 @@ Row-Validierungs-Engine, die Datensätze gegen neutrale Spaltenregeln prüft.
 4. **Output-Format**: nur Text vs. zusätzlich `--json`.
 
 ## 6. Vorbedingungen
-- **Lastenheft-Backfill erledigt**: `LF-027` „Datenvalidierung gegen Schema"
+- **Lastenheft-Backfill erledigt**: [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) „Datenvalidierung gegen Schema"
   ist in [`lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)
   angelegt; der cli-spec-Marker verweist als Markdown-Link mit Kennung darauf
   (gate-geprüfter Pfad, stabile Kennung). Damit ist die fehlende Provenienz,
