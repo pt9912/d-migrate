@@ -639,6 +639,12 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | QA        | Property-Based Testing (Jqwik)                       | LN-046 |
 | QA        | Performance-Regression-Tests                         | LN-044 |
 
+**Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
+gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,
+Frequent Items, neuer `ProfilingRowStreamPort`, PostgreSQL-Adapter, Benchmark
+approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
+`profiling-datasketches` mit CLI-Unterstützung.
+
 ### Milestone 1.0.0 — Stable Release
 
 | Bereich   | Aufgabe                                                             | LF-Ref |
@@ -696,6 +702,10 @@ Tranchen-Schnitt: [`trino.md`](../next/trino.md).
 Low-Latency-Integration und Streaming-Szenarien. Details:
 [`grpc-service.md`](../../../spec/grpc-service.md).
 
+**Einfuehrungsreihenfolge**: (1) Health + Schema-Validate/Generate + Job- und
+Artifact-Service; (2) Reverse/Compare/Profile; (3) Export, Artefakt-Upload-RPCs,
+Import, Transfer. (Aus `grpc-service.md` ausgegliedert, ADR 0024.)
+
 ### Milestone 1.2.0 — REST-API
 
 | Bereich | Aufgabe                                                                                          | LF-Ref |
@@ -711,6 +721,12 @@ Low-Latency-Integration und Streaming-Szenarien. Details:
 **Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
 programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 [`rest-service.md`](../../../spec/rest-service.md).
+
+**Einfuehrungsreihenfolge**: (1) Synchrone Basis: health, capabilities, schema
+validate/generate; (2) Job-System inkl. SSE + reverse/compare/profile (Profiling
+zuerst, da ohne Schreibzugriff auf die Ziel-DB); (3) Datenbewegung:
+export/import/transfer + Artefakt-Download; (4) Integrationen: Tool-Exports,
+KI-nahe Endpunkte nur bei echtem Bedarf. (Aus `rest-service.md` ausgegliedert, ADR 0024.)
 
 ### Milestone 1.3.0 — Testdaten-Generierung
 
@@ -809,6 +825,15 @@ Datenbanksystem.
 | Community | LTS-Support für 1.x-Linie (24 Monate)          | —      |
 
 **Ergebnis**: Feature-Complete, Enterprise-ready, aktive Community.
+
+**Shadow-Migration** (Distributed CDC-Modus; aus `shadow-migration.md` ausgegliedert, ADR 0024):
+gestaffelt — Phase 1 *Design* (Ziel 1.1): Contracts `ShadowMigrationJob`/`ShadowMigrationPlan`,
+`ShadowExecutionBackendPort`, REST/gRPC/MCP-Entwurf, Readiness-Gates, Datenschutzregeln;
+Phase 2 *Spike* (1.2): `FLINK_CDC_PIPELINE`-Adapter, Initial-Snapshot + CDC + Upsert-by-PK,
+Lag-Metrik, Dead-Letter-Artefakt; Phase 3 *Experimental* (1.3): CLI
+`shadow start/status/validate/readiness/stop`, REST-Job-API, Checkpoint/Resume,
+Validierungsreports; Phase 4 *Stable* (2.0): stabiler Distributed-Modus, mehrere
+DB-Kombinationen, Cutover-Readiness, Betriebs-/Failure-Recovery-Doku.
 
 ---
 

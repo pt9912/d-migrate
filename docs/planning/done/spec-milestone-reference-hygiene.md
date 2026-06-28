@@ -1,12 +1,20 @@
 # Spec-Hygiene: Milestone-/Phasen-/Versions-Provenienz in `spec/`
 
-> **Status:** Sammlung/Tracker (2026-06-17)
+> **Status:** In Progress (2026-06-28) — aus `../open/` aktiviert; Triage und
+> Bereinigung laufen.
+> **Umsetzung:** konkreter Ausführungsplan (entschiedene Weggabelungen,
+> Arbeitspakete, Akzeptanz) im Sub-Slice
+> [`spec-milestone-hygiene-slice.md`](spec-milestone-hygiene-slice.md).
 > **Trigger:** Bei der Bereinigung stale Milestone-Anker im Anwenderhandbuch
 > (`0.5.5`, `0.9.7`) fiel auf, dass dieselbe Provenienz **breit in `spec/`**
 > steckt.
-> **Aktivierungsbedingung:** Soll **noch in 0.9.9** abgearbeitet werden; bei
-> Aufnahme der Arbeit wandert der Eintrag nach `../in-progress/`. Verwandt:
-> [`mcp-server-spec-hygiene-residuals.md`](mcp-server-spec-hygiene-residuals.md)
+> **Scope:** Milestone-/Phasen-/Versions-Provenienz im Spec-*Text* gegen die
+> SDP-Regel 5 triagieren (s. u.); Abschnittsnummern und Engine-Versions-Fakten
+> (SQLite/MySQL) bleiben. **Projekt-Entscheidung 2026-06-28** (strenger als die
+> Regel-5-Default): eingebettete `Einführungsreihenfolge`-/
+> `Implementierungsstrategie`-Roadmap-Sektionen verlassen den Spec ganz (Details
+> im Sub-Slice). Verwandt:
+> [`../open/mcp-server-spec-hygiene-residuals.md`](../open/mcp-server-spec-hygiene-residuals.md)
 > (gleiche Kategorie, §-Referenzen).
 
 ## Maßgebliche Regel (Regelwerk v1.2.0)
@@ -92,3 +100,16 @@ Treffer pro Datei (Rohzählung inkl. Falsch-Positiver — vor Bewertung):
 Reine **Doku-Hygiene am Zielbild** — kein Verhaltens- oder Vertragswechsel am
 Code. Bereits erledigt: dieselbe Bereinigung im **Anwenderhandbuch**
 (`0.5.5` ×3, `0.9.7` ×1).
+
+## Closure (2026-06-28)
+
+Die Milestone-/Phasen-/Versions-Provenienz-Triage ist abgeschlossen — ausgeführt
+im Sub-Slice [`spec-milestone-hygiene-slice.md`](spec-milestone-hygiene-slice.md)
+(WP1–WP3 + ADR 0023/0024). `spec/` ist phasenfrei (voller `0.x.y`-Sweep leer,
+abzüglich Engine-Fakten/versionierter Dateinamen/Beispiele/Lastenheft/`design.md`);
+`make docs-check` grün.
+
+**In eigene Tracker abgegrenzt:** `design.md`-Retire
+([`../next/design-md-retire.md`](../next/design-md-retire.md)); Spec→ADR/Plan-
+Abwärts-Refs ([`../open/spec-adr-downref-hygiene.md`](../open/spec-adr-downref-hygiene.md));
+Phase-E/F-Cross-Ref-Familie; Lastenheft-Roadmap.

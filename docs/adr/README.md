@@ -76,3 +76,5 @@ argumentiert werden.
 | 0020 | [Cross-Dialect-Partitionierung PG↔MySQL: Mapping-Entscheide (AP6)](0020-cross-dialect-partitioning-mysql.md) | accepted |
 | 0021 | [Spalten-Ordinalreihenfolge erhalten (Hybrid: geordnete Serialisierung + explizites `ordinal`)](0021-column-ordinal-fidelity.md) | accepted |
 | 0022 | [Ports-Schicht ohne `java.sql`: neutrale `DatabaseConnection`-Abstraktion](0022-ports-jdbc-entkopplung.md) | accepted |
+| 0023 | [Reverse-Eingabe: Live-DB-first; DDL-Datei-Parser additiv-später](0023-reverse-eingabe-live-db-first.md) | accepted |
+| 0024 | [Ist-Zustand-Dokumentation: keine Prosa-Ist-Doku, `spec/` ist reines Zielbild](0024-ist-zustand-dokumentation.md) | accepted |

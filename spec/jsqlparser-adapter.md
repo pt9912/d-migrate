@@ -211,7 +211,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
 ## Warnungs-Katalog-Anbindung (Ledger)
 
 - `W111` ist Produktivsignal und muss in einem aktiven Ledger-Eintrag enthalten sein.
-  - In einem 0.9.3-Kontext: `warn-code-ledger-0.9.3.yaml` (`status: active`, `test_path`, `evidence_paths`).
+  - Im aktiven Ledger: `warn-code-ledger-0.9.3.yaml` (`status: active`, `test_path`, `evidence_paths`).
   - Nach Umstellung auf `status: active` muss `CodeLedgerValidationTest` grün bleiben.
 - `W198` wird in dieser Iteration als technische Diagnose gehalten:
   - `status: reserved` in Ledger.

@@ -1,7 +1,6 @@
 # Spec: Approximate Profiling mit Apache DataSketches
 
 Status: Draft  
-Zielversion: 0.9.9 Spike, 1.0.0-RC produktiv  
 Modulvorschlag: `d-migrate-profiling-datasketches`  
 Kategorie: Optional Extension / Driven Adapter
 
@@ -1858,54 +1857,9 @@ profiling:
 
 ---
 
-## 22. Implementierungsstrategie
+## 22. Tests
 
-### 22.1 Phase 1: Spike
-
-Zielversion: 0.9.9
-
-Umfang:
-
-- Prototyp für HLL/CPC Distinct Count.
-- Prototyp für KLL Quantiles.
-- Prototyp für Frequent Items.
-- Neuer `ProfilingRowStreamPort`.
-- Eine erste Adapter-Implementierung, bevorzugt PostgreSQL.
-- Benchmark gegen große lokale Testdaten.
-- Vergleich exakter vs. approximativer Werte.
-- Memory- und Laufzeitmessung.
-- Prüfung deterministischer Report-Ausgabe.
-
-Erfolgskriterien:
-
-- Profiling läuft streaming-basiert.
-- Keine vollständige Spalte muss im RAM gehalten werden.
-- Approx-Werte werden korrekt als approximativ markiert.
-- `distinctCount` wird nicht mit Approx-Werten befüllt.
-- Modul bleibt optional.
-- Datenschutzregeln blockieren werttragende Sketch-Artefakte standardmäßig.
-
-### 22.2 Phase 2: Produktives Modul
-
-Zielversion: 1.0.0-RC
-
-Umfang:
-
-- Stabiles Modul `profiling-datasketches`.
-- CLI-Unterstützung.
-- REST-/gRPC-Request-Optionen.
-- MCP-Ressourcenintegration.
-- Artefaktunterstützung.
-- Source-vs-Target-Vergleich.
-- Datenschutzoptionen.
-- Deterministische Merge- und Sortierregeln.
-- Tests und Dokumentation.
-
----
-
-## 23. Tests
-
-### 23.1 Unit Tests
+### 22.1 Unit Tests
 
 - Mapping Sketch-Ergebnis zu Domain-Modell.
 - Serialisierung von `ApproximateColumnStats`.
@@ -1916,7 +1870,7 @@ Umfang:
 - Blockieren werttragender Sketch-Artefakte.
 - Konfigurationsvalidierung.
 
-### 23.2 Integration Tests
+### 22.2 Integration Tests
 
 - Profiling PostgreSQL Testdaten.
 - Profiling MySQL Testdaten.
@@ -1928,7 +1882,7 @@ Umfang:
 - gRPC Job Request.
 - MCP `data_profile_start` mit `connectionId`.
 
-### 23.3 Determinismus-Tests
+### 22.3 Determinismus-Tests
 
 - Zwei identische Läufe erzeugen identische stabile Reports.
 - Kein `generatedAt` im stabilen Report.
@@ -1940,7 +1894,7 @@ Umfang:
 - Sampling erscheint nur mit stabilem Seed im stabilen Report.
 - Parallele Sketch-Merges verwenden deterministische Merge-Reihenfolge.
 
-### 23.4 Benchmark Tests
+### 22.4 Benchmark Tests
 
 Benchmark-Dimensionen:
 
@@ -1962,7 +1916,7 @@ Metriken:
 
 ---
 
-## 24. Akzeptanzkriterien
+## 23. Akzeptanzkriterien
 
 Die Integration gilt als akzeptiert, wenn:
 
@@ -2002,9 +1956,9 @@ Die Integration gilt als akzeptiert, wenn:
 
 ---
 
-## 25. Offene Entscheidungen
+## 24. Offene Entscheidungen
 
-### 25.1 HLL oder CPC als Default für Distinct Count?
+### 24.1 HLL oder CPC als Default für Distinct Count?
 
 Optionen:
 
@@ -2026,7 +1980,7 @@ Default: HLL
 Optional: CPC
 ```
 
-### 25.2 KLL oder t-digest als Default für Quantiles?
+### 24.2 KLL oder t-digest als Default für Quantiles?
 
 Optionen:
 
@@ -2047,7 +2001,7 @@ Default: KLL
 Optional: t-digest
 ```
 
-### 25.3 Sollen Sketch-Artefakte standardmäßig gespeichert werden?
+### 24.3 Sollen Sketch-Artefakte standardmäßig gespeichert werden?
 
 Vorschlag:
 
@@ -2067,7 +2021,7 @@ Aktivierung explizit über:
 --sketch-artifacts true
 ```
 
-### 25.4 Soll `hybrid` der Default für große Tabellen werden?
+### 24.4 Soll `hybrid` der Default für große Tabellen werden?
 
 Vorschlag:
 
@@ -2085,7 +2039,7 @@ else:
   use exact
 ```
 
-### 25.5 Soll `ComputedMetrics` dauerhaft bleiben?
+### 24.5 Soll `ComputedMetrics` dauerhaft bleiben?
 
 Vorschlag:
 
@@ -2101,9 +2055,9 @@ Langfristig kann eine Major-Version ein stärker typisiertes Metrikmodell einfü
 
 ---
 
-## 26. Beispiel: End-to-End
+## 25. Beispiel: End-to-End
 
-### 26.1 Command
+### 25.1 Command
 
 ```bash
 d-migrate data profile \
@@ -2116,7 +2070,7 @@ d-migrate data profile \
   --output orders-profile.yaml
 ```
 
-### 26.2 Stabiler Report ohne `generatedAt`
+### 25.2 Stabiler Report ohne `generatedAt`
 
 ```yaml
 database: prod
@@ -2182,7 +2136,7 @@ warnings:
     message: "Some statistics were computed using approximate sketches."
 ```
 
-### 26.3 Job-Metadaten separat
+### 25.3 Job-Metadaten separat
 
 ```yaml
 job:
@@ -2197,7 +2151,7 @@ job:
 
 ---
 
-## 27. Zusammenfassung
+## 26. Zusammenfassung
 
 Apache DataSketches passt sehr gut als optionales Backend für approximatives Profiling in d-migrate.
 

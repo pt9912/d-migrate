@@ -201,7 +201,7 @@ ausweisen: `maxToolResponseBytes=65536`,
 | `artifact_upload_abort` | eigenen laufenden Artefakt-Upload abbrechen; administrative Abbrueche policy-gesteuert | Owner-Pruefung / policy-gesteuert |
 | `job_cancel` | langen Lauf abbrechen | nur fuer eigene oder erlaubte Jobs |
 
-Bei `job_cancel` bedeutet "erlaubte Jobs" fuer 0.9.6: eigene Jobs oder
+Bei `job_cancel` bedeutet "erlaubte Jobs": eigene Jobs oder
 Jobs desselben Tenants, fuer die der Principal administrative Rechte besitzt.
 Cross-Tenant-Cancel ist ausgeschlossen, sofern der `PrincipalContext` nicht
 explizit mehrere erlaubte Tenants enthaelt. Ein `PrincipalContext` muss fuer
@@ -260,8 +260,8 @@ Hinweis:
     `correlationKind=idempotencyKey` gilt fuer Start-Tools,
     `correlationKind=approvalKey` fuer synchrone policy-pflichtige
     Side-Effect-Tools.
-- 0.9.6 braucht einen Beta-tauglichen Grant-Aussteller, obwohl keine
-  vollstaendige Consent-/Admin-UI Teil des Milestones ist: lokale
+- Das Zielbild braucht einen Beta-tauglichen Grant-Aussteller, obwohl keine
+  vollstaendige Consent-/Admin-UI Teil des Zielbilds ist: lokale
   Policy-Allowlist, ein schmales MCP-Admin-Grant-Unterkommando oder
   signierte Grant-Datei. Das Admin-Unterkommando darf nur
   `approvalRequestId` pruefen und Grants ausstellen; generelle
@@ -289,7 +289,7 @@ Policy, Prompt-Hygiene und Audit abgesichert:
 
 Diese Tools muessen strikt an die in `spec/design.md` beschriebene
 Provider- und Audit-Strategie gekoppelt sein.
-Fuer 0.9.6 ist dafuer mindestens ein adapterneutraler KI-/Testdaten-Port
+Dafuer ist mindestens ein adapterneutraler KI-/Testdaten-Port
 mit `NoOp`- oder lokaler Provider-Implementierung noetig. Externe
 Provider sind optional und brauchen explizite Konfiguration,
 Secret-Scrubbing, Provider-/Modell-Audit-Metadaten und erlaubende
@@ -360,7 +360,7 @@ Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-
 
 Wo der MCP-Server die Artefakt-Bytes (DDL, Reports, Exporte, Upload-Inputs)
 ablegt, steuert der `artifacts`-Block der `.d-migrate.yaml`. Der Default ist
-ein lokaler Datei-Store; seit 0.9.8 ist alternativ ein S3-kompatibler
+ein lokaler Datei-Store; alternativ ist ein S3-kompatibler
 Object-Storage waehlbar (AWS S3, MinIO, SeaweedFS, Ceph/RGW — alles ueber
 `endpoint`/`pathStyle`).
 
@@ -655,12 +655,11 @@ verbindlich:
 - Segmentbytes werden in MCP-`tools/call`-Argumenten als
   `contentBase64` uebertragen; streambares HTTP bleibt ein normaler
   JSON-RPC-POST und verwendet keinen separaten binaeren Upload-Body.
-  Diese Festlegung ist fuer 0.9.6 verbindlich: separate binaere
+  Diese Festlegung ist verbindlich: separate binaere
   Nicht-MCP-Upload-Bodies (Multipart, raw octet-stream Bodies etc.)
-  sind **nicht Teil von 0.9.6** und werden auch fuer Phase F nicht
-  eingefuehrt — sowohl `stdio` als auch HTTP-Transport bleiben
-  ueber denselben JSON-RPC-`contentBase64`-Pfad. Eine spaetere
-  Erweiterung kann additiv einen separaten Upload-Body-Pfad
+  sind **nicht Teil des MCP-Vertrags** — sowohl `stdio` als auch HTTP-Transport
+  bleiben ueber denselben JSON-RPC-`contentBase64`-Pfad. Eine spaetere
+  additive Erweiterung kann einen separaten Upload-Body-Pfad
   einfuehren, sobald MCP-Clients das einheitlich unterstuetzen.
   - Segmentierte Uploads sind verbindlich mit:
     - `uploadSessionId` (verbindlich, opak, sichtbar ASCII/URL-sicher,
@@ -842,12 +841,12 @@ Empfohlene Sicherheitsgrundlagen:
 - jeder MCP-Aufruf muss ein verifizierbares `principalId` haben
 - HTTP:
   - fuer entfernte bzw. nicht-lokale Clients ist Auth verbindlich
-  - solange nur der Abschnitt-0.9.6-A-HTTP-Grundpfad ohne vollstaendige
+  - solange nur der HTTP-Grundpfad ohne vollstaendige
     JWKS-/Introspection-Auth aktiv ist, darf HTTP nur auf Loopback binden;
     nicht-lokale Bindings muessen fail-closed abgelehnt werden
   - d-migrate agiert hier als Resource Server; ein eigener
     Authorization Server, Client-Registration-UI oder Mandanten-Admin
-    gehoert nicht zum 0.9.6-Ziel
+    gehoert nicht zum Zielbild
   - `Authorization` Header mit Bearer-Token (oder aequivalentes
     signiertes Principalsignal)
   - bei fehlendem oder ungueltigem Token: HTTP 401 mit
@@ -867,7 +866,7 @@ Empfohlene Sicherheitsgrundlagen:
     explizit konfigurierte Introspection geprueft, `aud`/Resource,
     Ablauf/Clock-Skew, Pflichtclaims und Tool-/Resource-Scopes werden
     validiert; ein blosser Bearer-String darf nie als Principal genuegen
-  - 0.9.6 nutzt rollenartige Scopes statt granularer Tool-Scopes:
+  - d-migrate nutzt rollenartige Scopes statt granularer Tool-Scopes:
     `dmigrate:read`, `dmigrate:job:start`,
     `dmigrate:artifact:upload`, `dmigrate:data:write`,
     `dmigrate:job:cancel`, `dmigrate:ai:execute` und
@@ -908,8 +907,8 @@ Empfohlene Sicherheitsgrundlagen:
 Fortschrittsmeldungen fuer langlaufende Jobs werden in der
 d-migrate-MCP-Toolvertragsversion `v1` ueber Polling
 (`job_status_get`) abgebildet. SSE-basierte Notifications oder
-MCP-Resource-Subscriptions sind nicht Teil des verbindlichen 0.9.6-
-Umfangs. Der Streamable-HTTP-`GET`-Pfad bleibt trotzdem MCP-konform:
+MCP-Resource-Subscriptions sind nicht Teil des verbindlichen
+Vertragsumfangs. Der Streamable-HTTP-`GET`-Pfad bleibt trotzdem MCP-konform:
 der Server liefert entweder `text/event-stream` fuer Transport-Interop
 oder HTTP 405, wenn keine serverinitiierte Stream-Kommunikation
 angeboten wird.
@@ -919,19 +918,19 @@ benoetigte Sessions per `DELETE` mit `MCP-Session-Id` beenden koennen.
 Der Server terminiert die Session oder liefert HTTP 405, wenn
 clientseitige Session-Terminierung nicht angeboten wird.
 
-0.9.6 fuehrt keine parallele MCP-Tasks-Abstraktion fuer
+Der MCP-Vertrag fuehrt keine parallele MCP-Tasks-Abstraktion fuer
 d-migrate-Langlaeufer ein. Das d-migrate-Jobmodell mit
 `job_status_get`, `job_list` und `job_cancel` bleibt die einheitliche
 Steuerflaeche. `job_cancel` ist dabei nur gueltig, wenn die betroffenen
 Runner kooperative Cancellation-Checkpoints und Side-Effect-Stopp
 unterstuetzen; eine reine `cancel_requested`-Markierung ohne Worker-
-Propagation erfuellt den 0.9.6-Vertrag nicht.
+Propagation erfuellt den d-migrate-MCP-Vertrag nicht.
 
 ### 10.1 Versionierung
 
 Die MCP-Protokollversion wird in der `initialize`-Phase ueber das
-datierte Feld `protocolVersion` ausgehandelt. Fuer 0.9.6 ist die
-MCP-Protokollversion `2025-11-25` massgeblich. `v1` bezeichnet dagegen
+datierte Feld `protocolVersion` ausgehandelt. Massgeblich ist die
+MCP-Protokollversion `2025-11-25`. `v1` bezeichnet dagegen
 nur den d-migrate-spezifischen Tool-/Resource-Vertrag und darf nicht als
 MCP-`protocolVersion` verwendet werden. Bei inkompatiblen
 MCP-Protokollversionen ist die Verbindung mit einer klaren
@@ -944,53 +943,7 @@ Empfehlung:
 
 ---
 
-## 11. Einfuehrungsreihenfolge
-
-Die Phasen sind Lieferabschnitte innerhalb von 0.9.6, keine Verschiebung
-nach 0.9.7 und kein reduzierter MVP-Scope. Ein einzelner Abschnitt darf
-nicht als vollstaendig abgeschlossener Milestone markiert werden.
-
-### Phase 1
-
-- `capabilities_list`
-- `schema_validate`
-- `schema_generate`
-- `schema_compare`
-- `job_status_get`
-- `job_list`
-- `artifact_list`
-- `schema_list`
-- `profile_list`
-- `diff_list`
-
-### Phase 2
-
-- `schema_reverse_start`
-- `schema_compare_start`
-- `data_profile_start`
-- Artefakt-Ressourcen
-- Idempotency-Zustand `AWAITING_APPROVAL` und genehmigter Retry, der genau
-  einen Job erzeugt
-- Byte-/Segment-Store mit File-Spooling fuer Artefaktinhalte und Upload-
-  Segmente
-- read-only Schema-Staging fuer grosse Schemas ohne Write-Policy, aber mit
-  Quota und Audit
-
-### Phase 3
-
-- kontrollierte Write-Tools fuer `artifact_upload_init`,
-  `artifact_upload`, `data_import_start` und `data_transfer_start`
-- `artifact_upload_abort`
-- Quotas, Rate Limits und Timeouts fuer aktive Jobs, Upload-Sessions,
-  Upload-/Artefaktbytes und Provider-Aufrufe
-
-### Phase 4
-
-- KI-nahe Spezialtools fuer Procedure-Transformation und Testdaten
-
----
-
-## 12. Entscheidung
+## 11. Entscheidung
 
 Fuer eine KI-Umgebung sollte `d-migrate` nicht nur "auch per REST erreichbar"
 sein. Es sollte einen eigenen MCP-Adapter bekommen. Damit werden die
@@ -999,7 +952,7 @@ und Audit-Anforderungen einer autonomen KI-Nutzung zu verwischen.
 
 ---
 
-## 13. Operations-Cross-Refs
+## 12. Operations-Cross-Refs
 
 - Phase-E Job-Executor (Pool-Sizing, Saturation-Diagnose, Sync-vs-Async-Tradeoffs):
   [`docs/operations/job-executor.md`](../docs/operations/job-executor.md)

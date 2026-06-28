@@ -124,9 +124,9 @@ Asynchrone Endpunkte (Job-basiert):
 
 Für Job-Fortschritt kann ein SSE-Endpunkt
 (`GET /api/v1/jobs/{jobId}/events`, `Accept: text/event-stream`) angeboten
-werden, um Polling-Last bei langlebigen Jobs zu reduzieren. Spezifikation
-des SSE-Endpunkts (Event-Typen, Reconnect via `Last-Event-ID`) erfolgt in
-Phase 2 zusammen mit dem Job-System. In `v1` ist Polling über
+werden, um Polling-Last bei langlebigen Jobs zu reduzieren. Die Spezifikation
+des SSE-Endpunkts (Event-Typen, Reconnect via `Last-Event-ID`) wird zusammen
+mit dem Job-System nachgezogen. In `v1` ist Polling über
 `GET /api/v1/jobs/{jobId}` der Standardweg.
 
 ### 3.4 Idempotenz
@@ -629,40 +629,7 @@ Der Service sollte von Anfang an folgende Signale liefern:
 
 ---
 
-## 10. Einführungsreihenfolge
-
-### Phase 1 — Synchrone Basis
-
-- `health`
-- `capabilities`
-- `schema validate`
-- `schema generate`
-
-### Phase 2 — Job-System und Analyse
-
-- Job-System (inkl. SSE-Endpunkt `jobs/{jobId}/events`)
-- `schema reverse`
-- `schema compare`
-- `data profile`
-
-Profiling wird vor Export/Import eingeführt, weil es ohne Schreibzugriff auf
-die Ziel-DB auskommt und als erstes den asynchronen Job-Pfad validiert.
-
-### Phase 3 — Datenbewegung
-
-- `data export`
-- `data import`
-- `data transfer`
-- Artefakt-Download
-
-### Phase 4 — Integrationen
-
-- Tool-Exports
-- KI-nahe Endpunkte nur falls REST für diesen Use Case wirklich nötig ist
-
----
-
-## 11. Entscheidung
+## 10. Entscheidung
 
 REST ist die richtige Schnittstelle für:
 

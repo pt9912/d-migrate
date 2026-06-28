@@ -138,7 +138,7 @@ War Auslöser dieses Slice; alle drei Schritte umgesetzt:
 (kein Plan), trug aber Phasen-Naming → umbenannt nach
 [`../../../spec/port-atomicity.md`](../../../spec/port-atomicity.md), Status/Geltung-Header und
 „Phase E"-Body-Erwähnungen entfernt. Restschuld (Phase-E-Provenienz in `ki-mcp`/`job-contract`-Labels)
-beim Hygiene-Tracker ([`../open/spec-milestone-reference-hygiene.md`](../open/spec-milestone-reference-hygiene.md)).
+beim Hygiene-Tracker ([`spec-milestone-reference-hygiene.md`](spec-milestone-reference-hygiene.md)).
 
 ## 7. Vorbedingungen
 
@@ -167,6 +167,6 @@ Zwei dabei aufgedeckte **Harness**-Bugs (kein Refactor-Regress) mitgefixt: E07-T
 [`phase-e2-persistence.md`](../done-archive/phase-e2-persistence.md)); Live-Refs nachgezogen, Handbuch
 self-contained (Flyway-/Backup-Inhalt inline). Zusätzlich der Port-Atomicity-Vertrag **de-phast**
 (umbenannt nach `spec/port-atomicity.md`, Phasen-Naming raus). **Restschuld am Hygiene-Tracker
-[`../open/spec-milestone-reference-hygiene.md`](../open/spec-milestone-reference-hygiene.md):** die
+[`spec-milestone-reference-hygiene.md`](spec-milestone-reference-hygiene.md):** die
 verbleibende Phase-E-Provenienz in den Labels von `ki-mcp`/`job-contract` (und
 `docs/operations/job-executor.md`) als Familie auflösen.

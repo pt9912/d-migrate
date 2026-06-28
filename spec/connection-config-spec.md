@@ -148,7 +148,7 @@ Beispiel: Passwort `p@ss:word` → `postgresql://admin:p%40ss%3Aword@localhost/m
 | `idleTimeout` | `300000` | Max. Idle-Zeit (ms, 5 Min) |
 | `maxLifetime` | `600000` | Max. Lebenszeit einer Verbindung (ms, 10 Min) |
 | `keepaliveTime` | `60000` | Keepalive-Intervall (ms) |
-| `statementTimeout` | `30000` | Per-Statement-Timeout (ms). Begrenzt jede atomar-nicht-cancelbare Driver-Operation auf das Cancel-Reaktionsbudget aus implementation-plan-0.9.6 §4.1 (`<=30s`). Wert `0` deaktiviert das Timeout; negative Werte sind Konstruktionsfehler. |
+| `statementTimeout` | `30000` | Per-Statement-Timeout (ms). Begrenzt jede atomar-nicht-cancelbare Driver-Operation auf das Cancel-Reaktionsbudget (`<=30s`). Wert `0` deaktiviert das Timeout; negative Werte sind Konstruktionsfehler. |
 | `networkTimeout` | `30000` | Per-Connection-Network-Timeout (ms). Schützt Commit-/Socket-/Connection-I/O-Pfade, die nicht über `Statement.setQueryTimeout` erfasst werden (z.B. `Connection.metaData.getPrimaryKeys` in PostgreSQL/MySQL-Writer). Wert `0` deaktiviert; negative Werte sind Konstruktionsfehler. |
 
 Für SQLite: Pool-Size auf `1` (SQLite unterstützt keine parallelen Schreibzugriffe).
@@ -484,10 +484,10 @@ d-migrate data export --source postgresql://other@host/db --format json
 
 Wenn `--source` oder `--target` kein URL-Schema (`://`) enthält, wird der Wert als Verbindungsname in `database.connections` nachgeschlagen. Die Auflösung erfolgt **vor** der CLI-Validierung — für die nachgelagerte Verarbeitung sieht das System immer eine vollständige URL. Wird kein passender Verbindungsname gefunden, erzeugt das System Fehler E402.
 
-**Wiederverwendung in 0.6.0-Kommandos**: Dieselbe Auflösung gilt für alle
-Kommandos, die DB-Verbindungen akzeptieren — insbesondere auch für die in 0.6.0
-neuen Pfade `schema reverse` (`--source`), `schema compare` (Operanden mit
-`db:`-Präfix) und `data transfer` (`--source`, `--target`). Die
+**Wiederverwendung in weiteren Kommandos**: Dieselbe Auflösung gilt für alle
+Kommandos, die DB-Verbindungen akzeptieren — insbesondere `schema reverse`
+(`--source`), `schema compare` (Operanden mit `db:`-Präfix) und `data transfer`
+(`--source`, `--target`). Die
 URL-/Alias-Semantik ist in dieser Spezifikation kanonisch; die
 [CLI-Spezifikation](./cli-spec.md) beschreibt nur die kommandospezifische
 Bedeutung der Flags.
@@ -505,4 +505,4 @@ Bedeutung der Flags.
 
 **Version**: 1.1
 **Stand**: 2026-04-13
-**Status**: Entwurf — explizite Wiederverwendung für 0.6.0-Kommandos (reverse, compare, transfer) dokumentiert
+**Status**: Entwurf

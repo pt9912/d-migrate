@@ -131,31 +131,30 @@ DDL-Ergebnis für `geometry` ist bewusst profilgesteuert (`postgis`, `native`,
 
 ### 2.3 Datenfluss-Modell
 
-Reverse-Engineering (LF-004) erfolgt in 0.6.0 ausschließlich über
-Live-DB-Verbindungen. Ein DDL-Datei-Parser ist als späterer additiver
-Funktionsschnitt vorgesehen, gehört aber nicht zum 0.6.0-Mindestvertrag (siehe
-[Neutrales-Modell-Spezifikation §12](./neutral-model-spec.md#12-ddl-parser-späterer-milestone--nicht-teil-von-060)).
+Reverse-Engineering (LF-004) kennt zwei Eingabepfade, die dasselbe neutrale
+Modell ergeben (siehe
+[Neutrales-Modell-Spezifikation §12](./neutral-model-spec.md#12-ddl-parser)):
 
-1. **DB-Connection-basiert** *(0.6.0)*: `SchemaReader` liest Metadaten direkt
+1. **DB-Connection-basiert**: `SchemaReader` liest Metadaten direkt
    aus der Datenbank via JDBC
-2. **DDL-Datei-basiert** *(späterer Milestone)*: DDL-Parser analysiert
+2. **DDL-Datei-basiert**: DDL-Parser analysiert
    SQL-Dateien (CREATE TABLE, CREATE PROCEDURE, etc.)
 
 ```
-  Quelle                  Neutral                    Ziel
-┌──────────┐         ┌──────────────┐          ┌──────────┐
+   Quelle                  Neutral                     Ziel
+┌──────────┐           ┌──────────────┐            ┌──────────┐
 │PostgreSQL│──JDBC────▶│              │──generate─▶│  MySQL   │
-│  MySQL   │ reverse  │   Schema-    │          │  SQLite  │
-│  SQLite  │         │   Modell     │◀─parse────│  YAML    │
-│          │         │   (Kotlin)   │          │  JSON    │
-└──────────┘         └──────┬───────┘          └──────────┘
-                            │
-                     ┌──────▼──────┐
-                     │  Validierung │
-                     │  - Syntax    │
-                     │  - Referenzen│
-                     │  - Typen     │
-                     └─────────────┘
+│  MySQL   │  reverse  │   Schema-    │            │  SQLite  │
+│  SQLite  │           │   Modell     │◀─parse─────│  YAML    │
+│          │           │   (Kotlin)   │            │  JSON    │
+└──────────┘           └──────┬───────┘            └──────────┘
+                              │
+                       ┌──────▼──────┐
+                       │ Validierung │
+                       │ - Syntax    │
+                       │ - Referenzen│
+                       │ - Typen     │
+                       └─────────────┘
 ```
 
 ---

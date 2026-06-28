@@ -868,7 +868,7 @@ Schluesselkomponenten:
 - **Renderer**: `PostgresDiffSequenceOps.renderAlterSequenceCurrentValue`
   (PG), `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue` (MySQL),
   `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue` (SQLite —
-  seit 0.9.7-E.3-Folge-Slice: Up auf `applySequenceRef`, Down auf
+  Up auf `applySequenceRef`, Down auf
   `probeSequenceRef` mit `restoreValue`; `restoreValue == null` ⇒
   Skip mit `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`).
 - **JDBC-Adapter**: `PostgresSequenceCurrentValueProbe` (SQLSTATE

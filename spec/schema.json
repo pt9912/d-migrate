@@ -104,7 +104,7 @@
     "tableMetadata": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Physische Tabellen-Metadaten (ab 0.6.0), primaer reverse-generiert",
+      "description": "Physische Tabellen-Metadaten, primaer reverse-generiert",
       "properties": {
         "engine": {
           "type": ["string", "null"],
@@ -211,7 +211,7 @@
             "multipoint", "multilinestring", "multipolygon", "geometrycollection"
           ],
           "default": "geometry",
-          "description": "Nur bei type: geometry (Spatial, ab 0.5.5)"
+          "description": "Nur bei type: geometry (Spatial)"
         },
         "srid": {
           "type": "integer",
@@ -452,7 +452,7 @@
         "projection_complete": {
           "type": "boolean",
           "default": true,
-          "description": "ab 0.6.0: nur serialisiert, wenn abweichend von true"
+          "description": "Nur serialisiert, wenn abweichend von true"
         },
         "table_projection_status": { "$ref": "#/$defs/projectionStatus" },
         "column_projection_status": { "$ref": "#/$defs/projectionStatus" },
@@ -618,7 +618,7 @@
         "preserve_current_value": {
           "type": "boolean",
           "default": false,
-          "description": "0.9.7: Runtime-Wert ueber Migration retten (opt-in)"
+          "description": "Runtime-Wert ueber Migration retten (opt-in)"
         }
       }
     }

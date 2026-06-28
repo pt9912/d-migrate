@@ -1213,7 +1213,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Flag | Pflicht | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--source` | Ja | URL oder Name | — | Connection-URL oder Name aus `.d-migrate.yaml` |
-| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (kein Default — explizit setzen, §6.15). Parquet schreibt je nach Ziel ein Bundle (Verzeichnis + `manifest.yaml`) oder Single-File; zusätzliche Parquet-Flags siehe CHANGELOG `[0.9.8]` |
+| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (kein Default — explizit setzen, §6.15). Parquet schreibt je nach Ziel ein Bundle (Verzeichnis + `manifest.yaml`) oder Single-File |
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
 | `--filter` | Nein | String | — | Filter-DSL-Ausdruck. Erlaubte Operatoren: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN (...)`, `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, Klammern. Erlaubte Funktionen: `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS`, `ROUND`, `COALESCE`. Arithmetik (`+`, `-`, `*`, `/`) und qualifizierte Identifier (`table.column`) sind zulaessig. Alle Literale werden als Bind-Parameter an JDBC gebunden. Rohes SQL wird nicht mehr akzeptiert — nicht DSL-konforme Eingaben enden mit Exit 2. |

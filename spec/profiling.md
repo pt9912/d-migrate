@@ -2,9 +2,9 @@
 
 **Erweiterung von d-migrate um deterministisches Datenbank-Profiling**
 
-> Dokumenttyp: Design-Spezifikation (Entwurf)
+> Dokumenttyp: Design-Spezifikation
 >
-> Status: Entwurf. Beschreibt den geplanten Soll-Zustand für d-migrate ab Phase 2 (0.7.5). Referenzen auf `SchemaReader`, `hexagon/profiling` und neue Profiling-Ports sind Zielarchitektur, nicht bereits heute im Code vorhandene APIs.
+> Beschreibt das Zielbild für deterministisches Datenbank-Profiling in d-migrate: Domänenmodell, Profiling-Ports und Dialekt-Adapter.
 
 ---
 
@@ -478,7 +478,7 @@ interface LogicalTypeResolverPort {
 }
 ```
 
-**Hinweis**: `SchemaIntrospectionPort` baut auf denselben JDBC-Metadaten-Bausteinen auf wie das Reverse-Engineering aus Milestone 0.6.0 (LF-004). Eine reine 1:1-Delegation auf `SchemaReader` reicht aber nicht aus, solange Profiling zusätzlich rohe DB-Typen (`dbType`) und Profiling-spezifische Metadaten braucht.
+**Hinweis**: `SchemaIntrospectionPort` baut auf denselben JDBC-Metadaten-Bausteinen auf wie das Reverse-Engineering (LF-004). Eine reine 1:1-Delegation auf `SchemaReader` reicht aber nicht aus, solange Profiling zusätzlich rohe DB-Typen (`dbType`) und Profiling-spezifische Metadaten braucht.
 
 ### 5.2 Services
 
@@ -543,7 +543,7 @@ class WarningEvaluator(
 
 ### 6.1 DB-Adapter pro Dialekt
 
-Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeResolverPort`. Die Schema-Introspection teilt sich die JDBC-Metadatenbasis mit dem Reverse-Engineering aus 0.6.0, liefert aber ein eigenes Profiling-Projektionsmodell (§5.1).
+Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeResolverPort`. Die Schema-Introspection teilt sich die JDBC-Metadatenbasis mit dem Reverse-Engineering, liefert aber ein eigenes Profiling-Projektionsmodell (§5.1).
 
 | Dialekt    | Aggregate-Queries                                                                  | Typ-Resolver                    |
 | ---------- | ---------------------------------------------------------------------------------- | ------------------------------- |
@@ -767,7 +767,7 @@ Adapter-Implementierungen (OpenAI, Ollama, Mock) folgen dem bestehenden Muster u
 
 ## 11. Einordnung in die Roadmap
 
-Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milestone 0.6.0, LF-004): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling soll daher auf derselben JDBC-Metadatenbasis aufsetzen wie `SchemaReader`, aber ein eigenes Projektionsmodell für rohe DB-Typen und Profiling-spezifische Metadaten bereitstellen. Geplanter Milestone: **0.7.5**.
+Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (LF-004): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling soll daher auf derselben JDBC-Metadatenbasis aufsetzen wie `SchemaReader`, aber ein eigenes Projektionsmodell für rohe DB-Typen und Profiling-spezifische Metadaten bereitstellen.
 
 ---
 
