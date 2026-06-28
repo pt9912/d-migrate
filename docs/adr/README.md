@@ -78,3 +78,4 @@ argumentiert werden.
 | 0022 | [Ports-Schicht ohne `java.sql`: neutrale `DatabaseConnection`-Abstraktion](0022-ports-jdbc-entkopplung.md) | accepted |
 | 0023 | [Reverse-Eingabe: Live-DB-first; DDL-Datei-Parser additiv-später](0023-reverse-eingabe-live-db-first.md) | accepted |
 | 0024 | [Ist-Zustand-Dokumentation: keine Prosa-Ist-Doku, `spec/` ist reines Zielbild](0024-ist-zustand-dokumentation.md) | accepted |
+| 0025 | [Volltext-Quellspalten als `FULLTEXT`-Index modellieren, nicht am `fulltext`-Typ](0025-fulltext-source-columns-as-index.md) | accepted |
