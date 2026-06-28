@@ -1293,20 +1293,20 @@ adapters/driven/formats/src/test/resources/fixtures/
 
 ---
 
-## 7. Architekturentscheidungen (ADR-Übersicht)
+## 7. Architektur-Grundsatzentscheidungen
 
-| #       | Entscheidung                       | Status        | Begründung                                             |
-| ------- | ---------------------------------- | ------------- | ------------------------------------------------------ |
-| ADR-001 | Kotlin als Implementierungssprache | Akzeptiert    | JDBC-Ökosystem, Null-Safety, Coroutines                |
-| ADR-002 | Hexagonale Architektur             | Akzeptiert    | Testbarkeit, Austauschbarkeit der Adapter              |
-| ADR-003 | Gradle Multi-Module                | Akzeptiert    | Modulare Builds, unabhängige Versionierung             |
-| ADR-004 | JDBC statt R2DBC                   | Akzeptiert    | Breitere Treiberunterstützung, Streaming via ResultSet |
-| ADR-005 | Kotlin Coroutines statt Threads    | Akzeptiert    | Strukturierte Concurrency, leichtgewichtig             |
-| ADR-006 | Jackson für Serialisierung         | Akzeptiert    | YAML + JSON Support, bewährt, performant               |
-| ADR-007 | SPI für Driver-Plugin-System       | Akzeptiert    | Standard-Java-Mechanismus, kein Framework nötig        |
-| ADR-008 | GraalVM Native Image               | Vorgeschlagen | Single-Binary, schneller Start, höherer Build-Aufwand  |
-| ADR-009 | Testcontainers für DB-Tests        | Akzeptiert    | Echte Datenbanken im Test, reproduzierbar              |
-| ADR-010 | YAML als Schema-Definitionsformat  | Akzeptiert    | Menschenlesbar, Git-freundlich, kommentierbar          |
+| #   | Entscheidung                       | Status        | Begründung                                             |
+| --- | ---------------------------------- | ------------- | ------------------------------------------------------ |
+| 1   | Kotlin als Implementierungssprache | Akzeptiert    | JDBC-Ökosystem, Null-Safety, Coroutines                |
+| 2   | Hexagonale Architektur             | Akzeptiert    | Testbarkeit, Austauschbarkeit der Adapter              |
+| 3   | Gradle Multi-Module                | Akzeptiert    | Modulare Builds, unabhängige Versionierung             |
+| 4   | JDBC statt R2DBC                   | Akzeptiert    | Breitere Treiberunterstützung, Streaming via ResultSet |
+| 5   | Kotlin Coroutines statt Threads    | Akzeptiert    | Strukturierte Concurrency, leichtgewichtig             |
+| 6   | Jackson für Serialisierung         | Akzeptiert    | YAML + JSON Support, bewährt, performant               |
+| 7   | SPI für Driver-Plugin-System       | Akzeptiert    | Standard-Java-Mechanismus, kein Framework nötig        |
+| 8   | GraalVM Native Image               | Vorgeschlagen | Single-Binary, schneller Start, höherer Build-Aufwand  |
+| 9   | Testcontainers für DB-Tests        | Akzeptiert    | Echte Datenbanken im Test, reproduzierbar              |
+| 10  | YAML als Schema-Definitionsformat  | Akzeptiert    | Menschenlesbar, Git-freundlich, kommentierbar          |
 
 ---
 

@@ -1,6 +1,7 @@
 # Spec-Hygiene: Spec→ADR-Abwärts-Verweise + Gate-Mechanisierung
 
-> **Status:** Sammlung/Tracker (2026-06-28)
+> **Status:** Bestands-Schuld **behoben** (2026-06-28); offen nur noch die
+> bewusst zurückgestellte `.d-check.yml`-Härtung.
 > **Trigger:** Beim Milestone-Hygiene-Slice
 > ([`../done/spec-milestone-hygiene-slice.md`](../done/spec-milestone-hygiene-slice.md))
 > bekräftigte der Maintainer das Ziel **„Specs verweisen NIE auf ADRs"**. Dabei
@@ -17,13 +18,16 @@
 ADRs. Die *eine* erlaubte Richtung ist **ADR → Spec** (s. ADR 0023/0024). „Andere
 Docs machen es auch" ist **kein** Argument (Ist-Stand, kein Prinzip).
 
-## Befunde (Bestands-Schuld)
+## Befunde (Bestands-Schuld) — ✅ behoben 2026-06-28
 
-| Stelle | Form | Empfehlung |
+| Stelle | Form | Fix |
 | --- | --- | --- |
-| `spec/cli-spec.md:302` | bare Inline-Code-Pfad `docs/adr/0003-cross-dialect-sequencing.md` als „die zugehörige ADR" | Verweis streichen — die normative Code-Mapping-Aussage steht ohnehin da; Begründung lebt im ADR (ADR→Spec). |
-| `spec/ledger.md` | Textnennungen „ADR 0020"/„ADR 0011" als Code-Provenienz (Warn-/Fehlercodes) | **Heikel** — der Ledger ist ein Code-Registry; die ADR-Nennung ist Provenienz, kein Anforderungs-Zeiger. Entscheiden, ob Registry-Provenienz als Ausnahme gilt (SDP-Regel 5) oder die ADR-Begründung in den Ledger inline wandert. |
-| `spec/architecture.md` (Z. 1286–1295) | informelle „ADR-001..010"-Tabelle (abweichend von `docs/adr/` nummeriert) | Eigener Fall: entweder als selbsttragende Architektur-Entscheidungs-*Zusammenfassung* belassen (keine Links auf `docs/adr/`) oder ganz entfernen (Entscheidungen leben in `docs/adr/`). |
+| `spec/cli-spec.md:302` | bare Inline-Code-Pfad zu ADR 0003 als „die zugehörige ADR" | ✅ Verweis gestrichen — die normative Mapping-Aussage steht ohnehin da. |
+| `spec/ledger.md` (E061-E065, W129-W131) | „(ADR 0020)" inline an Code-Zeilen | ✅ Citation gestrichen; Code-Semantik bleibt (ADR 0020 referenziert den Ledger, nicht umgekehrt — ADR→Spec). |
+| `spec/architecture.md` §7 | informelle „ADR-001..010"-Tabelle (abweichend von `docs/adr/`) | ✅ **Reframe statt Löschen** (§11.2-Lektion): Heading „ADR-Übersicht" → „Architektur-Grundsatzentscheidungen", Zellen `ADR-00N` → `N`. Die 10 Grundsatzentscheidungen bleiben erhalten, die ADR-Pretense ist raus. |
+| `spec/ddl-generation-rules.md:394, 610` | „Diff-Migrationen (Plan-2 §F.5/§E.3)" Spec→**Plan**-Refs | ✅ Plan-Section-Citation gestrichen (Re-Scan-Fund, war nicht in der Erstliste). |
+
+Re-Scan-Beleg: `grep -rnE 'docs/adr|ADR[ -]?[0-9]{3,4}|docs/planning|Plan-[0-9]' spec/` liefert leer; `make docs-check` grün.
 
 ## Gate-Mechanisierung (`.d-check.yml`) — **bewusst zurückgestellt**
 
@@ -38,8 +42,8 @@ Lücke der heutigen `matrix`: sie verbietet `spec→adr` und `spec→plan`, aber
   ist `matrix`-Sache, keine Link-Pflicht).
 - Prüfen, ob d-check Richtungs-Erkennung über bare Pfade/Text unterstützt
   (Config gibt es nicht her — ggf. Tool-Feature oder Review-Sache).
-- Reihenfolge: **erst** die drei Befunde fixen, **dann** die Regel schärfen
-  (sonst bricht das Gate an der Bestands-Schuld).
+- Reihenfolge: die vier Befunde sind **behoben** (2026-06-28); die Regel kann nun
+  geschärft werden, ohne dass das Gate an Bestands-Schuld bricht.
 
 ## Abgrenzung
 

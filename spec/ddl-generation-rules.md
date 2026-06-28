@@ -391,7 +391,7 @@ CONSTRAINT `fk_orders_customer_id` FOREIGN KEY (`customer_id`)
 > in die DDL-Ausgabe interpoliert. Der Wert stammt aus der Schema-YAML-Datei,
 > die vom Schema-Autor kontrolliert wird. Keine Sanitization findet statt.
 >
-> **Diff-Migrationen (Plan-2 §F.5)**: `CHECK`- und `EXCLUDE`-Constraints
+> **Diff-Migrationen**: `CHECK`- und `EXCLUDE`-Constraints
 > werden im Diff-Pfad nur konservativ per SQL-Text verglichen. Der Vergleich
 > normalisiert Zeilenenden auf LF und ignoriert umgebenden Whitespace, fuehrt
 > aber keine semantische SQL-Kanonisierung durch. Unveraenderte Constraints
@@ -607,7 +607,7 @@ Emulation eingeschaltet:
   modifiziert) oder W124 (User-BEFORE-INSERT-Trigger maskiert das
   Sequence-Trigger-Paar)
 
-> **Diff-Migrationen (Plan-2 §E.3)**: PostgreSQL rendert im
+> **Diff-Migrationen**: PostgreSQL rendert im
 > diffbasierten Migrationspfad deklarative `CREATE SEQUENCE`,
 > `ALTER SEQUENCE` und `DROP SEQUENCE`-Operationen fuer die neutralen
 > Attribute `start`, `increment`, `minValue`, `maxValue`, `cycle` und

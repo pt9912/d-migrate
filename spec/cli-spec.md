@@ -298,8 +298,7 @@ String-codierte Blocker-Diagnostiken aus dem Sequence-Render-Pfad
 §4.6 um Codes, die spezifisch für den Cross-Dialect-Transfer von
 Sequenzen sind. Alle Codes mappen via `PlannerBlockerClassifier` auf
 genau ein `MigrationBlockedReason`; das Mapping ist Teil des aktuellen
-Sequence-Migrationsvertrags und der zugehörigen ADR
-`docs/adr/0003-cross-dialect-sequencing.md`.
+Sequence-Migrationsvertrags.
 
 | Code | Reason | Emittiert in | Bedeutung |
 |---|---|---|---|
