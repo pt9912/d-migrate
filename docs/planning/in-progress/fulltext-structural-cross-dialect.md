@@ -1,13 +1,28 @@
 # Strukturelle Cross-Dialect-Volltext-Übersetzung (FTS5 / FULLTEXT)
 
-> **Status:** In Progress (2026-06-29). **P0+P1+P2 erledigt** (P0: Degradierungs-Note W132;
-> P1: ADR 0025 accepted + Modell `IndexType.FULLTEXT` + `textSearchConfig`; P2: PG-Reverse
-> synthetisiert den `FULLTEXT`-Index aus dem `tsvector_update_trigger`-Body, PG-Generate
-> expandiert ihn zurück zu GiST, Fingerprint-v6, live-grün); P3–P5 offen.
-> **Nächster Schritt (P3 — MySQL-Generate):** `fulltext`-Spalte → `TEXT`-Spalte(n) +
-> `FULLTEXT`-Index über die Quelltext-Spalten (Modell trägt sie jetzt). DoD in Abschnitt 5/P3
-> (live MySQL: `FULLTEXT`-Index in `information_schema`, `MATCH … AGAINST` liefert Treffer).
-> Ist-Stand-Pointer in Abschnitt 2.
+> **Status:** In Progress. **P0+P1+P2 erledigt & review-gehärtet**; P3–P5 offen.
+>
+> **STAND 2026-06-29 (Feierabend — morgen hier weiter):**
+> - **P0/P1/P2 fertig**, P2 über **5 Review-Runden** gehärtet. Common-Case (Pagila reverse→PG,
+>   single tsvector) seit Runde 2 stabil; Runden 3–5 betrafen v. a. den seltenen Edge
+>   *PG-FULLTEXT ohne auflösbare tsvector-Spalte* (Cross-Dialect-into-PG / hand-authored).
+>   Review-Loop bewusst **beendet** (konvergiert auf eigene Korrekturen, abnehmende Erträge).
+> - **Alle Gates grün:** Full-Repo `make docker-build`-`check`, `make sample-db-smoke` (PG→PG
+>   `compare == baseline`, 0 Diffs/Notes), `make docs-check` (0 Befunde).
+> - **Commits liegen LOKAL auf `develop`, NICHT gepusht** (8 Stück): `26e7d5e0` (P2 Feature),
+>   `880e6522`+`c4846667`+`403def3a`+`3cec9a53`+`37703822`+`d84305f5`+`1b065eef`
+>   (Rollback-Fix + Review-Runden 1–5). Morgen ggf. pushen.
+> - **Sample-DB-Postgres-Container läuft evtl. noch** (`make sample-db-down` zum Abbau).
+>
+> **NÄCHSTER SCHRITT = P3 (MySQL-Generate, live).** Das Modell trägt bereits alles Nötige:
+> `IndexType.FULLTEXT` + Quelltext-Spalten (`columns`) + `fullTextVectorColumn` + `textSearchConfig`
+> + `fullTextAccessMethod` (Generate-only-Hinweise, aus Vergleich ausgeschlossen). MySQL-**Generate**
+> **und** -**Diff** emittieren bereits natives `CREATE FULLTEXT INDEX` (P2-Nebenarbeit). P3 = die
+> **Live-Verifikation** + DoD (Abschnitt 5/P3): live MySQL, `FULLTEXT`-Index in `information_schema`,
+> `MATCH … AGAINST` liefert Treffer; Cross-Dialect-Smoke (`make sample-db-cross-smoke-pg2my`?) grün.
+> Vor P3-Bau: prüfen, was MySQL-seitig schon steht (P2 hat Generate+Diff angelegt) vs. was die
+> Live-DoD noch braucht. Ist-Stand-Pointer in Abschnitt 2, DoD in Abschnitt 5/P3.
+>
 > Phasen + Akzeptanzkriterien ausgearbeitet
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
 > **Herkunft:** Carve-Out aus [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)
