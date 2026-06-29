@@ -95,12 +95,23 @@ internal object PostgresFullTextIndexSynthesis {
 
     private fun enrichTable(table: TableDefinition, parsed: List<ParsedTrigger>): TableDefinition {
         // Only triggers whose named column really is a tsvector (FullText) column.
+        // `associateBy` keys on the tsvector column: a coherent schema has exactly one
+        // populating trigger per tsvector column (commonly a single multi-event
+        // `BEFORE INSERT OR UPDATE` trigger). Two *distinct* triggers writing the same
+        // tsvector column with diverging source columns is an incoherent schema (the vector
+        // would be populated differently per event); last-one-wins is then deterministic and
+        // as defensible as any other pick — we do not attempt to merge contradictory sources.
         val byVectorColumn = parsed
             .filter { table.columns[it.tsvectorColumn]?.type is NeutralType.FullText }
             .associateBy { it.tsvectorColumn }
         if (byVectorColumn.isEmpty()) return table
         var replaced = false
         val indices = table.indices.map { idx ->
+            // `singleOrNull`: only a single-column GiST/GIN over the tsvector column maps to a
+            // FULLTEXT index (the idiomatic fulltext index shape). A multi-column index that
+            // merely includes the tsvector column does not cleanly reduce to the FULLTEXT
+            // abstraction, so it is left as a raw GiST/GIN index — which degrades with a note
+            // on cross-dialect generate rather than being silently mis-converted.
             val p = idx.takeIf { it.type in VECTOR_INDEX_TYPES }
                 ?.columnNames?.singleOrNull()
                 ?.let { byVectorColumn[it] }

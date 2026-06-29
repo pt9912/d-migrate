@@ -151,6 +151,8 @@ internal class SqliteTableDdlSupport(
         // ADR 0025: degrade a FULLTEXT index (no SQLite FTS5 yet, slice P4) BEFORE the geometry
         // check — its source columns are text, so geometry routing must not see it. Emit the
         // dedicated W132 (fulltext) note via the shared text source, not the generic W102.
+        // (A Pagila-style table emits two independent, correct W132s on generate: one for the
+        // tsvector column degrading to TEXT, one here for the index — different objectNames.)
         if (index.type == IndexType.FULLTEXT) {
             return DdlStatement(
                 SqliteFullTextDegradation.skipComment(quoteIdentifier(indexName)),

@@ -180,9 +180,13 @@ class SchemaRollbackRunner(
         // strings are not comparable, so surface a precise "regenerate the artefact" error
         // rather than a misleading TARGET_STATE_MISMATCH on an otherwise-correct target.
         if (parsed.fingerprintAlgorithm != MigrationFingerprint.ALGORITHM) {
+            // A legitimately-built artefact always carries a non-blank algorithm; render a
+            // blank one (only reachable via a tampered/hand-edited header) as `(none)` rather
+            // than empty backticks.
+            val artefactAlgorithm = parsed.fingerprintAlgorithm.ifBlank { "(none)" }
             userFacingPrintError(
                 "ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH: artefact was produced with fingerprint " +
-                    "algorithm `${parsed.fingerprintAlgorithm}`, but this build computes " +
+                    "algorithm `$artefactAlgorithm`, but this build computes " +
                     "`${MigrationFingerprint.ALGORITHM}`. The stored target fingerprint is not comparable " +
                     "across algorithm versions; regenerate the rollback artefact with this version of the tool.",
                 request.target,
