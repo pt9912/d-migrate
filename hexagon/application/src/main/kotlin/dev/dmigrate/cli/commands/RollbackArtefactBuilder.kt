@@ -68,6 +68,15 @@ internal object RollbackArtefactBuilder {
         val partialRollback: Boolean = false,
         val skippedOperationIds: Set<String> = emptySet(),
         val emitPartialRollbackFields: Boolean = true,
+        /**
+         * Algorithm that produced [currentFingerprint]/[desiredFingerprint]/
+         * [postUpFingerprint]. Recorded so `schema rollback` can reject an artefact
+         * whose fingerprints are not comparable to this build's (ROLLBACK_FINGERPRINT_
+         * ALGORITHM_MISMATCH). Defaults to the current [FINGERPRINT_ALGORITHM] — callers
+         * compute the fingerprints with the live `MigrationFingerprint`, so the default is
+         * always correct in production; the override exists for cross-version tests.
+         */
+        val fingerprintAlgorithm: String = FINGERPRINT_ALGORITHM,
     )
 
     fun build(input: Input): String {
@@ -160,7 +169,7 @@ internal object RollbackArtefactBuilder {
         fields += "currentFingerprint" to jsonString(input.currentFingerprint)
         fields += "desiredFingerprint" to jsonString(input.desiredFingerprint)
         fields += "dialect" to jsonString(input.dialect.name)
-        fields += "fingerprintAlgorithm" to jsonString(FINGERPRINT_ALGORITHM)
+        fields += "fingerprintAlgorithm" to jsonString(input.fingerprintAlgorithm)
         fields += "format" to jsonString(FORMAT)
         fields += "formatVersion" to jsonString(FORMAT_VERSION)
         fields += "operationIds" to jsonArray(input.operationIds.sorted().map { jsonString(it) })
@@ -202,7 +211,7 @@ internal object RollbackArtefactBuilder {
         fields += "currentFingerprint" to jsonString(input.currentFingerprint)
         fields += "desiredFingerprint" to jsonString(input.desiredFingerprint)
         fields += "dialect" to jsonString(input.dialect.name)
-        fields += "fingerprintAlgorithm" to jsonString(FINGERPRINT_ALGORITHM)
+        fields += "fingerprintAlgorithm" to jsonString(input.fingerprintAlgorithm)
         fields += "format" to jsonString(FORMAT)
         fields += "formatVersion" to jsonString(FORMAT_VERSION_V1)
         fields += "operationIds" to jsonArray(input.operationIds.sorted().map { jsonString(it) })

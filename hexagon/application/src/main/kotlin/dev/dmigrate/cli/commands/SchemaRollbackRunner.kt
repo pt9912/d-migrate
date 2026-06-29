@@ -19,6 +19,9 @@ import java.nio.file.Path
  * 2. With `--execute`:
  *    - Verify target dialect matches the artefact's `dialect` field
  *      (`TARGET_DIALECT_MISMATCH` → Exit 8).
+ *    - Reject an artefact whose `fingerprintAlgorithm` differs from
+ *      this build's; the stored fingerprint is not comparable
+ *      (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` → Exit 8).
  *    - Verify target current state matches `postUpFingerprint` (or
  *      one of `allowedPostUpFingerprints` for recovery artefacts)
  *      (`TARGET_STATE_MISMATCH` → Exit 8).
@@ -171,6 +174,21 @@ class SchemaRollbackRunner(
         // SchemaMigrateRunner.runPostCompare's normalizer call, which only
         // exists to surface malformed-marker errors from any *file*-side
         // operand the loader might return.
+        // Guard the stored fingerprint against an algorithm-version bump: the artefact's
+        // postUpFingerprint was computed with `parsed.fingerprintAlgorithm`, but this build
+        // recomputes the target with MigrationFingerprint.ALGORITHM. When they differ the two
+        // strings are not comparable, so surface a precise "regenerate the artefact" error
+        // rather than a misleading TARGET_STATE_MISMATCH on an otherwise-correct target.
+        if (parsed.fingerprintAlgorithm != MigrationFingerprint.ALGORITHM) {
+            userFacingPrintError(
+                "ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH: artefact was produced with fingerprint " +
+                    "algorithm `${parsed.fingerprintAlgorithm}`, but this build computes " +
+                    "`${MigrationFingerprint.ALGORITHM}`. The stored target fingerprint is not comparable " +
+                    "across algorithm versions; regenerate the rollback artefact with this version of the tool.",
+                request.target,
+            )
+            return 8
+        }
         val targetFingerprint = fingerprint(targetResolved.schema)
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()
