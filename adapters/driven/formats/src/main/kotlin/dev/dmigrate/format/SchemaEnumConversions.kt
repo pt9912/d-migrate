@@ -23,6 +23,18 @@ internal fun String.toIndexType(): IndexType = when (lowercase()) {
     else -> throw IllegalArgumentException("Unknown index type: $this")
 }
 
+/**
+ * ADR 0025: parse a fulltext access method — only `gin`/`gist` are legal (per schema.json).
+ * Any other value (a typo, or an unsupported method) maps to null rather than throwing, so a
+ * malformed `full_text_access_method` does not abort the whole parse; the generate path then
+ * falls back to the GiST default. `schema validate` still reports the enum violation.
+ */
+internal fun String.toFullTextAccessMethod(): IndexType? = when (lowercase()) {
+    "gin" -> IndexType.GIN
+    "gist" -> IndexType.GIST
+    else -> null
+}
+
 internal fun String.toIndexSortDirection(): IndexSortDirection = when (lowercase()) {
     "asc" -> IndexSortDirection.ASC
     "desc" -> IndexSortDirection.DESC

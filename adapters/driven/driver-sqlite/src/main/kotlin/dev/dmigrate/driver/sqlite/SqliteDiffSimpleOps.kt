@@ -190,6 +190,13 @@ internal object SqliteDiffSimpleOps {
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // ADR 0025: the UP of an AddIndex(FULLTEXT) only emitted a skip marker — no index
+            // was materialised — so the DOWN must NOT `DROP INDEX` a non-existent index (which
+            // would fail with `no such index`). Emit the same no-op skip marker instead.
+            if (op.index.type == IndexType.FULLTEXT) {
+                ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
+                return
+            }
             if (ctx.indexTouchesGeometry(table, op.index)) {
                 SqliteSpatialDiffOps.disableSpatialIndex(op, ctx, table, op.index)
                 return

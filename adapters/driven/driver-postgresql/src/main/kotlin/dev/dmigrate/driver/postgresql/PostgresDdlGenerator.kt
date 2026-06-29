@@ -349,8 +349,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         return generateIndex(
             tableName,
             index.copy(
-                // ADR 0025: restore the recorded access method (GIN/GiST); GiST when absent.
-                type = index.fullTextAccessMethod ?: IndexType.GIST,
+                // ADR 0025: restore the recorded access method, clamped to GIN/GiST.
+                type = pgFullTextAccessMethod(index),
                 columns = listOf(IndexColumn(tsvectorColumn)),
                 textSearchConfig = null,
                 fullTextVectorColumn = null,

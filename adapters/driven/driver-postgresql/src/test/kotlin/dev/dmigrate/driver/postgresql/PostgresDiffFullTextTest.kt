@@ -11,7 +11,6 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
-import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -70,11 +69,13 @@ class PostgresDiffFullTextTest : FunSpec({
         r.statements.single().sql shouldContain "USING GIN (\"fulltext\")"
     }
 
-    test("AddIndex FULLTEXT blocks when no tsvector column is recorded or derivable") {
+    test("AddIndex FULLTEXT without a resolvable tsvector column warns and skips (no block, no invalid SQL)") {
+        // Consistent with the generate path (W133) and CreateTable: a degradation, not a hard
+        // block — createIndexSql emits only a no-op comment, so there is no invalid SQL to guard.
         val r = addIndex(ftIndex.copy(fullTextVectorColumn = null), withVectorColumn = false)
-        r.isBlocked shouldBe true
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.isBlocked shouldBe false
         r.diagnostics.any { it.code == "FULLTEXT_VECTOR_UNKNOWN" } shouldBe true
+        r.statements.none { it.sql.contains("USING") } shouldBe true
     }
 
     test("CreateTable with an unresolvable FULLTEXT index warns (never silently drops it)") {

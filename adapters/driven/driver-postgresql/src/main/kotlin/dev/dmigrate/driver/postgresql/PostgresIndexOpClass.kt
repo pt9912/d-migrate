@@ -19,6 +19,17 @@ internal fun pgAccessMethod(type: IndexType): String =
     if (type == IndexType.SPATIAL) "GIST" else type.name
 
 /**
+ * ADR 0025: the PostgreSQL access method a [IndexType.FULLTEXT] index expands to — the
+ * recorded [IndexDefinition.fullTextAccessMethod] **clamped** to GIN/GiST (GiST by default).
+ * A model carrying any other value (e.g. a hand-authored `full_text_access_method: btree`
+ * that bypassed the schema.json enum, or a missing value) falls back to GiST, the safe
+ * tsvector default — never emitting an invalid `USING <method>` over a tsvector column.
+ * Single source of truth shared by [PostgresDdlGenerator] and [PostgresDiffSqlBuilders].
+ */
+internal fun pgFullTextAccessMethod(index: IndexDefinition): IndexType =
+    if (index.fullTextAccessMethod == IndexType.GIN) IndexType.GIN else IndexType.GIST
+
+/**
  * VA3: ob [type] eine in PostGIS gültige *räumliche* Zugriffsmethode für eine
  * Geometriespalte ist. GiST (Default), SP-GiST und BRIN sind die unterstützten
  * räumlichen Methoden; der neutrale [IndexType.SPATIAL] wird auf GiST abgebildet.

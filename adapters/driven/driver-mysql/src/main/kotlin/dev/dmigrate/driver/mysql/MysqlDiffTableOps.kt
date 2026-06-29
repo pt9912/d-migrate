@@ -282,5 +282,9 @@ internal object MysqlDiffTableOps {
     }
 
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
-        columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
+        // ADR 0025: a FULLTEXT index lists its source TEXT columns; never treat it as spatial
+        // even if a source column is geometry-typed (createIndexSql has the native FULLTEXT
+        // branch). Mirrors MysqlDiffRenderContext.indexTouchesGeometry.
+        type != dev.dmigrate.core.model.IndexType.FULLTEXT &&
+            columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
 }

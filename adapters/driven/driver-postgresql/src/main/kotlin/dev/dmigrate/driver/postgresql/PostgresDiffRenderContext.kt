@@ -307,8 +307,13 @@ internal class PostgresDiffRenderContext(
      * neither is available, in which case the index cannot be reconstructed.
      */
     fun fullTextVectorColumn(table: String, index: IndexDefinition): String? {
-        index.fullTextVectorColumn?.let { return it }
-        return columnsFor(table).entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
+        val columns = columnsFor(table)
+        // Mirror PostgresDdlGenerator.expandFullTextIndex: only accept a recorded vector column
+        // that really is a tsvector (FullText) column — a stale/hand-set non-tsvector value
+        // must fall back (or yield null → FULLTEXT_VECTOR_UNKNOWN) instead of emitting an
+        // invalid `USING gist (text_col)` that PostgreSQL rejects.
+        index.fullTextVectorColumn?.takeIf { columns[it]?.type is NeutralType.FullText }?.let { return it }
+        return columns.entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
     }
 
     /**

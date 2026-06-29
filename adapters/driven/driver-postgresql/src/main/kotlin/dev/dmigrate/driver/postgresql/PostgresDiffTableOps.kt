@@ -55,12 +55,11 @@ internal object PostgresDiffTableOps {
         }
         ctx.emit(op, text)
         for (idx in op.table.indices) {
-            if (idx.type == IndexType.FULLTEXT) {
-                // ADR 0025: resolve the backing tsvector column so createIndexSql expands the
-                // index over the right column. When it can't be resolved, surface a warning
-                // (not a silent comment) — the AddIndex path blocks the equivalent case, the
-                // generate path warns W133; a brand-new table keeps being created but its
-                // unrenderable fulltext index is skipped with a diagnostic, never silently.
+            // ADR 0025: resolve a FULLTEXT index's backing tsvector column so createIndexSql
+            // expands it over the right column. When it can't be resolved, warn (not a silent
+            // comment) and skip it — consistent with the AddIndex path and the generate path
+            // (W133); the table is still created. Single emit for both index kinds.
+            val index = if (idx.type == IndexType.FULLTEXT) {
                 val vec = ctx.fullTextVectorColumn(tableName, idx)
                 if (vec == null) {
                     ctx.warning(
@@ -71,10 +70,11 @@ internal object PostgresDiffTableOps {
                         code = "FULLTEXT_VECTOR_UNKNOWN",
                     )
                 }
-                ctx.emit(op, ctx.sql.createIndexSql(tableName, idx.copy(fullTextVectorColumn = vec)))
+                idx.copy(fullTextVectorColumn = vec)
             } else {
-                ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+                idx
             }
+            ctx.emit(op, ctx.sql.createIndexSql(tableName, index))
         }
     }
 

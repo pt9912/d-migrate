@@ -108,7 +108,10 @@ internal class TableComparator {
     /** Partitions as a set, each with its child-local indices in canonical order. */
     private fun canonicalPartitions(config: PartitionConfig): Set<PartitionDefinition> =
         config.partitions.map { partition ->
-            partition.copy(indices = partition.indices.sortedBy { indexKey(it) })
+            // ADR 0025: project child-local indices too (drop the generate-only FULLTEXT
+            // hints) so a partition's FULLTEXT index does not phantom-diff authored-vs-reversed
+            // — same exclusion the table-level compareIndices applies.
+            partition.copy(indices = partition.indices.map { projectIndex(it) }.sortedBy { indexKey(it) })
         }.toSet()
 
     // ── Columns ───────────────────────────────────
@@ -307,9 +310,17 @@ internal class TableComparator {
      * with which access method) — they do not change the fulltext *capability*. Null them out
      * before equality so an authored index (hint absent) and the reversed live index (hint
      * set) are not reported as changed, mirroring [projectColumn] for non-semantic fields.
+     * Guarded on the index type (only FULLTEXT carries the hints) so the field list lives in
+     * one place — the `copy` — and a future hint can't slip past a stale guard condition.
+     *
+     * Contract (keep in sync): the index identity is shared by THREE projections — this
+     * denylist (excludes the generate-only hints), `MigrationFingerprint.appendIndex` and
+     * `CanonicalPayload.index` (allowlists of the semantic fields). A new *semantic* index
+     * field must be added to both allowlists; a new generate-only *hint* must be added to the
+     * `copy` here. `SchemaComparatorFullTextHintsTest` pins the hint exclusion across all three.
      */
     private fun projectIndex(index: IndexDefinition): IndexDefinition =
-        if (index.fullTextVectorColumn == null && index.fullTextAccessMethod == null) index
+        if (index.type != IndexType.FULLTEXT) index
         else index.copy(fullTextVectorColumn = null, fullTextAccessMethod = null)
 
     private fun indexKey(index: IndexDefinition): String =

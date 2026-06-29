@@ -2,6 +2,7 @@ package dev.dmigrate.format.yaml
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.core.validation.SchemaValidator
+import dev.dmigrate.format.toFullTextAccessMethod
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldHaveSize
@@ -162,6 +163,13 @@ class YamlSchemaCodecTest : FunSpec({
         yaml shouldContain "full_text_vector_column"
         yaml shouldContain "full_text_access_method: gin"
         codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
+    }
+
+    test("an out-of-domain full_text_access_method maps to null instead of throwing (no parse crash)") {
+        "ginn".toFullTextAccessMethod() shouldBe null
+        "btree".toFullTextAccessMethod() shouldBe null
+        "GiN".toFullTextAccessMethod() shouldBe IndexType.GIN
+        "gist".toFullTextAccessMethod() shouldBe IndexType.GIST
     }
 
     test("parse all-types schema covers pre-0.5.5 neutral types (geometry tested separately in spatial.yaml)") {

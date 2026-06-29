@@ -175,6 +175,30 @@ class PostgresDdlGeneratorIndexViewTest : FunSpec({
         result.notes.any { it.code == "W123" } shouldBe false
     }
 
+    test("FULLTEXT index with an out-of-domain access method clamps to GiST (never invalid USING)") {
+        // A hand-authored full_text_access_method that bypassed the schema.json gin|gist enum
+        // (here BTREE) must not produce `USING BTREE (tsvector)` — clamp to the safe GiST default.
+        val s = schema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.Text()), "fts" to col(NeutralType.FullText)),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "docs_fts",
+                            columns = listOf(IndexColumn("body")),
+                            type = IndexType.FULLTEXT,
+                            fullTextVectorColumn = "fts",
+                            fullTextAccessMethod = IndexType.BTREE,
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldContain "USING GIST (\"fts\")"
+        result.render() shouldNotContain "USING BTREE"
+    }
+
     test("FULLTEXT index without a tsvector column is not expandable on PostgreSQL — W133") {
         val s = schema(
             tables = mapOf(

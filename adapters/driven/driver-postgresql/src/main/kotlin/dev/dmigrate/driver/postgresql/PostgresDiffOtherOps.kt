@@ -164,7 +164,7 @@ internal object PostgresDiffOtherOps {
         }
         if (!guardSpatialIndex(op, op.index, ctx, table)) return
         if (!guardIndexOpClass(op, op.index, ctx, table)) return
-        val index = resolveFullTextIndex(op, op.index, ctx, table) ?: return
+        val index = resolveFullTextIndex(op, op.index, ctx, table)
         // CREATE INDEX (non-CONCURRENTLY): SHARE lock — writes block,
         // reads proceed. Plan-2 §A.1.
         ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
@@ -172,29 +172,31 @@ internal object PostgresDiffOtherOps {
 
     /**
      * ADR 0025: ensure a FULLTEXT index carries its backing `tsvector` column before it
-     * reaches [PostgresDiffSqlBuilders.createIndexSql] (which expands it to a GiST over
-     * that column). Resolves the column from the index or the table's sole tsvector
-     * column; blocks with `FULLTEXT_VECTOR_UNKNOWN` when neither is available rather than
-     * emitting an index that cannot be built. Non-FULLTEXT indices pass through unchanged.
+     * reaches [PostgresDiffSqlBuilders.createIndexSql] (which expands it to a GiST/GIN over
+     * that column). Resolves the column from the index or the table's sole tsvector column.
+     * When neither is available the index cannot be reconstructed: warn with
+     * `FULLTEXT_VECTOR_UNKNOWN` and leave the index without a vector column, so createIndexSql
+     * emits a no-op skip marker — a degradation, not a hard block (no invalid SQL is produced),
+     * consistent with the generate path (W133) and the CreateTable path. Non-FULLTEXT indices
+     * pass through unchanged.
      */
     private fun resolveFullTextIndex(
         op: DiffOperation,
         index: IndexDefinition,
         ctx: PostgresDiffRenderContext,
         table: String,
-    ): IndexDefinition? {
+    ): IndexDefinition {
         if (index.type != IndexType.FULLTEXT) return index
         val vec = ctx.fullTextVectorColumn(table, index)
         if (vec == null) {
-            ctx.skip(
+            ctx.warning(
                 op,
-                "Operation ${op.id} creates a FULLTEXT index on `$table`, but no backing tsvector " +
-                    "column is recorded on the index or derivable from a single tsvector column. " +
-                    "PostgreSQL builds a GiST index over the tsvector column.",
+                "FULLTEXT index '${ctx.sql.effectiveIndexName(table, index)}' on `$table` has no backing " +
+                    "tsvector column recorded or derivable and was skipped; PostgreSQL builds the index " +
+                    "over a tsvector column.",
                 code = "FULLTEXT_VECTOR_UNKNOWN",
             )
-            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-            return null
+            return index
         }
         return index.copy(fullTextVectorColumn = vec)
     }
@@ -204,7 +206,7 @@ internal object PostgresDiffOtherOps {
         if (ctx.direction == PostgresRenderDirection.DOWN) {
             if (!guardSpatialIndex(op, op.index, ctx, table)) return
             if (!guardIndexOpClass(op, op.index, ctx, table)) return
-            val index = resolveFullTextIndex(op, op.index, ctx, table) ?: return
+            val index = resolveFullTextIndex(op, op.index, ctx, table)
             ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
             return
         }

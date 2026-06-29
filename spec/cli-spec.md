@@ -1188,7 +1188,7 @@ Exit-Codes:
 | `4` | Verbindungsfehler |
 | `5` | DDL-Ausführungsfehler nach Beginn von `--execute` |
 | `7` | Artefakt ungültig (Hash, Format, Pflichtfelder, fehlender Metadatenblock) |
-| `8` | Drift-, Dialekt- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, fehlendes `--allow-destructive`) |
+| `8` | Drift-, Dialekt-, Algorithmus- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`, fehlendes `--allow-destructive`) |
 
 ### 6.2 data
 

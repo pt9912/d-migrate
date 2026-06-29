@@ -7,6 +7,9 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import io.kotest.core.spec.style.FunSpec
@@ -52,6 +55,28 @@ class SchemaComparatorFullTextHintsTest : FunSpec({
     test("CanonicalPayload.index is invariant to the hints but includes textSearchConfig") {
         CanonicalPayload.index(authored) shouldBe CanonicalPayload.index(reversed)
         CanonicalPayload.index(authored) shouldBe CanonicalPayload.index(authored.copy(textSearchConfig = "english"))
+    }
+
+    test("partition-local FULLTEXT indices also ignore the generate-only hints") {
+        fun partitioned(index: IndexDefinition) = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf(
+                "docs" to TableDefinition(
+                    columns = mapOf(
+                        "title" to ColumnDefinition(NeutralType.Text()),
+                        "fulltext" to ColumnDefinition(NeutralType.FullText),
+                    ),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("title"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "docs_p0", indices = listOf(index)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        comparator.compare(partitioned(authored), partitioned(reversed)).isEmpty() shouldBe true
     }
 
     test("a textSearchConfig difference IS still a change (it is semantic)") {

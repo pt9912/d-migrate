@@ -62,6 +62,18 @@ class SqliteFullTextDegradationTest : FunSpec({
         r.statements.joinToString("\n") { it.sql } shouldContain "skipped"
     }
 
+    test("AddIndex(FULLTEXT) DOWN does not DROP a non-existent index (rollback symmetry)") {
+        // UP only emits a skip marker (no index materialised), so DOWN must not `DROP INDEX`
+        // (which would fail `no such index`). It emits the same no-op skip marker.
+        val plan = DiffPlanner().plan(
+            SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to docsTable(null))),
+            SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to docsTable(ftIndex))),
+            SchemaDiff(tablesChanged = listOf(TableDiff(name = "docs", indicesAdded = listOf(ftIndex)))),
+        )
+        val down = SqliteDiffDdlGenerator().generateDown(plan, DdlGenerationOptions())
+        down.statements.none { it.sql.contains("DROP INDEX") } shouldBe true
+    }
+
     test("CreateTable carrying a FULLTEXT index does not emit a silent plain index (createIndexSql gap)") {
         // The fix lives in SqliteDiffSqlBuilders.createIndexSql so ALL callers — here the
         // CreateTable path — degrade, not just renderAddIndex.

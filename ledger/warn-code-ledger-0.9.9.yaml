@@ -79,7 +79,10 @@ entries:
     evidence_paths:
       - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
         path_type: production
-  # W132 — ADR 0015: cross-dialect fulltext column degraded to TEXT (no full-text vector type in MySQL/SQLite); the note points at the manual FULLTEXT/FTS5 path.
+  # W132 — ADR 0015/0025: cross-dialect fulltext degradation. Two related objects: (a) a
+  # fulltext column degraded to TEXT (no full-text vector type in MySQL/SQLite), and (b) on
+  # SQLite a FULLTEXT *index* skipped (no FTS5 virtual table yet, slice P4). Both point at the
+  # manual FULLTEXT/FTS5 path.
   - code: W132
     level: warning
     status: active
@@ -89,4 +92,6 @@ entries:
       - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlColumnConstraintHelper.kt"
         path_type: production
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextDegradation.kt"
         path_type: production
