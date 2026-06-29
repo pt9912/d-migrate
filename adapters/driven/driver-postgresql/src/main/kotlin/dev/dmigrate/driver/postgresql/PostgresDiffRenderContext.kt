@@ -10,7 +10,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
-import dev.dmigrate.core.model.referencesGeometryColumn
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
@@ -295,7 +295,7 @@ internal class PostgresDiffRenderContext(
 
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
         val columns = columnsFor(table)
-        return index.referencesGeometryColumn { columns[it]?.type }
+        return index.isSpatialGeometryIndex { columns[it]?.type }
     }
 
     /**
@@ -306,15 +306,12 @@ internal class PostgresDiffRenderContext(
      */
     fun fullTextVectorColumn(table: String, index: IndexDefinition): String? {
         val columns = columnsFor(table)
-        // Mirror PostgresDdlGenerator.expandFullTextIndex: accept a recorded vector column
-        // unless we can SEE it is not a tsvector — a stale/hand-set non-tsvector value must fall
-        // back. When the column is UNKNOWN (the render context's schema side is unavailable),
-        // trust the recorded value rather than dropping a valid index; the type check only
-        // rejects a positively-wrong column.
-        index.fullTextVectorColumn?.let { vec ->
-            val type = columns[vec]?.type
-            if (type == null || type is NeutralType.FullText) return vec
-        }
+        // Exactly mirror PostgresDdlGenerator.expandFullTextIndex: accept the recorded vector
+        // column only when it really is a tsvector (FullText) column; a stale/absent/typo'd or
+        // non-tsvector value falls back to the table's sole tsvector column (or null → block).
+        // A `null` type — column absent from a populated schema — must NOT be trusted, else the
+        // execute path would emit `USING gist (<ghost>)` that PostgreSQL rejects.
+        index.fullTextVectorColumn?.takeIf { columns[it]?.type is NeutralType.FullText }?.let { return it }
         return columns.entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
     }
 

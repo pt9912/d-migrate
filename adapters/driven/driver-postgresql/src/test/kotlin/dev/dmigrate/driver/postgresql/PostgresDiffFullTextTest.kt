@@ -94,5 +94,7 @@ class PostgresDiffFullTextTest : FunSpec({
         r.isBlocked shouldBe true
         r.diagnostics.any { it.code == "FULLTEXT_VECTOR_UNKNOWN" } shouldBe true
         r.statements.none { it.sql.contains("USING") } shouldBe true
+        // The block precedes the table emit (up-front resolution), so no CREATE TABLE leaks.
+        r.statements.none { it.sql.contains("CREATE TABLE") } shouldBe true
     }
 })

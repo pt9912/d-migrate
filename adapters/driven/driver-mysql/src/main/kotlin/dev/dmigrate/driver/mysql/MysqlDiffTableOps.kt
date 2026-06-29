@@ -6,7 +6,7 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.referencesGeometryColumn
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -284,5 +284,5 @@ internal object MysqlDiffTableOps {
 
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
         // ADR 0025: shared predicate (excludes FULLTEXT — createIndexSql has the native branch).
-        referencesGeometryColumn { table.columns[it]?.type }
+        isSpatialGeometryIndex { table.columns[it]?.type }
 }

@@ -2,7 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
-import dev.dmigrate.core.model.referencesGeometryColumn
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexType
@@ -314,7 +314,7 @@ internal class MysqlIndexPartitionDdlHelper(
         // ADR 0025: shared predicate — excludes FULLTEXT (lists its source TEXT columns; the
         // `when` below has the native CREATE FULLTEXT INDEX branch). One source of truth with
         // the diff-side geometry routers.
-        if (index.referencesGeometryColumn { columns[it]?.type }) {
+        if (index.isSpatialGeometryIndex { columns[it]?.type }) {
             return spatialIndexStatement(tableName, index, indexName)
         }
 

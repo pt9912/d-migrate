@@ -4,7 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.referencesGeometryColumn
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
@@ -224,7 +224,7 @@ internal object PostgresDiffTableOps {
         // column is geometry-typed would be flagged unsupported-spatial and block the whole
         // CreateTable instead of reaching the FULLTEXT expansion loop. (This was the missed 6th
         // copy of the geometry/FULLTEXT guard.)
-        referencesGeometryColumn { table.columns[it]?.type }
+        isSpatialGeometryIndex { table.columns[it]?.type }
 
     /**
      * F.5 Sub-Slice F: inline `CREATE TABLE` constraint loop emits

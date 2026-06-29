@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -70,11 +71,11 @@ internal object SqliteDiffSimpleOps {
             // erst per AddGeometryColumn entstehende Spalte zeigte). Der
             // SPATIALITE-Profil-/Extension-Guard ist hier bereits durch den
             // hasGeometryColumns-Block oben (guardSpatiaLite) garantiert, sonst wäre
-            // dieser Pfad nicht erreicht; daher reicht die reine Geometrie-Erkennung.
-            val geomCol = idx.columnNames.firstOrNull { name ->
-                op.table.columns[name]?.type is NeutralType.Geometry
-            }
-            if (geomCol != null) {
+            // dieser Pfad nicht erreicht. ADR 0025: das geteilte Prädikat schließt FULLTEXT aus
+            // (sonst würde ein FULLTEXT-Index über einer Geo-Quellspalte fälschlich als
+            // Spatial-Index emittiert statt via createIndexSql mit W132 degradiert).
+            if (idx.isSpatialGeometryIndex { op.table.columns[it]?.type }) {
+                val geomCol = idx.columnNames.first { op.table.columns[it]?.type is NeutralType.Geometry }
                 SqliteSpatialDiffOps.emitCreateSpatialIndex(op, ctx, tableName, geomCol)
             } else {
                 ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))

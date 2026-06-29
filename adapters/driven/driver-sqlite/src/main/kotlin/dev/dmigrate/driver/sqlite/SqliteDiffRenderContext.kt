@@ -8,7 +8,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
-import dev.dmigrate.core.model.referencesGeometryColumn
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
@@ -226,7 +226,7 @@ internal class SqliteDiffRenderContext(
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
         val schema = if (direction == SqliteRenderDirection.UP) desiredSchema else currentSchema
         val columns = schema?.tables?.get(table)?.columns.orEmpty()
-        return index.referencesGeometryColumn { columns[it]?.type }
+        return index.isSpatialGeometryIndex { columns[it]?.type }
     }
 
     /**

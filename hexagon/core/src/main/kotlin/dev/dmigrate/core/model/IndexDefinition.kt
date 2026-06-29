@@ -66,7 +66,7 @@ data class IndexDefinition(
  * unknown). Single predicate shared by every per-dialect generate + diff geometry router so
  * they cannot diverge (the FULLTEXT guard was previously hand-copied across ~6 sites).
  */
-fun IndexDefinition.referencesGeometryColumn(columnType: (String) -> NeutralType?): Boolean =
+fun IndexDefinition.isSpatialGeometryIndex(columnType: (String) -> NeutralType?): Boolean =
     type != IndexType.FULLTEXT && columnNames.any { columnType(it) is NeutralType.Geometry }
 
 enum class IndexType {
