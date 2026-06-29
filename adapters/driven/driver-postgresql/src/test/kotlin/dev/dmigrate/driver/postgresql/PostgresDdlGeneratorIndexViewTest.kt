@@ -99,6 +99,52 @@ class PostgresDdlGeneratorIndexViewTest : FunSpec({
         result.notes.any { it.code == "W123" } shouldBe false
     }
 
+    test("FULLTEXT index expands to a GiST index over the tsvector column (ADR 0025, P2)") {
+        val s = schema(
+            tables = mapOf(
+                "film" to table(
+                    columns = mapOf(
+                        "title" to col(NeutralType.Text()),
+                        "description" to col(NeutralType.Text()),
+                        "fulltext" to col(NeutralType.FullText),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "film_fulltext_idx",
+                            columns = listOf(IndexColumn("title"), IndexColumn("description")),
+                            type = IndexType.FULLTEXT,
+                            textSearchConfig = "english",
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        // PostgreSQL indexes the precomputed vector column, not the human text columns.
+        result.render() shouldContain "CREATE INDEX \"film_fulltext_idx\" ON \"film\" USING GIST (\"fulltext\")"
+        result.notes.any { it.code == "W123" } shouldBe false
+        result.notes.any { it.code == "W133" } shouldBe false
+    }
+
+    test("FULLTEXT index without a tsvector column is not expandable on PostgreSQL — W133") {
+        val s = schema(
+            tables = mapOf(
+                "notes_t" to table(
+                    columns = mapOf("body" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "notes_ft", columns = listOf(IndexColumn("body")), type = IndexType.FULLTEXT
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldNotContain "USING GIST"
+        result.render() shouldNotContain "USING FULLTEXT"
+        result.notes.any { it.code == "W133" && it.objectName == "notes_ft" } shouldBe true
+    }
+
     test("GIN index on a jsonb column is still emitted — has default operator class (I-08)") {
         val s = schema(
             tables = mapOf(

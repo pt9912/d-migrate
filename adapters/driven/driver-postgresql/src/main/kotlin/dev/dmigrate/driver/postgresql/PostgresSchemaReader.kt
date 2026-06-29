@@ -30,7 +30,7 @@ class PostgresSchemaReader(
             val schema = currentSchema(conn)
             val database = conn.catalog ?: "unknown"
 
-            val tables = readPostgresTables(session, schema, notes)
+            val rawTables = readPostgresTables(session, schema, notes)
             val sequences = readPostgresSequences(session, schema)
             val customTypes = readPostgresCustomTypes(session, schema)
 
@@ -42,6 +42,12 @@ class PostgresSchemaReader(
             val aggregates = if (options.includeFunctions) readPostgresAggregates(session, schema) else emptyMap()
             val procedures = if (options.includeProcedures) readPostgresProcedures(session, schema) else emptyMap()
             val triggers = if (options.includeTriggers) readPostgresTriggers(session, schema) else emptyMap()
+
+            // P2 (ADR 0025): the tsvector source columns + text-search config live only
+            // in the populating `tsvector_update_trigger(...)` body — recover them into a
+            // FULLTEXT index (replacing the GiST-over-tsvector index) so the fulltext
+            // capability survives a cross-dialect generate. No trigger → no change.
+            val tables = PostgresFullTextIndexSynthesis.enrich(rawTables, triggers)
 
             val schemaDef = SchemaDefinition(
                 name = ReverseScopeCodec.postgresName(database, schema),

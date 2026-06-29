@@ -64,6 +64,7 @@ neuen Version.
 | W125 - W126 | Index-Präfixlängen: MySQL-Index auf TEXT/BLOB ohne Präfix übersprungen; PG/SQLite verwerfen eine MySQL-Präfixlänge (Voll-Spalten-Index) |
 | W129 - W131 | Cross-Dialect-Partitionierung PG↔MySQL: timestamptz→UTC-Normalisierung, HASH-Platzierungsdivergenz, gehobener Partition-Index umbenannt |
 | W132 | Cross-Dialect: `fulltext`-Spalte zu TEXT degradiert (Volltext-Suche nicht erhalten; manueller `FULLTEXT`-Index in MySQL bzw. FTS5-Virtual-Table in SQLite nötig) |
+| W133 | PostgreSQL-Generate: `FULLTEXT`-Index ohne `tsvector`-Spalte nicht expandierbar (keine GiST-Volltext-Spalte vorhanden; manuell `tsvector`-Spalte + `tsvector_update_trigger` ergänzen oder MySQL/SQLite als Ziel wählen) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

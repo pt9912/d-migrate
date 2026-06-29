@@ -91,8 +91,12 @@ object MigrationFingerprint {
      * reader captures indices defined directly on a partition (not parent-propagated)
      * and the comparator compares them structurally, so the fingerprint includes them
      * for the same comparator/drift agreement reason as v4.
+     *
+     * v6: index `textSearchConfig` is now projected (ADR 0025). A FULLTEXT index carries
+     * the optional text-search config; the comparator distinguishes it via data-class
+     * equality, so the fingerprint follows for the same comparator/drift agreement reason.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v5"
+    const val ALGORITHM: String = "schema-fingerprint-v6"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -216,6 +220,11 @@ object MigrationFingerprint {
             .append(SEP).append("type=").append(idx.type.name)
             .append(SEP).append("unique=").append(idx.unique)
             .append(SEP).append("where=").append(idx.where ?: "")
+            // v6 (ADR 0025): a FULLTEXT index carries an optional text-search config;
+            // the comparator already distinguishes it via data-class equality, so the
+            // fingerprint must too, lest a config-only difference be DIFFERENT to
+            // `schema compare` yet identical to the post-`--execute` drift check.
+            .append(SEP).append("textSearchConfig=").append(idx.textSearchConfig ?: "")
             .append('\n')
     }
 
