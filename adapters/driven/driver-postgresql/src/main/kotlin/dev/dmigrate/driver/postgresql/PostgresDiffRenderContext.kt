@@ -292,6 +292,19 @@ internal class PostgresDiffRenderContext(
     }
 
     /**
+     * ADR 0025: the `tsvector` column a FULLTEXT index expands to on PostgreSQL — the
+     * recorded [IndexDefinition.fullTextVectorColumn], or (for a hand-authored index
+     * without it) the table's sole `tsvector` ([NeutralType.FullText]) column. Null when
+     * neither is available, in which case the index cannot be reconstructed.
+     */
+    fun fullTextVectorColumn(table: String, index: IndexDefinition): String? {
+        index.fullTextVectorColumn?.let { return it }
+        val schema = if (direction == PostgresRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return columns.entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
+    }
+
+    /**
      * I-08: first GIN/GIST-indexed column whose type has no default operator
      * class in PostgreSQL (e.g. a tsvector column degraded to text on reverse),
      * or null when the index is renderable. PG rejects `USING gist (text_col)`.

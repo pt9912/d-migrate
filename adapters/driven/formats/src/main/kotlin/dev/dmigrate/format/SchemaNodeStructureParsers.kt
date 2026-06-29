@@ -180,6 +180,7 @@ private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
             unique = childNode.boolOrDefault("unique", false),
             where = childNode.optionalText("where"),
             textSearchConfig = childNode.optionalText("text_search_config"),
+            fullTextVectorColumn = childNode.optionalText("full_text_vector_column"),
         )
     }
 }

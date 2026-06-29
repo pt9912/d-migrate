@@ -272,6 +272,11 @@
           "type": "string",
           "minLength": 1,
           "description": "Text-search configuration of a fulltext index (e.g. english); derived from the PG tsvector trigger (ADR 0025)."
+        },
+        "full_text_vector_column": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PostgreSQL tsvector backing column of a fulltext index (ADR 0025). columns lists the human source columns (MySQL/SQLite index those); PostgreSQL builds the GiST/GIN index on this precomputed vector column. Set on PG reverse; lets generate/diff reconstruct the index unambiguously even with several tsvector columns per table."
         }
       }
     },

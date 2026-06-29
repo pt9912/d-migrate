@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -198,6 +199,22 @@ internal object SqliteDiffSimpleOps {
         }
         if (ctx.indexTouchesGeometry(table, op.index)) {
             SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
+            return
+        }
+        // ADR 0025: a FULLTEXT index needs an FTS5 virtual table on SQLite (slice P4).
+        // Degrade — emit a no-op marker plus a W132 warning rather than a plain BTREE index
+        // over the source columns (which would silently lose full-text search). Mirrors the
+        // generate path (SqliteTableDdlSupport.generateIndex).
+        if (op.index.type == IndexType.FULLTEXT) {
+            val name = ctx.sql.effectiveIndexName(table, op.index)
+            ctx.emit(op, "-- FULLTEXT index ${ctx.sql.quote(name)} skipped: SQLite needs an FTS5 virtual table")
+            ctx.warning(
+                op,
+                "FULLTEXT index '$name' on '$table' is not supported in SQLite without an FTS5 virtual " +
+                    "table; it has been skipped. Create an FTS5 virtual table over the source columns to " +
+                    "retain full-text search.",
+                code = "W132",
+            )
             return
         }
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))

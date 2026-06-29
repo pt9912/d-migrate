@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
@@ -54,7 +55,15 @@ internal object PostgresDiffTableOps {
         }
         ctx.emit(op, text)
         for (idx in op.table.indices) {
-            ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+            // ADR 0025: ensure a FULLTEXT index carries its backing tsvector column so
+            // createIndexSql expands it to a GiST over the right column (reverse already
+            // records it; resolve from the table's sole tsvector column otherwise).
+            val index = if (idx.type == IndexType.FULLTEXT) {
+                idx.copy(fullTextVectorColumn = ctx.fullTextVectorColumn(tableName, idx))
+            } else {
+                idx
+            }
+            ctx.emit(op, ctx.sql.createIndexSql(tableName, index))
         }
     }
 

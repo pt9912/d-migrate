@@ -53,7 +53,7 @@
         },
         { "name": "idx_orders_status", "columns": ["status"], "type": "hash" },
         { "name": "uq_active", "columns": ["customer_id"], "unique": true, "where": "total > 0" },
-        { "name": "idx_orders_fulltext", "columns": ["status"], "type": "fulltext", "text_search_config": "english" }
+        { "name": "idx_orders_fulltext", "columns": ["status"], "type": "fulltext", "text_search_config": "english", "full_text_vector_column": "search" }
       ],
       "constraints": [
         { "name": "chk_total_positive", "type": "check", "expression": "total >= 0" },

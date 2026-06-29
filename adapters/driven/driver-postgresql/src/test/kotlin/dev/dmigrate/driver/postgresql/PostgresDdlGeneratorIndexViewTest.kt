@@ -126,6 +126,32 @@ class PostgresDdlGeneratorIndexViewTest : FunSpec({
         result.notes.any { it.code == "W133" } shouldBe false
     }
 
+    test("FULLTEXT index uses the recorded vector column to disambiguate multiple tsvector columns") {
+        val s = schema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf(
+                        "title" to col(NeutralType.Text()),
+                        "fts_a" to col(NeutralType.FullText),
+                        "fts_b" to col(NeutralType.FullText),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "docs_ft_b",
+                            columns = listOf(IndexColumn("title")),
+                            type = IndexType.FULLTEXT,
+                            fullTextVectorColumn = "fts_b",
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        // Must index fts_b (recorded), not fts_a (which a first-match heuristic would pick).
+        result.render() shouldContain "USING GIST (\"fts_b\")"
+        result.render() shouldNotContain "USING GIST (\"fts_a\")"
+    }
+
     test("FULLTEXT index without a tsvector column is not expandable on PostgreSQL — W133") {
         val s = schema(
             tables = mapOf(

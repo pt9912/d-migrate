@@ -126,7 +126,7 @@ class YamlSchemaCodecTest : FunSpec({
         codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
     }
 
-    test("fulltext index round-trips with type and text_search_config") {
+    test("fulltext index round-trips with type, text_search_config and full_text_vector_column") {
         val schema = SchemaDefinition(
             name = "Test",
             version = "1.0",
@@ -136,6 +136,7 @@ class YamlSchemaCodecTest : FunSpec({
                         "id" to ColumnDefinition(type = NeutralType.Identifier()),
                         "title" to ColumnDefinition(type = NeutralType.Text()),
                         "description" to ColumnDefinition(type = NeutralType.Text()),
+                        "fulltext" to ColumnDefinition(type = NeutralType.FullText),
                     ),
                     indices = listOf(
                         IndexDefinition(
@@ -143,6 +144,7 @@ class YamlSchemaCodecTest : FunSpec({
                             columns = listOf(IndexColumn("title"), IndexColumn("description")),
                             type = IndexType.FULLTEXT,
                             textSearchConfig = "english",
+                            fullTextVectorColumn = "fulltext",
                         )
                     ),
                 )
@@ -156,6 +158,7 @@ class YamlSchemaCodecTest : FunSpec({
         yaml shouldContain "fulltext"
         yaml shouldContain "text_search_config"
         yaml shouldContain "english"
+        yaml shouldContain "full_text_vector_column"
         codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
     }
 

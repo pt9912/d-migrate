@@ -33,6 +33,16 @@ data class IndexDefinition(
      * (ADR 0025). Null für alle anderen Indextypen.
      */
     val textSearchConfig: String? = null,
+    /**
+     * Backing-`tsvector`-Spalte eines [IndexType.FULLTEXT]-Index (ADR 0025). [columns]
+     * trägt die *Quelltext*-Spalten (MySQL `FULLTEXT` / SQLite FTS5 indizieren diese
+     * direkt); PostgreSQL materialisiert stattdessen einen vorberechneten `tsvector` in
+     * **dieser** Spalte und legt den GiST/GIN-Index darüber. Beim PG-Reverse aus dem
+     * `tsvector_update_trigger` gefüllt, damit PG-Generate/-Diff den Index ohne Raten
+     * (auch bei mehreren `tsvector`-Spalten je Tabelle) auf die richtige Vektorspalte
+     * rekonstruiert. Null für alle anderen Indextypen / hand-authored ohne Vektorspalte.
+     */
+    val fullTextVectorColumn: String? = null,
 ) {
     val columnNames: List<String>
         get() = columns.map { it.name }

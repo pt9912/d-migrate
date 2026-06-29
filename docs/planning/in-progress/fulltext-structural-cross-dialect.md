@@ -121,20 +121,23 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   (Serialize/Parse) + `spec/neutral-model-spec.md` + `spec/schema.json` synchron.
   **DoD erfüllt:** ADR accepted; YAML-Round-Trip-Test grün; schema.json-Contract-Fixture
   (fulltext-Index) validiert; Build grün.
-- **P2 — PG-Reverse-Anreicherung. ✅ ERLEDIGT 2026-06-29.** `tsvector_update_trigger`-Body
-  parsen → `sourceColumns` + Config füllen, GiST-über-`tsvector`-Index durch `FULLTEXT`-Index
-  ersetzen ([`PostgresFullTextIndexSynthesis`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresFullTextIndexSynthesis.kt),
+- **P2 — PG-Reverse-Anreicherung. ✅ ERLEDIGT 2026-06-29 (inkl. Review-Härtung, keine Carve-Outs).**
+  `tsvector_update_trigger`-Body parsen (quote-/klammer-/`''`-bewusst, links-wort-grenzen-
+  geankert, GIN **und** GiST) → `sourceColumns` + Config füllen, Backing-Index durch
+  `FULLTEXT`-Index ersetzen
+  ([`PostgresFullTextIndexSynthesis`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresFullTextIndexSynthesis.kt),
   in [`PostgresSchemaReader`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresSchemaReader.kt)
-  verdrahtet); nicht-parsebar → Modell unverändert (kein Verlust). PG-Generate expandiert den
-  `FULLTEXT`-Index zurück zu `USING GIST(<tsvector-Spalte>)`
-  ([`PostgresDdlGenerator.expandFullTextIndex`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt),
-  W133 falls keine `tsvector`-Spalte vorhanden); der Fingerprint projiziert jetzt
-  `textSearchConfig` (v6). **DoD erfüllt** (live `make sample-db-smoke`): PG-Reverse von Pagila
-  `film` erfasst `fulltext` + Quelltext-Spalten (`title`, `description`) + Config (`english`);
-  PG→PG-Round-Trip 0 Diffs (`compare == baseline`, 0 Generate-Notes, keine Regression).
-  **Carve-Out:** die Diff/Migrate-`createIndexSql`-Seite (PG `FULLTEXT`→GiST, fehlender
-  Spalten-Kontext) bleibt für **P5** offen — vom Generate-basierten Pagila-Round-Trip nicht
-  berührt; ein PG-`FULLTEXT`-Index entsteht nur aus Live-Reverse.
+  verdrahtet); nicht-parsebar → Modell unverändert (kein Verlust). Die Backing-`tsvector`-Spalte
+  wird in `IndexDefinition.fullTextVectorColumn` getragen (ADR 0025), sodass Generate **und**
+  Diff/Migrate den Index auch bei mehreren `tsvector`-Spalten je Tabelle eindeutig
+  rekonstruieren. **Alle Pfade FULLTEXT-bewusst:** PG-Generate **und** -Diff expandieren zu
+  `USING GIST(<vektor>)` (W133/`FULLTEXT_VECTOR_UNKNOWN` falls keine Vektorspalte); MySQL-Generate
+  **und** -Diff emittieren natives `CREATE FULLTEXT INDEX` (prefix-rule-exempt); SQLite-Generate
+  **und** -Diff degradieren mit **W132** (FTS5-Hinweis, kein stiller BTREE) bis P4. Fingerprint
+  v6 projiziert `textSearchConfig` + `fullTextVectorColumn`; YAML-Codec + `spec/schema.json` +
+  `neutral-model-spec.md` synchron. **DoD erfüllt** (live `make sample-db-smoke`): PG-Reverse von
+  Pagila `film` erfasst `fulltext` + Quelltext-Spalten (`title`, `description`) + Config
+  (`english`); PG→PG-Round-Trip 0 Diffs (`compare == baseline`, 0 Generate-Notes).
 - **P3 — MySQL-Generate (FULLTEXT).** `fulltext` → `TEXT`-Spalte(n) + `FULLTEXT`-Index über die
   Quelltext-Spalten. **DoD:** live MySQL — generierter `FULLTEXT`-Index existiert
   (`information_schema`), `MATCH … AGAINST` liefert Treffer; Cross-Dialect-Smoke grün.

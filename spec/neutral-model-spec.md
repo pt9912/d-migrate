@@ -337,9 +337,10 @@ tables:
         unique: true
         where: "is_archived = false"     # Partial-Index-Praedikat, Raw-SQL
       - name: idx_film_fulltext
-        columns: [title, description]    # Quelltext-Spalten
+        columns: [title, description]     # Quelltext-Spalten (MySQL/SQLite indizieren diese)
         type: fulltext
-        text_search_config: english      # optional: Text-Search-Config eines Volltext-Index
+        text_search_config: english       # optional: Text-Search-Config eines Volltext-Index
+        full_text_vector_column: fulltext # optional: PostgreSQL-tsvector-Backing-Spalte (ADR 0025)
 
     # ── Constraints ──────────────────
     constraints:

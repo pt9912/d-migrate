@@ -156,6 +156,7 @@ private fun buildIndices(
         if (index.unique) node.put("unique", true)
         if (index.where != null) node.put("where", index.where)
         if (index.textSearchConfig != null) node.put("text_search_config", index.textSearchConfig)
+        if (index.fullTextVectorColumn != null) node.put("full_text_vector_column", index.fullTextVectorColumn)
         arrayNode.add(node)
     }
     return arrayNode

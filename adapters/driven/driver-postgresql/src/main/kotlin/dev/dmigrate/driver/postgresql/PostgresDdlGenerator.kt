@@ -312,13 +312,16 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     /**
      * P2 (ADR 0025): expand a neutral [IndexType.FULLTEXT] index into PostgreSQL's
-     * native form — a GiST index over the table's `tsvector` ([NeutralType.FullText])
-     * column. The source columns the FULLTEXT index lists are the *human* text columns;
-     * PostgreSQL indexes the precomputed vector column instead, so we swap them here and
-     * delegate to the regular index path (which keeps the `tsvector_ops` default-operator
-     * -class handling, so no W123). When the table has no tsvector column the full
-     * expansion (synthesising the tsvector column + populating trigger) is out of scope —
-     * W133 records the manual step.
+     * native form — a GiST index over the `tsvector` ([NeutralType.FullText]) column the
+     * index is built on. The FULLTEXT index lists the *human* source text columns
+     * (MySQL/SQLite index those directly); PostgreSQL indexes the precomputed vector
+     * column instead. The vector column is read from [IndexDefinition.fullTextVectorColumn]
+     * (set on PG reverse — unambiguous even with several tsvector columns per table); for
+     * a hand-authored index without it we fall back to the table's sole tsvector column.
+     * We delegate to the regular index path, which keeps the `tsvector_ops`
+     * default-operator-class handling (so no W123). When no tsvector column can be
+     * determined, the full expansion (synthesising the tsvector column + populating
+     * trigger) is out of scope — W133 records the manual step.
      */
     private fun expandFullTextIndex(
         tableName: String,
@@ -326,7 +329,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         indexName: String,
         columns: Map<String, ColumnDefinition>,
     ): DdlStatement {
-        val tsvectorColumn = columns.entries.firstOrNull { it.value.type is NeutralType.FullText }?.key
+        val tsvectorColumn = index.fullTextVectorColumn?.takeIf { columns[it]?.type is NeutralType.FullText }
+            ?: columns.entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
             ?: return DdlStatement(
                 "",
                 listOf(
@@ -335,11 +339,10 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
                         code = "W133",
                         objectName = indexName,
                         message = "FULLTEXT index '$indexName' on table '$tableName' could not be " +
-                            "expanded for PostgreSQL: the table has no tsvector column to back a " +
-                            "GiST fulltext index.",
-                        hint = "Add a tsvector column populated by a tsvector_update_trigger from the " +
-                            "source columns, or target MySQL/SQLite where FULLTEXT maps to a native " +
-                            "fulltext index.",
+                            "expanded for PostgreSQL: no backing tsvector column is recorded and the " +
+                            "table has no single unambiguous tsvector column.",
+                        hint = "Set the backing tsvector column on the index (PG reverse does this), " +
+                            "or target MySQL/SQLite where FULLTEXT maps to a native fulltext index.",
                     ),
                 ),
             )
@@ -349,6 +352,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
                 type = IndexType.GIST,
                 columns = listOf(IndexColumn(tsvectorColumn)),
                 textSearchConfig = null,
+                fullTextVectorColumn = null,
             ),
             indexName,
             columns,

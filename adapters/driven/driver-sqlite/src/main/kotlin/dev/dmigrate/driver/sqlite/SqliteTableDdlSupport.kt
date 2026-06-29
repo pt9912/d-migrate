@@ -154,6 +154,26 @@ internal class SqliteTableDdlSupport(
         if (geometryColumn != null) {
             return spatialIndexStatement(tableName, geometryColumn, indexName, options)
         }
+        // ADR 0025: a FULLTEXT index needs an FTS5 virtual table on SQLite (slice P4).
+        // Until that lands the fulltext capability degrades — emit the dedicated W132
+        // (fulltext) note, not the generic W102 ("only BTREE"), so the diagnostic points
+        // at FTS5 rather than suggesting a plain BTREE index.
+        if (index.type == IndexType.FULLTEXT) {
+            return DdlStatement(
+                "-- Index ${quoteIdentifier(indexName)} skipped: SQLite needs an FTS5 virtual table for fulltext search",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = "W132",
+                        objectName = indexName,
+                        message = "FULLTEXT index '$indexName' on table '$tableName' is not supported in " +
+                            "SQLite without an FTS5 virtual table; it has been skipped.",
+                        hint = "Create an FTS5 virtual table over the source columns plus sync triggers to " +
+                            "retain full-text search.",
+                    ),
+                ),
+            )
+        }
         if (index.type != IndexType.BTREE) {
             return DdlStatement(
                 "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",

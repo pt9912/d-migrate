@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 
 /**
@@ -16,10 +17,15 @@ internal object MysqlIndexPrefix {
      * no prefix length, or null when the index is renderable. [columnType]
      * resolves a column name to its neutral type (null when unknown).
      */
-    fun columnNeedingPrefix(index: IndexDefinition, columnType: (String) -> NeutralType?): String? =
-        index.columns.firstOrNull { col ->
+    fun columnNeedingPrefix(index: IndexDefinition, columnType: (String) -> NeutralType?): String? {
+        // FULLTEXT (and SPATIAL) indexes are their own MySQL index kind and are exempt
+        // from the BTREE TEXT/BLOB prefix-length rule — a `CREATE FULLTEXT INDEX` over a
+        // TEXT column needs no key length (ADR 0025).
+        if (index.type == IndexType.FULLTEXT || index.type == IndexType.SPATIAL) return null
+        return index.columns.firstOrNull { col ->
             col.prefixLength == null && needsPrefixLength(columnType(col.name))
         }?.name
+    }
 
     fun needsPrefixLength(type: NeutralType?): Boolean = when (type) {
         is NeutralType.Text -> type.maxLength == null

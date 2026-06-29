@@ -102,6 +102,14 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             return "CREATE SPATIAL INDEX ${quote(effectiveIndexName(table, idx))} " +
                 "ON ${quote(table)} ($spatialCols);"
         }
+        // ADR 0025: a neutral FULLTEXT index maps to a native MySQL `FULLTEXT` index over
+        // the source text columns (mirrors the generate path in MysqlIndexPartitionDdlHelper).
+        // FULLTEXT is exempt from the TEXT/BLOB key-length rule, so no prefix length is needed.
+        if (idx.type == IndexType.FULLTEXT) {
+            val ftCols = idx.columns.joinToString(", ") { quote(it.name) }
+            return "CREATE FULLTEXT INDEX ${quote(effectiveIndexName(table, idx))} " +
+                "ON ${quote(table)} ($ftCols);"
+        }
         val unique = if (idx.unique) "UNIQUE " else ""
         val using = if (idx.type != IndexType.BTREE && idx.type != IndexType.HASH) {
             // MySQL only natively supports BTREE/HASH; FULLTEXT not modelled here.
