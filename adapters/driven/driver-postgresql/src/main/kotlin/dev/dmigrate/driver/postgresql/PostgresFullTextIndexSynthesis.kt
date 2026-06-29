@@ -111,17 +111,23 @@ internal object PostgresFullTextIndexSynthesis {
                 columns = p.sourceColumns.map { IndexColumn(it) },
                 textSearchConfig = p.textSearchConfig,
                 fullTextVectorColumn = p.tsvectorColumn,
+                // Preserve the original PG access method (GIN/GiST) so generate round-trips
+                // it exactly instead of normalising GIN → GiST (ADR 0025).
+                fullTextAccessMethod = idx.type,
             )
         }
         return if (replaced) table.copy(indices = indices) else table
     }
 
     /**
-     * Quote-/paren-aware parse of a SQL argument list starting just after its opening
-     * `(`. Single-quoted string literals (with `''` escapes) are unwrapped to their
-     * content; commas and parentheses inside a literal are not treated as separators.
+     * Quote-aware parse of a SQL argument list starting just after its opening `(`.
+     * Single-quoted string literals (with `''` escapes) are unwrapped to their content;
+     * commas and parentheses *inside a quoted literal* are not treated as separators.
      * Returns the per-argument content (positional, including empty positions) up to the
-     * matching top-level `)`, or null when no closing paren is found.
+     * first **unquoted** `)`, or null when no closing paren is found. Note: this does not
+     * track nesting depth — it relies on `tsvector_update_trigger`'s arguments always being
+     * single-quoted literals (as `pg_get_triggerdef` renders them), so an unquoted nested
+     * `)` is out of contract and would end the list early.
      */
     private fun parseArgList(s: String, start: Int): List<String>? {
         val args = mutableListOf<String>()
@@ -156,7 +162,7 @@ internal object PostgresFullTextIndexSynthesis {
         return when {
             v.isEmpty() -> null
             v.regionMatches(0, PG_CATALOG_PREFIX, 0, PG_CATALOG_PREFIX.length, ignoreCase = true) ->
-                v.substring(PG_CATALOG_PREFIX.length)
+                v.substring(PG_CATALOG_PREFIX.length).ifEmpty { null }
             else -> v
         }
     }

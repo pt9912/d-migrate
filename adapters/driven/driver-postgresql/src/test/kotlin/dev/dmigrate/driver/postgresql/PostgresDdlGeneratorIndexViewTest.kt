@@ -152,6 +152,29 @@ class PostgresDdlGeneratorIndexViewTest : FunSpec({
         result.render() shouldNotContain "USING GIST (\"fts_a\")"
     }
 
+    test("FULLTEXT index restores the recorded GIN access method (ADR 0025), no W123") {
+        val s = schema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.Text()), "fts" to col(NeutralType.FullText)),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "docs_fts",
+                            columns = listOf(IndexColumn("body")),
+                            type = IndexType.FULLTEXT,
+                            fullTextVectorColumn = "fts",
+                            fullTextAccessMethod = IndexType.GIN,
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldContain "USING GIN (\"fts\")"
+        result.render() shouldNotContain "USING GIST"
+        result.notes.any { it.code == "W123" } shouldBe false
+    }
+
     test("FULLTEXT index without a tsvector column is not expandable on PostgreSQL — W133") {
         val s = schema(
             tables = mapOf(

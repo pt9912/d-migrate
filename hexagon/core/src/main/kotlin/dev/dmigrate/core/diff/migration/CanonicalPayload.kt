@@ -72,6 +72,11 @@ internal object CanonicalPayload {
             .append(SEP).append("type=").append(i.type.name)
             .append(SEP).append("unique=").append(i.unique)
             .append(SEP).append("where=").append(i.where ?: "")
+            // ADR 0025: textSearchConfig is semantic (matches TableComparator + the v6
+            // fingerprint), so the rename overlay / operation-id key includes it too. The
+            // fullTextVectorColumn / fullTextAccessMethod hints are generate-only and
+            // excluded, consistent with TableComparator.projectIndex.
+            .append(SEP).append("textSearchConfig=").append(i.textSearchConfig ?: "")
     }
 
     fun customType(t: CustomTypeDefinition): String = buildString {

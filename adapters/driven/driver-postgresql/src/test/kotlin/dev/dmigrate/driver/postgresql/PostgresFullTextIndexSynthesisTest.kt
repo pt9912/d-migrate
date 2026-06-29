@@ -56,6 +56,12 @@ class PostgresFullTextIndexSynthesisTest : FunSpec({
         )?.textSearchConfig shouldBe "myschema.german"
     }
 
+    test("a pg_catalog-prefix-only config normalizes to null, not empty string") {
+        PostgresFullTextIndexSynthesis.parseTrigger(
+            trigger("doc", "EXECUTE FUNCTION tsvector_update_trigger('fts', 'pg_catalog.', 'body')"),
+        )?.textSearchConfig shouldBe null
+    }
+
     test("a non-tsvector trigger body is not a fulltext trigger") {
         PostgresFullTextIndexSynthesis.parseTrigger(
             trigger("users", "EXECUTE FUNCTION audit_fn()"),
@@ -145,6 +151,7 @@ class PostgresFullTextIndexSynthesisTest : FunSpec({
             type = IndexType.FULLTEXT,
             textSearchConfig = "english",
             fullTextVectorColumn = "fulltext",
+            fullTextAccessMethod = IndexType.GIST,
         )
         indices.single { it.name == "idx_title" }.type shouldBe IndexType.BTREE
     }
@@ -159,6 +166,8 @@ class PostgresFullTextIndexSynthesisTest : FunSpec({
         val idx = out.getValue("film").indices.single()
         idx.type shouldBe IndexType.FULLTEXT
         idx.fullTextVectorColumn shouldBe "fulltext"
+        // The original GIN access method is preserved (round-trips as GIN, not GiST).
+        idx.fullTextAccessMethod shouldBe IndexType.GIN
     }
 
     test("with two tsvector columns each index is mapped to its own vector column") {

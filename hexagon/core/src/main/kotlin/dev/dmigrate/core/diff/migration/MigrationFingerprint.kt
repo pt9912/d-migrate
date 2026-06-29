@@ -92,10 +92,10 @@ object MigrationFingerprint {
      * and the comparator compares them structurally, so the fingerprint includes them
      * for the same comparator/drift agreement reason as v4.
      *
-     * v6: index `textSearchConfig` and `fullTextVectorColumn` are now projected (ADR 0025).
-     * A FULLTEXT index carries the optional text-search config and the backing tsvector
-     * column; the comparator distinguishes them via data-class equality, so the fingerprint
-     * follows for the same comparator/drift agreement reason.
+     * v6: index `textSearchConfig` is now projected (ADR 0025) — it is semantic (changes the
+     * text analysis). A FULLTEXT index's backing tsvector column and access method are NOT
+     * projected: they are generate-only reconstruction hints (also excluded from
+     * `TableComparator.projectIndex`), so a hint-only difference does not read as a change.
      */
     const val ALGORITHM: String = "schema-fingerprint-v6"
 
@@ -221,13 +221,13 @@ object MigrationFingerprint {
             .append(SEP).append("type=").append(idx.type.name)
             .append(SEP).append("unique=").append(idx.unique)
             .append(SEP).append("where=").append(idx.where ?: "")
-            // v6 (ADR 0025): a FULLTEXT index carries an optional text-search config and
-            // backing tsvector column; the comparator already distinguishes them via
-            // data-class equality, so the fingerprint must too, lest a config-/vector-only
-            // difference be DIFFERENT to `schema compare` yet identical to the
-            // post-`--execute` drift check.
+            // v6 (ADR 0025): a FULLTEXT index's text-search config is semantic (it changes
+            // the analysis), so it is projected here — the comparator distinguishes it via
+            // data-class equality, and the fingerprint must agree. The backing tsvector
+            // column and access method are deliberately NOT projected: they are generate-only
+            // reconstruction hints (excluded from `TableComparator.projectIndex` too), so a
+            // hint-only difference must not read as DIFFERENT to `schema compare`.
             .append(SEP).append("textSearchConfig=").append(idx.textSearchConfig ?: "")
-            .append(SEP).append("fullTextVectorColumn=").append(idx.fullTextVectorColumn ?: "")
             .append('\n')
     }
 

@@ -1173,10 +1173,11 @@ Bei `--execute`:
 
 1. Artefakt-Hash neu berechnen und gegen den im Block gespeicherten Wert prüfen.
 2. Dialekt der Ziel-Connection mit dem im Block gespeicherten Dialekt vergleichen → Exit `8` (`TARGET_DIALECT_MISMATCH`) bei Abweichung.
-3. Aktuellen Zielzustand introspizieren und gegen `postUpFingerprint` (oder `allowedPostUpFingerprints` bei Recovery-Artefakten) prüfen → Exit `8` (`TARGET_STATE_MISMATCH`) bei Drift.
-4. `--allow-partial-rollback` verlangen, falls `partialRollback=true` gesetzt ist → Exit `8` ohne Flag.
-5. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
-6. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
+3. `fingerprintAlgorithm` des Artefakts mit dem dieser Version vergleichen → Exit `8` (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) bei Abweichung; der gespeicherte Fingerprint ist dann nicht vergleichbar und das Artefakt muss neu erzeugt werden.
+4. Aktuellen Zielzustand introspizieren und gegen `postUpFingerprint` (oder `allowedPostUpFingerprints` bei Recovery-Artefakten) prüfen → Exit `8` (`TARGET_STATE_MISMATCH`) bei Drift.
+5. `--allow-partial-rollback` verlangen, falls `partialRollback=true` gesetzt ist → Exit `8` ohne Flag.
+6. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
+7. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
 
 Exit-Codes:
 

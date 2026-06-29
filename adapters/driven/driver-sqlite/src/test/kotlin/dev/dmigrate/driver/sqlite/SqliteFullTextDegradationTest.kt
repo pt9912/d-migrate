@@ -61,4 +61,21 @@ class SqliteFullTextDegradationTest : FunSpec({
         r.statements.none { it.sql.contains("CREATE INDEX") } shouldBe true
         r.statements.joinToString("\n") { it.sql } shouldContain "skipped"
     }
+
+    test("CreateTable carrying a FULLTEXT index does not emit a silent plain index (createIndexSql gap)") {
+        // The fix lives in SqliteDiffSqlBuilders.createIndexSql so ALL callers — here the
+        // CreateTable path — degrade, not just renderAddIndex.
+        val table = docsTable(ftIndex)
+        val r = SqliteDiffDdlGenerator().generateUp(
+            DiffPlanner().plan(
+                SchemaDefinition(name = "App", version = "1"),
+                SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to table)),
+                SchemaDiff(tablesAdded = listOf(dev.dmigrate.core.diff.NamedTable("docs", table))),
+            ),
+            DdlGenerationOptions(),
+        )
+        r.statements.any { it.sql.contains("CREATE TABLE") } shouldBe true
+        r.statements.none { it.sql.contains("CREATE INDEX") } shouldBe true
+        r.statements.joinToString("\n") { it.sql } shouldContain "skipped"
+    }
 })

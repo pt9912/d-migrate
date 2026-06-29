@@ -43,6 +43,16 @@ data class IndexDefinition(
      * rekonstruiert. Null für alle anderen Indextypen / hand-authored ohne Vektorspalte.
      */
     val fullTextVectorColumn: String? = null,
+    /**
+     * PostgreSQL-Zugriffsmethode eines [IndexType.FULLTEXT]-Index — `GIN` oder `GIST`
+     * (ADR 0025). PostgreSQL unterscheidet beide bewusst (Performance/Größe/Planner), daher
+     * wird die Original-Methode beim Reverse erfasst und beim Generate exakt rekonstruiert
+     * (GIN→GIN, GiST→GiST); fehlt sie (hand-authored), gilt GiST als Default. Wie
+     * [fullTextVectorColumn] ein **Generate-only**-Hinweis: getragen fürs Generate, aber aus
+     * der Vergleichs-Semantik (Comparator/Fingerprint/CanonicalPayload) ausgeschlossen, weil
+     * er die Volltext-*Fähigkeit* nicht verändert. Null für alle anderen Indextypen.
+     */
+    val fullTextAccessMethod: IndexType? = null,
 ) {
     val columnNames: List<String>
         get() = columns.map { it.name }

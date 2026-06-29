@@ -277,6 +277,11 @@
           "type": "string",
           "minLength": 1,
           "description": "PostgreSQL tsvector backing column of a fulltext index (ADR 0025). columns lists the human source columns (MySQL/SQLite index those); PostgreSQL builds the GiST/GIN index on this precomputed vector column. Set on PG reverse; lets generate/diff reconstruct the index unambiguously even with several tsvector columns per table."
+        },
+        "full_text_access_method": {
+          "type": "string",
+          "enum": ["gin", "gist"],
+          "description": "PostgreSQL access method of a fulltext index — gin or gist (ADR 0025). Generate-only reconstruction hint captured on PG reverse so the original method round-trips (GIN stays GIN); defaults to gist when absent. Excluded from schema comparison/fingerprint."
         }
       }
     },

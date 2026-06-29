@@ -84,8 +84,10 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
             val vec = idx.fullTextVectorColumn
                 ?: return "-- FULLTEXT index ${quote(effectiveIndexName(table, idx))} skipped: " +
                     "no backing tsvector column"
+            // ADR 0025: restore the recorded access method (GIN/GiST); GiST when absent.
+            val method = (idx.fullTextAccessMethod ?: IndexType.GIST).name
             return "CREATE ${unique}INDEX ${quote(effectiveIndexName(table, idx))} " +
-                "ON ${quote(table)} USING GIST (${quote(vec)});"
+                "ON ${quote(table)} USING $method (${quote(vec)});"
         }
         // VA3: der neutrale räumliche Index (SPATIAL) wird in PostGIS als GIST-
         // Zugriffsmethode emittiert (PostgreSQL kennt kein `USING SPATIAL`).

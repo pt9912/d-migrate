@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -205,6 +206,9 @@ internal class MysqlDiffRenderContext(
     }
 
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
+        // ADR 0025: a FULLTEXT index lists its source TEXT columns; never route it to the
+        // spatial path even if a source column happens to be geometry-typed.
+        if (index.type == IndexType.FULLTEXT) return false
         val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
         val columns = schema?.tables?.get(table)?.columns.orEmpty()
         return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }

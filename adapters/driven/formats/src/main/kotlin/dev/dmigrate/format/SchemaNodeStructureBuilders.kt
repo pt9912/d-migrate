@@ -157,6 +157,7 @@ private fun buildIndices(
         if (index.where != null) node.put("where", index.where)
         if (index.textSearchConfig != null) node.put("text_search_config", index.textSearchConfig)
         if (index.fullTextVectorColumn != null) node.put("full_text_vector_column", index.fullTextVectorColumn)
+        index.fullTextAccessMethod?.let { node.put("full_text_access_method", it.name.lowercase()) }
         arrayNode.add(node)
     }
     return arrayNode

@@ -341,6 +341,7 @@ tables:
         type: fulltext
         text_search_config: english       # optional: Text-Search-Config eines Volltext-Index
         full_text_vector_column: fulltext # optional: PostgreSQL-tsvector-Backing-Spalte (ADR 0025)
+        full_text_access_method: gist     # optional: PostgreSQL-Zugriffsmethode gin|gist (ADR 0025)
 
     # ── Constraints ──────────────────
     constraints:

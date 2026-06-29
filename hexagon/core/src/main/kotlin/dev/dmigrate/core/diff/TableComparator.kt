@@ -296,10 +296,21 @@ internal class TableComparator {
         val removed = (leftKeys - rightKeys).sorted().map { leftByKey.getValue(it) }
         val changed = (leftKeys intersect rightKeys).sorted().mapNotNull { key ->
             val l = leftByKey.getValue(key); val r = rightByKey.getValue(key)
-            if (l == r) null else ValueChange(l, r)
+            if (projectIndex(l) == projectIndex(r)) null else ValueChange(l, r)
         }
         return IndexDiffResult(added, removed, changed)
     }
+
+    /**
+     * ADR 0025: a FULLTEXT index's `fullTextVectorColumn` / `fullTextAccessMethod` are
+     * generate-only reconstruction hints (which tsvector column PostgreSQL materialises and
+     * with which access method) — they do not change the fulltext *capability*. Null them out
+     * before equality so an authored index (hint absent) and the reversed live index (hint
+     * set) are not reported as changed, mirroring [projectColumn] for non-semantic fields.
+     */
+    private fun projectIndex(index: IndexDefinition): IndexDefinition =
+        if (index.fullTextVectorColumn == null && index.fullTextAccessMethod == null) index
+        else index.copy(fullTextVectorColumn = null, fullTextAccessMethod = null)
 
     private fun indexKey(index: IndexDefinition): String =
         index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}:${index.where.orEmpty()}"

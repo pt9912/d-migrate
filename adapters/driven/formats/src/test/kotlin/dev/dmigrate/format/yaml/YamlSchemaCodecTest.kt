@@ -145,6 +145,7 @@ class YamlSchemaCodecTest : FunSpec({
                             type = IndexType.FULLTEXT,
                             textSearchConfig = "english",
                             fullTextVectorColumn = "fulltext",
+                            fullTextAccessMethod = IndexType.GIN,
                         )
                     ),
                 )
@@ -159,6 +160,7 @@ class YamlSchemaCodecTest : FunSpec({
         yaml shouldContain "text_search_config"
         yaml shouldContain "english"
         yaml shouldContain "full_text_vector_column"
+        yaml shouldContain "full_text_access_method: gin"
         codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
     }
 

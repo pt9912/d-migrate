@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -285,9 +286,17 @@ internal class PostgresDiffRenderContext(
         }
     }
 
-    fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
+    /** Columns of [table] on the side this render direction reads (UP=desired, DOWN=current). */
+    private fun columnsFor(table: String): Map<String, ColumnDefinition> {
         val schema = if (direction == PostgresRenderDirection.UP) desiredSchema else currentSchema
-        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return schema?.tables?.get(table)?.columns.orEmpty()
+    }
+
+    fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
+        // ADR 0025: a FULLTEXT index lists its source TEXT columns; never route it to the
+        // spatial path even if a source column happens to be geometry-typed.
+        if (index.type == IndexType.FULLTEXT) return false
+        val columns = columnsFor(table)
         return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
     }
 
@@ -299,9 +308,7 @@ internal class PostgresDiffRenderContext(
      */
     fun fullTextVectorColumn(table: String, index: IndexDefinition): String? {
         index.fullTextVectorColumn?.let { return it }
-        val schema = if (direction == PostgresRenderDirection.UP) desiredSchema else currentSchema
-        val columns = schema?.tables?.get(table)?.columns.orEmpty()
-        return columns.entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
+        return columnsFor(table).entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
     }
 
     /**
@@ -310,8 +317,7 @@ internal class PostgresDiffRenderContext(
      * or null when the index is renderable. PG rejects `USING gist (text_col)`.
      */
     fun indexColumnMissingOpClass(table: String, index: IndexDefinition): String? {
-        val schema = if (direction == PostgresRenderDirection.UP) desiredSchema else currentSchema
-        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        val columns = columnsFor(table)
         return PostgresIndexOpClass.missingOpClassColumn(index) { columns[it]?.type }
     }
 

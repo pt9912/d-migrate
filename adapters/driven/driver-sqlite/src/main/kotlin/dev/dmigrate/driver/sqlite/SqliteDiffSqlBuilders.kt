@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.TriggerDefinition
@@ -82,6 +83,14 @@ internal class SqliteDiffSqlBuilders {
     }
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {
+        // ADR 0025: a FULLTEXT index has no SQLite equivalent without an FTS5 virtual table
+        // (slice P4). Emit the W132 skip marker here — the single SQL source — so EVERY caller
+        // (AddIndex, CreateTable, table rebuild, DropIndex-DOWN recreate) degrades instead of
+        // silently emitting a plain BTREE over the source columns. renderAddIndex additionally
+        // attaches the W132 diagnostic.
+        if (idx.type == IndexType.FULLTEXT) {
+            return SqliteFullTextDegradation.skipComment(quote(effectiveIndexName(table, idx)))
+        }
         val unique = if (idx.unique) "UNIQUE " else ""
         // SQLite always uses btree internally; USING clauses are unsupported.
         val cols = idx.columns.joinToString(", ") { col ->

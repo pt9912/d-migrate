@@ -197,24 +197,22 @@ internal object SqliteDiffSimpleOps {
             ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
             return
         }
-        if (ctx.indexTouchesGeometry(table, op.index)) {
-            SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
-            return
-        }
-        // ADR 0025: a FULLTEXT index needs an FTS5 virtual table on SQLite (slice P4).
-        // Degrade — emit a no-op marker plus a W132 warning rather than a plain BTREE index
-        // over the source columns (which would silently lose full-text search). Mirrors the
-        // generate path (SqliteTableDdlSupport.generateIndex).
+        // ADR 0025: degrade a FULLTEXT index (no SQLite FTS5 yet, slice P4) BEFORE the
+        // geometry check — its source columns are text, so the geometry routing must not see
+        // it. createIndexSql emits the W132 skip marker (shared with generate); add the
+        // diagnostic here so a plain BTREE is never silently produced.
         if (op.index.type == IndexType.FULLTEXT) {
             val name = ctx.sql.effectiveIndexName(table, op.index)
-            ctx.emit(op, "-- FULLTEXT index ${ctx.sql.quote(name)} skipped: SQLite needs an FTS5 virtual table")
+            ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             ctx.warning(
                 op,
-                "FULLTEXT index '$name' on '$table' is not supported in SQLite without an FTS5 virtual " +
-                    "table; it has been skipped. Create an FTS5 virtual table over the source columns to " +
-                    "retain full-text search.",
-                code = "W132",
+                "${SqliteFullTextDegradation.message(name, table)} ${SqliteFullTextDegradation.HINT}",
+                code = SqliteFullTextDegradation.W_CODE,
             )
+            return
+        }
+        if (ctx.indexTouchesGeometry(table, op.index)) {
+            SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
             return
         }
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))

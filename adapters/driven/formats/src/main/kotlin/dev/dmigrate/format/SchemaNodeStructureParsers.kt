@@ -181,6 +181,7 @@ private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
             where = childNode.optionalText("where"),
             textSearchConfig = childNode.optionalText("text_search_config"),
             fullTextVectorColumn = childNode.optionalText("full_text_vector_column"),
+            fullTextAccessMethod = childNode.optionalText("full_text_access_method")?.toIndexType(),
         )
     }
 }

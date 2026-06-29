@@ -90,6 +90,16 @@ Expansions-Muster aus ADR 0016.
 - PG-Generate trägt die Re-Derivations-Komplexität (Index → Spalte + Trigger + GiST). Akzeptiert: identisches Muster wie SpatiaLite, mit Idempotenz im Diff-Renderpfad.
 - Reverse muss `tsvector`-Spalte, Trigger und `FULLTEXT`-Index konsistent verknüpfen (welche Quellspalten zu welcher Vektorspalte) — die eigentliche „Quelltext-Herleitung" (Slice-Phase P2).
 
+**Verfeinerung (P2-Review-Härtung):** Die PG-Rekonstruktion braucht zwei Detail-Angaben, die
+nicht zur Volltext-*Fähigkeit* gehören: die Backing-`tsvector`-Spalte
+(`IndexDefinition.fullTextVectorColumn`) und die Zugriffsmethode GIN/GiST
+(`fullTextAccessMethod`). Beide sind **Generate-only-Rekonstruktions-Hinweise**: vom Reverse
+gefüllt und vom Generate genutzt (eindeutige Vektorspalte auch bei mehreren `tsvector`-Spalten;
+GIN→GIN statt GIN→GiST-Normalisierung), aber **aus der Vergleichs-Semantik ausgeschlossen**
+(Comparator/Fingerprint/`CanonicalPayload`, analog `ordinal`) — sonst erzeugt ein authored Index
+(Hinweise fehlen) gegen den reversed Index (Hinweise gesetzt) Phantom-Diffs. `textSearchConfig`
+bleibt dagegen semantisch und wird verglichen.
+
 ## Abgrenzung (Nicht-Ziele)
 
 - **Keine** Volltext-Query-Übersetzung (`to_tsquery` / `MATCH … AGAINST`).

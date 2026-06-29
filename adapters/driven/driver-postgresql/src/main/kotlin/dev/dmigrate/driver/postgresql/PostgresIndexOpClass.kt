@@ -57,7 +57,10 @@ internal object PostgresIndexOpClass {
     }
 
     private fun hasDefaultOpClass(indexType: IndexType, type: NeutralType): Boolean = when (indexType) {
-        IndexType.GIN -> type is NeutralType.Json || type is NeutralType.Array
+        // ADR 0025: tsvector also has the gin_tsvector_ops default GIN operator class, so a
+        // GIN fulltext index (the PG-recommended method) is renderable — required for the
+        // FULLTEXT→GIN expansion to round-trip a GIN source without a W123 skip.
+        IndexType.GIN -> type is NeutralType.Json || type is NeutralType.Array || type is NeutralType.FullText
         // ADR 0015: FullText (tsvector) has the tsvector_ops default GiST
         // operator class, so a GiST index on it is renderable (no W123 skip).
         IndexType.GIST -> type is NeutralType.Geometry || type is NeutralType.FullText

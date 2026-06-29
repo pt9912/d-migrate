@@ -148,31 +148,28 @@ internal class SqliteTableDdlSupport(
         columns: Map<String, ColumnDefinition>,
         options: DdlGenerationOptions,
     ): DdlStatement? {
+        // ADR 0025: degrade a FULLTEXT index (no SQLite FTS5 yet, slice P4) BEFORE the geometry
+        // check — its source columns are text, so geometry routing must not see it. Emit the
+        // dedicated W132 (fulltext) note via the shared text source, not the generic W102.
+        if (index.type == IndexType.FULLTEXT) {
+            return DdlStatement(
+                SqliteFullTextDegradation.skipComment(quoteIdentifier(indexName)),
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = SqliteFullTextDegradation.W_CODE,
+                        objectName = indexName,
+                        message = SqliteFullTextDegradation.message(indexName, tableName),
+                        hint = SqliteFullTextDegradation.HINT,
+                    ),
+                ),
+            )
+        }
         // VA4: ein Index auf einer Geometriespalte → SpatiaLite `CreateSpatialIndex`
         // (R*Tree). Nur unter `--spatial-profile spatialite`; sonst geskippt mit Note.
         val geometryColumn = index.columnNames.firstOrNull { columns[it]?.type is NeutralType.Geometry }
         if (geometryColumn != null) {
             return spatialIndexStatement(tableName, geometryColumn, indexName, options)
-        }
-        // ADR 0025: a FULLTEXT index needs an FTS5 virtual table on SQLite (slice P4).
-        // Until that lands the fulltext capability degrades — emit the dedicated W132
-        // (fulltext) note, not the generic W102 ("only BTREE"), so the diagnostic points
-        // at FTS5 rather than suggesting a plain BTREE index.
-        if (index.type == IndexType.FULLTEXT) {
-            return DdlStatement(
-                "-- Index ${quoteIdentifier(indexName)} skipped: SQLite needs an FTS5 virtual table for fulltext search",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.WARNING,
-                        code = "W132",
-                        objectName = indexName,
-                        message = "FULLTEXT index '$indexName' on table '$tableName' is not supported in " +
-                            "SQLite without an FTS5 virtual table; it has been skipped.",
-                        hint = "Create an FTS5 virtual table over the source columns plus sync triggers to " +
-                            "retain full-text search.",
-                    ),
-                ),
-            )
         }
         if (index.type != IndexType.BTREE) {
             return DdlStatement(

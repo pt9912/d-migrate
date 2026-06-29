@@ -64,10 +64,32 @@ class PostgresDiffFullTextTest : FunSpec({
         r.statements.single().sql shouldContain "USING GIST (\"fulltext\")"
     }
 
+    test("AddIndex FULLTEXT restores the recorded GIN access method") {
+        val r = addIndex(ftIndex.copy(fullTextAccessMethod = IndexType.GIN))
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContain "USING GIN (\"fulltext\")"
+    }
+
     test("AddIndex FULLTEXT blocks when no tsvector column is recorded or derivable") {
         val r = addIndex(ftIndex.copy(fullTextVectorColumn = null), withVectorColumn = false)
         r.isBlocked shouldBe true
         r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.any { it.code == "FULLTEXT_VECTOR_UNKNOWN" } shouldBe true
+    }
+
+    test("CreateTable with an unresolvable FULLTEXT index warns (never silently drops it)") {
+        val table = filmTable(ftIndex.copy(fullTextVectorColumn = null), withVectorColumn = false)
+        val r = gen.generateUp(
+            planner.plan(
+                SchemaDefinition(name = "App", version = "1"),
+                SchemaDefinition(name = "App", version = "1", tables = mapOf("film" to table)),
+                SchemaDiff(tablesAdded = listOf(dev.dmigrate.core.diff.NamedTable("film", table))),
+            ),
+            DdlGenerationOptions(),
+        )
+        // The table is created; the unrenderable fulltext index is skipped WITH a diagnostic.
+        r.statements.any { it.sql.contains("CREATE TABLE") } shouldBe true
+        r.statements.none { it.sql.contains("USING") } shouldBe true
         r.diagnostics.any { it.code == "FULLTEXT_VECTOR_UNKNOWN" } shouldBe true
     }
 })

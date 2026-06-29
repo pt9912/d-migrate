@@ -130,14 +130,18 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   verdrahtet); nicht-parsebar → Modell unverändert (kein Verlust). Die Backing-`tsvector`-Spalte
   wird in `IndexDefinition.fullTextVectorColumn` getragen (ADR 0025), sodass Generate **und**
   Diff/Migrate den Index auch bei mehreren `tsvector`-Spalten je Tabelle eindeutig
-  rekonstruieren. **Alle Pfade FULLTEXT-bewusst:** PG-Generate **und** -Diff expandieren zu
-  `USING GIST(<vektor>)` (W133/`FULLTEXT_VECTOR_UNKNOWN` falls keine Vektorspalte); MySQL-Generate
-  **und** -Diff emittieren natives `CREATE FULLTEXT INDEX` (prefix-rule-exempt); SQLite-Generate
-  **und** -Diff degradieren mit **W132** (FTS5-Hinweis, kein stiller BTREE) bis P4. Fingerprint
-  v6 projiziert `textSearchConfig` + `fullTextVectorColumn`; YAML-Codec + `spec/schema.json` +
-  `neutral-model-spec.md` synchron. **DoD erfüllt** (live `make sample-db-smoke`): PG-Reverse von
-  Pagila `film` erfasst `fulltext` + Quelltext-Spalten (`title`, `description`) + Config
-  (`english`); PG→PG-Round-Trip 0 Diffs (`compare == baseline`, 0 Generate-Notes).
+  rekonstruieren. **Alle Pfade FULLTEXT-bewusst (Generate UND Diff je Dialekt):** PG expandiert
+  zu `USING <gin|gist>(<vektor>)` (Original-AM erhalten via `fullTextAccessMethod`;
+  `FULLTEXT_VECTOR_UNKNOWN`-Block bzw. W133/Warnung falls keine Vektorspalte — CreateTable
+  warnt statt still); MySQL natives `CREATE FULLTEXT INDEX` (prefix-rule-exempt); SQLite W132 in
+  **`createIndexSql`** (alle Caller, kein stiller BTREE) bis P4. **Review-Runde 2 gehärtet:**
+  `fullTextVectorColumn` + `fullTextAccessMethod` sind **Generate-only-Hinweise** — im Modell, aber
+  aus Comparator/Fingerprint/`CanonicalPayload` ausgeschlossen (analog `ordinal`), sonst
+  Phantom-Diffs authored-vs-reversed; `textSearchConfig` bleibt semantisch (auch in
+  `CanonicalPayload`). YAML-Codec + `spec/schema.json` + `neutral-model-spec.md` + `cli-spec.md`
+  (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) synchron. **DoD erfüllt** (live `make sample-db-smoke`):
+  PG-Reverse von Pagila `film` erfasst `fulltext` + Quelltext-Spalten (`title`, `description`) +
+  Config (`english`) + `gist`; PG→PG-Round-Trip 0 Diffs (`compare == baseline`, 0 Generate-Notes).
 - **P3 — MySQL-Generate (FULLTEXT).** `fulltext` → `TEXT`-Spalte(n) + `FULLTEXT`-Index über die
   Quelltext-Spalten. **DoD:** live MySQL — generierter `FULLTEXT`-Index existiert
   (`information_schema`), `MATCH … AGAINST` liefert Treffer; Cross-Dialect-Smoke grün.
