@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.referencesGeometryColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexType
@@ -310,12 +311,10 @@ internal class MysqlIndexPartitionDdlHelper(
         // welcher neutralen Zugriffsmethode er hereinkommt (GIST/SP-GiST/BRIN/SPATIAL;
         // MySQL kennt nur SPATIAL). Vor dem Prefix-/when-Pfad, da Geometrie keine
         // Prefix-Länge trägt.
-        // ADR 0025: a FULLTEXT index lists its source TEXT columns; never route it to the
-        // spatial path even if a source column is geometry-typed (the `when` below has the
-        // native CREATE FULLTEXT INDEX branch). Mirrors the diff-side indexTouchesGeometry guard.
-        if (index.type != IndexType.FULLTEXT &&
-            index.columnNames.any { columns[it]?.type is NeutralType.Geometry }
-        ) {
+        // ADR 0025: shared predicate — excludes FULLTEXT (lists its source TEXT columns; the
+        // `when` below has the native CREATE FULLTEXT INDEX branch). One source of truth with
+        // the diff-side geometry routers.
+        if (index.referencesGeometryColumn { columns[it]?.type }) {
             return spatialIndexStatement(tableName, index, indexName)
         }
 

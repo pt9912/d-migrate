@@ -164,41 +164,13 @@ internal object PostgresDiffOtherOps {
         }
         if (!guardSpatialIndex(op, op.index, ctx, table)) return
         if (!guardIndexOpClass(op, op.index, ctx, table)) return
-        val index = resolveFullTextIndex(op, op.index, ctx, table)
+        // ADR 0025: a FULLTEXT index whose tsvector column can't be resolved is blocked
+        // (FULLTEXT_VECTOR_UNKNOWN) — see ctx.resolveFullTextIndex. A block here means UP
+        // never creates a phantom index, so the DOWN `DROP INDEX` below stays symmetric.
+        val index = ctx.resolveFullTextIndex(op, table, op.index) ?: return
         // CREATE INDEX (non-CONCURRENTLY): SHARE lock — writes block,
         // reads proceed. Plan-2 §A.1.
         ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
-    }
-
-    /**
-     * ADR 0025: ensure a FULLTEXT index carries its backing `tsvector` column before it
-     * reaches [PostgresDiffSqlBuilders.createIndexSql] (which expands it to a GiST/GIN over
-     * that column). Resolves the column from the index or the table's sole tsvector column.
-     * When neither is available the index cannot be reconstructed: warn with
-     * `FULLTEXT_VECTOR_UNKNOWN` and leave the index without a vector column, so createIndexSql
-     * emits a no-op skip marker — a degradation, not a hard block (no invalid SQL is produced),
-     * consistent with the generate path (W133) and the CreateTable path. Non-FULLTEXT indices
-     * pass through unchanged.
-     */
-    private fun resolveFullTextIndex(
-        op: DiffOperation,
-        index: IndexDefinition,
-        ctx: PostgresDiffRenderContext,
-        table: String,
-    ): IndexDefinition {
-        if (index.type != IndexType.FULLTEXT) return index
-        val vec = ctx.fullTextVectorColumn(table, index)
-        if (vec == null) {
-            ctx.warning(
-                op,
-                "FULLTEXT index '${ctx.sql.effectiveIndexName(table, index)}' on `$table` has no backing " +
-                    "tsvector column recorded or derivable and was skipped; PostgreSQL builds the index " +
-                    "over a tsvector column.",
-                code = "FULLTEXT_VECTOR_UNKNOWN",
-            )
-            return index
-        }
-        return index.copy(fullTextVectorColumn = vec)
     }
 
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: PostgresDiffRenderContext) {
@@ -206,7 +178,7 @@ internal object PostgresDiffOtherOps {
         if (ctx.direction == PostgresRenderDirection.DOWN) {
             if (!guardSpatialIndex(op, op.index, ctx, table)) return
             if (!guardIndexOpClass(op, op.index, ctx, table)) return
-            val index = resolveFullTextIndex(op, op.index, ctx, table)
+            val index = ctx.resolveFullTextIndex(op, table, op.index) ?: return
             ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
             return
         }

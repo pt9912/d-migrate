@@ -58,6 +58,17 @@ data class IndexDefinition(
         get() = columns.map { it.name }
 }
 
+/**
+ * ADR 0025: whether this index is a spatial index over a geometry column — true when a
+ * **non-FULLTEXT** index touches a [NeutralType.Geometry] column. FULLTEXT is excluded because
+ * it lists its *source* TEXT columns; a geometry-typed source must never route a fulltext index
+ * to the dialect spatial path. [columnType] resolves a column name to its neutral type (null =
+ * unknown). Single predicate shared by every per-dialect generate + diff geometry router so
+ * they cannot diverge (the FULLTEXT guard was previously hand-copied across ~6 sites).
+ */
+fun IndexDefinition.referencesGeometryColumn(columnType: (String) -> NeutralType?): Boolean =
+    type != IndexType.FULLTEXT && columnNames.any { columnType(it) is NeutralType.Geometry }
+
 enum class IndexType {
     BTREE, HASH, GIN, GIST, BRIN,
 

@@ -10,6 +10,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.referencesGeometryColumn
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
@@ -293,11 +294,8 @@ internal class PostgresDiffRenderContext(
     }
 
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
-        // ADR 0025: a FULLTEXT index lists its source TEXT columns; never route it to the
-        // spatial path even if a source column happens to be geometry-typed.
-        if (index.type == IndexType.FULLTEXT) return false
         val columns = columnsFor(table)
-        return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
+        return index.referencesGeometryColumn { columns[it]?.type }
     }
 
     /**
@@ -308,12 +306,44 @@ internal class PostgresDiffRenderContext(
      */
     fun fullTextVectorColumn(table: String, index: IndexDefinition): String? {
         val columns = columnsFor(table)
-        // Mirror PostgresDdlGenerator.expandFullTextIndex: only accept a recorded vector column
-        // that really is a tsvector (FullText) column — a stale/hand-set non-tsvector value
-        // must fall back (or yield null → FULLTEXT_VECTOR_UNKNOWN) instead of emitting an
-        // invalid `USING gist (text_col)` that PostgreSQL rejects.
-        index.fullTextVectorColumn?.takeIf { columns[it]?.type is NeutralType.FullText }?.let { return it }
+        // Mirror PostgresDdlGenerator.expandFullTextIndex: accept a recorded vector column
+        // unless we can SEE it is not a tsvector — a stale/hand-set non-tsvector value must fall
+        // back. When the column is UNKNOWN (the render context's schema side is unavailable),
+        // trust the recorded value rather than dropping a valid index; the type check only
+        // rejects a positively-wrong column.
+        index.fullTextVectorColumn?.let { vec ->
+            val type = columns[vec]?.type
+            if (type == null || type is NeutralType.FullText) return vec
+        }
         return columns.entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
+    }
+
+    /**
+     * ADR 0025: resolve a FULLTEXT index's backing `tsvector` column so
+     * [PostgresDiffSqlBuilders.createIndexSql] expands it over the right column (GIN/GiST).
+     * When neither a recorded nor a sole-tsvector column is available the index cannot be
+     * built on PostgreSQL, so this **blocks** with `FULLTEXT_VECTOR_UNKNOWN` /
+     * MANUAL_ACTION_REQUIRED — the same hard-block contract as the sibling spatial / op-class
+     * guards, and the safer choice on the execute path (the create paths would otherwise skip
+     * the index and the drop/rollback paths would `DROP INDEX` a never-created index). The
+     * generate path warns (W133) instead, because it only produces DDL text. Single source of
+     * truth for the AddIndex, DropIndex-DOWN and CreateTable paths. Non-FULLTEXT → unchanged.
+     */
+    fun resolveFullTextIndex(op: DiffOperation, table: String, index: IndexDefinition): IndexDefinition? {
+        if (index.type != IndexType.FULLTEXT) return index
+        val vec = fullTextVectorColumn(table, index)
+        if (vec == null) {
+            skip(
+                op,
+                "FULLTEXT index '${sql.effectiveIndexName(table, index)}' on `$table` has no backing " +
+                    "tsvector column recorded or derivable; PostgreSQL builds the index over a tsvector " +
+                    "column. Add the tsvector column (and its populating trigger) or remove the index.",
+                code = "FULLTEXT_VECTOR_UNKNOWN",
+            )
+            addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
+            return null
+        }
+        return index.copy(fullTextVectorColumn = vec)
     }
 
     /**

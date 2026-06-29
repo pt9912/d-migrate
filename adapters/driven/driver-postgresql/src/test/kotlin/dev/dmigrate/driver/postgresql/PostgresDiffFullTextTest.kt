@@ -11,6 +11,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -69,16 +70,18 @@ class PostgresDiffFullTextTest : FunSpec({
         r.statements.single().sql shouldContain "USING GIN (\"fulltext\")"
     }
 
-    test("AddIndex FULLTEXT without a resolvable tsvector column warns and skips (no block, no invalid SQL)") {
-        // Consistent with the generate path (W133) and CreateTable: a degradation, not a hard
-        // block — createIndexSql emits only a no-op comment, so there is no invalid SQL to guard.
+    test("AddIndex FULLTEXT without a resolvable tsvector column BLOCKS (FULLTEXT_VECTOR_UNKNOWN)") {
+        // Hard block, like the sibling spatial/op-class guards: a FULLTEXT index PG cannot build
+        // must not silently succeed — a warn-and-skip would also leave the DOWN `DROP INDEX`
+        // dropping a never-created index.
         val r = addIndex(ftIndex.copy(fullTextVectorColumn = null), withVectorColumn = false)
-        r.isBlocked shouldBe false
+        r.isBlocked shouldBe true
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
         r.diagnostics.any { it.code == "FULLTEXT_VECTOR_UNKNOWN" } shouldBe true
         r.statements.none { it.sql.contains("USING") } shouldBe true
     }
 
-    test("CreateTable with an unresolvable FULLTEXT index warns (never silently drops it)") {
+    test("CreateTable with an unresolvable FULLTEXT index BLOCKS (never silently drops it)") {
         val table = filmTable(ftIndex.copy(fullTextVectorColumn = null), withVectorColumn = false)
         val r = gen.generateUp(
             planner.plan(
@@ -88,9 +91,8 @@ class PostgresDiffFullTextTest : FunSpec({
             ),
             DdlGenerationOptions(),
         )
-        // The table is created; the unrenderable fulltext index is skipped WITH a diagnostic.
-        r.statements.any { it.sql.contains("CREATE TABLE") } shouldBe true
-        r.statements.none { it.sql.contains("USING") } shouldBe true
+        r.isBlocked shouldBe true
         r.diagnostics.any { it.code == "FULLTEXT_VECTOR_UNKNOWN" } shouldBe true
+        r.statements.none { it.sql.contains("USING") } shouldBe true
     }
 })

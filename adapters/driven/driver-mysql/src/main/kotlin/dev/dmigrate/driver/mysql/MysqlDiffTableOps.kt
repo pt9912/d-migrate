@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.referencesGeometryColumn
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -282,9 +283,6 @@ internal object MysqlDiffTableOps {
     }
 
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
-        // ADR 0025: a FULLTEXT index lists its source TEXT columns; never treat it as spatial
-        // even if a source column is geometry-typed (createIndexSql has the native FULLTEXT
-        // branch). Mirrors MysqlDiffRenderContext.indexTouchesGeometry.
-        type != dev.dmigrate.core.model.IndexType.FULLTEXT &&
-            columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
+        // ADR 0025: shared predicate (excludes FULLTEXT — createIndexSql has the native branch).
+        referencesGeometryColumn { table.columns[it]?.type }
 }

@@ -2,9 +2,9 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintType
-import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.referencesGeometryColumn
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
@@ -38,6 +38,12 @@ internal object PostgresDiffTableOps {
             return
         }
         if (blockUnsupportedExcludeOpClassInTable(op, ctx, tableName)) return
+        // ADR 0025: resolve FULLTEXT backing tsvector columns BEFORE emitting the table — a
+        // block must happen up-front (like the spatial precheck above), since skipping an op
+        // that was already emitted is inconsistent. An unresolvable FULLTEXT blocks the whole op.
+        val resolvedIndices = op.table.indices.map { idx ->
+            ctx.resolveFullTextIndex(op, tableName, idx) ?: return
+        }
         val lines = mutableListOf<String>()
         for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             lines += "    " + ctx.sql.columnLine(colName, col)
@@ -54,26 +60,7 @@ internal object PostgresDiffTableOps {
             append("\n);")
         }
         ctx.emit(op, text)
-        for (idx in op.table.indices) {
-            // ADR 0025: resolve a FULLTEXT index's backing tsvector column so createIndexSql
-            // expands it over the right column. When it can't be resolved, warn (not a silent
-            // comment) and skip it — consistent with the AddIndex path and the generate path
-            // (W133); the table is still created. Single emit for both index kinds.
-            val index = if (idx.type == IndexType.FULLTEXT) {
-                val vec = ctx.fullTextVectorColumn(tableName, idx)
-                if (vec == null) {
-                    ctx.warning(
-                        op,
-                        "FULLTEXT index '${ctx.sql.effectiveIndexName(tableName, idx)}' on new table " +
-                            "'$tableName' has no derivable tsvector column and was skipped. PostgreSQL " +
-                            "builds the index over a tsvector column.",
-                        code = "FULLTEXT_VECTOR_UNKNOWN",
-                    )
-                }
-                idx.copy(fullTextVectorColumn = vec)
-            } else {
-                idx
-            }
+        for (index in resolvedIndices) {
             ctx.emit(op, ctx.sql.createIndexSql(tableName, index))
         }
     }
@@ -233,7 +220,11 @@ internal object PostgresDiffTableOps {
         columns.values.any { it.type is NeutralType.Geometry }
 
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
-        columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
+        // ADR 0025: shared predicate excludes FULLTEXT — otherwise a FULLTEXT index whose source
+        // column is geometry-typed would be flagged unsupported-spatial and block the whole
+        // CreateTable instead of reaching the FULLTEXT expansion loop. (This was the missed 6th
+        // copy of the geometry/FULLTEXT guard.)
+        referencesGeometryColumn { table.columns[it]?.type }
 
     /**
      * F.5 Sub-Slice F: inline `CREATE TABLE` constraint loop emits

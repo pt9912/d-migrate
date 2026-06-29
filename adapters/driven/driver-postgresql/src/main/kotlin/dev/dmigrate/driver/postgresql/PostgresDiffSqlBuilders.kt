@@ -85,7 +85,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
                 ?: return "-- FULLTEXT index ${quote(effectiveIndexName(table, idx))} skipped: " +
                     "no backing tsvector column"
             // ADR 0025: restore the recorded access method, clamped to GIN/GiST.
-            val method = pgFullTextAccessMethod(idx).name
+            val method = pgFullTextAccessMethod(idx.fullTextAccessMethod).name
             return "CREATE ${unique}INDEX ${quote(effectiveIndexName(table, idx))} " +
                 "ON ${quote(table)} USING $method (${quote(vec)});"
         }

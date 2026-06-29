@@ -26,8 +26,8 @@ internal fun pgAccessMethod(type: IndexType): String =
  * tsvector default — never emitting an invalid `USING <method>` over a tsvector column.
  * Single source of truth shared by [PostgresDdlGenerator] and [PostgresDiffSqlBuilders].
  */
-internal fun pgFullTextAccessMethod(index: IndexDefinition): IndexType =
-    if (index.fullTextAccessMethod == IndexType.GIN) IndexType.GIN else IndexType.GIST
+internal fun pgFullTextAccessMethod(method: IndexType?): IndexType =
+    if (method == IndexType.GIN) IndexType.GIN else IndexType.GIST
 
 /**
  * VA3: ob [type] eine in PostGIS gültige *räumliche* Zugriffsmethode für eine

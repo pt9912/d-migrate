@@ -25,14 +25,15 @@ internal fun String.toIndexType(): IndexType = when (lowercase()) {
 
 /**
  * ADR 0025: parse a fulltext access method — only `gin`/`gist` are legal (per schema.json).
- * Any other value (a typo, or an unsupported method) maps to null rather than throwing, so a
- * malformed `full_text_access_method` does not abort the whole parse; the generate path then
- * falls back to the GiST default. `schema validate` still reports the enum violation.
+ * An out-of-domain value throws, exactly like [toIndexType], so a typo surfaces as a clean
+ * `Failed to parse schema file: …` parse error (Exit 7) rather than being silently swallowed
+ * to the GiST default. (The runtime CLI does NOT run json-schema-validation on the load path,
+ * so the schema.json enum alone would not catch it.)
  */
-internal fun String.toFullTextAccessMethod(): IndexType? = when (lowercase()) {
+internal fun String.toFullTextAccessMethod(): IndexType = when (lowercase()) {
     "gin" -> IndexType.GIN
     "gist" -> IndexType.GIST
-    else -> null
+    else -> throw IllegalArgumentException("Unknown fulltext access method: $this (expected gin or gist)")
 }
 
 internal fun String.toIndexSortDirection(): IndexSortDirection = when (lowercase()) {
