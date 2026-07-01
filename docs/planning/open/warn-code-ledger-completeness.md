@@ -50,6 +50,6 @@ ungeprüft durch.
 ## Bezug
 
 - Auslöser: W132 (Fulltext-Degradierung), Slice
-  [`../in-progress/fulltext-structural-cross-dialect.md`](../in-progress/fulltext-structural-cross-dialect.md).
+  [`../done/fulltext-structural-cross-dialect.md`](../done/fulltext-structural-cross-dialect.md).
 - Validierung: `CodeLedgerValidationTest.kt` (`hexagon/core`); Ledger-YAMLs unter
   dem `ledger`-Verzeichnis (`warn-code-ledger-0.9.9.yaml` u. a.).

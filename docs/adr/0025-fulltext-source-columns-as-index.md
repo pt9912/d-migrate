@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-06-28
 decision-makers: pt9912
-consulted: docs/planning/in-progress/fulltext-structural-cross-dialect.md (P1-Slice, Abschnitt 4), docs/adr/0015-fulltext-tsvector-neutral-type.md (parameterloser fulltext-Typ), docs/adr/0016-spatialite-metadata-bootstrap.md (strukturelle Spalten-Expansion)
+consulted: docs/planning/done/fulltext-structural-cross-dialect.md (Slice, Abschnitt 4), docs/adr/0015-fulltext-tsvector-neutral-type.md (parameterloser fulltext-Typ), docs/adr/0016-spatialite-metadata-bootstrap.md (strukturelle Spalten-Expansion)
 informed: hexagon/core, adapters/driven/driver-postgresql, adapters/driven/driver-mysql, adapters/driven/driver-sqlite, spec/neutral-model-spec.md
 ---
 
@@ -16,7 +16,7 @@ typ-spezifische Attribute und mit der Text-Search-Konfiguration (`pg_catalog.eng
 ausdrücklich **nicht** im Typ („die Config schmuggeln wir bewusst **nicht** in den Typ").
 
 Die strukturelle Cross-Dialect-Übersetzung (Slice
-[`../planning/in-progress/fulltext-structural-cross-dialect.md`](../planning/in-progress/fulltext-structural-cross-dialect.md))
+[`../planning/done/fulltext-structural-cross-dialect.md`](../planning/done/fulltext-structural-cross-dialect.md))
 braucht aber die **Quelltext-Spalten** (z. B. Pagila `film.title`, `film.description`)
 plus die Config:
 

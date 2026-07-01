@@ -1,7 +1,9 @@
 # Strukturelle Cross-Dialect-Volltext-Übersetzung (FTS5 / FULLTEXT)
 
-> **Status:** **P0–P5 KOMPLETT** (P2 review-gehärtet; P3+P4 live-verifiziert + review-gehärtet; P5
-> drift-frei live-verifiziert). Slice inhaltlich abgeschlossen — bereit zur Graduierung nach `done/`.
+> **Status:** **ABGESCHLOSSEN & nach `done/` graduiert (2026-07-01).** P0–P5 komplett (P2 review-gehärtet;
+> P3+P4 live-verifiziert + review-gehärtet; P5 drift-frei live-verifiziert + review-gehärtet). Alle
+> Phasen-Commits gepusht (`origin/develop`), Full-Repo-CI + E2E-Regression (sqlite/spatial) grün.
+> Offene Folgearbeit ausgeschnitten: [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md).
 >
 > **STAND 2026-07-01:**
 > - **P5 (Diff/Migrate-Härtung) live-verifiziert & DoD-komplett.** Der `migrate --execute`-Round-Trip
@@ -48,7 +50,7 @@
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
 > **Herkunft:** Carve-Out aus [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)
 > (Abschnitt „Abgrenzung"), getrackt in
-> [`carveout.md`](carveout.md), Abschnitt 8.
+> [`../in-progress/carveout.md`](../in-progress/carveout.md), Abschnitt 8.
 
 ## 1. Ziel
 
@@ -255,6 +257,6 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
 
 ## 8. Bezug
 
-- Carve-Out-Tracker: [`carveout.md`](carveout.md), Abschnitt 8.
+- Carve-Out-Tracker: [`../in-progress/carveout.md`](../in-progress/carveout.md), Abschnitt 8.
 - Verwandter Trigger-Watch (degradierende PG-only-Typen):
   [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md).

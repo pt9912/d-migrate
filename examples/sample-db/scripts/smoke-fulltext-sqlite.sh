@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sample-DB-Harness — Fulltext-Slice P4 (SQLite FTS5)
-# Plan: docs/planning/in-progress/fulltext-structural-cross-dialect.md (P4)
+# Plan: docs/planning/done/fulltext-structural-cross-dialect.md (P4/P5)
 # ADR:  docs/adr/0025-fulltext-source-columns-as-index.md
 #
 # Belegt live, dass ein neutraler FULLTEXT-Index cross-dialect zu einer SQLite

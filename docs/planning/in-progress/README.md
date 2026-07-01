@@ -57,7 +57,6 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`fulltext-structural-cross-dialect.md`](fulltext-structural-cross-dialect.md) | Per-Slice-ImpPlan | Strukturelle Cross-Dialect-`fulltext`-Uebersetzung (MySQL `FULLTEXT`-Index, SQLite FTS5 + Sync-Trigger). **P0 erledigt** (Degradierungs-Note W132); P1-P5 offen (ADR + Modell, PG-Reverse-Anreicherung, MySQL/SQLite-Generate, Diff-Haertung). Aus Carve-Out (`carveout.md` Abschnitt 8). |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

@@ -1,7 +1,7 @@
 # SQLite: FTS5-FULLTEXT-Objekte über den Table-Rebuild-Pfad recreaten
 
 > **Trigger:** Aufgedeckt im P5-Review des Fulltext-Slice
-> ([`in-progress/fulltext-structural-cross-dialect.md`](../in-progress/fulltext-structural-cross-dialect.md)).
+> ([`done/fulltext-structural-cross-dialect.md`](../done/fulltext-structural-cross-dialect.md)).
 > Ausgeschnitten, weil eigenständige Rebuild-Planner-Arbeit und **nicht** im P5-DoD/Slice-Akzeptanz.
 
 ## Kontext
