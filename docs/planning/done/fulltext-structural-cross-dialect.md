@@ -3,7 +3,10 @@
 > **Status:** **ABGESCHLOSSEN & nach `done/` graduiert (2026-07-01).** P0–P5 komplett (P2 review-gehärtet;
 > P3+P4 live-verifiziert + review-gehärtet; P5 drift-frei live-verifiziert + review-gehärtet). Alle
 > Phasen-Commits gepusht (`origin/develop`), Full-Repo-CI + E2E-Regression (sqlite/spatial) grün.
-> Offene Folgearbeit ausgeschnitten: [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md).
+> Offene Folgearbeit ausgeschnitten (SQLite-Table-Rebuild einer FULLTEXT-Tabelle, zwei Tickets):
+> [`../open/sqlite-fulltext-rebuild-block.md`](../open/sqlite-fulltext-rebuild-block.md) (Punkt 1,
+> loud-safe Interim) + [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md)
+> (Punkt 2, voller Recreate).
 >
 > **STAND 2026-07-01:**
 > - **P5 (Diff/Migrate-Härtung) live-verifiziert & DoD-komplett.** Der `migrate --execute`-Round-Trip

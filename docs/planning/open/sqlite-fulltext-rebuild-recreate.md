@@ -21,9 +21,20 @@ Daten kopiert, die Originaltabelle gedroppt, `<temp>` umbenannt. Der Renderer re
 abhängigen Indizes via `sql.createIndexSql(...)` — für einen FULLTEXT-Index liefert das den
 **W132-Skip-Marker** (sichtbarer SQL-Kommentar), also **keine** Neuanlage der FTS5-Struktur.
 
-Folge: nach einem Rebuild einer Tabelle mit FULLTEXT-Index ist die Volltext-Suche verloren (der
-FTS5-Index wird nicht wiederhergestellt). Die Degradierung ist **sichtbar** (Kommentar-Marker im
-Migrations-SQL), nicht still-kaputt — aber unvollständig.
+**Folge (Schwere — korrigiert ggü. dem ersten Entwurf: potenziell STILL, nicht nur sichtbar):**
+Die FTS5-Virtual-Table **überlebt** den Basistabellen-Drop (separates Objekt; SQLite erzwingt keine
+`content=`-Integrität), aber ihre drei Sync-Trigger **sterben** mit der Basistabelle und werden nicht
+neu angelegt (der Rebuild-Plan kennt sie nicht — P5 filtert sie aus dem neutralen Modell), und der
+`'rebuild'` läuft nicht erneut. Zurück bleibt eine **veraltete FTS5-Tabelle ohne Wartungs-Trigger**:
+die Suche liefert still veraltete/falsche Treffer und aktualisiert sich bei künftigen Writes nicht.
+Weil P5s Reverse den Index aus der überlebenden Virtual-Table rekonstruiert, **driftet der
+Post-Compare nicht** → `migrate` endet **Exit 0** trotz kaputter Suche. Das ist das „stiller
+Verlust"-Anti-Muster — daher der defensive Interim-Block als eigenes Ticket
+[`sqlite-fulltext-rebuild-block.md`](sqlite-fulltext-rebuild-block.md) (Punkt 1), den **dieses**
+Ticket (Punkt 2, die eigentliche Lösung) später ablöst.
+
+**Erreichbarkeit:** eng — nur bei einer inkrementellen SQLite-Migration, die eine fulltext-tragende
+Tabelle strukturell ALTERt. Der Slice-Zielpfad (PG→SQLite *fresh* migrate = CreateTable) trifft es nicht.
 
 ## Scope
 
