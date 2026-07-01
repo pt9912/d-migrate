@@ -15,6 +15,8 @@
 #     zählen nicht separat — payment ist EINE partitionierte MySQL-Tabelle)
 #   - Typ-Konvertierungen datenbelegt (boolean→tinyint(1), text[]→json,
 #     tsvector→text, timestamptz→datetime/W100)
+#   - FULLTEXT-Struktur (ADR 0025): der PG-GiST-tsvector-Index wird als nativer MySQL
+#     FULLTEXT-Index über die Quelltext-Spalten rekonstruiert (Katalog + MATCH … AGAINST)
 #   - Partitions-Integrität: payment round-trippt als EINE RANGE-COLUMNS-Tabelle,
 #     keine Kind-Duplikation, alle Zeilen vorhanden
 #
@@ -185,6 +187,30 @@ log "  text[]->json OK (valid JSON array)"
 ft_empty=$(my_val "SELECT COUNT(*) FROM pagila_target.film WHERE \`fulltext\` IS NULL OR CHAR_LENGTH(\`fulltext\`)=0;")
 [ "$ft_empty" = "0" ] || fail "tsvector->text: $ft_empty film rows have empty fulltext"
 log "  tsvector->text OK (all film.fulltext populated)"
+
+# --- 8b. FULLTEXT-Index (ADR 0025, P3): der PG-GiST-tsvector-Index wird cross-dialect
+#         als nativer MySQL FULLTEXT-Index über die Quelltext-Spalten (title, description)
+#         rekonstruiert — Volltext-Suche bleibt am Ziel erhalten (kein stiller Verlust,
+#         kein W102-GiST-Skip mehr). Belegt strukturell: Index existiert im Katalog UND
+#         MATCH … AGAINST liefert Treffer. -------------------------------------------
+log "verifying FULLTEXT index (ADR 0025) exists + MATCH … AGAINST returns hits..."
+ft_idx_type=$(my_val "SELECT DISTINCT index_type FROM information_schema.statistics WHERE table_schema='pagila_target' AND table_name='film' AND index_name='film_fulltext_idx';")
+[ "$ft_idx_type" = "FULLTEXT" ] || fail "film_fulltext_idx is not a FULLTEXT index (got '${ft_idx_type:-<none>}')"
+# Der Index muss genau die Quelltext-Spalten (title, description) tragen, sonst benutzt
+# MySQL ihn für MATCH(title, description) nicht.
+ft_idx_cols=$(my_val "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema='pagila_target' AND table_name='film' AND index_name='film_fulltext_idx';")
+[ "$ft_idx_cols" = "title,description" ] || fail "film_fulltext_idx columns expected 'title,description', got '$ft_idx_cols'"
+# Semantischer Beweis: MATCH … AGAINST liefert Treffer für einen Term, der in den
+# Beschreibungen vorkommt. PG (mit English-Stemming) zählt hier ~78; MySQL stemmt per
+# Default nicht, daher wird nur "> 0" hart geprüft (Exakt-Gleichheit wäre stemming-brüchig).
+pg_ft=$(pg_val "SELECT count(*) FROM film WHERE fulltext @@ to_tsquery('english','Astronaut')")
+my_ft=$(my_val "SELECT COUNT(*) FROM pagila_target.film WHERE MATCH(title, description) AGAINST('Astronaut' IN NATURAL LANGUAGE MODE);")
+[ "${my_ft:-0}" -ge 1 ] || fail "FULLTEXT MATCH returned no hits for 'Astronaut' (index not populated?)"
+# Negativkontrolle: ein Nonsens-Term liefert 0 Treffer — beweist, dass MATCH wirklich
+# filtert (statt z. B. alle Zeilen zurückzugeben).
+my_ft_none=$(my_val "SELECT COUNT(*) FROM pagila_target.film WHERE MATCH(title, description) AGAINST('zzqxnonexistentterm' IN NATURAL LANGUAGE MODE);")
+[ "${my_ft_none:-1}" = "0" ] || fail "FULLTEXT MATCH returned $my_ft_none hits for a nonsense term (search broken)"
+log "  FULLTEXT OK (film_fulltext_idx over title,description; MATCH 'Astronaut' → $my_ft hits [PG tsquery: $pg_ft]; nonsense → 0)"
 
 # --- 9. Partitions-Integrität (AP1/AP2 + AP6): payment round-trippt als EINE
 #        partitionierte MySQL-Tabelle — alle Zeilen, keine Kind-Duplikation. -----

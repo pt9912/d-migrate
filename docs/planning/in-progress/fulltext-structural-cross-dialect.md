@@ -1,27 +1,29 @@
 # Strukturelle Cross-Dialect-Volltext-Übersetzung (FTS5 / FULLTEXT)
 
-> **Status:** In Progress. **P0+P1+P2 erledigt & review-gehärtet**; P3–P5 offen.
+> **Status:** In Progress. **P0+P1+P2+P3 erledigt** (P2 review-gehärtet, P3 live-verifiziert); P4–P5 offen.
 >
-> **STAND 2026-06-29 (Feierabend — morgen hier weiter):**
-> - **P0/P1/P2 fertig**, P2 über **5 Review-Runden** gehärtet. Common-Case (Pagila reverse→PG,
->   single tsvector) seit Runde 2 stabil; Runden 3–5 betrafen v. a. den seltenen Edge
->   *PG-FULLTEXT ohne auflösbare tsvector-Spalte* (Cross-Dialect-into-PG / hand-authored).
->   Review-Loop bewusst **beendet** (konvergiert auf eigene Korrekturen, abnehmende Erträge).
-> - **Alle Gates grün:** Full-Repo `make docker-build`-`check`, `make sample-db-smoke` (PG→PG
->   `compare == baseline`, 0 Diffs/Notes), `make docs-check` (0 Befunde).
-> - **Commits liegen LOKAL auf `develop`, NICHT gepusht** (8 Stück): `26e7d5e0` (P2 Feature),
->   `880e6522`+`c4846667`+`403def3a`+`3cec9a53`+`37703822`+`d84305f5`+`1b065eef`
->   (Rollback-Fix + Review-Runden 1–5). Morgen ggf. pushen.
-> - **Sample-DB-Postgres-Container läuft evtl. noch** (`make sample-db-down` zum Abbau).
+> **STAND 2026-07-01:**
+> - **P3 (MySQL-Generate FULLTEXT) live-verifiziert & DoD-komplett.** Der pg2my-Cross-Smoke
+>   (`make sample-db-cross-smoke-pg2my`) belegt live gegen echtes MySQL: der PG-GiST-tsvector-Index
+>   wird als nativer MySQL `FULLTEXT`-Index über die Quelltext-Spalten (`title`, `description`)
+>   rekonstruiert — er existiert im Katalog (`information_schema.statistics`, `index_type=FULLTEXT`,
+>   genau `title,description`), `MATCH(title, description) AGAINST('Astronaut')` liefert **78 Treffer**
+>   (= PG `to_tsquery`-Zahl), eine Nonsens-Term-Negativkontrolle liefert **0**. Der frühere stille
+>   W102-GiST-Skip ist weg. Die `fulltext`-**Spalte** degradiert weiterhin explizit zu `TEXT` (W132).
+>   Neue Assertions dafür im Smoke-Skript (Abschnitt „8b"); Notes-Baseline `expected/pagila-cross.notes.txt`
+>   neu gepinnt (**W102 → W132**, der reale P3-Fortschritt).
+> - **Alle Gates grün:** `make sample-db-cross-smoke-pg2my` (SUCCESS inkl. FULLTEXT),
+>   `make sample-db-smoke` (PG→PG `compare == baseline`, keine Regression), `make docs-check` (0 Befunde).
+> - **P0/P1/P2 fertig**, P2 über **5 Review-Runden** gehärtet (Common-Case Pagila reverse→PG stabil
+>   seit Runde 2; Runden 3–5 betrafen den seltenen Edge *PG-FULLTEXT ohne auflösbare tsvector-Spalte*).
+> - **Sample-DB-Postgres+MySQL-Container laufen evtl. noch** (`make sample-db-down` zum Abbau).
 >
-> **NÄCHSTER SCHRITT = P3 (MySQL-Generate, live).** Das Modell trägt bereits alles Nötige:
-> `IndexType.FULLTEXT` + Quelltext-Spalten (`columns`) + `fullTextVectorColumn` + `textSearchConfig`
-> + `fullTextAccessMethod` (Generate-only-Hinweise, aus Vergleich ausgeschlossen). MySQL-**Generate**
-> **und** -**Diff** emittieren bereits natives `CREATE FULLTEXT INDEX` (P2-Nebenarbeit). P3 = die
-> **Live-Verifikation** + DoD (Abschnitt 5/P3): live MySQL, `FULLTEXT`-Index in `information_schema`,
-> `MATCH … AGAINST` liefert Treffer; Cross-Dialect-Smoke (`make sample-db-cross-smoke-pg2my`?) grün.
-> Vor P3-Bau: prüfen, was MySQL-seitig schon steht (P2 hat Generate+Diff angelegt) vs. was die
-> Live-DoD noch braucht. Ist-Stand-Pointer in Abschnitt 2, DoD in Abschnitt 5/P3.
+> **NÄCHSTER SCHRITT = P4 (SQLite-Generate, FTS5).** `fulltext` → FTS5-Virtual-Table + Initial-Befüllung
+> + drei Sync-Trigger im **Diff-Renderpfad** (nach dem SpatiaLite-Bootstrap-Muster,
+> [ADR 0016](../../adr/0016-spatialite-metadata-bootstrap.md), nicht
+> generate-seitig, damit `migrate --execute` und `generate` denselben Pfad teilen). Strukturelles Vorbild:
+> `SqliteSpatialDiffOps` + `SqliteTableDdlSupport`. Heute steht SQLite-seitig nur W132 in `createIndexSql`
+> (kein stiller BTREE) als Platzhalter bis P4. DoD in Abschnitt 5/P4. Design-Vorschlag in Abschnitt 4/3.
 >
 > Phasen + Akzeptanzkriterien ausgearbeitet
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
@@ -157,9 +159,17 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) synchron. **DoD erfüllt** (live `make sample-db-smoke`):
   PG-Reverse von Pagila `film` erfasst `fulltext` + Quelltext-Spalten (`title`, `description`) +
   Config (`english`) + `gist`; PG→PG-Round-Trip 0 Diffs (`compare == baseline`, 0 Generate-Notes).
-- **P3 — MySQL-Generate (FULLTEXT).** `fulltext` → `TEXT`-Spalte(n) + `FULLTEXT`-Index über die
-  Quelltext-Spalten. **DoD:** live MySQL — generierter `FULLTEXT`-Index existiert
-  (`information_schema`), `MATCH … AGAINST` liefert Treffer; Cross-Dialect-Smoke grün.
+- **P3 — MySQL-Generate (FULLTEXT). ✅ ERLEDIGT 2026-07-01 (live-verifiziert).** `fulltext` →
+  `TEXT`-Spalte (W132) + nativer `FULLTEXT`-Index über die Quelltext-Spalten. Der Generate-/Diff-Code
+  stand bereits aus P2-Nebenarbeit ([`MysqlIndexPartitionDdlHelper`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt)
+  `IndexType.FULLTEXT`-Branch, [`MysqlDiffSqlBuilders`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDiffSqlBuilders.kt),
+  prefix-rule-exempt via [`MysqlIndexPrefix`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPrefix.kt));
+  P3 war die **Live-Verifikation + DoD**, kein Kotlin-Change. Neue Assertions im pg2my-Smoke
+  ([`smoke-cross-pg2my.sh`](../../../examples/sample-db/scripts/smoke-cross-pg2my.sh) Abschnitt „8b"),
+  Notes-Baseline neu gepinnt (**W102 → W132**). **DoD erfüllt** (live MySQL, `make sample-db-cross-smoke-pg2my`):
+  `film_fulltext_idx` existiert im Katalog (`index_type=FULLTEXT` über genau `title,description`);
+  `MATCH(title, description) AGAINST('Astronaut')` → 78 Treffer (= PG `to_tsquery`); Nonsens-Term → 0;
+  Cross-Dialect-Smoke grün; PG→PG-Baseline regressionsfrei (`compare == baseline`); `docs-check` 0 Befunde.
 - **P4 — SQLite-Generate (FTS5).** `fulltext` → FTS5-Virtual-Table + Initial-Befüllung + drei
   Sync-Trigger im Diff-Renderpfad. **DoD:** live SQLite — FTS5-Tabelle per `MATCH` abfragbar;
   `migrate --execute`-Apply gegen frische `.db` grün.
