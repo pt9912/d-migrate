@@ -39,10 +39,43 @@ class SqliteFts5ReverseTest : FunSpec({
         def.columns shouldBe listOf("a")
     }
 
-    test("fts5 shadow tables and sync trigger names are the FTS5-managed set") {
-        SqliteFts5Reverse.fts5ShadowTables("docs_fts") shouldBe
+    test("parseFts5 strips UNINDEXED column options (keeps the identifier only)") {
+        val def = SqliteFts5Reverse.parseFts5(
+            "t_fts",
+            "CREATE VIRTUAL TABLE t_fts USING fts5(title, body UNINDEXED, content='docs')",
+        )
+        def.columns shouldBe listOf("title", "body")
+        def.contentTable shouldBe "docs"
+    }
+
+    test("parseFts5 keeps a content= value that contains a bracket-quoted close-paren") {
+        // Bracket [..] quoting must be balanced-args-aware, not just handled by unquote.
+        val def = SqliteFts5Reverse.parseFts5("x_fts", "CREATE VIRTUAL TABLE x_fts USING fts5(a, content=[we)ird])")
+        def.contentTable shouldBe "we)ird"
+        def.columns shouldBe listOf("a")
+    }
+
+    test("fts5 shadow-table set is external-content-aware (no phantom _content for external)") {
+        // External content (content=): SQLite creates no _content shadow, so it must NOT be filtered.
+        SqliteFts5Reverse.fts5ShadowTables("docs_fts", externalContent = true) shouldBe
+            setOf("docs_fts_data", "docs_fts_idx", "docs_fts_docsize", "docs_fts_config")
+        // Regular/contentless: _content is a real shadow.
+        SqliteFts5Reverse.fts5ShadowTables("docs_fts", externalContent = false) shouldBe
             setOf("docs_fts_data", "docs_fts_idx", "docs_fts_docsize", "docs_fts_config", "docs_fts_content")
         SqliteFts5Reverse.fts5SyncTriggerNames("docs_fts") shouldBe
             setOf("docs_fts_ai", "docs_fts_ad", "docs_fts_au")
+    }
+
+    test("isFts5SyncTrigger detects a custom-named trigger that INSERTs into a known fts5 table") {
+        val fts = setOf("docs_fts")
+        SqliteFts5Reverse.isFts5SyncTrigger(
+            "CREATE TRIGGER docs_sync AFTER INSERT ON docs BEGIN INSERT INTO docs_fts(rowid) VALUES(new.rowid); END",
+            fts,
+        ) shouldBe true
+        // A user trigger that neither inserts nor references an fts5 table is left alone.
+        SqliteFts5Reverse.isFts5SyncTrigger(
+            "CREATE TRIGGER audit AFTER UPDATE ON docs BEGIN UPDATE meta SET n=n+1; END",
+            fts,
+        ) shouldBe false
     }
 })

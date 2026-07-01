@@ -51,8 +51,14 @@ class SqliteSchemaReader : SchemaReader {
             val fts5Defs = tableEntries
                 .filter { (_, createSql) -> SqliteFts5Reverse.isFts5VirtualTable(createSql) }
                 .map { (name, createSql) -> SqliteFts5Reverse.parseFts5(name, createSql) }
-            val fts5ShadowTables = fts5Defs.flatMap { SqliteFts5Reverse.fts5ShadowTables(it.name) }.toSet()
+            // `_content` is only a real shadow for regular/contentless FTS5 (external-content, the
+            // form P4 emits, has none) → external tables must not filter it (avoid dropping a real
+            // user table named `<fts>_content`).
+            val fts5ShadowTables = fts5Defs
+                .flatMap { SqliteFts5Reverse.fts5ShadowTables(it.name, externalContent = it.contentTable != null) }
+                .toSet()
             val fts5SyncTriggerNames = fts5Defs.flatMap { SqliteFts5Reverse.fts5SyncTriggerNames(it.name) }.toSet()
+            val fts5TableNames = fts5Defs.map { it.name.lowercase() }.toSet()
             val fts5ByContentTable = fts5Defs.filter { it.contentTable != null }
                 .groupBy { it.contentTable!!.lowercase() }
             val tables = LinkedHashMap<String, TableDefinition>()
@@ -93,6 +99,22 @@ class SqliteSchemaReader : SchemaReader {
                 )
             }
 
+            // ADR 0025 (Slice P5): an external-content FTS5 whose `content=` table did NOT survive
+            // the reverse (filtered/absent — SQLite doesn't enforce content= referential integrity)
+            // would drop its FULLTEXT index silently (readTable only runs for surviving tables).
+            // Record it as a skip so the loss is diagnosed rather than silent.
+            for (fts in fts5Defs) {
+                val ct = fts.contentTable ?: continue
+                if (tables.keys.none { it.equals(ct, ignoreCase = true) }) {
+                    skipped += SkippedObject(
+                        type = "INDEX", name = fts.name,
+                        reason = "FTS5 content table '$ct' not present in the reversed schema; " +
+                            "FULLTEXT index not reconstructed",
+                        code = "S103",
+                    )
+                }
+            }
+
             // Views
             val views = if (options.includeViews) readViews(session) else emptyMap()
 
@@ -107,7 +129,11 @@ class SqliteSchemaReader : SchemaReader {
 
             // Triggers (filtered against the canonical sequence-support pairs + FTS5 sync triggers)
             val triggers =
-                if (options.includeTriggers) readTriggers(session, fts5SyncTriggerNames, notes) else emptyMap()
+                if (options.includeTriggers) {
+                    readTriggers(session, fts5SyncTriggerNames, fts5TableNames, notes)
+                } else {
+                    emptyMap()
+                }
             val filteredTriggers = sequenceSupport.filterSupportTriggers(triggers, supportSnapshot)
 
             val schemaDef = SchemaDefinition(
@@ -262,6 +288,7 @@ class SqliteSchemaReader : SchemaReader {
     private fun readTriggers(
         session: JdbcMetadataSession,
         fts5SyncTriggerNames: Set<String>,
+        fts5TableNames: Set<String>,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, TriggerDefinition> {
         val triggerRows = SqliteMetadataQueries.listTriggers(session)
@@ -284,6 +311,10 @@ class SqliteSchemaReader : SchemaReader {
             // SpatiaLite-Integritäts-/Spatial-Index-Trigger auf der User-Tabelle
             // (gg*/gi*/tm*) ebenfalls ausschließen — siehe isSpatiaLiteGeometryTrigger.
             if (SqliteTypeMapping.isSpatiaLiteGeometryTrigger(name, sql)) continue
+            // ADR 0025 (Slice P5): a trigger that INSERTs into a known FTS5 table is an FTS5 sync
+            // trigger (folded via the reconstructed index), even when its name doesn't match the
+            // generated <fts>_{ai,ad,au} — catches custom-named sync triggers on a hand-authored fts5.
+            if (SqliteFts5Reverse.isFts5SyncTrigger(sql, fts5TableNames)) continue
             val parsed = SqliteTriggerSqlParser.parse(sql, name)
             notes += parsed.notes
             // Schema-qualified names (R212) are rejected — no TriggerDefinition

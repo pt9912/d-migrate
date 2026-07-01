@@ -8,10 +8,22 @@
 >   ist jetzt **drift-frei (Exit 0)**: der Post-Execute-Compare reverst die Ziel-`.db` und der SQLite-
 >   Reverse ([`SqliteFts5Reverse`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFts5Reverse.kt)
 >   + [`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt))
->   (a) **filtert** die FTS5-Shadow-Tabellen (`_data`/`_idx`/`_docsize`/`_config`/`_content`, S102) + die
->   drei Sync-Trigger (`<fts>_ai/ad/au`) und (b) **rekonstruiert** den `FULLTEXT`-Index aus der
->   FTS5-Virtual-Table (Content-Tabelle + Quellspalten) — Pendant zum SpatiaLite-Spatial-Index-Fold.
->   Der Smoke-Teil C wurde von nicht-fatal auf **harte Exit-0-Assertion** verschärft.
+>   (a) **filtert** die FTS5-Shadow-Tabellen (`_data`/`_idx`/`_docsize`/`_config`, S102; `_content` nur
+>   bei regular/contentless FTS5) + die drei Sync-Trigger (`<fts>_ai/ad/au` per Name **und** body-
+>   basiert) und (b) **rekonstruiert** den `FULLTEXT`-Index aus der FTS5-Virtual-Table (Content-Tabelle
+>   + Quellspalten) — Pendant zum SpatiaLite-Spatial-Index-Fold. Der Smoke-Teil C wurde von nicht-fatal
+>   auf **harte Exit-0-Assertion** verschärft.
+> - **P5-Review-gehärtet (4 Finder):** `_content`-Shadow nur bei regular/contentless FTS5 filtern
+>   (external-content erzeugt keins → kein False-Positive auf eine User-Tabelle `<fts>_content`);
+>   Sync-Trigger zusätzlich **body-basiert** erkannt (custom-benannte Sync-Trigger hand-authored
+>   fts5 leaken nicht mehr); Parser strippt `UNINDEXED`-Spaltenoptionen und ist bracket-(`[]`)-quote-
+>   bewusst; **S103**-Diagnose, wenn die `content=`-Tabelle im Reverse fehlt (statt stillem Verlust).
+> - **Bekannte Grenzen (inhärent/nicht slice-blockierend):** (1) **`textSearchConfig`** (z. B. PG
+>   `english`) ist in SQLite FTS5 nicht repräsentierbar → ein config-tragendes Schema driftet beim
+>   PG→SQLite-`migrate` auf `textSearchConfig` (Struktur + Suche bleiben erhalten; nur die Config-
+>   Semantik geht verloren). (2) Ein **anonymer** (name-loser) FULLTEXT-Index bekommt beim Generate
+>   einen Namen → Reverse liefert ihn benannt zurück; das ist die generelle Anonym-Index-Eigenschaft
+>   (SQLite verlangt Index-Namen), gilt für alle Indextypen, nicht fulltext-spezifisch.
 > - **P4 (SQLite-Generate FTS5):** `FULLTEXT` → FTS5-External-Content-Virtual-Table + `'rebuild'` + drei
 >   Sync-Trigger über die Quelltext-Spalten; gemeinsame SQL-Quelle
 >   [`SqliteFullTextExpansion`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextExpansion.kt)
