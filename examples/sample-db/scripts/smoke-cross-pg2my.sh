@@ -203,14 +203,16 @@ ft_idx_cols=$(my_val "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FRO
 # Semantischer Beweis: MATCH … AGAINST liefert Treffer für einen Term, der in den
 # Beschreibungen vorkommt. PG (mit English-Stemming) zählt hier ~78; MySQL stemmt per
 # Default nicht, daher wird nur "> 0" hart geprüft (Exakt-Gleichheit wäre stemming-brüchig).
-pg_ft=$(pg_val "SELECT count(*) FROM film WHERE fulltext @@ to_tsquery('english','Astronaut')")
+# pg_ft ist NUR ein Diagnose-Wert für die Log-Zeile (nie asserted) — `|| pg_ft=""` verhindert,
+# dass ein transienter PG-Fehler an dieser Stelle unter `set -e` den sonst grünen Lauf abbricht.
+pg_ft=$(pg_val "SELECT count(*) FROM film WHERE fulltext @@ to_tsquery('english','Astronaut')") || pg_ft=""
 my_ft=$(my_val "SELECT COUNT(*) FROM pagila_target.film WHERE MATCH(title, description) AGAINST('Astronaut' IN NATURAL LANGUAGE MODE);")
 [ "${my_ft:-0}" -ge 1 ] || fail "FULLTEXT MATCH returned no hits for 'Astronaut' (index not populated?)"
 # Negativkontrolle: ein Nonsens-Term liefert 0 Treffer — beweist, dass MATCH wirklich
 # filtert (statt z. B. alle Zeilen zurückzugeben).
 my_ft_none=$(my_val "SELECT COUNT(*) FROM pagila_target.film WHERE MATCH(title, description) AGAINST('zzqxnonexistentterm' IN NATURAL LANGUAGE MODE);")
 [ "${my_ft_none:-1}" = "0" ] || fail "FULLTEXT MATCH returned $my_ft_none hits for a nonsense term (search broken)"
-log "  FULLTEXT OK (film_fulltext_idx over title,description; MATCH 'Astronaut' → $my_ft hits [PG tsquery: $pg_ft]; nonsense → 0)"
+log "  FULLTEXT OK (film_fulltext_idx over title,description; MATCH 'Astronaut' → $my_ft hits [PG tsquery: ${pg_ft:-?}]; nonsense → 0)"
 
 # --- 9. Partitions-Integrität (AP1/AP2 + AP6): payment round-trippt als EINE
 #        partitionierte MySQL-Tabelle — alle Zeilen, keine Kind-Duplikation. -----

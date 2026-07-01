@@ -7,8 +7,9 @@
 >   (`make sample-db-cross-smoke-pg2my`) belegt live gegen echtes MySQL: der PG-GiST-tsvector-Index
 >   wird als nativer MySQL `FULLTEXT`-Index über die Quelltext-Spalten (`title`, `description`)
 >   rekonstruiert — er existiert im Katalog (`information_schema.statistics`, `index_type=FULLTEXT`,
->   genau `title,description`), `MATCH(title, description) AGAINST('Astronaut')` liefert **78 Treffer**
->   (= PG `to_tsquery`-Zahl), eine Nonsens-Term-Negativkontrolle liefert **0**. Der frühere stille
+>   genau `title,description`), `MATCH(title, description) AGAINST('Astronaut')` liefert **Treffer**
+>   (Snapshot: 78, deckt sich mit der PG-`to_tsquery`-Zahl; der Test prüft **hart nur `> 0`**, da MySQL
+>   nicht stemmt — Exakt-Gleichheit wäre brüchig), eine Nonsens-Term-Negativkontrolle liefert **0**. Der frühere stille
 >   W102-GiST-Skip ist weg. Die `fulltext`-**Spalte** degradiert weiterhin explizit zu `TEXT` (W132).
 >   Neue Assertions dafür im Smoke-Skript (Abschnitt „8b"); Notes-Baseline `expected/pagila-cross.notes.txt`
 >   neu gepinnt (**W102 → W132**, der reale P3-Fortschritt).
@@ -168,7 +169,8 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   ([`smoke-cross-pg2my.sh`](../../../examples/sample-db/scripts/smoke-cross-pg2my.sh) Abschnitt „8b"),
   Notes-Baseline neu gepinnt (**W102 → W132**). **DoD erfüllt** (live MySQL, `make sample-db-cross-smoke-pg2my`):
   `film_fulltext_idx` existiert im Katalog (`index_type=FULLTEXT` über genau `title,description`);
-  `MATCH(title, description) AGAINST('Astronaut')` → 78 Treffer (= PG `to_tsquery`); Nonsens-Term → 0;
+  `MATCH(title, description) AGAINST('Astronaut')` liefert Treffer (Test-Assertion **`> 0`**; Snapshot 78,
+  = PG `to_tsquery`); Nonsens-Term → 0;
   Cross-Dialect-Smoke grün; PG→PG-Baseline regressionsfrei (`compare == baseline`); `docs-check` 0 Befunde.
 - **P4 — SQLite-Generate (FTS5).** `fulltext` → FTS5-Virtual-Table + Initial-Befüllung + drei
   Sync-Trigger im Diff-Renderpfad. **DoD:** live SQLite — FTS5-Tabelle per `MATCH` abfragbar;
