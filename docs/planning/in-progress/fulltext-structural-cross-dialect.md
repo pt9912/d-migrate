@@ -14,10 +14,19 @@
 >   Treffer inkl. `'rebuild'`-Befüllung UND aller drei Sync-Trigger (Insert/Update/Delete) + Nonsens-
 >   Negativkontrolle; (C) `migrate --execute` legt die FTS5-Struktur real an (Diff-Pfad). Die `fulltext`-
 >   Spalte degradiert weiterhin zu `TEXT` (W132), der Index degradiert **nicht** mehr.
+> - **Review-gehärtet (P4-Review, 4 Finder-Angles):** (1) **generate↔diff-Namensparität** — anonyme
+>   FULLTEXT-Indizes bekamen divergente FTS-Objektnamen (generate `idx_…` vs diff `…_idx`); jetzt eine
+>   gemeinsame `SqliteFullTextExpansion.ftsName`; (2) **`CREATE VIRTUAL TABLE` im Rollback-Inverter** —
+>   `generateRollback` ließ die Virtual-Table verwaisen (droppte nur die Trigger); `StatementInverter`
+>   invertiert sie jetzt zu `DROP TABLE`; (3) **Precondition-Guard** — WITHOUT-ROWID-Basistabelle bzw.
+>   reservierter FTS5-Spaltenname (`rank`/`rowid`)/Namenskollision degradieren konservativ (W132) statt
+>   kaputte DDL zu emittieren, rollback-symmetrisch; (4) Smoke-Teil-C-False-Green gehärtet (verifiziert
+>   den Drift-Grund), String-Literal via `quoteSqliteStringLiteral`, Test-Deckung `createIndexSql`-Skip.
 > - **Bewusste P4/P5-Grenze:** der *drift-freie* migrate-Round-Trip ist **P5** — `migrate --execute`
 >   endet heute mit Exit 5 (Post-Compare-Drift: Reverse sieht die FTS5-Shadow-Tabellen + Sync-Trigger
 >   und rekonstruiert den Index noch nicht). Der Smoke belegt den *Apply* (Teil C, nicht-fatal), nicht
->   Drift-Freiheit. Der Rebuild-Bucket-Pfad (`createIndexSql`) degradiert bis P5 weiter (Kommentar-Marker).
+>   Drift-Freiheit. Der Rebuild-Bucket-Pfad (`createIndexSql`) degradiert bis P5 weiter (Kommentar-Marker,
+>   ohne strukturierte Note — von P5 mit der Rebuild-Recreate-Arbeit geschlossen).
 > - **Alle Gates grün:** `make sample-db-fulltext-sqlite-smoke` (SUCCESS A/B/C), Full-Repo
 >   `make ci-build` (`build koverVerify`), `make docs-check` (0 Befunde).
 > - **P3 (MySQL) live-verifiziert** (`make sample-db-cross-smoke-pg2my`), PG→PG-Baseline regressionsfrei.

@@ -59,7 +59,7 @@ internal class SqliteTableDdlSupport(
         options: DdlGenerationOptions,
     ): List<DdlStatement> =
         generatedIndexNames(tableName, table.indices).flatMapIndexed { position, indexName ->
-            generateIndex(tableName, table.indices[position], indexName, table.columns, options)
+            generateIndex(tableName, table.indices[position], indexName, table.columns, table.metadata?.withoutRowid == true, options)
         }
 
     private fun checkSpatialMetadataBlocks(
@@ -146,20 +146,41 @@ internal class SqliteTableDdlSupport(
         index: IndexDefinition,
         indexName: String,
         columns: Map<String, ColumnDefinition>,
+        withoutRowid: Boolean,
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
         // ADR 0025 (Slice P4): expand a FULLTEXT index into a SQLite FTS5 external-content virtual
         // table + initial `'rebuild'` + three sync triggers over the source columns
         // (SqliteFullTextExpansion — the single SQL source shared with the diff/migrate render
-        // path). Emitted BEFORE the geometry check: a fulltext index lists its source TEXT columns,
-        // so geometry routing must not see it. POST_DATA so the `'rebuild'` runs after the base
-        // table is loaded (and the bulk transfer stays trigger-free). The tsvector column itself
-        // still degrades to TEXT with its own column-level W132 (SqliteColumnConstraintHelper) —
-        // that contract is unchanged; only the index no longer degrades. Rebuild-bucket recreation
-        // still degrades via createIndexSql until Slice P5.
+        // path; ftsName() gives the name both paths agree on). Emitted BEFORE the geometry check:
+        // a fulltext index lists its source TEXT columns, so geometry routing must not see it.
+        // POST_DATA so the `'rebuild'` runs after the base table is loaded (and the bulk transfer
+        // stays trigger-free). The tsvector column itself still degrades to TEXT with its own
+        // column-level W132 (SqliteColumnConstraintHelper) — unchanged; only the index no longer
+        // degrades. Where external-content FTS5 can't be built (WITHOUT ROWID / reserved FTS5
+        // column name) the index degrades conservatively with W132 instead of emitting broken DDL.
+        // Rebuild-bucket recreation still degrades via createIndexSql until Slice P5.
         if (index.type == IndexType.FULLTEXT) {
+            val ftsName = SqliteFullTextExpansion.ftsName(tableName, index)
+            val reason = SqliteFullTextExpansion.unsupportedReason(withoutRowid, index, ftsName)
+            if (reason != null) {
+                return listOf(
+                    DdlStatement(
+                        SqliteFullTextDegradation.skipComment(quoteIdentifier(ftsName)),
+                        listOf(
+                            TransformationNote(
+                                type = NoteType.WARNING,
+                                code = SqliteFullTextDegradation.W_CODE,
+                                objectName = ftsName,
+                                message = SqliteFullTextDegradation.message(ftsName, tableName, reason),
+                                hint = SqliteFullTextDegradation.HINT,
+                            ),
+                        ),
+                    ),
+                )
+            }
             return SqliteFullTextExpansion
-                .createStatements(tableName, indexName, index.columnNames, quoteIdentifier)
+                .createStatements(tableName, ftsName, index.columnNames)
                 .map { DdlStatement(it, phase = DdlPhase.POST_DATA) }
         }
         // VA4: ein Index auf einer Geometriespalte → SpatiaLite `CreateSpatialIndex`

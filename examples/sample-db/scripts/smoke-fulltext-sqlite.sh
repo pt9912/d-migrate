@@ -51,7 +51,6 @@ export SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)"
 DRUN="docker run --rm --user $(id -u):$(id -g) -v $EXAMPLES_DIR:/work -w /work d-migrate:dev"
 
 psql_t() { $COMPOSE exec -T postgres psql -v ON_ERROR_STOP="$2" -U "$POSTGRES_USER" -d "$1" "${@:3}"; }
-pg_val() { $COMPOSE exec -T postgres psql -U "$POSTGRES_USER" -d pagila -tAc "$1" </dev/null 2>/dev/null | tr -d '[:space:]'; }
 
 wait_healthy() {  # wait_healthy <service> <timeout_s>
     local svc="$1" to="$2" deadline st
@@ -86,7 +85,7 @@ $COMPOSE run --rm dmigrate schema generate --source /work/out/pagila.fts.reverse
     --output /work/out/pagila.fts.sql > /dev/null || fail "[A] generate failed"
 GEN_ALL="$OUT_DIR/pagila.fts.pre-data.sql $OUT_DIR/pagila.fts.post-data.sql"
 # shellcheck disable=SC2086
-if ! grep -hqi "CREATE VIRTUAL TABLE \"film_fulltext_idx\" USING fts5(\"title\", \"description\", content='film')" $GEN_ALL; then
+if ! grep -hq "CREATE VIRTUAL TABLE \"film_fulltext_idx\" USING fts5(\"title\", \"description\", content='film')" $GEN_ALL; then
     # shellcheck disable=SC2086
     grep -hi "fulltext\|fts5\|film_fulltext" $GEN_ALL || true
     fail "[A] generated SQLite DDL is missing the film FTS5 virtual table over (title, description)"
@@ -186,12 +185,19 @@ sqlite3 "$MDB" "INSERT INTO docs(id,title,body) VALUES (1,'Comet Watch','trackin
     || fail "[C] insert into migrated table failed"
 c_match=$(sqlite3 "$MDB" "SELECT count(*) FROM docs_fts WHERE docs_fts MATCH 'comet';" 2>/dev/null | tr -d '[:space:]')
 [ "$c_match" = "1" ] || { cat /tmp/fts5-migrate.log; fail "[C] diff-path FTS5 MATCH 'comet' expected 1, got '$c_match'"; }
+# The migration EXECUTION must complete cleanly — only the post-compare may fail (that is P5).
+grep -q '"executionError":null' "$CACHE_DIR/fts5-migrate.report.yaml" 2>/dev/null \
+    || { cat /tmp/fts5-migrate.log; fail "[C] migrate reported an execution error (the apply itself failed)"; }
 if [ "$mig_exit" = "0" ]; then
     log "[C] OK — migrate --execute Exit 0; docs_fts created + MATCH works via the diff path"
 else
-    note "[C] migrate --execute exited $mig_exit (expected until Slice P5: post-compare drift on the"
-    note "    FTS5 shadow tables/sync triggers + not-yet-reconstructed index). The APPLY itself is"
-    note "    correct: docs_fts exists and MATCH works. Drift-free round-trip = P5."
+    # Until Slice P5 the ONLY acceptable non-zero cause is the known post-compare drift; any other
+    # non-zero exit is a real regression and must fail the smoke (no blanket false-green tolerance).
+    grep -q "Post-execute compare detected drift" /tmp/fts5-migrate.log \
+        || { cat /tmp/fts5-migrate.log; fail "[C] migrate exited $mig_exit for an UNEXPECTED reason (not the known P5 post-compare drift)"; }
+    note "[C] migrate --execute exited $mig_exit = the expected P5 post-compare drift (reverse still"
+    note "    sees the FTS5 shadow tables/sync triggers + does not yet reconstruct the index). The"
+    note "    APPLY is correct: docs_fts exists and MATCH works. Drift-free round-trip lands in P5."
     log "[C] OK — diff path applied the FTS5 structure (docs_fts created + MATCH works)"
 fi
 
