@@ -1,45 +1,36 @@
 # Strukturelle Cross-Dialect-Volltext-Übersetzung (FTS5 / FULLTEXT)
 
-> **Status:** In Progress. **P0+P1+P2+P3+P4 erledigt** (P2 review-gehärtet, P3+P4 live-verifiziert); P5 offen.
+> **Status:** **P0–P5 KOMPLETT** (P2 review-gehärtet; P3+P4 live-verifiziert + review-gehärtet; P5
+> drift-frei live-verifiziert). Slice inhaltlich abgeschlossen — bereit zur Graduierung nach `done/`.
 >
 > **STAND 2026-07-01:**
-> - **P4 (SQLite-Generate FTS5) live-verifiziert & DoD-komplett.** Ein neutraler `FULLTEXT`-Index
->   expandiert cross-dialect zu einer SQLite **FTS5-External-Content-Virtual-Table** + `'rebuild'`
->   + **drei Sync-Trigger** (INSERT/UPDATE/DELETE) über die Quelltext-Spalten — eine gemeinsame
->   SQL-Quelle ([`SqliteFullTextExpansion`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextExpansion.kt))
->   in **beiden** Pfaden (generate + diff/migrate, dem SpatiaLite-Präzedenzfall folgend). Neuer Live-Smoke
+> - **P5 (Diff/Migrate-Härtung) live-verifiziert & DoD-komplett.** Der `migrate --execute`-Round-Trip
+>   ist jetzt **drift-frei (Exit 0)**: der Post-Execute-Compare reverst die Ziel-`.db` und der SQLite-
+>   Reverse ([`SqliteFts5Reverse`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFts5Reverse.kt)
+>   + [`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt))
+>   (a) **filtert** die FTS5-Shadow-Tabellen (`_data`/`_idx`/`_docsize`/`_config`/`_content`, S102) + die
+>   drei Sync-Trigger (`<fts>_ai/ad/au`) und (b) **rekonstruiert** den `FULLTEXT`-Index aus der
+>   FTS5-Virtual-Table (Content-Tabelle + Quellspalten) — Pendant zum SpatiaLite-Spatial-Index-Fold.
+>   Der Smoke-Teil C wurde von nicht-fatal auf **harte Exit-0-Assertion** verschärft.
+> - **P4 (SQLite-Generate FTS5):** `FULLTEXT` → FTS5-External-Content-Virtual-Table + `'rebuild'` + drei
+>   Sync-Trigger über die Quelltext-Spalten; gemeinsame SQL-Quelle
+>   [`SqliteFullTextExpansion`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextExpansion.kt)
+>   in beiden Pfaden (generate + diff/migrate). Review-gehärtet (Namensparität, Rollback-Inverter,
+>   WITHOUT-ROWID/reservierte-Namen-Guard). Live-Smoke
 >   [`smoke-fulltext-sqlite.sh`](../../../examples/sample-db/scripts/smoke-fulltext-sqlite.sh)
->   (`make sample-db-fulltext-sqlite-smoke`): (A) PG-Reverse Pagila → SQLite-Generate erzeugt die FTS5-DDL
->   für `film` über (`title`,`description`); (B) `sqlite3`-Apply + kuratierte Daten → FTS5-`MATCH` liefert
->   Treffer inkl. `'rebuild'`-Befüllung UND aller drei Sync-Trigger (Insert/Update/Delete) + Nonsens-
->   Negativkontrolle; (C) `migrate --execute` legt die FTS5-Struktur real an (Diff-Pfad). Die `fulltext`-
->   Spalte degradiert weiterhin zu `TEXT` (W132), der Index degradiert **nicht** mehr.
-> - **Review-gehärtet (P4-Review, 4 Finder-Angles):** (1) **generate↔diff-Namensparität** — anonyme
->   FULLTEXT-Indizes bekamen divergente FTS-Objektnamen (generate `idx_…` vs diff `…_idx`); jetzt eine
->   gemeinsame `SqliteFullTextExpansion.ftsName`; (2) **`CREATE VIRTUAL TABLE` im Rollback-Inverter** —
->   `generateRollback` ließ die Virtual-Table verwaisen (droppte nur die Trigger); `StatementInverter`
->   invertiert sie jetzt zu `DROP TABLE`; (3) **Precondition-Guard** — WITHOUT-ROWID-Basistabelle bzw.
->   reservierter FTS5-Spaltenname (`rank`/`rowid`)/Namenskollision degradieren konservativ (W132) statt
->   kaputte DDL zu emittieren, rollback-symmetrisch; (4) Smoke-Teil-C-False-Green gehärtet (verifiziert
->   den Drift-Grund), String-Literal via `quoteSqliteStringLiteral`, Test-Deckung `createIndexSql`-Skip.
-> - **Bewusste P4/P5-Grenze:** der *drift-freie* migrate-Round-Trip ist **P5** — `migrate --execute`
->   endet heute mit Exit 5 (Post-Compare-Drift: Reverse sieht die FTS5-Shadow-Tabellen + Sync-Trigger
->   und rekonstruiert den Index noch nicht). Der Smoke belegt den *Apply* (Teil C, nicht-fatal), nicht
->   Drift-Freiheit. Der Rebuild-Bucket-Pfad (`createIndexSql`) degradiert bis P5 weiter (Kommentar-Marker,
->   ohne strukturierte Note — von P5 mit der Rebuild-Recreate-Arbeit geschlossen).
-> - **Alle Gates grün:** `make sample-db-fulltext-sqlite-smoke` (SUCCESS A/B/C), Full-Repo
->   `make ci-build` (`build koverVerify`), `make docs-check` (0 Befunde).
+>   (`make sample-db-fulltext-sqlite-smoke`): (A) PG→SQLite-Struktur, (B) `MATCH` inkl. `'rebuild'` + alle
+>   drei Sync-Trigger + Negativkontrolle, (C) `migrate --execute` **drift-frei**. `fulltext`-Spalte
+>   degradiert weiter zu `TEXT` (W132); der Index degradiert nicht mehr.
 > - **P3 (MySQL) live-verifiziert** (`make sample-db-cross-smoke-pg2my`), PG→PG-Baseline regressionsfrei.
-> - **Sample-DB-Postgres-Container läuft evtl. noch** (`make sample-db-down` zum Abbau).
->
-> **NÄCHSTER SCHRITT = P5 (Diff/Migrate-Härtung).** Reverse: die FTS5-Shadow-Tabellen
-> (`_data`/`_idx`/`_docsize`/`_config`) + die drei Sync-Trigger als bekannt/nicht-driftend filtern
-> **und** den `FULLTEXT`-Index aus der FTS5-Virtual-Table + Trigger-Bodies rekonstruieren (Pendant zum
-> SpatiaLite-Reverse: [`SqliteTypeMapping`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapping.kt)
-> `SPATIALITE_META_TABLES`/`isSpatiaLiteGeometryTrigger`, [`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt)).
-> Erst damit wird `migrate --execute` drift-frei (Exit 0). Zusätzlich: der Table-**Rebuild**-Pfad
-> ([`SqliteRebuildRenderer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt))
-> muss die FTS5-Objekte als abhängig behandeln statt sie via `createIndexSql` zu degradieren. DoD in Abschnitt 5/P5.
+> - **Alle Gates grün:** `make sample-db-fulltext-sqlite-smoke` (SUCCESS A/B/C, Teil C Exit 0),
+>   `make sample-db-cross-smoke-pg2my`, Full-Repo `make ci-build` (`build koverVerify` + detekt),
+>   `make docs-check` (0 Befunde).
+> - **Ausgeschnittene Folgearbeit (nicht slice-blockierend):** der Table-**Rebuild**-Pfad
+>   ([`SqliteRebuildRenderer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt)
+>   via `createIndexSql`) recreatet einen FULLTEXT-Index bei einem Tabellen-**Rebuild** (inkrementelle
+>   ALTER-Kante) noch nicht, sondern degradiert ihn sichtbar (Kommentar-Marker) — eigenes Ticket
+>   [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md).
+>   Nicht im DoD/Akzeptanz (fresh-generate + drift-freier Round-Trip sind erfüllt).
 >
 > Phasen + Akzeptanzkriterien ausgearbeitet
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
@@ -211,12 +202,22 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   **Bewusst P5** (nicht P4): der *drift-freie* migrate-Round-Trip — `migrate --execute` endet heute
   mit Exit 5 (Post-Compare-Drift), weil der Reverse die FTS5-Shadow-Tabellen/Sync-Trigger noch nicht
   filtert und den Index noch nicht rekonstruiert.
-- **P5 — Diff/Migrate-Härtung.** Reverse: FTS5-Shadow-Tabellen (`_data`/`_idx`/`_docsize`/`_config`)
-  + die drei Sync-Trigger als bekannt/nicht-driftend **filtern** UND den `FULLTEXT`-Index aus der
-  FTS5-Virtual-Table (Spalten) + Trigger rekonstruieren (SpatiaLite-Pendant). Zusätzlich: der
-  Table-**Rebuild**-Pfad (`SqliteRebuildRenderer` via `createIndexSql`) muss die FTS5-Objekte als
-  abhängig recreaten statt sie zu degradieren. **DoD:** `migrate`-Round-Trip **Exit 0**, kein
-  Phantom-Drift (Teil C von `smoke-fulltext-sqlite.sh` wird auf Exit-0-Assertion verschärft).
+- **P5 — Diff/Migrate-Härtung. ✅ ERLEDIGT 2026-07-01 (live-verifiziert, drift-frei).** SQLite-Reverse
+  ([`SqliteFts5Reverse`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFts5Reverse.kt)
+  aus [`SqliteTypeMapping`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapping.kt)
+  ausgegliedert, in [`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt)
+  verdrahtet): **filtert** die FTS5-Shadow-Tabellen (`_data`/`_idx`/`_docsize`/`_config`/`_content`, S102)
+  + die drei Sync-Trigger (`<fts>_ai/ad/au`) und **rekonstruiert** den `FULLTEXT`-Index aus der
+  FTS5-Virtual-Table (Content-Tabelle via `content=` + Quellspalten, Casing gegen die realen Spalten
+  aufgelöst) — SpatiaLite-Spatial-Index-Fold-Pendant. **DoD erfüllt:** `migrate --execute`-Round-Trip
+  **Exit 0**, kein Phantom-Drift (Teil C von `smoke-fulltext-sqlite.sh` auf harte Exit-0-Assertion
+  verschärft); Unit-Tests
+  [`SqliteFts5ReverseTest`](../../../adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteFts5ReverseTest.kt)
+  (Parser) + [`SqliteSchemaReaderTest`](../../../adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReaderTest.kt)
+  (Fold-back + Shadow-/Trigger-Filter). **Ausgeschnitten** (eigenes Ticket
+  [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md), nicht
+  DoD/Akzeptanz-blockierend): der Table-**Rebuild**-Pfad (`SqliteRebuildRenderer` via `createIndexSql`)
+  recreatet FTS5-Objekte bei einem Tabellen-Rebuild noch nicht (sichtbare Kommentar-Degradierung).
 
 ## 6. Akzeptanzkriterien
 

@@ -43,14 +43,36 @@ class SqliteSchemaReader : SchemaReader {
                 val base = "idx_${it.table}_${it.column}".lowercase()
                 listOf("${base}_node", "${base}_parent", "${base}_rowid")
             }.toSet()
+            // ADR 0025 (Slice P5): scan the FTS5 virtual tables so the FULLTEXT expansion
+            // (SqliteFullTextExpansion) folds back on reverse — the virtual table itself is a
+            // FULLTEXT index on its content table, its `_data/_idx/_docsize/_config` shadow tables
+            // are FTS5-internal, and its `_ai/_ad/_au` sync triggers are FTS5-internal. Without this
+            // they would surface as user tables/triggers and drive a false migrate post-compare drift.
+            val fts5Defs = tableEntries
+                .filter { (_, createSql) -> SqliteFts5Reverse.isFts5VirtualTable(createSql) }
+                .map { (name, createSql) -> SqliteFts5Reverse.parseFts5(name, createSql) }
+            val fts5ShadowTables = fts5Defs.flatMap { SqliteFts5Reverse.fts5ShadowTables(it.name) }.toSet()
+            val fts5SyncTriggerNames = fts5Defs.flatMap { SqliteFts5Reverse.fts5SyncTriggerNames(it.name) }.toSet()
+            val fts5ByContentTable = fts5Defs.filter { it.contentTable != null }
+                .groupBy { it.contentTable!!.lowercase() }
             val tables = LinkedHashMap<String, TableDefinition>()
 
             for ((tableName, createSql) in tableEntries) {
                 if (SqliteTypeMapping.isVirtualTable(createSql)) {
+                    // The main FTS5 virtual table is folded back into a FULLTEXT index on its
+                    // content table (readTable) rather than surfaced as a table — still skipped here.
                     skipped += SkippedObject(
                         type = "TABLE", name = tableName,
                         reason = "Virtual table not supported in neutral model",
                         code = "S100",
+                    )
+                    continue
+                }
+                if (tableName.lowercase() in fts5ShadowTables) {
+                    skipped += SkippedObject(
+                        type = "TABLE", name = tableName,
+                        reason = "FTS5 shadow table",
+                        code = "S102",
                     )
                     continue
                 }
@@ -66,7 +88,8 @@ class SqliteSchemaReader : SchemaReader {
                 }
                 tables[tableName] = readTable(
                     session, tableName, createSql,
-                    geometryByTable[tableName.lowercase()].orEmpty(), notes,
+                    geometryByTable[tableName.lowercase()].orEmpty(),
+                    fts5ByContentTable[tableName.lowercase()].orEmpty(), notes,
                 )
             }
 
@@ -82,8 +105,9 @@ class SqliteSchemaReader : SchemaReader {
             val filteredTables = sequenceSupport.filterSupportTable(enrichedTables, supportSnapshot)
             notes += sequenceSupport.aggregateNotes(supportSnapshot)
 
-            // Triggers (filtered against the canonical sequence-support pairs)
-            val triggers = if (options.includeTriggers) readTriggers(session, notes) else emptyMap()
+            // Triggers (filtered against the canonical sequence-support pairs + FTS5 sync triggers)
+            val triggers =
+                if (options.includeTriggers) readTriggers(session, fts5SyncTriggerNames, notes) else emptyMap()
             val filteredTriggers = sequenceSupport.filterSupportTriggers(triggers, supportSnapshot)
 
             val schemaDef = SchemaDefinition(
@@ -108,6 +132,7 @@ class SqliteSchemaReader : SchemaReader {
         tableName: String,
         createSql: String,
         geometryColumns: List<SqliteGeometryColumn>,
+        fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
         notes: MutableList<SchemaReadNote>,
     ): TableDefinition {
         val columns = SqliteMetadataQueries.listColumns(session, tableName)
@@ -193,12 +218,29 @@ class SqliteSchemaReader : SchemaReader {
             )
         }
 
+        // ADR 0025 (Slice P5): reconstruct the neutral FULLTEXT index from each FTS5 virtual table
+        // whose `content=` is this table — the counterpart to the P4 expansion. The FTS5 virtual
+        // table + its shadow tables + sync triggers are filtered elsewhere; here the *index* is
+        // recovered so a PG→SQLite (or SQLite→SQLite) round-trip keeps the full-text structure.
+        // Source-column casing is resolved against the real column names (no round-trip drift);
+        // textSearchConfig/fullTextVectorColumn are not recoverable from FTS5 and stay null (the
+        // latter is a generate-only hint excluded from comparison anyway).
+        val fullTextIndices = fts5Defs.map { fts ->
+            IndexDefinition(
+                name = fts.name,
+                columns = fts.columns.map { c ->
+                    IndexColumn(columnDefs.keys.firstOrNull { it.equals(c, ignoreCase = true) } ?: c)
+                },
+                type = IndexType.FULLTEXT,
+            )
+        }
+
         val metadata = if (isWithoutRowid) TableMetadata(withoutRowid = true) else null
 
         return TableDefinition(
             columns = columnDefs,
             primaryKey = pkColumns,
-            indices = regularIndices + spatialIndices,
+            indices = regularIndices + spatialIndices + fullTextIndices,
             constraints = constraints,
             metadata = metadata,
         )
@@ -219,6 +261,7 @@ class SqliteSchemaReader : SchemaReader {
 
     private fun readTriggers(
         session: JdbcMetadataSession,
+        fts5SyncTriggerNames: Set<String>,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, TriggerDefinition> {
         val triggerRows = SqliteMetadataQueries.listTriggers(session)
@@ -226,6 +269,10 @@ class SqliteSchemaReader : SchemaReader {
         for (row in triggerRows) {
             val name = row["name"] as String
             val table = row["tbl_name"] as String
+            // ADR 0025 (Slice P5): the FTS5 sync triggers (<fts>_ai/_ad/_au) are internal to the
+            // FULLTEXT expansion — folded back via the reconstructed index — so they must not
+            // surface as user triggers (else false migrate post-compare drift).
+            if (name.lowercase() in fts5SyncTriggerNames) continue
             // VA4/5d Befund 3 (Trigger): `InitSpatialMetaData()` legt zahlreiche
             // Integritäts-Trigger AUF den SpatiaLite-Metatabellen an (geometry_columns*,
             // views_/virts_geometry_columns, spatial_ref_sys). Diese Tabellen werden

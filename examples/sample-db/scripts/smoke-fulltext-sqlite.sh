@@ -14,10 +14,10 @@
 #            frische .db -> kuratierte Daten -> FTS5-`MATCH` liefert Treffer. Deckt die
 #            `'rebuild'`-Befüllung UND alle drei Sync-Trigger (INSERT/UPDATE/DELETE) ab,
 #            plus eine Nonsens-Negativkontrolle.
-#   Teil C — DIFF-PFAD-APPLY: `migrate --execute` legt die FTS5-Struktur real in einer
-#            frischen .db an (Diff-Renderpfad). Der *drift-freie* migrate-Round-Trip
-#            (Reverse rekonstruiert den Index + filtert Shadow-Tabellen/Trigger) ist
-#            bewusst Slice P5 — hier wird nur der Apply belegt, nicht Drift-Freiheit.
+#   Teil C — DIFF-PFAD + DRIFT-FREIER ROUND-TRIP (Slice P5): `migrate --execute` legt die
+#            FTS5-Struktur real in einer frischen .db an (Diff-Renderpfad) UND endet mit
+#            Exit 0 — der Post-Execute-Compare reverst die .db, filtert die FTS5-Shadow-
+#            Tabellen/Sync-Trigger und rekonstruiert den FULLTEXT-Index (kein Phantom-Drift).
 #
 # Voraussetzung am Host: docker, docker compose, sqlite3, lokal gebautes d-migrate:dev-Image.
 
@@ -185,21 +185,15 @@ sqlite3 "$MDB" "INSERT INTO docs(id,title,body) VALUES (1,'Comet Watch','trackin
     || fail "[C] insert into migrated table failed"
 c_match=$(sqlite3 "$MDB" "SELECT count(*) FROM docs_fts WHERE docs_fts MATCH 'comet';" 2>/dev/null | tr -d '[:space:]')
 [ "$c_match" = "1" ] || { cat /tmp/fts5-migrate.log; fail "[C] diff-path FTS5 MATCH 'comet' expected 1, got '$c_match'"; }
-# The migration EXECUTION must complete cleanly — only the post-compare may fail (that is P5).
+# The migration EXECUTION must complete cleanly.
 grep -q '"executionError":null' "$CACHE_DIR/fts5-migrate.report.yaml" 2>/dev/null \
     || { cat /tmp/fts5-migrate.log; fail "[C] migrate reported an execution error (the apply itself failed)"; }
-if [ "$mig_exit" = "0" ]; then
-    log "[C] OK — migrate --execute Exit 0; docs_fts created + MATCH works via the diff path"
-else
-    # Until Slice P5 the ONLY acceptable non-zero cause is the known post-compare drift; any other
-    # non-zero exit is a real regression and must fail the smoke (no blanket false-green tolerance).
-    grep -q "Post-execute compare detected drift" /tmp/fts5-migrate.log \
-        || { cat /tmp/fts5-migrate.log; fail "[C] migrate exited $mig_exit for an UNEXPECTED reason (not the known P5 post-compare drift)"; }
-    note "[C] migrate --execute exited $mig_exit = the expected P5 post-compare drift (reverse still"
-    note "    sees the FTS5 shadow tables/sync triggers + does not yet reconstruct the index). The"
-    note "    APPLY is correct: docs_fts exists and MATCH works. Drift-free round-trip lands in P5."
-    log "[C] OK — diff path applied the FTS5 structure (docs_fts created + MATCH works)"
-fi
+# P5: the round-trip is now drift-free — the post-execute compare reverses the .db, filters the
+# FTS5 shadow tables/sync triggers and reconstructs the FULLTEXT index, so migrate --execute
+# exits 0 (no phantom drift). A non-zero exit here is a real regression.
+[ "$mig_exit" = "0" ] \
+    || { cat /tmp/fts5-migrate.log; fail "[C] migrate --execute exited $mig_exit (expected 0 — P5 reverse filter/reconstruction should make the round-trip drift-free)"; }
+log "[C] OK — migrate --execute Exit 0 (drift-free round-trip); docs_fts created + MATCH works"
 
 log "SUCCESS — SQLite FTS5 fulltext: PG→SQLite structure (A) + live MATCH incl. all 3 sync triggers (B) + diff-path apply (C)."
 log "postgres stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'."

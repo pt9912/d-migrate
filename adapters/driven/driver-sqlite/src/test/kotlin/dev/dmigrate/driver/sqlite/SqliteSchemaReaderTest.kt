@@ -210,17 +210,36 @@ class SqliteSchemaReaderTest : FunSpec({
 
     // ── Virtual tables skipped ──────────────────
 
-    test("virtual table is skipped with code S100") {
+    test("FTS5 virtual table and its shadow tables are skipped; nothing leaks as a user table") {
         withDb(
             "CREATE TABLE normal (id INTEGER PRIMARY KEY)",
             "CREATE VIRTUAL TABLE search USING fts5(content)",
         ) { pool ->
             val result = reader.read(pool)
-            result.schema.tables shouldContainKey "normal"
-            result.schema.tables.keys.contains("search") shouldBe false
-            result.skippedObjects shouldHaveSize 1
-            result.skippedObjects[0].name shouldBe "search"
-            result.skippedObjects[0].code shouldBe "S100"
+            // ADR 0025 (Slice P5): neither the fts5 virtual table (S100) nor its FTS5-managed
+            // shadow tables `search_{data,idx,docsize,config,content}` (S102) leak into the model.
+            result.schema.tables.keys shouldBe setOf("normal")
+            result.skippedObjects.first { it.name == "search" }.code shouldBe "S100"
+            result.skippedObjects.any { it.code == "S102" } shouldBe true
+        }
+    }
+
+    test("external-content FTS5 folds back into a FULLTEXT index on its content table (ADR 0025 P5)") {
+        withDb(
+            "CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, body TEXT)",
+            "CREATE VIRTUAL TABLE docs_fts USING fts5(title, body, content='docs')",
+            "CREATE TRIGGER docs_fts_ai AFTER INSERT ON docs BEGIN " +
+                "INSERT INTO docs_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body); END",
+        ) { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeTriggers = true))
+            // The fts5 virtual table + shadow tables do not surface as user tables.
+            result.schema.tables.keys shouldBe setOf("docs")
+            // The FULLTEXT index is reconstructed on the content table, in source-column order.
+            val idx = result.schema.tables["docs"]!!.indices.single { it.type == IndexType.FULLTEXT }
+            idx.name shouldBe "docs_fts"
+            idx.columnNames shouldBe listOf("title", "body")
+            // The FTS5 sync trigger is folded, not surfaced as a user trigger.
+            result.schema.triggers.values.none { it.body?.contains("docs_fts") == true } shouldBe true
         }
     }
 
