@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ports-jdbc-free-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ports-jdbc-free-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 help:
 	@printf '%s\n' \
@@ -113,6 +113,7 @@ help:
 		'  make sample-db-cross-smoke  Cross-Dialect (Phase 2, Sakila MySQL->PG): reverse/validate/generate -> transfer -> parity + type conversions' \
 		'  make sample-db-cross-smoke-pg2my  Cross-Dialect (Phase 2, Pagila PG->MySQL): symmetrischer Flow -> parity + type conversions' \
 		'  make sample-db-sqlite-smoke  SQLite round-trip (Phase 2b, Chinook): serverless .db -> reverse/validate/generate/transfer -> parity + precision' \
+		'  make sample-db-fulltext-sqlite-smoke  Fulltext P4 (SQLite FTS5): PG FULLTEXT -> FTS5 virtual table + sync triggers; live MATCH + diff-path apply' \
 		'  make sample-db-scale-smoke  Scale (Phase 3, Employees) opt-in/nightly: export-resume + chunking + dual-target import (MySQL+PG) parity' \
 		'  make sample-db-spatial-smoke  Spatial (Phase 5, VA1-Live-Smoke): geometry value round-trip PG->PG + MySQL->MySQL (+ native-point check)' \
 		'  make sample-db-tpch-gen  TPC-H (Phase 4, 4a Sourcing) opt-in: pinned DuckDB generates the TPC-H workload offline into .cache/tpch/ (SF=0.01 default)' \
@@ -418,6 +419,13 @@ sample-db-cross-smoke-pg2my:
 
 sample-db-sqlite-smoke:
 	./examples/sample-db/scripts/smoke-sqlite.sh
+
+# Fulltext-Slice P4 (SQLite FTS5) — postgres up + Pagila-Reverse belegt PG FULLTEXT ->
+# SQLite FTS5-Generate; ein self-contained Schema belegt FTS5-MATCH live (rebuild + alle
+# drei Sync-Trigger + Negativkontrolle); migrate --execute belegt den Diff-Pfad-Apply.
+# Voraussetzung: sqlite3 am Host + lokal gebautes d-migrate:dev-Image.
+sample-db-fulltext-sqlite-smoke:
+	./examples/sample-db/scripts/smoke-fulltext-sqlite.sh
 
 # Phase 3 (Scale, Employees) — opt-in/nightly, NICHT im PR-Gate. Lädt das
 # große Employees-Dataset (FETCH_EMPLOYEES=1, ~165 MiB), übt export-resume +

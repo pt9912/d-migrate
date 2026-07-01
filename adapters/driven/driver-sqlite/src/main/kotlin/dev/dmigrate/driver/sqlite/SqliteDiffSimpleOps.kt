@@ -18,6 +18,12 @@ internal object SqliteDiffSimpleOps {
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: SqliteDiffRenderContext) {
         val tableName = op.objectRef.rootName
         if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // ADR 0025 (Slice P4): an FTS5 virtual table + its three sync triggers are separate
+            // schema objects — `DROP TABLE` of the base table leaves them orphaned — so tear them
+            // down first for rollback symmetry with the UP-side expansion.
+            for (idx in op.table.indices) {
+                if (idx.type == IndexType.FULLTEXT) SqliteFullTextExpansion.emitDrop(op, ctx, tableName, idx)
+            }
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
             return
         }
@@ -65,6 +71,13 @@ internal object SqliteDiffSimpleOps {
             }
         }
         for (idx in op.table.indices) {
+            // ADR 0025 (Slice P4): a FULLTEXT index expands to an FTS5 virtual table + three sync
+            // triggers (SqliteFullTextExpansion) — checked FIRST because it lists its source TEXT
+            // columns, which the geometry router below must not see.
+            if (idx.type == IndexType.FULLTEXT) {
+                SqliteFullTextExpansion.emitCreate(op, ctx, tableName, idx)
+                continue
+            }
             // VA4/5d Befund 2: ein Index auf einer Geometriespalte muss auch im
             // CreateTable-Diff-Pfad als SpatiaLite `CreateSpatialIndex` (R*Tree)
             // emittiert werden — nicht als generischer `CREATE INDEX` (der auf eine
@@ -191,11 +204,11 @@ internal object SqliteDiffSimpleOps {
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
-            // ADR 0025: the UP of an AddIndex(FULLTEXT) only emitted a skip marker — no index
-            // was materialised — so the DOWN must NOT `DROP INDEX` a non-existent index (which
-            // would fail with `no such index`). Emit the same no-op skip marker instead.
+            // ADR 0025 (Slice P4): the UP expanded the FULLTEXT index to an FTS5 virtual table +
+            // three sync triggers, so the DOWN tears exactly those down (not a `DROP INDEX` — no
+            // plain index was ever materialised).
             if (op.index.type == IndexType.FULLTEXT) {
-                ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
+                SqliteFullTextExpansion.emitDrop(op, ctx, table, op.index)
                 return
             }
             if (ctx.indexTouchesGeometry(table, op.index)) {
@@ -205,18 +218,11 @@ internal object SqliteDiffSimpleOps {
             ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
             return
         }
-        // ADR 0025: degrade a FULLTEXT index (no SQLite FTS5 yet, slice P4) BEFORE the
-        // geometry check — its source columns are text, so the geometry routing must not see
-        // it. createIndexSql emits the W132 skip marker (shared with generate); add the
-        // diagnostic here so a plain BTREE is never silently produced.
+        // ADR 0025 (Slice P4): expand a FULLTEXT index to an FTS5 virtual table + three sync
+        // triggers (SqliteFullTextExpansion) BEFORE the geometry check — its source columns are
+        // text, so the geometry routing must not see it.
         if (op.index.type == IndexType.FULLTEXT) {
-            val name = ctx.sql.effectiveIndexName(table, op.index)
-            ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
-            ctx.warning(
-                op,
-                "${SqliteFullTextDegradation.message(name, table)} ${SqliteFullTextDegradation.HINT}",
-                code = SqliteFullTextDegradation.W_CODE,
-            )
+            SqliteFullTextExpansion.emitCreate(op, ctx, table, op.index)
             return
         }
         if (ctx.indexTouchesGeometry(table, op.index)) {
@@ -229,11 +235,22 @@ internal object SqliteDiffSimpleOps {
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // ADR 0025 (Slice P4): the UP dropped the FTS5 structure, so the DOWN rebuilds it.
+            if (op.index.type == IndexType.FULLTEXT) {
+                SqliteFullTextExpansion.emitCreate(op, ctx, table, op.index)
+                return
+            }
             if (ctx.indexTouchesGeometry(table, op.index)) {
                 SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
                 return
             }
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
+            return
+        }
+        // ADR 0025 (Slice P4): drop the FTS5 virtual table + three sync triggers (not a plain
+        // DROP INDEX — no plain index exists for a FULLTEXT index).
+        if (op.index.type == IndexType.FULLTEXT) {
+            SqliteFullTextExpansion.emitDrop(op, ctx, table, op.index)
             return
         }
         if (ctx.indexTouchesGeometry(table, op.index)) {

@@ -1,30 +1,36 @@
 # Strukturelle Cross-Dialect-Volltext-Übersetzung (FTS5 / FULLTEXT)
 
-> **Status:** In Progress. **P0+P1+P2+P3 erledigt** (P2 review-gehärtet, P3 live-verifiziert); P4–P5 offen.
+> **Status:** In Progress. **P0+P1+P2+P3+P4 erledigt** (P2 review-gehärtet, P3+P4 live-verifiziert); P5 offen.
 >
 > **STAND 2026-07-01:**
-> - **P3 (MySQL-Generate FULLTEXT) live-verifiziert & DoD-komplett.** Der pg2my-Cross-Smoke
->   (`make sample-db-cross-smoke-pg2my`) belegt live gegen echtes MySQL: der PG-GiST-tsvector-Index
->   wird als nativer MySQL `FULLTEXT`-Index über die Quelltext-Spalten (`title`, `description`)
->   rekonstruiert — er existiert im Katalog (`information_schema.statistics`, `index_type=FULLTEXT`,
->   genau `title,description`), `MATCH(title, description) AGAINST('Astronaut')` liefert **Treffer**
->   (Snapshot: 78, deckt sich mit der PG-`to_tsquery`-Zahl; der Test prüft **hart nur `> 0`**, da MySQL
->   nicht stemmt — Exakt-Gleichheit wäre brüchig), eine Nonsens-Term-Negativkontrolle liefert **0**. Der frühere stille
->   W102-GiST-Skip ist weg. Die `fulltext`-**Spalte** degradiert weiterhin explizit zu `TEXT` (W132).
->   Neue Assertions dafür im Smoke-Skript (Abschnitt „8b"); Notes-Baseline `expected/pagila-cross.notes.txt`
->   neu gepinnt (**W102 → W132**, der reale P3-Fortschritt).
-> - **Alle Gates grün:** `make sample-db-cross-smoke-pg2my` (SUCCESS inkl. FULLTEXT),
->   `make sample-db-smoke` (PG→PG `compare == baseline`, keine Regression), `make docs-check` (0 Befunde).
-> - **P0/P1/P2 fertig**, P2 über **5 Review-Runden** gehärtet (Common-Case Pagila reverse→PG stabil
->   seit Runde 2; Runden 3–5 betrafen den seltenen Edge *PG-FULLTEXT ohne auflösbare tsvector-Spalte*).
-> - **Sample-DB-Postgres+MySQL-Container laufen evtl. noch** (`make sample-db-down` zum Abbau).
+> - **P4 (SQLite-Generate FTS5) live-verifiziert & DoD-komplett.** Ein neutraler `FULLTEXT`-Index
+>   expandiert cross-dialect zu einer SQLite **FTS5-External-Content-Virtual-Table** + `'rebuild'`
+>   + **drei Sync-Trigger** (INSERT/UPDATE/DELETE) über die Quelltext-Spalten — eine gemeinsame
+>   SQL-Quelle ([`SqliteFullTextExpansion`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextExpansion.kt))
+>   in **beiden** Pfaden (generate + diff/migrate, dem SpatiaLite-Präzedenzfall folgend). Neuer Live-Smoke
+>   [`smoke-fulltext-sqlite.sh`](../../../examples/sample-db/scripts/smoke-fulltext-sqlite.sh)
+>   (`make sample-db-fulltext-sqlite-smoke`): (A) PG-Reverse Pagila → SQLite-Generate erzeugt die FTS5-DDL
+>   für `film` über (`title`,`description`); (B) `sqlite3`-Apply + kuratierte Daten → FTS5-`MATCH` liefert
+>   Treffer inkl. `'rebuild'`-Befüllung UND aller drei Sync-Trigger (Insert/Update/Delete) + Nonsens-
+>   Negativkontrolle; (C) `migrate --execute` legt die FTS5-Struktur real an (Diff-Pfad). Die `fulltext`-
+>   Spalte degradiert weiterhin zu `TEXT` (W132), der Index degradiert **nicht** mehr.
+> - **Bewusste P4/P5-Grenze:** der *drift-freie* migrate-Round-Trip ist **P5** — `migrate --execute`
+>   endet heute mit Exit 5 (Post-Compare-Drift: Reverse sieht die FTS5-Shadow-Tabellen + Sync-Trigger
+>   und rekonstruiert den Index noch nicht). Der Smoke belegt den *Apply* (Teil C, nicht-fatal), nicht
+>   Drift-Freiheit. Der Rebuild-Bucket-Pfad (`createIndexSql`) degradiert bis P5 weiter (Kommentar-Marker).
+> - **Alle Gates grün:** `make sample-db-fulltext-sqlite-smoke` (SUCCESS A/B/C), Full-Repo
+>   `make ci-build` (`build koverVerify`), `make docs-check` (0 Befunde).
+> - **P3 (MySQL) live-verifiziert** (`make sample-db-cross-smoke-pg2my`), PG→PG-Baseline regressionsfrei.
+> - **Sample-DB-Postgres-Container läuft evtl. noch** (`make sample-db-down` zum Abbau).
 >
-> **NÄCHSTER SCHRITT = P4 (SQLite-Generate, FTS5).** `fulltext` → FTS5-Virtual-Table + Initial-Befüllung
-> + drei Sync-Trigger im **Diff-Renderpfad** (nach dem SpatiaLite-Bootstrap-Muster,
-> [ADR 0016](../../adr/0016-spatialite-metadata-bootstrap.md), nicht
-> generate-seitig, damit `migrate --execute` und `generate` denselben Pfad teilen). Strukturelles Vorbild:
-> `SqliteSpatialDiffOps` + `SqliteTableDdlSupport`. Heute steht SQLite-seitig nur W132 in `createIndexSql`
-> (kein stiller BTREE) als Platzhalter bis P4. DoD in Abschnitt 5/P4. Design-Vorschlag in Abschnitt 4/3.
+> **NÄCHSTER SCHRITT = P5 (Diff/Migrate-Härtung).** Reverse: die FTS5-Shadow-Tabellen
+> (`_data`/`_idx`/`_docsize`/`_config`) + die drei Sync-Trigger als bekannt/nicht-driftend filtern
+> **und** den `FULLTEXT`-Index aus der FTS5-Virtual-Table + Trigger-Bodies rekonstruieren (Pendant zum
+> SpatiaLite-Reverse: [`SqliteTypeMapping`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapping.kt)
+> `SPATIALITE_META_TABLES`/`isSpatiaLiteGeometryTrigger`, [`SqliteSchemaReader`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt)).
+> Erst damit wird `migrate --execute` drift-frei (Exit 0). Zusätzlich: der Table-**Rebuild**-Pfad
+> ([`SqliteRebuildRenderer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt))
+> muss die FTS5-Objekte als abhängig behandeln statt sie via `createIndexSql` zu degradieren. DoD in Abschnitt 5/P5.
 >
 > Phasen + Akzeptanzkriterien ausgearbeitet
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
@@ -115,10 +121,17 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
    struktureller Umbau, sondern `text`-Degradierung + Note (Phase 0).
 2. **Index-Modell.** → **Vorschlag:** neue Variante `IndexType.FULLTEXT`, analog zur bereits
    gelösten `IndexType.SPATIAL` (kein Flag-Anbau an BTREE).
-3. **SQLite-FTS5-Form.** → **Vorschlag:** **external-content-FTS5** (`content='<basistabelle>'`)
-   + drei Sync-Trigger, emittiert im **Diff-Renderpfad** nach dem `SqliteSpatialDiffOps`-/
-   ADR 0016-Bootstrap-Muster (nicht generate-seitig), damit `migrate --execute` und `generate`
-   denselben Pfad teilen.
+3. **SQLite-FTS5-Form.** → **Entschieden & umgesetzt (P4):** **external-content-FTS5**
+   (`content='<basistabelle>'`) mit implizitem `rowid` (`content_rowid` default → kein Integer-PK-
+   Lookup nötig, jede rowid-Tabelle trägt) + Initial-`'rebuild'` + drei Sync-Trigger (Insert/Update/
+   Delete mit `'delete'`-Kommando für Konsistenz). **Korrektur zum ursprünglichen Vorschlag:** SQLite
+   hat — wie SpatiaLite — **zwei** getrennte Emit-Pfade (generate `SqliteTableDdlSupport`, diff/migrate
+   `SqliteDiffSimpleOps`); FTS5 lebt in **beiden**, gespeist aus **einer gemeinsamen SQL-Quelle**
+   (`SqliteFullTextExpansion`, analog zum P2-`SqliteFullTextDegradation`). Die Idee „nur im
+   Diff-Renderpfad" war ungenau — sie beschrieb die **Bootstrap**-Sonderregel aus
+   [ADR 0016](../../adr/0016-spatialite-metadata-bootstrap.md) (nur SpatiaLite),
+   nicht die Index-Emission. Deterministisches Naming (FTS-Tabelle = Indexname, Trigger `<index>_ai/ad/au`)
+   macht die Objekte für den P5-Reverse-Filter identifizierbar.
 4. **MySQL-FULLTEXT-Platzierung.** → **Vorschlag:** `FULLTEXT`-Index inline im
    `MysqlIndexPartitionDdlHelper`-Emit-Pfad, Quelltext-Spalten als reguläre `TEXT`-Spalten.
 5. **Diff/Migrate-Bewusstsein.** Die synthetisierten FTS5-Objekte (Virtual-Table + Trigger)
@@ -172,12 +185,29 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   `MATCH(title, description) AGAINST('Astronaut')` liefert Treffer (Test-Assertion **`> 0`**; Snapshot 78,
   = PG `to_tsquery`); Nonsens-Term → 0;
   Cross-Dialect-Smoke grün; PG→PG-Baseline regressionsfrei (`compare == baseline`); `docs-check` 0 Befunde.
-- **P4 — SQLite-Generate (FTS5).** `fulltext` → FTS5-Virtual-Table + Initial-Befüllung + drei
-  Sync-Trigger im Diff-Renderpfad. **DoD:** live SQLite — FTS5-Tabelle per `MATCH` abfragbar;
-  `migrate --execute`-Apply gegen frische `.db` grün.
-- **P5 — Diff/Migrate-Härtung.** FTS5-Virtual-Table + Sync-Trigger als bekannt/nicht-driftend
-  behandeln (Post-Compare-Filter, SpatiaLite-Pendant). **DoD:** `migrate`-Round-Trip Exit 0,
-  kein Phantom-Drift; Harness-Smoke `[fulltext]` grün.
+- **P4 — SQLite-Generate (FTS5). ✅ ERLEDIGT 2026-07-01 (live-verifiziert).** `fulltext` →
+  FTS5-External-Content-Virtual-Table + `'rebuild'` + drei Sync-Trigger über die Quelltext-Spalten
+  ([`SqliteFullTextExpansion`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextExpansion.kt),
+  eine SQL-Quelle für **beide** Pfade: generate
+  [`SqliteTableDdlSupport`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTableDdlSupport.kt),
+  diff/migrate [`SqliteDiffSimpleOps`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt)
+  inkl. DOWN/Rollback-Symmetrie). Die `fulltext`-Spalte degradiert weiter zu `TEXT` (W132); der Index
+  degradiert nicht mehr. FTS5-Statements sind **POST_DATA** (`'rebuild'` nach dem Daten-Load). **DoD
+  erfüllt** (`make sample-db-fulltext-sqlite-smoke`): (A) PG-Reverse Pagila → SQLite-Generate erzeugt
+  die `film`-FTS5-DDL über (`title`,`description`); (B) `sqlite3`-Apply + Daten → FTS5-`MATCH` liefert
+  Treffer inkl. `'rebuild'` **und** aller drei Sync-Trigger (Insert/Update/Delete) + Nonsens-
+  Negativkontrolle; (C) `migrate --execute` legt die FTS5-Struktur real in einer frischen `.db` an
+  (Diff-Pfad-Apply). Unit-Tests
+  [`SqliteFullTextExpansionTest`](../../../adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextExpansionTest.kt).
+  **Bewusst P5** (nicht P4): der *drift-freie* migrate-Round-Trip — `migrate --execute` endet heute
+  mit Exit 5 (Post-Compare-Drift), weil der Reverse die FTS5-Shadow-Tabellen/Sync-Trigger noch nicht
+  filtert und den Index noch nicht rekonstruiert.
+- **P5 — Diff/Migrate-Härtung.** Reverse: FTS5-Shadow-Tabellen (`_data`/`_idx`/`_docsize`/`_config`)
+  + die drei Sync-Trigger als bekannt/nicht-driftend **filtern** UND den `FULLTEXT`-Index aus der
+  FTS5-Virtual-Table (Spalten) + Trigger rekonstruieren (SpatiaLite-Pendant). Zusätzlich: der
+  Table-**Rebuild**-Pfad (`SqliteRebuildRenderer` via `createIndexSql`) muss die FTS5-Objekte als
+  abhängig recreaten statt sie zu degradieren. **DoD:** `migrate`-Round-Trip **Exit 0**, kein
+  Phantom-Drift (Teil C von `smoke-fulltext-sqlite.sh` wird auf Exit-0-Assertion verschärft).
 
 ## 6. Akzeptanzkriterien
 

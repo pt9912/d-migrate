@@ -1,22 +1,16 @@
 package dev.dmigrate.driver.sqlite
 
 /**
- * ADR 0025: SQLite has no fulltext index without an FTS5 virtual table (slice P4). Until that
- * lands a FULLTEXT index degrades with the dedicated **W132** note — single source of the
- * skip marker, message and hint so the generate and diff/migrate paths stay byte-identical.
+ * ADR 0025: the FULLTEXT → FTS5 structural expansion lives in [SqliteFullTextExpansion] (Slice
+ * P4). This object holds only the remaining interim degradation: the table-**rebuild** recreate
+ * path ([SqliteDiffSqlBuilders.createIndexSql], driven by [SqliteRebuildRenderer]) still emits a
+ * visible skip marker instead of rebuilding the FTS5 objects — teaching the rebuild about the
+ * virtual table + its three sync triggers as dependent objects is Slice P5. Kept as a single
+ * source so that path never silently emits a plain BTREE over the source columns.
  */
 internal object SqliteFullTextDegradation {
 
-    const val W_CODE: String = "W132"
-
-    /** No-op marker emitted in place of the index (never a silent plain BTREE). [quotedName] is pre-quoted. */
+    /** No-op marker emitted in place of the index in a rebuild bucket. [quotedName] is pre-quoted. */
     fun skipComment(quotedName: String): String =
         "-- FULLTEXT index $quotedName skipped: SQLite needs an FTS5 virtual table for fulltext search"
-
-    fun message(indexName: String, tableName: String): String =
-        "FULLTEXT index '$indexName' on table '$tableName' is not supported in SQLite without an " +
-            "FTS5 virtual table; it has been skipped."
-
-    const val HINT: String =
-        "Create an FTS5 virtual table over the source columns plus sync triggers to retain full-text search."
 }

@@ -58,7 +58,7 @@ internal class SqliteTableDdlSupport(
         table: TableDefinition,
         options: DdlGenerationOptions,
     ): List<DdlStatement> =
-        generatedIndexNames(tableName, table.indices).mapIndexedNotNull { position, indexName ->
+        generatedIndexNames(tableName, table.indices).flatMapIndexed { position, indexName ->
             generateIndex(tableName, table.indices[position], indexName, table.columns, options)
         }
 
@@ -147,49 +147,46 @@ internal class SqliteTableDdlSupport(
         indexName: String,
         columns: Map<String, ColumnDefinition>,
         options: DdlGenerationOptions,
-    ): DdlStatement? {
-        // ADR 0025: degrade a FULLTEXT index (no SQLite FTS5 yet, slice P4) BEFORE the geometry
-        // check — its source columns are text, so geometry routing must not see it. Emit the
-        // dedicated W132 (fulltext) note via the shared text source, not the generic W102.
-        // (A Pagila-style table emits two independent, correct W132s on generate: one for the
-        // tsvector column degrading to TEXT, one here for the index — different objectNames.)
+    ): List<DdlStatement> {
+        // ADR 0025 (Slice P4): expand a FULLTEXT index into a SQLite FTS5 external-content virtual
+        // table + initial `'rebuild'` + three sync triggers over the source columns
+        // (SqliteFullTextExpansion — the single SQL source shared with the diff/migrate render
+        // path). Emitted BEFORE the geometry check: a fulltext index lists its source TEXT columns,
+        // so geometry routing must not see it. POST_DATA so the `'rebuild'` runs after the base
+        // table is loaded (and the bulk transfer stays trigger-free). The tsvector column itself
+        // still degrades to TEXT with its own column-level W132 (SqliteColumnConstraintHelper) —
+        // that contract is unchanged; only the index no longer degrades. Rebuild-bucket recreation
+        // still degrades via createIndexSql until Slice P5.
         if (index.type == IndexType.FULLTEXT) {
-            return DdlStatement(
-                SqliteFullTextDegradation.skipComment(quoteIdentifier(indexName)),
-                listOf(
-                    TransformationNote(
-                        type = NoteType.WARNING,
-                        code = SqliteFullTextDegradation.W_CODE,
-                        objectName = indexName,
-                        message = SqliteFullTextDegradation.message(indexName, tableName),
-                        hint = SqliteFullTextDegradation.HINT,
-                    ),
-                ),
-            )
+            return SqliteFullTextExpansion
+                .createStatements(tableName, indexName, index.columnNames, quoteIdentifier)
+                .map { DdlStatement(it, phase = DdlPhase.POST_DATA) }
         }
         // VA4: ein Index auf einer Geometriespalte → SpatiaLite `CreateSpatialIndex`
         // (R*Tree). Nur unter `--spatial-profile spatialite`; sonst geskippt mit Note.
         val geometryColumn = index.columnNames.firstOrNull { columns[it]?.type is NeutralType.Geometry }
         if (geometryColumn != null) {
-            return spatialIndexStatement(tableName, geometryColumn, indexName, options)
+            return listOf(spatialIndexStatement(tableName, geometryColumn, indexName, options))
         }
         if (index.type != IndexType.BTREE) {
-            return DdlStatement(
-                "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.WARNING,
-                        code = "W102",
-                        objectName = indexName,
-                        message = buildString {
-                            append(index.type.name)
-                            append(" index '")
-                            append(indexName)
-                            append("' on table '")
-                            append(tableName)
-                            append("' is not supported in SQLite. Only BTREE is available.")
-                        },
-                        hint = "The index has been skipped. If needed, create a standard BTREE index instead."
+            return listOf(
+                DdlStatement(
+                    "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",
+                    listOf(
+                        TransformationNote(
+                            type = NoteType.WARNING,
+                            code = "W102",
+                            objectName = indexName,
+                            message = buildString {
+                                append(index.type.name)
+                                append(" index '")
+                                append(indexName)
+                                append("' on table '")
+                                append(tableName)
+                                append("' is not supported in SQLite. Only BTREE is available.")
+                            },
+                            hint = "The index has been skipped. If needed, create a standard BTREE index instead."
+                        )
                     )
                 )
             )
@@ -203,7 +200,7 @@ internal class SqliteTableDdlSupport(
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
-        return DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)"))
+        return listOf(DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)")))
     }
 
     /**
