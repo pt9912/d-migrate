@@ -2252,6 +2252,11 @@ Gibt das Keyring-YAML auf stdout aus (z. B. `… > keyring.yaml` umleiten).
 | `array` | type[] | JSON | TEXT (JSON) |
 | `geometry` | geometry(type, srid) | POINT / POLYGON / … | AddGeometryColumn() |
 
+`identifier` ist der 32-bit-Auto-Increment-Vertrag; SQLites
+`INTEGER PRIMARY KEY AUTOINCREMENT` ist dagegen 64-bit — ein Cross-Dialect-
+Transfer verengt den Wertebereich (der Reverse merkt das als Note `R202` an).
+Für 64-bit-Autowerte: `biginteger` + `generation` ([F.3](#f3-spalte)).
+
 Die autoritative Liste inkl. Attributen steht in der
 [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md#3-neutrales-typsystem).
 
@@ -2341,6 +2346,14 @@ Typ-spezifische Attribute:
 | `ref_type` | `enum` | Verweis auf `custom_types` |
 | `element_type` | `array` | Elementtyp (Pflicht) |
 | `geometry_type`, `srid` | `geometry` | Spatial → [F.4](#f4-spatial-typen) |
+| `generation` | `integer`, `biginteger` | Identity-Spalte: `type: identity`, `mode: by_default`/`always`, optional `sequence_name`, `legacy_serial_syntax` |
+
+`identifier` ist bewusst der **32-bit**-Auto-Increment-Vertrag (PostgreSQL
+`SERIAL`, MySQL `INT AUTO_INCREMENT`). 64-bit-Autowerte modelliert man als
+`biginteger` plus `generation: {type: identity}` — PostgreSQL rendert daraus
+`BIGINT GENERATED … AS IDENTITY`. `generation` schließt `default` auf
+derselben Spalte aus; Details in der
+[Schema-Referenz](../../spec/schema-reference.md).
 
 #### F.4 Spatial-Typen
 
