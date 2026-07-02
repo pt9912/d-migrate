@@ -1,11 +1,13 @@
 # SQLite: Table-Rebuild einer FULLTEXT-Tabelle blocken (loud-safe Interim)
 
-> **Status: GELIEFERT (2026-07-02), siehe Closure-Notiz unten.**
+> **Status: GELIEFERT (2026-07-02) und noch am selben Tag planmäßig ABGELÖST** — der volle
+> Recreate ([`sqlite-fulltext-rebuild-recreate.md`](sqlite-fulltext-rebuild-recreate.md)) hat
+> den Block zurückgebaut. Siehe Closure-Notiz unten.
 >
 > **Trigger:** P5-Review des Fulltext-Slice
 > ([`fulltext-structural-cross-dialect.md`](fulltext-structural-cross-dialect.md)).
 > Interim-Sicherung gegen den stillen Rebuild-Bug; abgelöst vom vollen Recreate
-> [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md) (Punkt 2).
+> [`sqlite-fulltext-rebuild-recreate.md`](sqlite-fulltext-rebuild-recreate.md) (Punkt 2).
 
 ## Problem (still, grüner migrate)
 
@@ -35,7 +37,7 @@ strukturell ALTERt); der Slice-Zielpfad (PG→SQLite *fresh* migrate) trifft es 
 ## Verhältnis zu Punkt 2
 
 Reiner Sicherheitsnetz-Interim. Sobald der volle Recreate
-([`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md))
+([`sqlite-fulltext-rebuild-recreate.md`](sqlite-fulltext-rebuild-recreate.md))
 landet, wird dieser Block durch die tatsächliche Wiederherstellung ersetzt (Block entfernen).
 
 ## Nicht-Scope
@@ -72,6 +74,6 @@ aufbauen bzw. Index vorher droppen / nachher neu anlegen).
 ein frisches `migrate --execute` mit einer `smallint`-Spalte endet auf SQLite immer Exit 5
 (Post-Compare-Drift-False-Positive durch Typ-Abflachung `smallint`→`INTEGER` im Generate).
 
-**Rückbau:** dieser Block wird durch den vollen Recreate ersetzt — Guard + Regressionstest dann
-entfernen bzw. auf das Recreate-Verhalten umstellen; die FULLTEXT-Erkennung im Rebuild-Pfad
-trägt 1:1 weiter.
+**Rückbau: ERFOLGT (2026-07-02).** Der volle Recreate hat Guard + Blocker entfernt und den
+Regressionstest auf das Recreate-Verhalten umgestellt; die FULLTEXT-Erkennung trug wie erwartet
+1:1 weiter (Drop-Seite des Recreate).

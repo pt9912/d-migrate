@@ -23,10 +23,10 @@ import dev.dmigrate.core.model.IndexDefinition
  * [unsupportedReason]; when it doesn't hold the index degrades conservatively (never broken DDL).
  *
  * **Not here:** the reverse drift filter (FTS5 shadow tables `_data`/`_idx`/`_docsize`/`_config` +
- * the three sync triggers) lives in the P5 reverse path; the table-rebuild recreate path is still
- * open (`docs/planning/open/sqlite-fulltext-rebuild-recreate.md`) — until it lands,
- * [SqliteRebuildRenderer] blocks a rebuild of a FULLTEXT-carrying table loud
- * (`SQLITE_REBUILD_FULLTEXT_UNSUPPORTED`) instead of leaving a stale FTS5 index behind.
+ * the three sync triggers) lives in the P5 reverse path. The table-**rebuild** path
+ * ([SqliteRebuildRenderer]) treats the FTS5 objects as dependent: it emits [dropStatements]
+ * before the base-table drop (the virtual table would survive it orphaned) and [createStatements]
+ * after the RENAME (`'rebuild'` repopulates from the copied rows).
  */
 internal object SqliteFullTextExpansion {
 

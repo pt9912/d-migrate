@@ -8,6 +8,7 @@ import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.sqliteContext
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
@@ -87,10 +88,6 @@ internal class SqliteRebuildRenderer(
     fun render(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         if (plan.hasMaterializedDependentViews()) {
             emitMaterializedViewBlocker(plan, ctx)
-            return
-        }
-        if (plan.hasFullTextIndices()) {
-            emitFullTextRebuildBlocker(plan, ctx)
             return
         }
         if (plan.mapping.isBlocked) {
@@ -311,44 +308,6 @@ internal class SqliteRebuildRenderer(
     private fun SqliteRebuildPlan.hasMaterializedDependentViews(): Boolean =
         (dependentViewsToDrop + dependentViewsToRecreate).any { it.definition.materialized }
 
-    /**
-     * Interim guard until the rebuild path recreates FTS5 objects
-     * (`docs/planning/open/sqlite-fulltext-rebuild-recreate.md`): a
-     * rebuild of a FULLTEXT-carrying table would drop the three FTS5
-     * sync triggers with the base table and recreate neither them nor
-     * the index population (`createIndexSql` degrades FULLTEXT to the
-     * W132 skip comment). The surviving FTS5 virtual table keeps the
-     * P5 reverse drift-free, so `migrate --execute` would end Exit 0
-     * while the full-text search silently serves stale hits and stops
-     * updating. Block loud instead — checked on both table sides so
-     * UP and DOWN behave identically.
-     */
-    private fun SqliteRebuildPlan.hasFullTextIndices(): Boolean =
-        (oldTable.indices + newTable.indices).any { it.type == IndexType.FULLTEXT }
-
-    private fun emitFullTextRebuildBlocker(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
-        val names = (plan.oldTable.indices + plan.newTable.indices)
-            .filter { it.type == IndexType.FULLTEXT }
-            .map { SqliteFullTextExpansion.ftsName(plan.originalTableName, it) }
-            .distinct()
-            .sorted()
-        val message = "RebuildTable for `${plan.originalTableName}` is not supported while the " +
-            "table carries FULLTEXT index(es) ${names.joinToString(", ")}: the rebuild would " +
-            "drop the FTS5 sync triggers together with the base table and recreate neither " +
-            "them nor the index content, leaving a stale full-text search that no longer " +
-            "updates. Apply the structural change manually and rebuild the FTS5 objects " +
-            "afterwards (drop the FTS5 virtual table + its `_ai`/`_ad`/`_au` triggers, then " +
-            "re-run the FULLTEXT index DDL), or drop the FULLTEXT index before the change " +
-            "and re-add it afterwards."
-        for (op in plan.bucketOperations) {
-            ctx.skip(op, message, code = "SQLITE_REBUILD_FULLTEXT_UNSUPPORTED")
-        }
-        ctx.addBlocker(
-            MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
-            operationIds = plan.sourceOperationIds,
-        )
-    }
-
     private fun emitMaterializedViewBlocker(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         val names = (plan.dependentViewsToDrop + plan.dependentViewsToRecreate)
             .filter { it.definition.materialized }
@@ -411,22 +370,7 @@ internal class SqliteRebuildRenderer(
             buildInsertSelectSql(tempName, originalTable, plan.mapping),
             opIds, risk = bucketRisk, phase = DiffPhase.TABLES,
         )
-        // Phase H.3a: drop dependent triggers and views BEFORE the
-        // table drop. Triggers first (they reference the table
-        // directly); views next (some views may reference triggers
-        // via SQLite's INSTEAD-OF mechanism, so views go second).
-        for (named in plan.dependentTriggersToDrop) {
-            ctx.emitRebuildStatement(
-                "DROP TRIGGER IF EXISTS ${sql.quote(named.name)};",
-                opIds, risk = safe, phase = DiffPhase.TABLES,
-            )
-        }
-        for (named in plan.dependentViewsToDrop) {
-            ctx.emitRebuildStatement(
-                "DROP VIEW IF EXISTS ${sql.quote(named.name)};",
-                opIds, risk = safe, phase = DiffPhase.TABLES,
-            )
-        }
+        emitDependentDropsBeforeBaseDrop(plan, ctx, opIds, safe)
         ctx.emitRebuildStatement(
             "DROP TABLE ${sql.quote(originalTable)};",
             opIds, risk = bucketRisk, phase = DiffPhase.TABLES,
@@ -437,7 +381,15 @@ internal class SqliteRebuildRenderer(
         )
 
         // INDEXES phase: re-create indices on the renamed-back table.
+        // A FULLTEXT index is not a plain index — route it through the
+        // FTS5 expansion (virtual table + `'rebuild'` repopulation +
+        // three sync triggers); `createIndexSql` would only degrade it
+        // to the W132 skip comment.
         for (idx in plan.indexesToRecreate) {
+            if (idx.type == IndexType.FULLTEXT) {
+                emitFullTextIndexRecreate(plan, ctx, idx, opIds, safe)
+                continue
+            }
             ctx.emitRebuildStatement(
                 sql.createIndexSql(originalTable, idx),
                 opIds, risk = safe, phase = DiffPhase.INDEXES,
@@ -487,6 +439,82 @@ internal class SqliteRebuildRenderer(
 
         for (op in plan.bucketOperations) ctx.markRendered(op)
         ctx.applyBucketRisk(opIds, bucketRisk)
+    }
+
+    /**
+     * Phase H.3a + ADR 0025: drop the rebuilt table's dependents BEFORE
+     * the base-table drop. Triggers first (they reference the table
+     * directly); views next (some views may reference triggers via
+     * SQLite's INSTEAD-OF mechanism); FTS5 objects of FULLTEXT indices
+     * last — the FTS5 virtual table SURVIVES the base-table drop
+     * (separate schema object, SQLite enforces no `content=` integrity)
+     * while its three sync triggers die with the table, so both are
+     * dropped explicitly and the recreate after RENAME starts clean
+     * instead of leaving a stale, unmaintained index behind.
+     */
+    private fun emitDependentDropsBeforeBaseDrop(
+        plan: SqliteRebuildPlan,
+        ctx: SqliteDiffRenderContext,
+        opIds: Set<String>,
+        safe: OperationRisk,
+    ) {
+        for (named in plan.dependentTriggersToDrop) {
+            ctx.emitRebuildStatement(
+                "DROP TRIGGER IF EXISTS ${sql.quote(named.name)};",
+                opIds, risk = safe, phase = DiffPhase.TABLES,
+            )
+        }
+        for (named in plan.dependentViewsToDrop) {
+            ctx.emitRebuildStatement(
+                "DROP VIEW IF EXISTS ${sql.quote(named.name)};",
+                opIds, risk = safe, phase = DiffPhase.TABLES,
+            )
+        }
+        for (idx in plan.oldTable.indices.filter { it.type == IndexType.FULLTEXT }) {
+            val fts = SqliteFullTextExpansion.ftsName(plan.originalTableName, idx)
+            for (stmt in SqliteFullTextExpansion.dropStatements(fts)) {
+                ctx.emitRebuildStatement(stmt, opIds, risk = safe, phase = DiffPhase.TABLES)
+            }
+        }
+    }
+
+    /**
+     * Recreate one FULLTEXT index after the RENAME via the FTS5
+     * expansion (ADR 0025): virtual table + `'rebuild'` (repopulates
+     * from the copied rows) + three sync triggers. When the expansion
+     * can't be built for the new table shape ([SqliteFullTextExpansion.unsupportedReason]:
+     * WITHOUT ROWID, reserved/colliding column name), degrade
+     * conservatively with the W132 skip marker — never broken DDL.
+     */
+    private fun emitFullTextIndexRecreate(
+        plan: SqliteRebuildPlan,
+        ctx: SqliteDiffRenderContext,
+        idx: IndexDefinition,
+        opIds: Set<String>,
+        safe: OperationRisk,
+    ) {
+        val table = plan.originalTableName
+        val fts = SqliteFullTextExpansion.ftsName(table, idx)
+        val withoutRowid = plan.newTable.metadata?.withoutRowid ?: false
+        val reason = SqliteFullTextExpansion.unsupportedReason(withoutRowid, idx, fts)
+        if (reason != null) {
+            ctx.emitRebuildStatement(
+                SqliteFullTextDegradation.skipComment(quoteSqliteIdentifier(fts)),
+                opIds, risk = safe, phase = DiffPhase.INDEXES,
+            )
+            ctx.addDiagnostic(
+                DiffDiagnostic(
+                    code = SqliteFullTextDegradation.W_CODE,
+                    message = "${SqliteFullTextDegradation.message(fts, table, reason)} " +
+                        SqliteFullTextDegradation.HINT,
+                    severity = DiffDiagnostic.Severity.WARNING,
+                ),
+            )
+            return
+        }
+        for (stmt in SqliteFullTextExpansion.createStatements(table, fts, idx.columnNames)) {
+            ctx.emitRebuildStatement(stmt, opIds, risk = safe, phase = DiffPhase.INDEXES)
+        }
     }
 
     /**

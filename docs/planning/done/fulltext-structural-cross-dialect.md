@@ -6,8 +6,8 @@
 > Offene Folgearbeit ausgeschnitten (SQLite-Table-Rebuild einer FULLTEXT-Tabelle, zwei Tickets):
 > [`sqlite-fulltext-rebuild-block.md`](sqlite-fulltext-rebuild-block.md) (Punkt 1,
 > loud-safe Interim, **geliefert 2026-07-02**) +
-> [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md)
-> (Punkt 2, voller Recreate).
+> [`sqlite-fulltext-rebuild-recreate.md`](sqlite-fulltext-rebuild-recreate.md)
+> (Punkt 2, voller Recreate, **geliefert 2026-07-02** — Rebuild-Folgearbeit damit komplett).
 >
 > **STAND 2026-07-01:**
 > - **P5 (Diff/Migrate-Härtung) live-verifiziert & DoD-komplett.** Der `migrate --execute`-Round-Trip
@@ -45,10 +45,10 @@
 >   `make docs-check` (0 Befunde).
 > - **Ausgeschnittene Folgearbeit (nicht slice-blockierend):** der Table-**Rebuild**-Pfad
 >   ([`SqliteRebuildRenderer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt)
->   via `createIndexSql`) recreatet einen FULLTEXT-Index bei einem Tabellen-**Rebuild** (inkrementelle
->   ALTER-Kante) noch nicht, sondern degradiert ihn sichtbar (Kommentar-Marker) — eigenes Ticket
->   [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md).
->   Nicht im DoD/Akzeptanz (fresh-generate + drift-freier Round-Trip sind erfüllt).
+>   via `createIndexSql`) recreatete einen FULLTEXT-Index bei einem Tabellen-**Rebuild** (inkrementelle
+>   ALTER-Kante) zunächst nicht, sondern degradierte ihn sichtbar (Kommentar-Marker) — eigenes Ticket
+>   [`sqlite-fulltext-rebuild-recreate.md`](sqlite-fulltext-rebuild-recreate.md), **geliefert 2026-07-02**.
+>   War nicht im DoD/Akzeptanz (fresh-generate + drift-freier Round-Trip sind erfüllt).
 >
 > Phasen + Akzeptanzkriterien ausgearbeitet
 > ([ADR 0004](../../adr/0004-documentation-and-planning-structure.md)).
@@ -233,9 +233,10 @@ Der Kern: das ist **keine** Typ-↔-Typ-Abbildung (wie `geometry` → `GEOMETRY`
   [`SqliteFts5ReverseTest`](../../../adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteFts5ReverseTest.kt)
   (Parser) + [`SqliteSchemaReaderTest`](../../../adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReaderTest.kt)
   (Fold-back + Shadow-/Trigger-Filter). **Ausgeschnitten** (eigenes Ticket
-  [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md), nicht
-  DoD/Akzeptanz-blockierend): der Table-**Rebuild**-Pfad (`SqliteRebuildRenderer` via `createIndexSql`)
-  recreatet FTS5-Objekte bei einem Tabellen-Rebuild noch nicht (sichtbare Kommentar-Degradierung).
+  [`sqlite-fulltext-rebuild-recreate.md`](sqlite-fulltext-rebuild-recreate.md), nicht
+  DoD/Akzeptanz-blockierend, geliefert 2026-07-02): der Table-**Rebuild**-Pfad
+  (`SqliteRebuildRenderer` via `createIndexSql`) recreatete FTS5-Objekte bei einem
+  Tabellen-Rebuild zunächst nicht (sichtbare Kommentar-Degradierung).
 
 ## 6. Akzeptanzkriterien
 

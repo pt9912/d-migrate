@@ -1,7 +1,9 @@
 # SQLite: FTS5-FULLTEXT-Objekte über den Table-Rebuild-Pfad recreaten
 
+> **Status: GELIEFERT (2026-07-02), siehe Closure-Notiz unten.**
+>
 > **Trigger:** Aufgedeckt im P5-Review des Fulltext-Slice
-> ([`done/fulltext-structural-cross-dialect.md`](../done/fulltext-structural-cross-dialect.md)).
+> ([`fulltext-structural-cross-dialect.md`](fulltext-structural-cross-dialect.md)).
 > Ausgeschnitten, weil eigenständige Rebuild-Planner-Arbeit und **nicht** im P5-DoD/Slice-Akzeptanz.
 
 ## Kontext
@@ -30,10 +32,10 @@ die Suche liefert still veraltete/falsche Treffer und aktualisiert sich bei kün
 Weil P5s Reverse den Index aus der überlebenden Virtual-Table rekonstruiert, **driftet der
 Post-Compare nicht** → `migrate` endet **Exit 0** trotz kaputter Suche. Das ist das „stiller
 Verlust"-Anti-Muster — daher der defensive Interim-Block als eigenes Ticket
-[`../done/sqlite-fulltext-rebuild-block.md`](../done/sqlite-fulltext-rebuild-block.md) (Punkt 1,
-**geliefert 2026-07-02**: Guard `SQLITE_REBUILD_FULLTEXT_UNSUPPORTED` in
+[`sqlite-fulltext-rebuild-block.md`](sqlite-fulltext-rebuild-block.md) (Punkt 1,
+geliefert 2026-07-02: Guard `SQLITE_REBUILD_FULLTEXT_UNSUPPORTED` in
 [`SqliteRebuildRenderer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt)),
-den **dieses** Ticket (Punkt 2, die eigentliche Lösung) später ablöst.
+den **dieses** Ticket (Punkt 2, die eigentliche Lösung) abgelöst hat.
 
 **Erreichbarkeit:** eng — nur bei einer inkrementellen SQLite-Migration, die eine fulltext-tragende
 Tabelle strukturell ALTERt. Der Slice-Zielpfad (PG→SQLite *fresh* migrate = CreateTable) trifft es nicht.
@@ -63,3 +65,37 @@ Analog zu `dependentTriggersToDrop`/`dependentTriggersToRecreate`: eine
 rebuildenden Tabelle; der Renderer emittiert `SqliteFullTextExpansion.dropStatements(...)` vor dem
 Drop und `createStatements(...)` nach dem RENAME (Phase INDEXES). Der bestehende
 `createIndexSql`-W132-Fallback bleibt als Sicherheitsnetz.
+
+## Closure-Notiz (2026-07-02)
+
+**Geliefert** in
+[`SqliteRebuildRenderer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt),
+mit einer bewussten Abweichung von der Skizze: **kein neues Plan-Feld** — `indexesToRecreate`
+(= `target.indices`) trägt den FULLTEXT-Index bereits, ein separates
+`dependentFullTextIndicesToRecreate`-Bucket wäre eine zweite Wahrheitsquelle gewesen; die
+Drop-Seite leitet sich aus `plan.oldTable.indices` ab, das der Plan ohnehin trägt (anders als
+Views/Trigger, die H.3a aus dem Schema in den Plan heben musste).
+
+- **Drop-Seite** (`emitDependentDropsBeforeBaseDrop`): vor dem Basistabellen-Drop
+  `SqliteFullTextExpansion.dropStatements(...)` je FULLTEXT-Index der alten Tabelle — die
+  Virtual-Table würde den Drop verwaist überleben, die drei Sync-Trigger sterben mit.
+- **Recreate-Seite**: die INDEXES-Phase routet FULLTEXT-Indizes durch
+  `SqliteFullTextExpansion.createStatements(...)` (Virtual-Table + `'rebuild'`-Repopulation +
+  3 Sync-Trigger) statt durch `createIndexSql`; bei `unsupportedReason` (WITHOUT ROWID,
+  reservierte/kollidierende Spaltennamen) konservative W132-Degradierung statt kaputter DDL.
+  Der `createIndexSql`-Skip bleibt als Sicherheitsnetz für andere Aufrufer.
+- **Interim-Block zurückgebaut** (Punkt 1, [`sqlite-fulltext-rebuild-block.md`](sqlite-fulltext-rebuild-block.md)):
+  `hasFullTextIndices`-Guard + `SQLITE_REBUILD_FULLTEXT_UNSUPPORTED`-Blocker entfernt; der
+  Regressionstest prüft jetzt das Recreate-Verhalten (Drop vor `DROP TABLE`, Expansion nach
+  RENAME, UP+DOWN) plus den W132-Degradationsfall.
+
+**DoD live-belegt** (Runtime-Image, `migrate --execute` mit NOT-NULL-Reshape auf einer
+FULLTEXT-Tabelle mit Bestandsdaten): Exit **0** drift-frei; FTS5-Virtual-Table + alle drei
+Sync-Trigger wiederhergestellt; `MATCH` findet die vor dem Rebuild eingefügten Zeilen
+(`'rebuild'`-Repopulation) **und** nach dem Rebuild eingefügte Zeilen (Trigger lebendig).
+
+**Nebenbefund** (vorbestehend, nicht durch diesen Slice verursacht — dokumentiert in
+[`../open/sqlite-postcompare-type-flattening-drift.md`](../open/sqlite-postcompare-type-flattening-drift.md)):
+ein Rebuild, der einen **benannten UNIQUE-Constraint** hinzufügt, endet Exit 5 — der Reverse
+liest ihn als Spalten-`unique` statt als benannten Constraint (Post-Compare-Asymmetrie derselben
+Familie wie die Typ-Abflachung; auch ohne FULLTEXT-Index reproduzierbar).

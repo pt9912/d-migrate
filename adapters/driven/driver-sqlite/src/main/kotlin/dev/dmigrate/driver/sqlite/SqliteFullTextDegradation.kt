@@ -4,11 +4,11 @@ package dev.dmigrate.driver.sqlite
  * ADR 0025: the FULLTEXT → FTS5 structural expansion lives in [SqliteFullTextExpansion] (Slice
  * P4). This object is the single source of the **conservative-degradation** text used where the
  * expansion can't be built — never a silent plain BTREE over the source columns. Two callers:
- *  1. [SqliteFullTextExpansion] when [SqliteFullTextExpansion.unsupportedReason] applies (base
- *     table WITHOUT ROWID, or a reserved/colliding FTS5 column name) — degrades with the W132 note.
- *  2. the table-**rebuild** recreate path ([SqliteDiffSqlBuilders.createIndexSql], driven by
- *     [SqliteRebuildRenderer]) — emits the visible skip marker; teaching the rebuild to recreate
- *     the FTS5 objects is Slice P5.
+ *  1. [SqliteFullTextExpansion] and the table-rebuild recreate path ([SqliteRebuildRenderer])
+ *     when [SqliteFullTextExpansion.unsupportedReason] applies (base table WITHOUT ROWID, or a
+ *     reserved/colliding FTS5 column name) — degrade with the W132 note.
+ *  2. [SqliteDiffSqlBuilders.createIndexSql] as a safety net for any remaining caller that
+ *     routes a FULLTEXT index at a plain `CREATE INDEX` — emits the visible skip marker.
  */
 internal object SqliteFullTextDegradation {
 

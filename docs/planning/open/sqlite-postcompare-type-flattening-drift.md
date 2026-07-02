@@ -47,6 +47,19 @@ hat (`normalize(toSql(X)) == normalize(toSql(Y))`). Präzedenz für Fingerprint-
 [`../done/migrate-postcompare-identifier-pk-drift.md`](../done/migrate-postcompare-identifier-pk-drift.md)
 (Fingerprint v3, impliziter `identifier`-PK). Vertragsänderung ⇒ Fingerprint-Version-Bump.
 
+## Verwandter Befund: UNIQUE-Constraint-Asymmetrie (2026-07-02)
+
+Gleiche Familie (Post-Compare-False-Positive auf SQLite), anderer Mechanismus: ein
+`migrate --execute`, das einen **benannten UNIQUE-Constraint** hinzufügt (Table-Rebuild),
+endet Exit 5 — der Generate rendert `CONSTRAINT "uq_x" UNIQUE ("col")` in die Tabelle, der
+Reverse liest den zugehörigen `sqlite_autoindex` aber als **Spalten-`unique`** zurück (kein
+benannter Constraint) → Soll (benannter Constraint) ≠ Reverse (Spaltenattribut). Live belegt
+beim FTS5-Rebuild-Recreate-Slice
+([`../done/sqlite-fulltext-rebuild-recreate.md`](../done/sqlite-fulltext-rebuild-recreate.md));
+reproduzierbar ohne Fulltext-Index. Die Kanonisierung sollte beide Repräsentationen
+äquivalent behandeln (benannter Single-Column-UNIQUE ↔ `unique: true` auf der Spalte —
+SQLite trägt den Constraint-Namen nicht in den Katalog).
+
 ## Nicht-Scope
 
 - Kein neues Typ-Mapping (die Abflachung selbst ist korrekt und gewollt, SQLite hat nur
