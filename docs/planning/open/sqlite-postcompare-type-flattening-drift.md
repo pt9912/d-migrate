@@ -1,13 +1,12 @@
 # `migrate --execute` Post-Compare-Drift-False-Positive durch SQLite-Typ-Abflachung
 
-> Status: **Vorabklärung** (Befund live belegt, Lösungsrichtung skizziert, kein Scope-Schnitt).
+> Status: **AKTIVIERT — als nächster Slice eingeplant (vereinbart 2026-07-02, Start 2026-07-03).**
+> Erster Arbeitsschritt ist der Scope-Schnitt (dieses Dokument → ausgearbeiteter Slice), siehe
+> „Geplanter Einstieg" unten.
 > Trigger: Live-Verifikation des Fulltext-Rebuild-Blocks
 > ([`../done/sqlite-fulltext-rebuild-block.md`](../done/sqlite-fulltext-rebuild-block.md)),
 > 2026-07-02 — die erste Testschema-Variante driftete wegen einer `smallint`-Spalte,
 > nicht wegen des Fulltext-Index.
-> Aktivierungsbedingung: sobald drift-freie frische `migrate --execute`-Läufe auf SQLite
-> für realistische Schemata gebraucht werden (jedes Schema mit `boolean`/`datetime`
-> trifft den Befund) oder der nächste RC-Zyklus die Exit-Semantik härtet.
 
 ## Befund (live belegt, 2026-07-02)
 
@@ -59,6 +58,26 @@ beim FTS5-Rebuild-Recreate-Slice
 reproduzierbar ohne Fulltext-Index. Die Kanonisierung sollte beide Repräsentationen
 äquivalent behandeln (benannter Single-Column-UNIQUE ↔ `unique: true` auf der Spalte —
 SQLite trägt den Constraint-Namen nicht in den Katalog).
+
+## Geplanter Einstieg (vereinbart 2026-07-02, für den Slice-Schnitt am 2026-07-03)
+
+- **Kern:** dialektbewusste Typ-Kanonisierung im Post-Compare — zwei Neutraltypen gelten als
+  äquivalent, wenn sie im Ziel-Dialekt auf denselben Typ abbilden (Substrat:
+  `StructuralTransferTypeCompatibility`, ports-common). Vermutlich als Projektion im
+  Fingerprint-/Compare-Pfad mit **Fingerprint-Version-Bump** — dabei die Rollback-Artefakt-Lektion
+  aus dem v6-Bump beachten (`c4846667`: Artefakt-Parser muss den Algo des Artefakts nutzen,
+  Runner braucht den Algo-Guard).
+- **Scope-Entscheidung (a):** Kanonisierung nur im Post-Compare, NICHT in `schema compare`/Diff —
+  dort ist ein gewolltes `smallint→integer` ein echter Unterschied. (Tendenz aus der Vorbesprechung:
+  nur Post-Compare.)
+- **Scope-Entscheidung (b):** UNIQUE-Constraint-Asymmetrie (unten) im selben Slice als eigener
+  Kanonisierungs-Schritt oder als Folge-Sub-Slice. (Tendenz: gleicher Slice, nach dem Schnitt
+  neu bewerten.)
+- **Abnahme:** die Probe-Matrix oben als Live-Testfälle — alle fünf Typ-Proben von Exit 5 auf
+  **Exit 0**, `text`-Kontrolle bleibt 0; Regressionstests auf Compare-/Fingerprint-Ebene;
+  `schema compare` erkennt `smallint→integer` weiterhin als Unterschied (Gegenprobe zu (a)).
+- **Folge-Effekt:** schaltet Option 2 des identifier-Tickets frei
+  ([`sqlite-reverse-identifier-64bit-narrowing.md`](sqlite-reverse-identifier-64bit-narrowing.md)).
 
 ## Nicht-Scope
 
