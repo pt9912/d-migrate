@@ -303,6 +303,65 @@ class SqliteRebuildRendererTest : FunSpec({
         r.diagnostics.any { it.code == "SQLITE_REBUILD_NOT_REVERSIBLE" } shouldBe true
     }
 
+    test("rebuild of a FULLTEXT-carrying table is blocked loud with MANUAL_ACTION_REQUIRED") {
+        // Interim guard (open/sqlite-fulltext-rebuild-block.md): the rebuild
+        // would orphan the surviving FTS5 virtual table (sync triggers die
+        // with the base table, createIndexSql degrades FULLTEXT to W132) —
+        // and because the P5 reverse rebuilds the index from the surviving
+        // virtual table, migrate would end Exit 0 with a stale search.
+        val fulltext = IndexDefinition(
+            name = "articles_fts",
+            columns = listOf(IndexColumn("title"), IndexColumn("body")),
+            type = IndexType.FULLTEXT,
+        )
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "title" to ColumnDefinition(NeutralType.Text()),
+                "body" to ColumnDefinition(NeutralType.Text()),
+                "views" to ColumnDefinition(NeutralType.SmallInt),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(fulltext),
+        )
+        val after = before.copy(
+            columns = before.columns + ("views" to ColumnDefinition(NeutralType.Integer)),
+        )
+        // SmallInt → Integer is a whitelisted cast — without the FULLTEXT
+        // index this exact rebuild renders (first test in this spec).
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "articles",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "views",
+                            type = ValueChange(NeutralType.SmallInt, NeutralType.Integer),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val current = schemaWith(mapOf("articles" to before))
+        val desired = schemaWith(mapOf("articles" to after))
+
+        val up = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        up.statements.size shouldBe 0
+        up.isBlocked shouldBe true
+        up.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        val diag = up.diagnostics.single { it.code == "SQLITE_REBUILD_FULLTEXT_UNSUPPORTED" }
+        diag.message shouldContain "`articles`"
+        diag.message shouldContain "articles_fts"
+        diag.message shouldContain "FULLTEXT"
+
+        // DOWN direction rebuilds the same table — must block identically.
+        val down = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
+        down.statements.size shouldBe 0
+        down.isBlocked shouldBe true
+        down.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        down.diagnostics.any { it.code == "SQLITE_REBUILD_FULLTEXT_UNSUPPORTED" } shouldBe true
+    }
+
     // ---- Phase G.1: SQLite Cast-Matrix ----
 
     /**

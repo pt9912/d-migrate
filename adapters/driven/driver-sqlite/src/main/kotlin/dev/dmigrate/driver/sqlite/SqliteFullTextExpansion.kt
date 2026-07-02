@@ -22,9 +22,11 @@ import dev.dmigrate.core.model.IndexDefinition
  * FTS5 docs pattern). This requires a real rowid and non-reserved column names — see
  * [unsupportedReason]; when it doesn't hold the index degrades conservatively (never broken DDL).
  *
- * **Not here (Slice P5 — diff/migrate hardening):** the reverse drift filter (FTS5 shadow tables
- * `_data`/`_idx`/`_docsize`/`_config` + the three sync triggers) and the table-rebuild recreate
- * path ([SqliteDiffSqlBuilders.createIndexSql] still degrades a FULLTEXT index in a rebuild bucket).
+ * **Not here:** the reverse drift filter (FTS5 shadow tables `_data`/`_idx`/`_docsize`/`_config` +
+ * the three sync triggers) lives in the P5 reverse path; the table-rebuild recreate path is still
+ * open (`docs/planning/open/sqlite-fulltext-rebuild-recreate.md`) — until it lands,
+ * [SqliteRebuildRenderer] blocks a rebuild of a FULLTEXT-carrying table loud
+ * (`SQLITE_REBUILD_FULLTEXT_UNSUPPORTED`) instead of leaving a stale FTS5 index behind.
  */
 internal object SqliteFullTextExpansion {
 

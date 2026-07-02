@@ -30,8 +30,10 @@ die Suche liefert still veraltete/falsche Treffer und aktualisiert sich bei kün
 Weil P5s Reverse den Index aus der überlebenden Virtual-Table rekonstruiert, **driftet der
 Post-Compare nicht** → `migrate` endet **Exit 0** trotz kaputter Suche. Das ist das „stiller
 Verlust"-Anti-Muster — daher der defensive Interim-Block als eigenes Ticket
-[`sqlite-fulltext-rebuild-block.md`](sqlite-fulltext-rebuild-block.md) (Punkt 1), den **dieses**
-Ticket (Punkt 2, die eigentliche Lösung) später ablöst.
+[`../done/sqlite-fulltext-rebuild-block.md`](../done/sqlite-fulltext-rebuild-block.md) (Punkt 1,
+**geliefert 2026-07-02**: Guard `SQLITE_REBUILD_FULLTEXT_UNSUPPORTED` in
+[`SqliteRebuildRenderer`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt)),
+den **dieses** Ticket (Punkt 2, die eigentliche Lösung) später ablöst.
 
 **Erreichbarkeit:** eng — nur bei einer inkrementellen SQLite-Migration, die eine fulltext-tragende
 Tabelle strukturell ALTERt. Der Slice-Zielpfad (PG→SQLite *fresh* migrate = CreateTable) trifft es nicht.
@@ -44,6 +46,10 @@ Tabelle strukturell ALTERt. Der Slice-Zielpfad (PG→SQLite *fresh* migrate = Cr
   RENAME per `SqliteFullTextExpansion` neu anlegen (`'rebuild'` repopuliert aus der neuen Tabelle).
 - DoD: ein `migrate --execute`, das einen Rebuild einer FULLTEXT-tragenden Tabelle auslöst, stellt
   die FTS5-Struktur wieder her (Index per `MATCH` abfragbar) und bleibt drift-frei (Exit 0).
+- Den Interim-Block aus Punkt 1 zurückbauen: `hasFullTextIndices`-Guard +
+  `SQLITE_REBUILD_FULLTEXT_UNSUPPORTED`-Blocker in `SqliteRebuildRenderer` entfernen und den
+  Regressionstest („rebuild of a FULLTEXT-carrying table is blocked loud…" in
+  `SqliteRebuildRendererTest`) auf das Recreate-Verhalten umstellen.
 
 ## Nicht-Scope
 

@@ -4,8 +4,9 @@
 > P3+P4 live-verifiziert + review-gehärtet; P5 drift-frei live-verifiziert + review-gehärtet). Alle
 > Phasen-Commits gepusht (`origin/develop`), Full-Repo-CI + E2E-Regression (sqlite/spatial) grün.
 > Offene Folgearbeit ausgeschnitten (SQLite-Table-Rebuild einer FULLTEXT-Tabelle, zwei Tickets):
-> [`../open/sqlite-fulltext-rebuild-block.md`](../open/sqlite-fulltext-rebuild-block.md) (Punkt 1,
-> loud-safe Interim) + [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md)
+> [`sqlite-fulltext-rebuild-block.md`](sqlite-fulltext-rebuild-block.md) (Punkt 1,
+> loud-safe Interim, **geliefert 2026-07-02**) +
+> [`../open/sqlite-fulltext-rebuild-recreate.md`](../open/sqlite-fulltext-rebuild-recreate.md)
 > (Punkt 2, voller Recreate).
 >
 > **STAND 2026-07-01:**

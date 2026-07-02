@@ -8,6 +8,7 @@ import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.sqliteContext
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -86,6 +87,10 @@ internal class SqliteRebuildRenderer(
     fun render(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         if (plan.hasMaterializedDependentViews()) {
             emitMaterializedViewBlocker(plan, ctx)
+            return
+        }
+        if (plan.hasFullTextIndices()) {
+            emitFullTextRebuildBlocker(plan, ctx)
             return
         }
         if (plan.mapping.isBlocked) {
@@ -305,6 +310,44 @@ internal class SqliteRebuildRenderer(
 
     private fun SqliteRebuildPlan.hasMaterializedDependentViews(): Boolean =
         (dependentViewsToDrop + dependentViewsToRecreate).any { it.definition.materialized }
+
+    /**
+     * Interim guard until the rebuild path recreates FTS5 objects
+     * (`docs/planning/open/sqlite-fulltext-rebuild-recreate.md`): a
+     * rebuild of a FULLTEXT-carrying table would drop the three FTS5
+     * sync triggers with the base table and recreate neither them nor
+     * the index population (`createIndexSql` degrades FULLTEXT to the
+     * W132 skip comment). The surviving FTS5 virtual table keeps the
+     * P5 reverse drift-free, so `migrate --execute` would end Exit 0
+     * while the full-text search silently serves stale hits and stops
+     * updating. Block loud instead — checked on both table sides so
+     * UP and DOWN behave identically.
+     */
+    private fun SqliteRebuildPlan.hasFullTextIndices(): Boolean =
+        (oldTable.indices + newTable.indices).any { it.type == IndexType.FULLTEXT }
+
+    private fun emitFullTextRebuildBlocker(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
+        val names = (plan.oldTable.indices + plan.newTable.indices)
+            .filter { it.type == IndexType.FULLTEXT }
+            .map { SqliteFullTextExpansion.ftsName(plan.originalTableName, it) }
+            .distinct()
+            .sorted()
+        val message = "RebuildTable for `${plan.originalTableName}` is not supported while the " +
+            "table carries FULLTEXT index(es) ${names.joinToString(", ")}: the rebuild would " +
+            "drop the FTS5 sync triggers together with the base table and recreate neither " +
+            "them nor the index content, leaving a stale full-text search that no longer " +
+            "updates. Apply the structural change manually and rebuild the FTS5 objects " +
+            "afterwards (drop the FTS5 virtual table + its `_ai`/`_ad`/`_au` triggers, then " +
+            "re-run the FULLTEXT index DDL), or drop the FULLTEXT index before the change " +
+            "and re-add it afterwards."
+        for (op in plan.bucketOperations) {
+            ctx.skip(op, message, code = "SQLITE_REBUILD_FULLTEXT_UNSUPPORTED")
+        }
+        ctx.addBlocker(
+            MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+            operationIds = plan.sourceOperationIds,
+        )
+    }
 
     private fun emitMaterializedViewBlocker(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         val names = (plan.dependentViewsToDrop + plan.dependentViewsToRecreate)
