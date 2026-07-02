@@ -79,7 +79,10 @@
       "metadata": { "engine": "InnoDB", "without_rowid": false }
     },
     "customers": {
-      "columns": { "id": { "type": "identifier", "auto_increment": true } },
+      "columns": {
+        "id": { "type": "identifier", "auto_increment": true },
+        "external_ref": { "type": "biginteger", "generation": { "type": "identity", "mode": "by_default" } }
+      },
       "primary_key": ["id"]
     }
   },

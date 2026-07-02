@@ -21,7 +21,23 @@ internal object SqliteTypeMapping {
         tableName: String,
         colName: String,
     ): MappingResult {
-        if (isAutoIncrement) return MappingResult(NeutralType.Identifier(autoIncrement = true))
+        // Neutral `identifier` is the deliberate 32-bit auto-increment contract
+        // (neutral-model-spec: PG SERIAL, MySQL INT AUTO_INCREMENT), but SQLite's
+        // AUTOINCREMENT rowid is 64-bit — a cross-dialect transfer narrows the
+        // range. R202 keeps that narrowing loud; the spec'd 64-bit path is
+        // biginteger + ColumnGeneration.Identity.
+        if (isAutoIncrement) return MappingResult(
+            NeutralType.Identifier(autoIncrement = true),
+            SchemaReadNote(
+                severity = SchemaReadSeverity.INFO, code = "R202",
+                objectName = "$tableName.$colName",
+                message = "SQLite AUTOINCREMENT primary key is 64-bit; neutral 'identifier' is the " +
+                    "32-bit auto-increment contract (PostgreSQL SERIAL, MySQL INT AUTO_INCREMENT) — " +
+                    "a cross-dialect transfer narrows the value range",
+                hint = "Model the column as biginteger plus generation: identity " +
+                    "when the 64-bit range is required",
+            ),
+        )
 
         val raw = rawType.uppercase().trim()
         val maxLen = extractMaxLength(raw)
@@ -138,25 +154,6 @@ internal object SqliteTypeMapping {
         } else {
             null to null
         }
-    }
-
-    /**
-     * Extracts named CHECK constraints from a CREATE TABLE statement.
-     * SQLite stores the full DDL in sqlite_master.sql — CHECK constraints
-     * can only be recovered from there.
-     */
-    fun extractCheckConstraints(createSql: String): List<Pair<String, String>> {
-        val results = mutableListOf<Pair<String, String>>()
-        val regex = Regex(
-            """CONSTRAINT\s+(\S+)\s+CHECK\s*\((.+?)\)""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
-        )
-        for (match in regex.findAll(createSql)) {
-            val name = match.groupValues[1].trim().removeSurrounding("\"").removeSurrounding("`")
-            val expr = match.groupValues[2].trim()
-            results += name to expr
-        }
-        return results
     }
 
     fun isVirtualTable(createSql: String): Boolean =

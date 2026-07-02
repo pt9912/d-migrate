@@ -253,6 +253,36 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    test("named CHECK with IN list keeps the full expression incl. closing paren (regression)") {
+        // The old regex truncated at the first `)` — `p IN ('a','b')` came
+        // back as `p IN ('a','b'` and re-generated invalid DDL downstream.
+        withDb("CREATE TABLE t (p TEXT, CONSTRAINT chk CHECK (p IN ('a','b')))") { pool ->
+            val result = reader.read(pool)
+            val check = result.schema.tables["t"]!!.constraints.single { it.type == ConstraintType.CHECK }
+            check.name shouldBe "chk"
+            check.expression shouldBe "p IN ('a','b')"
+        }
+    }
+
+    test("unnamed CHECK is surfaced as R203 note instead of silently dropped") {
+        withDb("CREATE TABLE t (age INTEGER CHECK (age >= 0))") { pool ->
+            val result = reader.read(pool)
+            result.schema.tables["t"]!!.constraints.none { it.type == ConstraintType.CHECK } shouldBe true
+            val note = result.notes.single { it.code == "R203" }
+            note.objectName shouldBe "t"
+            note.message.contains("age >= 0") shouldBe true
+        }
+    }
+
+    test("AUTOINCREMENT pk emits R202 64-bit narrowing note") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)") { pool ->
+            val result = reader.read(pool)
+            val note = result.notes.single { it.code == "R202" }
+            note.objectName shouldBe "t.id"
+            note.severity shouldBe SchemaReadSeverity.INFO
+        }
+    }
+
     // ── sqlite_autoindex suppressed ─────────────
 
     test("sqlite_autoindex backing indices are suppressed") {

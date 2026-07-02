@@ -159,6 +159,31 @@
           "type": "boolean",
           "description": "Nur bei type: identifier"
         },
+        "generation": {
+          "type": "object",
+          "description": "Spalten-Generierung (ColumnGeneration), z. B. Identity-Spalten: biginteger plus generation: {type: identity} ist der 64-bit-Identity-Vertrag (identifier bleibt der 32-bit-Auto-Increment-Vertrag)",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["identity"]
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["always", "by_default"],
+              "description": "GENERATED ALWAYS vs. BY DEFAULT AS IDENTITY (Default: by_default)"
+            },
+            "sequence_name": {
+              "type": "string",
+              "description": "Explizite Backing-Sequence (optional)"
+            },
+            "legacy_serial_syntax": {
+              "type": "boolean",
+              "description": "PostgreSQL-Legacy-SERIAL-Syntax statt GENERATED ... AS IDENTITY"
+            }
+          }
+        },
         "max_length": {
           "type": "integer",
           "minimum": 1,

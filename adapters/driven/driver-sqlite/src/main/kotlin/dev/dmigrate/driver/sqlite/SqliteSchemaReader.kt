@@ -207,11 +207,24 @@ class SqliteSchemaReader : SchemaReader {
         constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         // CHECK constraints from CREATE TABLE SQL
-        for ((checkName, checkExpr) in SqliteTypeMapping.extractCheckConstraints(createSql)) {
+        val checkScan = SqliteCheckConstraintScanner.scan(createSql)
+        for ((checkName, checkExpr) in checkScan.named) {
             constraints += ConstraintDefinition(
                 name = checkName,
                 type = ConstraintType.CHECK,
                 expression = checkExpr,
+            )
+        }
+        // Unnamed CHECK clauses cannot become ConstraintDefinitions (the
+        // model keys constraints by name) — surface the drop loud instead
+        // of silently losing the rule.
+        for (expr in checkScan.unnamedExpressions) {
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.INFO, code = "R203",
+                objectName = tableName,
+                message = "Unnamed CHECK constraint not carried on reverse: CHECK ($expr)",
+                hint = "Name the constraint (CONSTRAINT <name> CHECK (...)) to include it " +
+                    "in the neutral schema",
             )
         }
 
