@@ -47,6 +47,17 @@
 Empfehlung bei Aktivierung: Option 2 nach Landung der Typ-Kanonisierung; Option 3 nur, wenn
 mehrere Dialekt-Verträge ohnehin angefasst werden (ADR-würdig).
 
+## PG-Evidenz (Nachtrag 2026-07-03, AP0-Probe des Kanonisierungs-Slices)
+
+Dieselbe Rekonstruktions-Familie existiert auf PostgreSQL: der Reverse eines
+`SERIAL`-**ohne**-PK (Generate aus identifier-only-Soll) liest `integer` +
+`sequence_nextval`-Default zurück — kein `identifier`, kein `auto_increment` →
+Post-Compare-Drift mehrteilig (Typ + Default + effektiver PK). **Mit** explizitem
+`primary_key` rekonstruiert der PG-Reverse `identifier`/`auto_increment` dagegen
+korrekt (verbleibende `required`-Asymmetrie übernimmt der Kanonisierungs-Slice,
+Abnahme 8). Verwandter Generate-Aspekt (implizite PK-Materialisierung):
+[`generate-implicit-identifier-pk-materialization.md`](generate-implicit-identifier-pk-materialization.md).
+
 ## Nicht-Scope
 
 - Kein Wert-Bereichs-Preflight beim Transfer (Datenebene; eigener Schnitt, falls je nötig).

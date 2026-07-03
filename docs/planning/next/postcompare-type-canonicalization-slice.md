@@ -193,6 +193,8 @@ auf SQLite; systematische Round-Trip-Probe aller Neutraltypen auf MySQL/PG
 belegen (erwartet: Reverse verwirft). DoD: belegte Kanten-Tabelle je Dialekt;
 `enum`-Erwartung geklärt (vermutlich zusätzliche CHECK-Constraint-Drift → falls ja,
 eigenes Ticket, nicht dieser Slice).
+**→ ERLEDIGT 2026-07-03**, Ergebnisse und Scope-Konsequenzen im
+Status-Update am Dokumentende.
 
 **AP1 — Port + SQLite-Kanonisierer.**
 `NeutralTypeCanonicalizer` (ports-common) + `DatabaseDriver`-Methode (Default Identity,
@@ -209,11 +211,16 @@ minimale Faltung, gleiche Konstruktion).
 
 **AP2 — Fingerprint v7.**
 `MigrationFingerprint.compute(schema, canonicalizer = Identity)`: Typ-Projektion
-kanonisiert; UNIQUE-Fold (D4); `ALGORITHM` → `schema-fingerprint-v7` mit
-KDoc-Historieneintrag (Rationale + Verweis hierher). Unit-Tests: die fünf Typ-Proben
-hashen mit SQLite-Kanonisierer gleich, ohne Kanonisierer weiterhin verschieden
-(Identity-Default); UNIQUE-Fold Single-Column beidseitig, Multi-Column bleibt distinkt;
-Negativfälle (echte Typ-Drift auf PG bleibt Drift).
+kanonisiert; UNIQUE-Fold (D4); **`required`-Kanonisierung** (AP0-Befund, siehe
+Status-Update): `effectiveRequired(col) = col.required || col ∈ effectivePrimaryKey`
+— PK-Spalten sind semantisch NOT NULL, der PG-Reverse materialisiert das, der
+Soll-Parser nicht (dialekt-neutral, Analogon zu `effectivePrimaryKey` aus v3);
+`ALGORITHM` → `schema-fingerprint-v7` mit KDoc-Historieneintrag (Rationale + Verweis
+hierher). Unit-Tests: die fünf Typ-Proben hashen mit SQLite-Kanonisierer gleich, ohne
+Kanonisierer weiterhin verschieden (Identity-Default); UNIQUE-Fold Single-Column
+beidseitig, Multi-Column bleibt distinkt; `required`-Fold nur für PK-Spalten
+(Nicht-PK-`required`-Drift bleibt Drift); Negativfälle (echte Typ-Drift auf PG bleibt
+Drift).
 
 **AP3 — Durchreichung + Artefakt-Verträge.**
 Kanonisierer an alle Call-Sites: Migrate-Runner (Post-Compare-Lambda,
@@ -240,10 +247,23 @@ Multi-Column-Namensrekonstruktion ist **Teil dieses Slices** (Review-Entscheidun
 Round-Trip-Regressionstests: Reverse einer Tabelle mit inline-UNIQUE (single + multi)
 verliert den Constraint nicht mehr; `generate(reverse)` trägt UNIQUE.
 
-**AP5 — Live-Abnahme (Runtime-Image, Smoke-artig).**
-Siehe Abnahme unten; die Probe-Matrix wird als Regressionstest auf
-Integrationstest-Ebene verankert (Muster: bestehende
-`SqliteMigrateRoundTripIntegrationTest`).
+**AP5 — Live-Abnahme + permanenter Smoke.**
+Der AP0-Probe-Harness wird zu einem dedizierten Smoke destilliert
+(neues Script `smoke-types.sh` im Sample-DB-Harness + Make-Target
+`sample-db-types-smoke`, Muster
+[`smoke-fulltext-sqlite.sh`](../../../examples/sample-db/scripts/smoke-fulltext-sqlite.sh)):
+Typ-Probe-Matrix je
+Dialekt mit **Exit-0-Asserts** (nach dem Fix; heute wäre er rot → liefert mit dem
+Fix, nicht vorgezogen), UNIQUE-Proben single+multi inkl. Fidelity-Assert
+(`generate(reverse)` trägt den UNIQUE) und `schema compare`-Gegenprobe.
+SQLite-Teil service-frei (File-Targets), PG/MySQL über die vorhandenen
+Compose-Services. Rationale: dritter Post-Compare-Befund derselben Familie
+(identifier-PK, Typen, UNIQUE) — die Familie fällt nur in der echten
+CLI-Exit-Semantik auf; Sensor-Präzedenz ist der `[lite]`-Exit-0-Assert aus dem
+identifier-Slice. Die Fingerprint-Mechanik bleibt bewusst auf
+Unit-/Integrationstest-Ebene (AP2/AP3; Muster
+`SqliteMigrateRoundTripIntegrationTest`) — der Smoke prüft nur die
+End-to-End-Exit-Semantik, keine Doppelung.
 
 **AP6 — Doku.**
 ADR (nächste freie Nummer, voraussichtlich 0026): „Dialektbewusste
@@ -272,6 +292,11 @@ Overlay-Pins invalidiert (Verhalten wie bei früheren Bumps, jetzt dokumentiert)
    grün, Kover ≥ 90 % pro berührtem Modul.
 6. MySQL/PG: in AP0 belegte Kanten sind kanonisiert (oder belegt kantenfrei =
    Identity); keine Verhaltensänderung für fidelity-erhaltende Round-Trips.
+7. Die Punkte 1–3 sind als permanenter Sensor in `make sample-db-types-smoke`
+   verankert (AP5) und der Smoke ist grün.
+8. `required`-Kanonisierung: `identifier` + explizites `primary_key` ohne
+   ausgeschriebenes `required` → **Exit 0** auf PG (AP0-Reproducer `identifier_pk`);
+   Gegenprobe: `required`-Drift auf einer **Nicht**-PK-Spalte bleibt Drift.
 
 ## Nicht-Scope
 
@@ -292,6 +317,73 @@ Overlay-Pins invalidiert (Verhalten wie bei früheren Bumps, jetzt dokumentiert)
   zweite Wahrheit pflegen; eingearbeitet in AP1). Rückfallpunkt: erweist sich
   `mapColumn` im Bau als zu sperrig (Notes/Seiteneffekte), ist die explizite Tabelle
   mit kompositions-abgeleitetem Test der dokumentierte Plan B.
+
+## Status-Update 2026-07-03 — AP0-Ergebnisse (Probe-Matrix gelaufen)
+
+Vollständige Matrix live gelaufen (Runtime-Image, frisches Ziel je Probe; alle
+Neutraltypen außer `geometry`/`fulltext`, die per D1 Identity sind und eigene Smokes
+haben). Exit-5-Fälle wurden über den Report klassifiziert: **Post-Compare-Drift**
+(`executionError = null`) vs. **Runtime-Execution-Fehler** (anderer Mechanismus, keine
+Kanonisierungs-Kante).
+
+**Kanten-Tabelle SQLite (16 Kanten, alle Post-Compare-Drift):**
+`text(50)`→`text`, `char(10)`→`text`, `smallint`→`integer`, `biginteger`→`integer`,
+`decimal(10,2)`→`float`, `boolean`→`integer`, `datetime`→`text`,
+`datetime(tz)`→`text`, `date`→`text`, `time`→`text`, `uuid`→`text`, `json`→`text`,
+`xml`→`text`, `email`→`text(254)`, `enum`→`text`, `array`→`text`.
+Fixpunkte (Exit 0): `text`, `integer`, `float`, `binary`, `identifier` (implizit,
+ohne `primary_key`). `enum` ist eine **reine Typ-Kante**: das Generate-DDL ist bloßes
+`TEXT` ohne CHECK — kein zusätzliches Constraint-Drift-Ticket nötig (Werteverlust ist
+Generate-Degradation, nicht Post-Compare-Thema).
+
+**Kanten-Tabelle PostgreSQL (2 Kanten):** `email`→`text(254)` (`VARCHAR(254)`),
+`enum`→`text` (Generate rendert `TEXT`). Alle übrigen Typen inkl. `datetime(tz)`,
+`uuid`, `json`, `xml`, `array` round-trippen treu (Exit 0).
+
+**Kanten-Tabelle MySQL (5 Kanten):** `datetime(tz)`→`datetime` (tz-Flag fällt),
+`xml`→`text`, `email`→`text(254)`, `enum`→`text`, `array(text)`→`json`. Übrige treu.
+**AP1-Konsequenz:** auch PG/MySQL bekommen den Kompositions-Kanonisierer (nicht
+Identity) — die Kanten ergeben sich bei Option A automatisch aus derselben
+Konstruktion.
+
+**UNIQUE (Befund 2 vollständig live belegt):**
+- SQLite: inline Single- **und** Multi-Column-UNIQUE → Reverse verwirft komplett
+  (Exit 5; Reverse trägt weder Constraint noch `unique: true`).
+- PG/MySQL Single-Column: Reverse liest `unique: true` → Exit 5 = exakt der
+  Fingerprint-Fold-Fall (D4).
+- PG/MySQL Multi-Column: **Exit 0** — benannte Multi-Column-Constraints round-trippen
+  bereits. **AP4-Konsequenz:** der Fold bleibt auf Single-Column begrenzt (wie D4);
+  für Multi-Column genügt die SQLite-Reverse-Rekonstruktion (nach ihr vergleichen
+  benannter Constraint ↔ benannter Constraint ohne Fold).
+- MySQL-Probe-Hinweis: UNIQUE auf `text` **ohne** `max_length` scheitert als
+  Runtime-Fehler („BLOB/TEXT column … without a key length") — bekanntes
+  Präfixlängen-Terrain ([`../next/pk-constraint-prefix-length.md`](pk-constraint-prefix-length.md)),
+  kein neuer Befund; Proben nutzen `max_length: 50`.
+
+**Neuer In-Scope-Befund — PK-implizierte `required`-Asymmetrie (→ AP2, Abnahme 8):**
+`identifier` + explizites `primary_key` (ohne ausgeschriebenes `required`) endet auf
+PG mit Exit 5, obwohl der Reverse `identifier`/`auto_increment`/PK exakt
+rekonstruiert — einzige Differenz: der PG-Reverse materialisiert `required: true` für
+PK-Spalten, der Soll-Parser nicht. Gegenprobe mit `required: true` im Soll → Exit 0.
+SQLite/MySQL-Reverse materialisieren `required` für PK-Spalten nicht (dort kein
+Drift). Dialekt-neutrale Kanonisierung `effectiveRequired` im Fingerprint (Analogon
+zu `effectivePrimaryKey`, v3) — in AP2 aufgenommen, teilt den v7-Bump.
+
+**Nebenbefunde außerhalb des Scopes (eigenes Ticket bzw. Ticket-Ergänzung):**
+- **Generate materialisiert den impliziten `identifier`-PK nicht** →
+  [`../open/generate-implicit-identifier-pk-materialization.md`](../open/generate-implicit-identifier-pk-materialization.md):
+  MySQL rendert `INT NOT NULL AUTO_INCREMENT` ohne KEY (Runtime-Fehler „only one auto
+  column and it must be defined as a key"); SQLite rendert bei `identifier` +
+  explizitem `primary_key` **doppeltes** PRIMARY KEY (SQLITE_ERROR). Beides
+  Runtime-Execution-Fehler auf spec-validen Schemata, keine Post-Compare-Drift.
+- **PG-Reverse rekonstruiert `identifier` ohne PK nicht** (SERIAL-only → `integer` +
+  `sequence_nextval`-Default): PG-Evidenz im bestehenden Ticket
+  [`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
+  ergänzt (mit explizitem PK rekonstruiert PG korrekt).
+
+Der Probe-Harness (Schemata + Runner) ist der Seed für den AP5-Smoke
+(`smoke-types.sh`); Roh-Ergebnisse unter `examples/sample-db/.cache/ap0/`
+(gitignored), die Tabellen oben sind die festgehaltene Evidenz.
 - ~~**R2**~~ **entschieden (Review 2026-07-03):** Multi-Column-UNIQUE-Namensrekonstruktion
   bleibt im Slice (AP4 + Abnahme 2).
 - ~~**R3**~~ **entschieden (Review 2026-07-03):** das Plan-Artefakt bekommt das
