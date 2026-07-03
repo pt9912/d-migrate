@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.SqliteNamedSequenceMode
@@ -31,6 +32,7 @@ class SqliteDriver : DatabaseDriver {
     override fun preGenerationValidator(): PreGenerationValidator = SqlitePreGenerationValidator
     override fun transferCompatibility(): TransferTypeCompatibility =
         StructuralTransferTypeCompatibility(SqliteTypeMapper())
+    override fun typeCanonicalizer(): NeutralTypeCanonicalizer = SqliteNeutralTypeCanonicalizer
 }
 
 /**

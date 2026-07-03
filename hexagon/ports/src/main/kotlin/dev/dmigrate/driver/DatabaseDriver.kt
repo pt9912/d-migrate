@@ -38,6 +38,17 @@ interface DatabaseDriver {
         TransferTypeCompatibility { source, target -> source == target }
 
     /**
+     * The dialect's neutral-type canonicaliser for the migrate post-compare
+     * fingerprint: projects a neutral type onto what THIS dialect's reverse
+     * reader yields after generate has rendered it (see
+     * [NeutralTypeCanonicalizer]). Real drivers override this with the
+     * composition of their own forward and reverse type mappings; the default
+     * is the conservative identity so a driver without an explicit flattening
+     * declaration never folds types away.
+     */
+    fun typeCanonicalizer(): NeutralTypeCanonicalizer = NeutralTypeCanonicalizer.IDENTITY
+
+    /**
      * Returns the driver's dialect-specific pre-generation validator,
      * or [PreGenerationValidator.NoOp] if the driver carries no
      * mode-specific gates. The runner calls

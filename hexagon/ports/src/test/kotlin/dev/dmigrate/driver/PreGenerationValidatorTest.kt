@@ -59,4 +59,19 @@ class PreGenerationValidatorTest : FunSpec({
 
         driver.preGenerationValidator() shouldBe PreGenerationValidator.NoOp
     }
+
+    test("DatabaseDriver.typeCanonicalizer defaults to the identity projection") {
+        val driver: DatabaseDriver = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.POSTGRESQL
+            override fun ddlGenerator(): DdlGenerator = error("not needed")
+            override fun dataReader(): DataReader = error("not needed")
+            override fun tableLister(): TableLister = error("not needed")
+            override fun dataWriter(): DataWriter = error("not needed")
+            override fun urlBuilder(): JdbcUrlBuilder = error("not needed")
+            override fun schemaReader(): SchemaReader = error("not needed")
+        }
+
+        driver.typeCanonicalizer() shouldBe NeutralTypeCanonicalizer.IDENTITY
+        driver.typeCanonicalizer().canonicalize(NeutralType.SmallInt) shouldBe NeutralType.SmallInt
+    }
 })

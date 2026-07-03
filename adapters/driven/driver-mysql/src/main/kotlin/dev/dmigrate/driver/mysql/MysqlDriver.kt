@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.StructuralTransferTypeCompatibility
 import dev.dmigrate.driver.TransferTypeCompatibility
@@ -24,4 +25,5 @@ class MysqlDriver : DatabaseDriver {
     override fun schemaReader(): SchemaReader = MysqlSchemaReader()
     override fun transferCompatibility(): TransferTypeCompatibility =
         StructuralTransferTypeCompatibility(MysqlTypeMapper())
+    override fun typeCanonicalizer(): NeutralTypeCanonicalizer = MysqlNeutralTypeCanonicalizer
 }

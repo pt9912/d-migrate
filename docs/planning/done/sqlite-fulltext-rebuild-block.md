@@ -70,7 +70,7 @@ aufbauen bzw. Index vorher droppen / nachher neu anlegen).
   FTS5-Virtual-Table und alle drei Sync-Trigger bleiben unversehrt.
 
 **Nebenbefund** (unabhängig vom Guard, eigenes Ticket
-[`../next/postcompare-type-canonicalization-slice.md`](../next/postcompare-type-canonicalization-slice.md)):
+[`../in-progress/postcompare-type-canonicalization-slice.md`](../in-progress/postcompare-type-canonicalization-slice.md)):
 ein frisches `migrate --execute` mit einer `smallint`-Spalte endet auf SQLite immer Exit 5
 (Post-Compare-Drift-False-Positive durch Typ-Abflachung `smallint`→`INTEGER` im Generate).
 

@@ -1,6 +1,8 @@
 # Slice: Dialektbewusste Fingerprint-Kanonisierung im Post-Compare (Typ-Abflachung + Single-Column-UNIQUE)
 
-> Status: **Entwurf (Scope-Schnitt 2026-07-03, Review ausstehend).**
+> Status: **In Progress (2026-07-03).** Scope-Schnitt user-reviewt (R1–R3 entschieden),
+> AP0 erledigt (Status-Update unten), AP1 (Port + Kanonisierer) mit dem ersten
+> Implementierungs-Commit geliefert.
 > Hervorgegangen aus dem `open/`-Ticket `sqlite-postcompare-type-flattening-drift.md`
 > (aktiviert 2026-07-02, Scope-Schnitt als erster Arbeitsschritt vereinbart).
 > Severity: **P2** (Korrektheitsdefekt der `migrate --execute`-Exit-Semantik: spec-valide
@@ -359,7 +361,7 @@ Konstruktion.
   benannter Constraint ↔ benannter Constraint ohne Fold).
 - MySQL-Probe-Hinweis: UNIQUE auf `text` **ohne** `max_length` scheitert als
   Runtime-Fehler („BLOB/TEXT column … without a key length") — bekanntes
-  Präfixlängen-Terrain ([`../next/pk-constraint-prefix-length.md`](pk-constraint-prefix-length.md)),
+  Präfixlängen-Terrain ([`../next/pk-constraint-prefix-length.md`](../next/pk-constraint-prefix-length.md)),
   kein neuer Befund; Proben nutzen `max_length: 50`.
 
 **Neuer In-Scope-Befund — PK-implizierte `required`-Asymmetrie (→ AP2, Abnahme 8):**

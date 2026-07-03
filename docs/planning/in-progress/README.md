@@ -57,6 +57,7 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
+| [`postcompare-type-canonicalization-slice.md`](postcompare-type-canonicalization-slice.md) | Aktiver Slice-Plan | Dialektbewusste Fingerprint-Kanonisierung im Post-Compare (`schema-fingerprint-v6`→`v7`): Typ-Round-Trip-Projektion je Ziel-Dialekt, Single-Column-UNIQUE-Fold, `effectiveRequired`, SQLite-Reverse-UNIQUE-Fix, Typ-Smoke. AP0 erledigt (Kanten-Tabellen), AP1 geliefert; offen AP2-AP6. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.
