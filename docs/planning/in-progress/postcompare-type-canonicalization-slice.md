@@ -6,8 +6,10 @@
 > live-verifiziert), AP3 geliefert (Durchreichung + Plan-Artefakt-Algo-Feld,
 > volle Typ-Matrix live grün), AP4 geliefert (`9d0bc833`, SQLite-UNIQUE-Reverse-Fold,
 > live grün inkl. Rebuild-Szenario), Review-Härtung R2 (`91747294`, 5 Fixes),
-> **AP7 nachgeschnitten** (Plan-Konvergenz, user-entschieden 2026-07-03).
-> Offen: AP5 (Smoke + Rollback-Abnahme), AP6 (Doku/ADR).
+> **AP7 geliefert** (`f7cde5df`, Plan-Konvergenz — live: Zweitlauf plant 0 Statements),
+> AP5 geliefert (`smoke-types.sh` + `make sample-db-types-smoke`, Volllauf grün
+> inkl. Rollback-Round-Trip mit v7-Artefakt = Abnahme 4).
+> Offen: AP6 (Doku/ADR + Handbuch-Hinweis).
 > Hervorgegangen aus dem `open/`-Ticket `sqlite-postcompare-type-flattening-drift.md`
 > (aktiviert 2026-07-02, Scope-Schnitt als erster Arbeitsschritt vereinbart).
 > Severity: **P2** (Korrektheitsdefekt der `migrate --execute`-Exit-Semantik: spec-valide

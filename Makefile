@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ports-jdbc-free-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ports-jdbc-free-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 help:
 	@printf '%s\n' \
@@ -116,6 +116,7 @@ help:
 		'  make sample-db-fulltext-sqlite-smoke  Fulltext P4 (SQLite FTS5): PG FULLTEXT -> FTS5 virtual table + sync triggers; live MATCH + diff-path apply' \
 		'  make sample-db-scale-smoke  Scale (Phase 3, Employees) opt-in/nightly: export-resume + chunking + dual-target import (MySQL+PG) parity' \
 		'  make sample-db-spatial-smoke  Spatial (Phase 5, VA1-Live-Smoke): geometry value round-trip PG->PG + MySQL->MySQL (+ native-point check)' \
+		'  make sample-db-types-smoke    Typ-Kanonisierung: Post-Compare-Drift-Sensor (Typ-Matrix, Folds, Konvergenz, Rollback)' \
 		'  make sample-db-tpch-gen  TPC-H (Phase 4, 4a Sourcing) opt-in: pinned DuckDB generates the TPC-H workload offline into .cache/tpch/ (SF=0.01 default)' \
 		'  make sample-db-tpch-smoke  TPC-H (Phase 4, 4b Round-Trip) opt-in: reverse/validate/generate/transfer PG->PG + parity (8 tables + DECIMAL checksum)' \
 		'  make sample-db-tpch-perf  TPC-H (Phase 4, 4c Volume) opt-in: export->import >=1M under caps 2cpu/4g; canonical-SHA256 losslessness (hard) + throughput (diagnostic) + resume' \
@@ -439,6 +440,15 @@ sample-db-scale-smoke:
 # Spatial-VA1-Kette live gegen echte DBs. Voraussetzung: docker-build IMAGE_TAG=dev.
 sample-db-spatial-smoke:
 	./examples/sample-db/scripts/smoke-spatial.sh
+
+# Typ-Kanonisierungs-Smoke (postcompare-type-canonicalization slice, AP5) — permanenter
+# Sensor für die Post-Compare-Drift-Familie: SQLite-Typ-Matrix (21 Neutraltypen, je
+# frisches migrate --execute → Exit 0), UNIQUE-/FK-Folds inkl. Reverse-Fidelity,
+# Plan-Konvergenz (Zweitlauf = 0 Statements), Rebuild-UNIQUE, Rollback-Round-Trip
+# (v7-Artefakt), schema-compare-Striktheits-Gegenprobe + PG/MySQL-Kanten-Proben.
+# Voraussetzung: docker-build --target runtime (d-migrate:dev).
+sample-db-types-smoke:
+	./examples/sample-db/scripts/smoke-types.sh
 
 # Phase 4 (Performance, 4a Sourcing) — opt-in, NICHT im PR-Gate. Pinnt das
 # DuckDB-CLI v1.4.5 + tpch-Extension (FETCH_TPCH=1, ~50 MiB) und generiert die
