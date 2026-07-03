@@ -4,6 +4,8 @@ import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintReferenceDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
@@ -96,15 +98,49 @@ object MigrationFingerprint {
      * text analysis). A FULLTEXT index's backing tsvector column and access method are NOT
      * projected: they are generate-only reconstruction hints (also excluded from
      * `TableComparator.projectIndex`), so a hint-only difference does not read as a change.
+     *
+     * v7 (postcompare-type-canonicalization slice): four canonicalisations so a
+     * per-dialect-lossless round trip hashes identically to its reverse:
+     *
+     * 1. **Column types** run through an injected `canonicalizeType` projection
+     *    (default identity). The migrate/rollback call sites pass the TARGET
+     *    dialect's [dev.dmigrate.driver] `NeutralTypeCanonicalizer`, folding types
+     *    the dialect flattens onto one declared type (SQLite: `smallint`→`integer`,
+     *    `datetime`→`text`, …). Deliberate divergence from `SchemaComparator`:
+     *    `schema compare` stays structurally strict (a wanted `smallint→integer`
+     *    IS a difference there) — the fingerprint with a canonicaliser answers
+     *    "does the TARGET distinguish these?", the comparator answers "does the
+     *    MODEL?".
+     * 2. **Single-column UNIQUE fold** — a named single-column UNIQUE constraint
+     *    projects as the column's `unique` flag (constraint name dropped), exactly
+     *    mirroring `TableComparator.normalizeConstraints`.
+     * 3. **Single-column FOREIGN-KEY fold** — a named single-column FK constraint
+     *    (single-column target) projects as the column's `references` (mirrors the
+     *    comparator's `ForeignKeySignature` absorption; live-belegt: authored
+     *    column-level `references:` vs. reverse-materialised named constraint
+     *    drifted on every dialect). A signature that DIVERGES from an existing
+     *    column-level reference stays a distinct constraint.
+     * 4. **Effective required** — `required` projects as
+     *    `required || column ∈ effectivePrimaryKey` (PK ⇒ NOT NULL; the PG reverse
+     *    materialises it, the desired parser does not — same asymmetry family as
+     *    the v3 effective PK).
+     *
+     * Plan: `docs/planning/in-progress/postcompare-type-canonicalization-slice.md`.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v6"
+    const val ALGORITHM: String = "schema-fingerprint-v7"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
 
-    /** SHA-256 hex of the canonical projection. */
-    fun compute(schema: SchemaDefinition): String =
-        sha256Hex(project(schema))
+    /**
+     * SHA-256 hex of the canonical projection. [canonicalizeType] is the target
+     * dialect's neutral-type projection (v7); the identity default keeps the
+     * fingerprint dialect-neutral for callers without a target-dialect context.
+     */
+    fun compute(
+        schema: SchemaDefinition,
+        canonicalizeType: (NeutralType) -> NeutralType = { it },
+    ): String = sha256Hex(project(schema, canonicalizeType))
 
     /**
      * Returns the canonical projection string. Public for diagnostics.
@@ -121,11 +157,14 @@ object MigrationFingerprint {
      * them too — both code paths must agree on what counts as
      * "schema state".
      */
-    fun project(schema: SchemaDefinition): String {
+    fun project(
+        schema: SchemaDefinition,
+        canonicalizeType: (NeutralType) -> NeutralType = { it },
+    ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
         appendCustomTypes(sb, schema.customTypes)
-        appendTables(sb, schema.tables)
+        appendTables(sb, schema.tables, canonicalizeType)
         appendViews(sb, schema.views)
         appendSequences(sb, schema.sequences)
         appendFunctions(sb, schema.functions)
@@ -152,26 +191,36 @@ object MigrationFingerprint {
 
     // ── Tables ──────────────────────────────────────────────────────
 
-    private fun appendTables(sb: StringBuilder, tables: Map<String, TableDefinition>) {
+    private fun appendTables(
+        sb: StringBuilder,
+        tables: Map<String, TableDefinition>,
+        canonicalizeType: (NeutralType) -> NeutralType,
+    ) {
         sb.append("tables[").append(tables.size).append("]\n")
         for ((name, table) in tables.entries.sortedBy { it.key }) {
             sb.append("table=").append(name).append('\n')
+            val effectivePk = effectivePrimaryKey(table)
+            val folded = foldConstraints(table)
             sb.append("  columns[").append(table.columns.size).append("]\n")
             for ((colName, col) in table.columns.entries.sortedBy { it.key }) {
                 sb.append("    column=").append(colName)
-                    .append(SEP).append("type=").append(neutralType(col.type))
-                    .append(SEP).append("required=").append(col.required)
-                    .append(SEP).append("unique=").append(col.unique)
+                    .append(SEP).append("type=").append(neutralType(canonicalizeType(col.type)))
+                    // v7: PK ⇒ NOT NULL — required projects as its effective value.
+                    .append(SEP).append("required=").append(col.required || colName in effectivePk)
+                    // v7: single-column UNIQUE constraints fold onto the column flag.
+                    .append(SEP).append("unique=").append(col.unique || colName in folded.uniqueColumns)
                     .append(SEP).append("default=").append(defaultValue(col.default))
-                    .append(SEP).append("references=").append(reference(col.references))
+                    // v7: single-column FK constraints fold onto the column reference.
+                    .append(SEP).append("references=")
+                    .append(reference(col.references).ifEmpty { folded.foldedFkByColumn[colName] ?: "" })
                     .append(SEP).append("generation=").append(generation(col.generation))
                     .append('\n')
             }
-            sb.append("  primary_key=").append(effectivePrimaryKey(table).joinToString(",")).append('\n')
+            sb.append("  primary_key=").append(effectivePk.joinToString(",")).append('\n')
             sb.append("  indices[").append(table.indices.size).append("]\n")
             for (idx in table.indices.sortedWith(indexOrder)) appendIndex(sb, "    ", "index", idx)
-            sb.append("  constraints[").append(table.constraints.size).append("]\n")
-            for (c in table.constraints.sortedBy { it.name }) {
+            sb.append("  constraints[").append(folded.remaining.size).append("]\n")
+            for (c in folded.remaining.sortedBy { it.name }) {
                 sb.append("    constraint=").append(c.name)
                     .append(SEP).append("type=").append(c.type.name)
                     .append(SEP).append("columns=").append(c.columns?.joinToString(",") ?: "")
@@ -182,6 +231,58 @@ object MigrationFingerprint {
             }
             appendPartitioning(sb, table.partitioning)
         }
+    }
+
+    private data class FoldedConstraints(
+        val uniqueColumns: Set<String>,
+        /** Column name → projected reference string (same shape as [reference]). */
+        val foldedFkByColumn: Map<String, String>,
+        val remaining: List<ConstraintDefinition>,
+    )
+
+    /**
+     * v7 canonicalisation: mirrors `TableComparator.normalizeConstraints`. The
+     * reverse readers materialise single-column UNIQUE/FK as **named
+     * constraints**, authored YAML uses the column-level `unique:`/`references:`
+     * shorthand — semantically identical, and the constraint name is not
+     * observable state on every dialect (SQLite synthesises `fk_N`). Absorbed
+     * constraints leave the constraints block; a single-column FK whose
+     * signature DIVERGES from an existing column-level reference (or an earlier
+     * absorbed one) stays a distinct constraint, mirroring the comparator.
+     */
+    private fun foldConstraints(table: TableDefinition): FoldedConstraints {
+        val unique = mutableSetOf<String>()
+        val fkByCol = mutableMapOf<String, String>()
+        val remaining = mutableListOf<ConstraintDefinition>()
+        for (c in table.constraints) {
+            // Fold only onto columns that exist — a constraint on an unknown column
+            // must stay in the block, not silently vanish from the projection.
+            val cols = c.columns?.takeIf { it.size == 1 && it.first() in table.columns }
+            when {
+                c.type == ConstraintType.UNIQUE && cols != null ->
+                    unique += cols.first()
+
+                c.type == ConstraintType.FOREIGN_KEY && cols != null &&
+                    c.references != null && c.references.columns.size == 1 -> {
+                    val colName = cols.first()
+                    val sig = fkSignature(c.references)
+                    val columnRef = table.columns[colName]?.references?.let(::reference)?.ifEmpty { null }
+                    val existing = columnRef ?: fkByCol[colName]
+                    if (existing != null && existing != sig) remaining += c else fkByCol[colName] = sig
+                }
+
+                else -> remaining += c
+            }
+        }
+        return FoldedConstraints(unique, fkByCol, remaining)
+    }
+
+    /** Single-column FK signature in the same shape as [reference]. */
+    private fun fkSignature(ref: ConstraintReferenceDefinition): String {
+        val parts = mutableListOf("table=${ref.table}", "column=${ref.columns.first()}")
+        ref.onDelete?.let { parts += "onDelete=${it.name}" }
+        ref.onUpdate?.let { parts += "onUpdate=${it.name}" }
+        return parts.joinToString(",")
     }
 
     // v4: project partitioning (strategy, key, child partitions). Children are

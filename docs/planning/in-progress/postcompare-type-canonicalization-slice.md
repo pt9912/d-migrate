@@ -218,17 +218,24 @@ Dokumentationsfunktion der Faltung. PG/MySQL gemäß AP0-Kanten (erwartet: Ident
 minimale Faltung, gleiche Konstruktion).
 
 **AP2 — Fingerprint v7.**
-`MigrationFingerprint.compute(schema, canonicalizer = Identity)`: Typ-Projektion
-kanonisiert; UNIQUE-Fold (D4); **`required`-Kanonisierung** (AP0-Befund, siehe
-Status-Update): `effectiveRequired(col) = col.required || col ∈ effectivePrimaryKey`
-— PK-Spalten sind semantisch NOT NULL, der PG-Reverse materialisiert das, der
-Soll-Parser nicht (dialekt-neutral, Analogon zu `effectivePrimaryKey` aus v3);
-`ALGORITHM` → `schema-fingerprint-v7` mit KDoc-Historieneintrag (Rationale + Verweis
-hierher). Unit-Tests: die fünf Typ-Proben hashen mit SQLite-Kanonisierer gleich, ohne
-Kanonisierer weiterhin verschieden (Identity-Default); UNIQUE-Fold Single-Column
-beidseitig, Multi-Column bleibt distinkt; `required`-Fold nur für PK-Spalten
-(Nicht-PK-`required`-Drift bleibt Drift); Negativfälle (echte Typ-Drift auf PG bleibt
-Drift).
+`MigrationFingerprint.compute(schema, canonicalizeType = Identity)` (Funktionstyp-
+Parameter — core darf den ports-common-Port nicht importieren, Hexagon-Richtung):
+Typ-Projektion kanonisiert; UNIQUE-Fold (D4); **`required`-Kanonisierung**
+(AP0-Befund, siehe Status-Update): `effectiveRequired(col) = col.required || col ∈
+effectivePrimaryKey` — PK-Spalten sind semantisch NOT NULL, der PG-Reverse
+materialisiert das, der Soll-Parser nicht (dialekt-neutral, Analogon zu
+`effectivePrimaryKey` aus v3); **Single-Column-FK-Fold** (Scope-Erweiterung beim
+AP2-Bau, live belegt per Probe `fk_colref`: Soll mit Spalten-`references` vs. Reverse
+mit benanntem FK-Constraint driftet auf SQLite UND PG mit `executionError = null` —
+exakt die UNIQUE-Familie; der `TableComparator` absorbiert Single-Column-FKs bereits
+via `ForeignKeySignature`, der Fingerprint zieht im selben Bump nach statt später v8
+zu brauchen); Fold nur auf real existierende Spalten (Constraint auf unbekannter
+Spalte bleibt im Block — darf nicht still aus der Projektion fallen); `ALGORITHM` →
+`schema-fingerprint-v7` mit KDoc-Historieneintrag (Rationale + Verweis hierher).
+Unit-Tests: Typ-Proben hashen mit Kanonisierer gleich, ohne weiterhin verschieden
+(Identity-Default); UNIQUE-/FK-Fold Single-Column beidseitig und namens-insensitiv,
+Multi-Column und divergierende FK-Signaturen bleiben distinkt; `required`-Fold nur
+für PK-Spalten; Ghost-Spalten-Guard.
 
 **AP3 — Durchreichung + Artefakt-Verträge.**
 Kanonisierer an alle Call-Sites: Migrate-Runner (Post-Compare-Lambda,
@@ -292,6 +299,9 @@ Overlay-Pins invalidiert (Verhalten wie bei früheren Bumps, jetzt dokumentiert)
    verlustfrei.
 3. **Gegenprobe (a):** `schema compare` erkennt `smallint→integer` weiterhin als
    Unterschied.
+3a. FK-Fold: frisches `migrate --execute` eines Schemas mit Spalten-Level
+   `references:` (AP0-Nachprobe `fk_colref`) → **Exit 0** auf SQLite und PG;
+   divergierende FK-Signaturen bleiben Drift (Unit-Test-Ebene).
 4. Rollback-Round-Trip mit v7-Artefakt grün (migrate → rollback --execute);
    v6-Artefakt wird mit Exit 8 `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` abgelehnt.
    Ein mit `--plan-artefact` emittiertes Plan-Artefakt trägt
@@ -369,6 +379,11 @@ Konstruktion.
   Runtime-Fehler („BLOB/TEXT column … without a key length") — bekanntes
   Präfixlängen-Terrain ([`../next/pk-constraint-prefix-length.md`](../next/pk-constraint-prefix-length.md)),
   kein neuer Befund; Proben nutzen `max_length: 50`.
+- **Nachprobe `fk_colref` (AP2-Bau, 2026-07-03):** Soll mit Spalten-Level
+  `references:` vs. Reverse mit benanntem FK-Constraint (SQLite synthetisiert
+  `fk_0`, PG liest `child_parent_id_fkey`) → Exit 5 mit `executionError = null`
+  auf **beiden** Dialekten. Dieselbe Fold-Familie wie UNIQUE → Single-Column-FK-Fold
+  in AP2 aufgenommen (Comparator absorbiert bereits via `ForeignKeySignature`).
 
 **Neuer In-Scope-Befund — PK-implizierte `required`-Asymmetrie (→ AP2, Abnahme 8):**
 `identifier` + explizites `primary_key` (ohne ausgeschriebenes `required`) endet auf
