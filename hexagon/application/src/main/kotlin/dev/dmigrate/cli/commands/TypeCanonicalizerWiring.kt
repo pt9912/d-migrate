@@ -13,7 +13,10 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
  * loud post-compare drift, never a masked one.
  */
 internal fun registryTypeCanonicalizer(dialect: DatabaseDialect): (NeutralType) -> NeutralType {
-    val canonicalizer = runCatching { DatabaseDriverRegistry.get(dialect).typeCanonicalizer() }.getOrNull()
+    // Nur der Registry-Lookup fällt bei Miss (kein Driver registriert, einziger
+    // Fehlermodus von get()) auf Identity zurück — der typeCanonicalizer()-Aufruf
+    // steht bewusst AUSSERHALB, damit ein echter Kanonisierer-Fehler laut propagiert.
+    val driver = runCatching { DatabaseDriverRegistry.get(dialect) }.getOrNull()
         ?: return { it }
-    return canonicalizer::canonicalize
+    return driver.typeCanonicalizer()::canonicalize
 }

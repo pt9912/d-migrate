@@ -201,6 +201,22 @@ class MigrationFingerprintTest : FunSpec({
         MigrationFingerprint.compute(plain(false)) shouldNotBe MigrationFingerprint.compute(plain(true))
     }
 
+    test("v7: CHECK expressions hash in comparator-canonical form (CRLF/trim parity)") {
+        fun withCheck(expr: String) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("a" to ColumnDefinition(NeutralType.Integer)),
+            constraints = listOf(dev.dmigrate.core.model.ConstraintDefinition(
+                name = "chk_a", type = dev.dmigrate.core.model.ConstraintType.CHECK, expression = expr,
+            )),
+        )))
+        // Reverse-Reader können Zeilenenden/Randwhitespace anders liefern als das
+        // Soll-YAML — der Comparator kanonisiert das (ConstraintDiffContract), der
+        // Fingerprint muss dieselbe Form hashen.
+        MigrationFingerprint.compute(withCheck("a > 0\r\n")) shouldBe
+            MigrationFingerprint.compute(withCheck("a > 0"))
+        MigrationFingerprint.compute(withCheck("a > 0")) shouldNotBe
+            MigrationFingerprint.compute(withCheck("a > 1"))
+    }
+
     test("v7: constraint on a nonexistent column is NOT folded away") {
         val ghost = schema(tables = mapOf("t" to TableDefinition(
             columns = mapOf("a" to ColumnDefinition(NeutralType.Text())),

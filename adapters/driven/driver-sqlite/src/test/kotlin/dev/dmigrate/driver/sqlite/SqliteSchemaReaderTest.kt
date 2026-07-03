@@ -339,6 +339,16 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    test("synthetic unique name skips names taken by recovered constraints") {
+        withDb("""
+            CREATE TABLE t (a TEXT, b TEXT, c TEXT, CONSTRAINT "uq_0" UNIQUE (a, b), UNIQUE (b, c))
+        """) { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            val names = t.constraints.filter { it.type == ConstraintType.UNIQUE }.map { it.name }.toSet()
+            names shouldBe setOf("uq_0", "uq_1")
+        }
+    }
+
     test("PK autoindex is still not read as a UNIQUE constraint") {
         withDb("CREATE TABLE t (a TEXT, b TEXT, PRIMARY KEY (a, b))") { pool ->
             val t = reader.read(pool).schema.tables.getValue("t")

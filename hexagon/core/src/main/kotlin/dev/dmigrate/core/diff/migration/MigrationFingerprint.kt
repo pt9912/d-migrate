@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
@@ -268,22 +269,33 @@ object MigrationFingerprint {
                     val sig = fkSignature(c.references)
                     val columnRef = table.columns[colName]?.references?.let(::reference)?.ifEmpty { null }
                     val existing = columnRef ?: fkByCol[colName]
-                    if (existing != null && existing != sig) remaining += c else fkByCol[colName] = sig
+                    if (existing != null && existing != sig) {
+                        remaining += ConstraintDiffContract.comparable(c)
+                    } else {
+                        fkByCol[colName] = sig
+                    }
                 }
 
-                else -> remaining += c
+                // Comparator-Parität auch für den Rest: CHECK-/EXCLUDE-Expressions
+                // werden wie in TableComparator.normalizeConstraints kanonisiert
+                // (CRLF→LF + trim), sonst driftet der Hash auf reiner Textform.
+                else -> remaining += ConstraintDiffContract.comparable(c)
             }
         }
         return FoldedConstraints(unique, fkByCol, remaining)
     }
 
-    /** Single-column FK signature in the same shape as [reference]. */
-    private fun fkSignature(ref: ConstraintReferenceDefinition): String {
-        val parts = mutableListOf("table=${ref.table}", "column=${ref.columns.first()}")
-        ref.onDelete?.let { parts += "onDelete=${it.name}" }
-        ref.onUpdate?.let { parts += "onUpdate=${it.name}" }
-        return parts.joinToString(",")
-    }
+    /** Single-column FK signature — delegiert an [reference], damit es genau EIN
+     *  String-Format gibt, gegen das der Fold vergleicht. */
+    private fun fkSignature(ref: ConstraintReferenceDefinition): String =
+        reference(
+            ReferenceDefinition(
+                table = ref.table,
+                column = ref.columns.first(),
+                onDelete = ref.onDelete,
+                onUpdate = ref.onUpdate,
+            ),
+        )
 
     // v4: project partitioning (strategy, key, child partitions). Children are
     // sorted by name (set equality, ADR 0019); bounds render in the same canonical

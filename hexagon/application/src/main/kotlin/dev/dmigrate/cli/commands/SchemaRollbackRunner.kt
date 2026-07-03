@@ -198,11 +198,14 @@ class SchemaRollbackRunner(
             )
             return 8
         }
-        // v7: recompute with the artefact dialect's canonicalisation — the algo guard
+        // v7: recompute with the target dialect's canonicalisation — the algo guard
         // above already ensures both sides speak the same fingerprint version, and the
-        // dialect guard ensures the artefact dialect matches the live target.
-        val canonicalizeType = runCatching { DatabaseDialect.valueOf(parsed.dialect) }.getOrNull()
-            ?.let(typeCanonicalizerFor) ?: { it }
+        // dialect guard ensures the artefact dialect matches the live target. Prefer
+        // the LIVE connection dialect (enum, kein String-Parse); das Artefakt-Feld ist
+        // nur Fallback für dialekt-lose Operanden.
+        val dialect = targetResolved.dialect
+            ?: runCatching { DatabaseDialect.valueOf(parsed.dialect) }.getOrNull()
+        val canonicalizeType = dialect?.let(typeCanonicalizerFor) ?: { it }
         val targetFingerprint = fingerprint(targetResolved.schema, canonicalizeType)
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()

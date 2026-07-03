@@ -303,18 +303,26 @@ class SqliteSchemaReader : SchemaReader {
         createSql: String,
         uniqueConstraintIndexes: List<IndexProjection>,
     ): List<ConstraintDefinition> {
-        val clauses = SqliteUniqueConstraintScanner.scan(createSql).toMutableList()
-        var synthetic = 0
+        val clauses = SqliteUniqueConstraintScanner.scan(createSql)
+            .map { it to it.columns.map(String::lowercase) }
+            .toMutableList()
+        // Synthetische Namen dürfen nicht mit real rekonstruierten kollidieren
+        // (Tabelle mit echtem `uq_0` + unbenannter Klausel → uq_1).
+        val taken = clauses.mapNotNull { it.first.name }.toMutableSet()
         return uniqueConstraintIndexes.filter { it.columns.size > 1 }.map { idx ->
             val wanted = idx.columns.map(String::lowercase)
-            val match = clauses.firstOrNull { it.columns.map(String::lowercase) == wanted }
+            val match = clauses.firstOrNull { it.second == wanted }
             if (match != null) clauses.remove(match)
-            ConstraintDefinition(
-                name = match?.name ?: "uq_${synthetic++}",
-                type = ConstraintType.UNIQUE,
-                columns = idx.columns,
-            )
+            val name = match?.first?.name ?: syntheticUniqueName(taken)
+            taken += name
+            ConstraintDefinition(name = name, type = ConstraintType.UNIQUE, columns = idx.columns)
         }
+    }
+
+    private fun syntheticUniqueName(taken: Set<String>): String {
+        var n = 0
+        while ("uq_$n" in taken) n++
+        return "uq_$n"
     }
 
     private fun readViews(session: JdbcMetadataSession): Map<String, ViewDefinition> {
