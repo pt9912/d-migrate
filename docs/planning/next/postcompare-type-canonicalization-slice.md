@@ -334,7 +334,9 @@ Kanonisierungs-Kante).
 Fixpunkte (Exit 0): `text`, `integer`, `float`, `binary`, `identifier` (implizit,
 ohne `primary_key`). `enum` ist eine **reine Typ-Kante**: das Generate-DDL ist bloßes
 `TEXT` ohne CHECK — kein zusätzliches Constraint-Drift-Ticket nötig (Werteverlust ist
-Generate-Degradation, nicht Post-Compare-Thema).
+Generate-Degradation, nicht Post-Compare-Thema; als eigener Befund getrackt, weil
+zudem **still**:
+[`../open/enum-generate-silent-degradation.md`](../open/enum-generate-silent-degradation.md)).
 
 **Kanten-Tabelle PostgreSQL (2 Kanten):** `email`→`text(254)` (`VARCHAR(254)`),
 `enum`→`text` (Generate rendert `TEXT`). Alle übrigen Typen inkl. `datetime(tz)`,

@@ -4,8 +4,12 @@
 > Trigger: AP0-Probe-Matrix des Typ-Kanonisierungs-Slices
 > ([`../next/postcompare-type-canonicalization-slice.md`](../next/postcompare-type-canonicalization-slice.md),
 > Status-Update 2026-07-03) — zwei Runtime-Execution-Fehler auf spec-validen Schemata.
-> Aktivierungsbedingung: Scope-Schnitt (Ziel + Arbeitspakete + Akzeptanz), z. B. als
-> Folge-Slice nach der Post-Compare-Kanonisierung.
+> Aktivierungsbedingung: Scope-Schnitt (Ziel + Arbeitspakete + Akzeptanz).
+> **Vormerkung (2026-07-03): Kandidat für den direkten Folge-Slice nach der
+> Post-Compare-Kanonisierung** — die Lösung nutzt dieselbe Ableitungsregel wie
+> `effectivePrimaryKey` (Fingerprint v3), und der dort gelieferte Typ-Smoke
+> (`sample-db-types-smoke`) enthält die `identifier`-/`identifier_pk`-Proben je
+> Dialekt bereits als Sensorik.
 
 ## Befund (live belegt 2026-07-03, Runtime-Image)
 
