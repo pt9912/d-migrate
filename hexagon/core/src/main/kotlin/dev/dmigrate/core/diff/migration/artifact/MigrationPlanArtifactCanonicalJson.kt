@@ -10,6 +10,7 @@ object MigrationPlanArtifactCanonicalJson {
         fields += "dMigrateVersion" to JsonString(artifact.dMigrateVersion)
         fields += "sourceFingerprint" to JsonString(artifact.sourceFingerprint)
         fields += "targetFingerprint" to JsonString(artifact.targetFingerprint)
+        fields += "fingerprintAlgorithm" to JsonString(artifact.fingerprintAlgorithm)
         fields += "dialect" to JsonString(artifact.dialect)
         fields += "operations" to JsonArray(artifact.operations.map(::operationValue))
         fields += "diagnostics" to JsonArray(artifact.diagnostics.map(::diagnosticValue))

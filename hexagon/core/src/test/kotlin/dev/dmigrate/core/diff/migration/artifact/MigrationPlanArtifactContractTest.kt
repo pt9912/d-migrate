@@ -16,6 +16,7 @@ class MigrationPlanArtifactContractTest : FunSpec({
               "dMigrateVersion": "d-migrate-test",
               "sourceFingerprint": "src-fp",
               "targetFingerprint": "dst-fp",
+              "fingerprintAlgorithm": "schema-fingerprint-v7",
               "dialect": "postgresql",
               "operations": [
                 {
@@ -231,6 +232,7 @@ private fun unsignedArtifact(
         dMigrateVersion = "d-migrate-test",
         sourceFingerprint = "src-fp",
         targetFingerprint = "dst-fp",
+        fingerprintAlgorithm = "schema-fingerprint-v7",
         dialect = "postgresql",
         operations = listOf(
             MigrationPlanArtifactOperation(

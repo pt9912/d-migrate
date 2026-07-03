@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.CrossTableCheckHeuristic
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -97,6 +98,10 @@ open class DiffPlanner {
             RenameProjectionDialect.POSTGRESQL,
         ),
         triggerPlanningContext: TriggerPlanningContext = TriggerPlanningContext(),
+        // v7: target-dialect type canonicalisation for the endpoint fingerprints —
+        // must match what the migrate runner computes directly, or the persisted
+        // current/desired fingerprints diverge from the post-compare's.
+        canonicalizeType: (NeutralType) -> NeutralType = { it },
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         // F.5 Sub-Slice A (2026-05-19): the planner-level block
@@ -198,8 +203,8 @@ open class DiffPlanner {
         }
 
         return DiffResult(
-            current = endpoint(current),
-            desired = endpoint(desired),
+            current = endpoint(current, canonicalizeType),
+            desired = endpoint(desired, canonicalizeType),
             schemaDiff = schemaDiff,
             operations = sortResult.sorted,
             diagnostics = diagnostics,
@@ -211,11 +216,11 @@ open class DiffPlanner {
         )
     }
 
-    private fun endpoint(schema: SchemaDefinition): DiffEndpoint =
+    private fun endpoint(schema: SchemaDefinition, canonicalizeType: (NeutralType) -> NeutralType): DiffEndpoint =
         DiffEndpoint(
             schemaName = schema.name,
             schemaVersion = schema.version,
-            fingerprint = MigrationFingerprint.compute(schema),
+            fingerprint = MigrationFingerprint.compute(schema, canonicalizeType),
         )
 
     /**

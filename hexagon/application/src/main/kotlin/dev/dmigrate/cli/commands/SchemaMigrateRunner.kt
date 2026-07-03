@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
@@ -85,7 +86,16 @@ class SchemaMigrateRunner(
     private val printError: (message: String, source: String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
-    private val fingerprint: (SchemaDefinition) -> String = MigrationFingerprint::compute,
+    private val fingerprint: (SchemaDefinition, (NeutralType) -> NeutralType) -> String =
+        MigrationFingerprint::compute,
+    /**
+     * v7: resolves the TARGET dialect's neutral-type canonicalisation for all
+     * fingerprints of a run (plan endpoints, overlay pins, post-compare,
+     * rollback artefact) — one projection per run, so every persisted and
+     * compared hash agrees. Default resolves via [DatabaseDriverRegistry].
+     */
+    private val typeCanonicalizerFor: (DatabaseDialect) -> (NeutralType) -> NeutralType =
+        ::registryTypeCanonicalizer,
     private val clock: java.time.Clock = java.time.Clock.systemUTC(),
     private val createdByVersion: String = "d-migrate (dev)",
     /**
@@ -169,9 +179,12 @@ class SchemaMigrateRunner(
         // DiffPlanner.endpoint() writes to plan.current.fingerprint
         // so a mock-fingerprint test cannot accidentally make the
         // overlay validate against one hash and the plan against
-        // another.
-        val currentFingerprint = MigrationFingerprint.compute(prepared.targetNormalized.schema)
-        val desiredFingerprint = MigrationFingerprint.compute(prepared.sourceNormalized.schema)
+        // another. v7: the same target-dialect canonicalisation flows
+        // into BOTH (and into the post-compare below) for the same
+        // parity reason.
+        val canonicalizeType = typeCanonicalizerFor(prepared.effectiveDialect)
+        val currentFingerprint = MigrationFingerprint.compute(prepared.targetNormalized.schema, canonicalizeType)
+        val desiredFingerprint = MigrationFingerprint.compute(prepared.sourceNormalized.schema, canonicalizeType)
         val inlineResult = InlineRenameOverlayBuilder.build(
             renameTableFlags = request.renameTableFlags,
             renameColumnFlags = request.renameColumnFlags,
@@ -194,6 +207,7 @@ class SchemaMigrateRunner(
             mergedOverlays = mergedOverlays,
             currentFingerprint = currentFingerprint,
             desiredFingerprint = desiredFingerprint,
+            canonicalizeType = canonicalizeType,
         )
         val render = renderPipeline.run(
             request = request,
@@ -221,7 +235,7 @@ class SchemaMigrateRunner(
         )
         val withExecution = executionStage.applyExecutionTrace(render.executableCombined, executionTrace)
         val postCompareOutcome = if (executionTrace != null && executionTrace.executionError == null) {
-            executionStage.runPostCompare(request, prepared.sourceNormalized.schema, prepared.targetOp)
+            executionStage.runPostCompare(request, prepared.sourceNormalized.schema, prepared.targetOp, canonicalizeType)
         } else {
             null
         }
@@ -277,6 +291,7 @@ class SchemaMigrateRunner(
         mergedOverlays: List<MigrationOverlayDocument>,
         currentFingerprint: String,
         desiredFingerprint: String,
+        canonicalizeType: (NeutralType) -> NeutralType,
     ): Pair<DiffResult, MigrationOverlayPreflightResult> {
         val diff = comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
@@ -306,6 +321,7 @@ class SchemaMigrateRunner(
                 migrationOverlays = mergedOverlays,
                 capabilities = capabilities,
                 triggerPlanningContext = triggerPlanningContext,
+                canonicalizeType = canonicalizeType,
             )
         }
         return plan to overlayPreflight

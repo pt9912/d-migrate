@@ -1,8 +1,10 @@
 # Slice: Dialektbewusste Fingerprint-Kanonisierung im Post-Compare (Typ-Abflachung + Single-Column-UNIQUE)
 
 > Status: **In Progress (2026-07-03).** Scope-Schnitt user-reviewt (R1–R3 entschieden),
-> AP0 erledigt (Status-Update unten), AP1 (Port + Kanonisierer) mit dem ersten
-> Implementierungs-Commit geliefert.
+> AP0 erledigt (Status-Update unten), AP1 geliefert (`cfe51d02`) + review-gehärtet R1
+> (`13f4fb60`), AP2 geliefert (`b137b352`, v7 inkl. belegtem FK-Fold, Folds
+> live-verifiziert), AP3 geliefert (Durchreichung + Plan-Artefakt-Algo-Feld).
+> Offen: AP4 (SQLite-UNIQUE-Reverse), AP5 (Smoke), AP6 (Doku/ADR).
 > Hervorgegangen aus dem `open/`-Ticket `sqlite-postcompare-type-flattening-drift.md`
 > (aktiviert 2026-07-02, Scope-Schnitt als erster Arbeitsschritt vereinbart).
 > Severity: **P2** (Korrektheitsdefekt der `migrate --execute`-Exit-Semantik: spec-valide

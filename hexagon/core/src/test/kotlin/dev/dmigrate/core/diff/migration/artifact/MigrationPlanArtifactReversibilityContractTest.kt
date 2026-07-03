@@ -79,6 +79,7 @@ private fun reversibilityArtifact(
         dMigrateVersion = "d-migrate-test",
         sourceFingerprint = "src-fp",
         targetFingerprint = "dst-fp",
+        fingerprintAlgorithm = "schema-fingerprint-v7",
         dialect = "postgresql",
         operations = listOf(operation),
         diagnostics = emptyList(),

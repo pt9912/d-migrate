@@ -12,6 +12,13 @@ data class MigrationPlanArtifact(
     val dMigrateVersion: String,
     val sourceFingerprint: String,
     val targetFingerprint: String,
+    /**
+     * Fingerprint-Algorithmus, mit dem source-/targetFingerprint berechnet
+     * wurden (`MigrationFingerprint.ALGORITHM`) — ohne diese Kennung sind die
+     * persistierten Werte extern nicht interpretierbar (Konsistenz zum
+     * Rollback-Artefakt; Typ-Kanonisierungs-Slice AP3).
+     */
+    val fingerprintAlgorithm: String,
     val dialect: String,
     val operations: List<MigrationPlanArtifactOperation>,
     val diagnostics: List<MigrationPlanArtifactDiagnostic>,

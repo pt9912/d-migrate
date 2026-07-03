@@ -73,6 +73,7 @@ object MigrationPlanArtifactValidator {
         requireNonBlank("dMigrateVersion", artifact.dMigrateVersion, ::block)
         requireNonBlank("sourceFingerprint", artifact.sourceFingerprint, ::block)
         requireNonBlank("targetFingerprint", artifact.targetFingerprint, ::block)
+        requireNonBlank("fingerprintAlgorithm", artifact.fingerprintAlgorithm, ::block)
         requireNonBlank("dialect", artifact.dialect, ::block)
         requireNonBlank("createdAt", artifact.createdAt, ::block)
 

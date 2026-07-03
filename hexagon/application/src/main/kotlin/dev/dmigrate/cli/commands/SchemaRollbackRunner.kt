@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
@@ -47,7 +48,11 @@ class SchemaRollbackRunner(
     private val executor: ExecutorFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val fileReader: (Path) -> String = { Files.readString(it) },
-    private val fingerprint: (dev.dmigrate.core.model.SchemaDefinition) -> String = MigrationFingerprint::compute,
+    private val fingerprint: (dev.dmigrate.core.model.SchemaDefinition, (NeutralType) -> NeutralType) -> String =
+        MigrationFingerprint::compute,
+    /** v7: target-dialect type canonicalisation — must match the migrate run that wrote the artefact. */
+    private val typeCanonicalizerFor: (DatabaseDialect) -> (NeutralType) -> NeutralType =
+        ::registryTypeCanonicalizer,
     private val printError: (message: String, source: String) -> Unit,
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
@@ -193,7 +198,12 @@ class SchemaRollbackRunner(
             )
             return 8
         }
-        val targetFingerprint = fingerprint(targetResolved.schema)
+        // v7: recompute with the artefact dialect's canonicalisation — the algo guard
+        // above already ensures both sides speak the same fingerprint version, and the
+        // dialect guard ensures the artefact dialect matches the live target.
+        val canonicalizeType = runCatching { DatabaseDialect.valueOf(parsed.dialect) }.getOrNull()
+            ?.let(typeCanonicalizerFor) ?: { it }
+        val targetFingerprint = fingerprint(targetResolved.schema, canonicalizeType)
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()
         } else {
