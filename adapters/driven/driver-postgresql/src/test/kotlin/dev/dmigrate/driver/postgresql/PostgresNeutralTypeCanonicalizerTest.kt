@@ -36,11 +36,24 @@ class PostgresNeutralTypeCanonicalizerTest : FunSpec({
         NeutralType.Json,
         NeutralType.Xml,
         NeutralType.Binary,
+        // Review-Härtung R1: FullText round-trippt auf PG treu als tsvector —
+        // Fixpunkt der Komposition, kein Carve-out nötig.
+        NeutralType.FullText,
+        // Arrays der vier generate-baren Element-Typen round-trippen treu.
+        NeutralType.Array(elementType = "text"),
+        NeutralType.Array(elementType = "integer"),
+        NeutralType.Array(elementType = "boolean"),
+        NeutralType.Array(elementType = "uuid"),
     )
 
     val edges = mapOf<NeutralType, NeutralType>(
         NeutralType.Email to NeutralType.Text(maxLength = 254),
         NeutralType.Enum(values = listOf("red", "green")) to NeutralType.Text(),
+        // Review-Härtung R1: identifier OHNE auto_increment rendert plain
+        // INTEGER (kein SERIAL) — die Komposition muss zu Integer falten.
+        NeutralType.Identifier() to NeutralType.Integer,
+        // Nicht generate-bare Array-Element-Typen flachen real auf TEXT[] ab.
+        NeutralType.Array(elementType = "biginteger") to NeutralType.Array(elementType = "text"),
     )
 
     test("faithful round-trip types are fixpoints") {
@@ -55,20 +68,17 @@ class PostgresNeutralTypeCanonicalizerTest : FunSpec({
         }
     }
 
-    test("identity carve-outs: geometry, fulltext, identifier, array, refType enum") {
+    test("identity carve-outs: geometry, auto-increment identifier, refType enum") {
         val geometry = NeutralType.Geometry(GeometryType.of("point"), srid = 4326)
         canon.canonicalize(geometry) shouldBe geometry
-        canon.canonicalize(NeutralType.FullText) shouldBe NeutralType.FullText
         val identifier = NeutralType.Identifier(autoIncrement = true)
         canon.canonicalize(identifier) shouldBe identifier
-        val array = NeutralType.Array(elementType = "text")
-        canon.canonicalize(array) shouldBe array
         val refEnum = NeutralType.Enum(refType = "mood")
         canon.canonicalize(refEnum) shouldBe refEnum
     }
 
     test("projection is idempotent") {
-        for (type in fixpoints + edges.keys + NeutralType.Geometry() + NeutralType.FullText) {
+        for (type in fixpoints + edges.keys + NeutralType.Geometry()) {
             val once = canon.canonicalize(type)
             canon.canonicalize(once) shouldBe once
         }

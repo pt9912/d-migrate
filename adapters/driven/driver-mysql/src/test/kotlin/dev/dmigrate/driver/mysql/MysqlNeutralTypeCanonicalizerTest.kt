@@ -45,6 +45,9 @@ class MysqlNeutralTypeCanonicalizerTest : FunSpec({
         NeutralType.Array(elementType = "text") to NeutralType.Json,
         // Emergente Kante der Komposition: MySQL-Reverse hebt CHAR(36) zu Uuid (R310).
         NeutralType.Char(length = 36) to NeutralType.Uuid,
+        // Review-Härtung R1: FullText degradiert im migrate-Pfad real zu TEXT
+        // (Index-Feature, keine Spalten-Fidelity) — Komposition statt Carve-out.
+        NeutralType.FullText to NeutralType.Text(),
     )
 
     test("faithful round-trip types are fixpoints") {
@@ -59,16 +62,15 @@ class MysqlNeutralTypeCanonicalizerTest : FunSpec({
         }
     }
 
-    test("identity carve-outs: geometry, fulltext, refType enum") {
+    test("identity carve-outs: geometry, refType enum") {
         val geometry = NeutralType.Geometry(GeometryType.of("point"), srid = 4326)
         canon.canonicalize(geometry) shouldBe geometry
-        canon.canonicalize(NeutralType.FullText) shouldBe NeutralType.FullText
         val refEnum = NeutralType.Enum(refType = "mood")
         canon.canonicalize(refEnum) shouldBe refEnum
     }
 
     test("projection is idempotent") {
-        for (type in fixpoints + edges.keys + NeutralType.Geometry() + NeutralType.FullText) {
+        for (type in fixpoints + edges.keys + NeutralType.Geometry()) {
             val once = canon.canonicalize(type)
             canon.canonicalize(once) shouldBe once
         }

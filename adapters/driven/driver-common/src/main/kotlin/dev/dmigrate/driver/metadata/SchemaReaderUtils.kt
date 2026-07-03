@@ -120,4 +120,24 @@ object SchemaReaderUtils {
         uniqueConstraints: Map<String, List<String>>,
     ): Set<String> =
         uniqueConstraints.values.filter { it.size == 1 }.map { it[0] }.toSet()
+
+    private val PAREN_LENGTH = Regex("""\((\d+)\)""")
+    private val PAREN_PRECISION_SCALE = Regex("""\((\d+)\s*,\s*(\d+)\)""")
+
+    /**
+     * The single numeric length out of a parenthesised type spelling
+     * (`VARCHAR(50)` → 50), or null when absent or two-valued.
+     */
+    fun parenLength(raw: String): Int? =
+        if (PAREN_PRECISION_SCALE.containsMatchIn(raw)) null
+        else PAREN_LENGTH.find(raw)?.groupValues?.get(1)?.toIntOrNull()
+
+    /**
+     * The precision/scale pair out of a parenthesised type spelling
+     * (`DECIMAL(10,2)` → 10 to 2), or null/null when absent.
+     */
+    fun parenPrecisionScale(raw: String): Pair<Int?, Int?> {
+        val match = PAREN_PRECISION_SCALE.find(raw) ?: return null to null
+        return match.groupValues[1].toIntOrNull() to match.groupValues[2].toIntOrNull()
+    }
 }

@@ -34,15 +34,19 @@ Kanonisierungs-Slice behandelt. **Dieses Ticket betrifft nur die Generate-Seite*
 
 - Emittiert der reine `schema generate`-Pfad (ohne migrate) eine Note für die
   Degradation? Im `migrate`-Report kommt jedenfalls nichts an.
-- **Pfad-Inkonsistenz-Verdacht (Nachtrag 2026-07-03, AP1-Exploration):** der
-  MySQL-Tabellen-Generator besitzt eine Enum-Inline-Materialisierung
-  (`columnEnumInline` in
+- **Pfad-Inkonsistenz BESTÄTIGT (AP1-Review-Verifikation 2026-07-03):** der
+  `schema generate`-Pfad materialisiert Inline-Enums nativ (`columnEnumInline`
+  in
   [`MysqlColumnConstraintHelper`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlColumnConstraintHelper.kt)
-  rendert natives `ENUM('…')` bei gesetzten `values`), der
-  `migrate --execute`-CreateTable-Pfad erzeugte in der AP0-Probe aber bloßes
-  `TEXT` **trotz** gesetzter `values`. Beim Scope-Schnitt klären, welcher Pfad
-  den Helper umgeht — `schema generate` und `migrate` dürfen nicht
-  verschiedene Spaltentypen für dasselbe Soll rendern.
+  rendert `ENUM('…')` bei gesetzten `values`), der `migrate`-Diff-Pfad rendert
+  dagegen uniform über `typeMapper.toSql` (`columnLine` in
+  [`MysqlDiffSqlBuilders`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDiffSqlBuilders.kt),
+  aufgerufen aus `renderCreateTable` in
+  [`MysqlDiffTableOps`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDiffTableOps.kt))
+  → bloßes `TEXT` trotz gesetzter `values` (deckt sich mit der
+  AP0-Live-Evidenz). `schema generate` und `migrate` rendern damit
+  verschiedene Spaltentypen für dasselbe Soll — beim Scope-Schnitt
+  vereinheitlichen.
 - Verhältnis zu Custom-Types: das Neutralmodell kennt Custom-Types (der Fingerprint
   hasht sie); zu klären, ob Inline-`enum` bewusst der degradierte Pfad ist und die
   native Abbildung über Custom-Types laufen soll.

@@ -144,9 +144,14 @@ echte Drift verschleiern würde. Stattdessen: eine **per-Dialekt-Projektion**
 der Ziel-Reverse nach dem Rendern von `t`" (Komposition der vorhandenen Vorwärts-
 (`TypeMapper.toSql`) und Rückwärts-Abbildung des Drivers). Eigenschaften: **idempotent**
 (Reverse-Output ist Fixpunkt) und automatisch **Identity für fidelity-erhaltende
-Dialekte**. Typen, deren Fidelity außerhalb des deklarierten Spaltentyps transportiert
-wird (SQLite: `geometry` via `AddGeometryColumn`, `fulltext` via FTS5-Objekte), bleiben
-per Konstruktion Identity — SRID-/Typ-Sensitivität des Fingerprints bleibt erhalten.
+Dialekte**. Einziger Identity-Carve-out: `geometry` — Subtyp/SRID reisen über
+Dialekt-Metadaten (`AddGeometryColumn`, SRID-Attribut, PostGIS-Katalog), nicht durch
+den deklarierten Typ-String, und der Reverse rekonstruiert sie; die Komposition könnte
+das nicht transportieren. `fulltext` geht dagegen **durch die Komposition**
+(Review-Härtung R1, siehe Status-Update): auf PG ist `tsvector` ein Fixpunkt, auf
+SQLite/MySQL degradiert die Spalte real zu TEXT und der Reverse rekonstruiert nur den
+FULLTEXT-**Index** — ein Identity-Carve-out hätte dort exakt die
+False-Positive-Klasse dieses Slices wieder eingeführt.
 
 **D2 — Uniform im Fingerprint-Vertrag, `schema-fingerprint-v6` → `v7`, dialekt-parametrisiert.**
 Eine stille Projektion nur im Post-Compare wäre ein Vertragsbruch: der
@@ -202,9 +207,10 @@ Status-Update am Dokumentende.
 `NeutralTypeCanonicalizer` (ports-common) + `DatabaseDriver`-Methode (Default Identity,
 D5). SQLite-Implementierung als **Live-Komposition** (Review-Entscheidung 2026-07-03):
 `canonicalize(t) = SqliteTypeMapping.mapColumn(SqliteTypeMapper().toSql(t))` über einen
-dünnen Adapter, der die Reverse-Notes verwirft; **explizite Identity-Ausnahmen** für
-`geometry`/`fulltext` (Fidelity läuft nicht über den deklarierten Spaltentyp, D1) —
-keine zweite Abbildungstabelle im Produktionscode. Property-Tests über alle
+dünnen Adapter, der die Reverse-Notes verwirft; **explizite Identity-Ausnahme** nur für
+`geometry` (Fidelity läuft nicht über den deklarierten Spaltentyp, D1; `fulltext` geht
+durch die Komposition — Review-Härtung R1) — keine zweite Abbildungstabelle im
+Produktionscode. Property-Tests über alle
 Neutraltypen: (1) Idempotenz (`canonicalize(canonicalize(t)) == canonicalize(t)`),
 (2) Übereinstimmung mit einem echten Live-Round-Trip (DDL in frisches SQLite-File
 generieren, reversen, Neutraltyp vergleichen) — der Test übernimmt die
@@ -388,6 +394,33 @@ zu `effectivePrimaryKey`, v3) — in AP2 aufgenommen, teilt den v7-Bump.
 Der Probe-Harness (Schemata + Runner) ist der Seed für den AP5-Smoke
 (`smoke-types.sh`); Roh-Ergebnisse unter `examples/sample-db/.cache/ap0/`
 (gitignored), die Tabellen oben sind die festgehaltene Evidenz.
+
+**Review-Härtung R1 (2026-07-03, nach AP1):** 4 Finder-Winkel + adversarialer
+Verifier über den AP1-Commit. Bestätigt und behoben:
+1. **PG-`Identifier`-Carve-out zu breit** — `identifier` OHNE `auto_increment`
+   rendert plain `INTEGER` (kein SERIAL) und muss zu `integer` falten; Carve-out
+   jetzt nur noch für `autoIncrement = true`.
+2. **PG-`Array`-Carve-out zu breit** — nur text/integer/boolean/uuid sind
+   generate-bare Element-Typen, alles andere flacht real auf `TEXT[]` ab; Arrays
+   gehen jetzt durch die Komposition (Element-Brücke → `mapArrayElementType`).
+3. **`fulltext`-Carve-out war auf SQLite/MySQL selbst ein False-Positive-Erzeuger**
+   (Spalte degradiert real zu TEXT, Reverse rekonstruiert nur den Index; der
+   Fulltext-Smoke deckt nur den Index-Fall ab) — `fulltext` geht jetzt durch die
+   Komposition, auf PG bleibt es als tsvector-Fixpunkt automatisch treu.
+4. **Unknown-Fallback-Guard** in allen drei Kanonisierern: landet die Komposition
+   im Unknown-Type-Fallback (R201/R301), wird der Input unverändert zurückgegeben —
+   eine künftige Brücken-Lücke erzeugt lauten Drift statt stiller
+   Text()-Falsch-Äquivalenz.
+Refuted: MySQL-Enum-Fold ist korrekt (der migrate-Diff-Pfad rendert via `toSql`
+bloßes TEXT — Beleg jetzt im enum-Ticket; die generate/migrate-Divergenz ist dort
+als bestätigte Pfad-Inkonsistenz nachgetragen). Cleanup: Klammer-Parse-Helfer nach
+`SchemaReaderUtils` konsolidiert (vorher 4 Regex-Kopien, nebenbei
+Regex-Kompilierung pro `mapColumn`-Aufruf beseitigt), toter `NUMERIC`-Zweig raus,
+Stub-Driver im Ports-Test dedupliziert. Bewusst NICHT gebaut: Contract-Test-Fixture
+für die drei Kanonisierer-Tests (Fixpunkt-/Kanten-Tabellen sind inhärent
+dialekt-spezifisch, geteilt wären nur ~5 Zeilen Idempotenz-Loop) und ein
+„muss überschreiben"-Guard für künftige Driver (Identity ist für treue Dialekte
+korrekt — der Sensor je Dialekt ist der AP5-Smoke).
 - ~~**R2**~~ **entschieden (Review 2026-07-03):** Multi-Column-UNIQUE-Namensrekonstruktion
   bleibt im Slice (AP4 + Abnahme 2).
 - ~~**R3**~~ **entschieden (Review 2026-07-03):** das Plan-Artefakt bekommt das

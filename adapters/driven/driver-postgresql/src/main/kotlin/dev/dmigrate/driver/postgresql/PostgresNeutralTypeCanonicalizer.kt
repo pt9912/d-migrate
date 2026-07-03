@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.NeutralTypeCanonicalizer
+import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
  * PostgreSQL neutral-type canonicaliser as the live composition of the
@@ -9,45 +10,52 @@ import dev.dmigrate.driver.NeutralTypeCanonicalizer
  * reverse(toSql(t))`. [toColumnInput] bridges the rendered DDL spelling into
  * the information_schema spelling [PostgresTypeMapping.mapColumn] consumes
  * (`VARCHAR(n)` → `character varying`, `TIMESTAMP` → `timestamp without time
- * zone`, …) — a purely mechanical spelling map; the mapping SEMANTICS stay
- * single-sourced in [PostgresTypeMapping]. Reverse notes/generation are
- * discarded (type-only projection).
+ * zone`, `X[]` → `array` + `_x` udt, …) — a purely mechanical spelling map;
+ * the mapping SEMANTICS stay single-sourced in [PostgresTypeMapping].
+ * Reverse notes/generation are discarded (type-only projection), EXCEPT the
+ * unknown-type fallback (R301): an unbridged spelling returns the input
+ * unchanged, so a gap in the bridge surfaces as loud drift instead of a
+ * silent false type-equivalence.
  *
- * Identity carve-outs: [NeutralType.Geometry]/[NeutralType.FullText] carry
- * their fidelity outside resp. faithfully within the declared type;
- * [NeutralType.Identifier] round-trips PK-context-dependently (SERIAL — the
- * reverse reconstructs it only for PK columns), [NeutralType.Array]
- * round-trips faithfully (AP0-belegt), and [NeutralType.Enum] with `refType`
- * is the custom-type path, not the inline TEXT degradation.
+ * Identity carve-outs — only where the round trip carries fidelity the
+ * DDL type string cannot transport: [NeutralType.Geometry] (subtype + SRID
+ * travel through PostGIS metadata), [NeutralType.Identifier] with
+ * `autoIncrement` (SERIAL reverses PK-context-dependently), and
+ * [NeutralType.Enum] with `refType` (custom-type path, not the inline TEXT
+ * degradation). Everything else — including `fulltext` (tsvector round-trips
+ * faithfully) and arrays — goes through the composition.
  */
 internal object PostgresNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
 
     private val typeMapper = PostgresTypeMapper()
-    private val singleLength = Regex("""\((\d+)\)""")
-    private val precisionScale = Regex("""\((\d+)\s*,\s*(\d+)\)""")
     private val parenContent = Regex("""\([^)]*\)""")
 
     override fun canonicalize(type: NeutralType): NeutralType = when {
-        type is NeutralType.Geometry || type == NeutralType.FullText -> type
-        type is NeutralType.Identifier || type is NeutralType.Array -> type
+        type is NeutralType.Geometry -> type
+        type is NeutralType.Identifier && type.autoIncrement -> type
         type is NeutralType.Enum && type.refType != null -> type
-        else -> PostgresTypeMapping.mapColumn(toColumnInput(typeMapper.toSql(type))).type
+        else -> {
+            val mapped = PostgresTypeMapping.mapColumn(toColumnInput(typeMapper.toSql(type)))
+            if (mapped.note?.code == "R301") type else mapped.type
+        }
     }
 
     private fun toColumnInput(rendered: String): PostgresTypeMapping.ColumnInput {
         val upper = rendered.uppercase()
-        val ps = precisionScale.find(upper)
+        val (precision, scale) = SchemaReaderUtils.parenPrecisionScale(upper)
+        val isArray = upper.endsWith("[]")
+        val base = parenContent.replace(upper.removeSuffix("[]"), "").trim()
         return PostgresTypeMapping.ColumnInput(
-            dataType = infoSchemaSpelling(parenContent.replace(upper, "").trim()),
-            udtName = "",
+            dataType = if (isArray) "array" else infoSchemaSpelling(base),
+            udtName = if (isArray) "_${elementUdtName(base)}" else "",
             isPkCol = false,
             isIdentity = false,
             identityGeneration = null,
             colDefault = null,
             generatedSequenceName = null,
-            charMaxLen = if (ps == null) singleLength.find(upper)?.groupValues?.get(1)?.toIntOrNull() else null,
-            numPrecision = ps?.groupValues?.get(1)?.toIntOrNull(),
-            numScale = ps?.groupValues?.get(2)?.toIntOrNull(),
+            charMaxLen = SchemaReaderUtils.parenLength(upper),
+            numPrecision = precision,
+            numScale = scale,
             tableName = "",
             colName = "",
         )
@@ -57,10 +65,22 @@ internal object PostgresNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
     private fun infoSchemaSpelling(ddlBase: String): String = when (ddlBase) {
         "VARCHAR" -> "character varying"
         "CHAR" -> "character"
-        "DECIMAL", "NUMERIC" -> "numeric"
+        "DECIMAL" -> "numeric"
         "TIMESTAMP" -> "timestamp without time zone"
         "TIMESTAMP WITH TIME ZONE" -> "timestamp with time zone"
         "TIME" -> "time without time zone"
         else -> ddlBase.lowercase()
+    }
+
+    /**
+     * Element-DDL-Rendering → udt-Name. Geschlossener Satz: `resolveElementType`
+     * im [PostgresTypeMapper] rendert Array-Elemente ausschließlich als
+     * TEXT/INTEGER/BOOLEAN/UUID.
+     */
+    private fun elementUdtName(elementDdl: String): String = when (elementDdl) {
+        "INTEGER" -> "int4"
+        "BOOLEAN" -> "bool"
+        "UUID" -> "uuid"
+        else -> "text"
     }
 }

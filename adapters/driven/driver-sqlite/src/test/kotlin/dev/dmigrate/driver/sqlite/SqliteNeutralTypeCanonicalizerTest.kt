@@ -48,6 +48,10 @@ class SqliteNeutralTypeCanonicalizerTest : FunSpec({
         NeutralType.Email to NeutralType.Text(),
         NeutralType.Enum(values = listOf("red", "green")) to NeutralType.Text(),
         NeutralType.Array(elementType = "text") to NeutralType.Text(),
+        // Review-Härtung R1: FullText geht durch die Komposition — die Spalte
+        // degradiert im migrate-Pfad real zu TEXT (ADR 0015), der Reverse
+        // rekonstruiert nur den FULLTEXT-Index, nicht die Spalte.
+        NeutralType.FullText to NeutralType.Text(),
     )
 
     test("canonical projection matches the AP0 edge table") {
@@ -56,14 +60,13 @@ class SqliteNeutralTypeCanonicalizerTest : FunSpec({
         }
     }
 
-    test("geometry and fulltext stay identity (fidelity travels outside the declared type)") {
+    test("geometry stays identity (fidelity travels outside the declared type)") {
         val geometry = NeutralType.Geometry(GeometryType.of("point"), srid = 4326)
         canon.canonicalize(geometry) shouldBe geometry
-        canon.canonicalize(NeutralType.FullText) shouldBe NeutralType.FullText
     }
 
     test("projection is idempotent") {
-        for (type in expected.keys + NeutralType.Geometry() + NeutralType.FullText) {
+        for (type in expected.keys + NeutralType.Geometry()) {
             val once = canon.canonicalize(type)
             canon.canonicalize(once) shouldBe once
         }

@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
  * Pure functions for mapping SQLite type affinity to neutral types.
@@ -142,19 +143,9 @@ internal object SqliteTypeMapping {
         }
     }
 
-    fun extractMaxLength(raw: String): Int? {
-        val match = Regex("\\((\\d+)\\)").find(raw)
-        return match?.groupValues?.get(1)?.toIntOrNull()
-    }
+    fun extractMaxLength(raw: String): Int? = SchemaReaderUtils.parenLength(raw)
 
-    fun extractPrecisionScale(raw: String): Pair<Int?, Int?> {
-        val match = Regex("\\((\\d+)\\s*,\\s*(\\d+)\\)").find(raw)
-        return if (match != null) {
-            match.groupValues[1].toIntOrNull() to match.groupValues[2].toIntOrNull()
-        } else {
-            null to null
-        }
-    }
+    fun extractPrecisionScale(raw: String): Pair<Int?, Int?> = SchemaReaderUtils.parenPrecisionScale(raw)
 
     fun isVirtualTable(createSql: String): Boolean =
         createSql.trimStart().startsWith("CREATE VIRTUAL TABLE", ignoreCase = true)

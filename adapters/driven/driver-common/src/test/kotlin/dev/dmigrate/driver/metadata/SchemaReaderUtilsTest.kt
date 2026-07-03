@@ -158,4 +158,20 @@ class SchemaReaderUtilsTest : FunSpec({
         val constraints = mapOf("uq1" to listOf("email"), "uq2" to listOf("a", "b"))
         SchemaReaderUtils.singleColumnUniqueFromConstraints(constraints) shouldBe setOf("email")
     }
+
+    // ── parenLength / parenPrecisionScale ───────────
+
+    test("parenLength reads a single-valued length and ignores precision/scale pairs") {
+        SchemaReaderUtils.parenLength("VARCHAR(50)") shouldBe 50
+        SchemaReaderUtils.parenLength("tinyint(1)") shouldBe 1
+        SchemaReaderUtils.parenLength("TEXT") shouldBe null
+        SchemaReaderUtils.parenLength("DECIMAL(10,2)") shouldBe null
+    }
+
+    test("parenPrecisionScale reads a precision/scale pair") {
+        SchemaReaderUtils.parenPrecisionScale("DECIMAL(10,2)") shouldBe (10 to 2)
+        SchemaReaderUtils.parenPrecisionScale("NUMERIC(5, 3)") shouldBe (5 to 3)
+        SchemaReaderUtils.parenPrecisionScale("VARCHAR(50)") shouldBe (null to null)
+        SchemaReaderUtils.parenPrecisionScale("TEXT") shouldBe (null to null)
+    }
 })
