@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.metadata.IndexProjection
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import dev.dmigrate.driver.sqlite.parser.SqliteTriggerSqlParser
@@ -165,11 +166,15 @@ class SqliteSchemaReader : SchemaReader {
         val pkColumns = SqliteMetadataQueries.listPrimaryKeyColumns(session, tableName)
         val fks = SqliteMetadataQueries.listForeignKeys(session, tableName)
         val indices = SqliteMetadataQueries.listIndices(session, tableName)
+        // AP4: UNIQUE-Constraint-Autoindizes (origin 'u') — vorher komplett
+        // verworfen (Fidelity-Bug: Reverse verlor inline-UNIQUE ganz).
+        val uniqueConstraintIndexes = SqliteMetadataQueries.listUniqueConstraintIndexes(session, tableName)
 
         val hasAutoincrement = SqliteTypeMapping.hasAutoincrement(createSql)
         val isWithoutRowid = SqliteTypeMapping.hasWithoutRowid(createSql)
 
-        val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices)
+        val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices) +
+            SchemaReaderUtils.singleColumnUniqueFromIndices(uniqueConstraintIndexes)
         // VA4/5d Befund 3: SpatiaLite-Registry-Eintrag pro Spalte (case-insensitiv).
         val geometryByColumn = geometryColumns.associateBy { it.column.lowercase() }
 
@@ -206,6 +211,7 @@ class SqliteSchemaReader : SchemaReader {
         val constraints = mutableListOf<ConstraintDefinition>()
         constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
+        constraints += multiColumnUniqueConstraints(createSql, uniqueConstraintIndexes)
         // CHECK constraints from CREATE TABLE SQL
         val checkScan = SqliteCheckConstraintScanner.scan(createSql)
         for ((checkName, checkExpr) in checkScan.named) {
@@ -283,6 +289,32 @@ class SqliteSchemaReader : SchemaReader {
             constraints = constraints,
             metadata = metadata,
         )
+    }
+
+    /**
+     * AP4: Multi-Column-UNIQUE-Constraint-Autoindizes → benannte Constraints.
+     * Der Constraint-Name steht nur im CREATE-TABLE-SQL (sqlite_master), nicht
+     * im Katalog — [SqliteUniqueConstraintScanner] liest ihn; Klauseln werden
+     * per Spaltenliste gematcht (verbraucht, damit Duplikate deterministisch
+     * bleiben). Unbenannte Klauseln bekommen einen synthetischen Namen
+     * (`uq_N`, Präzedenz: FK-Reverse `fk_N`).
+     */
+    private fun multiColumnUniqueConstraints(
+        createSql: String,
+        uniqueConstraintIndexes: List<IndexProjection>,
+    ): List<ConstraintDefinition> {
+        val clauses = SqliteUniqueConstraintScanner.scan(createSql).toMutableList()
+        var synthetic = 0
+        return uniqueConstraintIndexes.filter { it.columns.size > 1 }.map { idx ->
+            val wanted = idx.columns.map(String::lowercase)
+            val match = clauses.firstOrNull { it.columns.map(String::lowercase) == wanted }
+            if (match != null) clauses.remove(match)
+            ConstraintDefinition(
+                name = match?.name ?: "uq_${synthetic++}",
+                type = ConstraintType.UNIQUE,
+                columns = idx.columns,
+            )
+        }
     }
 
     private fun readViews(session: JdbcMetadataSession): Map<String, ViewDefinition> {

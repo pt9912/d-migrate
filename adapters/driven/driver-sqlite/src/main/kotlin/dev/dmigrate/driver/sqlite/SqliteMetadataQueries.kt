@@ -88,11 +88,11 @@ object SqliteMetadataQueries {
         val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table)})")
         return indexRows.mapNotNull { idx ->
             val indexName = idx["name"] as String
-            // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints)
+            // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints) —
+            // UNIQUE-constraint autoindexes are surfaced separately via
+            // [listUniqueConstraintIndexes] and fold onto columns/constraints.
             if (indexName.startsWith("sqlite_autoindex_")) return@mapNotNull null
-            val colRows = session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName)})")
-                .filter { ((it["key"] as? Number)?.toInt() ?: 1) == 1 }
-                .sortedBy { (it["seqno"] as Number).toInt() }
+            val colRows = keyColumnRows(session, indexName)
             val cols = colRows.mapNotNull { it["name"] as? String }
             if (cols.isEmpty()) return@mapNotNull null
             val createSql = session.querySingle(
@@ -110,6 +110,31 @@ object SqliteMetadataQueries {
             )
         }
     }
+
+    /**
+     * AP4 (postcompare-type-canonicalization slice): the `sqlite_autoindex_*`
+     * entries backing inline UNIQUE constraints (PRAGMA index_list
+     * `origin = 'u'`). They are NOT user indices — the reader folds them onto
+     * the column `unique` flag (single-column) or reconstructs the named
+     * constraint (multi-column, name via [SqliteUniqueConstraintScanner]).
+     * PK autoindexes (`origin = 'pk'`) stay excluded.
+     */
+    fun listUniqueConstraintIndexes(session: JdbcMetadataSession, table: String): List<IndexProjection> {
+        val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table)})")
+        return indexRows.mapNotNull { idx ->
+            if ((idx["origin"] as? String) != "u") return@mapNotNull null
+            val indexName = idx["name"] as String
+            val cols = keyColumnRows(session, indexName).mapNotNull { it["name"] as? String }
+            if (cols.isEmpty()) return@mapNotNull null
+            IndexProjection(name = indexName, columns = cols, isUnique = true)
+        }
+    }
+
+    /** Key columns of an index (PRAGMA index_xinfo, `key = 1`, seqno-sortiert). */
+    private fun keyColumnRows(session: JdbcMetadataSession, indexName: String): List<Map<String, Any?>> =
+        session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName)})")
+            .filter { ((it["key"] as? Number)?.toInt() ?: 1) == 1 }
+            .sortedBy { (it["seqno"] as Number).toInt() }
 
     private fun extractIndexWhere(sql: String?): String? {
         if (sql == null) return null

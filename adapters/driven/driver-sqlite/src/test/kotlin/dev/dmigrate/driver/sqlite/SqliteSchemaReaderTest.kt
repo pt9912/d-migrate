@@ -296,6 +296,57 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    // ── AP4: inline UNIQUE constraints fold instead of vanishing ──
+
+    test("named single-column UNIQUE constraint folds onto the column flag") {
+        withDb("""
+            CREATE TABLE t (a TEXT, b TEXT, CONSTRAINT "uq_a" UNIQUE ("a"))
+        """) { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            t.columns.getValue("a").unique shouldBe true
+            t.columns.getValue("b").unique shouldBe false
+            t.constraints.none { it.type == ConstraintType.UNIQUE } shouldBe true
+            t.indices.none { it.name?.startsWith("sqlite_autoindex_") == true } shouldBe true
+        }
+    }
+
+    test("column-level UNIQUE folds onto the column flag") {
+        withDb("CREATE TABLE t (a TEXT UNIQUE, b TEXT)") { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            t.columns.getValue("a").unique shouldBe true
+        }
+    }
+
+    test("named multi-column UNIQUE constraint is reconstructed with its DDL name") {
+        withDb("""
+            CREATE TABLE t (a TEXT, b TEXT, CONSTRAINT "uq_ab" UNIQUE ("a", "b"))
+        """) { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            val uq = t.constraints.single { it.type == ConstraintType.UNIQUE }
+            uq.name shouldBe "uq_ab"
+            uq.columns shouldBe listOf("a", "b")
+            t.columns.getValue("a").unique shouldBe false
+            t.indices.none { it.name?.startsWith("sqlite_autoindex_") == true } shouldBe true
+        }
+    }
+
+    test("unnamed multi-column UNIQUE gets a synthetic name (fk_N precedent)") {
+        withDb("CREATE TABLE t (a TEXT, b TEXT, UNIQUE (a, b))") { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            val uq = t.constraints.single { it.type == ConstraintType.UNIQUE }
+            uq.name shouldBe "uq_0"
+            uq.columns shouldBe listOf("a", "b")
+        }
+    }
+
+    test("PK autoindex is still not read as a UNIQUE constraint") {
+        withDb("CREATE TABLE t (a TEXT, b TEXT, PRIMARY KEY (a, b))") { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            t.constraints.none { it.type == ConstraintType.UNIQUE } shouldBe true
+            t.columns.getValue("a").unique shouldBe false
+        }
+    }
+
     test("index descending direction is read from index_xinfo") {
         withDb(
             "CREATE TABLE orders (id INTEGER PRIMARY KEY, created_at TEXT)",
