@@ -412,6 +412,17 @@ Der Probe-Harness (Schemata + Runner) ist der Seed für den AP5-Smoke
 (`smoke-types.sh`); Roh-Ergebnisse unter `examples/sample-db/.cache/ap0/`
 (gitignored), die Tabellen oben sind die festgehaltene Evidenz.
 
+**Live-Stand nach AP3 (2026-07-03, volle Matrix, Runtime-Image):** alle 21
+Typ-Proben **Exit 0 auf allen drei Dialekten** — sämtliche Kanten-Tabellen-Fälle
+(SQLite 16, PG 2, MySQL 5) sind geschlossen; ebenso `fk_colref` (FK-Fold),
+`uq_single_vc`/`uq_multi_vc` auf PG/MySQL (UNIQUE-Fold bzw. treuer Round-Trip)
+und `identifier_pk` auf PG/MySQL (`required`-Fold). Verbleibende Exit-5-Fälle,
+alle erwartet und getrackt: SQLite `uq_single`/`uq_multi` (Reverse verwirft
+inline-UNIQUE → **AP4**); PG/MySQL `identifier` ohne explizites `primary_key`
+und MySQL-UNIQUE auf `text` ohne `max_length` (Runtime-/Rekonstruktions-Familie →
+[`../open/generate-implicit-identifier-pk-materialization.md`](../open/generate-implicit-identifier-pk-materialization.md)
+bzw. Präfixlängen-Ticket, nicht dieser Slice).
+
 **Review-Härtung R1 (2026-07-03, nach AP1):** 4 Finder-Winkel + adversarialer
 Verifier über den AP1-Commit. Bestätigt und behoben:
 1. **PG-`Identifier`-Carve-out zu breit** — `identifier` OHNE `auto_increment`
