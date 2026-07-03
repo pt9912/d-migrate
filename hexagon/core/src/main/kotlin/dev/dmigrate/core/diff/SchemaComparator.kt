@@ -4,9 +4,12 @@ import dev.dmigrate.core.diff.routine.RoutineBodyNormalizer
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.*
 
-class SchemaComparator {
+class SchemaComparator(
+    /** AP7: target-aware Vergleichsmodus (siehe [TableComparator]); null = strikt. */
+    targetCanonicalization: ((NeutralType) -> NeutralType)? = null,
+) {
 
-    private val tableComparator = TableComparator()
+    private val tableComparator = TableComparator(targetCanonicalization)
 
     fun compare(left: SchemaDefinition, right: SchemaDefinition): SchemaDiff {
         val metadataDiff = compareMetadata(left, right)

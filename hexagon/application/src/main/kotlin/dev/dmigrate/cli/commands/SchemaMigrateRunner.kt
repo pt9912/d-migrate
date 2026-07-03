@@ -64,6 +64,17 @@ class SchemaMigrateRunner(
     private val dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)? = null,
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand = CompareOperandNormalizer::normalize,
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
+    /**
+     * AP7 (Plan-Konvergenz): target-aware Comparator für den Migrate-Diff —
+     * unterdrückt Unterschiede, die der Ziel-Dialekt nicht ausdrücken kann
+     * (Typ-Faltung, PK-implizites required, effektiver PK), damit ein zweiter
+     * Lauf gegen ein frisch migriertes Ziel 0 Operationen plant statt eines
+     * ewigen No-Op-Rebuilds. Fällt auf [comparator] (strikt) zurück, wenn
+     * nicht gesetzt (Test-Verdrahtungen).
+     */
+    private val targetAwareComparator: (
+        (SchemaDefinition, SchemaDefinition, canonicalizeType: (NeutralType) -> NeutralType) -> SchemaDiff
+    )? = null,
     private val planner: DiffPlanner = DiffPlanner(),
     private val rendererFor: (DatabaseDialect) -> DiffDdlGenerator?,
     private val executor: SegmentAwareExecutorFn? = null,
@@ -293,7 +304,9 @@ class SchemaMigrateRunner(
         desiredFingerprint: String,
         canonicalizeType: (NeutralType) -> NeutralType,
     ): Pair<DiffResult, MigrationOverlayPreflightResult> {
-        val diff = comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
+        val diff = targetAwareComparator
+            ?.invoke(prep.targetNormalized.schema, prep.sourceNormalized.schema, canonicalizeType)
+            ?: comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
             documents = mergedOverlays,
             sourceFingerprint = currentFingerprint,

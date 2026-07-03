@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ConstraintDiffContract
+import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
@@ -384,11 +385,8 @@ object MigrationFingerprint {
      * untouched (non-empty → used verbatim), so divergent/composite PKs keep
      * producing distinct projections.
      */
-    private fun effectivePrimaryKey(table: TableDefinition): List<String> {
-        if (table.primaryKey.isNotEmpty()) return table.primaryKey
-        val identifierColumns = table.columns.entries.filter { it.value.type is NeutralType.Identifier }
-        return if (identifierColumns.size == 1) listOf(identifierColumns.first().key) else emptyList()
-    }
+    private fun effectivePrimaryKey(table: TableDefinition): List<String> =
+        EffectivePrimaryKey.of(table)
 
     // ── Views ───────────────────────────────────────────────────────
 

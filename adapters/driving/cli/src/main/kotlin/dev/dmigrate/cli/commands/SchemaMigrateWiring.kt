@@ -130,6 +130,9 @@ internal object SchemaMigrateWiring {
             },
             dbLoader = { op, cfgPath -> loadFromDb(op, cfgPath, validator) },
             comparator = { left, right -> SchemaComparator().compare(left, right) },
+            targetAwareComparator = { left, right, canonicalizeType ->
+                SchemaComparator(canonicalizeType).compare(left, right)
+            },
             rendererFor = MigrateRendererRegistry::forDialect,
             executor = SegmentAwareMigrationExecutor::executeWithDefaults,
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,

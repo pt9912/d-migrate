@@ -12,7 +12,18 @@ import dev.dmigrate.core.model.*
  * Extracted from [SchemaComparator] to isolate the most complex
  * comparison logic (~320 LOC).
  */
-internal class TableComparator {
+internal class TableComparator(
+    /**
+     * AP7 (postcompare-type-canonicalization slice): target-aware mode. When
+     * set, the comparison suppresses differences the TARGET dialect cannot
+     * express — column types that canonicalise onto the same declared type,
+     * PK-implied `required`, and the implicit-`identifier` effective PK —
+     * mirroring the v7 fingerprint so the migrate plan CONVERGES (a second
+     * run against a freshly migrated target plans zero operations instead of
+     * an eternal no-op rebuild). `schema compare` stays strict (null).
+     */
+    private val targetCanonicalization: ((NeutralType) -> NeutralType)? = null,
+) {
 
     fun compareTables(left: SchemaDefinition, right: SchemaDefinition): TableDiffs {
         val leftNames = left.tables.keys
@@ -39,16 +50,25 @@ internal class TableComparator {
         val leftNorm = normalizeConstraints(left)
         val rightNorm = normalizeConstraints(right)
 
+        // AP7: im target-aware Modus zählt der EFFEKTIVE PK (v3-Regel) für
+        // PK-Vergleich und PK-implizites required — sonst leere Sets (strikt).
+        val leftPk = if (targetCanonicalization != null) EffectivePrimaryKey.of(left).toSet() else emptySet()
+        val rightPk = if (targetCanonicalization != null) EffectivePrimaryKey.of(right).toSet() else emptySet()
         val absorbedColumns = AbsorbedColumns(
             uniqueLeft = leftNorm.singleColumnUnique,
             uniqueRight = rightNorm.singleColumnUnique,
             fkLeft = leftNorm.singleColumnForeignKeys.keys,
             fkRight = rightNorm.singleColumnForeignKeys.keys,
+            pkLeft = leftPk,
+            pkRight = rightPk,
         )
 
         val columnDiffs = compareColumns(left, right, absorbedColumns)
-        val pkDiff = if (left.primaryKey == right.primaryKey) null
-            else ValueChange(left.primaryKey, right.primaryKey)
+        val pkDiff = when {
+            targetCanonicalization != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
+            left.primaryKey == right.primaryKey -> null
+            else -> ValueChange(left.primaryKey, right.primaryKey)
+        }
 
         val indexDiffs = compareIndices(left.indices, right.indices)
         val constraintDiffs = compareConstraints(leftNorm, rightNorm)
@@ -119,6 +139,8 @@ internal class TableComparator {
     private data class AbsorbedColumns(
         val uniqueLeft: Set<String>, val uniqueRight: Set<String>,
         val fkLeft: Set<String>, val fkRight: Set<String>,
+        /** AP7: effektive PK-Spalten je Seite (leer im strikten Modus). */
+        val pkLeft: Set<String> = emptySet(), val pkRight: Set<String> = emptySet(),
     )
 
     private data class ColumnDiffs(
@@ -145,8 +167,15 @@ internal class TableComparator {
     private fun compareColumn(
         name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
     ): ColumnDiff? {
-        val typeDiff = diffValueChangeOrNull(left.type, right.type)
-        val requiredDiff = diffValueChangeOrNull(left.required, right.required)
+        val canon = targetCanonicalization
+        // AP7: Typen, die der Ziel-Dialekt auf denselben deklarierten Typ faltet,
+        // sind dort keine ausdrückbare Änderung — ein geplanter Alter wäre ein
+        // ewiger No-Op-Rebuild (Post-Compare wäre per v7 clean).
+        val typeDiff = if (canon != null && canon(left.type) == canon(right.type)) null
+            else diffValueChangeOrNull(left.type, right.type)
+        // AP7: PK ⇒ NOT NULL — required vergleicht im target-aware Modus effektiv.
+        val requiredDiff = if (canon != null && effectiveRequiredEqual(name, left, right, absorbed)) null
+            else diffValueChangeOrNull(left.required, right.required)
         val defaultDiff = if (left.default == right.default) null
             else ValueChange(left.default, right.default)
         val uniqueAbsorbed = name in absorbed.uniqueLeft || name in absorbed.uniqueRight
@@ -167,6 +196,15 @@ internal class TableComparator {
             references = refDiff,
             generation = generationDiff,
         )
+    }
+
+    /** AP7: `required` unter Einrechnung der effektiven PK-Mitgliedschaft je Seite. */
+    private fun effectiveRequiredEqual(
+        name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
+    ): Boolean {
+        val leftEffective = left.required || name in absorbed.pkLeft
+        val rightEffective = right.required || name in absorbed.pkRight
+        return leftEffective == rightEffective
     }
 
     private fun hasNoColumnDiff(vararg diffs: Any?): Boolean =

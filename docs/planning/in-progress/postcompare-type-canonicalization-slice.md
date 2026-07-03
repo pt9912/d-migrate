@@ -3,8 +3,11 @@
 > Status: **In Progress (2026-07-03).** Scope-Schnitt user-reviewt (R1–R3 entschieden),
 > AP0 erledigt (Status-Update unten), AP1 geliefert (`cfe51d02`) + review-gehärtet R1
 > (`13f4fb60`), AP2 geliefert (`b137b352`, v7 inkl. belegtem FK-Fold, Folds
-> live-verifiziert), AP3 geliefert (Durchreichung + Plan-Artefakt-Algo-Feld).
-> Offen: AP4 (SQLite-UNIQUE-Reverse), AP5 (Smoke), AP6 (Doku/ADR).
+> live-verifiziert), AP3 geliefert (Durchreichung + Plan-Artefakt-Algo-Feld,
+> volle Typ-Matrix live grün), AP4 geliefert (`9d0bc833`, SQLite-UNIQUE-Reverse-Fold,
+> live grün inkl. Rebuild-Szenario), Review-Härtung R2 (`91747294`, 5 Fixes),
+> **AP7 nachgeschnitten** (Plan-Konvergenz, user-entschieden 2026-07-03).
+> Offen: AP5 (Smoke + Rollback-Abnahme), AP6 (Doku/ADR).
 > Hervorgegangen aus dem `open/`-Ticket `sqlite-postcompare-type-flattening-drift.md`
 > (aktiviert 2026-07-02, Scope-Schnitt als erster Arbeitsschritt vereinbart).
 > Severity: **P2** (Korrektheitsdefekt der `migrate --execute`-Exit-Semantik: spec-valide
@@ -290,6 +293,27 @@ dass ein d-migrate-Update mit Fingerprint-Bump bestehende Rollback-Artefakte und
 Overlay-Pins invalidiert (Verhalten wie bei früheren Bumps, jetzt dokumentiert).
 `make docs-check` grün.
 
+**AP7 — Plan-Konvergenz (nachgeschnitten nach Review R2, user-entschieden 2026-07-03).**
+Der Migrate-Diff verglich Typen/`required`/PK dialekt-blind: Ein zweiter
+`migrate --execute` mit unverändertem Soll gegen das migrierte Ziel plante
+denselben No-Op-`AlterColumnType` erneut (live belegt: SQLite voller
+Table-Rebuild, 10 Statements, netto null — bei JEDEM Lauf), während der
+v7-Post-Compare Clean meldet. Vorbestehend (vor v7 lief derselbe Rebuild und
+endete laut Exit 5); v7 entfernte das Warnsignal. Fix auf richtiger Tiefe:
+**target-aware Vergleichsmodus** im
+[`TableComparator`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/TableComparator.kt)
+(optionaler `targetCanonicalization`-Parameter, Default strikt = `schema
+compare` unverändert, Scope-Entscheidung a bleibt): unterdrückt Typ-Diffs, die
+der Ziel-Dialekt auf denselben deklarierten Typ faltet, `required` auf
+Effektiv-Basis (PK ⇒ NOT NULL) und PK-Diffs auf Effektiv-PK-Basis (geteilte
+v3-Regel, extrahiert nach
+[`EffectivePrimaryKey`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/EffectivePrimaryKey.kt)
+— der Fingerprint delegiert). Der Runner nutzt einen optionalen
+`targetAwareComparator` (Wiring liefert `SchemaComparator(canonicalizeType)`;
+Test-Fakes laufen unverändert über den strikten Fallback). DoD: zweiter
+migrate-Lauf plant 0 Operationen (Konvergenz-Assert auch im AP5-Smoke);
+`schema compare` weiterhin strikt (Gegenprobe).
+
 ## Abnahme (Slice-DoD)
 
 1. Alle fünf Typ-Proben der Matrix: `migrate --execute` → **Exit 0**; `text`-Kontrolle
@@ -317,6 +341,9 @@ Overlay-Pins invalidiert (Verhalten wie bei früheren Bumps, jetzt dokumentiert)
 8. `required`-Kanonisierung: `identifier` + explizites `primary_key` ohne
    ausgeschriebenes `required` → **Exit 0** auf PG (AP0-Reproducer `identifier_pk`);
    Gegenprobe: `required`-Drift auf einer **Nicht**-PK-Spalte bleibt Drift.
+9. **Plan-Konvergenz (AP7):** ein zweiter `migrate --execute` mit unverändertem
+   Soll gegen das frisch migrierte Ziel plant **0 Operationen** (kein
+   No-Op-Rebuild); `schema compare` bleibt strikt.
 
 ## Nicht-Scope
 
@@ -430,6 +457,20 @@ bzw. Präfixlängen-Ticket, nicht dieser Slice).
 Table-Rebuild) endet ebenfalls Exit 0. Damit sind **alle** Post-Compare-Proben
 des Slices grün; offen bleiben nur die bewusst ausgelagerten
 Generate-Bug-Fälle.
+
+**Review-Härtung R2 (2026-07-03, nach AP2–AP4):** 4 Finder-Winkel + Verifier +
+eigene Live-Probe. Bestätigt und behoben (`91747294`): CHECK-/EXCLUDE-Expressions
+laufen im Fold durch `ConstraintDiffContract.comparable` (CRLF/trim-Parität mit
+dem Comparator); `fkSignature` delegiert an `reference()` (ein String-Format);
+`registryTypeCanonicalizer` fängt nur noch den Registry-Miss (Kanonisierer-Fehler
+propagieren laut); Rollback-Verify löst den Kanonisierer bevorzugt aus dem
+Live-Verbindungs-Dialekt auf; synthetische `uq_N`-Namen überspringen real
+rekonstruierte (uq_0-Kollision). **Haupt-Befund → AP7** (Plan-Konvergenz, live
+belegt per Zweitlauf-Probe). Bewusst vertagt: Kommentar-Lücke in
+`SqliteDdlScanning` (nur extern authorte DBs erreichbar, vorbestehend auch im
+CHECK-Scanner) und der geteilte Comparator/Fingerprint-Kanonisierungs-Refactor
+(Parität jetzt über geteilte Bausteine `comparable`/`reference`/`EffectivePrimaryKey`
++ Tests gepinnt).
 
 **Review-Härtung R1 (2026-07-03, nach AP1):** 4 Finder-Winkel + adversarialer
 Verifier über den AP1-Commit. Bestätigt und behoben:
