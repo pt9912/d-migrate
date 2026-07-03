@@ -423,6 +423,14 @@ und MySQL-UNIQUE auf `text` ohne `max_length` (Runtime-/Rekonstruktions-Familie 
 [`../open/generate-implicit-identifier-pk-materialization.md`](../open/generate-implicit-identifier-pk-materialization.md)
 bzw. Präfixlängen-Ticket, nicht dieser Slice).
 
+**Live-Stand nach AP4 (2026-07-03):** SQLite `uq_single`/`uq_multi` (und die
+`_vc`-Varianten) **Exit 0** — der Reverse liest Single-Column-UNIQUE als
+`unique: true` und rekonstruiert Multi-Column-Constraints mit ihrem DDL-Namen
+(`uq_ab`); das ursprüngliche Trigger-Szenario (benannter UNIQUE via
+Table-Rebuild) endet ebenfalls Exit 0. Damit sind **alle** Post-Compare-Proben
+des Slices grün; offen bleiben nur die bewusst ausgelagerten
+Generate-Bug-Fälle.
+
 **Review-Härtung R1 (2026-07-03, nach AP1):** 4 Finder-Winkel + adversarialer
 Verifier über den AP1-Commit. Bestätigt und behoben:
 1. **PG-`Identifier`-Carve-out zu breit** — `identifier` OHNE `auto_increment`
