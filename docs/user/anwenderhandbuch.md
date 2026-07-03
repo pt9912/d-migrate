@@ -1092,6 +1092,19 @@ Hilfsobjekte, die dasselbe Verhalten nachbilden.
   einer Sperre; auf SQLite müssen Sie zusätzlich
   `--sqlite-named-sequences helper_table` angeben.
 
+**Kurzmatrix:**
+
+| Thema | PostgreSQL | MySQL | SQLite |
+| ----- | ---------- | ----- | ------ |
+| `identifier` / PK-Autowert | native Identity/Serial-Spalte | `AUTO_INCREMENT` | `INTEGER PRIMARY KEY AUTOINCREMENT` |
+| benannte `sequences` | native `CREATE SEQUENCE` | `dmg_sequences` + `dmg_nextval`/`dmg_setval` + Trigger, nur mit `--mysql-named-sequences helper_table` | `dmg_sequences` + Trigger-Paar, nur mit `--sqlite-named-sequences helper_table` |
+| `sequence_nextval`-Default | `DEFAULT nextval(...)` | `BEFORE INSERT`-Trigger ruft `dmg_nextval(...)` auf | Trigger reserviert und schreibt den nächsten Wert |
+| `preserve_current_value` | `setval(...)` beim Ausrollen | `UPDATE dmg_sequences SET next_value = ...` unter Lock | `UPDATE dmg_sequences SET next_value = ...` unter Lock |
+| `cache` | native Cache-Semantik | Metadatum, keine Runtime-Preallocation | Metadatum, keine Runtime-Preallocation |
+
+Die vollständige Attributmatrix steht in der
+[Neutralmodell-Spezifikation](../../spec/neutral-model-spec.md#92-cross-dialect-capability-matrix).
+
 ### 3.13 Komplettbeispiel: eine Datenbank von PostgreSQL nach MySQL migrieren
 
 Dieses durchgängige Beispiel verbindet die Einzelaufgaben zu einem kompletten
