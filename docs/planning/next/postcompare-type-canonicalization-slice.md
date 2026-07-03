@@ -1,0 +1,298 @@
+# Slice: Dialektbewusste Fingerprint-Kanonisierung im Post-Compare (Typ-Abflachung + Single-Column-UNIQUE)
+
+> Status: **Entwurf (Scope-Schnitt 2026-07-03, Review ausstehend).**
+> Hervorgegangen aus dem `open/`-Ticket `sqlite-postcompare-type-flattening-drift.md`
+> (aktiviert 2026-07-02, Scope-Schnitt als erster Arbeitsschritt vereinbart).
+> Severity: **P2** (Korrektheitsdefekt der `migrate --execute`-Exit-Semantik: spec-valide
+> Schemata können auf SQLite nie drift-frei frisch migriert werden) **plus** ein beim
+> Schnitt aufgedeckter **Reverse-Fidelity-Bug** (SQLite verwirft inline-UNIQUE komplett,
+> siehe Befund 2).
+> Trigger: Live-Verifikation des Fulltext-Rebuild-Blocks
+> ([`../done/sqlite-fulltext-rebuild-block.md`](../done/sqlite-fulltext-rebuild-block.md)),
+> 2026-07-02.
+> Präzedenz: Fingerprint-v3-Kanonisierung des impliziten `identifier`-PK
+> ([`../done/migrate-postcompare-identifier-pk-drift.md`](../done/migrate-postcompare-identifier-pk-drift.md)).
+
+## Ziel
+
+Ein frisches `migrate --execute` gegen ein leeres SQLite-Ziel endet für spec-valide
+Schemata mit **Exit 0** statt Drift-False-Positive **Exit 5** — durch dialektbewusste
+Kanonisierung im Fingerprint-Vertrag (Typ-Abflachung + Single-Column-UNIQUE-Fold) und
+Behebung des SQLite-Reverse-UNIQUE-Fidelity-Bugs. `schema compare` bleibt strukturell
+unverändert streng.
+
+## Befund 1: Typ-Abflachung (live belegt 2026-07-02)
+
+Ein **frisches** `migrate --execute` gegen ein leeres SQLite-Ziel endet mit **Exit 5**
+(„Post-execute compare detected drift"), sobald das Soll-Schema einen Typ enthält, den
+[`SqliteTypeMapper`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapper.kt)
+auf eine SQLite-Storage-Klasse abflacht — obwohl der Apply sauber durchläuft
+(`execution.completed = true`, `executionError = null`, keine Diagnostics).
+
+Probe-Matrix (Ein-Spalten-Schemata, Runtime-Image, jeweils frisches File-Target):
+
+| Spaltentyp | Exit | Abflachung |
+| ---------- | ---- | ---------- |
+| `text` (Kontrollfall) | 0 | `TEXT` → `Text`, verlustfrei |
+| `smallint` | 5 | `INTEGER` → Reverse liest `integer` |
+| `biginteger` | 5 | `INTEGER` → Reverse liest `integer` |
+| `boolean` | 5 | `INTEGER` → Reverse liest `integer` |
+| `datetime` | 5 | `TEXT` → Reverse liest `text` |
+| `decimal(10,2)` | 5 | `REAL` → Reverse liest `float` |
+
+Mechanik: Generate flacht den Neutraltyp ab (`smallint`/`biginteger`/`boolean` →
+`INTEGER`, `datetime`/`date`/`time`/`uuid`/`json`/… → `TEXT`, `decimal` → `REAL`), der
+Reverse liest den deklarierten Storage-Typ zurück
+([`SqliteTypeMapping`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapping.kt)),
+und der Post-Compare vergleicht Neutraltypen wörtlich → Drift-False-Positive. Derselben
+Familie gehören weitere, noch nicht live geprobte Kanten an (`text(50)`/`char(10)` →
+`TEXT` ohne Länge, `uuid` → `TEXT`, `json` → `TEXT`); die Round-Trip-Projektion aus D1
+deckt sie per Konstruktion mit ab (AP0 erweitert die Matrix).
+
+Nur SQLite ist belegt; MySQL/PG werden in AP0 auf analoge Abflachungskanten geprobt
+(z. B. MySQL `uuid`; MySQL `boolean` → `TINYINT(1)` liest der Reverse bereits als
+`boolean` zurück — vermutlich Fixpunkt).
+
+## Befund 2: UNIQUE-Asymmetrie — beim Schnitt korrigiert (Code-Exploration 2026-07-03)
+
+Das Ursprungs-Ticket nahm an, der SQLite-Reverse lese den `sqlite_autoindex` eines
+inline gerenderten `CONSTRAINT "uq_x" UNIQUE ("col")` als Spalten-`unique` zurück. **Das
+stimmt nicht:**
+[`SqliteMetadataQueries`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteMetadataQueries.kt)
+überspringt **alle** `sqlite_autoindex_*`-Einträge, bevor
+`SchemaReaderUtils.singleColumnUniqueFromIndices` /
+`buildMultiColumnUniqueFromIndices`
+([`SchemaReaderUtils`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/metadata/SchemaReaderUtils.kt))
+sie sehen. Ein inline gerenderter UNIQUE-Constraint (Single- **und** Multi-Column) wird
+beim Reverse **komplett verworfen** — die Reverse-Seite trägt weder benannten Constraint
+noch `unique: true`. Nur user-erzeugte `CREATE UNIQUE INDEX` (origin `c`) werden gehoben.
+
+Das ist über den Post-Compare hinaus ein **Fidelity-Bug**: Reverse einer Datenbank mit
+inline-UNIQUE verliert den Constraint; ein anschließendes Generate erzeugt die Tabelle
+**ohne** UNIQUE. (Live belegt ist bisher das Exit-5-Symptom beim FTS5-Rebuild-Slice,
+[`../done/sqlite-fulltext-rebuild-recreate.md`](../done/sqlite-fulltext-rebuild-recreate.md);
+der Komplett-Verlust ist Code-Befund und wird in AP0 live belegt.)
+
+**PG/MySQL** lesen Single-Column-UNIQUE dagegen als `unique: true` zurück (Name fällt
+weg). Dort ist die Asymmetrie eine reine Fingerprint-Frage: benannter Constraint im Soll
+≠ Spaltenattribut im Reverse. Der
+[`TableComparator`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/TableComparator.kt)
+kanonisiert genau diese Äquivalenz in `normalizeConstraints` **bereits** (Grenze
+`columns.size == 1`) — nur der Fingerprint zieht nicht nach.
+
+## Code-Fakten (Exploration 2026-07-03)
+
+- **Post-Compare = reiner Fingerprint-Vergleich.** `runPostCompare` in
+  [`SchemaMigrateExecutionStage`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaMigrateExecutionStage.kt)
+  re-introspiziert das Ziel, normalisiert und vergleicht zwei Hash-Strings; kein
+  strukturierter Modell-Vergleich. Drift → Exit 5 im
+  [`SchemaMigrateRunner`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunner.kt).
+- **Fingerprint-Vertrag.**
+  [`MigrationFingerprint`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/MigrationFingerprint.kt),
+  `ALGORITHM = "schema-fingerprint-v6"`. Der Spaltentyp fließt an genau einer Stelle ein
+  (`neutralType(col.type)` in `appendTables`); Spalten-`unique` und benannte Constraints
+  werden **getrennt** projiziert (kein Fold — im Gegensatz zum `TableComparator`).
+- **Persistenz-Verträge, die Fingerprints tragen:**
+  - **Rollback-Artefakt**
+    ([`RollbackArtefactBuilder`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/RollbackArtefactBuilder.kt)):
+    `currentFingerprint` (Reverse-Pre), `desiredFingerprint` (Soll-YAML),
+    `postUpFingerprint` (Reverse-Post) + `fingerprintAlgorithm` + `dialect`.
+    `SchemaRollbackRunner.verifyTargetMatchesArtefact` re-berechnet den
+    Ziel-Fingerprint frisch und vergleicht gegen `postUpFingerprint` (bzw.
+    `allowedPostUpFingerprints`; im F.5.e-Recovery-Fall gegen den Soll-basierten
+    `desiredFingerprint`). Algo-Guard + Parser-Lektion aus dem v6-Bump (`c4846667`)
+    vorhanden. Ein Post-Down-Verify gegen `currentFingerprint` existiert nicht.
+  - **Plan-Artefakt**
+    ([`MigrationPlanArtifactBuilder`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/MigrationPlanArtifactBuilder.kt)):
+    persistiert `sourceFingerprint`/`targetFingerprint` + `dialect`, ist heute
+    **emit-only** (kein Rückles-/Verify-Pfad im Tool), trägt aber **kein**
+    `fingerprintAlgorithm`-Feld — externe Konsumenten können die Werte ohne
+    Algo-Kennung nicht interpretieren; wird in AP3 nachgerüstet (Entscheidung im
+    Plan-Review 2026-07-03).
+  - **Overlay-Preflight**
+    ([`MigrationOverlayPreflight`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/MigrationOverlayPreflight.kt)):
+    Overlays pinnen erwartete Soll-/Ist-Fingerprints und werden gegen frisch berechnete
+    validiert → ein Bump invalidiert bestehende Overlays laut (Blocker-Diagnose), wie
+    bei jedem bisherigen Bump.
+- **Call-Sites von `MigrationFingerprint.compute` (Produktion):** Migrate-Runner
+  (Post-Compare-Lambda + `currentFingerprint`/`desiredFingerprint`), Rollback-Runner
+  (Verify) — alle mit Ziel-Dialekt-Kontext (`prepared.effectiveDialect`,
+  `targetResolved.dialect`, `parsed.dialect`). Einzige dialekt-lose Stelle:
+  `DiffPlanner.endpoint`
+  ([`DiffPlanner`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/DiffPlanner.kt))
+  — dessen Werte fließen aber ins Rollback- und Plan-Artefakt und (F.5.e) in den
+  Recovery-Verify → Kanonisierer muss durch `DiffPlanner.plan()` durchgereicht werden.
+  Ein Fingerprint-Gleichheits-Kurzschluss in der Planung existiert nicht (die Werte sind
+  dort reine Metadaten).
+- **`schema compare` ist fingerprint-frei** (nutzt nur den `SchemaComparator`-Pfad,
+  Output-Modell ohne Fingerprint-Felder) und dialekt-mehrdeutig (beide Operanden können
+  YAML sein) → bleibt per Konstruktion außerhalb des Scopes.
+
+## Design-Entscheidungen
+
+**D1 — Kanonisierung als Round-Trip-Projektion, nicht als Prädikat.**
+`StructuralTransferTypeCompatibility`
+([`TransferTypeCompatibility`](../../../hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/TransferTypeCompatibility.kt))
+ist als paarweises Prädikat **keine Äquivalenzrelation** (reflexiv/symmetrisch, aber
+nicht transitiv: `identifier`≡`integer` und `integer`≡`boolean`, aber
+`identifier`≢`boolean`) — als Kanonisierungs-Substrat untauglich; zudem sind ihre
+Integral-/DateTime-Sonderregeln Transfer-Semantik (Value-Widening), die im Post-Compare
+echte Drift verschleiern würde. Stattdessen: eine **per-Dialekt-Projektion**
+`canonicalize(t: NeutralType): NeutralType` mit der Semantik „welchen Neutraltyp liefert
+der Ziel-Reverse nach dem Rendern von `t`" (Komposition der vorhandenen Vorwärts-
+(`TypeMapper.toSql`) und Rückwärts-Abbildung des Drivers). Eigenschaften: **idempotent**
+(Reverse-Output ist Fixpunkt) und automatisch **Identity für fidelity-erhaltende
+Dialekte**. Typen, deren Fidelity außerhalb des deklarierten Spaltentyps transportiert
+wird (SQLite: `geometry` via `AddGeometryColumn`, `fulltext` via FTS5-Objekte), bleiben
+per Konstruktion Identity — SRID-/Typ-Sensitivität des Fingerprints bleibt erhalten.
+
+**D2 — Uniform im Fingerprint-Vertrag, `schema-fingerprint-v6` → `v7`, dialekt-parametrisiert.**
+Eine stille Projektion nur im Post-Compare wäre ein Vertragsbruch: der
+`postUpFingerprint` wird ins Rollback-Artefakt persistiert und beim `schema rollback`
+mit unverändertem `compute` re-berechnet → falscher `TARGET_STATE_MISMATCH`, den der
+Algo-Guard nicht abfängt (exakt das von `c4846667` beseitigte Fehlerbild). Daher:
+`MigrationFingerprint.compute(schema, canonicalizer)` (Default Identity), `ALGORITHM`
+→ `v7`, **alle** Migrate-/Rollback-Call-Sites inkl. `DiffPlanner.plan()` reichen den
+Ziel-Dialekt-Kanonisierer durch. Das Artefakt trägt den Dialekt bereits und der
+Rollback-Verify erzwingt `TARGET_DIALECT_MISMATCH` → das Paar (Algorithmus, Dialekt)
+bestimmt die Fingerprint-Funktion eindeutig, **kein neues Artefakt-Feld nötig**. Alte
+v6-Artefakte lehnt der bestehende Algo-Guard laut ab
+(`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`, „regenerate").
+
+**D3 — Scope-Entscheidung (a) ratifiziert: nur Post-Compare-/Fingerprint-Vertrag.**
+`schema compare` und die Diff-Engine bleiben unberührt; ein gewolltes
+`smallint→integer` bleibt dort ein echter Unterschied. Durch die Fingerprint-Freiheit
+des Compare-Pfads ist das per Konstruktion erfüllt (Gegenprobe in der Abnahme). Die
+gewollte Divergenz Fingerprint (dialektbewusst tolerant) ↔ Comparator (strukturell
+streng) wird im `MigrationFingerprint`-KDoc dokumentiert.
+
+**D4 — Scope-Entscheidung (b) entschieden: UNIQUE im selben Slice.**
+Beide Kanonisierungen teilen denselben v7-Bump (zwei aufeinanderfolgende Bumps wären
+unnötige Artefakt-Invalidierung). Der Fingerprint-Fold spiegelt
+`TableComparator.normalizeConstraints` (benannter Single-Column-UNIQUE ↔
+`unique: true`, Grenze `columns.size == 1`; Multi-Column bleibt benannter Constraint) —
+er zieht den Fingerprint auf den bestehenden Comparator-Stand nach. Für SQLite
+zusätzlich der Reverse-Fix (AP4), sonst bleibt die Reverse-Seite leer und der Fold
+greift ins Leere.
+
+**D5 — Kanonisierer als Driver-Port-Methode.**
+Neues `fun interface NeutralTypeCanonicalizer` in ports-common + Methode auf
+[`DatabaseDriver`](../../../hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDriver.kt)
+nach dem `transferCompatibility()`-Muster: Default **Identity** (konservativ — ein
+Driver ohne explizite Abflachungs-Deklaration kanonisiert nichts weg), SQLite liefert
+die echte Faltung; PG/MySQL nur bei in AP0 belegten Kanten. `TypeMapper` bleibt
+gekapselt (wird weiterhin nicht auf dem Driver-Port exponiert).
+
+## Arbeitspakete
+
+**AP0 — Proben & Reproducer (vor dem Bau).**
+Probe-Matrix als automatisierbare Reproducer festhalten (Ein-Spalten-Schemata gegen
+frisches File-Target) und erweitern: `text(50)`, `char(10)`, `uuid`, `json`, `enum`
+auf SQLite; systematische Round-Trip-Probe aller Neutraltypen auf MySQL/PG
+(Kanten-Tabelle je Dialekt als AP1-Input); Multi-Column-inline-UNIQUE auf SQLite live
+belegen (erwartet: Reverse verwirft). DoD: belegte Kanten-Tabelle je Dialekt;
+`enum`-Erwartung geklärt (vermutlich zusätzliche CHECK-Constraint-Drift → falls ja,
+eigenes Ticket, nicht dieser Slice).
+
+**AP1 — Port + SQLite-Kanonisierer.**
+`NeutralTypeCanonicalizer` (ports-common) + `DatabaseDriver`-Methode (Default Identity,
+D5). SQLite-Implementierung als **Live-Komposition** (Review-Entscheidung 2026-07-03):
+`canonicalize(t) = SqliteTypeMapping.mapColumn(SqliteTypeMapper().toSql(t))` über einen
+dünnen Adapter, der die Reverse-Notes verwirft; **explizite Identity-Ausnahmen** für
+`geometry`/`fulltext` (Fidelity läuft nicht über den deklarierten Spaltentyp, D1) —
+keine zweite Abbildungstabelle im Produktionscode. Property-Tests über alle
+Neutraltypen: (1) Idempotenz (`canonicalize(canonicalize(t)) == canonicalize(t)`),
+(2) Übereinstimmung mit einem echten Live-Round-Trip (DDL in frisches SQLite-File
+generieren, reversen, Neutraltyp vergleichen) — der Test übernimmt die
+Dokumentationsfunktion der Faltung. PG/MySQL gemäß AP0-Kanten (erwartet: Identity oder
+minimale Faltung, gleiche Konstruktion).
+
+**AP2 — Fingerprint v7.**
+`MigrationFingerprint.compute(schema, canonicalizer = Identity)`: Typ-Projektion
+kanonisiert; UNIQUE-Fold (D4); `ALGORITHM` → `schema-fingerprint-v7` mit
+KDoc-Historieneintrag (Rationale + Verweis hierher). Unit-Tests: die fünf Typ-Proben
+hashen mit SQLite-Kanonisierer gleich, ohne Kanonisierer weiterhin verschieden
+(Identity-Default); UNIQUE-Fold Single-Column beidseitig, Multi-Column bleibt distinkt;
+Negativfälle (echte Typ-Drift auf PG bleibt Drift).
+
+**AP3 — Durchreichung + Artefakt-Verträge.**
+Kanonisierer an alle Call-Sites: Migrate-Runner (Post-Compare-Lambda,
+`currentFingerprint`/`desiredFingerprint`), `DiffPlanner.plan()` (neuer Parameter,
+Default Identity), Rollback-Verify (Dialekt aus Artefakt/Target). Konsistenz-Tests:
+`plan.current.fingerprint` == Runner-`currentFingerprint`; F.5.e-Recovery-Pfad
+(Soll-basierter `desiredFingerprint` vs. Reverse-Re-Compute) hasht konsistent;
+v6-Artefakt → Exit 8 `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` (Regressionstest);
+Parser nutzt weiterhin den Artefakt-Algo für die Integritätsprüfung (`c4846667`).
+Außerdem (Review-Entscheidung 2026-07-03): das **Plan-Artefakt** bekommt ein
+`fingerprintAlgorithm`-Feld, konsistent zum Rollback-Artefakt —
+`MigrationPlanArtifact` + Builder + kanonische JSON-Serialisierung + Validator
+(non-blank); rein additiv-informativ (kein `semanticExtensions`-Flag nötig, da
+Konsumenten das Feld nicht verstehen MÜSSEN, um das Artefakt korrekt zu nutzen —
+es macht die persistierten Fingerprint-Werte erst extern interpretierbar).
+
+**AP4 — SQLite-Reverse-UNIQUE-Fix.**
+UNIQUE-Autoindizes (origin `u`) nicht mehr verwerfen: Single-Column → `unique: true`
+auf der Spalte (PK-Autoindizes weiter überspringen); Multi-Column → benannter
+Constraint mit Namen aus dem `sqlite_master`-SQL-Text (Substrat:
+`SqliteCheckConstraintScanner`-Präzedenz, `9a4ea9f4`). Die
+Multi-Column-Namensrekonstruktion ist **Teil dieses Slices** (Review-Entscheidung
+2026-07-03) — beide Varianten sind derselbe Verwerf-Bug und werden zusammen behoben.
+Round-Trip-Regressionstests: Reverse einer Tabelle mit inline-UNIQUE (single + multi)
+verliert den Constraint nicht mehr; `generate(reverse)` trägt UNIQUE.
+
+**AP5 — Live-Abnahme (Runtime-Image, Smoke-artig).**
+Siehe Abnahme unten; die Probe-Matrix wird als Regressionstest auf
+Integrationstest-Ebene verankert (Muster: bestehende
+`SqliteMigrateRoundTripIntegrationTest`).
+
+**AP6 — Doku.**
+ADR (nächste freie Nummer, voraussichtlich 0026): „Dialektbewusste
+Fingerprint-Kanonisierung im Post-Compare" — Entscheidung D1–D3 (Projektion statt
+Prädikat, v7-Bump, gewollte Divergenz zu `schema compare`). Anwenderhandbuch: Hinweis,
+dass ein d-migrate-Update mit Fingerprint-Bump bestehende Rollback-Artefakte und
+Overlay-Pins invalidiert (Verhalten wie bei früheren Bumps, jetzt dokumentiert).
+`make docs-check` grün.
+
+## Abnahme (Slice-DoD)
+
+1. Alle fünf Typ-Proben der Matrix: `migrate --execute` → **Exit 0**; `text`-Kontrolle
+   bleibt 0; die AP0-Zusatzproben (`text(50)`, `char(10)`, `uuid`, `json`) ebenfalls 0.
+2. UNIQUE-Szenario aus dem Fulltext-Slice (benannter Single-Column-UNIQUE via
+   Table-Rebuild) → **Exit 0**; Reverse-Fidelity: `generate(reverse)` trägt den UNIQUE.
+   Multi-Column-inline-UNIQUE: frisches `migrate --execute` → **Exit 0**, Reverse
+   rekonstruiert den benannten Constraint (Name aus `sqlite_master`), Round-Trip
+   verlustfrei.
+3. **Gegenprobe (a):** `schema compare` erkennt `smallint→integer` weiterhin als
+   Unterschied.
+4. Rollback-Round-Trip mit v7-Artefakt grün (migrate → rollback --execute);
+   v6-Artefakt wird mit Exit 8 `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` abgelehnt.
+   Ein mit `--plan-artefact` emittiertes Plan-Artefakt trägt
+   `fingerprintAlgorithm = "schema-fingerprint-v7"`.
+5. Regressionstests auf Fingerprint-/Compare-Ebene (AP2/AP3-Testliste); Modul-Checks
+   grün, Kover ≥ 90 % pro berührtem Modul.
+6. MySQL/PG: in AP0 belegte Kanten sind kanonisiert (oder belegt kantenfrei =
+   Identity); keine Verhaltensänderung für fidelity-erhaltende Round-Trips.
+
+## Nicht-Scope
+
+- Kein neues Typ-Mapping (die Abflachung selbst ist korrekt und gewollt, SQLite hat nur
+  vier Storage-Klassen).
+- Kein Reverse-„Raten" des Ursprungstyps aus Werten.
+- `schema compare` / Diff-Engine / Generate-Pfad unverändert (D3).
+- `enum`-CHECK-Äquivalenz (falls AP0 sie als eigene Drift-Familie belegt → eigenes
+  Ticket).
+- Die `identifier`-64-bit-Entscheidung bleibt eigenes Ticket
+  ([`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md));
+  dieser Slice schaltet dort Option 2 frei (Folge-Effekt).
+
+## Review-Punkte (offen für den Plan-Review)
+
+- ~~**R1**~~ **entschieden (Review 2026-07-03):** Live-Komposition
+  `SqliteTypeMapping(SqliteTypeMapper.toSql(t))` + Property-Tests (Option A, keine
+  zweite Wahrheit pflegen; eingearbeitet in AP1). Rückfallpunkt: erweist sich
+  `mapColumn` im Bau als zu sperrig (Notes/Seiteneffekte), ist die explizite Tabelle
+  mit kompositions-abgeleitetem Test der dokumentierte Plan B.
+- ~~**R2**~~ **entschieden (Review 2026-07-03):** Multi-Column-UNIQUE-Namensrekonstruktion
+  bleibt im Slice (AP4 + Abnahme 2).
+- ~~**R3**~~ **entschieden (Review 2026-07-03):** das Plan-Artefakt bekommt das
+  `fingerprintAlgorithm`-Feld (eingearbeitet in AP3 + Abnahme 4).
