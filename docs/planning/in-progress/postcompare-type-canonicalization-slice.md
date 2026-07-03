@@ -409,8 +409,8 @@ zu `effectivePrimaryKey`, v3) — in AP2 aufgenommen, teilt den v7-Bump.
   ergänzt (mit explizitem PK rekonstruiert PG korrekt).
 
 Der Probe-Harness (Schemata + Runner) ist der Seed für den AP5-Smoke
-(`smoke-types.sh`); Roh-Ergebnisse unter `examples/sample-db/.cache/ap0/`
-(gitignored), die Tabellen oben sind die festgehaltene Evidenz.
+(`smoke-types.sh`); Roh-Ergebnisse liegen im Sample-DB-Harness unter `.cache/ap0/`
+(gitignored, kein Artefakt im Repo), die Tabellen oben sind die festgehaltene Evidenz.
 
 **Live-Stand nach AP3 (2026-07-03, volle Matrix, Runtime-Image):** alle 21
 Typ-Proben **Exit 0 auf allen drei Dialekten** — sämtliche Kanten-Tabellen-Fälle
