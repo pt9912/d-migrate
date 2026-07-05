@@ -39,6 +39,12 @@ getrackt.
 
 #### Fixed
 
+- **`enum` im migrate-Pfad**: der Diff-/`migrate`-Pfad rendert Enums jetzt konsistent
+  zum `schema generate` — MySQL nativ als `ENUM('…')`, PostgreSQL-`refType`-Enum als
+  Typreferenz auf den per `CREATE TYPE` erzeugten Typ (statt still zu bloßem `TEXT`).
+  Die verbleibenden Inline-Fälle (PostgreSQL inline-`values`, alle SQLite-Enums)
+  degradieren weiter zu `TEXT`, machen das aber jetzt **laut** über `W134` (statt
+  stillem Wertverlust) — an allen Renderpfaden (CREATE TABLE, ADD COLUMN, SQLite-Rebuild).
 - **Transfer-Datentreue PG → MySQL**: PG-`text[]` → MySQL-`JSON` (Wert als
   JSON-Array gebunden) und pgjdbc-`PGobject` (z. B. `tsvector`) → String-Bind
   statt Java-Serialisierung.

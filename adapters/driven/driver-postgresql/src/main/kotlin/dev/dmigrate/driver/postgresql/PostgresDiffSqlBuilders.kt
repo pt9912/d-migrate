@@ -26,6 +26,18 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
 
     fun columnLine(name: String, col: ColumnDefinition): String {
+        // Enum-Degradations-Slice (AP2): a `refType` enum references its native
+        // PostgreSQL type (created by the CreateCustomType op → `CREATE TYPE … AS
+        // ENUM`) instead of degrading to bare TEXT — mirrors the generate path
+        // (PostgresColumnConstraintHelper). Only the type NAME is needed, so no
+        // schema lookup. Inline-values enums (no refType) stay TEXT (2b / W134).
+        (col.type as? NeutralType.Enum)?.refType?.let { refType ->
+            val refParts = mutableListOf(quote(name), quote(refType))
+            if (col.required) refParts += "NOT NULL"
+            col.default?.let { refParts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
+            if (col.unique) refParts += "UNIQUE"
+            return refParts.joinToString(" ")
+        }
         val parts = mutableListOf<String>()
         parts += quote(name)
         parts += typeMapper.toSql(col.type)

@@ -99,3 +99,24 @@ entries:
         path_type: production
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
         path_type: production
+
+  # W134 — enum-degradation slice (Option 2a): an enum column the migrate/diff path cannot
+  # materialise natively is rendered as bare TEXT (declared values not enforced). Emitted for
+  # PostgreSQL inline-`values` enums (no refType) and for ALL SQLite enums, at every column-
+  # render site (CREATE TABLE, ADD COLUMN, table rebuild). NOT emitted for MySQL (native ENUM)
+  # nor PG refType (native CREATE TYPE reference) — those round-trip faithfully. Option 2b would
+  # add inline TEXT+CHECK fidelity + reverse reconstruction.
+  - code: W134
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffTableOpsEnumTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffTableOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteEnumDegradation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt"
+        path_type: production

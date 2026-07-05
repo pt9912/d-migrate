@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
@@ -60,6 +61,7 @@ internal object PostgresDiffTableOps {
             append("\n);")
         }
         ctx.emit(op, text)
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) warnIfDegradingEnum(op, ctx, colName, col)
         for (index in resolvedIndices) {
             ctx.emit(op, ctx.sql.createIndexSql(tableName, index))
         }
@@ -89,6 +91,7 @@ internal object PostgresDiffTableOps {
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+        warnIfDegradingEnum(op, ctx, column, op.column)
     }
 
     fun renderDropColumn(op: DiffOperation.DropColumn, ctx: PostgresDiffRenderContext) {
@@ -214,6 +217,31 @@ internal object PostgresDiffTableOps {
                 "PK constraint name; a non-conventional name will let the IF EXISTS swallow the " +
                 "mismatch and leave the PK in place.",
         )
+    }
+
+    /**
+     * Enum-Degradations-Slice (AP3, W134). A PostgreSQL inline-`values` enum
+     * (no `refType`) still renders as bare TEXT in the migrate/diff path — the
+     * `refType` path ([PostgresDiffSqlBuilders.columnLine]) is the faithful one.
+     * Make the value-enforcement loss loud instead of silent (DoD-Invariante).
+     * UP only: both call sites return early for the DOWN direction.
+     */
+    private fun warnIfDegradingEnum(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        colName: String,
+        col: ColumnDefinition,
+    ) {
+        val type = col.type
+        if (type is NeutralType.Enum && type.refType == null) {
+            ctx.warning(
+                op,
+                "Enum column `$colName` is migrated as bare TEXT; the declared values are not " +
+                    "enforced in the target (native enum materialisation is not yet implemented in the " +
+                    "PostgreSQL migrate/diff path — model the enum as a custom type for a native CREATE TYPE).",
+                code = "W134",
+            )
+        }
     }
 
     private fun TableDefinition.hasGeometryColumns(): Boolean =

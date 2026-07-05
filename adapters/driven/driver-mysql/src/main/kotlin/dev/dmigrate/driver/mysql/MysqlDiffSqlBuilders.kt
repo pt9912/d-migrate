@@ -24,6 +24,14 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.MYSQL)
 
     fun columnLine(name: String, col: ColumnDefinition): String {
+        // Enum-Degradations-Slice (AP1): a MySQL enum renders as a native
+        // `ENUM('a','b')` — mirror the generate path (MysqlEnumColumnRenderer) so
+        // `migrate` == `generate` instead of degrading to bare TEXT. MySQL enums
+        // always carry inline values (no standalone enum type), so the diff path
+        // needs no schema lookup.
+        (col.type as? NeutralType.Enum)?.values?.let { values ->
+            return MysqlEnumColumnRenderer.inline(quote(name), col, values, typeMapper::toDefaultSql)
+        }
         val parts = mutableListOf<String>()
         parts += quote(name)
         parts += typeMapper.toSql(col.type)

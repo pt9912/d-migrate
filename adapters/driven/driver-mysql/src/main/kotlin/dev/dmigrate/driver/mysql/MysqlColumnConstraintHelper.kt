@@ -69,14 +69,8 @@ internal class MysqlColumnConstraintHelper(
         return columnSql(tableName, colName, col, schema)
     }
 
-    private fun columnEnumInline(colName: String, col: ColumnDefinition, values: List<String>): String {
-        val enumDef = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
-        val parts = mutableListOf(quoteIdentifier(colName), "ENUM($enumDef)")
-        if (col.required) parts += "NOT NULL"
-        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
-        if (col.unique) parts += "UNIQUE"
-        return parts.joinToString(" ")
-    }
+    private fun columnEnumInline(colName: String, col: ColumnDefinition, values: List<String>): String =
+        MysqlEnumColumnRenderer.inline(quoteIdentifier(colName), col, values, typeMapper::toDefaultSql)
 
     private fun columnDomain(colName: String, col: ColumnDefinition, customType: CustomTypeDefinition): String {
         val parts = mutableListOf(quoteIdentifier(colName), customType.baseType ?: "TEXT")

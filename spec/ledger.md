@@ -65,6 +65,7 @@ neuen Version.
 | W129 - W131 | Cross-Dialect-Partitionierung PG↔MySQL: timestamptz→UTC-Normalisierung, HASH-Platzierungsdivergenz, gehobener Partition-Index umbenannt |
 | W132 | Cross-Dialect: `fulltext`-Spalte zu TEXT degradiert (Volltext-Suche nicht erhalten; manueller `FULLTEXT`-Index in MySQL bzw. FTS5-Virtual-Table in SQLite nötig) |
 | W133 | PostgreSQL-Generate: `FULLTEXT`-Index ohne `tsvector`-Spalte nicht expandierbar (keine GiST-Volltext-Spalte vorhanden; manuell `tsvector`-Spalte + `tsvector_update_trigger` ergänzen oder MySQL/SQLite als Ziel wählen) |
+| W134 | Migrate: `enum`-Spalte als bloßes `TEXT` migriert, Werte nicht durchgesetzt (PostgreSQL inline-`values`-Enum ohne `refType` sowie alle SQLite-Enums; nativ round-trippen nur MySQL `ENUM` und PG-`refType`-Typreferenz — für inline-Fidelity Custom-Type/`refType` verwenden) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

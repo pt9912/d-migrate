@@ -98,6 +98,23 @@ internal class SqliteRebuildRenderer(
         emitRebuildSequence(plan, ctx)
         emitPreflightInfoDiagnostics(plan, ctx)
         emitCastPreflightInfoDiagnostics(plan, ctx)
+        warnRebuiltEnumColumns(plan, ctx)
+    }
+
+    /**
+     * Enum-Degradations-Slice (AP3, W134). A rebuild recreates the target table
+     * through [SqliteDiffSqlBuilders.columnLine] ([buildCreateTempSql]), which
+     * renders SQLite enums as bare TEXT (no native enum). Make the value-
+     * enforcement loss loud rather than silent (DoD-Invariante). UP only — the
+     * DOWN rebuild restores the pre-reshape table, whose columns were already
+     * reported on the way up.
+     */
+    private fun warnRebuiltEnumColumns(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
+        if (ctx.direction != SqliteRenderDirection.UP) return
+        val op = plan.bucketOperations.firstOrNull() ?: return
+        for ((colName, col) in plan.newTable.columns.inOrdinalOrder()) {
+            SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
+        }
     }
 
     private fun emitCastPreflightBlockersIfAny(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext): Boolean {
