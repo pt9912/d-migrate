@@ -57,4 +57,17 @@ class ReverseAutoincrementResolverTest : FunSpec({
         val cfg = tempConfig("reverse:\n  sqlite:\n    autoincrement_width: 16\n")
         resolver(configPathFromCli = cfg).resolve(null) shouldBe SqliteAutoincrementReverse.IDENTIFIER
     }
+
+    // Review-Härtung (F1): die Präferenz ist optional — ein explizit angegebener,
+    // aber fehlender --config-Pfad blockiert den Reverse NICHT (bewusst lenient,
+    // anders als die Connection-/Checkpoint-Resolver), sondern fällt zum Default.
+    test("explicit but missing --config is lenient → conservative default (no throw)") {
+        val missing = Path.of("/tmp/dmigrate-missing-cli-${System.nanoTime()}.yaml")
+        resolver(configPathFromCli = missing).resolve(null) shouldBe SqliteAutoincrementReverse.IDENTIFIER
+    }
+
+    test("flag short-circuits the config read entirely") {
+        val missing = Path.of("/tmp/dmigrate-missing-cli-${System.nanoTime()}.yaml")
+        resolver(configPathFromCli = missing).resolve(64) shouldBe SqliteAutoincrementReverse.BIGINTEGER_IDENTITY
+    }
 })

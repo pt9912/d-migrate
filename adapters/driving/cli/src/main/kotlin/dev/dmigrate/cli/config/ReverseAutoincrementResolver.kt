@@ -16,10 +16,12 @@ import java.nio.file.Paths
  * The surface vocabulary is dialect-neutral *width* (`32` | `64`) — it decouples
  * the stable config/CLI contract from internal neutral-type names; this resolver
  * maps it onto the internal [SqliteAutoincrementReverse]. Path resolution follows
- * the same `--config` > `D_MIGRATE_CONFIG` > default precedence as the other
- * config sections (mirrors [PipelineCheckpointResolver]). A missing or
- * unparseable config, or an unrecognised width, yields the conservative default —
- * the preference is optional and never blocks the reverse.
+ * the same `--config` > `D_MIGRATE_CONFIG` > default precedence as the other config
+ * sections, but is **deliberately lenient** — unlike the connection/checkpoint
+ * resolvers, which throw on a missing explicit `--config`, this one treats *any*
+ * absent, unparseable, `reverse:`-less, or unrecognised-width config as "no
+ * preference declared" and returns the conservative default. The reverse preference
+ * is optional and must never block the reverse.
  */
 class ReverseAutoincrementResolver(
     private val configPathFromCli: Path? = null,
@@ -37,6 +39,10 @@ class ReverseAutoincrementResolver(
             envLookup = envLookup,
             defaultConfigPath = defaultConfigPath,
         ).resolve()
+        // Deliberately lenient (unlike the connection/checkpoint resolvers, which
+        // throw on a missing explicit --config): the reverse preference is optional
+        // and must never block the reverse — a missing config just means "no
+        // preference declared" → conservative default.
         if (!Files.isRegularFile(effective.path)) return null
         val parsed: Any? = try {
             val settings = LoadSettings.builder().build()
