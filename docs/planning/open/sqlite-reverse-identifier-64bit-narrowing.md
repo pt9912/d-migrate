@@ -56,7 +56,7 @@ Post-Compare-Drift mehrteilig (Typ + Default + effektiver PK). **Mit** explizite
 `primary_key` rekonstruiert der PG-Reverse `identifier`/`auto_increment` dagegen
 korrekt (verbleibende `required`-Asymmetrie übernimmt der Kanonisierungs-Slice,
 Abnahme 8). Verwandter Generate-Aspekt (implizite PK-Materialisierung):
-[`generate-implicit-identifier-pk-materialization.md`](../in-progress/generate-implicit-identifier-pk-materialization.md).
+[`generate-implicit-identifier-pk-materialization.md`](../done/generate-implicit-identifier-pk-materialization.md).
 
 **Update 2026-07-05:** Der PG-`identifier`-only-PK-Aspekt ist mit jenem Slice
 **geliefert** — Generate materialisiert den effektiven PK jetzt zentral im

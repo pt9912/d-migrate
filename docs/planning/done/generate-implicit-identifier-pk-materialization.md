@@ -1,13 +1,12 @@
 # Slice: Impliziten `identifier`-PK im Generate materialisieren (MySQL-KEY + SQLite-Dedup, dialektuniform)
 
-> Status: **In Progress 2026-07-05 — AP1–AP4 implementiert + live-verifiziert
-> (Docker-`check` grün, Typ-Smoke grün); Plan-Review erledigt 2026-07-05
-> (Entscheidungen unten).** Aktiviert aus dem
-> gleichnamigen `open/`-Ticket (Draft/Trigger-Watch) als **direkter Folge-Slice**
-> der Post-Compare-Kanonisierung
-> ([`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md)) —
-> wie dort vorgemerkt. Vor Graduierung nach `done/`: nur noch Commit-Referenz +
-> Closure-Notiz nachtragen.
+> Status: **Done — graduiert 2026-07-05.** AP1–AP4 implementiert, code-review-
+> gehärtet und live-verifiziert (Docker-`check` grün, Typ-Smoke grün, CI grün);
+> Plan-Review R1/R2 entschieden. Commits `263695b9` (Implementierung) + `5567ed14`
+> (Review-Härtung). Aktiviert aus dem gleichnamigen `open/`-Ticket
+> (Draft/Trigger-Watch) als **direkter Folge-Slice** der Post-Compare-Kanonisierung
+> ([`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md)).
+> Closure am Dateiende.
 > Severity: **P2** (zwei **Runtime-Execution-Fehler** auf spec-validen Schemata:
 > ein `identifier`-PK-Schema ist heute je nach Dialekt nicht anlegbar).
 > Trigger: AP0-Probe-Matrix der Kanonisierung (Status-Update 2026-07-03), zwei
@@ -230,3 +229,26 @@ Kanten + allgemeiner Korrektheits-Sweep. **Ein bestätigter Befund behoben, alle
 Re-Verifikation: `:adapters:driven:driver-sqlite:check` grün (inkl. neuem Test),
 `make sample-db-types-smoke` grün (inkl. Rebuild-Fall). Änderung ist
 `driver-sqlite`-intern (keine Signatur-/Cross-Modul-Wirkung) → kein erneuter Full-Check.
+
+## Closure
+
+**Graduiert 2026-07-05.** Alle Arbeitspakete geliefert, live-verifiziert,
+code-review-gehärtet, committet und gepusht (CI grün).
+
+- **AP1** `OperationMapper` materialisiert den effektiven PK zentral (interne
+  `EffectivePrimaryKey`-Regel, Kopie speist `table=` + Op-ID-Payload) — `263695b9`.
+- **AP2** `SqliteDiffSimpleOps` dedupt Inline- vs. Tabellen-PK für Single-Column-
+  `identifier` — `263695b9`.
+- **AP3** Typ-Smoke `[PK]`-Fälle (SQLite `identifier_pk` frisch + Rebuild, MySQL
+  `identifier`-only, PG `identifier`-only PK via `information_schema`) —
+  `263695b9`, Rebuild-Fall `5567ed14`.
+- **AP4** CHANGELOG + 64bit-Ticket-Update + Lifecycle-Graduierung — `263695b9`.
+- **Review-Härtung** geteilter `SqliteDiffSqlBuilders.primaryKeyClause` für beide
+  Diff-Emitter (Rebuild-Emitter-Doppel-PK, vom Code-Review gefunden) — `5567ed14`.
+
+**DoD 1–5 erfüllt** (Live-Smoke + Docker-`check` + CI grün). Folge-Tickets bleiben
+getrackt: [`enum-generate-silent-degradation.md`](../open/enum-generate-silent-degradation.md)
+(Scope-Entscheidung Option 1/2 nach diesem Slice offen) und
+[`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
+(PG-`identifier`-PK-Aspekt hier mitbehoben; nur noch die 64-bit-Wertebereichsfrage /
+Option 2 offen).
