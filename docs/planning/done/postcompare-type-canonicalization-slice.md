@@ -388,7 +388,7 @@ ohne `primary_key`). `enum` ist eine **reine Typ-Kante**: das Generate-DDL ist b
 `TEXT` ohne CHECK — kein zusätzliches Constraint-Drift-Ticket nötig (Werteverlust ist
 Generate-Degradation, nicht Post-Compare-Thema; als eigener Befund getrackt, weil
 zudem **still**:
-[`../next/enum-generate-silent-degradation.md`](../next/enum-generate-silent-degradation.md)).
+[`enum-migrate-silent-degradation.md`](enum-migrate-silent-degradation.md)).
 
 **Kanten-Tabelle PostgreSQL (2 Kanten):** `email`→`text(254)` (`VARCHAR(254)`),
 `enum`→`text` (Generate rendert `TEXT`). Alle übrigen Typen inkl. `datetime(tz)`,
@@ -533,6 +533,6 @@ verifiziert; kein offener Punkt mehr.
 **Slice-DoD (Abnahme 1–9) erfüllt.** Ausgelagerte Nebenbefunde bleiben als
 eigene Tickets getrackt:
 [`generate-implicit-identifier-pk-materialization.md`](../done/generate-implicit-identifier-pk-materialization.md),
-[`enum-generate-silent-degradation.md`](../next/enum-generate-silent-degradation.md),
+[`enum-migrate-silent-degradation.md`](enum-migrate-silent-degradation.md),
 [`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
 (dort ist durch `v7` jetzt Option 2 freigeschaltet).

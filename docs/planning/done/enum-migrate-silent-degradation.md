@@ -1,11 +1,10 @@
 # `enum`-Werte gehen im `migrate`-Diff-Pfad still verloren (Generate rendert nativ)
 
-> Status: **Scope-Schnitt 2026-07-05, Plan-Review eingearbeitet (F1–F7) — Option 2a + W134.**
-> Vorabklärung geklärt, Scope entschieden (Entscheidung + Round-Trip-Matrix unten),
-> Arbeitspakete + Abnahme geschnitten. Wandert mit dem ersten Code-Commit nach `in-progress/`.
-> Hinweis (Review F2): Der Dateiname `enum-generate-silent-degradation.md` ist **historisch** —
-> der Befund liegt im `migrate`/Diff-Pfad, **nicht** im Generate (der rendert nativ);
-> Umbenennung (`…migrate-silent-degradation`) bei der Graduierung erwägen.
+> Status: **Done — graduiert 2026-07-05.** Option 2a + W134 implementiert, live-verifiziert,
+> zweifach code-review-gehärtet (Docker-`check` + `docs-check` + Live-Abnahme grün);
+> Plan-Review 1 Runde (F1–F7). Commits siehe „## Closure". Bei der Graduierung von
+> `enum-generate-silent-degradation.md` umbenannt (Review F2 — der Befund liegt im
+> `migrate`-Pfad, nicht im Generate).
 > Trigger: AP0-Probe-Matrix des Typ-Kanonisierungs-Slices
 > ([`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md),
 > Status-Update 2026-07-03) plus gezielte Lautstärke-Nachprüfung der Reports.
@@ -230,3 +229,20 @@ PG-`refType`-Enum → `CREATE TYPE … AS ENUM` + typisierte Spalte; PG-inline +
 - Keine Änderung am Kanonisierungs-Slice (dort bleibt `enum` eine Typ-Kante; sollte
   2b später native Typen einführen, ändern sich die Kanten-Tabellen dort
   mit — der Kompositions-Kanonisierer folgt automatisch).
+
+## Closure (2026-07-05)
+
+Geliefert + graduiert (`next`→`done`, umbenannt von `enum-generate-silent-degradation.md`).
+
+- `387f35b8` Scope-Schnitt (`open`→`next`).
+- `9c47d378` Implementierung AP1–AP5: MySQL natives `ENUM`, PG `refType`-Typreferenz
+  (Ordering `TYPES<TABLES` via Phasen), `W134` an CreateTable/AddColumn/SQLite-Rebuild,
+  Ledger-Eintrag; 9 Diff-Enum-Tests.
+- `66d62865` Review-Härtung R1: F2 Rebuild-`W134`-Test, F1-KDoc ehrlich.
+- `18352b13` Review-Härtung R2: F1 MySQL-`W134` (refType/valueless), F3 Fast-Path-Guards
+  (FK/`SequenceNextVal` erhalten), F4 `AlterColumnType`→Enum.
+
+**DoD erfüllt:** `migrate` == `generate` für die treuen Fälle, keine neuen Post-Compare-
+Kanten, nichts still (`W134`). Live: MySQL `ENUM('open','closed')`; PG `refType`
+`CREATE TYPE`+Typreferenz (kein `W134`); PG inline + SQLite → `TEXT`+`W134`.
+**Offener Folge-Slice:** **2b** (Inline `TEXT`+`CHECK` im Diff + Reverse-Rekonstruktion).
