@@ -29,8 +29,15 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
         // `migrate` == `generate` instead of degrading to bare TEXT. Handles the
         // inline-`values` form (the diff builder has no schema); a `refType` enum
         // is blocked upstream for MySQL — see MysqlEnumColumnRenderer.
+        // Review F3: only take this fast path when the column carries neither an
+        // inline FK nor a SequenceNextVal default — otherwise fall through to the
+        // generic body, which renders `REFERENCES …` and applies the sequence-
+        // trigger bypass (the ENUM type degrades to TEXT there, but FK/sequence
+        // semantics are preserved instead of silently dropped).
         (col.type as? NeutralType.Enum)?.values?.let { values ->
-            return MysqlEnumColumnRenderer.inline(quote(name), col, values, typeMapper::toDefaultSql)
+            if (col.references == null && col.default !is DefaultValue.SequenceNextVal) {
+                return MysqlEnumColumnRenderer.inline(quote(name), col, values, typeMapper::toDefaultSql)
+            }
         }
         val parts = mutableListOf<String>()
         parts += quote(name)

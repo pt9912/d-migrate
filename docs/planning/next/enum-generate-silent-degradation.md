@@ -154,8 +154,9 @@ kein Stopgap-Carve-out.
   Diagnostics reichen ungefiltert durch `toResult()` in `MigrationDdlResult.diagnostics` →
   `SchemaMigrateReport.diagnostics[]` (nur Planner-Diagnostics werden auf BLOCKER gefiltert)
   — kein Notes-Plumbing. **W133 höchster → W134 frei** (W198 reservierte Sonderbande,
-  kollidiert nicht). MySQL braucht kein W134 (2a ist nativ auf allen Pfaden, da `columnLine`
-  gefixt wird).
+  kollidiert nicht). MySQL rendert inline-Enums nativ (kein W134), **warnt aber W134**
+  für ein `refType`/valueless-Enum, das der Diff nicht zu Inline-Werten auflösen kann
+  (Fall-through zu TEXT) — Review-Härtung R2 (F1).
 
 ## Arbeitspakete (Option 2a + W134)
 
@@ -218,15 +219,14 @@ PG-`refType`-Enum → `CREATE TYPE … AS ENUM` + typisierte Spalte; PG-inline +
 - **2b (Inline-Fidelity + Reverse-Rekonstruktion)** — PG-inline + SQLite `TEXT`+`CHECK`
   im Diff-Pfad **plus** Reverse-Pendant `TEXT`+`CHECK (col IN …)` → `Enum` (bzw.
   Kanonisierer-Fold). Eigener Folge-Slice (größter Reverse-Anteil); bis dahin trägt W134.
-- **Weitere Enum-Render-Pfade (Code-Review-Residuen — alle near-zero-Realismus bzw.
-  laut-geblockt, NICHT still im realistischen Fall):** (a) ein `refType`-Enum **auf
-  MySQL** (Werte nur via `schema.customTypes` auflösbar, die der Diff-`columnLine` nicht
-  sieht) — der begleitende `CreateCustomType`-Op ist für MySQL hart geblockt
-  (`DIALECT_UNSUPPORTED` → laut), nur ein dangling `refType` fiele still auf TEXT;
-  (b) ein Enum mit inline-FK/`SequenceNextVal`-Default (der Enum-Zweig `return`t vor der
-  generischen `references`/Sequence-Behandlung — konsistent mit dem Generate-Pfad);
-  (c) `AlterColumnType` **auf** einen Enum (nur mit USING-Overlay; MySQL blockt via
-  `isSafeImplicitCast`). Bei belegtem Bedarf ins Ur-Ticket bzw. 2b aufnehmen.
+- ~~Weitere Enum-Render-Pfade (Code-Review-Residuen)~~ **— in Review-Härtung R2 alle
+  behoben, nicht mehr Nicht-Scope:** (a) ein `refType`/valueless-Enum **auf MySQL**
+  (Fall-through zu TEXT) warnt jetzt **W134** (`MysqlDiffTableOps`); (b) ein Enum mit
+  inline-FK/`SequenceNextVal`-Default nimmt den nativen Fast-Path **nicht** mehr — es
+  fällt auf den generischen Rumpf durch, der `REFERENCES …` bzw. den Sequence-Bypass
+  erhält (Guard in `MysqlDiffSqlBuilders`/`PostgresDiffSqlBuilders`); (c)
+  `AlterColumnType` **auf** einen Enum rendert `refType` als Typreferenz bzw. warnt
+  W134 für Inline (`PostgresDiffTableOps.renderAlterColumnType`, UP-only).
 - Keine Änderung am Kanonisierungs-Slice (dort bleibt `enum` eine Typ-Kante; sollte
   2b später native Typen einführen, ändern sich die Kanten-Tabellen dort
   mit — der Kompositions-Kanonisierer folgt automatisch).

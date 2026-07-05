@@ -113,11 +113,27 @@ internal object PostgresDiffTableOps {
             PostgresUsingOverlayResolver.resolve(op, ctx) ?: return
         }
         val usingClause = usingExpression?.let { " USING $it" }.orEmpty()
+        // Enum-Degradations-Slice (Review F4): altering a column TO a `refType` enum
+        // references the native type; an inline-values enum degrades to TEXT and is
+        // made loud via W134 (UP only) instead of silently dropping the enum values.
+        val typeSql = (targetType as? NeutralType.Enum)?.refType?.let { ctx.sql.quote(it) }
+            ?: ctx.sql.toSql(targetType)
         ctx.emit(
             op,
             "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
-                "TYPE ${ctx.sql.toSql(targetType)}$usingClause;",
+                "TYPE $typeSql$usingClause;",
         )
+        if (ctx.direction == PostgresRenderDirection.UP &&
+            targetType is NeutralType.Enum && targetType.refType == null
+        ) {
+            ctx.warning(
+                op,
+                "Column `$table.$column` is altered to enum type but rendered as bare TEXT; the " +
+                    "declared values are not enforced (native enum materialisation is not yet in the " +
+                    "PostgreSQL migrate ALTER path — model the enum as a custom type for a native type).",
+                code = "W134",
+            )
+        }
     }
 
     fun renderAlterColumnNullability(op: DiffOperation.AlterColumnNullability, ctx: PostgresDiffRenderContext) {

@@ -31,7 +31,10 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         // ENUM`) instead of degrading to bare TEXT — mirrors the generate path
         // (PostgresColumnConstraintHelper). Only the type NAME is needed, so no
         // schema lookup. Inline-values enums (no refType) stay TEXT (2b / W134).
-        (col.type as? NeutralType.Enum)?.refType?.let { refType ->
+        // Review F3: only take this fast path with no inline FK — otherwise fall
+        // through to the generic body so the `REFERENCES …` clause is preserved
+        // (the ENUM type degrades to TEXT there rather than dropping the FK).
+        (col.type as? NeutralType.Enum)?.refType?.takeIf { col.references == null }?.let { refType ->
             val refParts = mutableListOf(quote(name), quote(refType))
             if (col.required) refParts += "NOT NULL"
             col.default?.let { refParts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }

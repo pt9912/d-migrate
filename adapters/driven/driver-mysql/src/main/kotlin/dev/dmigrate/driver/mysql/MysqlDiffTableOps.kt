@@ -65,6 +65,7 @@ internal object MysqlDiffTableOps {
             append("\n);")
         }
         ctx.emit(op, text)
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) warnIfDegradingEnum(op, ctx, colName, col)
         for (idx in op.table.indices) {
             // VA3: ein Index auf eine Geometriespalte → MySQL SPATIAL INDEX (statt
             // die ganze Tabelle zu blocken). Normalisiert auch dialektfremde Typen
@@ -143,9 +144,37 @@ internal object MysqlDiffTableOps {
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+        warnIfDegradingEnum(op, ctx, column, op.column)
         if (seqDefault != null) {
             MysqlDiffSequenceOps.emitSupportTriggerForColumn(
                 op, ctx, table, column, seqDefault.sequenceName,
+            )
+        }
+    }
+
+    /**
+     * Enum-Degradations-Slice (AP3, W134). MySQL materialises enums inline as
+     * native `ENUM('…')` ([MysqlDiffSqlBuilders.columnLine]) — the faithful path.
+     * But an enum WITHOUT inline `values` (a `refType` the diff cannot resolve, or a
+     * dangling reference) falls through to bare TEXT. Make that loud rather than
+     * silent (Review F1). The realistic `refType` case is already blocked upstream
+     * (`MysqlDiffOtherOps.renderCreateCustomType`); this covers the dangling residual.
+     * UP only: both call sites return early for the DOWN direction.
+     */
+    private fun warnIfDegradingEnum(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        colName: String,
+        col: ColumnDefinition,
+    ) {
+        val type = col.type
+        if (type is NeutralType.Enum && type.values == null) {
+            ctx.warning(
+                op,
+                "Enum column `$colName` is migrated as bare TEXT; the declared values are not " +
+                    "enforced in the target (a refType enum could not be resolved to inline values — " +
+                    "MySQL materialises enums inline, so model it with inline `values`).",
+                code = "W134",
             )
         }
     }
