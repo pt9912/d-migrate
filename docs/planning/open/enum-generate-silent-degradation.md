@@ -23,7 +23,8 @@ Die `values`-Liste wird dabei **vollständig verworfen** — im Ziel gibt es wed
 nativen Enum-Typ noch einen CHECK, d. h. keine Werte-Durchsetzung. Und: der
 Migrate-Report ist dazu **komplett still** (`diagnostics: []`, `blockers: []`, keine
 Note auf stderr) — ein stiller Fidelity-Verlust, der dem Loud-Prinzip widerspricht
-(Präzedenz: Fulltext-Degradationen sind mit Notes/W-Codes laut, ADR 0015-Muster).
+(Präzedenz: Fulltext-Degradationen sind mit Notes/W-Codes laut,
+[ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md)-Muster).
 
 Abgrenzung: Der Reverse liest das Ziel konsistent als `text` zurück; der daraus
 folgende Post-Compare-Drift ist eine gewöhnliche Typ-Kante und wird vom
@@ -45,8 +46,16 @@ Kanonisierungs-Slice behandelt. **Dieses Ticket betrifft nur die Generate-Seite*
   [`MysqlDiffTableOps`](../../../adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDiffTableOps.kt))
   → bloßes `TEXT` trotz gesetzter `values` (deckt sich mit der
   AP0-Live-Evidenz). `schema generate` und `migrate` rendern damit
-  verschiedene Spaltentypen für dasselbe Soll — beim Scope-Schnitt
-  vereinheitlichen.
+  verschiedene Spaltentypen für dasselbe Soll. Derselbe Generate-vs-Migrate-Split
+  besteht strukturell auch auf **SQLite**
+  ([`SqliteTypeMapper`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapper.kt)
+  mappt `Enum → TEXT` mit dem Kommentar „CHECK constraint added during table
+  generation" — der Diff-Pfad lässt den CHECK also weg); **PostgreSQL** ist dagegen
+  noch **unverifiziert** (der Migrate-Mapper
+  [`PostgresTypeMapper`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTypeMapper.kt)
+  liefert `TEXT`; ob der reine `schema generate`-Pfad einen nativen Enum-Typ
+  rendert, ist offen). Die Vereinheitlichung ist also **dialektübergreifend** zu
+  schneiden, nicht MySQL-lokal.
 - Verhältnis zu Custom-Types: das Neutralmodell kennt Custom-Types (der Fingerprint
   hasht sie); zu klären, ob Inline-`enum` bewusst der degradierte Pfad ist und die
   native Abbildung über Custom-Types laufen soll.
