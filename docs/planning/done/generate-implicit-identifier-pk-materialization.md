@@ -158,7 +158,7 @@ bereits korrekt spezifiziert — es ist ein Generate-Fidelity-Fix). `make docs-c
   ([`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md));
   dieser Slice berührt nur die PK-Materialisierung, nicht die Wertebereichsbreite.
 - **`enum`-Generate-Degradation** ist separat
-  ([`enum-generate-silent-degradation.md`](../open/enum-generate-silent-degradation.md)).
+  ([`enum-generate-silent-degradation.md`](../next/enum-generate-silent-degradation.md)).
 
 ## Plan-Review-Entscheidungen (erledigt 2026-07-05)
 
@@ -247,7 +247,7 @@ code-review-gehärtet, committet und gepusht (CI grün).
   Diff-Emitter (Rebuild-Emitter-Doppel-PK, vom Code-Review gefunden) — `5567ed14`.
 
 **DoD 1–5 erfüllt** (Live-Smoke + Docker-`check` + CI grün). Folge-Tickets bleiben
-getrackt: [`enum-generate-silent-degradation.md`](../open/enum-generate-silent-degradation.md)
+getrackt: [`enum-generate-silent-degradation.md`](../next/enum-generate-silent-degradation.md)
 (Scope-Entscheidung Option 1/2 nach diesem Slice offen) und
 [`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
 (PG-`identifier`-PK-Aspekt hier mitbehoben; nur noch die 64-bit-Wertebereichsfrage /
