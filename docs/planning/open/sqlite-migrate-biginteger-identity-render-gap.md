@@ -2,7 +2,7 @@
 
 > Status: **Draft (Trigger Watch)**
 > Trigger: Abspaltung beim Bau des Reverse-Präferenzen-Slices
-> ([`../in-progress/reverse-preferences.md`](../in-progress/reverse-preferences.md),
+> ([`../done/reverse-preferences.md`](../done/reverse-preferences.md),
 > Nicht-Scope). Der Slice adressiert den **Transfer**-Fall (SQLite reverse →
 > PG/MySQL generate); dieser Befund betrifft `migrate --execute` **gegen ein
 > SQLite-Ziel** mit authored `biginteger`+`generation: identity`.

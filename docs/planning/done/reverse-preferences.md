@@ -1,7 +1,8 @@
 # Slice: Reverse-Präferenzen — deklarierte Auflösung inhärenter Reverse-Mehrdeutigkeiten (Erstfall: SQLite-AUTOINCREMENT-Breite)
 
-> Status: **In Progress 2026-07-05 — AP1–AP5 implementiert + live-verifiziert
-> (Docker-`check` grün, Live-Abnahme grün); Plan-Review erledigt (3 Runden).**
+> Status: **Done — graduiert 2026-07-05.** AP1–AP5 implementiert, live-verifiziert,
+> code-review-gehärtet (Docker-`check` + `docs-check` + Live-Abnahme grün);
+> Plan-Review 3 Runden. Commits `387c0d67` (Impl.) + `4be94b14` (Review-Härtung).
 > Neuer Slice, aus der
 > Exploration zu [`../open/sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
 > hervorgegangen: die dortige **Option 2 (Post-Compare-Fold + Fingerprint-v8)** wird
@@ -301,4 +302,9 @@ keine Golden-Regression), **`make docs-check` grün**, **Live-Abnahme grün**.
   `biginteger`+`identity` (R204) → PG-Generate `BIGSERIAL`; Default → `identifier` →
   `SERIAL`. **DoD 1–7 erfüllt.**
 
-Vor Graduierung nach `done/`: Commit-Referenz + Closure nachtragen.
+**Graduiert nach `done/` 2026-07-05.** Implementierung `387c0d67`; Review-Härtung
+`4be94b14` (Config-Resolver-Leniency ehrlich dokumentiert — Code-Review-Urteil **SHIP**,
+alle kritischen Kanten sauber). Folge-Arbeit offen:
+[`sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md)
+(migrate-gegen-SQLite, zwei Ursachen); das 64bit-Ur-Ticket ist auf „Option 2 abgelöst"
+gesetzt.

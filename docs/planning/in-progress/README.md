@@ -57,7 +57,6 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`reverse-preferences.md`](reverse-preferences.md) | Aktiver Slice-Plan | Muster „deklarierte Reverse-Praeferenzen" (Erstfall SQLite-AUTOINCREMENT-Breite): Praeferenz-Feld auf `SchemaReadOptions` + CLI-Flag `--sqlite-autoincrement-width` + `.d-migrate.yaml`-`reverse:`-Block; verankert per ADR 0027 + Spec `reverse-preference-mechanism.md`. AP1-AP3 gebaut, AP4/AP5 laufen. Loest die 64bit-Transfer-Frage OHNE Fingerprint-Fold/v8-Bump. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

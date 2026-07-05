@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-05
 decision-makers: pt9912
-consulted: docs/planning/in-progress/reverse-preferences.md (Slice-Plan, drei Review-Runden), docs/planning/open/sqlite-reverse-identifier-64bit-narrowing.md (Ur-Ticket)
+consulted: docs/planning/done/reverse-preferences.md (Slice-Plan, drei Review-Runden), docs/planning/open/sqlite-reverse-identifier-64bit-narrowing.md (Ur-Ticket)
 informed: spec/reverse-preference-mechanism.md, spec/type-mapping.md, spec/connection-config-spec.md, spec/cli-spec.md
 ---
 
@@ -112,7 +112,7 @@ Oberfläche in `connection-config-spec.md`, `cli-spec.md` und `type-mapping.md`.
 ## Weitere Informationen
 
 - Slice-Plan (Design D1–D7, AP0–AP5, drei Review-Runden):
-  [`reverse-preferences.md`](../planning/in-progress/reverse-preferences.md).
+  [`reverse-preferences.md`](../planning/done/reverse-preferences.md).
 - Ur-Ticket (durch dieses Muster abgelöste „Option 2"):
   [`sqlite-reverse-identifier-64bit-narrowing.md`](../planning/open/sqlite-reverse-identifier-64bit-narrowing.md).
 - Muster-Präzedenz (querschnittliche Prinzipien als ADR):
