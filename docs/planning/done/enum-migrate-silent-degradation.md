@@ -245,4 +245,5 @@ Geliefert + graduiert (`next`→`done`, umbenannt von `enum-generate-silent-degr
 **DoD erfüllt:** `migrate` == `generate` für die treuen Fälle, keine neuen Post-Compare-
 Kanten, nichts still (`W134`). Live: MySQL `ENUM('open','closed')`; PG `refType`
 `CREATE TYPE`+Typreferenz (kein `W134`); PG inline + SQLite → `TEXT`+`W134`.
-**Offener Folge-Slice:** **2b** (Inline `TEXT`+`CHECK` im Diff + Reverse-Rekonstruktion).
+**Offener Folge-Slice:** **2b** (Inline `TEXT`+`CHECK` im Diff + Reverse-Rekonstruktion) —
+getrackt in [`../open/enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md).
