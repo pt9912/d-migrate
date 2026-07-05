@@ -430,7 +430,7 @@ zu `effectivePrimaryKey`, v3) — in AP2 aufgenommen, teilt den v7-Bump.
 
 **Nebenbefunde außerhalb des Scopes (eigenes Ticket bzw. Ticket-Ergänzung):**
 - **Generate materialisiert den impliziten `identifier`-PK nicht** →
-  [`../next/generate-implicit-identifier-pk-materialization.md`](../next/generate-implicit-identifier-pk-materialization.md):
+  [`../in-progress/generate-implicit-identifier-pk-materialization.md`](../in-progress/generate-implicit-identifier-pk-materialization.md):
   MySQL rendert `INT NOT NULL AUTO_INCREMENT` ohne KEY (Runtime-Fehler „only one auto
   column and it must be defined as a key"); SQLite rendert bei `identifier` +
   explizitem `primary_key` **doppeltes** PRIMARY KEY (SQLITE_ERROR). Beides
@@ -452,7 +452,7 @@ und `identifier_pk` auf PG/MySQL (`required`-Fold). Verbleibende Exit-5-Fälle,
 alle erwartet und getrackt: SQLite `uq_single`/`uq_multi` (Reverse verwirft
 inline-UNIQUE → **AP4**); PG/MySQL `identifier` ohne explizites `primary_key`
 und MySQL-UNIQUE auf `text` ohne `max_length` (Runtime-/Rekonstruktions-Familie →
-[`../next/generate-implicit-identifier-pk-materialization.md`](../next/generate-implicit-identifier-pk-materialization.md)
+[`../in-progress/generate-implicit-identifier-pk-materialization.md`](../in-progress/generate-implicit-identifier-pk-materialization.md)
 bzw. Präfixlängen-Ticket, nicht dieser Slice).
 
 **Live-Stand nach AP4 (2026-07-03):** SQLite `uq_single`/`uq_multi` (und die
@@ -532,7 +532,7 @@ verifiziert; kein offener Punkt mehr.
 
 **Slice-DoD (Abnahme 1–9) erfüllt.** Ausgelagerte Nebenbefunde bleiben als
 eigene Tickets getrackt:
-[`generate-implicit-identifier-pk-materialization.md`](../next/generate-implicit-identifier-pk-materialization.md),
+[`generate-implicit-identifier-pk-materialization.md`](../in-progress/generate-implicit-identifier-pk-materialization.md),
 [`enum-generate-silent-degradation.md`](../open/enum-generate-silent-degradation.md),
 [`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
 (dort ist durch `v7` jetzt Option 2 freigeschaltet).

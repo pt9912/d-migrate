@@ -56,7 +56,13 @@ Post-Compare-Drift mehrteilig (Typ + Default + effektiver PK). **Mit** explizite
 `primary_key` rekonstruiert der PG-Reverse `identifier`/`auto_increment` dagegen
 korrekt (verbleibende `required`-Asymmetrie übernimmt der Kanonisierungs-Slice,
 Abnahme 8). Verwandter Generate-Aspekt (implizite PK-Materialisierung):
-[`generate-implicit-identifier-pk-materialization.md`](../next/generate-implicit-identifier-pk-materialization.md).
+[`generate-implicit-identifier-pk-materialization.md`](../in-progress/generate-implicit-identifier-pk-materialization.md).
+
+**Update 2026-07-05:** Der PG-`identifier`-only-PK-Aspekt ist mit jenem Slice
+**geliefert** — Generate materialisiert den effektiven PK jetzt zentral im
+`OperationMapper`, PG `SERIAL` trägt einen `PRIMARY KEY` im Ziel, und der Reverse
+liest ihn korrekt als `identifier` zurück. Für dieses Ticket bleibt damit nur noch
+die 64-bit-Wertebereichsfrage (Option 2).
 
 ## Nicht-Scope
 

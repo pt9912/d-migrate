@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -52,7 +53,7 @@ internal object SqliteDiffSimpleOps {
         for ((colName, col) in effectiveColumns.inOrdinalOrder()) {
             lines += "    " + ctx.sql.columnLine(colName, col)
         }
-        if (op.table.primaryKey.isNotEmpty()) {
+        if (op.table.primaryKey.isNotEmpty() && !hasInlineIdentifierPrimaryKey(op.table)) {
             lines += "    PRIMARY KEY (" + op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) } + ")"
         }
         for (c in op.table.constraints.sortedBy { it.name }) {
@@ -94,6 +95,22 @@ internal object SqliteDiffSimpleOps {
                 ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
             }
         }
+    }
+
+    /**
+     * SQLite renders an `identifier` column inline as `INTEGER PRIMARY KEY
+     * AUTOINCREMENT` ([SqliteTypeMapper]), so a single-column PK on that
+     * same `identifier` column must NOT also emit a table-level
+     * `PRIMARY KEY (…)` — SQLite rejects the duplicate. Every other PK (a
+     * multi-column PK, or a single-column PK on a non-`identifier` column)
+     * still needs the explicit table-level clause. Pairs with the core-side
+     * `OperationMapper` effective-PK materialisation: identifier-only tables
+     * now arrive with `primaryKey = [id]`, and this dedup keeps them
+     * single-PK.
+     */
+    private fun hasInlineIdentifierPrimaryKey(table: TableDefinition): Boolean {
+        val pk = table.primaryKey
+        return pk.size == 1 && table.columns[pk.single()]?.type is NeutralType.Identifier
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: SqliteDiffRenderContext) {

@@ -57,6 +57,7 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
+| [`generate-implicit-identifier-pk-materialization.md`](generate-implicit-identifier-pk-materialization.md) | Aktiver Slice-Plan | Impliziten `identifier`-PK im Generate materialisieren (AP1-AP4 geliefert + live-gruen): zentral in `OperationMapper` via `EffectivePrimaryKey` (MySQL-KEY, SQLite-Dedup, PG-PK). Direkter Folge-Slice der Post-Compare-Kanonisierung; vor `done/` nur Commit-Ref + Closure. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

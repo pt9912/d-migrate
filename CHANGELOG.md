@@ -58,6 +58,14 @@ getrackt.
   (`schema-fingerprint-v6` → `v7`, invalidiert ältere Rollback-Artefakte/Overlays
   laut per `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` / `OVERLAY_STALE_*_FINGERPRINT`);
   `schema compare` bleibt strukturell streng (ADR-0026).
+- **Generate materialisiert den impliziten `identifier`-Primärschlüssel** — ein
+  spec-valides Schema mit `identifier`-getragenem PK (ohne ausgeschriebenes
+  `primary_key`) ist jetzt auf allen Dialekten anlegbar: MySQL `identifier`-only
+  bekommt die nötige KEY-Klausel für die AUTO_INCREMENT-Spalte (vorher Error 1075),
+  SQLite `identifier` + explizites `primary_key` erzeugt keinen doppelten PK mehr
+  (vorher SQLITE_ERROR), und PG `SERIAL` trägt nun `PRIMARY KEY` im Ziel. Der
+  effektive PK wird zentral im `OperationMapper` über dieselbe
+  `EffectivePrimaryKey`-Regel materialisiert, die Fingerprint und Comparator nutzen.
 
 ## [0.9.8] - 2026-06-14
 

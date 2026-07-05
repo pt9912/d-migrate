@@ -13,10 +13,12 @@
 #   [PG]/[MY] Kanten-Proben + Konvergenz je Dialekt (Compose-Services)
 #
 # Voraussetzung: docker, lokal gebautes d-migrate:dev (docker build --target runtime).
-# `geometry`/`fulltext` sind bewusst NICHT hier (eigene Smokes: spatial/fulltext);
-# `identifier` ohne PK (MySQL) und TEXT-UNIQUE ohne Länge (MySQL) sind getrackte
-# Generate-Befunde (open/generate-implicit-identifier-pk-materialization.md bzw.
-# Präfixlängen-Ticket) — nicht Teil dieses Sensors.
+# `geometry`/`fulltext` sind bewusst NICHT hier (eigene Smokes: spatial/fulltext).
+# Impliziter identifier-PK ist jetzt Teil des Sensors ([PK]): SQLite
+# identifier+primary_key (Doppel-PK-Dedup), MySQL identifier-only (AUTO_INCREMENT-KEY),
+# PG identifier-only (PK-Materialisierung im Ziel) — Slice
+# generate-implicit-identifier-pk-materialization. TEXT-UNIQUE ohne Länge (MySQL)
+# bleibt getracktes Präfixlängen-Ticket, nicht Teil dieses Sensors.
 
 set -euo pipefail
 
@@ -92,10 +94,9 @@ log "[T1] OK — $(echo $SQLITE_TYPES | wc -w) Typen Exit 0"
 
 # ── [T2] UNIQUE-/FK-Folds + Reverse-Fidelity ───────────────────────
 log "[T2] UNIQUE-/FK-Folds..."
-# identifier_pk ist hier bewusst NICHT dabei: identifier + explizites primary_key
-# rendert auf SQLite doppeltes PRIMARY KEY (getrackter Generate-Befund,
-# open/generate-implicit-identifier-pk-materialization.md) — die Probe läuft in
-# [PG]/[MY], wo sie grün ist.
+# identifier_pk (identifier + explizites primary_key) läuft separat in [PK] —
+# der SQLite-Doppel-PK ist mit dem Slice
+# generate-implicit-identifier-pk-materialization behoben.
 for p in uq_single uq_multi fk_colref; do
   rm -f "$WORK/out/$p.db"
   migrate_sqlite "$p" "$p" || fail "[T2] sqlite $p: migrate --execute != 0"
@@ -156,6 +157,20 @@ set -e
   || fail "[T6] schema compare Exit $COMPARE_EXIT statt 1 (Striktheit verloren?)"
 log "[T6] OK — compare meldet Unterschied"
 
+# ── [PK] Impliziter identifier-PK (SQLite-Teil) ────────────────────
+log "[PK] SQLite identifier + explizites primary_key (Doppel-PK-Dedup)..."
+rm -f "$WORK/out/identifier_pk.db"
+migrate_sqlite identifier_pk identifier_pk \
+  || fail "[PK] sqlite identifier_pk: migrate --execute != 0 (Doppel-PK-Regression)"
+$DRUN schema migrate --execute \
+  --source "/work/$WORK_REL/identifier_pk.yaml" \
+  --target "db:sqlite:///work/$WORK_REL/out/identifier_pk.db" \
+  --report "/work/$WORK_REL/out/pk-converge.report.yaml" > /dev/null 2>&1 \
+  || fail "[PK] sqlite identifier_pk Zweitlauf != 0"
+[ "$(statements_in pk-converge.report.yaml)" = "0" ] \
+  || fail "[PK] sqlite identifier_pk Zweitlauf plant Statements (Drift)"
+log "[PK] OK — SQLite identifier_pk Exit 0, konvergent (MySQL/PG folgen unten)"
+
 # ── [PG] Kanten-Proben + Konvergenz ────────────────────────────────
 log "[PG] postgres hoch + Kanten-Proben..."
 $COMPOSE up -d postgres > /dev/null 2>&1
@@ -180,6 +195,16 @@ $CRUN schema migrate --execute --source "/work/$WORK_REL/fk_colref.yaml" \
   --target "db:$PG_URL" --report "/work/$WORK_REL/out/pg-converge.report.yaml" > /dev/null 2>&1 \
   || fail "[PG] Konvergenz-Zweitlauf != 0"
 [ "$(statements_in pg-converge.report.yaml)" = "0" ] || fail "[PG] Zweitlauf plant Statements"
+# [PK] PG identifier-only muss jetzt einen PRIMARY KEY im Ziel tragen (D1/D3) —
+# Exit 0 allein genügt hier nicht (SERIAL ohne PK ist valides DDL), daher zählen.
+pg_fresh
+$CRUN schema migrate --execute --source "/work/$WORK_REL/identifier.yaml" \
+  --target "db:$PG_URL" --report "/work/$WORK_REL/out/pg-identifier.report.yaml" > /dev/null 2>&1 \
+  || fail "[PK] PG identifier-only: migrate --execute != 0"
+PG_PK=$($COMPOSE exec -T postgres psql -U "$POSTGRES_USER" -d types_smoke -tAc \
+  "SELECT count(*) FROM information_schema.table_constraints WHERE table_name='probe' AND constraint_type='PRIMARY KEY'" 2>/dev/null | tr -d '[:space:]')
+[ "$PG_PK" = "1" ] || fail "[PK] PG identifier-only: kein PRIMARY KEY im Ziel materialisiert (D1-Regression, count=$PG_PK)"
+log "[PK] PG identifier-only Exit 0, PRIMARY KEY im Ziel materialisiert"
 log "[PG] OK"
 
 # ── [MY] Kanten-Proben + Konvergenz ────────────────────────────────
@@ -194,7 +219,10 @@ my_fresh() {
   $COMPOSE exec -T mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" \
     -e "DROP DATABASE IF EXISTS types_smoke; CREATE DATABASE types_smoke; GRANT ALL ON types_smoke.* TO '$MYSQL_USER'@'%'; FLUSH PRIVILEGES;" > /dev/null 2>&1
 }
-for p in datetime_tz xml email enum array uq_single_vc identifier_pk; do
+# [PK] `identifier` (ohne PK) neu dabei: MySQL rendert AUTO_INCREMENT ohne KEY nur
+# dann fehlerfrei (Error 1075), wenn der effektive PK materialisiert wird → Exit 0
+# ist hier der Sensor.
+for p in datetime_tz xml email enum array uq_single_vc identifier identifier_pk; do
   my_fresh
   $CRUN schema migrate --execute --source "/work/$WORK_REL/$p.yaml" \
     --target "db:$MY_URL" --report "/work/$WORK_REL/out/my-$p.report.yaml" > /dev/null 2>&1 \

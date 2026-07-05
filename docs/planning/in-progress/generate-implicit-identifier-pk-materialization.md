@@ -1,10 +1,13 @@
 # Slice: Impliziten `identifier`-PK im Generate materialisieren (MySQL-KEY + SQLite-Dedup, dialektuniform)
 
-> Status: **Scope-Schnitt 2026-07-05 (Plan-Review offen).** Aktiviert aus dem
+> Status: **In Progress 2026-07-05 — AP1–AP4 implementiert + live-verifiziert
+> (Docker-`check` grün, Typ-Smoke grün); Plan-Review erledigt 2026-07-05
+> (Entscheidungen unten).** Aktiviert aus dem
 > gleichnamigen `open/`-Ticket (Draft/Trigger-Watch) als **direkter Folge-Slice**
 > der Post-Compare-Kanonisierung
 > ([`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md)) —
-> wie dort vorgemerkt. Wandert mit dem ersten Code-Commit nach `in-progress/`.
+> wie dort vorgemerkt. Vor Graduierung nach `done/`: nur noch Commit-Referenz +
+> Closure-Notiz nachtragen.
 > Severity: **P2** (zwei **Runtime-Execution-Fehler** auf spec-validen Schemata:
 > ein `identifier`-PK-Schema ist heute je nach Dialekt nicht anlegbar).
 > Trigger: AP0-Probe-Matrix der Kanonisierung (Status-Update 2026-07-03), zwei
@@ -100,17 +103,26 @@ unangetastet.
 ## Arbeitspakete
 
 **AP0 — Reproducer bestätigen + PG-Kante prüfen.** Die AP0-Proben der Kanonisierung
-(`identifier` / `identifier_pk` je Dialekt im Typ-Smoke) sind der Reproducer. Prüfen:
-(a) PG identifier-only Generate-DDL trägt heute **kein** `PRIMARY KEY` (erwartet);
-(b) genaue `OperationMapper`-Site der `CreateTable`-Konstruktion + dass die
-Quell-`TableDefinition` nicht geteilt-mutiert wird. DoD: Rot-Fälle als Asserts,
-PG-Kante geklärt.
+(`identifier` / `identifier_pk` je Dialekt im Typ-Smoke) sind der Reproducer. Im
+Plan-Review 2026-07-05 bereits bestätigt: (a) PG `identifier`-only trägt heute
+**kein** `PRIMARY KEY` — [`PostgresTypeMapper`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTypeMapper.kt)
+rendert `SERIAL`/`INTEGER` ohne Inline-PK; (b) `CreateTable` wird in core an **genau
+einer** Site konstruiert ([`OperationMapper`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/OperationMapper.kt),
+`tablesAdded`-Schleife) — der Rename-Fallback baut keine eigene `CreateTable`-Op
+(nicht-foldbare Renames bleiben in `tablesAdded`), und `TableDefinition` ist immutable,
+sodass `.copy()` die Quelle nicht teilt-mutiert (siehe R1). Rest-DoD: Rot-Fälle
+(MySQL identifier-only; SQLite identifier + expliziter PK) als Asserts festschreiben.
 
-**AP1 — Core-Materialisierung (D1).** `OperationMapper` setzt für `CreateTable` den
-effektiven PK, wenn explizit leer. Unit-Tests: identifier-only → PK materialisiert;
-expliziter PK gewinnt; mehrere `identifier` → unverändert (ambig, leer);
-Nicht-`identifier`-Tabellen ohne PK unverändert; Quell-Schema unverändert (kein
-Fingerprint-Effekt).
+**AP1 — Core-Materialisierung (D1).** `OperationMapper` zieht in der
+`tablesAdded`-Schleife (die einzige `CreateTable`-Bau-Site, siehe AP0(b)) den
+effektiven PK **vor** dem Op-Bau in eine Kopie
+(`added.definition.copy(primaryKey = EffectivePrimaryKey.of(added.definition))`) und
+verwendet diese Kopie sowohl für `table =` **als auch** für den Payload-Hash
+(`CanonicalPayload.table`), damit die Op-ID inhaltskonsistent bleibt — nur wenn der
+explizite PK leer und eindeutig ableitbar ist. Unit-Tests: identifier-only → PK
+materialisiert; expliziter PK gewinnt; mehrere `identifier` → unverändert (ambig,
+leer); Nicht-`identifier`-Tabellen ohne PK unverändert; Quell-Schema unverändert
+(kein Fingerprint-Effekt); Op-ID deterministisch aus der materialisierten Payload.
 
 **AP2 — SQLite-Dedup (D2).** `SqliteDiffSimpleOps` überspringt die Tabellen-Level-PK
 für einen Single-Column-PK, dessen Spalte inline `INTEGER PRIMARY KEY AUTOINCREMENT`
@@ -149,11 +161,41 @@ bereits korrekt spezifiziert — es ist ein Generate-Fidelity-Fix). `make docs-c
 - **`enum`-Generate-Degradation** ist separat
   ([`enum-generate-silent-degradation.md`](../open/enum-generate-silent-degradation.md)).
 
-## Review-Punkte (offen für den Plan-Review)
+## Plan-Review-Entscheidungen (erledigt 2026-07-05)
 
-- **R1 — Ort der Materialisierung (D1).** Zentral in `OperationMapper` (Empfehlung:
-  eine Wahrheit, Adapter bleiben dumm) vs. je Renderer-Eintritt. Rückfallpunkt:
-  erweist sich die `OperationMapper`-Normalisierung als zu invasiv für andere
-  Op-Konsumenten, ist ein dedizierter Pre-Render-Schritt Plan B.
-- **R2 — PG in der Abnahme (D3).** Als vollwertiges Abnahmekriterium (Empfehlung,
-  da Gratis-Effekt und für das 64-bit-Ticket relevant) vs. nur als Folge-Notiz.
+Beide Review-Punkte sind gegen den Code verifiziert und entschieden; der Plan ist
+bau-reif.
+
+- **R1 — Ort der Materialisierung (D1): ENTSCHIEDEN — zentral in `OperationMapper`.**
+  [`EffectivePrimaryKey`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/EffectivePrimaryKey.kt)
+  liegt `internal` in `hexagon/core` (`core.diff`); `OperationMapper`
+  (`core.diff.migration`) liegt im **selben Modul** → Zugriff ohne
+  Visibility-Öffnung, als dritter Konsument neben `MigrationFingerprint` und dem
+  target-aware `TableComparator` (AP7). Die Per-Renderer-Alternative ist
+  ausgeschlossen: die Adapter-Module (`driver-mysql`/`-sqlite`/`-postgresql`)
+  erreichen das `internal object` nicht — sie erzwängen entweder eine öffentliche
+  API für eine diff-interne Regel oder die Drei-Adapter-Duplikation (genau die
+  Drift, die die Kanonisierung beseitigt hat).
+  **`OperationMapper`-Plan-B (dedizierter Pre-Render-Pass) entfällt:** die
+  Exploration 2026-07-05 belegt genau **eine** `CreateTable`-Bau-Site in core
+  (`tablesAdded`-Schleife); nicht-foldbare Renames bleiben in `tablesAdded` und
+  laufen über dieselbe Site, der Rename-Fallback baut keine eigene `CreateTable`-Op.
+  Ein zweiter Pass würde also keine weitere Site abdecken. Op-ID-Konsistenz ist
+  über die Kopie-vor-Bau-Reihenfolge gesichert (siehe AP1).
+- **R2 — PG in der Abnahme (D3): ENTSCHIEDEN — vollwertiges Abnahmekriterium.**
+  Inkrementelle Testkosten ≈ null (PG läuft bereits in `smoke-types.sh`), Nutzen
+  real: D1 materialisiert PG `SERIAL` künftig **mit** `PRIMARY KEY`, der Reverse
+  liest einen expliziten PK zurück, und `EffectivePrimaryKey.of` stimmt auf Ziel-
+  und Soll-Seite überein — die im Ticket
+  [`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
+  notierte PG-Reverse-Folge (SERIAL-ohne-PK → `integer` + `sequence_nextval`) wird
+  damit **live** geschlossen statt nur behauptet. Bleibt als PG-Klausel in
+  DoD-Punkt 1 + eigener PG-`identifier`-only-Round-Trip-Assert; **kein eigenes AP**
+  (wie D3).
+
+Offengelassen (bewusst, außerhalb dieses Slice): Der SQLite-Typ-Mapper rendert
+**jede** `identifier`-Spalte inline als `INTEGER PRIMARY KEY AUTOINCREMENT` — bei
+mehreren `identifier`-Spalten also mehrfach. Das ist eine vorbestehende latente
+Kante, die vom „Kein Multi-`identifier`-Auto-PK"-Nicht-Scope gedeckt ist (mehrere
+`identifier` bleiben ambig → `EffectivePrimaryKey` leer → D1 materialisiert nichts,
+D2 dedupt nicht); dieser Slice verschärft sie nicht und behebt sie nicht.

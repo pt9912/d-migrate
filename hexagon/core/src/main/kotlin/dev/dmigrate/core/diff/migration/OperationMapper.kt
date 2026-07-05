@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ColumnDiff
+import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
@@ -8,6 +9,7 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.util.sha256Hex
 
 /**
@@ -282,10 +284,11 @@ internal object OperationMapper {
             if (added.name in blockedTables) continue
             if (added.name in renamedAdds) continue
             val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(added.name))
+            val definition = materializeEffectivePrimaryKey(added.definition)
             ops += DiffOperation.CreateTable(
-                id = OperationIdFactory.makeId("CreateTable", ref, CanonicalPayload.table(added.definition)),
+                id = OperationIdFactory.makeId("CreateTable", ref, CanonicalPayload.table(definition)),
                 objectRef = ref,
-                table = added.definition,
+                table = definition,
             )
         }
         for (removed in diff.tablesRemoved) {
@@ -307,6 +310,30 @@ internal object OperationMapper {
             mapTablePartitioning(changed, diagnostics)
         }
         return fold.absorbedViews
+    }
+
+    /**
+     * When a `CreateTable`'s desired definition carries no explicit
+     * `primary_key` but its *effective* PK is derivable — a single
+     * `identifier` column, the same v3 rule [EffectivePrimaryKey] gives
+     * the Fingerprint and the target-aware `TableComparator` — materialise
+     * it into the definition so every dialect renderer emits the PK
+     * uniformly: MySQL's AUTO_INCREMENT column gets its required KEY, PG's
+     * `SERIAL` gets `PRIMARY KEY`, and SQLite's inline `INTEGER PRIMARY KEY
+     * AUTOINCREMENT` is deduped against the table-level clause downstream
+     * (`SqliteDiffSimpleOps`).
+     *
+     * No-op when an explicit PK already exists (then [EffectivePrimaryKey.of]
+     * returns it verbatim) or the PK is ambiguous (multiple `identifier`
+     * columns → empty). [TableDefinition] is immutable, so the `.copy()`
+     * never mutates the desired schema — the Fingerprint (which applies
+     * [EffectivePrimaryKey.of] itself) stays unaffected. The same copy feeds
+     * both `table =` and the operation-id payload so the id remains
+     * content-consistent with the rendered table.
+     */
+    private fun materializeEffectivePrimaryKey(definition: TableDefinition): TableDefinition {
+        val effective = EffectivePrimaryKey.of(definition)
+        return if (effective == definition.primaryKey) definition else definition.copy(primaryKey = effective)
     }
 
     /**
