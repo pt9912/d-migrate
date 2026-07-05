@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
@@ -14,6 +15,11 @@ internal object SqliteTypeMapping {
     data class MappingResult(
         val type: NeutralType,
         val note: SchemaReadNote? = null,
+        // Auto-increment reverse (reverse-preferences slice): under the
+        // BIGINTEGER_IDENTITY width preference the reverse carries an explicit
+        // Identity generation on the neutral column — mirrors
+        // MysqlTypeMapping.MappingResult.generation.
+        val generation: ColumnGeneration? = null,
     )
 
     fun mapColumn(
@@ -21,24 +27,50 @@ internal object SqliteTypeMapping {
         isAutoIncrement: Boolean,
         tableName: String,
         colName: String,
+        // Declared preference resolving the inherent AUTOINCREMENT-width
+        // ambiguity. Default IDENTIFIER keeps the fingerprint canonicaliser
+        // (SqliteNeutralTypeCanonicalizer, which calls this with the default)
+        // unchanged — the preference only affects the live reverse read.
+        autoincrementReverse: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
     ): MappingResult {
-        // Neutral `identifier` is the deliberate 32-bit auto-increment contract
-        // (neutral-model-spec: PG SERIAL, MySQL INT AUTO_INCREMENT), but SQLite's
-        // AUTOINCREMENT rowid is 64-bit — a cross-dialect transfer narrows the
-        // range. R202 keeps that narrowing loud; the spec'd 64-bit path is
-        // biginteger + ColumnGeneration.Identity.
-        if (isAutoIncrement) return MappingResult(
-            NeutralType.Identifier(autoIncrement = true),
-            SchemaReadNote(
-                severity = SchemaReadSeverity.INFO, code = "R202",
-                objectName = "$tableName.$colName",
-                message = "SQLite AUTOINCREMENT primary key is 64-bit; neutral 'identifier' is the " +
-                    "32-bit auto-increment contract (PostgreSQL SERIAL, MySQL INT AUTO_INCREMENT) — " +
-                    "a cross-dialect transfer narrows the value range",
-                hint = "Model the column as biginteger plus generation: identity " +
-                    "when the 64-bit range is required",
-            ),
-        )
+        // SQLite's AUTOINCREMENT rowid is 64-bit and maps equally to the neutral
+        // 32-bit `identifier` contract (PG SERIAL, MySQL INT AUTO_INCREMENT) and
+        // to 64-bit `biginteger` + Identity — an inherent ambiguity only SQLite
+        // has. The user declares the intent; IDENTIFIER (default) keeps the
+        // narrowing loud via R202, BIGINTEGER_IDENTITY reconstructs 64-bit.
+        if (isAutoIncrement) return when (autoincrementReverse) {
+            // R204 (INFO): interim inline home pending the R-code ledger
+            // (warn-code-ledger-completeness.md); confirms the opt-in 64-bit
+            // reconstruction so the decision stays in the audit trail.
+            SqliteAutoincrementReverse.BIGINTEGER_IDENTITY -> MappingResult(
+                type = NeutralType.BigInteger,
+                note = SchemaReadNote(
+                    severity = SchemaReadSeverity.INFO, code = "R204",
+                    objectName = "$tableName.$colName",
+                    message = "SQLite AUTOINCREMENT primary key reconstructed as 64-bit " +
+                        "'biginteger' + generation: identity per declared preference " +
+                        "(reverse.sqlite.autoincrement_width: 64)",
+                ),
+                // legacySerialSyntax = true mirrors the MySQL reverse of the same
+                // legacy auto-increment construct (MysqlTypeMapping bigint path) →
+                // PG target BIGSERIAL; SQLite AUTOINCREMENT is legacy, not
+                // SQL-standard IDENTITY.
+                generation = ColumnGeneration.Identity(legacySerialSyntax = true),
+            )
+            SqliteAutoincrementReverse.IDENTIFIER -> MappingResult(
+                type = NeutralType.Identifier(autoIncrement = true),
+                note = SchemaReadNote(
+                    severity = SchemaReadSeverity.INFO, code = "R202",
+                    objectName = "$tableName.$colName",
+                    message = "SQLite AUTOINCREMENT primary key is 64-bit; neutral 'identifier' is the " +
+                        "32-bit auto-increment contract (PostgreSQL SERIAL, MySQL INT AUTO_INCREMENT) — " +
+                        "a cross-dialect transfer narrows the value range",
+                    hint = "Model the column as biginteger plus generation: identity when the 64-bit " +
+                        "range is required — pass --sqlite-autoincrement-width 64 (or config " +
+                        "reverse.sqlite.autoincrement_width: 64) so the reverse reconstructs it",
+                ),
+            )
+        }
 
         val raw = rawType.uppercase().trim()
         val maxLen = extractMaxLength(raw)

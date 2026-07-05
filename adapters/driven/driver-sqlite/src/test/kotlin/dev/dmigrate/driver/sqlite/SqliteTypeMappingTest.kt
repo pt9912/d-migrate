@@ -2,10 +2,12 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.string.shouldContain
 
 class SqliteTypeMappingTest : FunSpec({
 
@@ -52,6 +54,36 @@ class SqliteTypeMappingTest : FunSpec({
 
     test("AUTOINCREMENT → Identifier") {
         map("INTEGER", isAI = true).type shouldBe NeutralType.Identifier(autoIncrement = true)
+    }
+
+    // ── reverse-preferences: AUTOINCREMENT width preference ──
+    test("AUTOINCREMENT under 64-bit preference → biginteger + Identity(legacy) + R204") {
+        val r = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+        )
+        r.type shouldBe NeutralType.BigInteger
+        // legacySerialSyntax = true mirrors the MySQL bigint-auto_increment reverse → PG BIGSERIAL
+        r.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+        r.note?.code shouldBe "R204"
+        r.note?.severity shouldBe SchemaReadSeverity.INFO
+    }
+
+    test("AUTOINCREMENT explicit IDENTIFIER preference stays 32-bit (canonicaliser-safe default)") {
+        val r = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.IDENTIFIER,
+        )
+        r.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        r.generation.shouldBeNull()
+        r.note?.code shouldBe "R202"
+    }
+
+    test("R202 hint names the width flag/config-key (discoverability F1)") {
+        val hint = map("INTEGER", isAI = true).note?.hint
+        hint.shouldNotBeNull()
+        hint shouldContain "--sqlite-autoincrement-width 64"
+        hint shouldContain "reverse.sqlite.autoincrement_width"
     }
 
     // ── Geometry ────────────────────────────────

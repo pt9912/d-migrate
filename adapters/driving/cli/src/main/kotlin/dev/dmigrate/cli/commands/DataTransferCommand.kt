@@ -8,6 +8,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.split
+import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
@@ -33,6 +34,11 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
     val chunkSize by option("--chunk-size", help = "Rows per chunk (default: 10000)")
         .int()
         .default(10_000)
+    val sqliteAutoincrementWidth by option(
+        "--sqlite-autoincrement-width",
+        help = "SQLite reverse: render an AUTOINCREMENT primary key as 32-bit identifier (default) " +
+            "or 64-bit biginteger+identity (applies to a SQLite source or target)",
+    ).choice("32", "64")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -50,6 +56,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 chunkSize = chunkSize,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
+                sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

@@ -6,6 +6,7 @@ import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
+import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
@@ -28,6 +29,11 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
     val includeAll by option("--include-all", help = "Include all optional object types").flag()
     val schemaName by option("--name", help = "Schema name to write instead of the reverse-generated default")
     val schemaVersion by option("--version", help = "Schema version to write instead of 0.0.0-reverse")
+    val sqliteAutoincrementWidth by option(
+        "--sqlite-autoincrement-width",
+        help = "SQLite reverse: render an AUTOINCREMENT primary key as 32-bit identifier (default) " +
+            "or 64-bit biginteger+identity (faithful to SQLite's 64-bit rowid)",
+    ).choice("32", "64")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -44,6 +50,7 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
                 includeAll = includeAll,
                 schemaName = schemaName,
                 schemaVersion = schemaVersion,
+                sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

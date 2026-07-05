@@ -255,6 +255,16 @@ pipeline:
     initial_delay_ms: 1000           # Initialer Delay
     backoff_multiplier: 2.0          # Exponentieller Backoff-Faktor (Delay × Faktor^Versuch)
 
+# ── Reverse-Engineering-Praeferenzen ───────────
+# Aufloesung inhaerenter Reverse-Mehrdeutigkeiten (reverse-preference-mechanism.md).
+reverse:
+  sqlite:
+    # Wie der SQLite-Reverse einen AUTOINCREMENT-Primaerschluessel ins neutrale
+    # Modell schreibt: 32 → identifier (32-bit-Vertrag, Default) · 64 → biginteger
+    # + generation: identity (64-bit-treu). Prioritaet: CLI-Flag
+    # `--sqlite-autoincrement-width` > Config-Wert > Default.
+    autoincrement_width: 32
+
 # ── Inkrementelle Migration ────────────────────
 incremental:
   strategy: timestamp                # timestamp | id | hash | cdc

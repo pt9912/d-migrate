@@ -27,6 +27,15 @@ getrackt.
   (PG/SQLite `CURRENT_DATE`, MySQL `(CURRENT_DATE)`).
 - **Index-Präfixlängen** (`IndexColumn.prefixLength`) round-trip-fähig: MySQL
   `SUB_PART`-Reverse → `col(n)`-Generate; PG/SQLite verwerfen mit Hinweis.
+- **Reverse-Präferenzen** (ADR 0027) — inhärente Reverse-Mehrdeutigkeiten werden
+  per deklarierter Anwender-Präferenz aufgelöst (Config `.d-migrate.yaml` `reverse:`
+  + CLI-Flag, konservativer Default), nicht per Heuristik/Fold. Erster Fall: die
+  SQLite-AUTOINCREMENT-Breite — `schema reverse` / `data transfer` mit
+  `--sqlite-autoincrement-width 64` (oder `reverse.sqlite.autoincrement_width: 64`)
+  rekonstruiert einen SQLite-AUTOINCREMENT-PK als 64-bit `biginteger` +
+  `generation: identity` (statt 32-bit `identifier`), sodass ein SQLite→PostgreSQL-
+  Transfer den Wertebereich nicht mehr auf `SERIAL` verengt (Ziel `BIGSERIAL`).
+  Default unverändert (kein Fingerprint-Bump); die R202-Note nennt jetzt den Flag.
 
 #### Fixed
 

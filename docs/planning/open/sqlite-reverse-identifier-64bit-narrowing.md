@@ -47,6 +47,22 @@
 Empfehlung bei Aktivierung: Option 2 nach Landung der Typ-Kanonisierung; Option 3 nur, wenn
 mehrere Dialekt-Verträge ohnehin angefasst werden (ADR-würdig).
 
+**Update 2026-07-05 (2) — Option 2 durch Präferenz-Muster abgelöst.** Die Exploration von
+Option 2 (fester Reverse-Umbau + struktureller Post-Compare-Fold `identifier ≡
+biginteger+identity`) ergab: der Fold spannt `type` **und** `generation` und erzwänge einen
+Fingerprint-Bump (Artefakt-/Overlay-Invalidierung) plus eine invasive Sonderfaltung — hoher
+Preis für einen Einzelfall. Stattdessen löst der Slice
+[`../in-progress/reverse-preferences.md`](../in-progress/reverse-preferences.md) den
+64-bit-**Transfer**-Bedarf über eine **deklarierte Präferenz** an der Reverse-Wurzel
+(`--sqlite-autoincrement-width 64` / `reverse.sqlite.autoincrement_width: 64`) — **ohne**
+Fingerprint-Bump, konservativer Default. Die im Ticket höher gesetzte Aktivierungsschwelle
+(„wiederholte Consumer-Befunde") ist damit legitim gesenkt: das Kostenprofil ist niedriger
+(kein Bump) und das Ergebnis ein wiederverwendbares Muster. **Verbleibend offen** in diesem
+Ticket ist nur noch der `migrate`-**gegen-SQLite**-Fall (authored `biginteger`+`identity`),
+getrackt in
+[`sqlite-migrate-biginteger-identity-render-gap.md`](sqlite-migrate-biginteger-identity-render-gap.md);
+Option 3 (64-bit-Vertrag) bleibt separat.
+
 ## PG-Evidenz (Nachtrag 2026-07-03, AP0-Probe des Kanonisierungs-Slices)
 
 Dieselbe Rekonstruktions-Familie existiert auf PostgreSQL: der Reverse eines

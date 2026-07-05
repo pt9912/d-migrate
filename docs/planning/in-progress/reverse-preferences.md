@@ -1,6 +1,8 @@
 # Slice: Reverse-Präferenzen — deklarierte Auflösung inhärenter Reverse-Mehrdeutigkeiten (Erstfall: SQLite-AUTOINCREMENT-Breite)
 
-> Status: **Scope-Schnitt 2026-07-05; Plan-Review erledigt (3 Runden), bau-reif.** Neuer Slice, aus der
+> Status: **In Progress 2026-07-05 — AP1–AP5 implementiert + live-verifiziert
+> (Docker-`check` grün, Live-Abnahme grün); Plan-Review erledigt (3 Runden).**
+> Neuer Slice, aus der
 > Exploration zu [`../open/sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
 > hervorgegangen: die dortige **Option 2 (Post-Compare-Fold + Fingerprint-v8)** wird
 > durch das leichtere **Präferenz-Muster ersetzt**. Löst den 64-bit-Transfer-Bedarf
@@ -273,3 +275,30 @@ Beide offenen Fragen entschieden:
 - **R5 — Muster-Ambition: ENTSCHIEDEN — eigenes Spec jetzt**, mit **distinktem Namen**
   `reverse-preference-mechanism.md` (Review F4, vermeidet die Basename-Kollision mit diesem
   Plan) und SDP-lateral gehaltener Registry.
+
+## Umsetzungs-Stand (2026-07-05)
+
+Alle Arbeitspakete implementiert + verifiziert; **Docker-`check` grün** (inkl. neuer
+Unit-Tests: SQLite-Reverse beide Modi, Reader-Round-Trip, Config-Resolver-Präzedenz;
+keine Golden-Regression), **`make docs-check` grün**, **Live-Abnahme grün**.
+
+- **AP1** `SchemaReadOptions.sqliteAutoincrement` + Enum `SqliteAutoincrementReverse`
+  (ports-read).
+- **AP2** SQLite-Reverse präferenz-bewusst: `MappingResult`-`generation`-Kanal (B2),
+  `mapColumn`-Default `IDENTIFIER` (Kanonisierer/Fingerprint unberührt), 64-bit →
+  `biginteger` + `Identity(legacySerialSyntax = true)` + **R204**, R202-Hint nennt den
+  Flag (F1); Reader fädelt `generation` durch.
+- **AP3** CLI-Flag `--sqlite-autoincrement-width` auf `schema reverse` **und**
+  `data transfer` + `.d-migrate.yaml`-`reverse:`-Block via `ReverseAutoincrementResolver`
+  (Flag > Config > Default).
+- **AP4** [ADR-0027](../../adr/0027-reverse-preferences-inhaerente-mehrdeutigkeit.md) +
+  Zielbild-Spec `reverse-preference-mechanism.md` (Registry) + Oberflächen-Specs
+  (`connection-config-spec` 3.2, `cli-spec`, `type-mapping` 5.3) + Anwenderhandbuch +
+  CHANGELOG; 64bit-Ticket „Option 2 abgelöst"; Folge-Ticket
+  [`sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md)
+  angelegt (zwei Ursachen, B3).
+- **AP5** Live: SQLite-`AUTOINCREMENT` → `reverse --sqlite-autoincrement-width 64` →
+  `biginteger`+`identity` (R204) → PG-Generate `BIGSERIAL`; Default → `identifier` →
+  `SERIAL`. **DoD 1–7 erfüllt.**
+
+Vor Graduierung nach `done/`: Commit-Referenz + Closure nachtragen.

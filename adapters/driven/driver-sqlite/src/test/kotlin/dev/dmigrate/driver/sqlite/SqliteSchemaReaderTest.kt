@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.DatabaseConnection
@@ -70,6 +71,29 @@ class SqliteSchemaReaderTest : FunSpec({
     }
 
     // ── Basic table with columns ────────────────
+
+    test("reverse-preferences: 64-bit width preference reconstructs biginteger + Identity + R204") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") { pool ->
+            val result = reader.read(
+                pool,
+                SchemaReadOptions(sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY),
+            )
+            val col = result.schema.tables["t"]!!.columns["id"]!!
+            col.type shouldBe NeutralType.BigInteger
+            col.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+            result.notes.any { it.code == "R204" } shouldBe true
+        }
+    }
+
+    test("reverse-preferences: default width keeps identifier, no generation, R202") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") { pool ->
+            val result = reader.read(pool)
+            val col = result.schema.tables["t"]!!.columns["id"]!!
+            col.type shouldBe NeutralType.Identifier(autoIncrement = true)
+            col.generation shouldBe null
+            result.notes.any { it.code == "R202" } shouldBe true
+        }
+    }
 
     test("reads table with columns, PK and types") {
         withDb("""

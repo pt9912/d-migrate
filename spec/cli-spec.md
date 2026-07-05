@@ -499,6 +499,7 @@ denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
 | `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
 | `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults |
 | `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` |
+| `--sqlite-autoincrement-width` | Nein | `32`\|`64` | SQLite-Reverse: AUTOINCREMENT-Primärschlüssel als 32-bit `identifier` (Default) oder 64-bit `biginteger`+`identity` schreiben (inhärente Mehrdeutigkeit, `reverse-preference-mechanism.md`); übersteuert `reverse.sqlite.autoincrement_width` |
 
 **Reverse-Ausgabe und Reverse-Report**:
 

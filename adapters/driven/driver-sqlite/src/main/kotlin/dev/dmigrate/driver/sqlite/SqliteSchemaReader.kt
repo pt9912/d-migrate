@@ -97,6 +97,7 @@ class SqliteSchemaReader : SchemaReader {
                     session, tableName, createSql,
                     geometryByTable[tableName.lowercase()].orEmpty(),
                     fts5ByContentTable[tableName.lowercase()].orEmpty(), notes,
+                    options.sqliteAutoincrement,
                 )
             }
 
@@ -161,6 +162,7 @@ class SqliteSchemaReader : SchemaReader {
         geometryColumns: List<SqliteGeometryColumn>,
         fts5Defs: List<SqliteFts5Reverse.Fts5Definition>,
         notes: MutableList<SchemaReadNote>,
+        autoincrementReverse: SqliteAutoincrementReverse,
     ): TableDefinition {
         val columns = SqliteMetadataQueries.listColumns(session, tableName)
         val pkColumns = SqliteMetadataQueries.listPrimaryKeyColumns(session, tableName)
@@ -184,7 +186,7 @@ class SqliteSchemaReader : SchemaReader {
             val isAutoInc = isPkCol && hasAutoincrement && pkColumns.size == 1
                 && col.dataType.equals("INTEGER", ignoreCase = true)
 
-            val mapping = SqliteTypeMapping.mapColumn(col.dataType, isAutoInc, tableName, col.name)
+            val mapping = SqliteTypeMapping.mapColumn(col.dataType, isAutoInc, tableName, col.name, autoincrementReverse)
             if (mapping.note != null) notes += mapping.note
             // Befund 3: die SRID steht NICHT in PRAGMA table_info (nur der Subtyp),
             // sondern in geometry_columns — sonst käme der Round-Trip mit SRID 0 zurück.
@@ -202,6 +204,9 @@ class SqliteSchemaReader : SchemaReader {
                 required = required,
                 unique = unique,
                 default = SqliteTypeMapping.parseDefault(col.columnDefault),
+                // reverse-preferences: 64-bit width preference carries an explicit
+                // Identity generation; IDENTIFIER (default) leaves it null.
+                generation = mapping.generation,
                 // PRAGMA table_info.cid ist 0-basiert; +1 für 1-basierte Ordinale
                 // konsistent zu PG/MySQL (information_schema.ordinal_position).
                 ordinal = col.ordinalPosition + 1,

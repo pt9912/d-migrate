@@ -427,6 +427,12 @@ triggers:
   überschreiben.
 - Sequenz-Hilfsobjekte, die d-migrate selbst angelegt hat, werden automatisch
   erkannt und zurückübersetzt (siehe [3.12](#312-sequenzenautowerte-korrekt-mitnehmen)).
+- **SQLite-64-bit-Autowerte:** SQLites `AUTOINCREMENT`-Primärschlüssel ist 64-bit,
+  wird aber standardmäßig als 32-bit-`identifier` zurückübersetzt (bei einem Transfer
+  nach PostgreSQL/MySQL sonst `SERIAL`/`INT`). Brauchen Sie den vollen 64-bit-Bereich,
+  ergänzen Sie `--sqlite-autoincrement-width 64` (auch bei `data transfer`) — dann
+  entsteht `biginteger` mit Identity (Ziel `BIGSERIAL`/`BIGINT`). Alternativ dauerhaft
+  über die Konfiguration (`reverse.sqlite.autoincrement_width: 64` in `.d-migrate.yaml`).
 
 ### 3.4 Zwei Schemastände vergleichen
 
