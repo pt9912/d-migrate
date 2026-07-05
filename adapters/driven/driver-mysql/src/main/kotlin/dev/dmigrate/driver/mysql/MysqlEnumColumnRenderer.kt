@@ -15,9 +15,14 @@ import dev.dmigrate.core.model.NeutralType
  * (values dropped, no enforcement) — inconsistent with `schema generate`
  * (Review F1/F5 of the enum-degradation slice).
  *
- * MySQL enums always carry inline `values` (MySQL has no standalone enum
- * type), so this narrow signature — no `schema` / `tableName` — is
- * sufficient for the diff path, which has neither.
+ * This narrow signature (no `schema` / `tableName`) renders the inline-`values`
+ * form only — sufficient for the diff path, which has no schema. A `refType`-
+ * modeled MySQL enum (whose values the generate path resolves from
+ * `schema.customTypes`) is therefore NOT rendered natively by the diff path; in
+ * the realistic cross-dialect flow its accompanying `CreateCustomType` op is
+ * hard-blocked for MySQL (`MysqlDiffOtherOps.renderCreateCustomType` →
+ * DIALECT_UNSUPPORTED), so the migration is blocked (loud), not silently
+ * degraded (tracked: `enum-generate-silent-degradation.md`, Review F1).
  */
 internal object MysqlEnumColumnRenderer {
 

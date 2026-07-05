@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.NamedTable
+import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.DiffPlanner
@@ -50,6 +51,33 @@ class SqliteDiffEnumDegradationTest : FunSpec({
             ),
         )
         val r = planAndUp(diff)
+        r.diagnostics.any { it.code == "W134" } shouldBe true
+    }
+
+    // Review F2: a rebuild-triggering change (SQLite has no in-place ALTER COLUMN
+    // nullability) re-renders the whole table — including the enum column as TEXT
+    // — via SqliteRebuildRenderer, which must also warn W134 (not silently degrade).
+    test("table rebuild re-renders an enum column as TEXT → W134") {
+        fun schema(noteRequired: Boolean) = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf(
+                "tickets" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(NeutralType.Identifier(), required = true),
+                        "status" to ColumnDefinition(NeutralType.Enum(values = listOf("open", "closed"))),
+                        "note" to ColumnDefinition(NeutralType.Text(), required = noteRequired),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val current = schema(noteRequired = false)
+        val desired = schema(noteRequired = true) // nullability change on `note` → rebuild
+        val diff = SchemaComparator().compare(current, desired)
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        // sanity: the change really went through the rebuild path (temp-table recreate)
+        r.statements.map { it.sql }.any { it.contains("CREATE TABLE") } shouldBe true
         r.diagnostics.any { it.code == "W134" } shouldBe true
     }
 })
