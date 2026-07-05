@@ -1,7 +1,10 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
@@ -74,5 +77,47 @@ class SqliteDiffPrimaryKeyDedupTest : FunSpec({
             primaryKey = listOf("a", "b"),
         )
         createTableSql(table) shouldContainStr "PRIMARY KEY (\"a\", \"b\")"
+    }
+
+    test("table rebuild of an identifier+primary_key table does not double the PK") {
+        // Regression (Code-Review 2026-07-05): the table-rebuild renderer
+        // (SqliteRebuildRenderer.buildCreateTempSql) is a *second* CREATE TABLE
+        // emitter. AP2 makes identifier+PK tables creatable, so a later reshape
+        // can now reach the rebuild path — which must apply the same PK dedup or
+        // SQLite errors with two primary keys. Both emitters share
+        // SqliteDiffSqlBuilders.primaryKeyClause.
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "age" to ColumnDefinition(NeutralType.SmallInt),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val after = before.copy(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "age" to ColumnDefinition(NeutralType.Integer),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "age", type = ValueChange(NeutralType.SmallInt, NeutralType.Integer)),
+                    ),
+                ),
+            ),
+        )
+        val rebuildCreate = gen.generateUp(
+            planner.plan(
+                SchemaDefinition(name = "App", version = "1", tables = mapOf("t" to before)),
+                SchemaDefinition(name = "App", version = "1", tables = mapOf("t" to after)),
+                diff,
+            ),
+            DdlGenerationOptions(),
+        ).statements.map { it.sql }.first { it.contains("CREATE TABLE") && it.contains("__dmg_rebuild_") }
+        rebuildCreate shouldContainStr "PRIMARY KEY AUTOINCREMENT"
+        rebuildCreate shouldNotContainStr "PRIMARY KEY (\""
     }
 })

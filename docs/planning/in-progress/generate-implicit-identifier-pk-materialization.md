@@ -199,3 +199,34 @@ mehreren `identifier`-Spalten also mehrfach. Das ist eine vorbestehende latente
 Kante, die vom „Kein Multi-`identifier`-Auto-PK"-Nicht-Scope gedeckt ist (mehrere
 `identifier` bleiben ambig → `EffectivePrimaryKey` leer → D1 materialisiert nichts,
 D2 dedupt nicht); dieser Slice verschärft sie nicht und behebt sie nicht.
+
+## Review-Härtung (Code-Review 2026-07-05, nach AP1–AP4)
+
+Adversarialer Code-Review über den Implementierungs-Commit (`263695b9`), 4 gezielte
+Kanten + allgemeiner Korrektheits-Sweep. **Ein bestätigter Befund behoben, alle
+übrigen Kanten mit Code-Beleg widerlegt.**
+
+- **Befund (MEDIUM, CONFIRMED) — zweiter SQLite-`CREATE TABLE`-Emitter fehlte im
+  Dedup.** AP2 fixte nur `SqliteDiffSimpleOps.renderCreateTable`; der **Rebuild**-Pfad
+  [`SqliteRebuildRenderer.buildCreateTempSql`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt)
+  trug denselben un-deduplizierten Table-Level-PK. **Durch AP2 erstmals erreichbar:**
+  eine `identifier`+PK-Tabelle ist jetzt anlegbar, ein späterer Reshape erzwingt einen
+  Rebuild → Doppel-PK → `SQLITE_ERROR`. Von Unit-Tests + Smoke verfehlt (kein
+  Rebuild-auf-identifier-PK-Fall). **Fix:** Dedup in **ein** geteiltes
+  [`SqliteDiffSqlBuilders.primaryKeyClause`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSqlBuilders.kt)
+  gezogen, das beide Diff-Emitter nutzen (kann auf keinem Pfad mehr vergessen werden);
+  Regressions-Unit-Test + Live-Smoke-Rebuild-Fall (`identifier_pk_rb`) ergänzt.
+- **Dritter Emitter geprüft (Review-Ergänzung):** der reine `schema generate`-Pfad
+  [`SqliteTableDdlSupport`](../../../adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTableDdlSupport.kt)
+  dedupt **bereits** (sogar breiter, inkl. `ColumnGeneration.Identity`) — bestätigt
+  zugleich, dass die Dedup-Bedingung des Diff-Pfads korrekt nur `NeutralType.Identifier`
+  prüft (nur dieser Typ rendert im Diff-`columnLine` inline-PK).
+- **Widerlegt (mit Beleg):** AddColumn-Scope-Grenze (D4, vorbestehende DB-Grenze,
+  unverändert); composite PK mit `identifier`-Member (strikt vorbestehend, nicht neu);
+  PG/MySQL-Konvergenz für `identifier`-only (faltet über `EffectivePrimaryKey`);
+  Geometry-Interaktion (PK-Spalte nie Geometry); Shared-State/Op-ID/Ghost-PK
+  (`copy` mutiert nicht, IDs selbstkonsistent).
+
+Re-Verifikation: `:adapters:driven:driver-sqlite:check` grün (inkl. neuem Test),
+`make sample-db-types-smoke` grün (inkl. Rebuild-Fall). Änderung ist
+`driver-sqlite`-intern (keine Signatur-/Cross-Modul-Wirkung) → kein erneuter Full-Check.

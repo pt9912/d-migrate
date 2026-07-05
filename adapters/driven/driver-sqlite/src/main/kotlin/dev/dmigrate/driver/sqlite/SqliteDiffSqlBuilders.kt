@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.core.model.toSqlEventClause
@@ -48,6 +49,28 @@ internal class SqliteDiffSqlBuilders {
             parts += "REFERENCES ${quote(ref.table)}(${quote(ref.column)})$onDelete$onUpdate"
         }
         return parts.joinToString(" ")
+    }
+
+    /**
+     * The table-level `PRIMARY KEY (…)` clause for a `CREATE TABLE`, or `null`
+     * when it must be omitted. SQLite renders an `identifier` column inline as
+     * `INTEGER PRIMARY KEY AUTOINCREMENT` ([columnLine] → [SqliteTypeMapper]),
+     * so a single-column PK on that same column must NOT also emit a table-level
+     * clause — SQLite rejects the duplicate PK. Every other PK (multi-column, or
+     * a single-column PK on a non-`identifier` column) keeps the clause.
+     *
+     * Shared by **both** SQLite `CREATE TABLE` emitters — the diff renderer
+     * ([SqliteDiffSimpleOps]) and the table-rebuild renderer
+     * ([SqliteRebuildRenderer]) — so the dedup can never be forgotten on one
+     * path (the generate path [SqliteTableDdlSupport] carries its own, wider
+     * variant that also covers `ColumnGeneration.Identity`, which the diff
+     * `columnLine` does not render inline).
+     */
+    fun primaryKeyClause(table: TableDefinition): String? {
+        val pk = table.primaryKey
+        if (pk.isEmpty()) return null
+        if (pk.size == 1 && table.columns[pk.single()]?.type is NeutralType.Identifier) return null
+        return "PRIMARY KEY (" + pk.joinToString(", ") { quote(it) } + ")"
     }
 
     fun constraintLine(c: ConstraintDefinition): String? = when (c.type) {

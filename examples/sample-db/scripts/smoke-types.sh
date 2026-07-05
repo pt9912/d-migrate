@@ -63,6 +63,8 @@ col_probe enum        'type: enum, values: ["red", "green"]'
 col_probe array       'type: array, element_type: text'
 printf 'name: "types-identifier"\nversion: "1.0.0"\ntables:\n  probe:\n    columns:\n      id: { type: identifier, auto_increment: true }\n' > "$WORK/identifier.yaml"
 printf 'name: "types-identifier_pk"\nversion: "1.0.0"\ntables:\n  probe:\n    columns:\n      id: { type: identifier, auto_increment: true }\n    primary_key: [id]\n' > "$WORK/identifier_pk.yaml"
+printf 'name: "types-identifier_pk_rb"\nversion: "1.0.0"\ntables:\n  probe:\n    columns:\n      id: { type: identifier, auto_increment: true }\n      n: { type: smallint }\n    primary_key: [id]\n' > "$WORK/identifier_pk_rb1.yaml"
+printf 'name: "types-identifier_pk_rb"\nversion: "1.0.1"\ntables:\n  probe:\n    columns:\n      id: { type: identifier, auto_increment: true }\n      n: { type: integer }\n    primary_key: [id]\n' > "$WORK/identifier_pk_rb2.yaml"
 printf 'name: "types-uq_single"\nversion: "1.0.0"\ntables:\n  probe:\n    columns:\n      a: { type: text }\n      b: { type: text }\n    constraints:\n      - name: uq_a\n        type: unique\n        columns: [a]\n' > "$WORK/uq_single.yaml"
 printf 'name: "types-uq_multi"\nversion: "1.0.0"\ntables:\n  probe:\n    columns:\n      a: { type: text }\n      b: { type: text }\n    constraints:\n      - name: uq_ab\n        type: unique\n        columns: [a, b]\n' > "$WORK/uq_multi.yaml"
 printf 'name: "types-uq_single_vc"\nversion: "1.0.0"\ntables:\n  probe:\n    columns:\n      a: { type: text, max_length: 50 }\n      b: { type: text, max_length: 50 }\n    constraints:\n      - name: uq_a\n        type: unique\n        columns: [a]\n' > "$WORK/uq_single_vc.yaml"
@@ -169,7 +171,14 @@ $DRUN schema migrate --execute \
   || fail "[PK] sqlite identifier_pk Zweitlauf != 0"
 [ "$(statements_in pk-converge.report.yaml)" = "0" ] \
   || fail "[PK] sqlite identifier_pk Zweitlauf plant Statements (Drift)"
-log "[PK] OK — SQLite identifier_pk Exit 0, konvergent (MySQL/PG folgen unten)"
+# Rebuild-Pfad (zweiter CREATE-TABLE-Emitter, Review-Regression 2026-07-05): eine
+# identifier+PK-Tabelle reshapen (Sibling-Typ smallint→integer erzwingt SQLite-
+# Table-Rebuild) — der Rebuild darf den PK nicht doppeln (SQLITE_ERROR sonst).
+rm -f "$WORK/out/identifier_pk_rb.db"
+migrate_sqlite identifier_pk_rb1 identifier_pk_rb || fail "[PK] sqlite identifier_pk_rb v1 != 0"
+migrate_sqlite identifier_pk_rb2 identifier_pk_rb \
+  || fail "[PK] sqlite identifier_pk Rebuild != 0 (Doppel-PK im Rebuild-Emitter)"
+log "[PK] OK — SQLite identifier_pk Exit 0 (frisch + Rebuild), konvergent (MySQL/PG folgen unten)"
 
 # ── [PG] Kanten-Proben + Konvergenz ────────────────────────────────
 log "[PG] postgres hoch + Kanten-Proben..."

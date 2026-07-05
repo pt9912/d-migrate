@@ -577,9 +577,7 @@ internal class SqliteRebuildRenderer(
         for ((colName, col) in target.columns.inOrdinalOrder()) {
             lines += "    " + sql.columnLine(colName, col)
         }
-        if (target.primaryKey.isNotEmpty()) {
-            lines += "    PRIMARY KEY (" + target.primaryKey.joinToString(", ") { sql.quote(it) } + ")"
-        }
+        sql.primaryKeyClause(target)?.let { lines += "    $it" }
         for (c in target.constraints.sortedBy { it.name }) {
             sql.constraintLine(c)?.let { lines += "    $it" }
         }
