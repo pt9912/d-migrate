@@ -38,7 +38,7 @@
 2. **SQLite-Reverse emittiert `biginteger` + `generation: identity`.** Quelltreu (64-bit),
    aber: (a) braucht einen SQLite-Generate-Pfad für Identity-Spalten (Round-Trip-Parität),
    (b) erzeugt ohne dialektbewusste Typ-Kanonisierung im Post-Compare genau die
-   Drift-Klasse aus [`../in-progress/postcompare-type-canonicalization-slice.md`](../in-progress/postcompare-type-canonicalization-slice.md)
+   Drift-Klasse aus [`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md)
    (authored `identifier` vs. reversed `biginteger`) — Kanonisierung muss zuerst landen.
 3. **`identifier`-Vertrag auf 64-bit heben** (PG `BIGSERIAL`/Identity, MySQL `BIGINT`).
    Sauber langfristig, aber Spec-Änderung (ADR nötig), ändert generiertes DDL aller

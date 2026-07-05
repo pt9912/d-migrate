@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 0.9.9 (Beta)  ·  **Handbuch-Version:** 0.1 (Entwurf)  ·  **Stand:** 15.06.2026
+**Software-Version:** 0.9.9 (Beta)  ·  **Handbuch-Version:** 0.2 (Entwurf)  ·  **Stand:** 05.07.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
@@ -1240,6 +1240,9 @@ zurück.
   anderweitig verändert, bricht der Rollback mit **Exit 8**
   (`TARGET_STATE_MISMATCH`) ab, statt einen inkonsistenten Zustand zu erzeugen.
   Passt der Dialekt des Artefakts nicht zur Datenbank, ebenfalls Exit 8.
+- Nach einem **d-migrate-Update** kann ein älteres Down-Artefakt abgelehnt werden
+  (Exit 8, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) — erzeugen Sie es dann mit
+  der neuen Version neu. Siehe [Fehlerbehebung](#5-fehlerbehebung).
 - Ist das Rücknahme-Skript bewusst unvollständig, benötigen Sie zusätzlich
   `--allow-partial-rollback`.
 - Nicht jede Operation ist umkehrbar (z. B. das Ersetzen einer Routine, deren
@@ -1919,6 +1922,26 @@ Operation, oder eine Anweisung lässt sich für das Ziel nicht erzeugen.
 beabsichtigt, erlauben Sie sie gezielt mit `--allow-destructive`. Siehe
 [3.5](#35-eine-schemaänderung-ausrollen-und-zurücknehmen).
 
+### Rollback oder Overlay bricht nach einem d-migrate-Update ab (Exit 8)
+
+**Ursache:** d-migrate erkennt den Zustand einer Datenbank über einen internen
+**Fingerabdruck**. Rollback-Artefakte und Overlay-Dateien pinnen den
+Fingerabdruck-Stand, mit dem sie erzeugt wurden. Aktualisiert sich d-migrate und
+ändert dabei das Fingerabdruck-Verfahren, passen ältere Artefakte nicht mehr —
+der Lauf bricht dann **bewusst laut** ab, statt einen falschen Vergleich zu
+ziehen:
+
+- Rollback: **Exit 8**, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`.
+- Overlay: **Exit 8**, `OVERLAY_STALE_SOURCE_FINGERPRINT` bzw.
+  `OVERLAY_STALE_TARGET_FINGERPRINT`.
+
+**Lösung:** Erzeugen Sie das betroffene Artefakt mit der aktuellen Version neu:
+für ein Rücknahme-Skript den `migrate`-Lauf mit `--generate-rollback` erneut
+ausführen (das erzeugte Down-Artefakt trägt dann den aktuellen Fingerabdruck);
+für ein Overlay die darin gepinnten Soll-/Ist-Fingerabdrücke aus einem frischen
+`--plan-artefact`-Lauf übernehmen. Bereits ausgerollte Migrationen sind davon
+nicht betroffen — nur die *Artefakte* müssen zum aktuellen Stand passen.
+
 ### Wiederaufnahme schlägt mit Exit 3 fehl
 
 **Ursache:** Zwischen dem ursprünglichen und dem fortgesetzten Lauf haben sich
@@ -2502,6 +2525,7 @@ custom_types:
 | Handbuch-Version | Datum | Änderung |
 | ---------------- | ----- | -------- |
 | 0.1 | 15.06.2026 | Erster aufgabenorientierter Entwurf für Software-Version 0.9.9 (Beta). |
+| 0.2 | 05.07.2026 | Fehlerbehebung: Hinweis zur Fingerabdruck-Versionsbindung von Rollback-Artefakten und Overlays (Abbruch mit Exit 8 nach einem Update) ergänzt. |
 
 ---
 

@@ -2,7 +2,7 @@
 
 > Status: **Draft (Trigger Watch)**
 > Trigger: AP0-Probe-Matrix des Typ-Kanonisierungs-Slices
-> ([`../in-progress/postcompare-type-canonicalization-slice.md`](../in-progress/postcompare-type-canonicalization-slice.md),
+> ([`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md),
 > Status-Update 2026-07-03) plus gezielte Lautstärke-Nachprüfung der Reports.
 > Aktivierungsbedingung: Scope-Schnitt bei belegtem Fidelity-Bedarf (analog dem
 > Vorgehen in [`pg-only-types-first-class-candidates.md`](pg-only-types-first-class-candidates.md))

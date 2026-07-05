@@ -127,7 +127,7 @@ object MigrationFingerprint {
      *    materialises it, the desired parser does not — same asymmetry family as
      *    the v3 effective PK).
      *
-     * Plan: `docs/planning/in-progress/postcompare-type-canonicalization-slice.md`.
+     * Plan: `docs/planning/done/postcompare-type-canonicalization-slice.md`.
      */
     const val ALGORITHM: String = "schema-fingerprint-v7"
 

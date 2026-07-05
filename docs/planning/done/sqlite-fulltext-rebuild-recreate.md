@@ -95,7 +95,7 @@ Sync-Trigger wiederhergestellt; `MATCH` findet die vor dem Rebuild eingefügten 
 (`'rebuild'`-Repopulation) **und** nach dem Rebuild eingefügte Zeilen (Trigger lebendig).
 
 **Nebenbefund** (vorbestehend, nicht durch diesen Slice verursacht — dokumentiert in
-[`../in-progress/postcompare-type-canonicalization-slice.md`](../in-progress/postcompare-type-canonicalization-slice.md)):
+[`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md)):
 ein Rebuild, der einen **benannten UNIQUE-Constraint** hinzufügt, endet Exit 5 — der Reverse
 liest ihn als Spalten-`unique` statt als benannten Constraint (Post-Compare-Asymmetrie derselben
 Familie wie die Typ-Abflachung; auch ohne FULLTEXT-Index reproduzierbar).

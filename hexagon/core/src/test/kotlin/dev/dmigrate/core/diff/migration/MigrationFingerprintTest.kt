@@ -84,7 +84,7 @@ class MigrationFingerprintTest : FunSpec({
     }
 
     // v7: dialektbewusste Kanonisierung
-    // (docs/planning/in-progress/postcompare-type-canonicalization-slice.md)
+    // (docs/planning/done/postcompare-type-canonicalization-slice.md)
 
     test("v7: type canonicalizer folds dialect-flattened types onto one fingerprint") {
         fun withType(t: NeutralType) = schema(tables = mapOf("t" to TableDefinition(

@@ -2,7 +2,7 @@
 
 > Status: **Draft (Trigger Watch)**
 > Trigger: AP0-Probe-Matrix des Typ-Kanonisierungs-Slices
-> ([`../in-progress/postcompare-type-canonicalization-slice.md`](../in-progress/postcompare-type-canonicalization-slice.md),
+> ([`../done/postcompare-type-canonicalization-slice.md`](../done/postcompare-type-canonicalization-slice.md),
 > Status-Update 2026-07-03) — zwei Runtime-Execution-Fehler auf spec-validen Schemata.
 > Aktivierungsbedingung: Scope-Schnitt (Ziel + Arbeitspakete + Akzeptanz).
 > **Vormerkung (2026-07-03): Kandidat für den direkten Folge-Slice nach der

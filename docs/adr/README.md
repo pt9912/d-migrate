@@ -79,3 +79,4 @@ argumentiert werden.
 | 0023 | [Reverse-Eingabe: Live-DB-first; DDL-Datei-Parser additiv-später](0023-reverse-eingabe-live-db-first.md) | accepted |
 | 0024 | [Ist-Zustand-Dokumentation: keine Prosa-Ist-Doku, `spec/` ist reines Zielbild](0024-ist-zustand-dokumentation.md) | accepted |
 | 0025 | [Volltext-Quellspalten als `FULLTEXT`-Index modellieren, nicht am `fulltext`-Typ](0025-fulltext-source-columns-as-index.md) | accepted |
+| 0026 | [Dialektbewusste Fingerprint-Kanonisierung im Post-Compare (Projektion statt Prädikat, `v6`→`v7`)](0026-fingerprint-kanonisierung-post-compare.md) | accepted |

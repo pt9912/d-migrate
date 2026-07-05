@@ -48,6 +48,16 @@ getrackt.
   `OffsetDateTime`.
 - **Validierung**: Temporal-/Funktions-Defaults auf Date/DateTime/Time/Text
   korrekt akzeptiert.
+- **Post-Execute-Compare von `schema migrate --execute`** meldet keine
+  Drift-False-Positives mehr, wenn der Ziel-Dialekt Neutraltypen verlustfrei
+  abflacht (z. B. SQLite `smallint`/`boolean` → `INTEGER`, `datetime` → `TEXT`,
+  `decimal` → `REAL`) oder einen Single-Column-`UNIQUE`/-Fremdschlüssel als
+  Spaltenattribut zurückliest: Ein frisches `migrate --execute` spec-valider
+  Schemata endet jetzt mit **Exit 0** statt Exit 5, ein zweiter Lauf plant 0
+  Operationen. Die Fingerprint-Berechnung ist dafür dialektbewusst
+  (`schema-fingerprint-v6` → `v7`, invalidiert ältere Rollback-Artefakte/Overlays
+  laut per `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` / `OVERLAY_STALE_*_FINGERPRINT`);
+  `schema compare` bleibt strukturell streng (ADR-0026).
 
 ## [0.9.8] - 2026-06-14
 

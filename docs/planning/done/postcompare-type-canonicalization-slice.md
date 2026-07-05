@@ -1,6 +1,6 @@
 # Slice: Dialektbewusste Fingerprint-Kanonisierung im Post-Compare (Typ-Abflachung + Single-Column-UNIQUE)
 
-> Status: **In Progress (2026-07-03).** Scope-Schnitt user-reviewt (R1–R3 entschieden),
+> Status: **Done — graduiert 2026-07-05.** Scope-Schnitt user-reviewt (R1–R3 entschieden),
 > AP0 erledigt (Status-Update unten), AP1 geliefert (`cfe51d02`) + review-gehärtet R1
 > (`13f4fb60`), AP2 geliefert (`b137b352`, v7 inkl. belegtem FK-Fold, Folds
 > live-verifiziert), AP3 geliefert (Durchreichung + Plan-Artefakt-Algo-Feld,
@@ -9,7 +9,10 @@
 > **AP7 geliefert** (`f7cde5df`, Plan-Konvergenz — live: Zweitlauf plant 0 Statements),
 > AP5 geliefert (`smoke-types.sh` + `make sample-db-types-smoke`, Volllauf grün
 > inkl. Rollback-Round-Trip mit v7-Artefakt = Abnahme 4).
-> Offen: AP6 (Doku/ADR + Handbuch-Hinweis).
+> **AP6 geliefert (2026-07-05):** [ADR-0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md)
+> (Entscheidung D1–D3) + Anwenderhandbuch-Fehlerbehebung (Fingerabdruck-
+> Versionsbindung von Rollback-Artefakten/Overlays) + CHANGELOG-Eintrag.
+> **Alle AP0–AP7 geliefert — Slice komplett, siehe [Closure](#closure).**
 > Hervorgegangen aus dem `open/`-Ticket `sqlite-postcompare-type-flattening-drift.md`
 > (aktiviert 2026-07-02, Scope-Schnitt als erster Arbeitsschritt vereinbart).
 > Severity: **P2** (Korrektheitsdefekt der `migrate --execute`-Exit-Semantik: spec-valide
@@ -504,3 +507,32 @@ korrekt — der Sensor je Dialekt ist der AP5-Smoke).
   bleibt im Slice (AP4 + Abnahme 2).
 - ~~**R3**~~ **entschieden (Review 2026-07-03):** das Plan-Artefakt bekommt das
   `fingerprintAlgorithm`-Feld (eingearbeitet in AP3 + Abnahme 4).
+
+## Closure
+
+**Graduiert 2026-07-05.** Alle Arbeitspakete AP0–AP7 geliefert und live
+verifiziert; kein offener Punkt mehr.
+
+- **AP0** Proben & Reproducer (Kanten-Tabellen SQLite 16 / PG 2 / MySQL 5, UNIQUE-
+  und FK-Asymmetrie, `required`-Asymmetrie) — Status-Update oben.
+- **AP1** `NeutralTypeCanonicalizer` (ports-common) + SQLite/PG/MySQL-
+  Kompositions-Kanonisierer (`cfe51d02`), Review-Härtung R1 (`13f4fb60`).
+- **AP2** Fingerprint `v7` — Typ-Projektion + Single-Column-UNIQUE-/FK-Fold +
+  `effectiveRequired` (`b137b352`).
+- **AP3** Durchreichung an alle Call-Sites + Plan-Artefakt-`fingerprintAlgorithm`
+  (`efb0b520`, volle Typ-Matrix live grün).
+- **AP4** SQLite-Reverse-UNIQUE-Fix (single + multi, Namensrekonstruktion,
+  `9d0bc833`).
+- **AP7** target-aware Comparator-Modus — Plan-Konvergenz, Zweitlauf plant 0
+  Statements (`f7cde5df`); Review-Härtung R2 (`91747294`).
+- **AP5** permanenter Typ-Smoke `make sample-db-types-smoke` (`ebe30bb2`).
+- **AP6** [ADR-0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md)
+  (Entscheidung D1–D3, gewollte Divergenz Fingerprint ↔ `schema compare`) +
+  Anwenderhandbuch-Fehlerbehebung + CHANGELOG. `make docs-check` grün.
+
+**Slice-DoD (Abnahme 1–9) erfüllt.** Ausgelagerte Nebenbefunde bleiben als
+eigene Tickets getrackt:
+[`generate-implicit-identifier-pk-materialization.md`](../open/generate-implicit-identifier-pk-materialization.md),
+[`enum-generate-silent-degradation.md`](../open/enum-generate-silent-degradation.md),
+[`sqlite-reverse-identifier-64bit-narrowing.md`](../open/sqlite-reverse-identifier-64bit-narrowing.md)
+(dort ist durch `v7` jetzt Option 2 freigeschaltet).
