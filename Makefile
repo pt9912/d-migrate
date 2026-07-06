@@ -65,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate ports-jdbc-free-gate ast-grep-build ast-grep parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: help dev run integration ast-grep-build ast-grep parquet-sweep ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -153,45 +153,20 @@ integration:
 
 # Doku-Referenz-Checks via d-check (Digest-Pin auf v0.30.0, siehe
 # https://github.com/pt9912/d-check/releases/tag/v0.30.0). Die doc-*-Targets
-# (doc-check/-trace/-complete/-doctor/-repair/-help) kommen aus d-check.mk,
-# erzeugt via `docker run --rm ghcr.io/pt9912/d-check:v0.30.0 --print-mk`; der
-# Image-Pin lebt dort. DCHECK_DIGEST MUSS vor dem include stehen — die .mk
+# (doc-check/-trace/-complete/-doctor/-repair/-help) kommen aus make/d-check.mk,
+# regeneriert via `docker run --rm ghcr.io/pt9912/d-check:v0.30.0 --print-mk > make/d-check.mk`;
+# der Image-Pin lebt dort. DCHECK_DIGEST MUSS vor dem include stehen — die .mk
 # wertet den Digest beim Parsen aus (ifeq → DCHECK_REF).
 DCHECK_DIGEST = sha256:92a6327d50d9496c02f3b6a5cb6d45f721a44e5bb8a9b6b30acfc52e91ab2220
-include d-check.mk
+include make/d-check.mk
 
-# docs-check bleibt die Schirm-ID (gates/ci hängen daran): aggregiert d-checks
-# doc-check (Docker-Befund-Gate) plus das projekt-lokale Kover-Excludes-Ledger.
-docs-check: doc-check coverage-excludes-check
-
-coverage-excludes-check:
-	python3 ./scripts/verify-kover-excludes-ledger.py
-
-# Statische Sicherheitsanalyse via semgrep — hermetisches Gate:
-#  - gepinntes Regelset, on-demand gecacht (config/semgrep/, statt `--config auto`).
-#    Upstream ist LGPL-2.1 + Commons Clause → NICHT vendored, sondern per
-#    scripts/fetch-semgrep-rules.sh gepinnt+SHA256-verifiziert geholt (gitignored).
-#  - Image per Digest gepinnt (SEMGREP_IMAGE),
-#  - Scan offline (`--network none`, `--metrics off`) → reproduzierbar.
-# Bewusst akzeptierte Befunde sind inline via `# nosemgrep: <rule-id>` annotiert
-# (Begruendung am Fundort). Regel-/Image-Updates kommen als bewusster Pin-Bump,
-# nie als spontaner Gate-Bruch. Image + Regeln werden beim Erstlauf gezogen (Pull/
-# Fetch laufen ueber Host/Daemon, nicht den `--network none`-Scan-Container).
-SEMGREP_IMAGE ?= semgrep/semgrep@sha256:c180f0c93a17b420c0af5006214a29d3c747c5459c732b740191adf657dd0068
-
-semgrep-rules-fetch:
-	./scripts/fetch-semgrep-rules.sh
-
-semgrep: semgrep-rules-fetch
-	$(DOCKER) run --rm --network none -v "$(CURDIR)":/src:ro $(SEMGREP_IMAGE) \
-	  semgrep scan --config /src/config/semgrep --error --metrics off /src
-
-solid-suppression-gate:
-	./scripts/solid-suppression-gate.sh
-
-# Architektur-Fitness-Function (ADR 0022): hexagon:ports* ist java.sql-frei.
-ports-jdbc-free-gate:
-	./scripts/ports-jdbc-free-gate.sh
+# ── Quality-Gates ──────────────────────────────────────────────────
+#
+# In make/gate.mk ausgelagert: docs-check/coverage-excludes-check, semgrep(+fetch,
+# SEMGREP_IMAGE), solid-suppression-gate, ports-jdbc-free-gate und die
+# Aggregatoren gates/docker-gates/docker-full-gates. docs-check hängt weiterhin
+# an d-checks doc-check (oben inkludiert).
+include make/gate.mk
 
 # ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer für
 # große mechanische Umbauten (Signatur-/Rename über viele Call-Sites), wo Regex an
@@ -222,8 +197,6 @@ ast-grep: ast-grep-build
 # docs/operations/parquet-pr-checklist.md).
 parquet-sweep:
 	./scripts/parquet-sealed-sweep.sh
-
-gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate
 
 ci: ci-build docs-check
 
@@ -350,142 +323,18 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
 
-docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke semgrep
-
-docker-full-gates: docker-gates integration
-
 clean:
 	$(GRADLE) clean
 
 # ── BI-Demo (examples/bi-demo) ─────────────────────────────────────
 #
-# Kapselt den langen `docker compose -f
-# examples/bi-demo/docker-compose.yml ...`-Pfad. Spec siehe
-# `docs/planning/in-progress/bi-demo-compose.md`. Voraussetzung
-# fuer den `dmigrate`-Service: einmaliger `make docker-build
-# IMAGE_TAG=dev` (baut das d-migrate:dev-Runtime-Image).
-BI_DEMO_COMPOSE := docker compose -f examples/bi-demo/docker-compose.yml
-
-bi-demo-env:
-	@if [ ! -f examples/bi-demo/.env ]; then \
-	  cp examples/bi-demo/.env.example examples/bi-demo/.env; \
-	  echo "[bi-demo] created examples/bi-demo/.env from .env.example"; \
-	fi
-	@mkdir -p examples/bi-demo/out
-
-bi-demo-pull: bi-demo-env
-	$(BI_DEMO_COMPOSE) pull
-
-bi-demo-up: bi-demo-env
-	$(BI_DEMO_COMPOSE) up -d
-
-bi-demo-down:
-	$(BI_DEMO_COMPOSE) down
-
-bi-demo-purge:
-	$(BI_DEMO_COMPOSE) down -v
-
-bi-demo-smoke:
-	./examples/bi-demo/scripts/smoke.sh
+# In make/bi-demo.mk ausgelagert (Variable BI_DEMO_COMPOSE, .PHONY und alle
+# bi-demo-*-Targets). `make bi-demo-…` funktioniert unverändert.
+include make/bi-demo.mk
 
 # ── Sample-DB-Harness (examples/sample-db) ─────────────────────────
 #
-# Reproduzierbarer E2E-Smoke gegen das echte d-migrate:dev-CLI mit
-# gepinnten Sample-DBs (Phase 1: Pagila/PG-Round-Trip). Plan:
-# docs/planning/done/sample-db-integration-harness.md. Sourcing/Mechanik:
-# docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
-# einmaliger `make docker-build IMAGE_TAG=dev`.
-SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
-
-sample-db-fetch:
-	./examples/sample-db/scripts/fetch-dumps.sh
-
-sample-db-up:
-	$(SAMPLE_DB_COMPOSE) up -d postgres
-
-sample-db-down:
-	$(SAMPLE_DB_COMPOSE) down
-
-sample-db-purge:
-	$(SAMPLE_DB_COMPOSE) down -v
-
-sample-db-smoke:
-	./examples/sample-db/scripts/smoke.sh
-
-sample-db-cross-smoke:
-	./examples/sample-db/scripts/smoke-cross.sh
-
-sample-db-cross-smoke-pg2my:
-	./examples/sample-db/scripts/smoke-cross-pg2my.sh
-
-sample-db-sqlite-smoke:
-	./examples/sample-db/scripts/smoke-sqlite.sh
-
-# Fulltext-Slice P4 (SQLite FTS5) — postgres up + Pagila-Reverse belegt PG FULLTEXT ->
-# SQLite FTS5-Generate; ein self-contained Schema belegt FTS5-MATCH live (rebuild + alle
-# drei Sync-Trigger + Negativkontrolle); migrate --execute belegt den Diff-Pfad-Apply.
-# Voraussetzung: sqlite3 am Host + lokal gebautes d-migrate:dev-Image.
-sample-db-fulltext-sqlite-smoke:
-	./examples/sample-db/scripts/smoke-fulltext-sqlite.sh
-
-# Phase 3 (Scale, Employees) — opt-in/nightly, NICHT im PR-Gate. Lädt das
-# große Employees-Dataset (FETCH_EMPLOYEES=1, ~165 MiB), übt export-resume +
-# Chunking + Dual-Target-Import (MySQL + PG). Laufzeit/Volumen → nur lokal
-# oder im scheduled Workflow .github/workflows/sample-db-scale.yml.
-sample-db-scale-smoke:
-	./examples/sample-db/scripts/smoke-scale.sh
-
-# Phase 5 (Spatial) — VA1-Live-Smoke: postgis + mysql up, Geometrie-Wert-Transfer
-# PG->PG und MySQL->MySQL (inkl. native-PG-point-Gegenprobe). Verifiziert die
-# Spatial-VA1-Kette live gegen echte DBs. Voraussetzung: docker-build IMAGE_TAG=dev.
-sample-db-spatial-smoke:
-	./examples/sample-db/scripts/smoke-spatial.sh
-
-# Typ-Kanonisierungs-Smoke (postcompare-type-canonicalization slice, AP5) — permanenter
-# Sensor für die Post-Compare-Drift-Familie: SQLite-Typ-Matrix (21 Neutraltypen, je
-# frisches migrate --execute → Exit 0), UNIQUE-/FK-Folds inkl. Reverse-Fidelity,
-# Plan-Konvergenz (Zweitlauf = 0 Statements), Rebuild-UNIQUE, Rollback-Round-Trip
-# (v7-Artefakt), schema-compare-Striktheits-Gegenprobe + PG/MySQL-Kanten-Proben.
-# Voraussetzung: docker-build --target runtime (d-migrate:dev).
-sample-db-types-smoke:
-	./examples/sample-db/scripts/smoke-types.sh
-
-# Phase 4 (Performance, 4a Sourcing) — opt-in, NICHT im PR-Gate. Pinnt das
-# DuckDB-CLI v1.4.5 + tpch-Extension (FETCH_TPCH=1, ~50 MiB) und generiert die
-# TPC-H-Workload (8 Tabellen) OFFLINE in einem digest-gepinnten Loader; kein
-# Dump im Repo. SF konfigurierbar (Default 0.01): `SF=0.1 make sample-db-tpch-gen`.
-sample-db-tpch-gen:
-	./examples/sample-db/scripts/tpch-generate.sh
-
-# Phase 4 (Performance, 4b Round-Trip) — opt-in, NICHT im PR-Gate. Generiert die
-# TPC-H-Workload (4a) und fährt den vollen Korrektheits-Round-Trip PG->PG:
-# reverse/validate/generate/transfer + Parität (8 Tabellen + DECIMAL-Checksumme).
-# Voraussetzung: lokales d-migrate:dev (`make docker-build IMAGE_TAG=dev`).
-sample-db-tpch-smoke:
-	./examples/sample-db/scripts/smoke-tpch.sh
-
-# Phase 4 (Performance, 4c Volumen-Abnahme Mess-Kern) — opt-in, NICHT im PR-Gate.
-# Datei-basierter data export -> import (>=1 Mio, SF=0.2 default) unter Caps 2cpu/4g:
-# Verlustfreiheit per kanonischem SHA-256 (HART, host-unabhängig) + Export/Import-
-# Durchsatz vs LN-002/003 (diagnostisch; hart nur PERF_GATE=true auf dem designierten
-# Runner) + Resume nach Mid-Stream-Abbruch. Kalibrier-Guard + Nightly-Hart-Gate = Teil 2.
-sample-db-tpch-perf:
-	./examples/sample-db/scripts/smoke-tpch-perf.sh
-
-# Phase 4 (optionaler Sub-Slice 4e) — TPC-DS-Generierung (24 Tabellen) offline aus
-# gepinntem DuckDB + tpcds-Extension. Opt-in, NICHT im PR-Gate.
-sample-db-tpcds-gen:
-	./examples/sample-db/scripts/tpcds-generate.sh
-
-# Phase 4 (optionaler Sub-Slice 4e) — TPC-DS Round-Trip-Korrektheit PG->PG:
-# reverse/validate/generate/transfer + Parität (24 Tabellen + DECIMAL-Checksumme).
-# Opt-in, NICHT im PR-Gate. Voraussetzung: lokales d-migrate:dev (`make docker-build IMAGE_TAG=dev`).
-sample-db-tpcds-smoke:
-	./examples/sample-db/scripts/smoke-tpcds.sh
-
-# Phase 4 (#2 Tool-Vergleich) — opt-in, NICHT im PR-Gate, INTERNER Sanity-Check (kein
-# Audit-Benchmark). Bewegt dieselbe TPC-H-Workload PG->PG mit COPY (native Decke),
-# d-migrate (CSV, gecappt) und pgloader (gepinnt, gecappt); rows/s + Anteil COPY-Decke.
-# WITH_PGLOADER=0 lässt pgloader weg. Doku: docs/planning/open/tool-comparison.md.
-sample-db-tool-compare:
-	./examples/sample-db/scripts/smoke-tool-compare.sh
+# In make/sample-db.mk ausgelagert (Variable SAMPLE_DB_COMPOSE, .PHONY und alle
+# sample-db-*-Targets). Der `include` bindet sie in dieselbe make-Invocation
+# ein — `make sample-db-…` funktioniert unverändert.
+include make/sample-db.mk
