@@ -5,6 +5,8 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.ResumeMarker
 import dev.dmigrate.driver.data.TableLister
+import dev.dmigrate.format.data.BundleClosureContext
+import dev.dmigrate.format.data.BundleClosureTable
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat

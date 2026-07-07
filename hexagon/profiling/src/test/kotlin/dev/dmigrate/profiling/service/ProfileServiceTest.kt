@@ -6,6 +6,7 @@ import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingQueryError
 import dev.dmigrate.profiling.SchemaIntrospectionError
+import dev.dmigrate.profiling.UnsupportedProfilingFeatureException
 import dev.dmigrate.profiling.model.ValueFrequency
 import dev.dmigrate.profiling.port.ColumnMetrics
 import dev.dmigrate.profiling.port.ColumnSchema
@@ -20,7 +21,6 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.shouldBe
 import java.sql.SQLException
-import java.sql.SQLFeatureNotSupportedException
 
 class ProfileServiceTest : FunSpec({
 
@@ -94,7 +94,7 @@ class ProfileServiceTest : FunSpec({
     test("unsupported optional numeric stats are omitted") {
         val dataWithUnsupportedNumericStats = object : ProfilingDataPort by data {
             override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?) =
-                throw SQLFeatureNotSupportedException("numeric stats unsupported")
+                throw UnsupportedProfilingFeatureException("numeric stats unsupported")
         }
         val service = ProfileTableService(ProfilingAdapterSet(introspection, dataWithUnsupportedNumericStats, resolver))
 

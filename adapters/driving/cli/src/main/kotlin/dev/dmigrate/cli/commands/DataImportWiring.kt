@@ -16,6 +16,7 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.SchemaCodec
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.format.data.DefaultValueDeserializerFactory
 import dev.dmigrate.format.parquet.ParquetSeekableDataChunkReaderFactory
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 import dev.dmigrate.streaming.CheckpointConfig
@@ -95,6 +96,7 @@ internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
             importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
                 val importer = StreamingImporter(
                     readerFactory = readerFactory,
+                    valueDeserializerFactory = DefaultValueDeserializerFactory(),
                     seekableReaderFactory = ParquetSeekableDataChunkReaderFactory(),
                     writerLookup = writerLookup,
                     onTableOpened = callbacks.onTableOpened,

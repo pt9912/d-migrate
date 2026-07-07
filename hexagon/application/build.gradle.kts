@@ -41,6 +41,7 @@ dependencies {
     // dep is required because Gradle's testFixtures source set does not
     // inherit `implementation` deps' transitive `api` exports automatically.
     testFixturesApi(project(":hexagon:ports-read"))
+    testFixturesImplementation(project(":adapters:driven:driver-common"))
     // Atomic-Preserve Phase C.5: `executeSegmentsAgainstPool` test-helper
     // signature uses ExecutableSegment, AtomicSequencePreserveBatch,
     // AtomicSequencePreserveExecutor, and AtomicSequencePreserveResult

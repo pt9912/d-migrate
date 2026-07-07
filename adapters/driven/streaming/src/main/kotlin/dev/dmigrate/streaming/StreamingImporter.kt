@@ -9,6 +9,7 @@ import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
+import dev.dmigrate.format.data.ValueDeserializerFactory
 
 /**
  * Pull-basierter Streaming-Importer. Liest Chunks aus einem Reader und
@@ -24,6 +25,7 @@ import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
  */
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
+    private val valueDeserializerFactory: ValueDeserializerFactory,
     private val seekableReaderFactory: SeekableDataChunkReaderFactory? = null,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
@@ -35,6 +37,7 @@ class StreamingImporter(
     internal var tableImporter: TableImporter = TableImporter(
         readerFactory = readerFactory,
         onTableOpened = onTableOpened,
+        valueDeserializerFactory = valueDeserializerFactory,
         seekableReaderFactory = seekableReaderFactory,
     )
 

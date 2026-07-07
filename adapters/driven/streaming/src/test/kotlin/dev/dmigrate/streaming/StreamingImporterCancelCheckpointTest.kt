@@ -108,6 +108,7 @@ class StreamingImporterCancelCheckpointTest : FunSpec({
         val reportEvents = AtomicInteger(0)
         val reporter = ProgressReporter { reportEvents.incrementAndGet() }
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = emptyReaderFactory,
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }
@@ -137,6 +138,7 @@ class StreamingImporterCancelCheckpointTest : FunSpec({
         val completedTables = mutableListOf<String>()
         val source = TestCancellationTokenSource()
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = emptyReaderFactory,
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }

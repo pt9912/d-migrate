@@ -5,7 +5,7 @@ import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.ExportOptions
-import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.data.ValueSerializationWarning
 import java.io.OutputStream
 
 /**
@@ -16,7 +16,7 @@ import java.io.OutputStream
  * `CompositeDataChunkWriterFactory`-Adapter.
  *
  * - [warningSink] ist forward-compat; ParquetChunkWriter emittiert heute
- *   keine [ValueSerializer.Warning].
+ *   keine [ValueSerializationWarning].
  * - [extraMetaDataProvider] reicht den `d-migrate.manifest`-Footer-KV-
  *   Provider an [ParquetChunkWriter] durch. Single-File-Exports verdrahten
  *   `ParquetSingleFileManifestWriter(...).provider`, Bundle-Exports
@@ -24,7 +24,7 @@ import java.io.OutputStream
  *   gemaess `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
  */
 class ParquetChunkWriterFactory(
-    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
+    private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
     private val extraMetaDataProvider: (ChunkSchema) -> Map<String, String> = { emptyMap() },
 ) : DataChunkWriterFactory {
 

@@ -17,7 +17,7 @@ import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
 import dev.dmigrate.format.data.ExportOptions
-import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.data.ValueSerializationWarning
 import dev.dmigrate.format.parquet.ParquetChunkWriterFactory
 import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
 import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter
@@ -100,7 +100,7 @@ internal object DataExportWiring {
             checkpointDir = options.checkpointDir,
             manifestSha256 = options.manifestSha256,
         )
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val runner = DataExportRunner(
             sourceResolver = { source, configPath ->
                 try {
@@ -170,9 +170,9 @@ internal object DataExportWiring {
      */
     private fun buildWriterFactoryForOutput(
         exportOutput: ExportOutput,
-        warnings: MutableList<ValueSerializer.Warning>,
+        warnings: MutableList<ValueSerializationWarning>,
     ): DataChunkWriterFactory {
-        val sink: (ValueSerializer.Warning) -> Unit = { warnings += it }
+        val sink: (ValueSerializationWarning) -> Unit = { warnings += it }
         val parquetFactory = when (exportOutput) {
             is ExportOutput.SingleFile -> ParquetChunkWriterFactory(
                 warningSink = sink,

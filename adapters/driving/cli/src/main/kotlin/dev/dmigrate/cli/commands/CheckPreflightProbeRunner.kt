@@ -1,17 +1,16 @@
 package dev.dmigrate.cli.commands
-import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mysql.MysqlCheckPreflightProbe
 import dev.dmigrate.driver.postgresql.PostgresCheckPreflightProbe
 import dev.dmigrate.driver.sqlite.SqliteCheckPreflightProbe
 import java.nio.file.Path
-import java.sql.Connection
 
 /**
  * F.5 Sub-Slice E.4 (2026-05-19): cross-dialect CLI wiring for the
@@ -45,7 +44,7 @@ internal object CheckPreflightProbeRunner {
         }
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->
-            p.borrow().asJdbc().use { conn -> dispatch(conn, dialect, plan) }
+            p.borrow().use { conn -> dispatch(conn, dialect, plan) }
         }
     }
 
@@ -55,7 +54,7 @@ internal object CheckPreflightProbeRunner {
      * explicitly, the compiler enforces it here.
      */
     internal fun dispatch(
-        connection: Connection,
+        connection: DatabaseConnection,
         dialect: DatabaseDialect,
         plan: DiffResult,
     ): List<CheckPreflightDeclaration> = when (dialect) {

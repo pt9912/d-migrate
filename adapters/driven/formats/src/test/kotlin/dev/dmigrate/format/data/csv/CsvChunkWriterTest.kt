@@ -2,10 +2,10 @@ package dev.dmigrate.format.data.csv
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
-import dev.dmigrate.format.data.begin
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.begin
 import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.data.ValueSerializationWarning
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -201,7 +201,7 @@ class CsvChunkWriterTest : FunSpec({
     // ─── F29: java.sql.Array → W201 + null in CSV ────────────────
 
     test("F29: java.sql.Array column is rendered as null and emits W201 once per column") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val out = ByteArrayOutputStream()
         val sqlArray = object : java.sql.Array {
             override fun getBaseTypeName() = "int4"
@@ -235,7 +235,7 @@ class CsvChunkWriterTest : FunSpec({
     // ─── F27: echte Spaltennamen werden an ValueSerializer übergeben ───
 
     test("F27: W202 warning is attributed to the real column name, not col0/col1") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val out = ByteArrayOutputStream()
         CsvChunkWriter(out, warningSink = { warnings += it }).use { w ->
             w.begin("users", cols)

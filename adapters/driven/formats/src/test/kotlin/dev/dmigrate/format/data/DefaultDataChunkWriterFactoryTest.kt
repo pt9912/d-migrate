@@ -27,7 +27,7 @@ class DefaultDataChunkWriterFactoryTest : FunSpec({
     }
 
     test("warningSink is propagated to writers") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val factoryWithSink = DefaultDataChunkWriterFactory(warningSink = { warnings += it })
         // Smoke-Test: Factory akzeptiert den Sink ohne zu werfen
         val writer = factoryWithSink.create(DataExportFormat.JSON, out, opts)

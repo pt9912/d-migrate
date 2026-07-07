@@ -8,6 +8,7 @@ import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.SerializedValue
 import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.data.ValueSerializationWarning
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
@@ -30,7 +31,7 @@ import java.nio.charset.StandardCharsets
 class CsvChunkWriter(
     private val output: OutputStream,
     private val options: ExportOptions = ExportOptions(),
-    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
+    private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
 ) : DataChunkWriter {
 
     private val serializer = ValueSerializer(warningSink)
@@ -95,7 +96,7 @@ class CsvChunkWriter(
                     val key = "${chunk.table}|${columnNames[i]}"
                     if (sequenceWarnedColumns.add(key)) {
                         warningSink?.invoke(
-                            ValueSerializer.Warning(
+                            ValueSerializationWarning(
                                 code = "W201",
                                 table = chunk.table,
                                 column = columnNames[i],

@@ -97,6 +97,7 @@ class StreamingImporterCancelPropagationTest : FunSpec({
     test("cancellationToken passed to import lands on TableImportParams") {
         val capturer = CapturingTableImporter()
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = emptyReaderFactory,
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }
@@ -120,6 +121,7 @@ class StreamingImporterCancelPropagationTest : FunSpec({
     test("default cancellationToken is none() when caller omits it") {
         val capturer = CapturingTableImporter()
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = emptyReaderFactory,
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }

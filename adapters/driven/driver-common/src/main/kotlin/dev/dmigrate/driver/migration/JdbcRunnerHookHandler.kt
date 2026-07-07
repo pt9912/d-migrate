@@ -1,4 +1,4 @@
-package dev.dmigrate.cli.commands
+package dev.dmigrate.driver.migration
 
 import java.sql.Statement
 
@@ -17,12 +17,11 @@ import java.sql.Statement
  *   created on the same connection mid-iteration, so all PRAGMA-state
  *   reads/restores go through [jdbcStmt] directly.
  *
- * Lives in `hexagon:application` so both `JdbcMigrationExecutor`
- * (production CLI path) and the `MigrationExecutorTestSupport`
- * test-fixture variant share one implementation — keeping H.3b's
- * hook contract testable from the Application layer.
+ * Lives in the driven JDBC adapter because applying hooks requires a
+ * JDBC [Statement]. Pure render/planning layers only emit and carry the
+ * marker comments.
  */
-object RunnerHookHandler {
+object JdbcRunnerHookHandler {
 
     /** Allowlisted hook names — anything else is treated as a regular SQL statement. */
     private val ALLOWED_HOOKS = setOf(
@@ -103,7 +102,7 @@ object RunnerHookHandler {
                     )
                 }
             }
-            else -> error("RunnerHookHandler: unrecognised hook `$hook` — parseHook should have rejected it")
+            else -> error("JdbcRunnerHookHandler: unrecognised hook `$hook` — parseHook should have rejected it")
         }
     }
 

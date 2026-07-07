@@ -5,12 +5,12 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.data.ChunkColumnSchema
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.DefaultValueDeserializer
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.format.data.JdbcTypeHint
 import dev.dmigrate.format.data.SchemaOrigin
 import dev.dmigrate.format.data.SeekableChunkSource
-import dev.dmigrate.format.data.ValueDeserializer
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -168,7 +168,7 @@ class ParquetChunkRoundTripTest : FunSpec({
                 "created_at" to JdbcTypeHint(Types.TIMESTAMP),
                 "occurred_at" to JdbcTypeHint(Types.TIMESTAMP_WITH_TIMEZONE),
             )
-            val deserializer = ValueDeserializer(typeHintOf = { hints[it] })
+            val deserializer = DefaultValueDeserializer(typeHintOf = { hints[it] })
 
             deserializer.deserialize("events", "created_at", row[0]) shouldBe
                 LocalDateTime.ofInstant(tsUtc, ZoneOffset.UTC)

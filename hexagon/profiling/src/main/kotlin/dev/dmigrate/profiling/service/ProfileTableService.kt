@@ -5,12 +5,12 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingQueryError
 import dev.dmigrate.profiling.SchemaIntrospectionError
+import dev.dmigrate.profiling.UnsupportedProfilingFeatureException
 import dev.dmigrate.profiling.model.ColumnProfile
 import dev.dmigrate.profiling.model.TableProfile
 import dev.dmigrate.profiling.rules.WarningEvaluator
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
-import java.sql.SQLFeatureNotSupportedException
 
 /**
  * Orchestrates profiling for a single table.
@@ -177,6 +177,6 @@ open class ProfileTableService(
 
     private fun Exception.isExpectedOptionalProfilingFailure(): Boolean =
         this is UnsupportedOperationException ||
-            this is SQLFeatureNotSupportedException ||
-            cause is SQLFeatureNotSupportedException
+            this is UnsupportedProfilingFeatureException ||
+            cause is UnsupportedProfilingFeatureException
 }

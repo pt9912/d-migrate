@@ -16,6 +16,7 @@ import dev.dmigrate.driver.SqliteLiveCatalog
 import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.MigrationExecutionTrace
 import dev.dmigrate.driver.migration.MigrationExecutionStatementGroup
 import java.nio.file.Path
 
@@ -968,23 +969,7 @@ typealias SegmentAwareExecutorFn = (
     cancellationToken: CancellationToken,
 ) -> ExecutionTrace
 
-/**
- * Execution trace returned by the injected executor when `--execute`
- * is set. The runner copies these fields onto the combined
- * [MigrationDdlResult] so the report can surface them and downstream
- * artefact-writers know whether the rollback artefact is finalisable.
- */
-data class ExecutionTrace(
-    val executionStarted: Boolean,
-    val executionCompleted: Boolean,
-    val statementsAttempted: Int = 0,
-    val lastStatementOperationIds: Set<String> = emptySet(),
-    val transactionRolledBack: Boolean = false,
-    val sideEffectsPossible: Boolean = false,
-    val executionError: String? = null,
-    val statementGroups: List<MigrationExecutionStatementGroup> = emptyList(),
-    val recoverability: ExecutionRecoverability? = null,
-)
+typealias ExecutionTrace = MigrationExecutionTrace
 
 internal fun ExecutionTrace.withG3Defaults(
     statementGroups: List<MigrationExecutionStatementGroup>,

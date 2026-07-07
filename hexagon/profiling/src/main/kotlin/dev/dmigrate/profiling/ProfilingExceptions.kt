@@ -13,5 +13,8 @@ class SchemaIntrospectionError(message: String, cause: Throwable? = null) :
 class ProfilingQueryError(message: String, cause: Throwable? = null) :
     ProfilingException(message, cause)
 
+class UnsupportedProfilingFeatureException(message: String, cause: Throwable? = null) :
+    ProfilingException(message, cause)
+
 class TypeResolutionError(message: String, cause: Throwable? = null) :
     ProfilingException(message, cause)

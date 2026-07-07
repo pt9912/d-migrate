@@ -10,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.format.data.DefaultValueDeserializerFactory
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
 import dev.dmigrate.server.application.fingerprint.JsonValue
 import dev.dmigrate.server.core.connection.ConnectionReference
@@ -219,6 +220,7 @@ internal class McpDataImportJobWorker(
         // `docs/adr/0007-mcp-parquet-isolation-defense-in-depth.md`.
         StreamingImporter(
             readerFactory = DefaultDataChunkReaderFactory(),
+            valueDeserializerFactory = DefaultValueDeserializerFactory(),
             writerLookup = writerLookup,
             onTableOpened = callbacks.onTableOpened,
         ).import(

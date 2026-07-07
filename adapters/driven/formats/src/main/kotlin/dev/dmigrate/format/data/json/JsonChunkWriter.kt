@@ -9,6 +9,7 @@ import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.SerializedValue
 import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.data.ValueSerializationWarning
 import java.io.OutputStream
 
 /**
@@ -29,7 +30,7 @@ import java.io.OutputStream
 class JsonChunkWriter(
     output: OutputStream,
     private val options: ExportOptions = ExportOptions(),
-    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
+    private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
 ) : DataChunkWriter {
 
     /**

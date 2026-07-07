@@ -4,8 +4,6 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.data.TargetColumn
-import dev.dmigrate.format.data.FormatReadOptions
-import dev.dmigrate.format.data.JdbcTypeHint
 import dev.dmigrate.format.data.ValueDeserializer
 
 internal data class BindingPlan(
@@ -98,14 +96,6 @@ internal fun normalizeChunk(
         normalizedRows,
         chunk.chunkIndex,
     )
-}
-
-internal fun buildDeserializer(
-    targetColumns: List<TargetColumn>,
-    readOptions: FormatReadOptions,
-): ValueDeserializer {
-    val hints = targetColumns.associate { it.name to JdbcTypeHint(it.jdbcType, it.sqlTypeName) }
-    return ValueDeserializer(typeHintOf = { hints[it] }, csvNullString = readOptions.csvNullString)
 }
 
 internal fun TargetColumn.asColumnDescriptor(): ColumnDescriptor =
