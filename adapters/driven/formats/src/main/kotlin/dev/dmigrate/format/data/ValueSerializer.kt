@@ -44,17 +44,8 @@ class ValueSerializer(
      * Pro `(code, table, column, javaClass)`-Tupel wird der Sink höchstens
      * einmal aufgerufen.
      */
-    private val warningSink: ((Warning) -> Unit)? = null,
+    private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
 ) {
-
-    /** Eine Warnung aus dem Mapping-Pfad. */
-    data class Warning(
-        val code: String,
-        val table: String,
-        val column: String,
-        val javaClass: String,
-        val message: String,
-    )
 
     /** Tracking für die Deduplizierung. Pro Tupel höchstens einmal warnen. */
     private val emittedWarnings = HashSet<String>()
@@ -189,7 +180,7 @@ class ValueSerializer(
         val javaClass = value.javaClass.name
         val key = "$code|$table|$column|$javaClass"
         if (emittedWarnings.add(key)) {
-            sink(Warning(code = code, table = table, column = column, javaClass = javaClass, message = message))
+            sink(ValueSerializationWarning(code = code, table = table, column = column, javaClass = javaClass, message = message))
         }
     }
 

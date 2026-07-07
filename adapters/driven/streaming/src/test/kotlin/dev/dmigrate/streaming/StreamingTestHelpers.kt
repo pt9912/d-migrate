@@ -16,7 +16,9 @@ import dev.dmigrate.driver.data.WriteResult
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.DefaultValueDeserializerFactory
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.ValueDeserializerFactory
 import java.io.InputStream
 
 internal object ImporterNoopConnectionPool : ConnectionPool {
@@ -25,6 +27,8 @@ internal object ImporterNoopConnectionPool : ConnectionPool {
     override fun activeConnections(): Int = 0
     override fun close() = Unit
 }
+
+internal fun testValueDeserializerFactory(): ValueDeserializerFactory = DefaultValueDeserializerFactory()
 
 internal class FakeReaderFactory(
     private val readersByTable: Map<String, FakeReader>,

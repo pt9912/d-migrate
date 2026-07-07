@@ -10,10 +10,10 @@ import java.io.OutputStream
  * mit JSON-, YAML- und CSV-Writern.
  *
  * Optional kann ein [warningSink] übergeben werden, der pro
- * [ValueSerializer.Warning] aufgerufen wird (für Export-Reports).
+ * [ValueSerializationWarning] aufgerufen wird (für Export-Reports).
  */
 class DefaultDataChunkWriterFactory(
-    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
+    private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
 ) : DataChunkWriterFactory {
 
     override fun create(

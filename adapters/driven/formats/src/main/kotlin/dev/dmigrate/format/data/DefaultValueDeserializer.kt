@@ -6,39 +6,6 @@ import java.sql.Types
 import java.time.format.DateTimeParseException
 
 /**
- * Per-Spalten-Typ-Hint für den [ValueDeserializer]. Lebt im `formats`-
- * Modul (statt in `core`), weil der Deserializer der einzige Konsument ist
- * und der Hint sonst gegen die 0.3.0-Architektur-Regel "kein JDBC-
- * spezifisches Feld in core" verstoßen würde.
- *
- * Der Hint wird vom `StreamingImporter` aus den Writer-Side-
- * Metadaten (`TableImportSession.targetColumns` plus eine vom Writer
- * gelieferte typed metadata struct) gebaut und als Lookup-Closure
- * `(columnName: String) -> JdbcTypeHint?` an den Deserializer übergeben.
- *
- * @property jdbcType JDBC-Typcode aus
- *   `ResultSetMetaData.getColumnType(i)`, z.B. [java.sql.Types.VARCHAR].
- *   Primärer Typ-Anker für den Deserializer.
- * @property sqlTypeName Optional: dialekt-spezifischer Type-Name aus
- *   `ResultSetMetaData.getColumnTypeName(i)`. Sekundärer Hint für
- *   Pfade, in denen der JDBC-Typcode mehrdeutig ist (PG `Types.OTHER`
- *   für UUID/JSON/JSONB/INTERVAL, MySQL `BIT(1)` vs `BIT(N)`).
- * @property precision Optionale Dezimalpräzision aus JDBC-Metadaten.
- *   Wird für `NUMERIC`/`DECIMAL` gebraucht, um Werte mit
- *   `precision > 18` auf dem exakten `BigDecimal`-Pfad zu halten.
- * @property scale Optionale Dezimalskala aus JDBC-Metadaten. Eine
- *   positive Scale erzwingt für `NUMERIC`/`DECIMAL` den exakten
- *   `BigDecimal`-Pfad, auch wenn das aktuelle Input-Token ganzzahlig
- *   aussieht.
- */
-data class JdbcTypeHint(
-    val jdbcType: Int,
-    val sqlTypeName: String? = null,
-    val precision: Int? = null,
-    val scale: Int? = null,
-)
-
-/**
  * LF-010 / LF-013: Inverse zur [ValueSerializer]-Mapping-Tabelle.
  * Konvertiert einen Format-spezifischen Input-Wert (JSON-String / -Number /
  * -Array / YAML-Mapping / CSV-String) in den passenden Java-Wert, den der
@@ -99,7 +66,7 @@ data class JdbcTypeHint(
  * der Writer wird beim `setObject` typischerweise scheitern, aber der
  * Deserializer darf hier nicht raten.
  */
-class ValueDeserializer(
+class DefaultValueDeserializer(
     /**
      * Lookup-Closure: liefert den JDBC-Hint für eine gegebene Spalte oder
      * `null`, wenn die Spalte im Target unbekannt ist. Wird einmal pro
@@ -108,7 +75,7 @@ class ValueDeserializer(
     private val typeHintOf: (columnName: String) -> JdbcTypeHint?,
     /** Nullstring für CSV-Werte; alles andere Format ignoriert das Feld. */
     private val csvNullString: String = "",
-) {
+) : ValueDeserializer {
 
     /**
      * Convertiert einen format-getypten Input-Wert zu einem Java-Wert,
@@ -124,11 +91,11 @@ class ValueDeserializer(
      *   kommt — dann wird ein String gegen den `csvNullString`
      *   verglichen. Für JSON/YAML-Quellen `false`.
      */
-    fun deserialize(
+    override fun deserialize(
         table: String,
         columnName: String,
         value: Any?,
-        isCsvSource: Boolean = false,
+        isCsvSource: Boolean,
     ): Any? {
         // Null-Handling ist vor dem Type-Dispatch: jeder beliebige
         // Spalten-Typ akzeptiert SQL NULL.

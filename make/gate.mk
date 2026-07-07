@@ -42,8 +42,8 @@ solid-suppression-gate:
 ports-jdbc-free-gate:
 	./scripts/ports-jdbc-free-gate.sh
 
-gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate
+gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate a-check
 
-docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke semgrep
+docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke semgrep a-check
 
 docker-full-gates: docker-gates integration

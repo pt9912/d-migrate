@@ -1,12 +1,13 @@
 package dev.dmigrate.cli.commands.testing
 
 import dev.dmigrate.cli.commands.ExecutionTrace
-import dev.dmigrate.cli.commands.MigrationStreamClassifier
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.migration.ExecutionRecoverability
+import dev.dmigrate.driver.migration.JdbcRunnerHookHandler as RunnerHookHandler
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.MigrationStreamClassifier
 import dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
@@ -17,12 +18,9 @@ import java.sql.Connection
 import java.sql.SQLException
 
 /**
- * Test-only Unwrap des neutralen [DatabaseConnection] auf die JDBC-[Connection]
- * (ADR 0022). Die produktive Erweiterung `asJdbc()` lebt in
- * `:adapters:driven:driver-common`, das die `hexagon:application`-testFixtures-
- * Schicht aus Layering-Gründen NICHT auf dem Compile-Pfad trägt. Wie
- * `JdbcForeignValueNormalizer` (pgjdbc `PGobject`) wird der Zugriff daher
- * **reflektiv** gelöst — kein Compile-Dependency auf den Adapter.
+ * Test-only Unwrap des neutralen [DatabaseConnection] auf die JDBC-[Connection].
+ * Die Fixture bleibt bei Reflexion, damit die Live-ITs ihren bereits
+ * konfigurierten Pool weiterverwenden können.
  */
 private fun DatabaseConnection.jdbc(): Connection =
     javaClass.getMethod("getConnection").invoke(this) as Connection
@@ -119,7 +117,7 @@ private fun runStreamOwnedTransaction(
     // executor. Before this, hooks were passed verbatim to
     // jdbcStmt.execute as SQL comments (xerial-sqlite tolerated them
     // silently, masking H.3b regressions in Application-layer tests).
-    val hookState = dev.dmigrate.cli.commands.RunnerHookHandler.State()
+    val hookState = RunnerHookHandler.State()
     return try {
         // Per-statement fresh Statement — see JdbcMigrationExecutor for
         // the xerial-sqlite Statement-finalisation rationale.
@@ -127,7 +125,7 @@ private fun runStreamOwnedTransaction(
             lastIds = s.operationIds
             attempted++
             conn.createStatement().use { jdbcStmt ->
-                dev.dmigrate.cli.commands.RunnerHookHandler.executeOrApply(jdbcStmt, s.sql, hookState)
+                RunnerHookHandler.executeOrApply(jdbcStmt, s.sql, hookState)
             }
         }
         ExecutionTrace(
@@ -155,12 +153,12 @@ private fun runStreamOwnedTransaction(
 
 private fun tryRestoreFkStateAfterRollback(
     conn: Connection,
-    hookState: dev.dmigrate.cli.commands.RunnerHookHandler.State,
+    hookState: RunnerHookHandler.State,
 ) {
     if (hookState.savedSqliteForeignKeysPragma == null) return
     try {
         conn.createStatement().use { stmt ->
-            dev.dmigrate.cli.commands.RunnerHookHandler.apply(stmt, "restore-fk-state", hookState)
+            RunnerHookHandler.apply(stmt, "restore-fk-state", hookState)
         }
     } catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") _: Exception) {
         // Best-effort: original SQLException already drives the trace.

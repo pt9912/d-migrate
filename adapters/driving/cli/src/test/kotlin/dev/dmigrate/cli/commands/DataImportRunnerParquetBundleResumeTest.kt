@@ -17,8 +17,8 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.SchemaOrigin
 import dev.dmigrate.format.parquet.ParquetChunkWriter
 import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
-import dev.dmigrate.streaming.BundleClosureContext
-import dev.dmigrate.streaming.BundleClosureTable
+import dev.dmigrate.format.data.BundleClosureContext
+import dev.dmigrate.format.data.BundleClosureTable
 import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.TableImportSummary
 import dev.dmigrate.streaming.checkpoint.FileCheckpointStore

@@ -37,7 +37,7 @@ class ValueDeserializerTest : FunSpec({
         scale: Int? = null,
     ): ValueDeserializer {
         val hint = JdbcTypeHint(jdbcType, sqlTypeName, precision, scale)
-        return ValueDeserializer(typeHintOf = { name -> if (name == "c") hint else null })
+        return DefaultValueDeserializer(typeHintOf = { name -> if (name == "c") hint else null })
     }
 
     /** Same, but with an explicit CSV null sentinel. */
@@ -49,7 +49,7 @@ class ValueDeserializerTest : FunSpec({
         scale: Int? = null,
     ): ValueDeserializer {
         val hint = JdbcTypeHint(jdbcType, sqlTypeName, precision, scale)
-        return ValueDeserializer(
+        return DefaultValueDeserializer(
             typeHintOf = { name -> if (name == "c") hint else null },
             csvNullString = csvNullString,
         )

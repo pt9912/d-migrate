@@ -18,15 +18,10 @@ plugins {
 }
 
 dependencies {
+    api(project(":hexagon:ports-common"))
     api(project(":hexagon:ports-read"))
     api(project(":hexagon:ports-write"))
     implementation(project(":hexagon:core"))
-
-    // S3b (Parquet Cut A 2026-06-06): ParquetBundleClosure
-    // referenziert BundleClosureContext aus dem Streaming-Modul.
-    // implementation (kein api), weil das Wiring vom CLI ausgeht
-    // und formats-parquet keine Streaming-Typen weiter exponiert.
-    implementation(project(":adapters:driven:streaming"))
 
     implementation("org.apache.parquet:parquet-hadoop:${rootProject.properties["parquetVersion"]}")
     implementation("org.apache.parquet:parquet-column:${rootProject.properties["parquetVersion"]}")

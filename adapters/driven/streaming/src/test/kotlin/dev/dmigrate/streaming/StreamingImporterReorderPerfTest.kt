@@ -91,6 +91,7 @@ class StreamingImporterReorderPerfTest : FunSpec({
             // measures the same wall-clock on both sides.
             val writer = SqliteDataWriter()
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = DefaultDataChunkReaderFactory(),
                 writerLookup = { writer },
             )

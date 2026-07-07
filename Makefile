@@ -171,10 +171,10 @@ include make/gate.mk
 # ── Architektur-Gate (a-check) ─────────────────────────────────────
 #
 # Hexagon-Schicht-Regeln via a-check (extern, `pt9912/a-check`), Config in
-# `.a-check.yml`. Standalone `make a-check` — bewusst (noch) NICHT in `gates`,
-# solange die 12 bekannten Befunde offen sind (Slice
-# docs/planning/next/a-check-architecture-gate.md). make/a-check.mk ist
-# via `a-check --print-mk` erzeugt; Digest-Pin (v0.12.0) lebt dort.
+# `.a-check.yml`. `make a-check` ist Teil von `gates`/`docker-gates`; der
+# Befund-Bereinigungs-Slice ist in docs/planning/done/a-check-architecture-gate.md
+# dokumentiert. make/a-check.mk ist via `a-check --print-mk` erzeugt; Digest-Pin
+# (v0.12.0) lebt dort.
 include make/a-check.mk
 
 # ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer für

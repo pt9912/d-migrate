@@ -67,6 +67,7 @@ class StreamingImporterTestPart2 : FunSpec({
             writeBehaviors = mapOf(0L to FakeTableImportSession.WriteBehavior.WriteFails(RuntimeException("boom"))),
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -102,6 +103,7 @@ class StreamingImporterTestPart2 : FunSpec({
             writeBehaviors = mapOf(0L to FakeTableImportSession.WriteBehavior.WriteFails(RuntimeException("boom"))),
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -139,6 +141,7 @@ class StreamingImporterTestPart2 : FunSpec({
             writeBehaviors = mapOf(0L to FakeTableImportSession.WriteBehavior.WriteFails(RuntimeException("boom"))),
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -178,6 +181,7 @@ class StreamingImporterTestPart2 : FunSpec({
                 )
             )
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = {
                     FakeWriter(
@@ -233,6 +237,7 @@ class StreamingImporterTestPart2 : FunSpec({
             },
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -276,6 +281,7 @@ class StreamingImporterTestPart2 : FunSpec({
             writeBehaviors = mapOf(1L to FakeTableImportSession.WriteBehavior.WriteFails(RuntimeException("boom"))),
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -309,6 +315,7 @@ class StreamingImporterTestPart2 : FunSpec({
             writeResults = mapOf(0L to WriteResult(rowsInserted = 0, rowsUpdated = 0, rowsSkipped = 0, rowsUnknown = 2)),
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -337,6 +344,7 @@ class StreamingImporterTestPart2 : FunSpec({
             finishResult = FinishTableResult.PartialFailure(emptyList(), cause),
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -366,6 +374,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val session = FakeTableImportSession(targetColumns = listOf(targetColumns.first()))
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )

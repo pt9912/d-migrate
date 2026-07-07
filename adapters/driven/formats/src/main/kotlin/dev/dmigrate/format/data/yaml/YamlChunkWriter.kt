@@ -7,6 +7,7 @@ import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.SerializedValue
 import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.data.ValueSerializationWarning
 import org.snakeyaml.engine.v2.api.Dump
 import org.snakeyaml.engine.v2.api.DumpSettings
 import org.snakeyaml.engine.v2.common.FlowStyle
@@ -31,7 +32,7 @@ import java.io.OutputStreamWriter
 class YamlChunkWriter(
     private val output: OutputStream,
     private val options: ExportOptions = ExportOptions(),
-    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
+    private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
 ) : DataChunkWriter {
 
     private val streamWriter = OutputStreamWriter(output, options.encoding)

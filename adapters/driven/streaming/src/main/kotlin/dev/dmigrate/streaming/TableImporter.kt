@@ -14,6 +14,8 @@ import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
+import dev.dmigrate.format.data.ValueDeserializer
+import dev.dmigrate.format.data.ValueDeserializerFactory
 
 internal data class TableImportParams(
     val pool: ConnectionPool,
@@ -47,6 +49,7 @@ internal data class PreparedTableImport(
 internal open class TableImporter(
     private val readerFactory: DataChunkReaderFactory,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
+    private val valueDeserializerFactory: ValueDeserializerFactory = PassthroughValueDeserializerFactory,
     /**
      * S7a (Plan-Review-v4 Finding 2): hinten angehaengter Optional-Param,
      * sodass bestehende positional Call-Sites (TableImporter-Tests, default
@@ -183,7 +186,7 @@ internal open class TableImporter(
             firstChunk = firstChunk,
             targetColumns = session.targetColumns,
         )
-        val deserializer = buildDeserializer(session.targetColumns, params.readOptions)
+        val deserializer = valueDeserializerFactory.create(session.targetColumns, params.readOptions)
         return ChunkContext(
             table = params.tableInput.table,
             ordinal = params.ordinal,
@@ -295,5 +298,19 @@ internal open class TableImporter(
             closeCauseClass = closeCause?.let { it::class.qualifiedName ?: it.javaClass.name },
             closeCauseStack = closeCause?.stackTrace?.takeIf { it.isNotEmpty() }?.let { closeCause.stackTraceToString() },
         )
+    }
+}
+
+private object PassthroughValueDeserializerFactory : ValueDeserializerFactory {
+    override fun create(
+        targetColumns: List<TargetColumn>,
+        readOptions: FormatReadOptions,
+    ): ValueDeserializer = object : ValueDeserializer {
+        override fun deserialize(
+            table: String,
+            columnName: String,
+            value: Any?,
+            isCsvSource: Boolean,
+        ): Any? = value
     }
 }

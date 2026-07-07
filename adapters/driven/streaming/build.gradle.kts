@@ -5,12 +5,14 @@
 //
 // Hängt an:
 // - hexagon:core                   für DataChunk, ColumnDescriptor, DataFilter
-// - adapters:driven:driver-common  für DataReader, TableLister, ConnectionPool
-// - adapters:driven:formats        für DataChunkWriter
+// - hexagon:ports-common           für ConnectionPool und gemeinsame Format-Typen
+// - hexagon:ports-read             für DataReader, TableLister und Chunk-Reader-Ports
+// - hexagon:ports-write            für DataWriter und Import-/Writer-Ports
 dependencies {
     api(project(":hexagon:core"))
-    api(project(":adapters:driven:driver-common"))
-    api(project(":adapters:driven:formats"))
+    api(project(":hexagon:ports-common"))
+    api(project(":hexagon:ports-read"))
+    api(project(":hexagon:ports-write"))
 
     // LF-013 / LN-012 / LN-013: dateibasierter
     // CheckpointStore-Adapter schreibt das Manifest als YAML. Dieselbe
@@ -18,6 +20,8 @@ dependencies {
     // binden sie hier direkt ein, weil formats sie nur intern exponiert.
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
 
+    testImplementation(project(":adapters:driven:formats"))
+    testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":adapters:driven:driver-sqlite"))
 
     // Quality-Coverage-Expansion Phase A: PerfMeasure/PerfReport for the

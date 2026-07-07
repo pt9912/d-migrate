@@ -2,6 +2,8 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.diff.migration.OperationRisk
+import dev.dmigrate.driver.migration.JdbcMigrationStatementExecutor
+import dev.dmigrate.driver.migration.JdbcRunnerHookHandler as RunnerHookHandler
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.TransactionScope
 import io.kotest.core.spec.style.FunSpec
@@ -30,8 +32,8 @@ private fun ddl(sql: String): MigrationDdlStatement =
 
 /**
  * Phase H.3b: runner-hook marker parsing + side-effect application
- * via the shared [RunnerHookHandler] (hexagon:application). Both the
- * production [JdbcMigrationExecutor] and the
+ * via the shared [RunnerHookHandler] (driven JDBC adapter). Both the
+ * production [JdbcMigrationStatementExecutor] and the
  * `MigrationExecutorTestSupport` test-fixture call into the same
  * handler so the H.3b contract is uniformly enforced.
  */
@@ -235,7 +237,7 @@ class JdbcMigrationExecutorH3bTest : FunSpec({
         // = OFF` leaks past the rollback and the next migration runs
         // with FK enforcement silently disabled.
         //
-        // This test drives the actual production [JdbcMigrationExecutor.runAll]
+        // This test drives the actual production [JdbcMigrationStatementExecutor.runAll]
         // against an embedded SQLite connection: stream is classified
         // as stream-owned-tx (contains `BEGIN IMMEDIATE`), save-hook
         // captures the prior FK=ON, PRAGMA OFF + a good CREATE run,
@@ -256,7 +258,7 @@ class JdbcMigrationExecutorH3bTest : FunSpec({
                 ddl("COMMIT;"),
             )
 
-            val trace = JdbcMigrationExecutor.runAll(conn, statements)
+            val trace = JdbcMigrationStatementExecutor.runAll(conn, statements)
 
             trace.executionStarted shouldBe true
             trace.transactionRolledBack shouldBe true
@@ -299,7 +301,7 @@ class JdbcMigrationExecutorH3bTest : FunSpec({
                 ddl("COMMIT;"),
             )
 
-            val trace = JdbcMigrationExecutor.runAll(conn, statements)
+            val trace = JdbcMigrationStatementExecutor.runAll(conn, statements)
 
             trace.transactionRolledBack shouldBe true
             conn.createStatement().use { stmt ->
@@ -328,7 +330,7 @@ class JdbcMigrationExecutorH3bTest : FunSpec({
                 ddl("COMMIT;"),
             )
 
-            val trace = JdbcMigrationExecutor.runAll(conn, statements)
+            val trace = JdbcMigrationStatementExecutor.runAll(conn, statements)
 
             trace.transactionRolledBack shouldBe true
             conn.createStatement().use { stmt ->

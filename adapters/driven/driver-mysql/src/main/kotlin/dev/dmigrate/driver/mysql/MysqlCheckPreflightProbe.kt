@@ -6,6 +6,8 @@ import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.CheckPreflightStatus
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 import java.sql.SQLException
 
@@ -23,6 +25,9 @@ import java.sql.SQLException
  * query is a plain SELECT) but the result has no semantic weight.
  */
 object MysqlCheckPreflightProbe {
+
+    fun probe(connection: DatabaseConnection, diff: DiffResult): List<CheckPreflightDeclaration> =
+        probe(connection.asJdbc(), diff)
 
     fun probe(connection: Connection, diff: DiffResult): List<CheckPreflightDeclaration> {
         val plan = CheckPreflightPlanner.plan(

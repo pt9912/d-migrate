@@ -20,6 +20,21 @@
 > mitentscheiden, Gradle-Ziel heißt „0 ungültige Adapter→Adapter-Kanten" unter
 > `.a-check.yml`-Ausnahmen, und das Gradle-Gate filtert nach Konfiguration statt
 > pauschal nach `testFixtures(project(...))`.
+>
+> **Status-Update 2026-07-07:** D1/D2 entschieden via
+> [`ADR 0028`](../../adr/0028-a-check-architecture-gate-scope.md):
+> **D1 = G1 zuerst** (`jdbcType: Int` bleibt eng begrenzte Interop-/Persistenz-
+> Ausnahme, keine Typcode-Neutralisierung in diesem Slice), **D2 = streng**
+> (Composition Roots bleiben frei von produktiver JDBC-Ausführung, `asJdbc` und
+> direkter `JdbcDatabaseConnection`-Nutzung). A5, B und A3 sind umgesetzt:
+> `ValueSerializationWarning`, `BundleClosure*`, `JdbcTypeHint`,
+> `ValueDeserializer` und `ValueDeserializerFactory` liegen portseitig, streaming/
+> parquet verlieren die produktiven lateral-adapter-Kanten, A3 nutzt den
+> ratifizierten G1-Port-Wrapper `JdbcTypeCodes` statt `java.sql.Types`, A1/A4
+> laufen ueber den driven `JdbcMigrationStatementExecutor`, und A2 reicht nur
+> noch ein neutrales `DatabaseConnection`-Handle an die dialektspezifischen
+> driven Probes weiter. `make a-check` steht bei 0 Befunden und ist in
+> `gates`/`docker-gates` aktiviert.
 
 ## Ziel
 
@@ -120,16 +135,16 @@ erlaubt.)
 
 | # | Datei | Befund | Korrigierte Einordnung |
 |---|---|---|---|
-| A1 | `adapters/driving/cli/…/JdbcMigrationExecutor.kt` | tech-leak `java.sql.Connection`/`SQLException` (durch `forbid` in der composition_root) | Ausführung ist nicht nur `runAll(conn, stmts)`: der Stream-owned-Pfad ruft den JDBC-gebundenen `RunnerHookHandler` aus `hexagon:application` auf. Bei strengem D2 muss die CLI nur Target/Config auflösen; JDBC-Ausführung **inkl. Hook-Applier** wandert in einen driven Execution-Adapter/Port. Ein reiner Umzug von `runAll` nach driver-common wäre falsch, solange dadurch driver-common → application entstünde. |
-| A2 | `adapters/driving/cli/…/CheckPreflightProbeRunner.kt` | tech-leak `java.sql.Connection` (forbid) | **Cross-Dialect-Dispatch** (wählt PG/MySQL/SQLite-Probe) — kann **nicht** nach driver-common (Treiber hängen bereits an driver-common → Zyklus). Braucht **Probe-Registry-Port** oder wird als *eine* bewusste composition_root-JDBC-Stelle akzeptiert (→ D2) |
-| A3 | `hexagon/application/…/ImportTypeCompatibility.kt` | app-impurity `java.sql.Types` | **Nur** den Import umzubauen ist falsch-grün, solange `TargetColumn.jdbcType: Int` bleibt → an **D1** gekoppelt |
-| A4 | `hexagon/application/…/RunnerHookHandler.kt` | app-impurity `java.sql.Statement`/`SQLException` | Mit A1 zusammen schneiden: Pure Hook-Erkennung/State darf im Hexagon/Port bleiben; der `Statement`-Applier und die `SQLException`-Erzeugung gehören in den driven Execution-Adapter. |
+| A1 | `adapters/driving/cli/…/JdbcMigrationExecutor.kt` | tech-leak `java.sql.Connection`/`SQLException` (durch `forbid` in der composition_root) | **Umgesetzt:** CLI loest Target/Config und Pool auf; JDBC-Ausfuehrung, `asJdbc`, Transaktion/Rollback und Hook-Anwendung liegen im driven `JdbcMigrationStatementExecutor`. |
+| A2 | `adapters/driving/cli/…/CheckPreflightProbeRunner.kt` | tech-leak `java.sql.Connection` (forbid) | **Umgesetzt:** Composition Root dispatcht nur noch per Dialekt auf driven Probe-Objekte und reicht ein neutrales `DatabaseConnection`-Handle weiter; JDBC-Unwrap passiert in den jeweiligen Treiberadaptern. |
+| A3 | `hexagon/application/…/ImportTypeCompatibility.kt` | app-impurity `java.sql.Types` | **Umgesetzt nach D1/G1:** Application importiert kein `java.sql.Types` mehr, sondern nutzt den portseitigen `JdbcTypeCodes`-Wrapper. `TargetColumn.jdbcType: Int` bleibt als [ADR 0028](../../adr/0028-a-check-architecture-gate-scope.md)-Ausnahme bestehen; keine G2-Typcode-Neutralisierung. |
+| A4 | `hexagon/application/…/RunnerHookHandler.kt` | app-impurity `java.sql.Statement`/`SQLException` | **Umgesetzt mit A1:** der JDBC-gebundene Hook-Applier liegt im driven `JdbcRunnerHookHandler`; `hexagon:application` importiert dafuer keine JDBC-API mehr. |
 | A5 | `hexagon/profiling/…/service/ProfileTableService.kt` | app-impurity `SQLFeatureNotSupportedException` | neutrale Ausnahme statt JDBC-Exception (klein) |
 
-## Offene Entscheidungen (blockieren den Bau)
+## Entscheidungen (D1/D2 via ADR 0028 entschieden)
 
 - **D1 — Typcode-Modell (G1 vs. G2):**
-  - *(i) G1:* Neutrale Interfaces + neutrale Datentypen in Ports heben; `jdbcType: Int`
+  - *(i) G1 — entschieden fuer diesen Slice:* Neutrale Interfaces + neutrale Datentypen in Ports heben; `jdbcType: Int`
     bleibt (konsistent mit der bestehenden `TargetColumn`-Vorentscheidung). Dazu darf
     `JdbcTypeHint` als Port-DTO gehoben werden. Gate grün, moderater Umfang; **A3** =
     nur `ImportTypeCompatibility` entkoppeln, `TargetColumn` bleibt. **Trotzdem
@@ -137,7 +152,7 @@ erlaubt.)
     formulieren „JDBC lebt in Adaptern" breiter als nur „kein `java.sql`-Import". G1
     ratifiziert daher eine eng begrenzte `jdbcType`-Ausnahme in Ports/Formats und
     deklariert ehrlich „Import-Relokation, keine Typcode-Neutralisierung".
-  - *(ii) G2:* Neutrales **Typ-Enum** ersetzt `java.sql.Types`-Codes durch die ganze
+  - *(ii) G2 — separater Folgeslice, nicht Teil dieses Gates:* Neutrales **Typ-Enum** ersetzt `java.sql.Types`-Codes durch die ganze
     Transfer-Pipeline (`TargetColumn`, `JdbcTypeHint`/dessen neutralen Ersatz,
     `TypeConverterRegistry`, Reverse-Engineering, das die Codes erzeugt). Zusätzlich
     ist der persistierte Parquet-Manifest-/Bundle-Vertrag betroffen:
@@ -147,20 +162,18 @@ erlaubt.)
     ausdrücklich als eng begrenztes Carve-out ratifizieren; sonst bleibt ein
     Typcode-Falsch-Grün außerhalb der Port-Signaturen. Großer Umbau, ADR-würdig,
     revidiert L15/0.3.0.
-- **D2 — A1/A2 + Composition-Root-JDBC:** `forbid` behalten und cli-JDBC per Port/Registry
-  rausrefactoren (streng, mehr Arbeit) **oder** `forbid` an der composition_root lockern
-  (cli-Verdrahtung darf JDBC-Connections halten — pragmatisch, A1/A2 entfallen ohne
-  Code-Umbau). Wichtig: `java.sql`-/`javax.sql`-Importe sind nur die sichtbaren Treffer.
+- **D2 — A1/A2 + Composition-Root-JDBC:** **entschieden: `forbid` bleibt** und
+  cli-JDBC wird per Port/Registry rausrefactoren (streng, mehr Arbeit). Wichtig:
+  `java.sql`-/`javax.sql`-Importe sind nur die sichtbaren Treffer.
   Die CLI unwrappt JDBC heute auch über `dev.dmigrate.driver.connection.asJdbc` ohne
   `java.sql`-/`javax.sql`-Import. Aktuelles Inventar: `CheckPreflightProbeRunner`,
   `JdbcMigrationExecutor`,
   `SqliteCastPreflightProbeRunner`, `MysqlSequenceCanonicityProbeRunner`,
   `SqliteLiveCatalogProbeRunner`, `SegmentAwareMigrationExecutor` (plus künftige Treffer).
-  Wenn D2 streng bleibt, muss ein separates Such-/Grep-Gate auch `asJdbc`/
+  Ein separates Such-/Grep-Gate muss auch `asJdbc`/
   `JdbcDatabaseConnection` und produktive `java.sql.`-/`javax.sql.`-FQNs in `adapters/driving/**`
   verbieten (Kommentare/KDoc ausklammern, damit reine Doku-Referenzen nicht brechen) und
-  alle diese Stellen per Port/Registry aus der Composition Root ziehen; wenn D2
-  pragmatisch wird, muss genau diese Composition-Root-Ausnahme dokumentiert werden.
+  alle diese Stellen per Port/Registry aus der Composition Root ziehen.
 - **D3 — Port-Heimat** der geteilten format/streaming-Typen (B): **entschieden →
   `hexagon:ports-common`** (Package `format.data` liegt dort schon: `ChunkSchema`/
   `DataExportFormat`). Kein neues Modul. Ausnahme: write/import-spezifische Factory-
@@ -169,7 +182,7 @@ erlaubt.)
 
 ## Arbeitspakete (nach D1–D3)
 
-1. **B (Kotlin + Gradle):**
+1. **B (Kotlin + Gradle) — umgesetzt:**
    - Neuen top-level Port-Typ `ValueSerializationWarning` (ersetzt `ValueSerializer.Warning`
      in öffentlichen Signaturen), `BundleClosure*`, `JdbcTypeHint` + ein neutrales
      `ValueDeserializer`-Interface nach `ports-common` (`format.data`), Impls in
@@ -192,18 +205,21 @@ erlaubt.)
    Kante (Gradle) unter denselben Ausnahmen wie `.a-check.yml`:
    `adapters/driving/**` bleibt Composition Root, `adapters/driven/driver-common`
    bleibt Adapter-Sink.
-2. **A5:** JDBC-Exception in profiling neutralisieren (klein).
-3. **A1/A4 + Composition-Root-JDBC nach D2:** `RunnerHookHandler` nicht als
-   isolierten App-Import-Fix behandeln: Hook-Parser/State bleiben neutral, der
-   JDBC-`Statement`-Applier und die `SQLException`-Erzeugung wandern mit der
-   JDBC-Ausführung in den driven Execution-Adapter/Port (oder werden bei
-   pragmatischem D2 als Composition-Root-JDBC-Ausnahme ratifiziert). A1/A2 plus
-   alle `asJdbc`-/`JdbcDatabaseConnection`-Stellen und produktiven
-   `java.sql.`-/`javax.sql.`-FQNs in `adapters/driving/**` inventarisieren und
-   je nach D2 per Port/Registry rausrefactoren oder als begrenzte Composition-Root-
-   Ausnahme ratifizieren. Die explizite `asJdbc`/FQN-Regel wird Teil des Gates/der Doku.
-4. **A3** nach D1 (i: nur Import; ii: als Teil der Typcode-Neutralisierung).
-5. **Aktivierung:** `make a-check` = Exit 0 → a-check in `gates` + `docker-gates`; ADR
+2. **A5 — umgesetzt:** JDBC-Exception in profiling neutralisieren (klein).
+3. **A1/A2/A4 + Composition-Root-JDBC nach D2 — umgesetzt fuer a-check:**
+   - A1/A4: `MigrationExecutionTrace` und `MigrationStreamClassifier` sind portseitig
+     verfuegbar; `JdbcMigrationStatementExecutor` uebernimmt JDBC-Unwrap,
+     Transaktion/Rollback und `JdbcRunnerHookHandler`.
+   - A2: `CheckPreflightProbeRunner` reicht `DatabaseConnection` an die
+     dialektspezifischen driven Probes; diese unwrappen JDBC selbst.
+   - Die weitergehende Zusatzregel gegen `asJdbc`/`JdbcDatabaseConnection` in
+     `adapters/driving/**` bleibt eine separate Gate-Haertung jenseits des aktuellen
+     a-check-Import-Gates.
+4. **A3 — umgesetzt nach D1/G1:** `ImportTypeCompatibility` nutzt `JdbcTypeCodes`
+   aus den Ports; `TargetColumn.jdbcType: Int` bleibt als
+   [ADR 0028](../../adr/0028-a-check-architecture-gate-scope.md)-Ausnahme.
+5. **Aktivierung — umgesetzt:** `make a-check` = Exit 0; a-check ist in
+   `gates` + `docker-gates`. ADR
    (verallgemeinert ADR 0022, inklusive D1-`jdbcType`-Entscheid und D2-Composition-
    Root-Ausnahme/Strenge; Verhältnis zu `ports-jdbc-free-gate`: schneller Vorab-Check
    oder abgelöst?) + CHANGELOG/Handbuch.
@@ -243,6 +259,18 @@ erlaubt.)
 
 - a-check **≥ v0.12.0** (erfüllt). **D3 entschieden** (Datentypen: ports-common;
   write/import-spezifische Factory-Ausnahme siehe D3).
-- **D1 + D2 entschieden** (D1 ist in beiden Varianten ADR-/Architektur-relevant; D2
-  entscheidet zusätzlich, ob `asJdbc` in Composition Roots verboten oder als Ausnahme
-  dokumentiert wird).
+- **D1 + D2 entschieden** via ADR 0028 (D1: G1 zuerst; D2: streng).
+
+## Closure
+
+Geliefert am 2026-07-07:
+
+- Alle 12 initialen `a-check`-Befunde sind behoben; `make a-check` meldet
+  `gesamt: 0 Befund(e)`.
+- `a-check` ist in `gates` und `docker-gates` aktiviert.
+- Die G1/D2-Entscheidung ist in
+  [ADR 0028](../../adr/0028-a-check-architecture-gate-scope.md) und
+  `spec/architecture.md` dokumentiert.
+- Follow-up bleibt bewusst getrennt: ein Zusatzgate gegen produktive
+  `asJdbc`-/`JdbcDatabaseConnection`-Nutzung und produktive
+  `java.sql.`-/`javax.sql.`-FQNs in `adapters/driving/**`.

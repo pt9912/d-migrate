@@ -132,7 +132,9 @@ d-migrate/
 - `hexagon:ports-write` hängt von `ports-common` und `ports-read` ab
 - `hexagon:ports` ist ein Aggregator und re-exportiert alle drei Port-Module
 - `hexagon:application` hängt nur vom Hexagon-Inneren ab, nicht von Adaptern
-- Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`)
+- Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme:
+  Adapter dürfen die geteilte JDBC-Basis `adapters:driven:driver-common`
+  nutzen)
 - Treiber-Kernmodule hängen **nicht** von `hexagon:profiling` ab; Profiling-Adapter sind optionale Zusatzmodule
 
 Zusätzlich, durch eine **Architektur-Fitness-Function** (Gate) statt durch Gradle garantiert — denn
@@ -144,6 +146,16 @@ Zusätzlich, durch eine **Architektur-Fitness-Function** (Gate) statt durch Grad
   gerenderter Statements, Session-Reset); die JDBC-gebundene Implementierung (`JdbcDatabaseConnection`,
   Wrapper um die Hikari-Connection) liegt in `adapters:driven:driver-common`, wo die Adapter sie zur
   realen Connection auspacken.
+- Driving Adapter (`adapters:driving:*`) sind Composition Roots: Sie verdrahten
+  konkrete Adapter und Use Cases, halten aber keine produktive JDBC-Ausführung.
+  Produktive Driving-Quellen enthalten keine `java.sql`-/`javax.sql`-Imports,
+  keine produktiven `java.sql.`-/`javax.sql.`-FQNs, kein `asJdbc` und keine
+  direkte `JdbcDatabaseConnection`-Nutzung.
+- `jdbcType: Int` bleibt vorerst eine eng begrenzte Interop-/Persistenz-
+  Ausnahme in Transfer- und Formatverträgen (`TargetColumn`, `JdbcTypeHint`,
+  Parquet-Manifest-/Bundle-Vertrag). Das ist kein neutrales Typmodell und kein
+  Präzedenzfall für `hexagon:core`; eine vollständige Typcode-Neutralisierung
+  ist ein eigener G2-Slice.
 
 ### 1.3 Leitprinzipien
 
@@ -282,7 +294,7 @@ adapters:driving:cli
 └── adapters:driven:text-icu ──▶ hexagon:ports-common, ICU4J
 ```
 
-**Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `ports-common` hängt nur von `core` ab. `ports-read` nur von `ports-common`. `ports-write` von `ports-common` und `ports-read`. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`). Treiber-Kernmodule hängen nicht von `hexagon:profiling` ab.
+**Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `ports-common` hängt nur von `core` ab. `ports-read` nur von `ports-common`. `ports-write` von `ports-common` und `ports-read`. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in produktivem Code nicht voneinander abhängen (Ausnahme: die geteilte JDBC-Basis `adapters:driven:driver-common` als Adapter-Sink). Treiber-Kernmodule hängen nicht von `hexagon:profiling` ab. Driving Adapter sind Composition Roots für Wiring, aber nicht für produktive JDBC-Ausführung oder JDBC-Unwrap.
 
 ---
 
