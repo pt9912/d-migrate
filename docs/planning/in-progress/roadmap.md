@@ -551,7 +551,7 @@ nicht als Enterprise-BI-Plattform (siehe
 > dagegen 2026-06-09 in 0.9.8 vorgezogen (Scope-Entscheidung); die
 > BI-Demo-Plaene bleiben Grundlage fuer Showcase-Pfade ab Phase 3/4.
 
-### Milestone 0.9.9 — Dokumentation, Pilot-Validierung und Blocker-Fixes 🚧 (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16; Pilot-Vorfilter 2026-06-16; alle Pilot-Blocker P1/P2/P3 behoben bis 2026-06-18 — offen nur die menschliche ≥5-Tester-Abnahme)
+### Milestone 0.9.9 — Dokumentation, Pilot-Validierung und Blocker-Fixes ✅ (in Arbeit seit 2026-06-14; Doku abgeschlossen 2026-06-16; Pilot-Vorfilter 2026-06-16; alle Pilot-Blocker P1/P2/P3 behoben bis 2026-06-18; menschliche ≥5-Tester-Abnahme am 2026-07-08 erteilt — Milestone abgeschlossen)
 
 > Status-Legende: ✅ erledigt · 🔮 geplant (späterer Milestone) · ⛔ ausstehend.
 
@@ -562,9 +562,9 @@ nicht als Enterprise-BI-Plattform (siehe
 | Docs    | [Migrations-Leitfaden](../../user/migrations-leitfaden.md) | — | ✅ |
 | Docs    | [API-Dokumentation](../../user/api-referenz.md) | — | ✅ |
 | QA      | [Performance-Benchmarks dokumentiert](../../operations/performance-benchmarks.md) | — | ✅¹ |
-| QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2 | ⛔² |
+| QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2 | ✅² |
 | QA      | [Pilot-Blocker beheben (P1/P2/P3)](../done-archive/pilot-validation-0.9.9.md) | — | ✅³ |
-| QA      | Sample-DB-E2E-Harness (Phase 0–3 DoD; Phase 5 Spatial in Arbeit) | — | 🚧⁴ |
+| QA      | Sample-DB-E2E-Harness (Phase 0–3 DoD; Phase 5 Spatial komplett) | — | ✅⁴ |
 
 ¹ Methodik + aktuelle Budgets dokumentiert. Die acceptance-grade Benchmarks
 **LF 8.1** (1 Mio. Datensätze) und **LF 8.2** (1000 Tabellen < 30 s) sind
@@ -576,7 +576,9 @@ normierte Mess-Umgebung in [ADR 0018](../../adr/0018-normalized-perf-measurement
 (accepted, Caps 2 CPU/4 GB + Acceptance-Tier + Kalibrierungs-Guard); Bau folgt.
 ² Der automatisierte Vorfilter ([Playbook](../../operations/pilot-validation-playbook.md))
 lief am 2026-06-16 ([Report](../done-archive/pilot-validation-0.9.9.md), Verdikt **nicht RC-reif**);
-die menschliche ≥5-Tester-Abnahme bleibt davon unberührt und steht weiter aus.
+alle daraus abgeleiteten Blocker wurden anschließend behoben (siehe ³). Die
+menschliche ≥5-Tester-Abnahme ist am **2026-07-08 erteilt** — damit ist dieser
+Punkt abgeschlossen.
 ³ Der Vorfilter fand 4 P1-Blocker (Transfer-Preflight-Strictness I-01, E009-
 Temporal-Defaults I-02, MySQL-Enum-Lowercasing I-03, Enum-Transfer-Cast I-04)
 plus 6 P2 (ungültige DDL). Entscheidung: in **0.9.9** beheben (nicht nach 1.0.0
