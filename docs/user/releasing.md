@@ -54,6 +54,7 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 | `brew` verfügbar auf einem Verifikations-Host | `brew --version`                                                              |
 | Schreibrechte auf `main` und Tags im Remote   | —                                                                             |
 | Alle PRs für den Release sind gemerged        | GitHub-Milestone leer                                                         |
+| `HOMEBREW_TAP_GITHUB_TOKEN` nicht abgelaufen  | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — fine-grained PATs laufen ab; ein abgelaufener Token lässt den Tag-Publish mit `401` scheitern (nur der Homebrew-Tap-Push, nicht der GitHub-Release) |
 
 ---
 
@@ -64,14 +65,26 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 ### 3.1 Vollständiger Build & Test im Docker-Container
 
 ```bash
-IMAGE_TAG=pre-release make docker-build 2>&1 | tee /tmp/build.log
+docker build --target runtime -t d-migrate:pre-release . 2>&1 | tee /tmp/build.log
 ```
 
-Das schließt `./gradlew build :adapters:driving:cli:installDist` ein und führt alle
-Tests aller Module aus. Erwartetes Ergebnis: `BUILD SUCCESSFUL`. Der
-Image-Tag wird gezielt auf `d-migrate:pre-release` gesetzt (Default
-wäre `d-migrate:dev`), damit die DB-Smokes in §3.3 konsistent
-darauf laufen.
+Der `runtime`-Stage kopiert aus dem `build`-Stage, dessen Default-Tasks
+`build :adapters:driving:cli:installDist` sind — dieser eine Build läuft
+daher **alle Tests aller Module** *und* erzeugt das Smoke-Image
+`d-migrate:pre-release`, gegen das die Smokes in §3.3 laufen. Erwartetes
+Ergebnis: `BUILD SUCCESSFUL`.
+
+> **Wichtig:** **nicht** `make docker-build` benutzen — das baut ohne
+> `--target` die **letzte** Dockerfile-Stage (`ast-grep`, eigene
+> Node-Base), nicht das Runtime-Image; die Modul-Tests laufen dann nicht
+> zwingend und `d-migrate:pre-release` entsteht nicht. Nach einer
+> Quelländerung zusätzlich `--no-cache-filter compile,build` anhängen,
+> sonst liefert der gecachte `compile`-Layer alten Code.
+
+Das separate Coverage-Gate (`koverVerify`) läuft in der CI über
+`make ci-build`; lokal kann es mit
+`docker build --target build --build-arg GRADLE_TASKS="build koverVerify --no-build-cache" .`
+mitgeprüft werden.
 
 Für eine garantiert frische Test-Ausführung ohne Build-Cache (Spezialfall,
 deshalb direkter Docker-Aufruf statt `make docker-test` — letzteres
@@ -147,8 +160,11 @@ hinaus siehe auch die priorisierte Kandidatenliste in
 [`test-database-candidates.md`](../planning/open/test-database-candidates.md).
 
 ```bash
-SMOKE_DIR="$(mktemp -d)"
-mkdir -p "${SMOKE_DIR}/out"
+SMOKE_DIR="$(mktemp -d)"; chmod 777 "${SMOKE_DIR}"
+mkdir -p "${SMOKE_DIR}/out"; chmod 777 "${SMOKE_DIR}/out"
+# Das Runtime-Image läuft als uid 10001; ein `mktemp -d` gehört der Host-UID
+# mit Mode 700 → der Container kann sonst nicht in gemountete Out-Dirs
+# schreiben (reverse/transfer-Ausgabe scheitert mit "Failed to write").
 
 cat > "${SMOKE_DIR}/d-migrate.yaml" <<'YAML'
 database:
@@ -240,7 +256,11 @@ rm -rf "${SMOKE_DIR}"
 Fixture-Schema: `test/integration-integrations/src/test/resources/fixtures/export-test-schema.yaml`
 
 ```bash
-SMOKE_OUT="$(mktemp -d)"
+SMOKE_OUT="$(mktemp -d)"; chmod 777 "${SMOKE_OUT}"
+# uid-10001-Container muss in das gemountete /out schreiben können (s. §3.3
+# oben); ohne `chmod 777` scheitern die Tool-Exports mit `EXIT=7 Failed to write`.
+# Die erzeugten Dateien gehören danach uid 10001 — zum Aufräumen ggf.
+# `docker run --rm -v "${SMOKE_OUT}":/o --entrypoint sh d-migrate:pre-release -c 'rm -rf /o/*'`.
 
 # Flyway
 docker run --rm \
@@ -518,17 +538,32 @@ zeigen:
 - `bin/d-migrate` bleibt der Nutzer-Einstieg
 - Java 21 bleibt explizit deklariert
 
+**Zwei verschiedene Artefakte — nicht verwechseln:**
+
+- Die **Tap-Formula** (`pt9912/homebrew-d-migrate`, der echte `brew install`-Kanal)
+  wird von `homebrew-releaser` erzeugt und zeigt auf `d-migrate-X.Y.Z-homebrew.tar.gz`
+  mit einer **automatisch** berechneten SHA — die ist immer self-konsistent, hier
+  ist **nichts** von Hand zu pflegen.
+- Das **Repo-Template** [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)
+  (nur Referenz + Input für `verify-homebrew-formula.yml`) zeigt auf `d-migrate-X.Y.Z.zip`
+  und trägt eine **manuell** gepflegte SHA. Nur diese ist unten gemeint.
+
 ZIP-SHA **aus dem tatsächlich publizierten Release-Asset** ziehen — nicht
 aus `./release-assets/*.sha256`: der `build.yml`-Workflow lädt sein eigenes
 Artefakt mit eigener SHA hoch, während der publizierte ZIP aus dem
-separaten [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)-Lauf stammt und daher eine andere SHA hat:
+separaten [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)-Lauf stammt und daher eine andere SHA hat.
+
+> **⚠️ SHA erst nach dem *finalen* grünen `release-homebrew.yml`-Lauf ziehen.**
+> Ein **Re-Run** dieses Workflows (z. B. nach einer `HOMEBREW_TAP_GITHUB_TOKEN`-
+> Rotation) baut die Release-Assets **neu und ersetzt sie** — ZIPs sind nicht
+> bit-reproduzierbar, also ändert sich die `.zip`-SHA bei jedem Lauf. Eine SHA
+> aus einem früheren Lauf führt zu `Formula reports different checksum` in
+> `verify-homebrew-formula.yml`. Immer den letzten Stand ziehen (die
+> Download-URL ist autoritativ):
 
 ```bash
 curl -sL "https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip" \
   | sha256sum
-# oder:
-gh release download vX.Y.Z --pattern 'd-migrate-*.zip'
-sha256sum d-migrate-*.zip
 ```
 
 Nach dem Publish muss die Formula auf einem Host mit `brew` real verifiziert
@@ -542,6 +577,10 @@ brew tap-new local/d-migrate-verify --no-git
 TAP_DIR="$(brew --repository local/d-migrate-verify)"
 mkdir -p "${TAP_DIR}/Formula"
 cp packaging/homebrew/d-migrate.rb "${TAP_DIR}/Formula/d-migrate.rb"
+# Homebrew 5.0 verweigert Install aus Fremd-Taps ohne explizites Vertrauen
+# ("Refusing to load formula ... from untrusted tap"). Tap vor dem Install
+# vertrauen — genau das schlägt `brew` bei Verweigerung selbst vor.
+brew trust local/d-migrate-verify
 brew install local/d-migrate-verify/d-migrate
 d-migrate --help
 ```
@@ -551,9 +590,14 @@ Alternativ über den veröffentlichten Tap (bestätigt zusätzlich die
 
 ```bash
 brew tap pt9912/d-migrate https://github.com/pt9912/homebrew-d-migrate
+brew trust pt9912/d-migrate   # Homebrew 5.0: Fremd-Tap vor Install vertrauen
 brew install d-migrate
 d-migrate --help
 ```
+
+> **Hinweis für Endnutzer:** Auch beim `brew install` aus dem veröffentlichten
+> Tap verlangt Homebrew 5.0 vorab `brew trust pt9912/d-migrate`. Das gehört in
+> die Installationsanleitung (README / Guide), nicht nur in die Release-Doku.
 
 Wenn die Formula-Änderung nicht bereits im Release-Branch vorbereitet wurde,
 anschließend als verifizierten Repo-Stand nachziehen.
@@ -652,6 +696,22 @@ korrupte Tag der jüngste war, sollte schnell ein Hotfix-Tag folgen.
    Hotfix-Release die Formula automatisch überschreiben; bis dahin ggf.
    manuell im Tap revertieren
 
+### 6.6 `verify-homebrew`-Job eines Tags bleibt rot
+
+Ein `verify-homebrew`-Job, der auf einem bereits gepushten Tag scheitert,
+lässt sich **nicht** durch einen Workflow-Fix auf `develop`/`main`
+retroaktiv grün machen: Ein Re-Run nutzt den Workflow-Stand **des
+Tag-Commits**, nicht den aktuellen. Da der Tag nicht verschoben werden darf
+(§6.5 Punkt 1), gilt:
+
+- War der **`publish`-Job grün** (GitHub-Release + Tap-Push erfolgreich), ist
+  die Distribution live; ein rein am `verify-homebrew`-Smoke gescheiterter Lauf
+  ist **kosmetisch** — der Workflow-Fix greift ab dem nächsten Tag.
+- Zur *manuellen* Bestätigung, dass die publizierte Version wirklich
+  installierbar ist, den `verify-homebrew-formula.yml`-Pfad auf dem
+  Post-Release-Commit heranziehen (läuft mit dem gefixten Workflow) oder lokal
+  per Ephemeral-Tap (§4.7) verifizieren.
+
 ---
 
 ## 7. Release-Checkliste
@@ -662,7 +722,7 @@ Für jeden Release abhaken:
 - [ ] `develop` und `main` auf Remote-Stand
 - [ ] Working-Tree sauber
 - [ ] Alle Milestone-PRs gemerged
-- [ ] `IMAGE_TAG=pre-release make docker-build` grün
+- [ ] `docker build --target runtime -t d-migrate:pre-release .` grün (alle Tests + Smoke-Image; **nicht** `make docker-build`, s. §3.1)
 - [ ] lokaler Asset-Preflight für `assembleReleaseAssets` grün
 - [ ] `adapters/driving/cli/build/release` enthält ZIP, TAR, Fat JAR und SHA256 <!-- d-check:ignore (Build-Ausgabe, entsteht zur Build-Zeit; ADR 0011) -->
 - [ ] Fat JAR aus dem lokalen Preflight startet mit `--help`
