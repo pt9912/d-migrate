@@ -42,10 +42,10 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.8**
-(stable, released 2026-06-14).
+d-migrate is a working production tool at version **0.9.9**
+(stable, [released 2026-07-08](https://github.com/pt9912/d-migrate/releases/tag/v0.9.9)).
 
-> **In development (`develop`, 0.9.9):** a multi-round end-to-end
+> **New in 0.9.9:** a multi-round end-to-end
 > pilot validation (PostgreSQL / MySQL / SQLite against
 > Pagila/Sakila) has hardened cross-dialect data and DDL fidelity —
 > all reported P1/P2 cross-dialect blockers are fixed (transfer
@@ -167,7 +167,13 @@ The full release history (0.1.0–0.9.7) lives in
   `url-connection-client`, `artifacts.store: s3`); BI-demo Compose
   stack (Postgres + Metabase + SeaweedFS). All closure plan-docs in
   [`docs/planning/done/`](docs/planning/done/).
-- **0.9.9 Documentation + pilot validation** · `Planned`.
+- **0.9.9 Documentation + pilot validation + cross-dialect
+  fidelity hardening** · `Released` (2026-07-08): complete beta
+  documentation set, ≥5-tester pilot acceptance, and all P1/P2/P3
+  cross-dialect blockers from five pilot rounds fixed (structural
+  transfer preflight, array/`tsvector` binding, `CURRENT_DATE`
+  defaults, view portability, routine emission, post-execute
+  compare canonicalisation). See [`CHANGELOG.md`](CHANGELOG.md).
 - **1.0.0 Stable release** · `Planned`.
 
 For per-milestone task tables and ADR pointers see the canonical

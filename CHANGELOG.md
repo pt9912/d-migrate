@@ -7,16 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 0.9.9 — Cross-Dialect-Datentreue-Härtung (in Entwicklung)
+## [0.9.9] - 2026-07-08
 
-Eine mehrrundige End-to-End-Pilot-Validierung (PostgreSQL / MySQL / SQLite gegen
+**Cross-Dialect-Datentreue-Härtung.** Eine mehrrundige End-to-End-Pilot-Validierung
+(PostgreSQL / MySQL / SQLite gegen
 Pagila/Sakila, fünf Läufe) hat Cross-Dialect-Happy-Path-Defekte aufgedeckt, die
 erst sichtbar wurden, nachdem die jeweils vorgelagerten Blocker behoben waren.
 Alle gemeldeten P1/P2-Cross-Dialect-Befunde sind behoben; die verbleibenden
 Restpunkte sind P3 und in `docs/planning/open/pilot-rerun-p3-residuals.md`
 getrackt.
 
-#### Added
+### Added
 
 - **Strukturelle Transfer-Preflight** — Typ-Kompatibilität wird aus der
   Ziel-Dialekt-Typ-Abbildung abgeleitet (`normalize(toSql(X)) == normalize(toSql(Y))`)
@@ -37,7 +38,7 @@ getrackt.
   Transfer den Wertebereich nicht mehr auf `SERIAL` verengt (Ziel `BIGSERIAL`).
   Default unverändert (kein Fingerprint-Bump); die R202-Note nennt jetzt den Flag.
 
-#### Fixed
+### Fixed
 
 - **`enum` im migrate-Pfad**: der Diff-/`migrate`-Pfad rendert Enums jetzt konsistent
   zum `schema generate` — MySQL nativ als `ENUM('…')`, PostgreSQL-`refType`-Enum als
