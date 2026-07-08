@@ -35,8 +35,24 @@ object HikariConnectionPoolFactory {
             config.pool
         }
 
+        // VA4: opt-in SpatiaLite. Das d-migrate-eigene `?spatialite=true` wird in
+        // xerials `enable_load_extension=true` übersetzt (das proprietäre Flag selbst
+        // kennt der Treiber nicht und muss aus der URL); `mod_spatialite` wird per
+        // connectionInitSql geladen. Der busy_timeout, sonst per connectionInitSql,
+        // wandert für solche Connections als xerial-Pragma in die URL.
+        val spatialite = isSpatialiteRequested(config)
+        val effectiveConfig = if (spatialite) {
+            val extra = linkedMapOf("enable_load_extension" to "true")
+            if (effectivePool.statementTimeoutMs > 0) {
+                extra["busy_timeout"] = effectivePool.statementTimeoutMs.toString()
+            }
+            config.copy(params = (config.params - SPATIALITE_PARAM) + extra)
+        } else {
+            config
+        }
+
         val hikariConfig = HikariConfig().apply {
-            jdbcUrl = buildJdbcUrl(config)
+            jdbcUrl = buildJdbcUrl(effectiveConfig)
             if (config.user != null) username = config.user
             if (config.password != null) password = config.password
             poolName = "d-migrate-${config.dialect.name.lowercase()}"
@@ -46,8 +62,13 @@ object HikariConnectionPoolFactory {
             idleTimeout = effectivePool.idleTimeoutMs
             maxLifetime = effectivePool.maxLifetimeMs
             keepaliveTime = effectivePool.keepaliveTimeMs
-            connectionInitSqlFor(config.dialect, effectivePool.statementTimeoutMs)?.let {
-                connectionInitSql = it
+            if (spatialite) {
+                // busy_timeout steckt für SpatiaLite-Connections in der URL (s.o.).
+                connectionInitSql = "SELECT load_extension('mod_spatialite')"
+            } else {
+                connectionInitSqlFor(config.dialect, effectivePool.statementTimeoutMs)?.let {
+                    connectionInitSql = it
+                }
             }
         }
 
@@ -95,6 +116,17 @@ object HikariConnectionPoolFactory {
      *
      * `internal` für Tests.
      */
+    /**
+     * VA4: ob für diese (SQLite-)Connection SpatiaLite via `?spatialite=true`
+     * angefordert wurde (truthy: true/1/on/yes, case-insensitiv). Nur SQLite;
+     * andere Dialekte ignorieren das Flag. `internal` für Tests.
+     */
+    internal fun isSpatialiteRequested(config: ConnectionConfig): Boolean =
+        config.dialect == DatabaseDialect.SQLITE &&
+            config.params[SPATIALITE_PARAM]?.lowercase() in setOf("true", "1", "on", "yes")
+
+    internal const val SPATIALITE_PARAM = "spatialite"
+
     internal fun connectionInitSqlFor(dialect: DatabaseDialect, statementTimeoutMs: Int): String? {
         if (statementTimeoutMs <= 0) return null
         return when (dialect) {
@@ -178,7 +210,7 @@ private class HikariConnectionPool(
     private val networkTimeoutMs: Int,
 ) : ConnectionPool {
 
-    override fun borrow(): Connection {
+    override fun borrow(): DatabaseConnection {
         val raw = dataSource.connection
         if (networkTimeoutMs > 0) {
             try {
@@ -190,7 +222,7 @@ private class HikariConnectionPool(
                 // statement-level timeouts still bound query duration.
             }
         }
-        return TimeoutDecoratedConnection(raw, statementTimeoutSeconds)
+        return JdbcDatabaseConnection(TimeoutDecoratedConnection(raw, statementTimeoutSeconds))
     }
 
     override fun activeConnections(): Int {

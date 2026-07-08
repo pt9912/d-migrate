@@ -17,7 +17,10 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.*
+import org.postgresql.PGConnection
+import org.postgresql.copy.CopyManager
 import org.postgresql.util.PGobject
+import java.io.Reader
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -30,6 +33,9 @@ class PostgresTableImportSessionTest : FunSpec({
 
     fun mockConn(): Connection = mockk<Connection>(relaxUnitFun = true) {
         every { autoCommit } returns false
+        // Keine echte PGConnection → COPY-Fast-Path aus, Tests bleiben auf dem INSERT-Pfad.
+        // (Das COPY-Routing wird separat mit einer PG-fähigen Mock-Connection getestet.)
+        every { isWrapperFor(any()) } returns false
     }
 
     fun mockStmt(): PreparedStatement = mockk<PreparedStatement>(relaxUnitFun = true) {
@@ -263,6 +269,104 @@ class PostgresTableImportSessionTest : FunSpec({
         session.close()
     }
 
+    // ── COPY-Bulk-Fast-Path (import-throughput-copy-path.md) ────────────
+
+    fun pgCapableConn(copyManager: CopyManager): Connection {
+        val pgConn = mockk<PGConnection> { every { copyAPI } returns copyManager }
+        return mockk<Connection>(relaxUnitFun = true) {
+            every { autoCommit } returns false
+            every { isWrapperFor(any()) } returns true
+            every { unwrap(PGConnection::class.java) } returns pgConn
+        }
+    }
+
+    test("ABORT + plain-scalar columns route to COPY FROM STDIN (INSERT prepared but never executed)") {
+        val copyManager = mockk<CopyManager>()
+        val capturedSql = slot<String>()
+        every { copyManager.copyIn(capture(capturedSql), any<Reader>()) } returns 1L
+        val conn = pgCapableConn(copyManager)
+        // ensureInsertPlan() in der Basis bereitet das INSERT eager vor (einmal pro Tabelle),
+        // bevor executeChunk über COPY entscheidet — im COPY-Pfad wird es nie ausgeführt.
+        val stmt = mockStmt()
+        every { conn.prepareStatement(any<String>()) } returns stmt
+
+        val session = newSession(conn = conn, options = ImportOptions(onConflict = OnConflict.ABORT))
+        val result = session.write(makeChunk())   // id INTEGER + name VARCHAR → COPY-eligible
+
+        verify(exactly = 1) { copyManager.copyIn(any<String>(), any<Reader>()) }
+        verify(exactly = 0) { stmt.executeBatch() }   // COPY lief; das vorbereitete INSERT nie
+        capturedSql.captured shouldContain "COPY"
+        capturedSql.captured shouldContain "FROM STDIN"
+        result.rowsInserted shouldBe 1L
+        session.close()
+    }
+
+    test("ABORT + a jsonb column falls back to INSERT (not COPY-eligible) despite a PGConnection") {
+        val copyManager = mockk<CopyManager>(relaxed = true)
+        val stmt = mockStmt()
+        val capturedSql = slot<String>()
+        val conn = pgCapableConn(copyManager)
+        every { conn.prepareStatement(capture(capturedSql)) } returns stmt
+        every { stmt.executeBatch() } returns intArrayOf(1)
+
+        val jsonCols = listOf(
+            TargetColumn("id", nullable = false, jdbcType = Types.INTEGER, sqlTypeName = "int4"),
+            TargetColumn("doc", nullable = true, jdbcType = Types.OTHER, sqlTypeName = "jsonb"),
+        )
+        val session = newSession(
+            conn = conn, targetColumns = jsonCols, options = ImportOptions(onConflict = OnConflict.ABORT),
+        )
+        session.write(
+            makeChunk(
+                columns = listOf(
+                    ColumnDescriptor("id", nullable = false, sqlTypeName = "int4"),
+                    ColumnDescriptor("doc", nullable = true, sqlTypeName = "jsonb"),
+                ),
+                rows = listOf(arrayOf(1, "{}")),
+            ),
+        )
+
+        verify(exactly = 0) { copyManager.copyIn(any<String>(), any<Reader>()) }
+        capturedSql.captured shouldContain "INSERT INTO"
+        session.close()
+    }
+
+    test("SKIP stays on INSERT even with a PGConnection (COPY has no ON CONFLICT)") {
+        val copyManager = mockk<CopyManager>(relaxed = true)
+        val stmt = mockStmt()
+        val capturedSql = slot<String>()
+        val conn = pgCapableConn(copyManager)
+        every { conn.prepareStatement(capture(capturedSql)) } returns stmt
+        every { stmt.executeBatch() } returns intArrayOf(1)
+
+        val session = newSession(conn = conn, options = ImportOptions(onConflict = OnConflict.SKIP))
+        session.write(makeChunk())
+
+        verify(exactly = 0) { copyManager.copyIn(any<String>(), any<Reader>()) }
+        capturedSql.captured shouldContain "ON CONFLICT DO NOTHING"
+        session.close()
+    }
+
+    test("ABORT + a GENERATED ALWAYS value-takeover column falls back to INSERT (OVERRIDING SYSTEM VALUE)") {
+        val copyManager = mockk<CopyManager>(relaxed = true)
+        val stmt = mockStmt()
+        val capturedSql = slot<String>()
+        val conn = pgCapableConn(copyManager)
+        every { conn.prepareStatement(capture(capturedSql)) } returns stmt
+        every { stmt.executeBatch() } returns intArrayOf(1)
+
+        val session = newSession(
+            conn = conn,
+            generatedAlwaysColumns = setOf("id"),
+            options = ImportOptions(onConflict = OnConflict.ABORT),
+        )
+        session.write(makeChunk())
+
+        verify(exactly = 0) { copyManager.copyIn(any<String>(), any<Reader>()) }
+        capturedSql.captured shouldContain "OVERRIDING SYSTEM VALUE"
+        session.close()
+    }
+
     test("buildInsertSql for SKIP generates ON CONFLICT DO NOTHING") {
         val conn = mockConn()
         val stmt = mockStmt()
@@ -358,6 +462,31 @@ class PostgresTableImportSessionTest : FunSpec({
         session.close()
     }
 
+    test("enum target column bound as PGobject with enum type — I-04") {
+        val conn = mockConn()
+        val stmt = mockStmt()
+        every { conn.prepareStatement(any<String>()) } returns stmt
+        every { stmt.executeBatch() } returns intArrayOf(1)
+
+        val enumTargetColumns = listOf(
+            TargetColumn("id", nullable = false, jdbcType = Types.INTEGER, sqlTypeName = "int4"),
+            TargetColumn("mood", nullable = true, jdbcType = Types.OTHER, sqlTypeName = "mood"),
+        )
+        val enumColumns = listOf(
+            ColumnDescriptor("id", nullable = false, sqlTypeName = "int4"),
+            ColumnDescriptor("mood", nullable = true, sqlTypeName = "mood"),
+        )
+
+        val session = newSession(conn = conn, targetColumns = enumTargetColumns)
+        session.enumTypeNamesOverride = setOf("mood")
+        session.write(makeChunk(columns = enumColumns, rows = listOf(arrayOf(2, "happy"))))
+
+        verify {
+            stmt.setObject(2, match<PGobject> { it.type == "mood" && it.value == "happy" })
+        }
+        session.close()
+    }
+
     test("bindValue with generic type calls setObject") {
         val conn = mockConn()
         val stmt = mockStmt()
@@ -393,13 +522,29 @@ class PostgresTableImportSessionTest : FunSpec({
         session.close()
     }
 
-    test("toWriteResult handles SUCCESS_NO_INFO") {
+    test("ABORT + SUCCESS_NO_INFO (reWriteBatchedInserts) counts as inserted, not unknown") {
+        // pgjdbc mit reWriteBatchedInserts=true meldet SUCCESS_NO_INFO je Batch-Element.
+        // Unter ABORT fügt jede Zeile ein (ein Konflikt würde werfen) → als eingefügt zählen.
         val conn = mockConn()
         val stmt = mockStmt()
         every { conn.prepareStatement(any<String>()) } returns stmt
         every { stmt.executeBatch() } returns intArrayOf(Statement.SUCCESS_NO_INFO, Statement.SUCCESS_NO_INFO)
 
-        val session = newSession(conn = conn)
+        val session = newSession(conn = conn, options = ImportOptions(onConflict = OnConflict.ABORT))
+        val result = session.write(makeChunk(rows = listOf(arrayOf(1, "Alice"), arrayOf(2, "Bob"))))
+
+        result.rowsInserted shouldBe 2
+        result.rowsUnknown shouldBe 0
+        session.close()
+    }
+
+    test("SKIP + SUCCESS_NO_INFO stays unknown (insert vs DO-NOTHING-skip not recoverable)") {
+        val conn = mockConn()
+        val stmt = mockStmt()
+        every { conn.prepareStatement(any<String>()) } returns stmt
+        every { stmt.executeBatch() } returns intArrayOf(Statement.SUCCESS_NO_INFO, Statement.SUCCESS_NO_INFO)
+
+        val session = newSession(conn = conn, options = ImportOptions(onConflict = OnConflict.SKIP))
         val result = session.write(makeChunk(rows = listOf(arrayOf(1, "Alice"), arrayOf(2, "Bob"))))
 
         result.rowsUnknown shouldBe 2
@@ -443,7 +588,7 @@ class PostgresTableImportSessionTest : FunSpec({
         result.adjustments shouldHaveSize 1
         result.adjustments[0].newValue shouldBe 43
 
-        verify { sync.reseedGenerators(conn, "public.users", any()) }
+        verify { sync.reseedGenerators(any(), "public.users", any()) }
         session.close()
     }
 

@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.cli.commands.ResolvedSchemaOperand
 import dev.dmigrate.cli.commands.SchemaMigrateRequest
 import dev.dmigrate.cli.commands.SchemaMigrateRunner
@@ -28,7 +30,7 @@ import kotlin.io.path.createTempDirectory
 
 
 /**
- * F.4 — SQLite round-trip smoke (`docs/planning/done/diffresult-migration-plan.md §F.4`).
+ * F.4 — SQLite round-trip smoke (`docs/planning/done-archive/diffresult-migration-plan.md §F.4`).
  *
  * Two scenarios in one spec — the plan's two F.4 sub-bullets:
  *
@@ -348,7 +350,7 @@ class SqliteMigrateRoundTripIntegrationTest : FunSpec({
 })
 
 private fun countRoundTripRows(pool: ConnectionPool): Int {
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             stmt.executeQuery("SELECT COUNT(*) FROM round_trip").use { rs ->
                 rs.next()
@@ -360,7 +362,7 @@ private fun countRoundTripRows(pool: ConnectionPool): Int {
 
 private fun listOrphanRebuildTables(pool: ConnectionPool): List<String> {
     val out = mutableListOf<String>()
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             stmt.executeQuery(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%__dmg_rebuild_%'",
@@ -373,7 +375,7 @@ private fun listOrphanRebuildTables(pool: ConnectionPool): List<String> {
 }
 
 private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             for (sql in sqls) stmt.execute(sql)
         }

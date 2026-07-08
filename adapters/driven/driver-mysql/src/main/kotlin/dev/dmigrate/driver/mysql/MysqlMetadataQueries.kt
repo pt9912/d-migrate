@@ -41,12 +41,31 @@ object MysqlMetadataQueries {
         return row?.get("engine") as? String
     }
 
+    /**
+     * AP6.1 (ADR 0020): Partitionen einer Tabelle aus `information_schema.PARTITIONS`.
+     * Nur echte Partitionen (`partition_name IS NOT NULL`), keine Sub-Partitionen
+     * (Sub-Partitionierung ist OUT). Geordnet nach Ordinal für Determinismus.
+     */
+    fun listPartitions(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
+        return session.queryList(
+            """
+            SELECT partition_name, partition_method, partition_expression,
+                   partition_description, partition_ordinal_position
+            FROM information_schema.partitions
+            WHERE table_schema = ? AND table_name = ?
+              AND partition_name IS NOT NULL
+              AND subpartition_name IS NULL
+            ORDER BY partition_ordinal_position
+            """.trimIndent(), schemaName, table,
+        )
+    }
+
     fun listColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT column_name, data_type, column_type, is_nullable,
                    column_default, ordinal_position, extra,
-                   character_maximum_length, numeric_precision, numeric_scale
+                   character_maximum_length, numeric_precision, numeric_scale, srs_id
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
@@ -118,7 +137,7 @@ object MysqlMetadataQueries {
     fun listIndices(session: JdbcOperations, schemaName: String, table: String): List<IndexProjection> {
         val rows = session.queryList(
             """
-            SELECT index_name, column_name, non_unique, seq_in_index, index_type, collation
+            SELECT index_name, column_name, non_unique, seq_in_index, index_type, collation, sub_part
             FROM information_schema.statistics
             WHERE table_schema = ? AND table_name = ?
               AND index_name != 'PRIMARY'
@@ -126,14 +145,16 @@ object MysqlMetadataQueries {
             """.trimIndent(), schemaName, table,
         )
         return rows.groupBy { it["index_name"] as String }.map { (name, idxRows) ->
+            val ordered = idxRows.sortedBy { (it["seq_in_index"] as Number).toInt() }
             IndexProjection(
                 name = name,
-                columns = idxRows.sortedBy { (it["seq_in_index"] as Number).toInt() }
-                    .map { it["column_name"] as String },
+                columns = ordered.map { it["column_name"] as String },
                 isUnique = (idxRows.first()["non_unique"] as Number).toInt() == 0,
                 type = idxRows.first()["index_type"] as? String,
-                directions = idxRows.sortedBy { (it["seq_in_index"] as Number).toInt() }
-                    .map { row -> if ((row["collation"] as? String) == "D") IndexSortDirection.DESC else null },
+                directions = ordered.map { row ->
+                    if ((row["collation"] as? String) == "D") IndexSortDirection.DESC else null
+                },
+                prefixLengths = ordered.map { (it["sub_part"] as? Number)?.toInt() },
             )
         }
     }

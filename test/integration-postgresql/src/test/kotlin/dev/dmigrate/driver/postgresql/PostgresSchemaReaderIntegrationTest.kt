@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
@@ -42,7 +44,7 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             password = "dmigrate",
         )
         val pool = HikariConnectionPoolFactory.create(config)
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 // Extension (covers SchemaReader extension note loop)
                 stmt.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
@@ -153,6 +155,18 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
                     BEFORE INSERT ON customers
                     FOR EACH ROW EXECUTE FUNCTION trg_fn()
                 """)
+
+                // User-defined aggregate (N7) — uses the built-in int4pl
+                // transition function so the fixture is self-contained.
+                stmt.execute("CREATE AGGREGATE my_sum(integer) (SFUNC = int4pl, STYPE = integer, INITCOND = '0')")
+
+                // AP3 (ADR 0019): LIST-partitioned table with an explicit partition,
+                // a DEFAULT partition (in-scope), and a child-local index (AP2a) — so
+                // the reverse capture and the DEFAULT generate path are exercised live.
+                stmt.execute("CREATE TABLE ap3_part_demo (id INT, region TEXT) PARTITION BY LIST (region)")
+                stmt.execute("CREATE TABLE ap3_part_demo_eu PARTITION OF ap3_part_demo FOR VALUES IN ('eu')")
+                stmt.execute("CREATE TABLE ap3_part_demo_rest PARTITION OF ap3_part_demo DEFAULT")
+                stmt.execute("CREATE INDEX idx_ap3_eu_region ON ap3_part_demo_eu (region)")
             }
         }
         pool.close()
@@ -182,6 +196,21 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             scope["dialect"] shouldBe "postgresql"
             scope["database"] shouldBe "dmigrate_test"
             scope["schema"] shouldNotBe null
+        }
+    }
+
+    // ── Aggregates (N7) ─────────────────────────
+
+    test("reads user-defined aggregates from pg_aggregate (N7)") {
+        pool().use { pool ->
+            val aggregate = reader.read(pool).schema.aggregates["my_sum"]
+            aggregate shouldNotBe null
+            aggregate!!.stateType shouldBe "integer"
+            aggregate.transitionFunction shouldBe "int4pl"
+            aggregate.initialCondition shouldBe "0"
+            aggregate.inputTypes shouldBe listOf("integer")
+            aggregate.sourceDialect shouldBe "postgresql"
+            aggregate.isSqlDefined shouldBe true
         }
     }
 
@@ -426,7 +455,7 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             val trg = result.schema.triggers[expectedKey]!!
             trg.table shouldBe "customers"
             trg.timing shouldBe TriggerTiming.BEFORE
-            trg.event shouldBe TriggerEvent.INSERT
+            trg.events shouldBe setOf(TriggerEvent.INSERT)
         }
     }
 
@@ -456,7 +485,12 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             val domain = result.schema.customTypes["positive_int"]!!
             domain.kind shouldBe CustomTypeKind.DOMAIN
             domain.baseType shouldBe "integer"
-            domain.check shouldNotBe null
+            // I-06: pg_get_constraintdef liefert die volle CHECK-Hülle; das Modell
+            // hält nur das normalisierte Prädikat, damit generate genau einmal wrappt.
+            val check = domain.check
+            check shouldNotBe null
+            check!!.uppercase() shouldNotContain "CHECK"
+            check shouldContain "VALUE > 0"
         }
     }
 
@@ -531,6 +565,49 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             // Second read should work — connection was returned
             val result2 = reader.read(pool)
             result2.schema.tables shouldContainKey "customers"
+        }
+    }
+
+    // ── Partitioning: DEFAULT + child-local index round-trip (AP1/AP2a/AP3) ──
+
+    test("DEFAULT partition + child-local index reverse, and the model generates cleanly") {
+        pool().use { pool ->
+            val schema = reader.read(pool).schema
+
+            // The partition children are not top-level tables (AP2).
+            ("ap3_part_demo_eu" in schema.tables) shouldBe false
+            ("ap3_part_demo_rest" in schema.tables) shouldBe false
+
+            val table = schema.tables["ap3_part_demo"]!!
+            val partitioning = table.partitioning!!
+            partitioning.type shouldBe PartitionType.LIST
+            partitioning.key shouldBe listOf("region")
+
+            // DEFAULT partition captured (AP3, in-scope per ADR 0019).
+            partitioning.partitions.first { it.isDefault }.name shouldBe "ap3_part_demo_rest"
+            // Explicit LIST partition + its child-local index captured (AP1/AP2a).
+            val eu = partitioning.partitions.first { it.name == "ap3_part_demo_eu" }
+            eu.values shouldBe listOf("'eu'")
+            eu.indices.any { it.name == "idx_ap3_eu_region" } shouldBe true
+
+            // AP3: the AP1-populated model generates cleanly — re-apply the generated
+            // DDL into a throwaway schema; a syntax/semantic defect would throw here.
+            val minimal = SchemaDefinition(
+                name = schema.name, version = schema.version,
+                tables = mapOf("ap3_part_demo" to table),
+            )
+            val ddl = PostgresDdlGenerator().generate(minimal)
+            ddl.render() shouldContain "DEFAULT"
+            pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("DROP SCHEMA IF EXISTS ap3_rt CASCADE")
+                    stmt.execute("CREATE SCHEMA ap3_rt")
+                    stmt.execute("SET search_path TO ap3_rt")
+                    ddl.statements.filter { it.sql.isNotBlank() }.forEach { stmt.execute(it.sql) }
+                    stmt.execute("RESET search_path")
+                    stmt.execute("DROP SCHEMA ap3_rt CASCADE")
+                }
+            }
         }
     }
 })

@@ -3,8 +3,11 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.isSpatialGeometryIndex
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -28,10 +31,6 @@ internal object MysqlDiffTableOps {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
             return
         }
-        if (op.table.indices.any { it.referencesGeometry(op.table) }) {
-            blockSpatialIndex(op, ctx, tableName)
-            return
-        }
         // E.3 Sub-Slice F: if any column carries a SequenceNextVal
         // default the mode gate must clear first; emitting CREATE
         // TABLE before the gate would leave a half-rendered op on
@@ -41,11 +40,21 @@ internal object MysqlDiffTableOps {
             return
         }
         val lines = mutableListOf<String>()
-        for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             lines += "    " + ctx.sql.columnLine(colName, col)
         }
         if (op.table.primaryKey.isNotEmpty()) {
-            lines += "    PRIMARY KEY (" + op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) } + ")"
+            // I-07: an AUTO_INCREMENT column must lead a composite PK (ERROR 1075).
+            val ordered = MysqlPrimaryKeyOrdering.autoIncrementFirst(op.table.primaryKey, op.table.columns)
+            ordered.reordered?.let { moved ->
+                ctx.warning(
+                    op,
+                    "AUTO_INCREMENT column '$moved' was moved to the front of the composite PRIMARY KEY " +
+                        "of '$tableName' because MySQL requires it to be the leading key column (ERROR 1075).",
+                    code = "W118",
+                )
+            }
+            lines += "    PRIMARY KEY (" + ordered.columns.joinToString(", ") { ctx.sql.quote(it) } + ")"
         }
         for (c in op.table.constraints.sortedBy { it.name }) {
             ctx.sql.constraintLine(c)?.let { lines += "    $it" }
@@ -56,8 +65,22 @@ internal object MysqlDiffTableOps {
             append("\n);")
         }
         ctx.emit(op, text)
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) warnIfDegradingEnum(op, ctx, colName, col)
         for (idx in op.table.indices) {
-            ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+            // VA3: ein Index auf eine Geometriespalte → MySQL SPATIAL INDEX (statt
+            // die ganze Tabelle zu blocken). Normalisiert auch dialektfremde Typen
+            // (z. B. PostGIS-GIST) spaltenbasiert auf SPATIAL.
+            if (idx.referencesGeometry(op.table)) {
+                ctx.emit(op, ctx.sql.createIndexSql(tableName, idx.copy(type = IndexType.SPATIAL)))
+                ctx.info(
+                    op,
+                    "Index on a geometry column of `$tableName` emitted as MySQL SPATIAL INDEX; " +
+                        "MySQL requires the geometry column to be NOT NULL.",
+                    "SPATIAL_INDEX_REQUIRES_NOT_NULL",
+                )
+            } else {
+                ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+            }
         }
         // Now that the table exists, emit one BEFORE INSERT trigger
         // per `SequenceNextVal`-defaulted column. The trigger calls
@@ -84,7 +107,7 @@ internal object MysqlDiffTableOps {
         table: TableDefinition,
     ): List<Pair<String, DefaultValue.SequenceNextVal>> {
         val result = mutableListOf<Pair<String, DefaultValue.SequenceNextVal>>()
-        for ((name, col) in table.columns.entries.sortedBy { it.key }) {
+        for ((name, col) in table.columns.inOrdinalOrder()) {
             val seq = col.default as? DefaultValue.SequenceNextVal ?: continue
             result += name to seq
         }
@@ -121,9 +144,37 @@ internal object MysqlDiffTableOps {
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+        warnIfDegradingEnum(op, ctx, column, op.column)
         if (seqDefault != null) {
             MysqlDiffSequenceOps.emitSupportTriggerForColumn(
                 op, ctx, table, column, seqDefault.sequenceName,
+            )
+        }
+    }
+
+    /**
+     * Enum-Degradations-Slice (AP3, W134). MySQL materialises enums inline as
+     * native `ENUM('…')` ([MysqlDiffSqlBuilders.columnLine]) — the faithful path.
+     * But an enum WITHOUT inline `values` (a `refType` the diff cannot resolve, or a
+     * dangling reference) falls through to bare TEXT. Make that loud rather than
+     * silent (Review F1). The realistic `refType` case is already blocked upstream
+     * (`MysqlDiffOtherOps.renderCreateCustomType`); this covers the dangling residual.
+     * UP only: both call sites return early for the DOWN direction.
+     */
+    private fun warnIfDegradingEnum(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        colName: String,
+        col: ColumnDefinition,
+    ) {
+        val type = col.type
+        if (type is NeutralType.Enum && type.values == null) {
+            ctx.warning(
+                op,
+                "Enum column `$colName` is migrated as bare TEXT; the declared values are not " +
+                    "enforced in the target (a refType enum could not be resolved to inline values — " +
+                    "MySQL materialises enums inline, so model it with inline `values`).",
+                code = "W134",
             )
         }
     }
@@ -261,15 +312,6 @@ internal object MysqlDiffTableOps {
     }
 
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
-        columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
-
-    private fun blockSpatialIndex(op: DiffOperation, ctx: MysqlDiffRenderContext, tableName: String) {
-        ctx.skip(
-            op,
-            "Operation ${op.id} would create table `$tableName` with an index on a geometry column. " +
-                "MySQL requires SPATIAL INDEX semantics, which the neutral index model cannot express yet.",
-            code = "SPATIAL_INDEX_UNSUPPORTED",
-        )
-        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-    }
+        // ADR 0025: shared predicate (excludes FULLTEXT — createIndexSql has the native branch).
+        isSpatialGeometryIndex { table.columns[it]?.type }
 }

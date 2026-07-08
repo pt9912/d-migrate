@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.cli.commands.ResolvedSchemaOperand
 import dev.dmigrate.cli.commands.SchemaMigrateRequest
 import dev.dmigrate.cli.commands.SchemaMigrateRunner
@@ -27,7 +29,7 @@ import kotlin.io.path.createTempDirectory
 
 
 /**
- * F.2 — PostgreSQL round-trip smoke (`docs/planning/done/diffresult-migration-plan.md §F.2`).
+ * F.2 — PostgreSQL round-trip smoke (`docs/planning/done-archive/diffresult-migration-plan.md §F.2`).
  *
  * Drives `SchemaMigrateRunner` and `SchemaRollbackRunner` end-to-end
  * against a live PostgreSQL via Testcontainers, exercising the pipeline
@@ -200,7 +202,7 @@ class PostgresMigrateRoundTripIntegrationTest : FunSpec({
 })
 
 private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             for (sql in sqls) stmt.execute(sql)
         }

@@ -42,8 +42,18 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.8**
-(stable, released 2026-06-14). The current capabilities:
+d-migrate is a working production tool at version **0.9.9**
+(stable, [released 2026-07-08](https://github.com/pt9912/d-migrate/releases/tag/v0.9.9)).
+
+> **New in 0.9.9:** a multi-round end-to-end
+> pilot validation (PostgreSQL / MySQL / SQLite against
+> Pagila/Sakila) has hardened cross-dialect data and DDL fidelity —
+> all reported P1/P2 cross-dialect blockers are fixed (transfer
+> preflight derived structurally from the target type mapping,
+> array/`tsvector` value binding, `CURRENT_DATE` defaults, view
+> portability, routine emission, and more). See `CHANGELOG.md`.
+
+The current capabilities:
 
 - **Schema model**: neutral YAML schema with 19 types + Spatial
   Geometry; validator with 35+ error codes.
@@ -106,9 +116,9 @@ See [Quick start](#quick-start) below for more concrete recipes.
 - **≥ 90 % line coverage per module**, enforced by Kover
   (`minBound(90)` in every module's `build.gradle.kts`). The CI
   build fails if any module drops below.
-- **Doc-check gate**: every Markdown link target in [`docs/`](docs/),
-  [`spec/`](spec/), [`README.md`](README.md), and
-  [`CHANGELOG.md`](CHANGELOG.md) is validated against the file
+- **Doc-check gate**: Markdown link targets in [`docs/`](docs/),
+  [`spec/`](spec/), and root Markdown files (including both READMEs
+  and [`CHANGELOG.md`](CHANGELOG.md)) are validated against the file
   system on every CI run via
   [d-check](https://github.com/pt9912/d-check) (digest-pinned
   container image, configured in [`.d-check.yml`](.d-check.yml));
@@ -157,14 +167,20 @@ The full release history (0.1.0–0.9.7) lives in
   `url-connection-client`, `artifacts.store: s3`); BI-demo Compose
   stack (Postgres + Metabase + SeaweedFS). All closure plan-docs in
   [`docs/planning/done/`](docs/planning/done/).
-- **0.9.9 Documentation + pilot validation** · `Planned`.
+- **0.9.9 Documentation + pilot validation + cross-dialect
+  fidelity hardening** · `Released` (2026-07-08): complete beta
+  documentation set, ≥5-tester pilot acceptance, and all P1/P2/P3
+  cross-dialect blockers from five pilot rounds fixed (structural
+  transfer preflight, array/`tsvector` binding, `CURRENT_DATE`
+  defaults, view portability, routine emission, post-execute
+  compare canonicalisation). See [`CHANGELOG.md`](CHANGELOG.md).
 - **1.0.0 Stable release** · `Planned`.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at
 [`docs/planning/in-progress/roadmap.md`](docs/planning/in-progress/roadmap.md).
-ADRs live under [`docs/adr/`](docs/adr/) (4 accepted as of
-2026-06-02; index in [`docs/adr/README.md`](docs/adr/README.md)).
+ADRs live under [`docs/adr/`](docs/adr/); the canonical index is
+[`docs/adr/README.md`](docs/adr/README.md).
 
 All releases and details:
 [`CHANGELOG.md`](CHANGELOG.md) |
@@ -177,13 +193,17 @@ Individual gates for fast feedback loops:
 ```bash
 make help              # list all available targets
 make ci                # Docker CI build + docs-check (full local gate)
+make gates             # Docker check, coverage, docs, and semgrep gates
 make docker-build      # build the runtime image
 make docker-check      # Gradle check inside the Dockerfile build stage
 make docker-test       # Gradle test inside the Dockerfile build stage
 make docker-detekt     # Detekt static analysis
 make docker-coverage-gate  # Kover ≥ 90 % per module
 make docs-check        # validate Markdown link targets + Kover-excludes ledger
+make semgrep           # hermetic semgrep scan with pinned rules
 make integration       # Testcontainers integration suite
+make docker-full-gates # docker-gates plus Docker-backed integration tests
+make docker-oci-build  # build the Jib OCI image tar via Dockerfile stage
 make release-assets    # build ZIP, TAR, fat JAR, SHA256 release assets
 ```
 
@@ -226,6 +246,20 @@ docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest \
 # DB-to-DB data transfer
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest \
   data transfer --source sourcedb --target targetdb --tables users,orders
+```
+
+#### Docker / Volumes — running as non-root
+
+The published image runs as a **non-root** user (`uid 10001`). Read-only commands
+(`validate`, `compare`) work as shown above. Commands that **write** into a
+bind-mounted host directory (`reverse --output`, `generate` to a file, `data
+transfer` to file targets) need the mount to be writable by the container user —
+add `--user "$(id -u):$(id -g)"` so output lands with your host ownership:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
+  ghcr.io/pt9912/d-migrate:latest \
+  schema reverse --source mydb --output /work/reverse.yaml
 ```
 
 ### GitHub Release assets
@@ -368,7 +402,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 
 ```text
 .
-├── .github/workflows/             ← GitHub Actions: build + release-homebrew + verify-homebrew-formula
+├── .github/workflows/             ← GitHub Actions: build, integration, demo/sample DB, release
 ├── CHANGELOG.md
 ├── Dockerfile                     ← multi-stage (deps, build, detekt, coverage, runtime, release-assets, jib-image-tar)
 ├── Makefile                       ← build/test gates per Dockerfile stage
@@ -377,6 +411,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 ├── build.gradle.kts               ← root build config + module aggregation
 ├── settings.gradle.kts            ← Gradle multi-module declaration
 ├── gradle.properties              ← pinned dependency versions
+├── config/                        ← detekt and semgrep configuration
 ├── hexagon/                       ← pure domain + ports (no driver dependencies)
 │   ├── core/                      ← neutral schema model, diff core, validators
 │   ├── ports-common/              ← cross-cutting port contracts
@@ -388,29 +423,37 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 │   └── profiling/                 ← perf measurement infrastructure
 ├── adapters/
 │   ├── driven/                    ← outbound: driver-postgresql/-mysql/-sqlite (+ -profiling),
-│   │                                formats, integrations (Flyway/Liquibase/Django/Knex),
-│   │                                persistence-jdbc, storage-file, streaming, text-icu,
+│   │                                formats + formats-parquet, integrations
+│   │                                (Flyway/Liquibase/Django/Knex), persistence-jdbc,
+│   │                                storage-file/-s3, streaming, text-icu,
 │   │                                audit-logging, connection-config
 │   └── driving/                   ← inbound: cli, mcp
+├── examples/
+│   ├── bi-demo/                   ← Compose demo for Parquet/S3/BI flows
+│   └── sample-db/                 ← on-demand sample database harness
 ├── test/
+│   ├── consumer-read-probe/       ← read-only consumer surface verification
 │   ├── cross-dialect-matrix/      ← workstream × dialect × kind sweep + carve-out registry
 │   ├── integration-postgresql/    ← Testcontainers PG live-DB tests
 │   ├── integration-mysql/         ← Testcontainers MySQL live-DB tests
 │   ├── integration-sqlite/        ← file-backed SQLite live-DB tests
 │   ├── integration-concurrency/   ← race-condition reproducers (sequence preserve, atomic locks)
+│   ├── integration-integrations/  ← export integration contract tests
 │   ├── integration-persistence-jdbc/ ← JDBC store + migration runner ITs
 │   ├── integration-server-state/  ← MCP server state machine ITs
+│   ├── integration-storage-s3/    ← S3-compatible artifact store ITs
 │   ├── e2e-cli/                   ← end-to-end CLI + MCP harness scenarios
 │   └── perf-large-schema/         ← N = 100 / 1000 / 10000 perf scales
 ├── scripts/                       ← verify-doc-refs.sh, solid-suppression-gate.sh,
 │                                    test-integration-docker.sh, kover utilities
+├── ledger/                        ← suppression and quality ledgers
 ├── packaging/homebrew/            ← Homebrew formula (d-migrate.rb)
 ├── spec/                          ← normative specs (German): lastenheft, architecture,
 │                                    design, cli-spec, neutral-model-spec,
 │                                    ddl-generation-rules, mcp-server, schema-reference,
 │                                    connection-config-spec
 └── docs/
-    ├── adr/                       ← Architecture Decision Records (4 accepted)
+    ├── adr/                       ← Architecture Decision Records + index
     ├── planning/
     │   ├── open/                  ← trigger watch + open follow-ups
     │   ├── next/                  ← planned but not yet active
@@ -430,9 +473,13 @@ documents.
 Detailed documentation lives in [`docs/`](docs/) and
 [`spec/`](spec/):
 
+- [Documentation overview (German)](docs/user/README.md)
+  - [Anwenderhandbuch](docs/user/anwenderhandbuch.md)
+  - [Administrationshandbuch](docs/user/administrationshandbuch.md)
+  - [Migrations-Leitfaden](docs/user/migrations-leitfaden.md)
+  - [API-Referenz (CLI + MCP)](docs/user/api-referenz.md)
 - [Quick Start Guide (German)](docs/user/guide.md)
-- [Design](spec/design.md) /
-  [Architecture](spec/architecture.md)
+- [Architecture](spec/architecture.md)
 - [Schema YAML reference](spec/schema-reference.md)
 - [Neutral model specification](spec/neutral-model-spec.md)
 - [CLI specification](spec/cli-spec.md)

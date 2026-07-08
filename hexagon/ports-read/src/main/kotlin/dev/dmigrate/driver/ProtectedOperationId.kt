@@ -30,7 +30,7 @@ package dev.dmigrate.driver
  *   (always safe inside the atomic transaction by construction).
  * - `"InsertRow:dmg_sequences"` — MySQL helper-table maintenance.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase B (port + batch shape) and §5 Phase E (per-dialect
  * capability defaults).
  */

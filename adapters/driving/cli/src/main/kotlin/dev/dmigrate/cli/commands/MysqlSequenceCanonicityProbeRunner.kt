@@ -1,4 +1,5 @@
 package dev.dmigrate.cli.commands
+import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.diff.migration.DiffOperation
@@ -54,7 +55,7 @@ internal object MysqlSequenceCanonicityProbeRunner {
         }
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->
-            p.borrow().use { conn ->
+            p.borrow().asJdbc().use { conn ->
                 val adapter = MysqlSequenceCanonicityProbeAdapter(conn)
                 collect(adapter, plan)
             }

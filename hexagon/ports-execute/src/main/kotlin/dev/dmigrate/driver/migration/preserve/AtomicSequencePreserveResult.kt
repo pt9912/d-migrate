@@ -9,7 +9,7 @@ import dev.dmigrate.core.diff.migration.SequenceObjectRef
  * runner re-routes them onto the planner-blocker surface via
  * `PlannerBlockerClassifier`.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase B.
  */
 sealed class AtomicSequencePreserveResult {

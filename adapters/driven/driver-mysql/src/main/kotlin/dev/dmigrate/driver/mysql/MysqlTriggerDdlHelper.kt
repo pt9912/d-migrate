@@ -2,7 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.TriggerDefinition
-import dev.dmigrate.core.model.TriggerEvent
+import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -227,7 +227,7 @@ internal object MysqlTriggerDdlHelper {
         return buildString {
             append("CREATE TRIGGER ").append(ctx.sql.quote(triggerName)).append('\n')
             append("    ").append(trigger.timing.toSqlKeyword()).append(' ')
-                .append(trigger.event.toSqlKeyword()).append('\n')
+                .append(trigger.events.toSqlEventClause()).append('\n')
             append("    ON ").append(ctx.sql.quote(trigger.table)).append('\n')
             append("    FOR EACH ROW\n")
             append("    ").append(trimmedBody)
@@ -244,8 +244,6 @@ internal object MysqlTriggerDdlHelper {
         // `buildCreateSql` call, so this branch should be unreachable.
         TriggerTiming.INSTEAD_OF -> "INSTEAD OF"
     }
-
-    private fun TriggerEvent.toSqlKeyword(): String = name
 
     internal const val W_TRIGGER_REPLACE_GAP: String = "W_TRIGGER_REPLACE_GAP"
 }

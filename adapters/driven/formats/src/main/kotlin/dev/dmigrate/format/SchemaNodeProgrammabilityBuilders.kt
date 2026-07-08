@@ -45,6 +45,9 @@ internal fun buildFunctions(
         }
         if (definition.language != null) functionNode.put("language", definition.language)
         if (definition.deterministic != null) functionNode.put("deterministic", definition.deterministic!!)
+        // F3: PostgreSQL volatility + strictness — written only when captured.
+        if (definition.volatility != null) functionNode.put("volatility", definition.volatility!!.name.lowercase())
+        if (definition.strict != null) functionNode.put("strict", definition.strict!!)
         if (definition.body != null) functionNode.put("body", definition.body)
         if (definition.dependencies != null) {
             functionNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))
@@ -145,7 +148,18 @@ internal fun buildTriggers(
         val triggerNode = mapper.createObjectNode()
         if (definition.description != null) triggerNode.put("description", definition.description)
         triggerNode.put("table", definition.table)
-        triggerNode.put("event", definition.event.name.lowercase())
+        // F4: a single-event trigger keeps the scalar `event:` form (the
+        // dominant case, byte-identical to pre-F4 output); a multi-event
+        // trigger (PostgreSQL `INSERT OR UPDATE …`) serialises as a
+        // canonical-order list under the same `event` key.
+        val canonicalEvents = definition.events.canonicalOrder()
+        if (canonicalEvents.size == 1) {
+            triggerNode.put("event", canonicalEvents.single().name.lowercase())
+        } else {
+            val events = mapper.createArrayNode()
+            canonicalEvents.forEach { events.add(it.name.lowercase()) }
+            triggerNode.set<ArrayNode>("event", events)
+        }
         triggerNode.put("timing", definition.timing.name.lowercase())
         if (definition.forEach != TriggerForEach.ROW) {
             triggerNode.put("for_each", definition.forEach.name.lowercase())
@@ -177,6 +191,31 @@ internal fun buildSequences(
         if (definition.cache != null) sequenceNode.put("cache", definition.cache!!)
         if (definition.preserveCurrentValue) sequenceNode.put("preserve_current_value", true)
         node.set<ObjectNode>(name, sequenceNode)
+    }
+    return node
+}
+
+internal fun buildAggregates(
+    mapper: ObjectMapper,
+    aggregates: Map<String, AggregateDefinition>,
+): ObjectNode {
+    val node = mapper.createObjectNode()
+    for ((name, definition) in aggregates.entries.sortedBy { it.key }) {
+        val aggregateNode = mapper.createObjectNode()
+        if (definition.inputTypes.isNotEmpty()) {
+            val types = mapper.createArrayNode()
+            definition.inputTypes.forEach { types.add(it) }
+            aggregateNode.set<ArrayNode>("input_types", types)
+        }
+        if (definition.stateType != null) aggregateNode.put("state_type", definition.stateType)
+        if (definition.transitionFunction != null) aggregateNode.put("transition_function", definition.transitionFunction)
+        if (definition.finalFunction != null) aggregateNode.put("final_function", definition.finalFunction)
+        if (definition.initialCondition != null) aggregateNode.put("initial_condition", definition.initialCondition)
+        if (definition.sortOperator != null) aggregateNode.put("sort_operator", definition.sortOperator)
+        if (definition.returnType != null) aggregateNode.put("return_type", definition.returnType)
+        if (definition.library != null) aggregateNode.put("library", definition.library)
+        if (definition.sourceDialect != null) aggregateNode.put("source_dialect", definition.sourceDialect)
+        node.set<ObjectNode>(name, aggregateNode)
     }
     return node
 }

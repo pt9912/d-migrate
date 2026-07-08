@@ -10,8 +10,8 @@ und **keinen Lastenheft-Eintrag** tragen. Eine Konsistenzdurchsicht der
 „Geplant"-Marker (2026-06-09) hat ergeben:
 
 - Die *zugrundeliegende* Connection-/Config-Mechanik ist implementiert und
-  trägt LF-012 / LN-038: `ConnectionConfigParser`, `NamedConnectionResolver`
-  (`adapters/driving/cli/.../config/`), `EnvConnectionSecretResolver`,
+  trägt [`LF-012`](../../../spec/lastenheft-d-migrate.md#lf-012) / [`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038): `ConnectionConfigParser`, `NamedConnectionResolver`
+  (`adapters/driving/cli/…/config/`), `EnvConnectionSecretResolver`,
   `YamlConnectionReferenceLoader` (`adapters/driven/connection-config`).
 - `connection-config-spec.md §4` spezifiziert die Credential-Verwaltung
   vollständig: §4.1 eine **5-stufige Prioritätskette** und §4.2 den
@@ -48,20 +48,20 @@ Lastenheft-Backfill „Secret-Management" + eingeplanter `/security-review`).
 Stufe 1 und die `${VAR}`-Variante von Stufe 3 werden vom
 `NamedConnectionResolver` bedient (Inline-URL + Legacy-String-Form +
 `${VAR}`-Substitution + `default_source/target`). `credentialRef`-Einträge in
-der LF-012/LN-038-Map-Form werden dagegen durch
+der [`LF-012`](../../../spec/lastenheft-d-migrate.md#lf-012)/[`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)-Map-Form werden dagegen durch
 `YamlConnectionReferenceLoader` als secret-freie `ConnectionReference`
 geladen und erst im autorisierten Runner-Pfad durch
 `EnvConnectionSecretResolver` aufgelöst. Der `NamedConnectionResolver`
 ignoriert Map-Form-Einträge absichtlich.
 
-Wichtig: der LN-038-`YamlConnectionReferenceLoader` materialisiert Secrets
+Wichtig: der [`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)-`YamlConnectionReferenceLoader` materialisiert Secrets
 **bewusst nicht** in die MCP-Discovery-Oberfläche (`resources/list`,
 `*_list`) — ein lokaler Encrypted-Store ist eine reine CLI-Operator-Ebene und
 darf diese Trennung nicht aufweichen.
 
 ## 2. Architektur-Einordnung (beide Phasen)
 
-- Neues Top-Level-`ConfigCommand` in `adapters/driving/cli/.../Main.kt:155`
+- Neues Top-Level-`ConfigCommand` in `adapters/driving/cli/…/Main.kt:155`
   registrieren (`buildRootCommand().subcommands(..., ConfigCommand())`), plus
   `ConfigCommands.kt`.
   - Phase 1 registriert nur `ConfigShowCommand()`.
@@ -75,7 +75,7 @@ darf diese Trennung nicht aufweichen.
 - Bestehende Bausteine wiederverwenden, **nicht** duplizieren:
   `EffectiveConfigPathResolver` (CLI `>` ENV `>` Default) für den effektiven
   Pfad; `ConnectionConfigParser` nur für Legacy-String-Form; für
-  LF-012/LN-038-Map-Form `YamlConnectionReferenceLoader` bzw. eine neue
+  [`LF-012`](../../../spec/lastenheft-d-migrate.md#lf-012)/[`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)-Map-Form `YamlConnectionReferenceLoader` bzw. eine neue
   adapter-neutrale Listen-API verwenden.
 - Für `config show` **nicht** `ConnectionConfigParser` zweckentfremden: der
   Parser liest nur `database.connections`/Defaults und ignoriert Map-Form
@@ -135,7 +135,7 @@ verpflichtender Masking-Test-Gate Teil der Abnahme.
   `listNames()` / `resolve(name)`), Adapter als Implementierung.
 - Vor Implementierung den Store-Key-Vertrag festlegen: `name` muss eindeutig
   ein Connection-Identifier sein, der entweder dem CLI-Alias aus
-  `database.connections.<name>` oder dem LF-012/LN-038-`connectionId`
+  `database.connections.<name>` oder dem [`LF-012`](../../../spec/lastenheft-d-migrate.md#lf-012)/[`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)-`connectionId`
   entspricht. `database.default_source`/`default_target` werden zuerst auf
   diesen Identifier aufgelöst und nicht als eigene Store-Keys verwendet.
 - Vor Implementierung den Merge-Vertrag festlegen: Store-Credentials ergänzen
@@ -167,16 +167,16 @@ verpflichtender Masking-Test-Gate Teil der Abnahme.
 - Encrypted-Store als **Stufe 4** in die zuständige Secret-Resolution
   einhängen, *nach* Inline/ENV/`${VAR}`/`credentialRef`, *vor* dem
   interaktiven Prompt. Der CLI-Legacy-Pfad (`NamedConnectionResolver`) und der
-  LF-012/LN-038-Runner-Pfad (`ConnectionSecretResolver`) dürfen dabei nicht
+  [`LF-012`](../../../spec/lastenheft-d-migrate.md#lf-012)/[`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)-Runner-Pfad (`ConnectionSecretResolver`) dürfen dabei nicht
   versehentlich vermischt werden; ggf. braucht es einen gemeinsamen Port oder
   eine explizite Adapter-Komposition.
 - Store-Lookups verwenden den normalisierten Connection-Identifier aus §4.1.
   Akzeptanztests müssen mindestens abdecken: direkter Alias, Default-Source
-  auf Alias, LF-012-`connectionId`, Inline-URL mit vorhandenem Passwort (Store
+  auf Alias, [`LF-012`](../../../spec/lastenheft-d-migrate.md#lf-012)-`connectionId`, Inline-URL mit vorhandenem Passwort (Store
   wird nicht genutzt), URL ohne Passwort plus Store-Passwort, und fehlender
   Store-Eintrag mit non-TTY-fail-closed.
 - **Trennungs-Invariante**: Store-Inhalte dürfen nicht in die
-  MCP-Discovery-Oberfläche (LN-038) lecken — Regressions-Test, der
+  MCP-Discovery-Oberfläche ([`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)) lecken — Regressions-Test, der
   `resources/list`/`*_list` gegen einen befüllten Store prüft.
 - Interaktiver Prompt als **Stufe 5** nur bei TTY; non-TTY fail-closed mit
   operator-tauglicher, secret-freier Fehlermeldung.
@@ -227,7 +227,7 @@ verpflichtender Masking-Test-Gate Teil der Abnahme.
    `credentialRef`-Only-Strategie?
 3. Master-Key-Strategie in Phase 2: lokale Key-Datei (§4.2-Stand) vs.
    OS-Keychain/`providerRef: secrets-manager` (konsistent mit dem
-   LN-038-Modell). Ggf. macht ein `providerRef`-basierter Ansatz den
+   [`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)-Modell). Ggf. macht ein `providerRef`-basierter Ansatz den
    eigenen AES-Store teils überflüssig — vor Phase-2-Aktivierung klären.
 4. Output-Format `config show`: YAML-Echo vs. normalisierte Tabelle;
    `--json` für Skripting?

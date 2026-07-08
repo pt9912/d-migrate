@@ -4,7 +4,7 @@ import dev.dmigrate.core.util.sha256Hex
 
 /**
  * Deterministic [DiffOperation] ID derivation per
- * `docs/planning/done/diffresult-migration-plan.md §4.2.1`.
+ * `docs/planning/done-archive/diffresult-migration-plan.md §4.2.1`.
  *
  * An ID is a stable function of:
  *

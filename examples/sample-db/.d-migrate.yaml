@@ -1,0 +1,44 @@
+# Sample-DB-Harness Connection-Config
+# Plan: docs/planning/done/sample-db-integration-harness.md
+#
+# Container-Pfad: der dmigrate-Service erreicht postgres über das
+# Compose-Netz (Service-DNS `postgres`, Container-Port 5432).
+# ${VAR}-Substitution kommt aus der Container-Env (env_file: .env).
+
+database:
+  connections:
+    # Phase 1 (Pagila/PG-Round-Trip)
+    pagila_pg: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/pagila"
+    pagila_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/pagila_target"
+    # Phase 2 (Cross-Dialect) — mysql-Service über Compose-DNS `mysql:3306`
+    sakila_my: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/sakila"
+    pagila_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/pagila_target"
+    sakila_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/sakila_target"
+    # Phase 3 (Scale, Employees) — MySQL-Quelle + MySQL- und PG-Ziel.
+    # Die DBs legt der Scale-Smoke selbst an (idempotent), da initdb nur
+    # bei frischem Volume läuft.
+    employees_my: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/employees"
+    employees_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/employees_my_target"
+    employees_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/employees_pg_target"
+    # Phase 5 (Spatial, VA1-Live-Smoke) — PostGIS via postgis-Service, MySQL native
+    # via mysql-Service. Quell-/Ziel-DBs legt smoke-spatial.sh an (idempotent).
+    postgis_geo_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/geo_pg_src"
+    postgis_geo_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/geo_pg_target"
+    geo_my_src: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_src"
+    geo_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_target"
+    # 5a (echtes PostGIS-nyc): dedizierte DBs, damit der Reverse (kein --tables-Filter)
+    # nur nyc_neighborhoods sieht — keine Kollision mit den geo_pg_*-Tabellen oben.
+    nyc_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/nyc_src"
+    nyc_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/nyc_target"
+    # Phase 4 (TPC-H, 4b Round-Trip) — postgres-Service. Quell-/Ziel-DBs legt
+    # smoke-tpch.sh an (idempotent); die TPC-H-Tabellen kommen aus dem 4a-Generator
+    # (runtime-generierte DuckDB-schema.sql + CSVs, kein TPC-Artefakt im Repo).
+    tpch_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch"
+    tpch_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch_target"
+    # 4c (Volumen-Abnahme): dedizierte Re-Import-Ziel-DB, getrennt vom 4b-Ziel.
+    tpch_perf_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpch_perf_target"
+    # Phase 4 (TPC-DS, optionaler 4e Round-Trip) — postgres-Service. Quell-/Ziel-DBs legt
+    # smoke-tpcds.sh an (idempotent); die 24 TPC-DS-Tabellen kommen aus dem 4e-Generator
+    # (runtime-generierte DuckDB-schema.sql + CSVs, kein TPC-Artefakt im Repo).
+    tpcds_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpcds"
+    tpcds_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpcds_target"

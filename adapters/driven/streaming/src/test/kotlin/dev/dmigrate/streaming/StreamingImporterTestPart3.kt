@@ -59,6 +59,7 @@ class StreamingImporterTestPart3 : FunSpec({
         )
         val session = FakeTableImportSession(targetColumns = listOf(targetColumns.first()))
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -93,6 +94,7 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = { FakeWriter(mapOf("users" to session)) },
             ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -118,6 +120,7 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = { FakeWriter(mapOf("users" to session)) },
             ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -150,6 +153,7 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = { FakeWriter(mapOf("users" to session)) },
             ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -179,6 +183,7 @@ class StreamingImporterTestPart3 : FunSpec({
         try {
             // Use --on-error skip so commit failure doesn't abort, allowing TableFinished emission
             val result = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = { FakeWriter(mapOf("users" to session)) },
             ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -208,6 +213,7 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = { FakeWriter(mapOf("users" to session)) },
             ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -235,6 +241,7 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = { FakeWriter(mapOf("users" to session)) },
             ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -271,6 +278,7 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = { FakeWriter(mapOf("users" to session)) },
             ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -300,6 +308,7 @@ class StreamingImporterTestPart3 : FunSpec({
         try {
             shouldThrow<RuntimeException> {
                 StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                     readerFactory = readerFactory,
                     writerLookup = { FakeWriter(mapOf("users" to session)) },
                 ).import(pool = pool, input = ImportInput.SingleFile("users", file),
@@ -342,6 +351,7 @@ class StreamingImporterTestPart3 : FunSpec({
             }
         }
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { writer },
         )

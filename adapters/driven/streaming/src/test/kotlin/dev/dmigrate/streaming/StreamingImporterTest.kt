@@ -69,6 +69,7 @@ class StreamingImporterTest : FunSpec({
         )
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -105,6 +106,7 @@ class StreamingImporterTest : FunSpec({
             readersByTable = mapOf("users" to FakeReader(header = listOf("id"), chunks = emptyList())),
         )
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to FakeTableImportSession(targetColumns = listOf(targetColumns.first())))) },
         )
@@ -130,6 +132,7 @@ class StreamingImporterTest : FunSpec({
                 )
             )
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = {
                     FakeWriter(
@@ -165,6 +168,7 @@ class StreamingImporterTest : FunSpec({
                 )
             )
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = {
                     FakeWriter(
@@ -200,6 +204,7 @@ class StreamingImporterTest : FunSpec({
                 )
             )
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = {
                     FakeWriter(
@@ -231,6 +236,7 @@ class StreamingImporterTest : FunSpec({
                 readersByTable = mapOf("users" to FakeReader(header = listOf("id"), chunks = emptyList())),
             )
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = {
                     FakeWriter(
@@ -261,6 +267,7 @@ class StreamingImporterTest : FunSpec({
                 readersByTable = mapOf("users" to FakeReader(header = listOf("id"), chunks = emptyList())),
             )
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = {
                     FakeWriter(
@@ -295,6 +302,7 @@ class StreamingImporterTest : FunSpec({
                 )
             )
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = readerFactory,
                 writerLookup = {
                     FakeWriter(
@@ -337,6 +345,7 @@ class StreamingImporterTest : FunSpec({
         )
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
@@ -373,6 +382,7 @@ class StreamingImporterTest : FunSpec({
         )
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = readerFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )

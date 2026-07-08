@@ -8,7 +8,7 @@
 > - `adapters/driven/persistence-jdbc/src/main/resources/db/migration/`
 > - `adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/`
 > - `hexagon/ports-common/src/testFixtures/kotlin/dev/dmigrate/server/ports/contract/`
-> - `spec/phase-e-port-atomicity.md`
+> - `spec/port-atomicity.md`
 
 ---
 

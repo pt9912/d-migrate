@@ -5,6 +5,7 @@ import dev.dmigrate.core.cancel.TestCancellationTokenSource
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
@@ -22,7 +23,6 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.io.InputStream
 import java.nio.file.Files
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -36,7 +36,7 @@ class StreamingImporterCancelCheckpointTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = error("unused")
+        override fun borrow(): DatabaseConnection = error("unused")
         override fun activeConnections() = 0
         override fun close() {}
     }
@@ -108,6 +108,7 @@ class StreamingImporterCancelCheckpointTest : FunSpec({
         val reportEvents = AtomicInteger(0)
         val reporter = ProgressReporter { reportEvents.incrementAndGet() }
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = emptyReaderFactory,
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }
@@ -137,6 +138,7 @@ class StreamingImporterCancelCheckpointTest : FunSpec({
         val completedTables = mutableListOf<String>()
         val source = TestCancellationTokenSource()
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = emptyReaderFactory,
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }

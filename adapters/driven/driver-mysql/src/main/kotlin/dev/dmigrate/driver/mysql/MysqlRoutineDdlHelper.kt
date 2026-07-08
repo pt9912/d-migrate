@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
@@ -27,6 +28,20 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             return null
         }
 
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        val portability = transformer.assessPortability(query, view.sourceDialect)
+        if (!portability.portable) {
+            val action = ManualActionRequired(
+                code = "E053", objectType = "view", objectName = name,
+                reason = "View '$name' body is not portable to MySQL (${portability.reason}); " +
+                    "d-migrate does not translate view bodies between dialects.",
+                hint = "Rewrite the view body with MySQL-compatible syntax and re-run.",
+                sourceDialect = view.sourceDialect,
+            )
+            skipped += action.toSkipped()
+            return actionRequired(action)
+        }
+
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
             notes += TransformationNote(
@@ -38,7 +53,6 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
             )
         }
 
-        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
         notes += queryNotes
 
@@ -51,7 +65,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return functions.mapNotNull { (name, fn) -> generateFunction(name, fn, skipped) }
+        return functions.mapNotNull { (key, fn) -> generateFunction(ObjectKeyCodec.routineName(key), fn, skipped) }
     }
 
     private fun generateFunction(
@@ -113,7 +127,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return procedures.mapNotNull { (name, proc) -> generateProcedure(name, proc, skipped) }
+        return procedures.mapNotNull { (key, proc) -> generateProcedure(ObjectKeyCodec.routineName(key), proc, skipped) }
     }
 
     private fun generateProcedure(
@@ -196,7 +210,10 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
         }
 
         val timing = trigger.timing.name
-        val event = trigger.event.name
+        // F4: single-event sets render as a bare keyword (MySQL has no
+        // multi-event trigger grammar); foreign multi-event triggers are
+        // already gated by the E053 source-dialect skip above.
+        val event = trigger.events.toSqlEventClause()
         val forEach = trigger.forEach.name
 
         val sql = buildString {

@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -25,7 +26,7 @@ internal class SchemaMigrateExecutionStage(
     private val executor: SegmentAwareExecutorFn?,
     private val dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)?,
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand,
-    private val fingerprint: (SchemaDefinition) -> String,
+    private val fingerprint: (SchemaDefinition, (NeutralType) -> NeutralType) -> String,
     private val printError: (message: String, source: String) -> Unit,
     private val lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS,
 ) {
@@ -148,6 +149,7 @@ internal class SchemaMigrateExecutionStage(
         request: SchemaMigrateRequest,
         desired: SchemaDefinition,
         target: CompareOperand,
+        canonicalizeType: (NeutralType) -> NeutralType = { it },
     ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
         val dbOperand = target as? CompareOperand.Database ?: return null
@@ -166,15 +168,15 @@ internal class SchemaMigrateExecutionStage(
             printError("Post-execute reverse marker error: ${e.message}", request.target)
             return PostCompareOutcome.IntrospectionFailed
         }
-        val observed = fingerprint(postNormalized.schema)
-        val desiredFp = fingerprint(desired)
+        val observed = fingerprint(postNormalized.schema, canonicalizeType)
+        val desiredFp = fingerprint(desired, canonicalizeType)
         return if (observed == desiredFp) {
             PostCompareOutcome.Clean(observed)
         } else {
             printError(
                 "Post-execute compare detected drift; the target does not match the desired schema. " +
-                    "Per Plan §F.5.g no automatic recovery rollback artefact will be emitted on drift — " +
-                    "operator must inspect the target manually before deciding on rollback.",
+                    "No automatic recovery rollback artefact is emitted on drift — " +
+                    "inspect the target manually before deciding on rollback.",
                 request.target,
             )
             PostCompareOutcome.Drift(observed)

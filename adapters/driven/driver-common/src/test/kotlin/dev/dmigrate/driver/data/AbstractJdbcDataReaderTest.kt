@@ -1,9 +1,11 @@
 package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.DataFilter
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -49,7 +51,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
                 password = null,
             )
         )
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, qty INTEGER)")
                 stmt.execute("CREATE TABLE empty (id INTEGER PRIMARY KEY, label TEXT)")
@@ -311,7 +313,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
     test("LF-008 / LF-009 / LF-013 ResumeMarker with duplicate marker values: tie-breaker resumes precisely") {
         // Insert two rows sharing the same qty to stress the lexicographic
         // tie-breaker path.
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO items (id, name, qty) VALUES (6, 'item-6', 30)")
                 stmt.execute("INSERT INTO items (id, name, qty) VALUES (7, 'item-7', 30)")
@@ -427,6 +429,80 @@ class AbstractJdbcDataReaderTest : FunSpec({
             )
         }
     }
+
+    // ───────────────────────────────────────────────────────────────────
+    // VA1b (Spatial-Slice): geometry-aware read projection
+    // ───────────────────────────────────────────────────────────────────
+
+    val geomReader = GeometryTestJdbcReader()
+
+    fun createGeoTable() {
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { st ->
+                // SQLite ist typ-flexibel: der declared type "GEOMETRY" sorgt
+                // dafür, dass getColumnTypeName "GEOMETRY" liefert → VA1a erkennt
+                // die Spalte als Geometrie und VA1b wrappt sie in der Projektion.
+                st.execute("CREATE TABLE geo (id INTEGER PRIMARY KEY, label TEXT, g GEOMETRY)")
+                st.execute("INSERT INTO geo (id, label, g) VALUES (1, 'p1', 'abc')")
+            }
+        }
+    }
+
+    test("VA1b: geometry column is wrapped via geometryReadExpression in the projection") {
+        createGeoTable()
+        val chunk = geomReader.streamTable(pool, "geo", chunkSize = 100).toList().single()
+        chunk.columns.map { it.name } shouldContainExactly listOf("id", "label", "g")
+        val row = chunk.rows.single()
+        row[0] shouldBe 1
+        row[1] shouldBe "p1" // non-geometry column untouched
+        // hex('abc') = 0x616263 — proves the projection wrapped g via hex(g) AS g
+        row[2] shouldBe "616263"
+    }
+
+    test("VA1b/R2: geometry column carries neutralType Geometry in the chunk schema") {
+        createGeoTable()
+        geomReader.streamTable(pool, "geo", chunkSize = 100).use { seq ->
+            val gCol = seq.schema.columns.single { it.name == "g" }
+            // R2: trotz gewrapptem hex(g) (das als JDBC-Typ nicht "geometry" meldet)
+            // trägt der Header dank probedColumns NeutralType.Geometry.
+            gCol.neutralType shouldBe NeutralType.Geometry()
+        }
+    }
+
+    test("VA1b: tables without geometry are unaffected by a geometry-capable reader") {
+        // The probe finds no geometry column → projection stays "*", values raw.
+        val chunk = geomReader.streamTable(pool, "items", chunkSize = 100).toList().single()
+        chunk.columns.map { it.name } shouldContainExactly listOf("id", "name", "qty")
+        chunk.rows.first()[1] shouldBe "item-1"
+    }
+
+    test("VA1b: ColumnSubset including the geometry column still wraps it") {
+        createGeoTable()
+        val chunk = geomReader.streamTable(
+            pool, "geo", filter = DataFilter.ColumnSubset(listOf("g", "id")), chunkSize = 100,
+        ).toList().single()
+        chunk.columns.map { it.name } shouldContainExactly listOf("g", "id")
+        chunk.rows.single()[0] shouldBe "616263"
+    }
+
+    test("VA1b: ColumnSubset excluding the geometry column emits no wrapper") {
+        createGeoTable()
+        val chunk = geomReader.streamTable(
+            pool, "geo", filter = DataFilter.ColumnSubset(listOf("id", "label")), chunkSize = 100,
+        ).toList().single()
+        chunk.columns.map { it.name } shouldContainExactly listOf("id", "label")
+        chunk.rows.single()[1] shouldBe "p1"
+    }
+
+    test("VA1b: default geometryReadExpression makes projection explicit but leaves value raw") {
+        // supportsGeometryRead=true, aber kein geometryReadExpression-Override →
+        // Default (Spalte unverändert): Projektion wird explizit ("g" AS "g"),
+        // der Wert bleibt roh. Deckt den Default-Hook ab.
+        createGeoTable()
+        val chunk = DefaultGeomExprReader().streamTable(pool, "geo", chunkSize = 100).toList().single()
+        chunk.columns.map { it.name } shouldContainExactly listOf("id", "label", "g")
+        chunk.rows.single()[2] shouldBe "abc"
+    }
 })
 
 /** Concrete subclass that mirrors SqliteDataReader's quoting/settings without depending on the SQLite driver module. */
@@ -434,4 +510,27 @@ private class TestJdbcReader : AbstractJdbcDataReader() {
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
     override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
     override val needsAutoCommitFalse: Boolean = false
+}
+
+/**
+ * VA1b reader that opts into geometry-read wrapping. Uses SQLite's `hex(...)` as a
+ * stand-in for `ST_AsBinary`/`ST_AsEWKB` so the probe + projection mechanism can be
+ * exercised end-to-end against real sqlite-jdbc, without needing mod_spatialite.
+ */
+private class GeometryTestJdbcReader : AbstractJdbcDataReader() {
+    override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
+    override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
+    override val needsAutoCommitFalse: Boolean = false
+    override val supportsGeometryRead: Boolean = true
+    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
+    override fun geometryReadExpression(quotedColumn: String): String = "hex($quotedColumn)"
+}
+
+/** VA1b reader that opts into geometry-read but keeps the default (no-op) expression. */
+private class DefaultGeomExprReader : AbstractJdbcDataReader() {
+    override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
+    override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
+    override val needsAutoCommitFalse: Boolean = false
+    override val supportsGeometryRead: Boolean = true
+    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
 }

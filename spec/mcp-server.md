@@ -1,27 +1,18 @@
-# MCP-Server (Phase B + C + D + E + F + G)
+# MCP-Server
 
-> **Status (0.9.6):** Phase B (Transport / Auth / Discovery /
-> JSON-Schemas), Phase C (typisierte Schema-Tools, Upload-Flow,
-> `job_status_get`, `artifact_chunk_get`), Phase D (Discovery-
-> Listen-Tools, produktives `resources/read`, HMAC-Cursor,
-> Connection-Ref-Bootstrap), Phase E (Async-Job-Start-Tools,
-> Idempotency, Policy, Quota, `job_cancel`), Phase F
-> (policy-gesteuerter `job_input`-Upload, `data_import_start`,
-> `data_transfer_start`) und Phase G (KI-nahe Tools
-> `procedure_transform_plan/execute`, `testdata_plan` +
-> MCP-Prompts `prompts/list`/`prompts/get`) sind abgeschlossen.
-> Damit ist der 0.9.6-MCP-Vertrag vollständig produktiv.
-> Details der jeweiligen Phase: §"Phase D: Discovery und
-> Ressourcen", §"Phase E: Async-Jobs, Idempotency, Policy",
-> §"Phase F: Policy-gesteuerte Datenoperationen" und §"Phase G:
-> KI-nahe Tools und MCP-Prompts" unten + die done-Pläne unter
-> `docs/planning/done/`.
+> **Vertrag:** d-migrate-MCP-Contract **v1** auf Basis von
+> **MCP 2025-11-25**. Der Server stellt bereit: typisierte Schema- und
+> Daten-Tools, Discovery (`*_list`) und produktives `resources/read`,
+> asynchrone Jobs (Idempotency, Policy, Quota, Cancel), policy-gesteuerte
+> Datenoperationen (`job_input`-Upload, `data_import_start`,
+> `data_transfer_start`) sowie KI-nahe Tools
+> (`procedure_transform_plan`/`execute`, `testdata_plan`) und MCP-Prompts
+> (`prompts/list`/`prompts/get`). Die Verträge sind unten je
+> Funktionsbereich beschrieben.
 
 Der MCP-Server ist ein Driving-Adapter zu d-migrate
-(`adapters/driving/mcp`) und implementiert
-**MCP 2025-11-25** mit **stdio**- und **Streamable-HTTP**-Transport. Die
-vollständige Phasen-B-Spezifikation liegt in
-[`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md).
+(`adapters/driving/mcp`) und implementiert **MCP 2025-11-25** mit
+**stdio**- und **Streamable-HTTP**-Transport.
 
 ---
 
@@ -86,7 +77,7 @@ Nicht-Loopback nutzt — siehe §12.12.
 
 - Streamable-HTTP per MCP 2025-11-25 (§12.13).
 - `POST /mcp` für JSON-RPC.
-- `GET /mcp` antwortet HTTP 405 (kein SSE in Phase B).
+- `GET /mcp` antwortet HTTP 405 (kein SSE).
 - `DELETE /mcp` mit `MCP-Session-Id` terminiert die Session.
 - `GET /.well-known/oauth-protected-resource` liefert Protected
   Resource Metadata (§12.7).
@@ -181,14 +172,14 @@ d-migrate mcp serve \
 
 ### `capabilities_list`
 
-Phase B's einziger fachlicher Handler. Liefert einen Snapshot:
+Liefert einen Snapshot der Server-Capabilities:
 
 ```json
 {
   "mcpProtocolVersion": "2025-11-25",
   "dmigrateContractVersion": "v1",
   "serverName": "d-migrate",
-  "tools": [ /* alle 0.9.6-Tools mit Scope-Anforderungen */ ],
+  "tools": [ /* alle Tools mit Scope-Anforderungen */ ],
   "scopeTable": {
     "dmigrate:read": ["capabilities_list", "schema_validate", ...],
     "dmigrate:job:start": ["schema_reverse_start", ...],
@@ -199,7 +190,7 @@ Phase B's einziger fachlicher Handler. Liefert einen Snapshot:
 
 ### `tools/list` und `tools/call`
 
-`tools/list` liefert für jedes 0.9.6-Tool:
+`tools/list` liefert für jedes Tool:
 - `name`, `title`, `description`
 - `inputSchema` und `outputSchema` (JSON Schema 2020-12, §12.18)
 - `requiredScopes` (d-migrate-Erweiterung)
@@ -212,9 +203,9 @@ content=[ToolErrorEnvelope(code=UNSUPPORTED_TOOL_OPERATION, ...)])`.
 
 Walks Jobs → Artifacts → Schemas → Profiles → Diffs → Connections.
 Pagination per opaquem `nextCursor` (§12.17). Connection-Refs werden
-**ohne Secrets** projiziert (§6.9-Akzeptanz). Phase B's
-`ResourceStores.empty()`-Default liefert leere Listen — Phase C/D
-verdrahtet echte Stores.
+**ohne Secrets** projiziert (§6.9-Akzeptanz). Ein nicht verdrahteter
+`ResourceStores.empty()`-Default liefert leere Listen; produktive
+Deployments verdrahten echte Stores.
 
 ### Resource-URI-Templates
 
@@ -232,44 +223,30 @@ dmigrate://tenants/{tenantId}/connections/{connectionId}
 
 ---
 
-## Bekannte Grenzen Phase B
+## Abgrenzung (Nicht-Ziele)
 
-| Bereich                                      | Status                                                       |
-| -------------------------------------------- | ------------------------------------------------------------ |
-| Tool-Handler (außer `capabilities_list`)     | **Phase C+D produktiv** — Schema-Tools, Upload-Flow, `job_status_get`, `artifact_chunk_get` (Phase C); `*_list`-Discovery (Phase D). |
-| `resources/read`                             | **Phase D produktiv** — siehe Abschnitt "Phase D: Discovery und Ressourcen" unten. |
-| SSE-Push / `notifications/*`                 | **Nicht implementiert**                                      |
-| `subscribe`/`listChanged` Capabilities      | Beide `false` (§12.16, §12.17)                              |
-| `connections/list` (Admin-Filter)           | **Phase D**: Connection-Refs erscheinen in `resources/list` und sind via `resources/read` lesbar (secret-frei). |
-| `job_cancel`                                 | Registry-Eintrag — Handler folgt Phase E (Job-Lifecycle).   |
-| Upload-Session-Tools                         | **Phase C + F produktiv** — `schema_staging_readonly` (Phase C, Quota/Audit) + `job_input` (Phase F, policy-gesteuert mit `approvalKey` + Init-Fingerprint). `artifact_upload_init`, `artifact_upload`, `artifact_upload_abort` decken beide Intents. |
-| Data-write Start-Tools                       | **Phase F produktiv** — `data_import_start` und `data_transfer_start` (idempotent, policy-gesteuert, `targetConnectionRef`/`sourceConnectionRef` als tenant-scoped Resource-URI). |
-| AI-Tools (procedure_transform_*, testdata_*) | **Phase G produktiv** — `procedure_transform_plan`, `procedure_transform_execute` und `testdata_plan` mit AiProviderPort, NoOp-Default-Provider, Prompt-Hygiene, Provider-Quota (`PROVIDER_CALLS`), AiArtifactMetadataStore (Provenance) und AiToolOutcomeStore (Single-Writer-Lease + Replay). `testdata_execute` bleibt Carve-out (separate Daten-Schreiboperation, nicht in 0.9.6). |
-| MCP-Prompts (prompts/list, prompts/get) | **Phase G produktiv** — drei Pflichtprompts (`procedure_analysis`, `procedure_transformation`, `testdata_planning`) mit JSON-Schema-Argumentvalidierung, Plan-Hygiene auf Argument + zusammengebaute Prompt-Nachricht, dmigrate:read-Scope-Gate, JSON-RPC-Fehler mit `error.data.dmigrateCode`. |
-| Resource-Stores (Real-Backends)              | **Phase D**: `ResourceStores.fromMcpRuntimeWiring(...)` lädt Job/Artifact/Schema/Profile/Diff/Connection aus produktiver Wiring. |
-| Cross-Tenant-Reads                           | **Phase D**: Tenant-Scope ueber `allowedTenantIds`; Cross-Tenant-Reads erlaubt, wenn der URI-Tenant in `allowedTenantIds` liegt. |
-| OAuth Authorization Server / DCR             | **Nicht implementiert**                                      |
-| Multi-Scope-Tools                            | Heute nicht im Default-Mapping — Wire-Format ist vorbereitet |
+Bewusst **nicht** Teil des MCP-Servers:
 
-Eine Verfeinerung der `inputSchema`/`outputSchema`-Definitionen pro
-Tool kommt in Phase C/D mit den jeweiligen Handlern; Phase-B-Schemas
-sind typisiert auf die offensichtlichen Top-Level-Argumente und durch
-einen Golden-Test gegen Drift gepinnt
-(`adapters/driving/mcp/src/test/resources/golden/phase-b-tool-schemas.json`).
+- **Kein SSE-/Server→Client-Push.** Der HTTP-Transport ist Request/Response
+  (`POST /mcp`); `GET /mcp` → `405 Method Not Allowed`, die Capabilities
+  `subscribe`/`listChanged` sind `false`, und es gibt keine server-initiierten
+  `notifications/*`. Job-Fortschritt wird per `job_status_get` gepollt.
+- **Kein eigener OAuth-Authorization-Server / keine Dynamic Client Registration.**
+  Der Server ist OAuth-**Resource-Server**: er validiert extern ausgestellte JWTs
+  (`jwt-jwks`/`jwt-introspection`) gegen einen OIDC-Issuer und liefert
+  RFC-9728-Metadata, stellt aber selbst keine Tokens aus.
 
 ---
 
-## Phase D: Discovery und Ressourcen
+## Discovery und Ressourcen
 
-Phase D (`docs/planning/done/ImpPlan-0.9.6-D.md`) macht Jobs,
-Artefakte, Schemas, Profile, Diffs und Connection-Refs ueber MCP
-auffindbar und gezielt lesbar. Die Phase ergaenzt Phase B/C
-additiv — bestehende Tools/Wire-Vertraege bleiben rueckwaerts-
-kompatibel, sofern hier nicht ausdruecklich anders dokumentiert.
+Discovery macht Jobs, Artefakte, Schemas, Profile, Diffs und
+Connection-Refs ueber MCP auffindbar und gezielt lesbar — additiv zu
+den Basis-Tools, ohne bestehende Wire-Vertraege zu brechen.
 
 ### Discovery-Tools (`*_list`)
 
-Phase D liefert fuenf produktive Discovery-Tools, alle mit
+Es gibt fuenf Discovery-Tools, alle mit
 `dmigrate:read`-Scope:
 
 | Tool             | Collection-Feld | Wire-spezifische Filter                              |
@@ -342,7 +319,7 @@ nimmt dafuer weiterhin nur die jeweilige URI entgegen.
 Die einzige tenantlose Resource-URI. Liefert dieselbe
 Capabilities-Projektion wie das `capabilities_list`-Tool, ohne den
 per-Call `executionMeta.requestId`. Eine leer konfigurierte
-Capabilities-Provider-Function (Phase-B-/legacy-Pfad) kollabiert
+Capabilities-Provider-Function (legacy-Pfad) kollabiert
 auf `RESOURCE_NOT_FOUND`, damit ein Stale-Deployment niemals einen
 halbfertigen Capabilities-Body liefert.
 
@@ -356,13 +333,13 @@ HMAC-SHA256 (`McpCursorCodec`). Gebunden ist jeder Cursor an:
 - `family` (Tool-spezifisch oder fixed `"resources/list-walk"`)
 - `filters` (deterministische Map, leer bei `resources/list`)
 - `pageSize`
-- `sort` (heute immer `null`; Plan-E reserviert)
+- `sort` (heute immer `null`; reserviert)
 - `version`, `kid`, `issuedAt`, `expiresAt` (TTL 15 min)
 
 `artifact_chunk_get` produziert einen HMAC-gesealtenen
 `nextChunkCursor` zusaetzlich zum `nextChunkUri`. Bindung:
 (tenant, artifactId, chunkSize). Eingangsseitig akzeptiert das Tool
-weiterhin den nackten `chunkId`-Integer (befristete Phase-C-
+weiterhin den nackten `chunkId`-Integer (befristete
 Kompatibilitaet) und wirft `VALIDATION_ERROR`, wenn beide gesetzt
 sind. Der Output enthaelt nie ein `nextChunkId`-Feld.
 
@@ -373,10 +350,10 @@ JSON-RPC-`-32602`. Multi-Instanz-Deployments muessen einen
 deterministischen `cursorKeyring` wiren; der Default-Random-
 Keyring funktioniert nur fuer Single-Instance-Setups.
 
-Legacy-Phase-B-Cursor werden nicht dual-read-faehig gemacht, sobald
+Unsignierte Alt-Cursor werden nicht dual-read-faehig gemacht, sobald
 ein HMAC-Codec gewired ist. Der alte unsigned `resources/list`-Cursor
-(Base64 von `{kind, innerToken}`) bleibt nur in Phase-B-only
-Deployments ohne Codec gueltig. Produktive Deployments mit Codec
+(Base64 von `{kind, innerToken}`) bleibt nur in Deployments ohne
+Codec gueltig. Produktive Deployments mit Codec
 weisen unsigned Cursor mit `VALIDATION_ERROR` ab. Ein spaeteres
 Compat-Flag darf additiv eingefuehrt werden, muss aber explizit
 aktiviert werden; der Default bleibt fail-closed.
@@ -417,7 +394,7 @@ identischem Secret duplizieren; die Duplikation wird ignoriert.
 
 ### Connection-Ref-Bootstrap
 
-Phase D liefert einen adapter-neutralen Bootstrap fuer Connection-
+Es gibt einen adapter-neutralen Bootstrap fuer Connection-
 Refs in `adapters/driven/connection-config`:
 
 - `ConnectionReferenceConfigLoader` (Port) — laedt secret-freie
@@ -430,9 +407,9 @@ Refs in `adapters/driven/connection-config`:
 - `YamlConnectionReferenceLoader` — produktive Implementation.
   Erwartet die Map-Form pro Connection (mit `displayName`,
   `dialectId`, `sensitivity`, `credentialRef`, `providerRef`,
-  `allowedPrincipalIds`, `allowedScopes`). Phase-C-String-Form
-  (bare URL) wird silent gedroppt — Phase-D §3.7 verbietet das
-  Materialisieren expandierter Secrets im Discovery-Pfad.
+  `allowedPrincipalIds`, `allowedScopes`). Die bare-URL-String-Form
+  wird silent gedroppt — der Discovery-Pfad materialisiert keine
+  expandierten Secrets.
 - `EnvConnectionSecretResolver` — Default-Resolver fuer das
   `env:VAR_NAME`-Schema. Authorisiert via
   `allowedPrincipalIds`/`allowedScopes` mit Admin-Bypass.
@@ -459,14 +436,14 @@ Wire-Projektion. Discovery-Konsumenten sehen ausschliesslich
 | `--audience`                | Erwartetes `aud`/Resource-Indicator.                             |
 | `--stdio-token-file`        | Token-Registry für stdio (JSON oder YAML).                       |
 | `--allow-origin`            | Origin-Allowlist-Eintrag (mehrfach setzbar).                     |
-| `--connection-config`       | Project/server YAML fuer Phase-D Connection-Refs. Wenn nicht gesetzt, wird ein globales `--config <path>` wiederverwendet. |
+| `--connection-config`       | Project/server YAML fuer Connection-Refs. Wenn nicht gesetzt, wird ein globales `--config <path>` wiederverwendet. |
 | `--cursor-keyring-file`     | YAML-Keyring fuer deterministische HMAC-Cursor in Multi-Instanz-Deployments. |
 
 ---
 
-## Phase E: Async-Jobs, Idempotency, Policy
+## Async-Jobs, Idempotency, Policy
 
-Phase E (`ImpPlan-0.9.6-E.md`) wirelt vier produktive Tool-Slots:
+Vier Job-Tools:
 
 - `schema_reverse_start` — startet einen Schema-Reverse-Job (read-only, async).
 - `data_profile_start` — startet einen Daten-Profiling-Job (read-only).
@@ -496,7 +473,7 @@ Phase E (`ImpPlan-0.9.6-E.md`) wirelt vier produktive Tool-Slots:
 **`job_cancel`** — genau eines von `jobId | resourceUri`, optional `reason`:
 
 ```jsonc
-// Output (Plan §5.6 / §7.6)
+// Output
 {
   "jobId": "...",
   "operation": "schema_reverse",
@@ -523,7 +500,7 @@ der Server mit `POLICY_REQUIRED` plus `approvalRequestId` +
 `requiredScopes`. Der Client muss einen `approvalToken` vom Grant-
 Aussteller einholen und im Retry mitsenden.
 
-**Grant-Aussteller-Modi** (Plan §7.4):
+**Grant-Aussteller-Modi**:
 
 - `FailClosedGrantIssuer` — **Default ohne Konfiguration**. Lehnt jeden
   Issue-Versuch mit `policy:no-issuer-configured` ab. Eine laufende
@@ -542,7 +519,7 @@ Aussteller einholen und im Retry mitsenden.
 
 Aktive Jobs werden pro `(tenantId, ACTIVE_JOBS, principalId, operation)`
 gezählt. Überschreitet eine neue Reservierung den Limit-Wert, antwortet
-der Start mit `RATE_LIMITED` (Plan §7.9):
+der Start mit `RATE_LIMITED`:
 
 ```jsonc
 {
@@ -556,7 +533,7 @@ der Start mit `RATE_LIMITED` (Plan §7.9):
 }
 ```
 
-Wichtig (Plan §7.9 line 1270-1273): RATE_LIMITED entsteht **vor**
+Wichtig: RATE_LIMITED entsteht **vor**
 `jobBuilder`-Aufruf — keine Secret-Store-Reads, keine Pool-Initialisierung,
 keine Schema-Materialisierung bei rate-limited Starts.
 Der `reason`-Wert ist immer vorhanden: `ACTIVE_JOBS_QUOTA` fuer aktive
@@ -572,22 +549,21 @@ Slots werden freigegeben bei:
 ### Audit
 
 Jeder `tools/call` durchläuft `AuditScope.around` und emittiert genau
-ein `AuditEvent` (SUCCESS oder FAILURE mit ToolErrorCode). Phase-E-
+ein `AuditEvent` (SUCCESS oder FAILURE mit ToolErrorCode). Job-
 Outcomes bekommen damit automatisch Audit-Coverage. Reasons (z.B. im
 Cancel-Pfad) werden über `SecretScrubber` gescrubbed bevor sie in
 `cancelRequestedReason` oder Audit-Felder wandern.
 
 ---
 
-## Phase F: Policy-gesteuerte Datenoperationen
+## Policy-gesteuerte Datenoperationen
 
-Phase F (`docs/planning/done/ImpPlan-0.9.6-F.md`) ergänzt Phase
-C/D/E um drei produktive Bausteine:
+Drei policy-gesteuerte Bausteine:
 
 1. den **policy-gesteuerten `job_input`-Upload** über
    `artifact_upload_init` / `artifact_upload` /
    `artifact_upload_abort` (zusätzlich zum read-only
-   `schema_staging_readonly`-Pfad aus Phase C),
+   `schema_staging_readonly`-Pfad),
 2. **`data_import_start`** — startet einen Importjob, der ein
    hochgeladenes `UPLOAD_INPUT`-Artefakt in eine tenant-scoped
    Zielverbindung schreibt,
@@ -599,7 +575,7 @@ Alle drei Pfade sind idempotent, brauchen entweder einen
 `idempotencyKey` (Job-Starts) plus optional `approvalToken` für
 den Approved-Retry. Die Approval-Fingerprints binden Tenant,
 Caller, Tool, Korrelations-Kind und den normalisierten
-Payload-Fingerprint (Plan §5).
+Payload-Fingerprint.
 
 ### Upload-Intent-Trennung
 
@@ -608,26 +584,26 @@ write-nahe `job_input`-Uploads:
 
 | Intent                        | Scope-Gate                                | Default-Schutz                                                                                |
 | ----------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `schema_staging_readonly`     | `dmigrate:read`                           | nur Quota + Audit; idempotent über `clientRequestId` (Phase C).                               |
-| `job_input`                   | `dmigrate:artifact:upload`                | policy-gesteuert mit `approvalKey` + Init-Fingerprint; finalisiertes Artefakt ist `UPLOAD_INPUT` (Phase F). |
+| `schema_staging_readonly`     | `dmigrate:read`                           | nur Quota + Audit; idempotent über `clientRequestId`.                                         |
+| `job_input`                   | `dmigrate:artifact:upload`                | policy-gesteuert mit `approvalKey` + Init-Fingerprint; finalisiertes Artefakt ist `UPLOAD_INPUT`. |
 
 Read-only Staging-Artefakte (`SCHEMA`-Kind) dürfen nicht still
 als `job_input` weiterverwendet werden — der `data_import_start`-
 Handler erzwingt `kind=UPLOAD_INPUT` und liefert sonst
-`VALIDATION_ERROR` (Plan §6.1).
+`VALIDATION_ERROR`.
 
-### `artifact_upload_init` — Phase-F-Felder
+### `artifact_upload_init` — Felder
 
-Zusätzlich zu den Phase-C-Feldern (`uploadIntent`,
+Zusätzlich zu den Basis-Feldern (`uploadIntent`,
 `expectedSizeBytes`/`sizeBytes`, `checksumSha256`, `filename`)
-nimmt der Init-Pfad in Phase F entgegen:
+nimmt der Init-Pfad entgegen:
 
 - `approvalKey` — verbindlich für `uploadIntent=job_input`;
   bindet Idempotenz und Policy-Challenge an
   (`tenantId`,`callerId`,`approvalKey`,Init-Fingerprint).
 - `mimeType` — optional, default `application/octet-stream`.
-  Allowlist siehe `spec/ki-mcp.md` §8.3 (CSV ist seit Phase F
-  erlaubt: `text/csv` / `application/csv`).
+  Allowlist siehe `spec/ki-mcp.md` §8.3 (CSV erlaubt:
+  `text/csv` / `application/csv`).
 - `artifactKind` — verpflichtend, eines aus `schema`, `ddl`,
   `transform-script`, `seed-data`, `rules`, `generic`.
 - `targetTable` — optional Tabellenbindung für Single-File-
@@ -637,13 +613,13 @@ nimmt der Init-Pfad in Phase F entgegen:
 
 `sizeBytes=0` ist nur für nicht-Schema-`job_input` als Single-
 Empty-Segment erlaubt; `artifactKind=schema` mit `sizeBytes=0`
-liefert `VALIDATION_ERROR` (Plan §8.4 / F.4 2/3).
+liefert `VALIDATION_ERROR`.
 
 `uploadSessionTtlSeconds` startet bei 900s mit absoluter Hard-
 Cap 3600s ab Session-Erzeugung; jede erfolgreiche Segmentannahme
 darf bis 3600s verlängern. Idle-Timeout 300s. Session-Quota
 `STORED_ARTIFACT_BYTES` wird beim Übergang nach `COMPLETED`
-gegen das Init-Reserve-Bucket umgebucht (F.9 1/3).
+gegen das Init-Reserve-Bucket umgebucht.
 
 ### Administrative Abort-Pipeline
 
@@ -654,7 +630,7 @@ gegen das Init-Reserve-Bucket umgebucht (F.9 1/3).
 - **Administrative Abort** — `reason` + `approvalKey` + Admin-
   Scope; Outcome wird als `AbortOutcome` in einem persistenten
   Store geschrieben und über `correlationKey=approvalKey` +
-  Fingerprint dedupliziert (F.6). Approval-Reuse für andere
+  Fingerprint dedupliziert. Approval-Reuse für andere
   Session, anderen Caller oder anderen `reason` liefert
   `IDEMPOTENCY_CONFLICT`.
 
@@ -709,25 +685,25 @@ Der MCP-spezifische Import-/Transfer-Fingerprint enthält
   kanonische Filter-DSL-Form; datenbankspezifisches Binding bleibt
   Runner-Concern.
 
-Fingerprint-Pflichtfelder (Plan §8.7 / §8.8): Artefakt-sha256 +
+Fingerprint-Pflichtfelder: Artefakt-sha256 +
 persistente Upload-Metadaten (mimeType, filename) für Imports;
 beide Connection-Refs für Transfers; normalisierte Optionswerte;
 Tenant + Principal.
 
 ### Quota + Timeout
 
-Phase F erweitert die Quota-Modellierung um
-`STORED_ARTIFACT_BYTES` (Plan §8.9 / F.9 1/3): beim Übergang
+Die Quota-Modellierung umfasst
+`STORED_ARTIFACT_BYTES`: beim Übergang
 einer Upload-Session nach `COMPLETED` wird die Reservierung des
 Init-Buckets gegen das STORED-Bucket umgebucht; Expiry oder
 Finalisations-Failure releasen beide Buckets sofort.
 
-Der `FinalisationTimeoutSweeper` (F.9 2/3) verschiebt verwaiste
+Der `FinalisationTimeoutSweeper` verschiebt verwaiste
 `FINALIZING`-Sessions nach `OPERATION_TIMEOUT` und releast die
 beanspruchte Quota; der Wert wird über
 `McpServerConfig.operationTimeout` gepflegt.
 
-`AuditFields.resourceRefs` (F.9 3/3) trägt für Upload-Handler
+`AuditFields.resourceRefs` trägt für Upload-Handler
 die finalisierten/aborted Resource-URIs (`uploadSession`-,
 `artifact`-, `abortOutcome`-Refs), damit Audit-Reader ohne
 Cross-Lookups die wirksame Wirkung sehen.
@@ -736,8 +712,8 @@ Cross-Lookups die wirksame Wirkung sehen.
 
 `artifact_upload` überträgt Segmentbytes immer als
 `contentBase64` im JSON-RPC-Argument. **Separate binäre
-Upload-Bodies (Multipart, Streamable Binary) sind nicht Teil
-von 0.9.6** — auch das HTTP-Transport bleibt ein normaler
+Upload-Bodies (Multipart, Streamable Binary) sind nicht
+vorgesehen** — auch das HTTP-Transport bleibt ein normaler
 JSON-RPC-POST. Diese Festlegung ist absichtlich konservativ und
 hält den Wire-Vertrag identisch zwischen `stdio`- und HTTP-
 Transport. Eine spätere Erweiterung kann additiv einen separaten
@@ -746,10 +722,9 @@ unterstützen.
 
 ---
 
-## Phase G: KI-nahe Tools und MCP-Prompts
+## KI-nahe Tools und MCP-Prompts
 
-Phase G (`docs/planning/done/ImpPlan-0.9.6-G.md`) schließt den
-0.9.6-MCP-Vertrag ab. Drei produktive Bausteine:
+Drei Bausteine:
 
 1. **AI-Tools** — `procedure_transform_plan`,
    `procedure_transform_execute`, `testdata_plan` als
@@ -760,7 +735,7 @@ Phase G (`docs/planning/done/ImpPlan-0.9.6-G.md`) schließt den
 3. **Provider-Schicht** — `AiProviderPort` mit fail-closed-
    Konfiguration; NoOp-Default ohne Netzwerk und Secrets.
 
-### Provider-Schicht (Plan §5.1 + §5.2)
+### Provider-Schicht
 
 - `AiProviderPort` ist eine sync-Funktion `(AiProviderRequest)
   → AiProviderResult` (Success/Failure-Sealed). Provider-
@@ -769,8 +744,8 @@ Phase G (`docs/planning/done/ImpPlan-0.9.6-G.md`) schließt den
   einen Stacktrace.
 - `DefaultAiProviderRegistry` erzwingt fail-closed-Konfiguration:
   - **NoOp-Default** wird automatisch ergänzt, wenn keine
-    `AiProviderConfig.noOpDefault()` geliefert wurde — Plan §4.1
-    "NoOp ist immer verfügbar".
+    `AiProviderConfig.noOpDefault()` geliefert wurde — NoOp ist
+    immer verfügbar.
   - `EXTERNAL`-Provider verlangen HTTPS-Endpoint, `secretRef` und
     `allowExternalNetwork=true`. `LOCAL_LOOPBACK` (Ollama, LM
     Studio) erlaubt `secretRef=null`, verlangt aber Loopback-Host.
@@ -778,9 +753,9 @@ Phase G (`docs/planning/done/ImpPlan-0.9.6-G.md`) schließt den
     (`AiProviderConfigValidator`).
 - Außenseiten (Wire, `capabilities_list`, Audit) sehen
   ausschließlich `providerName`, `model`, `modelVersion` —
-  niemals Endpoints oder `secretRef` (Plan §5.2 Z. 611-612).
+  niemals Endpoints oder `secretRef`.
 
-### KI-Tool-Pipeline (Plan §6 G.6)
+### KI-Tool-Pipeline
 
 Jeder der drei Handler folgt demselben 7-stufigen Aufbau:
 
@@ -790,23 +765,23 @@ Jeder der drei Handler folgt demselben 7-stufigen Aufbau:
    Scope-Gate.
 2. **Scope-Check** `dmigrate:ai:execute`.
 3. **Single-Writer-Acquire** über `AiToolOrchestrator` +
-   `AiToolOutcomeStore` (Plan §6 G.6 Z. 1071-1073). Terminale
+   `AiToolOutcomeStore`. Terminale
    Outcomes (Succeeded, FailedTerminal) werden replayt; parallele
    identische Caller bekommen `OPERATION_TIMEOUT` (`InProgress`),
    abweichende Payloads `IDEMPOTENCY_CONFLICT`.
 4. **Semantische Resolution** + **Policy** (`PolicyAttempt`).
-5. **Provider-Quota** (`PROVIDER_CALLS`-Dimension) — Plan §6 G.8
-   verbindlich: keine Secrets, kein Provider-Client, kein
+5. **Provider-Quota** (`PROVIDER_CALLS`-Dimension), verbindlich:
+   keine Secrets, kein Provider-Client, kein
    Provider-Aufruf bei `RATE_LIMITED`.
 6. **Provider-Aufruf** mit Input-Hygiene (`PromptHygieneService`)
-   + Output-Hygiene (Plan §7.4 — Provider-Output wird ebenfalls
+   + Output-Hygiene (auch der Provider-Output wird
    geprüft).
 7. **Artefakt-Publish**: `ArtifactStore.save` +
    `ArtifactContentStore.write` + `AiArtifactMetadataStore.save`
    (atomisch zusammen). Deterministischer `artifactId` aus
    `(tenant, approvalKey, payloadFingerprint, op)`-Hash.
 
-### KI-Artefakt-Provenance (Plan §5.4)
+### KI-Artefakt-Provenance
 
 KI-Artefakte werden als `ArtifactKind.OTHER` gespeichert; die
 fachliche Typisierung lebt in `AiArtifactMetadata`:
@@ -819,11 +794,11 @@ fachliche Typisierung lebt in `AiArtifactMetadata`:
   `Execute` / `TestdataPlan`) mit operations-spezifischen
   Fingerprints
 - `Execute`-Provenance bindet zusätzlich `planRef` +
-  `planArtifactFingerprint`: Plan §5.5 Z. 794-799 — Source-Refs
+  `planArtifactFingerprint`: Source-Refs
   kommen ausschließlich aus der Plan-Provenance, nicht aus dem
   Execute-Payload.
 
-### MCP-Prompts (Plan §5.7 + §6 G.7)
+### MCP-Prompts
 
 `prompts/list` und `prompts/get` sind reine Read-Methoden
 (`dmigrate:read`). Pflichtprompts:
@@ -841,15 +816,15 @@ zusammengebaute Prompt-Nachricht läuft durch
 `PromptHygieneService` — Secrets oder bulk-Daten in Argumenten
 führen zu `PROMPT_HYGIENE_BLOCKED`.
 
-Plan §4.5 verbindlich: **Prompts führen keine Tools aus**. Der
+Verbindlich: **Prompts führen keine Tools aus**. Der
 `PromptsHandler`-Konstruktor hat keinen Zugriff auf die
 `ToolRegistry` — strukturell unmöglich, einen Tool-Aufruf zu
 verstecken.
 
-### Sicherheitsmodell (Plan §6 G.10)
+### Sicherheitsmodell
 
 - **Keine Secrets im Payload** — JDBC-URLs, Bearer-Tokens, API-
-  Keys werden vom Hygiene-Service blockiert (Plan §6 G.4).
+  Keys werden vom Hygiene-Service blockiert.
 - **Policy für Write- und KI-Tools** — alle Tool-Handler
   laufen durch `PolicyService.decide`; `RequiresApproval`
   liefert `POLICY_REQUIRED` ohne verwendbares `approvalToken`.
@@ -860,49 +835,31 @@ verstecken.
 - **Provider fail-closed** — externe Provider sind nur mit
   expliziter Konfig + `secretRef` + Policy aktivierbar; ohne
   Konfig läuft NoOp.
-- **Prompt-Hygiene** — Input und Output (Plan §7.4) werden gegen
+- **Prompt-Hygiene** — Input und Output werden gegen
   Secret-Pattern gescannt.
 
-### Bekannte Grenzen 0.9.6
+### Grenzen und Nicht-Ziele
 
 - **NoOp ist Default** — produktive externe Provider (OpenAI,
   Anthropic, Ollama, LM Studio) brauchen explizite YAML-
-  Konfiguration und sind nicht Teil des 0.9.6-Tests.
+  Konfiguration und sind nicht Teil der getesteten Standardkonfiguration.
 - **Externe Provider optional** — Bootstrap ohne Provider-Config
   hält den NoOp-Default; jeder Tool-Aufruf produziert
   deterministische Marker-Outputs.
 - **Keine freie SQL-Ausführung** — KI-Tools produzieren Plan-
   Artefakte, keine direkten DB-Schreiboperationen.
   `procedure_transform_execute` erzeugt ein Output-Artefakt,
-  führt aber keinen Ziel-DB-Code aus (Plan §5.5 Z. 778).
+  führt aber keinen Ziel-DB-Code aus.
 - **Keine Rohdaten im Prompt** — Profiling-Daten und Schema-
   Inhalte werden referenziert (`profileRef`, `schemaRef`), nicht
   inline serialisiert.
 - **Keine versteckten Tool-Ausführungen durch Prompts** —
   `PromptsHandler` hat keinen Zugriff auf `ToolRegistry`.
-- **`testdata_execute`** bleibt Carve-out (separate Daten-
-  Schreiboperation, nicht in 0.9.6).
 
 ---
 
-## Weiterführend
+## Verwandte Spezifikationen
 
-- [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md) — Komplette
-  Phasen-B-Spezifikation (§5 Architektur, §12.13–§12.18 Implementation
-  Contracts).
-- [`docs/planning/done/ImpPlan-0.9.6-C.md`](../docs/planning/done/ImpPlan-0.9.6-C.md) —
-  Phase-C: produktive Tool-Handler, Upload-Flow, AP 6.24 Integrationssuite.
-- [`docs/planning/done/ImpPlan-0.9.6-D.md`](../docs/planning/done/ImpPlan-0.9.6-D.md) —
-  Phase-D: Discovery, `resources/read`, HMAC-Cursor, Connection-Ref-
-  Bootstrap (siehe oben "Phase D: Discovery und Ressourcen").
-- [`docs/planning/done/ImpPlan-0.9.6-E.md`](../docs/planning/done/ImpPlan-0.9.6-E.md) —
-  Phase-E: Async-Jobs, Idempotency, Policy, Quotas, Cancel (siehe oben
-  "Phase E: Async-Jobs, Idempotency, Policy").
-- [`docs/planning/done/ImpPlan-0.9.6-F.md`](../docs/planning/done/ImpPlan-0.9.6-F.md) —
-  Phase-F: policy-gesteuerter `job_input`-Upload, `data_import_start`,
-  `data_transfer_start`, administrative Abort-Pipeline, STORED-Quota
-  (siehe oben "Phase F: Policy-gesteuerte Datenoperationen").
-- [`docs/planning/done/ImpPlan-0.9.6-G.md`](../docs/planning/done/ImpPlan-0.9.6-G.md) —
-  Phase-G: KI-nahe Tools, MCP-Prompts, Provider-Schicht (siehe oben
-  "Phase G: KI-nahe Tools und MCP-Prompts").
-- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Roadmap für 0.9.7+.
+- [`ki-mcp.md`](./ki-mcp.md) — fachliches MCP-Zielbild (Tools, Ressourcen, Fehler, Prompts).
+- [`job-contract.md`](./job-contract.md) — Async-Job- und Polling-Vertrag.
+- [`cli-spec.md`](./cli-spec.md) — CLI-Vertrag von `mcp serve` und `mcp cursor-key`.

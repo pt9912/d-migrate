@@ -144,7 +144,7 @@ class ValueSerializerTest : FunSpec({
     // ─── W201 / W202 fallback ────────────────────────────────────
 
     test("Unknown class → toString() + W202 warning") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val custom = object {
             override fun toString() = "custom!"
@@ -166,7 +166,7 @@ class ValueSerializerTest : FunSpec({
     }
 
     test("NaN double → string + W202 warning") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val result = ser.serialize("t", "c", Double.NaN)
         result shouldBe SerializedValue.Text("NaN")
@@ -176,7 +176,7 @@ class ValueSerializerTest : FunSpec({
     }
 
     test("Infinity double → string + W202 warning") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         ser.serialize("t", "c", Double.POSITIVE_INFINITY) shouldBe SerializedValue.Text("Infinity")
         warnings.size shouldBe 1
@@ -184,7 +184,7 @@ class ValueSerializerTest : FunSpec({
     }
 
     test("W202 deduplication: same (table, column, class) only warns once") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val custom = object { override fun toString() = "x" }
         ser.serialize("t", "c", custom)
@@ -194,7 +194,7 @@ class ValueSerializerTest : FunSpec({
     }
 
     test("W202 separate keys: different columns produce separate warnings") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val custom = object { override fun toString() = "x" }
         ser.serialize("t", "c1", custom)
@@ -230,7 +230,7 @@ class ValueSerializerTest : FunSpec({
     }
 
     test("F29: java.sql.Array → recursive Sequence (no warning on success)") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val array = StubSqlArray(arrayOf<Any?>(1, 2, "x"))
         val result = ser.serialize("t", "c", array) as SerializedValue.Sequence
@@ -263,7 +263,7 @@ class ValueSerializerTest : FunSpec({
     }
 
     test("java.sql.Struct → toString + W201") {
-        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val warnings = mutableListOf<ValueSerializationWarning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val struct = StubStruct("ROW(1,2)")
         ser.serialize("t", "c", struct) shouldBe SerializedValue.Text("ROW(1,2)")

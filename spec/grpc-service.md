@@ -5,7 +5,7 @@
 > Status: Entwurf fuer die kuenftige interne Service-Schnittstelle
 >
 > Referenzen: `spec/architecture.md`, `spec/cli-spec.md`,
-> `spec/job-contract.md`, `docs/planning/implementation-plan-0.9.1.md`
+> `spec/job-contract.md`
 
 ---
 
@@ -490,34 +490,7 @@ Der gRPC-Adapter sollte liefern:
 
 ---
 
-## 10. Einfuehrungsreihenfolge
-
-### Phase 1
-
-- `HealthService`
-- `SchemaService.ValidateSchema`
-- `SchemaService.GenerateSchemaDdl`
-- `JobService`
-- `ArtifactService` (fuer Referenzierung und Download von Artefakten großer Ergebnisvolumen)
-
-### Phase 2
-
-- `SchemaService.ReverseSchema`
-- `SchemaService.CompareSchema`
-- `DataService.ProfileData`
-
-### Phase 3
-
-- `DataService.ExportData`
-- `DataService.OpenArtifactUpload`, `DataService.UploadArtifact`,
-  `DataService.GetUploadSession`, `DataService.FinalizeArtifactUpload`,
-  `DataService.AbortArtifactUpload` (Voraussetzung fuer `StartImport`)
-- `DataService.StartImport`
-- `DataService.TransferData`
-
----
-
-## 11. Entscheidung
+## 10. Entscheidung
 
 gRPC ist die passende interne Schnittstelle fuer `d-migrate`, wenn mehrere
 Services denselben Migrationskern nutzen sollen. Fuer externe Clients sollte

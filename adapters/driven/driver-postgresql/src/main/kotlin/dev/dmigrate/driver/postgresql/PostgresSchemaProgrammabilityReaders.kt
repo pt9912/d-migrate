@@ -82,6 +82,36 @@ internal fun readPostgresFunctions(
             definer = identity?.definer,
             searchPath = identity?.searchPath,
             sqlMode = null,
+            // F3: volatility + strictness from pg_proc.provolatile/proisstrict.
+            volatility = identity?.volatility,
+            strict = identity?.strict,
+        )
+    }
+    return result
+}
+
+internal fun readPostgresAggregates(
+    session: JdbcOperations,
+    schema: String,
+): Map<String, AggregateDefinition> {
+    val rows = PostgresMetadataQueries.listAggregates(session, schema)
+    val result = LinkedHashMap<String, AggregateDefinition>()
+    for (row in rows) {
+        val name = row["name"] as String
+        val inputTypes = (row["input_args"] as? String)
+            .orEmpty()
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        // Keyed by bare name (overloaded aggregates are rare); the generator
+        // re-derives the emitted name via ObjectKeyCodec.routineName.
+        result[name] = AggregateDefinition(
+            inputTypes = inputTypes,
+            stateType = (row["state_type"] as? String).orEmpty(),
+            transitionFunction = (row["transition_function"] as? String).orEmpty(),
+            finalFunction = row["final_function"] as? String,
+            initialCondition = row["initial_condition"] as? String,
+            sourceDialect = "postgresql",
         )
     }
     return result
@@ -129,6 +159,9 @@ private data class ResolvedRoutineIdentity(
     val security: RoutineSecurity?,
     val definer: String?,
     val searchPath: List<String>?,
+    // F3: function volatility + strictness (functions only; procedures ignore them).
+    val volatility: FunctionVolatility?,
+    val strict: Boolean,
 )
 
 private fun routineIdentity(
@@ -146,6 +179,8 @@ private fun routineIdentity(
         security = if (attrs.securityDefiner) RoutineSecurity.DEFINER else RoutineSecurity.INVOKER,
         definer = attrs.definer.takeIf { attrs.securityDefiner },
         searchPath = attrs.searchPath,
+        volatility = attrs.volatility,
+        strict = attrs.strict,
     )
 }
 
@@ -213,15 +248,29 @@ internal fun readPostgresTriggers(
         val name = row["trigger_name"] as String
         val table = row["event_object_table"] as String
         val key = ObjectKeyCodec.triggerKey(table, name)
+        val event = when ((row["event_manipulation"] as String).uppercase()) {
+            "INSERT" -> TriggerEvent.INSERT
+            "UPDATE" -> TriggerEvent.UPDATE
+            "DELETE" -> TriggerEvent.DELETE
+            else -> TriggerEvent.INSERT
+        }
+        // F4 (docs/planning/in-progress/sample-db-roundtrip-findings.md):
+        // information_schema.triggers surfaces one row per event, so a
+        // `BEFORE INSERT OR UPDATE` trigger arrives as multiple rows sharing
+        // the same (table, name) key. Merge their events into the set instead
+        // of letting the last row overwrite the first — the previous
+        // `result[key] = …` collapsed multi-event triggers to a single event
+        // on round-trip. Timing/forEach/condition/body are identical across
+        // the per-event rows, so the first row's values stay authoritative.
+        val existing = result[key]
+        if (existing != null) {
+            result[key] = existing.copy(events = existing.events + event)
+            continue
+        }
         val functionDeps = triggerFunctions[TriggerKey(table = table, name = name)].orEmpty()
         result[key] = TriggerDefinition(
             table = table,
-            event = when ((row["event_manipulation"] as String).uppercase()) {
-                "INSERT" -> TriggerEvent.INSERT
-                "UPDATE" -> TriggerEvent.UPDATE
-                "DELETE" -> TriggerEvent.DELETE
-                else -> TriggerEvent.INSERT
-            },
+            events = setOf(event),
             timing = when ((row["action_timing"] as String).uppercase()) {
                 "BEFORE" -> TriggerTiming.BEFORE
                 "AFTER" -> TriggerTiming.AFTER

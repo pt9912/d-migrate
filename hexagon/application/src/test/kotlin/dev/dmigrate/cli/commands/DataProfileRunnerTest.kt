@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.model.ColumnProfile
 import dev.dmigrate.profiling.model.DatabaseProfile
@@ -61,7 +62,7 @@ class DataProfileRunnerTest : FunSpec({
 
     val fakePool = object : ConnectionPool {
         override val dialect = DatabaseDialect.POSTGRESQL
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

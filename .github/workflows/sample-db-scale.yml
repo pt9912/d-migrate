@@ -1,0 +1,46 @@
+name: Sample-DB Scale Smoke (Nightly / opt-in)
+
+# Phase-3-Scale-Smoke: großvolumiger Streaming-/Chunking-/Resume-Test mit dem
+# Employees-Dataset (datacharmer/test_db, ~4 Mio Zeilen) gegen das echte
+# d-migrate:dev-CLI.
+# Plan: docs/planning/done/sample-db-integration-harness.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-scale-smoke` (fetch gepinntes Employees-Dataset ->
+# mysql + postgres up -> load -> reverse/validate -> data export json
+# --split-files mit MID-STREAM-Interruption + --resume -> data import in
+# MySQL- UND PG-Ziel -> Zeilen-Paritaet + SUM(salary)-Checksumme gegen die
+# gepinnte Baseline examples/sample-db/expected/employees-scale.counts.txt).
+#
+# GATING (bewusst): NUR schedule (nightly) + workflow_dispatch — KEIN
+# push/pull_request-Trigger. Phase 3 ist wegen Laufzeit/Volumen ausdruecklich
+# NICHT Teil des PR-Gates (Plan: Slice-Grenze "opt-in/nightly").
+# Best-Effort: continue-on-error, damit transiente Netz-/Docker-Hub-
+# Instabilitaeten keinen Alarm ausloesen.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Taeglich 03:17 UTC (versetzt, um Runner-Spitzen zur vollen Stunde zu meiden).
+    - cron: '17 3 * * *'
+
+jobs:
+  scale-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB scale smoke (Employees export-resume + dual-target import)
+        run: make sample-db-scale-smoke
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true

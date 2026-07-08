@@ -10,7 +10,7 @@ informed: MCP-Maintainers; kuenftige Author:innen einer MCP-Parquet-Erweiterung
 
 ## Kontext und Problemstellung
 
-Der MCP-Import-Pfad (`adapters/driving/mcp/.../McpDataImportJobWorker`)
+Der MCP-Import-Pfad (`adapters/driving/mcp/…/McpDataImportJobWorker`)
 exponiert heute kein Parquet. Die Begruendung ist organisatorisch:
 das CLI-Wiring fuer Parquet (S6/S7) hat eine andere Resolver-,
 Hook- und Composite-Writer-Verdrahtung als MCP, und der vollstaendige

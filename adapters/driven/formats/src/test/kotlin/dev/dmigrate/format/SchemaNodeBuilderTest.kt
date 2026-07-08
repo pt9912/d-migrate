@@ -17,6 +17,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ParameterDirection
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.ProcedureDefinition
@@ -91,7 +92,13 @@ class SchemaNodeBuilderTest : FunSpec({
                     partitioning = PartitionConfig(
                         type = PartitionType.RANGE,
                         key = listOf("id"),
-                        partitions = listOf(PartitionDefinition(name = "p0", from = "0", to = "100")),
+                        partitions = listOf(
+                            PartitionDefinition(
+                                name = "p0",
+                                from = listOf(PartitionBound.Value("0")),
+                                to = listOf(PartitionBound.Value("100")),
+                            )
+                        ),
                     ),
                     metadata = TableMetadata(engine = "InnoDB", withoutRowid = true),
                 )
@@ -197,5 +204,30 @@ class SchemaNodeBuilderTest : FunSpec({
         root["views"]["order_view"]["dependencies"]["columns"]["orders"].map { it.asText() } shouldContainExactly listOf("id")
         root["triggers"]["orders_audit"]["for_each"].asText() shouldBe "statement"
         root["sequences"]["order_seq"]["cache"].asInt() shouldBe 20
+    }
+
+    test("child-local partition indices round-trip through build + parse (AP2a)") {
+        val schema = SchemaDefinition(
+            name = "t", version = "1",
+            tables = mapOf("events" to TableDefinition(
+                columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
+                partitioning = PartitionConfig(
+                    PartitionType.RANGE, listOf("id"),
+                    listOf(PartitionDefinition(
+                        name = "p0",
+                        from = listOf(PartitionBound.Value("0")),
+                        to = listOf(PartitionBound.Value("100")),
+                        indices = listOf(IndexDefinition(name = "idx_p0_id", columns = listOf(IndexColumn("id")))),
+                    )),
+                ),
+            )),
+        )
+
+        val root = SchemaNodeBuilder.build(mapper, schema)
+        val parsed = SchemaNodeParser.parse(root)
+
+        val partition = parsed.tables["events"]!!.partitioning!!.partitions.single()
+        partition.indices.map { it.name } shouldBe listOf("idx_p0_id")
+        partition.indices.single().columns.map { it.name } shouldBe listOf("id")
     }
 })

@@ -32,6 +32,21 @@ class ObjectKeyCodecTest : FunSpec({
         key shouldBe "do_stuff()"
     }
 
+    // --- routineName (M1: emit bare name, never the signature suffix) ---
+
+    test("routineName strips the empty signature suffix") {
+        ObjectKeyCodec.routineName("last_updated()") shouldBe "last_updated"
+    }
+
+    test("routineName strips a parameter signature and decodes the name") {
+        val key = ObjectKeyCodec.routineKey("get_user", listOf(ParameterDefinition("x", "integer", ParameterDirection.IN)))
+        ObjectKeyCodec.routineName(key) shouldBe "get_user"
+    }
+
+    test("routineName returns a non-routine-key (plain name) unchanged") {
+        ObjectKeyCodec.routineName("plain_name") shouldBe "plain_name"
+    }
+
     test("routineKey with single parameter") {
         val params = listOf(ParameterDefinition("x", "integer", ParameterDirection.IN))
         val key = ObjectKeyCodec.routineKey("get_user", params)

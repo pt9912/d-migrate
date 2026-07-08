@@ -4,7 +4,7 @@ plugins {
 
 // hexagon:ports-execute — execute-time orchestration ports.
 //
-// Plan-Doc: docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md
+// Plan-Doc: docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md
 // §5 Phase B. The module is deliberately separate from
 // `hexagon:ports-read` (read-only probes) and `hexagon:ports-write`
 // (data writers / schema sync) because its concerns — JDBC

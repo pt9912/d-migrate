@@ -12,6 +12,7 @@ internal object PostgresTypeMetadataQueries {
             JOIN pg_enum e ON e.enumtypid = t.oid
             JOIN pg_namespace n ON n.oid = t.typnamespace
             WHERE n.nspname = ?
+              AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.deptype = 'e' AND d.objid = t.oid)
             ORDER BY t.typname, e.enumsortorder
             """.trimIndent(), schemaName,
         )
@@ -36,6 +37,7 @@ internal object PostgresTypeMetadataQueries {
               AND information_schema.domains.domain_name = t.typname
             LEFT JOIN pg_constraint c ON c.contypid = t.oid AND c.contype = 'c'
             WHERE t.typtype = 'd' AND n.nspname = ?
+              AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.deptype = 'e' AND d.objid = t.oid)
             ORDER BY t.typname
             """.trimIndent(), schemaName,
         )
@@ -52,6 +54,9 @@ internal object PostgresTypeMetadataQueries {
             JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
             WHERE t.typtype = 'c' AND n.nspname = ?
               AND NOT EXISTS (SELECT 1 FROM pg_class r WHERE r.oid = t.typrelid AND r.relkind != 'c')
+              -- 5a: Extension-eigene Composite-Typen ausschließen (z. B. PostGIS
+              -- `geometry_dump`/`valid_detail`), sonst CREATE TYPE-Kollision im Ziel.
+              AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.deptype = 'e' AND d.objid = t.oid)
             ORDER BY t.typname, a.attnum
             """.trimIndent(), schemaName,
         )

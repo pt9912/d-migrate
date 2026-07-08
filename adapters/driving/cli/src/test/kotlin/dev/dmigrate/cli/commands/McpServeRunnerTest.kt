@@ -458,4 +458,42 @@ class McpServeRunnerTest : FunSpec({
             }
         }
     }
+
+    context("execute (happy path delegates to the launcher seam)") {
+        // Deterministic coverage of doExecute's success orchestration
+        // (resolve state dir -> lock -> startup sweep -> start-state line ->
+        // launcher.launch) without starting a real server. Before this the
+        // tail was covered only by the in-process CliMcpServeSmokeTest, whose
+        // multi-fork registration is timing-sensitive on CI and flaked the
+        // cli koverVerify gate (2026-06-18).
+        test("stdio happy path runs the lifecycle and delegates to launcher.launch with exit 0") {
+            val dir = Files.createTempDirectory("dmigrate-runner-happy-stdio-")
+            val launched = mutableListOf<String>()
+            val fakeLauncher = object : McpServeLauncher {
+                override fun launch(
+                    transport: String,
+                    config: McpServerConfig,
+                    owner: StateDirOwner,
+                    lock: McpStateDirLock,
+                    cursorKeyring: CursorKeyring?,
+                    artifacts: ArtifactStorageConfig,
+                ) {
+                    launched += transport
+                }
+            }
+            try {
+                val exit = McpServeRunner(
+                    options = McpServeOptions(transport = "stdio", mcpStateDir = dir),
+                    stderr = {},
+                    effectiveConnectionConfigPath = null,
+                    cliVersionProvider = { "test" },
+                    launcher = fakeLauncher,
+                ).execute()
+                exit shouldBe 0
+                launched shouldBe listOf("stdio")
+            } finally {
+                runCatching { Files.walk(dir).sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+            }
+        }
+    }
 })

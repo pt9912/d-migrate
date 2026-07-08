@@ -82,6 +82,29 @@ class MysqlDdlGeneratorTableTest : FunSpec({
         ddl shouldContain "`name` VARCHAR(100) NOT NULL"
     }
 
+    test("fulltext column degrades to TEXT with W132 degradation warning") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "body" to col(NeutralType.FullText, required = true)
+                    ),
+                    primaryKey = listOf("id")
+                )
+            )
+        )
+
+        val result = generator.generate(schema)
+        val ddl = result.render()
+
+        ddl shouldContain "`body` TEXT NOT NULL"
+        result.notes.any {
+            it.code == "W132" && it.type == NoteType.WARNING &&
+                it.objectName == "body" && it.hint?.contains("FULLTEXT") == true
+        } shouldBe true
+    }
+
     test("auto-increment identifier column renders INT NOT NULL AUTO_INCREMENT") {
         val schema = emptySchema(
             tables = mapOf(

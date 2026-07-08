@@ -17,25 +17,25 @@
 
 ```
                     ┌─────────────────────────────────────────────┐
-                    │                  d-migrate                   │
+                    │                  d-migrate                  │
   Benutzer ───CLI──▶│                                             │
-                    │  ┌─────────┐ ┌──────────┐ ┌─────────────┐  │
-  CI/CD ──Script───▶│  │ Schema  │ │  Daten   │ │ Integration │  │
-                    │  │ Mgmt    │ │  Mgmt    │ │ Adapter     │  │
-                    │  └────┬────┘ └────┬─────┘ └──────┬──────┘  │
+                    │  ┌─────────┐ ┌──────────┐ ┌─────────────┐   │
+  CI/CD ──Script───▶│  │ Schema  │ │  Daten   │ │ Integration │   │
+                    │  │ Mgmt    │ │  Mgmt    │ │ Adapter     │   │
+                    │  └────┬────┘ └────┬─────┘ └──────┬──────┘   │
                     │       │           │              │          │
-                    │  ┌────▼───────────▼──────────────▼──────┐  │
+                    │  ┌────▼───────────▼──────────────▼───────┐  │
                     │  │              Core Engine              │  │
                     │  │  (Neutrales Modell, Validierung,      │  │
                     │  │   Type-Mapping, Streaming-Pipeline)   │  │
                     │  └────┬───────────┬──────────────┬───────┘  │
                     │       │           │              │          │
-                    │  ┌────▼────┐ ┌────▼────┐  ┌─────▼──────┐  │
-                    │  │ DB      │ │ Format  │  │ KI         │  │
-                    │  │ Driver  │ │ Codec   │  │ Provider   │  │
-                    │  │ (JDBC)  │ │         │  │            │  │
-                    │  └────┬────┘ └────┬────┘  └─────┬──────┘  │
-                    └───────┼───────────┼─────────────┼──────────┘
+                    │  ┌────▼────┐ ┌────▼────┐  ┌─────▼──────┐    │
+                    │  │ DB      │ │ Format  │  │ KI         │    │
+                    │  │ Driver  │ │ Codec   │  │ Provider   │    │
+                    │  │ (JDBC)  │ │         │  │            │    │
+                    │  └────┬────┘ └────┬────┘  └─────┬──────┘    │
+                    └───────┼───────────┼─────────────┼───────────┘
                             │           │             │
                     ┌───────▼──┐  ┌─────▼────┐  ┌─────▼──────┐
                     │PostgreSQL│  │JSON/YAML │  │Ollama      │
@@ -76,25 +76,25 @@ d-migrate/
 │       └── streaming/                     ← Pipeline-Infrastruktur
 ```
 
-| Schicht         | Modul                               | Rolle                                                                                                                                |
-| --------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Domain Core     | `hexagon:core`                      | Neutrales Modell, Validierung, Typsystem, FK-Topo-Sort — keine externen Deps                                                        |
-| Ports           | `hexagon:ports-common`              | Gemeinsame Typen (`DatabaseDialect`, `SqlIdentifiers`, `DialectCapabilities`, `ConnectionPool`, `SchemaCodec`, `DataExportFormat`)    |
-| Ports           | `hexagon:ports-read`                | Lese-Ports (`SchemaReader`, `DdlGenerator`, `DataReader`, `DataChunkReader`, `FormatReadOptions`, `ManualActionRequired`)             |
-| Ports           | `hexagon:ports-write`               | Schreib-Ports (`DataWriter`, `TableImportSession`, `ImportOptions`, `ExportOptions`, `DataChunkWriter`, Checkpoint, Streaming-Typen)  |
-| Ports           | `hexagon:ports`                     | Aggregator-Modul — re-exportiert `ports-common`, `ports-read`, `ports-write` für bestehende Consumer                                 |
-| Application     | `hexagon:application`               | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`, `ExportResumeCoordinator`, `ImportResumeCoordinator`)                    |
-| Profiling       | `hexagon:profiling`                 | Profiling-Domänenmodell, Rule-Engine, Services — keine Treiber-Abhängigkeit                                                          |
-| Driving Adapter | `adapters:driving:cli`              | CLI-Einstiegspunkt (Clikt), Wiring aller Module                                                                                      |
-| Driven Adapter  | `adapters:driven:driver-common`     | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, `SqlIdentifiers`, …)                              |
-| Driven Adapter  | `adapters:driven:driver-postgresql` | PostgreSQL-Implementierung der `DatabaseDriver`-Fassade                                                                              |
-| Driven Adapter  | `adapters:driven:driver-mysql`      | MySQL-Implementierung der `DatabaseDriver`-Fassade                                                                                   |
-| Driven Adapter  | `adapters:driven:driver-sqlite`     | SQLite-Implementierung der `DatabaseDriver`-Fassade                                                                                  |
-| Driven Adapter  | `adapters:driven:driver-*-profiling`| Optionale Profiling-Adapter pro Dialekt (Introspection, LogicalTypeResolver, ProfilingData)                                           |
-| Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
-| Driven Adapter  | `adapters:driven:integrations`      | Tool-Exporter (Flyway, Liquibase, Django, Knex)                                                                                      |
-| Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`, `StreamingImporter`, `TableExporter`, `TableImporter`)                                       |
-| Driven Adapter  | `adapters:driven:text-icu`          | ICU4J-basierte `UnicodeTextService`-Implementierung (`IcuUnicodeTextService`); haelt ICU4J aus dem Application-Layer fern             |
+| Schicht         | Modul                                | Rolle                                                                                                                                |
+| --------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Domain Core     | `hexagon:core`                       | Neutrales Modell, Validierung, Typsystem, FK-Topo-Sort — keine externen Deps                                                         |
+| Ports           | `hexagon:ports-common`               | Gemeinsame Typen (`DatabaseDialect`, `SqlIdentifiers`, `DialectCapabilities`, `ConnectionPool`, `SchemaCodec`, `DataExportFormat`)   |
+| Ports           | `hexagon:ports-read`                 | Lese-Ports (`SchemaReader`, `DdlGenerator`, `DataReader`, `DataChunkReader`, `FormatReadOptions`, `ManualActionRequired`)            |
+| Ports           | `hexagon:ports-write`                | Schreib-Ports (`DataWriter`, `TableImportSession`, `ImportOptions`, `ExportOptions`, `DataChunkWriter`, Checkpoint, Streaming-Typen) |
+| Ports           | `hexagon:ports`                      | Aggregator-Modul — re-exportiert `ports-common`, `ports-read`, `ports-write` für bestehende Consumer                                 |
+| Application     | `hexagon:application`                | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`, `ExportResumeCoordinator`, `ImportResumeCoordinator`)                   |
+| Profiling       | `hexagon:profiling`                  | Profiling-Domänenmodell, Rule-Engine, Services — keine Treiber-Abhängigkeit                                                          |
+| Driving Adapter | `adapters:driving:cli`               | CLI-Einstiegspunkt (Clikt), Wiring aller Module                                                                                      |
+| Driven Adapter  | `adapters:driven:driver-common`      | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, `SqlIdentifiers`, …)                             |
+| Driven Adapter  | `adapters:driven:driver-postgresql`  | PostgreSQL-Implementierung der `DatabaseDriver`-Fassade                                                                              |
+| Driven Adapter  | `adapters:driven:driver-mysql`       | MySQL-Implementierung der `DatabaseDriver`-Fassade                                                                                   |
+| Driven Adapter  | `adapters:driven:driver-sqlite`      | SQLite-Implementierung der `DatabaseDriver`-Fassade                                                                                  |
+| Driven Adapter  | `adapters:driven:driver-*-profiling` | Optionale Profiling-Adapter pro Dialekt (Introspection, LogicalTypeResolver, ProfilingData)                                          |
+| Driven Adapter  | `adapters:driven:formats`            | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
+| Driven Adapter  | `adapters:driven:integrations`       | Tool-Exporter (Flyway, Liquibase, Django, Knex)                                                                                      |
+| Driven Adapter  | `adapters:driven:streaming`          | Streaming-Pipeline (`StreamingExporter`, `StreamingImporter`, `TableExporter`, `TableImporter`)                                      |
+| Driven Adapter  | `adapters:driven:text-icu`           | ICU4J-basierte `UnicodeTextService`-Implementierung (`IcuUnicodeTextService`); haelt ICU4J aus dem Application-Layer fern            |
 
 ```
               adapters:driving:cli  (Clikt)
@@ -132,8 +132,38 @@ d-migrate/
 - `hexagon:ports-write` hängt von `ports-common` und `ports-read` ab
 - `hexagon:ports` ist ein Aggregator und re-exportiert alle drei Port-Module
 - `hexagon:application` hängt nur vom Hexagon-Inneren ab, nicht von Adaptern
-- Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`)
+- Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme:
+  Adapter dürfen die geteilte JDBC-Basis `adapters:driven:driver-common`
+  nutzen)
 - Treiber-Kernmodule hängen **nicht** von `hexagon:profiling` ab; Profiling-Adapter sind optionale Zusatzmodule
+
+Zusätzlich, durch eine **Architektur-Fitness-Function** (Gate) statt durch Gradle garantiert — denn
+`java.sql` ist JDK-intern und ließe sich nicht über Modul-Abhängigkeiten ausschließen:
+- Die **Ports-Schicht** (`hexagon:ports-*`) exponiert in ihren Signaturen **kein `java.sql`**; JDBC
+  (Treiber-Technologie) lebt ausschließlich in den Adaptern. Ein neutrales
+  `DatabaseConnection`-Handle in `hexagon:ports-common` trägt die von den Ports benötigten
+  Fähigkeiten (Pool-Rückgabe via `AutoCloseable`, Transaktions-Lebenszyklus, Ausführung bereits
+  gerenderter Statements, Session-Reset); die JDBC-gebundene Implementierung (`JdbcDatabaseConnection`,
+  Wrapper um die Hikari-Connection) liegt in `adapters:driven:driver-common`, wo die Adapter sie zur
+  realen Connection auspacken.
+- Driving Adapter (`adapters:driving:*`) sind Composition Roots: Sie verdrahten
+  konkrete Adapter und Use Cases, halten aber keine produktive JDBC-Ausführung.
+  Produktive Driving-Quellen enthalten keine `java.sql`-/`javax.sql`-Imports,
+  keine produktiven `java.sql.`-/`javax.sql.`-FQNs, kein `asJdbc` und keine
+  direkte `JdbcDatabaseConnection`-Nutzung.
+- `jdbcType: Int` bleibt vorerst eine eng begrenzte Interop-/Persistenz-
+  Ausnahme in Transfer- und Formatverträgen (`TargetColumn`, `JdbcTypeHint`,
+  Parquet-Manifest-/Bundle-Vertrag). Das ist kein neutrales Typmodell und kein
+  Präzedenzfall für `hexagon:core`; eine vollständige Typcode-Neutralisierung
+  ist ein eigener G2-Slice.
+
+### 1.3 Leitprinzipien
+
+- **Database-Agnostic First**: Alle internen Datenstrukturen sind datenbankunabhängig; datenbankspezifisches Verhalten lebt ausschließlich in austauschbaren Adaptern.
+- **Convention over Configuration**: Sinnvolle Defaults überall, explizite Konfiguration nur wo nötig.
+- **Streaming by Default**: Datenverarbeitung ist grundsätzlich streaming-basiert (beliebig große Datenmengen).
+- **Fail-Safe**: Standardmäßig transaktionale Verarbeitung ohne stillschweigende Teilmigrationen; Best-Effort nur explizit konfigurierbar.
+- **Privacy by Design**: Lokale Verarbeitung als Standard, externe APIs nur opt-in.
 
 ---
 
@@ -264,7 +294,7 @@ adapters:driving:cli
 └── adapters:driven:text-icu ──▶ hexagon:ports-common, ICU4J
 ```
 
-**Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `ports-common` hängt nur von `core` ab. `ports-read` nur von `ports-common`. `ports-write` von `ports-common` und `ports-read`. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`). Treiber-Kernmodule hängen nicht von `hexagon:profiling` ab.
+**Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `ports-common` hängt nur von `core` ab. `ports-read` nur von `ports-common`. `ports-write` von `ports-common` und `ports-read`. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in produktivem Code nicht voneinander abhängen (Ausnahme: die geteilte JDBC-Basis `adapters:driven:driver-common` als Adapter-Sink). Treiber-Kernmodule hängen nicht von `hexagon:profiling` ab. Driving Adapter sind Composition Roots für Wiring, aber nicht für produktive JDBC-Ausführung oder JDBC-Unwrap.
 
 ---
 
@@ -563,13 +593,13 @@ Schema-Validierungsregeln.
 
 #### Verortung von `spatialProfile`
 
-| Aspekt | Verortung | Begruendung |
-|---|---|---|
-| `type: geometry` | `hexagon:core` — neutrales Modell | Gehoert zur portablen Schema-Definition |
-| `geometry_type`, `srid` | `hexagon:core` — `ColumnDefinition` | Portable Schema-Metadaten |
-| E120, E121 | `hexagon:core` — `SchemaValidator` | Schema-/Modellregeln, unabhaengig vom Zieldialekt |
-| `spatialProfile` | `hexagon:ports` — `GeneratorOptions` | Generator-Konfiguration, dialektabhaengig |
-| E052, W120 | Driven Adapter — DDL-Generator | Generator-/Report-Regeln, entstehen erst bei `schema generate` |
+| Aspekt                  | Verortung                            | Begruendung                                                    |
+| ----------------------- | ------------------------------------ | -------------------------------------------------------------- |
+| `type: geometry`        | `hexagon:core` — neutrales Modell    | Gehoert zur portablen Schema-Definition                        |
+| `geometry_type`, `srid` | `hexagon:core` — `ColumnDefinition`  | Portable Schema-Metadaten                                      |
+| E120, E121              | `hexagon:core` — `SchemaValidator`   | Schema-/Modellregeln, unabhaengig vom Zieldialekt              |
+| `spatialProfile`        | `hexagon:ports` — `GeneratorOptions` | Generator-Konfiguration, dialektabhaengig                      |
+| E052, W120              | Driven Adapter — DDL-Generator       | Generator-/Report-Regeln, entstehen erst bei `schema generate` |
 
 #### Trennung von Validierung und Generierung
 
@@ -737,10 +767,10 @@ data class DdlStatement(
 
 #### Objektzuordnung
 
-| Phase | Objekte |
-|-------|---------|
-| `PRE_DATA` | Custom Types, Sequences, Tabellen (topologisch sortiert), Indizes, Constraints, Views **ohne** Routinen-Abhaengigkeiten |
-| `POST_DATA` | Functions, Procedures, Triggers, Views **mit** Routinen-Abhaengigkeiten |
+| Phase       | Objekte                                                                                                                 |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `PRE_DATA`  | Custom Types, Sequences, Tabellen (topologisch sortiert), Indizes, Constraints, Views **ohne** Routinen-Abhaengigkeiten |
+| `POST_DATA` | Functions, Procedures, Triggers, Views **mit** Routinen-Abhaengigkeiten                                                 |
 
 Die Zuordnung von Views erfolgt ueber den `ViewPhaseClassifier`
 (`adapters:driven:driver-common`), der drei Regeln anwendet:
@@ -858,7 +888,7 @@ Schluesselkomponenten:
 - **Renderer**: `PostgresDiffSequenceOps.renderAlterSequenceCurrentValue`
   (PG), `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue` (MySQL),
   `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue` (SQLite —
-  seit 0.9.7-E.3-Folge-Slice: Up auf `applySequenceRef`, Down auf
+  Up auf `applySequenceRef`, Down auf
   `probeSequenceRef` mit `restoreValue`; `restoreValue == null` ⇒
   Skip mit `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`).
 - **JDBC-Adapter**: `PostgresSequenceCurrentValueProbe` (SQLSTATE
@@ -892,15 +922,15 @@ Beide Stages folgen dem gleichen Schichtschnitt — neue Live-DB-Probes
 `:hexagon:application` keine driver-spezifischen Importe sieht und CLI-Wiring
 konsistent bleibt:
 
-| Schicht | Drift-Check | preserveCurrentValue |
-|---|---|---|
-| Port (`hexagon:ports-read`) | `MysqlSequenceCanonicityProbe` | `SequenceCurrentValueProbe` |
-| Result-Typ | `MysqlSequenceCanonicityDeclaration` | sealed `SequenceCurrentValueProbeResult` |
-| Application-Layer Stage | `MysqlSequenceCanonicityStage` | `SequencePreserveStage` |
-| JDBC-Adapter | `MysqlSequenceCanonicityProbeAdapter` | `PostgresSequenceCurrentValueProbe`, `MysqlSequenceCurrentValueProbe`, `SqliteSequenceCurrentValueProbe` |
-| CLI-Runner | `MysqlSequenceCanonicityProbeRunner` | `SequenceCurrentValueProbeRunner` |
-| Renderer-Anbindung | `MysqlDiffSequenceOps.canonicityBlocks` | Stage augmentiert Plan; Renderer emittiert Follow-up |
-| Classifier-Codes | `E124_MYSQL_SEQUENCE_DRIFT_*` → `MANUAL_ACTION_REQUIRED` | `SEQUENCE_PRESERVE_PROBE_FAILED` / `_CONFIG_INVALID` / `_REQUIRES_DB_TARGET` / `_OPT_IN_REQUIRED` → `MANUAL_ACTION_REQUIRED`; `_NOT_SUPPORTED_BY_DIALECT` → `DIALECT_UNSUPPORTED_OPERATION` |
+| Schicht                     | Drift-Check                                              | preserveCurrentValue                                                                                                                                                                        |
+| --------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Port (`hexagon:ports-read`) | `MysqlSequenceCanonicityProbe`                           | `SequenceCurrentValueProbe`                                                                                                                                                                 |
+| Result-Typ                  | `MysqlSequenceCanonicityDeclaration`                     | sealed `SequenceCurrentValueProbeResult`                                                                                                                                                    |
+| Application-Layer Stage     | `MysqlSequenceCanonicityStage`                           | `SequencePreserveStage`                                                                                                                                                                     |
+| JDBC-Adapter                | `MysqlSequenceCanonicityProbeAdapter`                    | `PostgresSequenceCurrentValueProbe`, `MysqlSequenceCurrentValueProbe`, `SqliteSequenceCurrentValueProbe`                                                                                    |
+| CLI-Runner                  | `MysqlSequenceCanonicityProbeRunner`                     | `SequenceCurrentValueProbeRunner`                                                                                                                                                           |
+| Renderer-Anbindung          | `MysqlDiffSequenceOps.canonicityBlocks`                  | Stage augmentiert Plan; Renderer emittiert Follow-up                                                                                                                                        |
+| Classifier-Codes            | `E124_MYSQL_SEQUENCE_DRIFT_*` → `MANUAL_ACTION_REQUIRED` | `SEQUENCE_PRESERVE_PROBE_FAILED` / `_CONFIG_INVALID` / `_REQUIRES_DB_TARGET` / `_OPT_IN_REQUIRED` → `MANUAL_ACTION_REQUIRED`; `_NOT_SUPPORTED_BY_DIALECT` → `DIALECT_UNSUPPORTED_OPERATION` |
 
 ### 3.10 Reverse-Read-Treue fuer Programmability-Objekte
 
@@ -1023,16 +1053,16 @@ data class DocumentationConfig(
 Architekturvertrag:
 
 - `defaultLocale` beschreibt den Produktdefault; Root-/Fallback-Bundle ist Englisch (`messages.properties`).
-- Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
+- Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`. <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 - `defaultTimezone` ist optional und wird durch `I18nSettingsResolver` in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) zu einer `ZoneId` aufgeloest; die aufgeloeste Zone greift nur in expliziten Konvertierungen, nicht als Serialisierungs-Offset fuer lokale Werte.
 - `--lang` ist ein CLI-Override: `--lang` hat Vorrang vor `D_MIGRATE_LANG` und ist strikt auf gebundelte Produktsprachen (`de`, `en`) beschraenkt.
 
 ### 4.2 Logging und Observability
 
 ```
-┌─────────────────────────────────────────────┐
+┌──────────────────────────────────────────────┐
 │                  Logging                     │
-├─────────────────────────────────────────────┤
+├──────────────────────────────────────────────┤
 │ Level    │ Inhalt                            │
 │──────────┼───────────────────────────────────│
 │ ERROR    │ Fehlgeschlagene Operationen       │
@@ -1040,16 +1070,16 @@ Architekturvertrag:
 │ INFO     │ Start/Ende von Operationen        │
 │ DEBUG    │ SQL-Statements, Chunk-Verarbeitung│
 │ TRACE    │ Einzelne Datensätze (nur Dev)     │
-├─────────────────────────────────────────────┤
-│ Trennung: Technische Logs (EN) vs.          │
+├──────────────────────────────────────────────┤
+│ Trennung: Technische Logs (EN) vs.           │
 │           User-Meldungen (lokalisiert)       │
-└─────────────────────────────────────────────┘
+└──────────────────────────────────────────────┘
 ```
 
 - **Framework**: SLF4J + Logback
 - **Strukturiertes Logging**: JSON-Format für maschinelle Auswertung
 - **Audit-Log**: Separate Datei für alle DB-verändernden Operationen
-- **KI-Audit-Log**: Archivierung von Quell-/Zielcode und Metadaten aller KI-Transformationen (LN-030, LN-031)
+- **KI-Audit-Log**: Archivierung von Quell-/Zielcode und Metadaten aller KI-Transformationen ([`LN-030`](lastenheft-d-migrate.md#ln-030), [`LN-031`](lastenheft-d-migrate.md#ln-031))
 - **Sensible Daten**: Passwörter und API-Keys werden NICHT geloggt
 
 ### 4.3 Sicherheit
@@ -1111,6 +1141,12 @@ suspend fun <T> withRetry(
 - Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil: Feldnamen, Codes und freie Fehlermeldungstexte bleiben englisch, lokalisiert werden nur menschenlesbare Plain-Text-Ausgaben.
 - Optionale Validierungsbausteine fuer E.164-Telefonnummern bleiben ein Erweiterungspfad und gehoeren nicht zum Mindestvertrag.
 
+### 4.6 Versionierung und Kompatibilität
+
+- **Schema-Format**: rückwärtskompatibel für 2 Major-Versionen.
+- **CLI-Argumente**: deprecated Flags bleiben 2 Minor-Versionen erhalten.
+- **Export-Formate**: stabile Formate ab 1.0; JSON/YAML versionieren Metadaten im Dokument, CSV optional über Sidecar-Datei.
+
 ---
 
 ## 5. Build und Distribution
@@ -1149,22 +1185,22 @@ subprojects {
 
 ### 5.2 Abhängigkeiten (extern)
 
-| Bibliothek          | Version | Modul           | Zweck                    |
-| ------------------- | ------- | --------------- | ------------------------ |
-| Kotlin Stdlib       | 2.1.x   | Alle            | Sprach-Grundlagen        |
-| Kotlin Coroutines   | 1.9.x   | streaming, cli  | Async/Parallel           |
-| Clikt               | 5.x     | cli             | CLI-Framework            |
-| Jackson (YAML/JSON) | 2.18.x  | formats         | Serialisierung           |
-| PostgreSQL JDBC     | 42.x    | driver-postgres | DB-Zugriff               |
-| MySQL Connector/J   | 9.x     | driver-mysql    | DB-Zugriff               |
-| SQLite JDBC         | 3.47.x  | driver-sqlite   | DB-Zugriff               |
-| HikariCP            | 6.x     | drivers         | Connection Pooling       |
+| Bibliothek          | Version | Modul                    | Zweck                                                                                                                                                                                                              |
+| ------------------- | ------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Kotlin Stdlib       | 2.1.x   | Alle                     | Sprach-Grundlagen                                                                                                                                                                                                  |
+| Kotlin Coroutines   | 1.9.x   | streaming, cli           | Async/Parallel                                                                                                                                                                                                     |
+| Clikt               | 5.x     | cli                      | CLI-Framework                                                                                                                                                                                                      |
+| Jackson (YAML/JSON) | 2.18.x  | formats                  | Serialisierung                                                                                                                                                                                                     |
+| PostgreSQL JDBC     | 42.x    | driver-postgres          | DB-Zugriff                                                                                                                                                                                                         |
+| MySQL Connector/J   | 9.x     | driver-mysql             | DB-Zugriff                                                                                                                                                                                                         |
+| SQLite JDBC         | 3.47.x  | driver-sqlite            | DB-Zugriff                                                                                                                                                                                                         |
+| HikariCP            | 6.x     | drivers                  | Connection Pooling                                                                                                                                                                                                 |
 | ICU4J               | 76.x    | adapters/driven/text-icu | Unicode-Verarbeitung (versteckt hinter `dev.dmigrate.text.UnicodeTextService` in `hexagon:ports-common`; Composition Root verdrahtet `IcuUnicodeTextService` in `adapters/driving/cli` und `adapters/driving/mcp`) |
-| Ktor Client         | 3.x     | ai              | HTTP für KI-APIs         |
-| SLF4J + Logback     | 2.x/1.5 | Alle            | Logging                  |
-| Kotest              | 5.9.x   | Test            | Test-Framework           |
-| Jqwik               | 1.9.x   | Test            | Property-Based Testing   |
-| Testcontainers      | 1.20.x  | Test            | Docker-basierte DB-Tests |
+| Ktor Client         | 3.x     | ai                       | HTTP für KI-APIs                                                                                                                                                                                                   |
+| SLF4J + Logback     | 2.x/1.5 | Alle                     | Logging                                                                                                                                                                                                            |
+| Kotest              | 5.9.x   | Test                     | Test-Framework                                                                                                                                                                                                     |
+| Jqwik               | 1.9.x   | Test                     | Property-Based Testing                                                                                                                                                                                             |
+| Testcontainers      | 1.20.x  | Test                     | Docker-basierte DB-Tests                                                                                                                                                                                           |
 
 ### 5.3 Distribution
 
@@ -1269,20 +1305,20 @@ adapters/driven/formats/src/test/resources/fixtures/
 
 ---
 
-## 7. Architekturentscheidungen (ADR-Übersicht)
+## 7. Architektur-Grundsatzentscheidungen
 
-| #       | Entscheidung                       | Status        | Begründung                                             |
-| ------- | ---------------------------------- | ------------- | ------------------------------------------------------ |
-| ADR-001 | Kotlin als Implementierungssprache | Akzeptiert    | JDBC-Ökosystem, Null-Safety, Coroutines                |
-| ADR-002 | Hexagonale Architektur             | Akzeptiert    | Testbarkeit, Austauschbarkeit der Adapter              |
-| ADR-003 | Gradle Multi-Module                | Akzeptiert    | Modulare Builds, unabhängige Versionierung             |
-| ADR-004 | JDBC statt R2DBC                   | Akzeptiert    | Breitere Treiberunterstützung, Streaming via ResultSet |
-| ADR-005 | Kotlin Coroutines statt Threads    | Akzeptiert    | Strukturierte Concurrency, leichtgewichtig             |
-| ADR-006 | Jackson für Serialisierung         | Akzeptiert    | YAML + JSON Support, bewährt, performant               |
-| ADR-007 | SPI für Driver-Plugin-System       | Akzeptiert    | Standard-Java-Mechanismus, kein Framework nötig        |
-| ADR-008 | GraalVM Native Image               | Vorgeschlagen | Single-Binary, schneller Start, höherer Build-Aufwand  |
-| ADR-009 | Testcontainers für DB-Tests        | Akzeptiert    | Echte Datenbanken im Test, reproduzierbar              |
-| ADR-010 | YAML als Schema-Definitionsformat  | Akzeptiert    | Menschenlesbar, Git-freundlich, kommentierbar          |
+| #   | Entscheidung                       | Status        | Begründung                                             |
+| --- | ---------------------------------- | ------------- | ------------------------------------------------------ |
+| 1   | Kotlin als Implementierungssprache | Akzeptiert    | JDBC-Ökosystem, Null-Safety, Coroutines                |
+| 2   | Hexagonale Architektur             | Akzeptiert    | Testbarkeit, Austauschbarkeit der Adapter              |
+| 3   | Gradle Multi-Module                | Akzeptiert    | Modulare Builds, unabhängige Versionierung             |
+| 4   | JDBC statt R2DBC                   | Akzeptiert    | Breitere Treiberunterstützung, Streaming via ResultSet |
+| 5   | Kotlin Coroutines statt Threads    | Akzeptiert    | Strukturierte Concurrency, leichtgewichtig             |
+| 6   | Jackson für Serialisierung         | Akzeptiert    | YAML + JSON Support, bewährt, performant               |
+| 7   | SPI für Driver-Plugin-System       | Akzeptiert    | Standard-Java-Mechanismus, kein Framework nötig        |
+| 8   | GraalVM Native Image               | Vorgeschlagen | Single-Binary, schneller Start, höherer Build-Aufwand  |
+| 9   | Testcontainers für DB-Tests        | Akzeptiert    | Echte Datenbanken im Test, reproduzierbar              |
+| 10  | YAML als Schema-Definitionsformat  | Akzeptiert    | Menschenlesbar, Git-freundlich, kommentierbar          |
 
 ---
 
@@ -1302,7 +1338,7 @@ adapters/driven/formats/src/test/resources/fixtures/
 ### 8.2 Neuen KI-Provider hinzufügen
 
 ```
-1. Interface AiProvider implementieren
+1. `AiProviderPort` implementieren (`hexagon/application/ai/`)
 2. HTTP-Client oder lokales Adapter-Protokoll für Provider-API ergänzen
 3. Konfiguration in AiBackendConfig ergänzen
 4. ServiceLoader-Registrierung für JVM/Docker oder Native-Build-Profil erweitern
@@ -1364,13 +1400,10 @@ Entwickler-Maschine                    CI/CD-Pipeline
 ## Verwandte Dokumentation
 
 - [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
-- [Design](./design.md) — Design-Philosophie, Datenflüsse, CLI, Fehlerbehandlung
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Ausgabeformate, Kommando-Referenz
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
-- [Roadmap](../docs/planning/in-progress/roadmap.md) — Phasen und Release-Planung
-- [Beispiel: Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---
 

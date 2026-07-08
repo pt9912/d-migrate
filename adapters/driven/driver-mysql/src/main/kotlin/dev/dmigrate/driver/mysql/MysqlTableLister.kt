@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.TableLister
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
@@ -21,7 +22,7 @@ class MysqlTableLister(
     override val dialect: DatabaseDialect = DatabaseDialect.MYSQL
 
     override fun listTables(pool: ConnectionPool): List<String> {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             val database = currentDatabase(conn)
             val session = jdbcFactory(conn)
             return MysqlMetadataQueries.listTableRefs(session, database).map { it.name }

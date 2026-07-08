@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.CancellationTokenSource
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
@@ -18,7 +19,6 @@ import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.file.Path
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -30,7 +30,7 @@ class ImportStreamingInvokerCancelPropagationTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = error("unused")
+        override fun borrow(): DatabaseConnection = error("unused")
         override fun activeConnections() = 0
         override fun close() = Unit
     }

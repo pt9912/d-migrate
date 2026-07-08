@@ -1,7 +1,7 @@
 name: BI-Demo Smoke (Best-Effort)
 
 # BD.5 — optionaler End-to-End-Smoke-Job.
-# Spec: docs/planning/done/bi-demo-compose.md §9 BD.5.
+# Spec: docs/planning/done-archive/bi-demo-compose.md §9 BD.5.
 #
 # Faehrt `make bi-demo-smoke` (komplettes Compose-Up + d-migrate
 # Reverse/Profile/Generate + S3-Upload). Der Metabase-Browser-

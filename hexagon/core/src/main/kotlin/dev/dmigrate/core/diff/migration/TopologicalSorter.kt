@@ -1,10 +1,12 @@
 package dev.dmigrate.core.diff.migration
 
+import java.util.PriorityQueue
+
 /**
  * Sorts a list of [DiffOperation]s by their declared
  * [DiffOperation.dependencies], using a deterministic tie-breaker
  * (phase → object type → object name → id) per
- * `docs/planning/done/diffresult-migration-plan.md §4.4`. The
+ * `docs/planning/done-archive/diffresult-migration-plan.md §4.4`. The
  * `objectRef`-based ordering keeps the SQL output of unrelated
  * operations stable across schema revisions, which makes cross-
  * version diffs of generated migrations reviewable.
@@ -28,38 +30,48 @@ internal object TopologicalSorter {
         val cycleIds: Set<String>,
     )
 
+    /**
+     * Kahn-Topologie-Sortierung mit einer nach [stableOrder] geordneten Bereit-
+     * Schlange (PriorityQueue). Das liefert **exakt** dieselbe Auswahlreihenfolge wie
+     * „die aktuell bereite Menge jeden Schritt neu sortieren und das erste Element nehmen"
+     * (stabile Total-Ordnung über die eindeutige `id`), aber in **O((V+E)·log V)** statt der
+     * früheren **O(n³)** (pro Schritt voller `remaining`-Scan mit `List`-`in`-Lookup + voller
+     * Re-Sort der Bereit-Menge) — relevant für große gemischte Schemas mit vielen Views/Triggern.
+     */
     fun sort(ops: List<DiffOperation>): Result {
         val byId = ops.associateBy { it.id }
-        val deps = ops.associate { op ->
-            op.id to op.dependencies.filter { it in byId }.toSet()
+        // In-Grad je Op = Anzahl der **vorhandenen** Abhängigkeiten (Cross-Plan-IDs fallen
+        // weg); plus die Rückwärtskanten (je Dep-ID die Ops, die darauf warten). Self-Deps
+        // bleiben mitgezählt → die Op wird nie bereit → Zyklus (Verhalten wie zuvor).
+        val remainingDeps = HashMap<String, Int>(ops.size * 2)
+        val dependents = HashMap<String, MutableList<DiffOperation>>(ops.size * 2)
+        for (op in ops) {
+            val present = op.dependencies.filter { it in byId }
+            remainingDeps[op.id] = present.size
+            for (depId in present) dependents.getOrPut(depId) { mutableListOf() } += op
         }
-        val ready = ArrayDeque<DiffOperation>()
-        val remaining = ops.toMutableList()
-        val resolvedIds = mutableSetOf<String>()
-        val result = mutableListOf<DiffOperation>()
 
-        for (op in remaining) {
-            if (deps.getValue(op.id).isEmpty()) ready += op
-        }
-        sortInPlace(ready)
+        val ready = PriorityQueue(stableOrder)
+        for (op in ops) if (remainingDeps.getValue(op.id) == 0) ready += op
 
+        val result = ArrayList<DiffOperation>(ops.size)
+        val resolvedIds = HashSet<String>(ops.size * 2)
         while (ready.isNotEmpty()) {
-            val next = ready.removeFirst()
+            val next = ready.poll()
             result += next
             resolvedIds += next.id
-            remaining.remove(next)
-            val newlyReady = remaining.filter { op ->
-                op !in result && deps.getValue(op.id).all { it in resolvedIds }
+            for (dependent in dependents[next.id].orEmpty()) {
+                val left = remainingDeps.getValue(dependent.id) - 1
+                remainingDeps[dependent.id] = left
+                if (left == 0) ready += dependent
             }
-            for (op in newlyReady) if (op !in ready) ready += op
-            sortInPlace(ready)
         }
 
-        val cycleIds = remaining.map { it.id }.toSet()
-        if (remaining.isNotEmpty()) {
-            result += remaining.sortedWith(stableOrder)
-        }
-        return Result(sorted = result, cycleIds = cycleIds)
+        // Residuum = Ops, die nie In-Grad 0 erreichten = Zyklus-Mitglieder. Deterministisch
+        // anhängen (vollständiges Ergebnis fürs Diagnose-Rendering); IDs als cycleIds melden.
+        val cycle = ops.filter { it.id !in resolvedIds }
+        if (cycle.isNotEmpty()) result += cycle.sortedWith(stableOrder)
+        return Result(sorted = result, cycleIds = cycle.mapTo(mutableSetOf()) { it.id })
     }
 
     private val stableOrder: Comparator<DiffOperation> =
@@ -67,10 +79,4 @@ internal object TopologicalSorter {
             .thenBy { it.objectRef.type.ordinal }
             .thenBy { it.objectRef.displayName }
             .thenBy { it.id }
-
-    private fun sortInPlace(deque: ArrayDeque<DiffOperation>) {
-        val sorted = deque.sortedWith(stableOrder)
-        deque.clear()
-        deque.addAll(sorted)
-    }
 }

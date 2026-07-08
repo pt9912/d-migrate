@@ -2,7 +2,7 @@
 
 Pflicht-Checks vor jedem Merge auf `feature/parquet-0.9.8`
 (Umbrella
-[`parquet-productive-cut-a.md`](../planning/done/parquet-productive-cut-a.md)
+[`parquet-productive-cut-a.md`](../planning/done-archive/parquet-productive-cut-a.md)
 §5 PI-2).
 
 ## Sealed-`when`-Sweep
@@ -12,7 +12,7 @@ make parquet-sweep
 ```
 
 Faehrt die acht `rg`-Patterns aus AP13 §4.1
-([`parquet-decision-template.md`](../planning/done/parquet-decision-template.md)
+([`parquet-decision-template.md`](../planning/done-archive/parquet-decision-template.md)
 Zeilen 227-237) pro Sealed-Hierarchie und druckt jeden
 Treffer-Block:
 

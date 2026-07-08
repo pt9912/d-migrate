@@ -1,0 +1,4 @@
+Schema Compare: pagila_pg <-> pagila_target
+
+Status: IDENTICAL
+No differences found.

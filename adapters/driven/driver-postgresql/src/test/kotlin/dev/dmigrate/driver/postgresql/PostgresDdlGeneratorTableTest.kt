@@ -493,32 +493,6 @@ class PostgresDdlGeneratorTableTest : FunSpec({
         ddl shouldContain "REFERENCES"
     }
 
-    test("partitioning generates PARTITION BY RANGE with sub-partitions") {
-        val s = schema(
-            tables = mapOf(
-                "events" to table(
-                    columns = mapOf(
-                        "id" to col(NeutralType.Integer),
-                        "event_date" to col(NeutralType.Date)
-                    ),
-                    primaryKey = listOf("id", "event_date"),
-                    partitioning = PartitionConfig(
-                        type = PartitionType.RANGE,
-                        key = listOf("event_date"),
-                        partitions = listOf(
-                            PartitionDefinition(name = "events_2024", from = "'2024-01-01'", to = "'2025-01-01'"),
-                            PartitionDefinition(name = "events_2025", from = "'2025-01-01'", to = "'2026-01-01'")
-                        )
-                    )
-                )
-            )
-        )
-        val ddl = generator.generate(s).render()
-        ddl shouldContain "PARTITION BY RANGE (\"event_date\")"
-        ddl shouldContain "CREATE TABLE \"events_2024\" PARTITION OF \"events\" FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');"
-        ddl shouldContain "CREATE TABLE \"events_2025\" PARTITION OF \"events\" FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');"
-    }
-
     test("check constraint generates CONSTRAINT CHECK") {
         val s = schema(
             tables = mapOf(

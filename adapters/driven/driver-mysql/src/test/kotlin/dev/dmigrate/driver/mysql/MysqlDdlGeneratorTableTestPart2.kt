@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -74,9 +75,9 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
                         type = PartitionType.RANGE,
                         key = listOf("event_date"),
                         partitions = listOf(
-                            PartitionDefinition(name = "p2024", to = "'2025-01-01'"),
-                            PartitionDefinition(name = "p2025", to = "'2026-01-01'"),
-                            PartitionDefinition(name = "p_max", to = "MAXVALUE")
+                            PartitionDefinition(name = "p2024", to = listOf(PartitionBound.Value("'2025-01-01'"))),
+                            PartitionDefinition(name = "p2025", to = listOf(PartitionBound.Value("'2026-01-01'"))),
+                            PartitionDefinition(name = "p_max", to = listOf(PartitionBound.MaxValue))
                         )
                     )
                 )
@@ -86,11 +87,261 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "PARTITION BY RANGE (`event_date`)"
+        ddl shouldContain "PARTITION BY RANGE COLUMNS (`event_date`)"
         ddl shouldContain "PARTITION `p2024` VALUES LESS THAN ('2025-01-01')"
         ddl shouldContain "PARTITION `p2025` VALUES LESS THAN ('2026-01-01')"
         ddl shouldContain "PARTITION `p_max` VALUES LESS THAN (MAXVALUE)"
-        ddl shouldContain "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+        // I-07: table options precede partition options (MySQL grammar); the
+        // statement terminates after the partition clause, not after ENGINE.
+        ddl shouldContain "COLLATE=utf8mb4_unicode_ci\nPARTITION BY RANGE COLUMNS (`event_date`)"
+        ddl shouldContain "VALUES LESS THAN (MAXVALUE)\n);"
+    }
+
+    test("timestamptz RANGE bound is normalized to UTC for MySQL DATETIME (W129, AP6.2)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "payment" to table(
+                    columns = mapOf(
+                        "payment_date" to col(NeutralType.DateTime(timezone = true), required = true)
+                    ),
+                    primaryKey = listOf("payment_date"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("payment_date"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2022-02-01 00:00:00+00'")))
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        ddl shouldContain "PARTITION BY RANGE COLUMNS (`payment_date`)"
+        ddl shouldContain "VALUES LESS THAN ('2022-02-01 00:00:00')"
+        ddl shouldNotContain "00:00:00+00"
+        result.notes.any { it.code == "W129" } shouldBe true
+    }
+
+    test("non-UTC timezone offset on a partition bound emits E061 action_required (AP6.2)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "payment" to table(
+                    columns = mapOf(
+                        "payment_date" to col(NeutralType.DateTime(timezone = true), required = true)
+                    ),
+                    primaryKey = listOf("payment_date"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("payment_date"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2022-02-01 00:00:00+02'")))
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+        result.notes.find { it.code == "E061" }!!.type shouldBe NoteType.ACTION_REQUIRED
+    }
+
+    test("date-only RANGE bound on a DATETIME key keeps the full date (no phantom tz offset, AP6-review #1)") {
+        // Regression: the old offset regex ate the '-DD' of a date-only bound as a fake timezone,
+        // silently shifting the partition boundary ('2022-02-01' -> '2022-02') + a bogus E061.
+        val schema = emptySchema(tables = mapOf(
+            "payment" to table(
+                columns = mapOf("payment_date" to col(NeutralType.DateTime(timezone = true), required = true)),
+                primaryKey = listOf("payment_date"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("payment_date"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p_feb", to = listOf(PartitionBound.Value("'2022-02-01'"))),
+                        PartitionDefinition(name = "p_leap", to = listOf(PartitionBound.Value("'2024-02-29'"))),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        ddl shouldContain "VALUES LESS THAN ('2022-02-01')"
+        ddl shouldContain "VALUES LESS THAN ('2024-02-29')"
+        ddl shouldNotContain "('2022-02')"
+        result.notes.none { it.code == "E061" } shouldBe true
+    }
+
+    test("an already-quoted temporal RANGE bound is emitted once, not double-quoted (contract, AP6-review #3/C)") {
+        // The model carries the SQL quotes (fixture/spec contract, identical for both dialects); the
+        // generator emits them verbatim and must NOT re-quote — a date-only bound has no tz to strip.
+        val schema = emptySchema(tables = mapOf(
+            "events" to table(
+                columns = mapOf("event_date" to col(NeutralType.Date, required = true)),
+                primaryKey = listOf("event_date"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("event_date"),
+                    partitions = listOf(PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2025-01-01'")))),
+                ),
+            ),
+        ))
+        val ddl = generator.generate(schema).render()
+        ddl shouldContain "VALUES LESS THAN ('2025-01-01')"
+        ddl shouldNotContain "''2025-01-01''"
+    }
+
+    test("non-UTC RANGE bound is kept unchanged (no silent shift) and reported per partition (AP6-review #2)") {
+        val schema = emptySchema(tables = mapOf(
+            "payment" to table(
+                columns = mapOf("payment_date" to col(NeutralType.DateTime(timezone = true), required = true)),
+                primaryKey = listOf("payment_date"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("payment_date"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("'2022-02-01 00:00:00+02'"))),
+                        PartitionDefinition(name = "p2", to = listOf(PartitionBound.Value("'2022-03-01 00:00:00+02'"))),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        // Boundary kept verbatim — fails loudly instead of placing rows in the wrong partition.
+        ddl shouldContain "'2022-02-01 00:00:00+02'"
+        // Reported per partition, not deduped table-wide (the second one no longer leaks silently).
+        result.notes.filter { it.code == "E061" }.size shouldBe 2
+    }
+
+    test("single-column temporal LIST values route through tz-normalization (AP6-review #4)") {
+        // The #4 fix is about routing: a single-column temporal LIST normalizes each scalar value
+        // (here: UTC offset stripped for MySQL DATETIME), whereas a multi-column tuple does not.
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("d" to col(NeutralType.DateTime(timezone = true), required = true)),
+                primaryKey = listOf("d"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.LIST, key = listOf("d"),
+                    partitions = listOf(PartitionDefinition(
+                        name = "p", values = listOf("'2022-02-01 00:00:00+00'", "'2022-06-01 00:00:00+00'"),
+                    )),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        result.render() shouldContain "VALUES IN ('2022-02-01 00:00:00', '2022-06-01 00:00:00')"
+        result.notes.any { it.code == "W129" } shouldBe true
+    }
+
+    test("multi-column LIST tuple with a temporal first column is left intact, not scalar-normalized (AP6-review #4)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf(
+                    "d" to col(NeutralType.DateTime(timezone = true), required = true),
+                    "region" to col(NeutralType.Char(2), required = true),
+                ),
+                primaryKey = listOf("d", "region"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.LIST, key = listOf("d", "region"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p", values = listOf("('2022-02-01 00:00:00+00', 'eu')")),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        // The whole tuple is emitted verbatim; a tuple is never treated as a scalar temporal literal.
+        result.render() shouldContain "VALUES IN (('2022-02-01 00:00:00+00', 'eu'))"
+        result.notes.none { it.code == "W129" || it.code == "E061" } shouldBe true
+    }
+
+    test("DECIMAL partition key is unsupported by RANGE COLUMNS → E062 skip (AP6.2 §1)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("amount" to col(NeutralType.Decimal(10, 2), required = true)),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE, key = listOf("amount"),
+                    partitions = listOf(PartitionDefinition(name = "p1", to = listOf(PartitionBound.Value("100")))),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        result.notes.find { it.code == "E062" }!!.type shouldBe NoteType.ACTION_REQUIRED
+        result.render() shouldNotContain "PARTITION BY"
+    }
+
+    test("HASH on an integer key emits PARTITION BY HASH + W130 placement note (AP6.2 §3)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("id" to col(NeutralType.Integer, required = true)),
+                primaryKey = listOf("id"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.HASH, key = listOf("id"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p0", modulus = 2, remainder = 0),
+                        PartitionDefinition(name = "p1", modulus = 2, remainder = 1),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        ddl shouldContain "PARTITION BY HASH (`id`)"
+        ddl shouldContain "PARTITION `p0`"
+        result.notes.any { it.code == "W130" } shouldBe true
+    }
+
+    test("HASH on a non-integer key is unsupported → E062 skip (AP6.2 §3)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("name" to col(NeutralType.Text(50), required = true)),
+                partitioning = PartitionConfig(
+                    type = PartitionType.HASH, key = listOf("name"),
+                    partitions = listOf(PartitionDefinition(name = "p0", modulus = 1, remainder = 0)),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        result.notes.any { it.code == "E062" } shouldBe true
+        result.render() shouldNotContain "PARTITION BY HASH"
+    }
+
+    test("LIST DEFAULT partition is dropped with E063 data-loss note (AP6.2 §4)") {
+        val schema = emptySchema(tables = mapOf(
+            "t" to table(
+                columns = mapOf("region" to col(NeutralType.Text(10), required = true)),
+                partitioning = PartitionConfig(
+                    type = PartitionType.LIST, key = listOf("region"),
+                    partitions = listOf(
+                        PartitionDefinition(name = "p_eu", values = listOf("'eu'")),
+                        PartitionDefinition(name = "p_rest", isDefault = true),
+                    ),
+                ),
+            ),
+        ))
+        val result = generator.generate(schema)
+        val ddl = result.render()
+        result.notes.find { it.code == "E063" }!!.type shouldBe NoteType.ACTION_REQUIRED
+        ddl shouldContain "PARTITION `p_eu` VALUES IN ('eu')"
+        ddl shouldNotContain "p_rest"
+    }
+
+    test("partition bound with unsafe characters is rejected (guard parity with PostgreSQL)") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "events" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "event_date" to col(NeutralType.Date, required = true)
+                    ),
+                    primaryKey = listOf("id", "event_date"),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.RANGE,
+                        key = listOf("event_date"),
+                        partitions = listOf(
+                            PartitionDefinition(name = "evil", to = listOf(PartitionBound.Value("'x'); DROP TABLE t--")))
+                        )
+                    )
+                )
+            )
+        )
+        shouldThrow<IllegalArgumentException> { generator.generate(schema) }
     }
 
     test("UNIQUE constraint generates CONSTRAINT ... UNIQUE (columns)") {
@@ -319,7 +570,7 @@ class MysqlDdlGeneratorTableTestPart2 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "PARTITION BY LIST (`region`)"
+        ddl shouldContain "PARTITION BY LIST COLUMNS (`region`)"
         ddl shouldContain "PARTITION `p_us` VALUES IN ('US', 'CA')"
         ddl shouldContain "PARTITION `p_eu` VALUES IN ('DE', 'FR', 'UK')"
     }

@@ -10,6 +10,14 @@ class PostgresTypeMapperTest : FunSpec({
 
     val mapper = PostgresTypeMapper()
 
+    // -- toDefaultSql function defaults (N1) --
+    test("FunctionCall current_date renders CURRENT_DATE (N1)") {
+        mapper.toDefaultSql(DefaultValue.FunctionCall("current_date"), NeutralType.Date) shouldBe "CURRENT_DATE"
+    }
+    test("FunctionCall current_time renders CURRENT_TIME (N1)") {
+        mapper.toDefaultSql(DefaultValue.FunctionCall("current_time"), NeutralType.Time) shouldBe "CURRENT_TIME"
+    }
+
     // -- toSql --
 
     test("Identifier with autoIncrement maps to SERIAL") {
@@ -180,6 +188,10 @@ class PostgresTypeMapperTest : FunSpec({
         mapper.toSql(NeutralType.Geometry(
             dev.dmigrate.core.model.GeometryType("geometrycollection"), srid = 4326
         )) shouldBe "geometry(GeometryCollection, 4326)"
+    }
+
+    test("FullText maps to tsvector (ADR 0015)") {
+        mapper.toSql(NeutralType.FullText) shouldBe "tsvector"
     }
 
     test("FunctionCall unknown renders with parentheses") {

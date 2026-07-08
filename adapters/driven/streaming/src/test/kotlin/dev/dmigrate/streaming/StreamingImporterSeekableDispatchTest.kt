@@ -89,6 +89,7 @@ class StreamingImporterSeekableDispatchTest : FunSpec({
         val streamFactory = FakeReaderFactory(readersByTable = emptyMap())
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = streamFactory,
             seekableReaderFactory = seekableFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },
@@ -125,6 +126,7 @@ class StreamingImporterSeekableDispatchTest : FunSpec({
         )
         val streamFactory = FakeReaderFactory(readersByTable = emptyMap())
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = streamFactory,
             seekableReaderFactory = seekableFactory,
             writerLookup = {
@@ -168,6 +170,7 @@ class StreamingImporterSeekableDispatchTest : FunSpec({
     test("Seekable + null-Factory: Pre-Stream-Check faengt den Wiring-Bug mit klarer Meldung ab") {
         val streamFactory = FakeReaderFactory(readersByTable = emptyMap())
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = streamFactory,
             seekableReaderFactory = null,  // bewusst null — Wiring-Drift simulieren
             writerLookup = { FakeWriter(mapOf("users" to FakeTableImportSession(targetColumns = targetColumns))) },
@@ -219,6 +222,7 @@ class StreamingImporterSeekableDispatchTest : FunSpec({
         val seekableFactory = RecordingSeekableFactory(readersByTable = mapOf("users" to reader))
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
             readerFactory = FakeReaderFactory(readersByTable = emptyMap()),
             seekableReaderFactory = seekableFactory,
             writerLookup = { FakeWriter(mapOf("users" to session)) },

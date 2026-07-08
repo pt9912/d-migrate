@@ -20,11 +20,12 @@ private val LargeSchemaTag = NamedTag("large-schema")
 /**
  * Phase D large-schema scale spec.
  *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.4 (Sub-Slice D).
  *
  * For each [Scale] the spec builds a synthetic mixed schema
- * (tables + sequences + views + functions + triggers) via
+ * (4×n + 1: n tables + n sequences + n views + n triggers + 1 shared
+ * trigger function — NOT 5×n; the triggers share a single function) via
  * [LargeSchemaGenerator], runs the full
  * `current=empty → desired=schema` planner + PostgreSQL renderer
  * pipeline, and asserts both the wall-clock smoke budget
@@ -36,8 +37,8 @@ private val LargeSchemaTag = NamedTag("large-schema")
  * matching the Phase-A contract.
  *
  * Scales pinned in Sub-Slice D:
- *   - N=100  (renderSmokeMaxMs = 30 s, maxHeapMb = 256)
- *   - N=1000 (renderSmokeMaxMs = 120 s, maxHeapMb = 1024)
+ *   - N=100  (renderSmokeMaxMs = 10 s, maxHeapMb = 256)
+ *   - N=1000 (renderSmokeMaxMs = 30 s, maxHeapMb = 1024)
  *
  * N=10000 is deferred to Sub-Slice D-N10k as a nightly-only
  * opt-in (separate spec class so the standard `make docker-perf`
@@ -79,6 +80,29 @@ class LargeSchemaScaleSpec : FunSpec({
             )
         }
     }
+
+    // LN-004 (Skalierbarkeit): „DDL-Generierung für 1.000 Tabellen in unter 30 s".
+    // Bewusst REINE Tabellen (sequences/views/triggers = 0). Der gemischte 4×n-Scale
+    // oben misst 4001 Objekte + Dependency-Topologie (Views→Tables, Trigger→Function)
+    // und ist DESHALB NICHT die literale LN-004-Metrik — er ist ein umfassenderer
+    // Stress-Check. Dieser Test bildet LN-004 treu ab (nur Tabellen-DDL).
+    test("LN-004 — DDL-Generierung für 1000 reine Tabellen unter 30 s") {
+        val schema = LargeSchemaGenerator.mixedSchema(
+            tables = 1000, sequences = 0, views = 0, triggers = 0, seed = "ln004",
+        )
+        val budget = HeapBudget.start(1024L)
+        val sample = PerfMeasure.run(warmup = 0, iterations = 1) {
+            runMigratePipeline(schema)
+        }
+        sample.medianMs shouldBeLessThan 120_000.0   // Smoke-Runaway-Guard
+        budget.peakUsedMb() shouldBeLessThan 1024L
+        PerfReport.write(
+            hotpath = "ddl-1000-tables-ln004",
+            sample = sample,
+            smokeMaxMs = 120_000.0,
+            baselineMs = 30_000.0,   // LN-004; hart nur unter PERF_GATE (designierter Runner)
+        )
+    }
 }) {
     companion object {
         /**
@@ -89,9 +113,9 @@ class LargeSchemaScaleSpec : FunSpec({
          *
          * Smoke budgets are deliberately generous — the synthetic
          * schemas exercise the full planner + renderer chain for
-         * 5×n objects (tables + sequences + views + functions +
-         * triggers), and the cold-CI JIT warmup adds substantial
-         * tail latency to the first iterations.
+         * 4×n + 1 objects (n tables + n sequences + n views + n
+         * triggers + 1 shared trigger function), and the cold-CI JIT
+         * warmup adds substantial tail latency to the first iterations.
          */
         internal data class Scale(
             val n: Int,
@@ -100,9 +124,19 @@ class LargeSchemaScaleSpec : FunSpec({
             val maxHeapMb: Long,
         )
 
+        // Der gemischte 4×n-Scale ist ein UMFASSENDER Stress-Check (Tabellen +
+        // Sequenzen + Views + Trigger + Dependency-Topologie), NICHT die LN-004-Metrik
+        // („1.000 Tabellen") — die deckt der separate `ddl-1000-tables-ln004`-Test ab.
+        // Früher skalierte das 4×n stark super-linear (N=100 ~0,4 s vs. N=1000 ~52 s) wegen
+        // eines kubischen `TopologicalSorter` (pro Schritt voller `remaining`-Scan + `List`-
+        // `in` + Re-Sort). Seit der Kahn-/PriorityQueue-Linearisierung (2026-06-25,
+        // `open/large-schema-superlinear-scaling.md`) ist es linearithmisch — gemessen kalt
+        // N=100 ~0,2 s, N=1000 ~0,13 s, ln004 ~0,02 s. Die Budgets sind entsprechend
+        // gestrafft (Baseline = nightly-Erwartung, Smoke = Runaway-Guard mit Headroom für
+        // kalte-CI-JIT-Tails), kein LF-Abnahmebudget (LN-004 = separater Test).
         internal val SCALES: List<Scale> = listOf(
-            Scale(n = 100, renderSmokeMaxMs = 30_000L, renderBaselineMs = 2_000L, maxHeapMb = 256L),
-            Scale(n = 1000, renderSmokeMaxMs = 120_000L, renderBaselineMs = 30_000L, maxHeapMb = 1024L),
+            Scale(n = 100, renderSmokeMaxMs = 10_000L, renderBaselineMs = 2_000L, maxHeapMb = 256L),
+            Scale(n = 1000, renderSmokeMaxMs = 30_000L, renderBaselineMs = 5_000L, maxHeapMb = 1024L),
         )
 
         /**

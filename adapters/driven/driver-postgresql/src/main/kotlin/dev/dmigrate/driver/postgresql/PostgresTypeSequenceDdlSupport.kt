@@ -2,7 +2,9 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.TypeMapper
 
@@ -26,21 +28,16 @@ internal class PostgresTypeSequenceDdlSupport(
             }
             CustomTypeKind.COMPOSITE -> {
                 val fields = typeDef.fields ?: return emptyList()
-                val fieldsSql = fields.entries.joinToString(",\n    ") { (fieldName, col) ->
+                // Composite-Felder in physischer Ordinalreihenfolge (ADR 0021: einheitlich
+                // über alle DDL-Generate-Pfade), konsistent mit der Serialisierung.
+                val fieldsSql = fields.inOrdinalOrder().joinToString(",\n    ") { (fieldName, col) ->
                     "${quoteIdentifier(fieldName)} ${typeMapper.toSql(col.type)}"
                 }
                 listOf(DdlStatement("CREATE TYPE ${quoteIdentifier(name)} AS (\n    $fieldsSql\n);"))
             }
             CustomTypeKind.DOMAIN -> {
                 val baseType = typeDef.baseType ?: return emptyList()
-                val sqlType = buildString {
-                    append(baseType.uppercase())
-                    if (typeDef.precision != null) {
-                        append("(${typeDef.precision}")
-                        if (typeDef.scale != null) append(",${typeDef.scale}")
-                        append(")")
-                    }
-                }
+                val sqlType = domainBaseTypeSql(baseType, typeDef.precision, typeDef.scale)
                 val sql = buildString {
                     append("CREATE DOMAIN ${quoteIdentifier(name)} AS $sqlType")
                     if (typeDef.check != null) {
@@ -52,6 +49,44 @@ internal class PostgresTypeSequenceDdlSupport(
             }
         }
     }
+
+    /**
+     * Rendert den Domain-Basistyp über denselben Typ-Mapper wie Spalten/Composite-Felder,
+     * wenn [baseType] ein neutraler Typname ist (Reverse-Seite speichert z. B. "biginteger").
+     * Rohe SQL-Typstrings (z. B. handgeschriebenes "VARCHAR(254)") werden unverändert
+     * durchgereicht — sie sind bereits gültiges DDL.
+     */
+    private fun domainBaseTypeSql(baseType: String, precision: Int?, scale: Int?): String {
+        val neutral = resolveNeutralBaseType(baseType, precision, scale)
+        if (neutral != null) return typeMapper.toSql(neutral)
+        return buildString {
+            append(baseType.uppercase())
+            if (precision != null) {
+                append("($precision")
+                if (scale != null) append(",$scale")
+                append(")")
+            }
+        }
+    }
+
+    private fun resolveNeutralBaseType(baseType: String, precision: Int?, scale: Int?): NeutralType? =
+        when (baseType.lowercase()) {
+            "integer", "int", "int4" -> NeutralType.Integer
+            "biginteger", "bigint", "int8" -> NeutralType.BigInteger
+            "smallint", "int2" -> NeutralType.SmallInt
+            "boolean", "bool" -> NeutralType.BooleanType
+            "float", "real", "double precision", "float4", "float8" -> NeutralType.Float()
+            "decimal", "numeric" ->
+                if (precision != null) NeutralType.Decimal(precision, scale ?: 0) else null
+            "text" -> NeutralType.Text()
+            "uuid" -> NeutralType.Uuid
+            "json", "jsonb" -> NeutralType.Json
+            "xml" -> NeutralType.Xml
+            "binary", "bytea" -> NeutralType.Binary
+            "date" -> NeutralType.Date
+            "time" -> NeutralType.Time
+            else -> null
+        }
 
     private fun generateSequence(name: String, seq: SequenceDefinition): DdlStatement {
         val sql = buildString {

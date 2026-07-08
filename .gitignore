@@ -52,3 +52,7 @@ release-assets/
 #
 coverage.json
 scripts/__pycache__/
+
+# Cached semgrep rules (LGPL-2.1 + Commons Clause upstream → not vendored;
+# fetched + pinned + SHA256-verified by scripts/fetch-semgrep-rules.sh). README stays.
+config/semgrep/*.yml

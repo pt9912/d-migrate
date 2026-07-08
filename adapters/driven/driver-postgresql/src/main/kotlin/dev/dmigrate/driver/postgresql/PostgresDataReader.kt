@@ -32,4 +32,24 @@ class PostgresDataReader : AbstractJdbcDataReader() {
 
     /** PostgreSQL braucht zwingend `setAutoCommit(false)` für Cursor-Streaming. */
     override val needsAutoCommitFalse: Boolean = true
+
+    /**
+     * VA1b (Spatial-Slice): PostGIS-Geometriespalten auf dem Read-Pfad als
+     * kanonisches **WKB** projizieren (`ST_AsBinary`, OGC-Standard). Bewusst NICHT
+     * EWKB: EWKB trägt zwar die SRID, ist aber **nicht cross-dialect-tauglich**
+     * (MySQL `ST_GeomFromWKB` versteht das EWKB-SRID-Flag nicht). Das Transfer-
+     * Format ist damit einheitlich WKB für PG **und** MySQL; SRID-Erhalt läuft
+     * separat über den Reverse-Pfad (VA2) und das Ziel-Binding (VA1c).
+     */
+    override val supportsGeometryRead: Boolean = true
+
+    override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
+
+    /**
+     * Nur das PostGIS-`geometry` ist WKB-fähig. Die **nativen** PG-Typen
+     * `point`/`polygon`/`line`/`box`/`path`/`circle`/`lseg` heißen wie
+     * OGC-Subtypen, sind aber kein WKB — sie dürfen NICHT mit `ST_AsBinary`
+     * gewrappt werden. (`geography` bleibt vorerst außen vor: eigener Konstruktor.)
+     */
+    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
 }

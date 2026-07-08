@@ -45,18 +45,24 @@ class PreGenerationValidatorTest : FunSpec({
             .shouldBeEmpty()
     }
 
-    test("DatabaseDriver.preGenerationValidator defaults to PreGenerationValidator.NoOp") {
-        // Driver that overrides nothing should pick up the interface default.
-        val driver: DatabaseDriver = object : DatabaseDriver {
-            override val dialect = DatabaseDialect.POSTGRESQL
-            override fun ddlGenerator(): DdlGenerator = error("not needed")
-            override fun dataReader(): DataReader = error("not needed")
-            override fun tableLister(): TableLister = error("not needed")
-            override fun dataWriter(): DataWriter = error("not needed")
-            override fun urlBuilder(): JdbcUrlBuilder = error("not needed")
-            override fun schemaReader(): SchemaReader = error("not needed")
-        }
+    // Driver that overrides nothing should pick up the interface defaults.
+    fun stubDriver(): DatabaseDriver = object : DatabaseDriver {
+        override val dialect = DatabaseDialect.POSTGRESQL
+        override fun ddlGenerator(): DdlGenerator = error("not needed")
+        override fun dataReader(): DataReader = error("not needed")
+        override fun tableLister(): TableLister = error("not needed")
+        override fun dataWriter(): DataWriter = error("not needed")
+        override fun urlBuilder(): JdbcUrlBuilder = error("not needed")
+        override fun schemaReader(): SchemaReader = error("not needed")
+    }
 
-        driver.preGenerationValidator() shouldBe PreGenerationValidator.NoOp
+    test("DatabaseDriver.preGenerationValidator defaults to PreGenerationValidator.NoOp") {
+        stubDriver().preGenerationValidator() shouldBe PreGenerationValidator.NoOp
+    }
+
+    test("DatabaseDriver.typeCanonicalizer defaults to the identity projection") {
+        val driver = stubDriver()
+        driver.typeCanonicalizer() shouldBe NeutralTypeCanonicalizer.IDENTITY
+        driver.typeCanonicalizer().canonicalize(NeutralType.SmallInt) shouldBe NeutralType.SmallInt
     }
 })

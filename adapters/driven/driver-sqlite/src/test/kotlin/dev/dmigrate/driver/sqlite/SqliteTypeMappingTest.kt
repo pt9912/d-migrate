@@ -2,10 +2,12 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.string.shouldContain
 
 class SqliteTypeMappingTest : FunSpec({
 
@@ -42,8 +44,46 @@ class SqliteTypeMappingTest : FunSpec({
 
     // ── AUTOINCREMENT ───────────────────────────
 
+    test("AUTOINCREMENT carries R202 64-bit narrowing note") {
+        val r = map("INTEGER", isAI = true)
+        r.note.shouldNotBeNull()
+        r.note?.code shouldBe "R202"
+        r.note?.severity shouldBe SchemaReadSeverity.INFO
+        r.note?.objectName shouldBe "t.c"
+    }
+
     test("AUTOINCREMENT → Identifier") {
         map("INTEGER", isAI = true).type shouldBe NeutralType.Identifier(autoIncrement = true)
+    }
+
+    // ── reverse-preferences: AUTOINCREMENT width preference ──
+    test("AUTOINCREMENT under 64-bit preference → biginteger + Identity(legacy) + R204") {
+        val r = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.BIGINTEGER_IDENTITY,
+        )
+        r.type shouldBe NeutralType.BigInteger
+        // legacySerialSyntax = true mirrors the MySQL bigint-auto_increment reverse → PG BIGSERIAL
+        r.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+        r.note?.code shouldBe "R204"
+        r.note?.severity shouldBe SchemaReadSeverity.INFO
+    }
+
+    test("AUTOINCREMENT explicit IDENTIFIER preference stays 32-bit (canonicaliser-safe default)") {
+        val r = SqliteTypeMapping.mapColumn(
+            "INTEGER", isAutoIncrement = true, "t", "c",
+            SqliteAutoincrementReverse.IDENTIFIER,
+        )
+        r.type shouldBe NeutralType.Identifier(autoIncrement = true)
+        r.generation.shouldBeNull()
+        r.note?.code shouldBe "R202"
+    }
+
+    test("R202 hint names the width flag/config-key (discoverability F1)") {
+        val hint = map("INTEGER", isAI = true).note?.hint
+        hint.shouldNotBeNull()
+        hint shouldContain "--sqlite-autoincrement-width 64"
+        hint shouldContain "reverse.sqlite.autoincrement_width"
     }
 
     // ── Geometry ────────────────────────────────
@@ -133,27 +173,8 @@ class SqliteTypeMappingTest : FunSpec({
         SqliteTypeMapping.isSpatiaLiteMetaTable("users") shouldBe false
     }
 
-    // ── CHECK constraint extraction ─────────────
-
-    test("extractCheckConstraints finds named constraints") {
-        val sql = """CREATE TABLE t (
-            id INTEGER PRIMARY KEY,
-            age INTEGER,
-            CONSTRAINT chk_age CHECK (age > 0),
-            CONSTRAINT chk_range CHECK (age < 200)
-        )"""
-        val checks = SqliteTypeMapping.extractCheckConstraints(sql)
-        checks.size shouldBe 2
-        checks[0].first shouldBe "chk_age"
-        checks[0].second shouldBe "age > 0"
-        checks[1].first shouldBe "chk_range"
-        checks[1].second shouldBe "age < 200"
-    }
-
-    test("extractCheckConstraints returns empty for no constraints") {
-        val sql = "CREATE TABLE t (id INTEGER PRIMARY KEY)"
-        SqliteTypeMapping.extractCheckConstraints(sql).size shouldBe 0
-    }
+    // CHECK-constraint extraction lives in [SqliteCheckConstraintScannerTest]
+    // since the scanner moved to its own object.
 
     // ── View query extraction ───────────────────
 

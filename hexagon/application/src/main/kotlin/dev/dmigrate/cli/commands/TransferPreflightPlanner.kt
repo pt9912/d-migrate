@@ -3,12 +3,16 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.dependency.FkEdge
 import dev.dmigrate.core.dependency.sortTablesByDependency
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.TransferTypeCompatibility
 
-internal class TransferPreflightPlanner(
-    private val typeCompatibility: TransferTypeCompatibility = TransferTypeCompatibility(),
-) {
+internal class TransferPreflightPlanner {
 
-    fun planTables(request: DataTransferRequest, source: SchemaDefinition, target: SchemaDefinition): List<String> {
+    fun planTables(
+        request: DataTransferRequest,
+        source: SchemaDefinition,
+        target: SchemaDefinition,
+        typeCompatibility: TransferTypeCompatibility,
+    ): List<String> {
         val candidates = if (request.tables != null) {
             for (table in request.tables) {
                 if (table !in source.tables) {
@@ -27,7 +31,7 @@ internal class TransferPreflightPlanner(
             for ((column, sourceDefinition) in source.tables[table]!!.columns) {
                 val targetDefinition = target.tables[table]!!.columns[column]
                     ?: throw TransferPreflightException("Column '$table.$column' missing in target")
-                if (!typeCompatibility.isCompatible(sourceDefinition, targetDefinition)) {
+                if (!typeCompatibility.isCompatible(sourceDefinition.type, targetDefinition.type)) {
                     throw TransferPreflightException(
                         "Column '$table.$column' type mismatch: ${sourceDefinition.type} vs ${targetDefinition.type}"
                     )

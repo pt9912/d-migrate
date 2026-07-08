@@ -3,7 +3,7 @@
 > Status: **Vorschlag** (Trigger Watch)
 >
 > Trigger: Abschluss des Object-Storage-S3-Adapters in 0.9.8
-> ([`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md)
+> ([`object-storage-artifact-store.md`](../done-archive/object-storage-artifact-store.md)
 > Arbeitspaket 6 / Abschnitt 9). Der Byte-/Metadaten-ArtifactStore und der
 > S3-Adapter liefern opake, tenant-skopierte `ServerResourceUri`-Refs; der
 > MCP-Server nutzt sie bereits. REST und gRPC tun das noch nicht, weil es
@@ -54,10 +54,10 @@ Services existieren nicht).
 ## Verwandte Tracker
 
 - Architektur-/Closure-Kontext:
-  [`object-storage-artifact-store.md`](../done/object-storage-artifact-store.md)
+  [`object-storage-artifact-store.md`](../done-archive/object-storage-artifact-store.md)
   (Abschnitt 9, Closure).
 - S3-Adapter-Closure:
-  [`ImpPlan-0.9.8-object-storage-s3.md`](../done/ImpPlan-0.9.8-object-storage-s3.md).
+  [`ImpPlan-0.9.8-object-storage-s3.md`](../done-archive/ImpPlan-0.9.8-object-storage-s3.md).
 - Verwandter Service-Mode-Cluster (Pool/Cancellation/Rate-Limit/…):
   `carveout.md`-Zeile „Cross-JVM-Service-Mode-Vertraege (MCP/REST/gRPC)" →
   [`atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md).

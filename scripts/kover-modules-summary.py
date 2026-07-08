@@ -8,12 +8,17 @@ Reads `<module>.xml` files from a directory (produced by the Dockerfile
 - Top uncovered classes per module below 90% (configurable threshold)
 
 Usage:
+    pip install defusedxml
     python3 scripts/kover-modules-summary.py <dir> [--threshold 90] [--top 10]
 """
 import argparse
 import os
 import sys
-import xml.etree.ElementTree as ET
+
+# defusedxml hardens the XML parse against XXE / billion-laughs (semgrep
+# use-defused-xml-parse). The input here is the project's own Kover coverage
+# XML (trusted), but defense-in-depth is cheap and keeps the security gate green.
+import defusedxml.ElementTree as ET
 
 
 def cov(missed: int, covered: int) -> float:

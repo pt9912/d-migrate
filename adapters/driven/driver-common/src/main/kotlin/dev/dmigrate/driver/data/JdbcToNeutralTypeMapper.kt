@@ -6,7 +6,7 @@ import java.sql.Types
 
 /**
  * Mappt JDBC-Spaltentypen auf `NeutralType` per AP2 §8
- * Mapping-Tabelle (`docs/planning/done/parquet-schema-source.md`).
+ * Mapping-Tabelle (`docs/planning/done-archive/parquet-schema-source.md`).
  *
  * Reine Funktion ohne Seiteneffekt. Eingaben sind die vier
  * Felder, die `ResultSetMetaData` pro Spalte liefert:
@@ -38,29 +38,41 @@ internal object JdbcToNeutralTypeMapper {
 
         val typeNameLower = sqlTypeName?.lowercase()
 
-        return when (jdbcType) {
-            Types.BIT, Types.BOOLEAN -> NeutralType.BooleanType
-            Types.TINYINT, Types.SMALLINT -> NeutralType.SmallInt
-            Types.INTEGER -> NeutralType.Integer
-            Types.BIGINT -> NeutralType.BigInteger
-            Types.REAL -> NeutralType.Float(FloatPrecision.SINGLE)
-            Types.FLOAT, Types.DOUBLE -> NeutralType.Float(FloatPrecision.DOUBLE)
-            Types.DECIMAL, Types.NUMERIC -> NeutralType.Decimal(
-                precision = precision ?: DEFAULT_DECIMAL_PRECISION,
-                scale = scale ?: 0,
-            )
-            Types.CHAR -> NeutralType.Char(length = precision ?: 1)
-            Types.VARCHAR, Types.LONGVARCHAR, Types.NVARCHAR, Types.LONGNVARCHAR ->
-                NeutralType.Text(maxLength = precision?.takeIf { it > 0 })
-            Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY -> NeutralType.Binary
-            Types.DATE -> NeutralType.Date
-            Types.TIME, Types.TIME_WITH_TIMEZONE -> NeutralType.Time
-            Types.TIMESTAMP -> NeutralType.DateTime(timezone = false)
-            Types.TIMESTAMP_WITH_TIMEZONE -> NeutralType.DateTime(timezone = true)
-            Types.ARRAY -> NeutralType.Array(elementType = typeNameLower ?: "unknown")
-            Types.OTHER -> mapOther(typeNameLower)
-            else -> NeutralType.Text(maxLength = null) // konservativer Fallback
-        }
+        // Geometrie wird NICHT hier (dialekt-blind) erkannt: native PG-Typen
+        // (point/polygon/line/…) heißen genauso wie OGC-Geometrie-Subtypen, sind
+        // aber kein WKB. Die Geometrie-Markierung kommt dialekt-bewusst aus der
+        // Metadaten-Vorabfrage (probedColumns, VA1b) und überschreibt das Mapping
+        // im ChunkSchema (JdbcChunkSequence). Hier nur das reine JDBC-Mapping.
+        return mapByJdbcType(jdbcType, typeNameLower, precision, scale)
+    }
+
+    private fun mapByJdbcType(
+        jdbcType: Int,
+        typeNameLower: String?,
+        precision: Int?,
+        scale: Int?,
+    ): NeutralType = when (jdbcType) {
+        Types.BIT, Types.BOOLEAN -> NeutralType.BooleanType
+        Types.TINYINT, Types.SMALLINT -> NeutralType.SmallInt
+        Types.INTEGER -> NeutralType.Integer
+        Types.BIGINT -> NeutralType.BigInteger
+        Types.REAL -> NeutralType.Float(FloatPrecision.SINGLE)
+        Types.FLOAT, Types.DOUBLE -> NeutralType.Float(FloatPrecision.DOUBLE)
+        Types.DECIMAL, Types.NUMERIC -> NeutralType.Decimal(
+            precision = precision ?: DEFAULT_DECIMAL_PRECISION,
+            scale = scale ?: 0,
+        )
+        Types.CHAR -> NeutralType.Char(length = precision ?: 1)
+        Types.VARCHAR, Types.LONGVARCHAR, Types.NVARCHAR, Types.LONGNVARCHAR ->
+            NeutralType.Text(maxLength = precision?.takeIf { it > 0 })
+        Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY -> NeutralType.Binary
+        Types.DATE -> NeutralType.Date
+        Types.TIME, Types.TIME_WITH_TIMEZONE -> NeutralType.Time
+        Types.TIMESTAMP -> NeutralType.DateTime(timezone = false)
+        Types.TIMESTAMP_WITH_TIMEZONE -> NeutralType.DateTime(timezone = true)
+        Types.ARRAY -> NeutralType.Array(elementType = typeNameLower ?: "unknown")
+        Types.OTHER -> mapOther(typeNameLower)
+        else -> NeutralType.Text(maxLength = null) // konservativer Fallback
     }
 
     private fun mapOther(typeNameLower: String?): NeutralType = when (typeNameLower) {
@@ -68,8 +80,8 @@ internal object JdbcToNeutralTypeMapper {
         "uuid" -> NeutralType.Uuid
         "json", "jsonb" -> NeutralType.Json
         "xml" -> NeutralType.Xml
-        // Geometry und Enum brauchen dialektspezifische Erkennung,
-        // die AP3 nachzieht. Bis dahin Fallback auf Text.
+        // Enum braucht noch dialektspezifische Erkennung (AP3). Geometrie wird
+        // bereits oben typeName-basiert erkannt (VA1a), erreicht mapOther nicht.
         else -> NeutralType.Text(maxLength = null)
     }
 

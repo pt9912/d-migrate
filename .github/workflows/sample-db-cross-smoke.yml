@@ -1,0 +1,46 @@
+name: Sample-DB Cross-Dialect Smoke (Best-Effort)
+
+# Phase-2-Cross-Dialect-Smoke: Sakila MySQL -> PostgreSQL gegen das echte
+# d-migrate:dev-CLI.
+# Plan: docs/planning/done/sample-db-integration-harness.md
+# Findings: docs/planning/in-progress/sample-db-phase2-findings.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-cross-smoke` (fetch gepinnter Sakila-Dump -> mysql +
+# postgres up -> reverse/validate/generate --target postgresql -> data transfer
+# MySQL->PG -> Zeilen-Paritaet + Typ-Konvertierungs-Stichproben gegen die
+# gepinnte Notes-Baseline examples/sample-db/expected/sakila-cross.notes.txt).
+#
+# Best-Effort: continue-on-error, damit transiente Netz-/Docker-Hub-
+# Instabilitaeten (Dump-Fetch, Image-Pull) den Hauptbuild nicht rot machen.
+# Schlaegt der Smoke fehl, landet das im Job-Log, blockt aber keinen Merge.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'examples/sample-db/**'
+      - 'Makefile'
+      - '.github/workflows/sample-db-cross-smoke.yml'
+
+jobs:
+  cross-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB cross-dialect smoke (Sakila MySQL -> PG)
+        run: make sample-db-cross-smoke
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true

@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
@@ -19,6 +20,9 @@ import java.nio.file.Path
  * 2. With `--execute`:
  *    - Verify target dialect matches the artefact's `dialect` field
  *      (`TARGET_DIALECT_MISMATCH` → Exit 8).
+ *    - Reject an artefact whose `fingerprintAlgorithm` differs from
+ *      this build's; the stored fingerprint is not comparable
+ *      (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` → Exit 8).
  *    - Verify target current state matches `postUpFingerprint` (or
  *      one of `allowedPostUpFingerprints` for recovery artefacts)
  *      (`TARGET_STATE_MISMATCH` → Exit 8).
@@ -44,7 +48,11 @@ class SchemaRollbackRunner(
     private val executor: ExecutorFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val fileReader: (Path) -> String = { Files.readString(it) },
-    private val fingerprint: (dev.dmigrate.core.model.SchemaDefinition) -> String = MigrationFingerprint::compute,
+    private val fingerprint: (dev.dmigrate.core.model.SchemaDefinition, (NeutralType) -> NeutralType) -> String =
+        MigrationFingerprint::compute,
+    /** v7: target-dialect type canonicalisation — must match the migrate run that wrote the artefact. */
+    private val typeCanonicalizerFor: (DatabaseDialect) -> (NeutralType) -> NeutralType =
+        ::registryTypeCanonicalizer,
     private val printError: (message: String, source: String) -> Unit,
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
@@ -171,7 +179,34 @@ class SchemaRollbackRunner(
         // SchemaMigrateRunner.runPostCompare's normalizer call, which only
         // exists to surface malformed-marker errors from any *file*-side
         // operand the loader might return.
-        val targetFingerprint = fingerprint(targetResolved.schema)
+        // Guard the stored fingerprint against an algorithm-version bump: the artefact's
+        // postUpFingerprint was computed with `parsed.fingerprintAlgorithm`, but this build
+        // recomputes the target with MigrationFingerprint.ALGORITHM. When they differ the two
+        // strings are not comparable, so surface a precise "regenerate the artefact" error
+        // rather than a misleading TARGET_STATE_MISMATCH on an otherwise-correct target.
+        if (parsed.fingerprintAlgorithm != MigrationFingerprint.ALGORITHM) {
+            // A legitimately-built artefact always carries a non-blank algorithm; render a
+            // blank one (only reachable via a tampered/hand-edited header) as `(none)` rather
+            // than empty backticks.
+            val artefactAlgorithm = parsed.fingerprintAlgorithm.ifBlank { "(none)" }
+            userFacingPrintError(
+                "ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH: artefact was produced with fingerprint " +
+                    "algorithm `$artefactAlgorithm`, but this build computes " +
+                    "`${MigrationFingerprint.ALGORITHM}`. The stored target fingerprint is not comparable " +
+                    "across algorithm versions; regenerate the rollback artefact with this version of the tool.",
+                request.target,
+            )
+            return 8
+        }
+        // v7: recompute with the target dialect's canonicalisation — the algo guard
+        // above already ensures both sides speak the same fingerprint version, and the
+        // dialect guard ensures the artefact dialect matches the live target. Prefer
+        // the LIVE connection dialect (enum, kein String-Parse); das Artefakt-Feld ist
+        // nur Fallback für dialekt-lose Operanden.
+        val dialect = targetResolved.dialect
+            ?: runCatching { DatabaseDialect.valueOf(parsed.dialect) }.getOrNull()
+        val canonicalizeType = dialect?.let(typeCanonicalizerFor) ?: { it }
+        val targetFingerprint = fingerprint(targetResolved.schema, canonicalizeType)
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()
         } else {

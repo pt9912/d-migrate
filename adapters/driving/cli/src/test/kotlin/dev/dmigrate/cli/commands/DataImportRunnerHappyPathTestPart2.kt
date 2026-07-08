@@ -4,6 +4,7 @@ import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
@@ -36,7 +37,7 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
         override val dialect: DatabaseDialect = DatabaseDialect.SQLITE,
     ) : ConnectionPool {
         var closeCount: Int = 0
-        override fun borrow(): Connection =
+        override fun borrow(): DatabaseConnection =
             error("FakeConnectionPool.borrow() must not be called in runner unit tests")
         override fun activeConnections(): Int = 0
         override fun close() { closeCount++ }

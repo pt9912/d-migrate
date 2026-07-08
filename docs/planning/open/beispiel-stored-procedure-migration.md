@@ -1,6 +1,6 @@
 # Beispiel: Stored Procedure Migration von PostgreSQL zu MySQL
 
-**Use Case**: UC-04 - KI-gestützte Stored Procedure Migration
+**Use Case**: [UC-04](../../../spec/lastenheft-d-migrate.md) - KI-gestützte Stored Procedure Migration
 **Szenario**: Ein Entwickler möchte eine Stored Procedure von PostgreSQL nach MySQL migrieren
 
 Status: Draft
@@ -9,7 +9,7 @@ Status: Draft
 
 ## Übersicht
 
-Dieses Dokument illustriert die Anforderung **LF-017** (KI-gestützte Transformation von Stored Procedures) anhand eines konkreten Beispiels. Es zeigt, wie eine Stored Procedure mit Hilfe eines Sprachmodells wie Grok, Claude, GPT-4 oder einem lokalen Ollama-Modell zwischen verschiedenen Datenbanksystemen migriert werden kann.
+Dieses Dokument illustriert die Anforderung **[`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)** (KI-gestützte Transformation von Stored Procedures) anhand eines konkreten Beispiels. Es zeigt, wie eine Stored Procedure mit Hilfe eines Sprachmodells wie Grok, Claude, GPT-4 oder einem lokalen Ollama-Modell zwischen verschiedenen Datenbanksystemen migriert werden kann.
 
 ---
 
@@ -21,7 +21,7 @@ Ein Unternehmen betreibt eine PostgreSQL-Datenbank mit einer Stored Procedure, d
 
 ## Schritt 1: Extraktion der Stored Procedure
 
-Die Stored Procedure wird aus der PostgreSQL-Datenbank exportiert (gemäß **LF-004**).
+Die Stored Procedure wird aus der PostgreSQL-Datenbank exportiert (gemäß **[`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004)**).
 
 ### Quell-Code (PostgreSQL)
 
@@ -55,7 +55,7 @@ d-migrate export schema \
 
 ## Schritt 2: KI-gestützte Transformation
 
-Das System (oder ein KI-Modell wie Grok, Claude, GPT-4, Ollama) analysiert die Stored Procedure und transformiert sie in ein neutrales, textbasiertes Format (z.B. Markdown gemäß **LF-017**).
+Das System (oder ein KI-Modell wie Grok, Claude, GPT-4, Ollama) analysiert die Stored Procedure und transformiert sie in ein neutrales, textbasiertes Format (z.B. Markdown gemäß **[`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)**).
 
 ### Abstraktes Zwischenformat (Markdown)
 
@@ -192,7 +192,7 @@ d-migrate generate procedure \
 
 ## Schritt 4: Validierung
 
-Das System validiert die generierte Procedure gegen das Zielschema (**LF-002**) und stellt sicher, dass die Logik konsistent bleibt.
+Das System validiert die generierte Procedure gegen das Zielschema (**[`LF-002`](../../../spec/lastenheft-d-migrate.md#lf-002)**) und stellt sicher, dass die Logik konsistent bleibt.
 
 ### Syntaktische Validierung
 
@@ -312,10 +312,10 @@ Nach erfolgreicher Migration können weitere Schritte durchgeführt werden:
 ## Verwandte Dokumentation
 
 - [Lastenheft d-migrate](../../../spec/lastenheft-d-migrate.md) - Vollständige Anforderungsspezifikation
-- **LF-004**: Reverse-Engineering von Datenbankstrukturen
-- **LF-017**: KI-gestützte Transformation von Stored Procedures
-- **UC-04**: KI-gestützte Stored Procedure Migration
-- **LN-032 bis LN-036**: KI-Integration und Datenschutz-Anforderungen
+- **[`LF-004`](../../../spec/lastenheft-d-migrate.md#lf-004)**: Reverse-Engineering von Datenbankstrukturen
+- **[`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017)**: KI-gestützte Transformation von Stored Procedures
+- **[UC-04](../../../spec/lastenheft-d-migrate.md)**: KI-gestützte Stored Procedure Migration
+- **[`LN-032`](../../../spec/lastenheft-d-migrate.md#ln-032) bis [`LN-036`](../../../spec/lastenheft-d-migrate.md#ln-036)**: KI-Integration und Datenschutz-Anforderungen
 
 ---
 

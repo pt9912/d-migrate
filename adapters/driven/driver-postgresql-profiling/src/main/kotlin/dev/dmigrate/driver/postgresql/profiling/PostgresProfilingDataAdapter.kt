@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql.profiling
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.profiling.ProfilingSqlNames
@@ -25,7 +26,7 @@ class PostgresProfilingDataAdapter(
     private fun qt(table: String, schema: String?): String = sqlNames.tablePath(table, schema)
 
     private inline fun <T> withJdbc(pool: ConnectionPool, block: (JdbcOperations) -> T): T =
-        pool.borrow().use { conn -> block(jdbcFactory(conn)) }
+        pool.borrow().asJdbc().use { conn -> block(jdbcFactory(conn)) }
 
     override fun rowCount(pool: ConnectionPool, table: String, schema: String?): Long =
         withJdbc(pool) { jdbc ->
@@ -77,7 +78,9 @@ class PostgresProfilingDataAdapter(
         val t = qt(table, schema)
         val c = qi(column)
         return withJdbc(pool) { jdbc ->
-            val total = rowCount(pool, table, schema).toDouble()
+            // Zählung auf DERSELBEN geborgten Connection — kein zweiter
+            // rowCount(pool, ...)-borrow (sonst Pool-Erschöpfung bei size=1).
+            val total = (jdbc.querySingle("SELECT count(*) as cnt FROM $t")!!["cnt"] as Number).toLong().toDouble()
             if (total == 0.0) return@withJdbc emptyList()
             val rows = jdbc.queryList("""
                 SELECT $c::text as val, count(*) as cnt

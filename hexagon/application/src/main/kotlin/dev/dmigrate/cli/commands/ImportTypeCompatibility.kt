@@ -1,8 +1,9 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.driver.data.JdbcTypeCodes
 import dev.dmigrate.driver.data.TargetColumn
-import java.sql.Types
 
 /**
  * Pure functions for checking type compatibility between the neutral
@@ -37,32 +38,33 @@ internal object ImportTypeCompatibility {
             NeutralType.Xml,
             NeutralType.Binary -> isStructuredFamilyCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Enum -> isEnumCompatible(schemaType, jdbcType, sqlTypeName)
-            is NeutralType.Array -> jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
-            is NeutralType.Geometry -> true
+            is NeutralType.Array -> jdbcType == JdbcTypeCodes.ARRAY || sqlTypeName.endsWith("[]")
+            is NeutralType.Geometry -> isGeometryCompatible(sqlTypeName)
+            is NeutralType.FullText -> true
         }
     }
 
     private fun isIdentifierCompatible(jdbcType: Int): Boolean =
-        jdbcType in setOf(Types.SMALLINT, Types.INTEGER, Types.BIGINT, Types.NUMERIC, Types.DECIMAL)
+        jdbcType in setOf(JdbcTypeCodes.SMALLINT, JdbcTypeCodes.INTEGER, JdbcTypeCodes.BIGINT, JdbcTypeCodes.NUMERIC, JdbcTypeCodes.DECIMAL)
 
     private fun isTextFamilyCompatible(
         schemaType: NeutralType,
         jdbcType: Int,
         sqlTypeName: String,
     ): Boolean = when (schemaType) {
-        is NeutralType.Char -> jdbcType in setOf(Types.CHAR, Types.NCHAR)
+        is NeutralType.Char -> jdbcType in setOf(JdbcTypeCodes.CHAR, JdbcTypeCodes.NCHAR)
         else -> isTextCompatible(jdbcType, sqlTypeName)
     }
 
     private fun isTextCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
         jdbcType in setOf(
-            Types.CHAR,
-            Types.VARCHAR,
-            Types.LONGVARCHAR,
-            Types.NCHAR,
-            Types.NVARCHAR,
-            Types.LONGNVARCHAR,
-            Types.CLOB,
+            JdbcTypeCodes.CHAR,
+            JdbcTypeCodes.VARCHAR,
+            JdbcTypeCodes.LONGVARCHAR,
+            JdbcTypeCodes.NCHAR,
+            JdbcTypeCodes.NVARCHAR,
+            JdbcTypeCodes.LONGNVARCHAR,
+            JdbcTypeCodes.CLOB,
         ) || sqlTypeName.contains("TEXT")
 
     private fun isNumericFamilyCompatible(
@@ -70,30 +72,30 @@ internal object ImportTypeCompatibility {
         jdbcType: Int,
         sqlTypeName: String,
     ): Boolean = when (schemaType) {
-        NeutralType.Integer -> jdbcType == Types.INTEGER || sqlTypeName == "INT4"
-        NeutralType.SmallInt -> jdbcType == Types.SMALLINT || sqlTypeName == "INT2"
-        NeutralType.BigInteger -> jdbcType == Types.BIGINT || sqlTypeName == "INT8"
+        NeutralType.Integer -> jdbcType == JdbcTypeCodes.INTEGER || sqlTypeName == "INT4"
+        NeutralType.SmallInt -> jdbcType == JdbcTypeCodes.SMALLINT || sqlTypeName == "INT2"
+        NeutralType.BigInteger -> jdbcType == JdbcTypeCodes.BIGINT || sqlTypeName == "INT8"
         is NeutralType.Float -> isFloatCompatible(schemaType, jdbcType)
-        is NeutralType.Decimal -> jdbcType in setOf(Types.DECIMAL, Types.NUMERIC)
+        is NeutralType.Decimal -> jdbcType in setOf(JdbcTypeCodes.DECIMAL, JdbcTypeCodes.NUMERIC)
         NeutralType.BooleanType -> isBooleanCompatible(jdbcType, sqlTypeName)
         else -> false
     }
 
     private fun isFloatCompatible(type: NeutralType.Float, jdbcType: Int): Boolean =
-        if (type.floatPrecision.name == "SINGLE") jdbcType in setOf(Types.REAL, Types.FLOAT)
-        else jdbcType in setOf(Types.DOUBLE, Types.FLOAT, Types.REAL)
+        if (type.floatPrecision.name == "SINGLE") jdbcType in setOf(JdbcTypeCodes.REAL, JdbcTypeCodes.FLOAT)
+        else jdbcType in setOf(JdbcTypeCodes.DOUBLE, JdbcTypeCodes.FLOAT, JdbcTypeCodes.REAL)
 
     private fun isBooleanCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
-        jdbcType == Types.BOOLEAN || (jdbcType == Types.BIT && !isMultiBit(sqlTypeName))
+        jdbcType == JdbcTypeCodes.BOOLEAN || (jdbcType == JdbcTypeCodes.BIT && !isMultiBit(sqlTypeName))
 
     private fun isTemporalFamilyCompatible(
         schemaType: NeutralType,
         jdbcType: Int,
     ): Boolean = when (schemaType) {
         is NeutralType.DateTime ->
-            jdbcType in setOf(Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE)
-        NeutralType.Date -> jdbcType == Types.DATE
-        NeutralType.Time -> jdbcType in setOf(Types.TIME, Types.TIME_WITH_TIMEZONE)
+            jdbcType in setOf(JdbcTypeCodes.TIMESTAMP, JdbcTypeCodes.TIMESTAMP_WITH_TIMEZONE)
+        NeutralType.Date -> jdbcType == JdbcTypeCodes.DATE
+        NeutralType.Time -> jdbcType in setOf(JdbcTypeCodes.TIME, JdbcTypeCodes.TIME_WITH_TIMEZONE)
         else -> false
     }
 
@@ -103,26 +105,48 @@ internal object ImportTypeCompatibility {
         sqlTypeName: String,
     ): Boolean = when (schemaType) {
         NeutralType.Uuid ->
-            sqlTypeName == "UUID" || jdbcType in setOf(Types.CHAR, Types.VARCHAR)
+            sqlTypeName == "UUID" || jdbcType in setOf(JdbcTypeCodes.CHAR, JdbcTypeCodes.VARCHAR)
         NeutralType.Json -> isJsonCompatible(jdbcType, sqlTypeName)
         NeutralType.Xml -> isXmlCompatible(jdbcType, sqlTypeName)
         NeutralType.Binary ->
-            jdbcType in setOf(Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY, Types.BLOB)
+            jdbcType in setOf(
+                JdbcTypeCodes.BINARY,
+                JdbcTypeCodes.VARBINARY,
+                JdbcTypeCodes.LONGVARBINARY,
+                JdbcTypeCodes.BLOB,
+            )
         else -> false
     }
 
     private fun isJsonCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
-        sqlTypeName in setOf("JSON", "JSONB") || jdbcType in setOf(Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
+        sqlTypeName in setOf("JSON", "JSONB") ||
+            jdbcType in setOf(JdbcTypeCodes.VARCHAR, JdbcTypeCodes.LONGVARCHAR, JdbcTypeCodes.CLOB)
 
     private fun isXmlCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
-        jdbcType == Types.SQLXML || sqlTypeName == "XML" || jdbcType in setOf(Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
+        jdbcType == JdbcTypeCodes.SQLXML ||
+            sqlTypeName == "XML" ||
+            jdbcType in setOf(JdbcTypeCodes.VARCHAR, JdbcTypeCodes.LONGVARCHAR, JdbcTypeCodes.CLOB)
+
+    /**
+     * VA1d (Spatial-Slice): eine Geometrie-Quellspalte ist kompatibel **nur** mit
+     * einem Geometrie-Ziel (typeName in [GeometryType.KNOWN_VALUES] — der
+     * verlustfreie WKB-Round-Trip via VA1b/VA1c). Andere Ziele sind inkompatibel —
+     * vorher winkte `Geometry -> true` jedes Ziel durch (False-Green).
+     * **Bewusst NICHT** Geometry→Text: der Wertpfad (VA1b) liefert WKB-`byte[]`,
+     * kein WKT; ein WKB-`byte[]` in eine Text-Spalte ergäbe Binärmüll. Ein klarer
+     * Preflight-Fehler ist ehrlicher als stiller Datenmüll. (Eine echte WKT-
+     * Degradation für Text-Ziele bräuchte einen ziel-bewussten Read-Pfad — eigene
+     * Folgearbeit, nicht VA1.)
+     */
+    private fun isGeometryCompatible(sqlTypeName: String): Boolean =
+        sqlTypeName.lowercase() in GeometryType.KNOWN_VALUES
 
     private fun isEnumCompatible(type: NeutralType.Enum, jdbcType: Int, sqlTypeName: String): Boolean {
         val ref = type.refType?.uppercase()
         return sqlTypeName == "ENUM" ||
-            jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.NCHAR, Types.NVARCHAR) ||
+            jdbcType in setOf(JdbcTypeCodes.CHAR, JdbcTypeCodes.VARCHAR, JdbcTypeCodes.NCHAR, JdbcTypeCodes.NVARCHAR) ||
             (
-                jdbcType == Types.OTHER &&
+                jdbcType == JdbcTypeCodes.OTHER &&
                     sqlTypeName.isNotEmpty() &&
                     sqlTypeName !in WELL_KNOWN_OTHER_TYPE_NAMES &&
                     (ref == null || sqlTypeName == ref)
@@ -158,5 +182,6 @@ internal object ImportTypeCompatibility {
         is NeutralType.Enum -> "enum/text-compatible type"
         is NeutralType.Array -> "array-compatible type"
         is NeutralType.Geometry -> "geometry-compatible type"
+        is NeutralType.FullText -> "text-compatible type"
     }
 }

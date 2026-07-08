@@ -5,6 +5,7 @@ import dev.dmigrate.cli.commands.DataProfileRequest
 import dev.dmigrate.cli.commands.DataProfileRunner
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.profiling.model.ColumnProfile
@@ -24,13 +25,12 @@ import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
-import java.sql.Connection
 
 class DataProfileCliTest : FunSpec({
 
     val fakePool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

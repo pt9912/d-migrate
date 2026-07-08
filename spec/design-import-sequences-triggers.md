@@ -6,7 +6,7 @@
 >
 > Dieses Dokument beschreibt den geplanten Umgang mit datenbankeigenen
 > Sequenz- und Trigger-Mechanismen beim Datenimport. Es konkretisiert
-> [LF-010](./lastenheft-d-migrate.md) für den Milestone 0.4.0, ist aber noch
+> [LF-010](./lastenheft-d-migrate.md#lf-010), ist aber noch
 > kein final freigegebener Implementierungsvertrag.
 
 ---
@@ -102,7 +102,7 @@ Bedeutung:
 - `strict`
   - Import wird nur ausgeführt, wenn der aktuelle Plan garantiert, dass keine
     unerwarteten Trigger-Seiteneffekte auftreten.
-  - Für 0.4.0 praktisch als Sicherheitsmodus gedacht: Trigger vorhanden und
+  - Praktisch als Sicherheitsmodus gedacht: Trigger vorhanden und
     Verhalten nicht eindeutig steuerbar -> Abbruch mit Hinweis.
 
 ### 5.2 Schlüsselgenerator-Modus
@@ -148,7 +148,7 @@ Erwartetes Verhalten:
   auf mindestens `MAX(id)+1` gebracht.
 - `trigger-mode=fire` ist nativ unterstützt.
 - Für `trigger-mode=disable` gibt es keinen gleichwertig einfachen und sicheren
-  Standardpfad wie bei Constraints; deshalb ist für 0.4.0 eher mit Abbruch
+  Standardpfad wie bei Constraints; deshalb ist eher mit Abbruch
   oder Nicht-Unterstützung zu rechnen.
 
 Offene Designfrage:
@@ -164,7 +164,7 @@ Erwartetes Verhalten:
   `sqlite_sequence` abgebildet und muss nach Imports mit expliziten IDs
   konsistent sein.
 - `trigger-mode=fire` ist nativ unterstützt.
-- `trigger-mode=disable` ist wegen begrenzter Steuerungsmöglichkeiten in 0.4.0
+- `trigger-mode=disable` ist wegen begrenzter Steuerungsmöglichkeiten
   voraussichtlich nicht generisch sicher unterstützbar.
 
 Offene Designfrage:
@@ -251,7 +251,7 @@ Mindestens folgende Fälle müssen abgedeckt werden:
 Vor Implementierungsbeginn zu klären:
 
 1. Soll `fire` der Default bleiben oder `strict`?
-2. Soll `disable` in 0.4.0 nur dort unterstützt werden, wo es sauber und
+2. Soll `disable` nur dort unterstützt werden, wo es sauber und
    eng begrenzt implementierbar ist?
 3. Soll die Nachführung von Generatoren immer automatisch erfolgen oder
    abschaltbar sein?
@@ -261,7 +261,7 @@ Vor Implementierungsbeginn zu klären:
 
 ## 11. Empfehlung
 
-Für 0.4.0 ist die pragmatische Linie:
+Die pragmatische Linie:
 
 - Default `--trigger-mode=fire`
 - automatische Nachführung von Sequence-/Identity-/`AUTO_INCREMENT`-Zuständen

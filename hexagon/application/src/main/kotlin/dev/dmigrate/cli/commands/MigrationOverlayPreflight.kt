@@ -328,7 +328,7 @@ internal object MigrationOverlayPreflight {
 
     /**
      * Reason-classification table for one BLOCKER finding. See
-     * `docs/planning/done/ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`
+     * `docs/planning/done-archive/ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`
      * §4.3. Any rename-mapping-bound `OVERLAY_RENAME_MAPPING_*` or
      * rename-mapping-bound `OVERLAY_UNKNOWN_ENTRY_KIND` (objectType
      * outside the current whitelist) maps to

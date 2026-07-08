@@ -1,5 +1,7 @@
 package dev.dmigrate.test.concurrency
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -58,7 +60,7 @@ private val ConcurrencyTag = NamedTag("concurrency")
  *    the writer thread observed forward progress before the
  *    overwrite (writer wasn't blocked).
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.5 (race-test migration); §6 Risiko Nr. 8
  * (residual app-nextval race carve-out).
  */
@@ -155,7 +157,7 @@ class PostgresSequencePreserveRaceTest : FunSpec({
         )
 
         openConn().use { atomicConn ->
-            val result = executor.execute(atomicConn, batch, lockTimeoutMillis = 30_000L) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(atomicConn), batch, lockTimeoutMillis = 30_000L) { _, _ ->
                 // Inside the protected window: signal the writer to
                 // start its `nextval` loop, then wait until the
                 // writer has finished all advances. Advisory locks
@@ -165,8 +167,7 @@ class PostgresSequencePreserveRaceTest : FunSpec({
                 check(writerFinished.await(20, TimeUnit.SECONDS)) {
                     "writer did not finish its advances within budget"
                 }
-                AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
-            }
+                AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0) }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
         }
 

@@ -5,7 +5,11 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldContainKey
@@ -20,7 +24,7 @@ class SqliteSchemaReaderTest : FunSpec({
 
     fun pool(conn: Connection) = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = conn
+        override fun borrow(): DatabaseConnection = JdbcDatabaseConnection(conn)
         override fun activeConnections(): Int = 1
         override fun close() {}
     }
@@ -67,6 +71,29 @@ class SqliteSchemaReaderTest : FunSpec({
     }
 
     // ── Basic table with columns ────────────────
+
+    test("reverse-preferences: 64-bit width preference reconstructs biginteger + Identity + R204") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") { pool ->
+            val result = reader.read(
+                pool,
+                SchemaReadOptions(sqliteAutoincrement = SqliteAutoincrementReverse.BIGINTEGER_IDENTITY),
+            )
+            val col = result.schema.tables["t"]!!.columns["id"]!!
+            col.type shouldBe NeutralType.BigInteger
+            col.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+            result.notes.any { it.code == "R204" } shouldBe true
+        }
+    }
+
+    test("reverse-preferences: default width keeps identifier, no generation, R202") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)") { pool ->
+            val result = reader.read(pool)
+            val col = result.schema.tables["t"]!!.columns["id"]!!
+            col.type shouldBe NeutralType.Identifier(autoIncrement = true)
+            col.generation shouldBe null
+            result.notes.any { it.code == "R202" } shouldBe true
+        }
+    }
 
     test("reads table with columns, PK and types") {
         withDb("""
@@ -207,17 +234,36 @@ class SqliteSchemaReaderTest : FunSpec({
 
     // ── Virtual tables skipped ──────────────────
 
-    test("virtual table is skipped with code S100") {
+    test("FTS5 virtual table and its shadow tables are skipped; nothing leaks as a user table") {
         withDb(
             "CREATE TABLE normal (id INTEGER PRIMARY KEY)",
             "CREATE VIRTUAL TABLE search USING fts5(content)",
         ) { pool ->
             val result = reader.read(pool)
-            result.schema.tables shouldContainKey "normal"
-            result.schema.tables.keys.contains("search") shouldBe false
-            result.skippedObjects shouldHaveSize 1
-            result.skippedObjects[0].name shouldBe "search"
-            result.skippedObjects[0].code shouldBe "S100"
+            // ADR 0025 (Slice P5): neither the fts5 virtual table (S100) nor its FTS5-managed
+            // shadow tables `search_{data,idx,docsize,config,content}` (S102) leak into the model.
+            result.schema.tables.keys shouldBe setOf("normal")
+            result.skippedObjects.first { it.name == "search" }.code shouldBe "S100"
+            result.skippedObjects.any { it.code == "S102" } shouldBe true
+        }
+    }
+
+    test("external-content FTS5 folds back into a FULLTEXT index on its content table (ADR 0025 P5)") {
+        withDb(
+            "CREATE TABLE docs (id INTEGER PRIMARY KEY, title TEXT, body TEXT)",
+            "CREATE VIRTUAL TABLE docs_fts USING fts5(title, body, content='docs')",
+            "CREATE TRIGGER docs_fts_ai AFTER INSERT ON docs BEGIN " +
+                "INSERT INTO docs_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body); END",
+        ) { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeTriggers = true))
+            // The fts5 virtual table + shadow tables do not surface as user tables.
+            result.schema.tables.keys shouldBe setOf("docs")
+            // The FULLTEXT index is reconstructed on the content table, in source-column order.
+            val idx = result.schema.tables["docs"]!!.indices.single { it.type == IndexType.FULLTEXT }
+            idx.name shouldBe "docs_fts"
+            idx.columnNames shouldBe listOf("title", "body")
+            // The FTS5 sync trigger is folded, not surfaced as a user trigger.
+            result.schema.triggers.values.none { it.body?.contains("docs_fts") == true } shouldBe true
         }
     }
 
@@ -231,6 +277,36 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    test("named CHECK with IN list keeps the full expression incl. closing paren (regression)") {
+        // The old regex truncated at the first `)` — `p IN ('a','b')` came
+        // back as `p IN ('a','b'` and re-generated invalid DDL downstream.
+        withDb("CREATE TABLE t (p TEXT, CONSTRAINT chk CHECK (p IN ('a','b')))") { pool ->
+            val result = reader.read(pool)
+            val check = result.schema.tables["t"]!!.constraints.single { it.type == ConstraintType.CHECK }
+            check.name shouldBe "chk"
+            check.expression shouldBe "p IN ('a','b')"
+        }
+    }
+
+    test("unnamed CHECK is surfaced as R203 note instead of silently dropped") {
+        withDb("CREATE TABLE t (age INTEGER CHECK (age >= 0))") { pool ->
+            val result = reader.read(pool)
+            result.schema.tables["t"]!!.constraints.none { it.type == ConstraintType.CHECK } shouldBe true
+            val note = result.notes.single { it.code == "R203" }
+            note.objectName shouldBe "t"
+            note.message.contains("age >= 0") shouldBe true
+        }
+    }
+
+    test("AUTOINCREMENT pk emits R202 64-bit narrowing note") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)") { pool ->
+            val result = reader.read(pool)
+            val note = result.notes.single { it.code == "R202" }
+            note.objectName shouldBe "t.id"
+            note.severity shouldBe SchemaReadSeverity.INFO
+        }
+    }
+
     // ── sqlite_autoindex suppressed ─────────────
 
     test("sqlite_autoindex backing indices are suppressed") {
@@ -241,6 +317,67 @@ class SqliteSchemaReaderTest : FunSpec({
             val t = result.schema.tables["t"]!!
             // The UNIQUE constraint creates a sqlite_autoindex — should not appear
             t.indices.none { it.name?.startsWith("sqlite_autoindex_") == true } shouldBe true
+        }
+    }
+
+    // ── AP4: inline UNIQUE constraints fold instead of vanishing ──
+
+    test("named single-column UNIQUE constraint folds onto the column flag") {
+        withDb("""
+            CREATE TABLE t (a TEXT, b TEXT, CONSTRAINT "uq_a" UNIQUE ("a"))
+        """) { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            t.columns.getValue("a").unique shouldBe true
+            t.columns.getValue("b").unique shouldBe false
+            t.constraints.none { it.type == ConstraintType.UNIQUE } shouldBe true
+            t.indices.none { it.name?.startsWith("sqlite_autoindex_") == true } shouldBe true
+        }
+    }
+
+    test("column-level UNIQUE folds onto the column flag") {
+        withDb("CREATE TABLE t (a TEXT UNIQUE, b TEXT)") { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            t.columns.getValue("a").unique shouldBe true
+        }
+    }
+
+    test("named multi-column UNIQUE constraint is reconstructed with its DDL name") {
+        withDb("""
+            CREATE TABLE t (a TEXT, b TEXT, CONSTRAINT "uq_ab" UNIQUE ("a", "b"))
+        """) { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            val uq = t.constraints.single { it.type == ConstraintType.UNIQUE }
+            uq.name shouldBe "uq_ab"
+            uq.columns shouldBe listOf("a", "b")
+            t.columns.getValue("a").unique shouldBe false
+            t.indices.none { it.name?.startsWith("sqlite_autoindex_") == true } shouldBe true
+        }
+    }
+
+    test("unnamed multi-column UNIQUE gets a synthetic name (fk_N precedent)") {
+        withDb("CREATE TABLE t (a TEXT, b TEXT, UNIQUE (a, b))") { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            val uq = t.constraints.single { it.type == ConstraintType.UNIQUE }
+            uq.name shouldBe "uq_0"
+            uq.columns shouldBe listOf("a", "b")
+        }
+    }
+
+    test("synthetic unique name skips names taken by recovered constraints") {
+        withDb("""
+            CREATE TABLE t (a TEXT, b TEXT, c TEXT, CONSTRAINT "uq_0" UNIQUE (a, b), UNIQUE (b, c))
+        """) { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            val names = t.constraints.filter { it.type == ConstraintType.UNIQUE }.map { it.name }.toSet()
+            names shouldBe setOf("uq_0", "uq_1")
+        }
+    }
+
+    test("PK autoindex is still not read as a UNIQUE constraint") {
+        withDb("CREATE TABLE t (a TEXT, b TEXT, PRIMARY KEY (a, b))") { pool ->
+            val t = reader.read(pool).schema.tables.getValue("t")
+            t.constraints.none { it.type == ConstraintType.UNIQUE } shouldBe true
+            t.columns.getValue("a").unique shouldBe false
         }
     }
 
@@ -313,7 +450,7 @@ class SqliteSchemaReaderTest : FunSpec({
             val triggers = reader.read(pool, SchemaReadOptions(includeTriggers = true)).schema.triggers
             val trg = triggers.values.single()
             trg.timing shouldBe TriggerTiming.AFTER
-            trg.event shouldBe TriggerEvent.INSERT
+            trg.events shouldBe setOf(TriggerEvent.INSERT)
             trg.table shouldBe "t"
             // Renderer always appends `;\nEND;`, so the parser must not store
             // the trailing `;` of its own — otherwise round-trip render
@@ -356,7 +493,7 @@ class SqliteSchemaReaderTest : FunSpec({
             "CREATE TRIGGER trg AFTER UPDATE OF a, b ON t BEGIN SELECT 1; END",
         ) { pool ->
             val result = reader.read(pool, SchemaReadOptions(includeTriggers = true))
-            result.schema.triggers.values.single().event shouldBe TriggerEvent.UPDATE
+            result.schema.triggers.values.single().events shouldBe setOf(TriggerEvent.UPDATE)
             val r213 = result.notes.single { it.code == "R213" }
             r213.severity shouldBe SchemaReadSeverity.WARNING
             r213.objectName shouldBe "trg"
@@ -399,7 +536,7 @@ class SqliteSchemaReaderTest : FunSpec({
             val url = "jdbc:sqlite:${tmp.toAbsolutePath()}"
             val filePool = object : ConnectionPool {
                 override val dialect = DatabaseDialect.SQLITE
-                override fun borrow(): Connection = DriverManager.getConnection(url)
+                override fun borrow(): DatabaseConnection = JdbcDatabaseConnection(DriverManager.getConnection(url))
                 override fun activeConnections(): Int = 0
                 override fun close() {}
             }
@@ -483,11 +620,40 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    // ── 5d Befund 3: SRID + Spatial-Index aus geometry_columns ──
+
+    test("5d Befund 3: reverse recovers SRID + spatial index and filters R*Tree shadow tables") {
+        withDb(
+            "CREATE TABLE places (id INTEGER PRIMARY KEY, shape POINT)",
+            // SpatiaLite-Registry als reine Tabelle simuliert — keine Extension nötig.
+            "CREATE TABLE geometry_columns (f_table_name TEXT, f_geometry_column TEXT, " +
+                "geometry_type INTEGER, coord_dimension INTEGER, srid INTEGER, spatial_index_enabled INTEGER)",
+            "INSERT INTO geometry_columns VALUES ('places', 'shape', 1, 2, 4326, 1)",
+            "CREATE TABLE spatial_ref_sys (srid INTEGER PRIMARY KEY, auth_name TEXT)",
+            "CREATE TABLE spatialite_history (event_id INTEGER PRIMARY KEY)",
+            // R*Tree-Schattentabellen des Spatial-Index (reguläre Tabellen).
+            "CREATE TABLE idx_places_shape_node (nodeno INTEGER PRIMARY KEY, data BLOB)",
+            "CREATE TABLE idx_places_shape_parent (nodeno INTEGER PRIMARY KEY, parentnode INTEGER)",
+            "CREATE TABLE idx_places_shape_rowid (rowid INTEGER PRIMARY KEY, nodeno INTEGER)",
+        ) { pool ->
+            val result = reader.read(pool)
+            // Nur die User-Tabelle überlebt — Metatabellen + R*Tree-Shadows sind raus.
+            result.schema.tables.keys shouldBe setOf("places")
+            // SRID aus geometry_columns (PRAGMA table_info trägt sie nicht).
+            val shape = result.schema.tables["places"]!!.columns["shape"]!!.type
+            (shape is NeutralType.Geometry) shouldBe true
+            (shape as NeutralType.Geometry).srid shouldBe 4326
+            // Spatial-Index aus spatial_index_enabled rekonstruiert (nicht via sqlite_master).
+            val spatialIdx = result.schema.tables["places"]!!.indices.single { it.type == IndexType.SPATIAL }
+            spatialIdx.columnNames shouldBe listOf("shape")
+        }
+    }
+
     // ── Ownership: connection returned after read ──
 
     test("read completes successfully and returns result") {
         // Verifies the reader borrows and returns the connection within
-        // pool.borrow().use { } — if it leaked, the in-memory DB would
+        // pool.borrow().asJdbc().use { } — if it leaked, the in-memory DB would
         // be inaccessible. A successful read is the ownership proof.
         withDb("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)") { pool ->
             val result = reader.read(pool)

@@ -17,6 +17,7 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import java.io.ByteArrayInputStream
+import dev.dmigrate.driver.connection.DatabaseConnection
 import java.sql.Connection
 import java.sql.Types
 
@@ -137,7 +138,7 @@ private class RecordingWriter(
 
     override fun schemaSync(): SchemaSync = object : SchemaSync {
         override fun reseedGenerators(
-            conn: Connection,
+            conn: DatabaseConnection,
             table: String,
             importedColumns: List<ColumnDescriptor>,
         ): List<SequenceAdjustment> = emptyList()

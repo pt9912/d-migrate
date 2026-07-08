@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -22,7 +23,7 @@ class MysqlSchemaReaderTest : FunSpec({
 
     val conn = mockk<Connection>(relaxUnitFun = true)
     val pool = mockk<ConnectionPool> {
-        every { borrow() } returns conn
+        every { borrow() } returns JdbcDatabaseConnection(conn)
     }
     val jdbc = mockk<JdbcOperations>()
     val reader = MysqlSchemaReader(jdbcFactory = { jdbc })
@@ -51,6 +52,8 @@ class MysqlSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("constraint_name = 'PRIMARY'") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("referential_constraints") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns emptyList()
+        // AP6.1: information_schema.partitions — non-partitioned by default.
+        every { jdbc.queryList(match { it.contains("information_schema.partitions") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc.querySingle(match { it.contains("engine") }, any(), any()) } returns null
     }
@@ -317,7 +320,7 @@ class MysqlSchemaReaderTest : FunSpec({
         result.schema.triggers.mapShouldHaveSize(1)
         val trigger = result.schema.triggers.values.first()
         trigger.table shouldBe "users"
-        trigger.event shouldBe TriggerEvent.UPDATE
+        trigger.events shouldBe setOf(TriggerEvent.UPDATE)
         trigger.timing shouldBe TriggerTiming.BEFORE
         trigger.sourceDialect shouldBe "mysql"
         // E.1 Slice D.3: the trigger's owning table is surfaced as
@@ -582,7 +585,7 @@ class MysqlSchemaReaderTest : FunSpec({
             includeFunctions = false, includeProcedures = false))
 
         val trigger = result.schema.triggers.values.first()
-        trigger.event shouldBe TriggerEvent.DELETE
+        trigger.events shouldBe setOf(TriggerEvent.DELETE)
         trigger.forEach shouldBe TriggerForEach.STATEMENT
     }
 
@@ -610,7 +613,7 @@ class MysqlSchemaReaderTest : FunSpec({
 
     test("read with lowerCaseTableNames=1 normalizes identifiers") {
         val conn2 = mockk<Connection>(relaxUnitFun = true)
-        val pool2 = mockk<ConnectionPool> { every { borrow() } returns conn2 }
+        val pool2 = mockk<ConnectionPool> { every { borrow() } returns JdbcDatabaseConnection(conn2) }
         val jdbc2 = mockk<JdbcOperations>()
         val reader2 = MysqlSchemaReader(jdbcFactory = { jdbc2 })
 
@@ -636,6 +639,8 @@ class MysqlSchemaReaderTest : FunSpec({
         )
         every { jdbc2.queryList(match { it.contains("referential_constraints") }, any(), any()) } returns emptyList()
         every { jdbc2.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns emptyList()
+        // AP6.1: information_schema.partitions — non-partitioned by default.
+        every { jdbc2.queryList(match { it.contains("information_schema.partitions") }, any(), any()) } returns emptyList()
         every { jdbc2.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc2.querySingle(match { it.contains("engine") }, any(), any()) } returns null
         every { jdbc2.queryList(match { it.contains("information_schema.views") }, any()) } returns emptyList()

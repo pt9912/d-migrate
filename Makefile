@@ -1,3 +1,12 @@
+# Fail-closed pipes: ohne pipefail ist der Exit einer Pipe der des LETZTEN
+# Glieds — `docker run … | tar`/`| jq` (golden-update, release-assets,
+# coverage-modules-html, coverage-gate) würde einen `docker run`-Fehler
+# verschlucken und den Target fälschlich grün melden. bash + pipefail schließt
+# das. Bewusst OHNE -e/-u, um die Semantik bestehender Mehrzeilen-Rezepte nicht
+# zu ändern.
+SHELL := bash
+.SHELLFLAGS := -o pipefail -c
+
 GRADLE ?= ./gradlew
 DOCKER ?= docker
 
@@ -44,7 +53,7 @@ DOCKER_TAG ?= $(IMAGE):dev-targeted
 # `perfGate` Gradle project property by the spec). Default false so
 # shared-CI runs only the runaway-Smoke guard and reports baseline
 # drift as diagnostic, per
-# `docs/planning/done/quality-coverage-expansion-plan.md` §5.1.
+# `docs/planning/done-archive/quality-coverage-expansion-plan.md` §5.1.
 PERF_GATE ?= false
 PERF_GATE_ARG = $(if $(filter true,$(PERF_GATE)),-PperfGate=true,)
 
@@ -56,7 +65,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
+.PHONY: help dev run integration ast-grep-build ast-grep parquet-sweep ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -97,6 +106,24 @@ help:
 		'  make bi-demo-purge    Stop containers and remove all named volumes' \
 		'  make bi-demo-smoke    End-to-end smoke (pull + up + d-migrate + S3-upload + verify)' \
 		'' \
+		'Sample-DB-Harness (examples/sample-db, Plan: docs/planning/done/sample-db-integration-harness.md):' \
+		'  make sample-db-fetch  Fetch pinned + SHA256-verified dumps into gitignored .cache/' \
+		'  make sample-db-up     Start postgres (source + target DB)' \
+		'  make sample-db-smoke  Full E2E (Phase 1, Pagila/PG round-trip): load -> reverse/validate/generate -> transfer -> compare vs baseline' \
+		'  make sample-db-cross-smoke  Cross-Dialect (Phase 2, Sakila MySQL->PG): reverse/validate/generate -> transfer -> parity + type conversions' \
+		'  make sample-db-cross-smoke-pg2my  Cross-Dialect (Phase 2, Pagila PG->MySQL): symmetrischer Flow -> parity + type conversions' \
+		'  make sample-db-sqlite-smoke  SQLite round-trip (Phase 2b, Chinook): serverless .db -> reverse/validate/generate/transfer -> parity + precision' \
+		'  make sample-db-fulltext-sqlite-smoke  Fulltext P4 (SQLite FTS5): PG FULLTEXT -> FTS5 virtual table + sync triggers; live MATCH + diff-path apply' \
+		'  make sample-db-scale-smoke  Scale (Phase 3, Employees) opt-in/nightly: export-resume + chunking + dual-target import (MySQL+PG) parity' \
+		'  make sample-db-spatial-smoke  Spatial (Phase 5, VA1-Live-Smoke): geometry value round-trip PG->PG + MySQL->MySQL (+ native-point check)' \
+		'  make sample-db-types-smoke    Typ-Kanonisierung: Post-Compare-Drift-Sensor (Typ-Matrix, Folds, Konvergenz, Rollback)' \
+		'  make sample-db-tpch-gen  TPC-H (Phase 4, 4a Sourcing) opt-in: pinned DuckDB generates the TPC-H workload offline into .cache/tpch/ (SF=0.01 default)' \
+		'  make sample-db-tpch-smoke  TPC-H (Phase 4, 4b Round-Trip) opt-in: reverse/validate/generate/transfer PG->PG + parity (8 tables + DECIMAL checksum)' \
+		'  make sample-db-tpch-perf  TPC-H (Phase 4, 4c Volume) opt-in: export->import >=1M under caps 2cpu/4g; canonical-SHA256 losslessness (hard) + throughput (diagnostic) + resume' \
+		'  make sample-db-tool-compare  TPC-H PG->PG throughput sanity-check (internal): COPY ceiling vs d-migrate vs pgloader, same workload/caps (diagnostic, NOT an audit benchmark)' \
+		'  make sample-db-down   Stop containers (named volume survives)' \
+		'  make sample-db-purge  Stop containers and remove the named volume' \
+		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
 		'  DOCKER_OCI_TAR_IMAGE=d-migrate:jib-image-tar DOCKER_OCI_TAR=build/docker/jib-image.tar' \
@@ -124,19 +151,54 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.1.0, siehe
-# https://github.com/pt9912/d-check/releases/tag/v0.1.0); Konfiguration
-# in .d-check.yml. Ersetzt scripts/verify-doc-refs.sh (gelöscht).
-D_CHECK_IMAGE ?= ghcr.io/pt9912/d-check@sha256:5710b54bc4712af9769d7a820fd3fe62621451daeb43f3e9737b382099137b9e
+# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.30.0, siehe
+# https://github.com/pt9912/d-check/releases/tag/v0.30.0). Die doc-*-Targets
+# (doc-check/-trace/-complete/-doctor/-repair/-help) kommen aus make/d-check.mk,
+# regeneriert via `docker run --rm ghcr.io/pt9912/d-check:v0.30.0 --print-mk > make/d-check.mk`;
+# der Image-Pin lebt dort. DCHECK_DIGEST MUSS vor dem include stehen — die .mk
+# wertet den Digest beim Parsen aus (ifeq → DCHECK_REF).
+DCHECK_DIGEST = sha256:92a6327d50d9496c02f3b6a5cb6d45f721a44e5bb8a9b6b30acfc52e91ab2220
+include make/d-check.mk
 
-docs-check: coverage-excludes-check
-	$(DOCKER) run --rm -v "$(CURDIR)":/repo:ro $(D_CHECK_IMAGE)
+# ── Quality-Gates ──────────────────────────────────────────────────
+#
+# In make/gate.mk ausgelagert: docs-check/coverage-excludes-check, semgrep(+fetch,
+# SEMGREP_IMAGE), solid-suppression-gate, ports-jdbc-free-gate und die
+# Aggregatoren gates/docker-gates/docker-full-gates. docs-check hängt weiterhin
+# an d-checks doc-check (oben inkludiert).
+include make/gate.mk
 
-coverage-excludes-check:
-	python3 ./scripts/verify-kover-excludes-ledger.py
+# ── Architektur-Gate (a-check) ─────────────────────────────────────
+#
+# Hexagon-Schicht-Regeln via a-check (extern, `pt9912/a-check`), Config in
+# `.a-check.yml`. `make a-check` ist Teil von `gates`/`docker-gates`; der
+# Befund-Bereinigungs-Slice ist in docs/planning/done/a-check-architecture-gate.md
+# dokumentiert. make/a-check.mk ist via `a-check --print-mk` erzeugt; Digest-Pin
+# (v0.12.0) lebt dort.
+include make/a-check.mk
 
-solid-suppression-gate:
-	./scripts/solid-suppression-gate.sh
+# ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer für
+# große mechanische Umbauten (Signatur-/Rename über viele Call-Sites), wo Regex an
+# Strings/Kommentaren/Formatvarianten scheitert (memory feedback_syntax_aware_refactor).
+# Hermetische Stage (Dockerfile `ast-grep`), offline ausgeführt.
+#
+# Quoting: ARGS wird via $(value ARGS) UNEXPANDIERT an die Shell gereicht (make frisst
+# `$P` sonst als $(P)). Es bleibt EINE Ebene: die ast-grep-Metavariable `$P` gegen die
+# Shell schützen — `\$P` (in Doppel-Quotes) oder '$P' (Single-Quotes).
+# ACHTUNG: NICHT `$$P` — die Shell liest `$$` als Prozess-ID (PID), nicht als `$`.
+# Beispiele:
+#   make ast-grep ARGS='run -p "\$P.borrow()" -l kotlin adapters hexagon'        # Suche
+#   make ast-grep ARGS='run -p "\$A.foo(\$B)" -r "\$A.bar(\$B)" -l kotlin --update-all adapters'  # Rewrite
+# Read-write-Mount (für --update-all) + Host-User-Mapping (Datei-Ownership);
+# --network none, da ast-grep nach Install offline arbeitet.
+AST_GREP_IMAGE ?= d-migrate-ast-grep
+
+ast-grep-build:
+	$(DOCKER) build --target ast-grep -t $(AST_GREP_IMAGE) .
+
+ast-grep: ast-grep-build
+	$(DOCKER) run --rm --network none --user "$$(id -u):$$(id -g)" \
+	  -v "$(CURDIR)":/repo $(AST_GREP_IMAGE) $(value ARGS)
 
 # Parquet Cut-A (0.9.8) — Sealed-when-Sweep aus AP13 §4.1.
 # Pflicht-Lauf vor jedem Parquet-PR-Merge auf
@@ -144,8 +206,6 @@ solid-suppression-gate:
 # docs/operations/parquet-pr-checklist.md).
 parquet-sweep:
 	./scripts/parquet-sealed-sweep.sh
-
-gates: docker-check docker-coverage-gate docs-check
 
 ci: ci-build docs-check
 
@@ -272,40 +332,18 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
 
-docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke
-
-docker-full-gates: docker-gates integration
-
 clean:
 	$(GRADLE) clean
 
 # ── BI-Demo (examples/bi-demo) ─────────────────────────────────────
 #
-# Kapselt den langen `docker compose -f
-# examples/bi-demo/docker-compose.yml ...`-Pfad. Spec siehe
-# `docs/planning/in-progress/bi-demo-compose.md`. Voraussetzung
-# fuer den `dmigrate`-Service: einmaliger `make docker-build
-# IMAGE_TAG=dev` (baut das d-migrate:dev-Runtime-Image).
-BI_DEMO_COMPOSE := docker compose -f examples/bi-demo/docker-compose.yml
+# In make/bi-demo.mk ausgelagert (Variable BI_DEMO_COMPOSE, .PHONY und alle
+# bi-demo-*-Targets). `make bi-demo-…` funktioniert unverändert.
+include make/bi-demo.mk
 
-bi-demo-env:
-	@if [ ! -f examples/bi-demo/.env ]; then \
-	  cp examples/bi-demo/.env.example examples/bi-demo/.env; \
-	  echo "[bi-demo] created examples/bi-demo/.env from .env.example"; \
-	fi
-	@mkdir -p examples/bi-demo/out
-
-bi-demo-pull: bi-demo-env
-	$(BI_DEMO_COMPOSE) pull
-
-bi-demo-up: bi-demo-env
-	$(BI_DEMO_COMPOSE) up -d
-
-bi-demo-down:
-	$(BI_DEMO_COMPOSE) down
-
-bi-demo-purge:
-	$(BI_DEMO_COMPOSE) down -v
-
-bi-demo-smoke:
-	./examples/bi-demo/scripts/smoke.sh
+# ── Sample-DB-Harness (examples/sample-db) ─────────────────────────
+#
+# In make/sample-db.mk ausgelagert (Variable SAMPLE_DB_COMPOSE, .PHONY und alle
+# sample-db-*-Targets). Der `include` bindet sie in dieselbe make-Invocation
+# ein — `make sample-db-…` funktioniert unverändert.
+include make/sample-db.mk

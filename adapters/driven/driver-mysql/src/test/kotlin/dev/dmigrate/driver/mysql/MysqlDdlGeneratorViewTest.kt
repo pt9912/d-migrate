@@ -19,7 +19,8 @@ class MysqlDdlGeneratorViewTest : FunSpec({
         views: Map<String, ViewDefinition> = emptyMap(),
         functions: Map<String, FunctionDefinition> = emptyMap(),
         procedures: Map<String, ProcedureDefinition> = emptyMap(),
-        triggers: Map<String, TriggerDefinition> = emptyMap()
+        triggers: Map<String, TriggerDefinition> = emptyMap(),
+        aggregates: Map<String, AggregateDefinition> = emptyMap()
     ) = SchemaDefinition(
         name = "test_schema",
         version = "1.0",
@@ -29,7 +30,8 @@ class MysqlDdlGeneratorViewTest : FunSpec({
         views = views,
         functions = functions,
         procedures = procedures,
-        triggers = triggers
+        triggers = triggers,
+        aggregates = aggregates
     )
 
     test("materialized view creates regular VIEW with W103 warning") {
@@ -99,5 +101,36 @@ class MysqlDdlGeneratorViewTest : FunSpec({
         val result = generator.generate(schema)
 
         result.skippedObjects.any { it.name == "empty_view" } shouldBe true
+    }
+
+    test("PostgreSQL SQL-aggregate is surfaced as manual action (E053) for MySQL loadable-UDF (N7)") {
+        val schema = emptySchema(
+            aggregates = mapOf(
+                "group_concat" to AggregateDefinition(stateType = "internal", transitionFunction = "tf"),
+            ),
+        )
+        val result = generator.generate(schema)
+        // No actual statement is emitted (the E053 note text mentions
+        // "CREATE AGGREGATE FUNCTION", so assert on emitted SQL, not the
+        // rendered output which includes notes).
+        result.statements.none { it.sql.contains("CREATE AGGREGATE") } shouldBe true
+        result.skippedObjects.any {
+            it.type == "aggregate" && it.name == "group_concat" && it.code == "E053"
+        } shouldBe true
+    }
+
+    test("MySQL loadable-UDF aggregate emits CREATE AGGREGATE FUNCTION … SONAME (N7)") {
+        val schema = emptySchema(
+            aggregates = mapOf(
+                "my_agg" to AggregateDefinition(
+                    returnType = "STRING", library = "udf_agg.so", sourceDialect = "mysql",
+                ),
+            ),
+        )
+        val ddl = generator.generate(schema).render()
+        ddl shouldContain "CREATE AGGREGATE FUNCTION"
+        ddl shouldContain "my_agg"
+        ddl shouldContain "RETURNS STRING"
+        ddl shouldContain "SONAME 'udf_agg.so'"
     }
 })

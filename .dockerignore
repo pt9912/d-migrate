@@ -42,9 +42,21 @@ tmp/
 temp/
 dist/
 
+# Sample-DB-/Demo-Harness: on-demand-gefetchte Dumps + CLI-Artefakte
+# NIE in den Build-Kontext (ADR 0014: Footprint null, keine Redistribution).
+examples/**/.cache/
+examples/**/out/
+
+# Cached semgrep rules — fetched on demand (LGPL-2.1 + Commons Clause), never
+# vendored, never in the build context.
+config/semgrep/*.yml
+
 
 docs/
-spec/
+spec/*
+# Vertragsdatei im Build-Kontext halten: SchemaJsonContractTest (formats)
+# validiert Fixtures gegen dieses JSON-Schema. Der Rest von spec/ bleibt draussen.
+!spec/schema.json
 release/
 release-assets/
 

@@ -10,7 +10,7 @@ import java.sql.SQLException
  * 0.9.7 preserve-current-value Sub-Slice C (2026-05-21): MySQL
  * implementation of [SequenceCurrentValueProbe] against the helper-
  * table emulation introduced in 0.9.4
- * (`docs/planning/done/mysql-sequence-emulation-plan.md`). Reads
+ * (`docs/planning/done-archive/mysql-sequence-emulation-plan.md`). Reads
  * the runtime state of a named sequence via:
  *
  * ```sql

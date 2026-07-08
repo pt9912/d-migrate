@@ -26,11 +26,23 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         builder.dialect shouldBe DatabaseDialect.MYSQL
     }
 
-    test("defaultParams contains cursor fetch and batched statements only") {
+    test("defaultParams contains cursor fetch, batched statements and yearIsDateType=false") {
         builder.defaultParams() shouldBe mapOf(
             "useCursorFetch" to "true",
             "rewriteBatchedStatements" to "true",
+            "yearIsDateType" to "false",
         )
+    }
+
+    test("buildJdbcUrl injects yearIsDateType=false (Y1: YEAR must not be read as Date)") {
+        val url = builder.buildJdbcUrl(cfg())
+        url shouldContain "yearIsDateType=false"
+    }
+
+    test("buildJdbcUrl: user-provided yearIsDateType overrides the default") {
+        val url = builder.buildJdbcUrl(cfg(mapOf("yearIsDateType" to "true")))
+        url shouldContain "yearIsDateType=true"
+        url shouldNotContain "yearIsDateType=false"
     }
 
     test("baseJdbcUrl with explicit port") {

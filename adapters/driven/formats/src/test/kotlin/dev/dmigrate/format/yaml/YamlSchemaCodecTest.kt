@@ -2,6 +2,8 @@ package dev.dmigrate.format.yaml
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.core.validation.SchemaValidator
+import dev.dmigrate.format.toFullTextAccessMethod
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldHaveSize
@@ -126,6 +128,51 @@ class YamlSchemaCodecTest : FunSpec({
         codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
     }
 
+    test("fulltext index round-trips with type, text_search_config and full_text_vector_column") {
+        val schema = SchemaDefinition(
+            name = "Test",
+            version = "1.0",
+            tables = mapOf(
+                "film" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier()),
+                        "title" to ColumnDefinition(type = NeutralType.Text()),
+                        "description" to ColumnDefinition(type = NeutralType.Text()),
+                        "fulltext" to ColumnDefinition(type = NeutralType.FullText),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_film_fulltext",
+                            columns = listOf(IndexColumn("title"), IndexColumn("description")),
+                            type = IndexType.FULLTEXT,
+                            textSearchConfig = "english",
+                            fullTextVectorColumn = "fulltext",
+                            fullTextAccessMethod = IndexType.GIN,
+                        )
+                    ),
+                )
+            ),
+        )
+        val out = ByteArrayOutputStream()
+
+        codec.write(out, schema)
+
+        val yaml = out.toString(Charsets.UTF_8)
+        yaml shouldContain "fulltext"
+        yaml shouldContain "text_search_config"
+        yaml shouldContain "english"
+        yaml shouldContain "full_text_vector_column"
+        yaml shouldContain "full_text_access_method: gin"
+        codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
+    }
+
+    test("full_text_access_method accepts only gin/gist; an out-of-domain value throws (clean parse error)") {
+        "GiN".toFullTextAccessMethod() shouldBe IndexType.GIN
+        "gist".toFullTextAccessMethod() shouldBe IndexType.GIST
+        shouldThrow<IllegalArgumentException> { "ginn".toFullTextAccessMethod() }
+        shouldThrow<IllegalArgumentException> { "btree".toFullTextAccessMethod() }
+    }
+
     test("parse all-types schema covers pre-0.5.5 neutral types (geometry tested separately in spatial.yaml)") {
         val schema = loadFixture("schemas/all-types.yaml")
         val cols = schema.tables["type_test"]!!.columns
@@ -189,7 +236,7 @@ class YamlSchemaCodecTest : FunSpec({
         orders.partitioning!!.key shouldBe listOf("date")
         orders.partitioning!!.partitions shouldHaveSize 2
         orders.partitioning!!.partitions[0].name shouldBe "orders_2024"
-        orders.partitioning!!.partitions[0].from shouldBe "2024-01-01"
+        orders.partitioning!!.partitions[0].from shouldBe listOf(PartitionBound.Value("'2024-01-01'"))
         orders.constraints shouldHaveSize 3
         orders.constraints[2].type shouldBe ConstraintType.FOREIGN_KEY
         orders.constraints[2].references shouldNotBe null
@@ -252,13 +299,13 @@ class YamlSchemaCodecTest : FunSpec({
         schema.triggers shouldHaveSize 2
         val trg = schema.triggers["trg_updated"]!!
         trg.table shouldBe "orders"
-        trg.event shouldBe TriggerEvent.UPDATE
+        trg.events shouldBe setOf(TriggerEvent.UPDATE)
         trg.timing shouldBe TriggerTiming.BEFORE
         trg.forEach shouldBe TriggerForEach.ROW
         trg.condition shouldBe "OLD.status != NEW.status"
         trg.body shouldNotBe null
         val trgInsert = schema.triggers["trg_insert"]!!
-        trgInsert.event shouldBe TriggerEvent.INSERT
+        trgInsert.events shouldBe setOf(TriggerEvent.INSERT)
         trgInsert.timing shouldBe TriggerTiming.AFTER
         trgInsert.forEach shouldBe TriggerForEach.STATEMENT
 

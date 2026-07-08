@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql.profiling
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -15,7 +16,7 @@ class PostgresSchemaIntrospectionAdapterTest : FunSpec({
     val conn = mockk<Connection>()
     val pool = mockk<ConnectionPool> {
         every { dialect } returns DatabaseDialect.POSTGRESQL
-        every { borrow() } returns conn
+        every { borrow() } returns JdbcDatabaseConnection(conn)
     }
     every { conn.close() } returns Unit
 

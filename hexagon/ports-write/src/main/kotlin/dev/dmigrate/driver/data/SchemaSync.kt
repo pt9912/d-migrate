@@ -1,7 +1,7 @@
 package dev.dmigrate.driver.data
 
 import dev.dmigrate.core.data.ColumnDescriptor
-import java.sql.Connection
+import dev.dmigrate.driver.connection.DatabaseConnection
 
 /**
  * Dialekt-spezifische Operationen, die der Writer rund um den Schreib-Zyklus
@@ -34,7 +34,7 @@ interface SchemaSync {
      * Fehler werden unverändert an den Caller propagiert.
      */
     fun reseedGenerators(
-        conn: Connection,
+        conn: DatabaseConnection,
         table: String,
         importedColumns: List<ColumnDescriptor>,
     ): List<SequenceAdjustment>

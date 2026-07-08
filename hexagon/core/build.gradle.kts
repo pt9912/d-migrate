@@ -39,6 +39,7 @@ kover {
             excludes {
                 // Exclude pure data classes (no logic, only generated methods)
                 classes(
+                    "dev.dmigrate.core.model.AggregateDefinition",
                     "dev.dmigrate.core.model.ColumnDefinition",
                     "dev.dmigrate.core.model.ConstraintDefinition",
                     "dev.dmigrate.core.model.ConstraintReferenceDefinition",

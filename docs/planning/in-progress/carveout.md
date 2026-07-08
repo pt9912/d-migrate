@@ -47,10 +47,10 @@ Beispiele:
 ## 3. Sequence-Preserve / Atomic-Preserve (0.9.7)
 
 Quelldokumente:
-- [`../done/sequence-preserve-atomic-lock-plan.md`](../done/sequence-preserve-atomic-lock-plan.md)
+- [`../done-archive/sequence-preserve-atomic-lock-plan.md`](../done-archive/sequence-preserve-atomic-lock-plan.md)
   §3.2 Out-of-Scope, §6 Risiken, §7 Out-of-Scope-Folge-Themen,
   §8.2 Carve-outs.
-- [`../done/atomic-preserve-followups.md`](../done/atomic-preserve-followups.md) §6 + §8.3.
+- [`../done-archive/atomic-preserve-followups.md`](../done-archive/atomic-preserve-followups.md) §6 + §8.3.
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
@@ -67,7 +67,7 @@ Quelldokumente:
 ## 4. SQLite-Sequence-Emulation (0.9.7)
 
 Quelldokument:
-[`../done/sqlite-sequence-emulation-plan.md`](../done/sqlite-sequence-emulation-plan.md).
+[`../done-archive/sqlite-sequence-emulation-plan.md`](../done-archive/sqlite-sequence-emulation-plan.md).
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
@@ -80,12 +80,12 @@ Quelldokument:
 ## 5. Diff-basierte Migrationen (Plan 2, 0.9.7)
 
 Quelldokumente:
-- [`../done/diffresult-migration-plan-2.md`](../done/diffresult-migration-plan-2.md) §14.3.
-- [`../done/quality-coverage-expansion-plan.md`](../done/quality-coverage-expansion-plan.md).
+- [`../done-archive/diffresult-migration-plan-2.md`](../done-archive/diffresult-migration-plan-2.md) §14.3.
+- [`../done-archive/quality-coverage-expansion-plan.md`](../done-archive/quality-coverage-expansion-plan.md).
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
-| `adapter-coverage-uplift` Folge-Slice | Promoted | Phase E.2 hat ihn als eigenständigen Plan-Doc-Trigger ausgegliedert. | [`../open/adapter-coverage-uplift.md`](../open/adapter-coverage-uplift.md) |
+| `adapter-coverage-uplift` Folge-Slice | Promoted | Phase E.2 hat ihn als eigenständigen Plan-Doc-Trigger ausgegliedert; Spike erledigt, jetzt in `next/`. | [`../next/adapter-coverage-uplift.md`](../next/adapter-coverage-uplift.md) |
 | D-N10k Perf-Sweep (N=10000, Nightly-Only) | Provisional | Trigger: dedizierter Nightly-Perf-Runner mit höherem Budget. Bis dahin opt-in. | quality-coverage-expansion-plan §9 |
 | Phase H des ersten Plan-Docs nicht re-planen | Permanent | SQLite-Rebuild-Vertrag ist im Phase-H-Closure (Plan 1) abgeschlossen; nicht duplizieren. | diffresult-migration-plan-2 §2 |
 
@@ -94,7 +94,7 @@ Quelldokumente:
 ## 6. F.5 CHECK / EXCLUDE-Constraints (0.9.7)
 
 Quelldokument:
-[`../done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`](../done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md).
+[`../done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`](../done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md).
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
@@ -108,15 +108,51 @@ Quelldokument:
 
 | Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
 | --------- | ------ | ---------------- | ------------ |
-| Produktives Metrics-/Tracing-Wiring außerhalb 0.9.7 | Provisional | Trigger: Telemetry-Adapter-Slice. Plan existiert in `next/`. | [`../next/telemetry-observability-port.md`](../next/telemetry-observability-port.md) |
+| Produktives Metrics-/Tracing-Wiring außerhalb 0.9.7 | Promoted | Produktives Wiring ist Teil des Telemetry-Adapter-Slice; der Plan lebt in `next/` (Status Draft) → per Status-Vokabular Promoted (Plan-Doc existiert), nicht mehr Provisional. | [`../next/telemetry-observability-port.md`](../next/telemetry-observability-port.md) |
 | MCP-Server-Last-Tests | Provisional | Trigger: eigene Last-Strategie, gehört zum `spec/mcp-server.md`-Vertrag. | `../../../spec/mcp-server.md` |
-| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Vorabklärung 2026-06-03 angelegt; same-day Promote nach `next/` mit Sub-Slice-Schnitt F.1-F.5 + Wire-Vertrag V1. Atomic-Preserve-Plan-Doc 2026-06-03 in next/ + done/ImpPlan-0.9.8-AE.md gesplittet. | [`../next/mcp-schema-migrate-tool.md`](../next/mcp-schema-migrate-tool.md), [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md), [`../done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md), quality-coverage-expansion-plan §3.2 + §9 |
+| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Vorabklärung 2026-06-03 angelegt; same-day Promote nach `next/` mit Sub-Slice-Schnitt F.1-F.5 + Wire-Vertrag V1. Atomic-Preserve-Plan-Doc 2026-06-03 in next/ + done-archive/ImpPlan-0.9.8-AE.md gesplittet. | [`../next/mcp-schema-migrate-tool.md`](../next/mcp-schema-migrate-tool.md), [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md), [`../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md), quality-coverage-expansion-plan §3.2 + §9 |
 | App-Layer-Replay für Concurrent-Writer-Tests | Permanent | Anwendungssache, nicht d-migrate-Scope. | quality-coverage-expansion-plan §9 |
-| Mutation-Testing (PIT/Stryker) | Provisional | Trigger: stabile Coverage-Baseline + konsolidierte Excludes. | quality-coverage-expansion-plan §9 |
+| Mutation-Testing (PIT) | Promoted | Trigger (stabile Coverage-Baseline + konsolidierte Excludes) 2026-06-27 **erfüllt** (Kover-90-%-Per-Modul-Gate, 251 ledger-dokumentierte Excludes). Scope-Entwurf (Draft, Vorschlags-Altitude) in `open/`; noch nicht nach `next/` priorisiert. | [`../open/mutation-testing-pit.md`](../open/mutation-testing-pit.md) |
 
 ---
 
-## 8. Lifecycle und Pflege
+## 8. Volltext-Spaltentyp `fulltext` (ADR 0015, 0.9.9)
+
+Quelldokument:
+[`../../adr/0015-fulltext-tsvector-neutral-type.md`](../../adr/0015-fulltext-tsvector-neutral-type.md)
+(Abschnitt „Abgrenzung").
+
+| Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
+| --------- | ------ | ---------------- | ------------ |
+| Strukturelle Cross-Dialect-Volltext-Übersetzung (SQLite FTS5 / MySQL FULLTEXT) | **Done** (2026-07-01) | SQLite-FTS5 ist eine **virtuelle Tabelle**, MySQL-FULLTEXT ein **Index** — beide ein *struktureller* Umbau (Spalte → separate Tabelle/Index + Sync-Trigger), keine Typ-↔-Typ-Abbildung. **Geliefert (P0–P5, ADR 0025):** MySQL `FULLTEXT` (P3) + SQLite FTS5 + Sync-Trigger (P4) live; drift-freier migrate-Round-Trip via FTS5-Reverse-Fold (P5); der `fulltext`-Spaltentyp degradiert weiter zu `text`+W132. Slice graduiert nach `done/`; Rest-Folgearbeit (SQLite-Rebuild-Recreate) als eigenes `open/`-Ticket. | [`../done/fulltext-structural-cross-dialect.md`](../done/fulltext-structural-cross-dialect.md) |
+| Weitere PG-only-Typen first-class (`inet`, `cidr`, `tsquery`, Ranges, `ltree`, …) | Provisional | ADR 0015 deckt **nur** Volltext-Vektoren ab; jeder weitere native Typ ist eine eigene first-class-Entscheidung. Bis dahin degradieren sie zu `text` + `R301`. **Trigger:** konkreter Fidelity-Bedarf (z. B. ein neues Sample-DB-Finding). Kandidaten-Sammlung/Trigger-Watch (kein Slice — pro Typ eigene Entscheidung) in `open/`. | [`../open/pg-only-types-first-class-candidates.md`](../open/pg-only-types-first-class-candidates.md) |
+
+---
+
+## 9. Cross-Dialect-Partitionierung (ADR 0020, 0.9.9)
+
+Quelldokument: [`../done/cross-dialect-partitioning.md`](../done/cross-dialect-partitioning.md)
+(Review-Härtung Runde 1 — bewusst nicht in den AP6-Abschluss gezogen, beide sind eigene Sub-Slices).
+
+| Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
+| --------- | ------ | ---------------- | ------------ |
+| Kind-lokale FK-Constraints round-trippen (E065-Transparenz) | Promoted | PG erlaubt FKs direkt auf Kind-Partitionen (z. B. Pagila-`payment`-Kinder); `PartitionDefinition` trägt heute **kein** FK-Feld → kind-lokale FKs fallen beim Reverse still weg. Das MySQL-**Ergebnis** bleibt korrekt (FKs auf partitionierten Tabellen dort ohnehin verboten, E065), nur die Transparenz für *kind-lokale* FKs fehlt. **Trigger:** Cross-Dialect-Fidelity-Bedarf; braucht FK-Feld auf `PartitionDefinition` + Ergänzung von [ADR 0019](../../adr/0019-partition-hierarchy-structured-representation.md) + [ADR 0020](../../adr/0020-cross-dialect-partitioning-mysql.md) + Reverse-Erfassung. Scope-Entwurf (Draft, Vorschlags-Altitude) in `open/`; noch nicht nach `next/` priorisiert. | [`../open/partition-child-local-fk-transparency.md`](../open/partition-child-local-fk-transparency.md) |
+| LIST-`DEFAULT`-Transfer-Preflight | Promoted | Eine PG-LIST-`DEFAULT`-Partition hat kein MySQL-Pendant; die Generate-Note **E063** flaggt den Verwurf bereits laut (`action_required`, „Transfer-Datenverlust"). Eine zusätzliche Transfer-Zeit-Preflight (Zeilen zählen, die in die DEFAULT-Partition fielen) fehlt. **Trigger:** dediziertes Transfer-Preflight-Slice (spiegelt `CheckPreflight`: planner→runner→renderer→report). Scope-Entwurf (Draft, Vorschlags-Altitude) in `open/`; noch nicht nach `next/` priorisiert. | [`../open/partition-list-default-transfer-preflight.md`](../open/partition-list-default-transfer-preflight.md) |
+
+---
+
+## 10. TPC-Performance-Abnahme (ADR 0018, 0.9.9)
+
+Quelldokument: [`../done/tpc-4c-volume-acceptance-slice.md`](../done/tpc-4c-volume-acceptance-slice.md)
+(Closure — Option C: `ubuntu-latest` diagnostisch, Hart-Gate-Arming als reiner Ops-Schritt).
+
+| Carve-Out | Status | Reason / Trigger | Plan-Doc-Ref |
+| --------- | ------ | ---------------- | ------------ |
+| Absolutes Durchsatz-Hart-Gate (LF 8.2) scharf stellen | Provisional | Der Kalibrier-Guard hält das Zeit-Gate auf dem variablen `ubuntu-latest`-CI-Runner by-design diagnostisch (kein verlässlicher Zeit-Bezug). Verlustfreiheit + Resume sind ohnehin host-unabhängig hart. **Trigger:** einen stabilen Runner designieren (Repo-Variable `PERF_RUNNER`) + `CALIB_REFERENCE_MS` aus einem Bootstrap-Lauf pinnen — reine Ops, kein Code (Runbook im Quelldokument). | [`../done/tpc-4c-volume-acceptance-slice.md`](../done/tpc-4c-volume-acceptance-slice.md) |
+
+---
+
+## 11. Lifecycle und Pflege
 
 - **Neuer Carve-Out** → in das passende §3-§7 (oder neuen
   Abschnitt) als Zeile aufnehmen; Status setzen; Plan-Doc-Ref
@@ -125,7 +161,7 @@ Quelldokument:
 - **Promotion** (Provisional → Plan-Slice): Status auf
   **Promoted** setzen, `Plan-Doc-Ref`-Spalte auf den neuen
   Slice umbiegen. Zeile bleibt für die Audit-Spur.
-- **Resolution** (Permanent → Resolved): in §9 Resolved
+- **Resolution** (Permanent → Resolved): in §12 Resolved
   verschieben mit Datum und Release-Bezug.
 - **Konvention für Quelldokumente**: jeder Carve-Out-Block in
   einem Plan-Doc sollte einen Link zurück auf die passende
@@ -134,6 +170,6 @@ Quelldokument:
 
 ---
 
-## 9. Resolved
+## 12. Resolved
 
 *(noch leer — wird beim ersten Carve-Out-Resolve gefüllt)*

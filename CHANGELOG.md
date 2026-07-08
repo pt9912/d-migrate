@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.9.9] - 2026-07-08
+
+**Cross-Dialect-Datentreue-Härtung.** Eine mehrrundige End-to-End-Pilot-Validierung
+(PostgreSQL / MySQL / SQLite gegen
+Pagila/Sakila, fünf Läufe) hat Cross-Dialect-Happy-Path-Defekte aufgedeckt, die
+erst sichtbar wurden, nachdem die jeweils vorgelagerten Blocker behoben waren.
+Alle gemeldeten P1/P2-Cross-Dialect-Befunde sind behoben; die verbleibenden
+Restpunkte sind P3 und in `docs/planning/open/pilot-rerun-p3-residuals.md`
+getrackt.
+
+### Added
+
+- **Strukturelle Transfer-Preflight** — Typ-Kompatibilität wird aus der
+  Ziel-Dialekt-Typ-Abbildung abgeleitet (`normalize(toSql(X)) == normalize(toSql(Y))`)
+  statt aus einer hand-gepflegten Fall-Liste; deckt jede tool-eigene
+  Cross-Dialect-Abbildung per Konstruktion ab. Neuer Treiber-Port
+  `DatabaseDriver.transferCompatibility()`.
+- **`CURRENT_DATE` / `CURRENT_TIME`** als Funktions-Defaults über alle Dialekte
+  (PG/SQLite `CURRENT_DATE`, MySQL `(CURRENT_DATE)`).
+- **Index-Präfixlängen** (`IndexColumn.prefixLength`) round-trip-fähig: MySQL
+  `SUB_PART`-Reverse → `col(n)`-Generate; PG/SQLite verwerfen mit Hinweis.
+- **Reverse-Präferenzen** (ADR 0027) — inhärente Reverse-Mehrdeutigkeiten werden
+  per deklarierter Anwender-Präferenz aufgelöst (Config `.d-migrate.yaml` `reverse:`
+  + CLI-Flag, konservativer Default), nicht per Heuristik/Fold. Erster Fall: die
+  SQLite-AUTOINCREMENT-Breite — `schema reverse` / `data transfer` mit
+  `--sqlite-autoincrement-width 64` (oder `reverse.sqlite.autoincrement_width: 64`)
+  rekonstruiert einen SQLite-AUTOINCREMENT-PK als 64-bit `biginteger` +
+  `generation: identity` (statt 32-bit `identifier`), sodass ein SQLite→PostgreSQL-
+  Transfer den Wertebereich nicht mehr auf `SERIAL` verengt (Ziel `BIGSERIAL`).
+  Default unverändert (kein Fingerprint-Bump); die R202-Note nennt jetzt den Flag.
+
+### Fixed
+
+- **`enum` im migrate-Pfad**: der Diff-/`migrate`-Pfad rendert Enums jetzt konsistent
+  zum `schema generate` — MySQL nativ als `ENUM('…')`, PostgreSQL-`refType`-Enum als
+  Typreferenz auf den per `CREATE TYPE` erzeugten Typ (statt still zu bloßem `TEXT`).
+  Die verbleibenden Inline-Fälle (PostgreSQL inline-`values`, alle SQLite-Enums)
+  degradieren weiter zu `TEXT`, machen das aber jetzt **laut** über `W134` (statt
+  stillem Wertverlust) — an allen Renderpfaden (CREATE TABLE, ADD COLUMN, SQLite-Rebuild).
+- **Transfer-Datentreue PG → MySQL**: PG-`text[]` → MySQL-`JSON` (Wert als
+  JSON-Array gebunden) und pgjdbc-`PGobject` (z. B. `tsvector`) → String-Bind
+  statt Java-Serialisierung.
+- **Transfer-Preflight** akzeptiert tool-eigene Mappings (bool→INTEGER,
+  Enum↔Enum, Temporal→Text, timestamptz→DATETIME, Array→JSON, Decimal→REAL)
+  statt strikter Neutraltyp-Gleichheit.
+- **DDL-Generierung Cross-Dialect**: PG-Partition ohne Kind-Partitionen → plain
+  Table + `E055`; nicht-portierbare View-Bodies (Backticks, `::`/`||`,
+  dialektspezifische Funktionen) → `E053`-Skip statt invalidem DDL; MySQL
+  AUTO_INCREMENT-PK-Reihenfolge; GIN/GIST-Index ohne Default-Opclass → `W123`-Skip.
+- **Reverse-Engineering**: Nicht-PK-`nextval`-Spalte als Named-Sequence statt
+  Identity; MySQL-ENUM-Werte case-erhaltend; Routinen-Namen ohne Signatur-Suffix;
+  PG-Trigger-Action-Statement (`EXECUTE FUNCTION …`) nicht als plpgsql-Body
+  gewrappt; PG-Domain-Render über die Ziel-Typ-Abbildung.
+- **Parquet-Import**: Timestamp (`INT64`-µs / `Instant`) → `LocalDateTime` /
+  `OffsetDateTime`.
+- **Validierung**: Temporal-/Funktions-Defaults auf Date/DateTime/Time/Text
+  korrekt akzeptiert.
+- **Post-Execute-Compare von `schema migrate --execute`** meldet keine
+  Drift-False-Positives mehr, wenn der Ziel-Dialekt Neutraltypen verlustfrei
+  abflacht (z. B. SQLite `smallint`/`boolean` → `INTEGER`, `datetime` → `TEXT`,
+  `decimal` → `REAL`) oder einen Single-Column-`UNIQUE`/-Fremdschlüssel als
+  Spaltenattribut zurückliest: Ein frisches `migrate --execute` spec-valider
+  Schemata endet jetzt mit **Exit 0** statt Exit 5, ein zweiter Lauf plant 0
+  Operationen. Die Fingerprint-Berechnung ist dafür dialektbewusst
+  (`schema-fingerprint-v6` → `v7`, invalidiert ältere Rollback-Artefakte/Overlays
+  laut per `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` / `OVERLAY_STALE_*_FINGERPRINT`);
+  `schema compare` bleibt strukturell streng (ADR-0026).
+- **Generate materialisiert den impliziten `identifier`-Primärschlüssel** — ein
+  spec-valides Schema mit `identifier`-getragenem PK (ohne ausgeschriebenes
+  `primary_key`) ist jetzt auf allen Dialekten anlegbar: MySQL `identifier`-only
+  bekommt die nötige KEY-Klausel für die AUTO_INCREMENT-Spalte (vorher Error 1075),
+  SQLite `identifier` + explizites `primary_key` erzeugt keinen doppelten PK mehr
+  (vorher SQLITE_ERROR), und PG `SERIAL` trägt nun `PRIMARY KEY` im Ziel. Der
+  effektive PK wird zentral im `OperationMapper` über dieselbe
+  `EffectivePrimaryKey`-Regel materialisiert, die Fingerprint und Comparator nutzen.
+
 ## [0.9.8] - 2026-06-14
 
 ### Breaking
@@ -68,7 +146,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hatten am 2026-06-05 „Cut B (Bundle-only Pilot) als 1.0.0"
   empfohlen; Stakeholder-Entscheid e7f3f714 folgte dieser
   Empfehlung. Am 2026-06-06 wurde diese Empfehlung in
-  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
+  [`parquet-decision-template.md`](docs/planning/done-archive/parquet-decision-template.md)
   §8 superseded auf **Cut A (Voller Vertrag) als 0.9.8**.
   Begruendung: Operator-Mehrwert (Spark-/Hive-/DuckDB-
   Dateien direkt importieren) macht Cut B zu eng, sobald
@@ -87,7 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Parquet-Plan-Doc nach `done/` migriert — nur
   Evaluierungsphase abgeschlossen** *(2026-06-05)* —
   per `in-progress/`-Konvention (ADR-0004) wandern
-  [`parquet-export-import-evaluation.md`](docs/planning/done/parquet-export-import-evaluation.md)
+  [`parquet-export-import-evaluation.md`](docs/planning/done-archive/parquet-export-import-evaluation.md)
   und alle zehn Sub-Docs (AP1-AP13) nach
   `docs/planning/done/`, weil die **Evaluierungsphase**
   abgeschlossen ist. Hauptplan
@@ -111,7 +189,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI-`--format parquet`, Dependency-Hygiene, Hadoop-
   Footprint-Inventar fuer 1.0.0-Input) laeuft als
   Per-Feature-Umbrella
-  [`parquet-productive-cut-a.md`](docs/planning/done/parquet-productive-cut-a.md)
+  [`parquet-productive-cut-a.md`](docs/planning/done-archive/parquet-productive-cut-a.md)
   unter `in-progress/`. Trigger sind vier Befunde aus
   Code-Sichtung 2026-06-06 (`DataExportFormat.kt:10` ohne
   `PARQUET`, `DataImportCommand.kt:41` `.choice("json", "yaml",
@@ -151,7 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `url-connection`-Transport — kein Netty/Apache aus dem SDK).
 
   ImpPlan mit Slice-Tabelle und Bewusst-nicht-Scope:
-  [`ImpPlan-0.9.8-object-storage-s3.md`](docs/planning/done/ImpPlan-0.9.8-object-storage-s3.md).
+  [`ImpPlan-0.9.8-object-storage-s3.md`](docs/planning/done-archive/ImpPlan-0.9.8-object-storage-s3.md).
 
 - **Parquet als Export-/Import-Format (Cut A, S0..S9b)**
   *(2026-06-06–2026-06-08)* — `d-migrate data export --format parquet`
@@ -172,7 +250,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Hadoop-Footprint-Minimierung ist 1.0.0-Folgeinput (S10a-Snapshot).
 
   Per-Feature-Umbrella mit vollstaendiger Sub-Slice-Tabelle:
-  [`parquet-productive-cut-a.md`](docs/planning/done/parquet-productive-cut-a.md)
+  [`parquet-productive-cut-a.md`](docs/planning/done-archive/parquet-productive-cut-a.md)
   §3.4. Slice-Lead-Commits in chronologischer Reihenfolge (Headline-Commit
   pro Slice; vollstaendige Sub-Commit-Listen im Umbrella):
 
@@ -209,7 +287,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Parquet-Evaluierung — Stakeholder-Entscheid: Go fuer
   Cut B als 1.0.0** *(2026-06-05)* — alle fuenf offenen
   Punkte aus
-  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
+  [`parquet-decision-template.md`](docs/planning/done-archive/parquet-decision-template.md)
   §6 sind beantwortet (durchgaengig nach AP13-Empfehlung):
   - **Release-Branch:** `feature/parquet-1.0` mit
     Schritt-fuer-Schritt-Commits, Merge in `develop` nach
@@ -241,7 +319,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP13 Entscheidungsvorlage**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
+  [`parquet-decision-template.md`](docs/planning/done-archive/parquet-decision-template.md)
   synthetisiert die AP1-AP12-Evaluierung in eine Go/No-Go-
   Vorlage. **Damit ist die Plan-Doc-Phase abgeschlossen.**
   Inhalt:
@@ -301,7 +379,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP12 CLI- und Factory-Wiring-Skizze**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-cli-wiring.md`](docs/planning/done/parquet-cli-wiring.md)
+  [`parquet-cli-wiring.md`](docs/planning/done-archive/parquet-cli-wiring.md)
   zieht alle AP1-AP11-Vorentscheidungen ins konkrete CLI- und
   Wiring-Bild. Implementierungsfertiges Skelett, das nach AP13
   (Entscheidungsvorlage) umgesetzt werden kann; trifft selbst
@@ -418,7 +496,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP11 Single-File-Metadatenvertrag**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-single-file-metadata.md`](docs/planning/done/parquet-single-file-metadata.md)
+  [`parquet-single-file-metadata.md`](docs/planning/done-archive/parquet-single-file-metadata.md)
   fixiert den letzten Vertragspunkt vor AP12/AP13. Inhalt:
   - Drei Optionen aus Hauptplan §6 verglichen
     (Footer-KV vs. Sidecar vs. Footer-only); bindende Wahl
@@ -484,7 +562,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP10 Stream-vs-Datei-Portentscheidung**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-port-shape.md`](docs/planning/done/parquet-port-shape.md)
+  [`parquet-port-shape.md`](docs/planning/done-archive/parquet-port-shape.md)
   hebt die Vorentscheidung aus `parquet-libraries.md` §7 in eine
   bindende Reader-Port-Skizze. Inhalt:
   - Neuer Port `SeekableDataChunkReaderFactory` in
@@ -538,7 +616,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP9 Importpfad-Vertrag (bindende DTO-Wahl)**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-import-input-dto.md`](docs/planning/done/parquet-import-input-dto.md)
+  [`parquet-import-input-dto.md`](docs/planning/done-archive/parquet-import-input-dto.md)
   hebt die AP7-/AP8-Vorentscheidungen in die Implementierungs-
   Entscheidung. Inhalt:
   - Bindung auf neuen Sealed-Subtyp `ImportInput.ResolvedBundle`
@@ -607,14 +685,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Port-Begriffe abgebildet werden.
   - **Begleitentscheidung 1** (AP2-Erweiterung): `SchemaOrigin`-
     Enum in
-    [`parquet-schema-source.md`](docs/planning/done/parquet-schema-source.md)
+    [`parquet-schema-source.md`](docs/planning/done-archive/parquet-schema-source.md)
     §4.4 um `MANIFEST_FALLBACK` erweitert (additiv,
     `hexagon:ports-common`). Semantisch verschieden von `MERGED`
     („aus mehreren Quellen kombiniert"); `MANIFEST_FALLBACK`
     markiert best-effort-Manifest-Typen ohne SchemaReader-/
     JDBC-Provenance.
   - **Begleitentscheidung 2** (AP1-Aufraeumung):
-    [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+    [`parquet-libraries.md`](docs/planning/done-archive/parquet-libraries.md)
     §7.1 Bullet 4 finalisiert. Die urspruengliche AP1-Aussage
     „`ImportInput.Directory` wird nicht ersetzt" ist praezisiert,
     nicht verworfen: `Directory` bleibt fuer JSON/YAML/CSV und
@@ -634,7 +712,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP8 manifestgebundene Directory-Import-
   Aufloesung** *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-directory-import.md`](docs/planning/done/parquet-directory-import.md)
+  [`parquet-directory-import.md`](docs/planning/done-archive/parquet-directory-import.md)
   als Resolver-Skizze fuer Bundle-Importe. Inhalt:
   - Aufloesungsmodell mit `ParquetBundleResolver`: Wrapper um
     `ResolvedParquetBundle`, `resolve()` liefert eine
@@ -711,7 +789,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP1 §7.1 ImportInput.Directory-Aussage
   als ueberstimmt markiert** *(2026-06-05)* —
-  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+  [`parquet-libraries.md`](docs/planning/done-archive/parquet-libraries.md)
   §7.1 Bullet 4 traegt jetzt einen Korrektur-Hinweis: AP7 §10.2
   und AP8 §10.1 empfehlen inzwischen einen neuen
   `ImportInput.ResolvedBundle`-Subtyp statt der urspruenglich
@@ -720,7 +798,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP7 Manifest-Format und Import-Preflight**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-manifest-format.md`](docs/planning/done/parquet-manifest-format.md)
+  [`parquet-manifest-format.md`](docs/planning/done-archive/parquet-manifest-format.md)
   als architektonische Skizze fuer Multi-Table-/Directory-Bundle-
   Exporte. Inhalt:
   - YAML-Schema von `manifest.yaml`: Pflichtfelder `formatVersion`,
@@ -807,7 +885,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — `.crc`-Sidecar-Mitigation in §7
   praezisiert** *(2026-06-05)* — AP6-Befund:
-  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+  [`parquet-libraries.md`](docs/planning/done-archive/parquet-libraries.md)
   §7 Bullet zum `.crc`-Sidecar ergaenzt. In Hadoop 3.4.1 reicht
   `fs.file.impl=RawLocalFileSystem` allein nicht; ohne
   `fs.file.impl.disable.cache=true` bedient der
@@ -816,7 +894,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — `iceberg-parquet` als bewusst
   ausgeschlossener Kandidat dokumentiert** *(2026-06-05)* —
-  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+  [`parquet-libraries.md`](docs/planning/done-archive/parquet-libraries.md)
   §3.6 neu: `org.apache.iceberg:iceberg-parquet` ist ein Adapter
   zwischen Iceberg-Tabellen und Parquet-Dateien (nutzt intern
   `parquet-java`), nicht ein eigener Writer/Reader. Strukturell
@@ -831,7 +909,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *(2026-06-05)* — die drei Befunde aus dem AP3-Round-Trip-Spike
   (Commit `3b051ec`) sind aus dem Status-Header der Plan-Doc in die
   AP1-Bibliothekssichtung verschoben und damit final dokumentiert:
-  - [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
+  - [`parquet-libraries.md`](docs/planning/done-archive/parquet-libraries.md)
     §5.1 (neu) — Hadoop-API-Kanal in 1.17.1 praezisiert
     (Hadoop-`Path`+`Configuration`+`LocalFileSystem` rein NIO; die
     `PlainParquetConfiguration`-/`LocalOutputFile`-Pfade kommen erst
@@ -845,7 +923,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     nachgezogen, weil `ParquetReader.builder` ueber
     `ParquetInputFormat extends FileInputFormat` MapReduce-Klassen
     laedt.
-  - [`parquet-export-import-evaluation.md`](docs/planning/done/parquet-export-import-evaluation.md)
+  - [`parquet-export-import-evaluation.md`](docs/planning/done-archive/parquet-export-import-evaluation.md)
     §8 Arbeitspaket 3 markiert AP3 als erledigt; Status-Block auf
     Pointer nach `parquet-libraries.md` reduziert. Naechste
     Arbeitspakete: AP4 (DuckDB-Akzeptanzlauf), AP5 (Arrow-Inspektion).
@@ -856,7 +934,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reproduzierbare Demo-Umgebung unter `examples/bi-demo/`, die
   `d-migrate` in einen komponierbaren Analytics-Stack einbettet.
   Sub-Slices BD.1-BD.5 nach Plan
-  [`docs/planning/done/bi-demo-compose.md`](docs/planning/done/bi-demo-compose.md):
+  [`docs/planning/done-archive/bi-demo-compose.md`](docs/planning/done-archive/bi-demo-compose.md):
 
   - **BD.1** — Compose-Skeleton mit fuenf Services: Postgres
     17.10, SeaweedFS 4.31 (S3-API-Server), `seaweed-config` +
@@ -1080,7 +1158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Schreibverkehr vor `--execute` weiterhin manuell anhalten.
 
   Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`.
 
 - **0.9.7 SQLite-Sequence-Emulation Phase B.2 — Validator-Regeln**
   *(2026-05-28)* — zwei zusammengehörige Validator-Schichten, die
@@ -1127,7 +1205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`E059` in der `E052-E060`-Gruppe, `E125` an
   `E122-E124`-Sequence-Default-Cluster anschließend).
 
-  Plan-Doc: `docs/planning/done/sqlite-sequence-emulation-plan.md`
+  Plan-Doc: `docs/planning/done-archive/sqlite-sequence-emulation-plan.md`
   Phase B.2. Bleiben offen: B.3 (`helper_table`-DDL +
   `_bi`/`_ai`-Trigger-Paar inkl. CHECK-Auto-Suppression), B.4
   (`SequenceCapability`-Defaults flippen), C/D/E.
@@ -1189,7 +1267,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (SQLite-helper-table, MariaDB-native, Ownership-Feld).
 
   Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-cross-dialect-sequencing.md`.
 
 - **0.9.7 E.1 Folge-Slice — MySQL Routine-Identity Reverse-Read**
   *(2026-05-22)* — `MysqlRoutineReader.readFunctions` / `readProcedures`
@@ -1211,7 +1289,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ist.
 
   Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`.
 
 - **0.9.7 E.3 Folge-Slice — Sequence preserveCurrentValue
   (Sub-Slices A–E)** *(2026-05-21)* — neue, opt-in pro Sequenz
@@ -1341,7 +1419,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       Operator-Inserts zwischen den Probes können Inkonsistenzen
       erzeugen. Carve-out dokumentiert.
     - **SQLite-Sequence-Vollvariante**: separater Plan unter
-      `docs/planning/done/sqlite-sequence-emulation-plan.md`.
+      `docs/planning/done-archive/sqlite-sequence-emulation-plan.md`.
 
   Tests:
     - Unit: `SequencePreserveStageTest`,
@@ -1370,7 +1448,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - D — Pipeline + Planner-Emit: `257908fd`.
 
   Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-sequence-preserve-current-value.md`.
 
 - **0.9.7 E.3 Folge-Slice — MySQL Sequence Live-DB-Drift-Check
   (Sub-Slices A–F)** *(2026-05-20)* — `schema migrate --execute`
@@ -1505,14 +1583,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       Probe-Wire weglassen.
 
   Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-mysql-sequence-drift-check.md`.
 
 - **0.9.7 E.3 — MySQL Sequence Diff-Migration (Sub-Slices A–I)**
   *(2026-05-20)* — `schema migrate` against a MySQL target now
   renders the four sequence `DiffOperation` subtypes
   (`CreateSequence`, `AlterSequence`, `DropSequence`,
   `RenameSequence`) into the helper-table emulation that landed in
-  0.9.4 (`docs/planning/done/mysql-sequence-emulation-plan.md`).
+  0.9.4 (`docs/planning/done-archive/mysql-sequence-emulation-plan.md`).
   Previously the diff generator routed sequence ops to
   `OpCategory.UNSUPPORTED`, so operators with sequence-tracking
   MySQL schemas had to bypass `schema migrate` and apply the full
@@ -1653,7 +1731,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       existing `dmg_sequences` rows and `dmg_*` support objects)
       is now explicitly out of this slice with a dedicated
       follow-up plan-doc stub
-      (`docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
+      (`docs/planning/done-archive/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
       6 sub-slices) so "done" no longer hides the reduced scope.
 
   Commit timeline:
@@ -1666,7 +1744,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   G (closing iter 2) `aba3392f`,
   H `d248cd11`,
   I (closing iter 3) ⟵ this commit.
-  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
+  Plan-Doc: `docs/planning/done-archive/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
 
 - **0.9.7 F.5 — CHECK / EXCLUDE Constraint Vollscheibe (Sub-Slices A–G)**
   *(2026-05-20)* — the conservative F.5 carve-out from the
@@ -1806,7 +1884,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Sub-Slice A `2c784d8b`, B `d60939c5`, C `99c9528c`,
   D `fe0cc35e`, E.1+E.2 `cde9d39f`, E.3 `8a47a640`,
   E.4 `fc02d621` + `a2afe0c9`, F `172c9b82`.
-  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`.
+  Plan-Doc: `docs/planning/done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`.
 
 - **0.9.7 F.4 Follow-up — `migration-plan.v1` Artefact Producer Wiring**
   *(2026-05-19, Sub-Slice G)* — closes the audit gap raised after
@@ -1851,7 +1929,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field, the semantic-extension gates (`rename-projections.v1`),
   and the eleven validator codes (`PLAN_ARTIFACT_*`) consumers
   may see. Plan-doc:
-  `docs/planning/done/ImpPlan-0.9.7-F.4-G-artefact-producer-wiring.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-F.4-G-artefact-producer-wiring.md`.
 
   Tests: `MigrationPlanArtifactBuilderTest` (7 cases) pins per-field
   projection, reversibility-summary aggregation, stable `stmt-N`
@@ -1976,7 +2054,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inline shortcuts may follow if operator demand justifies the
   argument-parser complexity.
 
-  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`.
+  Plan-Doc: `docs/planning/done-archive/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`.
 
 - **0.9.7 E.2 Trigger-Rendering Vollscheibe** — `CreateTrigger`,
   `ReplaceTrigger` and `DropTrigger` leave `OpCategory.UNSUPPORTED` in
@@ -2467,7 +2545,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generatedAt`, `deterministic`, `deferForeignKeys`) bleiben am
   Top-Level. 30 Files migriert, semantisch identisch.
 
-  Plan-Doc: `docs/planning/done/sqlite-sequence-emulation-plan.md`
+  Plan-Doc: `docs/planning/done-archive/sqlite-sequence-emulation-plan.md`
   Phase B.0; Memory-Pin: `feedback_hexagon_dialect_context`.
 
 - **0.9.7 E.2 Folge-Slice — SQLite Trigger Reverse-Read
@@ -2502,7 +2580,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   akzeptieren, bevor 0.9.7 ausgerollt wird.
 
   Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`.
+  `docs/planning/done-archive/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`.
 
 - **0.9.7 E.2 Trigger-Rendering — data-class extensions on
   published types**: `OperationRisk` (hexagon:core) gains a new
@@ -2658,7 +2736,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       to stdout.
 
   §11 DoD Box (b) Carve-out (committed in `ffc6970e`) is resolved.
-  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`.
+  Plan-Doc: `docs/planning/done-archive/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`.
 
 - **0.9.7 E.3 Folge-Slice — MySQL Sequence Drift-Check
   Plan-Compliance-Fixes** *(2026-05-20)* — zwei Verhaltensabwei-

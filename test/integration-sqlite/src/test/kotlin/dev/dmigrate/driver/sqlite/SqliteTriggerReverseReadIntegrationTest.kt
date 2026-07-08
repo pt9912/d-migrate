@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
@@ -45,7 +47,7 @@ class SqliteTriggerReverseReadIntegrationTest : FunSpec({
     )
 
     fun execDdl(pool: ConnectionPool, vararg sqls: String) {
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt -> for (sql in sqls) stmt.execute(sql) }
         }
     }

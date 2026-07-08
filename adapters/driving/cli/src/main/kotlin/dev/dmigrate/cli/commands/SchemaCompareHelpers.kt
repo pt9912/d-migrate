@@ -7,17 +7,27 @@ internal object SchemaCompareHelpers {
 
     // ── Canonical string representations ──────────────────────────
 
+    // Parametric/decision-bearing types stay here; parameterless ones go to
+    // [simpleNeutralTypeToString] to keep each dispatch under the complexity limit
+    // (mirrors the simpleNeutralType split in MigrationFingerprint/CanonicalPayload).
     fun neutralTypeToString(type: NeutralType): String = when (type) {
         is NeutralType.Identifier -> if (type.autoIncrement) "identifier(auto)" else "identifier"
         is NeutralType.Text -> if (type.maxLength != null) "text(${type.maxLength})" else "text"
         is NeutralType.Char -> "char(${type.length})"
+        is NeutralType.Float -> "float(${type.floatPrecision.name.lowercase()})"
+        is NeutralType.Decimal -> "decimal(${type.precision},${type.scale})"
+        is NeutralType.DateTime -> if (type.timezone) "datetime(tz)" else "datetime"
+        is NeutralType.Enum -> enumTypeToString(type)
+        is NeutralType.Array -> "array(${type.elementType})"
+        is NeutralType.Geometry -> geometryTypeToString(type)
+        else -> simpleNeutralTypeToString(type)
+    }
+
+    private fun simpleNeutralTypeToString(type: NeutralType): String = when (type) {
         is NeutralType.Integer -> "integer"
         is NeutralType.SmallInt -> "smallint"
         is NeutralType.BigInteger -> "biginteger"
-        is NeutralType.Float -> "float(${type.floatPrecision.name.lowercase()})"
-        is NeutralType.Decimal -> "decimal(${type.precision},${type.scale})"
         is NeutralType.BooleanType -> "boolean"
-        is NeutralType.DateTime -> if (type.timezone) "datetime(tz)" else "datetime"
         is NeutralType.Date -> "date"
         is NeutralType.Time -> "time"
         is NeutralType.Uuid -> "uuid"
@@ -25,9 +35,8 @@ internal object SchemaCompareHelpers {
         is NeutralType.Xml -> "xml"
         is NeutralType.Binary -> "binary"
         is NeutralType.Email -> "email"
-        is NeutralType.Enum -> enumTypeToString(type)
-        is NeutralType.Array -> "array(${type.elementType})"
-        is NeutralType.Geometry -> geometryTypeToString(type)
+        is NeutralType.FullText -> "fulltext"
+        else -> error("simpleNeutralTypeToString called for a parametric NeutralType: $type")
     }
 
     private fun enumTypeToString(type: NeutralType.Enum): String = when {

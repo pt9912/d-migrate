@@ -3,7 +3,7 @@ package dev.dmigrate.format.parquet
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkWriter
-import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.data.ValueSerializationWarning
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.example.data.simple.SimpleGroupFactory
 import org.apache.parquet.hadoop.ParquetWriter
@@ -17,7 +17,7 @@ import java.io.OutputStream
  *
  * Folgt der AP3-Spike-Linie (parquet-java 1.17.1 + GZIP-Codec
  * ohne SNAPPY/ZSTD-Native-Libs,
- * `docs/planning/done/parquet-libraries.md` §5/§7) und erweitert
+ * `docs/planning/done-archive/parquet-libraries.md` §5/§7) und erweitert
  * den Spike um:
  *
  * - ChunkSchema-getriebenes Schema (AP2 §6.1) — der Writer ruft
@@ -52,12 +52,12 @@ class ParquetChunkWriter(
     private val extraMetaDataProvider: (ChunkSchema) -> Map<String, String> = { emptyMap() },
     /**
      * Forward-compat: symmetrisch zur Default-Factory; ParquetChunkWriter
-     * emittiert heute keine [ValueSerializer.Warning], reicht den Sink
+     * emittiert heute keine [ValueSerializationWarning], reicht den Sink
      * aber durch, damit kuenftige Value-Konvertierungs-Warnings (z.B.
      * NeutralType-Downcasts) nicht stillschweigend verloren gehen.
      */
     @Suppress("UnusedPrivateMember")
-    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
+    private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
 ) : DataChunkWriter {
 
     private var beginCalled: Boolean = false

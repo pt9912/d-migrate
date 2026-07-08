@@ -4,6 +4,7 @@ import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
@@ -20,7 +21,7 @@ class MysqlSchemaReader(
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             val session = jdbcFactory(conn)
             val database = currentDatabase(conn)
             val lctn = lowerCaseTableNames(conn)
@@ -36,6 +37,8 @@ class MysqlSchemaReader(
             }
             val views = if (options.includeViews) routineReader.readViews(session, metaDb, visibleFunctionNames) else emptyMap()
             val functions = if (options.includeFunctions) routineReader.readFunctions(session, metaDb) else emptyMap()
+            // N7: MySQL loadable-UDF aggregates (server-global, from mysql.func).
+            val aggregates = if (options.includeFunctions) routineReader.readAggregates(session) else emptyMap()
             val procedures = if (options.includeProcedures) routineReader.readProcedures(session, metaDb) else emptyMap()
             val triggers = if (options.includeTriggers) routineReader.readTriggers(session, metaDb) else emptyMap()
 
@@ -62,6 +65,7 @@ class MysqlSchemaReader(
                 procedures = procedures,
                 triggers = filteredTriggers,
                 sequences = d2Result.sequences,
+                aggregates = aggregates,
             )
 
             // E.1 Slice C.2: best-effort server-version probe.
@@ -164,6 +168,7 @@ class MysqlSchemaReader(
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
                 tableName = displayName,
                 colName = colName,
+                srsId = (row["srs_id"] as? Number)?.toInt()?.takeIf { it != 0 },
             ))
             if (mapping.note != null) notes += mapping.note
             val neutralType = mapping.type
@@ -180,6 +185,8 @@ class MysqlSchemaReader(
                 unique = unique,
                 default = defaultVal,
                 generation = mapping.generation,
+                // information_schema.columns.ordinal_position ist 1-basiert + dicht.
+                ordinal = (row["ordinal_position"] as? Number)?.toInt(),
             )
         }
 
@@ -196,6 +203,8 @@ class MysqlSchemaReader(
                     columns = idx.indexColumns,
                     type = when (idx.type?.uppercase()) {
                         "HASH" -> IndexType.HASH
+                        // VA3: MySQL meldet räumliche Indizes als index_type=SPATIAL.
+                        "SPATIAL" -> IndexType.SPATIAL
                         else -> IndexType.BTREE
                     },
                     unique = idx.isUnique,
@@ -211,6 +220,8 @@ class MysqlSchemaReader(
             indices = indexDefs,
             constraints = constraints,
             metadata = metadata,
+            // AP6.1 (ADR 0020): Partitionierung aus information_schema.PARTITIONS.
+            partitioning = MysqlPartitionReader.read(session, database, metaTable),
         )
     }
 }

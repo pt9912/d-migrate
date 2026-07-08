@@ -1,7 +1,9 @@
 package dev.dmigrate.driver
 
 import dev.dmigrate.core.dependency.FkEdge
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -13,6 +15,11 @@ data class TopologicalSortResult(
 
 data class ViewSortResult(
     val sorted: Map<String, ViewDefinition>,
+    val notes: List<TransformationNote> = emptyList(),
+)
+
+data class FunctionSortResult(
+    val sorted: Map<String, FunctionDefinition>,
     val notes: List<TransformationNote> = emptyList(),
 )
 
@@ -173,6 +180,61 @@ internal object DdlGenerationSupport {
         )
         return ViewSortResult(ordered, notes)
     }
+
+    /**
+     * K2: order functions so a function that calls another is emitted
+     * AFTER its callee. PostgreSQL validates `LANGUAGE sql` function
+     * bodies at CREATE time, so a forward reference to a not-yet-created
+     * function fails. Edges are inferred from each body (a call
+     * `callee(` to another schema function), mirroring the view-query
+     * inference — the reverse readers do not populate routine→routine
+     * edges. Cycles fall back to the original order with a W128 note.
+     */
+    fun sortFunctionsByDependencies(functions: Map<String, FunctionDefinition>): FunctionSortResult {
+        if (functions.size <= 1) return FunctionSortResult(functions)
+
+        val originalOrder = functions.keys.toList()
+        val nameToKeys = originalOrder.groupBy { ObjectKeyCodec.routineName(it) }
+        val dependencies = functions.mapValuesTo(linkedMapOf()) { (key, fn) ->
+            val selfName = ObjectKeyCodec.routineName(key)
+            val body = fn.body.orEmpty()
+            nameToKeys.keys.asSequence()
+                .filter { it != selfName && callsRoutine(body, it) }
+                .flatMap { nameToKeys.getValue(it).asSequence() }
+                .toMutableSet()
+        }
+        val inDegree = dependencies.mapValuesTo(mutableMapOf()) { (_, deps) -> deps.size }
+        val queue = ArrayDeque(originalOrder.filter { inDegree[it] == 0 })
+        val sorted = mutableListOf<String>()
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            sorted += current
+            for ((key, deps) in dependencies) {
+                if (deps.remove(current)) {
+                    inDegree[key] = (inDegree[key] ?: 1) - 1
+                    if (inDegree[key] == 0) queue.add(key)
+                }
+            }
+        }
+        val remaining = originalOrder.filter { it !in sorted }
+        val ordered = linkedMapOf<String, FunctionDefinition>()
+        for (key in sorted + remaining) ordered[key] = functions.getValue(key)
+        val notes = if (remaining.isEmpty()) emptyList() else listOf(
+            TransformationNote(
+                type = NoteType.WARNING,
+                code = "W128",
+                objectName = "functions",
+                message = "Functions contain unresolved or circular call dependencies: " +
+                    remaining.joinToString(", ") { ObjectKeyCodec.routineName(it) } +
+                    ". Original order is preserved for the remaining functions.",
+                hint = "Break the cycle or create the functions manually in dependency order.",
+            )
+        )
+        return FunctionSortResult(ordered, notes)
+    }
+
+    private fun callsRoutine(body: String, routineName: String): Boolean =
+        Regex("(?i)\\b${Regex.escape(routineName)}\\s*\\(").containsMatchIn(body)
 }
 
 internal fun registerBlockedTable(

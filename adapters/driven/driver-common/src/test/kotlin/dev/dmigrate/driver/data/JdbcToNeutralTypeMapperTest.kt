@@ -93,8 +93,20 @@ class JdbcToNeutralTypeMapperTest : FunSpec({
         JdbcToNeutralTypeMapper.map(Types.OTHER, "json", null, null) shouldBe NeutralType.Json
         JdbcToNeutralTypeMapper.map(Types.OTHER, "jsonb", null, null) shouldBe NeutralType.Json
         JdbcToNeutralTypeMapper.map(Types.OTHER, "xml", null, null) shouldBe NeutralType.Xml
-        JdbcToNeutralTypeMapper.map(Types.OTHER, "geometry", null, null) shouldBe NeutralType.Text()
         JdbcToNeutralTypeMapper.map(Types.OTHER, null, null, null) shouldBe NeutralType.Text()
+    }
+
+    // Der Mapper erkennt Geometrie NICHT (mehr) typeName-basiert: native PG-Typen
+    // (point/polygon/…) heißen wie OGC-Subtypen, sind aber kein WKB. Die
+    // Geometrie-Markierung ist dialekt-bewusst im Reader (probedColumns/
+    // JdbcChunkSequence), nicht hier. Der Mapper bleibt rein JDBC-basiert.
+    test("geometry-/PG-native typeNames fallen auf das reine JDBC-Mapping zurück") {
+        // PostGIS geometry meldet Types.OTHER → unbekannter OTHER-Typ → Text
+        JdbcToNeutralTypeMapper.map(Types.OTHER, "geometry", null, null) shouldBe NeutralType.Text()
+        JdbcToNeutralTypeMapper.map(Types.OTHER, "point", null, null) shouldBe NeutralType.Text()
+        // MySQL geometry meldet Types.BINARY → Binary (rein per JDBC-Code)
+        JdbcToNeutralTypeMapper.map(Types.BINARY, "GEOMETRY", null, null) shouldBe NeutralType.Binary
+        JdbcToNeutralTypeMapper.map(Types.BINARY, "VARBINARY", null, null) shouldBe NeutralType.Binary
     }
 
     test("Unbekannte JDBC-Typen fallen auf Text zurueck") {

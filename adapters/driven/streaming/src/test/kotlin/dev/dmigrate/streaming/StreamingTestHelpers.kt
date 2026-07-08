@@ -4,6 +4,7 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
@@ -15,16 +16,19 @@ import dev.dmigrate.driver.data.WriteResult
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.DefaultValueDeserializerFactory
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.ValueDeserializerFactory
 import java.io.InputStream
-import java.sql.Connection
 
 internal object ImporterNoopConnectionPool : ConnectionPool {
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
-    override fun borrow(): Connection = error("Fake importer tests do not borrow JDBC connections")
+    override fun borrow(): DatabaseConnection = error("Fake importer tests do not borrow JDBC connections")
     override fun activeConnections(): Int = 0
     override fun close() = Unit
 }
+
+internal fun testValueDeserializerFactory(): ValueDeserializerFactory = DefaultValueDeserializerFactory()
 
 internal class FakeReaderFactory(
     private val readersByTable: Map<String, FakeReader>,

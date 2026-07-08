@@ -1,5 +1,8 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.DatabaseConnection
+
 import dev.dmigrate.cli.commands.ResolvedSchemaOperand
 import dev.dmigrate.cli.commands.SchemaMigrateRequest
 import dev.dmigrate.cli.commands.SchemaMigrateRunner
@@ -75,11 +78,11 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
     }
 
     fun exec(sql: String) {
-        pool.borrow().use { c -> c.createStatement().use { it.execute(sql) } }
+        pool.borrow().asJdbc().use { c -> c.createStatement().use { it.execute(sql) } }
     }
 
     fun nextValueOf(name: String): Long {
-        pool.borrow().use { c ->
+        pool.borrow().asJdbc().use { c ->
             c.createStatement().use { s ->
                 s.executeQuery("SELECT `next_value` FROM `dmg_sequences` WHERE `name` = '$name'").use { rs ->
                     rs.next() shouldBe true
@@ -276,11 +279,11 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         val throwingExecutor = object : AtomicSequencePreserveExecutor {
             private val real = MysqlAtomicSequencePreserveExecutor()
             override fun execute(
-                connection: Connection,
+                connection: DatabaseConnection,
                 batch: AtomicSequencePreserveBatch,
                 lockTimeoutMillis: Long,
                 cancellationToken: dev.dmigrate.core.cancel.CancellationToken,
-                executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+                executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
             ): AtomicSequencePreserveResult = real.execute(
                 connection = connection,
                 batch = batch,

@@ -26,6 +26,9 @@ data class SchemaReverseRequest(
     val verbose: Boolean = false,
     val schemaName: String? = null,
     val schemaVersion: String? = null,
+    // reverse-preferences slice: resolved SQLite AUTOINCREMENT-width preference
+    // (CLI flag > config > default). Only the SQLite reader honours it.
+    val sqliteAutoincrement: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
 )
 
 /**
@@ -159,6 +162,7 @@ class SchemaReverseRunner(
                     includeProcedures = request.includeAll || request.includeProcedures,
                     includeFunctions = request.includeAll || request.includeFunctions,
                     includeTriggers = request.includeAll || request.includeTriggers,
+                    sqliteAutoincrement = request.sqliteAutoincrement,
                 )
                 val reader = driverLookup(ctx.config.dialect).schemaReader()
                 val result = reader.read(p, options)

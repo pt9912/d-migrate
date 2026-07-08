@@ -89,10 +89,12 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
                 migrationOverlays: List<MigrationOverlayDocument>,
                 capabilities: RenameProjectionCapabilities,
                 triggerPlanningContext: dev.dmigrate.core.diff.migration.TriggerPlanningContext,
+                canonicalizeType: (dev.dmigrate.core.model.NeutralType) -> dev.dmigrate.core.model.NeutralType,
             ): DiffResult {
                 plannerCallCount[0]++
                 return super.plan(
                     current, desired, schemaDiff, migrationOverlays, capabilities, triggerPlanningContext,
+                    canonicalizeType,
                 )
             }
         }

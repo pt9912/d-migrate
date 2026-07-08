@@ -1,5 +1,9 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -39,7 +43,7 @@ class MysqlSchemaSyncIntegrationTest : FunSpec({
             )
         )
 
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
                     "CREATE TABLE sync_auto (" +
@@ -64,7 +68,7 @@ class MysqlSchemaSyncIntegrationTest : FunSpec({
     }
 
     beforeTest {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("DELETE FROM sync_auto")
                 stmt.execute("ALTER TABLE sync_auto AUTO_INCREMENT = 1")
@@ -78,12 +82,12 @@ class MysqlSchemaSyncIntegrationTest : FunSpec({
     val idColumn = listOf(ColumnDescriptor("id", nullable = false))
 
     test("reseed auto increment uses next max plus one") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO sync_auto (id, name) VALUES (7, 'manual')")
             }
 
-            val adjustments = schemaSync.reseedGenerators(conn, "sync_auto", idColumn)
+            val adjustments = schemaSync.reseedGenerators(JdbcDatabaseConnection(conn), "sync_auto", idColumn)
 
             adjustments.single().column shouldBe "id"
             adjustments.single().sequenceName shouldBe null
@@ -100,13 +104,13 @@ class MysqlSchemaSyncIntegrationTest : FunSpec({
     }
 
     test("no adjustment when max is null without truncate signal") {
-        pool!!.borrow().use { conn ->
-            schemaSync.reseedGenerators(conn, "sync_empty", idColumn) shouldBe emptyList()
+        pool!!.borrow().asJdbc().use { conn ->
+            schemaSync.reseedGenerators(JdbcDatabaseConnection(conn), "sync_empty", idColumn) shouldBe emptyList()
         }
     }
 
     test("truncate empty table resets auto increment to one") {
-        pool!!.borrow().use { conn ->
+        pool!!.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("INSERT INTO sync_auto (id, name) VALUES (5, 'manual')")
                 stmt.execute("DELETE FROM sync_auto")

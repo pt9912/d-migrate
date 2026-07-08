@@ -46,8 +46,17 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**0.9.8** (stabil, veröffentlicht 2026-06-14). Die aktuellen
-Fähigkeiten:
+**0.9.8** (stabil, veröffentlicht 2026-06-14).
+
+> **In Entwicklung (`develop`, 0.9.9):** Eine mehrrundige
+> End-to-End-Pilot-Validierung (PostgreSQL / MySQL / SQLite gegen
+> Pagila/Sakila) hat die Cross-Dialect-Daten- und DDL-Treue
+> gehärtet — alle gemeldeten P1/P2-Cross-Dialect-Blocker sind
+> behoben (Transfer-Preflight strukturell aus der Ziel-Typ-Abbildung,
+> Array-/`tsvector`-Wertbindung, `CURRENT_DATE`-Defaults,
+> View-Portabilität, Routinen-Emission u. a.). Siehe `CHANGELOG.md`.
+
+Die aktuellen Fähigkeiten:
 
 - **Schema-Modell**: neutrales YAML-Schema mit 19 Typen +
   Spatial-Geometry; Validator mit 35+ Fehlercodes.
@@ -115,10 +124,10 @@ Rezepte.
 - **≥ 90 % Line-Coverage pro Modul**, durchgesetzt von Kover
   (`minBound(90)` in der `build.gradle.kts` jedes Moduls). Der
   CI-Build bricht ab, wenn ein Modul darunter fällt.
-- **Doc-Check-Gate**: jedes Markdown-Link-Ziel in
-  [`docs/`](docs/), [`spec/`](spec/), [`README.md`](README.md) und
-  [`CHANGELOG.md`](CHANGELOG.md) wird in jedem CI-Lauf gegen das
-  Dateisystem geprüft via
+- **Doc-Check-Gate**: Markdown-Link-Ziele in [`docs/`](docs/),
+  [`spec/`](spec/) und Root-Markdown-Dateien (einschließlich beider
+  READMEs und [`CHANGELOG.md`](CHANGELOG.md)) werden in jedem CI-Lauf
+  gegen das Dateisystem geprüft via
   [d-check](https://github.com/pt9912/d-check) (digest-gepinntes
   Container-Image, Konfiguration in [`.d-check.yml`](.d-check.yml));
   kaputte interne Links und Anker brechen den Build.
@@ -175,8 +184,8 @@ Die vollständige Release-History (0.1.0–0.9.7) steht in
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter
 [`docs/planning/in-progress/roadmap.md`](docs/planning/in-progress/roadmap.md).
-ADRs leben unter [`docs/adr/`](docs/adr/) (4 Accepted Stand
-2026-06-02; Index in [`docs/adr/README.md`](docs/adr/README.md)).
+ADRs leben unter [`docs/adr/`](docs/adr/); der kanonische Index ist
+[`docs/adr/README.md`](docs/adr/README.md).
 
 Alle Releases und Details:
 [`CHANGELOG.md`](CHANGELOG.md) |
@@ -189,13 +198,17 @@ Einzelne Gates für schnelle Feedback-Schleifen:
 ```bash
 make help              # alle verfügbaren Targets anzeigen
 make ci                # Docker-CI-Build + docs-check (volles lokales Gate)
+make gates             # Docker check, Coverage, Docs und semgrep-Gates
 make docker-build      # Runtime-Image bauen
 make docker-check      # Gradle check in der Dockerfile-Build-Stage
 make docker-test       # Gradle test in der Dockerfile-Build-Stage
 make docker-detekt     # Detekt-Statische-Analyse
 make docker-coverage-gate  # Kover ≥ 90 % pro Modul
 make docs-check        # Markdown-Link-Ziele + Kover-Excludes-Ledger prüfen
+make semgrep           # hermetischer semgrep-Scan mit gepinnten Regeln
 make integration       # Testcontainers-Integrationssuite
+make docker-full-gates # docker-gates plus Docker-gestützte Integrationstests
+make docker-oci-build  # Jib-OCI-Image-Tar via Dockerfile-Stage bauen
 make release-assets    # ZIP, TAR, Fat JAR, SHA256 Release-Assets bauen
 ```
 
@@ -238,6 +251,22 @@ docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest \
 # DB-zu-DB-Datentransfer
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest \
   data transfer --source sourcedb --target targetdb --tables users,orders
+```
+
+#### Docker / Volumes — Ausführung als Nicht-Root
+
+Das veröffentlichte Image läuft als **Nicht-Root**-User (`uid 10001`).
+Nur lesende Befehle (`validate`, `compare`) funktionieren wie oben gezeigt.
+Befehle, die in ein bind-gemountetes Host-Verzeichnis **schreiben**
+(`reverse --output`, `generate` in eine Datei, `data transfer` zu Datei-Targets),
+benötigen ein Mount, das für den Container-User schreibbar ist. Ergänze
+`--user "$(id -u):$(id -g)"`, damit Ausgabedateien mit deiner Host-Ownership
+angelegt werden:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
+  ghcr.io/pt9912/d-migrate:latest \
+  schema reverse --source mydb --output /work/reverse.yaml
 ```
 
 ### GitHub Release Assets
@@ -382,7 +411,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 
 ```text
 .
-├── .github/workflows/             ← GitHub Actions: build + release-homebrew + verify-homebrew-formula
+├── .github/workflows/             ← GitHub Actions: Build, Integration, Demo/Sample-DB, Release
 ├── CHANGELOG.md
 ├── Dockerfile                     ← Multi-Stage (deps, build, detekt, coverage, runtime, release-assets, jib-image-tar)
 ├── Makefile                       ← Build-/Test-Gates pro Dockerfile-Stage
@@ -391,6 +420,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 ├── build.gradle.kts               ← Root-Build-Config + Modul-Aggregation
 ├── settings.gradle.kts            ← Gradle-Multi-Modul-Deklaration
 ├── gradle.properties              ← gepinnte Dependency-Versionen
+├── config/                        ← detekt- und semgrep-Konfiguration
 ├── hexagon/                       ← Pure Domain + Ports (keine Treiber-Dependencies)
 │   ├── core/                      ← Neutrales Schema-Modell, Diff-Kern, Validatoren
 │   ├── ports-common/              ← Übergreifende Port-Verträge
@@ -402,29 +432,37 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 │   └── profiling/                 ← Perf-Measurement-Infrastruktur
 ├── adapters/
 │   ├── driven/                    ← Outbound: driver-postgresql/-mysql/-sqlite (+ -profiling),
-│   │                                formats, integrations (Flyway/Liquibase/Django/Knex),
-│   │                                persistence-jdbc, storage-file, streaming, text-icu,
+│   │                                formats + formats-parquet, integrations
+│   │                                (Flyway/Liquibase/Django/Knex), persistence-jdbc,
+│   │                                storage-file/-s3, streaming, text-icu,
 │   │                                audit-logging, connection-config
 │   └── driving/                   ← Inbound: cli, mcp
+├── examples/
+│   ├── bi-demo/                   ← Compose-Demo für Parquet-/S3-/BI-Flows
+│   └── sample-db/                 ← On-Demand-Sample-DB-Harness
 ├── test/
+│   ├── consumer-read-probe/       ← Read-only-Consumer-Surface-Verifikation
 │   ├── cross-dialect-matrix/      ← Workstream × Dialekt × Kind-Sweep + Carve-Out-Registry
 │   ├── integration-postgresql/    ← Testcontainers-PG-Live-DB-Tests
 │   ├── integration-mysql/         ← Testcontainers-MySQL-Live-DB-Tests
 │   ├── integration-sqlite/        ← file-backed SQLite-Live-DB-Tests
 │   ├── integration-concurrency/   ← Race-Condition-Reproducer (Sequence-Preserve, Atomic-Locks)
+│   ├── integration-integrations/  ← Export-Integrations-Contract-Tests
 │   ├── integration-persistence-jdbc/ ← JDBC-Store + Migration-Runner-ITs
 │   ├── integration-server-state/  ← MCP-Server-State-Machine-ITs
+│   ├── integration-storage-s3/    ← S3-kompatible ArtifactStore-ITs
 │   ├── e2e-cli/                   ← End-to-End-CLI + MCP-Harness-Szenarien
 │   └── perf-large-schema/         ← N = 100 / 1000 / 10000 Perf-Skalen
 ├── scripts/                       ← verify-doc-refs.sh, solid-suppression-gate.sh,
 │                                    test-integration-docker.sh, Kover-Utilities
+├── ledger/                        ← Suppression- und Quality-Ledger
 ├── packaging/homebrew/            ← Homebrew-Formula (d-migrate.rb)
 ├── spec/                          ← normative Spezifikationen (deutsch): lastenheft, architecture,
 │                                    design, cli-spec, neutral-model-spec,
 │                                    ddl-generation-rules, mcp-server, schema-reference,
 │                                    connection-config-spec
 └── docs/
-    ├── adr/                       ← Architecture Decision Records (4 Accepted)
+    ├── adr/                       ← Architecture Decision Records + Index
     ├── planning/
     │   ├── open/                  ← Trigger-Watch + offene Follow-ups
     │   ├── next/                  ← geplant aber noch nicht aktiv
@@ -444,8 +482,13 @@ maßgeblich.
 Detaillierte Dokumentation findest du in [`docs/`](docs/) und
 [`spec/`](spec/):
 
+- [Dokumentationsübersicht](docs/user/README.md)
+  - [Anwenderhandbuch](docs/user/anwenderhandbuch.md)
+  - [Administrationshandbuch](docs/user/administrationshandbuch.md)
+  - [Migrations-Leitfaden](docs/user/migrations-leitfaden.md)
+  - [API-Referenz (CLI + MCP)](docs/user/api-referenz.md)
 - [Quick Start Guide (Deutsch)](docs/user/guide.md)
-- [Entwurf](spec/design.md) / [Architektur](spec/architecture.md)
+- [Architektur](spec/architecture.md)
 - [Schema-YAML-Referenz](spec/schema-reference.md)
 - [Neutrale Modell-Spezifikation](spec/neutral-model-spec.md)
 - [CLI-Spezifikation](spec/cli-spec.md)

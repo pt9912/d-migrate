@@ -23,7 +23,7 @@ import io.kotest.matchers.string.shouldContain
  * into a structured `ExecutionTrace` instead of letting the CLI
  * crash with an uncaught planner-shape exception.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §10 "Bekannte Carve-Outs / Folge-Themen" Finding #1.
  */
 class SchemaMigrateExecutionStagePlanShapeTest : FunSpec({
@@ -32,7 +32,7 @@ class SchemaMigrateExecutionStagePlanShapeTest : FunSpec({
         executor = executor,
         dbLoader = null,
         normalizer = { it },
-        fingerprint = { it.name + ":" + it.version },
+        fingerprint = { s, _ -> s.name + ":" + s.version },
         printError = { _, _ -> },
     )
 

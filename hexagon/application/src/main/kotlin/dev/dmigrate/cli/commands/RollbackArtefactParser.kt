@@ -9,7 +9,7 @@ import dev.dmigrate.driver.migration.TransactionScope
 
 /**
  * Strict parser for the `d-migrate rollback-sql` artefact per
- * `docs/planning/done/diffresult-migration-plan.md §7.3`.
+ * `docs/planning/done-archive/diffresult-migration-plan.md §7.3`.
  *
  * The input must contain exactly one delimited block:
  *
@@ -318,6 +318,13 @@ internal object RollbackArtefactParser {
             partialRollback = parsed.partialRollback,
             skippedOperationIds = parsed.skippedOperationIds.toSet(),
             emitPartialRollbackFields = parsed.partialRollbackContractPresent,
+            // Re-canonicalise with the artefact's OWN fingerprint algorithm, not this
+            // build's default — otherwise an artefact produced under an older algorithm
+            // version (e.g. fingerprint v5 before the ADR 0025 v6 bump) fails hash
+            // verification (ARTIFACT_HASH_MISMATCH) even though its integrity is intact.
+            // The algorithm-version mismatch is surfaced later, precisely, by
+            // SchemaRollbackRunner (ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH).
+            fingerprintAlgorithm = parsed.fingerprintAlgorithm,
         )
         val rebuilt = if (parsed.formatVersion == RollbackArtefactBuilder.FORMAT_VERSION) {
             RollbackArtefactBuilder.build(input)

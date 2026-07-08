@@ -36,6 +36,7 @@ internal fun buildNeutralType(node: ObjectNode, type: NeutralType) {
             node.put("element_type", type.elementType)
         }
         is NeutralType.Geometry -> buildGeometryType(node, type)
+        is NeutralType.FullText -> node.put("type", "fulltext")
     }
 }
 

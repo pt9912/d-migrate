@@ -10,6 +10,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import java.sql.Connection
 
 /**
@@ -32,7 +33,7 @@ class MysqlAtomicSequencePreserveExecutorOwnerCheckTest : FunSpec({
         )
         val ex = shouldThrow<IllegalStateException> {
             executor.execute(
-                connection = enclosed,
+                connection = JdbcDatabaseConnection(enclosed),
                 batch = batch,
                 lockTimeoutMillis = 5_000L,
                 executeProtectedOperations = { _, _ ->

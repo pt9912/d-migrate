@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -40,7 +42,7 @@ import kotlin.io.path.deleteIfExists
  * outlasts the executor's budget, which is already covered by
  * [SqliteAtomicSequencePreserveExecutorIntegrationTest].
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase D ("Cross-Plan-Deadlock-Beweis pro Dialekt"); §4.3 für die
  * DB-weite Lock-Strategie.
  */
@@ -121,7 +123,7 @@ class SqliteAtomicPreserveCrossPlanDeadlockTest : FunSpec({
                         plan1Started.countDown()
                         plan2Started.await(10, TimeUnit.SECONDS)
                         plan1Result.set(
-                            executor.execute(c, plan1Batch, lockTimeoutMillis = 15_000) { _, _ ->
+                            executor.execute(JdbcDatabaseConnection(c), plan1Batch, lockTimeoutMillis = 15_000) { _, _ ->
                                 AtomicProtectedExecutionResult.Succeeded(0)
                             },
                         )
@@ -132,7 +134,7 @@ class SqliteAtomicPreserveCrossPlanDeadlockTest : FunSpec({
                         plan2Started.countDown()
                         plan1Started.await(10, TimeUnit.SECONDS)
                         plan2Result.set(
-                            executor.execute(c, plan2Batch, lockTimeoutMillis = 15_000) { _, _ ->
+                            executor.execute(JdbcDatabaseConnection(c), plan2Batch, lockTimeoutMillis = 15_000) { _, _ ->
                                 AtomicProtectedExecutionResult.Succeeded(0)
                             },
                         )

@@ -1,0 +1,7 @@
+departments 9
+employees 300024
+dept_manager 24
+dept_emp 331603
+titles 443308
+salaries 2844047
+salary_sum 181480757419

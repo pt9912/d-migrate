@@ -3,7 +3,7 @@
 Large-schema scale tests for the `SchemaMigrateRenderPipeline`.
 
 Plan-Doc:
-[quality-coverage-expansion-plan.md](../../docs/planning/done/quality-coverage-expansion-plan.md)
+[quality-coverage-expansion-plan.md](../../docs/planning/done-archive/quality-coverage-expansion-plan.md)
 §5.4 (Sub-Slice D + D-N10k).
 
 ## Why this module exists

@@ -195,6 +195,20 @@ class PostgresDiffSpatialTest : FunSpec({
         codes.toSet().size shouldBe 3
     }
 
+    test("GIST index on a text column is blocked — no operator class (I-08)") {
+        val before = TableDefinition(columns = mapOf("body" to ColumnDefinition(NeutralType.Text())))
+        val index = IndexDefinition(name = "idx_docs_body", columns = listOf(IndexColumn("body")), type = IndexType.GIST)
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("docs" to before))
+        val desired = emptySchema().copy(tables = mapOf("docs" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "docs", indicesAdded = listOf(index))))
+        val r = planAndUp(diff, current = current, desired = desired)
+
+        r.isBlocked shouldBe true
+        r.statements.none { it.sql.contains("USING GIST") } shouldBe true
+        r.diagnostics.any { it.code == "INDEX_OPCLASS_MISSING" } shouldBe true
+    }
+
     test("§C.2: PostgreSQL GIST index on geometry column renders with verified PostGIS") {
         val before = TableDefinition(
             columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
@@ -209,6 +223,36 @@ class PostgresDiffSpatialTest : FunSpec({
         r.isBlocked shouldBe false
         r.statements.single().sql shouldContain "CREATE INDEX \"idx_places_shape\" ON \"places\" USING GIST"
         r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.VERIFIED_PRESENT
+    }
+
+    test("VA3: PostgreSQL neutral SPATIAL index on geometry renders as USING GIST") {
+        val before = TableDefinition(
+            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val index = IndexDefinition(name = "idx_places_shape", columns = listOf(IndexColumn("shape")), type = IndexType.SPATIAL)
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("places" to before))
+        val desired = emptySchema().copy(tables = mapOf("places" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "places", indicesAdded = listOf(index))))
+        val r = planAndUp(diff, current = current, desired = desired, options = verifiedPostgisOptions())
+
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContain "CREATE INDEX \"idx_places_shape\" ON \"places\" USING GIST"
+    }
+
+    test("VA3: PostgreSQL SP-GiST index on geometry renders as USING SPGIST") {
+        val before = TableDefinition(
+            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val index = IndexDefinition(name = "idx_places_shape", columns = listOf(IndexColumn("shape")), type = IndexType.SPGIST)
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("places" to before))
+        val desired = emptySchema().copy(tables = mapOf("places" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "places", indicesAdded = listOf(index))))
+        val r = planAndUp(diff, current = current, desired = desired, options = verifiedPostgisOptions())
+
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContain "CREATE INDEX \"idx_places_shape\" ON \"places\" USING SPGIST"
     }
 
     test("§C.2: PostgreSQL non-GIST index on geometry column blocks") {

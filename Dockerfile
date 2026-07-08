@@ -129,6 +129,7 @@ RUN gradle --no-daemon detektBaseline --continue || true
 RUN find /src -name "detekt-baseline.xml" -not -path "/src/build/*" \
       -printf '%P\n' | tar cf /src/detekt-baselines.tar -C /src -T -
 
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/detekt-baselines.tar"]
 
 # ---- Stage: golden-update --------------------------------------------------
@@ -156,6 +157,7 @@ RUN gradle --no-daemon \
 RUN find /src -path "*/src/test/resources/golden/*" -type f \
       -printf '%P\n' | tar cf /src/goldens.tar -C /src -T -
 
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/goldens.tar"]
 
 # ---- Stage: detekt ---------------------------------------------------------
@@ -182,6 +184,7 @@ FROM compile AS jib-image-tar
 
 RUN gradle --no-daemon :adapters:driving:cli:jibBuildTar
 
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/jib-image.tar"]
 
 # ---- Stage 1c: coverage modules HTML --------------------------------------
@@ -214,6 +217,7 @@ RUN gradle --no-daemon ${COVERAGE_MODULES_HTML_TASKS}
 RUN find /src -path "*/build/reports/kover/html/*" -type f \
       -printf '%P\n' | tar cf /src/coverage-modules-html.tar -C /src -T -
 
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/coverage-modules-html.tar"]
 
 # ---- Stage 1d: release assets ---------------------------------------------
@@ -228,6 +232,7 @@ RUN if [ -n "${RELEASE_VERSION}" ]; then \
     fi
 RUN tar cf /src/release-assets.tar -C /src adapters/driving/cli/build/release
 
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/src/release-assets.tar"]
 
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
@@ -292,6 +297,7 @@ COPY --from=coverage-build /src/build/reports/kover/html/ /srv/coverage/
 
 EXPOSE 8080
 
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (serves coverage HTML locally in CI), never a published runtime image
 ENTRYPOINT ["python3", "-m", "http.server", "8080", "--directory", "/srv/coverage"]
 
 # ---- Stage 6: coverage-json ------------------------------------------------
@@ -303,6 +309,7 @@ WORKDIR /srv/coverage-json
 
 COPY --from=coverage-build /src/build/reports/kover/report.json /srv/coverage-json/report.json
 
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a coverage report to stdout), never a published runtime image
 ENTRYPOINT ["cat", "/srv/coverage-json/report.json"]
 
 # ---- Stage 6b: coverage-modules --------------------------------------------
@@ -374,6 +381,11 @@ WORKDIR /reports
 COPY --from=coverage-modules /reports/ /reports/
 COPY scripts/kover-modules-summary.py /usr/local/bin/kover-modules-summary.py
 
+# defusedxml: hardened XML parse used by the summary script (semgrep
+# use-defused-xml-parse).
+RUN pip install --no-cache-dir defusedxml
+
+# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (prints a coverage summary), never a published runtime image
 ENTRYPOINT ["python3", "/usr/local/bin/kover-modules-summary.py", "/reports"]
 
 # ---- Stage 7: runtime ------------------------------------------------------
@@ -388,14 +400,48 @@ LABEL org.opencontainers.image.title="d-migrate" \
 
 WORKDIR /opt/d-migrate
 
+# VA4 (Spatial): SpatiaLite-Extension für das SQLite-`spatialite`-Profil. Wird zur
+# Laufzeit NUR geladen, wenn eine Connection sie per `?spatialite=true` anfordert
+# (`SELECT load_extension('mod_spatialite')`); ohne das Flag bleibt SQLite unberührt.
+# Das Ubuntu-Noble-Paket stellt `/usr/lib/<triplet>/mod_spatialite.so` bereit, das
+# `load_extension('mod_spatialite')` über den Standard-Library-Pfad findet.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libsqlite3-mod-spatialite \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install the distribution produced by the `application` plugin.
 COPY --from=build /src/adapters/driving/cli/build/install/d-migrate/ /opt/d-migrate/
 
 ENV PATH="/opt/d-migrate/bin:${PATH}" \
     JAVA_OPTS="-XX:+UseZGC -XX:+ZGenerational"
 
+# Run the published image as a non-root user (semgrep
+# dockerfile.security.missing-user[-entrypoint]). The data volume /work is owned
+# by this uid so the CLI can write reverse/transfer output. Operators who
+# bind-mount a host directory may need `--user $(id -u):$(id -g)` so writes land
+# with host ownership (documented in README "Docker / Volumes").
+RUN useradd --no-create-home --uid 10001 dmigrate \
+    && mkdir -p /work && chown dmigrate:dmigrate /work
+
 WORKDIR /work
 VOLUME ["/work"]
 
+USER dmigrate
 ENTRYPOINT ["d-migrate"]
 CMD ["--help"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer.
+# Hermetisch im Projekt-Muster (vgl. semgrep/d-check): eigene Stage, offline via
+# `make ast-grep` ausgeführt. Schließt die Methodik-Lücke aus
+# `memory: feedback_syntax_aware_refactor` — Regex sieht Strings/Kommentare/
+# Formatvarianten nicht, ein AST schon. `ast-grep` unterstützt Kotlin built-in
+# (`-l kotlin`). Entrypoint = `ast-grep`; das Repo wird unter /repo gemountet.
+#
+# Version gepinnt (Hermetik-Vertrag, vgl. SEMGREP_IMAGE-Digest). TODO: node-Image
+# zusätzlich per Digest pinnen, sobald ein Build den Digest bestätigt.
+FROM node:22-bookworm-slim AS ast-grep
+RUN npm install -g @ast-grep/cli@0.44.0 \
+    && npm cache clean --force
+WORKDIR /repo
+ENTRYPOINT ["ast-grep"]

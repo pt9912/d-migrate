@@ -37,13 +37,13 @@ Jedes generierte DDL beginnt mit einem Header-Kommentar:
 -- Target: <dialect> | Generated: <ISO-8601-timestamp>
 ```
 
-**Tool-Export-Determinismus (0.7.0)**: Bei `d-migrate export flyway|liquibase|
+**Tool-Export-Determinismus**: Bei `d-migrate export flyway|liquibase|
 django|knex` wird der `Generated: <ISO-8601-timestamp>` Laufzeit-Timestamp
 nicht in die Tool-Artefakte übernommen. Gleiches Schema + gleiche Flags muss
 identische Artefaktinhalte erzeugen. Provenienz bleibt im Report oder in
 stabilen, nicht zeitabhängigen Metadaten sichtbar.
 
-**`schema generate`-Determinismus (0.9.5)**:
+**`schema generate`-Determinismus**:
 
 - Ohne weitere Flags bleibt der Header wie oben beschrieben und nutzt einen
   Laufzeit-Timestamp.
@@ -83,7 +83,7 @@ Begründung:
 - Keine Überraschungen bei reservierten Wörtern
 - Zukunftssicher (neue reservierte Wörter in DB-Updates)
 
-**Späterer Milestone: Nur reservierte Wörter quoten** (geplante Option `ddl.quote_identifiers: reserved_only`)
+**Optionaler Modus: Nur reservierte Wörter quoten** (Option `ddl.quote_identifiers: reserved_only`)
 
 Hinweis: Der aktuelle Implementierungsstand bietet **keine öffentliche
 Quoting-Konfigurationsoption**. Der Generator quotet derzeit immer.
@@ -233,7 +233,7 @@ Besonderheiten:
 ### 3.6 ALTER TABLE (Schema-Migration)
 
 Hinweis: Dieser Abschnitt beschreibt den geplanten diff-basierten
-`schema migrate`-Pfad eines spaeteren Milestones. Der Befehl ist im aktuellen
+`schema migrate`-Pfad. Der Befehl ist im aktuellen
 CLI-Umfang noch nicht verfuegbar.
 
 Für `schema migrate` erzeugt der Generator `ALTER TABLE`-Statements. Die Syntax variiert pro Dialekt:
@@ -339,13 +339,13 @@ DROP TABLE "_orders_old";
 | Kommando | Verhalten |
 |---|---|
 | `schema generate` | **Kein Rebuild** — erzeugt nur `CREATE TABLE` DDL (Neuerstellung). Der Rebuild ist nur bei Schema-Änderungen an bestehenden Tabellen relevant. |
-| `schema migrate` *(0.5.0)* | **Rebuild wird generiert** wenn eine ALTER-Operation für SQLite nicht unterstützt wird (z.B. ALTER COLUMN TYPE, ADD CONSTRAINT). |
+| `schema migrate` | **Rebuild wird generiert** wenn eine ALTER-Operation für SQLite nicht unterstützt wird (z.B. ALTER COLUMN TYPE, ADD CONSTRAINT). |
 
 Hinweis: Der hier beschriebene Rebuild-Workaround gehoert zum geplanten
-`schema migrate`-Pfad eines spaeteren Milestones und ist nicht Teil des
+`schema migrate`-Pfad und ist nicht Teil des
 aktuellen CLI-Funktionsumfangs.
 
-Für `schema generate` (0.2.0) ist der Rebuild-Workaround also **nicht relevant** — er wird erst mit `schema migrate` (0.5.0) implementiert.
+Für `schema generate` ist der Rebuild-Workaround also **nicht relevant** — er gehört zum `schema migrate`-Pfad.
 
 ---
 
@@ -391,7 +391,7 @@ CONSTRAINT `fk_orders_customer_id` FOREIGN KEY (`customer_id`)
 > in die DDL-Ausgabe interpoliert. Der Wert stammt aus der Schema-YAML-Datei,
 > die vom Schema-Autor kontrolliert wird. Keine Sanitization findet statt.
 >
-> **Diff-Migrationen (Plan-2 §F.5)**: `CHECK`- und `EXCLUDE`-Constraints
+> **Diff-Migrationen**: `CHECK`- und `EXCLUDE`-Constraints
 > werden im Diff-Pfad nur konservativ per SQL-Text verglichen. Der Vergleich
 > normalisiert Zeilenenden auf LF und ignoriert umgebenden Whitespace, fuehrt
 > aber keine semantische SQL-Kanonisierung durch. Unveraenderte Constraints
@@ -557,7 +557,7 @@ CREATE SEQUENCE "invoice_number_seq"
     CACHE 20;
 ```
 
-MySQL: Gesteuert ueber `--mysql-named-sequences` (seit 0.9.3):
+MySQL: Gesteuert ueber `--mysql-named-sequences`:
 
 - `action_required` (Default): Sequences werden mit E056 uebersprungen.
 - `helper_table`: Emulation ueber kanonische Hilfsobjekte:
@@ -568,13 +568,11 @@ MySQL: Gesteuert ueber `--mysql-named-sequences` (seit 0.9.3):
   - Cache-Warnung W114 (Preallocation nicht emuliert)
   - Transaktionswarnung W117 (Rollback retrahiert Inkremente)
 
-Details: [`mysql-sequence-emulation-plan.md`](../docs/planning/done/mysql-sequence-emulation-plan.md).
-
 SQLite: Keine nativen benannten Sequenzen. Standard ist `action_required`
-(E056-Skip). Mit `--sqlite-named-sequences helper_table` (0.9.7) wird die
+(E056-Skip). Mit `--sqlite-named-sequences helper_table` wird die
 Emulation eingeschaltet:
 
-- `dmg_sequences`-Hilfstabelle (TEXT-/INTEGER-Spalten gemäß Plan §3.2:
+- `dmg_sequences`-Hilfstabelle (TEXT-/INTEGER-Spalten:
   `managed_by`, `format_version`, `name`, `next_value`,
   `last_returned_value`, `exhausted`, `increment_by`, `min_value`,
   `max_value`, `cycle_enabled`, `cache_size`)
@@ -609,23 +607,21 @@ Emulation eingeschaltet:
   modifiziert) oder W124 (User-BEFORE-INSERT-Trigger maskiert das
   Sequence-Trigger-Paar)
 
-Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md).
-
-> **Diff-Migrationen (Plan-2 §E.3)**: PostgreSQL rendert im
+> **Diff-Migrationen**: PostgreSQL rendert im
 > diffbasierten Migrationspfad deklarative `CREATE SEQUENCE`,
 > `ALTER SEQUENCE` und `DROP SEQUENCE`-Operationen fuer die neutralen
 > Attribute `start`, `increment`, `minValue`, `maxValue`, `cycle` und
 > `cache`. `sequence_nextval`-Defaults werden im Plan nach einer im selben
 > Diff erzeugten Sequence sortiert. Der live aktuelle Sequence-Wert wird in
 > diesem Slice nicht uebernommen oder zurueckgesetzt; MySQL- und
-> SQLite-Sequence-Migrationen sind seit 0.9.7 im `helper_table`-Modus
+> SQLite-Sequence-Migrationen sind im `helper_table`-Modus
 > live: `CreateSequence` emittiert einen `INSERT INTO dmg_sequences`,
 > `AlterSequence` ein `UPDATE`, `DropSequence` ein `DELETE` (mit
 > E058-Preflight + gebundenen Trigger-DROPs), `RenameSequence` ein
 > `UPDATE name`+Trigger-Pair-Rebuild und `AlterSequenceCurrentValue`
 > ein `UPDATE next_value`. `AddColumn` mit `SequenceNextVal`
 > emittiert das Trigger-Paar gleich mit. `supportsCurrentValue-
-> Preserve` ist im 0.9.7-E.3-Folge-Slice fuer SQLite auf `true` gesetzt: der
+> Preserve` ist fuer SQLite auf `true` gesetzt: der
 > `SqliteSequenceCurrentValueProbe`-Adapter liest `dmg_sequences.next_value`
 > live, der `SequencePreserveStage` enthaelt SQLite in der Allowlist
 > und blockt ohne `--sqlite-named-sequences helper_table` mit
@@ -637,10 +633,7 @@ Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequ
 > der vor-Rename-Name). Ein fehlender `restoreValue` (typisch fuer
 > `CreateSequence` ohne deterministischen Vorzustand) surfaced als
 > `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`-Skip,
-> kein stiller `UPDATE`. Details siehe
-> [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md)
-> §6.2 und Phasen F/G, plus den 0.9.7-E.3-Folge-Slice
-> [`ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`](../docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md).
+> kein stiller `UPDATE`.
 
 ---
 
@@ -730,7 +723,7 @@ Funktionen die nicht in der obigen Tabelle stehen und dialektspezifisch sind, we
 | `source_dialect` ≠ Ziel-Dialekt, unbekannte Funktion erkannt | Query wird 1:1 übernommen + Warnung W111: "View query may contain dialect-specific functions" |
 | Kein `source_dialect` gesetzt | Query wird 1:1 übernommen (Annahme: Standard-SQL) |
 
-Die Erkennung unbekannter Funktionen erfolgt über eine einfache Heuristik: Wenn der Query Funktionsnamen enthält, die weder in der Transformationstabelle noch in der transparenten Liste stehen, wird W111 erzeugt. Für 0.2.0 ist dies eine Best-Effort-Prüfung — false positives sind akzeptabel.
+Die Erkennung unbekannter Funktionen erfolgt über eine einfache Heuristik: Wenn der Query Funktionsnamen enthält, die weder in der Transformationstabelle noch in der transparenten Liste stehen, wird W111 erzeugt. Dies ist eine Best-Effort-Prüfung — false positives sind akzeptabel.
 
 #### Identifier-Quoting in View-Queries
 
@@ -894,7 +887,7 @@ Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL
 
 **Strategie**:
 - **Wenn `source_dialect` = `target_dialect`**: Body wird 1:1 übernommen
-- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [design.md §4](./design.md#4-ki-integrations-design) und [Beispiel Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md))
+- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [ki-mcp.md](./ki-mcp.md))
 - **Fallback ohne KI**: `action_required` (E053) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
@@ -1129,13 +1122,13 @@ Bei `--output-format json` wird die DDL als `ddl`-Feld im JSON eingebettet:
 
 ---
 
-## 15. Golden-Master-Teststrategie (0.2.0)
+## 15. Golden-Master-Teststrategie
 
 ### 15.1 Fixture-Layout
 
 ```
 adapters/driven/formats/src/test/resources/fixtures/
-├── schemas/                          # Eingabe-Schemas (bestehend aus 0.1.0)
+├── schemas/                          # Eingabe-Schemas
 │   ├── minimal.yaml
 │   ├── e-commerce.yaml
 │   ├── all-types.yaml
@@ -1215,11 +1208,10 @@ git add adapters/driven/formats/src/test/resources/fixtures/ddl/
 
 ---
 
-## 16. Spatial-Spalten-Generierung (0.5.5)
+## 16. Spatial-Spalten-Generierung
 
 Dieser Abschnitt beschreibt verbindlich, wie `schema generate` Spalten mit
-`type: geometry` in datenbankspezifisches DDL ueberfuehrt. Er gilt fuer
-Milestone 0.5.5 (Spatial Phase 1).
+`type: geometry` in datenbankspezifisches DDL ueberfuehrt.
 
 Nicht Teil dieses Abschnitts: `type: geography`, `z`, `m`, Spatial-Indizes
 und automatische Erkennung oder Installation von Datenbankerweiterungen.
@@ -1378,7 +1370,7 @@ SELECT AddGeometryColumn('places', 'location', 4326, 'POINT', 'XY');
 
 - `srid`: Der Wert aus dem neutralen Modell; fehlt `srid`, wird `0` verwendet.
 - `type`: `geometry_type` in Grossbuchstaben (z.B. `POINT`, `POLYGON`).
-- `coord_dimension`: Immer `'XY'` in Phase 1 (Z/M sind nicht Teil von 0.5.5).
+- `coord_dimension`: Immer `'XY'` (Z/M werden nicht modelliert).
 
 **Rollback**: Das Rollback-Statement fuer `AddGeometryColumn` ist
 `SELECT DiscardGeometryColumn('<table>', '<column>');`. Fuer die zugehoerige
@@ -1392,7 +1384,7 @@ auf `TEXT` oder `BLOB` erzeugt.
 
 Die Tabelle wird als `action_required` mit Code E052 markiert, analog zu
 §16.3 (PostgreSQL mit Profil `none`). Partielle DDL ohne die Spatial-Spalte
-ist kein zulaessiger 0.5.5-Pfad.
+ist kein zulaessiger Pfad.
 
 ### 16.7 Rollback-Regeln fuer Spatial-Statements
 
@@ -1402,12 +1394,12 @@ ist kein zulaessiger 0.5.5-Pfad.
 | `SELECT AddGeometryColumn('t', 'c', ...)` | `SELECT DiscardGeometryColumn('t', 'c')` |
 | `geometry(Point, 4326)` als Spalte in `CREATE TABLE` | Teil des normalen `DROP TABLE IF EXISTS "t"` |
 
-**Kanonische Rollback-Semantik fuer PostgreSQL und MySQL (0.5.5)**:
-Da Geometry-Spalten in 0.5.5 ausschliesslich ueber `CREATE TABLE` (nicht ueber
+**Kanonische Rollback-Semantik fuer PostgreSQL und MySQL**:
+Da Geometry-Spalten ausschliesslich ueber `CREATE TABLE` (nicht ueber
 `ALTER TABLE ADD COLUMN`) erzeugt werden, ist der Rollback-Pfad fuer
-PostgreSQL und MySQL in 0.5.5 immer `DROP TABLE IF EXISTS`. Spaltenbezogene
-Rollback-Pfade (`ALTER TABLE ... DROP COLUMN`) sind erst bei spaeterer
-Migrationsunterstuetzung relevant und nicht Teil von 0.5.5.
+PostgreSQL und MySQL immer `DROP TABLE IF EXISTS`. Spaltenbezogene
+Rollback-Pfade (`ALTER TABLE ... DROP COLUMN`) sind nur relevant, wenn
+Geometry-Spalten ueber `ALTER TABLE ADD COLUMN` erzeugt werden.
 
 Wenn Rollback generiert wird (`--generate-rollback`) und das Profil
 `spatialite` ist, werden die `DiscardGeometryColumn`-Aufrufe in umgekehrter
@@ -1489,9 +1481,9 @@ erscheint im Report und auf stderr.
 
 ---
 
-## 17. Phasenbezogene DDL-Ordnung (0.9.2)
+## 17. Phasenbezogene DDL-Ordnung
 
-Ab 0.9.2 traegt jedes DDL-Statement eine `DdlPhase` (`PRE_DATA` oder
+Jedes DDL-Statement traegt eine `DdlPhase` (`PRE_DATA` oder
 `POST_DATA`). Im Default-Modus (`--split single`) hat das keine Auswirkung —
 alle Statements werden wie bisher in einer Datei ausgegeben. Mit
 `--split pre-post` werden die Statements nach Phase getrennt.
@@ -1562,12 +1554,10 @@ Notes und `skipped_objects` tragen im Split-Modus optional ein `phase`-Feld
 ## Verwandte Dokumentation
 
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typsystem §3, Validierung §13, Transformationshinweise §11
-- [Design](./design.md) — Domänenmodell §2, Rollback §7
-- [Architektur](./architecture.md) — TypeMapper §3.4, SchemaWriter §3.1
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes
 
 ---
 
 **Version**: 1.2
 **Stand**: 2026-04-20
-**Status**: Spezifikation fuer 0.9.2 (§17 Phasenbezogene DDL-Ordnung hinzugefuegt)
+**Status**: Verbindlich

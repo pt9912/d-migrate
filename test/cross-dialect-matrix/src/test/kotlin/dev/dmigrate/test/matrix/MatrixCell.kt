@@ -7,8 +7,8 @@ import dev.dmigrate.driver.DatabaseDialect
  * regression matrix. Identifies which fixture pair to load and what
  * exit code the file-mode `schema migrate` run must produce.
  *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
- * §5.2; `docs/planning/in-progress/diffresult-migration-plan-2.md`
+ * Plan-Doc: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
+ * §5.2; `docs/planning/done-archive/diffresult-migration-plan-2.md`
  * §11.2 (the matrix criteria the cells implement).
  */
 data class MatrixCell(

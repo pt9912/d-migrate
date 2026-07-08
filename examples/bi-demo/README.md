@@ -5,7 +5,7 @@ komponierbaren Analytics-Stack einbettet — PostgreSQL als
 Datenquelle, SeaweedFS (S3-kompatibel) als Object-Storage,
 Metabase als BI-Frontend.
 
-Spec: [`docs/planning/done/bi-demo-compose.md`](../../docs/planning/done/bi-demo-compose.md)
+Spec: [`docs/planning/done-archive/bi-demo-compose.md`](../../docs/planning/done-archive/bi-demo-compose.md)
 
 ## Voraussetzungen
 
@@ -290,7 +290,7 @@ make bi-demo-purge && make bi-demo-up
 | `bi-demo-up`        | `cp .env.example .env`, `mkdir -p out`, `docker compose ... up -d`                    |
 | `bi-demo-down`      | `docker compose -f examples/bi-demo/docker-compose.yml down`                          |
 | `bi-demo-purge`     | `docker compose -f examples/bi-demo/docker-compose.yml down -v`                       |
-| `bi-demo-smoke`     | `./examples/bi-demo/scripts/smoke.sh` (End-to-End-Smoke, siehe BD.5)                  |
+| `bi-demo-smoke`     | `./scripts/smoke.sh` (End-to-End-Smoke, siehe BD.5)                  |
 
 ## Slice-Status
 
@@ -301,4 +301,4 @@ make bi-demo-purge && make bi-demo-up
 - BD.5 (Smoke-Script + Make-Targets + CI) — done
 
 Spec + Sub-Slice-Akzeptanzkriterien:
-[`bi-demo-compose.md`](../../docs/planning/done/bi-demo-compose.md)
+[`bi-demo-compose.md`](../../docs/planning/done-archive/bi-demo-compose.md)

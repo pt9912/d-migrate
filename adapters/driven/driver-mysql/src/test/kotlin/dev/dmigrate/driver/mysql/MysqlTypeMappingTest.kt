@@ -16,6 +16,7 @@ class MysqlTypeMappingTest : FunSpec({
         charMaxLen: Int? = null,
         numP: Int? = null,
         numS: Int? = null,
+        srsId: Int? = null,
     ) = MysqlTypeMapping.mapColumn(
         MysqlTypeMapping.ColumnInput(
             dataType = dataType,
@@ -26,6 +27,7 @@ class MysqlTypeMappingTest : FunSpec({
             numScale = numS,
             tableName = "t",
             colName = "c",
+            srsId = srsId,
         ),
     )
 
@@ -91,6 +93,11 @@ class MysqlTypeMappingTest : FunSpec({
         enumType.values shouldBe listOf("a", "b", "c")
     }
 
+    test("enum values preserve original case — I-03 regression") {
+        val result = map("enum", "enum('Yes','No','MAYBE')")
+        (result.type as NeutralType.Enum).values shouldBe listOf("Yes", "No", "MAYBE")
+    }
+
     // ── SET → Note ──────────────────────────────
 
     test("SET → Text with ACTION_REQUIRED") {
@@ -113,6 +120,23 @@ class MysqlTypeMappingTest : FunSpec({
         (result.type is NeutralType.Geometry) shouldBe true
     }
 
+    test("VA2: geometry subtype is captured from data_type") {
+        val result = map("polygon")
+        (result.type as NeutralType.Geometry).geometryType shouldBe GeometryType.of("polygon")
+    }
+
+    test("VA2: srs_id is carried into the geometry SRID") {
+        val result = map("point", srsId = 4326)
+        val geom = result.type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.of("point")
+        geom.srid shouldBe 4326
+    }
+
+    test("VA2: geometry without srs_id has null SRID") {
+        val geom = map("geometry").type as NeutralType.Geometry
+        geom.srid.shouldBeNull()
+    }
+
     // ── Unknown ─────────────────────────────────
 
     test("unknown type → Text with warning") {
@@ -126,6 +150,10 @@ class MysqlTypeMappingTest : FunSpec({
 
     test("extractEnumValues parses values") {
         MysqlTypeMapping.extractEnumValues("enum('pending','shipped')") shouldBe listOf("pending", "shipped")
+    }
+
+    test("extractEnumValues preserves case — I-03") {
+        MysqlTypeMapping.extractEnumValues("ENUM('Active','Closed')") shouldBe listOf("Active", "Closed")
     }
 
     test("extractEnumValues empty") {

@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -24,7 +25,7 @@ class PostgresSchemaReaderDependencyTest : FunSpec({
 
     val conn = mockk<Connection>(relaxUnitFun = true)
     val pool = mockk<ConnectionPool> {
-        every { borrow() } returns conn
+        every { borrow() } returns JdbcDatabaseConnection(conn)
     }
     val jdbc = mockk<JdbcOperations>(relaxUnitFun = true)
     val stmt = mockk<Statement>(relaxUnitFun = true)
@@ -60,6 +61,8 @@ class PostgresSchemaReaderDependencyTest : FunSpec({
         every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns
             emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
+        // N7: user-defined aggregates from pg_aggregate.
+        every { jdbc.queryList(match { it.contains("pg_aggregate") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
         every {

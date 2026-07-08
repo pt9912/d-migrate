@@ -5,8 +5,10 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.IndexDefinition
-import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.ViewQueryTransformer
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
@@ -160,19 +162,49 @@ internal object PostgresDiffOtherOps {
             return
         }
         if (!guardSpatialIndex(op, op.index, ctx, table)) return
+        if (!guardIndexOpClass(op, op.index, ctx, table)) return
+        // ADR 0025: a FULLTEXT index whose tsvector column can't be resolved is blocked
+        // (FULLTEXT_VECTOR_UNKNOWN) — see ctx.resolveFullTextIndex. A block here means UP
+        // never creates a phantom index, so the DOWN `DROP INDEX` below stays symmetric.
+        val index = ctx.resolveFullTextIndex(op, table, op.index) ?: return
         // CREATE INDEX (non-CONCURRENTLY): SHARE lock — writes block,
         // reads proceed. Plan-2 §A.1.
-        ctx.emit(op, ctx.sql.createIndexSql(table, op.index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
+        ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
     }
 
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: PostgresDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == PostgresRenderDirection.DOWN) {
             if (!guardSpatialIndex(op, op.index, ctx, table)) return
-            ctx.emit(op, ctx.sql.createIndexSql(table, op.index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
+            if (!guardIndexOpClass(op, op.index, ctx, table)) return
+            val index = ctx.resolveFullTextIndex(op, table, op.index) ?: return
+            ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
             return
         }
         ctx.emit(op, "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};")
+    }
+
+    /**
+     * I-08: block a GIN/GIST index whose column type has no default operator
+     * class (e.g. tsvector degraded to text) instead of emitting invalid
+     * `USING gist (text_col)` DDL. Returns false (and blocks) when unrenderable.
+     */
+    private fun guardIndexOpClass(
+        op: DiffOperation,
+        index: IndexDefinition,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+    ): Boolean {
+        val offending = ctx.indexColumnMissingOpClass(table, index) ?: return true
+        ctx.skip(
+            op,
+            "Operation ${op.id} creates a ${index.type.name} index on `$table`.`$offending`, but that " +
+                "column type has no default ${index.type.name} operator class in PostgreSQL " +
+                "(e.g. a tsvector column degraded to text). Restore the type or add an operator class.",
+            code = "INDEX_OPCLASS_MISSING",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return false
     }
 
     private fun guardSpatialIndex(
@@ -182,7 +214,9 @@ internal object PostgresDiffOtherOps {
         table: String,
     ): Boolean {
         if (!ctx.indexTouchesGeometry(table, index)) return true
-        if (index.type != IndexType.GIST) {
+        // VA3: GiST/SP-GiST/BRIN und der neutrale SPATIAL-Typ sind gültige räumliche
+        // PostGIS-Methoden; B-Tree/HASH/GIN nicht (nur Equality/Sortierung).
+        if (!pgSupportsGeometryIndex(index.type)) {
             ctx.skip(
                 op,
                 "Operation ${op.id} targets a geometry-column index on `$table`, but index type " +
@@ -231,6 +265,7 @@ internal object PostgresDiffOtherOps {
             ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};", PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
             return
         }
+        if (blockNonPortableView(op, op.view, name, ctx)) return
         // CREATE VIEW: catalog write, AccessShareLock on referenced
         // relations during planning, no user-table lock. Plan-2 §A.1.
         ctx.emit(op, ctx.sql.createViewSql(name, op.view), PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
@@ -244,7 +279,32 @@ internal object PostgresDiffOtherOps {
             return
         }
         if (!guardViewSignatureCompatibility(op, ctx, name)) return
+        if (blockNonPortableView(op, target, name, ctx)) return
         ctx.emit(op, ctx.sql.replaceViewSql(name, target), PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
+    }
+
+    /**
+     * I-09: cross-dialect view bodies that PostgreSQL cannot parse (foreign
+     * quoting / dialect-specific functions) are blocked with E053 instead of
+     * emitting invalid `CREATE VIEW` DDL. Returns true when the op was blocked.
+     */
+    private fun blockNonPortableView(
+        op: DiffOperation,
+        view: ViewDefinition,
+        name: String,
+        ctx: PostgresDiffRenderContext,
+    ): Boolean {
+        val query = view.query ?: return false
+        val verdict = ViewQueryTransformer(DatabaseDialect.POSTGRESQL).assessPortability(query, view.sourceDialect)
+        if (verdict.portable) return false
+        ctx.skip(
+            op,
+            "View '$name' body is not portable to PostgreSQL (${verdict.reason}); d-migrate does not " +
+                "translate view bodies between dialects. Rewrite the view for PostgreSQL and re-run.",
+            code = "E053",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return true
     }
 
     fun renderDropView(op: DiffOperation.DropView, ctx: PostgresDiffRenderContext) {

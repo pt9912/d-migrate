@@ -15,7 +15,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * E.3 MySQL Sequence-Diff Sub-Slice B: per-operation renderers for
  * `CreateSequence` / `AlterSequence` / `DropSequence` /
  * `RenameSequence` against the helper-table emulation introduced in
- * 0.9.4 (`docs/planning/done/mysql-sequence-emulation-plan.md`).
+ * 0.9.4 (`docs/planning/done-archive/mysql-sequence-emulation-plan.md`).
  *
  * The renderer is stateful only through
  * [MysqlDiffRenderContext.sequenceMigration]: a per-direction latch
@@ -48,7 +48,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * stays uniform across modes.
  *
  * Plan-Doc:
- * `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
+ * `docs/planning/done-archive/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
  * §5.2 (Op-Subtyp-Mapping) + §6 Sub-Slice B.
  */
 internal object MysqlDiffSequenceOps {
@@ -120,7 +120,7 @@ internal object MysqlDiffSequenceOps {
                 "AlterSequence for `$name` carries only a runtime-state " +
                     "change (start / next_value); the managed-fields delta is empty. " +
                     "Deferred to the `preserveCurrentValue` follow-up slice " +
-                    "(`docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`); " +
+                    "(`docs/planning/done-archive/ImpPlan-0.9.7-sequence-preserve-current-value.md`); " +
                     "no SQL emitted in this slice.",
                 code = RUNTIME_STATE_NO_OP_CODE,
                 severity = dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.INFO,

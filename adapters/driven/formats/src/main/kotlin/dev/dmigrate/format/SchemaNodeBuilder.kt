@@ -43,6 +43,9 @@ internal object SchemaNodeBuilder {
         if (schema.sequences.isNotEmpty()) {
             root.set<ObjectNode>("sequences", buildSequences(mapper, schema.sequences))
         }
+        if (schema.aggregates.isNotEmpty()) {
+            root.set<ObjectNode>("aggregates", buildAggregates(mapper, schema.aggregates))
+        }
 
         return root
     }

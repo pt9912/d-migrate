@@ -60,7 +60,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
  *   schema-lock are permanently out-of-scope; see the plan-doc §3.2
  *   for the full carve-out list.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.1 (re-cut ausführungs-letzter aktivierender
  * Commit); §3.2 for out-of-scope, §5 Phase D for the AllInPlan-Flag.
  */

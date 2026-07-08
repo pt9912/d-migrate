@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
@@ -31,7 +32,7 @@ class MysqlDataWriter(
                 "the Runner should have validated this via DialectCapabilities"
         }
 
-        val conn = pool.borrow()
+        val conn = pool.borrow().asJdbc()
         val jdbc = jdbcFactory(conn)
         val sync = schemaSync()
         val qualified = parseMysqlQualifiedTableName(table)
@@ -40,7 +41,9 @@ class MysqlDataWriter(
         try {
             savedAutoCommit = conn.autoCommit
             val lowerCaseSetting = lowerCaseTableNames(conn)
-            val targetColumns = loadTargetColumns(conn, qualified)
+            val targetColumns = enrichGeometrySrid(
+                jdbc, conn, qualified, lowerCaseSetting, loadTargetColumns(conn, qualified),
+            )
             val primaryKeyColumns = if (options.onConflict == OnConflict.UPDATE) {
                 loadPrimaryKeyColumns(conn, qualified, lowerCaseSetting).also {
                     require(it.isNotEmpty()) {
@@ -93,6 +96,31 @@ class MysqlDataWriter(
         conn: Connection,
         table: MysqlQualifiedTableName,
     ): List<TargetColumn> = dev.dmigrate.driver.data.loadTargetColumns(conn, table.quotedPath())
+
+    /**
+     * VA2 (Spatial): reichert Geometrie-Zielspalten mit ihrer SRID aus
+     * `information_schema.columns.srs_id` an, damit der Import WKB als
+     * `ST_GeomFromWKB(?, srid)` bindet statt SRID 0 zu erzwingen. NULL/0
+     * (= keine SRID-Bindung) bleibt `null`.
+     */
+    private fun enrichGeometrySrid(
+        jdbc: JdbcOperations,
+        conn: Connection,
+        table: MysqlQualifiedTableName,
+        lowerCaseSetting: Int,
+        columns: List<TargetColumn>,
+    ): List<TargetColumn> {
+        val schema = table.metadataSchema(conn, lowerCaseSetting)
+        val metaTable = table.metadataTable(lowerCaseSetting)
+        val sridByColumn = MysqlMetadataQueries.listColumns(jdbc, schema, metaTable)
+            .mapNotNull { row ->
+                val name = row["column_name"] as? String ?: return@mapNotNull null
+                val srid = (row["srs_id"] as? Number)?.toInt()?.takeIf { it != 0 } ?: return@mapNotNull null
+                name to srid
+            }.toMap()
+        if (sridByColumn.isEmpty()) return columns
+        return columns.map { col -> sridByColumn[col.name]?.let { col.copy(srid = it) } ?: col }
+    }
 
     private fun loadPrimaryKeyColumns(
         conn: Connection,

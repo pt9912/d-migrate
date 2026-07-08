@@ -1,7 +1,6 @@
 # Spec: Kontinuierliche Shadow-Migration
 
 Status: Draft  
-Zielversion: 1.1 Design, 1.2 Spike, 1.3 Experimental, 2.0 Stable  
 Datei: `spec/shadow-migration.md`  
 Kategorie: Optional Execution Backend / Data Migration Workflow
 
@@ -2226,80 +2225,9 @@ execution backend reports unstable status
 
 ---
 
-## 27. Implementierungsstrategie
+## 27. Tests
 
-### 27.1 Phase 1: Design
-
-Zielversion: 1.1
-
-Umfang:
-
-- `spec/shadow-migration.md`
-- `ShadowMigrationJob` Contract
-- `ShadowMigrationPlan` Contract
-- `ShadowExecutionBackendPort`
-- REST/gRPC/MCP Vertragsentwurf
-- Readiness-Gates
-- Datenschutzregeln
-
-### 27.2 Phase 2: Spike
-
-Zielversion: 1.2
-
-Umfang:
-
-- Experimenteller `FLINK_CDC_PIPELINE`-Adapter.
-- Generierung von `flink-cdc-pipeline.yaml` aus `ShadowMigrationPlan`.
-- Ein Source/Sink-Paar, bevorzugt PostgreSQL -> PostgreSQL oder MySQL -> PostgreSQL.
-- Initial Snapshot.
-- CDC-Verarbeitung.
-- Upsert-by-primary-key.
-- Lag-Metrik.
-- Dead Letter Artefakt.
-- Manuelle Readiness-Prüfung.
-
-Nicht im Spike:
-
-```text
-vollständige Multi-DB-Matrix
-automatischer Cutover
-auto-evolve schema drift
-produktive HA-Garantien
-```
-
-### 27.3 Phase 3: Experimental
-
-Zielversion: 1.3
-
-Umfang:
-
-- CLI `shadow start/status/validate/readiness/stop`.
-- REST Job API.
-- Checkpoint/Resume.
-- Savepoint/Stop.
-- Validierungsreports.
-- Datenschutzkonfiguration.
-- Artifact Store Integration.
-
-### 27.4 Phase 4: Stable
-
-Zielversion: 2.0
-
-Umfang:
-
-- Stabiler Distributed Shadow-Migration-Modus.
-- Mehrere DB-Kombinationen.
-- Produktive Cutover-Readiness.
-- Stabile Flink-/Flink-CDC-Deployment-Dokumentation.
-- Betriebsleitfaden.
-- Failure-Recovery-Dokumentation.
-- Performance- und Langzeittests.
-
----
-
-## 28. Tests
-
-### 28.1 Unit Tests
+### 27.1 Unit Tests
 
 - Planvalidierung.
 - Primary-Key-Pflicht.
@@ -2312,7 +2240,7 @@ Umfang:
 - Stop Mode.
 - Resume Compatibility.
 
-### 28.2 Integration Tests
+### 27.2 Integration Tests
 
 - Shadow start.
 - Snapshot transfer.
@@ -2326,7 +2254,7 @@ Umfang:
 - Savepoint trigger.
 - Drain stop.
 
-### 28.3 End-to-End Tests
+### 27.3 End-to-End Tests
 
 Mindestens ein E2E-Szenario:
 
@@ -2350,7 +2278,7 @@ MySQL source
 PostgreSQL target
 ```
 
-### 28.4 Failure Tests
+### 27.4 Failure Tests
 
 - Source temporarily unavailable.
 - Target temporarily unavailable.
@@ -2362,7 +2290,7 @@ PostgreSQL target
 - Dead letter threshold exceeded.
 - Execution backend failure.
 
-### 28.5 Determinismus-Tests
+### 27.5 Determinismus-Tests
 
 - Identische Pläne erzeugen identische stabile Plan-Artefakte.
 - Identische Validierungen erzeugen identische stabile Reports.
@@ -2371,7 +2299,7 @@ PostgreSQL target
 
 ---
 
-## 29. Akzeptanzkriterien
+## 28. Akzeptanzkriterien
 
 Shadow-Migration gilt als akzeptiert, wenn:
 
@@ -2416,9 +2344,9 @@ Shadow-Migration gilt als akzeptiert, wenn:
 
 ---
 
-## 30. Offene Entscheidungen
+## 29. Offene Entscheidungen
 
-### 30.1 Erstes Source/Target-Paar
+### 29.1 Erstes Source/Target-Paar
 
 Optionen:
 
@@ -2440,7 +2368,7 @@ Begründung:
 - einfacher zu validieren
 - guter erster Spike
 
-### 30.2 Flink oder lokaler CDC-Runner zuerst?
+### 29.2 Flink oder lokaler CDC-Runner zuerst?
 
 Vorschlag:
 
@@ -2452,7 +2380,7 @@ Begründung:
 
 Shadow-Migration ist primär für kontinuierliche, größere Datenpfade relevant. Flink CDC 3.6 kann viele einfache Fälle über Pipeline-YAML abdecken, ohne dass d-migrate zuerst eigene Flink-Job-JARs bauen muss. Ein lokaler Runner kann für Tests nützlich sein, sollte aber nicht das Zielmodell verzerren.
 
-### 30.3 Auto-Evolve erlauben?
+### 29.3 Auto-Evolve erlauben?
 
 Vorschlag:
 
@@ -2467,7 +2395,7 @@ Default bleibt:
 FAIL_FAST
 ```
 
-### 30.4 Automatischer Cutover?
+### 29.4 Automatischer Cutover?
 
 Vorschlag:
 
@@ -2477,7 +2405,7 @@ Nein.
 
 d-migrate darf Readiness bewerten und Schritte dokumentieren. Der tatsächliche Cutover bleibt explizite Nutzer- oder Plattformaktion.
 
-### 30.5 Append-only Tabellen ohne Primary Key?
+### 29.5 Append-only Tabellen ohne Primary Key?
 
 Vorschlag:
 
@@ -2489,9 +2417,9 @@ Ohne explizite Konfiguration wird fehlender Primary Key abgelehnt.
 
 ---
 
-## 31. Beispiel: End-to-End
+## 30. Beispiel: End-to-End
 
-### 31.1 Plan erstellen
+### 30.1 Plan erstellen
 
 ```bash
 d-migrate shadow plan \
@@ -2502,7 +2430,7 @@ d-migrate shadow plan \
   --output shadow-plan.yaml
 ```
 
-### 31.2 Shadow starten
+### 30.2 Shadow starten
 
 ```bash
 d-migrate shadow start \
@@ -2514,7 +2442,7 @@ d-migrate shadow start \
   --checkpoint-interval-ms 30000
 ```
 
-### 31.3 Status prüfen
+### 30.3 Status prüfen
 
 ```bash
 d-migrate shadow status \
@@ -2536,7 +2464,7 @@ metrics:
   deadLetterEvents: 0
 ```
 
-### 31.4 Readiness prüfen
+### 30.4 Readiness prüfen
 
 ```bash
 d-migrate shadow readiness \
@@ -2560,7 +2488,7 @@ gates:
     status: PASS
 ```
 
-### 31.5 Drain und Stop
+### 30.5 Drain und Stop
 
 ```bash
 d-migrate shadow stop \
@@ -2570,7 +2498,7 @@ d-migrate shadow stop \
 
 ---
 
-## 32. Zusammenfassung
+## 31. Zusammenfassung
 
 Kontinuierliche Shadow-Migration ist der stärkste Anwendungsfall für ein optionales Flink- oder Flink-CDC-Pipeline-Backend in d-migrate.
 

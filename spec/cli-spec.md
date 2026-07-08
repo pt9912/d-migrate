@@ -4,18 +4,11 @@
 
 > Dokumenttyp: Spezifikation / Referenz
 >
-> **Überblick**: Implementiert sind `schema validate`,
-> `schema generate`, `schema reverse`, `schema compare`, `schema migrate`,
-> `schema rollback`, `data export`, `data import`, `data transfer`,
-> `export ...` sowie die
-> operativen `mcp`-Kommandos (`mcp serve`, `mcp approval-grant issue`,
-> `mcp cursor-key generate`/`validate`).
->
-> **Ausblick**: Geplant sind weitere CLI-Oberflächen fuer
-> Transformations-Workflows und ggf. eigene Service-Mode-Adapter fuer
-> langlaufende Operationen. Transport- und Tool-spezifische MCP-Vertraege
-> stehen in [`spec/mcp-server.md`](./mcp-server.md) und
-> [`spec/ki-mcp.md`](./ki-mcp.md).
+> **Überblick**: Die CLI gliedert sich in die Kommandogruppen `schema`,
+> `data`, `export`, `transform` sowie die operativen `mcp`-Kommandos
+> (`mcp serve`, `mcp approval-grant issue`, `mcp cursor-key generate`/`validate`).
+> Transport- und Tool-spezifische MCP-Verträge stehen in
+> [`spec/mcp-server.md`](./mcp-server.md) und [`spec/ki-mcp.md`](./ki-mcp.md).
 
 ---
 
@@ -27,7 +20,7 @@
 d-migrate <command> <subcommand> [flags] [arguments]
 ```
 
-- **Commands**: Oberste Ebene — implementiert: `schema`, `data`, `export`, `mcp`; geplant: `transform`
+- **Commands**: Oberste Ebene — `schema`, `data`, `export`, `transform`, `mcp`
 - **Subcommands**: Aktion innerhalb eines Commands (`schema validate`, `data export`)
 - **Flags**: Optionen mit `--` Präfix, Kurzform mit `-` (`--format json`, `-f json`)
 - **Arguments**: Positionelle Argumente (selten, nur wo eindeutig)
@@ -38,7 +31,7 @@ Diese Flags sind bei allen Kommandos verfügbar:
 
 | Flag | Kurzform | Typ | Default | Beschreibung |
 |---|---|---|---|---|
-| `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` |
+| `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` | <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 | `--lang` | | String | (kein Default; Fallback-Kette siehe unten) | Sprachwahl fuer menschenlesbare Ausgaben. Akzeptiert aktuell die gebundelten Produktsprachen `de` und `en` inkl. kanonisierbarer Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US`. Andere Werte fuehren zu Exit 2. Gewinnt gegen `D_MIGRATE_LANG`, `LC_ALL`/`LANG`, `i18n.default_locale` und System-Locale. Der generische Env-/Config-/System-Pfad bleibt toleranter und faellt fuer unbekannte Bundles weiterhin auf das englische Root-Bundle zurueck. |
 | `--output-format` | | String | `plain` | Ausgabeformat: `plain`, `json`, `yaml` |
 | `--verbose` | `-v` | Boolean | false | Erweiterte Ausgabe (DEBUG-Level) |
@@ -305,8 +298,7 @@ String-codierte Blocker-Diagnostiken aus dem Sequence-Render-Pfad
 §4.6 um Codes, die spezifisch für den Cross-Dialect-Transfer von
 Sequenzen sind. Alle Codes mappen via `PlannerBlockerClassifier` auf
 genau ein `MigrationBlockedReason`; das Mapping ist Teil des aktuellen
-Sequence-Migrationsvertrags und der zugehörigen ADR
-`docs/adr/0003-cross-dialect-sequencing.md`.
+Sequence-Migrationsvertrags.
 
 | Code | Reason | Emittiert in | Bedeutung |
 |---|---|---|---|
@@ -507,6 +499,7 @@ denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
 | `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
 | `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults |
 | `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` |
+| `--sqlite-autoincrement-width` | Nein | `32`\|`64` | SQLite-Reverse: AUTOINCREMENT-Primärschlüssel als 32-bit `identifier` (Default) oder 64-bit `biginteger`+`identity` schreiben (inhärente Mehrdeutigkeit, `reverse-preference-mechanism.md`); übersteuert `reverse.sqlite.autoincrement_width` |
 
 **Reverse-Ausgabe und Reverse-Report**:
 
@@ -648,7 +641,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--strict-gap-operations` | Nein | Boolean | Blockt Operationen, die ueber einen Multi-Statement-Fallback mit Sichtbarkeitsluecke gerendert wuerden (heute: `ReplaceTrigger` via Drop+Create auf PostgreSQL < 14, MySQL und SQLite). Default `false` (lenient): der Pfad emittiert die Drop+Create-Statements und meldet die Luecke als `W_TRIGGER_REPLACE_GAP`-Warning im Report. Mit Flag wechselt der Renderer zu `MANUAL_ACTION_REQUIRED` (Exit `8`) und gibt keine Statements fuer die betroffene Operation aus. Wirkt allgemein auf `OperationRisk.hasGap = true`-Operationen; aktuell setzt nur der Trigger-Mapper diesen Flag. |
 | `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie fuer den `--execute`-Pfad (Default: `action_required`). Identisch zur gleichnamigen Option auf `schema generate`, aber hier auf der Migrate-Seite: nur mit `helper_table` aktiviert sich der `SequencePreserveStage`-Probe-Pfad fuer SQLite (`SqliteSequenceCurrentValueProbe` liest `dmg_sequences.next_value`); ohne Opt-in blockt jede `preserveCurrentValue`-Kandidat-Op vor der Probe-Connection mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (`primaryBlockedReason = MANUAL_ACTION_REQUIRED`). |
 
-Begriffe (vollständig in `spec/design.md`):
+Begriffe:
 
 - **`SchemaDiff`** — struktureller Unterschied zwischen zwei Schemas
 - **`DiffView`** — stabile, primitive-only Compare-Ausgabe für `schema compare`
@@ -793,7 +786,7 @@ Routine-Rendering:
 Trigger-Rendering:
 
 - PostgreSQL rendert `CreateTrigger`/`ReplaceTrigger`/`DropTrigger` als native `CREATE TRIGGER ... EXECUTE FUNCTION <ref>;` / `DROP TRIGGER <name> ON <table>;`. Der Body **muss** eine strikte `[schema.]identifier([arg, ...])`-Funktionsreferenz sein — inline PL/pgSQL blockt der Renderer mit `TRIGGER_BODY_NOT_FUNCTION_REFERENCE` (Exit `8`). Replace nutzt natives `CREATE OR REPLACE TRIGGER` ab PG-14, sonst Drop+Create-Fallback.
-- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` bleibt geplant). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
+- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` ist nicht abgedeckt). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
 - SQLite rendert `CREATE TRIGGER ... BEGIN <body> END;` mit impliziter `FOR EACH ROW`-Orientierung; `DROP TRIGGER <name>;` mit bare Triggername (SQLite-Trigger sind global). Replace ist immer Drop+Create. Pre-Flight-Blocker: `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `SQLITE_TRIGGER_BODY_NOT_RENDERABLE` (`sourceDialect` ungleich `sqlite`). Trigger auf einer Tabelle, die ueber `AlterColumnType` / `AlterColumnNullability` / `AlterConstraint` einen Rebuild ausloest, werden von `SqliteRebuildPlanner` in den Rebuild-Block absorbiert; der Standalone-Renderer rendert nur Trigger ohne Rebuild-Betroffenheit.
 - **Gap-Vertrag**: jede Drop+Create-Replace traegt
   `OperationRisk.hasGap = true` und emittiert einen
@@ -811,7 +804,7 @@ Trigger-Rendering:
 - **Identitaets-Kollision**: zwei Trigger mit gleichem Namen auf verschiedenen Tabellen blockt der `TriggerNameCollisionDetector` mit `TRIGGER_NAME_COLLISION` (Exit `8`). Der Reader-Pfad konsultiert den Detektor vor der Map-Materialisierung; YAML-Files-mit-doppeltem-Map-Key blocken ueber Jacksons `FAIL_ON_READING_DUP_TREE_KEY` bereits im Codec.
 - Body-Sanitisation findet im Renderer **nicht** statt. Display-/Report-Plane scrubbt Trigger-Bodies ueber den gemeinsamen `RoutineBodyScrubber` (E.1) — `PASSWORD '...'`-Literale und andere bekannte Patterns sind im Report maskiert, im `--output`-Artefakt scrubbed und im Live-`--execute`-Pfad raw.
 
-Aktuell ausgeklammert: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` bleiben geplant. `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ist ebenfalls geplant.
+Aktuell ausgeklammert: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` sind nicht abgedeckt. Eine `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ist nicht Teil des aktuellen Modells.
 
 Report-Felder für Materialized Views:
 
@@ -1138,8 +1131,6 @@ internes `renameProvenance`-Metadatum (nicht im Artefakt seriell
 exponiert); die fuer Consumer verbindliche Quelle bleibt
 `renameProjections[]`.
 
-Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
-
 Abgrenzung gegen `export flyway|liquibase|django|knex`: jene Tools-Adapter erzeugen baseline-/full-state-Exports aus einem einzelnen Schema; `schema migrate` arbeitet diff-basiert (`current → desired`).
 
 #### `schema rollback`
@@ -1183,10 +1174,11 @@ Bei `--execute`:
 
 1. Artefakt-Hash neu berechnen und gegen den im Block gespeicherten Wert prüfen.
 2. Dialekt der Ziel-Connection mit dem im Block gespeicherten Dialekt vergleichen → Exit `8` (`TARGET_DIALECT_MISMATCH`) bei Abweichung.
-3. Aktuellen Zielzustand introspizieren und gegen `postUpFingerprint` (oder `allowedPostUpFingerprints` bei Recovery-Artefakten) prüfen → Exit `8` (`TARGET_STATE_MISMATCH`) bei Drift.
-4. `--allow-partial-rollback` verlangen, falls `partialRollback=true` gesetzt ist → Exit `8` ohne Flag.
-5. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
-6. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
+3. `fingerprintAlgorithm` des Artefakts mit dem dieser Version vergleichen → Exit `8` (`ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`) bei Abweichung; der gespeicherte Fingerprint ist dann nicht vergleichbar und das Artefakt muss neu erzeugt werden.
+4. Aktuellen Zielzustand introspizieren und gegen `postUpFingerprint` (oder `allowedPostUpFingerprints` bei Recovery-Artefakten) prüfen → Exit `8` (`TARGET_STATE_MISMATCH`) bei Drift.
+5. `--allow-partial-rollback` verlangen, falls `partialRollback=true` gesetzt ist → Exit `8` ohne Flag.
+6. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
+7. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
 
 Exit-Codes:
 
@@ -1197,9 +1189,7 @@ Exit-Codes:
 | `4` | Verbindungsfehler |
 | `5` | DDL-Ausführungsfehler nach Beginn von `--execute` |
 | `7` | Artefakt ungültig (Hash, Format, Pflichtfelder, fehlender Metadatenblock) |
-| `8` | Drift-, Dialekt- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, fehlendes `--allow-destructive`) |
-
-Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md §7.2`](../docs/planning/done/diffresult-migration-plan.md).
+| `8` | Drift-, Dialekt-, Algorithmus- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH`, fehlendes `--allow-destructive`) |
 
 ### 6.2 data
 
@@ -1207,7 +1197,7 @@ Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-p
 
 Streamt Tabellen aus einer Datenbank in JSON, YAML, CSV oder Parquet. Pull-basiert,
 chunk-weise — geeignet auch für Tabellen, die größer sind als der verfügbare
-Heap (Plan §2.1, §6.4).
+Heap.
 
 ```
 d-migrate data export --source <url-or-name> --format <format> [--output <path>]
@@ -1224,12 +1214,12 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Flag | Pflicht | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--source` | Ja | URL oder Name | — | Connection-URL oder Name aus `.d-migrate.yaml` |
-| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (kein Default — explizit setzen, §6.15). Parquet schreibt je nach Ziel ein Bundle (Verzeichnis + `manifest.yaml`) oder Single-File; zusätzliche Parquet-Flags siehe CHANGELOG `[0.9.8]` |
+| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (kein Default — explizit setzen, §6.15). Parquet schreibt je nach Ziel ein Bundle (Verzeichnis + `manifest.yaml`) oder Single-File |
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
 | `--filter` | Nein | String | — | Filter-DSL-Ausdruck. Erlaubte Operatoren: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN (...)`, `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, Klammern. Erlaubte Funktionen: `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS`, `ROUND`, `COALESCE`. Arithmetik (`+`, `-`, `*`, `/`) und qualifizierte Identifier (`table.column`) sind zulaessig. Alle Literale werden als Bind-Parameter an JDBC gebunden. Rohes SQL wird nicht mehr akzeptiert — nicht DSL-konforme Eingaben enden mit Exit 2. |
-| `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export (LF-013). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
-| `--since` | Nein | String | — | Untere Marker-Grenze für LF-013. Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
+| `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export ([`LF-013`](lastenheft-d-migrate.md#lf-013)). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
+| `--since` | Nein | String | — | Untere Marker-Grenze für [`LF-013`](lastenheft-d-migrate.md#lf-013). Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
@@ -1240,7 +1230,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz, inkl. Mid-Table-Wiederaufnahme. Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis endet der Aufruf mit Exit 7. Der Lauf uebernimmt `operationId` aus dem Manifest, skippt Tabellen mit Status `COMPLETED` und setzt unvollstaendige Tabellen fort. **Mid-Table**: ist `--since-column` gesetzt **und** hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; fehlt der PK, fallt der Lauf mit sichtbarem stderr-Hinweis auf Tabellen-Reexport zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei im Checkpoint-Verzeichnis geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume ignoriert den gespeicherten Marker und exportiert die Tabelle erneut von vorn. Kompatibilitaetsmismatch (Fingerprint inkl. PK-Signatur, Tabellenliste, Output-Modus, operationType; oder Manifest hat `resumePosition`, Request hat aber kein `--since-column`) → Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
-**Output-Auflösung** (Plan §6.9):
+**Output-Auflösung**:
 
 | `--output` | `--split-files` | Tabellen | Resultat |
 |---|---|---|---|
@@ -1303,7 +1293,7 @@ d-migrate data export --source local_pg --format json \
     --output ./full-dump --split-files
 ```
 
-**LF-013: Inkrementeller Export via `--since-column` / `--since`**
+**[`LF-013`](lastenheft-d-migrate.md#lf-013): Inkrementeller Export via `--since-column` / `--since`**
 
 - `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
 - `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
@@ -1374,7 +1364,7 @@ kanonisch beschrieben.
 | `--target` | Ja | URL oder Alias | — | Ziel-Datenbank |
 | `--tables` | Nein | Liste | alle | Kommaseparierte Tabellenliste |
 | `--filter` | Nein | String | — | Filter-DSL-Ausdruck fuer die Quellabfrage. Gleiche DSL-Grammatik wie bei `data export --filter`. Alle Literale werden als Bind-Parameter an JDBC gebunden. |
-| `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer (LF-013) |
+| `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer ([`LF-013`](lastenheft-d-migrate.md#lf-013)) |
 | `--since` | Nein | String | — | Untere Marker-Grenze (nur zusammen mit `--since-column`) |
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Handling: `fire`, `disable`, `strict` |
@@ -1432,7 +1422,7 @@ d-migrate data transfer --source staging --target local_pg \
 
 #### `data seed`
 
-Geplant (LF-024, Milestone 1.3.0). Generiert Testdaten und importiert sie.
+Generiert Testdaten und importiert sie.
 
 ```
 d-migrate data seed --schema <path> --target <url>
@@ -1488,7 +1478,7 @@ auf MySQL/SQLite, ungueltiges `--format`, `--top-n` ausserhalb 1..1000),
 
 #### `transform procedure`
 
-Geplant (LF-017). Transformiert Stored Procedures/Functions zwischen Dialekten.
+Transformiert Stored Procedures/Functions zwischen Dialekten.
 
 ```
 d-migrate transform procedure --source <path> --procedure <name> --ai-backend <provider>
@@ -1510,7 +1500,7 @@ Exit: `0` bei Erfolg, `6` bei KI-Fehlern.
 
 #### `generate procedure`
 
-Geplant (LF-017). Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
+Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
 
 ```
 d-migrate generate procedure --source <path> --target <dialect>
@@ -1575,7 +1565,7 @@ Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
 
 #### `validate data`
 
-Geplant ([LF-027](./lastenheft-d-migrate.md)). Validiert eine Datendatei
+Validiert eine Datendatei
 DB-frei gegen eine explizit gebundene Tabelle aus einer Schema-Definition.
 v1 prüft Spaltenpräsenz, Typ, Nullability und Länge/Präzision; CHECK, FK,
 Top-Level-Tabellenwrapper und headerlose CSV sind spätere Ausbaustufen.
@@ -1599,7 +1589,7 @@ Validierungsfehlern, `7` bei Parse-/I/O-Fehlern.
 
 #### `validate procedure`
 
-Geplant (LN-034). Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
+Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
 
 ```
 d-migrate validate procedure --source <path> --target <url>
@@ -1620,7 +1610,7 @@ Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
 #### `config credentials set`
 
-Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Speichert verschlüsselte Datenbank-Credentials.
+Speichert verschlüsselte Datenbank-Credentials.
 
 ```
 d-migrate config credentials set --name <connection> --user <user> --password <password>
@@ -1638,7 +1628,7 @@ Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
 #### `config credentials list`
 
-Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Listet gespeicherte Verbindungsnamen (ohne Passwörter).
+Listet gespeicherte Verbindungsnamen (ohne Passwörter).
 
 ```
 d-migrate config credentials list
@@ -1648,7 +1638,7 @@ Exit: `0` bei Erfolg.
 
 #### `config show`
 
-Geplant ([Credential-Management](./connection-config-spec.md#4-credential-management)). Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
+Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
 
 ```
 d-migrate config show [--section <section>]
@@ -1864,7 +1854,7 @@ Alternative: Umgebungsvariable `D_MIGRATE_DB_PASSWORD` oder Konfigurationsdatei.
 
 Prioritaet:
 
-- fuer den effektiven Config-Pfad: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`
+- fuer den effektiven Config-Pfad: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 - fuer allgemeine CLI-Optionen weiterhin: CLI-Argument > Umgebungsvariable > Konfigurationsdatei > Default
 
 ---
@@ -1906,10 +1896,8 @@ stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 
 ## Verwandte Dokumentation
 
-- [Design](./design.md) — CLI-Design §5, Fehlerbehandlung §8
-- [Architektur](./architecture.md) — CLI-Modul, Clikt-Framework
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Schema-Validierungsregeln §13
-- [Lastenheft](./lastenheft-d-migrate.md) — LF-012 (CLI), LN-015 (Dokumentation), LN-016 (Fehlermeldungen)
+- [Lastenheft](./lastenheft-d-migrate.md) — [`LF-012`](lastenheft-d-migrate.md#lf-012) (CLI), [`LN-015`](lastenheft-d-migrate.md#ln-015) (Dokumentation), [`LN-016`](lastenheft-d-migrate.md#ln-016) (Fehlermeldungen)
 
 ---
 

@@ -1,4 +1,5 @@
 package dev.dmigrate.streaming
+import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -58,7 +59,7 @@ class StreamingImporterReorderPerfTest : FunSpec({
         )
 
         try {
-            pool.borrow().use { conn ->
+            pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.execute(
                         "CREATE TABLE perf_users (" +
@@ -90,6 +91,7 @@ class StreamingImporterReorderPerfTest : FunSpec({
             // measures the same wall-clock on both sides.
             val writer = SqliteDataWriter()
             val importer = StreamingImporter(
+                valueDeserializerFactory = testValueDeserializerFactory(),
                 readerFactory = DefaultDataChunkReaderFactory(),
                 writerLookup = { writer },
             )

@@ -4,6 +4,8 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffEndpoint
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -38,8 +40,10 @@ class CheckPreflightProbeRunnerTest : FunSpec({
     // Use an in-memory SQLite connection as a no-op "real" JDBC connection.
     // For an empty plan, none of the three per-dialect probes execute any
     // SQL against it — they map over an empty planner output.
-    fun useSqliteConn(block: (java.sql.Connection) -> Unit) {
-        DriverManager.getConnection("jdbc:sqlite::memory:").use(block)
+    fun useSqliteConn(block: (DatabaseConnection) -> Unit) {
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { conn ->
+            block(JdbcDatabaseConnection(conn))
+        }
     }
 
     test("dispatch routes POSTGRESQL → empty plan returns empty list") {

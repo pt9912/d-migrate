@@ -275,9 +275,13 @@ internal object SchemaColumnValidationRules {
         is DefaultValue.SequenceNextVal -> isSequenceDefaultCompatible(type)
     }
 
+    // I-02: String-Literal-Defaults sind auch auf Temporaltypen gültig
+    // (z. B. `date DEFAULT '2020-01-01'`); ohne das scheitert reverse-/SQLite-
+    // generate-Output am eigenen Validator.
     private fun isStringDefaultCompatible(type: NeutralType): Boolean =
         type is NeutralType.Text || type is NeutralType.Char ||
-            type is NeutralType.Enum || type == NeutralType.Email || type is NeutralType.Uuid
+            type is NeutralType.Enum || type == NeutralType.Email || type is NeutralType.Uuid ||
+            type is NeutralType.DateTime || type is NeutralType.Date || type is NeutralType.Time
 
     private fun isNumericDefaultCompatible(type: NeutralType): Boolean =
         type is NeutralType.Integer || type is NeutralType.SmallInt ||
@@ -288,7 +292,15 @@ internal object SchemaColumnValidationRules {
         default: DefaultValue.FunctionCall,
         type: NeutralType,
     ): Boolean = when (default.name) {
-        "current_timestamp" -> type is NeutralType.DateTime || type is NeutralType.Date || type is NeutralType.Time
+        // I-02: SQLite legt Zeitstempel als TEXT ab (`text DEFAULT current_timestamp`).
+        "current_timestamp" ->
+            type is NeutralType.DateTime || type is NeutralType.Date ||
+                type is NeutralType.Time || type is NeutralType.Text
+        // N1: CURRENT_DATE / CURRENT_TIME als Funktions-Default.
+        "current_date" ->
+            type is NeutralType.Date || type is NeutralType.DateTime || type is NeutralType.Text
+        "current_time" ->
+            type is NeutralType.Time || type is NeutralType.DateTime || type is NeutralType.Text
         "gen_uuid" -> type is NeutralType.Uuid
         else -> true
     }

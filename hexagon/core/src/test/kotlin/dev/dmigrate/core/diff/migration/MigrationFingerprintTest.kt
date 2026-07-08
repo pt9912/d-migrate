@@ -6,6 +6,10 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -25,7 +29,216 @@ class MigrationFingerprintTest : FunSpec({
     ) = SchemaDefinition(name = name, version = version, tables = tables, sequences = sequences)
 
     test("project starts with the algorithm identifier") {
-        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v1\n")
+        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v7\n")
+    }
+
+    // v3: identifier-implied PK canonicalisation
+    // (docs/planning/done/migrate-postcompare-identifier-pk-drift.md)
+
+    test("implicit identifier PK fingerprints identically to explicit primary_key") {
+        // Soll: PK nur implizit über `identifier` (kein primary_key) — wie ein
+        // hand-/CLI-Schema. Reverse: PK explizit materialisiert. Müssen gleich hashen.
+        val implicit = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "label" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )))
+        val explicit = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "label" to ColumnDefinition(NeutralType.Text()),
+            ),
+            primaryKey = listOf("id"),
+        )))
+        MigrationFingerprint.compute(implicit) shouldBe MigrationFingerprint.compute(explicit)
+        MigrationFingerprint.project(implicit) shouldContain "primary_key=id\n"
+    }
+
+    test("ambiguous: multiple identifier columns without primary_key do NOT derive a PK") {
+        val twoIds = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "a" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "b" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+            ),
+        )))
+        // Keine implizite PK abgeleitet → leer; unterscheidet sich von explizitem PK.
+        MigrationFingerprint.project(twoIds) shouldContain "primary_key=\n"
+        val explicitA = schema(tables = mapOf("t" to TableDefinition(
+            columns = twoIds.tables.getValue("t").columns,
+            primaryKey = listOf("a"),
+        )))
+        MigrationFingerprint.compute(twoIds) shouldNotBe MigrationFingerprint.compute(explicitA)
+    }
+
+    test("explicit PK diverging from the identifier column stays distinct (no false match)") {
+        val pkOnOther = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                "code" to ColumnDefinition(NeutralType.Text()),
+            ),
+            primaryKey = listOf("code"),
+        )))
+        // Nicht-leerer PK wird verbatim genutzt → NICHT auf `id` kanonisiert.
+        MigrationFingerprint.project(pkOnOther) shouldContain "primary_key=code\n"
+    }
+
+    // v7: dialektbewusste Kanonisierung
+    // (docs/planning/done/postcompare-type-canonicalization-slice.md)
+
+    test("v7: type canonicalizer folds dialect-flattened types onto one fingerprint") {
+        fun withType(t: NeutralType) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("val" to ColumnDefinition(t)),
+        )))
+        // SQLite-artige Faltung als dialektneutrale Test-Projektion.
+        val sqliteLike: (NeutralType) -> NeutralType = { t ->
+            when (t) {
+                NeutralType.SmallInt, NeutralType.BigInteger, NeutralType.BooleanType -> NeutralType.Integer
+                is NeutralType.DateTime, NeutralType.Uuid, NeutralType.Json -> NeutralType.Text()
+                is NeutralType.Decimal -> NeutralType.Float()
+                else -> t
+            }
+        }
+        MigrationFingerprint.compute(withType(NeutralType.SmallInt), sqliteLike) shouldBe
+            MigrationFingerprint.compute(withType(NeutralType.Integer), sqliteLike)
+        MigrationFingerprint.compute(withType(NeutralType.Decimal(10, 2)), sqliteLike) shouldBe
+            MigrationFingerprint.compute(withType(NeutralType.Float()), sqliteLike)
+        MigrationFingerprint.compute(withType(NeutralType.DateTime()), sqliteLike) shouldBe
+            MigrationFingerprint.compute(withType(NeutralType.Text()), sqliteLike)
+        // Identity-Default: ohne Kanonisierer bleiben dieselben Schemata verschieden.
+        MigrationFingerprint.compute(withType(NeutralType.SmallInt)) shouldNotBe
+            MigrationFingerprint.compute(withType(NeutralType.Integer))
+    }
+
+    test("v7: named single-column UNIQUE folds onto the column flag (comparator parity)") {
+        val named = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "a" to ColumnDefinition(NeutralType.Text()),
+                "b" to ColumnDefinition(NeutralType.Text()),
+            ),
+            constraints = listOf(dev.dmigrate.core.model.ConstraintDefinition(
+                name = "uq_a", type = dev.dmigrate.core.model.ConstraintType.UNIQUE, columns = listOf("a"),
+            )),
+        )))
+        val flagged = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "a" to ColumnDefinition(NeutralType.Text(), unique = true),
+                "b" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )))
+        MigrationFingerprint.compute(named) shouldBe MigrationFingerprint.compute(flagged)
+    }
+
+    test("v7: multi-column UNIQUE stays a distinct named constraint (no fold)") {
+        val multi = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "a" to ColumnDefinition(NeutralType.Text()),
+                "b" to ColumnDefinition(NeutralType.Text()),
+            ),
+            constraints = listOf(dev.dmigrate.core.model.ConstraintDefinition(
+                name = "uq_ab", type = dev.dmigrate.core.model.ConstraintType.UNIQUE, columns = listOf("a", "b"),
+            )),
+        )))
+        val flags = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf(
+                "a" to ColumnDefinition(NeutralType.Text(), unique = true),
+                "b" to ColumnDefinition(NeutralType.Text(), unique = true),
+            ),
+        )))
+        MigrationFingerprint.compute(multi) shouldNotBe MigrationFingerprint.compute(flags)
+        MigrationFingerprint.project(multi) shouldContain "constraint=uq_ab"
+    }
+
+    test("v7: named single-column FK folds onto the column reference, name-insensitively") {
+        fun child(cols: Map<String, ColumnDefinition>, constraints: List<dev.dmigrate.core.model.ConstraintDefinition> = emptyList()) =
+            schema(tables = mapOf(
+                "parent" to TableDefinition(
+                    columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
+                    primaryKey = listOf("id"),
+                ),
+                "child" to TableDefinition(columns = cols, constraints = constraints),
+            ))
+        fun fkConstraint(name: String) = dev.dmigrate.core.model.ConstraintDefinition(
+            name = name, type = dev.dmigrate.core.model.ConstraintType.FOREIGN_KEY,
+            columns = listOf("parent_id"),
+            references = dev.dmigrate.core.model.ConstraintReferenceDefinition(table = "parent", columns = listOf("id")),
+        )
+        // Authored: Spalten-Level `references:`. Reverse: benannter Constraint (fk_0 / *_fkey).
+        val authored = child(mapOf("parent_id" to ColumnDefinition(
+            NeutralType.Integer,
+            references = dev.dmigrate.core.model.ReferenceDefinition(table = "parent", column = "id"),
+        )))
+        val reversedSqlite = child(mapOf("parent_id" to ColumnDefinition(NeutralType.Integer)), listOf(fkConstraint("fk_0")))
+        val reversedPg = child(mapOf("parent_id" to ColumnDefinition(NeutralType.Integer)), listOf(fkConstraint("child_parent_id_fkey")))
+        MigrationFingerprint.compute(authored) shouldBe MigrationFingerprint.compute(reversedSqlite)
+        MigrationFingerprint.compute(reversedSqlite) shouldBe MigrationFingerprint.compute(reversedPg)
+        // Divergierende Signatur bleibt ein eigener Constraint (kein Fold).
+        val diverging = child(
+            mapOf("parent_id" to ColumnDefinition(
+                NeutralType.Integer,
+                references = dev.dmigrate.core.model.ReferenceDefinition(table = "parent", column = "id"),
+            )),
+            listOf(dev.dmigrate.core.model.ConstraintDefinition(
+                name = "fk_other", type = dev.dmigrate.core.model.ConstraintType.FOREIGN_KEY,
+                columns = listOf("parent_id"),
+                references = dev.dmigrate.core.model.ConstraintReferenceDefinition(table = "parent", columns = listOf("code")),
+            )),
+        )
+        MigrationFingerprint.compute(diverging) shouldNotBe MigrationFingerprint.compute(authored)
+        MigrationFingerprint.project(diverging) shouldContain "constraint=fk_other"
+    }
+
+    test("v7: required projects as effective value for PK columns (PK implies NOT NULL)") {
+        fun pkTable(required: Boolean) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = required)),
+            primaryKey = listOf("id"),
+        )))
+        MigrationFingerprint.compute(pkTable(false)) shouldBe MigrationFingerprint.compute(pkTable(true))
+        // Nicht-PK-Spalten bleiben streng.
+        fun plain(required: Boolean) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("val" to ColumnDefinition(NeutralType.Text(), required = required)),
+        )))
+        MigrationFingerprint.compute(plain(false)) shouldNotBe MigrationFingerprint.compute(plain(true))
+    }
+
+    test("v7: CHECK expressions hash in comparator-canonical form (CRLF/trim parity)") {
+        fun withCheck(expr: String) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("a" to ColumnDefinition(NeutralType.Integer)),
+            constraints = listOf(dev.dmigrate.core.model.ConstraintDefinition(
+                name = "chk_a", type = dev.dmigrate.core.model.ConstraintType.CHECK, expression = expr,
+            )),
+        )))
+        // Reverse-Reader können Zeilenenden/Randwhitespace anders liefern als das
+        // Soll-YAML — der Comparator kanonisiert das (ConstraintDiffContract), der
+        // Fingerprint muss dieselbe Form hashen.
+        MigrationFingerprint.compute(withCheck("a > 0\r\n")) shouldBe
+            MigrationFingerprint.compute(withCheck("a > 0"))
+        MigrationFingerprint.compute(withCheck("a > 0")) shouldNotBe
+            MigrationFingerprint.compute(withCheck("a > 1"))
+    }
+
+    test("v7: constraint on a nonexistent column is NOT folded away") {
+        val ghost = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("a" to ColumnDefinition(NeutralType.Text())),
+            constraints = listOf(dev.dmigrate.core.model.ConstraintDefinition(
+                name = "uq_ghost", type = dev.dmigrate.core.model.ConstraintType.UNIQUE, columns = listOf("ghost"),
+            )),
+        )))
+        MigrationFingerprint.project(ghost) shouldContain "constraint=uq_ghost"
+    }
+
+    test("index column prefix length is part of the fingerprint (prefix-length slice)") {
+        fun docs(prefix: Int?) = schema(
+            tables = mapOf(
+                "docs" to TableDefinition(
+                    columns = mapOf("body" to ColumnDefinition(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(name = "idx_body", columns = listOf(IndexColumn("body", prefixLength = prefix)))
+                    ),
+                )
+            )
+        )
+        MigrationFingerprint.compute(docs(null)) shouldNotBe MigrationFingerprint.compute(docs(100))
     }
 
     test("compute returns 64 hex chars (SHA-256)") {
@@ -133,8 +346,95 @@ class MigrationFingerprintTest : FunSpec({
         out shouldContain "unique=true"
     }
 
-    test("ALGORITHM constant is the version-1 string") {
-        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v1"
+    test("ALGORITHM constant is the version-7 string") {
+        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v7"
+    }
+
+    test("child-local partition indices are projected (AP2a)") {
+        val out = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("c" to ColumnDefinition(NeutralType.Integer)),
+                partitioning = PartitionConfig(
+                    PartitionType.RANGE, listOf("c"),
+                    listOf(PartitionDefinition(
+                        name = "p1",
+                        to = listOf(PartitionBound.Value("1")),
+                        indices = listOf(IndexDefinition(name = "idx_p1_c", columns = listOf(IndexColumn("c")))),
+                    )),
+                ),
+            ),
+        )))
+        out shouldContain "partition_index=idx_p1_c"
+        out shouldContain "unique=false"
+    }
+
+    // v4: partitioning is projected (AP4 / ADR 0019).
+
+    test("non-partitioned table projects partitioning=none") {
+        val out = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier()))),
+        )))
+        out shouldContain "partitioning=none"
+    }
+
+    test("partitioned table projects strategy, key and child bounds; order-independent") {
+        val children = listOf(
+            PartitionDefinition(
+                name = "p1",
+                from = listOf(PartitionBound.MinValue),
+                to = listOf(PartitionBound.Value("'2022-02-01'")),
+            ),
+            PartitionDefinition(
+                name = "p2",
+                from = listOf(PartitionBound.Value("'2022-02-01'")),
+                to = listOf(PartitionBound.MaxValue),
+            ),
+        )
+        fun projectWith(parts: List<PartitionDefinition>) = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("created_at" to ColumnDefinition(NeutralType.DateTime())),
+                partitioning = PartitionConfig(PartitionType.RANGE, listOf("created_at"), parts),
+            ),
+        )))
+
+        val out = projectWith(children)
+        out shouldContain "partitioning=RANGE"
+        out shouldContain "key=created_at"
+        out shouldContain "partition=p1"
+        out shouldContain "from=MINVALUE"
+        out shouldContain "to=MAXVALUE"
+        // Children sorted by name → declaration order does not affect the projection.
+        projectWith(children.reversed()) shouldBe out
+    }
+
+    test("null vs empty bound list project differently (agrees with comparator)") {
+        fun projectFrom(from: List<PartitionBound>?) = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("c" to ColumnDefinition(NeutralType.Integer)),
+                partitioning = PartitionConfig(
+                    PartitionType.RANGE, listOf("c"),
+                    listOf(PartitionDefinition(name = "p", from = from, to = listOf(PartitionBound.Value("1")))),
+                ),
+            ),
+        )))
+        // null -> "from=", empty list -> "from=<empty>"; the comparator treats
+        // null != emptyList, so the fingerprint must not collapse them.
+        projectFrom(null) shouldNotBe projectFrom(emptyList())
+        projectFrom(emptyList()) shouldContain "from=<empty>"
+    }
+
+    test("HASH partition projects modulus and remainder") {
+        val out = MigrationFingerprint.project(schema(tables = mapOf(
+            "t" to TableDefinition(
+                columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())),
+                partitioning = PartitionConfig(
+                    PartitionType.HASH, listOf("id"),
+                    listOf(PartitionDefinition(name = "h0", modulus = 4, remainder = 1)),
+                ),
+            ),
+        )))
+        out shouldContain "modulus=4"
+        out shouldContain "remainder=1"
     }
 
     // ── Branch coverage for type / default / generation projections ──

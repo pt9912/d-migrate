@@ -35,7 +35,7 @@ class ValueDeserializerTestPart2 : FunSpec({
         scale: Int? = null,
     ): ValueDeserializer {
         val hint = JdbcTypeHint(jdbcType, sqlTypeName, precision, scale)
-        return ValueDeserializer(typeHintOf = { name -> if (name == "c") hint else null })
+        return DefaultValueDeserializer(typeHintOf = { name -> if (name == "c") hint else null })
     }
 
     /** Same, but with an explicit CSV null sentinel. */
@@ -47,7 +47,7 @@ class ValueDeserializerTestPart2 : FunSpec({
         scale: Int? = null,
     ): ValueDeserializer {
         val hint = JdbcTypeHint(jdbcType, sqlTypeName, precision, scale)
-        return ValueDeserializer(
+        return DefaultValueDeserializer(
             typeHintOf = { name -> if (name == "c") hint else null },
             csvNullString = csvNullString,
         )
@@ -124,7 +124,7 @@ class ValueDeserializerTestPart2 : FunSpec({
         // This is the L15 / "unknown column" path: the deserializer was
         // called with a column the lookup doesn't know about. Best-effort
         // passthrough.
-        val d = ValueDeserializer(typeHintOf = { null })
+        val d = DefaultValueDeserializer(typeHintOf = { null })
         d.deserialize(tableName, "anything", "x") shouldBe "x"
         d.deserialize(tableName, "other", 42) shouldBe 42
     }
@@ -137,7 +137,7 @@ class ValueDeserializerTestPart2 : FunSpec({
             "name" to JdbcTypeHint(Types.VARCHAR, "VARCHAR"),
             "score" to JdbcTypeHint(Types.DOUBLE, "DOUBLE PRECISION"),
         )
-        val d = ValueDeserializer(typeHintOf = hints::get)
+        val d = DefaultValueDeserializer(typeHintOf = hints::get)
         d.deserialize("users", "id", "42") shouldBe 42L
         d.deserialize("users", "name", 99) shouldBe "99"
         d.deserialize("users", "score", "3.14") shouldBe 3.14

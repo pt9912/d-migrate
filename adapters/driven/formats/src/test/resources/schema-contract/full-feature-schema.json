@@ -1,0 +1,168 @@
+{
+  "schema_format": "1.0",
+  "name": "FullFeatureContract",
+  "version": "1.0.0",
+  "description": "Deckt bewusst jede in neutral-model-spec.md dokumentierte Elementgruppe ab, damit Drift in spec/schema.json auffaellt.",
+  "encoding": "utf-8",
+  "locale": "de_DE",
+  "custom_types": {
+    "order_status": { "kind": "enum", "values": ["pending", "shipped"], "description": "Status" },
+    "address": {
+      "kind": "composite",
+      "fields": {
+        "street": { "type": "text", "max_length": 200 },
+        "zip": { "type": "char", "length": 10 }
+      }
+    },
+    "positive_amount": {
+      "kind": "domain",
+      "base_type": "decimal",
+      "precision": 10,
+      "scale": 2,
+      "check": "VALUE >= 0",
+      "description": "Nicht-negativer Betrag"
+    }
+  },
+  "tables": {
+    "orders": {
+      "description": "Bestellungen",
+      "columns": {
+        "id": { "type": "identifier", "auto_increment": true },
+        "customer_id": {
+          "type": "integer",
+          "required": true,
+          "references": { "table": "customers", "column": "id", "on_delete": "restrict", "on_update": "cascade" }
+        },
+        "country_code": { "type": "char", "length": 2 },
+        "total": { "type": "decimal", "precision": 10, "scale": 2 },
+        "latitude": { "type": "float", "float_precision": "double" },
+        "created_at": { "type": "datetime", "timezone": true, "default": "current_timestamp" },
+        "status": { "type": "enum", "ref_type": "order_status", "default": "pending" },
+        "priority": { "type": "enum", "values": ["low", "high"] },
+        "tags": { "type": "array", "element_type": "text" },
+        "location": { "type": "geometry", "geometry_type": "point", "srid": 4326 },
+        "search": { "type": "fulltext" }
+      },
+      "primary_key": ["id"],
+      "indices": [
+        {
+          "name": "idx_orders_customer_date",
+          "columns": ["customer_id", { "name": "created_at", "direction": "desc" }],
+          "type": "btree",
+          "unique": false
+        },
+        { "name": "idx_orders_status", "columns": ["status"], "type": "hash" },
+        { "name": "uq_active", "columns": ["customer_id"], "unique": true, "where": "total > 0" },
+        { "name": "idx_orders_fulltext", "columns": ["status"], "type": "fulltext", "text_search_config": "english", "full_text_vector_column": "search", "full_text_access_method": "gin" }
+      ],
+      "constraints": [
+        { "name": "chk_total_positive", "type": "check", "expression": "total >= 0" },
+        { "name": "uq_customer_date", "type": "unique", "columns": ["customer_id", "created_at"] },
+        {
+          "name": "fk_customer",
+          "type": "foreign_key",
+          "columns": ["customer_id"],
+          "references": { "table": "customers", "columns": ["id"], "on_delete": "cascade" }
+        }
+      ],
+      "partitioning": {
+        "type": "range",
+        "key": ["created_at"],
+        "partitions": [
+          {
+            "name": "orders_2024", "from": ["'2024-01-01'"], "to": ["'2025-01-01'"],
+            "indices": [ { "name": "idx_orders_2024_status", "columns": ["status"] } ]
+          },
+          { "name": "orders_2025", "from": ["'2025-01-01'"], "to": ["'2026-01-01'"] }
+        ]
+      },
+      "metadata": { "engine": "InnoDB", "without_rowid": false }
+    },
+    "customers": {
+      "columns": {
+        "id": { "type": "identifier", "auto_increment": true },
+        "external_ref": { "type": "biginteger", "generation": { "type": "identity", "mode": "by_default" } }
+      },
+      "primary_key": ["id"]
+    }
+  },
+  "procedures": {
+    "update_status": {
+      "description": "Aktualisiert den Status",
+      "parameters": [
+        { "name": "p_order_id", "type": "integer", "direction": "in" },
+        { "name": "p_rows", "type": "integer", "direction": "out" }
+      ],
+      "language": "plpgsql",
+      "body": "BEGIN END;",
+      "dependencies": { "tables": ["orders"], "columns": { "orders": ["status"] } },
+      "source_dialect": "postgresql"
+    }
+  },
+  "functions": {
+    "order_total": {
+      "parameters": [{ "name": "p_order_id", "type": "integer", "direction": "in" }],
+      "returns": { "type": "decimal", "precision": 10, "scale": 2 },
+      "language": "plpgsql",
+      "deterministic": false,
+      "volatility": "immutable",
+      "strict": true,
+      "body": "BEGIN RETURN 0; END;",
+      "dependencies": { "tables": ["orders"] },
+      "source_dialect": "postgresql"
+    }
+  },
+  "views": {
+    "active_orders": {
+      "description": "Offene Bestellungen",
+      "materialized": true,
+      "refresh": "on_demand",
+      "query": "SELECT id FROM orders WHERE status = 'pending'",
+      "columns": [{ "name": "id", "type": "integer" }, "customer_name"],
+      "dependencies": {
+        "tables": ["orders"],
+        "projection_complete": false,
+        "table_projection_status": "complete",
+        "column_projection_status": "empty_verified",
+        "routine_projection_status": "unknown"
+      },
+      "source_dialect": "postgresql"
+    }
+  },
+  "triggers": {
+    "trg_orders_updated_at": {
+      "description": "Setzt updated_at",
+      "table": "orders",
+      "event": "update",
+      "timing": "before",
+      "for_each": "row",
+      "condition": null,
+      "body": "NEW.updated_at = CURRENT_TIMESTAMP;",
+      "dependencies": { "tables": ["orders"] },
+      "source_dialect": "postgresql"
+    },
+    "trg_orders_fulltext": {
+      "description": "Multi-Event-Trigger (F4): INSERT OR UPDATE",
+      "table": "orders",
+      "event": ["insert", "update"],
+      "timing": "before",
+      "for_each": "row",
+      "condition": null,
+      "body": "tsvector_update_trigger(tsv, 'pg_catalog.english', title)",
+      "dependencies": { "tables": ["orders"] },
+      "source_dialect": "postgresql"
+    }
+  },
+  "sequences": {
+    "invoice_number_seq": {
+      "description": "Rechnungsnummern",
+      "start": 10000,
+      "increment": 1,
+      "min_value": 10000,
+      "max_value": 99999999,
+      "cycle": false,
+      "cache": 20,
+      "preserve_current_value": true
+    }
+  }
+}

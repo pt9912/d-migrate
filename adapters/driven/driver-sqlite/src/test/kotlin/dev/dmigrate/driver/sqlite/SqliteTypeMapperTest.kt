@@ -128,4 +128,8 @@ class SqliteTypeMapperTest : FunSpec({
     test("geometry maps to GEOMETRY (placeholder, actual DDL via AddGeometryColumn)") {
         mapper.toSql(NeutralType.Geometry()) shouldBe "GEOMETRY"
     }
+
+    test("fulltext degrades to TEXT (ADR 0015 — SQLite FTS5 is a virtual table, not a column type)") {
+        mapper.toSql(NeutralType.FullText) shouldBe "TEXT"
+    }
 })

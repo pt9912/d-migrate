@@ -1,11 +1,11 @@
 # Operations: Phase-E Job-Executor
 
 > **Status**: aktiv (2026-05-06)
-> **Geltung**: Phase-E3 Async-Executor (Plan: `docs/planning/done/ImpPlan-0.9.6-E3.md`)
+> **Geltung**: Phase-E3 Async-Executor (Plan: `docs/planning/done-archive/ImpPlan-0.9.6-E3.md`)
 > **Cross-Refs**:
 > [`spec/ki-mcp.md`](../../spec/ki-mcp.md) — MCP-Server-Vertrag;
 > [`spec/job-contract.md`](../../spec/job-contract.md) — Job-Lifecycle;
-> [`spec/phase-e2-persistence.md`](../../spec/phase-e2-persistence.md) — Server-State-Persistenz
+> [`phase-e2-persistence.md` (archiviert)](../planning/done-archive/phase-e2-persistence.md) — Server-State-Persistenz
 
 ## Inhalt
 
@@ -203,7 +203,7 @@ Schritte:
    Optional Limit erhöhen oder den Tenant über erwartete Job-Volumina
    informieren. Quota-Counters via DB (`quota_counters`,
    `quota_reservation_owners`) inspizieren — siehe
-   [`spec/phase-e2-persistence.md`](../../spec/phase-e2-persistence.md).
+   [`phase-e2-persistence.md` (archiviert)](../planning/done-archive/phase-e2-persistence.md).
 
 3. **Pool-Saturation-Pfad**:
    1. Aktuellen Snapshot lesen

@@ -13,13 +13,13 @@ import dev.dmigrate.driver.SchemaReadResult
 import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.TargetColumn
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -41,7 +41,7 @@ class DataTransferRunnerCancelPropagationTest : FunSpec({
     val fakeCfg = ConnectionConfig(DatabaseDialect.SQLITE, "h", null, "d", null, null)
     val fakePool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

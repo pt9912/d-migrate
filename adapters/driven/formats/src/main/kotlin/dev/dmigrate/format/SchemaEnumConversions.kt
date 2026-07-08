@@ -17,7 +17,23 @@ internal fun String.toIndexType(): IndexType = when (lowercase()) {
     "gin" -> IndexType.GIN
     "gist" -> IndexType.GIST
     "brin" -> IndexType.BRIN
+    "spgist" -> IndexType.SPGIST
+    "spatial" -> IndexType.SPATIAL
+    "fulltext" -> IndexType.FULLTEXT
     else -> throw IllegalArgumentException("Unknown index type: $this")
+}
+
+/**
+ * ADR 0025: parse a fulltext access method — only `gin`/`gist` are legal (per schema.json).
+ * An out-of-domain value throws, exactly like [toIndexType], so a typo surfaces as a clean
+ * `Failed to parse schema file: …` parse error (Exit 7) rather than being silently swallowed
+ * to the GiST default. (The runtime CLI does NOT run json-schema-validation on the load path,
+ * so the schema.json enum alone would not catch it.)
+ */
+internal fun String.toFullTextAccessMethod(): IndexType = when (lowercase()) {
+    "gin" -> IndexType.GIN
+    "gist" -> IndexType.GIST
+    else -> throw IllegalArgumentException("Unknown fulltext access method: $this (expected gin or gist)")
 }
 
 internal fun String.toIndexSortDirection(): IndexSortDirection = when (lowercase()) {
@@ -53,6 +69,13 @@ internal fun String.toParameterDirection(): ParameterDirection = when (lowercase
     "out" -> ParameterDirection.OUT
     "inout" -> ParameterDirection.INOUT
     else -> throw IllegalArgumentException("Unknown parameter direction: $this")
+}
+
+internal fun String.toFunctionVolatility(): FunctionVolatility = when (lowercase()) {
+    "immutable" -> FunctionVolatility.IMMUTABLE
+    "stable" -> FunctionVolatility.STABLE
+    "volatile" -> FunctionVolatility.VOLATILE
+    else -> throw IllegalArgumentException("Unknown function volatility: $this")
 }
 
 internal fun String.toTriggerEvent(): TriggerEvent = when (lowercase()) {

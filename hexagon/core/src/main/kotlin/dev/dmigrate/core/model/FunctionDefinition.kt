@@ -47,6 +47,21 @@ data class FunctionDefinition(
      * triggers ReplaceFunction even when the body is identical.
      */
     val sqlMode: String? = null,
+    /**
+     * F3 (docs/planning/in-progress/sample-db-roundtrip-findings.md):
+     * PostgreSQL function volatility — `IMMUTABLE` / `STABLE` / `VOLATILE`.
+     * Part of the externally observable contract (an IMMUTABLE function may
+     * be inlined/cached); silently dropping it on round-trip degrades it to
+     * the `VOLATILE` default. Null means "dialect default applies".
+     * `deterministic` (MySQL) stays a separate, coarser boolean.
+     */
+    val volatility: FunctionVolatility? = null,
+    /**
+     * F3: PostgreSQL `STRICT` (a.k.a. `RETURNS NULL ON NULL INPUT`) — the
+     * function returns NULL whenever any argument is NULL. A real behavioural
+     * attribute; null/false means the `CALLED ON NULL INPUT` default applies.
+     */
+    val strict: Boolean? = null,
 )
 
 /**
@@ -55,6 +70,18 @@ data class FunctionDefinition(
 enum class RoutineSecurity {
     INVOKER,
     DEFINER,
+}
+
+/**
+ * PostgreSQL function volatility category (`pg_proc.provolatile`): the
+ * planner's purity contract. `IMMUTABLE` (same args → same result, no DB
+ * reads), `STABLE` (consistent within one statement), `VOLATILE` (default;
+ * may have side effects / differ per call).
+ */
+enum class FunctionVolatility {
+    IMMUTABLE,
+    STABLE,
+    VOLATILE,
 }
 
 data class ReturnType(

@@ -5,6 +5,8 @@ import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 
 class MysqlSchemaSync(
@@ -12,11 +14,11 @@ class MysqlSchemaSync(
 ) : SchemaSync {
 
     override fun reseedGenerators(
-        conn: Connection,
+        conn: DatabaseConnection,
         table: String,
         importedColumns: List<ColumnDescriptor>,
     ): List<SequenceAdjustment> = reseedGenerators(
-        conn = conn,
+        conn = conn.asJdbc(),
         table = table,
         importedColumns = importedColumns,
         truncatePerformed = false,

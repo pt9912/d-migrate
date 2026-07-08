@@ -6,7 +6,9 @@ import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.WriteResult
+import org.postgresql.PGConnection
 import org.postgresql.util.PGobject
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.Statement
@@ -27,6 +29,34 @@ internal class PostgresTableImportSession(
 
     private var triggersReenabled: Boolean = false
 
+    /**
+     * I-04: Namen der PostgreSQL-Enum-Typen im Ziel. Werte für solche Spalten
+     * werden als [PGobject] mit dem Enum-Typ gebunden — sonst lehnt PostgreSQL
+     * den `varchar`-Parameter ab (`column is of type X but expression is of type
+     * character varying`). Per Default lazy aus der Verbindung (pg_enum); für
+     * Tests über [enumTypeNamesOverride] setzbar (Seam, keine Live-DB nötig).
+     */
+    internal var enumTypeNamesOverride: Set<String>? = null
+    private val resolvedEnumTypeNames: Set<String> by lazy { loadEnumTypeNames() }
+    private val enumTypeNames: Set<String> get() = enumTypeNamesOverride ?: resolvedEnumTypeNames
+
+    private fun loadEnumTypeNames(): Set<String> =
+        conn.prepareStatement(
+            "SELECT DISTINCT t.typname FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid",
+        ).use { ps ->
+            ps.executeQuery().use { rs ->
+                buildSet { while (rs.next()) add(rs.getString(1)) }
+            }
+        }
+
+    // VA1c: PostGIS-Geometriespalten beim INSERT aus WKB konstruieren.
+    // ST_GeomFromWKB akzeptiert plain WKB (von ST_AsBinary, VA1b) — auch das von
+    // einer MySQL-Quelle gelesene WKB; SRID 0 (SRID-Erhalt via VA2).
+    override val geometryBindConstructor: String? = "ST_GeomFromWKB"
+
+    // Nur PostGIS-`geometry` (NICHT die nativen PG-Typen point/polygon/…).
+    override fun isGeometryTypeName(typeNameLower: String): Boolean = typeNameLower == "geometry"
+
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         val overridingSystemValue = if (importedTargetColumns.any { it.name in generatedAlwaysColumns }) {
             " OVERRIDING SYSTEM VALUE"
@@ -46,7 +76,21 @@ internal class PostgresTableImportSession(
         rows: List<Array<Any?>>,
     ): WriteResult = when (options.onConflict) {
         OnConflict.UPDATE -> executeUpsertChunk(importedTargetColumns, rows)
-        else -> executeInsertChunk(importedTargetColumns, rows)
+        // ABORT: COPY-Bulk-Fast-Path, wenn sicher (echte PGConnection für copyAPI + alle harten
+        // Sperren via PostgresCopyFastPath.isEligible) — sonst der Batch-INSERT-Pfad.
+        OnConflict.ABORT ->
+            if (conn.isWrapperFor(PGConnection::class.java) &&
+                PostgresCopyFastPath.isEligible(
+                    importedTargetColumns, generatedAlwaysColumns,
+                    isGeometry = { isGeometryColumn(it) }, isEnum = { isEnumColumn(it) },
+                )
+            ) {
+                PostgresCopyFastPath.execute(conn, qualifiedTable.quotedPath(), importedTargetColumns, rows)
+            } else {
+                executeInsertChunk(importedTargetColumns, rows)
+            }
+        // SKIP = ON CONFLICT DO NOTHING — COPY kennt kein ON CONFLICT → Batch-INSERT.
+        OnConflict.SKIP -> executeInsertChunk(importedTargetColumns, rows)
     }
 
     override fun bindRow(
@@ -60,12 +104,12 @@ internal class PostgresTableImportSession(
     }
 
     override fun reseedSequences(): List<SequenceAdjustment> =
-        schemaSync.reseedGenerators(conn, table, importedColumns.orEmpty())
+        schemaSync.reseedGenerators(JdbcDatabaseConnection(conn), table, importedColumns.orEmpty())
 
     override fun finishDialectCleanup(): Throwable? =
         if (triggersDisabled && !triggersReenabled) {
             runCatching {
-                schemaSync.enableTriggers(conn, table)
+                schemaSync.enableTriggers(JdbcDatabaseConnection(conn), table)
                 triggersReenabled = true
             }.exceptionOrNull()
         } else {
@@ -75,7 +119,7 @@ internal class PostgresTableImportSession(
     override fun closePreFinally() {
         if (triggersDisabled && !triggersReenabled) {
             runCatching {
-                schemaSync.enableTriggers(conn, table)
+                schemaSync.enableTriggers(JdbcDatabaseConnection(conn), table)
                 triggersReenabled = true
             }.onFailure(::recordCleanupFailure)
         }
@@ -110,7 +154,7 @@ internal class PostgresTableImportSession(
         overridingSystemValue: String,
     ): String {
         val columnList = importedTargetColumns.joinToString(", ") { quotePostgresIdentifier(it.name) }
-        val placeholders = importedTargetColumns.joinToString(", ") { "?" }
+        val placeholders = importedTargetColumns.joinToString(", ") { valuePlaceholder(it) }
         val baseInsert =
             "INSERT INTO ${qualifiedTable.quotedPath()} ($columnList)$overridingSystemValue VALUES ($placeholders)"
         return when (options.onConflict) {
@@ -152,7 +196,7 @@ internal class PostgresTableImportSession(
             bindRow(stmt, importedTargetColumns, row)
             stmt.addBatch()
         }
-        return toWriteResult(stmt.executeBatch())
+        return toWriteResult(stmt.executeBatch(), options.onConflict)
     }
 
     private fun executeUpsertChunk(
@@ -203,7 +247,7 @@ internal class PostgresTableImportSession(
             ""
         }
         val columnList = importedTargetColumns.joinToString(", ") { quotePostgresIdentifier(it.name) }
-        val singleRow = "(${importedTargetColumns.joinToString(", ") { "?" }})"
+        val singleRow = "(${importedTargetColumns.joinToString(", ") { valuePlaceholder(it) }})"
         val allRows = (1..rowCount).joinToString(", ") { singleRow }
         val baseInsert =
             "INSERT INTO ${qualifiedTable.quotedPath()} " +
@@ -223,6 +267,14 @@ internal class PostgresTableImportSession(
         }
 
         when {
+            // VA1c/W1: WKB-Geometriespalte. Explizit als bytea binden (setBytes),
+            // nicht via setObject-Default — `ST_GeomFromWKB(?)` erwartet bytea, und
+            // setBytes ist pgjdbc-versionsunabhängig. MUSS vor dem Enum-Zweig
+            // stehen (geometry ist OTHER + nicht-well-known → würde sonst dort als
+            // Enum-pgObject(value.toString()) landen).
+            isGeometryColumn(targetColumn) && value is ByteArray ->
+                stmt.setBytes(parameterIndex, value)
+
             targetColumn.jdbcType == Types.OTHER &&
                 targetColumn.sqlTypeName.equals("json", ignoreCase = true) ->
                 stmt.setObject(parameterIndex, pgObject("json", value.toString()))
@@ -238,6 +290,13 @@ internal class PostgresTableImportSession(
             targetColumn.jdbcType == Types.OTHER &&
                 targetColumn.sqlTypeName.equals("xml", ignoreCase = true) ->
                 stmt.setObject(parameterIndex, pgObject("xml", value.toString()))
+
+            // I-04: benannte PG-Enum-Spalte. pgjdbc meldet sie als `VARCHAR` (nicht
+            // `OTHER`), unterschieden wird allein über den Typnamen. Built-ins werden
+            // vorab ausgeschlossen, damit für sie nicht der pg_enum-Katalog abgefragt
+            // wird; nur echte Nicht-Built-in-Namen konsultieren [enumTypeNames].
+            isEnumColumn(targetColumn) ->
+                stmt.setObject(parameterIndex, pgObject(targetColumn.sqlTypeName!!, value.toString()))
 
             targetColumn.jdbcType == Types.ARRAY && value is List<*> ->
                 stmt.setArray(
@@ -264,15 +323,28 @@ internal class PostgresTableImportSession(
             this.value = value
         }
 
-    private fun toWriteResult(counts: IntArray): WriteResult {
+    private fun isEnumColumn(targetColumn: TargetColumn): Boolean {
+        val typeName = targetColumn.sqlTypeName ?: return false
+        if (typeName.lowercase() in NON_ENUM_TYPE_NAMES) return false
+        return typeName in enumTypeNames
+    }
+
+    private fun toWriteResult(counts: IntArray, onConflict: OnConflict): WriteResult {
         var inserted = 0L
         var skipped = 0L
         var unknown = 0L
 
         for (count in counts) {
-            when (count) {
-                Statement.SUCCESS_NO_INFO -> unknown++
-                0 -> skipped++
+            when {
+                // `reWriteBatchedInserts=true` (PostgresJdbcUrlBuilder) lässt pgjdbc
+                // Mehrzeilen-Batches serverseitig zu einem Multi-Row-INSERT zusammenfassen und
+                // meldet dann SUCCESS_NO_INFO je Batch-Element statt einer Zeilenzahl. Unter
+                // ABORT fügt jede Zeile ein (ein Konflikt würde werfen, nicht stumm überspringen)
+                // → als eingefügt zählen. Unter SKIP (ON CONFLICT DO NOTHING) ist Einfügen vs.
+                // Überspringen aus SUCCESS_NO_INFO nicht rekonstruierbar → ehrlich als unknown.
+                count == Statement.SUCCESS_NO_INFO ->
+                    if (onConflict == OnConflict.ABORT) inserted++ else unknown++
+                count == 0 -> skipped++
                 else -> inserted += count.toLong()
             }
         }
@@ -282,6 +354,27 @@ internal class PostgresTableImportSession(
             rowsUpdated = 0,
             rowsSkipped = skipped,
             rowsUnknown = unknown,
+        )
+    }
+
+    private companion object {
+        /**
+         * I-04: pgjdbc meldet echte Skalar-Spalten und Enum-Spalten beide mit
+         * `Types.VARCHAR`; unterschieden wird über den Typnamen. Bekannte Built-in-
+         * Typnamen werden vorab ausgeschlossen, damit für sie nicht der pg_enum-
+         * Katalog abgefragt wird (und Unit-Tests mit Mock-Verbindungen keine
+         * Katalogabfrage auslösen).
+         */
+        val NON_ENUM_TYPE_NAMES = setOf(
+            "varchar", "text", "bpchar", "char", "name", "citext",
+            "int2", "int4", "int8", "serial", "bigserial", "smallserial",
+            "float4", "float8", "numeric", "money",
+            "bool", "boolean", "date", "timestamp", "timestamptz",
+            "time", "timetz", "interval",
+            "uuid", "bytea", "json", "jsonb", "xml",
+            "inet", "cidr", "macaddr", "macaddr8",
+            "bit", "varbit",
+            "point", "line", "lseg", "box", "path", "polygon", "circle",
         )
     }
 }

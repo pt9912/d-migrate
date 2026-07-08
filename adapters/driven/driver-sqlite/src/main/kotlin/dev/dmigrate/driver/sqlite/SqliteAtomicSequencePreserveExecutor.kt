@@ -9,6 +9,9 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 import java.sql.SQLException
 
@@ -44,16 +47,16 @@ import java.sql.SQLException
  * connection that is not already inside a higher-level
  * transaction.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`.
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`.
  */
 class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
 
     override fun execute(
-        connection: Connection,
+        connection: DatabaseConnection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
         cancellationToken: CancellationToken,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult {
         require(lockTimeoutMillis > 0) {
             "lockTimeoutMillis must be > 0, was $lockTimeoutMillis"
@@ -80,13 +83,14 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
             return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
         }
 
-        val previousAutoCommit = connection.autoCommit
-        val previousBusyTimeout = readBusyTimeout(connection)
-        connection.autoCommit = true
-        applyBusyTimeout(connection, lockTimeoutMillis)
+        val jdbc = connection.asJdbc()
+        val previousAutoCommit = jdbc.autoCommit
+        val previousBusyTimeout = readBusyTimeout(jdbc)
+        jdbc.autoCommit = true
+        applyBusyTimeout(jdbc, lockTimeoutMillis)
         try {
             try {
-                connection.createStatement().use { it.execute("BEGIN IMMEDIATE") }
+                jdbc.createStatement().use { it.execute("BEGIN IMMEDIATE") }
             } catch (e: SQLException) {
                 return if (e.errorCode == SQLITE_BUSY) {
                     AtomicSequencePreserveResult.LockTimeout(sortedRefs)
@@ -94,10 +98,10 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
                     AtomicSequencePreserveResult.Failed(sortedRefs.first(), e)
                 }
             }
-            return runUnderLock(connection, sortedRequests, sortedRefs, batch, executeProtectedOperations, cancellationToken)
+            return runUnderLock(jdbc, sortedRequests, sortedRefs, batch, executeProtectedOperations, cancellationToken)
         } finally {
-            runCatching { applyBusyTimeout(connection, previousBusyTimeout) }
-            runCatching { connection.autoCommit = previousAutoCommit }
+            runCatching { applyBusyTimeout(jdbc, previousBusyTimeout) }
+            runCatching { jdbc.autoCommit = previousAutoCommit }
         }
     }
 
@@ -106,7 +110,7 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         sortedRequests: List<AtomicSequencePreserveRequest>,
         sortedRefs: List<SequenceObjectRef>,
         batch: AtomicSequencePreserveBatch,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         cancellationToken: CancellationToken,
     ): AtomicSequencePreserveResult {
         val probeResults = mutableMapOf<SequenceObjectRef, SequenceCurrentValueProbeResult.Read>()
@@ -125,7 +129,7 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
             return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
         }
         try {
-            executeProtectedOperations(connection, batch.protectedOperationIds)
+            executeProtectedOperations(JdbcDatabaseConnection(connection), batch.protectedOperationIds)
         } catch (e: Throwable) {
             rollbackQuietly(connection)
             return AtomicSequencePreserveResult.Failed(sortedRefs.last(), e)

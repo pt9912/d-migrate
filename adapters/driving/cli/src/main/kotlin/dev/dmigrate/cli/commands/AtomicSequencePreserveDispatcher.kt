@@ -11,7 +11,7 @@ import dev.dmigrate.driver.sqlite.SqliteAtomicSequencePreserveExecutor
  * picks the per-dialect [AtomicSequencePreserveExecutor]
  * implementation from the Phase-B adapter modules.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.4. Executor implementations are stateless
  * and reusable across plan runs, so one instance per dialect lives
  * statically inside this object — a fresh JDBC [java.sql.Connection]

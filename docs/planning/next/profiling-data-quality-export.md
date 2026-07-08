@@ -4,7 +4,7 @@
 >
 > Status: Entwurf (2026-05-01)
 >
-> Referenzen: `spec/profiling.md`, `docs/planning/roadmap.md`,
+> Referenzen: `spec/profiling.md`, `docs/planning/in-progress/roadmap.md`,
 > `spec/architecture.md`, `spec/cli-spec.md`
 
 ---

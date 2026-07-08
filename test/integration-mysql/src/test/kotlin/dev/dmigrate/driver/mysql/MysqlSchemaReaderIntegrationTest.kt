@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
@@ -44,7 +46,7 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
         val pool = HikariConnectionPoolFactory.create(config)
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("""
                     CREATE TABLE customers (
@@ -70,6 +72,14 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                 """)
 
                 stmt.execute("CREATE INDEX idx_orders_customer ON orders (customer_id)")
+
+                stmt.execute("""
+                    CREATE TABLE docs (
+                        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        body TEXT NOT NULL,
+                        INDEX idx_docs_body (body(100))
+                    ) ENGINE=InnoDB
+                """)
 
                 stmt.execute("""
                     CREATE VIEW active_orders AS
@@ -99,6 +109,28 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                     FOR EACH ROW
                     SET NEW.created_at = NOW()
                 """)
+
+                // AP6.1 (ADR 0020): RANGE COLUMNS partitioned table (same form AP6.2 generates)
+                // so the reverse capture is exercised against real information_schema.PARTITIONS.
+                stmt.execute("""
+                    CREATE TABLE ap61_events (
+                        id INT NOT NULL,
+                        event_date DATETIME NOT NULL,
+                        PRIMARY KEY (id, event_date)
+                    ) PARTITION BY RANGE COLUMNS (event_date) (
+                        PARTITION p2024 VALUES LESS THAN ('2025-01-01 00:00:00'),
+                        PARTITION p_max VALUES LESS THAN (MAXVALUE)
+                    )
+                """)
+
+                // AP6.5 (ADR 0020 §6): HASH table — MySQL names children p0..p3 with no
+                // modulus/remainder; the reverse must synthesize modulus=4, remainder=ordinal.
+                stmt.execute("""
+                    CREATE TABLE ap65_hash (
+                        id INT NOT NULL,
+                        PRIMARY KEY (id)
+                    ) PARTITION BY HASH (id) PARTITIONS 4
+                """)
             }
         }
         pool.close()
@@ -127,6 +159,21 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             val scope = ReverseScopeCodec.parseScope(result.schema.name)
             scope["dialect"] shouldBe "mysql"
             scope["database"] shouldBe "dmigrate_test"
+        }
+    }
+
+    // ── Aggregates (N7) ─────────────────────────
+
+    test("reverse is resilient to mysql.func access restrictions — aggregates best-effort (N7)") {
+        // A real loadable-UDF aggregate needs a compiled `.so` on the server
+        // (infeasible in a vanilla container), and the test role has no
+        // privilege on `mysql.func`. readAggregates is best-effort: the live
+        // reverse must still succeed and yield no aggregates rather than
+        // failing the whole read. The happy-path ret→type / dl→library mapping
+        // is covered by MysqlRoutineReaderTest (mocked mysql.func rows).
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeFunctions = true))
+            result.schema.aggregates shouldBe emptyMap()
         }
     }
 
@@ -224,6 +271,16 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
+    // ── Prefix index (prefix-length slice) ──────
+
+    test("prefix index reads SUB_PART into IndexColumn.prefixLength") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val idx = result.schema.tables.getValue("docs").indices.single { it.name == "idx_docs_body" }
+            idx.columns.single() shouldBe IndexColumn("body", prefixLength = 100)
+        }
+    }
+
     // ── ENUM column ─────────────────────────────
 
     test("enum column maps to Enum with values") {
@@ -273,7 +330,7 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             val trg = result.schema.triggers[expectedKey]!!
             trg.table shouldBe "customers"
             trg.timing shouldBe TriggerTiming.BEFORE
-            trg.event shouldBe TriggerEvent.INSERT
+            trg.events shouldBe setOf(TriggerEvent.INSERT)
         }
     }
 
@@ -367,6 +424,36 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             reader.read(pool)
             val result2 = reader.read(pool)
             result2.schema.tables shouldContainKey "customers"
+        }
+    }
+
+    // ── Partitioning: RANGE COLUMNS reverse capture (AP6.1) + from reconstruction (AP6.5) ──
+
+    test("reverse captures RANGE COLUMNS partitioning + reconstructs from bounds (AP6.1/AP6.5)") {
+        pool().use { pool ->
+            val partitioning = reader.read(pool).schema.tables["ap61_events"]!!.partitioning!!
+            partitioning.type shouldBe PartitionType.RANGE
+            partitioning.key shouldBe listOf("event_date")
+            partitioning.partitions.map { it.name } shouldBe listOf("p2024", "p_max")
+            (partitioning.partitions[0].to!!.single() as PartitionBound.Value).literal shouldContain "2025-01-01"
+            partitioning.partitions[1].to shouldBe listOf(PartitionBound.MaxValue)
+            // AP6.5: from reconstructed from contiguity — first = MINVALUE, next = previous upper.
+            partitioning.partitions[0].from shouldBe listOf(PartitionBound.MinValue)
+            (partitioning.partitions[1].from!!.single() as PartitionBound.Value).literal shouldContain "2025-01-01"
+        }
+    }
+
+    // ── Partitioning: HASH reverse — modulus/remainder synthesis (AP6.5) ──
+
+    test("reverse captures HASH partitioning + synthesizes modulus/remainder (AP6.5)") {
+        pool().use { pool ->
+            val partitioning = reader.read(pool).schema.tables["ap65_hash"]!!.partitioning!!
+            partitioning.type shouldBe PartitionType.HASH
+            partitioning.key shouldBe listOf("id")
+            partitioning.partitions.size shouldBe 4
+            // MySQL `PARTITIONS 4` → PG modulus=4, remainder = ordinal index for each child.
+            partitioning.partitions.map { it.modulus } shouldBe listOf(4, 4, 4, 4)
+            partitioning.partitions.map { it.remainder } shouldBe listOf(0, 1, 2, 3)
         }
     }
 })

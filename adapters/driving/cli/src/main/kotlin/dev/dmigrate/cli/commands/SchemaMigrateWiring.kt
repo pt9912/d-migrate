@@ -27,6 +27,7 @@ internal data class SchemaMigrateOptions(
     val source: String,
     val target: String,
     val dialect: DatabaseDialect?,
+    val spatialProfile: String?,
     val output: Path?,
     val rollbackOutput: Path?,
     val report: Path?,
@@ -95,6 +96,7 @@ internal object SchemaMigrateWiring {
             source = options.source,
             target = options.target,
             dialect = options.dialect,
+            spatialProfile = options.spatialProfile,
             output = options.output,
             report = options.report,
             rollbackOutput = options.rollbackOutput,
@@ -128,6 +130,9 @@ internal object SchemaMigrateWiring {
             },
             dbLoader = { op, cfgPath -> loadFromDb(op, cfgPath, validator) },
             comparator = { left, right -> SchemaComparator().compare(left, right) },
+            targetAwareComparator = { left, right, canonicalizeType ->
+                SchemaComparator(canonicalizeType).compare(left, right)
+            },
             rendererFor = MigrateRendererRegistry::forDialect,
             executor = SegmentAwareMigrationExecutor::executeWithDefaults,
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,

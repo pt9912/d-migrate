@@ -64,6 +64,7 @@ internal object MigrationPlanArtifactBuilder {
                 ?: error("DiffResult.current.fingerprint must be set before artifact emission"),
             targetFingerprint = plan.desired.fingerprint
                 ?: error("DiffResult.desired.fingerprint must be set before artifact emission"),
+            fingerprintAlgorithm = dev.dmigrate.core.diff.migration.MigrationFingerprint.ALGORITHM,
             dialect = dialect.name.lowercase(Locale.ROOT),
             operations = operations,
             diagnostics = diagnostics,

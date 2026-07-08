@@ -2,7 +2,7 @@
 # Parquet Cut-A (0.9.8) — Sealed-when-Sweep
 #
 # Faehrt die `rg`-Patterns aus AP12 §8 / AP13 §4.1
-# (`docs/planning/done/parquet-decision-template.md:227-237`)
+# (`docs/planning/done-archive/parquet-decision-template.md:227-237`)
 # pro Sealed-Hierarchie und druckt fuer jede einen Treffer-
 # Block. Jeder Treffer ist ein potentieller `when`/`is`-
 # Zweig, der bei neuen Sealed-Varianten geprueft werden

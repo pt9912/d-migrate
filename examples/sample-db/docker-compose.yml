@@ -1,0 +1,166 @@
+# Sample-DB-Harness Compose-Stack — Plan: docs/planning/done/sample-db-integration-harness.md
+# Sourcing/Mechanik-Entscheidung: docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Phase 1 (Pagila/PG-Smoke): ein postgres-Service mit zwei Datenbanken
+#   - pagila         (Quelle, vom gefetchten Dump geladen)
+#   - pagila_target  (leeres Round-Trip-Ziel)
+# Der dmigrate-Service (echtes d-migrate:dev-CLI-Image) läuft nur unter
+# `--profile tools` (kein Auto-Start bei `up`). Voraussetzung:
+# einmaliger `make docker-build IMAGE_TAG=dev`.
+
+services:
+  postgres:
+    image: postgres:17.10-trixie
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_PG_PORT}:5432"
+    volumes:
+      - sample-db-pg-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # Phase 2 (Cross-Dialect): MySQL-Service mit zwei Datenbanken
+  #   - sakila          (Quelle, vom gefetchten Dump geladen)
+  #   - pagila_target   (leeres Ziel für Pagila PG→MySQL)
+  # MYSQL_DATABASE legt sakila an + grantet MYSQL_USER; sql-mysql/ legt
+  # pagila_target nach + grantet. Nur bei Phase-2-Läufen hochgefahren.
+  #
+  # Phase 3 (Scale): das Employees-Dataset (employees.sql + load_*.dump)
+  # wird read-only nach /sample-cache gemountet, damit der Smoke-Loader
+  # `mysql < employees.sql` mit cwd=/sample-cache/employees ausführen kann
+  # (employees.sql `source`t die Dumps mit relativen Pfaden). Quell-/Ziel-
+  # DBs (employees, employees_my_target) legt der Scale-Smoke selbst an.
+  mysql:
+    image: mysql:8.4
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_MYSQL_PORT}:3306"
+    volumes:
+      - sample-db-mysql-data:/var/lib/mysql
+      - ./sql-mysql:/docker-entrypoint-initdb.d:ro
+      - ./.cache:/sample-cache:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 18
+      start_period: 20s
+
+  # Phase 5 (Spatial, VA1-Live-Smoke): PostGIS-Superset-Image für den
+  # PG-Geometrie-Round-Trip. Eigener Service/Volume/Port neben dem reinen
+  # postgres-Service (Phase 1/2). DBs (geo_pg_src/geo_pg_target) legt
+  # sql-postgis/ an; CREATE EXTENSION postgis + Tabellen macht smoke-spatial.sh.
+  postgis:
+    image: postgis/postgis:16-3.4
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_POSTGIS_PORT}:5432"
+    volumes:
+      - sample-db-postgis-data:/var/lib/postgresql/data
+      - ./sql-postgis:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # Phase 5 (Spatial, 5a): Shapefile-Loader für das gepinnte PostGIS-nyc-Sample.
+  # postgis/postgis enthält KEIN shp2pgsql/ogr2ogr — daher ein dedizierter,
+  # gepinnter GDAL-Container, der die nyc-Shapefiles per ogr2ogr über das
+  # Compose-Netz in die postgis-Quelle lädt (nur on-demand via `compose run gdal`,
+  # FETCH_NYC=1 + smoke-spatial.sh). Kein Auto-Start (profile tools).
+  gdal:
+    image: ghcr.io/osgeo/gdal:ubuntu-small-3.13.1
+    user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
+    profiles: ["tools"]
+    env_file:
+      - .env
+    volumes:
+      - .:/work
+    working_dir: /work
+
+  # Phase 4 (Performance, 4a): TPC-H-Generator. ADR 0017 pinnt das GENERATOR-
+  # Tool statt eines Dumps. Das gepinnte DuckDB-CLI v1.4.5 + tpch-Extension
+  # (fetch-dumps.sh FETCH_TPCH=1 -> .cache/tpch-tool/) erzeugen die TPC-H-
+  # Workload OFFLINE — kein DuckDB-Image nötig: der digest-gepinnte
+  # debian-slim-Container liefert nur die glibc-Laufzeit, das Tool ist das
+  # gepinnte Binary (analog gdal-Loader). `network_mode: none` erzwingt die
+  # Hermetizität (die tpch-Extension ist mitgepinnt, kein Laufzeit-Download).
+  # Nur on-demand (profile tools), via scripts/tpch-generate.sh.
+  duckdb:
+    image: debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
+    user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
+    profiles: ["tools"]
+    network_mode: "none"
+    env_file:
+      - .env
+    volumes:
+      - .:/work
+    working_dir: /work
+
+  dmigrate:
+    image: d-migrate:dev
+    # Das Image läuft als non-root (uid 10001). Damit es in das gemountete
+    # Host-Verzeichnis (out/) schreiben kann, läuft der Container als der
+    # aufrufende Host-User — die smoke-Skripte exportieren
+    # SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)". Fallback 0:0 (root) für
+    # manuelle `docker compose run` ohne gesetzte Variable. Vgl. die --user-Note
+    # im Anwenderhandbuch (docs/user/anwenderhandbuch.md).
+    user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    env_file:
+      - .env
+    environment:
+      D_MIGRATE_CONFIG: /work/.d-migrate.yaml
+    volumes:
+      - .:/work
+    working_dir: /work
+
+  # Phase 4 (4c, Volumen-Abnahme): wie dmigrate, aber mit fixierten Ressourcen-Caps
+  # als normierte Mess-Referenz (ADR 0018: cpus=2, mem_limit=4g). Eigener Service, damit
+  # die übrigen Phasen-Smokes ungecappt bleiben. compose v2 wendet cpus/mem_limit auch
+  # bei `compose run` an (kein Swarm nötig). Die absoluten Zeit-/Durchsatz-Zahlen gelten
+  # nur „unter Caps 2 CPU/4 GB".
+  dmigrate-capped:
+    image: d-migrate:dev
+    user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
+    cpus: 2
+    mem_limit: 4g
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    env_file:
+      - .env
+    environment:
+      D_MIGRATE_CONFIG: /work/.d-migrate.yaml
+    volumes:
+      - .:/work
+    working_dir: /work
+
+  # #2 Tool-Vergleich (intern, Sanity-Check): gepinntes pgloader als OSS-Migrations-Peer
+  # für den PG->PG-Durchsatz-Vergleich (docs/planning/open/tool-comparison.md). Tag
+  # v3.6.7 per DIGEST gepinnt — NICHT :latest (= unfertiger Rewrite-Branch laut Recherche).
+  # Gecappter Client (2 CPU/4 GB) wie dmigrate-capped, fairer Vergleich. profile tools.
+  pgloader:
+    image: dimitri/pgloader@sha256:d29ea680cf1aaaf7269690a922dd69167567b91b35e9c48a0b54a99cef96c0ed
+    cpus: 2
+    mem_limit: 4g
+    profiles: ["tools"]
+
+volumes:
+  sample-db-pg-data:
+  sample-db-mysql-data:
+  sample-db-postgis-data:

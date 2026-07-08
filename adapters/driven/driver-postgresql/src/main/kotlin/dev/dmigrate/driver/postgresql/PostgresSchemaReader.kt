@@ -5,6 +5,7 @@ import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
@@ -24,20 +25,29 @@ class PostgresSchemaReader(
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
 
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             val session = jdbcFactory(conn)
             val schema = currentSchema(conn)
             val database = conn.catalog ?: "unknown"
 
-            val tables = readPostgresTables(session, schema, notes)
+            val rawTables = readPostgresTables(session, schema, notes)
             val sequences = readPostgresSequences(session, schema)
             val customTypes = readPostgresCustomTypes(session, schema)
 
             readPostgresExtensionNotes(session, notes)
             val views = if (options.includeViews) readPostgresViews(session, schema) else emptyMap()
             val functions = if (options.includeFunctions) readPostgresFunctions(session, schema) else emptyMap()
+            // N7: user-defined aggregates are routine-like; gate them with the
+            // same flag as functions (they reference transition/final functions).
+            val aggregates = if (options.includeFunctions) readPostgresAggregates(session, schema) else emptyMap()
             val procedures = if (options.includeProcedures) readPostgresProcedures(session, schema) else emptyMap()
             val triggers = if (options.includeTriggers) readPostgresTriggers(session, schema) else emptyMap()
+
+            // P2 (ADR 0025): the tsvector source columns + text-search config live only
+            // in the populating `tsvector_update_trigger(...)` body — recover them into a
+            // FULLTEXT index (replacing the GiST-over-tsvector index) so the fulltext
+            // capability survives a cross-dialect generate. No trigger → no change.
+            val tables = PostgresFullTextIndexSynthesis.enrich(rawTables, triggers)
 
             val schemaDef = SchemaDefinition(
                 name = ReverseScopeCodec.postgresName(database, schema),
@@ -49,6 +59,7 @@ class PostgresSchemaReader(
                 functions = functions,
                 procedures = procedures,
                 triggers = triggers,
+                aggregates = aggregates,
             )
 
             return SchemaReadResult(schema = schemaDef, notes = notes, skippedObjects = skipped)

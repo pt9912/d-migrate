@@ -1,4 +1,4 @@
-# BI-Demo Compose-Stack — Spec: docs/planning/done/bi-demo-compose.md
+# BI-Demo Compose-Stack — Spec: docs/planning/done-archive/bi-demo-compose.md
 #
 # Aktuelle Services: postgres (+ sql/ initdb), seaweed-config
 # (one-shot), seaweed, seaweed-init (one-shot), metabase,

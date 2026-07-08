@@ -5,17 +5,23 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.data.ChunkColumnSchema
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.DefaultValueDeserializer
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.JdbcTypeHint
 import dev.dmigrate.format.data.SchemaOrigin
 import dev.dmigrate.format.data.SeekableChunkSource
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import java.math.BigDecimal
 import java.nio.file.Files
+import java.sql.Types
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 class ParquetChunkRoundTripTest : FunSpec({
 
@@ -104,6 +110,70 @@ class ParquetChunkRoundTripTest : FunSpec({
             row2[3] shouldBe null
             row2[4] shouldBe null
             row2[5] shouldBe Instant.parse("2024-03-05T01:23:45.123Z")
+        } finally {
+            Files.deleteIfExists(tempFile)
+        }
+    }
+
+    test("Parquet timestamp columns import through ValueDeserializer without Instant type error (I-10)") {
+        val tempFile = Files.createTempFile("parquet-ts-i10", ".parquet")
+        Files.deleteIfExists(tempFile)
+        try {
+            val schema = ChunkSchema(
+                table = "events",
+                columns = listOf(
+                    ChunkColumnSchema(
+                        "created_at", nullable = false, neutralType = NeutralType.DateTime(timezone = false),
+                    ),
+                    ChunkColumnSchema(
+                        "occurred_at", nullable = false, neutralType = NeutralType.DateTime(timezone = true),
+                    ),
+                ),
+                origin = SchemaOrigin.JDBC_METADATA,
+            )
+            val tsUtc = Instant.parse("2024-03-04T12:34:56Z")
+            val tstzUtc = Instant.parse("2024-03-04T10:34:56Z")
+
+            Files.newOutputStream(tempFile).use { output ->
+                ParquetChunkWriterFactory().create(DataExportFormat.PARQUET, output, ExportOptions()).use { writer ->
+                    writer.begin("events", schema)
+                    writer.write(
+                        DataChunk(
+                            table = "events",
+                            columns = emptyList(),
+                            rows = listOf(arrayOf<Any?>(tsUtc, tstzUtc)),
+                            chunkIndex = 0L,
+                        )
+                    )
+                    writer.end()
+                }
+            }
+
+            val chunk = ParquetSeekableDataChunkReaderFactory().create(
+                format = DataExportFormat.PARQUET,
+                source = SeekableChunkSource.Local(tempFile),
+                table = "events",
+                schema = schema,
+                chunkSize = 10,
+                options = FormatReadOptions(),
+            ).use { it.nextChunk() } ?: error("expected chunk, got null")
+
+            // Der Reader liefert Instant (Parquet INT64 µs) — vor I-10 brach der Import
+            // hier mit "expects TIMESTAMP, got Instant" ab.
+            val row = chunk.rows[0]
+            row[0].shouldBeInstanceOf<Instant>()
+            row[1].shouldBeInstanceOf<Instant>()
+
+            val hints = mapOf(
+                "created_at" to JdbcTypeHint(Types.TIMESTAMP),
+                "occurred_at" to JdbcTypeHint(Types.TIMESTAMP_WITH_TIMEZONE),
+            )
+            val deserializer = DefaultValueDeserializer(typeHintOf = { hints[it] })
+
+            deserializer.deserialize("events", "created_at", row[0]) shouldBe
+                LocalDateTime.ofInstant(tsUtc, ZoneOffset.UTC)
+            deserializer.deserialize("events", "occurred_at", row[1]) shouldBe
+                tstzUtc.atOffset(ZoneOffset.UTC)
         } finally {
             Files.deleteIfExists(tempFile)
         }

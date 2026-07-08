@@ -1,64 +1,297 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlStatement
+import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
 
 internal class MysqlIndexPartitionDdlHelper(
     private val quoteIdentifier: (String) -> String,
 ) {
 
+    /** Wert-Seite der Partitionsgrenzen (Temporal-Normalisierung/Quoting) — eigene Verantwortung. */
+    private val boundRenderer = MysqlPartitionBoundRenderer()
+
     fun generatePartitionClause(
         partitioning: PartitionConfig,
+        columns: Map<String, ColumnDefinition>,
         notes: MutableList<TransformationNote>,
     ): String {
-        if (partitioning.type == PartitionType.RANGE) {
-            notes += TransformationNote(
-                type = NoteType.WARNING,
-                code = "W112",
-                objectName = partitioning.key.joinToString(","),
-                message = "RANGE partition expressions may need manual adjustment for MySQL (e.g., wrapping date columns with YEAR()).",
-                hint = "Review the partition key expressions and adjust for MySQL-specific syntax if needed.",
-            )
-        }
+        val keyTypes = partitioning.key.map { columns[it]?.type }
+        skipNote(partitioning, keyTypes)?.let { notes += it; return "" }
+        notes += partitionDiagnostics(partitioning)
+        val emitPartitions = effectivePartitions(partitioning, notes)
+        // LIST that filtered down to nothing (only DEFAULT existed) → nothing valid to emit.
+        if (emitPartitions.isEmpty() && partitioning.type != PartitionType.HASH) return ""
 
+        // §1/§4: RANGE/LIST → `… COLUMNS(key)` so date/datetime/string keys take literal bounds directly.
+        val mysqlMethod = when (partitioning.type) {
+            PartitionType.RANGE -> "RANGE COLUMNS"
+            PartitionType.LIST -> "LIST COLUMNS"
+            PartitionType.HASH -> "HASH"
+        }
         val key = partitioning.key.joinToString(", ") { quoteIdentifier(it) }
+        val emittedCodes = mutableSetOf<String>()
         return buildString {
-            append("PARTITION BY ${partitioning.type.name} ($key)")
-            if (partitioning.partitions.isNotEmpty()) {
+            append("PARTITION BY $mysqlMethod ($key)")
+            if (emitPartitions.isNotEmpty()) {
                 append(" (\n")
-                append(
-                    partitioning.partitions.joinToString(",\n") { partition ->
-                        buildString {
-                            append("    PARTITION ${quoteIdentifier(partition.name)}")
-                            when (partitioning.type) {
-                                PartitionType.RANGE -> append(" VALUES LESS THAN (${partition.to})")
-                                PartitionType.LIST -> {
-                                    val values = partition.values?.joinToString(", ") ?: ""
-                                    append(" VALUES IN ($values)")
-                                }
-                                PartitionType.HASH -> Unit
-                            }
-                        }
-                    }
-                )
+                append(emitPartitions.joinToString(",\n") {
+                    renderPartition(it, partitioning.type, keyTypes, notes, emittedCodes)
+                })
                 append("\n)")
             }
         }
     }
 
-    fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
-        generatedIndexNames(tableName, table.indices).mapIndexedNotNull { position, indexName ->
-            generateIndex(tableName, table.indices[position], indexName)
+    /**
+     * Wenn die Partitionierung **ganz** verworfen werden muss, die zugehörige
+     * `action_required`-Note (sonst null): leere RANGE/LIST (E055; MySQL lehnt
+     * bare `PARTITION BY` ab) oder nicht abbildbarer Schlüsseltyp (E062, ADR 0020 §1/§3 —
+     * RANGE/LIST COLUMNS brauchen INT/DATE/DATETIME/CHAR, HASH einen Integer).
+     */
+    private fun skipNote(partitioning: PartitionConfig, keyTypes: List<NeutralType?>): TransformationNote? {
+        val objectName = partitionObjectName(partitioning)
+        if (partitioning.partitions.isEmpty() &&
+            (partitioning.type == PartitionType.RANGE || partitioning.type == PartitionType.LIST)
+        ) {
+            return ManualActionRequired(
+                code = "E055", objectType = "partitioning", objectName = objectName,
+                reason = "${partitioning.type.name} partitioning requires at least one partition, " +
+                    "but the definition is empty; partitioning was skipped for this table.",
+                hint = "Add explicit partition boundaries or remove the partitioning configuration.",
+            ).toNote()
         }
+        val unsupported = when (partitioning.type) {
+            PartitionType.RANGE, PartitionType.LIST -> keyTypes.any { it is NeutralType.Decimal || it is NeutralType.Float }
+            PartitionType.HASH -> keyTypes.any { !isIntegerKey(it) }
+        }
+        if (unsupported) {
+            return ManualActionRequired(
+                code = "E062", objectType = "partitioning", objectName = objectName,
+                reason = "${partitioning.type.name} partition key type is not supported by MySQL " +
+                    "(RANGE/LIST COLUMNS need INT/DATE/DATETIME/CHAR; HASH needs an integer key); " +
+                    "partitioning was skipped for this table.",
+                hint = "Repartition on a supported key type, or remove the partitioning configuration.",
+            ).toNote()
+        }
+        return null
+    }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement? {
+    /** Stabiler `objectName` für partitions-bezogene Notes: die Schlüsselspalten als CSV. */
+    private fun partitionObjectName(partitioning: PartitionConfig): String =
+        partitioning.key.joinToString(",")
+
+    /** Diagnostische Notes für eine emittierte Partitionierung (ADR 0020): W112 (`from`-Verwurf), W130 (HASH-Platzierung). */
+    private fun partitionDiagnostics(partitioning: PartitionConfig): List<TransformationNote> {
+        val objectName = partitionObjectName(partitioning)
+        return when (partitioning.type) {
+            PartitionType.RANGE -> listOf(TransformationNote(
+                type = NoteType.WARNING, code = "W112", objectName = objectName,
+                message = "PostgreSQL RANGE has lower+upper bounds; MySQL RANGE COLUMNS keeps only the " +
+                    "upper bound (VALUES LESS THAN), so the partition's `from` bound is dropped.",
+                hint = "Verify the partitions are contiguous (MySQL RANGE assumes no gaps).",
+            ))
+            PartitionType.HASH -> listOf(TransformationNote(
+                type = NoteType.WARNING, code = "W130", objectName = objectName,
+                message = "PostgreSQL and MySQL hash functions differ; partition count and names are " +
+                    "preserved, but rows may land in different partitions after import.",
+                hint = "No data loss (parent routing); placement differs from the source.",
+            ))
+            PartitionType.LIST -> emptyList()
+        }
+    }
+
+    /**
+     * §4 (ADR 0020): MySQL-LIST hat keinen `DEFAULT`-Catch-all. Eine DEFAULT-Partition wird
+     * verworfen — **Transfer-Datenverlust** (E063), da ihre Zeilen in MySQL keine Ziel-Partition haben.
+     */
+    private fun effectivePartitions(
+        partitioning: PartitionConfig,
+        notes: MutableList<TransformationNote>,
+    ): List<PartitionDefinition> {
+        if (partitioning.type == PartitionType.LIST && partitioning.partitions.any { it.isDefault }) {
+            notes += ManualActionRequired(
+                code = "E063", objectType = "partition", objectName = partitionObjectName(partitioning),
+                reason = "LIST DEFAULT partition has no MySQL equivalent and was dropped; rows that fell " +
+                    "into it have no target partition in MySQL and would be rejected on transfer (data loss).",
+                hint = "Replace the DEFAULT partition with explicit LIST values, or migrate those rows separately.",
+            ).toNote()
+            return partitioning.partitions.filter { !it.isDefault }
+        }
+        return partitioning.partitions
+    }
+
+    private fun renderPartition(
+        partition: PartitionDefinition,
+        type: PartitionType,
+        keyTypes: List<NeutralType?>,
+        notes: MutableList<TransformationNote>,
+        emittedCodes: MutableSet<String>,
+    ): String = buildString {
+        append("    PARTITION ${quoteIdentifier(partition.name)}")
+        when (type) {
+            PartitionType.RANGE ->
+                append(" VALUES LESS THAN (${renderMysqlUpperBound(partition, keyTypes, notes, emittedCodes)})")
+            PartitionType.LIST -> {
+                // §4 (#4): Nur eine **einspaltige** LIST mit Temporal-Schlüssel trägt skalare
+                // Temporal-Werte, die normalisiert/quotiert werden. Eine mehrspaltige LIST
+                // (LIST COLUMNS(a,b)) trägt Tupel-Werte ((a,b)) — die werden nicht
+                // wert-normalisiert (Konsistenz mit dem RANGE-Pfad, der per Ordinal prüft).
+                val temporalKey = keyTypes.singleOrNull()?.takeIf { boundRenderer.isTemporal(it) }
+                val values = partition.values?.joinToString(", ") {
+                    val safe = PartitionLiteralGuard.ensureSafe(it, partition.name)
+                    boundRenderer.renderColumnBoundLiteral(safe, temporalKey, partition.name, notes, emittedCodes)
+                } ?: ""
+                append(" VALUES IN ($values)")
+            }
+            PartitionType.HASH -> Unit
+        }
+    }
+
+    /** Integer-coercible key (MySQL HASH/KEY require it). */
+    private fun isIntegerKey(type: NeutralType?): Boolean = when (type) {
+        is NeutralType.Identifier, NeutralType.Integer, NeutralType.SmallInt,
+        NeutralType.BigInteger, NeutralType.BooleanType -> true
+        else -> false
+    }
+
+    /** MySQL-RANGE-Obergrenze aus dem strukturierten `to`-Bound-Tupel (ADR 0019/0020).
+     *  DEFAULT-/leere Grenze → `MAXVALUE`; Temporal-Grenzen werden auf UTC normalisiert. */
+    private fun renderMysqlUpperBound(
+        partition: PartitionDefinition,
+        keyTypes: List<NeutralType?>,
+        notes: MutableList<TransformationNote>,
+        emittedCodes: MutableSet<String>,
+    ): String {
+        if (partition.isDefault) return "MAXVALUE"
+        return partition.to.orEmpty().mapIndexed { i, bound ->
+            when (bound) {
+                PartitionBound.MaxValue -> "MAXVALUE"
+                PartitionBound.MinValue -> "MINVALUE"
+                is PartitionBound.Value -> {
+                    val safe = PartitionLiteralGuard.ensureSafe(bound.literal, partition.name)
+                    boundRenderer.renderColumnBoundLiteral(safe, keyTypes.getOrNull(i), partition.name, notes, emittedCodes)
+                }
+            }
+        }.joinToString(", ").ifEmpty { "MAXVALUE" }
+    }
+
+    fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
+        val lift = liftPartitionIndices(tableName, table)
+        val allIndices = table.indices + lift.indices
+        val statements = generatedIndexNames(tableName, allIndices).mapIndexedNotNull { position, indexName ->
+            generateIndex(tableName, allIndices[position], indexName, table.columns)
+        }
+        // Lift notes (E064 unique-skip, W131 rename, INFO lifted) carry on a note-only statement.
+        return if (lift.notes.isEmpty()) statements else statements + DdlStatement("", lift.notes)
+    }
+
+    private class LiftedIndices(
+        val indices: List<IndexDefinition>,
+        val notes: List<TransformationNote>,
+    )
+
+    /**
+     * §5 (ADR 0020): MySQL teilt Indizes über **alle** Partitionen — PG-kind-lokale Indizes
+     * (`PartitionDefinition.indices`) müssen auf die Tabelle **gehoben** werden statt still verworfen:
+     * - **Nicht-unique** → heben, dedupliziert nach Spalten/Typ (N Partitionen tragen denselben Index →
+     *   genau einer); Namenskollision mit einem Tabellen-Index → eindeutiger Name + W131; INFO je gehobenem Index.
+     * - **UNIQUE/PK-artig** → NICHT heben, skip + `action_required` (E064): eine gehobene UNIQUE ohne alle
+     *   Partitionsschlüssel-Spalten ergäbe invalides MySQL-DDL, und partition-lokale ≠ globale Eindeutigkeit.
+     */
+    private fun liftPartitionIndices(tableName: String, table: TableDefinition): LiftedIndices {
+        val childLocal = table.partitioning?.partitions?.flatMap { it.indices }.orEmpty()
+        if (childLocal.isEmpty()) return LiftedIndices(emptyList(), emptyList())
+        val notes = mutableListOf<TransformationNote>()
+        val lifted = mutableListOf<IndexDefinition>()
+        val seenSignatures = table.indices.mapTo(mutableSetOf()) { indexSignature(it) }
+        val usedNames = table.indices.mapNotNullTo(mutableSetOf()) { it.name }
+        for (index in childLocal) {
+            if (index.unique) {
+                notes += uniqueSkipNote(index, tableName)
+                continue
+            }
+            if (!seenSignatures.add(indexSignature(index))) continue
+            val renamed = uniqueLiftName(index, usedNames, tableName, notes)
+            renamed.name?.let { usedNames += it }
+            lifted += renamed
+            notes += liftedInfoNote(renamed, tableName)
+        }
+        return LiftedIndices(lifted, notes)
+    }
+
+    /**
+     * Identität für die Lift-Deduplikation: Spalten (Name/Prefix/Richtung) + Typ + Unique + `where`,
+     * **ohne** Name. Schließt `where` ein, damit zwei partition-lokale Partial-Indizes, die sich nur
+     * im Prädikat unterscheiden, nicht zu einem kollabieren (AP6-Review P3 #8 — konsistent mit
+     * `TableComparator.indexKey`).
+     */
+    private fun indexSignature(index: IndexDefinition): String =
+        "${index.type}|${index.unique}|${index.where.orEmpty()}|" + index.columns.joinToString(",") { it.toString() }
+
+    private fun generatedIndexName(index: IndexDefinition, tableName: String): String =
+        index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+
+    /** Kollidiert der (explizite) Name eines gehobenen Index, eindeutig suffigieren + W131. Generierte Namen: weiter unten disambiguiert. */
+    private fun uniqueLiftName(
+        index: IndexDefinition,
+        used: Set<String>,
+        tableName: String,
+        notes: MutableList<TransformationNote>,
+    ): IndexDefinition {
+        val name = index.name ?: return index
+        if (name !in used) return index
+        var suffix = 2
+        while ("${name}_$suffix" in used) suffix++
+        val renamed = "${name}_$suffix"
+        notes += TransformationNote(
+            type = NoteType.WARNING, code = "W131", objectName = renamed,
+            message = "Lifted partition-local index '$name' was renamed to '$renamed' because that name " +
+                "already exists on table '$tableName' (MySQL shares indexes across all partitions).",
+            hint = "Verify the renamed index is acceptable, or rename the source index.",
+        )
+        return index.copy(name = renamed)
+    }
+
+    private fun uniqueSkipNote(index: IndexDefinition, tableName: String): TransformationNote {
+        val name = generatedIndexName(index, tableName)
+        return ManualActionRequired(
+            code = "E064", objectType = "index", objectName = name,
+            reason = "UNIQUE partition-local index '$name' cannot be lifted " +
+                "to MySQL: a unique key on a partitioned table must include every partition-key column, and " +
+                "partition-local uniqueness is not global uniqueness; lifting it would emit invalid DDL or " +
+                "change semantics. The index was skipped.",
+            hint = "Add the partition-key columns to the unique index, or enforce uniqueness in the application.",
+        ).toNote()
+    }
+
+    private fun liftedInfoNote(index: IndexDefinition, tableName: String): TransformationNote =
+        TransformationNote(
+            type = NoteType.INFO, code = "PARTITION_INDEX_LIFTED", objectName = generatedIndexName(index, tableName),
+            message = "Partition-local index '${generatedIndexName(index, tableName)}' was lifted to a " +
+                "table-level index because MySQL shares indexes across all partitions (no per-partition indexes).",
+            hint = "The index now covers all partitions; it is a non-unique performance index, so coverage only widens.",
+        )
+
+    private fun generateIndex(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+        columns: Map<String, ColumnDefinition>,
+    ): DdlStatement? {
         if (index.where != null) {
             return DdlStatement(
                 "",
@@ -74,10 +307,54 @@ internal class MysqlIndexPartitionDdlHelper(
             )
         }
 
-        val columns = index.columns.joinToString(", ") { renderIndexColumn(it) }
+        // VA3: ein Index auf einer Geometriespalte → MySQL `SPATIAL INDEX`, egal mit
+        // welcher neutralen Zugriffsmethode er hereinkommt (GIST/SP-GiST/BRIN/SPATIAL;
+        // MySQL kennt nur SPATIAL). Vor dem Prefix-/when-Pfad, da Geometrie keine
+        // Prefix-Länge trägt.
+        // ADR 0025: shared predicate — excludes FULLTEXT (lists its source TEXT columns; the
+        // `when` below has the native CREATE FULLTEXT INDEX branch). One source of truth with
+        // the diff-side geometry routers.
+        if (index.isSpatialGeometryIndex { columns[it]?.type }) {
+            return spatialIndexStatement(tableName, index, indexName)
+        }
+
+        // I-08: an unbounded TEXT/BLOB column needs a prefix length in MySQL
+        // (ERROR 1170). When none is carried, the index cannot be rendered as
+        // valid DDL — skip it with a note rather than guess a length. Only the
+        // emitted BTREE/HASH types are affected; GIN/GIST/BRIN/SP-GiST are skipped below.
+        val emitsBtree = index.type == IndexType.BTREE || index.type == IndexType.HASH
+        val missingPrefix = if (emitsBtree) MysqlIndexPrefix.columnNeedingPrefix(index) { columns[it]?.type } else null
+        missingPrefix?.let { offending ->
+            return DdlStatement(
+                "",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = "W125",
+                        objectName = indexName,
+                        message = "Index '$indexName' on TEXT/BLOB column '$offending' was skipped: " +
+                            "MySQL requires a prefix length (e.g. `$offending(255)`) which is not present.",
+                        hint = "Add a prefix length to the index column, or index a bounded VARCHAR/CHAR column.",
+                    )
+                )
+            )
+        }
+
+        val columnsSql = index.columns.joinToString(", ") { renderIndexColumn(it) }
 
         return when (index.type) {
-            IndexType.GIN, IndexType.GIST, IndexType.BRIN -> {
+            // VA3: räumlicher Index → natives `CREATE SPATIAL INDEX` (Spalten ohne
+            // Prefix/Richtung; MySQL erlaubt SPATIAL nur auf NOT-NULL-Geometrie).
+            IndexType.SPATIAL -> {
+                val spatialCols = index.columns.joinToString(", ") { quoteIdentifier(it.name) }
+                DdlStatement(
+                    "CREATE SPATIAL INDEX ${quoteIdentifier(indexName)} " +
+                        "ON ${quoteIdentifier(tableName)} ($spatialCols);",
+                )
+            }
+            IndexType.GIN, IndexType.GIST, IndexType.BRIN, IndexType.SPGIST -> {
+                // Erreicht nur Nicht-Geometrie-Spalten; Geometrie ist oben als
+                // SPATIAL abgefangen. Diese PG-Zugriffsmethoden kennt MySQL nicht.
                 DdlStatement(
                     "",
                     listOf(
@@ -97,7 +374,7 @@ internal class MysqlIndexPartitionDdlHelper(
                     if (index.unique) append("UNIQUE ")
                     append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
                     append(" USING BTREE")
-                    append(" ($columns);")
+                    append(" ($columnsSql);")
                 }
                 DdlStatement(
                     sql,
@@ -117,24 +394,62 @@ internal class MysqlIndexPartitionDdlHelper(
                     append("CREATE ")
                     if (index.unique) append("UNIQUE ")
                     append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
-                    append(" ($columns);")
+                    append(" ($columnsSql);")
                 }
                 DdlStatement(sql)
+            }
+            // ADR 0025: Volltext-Index → natives MySQL `CREATE FULLTEXT INDEX` über die
+            // Quelltext-Spalten (ohne Prefix/Richtung); MySQL-FULLTEXT kennt keine
+            // Text-Search-Config, daher wird `textSearchConfig` hier nicht emittiert.
+            IndexType.FULLTEXT -> {
+                val ftCols = index.columns.joinToString(", ") { quoteIdentifier(it.name) }
+                DdlStatement(
+                    "CREATE FULLTEXT INDEX ${quoteIdentifier(indexName)} " +
+                        "ON ${quoteIdentifier(tableName)} ($ftCols);",
+                )
             }
         }
     }
 
+    /**
+     * VA3: natives MySQL `CREATE SPATIAL INDEX` für einen Index auf einer
+     * Geometriespalte (Spalten ohne Prefix/Richtung). MySQL verlangt dafür eine
+     * NOT-NULL-Geometriespalte (als INFO-Note vermerkt).
+     */
+    private fun spatialIndexStatement(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+    ): DdlStatement {
+        val spatialCols = index.columns.joinToString(", ") { quoteIdentifier(it.name) }
+        return DdlStatement(
+            "CREATE SPATIAL INDEX ${quoteIdentifier(indexName)} " +
+                "ON ${quoteIdentifier(tableName)} ($spatialCols);",
+            listOf(
+                TransformationNote(
+                    type = NoteType.INFO,
+                    code = "SPATIAL_INDEX_REQUIRES_NOT_NULL",
+                    objectName = indexName,
+                    message = "Index '$indexName' on a geometry column emitted as MySQL SPATIAL INDEX.",
+                    hint = "MySQL requires the geometry column to be NOT NULL for a SPATIAL INDEX.",
+                )
+            ),
+        )
+    }
+
     private fun renderIndexColumn(column: IndexColumn): String =
         buildString {
-            val direction = column.direction
             append(quoteIdentifier(column.name))
+            val prefixLength = column.prefixLength
+            if (prefixLength != null) append("($prefixLength)")
+            val direction = column.direction
             if (direction != null) append(" ${direction.name}")
         }
 
+
     private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
-        val baseNames = indices.map { index ->
-            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
-        }
+        // #13: single source of truth for the base name (shared with generatedIndexName).
+        val baseNames = indices.map { generatedIndexName(it, tableName) }
         val baseCounts = baseNames.groupingBy { it }.eachCount()
         val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()
         return indices.mapIndexed { position, index ->

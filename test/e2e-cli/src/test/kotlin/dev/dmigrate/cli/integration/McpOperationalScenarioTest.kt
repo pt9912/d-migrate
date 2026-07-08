@@ -24,7 +24,7 @@ import kotlin.io.path.deleteIfExists
  * status with the artefact surface populated. Mirrors the production
  * composition
  * `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`
- * — Plan-Doc `docs/planning/done/quality-coverage-expansion-plan.md`
+ * — Plan-Doc `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.3 (Sub-Slice C-MCP).
  *
  * Three cells:

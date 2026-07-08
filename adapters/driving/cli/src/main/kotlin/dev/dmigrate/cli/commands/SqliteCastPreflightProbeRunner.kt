@@ -1,4 +1,5 @@
 package dev.dmigrate.cli.commands
+import dev.dmigrate.driver.connection.asJdbc
 
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.diff.migration.DiffResult
@@ -41,7 +42,7 @@ internal object SqliteCastPreflightProbeRunner {
         }
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->
-            p.borrow().use { conn ->
+            p.borrow().asJdbc().use { conn ->
                 SqliteCastPreflightProbe.probe(conn, plan)
             }
         }

@@ -15,7 +15,7 @@ import kotlin.io.path.absolutePathString
  * Operational-Harness validation/blocker scenarios surface a
  * typed error instead of a NullPointerException.
  *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/quality-coverage-expansion-plan.md`
  * §5.3 (C-MCP `ConnectionSecretResolver` test seam).
  *
  * The resolver is intentionally NOT scope-aware — the

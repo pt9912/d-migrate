@@ -28,4 +28,9 @@ class SqliteDataReader : AbstractJdbcDataReader() {
     override val fetchSize: Int = 1_000
 
     override val needsAutoCommitFalse: Boolean = false
+
+    // VA1b: kein Geometrie-Read-Wrapping (supportsGeometryRead bleibt false).
+    // SpatiaLite-Geometrie wird ohne geladenes mod_spatialite gar nicht als
+    // Geometriespalte erkannt; der SQLite-Read-Pfad (ST_AsBinary + Extension)
+    // folgt mit VA4 (mod_spatialite im CLI-Image).
 }

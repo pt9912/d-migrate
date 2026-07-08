@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -18,7 +19,7 @@ class MysqlSchemaReaderSequenceTest : FunSpec({
 
     val conn = mockk<Connection>(relaxUnitFun = true)
     val pool = mockk<ConnectionPool> {
-        every { borrow() } returns conn
+        every { borrow() } returns JdbcDatabaseConnection(conn)
     }
     val jdbc = mockk<JdbcOperations>()
     val reader = MysqlSchemaReader(jdbcFactory = { jdbc })
@@ -47,6 +48,8 @@ class MysqlSchemaReaderSequenceTest : FunSpec({
         every { jdbc.queryList(match { it.contains("constraint_name = 'PRIMARY'") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("referential_constraints") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns emptyList()
+        // AP6.1: information_schema.partitions — non-partitioned by default.
+        every { jdbc.queryList(match { it.contains("information_schema.partitions") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc.querySingle(match { it.contains("engine") }, any(), any()) } returns null
     }

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.model.AggregateDefinition
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.DefaultValue
@@ -214,7 +215,7 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         result.statements.none { it.sql.contains("CREATE TABLE \"geo\"") } shouldBe true
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "functions", "aggregates", "procedures", "views", "triggers",
         )
     }
 
@@ -235,7 +236,7 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:geo", "indices:geo",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "functions", "aggregates", "procedures", "views", "triggers",
         )
     }
 
@@ -281,6 +282,29 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         postStmts.any { it.sql.contains("trg_audit") } shouldBe true
     }
 
+    test("F2: post-data view is emitted AFTER the function it references") {
+        // docs/planning/open/sample-db-roundtrip-findings.md F2: a view body is
+        // validated at CREATE time, so a view referencing calc_total must be
+        // emitted after the function — not before it.
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            "orders" to table(),
+            functions = mapOf("calc_total" to FunctionDefinition()),
+            views = mapOf(
+                "computed_view" to ViewDefinition(
+                    query = "SELECT calc_total(id) FROM orders",
+                    dependencies = DependencyInfo(functions = listOf("calc_total")),
+                ),
+            ),
+        ))
+        val post = result.statementsForPhase(DdlPhase.POST_DATA).map { it.sql }
+        val fnIdx = post.indexOfFirst { it.contains("FUNCTION") && it.contains("calc_total") }
+        val viewIdx = post.indexOfFirst { it.contains("computed_view") }
+        (fnIdx >= 0) shouldBe true
+        (viewIdx >= 0) shouldBe true
+        (fnIdx < viewIdx) shouldBe true
+    }
+
     test("render() is unchanged despite phase tagging") {
         val gen = TestDdlGenerator()
         val result = gen.generate(schema(
@@ -305,6 +329,7 @@ internal fun schema(
     functions: Map<String, FunctionDefinition> = emptyMap(),
     procedures: Map<String, ProcedureDefinition> = emptyMap(),
     triggers: Map<String, TriggerDefinition> = emptyMap(),
+    aggregates: Map<String, AggregateDefinition> = emptyMap(),
 ) = SchemaDefinition(
     name = "Test",
     version = "1.0.0",
@@ -313,6 +338,7 @@ internal fun schema(
     functions = functions,
     procedures = procedures,
     triggers = triggers,
+    aggregates = aggregates,
 )
 
 internal fun table(vararg cols: Pair<String, ColumnDefinition>) = TableDefinition(
@@ -345,6 +371,7 @@ internal class TestDdlGenerator(
     val callOrder = mutableListOf<String>()
     val tableOrder = mutableListOf<String>()
     val viewOrder = mutableListOf<String>()
+    val functionOrder = mutableListOf<String>()
     val circularEdges = mutableListOf<CircularFkEdge>()
     val deferredForeignKeys = mutableListOf<DeferredForeignKey>()
 
@@ -389,7 +416,11 @@ internal class TestDdlGenerator(
         return if (emitBlankSequence) listOf(DdlStatement("   ")) else emptyList()
     }
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> {
         callOrder += "indices:$tableName"
         return emptyList()
     }
@@ -428,7 +459,16 @@ internal class TestDdlGenerator(
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         callOrder += "functions"
+        functionOrder += functions.keys
         return functions.keys.map { DdlStatement("CREATE FUNCTION \"$it\"();") }
+    }
+
+    override fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> {
+        callOrder += "aggregates"
+        return aggregates.keys.map { DdlStatement("CREATE AGGREGATE \"$it\"();") }
     }
 
     override fun generateProcedures(

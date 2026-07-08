@@ -4,9 +4,12 @@ import dev.dmigrate.core.diff.routine.RoutineBodyNormalizer
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.*
 
-class SchemaComparator {
+class SchemaComparator(
+    /** AP7: target-aware Vergleichsmodus (siehe [TableComparator]); null = strikt. */
+    targetCanonicalization: ((NeutralType) -> NeutralType)? = null,
+) {
 
-    private val tableComparator = TableComparator()
+    private val tableComparator = TableComparator(targetCanonicalization)
 
     fun compare(left: SchemaDefinition, right: SchemaDefinition): SchemaDiff {
         val metadataDiff = compareMetadata(left, right)
@@ -236,7 +239,7 @@ class SchemaComparator {
         val diff = TriggerDiff(
             name = name,
             table = valueChangeOrNull(left.table, right.table),
-            event = valueChangeOrNull(left.event, right.event),
+            event = valueChangeOrNull(left.events, right.events),
             timing = valueChangeOrNull(left.timing, right.timing),
             forEach = valueChangeOrNull(left.forEach, right.forEach),
             condition = valueChangeOrNull(left.condition, right.condition),

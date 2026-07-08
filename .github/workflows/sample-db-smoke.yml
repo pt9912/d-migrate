@@ -1,0 +1,44 @@
+name: Sample-DB Smoke (Best-Effort)
+
+# Phase-1-E2E-Smoke: Pagila/PG-Round-Trip gegen das echte d-migrate:dev-CLI.
+# Plan: docs/planning/done/sample-db-integration-harness.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-smoke` (fetch gepinnter Dump -> compose up ->
+# reverse/validate/generate -> transfer -> schema compare gegen die
+# gepinnte Baseline examples/sample-db/expected/).
+#
+# Best-Effort: continue-on-error, damit transiente Netz-/Docker-Hub-
+# Instabilitaeten (Dump-Fetch, Image-Pull) den Hauptbuild nicht rot
+# machen. Schlaegt der Smoke fehl, landet das im Job-Log, blockt aber
+# keinen Merge. Der gepinnte Dump (SHA256) wird on-demand geladen.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'examples/sample-db/**'
+      - 'Makefile'
+      - '.github/workflows/sample-db-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB smoke (fetch + up + reverse/validate/generate/transfer/compare)
+        run: make sample-db-smoke
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true

@@ -119,7 +119,11 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         )
 
         r.isBlocked shouldBe false
-        r.statements.single().sql shouldContainStr
+        // 5d Befund 1: der Metadaten-Bootstrap geht dem ersten AddGeometryColumn voran.
+        r.statements.size shouldBe 2
+        r.statements[0].sql shouldBe
+            "SELECT CASE WHEN CheckSpatialMetaData() = 0 THEN InitSpatialMetaData() END;"
+        r.statements[1].sql shouldContainStr
             "AddGeometryColumn('places', 'shape', 0, 'GEOMETRY', 'XY')"
         r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_VERIFIED" }
             .message shouldContainStr "spatialite"
@@ -176,13 +180,18 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         )
 
         r.isBlocked shouldBe false
-        r.statements.size shouldBe 2
+        // 5d Befund 1: CREATE TABLE, dann einmaliger Metadaten-Bootstrap, dann
+        // AddGeometryColumn (das eine frische .db sonst mit "unexpected metadata
+        // layout" abweist).
+        r.statements.size shouldBe 3
         r.statements[0].sql shouldContainStr "CREATE TABLE \"places\""
         r.statements[0].sql.contains("\"shape\"") shouldBe false
-        r.statements[1].sql shouldContainStr "AddGeometryColumn('places', 'shape', 0, 'GEOMETRY', 'XY')"
+        r.statements[1].sql shouldBe
+            "SELECT CASE WHEN CheckSpatialMetaData() = 0 THEN InitSpatialMetaData() END;"
+        r.statements[2].sql shouldContainStr "AddGeometryColumn('places', 'shape', 0, 'GEOMETRY', 'XY')"
     }
 
-    test("§C.2: SQLite index on geometry column is blocked") {
+    test("§C.2: SQLite geometry index blocks without SpatiaLite profile") {
         val before = TableDefinition(
             columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
         )
@@ -195,8 +204,68 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
 
         r.statements.shouldBeEmpty()
         r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        r.diagnostics.single { it.code == "SPATIAL_INDEX_UNSUPPORTED" }
-            .message shouldContainStr "spatial-index metadata"
+        r.diagnostics.single { it.code == "SPATIAL_PROFILE_REQUIRED" }
+    }
+
+    test("VA4: SQLite geometry index renders as CreateSpatialIndex under SpatiaLite") {
+        val before = TableDefinition(
+            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val index = IndexDefinition(name = "idx_places_shape", columns = listOf(IndexColumn("shape")))
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("places" to before))
+        val desired = emptySchema().copy(tables = mapOf("places" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "places", indicesAdded = listOf(index))))
+        val r = planAndUp(
+            diff,
+            current = current,
+            desired = desired,
+            options = DdlGenerationOptions(
+                spatialProfile = SpatialProfile.SPATIALITE,
+                extensionAvailability = listOf(
+                    ExtensionAvailabilityDeclaration(
+                        dialect = "sqlite",
+                        extension = "spatialite",
+                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                    ),
+                ),
+            ),
+        )
+
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContainStr "CreateSpatialIndex('places', 'shape')"
+    }
+
+    test("5d Befund 2: geometry index in CreateTable renders as CreateSpatialIndex, not CREATE INDEX") {
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer),
+                "shape" to ColumnDefinition(NeutralType.Geometry()),
+            ),
+            indices = listOf(
+                IndexDefinition(name = "idx_places_shape", columns = listOf(IndexColumn("shape"))),
+            ),
+        )
+        val r = planAndUp(
+            SchemaDiff(tablesAdded = listOf(NamedTable("places", table))),
+            options = DdlGenerationOptions(
+                spatialProfile = SpatialProfile.SPATIALITE,
+                extensionAvailability = listOf(
+                    ExtensionAvailabilityDeclaration(
+                        dialect = "sqlite",
+                        extension = "spatialite",
+                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                    ),
+                ),
+            ),
+        )
+
+        r.isBlocked shouldBe false
+        // CREATE TABLE, Bootstrap (Befund 1), AddGeometryColumn, CreateSpatialIndex (Befund 2).
+        r.statements.size shouldBe 4
+        r.statements[3].sql shouldBe "SELECT CreateSpatialIndex('places', 'shape');"
+        // Der Geometrie-Index darf NICHT als generischer CREATE INDEX entstehen.
+        r.statements.any { it.sql.contains("CREATE INDEX", ignoreCase = true) } shouldBe false
     }
 
     test("DropColumn renders DROP COLUMN") {

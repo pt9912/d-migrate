@@ -1,5 +1,7 @@
 package dev.dmigrate.test.concurrency
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -32,7 +34,7 @@ private val ConcurrencyTag = NamedTag("concurrency")
  * holds a database-wide `RESERVED` lock which blocks every concurrent
  * writer for the duration of the atomic probe+restore window.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.5.
  */
 class SqliteSequencePreserveRaceTest : FunSpec({
@@ -116,7 +118,7 @@ class SqliteSequencePreserveRaceTest : FunSpec({
         val advancesAtLockEnd = java.util.concurrent.atomic.AtomicInteger(-1)
 
         openConnection(url).use { atomicConn ->
-            val result = executor.execute(atomicConn, batch, lockTimeoutMillis = 30_000L) { _, _ ->
+            val result = executor.execute(JdbcDatabaseConnection(atomicConn), batch, lockTimeoutMillis = 30_000L) { _, _ ->
                 // The SQLite executor has already issued BEGIN
                 // IMMEDIATE before this callback runs; the RESERVED
                 // lock is held until commit. Any writer UPDATE on a
@@ -125,8 +127,7 @@ class SqliteSequencePreserveRaceTest : FunSpec({
                 advancesAtLockStart.set(writerAdvancesDone.get())
                 Thread.sleep(lockWindowSleepMillis)
                 advancesAtLockEnd.set(writerAdvancesDone.get())
-                AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
-            }
+                AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0) }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
         }
 

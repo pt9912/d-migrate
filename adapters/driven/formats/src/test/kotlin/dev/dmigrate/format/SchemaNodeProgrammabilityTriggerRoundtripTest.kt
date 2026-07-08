@@ -46,7 +46,7 @@ class SchemaNodeProgrammabilityTriggerRoundtripTest : FunSpec({
         val schema = SchemaDefinition(name = "App", version = "1", triggers = mapOf("vt::trg" to trg))
         val parsed = roundtrip(schema).triggers.getValue("vt::trg")
         parsed.timing shouldBe TriggerTiming.INSTEAD_OF
-        parsed.event shouldBe TriggerEvent.UPDATE
+        parsed.events shouldBe setOf(TriggerEvent.UPDATE)
         parsed.forEach shouldBe TriggerForEach.ROW
         parsed.condition shouldBe "NEW.name <> OLD.name"
         parsed.body shouldBe "UPDATE t SET name = NEW.name WHERE id = OLD.id;\n" +
@@ -85,5 +85,43 @@ class SchemaNodeProgrammabilityTriggerRoundtripTest : FunSpec({
         val schema = SchemaDefinition(name = "App", version = "1", triggers = mapOf("t::trg" to trg))
         val parsed = roundtrip(schema).triggers.getValue("t::trg")
         parsed.forEach shouldBe TriggerForEach.STATEMENT
+    }
+
+    test("multi-event trigger serialises events as a canonical-order array and roundtrips (F4)") {
+        // Pagila's film_fulltext_trigger: BEFORE INSERT OR UPDATE. Build the
+        // set UPDATE-first to prove serialisation pins canonical enum order.
+        val trg = TriggerDefinition(
+            table = "film",
+            events = setOf(TriggerEvent.UPDATE, TriggerEvent.INSERT),
+            timing = TriggerTiming.BEFORE,
+            forEach = TriggerForEach.ROW,
+            body = "EXECUTE FUNCTION film_fulltext_update()",
+            sourceDialect = "postgresql",
+        )
+        val schema = SchemaDefinition(name = "App", version = "1", triggers = mapOf("film::ft" to trg))
+        val node = SchemaNodeBuilder.build(mapper, schema)
+        val eventNode = node.get("triggers").get("film::ft").get("event")
+        eventNode.isArray shouldBe true
+        eventNode.map { it.asText() } shouldBe listOf("insert", "update")
+        SchemaNodeParser.parse(node).triggers.getValue("film::ft").events shouldBe
+            setOf(TriggerEvent.INSERT, TriggerEvent.UPDATE)
+    }
+
+    test("single-event trigger keeps the scalar `event` form and roundtrips (F4 back-compat)") {
+        // The scalar form keeps single-event output byte-identical to pre-F4
+        // and lets existing hand-written schema files parse unchanged.
+        val trg = TriggerDefinition(
+            table = "t",
+            event = TriggerEvent.INSERT,
+            timing = TriggerTiming.AFTER,
+            body = "SELECT 1",
+            sourceDialect = "sqlite",
+        )
+        val schema = SchemaDefinition(name = "App", version = "1", triggers = mapOf("t::trg" to trg))
+        val node = SchemaNodeBuilder.build(mapper, schema)
+        val eventNode = node.get("triggers").get("t::trg").get("event")
+        eventNode.isTextual shouldBe true
+        eventNode.asText() shouldBe "insert"
+        SchemaNodeParser.parse(node).triggers.getValue("t::trg").events shouldBe setOf(TriggerEvent.INSERT)
     }
 })

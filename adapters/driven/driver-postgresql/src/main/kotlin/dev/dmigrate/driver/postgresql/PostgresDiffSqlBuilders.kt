@@ -26,6 +26,21 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
 
     fun columnLine(name: String, col: ColumnDefinition): String {
+        // Enum-Degradations-Slice (AP2): a `refType` enum references its native
+        // PostgreSQL type (created by the CreateCustomType op → `CREATE TYPE … AS
+        // ENUM`) instead of degrading to bare TEXT — mirrors the generate path
+        // (PostgresColumnConstraintHelper). Only the type NAME is needed, so no
+        // schema lookup. Inline-values enums (no refType) stay TEXT (2b / W134).
+        // Review F3: only take this fast path with no inline FK — otherwise fall
+        // through to the generic body so the `REFERENCES …` clause is preserved
+        // (the ENUM type degrades to TEXT there rather than dropping the FK).
+        (col.type as? NeutralType.Enum)?.refType?.takeIf { col.references == null }?.let { refType ->
+            val refParts = mutableListOf(quote(name), quote(refType))
+            if (col.required) refParts += "NOT NULL"
+            col.default?.let { refParts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
+            if (col.unique) refParts += "UNIQUE"
+            return refParts.joinToString(" ")
+        }
         val parts = mutableListOf<String>()
         parts += quote(name)
         parts += typeMapper.toSql(col.type)
@@ -76,7 +91,22 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {
         val unique = if (idx.unique) "UNIQUE " else ""
-        val using = if (idx.type != IndexType.BTREE) " USING ${idx.type.name}" else ""
+        // ADR 0025: a neutral FULLTEXT index expands to a GiST index over the precomputed
+        // `tsvector` column (recorded in fullTextVectorColumn); `columns` holds the human
+        // source columns that MySQL/SQLite index. The caller's FULLTEXT guard resolves /
+        // blocks the vector column, so it is normally present here.
+        if (idx.type == IndexType.FULLTEXT) {
+            val vec = idx.fullTextVectorColumn
+                ?: return "-- FULLTEXT index ${quote(effectiveIndexName(table, idx))} skipped: " +
+                    "no backing tsvector column"
+            // ADR 0025: restore the recorded access method, clamped to GIN/GiST.
+            val method = pgFullTextAccessMethod(idx.fullTextAccessMethod).name
+            return "CREATE ${unique}INDEX ${quote(effectiveIndexName(table, idx))} " +
+                "ON ${quote(table)} USING $method (${quote(vec)});"
+        }
+        // VA3: der neutrale räumliche Index (SPATIAL) wird in PostGIS als GIST-
+        // Zugriffsmethode emittiert (PostgreSQL kennt kein `USING SPATIAL`).
+        val using = if (idx.type != IndexType.BTREE) " USING ${pgAccessMethod(idx.type)}" else ""
         val cols = idx.columns.joinToString(", ") { col ->
             quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
         }

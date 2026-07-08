@@ -5,6 +5,19 @@ import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.*
 
 /**
+ * VA4/5d Befund 3: one SpatiaLite `geometry_columns` registry row, reduced to the
+ * two facts the neutral reverse path cannot recover from `PRAGMA table_info`/
+ * `sqlite_master` alone: the [srid] (null = unconstrained, mirrors PG/MySQL VA2)
+ * and whether an R*Tree [spatialIndexEnabled] spatial index backs the column.
+ */
+data class SqliteGeometryColumn(
+    val table: String,
+    val column: String,
+    val srid: Int?,
+    val spatialIndexEnabled: Boolean,
+)
+
+/**
  * Shared JDBC metadata queries for SQLite.
  *
  * Operates on an already-borrowed connection via [JdbcMetadataSession].
@@ -75,11 +88,11 @@ object SqliteMetadataQueries {
         val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table)})")
         return indexRows.mapNotNull { idx ->
             val indexName = idx["name"] as String
-            // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints)
+            // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints) —
+            // UNIQUE-constraint autoindexes are surfaced separately via
+            // [listUniqueConstraintIndexes] and fold onto columns/constraints.
             if (indexName.startsWith("sqlite_autoindex_")) return@mapNotNull null
-            val colRows = session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName)})")
-                .filter { ((it["key"] as? Number)?.toInt() ?: 1) == 1 }
-                .sortedBy { (it["seqno"] as Number).toInt() }
+            val colRows = keyColumnRows(session, indexName)
             val cols = colRows.mapNotNull { it["name"] as? String }
             if (cols.isEmpty()) return@mapNotNull null
             val createSql = session.querySingle(
@@ -97,6 +110,31 @@ object SqliteMetadataQueries {
             )
         }
     }
+
+    /**
+     * AP4 (postcompare-type-canonicalization slice): the `sqlite_autoindex_*`
+     * entries backing inline UNIQUE constraints (PRAGMA index_list
+     * `origin = 'u'`). They are NOT user indices — the reader folds them onto
+     * the column `unique` flag (single-column) or reconstructs the named
+     * constraint (multi-column, name via [SqliteUniqueConstraintScanner]).
+     * PK autoindexes (`origin = 'pk'`) stay excluded.
+     */
+    fun listUniqueConstraintIndexes(session: JdbcMetadataSession, table: String): List<IndexProjection> {
+        val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table)})")
+        return indexRows.mapNotNull { idx ->
+            if ((idx["origin"] as? String) != "u") return@mapNotNull null
+            val indexName = idx["name"] as String
+            val cols = keyColumnRows(session, indexName).mapNotNull { it["name"] as? String }
+            if (cols.isEmpty()) return@mapNotNull null
+            IndexProjection(name = indexName, columns = cols, isUnique = true)
+        }
+    }
+
+    /** Key columns of an index (PRAGMA index_xinfo, `key = 1`, seqno-sortiert). */
+    private fun keyColumnRows(session: JdbcMetadataSession, indexName: String): List<Map<String, Any?>> =
+        session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName)})")
+            .filter { ((it["key"] as? Number)?.toInt() ?: 1) == 1 }
+            .sortedBy { (it["seqno"] as Number).toInt() }
 
     private fun extractIndexWhere(sql: String?): String? {
         if (sql == null) return null
@@ -130,6 +168,35 @@ object SqliteMetadataQueries {
             "SELECT rowid, name, tbl_name, sql FROM sqlite_master " +
                 "WHERE type = 'trigger' ORDER BY rowid"
         )
+    }
+
+    /**
+     * VA4/5d Befund 3: read the SpatiaLite `geometry_columns` registry so the
+     * reverse path can recover the SRID (lost via `PRAGMA table_info`, which only
+     * yields the declared geometry subtype) and the spatial-index flag (the R*Tree
+     * index is a virtual table, not a `sqlite_master` `type='index'` row).
+     *
+     * Guarded: a non-SpatiaLite database has no `geometry_columns` table, so the
+     * query throws and we return an empty list (= "no SpatiaLite metadata"). The
+     * extension need not be loaded — `geometry_columns` is a plain table once
+     * `InitSpatialMetaData()` has run.
+     */
+    fun listGeometryColumns(session: JdbcMetadataSession): List<SqliteGeometryColumn> = try {
+        session.queryList(
+            "SELECT f_table_name, f_geometry_column, srid, spatial_index_enabled " +
+                "FROM geometry_columns",
+        ).mapNotNull { row ->
+            val table = row["f_table_name"] as? String ?: return@mapNotNull null
+            val column = row["f_geometry_column"] as? String ?: return@mapNotNull null
+            SqliteGeometryColumn(
+                table = table,
+                column = column,
+                srid = (row["srid"] as? Number)?.toInt()?.takeIf { it > 0 },
+                spatialIndexEnabled = ((row["spatial_index_enabled"] as? Number)?.toInt() ?: 0) == 1,
+            )
+        }
+    } catch (_: Exception) {
+        emptyList()
     }
 
     /** Get the CREATE TABLE SQL for a table. */

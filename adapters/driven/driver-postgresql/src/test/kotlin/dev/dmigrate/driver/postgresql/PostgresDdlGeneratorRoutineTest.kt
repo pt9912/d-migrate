@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.*
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 
 class PostgresDdlGeneratorRoutineTest : FunSpec({
 
@@ -18,7 +19,8 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         views: Map<String, ViewDefinition> = emptyMap(),
         functions: Map<String, FunctionDefinition> = emptyMap(),
         procedures: Map<String, ProcedureDefinition> = emptyMap(),
-        triggers: Map<String, TriggerDefinition> = emptyMap()
+        triggers: Map<String, TriggerDefinition> = emptyMap(),
+        aggregates: Map<String, AggregateDefinition> = emptyMap()
     ) = SchemaDefinition(
         name = name,
         version = version,
@@ -28,7 +30,8 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         views = views,
         functions = functions,
         procedures = procedures,
-        triggers = triggers
+        triggers = triggers,
+        aggregates = aggregates
     )
 
     fun table(
@@ -81,6 +84,24 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         ddl shouldContain "RETURNS INTEGER"
         ddl shouldContain "BEGIN\n    RETURN a + b;\nEND;"
         ddl shouldContain "LANGUAGE plpgsql;"
+    }
+
+    test("routine-key map entry emits the bare function name, not the signature suffix (M1)") {
+        val s = schema(
+            functions = mapOf(
+                // Reverse keys routines canonically as `name(params)` for overload
+                // uniqueness; the emitted DDL name must be the bare `last_updated`.
+                "last_updated()" to FunctionDefinition(
+                    returns = ReturnType(type = "trigger"),
+                    language = "plpgsql",
+                    body = "BEGIN NEW.last_update = now(); RETURN NEW; END;",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE OR REPLACE FUNCTION \"last_updated\"("
+        ddl shouldNotContain "\"last_updated()\""
     }
 
     test("function with non-postgresql source_dialect is skipped with E053") {
@@ -153,6 +174,29 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         ddl shouldContain "AFTER INSERT ON \"orders\""
         ddl shouldContain "FOR EACH ROW"
         ddl shouldContain "EXECUTE FUNCTION \"trg_fn_audit_orders\"();"
+    }
+
+    test("trigger whose body is an EXECUTE FUNCTION action references the function directly (N6)") {
+        val s = schema(
+            tables = mapOf(
+                "film" to table(columns = mapOf("id" to col(NeutralType.Integer)))
+            ),
+            triggers = mapOf(
+                "last_updated" to TriggerDefinition(
+                    table = "film",
+                    event = TriggerEvent.UPDATE,
+                    timing = TriggerTiming.BEFORE,
+                    forEach = TriggerForEach.ROW,
+                    sourceDialect = "postgresql",
+                    body = "EXECUTE FUNCTION last_updated()"
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        // No wrapper function around the action statement (was the N6 invalid `AS $$ EXECUTE … $$`).
+        ddl shouldNotContain "CREATE OR REPLACE FUNCTION \"trg_fn_last_updated\""
+        ddl shouldContain "CREATE TRIGGER \"last_updated\""
+        ddl shouldContain "EXECUTE FUNCTION last_updated();"
     }
 
     test("trigger with WHEN condition") {
@@ -296,5 +340,118 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         val ddl = generator.generate(s).render()
         ddl shouldContain "INOUT \"a\" INTEGER"
         ddl shouldContain "INOUT \"b\" INTEGER"
+    }
+
+    test("functions are emitted in call-dependency order — callee before caller (K2)") {
+        // Map insertion order puts the CALLER first; PostgreSQL validates
+        // `LANGUAGE sql` bodies at CREATE, so the callee must be emitted
+        // first. The generator infers the call edge from the body.
+        val s = schema(
+            functions = linkedMapOf(
+                "film_in_stock" to FunctionDefinition(
+                    parameters = listOf(ParameterDefinition(name = "p_film_id", type = "INTEGER")),
+                    returns = ReturnType(type = "INTEGER"),
+                    language = "sql",
+                    body = "SELECT inventory_id FROM inventory WHERE inventory_in_stock(inventory_id);",
+                    sourceDialect = "postgresql",
+                ),
+                "inventory_in_stock" to FunctionDefinition(
+                    parameters = listOf(ParameterDefinition(name = "p_inventory_id", type = "INTEGER")),
+                    returns = ReturnType(type = "BOOLEAN"),
+                    language = "sql",
+                    body = "SELECT true;",
+                    sourceDialect = "postgresql",
+                ),
+            )
+        )
+        val ddl = generator.generate(s).render()
+        (ddl.indexOf("FUNCTION \"inventory_in_stock\"") < ddl.indexOf("FUNCTION \"film_in_stock\"")) shouldBe true
+    }
+
+    test("circular function call dependency falls back to original order with W128 (K2)") {
+        val s = schema(
+            functions = linkedMapOf(
+                "ping" to FunctionDefinition(
+                    returns = ReturnType(type = "INTEGER"), language = "sql",
+                    body = "SELECT pong();", sourceDialect = "postgresql",
+                ),
+                "pong" to FunctionDefinition(
+                    returns = ReturnType(type = "INTEGER"), language = "sql",
+                    body = "SELECT ping();", sourceDialect = "postgresql",
+                ),
+            )
+        )
+        val result = generator.generate(s)
+        // Both are still emitted (not dropped); the cycle is surfaced, not silent.
+        result.render() shouldContain "FUNCTION \"ping\""
+        result.render() shouldContain "FUNCTION \"pong\""
+        result.notes.any { it.code == "W128" && it.objectName == "functions" } shouldBe true
+    }
+
+    test("user-defined aggregate generates CREATE AGGREGATE (N7)") {
+        val s = schema(
+            aggregates = mapOf(
+                "group_concat" to AggregateDefinition(
+                    inputTypes = listOf("text"),
+                    stateType = "internal",
+                    transitionFunction = "group_concat_transfn",
+                    finalFunction = "group_concat_finalfn",
+                    initialCondition = "",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE AGGREGATE \"group_concat\"(TEXT) ("
+        ddl shouldContain "SFUNC = group_concat_transfn"
+        ddl shouldContain "STYPE = internal"
+        ddl shouldContain "FINALFUNC = group_concat_finalfn"
+        ddl shouldContain "INITCOND = ''"
+    }
+
+    test("MySQL loadable-UDF aggregate cannot be emitted by PostgreSQL — skipped with E053 (N7)") {
+        val s = schema(
+            aggregates = mapOf(
+                // MySQL loadable-UDF form (library/returns, no SQL transition fn):
+                // PostgreSQL has no way to emit it as CREATE AGGREGATE.
+                "custom_agg" to AggregateDefinition(
+                    returnType = "STRING", library = "udf_agg.so", sourceDialect = "mysql",
+                )
+            )
+        )
+        val result = generator.generate(s)
+        result.render() shouldNotContain "CREATE AGGREGATE \"custom_agg\""
+        result.notes.any { it.code == "E053" && it.objectName == "custom_agg" } shouldBe true
+    }
+
+    test("plpgsql body with RETURN NEXT yields RETURNS SETOF (K2)") {
+        val s = schema(
+            functions = mapOf(
+                "list_ids" to FunctionDefinition(
+                    returns = ReturnType(type = "integer"),
+                    language = "plpgsql",
+                    body = "BEGIN\n  RETURN NEXT 1;\n  RETURN NEXT 2;\nEND;",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "RETURNS SETOF INTEGER"
+    }
+
+    test("scalar plpgsql body (RETURN NEW) does NOT get SETOF (K2)") {
+        val s = schema(
+            functions = mapOf(
+                "touch" to FunctionDefinition(
+                    returns = ReturnType(type = "trigger"),
+                    language = "plpgsql",
+                    body = "BEGIN NEW.updated = now(); RETURN NEW; END;",
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "RETURNS TRIGGER"
+        ddl shouldNotContain "SETOF"
     }
 })

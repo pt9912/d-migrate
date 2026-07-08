@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.cli.config.ReverseAutoincrementResolver
 import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
@@ -22,6 +23,7 @@ internal data class DataTransferOptions(
     val chunkSize: Int,
     val cliContext: CliContext,
     val configPath: Path?,
+    val sqliteAutoincrementWidth: Int? = null,
 )
 
 /**
@@ -60,6 +62,8 @@ internal object DataTransferWiring {
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
             noProgress = options.cliContext.noProgress,
+            sqliteAutoincrement = ReverseAutoincrementResolver(configPathFromCli = options.configPath)
+                .resolve(options.sqliteAutoincrementWidth),
         )
         val runner = DataTransferRunner(
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },

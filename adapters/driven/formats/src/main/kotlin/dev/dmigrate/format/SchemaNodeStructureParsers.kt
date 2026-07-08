@@ -34,8 +34,11 @@ private fun parseColumn(node: JsonNode): ColumnDefinition = ColumnDefinition(
     default = parseDefault(node["default"]),
     references = parseReference(node["references"]),
     generation = parseGeneration(node["generation"]),
+    ordinal = node.optionalInt("ordinal"),
 )
 
+// Parametric types (reading extra attributes) stay here; parameterless names go
+// to [parseSimpleNeutralType] to keep each dispatch under the complexity limit.
 private fun parseNeutralType(node: JsonNode): NeutralType {
     val typeName = node.requiredText("type")
     return when (typeName) {
@@ -44,9 +47,6 @@ private fun parseNeutralType(node: JsonNode): NeutralType {
         )
         "text" -> NeutralType.Text(maxLength = node.optionalInt("max_length"))
         "char" -> NeutralType.Char(length = node.requiredInt("length"))
-        "integer" -> NeutralType.Integer
-        "smallint" -> NeutralType.SmallInt
-        "biginteger" -> NeutralType.BigInteger
         "float" -> NeutralType.Float(
             floatPrecision = when (node.optionalText("float_precision")) {
                 "single" -> FloatPrecision.SINGLE
@@ -57,17 +57,9 @@ private fun parseNeutralType(node: JsonNode): NeutralType {
             precision = node.requiredInt("precision"),
             scale = node.requiredInt("scale"),
         )
-        "boolean" -> NeutralType.BooleanType
         "datetime" -> NeutralType.DateTime(
             timezone = node.boolOrDefault("timezone", false)
         )
-        "date" -> NeutralType.Date
-        "time" -> NeutralType.Time
-        "uuid" -> NeutralType.Uuid
-        "json" -> NeutralType.Json
-        "xml" -> NeutralType.Xml
-        "binary" -> NeutralType.Binary
-        "email" -> NeutralType.Email
         "enum" -> NeutralType.Enum(
             values = node["values"]?.toStringList(),
             refType = node.optionalText("ref_type"),
@@ -79,8 +71,24 @@ private fun parseNeutralType(node: JsonNode): NeutralType {
             geometryType = GeometryType.of(node.optionalText("geometry_type")),
             srid = node.optionalInt("srid"),
         )
-        else -> throw IllegalArgumentException("Unknown type: $typeName")
+        else -> parseSimpleNeutralType(typeName)
     }
+}
+
+private fun parseSimpleNeutralType(typeName: String): NeutralType = when (typeName) {
+    "integer" -> NeutralType.Integer
+    "smallint" -> NeutralType.SmallInt
+    "biginteger" -> NeutralType.BigInteger
+    "boolean" -> NeutralType.BooleanType
+    "date" -> NeutralType.Date
+    "time" -> NeutralType.Time
+    "uuid" -> NeutralType.Uuid
+    "json" -> NeutralType.Json
+    "xml" -> NeutralType.Xml
+    "binary" -> NeutralType.Binary
+    "email" -> NeutralType.Email
+    "fulltext" -> NeutralType.FullText
+    else -> throw IllegalArgumentException("Unknown type: $typeName")
 }
 
 private fun parseDefault(node: JsonNode?): DefaultValue? {
@@ -97,10 +105,11 @@ private fun parseDefault(node: JsonNode?): DefaultValue? {
     }
 }
 
+private val KNOWN_FUNCTION_DEFAULTS = setOf("current_timestamp", "current_date", "current_time", "gen_uuid")
+
 private fun parseScalarDefault(text: String): DefaultValue =
     when {
-        text == "current_timestamp" -> DefaultValue.FunctionCall("current_timestamp")
-        text == "gen_uuid" -> DefaultValue.FunctionCall("gen_uuid")
+        text in KNOWN_FUNCTION_DEFAULTS -> DefaultValue.FunctionCall(text)
         text.matches(Regex("""^nextval\(.+\)$""", RegexOption.IGNORE_CASE)) ->
             DefaultValue.FunctionCall(text)
         else -> DefaultValue.StringLiteral(text)
@@ -170,6 +179,9 @@ private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
             type = childNode.optionalText("type")?.toIndexType() ?: IndexType.BTREE,
             unique = childNode.boolOrDefault("unique", false),
             where = childNode.optionalText("where"),
+            textSearchConfig = childNode.optionalText("text_search_config"),
+            fullTextVectorColumn = childNode.optionalText("full_text_vector_column"),
+            fullTextAccessMethod = childNode.optionalText("full_text_access_method")?.toFullTextAccessMethod(),
         )
     }
 }
@@ -182,9 +194,10 @@ private fun parseIndexColumns(node: JsonNode?): List<IndexColumn> {
             columnNode.isObject -> IndexColumn(
                 name = columnNode.requiredText("name"),
                 direction = columnNode.optionalText("direction")?.toIndexSortDirection(),
+                prefixLength = columnNode.optionalInt("prefix_length"),
             )
             else -> throw IllegalArgumentException(
-                "Index columns must be strings or objects with 'name' and optional 'direction'"
+                "Index columns must be strings or objects with 'name', optional 'direction' and 'prefix_length'"
             )
         }
     }
@@ -221,12 +234,22 @@ private fun parsePartitioning(node: JsonNode?): PartitionConfig? {
         partitions = node["partitions"]?.map { childNode ->
             PartitionDefinition(
                 name = childNode.requiredText("name"),
-                from = childNode.optionalText("from"),
-                to = childNode.optionalText("to"),
+                isDefault = childNode.boolOrDefault("default", false),
+                from = childNode["from"]?.toStringList()?.map { it.toPartitionBound() },
+                to = childNode["to"]?.toStringList()?.map { it.toPartitionBound() },
                 values = childNode["values"]?.toStringList(),
+                modulus = childNode["modulus"]?.takeIf { it.isNumber }?.asInt(),
+                remainder = childNode["remainder"]?.takeIf { it.isNumber }?.asInt(),
+                indices = parseIndices(childNode["indices"]),
             )
         } ?: emptyList(),
     )
+}
+
+private fun String.toPartitionBound(): PartitionBound = when (uppercase()) {
+    "MINVALUE" -> PartitionBound.MinValue
+    "MAXVALUE" -> PartitionBound.MaxValue
+    else -> PartitionBound.Value(this)
 }
 
 internal fun parseCustomTypes(node: JsonNode?): Map<String, CustomTypeDefinition> =

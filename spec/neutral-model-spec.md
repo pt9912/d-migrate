@@ -27,12 +27,11 @@ Das neutrale Modell beschreibt Datenbankstrukturen **deklarativ** (was, nicht wi
 Eingabepfade für das neutrale Modell:
 
 1. **YAML/JSON-Definition**: Manuell geschriebene Schema-Datei
-2. **JDBC-Reverse-Engineering** *(0.6.0)*: Extraktion aus einer bestehenden
+2. **JDBC-Reverse-Engineering**: Extraktion aus einer bestehenden
    Datenbank über eine Live-Verbindung (`schema reverse`)
 
-Ein dritter Pfad — **DDL-Datei-Parsing** (Analyse von SQL-DDL-Dateien) — ist
-als späterer additiver Funktionsschnitt vorgesehen, gehört aber nicht zum
-0.6.0-Mindestvertrag.
+Ein dritter Pfad — **DDL-Datei-Parsing** (Analyse von SQL-DDL-Dateien) —
+ist ein additiver Eingabepfad neben Definition und Live-Reverse.
 
 ### 1.2 Design-Prinzipien
 
@@ -67,7 +66,7 @@ triggers: {}                      # Trigger
 sequences: {}                     # Sequenzen (explizit definierte)
 ```
 
-### 2.2 Reverse-generierte Metadaten (ab 0.6.0)
+### 2.2 Reverse-generierte Metadaten
 
 Reverse-generierte Schemas verwenden technische Provenienzwerte fuer
 `name` und `version`, damit sie nach YAML-/JSON-Serialisierung ohne
@@ -103,7 +102,7 @@ SchemaDefinition
 ├── tables
 │   └── TableDefinition
 │       ├── columns
-│       │   └── ColumnDefinition (name, type, required, unique, default, references, typ-spezifische Attribute)
+│       │   └── ColumnDefinition (name, type, ordinal, required, unique, default, references, typ-spezifische Attribute)
 │       ├── primary_key
 │       ├── indices
 │       │   └── IndexDefinition (name, columns, type, unique)
@@ -153,16 +152,22 @@ Jeder Spaltentyp im neutralen Modell wird pro Zieldatenbank in den passenden nat
 | `enum`        | CREATE TYPE ... ENUM    | ENUM(...)             | TEXT + CHECK                      |
 | `array`       | type[]                  | JSON                  | TEXT (JSON)                       |
 | `geometry`    | geometry(type, srid) *  | POINT / POLYGON / ... | AddGeometryColumn() *             |
+| `fulltext`    | tsvector                | TEXT **               | TEXT **                           |
 
 \* Spatial-Mapping haengt vom gewaehlten `--spatial-profile` ab. Details in
 `spec/ddl-generation-rules.md`. Bei Profil `none` wird die Spalte nicht als
 DDL generiert, sondern als `action_required` gemeldet.
 
+\*\* `fulltext` (PostgreSQL `tsvector`) ist ein first-class neutraler Volltext-Such-
+Vektor (parameterlos). PostgreSQL round-trippt ihn als `tsvector` (inkl. GiST-Index).
+MySQL/SQLite haben Volltext nur strukturell anders (MySQL `FULLTEXT`-Index, SQLite
+`FTS5`-virtuelle Tabelle), nicht als Spaltentyp — dort degradiert die Spalte zu
+`TEXT`; die strukturelle Übersetzung ist ein eigener Folge-Slice.
+
 `identifier` ist der aktuelle 32-bit-Auto-Increment-Vertrag. PostgreSQL
 `BIGSERIAL` und `BIGINT GENERATED ... AS IDENTITY` werden nicht durch
 `NeutralType.BigInteger` allein ausgedrueckt; sie brauchen ein separates
-Spaltenmetadatum fuer Generation/Identity. Der Modell-Vertrag ist im
-Follow-up `docs/planning/done/bigserial-neutral-identity-followup.md` als
+Spaltenmetadatum fuer Generation/Identity. Der Modell-Vertrag ist als
 `ColumnGeneration.Identity` festgelegt. `biginteger` ohne dieses Metadatum
 bleibt im Forward-Generate `BIGINT`.
 
@@ -220,14 +225,14 @@ columns:
     type: identifier
     auto_increment: true
 
-  # Geometry mit Typ und SRID (Spatial Phase 1, ab 0.5.5)
+  # Geometry mit Typ und SRID
   location:
     type: geometry
     geometry_type: point        # optional, Default: geometry
     srid: 4326                  # optional, positive Ganzzahl
 ```
 
-#### Spatial-Typ-Attribute (ab 0.5.5)
+#### Spatial-Typ-Attribute
 
 | Attribut        | Pflicht | Typ         | Default    | Beschreibung                                       |
 | --------------- | ------- | ----------- | ---------- | -------------------------------------------------- |
@@ -245,14 +250,14 @@ Erlaubte `geometry_type`-Werte:
 - `multipolygon`
 - `geometrycollection`
 
-Nicht Teil von 0.5.5:
+Nicht Teil des neutralen Geometry-Modells:
 
 - `geography` (sphaerische Koordinaten)
 - `z` (3D-Koordinaten)
 - `m` (Messwerte)
 - Spatial-Indizes als eigener neutraler Typ
 
-`geometry` ist in 0.5.5 **nicht** als zulaessiger `array.element_type`
+`geometry` ist **nicht** als zulaessiger `array.element_type`
 vorgesehen. Basistyp-Allowlist und Array-Element-Allowlist sind getrennte
 Vertraege.
 
@@ -322,7 +327,7 @@ tables:
           - customer_id
           - name: order_date
             direction: desc              # optional: asc | desc
-        type: btree                      # btree | hash | gin | gist | brin
+        type: btree                      # btree | hash | gin | gist | brin | spgist | spatial | fulltext
         unique: false
       - name: idx_orders_status
         columns: [status]
@@ -331,6 +336,12 @@ tables:
         columns: [customer_id]
         unique: true
         where: "is_archived = false"     # Partial-Index-Praedikat, Raw-SQL
+      - name: idx_film_fulltext
+        columns: [title, description]     # Quelltext-Spalten (MySQL/SQLite indizieren diese)
+        type: fulltext
+        text_search_config: english       # optional: Text-Search-Config eines Volltext-Index
+        full_text_vector_column: fulltext # optional: PostgreSQL-tsvector-Backing-Spalte (ADR 0025)
+        full_text_access_method: gist     # optional: PostgreSQL-Zugriffsmethode gin|gist (ADR 0025)
 
     # ── Constraints ──────────────────
     constraints:
@@ -346,22 +357,29 @@ tables:
       type: range                        # range | hash | list
       key: [order_date]
       partitions:
+        # Bound-Literale tragen ihr SQL-Quoting (`'2024-01-01'`) — identisch für alle Dialekte.
         - name: orders_2024
-          from: "2024-01-01"
-          to: "2025-01-01"
+          from: ["'2024-01-01'"]
+          to: ["'2025-01-01'"]
         - name: orders_2025
-          from: "2025-01-01"
-          to: "2026-01-01"
+          from: ["'2025-01-01'"]
+          to: ["'2026-01-01'"]
 
-    # ── Tabellen-Metadaten (optional, ab 0.6.0) ───
+    # ── Tabellen-Metadaten (optional) ───
     metadata:
       engine: InnoDB                     # MySQL-Tabellen-Engine (InnoDB, MyISAM, etc.)
       without_rowid: false               # SQLite WITHOUT ROWID-Tabelle
 ```
 
+Jede Spalte traegt optional ein `ordinal` (1-basierte physische Position der Quelle).
+Reverse befuellt es; Serialisierung und DDL-Generierung emittieren die Spalten in
+Ordinalreihenfolge, sodass die Quell-Spaltenreihenfolge ueber den Round-Trip erhalten
+bleibt. Fehlt `ordinal` (hand-authored), gilt die Reihenfolge im Dokument. `ordinal` ist
+bewusst nicht Teil von `schema compare` (eine reine Umsortierung ist kein Migrationsschritt).
+
 ### 4.2 Tabellen-Metadaten
 
-Ab 0.6.0 koennen Tabellen optionale physische Metadaten tragen, die
+Tabellen koennen optionale physische Metadaten tragen, die
 compare-relevant sind:
 
 | Feld           | Typ      | Default | Beschreibung                      |
@@ -436,7 +454,7 @@ columns:
     type: uuid
     default: gen_uuid          # DB-spezifisch aufgelöst: uuid_generate_v4() / UUID() / etc.
 
-  # Sequence-basierter Default (0.9.3)
+  # Sequence-basierter Default
   invoice_number:
     type: integer
     default:
@@ -446,10 +464,10 @@ columns:
 `sequence_nextval` ist eine Objektform (nicht skalar) und referenziert eine
 benannte Sequence aus `schema.sequences`. Nur fuer numerische und
 Identifier-Spalten zulaessig. PostgreSQL erzeugt nativ `DEFAULT nextval('...')`;
-MySQL nutzt im `helper_table`-Modus kanonische Emulationsobjekte (0.9.3).
+MySQL nutzt im `helper_table`-Modus kanonische Emulationsobjekte.
 
 Historische `nextval(...)`-Notationen als freier Text oder FunctionCall werden
-seit 0.9.3 mit E122 abgelehnt. Migration: `default: "nextval('seq')"` →
+mit E122 abgelehnt. Migration: `default: "nextval('seq')"` →
 `default: { sequence_nextval: seq }`.
 
 ---
@@ -574,7 +592,7 @@ functions:
     source_dialect: postgresql
 ```
 
-### 6.3 Kanonische Objekt-Keys (ab 0.6.0)
+### 6.3 Kanonische Objekt-Keys
 
 Fuer die verlustfreie Identitaet von Routinen und Triggern definiert das
 neutrale Modell kanonische Schluesselformate. Diese werden als Map-Keys
@@ -668,7 +686,7 @@ kanonische Keys normalisiert.
 Das `body`-Feld enthält den Quell-Code im **Quell-Dialekt** (angegeben in `source_dialect`). Für die Generierung im Ziel-Dialekt gibt es zwei Wege:
 
 1. **Regelbasiert**: Einfache Syntax-Transformationen (z.B. `:=` → `DEFAULT`, `GET DIAGNOSTICS` → `ROW_COUNT()`)
-2. **KI-gestützt**: Über `d-migrate transform procedure` wird der Body in ein abstraktes Markdown-Zwischenformat transformiert und dann im Ziel-Dialekt neu generiert (siehe [Beispiel Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md))
+2. **KI-gestützt**: Über `d-migrate transform procedure` wird der Body in ein abstraktes Markdown-Zwischenformat transformiert und dann im Ziel-Dialekt neu generiert
 
 ---
 
@@ -727,7 +745,7 @@ views:
 
 ## 8. Triggers
 
-Trigger-Keys folgen ab 0.6.0 dem kanonischen Format `table::name`
+Trigger-Keys folgen dem kanonischen Format `table::name`
 (siehe Abschnitt 6.3). In handgeschriebenen YAML-Dateien ohne
 Namenskollisionen koennen weiterhin einfache Namen verwendet werden.
 
@@ -765,7 +783,7 @@ sequences:
     max_value: 99999999
     cycle: false                       # Neustart nach max_value?
     cache: 20                          # Anzahl vorausberechneter Werte
-    preserve_current_value: false      # 0.9.7: Runtime-Wert über Migration retten?
+    preserve_current_value: false      # Runtime-Wert über Migration retten?
 ```
 
 **Generierung**:
@@ -773,7 +791,7 @@ sequences:
 - MySQL: Emulation über dedizierte Sequenz-Tabelle oder generator-spezifische Hilfsstruktur
 - SQLite: Keine nativen benannten Sequenzen; Emulation nur über explizite Hilfstabelle/Trigger oder `action_required`
 
-### 9.1 `preserve_current_value` (0.9.7)
+### 9.1 `preserve_current_value`
 
 Per Default verlieren Sequenzen ihren Laufzeit-Wert bei einer
 Migration: eine `CREATE SEQUENCE … START WITH 1` startet `nextval` bei
@@ -791,10 +809,9 @@ aus dem Live-Target übernimmt:
 |---|---|---|
 | PostgreSQL | `SELECT setval('<seq>', <last_value>, <is_called>);` | `SELECT last_value, is_called FROM <seq>` |
 | MySQL (HELPER_TABLE-Mode) | `UPDATE dmg_sequences SET next_value = <v> WHERE name = <key> AND managed_by IN (…) AND format_version IN (…);` | `SELECT next_value, managed_by, format_version FROM dmg_sequences WHERE name = <key>` |
-| SQLite (HELPER_TABLE-Mode, seit 0.9.7-E.3-Folge-Slice) | `UPDATE "dmg_sequences" SET "next_value" = <v> WHERE "name" = <key>;` (Up auf `applySequenceRef`, Down auf `probeSequenceRef`) | `SELECT "next_value", "managed_by", "format_version" FROM "dmg_sequences" WHERE "name" = <key>` |
+| SQLite (HELPER_TABLE-Mode) | `UPDATE "dmg_sequences" SET "next_value" = <v> WHERE "name" = <key>;` (Up auf `applySequenceRef`, Down auf `probeSequenceRef`) | `SELECT "next_value", "managed_by", "format_version" FROM "dmg_sequences" WHERE "name" = <key>` |
 
-**Voraussetzungen** (gemäß
-`docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`):
+**Voraussetzungen**:
 
 - `--execute` mit DB-Target. Die Probe braucht eine offene
   Connection; File-Mode emittiert `SEQUENCE_PRESERVE_NOT_RUN_POLICY`
@@ -815,7 +832,7 @@ aus dem Live-Target übernimmt:
 explizitem `false`) bleibt die Migration unverändert — kein Probe,
 kein Follow-up, keine neuen Statements im Migrate-Output.
 
-### 9.2 Cross-Dialect-Capability-Matrix (0.9.7)
+### 9.2 Cross-Dialect-Capability-Matrix
 
 `SequenceDefinition`-Attribute überleben den Cross-Dialect-Transfer
 unterschiedlich. Der Renderer pro Dialekt konsultiert
@@ -835,16 +852,12 @@ Tranche kann Overlay-/CLI-Overrides ergänzen.
 | `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | Verlustfrei in `helper_table` |
 | `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | `dmg_sequences.cycle_enabled` (`INTEGER`) | Verlustfrei in `helper_table` |
 | `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Alle Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
-| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(seit 0.9.7-E.3-Folge-Slice; opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | Execute-only; siehe §9.1 |
+| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | Execute-only; siehe §9.1 |
 | `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
 
-**SQLite-Defaults (Reality-First, Stand 0.9.7)**: die
-SQLite-Sequence-Emulation aus
-`docs/planning/done/sqlite-sequence-emulation-plan.md` liefert seit
-0.9.7 (Phasen A–E) eine vollständige `helper_table`-Variante; der
-0.9.7-E.3-Folge-Slice
-(`docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`)
-ergänzt den `preserveCurrentValue`-Pfad. Damit melden die SQLite-
+**SQLite-Defaults (Reality-First)**: die
+SQLite-Sequence-Emulation liefert eine vollständige `helper_table`-Variante
+inklusive `preserveCurrentValue`-Pfad. Damit melden die SQLite-
 Capability-Defaults `supportsNamedSequences = true` und
 `supportsCurrentValuePreserve = true`. Der Default-Mode bleibt
 `action_required` (`E056`-Skip im Full-Schema-Pfad,
@@ -862,8 +875,8 @@ Capability-Subset ein einzelnes Attribut ausschliessen muss.
 ### 10.1 PostgreSQL-Eingabe (DDL-Referenz)
 
 > Das folgende DDL dient als Referenz dafür, welches neutrale Modell bei einem
-> Reverse-Engineering dieser Datenbankstruktur entstehen würde. In 0.6.0
-> erfolgt die Extraktion via Live-DB-Verbindung (`schema reverse`), nicht
+> Reverse-Engineering dieser Datenbankstruktur entstehen würde. Die
+> Extraktion erfolgt via Live-DB-Verbindung (`schema reverse`) oder
 > über DDL-Datei-Parsing.
 
 ```sql
@@ -1154,15 +1167,14 @@ transformation_notes:
 
 ---
 
-## 12. DDL-Parser *(späterer Milestone — nicht Teil von 0.6.0)*
+## 12. DDL-Parser
 
-> **Hinweis**: Der DDL-Parser (SQL-Datei-Parsing, Dialekt-Erkennung aus
-> Dateien, stdin-DDL) gehört **nicht** zum 0.6.0-Mindestvertrag. In 0.6.0
-> arbeitet `schema reverse` ausschließlich gegen Live-DB-Verbindungen via
-> JDBC. Dieser Abschnitt beschreibt den geplanten Entwurf für einen späteren
-> additiven Funktionsschnitt.
+Der DDL-Parser liest SQL-Dateien (Datei-Parsing, Dialekt-Erkennung aus Dateien,
+stdin-DDL) und projiziert sie ins neutrale Modell — ein dateibasierter
+Eingabepfad neben dem Live-DB-Reverse. Beide Pfade ergeben dasselbe
+`SchemaDefinition`.
 
-### 12.1 Unterstützte Statements (geplant)
+### 12.1 Unterstützte Statements
 
 Der DDL-Parser soll folgende SQL-Statements erkennen und verarbeiten:
 
@@ -1181,7 +1193,7 @@ Der DDL-Parser soll folgende SQL-Statements erkennen und verarbeiten:
 | `CREATE TRIGGER`                 | `triggers.<name>`                   |
 | `CREATE SEQUENCE`                | `sequences.<name>`                  |
 
-### 12.2 Dialekt-Erkennung (geplant)
+### 12.2 Dialekt-Erkennung
 
 Der Parser soll den Quell-Dialekt automatisch erkennen:
 
@@ -1195,7 +1207,7 @@ Der Parser soll den Quell-Dialekt automatisch erkennen:
 
 Akzeptierte CLI-Aliase wie `postgres` werden intern auf kanonische Modellwerte normalisiert (`postgresql`, `mysql`, `sqlite`, `mssql`, `oracle`).
 
-### 12.3 Verarbeitungspipeline (geplant)
+### 12.3 Verarbeitungspipeline
 
 ```
 SQL-Datei(en)
@@ -1275,7 +1287,7 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 - `float_precision` darf nur bei `type: float` gesetzt sein
 - `timezone` darf nur bei `type: datetime` gesetzt sein
 
-### 13.4 Spatial-Validierungsregeln (ab 0.5.5)
+### 13.4 Spatial-Validierungsregeln
 
 Diese Regeln pruefen das neutrale Schema selbst (`schema validate`):
 
@@ -1333,24 +1345,20 @@ einer ganzen Tabelle blockiert, ist eine separate Generatorwirkung.
 
 1. Definition-Klasse erstellen (z.B. `MaterializedViewDefinition`)
 2. In `SchemaDefinition` als optionales Feld aufnehmen
-3. `SchemaReader` (ab 0.6.0) und `DdlGenerator` in der Driver-API erweitern
+3. `SchemaReader` und `DdlGenerator` in der Driver-API erweitern
 4. YAML-Serialisierung ergänzen
-5. Ggf. DDL-Parser um neues Statement erweitern (späterer Milestone)
+5. Ggf. DDL-Parser um neues Statement erweitern
 
 ---
 
 ## Verwandte Dokumentation
 
-- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation (LF-001 bis LF-004)
-- [Design](./design.md) — Design-Philosophie, Streaming-Pipeline, KI-Integration
-- [Architektur](./architecture.md) — Modul-Struktur, TypeMapper-Implementierung, Driver-SPI
+- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation ([`LF-001`](lastenheft-d-migrate.md#lf-001) bis [`LF-004`](lastenheft-d-migrate.md#lf-004))
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes, Kommando-Referenz
-- [Roadmap](../docs/planning/in-progress/roadmap.md) — Phasen, Milestones und Release-Planung
-- [Beispiel: Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---
 
 **Version**: 1.2
 **Stand**: 2026-04-13
-**Status**: Entwurf — DDL-Parser-Abschnitt (§12) als späterer Milestone markiert; Reverse-Eingabepfad auf Live-DB-first für 0.6.0 bereinigt
+**Status**: Entwurf

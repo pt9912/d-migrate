@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
@@ -20,14 +21,13 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Path
-import java.sql.Connection
 
 class ImportStreamingInvokerTest : FunSpec({
 
     class FakeConnectionPool : ConnectionPool {
         override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
 
-        override fun borrow(): Connection = error("unused in invoker tests")
+        override fun borrow(): DatabaseConnection = error("unused in invoker tests")
 
         override fun activeConnections(): Int = 0
 

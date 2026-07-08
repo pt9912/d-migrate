@@ -2,6 +2,8 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
@@ -33,7 +35,7 @@ class PostgresDataWriter(
                     "use schema ordering or DEFERRABLE constraints instead"
             )
         }
-        val conn = pool.borrow()
+        val conn = pool.borrow().asJdbc()
         val jdbc = jdbcFactory(conn)
         val sync = PostgresSchemaSync(jdbcFactory)
         val qualified = parseQualifiedTableName(table)
@@ -41,7 +43,7 @@ class PostgresDataWriter(
         var savedAutoCommit: Boolean? = null
         try {
             savedAutoCommit = conn.autoCommit
-            val targetColumns = loadTargetColumns(conn, qualified)
+            val targetColumns = enrichGeometrySrid(jdbc, conn, qualified, loadTargetColumns(conn, qualified))
             val generatedAlwaysColumns = loadGeneratedAlwaysColumns(jdbc, conn, qualified)
             val primaryKeyColumns = if (options.onConflict == OnConflict.UPDATE) {
                 loadPrimaryKeyColumns(conn, qualified).also {
@@ -65,11 +67,11 @@ class PostgresDataWriter(
             when (options.triggerMode) {
                 TriggerMode.FIRE -> Unit
                 TriggerMode.STRICT -> {
-                    sync.assertNoUserTriggers(conn, table)
+                    sync.assertNoUserTriggers(JdbcDatabaseConnection(conn), table)
                     conn.commit()
                 }
                 TriggerMode.DISABLE -> {
-                    sync.disableTriggers(conn, table)
+                    sync.disableTriggers(JdbcDatabaseConnection(conn), table)
                     triggersDisabled = true
                 }
             }
@@ -91,7 +93,7 @@ class PostgresDataWriter(
             }
             return session
         } catch (t: Throwable) {
-            t.runSuppressing { if (triggersDisabled) sync.enableTriggers(conn, table) }
+            t.runSuppressing { if (triggersDisabled) sync.enableTriggers(JdbcDatabaseConnection(conn), table) }
             t.runSuppressing { conn.rollback() }
             t.runSuppressing { if (savedAutoCommit != null) conn.autoCommit = savedAutoCommit }
             t.runSuppressing { conn.close() }
@@ -103,6 +105,30 @@ class PostgresDataWriter(
         conn: Connection,
         table: QualifiedTableName,
     ): List<TargetColumn> = dev.dmigrate.driver.data.loadTargetColumns(conn, table.quotedPath())
+
+    /**
+     * VA2 (Spatial): reichert Geometrie-Zielspalten mit ihrer SRID aus dem
+     * PostGIS-`geometry_columns`-View an, damit der Import WKB als
+     * `ST_GeomFromWKB(?, srid)` bindet statt SRID 0 zu erzwingen. SRID 0
+     * (= keine SRID) bleibt `null`. Ohne PostGIS/View liefert die Query leer
+     * → die Spalten bleiben unverändert.
+     */
+    private fun enrichGeometrySrid(
+        jdbc: JdbcOperations,
+        conn: Connection,
+        table: QualifiedTableName,
+        columns: List<TargetColumn>,
+    ): List<TargetColumn> {
+        val schema = table.schemaOrCurrent(conn)
+        val sridByColumn = PostgresMetadataQueries.listGeometryColumns(jdbc, schema, table.table)
+            .mapNotNull { row ->
+                val name = row["f_geometry_column"] as? String ?: return@mapNotNull null
+                val srid = (row["srid"] as? Number)?.toInt()?.takeIf { it != 0 } ?: return@mapNotNull null
+                name to srid
+            }.toMap()
+        if (sridByColumn.isEmpty()) return columns
+        return columns.map { col -> sridByColumn[col.name]?.let { col.copy(srid = it) } ?: col }
+    }
 
     private fun loadGeneratedAlwaysColumns(
         jdbc: JdbcOperations,

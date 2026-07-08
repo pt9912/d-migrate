@@ -97,7 +97,24 @@
           "type": "array",
           "items": { "$ref": "#/$defs/constraint" }
         },
-        "partitioning": { "$ref": "#/$defs/partitioning" }
+        "partitioning": { "$ref": "#/$defs/partitioning" },
+        "metadata": { "$ref": "#/$defs/tableMetadata" }
+      }
+    },
+    "tableMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Physische Tabellen-Metadaten, primaer reverse-generiert",
+      "properties": {
+        "engine": {
+          "type": ["string", "null"],
+          "description": "MySQL-Tabellen-Engine (z.B. InnoDB)"
+        },
+        "without_rowid": {
+          "type": "boolean",
+          "default": false,
+          "description": "SQLite WITHOUT ROWID-Tabelle"
+        }
       }
     },
     "column": {
@@ -110,9 +127,15 @@
           "enum": [
             "identifier", "text", "char", "integer", "smallint", "biginteger",
             "float", "decimal", "boolean", "datetime", "date", "time",
-            "uuid", "json", "xml", "binary", "email", "enum", "array"
+            "uuid", "json", "xml", "binary", "email", "enum", "array", "geometry",
+            "fulltext"
           ],
-          "description": "Einer der 18 neutralen Typen"
+          "description": "Einer der neutralen Typen (vollstaendige Liste: neutral-model-spec.md Abschnitt 3.1)"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Physische Spaltenposition (1-basiert) aus der Quelle. Erhaelt die Ordinalreihenfolge ueber Reverse/Generate. Optional; fehlt bei hand-authored Schemata (dann gilt die Reihenfolge im Dokument)."
         },
         "required": {
           "type": "boolean",
@@ -135,6 +158,31 @@
         "auto_increment": {
           "type": "boolean",
           "description": "Nur bei type: identifier"
+        },
+        "generation": {
+          "type": "object",
+          "description": "Spalten-Generierung (ColumnGeneration), z. B. Identity-Spalten: biginteger plus generation: {type: identity} ist der 64-bit-Identity-Vertrag (identifier bleibt der 32-bit-Auto-Increment-Vertrag)",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["identity"]
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["always", "by_default"],
+              "description": "GENERATED ALWAYS vs. BY DEFAULT AS IDENTITY (Default: by_default)"
+            },
+            "sequence_name": {
+              "type": "string",
+              "description": "Explizite Backing-Sequence (optional)"
+            },
+            "legacy_serial_syntax": {
+              "type": "boolean",
+              "description": "PostgreSQL-Legacy-SERIAL-Syntax statt GENERATED ... AS IDENTITY"
+            }
+          }
         },
         "max_length": {
           "type": "integer",
@@ -181,6 +229,20 @@
           "type": "string",
           "description": "Nur bei type: array (Pflicht)"
         },
+        "geometry_type": {
+          "type": "string",
+          "enum": [
+            "geometry", "point", "linestring", "polygon",
+            "multipoint", "multilinestring", "multipolygon", "geometrycollection"
+          ],
+          "default": "geometry",
+          "description": "Nur bei type: geometry (Spatial)"
+        },
+        "srid": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Nur bei type: geometry — Spatial Reference System Identifier (> 0)"
+        },
         "references": { "$ref": "#/$defs/reference" }
       }
     },
@@ -223,14 +285,29 @@
         },
         "type": {
           "type": "string",
-          "enum": ["btree", "hash", "gin", "gist", "brin"],
+          "enum": ["btree", "hash", "gin", "gist", "brin", "spgist", "spatial", "fulltext"],
           "default": "btree"
         },
         "unique": {
           "type": "boolean",
           "default": false
         },
-        "where": { "type": "string", "minLength": 1 }
+        "where": { "type": "string", "minLength": 1 },
+        "text_search_config": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text-search configuration of a fulltext index (e.g. english); derived from the PG tsvector trigger (ADR 0025)."
+        },
+        "full_text_vector_column": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PostgreSQL tsvector backing column of a fulltext index (ADR 0025). columns lists the human source columns (MySQL/SQLite index those); PostgreSQL builds the GiST/GIN index on this precomputed vector column. Set on PG reverse; lets generate/diff reconstruct the index unambiguously even with several tsvector columns per table."
+        },
+        "full_text_access_method": {
+          "type": "string",
+          "enum": ["gin", "gist"],
+          "description": "PostgreSQL access method of a fulltext index — gin or gist (ADR 0025). Generate-only reconstruction hint captured on PG reverse so the original method round-trips (GIN stays GIN); defaults to gist when absent. Excluded from schema comparison/fingerprint."
+        }
       }
     },
     "indexColumn": {
@@ -242,6 +319,11 @@
         "direction": {
           "type": "string",
           "enum": ["asc", "desc"]
+        },
+        "prefix_length": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "MySQL prefix-index key length (col(n)); omit to index the full column."
         }
       }
     },
@@ -303,11 +385,32 @@
             "additionalProperties": false,
             "properties": {
               "name": { "type": "string" },
-              "from": { "type": "string" },
-              "to": { "type": "string" },
+              "default": {
+                "type": "boolean",
+                "default": false,
+                "description": "DEFAULT-Partition (Catch-all); schliesst from/to/values/modulus aus"
+              },
+              "from": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "RANGE untere Grenze (Bound-Tupel; Sentinels MINVALUE/MAXVALUE)"
+              },
+              "to": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "RANGE obere Grenze (Bound-Tupel; Sentinels MINVALUE/MAXVALUE)"
+              },
               "values": {
                 "type": "array",
-                "items": { "type": "string" }
+                "items": { "type": "string" },
+                "description": "LIST-Werte"
+              },
+              "modulus": { "type": "integer", "description": "HASH-Modulus" },
+              "remainder": { "type": "integer", "description": "HASH-Remainder" },
+              "indices": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/index" },
+                "description": "Kind-lokale Indizes der Partition (nicht vom Parent propagiert)"
               }
             }
           }
@@ -385,8 +488,23 @@
             "type": "array",
             "items": { "type": "string" }
           }
-        }
+        },
+        "projection_complete": {
+          "type": "boolean",
+          "default": true,
+          "description": "Nur serialisiert, wenn abweichend von true"
+        },
+        "table_projection_status": { "$ref": "#/$defs/projectionStatus" },
+        "column_projection_status": { "$ref": "#/$defs/projectionStatus" },
+        "routine_projection_status": { "$ref": "#/$defs/projectionStatus" }
       }
+    },
+    "projectionStatus": {
+      "type": "string",
+      "enum": [
+        "complete", "empty_verified", "incomplete_privilege",
+        "incomplete_object_missing", "unknown"
+      ]
     },
     "procedure": {
       "type": "object",
@@ -424,6 +542,15 @@
         },
         "language": { "type": "string" },
         "deterministic": { "type": "boolean" },
+        "volatility": {
+          "type": "string",
+          "enum": ["immutable", "stable", "volatile"],
+          "description": "PostgreSQL-Funktionsvolatilität (provolatile)"
+        },
+        "strict": {
+          "type": "boolean",
+          "description": "PostgreSQL STRICT / RETURNS NULL ON NULL INPUT"
+        },
         "body": { "type": "string" },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }
@@ -443,6 +570,24 @@
           "enum": ["on_demand", "on_commit"]
         },
         "query": { "type": "string" },
+        "columns": {
+          "type": "array",
+          "description": "Optionale sichtbare View-Signatur",
+          "items": {
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              {
+                "type": "object",
+                "required": ["name"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "type": { "type": "string" }
+                }
+              }
+            ]
+          }
+        },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }
       }
@@ -455,8 +600,22 @@
         "description": { "type": "string" },
         "table": { "type": "string" },
         "event": {
-          "type": "string",
-          "enum": ["insert", "update", "delete"]
+          "description": "Ein einzelnes DML-Event (Skalar) oder — für Multi-Event-Trigger wie PostgreSQLs INSERT OR UPDATE — eine nicht-leere Menge von Events (Array)",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["insert", "update", "delete"]
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["insert", "update", "delete"]
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          ]
         },
         "timing": {
           "type": "string",
@@ -467,7 +626,10 @@
           "enum": ["row", "statement"],
           "default": "row"
         },
-        "condition": { "type": "string" },
+        "condition": {
+          "type": ["string", "null"],
+          "description": "Optionale WHEN-Bedingung; null bedeutet keine Bedingung"
+        },
         "body": { "type": "string" },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }
@@ -492,7 +654,12 @@
           "type": "boolean",
           "default": false
         },
-        "cache": { "type": "integer" }
+        "cache": { "type": "integer" },
+        "preserve_current_value": {
+          "type": "boolean",
+          "default": false,
+          "description": "Runtime-Wert ueber Migration retten (opt-in)"
+        }
       }
     }
   }

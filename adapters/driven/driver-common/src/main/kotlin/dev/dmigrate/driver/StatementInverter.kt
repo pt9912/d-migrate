@@ -10,6 +10,14 @@ internal open class StatementInverter {
     open fun invert(stmt: DdlStatement): DdlStatement? {
         val sql = stmt.sql.trim()
         return when {
+            // ADR 0025 (Slice P4): a SQLite FTS5 index expands to `CREATE VIRTUAL TABLE … USING
+            // fts5(…)`. This must invert to `DROP TABLE` — checked BEFORE `CREATE TABLE` since it is
+            // not a prefix of it — otherwise generateRollback would drop the FTS5 sync triggers but
+            // leave the virtual table orphaned (re-applying the forward DDL then fails).
+            sql.startsWith("CREATE VIRTUAL TABLE", ignoreCase = true) -> {
+                val name = extractNameAfter(sql, "CREATE VIRTUAL TABLE")
+                DdlStatement("DROP TABLE IF EXISTS $name;")
+            }
             sql.startsWith("CREATE TABLE", ignoreCase = true) -> {
                 val name = extractNameAfter(sql, "CREATE TABLE")
                 DdlStatement("DROP TABLE IF EXISTS $name;")

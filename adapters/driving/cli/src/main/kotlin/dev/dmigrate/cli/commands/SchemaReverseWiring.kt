@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.cli.config.ReverseAutoincrementResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
@@ -31,6 +32,7 @@ internal data class SchemaReverseOptions(
     val includeAll: Boolean,
     val schemaName: String?,
     val schemaVersion: String?,
+    val sqliteAutoincrementWidth: Int? = null,
     val cliContext: CliContext,
     val configPath: Path?,
 )
@@ -95,6 +97,8 @@ internal object SchemaReverseWiring {
             verbose = options.cliContext.verbose,
             schemaName = options.schemaName,
             schemaVersion = options.schemaVersion,
+            sqliteAutoincrement = ReverseAutoincrementResolver(configPathFromCli = options.configPath)
+                .resolve(options.sqliteAutoincrementWidth),
         )
         val runner = SchemaReverseRunner(
             sourceResolver = bundle.sourceResolver,

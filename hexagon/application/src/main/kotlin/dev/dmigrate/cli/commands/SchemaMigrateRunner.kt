@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
@@ -15,6 +16,7 @@ import dev.dmigrate.driver.SqliteLiveCatalog
 import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.MigrationExecutionTrace
 import dev.dmigrate.driver.migration.MigrationExecutionStatementGroup
 import java.nio.file.Path
 
@@ -63,6 +65,17 @@ class SchemaMigrateRunner(
     private val dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)? = null,
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand = CompareOperandNormalizer::normalize,
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
+    /**
+     * AP7 (Plan-Konvergenz): target-aware Comparator für den Migrate-Diff —
+     * unterdrückt Unterschiede, die der Ziel-Dialekt nicht ausdrücken kann
+     * (Typ-Faltung, PK-implizites required, effektiver PK), damit ein zweiter
+     * Lauf gegen ein frisch migriertes Ziel 0 Operationen plant statt eines
+     * ewigen No-Op-Rebuilds. Fällt auf [comparator] (strikt) zurück, wenn
+     * nicht gesetzt (Test-Verdrahtungen).
+     */
+    private val targetAwareComparator: (
+        (SchemaDefinition, SchemaDefinition, canonicalizeType: (NeutralType) -> NeutralType) -> SchemaDiff
+    )? = null,
     private val planner: DiffPlanner = DiffPlanner(),
     private val rendererFor: (DatabaseDialect) -> DiffDdlGenerator?,
     private val executor: SegmentAwareExecutorFn? = null,
@@ -85,7 +98,16 @@ class SchemaMigrateRunner(
     private val printError: (message: String, source: String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
-    private val fingerprint: (SchemaDefinition) -> String = MigrationFingerprint::compute,
+    private val fingerprint: (SchemaDefinition, (NeutralType) -> NeutralType) -> String =
+        MigrationFingerprint::compute,
+    /**
+     * v7: resolves the TARGET dialect's neutral-type canonicalisation for all
+     * fingerprints of a run (plan endpoints, overlay pins, post-compare,
+     * rollback artefact) — one projection per run, so every persisted and
+     * compared hash agrees. Default resolves via [DatabaseDriverRegistry].
+     */
+    private val typeCanonicalizerFor: (DatabaseDialect) -> (NeutralType) -> NeutralType =
+        ::registryTypeCanonicalizer,
     private val clock: java.time.Clock = java.time.Clock.systemUTC(),
     private val createdByVersion: String = "d-migrate (dev)",
     /**
@@ -169,9 +191,12 @@ class SchemaMigrateRunner(
         // DiffPlanner.endpoint() writes to plan.current.fingerprint
         // so a mock-fingerprint test cannot accidentally make the
         // overlay validate against one hash and the plan against
-        // another.
-        val currentFingerprint = MigrationFingerprint.compute(prepared.targetNormalized.schema)
-        val desiredFingerprint = MigrationFingerprint.compute(prepared.sourceNormalized.schema)
+        // another. v7: the same target-dialect canonicalisation flows
+        // into BOTH (and into the post-compare below) for the same
+        // parity reason.
+        val canonicalizeType = typeCanonicalizerFor(prepared.effectiveDialect)
+        val currentFingerprint = MigrationFingerprint.compute(prepared.targetNormalized.schema, canonicalizeType)
+        val desiredFingerprint = MigrationFingerprint.compute(prepared.sourceNormalized.schema, canonicalizeType)
         val inlineResult = InlineRenameOverlayBuilder.build(
             renameTableFlags = request.renameTableFlags,
             renameColumnFlags = request.renameColumnFlags,
@@ -194,6 +219,7 @@ class SchemaMigrateRunner(
             mergedOverlays = mergedOverlays,
             currentFingerprint = currentFingerprint,
             desiredFingerprint = desiredFingerprint,
+            canonicalizeType = canonicalizeType,
         )
         val render = renderPipeline.run(
             request = request,
@@ -221,7 +247,7 @@ class SchemaMigrateRunner(
         )
         val withExecution = executionStage.applyExecutionTrace(render.executableCombined, executionTrace)
         val postCompareOutcome = if (executionTrace != null && executionTrace.executionError == null) {
-            executionStage.runPostCompare(request, prepared.sourceNormalized.schema, prepared.targetOp)
+            executionStage.runPostCompare(request, prepared.sourceNormalized.schema, prepared.targetOp, canonicalizeType)
         } else {
             null
         }
@@ -277,8 +303,11 @@ class SchemaMigrateRunner(
         mergedOverlays: List<MigrationOverlayDocument>,
         currentFingerprint: String,
         desiredFingerprint: String,
+        canonicalizeType: (NeutralType) -> NeutralType,
     ): Pair<DiffResult, MigrationOverlayPreflightResult> {
-        val diff = comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
+        val diff = targetAwareComparator
+            ?.invoke(prep.targetNormalized.schema, prep.sourceNormalized.schema, canonicalizeType)
+            ?: comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
             documents = mergedOverlays,
             sourceFingerprint = currentFingerprint,
@@ -306,6 +335,7 @@ class SchemaMigrateRunner(
                 migrationOverlays = mergedOverlays,
                 capabilities = capabilities,
                 triggerPlanningContext = triggerPlanningContext,
+                canonicalizeType = canonicalizeType,
             )
         }
         return plan to overlayPreflight
@@ -469,6 +499,14 @@ data class SchemaMigrateRequest(
      * DB-target dialect are present, they must match (Exit 2).
      */
     val dialect: DatabaseDialect? = null,
+    /**
+     * VA4: optionales Spatial-Profil (`postgis`/`native`/`spatialite`/`none`),
+     * verdrahtet von `schema migrate --spatial-profile` (analog `schema generate`).
+     * `null` → dialekt-Default ([SpatialProfilePolicy.defaultFor]); ein gesetzter
+     * Wert (z. B. `spatialite`) schaltet die Geometrie-DDL für `migrate`/`--execute`
+     * frei. CLI-String, im Renderer über [SpatialProfile.fromCliName] aufgelöst.
+     */
+    val spatialProfile: String? = null,
     val output: Path? = null,
     val report: Path? = null,
     val rollbackOutput: Path? = null,
@@ -931,23 +969,7 @@ typealias SegmentAwareExecutorFn = (
     cancellationToken: CancellationToken,
 ) -> ExecutionTrace
 
-/**
- * Execution trace returned by the injected executor when `--execute`
- * is set. The runner copies these fields onto the combined
- * [MigrationDdlResult] so the report can surface them and downstream
- * artefact-writers know whether the rollback artefact is finalisable.
- */
-data class ExecutionTrace(
-    val executionStarted: Boolean,
-    val executionCompleted: Boolean,
-    val statementsAttempted: Int = 0,
-    val lastStatementOperationIds: Set<String> = emptySet(),
-    val transactionRolledBack: Boolean = false,
-    val sideEffectsPossible: Boolean = false,
-    val executionError: String? = null,
-    val statementGroups: List<MigrationExecutionStatementGroup> = emptyList(),
-    val recoverability: ExecutionRecoverability? = null,
-)
+typealias ExecutionTrace = MigrationExecutionTrace
 
 internal fun ExecutionTrace.withG3Defaults(
     statementGroups: List<MigrationExecutionStatementGroup>,

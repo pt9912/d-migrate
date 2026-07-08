@@ -278,5 +278,5 @@ Spezifikationen definiert.
   Sync-vs-Async-Tradeoffs, Shutdown-Verhalten):
   [`docs/operations/job-executor.md`](../docs/operations/job-executor.md)
 - Phase-E2 persistente Server-State-Adapter (Schema, Flyway-Workflow,
-  Atomicity-Realisierung, MySQL/SQLite-Skizze):
-  [`spec/phase-e2-persistence.md`](./phase-e2-persistence.md)
+  Atomicity-Realisierung, MySQL/SQLite-Skizze): Adapter-Modul
+  `adapters/driven/persistence-jdbc`

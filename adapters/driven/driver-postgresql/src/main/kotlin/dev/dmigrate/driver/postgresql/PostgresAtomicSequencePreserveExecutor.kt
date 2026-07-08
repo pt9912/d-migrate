@@ -9,6 +9,9 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 import java.sql.SQLException
 
@@ -45,16 +48,16 @@ import java.sql.SQLException
  * — callers MUST supply a single-owner connection that is not
  * already inside a higher-level transaction.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`.
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`.
  */
 class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
 
     override fun execute(
-        connection: Connection,
+        connection: DatabaseConnection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
         cancellationToken: CancellationToken,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult {
         require(lockTimeoutMillis > 0) {
             "lockTimeoutMillis must be > 0, was $lockTimeoutMillis"
@@ -82,49 +85,50 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
             return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
         }
 
-        val previousAutoCommit = connection.autoCommit
-        connection.autoCommit = false
+        val jdbc = connection.asJdbc()
+        val previousAutoCommit = jdbc.autoCommit
+        jdbc.autoCommit = false
         try {
-            connection.createStatement().use { stmt ->
+            jdbc.createStatement().use { stmt ->
                 stmt.execute("SET LOCAL lock_timeout = '${lockTimeoutMillis}ms'")
             }
             val probeResults = mutableMapOf<SequenceObjectRef, SequenceCurrentValueProbeResult.Read>()
             for (request in sortedRequests) {
                 val ref = request.sequenceRef
-                lockAndProbe(connection, ref, probeResults)?.let { earlyExit -> return earlyExit }
+                lockAndProbe(jdbc, ref, probeResults)?.let { earlyExit -> return earlyExit }
             }
             // Service-Mode Sub-Slice E checkpoint 2 (post-probe,
             // pre-protected-operations): rollback releases the
             // advisory locks acquired above.
             if (cancellationToken.isCancellationRequested) {
-                runCatching { connection.rollback() }
+                runCatching { jdbc.rollback() }
                 return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
             }
-            runProtected(connection, batch.protectedOperationIds, executeProtectedOperations, sortedRefs)
+            runProtected(jdbc, batch.protectedOperationIds, executeProtectedOperations, sortedRefs)
                 ?.let { earlyExit -> return earlyExit }
             // Service-Mode Sub-Slice E checkpoint 3 (post-protected,
             // pre-restore): rollback undoes the protected-operation
             // statements so the sequence state is unchanged for the
             // caller-observed cancellation.
             if (cancellationToken.isCancellationRequested) {
-                runCatching { connection.rollback() }
+                runCatching { jdbc.rollback() }
                 return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
             }
             for (request in sortedRequests) {
-                restore(connection, request, probeResults.getValue(request.sequenceRef))
+                restore(jdbc, request, probeResults.getValue(request.sequenceRef))
                     ?.let { earlyExit -> return earlyExit }
             }
-            connection.commit()
+            jdbc.commit()
             return AtomicSequencePreserveResult.Applied(sortedRefs)
         } catch (e: Throwable) {
-            runCatching { connection.rollback() }
+            runCatching { jdbc.rollback() }
             return AtomicSequencePreserveResult.Failed(sortedRefs.first(), e)
         } finally {
             // `SET LOCAL lock_timeout` is transaction-scoped (PG
             // reverts on commit/rollback) — no extra reset needed.
             // Only the autocommit override needs to be undone so the
             // pooled connection lands back in its borrow-time state.
-            runCatching { connection.autoCommit = previousAutoCommit }
+            runCatching { jdbc.autoCommit = previousAutoCommit }
         }
     }
 
@@ -206,11 +210,11 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
     private fun runProtected(
         connection: Connection,
         protectedOperationIds: List<ProtectedOperationId>,
-        executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        executeProtectedOperations: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         sortedRefs: List<SequenceObjectRef>,
     ): AtomicSequencePreserveResult? {
         return try {
-            executeProtectedOperations(connection, protectedOperationIds)
+            executeProtectedOperations(JdbcDatabaseConnection(connection), protectedOperationIds)
             null
         } catch (e: Throwable) {
             connection.rollback()

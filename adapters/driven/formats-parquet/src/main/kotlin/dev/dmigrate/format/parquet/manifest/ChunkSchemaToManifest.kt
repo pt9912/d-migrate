@@ -76,6 +76,7 @@ internal object ChunkSchemaToManifest {
         is NeutralType.Uuid -> ManifestNeutralType("Uuid")
         is NeutralType.Json -> ManifestNeutralType("Json")
         is NeutralType.Xml -> ManifestNeutralType("Xml")
+        is NeutralType.FullText -> ManifestNeutralType("FullText")
         else -> null
     }
 

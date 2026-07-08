@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.TargetColumn
@@ -58,6 +59,11 @@ class PostgresDataWriterTest : FunSpec({
         every {
             conn.prepareStatement("SELECT * FROM ${table.quotedPath()} LIMIT 0")
         } returns ps
+
+        // VA2: SRID enrichment probes geometry_columns; default = no PostGIS view.
+        every { jdbc.queryList(match { it.contains("to_regclass('geometry_columns')") }) } returns
+            listOf(mapOf("r" to null))
+        every { jdbc.queryList(match { it.contains("FROM geometry_columns") }, any(), any()) } returns emptyList()
     }
 
     /**
@@ -137,7 +143,7 @@ class PostgresDataWriterTest : FunSpec({
         every { conn.catalog } returns "testdb"
 
         pool = mockk<ConnectionPool>()
-        every { pool.borrow() } returns conn
+        every { pool.borrow() } returns JdbcDatabaseConnection(conn)
 
         jdbc = mockk<JdbcOperations>()
     }

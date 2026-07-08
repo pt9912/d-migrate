@@ -16,6 +16,25 @@ internal object PostgresTableMetadataQueries {
             FROM information_schema.tables
             WHERE table_schema = ?
               AND table_type = 'BASE TABLE'
+              -- 5a: Extension-eigene Tabellen ausschließen (z. B. PostGIS
+              -- `spatial_ref_sys`). Sie liegen zwar im User-Schema, gehören
+              -- aber der Extension (pg_depend.deptype = 'e') und würden sonst
+              -- als User-Tabellen reverse-engineered + im Ziel-DDL kollidieren.
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_depend d
+                WHERE d.deptype = 'e'
+                  AND d.objid = to_regclass(quote_ident(table_schema) || '.' || quote_ident(table_name))::oid
+              )
+              -- AP2 (ADR 0019): Partitionskinder NICHT als Top-Level-Tabelle führen.
+              -- Sie werden ausschließlich unter ihrem Parent erfasst
+              -- (readPostgresPartitioning → listPartitionChildren); sonst emittiert
+              -- Generate den Kind-Namen doppelt (CREATE TABLE … PARTITION OF + plain)
+              -- → `relation already exists`, und der Transfer dupliziert die Zeilen.
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_class pc
+                WHERE pc.oid = to_regclass(quote_ident(table_schema) || '.' || quote_ident(table_name))::oid
+                  AND pc.relispartition
+              )
             ORDER BY table_name
             """.trimIndent(), schemaName,
         ).map { row ->
@@ -39,6 +58,24 @@ internal object PostgresTableMetadataQueries {
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
+            """.trimIndent(), schemaName, table,
+        )
+    }
+
+    /**
+     * VA2 (Spatial): PostGIS-Geometriespalten der Tabelle mit Subtyp + SRID aus
+     * dem `geometry_columns`-View. Der `to_regclass`-Guard liefert leer (statt zu
+     * werfen + die Lese-Transaktion zu aborten), wenn PostGIS/der View fehlt.
+     */
+    fun listGeometryColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
+        val viewPresent = session.queryList("SELECT to_regclass('geometry_columns') AS r")
+            .firstOrNull()?.get("r") != null
+        if (!viewPresent) return emptyList()
+        return session.queryList(
+            """
+            SELECT f_geometry_column, type, srid
+            FROM geometry_columns
+            WHERE f_table_schema = ? AND f_table_name = ?
             """.trimIndent(), schemaName, table,
         )
     }
@@ -200,21 +237,6 @@ internal object PostgresTableMetadataQueries {
               )
             ORDER BY s.sequence_name
             """.trimIndent(), schemaName,
-        )
-    }
-
-    fun getPartitionInfo(session: JdbcOperations, schemaName: String, table: String): Map<String, Any?>? {
-        return session.querySingle(
-            """
-            SELECT pt.partstrat, array_agg(a.attname ORDER BY pos.n) AS key_columns
-            FROM pg_partitioned_table pt
-            JOIN pg_class c ON c.oid = pt.partrelid
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            CROSS JOIN LATERAL unnest(pt.partattrs) WITH ORDINALITY AS pos(attnum, n)
-            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = pos.attnum
-            WHERE n.nspname = ? AND c.relname = ?
-            GROUP BY pt.partstrat
-            """.trimIndent(), schemaName, table,
         )
     }
 

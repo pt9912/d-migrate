@@ -21,6 +21,9 @@ object PostgresMetadataQueries {
     fun listColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> =
         PostgresTableMetadataQueries.listColumns(session, schemaName, table)
 
+    fun listGeometryColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> =
+        PostgresTableMetadataQueries.listGeometryColumns(session, schemaName, table)
+
     fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> =
         PostgresTableMetadataQueries.listPrimaryKeyColumns(session, schemaName, table)
 
@@ -45,8 +48,8 @@ object PostgresMetadataQueries {
     fun listSequences(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
         PostgresTableMetadataQueries.listSequences(session, schemaName)
 
-    fun getPartitionInfo(session: JdbcOperations, schemaName: String, table: String): Map<String, Any?>? =
-        PostgresTableMetadataQueries.getPartitionInfo(session, schemaName, table)
+    // Partitions-Abfragen liegen in PostgresPartitionMetadataQueries (eigene Domäne,
+    // ADR 0019) — der Reverse-Reader ruft sie dort direkt, nicht über diese Fassade.
 
     fun listInstalledExtensions(session: JdbcOperations): List<String> =
         PostgresTableMetadataQueries.listInstalledExtensions(session)
@@ -74,6 +77,9 @@ object PostgresMetadataQueries {
 
     fun listFunctions(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
         PostgresProgrammabilityMetadataQueries.listFunctions(session, schemaName)
+
+    fun listAggregates(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
+        PostgresProgrammabilityMetadataQueries.listAggregates(session, schemaName)
 
     fun listProcedures(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
         PostgresProgrammabilityMetadataQueries.listProcedures(session, schemaName)

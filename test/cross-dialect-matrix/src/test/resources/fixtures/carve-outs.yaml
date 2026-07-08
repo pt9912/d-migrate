@@ -1,6 +1,6 @@
 # Cross-dialect matrix carve-outs
 #
-# Plan-Doc: docs/planning/done/quality-coverage-expansion-plan.md
+# Plan-Doc: docs/planning/done-archive/quality-coverage-expansion-plan.md
 # §5.2, §6 (Sub-Slice B + B-Vervollständigung).
 #
 # Closing contract (B-Vervollständigung):
@@ -37,7 +37,7 @@ carve_outs:
     kind: blocker
     permanent: true
     reason: "transactionScope blocker is a runner-level autocommit-mismatch concern; not reproducible file-mode. The matrix surface covers the renderer's transactionScope emission via the POSITIVE cells."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.1
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerExecuteTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationStreamClassifierTest.kt
@@ -50,7 +50,7 @@ carve_outs:
     kind: blocker
     permanent: true
     reason: "NOT_REVERSIBLE blocker needs --generate-rollback wiring in the sweep request plus a synthetic non-reversible op fixture. Coverage lives in the artefact builder + rollback runner tests below."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.2
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactBuilderTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaRollbackRunnerTest.kt
@@ -63,7 +63,7 @@ carve_outs:
     kind: blocker
     permanent: true
     reason: "Execution-status BLOCKER cells require execute-path failure simulation (JDBC mid-statement crash) which is incompatible with the file-mode-only sweep contract."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.3
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerExecuteTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationExecutionStatusBuilderTest.kt
@@ -75,7 +75,7 @@ carve_outs:
     kind: blocker
     permanent: true
     reason: "Locking/transactional-DDL hints are diagnostic-only (DialectExecutionHints); they never produce a planner or renderer blocker. The cell shape is therefore inapplicable by design."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §5 A.1
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
       - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
@@ -89,7 +89,7 @@ carve_outs:
     kind: positive
     permanent: true
     reason: "MySQL CHECK rendering blocks with MYSQL_CHECK_ENFORCEMENT_UNKNOWN without --mysql-server-version. Sweep runner does not accept per-cell --mysql-server-version overrides."
-    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+    planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
     ownerTests:
       - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/MysqlCheckEnforcementResolverTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/CheckPreflightStageTest.kt
@@ -98,7 +98,7 @@ carve_outs:
     kind: blocker
     permanent: true
     reason: "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED fixture requires a cross-table CHECK subquery file-mode reproducer aligned with the planner heuristic; the heuristic + dialect-renderer coverage already lives in the tests below."
-    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+    planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorCheckExcludeTest.kt
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffCheckPreflightGateTest.kt
@@ -113,7 +113,7 @@ carve_outs:
     kind: positive
     permanent: true
     reason: "MySQL has no native MATERIALIZED VIEW. The MV-add fixture deliberately routes through the BLOCKER cell (MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT); no separate POSITIVE path exists for this dialect."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.3
     ownerTests:
       - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
@@ -122,7 +122,7 @@ carve_outs:
     kind: positive
     permanent: true
     reason: "SQLite has no native MATERIALIZED VIEW. Same shape as MySQL: BLOCKER cell carries the dialect contract."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.3
     ownerTests:
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffDdlGeneratorTest.kt
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
@@ -131,7 +131,7 @@ carve_outs:
     kind: blocker
     permanent: true
     reason: "PostgreSQL renders MATERIALIZED VIEW successfully; no dialect-blocker path exists. The cell is structurally inapplicable."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.3
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffMaterializedViewTest.kt
 
@@ -144,7 +144,7 @@ carve_outs:
     kind: positive
     permanent: true
     reason: "PG triggers require `[schema.]identifier([args])` function references in the body. Sharing a single trigger fixture across dialects is infeasible; per-dialect body promotion is a separate matrix-fixture-format change."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.2
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTriggerDdlHelperTest.kt
       - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/TriggerCapabilityTest.kt
@@ -153,7 +153,7 @@ carve_outs:
     kind: positive
     permanent: true
     reason: "SQLite refuses to translate trigger bodies across dialects (sourceDialect mismatch with the shared fixture). Per-dialect bodies require a fixture-format change."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.2
     ownerTests:
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelperTest.kt
   - workstream: E.2
@@ -161,7 +161,7 @@ carve_outs:
     kind: blocker
     permanent: true
     reason: "Strict-gap trigger blocker (SQLite REPLACE without OR REPLACE) requires --strict-gap-operations wiring in the sweep request."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.2
     ownerTests:
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/OperationMapperTriggerGapTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerTest.kt
@@ -178,7 +178,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "SQLite live sqlite_master probe is an explicit live-DB workstream (plan-doc §5 A.2). File-mode pinning would require a stub-probe seam which is out of scope for the cross-dialect matrix surface."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §5 A.2
     ownerTests:
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteLiveCatalogProbeTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerSqliteProbeTest.kt
@@ -188,7 +188,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "PostgreSQL USING-overlay binding is PG-specific and overlay-driven. Sweep promotion needs overlay YAML support in the request which is out of scope for the file-mode matrix shape."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §6 B.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §6 B.1
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresUsingOverlayResolverTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationOverlayPreflightTest.kt
@@ -198,7 +198,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "SQLite live-DB cast-preflight is live-DB-only by design. Matrix needs a stub-probe seam out of scope here."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §6 B.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §6 B.2
     ownerTests:
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteCastPreflightProbeTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerSqliteProbeTest.kt
@@ -208,7 +208,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Extension dependency install-policy needs PG with extensions; positive-path requires Testcontainers-managed PostGIS/pg_trgm. Outside the file-mode matrix shape; coverage lives in the PG DDL-generator tests and metadata queries."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §7 C.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §7 C.1
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresMetadataQueriesTest.kt
@@ -218,7 +218,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Spatial migration requires dialect-specific PostGIS/SpatiaLite fixtures and live extensions; matrix promotion needs a Spatial-Profile policy field in the request which is out of scope."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §7 C.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §7 C.2
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffSpatialTest.kt
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGeneratorSpatialTest.kt
@@ -229,7 +229,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "PostgreSQL view visible-signature-compatibility is PG-only and covered by the dedicated PG DDL-generator tests. Matrix surface does not add value over the existing tests."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.1
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffMaterializedViewTest.kt
@@ -239,7 +239,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "MySQL VIEW_ROUTINE_USAGE privilege-preflight is a live-DB grant inspection, fundamentally Testcontainers-shaped. Coverage lives in MySQL metadata-query tests and the integration suite."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.2
     ownerTests:
       - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueriesTest.kt
       - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
@@ -249,7 +249,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Routine migration body-normalisation and Replace/Reverse semantics need rich routine fixtures per dialect plus --mysql-server-version wiring. Coverage lives in routine DDL-helper tests outside the matrix surface."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.1
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresRoutineDdlHelperTest.kt
       - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlRoutineDdlHelperTest.kt
@@ -259,7 +259,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Sequence migration cross-dialect surface needs per-dialect helper_table fixtures, --mysql-named-sequences / --sqlite-named-sequences flag wiring, and per-cell preserveCurrentValue probes. Outside the file-mode matrix shape."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.3
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SequencePreserveStageTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MysqlSequenceCanonicityStageTest.kt
@@ -270,7 +270,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Migration-overlay grundvertrag is overlay-driven; sweep would need migrationOverlays in the request plus overlay-YAML fixtures. Coverage lives in overlay-preflight tests."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.0
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §10 F.0
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationOverlayPreflightTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigratePrePlanOverlayGateTest.kt
@@ -280,7 +280,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Automated data transformations are not yet implemented (Phase 1.x material). The carve-out lifts when F.1 lands."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §10 F.1
     ownerTests:
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/DataTransformationContractTest.kt
 
@@ -289,7 +289,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Plan-artefact emission needs --plan-artefact path in the request plus signed-JSON assertion infrastructure. Coverage lives in the artefact builder tests."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §10 F.2
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationPlanArtifactBuilderTest.kt
 
@@ -298,7 +298,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Partial rollback semantics need multi-statement Down + skip-set fixtures plus runner-level partial-rollback wiring."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §10 F.3
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaRollbackRunnerPartialRollbackTest.kt
 
@@ -307,7 +307,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Rename mappings + cli-inline-overlay need --rename-table/--rename-column flag wiring in the sweep request. Coverage lives in overlay-builder + rename-projector tests."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.4
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §10 F.4
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/InlineRenameOverlayBuilderTest.kt
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/RenameDependencyProjectorTest.kt
@@ -317,7 +317,7 @@ carve_outs:
     kind: "*"
     permanent: true
     reason: "Internal renderer-blocker classifier slice; the matrix exit-code surface gains nothing over the dedicated classifier test."
-    planRef: docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md
+    planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md
     ownerTests:
       - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/migration/PlannerBlockerClassifierTest.kt
 
@@ -341,7 +341,7 @@ carve_outs:
     kind: report
     permanent: true
     reason: "transactionScope report-shape (stream-owned vs mixed) is asserted directly in MigrationStreamClassifierTest + the runner-execute report test; the matrix exit-code surface adds no signal on top."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.1
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationStreamClassifierTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerExecuteTest.kt
@@ -350,7 +350,7 @@ carve_outs:
     kind: rollback
     permanent: true
     reason: "transactionScope rollback boundaries are an execute-path concern (autocommit + stream-owned mid-statement); covered by SchemaMigrateRunnerExecuteTest."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.1
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerExecuteTest.kt
   - workstream: G.1
@@ -358,7 +358,7 @@ carve_outs:
     kind: file-mode
     permanent: true
     reason: "transactionScope hints render in file-mode the same as in execute; coverage lives in MigrationStreamClassifierTest's file-mode paths."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.1
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationStreamClassifierTest.kt
 
@@ -369,7 +369,7 @@ carve_outs:
     kind: report
     permanent: true
     reason: "Rollback artefact's report-side surface (artefact summary + hash) is pinned in RollbackArtefactBuilderTest's canonical-shape assertions."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.2
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactBuilderTest.kt
   - workstream: G.2
@@ -377,7 +377,7 @@ carve_outs:
     kind: rollback
     permanent: true
     reason: "Canonical rollback-artefact round-trip lives in the builder + parser + runner triplet, which already covers v2 delimiters, hash invariants, and SchemaRollbackRunner execute."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.2
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactBuilderTest.kt
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactParserTest.kt
@@ -387,7 +387,7 @@ carve_outs:
     kind: file-mode
     permanent: true
     reason: "File-mode rollback emission is the default for `schema migrate --generate-rollback`; covered by RollbackArtefactBuilderTest's file-mode write-path."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.2
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactBuilderTest.kt
 
@@ -398,7 +398,7 @@ carve_outs:
     kind: report
     permanent: true
     reason: "Execution-status report shape (groups + repeated-operation suffixes) is pinned in MigrationExecutionStatusBuilderTest; the matrix exit-code surface adds no signal."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.3
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationExecutionStatusBuilderTest.kt
   - workstream: G.3
@@ -406,7 +406,7 @@ carve_outs:
     kind: rollback
     permanent: true
     reason: "Execution-status rollback semantics fire only on execute-path failures; covered by SchemaMigrateRunnerExecuteTest."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.3
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerExecuteTest.kt
   - workstream: G.3
@@ -414,7 +414,7 @@ carve_outs:
     kind: file-mode
     permanent: true
     reason: "Execution-status renders identically in file-mode for the planning report; coverage in MigrationExecutionStatusBuilderTest."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §4 G.3
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationExecutionStatusBuilderTest.kt
 
@@ -424,7 +424,7 @@ carve_outs:
     kind: report
     permanent: true
     reason: "Hint aggregation onto the report (planFullyRollbackable / exclusiveAccess / impliesImplicitCommit) is asserted in SchemaMigrateReportBuilderHintsTest."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §5 A.1
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateReportBuilderHintsTest.kt
   - workstream: A.1
@@ -432,7 +432,7 @@ carve_outs:
     kind: rollback
     permanent: true
     reason: "Locking/Tx hints are diagnostic-only; they never gate rollback artefact emission. The cell shape is therefore inapplicable by design — same reason as the blocker cell."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §5 A.1
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
       - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
@@ -442,7 +442,7 @@ carve_outs:
     kind: file-mode
     permanent: true
     reason: "Hints render identically in file-mode and execute-mode for the planning report; per-dialect coverage lives in the renderer tests."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.1
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §5 A.1
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
       - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
@@ -455,7 +455,7 @@ carve_outs:
     kind: report
     permanent: true
     reason: "CheckPreflightStageTest pins the report-side CHECK preflight emission; PostgresDiffCheckPreflightGateTest pins the renderer-side blocker shape that surfaces in the report."
-    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+    planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
     ownerTests:
       - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/CheckPreflightStageTest.kt
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffCheckPreflightGateTest.kt
@@ -464,7 +464,7 @@ carve_outs:
     kind: rollback
     permanent: true
     reason: "CHECK / EXCLUDE rollback semantics ride on the AddConstraint / DropConstraint replacePairId contract from F.5; covered in PostgresDiffDdlGeneratorCheckExcludeTest."
-    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+    planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorCheckExcludeTest.kt
   - workstream: F.5
@@ -472,7 +472,7 @@ carve_outs:
     kind: file-mode
     permanent: true
     reason: "CHECK / EXCLUDE renders in file-mode identically to execute-mode; live-data preflight gates only fire under `--execute`. Coverage lives in the per-dialect CheckExclude renderer tests."
-    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+    planRef: docs/planning/done-archive/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorCheckExcludeTest.kt
 
@@ -483,7 +483,7 @@ carve_outs:
     kind: report
     permanent: true
     reason: "MV report-shape (blocker reason + dependency edges) is pinned in MaterializedViewDependencyDetectorTest and PostgresDiffMaterializedViewTest."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.3
     ownerTests:
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffMaterializedViewTest.kt
@@ -492,7 +492,7 @@ carve_outs:
     kind: rollback
     permanent: true
     reason: "MV add/drop rollback path is exercised by PostgresDiffMaterializedViewTest; MySQL/SQLite never reach a rollback path because the dialect blocks at plan time."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.3
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffMaterializedViewTest.kt
   - workstream: D.3
@@ -500,7 +500,7 @@ carve_outs:
     kind: file-mode
     permanent: true
     reason: "MV renders in file-mode identically to execute-mode for the planning report; the live-DB MV-refresh path is out of scope (separate workstream)."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §8 D.3
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffMaterializedViewTest.kt
 
@@ -510,7 +510,7 @@ carve_outs:
     kind: report
     permanent: true
     reason: "Trigger report-shape (TriggerCapability claims, strict-gap diagnostics) is covered in TriggerCapabilityTest and the per-dialect trigger helper tests."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.2
     ownerTests:
       - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/TriggerCapabilityTest.kt
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTriggerDdlHelperTest.kt
@@ -520,7 +520,7 @@ carve_outs:
     kind: rollback
     permanent: true
     reason: "Trigger Replace-/Drop-rollback fires on the per-dialect helper tests' Down-render paths; matrix would need per-dialect trigger bodies (the same fixture-format gap that blocks PG/SQLite POSITIVE cells)."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.2
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTriggerDdlHelperTest.kt
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelperTest.kt
@@ -529,7 +529,7 @@ carve_outs:
     kind: file-mode
     permanent: true
     reason: "Trigger DDL renders in file-mode identically to execute-mode; live-DB trigger checks are out of scope (no live-trigger preflight today)."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.2
     ownerTests:
       - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTriggerDdlHelperTest.kt
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelperTest.kt

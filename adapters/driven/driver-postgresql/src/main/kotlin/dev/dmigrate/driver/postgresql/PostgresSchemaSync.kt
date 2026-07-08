@@ -6,6 +6,8 @@ import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TriggerManagement
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
+import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import java.sql.Connection
 
 class PostgresSchemaSync(
@@ -13,13 +15,13 @@ class PostgresSchemaSync(
 ) : SchemaSync, TriggerManagement {
 
     override fun reseedGenerators(
-        conn: Connection,
+        conn: DatabaseConnection,
         table: String,
         importedColumns: List<ColumnDescriptor>,
     ): List<SequenceAdjustment> {
         if (importedColumns.isEmpty()) return emptyList()
 
-        val jdbc = jdbcFactory(conn)
+        val jdbc = jdbcFactory(conn.asJdbc())
         val qualified = parseQualifiedTableName(table)
         val adjustments = mutableListOf<SequenceAdjustment>()
 
@@ -38,18 +40,20 @@ class PostgresSchemaSync(
         return adjustments
     }
 
-    override fun disableTriggers(conn: Connection, table: String) {
+    override fun disableTriggers(conn: DatabaseConnection, table: String) {
+        val raw = conn.asJdbc()
         val qualified = parseQualifiedTableName(table)
-        val jdbc = jdbcFactory(conn)
-        inOwnTransaction(conn) {
+        val jdbc = jdbcFactory(raw)
+        inOwnTransaction(raw) {
             jdbc.execute("ALTER TABLE ${qualified.quotedPath()} DISABLE TRIGGER USER")
         }
     }
 
-    override fun assertNoUserTriggers(conn: Connection, table: String) {
+    override fun assertNoUserTriggers(conn: DatabaseConnection, table: String) {
+        val raw = conn.asJdbc()
         val qualified = parseQualifiedTableName(table)
-        val schema = qualified.schemaOrCurrent(conn)
-        val jdbc = jdbcFactory(conn)
+        val schema = qualified.schemaOrCurrent(raw)
+        val jdbc = jdbcFactory(raw)
         val result = jdbc.querySingle(
             """
             SELECT tg.tgname
@@ -73,10 +77,11 @@ class PostgresSchemaSync(
         }
     }
 
-    override fun enableTriggers(conn: Connection, table: String) {
+    override fun enableTriggers(conn: DatabaseConnection, table: String) {
+        val raw = conn.asJdbc()
         val qualified = parseQualifiedTableName(table)
-        val jdbc = jdbcFactory(conn)
-        inOwnTransaction(conn) {
+        val jdbc = jdbcFactory(raw)
+        inOwnTransaction(raw) {
             jdbc.execute("ALTER TABLE ${qualified.quotedPath()} ENABLE TRIGGER USER")
         }
     }

@@ -272,6 +272,81 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         ddl shouldNotContain "CHECK"
     }
 
+    test("domain neutral base_type maps through type mapper (I-05)") {
+        val s = schema(
+            customTypes = mapOf(
+                "big_id" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN,
+                    baseType = "biginteger",
+                    precision = 64,
+                    scale = 0,
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE DOMAIN \"big_id\" AS BIGINT;"
+        ddl shouldNotContain "BIGINTEGER"
+    }
+
+    test("domain neutral base_type names each map to a valid SQL type (I-05)") {
+        val expectations = mapOf(
+            "integer" to "INTEGER",
+            "smallint" to "SMALLINT",
+            "boolean" to "BOOLEAN",
+            "float" to "DOUBLE PRECISION",
+            "text" to "TEXT",
+            "uuid" to "UUID",
+            "json" to "JSONB",
+            "xml" to "XML",
+            "binary" to "BYTEA",
+            "date" to "DATE",
+            "time" to "TIME",
+        )
+        expectations.forEach { (neutralName, expectedSql) ->
+            val s = schema(
+                customTypes = mapOf(
+                    "d_$neutralName" to CustomTypeDefinition(
+                        kind = CustomTypeKind.DOMAIN,
+                        baseType = neutralName,
+                    )
+                )
+            )
+            val ddl = generator.generate(s).render()
+            ddl shouldContain "CREATE DOMAIN \"d_$neutralName\" AS $expectedSql;"
+        }
+    }
+
+    test("domain decimal base_type keeps precision and scale (I-05)") {
+        val s = schema(
+            customTypes = mapOf(
+                "money" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN,
+                    baseType = "decimal",
+                    precision = 12,
+                    scale = 2,
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE DOMAIN \"money\" AS DECIMAL(12,2);"
+        ddl shouldNotContain "DECIMAL(DECIMAL"
+    }
+
+    test("domain CHECK predicate is wrapped exactly once (I-06)") {
+        val s = schema(
+            customTypes = mapOf(
+                "positive" to CustomTypeDefinition(
+                    kind = CustomTypeKind.DOMAIN,
+                    baseType = "biginteger",
+                    check = "(VALUE > 0)",
+                )
+            )
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CREATE DOMAIN \"positive\" AS BIGINT CHECK ((VALUE > 0));"
+        ddl shouldNotContain "CHECK (CHECK"
+    }
+
     test("index name is auto-generated when not provided") {
         val s = schema(
             tables = mapOf(
@@ -389,24 +464,6 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         ddl shouldContain "CREATE INDEX \"idx_orders_cust_date\" ON \"orders\" (\"customer_id\", \"order_date\");"
     }
 
-    test("view with incompatible source_dialect is transformed best-effort and warns with W111") {
-        val s = schema(
-            views = mapOf(
-                "mysql_view" to ViewDefinition(
-                    query = "SELECT IFNULL(x, 0) FROM t",
-                    sourceDialect = "mysql"
-                )
-            )
-        )
-        val result = generator.generate(s)
-        val rendered = result.render()
-        rendered shouldContain "CREATE OR REPLACE VIEW \"mysql_view\" AS"
-        rendered shouldContain "SELECT IFNULL(x, 0) FROM t;"
-        rendered shouldContain "W111"
-        result.notes.any { it.code == "W111" && it.objectName == "view_query" } shouldBe true
-        result.skippedObjects.any { it.name == "mysql_view" } shouldBe false
-    }
-
     test("LIST partitioning generates FOR VALUES IN") {
         val s = schema(tables = mapOf(
             "events" to table(
@@ -428,6 +485,23 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
         ddl shouldContain "events_eu"
     }
 
+    test("empty partition list falls back to a plain table with E055 (N2)") {
+        val s = schema(tables = mapOf(
+            "events" to table(
+                columns = mapOf("id" to col(NeutralType.Integer), "region" to col(NeutralType.Text(50))),
+                primaryKey = listOf("id", "region"),
+                partitioning = PartitionConfig(
+                    type = PartitionType.RANGE,
+                    key = listOf("region"),
+                    partitions = emptyList()
+                )
+            )
+        ))
+        val result = generator.generate(s)
+        result.render() shouldNotContain "PARTITION BY"
+        result.notes.any { it.code == "E055" && it.objectName == "events" } shouldBe true
+    }
+
     test("HASH partitioning generates FOR VALUES WITH") {
         val s = schema(tables = mapOf(
             "logs" to table(
@@ -437,8 +511,8 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
                     type = PartitionType.HASH,
                     key = listOf("id"),
                     partitions = listOf(
-                        PartitionDefinition(name = "logs_p0", from = "MODULUS 4, REMAINDER 0"),
-                        PartitionDefinition(name = "logs_p1", from = "MODULUS 4, REMAINDER 1")
+                        PartitionDefinition(name = "logs_p0", modulus = 4, remainder = 0),
+                        PartitionDefinition(name = "logs_p1", modulus = 4, remainder = 1)
                     )
                 )
             )

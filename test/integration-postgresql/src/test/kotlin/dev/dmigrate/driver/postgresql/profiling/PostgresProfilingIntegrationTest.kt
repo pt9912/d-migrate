@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql.profiling
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -40,7 +42,7 @@ class PostgresProfilingIntegrationTest : FunSpec({
             password = "test",
         )
         val pool = HikariConnectionPoolFactory.create(config)
-        pool.borrow().use { conn ->
+        pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute("""
                     CREATE TABLE users (
@@ -128,7 +130,7 @@ class PostgresProfilingIntegrationTest : FunSpec({
 
     test("security: table with embedded double-quote is profiled safely") {
         pool().use { p ->
-            p.borrow().createStatement().use { stmt ->
+            p.borrow().asJdbc().createStatement().use { stmt ->
                 stmt.execute("""CREATE TABLE "my""table" ("col""1" TEXT, "val" INTEGER)""")
                 stmt.execute("""INSERT INTO "my""table" VALUES ('a', 1)""")
             }
@@ -140,7 +142,7 @@ class PostgresProfilingIntegrationTest : FunSpec({
 
     test("security: table named with reserved word is profiled safely") {
         pool().use { p ->
-            p.borrow().createStatement().use { stmt ->
+            p.borrow().asJdbc().createStatement().use { stmt ->
                 stmt.execute("""CREATE TABLE "select" ("where" TEXT, "from" INTEGER)""")
                 stmt.execute("""INSERT INTO "select" VALUES ('x', 42)""")
             }
@@ -152,7 +154,7 @@ class PostgresProfilingIntegrationTest : FunSpec({
 
     test("security: semicolon-injection attempt does not corrupt database") {
         pool().use { p ->
-            p.borrow().createStatement().use { stmt ->
+            p.borrow().asJdbc().createStatement().use { stmt ->
                 stmt.execute("""CREATE TABLE "users; DROP TABLE users --" ("id" INTEGER)""")
                 stmt.execute("""INSERT INTO "users; DROP TABLE users --" VALUES (1)""")
             }

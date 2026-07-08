@@ -64,6 +64,7 @@ sequences: {}                  # Sequenzen
 columns:
   <spaltenname>:
     type: <typ>                # Pflicht: einer der 18 neutralen Typen
+    ordinal: 1                 # physische Spaltenposition (1-basiert); optional
     required: true             # NOT NULL (Default: false)
     unique: true               # UNIQUE-Constraint (Default: false)
     default: <wert>            # Default-Wert (Literal, Zahl, Boolean oder Funktion)
@@ -95,6 +96,13 @@ columns:
       on_update: cascade       # (gleiche Optionen)
 ```
 
+`ordinal` ist die 1-basierte physische Spaltenposition der Quelle. Reverse befuellt
+es; Serialisierung und DDL-Generierung emittieren Spalten in dieser Reihenfolge, sodass
+die Quell-Spaltenreihenfolge ueber den Round-Trip erhalten bleibt. In hand-authored
+Schemata ist `ordinal` optional — fehlt es, gilt die Reihenfolge der Spalten im Dokument.
+`ordinal` ist bewusst **kein** Bestandteil von `schema compare` (eine reine Umsortierung
+ist kein Migrationsschritt).
+
 `generation` ist mit `default` gegenseitig ausgeschlossen. Ein
 `generation.sequence_name` beschreibt eine an die Spalte gebundene
 owned/implizite Sequence; dieselbe Sequence darf nicht zusaetzlich unter
@@ -108,12 +116,12 @@ default: 42                    # Zahl
 default: true                  # Boolean
 default: current_timestamp     # DB-Funktion (pro Dialekt uebersetzt)
 default: gen_uuid              # UUID-Generierung (pro Dialekt uebersetzt)
-default:                       # Sequence-basierter Default (0.9.3)
+default:                       # Sequence-basierter Default
   sequence_nextval: invoice_seq  # Referenziert schema.sequences
 ```
 
 Hinweis: `sequence_nextval` ist eine Objektform und nur fuer numerische/Identifier-Spalten
-zulaessig. Alte `nextval(...)`-Textnotationen werden seit 0.9.3 mit E122 abgelehnt.
+zulaessig. Alte `nextval(...)`-Textnotationen werden mit E122 abgelehnt.
 
 ---
 
@@ -157,10 +165,21 @@ tables:
     partitioning:
       type: range              # range | hash | list
       key: [spalte]
+      # Partitionierung ist vergleichs- und fingerprint-relevant: `schema compare`
+      # meldet Unterschiede in Strategie, Schlüssel und Kind-Partitionen (kindweise
+      # als Menge — die Reihenfolge der Kinder ist nicht signifikant).
       partitions:
+        # RANGE: from/to als Bound-Tupel (Sentinels MINVALUE/MAXVALUE);
+        # HASH: modulus/remainder; LIST: values; DEFAULT-Partition: default: true
+        # Literale tragen ihr SQL-Quoting (`'2025-01-01'`) — identisch für alle Ziel-Dialekte.
         - name: part_2025
-          from: "2025-01-01"
-          to: "2026-01-01"
+          from: ["'2025-01-01'"]
+          to: ["'2026-01-01'"]
+          # Kind-lokale Indizes (nur direkt auf der Partition definierte; vom
+          # Parent propagierte Indizes/Constraints/FKs bleiben am Parent).
+          indices:
+            - name: idx_part_2025_col
+              columns: [col]
 ```
 
 ---
@@ -235,6 +254,8 @@ functions:
       scale: 2
     language: plpgsql
     deterministic: false       # Fuer MySQL: DETERMINISTIC / NOT DETERMINISTIC
+    volatility: immutable      # PostgreSQL: immutable | stable | volatile
+    strict: true               # PostgreSQL: STRICT / RETURNS NULL ON NULL INPUT
     body: |
       BEGIN RETURN 0; END;
     dependencies:
@@ -285,7 +306,9 @@ kompatibel ist. Projection-Status-Felder in `dependencies` nutzen die Werte
 triggers:
   trg_updated_at:
     table: orders              # Pflicht: Zieltabelle
-    event: update              # insert | update | delete
+    event: update              # insert | update | delete (Skalar) …
+    # … oder Liste für Multi-Event-Trigger (PostgreSQL INSERT OR UPDATE):
+    # event: [insert, update]
     timing: before             # before | after | instead_of
     for_each: row              # row | statement
     condition: "OLD.x != NEW.x"  # Optional: WHEN-Bedingung

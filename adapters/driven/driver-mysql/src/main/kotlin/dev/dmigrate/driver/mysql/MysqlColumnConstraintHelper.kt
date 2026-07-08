@@ -27,11 +27,12 @@ internal class MysqlColumnConstraintHelper(
             columnAutoIncrement(colName, col)
         col.type is NeutralType.Enum -> columnEnum(tableName, colName, col, schema)
         col.type is NeutralType.Geometry -> columnGeometry(colName, col, notes)
+        col.type is NeutralType.FullText -> columnFullText(tableName, colName, col, schema, notes)
         else -> columnSql(tableName, colName, col, schema)
     }
 
     private fun supportsIdentityGeneration(type: NeutralType): Boolean =
-        type is NeutralType.Integer || type is NeutralType.BigInteger
+        MysqlPrimaryKeyOrdering.supportsIdentityGeneration(type)
 
     private fun columnAutoIncrement(colName: String, col: ColumnDefinition): String {
         val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(col.type))
@@ -68,14 +69,8 @@ internal class MysqlColumnConstraintHelper(
         return columnSql(tableName, colName, col, schema)
     }
 
-    private fun columnEnumInline(colName: String, col: ColumnDefinition, values: List<String>): String {
-        val enumDef = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
-        val parts = mutableListOf(quoteIdentifier(colName), "ENUM($enumDef)")
-        if (col.required) parts += "NOT NULL"
-        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
-        if (col.unique) parts += "UNIQUE"
-        return parts.joinToString(" ")
-    }
+    private fun columnEnumInline(colName: String, col: ColumnDefinition, values: List<String>): String =
+        MysqlEnumColumnRenderer.inline(quoteIdentifier(colName), col, values, typeMapper::toDefaultSql)
 
     private fun columnDomain(colName: String, col: ColumnDefinition, customType: CustomTypeDefinition): String {
         val parts = mutableListOf(quoteIdentifier(colName), customType.baseType ?: "TEXT")
@@ -103,6 +98,26 @@ internal class MysqlColumnConstraintHelper(
         }
         if (col.required) parts += "NOT NULL"
         return parts.joinToString(" ")
+    }
+
+    // ADR 0015: cross-dialect, a full-text column degrades to a plain TEXT
+    // column (MySQL has no full-text vector type). The note points at the
+    // manual FULLTEXT-index path; structural translation is a future slice.
+    private fun columnFullText(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        schema: SchemaDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String {
+        notes += TransformationNote(
+            type = NoteType.WARNING, code = "W132", objectName = colName,
+            message = "Full-text column '$colName' degraded to TEXT; " +
+                "MySQL has no full-text vector column type.",
+            hint = "To restore full-text search, add a FULLTEXT index over the source text " +
+                "column(s); structural cross-dialect translation is a future slice.",
+        )
+        return columnSql(tableName, colName, col, schema)
     }
 
     fun buildForeignKeyClause(

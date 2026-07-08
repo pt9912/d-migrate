@@ -25,6 +25,9 @@ internal object MysqlTypeMapping {
         val numScale: Int?,
         val tableName: String,
         val colName: String,
+        // VA2 (Spatial): SRID-Constraint einer Geometriespalte aus
+        // information_schema.columns.srs_id; null, wenn keine SRID gesetzt ist.
+        val srsId: Int? = null,
     )
 
     fun mapColumn(input: ColumnInput): MappingResult {
@@ -46,7 +49,7 @@ internal object MysqlTypeMapping {
             ?: mapStringTypes(dt, input.charMaxLen, input.tableName, input.colName)
             ?: mapNumericTypes(dt, input.numPrecision, input.numScale)
             ?: mapTemporalTypes(dt)
-            ?: mapSpecialTypes(dt, ct, input.tableName, input.colName)
+            ?: mapSpecialTypes(dt, ct, input.columnType, input.tableName, input.colName, input.srsId)
             ?: MappingResult(
                 NeutralType.Text(),
                 note = SchemaReadNote(
@@ -98,17 +101,26 @@ internal object MysqlTypeMapping {
         else -> null
     }
 
-    private fun mapSpecialTypes(dt: String, ct: String, tableName: String, colName: String): MappingResult? = when (dt) {
+    private fun mapSpecialTypes(
+        dt: String,
+        ct: String,
+        rawColumnType: String,
+        tableName: String,
+        colName: String,
+        srsId: Int?,
+    ): MappingResult? = when (dt) {
         "json" -> MappingResult(NeutralType.Json)
         "blob", "mediumblob", "longblob", "tinyblob", "binary", "varbinary" -> MappingResult(NeutralType.Binary)
-        "enum" -> MappingResult(NeutralType.Enum(values = extractEnumValues(ct)))
+        // I-03: Enum-Werte aus dem Original-Case-columnType extrahieren, nicht aus
+        // dem für die Typ-Erkennung kleingeschriebenen `ct` (sonst Wert-Korruption).
+        "enum" -> MappingResult(NeutralType.Enum(values = extractEnumValues(rawColumnType)))
         "set" -> MappingResult(NeutralType.Text(), note = SchemaReadNote(
             severity = SchemaReadSeverity.ACTION_REQUIRED, code = "R320", objectName = "$tableName.$colName",
             message = "MySQL SET type '$ct' has no neutral equivalent — mapped to text",
             hint = "Review and convert to enum or text with application-level validation",
         ))
         "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection" ->
-            MappingResult(NeutralType.Geometry(geometryType = GeometryType.of(dt)))
+            MappingResult(NeutralType.Geometry(geometryType = GeometryType.of(dt), srid = srsId))
         else -> null
     }
 
@@ -127,6 +139,12 @@ internal object MysqlTypeMapping {
             trimmed.equals("NULL", ignoreCase = true) -> null
             trimmed == "CURRENT_TIMESTAMP" || trimmed == "current_timestamp()" ->
                 DefaultValue.FunctionCall("current_timestamp")
+            trimmed.equals("CURRENT_DATE", ignoreCase = true) ||
+                trimmed.equals("curdate()", ignoreCase = true) ||
+                trimmed.equals("current_date()", ignoreCase = true) -> DefaultValue.FunctionCall("current_date")
+            trimmed.equals("CURRENT_TIME", ignoreCase = true) ||
+                trimmed.equals("curtime()", ignoreCase = true) ||
+                trimmed.equals("current_time()", ignoreCase = true) -> DefaultValue.FunctionCall("current_time")
             trimmed == "1" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(true)
             trimmed == "0" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(false)
             trimmed.startsWith("'") && trimmed.endsWith("'") ->

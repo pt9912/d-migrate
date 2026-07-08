@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.util.sha256Hex
 
 /**
@@ -400,9 +401,9 @@ internal object SqliteRebuildPlanner {
         val added = mutableListOf<AddedColumnFill>()
         val notNullBlocked = mutableListOf<String>()
         val castBlocked = mutableListOf<CastBlockEntry>()
-        // Deterministic key order — same as pre-H.1b `targetColumnOrder`
-        // so resulting SQL doesn't shift.
-        for ((name, targetCol) in target.columns.entries.sortedBy { it.key }) {
+        // Physische Ordinalreihenfolge (siehe inOrdinalOrder) — deterministisch und
+        // konsistent zur CREATE-TEMP-Spaltenreihenfolge in [buildCreateTempSql].
+        for ((name, targetCol) in target.columns.inOrdinalOrder()) {
             val sourceCol = source.columns[name]
             val quoted = sql.quote(name)
             when {

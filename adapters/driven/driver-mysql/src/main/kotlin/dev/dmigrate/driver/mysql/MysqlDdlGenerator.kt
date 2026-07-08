@@ -11,10 +11,40 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     private val sequenceSupport = MysqlSequenceDdlSupport(::quoteIdentifier)
     private val indexPartitionHelper = MysqlIndexPartitionDdlHelper(::quoteIdentifier)
 
+    /**
+     * Tables that end up **actually partitioned** in the emitted DDL — computed **once,
+     * order-independent** from the schema (see [computePartitionedTables]) before any table is
+     * emitted, then consumed read-only by the FK paths and [handleCircularReferences].
+     * MySQL/InnoDB forbids foreign keys touching a partitioned table in **either** direction
+     * (ADR 0020 §5), so such FKs are skipped + flagged (E065). "Actually partitioned" ≠
+     * "partitioning configured": a config that is skipped (E055/E062) leaves a plain table whose
+     * FKs stay valid. Previously this was a mutable set filled during emission — an order-dependent
+     * side-channel (an FK referencing a not-yet-emitted partitioned table could be misread). Now
+     * it is a full snapshot taken up front, so emission order no longer matters.
+     */
+    private var partitionedTables: Set<String> = emptySet()
+
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        partitionedTables = computePartitionedTables(schema)
         sequenceSupport.beginRun(schema, options)
         return sequenceSupport.finalizeResult(super.generate(schema, options))
     }
+
+    /**
+     * The set of tables whose partitioning is **actually emitted** (not skipped via E055/E062, not
+     * filtered to an empty LIST). Mirrors [generateTable]'s emit decision exactly by calling the same
+     * [MysqlIndexPartitionDdlHelper.generatePartitionClause] with a **throwaway** note sink — the
+     * real notes are produced during emission, so this discards its diagnostic output and keeps only
+     * the emit-or-not signal. Kept MySQL-local on purpose: only MySQL/InnoDB forbids FKs on
+     * partitioned tables (PostgreSQL allows them; SQLite has no partitioning), so there is no
+     * PG/SQLite consumer to share a generic abstraction with — hoisting it would be premature.
+     */
+    private fun computePartitionedTables(schema: SchemaDefinition): Set<String> =
+        schema.tables.filterValues { table ->
+            table.partitioning?.let {
+                indexPartitionHelper.generatePartitionClause(it, table.columns, mutableListOf()).isNotBlank()
+            } ?: false
+        }.keys.toSet()
 
     // ── SequenceNextVal interception (§4.6) ──────
 
@@ -74,8 +104,19 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         val notes = mutableListOf<TransformationNote>()
         val columnLines = mutableListOf<String>()
 
-        // Columns
-        for ((colName, col) in table.columns) {
+        // Compute the partition clause up front so the FK paths below can see whether the table
+        // is actually partitioned (MySQL forbids FKs on partitioned tables, ADR 0020 §5). Its
+        // diagnostics are merged back below (before the drain), preserving the original note order.
+        val partitionNotes = mutableListOf<TransformationNote>()
+        val partitionClause = table.partitioning
+            ?.let { indexPartitionHelper.generatePartitionClause(it, table.columns, partitionNotes) }
+            .orEmpty()
+        // Order-independent: read the up-front snapshot (== partitionClause.isNotBlank() here, since
+        // both come from the same generatePartitionClause logic) rather than mutating a side-channel.
+        val isPartitioned = name in partitionedTables
+
+        // Columns — physische Ordinalreihenfolge (siehe inOrdinalOrder).
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             columnLines += generateColumnSql(colName, col, schema, name, notes)
             // C3: Warn when datetime with timezone is mapped to DATETIME (no TZ support in MySQL)
             if (col.type is NeutralType.DateTime && (col.type as NeutralType.DateTime).timezone) {
@@ -90,22 +131,33 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         }
 
         // Inline foreign key constraints (non-circular, from column references)
-        for ((colName, col) in table.columns) {
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             val ref = col.references ?: continue
             if ((name to colName) in deferredFks) continue
             val fkName = "fk_${name}_${colName}"
+            if (isPartitioned || ref.table in partitionedTables) {
+                notes += partitionedFkSkipNote(fkName, name)
+                continue
+            }
             columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
         }
 
         // Explicit constraints
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
+            if (constraint.type == ConstraintType.FOREIGN_KEY &&
+                (isPartitioned || constraint.references?.table in partitionedTables)
+            ) {
+                notes += partitionedFkSkipNote(constraint.name, name)
+                continue
+            }
             generateConstraintClause(constraint, notes)?.let { columnLines += it }
         }
 
         // Primary key
         if (table.primaryKey.isNotEmpty()) {
-            val pkCols = table.primaryKey.joinToString(", ") { quoteIdentifier(it) }
+            val pkCols = orderPkAutoIncrementFirst(name, table, notes)
+                .joinToString(", ") { quoteIdentifier(it) }
             columnLines += "PRIMARY KEY ($pkCols)"
         }
 
@@ -114,18 +166,44 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             append("CREATE TABLE ${quoteIdentifier(name)} (\n")
             append(columnLines.joinToString(",\n") { "    $it" })
             append("\n)")
-            // Partitioning (inline in CREATE TABLE for MySQL)
-            val partitioning = table.partitioning
-            if (partitioning != null) {
+            // Table options precede partition options per the MySQL grammar:
+            //   CREATE TABLE ... (defs) [table_options] [partition_options]
+            append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
+            if (partitionClause.isNotBlank()) {
                 append("\n")
-                append(indexPartitionHelper.generatePartitionClause(partitioning, notes))
+                append(partitionClause)
             }
-            append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;")
+            append(";")
         }
+        notes += partitionNotes
         notes += sequenceSupport.drainPendingNotes()
         statements += DdlStatement(tableSql, notes)
 
         return statements
+    }
+
+    /**
+     * MySQL requires an AUTO_INCREMENT column to be the leading column of a key
+     * (ERROR 1075). When a composite PRIMARY KEY contains an AUTO_INCREMENT
+     * column that is not first, reorder it to the front and flag the change.
+     */
+    private fun orderPkAutoIncrementFirst(
+        tableName: String,
+        table: TableDefinition,
+        notes: MutableList<TransformationNote>,
+    ): List<String> {
+        val result = MysqlPrimaryKeyOrdering.autoIncrementFirst(table.primaryKey, table.columns)
+        result.reordered?.let { moved ->
+            notes += TransformationNote(
+                type = NoteType.WARNING,
+                code = "W118",
+                objectName = "$tableName.$moved",
+                message = "AUTO_INCREMENT column '$moved' was moved to the front of the composite " +
+                    "PRIMARY KEY because MySQL requires it to be the leading key column (ERROR 1075).",
+                hint = "Verify the primary key column order is acceptable for your access patterns.",
+            )
+        }
+        return result.columns
     }
 
     private val columnConstraintHelper = MysqlColumnConstraintHelper(
@@ -146,8 +224,26 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         constraint: ConstraintDefinition, notes: MutableList<TransformationNote>,
     ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes)
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> =
         indexPartitionHelper.generateIndices(tableName, table)
+
+    /**
+     * §5 (ADR 0020): MySQL/InnoDB supports no foreign keys on partitioned tables in either
+     * direction. A FK declared on — or referencing — a partitioned table is skipped + flagged.
+     */
+    private fun partitionedFkSkipNote(fkName: String, tableName: String): TransformationNote =
+        TransformationNote(
+            type = NoteType.ACTION_REQUIRED,
+            code = "E065",
+            objectName = fkName,
+            message = "Foreign key '$fkName' on partitioned table '$tableName' was skipped: MySQL/InnoDB " +
+                "does not support foreign keys on partitioned tables (in either direction).",
+            hint = "Enforce referential integrity in the application, or do not partition the table.",
+        )
 
     // ── Circular FK references ───────────────────
 
@@ -156,6 +252,10 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return edges.map { edge ->
+            // ADR 0020 §5: drop a deferred/circular FK that touches a partitioned table (either end).
+            if (edge.fromTable in partitionedTables || edge.toTable in partitionedTables) {
+                return@map DdlStatement("", listOf(partitionedFkSkipNote(edge.constraintName, edge.fromTable)))
+            }
             val sql = buildString {
                 append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD CONSTRAINT ${quoteIdentifier(edge.constraintName)}")
                 append(" FOREIGN KEY (${edge.fromColumns.joinToString(", ") { quoteIdentifier(it) }})")
@@ -189,6 +289,33 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         statements += sequenceSupport.generateSupportFunctions(functions, skipped)
         statements += routineHelper.generateFunctions(functions, skipped)
         return statements
+    }
+
+    // ── Aggregates (N7) ──────────────────────────
+
+    override fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>
+    ): List<DdlStatement> = aggregates.map { (name, aggregate) ->
+        if (aggregate.isLoadableUdf) {
+            // MySQL loadable native UDF aggregate (compiled C in a shared library).
+            val returns = (aggregate.returnType ?: "STRING").uppercase()
+            DdlStatement(
+                "CREATE AGGREGATE FUNCTION ${quoteIdentifier(name)} RETURNS $returns SONAME '${aggregate.library}';"
+            )
+        } else {
+            // A SQL-defined (e.g. PostgreSQL) aggregate cannot be mechanically
+            // translated to MySQL's loadable-UDF mechanism.
+            val action = ManualActionRequired(
+                code = "E053", objectType = "aggregate", objectName = name,
+                reason = "Aggregate '$name' is SQL-defined and cannot be auto-translated to MySQL: MySQL user " +
+                    "aggregates are loadable native UDFs (CREATE AGGREGATE FUNCTION … SONAME).",
+                hint = "Re-implement '$name' as a MySQL loadable aggregate UDF, or express the aggregation " +
+                    "in application code / built-in functions.",
+            )
+            skipped += action.toSkipped()
+            DdlStatement("", notes = listOf(action.toNote()))
+        }
     }
 
     // ── Procedures ───────────────────────────────

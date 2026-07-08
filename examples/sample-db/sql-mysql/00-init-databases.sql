@@ -1,0 +1,19 @@
+-- Sample-DB-Harness MySQL initdb — Plan: docs/planning/done/sample-db-integration-harness.md
+--
+-- Läuft einmalig beim ersten Volume-Init des mysql-Service
+-- (docker-entrypoint-initdb.d), als root.
+-- MYSQL_DATABASE=sakila legt die Quell-DB bereits an und grantet sie
+-- MYSQL_USER. Hier wird nur das zweite Ziel `pagila_target` (für den
+-- Cross-Dialect-Flow Pagila PG→MySQL, Phase 2) nachgelegt + gegrantet.
+-- Befüllt werden beide erst vom Smoke-Skript.
+CREATE DATABASE IF NOT EXISTS pagila_target
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON pagila_target.* TO 'dmigrate'@'%';
+-- Phase 3 (Scale): MySQL-Ziel für den Employees-Round-Trip. Die Quell-DB
+-- `employees` wird vom Dump-Loader (employees.sql: DROP/CREATE) angelegt;
+-- der Scale-Smoke grantet sie danach an dmigrate. Hier nur das Ziel.
+CREATE DATABASE IF NOT EXISTS employees_my_target
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON employees_my_target.* TO 'dmigrate'@'%';
+GRANT ALL PRIVILEGES ON employees.* TO 'dmigrate'@'%';
+FLUSH PRIVILEGES;

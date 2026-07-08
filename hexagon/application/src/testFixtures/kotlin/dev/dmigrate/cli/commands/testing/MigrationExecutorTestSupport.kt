@@ -1,11 +1,13 @@
 package dev.dmigrate.cli.commands.testing
 
 import dev.dmigrate.cli.commands.ExecutionTrace
-import dev.dmigrate.cli.commands.MigrationStreamClassifier
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.migration.ExecutionRecoverability
+import dev.dmigrate.driver.migration.JdbcRunnerHookHandler as RunnerHookHandler
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.MigrationStreamClassifier
 import dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
@@ -14,6 +16,14 @@ import dev.dmigrate.driver.migration.preserve.ExecutableSegment
 import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import java.sql.Connection
 import java.sql.SQLException
+
+/**
+ * Test-only Unwrap des neutralen [DatabaseConnection] auf die JDBC-[Connection].
+ * Die Fixture bleibt bei Reflexion, damit die Live-ITs ihren bereits
+ * konfigurierten Pool weiterverwenden können.
+ */
+private fun DatabaseConnection.jdbc(): Connection =
+    javaClass.getMethod("getConnection").invoke(this) as Connection
 
 /**
  * Test-only mirror of the production `JdbcMigrationExecutor.runAll`
@@ -57,7 +67,7 @@ fun executeAgainstPool(
     if (statements.isEmpty()) {
         return ExecutionTrace(executionStarted = true, executionCompleted = true)
     }
-    return pool.borrow().use { conn ->
+    return pool.borrow().jdbc().use { conn ->
         if (MigrationStreamClassifier.streamOwnsTransaction(statements)) {
             runStreamOwnedTransaction(conn, statements)
         } else {
@@ -107,7 +117,7 @@ private fun runStreamOwnedTransaction(
     // executor. Before this, hooks were passed verbatim to
     // jdbcStmt.execute as SQL comments (xerial-sqlite tolerated them
     // silently, masking H.3b regressions in Application-layer tests).
-    val hookState = dev.dmigrate.cli.commands.RunnerHookHandler.State()
+    val hookState = RunnerHookHandler.State()
     return try {
         // Per-statement fresh Statement — see JdbcMigrationExecutor for
         // the xerial-sqlite Statement-finalisation rationale.
@@ -115,7 +125,7 @@ private fun runStreamOwnedTransaction(
             lastIds = s.operationIds
             attempted++
             conn.createStatement().use { jdbcStmt ->
-                dev.dmigrate.cli.commands.RunnerHookHandler.executeOrApply(jdbcStmt, s.sql, hookState)
+                RunnerHookHandler.executeOrApply(jdbcStmt, s.sql, hookState)
             }
         }
         ExecutionTrace(
@@ -143,12 +153,12 @@ private fun runStreamOwnedTransaction(
 
 private fun tryRestoreFkStateAfterRollback(
     conn: Connection,
-    hookState: dev.dmigrate.cli.commands.RunnerHookHandler.State,
+    hookState: RunnerHookHandler.State,
 ) {
     if (hookState.savedSqliteForeignKeysPragma == null) return
     try {
         conn.createStatement().use { stmt ->
-            dev.dmigrate.cli.commands.RunnerHookHandler.apply(stmt, "restore-fk-state", hookState)
+            RunnerHookHandler.apply(stmt, "restore-fk-state", hookState)
         }
     } catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") _: Exception) {
         // Best-effort: original SQLException already drives the trace.
@@ -273,16 +283,17 @@ private fun runAtomicSegmentAgainstPool(
     val protectedStatements = segment.statements.filter { stmt ->
         stmt.operationIds.none { it in followUpIds }
     }
-    val executeProtectedOps: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
-        { connection, _ ->
+    val executeProtectedOps: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
+        { databaseConnection, _ ->
+            val connection = databaseConnection.jdbc()
             for (stmt in protectedStatements) {
                 connection.createStatement().use { it.execute(stmt.sql) }
             }
             AtomicProtectedExecutionResult.Succeeded(statementsExecuted = protectedStatements.size)
         }
-    val result = pool.borrow().use { conn ->
+    val result = pool.borrow().use { handle ->
         atomicExecutor.execute(
-            connection = conn,
+            connection = handle,
             batch = segment.batch,
             lockTimeoutMillis = lockTimeoutMillis,
             executeProtectedOperations = executeProtectedOps,

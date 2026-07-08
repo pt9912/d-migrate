@@ -154,7 +154,7 @@ Commit `5d19903e` entsprechend angepasst.
   `RoutineDependencyAnalyzer.detectUnsafeRoutinePairs` erzeugt
   die Kandidaten; `DiffPlanner.kt` emittiert die Diagnostic.
 - Plan-Referenz:
-  `docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md`
+  `docs/planning/done-archive/ImpPlan-0.9.7-E.1-routine-migration.md`
   §D.1-Follow-up + §D.4-Follow-up.
 - Verwandte ADR: ADR-0001 dokumentiert die parallele
   Entscheidung zu `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC`.

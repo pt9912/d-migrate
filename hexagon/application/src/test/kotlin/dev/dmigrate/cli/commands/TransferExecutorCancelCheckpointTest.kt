@@ -7,6 +7,7 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.ChunkSequence
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
@@ -20,7 +21,6 @@ import dev.dmigrate.driver.data.WriteResult
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -34,7 +34,7 @@ class TransferExecutorCancelCheckpointTest : FunSpec({
 
     val pool = object : ConnectionPool {
         override val dialect = DatabaseDialect.SQLITE
-        override fun borrow(): Connection = throw UnsupportedOperationException()
+        override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
         override fun activeConnections() = 0
         override fun close() {}
     }

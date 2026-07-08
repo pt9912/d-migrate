@@ -82,8 +82,12 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
     ): List<DdlStatement> =
         tableSupport.generateTable(name, table, schema, deferredFks, deferredConstraints, options)
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
-        tableSupport.generateIndices(tableName, table)
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> =
+        tableSupport.generateIndices(tableName, table, options)
 
     override fun handleCircularReferences(
         edges: List<CircularFkEdge>,
@@ -99,6 +103,19 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> = routineHelper.generateFunctions(functions, skipped)
+
+    override fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>
+    ): List<DdlStatement> = aggregates.map { (name, _) ->
+        val action = ManualActionRequired(
+            code = "E054", objectType = "aggregate", objectName = name,
+            reason = "User-defined aggregate '$name' is not supported in SQLite.",
+            hint = "Re-express the aggregation in application code or register a custom aggregate at runtime.",
+        )
+        skipped += action.toSkipped()
+        DdlStatement("", notes = listOf(action.toNote()))
+    }
 
     override fun generateProcedures(
         procedures: Map<String, ProcedureDefinition>,

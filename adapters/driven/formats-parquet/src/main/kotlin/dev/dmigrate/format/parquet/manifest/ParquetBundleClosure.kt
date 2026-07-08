@@ -1,8 +1,8 @@
 package dev.dmigrate.format.parquet.manifest
 
 import dev.dmigrate.format.data.DataExportFormat
-import dev.dmigrate.streaming.BundleClosureContext
-import dev.dmigrate.streaming.BundleClosureTable
+import dev.dmigrate.format.data.BundleClosureContext
+import dev.dmigrate.format.data.BundleClosureTable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock

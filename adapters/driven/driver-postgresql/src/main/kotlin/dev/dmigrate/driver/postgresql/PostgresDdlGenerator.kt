@@ -20,6 +20,18 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         referentialActionSql = ::referentialActionSql,
     )
 
+    // N8: index names are schema-global in PostgreSQL; the allocator
+    // disambiguates cross-table collisions and is reset per generate() run.
+    private val indexNameAllocator = PostgresIndexNameAllocator()
+
+    override fun generate(
+        schema: SchemaDefinition,
+        options: DdlGenerationOptions,
+    ): DdlResult {
+        indexNameAllocator.reset()
+        return super.generate(schema, options)
+    }
+
     // ── Quoting ──────────────────────────────────
 
     override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
@@ -77,13 +89,13 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             )
         }
 
-        // Columns
-        for ((colName, col) in table.columns) {
+        // Columns — physische Ordinalreihenfolge (siehe inOrdinalOrder).
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             columnLines += generateColumnSql(colName, col, schema, name)
         }
 
         // Inline foreign key constraints (non-circular, from column references)
-        for ((colName, col) in table.columns) {
+        for ((colName, col) in table.columns.inOrdinalOrder()) {
             val ref = col.references ?: continue
             if (options.deferForeignKeys) continue
             if ((name to colName) in deferredFks) continue
@@ -104,15 +116,30 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             columnLines += "PRIMARY KEY ($pkCols)"
         }
 
+        // N2: PostgreSQL has no default partition — a `PARTITION BY` parent
+        // without child partitions accepts no rows ("no partition of relation
+        // found for row"). Emit partitioning only when child partitions exist;
+        // otherwise fall back to a plain table and flag it (like MySQL's E055).
+        val partitioning = table.partitioning
+        val emitPartitioning = partitioning != null && partitioning.partitions.isNotEmpty()
+        if (partitioning != null && !emitPartitioning) {
+            notes += TransformationNote(
+                type = NoteType.ACTION_REQUIRED,
+                code = "E055",
+                objectName = name,
+                message = "${partitioning.type.name} partitioning of table '$name' has no child partitions; " +
+                    "PostgreSQL would reject every insert. Created as a plain (non-partitioned) table.",
+                hint = "Define the partition boundaries (PARTITION OF …) or remove the partitioning configuration.",
+            )
+        }
+
         // Build CREATE TABLE
         val tableSql = buildString {
             append("CREATE TABLE ${quoteIdentifier(name)} (\n")
             append(columnLines.joinToString(",\n") { "    $it" })
             append("\n)")
-            // Partitioning
-            val partitioning = table.partitioning
-            if (partitioning != null) {
-                val key = partitioning.key.joinToString(", ") { quoteIdentifier(it) }
+            if (emitPartitioning) {
+                val key = partitioning!!.key.joinToString(", ") { quoteIdentifier(it) }
                 append(" PARTITION BY ${partitioning.type.name} ($key)")
             }
             append(";")
@@ -120,9 +147,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         statements += DdlStatement(tableSql, notes)
 
         // Sub-partitions
-        val partitioning = table.partitioning
-        if (partitioning != null) {
-            for (partition in partitioning.partitions) {
+        if (emitPartitioning) {
+            for (partition in partitioning!!.partitions) {
                 statements += generatePartitionStatement(name, partition, partitioning.type)
             }
         }
@@ -156,21 +182,27 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     ): DdlStatement {
         val sql = buildString {
             append("CREATE TABLE ${quoteIdentifier(partition.name)} PARTITION OF ${quoteIdentifier(parentTable)}")
-            when (type) {
+            if (partition.isDefault) {
+                append(" DEFAULT")
+            } else when (type) {
                 PartitionType.RANGE -> {
-                    val from = validatePartitionBound(partition.from, "FROM", partition.name)
-                    val to = validatePartitionBound(partition.to, "TO", partition.name)
+                    val from = renderRangeBounds(partition.from, "FROM", partition.name)
+                    val to = renderRangeBounds(partition.to, "TO", partition.name)
                     append(" FOR VALUES FROM ($from) TO ($to)")
                 }
                 PartitionType.LIST -> {
-                    val vals = partition.values?.onEach {
-                        validatePartitionBound(it, "IN", partition.name)
-                    }?.joinToString(", ") ?: ""
+                    val vals = partition.values.orEmpty()
+                        .joinToString(", ") { PartitionLiteralGuard.ensureSafe(it, partition.name) }
                     append(" FOR VALUES IN ($vals)")
                 }
                 PartitionType.HASH -> {
-                    val from = validatePartitionBound(partition.from, "WITH", partition.name)
-                    append(" FOR VALUES WITH ($from)")
+                    val modulus = requireNotNull(partition.modulus) {
+                        "HASH partition '${partition.name}' must have a modulus"
+                    }
+                    val remainder = requireNotNull(partition.remainder) {
+                        "HASH partition '${partition.name}' must have a remainder"
+                    }
+                    append(" FOR VALUES WITH (MODULUS $modulus, REMAINDER $remainder)")
                 }
             }
             append(";")
@@ -178,38 +210,155 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         return DdlStatement(sql)
     }
 
-    private fun validatePartitionBound(value: String?, clause: String, partitionName: String): String {
-        requireNotNull(value) {
-            "Partition '$partitionName' $clause bound must not be null"
+    private fun renderRangeBounds(
+        bounds: List<PartitionBound>?,
+        clause: String,
+        partitionName: String
+    ): String {
+        requireNotNull(bounds) { "Partition '$partitionName' $clause bound must not be null" }
+        require(bounds.isNotEmpty()) { "Partition '$partitionName' $clause bound must not be empty" }
+        return bounds.joinToString(", ") { bound ->
+            when (bound) {
+                PartitionBound.MinValue -> "MINVALUE"
+                PartitionBound.MaxValue -> "MAXVALUE"
+                is PartitionBound.Value -> PartitionLiteralGuard.ensureSafe(bound.literal, partitionName)
+            }
         }
-        require(!value.contains(';') && !value.contains("--") && !value.contains("/*")) {
-            "Partition '$partitionName' $clause bound contains unsafe characters: $value"
-        }
-        return value
     }
 
     // ── Indices ──────────────────────────────────
 
-    override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
-        val generatedNames = generatedIndexNames(tableName, table.indices)
-        return table.indices.mapIndexed { position, index -> generateIndex(tableName, index, generatedNames[position]) }
+    override fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> {
+        val generatedNames = indexNameAllocator.namesFor(tableName, table.indices)
+        val parentIndices = table.indices.mapIndexed { position, index ->
+            generateIndex(tableName, index, generatedNames[position], table.columns)
+        }
+        // AP2a: kind-lokale Indizes je Partition — auf der Partitionstabelle
+        // erzeugt (Partitionen erben die Spalten des Parents). Im selben
+        // Index-Phasenlauf wie die Top-Level-Indizes, damit die Tabellen schon stehen.
+        val partitionIndices = table.partitioning?.partitions.orEmpty().flatMap { partition ->
+            val names = indexNameAllocator.namesFor(partition.name, partition.indices)
+            partition.indices.mapIndexed { position, index ->
+                generateIndex(partition.name, index, names[position], table.columns)
+            }
+        }
+        return parentIndices + partitionIndices
     }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement {
+    private fun generateIndex(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+        columns: Map<String, ColumnDefinition>,
+    ): DdlStatement {
+        // P2 (ADR 0025): the neutral FULLTEXT index over the source text columns is the
+        // cross-dialect abstraction of PostgreSQL's tsvector machinery. On PostgreSQL it
+        // expands back to a GiST index over the (parameterless) tsvector column — the
+        // tsvector column itself and its populating trigger come from the column/trigger
+        // model, so only the GiST index is re-derived here. This keeps the PG→PG
+        // round-trip at 0 diffs (the reverse reader replaced this very GiST index with a
+        // FULLTEXT one in PostgresFullTextIndexSynthesis).
+        if (index.type == IndexType.FULLTEXT) {
+            return expandFullTextIndex(tableName, index, indexName, columns)
+        }
+        PostgresIndexOpClass.missingOpClassColumn(index) { columns[it]?.type }?.let { offending ->
+            return DdlStatement(
+                "",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = "W123",
+                        objectName = indexName,
+                        message = "${index.type.name} index '$indexName' on column '$offending' was skipped: " +
+                            "the column type has no default ${index.type.name} operator class in PostgreSQL " +
+                            "(e.g. a tsvector column degraded to text on reverse).",
+                        hint = "Restore the original column type, or add the required operator class " +
+                            "(e.g. via the pg_trgm extension) and create the index manually.",
+                    )
+                )
+            )
+        }
         val cols = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
             append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
-            // Omit USING for BTREE since it's the default
+            // Omit USING for BTREE since it's the default. VA3: SPATIAL → GIST.
             if (index.type != IndexType.BTREE) {
-                append(" USING ${index.type.name}")
+                append(" USING ${pgAccessMethod(index.type)}")
             }
             append(" ($cols)")
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
-        return DdlStatement(sql)
+        val notes = IndexPrefixDropNote.forDialect(index, indexName, "PostgreSQL", "left(col, n)").toMutableList()
+        if (index.name != null && index.name != indexName) {
+            notes += TransformationNote(
+                type = NoteType.WARNING,
+                code = "W127",
+                objectName = indexName,
+                message = "Index '${index.name}' on table '$tableName' was renamed to '$indexName' to keep " +
+                    "index names unique within the PostgreSQL schema (MySQL allows the same index name on " +
+                    "several tables; PostgreSQL index names are schema-global).",
+                hint = "Rename the source index if a specific PostgreSQL name is required.",
+            )
+        }
+        return DdlStatement(sql, notes)
+    }
+
+    /**
+     * P2 (ADR 0025): expand a neutral [IndexType.FULLTEXT] index into PostgreSQL's
+     * native form — a GiST index over the `tsvector` ([NeutralType.FullText]) column the
+     * index is built on. The FULLTEXT index lists the *human* source text columns
+     * (MySQL/SQLite index those directly); PostgreSQL indexes the precomputed vector
+     * column instead. The vector column is read from [IndexDefinition.fullTextVectorColumn]
+     * (set on PG reverse — unambiguous even with several tsvector columns per table); for
+     * a hand-authored index without it we fall back to the table's sole tsvector column.
+     * We delegate to the regular index path, which keeps the `tsvector_ops`
+     * default-operator-class handling (so no W123). When no tsvector column can be
+     * determined, the full expansion (synthesising the tsvector column + populating
+     * trigger) is out of scope — W133 records the manual step.
+     */
+    private fun expandFullTextIndex(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+        columns: Map<String, ColumnDefinition>,
+    ): DdlStatement {
+        val tsvectorColumn = index.fullTextVectorColumn?.takeIf { columns[it]?.type is NeutralType.FullText }
+            ?: columns.entries.singleOrNull { it.value.type is NeutralType.FullText }?.key
+            ?: return DdlStatement(
+                "",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = "W133",
+                        objectName = indexName,
+                        message = "FULLTEXT index '$indexName' on table '$tableName' could not be " +
+                            "expanded for PostgreSQL: no backing tsvector column is recorded and the " +
+                            "table has no single unambiguous tsvector column.",
+                        hint = "Set the backing tsvector column on the index (PG reverse does this), " +
+                            "or target MySQL/SQLite where FULLTEXT maps to a native fulltext index.",
+                    ),
+                ),
+            )
+        return generateIndex(
+            tableName,
+            index.copy(
+                // ADR 0025: restore the recorded access method, clamped to GIN/GiST.
+                type = pgFullTextAccessMethod(index.fullTextAccessMethod),
+                columns = listOf(IndexColumn(tsvectorColumn)),
+                textSearchConfig = null,
+                fullTextVectorColumn = null,
+                fullTextAccessMethod = null,
+            ),
+            indexName,
+            columns,
+        )
     }
 
     private fun renderIndexColumn(column: IndexColumn): String =
@@ -219,34 +368,6 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             if (direction != null) append(" ${direction.name}")
         }
 
-    private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
-        val baseNames = indices.map { index ->
-            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
-        }
-        val baseCounts = baseNames.groupingBy { it }.eachCount()
-        val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()
-        return indices.mapIndexed { position, index ->
-            index.name ?: disambiguateGeneratedIndexName(baseNames[position], index, baseCounts.getValue(baseNames[position]), used)
-        }
-    }
-
-    private fun disambiguateGeneratedIndexName(
-        baseName: String,
-        index: IndexDefinition,
-        baseCount: Int,
-        used: MutableMap<String, Int>,
-    ): String {
-        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDisambiguationSuffix(index)}"
-        val seen = used.getOrDefault(candidate, 0)
-        used[candidate] = seen + 1
-        return if (seen == 0) candidate else "${candidate}_${seen + 1}"
-    }
-
-    private fun indexDisambiguationSuffix(index: IndexDefinition): String {
-        val directionPart = index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
-        val wherePart = index.where?.let { "_where_${Integer.toUnsignedString(it.hashCode(), 36)}" }.orEmpty()
-        return "$directionPart$wherePart"
-    }
 
     // ── Circular FK references ───────────────────
 
@@ -307,6 +428,15 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return routineHelper.generateFunctions(functions, skipped)
+    }
+
+    // ── Aggregates (N7) ──────────────────────────
+
+    override fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>
+    ): List<DdlStatement> {
+        return routineHelper.generateAggregates(aggregates, skipped)
     }
 
     // ── Procedures ───────────────────────────────

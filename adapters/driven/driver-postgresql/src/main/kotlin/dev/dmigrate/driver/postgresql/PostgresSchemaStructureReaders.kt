@@ -33,6 +33,16 @@ private fun readPostgresTable(
 
     val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromConstraints(uniqueConstraints)
 
+    // VA2 (Spatial): PostGIS-Subtyp + SRID je Geometriespalte (leer ohne PostGIS).
+    // srid 0 (= keine SRID) → null, damit das Modell sauber bleibt.
+    val geometryColumns = PostgresMetadataQueries.listGeometryColumns(session, schema, tableName)
+        .associate { gc ->
+            (gc["f_geometry_column"] as String) to Pair(
+                gc["type"] as? String,
+                (gc["srid"] as? Number)?.toInt()?.takeIf { it != 0 },
+            )
+        }
+
     val columns = LinkedHashMap<String, ColumnDefinition>()
     for (row in columnRows) {
         val columnName = row["column_name"] as String
@@ -52,19 +62,22 @@ private fun readPostgresTable(
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
                 tableName = tableName,
                 colName = columnName,
+                geometrySubtype = geometryColumns[columnName]?.first,
+                geometrySrid = geometryColumns[columnName]?.second,
             )
         )
         if (mapping.note != null) notes += mapping.note
 
         val required = (row["is_nullable"] as String) == "NO"
         val unique = if (isPrimaryKeyColumn) false else columnName in singleColumnUnique
-        val defaultValue = if (
-            isPrimaryKeyColumn &&
-            PostgresTypeMapping.isSerialDefault(row["column_default"] as? String)
-        ) {
-            null
-        } else {
-            PostgresTypeMapping.parseDefault(row["column_default"] as? String)
+        val colDefault = row["column_default"] as? String
+        val defaultValue = when {
+            // Serial PK: the autoincrement/identity carries the default.
+            isPrimaryKeyColumn && PostgresTypeMapping.isSerialDefault(colDefault) -> null
+            // N5: a non-PK `nextval` default is a named-sequence reference, not identity.
+            PostgresTypeMapping.isSerialDefault(colDefault) ->
+                PostgresTypeMapping.sequenceNameFromNextval(colDefault)?.let { DefaultValue.SequenceNextVal(it) }
+            else -> PostgresTypeMapping.parseDefault(colDefault)
         }
 
         columns[columnName] = ColumnDefinition(
@@ -73,6 +86,9 @@ private fun readPostgresTable(
             unique = unique,
             default = defaultValue,
             generation = mapping.generation,
+            // information_schema.columns.ordinal_position ist 1-basiert + dicht (Drop-Lücken
+            // bereits aufgelöst) — die physische Spaltenreihenfolge der Quelle.
+            ordinal = (row["ordinal_position"] as? Number)?.toInt(),
         )
     }
 
@@ -81,22 +97,7 @@ private fun readPostgresTable(
     constraints += SchemaReaderUtils.buildMultiColumnUniqueFromConstraints(uniqueConstraints)
     constraints += SchemaReaderUtils.buildCheckConstraints(checkConstraints)
 
-    val indices = indexRows.map { index ->
-        IndexDefinition(
-            name = index.name,
-            columns = index.indexColumns,
-            type = when (index.type) {
-                "btree" -> IndexType.BTREE
-                "hash" -> IndexType.HASH
-                "gin" -> IndexType.GIN
-                "gist" -> IndexType.GIST
-                "brin" -> IndexType.BRIN
-                else -> IndexType.BTREE
-            },
-            unique = index.isUnique,
-            where = index.where,
-        )
-    }
+    val indices = mapPostgresIndices(indexRows)
 
     return TableDefinition(
         columns = columns,
@@ -107,12 +108,32 @@ private fun readPostgresTable(
     )
 }
 
+private fun mapPostgresIndices(indexRows: List<dev.dmigrate.driver.metadata.IndexProjection>): List<IndexDefinition> =
+    indexRows.map { index ->
+        IndexDefinition(
+            name = index.name,
+            columns = index.indexColumns,
+            type = when (index.type) {
+                "btree" -> IndexType.BTREE
+                "hash" -> IndexType.HASH
+                "gin" -> IndexType.GIN
+                "gist" -> IndexType.GIST
+                "brin" -> IndexType.BRIN
+                // VA3: SP-GiST methoden-genau erfassen (vorher → BTREE-Verlust).
+                "spgist" -> IndexType.SPGIST
+                else -> IndexType.BTREE
+            },
+            unique = index.isUnique,
+            where = index.where,
+        )
+    }
+
 private fun readPostgresPartitioning(
     session: JdbcOperations,
     schema: String,
     tableName: String,
 ): PartitionConfig? {
-    val info = PostgresMetadataQueries.getPartitionInfo(session, schema, tableName)
+    val info = PostgresPartitionMetadataQueries.getPartitionInfo(session, schema, tableName)
         ?: return null
     val strategy = when (info["partstrat"] as? String) {
         "r" -> PartitionType.RANGE
@@ -126,7 +147,35 @@ private fun readPostgresPartitioning(
         is String -> keyColumns.removeSurrounding("{", "}").split(",")
         else -> emptyList()
     }
-    return PartitionConfig(type = strategy, key = key)
+    // AP1 (ADR 0019): Kind-Partitionen + Grenzen erfassen; die rohe
+    // `FOR VALUES`-Klausel ins strukturierte Modell parsen/normalisieren.
+    // AP2a: je Kind die kind-lokalen Indizes mitführen (parent-propagierte raus).
+    val partitions = PostgresPartitionMetadataQueries.listPartitionChildren(session, schema, tableName)
+        .mapNotNull { row ->
+            val name = row["partition_name"] as? String ?: return@mapNotNull null
+            val boundExpr = row["bound_expr"] as? String ?: return@mapNotNull null
+            PostgresPartitionBoundParser.parse(name, boundExpr, strategy)
+                .copy(indices = readPartitionLocalIndices(session, schema, name))
+        }
+    return PartitionConfig(type = strategy, key = key, partitions = partitions)
+}
+
+/**
+ * AP2a (ADR 0019): die **kind-lokalen** Indizes einer Partition. [listIndices]
+ * schließt PK-/Unique-Constraint-Backings bereits aus; davon ziehen wir die
+ * **parent-propagierten** ab (Index-Vererbung via `pg_inherits`), sodass nur
+ * Indizes bleiben, die direkt auf dem Kind definiert wurden. Nach Name sortiert
+ * für ein deterministisches Encoding (Comparator/Fingerprint vergleichen Mengen).
+ */
+private fun readPartitionLocalIndices(
+    session: JdbcOperations,
+    schema: String,
+    partitionName: String,
+): List<IndexDefinition> {
+    val inherited = PostgresPartitionMetadataQueries.listInheritedIndexNames(session, schema, partitionName).toSet()
+    val local = PostgresMetadataQueries.listIndices(session, schema, partitionName)
+        .filter { it.name !in inherited }
+    return mapPostgresIndices(local).sortedBy { it.name ?: "" }
 }
 
 internal fun readPostgresSequences(
@@ -173,18 +222,21 @@ internal fun readPostgresCustomTypes(
             baseType = PostgresTypeMapping.mapParamType(baseType),
             precision = (row["numeric_precision"] as? Number)?.toInt(),
             scale = (row["numeric_scale"] as? Number)?.toInt(),
-            check = row["check_clause"] as? String,
+            check = normalizeDomainCheck(row["check_clause"] as? String),
         )
     }
 
     val compositeRows = PostgresMetadataQueries.listCompositeTypes(session, schema)
     for ((typeName, fieldRows) in compositeRows.groupBy { it["typname"] as String }) {
         val fields = LinkedHashMap<String, ColumnDefinition>()
-        for (fieldRow in fieldRows.sortedBy { (it["attnum"] as Number).toInt() }) {
+        // attnum trägt Drop-Lücken — daher 1-basierter Laufindex über die nach attnum
+        // sortierten Felder als dichte physische Feldposition.
+        for ((fieldIndex, fieldRow) in fieldRows.sortedBy { (it["attnum"] as Number).toInt() }.withIndex()) {
             val fieldName = fieldRow["attname"] as String
             val columnType = fieldRow["column_type"] as? String ?: "text"
             fields[fieldName] = ColumnDefinition(
                 type = PostgresTypeMapping.mapCompositeFieldType(columnType),
+                ordinal = fieldIndex + 1,
             )
         }
         result[typeName] = CustomTypeDefinition(
@@ -194,4 +246,38 @@ internal fun readPostgresCustomTypes(
     }
 
     return result
+}
+
+/**
+ * `pg_get_constraintdef` liefert den vollständigen Domain-Check inkl. Hülle, z. B.
+ * `CHECK ((VALUE > 0))`. Das Modell soll nur das Prädikat halten, damit die
+ * Generate-Seite genau einmal `CHECK (...)` wrappt (sonst entsteht
+ * `CHECK (CHECK (...))`). Entfernt das führende `CHECK`-Token und – falls die
+ * äußerste Klammer das gesamte Prädikat umschließt – genau dieses eine Klammerpaar.
+ */
+internal fun normalizeDomainCheck(raw: String?): String? {
+    if (raw == null) return null
+    var s = raw.trim()
+    if (s.regionMatches(0, "CHECK", 0, 5, ignoreCase = true)) {
+        s = s.substring(5).trim()
+        if (s.startsWith("(") && outerParenSpansWhole(s)) {
+            s = s.substring(1, s.length - 1).trim()
+        }
+    }
+    return s.ifEmpty { null }
+}
+
+/** True, wenn die öffnende Klammer an Index 0 erst am letzten Zeichen geschlossen wird. */
+private fun outerParenSpansWhole(s: String): Boolean {
+    var depth = 0
+    for ((i, c) in s.withIndex()) {
+        when (c) {
+            '(' -> depth++
+            ')' -> {
+                depth--
+                if (depth == 0) return i == s.length - 1
+            }
+        }
+    }
+    return false
 }

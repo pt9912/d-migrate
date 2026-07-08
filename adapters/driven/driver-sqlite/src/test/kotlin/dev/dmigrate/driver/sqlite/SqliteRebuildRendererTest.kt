@@ -303,6 +303,116 @@ class SqliteRebuildRendererTest : FunSpec({
         r.diagnostics.any { it.code == "SQLITE_REBUILD_NOT_REVERSIBLE" } shouldBe true
     }
 
+    test("rebuild of a FULLTEXT-carrying table drops and recreates the FTS5 objects") {
+        // ADR 0025: the FTS5 virtual table would survive the base-table
+        // drop orphaned (sync triggers die with the table) — the rebuild
+        // must drop it before `DROP TABLE` and recreate the full expansion
+        // (virtual table + 'rebuild' + 3 sync triggers) after the RENAME.
+        val fulltext = IndexDefinition(
+            name = "docs_fts",
+            columns = listOf(IndexColumn("title"), IndexColumn("body")),
+            type = IndexType.FULLTEXT,
+        )
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "title" to ColumnDefinition(NeutralType.Text()),
+                "body" to ColumnDefinition(NeutralType.Text()),
+                "views" to ColumnDefinition(NeutralType.SmallInt),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(fulltext),
+        )
+        val after = before.copy(
+            columns = before.columns + ("views" to ColumnDefinition(NeutralType.Integer)),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "docs",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "views",
+                            type = ValueChange(NeutralType.SmallInt, NeutralType.Integer),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val current = schemaWith(mapOf("docs" to before))
+        val desired = schemaWith(mapOf("docs" to after))
+
+        val up = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        up.isBlocked shouldBe false
+        val sqls = up.statements.map { it.sql }
+
+        // Old FTS5 objects torn down BEFORE the base-table drop...
+        val ftsDrop = sqls.indexOfFirst { it == "DROP TABLE IF EXISTS \"docs_fts\";" }
+        val baseDrop = sqls.indexOfFirst { it.startsWith("DROP TABLE \"docs\"") }
+        val rename = sqls.indexOfFirst { it.contains("RENAME TO \"docs\"") }
+        (ftsDrop >= 0) shouldBe true
+        (ftsDrop < baseDrop) shouldBe true
+        sqls.count { it.startsWith("DROP TRIGGER IF EXISTS \"docs_fts_") } shouldBe 3
+
+        // ...and recreated (incl. 'rebuild' repopulation) AFTER the RENAME.
+        val createVt = sqls.indexOfFirst { it.startsWith("CREATE VIRTUAL TABLE \"docs_fts\" USING fts5") }
+        val rebuild = sqls.indexOfFirst { it == "INSERT INTO \"docs_fts\"(\"docs_fts\") VALUES('rebuild');" }
+        (rename in (baseDrop + 1) until createVt) shouldBe true
+        (rebuild > createVt) shouldBe true
+        sqls.single { it.startsWith("CREATE VIRTUAL TABLE") } shouldContain "content='docs'"
+        sqls.count { it.startsWith("CREATE TRIGGER \"docs_fts_") } shouldBe 3
+
+        // DOWN direction (reversible bucket) recreates the FTS5 objects too.
+        val down = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
+        down.isBlocked shouldBe false
+        val downSqls = down.statements.map { it.sql }
+        downSqls.any { it.startsWith("CREATE VIRTUAL TABLE \"docs_fts\" USING fts5") } shouldBe true
+        downSqls.count { it.startsWith("CREATE TRIGGER \"docs_fts_") } shouldBe 3
+    }
+
+    test("FULLTEXT recreate degrades with W132 when the new table is WITHOUT ROWID") {
+        // unsupportedReason: external-content FTS5 needs the implicit rowid —
+        // degrade with the skip marker + W132 diagnostic, never broken DDL.
+        val fulltext = IndexDefinition(
+            name = "docs_fts",
+            columns = listOf(IndexColumn("title")),
+            type = IndexType.FULLTEXT,
+        )
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "title" to ColumnDefinition(NeutralType.Text()),
+                "views" to ColumnDefinition(NeutralType.SmallInt),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(fulltext),
+            metadata = dev.dmigrate.core.model.TableMetadata(withoutRowid = true),
+        )
+        val after = before.copy(
+            columns = before.columns + ("views" to ColumnDefinition(NeutralType.Integer)),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "docs",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "views",
+                            type = ValueChange(NeutralType.SmallInt, NeutralType.Integer),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val current = schemaWith(mapOf("docs" to before))
+        val desired = schemaWith(mapOf("docs" to after))
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        r.isBlocked shouldBe false
+        r.statements.any { it.sql.startsWith("CREATE VIRTUAL TABLE") } shouldBe false
+        r.statements.any { it.sql.startsWith("-- FULLTEXT index \"docs_fts\" skipped") } shouldBe true
+        r.diagnostics.any { it.code == "W132" } shouldBe true
+    }
+
     // ---- Phase G.1: SQLite Cast-Matrix ----
 
     /**

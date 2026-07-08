@@ -10,6 +10,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.mockk.*
 import java.sql.Connection
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import java.sql.ResultSet
 import java.sql.Statement
 
@@ -95,7 +96,7 @@ class MysqlSchemaSyncTest : FunSpec({
 
         val cols = listOf(ColumnDescriptor("id", nullable = false))
         // Uses the SchemaSync interface method (without truncatePerformed)
-        (sync as dev.dmigrate.driver.data.SchemaSync).reseedGenerators(conn, "users", cols).shouldBeEmpty()
+        (sync as dev.dmigrate.driver.data.SchemaSync).reseedGenerators(JdbcDatabaseConnection(conn), "users", cols).shouldBeEmpty()
     }
 
     test("reseedGenerators with truncate and column not imported still reseeds") {

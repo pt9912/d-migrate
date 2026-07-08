@@ -1,0 +1,48 @@
+name: Sample-DB Spatial Smoke (Best-Effort)
+
+# Phase-5-VA1-Live-Smoke: Geometrie-Wert-Round-Trip gegen echtes PostGIS und
+# echtes MySQL (das, was die Unit-/SQLite-Tests strukturell nicht abdecken).
+# Plan: docs/planning/in-progress/spatial-harness-slice.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-spatial-smoke` (postgis + mysql up -> Geometrie-Tabellen
+# inkl. native-PG-point -> data transfer PG->PG und MySQL->MySQL -> Wert-Gleichheit
+# via ST_AsText/ST_IsValid). Kein externes Sample (winzige WKT-Inserts inline).
+#
+# Best-Effort: continue-on-error, damit transiente Netz-/Docker-Hub-Instabilitaeten
+# (PostGIS-Image-Pull) den Hauptbuild nicht rot machen.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'examples/sample-db/**'
+      - 'adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/data/**'
+      - 'adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDataReader.kt'
+      - 'adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTableImportSession.kt'
+      - 'adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDataReader.kt'
+      - 'adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlTableImportSession.kt'
+      - 'Makefile'
+      - '.github/workflows/sample-db-spatial-smoke.yml'
+
+jobs:
+  spatial-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB spatial smoke (geometry round-trip PG + MySQL)
+        run: make sample-db-spatial-smoke
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true

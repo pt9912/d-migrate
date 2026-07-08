@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.connection.asJdbc
+
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
@@ -121,7 +123,7 @@ class SqliteSequenceRoundTripIntegrationTest : FunSpec({
         // marker but a no-op body (no reference to dmg_sequences). The
         // marker stays authoritative, body integrity check fails →
         // W120.
-        val biName = pool.borrow().use { conn ->
+        val biName = pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery(
                     "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'dmg_seq_%_bi'",
@@ -153,7 +155,7 @@ class SqliteSequenceRoundTripIntegrationTest : FunSpec({
     test("reverse path emits W116 when the marker is stripped from the _bi body") {
         val pool = newPool()
         installSchema(pool, originalSchema())
-        val biName = pool.borrow().use { conn ->
+        val biName = pool.borrow().asJdbc().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.executeQuery(
                     "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'dmg_seq_%_bi'",
@@ -193,7 +195,7 @@ private fun isCommentOnly(sql: String): Boolean =
     }
 
 private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
-    pool.borrow().use { conn ->
+    pool.borrow().asJdbc().use { conn ->
         conn.createStatement().use { stmt ->
             for (sql in sqls) {
                 try {

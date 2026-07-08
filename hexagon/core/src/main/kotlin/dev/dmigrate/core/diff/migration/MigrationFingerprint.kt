@@ -1,14 +1,20 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.ConstraintDiffContract
+import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintReferenceDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -16,6 +22,7 @@ import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
+import dev.dmigrate.core.model.canonicalOrder
 import dev.dmigrate.core.util.sha256Hex
 
 /**
@@ -58,15 +65,84 @@ import dev.dmigrate.core.util.sha256Hex
  */
 object MigrationFingerprint {
 
-    /** Algorithm identifier folded into every projection. Bump on contract change. */
-    const val ALGORITHM: String = "schema-fingerprint-v1"
+    /**
+     * Algorithm identifier folded into every projection. Bump on contract change.
+     *
+     * v2: index columns now carry a MySQL prefix length (`IndexColumn.prefixLength`,
+     * read from `SUB_PART` on reverse). Projections that include a prefix index
+     * differ from v1; the bump signals the reverse-reader semantic change so
+     * v1-era rollback artefacts are recognised as a different algorithm version
+     * rather than silently mismatched.
+     *
+     * v3: the primary key is projected as its **effective** value — an implicit,
+     * `identifier`-typed PK is canonicalised to the same projection as an explicit
+     * `primary_key`. Rationale: `spec/neutral-model-spec.md` 13.1 defines a PK as
+     * "explicit OR via the `identifier` type", so a desired schema that omits
+     * `primary_key` (PK only implicit via `identifier`) is semantically identical to
+     * the reverse, which always materialises `primaryKey = [<col>]`. Without this,
+     * `migrate --execute` reported a spurious post-compare drift (Exit 5) on a
+     * spec-valid identifier-only schema — dialect-neutral
+     * (`docs/planning/done/migrate-postcompare-identifier-pk-drift.md`).
+     *
+     * v4: table partitioning is now projected (strategy, key, child partitions with
+     * their structured bounds). AP4/ADR 0019 makes `SchemaComparator` partition-aware;
+     * the fingerprint must follow so the comparator and the post-`--execute` drift
+     * check agree — otherwise a partition-only difference would be DIFFERENT to
+     * `schema compare` yet identical to the fingerprint. Child partitions are sorted
+     * by name (set equality — declaration order is not semantic).
+     *
+     * v5: child-local partition indices are now projected too (AP2a). The reverse
+     * reader captures indices defined directly on a partition (not parent-propagated)
+     * and the comparator compares them structurally, so the fingerprint includes them
+     * for the same comparator/drift agreement reason as v4.
+     *
+     * v6: index `textSearchConfig` is now projected (ADR 0025) — it is semantic (changes the
+     * text analysis). A FULLTEXT index's backing tsvector column and access method are NOT
+     * projected: they are generate-only reconstruction hints (also excluded from
+     * `TableComparator.projectIndex`), so a hint-only difference does not read as a change.
+     *
+     * v7 (postcompare-type-canonicalization slice): four canonicalisations so a
+     * per-dialect-lossless round trip hashes identically to its reverse:
+     *
+     * 1. **Column types** run through an injected `canonicalizeType` projection
+     *    (default identity). The migrate/rollback call sites pass the TARGET
+     *    dialect's [dev.dmigrate.driver] `NeutralTypeCanonicalizer`, folding types
+     *    the dialect flattens onto one declared type (SQLite: `smallint`→`integer`,
+     *    `datetime`→`text`, …). Deliberate divergence from `SchemaComparator`:
+     *    `schema compare` stays structurally strict (a wanted `smallint→integer`
+     *    IS a difference there) — the fingerprint with a canonicaliser answers
+     *    "does the TARGET distinguish these?", the comparator answers "does the
+     *    MODEL?".
+     * 2. **Single-column UNIQUE fold** — a named single-column UNIQUE constraint
+     *    projects as the column's `unique` flag (constraint name dropped), exactly
+     *    mirroring `TableComparator.normalizeConstraints`.
+     * 3. **Single-column FOREIGN-KEY fold** — a named single-column FK constraint
+     *    (single-column target) projects as the column's `references` (mirrors the
+     *    comparator's `ForeignKeySignature` absorption; live-belegt: authored
+     *    column-level `references:` vs. reverse-materialised named constraint
+     *    drifted on every dialect). A signature that DIVERGES from an existing
+     *    column-level reference stays a distinct constraint.
+     * 4. **Effective required** — `required` projects as
+     *    `required || column ∈ effectivePrimaryKey` (PK ⇒ NOT NULL; the PG reverse
+     *    materialises it, the desired parser does not — same asymmetry family as
+     *    the v3 effective PK).
+     *
+     * Plan: `docs/planning/done/postcompare-type-canonicalization-slice.md`.
+     */
+    const val ALGORITHM: String = "schema-fingerprint-v7"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
 
-    /** SHA-256 hex of the canonical projection. */
-    fun compute(schema: SchemaDefinition): String =
-        sha256Hex(project(schema))
+    /**
+     * SHA-256 hex of the canonical projection. [canonicalizeType] is the target
+     * dialect's neutral-type projection (v7); the identity default keeps the
+     * fingerprint dialect-neutral for callers without a target-dialect context.
+     */
+    fun compute(
+        schema: SchemaDefinition,
+        canonicalizeType: (NeutralType) -> NeutralType = { it },
+    ): String = sha256Hex(project(schema, canonicalizeType))
 
     /**
      * Returns the canonical projection string. Public for diagnostics.
@@ -83,11 +159,14 @@ object MigrationFingerprint {
      * them too — both code paths must agree on what counts as
      * "schema state".
      */
-    fun project(schema: SchemaDefinition): String {
+    fun project(
+        schema: SchemaDefinition,
+        canonicalizeType: (NeutralType) -> NeutralType = { it },
+    ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
         appendCustomTypes(sb, schema.customTypes)
-        appendTables(sb, schema.tables)
+        appendTables(sb, schema.tables, canonicalizeType)
         appendViews(sb, schema.views)
         appendSequences(sb, schema.sequences)
         appendFunctions(sb, schema.functions)
@@ -114,33 +193,36 @@ object MigrationFingerprint {
 
     // ── Tables ──────────────────────────────────────────────────────
 
-    private fun appendTables(sb: StringBuilder, tables: Map<String, TableDefinition>) {
+    private fun appendTables(
+        sb: StringBuilder,
+        tables: Map<String, TableDefinition>,
+        canonicalizeType: (NeutralType) -> NeutralType,
+    ) {
         sb.append("tables[").append(tables.size).append("]\n")
         for ((name, table) in tables.entries.sortedBy { it.key }) {
             sb.append("table=").append(name).append('\n')
+            val effectivePk = effectivePrimaryKey(table)
+            val folded = foldConstraints(table)
             sb.append("  columns[").append(table.columns.size).append("]\n")
             for ((colName, col) in table.columns.entries.sortedBy { it.key }) {
                 sb.append("    column=").append(colName)
-                    .append(SEP).append("type=").append(neutralType(col.type))
-                    .append(SEP).append("required=").append(col.required)
-                    .append(SEP).append("unique=").append(col.unique)
+                    .append(SEP).append("type=").append(neutralType(canonicalizeType(col.type)))
+                    // v7: PK ⇒ NOT NULL — required projects as its effective value.
+                    .append(SEP).append("required=").append(col.required || colName in effectivePk)
+                    // v7: single-column UNIQUE constraints fold onto the column flag.
+                    .append(SEP).append("unique=").append(col.unique || colName in folded.uniqueColumns)
                     .append(SEP).append("default=").append(defaultValue(col.default))
-                    .append(SEP).append("references=").append(reference(col.references))
+                    // v7: single-column FK constraints fold onto the column reference.
+                    .append(SEP).append("references=")
+                    .append(reference(col.references).ifEmpty { folded.foldedFkByColumn[colName] ?: "" })
                     .append(SEP).append("generation=").append(generation(col.generation))
                     .append('\n')
             }
-            sb.append("  primary_key=").append(table.primaryKey.joinToString(",")).append('\n')
+            sb.append("  primary_key=").append(effectivePk.joinToString(",")).append('\n')
             sb.append("  indices[").append(table.indices.size).append("]\n")
-            for (idx in table.indices.sortedWith(indexOrder)) {
-                sb.append("    index=").append(idx.name ?: "")
-                    .append(SEP).append("columns=").append(idx.columns.joinToString(","))
-                    .append(SEP).append("type=").append(idx.type.name)
-                    .append(SEP).append("unique=").append(idx.unique)
-                    .append(SEP).append("where=").append(idx.where ?: "")
-                    .append('\n')
-            }
-            sb.append("  constraints[").append(table.constraints.size).append("]\n")
-            for (c in table.constraints.sortedBy { it.name }) {
+            for (idx in table.indices.sortedWith(indexOrder)) appendIndex(sb, "    ", "index", idx)
+            sb.append("  constraints[").append(folded.remaining.size).append("]\n")
+            for (c in folded.remaining.sortedBy { it.name }) {
                 sb.append("    constraint=").append(c.name)
                     .append(SEP).append("type=").append(c.type.name)
                     .append(SEP).append("columns=").append(c.columns?.joinToString(",") ?: "")
@@ -149,11 +231,162 @@ object MigrationFingerprint {
                     .append(c.references?.let { "${it.table}[${it.columns.joinToString(",")}]" } ?: "")
                     .append('\n')
             }
+            appendPartitioning(sb, table.partitioning)
         }
     }
 
+    private data class FoldedConstraints(
+        val uniqueColumns: Set<String>,
+        /** Column name → projected reference string (same shape as [reference]). */
+        val foldedFkByColumn: Map<String, String>,
+        val remaining: List<ConstraintDefinition>,
+    )
+
+    /**
+     * v7 canonicalisation: mirrors `TableComparator.normalizeConstraints`. The
+     * reverse readers materialise single-column UNIQUE/FK as **named
+     * constraints**, authored YAML uses the column-level `unique:`/`references:`
+     * shorthand — semantically identical, and the constraint name is not
+     * observable state on every dialect (SQLite synthesises `fk_N`). Absorbed
+     * constraints leave the constraints block; a single-column FK whose
+     * signature DIVERGES from an existing column-level reference (or an earlier
+     * absorbed one) stays a distinct constraint, mirroring the comparator.
+     */
+    private fun foldConstraints(table: TableDefinition): FoldedConstraints {
+        val unique = mutableSetOf<String>()
+        val fkByCol = mutableMapOf<String, String>()
+        val remaining = mutableListOf<ConstraintDefinition>()
+        for (c in table.constraints) {
+            // Fold only onto columns that exist — a constraint on an unknown column
+            // must stay in the block, not silently vanish from the projection.
+            val cols = c.columns?.takeIf { it.size == 1 && it.first() in table.columns }
+            when {
+                c.type == ConstraintType.UNIQUE && cols != null ->
+                    unique += cols.first()
+
+                c.type == ConstraintType.FOREIGN_KEY && cols != null &&
+                    c.references != null && c.references.columns.size == 1 -> {
+                    val colName = cols.first()
+                    val sig = fkSignature(c.references)
+                    val columnRef = table.columns[colName]?.references?.let(::reference)?.ifEmpty { null }
+                    val existing = columnRef ?: fkByCol[colName]
+                    if (existing != null && existing != sig) {
+                        remaining += ConstraintDiffContract.comparable(c)
+                    } else {
+                        fkByCol[colName] = sig
+                    }
+                }
+
+                // Comparator-Parität auch für den Rest: CHECK-/EXCLUDE-Expressions
+                // werden wie in TableComparator.normalizeConstraints kanonisiert
+                // (CRLF→LF + trim), sonst driftet der Hash auf reiner Textform.
+                else -> remaining += ConstraintDiffContract.comparable(c)
+            }
+        }
+        return FoldedConstraints(unique, fkByCol, remaining)
+    }
+
+    /** Single-column FK signature — delegiert an [reference], damit es genau EIN
+     *  String-Format gibt, gegen das der Fold vergleicht. */
+    private fun fkSignature(ref: ConstraintReferenceDefinition): String =
+        reference(
+            ReferenceDefinition(
+                table = ref.table,
+                column = ref.columns.first(),
+                onDelete = ref.onDelete,
+                onUpdate = ref.onUpdate,
+            ),
+        )
+
+    // v4: project partitioning (strategy, key, child partitions). Children are
+    // sorted by name (set equality, ADR 0019); bounds render in the same canonical
+    // encoding the reverse parser / generator share, so an unchanged partitioned
+    // table hashes identically across a round-trip.
+    private fun appendPartitioning(sb: StringBuilder, partitioning: PartitionConfig?) {
+        if (partitioning == null) {
+            sb.append("  partitioning=none\n")
+            return
+        }
+        sb.append("  partitioning=").append(partitioning.type.name)
+            .append(SEP).append("key=").append(partitioning.key.joinToString(","))
+            .append(SEP).append("partitions[").append(partitioning.partitions.size).append("]\n")
+        for (part in partitioning.partitions.sortedBy { it.name }) {
+            sb.append("    partition=").append(part.name)
+                .append(SEP).append("default=").append(part.isDefault)
+                .append(SEP).append("from=").append(bounds(part.from))
+                .append(SEP).append("to=").append(bounds(part.to))
+                .append(SEP).append("values=")
+                .append(part.values?.let { if (it.isEmpty()) EMPTY_LIST_MARKER else it.joinToString(",") } ?: "")
+                .append(SEP).append("modulus=").append(part.modulus ?: "")
+                .append(SEP).append("remainder=").append(part.remainder ?: "")
+                .append('\n')
+            // v5/AP2a: child-local indices, same shape as the table-level index
+            // projection, sorted by the shared indexOrder (declaration order is
+            // not semantic). Lets the fingerprint agree with the comparator,
+            // which compares partition.indices as a set.
+            for (idx in part.indices.sortedWith(indexOrder)) appendIndex(sb, "      ", "partition_index", idx)
+        }
+    }
+
+    /** Shared index projection — same field shape for table-level and partition-local indices. */
+    private fun appendIndex(sb: StringBuilder, indent: String, label: String, idx: IndexDefinition) {
+        sb.append(indent).append(label).append('=').append(idx.name ?: "")
+            .append(SEP).append("columns=").append(idx.columns.joinToString(","))
+            .append(SEP).append("type=").append(idx.type.name)
+            .append(SEP).append("unique=").append(idx.unique)
+            .append(SEP).append("where=").append(idx.where ?: "")
+            // v6 (ADR 0025): a FULLTEXT index's text-search config is semantic (it changes
+            // the analysis), so it is projected here — the comparator distinguishes it via
+            // data-class equality, and the fingerprint must agree. The backing tsvector
+            // column and access method are deliberately NOT projected: they are generate-only
+            // reconstruction hints (excluded from `TableComparator.projectIndex` too), so a
+            // hint-only difference must not read as DIFFERENT to `schema compare`.
+            .append(SEP).append("textSearchConfig=").append(idx.textSearchConfig ?: "")
+            .append('\n')
+    }
+
+    /**
+     * A null bound list (non-RANGE strategies have no `from`/`to`) projects to
+     * the empty string; an *explicitly empty* list projects to [EMPTY_LIST_MARKER].
+     * The comparator distinguishes `null` from `[]` via data-class equality, so the
+     * fingerprint must too — otherwise a partition-only difference could be
+     * DIFFERENT to `schema compare` yet identical to the drift check. The empty
+     * case is unreachable from the reverse reader (RANGE always yields non-empty
+     * bounds), so no real partition's projection changes.
+     */
+    private fun bounds(list: List<PartitionBound>?): String = when {
+        list == null -> ""
+        list.isEmpty() -> EMPTY_LIST_MARKER
+        else -> list.joinToString(",") { bound ->
+            when (bound) {
+                PartitionBound.MinValue -> "MINVALUE"
+                PartitionBound.MaxValue -> "MAXVALUE"
+                is PartitionBound.Value -> bound.literal
+            }
+        }
+    }
+
+    private const val EMPTY_LIST_MARKER = "<empty>"
+
     private val indexOrder = compareBy<IndexDefinition> { it.name ?: "" }
         .thenBy { it.columns.joinToString(",") }
+
+    /**
+     * v3 canonicalisation: the *effective* primary key. An explicit `primary_key`
+     * wins as-is. Otherwise the PK is derived from an `identifier`-typed column
+     * (`spec/neutral-model-spec.md` 13.1 — `identifier` carries PK semantics), so a
+     * desired schema that omits `primary_key` hashes identically to the reverse,
+     * which always materialises the PK explicitly.
+     *
+     * Precise rule — derive ONLY when there is **exactly one** `identifier` column
+     * and `primaryKey` is empty. Multiple `identifier` columns make the implicit PK
+     * **ambiguous**; we must NOT invent one (the schemas should still drift). An
+     * explicit `primary_key` that diverges from the `identifier` column is left
+     * untouched (non-empty → used verbatim), so divergent/composite PKs keep
+     * producing distinct projections.
+     */
+    private fun effectivePrimaryKey(table: TableDefinition): List<String> =
+        EffectivePrimaryKey.of(table)
 
     // ── Views ───────────────────────────────────────────────────────
 
@@ -233,7 +466,7 @@ object MigrationFingerprint {
         for ((name, trg) in trs.entries.sortedBy { it.key }) {
             sb.append("trigger=").append(name)
                 .append(SEP).append("table=").append(trg.table)
-                .append(SEP).append("event=").append(trg.event.name)
+                .append(SEP).append("event=").append(trg.events.canonicalOrder().joinToString(",") { it.name })
                 .append(SEP).append("timing=").append(trg.timing.name)
                 .append(SEP).append("for_each=").append(trg.forEach.name)
                 .append(SEP).append("condition=").append(trg.condition ?: "")
@@ -270,6 +503,7 @@ object MigrationFingerprint {
         NeutralType.Xml -> "xml"
         NeutralType.Binary -> "binary"
         NeutralType.Email -> "email"
+        NeutralType.FullText -> "fulltext"
         else -> error("simpleNeutralType called for non-simple variant: $t")
     }
 

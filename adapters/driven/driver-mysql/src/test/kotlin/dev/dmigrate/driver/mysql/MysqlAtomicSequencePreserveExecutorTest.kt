@@ -10,6 +10,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import java.sql.Connection
 import java.sql.SQLException
 
@@ -39,7 +40,7 @@ class MysqlAtomicSequencePreserveExecutorTest : FunSpec({
             internalFollowUpIds = emptyList(),
         )
         var callbackInvoked = false
-        val result = executor.execute(unusedConnection, batch, lockTimeoutMillis = 5_000) { _, _ ->
+        val result = executor.execute(JdbcDatabaseConnection(unusedConnection), batch, lockTimeoutMillis = 5_000) { _, _ ->
             callbackInvoked = true
             AtomicProtectedExecutionResult.Succeeded(0)
         }
@@ -55,12 +56,12 @@ class MysqlAtomicSequencePreserveExecutorTest : FunSpec({
             internalFollowUpIds = emptyList(),
         )
         shouldThrow<IllegalArgumentException> {
-            executor.execute(unusedConnection, batch, lockTimeoutMillis = 0L) { _, _ ->
+            executor.execute(JdbcDatabaseConnection(unusedConnection), batch, lockTimeoutMillis = 0L) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(0)
             }
         }
         shouldThrow<IllegalArgumentException> {
-            executor.execute(unusedConnection, batch, lockTimeoutMillis = -1L) { _, _ ->
+            executor.execute(JdbcDatabaseConnection(unusedConnection), batch, lockTimeoutMillis = -1L) { _, _ ->
                 AtomicProtectedExecutionResult.Succeeded(0)
             }
         }

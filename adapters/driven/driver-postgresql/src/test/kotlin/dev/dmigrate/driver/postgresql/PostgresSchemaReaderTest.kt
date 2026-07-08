@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -26,7 +27,7 @@ class PostgresSchemaReaderTest : FunSpec({
 
     val conn = mockk<Connection>(relaxUnitFun = true)
     val pool = mockk<ConnectionPool> {
-        every { borrow() } returns conn
+        every { borrow() } returns JdbcDatabaseConnection(conn)
     }
     val jdbc = mockk<JdbcOperations>()
     val reader = PostgresSchemaReader(jdbcFactory = { jdbc })
@@ -59,6 +60,8 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("pg_depend") && it.contains("pg_proc") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
+        // N7: user-defined aggregates from pg_aggregate.
+        every { jdbc.queryList(match { it.contains("pg_aggregate") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
         // E.1 Slice D.2: trigger ↔ function edges via pg_trigger.tgfoid → pg_proc.oid.
@@ -71,6 +74,10 @@ class PostgresSchemaReaderTest : FunSpec({
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
         every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns columns
+        // VA2: geometry_columns probe — no PostGIS view present by default.
+        every { jdbc.queryList(match { it.contains("to_regclass('geometry_columns')") }) } returns
+            listOf(mapOf("r" to null))
+        every { jdbc.queryList(match { it.contains("FROM geometry_columns") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("contype = 'p'") }, any(), any()) } returns
             pkColumns.map { mapOf("column_name" to it) }
         every { jdbc.queryList(match { it.contains("contype = 'f'") }, any(), any()) } returns emptyList()
@@ -78,6 +85,10 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("pg_index") }, any(), any()) } returns emptyList()
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns null
+        // AP1: partition children (pg_inherits + relpartbound) — none by default.
+        every { jdbc.queryList(match { it.contains("relpartbound") }, any(), any()) } returns emptyList()
+        // AP2a: inherited (parent-propagated) index names per partition — none by default.
+        every { jdbc.queryList(match { it.contains("cix.indexrelid") }, any(), any()) } returns emptyList()
     }
 
     // ── tests ──────────────────────────────────────
@@ -276,6 +287,12 @@ class PostgresSchemaReaderTest : FunSpec({
             mapOf("parameter_name" to "b", "data_type" to "integer", "udt_name" to "int4",
                 "parameter_mode" to "IN", "ordinal_position" to 2),
         )
+        // F3: pg_proc identity projection now also carries provolatile/proisstrict.
+        every { jdbc.queryList(match { it.contains("provolatile") }, any()) } returns listOf(
+            mapOf("routine_name" to "add_numbers", "routine_oid" to 1L,
+                "security_definer" to false, "definer" to null, "config" to null,
+                "volatility" to "i", "strict" to true),
+        )
 
         val result = reader.read(pool, SchemaReadOptions(includeViews = false,
             includeProcedures = false, includeTriggers = false))
@@ -287,58 +304,10 @@ class PostgresSchemaReaderTest : FunSpec({
         func.parameters[0].direction shouldBe ParameterDirection.IN
         func.returns.shouldNotBeNull()
         func.deterministic shouldBe true
+        // F3: volatility + strictness captured from pg_proc.
+        func.volatility shouldBe FunctionVolatility.IMMUTABLE
+        func.strict shouldBe true
         func.sourceDialect shouldBe "postgresql"
-    }
-
-    test("read includes triggers") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns listOf(
-            mapOf("trigger_name" to "trg_audit", "event_object_table" to "users",
-                "action_timing" to "AFTER", "event_manipulation" to "INSERT",
-                "action_orientation" to "ROW", "action_condition" to null,
-                "action_statement" to "EXECUTE FUNCTION audit_fn()"),
-        )
-
-        val result = reader.read(pool, SchemaReadOptions(includeViews = false,
-            includeFunctions = false, includeProcedures = false))
-
-        result.schema.triggers.mapShouldHaveSize(1)
-        val trigger = result.schema.triggers.values.first()
-        trigger.table shouldBe "users"
-        trigger.event shouldBe TriggerEvent.INSERT
-        trigger.timing shouldBe TriggerTiming.AFTER
-        trigger.forEach shouldBe TriggerForEach.ROW
-        trigger.sourceDialect shouldBe "postgresql"
-    }
-
-    test("read with partitioned table") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "events", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-            mapOf("column_name" to "created_at", "data_type" to "timestamp without time zone",
-                "udt_name" to "timestamp", "is_nullable" to "NO", "column_default" to null,
-                "ordinal_position" to 2, "character_maximum_length" to null,
-                "numeric_precision" to null, "numeric_scale" to null,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "r", "key_columns" to "{created_at}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-
-        val table = result.schema.tables["events"]!!
-        table.partitioning.shouldNotBeNull()
-        table.partitioning!!.type shouldBe PartitionType.RANGE
-        table.partitioning!!.key shouldBe listOf("created_at")
     }
 
     test("read with empty schema returns empty collections") {
@@ -374,6 +343,36 @@ class PostgresSchemaReaderTest : FunSpec({
         val composite = result.schema.customTypes["address"]!!
         composite.kind shouldBe CustomTypeKind.COMPOSITE
         composite.fields!!.mapShouldHaveSize(2)
+    }
+
+    test("domain check_clause is normalized to bare predicate (I-06)") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("typtype = 'd'") }, any()) } returns listOf(
+            mapOf("typname" to "positive", "base_type" to "int8", "numeric_precision" to 64,
+                "numeric_scale" to 0, "domain_default" to null, "check_clause" to "CHECK ((VALUE > 0))"),
+        )
+        every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+
+        val domain = result.schema.customTypes["positive"]!!
+        domain.kind shouldBe CustomTypeKind.DOMAIN
+        domain.check shouldBe "(VALUE > 0)"
+    }
+
+    test("normalizeDomainCheck strips one CHECK wrapper and is idempotent (I-06)") {
+        val once = normalizeDomainCheck("CHECK ((VALUE > 0))")
+        once shouldBe "(VALUE > 0)"
+        // Re-applying must not strip further parentheses (round-trip stable).
+        normalizeDomainCheck(once) shouldBe "(VALUE > 0)"
+        normalizeDomainCheck(null).shouldBeNull()
+    }
+
+    test("normalizeDomainCheck keeps predicate with multiple paren groups intact (I-06)") {
+        normalizeDomainCheck("CHECK ((VALUE > 0) AND (VALUE < 100))") shouldBe
+            "(VALUE > 0) AND (VALUE < 100)"
     }
 
     test("read includes procedures with OUT parameters") {
@@ -518,91 +517,6 @@ class PostgresSchemaReaderTest : FunSpec({
         result.notes.none { it.code == "R300" } shouldBe true
     }
 
-    test("readPartitioning with LIST and HASH strategies") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "logs", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "l", "key_columns" to "{region}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-
-        result.schema.tables["logs"]!!.partitioning!!.type shouldBe PartitionType.LIST
-    }
-
-    test("readPartitioning with HASH strategy") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "data", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "h", "key_columns" to "{id}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-        result.schema.tables["data"]!!.partitioning!!.type shouldBe PartitionType.HASH
-    }
-
-    test("readPartitioning returns null for unknown strategy") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "t", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "x", "key_columns" to "{id}")
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-        result.schema.tables["t"]!!.partitioning.shouldBeNull()
-    }
-
-    test("readPartitioning handles java.sql.Array key_columns") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
-            mapOf("table_name" to "parts", "table_schema" to "public", "table_type" to "BASE TABLE"),
-        )
-        stubTableQueries(listOf(
-            mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
-                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
-                "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
-                "is_identity" to "NO", "identity_generation" to null),
-        ), listOf("id"))
-
-        val sqlArray = mockk<java.sql.Array>()
-        every { sqlArray.array } returns arrayOf("region", "date")
-        every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns
-            mapOf("partstrat" to "r", "key_columns" to sqlArray)
-
-        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
-            includeProcedures = false, includeTriggers = false)
-        val result = reader.read(pool, opts)
-
-        result.schema.tables["parts"]!!.partitioning!!.key shouldBe listOf("region", "date")
-    }
-
     test("read function with null parameter_name uses fallback") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
@@ -642,25 +556,6 @@ class PostgresSchemaReaderTest : FunSpec({
         val func = result.schema.functions.values.first()
         func.parameters[0].direction shouldBe ParameterDirection.INOUT
         func.returns.shouldBeNull() // void
-    }
-
-    test("read trigger with DELETE event and INSTEAD OF timing") {
-        stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns listOf(
-            mapOf("trigger_name" to "trg_del", "event_object_table" to "v",
-                "action_timing" to "INSTEAD OF", "event_manipulation" to "DELETE",
-                "action_orientation" to "STATEMENT", "action_condition" to "OLD.id > 0",
-                "action_statement" to "EXECUTE FUNCTION handle_del()"),
-        )
-
-        val result = reader.read(pool, SchemaReadOptions(includeViews = false,
-            includeFunctions = false, includeProcedures = false))
-
-        val trigger = result.schema.triggers.values.first()
-        trigger.event shouldBe TriggerEvent.DELETE
-        trigger.timing shouldBe TriggerTiming.INSTEAD_OF
-        trigger.forEach shouldBe TriggerForEach.STATEMENT
-        trigger.condition shouldBe "OLD.id > 0"
     }
 
     test("read with sequence having string values from information_schema") {

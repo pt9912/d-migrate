@@ -1,12 +1,10 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
-import dev.dmigrate.core.model.ColumnDefinition
-import dev.dmigrate.core.model.ConstraintDefinition
-import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
-import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.driver.SpatialProfile
+import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -20,37 +18,41 @@ internal object SqliteDiffSimpleOps {
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: SqliteDiffRenderContext) {
         val tableName = op.objectRef.rootName
         if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // ADR 0025 (Slice P4): an FTS5 virtual table + its three sync triggers are separate
+            // schema objects — `DROP TABLE` of the base table leaves them orphaned — so tear them
+            // down first for rollback symmetry with the UP-side expansion.
+            for (idx in op.table.indices) {
+                if (idx.type == IndexType.FULLTEXT) SqliteFullTextExpansion.emitDrop(op, ctx, tableName, idx)
+            }
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
             return
         }
-        if (op.table.hasGeometryColumns() &&
-            !guardSpatiaLite(op, ctx, "geometry columns on table `$tableName`")
+        if (SqliteSpatialDiffOps.hasGeometryColumns(op.table) &&
+            !SqliteSpatialDiffOps.guardSpatiaLite(op, ctx, "geometry columns on table `$tableName`")
         ) {
             return
         }
-        if (op.table.hasGeometryColumns()) {
-            val blocked = spatialMetadataBlock(op.table)
+        if (SqliteSpatialDiffOps.hasGeometryColumns(op.table)) {
+            val blocked = SqliteSpatialDiffOps.spatialMetadataBlock(op.table)
             if (blocked != null) {
-                blockSpatialMetadata(op, ctx, tableName, blocked)
+                SqliteSpatialDiffOps.blockSpatialMetadata(op, ctx, tableName, blocked)
                 return
             }
         }
         val lines = mutableListOf<String>()
-        val effectiveColumns = if (op.table.hasGeometryColumns()) {
+        val effectiveColumns = if (SqliteSpatialDiffOps.hasGeometryColumns(op.table)) {
             op.table.columns.filterValues { it.type !is NeutralType.Geometry }
         } else {
             op.table.columns
         }
         if (effectiveColumns.isEmpty()) {
-            blockSpatialMetadata(op, ctx, tableName, "geometry-only table requires a non-spatial base column")
+            SqliteSpatialDiffOps.blockSpatialMetadata(op, ctx, tableName, "geometry-only table requires a non-spatial base column")
             return
         }
-        for ((colName, col) in effectiveColumns.entries.sortedBy { it.key }) {
+        for ((colName, col) in effectiveColumns.inOrdinalOrder()) {
             lines += "    " + ctx.sql.columnLine(colName, col)
         }
-        if (op.table.primaryKey.isNotEmpty()) {
-            lines += "    PRIMARY KEY (" + op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) } + ")"
-        }
+        ctx.sql.primaryKeyClause(op.table)?.let { lines += "    $it" }
         for (c in op.table.constraints.sortedBy { it.name }) {
             ctx.sql.constraintLine(c)?.let { lines += "    $it" }
         }
@@ -60,13 +62,36 @@ internal object SqliteDiffSimpleOps {
             append("\n);")
         }
         ctx.emit(op, text)
-        for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
             if (col.type is NeutralType.Geometry) {
-                ctx.emit(op, addGeometryColumnSql(tableName, colName, col))
+                SqliteSpatialDiffOps.ensureSpatialMetadataBootstrap(op, ctx)
+                ctx.emit(op, SqliteSpatialDiffOps.addGeometryColumnSql(tableName, colName, col))
             }
+            SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
         }
         for (idx in op.table.indices) {
-            ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+            // ADR 0025 (Slice P4): a FULLTEXT index expands to an FTS5 virtual table + three sync
+            // triggers (SqliteFullTextExpansion) — checked FIRST because it lists its source TEXT
+            // columns, which the geometry router below must not see.
+            if (idx.type == IndexType.FULLTEXT) {
+                SqliteFullTextExpansion.emitCreate(op, ctx, tableName, idx)
+                continue
+            }
+            // VA4/5d Befund 2: ein Index auf einer Geometriespalte muss auch im
+            // CreateTable-Diff-Pfad als SpatiaLite `CreateSpatialIndex` (R*Tree)
+            // emittiert werden — nicht als generischer `CREATE INDEX` (der auf eine
+            // erst per AddGeometryColumn entstehende Spalte zeigte). Der
+            // SPATIALITE-Profil-/Extension-Guard ist hier bereits durch den
+            // hasGeometryColumns-Block oben (guardSpatiaLite) garantiert, sonst wäre
+            // dieser Pfad nicht erreicht. ADR 0025: das geteilte Prädikat schließt FULLTEXT aus
+            // (sonst würde ein FULLTEXT-Index über einer Geo-Quellspalte fälschlich als
+            // Spatial-Index emittiert statt via createIndexSql mit W132 degradiert).
+            if (idx.isSpatialGeometryIndex { op.table.columns[it]?.type }) {
+                val geomCol = idx.columnNames.first { op.table.columns[it]?.type is NeutralType.Geometry }
+                SqliteSpatialDiffOps.emitCreateSpatialIndex(op, ctx, tableName, geomCol)
+            } else {
+                ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+            }
         }
     }
 
@@ -85,8 +110,8 @@ internal object SqliteDiffSimpleOps {
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             // SQLite ≥ 3.35.0 supports DROP COLUMN. The runner enforces the version policy.
             if (op.column.type is NeutralType.Geometry) {
-                if (!guardSpatiaLite(op, ctx, "geometry column `$table.$column`")) return
-                ctx.emit(op, discardGeometryColumnSql(table, column))
+                if (!SqliteSpatialDiffOps.guardSpatiaLite(op, ctx, "geometry column `$table.$column`")) return
+                ctx.emit(op, SqliteSpatialDiffOps.discardGeometryColumnSql(table, column))
                 return
             }
             // 0.9.7 G5: drop the sequence-support trigger pair before
@@ -96,20 +121,22 @@ internal object SqliteDiffSimpleOps {
             return
         }
         if (op.column.type is NeutralType.Geometry &&
-            !guardSpatiaLite(op, ctx, "geometry column `$table.$column`")
+            !SqliteSpatialDiffOps.guardSpatiaLite(op, ctx, "geometry column `$table.$column`")
         ) {
             return
         }
         if (op.column.type is NeutralType.Geometry) {
-            val blocked = geometryColumnMetadataBlock(column, op.column)
+            val blocked = SqliteSpatialDiffOps.geometryColumnMetadataBlock(column, op.column)
             if (blocked != null) {
-                blockSpatialMetadata(op, ctx, table, blocked)
+                SqliteSpatialDiffOps.blockSpatialMetadata(op, ctx, table, blocked)
                 return
             }
-            ctx.emit(op, addGeometryColumnSql(table, column, op.column))
+            SqliteSpatialDiffOps.ensureSpatialMetadataBootstrap(op, ctx)
+            ctx.emit(op, SqliteSpatialDiffOps.addGeometryColumnSql(table, column, op.column))
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+        SqliteEnumDegradation.warnIfEnum(op, ctx, column, op.column)
         // 0.9.7 G5: when the new column carries SequenceNextVal,
         // emit the `_bi`/`_ai` trigger pair against the sequence
         // declared in the target schema. action_required mode is a
@@ -122,8 +149,8 @@ internal object SqliteDiffSimpleOps {
     fun renderDropColumn(op: DiffOperation.DropColumn, ctx: SqliteDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         if (op.column.type is NeutralType.Geometry) {
-            if (!guardSpatiaLite(op, ctx, "geometry column `$table.$column`")) return
-            ctx.emit(op, discardGeometryColumnSql(table, column))
+            if (!SqliteSpatialDiffOps.guardSpatiaLite(op, ctx, "geometry column `$table.$column`")) return
+            ctx.emit(op, SqliteSpatialDiffOps.discardGeometryColumnSql(table, column))
             return
         }
         // 0.9.7 G5: drop the sequence-support trigger pair before
@@ -177,11 +204,29 @@ internal object SqliteDiffSimpleOps {
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // ADR 0025 (Slice P4): the UP expanded the FULLTEXT index to an FTS5 virtual table +
+            // three sync triggers, so the DOWN tears exactly those down (not a `DROP INDEX` — no
+            // plain index was ever materialised).
+            if (op.index.type == IndexType.FULLTEXT) {
+                SqliteFullTextExpansion.emitDrop(op, ctx, table, op.index)
+                return
+            }
+            if (ctx.indexTouchesGeometry(table, op.index)) {
+                SqliteSpatialDiffOps.disableSpatialIndex(op, ctx, table, op.index)
+                return
+            }
             ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
             return
         }
+        // ADR 0025 (Slice P4): expand a FULLTEXT index to an FTS5 virtual table + three sync
+        // triggers (SqliteFullTextExpansion) BEFORE the geometry check — its source columns are
+        // text, so the geometry routing must not see it.
+        if (op.index.type == IndexType.FULLTEXT) {
+            SqliteFullTextExpansion.emitCreate(op, ctx, table, op.index)
+            return
+        }
         if (ctx.indexTouchesGeometry(table, op.index)) {
-            blockSpatialIndex(op, ctx, table)
+            SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
             return
         }
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
@@ -190,11 +235,26 @@ internal object SqliteDiffSimpleOps {
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // ADR 0025 (Slice P4): the UP dropped the FTS5 structure, so the DOWN rebuilds it.
+            if (op.index.type == IndexType.FULLTEXT) {
+                SqliteFullTextExpansion.emitCreate(op, ctx, table, op.index)
+                return
+            }
             if (ctx.indexTouchesGeometry(table, op.index)) {
-                blockSpatialIndex(op, ctx, table)
+                SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
                 return
             }
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
+            return
+        }
+        // ADR 0025 (Slice P4): drop the FTS5 virtual table + three sync triggers (not a plain
+        // DROP INDEX — no plain index exists for a FULLTEXT index).
+        if (op.index.type == IndexType.FULLTEXT) {
+            SqliteFullTextExpansion.emitDrop(op, ctx, table, op.index)
+            return
+        }
+        if (ctx.indexTouchesGeometry(table, op.index)) {
+            SqliteSpatialDiffOps.disableSpatialIndex(op, ctx, table, op.index)
             return
         }
         ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
@@ -253,92 +313,4 @@ internal object SqliteDiffSimpleOps {
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
-
-    private fun TableDefinition.hasGeometryColumns(): Boolean =
-        columns.values.any { it.type is NeutralType.Geometry }
-
-    private fun guardSpatiaLite(op: DiffOperation, ctx: SqliteDiffRenderContext, detail: String): Boolean {
-        if (ctx.options.spatialProfile != SpatialProfile.SPATIALITE) {
-            ctx.skip(
-                op,
-                "Operation ${op.id} requires SQLite spatial profile SPATIALITE for $detail; " +
-                    "current profile is ${ctx.options.spatialProfile.name}.",
-                code = "SPATIAL_PROFILE_REQUIRED",
-            )
-            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-            return false
-        }
-        return ctx.requireExtension(op, SPATIALITE_EXTENSION, detail)
-    }
-
-    private fun spatialMetadataBlock(table: TableDefinition): String? {
-        val geometryColumnNames = table.columns.filterValues { it.type is NeutralType.Geometry }.keys
-        for ((columnName, column) in table.columns) {
-            if (column.type is NeutralType.Geometry) {
-                geometryColumnMetadataBlock(columnName, column)?.let { return it }
-                if (columnName in table.primaryKey) {
-                    return "geometry column `$columnName` participates in the primary key"
-                }
-            }
-        }
-        table.constraints.firstConstraintGeometryColumn(geometryColumnNames)?.let { column ->
-            return "table-level constraint references geometry column `$column`"
-        }
-        table.indices.firstIndexGeometryColumn(geometryColumnNames)?.let { column ->
-            return "index references geometry column `$column`"
-        }
-        return null
-    }
-
-    private fun geometryColumnMetadataBlock(columnName: String, column: ColumnDefinition): String? = when {
-        column.required -> "geometry column `$columnName` is NOT NULL"
-        column.unique -> "geometry column `$columnName` is UNIQUE"
-        column.default != null -> "geometry column `$columnName` has a DEFAULT"
-        column.references != null -> "geometry column `$columnName` has a foreign key reference"
-        else -> null
-    }
-
-    private fun List<ConstraintDefinition>.firstConstraintGeometryColumn(geometryColumnNames: Set<String>): String? =
-        firstNotNullOfOrNull { constraint -> constraint.columns.orEmpty().firstOrNull { it in geometryColumnNames } }
-
-    private fun List<IndexDefinition>.firstIndexGeometryColumn(geometryColumnNames: Set<String>): String? =
-        firstNotNullOfOrNull { index -> index.columnNames.firstOrNull { it in geometryColumnNames } }
-
-    private fun blockSpatialMetadata(
-        op: DiffOperation,
-        ctx: SqliteDiffRenderContext,
-        table: String,
-        reason: String,
-    ) {
-        ctx.skip(
-            op,
-            "Operation ${op.id} cannot render SpatiaLite metadata for `$table`: $reason.",
-            code = "SPATIAL_METADATA_UNSUPPORTED",
-        )
-        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-    }
-
-    private fun blockSpatialIndex(op: DiffOperation, ctx: SqliteDiffRenderContext, table: String) {
-        ctx.skip(
-            op,
-            "Operation ${op.id} targets an index on a geometry column in `$table`. SpatiaLite spatial " +
-                "indexes require explicit spatial-index metadata not represented by the neutral index model.",
-            code = "SPATIAL_INDEX_UNSUPPORTED",
-        )
-        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
-    }
-
-    private fun addGeometryColumnSql(table: String, column: String, definition: ColumnDefinition): String {
-        val geometry = definition.type as NeutralType.Geometry
-        val geometryType = geometry.geometryType.schemaName.uppercase()
-        val srid = geometry.srid ?: 0
-        return "SELECT AddGeometryColumn('${table.sqlString()}', '${column.sqlString()}', $srid, '$geometryType', 'XY');"
-    }
-
-    private fun discardGeometryColumnSql(table: String, column: String): String =
-        "SELECT DiscardGeometryColumn('${table.sqlString()}', '${column.sqlString()}');"
-
-    private fun String.sqlString(): String = replace("'", "''")
-
-    private const val SPATIALITE_EXTENSION = "spatialite"
 }

@@ -3,6 +3,8 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
@@ -14,6 +16,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import dev.dmigrate.driver.connection.DatabaseConnection
 import java.sql.Connection
 
 /**
@@ -38,13 +41,13 @@ class AtomicSequencePreserveRunnerTest : FunSpec({
         protectedOperationIds = emptyList(),
         internalFollowUpIds = emptyList(),
     )
-    val noopExecuteProtectedOps: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
+    val noopExecuteProtectedOps: (DatabaseConnection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
         { _, _ -> AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0) }
 
     fun fakeAcquireFor(dialect: DatabaseDialect, conn: Connection): AtomicSequencePreserveRunner.AcquiredPool {
         val pool = mockk<ConnectionPool>(relaxed = true)
         every { pool.dialect } returns dialect
-        every { pool.borrow() } returns conn
+        every { pool.borrow() } returns JdbcDatabaseConnection(conn)
         return AtomicSequencePreserveRunner.AcquiredPool(dialect = dialect, pool = pool)
     }
 

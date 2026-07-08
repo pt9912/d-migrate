@@ -3,8 +3,13 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlCheckEnforcementResolver
+import dev.dmigrate.driver.ViewQueryTransformer
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 import dev.dmigrate.driver.mysqlContext
@@ -213,9 +218,10 @@ internal object MysqlDiffOtherOps {
             return
         }
         if (ctx.indexTouchesGeometry(table, op.index)) {
-            blockSpatialIndex(op, ctx, table)
+            emitSpatialIndex(op, ctx, table, op.index)
             return
         }
+        if (blockMissingPrefix(op, op.index, ctx, table)) return
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
     }
 
@@ -223,23 +229,57 @@ internal object MysqlDiffOtherOps {
         val table = op.objectRef.path[0]
         if (ctx.direction == MysqlRenderDirection.DOWN) {
             if (ctx.indexTouchesGeometry(table, op.index)) {
-                blockSpatialIndex(op, ctx, table)
+                emitSpatialIndex(op, ctx, table, op.index)
                 return
             }
+            if (blockMissingPrefix(op, op.index, ctx, table)) return
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             return
         }
         ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
     }
 
-    private fun blockSpatialIndex(op: DiffOperation, ctx: MysqlDiffRenderContext, table: String) {
+    /**
+     * I-08: block an index on an unbounded TEXT/BLOB column without a prefix
+     * length (ERROR 1170) instead of emitting invalid DDL. Returns true if blocked.
+     */
+    private fun blockMissingPrefix(
+        op: DiffOperation,
+        index: IndexDefinition,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+    ): Boolean {
+        val offending = ctx.indexColumnNeedingPrefix(table, index) ?: return false
         ctx.skip(
             op,
-            "Operation ${op.id} targets an index on a geometry column in `$table`. MySQL requires " +
-                "SPATIAL INDEX semantics, which the neutral index model cannot express yet.",
-            code = "SPATIAL_INDEX_UNSUPPORTED",
+            "Operation ${op.id} indexes TEXT/BLOB column `$table`.`$offending` without a prefix length; " +
+                "MySQL requires one (e.g. `$offending(255)`, ERROR 1170). Add a prefix length and re-run.",
+            code = "INDEX_PREFIX_MISSING",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return true
+    }
+
+    /**
+     * VA3: ein Index auf eine Geometriespalte wird als nativer MySQL `SPATIAL INDEX`
+     * emittiert (nicht mehr geblockt). Der Index kann als [IndexType.SPATIAL] (MySQL-
+     * Reverse) oder dialektfremd (z. B. PostGIS-`GIST`) hereinkommen — die
+     * spaltenbasierte Erkennung (`indexTouchesGeometry`) normalisiert beide auf
+     * SPATIAL. MySQL verlangt dafür eine NOT-NULL-Geometriespalte (Hinweis als Note).
+     */
+    private fun emitSpatialIndex(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        ctx.emit(op, ctx.sql.createIndexSql(table, index.copy(type = IndexType.SPATIAL)))
+        ctx.info(
+            op,
+            "Index on a geometry column in `$table` emitted as MySQL SPATIAL INDEX; " +
+                "MySQL requires the geometry column to be NOT NULL.",
+            "SPATIAL_INDEX_REQUIRES_NOT_NULL",
+        )
     }
 
     fun renderCreateCustomType(op: DiffOperation.CreateCustomType, ctx: MysqlDiffRenderContext) {
@@ -263,6 +303,7 @@ internal object MysqlDiffOtherOps {
             ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};")
             return
         }
+        if (blockNonPortableView(op, op.view, name, ctx)) return
         ctx.emit(op, ctx.sql.createViewSql(name, op.view))
     }
 
@@ -273,7 +314,32 @@ internal object MysqlDiffOtherOps {
             blockMaterializedView(op, ctx, name)
             return
         }
+        if (blockNonPortableView(op, target, name, ctx)) return
         ctx.emit(op, ctx.sql.replaceViewSql(name, target))
+    }
+
+    /**
+     * I-09: cross-dialect view bodies MySQL cannot parse (foreign quoting /
+     * dialect-specific functions) are blocked with E053 instead of emitting
+     * invalid `CREATE VIEW` DDL. Returns true when the op was blocked.
+     */
+    private fun blockNonPortableView(
+        op: DiffOperation,
+        view: ViewDefinition,
+        name: String,
+        ctx: MysqlDiffRenderContext,
+    ): Boolean {
+        val query = view.query ?: return false
+        val verdict = ViewQueryTransformer(DatabaseDialect.MYSQL).assessPortability(query, view.sourceDialect)
+        if (verdict.portable) return false
+        ctx.skip(
+            op,
+            "View '$name' body is not portable to MySQL (${verdict.reason}); d-migrate does not " +
+                "translate view bodies between dialects. Rewrite the view for MySQL and re-run.",
+            code = "E053",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return true
     }
 
     fun renderDropView(op: DiffOperation.DropView, ctx: MysqlDiffRenderContext) {

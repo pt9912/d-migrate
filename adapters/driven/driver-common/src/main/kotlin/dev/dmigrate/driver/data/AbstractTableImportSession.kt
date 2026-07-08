@@ -44,6 +44,38 @@ abstract class AbstractTableImportSession(
     /** Build the dialect-specific INSERT / UPSERT SQL for the given columns. */
     protected abstract fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String
 
+    /**
+     * VA1c (Spatial-Slice): dialekt-spezifischer SQL-Konstruktor, der einen
+     * gebundenen WKB-Wert in eine Geometriespalte umwandelt — z. B.
+     * `"ST_GeomFromWKB"` (PostGIS/MySQL). Ist er gesetzt, wrappt [valuePlaceholder]
+     * Geometrie-Zielspalten als `<ctor>(?)` statt `?`; der gebundene Wert bleibt
+     * das WKB-`byte[]` aus dem Read-Pfad (VA1b). Default `null` → kein Wrapping
+     * (SQLite/SpatiaLite folgt mit VA4). VA2: trägt die Ziel-Spalte eine SRID
+     * ([TargetColumn.srid]), wird sie als `<ctor>(?, srid)` mitgegeben, sonst
+     * `<ctor>(?)` (→ SRID 0); beide Formen gelten für PostGIS und MySQL.
+     */
+    protected open val geometryBindConstructor: String? = null
+
+    /**
+     * VA1 (Spatial-Slice): **dialekt-bewusste** Erkennung, ob ein (lowercase)
+     * Ziel-`sqlTypeName` eine WKB-fähige Geometriespalte bezeichnet. Default
+     * `false`. PostGIS überschreibt mit nur `"geometry"` (NICHT die nativen
+     * PG-Typen point/polygon/…); MySQL mit allen OGC-Namen. Steuert, ob
+     * [valuePlaceholder] die Spalte mit [geometryBindConstructor] wrappt.
+     */
+    protected open fun isGeometryTypeName(typeNameLower: String): Boolean = false
+
+    /**
+     * VA2-X1 (Cross-Dialect-Achsenreihenfolge): zusätzliche Konstruktor-Argumente
+     * nach der SRID, z. B. MySQLs `"'axis-order=long-lat'"`, damit der gebundene
+     * WKB in OGC-X/Y-Reihenfolge interpretiert wird (PostGIS-kompatibel). Wird von
+     * [valuePlaceholder] **nur** angehängt, wenn eine SRID vorliegt
+     * (`<ctor>(?, srid, <options>)`) — ohne SRID gibt es kein Argument, an das die
+     * Optionen syntaktisch andocken könnten. Default `null` → keine Optionen
+     * (PostGIS liest/schreibt nativ OGC X/Y und braucht keine).
+     */
+    protected open val geometryBindOptions: String? = null
+
     /** Execute a chunk of rows using the dialect-specific conflict strategy. */
     protected abstract fun executeChunk(
         importedTargetColumns: List<TargetColumn>,
@@ -232,6 +264,28 @@ abstract class AbstractTableImportSession(
                 )
             }
         }
+    }
+
+    /**
+     * VA1c/VA2: liefert den VALUES-Platzhalter für eine Zielspalte — `?` normal, bzw.
+     * `<geometryBindConstructor>(?)` für Geometrie-Zielspalten (typeName in
+     * [GeometryType.KNOWN_VALUES], wie VA1a/VA1b). Trägt die Zielspalte eine SRID,
+     * wird sie als zweites Konstruktor-Argument mitgegeben (`<ctor>(?, srid)`), damit
+     * das Ziel die SRID nicht auf 0 fallen lässt. Die Bind-Position bleibt ein `?`
+     * pro Spalte; [bindRow] bindet weiterhin genau einen Wert (das WKB-`byte[]`).
+     */
+    protected fun valuePlaceholder(column: TargetColumn): String {
+        val constructor = geometryBindConstructor
+        if (constructor == null || !isGeometryColumn(column)) return "?"
+        val srid = column.srid ?: return "$constructor(?)"
+        val options = geometryBindOptions
+        return if (options != null) "$constructor(?, $srid, $options)" else "$constructor(?, $srid)"
+    }
+
+    /** VA1c: ob die Zielspalte eine WKB-Geometriespalte ist (dialekt-bewusst). */
+    protected fun isGeometryColumn(column: TargetColumn): Boolean {
+        val typeName = column.sqlTypeName?.lowercase()
+        return typeName != null && isGeometryTypeName(typeName)
     }
 
     protected fun validateRowWidths(chunk: DataChunk, columnCount: Int) {

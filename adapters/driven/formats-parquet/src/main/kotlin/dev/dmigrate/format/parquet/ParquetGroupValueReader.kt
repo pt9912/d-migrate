@@ -51,7 +51,7 @@ internal object ParquetGroupValueReader {
             is NeutralType.Decimal -> readDecimal(group, fieldIndex, neutralType.precision, neutralType.scale)
             is NeutralType.Text, is NeutralType.Email, is NeutralType.Char,
             is NeutralType.Xml, is NeutralType.Enum, is NeutralType.Json,
-            is NeutralType.Array ->
+            is NeutralType.Array, is NeutralType.FullText ->
                 group.getString(fieldIndex, 0)
             is NeutralType.Binary, is NeutralType.Geometry ->
                 group.getBinary(fieldIndex, 0).bytes

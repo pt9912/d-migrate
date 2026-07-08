@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
@@ -28,6 +29,19 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
 
         val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        val portability = transformer.assessPortability(query, view.sourceDialect)
+        if (!portability.portable) {
+            val action = ManualActionRequired(
+                code = "E053", objectType = "view", objectName = name,
+                reason = "View '$name' body is not portable to PostgreSQL (${portability.reason}); " +
+                    "d-migrate does not translate view bodies between dialects.",
+                hint = "Rewrite the view body with PostgreSQL-compatible syntax and re-run.",
+                sourceDialect = view.sourceDialect,
+            )
+            skipped += action.toSkipped()
+            return actionRequired(action)
+        }
+
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
 
         return if (view.materialized) {
@@ -43,7 +57,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return functions.mapNotNull { (name, fn) -> generateFunction(name, fn, skipped) }
+        return functions.mapNotNull { (key, fn) -> generateFunction(ObjectKeyCodec.routineName(key), fn, skipped) }
     }
 
     private fun generateFunction(
@@ -79,15 +93,76 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
         val returns = fn.returns?.let {
             val type = it.type.uppercase()
-            val params = if (it.precision != null) "(${it.precision}${if (it.scale != null) ",${it.scale}" else ""})" else ""
-            " RETURNS $type$params"
+            val precision = if (it.precision != null) "(${it.precision}${if (it.scale != null) ",${it.scale}" else ""})" else ""
+            // K2: a plpgsql body using `RETURN NEXT` / `RETURN QUERY` is
+            // set-returning; emit SETOF so the CREATE matches the body (the
+            // reverse return-type projection does not carry the set flag).
+            val setof = if (!type.contains("SETOF") && isSetReturningBody(body)) "SETOF " else ""
+            " RETURNS $setof$type$precision"
         } ?: ""
         val language = fn.language ?: "plpgsql"
+
+        // F3 (docs/planning/in-progress/sample-db-roundtrip-findings.md): emit the
+        // function's observable contract that the reverse captures but generate
+        // previously dropped — volatility, strictness, and SECURITY DEFINER. Each
+        // is omitted when it equals the PostgreSQL default (VOLATILE / CALLED ON
+        // NULL INPUT / SECURITY INVOKER) so single-attribute functions stay clean.
+        val attributes = buildString {
+            when (fn.volatility) {
+                FunctionVolatility.IMMUTABLE -> append(" IMMUTABLE")
+                FunctionVolatility.STABLE -> append(" STABLE")
+                FunctionVolatility.VOLATILE, null -> {}
+            }
+            if (fn.strict == true) append(" STRICT")
+            if (fn.security == RoutineSecurity.DEFINER) append(" SECURITY DEFINER")
+        }
 
         val sql = buildString {
             append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(name)}($params)$returns AS \$\$\n")
             append(body)
-            append("\n\$\$ LANGUAGE $language;")
+            append("\n\$\$ LANGUAGE $language$attributes;")
+        }
+        return DdlStatement(sql)
+    }
+
+    // ── Aggregates (N7) ──────────────────────────
+
+    fun generateAggregates(
+        aggregates: Map<String, AggregateDefinition>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> =
+        aggregates.mapNotNull { (key, aggregate) ->
+            generateAggregate(ObjectKeyCodec.routineName(key), aggregate, skipped)
+        }
+
+    private fun generateAggregate(
+        name: String,
+        aggregate: AggregateDefinition,
+        skipped: MutableList<SkippedObject>,
+    ): DdlStatement? {
+        if (!aggregate.isSqlDefined) {
+            val action = ManualActionRequired(
+                code = "E053", objectType = "aggregate", objectName = name,
+                reason = "Aggregate '$name' is not a PostgreSQL SQL-defined aggregate (e.g. a MySQL " +
+                    "loadable native UDF) and cannot be emitted as CREATE AGGREGATE.",
+                hint = "Re-implement '$name' as a PostgreSQL aggregate with SQL/plpgsql transition functions.",
+                sourceDialect = aggregate.sourceDialect,
+            )
+            skipped += action.toSkipped()
+            return actionRequired(action)
+        }
+        val args = if (aggregate.inputTypes.isEmpty()) "*" else aggregate.inputTypes.joinToString(", ") { it.uppercase() }
+        val clauses = buildList {
+            add("SFUNC = ${aggregate.transitionFunction}")
+            add("STYPE = ${aggregate.stateType}")
+            if (aggregate.finalFunction != null) add("FINALFUNC = ${aggregate.finalFunction}")
+            if (aggregate.initialCondition != null) add("INITCOND = '${aggregate.initialCondition}'")
+            if (aggregate.sortOperator != null) add("SORTOP = ${aggregate.sortOperator}")
+        }
+        val sql = buildString {
+            append("CREATE AGGREGATE ${quoteIdentifier(name)}($args) (\n")
+            append(clauses.joinToString(",\n") { "    $it" })
+            append("\n);")
         }
         return DdlStatement(sql)
     }
@@ -98,7 +173,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return procedures.mapNotNull { (name, proc) -> generateProcedure(name, proc, skipped) }
+        return procedures.mapNotNull { (key, proc) -> generateProcedure(ObjectKeyCodec.routineName(key), proc, skipped) }
     }
 
     private fun generateProcedure(
@@ -152,10 +227,17 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
     }
 
     private fun generateTrigger(
-        name: String,
+        key: String,
         trigger: TriggerDefinition,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
+        // F1 (docs/planning/open/sample-db-roundtrip-findings.md): PostgreSQL has a
+        // per-table trigger namespace, so emit the BARE trigger name — not the
+        // canonical `table::name` key, which would round-trip `last_updated` into a
+        // literal trigger named `users::last_updated`. The key disambiguates
+        // identically-named triggers across tables in the model; it must not leak
+        // into the emitted identifier.
+        val name = ObjectKeyCodec.triggerName(key)
         val body = trigger.body
         if (body == null) {
             val action = ManualActionRequired(
@@ -178,18 +260,34 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             return listOf(actionRequired(action))
         }
 
-        val funcName = "trg_fn_${name}"
         val statements = mutableListOf<DdlStatement>()
 
-        val funcSql = buildString {
-            append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(funcName)}() RETURNS TRIGGER AS \$\$\n")
-            append(body)
-            append("\n\$\$ LANGUAGE plpgsql;")
+        // N6: the PG reverse stores `information_schema.triggers.action_statement`
+        // (`EXECUTE FUNCTION fn()`) as the body — that is the trigger's action
+        // clause, not a plpgsql body. Reference the existing function directly
+        // then; only a real plpgsql body gets wrapped in a CREATE FUNCTION.
+        val actionClause = if (isExecuteActionStatement(body)) {
+            body.trim().trimEnd(';')
+        } else {
+            // Keyed on the full canonical key (sanitised to a valid identifier)
+            // so inline-body trigger functions stay globally unique across tables
+            // that share a bare trigger name.
+            val funcName = "trg_fn_" + key.replace(Regex("[^A-Za-z0-9_]"), "_")
+            statements += DdlStatement(
+                buildString {
+                    append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(funcName)}() RETURNS TRIGGER AS \$\$\n")
+                    append(body)
+                    append("\n\$\$ LANGUAGE plpgsql;")
+                }
+            )
+            "EXECUTE FUNCTION ${quoteIdentifier(funcName)}()"
         }
-        statements += DdlStatement(funcSql)
 
         val timing = trigger.timing.name
-        val event = trigger.event.name
+        // F4: emit the full event set in canonical order — a multi-event
+        // trigger renders `BEFORE INSERT OR UPDATE`, a single event `BEFORE
+        // UPDATE`. PostgreSQL is the only dialect with multi-event triggers.
+        val event = trigger.events.toSqlEventClause()
         val forEach = trigger.forEach.name
         val triggerSql = buildString {
             append("CREATE TRIGGER ${quoteIdentifier(name)}\n")
@@ -198,10 +296,18 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             if (trigger.condition != null) {
                 append("\n    WHEN (${trigger.condition})")
             }
-            append("\n    EXECUTE FUNCTION ${quoteIdentifier(funcName)}();")
+            append("\n    $actionClause;")
         }
         statements += DdlStatement(triggerSql)
 
         return statements
     }
+
+    /** N6: true when the body is already a PG trigger action (`EXECUTE FUNCTION/PROCEDURE …`). */
+    private fun isExecuteActionStatement(body: String): Boolean =
+        body.trimStart().matches(Regex("(?is)^EXECUTE\\s+(FUNCTION|PROCEDURE)\\s+.+"))
+
+    /** K2: true when a plpgsql body returns a set (`RETURN NEXT` / `RETURN QUERY`). */
+    private fun isSetReturningBody(body: String): Boolean =
+        Regex("(?i)\\bRETURN\\s+(NEXT|QUERY)\\b").containsMatchIn(body)
 }

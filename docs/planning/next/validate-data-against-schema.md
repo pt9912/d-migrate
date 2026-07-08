@@ -6,7 +6,7 @@ Scope + offene Designfragen ausgearbeitet; bereit für Review).
 **Trigger**: `validate data` ist in [cli-spec.md](../../../spec/cli-spec.md) (Abschnitt
 `validate`) als bloßes „Geplant." spezifiziert — als einziges Kommando **ohne
 jeden Anker**: kein `LF`/`LN`, keine Roadmap, kein normativer Spec-Abschnitt
-(nur Verwendungsbeispiele in `cli-spec.md` und `spec/design.md`), kein Code.
+(nur Verwendungsbeispiele in `cli-spec.md` und `docs/archive/design.md`), kein Code.
 Aufgefallen bei der Referenz-/Provenienz-Durchsicht der „Geplant"-Marker am
 2026-06-09. Statt es als „nicht eingeplant" zu markieren oder zu entfernen,
 wird der Scope hier ausgearbeitet.
@@ -15,9 +15,9 @@ wird der Scope hier ausgearbeitet.
 Vorbedingungen sind in diesem Plan fixiert; der Move erfolgt erst mit dem
 ersten Implementierungs-Commit gemäß
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md).
-Der Lastenheft-Backfill ist mit `LF-027` erledigt, siehe Vorbedingungen.
+Der Lastenheft-Backfill ist mit [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) erledigt, siehe Vorbedingungen.
 
-> Status-Update 2026-06-09: `LF-027` im Lastenheft angelegt; cli-spec-Marker
+> Status-Update 2026-06-09: [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) im Lastenheft angelegt; cli-spec-Marker
 > verweist als Markdown-Link mit Kennung darauf (Option C). Trigger-Absatz
 > beschreibt den ursprünglichen ankerlosen Zustand.
 
@@ -56,17 +56,17 @@ Unbekannte Eingangsspalten sind Fehler.
 - **`schema validate`** (implementiert, [cli-spec.md](../../../spec/cli-spec.md))
   prüft die *Schema-Datei selbst* auf Korrektheit — keine Daten.
 - **`data import`-Preflight** (`ImportPreflightValidator`,
-  `schemaTargetValidator` in `hexagon/application/.../cli/commands/`) prüft
+  `schemaTargetValidator` in `hexagon/application/…/cli/commands/`) prüft
   Spalten-Matching gegen ein Schema, aber im Kontext eines Live-DB-Imports.
   `validate data` ist die eigenständige, DB-freie Trockenvariante.
 
 ## 3. Vorhandene Bausteine (wiederverwenden, nicht duplizieren)
 
-- **Schema laden**: `SchemaDefinition` (`hexagon/core/.../model/SchemaDefinition.kt`)
+- **Schema laden**: `SchemaDefinition` (`hexagon/core/…/model/SchemaDefinition.kt`)
   + `JsonSchemaCodec` / `YamlSchemaCodec` (`adapters/driven/formats`).
 - **Daten streamen / Reader-Vorlagen**: `DataChunkReaderFactory`, `JsonChunkReader`,
   `YamlChunkReader`/`YamlEventCursor`, `CsvChunkReader` und
-  `FormatReadOptions` aus `adapters/driven/formats/.../format/data`.
+  `FormatReadOptions` aus `adapters/driven/formats/…/format/data`.
   Wichtig: `DataChunkReaderFactory.create(...)` braucht den Tabellennamen
   bereits beim Reader-Bau. Die Tabellen-Zuordnung ist daher Voraussetzung für
   das Einlesen, nicht erst für die Row-Engine. Die heutigen JSON-/YAML-Reader
@@ -106,7 +106,7 @@ Row-Validierungs-Engine, die Datensätze gegen neutrale Spaltenregeln prüft.
 
 1. **`validate`-Command-Group + Wiring** — `ValidateCommand` als Top-Level in
    `Main.kt` registrieren, mit `ValidateDataCommand` (und später dem schon
-   geplanten `validate procedure`, `LN-034`). Drei-Schicht-Muster (Command →
+   geplanten `validate procedure`, [`LN-034`](../../../spec/lastenheft-d-migrate.md#ln-034)). Drei-Schicht-Muster (Command →
    Runner → Wiring, Runner/Wiring `internal`), analog zu
    [`SchemaCommands.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCommands.kt)
    und
@@ -161,7 +161,7 @@ Row-Validierungs-Engine, die Datensätze gegen neutrale Spaltenregeln prüft.
 4. **Output-Format**: nur Text vs. zusätzlich `--json`.
 
 ## 6. Vorbedingungen
-- **Lastenheft-Backfill erledigt**: `LF-027` „Datenvalidierung gegen Schema"
+- **Lastenheft-Backfill erledigt**: [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) „Datenvalidierung gegen Schema"
   ist in [`lastenheft-d-migrate.md`](../../../spec/lastenheft-d-migrate.md)
   angelegt; der cli-spec-Marker verweist als Markdown-Link mit Kennung darauf
   (gate-geprüfter Pfad, stabile Kennung). Damit ist die fehlende Provenienz,

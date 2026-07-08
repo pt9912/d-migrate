@@ -1,0 +1,117 @@
+# Pilot-Re-Run-P3-Restbefunde (N7, N8, K2)
+
+> **Status:** ABGESCHLOSSEN 2026-06-18 — N7, N8, K2 alle drei geliefert (CI grün: Build & Test, Integration Tests, docs-check). Closure am Ende. Pilot-Zyklus 0.9.9 abgeschlossen (alle P1/P2 behoben).
+> **Trigger:** Die 0.9.9-Re-Validierungsläufe
+> ([`../done-archive/pilot-validation-0.9.9-rerun.md`](../done-archive/pilot-validation-0.9.9-rerun.md),
+> [`../done-archive/pilot-validation-0.9.9-rerun3.md`](../done-archive/pilot-validation-0.9.9-rerun3.md))
+> deckten nach Behebung der P1/P2-Blocker drei **P3**-Befunde auf (N7, N8 aus
+> Re-Run 1; K2 aus Re-Run 3). Keiner ist RC-blockierend; es sind Feature-Lücken
+> bzw. generatorweite/Ordnungs-Themen — daher hier getrackt statt in den engen
+> Fix-Runden mitgezogen.
+> **Disposition (2026-06-18):** Für 1.0.0 aufgenommen, direkt umgesetzt und
+> geliefert (User-Entscheidung). Closure unten; abgelegt in `done/`.
+
+## N7 — Benutzerdefiniertes Aggregat wird von reverse nicht erfasst (P3, Feature)
+
+**Repro:** PG `CREATE AGGREGATE group_concat(...)` → nicht im reverse-DDL;
+abhängige Views (`SELECT group_concat(x) …`) scheitern beim Apply mit
+`function group_concat does not exist`.
+
+**Ursache/Richtung:** Der PG-Reverse liest Tabellen/Views/Funktionen/Trigger/
+Sequenzen, aber **keine** `CREATE AGGREGATE`-Objekte (kein `pg_aggregate`-Pfad,
+kein Modell-Typ `AggregateDefinition`). Das ist eine **echte Feature-Erweiterung**
+(Reverse-Query + neutrales Modell + Generate je Dialekt), kein Einzeiler — daher
+eigener Slice. Bis dahin: dokumentierte Lücke (Views, die Custom-Aggregate nutzen,
+brauchen manuelle Nacharbeit).
+
+**✅ BEHOBEN (2026-06-18) — inkl. voller MySQL-Form (User-Entscheidung).** Neuer
+neutraler Modelltyp `AggregateDefinition` (`SchemaDefinition.aggregates`) trägt
+**zwei Formen**: PG-SQL-definiert (`SFUNC`/`STYPE`/`FINALFUNC`/…) und MySQL-Loadable-
+UDF (`RETURNS`/`SONAME`). Serialisierung (build/parse) round-trip-fähig.
+- **PG-Reverse** liest `pg_aggregate` (+ pg_proc/format_type) → `AggregateDefinition`;
+  **PG-Generate** emittiert `CREATE AGGREGATE name(types) (SFUNC=…, STYPE=…, …)`.
+- **MySQL-Reverse** liest `mysql.func` (`type='aggregate'`, best-effort bei fehlender
+  Berechtigung); **MySQL-Generate** emittiert `CREATE AGGREGATE FUNCTION … RETURNS …
+  SONAME '…'`. Beide Generatoren sind **form-bewusst**: emittieren nur die passende
+  Form, sonst E053-Skip (SQL-Aggregat ↔ Loadable-UDF sind nicht auto-übersetzbar).
+  SQLite: E054-Skip (kein DDL-Aggregat; Runtime-Registrierung).
+- **Tests:** Unit (Generate je Dialekt, MySQL-Reverse-Mapping via Mock, Serialisierungs-
+  Round-Trip beider Formen, driver-common-Orchestrierung) + **Live-PG-Integrationstest**
+  (echtes `CREATE AGGREGATE` → Reverse) + MySQL-Integrations-Resilienztest. Modell als
+  DTO in core-Kover-Exclude+Ledger. Naht: redundanter `sortViewsByDependencies`-Delegate
+  entfernt, um detekt-`TooManyFunctions` ohne `@Suppress` einzuhalten.
+
+## N8 — Index-Namens-Kollision MySQL→PG (P3)
+
+**Repro:** MySQL erlaubt denselben Index-Namen (`idx_fk_address_id`) auf mehreren
+Tabellen (per-Tabelle-Namensraum); PG-Index-Namen sind **schema-global**. Generate
+emittiert die Roh-Namen → `ERROR: relation "idx_fk_address_id" already exists`;
+einzelne Indizes fehlen im Ziel.
+
+**Ursache/Richtung:** `PostgresDdlGenerator.generatedIndexNames` disambiguiert nur
+**innerhalb einer Tabelle**. Für schema-globale Eindeutigkeit braucht der Generator
+**generatorweiten State** über einen `generate()`-Lauf (Set benutzter Index-Namen,
+deterministisch je Reset) oder einen Schema-Vorpass, der kollidierende explizite
+Namen tabellen-präfigiert. Beides berührt die Generator-Orchestrierung und
+Golden-Master — eigener, fokussierter Slice (Achtung: Golden-Churn).
+
+**✅ BEHOBEN (2026-06-18).** Neue Klasse `PostgresIndexNameAllocator` trägt den
+schema-globalen Namens-State; `PostgresDdlGenerator.generate()` ruft `reset()` je
+Lauf, `generateIndices` delegiert an `namesFor(...)`. Kollidierende Namen werden
+deterministisch (`_2`, `_3`, …) disambiguiert; eine Umbenennung wird mit **W127**
+gemeldet (nicht still). Regressionstests in `PostgresDdlGeneratorIndexViewTest`
+(Cross-Table-Kollision + Per-Run-Reset). Kein Golden-Churn (keine Intra-Datei-
+Index-Namen-Duplikate in den PG-Goldens). Aufteilung in eine Helper-Klasse statt
+`@Suppress`, um die detekt-`TooManyFunctions`-Schwelle einzuhalten.
+
+## K2 — `--include-all`-Routinen nicht topologisch geordnet (P3)
+
+**Repro:** `--include-all` emittiert die SQL-Funktion `film_in_stock`
+(`LANGUAGE sql`) **vor** der von ihr referenzierten `inventory_in_stock` →
+`CREATE`-Fehler. Zusätzlich: `RETURN NEXT` ohne `RETURNS SETOF`.
+
+**Ursache/Richtung:** PG validiert `LANGUAGE sql`-Funktions-Bodies **bei `CREATE`**
+(anders als plpgsql, dessen Body ein nicht geprüfter String ist) — die
+emittierte Routine-Reihenfolge muss daher Funktion→Funktion-Abhängigkeiten
+respektieren. Es braucht eine **topologische Routinen-Ordnung** (analog
+`sortTablesByDependency` für FK-Kanten), gespeist aus Routine-Dependency-Kanten;
+plus korrekte `RETURNS SETOF`-Ableitung bei `RETURN NEXT`. Vorbestehend, nur
+`--include-all`, gleiche `--include-all`-Residualklasse wie N7/N8 — eigener,
+fokussierter Slice (Reverse-Dependency-Extraktion + Emissions-Sortierung).
+
+**✅ BEHOBEN (2026-06-18).** `DdlGenerationSupport.sortFunctionsByDependencies`
+ordnet Funktionen vor der Emission topologisch (Callee vor Caller);
+`AbstractDdlGenerator.generate()` wendet es dialekt-übergreifend an. Die
+Funktion→Funktion-Kanten werden **zur Generate-Zeit aus den Bodies inferiert**
+(Aufruf-Form `callee(`), analog zur bestehenden View-Query-Inferenz — die
+Reverse-Reader befüllen `DependencyInfo.functions` nicht. Zyklen fallen mit
+**W128** auf die Original-Reihenfolge zurück. `RETURNS SETOF` wird in
+`PostgresRoutineDdlHelper` aus `RETURN NEXT`/`RETURN QUERY` im Body abgeleitet.
+Tests: driver-common (Ordering + Zyklus/W128 über `TestDdlGenerator.functionOrder`)
+und driver-postgresql (Ordering, Zyklus, SETOF, Negativ-Fall `RETURN NEW`). Kein
+Golden-Churn (keine Cross-Funktions-Aufrufkanten in den Fixtures).
+
+## Abgrenzung (bereits gefixt)
+
+Alle P1/P2-Befunde der **fünf** Pilot-Läufe sind erledigt (Commits auf `develop`):
+Erstlauf I-01…I-10; Re-Run 1 N1 (CURRENT_DATE), N3 (Preflight Enum/Temporal),
+N2 (PG-Partition leer), N4 (View `::`/`||`→MySQL), N5 (Nicht-PK-nextval),
+N6 (Trigger-Action-Body); Re-Run 2 M2 (Preflight strukturell), M1 (Routinen-
+Namen ohne Signatur-Suffix); Re-Run 3 K1 (PG-Array→MySQL-JSON-Wertkonverter);
+Re-Run 4 L1 (pgjdbc-`PGobject`→String-Form im MySQL-Bind-Pfad, `c8115fc7`).
+Der Pilot-Validierungszyklus 0.9.9 ist abgeschlossen; alle fünf Reports liegen
+in `../done-archive/`.
+
+## Closure (2026-06-18)
+
+Alle drei P3-Restbefunde sind geliefert und CI-verifiziert (Build & Test +
+Integration Tests + docs-check grün auf `develop`):
+
+| Befund | Commit | Kern |
+| ------ | ------ | ---- |
+| **N8** | `8c610743` | PG schema-globale Index-Namen-Deduplizierung (`PostgresIndexNameAllocator`, W127-Rename-Note). |
+| **K2** | `20ec6565` | Topologische Funktions-Ordnung (`DdlGenerationSupport.sortFunctionsByDependencies`, Body-Inferenz, W128-Zyklus-Fallback) + `RETURNS SETOF`-Ableitung. |
+| **N7** | `b1d9531c` | Benutzerdefinierte Aggregate — `AggregateDefinition` (PG-SQL-Form + MySQL-Loadable-UDF-Form), Reverse (`pg_aggregate` / `mysql.func`) + Generate (`CREATE AGGREGATE` / `CREATE AGGREGATE FUNCTION … SONAME`), form-bewusst; Live-PG-Integrationstest. |
+
+Damit ist der gesamte Pilot-Folgebacklog (P1/P2 + P3) der fünf 0.9.9-Läufe
+abgearbeitet. Dieser Tracker wandert nach `../done/`.

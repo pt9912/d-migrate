@@ -17,45 +17,8 @@ class SchemaRollbackRunnerTest : FunSpec({
 
     val tmpDir: Path = Files.createTempDirectory("rollback-runner-test")
 
-    fun stmt(sql: String) = MigrationDdlStatement(
-        sql = sql,
-        operationIds = setOf("op-1"),
-        risk = OperationRisk.SAFE,
-        phase = DiffPhase.TABLES,
-    )
-
-    fun buildArtefact(
-        dialect: DatabaseDialect = DatabaseDialect.POSTGRESQL,
-        currentFp: String = "fp-current",
-        desiredFp: String = "fp-desired",
-        postUpFp: String = "fp-desired",
-        sql: String = "DROP TABLE x;",
-        destructive: Boolean = false,
-        recovery: Boolean = false,
-        postUpVerified: Boolean = false,
-        allowedPostUpFingerprints: List<String>? = null,
-        legacyV1: Boolean = false,
-    ): String {
-        val input = RollbackArtefactBuilder.Input(
-            dialect = dialect,
-            currentFingerprint = currentFp,
-            desiredFingerprint = desiredFp,
-            postUpFingerprint = postUpFp,
-            operationIds = setOf("op-1"),
-            risk = RollbackArtefactBuilder.Risk(
-                destructive = destructive,
-                dataLossPossible = false,
-                requiresManualConfirmation = false,
-                operationIds = setOf("op-1"),
-            ),
-            downStatements = listOf(stmt(sql)),
-            createdByVersion = "test/0.0.0",
-            recovery = recovery,
-            postUpVerified = postUpVerified,
-            allowedPostUpFingerprints = allowedPostUpFingerprints,
-        )
-        return if (legacyV1) RollbackArtefactBuilder.buildLegacyV1(input) else RollbackArtefactBuilder.build(input)
-    }
+    // stmt(...) / buildArtefact(...) live in RollbackArtefactTestSupport.kt (shared with
+    // SchemaRollbackRunnerFingerprintTest) so neither spec trips Detekt's LargeClass.
 
     fun writeArtefact(name: String, text: String): Path {
         val p = tmpDir.resolve(name)

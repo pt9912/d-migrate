@@ -4,7 +4,7 @@
 >
 > Status: Entwurf (2026-05-01)
 >
-> Referenzen: `docs/planning/roadmap.md`, `spec/cli-spec.md`,
+> Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/cli-spec.md`,
 > `docs/user/guide.md`, `spec/job-contract.md`
 
 ---

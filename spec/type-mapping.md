@@ -160,6 +160,24 @@ Länge/Precision. Unbekannte Typen fallen auf `Text()`.
 | `BLOB` | `Binary` ✅ | — |
 | `NUMERIC` ohne Precision | `Float()` | Akzeptabel |
 
+### 5.3 AUTOINCREMENT-Breite (inhärente Reverse-Mehrdeutigkeit)
+
+`INTEGER PRIMARY KEY AUTOINCREMENT` ist ein 64-bit-Rowid und **speicher-
+ununterscheidbar** vom 32-bit-`identifier`-Vertrag (PG `SERIAL`, MySQL `INT
+AUTO_INCREMENT`) und von 64-bit `biginteger` + `generation: identity`. SQLite
+trägt die Information nicht, die die Wahl entscheiden würde — anders als PG/MySQL,
+die per Spaltenbreite (int4/int8) unterscheiden. Der Reverse löst das über eine
+**deklarierte Präferenz** (`reverse-preference-mechanism.md`):
+
+| Breite | Reverse-Ergebnis | Note |
+|--------|------------------|------|
+| `32` (Default) | `identifier` (32-bit-Vertrag) | R202 (Verengungs-Hinweis, nennt den Flag) |
+| `64` | `biginteger` + `generation: identity` (`legacySerialSyntax = true`, wie der MySQL-`BIGINT AUTO_INCREMENT`-Reverse → PG `BIGSERIAL`) | R204 (Bestätigung) |
+
+Deklaration: CLI `--sqlite-autoincrement-width` bzw. Config
+`reverse.sqlite.autoincrement_width`. Der Default lässt den Reverse-Output
+unverändert (keine Regression), der Fingerprint bleibt unberührt.
+
 ---
 
 ## 6. Reverse-Mapping else-Fallback

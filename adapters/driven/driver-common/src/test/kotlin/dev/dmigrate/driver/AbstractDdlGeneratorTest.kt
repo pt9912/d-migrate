@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.model.AggregateDefinition
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintReferenceDefinition
@@ -64,6 +65,42 @@ class AbstractDdlGeneratorTest : FunSpec({
         )
         gen.generate(schema)
         (gen.tableOrder.indexOf("users") < gen.tableOrder.indexOf("orders")) shouldBe true
+    }
+
+    test("functions are emitted callee-before-caller by inferred call edges (K2)") {
+        val gen = TestDdlGenerator()
+        val schema = schema(
+            functions = linkedMapOf(
+                "caller" to FunctionDefinition(body = "BEGIN RETURN callee(); END;", sourceDialect = "postgresql"),
+                "callee" to FunctionDefinition(body = "BEGIN RETURN 1; END;", sourceDialect = "postgresql"),
+            ),
+        )
+        gen.generate(schema)
+        (gen.functionOrder.indexOf("callee") < gen.functionOrder.indexOf("caller")) shouldBe true
+    }
+
+    test("aggregates are emitted via generateAggregates, after functions (N7)") {
+        val gen = TestDdlGenerator()
+        val schema = schema(
+            functions = linkedMapOf("f" to FunctionDefinition(body = "BEGIN END;", sourceDialect = "postgresql")),
+            aggregates = linkedMapOf("agg" to AggregateDefinition(stateType = "internal", transitionFunction = "f")),
+        )
+        gen.generate(schema)
+        ("aggregates" in gen.callOrder) shouldBe true
+        (gen.callOrder.indexOf("functions") < gen.callOrder.indexOf("aggregates")) shouldBe true
+    }
+
+    test("circular function call dependencies fall back to original order with W128 (K2)") {
+        val gen = TestDdlGenerator()
+        val schema = schema(
+            functions = linkedMapOf(
+                "ping" to FunctionDefinition(body = "BEGIN RETURN pong(); END;", sourceDialect = "postgresql"),
+                "pong" to FunctionDefinition(body = "BEGIN RETURN ping(); END;", sourceDialect = "postgresql"),
+            ),
+        )
+        val result = gen.generate(schema)
+        gen.functionOrder shouldContainExactly listOf("ping", "pong")
+        result.notes.any { it.code == "W128" && it.objectName == "functions" } shouldBe true
     }
 
     test("topologicalSort orders composite FK constraints before their dependents") {
@@ -140,7 +177,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t", "indices:t",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "functions", "aggregates", "procedures", "views", "triggers",
         )
     }
 
@@ -243,7 +280,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t",
-            "circular", "views", "views", "functions", "procedures", "triggers",
+            "circular", "views", "functions", "aggregates", "procedures", "views", "triggers",
         )
         result.notes.any { it.code == "E055" && it.blocksTable && it.objectName == "t" } shouldBe true
         result.skippedObjects shouldContainExactly listOf(

@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -16,7 +17,7 @@ class MysqlTableListerTest : FunSpec({
 
     val conn = mockk<Connection>(relaxUnitFun = true)
     val pool = mockk<ConnectionPool> {
-        every { borrow() } returns conn
+        every { borrow() } returns JdbcDatabaseConnection(conn)
     }
     val jdbc = mockk<JdbcOperations>()
     val lister = MysqlTableLister(jdbcFactory = { jdbc })
@@ -45,7 +46,7 @@ class MysqlTableListerTest : FunSpec({
     test("listTables uses currentDatabase fallback when conn.catalog is null") {
         val conn2 = mockk<Connection>(relaxUnitFun = true)
         val pool2 = mockk<ConnectionPool> {
-            every { borrow() } returns conn2
+            every { borrow() } returns JdbcDatabaseConnection(conn2)
         }
         val jdbc2 = mockk<JdbcOperations>()
         val lister2 = MysqlTableLister(jdbcFactory = { jdbc2 })

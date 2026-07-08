@@ -74,7 +74,10 @@ internal fun buildColumns(
     columns: Map<String, ColumnDefinition>,
 ): ObjectNode {
     val node = mapper.createObjectNode()
-    for ((name, column) in columns.entries.sortedBy { it.key }) {
+    // Spalten in physischer Reihenfolge (Ordinal) statt alphabetisch — die übrigen
+    // Map-Felder (Tabellen, Custom-Types) bleiben für deterministischen Output nach
+    // Name sortiert. Das explizite `ordinal` je Spalte sichert die Reihenfolge robust ab.
+    for ((name, column) in columns.inOrdinalOrder()) {
         node.set<ObjectNode>(name, buildColumn(mapper, column))
     }
     return node
@@ -83,6 +86,7 @@ internal fun buildColumns(
 private fun buildColumn(mapper: ObjectMapper, column: ColumnDefinition): ObjectNode {
     val node = mapper.createObjectNode()
     buildNeutralType(node, column.type)
+    if (column.ordinal != null) node.put("ordinal", column.ordinal)
     if (column.required) node.put("required", true)
     if (column.unique) node.put("unique", true)
     if (column.default != null) buildDefault(node, column.default!!)
@@ -151,6 +155,9 @@ private fun buildIndices(
         if (index.type != IndexType.BTREE) node.put("type", index.type.name.lowercase())
         if (index.unique) node.put("unique", true)
         if (index.where != null) node.put("where", index.where)
+        if (index.textSearchConfig != null) node.put("text_search_config", index.textSearchConfig)
+        if (index.fullTextVectorColumn != null) node.put("full_text_vector_column", index.fullTextVectorColumn)
+        index.fullTextAccessMethod?.let { node.put("full_text_access_method", it.name.lowercase()) }
         arrayNode.add(node)
     }
     return arrayNode
@@ -163,12 +170,14 @@ private fun buildIndexColumns(
     val arrayNode = mapper.createArrayNode()
     for (column in columns) {
         val direction = column.direction
-        if (direction == null) {
+        val prefixLength = column.prefixLength
+        if (direction == null && prefixLength == null) {
             arrayNode.add(column.name)
         } else {
             val columnNode = mapper.createObjectNode()
             columnNode.put("name", column.name)
-            columnNode.put("direction", direction.name.lowercase())
+            if (direction != null) columnNode.put("direction", direction.name.lowercase())
+            if (prefixLength != null) columnNode.put("prefix_length", prefixLength)
             arrayNode.add(columnNode)
         }
     }
@@ -217,14 +226,36 @@ private fun buildPartitioning(mapper: ObjectMapper, partitioning: PartitionConfi
         for (partition in partitioning.partitions) {
             val partitionNode = mapper.createObjectNode()
             partitionNode.put("name", partition.name)
-            if (partition.from != null) partitionNode.put("from", partition.from)
-            if (partition.to != null) partitionNode.put("to", partition.to)
+            if (partition.isDefault) partitionNode.put("default", true)
+            if (partition.from != null) partitionNode.set<ArrayNode>("from", boundArray(mapper, partition.from!!))
+            if (partition.to != null) partitionNode.set<ArrayNode>("to", boundArray(mapper, partition.to!!))
             if (!partition.values.isNullOrEmpty()) {
                 partitionNode.set<ArrayNode>("values", stringArray(mapper, partition.values!!))
+            }
+            partition.modulus?.let { partitionNode.put("modulus", it) }
+            partition.remainder?.let { partitionNode.put("remainder", it) }
+            // AP2a: kind-lokale Indizes der Partition.
+            if (partition.indices.isNotEmpty()) {
+                partitionNode.set<ArrayNode>("indices", buildIndices(mapper, partition.indices))
             }
             partitionsNode.add(partitionNode)
         }
         node.set<ArrayNode>("partitions", partitionsNode)
     }
     return node
+}
+
+/** RANGE-Bound-Tupel als String-Array serialisieren (Sentinels als `MINVALUE`/`MAXVALUE`). */
+private fun boundArray(mapper: ObjectMapper, bounds: List<PartitionBound>): ArrayNode {
+    val arr = mapper.createArrayNode()
+    for (bound in bounds) {
+        arr.add(
+            when (bound) {
+                PartitionBound.MinValue -> "MINVALUE"
+                PartitionBound.MaxValue -> "MAXVALUE"
+                is PartitionBound.Value -> bound.literal
+            }
+        )
+    }
+    return arr
 }

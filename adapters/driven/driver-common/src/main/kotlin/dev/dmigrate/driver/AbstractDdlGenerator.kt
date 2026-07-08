@@ -49,7 +49,7 @@ abstract class AbstractDdlGenerator(
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
             if (name in blockedTables) continue
-            statements += generateIndices(name, table)
+            statements += generateIndices(name, table, options)
         }
 
         preSkipCount = skipped.size
@@ -73,7 +73,7 @@ abstract class AbstractDdlGenerator(
         }
 
         // ─── Views (split into PRE_DATA / POST_DATA) ───────────
-        val sortedViews = sortViewsByDependencies(schema.views)
+        val sortedViews = DdlGenerationSupport.sortViewsByDependencies(schema.views)
         statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
 
         val globalNotes = mutableListOf<TransformationNote>()
@@ -86,17 +86,32 @@ abstract class AbstractDdlGenerator(
         statements += generateViews(preDataViews, skipped)
         tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
 
-        preSkipCount = skipped.size
-        statements += generateViews(postDataViews, skipped).withPhase(DdlPhase.POST_DATA)
-        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
-
         // ─── POST_DATA ───────────────────────────────────────────
         preSkipCount = skipped.size
-        statements += generateFunctions(schema.functions, skipped).withPhase(DdlPhase.POST_DATA)
+        // K2: emit functions in call-dependency order (callee before caller)
+        // so PostgreSQL's CREATE-time body validation does not hit forward refs.
+        val sortedFunctions = DdlGenerationSupport.sortFunctionsByDependencies(schema.functions)
+        statements += sortedFunctions.notes.map { DdlStatement("", notes = listOf(it)) }.withPhase(DdlPhase.POST_DATA)
+        statements += generateFunctions(sortedFunctions.sorted, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        preSkipCount = skipped.size
+        // N7: user-defined aggregates depend on their transition/final
+        // functions, so emit them after the functions block (POST_DATA).
+        statements += generateAggregates(schema.aggregates, skipped).withPhase(DdlPhase.POST_DATA)
         tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
         preSkipCount = skipped.size
         statements += generateProcedures(schema.procedures, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        // F2 (docs/planning/open/sample-db-roundtrip-findings.md): post-data views
+        // are emitted AFTER functions/aggregates/procedures. A view body is
+        // validated at CREATE time and commonly references them (e.g. an aggregate
+        // like group_concat); emitting the views first made PostgreSQL reject them
+        // with "function ... does not exist".
+        preSkipCount = skipped.size
+        statements += generateViews(postDataViews, skipped).withPhase(DdlPhase.POST_DATA)
         tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
         preSkipCount = skipped.size
@@ -125,10 +140,15 @@ abstract class AbstractDdlGenerator(
     ): List<DdlStatement>
     abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
     abstract fun generateSequences(schema: SchemaDefinition, skipped: MutableList<SkippedObject>): List<DdlStatement>
-    abstract fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement>
+    abstract fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions = DdlGenerationOptions(),
+    ): List<DdlStatement>
     abstract fun handleCircularReferences(edges: List<CircularFkEdge>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateViews(views: Map<String, ViewDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateFunctions(functions: Map<String, FunctionDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
+    abstract fun generateAggregates(aggregates: Map<String, AggregateDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateProcedures(procedures: Map<String, ProcedureDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
@@ -234,7 +254,4 @@ abstract class AbstractDdlGenerator(
 
     protected fun topologicalSort(tables: Map<String, TableDefinition>): TopologicalSortResult =
         DdlGenerationSupport.topologicalSort(tables)
-
-    protected fun sortViewsByDependencies(views: Map<String, ViewDefinition>): ViewSortResult =
-        DdlGenerationSupport.sortViewsByDependencies(views)
 }

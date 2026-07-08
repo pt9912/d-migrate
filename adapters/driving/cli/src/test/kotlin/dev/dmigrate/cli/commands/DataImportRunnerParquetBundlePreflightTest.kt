@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.SchemaSync
@@ -15,14 +16,13 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.SchemaOrigin
 import dev.dmigrate.format.parquet.ParquetChunkWriter
 import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
-import dev.dmigrate.streaming.BundleClosureContext
-import dev.dmigrate.streaming.BundleClosureTable
+import dev.dmigrate.format.data.BundleClosureContext
+import dev.dmigrate.format.data.BundleClosureTable
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
-import java.sql.Connection
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -52,7 +52,7 @@ class DataImportRunnerParquetBundlePreflightTest : FunSpec({
     class FakeConnectionPool(
         override val dialect: DatabaseDialect = DatabaseDialect.SQLITE,
     ) : ConnectionPool {
-        override fun borrow(): Connection = error("borrow() must not be called — preflight fails first")
+        override fun borrow(): DatabaseConnection = error("borrow() must not be called — preflight fails first")
         override fun activeConnections(): Int = 0
         override fun close() {}
     }

@@ -34,10 +34,29 @@ class PostgresTypeMappingTest : FunSpec({
 
     test("integer") { map("integer").type shouldBe NeutralType.Integer }
     test("bigint") { map("bigint").type shouldBe NeutralType.BigInteger }
+
+    // N5: nextval default is identity only for a serial PK, not a non-PK reference
+    test("non-PK bigint with nextval default → BigInteger, no identity (N5)") {
+        val r = map("bigint", udtName = "int8", isPk = false, colDefault = "nextval('s'::regclass)")
+        r.type shouldBe NeutralType.BigInteger
+        r.generation.shouldBeNull()
+    }
+    test("PK bigint with nextval default stays identity (N5 regression guard)") {
+        val r = map("bigint", udtName = "int8", isPk = true, colDefault = "nextval('s'::regclass)")
+        (r.generation != null) shouldBe true
+    }
+    test("sequenceNameFromNextval strips schema and quotes (N5)") {
+        PostgresTypeMapping.sequenceNameFromNextval("nextval('public.my_seq'::regclass)") shouldBe "my_seq"
+    }
     test("smallint") { map("smallint").type shouldBe NeutralType.SmallInt }
     test("boolean") { map("boolean").type shouldBe NeutralType.BooleanType }
     test("text") { map("text").type shouldBe NeutralType.Text() }
     test("uuid") { map("uuid").type shouldBe NeutralType.Uuid }
+    test("tsvector maps to FullText, not text+R301 (ADR 0015)") {
+        val r = map("tsvector")
+        r.type shouldBe NeutralType.FullText
+        r.note shouldBe null
+    }
     test("jsonb") { map("jsonb").type shouldBe NeutralType.Json }
     test("json") { map("json").type shouldBe NeutralType.Json }
     test("xml") { map("xml").type shouldBe NeutralType.Xml }
@@ -137,6 +156,19 @@ class PostgresTypeMappingTest : FunSpec({
         result.note!!.code shouldBe "R401"
     }
 
+    test("VA2: geometry subtype + SRID carried from geometry_columns") {
+        val result = PostgresTypeMapping.mapUserDefined("geometry", "t", "c", geometrySubtype = "Point", geometrySrid = 4326)
+        val geom = result.type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.of("point")
+        geom.srid shouldBe 4326
+    }
+
+    test("VA2: geometry with no SRID defaults to GEOMETRY/null") {
+        val geom = PostgresTypeMapping.mapUserDefined("geometry", "t", "c").type as NeutralType.Geometry
+        geom.geometryType shouldBe GeometryType.GEOMETRY
+        geom.srid.shouldBeNull()
+    }
+
     test("custom enum → Enum refType") {
         val result = PostgresTypeMapping.mapUserDefined("order_status", "t", "c")
         (result.type as NeutralType.Enum).refType shouldBe "order_status"
@@ -163,6 +195,12 @@ class PostgresTypeMappingTest : FunSpec({
             DefaultValue.FunctionCall("current_timestamp")
     }
     test("parseDefault now()") { PostgresTypeMapping.parseDefault("now()") shouldBe DefaultValue.FunctionCall("current_timestamp") }
+    test("parseDefault CURRENT_DATE (N1)") {
+        PostgresTypeMapping.parseDefault("CURRENT_DATE") shouldBe DefaultValue.FunctionCall("current_date")
+    }
+    test("parseDefault CURRENT_TIME (N1)") {
+        PostgresTypeMapping.parseDefault("CURRENT_TIME") shouldBe DefaultValue.FunctionCall("current_time")
+    }
     test("parseDefault gen_random_uuid()") {
         PostgresTypeMapping.parseDefault("gen_random_uuid()") shouldBe
             DefaultValue.FunctionCall("gen_uuid")

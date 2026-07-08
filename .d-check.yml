@@ -3,4 +3,86 @@
 # Die Default-Scan-Wurzeln (docs/, spec/, Root-*.md) decken den
 # Alt-Tool-Umfang ab; `anchors` ist bewusste Mehr-Abdeckung
 # (Anker-Validierung, Bildreferenzen — das Alt-Tool prüfte beides nicht).
-modules: [links, anchors]
+
+# scan.ignore: eingefrorenes Done-Archiv aus dem Scan nehmen.
+# docs/planning/done-archive/ enthält abgeschlossene, kalt gestellte
+# Pläne (unveränderliche Historie); sie auf Referenz-Frische zu prüfen
+# wäre dauerhaftes Rauschen ohne Nutzen. docs/planning/done/ bleibt im
+# Scan (frisch abgeschlossen). Begründung: ADR 0010. docs/archive/ (kalt
+# gestellte/retirete Artefakte wie das retirete design.md) ebenso ausgenommen.
+scan:
+  ignore: ["docs/planning/done-archive/**", "docs/archive/**"]
+
+modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids]
+
+# matrix: mechanisiert die Referenz-Richtung (Stable Dependencies
+# Principle, konventionen.md "Referenz-Richtung (SDP)"): Spec-Straten
+# verweisen nie abwärts — weder auf ADRs noch auf Pläne/Slices/Roadmap —,
+# und Verweise auf überholte Stände (superseded/deprecated) sind verboten.
+# Provenance in Historie-/Versions-Sektionen ist ausgenommen (SDP-Regel 5).
+# ADR→Slice/Plan abwärts ist bewusst KEINE Regel: laut Regelwerk
+# (konventionen.md, Zeile "Referenz-Richtung (SDP)") sind "Abwärts-/
+# Seitwärts-Verweise Kontext, keine Spezifikation" = erlaubt (consulted:/
+# Slice-Provenienz). Hart erzwungen ist nur der Spec-Abwärts-Bann oben
+# (konventionen.md, Zeile "Cross-Reference-Trigger": Spec→ADR existiert
+# nicht im bindenden Text, auch nicht als Quellen-Spalte). Eine adr→plan-
+# Regel flaggte nur legitime Provenienz (Probe 2026-06-28: 19 Refs/14 ADRs).
+matrix:
+  classes:
+    - name: spec
+      paths: ["spec/**"]
+      # Spec-interne Straten (konventionen.md "Spec-Straten": Rang Vertrag › Technik › Sicht;
+      # architecture.md = Sicht = unterste Schicht). [^a] = alle Specs außer architecture
+      # (einzige a*-Datei) → Technik-Schicht (Rang 1); architecture explizit als Rang 2 = Sicht.
+      order: ["spec/lastenheft-d-migrate.md", "spec/[^a]*.md", "spec/architecture.md"]   # Rang 0 Vertrag (Lastenheft), Rang 1 Technik (Topical, Peers), Rang 2 Sicht (architecture)
+      direction: no-downward
+    - name: adr
+      paths: ["docs/adr/[0-9]*.md"]
+    - name: plan
+      paths: ["docs/planning/**"]
+  rules:
+    - {from: spec, to: adr, allow: false}
+    - {from: spec, to: plan, allow: false}
+  status:
+    forbidden: [superseded, deprecated]
+  exclude-sections: [Historie, Geschichte, Versionierung, Changelog, Änderungshistorie]
+
+# hostpaths/spans: keine Konfiguration nötig; Probe 2026-06-16 je 0
+# Befunde (keine Maschinenpfad-Leaks, keine Span-Artefakte).
+
+# codepaths: prüft Inline-Code-Repo-Pfade auf Existenz. scope auf docs/spec
+# (Root-*.md wie CHANGELOG ausgenommen — unveränderliche Historie). roots =
+# Repo-Pfad-Präfixe, gegen die wurzel-relative Pfade aufgelöst werden.
+# scope.ignore: Done-Archiv (ADR 0010) + reine Zukunfts-Adapter-Specs als
+# Sub-Area-Ausnahme mit Graduations-Trigger. Dauerhafte Nicht-Repo-Pfade
+# (Nutzer-CWD, Build-Ausgaben) tragen d-check:ignore-Marker. Begründung +
+# Konvention: ADR 0011.
+codepaths:
+  roots: [adapters, config, docs, examples, gradle, hexagon, ledger, packaging, scripts, spec, test]
+  scope:
+    roots: [docs, spec]
+    ignore:
+      - "docs/planning/done-archive/**"
+      - "spec/jsqlparser-adapter.md"   # Zielbild-Spec künftiger Adapter; Graduation bei Adapter-Bau (ADR 0011)
+      - "spec/grpc-service.md"         # Zielbild-Spec künftiger Adapter; Graduation bei Adapter-Bau (ADR 0011)
+      - "spec/rest-service.md"         # Zielbild-Spec künftiger Adapter; Graduation bei Adapter-Bau (ADR 0011)
+
+# ids: Kennungs-Verlinkungspflicht im Fließtext. Modell aus
+# `d-check --suggest-config` (Kennungen nur aus Definitions-Headings):
+# UC-NN aus dem Lastenheft, ADR-NNNN mit Ziel docs/adr/. LF/LN-Mandat aktiv
+# (D2 revidiert 2026-06-28 — LF/LN müssen aufs Lastenheft verlinkt sein).
+# scope wie codepaths (CHANGELOG/Archiv aus).
+ids:
+  scope:
+    roots: [docs, spec]
+    ignore: ["docs/planning/done-archive/**", "docs/archive/**"]
+  patterns:
+    - regex: 'UC-\d+'
+      target: "spec/lastenheft-d-migrate.md"
+      link-policy: always
+    - regex: 'ADR-\d{4}'
+      target: "docs/adr/"
+      link-policy: always
+    - regex: 'L[FN]-\d{3}'
+      target: "spec/lastenheft-d-migrate.md"
+      link-policy: always

@@ -1,8 +1,8 @@
 # Plan: Atomic-Preserve Service-Mode (MCP / REST / gRPC) — Sub-Slices C/D/F
 
 > **Status**: Next (2026-06-03 — Split aus
-> [`docs/planning/done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
-> als ADR-0004-strikte Aufteilung: A + E + SIGINT als Closure dort,
+> [`docs/planning/done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
+> als [ADR-0004](../../adr/0004-documentation-and-planning-structure.md)-strikte Aufteilung: A + E + SIGINT als Closure dort,
 > die offenen Sub-Slices C + D + F hier).
 >
 > **Aktivierungsbedingung** (Move nach `in-progress/`): Mindestens
@@ -35,7 +35,7 @@ Cross-JVM-Carve-Out (Atomic-Preserve §3.2, §6 Risk 8, §8.2)
    **vor** Pool-Exhaustion.
 3. **`schema_migrate_start`-Handler-Skeleton**, der C + D mit
    den in
-   [`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+   [`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
    bereits gelieferten A (Lock-Timeout-Tuning) und E (Cancellation-
    Token) komponiert.
 
@@ -62,17 +62,17 @@ Plan liefert die **JVM-seitigen Verträge**, die der MCP-Handler
 - **E-Follow-up** SIGINT-Bridge im CLI-Pfad (`73fb1f73`).
 - **B** Idempotency-Hook als eigenständiger Slice **deferred** —
   Wiring landet direkt im MCP-Handler von F (siehe
-  [`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+  [`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
   §3).
 
 ### 2.2 Reuse-Kandidaten für C/D/F
 
 | Vertrag | Bestehender Port / Adapter | Quelle |
 | ------- | -------------------------- | ------ |
-| Connection-Pool | `HikariConnectionPoolFactory` + `PoolSettings` | `adapters/driven/driver-common/.../connection/HikariConnectionPoolFactory.kt`; `hexagon/ports-common/.../driver/connection/PoolSettings.kt` |
-| Cancellation (data-Pfad) | `JobCancelHandler` + Worker-Cancel-Polling | `adapters/driving/mcp/.../registry/JobCancelHandler.kt` |
-| Quota / Rate-Limit | `QuotaStore` + `JdbcQuotaStore` + `QuotaReservationSweeper` | `hexagon/ports-common/.../server/ports/quota/QuotaStore.kt`; `JobQuotaScenarioTest.kt` |
-| Idempotency | `IdempotencyStore` + `JdbcIdempotencyStore` | `hexagon/ports-common/.../server/ports/IdempotencyStore.kt`; `adapters/driven/persistence-jdbc/.../idempotency/JdbcIdempotencyStore.kt` |
+| Connection-Pool | `HikariConnectionPoolFactory` + `PoolSettings` | `adapters/driven/driver-common/…/connection/HikariConnectionPoolFactory.kt`; `hexagon/ports-common/…/driver/connection/PoolSettings.kt` |
+| Cancellation (data-Pfad) | `JobCancelHandler` + Worker-Cancel-Polling | `adapters/driving/mcp/…/registry/JobCancelHandler.kt` |
+| Quota / Rate-Limit | `QuotaStore` + `JdbcQuotaStore` + `QuotaReservationSweeper` | `hexagon/ports-common/…/server/ports/quota/QuotaStore.kt`; `JobQuotaScenarioTest.kt` |
+| Idempotency | `IdempotencyStore` + `JdbcIdempotencyStore` | `hexagon/ports-common/…/server/ports/IdempotencyStore.kt`; `adapters/driven/persistence-jdbc/…/idempotency/JdbcIdempotencyStore.kt` |
 
 C/D/F komponieren diese Ports, statt parallele
 Implementierungen zu bauen.
@@ -99,7 +99,7 @@ Lock-Garantie aber nicht.
 ### 3.3 CLI-Pfad bleibt regressionsfrei
 
 Genau wie A+E im CLI-Pfad transparent waren
-([`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)),
+([`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)),
 müssen C/D den bestehenden CLI-Pfad unverändert lassen — kein
 Sub-Pool-Override, kein Quota-Check (Default
 `InMemoryQuotaStore` mit `unlimited`).
@@ -140,9 +140,9 @@ Pool-Exhaustion blocken.
 
 **Betroffene Dateien**:
 
-- Neuer Port: `hexagon/ports-execute/.../MigratePoolFactory.kt`
+- Neuer Port: `hexagon/ports-execute/…/MigratePoolFactory.kt`
 - Neuer Adapter:
-  `adapters/driven/driver-common/.../connection/HikariMigratePoolAdapter.kt`
+  `adapters/driven/driver-common/…/connection/HikariMigratePoolAdapter.kt`
 - Wiring in `SchemaMigrateWiring.kt`
 
 **Dependencies**: keine.
@@ -184,11 +184,11 @@ Limit **vor** Pool-Exhaustion greift.
 
 **Betroffene Dateien**:
 
-- `hexagon/ports-common/.../server/ports/quota/QuotaStore.kt`
+- `hexagon/ports-common/…/server/ports/quota/QuotaStore.kt`
   (Erweiterung wenn nötig)
-- `hexagon/application/.../job/JobStartOrchestrator.kt`
+- `hexagon/application/…/job/JobStartOrchestrator.kt`
 - Neuer Test:
-  `hexagon/application/.../job/SchemaMigrateQuotaScenarioTest.kt`
+  `hexagon/application/…/job/SchemaMigrateQuotaScenarioTest.kt`
 
 **Dependencies**: C (Connection-Sub-Pool) — Quota schützt den
 Pool, also muss der Pool da sein.
@@ -320,20 +320,20 @@ implementierbar ohne C/D), dann F.3 (parallel zu C in
 
 ## 8. Verweise
 
-- [`done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+- [`done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
   — Closure für die gelieferten Sub-Slices A + E + SIGINT +
   B-Deferral.
 - [`mcp-schema-migrate-tool.md`](mcp-schema-migrate-tool.md) —
   MCP-Tool-Vertrag, der F konsumiert. Sub-Slices F.1-F.5 dort
   sind die MCP-seitigen Implementierungs-Stufen.
-- `docs/planning/done/sequence-preserve-atomic-lock-plan.md`
+- `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
   §3.2 Out-of-Scope, §6 Risiken Nr. 8, §7 Out-of-Scope-Folge-
   Themen, §8.2 Carve-outs.
-- `docs/planning/done/atomic-preserve-followups.md` §6 Offene
+- `docs/planning/done-archive/atomic-preserve-followups.md` §6 Offene
   Fragen + §8.3 Carve-outs.
-- `docs/planning/done/ImpPlan-0.9.6-F.md` — Policy-Gate-Pattern
+- `docs/planning/done-archive/ImpPlan-0.9.6-F.md` — Policy-Gate-Pattern
   für `data_transfer_start`, Referenz für F-Wiring.
-- `docs/planning/done/quality-coverage-expansion-plan.md` §3.2
+- `docs/planning/done-archive/quality-coverage-expansion-plan.md` §3.2
   + §9 — MCP-Migrate-Tool als neues Produkt-Thema.
 - [`docs/planning/in-progress/carveout.md`](../in-progress/carveout.md)
   §3 Sequence-Preserve / Atomic-Preserve + §7 Telemetry +

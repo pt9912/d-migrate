@@ -562,19 +562,10 @@ class SchemaComparatorTest : FunSpec({
         diff.isEmpty() shouldBe true
     }
 
-    test("partitioning changes do not produce diff") {
-        val left = schema(tables = mapOf("t" to TableDefinition(
-            columns = mapOf("id" to col(NeutralType.Identifier())),
-            partitioning = PartitionConfig(PartitionType.RANGE, emptyList()),
-        )))
-        val right = schema(tables = mapOf("t" to TableDefinition(
-            columns = mapOf("id" to col(NeutralType.Identifier())),
-            partitioning = null,
-        )))
-
-        val diff = comparator.compare(left, right)
-        diff.isEmpty() shouldBe true
-    }
+    // AP4 (ADR 0019): the comparator is partition-aware — the former
+    // "partitioning changes do not produce diff" expectation is INVERTED.
+    // Partition-specific cases live in SchemaComparatorPartitioningTest to keep
+    // this spec under the LargeClass threshold (no @Suppress, real split).
 
     test("schema metadata name change") {
         val left = schema(name = "old")

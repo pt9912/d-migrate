@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
@@ -45,6 +46,15 @@ internal class SqliteDiffRenderContext(
      * re-emit the bootstrap statement.
      */
     var bootstrapEmitted: Boolean = false
+
+    /**
+     * VA4/5d Befund 1: flips to `true` once the SpatiaLite metadata bootstrap
+     * (`SELECT CASE WHEN CheckSpatialMetaData() = 0 THEN InitSpatialMetaData() END;`)
+     * has been emitted in the current (UP) direction, so it is emitted at most once
+     * before the first `AddGeometryColumn`. Separate from [bootstrapEmitted] (the
+     * `dmg_sequences` helper) — the two bootstraps are independent.
+     */
+    var spatialMetadataBootstrapEmitted: Boolean = false
     private val skipped = mutableSetOf<String>()
     private val manualActions = mutableSetOf<String>()
     private val destructive = mutableSetOf<String>()
@@ -216,7 +226,29 @@ internal class SqliteDiffRenderContext(
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
         val schema = if (direction == SqliteRenderDirection.UP) desiredSchema else currentSchema
         val columns = schema?.tables?.get(table)?.columns.orEmpty()
-        return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
+        return index.isSpatialGeometryIndex { columns[it]?.type }
+    }
+
+    /**
+     * ADR 0025 (Slice P4): whether [table] is declared WITHOUT ROWID — external-content FTS5 needs
+     * the implicit rowid, so a WITHOUT ROWID base table degrades the FULLTEXT expansion
+     * ([SqliteFullTextExpansion.unsupportedReason]). Schema selection mirrors [indexTouchesGeometry]
+     * (desired UP, current DOWN); unknown table → false (best effort, guard is direction-agnostic).
+     */
+    fun tableWithoutRowid(table: String): Boolean {
+        val schema = if (direction == SqliteRenderDirection.UP) desiredSchema else currentSchema
+        return schema?.tables?.get(table)?.metadata?.withoutRowid ?: false
+    }
+
+    /**
+     * VA4: erste Geometriespalte, die [index] indiziert (für `CreateSpatialIndex`,
+     * das genau eine Geometriespalte adressiert), oder null. Schema-Auswahl wie
+     * [indexTouchesGeometry] (gewünschtes Schema UP, aktuelles DOWN).
+     */
+    fun geometryIndexColumn(table: String, index: IndexDefinition): String? {
+        val schema = if (direction == SqliteRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return index.columnNames.firstOrNull { name -> columns[name]?.type is NeutralType.Geometry }
     }
 
     /**

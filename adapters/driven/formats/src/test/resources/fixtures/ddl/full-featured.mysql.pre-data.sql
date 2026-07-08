@@ -20,8 +20,12 @@ ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- [W100] DATETIME with timezone on column 'date' mapped to DATETIME in MySQL which does not support time zones.
 -- Hint: Store timezone information in a separate column or use UTC consistently.
--- [W112] RANGE partition expressions may need manual adjustment for MySQL (e.g., wrapping date columns with YEAR()).
--- Hint: Review the partition key expressions and adjust for MySQL-specific syntax if needed.
+-- [E065] Foreign key 'fk_orders_customer_id' on partitioned table 'orders' was skipped: MySQL/InnoDB does not support foreign keys on partitioned tables (in either direction).
+-- Hint: Enforce referential integrity in the application, or do not partition the table.
+-- [E065] Foreign key 'fk_composite' on partitioned table 'orders' was skipped: MySQL/InnoDB does not support foreign keys on partitioned tables (in either direction).
+-- Hint: Enforce referential integrity in the application, or do not partition the table.
+-- [W112] PostgreSQL RANGE has lower+upper bounds; MySQL RANGE COLUMNS keeps only the upper bound (VALUES LESS THAN), so the partition's `from` bound is dropped.
+-- Hint: Verify the partitions are contiguous (MySQL RANGE assumes no gaps).
 -- [E056] Sequence-based default on 'invoice_number' requires --mysql-named-sequences helper_table to generate support objects.
 -- Hint: Add --mysql-named-sequences helper_table to enable sequence emulation.
 CREATE TABLE `orders` (
@@ -33,17 +37,15 @@ CREATE TABLE `orders` (
     `active` TINYINT(1) DEFAULT 1,
     `amount` DECIMAL(10,2) DEFAULT 0,
     `invoice_number` BIGINT,
-    CONSTRAINT `fk_orders_customer_id` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
     CONSTRAINT `chk_amount` CHECK (amount >= 0),
     CONSTRAINT `uq_uuid` UNIQUE (`uuid_field`),
-    CONSTRAINT `fk_composite` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
     PRIMARY KEY (`id`)
 )
-PARTITION BY RANGE (`date`) (
-    PARTITION `orders_2024` VALUES LESS THAN (2025-01-01),
-    PARTITION `orders_2025` VALUES LESS THAN (2026-01-01)
-)
-ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+PARTITION BY RANGE COLUMNS (`date`) (
+    PARTITION `orders_2024` VALUES LESS THAN ('2025-01-01'),
+    PARTITION `orders_2025` VALUES LESS THAN ('2026-01-01')
+);
 
 -- [W102] HASH index 'idx_customer' is not supported on InnoDB; converted to BTREE.
 -- Hint: InnoDB only supports BTREE indexes. The HASH index has been automatically converted.

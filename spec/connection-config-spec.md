@@ -148,7 +148,7 @@ Beispiel: Passwort `p@ss:word` → `postgresql://admin:p%40ss%3Aword@localhost/m
 | `idleTimeout` | `300000` | Max. Idle-Zeit (ms, 5 Min) |
 | `maxLifetime` | `600000` | Max. Lebenszeit einer Verbindung (ms, 10 Min) |
 | `keepaliveTime` | `60000` | Keepalive-Intervall (ms) |
-| `statementTimeout` | `30000` | Per-Statement-Timeout (ms). Begrenzt jede atomar-nicht-cancelbare Driver-Operation auf das Cancel-Reaktionsbudget aus implementation-plan-0.9.6 §4.1 (`<=30s`). Wert `0` deaktiviert das Timeout; negative Werte sind Konstruktionsfehler. |
+| `statementTimeout` | `30000` | Per-Statement-Timeout (ms). Begrenzt jede atomar-nicht-cancelbare Driver-Operation auf das Cancel-Reaktionsbudget (`<=30s`). Wert `0` deaktiviert das Timeout; negative Werte sind Konstruktionsfehler. |
 | `networkTimeout` | `30000` | Per-Connection-Network-Timeout (ms). Schützt Commit-/Socket-/Connection-I/O-Pfade, die nicht über `Statement.setQueryTimeout` erfasst werden (z.B. `Connection.metaData.getPrimaryKeys` in PostgreSQL/MySQL-Writer). Wert `0` deaktiviert; negative Werte sind Konstruktionsfehler. |
 
 Für SQLite: Pool-Size auf `1` (SQLite unterstützt keine parallelen Schreibzugriffe).
@@ -255,6 +255,16 @@ pipeline:
     initial_delay_ms: 1000           # Initialer Delay
     backoff_multiplier: 2.0          # Exponentieller Backoff-Faktor (Delay × Faktor^Versuch)
 
+# ── Reverse-Engineering-Praeferenzen ───────────
+# Aufloesung inhaerenter Reverse-Mehrdeutigkeiten (reverse-preference-mechanism.md).
+reverse:
+  sqlite:
+    # Wie der SQLite-Reverse einen AUTOINCREMENT-Primaerschluessel ins neutrale
+    # Modell schreibt: 32 → identifier (32-bit-Vertrag, Default) · 64 → biginteger
+    # + generation: identity (64-bit-treu). Prioritaet: CLI-Flag
+    # `--sqlite-autoincrement-width` > Config-Wert > Default.
+    autoincrement_width: 32
+
 # ── Inkrementelle Migration ────────────────────
 incremental:
   strategy: timestamp                # timestamp | id | hash | cdc
@@ -325,7 +335,7 @@ ai:
 # ── Internationalisierung ──────────────────────
 i18n:
   default_locale: en                 # Sprache für CLI-Ausgaben
-  default_timezone: UTC              # Nur expliziter Zonierungs-Baustein (Phase E §4.4), kein Export-Default
+  default_timezone: UTC              # Nur expliziter Zonierungs-Baustein, kein Export-Default
   normalize_unicode: NFC             # Unicode-Normalisierung: NFC | NFD | NFKC | NFKD
 
 # Vertragsregeln:
@@ -484,10 +494,10 @@ d-migrate data export --source postgresql://other@host/db --format json
 
 Wenn `--source` oder `--target` kein URL-Schema (`://`) enthält, wird der Wert als Verbindungsname in `database.connections` nachgeschlagen. Die Auflösung erfolgt **vor** der CLI-Validierung — für die nachgelagerte Verarbeitung sieht das System immer eine vollständige URL. Wird kein passender Verbindungsname gefunden, erzeugt das System Fehler E402.
 
-**Wiederverwendung in 0.6.0-Kommandos**: Dieselbe Auflösung gilt für alle
-Kommandos, die DB-Verbindungen akzeptieren — insbesondere auch für die in 0.6.0
-neuen Pfade `schema reverse` (`--source`), `schema compare` (Operanden mit
-`db:`-Präfix) und `data transfer` (`--source`, `--target`). Die
+**Wiederverwendung in weiteren Kommandos**: Dieselbe Auflösung gilt für alle
+Kommandos, die DB-Verbindungen akzeptieren — insbesondere `schema reverse`
+(`--source`), `schema compare` (Operanden mit `db:`-Präfix) und `data transfer`
+(`--source`, `--target`). Die
 URL-/Alias-Semantik ist in dieser Spezifikation kanonisch; die
 [CLI-Spezifikation](./cli-spec.md) beschreibt nur die kommandospezifische
 Bedeutung der Flags.
@@ -497,12 +507,10 @@ Bedeutung der Flags.
 ## Verwandte Dokumentation
 
 - [CLI-Spezifikation](./cli-spec.md) — Kommandos, Flags, Exit-Codes
-- [Design](./design.md) — Konfigurationshierarchie §5.3, KI-Datenschutz §4.3
-- [Architektur](./architecture.md) — HikariCP §5.2, DmigrateConfig §4.1, Sicherheit §4.3
-- [Lastenheft](./lastenheft-d-migrate.md) — LN-025 (Credentials), LN-026 (Verschlüsselung), LN-032 (KI-Datenschutz)
+- [Lastenheft](./lastenheft-d-migrate.md) — [`LN-025`](lastenheft-d-migrate.md#ln-025) (Credentials), [`LN-026`](lastenheft-d-migrate.md#ln-026) (Verschlüsselung), [`LN-032`](lastenheft-d-migrate.md#ln-032) (KI-Datenschutz)
 
 ---
 
 **Version**: 1.1
 **Stand**: 2026-04-13
-**Status**: Entwurf — explizite Wiederverwendung für 0.6.0-Kommandos (reverse, compare, transfer) dokumentiert
+**Status**: Entwurf

@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
+
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -28,7 +30,7 @@ import java.util.concurrent.atomic.AtomicReference
  * positive and negative smoke follow the same shape; MySQL's
  * `innodb_lock_wait_timeout` plays the role PG's `lock_timeout` plays.
  *
- * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * Plan-Doc: `docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase D ("Cross-Plan-Deadlock-Beweis pro Dialekt").
  */
 class MysqlAtomicPreserveCrossPlanDeadlockTest : FunSpec({
@@ -106,7 +108,7 @@ class MysqlAtomicPreserveCrossPlanDeadlockTest : FunSpec({
                     plan1Started.countDown()
                     plan2Started.await(10, TimeUnit.SECONDS)
                     plan1Result.set(
-                        executor.execute(c, plan1Batch, lockTimeoutMillis = 15_000) { _, _ ->
+                        executor.execute(JdbcDatabaseConnection(c), plan1Batch, lockTimeoutMillis = 15_000) { _, _ ->
                             AtomicProtectedExecutionResult.Succeeded(0)
                         },
                     )
@@ -117,7 +119,7 @@ class MysqlAtomicPreserveCrossPlanDeadlockTest : FunSpec({
                     plan2Started.countDown()
                     plan1Started.await(10, TimeUnit.SECONDS)
                     plan2Result.set(
-                        executor.execute(c, plan2Batch, lockTimeoutMillis = 15_000) { _, _ ->
+                        executor.execute(JdbcDatabaseConnection(c), plan2Batch, lockTimeoutMillis = 15_000) { _, _ ->
                             AtomicProtectedExecutionResult.Succeeded(0)
                         },
                     )

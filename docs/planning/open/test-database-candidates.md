@@ -82,6 +82,69 @@ Empfohlene Nutzung:
 
 ---
 
+### 2.4 Spatial-Samples (Phase 5)
+
+Spatial deckt **Korrektheit** ab (Geometrie-/SRID-/Index-Fidelitaet), nicht
+Volumen — daher ein Hybrid aus einem echten PostGIS-Sample (PG-Realismus) und
+einem kuratierten WKT-Sample (portabel ueber alle Dialekte).
+
+**(a) PostGIS nyc (echtes Workshop-Sample) — 5a, PostgreSQL/PostGIS.**
+
+- URL: `https://s3.amazonaws.com/s3.cleverelephant.ca/postgis-workshop-2020.zip`
+  (offizielles „Introduction to PostGIS"-Workshop-Bundle, postgis.net)
+- SHA256: `373cab8cf4004d92bb77fbbe496fe7b683969a3f9b5be19225935287d8497a85`
+- Datenbanktyp: PostgreSQL/PostGIS; Format: **Shapefiles**
+- Inhalt: `nyc_neighborhoods` (129 MultiPolygons, **EPSG:26918** NAD83/UTM18N),
+  `nyc_streets`, `nyc_subway_stations`, `nyc_census_blocks`.
+- Lade-Mechanik: `postgis/postgis` hat **kein** `shp2pgsql`/`ogr2ogr` → der
+  gepinnte `gdal`-Compose-Service (`ghcr.io/osgeo/gdal:ubuntu-small-3.13.1`)
+  laedt die Shapefile per `ogr2ogr` in die PostGIS-Quelle (legt auto. einen
+  GIST-Index an).
+- Pin/Fetch: `fetch-dumps.sh` (`FETCH_NYC=1`, ~22 MB, opt-in, kein PR-Gate).
+- Nutzung: 5a PostGIS-Round-Trip (`smoke-spatial.sh` `[pg-nyc]`): reverse →
+  validate → generate `--spatial-profile postgis` → transfer; Paritaet (Zeilen +
+  Flaechen-Checksumme), SRID-Erhalt, GIST-Index.
+
+**(b) Kuratiertes WKT-Sample — 5b/5c/5d, alle Dialekte.**
+
+- Quelle: **inline in `examples/sample-db/scripts/smoke-spatial.sh`** (versioniert
+  im Repo, kein externer Pin noetig) — Point + Polygon, geografisch (EPSG:4326)
+  und projiziert (EPSG:25832/3857/31466, inkl. gedrehter Gauss-Krueger-Achsen).
+- Warum kuratiert: ein einzelnes echtes Sample laedt nicht portabel ueber PG +
+  MySQL + SpatiaLite; exakt-in-double darstellbare WKT-Koordinaten machen
+  Achsen-/SRID-Fehler datenbelegt sichtbar (semantischer Vergleich statt
+  `ST_AsText`).
+- Nutzung: 5b (MySQL native GEOMETRY+SRID), 5c (Cross-Dialect PG↔MySQL,
+  axis-order), 5d (SpatiaLite migrate-Round-Trip).
+
+### 2.5 TPC-H via DuckDB-Generator (Phase 4, 4a)
+
+TPC-H deckt **realistische Join-/Aggregat-Last + Volumen** ab. Statt eines Dumps
+wird das **Generator-Tool gepinnt** (ADR 0017) und on-demand offline generiert —
+analog zum gepinnten `gdal`-Loader, aber als gepinntes Binary statt fremdem Image.
+
+- Tool: **DuckDB-CLI v1.4.5** (linux-amd64) + **`tpch`-Extension** v1.4.5/linux_amd64.
+  Die Extension ist **nicht** im CLI gebuendelt (sonst Laufzeit-Download von
+  `extensions.duckdb.org`) → sie wird **mitgepinnt** und aus Datei `LOAD`-ed; erst
+  damit ist die Generierung hermetisch (Loader laeuft `network_mode: none`).
+- Pins (SHA256): CLI `ff4ef9ec59fe3e1a1f3dd1004c6218d1fd59c0533c185c968c4403fd0240d02b`,
+  Extension-`.gz` `56256ba742be9b2800c89ffedb4409946aaa2514d95e07288bb5cf6b88e45014`;
+  Runner-Image `debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716`.
+- Lade-Mechanik: `duckdb`-Compose-Service (digest-gepinntes `debian:bookworm-slim`)
+  fuehrt das gepinnte CLI aus: `LOAD <ext>; CALL dbgen(sf=SF); EXPORT DATABASE`
+  → `schema.sql` + `load.sql` + 8 CSVs (customer/lineitem/nation/orders/part/
+  partsupp/region/supplier) nach `.cache/tpch/` (gitignored, **kein Dump im Repo**).
+- Scale-Factor konfigurierbar: SF=0.01 (Default, CI-Funktionsnachweis: `lineitem`
+  = 60175 Zeilen) bis SF=1 (~6 Mio `lineitem`, Volumen-Abnahme in 4c).
+- Pin/Fetch: `fetch-dumps.sh` (`FETCH_TPCH=1`, ~50 MB, opt-in, kein PR-Gate).
+- Nutzung: 4a Sourcing-Beleg (`make sample-db-tpch-gen`); **4b Round-Trip-Korrektheit
+  ERLEDIGT** (`make sample-db-tpch-smoke`: PG→PG reverse/validate/generate/transfer,
+  8 Tabellen Parität + DECIMAL-Checksumme; FK-/PK-frei). Gemessene Abnahme = 4c/4d.
+- Lizenz: DuckDB-`tpch`-Extension **MIT**, lokal generiert, nichts eingecheckt/
+  publiziert → keine TPC-EULA-/Branding-Bindung (ADR 0017).
+
+---
+
 ## 3. Weitere sinnvolle Kandidaten
 
 ### 3.1 PostgreSQL-Sample-Databases Uebersicht
@@ -111,6 +174,9 @@ Nutzen:
 ### 4.1 TPC-H
 
 - URL: `https://www.tpc.org/tpch/`
+- **Aktiv ab Phase 4 (4a):** via gepinntem DuckDB-Generator gesourct — siehe
+  [2.5](#25-tpc-h-via-duckdb-generator-phase-4-4a). Dieser Abschnitt bleibt als
+  Einordnung des Original-Benchmarks.
 
 Einordnung:
 
@@ -164,3 +230,10 @@ Datensaetze operationalisiert werden:
 Diese Kombination deckt kleine bis mittlere Smoke-/Kompatibilitaetstests
 sowie einen ersten groesseren Datenpfad ab, ohne die Komplexitaet eines
 formalen Benchmark-Sets zu frueh in den Testaufbau zu ziehen.
+
+> **Operationalisierung (Stand 2026-06-18):** Pagila/Sakila sind im 0.9.9-Pilot
+> real genutzt (ad-hoc), aber noch **nicht** in der automatisierten CI-Suite
+> (die nutzt synthetische Fixtures); Employees ist noch nicht geladen. Der
+> Umsetzungsplan fuer einen automatisierten Sample-DB-Integrationstest-Harness
+> liegt in [`../done/sample-db-integration-harness.md`](../done/sample-db-integration-harness.md)
+> (Smoke/Compatibility = Test-Infra; Scale/Performance = 1.0.0-QA, LF 8.1/8.2).

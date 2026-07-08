@@ -7,7 +7,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexDefinition
-import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlocker
@@ -207,7 +207,17 @@ internal class MysqlDiffRenderContext(
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
         val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
         val columns = schema?.tables?.get(table)?.columns.orEmpty()
-        return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
+        return index.isSpatialGeometryIndex { columns[it]?.type }
+    }
+
+    /**
+     * I-08: first index column that renders to an unbounded TEXT/BLOB but carries
+     * no prefix length (cannot be indexed without a key length, ERROR 1170), or null.
+     */
+    fun indexColumnNeedingPrefix(table: String, index: IndexDefinition): String? {
+        val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return MysqlIndexPrefix.columnNeedingPrefix(index) { columns[it]?.type }
     }
 
     /**

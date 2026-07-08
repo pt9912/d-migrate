@@ -14,7 +14,7 @@ import org.apache.parquet.schema.Types
 /**
  * Konvertiert ein [ChunkSchema] in einen Parquet-[MessageType]
  * gemaess der AP2 §8 Mapping-Tabelle
- * (`docs/planning/done/parquet-schema-source.md`).
+ * (`docs/planning/done-archive/parquet-schema-source.md`).
  *
  * Bewusst pure Funktion ohne Seiteneffekt. Decimal-Physik
  * richtet sich nach Precision (INT32 bis 9, INT64 bis 18,
@@ -97,6 +97,12 @@ internal object ChunkSchemaToParquetMessageType {
             // Xml: in Parquet ohne eigenen Logical-Type. Per AP2 §8 als
             // STRING(UTF-8) abgelegt; XML-Detail bleibt im Manifest.
             is NeutralType.Xml -> Types.primitive(PrimitiveTypeName.BINARY, repetition)
+                .`as`(LogicalTypeAnnotation.stringType())
+                .named(column.name)
+
+            // ADR 0015: FullText (tsvector) — its value is a string; store as
+            // STRING(UTF-8), like Xml.
+            is NeutralType.FullText -> Types.primitive(PrimitiveTypeName.BINARY, repetition)
                 .`as`(LogicalTypeAnnotation.stringType())
                 .named(column.name)
 

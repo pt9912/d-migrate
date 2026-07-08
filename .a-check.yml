@@ -1,0 +1,97 @@
+# .a-check.yml — Hexagon-Architektur-Gate (a-check). Ergänzt/verallgemeinert das
+# bestehende ports-jdbc-free-gate (ADR 0022) zu einem sprach-weiten Schicht-Gate.
+#
+# Braucht a-check >= v0.12.0 (deklarations-bewusste Split-Package-Auflösung, slice-031)
+# — d-migrate hat 9 schicht-übergreifende Split-Packages (dev.dmigrate.driver.* etc. in
+# ports- UND adapters-Modulen); ältere Versionen brechen dort mit Exit 2 ab.
+#
+# STRENGES Modell (2026-07-06): feine Adapter-Globs (driven/driving) + adapter_sink auf
+# die eine geteilte JDBC-Basis driver-common. Standalone-Target `make a-check`; NICHT im
+# gates-Aggregat, solange die 12 bekannten Befunde offen sind (5 java.sql + 7 lateral im
+# formats/streaming/parquet-Dreieck) — Slice docs/planning/*/a-check-architecture-gate.md.
+#
+# d-migrate ist ein JVM-Kotlin-Hexagon (src/main/kotlin, KEIN KMP). Die Packages sind
+# KONZEPT-basiert (dev.dmigrate.{driver,format,server,streaming,cli,…}) und spannen über
+# mehrere Gradle-Module/Schichten — die Hexagon-Schicht steckt im Modul-VERZEICHNIS, nicht
+# im Package-Namen. Darum: layers per Verzeichnis-Glob + resolution.fixed-root, ein root
+# pro Modul.
+version: 1
+
+languages:
+  kotlin: ["**/*.kt"]
+
+layers:
+  domain:      {globs: ["hexagon/core/**"], role: domain}
+  application: {globs: ["hexagon/application/**"], role: app}
+  profiling:   {globs: ["hexagon/profiling/**"], role: app}
+  ports:       {globs: ["hexagon/ports/**", "hexagon/ports-common/**", "hexagon/ports-read/**", "hexagon/ports-write/**", "hexagon/ports-execute/**"], role: port}
+  adapters:    {globs: ["adapters/driven/**", "adapters/driving/**"], role: adapter}
+
+edges:
+  - {from: application, to: domain}    # Use-Case orchestriert die Domäne
+  - {from: application, to: ports}     # ... und spricht nach außen über Ports
+  - {from: application, to: profiling} # App kann Profiling-Services orchestrieren
+  - {from: profiling, to: domain}      # Profiling referenziert Domänentypen
+  - {from: profiling, to: ports}       # ... und spricht über Ports
+  - {from: ports, to: domain}          # Ports sprechen die Sprache der Domäne
+  - {from: adapters, to: ports}        # Adapter implementieren / rufen Ports
+  - {from: adapters, to: application}  # Driving-Adapter (cli/mcp) rufen Use Cases
+  - {from: adapters, to: domain}       # Adapter dürfen Domänentypen referenzieren
+  - {from: adapters, to: profiling}    # Profiling-Adapter (driver-*-profiling) → Profiling
+
+# Ein root pro Modul (bis dev/dmigrate); a-check löst FQNs datei-mengen-bewusst gegen die
+# realen Dateien auf, member-level auch über die 9 Split-Packages (>= v0.12.0).
+resolution:
+  kotlin:
+    mode: fixed-root
+    package_base: "dev.dmigrate"
+    roots:
+      - "hexagon/core/src/main/kotlin/dev/dmigrate"
+      - "hexagon/application/src/main/kotlin/dev/dmigrate"
+      - "hexagon/profiling/src/main/kotlin/dev/dmigrate"
+      - "hexagon/ports/src/main/kotlin/dev/dmigrate"
+      - "hexagon/ports-common/src/main/kotlin/dev/dmigrate"
+      - "hexagon/ports-read/src/main/kotlin/dev/dmigrate"
+      - "hexagon/ports-write/src/main/kotlin/dev/dmigrate"
+      - "hexagon/ports-execute/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/audit-logging/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/connection-config/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-common/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-postgresql-profiling/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-mysql-profiling/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-sqlite-profiling/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/formats/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/formats-parquet/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/integrations/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/storage-file/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/storage-s3/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/streaming/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/text-icu/src/main/kotlin/dev/dmigrate"
+      - "adapters/driving/cli/src/main/kotlin/dev/dmigrate"
+      - "adapters/driving/mcp/src/main/kotlin/dev/dmigrate"
+
+# cli/mcp sind die Driving-/Composition-Root-Naht (verdrahten konkrete Adapter) —
+# von den Schicht-Regeln (lateral-adapter) ausgenommen.
+composition_root: ["adapters/driving/**"]
+# driver-common ist die EINE geteilte Adapter-Basis (JDBC), die alle Adapter importieren
+# dürfen. Streng: jede weitere adapter→adapter-Kante ist lateral-adapter (aktuell 7, im
+# formats/streaming/parquet-Dreieck — geteilte Typen, die in einen Port gehören).
+adapter_sink: "adapters/driven/driver-common"
+
+# JDBC gehört nur an die getriebenen Adapter (ADR 0022, hier hexagon-weit statt
+# nur ports*). composition_root: forbid hält java.sql AUCH in der Verdrahtung scharf.
+tech:
+  - {pattern: "java.sql", adapter: "adapters/driven", composition_root: forbid}
+  - {pattern: "javax.sql", adapter: "adapters/driven", composition_root: forbid}
+
+# Nur Produktivimporte prüfen: Test-Quellen je Modul + die eigenständigen
+# test/-Gradle-Module + generierter build-Output raus.
+exclude:
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
+  - "test/**"
+  - "**/build/**"

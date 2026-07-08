@@ -53,9 +53,13 @@ internal class SqliteTableDdlSupport(
         return statements
     }
 
-    fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
-        generatedIndexNames(tableName, table.indices).mapIndexedNotNull { position, indexName ->
-            generateIndex(tableName, table.indices[position], indexName)
+    fun generateIndices(
+        tableName: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> =
+        generatedIndexNames(tableName, table.indices).flatMapIndexed { position, indexName ->
+            generateIndex(tableName, table.indices[position], indexName, table.columns, table.metadata?.withoutRowid == true, options)
         }
 
     private fun checkSpatialMetadataBlocks(
@@ -79,12 +83,8 @@ internal class SqliteTableDdlSupport(
                 )
             }
         }
-        for (index in table.indices) {
-            val blockingColumn = index.columnNames.firstOrNull { it in geometryColumnNames }
-            if (blockingColumn != null) {
-                return blockTableForSpatialMetadata(name, blockingColumn, "index on geometry column")
-            }
-        }
+        // VA4: ein Index auf einer Geometriespalte blockt die Tabelle NICHT mehr —
+        // er wird separat als SpatiaLite `CreateSpatialIndex` emittiert (generateIndices).
         return null
     }
 
@@ -100,7 +100,7 @@ internal class SqliteTableDdlSupport(
         val lines = mutableListOf<String>()
         val normalColumns = table.columns.filter { it.value.type !is NeutralType.Geometry }
         val effectiveColumns = if (isSpatiaLite) normalColumns else table.columns
-        for ((columnName, column) in effectiveColumns) {
+        for ((columnName, column) in effectiveColumns.inOrdinalOrder()) {
             lines += columnConstraintHelper.generateColumnSql(columnName, column, schema, name, notes, deferredFks)
         }
         for (constraint in table.constraints) {
@@ -141,24 +141,73 @@ internal class SqliteTableDdlSupport(
             )
         }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement? {
+    private fun generateIndex(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+        columns: Map<String, ColumnDefinition>,
+        withoutRowid: Boolean,
+        options: DdlGenerationOptions,
+    ): List<DdlStatement> {
+        // ADR 0025 (Slice P4): expand a FULLTEXT index into a SQLite FTS5 external-content virtual
+        // table + initial `'rebuild'` + three sync triggers over the source columns
+        // (SqliteFullTextExpansion — the single SQL source shared with the diff/migrate render
+        // path; ftsName() gives the name both paths agree on). Emitted BEFORE the geometry check:
+        // a fulltext index lists its source TEXT columns, so geometry routing must not see it.
+        // POST_DATA so the `'rebuild'` runs after the base table is loaded (and the bulk transfer
+        // stays trigger-free). The tsvector column itself still degrades to TEXT with its own
+        // column-level W132 (SqliteColumnConstraintHelper) — unchanged; only the index no longer
+        // degrades. Where external-content FTS5 can't be built (WITHOUT ROWID / reserved FTS5
+        // column name) the index degrades conservatively with W132 instead of emitting broken DDL.
+        // Rebuild-bucket recreation still degrades via createIndexSql until Slice P5.
+        if (index.type == IndexType.FULLTEXT) {
+            val ftsName = SqliteFullTextExpansion.ftsName(tableName, index)
+            val reason = SqliteFullTextExpansion.unsupportedReason(withoutRowid, index, ftsName)
+            if (reason != null) {
+                return listOf(
+                    DdlStatement(
+                        SqliteFullTextDegradation.skipComment(quoteIdentifier(ftsName)),
+                        listOf(
+                            TransformationNote(
+                                type = NoteType.WARNING,
+                                code = SqliteFullTextDegradation.W_CODE,
+                                objectName = ftsName,
+                                message = SqliteFullTextDegradation.message(ftsName, tableName, reason),
+                                hint = SqliteFullTextDegradation.HINT,
+                            ),
+                        ),
+                    ),
+                )
+            }
+            return SqliteFullTextExpansion
+                .createStatements(tableName, ftsName, index.columnNames)
+                .map { DdlStatement(it, phase = DdlPhase.POST_DATA) }
+        }
+        // VA4: ein Index auf einer Geometriespalte → SpatiaLite `CreateSpatialIndex`
+        // (R*Tree). Nur unter `--spatial-profile spatialite`; sonst geskippt mit Note.
+        val geometryColumn = index.columnNames.firstOrNull { columns[it]?.type is NeutralType.Geometry }
+        if (geometryColumn != null) {
+            return listOf(spatialIndexStatement(tableName, geometryColumn, indexName, options))
+        }
         if (index.type != IndexType.BTREE) {
-            return DdlStatement(
-                "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.WARNING,
-                        code = "W102",
-                        objectName = indexName,
-                        message = buildString {
-                            append(index.type.name)
-                            append(" index '")
-                            append(indexName)
-                            append("' on table '")
-                            append(tableName)
-                            append("' is not supported in SQLite. Only BTREE is available.")
-                        },
-                        hint = "The index has been skipped. If needed, create a standard BTREE index instead."
+            return listOf(
+                DdlStatement(
+                    "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",
+                    listOf(
+                        TransformationNote(
+                            type = NoteType.WARNING,
+                            code = "W102",
+                            objectName = indexName,
+                            message = buildString {
+                                append(index.type.name)
+                                append(" index '")
+                                append(indexName)
+                                append("' on table '")
+                                append(tableName)
+                                append("' is not supported in SQLite. Only BTREE is available.")
+                            },
+                            hint = "The index has been skipped. If needed, create a standard BTREE index instead."
+                        )
                     )
                 )
             )
@@ -172,7 +221,37 @@ internal class SqliteTableDdlSupport(
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
-        return DdlStatement(sql)
+        return listOf(DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)")))
+    }
+
+    /**
+     * VA4: SpatiaLite `CreateSpatialIndex` für einen Geometrie-Index. Ohne
+     * `--spatial-profile spatialite` wird er übersprungen (Note), da der Spatial-
+     * Index die SpatiaLite-Extension + Geometrie-Metadaten voraussetzt.
+     */
+    private fun spatialIndexStatement(
+        tableName: String,
+        geometryColumn: String,
+        indexName: String,
+        options: DdlGenerationOptions,
+    ): DdlStatement {
+        if (options.spatialProfile != SpatialProfile.SPATIALITE) {
+            return DdlStatement(
+                "-- Index ${quoteIdentifier(indexName)} skipped: geometry index requires --spatial-profile spatialite",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.WARNING,
+                        code = "SPATIAL_PROFILE_REQUIRED",
+                        objectName = indexName,
+                        message = "Spatial index '$indexName' on table '$tableName' requires the SpatiaLite profile.",
+                        hint = "Re-run schema generate with --spatial-profile spatialite to emit CreateSpatialIndex.",
+                    )
+                ),
+            )
+        }
+        val escapedTable = tableName.replace("'", "''")
+        val escapedColumn = geometryColumn.replace("'", "''")
+        return DdlStatement("SELECT CreateSpatialIndex('$escapedTable', '$escapedColumn');")
     }
 
     private fun renderIndexColumn(column: IndexColumn): String =

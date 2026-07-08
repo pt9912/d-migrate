@@ -516,7 +516,7 @@ dem Vertrag aus CHANGELOG `[0.9.8]`.
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `-c`, `--config`      | Pfad zu einer Konfigurationsdatei                         |
-| `--lang`              | Sprache der Ausgabe (`de`, `en`, plus Varianten `de-DE`, `de_DE`, `en-US`, `en_US`). Hat Vorrang vor `D_MIGRATE_LANG`, `LC_ALL`/`LANG` und `i18n.default_locale`. Unsupported Werte (z.B. `fr`) enden mit Exit 2 (seit 0.9.0 Phase A, `docs/planning/ImpPlan-0.9.0-A.md` §4.1/§4.2). |
+| `--lang`              | Sprache der Ausgabe (`de`, `en`, plus Varianten `de-DE`, `de_DE`, `en-US`, `en_US`). Hat Vorrang vor `D_MIGRATE_LANG`, `LC_ALL`/`LANG` und `i18n.default_locale`. Unsupported Werte (z.B. `fr`) enden mit Exit 2 (seit 0.9.0 Phase A, `docs/planning/done-archive/ImpPlan-0.9.0-A.md` §4.1/§4.2). |
 | `--output-format`     | Ausgabeformat: `plain` (Standard), `json`, `yaml`         |
 | `-v`, `--verbose`     | Erweiterte Ausgabe (DEBUG-Level)                          |
 | `-q`, `--quiet`       | Nur Fehler ausgeben                                       |
@@ -527,6 +527,22 @@ dem Vertrag aus CHANGELOG `[0.9.8]`.
 | `-h`, `--help`        | Hilfe anzeigen                                            |
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
+
+### Optionen für `schema reverse`
+
+`schema reverse` liest standardmäßig **nur** Tabellen, Sequenzen, Constraints
+und Indizes. Views, Trigger, Functions und Stored Procedures sind **opt-in**:
+
+| Option                 | Wirkung                              |
+| ---------------------- | ------------------------------------ |
+| `--include-views`      | Views mitnehmen                      |
+| `--include-functions`  | User-Defined Functions mitnehmen     |
+| `--include-procedures` | Stored Procedures mitnehmen          |
+| `--include-triggers`   | Trigger mitnehmen                    |
+| `--include-all`        | alle optionalen Objekttypen mitnehmen |
+
+Ohne diese Flags werden die genannten Objekte **ohne Fehler ausgelassen** — für
+eine vollständige Migration siehe [Migrations-Leitfaden](migrations-leitfaden.md).
 
 ### Optionen für `schema generate`
 
@@ -551,7 +567,7 @@ dem Vertrag aus CHANGELOG `[0.9.8]`.
 | `--output`, `-o`      | Ausgabedatei oder -verzeichnis (Standard: stdout)         |
 | `--tables`            | Nur diese Tabellen (kommasepariert)                       |
 | `--filter`            | Filter-DSL-Ausdruck (Vergleiche, IN, IS NULL, AND/OR/NOT, Funktionen) |
-| `--since-column`      | Marker-Spalte für inkrementellen Export (LF-013)          |
+| `--since-column`      | Marker-Spalte für inkrementellen Export ([`LF-013`](../../spec/lastenheft-d-migrate.md#lf-013))          |
 | `--since`             | Untere Grenze für `--since-column`                        |
 | `--split-files`       | Eine Datei pro Tabelle in `--output <dir>`                |
 | `--chunk-size`        | Rows pro Streaming-Chunk (Standard: 10000)                |
@@ -753,7 +769,7 @@ PG-/MySQL-Pfad benoetigt keinen Opt-in — der atomare Pfad ist Default.
   Beweise sind Phase D des Atomic-Preserve-Refactors.
 
 Plan-Doc:
-`docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md` §3.2
+`docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md` §3.2
 und §6 fuer die vollstaendige Carve-Out-Liste.
 
 ## Neutrales Typsystem
@@ -779,7 +795,7 @@ d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch ü
 - [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md) -- Vollständige Typsystem-Referenz
 - [CLI-Spezifikation](../../spec/cli-spec.md) -- Alle Kommandos und Exit-Codes
 - [BI-Demo-Stack](../../examples/bi-demo/README.md) -- Analytics-Compose-Stack (Postgres + Metabase + SeaweedFS/S3) mit Parquet-Export in Object-Storage (0.9.8)
-- [Design-Dokument](../../spec/design.md) -- Architektur und Designentscheidungen
+- [Architektur-Dokument](../../spec/architecture.md) -- Architektur und Designentscheidungen
 - [Roadmap](../planning/in-progress/roadmap.md) -- Geplante Features und Meilensteine
 - [README (English)](../../README.md) -- Projektübersicht auf Englisch
 - [Changelog](../../CHANGELOG.md) -- Alle Änderungen im Überblick

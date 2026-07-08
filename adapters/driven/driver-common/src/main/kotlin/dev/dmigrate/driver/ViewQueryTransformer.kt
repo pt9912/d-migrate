@@ -11,6 +11,51 @@ package dev.dmigrate.driver
  */
 class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
 
+    /** Result of [assessPortability]: whether a view body is safe to emit verbatim. */
+    data class ViewPortability(val portable: Boolean, val reason: String?)
+
+    /**
+     * Verdict on whether a view body can be emitted for [targetDialect] verbatim.
+     * d-migrate does not transpile view bodies across dialects (no SQL transpiler
+     * in 0.9.x), so a body carrying foreign identifier quoting or — for a
+     * cross-dialect source — dialect-specific functions is reported as
+     * non-portable. Callers skip such views with an E053 note instead of emitting
+     * DDL the target rejects (e.g. MySQL backticks or `group_concat` into PG).
+     */
+    fun assessPortability(query: String, sourceDialect: String?): ViewPortability {
+        // Normalise via DatabaseDialect so aliases ("postgres"/"pg"/"maria"/…) are
+        // not mistaken for a foreign dialect; unparseable values stay conservative.
+        val crossDialect = sourceDialect != null &&
+            runCatching { DatabaseDialect.fromString(sourceDialect) }.getOrNull() != targetDialect
+        val tokens = ViewQueryTokenizer.tokenize(query)
+        val markers = mutableListOf<String>()
+        // Backticks are MySQL-only quoting and are a hard syntax error in PG/SQLite.
+        // Checked on the token stream so a backtick inside a string literal is ignored.
+        if (targetDialect != DatabaseDialect.MYSQL &&
+            tokens.any { it.type == ViewQueryTokenType.WORD && it.text.startsWith("`") }
+        ) {
+            markers += "MySQL-style backtick quoting"
+        }
+        // N4: PostgreSQL/SQLite cast `::` and concat `||` are not portable to MySQL.
+        // Checked on a code-only view (string literals blanked) so `::`/`||` inside
+        // a literal is ignored. `::` is always a syntax error in MySQL; `||` is
+        // valid there as logical OR, so it is only flagged for a cross-dialect body.
+        if (targetDialect == DatabaseDialect.MYSQL) {
+            val codeOnly = tokens.joinToString("") {
+                if (it.type == ViewQueryTokenType.STRING) " " else it.text
+            }
+            if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
+            if (crossDialect && codeOnly.contains("||")) markers += "PostgreSQL/SQLite-style concatenation (||)"
+        }
+        if (crossDialect) {
+            val unknown = detectUnknownFunctions(applyRules(tokens))
+            if (unknown.isNotEmpty()) {
+                markers += "dialect-specific function(s): ${unknown.joinToString(", ")}"
+            }
+        }
+        return ViewPortability(portable = markers.isEmpty(), reason = markers.joinToString("; ").ifEmpty { null })
+    }
+
     fun transform(query: String, sourceDialect: String?): Pair<String, List<TransformationNote>> {
         val notes = mutableListOf<TransformationNote>()
         val tokens = ViewQueryTokenizer.tokenize(query)
@@ -156,12 +201,30 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
 
     private val allKnown = transparentFunctions + sqlKeywords
 
+    /**
+     * Scalar/aggregate functions that are spelled and behave identically in
+     * MySQL and PostgreSQL. Treated as known for those targets so a portable
+     * cross-dialect view (e.g. `SELECT FLOOR(x)`) is not falsely flagged as
+     * non-portable. NOT applied to SQLite, where several of these require the
+     * optional math extension — keeping the SQLite verdict conservative.
+     */
+    private val mysqlPostgresPortableFunctions = setOf(
+        "FLOOR", "CEIL", "CEILING", "MOD", "POWER", "SQRT", "SIGN", "EXP", "LN", "LOG",
+        "GREATEST", "LEAST", "LTRIM", "RTRIM",
+    )
+
+    private fun knownFunctions(): Set<String> = when (targetDialect) {
+        DatabaseDialect.MYSQL, DatabaseDialect.POSTGRESQL -> allKnown + mysqlPostgresPortableFunctions
+        DatabaseDialect.SQLITE -> allKnown
+    }
+
     private fun detectUnknownFunctions(tokens: List<ViewQueryToken>): List<String> {
+        val known = knownFunctions()
         val unknown = mutableListOf<String>()
         for ((index, token) in tokens.withIndex()) {
             if (token.type != ViewQueryTokenType.WORD) continue
             val next = tokens.drop(index + 1).firstOrNull { it.type != ViewQueryTokenType.WS }
-            if (next?.type == ViewQueryTokenType.LPAREN && token.text.uppercase() !in allKnown) {
+            if (next?.type == ViewQueryTokenType.LPAREN && token.text.uppercase() !in known) {
                 unknown += token.text.uppercase()
             }
         }

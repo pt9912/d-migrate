@@ -3,6 +3,7 @@ package dev.dmigrate.driver.data
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
+import dev.dmigrate.core.model.GeometryType
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -91,6 +92,8 @@ class AbstractTableImportSessionTest : FunSpec({
         finishCleanupFailure: Throwable? = null,
         closePreFinallyAction: (() -> Unit)? = null,
         closeFinallyAction: (() -> Unit)? = null,
+        geometryBindCtor: String? = null,
+        geometryBindOpts: String? = null,
     ) = TestTableImportSession(
         conn = conn,
         savedAutoCommit = true,
@@ -102,6 +105,8 @@ class AbstractTableImportSessionTest : FunSpec({
         finishCleanupFailure = finishCleanupFailure,
         closePreFinallyAction = closePreFinallyAction,
         closeFinallyAction = closeFinallyAction,
+        geometryBindCtor = geometryBindCtor,
+        geometryBindOpts = geometryBindOpts,
     )
 
     // ── write ──────────────────────────────────────────────
@@ -433,6 +438,78 @@ class AbstractTableImportSessionTest : FunSpec({
         result.shouldBeInstanceOf<FinishTableResult.Success>()
         s.close()
     }
+
+    // ── VA1c (Spatial-Slice): geometry-aware value placeholder ──────────
+    val geomCol = TargetColumn("g", nullable = true, jdbcType = Types.OTHER, sqlTypeName = "geometry")
+    val pointCol = TargetColumn("p", nullable = true, jdbcType = Types.BINARY, sqlTypeName = "POINT")
+    val plainCol = TargetColumn("name", nullable = true, jdbcType = Types.VARCHAR, sqlTypeName = "varchar")
+
+    test("VA1c: without geometryBindConstructor every column uses a plain ? placeholder") {
+        val s = session(geometryBindCtor = null)
+        s.testValuePlaceholder(geomCol) shouldBe "?"
+        s.testValuePlaceholder(plainCol) shouldBe "?"
+    }
+
+    test("VA1c: with geometryBindConstructor, geometry columns are wrapped (case-insensitive subtype), others not") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        s.testValuePlaceholder(geomCol) shouldBe "ST_GeomFromWKB(?)"
+        s.testValuePlaceholder(pointCol) shouldBe "ST_GeomFromWKB(?)"
+        s.testValuePlaceholder(plainCol) shouldBe "?"
+        // a geometry column with no sqlTypeName is not treated as geometry
+        s.testValuePlaceholder(TargetColumn("x", nullable = true, jdbcType = Types.OTHER)) shouldBe "?"
+    }
+
+    test("VA1c: buildInsertSql inlines the geometry constructor at the right position") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        val targets = listOf(
+            TargetColumn("id", nullable = false, jdbcType = Types.INTEGER, sqlTypeName = "int4"),
+            geomCol,
+        )
+        s.testBuildInsertSql(targets) shouldBe "INSERT INTO t (id, g) VALUES (?, ST_GeomFromWKB(?))"
+    }
+
+    // ── VA2 (Spatial): SRID is carried into the geometry constructor ────
+    val sridGeomCol = TargetColumn("g", nullable = true, jdbcType = Types.OTHER, sqlTypeName = "geometry", srid = 4326)
+    val sridPointCol = TargetColumn("p", nullable = true, jdbcType = Types.BINARY, sqlTypeName = "POINT", srid = 3857)
+
+    test("VA2: with an SRID the geometry constructor takes a second srid argument") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        s.testValuePlaceholder(sridGeomCol) shouldBe "ST_GeomFromWKB(?, 4326)"
+        s.testValuePlaceholder(sridPointCol) shouldBe "ST_GeomFromWKB(?, 3857)"
+        // no SRID → no second argument (SRID 0)
+        s.testValuePlaceholder(geomCol) shouldBe "ST_GeomFromWKB(?)"
+    }
+
+    test("VA2: SRID on a non-geometry column is ignored (plain ?)") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        val plainWithSrid = TargetColumn("name", nullable = true, jdbcType = Types.VARCHAR, sqlTypeName = "varchar", srid = 4326)
+        s.testValuePlaceholder(plainWithSrid) shouldBe "?"
+    }
+
+    test("VA2: SRID is ignored without a geometryBindConstructor") {
+        val s = session(geometryBindCtor = null)
+        s.testValuePlaceholder(sridGeomCol) shouldBe "?"
+    }
+
+    test("VA2: buildInsertSql inlines the SRID at the geometry position") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB")
+        val targets = listOf(
+            TargetColumn("id", nullable = false, jdbcType = Types.INTEGER, sqlTypeName = "int4"),
+            sridGeomCol,
+        )
+        s.testBuildInsertSql(targets) shouldBe "INSERT INTO t (id, g) VALUES (?, ST_GeomFromWKB(?, 4326))"
+    }
+
+    // ── VA2-X1 (Cross-Dialect): axis-order options after the SRID ───────
+    test("VA2-X1: geometryBindOptions are appended after the SRID") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB", geometryBindOpts = "'axis-order=long-lat'")
+        s.testValuePlaceholder(sridGeomCol) shouldBe "ST_GeomFromWKB(?, 4326, 'axis-order=long-lat')"
+    }
+
+    test("VA2-X1: options are NOT appended without an SRID (no anchor argument)") {
+        val s = session(geometryBindCtor = "ST_GeomFromWKB", geometryBindOpts = "'axis-order=long-lat'")
+        s.testValuePlaceholder(geomCol) shouldBe "ST_GeomFromWKB(?)"
+    }
 })
 
 /**
@@ -451,15 +528,29 @@ internal class TestTableImportSession(
     private val finishCleanupFailure: Throwable? = null,
     private val closePreFinallyAction: (() -> Unit)? = null,
     private val closeFinallyAction: (() -> Unit)? = null,
+    geometryBindCtor: String? = null,
+    geometryBindOpts: String? = null,
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
     var reseedThrows: Throwable? = null
 
+    override val geometryBindConstructor: String? = geometryBindCtor
+    override val geometryBindOptions: String? = geometryBindOpts
+
+    // MySQL-artige Erkennung (alle OGC-Namen), damit die VA1c-Tests sowohl
+    // "geometry" als auch Subtypen wie "POINT" abdecken.
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower in GeometryType.KNOWN_VALUES
+
     fun testRecordCleanupFailure(t: Throwable) = recordCleanupFailure(t)
+
+    /** VA1c test accessors for the protected geometry-aware placeholder helpers. */
+    fun testValuePlaceholder(column: TargetColumn): String = valuePlaceholder(column)
+    fun testBuildInsertSql(columns: List<TargetColumn>): String = buildInsertSql(columns)
 
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         val cols = importedTargetColumns.joinToString(", ") { it.name }
-        val placeholders = importedTargetColumns.joinToString(", ") { "?" }
+        val placeholders = importedTargetColumns.joinToString(", ") { valuePlaceholder(it) }
         return "INSERT INTO $table ($cols) VALUES ($placeholders)"
     }
 

@@ -16,7 +16,7 @@ nicht starten. Plan `atomic-preserve-service-mode` selbst sagt im Header:
 erst in einer späteren Tranche, wenn `schema_migrate` als Tool
 geplant wird."
 
-Auch [`done/quality-coverage-expansion-plan.md`](../done/quality-coverage-expansion-plan.md) §3.2 + §9 hält fest
+Auch [`done-archive/quality-coverage-expansion-plan.md`](../done-archive/quality-coverage-expansion-plan.md) §3.2 + §9 hält fest
 (Zeile 384): „Ein MCP-Migrate-Tool (`schema_migrate` oder
 `schema_migrate_start`) wäre ein eigener Produkt-/Contract-Slice."
 
@@ -53,7 +53,7 @@ Entscheidungen, keine Produkt-Fragen mehr:
   analog `data_transfer_start` ([`spec/mcp-server.md`](../../../spec/mcp-server.md)
   §661ff). `dryRun: true` ist die Plan-only-Ausnahme aus §3.1.
 - **Idempotency-Wiring direkt am Handler** (gefaltete Sub-Slice B
-  aus `atomic-preserve-service-mode` §3 Sub-Slice B, gefaltet in F gemäß done/ImpPlan-0.9.8-atomic-preserve-AE.md). Der bestehende
+  aus `atomic-preserve-service-mode` §3 Sub-Slice B, gefaltet in F gemäß done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md). Der bestehende
   [`IdempotencyStore`](../../../hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/IdempotencyStore.kt)
   +
   [`JdbcIdempotencyStore`](../../../adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/idempotency/JdbcIdempotencyStore.kt)
@@ -90,7 +90,7 @@ Entscheidungen, keine Produkt-Fragen mehr:
   geliefert (commit `2fcb3846`); das Tool-Schema reicht diesen
   Override durch.
 - **Policy-Gate-Architektur** ist durch
-  [`done/ImpPlan-0.9.6-F.md`](../done/ImpPlan-0.9.6-F.md) (Phase F Job-Start-Tools) etabliert:
+  [`done-archive/ImpPlan-0.9.6-F.md`](../done-archive/ImpPlan-0.9.6-F.md) (Phase F Job-Start-Tools) etabliert:
   Approval-Flow + Audit-Trail + Quota-basiertes Rate-Limit. Es
   existiert bereits — neu ist nur die Anwendung auf
   `schema_migrate_start`.
@@ -318,7 +318,7 @@ Approval, Quota und Audit beziehen sich auf diesen einen Job.
 Begründung:
 
 - Die Atomic-Preserve-Garantie aus
-  [`done/atomic-preserve-followups.md`](../done/atomic-preserve-followups.md)
+  [`done-archive/atomic-preserve-followups.md`](../done-archive/atomic-preserve-followups.md)
   ist Probe + Apply in einer Transaktion. Ein getrenntes
   `plan_start`/`apply_start`-Paar würde zulassen, dass ein
   Plan-Artefakt zwischen Planung und Anwendung gegen Source- oder
@@ -602,7 +602,7 @@ Log-Kontext und erscheinen nie im Wire-Envelope.
 
 Die Sub-Slices wachsen nicht entlang der DDL-Phasen, sondern entlang
 der Job-Start-Tool-Architektur aus
-[`done/ImpPlan-0.9.6-F.md`](../done/ImpPlan-0.9.6-F.md):
+[`done-archive/ImpPlan-0.9.6-F.md`](../done-archive/ImpPlan-0.9.6-F.md):
 Tool-Schema → Handler-Skeleton (dryRun) → Pool-Wiring (Worker) →
 Apply-Job (Approval+Quota+Lock+Cancel) → E2E. Das verteilt das
 Risiko der Atomic-Preserve-Garantie auf einen einzigen Sub-Slice
@@ -631,7 +631,7 @@ Die Sub-Slices F.1-F.5 schließen den Service-Mode-Vertrags-Track
 ab. Sie konsumieren die JVM-Verträge C, D (offen in
 [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
 §4) und A, E (geliefert in
-[`../done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md))
+[`../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md))
 und liefern den MCP-Konsumenten.
 
 ### Sub-Slice F.1 — Tool-Schema + Discovery-Wiring
@@ -738,7 +738,7 @@ mit Title/Description/ErrorCodes versorgt.
 - `hexagon/core/src/test/kotlin/dev/dmigrate/server/core/error/ToolErrorEnvelopeTest.kt`
   (Pin auf 21 erhöhen)
 - `spec/mcp-server.md`, `spec/ki-mcp.md` (Code-Liste)
-- Neuer Test: `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/schema/SchemaMigrateStartSchemaTest.kt`
+- Neuer Test: `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/schema/SchemaMigrateStartSchemaTest.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 - Erweiterung an `McpToolsListContractTest.kt` (oder Pendant) für
   den `tools/list`-Vertrag.
 
@@ -795,10 +795,10 @@ NOT_IMPLEMENTED.
 
 **Betroffene Dateien**:
 - Neuer Handler:
-  `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt`
+  `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 - `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/OperationalMcpRegistries.kt`
 - Neuer Test:
-  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandlerTest.kt`
+  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandlerTest.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 
 **Dependencies**: F.1.
 
@@ -894,7 +894,7 @@ aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures mappen auf
 - [ ] Cancel zwischen Probe und Restore → Job-Status `CANCELLED`
   mit Rollback (Vertrag aus
   [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
-  §4 Sub-Slice E, geliefert in done/ImpPlan-0.9.8-atomic-preserve-AE.md).
+  §4 Sub-Slice E, geliefert in done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md).
 - [ ] Lock-Acquire-Timeout → Job-Status `FAILED` mit
   Failure-Detail `code = SCHEMA_MIGRATE_LOCK_TIMEOUT` (und
   `details.lockTimeoutMs`/`dialect`) im Job-Result.
@@ -908,14 +908,14 @@ aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures mappen auf
 - [ ] `make ci` grün inkl. neuer Integrationstests pro Dialekt.
 
 **Betroffene Dateien**:
-- `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt`
+- `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 - Job-Worker-Wiring (Pool + Cancel + Apply-Sequenz)
 - IT-Tests pro Dialekt
 
 **Dependencies**: F.2 + F.3 plus
 [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
 §4 Sub-Slice D (Quota-Plumbing) plus
-[`../done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+[`../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done-archive/ImpPlan-0.9.8-atomic-preserve-AE.md)
 §2 (Lock-Timeout, geliefert) + §4 (Cancellation-Token, geliefert).
 
 **Risiken**: hoch — zusammengesetzter Atomicity-Vertrag
@@ -956,7 +956,7 @@ pinnt das volle Vertragsbündel.
 
 **Betroffene Dateien**:
 - Neuer Test:
-  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/integration/McpSchemaMigrateStartScenarioTest.kt`
+  `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/integration/McpSchemaMigrateStartScenarioTest.kt` <!-- d-check:ignore (Zielbild: entsteht mit schema_migrate, Sub-Slices F.1–F.5; ADR 0011) -->
 
 **Dependencies**: F.4.
 
@@ -1099,10 +1099,10 @@ geliefert sind, **F.4 → F.5**.
   Pattern (`procedure_transform_plan` /
   `procedure_transform_execute`) als bewusst nicht übernommene
   Kontrastfolie zu §3.1.
-- [`done/ImpPlan-0.9.6-F.md`](../done/ImpPlan-0.9.6-F.md) —
+- [`done-archive/ImpPlan-0.9.6-F.md`](../done-archive/ImpPlan-0.9.6-F.md) —
   Policy-Gate-Architektur (Approval + Audit + Quota), die
   `schema_migrate_start` übernehmen kann.
-- [`done/atomic-preserve-followups.md`](../done/atomic-preserve-followups.md)
+- [`done-archive/atomic-preserve-followups.md`](../done-archive/atomic-preserve-followups.md)
   — Atomic-Preserve-Garantien, die der Tool-Vertrag respektieren
   muss.
 - [`in-progress/carveout.md`](../in-progress/carveout.md) §62, §113

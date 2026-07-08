@@ -4,10 +4,13 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
+import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 
@@ -48,6 +51,28 @@ internal class SqliteDiffSqlBuilders {
         return parts.joinToString(" ")
     }
 
+    /**
+     * The table-level `PRIMARY KEY (…)` clause for a `CREATE TABLE`, or `null`
+     * when it must be omitted. SQLite renders an `identifier` column inline as
+     * `INTEGER PRIMARY KEY AUTOINCREMENT` ([columnLine] → [SqliteTypeMapper]),
+     * so a single-column PK on that same column must NOT also emit a table-level
+     * clause — SQLite rejects the duplicate PK. Every other PK (multi-column, or
+     * a single-column PK on a non-`identifier` column) keeps the clause.
+     *
+     * Shared by **both** SQLite `CREATE TABLE` emitters — the diff renderer
+     * ([SqliteDiffSimpleOps]) and the table-rebuild renderer
+     * ([SqliteRebuildRenderer]) — so the dedup can never be forgotten on one
+     * path (the generate path [SqliteTableDdlSupport] carries its own, wider
+     * variant that also covers `ColumnGeneration.Identity`, which the diff
+     * `columnLine` does not render inline).
+     */
+    fun primaryKeyClause(table: TableDefinition): String? {
+        val pk = table.primaryKey
+        if (pk.isEmpty()) return null
+        if (pk.size == 1 && table.columns[pk.single()]?.type is NeutralType.Identifier) return null
+        return "PRIMARY KEY (" + pk.joinToString(", ") { quote(it) } + ")"
+    }
+
     fun constraintLine(c: ConstraintDefinition): String? = when (c.type) {
         ConstraintType.UNIQUE -> {
             val cols = c.columns?.joinToString(", ") { quote(it) } ?: return null
@@ -81,6 +106,14 @@ internal class SqliteDiffSqlBuilders {
     }
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {
+        // ADR 0025: a FULLTEXT index has no SQLite equivalent without an FTS5 virtual table
+        // (slice P4). Emit the W132 skip marker here — the single SQL source — so EVERY caller
+        // (AddIndex, CreateTable, table rebuild, DropIndex-DOWN recreate) degrades instead of
+        // silently emitting a plain BTREE over the source columns. renderAddIndex additionally
+        // attaches the W132 diagnostic.
+        if (idx.type == IndexType.FULLTEXT) {
+            return SqliteFullTextDegradation.skipComment(quote(effectiveIndexName(table, idx)))
+        }
         val unique = if (idx.unique) "UNIQUE " else ""
         // SQLite always uses btree internally; USING clauses are unsupported.
         val cols = idx.columns.joinToString(", ") { col ->
@@ -118,7 +151,9 @@ internal class SqliteDiffSqlBuilders {
         val body = trigger.body ?: return null
         if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") return null
         val timing = trigger.timing.name
-        val event = trigger.event.name
+        // F4: single-event sets render as a bare keyword (SQLite has no
+        // multi-event trigger grammar); foreign triggers are rejected upstream.
+        val event = trigger.events.toSqlEventClause()
         val forEach = trigger.forEach.name
         // E.2 review follow-up: deduplicate the trailing `;` — readers
         // may or may not include it on the body, but the BEGIN..END

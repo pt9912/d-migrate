@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.profiling.model.TargetTypeCompatibility
@@ -20,7 +21,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
-import java.sql.Connection
 
 class DataProfileWiringTest : FunSpec({
 
@@ -278,7 +278,7 @@ private class FakeProfilePool(
 ) : ConnectionPool {
     var closed = false
 
-    override fun borrow(): Connection = throw UnsupportedOperationException()
+    override fun borrow(): DatabaseConnection = throw UnsupportedOperationException()
 
     override fun activeConnections() = 0
 

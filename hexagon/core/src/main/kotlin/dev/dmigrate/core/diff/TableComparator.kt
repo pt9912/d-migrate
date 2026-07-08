@@ -12,7 +12,18 @@ import dev.dmigrate.core.model.*
  * Extracted from [SchemaComparator] to isolate the most complex
  * comparison logic (~320 LOC).
  */
-internal class TableComparator {
+internal class TableComparator(
+    /**
+     * AP7 (postcompare-type-canonicalization slice): target-aware mode. When
+     * set, the comparison suppresses differences the TARGET dialect cannot
+     * express — column types that canonicalise onto the same declared type,
+     * PK-implied `required`, and the implicit-`identifier` effective PK —
+     * mirroring the v7 fingerprint so the migrate plan CONVERGES (a second
+     * run against a freshly migrated target plans zero operations instead of
+     * an eternal no-op rebuild). `schema compare` stays strict (null).
+     */
+    private val targetCanonicalization: ((NeutralType) -> NeutralType)? = null,
+) {
 
     fun compareTables(left: SchemaDefinition, right: SchemaDefinition): TableDiffs {
         val leftNames = left.tables.keys
@@ -39,21 +50,31 @@ internal class TableComparator {
         val leftNorm = normalizeConstraints(left)
         val rightNorm = normalizeConstraints(right)
 
+        // AP7: im target-aware Modus zählt der EFFEKTIVE PK (v3-Regel) für
+        // PK-Vergleich und PK-implizites required — sonst leere Sets (strikt).
+        val leftPk = if (targetCanonicalization != null) EffectivePrimaryKey.of(left).toSet() else emptySet()
+        val rightPk = if (targetCanonicalization != null) EffectivePrimaryKey.of(right).toSet() else emptySet()
         val absorbedColumns = AbsorbedColumns(
             uniqueLeft = leftNorm.singleColumnUnique,
             uniqueRight = rightNorm.singleColumnUnique,
             fkLeft = leftNorm.singleColumnForeignKeys.keys,
             fkRight = rightNorm.singleColumnForeignKeys.keys,
+            pkLeft = leftPk,
+            pkRight = rightPk,
         )
 
         val columnDiffs = compareColumns(left, right, absorbedColumns)
-        val pkDiff = if (left.primaryKey == right.primaryKey) null
-            else ValueChange(left.primaryKey, right.primaryKey)
+        val pkDiff = when {
+            targetCanonicalization != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
+            left.primaryKey == right.primaryKey -> null
+            else -> ValueChange(left.primaryKey, right.primaryKey)
+        }
 
         val indexDiffs = compareIndices(left.indices, right.indices)
         val constraintDiffs = compareConstraints(leftNorm, rightNorm)
         val metadataDiff = if (left.metadata == right.metadata) null
             else ValueChange(left.metadata, right.metadata)
+        val partitioningDiff = comparePartitioning(left.partitioning, right.partitioning)
 
         val diff = TableDiff(
             name = name,
@@ -68,16 +89,58 @@ internal class TableComparator {
             constraintsRemoved = constraintDiffs.removed,
             constraintsChanged = constraintDiffs.changed,
             metadata = metadataDiff,
+            partitioning = partitioningDiff,
         )
 
         return if (diff.hasChanges()) diff else null
     }
+
+    // ── Partitioning (AP4, ADR 0019) ──────────────
+
+    /**
+     * Compares the partitioning of two tables. Strategy and key (ordered — the
+     * partition-key column order is semantic) must be equal, and the **child
+     * partitions as a set** (order-independent: the reverse reader emits them by
+     * `relname`, the generator by list position). Set equality relies on the
+     * *single canonical* bound encoding (AP1/AP1a) — otherwise false-positive diffs.
+     *
+     * Within each partition the **child-local indices are likewise order-
+     * independent** (AP2a): they are canonicalised by [indexKey] before the set
+     * comparison, so a reordered-but-equal index set is not a diff. This matches
+     * the order-independent top-level index comparison and the sorted fingerprint
+     * projection — without it the comparator and the post-`--execute` drift check
+     * would disagree on a reordered index set.
+     */
+    private fun comparePartitioning(
+        left: PartitionConfig?,
+        right: PartitionConfig?,
+    ): ValueChange<PartitionConfig?>? {
+        val equivalent = when {
+            left == null && right == null -> true
+            left == null || right == null -> false
+            else -> left.type == right.type &&
+                left.key == right.key &&
+                canonicalPartitions(left) == canonicalPartitions(right)
+        }
+        return if (equivalent) null else ValueChange(left, right)
+    }
+
+    /** Partitions as a set, each with its child-local indices in canonical order. */
+    private fun canonicalPartitions(config: PartitionConfig): Set<PartitionDefinition> =
+        config.partitions.map { partition ->
+            // ADR 0025: project child-local indices too (drop the generate-only FULLTEXT
+            // hints) so a partition's FULLTEXT index does not phantom-diff authored-vs-reversed
+            // — same exclusion the table-level compareIndices applies.
+            partition.copy(indices = partition.indices.map { projectIndex(it) }.sortedBy { indexKey(it) })
+        }.toSet()
 
     // ── Columns ───────────────────────────────────
 
     private data class AbsorbedColumns(
         val uniqueLeft: Set<String>, val uniqueRight: Set<String>,
         val fkLeft: Set<String>, val fkRight: Set<String>,
+        /** AP7: effektive PK-Spalten je Seite (leer im strikten Modus). */
+        val pkLeft: Set<String> = emptySet(), val pkRight: Set<String> = emptySet(),
     )
 
     private data class ColumnDiffs(
@@ -104,8 +167,15 @@ internal class TableComparator {
     private fun compareColumn(
         name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
     ): ColumnDiff? {
-        val typeDiff = diffValueChangeOrNull(left.type, right.type)
-        val requiredDiff = diffValueChangeOrNull(left.required, right.required)
+        val canon = targetCanonicalization
+        // AP7: Typen, die der Ziel-Dialekt auf denselben deklarierten Typ faltet,
+        // sind dort keine ausdrückbare Änderung — ein geplanter Alter wäre ein
+        // ewiger No-Op-Rebuild (Post-Compare wäre per v7 clean).
+        val typeDiff = if (canon != null && canon(left.type) == canon(right.type)) null
+            else diffValueChangeOrNull(left.type, right.type)
+        // AP7: PK ⇒ NOT NULL — required vergleicht im target-aware Modus effektiv.
+        val requiredDiff = if (canon != null && effectiveRequiredEqual(name, left, right, absorbed)) null
+            else diffValueChangeOrNull(left.required, right.required)
         val defaultDiff = if (left.default == right.default) null
             else ValueChange(left.default, right.default)
         val uniqueAbsorbed = name in absorbed.uniqueLeft || name in absorbed.uniqueRight
@@ -126,6 +196,15 @@ internal class TableComparator {
             references = refDiff,
             generation = generationDiff,
         )
+    }
+
+    /** AP7: `required` unter Einrechnung der effektiven PK-Mitgliedschaft je Seite. */
+    private fun effectiveRequiredEqual(
+        name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
+    ): Boolean {
+        val leftEffective = left.required || name in absorbed.pkLeft
+        val rightEffective = right.required || name in absorbed.pkRight
+        return leftEffective == rightEffective
     }
 
     private fun hasNoColumnDiff(vararg diffs: Any?): Boolean =
@@ -258,10 +337,29 @@ internal class TableComparator {
         val removed = (leftKeys - rightKeys).sorted().map { leftByKey.getValue(it) }
         val changed = (leftKeys intersect rightKeys).sorted().mapNotNull { key ->
             val l = leftByKey.getValue(key); val r = rightByKey.getValue(key)
-            if (l == r) null else ValueChange(l, r)
+            if (projectIndex(l) == projectIndex(r)) null else ValueChange(l, r)
         }
         return IndexDiffResult(added, removed, changed)
     }
+
+    /**
+     * ADR 0025: a FULLTEXT index's `fullTextVectorColumn` / `fullTextAccessMethod` are
+     * generate-only reconstruction hints (which tsvector column PostgreSQL materialises and
+     * with which access method) — they do not change the fulltext *capability*. Null them out
+     * before equality so an authored index (hint absent) and the reversed live index (hint
+     * set) are not reported as changed, mirroring [projectColumn] for non-semantic fields.
+     * Guarded on the index type (only FULLTEXT carries the hints) so the field list lives in
+     * one place — the `copy` — and a future hint can't slip past a stale guard condition.
+     *
+     * Contract (keep in sync): the index identity is shared by THREE projections — this
+     * denylist (excludes the generate-only hints), `MigrationFingerprint.appendIndex` and
+     * `CanonicalPayload.index` (allowlists of the semantic fields). A new *semantic* index
+     * field must be added to both allowlists; a new generate-only *hint* must be added to the
+     * `copy` here. `SchemaComparatorFullTextHintsTest` pins the hint exclusion across all three.
+     */
+    private fun projectIndex(index: IndexDefinition): IndexDefinition =
+        if (index.type != IndexType.FULLTEXT) index
+        else index.copy(fullTextVectorColumn = null, fullTextAccessMethod = null)
 
     private fun indexKey(index: IndexDefinition): String =
         index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}:${index.where.orEmpty()}"

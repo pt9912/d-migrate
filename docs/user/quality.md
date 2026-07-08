@@ -71,7 +71,7 @@ wird.
 Die Docker-Stages `coverage`, `coverage-json`, `coverage-verify` und
 `docker-coverage-modules-html` sind in der [README](../../README.md)
 beschrieben. Das erledigte Analyse-Dokument
-[`test-coverage.md`](../planning/done/test-coverage.md) enthaelt Befehle, um
+[`test-coverage.md`](../planning/done-archive/test-coverage.md) enthaelt Befehle, um
 Pakete und Klassen unterhalb der 90%-Grenze aus dem JSON-Report zu ermitteln.
 
 ### Tag-Steuerung
@@ -82,15 +82,19 @@ automatisch je nach Modus:
 | Modus                | Befehl                                 | Tag-Filter             |
 | -------------------- | -------------------------------------- | ---------------------- |
 | Unit-Tests (Default) | `docker build .`                       | `!integration & !perf` |
-| Integration-Tests    | `./scripts/test-integration-docker.sh` | `!perf`                |
+| Integration-Tests    | `scripts/test-integration-docker.sh` | `!perf`                |
 | Perf-Tests (opt-in)  | `-Dkotest.tags=perf`                   | nur `perf`             |
 | Expliziter Filter    | `-Dkotest.tags='...'`                  | wie angegeben          |
 
-Perf-Tests (`perf`-Tag) prüfen Memory-Budgets mit großen Fixtures
-(100 MB JSON, 100k YAML) und laufen nie automatisch. Ergebnisse und
-Entscheidungen sind im erledigten Planungsdokument
-[`0.4.0-phase-d-reorder.md`](../planning/done/0.4.0-phase-d-reorder.md)
-dokumentiert. Manueller Start:
+Perf-Tests (`perf`-Tag) prüfen Laufzeit- und Memory-Budgets ausgewählter
+Hotpaths und laufen nie automatisch. Methodik, Hotpaths, Budgets und
+Large-Schema-Scale sind in
+[`../operations/performance-benchmarks.md`](../operations/performance-benchmarks.md)
+beschrieben; regulärer Lauf über `make docker-perf` (opt-in/Nightly;
+`PERF_GATE=true` macht die Baseline-Budgets zum harten Gate). Die frühen
+Format-Budget-Entscheidungen stehen im erledigten Planungsdokument
+[`0.4.0-phase-d-reorder.md`](../planning/done-archive/0.4.0-phase-d-reorder.md).
+Manueller Einzelmodul-Start (Beispiel Formats):
 
 ```bash
 docker build --target build \
@@ -104,7 +108,7 @@ Integrations-Tests (`integration`-Tag) benötigen Docker (Testcontainers)
 und laufen über das Skript:
 
 ```bash
-./scripts/test-integration-docker.sh
+scripts/test-integration-docker.sh
 ```
 
 Der Output wird zusätzlich in eine Log-Datei geschrieben

@@ -24,6 +24,21 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.MYSQL)
 
     fun columnLine(name: String, col: ColumnDefinition): String {
+        // Enum-Degradations-Slice (AP1): a MySQL enum renders as a native
+        // `ENUM('a','b')` — mirror the generate path (MysqlEnumColumnRenderer) so
+        // `migrate` == `generate` instead of degrading to bare TEXT. Handles the
+        // inline-`values` form (the diff builder has no schema); a `refType` enum
+        // is blocked upstream for MySQL — see MysqlEnumColumnRenderer.
+        // Review F3: only take this fast path when the column carries neither an
+        // inline FK nor a SequenceNextVal default — otherwise fall through to the
+        // generic body, which renders `REFERENCES …` and applies the sequence-
+        // trigger bypass (the ENUM type degrades to TEXT there, but FK/sequence
+        // semantics are preserved instead of silently dropped).
+        (col.type as? NeutralType.Enum)?.values?.let { values ->
+            if (col.references == null && col.default !is DefaultValue.SequenceNextVal) {
+                return MysqlEnumColumnRenderer.inline(quote(name), col, values, typeMapper::toDefaultSql)
+            }
+        }
         val parts = mutableListOf<String>()
         parts += quote(name)
         parts += typeMapper.toSql(col.type)
@@ -95,9 +110,24 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
     }
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {
+        // VA3: räumlicher Index → `CREATE SPATIAL INDEX` (kein UNIQUE/USING, keine
+        // Prefix-Länge/Richtung; MySQL erlaubt SPATIAL nur auf NOT-NULL-Geometrie).
+        if (idx.type == IndexType.SPATIAL) {
+            val spatialCols = idx.columns.joinToString(", ") { quote(it.name) }
+            return "CREATE SPATIAL INDEX ${quote(effectiveIndexName(table, idx))} " +
+                "ON ${quote(table)} ($spatialCols);"
+        }
+        // ADR 0025: a neutral FULLTEXT index maps to a native MySQL `FULLTEXT` index over
+        // the source text columns (mirrors the generate path in MysqlIndexPartitionDdlHelper).
+        // FULLTEXT is exempt from the TEXT/BLOB key-length rule, so no prefix length is needed.
+        if (idx.type == IndexType.FULLTEXT) {
+            val ftCols = idx.columns.joinToString(", ") { quote(it.name) }
+            return "CREATE FULLTEXT INDEX ${quote(effectiveIndexName(table, idx))} " +
+                "ON ${quote(table)} ($ftCols);"
+        }
         val unique = if (idx.unique) "UNIQUE " else ""
         val using = if (idx.type != IndexType.BTREE && idx.type != IndexType.HASH) {
-            // MySQL only natively supports BTREE/HASH; FULLTEXT / SPATIAL not modelled here.
+            // MySQL only natively supports BTREE/HASH; FULLTEXT not modelled here.
             ""
         } else if (idx.type == IndexType.HASH) {
             " USING HASH"
@@ -105,7 +135,9 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             ""
         }
         val cols = idx.columns.joinToString(", ") { col ->
-            quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
+            quote(col.name) +
+                (col.prefixLength?.let { "($it)" } ?: "") +
+                (col.direction?.let { " ${it.name}" } ?: "")
         }
         val name = effectiveIndexName(table, idx)
         return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)}$using ($cols);"

@@ -5,11 +5,11 @@ migrate behaviour across PostgreSQL, MySQL and SQLite in a single
 table-driven test.
 
 Plan-Doc:
-[quality-coverage-expansion-plan.md](../../docs/planning/done/quality-coverage-expansion-plan.md)
+[quality-coverage-expansion-plan.md](../../docs/planning/done-archive/quality-coverage-expansion-plan.md)
 §5.2, §6 (Sub-Slice B + B-Vervollständigung).
 
 Cross-criteria source:
-[diffresult-migration-plan-2.md](../../docs/planning/in-progress/diffresult-migration-plan-2.md)
+[diffresult-migration-plan-2.md](../../docs/planning/done-archive/diffresult-migration-plan-2.md)
 §11.2.
 
 ## Why this module exists

@@ -13,5 +13,6 @@ data class SchemaDefinition(
     val functions: Map<String, FunctionDefinition> = emptyMap(),
     val views: Map<String, ViewDefinition> = emptyMap(),
     val triggers: Map<String, TriggerDefinition> = emptyMap(),
-    val sequences: Map<String, SequenceDefinition> = emptyMap()
+    val sequences: Map<String, SequenceDefinition> = emptyMap(),
+    val aggregates: Map<String, AggregateDefinition> = emptyMap()
 )

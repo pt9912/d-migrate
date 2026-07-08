@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# Sample-DB-Harness — Phase 1 Smoke (Pagila / PostgreSQL Round-Trip)
+# Plan: docs/planning/done/sample-db-integration-harness.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Echter End-to-End-CLI-Lauf gegen das d-migrate:dev-Image:
+#   Dump laden -> reverse --include-all -> validate (0 Errors)
+#   -> generate --split pre-post -> Zielschema (pre) -> data transfer
+#   -> Zielschema (post) -> schema compare gegen Expected-Baseline.
+#
+# Voraussetzung am Host: docker, docker compose, jq sowie das lokal
+# gebaute d-migrate:dev-Image (`make docker-build IMAGE_TAG=dev`).
+# Der Stack bleibt nach dem Lauf stehen — Cleanup via
+# `make sample-db-down` (Volume bleibt) / `make sample-db-purge`.
+#
+# Green-Kriterien (hart): validate 0 Errors, generate-Notes == Baseline
+# (E055+W123), Daten-Zeilenzahlen Quelle == Ziel je Tabelle, und
+# `schema compare` == gepinnte Baseline (keine UNERWARTETEN Diffs).
+# Die in der Baseline gepinnten Schema-Diffs sind in
+# expected/pagila-smoke.md je Klasse erklärt.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+EXAMPLES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+COMPOSE_FILE="$EXAMPLES_DIR/docker-compose.yml"
+COMPOSE="docker compose -f $COMPOSE_FILE"
+OUT_DIR="$EXAMPLES_DIR/out"
+EXPECTED_DIR="$EXAMPLES_DIR/expected"
+BASELINE="$EXPECTED_DIR/pagila-smoke.compare.txt"
+
+log()  { printf '[smoke] %s\n' "$*"; }
+fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
+
+# --- 0. .env + Verzeichnisse + Dump-Fetch --------------------------
+mkdir -p "$OUT_DIR" "$EXPECTED_DIR"
+if [ ! -f "$EXAMPLES_DIR/.env" ]; then
+    cp "$EXAMPLES_DIR/.env.example" "$EXAMPLES_DIR/.env"
+    log "created examples/sample-db/.env from .env.example"
+fi
+# shellcheck disable=SC1091
+set -a; . "$EXAMPLES_DIR/.env"; set +a
+: "${POSTGRES_USER:?POSTGRES_USER not set}"
+
+# Das d-migrate:dev-Image läuft als non-root (uid 10001); damit es in das
+# gemountete out/ schreiben kann, läuft der dmigrate-Container als Host-User
+# (vom compose `user:`-Feld konsumiert). Sonst: "Failed to write schema".
+export SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)"
+
+"$SCRIPT_DIR/fetch-dumps.sh"
+
+# psql helper inside the postgres service (unix-socket -> trust)
+psql_db() {  # psql_db <db> <on_error_stop:0|1> [extra psql args...]
+    local db="$1" oes="$2"; shift 2
+    $COMPOSE exec -T postgres psql -v ON_ERROR_STOP="$oes" -U "$POSTGRES_USER" -d "$db" "$@"
+}
+# `</dev/null`: count_rows läuft in der `while read … done <<< "$list"`-Paritätsschleife;
+# `docker compose exec` (in psql_db) würde sonst das Here-String von stdin schlucken und die
+# Schleife nach der 1. Iteration abbrechen (False-Green — bisher als „all 1 tables" maskiert).
+# psql_db selbst behält stdin (Pre-Data-DDL via `< *.sql`) — Redirektion daher nur hier.
+count_rows() { psql_db "$1" 0 -tAc "SELECT count(*) FROM \"$2\"" </dev/null 2>/dev/null | tr -d '[:space:]'; }
+
+# --- 1. Stack hoch + healthy ---------------------------------------
+log "starting postgres..."
+$COMPOSE up -d postgres
+log "waiting for postgres healthy (timeout 120s)..."
+deadline=$(($(date +%s) + 120)); pg_ok="no"
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    st=$(docker inspect --format '{{.State.Health.Status}}' "$($COMPOSE ps -q postgres)" 2>/dev/null || echo "?")
+    if [ "$st" = "healthy" ]; then pg_ok="yes"; break; fi
+    sleep 2
+done
+[ "$pg_ok" = "yes" ] || fail "postgres did not reach healthy state"
+log "postgres healthy"
+
+# --- 2. Pagila-Dump in frische Quell-DB laden ----------------------
+log "resetting + loading pagila source DB..."
+psql_db postgres 1 -c "DROP DATABASE IF EXISTS pagila WITH (FORCE)" -c "CREATE DATABASE pagila" > /dev/null
+psql_db pagila 1 < "$EXAMPLES_DIR/.cache/pagila.sql" > /dev/null || fail "pagila dump load failed"
+src_tables=$(psql_db pagila 0 -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'" | tr -d '[:space:]')
+[ "$src_tables" = "22" ] || fail "expected 22 source tables, got $src_tables"
+log "pagila loaded ($src_tables tables)"
+
+# --- 3. reverse --include-all --------------------------------------
+log "schema reverse --include-all..."
+$COMPOSE run --rm dmigrate schema reverse --source pagila_pg --include-all \
+    --output /work/out/pagila.reverse.yaml > /dev/null || fail "reverse failed"
+[ -s "$OUT_DIR/pagila.reverse.yaml" ] || fail "empty reverse.yaml"
+
+# --- 4. validate (0 Errors hart) -----------------------------------
+log "schema validate (expect 0 errors)..."
+val_out=$($COMPOSE run --rm dmigrate schema validate --source /work/out/pagila.reverse.yaml 2>&1) \
+    || fail "validate exited non-zero:\n$val_out"
+printf '%s' "$val_out" | grep -q "Validation passed" || fail "validate did not pass:\n$val_out"
+log "validate passed"
+
+# --- 5. generate --split pre-post + Notes gegen Baseline -----------
+log "schema generate --split pre-post --deterministic..."
+$COMPOSE run --rm dmigrate schema generate --source /work/out/pagila.reverse.yaml \
+    --target postgresql --split pre-post --deterministic \
+    --output /work/out/pagila.sql > /dev/null || fail "generate failed"
+for f in pagila.pre-data.sql pagila.post-data.sql pagila.report.yaml; do
+    [ -s "$OUT_DIR/$f" ] || fail "empty generate artifact: $f"
+done
+# Erwartete generate-Notes (Pagila/PG): seit AP1/AP2 (ADR 0019) erfasst der
+# PG-Reverse die 7 payment-Kind-Partitionen → payment round-trippt als ECHTE
+# RANGE-Partition, der frühere E055 (leere RANGE-Partition) entfaellt. tsvector
+# ist seit ADR 0015 first-class → kein W123. Erwartung: 0 Notes. Abweichung = Regression.
+grep -q "code: E055" "$OUT_DIR/pagila.report.yaml" && fail "unexpected E055 — payment should round-trip as a real RANGE partition (AP1/AP2, ADR 0019)"
+grep -q "code: W123" "$OUT_DIR/pagila.report.yaml" && fail "unexpected W123 — fulltext gist should round-trip (ADR 0015)"
+note_count=$(grep -cE "^  - type:" "$OUT_DIR/pagila.report.yaml" || true)
+[ "$note_count" = "0" ] || fail "expected 0 generate notes after AP1/AP2 (ADR 0019), got $note_count"
+log "generate OK (no E055 — payment round-trips as real partition; no W123 since ADR 0015)"
+
+# --- 6. Zielschema aufbauen + Daten transferieren ------------------
+log "resetting target DB + applying pre-data DDL..."
+psql_db postgres 1 -c "DROP DATABASE IF EXISTS pagila_target WITH (FORCE)" -c "CREATE DATABASE pagila_target" > /dev/null
+psql_db pagila_target 1 < "$OUT_DIR/pagila.pre-data.sql" > /dev/null || fail "pre-data apply failed"
+
+log "data transfer pagila_pg -> pagila_target..."
+$COMPOSE run --rm dmigrate data transfer --source pagila_pg --target pagila_target --truncate \
+    > /tmp/sample-db-xfer.log 2>&1 || { cat /tmp/sample-db-xfer.log; fail "transfer failed"; }
+grep -q "Transfer complete" /tmp/sample-db-xfer.log || fail "transfer did not complete"
+
+log "applying post-data DDL (FK/index/constraint/trigger/routine)..."
+# F2 (docs/planning/in-progress/sample-db-roundtrip-findings.md) fixed the
+# programmability ordering (functions/aggregates are now emitted before the views
+# that call them), so post-data must apply CLEANLY under ON_ERROR_STOP=1.
+psql_db pagila_target 1 < "$OUT_DIR/pagila.post-data.sql" > /tmp/sample-db-post.log 2>&1 \
+    || { tail -20 /tmp/sample-db-post.log; fail "post-data apply failed (expected clean after F2 ordering fix)"; }
+log "post-data applied cleanly"
+
+# --- 7. Daten-Zeilenzahlen Quelle == Ziel (alle Tabellen) ----------
+log "verifying row-count parity (source == target) for all tables..."
+mismatch=0
+compared=0
+# F1: list tables into a variable FIRST — process substitution `< <(…)` does not
+# propagate the generator's exit (even under pipefail), so a failed list query would
+# run the loop 0× and falsely log "parity OK" without comparing anything. The bare
+# assignment aborts on a generator error (|| fail); the compared-count guard below
+# kills the 0-iteration false-green. Lower bound (not == src_tables): the loop lists
+# pg_tables (relkind 'r', includes partition children, excludes the parent) while
+# src_tables counts information_schema BASE TABLE — different filters, so an exact
+# match would risk a false red. The log now prints the actually-compared count.
+src_table_list=$(psql_db pagila 0 -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1") \
+    || fail "could not list source tables for parity"
+[ -n "$src_table_list" ] || fail "source table list for parity is empty"
+while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    s=$(count_rows pagila "$t"); d=$(count_rows pagila_target "$t")
+    if [ "$s" != "$d" ]; then printf '[smoke]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
+    compared=$((compared + 1))
+done <<< "$src_table_list"
+[ "$mismatch" = "0" ] || fail "row-count parity violated"
+[ "$compared" -gt 0 ] || fail "parity compared 0 tables (generator-swallow guard)"
+log "row-count parity OK (all $compared tables)"
+
+# --- 7b. AP2a: kind-lokale Partition-Indizes überleben den Round-Trip ----
+# Pagila deklariert die FK-Backing-Indizes (idx_fk_payment_p2022_NN_*) PRO KIND
+# (der Parent payment hat keine) → sie sind kind-lokal. Vor AP2a gingen sie beim
+# Round-Trip still verloren; jetzt müssen sie auf dem Ziel-Kind wieder da sein.
+# (Der `schema compare` unten beweist das zusätzlich strukturell, da der Comparator
+# seit AP4/AP2a partition.indices vergleicht — dieser Check macht es explizit.)
+idx_count() { psql_db "$1" 0 -tAc \
+    "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='payment_p2022_01' AND indexname NOT LIKE '%_pkey'" \
+    | tr -d '[:space:]'; }
+src_idx=$(idx_count pagila); dst_idx=$(idx_count pagila_target)
+[ "${src_idx:-0}" -gt 0 ] || fail "expected child-local indices on source payment_p2022_01, got '$src_idx'"
+[ "$src_idx" = "$dst_idx" ] || fail "AP2a: child-local index count mismatch on payment_p2022_01: src=$src_idx dst=$dst_idx"
+log "AP2a: child-local indices survived round-trip ($src_idx on payment_p2022_01)"
+
+# --- 8. schema compare gegen gepinnte Baseline ---------------------
+log "schema compare pagila_pg <-> pagila_target..."
+$COMPOSE run --rm dmigrate schema compare --source db:pagila_pg --target db:pagila_target \
+    --output /work/out/pagila.compare.yaml > /dev/null 2>&1 || true   # exit 1 bei DIFFERENT ist erwartet
+[ -s "$OUT_DIR/pagila.compare.yaml" ] || fail "empty compare output"
+
+if [ ! -f "$BASELINE" ]; then
+    cp "$OUT_DIR/pagila.compare.yaml" "$BASELINE"
+    log "BASELINE BOOTSTRAP: wrote $BASELINE — review + commit it, then re-run."
+else
+    if diff -u "$BASELINE" "$OUT_DIR/pagila.compare.yaml" > /tmp/sample-db-cmp.diff 2>&1; then
+        log "schema compare == baseline (no unexpected diffs)"
+    else
+        cat /tmp/sample-db-cmp.diff
+        fail "schema compare DEVIATES from baseline — review the diff above. If a real fix shrank the diff, update expected/pagila-smoke.compare.txt + the explanation in expected/pagila-smoke.md."
+    fi
+fi
+
+log "SUCCESS — stack is up; clean up with 'make sample-db-down' or 'make sample-db-purge'"

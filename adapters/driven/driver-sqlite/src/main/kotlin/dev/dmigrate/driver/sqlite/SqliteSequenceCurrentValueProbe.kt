@@ -9,7 +9,7 @@ import java.sql.SQLException
  * 0.9.7 SQLite preserve-current-value Folge-Slice
  * (2026-05-29): SQLite implementation of [SequenceCurrentValueProbe]
  * against the helper-table emulation introduced in 0.9.7
- * (`docs/planning/done/sqlite-sequence-emulation-plan.md` Phase B.3).
+ * (`docs/planning/done-archive/sqlite-sequence-emulation-plan.md` Phase B.3).
  *
  * Reads the runtime state of a named sequence via:
  *

@@ -7,6 +7,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.SchemaReadOptions
+import dev.dmigrate.driver.SqliteAutoincrementReverse
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.ImportOptions
@@ -27,6 +28,8 @@ data class DataTransferRequest(
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
     val cliConfigPath: Path? = null,
     val quiet: Boolean = false, val noProgress: Boolean = false,
+    // reverse-preferences: applies to any SQLite read — source OR target (F3).
+    val sqliteAutoincrement: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
 )
 
 class DataTransferRunner(
@@ -100,7 +103,8 @@ class DataTransferRunner(
         val tgtRef = connections.target.ref
         val srcDrv = driverLookup(srcCfg.dialect); val tgtDrv = driverLookup(tgtCfg.dialect)
         val readOpts = SchemaReadOptions(includeViews = false, includeProcedures = false,
-            includeFunctions = false, includeTriggers = false)
+            includeFunctions = false, includeTriggers = false,
+            sqliteAutoincrement = request.sqliteAutoincrement)
         val srcSchema: SchemaDefinition; val tgtSchema: SchemaDefinition
         cancellationToken.throwIfCancellationRequested()
         try {
@@ -112,7 +116,7 @@ class DataTransferRunner(
         } catch (e: Exception) { userFacingPrintError("Schema read: ${e.message}", srcRef); return 4 }
 
         val tables: List<String>
-        try { tables = preflightPlanner.planTables(request, srcSchema, tgtSchema) }
+        try { tables = preflightPlanner.planTables(request, srcSchema, tgtSchema, tgtDrv.transferCompatibility()) }
         catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
 
         val caps = DialectCapabilities.forDialect(tgtCfg.dialect)

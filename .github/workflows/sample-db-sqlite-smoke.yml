@@ -1,0 +1,40 @@
+name: Sample-DB SQLite Smoke (Best-Effort)
+
+# Phase-2b-SQLite-Round-Trip: Chinook (serverless .db) gegen das echte
+# d-migrate:dev-CLI.
+# Plan: docs/planning/done/sample-db-integration-harness.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-sqlite-smoke` (fetch gepinnte Chinook-.db -> reverse/
+# validate/generate --target sqlite -> sqlite3 baut Zielschema -> data transfer
+# -> Zeilen-Paritaet + Decimal->REAL-Praezision gegen die gepinnte Notes-Baseline
+# examples/sample-db/expected/chinook-sqlite.notes.txt).
+#
+# Kein DB-Server (SQLite ist dateibasiert); nur sqlite3 + docker noetig.
+# Best-Effort: continue-on-error.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'examples/sample-db/**'
+      - 'Makefile'
+      - '.github/workflows/sample-db-sqlite-smoke.yml'
+
+jobs:
+  sqlite-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure sqlite3 is available
+        run: sqlite3 --version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB SQLite round-trip smoke (Chinook)
+        run: make sample-db-sqlite-smoke

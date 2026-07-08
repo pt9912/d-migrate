@@ -16,18 +16,18 @@ eine Mehrschicht-Sicherheitsarchitektur fuer Seekable-Inputs im
 Streaming-Layer:
 
 1. **`StreamingImporter.import`-Loop Pre-Stream-Check**
-   (`adapters/driven/streaming/.../StreamingImporter.kt:88`): wenn
+   (`adapters/driven/streaming/…/StreamingImporter.kt:88`): wenn
    ein `ResolvedTableInput.Seekable` im Loop landet, aber kein
    `seekableReaderFactory` verdrahtet ist, brechen wir fail-fast
    mit `error("Seekable input requires seekableReaderFactory; ...")` ab.
    `error(...)` wirft `IllegalStateException`.
 2. **`TableImporter.prepareImport` Elvis-Resolver**
-   (`adapters/driven/streaming/.../TableImporter.kt:135`): zweite
+   (`adapters/driven/streaming/…/TableImporter.kt:135`): zweite
    Verteidigungslinie fuer direkte Test-Aufrufe am `TableImporter`,
    die den outer Pre-Stream-Check umgehen. Ebenfalls
    `error(...)`-Aufruf, also `IllegalStateException`.
 3. **`SeekableDataChunkReaderFactory.unsupported(reason)`-Sentinel**
-   (`hexagon/ports-read/.../SeekableDataChunkReaderFactory.kt:75`):
+   (`hexagon/ports-read/…/SeekableDataChunkReaderFactory.kt:75`):
    Companion-Factory am Port, die im `create(...)`-Body wirft. Bis
    zum S7-Review-Fix R2 (#4) warf dieser Pfad
    `UnsupportedOperationException`.
