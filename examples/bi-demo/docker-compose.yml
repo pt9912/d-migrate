@@ -115,6 +115,10 @@ services:
 
   dmigrate:
     image: d-migrate:dev
+    # Non-root Runtime-Image (uid 10001): auf host-owned Bind-Mount /work sonst kein
+    # Schreibzugriff. Der Smoke exportiert BI_DEMO_DMIGRATE_USER="$(id -u):$(id -g)",
+    # damit der Container als Host-User läuft (Muster wie sample-db-Compose).
+    user: "${BI_DEMO_DMIGRATE_USER:-0:0}"
     depends_on:
       postgres:
         condition: service_healthy

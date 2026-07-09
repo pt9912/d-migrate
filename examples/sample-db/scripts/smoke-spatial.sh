@@ -55,6 +55,12 @@ set -a; . "$EXAMPLES_DIR/.env"; set +a
 export SAMPLE_DB_POSTGIS_PORT="${SAMPLE_DB_POSTGIS_PORT:-55434}"
 export SAMPLE_DB_DMIGRATE_USER="$(id -u):$(id -g)"
 
+# Zielverzeichnisse für reverse/generate-Artefakte. Dieser Smoke nutzt inline-WKT
+# und ruft nie fetch-dumps.sh auf, das .cache/ anlegt — auf einem sauberen Checkout
+# (CI) fehlt .cache/ daher, und der non-root Container kann /work/.cache/*.yaml nicht
+# schreiben. Als Host-User vorab anlegen, damit der user-gemappte Container reinschreibt.
+mkdir -p "$EXAMPLES_DIR/.cache" "$EXAMPLES_DIR/out"
+
 psql_pg() { $COMPOSE exec -T postgis psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$1" "${@:2}"; }
 pg_val()  { $COMPOSE exec -T postgis psql -U "$POSTGRES_USER" -d "$1" -tAc "$2" 2>/dev/null | tr -d '\r'; }
 mysql_root() { $COMPOSE exec -T mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N "$@" 2>/dev/null; }
