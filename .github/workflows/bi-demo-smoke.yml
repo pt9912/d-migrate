@@ -20,6 +20,8 @@ on:
     paths:
       - 'examples/bi-demo/**'
       - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
       - '.github/workflows/bi-demo-smoke.yml'
 
 jobs:
