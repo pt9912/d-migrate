@@ -21,6 +21,8 @@ on:
     paths:
       - 'examples/sample-db/**'
       - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
       - '.github/workflows/sample-db-cross-smoke-pg2my.yml'
 
 jobs:

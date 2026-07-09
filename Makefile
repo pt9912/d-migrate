@@ -230,7 +230,7 @@ docker-oci-build:
 	$(DOCKER) load -i $(DOCKER_OCI_TAR)
 
 docker-build:
-	$(DOCKER) build -t $(IMAGE):$(IMAGE_TAG) .
+	$(DOCKER) build --target runtime -t $(IMAGE):$(IMAGE_TAG) .
 
 # Targeted module check inside the Dockerfile `build` stage.
 #   make docker-check                            # whole repo (slower than docker-build)
@@ -331,6 +331,10 @@ golden-update:
 docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
+	# Exercise a real subcommand so the smoke fails loud if the image ships the
+	# wrong entrypoint (e.g. the ast-grep stage): `--version`/`--help` alone pass
+	# on ANY entrypoint, but `schema --help` only resolves against the real CLI.
+	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) schema --help
 
 clean:
 	$(GRADLE) clean

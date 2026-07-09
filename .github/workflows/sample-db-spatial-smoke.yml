@@ -24,6 +24,8 @@ on:
       - 'adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDataReader.kt'
       - 'adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlTableImportSession.kt'
       - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
       - '.github/workflows/sample-db-spatial-smoke.yml'
 
 jobs:

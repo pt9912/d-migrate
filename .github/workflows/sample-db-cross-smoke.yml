@@ -22,6 +22,8 @@ on:
     paths:
       - 'examples/sample-db/**'
       - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
       - '.github/workflows/sample-db-cross-smoke.yml'
 
 jobs:

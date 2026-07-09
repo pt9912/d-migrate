@@ -20,6 +20,8 @@ on:
     paths:
       - 'examples/sample-db/**'
       - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
       - '.github/workflows/sample-db-smoke.yml'
 
 jobs:
