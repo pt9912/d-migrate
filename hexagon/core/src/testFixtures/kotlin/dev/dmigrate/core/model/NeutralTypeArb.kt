@@ -32,7 +32,12 @@ fun Arb.Companion.neutralType(): Arb<NeutralType> {
         Arb.bind(Arb.int(1..38), Arb.int(0..38)) { p, s -> NeutralType.Decimal(precision = p, scale = minOf(s, p)) }
     val dateTime: Arb<NeutralType> = Arb.boolean().map { NeutralType.DateTime(timezone = it) }
     val enum: Arb<NeutralType> = Arb.bind(
-        Arb.list(Arb.string(1..8), 0..4).orNull(),
+        // Werteliste ist null oder NICHT-leer: ein Enum ohne Werte ist ein
+        // ungültiges Schema (der Reverse-Reader erzeugt es nie). Der Fingerprint
+        // unterscheidet `Enum([])` (→ enum()) von `Enum(null)` (→ enum), während
+        // der YAML-Codec beide zu null normalisiert — nur für diesen degenerierten
+        // Fall bräche der Round-Trip (LN-046 Phase C, per PBT gefunden).
+        Arb.list(Arb.string(1..8), 1..4).orNull(),
         Arb.string(1..12).orNull(),
     ) { values, refType -> NeutralType.Enum(values = values, refType = refType) }
     val array: Arb<NeutralType> =

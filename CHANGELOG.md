@@ -9,17 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Property-Based Testing** (LN-046, Phasen A + B): `kotest-property` als
-  Test-Dependency verdrahtet (stack-nativ statt Jqwik, [ADR 0029](docs/adr/0029-property-based-testing-framework.md)).
+- **Property-Based Testing** (LN-046, erledigt — Phasen A–C): `kotest-property`
+  als Test-Dependency verdrahtet (stack-nativ statt Jqwik, [ADR 0029](docs/adr/0029-property-based-testing-framework.md)).
   - Phase A — `ObjectKeyCodecPropertySpec` verifiziert die „lossless"-Round-Trip-
     Garantie der Routine-/Trigger-Identitätskodierung über generierte Eingaben
     inklusive Shrinking.
   - Phase B — geteilter `Arb<NeutralType>` (alle 21 Varianten) in den
     core-Test-Fixtures; drei Driver-Specs prüfen `TypeMapper.toSql`-Totalität und
     `NeutralTypeCanonicalizer`-Idempotenz für PostgreSQL/MySQL/SQLite.
-  - Offen (Phase C): Fingerprint-Ordnungsunabhängigkeit + YAML-Schema-Parser-
-    Round-Trip (macht LN-046 erledigt). Slice
-    `docs/planning/next/property-based-testing-ln046.md`.
+  - Phase C — geteilter `Arb<SchemaDefinition>`; das spec-genannte Schema-Parsing:
+    `YamlSchemaCodec.read`-Robustheit (nie NPE), `MigrationFingerprint`-
+    Ordnungsunabhängigkeit + Metadaten-Ausschluss und der semantische
+    `write→read`-Round-Trip (Fingerprint als Orakel). PBT deckte dabei einen
+    degenerierten Enum-Round-Trip-Fall auf (leeres Enum, im Generator
+    ausgeschlossen). Slice `docs/planning/done/property-based-testing-ln046.md`.
 
 ## [0.9.9] - 2026-07-08
 

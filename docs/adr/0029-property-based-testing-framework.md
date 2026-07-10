@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-10
 decision-makers: pt9912
-consulted: spec/lastenheft-d-migrate.md, docs/planning/next/property-based-testing-ln046.md
+consulted: spec/lastenheft-d-migrate.md, docs/planning/done/property-based-testing-ln046.md
 informed: build.gradle.kts, docs/planning/in-progress/roadmap.md, hexagon/core
 ---
 
@@ -82,5 +82,5 @@ JVM-Werkzeug vorschreibt — kotest-property erfüllt beide harten Anforderungen
   müssten bei Bedarf selbst modelliert werden. Für die Ziele dieses Slices nicht
   relevant.
 - **Abweichung dokumentiert**: Roadmap-Wortlaut „Jqwik" → „kotest-property"; der
-  Slice `docs/planning/next/property-based-testing-ln046.md` führt Ziele, Phasen
+  Slice `docs/planning/done/property-based-testing-ln046.md` führt Ziele, Phasen
   und Definition of Done.

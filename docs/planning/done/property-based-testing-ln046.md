@@ -1,6 +1,7 @@
 # Property-Based Testing (LN-046)
 
-**Status:** in Arbeit — Phase A + B geliefert (2026-07-10); Phase C offen.
+**Status:** ABGESCHLOSSEN (2026-07-10) — Phasen A + B + C geliefert; die
+Anforderung erledigt.
 **Lastenheft:** [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) ·
 **Roadmap:** Milestone 1.0.0-RC · **ADR:** [0029](../../adr/0029-property-based-testing-framework.md)
 
@@ -53,22 +54,47 @@ eingebaut.
   (test + detekt + koverVerify-90%) für Core + alle drei Driver grün. Die offene
   Frage (Ablageort) ist zugunsten der Test-Fixtures entschieden — reusable für
   Phase C.
-- **Phase C — Schema-Parsing (spec-wörtlich):** `Arb<SchemaDefinition>` /
-  `Arb<TableDefinition>`; YAML `write→read`-Round-Trip; Parser-Nie-Crash auf
-  beliebigem Text; `MigrationFingerprint`-Ordnungs-Unabhängigkeit +
-  Metadaten-Ausschluss. **Erst hiernach ist
-  [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) „erledigt"** (das
-  Schema-Parsing-Property ist die namentliche Anforderung).
+- **Phase C — Schema-Parsing (spec-wörtlich, geliefert 2026-07-10):** geteilter
+  `Arb<SchemaDefinition>` (Tabellen/Spalten über die volle `NeutralType`-Matrix,
+  YAML-sichere präfixierte Bezeichner) in den core-Test-Fixtures
+  (`hexagon/core/src/testFixtures/kotlin/dev/dmigrate/core/model/SchemaArb.kt`).
+  Drei Properties: **(C1)** `YamlSchemaCodec.read` wirft nie eine
+  `NullPointerException` auf beliebigem Text (nur Domänen-/Parse-Fehler);
+  **(C2)** `MigrationFingerprint` ist reihenfolge-unabhängig (Tabellen-/Spalten-
+  Permutation) und schließt Reporting-Metadaten (name/version/description) aus;
+  **(C3)** semantischer Round-Trip `compute(read(write(s))) == compute(s)` — der
+  Fingerprint als Orakel (kanonisiert, ignoriert `ordinal`/Metadaten) fängt
+  echten Datenverlust ohne an belangloser Normalisierung falsch-rot zu werden.
+  Damit ist [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) erledigt (das
+  Schema-Parsing-Property ist die namentliche Anforderung). Verifiziert: `:check`
+  (test + detekt + koverVerify-90 %) für Core + formats grün.
 
-## Definition of Done
+### Befund (per PBT gefunden)
 
-- Alle drei Phasen grün; Shrinking an mindestens einem bewussten
-  Fehlversuch demonstriert (minimales Gegenbeispiel), dann bereinigt.
-- Kover-Coverage pro Modul ≥ 90 % gehalten (Property-Tests erhöhen Ausführung,
-  senken sie nicht).
-- Roadmap [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) → ✅ (mit Beleg);
+C3 shrinkte auf `Enum(values=[], refType=null)` (leeres Enum): der Fingerprint
+projiziert `[]` als `enum()`, der YAML-Codec normalisiert die leere Liste auf
+`null` (→ `enum`) — der einzige nicht round-trippende Typ. Ein Enum ohne Werte
+ist ein **ungültiges Schema** (der Reverse-Reader erzeugt es nie), daher im
+Generator ausgeschlossen (Werteliste = null oder nicht-leer) statt als
+Codec-Bug behandelt. Alle übrigen 29 Typvarianten (inkl. Geometry+SRID,
+`datetime(tz)`, Array, Enum-mit-Werten/-ref) round-trippen verlustfrei.
+
+### Round-Trip-Abdeckung (transparenter Scope)
+
+C3 deckt den **Tabellen-/Spalten-/Typ-Kern** ab (voller `NeutralType`-Satz +
+optionaler String-Default + PK). Noch nicht generiert und daher nicht
+round-trip-geprüft: Referenzen, Constraints, Indizes, Partitionierung,
+Views/Routinen/Sequenzen und nicht-String-Defaults — optionale Breiten-
+Erweiterung des `Arb<SchemaDefinition>` in einem Folge-Increment.
+
+## Definition of Done — erfüllt
+
+- ✅ Alle drei Phasen grün; Shrinking real demonstriert (C3 shrinkte auf das
+  degenerierte leere Enum, siehe Befund), Generator bereinigt.
+- ✅ Kover-Coverage pro Modul ≥ 90 % gehalten (`:check` für Core/Driver/formats grün).
+- ✅ Roadmap [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) → ✅ (mit Beleg);
   CHANGELOG-Eintrag; ADR 0029 accepted.
-- Slice graduiert nach `docs/planning/done/`.
+- ✅ Slice graduiert nach `docs/planning/done/`.
 
 ## Offene Fragen
 

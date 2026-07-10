@@ -643,7 +643,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | 🚧³ |
 | Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | 🚧⁴ |
-| QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | 🚧⁶ |
+| QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
 | QA        | Performance-Regression-Tests                         | [`LN-044`](../../../spec/lastenheft-d-migrate.md#ln-044) | ✅⁵ |
 
 ¹ Chunk-weise Pull-Streaming (`TableExporter`, `chunkSize=10_000`) + Resume/Checkpoint
@@ -670,13 +670,13 @@ Kalibrier-Guard ([ADR 0018](../../adr/0018-normalized-perf-measurement-environme
 unter `PERF_GATE`. Offen bleibt nur der bewusste Provisional-Carve-Out (Runner-Pin
 `PERF_RUNNER`/`CALIB_REFERENCE_MS`, Hart-Zeit-Gate scharf stellen).
 ⁶ kotest-property statt Jqwik ([ADR 0029](../../adr/0029-property-based-testing-framework.md)).
-**Phase A + B live** (2026-07-10): Harness + `ObjectKeyCodecPropertySpec`
-(Round-Trip, Shrinking); geteilter `Arb<NeutralType>` + Driver-Specs für
-`TypeMapper.toSql`-Totalität und `NeutralTypeCanonicalizer`-Idempotenz
-(PG/MySQL/SQLite, `:check` grün). Für „erledigt" offen (Phase C): das spec-genannte
-**Schema-Parsing**-Property (YAML `write→read`-Round-Trip + Parser-Nie-Crash) plus
-Fingerprint-Ordnungsunabhängigkeit. Slice:
-[`property-based-testing-ln046.md`](../next/property-based-testing-ln046.md).
+**Erledigt (2026-07-10, Phasen A–C):** A `ObjectKeyCodec`-Round-Trip; B geteilter
+`Arb<NeutralType>` + `TypeMapper.toSql`-Totalität und Canonicalizer-Idempotenz
+(PG/MySQL/SQLite); C das spec-genannte **Schema-Parsing** — `Arb<SchemaDefinition>`,
+Parser-Robustheit (nie NPE), Fingerprint-Ordnungsunabhängigkeit + Metadaten-Ausschluss,
+semantischer YAML-`write→read`-Round-Trip (PBT deckte einen degenerierten
+Enum-Round-Trip-Fall auf, im Generator ausgeschlossen). `:check` durchweg grün. Slice:
+[`property-based-testing-ln046.md`](../done/property-based-testing-ln046.md).
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,
