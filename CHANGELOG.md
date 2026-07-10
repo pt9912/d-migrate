@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Property-Based Testing** (LN-046, Phase A): `kotest-property` als
+  Test-Dependency verdrahtet (stack-nativ statt Jqwik, [ADR 0029](docs/adr/0029-property-based-testing-framework.md)).
+  Erster Spec `ObjectKeyCodecPropertySpec` verifiziert die „lossless"-Round-Trip-
+  Garantie der Routine-/Trigger-Identitätskodierung über generierte Eingaben
+  inklusive Shrinking. Folgephasen (TypeMapper-Totalität, Kanonisierer-Idempotenz,
+  Fingerprint-Ordnungsunabhängigkeit, YAML-Schema-Parser-Round-Trip) im Slice
+  `docs/planning/next/property-based-testing-ln046.md`.
+
 ## [0.9.9] - 2026-07-08
 
 **Cross-Dialect-Datentreue-Härtung.** Eine mehrrundige End-to-End-Pilot-Validierung
