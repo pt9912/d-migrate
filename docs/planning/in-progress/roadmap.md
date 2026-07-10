@@ -670,11 +670,12 @@ Kalibrier-Guard ([ADR 0018](../../adr/0018-normalized-perf-measurement-environme
 unter `PERF_GATE`. Offen bleibt nur der bewusste Provisional-Carve-Out (Runner-Pin
 `PERF_RUNNER`/`CALIB_REFERENCE_MS`, Hart-Zeit-Gate scharf stellen).
 ⁶ kotest-property statt Jqwik ([ADR 0029](../../adr/0029-property-based-testing-framework.md)).
-**Phase A live** (2026-07-10): Harness verdrahtet + `ObjectKeyCodecPropertySpec`
-(Round-Trip-Invarianten, Shrinking aktiv). Für „erledigt" offen: das spec-genannte
+**Phase A + B live** (2026-07-10): Harness + `ObjectKeyCodecPropertySpec`
+(Round-Trip, Shrinking); geteilter `Arb<NeutralType>` + Driver-Specs für
+`TypeMapper.toSql`-Totalität und `NeutralTypeCanonicalizer`-Idempotenz
+(PG/MySQL/SQLite, `:check` grün). Für „erledigt" offen (Phase C): das spec-genannte
 **Schema-Parsing**-Property (YAML `write→read`-Round-Trip + Parser-Nie-Crash) plus
-Kern-Invarianten (TypeMapper-Totalität, Canonicalizer-Idempotenz,
-Fingerprint-Ordnungsunabhängigkeit). Slice:
+Fingerprint-Ordnungsunabhängigkeit. Slice:
 [`property-based-testing-ln046.md`](../next/property-based-testing-ln046.md).
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):

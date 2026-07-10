@@ -1,6 +1,6 @@
 # Property-Based Testing (LN-046)
 
-**Status:** in Arbeit — Phase A geliefert (2026-07-10).
+**Status:** in Arbeit — Phase A + B geliefert (2026-07-10); Phase C offen.
 **Lastenheft:** [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) ·
 **Roadmap:** Milestone 1.0.0-RC · **ADR:** [0029](../../adr/0029-property-based-testing-framework.md)
 
@@ -40,12 +40,19 @@ eingebaut.
 - **Phase A — Harness + Beweis (geliefert 2026-07-10):** `kotest-property`
   verdrahtet; `ObjectKeyCodecPropertySpec` (5 Round-Trip-/Namens-Invarianten,
   reine Strings, kein DB-Setup). Belegt Generatoren + Shrinking end-to-end.
-- **Phase B — Kern-Invarianten:** wiederverwendbarer `Arb<NeutralType>` (~21
-  sealed-Varianten) als Test-Baustein; `TypeMapper.toSql`-Totalität je Dialekt
-  (fängt „neue `NeutralType`-Variante ohne Mapper-Update", spec-nah zu
-  [`LN-045`](../../../spec/lastenheft-d-migrate.md#ln-045))
-  + `NeutralTypeCanonicalizer`-Idempotenz je Dialekt. Ablageort des geteilten
-  `Arb<NeutralType>` klären (Test-Fixtures vs. pro-Modul-Duplikat).
+- **Phase B — Kern-Invarianten (geliefert 2026-07-10):** geteilter
+  `Arb<NeutralType>` (alle 21 Varianten, uniform via `Arb.choice`) in den
+  **core-Test-Fixtures** (`hexagon/core/src/testFixtures/kotlin/dev/dmigrate/core/model/NeutralTypeArb.kt`,
+  via `testFixturesApi(kotest-property)`; Driver konsumieren per
+  `testImplementation(testFixtures(project(":hexagon:core")))`). Drei
+  Driver-Specs (`<Dialekt>NeutralTypePropertySpec`) prüfen `TypeMapper.toSql`-
+  **Totalität** (fängt „neue `NeutralType`-Variante ohne Mapper-Update" — bei
+  PG/MySQL zur Laufzeit via `simpleToSql`-`error`, bei SQLite compile-erschöpft;
+  spec-nah zu [`LN-045`](../../../spec/lastenheft-d-migrate.md#ln-045)) +
+  `NeutralTypeCanonicalizer`-**Idempotenz** je Dialekt. Verifiziert: `:check`
+  (test + detekt + koverVerify-90%) für Core + alle drei Driver grün. Die offene
+  Frage (Ablageort) ist zugunsten der Test-Fixtures entschieden — reusable für
+  Phase C.
 - **Phase C — Schema-Parsing (spec-wörtlich):** `Arb<SchemaDefinition>` /
   `Arb<TableDefinition>`; YAML `write→read`-Round-Trip; Parser-Nie-Crash auf
   beliebigem Text; `MigrationFingerprint`-Ordnungs-Unabhängigkeit +
@@ -65,6 +72,7 @@ eingebaut.
 
 ## Offene Fragen
 
-- Geteilter `Arb<NeutralType>`/`Arb<SchemaDefinition>`-Baukasten: eigenes
-  Test-Fixtures-Artefakt (modulübergreifend nutzbar) oder pro Modul lokal?
+- ~~Geteilter `Arb<NeutralType>`-Baukasten: Test-Fixtures oder pro Modul lokal?~~
+  **Entschieden (Phase B):** core-Test-Fixtures. `Arb<SchemaDefinition>` (Phase C)
+  gesellt sich dorthin.
 - Iterations-Budget/Seed-Politik für die CI (Determinismus vs. Abdeckung).

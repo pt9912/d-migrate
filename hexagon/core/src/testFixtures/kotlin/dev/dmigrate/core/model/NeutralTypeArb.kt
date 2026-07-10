@@ -1,0 +1,50 @@
+package dev.dmigrate.core.model
+
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.bind
+import io.kotest.property.arbitrary.boolean
+import io.kotest.property.arbitrary.choice
+import io.kotest.property.arbitrary.enum
+import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.list
+import io.kotest.property.arbitrary.map
+import io.kotest.property.arbitrary.of
+import io.kotest.property.arbitrary.orNull
+import io.kotest.property.arbitrary.string
+
+/**
+ * Geteilter Generator für die gesamte [NeutralType]-Hierarchie (LN-046, ADR 0029).
+ *
+ * Deckt alle 21 Varianten — 12 parameterlose Literale + 9 parametrische — uniform
+ * ab, damit Property-Tests (TypeMapper-Totalität, Kanonisierer-Idempotenz,
+ * Fingerprint-Ordnungsunabhängigkeit) jeden Zweig treffen und eine neu ergänzte
+ * Variante laut auffällt. Wohnt in den Test-Fixtures, damit Core und die
+ * Driver-Module eine einzige Quelle teilen.
+ */
+fun Arb.Companion.neutralType(): Arb<NeutralType> {
+    val geometryType = Arb.of(GeometryType.KNOWN_VALUES.toList() + "unknownshape").map { GeometryType(it) }
+
+    val identifier: Arb<NeutralType> = Arb.boolean().map { NeutralType.Identifier(autoIncrement = it) }
+    val text: Arb<NeutralType> = Arb.int(1..8000).orNull().map { NeutralType.Text(maxLength = it) }
+    val char: Arb<NeutralType> = Arb.int(1..255).map { NeutralType.Char(length = it) }
+    val float: Arb<NeutralType> = Arb.enum<FloatPrecision>().map { NeutralType.Float(floatPrecision = it) }
+    val decimal: Arb<NeutralType> =
+        Arb.bind(Arb.int(1..38), Arb.int(0..38)) { p, s -> NeutralType.Decimal(precision = p, scale = minOf(s, p)) }
+    val dateTime: Arb<NeutralType> = Arb.boolean().map { NeutralType.DateTime(timezone = it) }
+    val enum: Arb<NeutralType> = Arb.bind(
+        Arb.list(Arb.string(1..8), 0..4).orNull(),
+        Arb.string(1..12).orNull(),
+    ) { values, refType -> NeutralType.Enum(values = values, refType = refType) }
+    val array: Arb<NeutralType> =
+        Arb.of("text", "integer", "boolean", "uuid", "custom").map { NeutralType.Array(elementType = it) }
+    val geometry: Arb<NeutralType> =
+        Arb.bind(geometryType, Arb.int(0..40000).orNull()) { g, srid -> NeutralType.Geometry(geometryType = g, srid = srid) }
+
+    val literals: Arb<NeutralType> = Arb.of(
+        NeutralType.Integer, NeutralType.SmallInt, NeutralType.BigInteger, NeutralType.BooleanType,
+        NeutralType.Date, NeutralType.Time, NeutralType.Uuid, NeutralType.Json, NeutralType.Xml,
+        NeutralType.Binary, NeutralType.Email, NeutralType.FullText,
+    )
+
+    return Arb.choice(identifier, text, char, float, decimal, dateTime, enum, array, geometry, literals)
+}

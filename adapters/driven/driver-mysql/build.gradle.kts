@@ -1,6 +1,9 @@
 dependencies {
     implementation(project(":adapters:driven:driver-common"))
     implementation("com.mysql:mysql-connector-j:${rootProject.properties["mysqlJdbcVersion"]}")
+
+    // LN-046 / ADR 0029: geteilter Arb<NeutralType> aus core-Test-Fixtures.
+    testImplementation(testFixtures(project(":hexagon:core")))
 }
 
 kover {

@@ -24,6 +24,10 @@ tasks.named<ProcessResources>("processResources") {
 
 dependencies {
     testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+    // LN-046 / ADR 0029: geteilter Arb<NeutralType> (NeutralTypeArb) lebt in
+    // den Test-Fixtures und wird von den Driver-Modulen konsumiert; als `api`,
+    // damit Konsumenten `Arb`/Generatoren transitiv sehen.
+    testFixturesApi("io.kotest:kotest-property:${rootProject.properties["kotestVersion"]}")
 
     // Quality-Coverage-Expansion Phase A: PerfMeasure/PerfReport for the
     // opt-in `perf`-tagged DiffPlanner hotpath spec (Sub-Slice A-
