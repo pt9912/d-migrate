@@ -35,8 +35,9 @@ fun Arb.Companion.neutralType(): Arb<NeutralType> {
     // Damit kann der Wert nie ein YAML-1.1-Implicit-Scalar sein (Zahl, Bool
     // `yes/no/on/off/true/false`, Null `~/null`) — dieselbe Disziplin, mit der
     // SchemaArb schon seine Bezeichner präfixiert. So misst das PBT den
-    // strukturellen Round-Trip, nicht YAML-Quoting-/Typ-Inferenz-Artefakte
-    // (der beliebige-String-Round-Trip des Codecs ist eine getrennte Folgearbeit).
+    // strukturellen Round-Trip, nicht YAML-Quoting-/Typ-Inferenz-Artefakte. Der
+    // beliebige-String-Round-Trip des Codecs ist getrennte Folgearbeit:
+    // docs/planning/open/yaml-codec-arbitrary-string-roundtrip.md.
     fun yamlSafeToken(maxTail: Int): Arb<String> = Arb.bind(
         Arb.of(('a'..'z').toList() - listOf('y', 'n', 't', 'f', 'o')),
         Arb.list(Arb.of(('a'..'z').toList() + ('0'..'9')), 0..maxTail),
