@@ -31,14 +31,26 @@ fun Arb.Companion.neutralType(): Arb<NeutralType> {
     val decimal: Arb<NeutralType> =
         Arb.bind(Arb.int(1..38), Arb.int(0..38)) { p, s -> NeutralType.Decimal(precision = p, scale = minOf(s, p)) }
     val dateTime: Arb<NeutralType> = Arb.boolean().map { NeutralType.DateTime(timezone = it) }
+    // YAML-sicheres Token: führender Buchstabe ∉ {y,n,t,f,o} + [a-z0-9]-Suffix.
+    // Damit kann der Wert nie ein YAML-1.1-Implicit-Scalar sein (Zahl, Bool
+    // `yes/no/on/off/true/false`, Null `~/null`) — dieselbe Disziplin, mit der
+    // SchemaArb schon seine Bezeichner präfixiert. So misst das PBT den
+    // strukturellen Round-Trip, nicht YAML-Quoting-/Typ-Inferenz-Artefakte. Der
+    // beliebige-String-Round-Trip des Codecs ist getrennte Folgearbeit:
+    // docs/planning/open/yaml-codec-arbitrary-string-roundtrip.md.
+    fun yamlSafeToken(maxTail: Int): Arb<String> = Arb.bind(
+        Arb.of(('a'..'z').toList() - listOf('y', 'n', 't', 'f', 'o')),
+        Arb.list(Arb.of(('a'..'z').toList() + ('0'..'9')), 0..maxTail),
+    ) { head, tail -> head + tail.joinToString("") }
+
     val enum: Arb<NeutralType> = Arb.bind(
         // Werteliste ist null oder NICHT-leer: ein Enum ohne Werte ist ein
         // ungültiges Schema (der Reverse-Reader erzeugt es nie). Der Fingerprint
         // unterscheidet `Enum([])` (→ enum()) von `Enum(null)` (→ enum), während
         // der YAML-Codec beide zu null normalisiert — nur für diesen degenerierten
         // Fall bräche der Round-Trip (LN-046 Phase C, per PBT gefunden).
-        Arb.list(Arb.string(1..8), 1..4).orNull(),
-        Arb.string(1..12).orNull(),
+        Arb.list(yamlSafeToken(7), 1..4).orNull(),
+        yamlSafeToken(11).orNull(),
     ) { values, refType -> NeutralType.Enum(values = values, refType = refType) }
     val array: Arb<NeutralType> =
         Arb.of("text", "integer", "boolean", "uuid", "custom").map { NeutralType.Array(elementType = it) }
