@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.ReverseAutoincrementResolver
 import dev.dmigrate.cli.output.OutputFormatter
@@ -79,6 +81,14 @@ internal object SchemaReverseWiring {
     fun execute(
         options: SchemaReverseOptions,
         factory: SchemaReverseWiringFactory = DefaultSchemaReverseWiringFactory,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.record("schema.reverse", listOf(options.source)) {
+        executeInner(options, factory)
+    }
+
+    private fun executeInner(
+        options: SchemaReverseOptions,
+        factory: SchemaReverseWiringFactory,
     ): Int {
         val bundle = factory.build(options.cliContext)
         val request = SchemaReverseRequest(

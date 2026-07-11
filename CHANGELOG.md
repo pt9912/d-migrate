@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Audit-Logging der CLI-DB-Operationen** (LN-027) — neben dem MCP-Server
+  emittieren jetzt auch die DB-berührenden CLI-Operationen (`schema
+  reverse`/`migrate`/`compare` (mit DB-Operand)/`rollback --execute`, `data
+  export`/`import`/`transfer`/`profile`) Audit-Events. Opt-in über
+  `logging.audit.enabled: true`; jedes Event wird als JSONL-Zeile (ein
+  `AuditEvent`-JSON pro Zeile) an `logging.audit.file` (Default
+  `.d-migrate/audit.log`) angehängt. Der `CliAuditRecorder` ist
+  exit-code-getrieben (`outcome`/`exitCode` aus dem Prozess-Exit-Code),
+  scrubbt Verbindungs-Referenzen (`SecretScrubber`) und ist best-effort — ein
+  Audit-Schreibfehler lässt die Operation nie abstürzen.
+
 ### Fixed
 
 - **YAML-Schema-Codec: verlustfreier Round-Trip YAML-mehrdeutiger String-Werte** —

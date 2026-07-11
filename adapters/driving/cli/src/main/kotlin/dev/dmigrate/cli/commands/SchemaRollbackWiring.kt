@@ -1,6 +1,9 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
+import dev.dmigrate.cli.audit.recordIf
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.validation.SchemaValidator
@@ -25,7 +28,14 @@ internal data class SchemaRollbackOptions(
 
 internal object SchemaRollbackWiring {
 
-    fun execute(options: SchemaRollbackOptions): Int {
+    fun execute(
+        options: SchemaRollbackOptions,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.recordIf(options.execute, "schema.rollback", listOf(options.target)) {
+        executeInner(options)
+    }
+
+    private fun executeInner(options: SchemaRollbackOptions): Int {
         val formatter = OutputFormatter(options.cliContext, IcuUnicodeTextService())
         val validator = SchemaValidator()
         val request = SchemaRollbackRequest(

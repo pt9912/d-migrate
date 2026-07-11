@@ -376,8 +376,8 @@ logging:
   format: plain                      # plain | json (für maschinelle Auswertung)
   file: null                         # Log-Datei (null = nur stderr)
   audit:
-    enabled: true                    # Audit-Log für DB-Operationen
-    file: ".d-migrate/audit.log"     # Audit-Log-Datei
+    enabled: true                    # Audit-Log für DB-Operationen (Default: false — opt-in)
+    file: ".d-migrate/audit.log"     # Audit-Log-Datei (JSONL, ein AuditEvent pro Zeile)
 
 # ── Sicherheit ─────────────────────────────────
 security:

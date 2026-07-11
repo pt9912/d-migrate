@@ -18,4 +18,11 @@ data class AuditEvent(
     val payloadFingerprint: String? = null,
     val resourceRefs: List<String> = emptyList(),
     val durationMs: Long? = null,
+    /**
+     * Prozess-Exit-Code der Operation (LN-027 CLI-Audit). Die CLI ist
+     * exit-code-getrieben, nicht exception-getrieben (`AuditScope` passt dort
+     * nicht); der `CliAuditRecorder` setzt diesen Code, MCP-Events lassen ihn
+     * `null`. `null` heißt „nicht anwendbar" (MCP-Pfad).
+     */
+    val exitCode: Int? = null,
 )

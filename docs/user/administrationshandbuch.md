@@ -288,7 +288,9 @@ freigegeben. Diagnose/Behebung: [§7](#7-asynchrone-jobs-und-job-executor) und
 
 Jeder `tools/call` durchläuft `AuditScope.around` und emittiert **genau ein**
 `AuditEvent` (SUCCESS oder FAILURE mit Fehlercode). Audit-Oberflächen bleiben
-**secret-frei** (`connectionId` + `sensitivity`, keine URLs/Secrets).
+**secret-frei** (`connectionId` + `sensitivity`, keine URLs/Secrets). Auch die
+**CLI**-DB-Operationen emittieren Audit-Events (opt-in via `logging.audit`,
+JSONL-Datei) — siehe [§8.1](#8-logging-und-telemetrie).
 
 ### 6.7 Policy-gesteuerte Datenoperationen
 
@@ -346,6 +348,16 @@ API-Keys/URLs werden maskiert ([§4.6](#4-datenbank-verbindungen)). Strukturiert
 Dispatcher-Events (`job.dispatch.scheduled|started|finished`) erlauben
 Queue-Latenz-Korrelation
 ([`operations/job-executor.md`](../operations/job-executor.md) §4.4).
+
+**Audit-Log der DB-Operationen** (`logging.audit`, [`LN-027`](../../spec/lastenheft-d-migrate.md#ln-027), opt-in): mit
+`logging.audit.enabled: true` schreibt die CLI für jede DB-berührende Operation
+(`schema reverse`/`migrate`/`compare` mit DB-Operand/`rollback --execute`, `data
+export`/`import`/`transfer`/`profile`) genau ein `AuditEvent` als JSONL-Zeile an
+`logging.audit.file` (Default `.d-migrate/audit.log`). Jedes Event trägt
+`requestId`, `toolName`, `outcome` (SUCCESS/FAILURE aus dem Exit-Code), `exitCode`,
+gescrubbte `resourceRefs` und `durationMs`; Verbindungs-Secrets werden maskiert.
+Das Schreiben ist **best-effort** — ein Audit-Fehler bricht die Operation nie ab.
+Default ist **aus**: ohne die Config entsteht keine Datei.
 
 ### 8.2 Telemetrie-/Observability-Port
 

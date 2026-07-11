@@ -1,7 +1,9 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
 import java.nio.file.Path
@@ -49,4 +51,39 @@ class SchemaRollbackWiringTest : FunSpec({
 
         (exit != 0) shouldBe true
     }
+
+    test("--execute wird als schema.rollback mit gescrubbtem Ziel-Ref auditiert") {
+        val spy = SpyRecorder()
+        val artefact = Files.createTempDirectory("rb").resolve("a.sql")
+        Files.writeString(artefact, "x")
+
+        SchemaRollbackWiring.execute(
+            options(source = artefact, target = "db:prod", execute = true),
+            recorder = spy,
+        )
+
+        spy.calls shouldBe listOf("schema.rollback" to listOf("db:prod"))
+    }
+
+    test("dry-run (kein --execute) wird nicht auditiert") {
+        val spy = SpyRecorder()
+        val artefact = Files.createTempDirectory("rb").resolve("a.sql")
+        Files.writeString(artefact, "not-a-valid-artefact")
+
+        SchemaRollbackWiring.execute(
+            options(source = artefact, target = "db:prod", execute = false),
+            recorder = spy,
+        )
+
+        spy.calls.shouldBeEmpty()
+    }
 })
+
+/** Captured die record-Aufrufe und führt den Block NICHT aus (Metadaten-Assertion ohne echte Operation). */
+private class SpyRecorder : CliAuditRecorder {
+    val calls = mutableListOf<Pair<String, List<String>>>()
+    override fun record(toolName: String, resourceRefs: List<String>, block: () -> Int): Int {
+        calls += toolName to resourceRefs
+        return 0
+    }
+}

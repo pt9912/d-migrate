@@ -642,7 +642,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ⛔ |
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | 🚧³ |
-| Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | 🚧⁴ |
+| Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | ✅⁴ |
 | QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
 | QA        | Performance-Regression-Tests                         | [`LN-044`](../../../spec/lastenheft-d-migrate.md#ln-044) | ✅⁵ |
 
@@ -660,10 +660,12 @@ belegt sich über den Test-Harness, nicht über dieses Produktfeature.)
 ³ SSL ist nur als generischer JDBC-URL-Parameter-Passthrough möglich (`?sslmode=…` /
 `?useSSL=…` selbst setzen); First-Class-Config (sslmode/Truststore/Zertifikate,
 Erzwingung) fehlt in `ConnectionUrlParser`/`ConnectionConfig`/den JdbcUrlBuildern.
-⁴ Die Audit-Kette (`AuditSink` → `LoggingAuditSink` → `AuditScope`) ist verdrahtet und
-aktiv, aber nur im MCP-Dispatcher (`McpServiceImpl`); die CLI-Datenoperationen
-(export/import/transfer/migrate) emittieren keine Audit-Events → „aller Operationen"
-noch nicht erfüllt.
+⁴ Erledigt (2026-07-11, ImpPlan `docs/planning/done/ImpPlan-1.0.0-RC-ln027-cli-audit.md`):
+neben dem MCP-Dispatcher emittieren jetzt auch die CLI-DB-Operationen (`schema
+reverse/migrate/compare[db]/rollback --execute`, `data export/import/transfer/profile`)
+Audit-Events. Opt-in via `logging.audit.enabled: true` → JSONL nach
+`logging.audit.file` (Default `.d-migrate/audit.log`); exit-code-getriebener
+`CliAuditRecorder` (SUCCESS/FAILURE + `exitCode`), gescrubbte Refs, best-effort.
 ⁵ Geliefert via Perf-Acceptance-Infrastruktur: `.github/workflows/perf-acceptance.yml`
 (Nightly) + `PerfMeasure`/`PerfReport`-Lib + Hotpath-PerfSpecs + `diff-planner`-
 Kalibrier-Guard ([ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md))

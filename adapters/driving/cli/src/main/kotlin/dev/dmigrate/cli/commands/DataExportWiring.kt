@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.PipelineCheckpointResolver
@@ -63,7 +65,14 @@ internal data class DataExportOptions(
  */
 internal object DataExportWiring {
 
-    fun execute(options: DataExportOptions): Int {
+    fun execute(
+        options: DataExportOptions,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.record("data.export", listOf(options.source)) {
+        executeInner(options)
+    }
+
+    private fun executeInner(options: DataExportOptions): Int {
         if (options.filter != null && options.filter.isBlank()) {
             System.err.println(
                 "Error: --filter must not be empty or whitespace-only. Omit the flag to export without a filter."

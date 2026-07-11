@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.ReverseAutoincrementResolver
 import dev.dmigrate.cli.output.MessageResolver
@@ -33,7 +35,14 @@ internal data class DataTransferOptions(
  */
 internal object DataTransferWiring {
 
-    fun execute(options: DataTransferOptions): Int {
+    fun execute(
+        options: DataTransferOptions,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.record("data.transfer", listOf(options.source, options.target)) {
+        executeInner(options)
+    }
+
+    private fun executeInner(options: DataTransferOptions): Int {
         if (options.filter != null && options.filter.isBlank()) {
             System.err.println(
                 "Error: --filter must not be empty or whitespace-only. Omit the flag to transfer without a filter."
