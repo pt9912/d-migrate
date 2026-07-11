@@ -391,10 +391,21 @@ Versionskontrolle ausschließen.
 
 ### 9.3 TLS/SSL für DB-Verbindungen
 
-SSL-Parameter werden heute über die Connection-URL gesetzt (z. B.
-`?ssl=verify-full`/`sslmode`), dialektspezifisch.
-🔮 **Geplant (1.0.0-RC, [`LN-026`](../../spec/lastenheft-d-migrate.md#ln-026)):** durchgängig erzwungenes TLS/SSL für alle
-DB-Verbindungen.
+SSL wird über die Connection-URL gesetzt, dialektspezifisch: **PostgreSQL**
+`?sslmode=disable|allow|prefer|require|verify-ca|verify-full` (+ `sslrootcert=`
+CA-Pfad); **MySQL** `?sslMode=DISABLED|PREFERRED|REQUIRED|VERIFY_CA|VERIFY_IDENTITY`
+(Legacy `?ssl=true` wird opportunistisch als `PREFERRED` interpretiert).
+Seit **[`LN-026`](../../spec/lastenheft-d-migrate.md#ln-026)** (2026-07-11) werden
+diese Modi **typisiert geparst und validiert** (ein ungültiger Modus ist ein
+Fehler, kein stiller Passthrough) und intern über ein neutrales `SslMode`-Modell
+per Dialekt korrekt gemappt.
+
+> **Hinweis:** MySQL `VERIFY_CA`/`VERIFY_IDENTITY` benötigen eine CA im
+> Truststore. Truststore-/Keystore-Konfiguration ist noch nicht Teil dieser Stufe
+> (System-Truststore-Fallback); ohne CA schlägt der Connect fehl.
+
+🔮 **Geplant (nächste Tiefenstufen):** **Erzwingung** (require-SSL, fail-closed) und
+**Truststore/Keystore**-Konfiguration.
 
 ### 9.4 Audit-Logging
 

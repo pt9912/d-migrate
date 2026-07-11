@@ -27,11 +27,21 @@ interface JdbcUrlBuilder {
     fun defaultParams(): Map<String, String>
 
     /**
+     * Dialekt-spezifische SSL-Params aus den typisierten [ConnectionConfig.ssl]
+     * (LN-026). Default **leer**; PostgreSQL/MySQL überschreiben, SQLite erbt leer.
+     * Werden in [buildJdbcUrl] zwischen [defaultParams] und `config.params`
+     * gemerged — `config.params` trägt keine dialekt-eigenen ssl-Keys mehr
+     * (der [ConnectionUrlParser] extrahiert sie), also kein Konflikt.
+     */
+    fun sslParams(ssl: SslSettings): Map<String, String> = emptyMap()
+
+    /**
      * Baut die finale JDBC-URL.
      *
      * Default-Implementierung: scheme + host/port/database aus dem Dialekt-
-     * Mapping ableiten, dann `defaultParams()` mit `config.params` mergen
-     * (User-Werte überschreiben Defaults) und URL-encoded anhängen.
+     * Mapping ableiten, dann `defaultParams()` → `sslParams(config.ssl)` →
+     * `config.params` mergen (spätere überschreiben frühere) und URL-encoded
+     * anhängen.
      */
     fun buildJdbcUrl(config: ConnectionConfig): String {
         require(config.dialect == dialect) {
@@ -39,6 +49,7 @@ interface JdbcUrlBuilder {
         }
         val merged = LinkedHashMap<String, String>().apply {
             putAll(defaultParams())
+            putAll(sslParams(config.ssl))
             putAll(config.params)
         }
         // SQLite treats `jdbc:sqlite::memory:?...` as a literal file path

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-Class SSL/TLS-Konfiguration** (LN-026, Minimal-Scope: typisiert +
+  validiert) — SSL-Verbindungsparameter werden nicht mehr nur roh durchgereicht,
+  sondern in ein neutrales `SslMode`/`SslSettings` (`ConnectionConfig.ssl`) geparst
+  und validiert: PostgreSQL `sslmode`/`sslrootcert`, MySQL `sslMode`/`ssl`
+  (Legacy-Bool opportunistisch → `PREFERRED`). Ungültige Modi ergeben einen klaren
+  Fehler statt stillem Passthrough; die per-Dialekt-korrekten JDBC-Parameter werden
+  über eine neue `JdbcUrlBuilder.sslParams`-Naht emittiert. Ohne explizite
+  SSL-Parameter unverändertes Verhalten. Erzwingung (require-SSL) und
+  Truststore/Keystore-Konfiguration folgen als spätere Tiefenstufen.
+
 - **Audit-Logging der CLI-DB-Operationen** (LN-027) — neben dem MCP-Server
   emittieren jetzt auch die DB-berührenden CLI-Operationen (`schema
   reverse`/`migrate`/`compare` (mit DB-Operand)/`rollback --execute`, `data

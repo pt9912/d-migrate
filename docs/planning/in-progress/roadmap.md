@@ -641,7 +641,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ⛔² |
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ⛔ |
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
-| Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | 🚧³ |
+| Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | ✅³ |
 | Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | ✅⁴ |
 | QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
 | QA        | Performance-Regression-Tests                         | [`LN-044`](../../../spec/lastenheft-d-migrate.md#ln-044) | ✅⁵ |
@@ -657,9 +657,14 @@ Datei-Integrität/Resume. Ein nutzerseitiges `--verify` bzw. eine Quelle↔Ziel-
 Reconciliation im `data transfer`-Pfad fehlt. (Nicht mit dem QA-Punkt „1 Mio ohne
 Datenverlust" des [Milestone 1.0.0](#milestone-100--stable-release) verwechseln — der
 belegt sich über den Test-Harness, nicht über dieses Produktfeature.)
-³ SSL ist nur als generischer JDBC-URL-Parameter-Passthrough möglich (`?sslmode=…` /
-`?useSSL=…` selbst setzen); First-Class-Config (sslmode/Truststore/Zertifikate,
-Erzwingung) fehlt in `ConnectionUrlParser`/`ConnectionConfig`/den JdbcUrlBuildern.
+³ First-Class SSL erledigt (2026-07-11, ImpPlan
+`docs/planning/done/ImpPlan-1.0.0-RC-ln026-ssl-first-class.md`, Minimal-Scope
+typisiert + validiert): neutraler `SslMode` (`ConnectionConfig.ssl`), der
+`ConnectionUrlParser` extrahiert + validiert PG `sslmode`/`sslrootcert` und MySQL
+`sslMode`/`ssl` (ungültig → Fehler statt Passthrough), die JdbcUrlBuilder mappen
+per-Dialekt korrekt über die neue `sslParams`-Naht. Offene Tiefenstufen (bewusst
+Nicht-Scope): **Erzwingung** (require-SSL/fail-closed) und **Truststore/Keystore**
+(inkl. MySQL-`VERIFY_*`-CA).
 ⁴ Erledigt (2026-07-11, ImpPlan `docs/planning/done/ImpPlan-1.0.0-RC-ln027-cli-audit.md`):
 neben dem MCP-Dispatcher emittieren jetzt auch die CLI-DB-Operationen (`schema
 reverse/migrate/compare[db]/rollback --execute`, `data export/import/transfer/profile`)

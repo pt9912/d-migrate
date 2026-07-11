@@ -203,7 +203,7 @@ database:
   connections:
     local_pg: "postgresql://dev:dev@localhost:5432/myapp"
     local_mysql: "mysql://root@localhost:3306/myapp"
-    staging: "postgresql://app:${DB_STAGING_PASSWORD}@staging.example.com/myapp?ssl=require"
+    staging: "postgresql://app:${DB_STAGING_PASSWORD}@staging.example.com/myapp?sslmode=require"
 
   # Connection-Pool-Einstellungen
   pool:
@@ -472,8 +472,8 @@ Für verschiedene Umgebungen (dev, staging, prod) können Profile verwendet werd
 database:
   connections:
     dev: "postgresql://dev:dev@localhost/myapp"
-    staging: "postgresql://app:${STAGING_PW}@staging/myapp?ssl=require"
-    prod: "postgresql://app:${PROD_PW}@prod/myapp?ssl=verify-full"
+    staging: "postgresql://app:${STAGING_PW}@staging/myapp?sslmode=require"
+    prod: "postgresql://app:${PROD_PW}@prod/myapp?sslmode=verify-full"
 
   default_source: dev    # Default für --source
   default_target: dev    # Default für --target

@@ -22,6 +22,8 @@ data class ConnectionConfig(
     val password: String?,
     val params: Map<String, String> = emptyMap(),
     val pool: PoolSettings = PoolSettings(),
+    /** First-Class SSL/TLS-Einstellungen (LN-026); Modus + CA-Pfad, nicht sensibel. */
+    val ssl: SslSettings = SslSettings(),
 ) {
     override fun toString(): String = buildString {
         append("ConnectionConfig(dialect=").append(dialect)
@@ -33,6 +35,7 @@ data class ConnectionConfig(
         append(if (password != null) "***" else "null")
         append(", params=").append(params)
         append(", pool=").append(pool)
+        append(", ssl=").append(ssl)
         append(')')
     }
 }
