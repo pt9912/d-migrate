@@ -101,6 +101,10 @@ jobs:
       - name: Tap and install d-migrate from published tap
         run: |
           brew tap pt9912/d-migrate https://github.com/pt9912/homebrew-d-migrate
+          # Homebrew 5.0 refuses to install from a third-party tap until it is
+          # explicitly trusted (security policy). The tap clones fine; trust it
+          # before installing, exactly as `brew` instructs on refusal.
+          brew trust pt9912/d-migrate
           brew install d-migrate
 
       - name: Smoke-test installed CLI

@@ -28,6 +28,10 @@ fail() { printf '[smoke] FAIL: %s\n' "$*" >&2; exit 1; }
 
 # --- 1. Bind-Mount-Owner-Schutz + .env -----------------------------
 mkdir -p "$EXAMPLES_DIR/out"
+# Non-root Image (uid 10001): der dmigrate-Container läuft als Host-User, damit er
+# ins host-owned /work/out schreiben kann (Compose interpoliert die Variable in die
+# `user:`-Direktive des dmigrate-Service). Muster wie sample-db-Compose.
+export BI_DEMO_DMIGRATE_USER="$(id -u):$(id -g)"
 if [ ! -f "$EXAMPLES_DIR/.env" ]; then
     cp "$EXAMPLES_DIR/.env.example" "$EXAMPLES_DIR/.env"
     log "created examples/bi-demo/.env from .env.example"

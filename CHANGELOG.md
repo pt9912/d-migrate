@@ -5,7 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.10] - 2026-07-11
+
+### Added
+
+- **Property-Based Testing** (LN-046, erledigt — Phasen A–C): `kotest-property`
+  als Test-Dependency verdrahtet (stack-nativ statt Jqwik, [ADR 0029](docs/adr/0029-property-based-testing-framework.md)).
+  - Phase A — `ObjectKeyCodecPropertySpec` verifiziert die „lossless"-Round-Trip-
+    Garantie der Routine-/Trigger-Identitätskodierung über generierte Eingaben
+    inklusive Shrinking.
+  - Phase B — geteilter `Arb<NeutralType>` (alle 21 Varianten) in den
+    core-Test-Fixtures; drei Driver-Specs prüfen `TypeMapper.toSql`-Totalität und
+    `NeutralTypeCanonicalizer`-Idempotenz für PostgreSQL/MySQL/SQLite.
+  - Phase C — geteilter `Arb<SchemaDefinition>`; das spec-genannte Schema-Parsing:
+    `YamlSchemaCodec.read`-Robustheit (nie NPE), `MigrationFingerprint`-
+    Ordnungsunabhängigkeit + Metadaten-Ausschluss und der semantische
+    `write→read`-Round-Trip (Fingerprint als Orakel). PBT deckte dabei einen
+    degenerierten Enum-Round-Trip-Fall auf (leeres Enum, im Generator
+    ausgeschlossen). Slice `docs/planning/done/property-based-testing-ln046.md`.
+
+### Fixed
+
+- **SQLite: `NOT NULL` auf PRIMARY-KEY-Spalten** — SQLites `PRIMARY KEY`
+  erzwingt (anders als PostgreSQL/MySQL) kein `NOT NULL`; nur `INTEGER PRIMARY
+  KEY` und `WITHOUT ROWID` sind ausgenommen. Das neutrale Modell lässt
+  `required` auf PK-Spalten weg (Invariante „PK ⇒ required implizit"), weshalb
+  ein von d-migrate reversierter und wieder nach SQLite exportierter
+  Schema-Stand `NOT NULL` auf allen PK-Spalten still verlor (stille
+  Constraint-Schwächung, gemeldet vom m-trace-Consumer). Der SQLite-Renderer
+  materialisiert die Invariante jetzt explizit (`SqlitePrimaryKeyNullability`)
+  im `CREATE TABLE`- und im 12-Schritt-Rebuild-Pfad; sequence-emulierte
+  PK-Spalten bleiben (transientes `NULL` während der Trigger-Befüllung)
+  unangetastet, und die Rowid-Alias-Pfade (`INTEGER PRIMARY KEY`) ändern sich
+  nicht. PostgreSQL- und MySQL-Ausgabe unverändert.
 
 ## [0.9.9] - 2026-07-08
 

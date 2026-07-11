@@ -69,6 +69,8 @@ jobs:
           TAP_DIR="$(brew --repository local/d-migrate-verify)"
           mkdir -p "${TAP_DIR}/Formula"
           cp packaging/homebrew/d-migrate.rb "${TAP_DIR}/Formula/d-migrate.rb"
+          # Homebrew 5.0 requires third-party taps to be trusted before install.
+          brew trust local/d-migrate-verify
           brew install local/d-migrate-verify/d-migrate
 
       - name: Smoke-test installed CLI

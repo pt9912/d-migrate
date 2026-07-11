@@ -28,6 +28,8 @@ dependencies {
     // Parquet Cut A S0b: DataChunkWriter.begin(table, columns)-Bridge-Extension.
     testImplementation(testFixtures(project(":hexagon:ports-write")))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    // LN-046 / ADR 0029 Phase C: geteilter Arb<SchemaDefinition> aus core-Fixtures.
+    testImplementation(testFixtures(project(":hexagon:core")))
 
     // Vertrags-Guard: validiert ein Voll-Feature-Fixture gegen spec/schema.json
     // (SchemaJsonContractTest), damit das handgepflegte JSON-Schema nicht hinter

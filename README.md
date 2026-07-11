@@ -42,16 +42,17 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.9**
-(stable, [released 2026-07-08](https://github.com/pt9912/d-migrate/releases/tag/v0.9.9)).
+d-migrate is a working production tool at version **0.9.10**
+(stable, [released 2026-07-11](https://github.com/pt9912/d-migrate/releases/tag/v0.9.10)).
 
-> **New in 0.9.9:** a multi-round end-to-end
-> pilot validation (PostgreSQL / MySQL / SQLite against
-> Pagila/Sakila) has hardened cross-dialect data and DDL fidelity —
-> all reported P1/P2 cross-dialect blockers are fixed (transfer
-> preflight derived structurally from the target type mapping,
-> array/`tsvector` value binding, `CURRENT_DATE` defaults, view
-> portability, routine emission, and more). See `CHANGELOG.md`.
+> **New in 0.9.10:** a SQLite round-trip fidelity fix — primary-key
+> columns now render `NOT NULL` on export and table rebuild. SQLite's
+> `PRIMARY KEY` does not imply `NOT NULL` (unlike PostgreSQL/MySQL), so a
+> reverse→regenerate cycle previously weakened the constraint silently;
+> the SQLite renderer now materialises the neutral model's `PK ⇒ NOT
+> NULL` invariant. Also ships property-based testing (`kotest-property`,
+> LN-046) across type mapping, canonicalization and schema parsing. See
+> `CHANGELOG.md`.
 
 The current capabilities:
 

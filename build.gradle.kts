@@ -16,7 +16,7 @@ fun normalizedReleaseVersion(raw: String?): String? {
     return normalized.takeIf { semverLike.matches(it) }
 }
 
-val defaultProjectVersion = "0.9.9"
+val defaultProjectVersion = "0.9.10"
 val resolvedProjectVersion =
     normalizedReleaseVersion(findProperty("releaseVersion")?.toString())
         ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))
@@ -67,6 +67,9 @@ subprojects {
     dependencies {
         "testImplementation"("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
         "testImplementation"("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+        // Property-Based Testing (LN-046, ADR 0029): kotest-property statt Jqwik —
+        // stack-nativ (gleicher Runner/gleiches Spec-Idiom), Generatoren + Shrinking.
+        "testImplementation"("io.kotest:kotest-property:${rootProject.properties["kotestVersion"]}")
         "testImplementation"("io.mockk:mockk:${rootProject.properties["mockkVersion"]}")
         // SLF4J-Provider für Tests, damit Testcontainers-Diagnostics nicht im
         // NOP-Logger verschwinden. Ohne dieses Fragment ist die
