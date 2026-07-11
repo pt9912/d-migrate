@@ -24,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     degenerierten Enum-Round-Trip-Fall auf (leeres Enum, im Generator
     ausgeschlossen). Slice `docs/planning/done/property-based-testing-ln046.md`.
 
+### Fixed
+
+- **SQLite: `NOT NULL` auf PRIMARY-KEY-Spalten** — SQLites `PRIMARY KEY`
+  erzwingt (anders als PostgreSQL/MySQL) kein `NOT NULL`; nur `INTEGER PRIMARY
+  KEY` und `WITHOUT ROWID` sind ausgenommen. Das neutrale Modell lässt
+  `required` auf PK-Spalten weg (Invariante „PK ⇒ required implizit"), weshalb
+  ein von d-migrate reversierter und wieder nach SQLite exportierter
+  Schema-Stand `NOT NULL` auf allen PK-Spalten still verlor (stille
+  Constraint-Schwächung, gemeldet vom m-trace-Consumer). Der SQLite-Renderer
+  materialisiert die Invariante jetzt explizit (`SqlitePrimaryKeyNullability`)
+  im `CREATE TABLE`- und im 12-Schritt-Rebuild-Pfad; sequence-emulierte
+  PK-Spalten bleiben (transientes `NULL` während der Trigger-Befüllung)
+  unangetastet, und die Rowid-Alias-Pfade (`INTEGER PRIMARY KEY`) ändern sich
+  nicht. PostgreSQL- und MySQL-Ausgabe unverändert.
+
 ## [0.9.9] - 2026-07-08
 
 **Cross-Dialect-Datentreue-Härtung.** Eine mehrrundige End-to-End-Pilot-Validierung

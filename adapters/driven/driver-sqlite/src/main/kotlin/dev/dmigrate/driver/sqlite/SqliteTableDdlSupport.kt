@@ -101,7 +101,10 @@ internal class SqliteTableDdlSupport(
         val normalColumns = table.columns.filter { it.value.type !is NeutralType.Geometry }
         val effectiveColumns = if (isSpatiaLite) normalColumns else table.columns
         for ((columnName, column) in effectiveColumns.inOrdinalOrder()) {
-            lines += columnConstraintHelper.generateColumnSql(columnName, column, schema, name, notes, deferredFks)
+            // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
+            // neutral model's "PK ⇒ required" invariant before rendering.
+            val col = SqlitePrimaryKeyNullability.materialize(columnName, column, table.primaryKey)
+            lines += columnConstraintHelper.generateColumnSql(columnName, col, schema, name, notes, deferredFks)
         }
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue

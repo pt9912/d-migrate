@@ -592,7 +592,10 @@ internal class SqliteRebuildRenderer(
     private fun buildCreateTempSql(tempName: String, target: TableDefinition): String {
         val lines = mutableListOf<String>()
         for ((colName, col) in target.columns.inOrdinalOrder()) {
-            lines += "    " + sql.columnLine(colName, col)
+            // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
+            // neutral model's "PK ⇒ required" invariant on the rebuilt table.
+            val effectiveCol = SqlitePrimaryKeyNullability.materialize(colName, col, target.primaryKey)
+            lines += "    " + sql.columnLine(colName, effectiveCol)
         }
         sql.primaryKeyClause(target)?.let { lines += "    $it" }
         for (c in target.constraints.sortedBy { it.name }) {
