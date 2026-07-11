@@ -18,7 +18,12 @@ class YamlSchemaCodec : SchemaCodec {
     }
 
     private val writeMapper = ObjectMapper(
-        YAMLFactory()
+        YAMLFactory.builder()
+            // Quotet number-/bool-/null-/timestamp-artige String-Werte, die
+            // `MINIMIZE_QUOTES` sonst unquotiert ließe und die YAML-Lese-Seite
+            // umdeuten würde (LN-046). Delegiert an SnakeYAMLs Resolver.
+            .stringQuotingChecker(YamlImplicitAwareQuotingChecker())
+            .build()
             .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
             .enable(YAMLGenerator.Feature.MINIMIZE_QUOTES)
     )

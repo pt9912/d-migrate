@@ -1,13 +1,13 @@
 # YAML-Codec: Round-Trip beliebiger String-Werte unter `MINIMIZE_QUOTES`
 
-> Status: **Bekannte Limitierung / Folgearbeit** — noch nicht gebaut.
+> Status: **DONE / graduiert** — gebaut & abgenommen 2026-07-11 (Option: custom
+> `StringQuotingChecker`). Siehe „## Closure" unten.
 > Trigger: [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) Property-Based-Testing (`YamlSchemaCodecPropertySpec`) deckte
 > auf, dass `write→read` den Fingerprint für bestimmte String-**Werte** nicht
-> erhält. Der PBT-Generator (`NeutralTypeArb`) wurde auf YAML-sichere Enum-Werte
-> eingeschränkt (konsistent mit der bereits YAML-sicheren Bezeichner-Erzeugung in
-> `SchemaArb`), damit das PBT den **strukturellen** Round-Trip misst statt an
-> YAML-Quoting-Artefakten falsch-rot zu werden. Diese Datei trackt die
-> **eigentliche Codec-Limitierung**, die dabei sichtbar wurde.
+> erhält. Ein Interim (Generator-Einschränkung auf YAML-sichere Enum-Werte,
+> Commit `4a744dfd`) hielt v0.9.10 grün; dieser Slice schließt die **eigentliche
+> Codec-Limitierung** und **nimmt die Generator-Einschränkung wieder zurück**, so
+> dass das PBT den Fix beweist statt ihn zu umgehen.
 > Severity/Charakter: **echter, aber seltener Datenverlust-Bug** — trifft nur
 > Schemata mit YAML-mehrdeutigen String-Werten (Enum-Labels, String-Defaults).
 
@@ -55,3 +55,29 @@ Priorität entsprechend niedrig, aber ein echter Korrektheits-Gap.
   (Rücknahme der `yamlSafeToken`-Einschränkung in `NeutralTypeArb`) grün.
 - Gewählte Option dokumentiert; Output-Format-Änderung (falls Option 1) in
   Golden-/Format-Tests nachgezogen.
+
+## Closure (2026-07-11)
+
+**Gewählt: die saubere Realisierung von Option 3** — ein custom
+`StringQuotingChecker`, ermöglicht durch Jackson 2.21.2
+(`YAMLFactory.builder().stringQuotingChecker(...)`; das Ticket hielt „gezieltes
+Quoting" fälschlich für „nicht direkt möglich"). **Kein ADR** (Bugfix, der den
+Output-Vertrag *erhält* — keine permanente Ausschluss-Entscheidung).
+
+Geliefert:
+- `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/yaml/YamlImplicitAwareQuotingChecker.kt`:
+  Subklasse von `StringQuotingChecker.Default`, quotet einen Wert zusätzlich, wenn
+  **SnakeYAMLs Resolver** (derselbe, den die Lese-Seite nutzt) ihn zu einem anderen
+  Tag als `Tag.STR` auflöst. Keine Nachbildung der Implicit-Type-Grammatik →
+  Schreib/Lese-Symmetrie garantiert; harmlose Strings bleiben unter
+  `MINIMIZE_QUOTES` unquotiert (**kein Output-Regress**, die Format-Assertions
+  `full_text_access_method: gin` / `type: fulltext` halten).
+- Verdrahtet in `YamlSchemaCodec.writeMapper`.
+- **Generator-Einschränkung `yamlSafeToken` in `NeutralTypeArb` zurückgenommen**
+  → Enum-Werte/refType sind wieder unbeschränkte `Arb.string`.
+
+Abnahme: unbeschränktes `YamlSchemaCodecPropertySpec` grün; temporärer 20000-Iter-
+Repro grün (volle `Arb.string`-Domäne inkl. Control-Chars/Unicode — kein
+Repräsentierbarkeits-Problem); Fokus-Test `YamlSchemaCodecImplicitStringTest`
+(`4.`/`9_`/`yes`/`~`/`2024-01-01`/… round-trippen, harmlose bleiben unquotiert);
+`formats:check` + `core:check` (detekt + koverVerify-90%) grün.

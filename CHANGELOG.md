@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **YAML-Schema-Codec: verlustfreier Round-Trip YAML-mehrdeutiger String-Werte** —
+  Enum-Labels und String-Defaults wie `4.`, `9_`, `yes`, `on`, `~` oder
+  `2024-01-01` wurden unter `MINIMIZE_QUOTES` unquotiert geschrieben und beim
+  Lesen als Zahl/Bool/Null/Timestamp umgedeutet (`yes` → `true`, `4.` → `4.0`),
+  d. h. die String-Identität ging verloren. Ein neuer `StringQuotingChecker`
+  delegiert die Quoting-Entscheidung an denselben SnakeYAML-Resolver, den die
+  Lese-Seite nutzt, und quotet genau die mehrdeutigen Scalars — harmlose Strings
+  bleiben unquotiert (kein Output-Wechsel). Von LN-046 Property-Based-Testing
+  aufgedeckt.
+
 ## [0.9.10] - 2026-07-11
 
 ### Added
