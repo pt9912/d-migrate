@@ -127,6 +127,66 @@ class PostgresProfilingDataAdapterTest : FunSpec({
         compat[0].exampleInvalidValues shouldHaveSize 2
     }
 
+    // ── empty tables / non-string values (v0.9.11 regression) ────────────
+
+    test("columnMetrics on empty text table: sum(case) is NULL → 0, no crash") {
+        every { jdbc.querySingle(match { it.contains("non_null_count") }) } returns mapOf(
+            "non_null_count" to 0L, "null_count" to 0L,
+            "distinct_count" to 0L, "dup_count" to 0L,
+            "min_val" to null, "max_val" to null,
+            "empty_count" to null, "blank_count" to null,
+            "min_len" to null, "max_len" to null,
+        )
+        val m = adapter.columnMetrics(pool, "t", "name", "text")
+        m.nonNullCount shouldBe 0
+        m.emptyStringCount shouldBe 0
+        m.blankStringCount shouldBe 0
+        m.minLength shouldBe null
+        m.minValue shouldBe null
+    }
+
+    test("targetTypeCompatibility on empty table: sum(case) NULL → compat/incompat 0") {
+        every { jdbc.querySingle(match { it.contains("checked") }) } returns mapOf(
+            "checked" to 0L, "compat" to null, "incompat" to null,
+        )
+        val compat = adapter.targetTypeCompatibility(pool, "t", "id", listOf(TargetLogicalType.INTEGER))
+        compat shouldHaveSize 1
+        compat[0].checkedValueCount shouldBe 0
+        compat[0].compatibleCount shouldBe 0
+        compat[0].incompatibleCount shouldBe 0
+        compat[0].exampleInvalidValues shouldHaveSize 0
+    }
+
+    test("targetTypeCompatibility renders non-string example values via toString") {
+        every { jdbc.querySingle(match { it.contains("checked") }) } returns mapOf(
+            "checked" to 3L, "compat" to 1L, "incompat" to 2L,
+        )
+        every { jdbc.queryList(match { it.contains("DISTINCT") }) } returns listOf(
+            mapOf("val" to 2), mapOf("val" to 3),
+        )
+        val compat = adapter.targetTypeCompatibility(pool, "t", "n", listOf(TargetLogicalType.BOOLEAN))
+        compat[0].incompatibleCount shouldBe 2
+        compat[0].exampleInvalidValues shouldBe listOf("2", "3")
+    }
+
+    test("numericStats surfaces zero/negative counts and full stats") {
+        every { jdbc.querySingle(match { it.contains("min") && it.contains("numeric") }) } returns mapOf(
+            "min_val" to -5.0, "max_val" to 10.0, "avg_val" to 2.5,
+            "sum_val" to 5.0, "stddev_val" to 7.0,
+            "zero_count" to 1L, "neg_count" to 2L,
+        )
+        val stats = adapter.numericStats(pool, "t", "score")!!
+        stats.zeroCount shouldBe 1
+        stats.negativeCount shouldBe 2
+        stats.sum shouldBe 5.0
+        stats.stddev shouldBe 7.0
+    }
+
+    test("temporalStats returns null for empty table") {
+        every { jdbc.querySingle(match { it.contains("min_ts") }) } returns null
+        adapter.temporalStats(pool, "t", "created_at") shouldBe null
+    }
+
     // ── security: malicious identifiers ────────────
 
     test("rowCount quotes malicious table name to prevent injection") {

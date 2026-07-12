@@ -87,6 +87,58 @@ class MysqlProfilingDataAdapterTest : FunSpec({
         compat[0].compatibleCount shouldBe 5
     }
 
+    // ── empty tables / non-string values (v0.9.11 regression) ────────────
+
+    test("columnMetrics on empty text table: sum(case) is NULL → 0, no crash") {
+        every { jdbc.querySingle(match { it.contains("non_null_count") }) } returns mapOf(
+            "non_null_count" to 0L, "null_count" to 0L,
+            "distinct_count" to 0L, "dup_count" to 0L,
+            "min_val" to null, "max_val" to null,
+            "empty_count" to null, "blank_count" to null,
+            "min_len" to null, "max_len" to null,
+        )
+        val m = adapter.columnMetrics(pool, "t", "name", "text")
+        m.nonNullCount shouldBe 0
+        m.emptyStringCount shouldBe 0
+        m.blankStringCount shouldBe 0
+    }
+
+    test("numericStats on empty column: sum(case) NULL → zero/negative counts 0") {
+        every {
+            jdbc.querySingle(match { it.contains("min") && it.contains("max") && !it.contains("min_ts") })
+        } returns mapOf(
+            "min_val" to null, "max_val" to null, "avg_val" to null,
+            "sum_val" to null, "stddev_val" to null,
+            "zero_count" to null, "neg_count" to null,
+        )
+        val stats = adapter.numericStats(pool, "t", "n")!!
+        stats.zeroCount shouldBe 0
+        stats.negativeCount shouldBe 0
+        stats.min shouldBe null
+    }
+
+    test("targetTypeCompatibility on empty table: sum(case) NULL → compat/incompat 0") {
+        every { jdbc.querySingle(match { it.contains("checked") }) } returns mapOf(
+            "checked" to 0L, "compat" to null, "incompat" to null,
+        )
+        val compat = adapter.targetTypeCompatibility(pool, "t", "id", listOf(TargetLogicalType.INTEGER))
+        compat[0].compatibleCount shouldBe 0
+        compat[0].incompatibleCount shouldBe 0
+        compat[0].exampleInvalidValues shouldHaveSize 0
+    }
+
+    test("targetTypeCompatibility renders non-string example values via toString") {
+        every { jdbc.querySingle(match { it.contains("checked") }) } returns mapOf(
+            "checked" to 3L, "compat" to 1L, "incompat" to 2L,
+        )
+        every { jdbc.queryList(match { it.contains("DISTINCT") }) } returns listOf(
+            mapOf("val" to 2), mapOf("val" to 3),
+        )
+        val compat = adapter.targetTypeCompatibility(pool, "t", "n", listOf(TargetLogicalType.BOOLEAN))
+        compat[0].incompatibleCount shouldBe 2
+        compat[0].exampleInvalidValues shouldBe listOf("2", "3")
+    }
+
     // ── security: malicious identifiers ────────────
 
     test("rowCount quotes malicious table name to prevent injection") {
