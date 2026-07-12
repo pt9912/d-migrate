@@ -638,7 +638,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | 🚧¹ |
 | Streaming | Parallele Tabellenverarbeitung (Coroutines)          | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) | ⛔ |
 | Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ⛔ |
-| Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ⛔² |
+| Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ⛔ |
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | ✅³ |
@@ -651,12 +651,18 @@ sind ausgeliefert (Basis seit 0.3.0); das „>10 TB ohne OOM"-Akzeptanzkriterium
 aber **nicht validiert** — der einzige Heap-Cap-/HeapDump-Test prüft die
 Schema-DDL-Render-Pipeline ([`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004)),
 nicht den Datenpfad.
-² Der reale SHA-256-Byte-Vergleich migrierter Daten lebt nur im TPC-Perf-Testharness
-(`make sample-db-tpch-perf`); die Bundle-Import-Preflight-SHA-256 prüft nur
-Datei-Integrität/Resume. Ein nutzerseitiges `--verify` bzw. eine Quelle↔Ziel-
-Reconciliation im `data transfer`-Pfad fehlt. (Nicht mit dem QA-Punkt „1 Mio ohne
-Datenverlust" des [Milestone 1.0.0](#milestone-100--stable-release) verwechseln — der
-belegt sich über den Test-Harness, nicht über dieses Produktfeature.)
+² Erledigt (2026-07-12, [ADR 0030](../../adr/0030-datenwert-kanonisierung-verify.md),
+ImpPlan [`ImpPlan-1.0.0-RC-ln009-sha256-verify.md`](../done/ImpPlan-1.0.0-RC-ln009-sha256-verify.md)):
+nutzerseitiges `data transfer --verify` mit dialekt-neutraler, reihenfolge-
+unabhängiger SHA-256-Quelle↔Ziel-Reconciliation je Tabelle (additive 256-bit-
+Kombination mod 2²⁵⁶; `CanonicalValueCodec` je NeutralType inkl. JSON semantisch,
+Array rekursiv, Geometry-WKB); Divergenz → Exit 3. Cross-dialect repräsentations-
+transformierende Spalten (`text[]`→`json`, `tsvector`→`text`, tz→lokal) werden
+familien-basiert mit W-Code ausgeschlossen (kein False-Positive), der Rest
+byte-genau verglichen. Nicht-Ziel: `data export/import --verify`, inkrementeller/
+Merge-Load. (Nicht mit dem QA-Punkt „1 Mio ohne Datenverlust" des
+[Milestone 1.0.0](#milestone-100--stable-release) verwechseln — der belegt sich
+über den Test-Harness, nicht über dieses Produktfeature.)
 ³ First-Class SSL erledigt (2026-07-11, ImpPlan
 `docs/planning/done/ImpPlan-1.0.0-RC-ln026-ssl-first-class.md`, Minimal-Scope
 typisiert + validiert): neutraler `SslMode` (`ConnectionConfig.ssl`), der

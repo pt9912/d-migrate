@@ -23,6 +23,7 @@ class DataTransferWiringTest : FunSpec({
         onConflict = "abort",
         triggerMode = "fire",
         truncate = false,
+        verify = false,
         chunkSize = 10_000,
         cliContext = CliContext(),
         configPath = null,

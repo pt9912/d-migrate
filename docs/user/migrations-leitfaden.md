@@ -293,9 +293,22 @@ lassen.
 
 ### 10.3 SHA-256-Verifikation
 
-> 🔮 **Geplant (1.0.0-RC, [`LN-009`](../../spec/lastenheft-d-migrate.md#ln-009)):** durchgängige SHA-256-Verifikation der
-> Datenintegrität über den Transfer hinweg. Heute erfolgt die Abnahme über
-> Schema-Compare und Zeilen-/Stichprobenvergleich.
+Beim Direkt-Transfer prüfen Sie die Datenintegrität mit `data transfer --verify`
+([`LN-009`](../../spec/lastenheft-d-migrate.md#ln-009)): d-migrate bildet nach dem
+Transfer je Tabelle eine dialekt-neutrale, reihenfolge-unabhängige SHA-256-
+Prüfsumme über Quelle und Ziel und meldet Divergenzen mit Exit-Code `3`.
+
+```bash
+d-migrate data transfer --source staging --target local_pg --truncate --verify
+```
+
+Voraussetzung ist ein sauberer Load (leeres oder mit `--truncate` geleertes Ziel).
+Bei Cross-Dialekt-Transfers, die eine Spalte repräsentativ umformen (z. B.
+`text[]`→`json`, `tsvector`→`text`, `timestamptz`→`datetime`), lässt sich die
+Byte-Gleichheit nicht bestätigen — diese Spalten werden mit einer Warnung aus der
+Prüfung ausgeschlossen und im Report ausgewiesen; alle übrigen Spalten werden
+byte-genau verglichen. Ergänzend bleiben Schema-Compare und Zeilen-/Stichproben-
+vergleich ([10.1](#10-validierung-und-abnahme)/[10.2](#10-validierung-und-abnahme)) nützlich.
 
 ### 10.4 Checkliste für Pilot-Migrationen
 

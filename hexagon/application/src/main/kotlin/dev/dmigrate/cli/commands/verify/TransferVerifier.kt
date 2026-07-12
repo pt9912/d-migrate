@@ -1,0 +1,171 @@
+package dev.dmigrate.cli.commands.verify
+
+import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.data.DataFilter
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.data.DataReader
+import dev.dmigrate.verify.ValueCanonicalizationException
+import dev.dmigrate.verify.ValueCanonicalizer
+
+/**
+ * LN-009: Quelle↔Ziel-Reconciliation eines abgeschlossenen Transfers.
+ *
+ * Streamt je Tabelle Quelle **und** Ziel erneut, kanonisiert die Werte
+ * dialekt-neutral (jede Seite gegen ihren **eigenen** reverse-engineerten
+ * Spaltentyp) und vergleicht die reihenfolge-unabhängigen SHA-256-Tabellen-
+ * Prüfsummen samt Zeilenzahl.
+ *
+ * **Familien-basierter Ausschluss (ADR 0030).** Byte-Kanonik kann eine
+ * *repräsentations-transformierende* Cross-Dialekt-Konversion (z. B. `text[]`→
+ * `json`, `tsvector`→`text`, tz-behaftet→lokal) nicht bestätigen: die Quelle
+ * liefert weiter den quell-typisierten Wert. Solche Spalten — deren Quell- und
+ * Zieltyp in **verschiedenen Kanonik-Familien** liegen — werden mit einem W-Code
+ * **ausgeschlossen** (kein False-Positive), nicht als Divergenz gemeldet.
+ * Innerhalb einer Familie (bool↔int, uuid↔text, decimal-Weite, temporal gleicher
+ * Art) kollidieren die kanonischen Formen und werden verglichen.
+ *
+ * Vertrag: exakte Übereinstimmung setzt einen **sauberen Load** voraus (leeres/
+ * getrunctes Ziel). Ein Wert, der nicht kanonisiert werden kann, macht die
+ * Tabelle **inkonklusiv** (Fehler im Ergebnis) — nie ein stiller Pass.
+ */
+class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
+
+    @Suppress("LongParameterList") // spiegelt den Transfer-Kontext (Reader/Pools/Schemas je Seite)
+    fun verify(
+        tables: List<String>,
+        sourceReader: DataReader,
+        targetReader: DataReader,
+        sourcePool: ConnectionPool,
+        targetPool: ConnectionPool,
+        sourceSchema: SchemaDefinition,
+        targetSchema: SchemaDefinition,
+        filter: DataFilter?,
+        chunkSize: Int,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): VerifyReport {
+        val results = tables.map { table ->
+            cancellationToken.throwIfCancellationRequested()
+            verifyTable(
+                table, sourceReader, targetReader, sourcePool, targetPool,
+                sourceSchema, targetSchema, filter, chunkSize, cancellationToken,
+            )
+        }
+        return VerifyReport(results)
+    }
+
+    @Suppress("LongParameterList")
+    private fun verifyTable(
+        table: String,
+        sourceReader: DataReader,
+        targetReader: DataReader,
+        sourcePool: ConnectionPool,
+        targetPool: ConnectionPool,
+        sourceSchema: SchemaDefinition,
+        targetSchema: SchemaDefinition,
+        filter: DataFilter?,
+        chunkSize: Int,
+        cancellationToken: CancellationToken,
+    ): TableVerifyResult {
+        val sourceColumns = columnsFor(sourceSchema, table)
+        val targetColumns = columnsFor(targetSchema, table)
+        val shared = sourceColumns.keys.intersect(targetColumns.keys).sorted()
+
+        val excluded = mutableListOf<ColumnExclusion>()
+        val active = mutableListOf<String>()
+        for (column in shared) {
+            val reason = exclusionReason(sourceColumns.getValue(column).type, targetColumns.getValue(column).type)
+            if (reason != null) excluded.add(ColumnExclusion(table, column, reason)) else active.add(column)
+        }
+        val sourceTypes = active.associateWith { sourceColumns.getValue(it).type }
+        val targetTypes = active.associateWith { targetColumns.getValue(it).type }
+
+        return try {
+            val source = checksum(sourceReader, sourcePool, table, filter, chunkSize, active, sourceTypes, cancellationToken)
+            val target = checksum(targetReader, targetPool, table, filter, chunkSize, active, targetTypes, cancellationToken)
+            TableVerifyResult(
+                table = table,
+                sourceRows = source.rowCount(),
+                targetRows = target.rowCount(),
+                sourceHash = source.digestHex(),
+                targetHash = target.digestHex(),
+                excluded = excluded,
+            )
+        } catch (e: ValueCanonicalizationException) {
+            TableVerifyResult(table, 0, 0, "", "", excluded, error = e.message)
+        }
+    }
+
+    @Suppress("LongParameterList")
+    private fun checksum(
+        reader: DataReader,
+        pool: ConnectionPool,
+        table: String,
+        filter: DataFilter?,
+        chunkSize: Int,
+        active: List<String>,
+        types: Map<String, NeutralType>,
+        cancellationToken: CancellationToken,
+    ): TableChecksum {
+        val checksum = TableChecksum()
+        reader.streamTable(pool, table, filter, chunkSize).use { sequence ->
+            for (chunk in sequence) {
+                cancellationToken.throwIfCancellationRequested()
+                val indexByName = chunk.columns.withIndex().associate { (i, c) -> c.name to i }
+                for (row in chunk.rows) {
+                    checksum.addRow(
+                        active.map { column ->
+                            val index = indexByName[column] ?: return@map null
+                            row[index]?.let { canonicalizer.canonicalize(it, types.getValue(column)) }
+                        },
+                    )
+                }
+            }
+        }
+        return checksum
+    }
+
+    /** Spalten einer (ggf. schema-qualifizierten) Tabelle aus dem Schema. */
+    private fun columnsFor(schema: SchemaDefinition, table: String): Map<String, ColumnDefinition> {
+        schema.tables[table]?.let { return it.columns }
+        val bare = table.substringAfterLast('.')
+        schema.tables[bare]?.let { return it.columns }
+        return schema.tables.entries.firstOrNull { it.key.substringAfterLast('.') == bare }?.value?.columns ?: emptyMap()
+    }
+
+    /** Grund für einen Spalten-Ausschluss, oder null wenn beide Seiten byte-verifizierbar sind. */
+    private fun exclusionReason(source: NeutralType, target: NeutralType): String? {
+        val sourceFamily = canonicalFamily(source)
+        val targetFamily = canonicalFamily(target)
+        if (sourceFamily != targetFamily) {
+            return "cross-dialect representation transform ($sourceFamily -> $targetFamily), not byte-verifiable"
+        }
+        if (source is NeutralType.Float && target is NeutralType.Float && source.floatPrecision != target.floatPrecision) {
+            return "float width mismatch (${source.floatPrecision} vs ${target.floatPrecision})"
+        }
+        return null
+    }
+
+    /**
+     * Kanonik-Familie eines Neutraltyps. Zwei Typen sind byte-verifizierbar
+     * kompatibel, wenn ihre Familien übereinstimmen — dann liefern die
+     * kanonischen Formen für gleiche logische Werte identische Bytes.
+     */
+    private fun canonicalFamily(type: NeutralType): String = when (type) {
+        is NeutralType.Text, NeutralType.Xml, NeutralType.Email, is NeutralType.Enum,
+        is NeutralType.Char, NeutralType.Uuid -> "text"
+        NeutralType.Integer, NeutralType.SmallInt, NeutralType.BigInteger,
+        is NeutralType.Identifier, is NeutralType.Decimal, NeutralType.BooleanType -> "numeric"
+        is NeutralType.Float -> "float"
+        NeutralType.Date -> "date"
+        NeutralType.Time -> "time"
+        is NeutralType.DateTime -> if (type.timezone) "datetime-tz" else "datetime-local"
+        NeutralType.Json -> "json"
+        is NeutralType.Array -> "array"
+        NeutralType.Binary -> "binary"
+        is NeutralType.Geometry -> "geometry"
+        NeutralType.FullText -> "fulltext"
+    }
+}

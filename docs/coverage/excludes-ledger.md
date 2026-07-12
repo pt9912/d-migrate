@@ -184,6 +184,8 @@ Permanent reference tokens:
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.data.ResumeMarker$Position` | `permanent: dto-or-value-carrier` | Pure data carrier subtype. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.format.SchemaCodec` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.format.SchemaCodec$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helper for interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.verify.ValueCanonicalizer` | `permanent: port-contract` | Value-canonicalization port/interface; impl (CanonicalValueCodec) covered in formats tests. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.verify.ValueCanonicalizationException` | `permanent: dto-or-value-carrier` | Thin exception type. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ApprovalGrantStore` | `permanent: port-contract` | Server port/interface contract. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactContentStore` | `permanent: port-contract` | Server port/interface contract. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactStore` | `permanent: port-contract` | Server port/interface contract. |

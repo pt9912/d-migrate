@@ -83,3 +83,4 @@ argumentiert werden.
 | 0027 | [Reverse-Präferenzen: inhärente Mehrdeutigkeiten per deklarierter Präferenz auflösen (nicht Heuristik/Fold)](0027-reverse-preferences-inhaerente-mehrdeutigkeit.md) | accepted |
 | 0028 | [a-check-Architektur-Gate: G1 zuerst, strikte Composition-Root-JDBC-Regel](0028-a-check-architecture-gate-scope.md) | accepted |
 | 0029 | [Property-Based-Testing-Framework: kotest-property statt Jqwik](0029-property-based-testing-framework.md) | accepted |
+| 0030 | [Datenwert-Kanonisierung für `data transfer --verify` (LN-009)](0030-datenwert-kanonisierung-verify.md) | accepted |

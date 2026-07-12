@@ -21,6 +21,9 @@ kover {
                     "dev.dmigrate.driver.connection.JdbcUrlBuilder",
                     "dev.dmigrate.driver.connection.JdbcUrlBuilder\$DefaultImpls",
                     "dev.dmigrate.driver.TypeMapper",
+                    // LN-009: Verify-Kanonik-Port (Interface) + reine Exception ohne Logik
+                    "dev.dmigrate.verify.ValueCanonicalizer",
+                    "dev.dmigrate.verify.ValueCanonicalizationException",
                     "dev.dmigrate.format.SchemaCodec",
                     "dev.dmigrate.format.SchemaCodec\$DefaultImpls",
                     // Pure data containers without logic

@@ -14,7 +14,12 @@ import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
+import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.core.data.ImportSchemaMismatchException
+import dev.dmigrate.driver.data.DataReader
+import dev.dmigrate.cli.commands.verify.TransferVerifier
+import dev.dmigrate.cli.commands.verify.VerifyReport
+import dev.dmigrate.verify.ValueCanonicalizer
 import java.nio.file.Path
 
 class TransferConfigException(msg: String, cause: Throwable? = null) : RuntimeException(msg, cause)
@@ -26,6 +31,8 @@ data class DataTransferRequest(
     val sinceColumn: String? = null, val since: String? = null,
     val onConflict: String = "abort", val triggerMode: String = "fire",
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
+    // LN-009: SHA-256 Quelle↔Ziel-Reconciliation nach dem Transfer.
+    val verify: Boolean = false,
     val cliConfigPath: Path? = null,
     val quiet: Boolean = false, val noProgress: Boolean = false,
     // reverse-preferences: applies to any SQLite read — source OR target (F3).
@@ -42,6 +49,8 @@ class DataTransferRunner(
     printError: (String, String) -> Unit,
     stderr: (String) -> Unit = { System.err.println(it) },
     private val transferExecutor: TransferExecutor = TransferExecutor(),
+    // LN-009: von der CLI-Wiring injiziert (formats-Adapter). Null → --verify meldet Konfigurationsfehler.
+    private val valueCanonicalizer: ValueCanonicalizer? = null,
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
     private val userFacingPrintError = userFacingErrors.printError(printError)
@@ -170,7 +179,75 @@ class DataTransferRunner(
 
         if (!request.quiet && !request.noProgress)
             userFacingStderr("Transfer complete: ${tables.size} table(s) $srcRef -> $tgtRef")
-        return 0
+
+        if (!request.verify) return 0
+        return verifyTransfer(
+            request, tables, srcSchema, tgtSchema, reader, tgtDrv,
+            srcPool, tgtPool, filter, cancellationToken, srcRef, tgtRef,
+        )
+    }
+
+    @Suppress("LongParameterList") // spiegelt den Transfer-Kontext (Reader/Pools/Schemas/Refs je Seite)
+    private fun verifyTransfer(
+        request: DataTransferRequest,
+        tables: List<String>,
+        srcSchema: SchemaDefinition,
+        tgtSchema: SchemaDefinition,
+        sourceReader: DataReader,
+        tgtDrv: DatabaseDriver,
+        srcPool: ConnectionPool,
+        tgtPool: ConnectionPool,
+        filter: DataFilter?,
+        cancellationToken: CancellationToken,
+        srcRef: String,
+        tgtRef: String,
+    ): Int {
+        val canonicalizer = valueCanonicalizer ?: run {
+            userFacingPrintError("--verify requires a value canonicalizer (internal wiring error)", srcRef)
+            return 7
+        }
+        val report = try {
+            TransferVerifier(canonicalizer).verify(
+                tables = tables,
+                sourceReader = sourceReader,
+                targetReader = tgtDrv.dataReader(),
+                sourcePool = srcPool,
+                targetPool = tgtPool,
+                sourceSchema = srcSchema,
+                targetSchema = tgtSchema,
+                filter = filter,
+                chunkSize = request.chunkSize,
+                cancellationToken = cancellationToken,
+            )
+        } catch (e: OperationCancelledException) {
+            throw e
+        } catch (e: Exception) {
+            userFacingPrintError("Verify error: ${e.message}", srcRef)
+            return 5
+        }
+        return reportVerify(request, report, srcRef, tgtRef)
+    }
+
+    internal fun reportVerify(request: DataTransferRequest, report: VerifyReport, srcRef: String, tgtRef: String): Int {
+        for (exclusion in report.exclusions) {
+            userFacingStderr("W: verify excluded ${exclusion.table}.${exclusion.column}: ${exclusion.reason}")
+        }
+        if (report.allMatch) {
+            if (!request.quiet && !request.noProgress) {
+                val rows = report.tables.sumOf { it.sourceRows }
+                userFacingStderr("Verify OK: ${report.tables.size} table(s), $rows row(s) match $srcRef <-> $tgtRef")
+            }
+            return 0
+        }
+        for (result in report.tables.filter { !it.match }) {
+            val detail = when {
+                result.error != null -> "inconclusive (${result.error})"
+                result.sourceRows != result.targetRows -> "row count ${result.sourceRows} != ${result.targetRows}"
+                else -> "checksum mismatch"
+            }
+            userFacingPrintError("Verify divergence: table '${result.table}': $detail", tgtRef)
+        }
+        return 3
     }
 
     companion object {

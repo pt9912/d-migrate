@@ -31,6 +31,11 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         .default("fire")
     val truncate by option("--truncate", help = "Truncate target tables before transfer")
         .flag()
+    val verify by option(
+        "--verify",
+        help = "After transfer, verify data integrity via SHA-256 source↔target reconciliation " +
+            "(exit 3 on divergence)",
+    ).flag()
     val chunkSize by option("--chunk-size", help = "Rows per chunk (default: 10000)")
         .int()
         .default(10_000)
@@ -53,6 +58,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 onConflict = onConflict,
                 triggerMode = triggerMode,
                 truncate = truncate,
+                verify = verify,
                 chunkSize = chunkSize,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,

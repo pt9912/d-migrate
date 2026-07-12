@@ -10,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
+import dev.dmigrate.format.verify.CanonicalValueCodec
 import java.nio.file.Path
 
 internal data class DataTransferOptions(
@@ -22,6 +23,7 @@ internal data class DataTransferOptions(
     val onConflict: String,
     val triggerMode: String,
     val truncate: Boolean,
+    val verify: Boolean,
     val chunkSize: Int,
     val cliContext: CliContext,
     val configPath: Path?,
@@ -67,6 +69,7 @@ internal object DataTransferWiring {
             onConflict = options.onConflict,
             triggerMode = options.triggerMode,
             truncate = options.truncate,
+            verify = options.verify,
             chunkSize = options.chunkSize,
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
@@ -87,6 +90,8 @@ internal object DataTransferWiring {
                 val msgs = MessageResolver(options.cliContext.locale)
                 System.err.println(msgs.text("cli.error.source_format", src, msg))
             },
+            // LN-009: dialekt-neutrale Wert-Kanonik für --verify (formats-Adapter).
+            valueCanonicalizer = CanonicalValueCodec(),
         )
         return runner.execute(request)
     }
