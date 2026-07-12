@@ -150,6 +150,27 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
         trace.recoverability shouldBe ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED
     }
 
+    test("AtomicPreserveSegment Cancelled → rolled back, error names reason + sequence, FULL_ROLLBACK_CONFIRMED") {
+        val segment = AtomicPreserveSegment(batch = batch(), statements = listOf(stmt("AlterSequence")))
+        val trace = SegmentAwareMigrationExecutor.execute(
+            target = target,
+            configPath = null,
+            segments = listOf(segment),
+            plainExecutor = { _, _, _ -> error("must not be called") },
+            atomicRunner = { _, _, _, _, _, _ ->
+                AtomicSequencePreserveResult.Cancelled(refs = listOf(pgSeq), reason = "operator cancel")
+            },
+        )
+        trace.executionStarted shouldBe true
+        trace.executionCompleted shouldBe false
+        trace.transactionRolledBack shouldBe true
+        trace.statementsAttempted shouldBe 0
+        trace.executionError!! shouldContain "cancelled"
+        trace.executionError!! shouldContain "operator cancel"
+        trace.executionError!! shouldContain "users_id_seq"
+        trace.recoverability shouldBe ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED
+    }
+
     test("AtomicPreserveSegment Failed → executionError carries the cause, FULL_ROLLBACK_CONFIRMED") {
         val segment = AtomicPreserveSegment(batch = batch(), statements = listOf(stmt("AlterSequence")))
         val trace = SegmentAwareMigrationExecutor.execute(

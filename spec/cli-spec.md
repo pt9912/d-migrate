@@ -1370,6 +1370,7 @@ kanonisch beschrieben.
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Handling: `fire`, `disable`, `strict` |
 | `--truncate` | Nein | Boolean | aus | Zieltabellen vor dem Transfer leeren |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
+| `--verify` | Nein | Boolean | aus | Nach dem Transfer die Datenintegrität per SHA-256-Quelle↔Ziel-Reconciliation prüfen. Dialekt-neutrale, reihenfolge-unabhängige Prüfsumme je Tabelle; setzt einen sauberen Load (leeres/getrunctes Ziel) voraus. Repräsentations-transformierende Cross-Dialekt-Spalten (z. B. `text[]`→`json`, `tsvector`→`text`) werden mit Warnung ausgeschlossen statt fälschlich als Divergenz gemeldet. Divergenz → Exit-Code `3` |
 
 **Target-autoritatives Preflight**:
 
@@ -1399,7 +1400,7 @@ Streaming-Fehlerpfad getrennt bleiben.
 |---|---|
 | `0` | Transfer erfolgreich |
 | `2` | Ungültige CLI-Argumente |
-| `3` | Preflight fehlgeschlagen (Inkompatibilität, FK-Zyklen) |
+| `3` | Preflight fehlgeschlagen (Inkompatibilität, FK-Zyklen) oder `--verify`-Divergenz (Quelle≠Ziel) |
 | `4` | Verbindungsfehler (Source oder Target) |
 | `5` | Streaming-/Schreibfehler während Transfer |
 | `7` | Konfigurationsfehler |

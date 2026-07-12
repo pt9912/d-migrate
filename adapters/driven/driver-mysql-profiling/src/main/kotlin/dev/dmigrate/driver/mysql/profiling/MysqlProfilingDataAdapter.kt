@@ -64,8 +64,9 @@ class MysqlProfilingDataAdapter(
                 nullCount = (row["null_count"] as Number).toLong(),
                 distinctCount = (row["distinct_count"] as Number).toLong(),
                 duplicateValueCount = (row["dup_count"] as Number).toLong(),
-                emptyStringCount = if (isText) (row["empty_count"] as Number).toLong() else 0,
-                blankStringCount = if (isText) (row["blank_count"] as Number).toLong() else 0,
+                // sum(case …) über 0 Zeilen liefert NULL (nicht 0) → null-sicher.
+                emptyStringCount = if (isText) ((row["empty_count"] as? Number)?.toLong() ?: 0) else 0,
+                blankStringCount = if (isText) ((row["blank_count"] as? Number)?.toLong() ?: 0) else 0,
                 minLength = if (isText) (row["min_len"] as? Number)?.toInt() else null,
                 maxLength = if (isText) (row["max_len"] as? Number)?.toInt() else null,
                 minValue = row["min_val"] as? String,
@@ -112,8 +113,9 @@ class MysqlProfilingDataAdapter(
                 avg = (row["avg_val"] as? Number)?.toDouble(),
                 sum = (row["sum_val"] as? Number)?.toDouble(),
                 stddev = (row["stddev_val"] as? Number)?.toDouble(),
-                zeroCount = (row["zero_count"] as Number).toLong(),
-                negativeCount = (row["neg_count"] as Number).toLong(),
+                // sum(case …) über 0 Nicht-NULL-Zeilen liefert NULL → null-sicher.
+                zeroCount = (row["zero_count"] as? Number)?.toLong() ?: 0,
+                negativeCount = (row["neg_count"] as? Number)?.toLong() ?: 0,
             )
         }
     }
@@ -152,20 +154,21 @@ class MysqlProfilingDataAdapter(
                            sum(case when NOT $castExpr then 1 else 0 end) as incompat
                     FROM $t WHERE $c IS NOT NULL
                 """.trimIndent())!!
-                val incompatible = (row["incompat"] as Number).toLong()
+                // sum(case …) über 0 Zeilen (leere Tabelle) liefert NULL → null-sicher.
+                val incompatible = (row["incompat"] as? Number)?.toLong() ?: 0
 
                 val examples = if (incompatible > 0) {
                     jdbc.queryList("""
                         SELECT DISTINCT cast($c as char) as val FROM $t
                         WHERE $c IS NOT NULL AND NOT $castExpr
                         ORDER BY val ASC LIMIT 3
-                    """.trimIndent()).map { it["val"] as String }
+                    """.trimIndent()).map { it["val"].toString() }
                 } else emptyList()
 
                 TargetTypeCompatibility(
                     targetType,
                     (row["checked"] as Number).toLong(),
-                    (row["compat"] as Number).toLong(),
+                    (row["compat"] as? Number)?.toLong() ?: 0,
                     incompatible,
                     examples,
                     DeterminationStatus.FULL_SCAN,

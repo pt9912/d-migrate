@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.ReverseAutoincrementResolver
 import dev.dmigrate.cli.output.MessageResolver
@@ -8,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
+import dev.dmigrate.format.verify.CanonicalValueCodec
 import java.nio.file.Path
 
 internal data class DataTransferOptions(
@@ -20,6 +23,7 @@ internal data class DataTransferOptions(
     val onConflict: String,
     val triggerMode: String,
     val truncate: Boolean,
+    val verify: Boolean,
     val chunkSize: Int,
     val cliContext: CliContext,
     val configPath: Path?,
@@ -33,7 +37,14 @@ internal data class DataTransferOptions(
  */
 internal object DataTransferWiring {
 
-    fun execute(options: DataTransferOptions): Int {
+    fun execute(
+        options: DataTransferOptions,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.record("data.transfer", listOf(options.source, options.target)) {
+        executeInner(options)
+    }
+
+    private fun executeInner(options: DataTransferOptions): Int {
         if (options.filter != null && options.filter.isBlank()) {
             System.err.println(
                 "Error: --filter must not be empty or whitespace-only. Omit the flag to transfer without a filter."
@@ -58,6 +69,7 @@ internal object DataTransferWiring {
             onConflict = options.onConflict,
             triggerMode = options.triggerMode,
             truncate = options.truncate,
+            verify = options.verify,
             chunkSize = options.chunkSize,
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
@@ -78,6 +90,8 @@ internal object DataTransferWiring {
                 val msgs = MessageResolver(options.cliContext.locale)
                 System.err.println(msgs.text("cli.error.source_format", src, msg))
             },
+            // LN-009: dialekt-neutrale Wert-Kanonik für --verify (formats-Adapter).
+            valueCanonicalizer = CanonicalValueCodec(),
         )
         return runner.execute(request)
     }

@@ -3,6 +3,8 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
+import dev.dmigrate.driver.connection.SslMode
+import dev.dmigrate.driver.connection.SslSettings
 
 /**
  * MySQL [JdbcUrlBuilder].
@@ -44,4 +46,18 @@ class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
         return "jdbc:mysql://${config.host}:$port/${config.database}"
     }
 
+    // LN-026: neutrales SslMode → Connector/J `sslMode`. `ALLOW` gibt es in MySQL
+    // nicht → opportunistisch `PREFERRED`. rootCert (Client-CA) ist Nicht-Scope
+    // (Truststore-Tiefenstufe); `VERIFY_*` wirkt voll erst mit Truststore.
+    override fun sslParams(ssl: SslSettings): Map<String, String> = buildMap {
+        ssl.mode?.let { put("sslMode", it.toSslMode()) }
+    }
+
+    private fun SslMode.toSslMode(): String = when (this) {
+        SslMode.DISABLE -> "DISABLED"
+        SslMode.ALLOW, SslMode.PREFER -> "PREFERRED"
+        SslMode.REQUIRE -> "REQUIRED"
+        SslMode.VERIFY_CA -> "VERIFY_CA"
+        SslMode.VERIFY_FULL -> "VERIFY_IDENTITY"
+    }
 }

@@ -47,7 +47,9 @@ class ConnectionUrlParserTest : FunSpec({
 
     test("postgresql with query parameters") {
         val cfg = ConnectionUrlParser.parse("postgresql://localhost/mydb?sslmode=require&applicationName=d-migrate")
-        cfg.params shouldBe mapOf("sslmode" to "require", "applicationName" to "d-migrate")
+        // LN-026: sslmode wird typisiert nach cfg.ssl extrahiert und aus params entfernt.
+        cfg.params shouldBe mapOf("applicationName" to "d-migrate")
+        cfg.ssl shouldBe SslSettings(SslMode.REQUIRE)
     }
 
     test("postgresql with URL-encoded password (special chars)") {
@@ -71,7 +73,9 @@ class ConnectionUrlParserTest : FunSpec({
         cfg.database shouldBe "shop"
         cfg.user shouldBe "root"
         cfg.password shouldBe "rootpw"
-        cfg.params shouldBe mapOf("ssl" to "true")
+        // LN-026: Legacy ssl=true → opportunistisch PREFER (nach cfg.ssl extrahiert).
+        cfg.params shouldBe emptyMap()
+        cfg.ssl shouldBe SslSettings(SslMode.PREFER)
     }
 
     test("mysql alias 'maria' is normalized") {

@@ -3,6 +3,8 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
+import dev.dmigrate.driver.connection.SslMode
+import dev.dmigrate.driver.connection.SslSettings
 
 /**
  * PostgreSQL [JdbcUrlBuilder].
@@ -40,4 +42,18 @@ class PostgresJdbcUrlBuilder : JdbcUrlBuilder {
         return "jdbc:postgresql://${config.host}:$port/${config.database}"
     }
 
+    // LN-026: neutrales SslMode → pgjdbc `sslmode` (1:1) + `sslrootcert`.
+    override fun sslParams(ssl: SslSettings): Map<String, String> = buildMap {
+        ssl.mode?.let { put("sslmode", it.toSslmode()) }
+        ssl.rootCert?.let { put("sslrootcert", it) }
+    }
+
+    private fun SslMode.toSslmode(): String = when (this) {
+        SslMode.DISABLE -> "disable"
+        SslMode.ALLOW -> "allow"
+        SslMode.PREFER -> "prefer"
+        SslMode.REQUIRE -> "require"
+        SslMode.VERIFY_CA -> "verify-ca"
+        SslMode.VERIFY_FULL -> "verify-full"
+    }
 }

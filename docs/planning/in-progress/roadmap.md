@@ -638,11 +638,11 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | 🚧¹ |
 | Streaming | Parallele Tabellenverarbeitung (Coroutines)          | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) | ⛔ |
 | Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ⛔ |
-| Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ⛔² |
+| Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ⛔ |
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
-| Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | 🚧³ |
-| Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | 🚧⁴ |
+| Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | ✅³ |
+| Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | ✅⁴ |
 | QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
 | QA        | Performance-Regression-Tests                         | [`LN-044`](../../../spec/lastenheft-d-migrate.md#ln-044) | ✅⁵ |
 
@@ -651,19 +651,32 @@ sind ausgeliefert (Basis seit 0.3.0); das „>10 TB ohne OOM"-Akzeptanzkriterium
 aber **nicht validiert** — der einzige Heap-Cap-/HeapDump-Test prüft die
 Schema-DDL-Render-Pipeline ([`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004)),
 nicht den Datenpfad.
-² Der reale SHA-256-Byte-Vergleich migrierter Daten lebt nur im TPC-Perf-Testharness
-(`make sample-db-tpch-perf`); die Bundle-Import-Preflight-SHA-256 prüft nur
-Datei-Integrität/Resume. Ein nutzerseitiges `--verify` bzw. eine Quelle↔Ziel-
-Reconciliation im `data transfer`-Pfad fehlt. (Nicht mit dem QA-Punkt „1 Mio ohne
-Datenverlust" des [Milestone 1.0.0](#milestone-100--stable-release) verwechseln — der
-belegt sich über den Test-Harness, nicht über dieses Produktfeature.)
-³ SSL ist nur als generischer JDBC-URL-Parameter-Passthrough möglich (`?sslmode=…` /
-`?useSSL=…` selbst setzen); First-Class-Config (sslmode/Truststore/Zertifikate,
-Erzwingung) fehlt in `ConnectionUrlParser`/`ConnectionConfig`/den JdbcUrlBuildern.
-⁴ Die Audit-Kette (`AuditSink` → `LoggingAuditSink` → `AuditScope`) ist verdrahtet und
-aktiv, aber nur im MCP-Dispatcher (`McpServiceImpl`); die CLI-Datenoperationen
-(export/import/transfer/migrate) emittieren keine Audit-Events → „aller Operationen"
-noch nicht erfüllt.
+² Erledigt (2026-07-12, [ADR 0030](../../adr/0030-datenwert-kanonisierung-verify.md),
+ImpPlan [`ImpPlan-1.0.0-RC-ln009-sha256-verify.md`](../done/ImpPlan-1.0.0-RC-ln009-sha256-verify.md)):
+nutzerseitiges `data transfer --verify` mit dialekt-neutraler, reihenfolge-
+unabhängiger SHA-256-Quelle↔Ziel-Reconciliation je Tabelle (additive 256-bit-
+Kombination mod 2²⁵⁶; `CanonicalValueCodec` je NeutralType inkl. JSON semantisch,
+Array rekursiv, Geometry-WKB); Divergenz → Exit 3. Cross-dialect repräsentations-
+transformierende Spalten (`text[]`→`json`, `tsvector`→`text`, tz→lokal) werden
+familien-basiert mit W-Code ausgeschlossen (kein False-Positive), der Rest
+byte-genau verglichen. Nicht-Ziel: `data export/import --verify`, inkrementeller/
+Merge-Load. (Nicht mit dem QA-Punkt „1 Mio ohne Datenverlust" des
+[Milestone 1.0.0](#milestone-100--stable-release) verwechseln — der belegt sich
+über den Test-Harness, nicht über dieses Produktfeature.)
+³ First-Class SSL erledigt (2026-07-11, ImpPlan
+`docs/planning/done/ImpPlan-1.0.0-RC-ln026-ssl-first-class.md`, Minimal-Scope
+typisiert + validiert): neutraler `SslMode` (`ConnectionConfig.ssl`), der
+`ConnectionUrlParser` extrahiert + validiert PG `sslmode`/`sslrootcert` und MySQL
+`sslMode`/`ssl` (ungültig → Fehler statt Passthrough), die JdbcUrlBuilder mappen
+per-Dialekt korrekt über die neue `sslParams`-Naht. Offene Tiefenstufen (bewusst
+Nicht-Scope): **Erzwingung** (require-SSL/fail-closed) und **Truststore/Keystore**
+(inkl. MySQL-`VERIFY_*`-CA).
+⁴ Erledigt (2026-07-11, ImpPlan `docs/planning/done/ImpPlan-1.0.0-RC-ln027-cli-audit.md`):
+neben dem MCP-Dispatcher emittieren jetzt auch die CLI-DB-Operationen (`schema
+reverse/migrate/compare[db]/rollback --execute`, `data export/import/transfer/profile`)
+Audit-Events. Opt-in via `logging.audit.enabled: true` → JSONL nach
+`logging.audit.file` (Default `.d-migrate/audit.log`); exit-code-getriebener
+`CliAuditRecorder` (SUCCESS/FAILURE + `exitCode`), gescrubbte Refs, best-effort.
 ⁵ Geliefert via Perf-Acceptance-Infrastruktur: `.github/workflows/perf-acceptance.yml`
 (Nightly) + `PerfMeasure`/`PerfReport`-Lib + Hotpath-PerfSpecs + `diff-planner`-
 Kalibrier-Guard ([ADR 0018](../../adr/0018-normalized-perf-measurement-environment.md))
@@ -944,6 +957,6 @@ DB-Kombinationen, Cutover-Readiness, Betriebs-/Failure-Recovery-Doku.
 
 ---
 
-**Version**: 3.58
-**Stand**: 2026-07-11 (0.9.10 released — Patch: SQLite-PK-NOT-NULL-Round-Trip-Fix + Property-Based-Testing [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046); Milestone 0.9.9 ✅; develop nach Release auf `1.0.0-RC-SNAPSHOT`)
+**Version**: 3.59
+**Stand**: 2026-07-11 (0.9.10 released; danach 1.0.0-RC-Fortschritt auf `1.0.0-RC-SNAPSHOT`: **RC-Security-Block abgeräumt** — [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) CLI-Audit-Logging ✅ (`35f3a5a9`) + [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) First-Class SSL/TLS ✅ (`93cb9cd2`, minimal typisiert+validiert; Erzwingung/Truststore = offene Tiefenstufen); zuvor 0.9.10-Patch SQLite-PK-NOT-NULL + Property-Based-Testing [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) inkl. YAML-Codec-Round-Trip-Fix (`1fdfc087`) + cli-Coverage-Härtung 94,3% (`893768e8`); Milestone 0.9.9 ✅)
 **Status**: Milestone 0.1.0–0.9.7 abgeschlossen — 0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 veröffentlicht. **0.9.8 ist am 2026-06-14 als `v0.9.8` veröffentlicht** — produktiver Parquet „Cut A" (Sub-Slices S0..S9b closed), S3-kompatibler `ArtifactStore` (Verdict AWS SDK v2 + `url-connection-client`), BI-Demo unter `examples/bi-demo/`, plus die 0.9.8-Refactor-Slices (Atomic-Preserve Service-Mode A+E+SIGINT-Bridge, [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)); alle Closure-Plan-Docs in `docs/planning/done/` (Umbrella [`parquet-productive-cut-a.md`](../done-archive/parquet-productive-cut-a.md)). **0.9.9 ist am 2026-07-08 als `v0.9.9` veröffentlicht** — vollständige Beta-Dokumentation, menschliche ≥5-Tester-Pilot-Abnahme (LF 9.2) und alle P1/P2/P3-Cross-Dialect-Blocker aus fünf Pilot-Läufen behoben (strukturelle Transfer-Preflight, Array/`tsvector`-Bind, `CURRENT_DATE`-Defaults, View-Portabilität, Routinen-Emission, Post-Execute-Compare-Kanonisierung). **0.9.10 ist am 2026-07-11 als `v0.9.10` veröffentlicht** — Patch-Release aus der 1.0.0-Entwicklungslinie: SQLite-Round-Trip-Fix (PK-Spalten rendern jetzt `NOT NULL`, da SQLites `PRIMARY KEY` es — anders als PG/MySQL — nicht impliziert; m-trace-Consumer-Befund) plus Property-Based-Testing ([`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046), `kotest-property`, [ADR 0029](../../adr/0029-property-based-testing-framework.md)). Develop ist nach dem 0.9.10-Release auf `1.0.0-RC-SNAPSHOT` gebumpt; **1.0.0-RC ist jetzt der aktive Zyklus**. Inhalte 0.9.7: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)**, **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)**, **SQLite-Trigger-Reverse-Read (Sub-Slices A–E)** und **MySQL-Routine-Identity-Reverse-Read** sind umgesetzt; **Quality-Coverage-Expansion** komplett 2026-05-31 (Phasen A/B/C/D am 2026-05-30, E in vier Sub-Slices + Review-Fixes am 2026-05-31, F als Closure): `PerfMeasure`-Lib + 3 Hotpath-PerfSpecs + Bestands-Migration, Cross-Dialekt-Matrix-Sweep mit 7 gepinnten + permanenten Carve-outs (Phase F2 ergaenzt um `Kind.REPORT`/`ROLLBACK`/`FILE_MODE`), PG/MySQL/SQLite Sequence-Preserve-Race-Reproducer, Operational-MCP-Harness gegen file-SQLite mit `schema_compare_start` + MCP `resources/read` (Phase F1), Large-Schema-Scales N=100/1000 mit `HeapDumpOnOutOfMemoryError`-jvmArgs (Phase F5), Kover-Excludes-Ledger mit Disposition-Pflichtspalte + geschlossenem Token-Vokabular + fail-closed-Gradle-Scanner auf unbekannte Selectoren (Phase F4) + Formats-PerfTest-Migration auf `PerfMeasure`/`PerfReport` (Phase F3). D-N10k (N=10000 Nightly) bleibt opt-in-Folge-Thema. **Atomic-Preserve-Folge-Slice** zur 0.9.7-`preserveCurrentValue`-Serie ist 2026-06-01 mit Phasen A + B + C + D + E komplett geliefert: Probe + Restore + protected DDL in einer einzigen Transaktion unter Per-Dialekt-Lock (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`), drei Cross-Plan-Deadlock-Tests pinnen die deterministische Lock-Reihenfolge, `supportsAtomicPreserveAllInPlan = true` pro Dialekt, Stage-AllInPlan-Gate, CHANGELOG + User-Guide + KDoc-Sync. Backlog-Tracker `docs/planning/done-archive/atomic-preserve-followups.md` mit allen 6 Code-Review-Findings + Dead-Code-Cleanup (Interface gelöscht, Adapter-Singletons live) ebenfalls abgehakt — wandert zusammen mit dem Plan-Doc zum 0.9.7-Release-Tag nach `done/`. Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit Trino-Federation (1.1.0), gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

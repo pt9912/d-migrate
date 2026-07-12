@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.ConfigMissingDefaultException
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
@@ -132,6 +134,14 @@ internal object DataImportWiring {
     fun execute(
         options: DataImportOptions,
         factory: DataImportWiringFactory = DefaultDataImportWiringFactory,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.record("data.import", listOfNotNull(options.target)) {
+        executeInner(options, factory)
+    }
+
+    private fun executeInner(
+        options: DataImportOptions,
+        factory: DataImportWiringFactory,
     ): Int {
         val bundle = factory.build(options.cliContext)
         val preflight = bundle.preflightFactory(bundle.schemaCodec)

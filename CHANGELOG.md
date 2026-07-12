@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.11] - 2026-07-12
+
+### Added
+
+- **First-Class SSL/TLS-Konfiguration** (LN-026, Minimal-Scope: typisiert +
+  validiert) — SSL-Verbindungsparameter werden nicht mehr nur roh durchgereicht,
+  sondern in ein neutrales `SslMode`/`SslSettings` (`ConnectionConfig.ssl`) geparst
+  und validiert: PostgreSQL `sslmode`/`sslrootcert`, MySQL `sslMode`/`ssl`
+  (Legacy-Bool opportunistisch → `PREFERRED`). Ungültige Modi ergeben einen klaren
+  Fehler statt stillem Passthrough; die per-Dialekt-korrekten JDBC-Parameter werden
+  über eine neue `JdbcUrlBuilder.sslParams`-Naht emittiert. Ohne explizite
+  SSL-Parameter unverändertes Verhalten. Erzwingung (require-SSL) und
+  Truststore/Keystore-Konfiguration folgen als spätere Tiefenstufen.
+
+- **Audit-Logging der CLI-DB-Operationen** (LN-027) — neben dem MCP-Server
+  emittieren jetzt auch die DB-berührenden CLI-Operationen (`schema
+  reverse`/`migrate`/`compare` (mit DB-Operand)/`rollback --execute`, `data
+  export`/`import`/`transfer`/`profile`) Audit-Events. Opt-in über
+  `logging.audit.enabled: true`; jedes Event wird als JSONL-Zeile (ein
+  `AuditEvent`-JSON pro Zeile) an `logging.audit.file` (Default
+  `.d-migrate/audit.log`) angehängt. Der `CliAuditRecorder` ist
+  exit-code-getrieben (`outcome`/`exitCode` aus dem Prozess-Exit-Code),
+  scrubbt Verbindungs-Referenzen (`SecretScrubber`) und ist best-effort — ein
+  Audit-Schreibfehler lässt die Operation nie abstürzen.
+
+- **SHA-256-Datenintegritäts-Verifikation** (LN-009) — `data transfer --verify`
+  gleicht nach dem Transfer Quelle und Ziel je Tabelle über eine dialekt-neutrale,
+  reihenfolge-unabhängige SHA-256-Prüfsumme ab (additive 256-bit-Kombination;
+  `CanonicalValueCodec` je NeutralType inkl. JSON semantisch, Array rekursiv,
+  Geometry über WKB). Divergenz → Exit 3. Repräsentations-transformierende
+  Cross-Dialekt-Spalten (`text[]`→`json`, `tsvector`→`text`, tz→lokal) werden
+  familien-basiert mit Warnung ausgeschlossen (kein False-Positive), der Rest
+  byte-genau verglichen. Setzt einen sauberen Load (leeres/getrunctes Ziel)
+  voraus. ADR 0030.
+
+### Fixed
+
+- **`data profile` crashte bei Integer-Spalten und leeren Tabellen** (gemeldet vom
+  m-trace-Consumer) — zwei `ClassCastException`-Klassen im Profiling-Pfad,
+  systemisch in allen drei Adaptern (SQLite/PostgreSQL/MySQL):
+  `targetTypeCompatibility` castete inkompatible Beispielwerte ungeprüft auf
+  `String` (crashte bei jeder Integer-Spalte), und `sum(case …)` über 0 Zeilen
+  liefert `NULL` statt `0` (crashte bei leerer/all-NULL-Spalte in `columnMetrics`,
+  `numericStats` und `targetTypeCompatibility`). `data profile` läuft jetzt als
+  Pre-Flight über reale Schemata mit Integer-Spalten und leeren Tabellen sauber
+  durch (Exit 0 mit Profil-JSON) statt hart abzubrechen (Exit 5).
+
+- **YAML-Schema-Codec: verlustfreier Round-Trip YAML-mehrdeutiger String-Werte** —
+  Enum-Labels und String-Defaults wie `4.`, `9_`, `yes`, `on`, `~` oder
+  `2024-01-01` wurden unter `MINIMIZE_QUOTES` unquotiert geschrieben und beim
+  Lesen als Zahl/Bool/Null/Timestamp umgedeutet (`yes` → `true`, `4.` → `4.0`),
+  d. h. die String-Identität ging verloren. Ein neuer `StringQuotingChecker`
+  delegiert die Quoting-Entscheidung an denselben SnakeYAML-Resolver, den die
+  Lese-Seite nutzt, und quotet genau die mehrdeutigen Scalars — harmlose Strings
+  bleiben unquotiert (kein Output-Wechsel). Von LN-046 Property-Based-Testing
+  aufgedeckt.
+
 ## [0.9.10] - 2026-07-11
 
 ### Added

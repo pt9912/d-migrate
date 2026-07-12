@@ -2,6 +2,8 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
+import dev.dmigrate.driver.connection.SslMode
+import dev.dmigrate.driver.connection.SslSettings
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -12,7 +14,11 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
 
     val builder = MysqlJdbcUrlBuilder()
 
-    fun cfg(params: Map<String, String> = emptyMap(), port: Int? = 3306) = ConnectionConfig(
+    fun cfg(
+        params: Map<String, String> = emptyMap(),
+        port: Int? = 3306,
+        ssl: SslSettings = SslSettings(),
+    ) = ConnectionConfig(
         dialect = DatabaseDialect.MYSQL,
         host = "mysql.example.com",
         port = port,
@@ -20,7 +26,27 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         user = "root",
         password = "rootpw",
         params = params,
+        ssl = ssl,
     )
+
+    test("sslParams: neutrales SslMode → Connector/J sslMode-Namen; ALLOW → PREFERRED") {
+        builder.sslParams(SslSettings(SslMode.DISABLE)) shouldBe mapOf("sslMode" to "DISABLED")
+        builder.sslParams(SslSettings(SslMode.ALLOW)) shouldBe mapOf("sslMode" to "PREFERRED")
+        builder.sslParams(SslSettings(SslMode.PREFER)) shouldBe mapOf("sslMode" to "PREFERRED")
+        builder.sslParams(SslSettings(SslMode.REQUIRE)) shouldBe mapOf("sslMode" to "REQUIRED")
+        builder.sslParams(SslSettings(SslMode.VERIFY_CA)) shouldBe mapOf("sslMode" to "VERIFY_CA")
+        builder.sslParams(SslSettings(SslMode.VERIFY_FULL)) shouldBe mapOf("sslMode" to "VERIFY_IDENTITY")
+    }
+
+    test("sslParams: rootCert ignoriert (MySQL-Truststore Nicht-Scope); leer → leer") {
+        builder.sslParams(SslSettings(SslMode.REQUIRE, "/ca.pem")) shouldBe mapOf("sslMode" to "REQUIRED")
+        builder.sslParams(SslSettings()) shouldBe emptyMap()
+    }
+
+    test("buildJdbcUrl: ssl → sslMode in URL; ohne ssl kein sslMode (Paritaet)") {
+        builder.buildJdbcUrl(cfg(ssl = SslSettings(SslMode.REQUIRE))) shouldContain "sslMode=REQUIRED"
+        builder.buildJdbcUrl(cfg()) shouldNotContain "sslMode"
+    }
 
     test("dialect is MYSQL") {
         builder.dialect shouldBe DatabaseDialect.MYSQL

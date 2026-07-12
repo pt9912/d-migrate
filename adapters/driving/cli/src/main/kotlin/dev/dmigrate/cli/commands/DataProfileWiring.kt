@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.driver.DatabaseDialect
@@ -93,6 +95,14 @@ internal object DataProfileWiring {
     fun execute(
         options: DataProfileOptions,
         factory: DataProfileWiringFactory = DefaultDataProfileWiringFactory,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.record("data.profile", listOf(options.source)) {
+        executeInner(options, factory)
+    }
+
+    private fun executeInner(
+        options: DataProfileOptions,
+        factory: DataProfileWiringFactory,
     ): Int {
         val bundle = factory.build(options.configPath)
         val request = DataProfileRequest(

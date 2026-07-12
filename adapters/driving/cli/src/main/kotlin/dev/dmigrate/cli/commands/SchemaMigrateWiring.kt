@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.RoutineCapabilityConfigResolver
 import dev.dmigrate.cli.output.OutputFormatter
@@ -53,7 +55,12 @@ internal data class SchemaMigrateOptions(
 
 internal object SchemaMigrateWiring {
 
-    fun execute(options: SchemaMigrateOptions): Int = executeInternal(options)
+    fun execute(
+        options: SchemaMigrateOptions,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int = recorder.record("schema.migrate", listOf(options.source, options.target)) {
+        executeInternal(options)
+    }
 
     /**
      * Service-Mode Sub-Slice E follow-up (2026-06-02): execute with

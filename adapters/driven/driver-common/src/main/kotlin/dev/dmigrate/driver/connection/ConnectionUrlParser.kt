@@ -76,7 +76,11 @@ object ConnectionUrlParser {
         // userInfo enthält "user[:password]" — beide Teile potenziell URL-encoded.
         val (user, password) = parseUserInfo(uri.rawUserInfo)
 
-        val params = parseQuery(uri.rawQuery)
+        val rawParams = parseQuery(uri.rawQuery)
+        // LN-026: SSL-Params typisiert aus den rohen Query-Params extrahieren +
+        // validieren; `remainingParams` trägt danach keine dialekt-eigenen ssl-Keys
+        // mehr (Single Source of Truth — die JdbcUrlBuilder emittieren ssl aus config.ssl).
+        val extracted = SslSettingsParser.extract(dialect, rawParams, url)
 
         return ConnectionConfig(
             dialect = dialect,
@@ -85,7 +89,8 @@ object ConnectionUrlParser {
             database = database,
             user = user,
             password = password,
-            params = params,
+            params = extracted.remainingParams,
+            ssl = extracted.ssl,
         )
     }
 

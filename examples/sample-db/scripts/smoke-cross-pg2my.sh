@@ -138,10 +138,18 @@ mysql_root pagila_target < "$OUT_DIR/pagila.my.pre-data.sql" || fail "pre-data a
 tgt_tables=$(my_val "SELECT count(*) FROM information_schema.tables WHERE table_schema='pagila_target' AND table_type='BASE TABLE';")
 [ "$tgt_tables" = "$logical_tables" ] || fail "expected $logical_tables target tables after pre-data (payment partitioned, children not separate), got $tgt_tables"
 
-log "data transfer pagila_pg -> pagila_my_target..."
-$COMPOSE run --rm dmigrate data transfer --source pagila_pg --target pagila_my_target --truncate \
-    > /tmp/cross-pg2my-xfer.log 2>&1 || { cat /tmp/cross-pg2my-xfer.log; fail "transfer failed"; }
+log "data transfer pagila_pg -> pagila_my_target (with --verify, LN-009)..."
+# LN-009: --verify bildet je Tabelle eine dialekt-neutrale, reihenfolge-unabhaengige
+# SHA-256-Quelle<->Ziel-Reconciliation. Cross-dialect repraesentations-transformierende
+# Spalten (text[]->json film.special_features, tsvector->text film.fulltext,
+# timestamptz->datetime) liegen in verschiedenen Kanonik-Familien und werden mit
+# W-Code ausgeschlossen (kein False-Positive); alle uebrigen Spalten byte-genau.
+$COMPOSE run --rm dmigrate data transfer --source pagila_pg --target pagila_my_target --truncate --verify \
+    > /tmp/cross-pg2my-xfer.log 2>&1 || { cat /tmp/cross-pg2my-xfer.log; fail "transfer/--verify failed"; }
 grep -q "Transfer complete" /tmp/cross-pg2my-xfer.log || fail "transfer did not complete"
+grep -q "Verify OK" /tmp/cross-pg2my-xfer.log || { cat /tmp/cross-pg2my-xfer.log; fail "--verify did not pass (LN-009 divergence)"; }
+xfer_excl=$(grep -c "verify excluded" /tmp/cross-pg2my-xfer.log || true)
+log "  --verify OK (byte-reconciled; $xfer_excl column(s) excluded as cross-dialect transforms)"
 
 # --- 7. Per-Tabelle-Zeilen-Parität ---------------------------------
 log "verifying per-table row-count parity (source == target)..."

@@ -1,6 +1,9 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.audit.CliAuditRecorder
+import dev.dmigrate.cli.audit.cliAuditRecorder
+import dev.dmigrate.cli.audit.recordIf
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaDiff
@@ -108,6 +111,20 @@ internal object SchemaCompareWiring {
     fun execute(
         options: SchemaCompareOptions,
         factory: SchemaCompareWiringFactory = DefaultSchemaCompareWiringFactory,
+        recorder: CliAuditRecorder = cliAuditRecorder(options.configPath),
+    ): Int {
+        val dbRefs = listOf(options.source, options.target)
+            .map(CompareOperandParser::parse)
+            .filterIsInstance<CompareOperand.Database>()
+            .map { it.source }
+        return recorder.recordIf(dbRefs.isNotEmpty(), "schema.compare", dbRefs) {
+            executeInner(options, factory)
+        }
+    }
+
+    private fun executeInner(
+        options: SchemaCompareOptions,
+        factory: SchemaCompareWiringFactory,
     ): Int {
         val bundle = factory.build(options.cliContext)
         val request = SchemaCompareRequest(
