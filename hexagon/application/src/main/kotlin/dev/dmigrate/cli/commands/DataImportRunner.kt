@@ -39,6 +39,9 @@ data class DataImportRequest(
     val onConflict: String?,
     val triggerMode: String,
     val truncate: Boolean,
+    /** LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück.
+     *  Erfordert [truncate]; inkompatibel mit [resume] (Exit 2 in `validateCliFlags`). */
+    val atomic: Boolean = false,
     val disableFkChecks: Boolean,
     val reseedSequences: Boolean,
     val encoding: String?,
@@ -268,7 +271,7 @@ class DataImportRunner(
             is StreamingResult.Ok -> r.value
             is StreamingResult.Exit -> return r.code
         }
-        return finalizeAndReport(
+        val exitCode = finalizeAndReport(
             request,
             result,
             executionPlan.checkpointStore,
@@ -277,6 +280,18 @@ class DataImportRunner(
             // bekommen den stabilen Code BUNDLE_TABLE_IMPORT_FAILED.
             isParquetBundle = preparedImport.input is ImportInput.ResolvedBundle,
         )
+        // LN-013: bei --atomic + Fehler den gesamten Operations-Tabellensatz auf
+        // leer zurücksetzen ("alle Tabellen oder keine"). Cancel (130) läuft nicht
+        // hier durch — er wird oben als OperationCancelledException gefangen.
+        if (exitCode != 0 && request.atomic) {
+            AtomicCompensation.rollback(
+                writer = writerLookup(context.connectionConfig.dialect),
+                pool = pool,
+                tables = result.tables.map { it.table },
+                stderr = userFacingStderr,
+            )
+        }
+        return exitCode
     }
 
     /** Step 9: Evaluate the result, clean up the manifest, and print the summary. */

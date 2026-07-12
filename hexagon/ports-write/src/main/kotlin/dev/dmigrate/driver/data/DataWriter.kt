@@ -52,4 +52,26 @@ interface DataWriter {
         table: String,
         options: ImportOptions,
     ): TableImportSession
+
+    /**
+     * LN-013: setzt die gegebenen Tabellen FK-sicher auf **leer** zurück
+     * (Clean-Load-Kompensation für `data import`/`data transfer --atomic`).
+     *
+     * Wird bei einem Fehler eines `--atomic`-Laufs über den **vollständigen**
+     * Operations-Tabellensatz aufgerufen, um „alle Tabellen oder keine" auf einer
+     * bekannt-leeren Basis herzustellen. Truncatet alle Tabellen in einem borrow
+     * FK-sicher (Postgres `TRUNCATE … CASCADE`; MySQL/SQLite FK-Checks aus + `DELETE`).
+     *
+     * Vertrag: **nicht-transaktional** (wie `--truncate`, siehe [ImportOptions]) und
+     * **idempotent** (leere Tabelle → no-op) — deshalb resume-sicher, weil ein
+     * `--atomic`-Lauf ohnehin per erzwungenem `--truncate` sauber startet.
+     *
+     * Default-Delegation: ohne Dialekt-Impl wirft die Methode
+     * [UnsupportedOperationException] (analog [DataReader.streamTable] mit
+     * `resumeMarker`) — die realen Treiber überschreiben sie.
+     */
+    fun truncateTables(pool: ConnectionPool, tables: List<String>): Unit =
+        throw UnsupportedOperationException(
+            "${this::class.simpleName} does not support truncateTables (LN-013 --atomic compensation)"
+        )
 }

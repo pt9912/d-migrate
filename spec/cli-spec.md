@@ -1324,6 +1324,7 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Verhalten: `fire`, `disable`, `strict` |
 | `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
+| `--atomic` | Nein | Boolean | aus | Atomarer Clean-Load: bei einem Fehler werden **alle** Tabellen der Operation auf den leeren Vor-Import-Zustand zurückgesetzt (Kompensations-Truncate) → „alle Tabellen oder keine". Erfordert explizit `--truncate` (sonst Exit `2`) und ist inkompatibel mit `--resume` (Exit `2`). Die Kompensation ist eine O(1)-Metadaten-Operation (streaming-verträglich für große Datenmengen). Nicht-Scope: Append in ein nicht-leeres Ziel. |
 | `--disable-fk-checks` | Nein | Boolean | aus | FK-Checks während des Imports deaktivieren (dialektabhängig) |
 | `--reseed-sequences` / `--no-reseed-sequences` | Nein | Boolean | an | Identity-/Sequence-Reseed nach Import steuern |
 | `--encoding` | Nein | String | `auto` | Input-Encoding. Der Default-Pfad `auto` erkennt BOM-markierte UTF-Streams (UTF-8, UTF-16 BE/LE) und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird mit Exit 2 abgelehnt. Für Non-UTF-Encodings (`iso-8859-1`, `windows-1252`, …) muss der Wert explizit gesetzt werden — es gibt keine Heuristik-Erkennung. |
@@ -1371,6 +1372,7 @@ kanonisch beschrieben.
 | `--truncate` | Nein | Boolean | aus | Zieltabellen vor dem Transfer leeren |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--verify` | Nein | Boolean | aus | Nach dem Transfer die Datenintegrität per SHA-256-Quelle↔Ziel-Reconciliation prüfen. Dialekt-neutrale, reihenfolge-unabhängige Prüfsumme je Tabelle; setzt einen sauberen Load (leeres/getrunctes Ziel) voraus. Repräsentations-transformierende Cross-Dialekt-Spalten (z. B. `text[]`→`json`, `tsvector`→`text`) werden mit Warnung ausgeschlossen statt fälschlich als Divergenz gemeldet. Divergenz → Exit-Code `3` |
+| `--atomic` | Nein | Boolean | aus | Atomarer Clean-Load: bei einem Fehler werden **alle** Zieltabellen der Operation auf leer zurückgesetzt (Kompensations-Truncate) → „alle Tabellen oder keine". Erfordert explizit `--truncate` (sonst Exit `2`). O(1)-Metadaten-Kompensation, unabhängig vom Datenvolumen. |
 
 **Target-autoritatives Preflight**:
 

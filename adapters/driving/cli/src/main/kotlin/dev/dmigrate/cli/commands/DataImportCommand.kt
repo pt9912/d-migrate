@@ -86,6 +86,13 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Truncate target table before import (non-atomic)",
     ).flag()
 
+    // LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück.
+    val atomic by option(
+        "--atomic",
+        help = "Atomic clean-load: on any error, roll back all target tables to empty. " +
+            "Requires --truncate; not compatible with --resume.",
+    ).flag()
+
     val disableFkChecks by option(
         "--disable-fk-checks",
         help = "Disable FK checks during import (MySQL/SQLite only)",
@@ -156,6 +163,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 onConflict = onConflict,
                 triggerMode = triggerMode,
                 truncate = truncate,
+                atomic = atomic,
                 disableFkChecks = disableFkChecks,
                 reseedSequences = reseedSequences,
                 encoding = encoding,

@@ -291,6 +291,42 @@ class DataImportHelpersTest : FunSpec({
         stderr.single() shouldContain "--no-checkpoint and --resume are mutually exclusive"
     }
 
+    test("validateCliFlags rejects --atomic without --truncate (LN-013)") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(atomic = true, truncate = false),
+            stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "--atomic requires --truncate"
+    }
+
+    test("validateCliFlags rejects --atomic combined with --resume (LN-013)") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(atomic = true, truncate = true, resume = "run-123"),
+            stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "--atomic and --resume are mutually exclusive"
+    }
+
+    test("validateCliFlags accepts --atomic with --truncate (LN-013)") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(atomic = true, truncate = true),
+            stderr::add,
+        )
+
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
     test("validateCliFlags accepts --no-checkpoint alone") {
         val stderr = mutableListOf<String>()
 

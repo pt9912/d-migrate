@@ -639,7 +639,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Streaming | Parallele Tabellenverarbeitung (Coroutines)          | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) | ⛔ |
 | Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ⛔ |
 | Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
-| Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ⛔ |
+| Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ✅⁷ |
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | ✅³ |
 | Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | ✅⁴ |
@@ -690,6 +690,15 @@ Parser-Robustheit (nie NPE), Fingerprint-Ordnungsunabhängigkeit + Metadaten-Aus
 semantischer YAML-`write→read`-Round-Trip (PBT deckte einen degenerierten
 Enum-Round-Trip-Fall auf, im Generator ausgeschlossen). `:check` durchweg grün. Slice:
 [`property-based-testing-ln046.md`](../done/property-based-testing-ln046.md).
+
+⁷ Erledigt (2026-07-12, [ADR 0031](../../adr/0031-atomic-clean-load-rollback.md),
+ImpPlan [`ImpPlan-1.0.0-RC-ln013-atomic-clean-load.md`](../done/ImpPlan-1.0.0-RC-ln013-atomic-clean-load.md)):
+`data import`/`data transfer --atomic` — Clean-Load-Kompensation. Bei einem Fehler
+wird der vollständige Operations-Tabellensatz per `DataWriter.truncateTables` auf leer
+zurückgesetzt („alle Tabellen oder keine"), O(1)-Metadaten-Kompensation statt
+tx-/undo-log-skalierender Modelle (streaming-verträglich für >10 TB). `--atomic`
+erfordert explizit `--truncate` (Exit 2) und ist inkompatibel mit `--resume`.
+Nicht-Scope: Append-in-nicht-leeres-Ziel (Staging/Swap) und Kompensation bei Cancel.
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,

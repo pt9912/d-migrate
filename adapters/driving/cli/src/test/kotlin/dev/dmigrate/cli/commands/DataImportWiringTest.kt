@@ -64,6 +64,7 @@ class DataImportWiringTest : FunSpec({
         onConflict = null,
         triggerMode = "fire",
         truncate = truncate,
+        atomic = false,
         disableFkChecks = false,
         reseedSequences = true,
         encoding = null,

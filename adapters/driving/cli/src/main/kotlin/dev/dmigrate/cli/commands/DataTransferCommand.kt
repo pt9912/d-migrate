@@ -36,6 +36,10 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         help = "After transfer, verify data integrity via SHA-256 source↔target reconciliation " +
             "(exit 3 on divergence)",
     ).flag()
+    val atomic by option(
+        "--atomic",
+        help = "Atomic clean-load: on any error, roll back all target tables to empty. Requires --truncate.",
+    ).flag()
     val chunkSize by option("--chunk-size", help = "Rows per chunk (default: 10000)")
         .int()
         .default(10_000)
@@ -59,6 +63,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 triggerMode = triggerMode,
                 truncate = truncate,
                 verify = verify,
+                atomic = atomic,
                 chunkSize = chunkSize,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,

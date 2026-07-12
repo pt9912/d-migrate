@@ -19,6 +19,28 @@ class SqliteDataWriter : DataWriter {
 
     override fun schemaSync() = SqliteSchemaSync()
 
+    // LN-013: Clean-Load-Kompensation für --atomic. SQLite kennt kein CASCADE-
+    // TRUNCATE → FK-Checks aus (PRAGMA nur außerhalb einer Tx erlaubt, daher
+    // autoCommit=true), DELETE je Tabelle, FK-Checks wieder an.
+    override fun truncateTables(pool: ConnectionPool, tables: List<String>) {
+        if (tables.isEmpty()) return
+        pool.borrow().use { handle -> deleteAllWithFkOff(handle.asJdbc(), tables) }
+    }
+
+    private fun deleteAllWithFkOff(conn: Connection, tables: List<String>) {
+        val savedAutoCommit = conn.autoCommit
+        conn.autoCommit = true
+        setForeignKeyChecks(conn, enabled = false)
+        try {
+            conn.createStatement().use { stmt ->
+                tables.forEach { stmt.execute("DELETE FROM ${parseSqliteQualifiedTableName(it).quotedPath()}") }
+            }
+        } finally {
+            setForeignKeyChecks(conn, enabled = true)
+            conn.autoCommit = savedAutoCommit
+        }
+    }
+
     override fun openTable(
         pool: ConnectionPool,
         table: String,

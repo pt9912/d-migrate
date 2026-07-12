@@ -33,6 +33,8 @@ data class DataTransferRequest(
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
     // LN-009: SHA-256 Quelle↔Ziel-Reconciliation nach dem Transfer.
     val verify: Boolean = false,
+    // LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück (erfordert truncate).
+    val atomic: Boolean = false,
     val cliConfigPath: Path? = null,
     val quiet: Boolean = false, val noProgress: Boolean = false,
     // reverse-preferences: applies to any SQLite read — source OR target (F3).
@@ -174,7 +176,10 @@ class DataTransferRunner(
         } catch (e: UnsupportedTriggerModeException) {
             userFacingPrintError("Trigger mode: ${e.message}", tgtRef); return 2
         } catch (e: Exception) {
-            userFacingPrintError("Transfer error: ${e.message}", srcRef); return 5
+            userFacingPrintError("Transfer error: ${e.message}", srcRef)
+            // LN-013: bei --atomic den vollen Zieltabellensatz auf leer zurücksetzen.
+            if (request.atomic) AtomicCompensation.rollback(writer, tgtPool, tables, userFacingStderr)
+            return 5
         }
 
         if (!request.quiet && !request.noProgress)
@@ -261,6 +266,9 @@ class DataTransferRunner(
         if (!r.sinceColumn.isNullOrBlank() && DataExportHelpers.firstInvalidTableIdentifier(listOf(r.sinceColumn)) != null) {
             return "--since-column '${r.sinceColumn}' is not a valid identifier"
         }
+        // LN-013: --atomic ist destruktiv (Kompensation truncatet bei Fehler) → --truncate
+        // muss explizit gesetzt sein, damit die Clean-Load-Zerstörung am Call-Site sichtbar ist.
+        if (r.atomic && !r.truncate) return "--atomic requires --truncate"
         // No --filter validation needed: filter is already parsed into
         // ParsedFilter by the CLI layer before constructing DataTransferRequest.
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }

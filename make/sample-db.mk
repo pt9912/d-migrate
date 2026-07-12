@@ -9,7 +9,7 @@
 # docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
 
@@ -41,6 +41,11 @@ sample-db-sqlite-smoke:
 # Divergenz-Erkennung). Kein DB-Container noetig; braucht sqlite3 + d-migrate:dev-Image.
 sample-db-verify-sqlite-smoke:
 	./examples/sample-db/scripts/smoke-verify-sqlite.sh
+
+# LN-013 — SQLite `data transfer --atomic` Smoke (Clean-Load-Rollback: Fehler in
+# Tabelle 2 rollt auch die committete Tabelle 1 zurueck). Kein DB-Container noetig.
+sample-db-atomic-sqlite-smoke:
+	./examples/sample-db/scripts/smoke-atomic-sqlite.sh
 
 # Fulltext-Slice P4 (SQLite FTS5) — postgres up + Pagila-Reverse belegt PG FULLTEXT ->
 # SQLite FTS5-Generate; ein self-contained Schema belegt FTS5-MATCH live (rebuild + alle
