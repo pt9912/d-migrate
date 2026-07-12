@@ -168,6 +168,18 @@ class DataTransferRunnerTest : FunSpec({
         errors.joined() shouldContain "--atomic requires --truncate"
     }
 
+    test("--parallel < 1 → exit 2 (LN-007/LN-008)") {
+        val (runner, _, errors) = buildRunner()
+        runner.execute(request().copy(parallel = 0)) shouldBe 2
+        errors.joined() shouldContain "--parallel must be >= 1"
+    }
+
+    test("--parallel > 1 with --atomic → exit 2 (race with compensation, LN-007/LN-008)") {
+        val (runner, _, errors) = buildRunner()
+        runner.execute(request().copy(parallel = 4, atomic = true, truncate = true)) shouldBe 2
+        errors.joined() shouldContain "--atomic is incompatible with --parallel"
+    }
+
     test("--atomic transfer error rolls back all tables via truncateTables (LN-013)") {
         val truncated = mutableListOf<List<String>>()
         val throwingReader = object : DataReader {

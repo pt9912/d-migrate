@@ -123,6 +123,13 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Rows per chunk (streaming buffer size); default: 10 000",
     ).int().default(10_000)
 
+    val parallel by option(
+        "--parallel",
+        help = "Max tables/partitions to import concurrently (default: 1 = sequential). " +
+            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+            "incompatible with --resume and --atomic.",
+    ).int().default(1)
+
     // LF-010 / LF-013 / LN-012: Resume-Oberflaeche fuer Datei- und
     // Directory-Importe. Stdin bleibt ausgeschlossen, weil kein
     // stabiler Input-Pfad fuer Wiederaufnahme existiert.
@@ -170,6 +177,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 csvNoHeader = csvNoHeader,
                 csvNullString = csvNullString,
                 chunkSize = chunkSize,
+                parallel = parallel,
                 resume = resume,
                 checkpointDir = checkpointDir,
                 noCheckpoint = noCheckpoint,

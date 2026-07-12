@@ -250,6 +250,34 @@ internal object DataImportHelpers {
         }
         // LN-013: --atomic-Preflight ausgelagert (hält validateCliFlags-Complexity unter der Grenze).
         validateAtomicFlags(request, stderr)?.let { return it }
+        // LN-007/LN-008: --parallel-Preflight ausgelagert (gleiche Complexity-Begründung).
+        validateParallelFlags(request, stderr)?.let { return it }
+        return null
+    }
+
+    /**
+     * LN-007/LN-008 (ADR 0032): der Nebenläufigkeitsgrad muss positiv sein, und ein
+     * paralleler Lauf hat keinen einzelnen wiederaufnehmbaren Zustand → inkompatibel
+     * mit `--resume`. Die SQLite-Klemmung passiert erst am Executor-Nahtpunkt.
+     */
+    fun validateParallelFlags(
+        request: DataImportRequest,
+        stderr: (String) -> Unit,
+    ): Int? {
+        if (request.parallel < 1) {
+            stderr("Error: --parallel must be >= 1, got ${request.parallel}.")
+            return 2
+        }
+        if (request.parallel > 1 && !request.resume.isNullOrBlank()) {
+            stderr("Error: --parallel > 1 is incompatible with --resume (all-or-nothing).")
+            return 2
+        }
+        // LN-013 × LN-007/LN-008: a straggler worker could still commit while the atomic
+        // compensation truncates → the all-or-nothing guarantee would be racy.
+        if (request.parallel > 1 && request.atomic) {
+            stderr("Error: --parallel > 1 is incompatible with --atomic (all-or-nothing).")
+            return 2
+        }
         return null
     }
 

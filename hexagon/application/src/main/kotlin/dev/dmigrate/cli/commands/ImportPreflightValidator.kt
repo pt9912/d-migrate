@@ -43,6 +43,7 @@ internal class ImportPreflightValidator(
         request: DataImportRequest,
         charset: Charset?,
         preparedImport: SchemaPreflightResult,
+        dialect: DatabaseDialect,
     ): ImportPreparedOptions {
         val triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase())
         val onError = OnError.valueOf(request.onError.uppercase())
@@ -65,7 +66,11 @@ internal class ImportPreflightValidator(
             onConflict = onConflict,
             onError = onError,
         )
-        val pipelineConfig = PipelineConfig(chunkSize = request.chunkSize)
+        // LN-007/LN-008 (ADR 0032): effective parallelism (SQLite → 1, with note).
+        val parallelism = ParallelismClamp.effective(
+            request.parallel, dialect == DatabaseDialect.SQLITE, stderr,
+        )
+        val pipelineConfig = PipelineConfig(chunkSize = request.chunkSize, parallelism = parallelism)
         val onTableOpened: (String, List<TargetColumn>) -> Unit =
             preparedImport.schema?.let { schema ->
                 { table, targetColumns ->

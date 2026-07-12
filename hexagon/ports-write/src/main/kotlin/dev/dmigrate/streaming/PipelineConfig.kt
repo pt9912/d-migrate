@@ -9,8 +9,9 @@ import java.time.Duration
  *
  * LF-008 / LF-010 / LN-012: `chunkSize` bleibt der zentrale
  * user-tunable Parameter. `fetchSize` ist treiberintern und gehört
- * nicht hierher. Parallelism und Retry sind bewusst nicht Teil dieses
- * Typs, damit `PipelineConfig` nicht zu einem Sammelbehaelter wird.
+ * nicht hierher. `parallelism` (LN-007 / LN-008, ADR 0032) ist mit dem
+ * parallelen Datenpfad in Scope gekommen; Retry bleibt bewusst draussen,
+ * damit `PipelineConfig` nicht zu einem Sammelbehaelter wird.
  *
  * [checkpoint] traegt die Laufzeit-Auspraegung der
  * `pipeline.checkpoint.*`-Config inklusive der aus dem CLI-Flag
@@ -30,9 +31,19 @@ data class PipelineConfig(
      * Streaming-Pfad alle weiteren Felder (Default).
      */
     val checkpoint: CheckpointConfig = CheckpointConfig(),
+    /**
+     * LN-007 / LN-008 (ADR 0032): maximaler Grad der Nebenläufigkeit für
+     * unabhängige Tabellen bzw. Kind-Partitionen eines Parents. Default 1
+     * = exakt sequenziell (byte-identisch zum bisherigen Pfad). Der
+     * CLI-Wert `--parallel` fliesst hierher; die SQLite-Klemmung auf 1
+     * (Pool-Size 1) passiert bereits im Preflight, bevor dieser Wert
+     * gesetzt wird.
+     */
+    val parallelism: Int = 1,
 ) {
     init {
         require(chunkSize > 0) { "chunkSize must be > 0, got $chunkSize" }
+        require(parallelism >= 1) { "parallelism must be >= 1, got $parallelism" }
     }
 }
 

@@ -3,6 +3,7 @@ package dev.dmigrate.core.dependency
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 
@@ -97,6 +98,99 @@ class TableDependencySortTest : FunSpec({
         )
         // c first (no cycle), then a and b appended
         result.sorted.first() shouldBe "c"
+        result.circularEdges shouldHaveSize 2
+        result.circularEdges.all { it.fromTable in setOf("a", "b") } shouldBe true
+    }
+
+    // --- sortTablesIntoLayers (LN-007 FK-safe concurrency layers) ---
+
+    test("layers: empty input") {
+        val result = sortTablesIntoLayers(emptySet(), emptyList())
+        result.layers.shouldBeEmpty()
+        result.circularEdges.shouldBeEmpty()
+    }
+
+    test("layers: independent tables all in one layer (island)") {
+        val result = sortTablesIntoLayers(setOf("a", "b", "c"), emptyList())
+        result.layers shouldHaveSize 1
+        result.layers[0] shouldContainExactlyInAnyOrder listOf("a", "b", "c")
+        result.circularEdges.shouldBeEmpty()
+    }
+
+    test("layers: linear chain a -> b -> c is three singleton layers") {
+        val result = sortTablesIntoLayers(
+            setOf("a", "b", "c"),
+            listOf(
+                FkEdge("a", "b_id", "b", "id"),
+                FkEdge("b", "c_id", "c", "id"),
+            ),
+        )
+        result.layers shouldContainExactly listOf(listOf("c"), listOf("b"), listOf("a"))
+        result.flattened shouldContainExactly listOf("c", "b", "a")
+        result.circularEdges.shouldBeEmpty()
+    }
+
+    test("layers: diamond -> d | b,c | a (siblings share a layer)") {
+        val result = sortTablesIntoLayers(
+            setOf("a", "b", "c", "d"),
+            listOf(
+                FkEdge("a", toTable = "b"),
+                FkEdge("a", toTable = "c"),
+                FkEdge("b", toTable = "d"),
+                FkEdge("c", toTable = "d"),
+            ),
+        )
+        result.layers shouldHaveSize 3
+        result.layers[0] shouldContainExactly listOf("d")
+        result.layers[1] shouldContainExactlyInAnyOrder listOf("b", "c") // parallelizable siblings
+        result.layers[2] shouldContainExactly listOf("a")
+        result.circularEdges.shouldBeEmpty()
+    }
+
+    test("layers: self-reference is ignored") {
+        val result = sortTablesIntoLayers(
+            setOf("a", "b"),
+            listOf(
+                FkEdge("a", "parent_id", "a", "id"), // self-ref
+                FkEdge("a", "b_id", "b", "id"),
+            ),
+        )
+        result.layers shouldContainExactly listOf(listOf("b"), listOf("a"))
+    }
+
+    test("layers: reference to unknown table is ignored") {
+        val result = sortTablesIntoLayers(
+            setOf("a", "b"),
+            listOf(
+                FkEdge("a", "b_id", "b", "id"),
+                FkEdge("a", "ext_id", "external_table", "id"), // not in set
+            ),
+        )
+        result.layers shouldContainExactly listOf(listOf("b"), listOf("a"))
+    }
+
+    test("layers: cycle tables are left out and reported") {
+        val result = sortTablesIntoLayers(
+            setOf("a", "b"),
+            listOf(
+                FkEdge("a", "b_id", "b", "id"),
+                FkEdge("b", "a_id", "a", "id"),
+            ),
+        )
+        result.layers.shouldBeEmpty() // neither can be satisfied
+        result.circularEdges shouldHaveSize 2
+    }
+
+    test("layers: partial cycle keeps clean table, drops cyclic pair") {
+        val result = sortTablesIntoLayers(
+            setOf("a", "b", "c"),
+            listOf(
+                FkEdge("a", toTable = "b"),
+                FkEdge("b", toTable = "a"),
+                FkEdge("a", toTable = "c"),
+            ),
+        )
+        result.flattened shouldContainExactly listOf("c") // only the acyclic table is placed
         result.circularEdges shouldHaveSize 2
         result.circularEdges.all { it.fromTable in setOf("a", "b") } shouldBe true
     }

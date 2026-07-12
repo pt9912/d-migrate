@@ -44,6 +44,7 @@ internal data class DataExportOptions(
     val since: String?,
     val encoding: String,
     val chunkSize: Int,
+    val parallel: Int,
     val splitFiles: Boolean,
     val csvDelimiter: String,
     val csvBom: Boolean,
@@ -97,6 +98,7 @@ internal object DataExportWiring {
             since = options.since,
             encoding = options.encoding,
             chunkSize = options.chunkSize,
+            parallel = options.parallel,
             splitFiles = options.splitFiles,
             csvDelimiter = options.csvDelimiter,
             csvBom = options.csvBom,
@@ -109,7 +111,9 @@ internal object DataExportWiring {
             checkpointDir = options.checkpointDir,
             manifestSha256 = options.manifestSha256,
         )
-        val warnings = mutableListOf<ValueSerializationWarning>()
+        // Thread-safe: on the parallel FilePerTable path N worker threads share this one
+        // sink (baked into the writer factory) and append warnings concurrently (LN-007).
+        val warnings = java.util.Collections.synchronizedList(mutableListOf<ValueSerializationWarning>())
         val runner = DataExportRunner(
             sourceResolver = { source, configPath ->
                 try {
@@ -131,6 +135,13 @@ internal object DataExportWiring {
                 }
             },
             exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                // Only FilePerTable fans out per child; Stdout/SingleFile (single table)
+                // must not pay for — or fail on — an unused structural schema read.
+                val partitionChildren = if (opts.output is ExportOutput.FilePerTable) {
+                    resolveExportPartitionChildren(ctx.pool, opts.config.parallelism, opts.tables)
+                } else {
+                    emptyMap()
+                }
                 StreamingExporter(ctx.reader, ctx.lister, ctx.factory)
                     .export(
                         pool = ctx.pool,
@@ -154,6 +165,7 @@ internal object DataExportWiring {
                             producerVersion = VersionInfo.PRODUCT_VERSION,
                             manifestSha256 = request.manifestSha256,
                         )::invoke,
+                        partitionChildren = partitionChildren,
                     )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(options.cliContext.locale)),
@@ -177,6 +189,20 @@ internal object DataExportWiring {
      * den Validator-Guard schwaecht. `warningSink` wird symmetrisch zur
      * Default-Factory geteilt.
      */
+    /**
+     * LN-008 (ADR 0032): on the parallel path, read the source schema once to fan out
+     * partitioned parents into one file per child partition. Kept in the composition root
+     * (driver access) so the runner needs no schema-reader; empty for the sequential path.
+     */
+    private fun resolveExportPartitionChildren(
+        pool: ConnectionPool,
+        parallelism: Int,
+        tables: List<String>,
+    ): Map<String, List<String>> {
+        if (parallelism <= 1) return emptyMap()
+        return ExportPartitionExpansion.plan(readStructuralSchema(pool), tables)
+    }
+
     private fun buildWriterFactoryForOutput(
         exportOutput: ExportOutput,
         warnings: MutableList<ValueSerializationWarning>,

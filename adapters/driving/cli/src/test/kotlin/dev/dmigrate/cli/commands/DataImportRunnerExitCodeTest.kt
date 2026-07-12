@@ -66,6 +66,19 @@ class DataImportRunnerExitCodeTest : FunSpec({
             error("FakeDataWriter.openTable() must not be called — runner delegates to ImportExecutor")
     }
 
+    /** Records the tables the `--atomic` compensation truncates (LN-013 abort-path fix). */
+    class CapturingTruncateWriter(
+        override val dialect: DatabaseDialect = DatabaseDialect.SQLITE,
+    ) : DataWriter {
+        val truncated = mutableListOf<List<String>>()
+        override fun schemaSync(): SchemaSync = error("not used")
+        override fun openTable(pool: ConnectionPool, table: String, options: ImportOptions): TableImportSession =
+            error("not used")
+        override fun truncateTables(pool: ConnectionPool, tables: List<String>) {
+            truncated += tables
+        }
+    }
+
     val successExecutor: ImportExecutor = ImportExecutor { ctx, _, _, _ ->
         val tables = when (val input = ctx.input) {
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
@@ -251,6 +264,22 @@ class DataImportRunnerExitCodeTest : FunSpec({
         assertExit(runner.execute(request()), 5, stderr)
         stderr.joined() shouldContain "Import failed"
         stderr.joined() shouldContain "streaming broke"
+    }
+
+    test("Exit 5: --atomic compensates on the fail-fast abort path (LN-013 regression)") {
+        val stderr = StderrCapture()
+        val writer = CapturingTruncateWriter()
+        val runner = newRunner(
+            stderr,
+            writerLookup = { writer },
+            importExecutor = ImportExecutor { _, _, _, _ ->
+                throw RuntimeException("constraint violation mid-import")
+            },
+        )
+        // Abort-mode failure → StreamingResult.Exit(5); --atomic must still truncate all
+        // operation tables (before the fix the compensation only ran for skip/log failures).
+        assertExit(runner.execute(request(truncate = true).copy(atomic = true)), 5, stderr)
+        writer.truncated.single() shouldBe listOf("users")
     }
 
     test("Exit 5: per-table summary has error → reported with table name") {

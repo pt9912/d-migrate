@@ -48,6 +48,8 @@ data class DataImportRequest(
     val csvNoHeader: Boolean,
     val csvNullString: String,
     val chunkSize: Int,
+    // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
+    val parallel: Int = 1,
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,
@@ -269,7 +271,21 @@ class DataImportRunner(
             )
         ) {
             is StreamingResult.Ok -> r.value
-            is StreamingResult.Exit -> return r.code
+            is StreamingResult.Exit -> {
+                // LN-013: `--atomic` must also compensate on the fail-fast path. A first
+                // chunk error under `--on-error abort` (the default) throws and the invoker
+                // maps it to StreamingResult.Exit BEFORE finalizeAndReport — so without this
+                // the all-or-nothing guarantee silently held only for skip/log-mode failures.
+                if (r.code != 0 && request.atomic) {
+                    AtomicCompensation.rollback(
+                        writer = writerLookup(context.connectionConfig.dialect),
+                        pool = pool,
+                        tables = executionPlan.effectiveTables,
+                        stderr = userFacingStderr,
+                    )
+                }
+                return r.code
+            }
         }
         val exitCode = finalizeAndReport(
             request,

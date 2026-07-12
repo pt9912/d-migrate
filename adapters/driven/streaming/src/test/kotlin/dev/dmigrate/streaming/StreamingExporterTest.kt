@@ -315,6 +315,37 @@ class StreamingExporterTest : FunSpec({
         }
     }
 
+    test("FilePerTable parallel fans out a partitioned parent into one file per child (LN-008)") {
+        val tmpDir = Files.createTempDirectory("streaming-parallel-")
+        try {
+            val reader = FakeDataReader(
+                mapOf(
+                    "payment_p1" to listOf(chunk("payment_p1", 0, arrayOf<Any?>(1, "a"))),
+                    "payment_p2" to listOf(chunk("payment_p2", 0, arrayOf<Any?>(2, "b"))),
+                    "users" to listOf(chunk("users", 0, arrayOf<Any?>(3, "c"))),
+                )
+            )
+            val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
+
+            val result = exporter.export(
+                pool = pool,
+                tables = listOf("payment", "users"),
+                output = ExportOutput.FilePerTable(tmpDir),
+                format = DataExportFormat.JSON,
+                config = PipelineConfig(parallelism = 4),
+                partitionChildren = mapOf("payment" to listOf("payment_p1", "payment_p2")),
+            )
+
+            Files.exists(tmpDir.resolve("payment_p1.json")) shouldBe true
+            Files.exists(tmpDir.resolve("payment_p2.json")) shouldBe true
+            Files.exists(tmpDir.resolve("payment.json")) shouldBe false // parent not written directly
+            Files.exists(tmpDir.resolve("users.json")) shouldBe true
+            result.tables.map { it.table }.toSet() shouldBe setOf("payment_p1", "payment_p2", "users")
+        } finally {
+            Files.walk(tmpDir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.delete(it) } }
+        }
+    }
+
     // ─── §6.17: empty table contract ─────────────────────────────
 
     test("§6.17: empty table → begin and end are still called, write gets the empty chunk") {

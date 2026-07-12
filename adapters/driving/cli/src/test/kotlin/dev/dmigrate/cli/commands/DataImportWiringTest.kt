@@ -71,6 +71,7 @@ class DataImportWiringTest : FunSpec({
         csvNoHeader = csvNoHeader,
         csvNullString = "",
         chunkSize = chunkSize,
+        parallel = 1,
         resume = null,
         checkpointDir = checkpointDir,
         noCheckpoint = false,

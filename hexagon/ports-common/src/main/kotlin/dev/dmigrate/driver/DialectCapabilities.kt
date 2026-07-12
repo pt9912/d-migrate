@@ -26,6 +26,14 @@ data class DialectCapabilities(
     val supportsTriggerStrict: Boolean = false,
     /** Whether the dialect supports a `--schema` parameter for namespace scoping. */
     val supportsSchemaParameter: Boolean = false,
+    /**
+     * Whether partition children are addressable as standalone relations
+     * (PostgreSQL: yes — `SELECT … FROM child_partition`; MySQL: no — children
+     * are sub-objects reachable only via `SELECT … FROM parent PARTITION (p)`).
+     * Gates the LN-008 per-child parallel fan-out (ADR 0032): only when `true`
+     * may a partitioned parent be transferred/exported one child at a time.
+     */
+    val partitionChildrenAreTables: Boolean = false,
 ) {
     companion object {
         fun forDialect(dialect: DatabaseDialect): DialectCapabilities = when (dialect) {
@@ -41,6 +49,7 @@ data class DialectCapabilities(
                 supportsTriggerDisable = true,
                 supportsTriggerStrict = true,
                 supportsSchemaParameter = true,
+                partitionChildrenAreTables = true,
             )
             DatabaseDialect.MYSQL -> DialectCapabilities(
                 supportsViews = true,

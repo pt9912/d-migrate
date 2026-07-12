@@ -43,6 +43,12 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
     val chunkSize by option("--chunk-size", help = "Rows per chunk (default: 10000)")
         .int()
         .default(10_000)
+    val parallel by option(
+        "--parallel",
+        help = "Max tables/partitions to transfer concurrently (default: 1 = sequential). " +
+            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+            "incompatible with --atomic.",
+    ).int().default(1)
     val sqliteAutoincrementWidth by option(
         "--sqlite-autoincrement-width",
         help = "SQLite reverse: render an AUTOINCREMENT primary key as 32-bit identifier (default) " +
@@ -65,6 +71,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 verify = verify,
                 atomic = atomic,
                 chunkSize = chunkSize,
+                parallel = parallel,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),

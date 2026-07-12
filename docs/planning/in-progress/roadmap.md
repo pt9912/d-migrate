@@ -636,8 +636,8 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Bereich   | Aufgabe                                              | LF-Ref | Status |
 | --------- | ---------------------------------------------------- | ------ | ------ |
 | Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | 🚧¹ |
-| Streaming | Parallele Tabellenverarbeitung (Coroutines)          | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) | ⛔ |
-| Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ⛔ |
+| Streaming | Parallele Tabellenverarbeitung (`--parallel`, bounded ThreadPool) | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) | ✅⁸ |
+| Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ✅⁸ |
 | Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ✅⁷ |
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
@@ -699,6 +699,15 @@ zurückgesetzt („alle Tabellen oder keine"), O(1)-Metadaten-Kompensation statt
 tx-/undo-log-skalierender Modelle (streaming-verträglich für >10 TB). `--atomic`
 erfordert explizit `--truncate` (Exit 2) und ist inkompatibel mit `--resume`.
 Nicht-Scope: Append-in-nicht-leeres-Ziel (Staging/Swap) und Kompensation bei Cancel.
+⁸ Erledigt (2026-07-12, [ADR 0032](../../adr/0032-paralleler-datenpfad-tabellen-partitionen.md),
+ImpPlan [`ImpPlan-1.0.0-RC-ln007-ln008-parallel-partition-data-path.md`](../done/ImpPlan-1.0.0-RC-ln007-ln008-parallel-partition-data-path.md)):
+`data export`/`import`/`transfer --parallel N` verarbeitet unabhängige Tabellen — und die
+Kind-Partitionen eines Parents — nebenläufig über einen begrenzten Worker-Pool (kein
+`kotlinx-coroutines`; blockierendes JDBC → Thread-Pool), FK-sicher per Topo-Layer-Barriere.
+Transfer/Import gruppieren FK-Ebenen; Export fächert einen partitionierten Parent in eine
+Datei pro Kind. `--parallel 1` (Default) ist byte-identisch zum sequenziellen Pfad; SQLite
+wird auf 1 geklemmt (Pool-Size 1); `--parallel > 1` ⊥ `--resume` (Exit 2). Nicht-Scope:
+parallele `--resume`-Wiederaufnahme; Cross-Dialekt-Partitions-Fan-out (Fallback auf Parent).
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,

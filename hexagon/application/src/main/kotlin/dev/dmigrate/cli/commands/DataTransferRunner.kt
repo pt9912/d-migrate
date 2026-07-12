@@ -31,6 +31,8 @@ data class DataTransferRequest(
     val sinceColumn: String? = null, val since: String? = null,
     val onConflict: String = "abort", val triggerMode: String = "fire",
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
+    // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
+    val parallel: Int = 1,
     // LN-009: SHA-256 Quelle↔Ziel-Reconciliation nach dem Transfer.
     val verify: Boolean = false,
     // LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück (erfordert truncate).
@@ -126,9 +128,36 @@ class DataTransferRunner(
             throw e
         } catch (e: Exception) { userFacingPrintError("Schema read: ${e.message}", srcRef); return 4 }
 
+        // LN-007/LN-008: resolve the effective parallelism (SQLite → 1, with note).
+        val sqliteInvolved = srcCfg.dialect == DatabaseDialect.SQLITE || tgtCfg.dialect == DatabaseDialect.SQLITE
+        val degree = ParallelismClamp.effective(request.parallel, sqliteInvolved, userFacingStderr)
+
+        // Sequential default keeps the linear FK order (byte-/order-identical); the parallel
+        // path uses FK-safe layers. tables (flat) drives --verify/--atomic/progress either way.
+        val layers: List<List<String>>
         val tables: List<String>
-        try { tables = preflightPlanner.planTables(request, srcSchema, tgtSchema, tgtDrv.transferCompatibility()) }
-        catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
+        try {
+            val compat = tgtDrv.transferCompatibility()
+            if (degree > 1) {
+                layers = preflightPlanner.planLayers(request, srcSchema, tgtSchema, compat)
+                tables = layers.flatten()
+            } else {
+                layers = emptyList()
+                tables = preflightPlanner.planTables(request, srcSchema, tgtSchema, compat)
+            }
+        } catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
+
+        // LN-008: fan a partitioned parent out per child only when BOTH dialects address
+        // partition children as standalone relations (PostgreSQL); else transparent parent.
+        val partitionChildren = if (
+            degree > 1 &&
+            DialectCapabilities.forDialect(srcCfg.dialect).partitionChildrenAreTables &&
+            DialectCapabilities.forDialect(tgtCfg.dialect).partitionChildrenAreTables
+        ) {
+            PartitionTransferExpansion.plan(srcSchema, tgtSchema, tables)
+        } else {
+            emptyMap()
+        }
 
         val caps = DialectCapabilities.forDialect(tgtCfg.dialect)
         val triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase())
@@ -162,6 +191,9 @@ class DataTransferRunner(
                     chunkSize = request.chunkSize,
                     importOptions = opts,
                     cancellationToken = cancellationToken,
+                    layers = layers,
+                    partitionChildren = partitionChildren,
+                    parallelism = degree,
                 )
             ) { table ->
                 if (!request.quiet && !request.noProgress) userFacingStderr("  Transferred: $table")
@@ -269,6 +301,11 @@ class DataTransferRunner(
         // LN-013: --atomic ist destruktiv (Kompensation truncatet bei Fehler) → --truncate
         // muss explizit gesetzt sein, damit die Clean-Load-Zerstörung am Call-Site sichtbar ist.
         if (r.atomic && !r.truncate) return "--atomic requires --truncate"
+        // LN-007/LN-008: degree of parallelism must be positive.
+        if (r.parallel < 1) return "--parallel must be >= 1, got ${r.parallel}"
+        // LN-013 × LN-007/LN-008: parallel workers can still be committing when the
+        // atomic compensation truncates → the all-or-nothing guarantee would be racy.
+        if (r.atomic && r.parallel > 1) return "--atomic is incompatible with --parallel > 1"
         // No --filter validation needed: filter is already parsed into
         // ParsedFilter by the CLI layer before constructing DataTransferRequest.
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }

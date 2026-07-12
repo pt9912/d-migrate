@@ -47,6 +47,7 @@ internal data class DataImportOptions(
     val csvNoHeader: Boolean,
     val csvNullString: String,
     val chunkSize: Int,
+    val parallel: Int,
     val resume: String?,
     val checkpointDir: Path?,
     val noCheckpoint: Boolean,
@@ -119,6 +120,7 @@ internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
                     onChunkCommitted = callbacks.onChunkCommitted,
                     onTableCompleted = callbacks.onTableCompleted,
                     cancellationToken = ctx.cancellationToken,
+                    fkLayers = importFkLayers(ctx.pool, opts.config.parallelism),
                 )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(cliContext.locale)),
@@ -127,6 +129,16 @@ internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
                 PipelineCheckpointResolver(configPathFromCli = cliCfg).resolve()
             },
         )
+    }
+
+    /**
+     * LN-007/LN-008 (ADR 0032): on the parallel path, read the target schema once to group
+     * the resolved inputs into FK-safe layers (a child-partition input inherits its parent's
+     * layer). Kept in the composition root (driver access); single layer for the sequential path.
+     */
+    private fun importFkLayers(pool: ConnectionPool, parallelism: Int): (List<String>) -> List<List<String>> {
+        if (parallelism <= 1) return { listOf(it) }
+        return { inputTables -> ImportLayerPlanner.plan(readStructuralSchema(pool), inputTables) }
     }
 }
 
@@ -165,6 +177,7 @@ internal object DataImportWiring {
             csvNoHeader = options.csvNoHeader,
             csvNullString = options.csvNullString,
             chunkSize = options.chunkSize,
+            parallel = options.parallel,
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
             noProgress = options.cliContext.noProgress,

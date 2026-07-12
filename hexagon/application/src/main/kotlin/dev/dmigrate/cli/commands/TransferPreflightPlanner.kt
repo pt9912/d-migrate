@@ -1,13 +1,53 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.core.dependency.FkEdge
 import dev.dmigrate.core.dependency.sortTablesByDependency
+import dev.dmigrate.core.dependency.sortTablesIntoLayers
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.TransferTypeCompatibility
 
 internal class TransferPreflightPlanner {
 
+    /**
+     * Linear FK-safe table order for the sequential path (`--parallel 1`).
+     * Kept identical to the pre-LN-007 behaviour so the default run is
+     * byte-/order-identical (incl. the "Transferred: <table>" progress order).
+     */
     fun planTables(
+        request: DataTransferRequest,
+        source: SchemaDefinition,
+        target: SchemaDefinition,
+        typeCompatibility: TransferTypeCompatibility,
+    ): List<String> {
+        val candidates = validate(request, source, target, typeCompatibility)
+        val result = sortTablesByDependency(candidates.toSet(), SchemaFkEdges.of(target, candidates))
+        if (result.circularEdges.isNotEmpty()) {
+            throw TransferPreflightException("FK cycle: ${result.circularEdges.map { it.fromTable }.toSet().joinToString()}")
+        }
+        return result.sorted
+    }
+
+    /**
+     * LN-007/LN-008: the validated transfer table set grouped into FK-safe
+     * concurrency layers (Kahn by level) for the parallel path. Layer `i` may
+     * only start once layers `< i` are done; tables inside a layer have no FK
+     * edge among them and may run concurrently.
+     */
+    fun planLayers(
+        request: DataTransferRequest,
+        source: SchemaDefinition,
+        target: SchemaDefinition,
+        typeCompatibility: TransferTypeCompatibility,
+    ): List<List<String>> {
+        val candidates = validate(request, source, target, typeCompatibility)
+        val result = sortTablesIntoLayers(candidates.toSet(), SchemaFkEdges.of(target, candidates))
+        if (result.circularEdges.isNotEmpty()) {
+            val cyclic = result.circularEdges.map { it.fromTable }.toSet()
+            throw TransferPreflightException("FK cycle: ${cyclic.joinToString()}")
+        }
+        return result.layers
+    }
+
+    private fun validate(
         request: DataTransferRequest,
         source: SchemaDefinition,
         target: SchemaDefinition,
@@ -46,26 +86,6 @@ internal class TransferPreflightPlanner {
                 }
             }
         }
-        return topoSort(candidates, target)
-    }
-
-    private fun topoSort(tables: List<String>, schema: SchemaDefinition): List<String> {
-        val tableSet = tables.toSet()
-        val edges = tables.flatMap { table ->
-            val refs = mutableListOf<FkEdge>()
-            schema.tables[table]?.columns?.values?.forEach { column ->
-                column.references?.let { refs += FkEdge(table, toTable = it.table) }
-            }
-            schema.tables[table]?.constraints?.forEach { constraint ->
-                constraint.references?.let { refs += FkEdge(table, toTable = it.table) }
-            }
-            refs
-        }
-        val result = sortTablesByDependency(tableSet, edges)
-        if (result.circularEdges.isNotEmpty()) {
-            val cyclic = result.circularEdges.map { it.fromTable }.toSet()
-            throw TransferPreflightException("FK cycle: ${cyclic.joinToString()}")
-        }
-        return result.sorted
+        return candidates
     }
 }
