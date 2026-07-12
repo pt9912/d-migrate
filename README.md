@@ -42,17 +42,15 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.10**
-(stable, [released 2026-07-11](https://github.com/pt9912/d-migrate/releases/tag/v0.9.10)).
+d-migrate is a working production tool at version **0.9.11**
+(stable, [released 2026-07-12](https://github.com/pt9912/d-migrate/releases/tag/v0.9.11)).
 
-> **New in 0.9.10:** a SQLite round-trip fidelity fix — primary-key
-> columns now render `NOT NULL` on export and table rebuild. SQLite's
-> `PRIMARY KEY` does not imply `NOT NULL` (unlike PostgreSQL/MySQL), so a
-> reverse→regenerate cycle previously weakened the constraint silently;
-> the SQLite renderer now materialises the neutral model's `PK ⇒ NOT
-> NULL` invariant. Also ships property-based testing (`kotest-property`,
-> LN-046) across type mapping, canonicalization and schema parsing. See
-> `CHANGELOG.md`.
+> **New in 0.9.11:** end-to-end SHA-256 data-integrity verification
+> (`data transfer --verify`, LN-009) reconciling source and target with a
+> dialect-neutral, order-independent per-table checksum; first-class SSL/TLS
+> connection config (LN-026) and CLI audit logging (LN-027); plus a `data
+> profile` crash fix — profiling a column with integer values or an empty table
+> no longer aborts with a `ClassCastException`. See `CHANGELOG.md`.
 
 The current capabilities:
 

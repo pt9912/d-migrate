@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.11] - 2026-07-12
 
 ### Added
 
@@ -30,7 +30,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scrubbt Verbindungs-Referenzen (`SecretScrubber`) und ist best-effort — ein
   Audit-Schreibfehler lässt die Operation nie abstürzen.
 
+- **SHA-256-Datenintegritäts-Verifikation** (LN-009) — `data transfer --verify`
+  gleicht nach dem Transfer Quelle und Ziel je Tabelle über eine dialekt-neutrale,
+  reihenfolge-unabhängige SHA-256-Prüfsumme ab (additive 256-bit-Kombination;
+  `CanonicalValueCodec` je NeutralType inkl. JSON semantisch, Array rekursiv,
+  Geometry über WKB). Divergenz → Exit 3. Repräsentations-transformierende
+  Cross-Dialekt-Spalten (`text[]`→`json`, `tsvector`→`text`, tz→lokal) werden
+  familien-basiert mit Warnung ausgeschlossen (kein False-Positive), der Rest
+  byte-genau verglichen. Setzt einen sauberen Load (leeres/getrunctes Ziel)
+  voraus. ADR 0030.
+
 ### Fixed
+
+- **`data profile` crashte bei Integer-Spalten und leeren Tabellen** (gemeldet vom
+  m-trace-Consumer) — zwei `ClassCastException`-Klassen im Profiling-Pfad,
+  systemisch in allen drei Adaptern (SQLite/PostgreSQL/MySQL):
+  `targetTypeCompatibility` castete inkompatible Beispielwerte ungeprüft auf
+  `String` (crashte bei jeder Integer-Spalte), und `sum(case …)` über 0 Zeilen
+  liefert `NULL` statt `0` (crashte bei leerer/all-NULL-Spalte in `columnMetrics`,
+  `numericStats` und `targetTypeCompatibility`). `data profile` läuft jetzt als
+  Pre-Flight über reale Schemata mit Integer-Spalten und leeren Tabellen sauber
+  durch (Exit 0 mit Profil-JSON) statt hart abzubrechen (Exit 5).
 
 - **YAML-Schema-Codec: verlustfreier Round-Trip YAML-mehrdeutiger String-Werte** —
   Enum-Labels und String-Defaults wie `4.`, `9_`, `yes`, `on`, `~` oder
