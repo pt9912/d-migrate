@@ -14,8 +14,7 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.resolveEffectiveChunkSize
-import dev.dmigrate.cli.config.resolveEffectiveParallelism
+import dev.dmigrate.cli.config.resolveEffectiveDataPipeline
 
 /**
  * `d-migrate data import` — streamt Daten aus Dateien (json/yaml/csv) oder
@@ -130,8 +129,8 @@ class DataImportCommand : CliktCommand(name = "import") {
     val parallel by option(
         "--parallel",
         help = "Max tables/partitions to import concurrently (default: 1 = sequential; " +
-            "overrides pipeline.parallelism in config). Clamped to 1 for SQLite; " +
-            "incompatible with --resume and --atomic.",
+            "overrides pipeline.parallelism in config). Keep <= the connection pool size " +
+            "(default 10); clamped to 1 for SQLite; incompatible with --resume and --atomic.",
     ).int()
 
     // LF-010 / LF-013 / LN-012: Resume-Oberflaeche fuer Datei- und
@@ -161,11 +160,14 @@ class DataImportCommand : CliktCommand(name = "import") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
-        // LN-005: --chunk-size (nullbar) mit pipeline.chunk_size mergen (CLI > Config > Default).
-        // Bewusst NUR chunk_size: der Import liest aus Format-Dateien (kein JDBC-DataReader), also
-        // darf ein für ihn irrelevanter pipeline.fetch_size-Config-Fehler den Import nicht scheitern lassen.
-        val effectiveChunkSize = try {
-            resolveEffectiveChunkSize(root?.config, chunkSize)
+        // LN-005 + pipeline.parallelism: chunk_size + parallelism in EINEM Config-Ladevorgang mergen
+        // (CLI-explizit > Config > Default). Bewusst readFetchSize=false: der Import liest aus Format-
+        // Dateien (kein JDBC-DataReader), also darf ein irrelevanter pipeline.fetch_size-Config-Fehler
+        // den Import nicht scheitern lassen.
+        val pipeline = try {
+            resolveEffectiveDataPipeline(
+                root?.config, chunkSize, cliFetchSize = null, cliParallel = parallel, readFetchSize = false,
+            )
         } catch (e: ConfigResolveException) {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(7)
@@ -173,15 +175,8 @@ class DataImportCommand : CliktCommand(name = "import") {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(2)
         }
-        val par = try {
-            resolveEffectiveParallelism(root?.config, parallel)
-        } catch (e: ConfigResolveException) {
-            echo("Error: ${e.message}", err = true)
-            throw ProgramResult(7)
-        } catch (e: IllegalArgumentException) {
-            echo("Error: ${e.message}", err = true)
-            throw ProgramResult(2)
-        }
+        val effectiveChunkSize = pipeline.tuning.chunkSize
+        val par = pipeline.parallelism
         val exitCode = DataImportWiring.execute(
             DataImportOptions(
                 target = target,

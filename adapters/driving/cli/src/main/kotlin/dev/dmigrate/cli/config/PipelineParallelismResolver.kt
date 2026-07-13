@@ -40,17 +40,20 @@ data class ResolvedParallelism(
  * bei ungültigem CLI-`--parallel` (→ Exit 2). `availableProcessors`/`maxPoolSize` sind für
  * deterministische Tests injizierbar.
  */
-fun resolveEffectiveParallelism(
+internal fun resolveEffectiveParallelism(
     configPath: Path?,
     cliParallel: Int?,
     availableProcessors: Int = Runtime.getRuntime().availableProcessors(),
     maxPoolSize: Int = PoolSettings().maximumPoolSize,
+    preloaded: LoadedConfig? = null,
 ): ResolvedParallelism {
     if (cliParallel != null) {
         require(cliParallel >= 1) { "--parallel must be >= 1, got $cliParallel" }
         return ResolvedParallelism(cliParallel, fromCli = true, sourceLabel = "--parallel $cliParallel")
     }
-    return when (val cfg = PipelineParallelismResolver(configPathFromCli = configPath).resolve()) {
+    return when (
+        val cfg = PipelineParallelismResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
+    ) {
         null -> ResolvedParallelism(degree = 1, fromCli = false, sourceLabel = "pipeline.parallelism")
         ParallelismConfig.Auto -> {
             val degree = minOf(availableProcessors, maxPoolSize).coerceAtLeast(1)
@@ -67,15 +70,17 @@ fun resolveEffectiveParallelism(
  * (case-insensitive); alles andere → [ConfigResolveException] (laut statt still). Der Key war
  * spec-dokumentiert, aber bislang unverdrahtet (stiller No-op).
  */
-class PipelineParallelismResolver(
+internal class PipelineParallelismResolver(
     private val configPathFromCli: Path? = null,
     private val envLookup: (String) -> String? = System::getenv,
     private val defaultConfigPath: Path = Paths.get(".d-migrate.yaml"),
+    /** Bereits geladene Config (teilt EINEN Ladevorgang mit dem Tuning-Resolver). `null` → selbst laden. */
+    private val preloaded: LoadedConfig? = null,
 ) {
 
     /** `null` = nicht gesetzt; sonst [ParallelismConfig.Auto] oder [ParallelismConfig.Fixed]. */
     fun resolve(): ParallelismConfig? {
-        val (root, path) = loadEffectiveConfig(configPathFromCli, envLookup, defaultConfigPath)
+        val (root, path) = preloaded ?: loadEffectiveConfig(configPathFromCli, envLookup, defaultConfigPath)
         val pipeline = root?.get("pipeline") as? Map<*, *> ?: return null
         if (!pipeline.containsKey("parallelism")) return null
 
@@ -83,7 +88,9 @@ class PipelineParallelismResolver(
         if (raw is String && raw.trim().equals("auto", ignoreCase = true)) {
             return ParallelismConfig.Auto
         }
-        if (raw is Number || raw is java.math.BigInteger) {
+        // BigInteger ist selbst ein Number → die Number-Prüfung deckt große YAML-Ganzzahlen mit ab;
+        // requirePositiveIntConfig lehnt Fließkomma/Overflow laut ab (keine stille Coercion).
+        if (raw is Number) {
             return ParallelismConfig.Fixed(requirePositiveIntConfig(raw, "pipeline.parallelism", path))
         }
         throw ConfigResolveException(

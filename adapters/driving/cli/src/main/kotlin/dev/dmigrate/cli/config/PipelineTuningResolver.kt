@@ -31,13 +31,14 @@ data class EffectivePipelineTuning(
  * Wirft [ConfigResolveException] bei Config-Fehlern (→ Command mappt auf Exit 7)
  * und [IllegalArgumentException] bei ungültigen effektiven Werten (→ Exit 2).
  */
-fun resolveEffectivePipelineTuning(
+internal fun resolveEffectivePipelineTuning(
     configPath: Path?,
     cliChunkSize: Int?,
     cliFetchSize: Int?,
     defaultChunkSize: Int = 10_000,
+    preloaded: LoadedConfig? = null,
 ): EffectivePipelineTuning {
-    val config = PipelineTuningResolver(configPathFromCli = configPath).resolve()
+    val config = PipelineTuningResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
     val chunkSize = cliChunkSize ?: config.chunkSize ?: defaultChunkSize
     require(chunkSize > 0) { "--chunk-size must be > 0, got $chunkSize" }
     val fetchSize = cliFetchSize ?: config.fetchSize
@@ -53,12 +54,13 @@ fun resolveEffectivePipelineTuning(
  * — der Import nutzt keinen JDBC-`DataReader`, also darf ein (für ihn irrelevanter)
  * `fetch_size`-Config-Fehler den Import nicht scheitern lassen.
  */
-fun resolveEffectiveChunkSize(
+internal fun resolveEffectiveChunkSize(
     configPath: Path?,
     cliChunkSize: Int?,
     defaultChunkSize: Int = 10_000,
+    preloaded: LoadedConfig? = null,
 ): Int {
-    val config = PipelineTuningResolver(configPathFromCli = configPath).resolveChunkSizeOnly()
+    val config = PipelineTuningResolver(configPathFromCli = configPath, preloaded = preloaded).resolveChunkSizeOnly()
     val chunkSize = cliChunkSize ?: config.chunkSize ?: defaultChunkSize
     require(chunkSize > 0) { "--chunk-size must be > 0, got $chunkSize" }
     return chunkSize
@@ -71,10 +73,12 @@ fun resolveEffectiveChunkSize(
  * Runtime. Werte müssen, falls gesetzt, positive Ganzzahlen sein — sonst
  * [ConfigResolveException] (statt stiller Ignoranz/Coercion).
  */
-class PipelineTuningResolver(
+internal class PipelineTuningResolver(
     private val configPathFromCli: Path? = null,
     private val envLookup: (String) -> String? = System::getenv,
     private val defaultConfigPath: Path = java.nio.file.Paths.get(".d-migrate.yaml"),
+    /** Bereits geladene Config (teilt EINEN Ladevorgang mit dem Parallelism-Resolver). `null` → selbst laden. */
+    private val preloaded: LoadedConfig? = null,
 ) {
 
     /** Liest `chunk_size` **und** `fetch_size` (export/transfer). */
@@ -84,7 +88,7 @@ class PipelineTuningResolver(
     fun resolveChunkSizeOnly(): PipelineTuning = resolveInternal(readFetchSize = false)
 
     private fun resolveInternal(readFetchSize: Boolean): PipelineTuning {
-        val (root, path) = loadEffectiveConfig(configPathFromCli, envLookup, defaultConfigPath)
+        val (root, path) = preloaded ?: loadEffectiveConfig(configPathFromCli, envLookup, defaultConfigPath)
         val pipeline = root?.get("pipeline") as? Map<*, *> ?: return PipelineTuning()
         return PipelineTuning(
             chunkSize = readPipelineInt(pipeline, "chunk_size", path),
