@@ -20,6 +20,8 @@ internal class ImportLoopState {
     var rowsUnknown = 0L
     var rowsFailed = 0L
     val chunkFailures = mutableListOf<ChunkFailure>()
+    /** LN-005 (R4): Anzahl der über [MAX_LOGGED_CHUNK_FAILURES] hinaus unterdrückten Detaileinträge. */
+    var chunkFailuresSuppressed = 0L
     var sequenceAdjustments: List<SequenceAdjustment> = emptyList()
     var partialFinish: FinishTableResult.PartialFailure? = null
     var error: String? = null
@@ -27,6 +29,27 @@ internal class ImportLoopState {
     var chunksCommittedTotal = 0L
     val totalRows: Long
         get() = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed
+
+    /**
+     * LN-005 (R4): fügt einen Chunk-Fehler-Detaileintrag hinzu (nur `--on-error log`),
+     * aber **gedeckelt** auf [MAX_LOGGED_CHUNK_FAILURES]. Darüber hinausgehende Fehler
+     * werden nur gezählt ([chunkFailuresSuppressed]) statt die Liste unbounded wachsen zu
+     * lassen (pathologisches „jeder Chunk schlägt fehl" auf einer sehr großen Tabelle → sonst
+     * ~`totalRows/chunkSize` Einträge). Die **wahre** Fehlerzahl trägt ohnehin [rowsFailed];
+     * die Liste ist ein begrenztes Detail-Sample.
+     */
+    fun recordChunkFailure(failure: ChunkFailure) {
+        if (chunkFailures.size < MAX_LOGGED_CHUNK_FAILURES) {
+            chunkFailures += failure
+        } else {
+            chunkFailuresSuppressed++
+        }
+    }
+
+    companion object {
+        /** LN-005 (R4): Obergrenze für protokollierte Chunk-Fehler-Detaileinträge (`--on-error log`). */
+        const val MAX_LOGGED_CHUNK_FAILURES = 1000
+    }
 }
 
 internal data class ChunkContext(
@@ -133,7 +156,7 @@ private fun commitAndAccount(
         false
     } catch (throwable: Throwable) {
         state.rowsFailed += normalizedChunk.rows.size.toLong()
-        when (handleChunkFailure(normalizedChunk, throwable, context.options, state.chunkFailures)) {
+        when (handleChunkFailure(normalizedChunk, throwable, context.options, state)) {
             ChunkDecision.ABORT -> throw throwable
             ChunkDecision.CONTINUE -> {
                 state.error = throwable.message ?: throwable::class.simpleName
@@ -157,7 +180,7 @@ private fun handleNormalizationFailure(
     state: ImportLoopState,
     reporter: ProgressReporter,
 ): LoopAction =
-    when (handleChunkFailure(chunk, throwable, context.options, state.chunkFailures)) {
+    when (handleChunkFailure(chunk, throwable, context.options, state)) {
         ChunkDecision.ABORT -> LoopAction.ABORT
         ChunkDecision.CONTINUE -> {
             state.rowsFailed += chunk.rows.size.toLong()
@@ -176,7 +199,7 @@ private fun handleWriteFailure(
 ): LoopAction {
     val recovered = runCatching { session.rollbackChunk() }.isSuccess
     state.rowsFailed += chunk.rows.size.toLong()
-    return when (handleChunkFailure(chunk, throwable, context.options, state.chunkFailures)) {
+    return when (handleChunkFailure(chunk, throwable, context.options, state)) {
         ChunkDecision.ABORT -> LoopAction.ABORT
         ChunkDecision.CONTINUE -> {
             reportChunkProcessed(reporter, context, chunk, state)
@@ -225,7 +248,7 @@ private fun advanceOrBreak(
             table = context.table,
             chunkIndex = nextIndex,
             options = context.options,
-            chunkFailures = state.chunkFailures,
+            state = state,
         )
     ) {
         is ReadNextChunkResult.Chunk -> readResult.chunk
@@ -240,14 +263,16 @@ private fun handleChunkFailure(
     chunk: DataChunk,
     throwable: Throwable,
     options: ImportOptions,
-    chunkFailures: MutableList<ChunkFailure>,
+    state: ImportLoopState,
 ): ChunkDecision {
     if (options.onError == OnError.LOG) {
-        chunkFailures += ChunkFailure(
-            chunk.table,
-            chunk.chunkIndex,
-            chunk.rows.size.toLong(),
-            throwable.message ?: throwable::class.simpleName.orEmpty(),
+        state.recordChunkFailure(
+            ChunkFailure(
+                chunk.table,
+                chunk.chunkIndex,
+                chunk.rows.size.toLong(),
+                throwable.message ?: throwable::class.simpleName.orEmpty(),
+            )
         )
     }
     return when (options.onError) {
@@ -261,12 +286,12 @@ private fun tryReadNextChunk(
     table: String,
     chunkIndex: Long,
     options: ImportOptions,
-    chunkFailures: MutableList<ChunkFailure>,
+    state: ImportLoopState,
 ): ReadNextChunkResult =
     try {
         reader.nextChunk()?.let(ReadNextChunkResult::Chunk) ?: ReadNextChunkResult.EndOfInput
     } catch (throwable: Throwable) {
-        when (handleReaderFailure(table, chunkIndex, throwable, options, chunkFailures)) {
+        when (handleReaderFailure(table, chunkIndex, throwable, options, state)) {
             ChunkDecision.ABORT -> throw throwable
             ChunkDecision.CONTINUE -> ReadNextChunkResult.Failed(
                 throwable.message ?: throwable::class.simpleName.orEmpty()
@@ -279,14 +304,16 @@ private fun handleReaderFailure(
     chunkIndex: Long,
     throwable: Throwable,
     options: ImportOptions,
-    chunkFailures: MutableList<ChunkFailure>,
+    state: ImportLoopState,
 ): ChunkDecision {
     if (options.onError == OnError.LOG) {
-        chunkFailures += ChunkFailure(
-            table,
-            chunkIndex,
-            0,
-            throwable.message ?: throwable::class.simpleName.orEmpty(),
+        state.recordChunkFailure(
+            ChunkFailure(
+                table,
+                chunkIndex,
+                0,
+                throwable.message ?: throwable::class.simpleName.orEmpty(),
+            )
         )
     }
     return when (options.onError) {

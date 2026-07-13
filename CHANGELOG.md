@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pipeline.fetch_size` (export/transfer) werden jetzt über einen `PipelineTuningResolver` echt
   verdrahtet (Präzedenz CLI-explizit > Config > Default; ungültige Werte → Exit 2 bzw. 7).
 
+- **Parquet-Export: explizite Row-Group-Größe** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  der Parquet-Writer setzt jetzt eine explizite Row-Group-Größe (32 MiB) statt auf den
+  parquet-java-~128-MB-Default zu fallen. Ohne das puffert jeder Writer eine ganze Row-Group im RAM;
+  im parallelen File-per-Table-Export (`--parallel N`) wäre der Peak ≈ `N × 128 MB`.
+
+- **Import: `chunkFailures`-Detailliste gedeckelt** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  bei `--on-error log` wuchs die Liste der Chunk-Fehler-Details unbounded (ein Eintrag je
+  fehlgeschlagenem Chunk). Sie ist jetzt auf ein Sample (1000) gedeckelt; darüber hinausgehende
+  Fehler werden gezählt (`chunkFailuresSuppressed`). Die wahre Fehlerzahl trägt ohnehin `rowsFailed`.
+
 ## [0.9.12] - 2026-07-13
 
 ### Added

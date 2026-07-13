@@ -44,6 +44,14 @@ data class TableImportSummary(
     val failedFinish: FailedFinishInfo? = null,
     val error: String? = null,
     val durationMs: Long,
+    /**
+     * LN-005 (R4): Anzahl der Chunk-Fehler-Detaileinträge, die über die Obergrenze
+     * (`ImportLoopState.MAX_LOGGED_CHUNK_FAILURES`, nur `--on-error log`) hinaus
+     * **unterdrückt** wurden. `chunkFailures` ist damit ein begrenztes Sample; die
+     * wahre Fehlerzahl trägt `rowsFailed`. Default `0` → positional-kompatibel für
+     * bestehende Konstruktionen.
+     */
+    val chunkFailuresSuppressed: Long = 0,
 )
 
 /**

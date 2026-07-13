@@ -125,14 +125,19 @@ verworfen — Review-Entscheid.)*
 ### AE-2 — Parquet-Row-Group (R2)
 
 `ExampleParquetWriter.builder(...)` (`ParquetChunkWriter.kt:78-85`) bekommt ein explizites
-`.withRowGroupSize(...)`. Default **32 MB** (statt parquet-java-~128 MB), damit `parallelism × rowGroup`
-bei realistischem `--parallel` in einem moderaten Heap-Budget bleibt; optional per Config
-überschreibbar. Config-Key **`export.parquet.row_group_bytes`** (nicht unter `pipeline.` — Row-Group
-ist ein Format-/Export-Detail; die Config hat bereits eine `export:`-Sektion und das
-formatspezifische Muster `import.csv.*`; `pipeline.fetch_size` passt dagegen zum
-`pipeline.chunk_size`-Muster). **Trade-off**: kleinere Row-Groups kosten etwas
-Lese-/Kompressionseffizienz (kleinere Kompressionsfenster, mehr Row-Group-Metadaten) — 32 MB ist der
-bewusste Kompromiss zwischen Heap-Sicherheit unter `--parallel` und Scan-Effizienz.
+`.withRowGroupSize(rowGroupBytes)`. Der Wert ist ein **Konstruktor-Parameter** mit Default
+**32 MiB** (`DEFAULT_ROW_GROUP_BYTES`, statt parquet-java-~128 MB), damit `parallelism × rowGroup`
+bei realistischem `--parallel` in einem moderaten Heap-Budget bleibt. **Trade-off**: kleinere
+Row-Groups kosten etwas Lese-/Kompressionseffizienz (kleinere Kompressionsfenster, mehr
+Row-Group-Metadaten) — 32 MiB ist der bewusste Kompromiss zwischen Heap-Sicherheit unter `--parallel`
+und Scan-Effizienz.
+
+> **Status-Update 2026-07-13 (Scope-Schnitt):** Der **Config-Key** `export.parquet.row_group_bytes`
+> wird **nicht** in diesem Slice verdrahtet. Der explizite 32-MiB-Default ist der eigentliche
+> OOM-Fix (er ersetzt den 128-MB-parquet-Default); die Tunability über Config ist ein niedrig
+> priorisierter Nice-to-have für ein Nischen-Format-Detail und würde eine eigene `export.parquet.*`-
+> Config-Sektion + Threading durch die Writer-Factory erfordern. Der `rowGroupBytes`-Konstruktor-Param
+> hält die Größe testbar und künftig-konfigurierbar, ohne den Slice weiter aufzublähen.
 
 ### AE-3 — chunkFailures-Deckel (R4)
 
@@ -153,8 +158,8 @@ Import-Report zeigt „N Fehler protokolliert (+ M weitere unterdrückt)".
   (`DataTransferRunner:181,252`, `DataExportWiring:129`) + **ADR 0033**. Kein `PipelineConfig`-Feld,
   kein Config-Key (s. AE-1). `streamTable` unangetastet. TDD: Reader nutzt Override; Dialekt-Default
   bei `null`; Verify-Read-Back nutzt den Wert; `≤ 0` → Exit 2.
-- **Phase B (R2)** — explizite Parquet-Row-Group-Größe (Default 32 MB, `export.parquet.row_group_bytes`)
-  + Test (Writer setzt die konfigurierte Größe; Default gedeckelt).
+- **Phase B (R2)** — explizite Parquet-Row-Group-Größe (`rowGroupBytes`-Konstruktor-Param, Default
+  32 MiB; Config-Key deferred, s. AE-2) + Test (winzige Größe → mehrere Row-Groups; Default → eine).
 - **Phase C (R4)** — `chunkFailures`-Deckel im `log`-Pfad + Test (Overflow bei `log`; `abort`/`skip`
   unverändert).
 - **Phase D (Akzeptanztest)** — **neues Schwester-Modul `test/perf-data-path`** <!-- d-check:ignore (neues Modul, entsteht in Phase D dieses Slices) --> (der DDL-fokussierte
@@ -177,8 +182,8 @@ Import-Report zeigt „N Fehler protokolliert (+ M weitere unterdrückt)".
 - [ ] `--fetch-size` wirkt end-to-end an **export/transfer** (Reader nutzt den Wert; Verify-Read-Back
   nutzt denselben), Default = Dialekt-Konstante; `≤ 0` → Exit 2; **kein** `--fetch-size` an `import`,
   kein Config-Key (CLI-only, s. AE-1).
-- [ ] Parquet-Export nutzt die explizite Row-Group-Größe (Default 32 MB, via
-  `export.parquet.row_group_bytes` überschreibbar; Test belegt den Builder-Wert).
+- [ ] Parquet-Export nutzt die explizite Row-Group-Größe (Default 32 MiB, `rowGroupBytes`-Param;
+  Config-Key deferred; Test belegt: winzige Größe → mehrere Row-Groups, Default → eine).
 - [ ] `chunkFailures` ist bei `--on-error log` gedeckelt (Test belegt Overflow; `abort`/`skip`
   unverändert).
 - [ ] roadmap [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) (Zeile 638) → `✅`; ADR 0033
