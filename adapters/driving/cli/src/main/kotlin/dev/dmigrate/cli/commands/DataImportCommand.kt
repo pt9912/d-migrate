@@ -13,6 +13,8 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectivePipelineTuning
 
 /**
  * `d-migrate data import` — streamt Daten aus Dateien (json/yaml/csv) oder
@@ -120,8 +122,9 @@ class DataImportCommand : CliktCommand(name = "import") {
 
     val chunkSize by option(
         "--chunk-size",
-        help = "Rows per chunk (streaming buffer size); default: 10 000",
-    ).int().default(10_000)
+        help = "Rows per chunk (streaming buffer size); default: 10 000 " +
+            "(overrides pipeline.chunk_size in config)",
+    ).int()
 
     val parallel by option(
         "--parallel",
@@ -157,6 +160,17 @@ class DataImportCommand : CliktCommand(name = "import") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
+        // LN-005: --chunk-size (nullbar) mit pipeline.chunk_size mergen (CLI > Config > Default).
+        // fetchSize ist für den Import irrelevant (liest aus Format-Dateien, nicht per JDBC-DataReader).
+        val tuning = try {
+            resolveEffectivePipelineTuning(root?.config, chunkSize, cliFetchSize = null)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(2)
+        }
         val exitCode = DataImportWiring.execute(
             DataImportOptions(
                 target = target,
@@ -176,7 +190,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 encoding = encoding,
                 csvNoHeader = csvNoHeader,
                 csvNullString = csvNullString,
-                chunkSize = chunkSize,
+                chunkSize = tuning.chunkSize,
                 parallel = parallel,
                 resume = resume,
                 checkpointDir = checkpointDir,

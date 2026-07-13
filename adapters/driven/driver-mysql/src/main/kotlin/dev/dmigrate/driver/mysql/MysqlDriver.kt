@@ -18,7 +18,9 @@ import dev.dmigrate.driver.data.TableLister
 class MysqlDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.MYSQL
     override fun ddlGenerator(): DdlGenerator = MysqlDdlGenerator()
-    override fun dataReader(): DataReader = MysqlDataReader()
+    override fun dataReader(): DataReader = dataReader(null)
+
+    override fun dataReader(fetchSize: Int?): DataReader = MysqlDataReader(fetchSize)
     override fun tableLister(): TableLister = MysqlTableLister()
     override fun dataWriter(): DataWriter = MysqlDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = MysqlJdbcUrlBuilder()

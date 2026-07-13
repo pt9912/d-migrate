@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Konfigurierbarer JDBC-`fetchSize`** (`data export`/`transfer --fetch-size`, [`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  der Cursor-Prefetch für den Quell-Read ist nicht mehr eine pro Dialekt hart verdrahtete Konstante,
+  sondern per CLI-Flag bzw. `pipeline.fetch_size` einstellbar (für sehr breite Zeilen kleiner wählbar,
+  um die Peak-Speicherlast pro Chunk zu senken). Wird am Reader-Bau fixiert (immutable pro Instanz →
+  parallel-sicher); SQLite = nur Hint; gilt nicht für den Import (liest aus Format-Dateien); der
+  `data transfer --verify`-Read-Back nutzt denselben Wert. Präzedenz: CLI-explizit > Config >
+  Dialekt-Default; `≤ 0` → Exit 2. [ADR 0033](docs/adr/0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md).
+
+### Fixed
+
+- **`pipeline.chunk_size` war ein stiller No-op** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  der Config-Key war in der Connection-Spec dokumentiert, wurde vom Runtime aber ignoriert (nur
+  `--chunk-size` wirkte). `pipeline.chunk_size` (export/import/transfer) und der neue
+  `pipeline.fetch_size` (export/transfer) werden jetzt über einen `PipelineTuningResolver` echt
+  verdrahtet (Präzedenz CLI-explizit > Config > Default; ungültige Werte → Exit 2 bzw. 7).
+
 ## [0.9.12] - 2026-07-13
 
 ### Added

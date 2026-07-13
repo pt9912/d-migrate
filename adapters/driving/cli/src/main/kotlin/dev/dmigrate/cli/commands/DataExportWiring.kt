@@ -46,6 +46,8 @@ internal data class DataExportOptions(
     val chunkSize: Int,
     val parallel: Int,
     val readOnly: Boolean,
+    /** LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default). */
+    val fetchSize: Int? = null,
     val splitFiles: Boolean,
     val csvDelimiter: String,
     val csvBom: Boolean,
@@ -126,7 +128,7 @@ internal object DataExportWiring {
             },
             urlParser = ConnectionUrlParser::parse,
             poolFactory = HikariConnectionPoolFactory::create,
-            readerLookup = { DatabaseDriverRegistry.get(it).dataReader() },
+            readerLookup = { DatabaseDriverRegistry.get(it).dataReader(options.fetchSize) },
             listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
             writerFactoryBuilder = { exportOutput ->
                 buildWriterFactoryForOutput(exportOutput, warnings)

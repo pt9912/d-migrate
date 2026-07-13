@@ -78,40 +78,49 @@ R3 (LOB) bleibt eine **dokumentierte Grenze**; R5 ist Nicht-Scope.
 `fetchSize` ist heute ein `protected open val` auf `AbstractJdbcDataReader`, pro Dialekt
 überschrieben (`PostgresDataReader.kt:31`, `MysqlDataReader.kt:37`, `SqliteDataReader.kt:28`).
 
-**Signatur-Form (festgezurrt): `ReadTuning`-Parameterobjekt.** `DataReader` hat bereits zwei
-`streamTable`-Overloads (4-Parameter + 5-Parameter mit `resumeMarker: ResumeMarker?`, Default-Impl).
-Ein bloßes `fetchSize: Int? = null` an den 4-Parameter-Overload macht **beide** zu
-5-Positions-Signaturen mit nullbarem fünften Parameter → ein positionales `null` wird **ambig**, und
-der Resume-Overload (genau der Transfer-/Checkpoint-Pfad) bräuchte `fetchSize` ohnehin auch. Daher:
-`chunkSize` + `fetchSize` werden in ein kleines, erweiterbares
-`ReadTuning(chunkSize: Int = 10_000, fetchSize: Int? = null)` (neuer Wert-Typ in `ports-read`)
-gebündelt; beide Overloads nehmen `tuning: ReadTuning` (4-Param mit Default; 5-Param + `resumeMarker`).
-Der abstrakte Reader nutzt `effectiveFetchSize = tuning.fetchSize ?: fetchSize` (Dialekt-Default
-bleibt bei `null`). *(Die leichtere Variante „`fetchSize` an beide Overloads hinter `resumeMarker`,
-verschiedene Arität" wurde erwogen — `ReadTuning` gewinnt, weil es die Overload-Ambiguität
-grundsätzlich beseitigt und die nächste Tuning-Größe nicht denselben Sprawl auslöst.)*
+**Form (festgezurrt, Review 2026-07-13): Konstruktor-/Factory-Parameter — NICHT die
+`streamTable`-Signatur.** Blast-Radius-Fund: `streamTable` hat **81 Call-Sites** und zwei Overloads
+(4-Param + 5-Param `resumeMarker`); ein per-Call-`fetchSize` dort erzeugt Overload-Ambiguität (null
+fünfter Parameter) und 38 chunkSize-Site-Edits. Stattdessen wird `fetchSize` beim **Bau des Readers**
+gesetzt — nur **6 `dataReader()`-Call-Sites**, `streamTable` bleibt unangetastet:
 
-- `PipelineConfig` bekommt `fetchSize: Int? = null` (null = Dialekt-Default). Der Kommentar
-  „`fetchSize` … gehört nicht hierher" (`PipelineConfig.kt:11-14`) wird **umgekehrt** (→ ADR 0033).
-- CLI-Flag `--fetch-size` **nur an `data export`/`transfer`** (Validierung `> 0`; SQLite = Hint,
-  dokumentieren); Config-Key `pipeline.fetch_size` (Muster wie `pipeline.chunk_size`).
-- **`data import` bleibt außen vor**: der Import liest aus Format-Dateien über `DataChunkReader`/
-  `DataChunkReaderFactory` (`TableImporter.kt:12-13,43`), nie über einen JDBC-`DataReader` — ein
-  `--fetch-size` dort wäre tote Oberfläche.
-- **Verify nutzt denselben Wert**: `data transfer --verify` liest Quelle+Ziel per `DataReader`
-  zurück (`verify/TransferVerifier.kt`), also greift `fetchSize` dort real; der Transfer-`--fetch-size`
-  fließt in den Read-Back.
-- **Betroffen (verifizierte `streamTable`-Caller)**: `TableExporter` (Export), `TransferExecutor`
-  (Transfer), `TransferVerifier` (Verify-Read-Back) — **nicht** `TableImporter`. Dazu: Port
-  `DataReader` (beide Overloads → `ReadTuning`), `AbstractJdbcDataReader`, die drei Reader (nur
-  Doc/Default), CLI-Commands (export/transfer) + Wiring, `PipelineConfig`, Config-Parser, neuer
-  `ReadTuning`-Typ in `ports-read`.
+- `DatabaseDriver.dataReader(fetchSize: Int? = null): DataReader` — optionaler Parameter, Default
+  `null` = Dialekt-Konstante (rückwärtskompatibel; die 3 no-arg-Test-Calls brechen nicht).
+- Jeder Reader-Konstruktor nimmt `fetchSizeOverride: Int? = null` und setzt
+  `override val fetchSize = fetchSizeOverride ?: <Dialekt-Default>`. Wert **immutable pro Instanz**
+  → parallel-sicher (jeder `dataReader(...)`-Aufruf liefert eine frische Instanz;
+  `AbstractJdbcDataReader.kt:130` wendet ihn an).
+- Nur **6 `dataReader()`-Call-Sites** (Produktion: `DataTransferRunner.kt:181,252`,
+  `DataExportWiring.kt:129`; 3 Test — bleiben no-arg). Die 3 Produktionssites reichen den CLI-/Config-
+  Wert durch.
+- **Config-Key `pipeline.fetch_size` + Reparatur `pipeline.chunk_size` (Review-Entscheid „jetzt
+  mitverdrahten").** Verifiziert: `pipeline.chunk_size` ist zwar spec-dokumentiert
+  (`connection-config-spec.md:242`), aber im Runtime ein **stiller No-op** — `PipelineCheckpointResolver`
+  liest nur `pipeline.checkpoint.*` (Test belegt: `pipeline.chunk_size` → `resolve()==null`); `chunkSize`
+  kommt real nur aus `--chunk-size`. Dieser Slice verdrahtet beide Keys **echt**: neuer
+  `PipelineTuningResolver` (Muster wie `PipelineCheckpointResolver`) liest `pipeline.chunk_size` +
+  `pipeline.fetch_size` (Number, `>0`); Präzedenz **CLI-explizit > Config > Default** (die Options
+  `--chunk-size`/`--fetch-size` werden nullbar, der Default `10_000` bzw. Dialekt-Default wandert in den
+  Merge). `chunk_size` gilt für `export`/`import`/`transfer`, `fetch_size` für `export`/`transfer`.
+- CLI-Flag `--fetch-size` **nur `data export`/`transfer`** (Validierung `> 0`; SQLite = Hint) →
+  effektiver Wert (CLI/Config-Merge) → `DataExportOptions`/`DataTransferRequest`-Feld → die 3
+  `dataReader(...)`-Call-Sites. `fetchSize` bleibt **nicht** in `PipelineConfig` (die speist die
+  Streaming-Schleife mit dem bereits gebauten Reader) — es wird am Reader-Bau angewandt.
+- **`data import` außen vor** (liest per `DataChunkReader`, `TableImporter.kt:12-13,43`); **Verify**
+  (`data transfer --verify`) baut seinen Read-Back-Reader (Quelle+Ziel) ebenfalls über
+  `dataReader(...)` → nutzt denselben Wert.
 
-> **AE-1a (entschieden): kleiner ADR 0033.** Die Umkehr der dokumentierten Stance („fetchSize ist
-> treiberintern, nicht user-tunable", `PipelineConfig.kt:11-14`) + die neue Config-Oberfläche + das
-> `ReadTuning`-Objekt sind eine bewusste Vertragsänderung — analog
+**Semantik-Argument**: `fetchSize` ist Connection-/Cursor-Tuning (wie viele Zeilen der JDBC-Cursor
+vorablädt) — natürlicherweise einmal beim Reader-Bau gesetzt; `chunkSize` bleibt per-`streamTable`-Call
+(variiert je Operation/Resume). Die beiden Ebenen bleiben sauber getrennt. *(Die zuerst erwogene
+`ReadTuning`-am-`streamTable`-Variante wurde wegen des 81-Site-Blast-Radius + Overload-Ambiguität
+verworfen — Review-Entscheid.)*
+
+> **AE-1a (entschieden): kleiner ADR 0033.** `fetchSize` von „treiberintern, nicht user-tunable"
+> (Stance in `PipelineConfig.kt:11-14`) zu **user-konfigurierbar via `--fetch-size`** (am Reader-Bau)
+> ist eine bewusste Vertragsänderung — analog
 > [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009)/[`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013)
-> → ADR 0030/0031. Ein Kommentar allein verlöre die Begründung der alten Stance.
+> → ADR 0030/0031. Der ADR hält Grund + die „am Reader-Bau, nicht in `PipelineConfig`"-Entscheidung fest.
 
 ### AE-2 — Parquet-Row-Group (R2)
 
@@ -137,11 +146,13 @@ Import-Report zeigt „N Fehler protokolliert (+ M weitere unterdrückt)".
 
 ## Phasen
 
-- **Phase A (R1)** — `ReadTuning` + konfigurierbarer `fetchSize`: neuer `ReadTuning`-Typ (`ports-read`)
-  + beide `streamTable`-Overloads auf `ReadTuning` + `AbstractJdbcDataReader.effectiveFetchSize` +
-  `PipelineConfig.fetchSize` + `--fetch-size` (**nur export/transfer**) + `pipeline.fetch_size` +
-  Kommentar-/Spec-Update + **ADR 0033**. TDD: Reader wendet Override an; Dialekt-Default greift bei
-  `null`; Verify-Read-Back nutzt den Transfer-Wert; CLI→PipelineConfig-Wiring; `≤ 0` → Exit 2.
+- **Phase A (R1)** — konfigurierbarer `fetchSize` via `dataReader(fetchSize)`:
+  `DatabaseDriver.dataReader(fetchSize: Int?)`-Default-Methode + 3 Reader-Konstruktoren
+  (`fetchSizeOverride`) + 3 Driver-Overrides + `--fetch-size` (**nur export/transfer**) →
+  `DataExportOptions`/`DataTransferRequest`-Feld → 3 Produktions-`dataReader()`-Sites
+  (`DataTransferRunner:181,252`, `DataExportWiring:129`) + **ADR 0033**. Kein `PipelineConfig`-Feld,
+  kein Config-Key (s. AE-1). `streamTable` unangetastet. TDD: Reader nutzt Override; Dialekt-Default
+  bei `null`; Verify-Read-Back nutzt den Wert; `≤ 0` → Exit 2.
 - **Phase B (R2)** — explizite Parquet-Row-Group-Größe (Default 32 MB, `export.parquet.row_group_bytes`)
   + Test (Writer setzt die konfigurierte Größe; Default gedeckelt).
 - **Phase C (R4)** — `chunkFailures`-Deckel im `log`-Pfad + Test (Overflow bei `log`; `abort`/`skip`
@@ -152,8 +163,8 @@ Import-Report zeigt „N Fehler protokolliert (+ M weitere unterdrückt)".
   (perf-Tag, `HeapDumpOnOutOfMemoryError`, kleines `-Xmx`, kover minBound 0) für Export **und**
   Transfer; opt-in via `make docker-perf`.
 - **Phase E (Doku)** — roadmap Zeile 638 `🚧¹ → ✅` (Fußnote auf „validiert" umschreiben);
-  `cli-spec.md` `--fetch-size` (export/transfer); `connection-config-spec.md` `pipeline.fetch_size` +
-  `export.parquet.row_group_bytes`; CHANGELOG `[Unreleased]`; `make docs-check`.
+  `cli-spec.md` `--fetch-size` (export/transfer); `connection-config-spec.md`
+  `export.parquet.row_group_bytes` (R2); CHANGELOG `[Unreleased]`; `make docs-check`.
 
 ## Akzeptanzkriterien
 
@@ -163,9 +174,9 @@ Import-Report zeigt „N Fehler protokolliert (+ M weitere unterdrückt)".
   garantiert sprengt. Beispiel: `-Xmx 256 MB` ⇒ Nutzdaten ≥ 1 GB (nicht bloß 1 Mio. schmale Zeilen
   ≈ 100–200 MB, die unter 256 MB u. U. **nicht** OOMen und den Test false-green machen). Roter Lauf
   ⇒ HeapDump.
-- [ ] `--fetch-size`/`pipeline.fetch_size` wirkt end-to-end an **export/transfer** (Reader nutzt den
-  Wert; Verify-Read-Back nutzt denselben), Default = Dialekt-Konstante; `≤ 0` → Exit 2; **kein**
-  `--fetch-size` an `import`.
+- [ ] `--fetch-size` wirkt end-to-end an **export/transfer** (Reader nutzt den Wert; Verify-Read-Back
+  nutzt denselben), Default = Dialekt-Konstante; `≤ 0` → Exit 2; **kein** `--fetch-size` an `import`,
+  kein Config-Key (CLI-only, s. AE-1).
 - [ ] Parquet-Export nutzt die explizite Row-Group-Größe (Default 32 MB, via
   `export.parquet.row_group_bytes` überschreibbar; Test belegt den Builder-Wert).
 - [ ] `chunkFailures` ist bei `--on-error log` gedeckelt (Test belegt Overflow; `abort`/`skip`

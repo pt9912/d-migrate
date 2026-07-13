@@ -12,6 +12,8 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectivePipelineTuning
 
 class DataTransferCommand : CliktCommand(name = "transfer") {
     override fun help(context: Context) = "Transfer data directly between databases"
@@ -40,9 +42,15 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         "--atomic",
         help = "Atomic clean-load: on any error, roll back all target tables to empty. Requires --truncate.",
     ).flag()
-    val chunkSize by option("--chunk-size", help = "Rows per chunk (default: 10000)")
-        .int()
-        .default(10_000)
+    val chunkSize by option(
+        "--chunk-size",
+        help = "Rows per chunk (default: 10000; overrides pipeline.chunk_size in config)",
+    ).int()
+    val fetchSize by option(
+        "--fetch-size",
+        help = "JDBC cursor prefetch size for reading the SOURCE (default: dialect-specific 1000; " +
+            "overrides pipeline.fetch_size in config). SQLite: hint only. --verify read-back uses the same value.",
+    ).int()
     val parallel by option(
         "--parallel",
         help = "Max tables/partitions to transfer concurrently (default: 1 = sequential). " +
@@ -62,6 +70,15 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
+        val tuning = try {
+            resolveEffectivePipelineTuning(root?.config, chunkSize, fetchSize)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(2)
+        }
         val exitCode = DataTransferWiring.execute(
             DataTransferOptions(
                 source = source,
@@ -75,9 +92,10 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 truncate = truncate,
                 verify = verify,
                 atomic = atomic,
-                chunkSize = chunkSize,
+                chunkSize = tuning.chunkSize,
                 parallel = parallel,
                 readOnly = readOnly,
+                fetchSize = tuning.fetchSize,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),

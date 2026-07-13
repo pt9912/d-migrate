@@ -86,3 +86,4 @@ argumentiert werden.
 | 0030 | [Datenwert-Kanonisierung für `data transfer --verify` (LN-009)](0030-datenwert-kanonisierung-verify.md) | accepted |
 | 0031 | [Atomarer Rollback auf Checkpoint-Ebene: Clean-Load-Kompensation (`--atomic`, LN-013)](0031-atomic-clean-load-rollback.md) | accepted |
 | 0032 | [Paralleler Datenpfad: Tabellen- und Partitions-Parallelität (`--parallel`, LN-007 + LN-008)](0032-paralleler-datenpfad-tabellen-partitionen.md) | accepted |
+| 0033 | [Konfigurierbarer JDBC-`fetchSize` + Verdrahtung von `pipeline.chunk_size`/`fetch_size` (LN-005)](0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md) | accepted |

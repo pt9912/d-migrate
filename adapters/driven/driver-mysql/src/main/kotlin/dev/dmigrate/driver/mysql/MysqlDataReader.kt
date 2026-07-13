@@ -26,15 +26,18 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  * und laufen unter `-PintegrationTests` gegen einen Testcontainers-
  * MySQL — siehe `.github/workflows/integration.yml`.
  */
-class MysqlDataReader : AbstractJdbcDataReader() {
+class MysqlDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataReader() {
 
     override val dialect: DatabaseDialect = DatabaseDialect.MYSQL
 
     override fun quoteIdentifier(name: String): String =
         SqlIdentifiers.quoteIdentifier(name, dialect)
 
-    /** LF-008 / LN-010: Tuning fuer serverseitigen Cursor. */
-    override val fetchSize: Int = 1_000
+    /**
+     * LF-008 / LN-010: Tuning fuer serverseitigen Cursor.
+     * LN-005: per `dataReader(fetchSize)` überschreibbar (`null` = dieser Default).
+     */
+    override val fetchSize: Int = fetchSizeOverride ?: 1_000
 
     /** Konsistenter Snapshot über den Stream hinweg. */
     override val needsAutoCommitFalse: Boolean = true

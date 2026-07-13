@@ -28,6 +28,8 @@ internal data class DataTransferOptions(
     val chunkSize: Int,
     val parallel: Int,
     val readOnly: Boolean,
+    /** LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default). */
+    val fetchSize: Int? = null,
     val cliContext: CliContext,
     val configPath: Path?,
     val sqliteAutoincrementWidth: Int? = null,
@@ -77,6 +79,7 @@ internal object DataTransferWiring {
             chunkSize = options.chunkSize,
             parallel = options.parallel,
             readOnly = options.readOnly,
+            fetchSize = options.fetchSize,
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
             noProgress = options.cliContext.noProgress,

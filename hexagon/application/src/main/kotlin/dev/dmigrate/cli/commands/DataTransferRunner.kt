@@ -35,6 +35,8 @@ data class DataTransferRequest(
     val parallel: Int = 1,
     // Read-only-Quelle (Default an über CLI-Flag; SQLite → SQLITE_OPEN_READONLY). Ziel bleibt read-write.
     val readOnly: Boolean = false,
+    // LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default); auch der --verify-Read-Back nutzt ihn.
+    val fetchSize: Int? = null,
     // LN-009: SHA-256 Quelle↔Ziel-Reconciliation nach dem Transfer.
     val verify: Boolean = false,
     // LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück (erfordert truncate).
@@ -178,7 +180,7 @@ class DataTransferRunner(
             sinceColumn = request.sinceColumn,
             since = request.since,
         )
-        val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
+        val reader = srcDrv.dataReader(request.fetchSize); val writer = tgtDrv.dataWriter()
 
         cancellationToken.throwIfCancellationRequested()
         try {
@@ -249,7 +251,7 @@ class DataTransferRunner(
             TransferVerifier(canonicalizer).verify(
                 tables = tables,
                 sourceReader = sourceReader,
-                targetReader = tgtDrv.dataReader(),
+                targetReader = tgtDrv.dataReader(request.fetchSize),
                 sourcePool = srcPool,
                 targetPool = tgtPool,
                 sourceSchema = srcSchema,

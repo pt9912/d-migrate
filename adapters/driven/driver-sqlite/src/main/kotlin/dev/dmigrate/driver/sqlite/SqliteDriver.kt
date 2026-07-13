@@ -24,7 +24,9 @@ import dev.dmigrate.driver.sqliteContext
 class SqliteDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.SQLITE
     override fun ddlGenerator(): DdlGenerator = SqliteDdlGenerator()
-    override fun dataReader(): DataReader = SqliteDataReader()
+    override fun dataReader(): DataReader = dataReader(null)
+
+    override fun dataReader(fetchSize: Int?): DataReader = SqliteDataReader(fetchSize)
     override fun tableLister(): TableLister = SqliteTableLister()
     override fun dataWriter(): DataWriter = SqliteDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = SqliteJdbcUrlBuilder()

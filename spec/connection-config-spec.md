@@ -239,7 +239,11 @@ import:
 
 # ── Pipeline-Einstellungen ─────────────────────
 pipeline:
-  chunk_size: 10000                  # Datensätze pro Chunk
+  chunk_size: 10000                  # Datensätze pro Chunk (export/import/transfer).
+                                     # Präzedenz: --chunk-size (CLI) > diese Config > Default 10000.
+  fetch_size: 1000                   # LN-005: JDBC-Cursor-Prefetch für den Quell-Read (export/transfer).
+                                     # Präzedenz: --fetch-size (CLI) > diese Config > Dialekt-Default 1000.
+                                     # SQLite: nur Hint. Gilt nicht für den Import (liest aus Dateien).
   parallelism: auto                  # auto (= CPU-Kerne) oder Zahl
   checkpoint:
     enabled: true                    # Checkpoints erstellen

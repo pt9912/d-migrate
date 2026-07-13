@@ -20,15 +20,18 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  * und laufen unter `-PintegrationTests` gegen einen Testcontainers-
  * PostgreSQL — siehe `.github/workflows/integration.yml`.
  */
-class PostgresDataReader : AbstractJdbcDataReader() {
+class PostgresDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataReader() {
 
     override val dialect: DatabaseDialect = DatabaseDialect.POSTGRESQL
 
     override fun quoteIdentifier(name: String): String =
         SqlIdentifiers.quoteIdentifier(name, dialect)
 
-    /** Standard-Cursor-fetchSize. Empirisch guter Wert für PostgreSQL JDBC. */
-    override val fetchSize: Int = 1_000
+    /**
+     * Standard-Cursor-fetchSize (empirisch guter Wert für PostgreSQL JDBC);
+     * LN-005: per `dataReader(fetchSize)` überschreibbar (`null` = dieser Default).
+     */
+    override val fetchSize: Int = fetchSizeOverride ?: 1_000
 
     /** PostgreSQL braucht zwingend `setAutoCommit(false)` für Cursor-Streaming. */
     override val needsAutoCommitFalse: Boolean = true
