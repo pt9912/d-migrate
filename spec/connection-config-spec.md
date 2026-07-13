@@ -94,6 +94,8 @@ sqlite::memory:
 
 SQLite-URLs mit `foreign_keys=true` als Default, weil d-migrate auf referenzielle Integrität angewiesen ist (in SQLite sind FKs standardmäßig deaktiviert).
 
+**Read-only-Öffnung**: Reine Lese-Operationen (`data profile`, `data export`, die Quelle von `data transfer`) öffnen die SQLite-Quelle mit `SQLITE_OPEN_READONLY` über die URI-Form `file:<db>?mode=ro`, bewusst **ohne** `journal_mode=wal` (WAL braucht Schreibrecht). So sind auch nicht-schreibbare Quellen les-/profilierbar, ohne `-wal`/`-shm`-Nebendateien anzulegen; `:memory:` bleibt schreibbar/ephemer und ignoriert das Flag. Gesteuert über `--read-only`/`--no-read-only` (Default an), siehe [CLI-Spezifikation](./cli-spec.md).
+
 ### 1.6 Timeout-Einheiten
 
 Die Timeout-Parameter in Connection-URLs verwenden die **native JDBC-Konvention** des jeweiligen Treibers. Diese ist nicht einheitlich:

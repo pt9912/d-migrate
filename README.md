@@ -42,15 +42,17 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.11**
-(stable, [released 2026-07-12](https://github.com/pt9912/d-migrate/releases/tag/v0.9.11)).
+d-migrate is a working production tool at version **0.9.12**
+(stable, [released 2026-07-13](https://github.com/pt9912/d-migrate/releases/tag/v0.9.12)).
 
-> **New in 0.9.11:** end-to-end SHA-256 data-integrity verification
-> (`data transfer --verify`, LN-009) reconciling source and target with a
-> dialect-neutral, order-independent per-table checksum; first-class SSL/TLS
-> connection config (LN-026) and CLI audit logging (LN-027); plus a `data
-> profile` crash fix — profiling a column with integer values or an empty table
-> no longer aborts with a `ClassCastException`. See `CHANGELOG.md`.
+> **New in 0.9.12:** a parallel data path (`data export`/`import`/`transfer
+> --parallel N`, LN-007/LN-008) running independent tables concurrently in
+> FK-safe topological layers, with per-child fan-out for partitioned tables;
+> atomic clean-load rollback (`--atomic`, LN-013) resetting **all** target
+> tables to their empty pre-load state on any failure via O(1) compensation;
+> and read-only source opening (`--read-only`, on by default) — SQLite sources
+> open with `SQLITE_OPEN_READONLY` and no `-wal`/`-shm` side files, so even
+> non-writable databases are profilable. See `CHANGELOG.md`.
 
 The current capabilities:
 

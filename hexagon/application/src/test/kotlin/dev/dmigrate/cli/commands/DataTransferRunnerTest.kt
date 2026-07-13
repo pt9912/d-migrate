@@ -162,6 +162,59 @@ class DataTransferRunnerTest : FunSpec({
         runner.execute(request(triggerMode = "invalid")) shouldBe 2
     }
 
+    test("--atomic without --truncate → exit 2 (LN-013)") {
+        val (runner, _, errors) = buildRunner()
+        runner.execute(request().copy(atomic = true)) shouldBe 2
+        errors.joined() shouldContain "--atomic requires --truncate"
+    }
+
+    test("--parallel < 1 → exit 2 (LN-007/LN-008)") {
+        val (runner, _, errors) = buildRunner()
+        runner.execute(request().copy(parallel = 0)) shouldBe 2
+        errors.joined() shouldContain "--parallel must be >= 1"
+    }
+
+    test("--parallel > 1 with --atomic → exit 2 (race with compensation, LN-007/LN-008)") {
+        val (runner, _, errors) = buildRunner()
+        runner.execute(request().copy(parallel = 4, atomic = true, truncate = true)) shouldBe 2
+        errors.joined() shouldContain "--atomic is incompatible with --parallel"
+    }
+
+    test("--atomic transfer error rolls back all tables via truncateTables (LN-013)") {
+        val truncated = mutableListOf<List<String>>()
+        val throwingReader = object : DataReader {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun streamTable(
+                pool: ConnectionPool,
+                table: String,
+                filter: dev.dmigrate.core.data.DataFilter?,
+                chunkSize: Int,
+            ): dev.dmigrate.driver.data.ChunkSequence = throw RuntimeException("read boom")
+        }
+        val recordingWriter = object : DataWriter {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun schemaSync() = throw UnsupportedOperationException()
+            override fun openTable(pool: ConnectionPool, table: String, options: ImportOptions) = fakeSession
+            override fun truncateTables(pool: ConnectionPool, tables: List<String>) {
+                truncated += tables
+            }
+        }
+        val throwingDriver = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun ddlGenerator() = throw UnsupportedOperationException()
+            override fun dataReader() = throwingReader
+            override fun tableLister() = throw UnsupportedOperationException()
+            override fun dataWriter() = recordingWriter
+            override fun urlBuilder() = throw UnsupportedOperationException()
+            override fun schemaReader() = fakeSchemaReader
+        }
+        val (runner, _, _) = buildRunner(driverLookup = { throwingDriver })
+
+        runner.execute(request().copy(truncate = true, atomic = true)) shouldBe 5
+
+        truncated shouldContainExactly listOf(listOf("users"))
+    }
+
     // ── Exit 3 ──────────────────────────────────
 
     test("missing source table → exit 3") {

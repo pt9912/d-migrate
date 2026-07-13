@@ -1222,6 +1222,8 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--since` | Nein | String | — | Untere Marker-Grenze für [`LF-013`](lastenheft-d-migrate.md#lf-013). Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
+| `--parallel` | Nein | Integer | `1` | Max. Tabellen/Partitionen, die nebenläufig exportiert werden (`1` = sequenziell). Bei `> 1` (nur `--split-files`) wird ein partitionierter Parent als **eine Datei pro Kind-Partition** geschrieben (PostgreSQL — MySQL-Partitionen sind keine adressierbaren Tabellen, daher transparenter Parent). Für SQLite auf `1` geklemmt (Pool-Size 1); inkompatibel mit `--resume` (Exit `2`); `< 1` → Exit `2`; sollte die Verbindungspool-Größe (Default 10) nicht überschreiten. |
+| `--read-only` / `--no-read-only` | Nein | Boolean | an | Öffnet die Quelle read-only (Default). SQLite: `SQLITE_OPEN_READONLY` über `file:<db>?mode=ro`, **ohne** `journal_mode=wal` — auch nicht-schreibbare Quellen exportierbar, ohne `-wal`/`-shm`-Nebendateien. `:memory:` ignoriert das Flag (immer schreibbar/ephemer); andere Dialekte ignorieren es heute (kein Datei-Schreib-Problem). `--no-read-only` erzwingt ein schreibendes Öffnen. |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
 | `--csv-delimiter` | Nein | Char | `,` | CSV-Spalten-Trennzeichen (genau ein Zeichen) |
 | `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. |
@@ -1324,12 +1326,14 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Verhalten: `fire`, `disable`, `strict` |
 | `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
+| `--atomic` | Nein | Boolean | aus | Atomarer Clean-Load: bei einem Fehler werden **alle** Tabellen der Operation auf den leeren Vor-Import-Zustand zurückgesetzt (Kompensations-Truncate) → „alle Tabellen oder keine". Erfordert explizit `--truncate` (sonst Exit `2`) und ist inkompatibel mit `--resume` (Exit `2`). Die Kompensation ist eine O(1)-Metadaten-Operation (streaming-verträglich für große Datenmengen). Nicht-Scope: Append in ein nicht-leeres Ziel. |
 | `--disable-fk-checks` | Nein | Boolean | aus | FK-Checks während des Imports deaktivieren (dialektabhängig) |
 | `--reseed-sequences` / `--no-reseed-sequences` | Nein | Boolean | an | Identity-/Sequence-Reseed nach Import steuern |
 | `--encoding` | Nein | String | `auto` | Input-Encoding. Der Default-Pfad `auto` erkennt BOM-markierte UTF-Streams (UTF-8, UTF-16 BE/LE) und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird mit Exit 2 abgelehnt. Für Non-UTF-Encodings (`iso-8859-1`, `windows-1252`, …) muss der Wert explizit gesetzt werden — es gibt keine Heuristik-Erkennung. |
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
+| `--parallel` | Nein | Integer | `1` | Max. Tabellen/Partitionen, die nebenläufig importiert werden (`1` = sequenziell). Unabhängige Tabellen laufen FK-sicher in Topo-Ebenen (Barriere zwischen Ebenen); Kind-Partitions-Dateien landen in ihren Kind-Tabellen. Für SQLite auf `1` geklemmt; inkompatibel mit `--resume` und `--atomic` (Exit `2`); `< 1` → Exit `2`; sollte die Verbindungspool-Größe (Default 10) nicht überschreiten. |
 | `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz. Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis → Exit 7. **Preflight** prueft `operationType == IMPORT`, den Options-Fingerprint (Format, Encoding, CSV-Header/NULL, `--on-error`/`--on-conflict`/`--trigger-mode`/`--truncate`/`--disable-fk-checks`/`--reseed-sequences`/`chunk-size`, Tabellenliste in Reihenfolge, Input-Topologie, Input-Pfad, Ziel-Dialekt und Ziel-URL; fuer Directory-Importe zusaetzlich die `table -> inputFile`-Bindung) sowie die Tabellenlisten-Gleichheit. Inkompatible Referenzen → Exit 3. **Wiederaufnahme** setzt an committed Chunk-Grenzen an: bereits als `COMPLETED` markierte Tabellen werden uebersprungen; teilweise bestaetigte Tabellen lesen die bereits bestaetigten Chunks aus dem Reader (ohne Schreib-/Commit-Aktion) und starten am naechsten offenen Chunk. `--truncate` wird fuer teilweise bestaetigte Tabellen automatisch unterbunden (sonst gingen bestaetigte Zeilen verloren). `--on-error abort/skip/log` behaelt seine Semantik auch beim Resume; nur erfolgreich committete Chunks treiben den Checkpoint vorwaerts. `failedFinish` laesst die Tabelle als `FAILED` markiert (nicht still als `COMPLETED`). Directory-Importe verlangen zusaetzlich, dass die `table -> inputFile`-Bindung des Manifests mit dem aktuellen Directory-Scan uebereinstimmt — umbenannte, hinzugefuegte oder entfernte Dateien → Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
@@ -1370,7 +1374,10 @@ kanonisch beschrieben.
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Handling: `fire`, `disable`, `strict` |
 | `--truncate` | Nein | Boolean | aus | Zieltabellen vor dem Transfer leeren |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
+| `--parallel` | Nein | Integer | `1` | Max. Tabellen/Partitionen, die nebenläufig transferiert werden (`1` = sequenziell). Unabhängige Tabellen laufen FK-sicher in Topo-Ebenen; ein beidseitig namensgleich partitionierter Parent wird pro Kind (Quell-Kind → Ziel-Kind) transferiert (PostgreSQL), sonst als transparenter Parent. Für SQLite auf `1` geklemmt; inkompatibel mit `--atomic` (Exit `2`); `< 1` → Exit `2`; sollte die Verbindungspool-Größe (Default 10) nicht überschreiten. |
 | `--verify` | Nein | Boolean | aus | Nach dem Transfer die Datenintegrität per SHA-256-Quelle↔Ziel-Reconciliation prüfen. Dialekt-neutrale, reihenfolge-unabhängige Prüfsumme je Tabelle; setzt einen sauberen Load (leeres/getrunctes Ziel) voraus. Repräsentations-transformierende Cross-Dialekt-Spalten (z. B. `text[]`→`json`, `tsvector`→`text`) werden mit Warnung ausgeschlossen statt fälschlich als Divergenz gemeldet. Divergenz → Exit-Code `3` |
+| `--atomic` | Nein | Boolean | aus | Atomarer Clean-Load: bei einem Fehler werden **alle** Zieltabellen der Operation auf leer zurückgesetzt (Kompensations-Truncate) → „alle Tabellen oder keine". Erfordert explizit `--truncate` (sonst Exit `2`). O(1)-Metadaten-Kompensation, unabhängig vom Datenvolumen. |
+| `--read-only` / `--no-read-only` | Nein | Boolean | an | Öffnet die **Quelle** read-only (Default; das Ziel bleibt immer schreibend). SQLite-Quelle: `SQLITE_OPEN_READONLY` über `file:<db>?mode=ro`, **ohne** `journal_mode=wal`, keine `-wal`/`-shm`-Nebendateien; `:memory:` und andere Dialekte ignorieren das Flag. `--no-read-only` erzwingt ein schreibendes Öffnen der Quelle. |
 
 **Target-autoritatives Preflight**:
 
@@ -1449,6 +1456,7 @@ und Zieltyp-Kompatibilitaet. Ergebnis ist ein JSON- oder YAML-Report.
 ```
 d-migrate data profile --source <url-or-name> [--tables <t1,t2,...>]
   [--schema <schema>] [--top-n <n>] [--format json|yaml] [--output <path>]
+  [--read-only]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
@@ -1459,6 +1467,7 @@ d-migrate data profile --source <url-or-name> [--tables <t1,t2,...>]
 | `--top-n` | Nein | Int | Anzahl Top-Werte pro Spalte (Default: 10, Max: 1000) |
 | `--format` | Nein | String | Ausgabeformat: `json` (Default), `yaml` |
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
+| `--read-only` / `--no-read-only` | Nein | Boolean | Öffnet die Quelle read-only (Default an). SQLite: `SQLITE_OPEN_READONLY` (`file:<db>?mode=ro`, **ohne** `journal_mode=wal`) — auch nicht-schreibbare Quellen profilierbar, ohne `-wal`/`-shm`-Nebendateien. `--no-read-only` erzwingt ein schreibendes Öffnen. |
 
 **Determinismus**: Gleiches Schema + gleiche Daten = identischer Report.
 Stabile Tabellen- und Spaltenreihenfolge, stabile `topValues`-Sortierung,

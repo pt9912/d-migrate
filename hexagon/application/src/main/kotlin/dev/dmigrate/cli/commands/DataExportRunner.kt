@@ -36,6 +36,8 @@ data class DataExportRequest(
     val since: String?,
     val encoding: String,
     val chunkSize: Int,
+    // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
+    val parallel: Int = 1,
     val splitFiles: Boolean,
     val csvDelimiter: String,
     val csvBom: Boolean,
@@ -44,6 +46,8 @@ data class DataExportRequest(
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,
+    /** Read-only-Quelle (Default an über CLI-Flag; SQLite → SQLITE_OPEN_READONLY). */
+    val readOnly: Boolean = false,
     /** Explicit resume entry point. Value is a checkpoint ID or path to a manifest. */
     val resume: String? = null,
     /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
@@ -158,6 +162,16 @@ class DataExportRunner(
             )
             return 2
         }
+        // LN-007/LN-008 (ADR 0032): parallelism degree must be positive, and a
+        // parallel run has no single resumable state → mutually exclusive with --resume.
+        if (request.parallel < 1) {
+            userFacingStderr("Error: --parallel must be >= 1, got ${request.parallel}.")
+            return 2
+        }
+        if (request.parallel > 1 && !request.resume.isNullOrBlank()) {
+            userFacingStderr("Error: --parallel > 1 is incompatible with --resume (all-or-nothing).")
+            return 2
+        }
         // AP12 §4.1 / Review-Finding F1: Capability-Check auf dem
         // DataExportFormat-Enum statt PARQUET-hartkodiert. Neue
         // seekable Formate (Arrow IPC/ORC) kommen ohne neuen Branch.
@@ -185,7 +199,8 @@ class DataExportRunner(
         }
 
         return try {
-            urlParser(resolvedUrl)
+            // data export liest nur die Quelle (Ziel = Datei) → read-only oeffnen.
+            urlParser(resolvedUrl).copy(readOnly = request.readOnly)
         } catch (e: IllegalArgumentException) {
             userFacingStderr("Error: ${e.message}")
             null
@@ -259,12 +274,16 @@ class DataExportRunner(
             markers.mapValues { (_, m) -> m.copy(position = null) }
         } else markers
 
+        // LN-007/LN-008 (ADR 0032): resolve the effective parallelism (SQLite → 1, with note).
+        val degree = ParallelismClamp.effective(
+            request.parallel, pool.dialect == DatabaseDialect.SQLITE, userFacingStderr,
+        )
         return try {
             val raw = exportExecutor.execute(
                 context = ExportExecutionContext(pool, ctx.reader, ctx.lister, ctx.factory),
                 options = ExportExecutionOptions(
                     ctx.tables, executorOutput, DataExportFormat.fromCli(request.format),
-                    ctx.options, PipelineConfig(chunkSize = request.chunkSize), ctx.filter,
+                    ctx.options, PipelineConfig(chunkSize = request.chunkSize, parallelism = degree), ctx.filter,
                 ),
                 resume = ExportResumeState(resume.operationId, resume.resuming, resume.skippedTables, executorMarkers),
                 callbacks = callbacks,

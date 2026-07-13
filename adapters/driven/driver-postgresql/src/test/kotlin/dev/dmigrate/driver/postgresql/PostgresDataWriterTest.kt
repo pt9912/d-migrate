@@ -218,6 +218,26 @@ class PostgresDataWriterTest : FunSpec({
         }
     }
 
+    // ── 5b. truncateTables (LN-013 --atomic compensation) ──
+
+    test("truncateTables issues one TRUNCATE … RESTART IDENTITY CASCADE for all tables (LN-013)") {
+        every { jdbc.execute(match { it.contains("TRUNCATE TABLE") }) } returns 0
+
+        newWriter().truncateTables(pool, listOf("public.a", "public.b"))
+
+        verify {
+            jdbc.execute(match {
+                it.contains("TRUNCATE TABLE") && it.contains("RESTART IDENTITY CASCADE") &&
+                    it.contains("\"public\".\"a\"") && it.contains("\"public\".\"b\"")
+            })
+        }
+    }
+
+    test("truncateTables on empty list borrows nothing (LN-013)") {
+        newWriter().truncateTables(pool, emptyList())
+        verify(exactly = 0) { pool.borrow() }
+    }
+
     // ── 6. openTable with onConflict=UPDATE loads primary keys ──
 
     test("openTable with onConflict=UPDATE loads primary keys") {

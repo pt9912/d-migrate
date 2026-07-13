@@ -661,6 +661,8 @@ betroffene Verarbeitung abgebrochen, sodass keine halben Stände entstehen.
 
 - Das Format wird aus der Dateiendung erkannt; mit `--format` erzwingen Sie es.
 - Eine Tabelle vorher leeren: `--truncate`.
+- Kein Teil-Import bei einem Fehler (alles-oder-nichts): `--atomic` (zusammen
+  mit `--truncate`).
 - Trigger stören den Import? Auf PostgreSQL hilft `--trigger-mode disable`, auf
   MySQL/SQLite `--disable-fk-checks`.
 - **Tipp (Trigger/Funktionen):** Erzeugen Sie das Schema mit
@@ -729,6 +731,15 @@ richtige Reihenfolge anhand der Fremdschlüssel im Ziel.
   [3.2](#32-sql-für-eine-zieldatenbank-erzeugen).
 - Optionen wie `--filter`, `--on-conflict` und `--truncate` funktionieren wie
   beim Export/Import.
+- **Soll bei einem Fehler kein halber Stand zurückbleiben?** Fügen Sie `--atomic`
+  hinzu (zusammen mit `--truncate`): schlägt eine Tabelle fehl, gehen **alle**
+  Zieltabellen wieder auf leer.
+- **Wollen Sie die Übertragung beweisen?** Hängen Sie `--verify` an — d-migrate
+  gleicht danach Quelle und Ziel ab und meldet eine Abweichung mit Exit 3.
+- **Die Quelle darf nicht verändert werden?** Das ist der Standard: d-migrate
+  öffnet die Quelle schreibgeschützt (bei SQLite ohne `-wal`/`-shm`-Nebendateien);
+  das Ziel bleibt schreibend. Brauchen Sie ausnahmsweise ein schreibendes Öffnen
+  der Quelle, setzen Sie `--no-read-only`.
 
 ### 3.9 Sehr große Datenmengen übertragen (mit Wiederaufnahme)
 
@@ -764,6 +775,12 @@ Tabellen setzen an der letzten gesicherten Stelle fort.
   `stdin`.
 - Ändern Sie zwischen den Läufen wichtige Optionen, die Tabellenliste oder Pfade,
   bricht d-migrate mit Exit 3 ab, um Inkonsistenzen zu vermeiden.
+- **Schneller statt wiederaufnehmbar:** Braucht ein breites Schema oder eine große
+  partitionierte Tabelle vor allem Tempo (und keine Wiederaufnahme), übertragen/
+  exportieren/importieren Sie mit `--parallel N` — unabhängige Tabellen und die
+  Kind-Partitionen einer Tabelle laufen dann nebenläufig (FK-Reihenfolge bleibt
+  gewahrt). Halten Sie `N` ≤ der Verbindungspool-Größe (Standard 10). `--parallel`
+  schließt `--resume` (und `--atomic`) aus; für SQLite bleibt der Lauf sequenziell.
 
 ### 3.10 Eine Datenbank auf Datenqualität prüfen (Profiling)
 
@@ -872,6 +889,10 @@ tables:
 - `--top-n` steuert die Zahl der häufigsten Werte je Spalte (Standard 10,
   höchstens 1000); `--schema` gilt nur für PostgreSQL. Alle Optionen:
   [Anhang A.12](#a12-data-profile).
+- Profiling **verändert die Quelle nicht**: d-migrate öffnet sie schreibgeschützt
+  (bei SQLite ohne `-wal`/`-shm`-Nebendateien), so lassen sich auch
+  nicht-schreibbare Datenbanken profilieren. Mit `--no-read-only` erzwingen Sie
+  bei Bedarf ein schreibendes Öffnen.
 
 ### 3.11 Migrationsdateien für Flyway, Liquibase, Django oder Knex erzeugen
 
@@ -2146,6 +2167,8 @@ Fortschritt/Warnungen nach stderr.
 | `--since-column` / `--since` | inkrementeller Export |
 | `--split-files` | eine Datei pro Tabelle |
 | `--chunk-size` | Rows pro Chunk (Standard 10000) |
+| `--parallel` | Tabellen/Partitionen nebenläufig (Standard 1); pro-Kind-Datei bei `--split-files`, PostgreSQL |
+| `--read-only` / `--no-read-only` | Quelle schreibgeschützt öffnen (Standard an); SQLite ohne `-wal`/`-shm` |
 | `--encoding` | Output-Encoding (Standard `utf-8`) |
 | `--csv-delimiter` / `--csv-bom` / `--csv-no-header` / `--null-string` | CSV-Optionen |
 | `--resume` / `--checkpoint-dir` | Wiederaufnahme |
@@ -2165,11 +2188,13 @@ Fortschritt/Warnungen nach stderr.
 | `--on-conflict` | `abort` (Standard), `skip`, `update` |
 | `--trigger-mode` | `fire` (Standard), `disable` (nur PostgreSQL), `strict` |
 | `--truncate` | Zieltabelle vorher leeren |
+| `--atomic` | alles-oder-nichts: bei Fehler alle Tabellen auf leer zurück (setzt `--truncate` voraus) |
 | `--disable-fk-checks` | FK-Prüfung aussetzen (nur MySQL/SQLite) |
 | `--reseed-sequences` / `--no-reseed-sequences` | Identity/Sequenz neu setzen (Standard an) |
 | `--encoding` | Eingabe-Encoding (Standard: Auto via BOM) |
 | `--csv-no-header` / `--csv-null-string` | CSV-Optionen |
 | `--chunk-size` | Datensätze pro Transaktion (Standard 10000) |
+| `--parallel` | Tabellen nebenläufig, FK-sicher (Standard 1); ⊥ `--resume`/`--atomic` |
 | `--resume` / `--checkpoint-dir` / `--no-checkpoint` | Wiederaufnahme |
 
 #### A.11 `data transfer`
@@ -2183,7 +2208,11 @@ Fortschritt/Warnungen nach stderr.
 | `--on-conflict` | `abort` (Standard), `skip`, `update` |
 | `--trigger-mode` | `fire` (Standard), `disable`, `strict` |
 | `--truncate` | Zieltabellen vorher leeren |
+| `--atomic` | alles-oder-nichts: bei Fehler alle Zieltabellen auf leer zurück (setzt `--truncate` voraus) |
+| `--verify` | nach dem Transfer Quelle↔Ziel per SHA-256 abgleichen (Divergenz → Exit 3) |
 | `--chunk-size` | Rows pro Chunk (Standard 10000) |
+| `--parallel` | Tabellen/Partitionen nebenläufig, FK-sicher (Standard 1); ⊥ `--atomic`, SQLite→1 |
+| `--read-only` / `--no-read-only` | **Quelle** schreibgeschützt öffnen (Standard an); Ziel bleibt schreibend; SQLite-Quelle ohne `-wal`/`-shm` |
 
 #### A.12 `data profile`
 
@@ -2195,6 +2224,7 @@ Fortschritt/Warnungen nach stderr.
 | `--top-n` | häufigste Werte je Spalte (Standard 10, Max 1000) |
 | `--format` | `json` (Standard) oder `yaml` |
 | `--output` | Ausgabedatei (Standard: stdout) |
+| `--read-only` / `--no-read-only` | Quelle schreibgeschützt öffnen (Standard an); SQLite ohne `-wal`/`-shm` |
 
 #### A.13 `mcp serve`
 

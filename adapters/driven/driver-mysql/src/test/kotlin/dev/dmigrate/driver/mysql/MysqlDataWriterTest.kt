@@ -19,6 +19,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 import java.sql.Connection
 import java.sql.DatabaseMetaData
 import java.sql.PreparedStatement
@@ -189,6 +190,28 @@ class MysqlDataWriterTest : FunSpec({
 
         verify { mocks.jdbc.execute(match { it.contains("DELETE FROM") && it.contains("users") }) }
         session.close()
+    }
+
+    // ── truncateTables (LN-013 --atomic compensation) ──
+
+    test("truncateTables DELETEs all tables with FK checks toggled off/on (LN-013)") {
+        val mocks = buildMocks()
+        every { mocks.jdbc.execute(any(), *anyVararg()) } returns 0
+
+        mocks.writer.truncateTables(mocks.pool, listOf("a", "b"))
+
+        verifyOrder {
+            mocks.jdbc.execute("SET FOREIGN_KEY_CHECKS = 0")
+            mocks.jdbc.execute(match { it.contains("DELETE FROM") && it.contains("a") })
+            mocks.jdbc.execute(match { it.contains("DELETE FROM") && it.contains("b") })
+            mocks.jdbc.execute("SET FOREIGN_KEY_CHECKS = 1")
+        }
+    }
+
+    test("truncateTables on empty list borrows nothing (LN-013)") {
+        val mocks = buildMocks()
+        mocks.writer.truncateTables(mocks.pool, emptyList())
+        verify(exactly = 0) { mocks.pool.borrow() }
     }
 
     test("openTable with onConflict=UPDATE loads primary keys") {

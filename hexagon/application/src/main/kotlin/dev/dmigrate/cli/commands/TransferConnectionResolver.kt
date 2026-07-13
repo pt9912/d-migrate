@@ -70,7 +70,8 @@ internal class TransferConnectionResolver(
         val srcCfg: ConnectionConfig
         val tgtCfg: ConnectionConfig
         try {
-            srcCfg = urlParser(srcUrl)
+            // Nur die Quelle wird gelesen → read-only oeffnen; das Ziel bleibt read-write.
+            srcCfg = urlParser(srcUrl).copy(readOnly = request.readOnly)
             tgtCfg = urlParser(tgtUrl)
         } catch (e: Exception) {
             printError("URL parse: ${e.message}", srcRef)

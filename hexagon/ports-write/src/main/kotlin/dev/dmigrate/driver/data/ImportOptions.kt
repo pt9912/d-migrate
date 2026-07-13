@@ -35,7 +35,10 @@ data class ImportOptions(
      * Ob die Zieltabelle vor dem Import per `TRUNCATE` (PG) bzw.
      * `DELETE FROM` (MySQL/SQLite) geleert wird. Nicht-atomar (F41 /
      * §6.14): wenn der nachfolgende Import scheitert, bleibt die
-     * Tabelle leer.
+     * Tabelle leer. LN-013: `--atomic` liefert die atomare Alternative —
+     * es setzt `truncate` voraus und rollt bei einem Fehler ALLE
+     * Operations-Tabellen per Kompensation auf leer zurück (siehe
+     * [DataWriter.truncateTables], ADR 0031).
      */
     val truncate: Boolean = false,
 

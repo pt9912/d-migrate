@@ -1,5 +1,6 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.core.concurrency.ParallelWorkExecutor
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataReader
@@ -35,6 +36,7 @@ class StreamingExporter(
     private val reader: DataReader,
     private val tableLister: TableLister,
     private val writerFactory: DataChunkWriterFactory,
+    private val parallelExecutor: ParallelWorkExecutor = ParallelWorkExecutor("export-worker"),
 ) {
 
     /**
@@ -107,6 +109,8 @@ class StreamingExporter(
          * stehen — fuer sie gibt es kein Bundle-Konzept.
          */
         onBundleClosure: (BundleClosureContext) -> Unit = {},
+        /** LN-008 (ADR 0032): parent → child partitions; fans out per child on the parallel path. */
+        partitionChildren: Map<String, List<String>> = emptyMap(),
     ): ExportResult {
         val discoveredTables = tables.ifEmpty { tableLister.listTables(pool) }
         // Skipped tables are not exported but count toward the total table count
@@ -175,23 +179,10 @@ class StreamingExporter(
             }
 
             is ExportOutput.FilePerTable -> {
-                totalBytes += exportFilePerTable(
-                    output = output,
-                    discoveredTables = discoveredTables,
-                    skippedTables = skippedTables,
-                    format = format,
-                    options = options,
-                    pool = pool,
-                    filter = filter,
-                    config = config,
-                    progressReporter = progressReporter,
-                    resumeMarkers = resumeMarkers,
-                    onChunkProcessed = onChunkProcessed,
-                    onTableCompleted = onTableCompleted,
-                    warningSink = warningSink,
-                    onBundleClosure = onBundleClosure,
-                    tableExporter = tableExporter,
-                    tableSummaries = tableSummaries,
+                totalBytes += dispatchFilePerTable(
+                    output, discoveredTables, skippedTables, format, options, pool, filter, config,
+                    progressReporter, resumeMarkers, onChunkProcessed, onTableCompleted, warningSink,
+                    onBundleClosure, partitionChildren, tableExporter, tableSummaries,
                 )
             }
         }
@@ -204,6 +195,42 @@ class StreamingExporter(
             totalBytes = totalBytes,
             durationMs = durationMs,
             operationId = operationId,
+        )
+    }
+
+    /** Routes FilePerTable to the sequential or the parallel path (LN-007/LN-008, ADR 0032). */
+    @Suppress("LongParameterList")
+    private fun dispatchFilePerTable(
+        output: ExportOutput.FilePerTable,
+        discoveredTables: List<String>,
+        skippedTables: Set<String>,
+        format: DataExportFormat,
+        options: ExportOptions,
+        pool: ConnectionPool,
+        filter: DataFilter?,
+        config: PipelineConfig,
+        progressReporter: ProgressReporter,
+        resumeMarkers: Map<String, ResumeMarker>,
+        onChunkProcessed: (TableChunkProgress) -> Unit,
+        onTableCompleted: (TableExportSummary) -> Unit,
+        warningSink: (String) -> Unit,
+        onBundleClosure: (BundleClosureContext) -> Unit,
+        partitionChildren: Map<String, List<String>>,
+        tableExporter: TableExporter,
+        tableSummaries: MutableList<TableExportSummary>,
+    ): Long = if (config.parallelism > 1) {
+        exportFilePerTableParallel(
+            FilePerTableParallelParams(
+                output, discoveredTables, skippedTables, format, options, pool, filter,
+                config, warningSink, onTableCompleted, onBundleClosure, partitionChildren,
+                tableExporter, tableSummaries,
+            )
+        )
+    } else {
+        exportFilePerTable(
+            output, discoveredTables, skippedTables, format, options, pool, filter, config,
+            progressReporter, resumeMarkers, onChunkProcessed, onTableCompleted, warningSink,
+            onBundleClosure, tableExporter, tableSummaries,
         )
     }
 
@@ -261,6 +288,80 @@ class StreamingExporter(
         }
         return totalBytes
     }
+
+    /**
+     * LN-007/LN-008 (ADR 0032): parallel FilePerTable export. Each listed table
+     * (fanned out into one unit per child partition when [partitionChildren] carries
+     * it) writes to its own file through the bounded [parallelExecutor]. Results are
+     * aggregated on this thread **after** the parallel run, so progress/manifest
+     * callbacks never fire from a worker thread. `--parallel` excludes `--resume`,
+     * so mid-table markers/chunk-progress are not in play here.
+     */
+    private fun exportFilePerTableParallel(params: FilePerTableParallelParams): Long {
+        Files.createDirectories(params.output.directory)
+        val active = params.discoveredTables.filter { it !in params.skippedTables }
+        val unitTables: List<String> = active.flatMap { parent ->
+            params.partitionChildren[parent]?.takeIf { it.isNotEmpty() } ?: listOf(parent)
+        }
+        val results = parallelExecutor.run(
+            unitTables.map { table -> { exportOneFile(params, table) } },
+            params.config.parallelism,
+        )
+        val bundleTables = mutableListOf<BundleClosureTable>()
+        var totalBytes = 0L
+        for (result in results) {
+            params.tableSummaries += result.summary
+            params.onTableCompleted(result.summary)
+            totalBytes += result.bytes
+            bundleTables += result.bundleTable
+        }
+        if (bundleTables.isNotEmpty()) {
+            params.onBundleClosure(BundleClosureContext(params.output.directory, params.format, bundleTables))
+        }
+        return totalBytes
+    }
+
+    private fun exportOneFile(params: FilePerTableParallelParams, table: String): ExportUnitResult {
+        val path = params.output.directory.resolve(ExportOutput.fileNameFor(table, params.format))
+        var captured: ExportUnitResult? = null
+        exportToFile(path, params.format, params.options) { counting, writer ->
+            val exported = params.tableExporter.export(
+                TableExportParams(
+                    params.pool, table, params.filter, params.config, writer, counting,
+                    NoOpProgressReporter, 1, 1, null, {}, params.warningSink,
+                )
+            )
+            captured = ExportUnitResult(
+                exported.summary,
+                counting.count,
+                BundleClosureTable(exported.summary.table, path, exported.schema, exported.summary.rows),
+            )
+        }
+        return captured!!
+    }
+
+    private data class FilePerTableParallelParams(
+        val output: ExportOutput.FilePerTable,
+        val discoveredTables: List<String>,
+        val skippedTables: Set<String>,
+        val format: DataExportFormat,
+        val options: ExportOptions,
+        val pool: ConnectionPool,
+        val filter: DataFilter?,
+        val config: PipelineConfig,
+        val warningSink: (String) -> Unit,
+        val onTableCompleted: (TableExportSummary) -> Unit,
+        val onBundleClosure: (BundleClosureContext) -> Unit,
+        val partitionChildren: Map<String, List<String>>,
+        val tableExporter: TableExporter,
+        val tableSummaries: MutableList<TableExportSummary>,
+    )
+
+    private data class ExportUnitResult(
+        val summary: TableExportSummary,
+        val bytes: Long,
+        val bundleTable: BundleClosureTable,
+    )
 
     private inline fun exportToFile(
         path: Path,

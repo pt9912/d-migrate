@@ -36,9 +36,24 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         help = "After transfer, verify data integrity via SHA-256 source↔target reconciliation " +
             "(exit 3 on divergence)",
     ).flag()
+    val atomic by option(
+        "--atomic",
+        help = "Atomic clean-load: on any error, roll back all target tables to empty. Requires --truncate.",
+    ).flag()
     val chunkSize by option("--chunk-size", help = "Rows per chunk (default: 10000)")
         .int()
         .default(10_000)
+    val parallel by option(
+        "--parallel",
+        help = "Max tables/partitions to transfer concurrently (default: 1 = sequential). " +
+            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+            "incompatible with --atomic.",
+    ).int().default(1)
+    val readOnly by option(
+        "--read-only",
+        help = "Open the SOURCE read-only (default; the target is always read-write). SQLite source: " +
+            "SQLITE_OPEN_READONLY, no -wal/-shm side files. --no-read-only forces a read-write source open.",
+    ).flag("--no-read-only", default = true)
     val sqliteAutoincrementWidth by option(
         "--sqlite-autoincrement-width",
         help = "SQLite reverse: render an AUTOINCREMENT primary key as 32-bit identifier (default) " +
@@ -59,7 +74,10 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 triggerMode = triggerMode,
                 truncate = truncate,
                 verify = verify,
+                atomic = atomic,
                 chunkSize = chunkSize,
+                parallel = parallel,
+                readOnly = readOnly,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),

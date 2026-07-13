@@ -430,4 +430,40 @@ class SqliteDataWriterTest : FunSpec({
             session.finishTable()
         }
     }
+
+    test("truncateTables empties all given tables FK-safely (LN-013 --atomic compensation)") {
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("PRAGMA foreign_keys = ON")
+                stmt.execute("CREATE TABLE atomic_parent (id INTEGER PRIMARY KEY, name TEXT)")
+                stmt.execute(
+                    "CREATE TABLE atomic_child (" +
+                        "id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES atomic_parent(id))"
+                )
+                stmt.execute("INSERT INTO atomic_parent VALUES (1, 'p')")
+                stmt.execute("INSERT INTO atomic_child VALUES (1, 1)")
+            }
+        }
+
+        // Bewusst parent-first: mit FK-Checks würde das die Kind-Referenz verletzen;
+        // truncateTables schaltet FK-Checks ab → beide Tabellen werden geleert.
+        writer.truncateTables(pool, listOf("atomic_parent", "atomic_child"))
+
+        pool.borrow().asJdbc().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("SELECT count(*) FROM atomic_parent").use { rs ->
+                    rs.next()
+                    rs.getInt(1) shouldBe 0
+                }
+                stmt.executeQuery("SELECT count(*) FROM atomic_child").use { rs ->
+                    rs.next()
+                    rs.getInt(1) shouldBe 0
+                }
+            }
+        }
+    }
+
+    test("truncateTables on empty list is a no-op (LN-013)") {
+        writer.truncateTables(pool, emptyList())
+    }
 })

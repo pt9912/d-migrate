@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
@@ -31,6 +32,12 @@ class DataProfileCommand : CliktCommand(name = "profile") {
         .choice("json", "yaml").default("json")
     val output by option("--output", help = "Output file path (default: stdout)")
         .path()
+    val readOnly by option(
+        "--read-only",
+        help = "Open the source read-only (default). For SQLite this uses SQLITE_OPEN_READONLY " +
+            "(no -wal/-shm side files), so non-writable sources are profilable. " +
+            "--no-read-only forces a read-write open.",
+    ).flag("--no-read-only", default = true)
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -42,6 +49,7 @@ class DataProfileCommand : CliktCommand(name = "profile") {
                 topN = topN,
                 format = format,
                 output = output,
+                readOnly = readOnly,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

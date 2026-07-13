@@ -36,6 +36,7 @@ class DataProfileWiringTest : FunSpec({
         topN = topN,
         format = "json",
         output = null,
+        readOnly = true,
         cliContext = CliContext(quiet = true),
         configPath = configPath,
     )
@@ -59,6 +60,8 @@ class DataProfileWiringTest : FunSpec({
 
                 exit shouldBe 0
                 factory.configPaths shouldBe listOf(configPath)
+                factory.readOnlyRequests shouldBe listOf(true) // profile opens the source read-only by default
+
                 factory.sources shouldBe listOf("named-${dialect.name.lowercase()}")
                 factory.dialectUrls shouldBe listOf("${dialect.name.lowercase()}://profile-db")
                 factory.poolRequests shouldBe listOf(dialect)
@@ -108,7 +111,7 @@ class DataProfileWiringTest : FunSpec({
     }
 
     test("default factory resolves direct URLs and selects all profiling adapter sets") {
-        val bundle = DefaultDataProfileWiringFactory.build(configPath = null)
+        val bundle = DefaultDataProfileWiringFactory.build(configPath = null, readOnly = true)
 
         bundle.connectionResolver("sqlite://profile.db") shouldBe "sqlite://profile.db"
         bundle.dialectResolver("postgresql://localhost/profile") shouldBe DatabaseDialect.POSTGRESQL
@@ -124,7 +127,7 @@ class DataProfileWiringTest : FunSpec({
     }
 
     test("default factory report writer writes deterministic file output") {
-        val bundle = DefaultDataProfileWiringFactory.build(configPath = null)
+        val bundle = DefaultDataProfileWiringFactory.build(configPath = null, readOnly = true)
         val output = Files.createTempFile("dmigrate-profile-wiring-", ".json")
         try {
             bundle.reportWriter(
@@ -160,9 +163,11 @@ private class RecordingDataProfileFactory(
     var listTablesCalls = 0
     var listColumnsCalls = 0
     var dataCalls = 0
+    val readOnlyRequests = mutableListOf<Boolean>()
 
-    override fun build(configPath: Path?): DataProfileWiringBundle {
+    override fun build(configPath: Path?, readOnly: Boolean): DataProfileWiringBundle {
         configPaths += configPath
+        readOnlyRequests += readOnly
         return DataProfileWiringBundle(
             connectionResolver = { source ->
                 sources += source

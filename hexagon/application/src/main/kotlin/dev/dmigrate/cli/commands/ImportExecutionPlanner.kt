@@ -24,7 +24,7 @@ internal class ImportExecutionPlanner(
     ): ImportExecutionPlanResult {
         preflightValidator.resolveWriter(connectionConfig) ?: return ImportExecutionPlanResult.Exit(7)
 
-        val options = preflightValidator.buildImportOptions(request, charset, preparedImport)
+        val options = preflightValidator.buildImportOptions(request, charset, preparedImport, connectionConfig.dialect)
         val inputContext = when (
             val result = preflightValidator.resolveInputContext(
                 request,
@@ -70,6 +70,7 @@ internal class ImportExecutionPlanner(
                 checkpointStore = checkpoint.store,
                 resumeContext = resumeContext,
                 callbacks = callbacks,
+                effectiveTables = inputContext.effectiveTables,
             )
         )
     }

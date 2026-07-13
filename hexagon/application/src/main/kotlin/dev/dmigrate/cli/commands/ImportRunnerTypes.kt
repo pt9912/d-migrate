@@ -126,6 +126,12 @@ internal data class ImportExecutionPlan(
     val checkpointStore: CheckpointStore?,
     val resumeContext: ImportResumeContext,
     val callbacks: ImportCallbacks,
+    /**
+     * LN-013: the resolved target tables of this import. Needed so `--atomic`
+     * can compensate (truncate all) even on the fail-fast `--on-error abort`
+     * path, where no [ImportResult] is produced.
+     */
+    val effectiveTables: List<String> = emptyList(),
 )
 
 internal sealed class ImportExecutionPlanResult {

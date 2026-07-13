@@ -86,6 +86,13 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Truncate target table before import (non-atomic)",
     ).flag()
 
+    // LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück.
+    val atomic by option(
+        "--atomic",
+        help = "Atomic clean-load: on any error, roll back all target tables to empty. " +
+            "Requires --truncate; not compatible with --resume.",
+    ).flag()
+
     val disableFkChecks by option(
         "--disable-fk-checks",
         help = "Disable FK checks during import (MySQL/SQLite only)",
@@ -115,6 +122,13 @@ class DataImportCommand : CliktCommand(name = "import") {
         "--chunk-size",
         help = "Rows per chunk (streaming buffer size); default: 10 000",
     ).int().default(10_000)
+
+    val parallel by option(
+        "--parallel",
+        help = "Max tables/partitions to import concurrently (default: 1 = sequential). " +
+            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+            "incompatible with --resume and --atomic.",
+    ).int().default(1)
 
     // LF-010 / LF-013 / LN-012: Resume-Oberflaeche fuer Datei- und
     // Directory-Importe. Stdin bleibt ausgeschlossen, weil kein
@@ -156,12 +170,14 @@ class DataImportCommand : CliktCommand(name = "import") {
                 onConflict = onConflict,
                 triggerMode = triggerMode,
                 truncate = truncate,
+                atomic = atomic,
                 disableFkChecks = disableFkChecks,
                 reseedSequences = reseedSequences,
                 encoding = encoding,
                 csvNoHeader = csvNoHeader,
                 csvNullString = csvNullString,
                 chunkSize = chunkSize,
+                parallel = parallel,
                 resume = resume,
                 checkpointDir = checkpointDir,
                 noCheckpoint = noCheckpoint,

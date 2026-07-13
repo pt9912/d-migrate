@@ -74,6 +74,19 @@ class DataExportCommand : CliktCommand(name = "export") {
         help = "Rows per chunk (streaming buffer size); default: 10 000",
     ).int().default(10_000)
 
+    val parallel by option(
+        "--parallel",
+        help = "Max tables/partitions to export concurrently (default: 1 = sequential). " +
+            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+            "incompatible with --resume. Per-child fan-out applies to --split-files only.",
+    ).int().default(1)
+
+    val readOnly by option(
+        "--read-only",
+        help = "Open the source read-only (default). SQLite: SQLITE_OPEN_READONLY, no -wal/-shm " +
+            "side files. --no-read-only forces a read-write open.",
+    ).flag("--no-read-only", default = true)
+
     val splitFiles by option(
         "--split-files",
         help = "Write one file per table into the --output directory",
@@ -131,6 +144,8 @@ class DataExportCommand : CliktCommand(name = "export") {
                 since = since,
                 encoding = encoding,
                 chunkSize = chunkSize,
+                parallel = parallel,
+                readOnly = readOnly,
                 splitFiles = splitFiles,
                 csvDelimiter = csvDelimiter,
                 csvBom = csvBom,

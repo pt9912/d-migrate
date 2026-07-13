@@ -100,6 +100,44 @@ class StreamingImporterTest : FunSpec({
         }
     }
 
+    test("--parallel routes through the parallel path and imports the table (LN-007/LN-008)") {
+        val readerFactory = FakeReaderFactory(
+            readersByTable = mapOf(
+                "users" to FakeReader(
+                    header = listOf("name", "id"),
+                    chunks = listOf(
+                        chunk(
+                            table = "users",
+                            columns = listOf("name", "id"),
+                            rows = listOf(arrayOf<Any?>("alice", 1L), arrayOf<Any?>("bob", 2L)),
+                        )
+                    )
+                )
+            )
+        )
+        val session = FakeTableImportSession(targetColumns = targetColumns)
+        val importer = StreamingImporter(
+            valueDeserializerFactory = testValueDeserializerFactory(),
+            readerFactory = readerFactory,
+            writerLookup = { FakeWriter(mapOf("users" to session)) },
+        )
+        val file = Files.createTempFile("streaming-import-parallel-", ".json")
+        try {
+            val result = importer.import(
+                pool = pool,
+                input = ImportInput.SingleFile("users", file),
+                format = DataExportFormat.JSON,
+                config = PipelineConfig(parallelism = 4),
+            )
+
+            result.success shouldBe true
+            result.tables.single().rowsInserted shouldBe 2
+            session.writtenChunks.shouldHaveSize(1)
+        } finally {
+            file.deleteIfExists()
+        }
+    }
+
     test("stdin input uses provided stream instead of global system in") {
         val stdin = ByteArrayInputStream("""[{"id":1}]""".toByteArray())
         val readerFactory = FakeReaderFactory(

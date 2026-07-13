@@ -22,6 +22,28 @@ class MysqlDataWriter(
 
     override fun schemaSync() = MysqlSchemaSync(jdbcFactory)
 
+    // LN-013: Clean-Load-Kompensation für --atomic. MySQL kann FKs nicht per
+    // CASCADE truncaten → FK-Checks aus, DELETE je Tabelle, FK-Checks wieder an.
+    override fun truncateTables(pool: ConnectionPool, tables: List<String>) {
+        if (tables.isEmpty()) return
+        pool.borrow().use { handle ->
+            val conn = handle.asJdbc()
+            val jdbc = jdbcFactory(conn)
+            val savedAutoCommit = conn.autoCommit
+            try {
+                conn.autoCommit = true
+                jdbc.execute("SET FOREIGN_KEY_CHECKS = 0")
+                try {
+                    for (t in tables) jdbc.execute("DELETE FROM ${parseMysqlQualifiedTableName(t).quotedPath()}")
+                } finally {
+                    jdbc.execute("SET FOREIGN_KEY_CHECKS = 1")
+                }
+            } finally {
+                conn.autoCommit = savedAutoCommit
+            }
+        }
+    }
+
     override fun openTable(
         pool: ConnectionPool,
         table: String,

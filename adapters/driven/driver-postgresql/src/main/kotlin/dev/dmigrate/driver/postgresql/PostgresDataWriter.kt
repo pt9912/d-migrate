@@ -24,6 +24,25 @@ class PostgresDataWriter(
 
     override fun schemaSync(): SchemaSync = PostgresSchemaSync(jdbcFactory)
 
+    // LN-013: Clean-Load-Kompensation für --atomic. TRUNCATE … CASCADE löst
+    // FK-Abhängigkeiten in einem Statement; RESTART IDENTITY spiegelt den
+    // Start-Truncate aus openTable. Nicht-transaktional + idempotent.
+    override fun truncateTables(pool: ConnectionPool, tables: List<String>) {
+        if (tables.isEmpty()) return
+        pool.borrow().use { handle ->
+            val conn = handle.asJdbc()
+            val jdbc = jdbcFactory(conn)
+            val savedAutoCommit = conn.autoCommit
+            try {
+                conn.autoCommit = true
+                val quoted = tables.joinToString(", ") { parseQualifiedTableName(it).quotedPath() }
+                jdbc.execute("TRUNCATE TABLE $quoted RESTART IDENTITY CASCADE")
+            } finally {
+                conn.autoCommit = savedAutoCommit
+            }
+        }
+    }
+
     override fun openTable(
         pool: ConnectionPool,
         table: String,

@@ -24,7 +24,10 @@ class DataTransferWiringTest : FunSpec({
         triggerMode = "fire",
         truncate = false,
         verify = false,
+        atomic = false,
         chunkSize = 10_000,
+        parallel = 1,
+        readOnly = true,
         cliContext = CliContext(),
         configPath = null,
     )
