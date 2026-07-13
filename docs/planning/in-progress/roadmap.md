@@ -635,7 +635,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 | Bereich   | Aufgabe                                              | LF-Ref | Status |
 | --------- | ---------------------------------------------------- | ------ | ------ |
-| Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | 🚧¹ |
+| Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | ✅¹ |
 | Streaming | Parallele Tabellenverarbeitung (`--parallel`, bounded ThreadPool) | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) | ✅⁸ |
 | Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ✅⁸ |
 | Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
@@ -646,11 +646,15 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
 | QA        | Performance-Regression-Tests                         | [`LN-044`](../../../spec/lastenheft-d-migrate.md#ln-044) | ✅⁵ |
 
-¹ Chunk-weise Pull-Streaming (`TableExporter`, `chunkSize=10_000`) + Resume/Checkpoint
-sind ausgeliefert (Basis seit 0.3.0); das „>10 TB ohne OOM"-Akzeptanzkriterium ist
-aber **nicht validiert** — der einzige Heap-Cap-/HeapDump-Test prüft die
-Schema-DDL-Render-Pipeline ([`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004)),
-nicht den Datenpfad.
+¹ Erledigt (2026-07-13): chunk-weises Pull-Streaming (`TableExporter`, `chunkSize=10_000`) +
+Resume/Checkpoint sind ausgeliefert (Basis seit 0.3.0); das „>10 TB ohne OOM"-Akzeptanzkriterium
+ist jetzt **validiert** durch einen heap-gedeckelten Datenpfad-Akzeptanztest (`test/perf-data-path`,
+opt-in `make docker-perf`): ein synthetischer lazy `DataReader` treibt ~1 GiB durch den echten
+Chunk-Loop + realen `CsvChunkWriter` unter `-Xmx 256m` (Volumen ~4× Heap) — eine „hält-alles"-
+Regression OOMt, der bounded Pfad läuft durch. Zusätzlich gehärtet: konfigurierbarer `fetchSize`
+([ADR 0033](../../adr/0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md)), explizite
+Parquet-Row-Group-Größe (R2) und ein Deckel auf die Import-`chunkFailures`-Detailliste (R4). Slice:
+[`ln005-streaming-oom-hardening.md`](ln005-streaming-oom-hardening.md).
 ² Erledigt (2026-07-12, [ADR 0030](../../adr/0030-datenwert-kanonisierung-verify.md),
 ImpPlan [`ImpPlan-1.0.0-RC-ln009-sha256-verify.md`](../done/ImpPlan-1.0.0-RC-ln009-sha256-verify.md)):
 nutzerseitiges `data transfer --verify` mit dialekt-neutraler, reihenfolge-

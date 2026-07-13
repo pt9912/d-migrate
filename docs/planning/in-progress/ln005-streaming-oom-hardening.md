@@ -1,6 +1,9 @@
 # LN-005: Streaming-Datenpfad — OOM-Härtung & Akzeptanz-Validierung
 
-**Status**: Entwurf (2026-07-13) — Scope user-abgestimmt, noch kein Implementierungs-Commit.
+**Status**: ERLEDIGT (2026-07-13) — R1 (`cdef4aba`), R2+R4 (`073afe08`), Heap-Cap-Akzeptanztest +
+roadmap-✅. Alle Akzeptanzkriterien erfüllt (Heap-Test grün unter `-Xmx 256m`, kein OOM). Offen nur
+Hygiene: Graduierung nach `done/` (Follow-up, wegen der `consulted:`-Referenz in
+[ADR 0033](../../adr/0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md) + roadmap-Link).
 **Ziel**: Das Lastenheft-Akzeptanzkriterium [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005)
 („sehr große Datenmengen >10 TB ohne OutOfMemory verarbeiten") **beweisbar** machen und die
 verbleibenden Scale-Tuning-Kanten schließen — ohne den (bereits streaming-sicheren) Datenpfad

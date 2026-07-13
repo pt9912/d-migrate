@@ -55,3 +55,4 @@ include("test:integration-concurrency")
 // Large-schema scale tests for the SchemaMigrateRenderPipeline.
 // See docs/planning/done-archive/quality-coverage-expansion-plan.md §5.4.
 include("test:perf-large-schema")
+include("test:perf-data-path")
