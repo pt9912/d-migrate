@@ -2,8 +2,8 @@
 
 **Status**: Trigger (2026-07-13) — Nebenbefund aus dem Streaming-OOM-Slice
 ([`../done/ln005-streaming-oom-hardening.md`](../done/ln005-streaming-oom-hardening.md),
-[`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005)). Design-Fragen entschieden
-(Review 2026-07-13) — baubereit, sobald aufgenommen.
+[`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005)). **In Umsetzung (2026-07-13)** — Design-Fragen
+entschieden + review-gehärtet (Ansatz A code-verifiziert, herkunftsbewusste Meldungen ergänzt).
 
 **Befund**: `pipeline.parallelism: auto` ist in der Connection-Spec dokumentiert
 ([`connection-config-spec.md`](../../../spec/connection-config-spec.md), Abschnitt „Pipeline-Einstellungen"),
@@ -28,19 +28,37 @@ kein `auto`); dazu kommen die SQLite-Klemmung auf 1 und ein anderer Pfad (`Paral
 
 ## Entscheidungen (Review 2026-07-13)
 
-- **`auto`-Auflösung**: `auto` = `min(Runtime.availableProcessors(), PoolSettings.maximumPoolSize)`,
-  danach wie jede Zahl durch den `ParallelismClamp` (SQLite → 1). Die Pool-Deckelung ist **neue**
-  Logik — der bestehende Clamp kennt nur die SQLite-Klemme und den Floor auf 1; das
-  „keep <= pool size" im `--parallel`-Hilfetext ist unerzwungene Empfehlung. Die effektive
-  Pool-Größe referenzieren (`PoolSettings.maximumPoolSize`), nicht `10` hartkodieren. Begründung:
-  ohne Deckel hieße `auto` auf einer 32-Kern-Maschine 32 Worker gegen einen Pool von 10 —
+- **`auto`-Auflösung (am Resolver-Level, „Ansatz A")**: `auto` = `min(Runtime.availableProcessors(),
+  PoolSettings.maximumPoolSize)`, danach wie jede Zahl durch den `ParallelismClamp` (SQLite → 1). Die
+  Pool-Deckelung ist **neue** Logik — der bestehende Clamp kennt nur die SQLite-Klemme und den Floor
+  auf 1; das „keep <= pool size" im `--parallel`-Hilfetext ist unerzwungene Empfehlung. Die effektive
+  Pool-Größe wird über `PoolSettings.maximumPoolSize` referenziert, **nicht** `10` hartkodiert.
+  Begründung: ohne Deckel hieße `auto` auf einer 32-Kern-Maschine 32 Worker gegen einen Pool von 10 —
   überzählige Worker blockieren in `getConnection` und laufen bei langen Streaming-Reads in den
   10-s-`connectionTimeoutMs`-Default → echte Chunk-Fehler.
+  - **Code-verifiziert (2026-07-13):** Der Datenpfad baut Pools **ausschließlich** über
+    `HikariConnectionPoolFactory.create(config)` mit `ConnectionConfig.pool = PoolSettings()` (Default) —
+    **kein** Data-Command übersteuert `pool` (`ConnectionConfig.kt:24` ist die einzige Main-Source-
+    Konstruktion; nur der MCP-Serve-Pfad setzt eine eigene Größe, hier irrelevant). `PoolSettings()
+    .maximumPoolSize` am Resolver ist damit die **tatsächliche** Pool-Größe aller Nicht-SQLite-Läufe
+    (SQLite → Pool 1 fängt der nachgelagerte `ParallelismClamp` ab).
+  - **Code-Notiz (Zukunft, nicht „Runner-Level"):** Bei künftiger `pool:`-Verdrahtung
+    (s. Nebenbefund) kommt `pool.max_size` aus **derselben** `.d-migrate.yaml` — der Parallelism-
+    Resolver liest sie ohnehin und löst `auto` dann am Resolver-Level gegen den verdrahteten Wert auf
+    (kein Sentinel, kein Architekturwechsel). Runner-Level-Auflösung („Ansatz B") wird erst nötig, wenn
+    Pool-Größen **pro Verbindung divergieren** können (z. B. Transfer Source≠Target → Deckel
+    `min(source, target)`) — ein Konzept, das heute nirgends existiert, nicht mal als Spec-Idee.
 - **Parallel-inkompatible Flags (`--resume`, `--atomic`)**: kommt `parallelism > 1`/`auto` aus der
   **Config**, fällt der Lauf mit stderr-Hinweis auf 1 zurück (analog SQLite-Klemme); harter Fehler
   nur bei CLI-explizitem `--parallel > 1`. Gilt für **alle** Kombinationen: Export `--resume`,
   Import `--resume` **und** `--atomic`, Transfer `--atomic` (Transfer hat kein `--resume`).
   Grundsatz: die Config darf keine überraschenden Hard-Fails verursachen.
+- **Herkunftsbewusste Meldungstexte**: Die Herkunft steuert **auch die Wortwahl**, nicht nur
+  Fail-vs-Fallback. Heute meldet `ParallelismClamp.kt:26` wörtlich „`--parallel $requested ignored`" —
+  löst der Resolver Config-`auto` zu z. B. 8 auf und SQLite klemmt, behauptet die Meldung
+  „`--parallel 8 ignored`", obwohl der Nutzer nie `--parallel` gesetzt hat. Bei Config-Herkunft muss
+  der Text stattdessen den Config-Key nennen (z. B. „`pipeline.parallelism: auto (= 8)` ignoriert:
+  SQLite …"). Gilt für die SQLite-Klemme **und** die `--resume`/`--atomic`-Fallback-Hinweise.
 - **CLI-Symmetrie**: `auto` bleibt config-only; `--parallel` bleibt Integer. Per Lauf gibt man eine
   explizite Zahl; Config-Übersteuerung zurück auf sequenziell via `--parallel 1`.
 - **Spec-Beispielwert**: Voll-Schema-Beispiel von `parallelism: auto` auf `parallelism: 1` — der
@@ -59,9 +77,12 @@ kein `auto`); dazu kommen die SQLite-Klemmung auf 1 und ein anderer Pfad (`Paral
   festem Flag-Default ist „CLI-explizit" nicht von „Default" unterscheidbar; der Default `1` wandert
   in den Merge, analog `--chunk-size`. Betroffen sind auch die `request.parallel`-Validierungen in
   den Runnern.
-- Herkunft (CLI-explizit vs. Config) bis zu den drei Inkompatibilitäts-Prüfstellen transportieren
-  (`DataExportRunner`, `DataImportHelpers`, `DataTransferRunner`), damit die Fallback-Entscheidung
-  dort umsetzbar ist.
+- Herkunft (CLI-explizit vs. Config) + eine origin-bewusste Label-Zeichenkette bis zu den vier
+  Inkompatibilitäts-Prüfstellen (`DataExportRunner:171` resume, `DataImportHelpers:271/277`
+  resume+atomic, `DataTransferRunner:312` atomic) **und** den drei `ParallelismClamp.effective`-Aufrufern
+  (`DataExportRunner:278`, `ImportPreflightValidator:70`, `DataTransferRunner:137`) transportieren —
+  für die Fallback-Entscheidung *und* die herkunftsbewussten Meldungstexte (`ParallelismClamp` bekommt
+  den Label statt „`--parallel N`" hartzukodieren).
 - Spec-Notiz in `connection-config-spec.md` (Präzedenz + Beispielwert), CHANGELOG
   (Fixed: stiller No-op).
 
