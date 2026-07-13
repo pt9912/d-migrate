@@ -1,10 +1,6 @@
 package dev.dmigrate.cli.config
 
-import org.snakeyaml.engine.v2.api.Load
-import org.snakeyaml.engine.v2.api.LoadSettings
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
 /**
  * LN-005: geparste `pipeline.chunk_size` / `pipeline.fetch_size`-Werte aus der
@@ -29,7 +25,8 @@ data class EffectivePipelineTuning(
 /**
  * LN-005: mergt die nullbaren CLI-Flags `--chunk-size`/`--fetch-size` mit den
  * `pipeline.chunk_size`/`pipeline.fetch_size`-Config-Werten und den Defaults.
- * Präzedenz: **CLI-explizit > Config > eingebauter Default**.
+ * Präzedenz: **CLI-explizit > Config > eingebauter Default**. Für `data export`/
+ * `transfer` (beide Keys relevant).
  *
  * Wirft [ConfigResolveException] bei Config-Fehlern (→ Command mappt auf Exit 7)
  * und [IllegalArgumentException] bei ungültigen effektiven Werten (→ Exit 2).
@@ -51,87 +48,52 @@ fun resolveEffectivePipelineTuning(
 }
 
 /**
- * LN-005: parst den `pipeline.chunk_size`- und `pipeline.fetch_size`-Wert aus der
- * effektiven `.d-migrate.yaml`. Analog zu [PipelineCheckpointResolver]
- * (`pipeline.checkpoint.*`) — beide Keys lagen zuvor spec-dokumentiert, aber
- * unverdrahtet vor; dieser Resolver hängt sie ans Runtime.
- *
- * Präzedenz im Command: **CLI-explizit > Config > eingebauter Default**
- * (`--chunk-size`/`--fetch-size` sind nullbar; der Default wandert in den Merge).
- *
- * Pfad-Auflösung folgt den gleichen Prioritäten wie andere Config-Abschnitte:
- * `--config` > `D_MIGRATE_CONFIG` > Default.
- *
- * Mappings:
- * - `pipeline.chunk_size` -> [PipelineTuning.chunkSize] (Rows pro Streaming-Chunk)
- * - `pipeline.fetch_size` -> [PipelineTuning.fetchSize] (JDBC-Cursor-Prefetch)
- *
- * Beide müssen, falls gesetzt, positive Ganzzahlen sein — sonst
- * [ConfigResolveException].
+ * LN-005 (#1a): mergt nur `--chunk-size` mit `pipeline.chunk_size` (CLI > Config >
+ * Default) für `data import`. Liest/validiert **bewusst nicht** `pipeline.fetch_size`
+ * — der Import nutzt keinen JDBC-`DataReader`, also darf ein (für ihn irrelevanter)
+ * `fetch_size`-Config-Fehler den Import nicht scheitern lassen.
+ */
+fun resolveEffectiveChunkSize(
+    configPath: Path?,
+    cliChunkSize: Int?,
+    defaultChunkSize: Int = 10_000,
+): Int {
+    val config = PipelineTuningResolver(configPathFromCli = configPath).resolveChunkSizeOnly()
+    val chunkSize = cliChunkSize ?: config.chunkSize ?: defaultChunkSize
+    require(chunkSize > 0) { "--chunk-size must be > 0, got $chunkSize" }
+    return chunkSize
+}
+
+/**
+ * LN-005: parst `pipeline.chunk_size`/`pipeline.fetch_size` aus der effektiven
+ * `.d-migrate.yaml` (gemeinsamer [loadEffectiveConfig]-Loader). Beide Keys lagen
+ * zuvor spec-dokumentiert, aber unverdrahtet vor; dieser Resolver hängt sie ans
+ * Runtime. Werte müssen, falls gesetzt, positive Ganzzahlen sein — sonst
+ * [ConfigResolveException] (statt stiller Ignoranz/Coercion).
  */
 class PipelineTuningResolver(
     private val configPathFromCli: Path? = null,
     private val envLookup: (String) -> String? = System::getenv,
-    private val defaultConfigPath: Path = Paths.get(".d-migrate.yaml"),
+    private val defaultConfigPath: Path = java.nio.file.Paths.get(".d-migrate.yaml"),
 ) {
 
-    fun resolve(): PipelineTuning {
-        val effective = EffectiveConfigPathResolver(
-            configPathFromCli = configPathFromCli,
-            envLookup = envLookup,
-            defaultConfigPath = defaultConfigPath,
-        ).resolve()
+    /** Liest `chunk_size` **und** `fetch_size` (export/transfer). */
+    fun resolve(): PipelineTuning = resolveInternal(readFetchSize = true)
 
-        if (!Files.isRegularFile(effective.path)) {
-            return when (effective.source) {
-                EffectiveConfigSource.DEFAULT -> PipelineTuning()
-                EffectiveConfigSource.CLI ->
-                    throw ConfigResolveException("Config file not found: ${effective.path}")
-                EffectiveConfigSource.ENV ->
-                    throw ConfigResolveException(
-                        "D_MIGRATE_CONFIG points to non-existent file: ${effective.path}"
-                    )
-            }
-        }
+    /** Liest nur `chunk_size` (import); `fetch_size` bleibt unberührt/`null`. */
+    fun resolveChunkSizeOnly(): PipelineTuning = resolveInternal(readFetchSize = false)
 
-        val parsed: Any? = try {
-            val settings = LoadSettings.builder().build()
-            Files.newInputStream(effective.path).use { input ->
-                Load(settings).loadFromInputStream(input)
-            }
-        } catch (t: Throwable) {
-            throw ConfigResolveException(
-                "Failed to parse ${effective.path}: ${t.message ?: t::class.simpleName}",
-                cause = t,
-            )
-        }
-
-        val root = parsed as? Map<*, *> ?: return PipelineTuning()
-        val pipeline = root["pipeline"] as? Map<*, *> ?: return PipelineTuning()
-
+    private fun resolveInternal(readFetchSize: Boolean): PipelineTuning {
+        val (root, path) = loadEffectiveConfig(configPathFromCli, envLookup, defaultConfigPath)
+        val pipeline = root?.get("pipeline") as? Map<*, *> ?: return PipelineTuning()
         return PipelineTuning(
-            chunkSize = readPositiveInt(pipeline, "chunk_size", effective.path),
-            fetchSize = readPositiveInt(pipeline, "fetch_size", effective.path),
+            chunkSize = readPipelineInt(pipeline, "chunk_size", path),
+            fetchSize = if (readFetchSize) readPipelineInt(pipeline, "fetch_size", path) else null,
         )
     }
 
-    /**
-     * Liest einen positiven Int-Wert. Fehlt der Key → `null`. Ist er gesetzt,
-     * aber keine positive Ganzzahl → [ConfigResolveException] (lauter Fehler statt
-     * stiller Ignoranz — der frühere `pipeline.chunk_size`-No-op war genau das Problem).
-     */
-    private fun readPositiveInt(pipeline: Map<*, *>, key: String, source: Path): Int? {
+    private fun readPipelineInt(pipeline: Map<*, *>, key: String, source: Path): Int? {
         if (!pipeline.containsKey(key)) return null
-        val value = pipeline[key] as? Number
-            ?: throw ConfigResolveException(
-                "pipeline.$key in $source must be a positive integer, got: ${pipeline[key]}"
-            )
-        val intValue = value.toInt()
-        if (intValue <= 0) {
-            throw ConfigResolveException(
-                "pipeline.$key in $source must be > 0, got $intValue"
-            )
-        }
-        return intValue
+        return requirePositiveIntConfig(pipeline[key], "pipeline.$key", source)
     }
 }

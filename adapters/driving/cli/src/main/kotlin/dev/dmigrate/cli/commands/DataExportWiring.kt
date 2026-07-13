@@ -94,13 +94,18 @@ internal object DataExportWiring {
             return 2
         }
         // LN-005 (R2): Parquet-Row-Group-Größe aus export.parquet.row_group_bytes (Config)
-        // > eingebauter Default (32 MiB). Nur für Parquet-Exports relevant.
-        val parquetRowGroupBytes = try {
-            ParquetExportConfigResolver(configPathFromCli = options.configPath).resolveRowGroupBytes()
-                ?: ParquetChunkWriter.DEFAULT_ROW_GROUP_BYTES
-        } catch (e: ConfigResolveException) {
-            System.err.println("Error: ${e.message}")
-            return 7
+        // > eingebauter Default (32 MiB) — NUR wenn tatsächlich nach Parquet exportiert wird
+        // (#1b: ein JSON/CSV/YAML-Export soll nicht an einem Parquet-Config-Fehler scheitern).
+        val parquetRowGroupBytes = if (options.format.equals("parquet", ignoreCase = true)) {
+            try {
+                ParquetExportConfigResolver(configPathFromCli = options.configPath).resolveRowGroupBytes()
+                    ?: ParquetChunkWriter.DEFAULT_ROW_GROUP_BYTES
+            } catch (e: ConfigResolveException) {
+                System.err.println("Error: ${e.message}")
+                return 7
+            }
+        } else {
+            ParquetChunkWriter.DEFAULT_ROW_GROUP_BYTES
         }
         val request = buildExportRequest(options, parsedFilter)
         // Thread-safe: on the parallel FilePerTable path N worker threads share this one

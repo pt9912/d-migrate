@@ -14,7 +14,7 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.resolveEffectivePipelineTuning
+import dev.dmigrate.cli.config.resolveEffectiveChunkSize
 
 /**
  * `d-migrate data import` — streamt Daten aus Dateien (json/yaml/csv) oder
@@ -161,9 +161,10 @@ class DataImportCommand : CliktCommand(name = "import") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         // LN-005: --chunk-size (nullbar) mit pipeline.chunk_size mergen (CLI > Config > Default).
-        // fetchSize ist für den Import irrelevant (liest aus Format-Dateien, nicht per JDBC-DataReader).
-        val tuning = try {
-            resolveEffectivePipelineTuning(root?.config, chunkSize, cliFetchSize = null)
+        // Bewusst NUR chunk_size: der Import liest aus Format-Dateien (kein JDBC-DataReader), also
+        // darf ein für ihn irrelevanter pipeline.fetch_size-Config-Fehler den Import nicht scheitern lassen.
+        val effectiveChunkSize = try {
+            resolveEffectiveChunkSize(root?.config, chunkSize)
         } catch (e: ConfigResolveException) {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(7)
@@ -190,7 +191,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 encoding = encoding,
                 csvNoHeader = csvNoHeader,
                 csvNullString = csvNullString,
-                chunkSize = tuning.chunkSize,
+                chunkSize = effectiveChunkSize,
                 parallel = parallel,
                 resume = resume,
                 checkpointDir = checkpointDir,

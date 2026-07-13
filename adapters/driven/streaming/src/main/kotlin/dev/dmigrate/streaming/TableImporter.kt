@@ -239,7 +239,6 @@ internal open class TableImporter(
             rowsUnknown = state.rowsUnknown,
             rowsFailed = state.rowsFailed,
             chunkFailures = state.chunkFailures.toList(),
-            chunkFailuresSuppressed = state.chunkFailuresSuppressed,
             sequenceAdjustments = state.sequenceAdjustments,
             targetColumns = state.targetColumns,
             triggerMode = params.options.triggerMode,

@@ -53,4 +53,10 @@ class ParquetExportConfigResolverTest : FunSpec({
         ex.message shouldContain "row_group_bytes"
         ex.message shouldContain "positive integer"
     }
+
+    test("fractional row_group_bytes is rejected, not silently coerced (#4)") {
+        val file = tempConfig("export:\n  parquet:\n    row_group_bytes: 1048576.5\n")
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolveRowGroupBytes() }
+        ex.message shouldContain "positive integer"
+    }
 })

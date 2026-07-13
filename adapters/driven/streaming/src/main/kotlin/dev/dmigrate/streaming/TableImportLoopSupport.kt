@@ -20,8 +20,6 @@ internal class ImportLoopState {
     var rowsUnknown = 0L
     var rowsFailed = 0L
     val chunkFailures = mutableListOf<ChunkFailure>()
-    /** LN-005 (R4): Anzahl der über [MAX_LOGGED_CHUNK_FAILURES] hinaus unterdrückten Detaileinträge. */
-    var chunkFailuresSuppressed = 0L
     var sequenceAdjustments: List<SequenceAdjustment> = emptyList()
     var partialFinish: FinishTableResult.PartialFailure? = null
     var error: String? = null
@@ -32,17 +30,15 @@ internal class ImportLoopState {
 
     /**
      * LN-005 (R4): fügt einen Chunk-Fehler-Detaileintrag hinzu (nur `--on-error log`),
-     * aber **gedeckelt** auf [MAX_LOGGED_CHUNK_FAILURES]. Darüber hinausgehende Fehler
-     * werden nur gezählt ([chunkFailuresSuppressed]) statt die Liste unbounded wachsen zu
-     * lassen (pathologisches „jeder Chunk schlägt fehl" auf einer sehr großen Tabelle → sonst
-     * ~`totalRows/chunkSize` Einträge). Die **wahre** Fehlerzahl trägt ohnehin [rowsFailed];
-     * die Liste ist ein begrenztes Detail-Sample.
+     * aber **gedeckelt** auf [MAX_LOGGED_CHUNK_FAILURES], statt die Liste unbounded wachsen
+     * zu lassen (pathologisches „jeder Chunk schlägt fehl" auf einer sehr großen Tabelle →
+     * sonst ~`totalRows/chunkSize` Einträge, ein Memory-Leck). Darüber hinausgehende Einträge
+     * werden verworfen: `chunkFailures` ist ein begrenztes Detail-Sample, die **wahre**
+     * Fehlerzahl trägt ohnehin [rowsFailed].
      */
     fun recordChunkFailure(failure: ChunkFailure) {
         if (chunkFailures.size < MAX_LOGGED_CHUNK_FAILURES) {
             chunkFailures += failure
-        } else {
-            chunkFailuresSuppressed++
         }
     }
 

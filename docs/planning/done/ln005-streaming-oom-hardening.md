@@ -9,6 +9,15 @@ gleicher No-op-Befund wie `chunk_size`, aber im Scope des parallelen Datenpfads)
 („sehr große Datenmengen >10 TB ohne OutOfMemory verarbeiten") **beweisbar** machen und die
 verbleibenden Scale-Tuning-Kanten schließen — ohne den (bereits streaming-sicheren) Datenpfad
 umzubauen.
+**Review-Nachzug (2026-07-13)**: Code-Review des Slices → 4 Design-/Cleanup-Befunde, alle gefixt:
+(#1) Config-Validierung auf die Operation eingegrenzt — Import validiert nur `chunk_size`
+(`resolveEffectiveChunkSize`), Parquet-Row-Group-Config nur bei `--format parquet`; (#2) gemeinsamer
+`loadEffectiveConfig`-Loader statt 3× kopierter YAML-Boilerplate; (#3) totes `chunkFailuresSuppressed`-
+Feld entfernt (`chunkFailures` wird nirgends gerendert; Memory-Deckel bleibt); (#4) strenge
+Positive-Ganzzahl-Prüfung (`requirePositive{Int,Long}Config`) statt stiller Float-/Overflow-Coercion.
+Verifiziert grün. (Nebenbefund: 4 weitere Config-Resolver duplizieren dieselbe Boilerplate — pre-existing,
+via `loadEffectiveConfig` künftig entdupelbar.)
+
 **Vorbedingungen**: keine offenen Plan-/ADR-Abhängigkeiten. Baut auf dem ausgelieferten
 chunk-weisen Pull-Streaming (Basis seit 0.3.0) und dem parallelen Datenpfad
 ([`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007)/[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008),

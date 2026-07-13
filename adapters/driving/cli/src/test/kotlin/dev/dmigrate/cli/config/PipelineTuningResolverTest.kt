@@ -103,4 +103,31 @@ class PipelineTuningResolverTest : FunSpec({
         }
         ex.message shouldContain "fetch-size"
     }
+
+    // --- #4: strenge Ganzzahl (kein stilles Coercen von Float/Overflow) ---
+
+    test("fractional chunk_size is rejected, not silently truncated to 1") {
+        val file = tempConfig("pipeline:\n  chunk_size: 1.9\n")
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message shouldContain "chunk_size"
+        ex.message shouldContain "positive integer"
+    }
+
+    test("chunk_size above Int.MAX is rejected, not wrapped via toInt()") {
+        val file = tempConfig("pipeline:\n  chunk_size: 9999999999\n")
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message shouldContain "chunk_size"
+    }
+
+    // --- #1a: resolveEffectiveChunkSize (import) darf pipeline.fetch_size NICHT validieren ---
+
+    test("resolveEffectiveChunkSize ignores an invalid pipeline.fetch_size (import path)") {
+        val file = tempConfig("pipeline:\n  chunk_size: 25000\n  fetch_size: -3\n")
+        // import: fetch_size irrelevant → kein Fehler, chunk_size greift.
+        resolveEffectiveChunkSize(configPath = file, cliChunkSize = null) shouldBe 25000
+        // contrast: der volle Tuning-Pfad (export/transfer) MUSS an fetch_size scheitern.
+        shouldThrow<ConfigResolveException> {
+            resolveEffectivePipelineTuning(configPath = file, cliChunkSize = null, cliFetchSize = null)
+        }
+    }
 })
