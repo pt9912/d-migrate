@@ -29,6 +29,7 @@ class DataExportWiringTest : FunSpec({
         encoding = "utf-8",
         chunkSize = 10_000,
         parallel = 1,
+        readOnly = true,
         splitFiles = false,
         csvDelimiter = ",",
         csvBom = false,

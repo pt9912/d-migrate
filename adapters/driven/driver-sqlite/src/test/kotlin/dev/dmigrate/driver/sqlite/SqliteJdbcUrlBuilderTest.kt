@@ -76,6 +76,27 @@ class SqliteJdbcUrlBuilderTest : FunSpec({
         url shouldNotContain "journal_mode=wal"
     }
 
+    test("buildJdbcUrl read-only uses the file: URI + mode=ro, without WAL") {
+        val url = builder.buildJdbcUrl(cfg().copy(readOnly = true))
+        // SQLITE_OPEN_READONLY via mode=ro; journal_mode=wal deliberately dropped
+        // (WAL needs write) → no -wal/-shm side files on a non-writable source.
+        url shouldBe "jdbc:sqlite:file:/tmp/test.db?mode=ro"
+        url shouldNotContain "journal_mode=wal"
+    }
+
+    test("buildJdbcUrl read-only collapses leading double-slash (file: URI authority guard)") {
+        // `sqlite:///<abspath>` URLs parse to a `//`-prefixed database; `file://tmp/x`
+        // would read `tmp` as an authority → SQLITE_ERROR. Must collapse to `file:/tmp/x`.
+        val url = builder.buildJdbcUrl(cfg(database = "//tmp/test.db").copy(readOnly = true))
+        url shouldBe "jdbc:sqlite:file:/tmp/test.db?mode=ro"
+    }
+
+    test("buildJdbcUrl read-only is ignored for :memory: (always writable/ephemeral)") {
+        val url = builder.buildJdbcUrl(cfg(database = ":memory:").copy(readOnly = true))
+        url shouldNotContain "mode=ro"
+        url shouldContain "file::memory:"
+    }
+
     test("buildJdbcUrl rejects mismatched dialect") {
         val mismatched = cfg().copy(dialect = DatabaseDialect.MYSQL)
         shouldThrow<IllegalArgumentException> { builder.buildJdbcUrl(mismatched) }

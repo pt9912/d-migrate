@@ -33,6 +33,8 @@ data class DataTransferRequest(
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
     // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
     val parallel: Int = 1,
+    // Read-only-Quelle (Default an über CLI-Flag; SQLite → SQLITE_OPEN_READONLY). Ziel bleibt read-write.
+    val readOnly: Boolean = false,
     // LN-009: SHA-256 Quelle↔Ziel-Reconciliation nach dem Transfer.
     val verify: Boolean = false,
     // LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück (erfordert truncate).

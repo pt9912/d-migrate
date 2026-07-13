@@ -1223,6 +1223,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--parallel` | Nein | Integer | `1` | Max. Tabellen/Partitionen, die nebenläufig exportiert werden (`1` = sequenziell). Bei `> 1` (nur `--split-files`) wird ein partitionierter Parent als **eine Datei pro Kind-Partition** geschrieben (PostgreSQL — MySQL-Partitionen sind keine adressierbaren Tabellen, daher transparenter Parent). Für SQLite auf `1` geklemmt (Pool-Size 1); inkompatibel mit `--resume` (Exit `2`); `< 1` → Exit `2`; sollte die Verbindungspool-Größe (Default 10) nicht überschreiten. |
+| `--read-only` / `--no-read-only` | Nein | Boolean | an | Öffnet die Quelle read-only (Default). SQLite: `SQLITE_OPEN_READONLY` über `file:<db>?mode=ro`, **ohne** `journal_mode=wal` — auch nicht-schreibbare Quellen exportierbar, ohne `-wal`/`-shm`-Nebendateien. `:memory:` ignoriert das Flag (immer schreibbar/ephemer); andere Dialekte ignorieren es heute (kein Datei-Schreib-Problem). `--no-read-only` erzwingt ein schreibendes Öffnen. |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
 | `--csv-delimiter` | Nein | Char | `,` | CSV-Spalten-Trennzeichen (genau ein Zeichen) |
 | `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. |
@@ -1376,6 +1377,7 @@ kanonisch beschrieben.
 | `--parallel` | Nein | Integer | `1` | Max. Tabellen/Partitionen, die nebenläufig transferiert werden (`1` = sequenziell). Unabhängige Tabellen laufen FK-sicher in Topo-Ebenen; ein beidseitig namensgleich partitionierter Parent wird pro Kind (Quell-Kind → Ziel-Kind) transferiert (PostgreSQL), sonst als transparenter Parent. Für SQLite auf `1` geklemmt; inkompatibel mit `--atomic` (Exit `2`); `< 1` → Exit `2`; sollte die Verbindungspool-Größe (Default 10) nicht überschreiten. |
 | `--verify` | Nein | Boolean | aus | Nach dem Transfer die Datenintegrität per SHA-256-Quelle↔Ziel-Reconciliation prüfen. Dialekt-neutrale, reihenfolge-unabhängige Prüfsumme je Tabelle; setzt einen sauberen Load (leeres/getrunctes Ziel) voraus. Repräsentations-transformierende Cross-Dialekt-Spalten (z. B. `text[]`→`json`, `tsvector`→`text`) werden mit Warnung ausgeschlossen statt fälschlich als Divergenz gemeldet. Divergenz → Exit-Code `3` |
 | `--atomic` | Nein | Boolean | aus | Atomarer Clean-Load: bei einem Fehler werden **alle** Zieltabellen der Operation auf leer zurückgesetzt (Kompensations-Truncate) → „alle Tabellen oder keine". Erfordert explizit `--truncate` (sonst Exit `2`). O(1)-Metadaten-Kompensation, unabhängig vom Datenvolumen. |
+| `--read-only` / `--no-read-only` | Nein | Boolean | an | Öffnet die **Quelle** read-only (Default; das Ziel bleibt immer schreibend). SQLite-Quelle: `SQLITE_OPEN_READONLY` über `file:<db>?mode=ro`, **ohne** `journal_mode=wal`, keine `-wal`/`-shm`-Nebendateien; `:memory:` und andere Dialekte ignorieren das Flag. `--no-read-only` erzwingt ein schreibendes Öffnen der Quelle. |
 
 **Target-autoritatives Preflight**:
 
@@ -1454,6 +1456,7 @@ und Zieltyp-Kompatibilitaet. Ergebnis ist ein JSON- oder YAML-Report.
 ```
 d-migrate data profile --source <url-or-name> [--tables <t1,t2,...>]
   [--schema <schema>] [--top-n <n>] [--format json|yaml] [--output <path>]
+  [--read-only]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
@@ -1464,6 +1467,7 @@ d-migrate data profile --source <url-or-name> [--tables <t1,t2,...>]
 | `--top-n` | Nein | Int | Anzahl Top-Werte pro Spalte (Default: 10, Max: 1000) |
 | `--format` | Nein | String | Ausgabeformat: `json` (Default), `yaml` |
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
+| `--read-only` / `--no-read-only` | Nein | Boolean | Öffnet die Quelle read-only (Default an). SQLite: `SQLITE_OPEN_READONLY` (`file:<db>?mode=ro`, **ohne** `journal_mode=wal`) — auch nicht-schreibbare Quellen profilierbar, ohne `-wal`/`-shm`-Nebendateien. `--no-read-only` erzwingt ein schreibendes Öffnen. |
 
 **Determinismus**: Gleiches Schema + gleiche Daten = identischer Report.
 Stabile Tabellen- und Spaltenreihenfolge, stabile `topValues`-Sortierung,

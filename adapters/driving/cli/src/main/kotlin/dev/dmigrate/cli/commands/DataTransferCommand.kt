@@ -49,6 +49,11 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
             "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
             "incompatible with --atomic.",
     ).int().default(1)
+    val readOnly by option(
+        "--read-only",
+        help = "Open the SOURCE read-only (default; the target is always read-write). SQLite source: " +
+            "SQLITE_OPEN_READONLY, no -wal/-shm side files. --no-read-only forces a read-write source open.",
+    ).flag("--no-read-only", default = true)
     val sqliteAutoincrementWidth by option(
         "--sqlite-autoincrement-width",
         help = "SQLite reverse: render an AUTOINCREMENT primary key as 32-bit identifier (default) " +
@@ -72,6 +77,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 atomic = atomic,
                 chunkSize = chunkSize,
                 parallel = parallel,
+                readOnly = readOnly,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),

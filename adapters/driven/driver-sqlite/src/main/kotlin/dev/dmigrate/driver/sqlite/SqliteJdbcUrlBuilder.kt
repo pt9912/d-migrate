@@ -28,4 +28,26 @@ class SqliteJdbcUrlBuilder : JdbcUrlBuilder {
         return "jdbc:sqlite:${config.database}"
     }
 
+    /**
+     * Read-only-Quellen ([ConnectionConfig.readOnly]) öffnen mit
+     * `SQLITE_OPEN_READONLY` über die URI-Form `file:<db>?mode=ro`. Bewusst
+     * OHNE `journal_mode=wal` (WAL braucht Schreibrecht) → profilierbar auch bei
+     * nicht-schreibbarer Quelle, ohne `-wal`/`-shm`-Nebendateien. `:memory:`
+     * ist immer schreibbar/ephemer und ignoriert das Flag (Default-Pfad).
+     */
+    override fun buildJdbcUrl(config: ConnectionConfig): String {
+        if (config.readOnly && config.database != ":memory:") {
+            require(config.dialect == DatabaseDialect.SQLITE) {
+                "SqliteJdbcUrlBuilder cannot build URL for ${config.dialect}"
+            }
+            // Collapse leading slashes to one: the `file:` URI form reads a `//…`
+            // prefix as an authority (`file://tmp/x` → authority `tmp` → SQLITE_ERROR),
+            // whereas the plain `jdbc:sqlite:` form tolerates it. `sqlite:///<abspath>`
+            // URLs (path already starts with `/`) parse to a `//`-prefixed database.
+            val path = config.database.replaceFirst(Regex("^/+"), "/")
+            return "jdbc:sqlite:file:$path?mode=ro"
+        }
+        return super<JdbcUrlBuilder>.buildJdbcUrl(config)
+    }
+
 }

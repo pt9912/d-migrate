@@ -24,6 +24,14 @@ data class ConnectionConfig(
     val pool: PoolSettings = PoolSettings(),
     /** First-Class SSL/TLS-Einstellungen (LN-026); Modus + CA-Pfad, nicht sensibel. */
     val ssl: SslSettings = SslSettings(),
+    /**
+     * Read-only-Absicht für reine Lese-Verbindungen (Quelle von `data profile`/
+     * `export`/`transfer`). SQLite öffnet dann mit `SQLITE_OPEN_READONLY`
+     * (`file:…?mode=ro`, ohne `journal_mode=wal`) — profilierbar auch bei
+     * nicht-schreibbarer Quelle, ohne `-wal`/`-shm`-Nebendateien. Andere
+     * Dialekte ignorieren das Flag heute (kein Datei-Schreib-Problem).
+     */
+    val readOnly: Boolean = false,
 ) {
     override fun toString(): String = buildString {
         append("ConnectionConfig(dialect=").append(dialect)
@@ -36,6 +44,7 @@ data class ConnectionConfig(
         append(", params=").append(params)
         append(", pool=").append(pool)
         append(", ssl=").append(ssl)
+        append(", readOnly=").append(readOnly)
         append(')')
     }
 }

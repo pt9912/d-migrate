@@ -30,6 +30,8 @@ internal data class DataProfileOptions(
     val topN: Int,
     val format: String,
     val output: Path?,
+    /** Read-only-Öffnung der Quelle (Default an; `--no-read-only` erzwingt read-write). */
+    val readOnly: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
 )
@@ -45,12 +47,12 @@ internal data class DataProfileWiringBundle(
 )
 
 internal fun interface DataProfileWiringFactory {
-    fun build(configPath: Path?): DataProfileWiringBundle
+    fun build(configPath: Path?, readOnly: Boolean): DataProfileWiringBundle
 }
 
 internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
 
-    override fun build(configPath: Path?): DataProfileWiringBundle {
+    override fun build(configPath: Path?, readOnly: Boolean): DataProfileWiringBundle {
         val writer = ProfileReportWriter()
         val resolver = NamedConnectionResolver(configPathFromCli = configPath)
         return DataProfileWiringBundle(
@@ -63,7 +65,9 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
             },
             dialectResolver = { url -> ConnectionUrlParser.parse(url).dialect },
             poolFactory = { url, _ ->
-                val config = ConnectionUrlParser.parse(url)
+                // data profile ist eine reine Lese-Operation → Quelle read-only oeffnen
+                // (SQLite: SQLITE_OPEN_READONLY, kein -wal/-shm); --no-read-only schaltet ab.
+                val config = ConnectionUrlParser.parse(url).copy(readOnly = readOnly)
                 HikariConnectionPoolFactory.create(config)
             },
             adapterLookup = ::profilingAdaptersFor,
@@ -104,7 +108,7 @@ internal object DataProfileWiring {
         options: DataProfileOptions,
         factory: DataProfileWiringFactory,
     ): Int {
-        val bundle = factory.build(options.configPath)
+        val bundle = factory.build(options.configPath, options.readOnly)
         val request = DataProfileRequest(
             source = options.source,
             tables = options.tables,

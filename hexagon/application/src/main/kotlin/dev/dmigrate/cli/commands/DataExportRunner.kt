@@ -46,6 +46,8 @@ data class DataExportRequest(
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,
+    /** Read-only-Quelle (Default an über CLI-Flag; SQLite → SQLITE_OPEN_READONLY). */
+    val readOnly: Boolean = false,
     /** Explicit resume entry point. Value is a checkpoint ID or path to a manifest. */
     val resume: String? = null,
     /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
@@ -197,7 +199,8 @@ class DataExportRunner(
         }
 
         return try {
-            urlParser(resolvedUrl)
+            // data export liest nur die Quelle (Ziel = Datei) → read-only oeffnen.
+            urlParser(resolvedUrl).copy(readOnly = request.readOnly)
         } catch (e: IllegalArgumentException) {
             userFacingStderr("Error: ${e.message}")
             null

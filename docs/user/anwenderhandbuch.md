@@ -736,6 +736,10 @@ richtige Reihenfolge anhand der Fremdschlüssel im Ziel.
   Zieltabellen wieder auf leer.
 - **Wollen Sie die Übertragung beweisen?** Hängen Sie `--verify` an — d-migrate
   gleicht danach Quelle und Ziel ab und meldet eine Abweichung mit Exit 3.
+- **Die Quelle darf nicht verändert werden?** Das ist der Standard: d-migrate
+  öffnet die Quelle schreibgeschützt (bei SQLite ohne `-wal`/`-shm`-Nebendateien);
+  das Ziel bleibt schreibend. Brauchen Sie ausnahmsweise ein schreibendes Öffnen
+  der Quelle, setzen Sie `--no-read-only`.
 
 ### 3.9 Sehr große Datenmengen übertragen (mit Wiederaufnahme)
 
@@ -885,6 +889,10 @@ tables:
 - `--top-n` steuert die Zahl der häufigsten Werte je Spalte (Standard 10,
   höchstens 1000); `--schema` gilt nur für PostgreSQL. Alle Optionen:
   [Anhang A.12](#a12-data-profile).
+- Profiling **verändert die Quelle nicht**: d-migrate öffnet sie schreibgeschützt
+  (bei SQLite ohne `-wal`/`-shm`-Nebendateien), so lassen sich auch
+  nicht-schreibbare Datenbanken profilieren. Mit `--no-read-only` erzwingen Sie
+  bei Bedarf ein schreibendes Öffnen.
 
 ### 3.11 Migrationsdateien für Flyway, Liquibase, Django oder Knex erzeugen
 
@@ -2160,6 +2168,7 @@ Fortschritt/Warnungen nach stderr.
 | `--split-files` | eine Datei pro Tabelle |
 | `--chunk-size` | Rows pro Chunk (Standard 10000) |
 | `--parallel` | Tabellen/Partitionen nebenläufig (Standard 1); pro-Kind-Datei bei `--split-files`, PostgreSQL |
+| `--read-only` / `--no-read-only` | Quelle schreibgeschützt öffnen (Standard an); SQLite ohne `-wal`/`-shm` |
 | `--encoding` | Output-Encoding (Standard `utf-8`) |
 | `--csv-delimiter` / `--csv-bom` / `--csv-no-header` / `--null-string` | CSV-Optionen |
 | `--resume` / `--checkpoint-dir` | Wiederaufnahme |
@@ -2203,6 +2212,7 @@ Fortschritt/Warnungen nach stderr.
 | `--verify` | nach dem Transfer Quelle↔Ziel per SHA-256 abgleichen (Divergenz → Exit 3) |
 | `--chunk-size` | Rows pro Chunk (Standard 10000) |
 | `--parallel` | Tabellen/Partitionen nebenläufig, FK-sicher (Standard 1); ⊥ `--atomic`, SQLite→1 |
+| `--read-only` / `--no-read-only` | **Quelle** schreibgeschützt öffnen (Standard an); Ziel bleibt schreibend; SQLite-Quelle ohne `-wal`/`-shm` |
 
 #### A.12 `data profile`
 
@@ -2214,6 +2224,7 @@ Fortschritt/Warnungen nach stderr.
 | `--top-n` | häufigste Werte je Spalte (Standard 10, Max 1000) |
 | `--format` | `json` (Standard) oder `yaml` |
 | `--output` | Ausgabedatei (Standard: stdout) |
+| `--read-only` / `--no-read-only` | Quelle schreibgeschützt öffnen (Standard an); SQLite ohne `-wal`/`-shm` |
 
 #### A.13 `mcp serve`
 
