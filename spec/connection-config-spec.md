@@ -227,6 +227,11 @@ export:
     null_string: ""                  # Darstellung von NULL-Werten
     header: true                     # Spaltenüberschriften schreiben
     line_separator: "\n"             # Zeilentrenner
+  parquet:
+    # LN-005 (R2): Parquet-Row-Group-Größe in Bytes. Kleiner = geringerer Heap-Peak
+    # (v.a. bei parallelem File-per-Table-Export `--parallel N`), etwas geringere
+    # Scan-/Kompressionseffizienz. Default 33554432 (32 MiB). Positive Ganzzahl.
+    row_group_bytes: 33554432
 
 # ── Import-Einstellungen ──────────────────────
 import:

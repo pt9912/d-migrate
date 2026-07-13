@@ -136,12 +136,12 @@ Row-Groups kosten etwas Lese-/Kompressionseffizienz (kleinere Kompressionsfenste
 Row-Group-Metadaten) — 32 MiB ist der bewusste Kompromiss zwischen Heap-Sicherheit unter `--parallel`
 und Scan-Effizienz.
 
-> **Status-Update 2026-07-13 (Scope-Schnitt):** Der **Config-Key** `export.parquet.row_group_bytes`
-> wird **nicht** in diesem Slice verdrahtet. Der explizite 32-MiB-Default ist der eigentliche
-> OOM-Fix (er ersetzt den 128-MB-parquet-Default); die Tunability über Config ist ein niedrig
-> priorisierter Nice-to-have für ein Nischen-Format-Detail und würde eine eigene `export.parquet.*`-
-> Config-Sektion + Threading durch die Writer-Factory erfordern. Der `rowGroupBytes`-Konstruktor-Param
-> hält die Größe testbar und künftig-konfigurierbar, ohne den Slice weiter aufzublähen.
+> **Status-Update 2026-07-13:** Der **Config-Key** `export.parquet.row_group_bytes` wurde — nachgezogen
+> auf User-Wunsch (konsistent zum `pipeline.chunk_size`-Wiring) — **verdrahtet**: `ParquetExportConfigResolver`
+> liest den Key (positive Ganzzahl; `≤ 0`/nicht-numerisch → Exit 7), `DataExportWiring` reicht den
+> effektiven Wert (Config > Default 32 MiB) über `ParquetChunkWriterFactory` an `ParquetChunkWriter`.
+> Kein CLI-Flag (Nischen-Detail, einmal pro Umgebung gesetzt). Der explizite Default bleibt der
+> eigentliche OOM-Fix; der Config-Key ist die Tunability darüber.
 
 ### AE-3 — chunkFailures-Deckel (R4)
 

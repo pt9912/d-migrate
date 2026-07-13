@@ -4,6 +4,8 @@ import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.format.data.ChunkColumnSchema
 import dev.dmigrate.format.data.ChunkSchema
+import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.SchemaOrigin
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.comparables.shouldBeGreaterThan
@@ -66,6 +68,25 @@ class ParquetChunkWriterRowGroupSizeTest : FunSpec({
         try {
             writeWith(rowGroupBytes = ParquetChunkWriter.DEFAULT_ROW_GROUP_BYTES, file = file)
             rowGroupCount(file) shouldBe 1
+        } finally {
+            Files.deleteIfExists(file)
+        }
+    }
+
+    test("ParquetChunkWriterFactory passes rowGroupBytes through to the writer") {
+        val file = Files.createTempFile("rowgroup-factory-", ".parquet")
+        try {
+            Files.deleteIfExists(file)
+            Files.newOutputStream(file).use { out ->
+                ParquetChunkWriterFactory(rowGroupBytes = 4L * 1024)
+                    .create(DataExportFormat.PARQUET, out, ExportOptions())
+                    .use { writer ->
+                        writer.begin(schema.table, schema)
+                        writer.write(DataChunk(table = schema.table, columns = emptyList(), rows = rows, chunkIndex = 0L))
+                        writer.end()
+                    }
+            }
+            rowGroupCount(file) shouldBeGreaterThan 1
         } finally {
             Files.deleteIfExists(file)
         }

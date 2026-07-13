@@ -26,6 +26,8 @@ import java.io.OutputStream
 class ParquetChunkWriterFactory(
     private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
     private val extraMetaDataProvider: (ChunkSchema) -> Map<String, String> = { emptyMap() },
+    /** LN-005 (R2): Parquet-Row-Group-Größe in Bytes; Default via [ParquetChunkWriter]. */
+    private val rowGroupBytes: Long = ParquetChunkWriter.DEFAULT_ROW_GROUP_BYTES,
 ) : DataChunkWriterFactory {
 
     override fun create(
@@ -40,6 +42,7 @@ class ParquetChunkWriterFactory(
             output = output,
             extraMetaDataProvider = extraMetaDataProvider,
             warningSink = warningSink,
+            rowGroupBytes = rowGroupBytes,
         )
     }
 }
