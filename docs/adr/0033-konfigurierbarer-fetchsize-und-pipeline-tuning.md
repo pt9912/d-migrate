@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-13
 decision-makers: pt9912
-consulted: spec/lastenheft-d-migrate.md, docs/planning/in-progress/ln005-streaming-oom-hardening.md
+consulted: spec/lastenheft-d-migrate.md, docs/planning/done/ln005-streaming-oom-hardening.md
 informed: hexagon/ports, adapters/driven/driver-postgresql, adapters/driven/driver-mysql, adapters/driven/driver-sqlite, adapters/driving/cli, hexagon/application, spec/cli-spec.md, spec/connection-config-spec.md
 ---
 

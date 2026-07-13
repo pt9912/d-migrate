@@ -1,9 +1,10 @@
 # LN-005: Streaming-Datenpfad — OOM-Härtung & Akzeptanz-Validierung
 
-**Status**: ERLEDIGT (2026-07-13) — R1 (`cdef4aba`), R2+R4 (`073afe08`), Heap-Cap-Akzeptanztest +
-roadmap-✅. Alle Akzeptanzkriterien erfüllt (Heap-Test grün unter `-Xmx 256m`, kein OOM). Offen nur
-Hygiene: Graduierung nach `done/` (Follow-up, wegen der `consulted:`-Referenz in
-[ADR 0033](../../adr/0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md) + roadmap-Link).
+**Status**: ERLEDIGT + graduiert nach `done/` (2026-07-13) — R1 (`cdef4aba`), R2+R4 (`073afe08`),
+Heap-Cap-Akzeptanztest + roadmap-✅ (`412f7afc`). Alle Akzeptanzkriterien erfüllt (Heap-Test grün
+unter `-Xmx 256m`, kein OOM); CI grün. **Folge-Ticket:** `pipeline.parallelism`-Config-Wiring
+([`open/pipeline-parallelism-config-unwired.md`](../open/pipeline-parallelism-config-unwired.md),
+gleicher No-op-Befund wie `chunk_size`, aber im Scope des parallelen Datenpfads).
 **Ziel**: Das Lastenheft-Akzeptanzkriterium [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005)
 („sehr große Datenmengen >10 TB ohne OutOfMemory verarbeiten") **beweisbar** machen und die
 verbleibenden Scale-Tuning-Kanten schließen — ohne den (bereits streaming-sicheren) Datenpfad

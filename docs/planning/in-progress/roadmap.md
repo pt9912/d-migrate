@@ -654,7 +654,7 @@ Chunk-Loop + realen `CsvChunkWriter` unter `-Xmx 256m` (Volumen ~4× Heap) — e
 Regression OOMt, der bounded Pfad läuft durch. Zusätzlich gehärtet: konfigurierbarer `fetchSize`
 ([ADR 0033](../../adr/0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md)), explizite
 Parquet-Row-Group-Größe (R2) und ein Deckel auf die Import-`chunkFailures`-Detailliste (R4). Slice:
-[`ln005-streaming-oom-hardening.md`](ln005-streaming-oom-hardening.md).
+[`ln005-streaming-oom-hardening.md`](../done/ln005-streaming-oom-hardening.md).
 ² Erledigt (2026-07-12, [ADR 0030](../../adr/0030-datenwert-kanonisierung-verify.md),
 ImpPlan [`ImpPlan-1.0.0-RC-ln009-sha256-verify.md`](../done/ImpPlan-1.0.0-RC-ln009-sha256-verify.md)):
 nutzerseitiges `data transfer --verify` mit dialekt-neutraler, reihenfolge-
