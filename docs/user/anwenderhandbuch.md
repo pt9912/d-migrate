@@ -781,6 +781,10 @@ Tabellen setzen an der letzten gesicherten Stelle fort.
   Kind-Partitionen einer Tabelle laufen dann nebenläufig (FK-Reihenfolge bleibt
   gewahrt). Halten Sie `N` ≤ der Verbindungspool-Größe (Standard 10). `--parallel`
   schließt `--resume` (und `--atomic`) aus; für SQLite bleibt der Lauf sequenziell.
+- **Durchsatz feinjustieren:** `--chunk-size` steuert die Zeilen pro Chunk/
+  Transaktion, `--fetch-size` den JDBC-Cursor-Prefetch beim Lesen der Quelle
+  (nur `data export`/`data transfer`; Standard dialektspezifisch 1000, SQLite nur
+  Hinweis). Größere Werte erhöhen den Durchsatz, aber auch den Speicherbedarf.
 
 ### 3.10 Eine Datenbank auf Datenqualität prüfen (Profiling)
 
@@ -2167,6 +2171,7 @@ Fortschritt/Warnungen nach stderr.
 | `--since-column` / `--since` | inkrementeller Export |
 | `--split-files` | eine Datei pro Tabelle |
 | `--chunk-size` | Rows pro Chunk (Standard 10000) |
+| `--fetch-size` | JDBC-Cursor-Prefetch beim Lesen der Quelle (Standard: dialektspezifisch 1000); SQLite nur Hinweis |
 | `--parallel` | Tabellen/Partitionen nebenläufig (Standard 1); pro-Kind-Datei bei `--split-files`, PostgreSQL |
 | `--read-only` / `--no-read-only` | Quelle schreibgeschützt öffnen (Standard an); SQLite ohne `-wal`/`-shm` |
 | `--encoding` | Output-Encoding (Standard `utf-8`) |
@@ -2211,6 +2216,7 @@ Fortschritt/Warnungen nach stderr.
 | `--atomic` | alles-oder-nichts: bei Fehler alle Zieltabellen auf leer zurück (setzt `--truncate` voraus) |
 | `--verify` | nach dem Transfer Quelle↔Ziel per SHA-256 abgleichen (Divergenz → Exit 3) |
 | `--chunk-size` | Rows pro Chunk (Standard 10000) |
+| `--fetch-size` | JDBC-Cursor-Prefetch beim Lesen der Quelle (Standard: dialektspezifisch 1000); SQLite nur Hinweis; auch der `--verify`-Read-Back nutzt ihn |
 | `--parallel` | Tabellen/Partitionen nebenläufig, FK-sicher (Standard 1); ⊥ `--atomic`, SQLite→1 |
 | `--read-only` / `--no-read-only` | **Quelle** schreibgeschützt öffnen (Standard an); Ziel bleibt schreibend; SQLite-Quelle ohne `-wal`/`-shm` |
 

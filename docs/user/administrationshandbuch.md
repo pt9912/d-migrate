@@ -128,6 +128,35 @@ Tatsächlich vom Code gelesen (Stand 0.9.9):
 - `default_timezone` ist ein **expliziter** Konvertierungsbaustein und löst
   keine pauschale Umdeutung vorhandener lokaler Zeitwerte aus.
 
+### 3.5 Pipeline-Tuning (`pipeline.*`)
+
+Die `pipeline`-Sektion steuert den Streaming-Datenpfad von `data export`/`import`/
+`transfer`. Alle Schlüssel sind optional; die Präzedenz ist **CLI-Flag > Config >
+eingebauter Default**. Ungültige Werte (Fließkomma, `<= 0`, unbekannter String)
+werden **laut** abgelehnt (Exit 7), nicht still ignoriert oder gekürzt.
+
+| Schlüssel | Default | Wirkung | CLI-Override |
+| --------- | ------- | ------- | ------------ |
+| `pipeline.chunk_size` | `10000` | Zeilen pro Chunk/Transaktion | `--chunk-size` |
+| `pipeline.fetch_size` | dialektspezifisch `1000` | JDBC-Cursor-Prefetch beim Lesen der Quelle (nur Export/Transfer — der Import liest aus Dateien). SQLite: nur Hint. | `--fetch-size` |
+| `pipeline.parallelism` | `1` | nebenläufige unabhängige Tabellen/Partitionen; `auto` = `min(CPU-Kerne, Pool-Größe)`. **SQLite → 1.** | `--parallel` |
+
+Verhalten von `pipeline.parallelism`:
+
+- `auto` wird gegen die Connection-Pool-Größe gedeckelt (`maximumPoolSize`, Default
+  `10`; siehe [Abschnitt 4.3](#43-connection-pool-defaults-hikaricp)) — mehr Worker
+  als Pool-Verbindungen brächten nur Wartezeit in `getConnection`.
+- Kommt der Wert aus der **Config** und ist der Lauf mit `--resume`/`--atomic`
+  kombiniert, fällt er mit Hinweis auf `1` zurück statt hart zu scheitern; nur ein
+  **explizit** gesetztes `--parallel > 1` wird mit `--resume`/`--atomic` abgelehnt.
+- `pipeline.checkpoint.*` (Wiederaufnahme) und `incremental.*` (Since-Pfade)
+  gehören ebenfalls in diese Sektion; vollständiges Schema:
+  [`connection-config-spec.md`](../../spec/connection-config-spec.md).
+
+> ℹ️ Die weitergehende `pool:`-Sektion (`max_size`/`min_idle`) des Schemas wirkt
+> derzeit nur auf den MCP-Server-State, nicht auf den CLI-Datenpfad (dieser nutzt
+> die HikariCP-Defaults aus [Abschnitt 4.3](#43-connection-pool-defaults-hikaricp)).
+
 ---
 
 ## 4. Datenbank-Verbindungen
