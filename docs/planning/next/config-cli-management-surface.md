@@ -128,9 +128,10 @@ verpflichtender Masking-Test-Gate Teil der Abnahme.
 ## 4. Phase 2 — `config credentials set/list` + Credential-Resolution (sicherheitssensibel, eigener Slice)
 
 ### 4.1 Neuer Driven-Adapter `adapters/driven/credential-store`
-- AES-256-Verschlüsselung von `~/.d-migrate/credentials.enc`; Master-Key
-  `~/.d-migrate/master.key` (chmod 600, nur Benutzer-lesbar; Erzeugung beim
-  ersten `set`).
+- AES-256-GCM-Verschlüsselung von `~/.d-migrate/credentials.enc`; Schlüssel
+  **passphrase-abgeleitet** (PBKDF2 aus TTY-Prompt/`D_MIGRATE_MASTER_PASSWORD`, **keine**
+  Key-Datei) — Master-Key-Datei-Design (O1) ist verworfen, s.
+  [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md).
 - Port im Hexagon (`CredentialStorePort`: `put(name,user,password)` /
   `listNames()` / `resolve(name)`), Adapter als Implementierung.
 - Vor Implementierung den Store-Key-Vertrag festlegen: `name` muss eindeutig

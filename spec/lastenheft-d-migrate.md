@@ -348,6 +348,8 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 <a id="ln-025"></a>**LN-025** Datenbankzugangsdaten müssen verschlüsselt gespeichert werden
 
+<a id="ln-049"></a>**LN-049** Zugangsdaten müssen aus einer definierten Quellen-Priorität aufgelöst werden können (Inline-Verbindung, Umgebungsvariable, verschlüsselter lokaler Speicher, externe Secret-Referenz, interaktive Eingabe) und dürfen nie im Klartext gespeichert, geloggt oder in Fehlerausgaben erscheinen (Maskierung). Ergänzt [`LN-025`](#ln-025).
+
 <a id="ln-026"></a>**LN-026** Verbindungen zu Datenbanken müssen verschlüsselt erfolgen können
 
 <a id="ln-027"></a>**LN-027** Audit-Logging aller durchgeführten Operationen

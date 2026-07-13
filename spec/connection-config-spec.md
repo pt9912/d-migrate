@@ -451,20 +451,39 @@ Credentials werden in folgender Reihenfolge gesucht:
 5. Interaktiver Prompt (nur wenn TTY)
 ```
 
-### 4.2 Encrypted Credentials File
+Es gewinnt die **erste** Quelle, die ein Passwort liefert (fehlt es inline, wird die nächste Stufe
+konsultiert). `D_MIGRATE_DB_PASSWORD` ist eine **globale** Fallback-Variable: sie ergänzt ein in der
+gewählten Verbindung **fehlendes** Passwort und überschreibt **kein** explizit inline oder per
+`${VAR}` gesetztes. Bei Operationen mit zwei Verbindungen, die **unterschiedliche** Passwörter brauchen
+(z. B. `data transfer` mit Quelle ≠ Ziel), kann die eine globale Variable nicht unterscheiden — dort pro
+Verbindung `${VAR}`, den lokalen Store oder `credentialRef` verwenden.
 
-Credentials werden über das CLI-Kommando [`config credentials set`](./cli-spec.md#67-config) verwaltet:
+### 4.2 Verschlüsselter lokaler Store (interaktiver Betrieb)
+
+Für den **interaktiven** Betrieb (Entwickler-Arbeitsplatz) verwaltet die CLI einen lokalen,
+verschlüsselten Store über [`config credentials set`](./cli-spec.md#67-config):
 
 ```bash
-# Credentials verschlüsseln
-d-migrate config credentials set --name prod --user admin --password secret
+# Credential unter einem Verbindungsnamen ablegen (Passwort interaktiv abgefragt, wenn nicht angegeben)
+d-migrate config credentials set --name prod --user admin
 
-# Gespeicherte Verbindungen anzeigen
+# Gespeicherte Verbindungsnamen anzeigen (nie Werte/Passwörter)
 d-migrate config credentials list
 
-# Ergebnis: ~/.d-migrate/credentials.enc (AES-256 verschlüsselt)
-# Master-Key: ~/.d-migrate/master.key (nur Benutzer-lesbar, chmod 600)
+# Ergebnis: ~/.d-migrate/credentials.enc (AES-256-GCM)
 ```
+
+Der Verschlüsselungs-Schlüssel wird aus einem **Master-Secret abgeleitet** (PBKDF2), das die CLI per
+interaktivem Prompt oder aus `D_MIGRATE_MASTER_PASSWORD` bezieht; er wird **nicht als Datei gespeichert**
+und liegt damit nicht neben dem Ciphertext.
+
+### 4.2.1 Schicht-Wahl: lokaler Store vs. Delegation
+
+- **Interaktiv (Arbeitsplatz):** der lokale Store (oben) — Passwort einmal setzen, wiederverwenden.
+- **Headless (CI/CD, Container):** **Delegation** an externe Secret-Quellen (Umgebungsvariablen,
+  `${VAR}`-Referenzen, `credentialRef`), sodass kein Secret im Ruhezustand bei d-migrate liegt.
+  `D_MIGRATE_MASTER_PASSWORD` in einer CI-Umgebung ist **kein** Sicherheitsgewinn gegenüber den
+  DB-Zugangsdaten direkt per Umgebungsvariable — dort die Delegation nutzen, nicht den lokalen Store.
 
 ### 4.3 Sicherheitsregeln
 
@@ -472,7 +491,6 @@ d-migrate config credentials list
 - API-Keys werden **nie** in Logs geschrieben
 - Connection-URLs in Logs maskieren das Passwort: `postgresql://admin:***@host/db`
 - `.d-migrate/credentials.enc` muss in `.gitignore` stehen
-- `.d-migrate/master.key` muss in `.gitignore` stehen
 - Empfohlener `.gitignore`-Eintrag: `.d-migrate/` (schließt auch Checkpoints, Cache und Audit-Daten aus)
 
 ---
