@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-07-13
+
+### Added
+
+- **Paralleler Datenpfad** (LN-007/LN-008) — `data export`/`import`/`transfer`
+  akzeptieren `--parallel N` und verarbeiten unabhängige Tabellen nebenläufig
+  (`1` = sequenziell, Default). Unabhängige Tabellen laufen FK-sicher in
+  topologischen Ebenen (Barriere zwischen den Ebenen); ein beidseitig
+  namensgleich partitionierter Parent wird pro Kind-Partition transferiert bzw.
+  als eine Datei pro Kind exportiert (PostgreSQL — MySQL-Partitionen sind keine
+  adressierbaren Tabellen und bleiben transparent). Für SQLite auf `1` geklemmt
+  (Pool-Size 1); `N` sollte die Verbindungspool-Größe (Default 10) nicht
+  überschreiten; inkompatibel mit `--resume` und `--atomic` (Exit 2).
+  [ADR 0032](docs/adr/0032-paralleler-datenpfad-tabellen-partitionen.md).
+
+- **Atomarer Clean-Load-Rollback** (LN-013) — `data import`/`transfer --atomic`
+  setzt bei einem Fehler **alle** Zieltabellen der Operation auf den leeren
+  Vor-Load-Zustand zurück (Kompensations-Truncate) → „alle Tabellen oder keine".
+  Erfordert explizit `--truncate` (sonst Exit 2) und ist inkompatibel mit
+  `--resume`/`--parallel` (Exit 2). Die Kompensation ist eine
+  O(1)-Metadaten-Operation und damit streaming-verträglich für große
+  Datenmengen. Nicht-Scope: Append in ein nicht-leeres Ziel.
+  [ADR 0031](docs/adr/0031-atomic-clean-load-rollback.md).
+
+- **Read-only-Öffnung der Quelle** (`--read-only`, Default an) — reine
+  Lese-Operationen (`data profile`/`export` und die Quelle von `data transfer`)
+  öffnen die Quelldatenbank schreibgeschützt. Für SQLite bedeutet das
+  `SQLITE_OPEN_READONLY` über `file:<db>?mode=ro` **ohne** `journal_mode=wal`:
+  auch nicht-schreibbare Quellen sind les-/profilierbar, ohne
+  `-wal`/`-shm`-Nebendateien anzulegen. `--no-read-only` erzwingt ein
+  schreibendes Öffnen; das Transfer-Ziel bleibt immer schreibend. `:memory:`
+  und andere Dialekte ignorieren das Flag. (Enthält einen Fix im
+  SQLite-JDBC-URL-Builder: führende `//` der `file:`-URI-Form wurden als
+  URI-Authority fehlinterpretiert.)
+
 ## [0.9.11] - 2026-07-12
 
 ### Added
