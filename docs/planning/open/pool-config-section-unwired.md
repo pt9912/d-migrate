@@ -1,7 +1,7 @@
 # `pool:` Config-Sektion ist für den Datenpfad unverdrahtet (stiller No-op)
 
 **Status**: Trigger (2026-07-13) — Nebenbefund aus dem `pipeline.parallelism`-Slice
-([`../in-progress/pipeline-parallelism-config-wiring.md`](../in-progress/pipeline-parallelism-config-wiring.md)).
+([`../done/pipeline-parallelism-config-wiring.md`](../done/pipeline-parallelism-config-wiring.md)).
 
 **Befund**: Die YAML-Sektion `pool:` (`max_size`, `min_idle`, `connection_timeout_ms`, …) im
 Voll-Schema-Beispiel von [`connection-config-spec.md`](../../../spec/connection-config-spec.md)

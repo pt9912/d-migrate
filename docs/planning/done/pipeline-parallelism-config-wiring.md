@@ -1,9 +1,11 @@
 # `pipeline.parallelism` Config-Key ist unverdrahtet (stiller No-op)
 
 **Status**: Trigger (2026-07-13) — Nebenbefund aus dem Streaming-OOM-Slice
-([`../done/ln005-streaming-oom-hardening.md`](../done/ln005-streaming-oom-hardening.md),
-[`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005)). **In Umsetzung (2026-07-13)** — Design-Fragen
-entschieden + review-gehärtet (Ansatz A code-verifiziert, herkunftsbewusste Meldungen ergänzt).
+([`ln005-streaming-oom-hardening.md`](ln005-streaming-oom-hardening.md),
+[`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005)). **ERLEDIGT (2026-07-13)** — Phase A Resolver
+(`19f7ccbd`), Phase B+C Commands/Runner-Wiring + origin-bewusster Fallback (`17c83c35`); Ansatz A
+code-verifiziert umgesetzt. Nebenbefund `pool:` verifiziert → eigenes Ticket
+([`../open/pool-config-section-unwired.md`](../open/pool-config-section-unwired.md)). Graduiert nach `done/`.
 
 **Befund**: `pipeline.parallelism: auto` ist in der Connection-Spec dokumentiert
 ([`connection-config-spec.md`](../../../spec/connection-config-spec.md), Abschnitt „Pipeline-Einstellungen"),
@@ -86,9 +88,10 @@ kein `auto`); dazu kommen die SQLite-Klemmung auf 1 und ein anderer Pfad (`Paral
 - Spec-Notiz in `connection-config-spec.md` (Präzedenz + Beispielwert), CHANGELOG
   (Fixed: stiller No-op).
 
-## Nebenbefund (separat verifizieren, ggf. eigenes Ticket)
+## Nebenbefund — verifiziert, eigenes Ticket
 
 Die YAML-Sektion `pool:` (`max_size`, `min_idle`, …) in `connection-config-spec.md`
-(Abschnitt „Vollständiges Schema") scheint **ebenfalls unverdrahtet** — kein `"pool"`-/
-`"max_size"`-String-Literal im Config-Lesepfad; nur der MCP-Serve-Pfad liest sein eigenes
-`hikari.maximumPoolSize`. Gleiches Muster wie dieser Befund.
+(Abschnitt „Vollständiges Schema") ist **ebenfalls unverdrahtet** (Code-Trace 2026-07-13
+bestätigt: kein `"pool"`-/`"max_size"`-String-Literal im Datenpfad-Config-Lesepfad; nur der
+MCP-Serve-Pfad liest sein eigenes `hikari.maximumPoolSize`). Gleiches Muster wie dieser Befund;
+ausgegliedert nach [`../open/pool-config-section-unwired.md`](../open/pool-config-section-unwired.md).
