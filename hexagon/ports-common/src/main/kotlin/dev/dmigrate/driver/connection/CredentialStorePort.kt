@@ -18,6 +18,12 @@ interface CredentialStorePort {
 
     /** Zugangsdaten zu [name], oder `null` wenn kein Eintrag existiert. */
     fun resolve(name: String): StoredCredential?
+
+    /**
+     * Ob der Store bereits existiert (Datei vorhanden) — **ohne** Entschlüsselung, braucht kein
+     * Master-Secret. Steuert die Confirm-Doppel-Eingabe bei Neuanlage.
+     */
+    fun isInitialized(): Boolean
 }
 
 /**

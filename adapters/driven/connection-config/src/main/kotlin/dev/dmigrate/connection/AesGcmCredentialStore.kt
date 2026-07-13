@@ -65,6 +65,8 @@ class AesGcmCredentialStore(
         }
     }
 
+    override fun isInitialized(): Boolean = Files.isRegularFile(storeFile)
+
     private fun readEntries(): LinkedHashMap<String, CredentialEntry> {
         if (!Files.isRegularFile(storeFile)) return LinkedHashMap()
         val file = try {
