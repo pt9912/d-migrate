@@ -176,7 +176,7 @@ class DataTransferRunnerTest : FunSpec({
 
     test("--parallel > 1 with --atomic → exit 2 (race with compensation, LN-007/LN-008)") {
         val (runner, _, errors) = buildRunner()
-        runner.execute(request().copy(parallel = 4, atomic = true, truncate = true)) shouldBe 2
+        runner.execute(request().copy(parallel = 4, atomic = true, truncate = true, parallelFromCli = true)) shouldBe 2
         errors.joined() shouldContain "--atomic is incompatible with --parallel"
     }
 

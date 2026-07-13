@@ -47,6 +47,9 @@ internal data class DataExportOptions(
     val encoding: String,
     val chunkSize: Int,
     val parallel: Int,
+    /** pipeline.parallelism-Slice: Origin (CLI-explizit?) + Label, s. DataExportRequest. */
+    val parallelFromCli: Boolean = false,
+    val parallelSourceLabel: String = "--parallel",
     val readOnly: Boolean,
     /** LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default). */
     val fetchSize: Int? = null,
@@ -214,6 +217,8 @@ internal object DataExportWiring {
         encoding = options.encoding,
         chunkSize = options.chunkSize,
         parallel = options.parallel,
+        parallelFromCli = options.parallelFromCli,
+        parallelSourceLabel = options.parallelSourceLabel,
         readOnly = options.readOnly,
         splitFiles = options.splitFiles,
         csvDelimiter = options.csvDelimiter,

@@ -66,9 +66,20 @@ internal class ImportPreflightValidator(
             onConflict = onConflict,
             onError = onError,
         )
-        // LN-007/LN-008 (ADR 0032): effective parallelism (SQLite → 1, with note).
+        // pipeline.parallelism-Slice: config-basiertes parallel>1 + --resume/--atomic → sequenzieller
+        // Fallback (CLI-explizit ist in DataImportHelpers schon hart abgefangen); origin-bewusster Hinweis.
+        val requestedParallel = ParallelismClamp.fallbackIfIncompatible(
+            request.parallel, request.parallelFromCli, request.parallelSourceLabel,
+            incompatibleFlag = when {
+                !request.resume.isNullOrBlank() -> "--resume"
+                request.atomic -> "--atomic"
+                else -> null
+            },
+            onNote = stderr,
+        )
+        // LN-007/LN-008 (ADR 0032): effective parallelism (SQLite → 1, with origin-aware note).
         val parallelism = ParallelismClamp.effective(
-            request.parallel, dialect == DatabaseDialect.SQLITE, stderr,
+            requestedParallel, dialect == DatabaseDialect.SQLITE, request.parallelSourceLabel, stderr,
         )
         val pipelineConfig = PipelineConfig(chunkSize = request.chunkSize, parallelism = parallelism)
         val onTableOpened: (String, List<TargetColumn>) -> Unit =

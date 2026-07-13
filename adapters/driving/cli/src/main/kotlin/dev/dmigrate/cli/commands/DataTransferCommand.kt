@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectiveParallelism
 import dev.dmigrate.cli.config.resolveEffectivePipelineTuning
 
 class DataTransferCommand : CliktCommand(name = "transfer") {
@@ -53,10 +54,10 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
     ).int()
     val parallel by option(
         "--parallel",
-        help = "Max tables/partitions to transfer concurrently (default: 1 = sequential). " +
-            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+        help = "Max tables/partitions to transfer concurrently (default: 1 = sequential; " +
+            "overrides pipeline.parallelism in config). Clamped to 1 for SQLite; " +
             "incompatible with --atomic.",
-    ).int().default(1)
+    ).int()
     val readOnly by option(
         "--read-only",
         help = "Open the SOURCE read-only (default; the target is always read-write). SQLite source: " +
@@ -79,6 +80,15 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(2)
         }
+        val par = try {
+            resolveEffectiveParallelism(root?.config, parallel)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(2)
+        }
         val exitCode = DataTransferWiring.execute(
             DataTransferOptions(
                 source = source,
@@ -93,7 +103,9 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 verify = verify,
                 atomic = atomic,
                 chunkSize = tuning.chunkSize,
-                parallel = parallel,
+                parallel = par.degree,
+                parallelFromCli = par.fromCli,
+                parallelSourceLabel = par.sourceLabel,
                 readOnly = readOnly,
                 fetchSize = tuning.fetchSize,
                 cliContext = root?.cliContext() ?: CliContext(),

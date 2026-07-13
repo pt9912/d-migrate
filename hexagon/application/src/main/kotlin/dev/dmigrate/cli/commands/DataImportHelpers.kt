@@ -268,13 +268,15 @@ internal object DataImportHelpers {
             stderr("Error: --parallel must be >= 1, got ${request.parallel}.")
             return 2
         }
-        if (request.parallel > 1 && !request.resume.isNullOrBlank()) {
+        // pipeline.parallelism-Slice: harter Fehler nur bei CLI-explizitem --parallel; kommt der Wert
+        // aus der Config, fällt der Lauf im ImportPreflightValidator (am Clamp) auf 1 zurück.
+        if (request.parallel > 1 && !request.resume.isNullOrBlank() && request.parallelFromCli) {
             stderr("Error: --parallel > 1 is incompatible with --resume (all-or-nothing).")
             return 2
         }
         // LN-013 × LN-007/LN-008: a straggler worker could still commit while the atomic
         // compensation truncates → the all-or-nothing guarantee would be racy.
-        if (request.parallel > 1 && request.atomic) {
+        if (request.parallel > 1 && request.atomic && request.parallelFromCli) {
             stderr("Error: --parallel > 1 is incompatible with --atomic (all-or-nothing).")
             return 2
         }

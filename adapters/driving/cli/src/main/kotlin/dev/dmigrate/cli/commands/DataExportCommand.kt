@@ -14,6 +14,7 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectiveParallelism
 import dev.dmigrate.cli.config.resolveEffectivePipelineTuning
 
 /**
@@ -84,10 +85,10 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     val parallel by option(
         "--parallel",
-        help = "Max tables/partitions to export concurrently (default: 1 = sequential). " +
-            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+        help = "Max tables/partitions to export concurrently (default: 1 = sequential; " +
+            "overrides pipeline.parallelism in config). Clamped to 1 for SQLite; " +
             "incompatible with --resume. Per-child fan-out applies to --split-files only.",
-    ).int().default(1)
+    ).int()
 
     val readOnly by option(
         "--read-only",
@@ -150,6 +151,15 @@ class DataExportCommand : CliktCommand(name = "export") {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(2)
         }
+        val par = try {
+            resolveEffectiveParallelism(root?.config, parallel)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(2)
+        }
         val exitCode = DataExportWiring.execute(
             DataExportOptions(
                 source = source,
@@ -161,7 +171,9 @@ class DataExportCommand : CliktCommand(name = "export") {
                 since = since,
                 encoding = encoding,
                 chunkSize = tuning.chunkSize,
-                parallel = parallel,
+                parallel = par.degree,
+                parallelFromCli = par.fromCli,
+                parallelSourceLabel = par.sourceLabel,
                 readOnly = readOnly,
                 fetchSize = tuning.fetchSize,
                 splitFiles = splitFiles,

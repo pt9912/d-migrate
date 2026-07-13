@@ -38,6 +38,10 @@ data class DataExportRequest(
     val chunkSize: Int,
     // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
     val parallel: Int = 1,
+    // pipeline.parallelism-Slice: war --parallel CLI-explizit? Steuert Hard-Fail vs. Fallback bei --resume/--atomic.
+    val parallelFromCli: Boolean = false,
+    // Herkunftsbewusster Label für Klemm-/Fallback-Meldungen (--parallel N vs. pipeline.parallelism: auto (= N)).
+    val parallelSourceLabel: String = "--parallel",
     val splitFiles: Boolean,
     val csvDelimiter: String,
     val csvBom: Boolean,
@@ -168,7 +172,9 @@ class DataExportRunner(
             userFacingStderr("Error: --parallel must be >= 1, got ${request.parallel}.")
             return 2
         }
-        if (request.parallel > 1 && !request.resume.isNullOrBlank()) {
+        // pipeline.parallelism-Slice: harter Fehler nur bei CLI-explizitem --parallel; kommt der Wert
+        // aus der Config, fällt der Lauf weiter unten (am Clamp) auf 1 zurück statt zu scheitern.
+        if (request.parallel > 1 && !request.resume.isNullOrBlank() && request.parallelFromCli) {
             userFacingStderr("Error: --parallel > 1 is incompatible with --resume (all-or-nothing).")
             return 2
         }
@@ -274,9 +280,17 @@ class DataExportRunner(
             markers.mapValues { (_, m) -> m.copy(position = null) }
         } else markers
 
-        // LN-007/LN-008 (ADR 0032): resolve the effective parallelism (SQLite → 1, with note).
+        // pipeline.parallelism-Slice: config-basiertes parallel>1 + --resume → sequenzieller Fallback
+        // (CLI-explizit ist oben schon hart abgefangen); herkunftsbewusster Hinweis.
+        val requestedParallel = ParallelismClamp.fallbackIfIncompatible(
+            request.parallel, request.parallelFromCli, request.parallelSourceLabel,
+            incompatibleFlag = if (!request.resume.isNullOrBlank()) "--resume" else null,
+            onNote = userFacingStderr,
+        )
+        // LN-007/LN-008 (ADR 0032): resolve the effective parallelism (SQLite → 1, with origin-aware note).
         val degree = ParallelismClamp.effective(
-            request.parallel, pool.dialect == DatabaseDialect.SQLITE, userFacingStderr,
+            requestedParallel, pool.dialect == DatabaseDialect.SQLITE,
+            request.parallelSourceLabel, userFacingStderr,
         )
         return try {
             val raw = exportExecutor.execute(

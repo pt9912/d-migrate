@@ -27,6 +27,9 @@ internal data class DataTransferOptions(
     val atomic: Boolean,
     val chunkSize: Int,
     val parallel: Int,
+    /** pipeline.parallelism-Slice: Origin (CLI-explizit?) + Label, s. DataTransferRequest. */
+    val parallelFromCli: Boolean = false,
+    val parallelSourceLabel: String = "--parallel",
     val readOnly: Boolean,
     /** LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default). */
     val fetchSize: Int? = null,
@@ -78,6 +81,8 @@ internal object DataTransferWiring {
             atomic = options.atomic,
             chunkSize = options.chunkSize,
             parallel = options.parallel,
+            parallelFromCli = options.parallelFromCli,
+            parallelSourceLabel = options.parallelSourceLabel,
             readOnly = options.readOnly,
             fetchSize = options.fetchSize,
             cliConfigPath = options.configPath,

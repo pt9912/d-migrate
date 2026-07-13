@@ -15,6 +15,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.resolveEffectiveChunkSize
+import dev.dmigrate.cli.config.resolveEffectiveParallelism
 
 /**
  * `d-migrate data import` — streamt Daten aus Dateien (json/yaml/csv) oder
@@ -128,10 +129,10 @@ class DataImportCommand : CliktCommand(name = "import") {
 
     val parallel by option(
         "--parallel",
-        help = "Max tables/partitions to import concurrently (default: 1 = sequential). " +
-            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
+        help = "Max tables/partitions to import concurrently (default: 1 = sequential; " +
+            "overrides pipeline.parallelism in config). Clamped to 1 for SQLite; " +
             "incompatible with --resume and --atomic.",
-    ).int().default(1)
+    ).int()
 
     // LF-010 / LF-013 / LN-012: Resume-Oberflaeche fuer Datei- und
     // Directory-Importe. Stdin bleibt ausgeschlossen, weil kein
@@ -172,6 +173,15 @@ class DataImportCommand : CliktCommand(name = "import") {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(2)
         }
+        val par = try {
+            resolveEffectiveParallelism(root?.config, parallel)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(2)
+        }
         val exitCode = DataImportWiring.execute(
             DataImportOptions(
                 target = target,
@@ -192,7 +202,9 @@ class DataImportCommand : CliktCommand(name = "import") {
                 csvNoHeader = csvNoHeader,
                 csvNullString = csvNullString,
                 chunkSize = effectiveChunkSize,
-                parallel = parallel,
+                parallel = par.degree,
+                parallelFromCli = par.fromCli,
+                parallelSourceLabel = par.sourceLabel,
                 resume = resume,
                 checkpointDir = checkpointDir,
                 noCheckpoint = noCheckpoint,

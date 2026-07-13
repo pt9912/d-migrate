@@ -249,7 +249,10 @@ pipeline:
   fetch_size: 1000                   # LN-005: JDBC-Cursor-Prefetch für den Quell-Read (export/transfer).
                                      # Präzedenz: --fetch-size (CLI) > diese Config > Dialekt-Default 1000.
                                      # SQLite: nur Hint. Gilt nicht für den Import (liest aus Dateien).
-  parallelism: auto                  # auto (= CPU-Kerne) oder Zahl
+  parallelism: 1                     # Nebenläufige Tabellen/Partitionen (export/import/transfer).
+                                     # Ganzzahl oder `auto` (= min(CPU-Kerne, Pool-Größe)). Präzedenz:
+                                     # --parallel (CLI) > diese Config > Default 1. Bei --resume/--atomic
+                                     # aus der Config → Fallback auf 1 (kein Hard-Fail); SQLite → 1.
   checkpoint:
     enabled: true                    # Checkpoints erstellen
     # Row-basierter Trigger. Intern `CheckpointConfig.rowInterval`.

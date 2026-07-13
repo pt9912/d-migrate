@@ -33,8 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Import: `chunkFailures`-Detailliste gedeckelt** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
   bei `--on-error log` wuchs die Liste der Chunk-Fehler-Details unbounded (ein Eintrag je
-  fehlgeschlagenem Chunk). Sie ist jetzt auf ein Sample (1000) gedeckelt; darüber hinausgehende
-  Fehler werden gezählt (`chunkFailuresSuppressed`). Die wahre Fehlerzahl trägt ohnehin `rowsFailed`.
+  fehlgeschlagenem Chunk → Memory-Leck bei sehr großen Tabellen). Sie ist jetzt auf ein Sample (1000)
+  gedeckelt; darüber hinausgehende Einträge werden verworfen. Die wahre Fehlerzahl trägt ohnehin
+  `rowsFailed`.
+
+- **`pipeline.parallelism` war ein stiller No-op** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)-Folge) —
+  wie zuvor `chunk_size` war der Config-Key dokumentiert, aber unverdrahtet (nur `--parallel` wirkte).
+  `pipeline.parallelism` (export/import/transfer) wird jetzt echt verdrahtet: Ganzzahl oder `auto`
+  (= `min(CPU-Kerne, Pool-Größe)`), Präzedenz CLI-explizit > Config > Default 1. Kommt der Wert aus der
+  Config und ist mit `--resume`/`--atomic` inkompatibel, fällt der Lauf mit Hinweis auf 1 zurück statt
+  hart zu scheitern (harter Fehler nur bei explizitem `--parallel > 1`). Meldungstexte sind
+  herkunftsbewusst (`pipeline.parallelism: auto (= N)` statt `--parallel N`).
 
 ## [0.9.12] - 2026-07-13
 

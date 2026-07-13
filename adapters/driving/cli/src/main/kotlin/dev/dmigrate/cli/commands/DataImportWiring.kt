@@ -48,6 +48,9 @@ internal data class DataImportOptions(
     val csvNullString: String,
     val chunkSize: Int,
     val parallel: Int,
+    /** pipeline.parallelism-Slice: Origin (CLI-explizit?) + Label, s. DataImportRunner-Request. */
+    val parallelFromCli: Boolean = false,
+    val parallelSourceLabel: String = "--parallel",
     val resume: String?,
     val checkpointDir: Path?,
     val noCheckpoint: Boolean,
@@ -178,6 +181,8 @@ internal object DataImportWiring {
             csvNullString = options.csvNullString,
             chunkSize = options.chunkSize,
             parallel = options.parallel,
+            parallelFromCli = options.parallelFromCli,
+            parallelSourceLabel = options.parallelSourceLabel,
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
             noProgress = options.cliContext.noProgress,
