@@ -30,9 +30,17 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
   (D-4) würde **passwortlose Auth** (Postgres `peer`/`trust`/`.pgpass`) brechen → **Stufe 5 (Prompt)
   verschoben** auf ein nicht-regressierendes Design (connect-then-prompt / Opt-in). A1 ist damit **rein
   additiv** (nur Stufe 2).
-- **A1 (Stufe 2) damit vollständig** über die CLI-DB-Ops. **Offen A2:** Stufe 4 (Store-Konsum +
-  Namens-Refactor `ResolvedConnectionRef` + `CredentialFillSession`). **Offen:** Stufe 5 (Prompt-Design,
-  connect-then-prompt/Opt-in), Slice B (`credentialRef` O4).
+- **A1 (Stufe 2) vollständig** über die CLI-DB-Ops.
+- **A2 (Stufe 4 Store-Konsum) — leichter Schnitt begonnen** (User-Entscheidung: statt der 30-Datei-
+  Namens-Migration die **Wiring-kennt-Namen**-Variante für Single-Connection-Ops): Kern
+  `CredentialFillSession` (Master-Secret-Cache, **copy-on-read**, `wipe`) + `StoreCredentialFiller`
+  (Stufe 4 nach Env, additiv, dialekt-gegatet, kein fail-closed, secret-freie Diagnose, User-Feld D-9) +
+  `CredentialFilling` (baut `parse→Env→Store` aus `rawSource`; Store nur bei Name, kein `://`). **Erst in
+  `data export` verdrahtet** (`CredentialFilling(request.source).parser()`); Kern voll unit-getestet.
+  **Offen:** die übrigen Single-Connection-Ops (`import`/`profile`/`schema reverse`/`rollback`/`migrate`),
+  Session-`wipe`-Lifecycle im Wiring (`finally`, aktuell GC-Hygiene), Store-Konsum für Default-Resolution
+  (`default_*`) und Dual-Connection (`transfer`/`compare` = Namens-Migration). **Offen:** Stufe 5 (Prompt),
+  Slice B (`credentialRef` O4).
 
 ## 1. Ziel, Scope & Staffelung
 
