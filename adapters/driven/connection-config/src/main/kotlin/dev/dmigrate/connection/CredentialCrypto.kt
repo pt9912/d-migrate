@@ -103,6 +103,17 @@ internal object CredentialCipher {
 
     private val MAGIC = byteArrayOf('D'.code.toByte(), 'M'.code.toByte(), 'C'.code.toByte(), 'S'.code.toByte())
     private const val VERSION = 1
+
+    /**
+     * Sane-Range für die aus dem (untrusted) Header gelesene Iterationszahl. Die untere Grenze ist rein
+     * funktional (`PBEKeySpec` wirft für `<= 0` ein **ungefangenes** `IllegalArgumentException`); die obere
+     * ist eine großzügige Sanity-Deckel weit über jedem realen/künftigen OWASP-Wert. Eine beschädigte oder
+     * manipulierte Datei mit einer Zahl außerhalb der Range wird so zum sauberen, secret-freien
+     * [CredentialStoreException] statt zu einem Crash oder einem header-gesteuerten PBKDF2-Dauerlauf.
+     */
+    private const val MIN_ITERATIONS = 1
+    private const val MAX_ITERATIONS = 100_000_000
+
     private const val VERSION_OFFSET = 4
     private const val ITER_OFFSET = 5
     private const val SALT_OFFSET = 9
@@ -134,6 +145,9 @@ internal object CredentialCipher {
             throw CredentialStoreException("Beschädigte oder fremde Store-Datei.")
         }
         val iterations = readInt(file, ITER_OFFSET)
+        if (iterations !in MIN_ITERATIONS..MAX_ITERATIONS) {
+            throw CredentialStoreException("Beschädigte oder fremde Store-Datei.")
+        }
         val salt = file.copyOfRange(SALT_OFFSET, SALT_OFFSET + SALT_LEN)
         val nonce = file.copyOfRange(NONCE_OFFSET, HEADER_LEN)
         val header = file.copyOfRange(0, HEADER_LEN)

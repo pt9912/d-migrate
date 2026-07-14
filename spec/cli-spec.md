@@ -20,7 +20,7 @@
 d-migrate <command> <subcommand> [flags] [arguments]
 ```
 
-- **Commands**: Oberste Ebene — `schema`, `data`, `export`, `transform`, `mcp`
+- **Commands**: Oberste Ebene — `schema`, `data`, `export`, `transform`, `config`, `mcp`
 - **Subcommands**: Aktion innerhalb eines Commands (`schema validate`, `data export`)
 - **Flags**: Optionen mit `--` Präfix, Kurzform mit `-` (`--format json`, `-f json`)
 - **Arguments**: Positionelle Argumente (selten, nur wo eindeutig)
@@ -1632,21 +1632,23 @@ d-migrate config credentials set --name <connection> --user <user> --password <p
 |---|---|---|---|
 | `--name` | Ja | String | Verbindungsname |
 | `--user` | Ja | String | Benutzername |
-| `--password` | Ja | String | Passwort (wird interaktiv abgefragt wenn nicht angegeben) |
+| `--password` | Nein | String | DB-Passwort. **Empfehlung: weglassen** — dann versteckte interaktive Abfrage; ein Klartext-Passwort auf der Kommandozeile kann über Shell-History/Prozessliste leaken. |
 
-Ergebnis: Credentials werden in `~/.d-migrate/credentials.enc` (AES-256) gespeichert. Details unter [Credential-Management](./connection-config-spec.md#4-credential-management).
+Der Store ist mit einem **Master-Secret** verschlüsselt, das die CLI aus `D_MIGRATE_MASTER_PASSWORD` oder per verstecktem interaktiven Prompt bezieht. Bei **Neuanlage** des Stores wird es zur Bestätigung doppelt eingegeben (ein Tippfehler machte den Store sonst dauerhaft unentschlüsselbar — siehe Recovery-Hinweis im [Benutzerhandbuch](../docs/user/anwenderhandbuch.md)).
 
-Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
+Ergebnis: Credentials werden in `~/.d-migrate/credentials.enc` (AES-256-GCM) gespeichert. Details unter [Credential-Management](./connection-config-spec.md#4-credential-management).
+
+Exit: `0` bei Erfolg; `2` wenn ohne interaktives Terminal kein `--password` angegeben ist (Passwort nicht abfragbar); `7` bei fehlendem Master-Secret ohne TTY (kein `D_MIGRATE_MASTER_PASSWORD`) oder Store-/Krypto-Fehler (z. B. falsches Master-Secret bei bestehendem Store).
 
 #### `config credentials list`
 
-Listet gespeicherte Verbindungsnamen (ohne Passwörter).
+Listet gespeicherte Verbindungsnamen (ohne Werte/Passwörter). Ein **bestehender** Store ist ganz verschlüsselt, daher braucht die Auflistung das Master-Secret (aus `D_MIGRATE_MASTER_PASSWORD` oder Prompt); ein leerer/fehlender Store wird ohne Master-Secret als leere Liste behandelt.
 
 ```
 d-migrate config credentials list
 ```
 
-Exit: `0` bei Erfolg.
+Exit: `0` bei Erfolg (auch bei leerem/fehlendem Store — leere Ausgabe, kein Master-Secret nötig); `7` bei fehlendem Master-Secret ohne TTY oder falschem Master-Secret / beschädigtem Store.
 
 #### `config show`
 

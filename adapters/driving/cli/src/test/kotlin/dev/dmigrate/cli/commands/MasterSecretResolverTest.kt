@@ -37,4 +37,32 @@ class MasterSecretResolverTest : FunSpec({
         val r = MasterSecretResolver(prompt = { "typed".toCharArray() }, env = { "" }, isTty = { true })
         String(r.resolve(isNewStore = false)!!) shouldBe "typed"
     }
+
+    test("confirmedSecret returns the secret on a match and wipes the second copy") {
+        val first = "master".toCharArray()
+        val second = "master".toCharArray()
+        var mismatched = false
+        val result = confirmedSecret(first, second) { mismatched = true }
+        String(result!!) shouldBe "master"
+        mismatched shouldBe false
+        String(second) shouldBe "      " // 6 spaces (wiped)
+    }
+
+    test("confirmedSecret returns null and signals a mismatch, wiping both copies") {
+        val first = "master".toCharArray()
+        val second = "typo!!".toCharArray()
+        var mismatched = false
+        confirmedSecret(first, second) { mismatched = true }.shouldBeNull()
+        mismatched shouldBe true
+        String(first) shouldBe "      "
+        String(second) shouldBe "      "
+    }
+
+    test("confirmedSecret returns null without a mismatch when the confirmation is aborted") {
+        val first = "master".toCharArray()
+        var mismatched = false
+        confirmedSecret(first, null) { mismatched = true }.shouldBeNull()
+        mismatched shouldBe false
+        String(first) shouldBe "      "
+    }
 })

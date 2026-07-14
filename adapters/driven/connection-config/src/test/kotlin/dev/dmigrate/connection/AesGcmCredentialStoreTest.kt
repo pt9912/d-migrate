@@ -122,6 +122,16 @@ class AesGcmCredentialStoreTest : FunSpec({
         leftovers shouldBe 0L
     }
 
+    test("write fails cleanly (CredentialStoreException) when the base dir is a regular file") {
+        // baseDir existiert als reguläre Datei → ensureDir/createDirectories wirft IOException.
+        // Muss als sauberer, secret-freier CredentialStoreException (Exit 7) ankommen, nicht als roher Crash.
+        val notADir = Files.createTempFile("cred-store-not-a-dir", ".tmp")
+        val store = AesGcmCredentialStore(
+            baseDir = notADir, masterSecretProvider = { "m".toCharArray() }, writeIterations = 1000,
+        )
+        shouldThrow<CredentialStoreException> { store.put("prod", "admin", "s3cr3t".toCharArray()) }
+    }
+
     test("StoredCredential masks in toString and clears on wipe") {
         val c = StoredCredential("admin", "s3cr3t".toCharArray())
         c.toString() shouldBe "StoredCredential(user=***, password=***)"

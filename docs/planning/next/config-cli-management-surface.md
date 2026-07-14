@@ -129,7 +129,7 @@ verpflichtender Masking-Test-Gate Teil der Abnahme.
 
 > **Supersedet (2026-07-13):** Phase 2 wird durch die O2/O4-Staffelung aus
 > [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) abgelöst — konkret durch
-> [`ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md`](../in-progress/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md)
+> [`ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md`](../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md)
 > (Slice 1 = O2-Store) und die noch offene Slice 2 (O4-Naht). Der `master.key`-Datei-Ansatz unten (§4.1)
 > ist **verworfen**; die Resolution-Ketten-Integration (§4.4) bleibt Slice-2-Gegenstand.
 

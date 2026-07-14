@@ -26,3 +26,28 @@ class MasterSecretResolver(
         const val ENV_VAR = "D_MIGRATE_MASTER_PASSWORD"
     }
 }
+
+/**
+ * Wertet die Confirm-Doppel-Eingabe des Master-Secrets (Neuanlage) aus — **reine, TTY-freie Logik**,
+ * damit sie ohne echte Konsole testbar ist; die `readPassword`-Aufrufe bleiben im dünnen Command-Shell.
+ * Wiped die **nicht** zurückgegebenen Kopien und ruft bei Nicht-Übereinstimmung [onMismatch].
+ *
+ * @return das bestätigte Secret ([first]) oder `null` (abgebrochen bzw. Tippfehler → fail-closed).
+ */
+internal fun confirmedSecret(first: CharArray, second: CharArray?, onMismatch: () -> Unit): CharArray? =
+    when {
+        second == null -> {
+            first.fill(' ')
+            null
+        }
+        first.contentEquals(second) -> {
+            second.fill(' ')
+            first
+        }
+        else -> {
+            first.fill(' ')
+            second.fill(' ')
+            onMismatch()
+            null
+        }
+    }

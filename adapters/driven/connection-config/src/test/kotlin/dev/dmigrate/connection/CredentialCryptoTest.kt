@@ -51,4 +51,31 @@ class CredentialCryptoTest : FunSpec({
             CredentialCipher.decrypt(byteArrayOf(1, 2, 3), "m".toCharArray())
         }
     }
+
+    test("a header with a non-positive iteration count is a clean corrupt-file error, not an IllegalArgumentException") {
+        val file = CredentialCipher.encrypt("x".toByteArray(), "m".toCharArray(), 1000, SecureRandom())
+        // Iterationszahl (Big-Endian-Int ab Offset 5) auf 0 überschreiben — PBEKeySpec würde sonst ein
+        // ungefangenes IllegalArgumentException werfen (Absturz statt sauberem Fehler).
+        setIterations(file, 0)
+        shouldThrow<CredentialStoreException> {
+            CredentialCipher.decrypt(file, "m".toCharArray())
+        }
+    }
+
+    test("a header with an absurd iteration count is rejected as corrupt (no PBKDF2 runaway)") {
+        val file = CredentialCipher.encrypt("x".toByteArray(), "m".toCharArray(), 1000, SecureRandom())
+        setIterations(file, Int.MAX_VALUE) // > MAX_ITERATIONS → sauberer Fehler statt Milliarden-Runden-Lauf
+        shouldThrow<CredentialStoreException> {
+            CredentialCipher.decrypt(file, "m".toCharArray())
+        }
+    }
 })
+
+/** Überschreibt die Iterationszahl (Big-Endian-Int) im 37-Byte-Header ab Offset 5. */
+private fun setIterations(file: ByteArray, value: Int) {
+    val iterOffset = 5
+    file[iterOffset] = (value ushr 24).toByte()
+    file[iterOffset + 1] = (value ushr 16).toByte()
+    file[iterOffset + 2] = (value ushr 8).toByte()
+    file[iterOffset + 3] = value.toByte()
+}

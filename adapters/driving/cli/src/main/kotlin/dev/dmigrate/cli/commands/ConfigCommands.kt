@@ -7,6 +7,7 @@ import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import dev.dmigrate.cli.DMigrate
+import java.nio.file.Path
 
 /**
  * `d-migrate config` — Konfigurations- und Credential-Verwaltung (LN-025 Slice 1). Reine
@@ -67,15 +68,7 @@ class ConfigCredentialsSetCommand : CliktCommand(name = "set") {
         val first = console.readPassword("Master passphrase: ") ?: return null
         if (!confirm) return first
         val second = console.readPassword("Confirm master passphrase: ")
-        return when {
-            second == null -> { first.fill(' '); null }
-            first.contentEquals(second) -> { second.fill(' '); first }
-            else -> {
-                first.fill(' '); second.fill(' ')
-                echo("Error: passphrases do not match.", err = true)
-                null
-            }
-        }
+        return confirmedSecret(first, second) { echo("Error: passphrases do not match.", err = true) }
     }
 
     private fun acquireDbPassword(): CharArray {
@@ -85,8 +78,6 @@ class ConfigCredentialsSetCommand : CliktCommand(name = "set") {
         }
         return System.console()?.readPassword("Database password for '$user': ") ?: CharArray(0)
     }
-
-    private fun rootConfigPath() = (currentContext.parent?.parent?.parent?.command as? DMigrate)?.config
 }
 
 /** `config credentials list` — listet gespeicherte Verbindungsnamen (nie Werte/Passwörter). */
@@ -104,6 +95,12 @@ class ConfigCredentialsListCommand : CliktCommand(name = "list") {
         )
         if (exit != 0) throw ProgramResult(exit)
     }
-
-    private fun rootConfigPath() = (currentContext.parent?.parent?.parent?.command as? DMigrate)?.config
 }
+
+/**
+ * Der effektive `--config`-Pfad, von einem `config`-Leaf-Kommando aus über die Wurzel `DMigrate`
+ * gelesen (Verschachtelung `config → credentials → set`/`list` = drei Ebenen hoch). Steuert nur den
+ * Audit-Konfigurationspfad; `null` = kein `--config` gesetzt.
+ */
+internal fun CliktCommand.rootConfigPath(): Path? =
+    (currentContext.parent?.parent?.parent?.command as? DMigrate)?.config

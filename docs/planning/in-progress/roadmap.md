@@ -640,7 +640,8 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ✅⁸ |
 | Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ✅⁷ |
-| Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
+| Security  | Verschlüsselte Credential-Speicherung (AES-256-GCM)  | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ✅⁹ |
+| Security  | Credential-Auflösung aus Quellen-Priorität (inkl. Store) | [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) | 🚧¹⁰ |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | ✅³ |
 | Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | ✅⁴ |
 | QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
@@ -712,6 +713,21 @@ Transfer/Import gruppieren FK-Ebenen; Export fächert einen partitionierten Pare
 Datei pro Kind. `--parallel 1` (Default) ist byte-identisch zum sequenziellen Pfad; SQLite
 wird auf 1 geklemmt (Pool-Size 1); `--parallel > 1` ⊥ `--resume` (Exit 2). Nicht-Scope:
 parallele `--resume`-Wiederaufnahme; Cross-Dialekt-Partitions-Fan-out (Fallback auf Parent).
+⁹ Erledigt (2026-07-14, [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) „O2",
+ImpPlan [`ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md`](../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md)):
+lokaler passphrase-verschlüsselter Store (`~/.d-migrate/credentials.enc`, AES-256-GCM,
+PBKDF2-HMAC-SHA256/600k, Header als AAD, kein Key auf Platte) + `config credentials set`/`list`.
+[`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) fordert nur die verschlüsselte
+**Speicherung** — die ist erfüllt. Das **Verwenden** gespeicherter Zugangsdaten beim
+Verbindungsaufbau (Auflösung aus der Quellen-Priorität) ist eine eigene Anforderung
+[`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) (s. ¹⁰), nicht Teil dieser Zeile.
+¹⁰ 🚧 Teilweise (Stand 2026-07-14): Die Auflösungskette (connection-config-spec 4.1) ist auf dem
+CLI-`--source`-Pfad erst zu Stufe 1 (Inline-URL) und Stufe 3 (`${VAR}` aus Config) implementiert
+(`NamedConnectionResolver`). Offen: Stufe 2 (`D_MIGRATE_DB_PASSWORD`), Stufe 4 (verschlüsselter
+Store — mit ⁹ gebaut, aber noch **nicht** konsumiert), Stufe 5 (interaktiver Prompt) und die externe
+Secret-Referenz (`credentialRef`/`providerRef`, heute nur hinter der MCP-`ConnectionSecretResolver`-
+Naht, nicht auf dem CLI-Pfad). Eigener Folge-Slice (O4-Naht aus
+[ADR 0034](../../adr/0034-master-key-architektur-credential-store.md)).
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,

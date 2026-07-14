@@ -100,12 +100,18 @@ class AesGcmCredentialStore(
     }
 
     private fun writeAtomically(bytes: ByteArray) {
-        ensureDir()
-        val posix = isPosix()
-        val tmp = if (posix) {
-            Files.createTempFile(baseDir, TMP_PREFIX, TMP_SUFFIX, PosixFilePermissions.asFileAttribute(OWNER_RW))
-        } else {
-            Files.createTempFile(baseDir, TMP_PREFIX, TMP_SUFFIX)
+        // Prelude (Verzeichnis anlegen + Temp-Datei) kann ebenfalls scheitern (z. B. baseDir ist eine
+        // reguläre Datei, read-only oder Platte voll) → wie der Schreibpfad in einen sauberen,
+        // secret-freien CredentialStoreException (Exit 7) mappen statt roh durchzureichen.
+        val tmp = try {
+            ensureDir()
+            if (isPosix()) {
+                Files.createTempFile(baseDir, TMP_PREFIX, TMP_SUFFIX, PosixFilePermissions.asFileAttribute(OWNER_RW))
+            } else {
+                Files.createTempFile(baseDir, TMP_PREFIX, TMP_SUFFIX)
+            }
+        } catch (e: IOException) {
+            throw CredentialStoreException("Store nicht schreibbar: ${storeFile.fileName}", e)
         }
         try {
             Files.write(tmp, bytes)

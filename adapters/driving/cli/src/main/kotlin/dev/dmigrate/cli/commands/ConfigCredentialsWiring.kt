@@ -36,7 +36,7 @@ internal object ConfigCredentialsWiring {
         storeFactory: (Path, () -> CharArray) -> CredentialStorePort = ::defaultStore,
     ): Int = recorder.record("config.credentials.set", listOf(options.name)) {
         var secret: CharArray? = null
-        val store = storeFactory(options.baseDir) { secret?.copyOf() ?: CharArray(0) }
+        val store = storeFactory(options.baseDir) { secret?.copyOf() ?: error("master secret accessed before it was resolved") }
         secret = masterSecretResolver.resolve(isNewStore = !store.isInitialized())
             ?: return@record failClosed(stderr)
         try {
@@ -54,7 +54,7 @@ internal object ConfigCredentialsWiring {
         storeFactory: (Path, () -> CharArray) -> CredentialStorePort = ::defaultStore,
     ): Int {
         var secret: CharArray? = null
-        val store = storeFactory(options.baseDir) { secret?.copyOf() ?: CharArray(0) }
+        val store = storeFactory(options.baseDir) { secret?.copyOf() ?: error("master secret accessed before it was resolved") }
         val runner = CredentialCommandRunner(store, stdout, stderr)
         // Leerer/fehlender Store → leere Liste ohne Master-Secret (Akzeptanz: Exit 0).
         if (!store.isInitialized()) return runner.list()
