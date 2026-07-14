@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionUrlParser
+import dev.dmigrate.driver.connection.CredentialStoreException
 
 /**
  * Baut den CLI-`urlParser` für **Single-Connection**-Ops: `parse → Stufe 2 (Env) → Stufe 4 (Store)`.
@@ -24,8 +25,16 @@ internal class CredentialFilling(
     /** `parse → Env(2) → Store(4)`. */
     fun parser(parse: (String) -> ConnectionConfig = ConnectionUrlParser::parse): (String) -> ConnectionConfig =
         { url ->
-            val afterEnv = envFiller.fill(parse(url))
-            storeFiller?.fill(afterEnv) ?: afterEnv
+            try {
+                val afterEnv = envFiller.fill(parse(url))
+                storeFiller?.fill(afterEnv) ?: afterEnv
+            } catch (e: CredentialStoreException) {
+                // Falsches Master-Secret / beschädigter Store = lokaler Fehler. Als IllegalArgumentException
+                // signalisieren (wie ein URL-Parse-Fehler) — damit die Verbindungs-Runner es einheitlich auf
+                // Exit 7 mit secret-freier Meldung mappen, statt als ungefangene Exception (Stacktrace, Exit 1)
+                // zu entkommen. KEIN fail-open bei falschem Secret (der Nutzer soll die Passphrase korrigieren).
+                throw IllegalArgumentException(e.message, e)
+            }
         }
 }
 

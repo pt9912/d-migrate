@@ -2,8 +2,10 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
+import dev.dmigrate.driver.connection.CredentialStoreException
 import dev.dmigrate.driver.connection.CredentialStorePort
 import dev.dmigrate.driver.connection.StoredCredential
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.nulls.shouldBeNull
@@ -18,6 +20,7 @@ private class FillingFakeStore(
     private val entries: Map<String, Pair<String, String>>,
     private val secretProvider: () -> CharArray,
     private val onSecret: (String) -> Unit = {},
+    private val throwOnResolve: Boolean = false,
 ) : CredentialStorePort {
     override fun put(name: String, user: String, password: CharArray): Unit = error("unused")
     override fun listNames(): List<String> = entries.keys.sorted()
@@ -26,6 +29,7 @@ private class FillingFakeStore(
         val s = secretProvider()
         onSecret(String(s))
         s.fill(' ')
+        if (throwOnResolve) throw CredentialStoreException("Falsches Master-Secret oder manipulierte Store-Datei.")
         val e = entries[name] ?: return null
         return StoredCredential(e.first, e.second.toCharArray())
     }
@@ -134,5 +138,19 @@ class CredentialFillingTest : FunSpec({
             .fill(cfg(DatabaseDialect.POSTGRESQL, password = null))
         out.password shouldBe null
         err.shouldBeEmpty()
+    }
+
+    // --- CredentialFilling.parser: wrong-secret path maps to exit 7 (not an uncaught crash) ---
+
+    test("parser: a store-decrypt failure surfaces as IllegalArgumentException (runners map it to exit 7)") {
+        val throwingSession = CredentialFillSession(
+            masterSecretResolver = resolver("master"),
+            baseDir = UNUSED_DIR,
+            storeFactory = { _, provider -> FillingFakeStore(true, emptyMap(), provider, throwOnResolve = true) },
+        )
+        val filling = CredentialFilling(rawSource = "prod", stderr = {}, sessionFactory = { throwingSession })
+        shouldThrow<IllegalArgumentException> {
+            filling.parser { cfg(DatabaseDialect.POSTGRESQL, password = null) }("postgresql://h/db")
+        }
     }
 })
