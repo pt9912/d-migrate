@@ -18,6 +18,19 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
 > Entschlüsselung) + Probe-Typealias-Aufweitung (D-5/AP-A2.3); Integrationstest-Netz greift nur unter
 > `-PintegrationTests` → **per-Site-Unit-Asserts** nötig (AP-A1.4/A2.4).
 
+## Fortschritt
+
+- **A1-Stufe 2 für Data-Ops geliefert** (`EnvCredentialFiller`): `data export`/`import`/`transfer`
+  ergänzen ein fehlendes DB-Passwort aus `D_MIGRATE_DB_PASSWORD` — **additiv, dialekt-gegatet, kein
+  fail-closed**. Realisiert als CLI-Naht `urlParser = EnvCredentialFiller().fillingParser(parse)` in den
+  drei Data-Wirings; MCP unverändert (nackter Parser → kein Fill). cli test/detekt/koverVerify grün.
+- **Implementierungs-Befund (Plan-Korrektur):** die ursprüngliche „Stufe 5 non-TTY → fail-closed Exit 7"
+  (D-4) würde **passwortlose Auth** (Postgres `peer`/`trust`/`.pgpass`) brechen → **Stufe 5 (Prompt)
+  verschoben** auf ein nicht-regressierendes Design (connect-then-prompt / Opt-in). A1 ist damit **rein
+  additiv** (nur Stufe 2).
+- **Offen A1:** Stufe 2 an den Schema-/Probe-Stellen (~11 weitere Sites, eigener Schnitt). **Offen A2:**
+  Stufe 4 (Store-Konsum + Namens-Refactor). **Offen:** Stufe 5 (Prompt-Design), Slice B (`credentialRef`).
+
 ## 1. Ziel, Scope & Staffelung
 
 **Ziel:** [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) — Zugangsdaten aus der definierten

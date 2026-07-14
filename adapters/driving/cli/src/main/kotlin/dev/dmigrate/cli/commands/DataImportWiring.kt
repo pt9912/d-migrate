@@ -95,7 +95,7 @@ internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
                     throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
                 }
             },
-            urlParser = ConnectionUrlParser::parse,
+            urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
             poolFactory = HikariConnectionPoolFactory::create,
             writerLookup = writerLookup,
             schemaCodec = YamlSchemaCodec(),

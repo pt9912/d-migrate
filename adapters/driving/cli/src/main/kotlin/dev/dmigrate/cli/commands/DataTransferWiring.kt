@@ -94,7 +94,7 @@ internal object DataTransferWiring {
         val runner = DataTransferRunner(
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },
             targetResolver = { tgt, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(tgt) },
-            urlParser = { url -> ConnectionUrlParser.parse(url) },
+            urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
             poolFactory = { config -> HikariConnectionPoolFactory.create(config) },
             driverLookup = { dialect -> DatabaseDriverRegistry.get(dialect) },
             urlScrubber = LogScrubber::maskUrl,

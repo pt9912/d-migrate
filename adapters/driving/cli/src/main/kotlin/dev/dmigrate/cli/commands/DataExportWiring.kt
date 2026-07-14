@@ -122,7 +122,7 @@ internal object DataExportWiring {
                     throw IllegalArgumentException(e.message, e)
                 }
             },
-            urlParser = ConnectionUrlParser::parse,
+            urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
             poolFactory = HikariConnectionPoolFactory::create,
             readerLookup = { DatabaseDriverRegistry.get(it).dataReader(options.fetchSize) },
             listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
