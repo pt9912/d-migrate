@@ -36,6 +36,36 @@ internal class CredentialFilling(
                 throw IllegalArgumentException(e.message, e)
             }
         }
+
+    /** Wie [parser], direkt auf eine bereits aufgelöste URL angewandt (für Wirings, die inline parsen). */
+    fun fill(url: String, parse: (String) -> ConnectionConfig = ConnectionUrlParser::parse): ConnectionConfig =
+        parser(parse)(url)
+
+    companion object {
+        /**
+         * Legt den Store-Filler (Stufe 4) **über** einen bestehenden `urlParser` [base] (der bereits parst
+         * und Stufe 2/Env füllt) — für Wirings mit Bundle-Seam, bei denen der Name erst am Runner-Bau
+         * bekannt ist. Store nur bei einem Namen ([rawSource] ohne `://`); sonst wird [base] unverändert
+         * zurückgegeben (der injizierte Seam bleibt also erhalten). Falsches Master-Secret / beschädigter
+         * Store → IllegalArgumentException (→ Exit 7), kein fail-open.
+         */
+        fun storeOnTop(
+            rawSource: String?,
+            base: (String) -> ConnectionConfig,
+            stderr: (String) -> Unit = { System.err.println(it) },
+            sessionFactory: () -> CredentialFillSession = ::defaultFillSession,
+        ): (String) -> ConnectionConfig {
+            val name = rawSource?.takeUnless { it.contains("://") } ?: return base
+            val storeFiller = StoreCredentialFiller(name, sessionFactory(), stderr)
+            return { url ->
+                try {
+                    storeFiller.fill(base(url))
+                } catch (e: CredentialStoreException) {
+                    throw IllegalArgumentException(e.message, e)
+                }
+            }
+        }
+    }
 }
 
 private fun defaultFillSession(): CredentialFillSession = CredentialFillSession(

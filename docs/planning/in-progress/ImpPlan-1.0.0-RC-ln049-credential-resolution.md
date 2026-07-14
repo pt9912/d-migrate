@@ -35,12 +35,17 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
   Namens-Migration die **Wiring-kennt-Namen**-Variante für Single-Connection-Ops): Kern
   `CredentialFillSession` (Master-Secret-Cache, **copy-on-read**, `wipe`) + `StoreCredentialFiller`
   (Stufe 4 nach Env, additiv, dialekt-gegatet, kein fail-closed, secret-freie Diagnose, User-Feld D-9) +
-  `CredentialFilling` (baut `parse→Env→Store` aus `rawSource`; Store nur bei Name, kein `://`). **Erst in
-  `data export` verdrahtet** (`CredentialFilling(request.source).parser()`); Kern voll unit-getestet.
-  **Offen:** die übrigen Single-Connection-Ops (`import`/`profile`/`schema reverse`/`rollback`/`migrate`),
-  Session-`wipe`-Lifecycle im Wiring (`finally`, aktuell GC-Hygiene), Store-Konsum für Default-Resolution
-  (`default_*`) und Dual-Connection (`transfer`/`compare` = Namens-Migration). **Offen:** Stufe 5 (Prompt),
-  Slice B (`credentialRef` O4).
+  `CredentialFilling` (baut `parse→Env→Store` aus `rawSource`; Store nur bei Name, kein `://`; `fill(url)`
+  für inline-parsende Wirings, `storeOnTop(name, base)` für Bundle-Seams). **Verdrahtet:** `data export`
+  (`request.source`), `data import` (`options.target` via `storeOnTop` über `bundle.urlParser`), `schema
+  compare` (je Operand `op.source`, inline im Exit-7-`try`). A2-Kern-Review fand + fixte einen Major-Bug
+  (Falsch-Secret → Exit 7 statt Crash, `9a9d6760`). Kern voll unit-getestet inkl. `storeOnTop`.
+  **Offen A2:** `data profile`/`schema reverse` (Name am Bundle-**poolFactory**/-Seam nicht verfügbar),
+  `schema migrate`/`rollback` (deren Preflight-**Probes** treffen dieselbe Ziel-Verbindung → nur mit den
+  Probes konsistent = Namens-/Session-Threading), `data transfer` (Dual-Connection), `default_*`-Resolution.
+  **Bekannte Nachbesserungen:** Session-`wipe`-`finally`-Lifecycle (aktuell GC); Wiring-Tests hängen für
+  Name-Quellen latent von `~/.d-migrate` ab (Session injizierbar machen); totes `DataImportWiringBundle.
+  urlParser`-Feld (durch `storeOnTop` ersetzt). **Offen:** Stufe 5 (Prompt), Slice B (`credentialRef` O4).
 
 ## 1. Ziel, Scope & Staffelung
 

@@ -192,7 +192,7 @@ internal object DataImportWiring {
         )
         val runner = DataImportRunner(
             targetResolver = bundle.targetResolver,
-            urlParser = bundle.urlParser,
+            urlParser = CredentialFilling.storeOnTop(options.target, bundle.urlParser),
             poolFactory = bundle.poolFactory,
             writerLookup = bundle.writerLookup,
             schemaPreflight = preflight::prepare,

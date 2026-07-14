@@ -12,7 +12,6 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.SchemaReadOptions
-import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.LogScrubber
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.format.SchemaFileResolver
@@ -84,7 +83,7 @@ internal object DefaultSchemaCompareWiringFactory : SchemaCompareWiringFactory {
         val config: dev.dmigrate.driver.connection.ConnectionConfig
         try {
             url = NamedConnectionResolver(configPathFromCli = cfgPath).resolve(op.source)
-            config = EnvCredentialFiller().fill(ConnectionUrlParser.parse(url))
+            config = CredentialFilling(op.source).fill(url)
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }

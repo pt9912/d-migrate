@@ -153,4 +153,39 @@ class CredentialFillingTest : FunSpec({
             filling.parser { cfg(DatabaseDialect.POSTGRESQL, password = null) }("postgresql://h/db")
         }
     }
+
+    // --- CredentialFilling.storeOnTop (Bundle-Seam-Fall: Store ÜBER einen bestehenden urlParser) ---
+
+    test("storeOnTop: a URL rawSource returns the base parser unchanged (no session built)") {
+        var baseCalled = false
+        val base: (String) -> ConnectionConfig = { baseCalled = true; cfg(DatabaseDialect.POSTGRESQL, "explicit") }
+        val p = CredentialFilling.storeOnTop("postgresql://h/db", base, {}) { error("session must not be built") }
+        p("postgresql://h/db").password shouldBe "explicit"
+        baseCalled shouldBe true
+    }
+
+    test("storeOnTop: a name composes the store fill on top of base (base still invoked)") {
+        var baseCalled = false
+        val base: (String) -> ConnectionConfig = {
+            baseCalled = true
+            cfg(DatabaseDialect.POSTGRESQL, password = null, user = null)
+        }
+        val p = CredentialFilling.storeOnTop("prod", base, {}) { session(mapOf("prod" to ("admin" to "s3cr3t"))) }
+        val out = p("postgresql://h/db")
+        baseCalled shouldBe true
+        out.password shouldBe "s3cr3t"
+        out.user shouldBe "admin"
+    }
+
+    test("storeOnTop: a store-decrypt failure surfaces as IllegalArgumentException") {
+        val base: (String) -> ConnectionConfig = { cfg(DatabaseDialect.POSTGRESQL, password = null) }
+        val p = CredentialFilling.storeOnTop("prod", base, {}) {
+            CredentialFillSession(
+                masterSecretResolver = resolver("master"),
+                baseDir = UNUSED_DIR,
+                storeFactory = { _, provider -> FillingFakeStore(true, emptyMap(), provider, throwOnResolve = true) },
+            )
+        }
+        shouldThrow<IllegalArgumentException> { p("postgresql://h/db") }
+    }
 })

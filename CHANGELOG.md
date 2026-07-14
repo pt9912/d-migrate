@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Stufe 4) — ein mit `config credentials set --name <n>` hinterlegtes Passwort wird jetzt von
   `data export --source <n>` genutzt (Master-Passphrase via `D_MIGRATE_MASTER_PASSWORD` oder Prompt, je Lauf
   einmal). Additiv nach Stufe 2 (Env), dialekt-gegatet, **kein** fail-closed (fehlt Eintrag/Master-Secret →
-  weiter ohne, mit secret-freier Notiz). Erster Schnitt: `data export`; weitere Single-Connection-Ops
-  (`import`/`profile`/`schema reverse`/`rollback`/`migrate`) folgen, `transfer`/`compare` (Dual-Connection)
-  danach.
+  weiter ohne, mit secret-freier Notiz). Falsches Master-Secret / beschädigter Store → Exit 7 (secret-frei).
+  Verdrahtet für `data export`/`import` und `schema compare` (Store-Key = der `--source`/`--target`-
+  Connection-Name). Die übrigen Ops (`data profile`, `schema reverse`/`migrate`/`rollback`, `data transfer`)
+  brauchen die Namens-Durchreichung an ihre Verbindungs-Seams und folgen.
 - **Konfigurierbarer JDBC-`fetchSize`** (`data export`/`transfer --fetch-size`, [`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
   der Cursor-Prefetch für den Quell-Read ist nicht mehr eine pro Dialekt hart verdrahtete Konstante,
   sondern per CLI-Flag bzw. `pipeline.fetch_size` einstellbar (für sehr breite Zeilen kleiner wählbar,
