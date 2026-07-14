@@ -20,16 +20,19 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
 
 ## Fortschritt
 
-- **A1-Stufe 2 für Data-Ops geliefert** (`EnvCredentialFiller`): `data export`/`import`/`transfer`
-  ergänzen ein fehlendes DB-Passwort aus `D_MIGRATE_DB_PASSWORD` — **additiv, dialekt-gegatet, kein
-  fail-closed**. Realisiert als CLI-Naht `urlParser = EnvCredentialFiller().fillingParser(parse)` in den
-  drei Data-Wirings; MCP unverändert (nackter Parser → kein Fill). cli test/detekt/koverVerify grün.
+- **A1-Stufe 2 KOMPLETT über alle CLI-DB-Ops geliefert** (`EnvCredentialFiller`): `data export`/`import`/
+  `transfer`/`profile` **und** `schema reverse`/`migrate`/`compare`/`rollback` (inkl. der 4 auth-relevanten
+  Preflight-/Sequenz-Probes) ergänzen ein fehlendes DB-Passwort aus `D_MIGRATE_DB_PASSWORD` — **additiv,
+  dialekt-gegatet, kein fail-closed**. Realisiert als `EnvCredentialFiller().fill(parse(url))` bzw.
+  `fillingParser` an den 12 auth-relevanten Sites; die 2 SQLite-only-Probes brauchen keinen Fill
+  (Dialekt-Gate no-op); MCP unverändert (nackter Parser → kein Fill). cli test/detekt/koverVerify grün.
 - **Implementierungs-Befund (Plan-Korrektur):** die ursprüngliche „Stufe 5 non-TTY → fail-closed Exit 7"
   (D-4) würde **passwortlose Auth** (Postgres `peer`/`trust`/`.pgpass`) brechen → **Stufe 5 (Prompt)
   verschoben** auf ein nicht-regressierendes Design (connect-then-prompt / Opt-in). A1 ist damit **rein
   additiv** (nur Stufe 2).
-- **Offen A1:** Stufe 2 an den Schema-/Probe-Stellen (~11 weitere Sites, eigener Schnitt). **Offen A2:**
-  Stufe 4 (Store-Konsum + Namens-Refactor). **Offen:** Stufe 5 (Prompt-Design), Slice B (`credentialRef`).
+- **A1 (Stufe 2) damit vollständig** über die CLI-DB-Ops. **Offen A2:** Stufe 4 (Store-Konsum +
+  Namens-Refactor `ResolvedConnectionRef` + `CredentialFillSession`). **Offen:** Stufe 5 (Prompt-Design,
+  connect-then-prompt/Opt-in), Slice B (`credentialRef` O4).
 
 ## 1. Ziel, Scope & Staffelung
 

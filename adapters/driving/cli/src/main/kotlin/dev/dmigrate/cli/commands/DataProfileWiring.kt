@@ -67,7 +67,7 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
             poolFactory = { url, _ ->
                 // data profile ist eine reine Lese-Operation → Quelle read-only oeffnen
                 // (SQLite: SQLITE_OPEN_READONLY, kein -wal/-shm); --no-read-only schaltet ab.
-                val config = ConnectionUrlParser.parse(url).copy(readOnly = readOnly)
+                val config = EnvCredentialFiller().fill(ConnectionUrlParser.parse(url).copy(readOnly = readOnly))
                 HikariConnectionPoolFactory.create(config)
             },
             adapterLookup = ::profilingAdaptersFor,

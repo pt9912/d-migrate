@@ -63,7 +63,7 @@ internal object DefaultSchemaReverseWiringFactory : SchemaReverseWiringFactory {
         val reportWriter = ReverseReportWriter()
         return SchemaReverseWiringBundle(
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },
-            urlParser = { url -> ConnectionUrlParser.parse(url) },
+            urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
             poolFactory = { config -> HikariConnectionPoolFactory.create(config) },
             driverLookup = { dialect -> DatabaseDriverRegistry.get(dialect) },
             schemaWriter = { path, schema, fmt -> SchemaFileResolver.writeSchema(path, schema, fmt) },

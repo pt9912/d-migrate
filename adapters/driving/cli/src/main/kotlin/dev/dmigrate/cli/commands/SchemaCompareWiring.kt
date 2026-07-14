@@ -84,7 +84,7 @@ internal object DefaultSchemaCompareWiringFactory : SchemaCompareWiringFactory {
         val config: dev.dmigrate.driver.connection.ConnectionConfig
         try {
             url = NamedConnectionResolver(configPathFromCli = cfgPath).resolve(op.source)
-            config = ConnectionUrlParser.parse(url)
+            config = EnvCredentialFiller().fill(ConnectionUrlParser.parse(url))
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }

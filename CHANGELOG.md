@@ -21,11 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`D_MIGRATE_DB_PASSWORD` war ein stiller No-op** ([`LN-049`](spec/lastenheft-d-migrate.md#ln-049)) —
   die globale Fallback-Variable war in der Connection-Spec als Auflösungs-Stufe 2 dokumentiert, wurde vom
-  Runtime aber nie gelesen. `data export`/`import`/`transfer` ergänzen jetzt ein **fehlendes** DB-Passwort
-  aus `D_MIGRATE_DB_PASSWORD` (rein additiv: explizit inline/`${VAR}` gesetztes gewinnt; SQLite/no-auth
-  wird übersprungen; ist die Variable leer/ungesetzt, bleibt es beim bisherigen Verhalten — **kein**
-  fail-closed, passwortlose Auth wie Postgres `peer`/`trust`/`.pgpass` bleibt möglich). CLI-only; der
-  MCP-Pfad ist bewusst ausgenommen. Store-Konsum (Stufe 4) + interaktiver Prompt (Stufe 5) folgen.
+  Runtime aber nie gelesen. Alle CLI-DB-Operationen (`data export`/`import`/`transfer`/`profile`,
+  `schema reverse`/`migrate`/`compare`/`rollback` inkl. der Preflight-/Sequenz-Probes) ergänzen jetzt ein
+  **fehlendes** DB-Passwort aus `D_MIGRATE_DB_PASSWORD` (rein additiv: explizit inline/`${VAR}` gesetztes
+  gewinnt; SQLite/no-auth wird übersprungen; ist die Variable leer/ungesetzt, bleibt es beim bisherigen
+  Verhalten — **kein** fail-closed, passwortlose Auth wie Postgres `peer`/`trust`/`.pgpass` bleibt möglich).
+  CLI-only; der MCP-Pfad ist bewusst ausgenommen. Store-Konsum (Stufe 4) + interaktiver Prompt (Stufe 5) folgen.
 - **`pipeline.chunk_size` war ein stiller No-op** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
   der Config-Key war in der Connection-Spec dokumentiert, wurde vom Runtime aber ignoriert (nur
   `--chunk-size` wirkte). `pipeline.chunk_size` (export/import/transfer) und der neue

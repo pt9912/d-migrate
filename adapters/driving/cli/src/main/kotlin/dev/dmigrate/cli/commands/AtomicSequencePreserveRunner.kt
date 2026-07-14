@@ -97,7 +97,7 @@ internal object AtomicSequencePreserveRunner {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
         val config = try {
-            ConnectionUrlParser.parse(url)
+            EnvCredentialFiller().fill(ConnectionUrlParser.parse(url))
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "URL parse failed", e)
         }

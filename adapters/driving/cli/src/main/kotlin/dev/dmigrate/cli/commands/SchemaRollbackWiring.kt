@@ -66,7 +66,7 @@ internal object SchemaRollbackWiring {
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
-        val config = ConnectionUrlParser.parse(url)
+        val config = EnvCredentialFiller().fill(ConnectionUrlParser.parse(url))
         val userRef = if (op.source.contains("://")) LogScrubber.maskUrl(url) else op.source
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->
