@@ -726,7 +726,8 @@ CLI-`--source`-Pfad erst zu Stufe 1 (Inline-URL) und Stufe 3 (`${VAR}` aus Confi
 (`NamedConnectionResolver`). Offen: Stufe 2 (`D_MIGRATE_DB_PASSWORD`), Stufe 4 (verschlüsselter
 Store — mit ⁹ gebaut, aber noch **nicht** konsumiert), Stufe 5 (interaktiver Prompt) und die externe
 Secret-Referenz (`credentialRef`/`providerRef`, heute nur hinter der MCP-`ConnectionSecretResolver`-
-Naht, nicht auf dem CLI-Pfad). Eigener Folge-Slice (O4-Naht aus
+Naht, nicht auf dem CLI-Pfad). Eigener Folge-Slice — Plan
+[`ln049-credential-resolution`](./ImpPlan-1.0.0-RC-ln049-credential-resolution.md) (O4-Naht aus
 [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md)).
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
