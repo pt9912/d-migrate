@@ -42,10 +42,12 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
   additivem `credentialFiller`-Seam auf `DataTransferRunner`/`TransferConnectionResolver`,
   `CredentialFilling.perConnectionStoreFiller` mit **einer** geteilten Session; MCP/Tests = Identity-Default). A2-Kern-Review fand + fixte einen Major-Bug
   (Falsch-Secret → Exit 7 statt Crash, `9a9d6760`). Kern voll unit-getestet inkl. `storeOnTop`.
-  **Offen A2:** `data profile`/`schema reverse` (Name am Bundle-**poolFactory**/-Seam nicht verfügbar →
-  Runner-`credentialFiller`-Seam wie bei transfer), `schema migrate`/`rollback` (deren Preflight-**Probes**
-  treffen dieselbe Ziel-Verbindung → nur mit den Probes konsistent = Session-Threading in die Probe-Seams),
-  `default_*`-Resolution.
+  **`schema reverse`** (via `storeOnTop` über `bundle.urlParser`, wie import).
+  **Offen A2 (invasiv):** `data profile` (opaker `poolFactory: (url,dialect)->pool` → Runner-Connection-Fluss
+  restrukturieren, damit ein config-Level-Fill-Punkt entsteht), `schema migrate`/`rollback` (`loadFromDb` +
+  ~5 Probe-Runner öffnen **dieselbe** Ziel-Verbindung als bare `::probe`-Refs → **gemeinsam durchgereichte
+  Session** nötig, sonst N Master-Secret-Prompts; berührt Probe-Signaturen/Typealiases + Render-Pipeline),
+  `default_*`-Resolution. Diese drei decken sich uniform mit der Namens-Migration (`ResolvedConnectionRef`).
   **Bekannte Nachbesserungen:** Session-`wipe`-`finally`-Lifecycle (aktuell GC); Wiring-Tests hängen für
   Name-Quellen latent von `~/.d-migrate` ab (Session injizierbar machen); totes `DataImportWiringBundle.
   urlParser`-Feld (durch `storeOnTop` ersetzt). **Offen:** Stufe 5 (Prompt), Slice B (`credentialRef` O4).

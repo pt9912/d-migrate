@@ -112,7 +112,7 @@ internal object SchemaReverseWiring {
         )
         val runner = SchemaReverseRunner(
             sourceResolver = bundle.sourceResolver,
-            urlParser = bundle.urlParser,
+            urlParser = CredentialFilling.storeOnTop(options.source, bundle.urlParser),
             poolFactory = bundle.poolFactory,
             driverLookup = bundle.driverLookup,
             schemaWriter = bundle.schemaWriter,
