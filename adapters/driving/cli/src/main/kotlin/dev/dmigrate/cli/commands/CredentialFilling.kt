@@ -65,6 +65,31 @@ internal class CredentialFilling(
                 }
             }
         }
+
+        /**
+         * Per-Connection-Store-Filler (Stufe 4) für Dual-Connection-Ops (`data transfer`): füllt eine
+         * ConnectionConfig, keyed nach dem **rohen** `--source`/`--target`-Ref (Store nur bei Name, kein
+         * `://`). **Eine geteilte Session** über alle Connections → höchstens **ein** Master-Secret-Prompt
+         * je Lauf (lazy: keine Session, wenn nie ein Name kommt). Falsches Master-Secret → IAE (→ Exit 7).
+         */
+        fun perConnectionStoreFiller(
+            stderr: (String) -> Unit = { System.err.println(it) },
+            sessionFactory: () -> CredentialFillSession = ::defaultFillSession,
+        ): (ConnectionConfig, String) -> ConnectionConfig {
+            val session by lazy(sessionFactory)
+            return { config, rawRef ->
+                val name = rawRef.takeUnless { it.contains("://") }
+                if (name == null) {
+                    config
+                } else {
+                    try {
+                        StoreCredentialFiller(name, session, stderr).fill(config)
+                    } catch (e: CredentialStoreException) {
+                        throw IllegalArgumentException(e.message, e)
+                    }
+                }
+            }
+        }
     }
 }
 

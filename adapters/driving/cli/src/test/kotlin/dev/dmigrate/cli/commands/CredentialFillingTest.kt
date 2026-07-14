@@ -188,4 +188,20 @@ class CredentialFillingTest : FunSpec({
         }
         shouldThrow<IllegalArgumentException> { p("postgresql://h/db") }
     }
+
+    // --- CredentialFilling.perConnectionStoreFiller (Dual-Connection: transfer) ---
+
+    test("perConnectionStoreFiller: URL ref unchanged; name refs filled; a single shared session") {
+        var sessionsBuilt = 0
+        val filler = CredentialFilling.perConnectionStoreFiller(stderr = {}) {
+            sessionsBuilt++
+            session(mapOf("prod" to ("admin" to "s3cr3t"), "warehouse" to ("wh" to "whpw")))
+        }
+        // URL-Ref → unverändert, keine Session gebaut
+        filler(cfg(DatabaseDialect.POSTGRESQL, "explicit"), "postgresql://h/db").password shouldBe "explicit"
+        // zwei Name-Refs (Quelle + Ziel) → beide aus demselben Store gefüllt, EINE Session
+        filler(cfg(DatabaseDialect.POSTGRESQL, password = null), "prod").password shouldBe "s3cr3t"
+        filler(cfg(DatabaseDialect.POSTGRESQL, password = null), "warehouse").password shouldBe "whpw"
+        sessionsBuilt shouldBe 1
+    }
 })

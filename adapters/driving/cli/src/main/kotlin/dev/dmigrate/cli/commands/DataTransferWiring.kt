@@ -106,6 +106,8 @@ internal object DataTransferWiring {
             },
             // LN-009: dialekt-neutrale Wert-Kanonik für --verify (formats-Adapter).
             valueCanonicalizer = CanonicalValueCodec(),
+            // LN-049 Stufe 4: Store-Konsum je Verbindung (Quelle/Ziel), eine geteilte Master-Secret-Session.
+            credentialFiller = CredentialFilling.perConnectionStoreFiller(),
         )
         return runner.execute(request)
     }

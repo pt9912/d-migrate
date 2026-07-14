@@ -41,6 +41,9 @@ internal class TransferConnectionResolver(
     private val urlScrubber: (String) -> String,
     private val userFacingErrors: UserFacingErrors,
     private val printError: (String, String) -> Unit,
+    // LN-049 Stufe 4: Per-Connection-Filler, keyed nach dem rohen --source/--target. Identity-Default →
+    // MCP füllt nicht; nur die CLI-Wiring injiziert den Store-Filler.
+    private val credentialFiller: (ConnectionConfig, String) -> ConnectionConfig = { config, _ -> config },
 ) {
 
     fun resolve(request: DataTransferRequest): TransferConnectionResult {
@@ -71,8 +74,8 @@ internal class TransferConnectionResolver(
         val tgtCfg: ConnectionConfig
         try {
             // Nur die Quelle wird gelesen → read-only oeffnen; das Ziel bleibt read-write.
-            srcCfg = urlParser(srcUrl).copy(readOnly = request.readOnly)
-            tgtCfg = urlParser(tgtUrl)
+            srcCfg = credentialFiller(urlParser(srcUrl).copy(readOnly = request.readOnly), request.source)
+            tgtCfg = credentialFiller(urlParser(tgtUrl), request.target)
         } catch (e: Exception) {
             printError("URL parse: ${e.message}", srcRef)
             return TransferConnectionResult.Exit(7)

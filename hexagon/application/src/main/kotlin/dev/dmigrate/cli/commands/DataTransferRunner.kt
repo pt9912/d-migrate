@@ -63,6 +63,8 @@ class DataTransferRunner(
     private val transferExecutor: TransferExecutor = TransferExecutor(),
     // LN-009: von der CLI-Wiring injiziert (formats-Adapter). Null → --verify meldet Konfigurationsfehler.
     private val valueCanonicalizer: ValueCanonicalizer? = null,
+    // LN-049 Stufe 4: Per-Connection-Store-Filler (Identity-Default → MCP/Tests unverändert).
+    credentialFiller: (ConnectionConfig, String) -> ConnectionConfig = { config, _ -> config },
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
     private val userFacingPrintError = userFacingErrors.printError(printError)
@@ -75,6 +77,7 @@ class DataTransferRunner(
         urlScrubber = urlScrubber,
         userFacingErrors = userFacingErrors,
         printError = userFacingPrintError,
+        credentialFiller = credentialFiller,
     )
     private val preflightPlanner = TransferPreflightPlanner()
 
