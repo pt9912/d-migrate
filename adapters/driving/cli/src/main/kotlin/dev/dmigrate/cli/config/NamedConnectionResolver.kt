@@ -110,6 +110,25 @@ class NamedConnectionResolver(
     }
 
     /**
+     * Der effektive Connection-**Name** für den LN-049-Stufe-4-Store-Lookup, oder `null` wenn keiner
+     * bestimmbar ist (Inline-URL, oder der Default zeigt auf eine URL, oder keine Config). [raw] ist der
+     * rohe `--source`/`--target`-Wert; ist er `null` (weggelassen), wird `database.[defaultKey]`
+     * konsultiert. Wirft **nicht** — ein Lookup-Fehler liefert `null` (kein Store, keine Störung des
+     * eigentlichen Verbindungsaufbaus).
+     */
+    fun connectionName(raw: String?, defaultKey: String): String? {
+        if (raw != null) return raw.takeUnless { it.contains("://") }
+        val configPath = resolveConfigPath()
+        if (!Files.isRegularFile(configPath.path)) return null
+        val default = try {
+            lookupDefaultValue(configPath.path, defaultKey)
+        } catch (_: ConfigResolveException) {
+            return null
+        } ?: return null
+        return default.takeUnless { it.contains("://") }
+    }
+
+    /**
      * Liest `database.<defaultKey>` aus der Config und löst den Wert als
      * URL oder Connection-Name auf.
      */

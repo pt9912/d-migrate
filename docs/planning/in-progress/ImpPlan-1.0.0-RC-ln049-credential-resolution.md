@@ -42,11 +42,14 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
   additivem `credentialFiller`-Seam auf `DataTransferRunner`/`TransferConnectionResolver`,
   `CredentialFilling.perConnectionStoreFiller` mit **einer** geteilten Session; MCP/Tests = Identity-Default). A2-Kern-Review fand + fixte einen Major-Bug
   (Falsch-Secret → Exit 7 statt Crash, `9a9d6760`). Kern voll unit-getestet inkl. `storeOnTop`.
-  **`data profile` ✅ erledigt** (Runner-Restrukturierung): `DataProfileRunner` bekam `urlParser` +
-  config-Level-`credentialFiller`-Seam, `poolFactory` auf `(ConnectionConfig)->ConnectionPool`; Store-Konsum
-  via `perConnectionStoreFiller`, Store-Fehler → Exit 7. Bundle/Factory/Wiring + 4 Testkonstruktionen
-  angepasst. **Damit 8/8 Ops** bei explizitem `--source`. **Verbleibend für ✅:** nur `default_*` +
-  Stufe-5-Doku (s. u.).
+  **`data profile` ✅ erledigt** (Runner-Restrukturierung, config-Level-`credentialFiller`-Seam, Exit 7) →
+  **8/8 Ops** bei explizitem `--source`. **`default_*` ✅ erledigt:** `NamedConnectionResolver.connectionName
+  (raw, defaultKey)` liefert den effektiven Store-Namen (raw-Name / bei `null` → `database.<defaultKey>`);
+  in `data import` verdrahtet (der einzige Op mit Default-Variante `resolveTarget` — alle anderen haben
+  `--source` effektiv erforderlich). **Damit sind alle fünf Quellen der Anforderung auflösbar** (inline/env/`${VAR}`/
+  Store/interaktiv-via-`config credentials set`). **Einzig offen:** der **connect-Zeit-Prompt** (spec-4.1
+  Stufe 5) ist bewusst nicht implementiert (würde passwortlose Auth regressieren) — Interpretationsfrage,
+  ob „interaktive Eingabe" damit erfüllt ist (→ User-Entscheidung für roadmap ✅).
 
   **Ausführungsreife Checkliste (Rest):**
   - **profile-Store (Runner-Restrukturierung, 7 Stellen):** `DataProfileRunner` — `poolFactory` von

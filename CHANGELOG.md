@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Verdrahtet für **alle 8 Ops** (`data export`/`import`/`transfer`/`profile`, `schema compare`/`reverse`/
   `migrate`/`rollback`) bei explizitem `--source`/`--target`-Connection-Namen. Eine **prozess-weite**
   Session beschafft das Master-Secret höchstens **einmal pro Lauf** — Ops mit mehreren Ziel-Verbindungen
-  bekommen so **einen** Prompt statt n. Offen: Store-Konsum bei weggelassenem `--source`/`--target`
-  (`default_*`-Resolution — der Name wird noch nicht durchgereicht).
+  bekommen so **einen** Prompt statt n. Auch bei **weggelassenem `--target`** (`data import`) greift der
+  Store über den `database.default_target`-Namen (`NamedConnectionResolver.connectionName`). Der
+  connect-Zeit-Prompt (Stufe 5 der Kette) ist bewusst nicht implementiert — die interaktive Eingabe eines
+  DB-Passworts erfolgt über `config credentials set` (→ verschlüsselt abgelegt → konsumiert).
 - **Konfigurierbarer JDBC-`fetchSize`** (`data export`/`transfer --fetch-size`, [`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
   der Cursor-Prefetch für den Quell-Read ist nicht mehr eine pro Dialekt hart verdrahtete Konstante,
   sondern per CLI-Flag bzw. `pipeline.fetch_size` einstellbar (für sehr breite Zeilen kleiner wählbar,

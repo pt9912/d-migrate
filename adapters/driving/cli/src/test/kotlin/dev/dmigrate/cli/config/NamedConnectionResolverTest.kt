@@ -453,6 +453,43 @@ class NamedConnectionResolverTest : FunSpec({
         resolver.resolveTarget(null) shouldBe "postgresql://u:p@staging/db"
     }
 
+    // ─── connectionName (LN-049 Stufe-4 Store-Key) ──────────────
+
+    test("connectionName: an explicit name is returned") {
+        NamedConnectionResolver().connectionName("prod", "default_target") shouldBe "prod"
+    }
+
+    test("connectionName: an inline URL returns null (no store key)") {
+        NamedConnectionResolver().connectionName("postgresql://u:p@host/db", "default_target") shouldBe null
+    }
+
+    test("connectionName: null falls back to the database.default_target name") {
+        val cfg = tempConfig(
+            """
+            database:
+              default_target: staging
+              connections:
+                staging: "postgresql://u:p@staging/db"
+            """.trimIndent()
+        )
+        NamedConnectionResolver(configPathFromCli = cfg).connectionName(null, "default_target") shouldBe "staging"
+    }
+
+    test("connectionName: null with a default that is a URL returns null") {
+        val cfg = tempConfig(
+            """
+            database:
+              default_target: "postgresql://u:p@host/db"
+            """.trimIndent()
+        )
+        NamedConnectionResolver(configPathFromCli = cfg).connectionName(null, "default_target") shouldBe null
+    }
+
+    test("connectionName: null without a config file returns null (no throw)") {
+        val missing = tempConfig("x: y").resolveSibling("does-not-exist.yaml")
+        NamedConnectionResolver(configPathFromCli = missing).connectionName(null, "default_target") shouldBe null
+    }
+
     test("resolveTarget: null without default_target throws ConfigResolveException") {
         val cfg = tempConfig(
             """

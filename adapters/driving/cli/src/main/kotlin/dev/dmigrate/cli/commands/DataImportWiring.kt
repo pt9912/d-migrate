@@ -192,7 +192,12 @@ internal object DataImportWiring {
         )
         val runner = DataImportRunner(
             targetResolver = bundle.targetResolver,
-            urlParser = CredentialFilling.storeOnTop(options.target, bundle.urlParser),
+            // Store-Key = --target-Name; bei weggelassenem --target der database.default_target-Name (LN-049).
+            urlParser = CredentialFilling.storeOnTop(
+                NamedConnectionResolver(configPathFromCli = options.configPath)
+                    .connectionName(options.target, "default_target"),
+                bundle.urlParser,
+            ),
             poolFactory = bundle.poolFactory,
             writerLookup = bundle.writerLookup,
             schemaPreflight = preflight::prepare,
