@@ -42,6 +42,28 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
   additivem `credentialFiller`-Seam auf `DataTransferRunner`/`TransferConnectionResolver`,
   `CredentialFilling.perConnectionStoreFiller` mit **einer** geteilten Session; MCP/Tests = Identity-Default). A2-Kern-Review fand + fixte einen Major-Bug
   (Falsch-Secret → Exit 7 statt Crash, `9a9d6760`). Kern voll unit-getestet inkl. `storeOnTop`.
+  **Ausführungsreife Checkliste für die letzten 2 Gaps → ✅** (fokussierter Folgelauf, code-vermessen):
+  - **profile-Store (Runner-Restrukturierung, 7 Stellen):** `DataProfileRunner` — `poolFactory` von
+    `(String,DatabaseDialect)->ConnectionPool` auf `(ConnectionConfig)->ConnectionPool`; neu `urlParser:
+    (String)->ConnectionConfig` + `credentialFiller: (ConnectionConfig,String)->ConnectionConfig = {c,_->c}`;
+    in `execute` nach `dialectResolver` `config = try { credentialFiller(urlParser(url), request.source) }
+    catch { Exit 7 }`, dann `poolFactory(config)` (Exit 4). `DataProfileWiringBundle.poolFactory`-Typ + die
+    `build`-Lambda auf `(config)->create`; `executeInner` liefert `urlParser = { ConnectionUrlParser.parse(it)
+    .copy(readOnly = options.readOnly) }` + `credentialFiller = CredentialFilling.perConnectionStoreFiller()`.
+    3 Testkonstruktionen anpassen (`DataProfileRunnerTest.runner()`-Helper, `DataProfileRunnerCancelCheckpointTest`,
+    `DataProfileCliTest`): Fake-`poolFactory` → `{ _ -> pool }`, Fake-`urlParser` ergänzen (liefert eine
+    `ConnectionConfig` mit passendem Dialekt). → **8/8 Ops.**
+  - **`default_*`-Namens-Surfacing:** `NamedConnectionResolver` um `connectionName(raw:String?, defaultKey:
+    String, cfgPath):String?` erweitern (raw ohne `://` → raw; raw mit `://`/inline → null; raw==null →
+    `database.<defaultKey>`-Wert, falls Name). Die Wirings, die den Store-Namen aus dem rohen `--source`/
+    `--target` ableiten (export/import/transfer/profile/reverse), auf `connectionName(...)` umstellen, damit
+    der Store auch bei `default_source`/`default_target` greift. Betroffen: die Ops mit optionalem `--source`/
+    `--target` (profile, transfer, import).
+  - **Stufe 5 (connect-Zeit-Prompt):** entweder Opt-in-Flag `--prompt-password` (nicht-regressierend) ODER
+    dokumentieren, dass die interaktive Eingabe über `config credentials set` erfolgt (Store→Konsum). Für ✅
+    reicht Letzteres (die fünf Quellen der Anforderung sind dann alle auflösbar).
+  - Danach: roadmap-Zeile 🚧→✅ (Fußnote ¹⁰), Slice nach done/.
+
   **`schema reverse`** (via `storeOnTop`), **`schema migrate`/`rollback`** (loadFromDb + die 4 auth-Probe/
   Executor-Runner `CheckPreflight`/`MysqlSequenceCanonicity`/`JdbcMigrationExecutor`/`AtomicSequencePreserve`
   je auf `CredentialFilling(target.source)`; loadFromDb-Fill in den Exit-7-`try` gezogen). **Statt Threading
