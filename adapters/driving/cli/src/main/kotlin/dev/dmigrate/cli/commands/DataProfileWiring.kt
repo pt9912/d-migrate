@@ -69,7 +69,8 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
             dialectResolver = { url -> ConnectionUrlParser.parse(url).dialect },
             // data profile ist eine reine Lese-Operation → Quelle read-only oeffnen
             // (SQLite: SQLITE_OPEN_READONLY, kein -wal/-shm); --no-read-only schaltet ab.
-            urlParser = { url -> ConnectionUrlParser.parse(url).copy(readOnly = readOnly) },
+            // LN-049 Stufe 2 (Env D_MIGRATE_DB_PASSWORD) hier im urlParser; Stufe 4 (Store) im credentialFiller.
+            urlParser = { url -> EnvCredentialFiller().fill(ConnectionUrlParser.parse(url).copy(readOnly = readOnly)) },
             // LN-049 Stufe 4: Store-Konsum keyed nach --source (prozess-weite Session = ein Master-Prompt).
             credentialFiller = CredentialFilling.perConnectionStoreFiller(),
             poolFactory = { config -> HikariConnectionPoolFactory.create(config) },

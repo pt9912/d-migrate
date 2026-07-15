@@ -106,7 +106,11 @@ private val processFillSession: CredentialFillSession by lazy {
             prompt = { System.console()?.readPassword("Master passphrase for credential store: ") },
         ),
         baseDir = defaultCredentialBaseDir(),
-    )
+    ).also { session ->
+        // Best-effort: das gecachte Master-Secret beim Prozess-Ende wipen (die Session lebt sonst
+        // prozessweit). Der Hook wird nur registriert, wenn die Session tatsächlich gebaut wurde.
+        runCatching { Runtime.getRuntime().addShutdownHook(Thread { session.wipe() }) }
+    }
 }
 
 private fun defaultFillSession(): CredentialFillSession = processFillSession
