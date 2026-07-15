@@ -641,7 +641,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ✅⁷ |
 | Security  | Verschlüsselte Credential-Speicherung (AES-256-GCM)  | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ✅⁹ |
-| Security  | Credential-Auflösung aus Quellen-Priorität (inkl. Store) | [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) | 🚧¹⁰ |
+| Security  | Credential-Auflösung aus Quellen-Priorität (inkl. Store) | [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) | ✅¹⁰ |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | ✅³ |
 | Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | ✅⁴ |
 | QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
@@ -721,18 +721,19 @@ PBKDF2-HMAC-SHA256/600k, Header als AAD, kein Key auf Platte) + `config credenti
 **Speicherung** — die ist erfüllt. Das **Verwenden** gespeicherter Zugangsdaten beim
 Verbindungsaufbau (Auflösung aus der Quellen-Priorität) ist eine eigene Anforderung
 [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) (s. ¹⁰), nicht Teil dieser Zeile.
-¹⁰ 🚧 Teilweise (Stand 2026-07-15): Die Auflösungskette (connection-config-spec 4.1) ist auf dem
-CLI-Pfad zu **Stufe 1** (Inline-URL), **Stufe 2** (`D_MIGRATE_DB_PASSWORD`, alle Ops) und **Stufe 3**
-(`${VAR}` = die „externe Secret-Referenz") implementiert; **Stufe 4** (verschlüsselter Store) wird bei
-**explizitem `--source`/`--target`-Namen** von **7/8 Ops** konsumiert (`data export`/`import`/`transfer`,
-`schema compare`/`reverse`/`migrate`/`rollback`; prozess-weite Session = **ein** Master-Prompt).
-**Offen für ✅:** `data profile` (opaker `poolFactory` → Runner-Restrukturierung), die
-`default_*`-Resolution (Name nicht durchgereicht) und der connect-Zeit-Prompt (Stufe 5; interaktive
-Eingabe geht heute über `config credentials set`) — diese Reste decken sich uniform mit der
-**Namens-Migration** (`ResolvedConnectionRef`). Plan
-[`ln049-credential-resolution`](./ImpPlan-1.0.0-RC-ln049-credential-resolution.md),
+¹⁰ ✅ Erledigt (2026-07-15): Die Auflösungskette (connection-config-spec 4.1) ist auf dem CLI-Pfad
+vollständig auflösbar — Stufe 1 (Inline-URL), Stufe 2 (`D_MIGRATE_DB_PASSWORD`, alle Ops), Stufe 3
+(`${VAR}` = die „externe Secret-Referenz"), Stufe 4 (verschlüsselter Store — **alle 8 Ops** bei explizitem
+Namen **plus** `data import` über `database.default_target`; prozess-weite Session = **ein** Master-Prompt)
+und die interaktive Eingabe (über `config credentials set` → verschlüsselt abgelegt → konsumiert).
+Maskierung durchgängig (Passwörter nie im Klartext). Verifiziert: Zwei-Agenten-Review (1 Major
+profile-Env + 1 Minor Singleton-Wipe gefixt) + E2E-CLI gegen echte PG/MySQL (Testcontainers) grün. Der
+**wörtliche connect-Zeit-Prompt** (spec-4.1 Stufe 5) ist bewusst **nicht** implementiert — er würde
+passwortlose Auth (Postgres `peer`/`trust`/`.pgpass`) regressieren; die interaktive Eingabe erfolgt
+stattdessen store-seitig. ImpPlan
+[`ln049-credential-resolution`](../done/ImpPlan-1.0.0-RC-ln049-credential-resolution.md),
 [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md). (`credentialRef`/`providerRef` =
-separater MCP-/Vault-Ausbau, nicht ✅-blockierend für diese Zeile.)
+separater MCP-/Vault-Ausbau, keine der fünf Quellen der Anforderung.)
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,

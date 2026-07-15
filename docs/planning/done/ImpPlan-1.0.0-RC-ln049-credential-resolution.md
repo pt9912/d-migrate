@@ -1,8 +1,20 @@
 # ImpPlan LN-049 — Credential-Auflösung aus der Quellen-Priorität (inkl. Store-Konsum)
 
-**Status**: **REVIEWBARER PLAN (next/) — Rev. 3 (zwei Review-Runden eingearbeitet, 2026-07-14)**. Noch nicht
-in Umsetzung. Folge-Schnitt zu [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) Slice 1 (Store
-gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md).
+**Status**: **ERLEDIGT (2026-07-15) — [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) ✅, Slice
+nach `done/` graduiert.** Der Store-Konsum ist komplett auf develop: alle **8 Ops** (`data export`/`import`/
+`transfer`/`profile`, `schema compare`/`reverse`/`migrate`/`rollback`) ziehen bei explizitem `--source`/
+`--target`-Namen den Store, `data import` auch über `database.default_target`; prozess-weite Singleton-
+Session = **ein** Master-Prompt. Alle fünf Quellen der Anforderung auflösbar (inline/env/`${VAR}`/Store/
+interaktiv-via-`config credentials set`), Maskierung durchgängig. Verifiziert: Zwei-Agenten-Review
+(1 Major profile-Env + 1 Minor Singleton-Wipe gefixt, `03ee54b3`) + E2E-CLI (echte PG/MySQL) grün. Der
+wörtliche connect-Zeit-Prompt (spec-4.1 Stufe 5) bleibt bewusst weg (regressiert passwortlose Auth). Baut
+auf [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) Slice 1 + der „O4-Naht"-Richtung aus
+[ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) auf.
+
+> **Historie:** Plan zweifach adversarial reviewt (Rev. 2/3), dann additiv umgesetzt (kein 31-Datei-
+> `ResolvedConnectionRef`-Refactor nötig): identity-defaultete `credentialFiller`-Seams + `storeOnTop` +
+> `perConnectionStoreFiller` + prozess-weite Session; nur `data profile` brauchte eine Runner-
+> Restrukturierung, `default_target` das `connectionName(...)`-Helfer. Commits `67222056`…`581bd3b7`.
 
 > **Rev. 2** (1. Review-Runde, 2 Blocker/4 Majors): Connection-**Name** geht am Hook-Punkt verloren (B1);
 > **~14** verbindungsöffnende Stellen, nicht 8 (B2); Runner liegen in `hexagon/application` und werden von
