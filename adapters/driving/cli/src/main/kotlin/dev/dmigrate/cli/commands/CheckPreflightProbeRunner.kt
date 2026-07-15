@@ -5,7 +5,6 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.DatabaseConnection
-import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mysql.MysqlCheckPreflightProbe
 import dev.dmigrate.driver.postgresql.PostgresCheckPreflightProbe
@@ -38,7 +37,7 @@ internal object CheckPreflightProbeRunner {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
         val config = try {
-            EnvCredentialFiller().fill(ConnectionUrlParser.parse(url))
+            CredentialFilling(target.source).fill(url)
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "URL parse failed", e)
         }

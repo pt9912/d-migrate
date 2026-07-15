@@ -14,7 +14,6 @@ import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.SchemaReadOptions
-import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
 import dev.dmigrate.format.SchemaFileResolver
@@ -189,12 +188,12 @@ internal object SchemaMigrateWiring {
         cfgPath: Path?,
         validator: SchemaValidator,
     ): ResolvedSchemaOperand {
-        val url = try {
-            NamedConnectionResolver(configPathFromCli = cfgPath).resolve(op.source)
+        val (url, config) = try {
+            val resolvedUrl = NamedConnectionResolver(configPathFromCli = cfgPath).resolve(op.source)
+            resolvedUrl to CredentialFilling(op.source).fill(resolvedUrl)
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
-        val config = EnvCredentialFiller().fill(ConnectionUrlParser.parse(url))
         val userRef = if (op.source.contains("://")) LogScrubber.maskUrl(url) else op.source
         val pool = HikariConnectionPoolFactory.create(config)
         return pool.use { p ->

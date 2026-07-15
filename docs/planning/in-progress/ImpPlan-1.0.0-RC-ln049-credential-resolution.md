@@ -42,12 +42,14 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
   additivem `credentialFiller`-Seam auf `DataTransferRunner`/`TransferConnectionResolver`,
   `CredentialFilling.perConnectionStoreFiller` mit **einer** geteilten Session; MCP/Tests = Identity-Default). A2-Kern-Review fand + fixte einen Major-Bug
   (Falsch-Secret → Exit 7 statt Crash, `9a9d6760`). Kern voll unit-getestet inkl. `storeOnTop`.
-  **`schema reverse`** (via `storeOnTop` über `bundle.urlParser`, wie import).
-  **Offen A2 (invasiv):** `data profile` (opaker `poolFactory: (url,dialect)->pool` → Runner-Connection-Fluss
-  restrukturieren, damit ein config-Level-Fill-Punkt entsteht), `schema migrate`/`rollback` (`loadFromDb` +
-  ~5 Probe-Runner öffnen **dieselbe** Ziel-Verbindung als bare `::probe`-Refs → **gemeinsam durchgereichte
-  Session** nötig, sonst N Master-Secret-Prompts; berührt Probe-Signaturen/Typealiases + Render-Pipeline),
-  `default_*`-Resolution. Diese drei decken sich uniform mit der Namens-Migration (`ResolvedConnectionRef`).
+  **`schema reverse`** (via `storeOnTop`), **`schema migrate`/`rollback`** (loadFromDb + die 4 auth-Probe/
+  Executor-Runner `CheckPreflight`/`MysqlSequenceCanonicity`/`JdbcMigrationExecutor`/`AtomicSequencePreserve`
+  je auf `CredentialFilling(target.source)`; loadFromDb-Fill in den Exit-7-`try` gezogen). **Statt Threading
+  durch die Execution-Stack: eine prozess-weite Singleton-Session** (`processFillSession by lazy`) → alle
+  unabhängig re-resolvenden Verbindungen teilen **ein** gecachtes Master-Secret = **ein** Prompt; fixt
+  zugleich compares 2-Operanden-Fall. **Offen A2:** `data profile` (opaker `poolFactory (url,dialect)->pool`
+  → Connection-Fluss des Runners restrukturieren), `default_*`-Resolution (Name nicht durchgereicht →
+  Namens-Migration).
   **Bekannte Nachbesserungen:** Session-`wipe`-`finally`-Lifecycle (aktuell GC); Wiring-Tests hängen für
   Name-Quellen latent von `~/.d-migrate` ab (Session injizierbar machen); totes `DataImportWiringBundle.
   urlParser`-Feld (durch `storeOnTop` ersetzt). **Offen:** Stufe 5 (Prompt), Slice B (`credentialRef` O4).

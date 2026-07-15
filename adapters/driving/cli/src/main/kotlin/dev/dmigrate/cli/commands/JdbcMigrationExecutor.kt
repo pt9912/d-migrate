@@ -1,7 +1,6 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.config.NamedConnectionResolver
-import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.migration.JdbcMigrationStatementExecutor
 import dev.dmigrate.driver.migration.MigrationDdlStatement
@@ -34,7 +33,7 @@ internal object JdbcMigrationExecutor {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
         val config = try {
-            EnvCredentialFiller().fill(ConnectionUrlParser.parse(url))
+            CredentialFilling(target.source).fill(url)
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "URL parse failed", e)
         }

@@ -93,9 +93,20 @@ internal class CredentialFilling(
     }
 }
 
-private fun defaultFillSession(): CredentialFillSession = CredentialFillSession(
-    masterSecretResolver = MasterSecretResolver(
-        prompt = { System.console()?.readPassword("Master passphrase for credential store: ") },
-    ),
-    baseDir = defaultCredentialBaseDir(),
-)
+/**
+ * **Prozess-weite** Fill-Session: das Master-Secret wird höchstens **einmal pro CLI-Prozess** beschafft und
+ * von allen store-konsumierenden Verbindungen geteilt. Ops mit mehreren Ziel-Verbindungen — `transfer`,
+ * `compare` (2 Operanden) und `migrate`/`rollback` (loadFromDb + Probes + Executor, die jeweils **eigen**
+ * re-resolven) — bekommen so **einen** Master-Secret-Prompt statt n, ohne die Session durch jeden Layer
+ * durchzureichen. Tests injizieren eigene Sessions; dieser Default wird dort nicht genutzt.
+ */
+private val processFillSession: CredentialFillSession by lazy {
+    CredentialFillSession(
+        masterSecretResolver = MasterSecretResolver(
+            prompt = { System.console()?.readPassword("Master passphrase for credential store: ") },
+        ),
+        baseDir = defaultCredentialBaseDir(),
+    )
+}
+
+private fun defaultFillSession(): CredentialFillSession = processFillSession
