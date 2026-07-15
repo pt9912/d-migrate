@@ -721,14 +721,18 @@ PBKDF2-HMAC-SHA256/600k, Header als AAD, kein Key auf Platte) + `config credenti
 **Speicherung** — die ist erfüllt. Das **Verwenden** gespeicherter Zugangsdaten beim
 Verbindungsaufbau (Auflösung aus der Quellen-Priorität) ist eine eigene Anforderung
 [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) (s. ¹⁰), nicht Teil dieser Zeile.
-¹⁰ 🚧 Teilweise (Stand 2026-07-14): Die Auflösungskette (connection-config-spec 4.1) ist auf dem
-CLI-`--source`-Pfad erst zu Stufe 1 (Inline-URL) und Stufe 3 (`${VAR}` aus Config) implementiert
-(`NamedConnectionResolver`). Offen: Stufe 2 (`D_MIGRATE_DB_PASSWORD`), Stufe 4 (verschlüsselter
-Store — mit ⁹ gebaut, aber noch **nicht** konsumiert), Stufe 5 (interaktiver Prompt) und die externe
-Secret-Referenz (`credentialRef`/`providerRef`, heute nur hinter der MCP-`ConnectionSecretResolver`-
-Naht, nicht auf dem CLI-Pfad). Eigener Folge-Slice — Plan
-[`ln049-credential-resolution`](./ImpPlan-1.0.0-RC-ln049-credential-resolution.md) (O4-Naht aus
-[ADR 0034](../../adr/0034-master-key-architektur-credential-store.md)).
+¹⁰ 🚧 Teilweise (Stand 2026-07-15): Die Auflösungskette (connection-config-spec 4.1) ist auf dem
+CLI-Pfad zu **Stufe 1** (Inline-URL), **Stufe 2** (`D_MIGRATE_DB_PASSWORD`, alle Ops) und **Stufe 3**
+(`${VAR}` = die „externe Secret-Referenz") implementiert; **Stufe 4** (verschlüsselter Store) wird bei
+**explizitem `--source`/`--target`-Namen** von **7/8 Ops** konsumiert (`data export`/`import`/`transfer`,
+`schema compare`/`reverse`/`migrate`/`rollback`; prozess-weite Session = **ein** Master-Prompt).
+**Offen für ✅:** `data profile` (opaker `poolFactory` → Runner-Restrukturierung), die
+`default_*`-Resolution (Name nicht durchgereicht) und der connect-Zeit-Prompt (Stufe 5; interaktive
+Eingabe geht heute über `config credentials set`) — diese Reste decken sich uniform mit der
+**Namens-Migration** (`ResolvedConnectionRef`). Plan
+[`ln049-credential-resolution`](./ImpPlan-1.0.0-RC-ln049-credential-resolution.md),
+[ADR 0034](../../adr/0034-master-key-architektur-credential-store.md). (`credentialRef`/`providerRef` =
+separater MCP-/Vault-Ausbau, nicht ✅-blockierend für diese Zeile.)
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,
