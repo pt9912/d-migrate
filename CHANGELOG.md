@@ -14,11 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `data export --source <n>` genutzt (Master-Passphrase via `D_MIGRATE_MASTER_PASSWORD` oder Prompt, je Lauf
   einmal). Additiv nach Stufe 2 (Env), dialekt-gegatet, **kein** fail-closed (fehlt Eintrag/Master-Secret →
   weiter ohne, mit secret-freier Notiz). Falsches Master-Secret / beschädigter Store → Exit 7 (secret-frei).
-  Verdrahtet für `data export`/`import`/`transfer`, `schema compare`/`reverse`/`migrate`/`rollback`
-  (Store-Key = der `--source`/`--target`-Connection-Name). Eine **prozess-weite** Session beschafft das
-  Master-Secret höchstens **einmal pro Lauf** — Ops mit mehreren Ziel-Verbindungen (`transfer`, `compare`,
-  und `migrate`/`rollback` mit ihren eigen-resolvenden Preflight-Probes + Executor) bekommen so **einen**
-  Prompt statt n. Offen (folgt): `data profile` (opaker `poolFactory`) und `default_*`-Resolution.
+  Verdrahtet für **alle 8 Ops** (`data export`/`import`/`transfer`/`profile`, `schema compare`/`reverse`/
+  `migrate`/`rollback`) bei explizitem `--source`/`--target`-Connection-Namen. Eine **prozess-weite**
+  Session beschafft das Master-Secret höchstens **einmal pro Lauf** — Ops mit mehreren Ziel-Verbindungen
+  bekommen so **einen** Prompt statt n. Offen: Store-Konsum bei weggelassenem `--source`/`--target`
+  (`default_*`-Resolution — der Name wird noch nicht durchgereicht).
 - **Konfigurierbarer JDBC-`fetchSize`** (`data export`/`transfer --fetch-size`, [`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
   der Cursor-Prefetch für den Quell-Read ist nicht mehr eine pro Dialekt hart verdrahtete Konstante,
   sondern per CLI-Flag bzw. `pipeline.fetch_size` einstellbar (für sehr breite Zeilen kleiner wählbar,

@@ -4,6 +4,7 @@ import dev.dmigrate.cli.commands.DataProfileCommand
 import dev.dmigrate.cli.commands.DataProfileRequest
 import dev.dmigrate.cli.commands.DataProfileRunner
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
@@ -78,7 +79,8 @@ class DataProfileCliTest : FunSpec({
         return DataProfileRunner(
             connectionResolver = { it },
             dialectResolver = { DatabaseDialect.SQLITE },
-            poolFactory = { _, _ -> fakePool },
+            urlParser = { ConnectionConfig(DatabaseDialect.SQLITE, null, null, "test", null, null) },
+            poolFactory = { _ -> fakePool },
             adapterLookup = { fakeAdapters },
             databaseProduct = { "SQLite" },
             databaseVersion = { null },

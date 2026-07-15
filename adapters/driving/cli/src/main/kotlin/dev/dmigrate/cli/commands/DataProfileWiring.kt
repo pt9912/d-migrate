@@ -6,6 +6,7 @@ import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
@@ -39,7 +40,9 @@ internal data class DataProfileOptions(
 internal data class DataProfileWiringBundle(
     val connectionResolver: (String) -> String,
     val dialectResolver: (String) -> DatabaseDialect,
-    val poolFactory: (String, DatabaseDialect) -> ConnectionPool,
+    val urlParser: (String) -> ConnectionConfig,
+    val credentialFiller: (ConnectionConfig, String) -> ConnectionConfig,
+    val poolFactory: (ConnectionConfig) -> ConnectionPool,
     val adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet,
     val databaseProduct: (AutoCloseable) -> String = { "unknown" },
     val databaseVersion: (AutoCloseable) -> String? = { null },
@@ -64,12 +67,12 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
                 }
             },
             dialectResolver = { url -> ConnectionUrlParser.parse(url).dialect },
-            poolFactory = { url, _ ->
-                // data profile ist eine reine Lese-Operation → Quelle read-only oeffnen
-                // (SQLite: SQLITE_OPEN_READONLY, kein -wal/-shm); --no-read-only schaltet ab.
-                val config = EnvCredentialFiller().fill(ConnectionUrlParser.parse(url).copy(readOnly = readOnly))
-                HikariConnectionPoolFactory.create(config)
-            },
+            // data profile ist eine reine Lese-Operation → Quelle read-only oeffnen
+            // (SQLite: SQLITE_OPEN_READONLY, kein -wal/-shm); --no-read-only schaltet ab.
+            urlParser = { url -> ConnectionUrlParser.parse(url).copy(readOnly = readOnly) },
+            // LN-049 Stufe 4: Store-Konsum keyed nach --source (prozess-weite Session = ein Master-Prompt).
+            credentialFiller = CredentialFilling.perConnectionStoreFiller(),
+            poolFactory = { config -> HikariConnectionPoolFactory.create(config) },
             adapterLookup = ::profilingAdaptersFor,
             reportWriter = { profile, fmt, out -> writer.write(profile, fmt, out) },
         )
@@ -121,6 +124,8 @@ internal object DataProfileWiring {
         val runner = DataProfileRunner(
             connectionResolver = bundle.connectionResolver,
             dialectResolver = bundle.dialectResolver,
+            urlParser = bundle.urlParser,
+            credentialFiller = bundle.credentialFiller,
             poolFactory = bundle.poolFactory,
             adapterLookup = bundle.adapterLookup,
             databaseProduct = bundle.databaseProduct,

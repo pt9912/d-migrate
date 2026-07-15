@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
@@ -177,10 +178,12 @@ private class RecordingDataProfileFactory(
                 dialectUrls += url
                 dialect
             },
-            poolFactory = { _, requestedDialect ->
-                poolRequests += requestedDialect
+            urlParser = { ConnectionConfig(dialect, null, null, "db", null, null) },
+            credentialFiller = { config, _ -> config },
+            poolFactory = { config ->
+                poolRequests += config.dialect
                 poolFailure?.let { throw it }
-                FakeProfilePool(requestedDialect).also { createdPools += it }
+                FakeProfilePool(config.dialect).also { createdPools += it }
             },
             adapterLookup = { requestedDialect ->
                 adapterLookups += requestedDialect

@@ -42,7 +42,13 @@ gebaut, aber **nicht** konsumiert) und die „O4-Naht" aus [ADR 0034](../../adr/
   additivem `credentialFiller`-Seam auf `DataTransferRunner`/`TransferConnectionResolver`,
   `CredentialFilling.perConnectionStoreFiller` mit **einer** geteilten Session; MCP/Tests = Identity-Default). A2-Kern-Review fand + fixte einen Major-Bug
   (Falsch-Secret → Exit 7 statt Crash, `9a9d6760`). Kern voll unit-getestet inkl. `storeOnTop`.
-  **Ausführungsreife Checkliste für die letzten 2 Gaps → ✅** (fokussierter Folgelauf, code-vermessen):
+  **`data profile` ✅ erledigt** (Runner-Restrukturierung): `DataProfileRunner` bekam `urlParser` +
+  config-Level-`credentialFiller`-Seam, `poolFactory` auf `(ConnectionConfig)->ConnectionPool`; Store-Konsum
+  via `perConnectionStoreFiller`, Store-Fehler → Exit 7. Bundle/Factory/Wiring + 4 Testkonstruktionen
+  angepasst. **Damit 8/8 Ops** bei explizitem `--source`. **Verbleibend für ✅:** nur `default_*` +
+  Stufe-5-Doku (s. u.).
+
+  **Ausführungsreife Checkliste (Rest):**
   - **profile-Store (Runner-Restrukturierung, 7 Stellen):** `DataProfileRunner` — `poolFactory` von
     `(String,DatabaseDialect)->ConnectionPool` auf `(ConnectionConfig)->ConnectionPool`; neu `urlParser:
     (String)->ConnectionConfig` + `credentialFiller: (ConnectionConfig,String)->ConnectionConfig = {c,_->c}`;
