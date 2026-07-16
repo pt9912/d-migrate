@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   über alle logischen Tabellen plus die drei 8.6-Typ-Transformationen
   Serial→`AUTO_INCREMENT`→`AUTOINCREMENT`, Array→JSON→JSON und ENUM→ENUM→CHECK. Ergänzt die
   bestehenden paarweisen Cross-Dialect-Smokes um die dritte Kaskadenstufe (MySQL→SQLite).
+- **Best-Practices-Leitfaden** ([`docs/user/best-practices-leitfaden.md`](docs/user/best-practices-leitfaden.md)) —
+  verdichtete Empfehlungen, Faustregeln und Anti-Patterns quer über die Aufgaben: Pre-Flight,
+  Performance-Tuning (das einzige konsolidierte `parallelism`/`chunk_size`/`fetch_size`/`pool`-Kapitel),
+  Cross-Dialect-Typ-Fallstricke, Verifikation/sauberer Load, Rollback-Strategie, Credential-Handling und
+  CI-Integration. Additiv zum Migrations-Leitfaden (verlinkt statt nacherzählt).
 
 ## [1.0.0-RC1] - 2026-07-16
 

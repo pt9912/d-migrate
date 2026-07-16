@@ -486,6 +486,7 @@ Detailed documentation lives in [`docs/`](docs/) and
   - [Administrationshandbuch](docs/user/administrationshandbuch.md)
   - [Migrations-Leitfaden](docs/user/migrations-leitfaden.md)
   - [API-Referenz (CLI + MCP)](docs/user/api-referenz.md)
+  - [Best-Practices-Leitfaden](docs/user/best-practices-leitfaden.md)
 - [Quick Start Guide (German)](docs/user/guide.md)
 - [Architecture](spec/architecture.md)
 - [Schema YAML reference](spec/schema-reference.md)

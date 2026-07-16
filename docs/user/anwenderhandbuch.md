@@ -2612,6 +2612,7 @@ custom_types:
 ---
 
 **Weiterführend:** [Migrations-Leitfaden](migrations-leitfaden.md) ·
+[Best-Practices-Leitfaden](best-practices-leitfaden.md) ·
 [Administrationshandbuch](administrationshandbuch.md) ·
 [API-Referenz](api-referenz.md) ·
 [BI-Demo-Stack](../../examples/bi-demo/README.md) ·

@@ -513,6 +513,6 @@ Migrationen erzeugen optional ein Rollback-Artefakt (`--generate-rollback`).
 
 ## Verwandte Dokumentation
 
-- [Anwenderhandbuch](anwenderhandbuch.md) · [API-Referenz](api-referenz.md) · [Migrations-Leitfaden](migrations-leitfaden.md)
+- [Anwenderhandbuch](anwenderhandbuch.md) · [Best-Practices-Leitfaden](best-practices-leitfaden.md) · [API-Referenz](api-referenz.md) · [Migrations-Leitfaden](migrations-leitfaden.md)
 - [`spec/architecture.md`](../../spec/architecture.md), [`spec/connection-config-spec.md`](../../spec/connection-config-spec.md), [`spec/mcp-server.md`](../../spec/mcp-server.md), [`spec/job-contract.md`](../../spec/job-contract.md), [`spec/ki-mcp.md`](../../spec/ki-mcp.md)
 - [`operations/job-executor.md`](../operations/job-executor.md) · [Changelog](../../CHANGELOG.md)

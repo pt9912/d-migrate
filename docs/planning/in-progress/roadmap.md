@@ -758,7 +758,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | QA        | 1 Mio. Datensätze Export/Import ohne Datenverlust                   | 8.1    | ✅¹    |
 | QA        | DDL-Generierung 1.000 Tabellen < 30 Sekunden                        | 8.2    | ✅²    |
 | QA        | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite                    | 8.6    | ✅³    |
-| Docs      | Best Practices Guide                                                | —      | ⛔     |
+| Docs      | Best Practices Guide                                                | —      | ✅     |
 | Docs      | Troubleshooting-Guide                                               | —      | ⛔     |
 | Community | Contributor Guide                                                   | —      | ⛔     |
 | Community | Code of Conduct                                                     | —      | ⛔     |

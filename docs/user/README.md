@@ -16,6 +16,9 @@ Statusüberblick.
 
 ## Weitere Dokumente
 
+- [`best-practices-leitfaden.md`](best-practices-leitfaden.md) — verdichtete
+  Empfehlungen, Faustregeln und Anti-Patterns quer über die Aufgaben (Performance-
+  Tuning, Cross-Dialect-Typ-Fallstricke, Verifikation, Rollback, Credentials, CI).
 - [`guide.md`](guide.md) — bestehende „Schnellstart-Anleitung". Wird in das
   **Anwenderhandbuch** überführt; bleibt vorerst als Quelle erhalten.
 - [`releasing.md`](releasing.md) — Release-Leitfaden (Maintainer).
