@@ -1,6 +1,12 @@
 # `pool:` Config-Sektion ist für den Datenpfad unverdrahtet (stiller No-op)
 
-**Status**: Trigger (2026-07-13) — Nebenbefund aus dem `pipeline.parallelism`-Slice
+**Status**: **ERLEDIGT (2026-07-16)** — umgesetzt gemäß
+[`ImpPlan-1.0.0-RC-pool-config-wiring.md`](ImpPlan-1.0.0-RC-pool-config-wiring.md)
+(AP1–AP3, full-build + docs-check grün). `PoolSettingsResolver` liest die fünf
+`database.pool.*`-Keys, injiziert sie am `poolFactory`-Seam (export/import/transfer/profile) und
+deckelt `parallelism: auto` gegen den konfigurierten `max_size`. Graduiert nach `done/`.
+
+Nebenbefund aus dem `pipeline.parallelism`-Slice
 ([`../done/pipeline-parallelism-config-wiring.md`](../done/pipeline-parallelism-config-wiring.md)).
 
 **Befund**: Die YAML-Sektion `pool:` (`max_size`, `min_idle`, `connection_timeout_ms`, …) im

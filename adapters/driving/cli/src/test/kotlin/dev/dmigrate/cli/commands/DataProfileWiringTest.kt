@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.model.DatabaseProfile
 import dev.dmigrate.profiling.model.TargetTypeCompatibility
@@ -30,6 +31,7 @@ class DataProfileWiringTest : FunSpec({
         tables: List<String>? = null,
         topN: Int = 4,
         configPath: Path? = null,
+        pool: PoolSettings = PoolSettings(),
     ) = DataProfileOptions(
         source = "named-${dialect.name.lowercase()}",
         tables = tables,
@@ -40,6 +42,7 @@ class DataProfileWiringTest : FunSpec({
         readOnly = true,
         cliContext = CliContext(quiet = true),
         configPath = configPath,
+        pool = pool,
     )
 
     context("happy path by dialect") {
@@ -90,6 +93,19 @@ class DataProfileWiringTest : FunSpec({
         factory.adapterLookups shouldBe emptyList()
         factory.reports shouldBe emptyList()
         factory.createdPools shouldBe emptyList()
+    }
+
+    test("pool:-wiring injects the resolved PoolSettings into the ConnectionConfig") {
+        val factory = RecordingDataProfileFactory(DatabaseDialect.POSTGRESQL)
+        val configured = PoolSettings(maximumPoolSize = 7, minimumIdle = 3, connectionTimeoutMs = 20_000)
+
+        val exit = DataProfileWiring.execute(
+            options(dialect = DatabaseDialect.POSTGRESQL, pool = configured),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.poolConfigs.single().pool shouldBe configured
     }
 
     test("empty table filter writes an empty profile without column or data calls") {
@@ -156,6 +172,7 @@ private class RecordingDataProfileFactory(
     val sources = mutableListOf<String>()
     val dialectUrls = mutableListOf<String>()
     val poolRequests = mutableListOf<DatabaseDialect>()
+    val poolConfigs = mutableListOf<ConnectionConfig>()
     val adapterLookups = mutableListOf<DatabaseDialect>()
     val createdPools = mutableListOf<FakeProfilePool>()
     val reports = mutableListOf<DatabaseProfile>()
@@ -182,6 +199,7 @@ private class RecordingDataProfileFactory(
             credentialFiller = { config, _ -> config },
             poolFactory = { config ->
                 poolRequests += config.dialect
+                poolConfigs += config
                 poolFailure?.let { throw it }
                 FakeProfilePool(config.dialect).also { createdPools += it }
             },

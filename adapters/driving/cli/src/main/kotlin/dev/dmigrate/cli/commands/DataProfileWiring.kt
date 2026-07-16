@@ -10,6 +10,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.driver.mysql.profiling.MysqlLogicalTypeResolver
 import dev.dmigrate.driver.mysql.profiling.MysqlProfilingDataAdapter
 import dev.dmigrate.driver.mysql.profiling.MysqlSchemaIntrospectionAdapter
@@ -35,6 +36,8 @@ internal data class DataProfileOptions(
     val readOnly: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
 )
 
 internal data class DataProfileWiringBundle(
@@ -127,7 +130,8 @@ internal object DataProfileWiring {
             dialectResolver = bundle.dialectResolver,
             urlParser = bundle.urlParser,
             credentialFiller = bundle.credentialFiller,
-            poolFactory = bundle.poolFactory,
+            // pool:-Wiring — aufgelöste PoolSettings injizieren (SQLite bleibt geklemmt).
+            poolFactory = { config -> bundle.poolFactory(config.copy(pool = options.pool)) },
             adapterLookup = bundle.adapterLookup,
             databaseProduct = bundle.databaseProduct,
             databaseVersion = bundle.databaseVersion,

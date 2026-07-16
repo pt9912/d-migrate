@@ -24,12 +24,57 @@ class EffectiveDataPipelineResolverTest : FunSpec({
         val file = tempConfig("pipeline:\n  chunk_size: 5000\n  fetch_size: 250\n  parallelism: auto\n")
         val eff = resolveEffectiveDataPipeline(
             configPath = file, cliChunkSize = null, cliFetchSize = null, cliParallel = null,
-            availableProcessors = 4, maxPoolSize = 10,
+            availableProcessors = 4,
         )
         eff.tuning.chunkSize shouldBe 5000
         eff.tuning.fetchSize shouldBe 250
-        eff.parallelism.degree shouldBe 4 // auto = min(4 cores, 10 pool)
+        eff.parallelism.degree shouldBe 4 // auto = min(4 cores, 10 default pool)
         eff.parallelism.fromCli shouldBe false
+    }
+
+    test("parallelism: auto clamps against the configured database.pool.max_size, not the default") {
+        // pool.max_size 4 < 16 cores → auto must resolve to 4 (the wired pool cap),
+        // proving the pool section now feeds the auto-resolution instead of the hard-coded 10.
+        val file = tempConfig(
+            """
+            database:
+              pool:
+                max_size: 4
+            pipeline:
+              parallelism: auto
+            """.trimIndent()
+        )
+        val eff = resolveEffectiveDataPipeline(
+            configPath = file, cliChunkSize = null, cliFetchSize = null, cliParallel = null,
+            availableProcessors = 16,
+        )
+        eff.pool.maximumPoolSize shouldBe 4
+        eff.parallelism.degree shouldBe 4
+    }
+
+    test("resolved pool settings are surfaced on the bundle") {
+        val file = tempConfig(
+            """
+            database:
+              pool:
+                max_size: 7
+                connection_timeout_ms: 20000
+            """.trimIndent()
+        )
+        val eff = resolveEffectiveDataPipeline(
+            configPath = file, cliChunkSize = null, cliFetchSize = null, cliParallel = null,
+        )
+        eff.pool.maximumPoolSize shouldBe 7
+        eff.pool.connectionTimeoutMs shouldBe 20_000
+    }
+
+    test("bad database.pool value surfaces as ConfigResolveException") {
+        val file = tempConfig("database:\n  pool:\n    max_size: 0\n")
+        shouldThrow<ConfigResolveException> {
+            resolveEffectiveDataPipeline(
+                configPath = file, cliChunkSize = null, cliFetchSize = null, cliParallel = null,
+            )
+        }
     }
 
     test("CLI values win over config for both tuning and parallelism") {

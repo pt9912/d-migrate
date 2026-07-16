@@ -105,6 +105,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),
+                pool = pipeline.pool,
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

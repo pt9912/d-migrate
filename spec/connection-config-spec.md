@@ -207,7 +207,10 @@ database:
     local_mysql: "mysql://root@localhost:3306/myapp"
     staging: "postgresql://app:${DB_STAGING_PASSWORD}@staging.example.com/myapp?sslmode=require"
 
-  # Connection-Pool-Einstellungen
+  # Connection-Pool-Einstellungen — diese fünf Keys werden auf dem Datenpfad
+  # (data export/import/transfer/profile) honoriert. Präzedenz: Config > Default
+  # (kein CLI-Flag); jeder Wert muss eine positive Ganzzahl sein und min_idle <= max_size.
+  # SQLite bleibt unabhängig davon auf Pool-Größe 1 geklemmt.
   pool:
     max_size: 10                     # Maximale Verbindungen
     min_idle: 2                      # Minimale Idle-Verbindungen

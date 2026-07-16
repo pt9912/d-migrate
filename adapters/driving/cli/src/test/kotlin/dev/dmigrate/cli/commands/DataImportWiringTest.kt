@@ -10,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.SchemaSync
@@ -53,6 +54,7 @@ class DataImportWiringTest : FunSpec({
         checkpointDir: Path? = null,
         cliContext: CliContext = CliContext(quiet = true),
         configPath: Path? = Path.of(".d-migrate-test.yaml"),
+        pool: PoolSettings = PoolSettings(),
     ) = DataImportOptions(
         target = target,
         source = source,
@@ -77,6 +79,7 @@ class DataImportWiringTest : FunSpec({
         noCheckpoint = false,
         cliContext = cliContext,
         configPath = configPath,
+        pool = pool,
     )
 
     test("wires all fake bundle collaborators through a file import") {
@@ -127,6 +130,28 @@ class DataImportWiringTest : FunSpec({
                 ProgressEvent.RunStarted(ProgressOperation.IMPORT, totalTables = 1)
             factory.checkpointStores.single().saved.isNotEmpty().shouldBeTrue()
             factory.checkpointStores.single().completed shouldBe listOf(call.resume.operationId)
+        } finally {
+            deleteRecursively(dir)
+        }
+    }
+
+    test("pool:-wiring injects the resolved PoolSettings into the ConnectionConfig") {
+        val dir = Files.createTempDirectory("dmigrate-import-pool-")
+        val source = dir.resolve("items.json")
+        val schema = dir.resolve("schema.yaml")
+        val factory = RecordingDataImportFactory()
+        val configured = PoolSettings(maximumPoolSize = 9, minimumIdle = 4, connectionTimeoutMs = 25_000)
+        try {
+            Files.writeString(source, "[]")
+            Files.writeString(schema, "schema: fake")
+
+            val exit = DataImportWiring.execute(
+                options(source = source.toString(), schema = schema, pool = configured),
+                factory,
+            )
+
+            exit shouldBe 0
+            factory.poolConfigs.single().pool shouldBe configured
         } finally {
             deleteRecursively(dir)
         }

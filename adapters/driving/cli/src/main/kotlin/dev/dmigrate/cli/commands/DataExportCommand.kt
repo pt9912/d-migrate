@@ -181,6 +181,7 @@ class DataExportCommand : CliktCommand(name = "export") {
                 manifestSha256 = manifestSha256,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
+                pool = pipeline.pool,
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

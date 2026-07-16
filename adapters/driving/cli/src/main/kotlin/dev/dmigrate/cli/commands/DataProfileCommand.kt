@@ -13,6 +13,8 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectivePoolSettings
 
 /**
  * `d-migrate data profile` — thin Clikt shell over [DataProfileRunner].
@@ -41,6 +43,14 @@ class DataProfileCommand : CliktCommand(name = "profile") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
+        // pool:-Wiring — `database.pool:` auflösen (Config > Default). Profile nutzt keinen
+        // Pipeline-Resolver (keine Parallelität), also hier standalone; Config-Fehler → Exit 7.
+        val pool = try {
+            resolveEffectivePoolSettings(root?.config)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        }
         val exitCode = DataProfileWiring.execute(
             DataProfileOptions(
                 source = source,
@@ -52,6 +62,7 @@ class DataProfileCommand : CliktCommand(name = "profile") {
                 readOnly = readOnly,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
+                pool = pool,
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

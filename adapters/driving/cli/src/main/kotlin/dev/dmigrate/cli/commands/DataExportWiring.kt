@@ -14,6 +14,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
@@ -63,6 +64,8 @@ internal data class DataExportOptions(
     val manifestSha256: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
 )
 
 /**
@@ -123,7 +126,9 @@ internal object DataExportWiring {
                 }
             },
             urlParser = CredentialFilling(request.source).parser(),
-            poolFactory = HikariConnectionPoolFactory::create,
+            // pool:-Wiring — die aus `database.pool:` aufgelöste PoolSettings in die
+            // ConnectionConfig injizieren; der Faktor klemmt SQLite weiterhin auf 1.
+            poolFactory = { config -> HikariConnectionPoolFactory.create(config.copy(pool = options.pool)) },
             readerLookup = { DatabaseDriverRegistry.get(it).dataReader(options.fetchSize) },
             listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
             writerFactoryBuilder = { exportOutput ->

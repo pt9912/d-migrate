@@ -15,6 +15,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.SchemaCodec
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
@@ -56,6 +57,8 @@ internal data class DataImportOptions(
     val noCheckpoint: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
 )
 
 internal data class DataImportWiringBundle(
@@ -198,7 +201,8 @@ internal object DataImportWiring {
                     .connectionName(options.target, "default_target"),
                 bundle.urlParser,
             ),
-            poolFactory = bundle.poolFactory,
+            // pool:-Wiring — aus `database.pool:` aufgelöste PoolSettings injizieren (SQLite bleibt geklemmt).
+            poolFactory = { config -> bundle.poolFactory(config.copy(pool = options.pool)) },
             writerLookup = bundle.writerLookup,
             schemaPreflight = preflight::prepare,
             schemaTargetValidator = preflight::validateTargetTable,

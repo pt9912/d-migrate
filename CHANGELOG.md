@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`database.pool:` war auf dem Datenpfad ein stiller No-op** — der Pool-Block
+  (`max_size`/`min_idle`/`connection_timeout_ms`/`idle_timeout_ms`/`max_lifetime_ms`) war in der
+  Connection-Spec dokumentiert, wurde vom Datenpfad aber nie gelesen (`ConnectionConfig.pool` blieb
+  immer der HikariCP-Default). Diese fünf Keys werden jetzt über einen `PoolSettingsResolver` aus
+  `.d-migrate.yaml` aufgelöst und für `data export`/`import`/`transfer`/`profile` in die Verbindung
+  injiziert (Präzedenz Config > Default; kein CLI-Flag). Zugleich deckelt `pipeline.parallelism: auto`
+  nun gegen den konfigurierten `max_size` statt gegen den Hardcode-Default. Werte müssen positive
+  Ganzzahlen sein und `min_idle <= max_size` erfüllen — sonst Exit 7 (laut statt stiller Coercion);
+  SQLite bleibt auf Pool-Größe 1 geklemmt. Die sicherheitskritischen Cancel-Reaktions-Schranken
+  (keepalive-/statement-/network-Timeout) bleiben bewusst nicht über diese Sektion tunbar.
 - **`D_MIGRATE_DB_PASSWORD` war ein stiller No-op** ([`LN-049`](spec/lastenheft-d-migrate.md#ln-049)) —
   die globale Fallback-Variable war in der Connection-Spec als Auflösungs-Stufe 2 dokumentiert, wurde vom
   Runtime aber nie gelesen. Alle CLI-DB-Operationen (`data export`/`import`/`transfer`/`profile`,

@@ -4,12 +4,18 @@ import dev.dmigrate.driver.connection.PoolSettings
 import java.nio.file.Path
 
 /**
- * Gebündelte effektive Pipeline-Konfiguration (Tuning + Parallelität) für die
+ * Gebündelte effektive Pipeline-Konfiguration (Tuning + Parallelität + Pool) für die
  * Daten-Commands `data export`/`import`/`transfer`.
+ *
+ * [pool] ist die aus `database.pool:` aufgelöste [PoolSettings] (Config > Default). Sie
+ * dient **zwei** Zwecken im selben Ladevorgang: (1) Injektion in `ConnectionConfig.pool`
+ * am `poolFactory`-Seam der Wirings, und (2) `pipeline.parallelism: auto` deckelt gegen
+ * `pool.maximumPoolSize` statt gegen den `PoolSettings()`-Hardcode-Default.
  */
 internal data class EffectiveDataPipeline(
     val tuning: EffectivePipelineTuning,
     val parallelism: ResolvedParallelism,
+    val pool: PoolSettings,
 )
 
 /**
@@ -35,10 +41,13 @@ internal fun resolveEffectiveDataPipeline(
     cliParallel: Int?,
     readFetchSize: Boolean = true,
     availableProcessors: Int = Runtime.getRuntime().availableProcessors(),
-    maxPoolSize: Int = PoolSettings().maximumPoolSize,
     defaultChunkSize: Int = 10_000,
 ): EffectiveDataPipeline {
     val loaded = loadEffectiveConfig(configPath)
+    // `database.pool:` im selben Ladevorgang auflösen — die effektive `max_size` deckelt
+    // dann `parallelism: auto` (statt des Hardcode-Defaults) und wird zugleich in die
+    // ConnectionConfig injiziert (Wiring-Seam). Config > Default; kein CLI-Flag für Pool.
+    val pool = resolveEffectivePoolSettings(configPath, preloaded = loaded)
     val tuning = if (readFetchSize) {
         resolveEffectivePipelineTuning(configPath, cliChunkSize, cliFetchSize, defaultChunkSize, preloaded = loaded)
     } else {
@@ -48,7 +57,7 @@ internal fun resolveEffectiveDataPipeline(
         )
     }
     val parallelism = resolveEffectiveParallelism(
-        configPath, cliParallel, availableProcessors, maxPoolSize, preloaded = loaded,
+        configPath, cliParallel, availableProcessors, pool.maximumPoolSize, preloaded = loaded,
     )
-    return EffectiveDataPipeline(tuning, parallelism)
+    return EffectiveDataPipeline(tuning, parallelism, pool)
 }

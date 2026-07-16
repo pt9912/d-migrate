@@ -5,7 +5,7 @@
 [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005)). **ERLEDIGT (2026-07-13)** — Phase A Resolver
 (`19f7ccbd`), Phase B+C Commands/Runner-Wiring + origin-bewusster Fallback (`17c83c35`); Ansatz A
 code-verifiziert umgesetzt. Nebenbefund `pool:` verifiziert → eigenes Ticket
-([`../open/pool-config-section-unwired.md`](../open/pool-config-section-unwired.md)). Graduiert nach `done/`.
+([`pool-config-section-unwired.md`](pool-config-section-unwired.md)). Graduiert nach `done/`.
 
 **Befund**: `pipeline.parallelism: auto` ist in der Connection-Spec dokumentiert
 ([`connection-config-spec.md`](../../../spec/connection-config-spec.md), Abschnitt „Pipeline-Einstellungen"),
@@ -94,4 +94,4 @@ Die YAML-Sektion `pool:` (`max_size`, `min_idle`, …) in `connection-config-spe
 (Abschnitt „Vollständiges Schema") ist **ebenfalls unverdrahtet** (Code-Trace 2026-07-13
 bestätigt: kein `"pool"`-/`"max_size"`-String-Literal im Datenpfad-Config-Lesepfad; nur der
 MCP-Serve-Pfad liest sein eigenes `hikari.maximumPoolSize`). Gleiches Muster wie dieser Befund;
-ausgegliedert nach [`../open/pool-config-section-unwired.md`](../open/pool-config-section-unwired.md).
+ausgegliedert nach [`pool-config-section-unwired.md`](pool-config-section-unwired.md).

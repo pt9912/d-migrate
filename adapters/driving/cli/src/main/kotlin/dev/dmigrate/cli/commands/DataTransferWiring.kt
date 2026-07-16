@@ -10,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.format.verify.CanonicalValueCodec
 import java.nio.file.Path
 
@@ -36,6 +37,8 @@ internal data class DataTransferOptions(
     val cliContext: CliContext,
     val configPath: Path?,
     val sqliteAutoincrementWidth: Int? = null,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in beide `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
 )
 
 /**
@@ -95,7 +98,9 @@ internal object DataTransferWiring {
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },
             targetResolver = { tgt, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(tgt) },
             urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
-            poolFactory = { config -> HikariConnectionPoolFactory.create(config) },
+            // pool:-Wiring — aufgelöste PoolSettings in Quell- UND Ziel-ConnectionConfig injizieren
+            // (der credentialFiller läuft davor am urlParser; SQLite bleibt geklemmt).
+            poolFactory = { config -> HikariConnectionPoolFactory.create(config.copy(pool = options.pool)) },
             driverLookup = { dialect -> DatabaseDriverRegistry.get(dialect) },
             urlScrubber = LogScrubber::maskUrl,
             // data transfer uses plain stderr for errors — no structured json/yaml

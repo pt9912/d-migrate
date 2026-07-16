@@ -205,6 +205,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 noCheckpoint = noCheckpoint,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
+                pool = pipeline.pool,
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)
