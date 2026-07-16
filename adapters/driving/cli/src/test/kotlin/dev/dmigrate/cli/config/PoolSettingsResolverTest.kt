@@ -75,19 +75,30 @@ class PoolSettingsResolverTest : FunSpec({
         resolverFor(file).resolve() shouldBe defaults.copy(maximumPoolSize = 4)
     }
 
-    test("keepalive/statement/network keys are NOT read from this section") {
-        // These YAML keys are not part of the documented schema; the resolver ignores
-        // unknown keys and never touches the safety-critical timeout fields.
+    test("keepalive/statement/network keys are rejected — not silently ignored (safety fields not tunable here)") {
+        // These are real PoolSettings fields but deliberately NOT part of the documented pool schema.
+        // The resolver rejects unknown keys loudly (F4) rather than silently dropping them.
         val file = tempConfig(
             """
             database:
               pool:
-                keepalive_ms: 1
                 statement_timeout_ms: 1
-                network_timeout_ms: 1
             """.trimIndent()
         )
-        resolverFor(file).resolve() shouldBe PoolSettings()
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message shouldContain "statement_timeout_ms"
+    }
+
+    test("an unknown/misspelled key is rejected loudly (no silent fallback to default)") {
+        val file = tempConfig("database:\n  pool:\n    maxsize: 20\n")
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message shouldContain "maxsize"
+        ex.message shouldContain "max_size" // the supported-keys hint
+    }
+
+    test("max_size: 1 alone succeeds — default min_idle is clamped down, not treated as a conflict (F1)") {
+        val file = tempConfig("database:\n  pool:\n    max_size: 1\n")
+        resolverFor(file).resolve() shouldBe PoolSettings(maximumPoolSize = 1, minimumIdle = 1)
     }
 
     test("float max_size — rejected (no silent coercion)") {

@@ -8,11 +8,16 @@ import dev.dmigrate.server.ports.CredentialProviderRegistry
  * unterstützen.
  *
  * Reihenfolge egal (Dispatch am Scheme-Prefix, kollisionsfrei). Aktuell: `env:` + `file:`.
+ *
+ * Die Registry ist zustandslos/immutable (Provider halten nur Lambdas; `env:` liest die Umgebung
+ * erst zur Auflösungszeit) → **eine** geteilte Instanz statt pro Aufrufer neu zu bauen (Review F3).
  */
-fun defaultCredentialProviderRegistry(): CredentialProviderRegistry =
+private val sharedCredentialProviderRegistry: CredentialProviderRegistry =
     CredentialProviderRegistry(
         listOf(
             EnvCredentialProvider(),
             FileCredentialProvider(),
         ),
     )
+
+fun defaultCredentialProviderRegistry(): CredentialProviderRegistry = sharedCredentialProviderRegistry

@@ -178,33 +178,33 @@ class NamedConnectionResolver(
      * String-Form + `${VAR}`-Substitution wie bisher.
      */
     private fun resolveConnectionName(configPath: Path, name: String): String {
-        resolveMapFormUrl(configPath, name)?.let { return it }
-        val rawUrl = lookupConnectionUrl(configPath, name)
+        // EIN Parse-Durchgang für beide Formen (Review F2): String-Form ODER Map-Form-credentialRef.
+        val entry = try {
+            ConnectionConfigParser.parseConnectionEntry(configPath, name)
+        } catch (e: ConnectionConfigException) {
+            throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
+        }
+        entry.credentialRef?.let { return resolveViaRegistry(it, name) }
+        val rawUrl = entry.stringUrl ?: throw ConfigResolveException(
+            "Connection name '$name' is not defined in $configPath under database.connections.",
+        )
         return substituteEnvVars(rawUrl, name)
     }
 
     /**
-     * Löst eine Map-Form-Connection `database.connections.<name>` mit `credentialRef` über die
-     * Registry auf. Gibt `null`, wenn [name] **keine** Map-Form-mit-`credentialRef` ist (→ der
-     * String-Form-Pfad übernimmt). **Fail-closed**: ein vorhandener, aber unauflösbarer
-     * `credentialRef` wirft [ConfigResolveException] (Exit 7) — der Operator hat eine Secret-Quelle
-     * explizit deklariert, ein stiller Rückfall auf String-Form wäre falsch. Die Meldung bleibt
-     * secret-frei (nur `reason`/`detail` der Registry, nie die aufgelöste URL).
+     * Löst einen Map-Form-`credentialRef` über die geteilte [CredentialProviderRegistry] zu einer
+     * **vollständigen** URL auf. **Fail-closed**: unauflösbar → [ConfigResolveException] (Exit 7) —
+     * der Operator hat eine Secret-Quelle explizit deklariert. Die Meldung bleibt secret-frei (nur
+     * `reason`/`detail` der Registry, nie die aufgelöste URL).
      */
-    private fun resolveMapFormUrl(configPath: Path, name: String): String? {
-        val credentialRef = try {
-            ConnectionConfigParser.parseMapFormCredentialRef(configPath, name)
-        } catch (e: ConnectionConfigException) {
-            throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
-        } ?: return null
-        return when (val outcome = credentialRegistry.resolve(credentialRef)) {
+    private fun resolveViaRegistry(credentialRef: String, name: String): String =
+        when (val outcome = credentialRegistry.resolve(credentialRef)) {
             is CredentialResolution.Success -> outcome.url
             is CredentialResolution.Failure -> throw ConfigResolveException(
                 "Failed to resolve credentialRef for connection '$name' (fail-closed): " +
                     "${outcome.reason} — ${outcome.detail}",
             )
         }
-    }
 
     /**
      * Liest `database.<key>` aus der bereits geparsten Config-Datei.
@@ -230,25 +230,6 @@ class NamedConnectionResolver(
             envLookup = envLookup,
             defaultConfigPath = defaultConfigPath,
         ).resolve()
-
-    /**
-     * LF-012 / LN-038: das eigentliche YAML-Parsing wandert in den
-     * adapter-neutralen [ConnectionConfigParser]; dieser
-     * Resolver behält nur noch die CLI-spezifische
-     * Pfad-Resolution und die ENV-Substitution. Das `${VAR}`-
-     * Expansion bleibt CLI-only — der Discovery-Pfad (MCP) darf
-     * den Resolver nie aufrufen.
-     */
-    private fun lookupConnectionUrl(configPath: Path, name: String): String {
-        val connections = try {
-            ConnectionConfigParser.parseConnections(configPath)
-        } catch (e: ConnectionConfigException) {
-            throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
-        }
-        return connections[name] ?: throw ConfigResolveException(
-            "Connection name '$name' is not defined in $configPath under database.connections.",
-        )
-    }
 
     /**
      * Ersetzt `${VAR}` durch `System.getenv(VAR)` (bzw. die Test-`envLookup`).

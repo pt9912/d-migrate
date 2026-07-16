@@ -31,13 +31,9 @@ class FileCredentialProvider(
 
     override val scheme: String = SCHEME
 
+    // Vertrag: [credentialRef] beginnt mit [scheme] (die CredentialProviderRegistry dispatcht am
+    // Prefix und ruft diesen Provider nur dann auf) — kein eigener Scheme-Guard nötig (Review F5).
     override fun resolve(credentialRef: String): CredentialResolution {
-        if (!credentialRef.startsWith(SCHEME)) {
-            return CredentialResolution.Failure(
-                reason = CredentialResolution.REASON_PROVIDER_MISSING,
-                detail = "credentialRef is not a '$SCHEME' reference",
-            )
-        }
         val rawPath = credentialRef.removePrefix(SCHEME)
         if (rawPath.isBlank()) {
             return CredentialResolution.Failure(

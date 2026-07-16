@@ -27,12 +27,6 @@ class FileCredentialProviderTest : FunSpec({
         }
     }
 
-    test("a non-file ref (defensive; registry normally guards) surfaces PROVIDER_MISSING") {
-        FileCredentialProvider().resolve("env:X")
-            .shouldBeInstanceOf<CredentialResolution.Failure>()
-            .reason shouldBe CredentialResolution.REASON_PROVIDER_MISSING
-    }
-
     test("blank path surfaces FILE_NOT_FOUND") {
         FileCredentialProvider().resolve("file:")
             .shouldBeInstanceOf<CredentialResolution.Failure>()

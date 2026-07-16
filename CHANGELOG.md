@@ -50,9 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.d-migrate.yaml` aufgelöst und für `data export`/`import`/`transfer`/`profile` in die Verbindung
   injiziert (Präzedenz Config > Default; kein CLI-Flag). Zugleich deckelt `pipeline.parallelism: auto`
   nun gegen den konfigurierten `max_size` statt gegen den Hardcode-Default. Werte müssen positive
-  Ganzzahlen sein und `min_idle <= max_size` erfüllen — sonst Exit 7 (laut statt stiller Coercion);
-  SQLite bleibt auf Pool-Größe 1 geklemmt. Die sicherheitskritischen Cancel-Reaktions-Schranken
-  (keepalive-/statement-/network-Timeout) bleiben bewusst nicht über diese Sektion tunbar.
+  Ganzzahlen sein; ein **explizit** gesetztes `min_idle > max_size` ist ein Fehler (Exit 7), während
+  ein nur gesetztes `max_size` das Default-`min_idle` bei Bedarf herunterklemmt (`max_size: 1` allein
+  ist gültig). Unbekannte/vertippte Keys unter `pool:` werden **laut abgelehnt** (statt still auf
+  Default zurückzufallen). SQLite bleibt auf Pool-Größe 1 geklemmt. Die sicherheitskritischen
+  Cancel-Reaktions-Schranken (keepalive-/statement-/network-Timeout) bleiben bewusst nicht über diese
+  Sektion tunbar.
 - **`D_MIGRATE_DB_PASSWORD` war ein stiller No-op** ([`LN-049`](spec/lastenheft-d-migrate.md#ln-049)) —
   die globale Fallback-Variable war in der Connection-Spec als Auflösungs-Stufe 2 dokumentiert, wurde vom
   Runtime aber nie gelesen. Alle CLI-DB-Operationen (`data export`/`import`/`transfer`/`profile`,

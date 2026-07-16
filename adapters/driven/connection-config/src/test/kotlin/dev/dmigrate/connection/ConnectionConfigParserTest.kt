@@ -109,9 +109,9 @@ class ConnectionConfigParserTest : FunSpec({
         }
     }
 
-    // ─── O4 (ADR 0035): parseMapFormCredentialRef ─────────────────
+    // ─── O4 (ADR 0035): parseConnectionEntry (ein Parse für beide Formen) ─────────────────
 
-    test("parseMapFormCredentialRef returns the credentialRef of a map-form connection") {
+    test("parseConnectionEntry returns the credentialRef of a map-form connection") {
         val yaml = """
             database:
               connections:
@@ -121,19 +121,21 @@ class ConnectionConfigParserTest : FunSpec({
                 legacy: "postgresql://u:p@host/db"
         """.trimIndent()
         val path = tempYaml(yaml)
-        ConnectionConfigParser.parseMapFormCredentialRef(path, "prod") shouldBe "file:/run/secrets/prod_db_url"
+        ConnectionConfigParser.parseConnectionEntry(path, "prod") shouldBe
+            ConnectionEntry(credentialRef = "file:/run/secrets/prod_db_url")
     }
 
-    test("parseMapFormCredentialRef returns null for a string-form connection") {
+    test("parseConnectionEntry returns the raw URL of a string-form connection (\${VAR} unexpanded)") {
         val yaml = """
             database:
               connections:
                 legacy: "postgresql://u:p@host/db"
         """.trimIndent()
-        ConnectionConfigParser.parseMapFormCredentialRef(tempYaml(yaml), "legacy") shouldBe null
+        ConnectionConfigParser.parseConnectionEntry(tempYaml(yaml), "legacy") shouldBe
+            ConnectionEntry(stringUrl = "postgresql://u:p@host/db")
     }
 
-    test("parseMapFormCredentialRef returns null for an absent connection or a map without credentialRef") {
+    test("parseConnectionEntry returns empty for an absent connection or a map without credentialRef") {
         val yaml = """
             database:
               connections:
@@ -141,11 +143,11 @@ class ConnectionConfigParserTest : FunSpec({
                   displayName: "Prod"
         """.trimIndent()
         val path = tempYaml(yaml)
-        ConnectionConfigParser.parseMapFormCredentialRef(path, "prod") shouldBe null
-        ConnectionConfigParser.parseMapFormCredentialRef(path, "absent") shouldBe null
+        ConnectionConfigParser.parseConnectionEntry(path, "prod") shouldBe ConnectionEntry()
+        ConnectionConfigParser.parseConnectionEntry(path, "absent") shouldBe ConnectionEntry()
     }
 
-    test("parseMapFormCredentialRef throws when credentialRef is present-but-not-a-string") {
+    test("parseConnectionEntry throws when credentialRef is present-but-not-a-string") {
         val yaml = """
             database:
               connections:
@@ -153,7 +155,7 @@ class ConnectionConfigParserTest : FunSpec({
                   credentialRef: 42
         """.trimIndent()
         shouldThrow<ConnectionConfigException> {
-            ConnectionConfigParser.parseMapFormCredentialRef(tempYaml(yaml), "prod")
+            ConnectionConfigParser.parseConnectionEntry(tempYaml(yaml), "prod")
         }
     }
 })

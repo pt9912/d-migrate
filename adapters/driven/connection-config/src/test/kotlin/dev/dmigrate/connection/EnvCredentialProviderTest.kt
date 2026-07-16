@@ -34,10 +34,4 @@ class EnvCredentialProviderTest : FunSpec({
         outcome.reason shouldBe CredentialResolution.REASON_ENV_NOT_SET
         outcome.detail shouldBe "environment variable 'MISSING' is not set"
     }
-
-    test("a non-env ref (defensive; registry normally guards this) surfaces PROVIDER_MISSING") {
-        val provider = EnvCredentialProvider(envLookup = { error("must not be called") })
-        val outcome = provider.resolve("file:/x").shouldBeInstanceOf<CredentialResolution.Failure>()
-        outcome.reason shouldBe CredentialResolution.REASON_PROVIDER_MISSING
-    }
 })

@@ -54,18 +54,25 @@ object ConnectionConfigParser {
     }
 
     /**
-     * O4 (ADR 0035): Liest den `credentialRef` einer **Map-Form**-Connection
-     * `database.connections.<name>`. Gibt `null` zurück, wenn der Eintrag fehlt, String-Form ist
-     * oder eine Map **ohne** `credentialRef` ist (dann greift der String-Form-/Fehlerpfad des
-     * Aufrufers). Der `credentialRef` (z. B. `file:/pfad`, `env:VAR`) ist ein **secret-freier**
-     * Zeiger, nicht das Secret selbst. Wirft [ConnectionConfigException], wenn `credentialRef`
-     * present-but-not-a-string ist.
+     * O4 (ADR 0035): liest EINEN Eintrag `database.connections.<name>` in **einem** Parse-Durchgang
+     * (statt String- und Map-Form getrennt zu parsen). String-Form → [ConnectionEntry.stringUrl]
+     * (rohe URL-Vorlage, `${VAR}` **unexpandiert**). Map-Form mit `credentialRef` →
+     * [ConnectionEntry.credentialRef] (secret-freier Zeiger, z. B. `file:/pfad`/`env:VAR`). Fehlt der
+     * Eintrag oder ist es eine Map **ohne** `credentialRef` → beide `null`. Wirft
+     * [ConnectionConfigException] bei non-string `credentialRef`.
      */
-    fun parseMapFormCredentialRef(configPath: Path, name: String): String? {
-        val root = parseRoot(configPath) ?: return null
-        val database = root["database"] as? Map<*, *> ?: return null
-        val connections = database["connections"] as? Map<*, *> ?: return null
-        val entry = connections[name] as? Map<*, *> ?: return null
+    fun parseConnectionEntry(configPath: Path, name: String): ConnectionEntry {
+        val root = parseRoot(configPath) ?: return ConnectionEntry()
+        val database = root["database"] as? Map<*, *> ?: return ConnectionEntry()
+        val connections = database["connections"] as? Map<*, *> ?: return ConnectionEntry()
+        return when (val value = connections[name]) {
+            is String -> ConnectionEntry(stringUrl = value)
+            is Map<*, *> -> ConnectionEntry(credentialRef = credentialRefOf(value, name, configPath))
+            else -> ConnectionEntry()
+        }
+    }
+
+    private fun credentialRefOf(entry: Map<*, *>, name: String, configPath: Path): String? {
         val ref = entry["credentialRef"] ?: return null
         return ref as? String ?: throw ConnectionConfigException(
             "database.connections.$name.credentialRef in $configPath must be a string, " +
@@ -107,6 +114,13 @@ object ConnectionConfigParser {
         )
     }
 }
+
+/**
+ * Ein aufgelöster `database.connections.<name>`-Eintrag (O4, ADR 0035): entweder eine
+ * String-Form-URL-Vorlage ([stringUrl]) **oder** ein Map-Form-`credentialRef` ([credentialRef]);
+ * höchstens eines ist gesetzt. Beide `null` = Eintrag fehlt / Map ohne `credentialRef`.
+ */
+data class ConnectionEntry(val stringUrl: String? = null, val credentialRef: String? = null)
 
 /**
  * Thrown when the legacy legacy YAML cannot be parsed or the

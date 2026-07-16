@@ -36,13 +36,31 @@ internal class PoolSettingsResolver(
         val database = root?.get("database") as? Map<*, *> ?: return PoolSettings()
         val pool = database["pool"] as? Map<*, *> ?: return PoolSettings()
 
+        // Unbekannte Keys laut ablehnen — das pool:-Schema ist fix & klein; ein Tippfehler
+        // (z. B. `maxsize`) soll nicht still auf Default zurückfallen (genau das No-op-Muster, das
+        // dieser Resolver behebt). Auch die drei nicht user-tunbaren Timeout-Felder (keepalive/
+        // statement/network) werden so klar abgelehnt statt still ignoriert.
+        pool.keys.forEach { key ->
+            val name = key as? String
+            if (name == null || name !in KNOWN_KEYS) {
+                throw ConfigResolveException(
+                    "unknown key '$key' under database.pool in $path (supported: ${KNOWN_KEYS.joinToString(", ")})"
+                )
+            }
+        }
+
         val defaults = PoolSettings()
         val maxSize = readInt(pool, "max_size", path) ?: defaults.maximumPoolSize
-        val minIdle = readInt(pool, "min_idle", path) ?: defaults.minimumIdle
-        if (minIdle > maxSize) {
-            throw ConfigResolveException(
-                "database.pool.min_idle ($minIdle) in $path must be <= database.pool.max_size ($maxSize)"
+        val explicitMinIdle = readInt(pool, "min_idle", path)
+        // Cross-Field nur bei EXPLIZIT gesetztem min_idle als Fehler; ist min_idle ungesetzt, den
+        // Default auf max_size herunterklemmen (HikariCP-Verhalten) — sonst würde `max_size: 1`
+        // allein am Default min_idle=2 scheitern, obwohl der Nutzer min_idle nie angefasst hat.
+        val minIdle = when {
+            explicitMinIdle == null -> minOf(defaults.minimumIdle, maxSize)
+            explicitMinIdle > maxSize -> throw ConfigResolveException(
+                "database.pool.min_idle ($explicitMinIdle) in $path must be <= database.pool.max_size ($maxSize)"
             )
+            else -> explicitMinIdle
         }
         return PoolSettings(
             maximumPoolSize = maxSize,
@@ -61,6 +79,13 @@ internal class PoolSettingsResolver(
     private fun readLong(pool: Map<*, *>, key: String, source: Path): Long? {
         if (!pool.containsKey(key)) return null
         return requirePositiveLongConfig(pool[key], "database.pool.$key", source)
+    }
+
+    private companion object {
+        /** Die fünf im YAML-Schema dokumentierten `pool:`-Keys (spec §3.2). */
+        val KNOWN_KEYS = setOf(
+            "max_size", "min_idle", "connection_timeout_ms", "idle_timeout_ms", "max_lifetime_ms",
+        )
     }
 }
 
