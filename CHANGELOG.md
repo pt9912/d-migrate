@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-RC1] - 2026-07-16
+
 ### Added
 
 - **`credentialRef`-Provider auf dem CLI-Pfad** ([`LN-025`](spec/lastenheft-d-migrate.md#ln-025) O4,
