@@ -12,6 +12,8 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectiveDataPipeline
 
 class DataTransferCommand : CliktCommand(name = "transfer") {
     override fun help(context: Context) = "Transfer data directly between databases"
@@ -40,15 +42,21 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         "--atomic",
         help = "Atomic clean-load: on any error, roll back all target tables to empty. Requires --truncate.",
     ).flag()
-    val chunkSize by option("--chunk-size", help = "Rows per chunk (default: 10000)")
-        .int()
-        .default(10_000)
+    val chunkSize by option(
+        "--chunk-size",
+        help = "Rows per chunk (default: 10000; overrides pipeline.chunk_size in config)",
+    ).int()
+    val fetchSize by option(
+        "--fetch-size",
+        help = "JDBC cursor prefetch size for reading the SOURCE (default: dialect-specific 1000; " +
+            "overrides pipeline.fetch_size in config). SQLite: hint only. --verify read-back uses the same value.",
+    ).int()
     val parallel by option(
         "--parallel",
-        help = "Max tables/partitions to transfer concurrently (default: 1 = sequential). " +
-            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
-            "incompatible with --atomic.",
-    ).int().default(1)
+        help = "Max tables/partitions to transfer concurrently (default: 1 = sequential; " +
+            "overrides pipeline.parallelism in config). Keep <= the connection pool size " +
+            "(default 10); clamped to 1 for SQLite; incompatible with --atomic.",
+    ).int()
     val readOnly by option(
         "--read-only",
         help = "Open the SOURCE read-only (default; the target is always read-write). SQLite source: " +
@@ -62,6 +70,19 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
+        // LN-005 + pipeline.parallelism: chunk_size/fetch_size/parallelism in EINEM Config-Ladevorgang
+        // mergen (CLI-explizit > Config > Default), statt die YAML pro Resolver erneut zu parsen.
+        val pipeline = try {
+            resolveEffectiveDataPipeline(root?.config, chunkSize, fetchSize, parallel)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(2)
+        }
+        val tuning = pipeline.tuning
+        val par = pipeline.parallelism
         val exitCode = DataTransferWiring.execute(
             DataTransferOptions(
                 source = source,
@@ -75,12 +96,16 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 truncate = truncate,
                 verify = verify,
                 atomic = atomic,
-                chunkSize = chunkSize,
-                parallel = parallel,
+                chunkSize = tuning.chunkSize,
+                parallel = par.degree,
+                parallelFromCli = par.fromCli,
+                parallelSourceLabel = par.sourceLabel,
                 readOnly = readOnly,
+                fetchSize = tuning.fetchSize,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
                 sqliteAutoincrementWidth = sqliteAutoincrementWidth?.toInt(),
+                pool = pipeline.pool,
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

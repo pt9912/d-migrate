@@ -58,7 +58,22 @@ class ParquetChunkWriter(
      */
     @Suppress("UnusedPrivateMember")
     private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,
+    /**
+     * LN-005 (R2): explizite Parquet-Row-Group-Größe in Bytes. Ohne dieses
+     * `withRowGroupSize` fällt parquet-java auf seinen ~128-MB-Default zurück —
+     * der `ParquetWriter` puffert eine ganze Row-Group + Column-Encoder im RAM,
+     * bevor er flusht. Im parallelen File-per-Table-Export (`--parallel N`) hätte
+     * jeder Worker seinen eigenen Writer → Peak ≈ `N × 128 MB`. Der bewusst
+     * kleinere Default (32 MB) hält das Heap-Budget beherrschbar; Trade-off:
+     * etwas geringere Scan-/Kompressionseffizienz.
+     */
+    private val rowGroupBytes: Long = DEFAULT_ROW_GROUP_BYTES,
 ) : DataChunkWriter {
+
+    companion object {
+        /** LN-005 (R2): 32 MiB — deutlich unter dem parquet-java-Default (~128 MB). */
+        const val DEFAULT_ROW_GROUP_BYTES: Long = 32L * 1024 * 1024
+    }
 
     private var beginCalled: Boolean = false
     private var closed: Boolean = false
@@ -78,6 +93,7 @@ class ParquetChunkWriter(
         val builder = ExampleParquetWriter.builder(OutputStreamOutputFile(output))
             .withConf(configuration)
             .withCompressionCodec(CompressionCodecName.GZIP)
+            .withRowGroupSize(rowGroupBytes) // LN-005 (R2): explizit statt ~128-MB-Default
             .withType(messageType)
         if (extraMetaData.isNotEmpty()) {
             builder.withExtraMetaData(extraMetaData)

@@ -15,6 +15,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.SchemaCodec
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
@@ -48,11 +49,16 @@ internal data class DataImportOptions(
     val csvNullString: String,
     val chunkSize: Int,
     val parallel: Int,
+    /** pipeline.parallelism-Slice: Origin (CLI-explizit?) + Label, s. DataImportRunner-Request. */
+    val parallelFromCli: Boolean = false,
+    val parallelSourceLabel: String = "--parallel",
     val resume: String?,
     val checkpointDir: Path?,
     val noCheckpoint: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
 )
 
 internal data class DataImportWiringBundle(
@@ -92,7 +98,7 @@ internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
                     throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
                 }
             },
-            urlParser = ConnectionUrlParser::parse,
+            urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
             poolFactory = HikariConnectionPoolFactory::create,
             writerLookup = writerLookup,
             schemaCodec = YamlSchemaCodec(),
@@ -178,6 +184,8 @@ internal object DataImportWiring {
             csvNullString = options.csvNullString,
             chunkSize = options.chunkSize,
             parallel = options.parallel,
+            parallelFromCli = options.parallelFromCli,
+            parallelSourceLabel = options.parallelSourceLabel,
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
             noProgress = options.cliContext.noProgress,
@@ -187,8 +195,14 @@ internal object DataImportWiring {
         )
         val runner = DataImportRunner(
             targetResolver = bundle.targetResolver,
-            urlParser = bundle.urlParser,
-            poolFactory = bundle.poolFactory,
+            // Store-Key = --target-Name; bei weggelassenem --target der database.default_target-Name (LN-049).
+            urlParser = CredentialFilling.storeOnTop(
+                NamedConnectionResolver(configPathFromCli = options.configPath)
+                    .connectionName(options.target, "default_target"),
+                bundle.urlParser,
+            ),
+            // pool:-Wiring — aus `database.pool:` aufgelöste PoolSettings injizieren (SQLite bleibt geklemmt).
+            poolFactory = { config -> bundle.poolFactory(config.copy(pool = options.pool)) },
             writerLookup = bundle.writerLookup,
             schemaPreflight = preflight::prepare,
             schemaTargetValidator = preflight::validateTargetTable,

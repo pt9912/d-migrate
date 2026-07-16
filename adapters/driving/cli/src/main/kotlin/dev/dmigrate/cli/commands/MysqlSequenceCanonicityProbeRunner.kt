@@ -8,7 +8,6 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityProbe
-import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mysql.MysqlSequenceCanonicityProbeAdapter
 import dev.dmigrate.driver.mysql.MysqlSequenceNaming
@@ -49,7 +48,7 @@ internal object MysqlSequenceCanonicityProbeRunner {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
         val config = try {
-            ConnectionUrlParser.parse(url)
+            CredentialFilling(target.source).fill(url)
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "URL parse failed", e)
         }

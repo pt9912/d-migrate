@@ -10,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.format.verify.CanonicalValueCodec
 import java.nio.file.Path
 
@@ -27,10 +28,17 @@ internal data class DataTransferOptions(
     val atomic: Boolean,
     val chunkSize: Int,
     val parallel: Int,
+    /** pipeline.parallelism-Slice: Origin (CLI-explizit?) + Label, s. DataTransferRequest. */
+    val parallelFromCli: Boolean = false,
+    val parallelSourceLabel: String = "--parallel",
     val readOnly: Boolean,
+    /** LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default). */
+    val fetchSize: Int? = null,
     val cliContext: CliContext,
     val configPath: Path?,
     val sqliteAutoincrementWidth: Int? = null,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in beide `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
 )
 
 /**
@@ -76,7 +84,10 @@ internal object DataTransferWiring {
             atomic = options.atomic,
             chunkSize = options.chunkSize,
             parallel = options.parallel,
+            parallelFromCli = options.parallelFromCli,
+            parallelSourceLabel = options.parallelSourceLabel,
             readOnly = options.readOnly,
+            fetchSize = options.fetchSize,
             cliConfigPath = options.configPath,
             quiet = options.cliContext.quiet,
             noProgress = options.cliContext.noProgress,
@@ -86,8 +97,10 @@ internal object DataTransferWiring {
         val runner = DataTransferRunner(
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },
             targetResolver = { tgt, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(tgt) },
-            urlParser = { url -> ConnectionUrlParser.parse(url) },
-            poolFactory = { config -> HikariConnectionPoolFactory.create(config) },
+            urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
+            // pool:-Wiring — aufgelöste PoolSettings in Quell- UND Ziel-ConnectionConfig injizieren
+            // (der credentialFiller läuft davor am urlParser; SQLite bleibt geklemmt).
+            poolFactory = { config -> HikariConnectionPoolFactory.create(config.copy(pool = options.pool)) },
             driverLookup = { dialect -> DatabaseDriverRegistry.get(dialect) },
             urlScrubber = LogScrubber::maskUrl,
             // data transfer uses plain stderr for errors — no structured json/yaml
@@ -98,6 +111,8 @@ internal object DataTransferWiring {
             },
             // LN-009: dialekt-neutrale Wert-Kanonik für --verify (formats-Adapter).
             valueCanonicalizer = CanonicalValueCodec(),
+            // LN-049 Stufe 4: Store-Konsum je Verbindung (Quelle/Ziel), eine geteilte Master-Secret-Session.
+            credentialFiller = CredentialFilling.perConnectionStoreFiller(),
         )
         return runner.execute(request)
     }

@@ -616,6 +616,31 @@ anschließend als verifizierten Repo-Stand nachziehen.
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
 - [ ] CI ist auf `main` und auf dem Tag grün
 
+### 4.9 Vorabversionen (Release Candidates / Prereleases)
+
+Ein Release Candidate (z. B. `1.0.0-RC1` vor `1.0.0`) durchläuft denselben Ablauf
+(§4.1–§4.6, §4.8), aber die Pipeline behandelt ihn **automatisch** als Prerelease.
+Erkannt wird das an der SemVer-Regel „die Version enthält ein `-`" (Tag `vX.Y.Z-RCn`).
+
+**Versionierung.** In [`build.gradle.kts`](../../build.gradle.kts) (`defaultProjectVersion`):
+`X.Y.Z-RC-SNAPSHOT` → `X.Y.Z-RCn` für den Release-Commit (§4.2), Tag `vX.Y.Z-RCn`.
+Post-Release (§5) zurück auf die nächste Vorab-Entwicklungsversion, z. B.
+`X.Y.Z-RC(n+1)-SNAPSHOT`; erst der finale Stable-Cut bumpt auf `X.Y.Z`.
+
+**Was die Pipeline für Prerelease-Tags abweichend tut** (automatisch, keine Handarbeit):
+
+- **Kein GHCR `:latest`** — [`build.yml`](../../.github/workflows/build.yml) pusht nur das
+  versionierte Tag; `:latest` bleibt auf dem letzten **Stable**.
+- **GitHub-Release als `--prerelease`** markiert
+  ([`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) — erscheint nicht
+  als „Latest release".
+- **Kein Homebrew-Tap-Update** und **kein `verify-homebrew`** — Homebrew trackt nur Stable.
+
+**Folge:** Die Homebrew-Schritte (§4.7) **entfallen** beim RC. Bei der Verifikation (§4.8) das
+**versionierte** GHCR-Tag ziehen (nicht `:latest`), den Homebrew-Punkt überspringen und prüfen,
+dass der GitHub-Release als Prerelease markiert ist. RC-Nutzer beziehen die Vorabversion über das
+versionierte GHCR-Tag bzw. den GitHub-Prerelease.
+
 ---
 
 ## 5. Post-Release

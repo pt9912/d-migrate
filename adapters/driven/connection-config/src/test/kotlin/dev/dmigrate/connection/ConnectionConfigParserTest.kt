@@ -108,4 +108,54 @@ class ConnectionConfigParserTest : FunSpec({
             ConnectionConfigParser.parseConnections(tempYaml(yaml))
         }
     }
+
+    // ─── O4 (ADR 0035): parseConnectionEntry (ein Parse für beide Formen) ─────────────────
+
+    test("parseConnectionEntry returns the credentialRef of a map-form connection") {
+        val yaml = """
+            database:
+              connections:
+                prod:
+                  credentialRef: "file:/run/secrets/prod_db_url"
+                  providerRef: "secrets-manager"
+                legacy: "postgresql://u:p@host/db"
+        """.trimIndent()
+        val path = tempYaml(yaml)
+        ConnectionConfigParser.parseConnectionEntry(path, "prod") shouldBe
+            ConnectionEntry(credentialRef = "file:/run/secrets/prod_db_url")
+    }
+
+    test("parseConnectionEntry returns the raw URL of a string-form connection (\${VAR} unexpanded)") {
+        val yaml = """
+            database:
+              connections:
+                legacy: "postgresql://u:p@host/db"
+        """.trimIndent()
+        ConnectionConfigParser.parseConnectionEntry(tempYaml(yaml), "legacy") shouldBe
+            ConnectionEntry(stringUrl = "postgresql://u:p@host/db")
+    }
+
+    test("parseConnectionEntry returns empty for an absent connection or a map without credentialRef") {
+        val yaml = """
+            database:
+              connections:
+                prod:
+                  displayName: "Prod"
+        """.trimIndent()
+        val path = tempYaml(yaml)
+        ConnectionConfigParser.parseConnectionEntry(path, "prod") shouldBe ConnectionEntry()
+        ConnectionConfigParser.parseConnectionEntry(path, "absent") shouldBe ConnectionEntry()
+    }
+
+    test("parseConnectionEntry throws when credentialRef is present-but-not-a-string") {
+        val yaml = """
+            database:
+              connections:
+                prod:
+                  credentialRef: 42
+        """.trimIndent()
+        shouldThrow<ConnectionConfigException> {
+            ConnectionConfigParser.parseConnectionEntry(tempYaml(yaml), "prod")
+        }
+    }
 })

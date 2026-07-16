@@ -33,8 +33,14 @@ data class DataTransferRequest(
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
     // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
     val parallel: Int = 1,
+    // pipeline.parallelism-Slice: war --parallel CLI-explizit? Steuert Hard-Fail vs. Fallback bei --resume/--atomic.
+    val parallelFromCli: Boolean = false,
+    // Herkunftsbewusster Label für Klemm-/Fallback-Meldungen (--parallel N vs. pipeline.parallelism: auto (= N)).
+    val parallelSourceLabel: String = "--parallel",
     // Read-only-Quelle (Default an über CLI-Flag; SQLite → SQLITE_OPEN_READONLY). Ziel bleibt read-write.
     val readOnly: Boolean = false,
+    // LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default); auch der --verify-Read-Back nutzt ihn.
+    val fetchSize: Int? = null,
     // LN-009: SHA-256 Quelle↔Ziel-Reconciliation nach dem Transfer.
     val verify: Boolean = false,
     // LN-013: atomarer Clean-Load — bei Fehler alle Tabellen auf leer zurück (erfordert truncate).
@@ -57,6 +63,8 @@ class DataTransferRunner(
     private val transferExecutor: TransferExecutor = TransferExecutor(),
     // LN-009: von der CLI-Wiring injiziert (formats-Adapter). Null → --verify meldet Konfigurationsfehler.
     private val valueCanonicalizer: ValueCanonicalizer? = null,
+    // LN-049 Stufe 4: Per-Connection-Store-Filler (Identity-Default → MCP/Tests unverändert).
+    credentialFiller: (ConnectionConfig, String) -> ConnectionConfig = { config, _ -> config },
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
     private val userFacingPrintError = userFacingErrors.printError(printError)
@@ -69,6 +77,7 @@ class DataTransferRunner(
         urlScrubber = urlScrubber,
         userFacingErrors = userFacingErrors,
         printError = userFacingPrintError,
+        credentialFiller = credentialFiller,
     )
     private val preflightPlanner = TransferPreflightPlanner()
 
@@ -130,9 +139,8 @@ class DataTransferRunner(
             throw e
         } catch (e: Exception) { userFacingPrintError("Schema read: ${e.message}", srcRef); return 4 }
 
-        // LN-007/LN-008: resolve the effective parallelism (SQLite → 1, with note).
         val sqliteInvolved = srcCfg.dialect == DatabaseDialect.SQLITE || tgtCfg.dialect == DatabaseDialect.SQLITE
-        val degree = ParallelismClamp.effective(request.parallel, sqliteInvolved, userFacingStderr)
+        val degree = effectiveTransferParallelism(request, sqliteInvolved, userFacingStderr)
 
         // Sequential default keeps the linear FK order (byte-/order-identical); the parallel
         // path uses FK-safe layers. tables (flat) drives --verify/--atomic/progress either way.
@@ -178,7 +186,7 @@ class DataTransferRunner(
             sinceColumn = request.sinceColumn,
             since = request.since,
         )
-        val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
+        val reader = srcDrv.dataReader(request.fetchSize); val writer = tgtDrv.dataWriter()
 
         cancellationToken.throwIfCancellationRequested()
         try {
@@ -226,6 +234,24 @@ class DataTransferRunner(
         )
     }
 
+    /**
+     * pipeline.parallelism-Slice: effektive Transfer-Parallelität — config-basiertes `parallel > 1`
+     * + `--atomic` fällt auf 1 zurück (CLI-explizit fängt [validate] hart ab), danach die
+     * SQLite-Klemme. Extrahiert, damit `executeWithConnections` unter der detekt-LongMethod-Grenze bleibt.
+     */
+    private fun effectiveTransferParallelism(
+        request: DataTransferRequest,
+        sqliteInvolved: Boolean,
+        onNote: (String) -> Unit,
+    ): Int {
+        val requested = ParallelismClamp.fallbackIfIncompatible(
+            request.parallel, request.parallelFromCli, request.parallelSourceLabel,
+            incompatibleFlag = if (request.atomic) "--atomic" else null,
+            onNote = onNote,
+        )
+        return ParallelismClamp.effective(requested, sqliteInvolved, request.parallelSourceLabel, onNote)
+    }
+
     @Suppress("LongParameterList") // spiegelt den Transfer-Kontext (Reader/Pools/Schemas/Refs je Seite)
     private fun verifyTransfer(
         request: DataTransferRequest,
@@ -249,7 +275,7 @@ class DataTransferRunner(
             TransferVerifier(canonicalizer).verify(
                 tables = tables,
                 sourceReader = sourceReader,
-                targetReader = tgtDrv.dataReader(),
+                targetReader = tgtDrv.dataReader(request.fetchSize),
                 sourcePool = srcPool,
                 targetPool = tgtPool,
                 sourceSchema = srcSchema,
@@ -307,7 +333,9 @@ class DataTransferRunner(
         if (r.parallel < 1) return "--parallel must be >= 1, got ${r.parallel}"
         // LN-013 × LN-007/LN-008: parallel workers can still be committing when the
         // atomic compensation truncates → the all-or-nothing guarantee would be racy.
-        if (r.atomic && r.parallel > 1) return "--atomic is incompatible with --parallel > 1"
+        // pipeline.parallelism-Slice: harter Fehler nur bei CLI-explizitem --parallel; kommt der Wert
+        // aus der Config, fällt der Lauf am Clamp auf 1 zurück (s. requestedParallel weiter oben).
+        if (r.atomic && r.parallel > 1 && r.parallelFromCli) return "--atomic is incompatible with --parallel > 1"
         // No --filter validation needed: filter is already parsed into
         // ParsedFilter by the CLI layer before constructing DataTransferRequest.
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }

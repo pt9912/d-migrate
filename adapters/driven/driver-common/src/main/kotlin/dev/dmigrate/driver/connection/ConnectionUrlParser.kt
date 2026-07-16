@@ -44,7 +44,14 @@ object ConnectionUrlParser {
         val uri = try {
             URI(url)
         } catch (e: URISyntaxException) {
-            throw IllegalArgumentException("Invalid connection URL: ${LogScrubber.maskUrl(url)} — ${e.message}", e)
+            // SECURITY: URISyntaxException.message appends the RAW input verbatim
+            // ("<reason> at index N: <input>") — that would leak an unmasked, password-bearing
+            // URL (esp. one sourced from a `file:`/`env:` credentialRef). Use reason+index only.
+            val where = if (e.index >= 0) " at index ${e.index}" else ""
+            throw IllegalArgumentException(
+                "Invalid connection URL: ${LogScrubber.maskUrl(url)} — ${e.reason}$where",
+                e,
+            )
         }
 
         val scheme = uri.scheme

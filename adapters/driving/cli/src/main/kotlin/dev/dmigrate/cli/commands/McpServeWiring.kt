@@ -191,7 +191,9 @@ internal class McpServeWiring(
             finalisationTimeout = startFinalisationTimeoutLoop(phaseCWithJdbc)
             val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath).resolve()
             val executorBundle = dev.dmigrate.server.application.job.JobExecutorFactory.create(executor.config)
-            val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
+            val connectionSecretResolver = dev.dmigrate.connection.ProviderBackedConnectionSecretResolver(
+                dev.dmigrate.connection.defaultCredentialProviderRegistry(),
+            )
             val phaseE = OperationalMcpWiring(
                 runtimeWiring = phaseCWithJdbc,
                 idempotencyStore = bundle.idempotencyStore,
@@ -253,7 +255,9 @@ internal class McpServeWiring(
         val artifactRetention = startArtifactRetentionLoop(phaseC)
         val finalisationTimeout = startFinalisationTimeoutLoop(phaseC)
         val idempotencyStore = InMemoryIdempotencyStore()
-        val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
+        val connectionSecretResolver = dev.dmigrate.connection.ProviderBackedConnectionSecretResolver(
+            dev.dmigrate.connection.defaultCredentialProviderRegistry(),
+        )
         val phaseE = OperationalMcpWiring(
             runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,

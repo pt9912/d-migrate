@@ -50,6 +50,10 @@ data class DataImportRequest(
     val chunkSize: Int,
     // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
     val parallel: Int = 1,
+    // pipeline.parallelism-Slice: war --parallel CLI-explizit? Steuert Hard-Fail vs. Fallback bei --resume/--atomic.
+    val parallelFromCli: Boolean = false,
+    // Herkunftsbewusster Label für Klemm-/Fallback-Meldungen (--parallel N vs. pipeline.parallelism: auto (= N)).
+    val parallelSourceLabel: String = "--parallel",
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,

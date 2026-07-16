@@ -153,7 +153,7 @@ class DataImportFlagValidationTest : FunSpec({
         val stderr = mutableListOf<String>()
 
         val exit = DataImportHelpers.validateCliFlags(
-            request().copy(parallel = 4, resume = "run-123"),
+            request().copy(parallel = 4, resume = "run-123", parallelFromCli = true),
             stderr::add,
         )
 
@@ -177,12 +177,32 @@ class DataImportFlagValidationTest : FunSpec({
         val stderr = mutableListOf<String>()
 
         val exit = DataImportHelpers.validateCliFlags(
-            request().copy(parallel = 4, atomic = true, truncate = true),
+            request().copy(parallel = 4, atomic = true, truncate = true, parallelFromCli = true),
             stderr::add,
         )
 
         exit shouldBe 2
         stderr.single() shouldContain "--parallel > 1 is incompatible with --atomic"
+    }
+
+    test("validateCliFlags does NOT hard-fail CONFIG-sourced parallel + --resume (falls back later)") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(parallel = 4, resume = "run-123", parallelFromCli = false),
+            stderr::add,
+        )
+        exit shouldBe null // no hard error; the fallback to 1 happens at the preflight clamp
+        stderr.shouldBeEmpty()
+    }
+
+    test("validateCliFlags does NOT hard-fail CONFIG-sourced parallel + --atomic (falls back later)") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(parallel = 4, atomic = true, truncate = true, parallelFromCli = false),
+            stderr::add,
+        )
+        exit shouldBe null
+        stderr.shouldBeEmpty()
     }
 
     test("validateCliFlags accepts --no-checkpoint alone") {

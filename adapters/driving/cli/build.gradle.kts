@@ -208,6 +208,17 @@ kover {
                     "dev.dmigrate.cli.commands.DataTransferCommand*",
                     "dev.dmigrate.cli.commands.SchemaCommand*",
                     "dev.dmigrate.cli.commands.DataCommand*",
+                    // `config` / `config credentials set`/`list` shells — flag
+                    // parsing + console I/O (readPassword) only. The pure
+                    // confirm/mismatch logic is extracted to the unit-tested
+                    // `confirmedSecret` (MasterSecretResolver.kt); the set/list
+                    // behaviour lives in the Clikt-free ConfigCredentialsWiring +
+                    // CredentialCommandRunner (both unit-tested); the top-level
+                    // `rootConfigPath` (ConfigCommandsKt) is thin Clikt-context glue.
+                    "dev.dmigrate.cli.commands.ConfigCommand*",
+                    "dev.dmigrate.cli.commands.ConfigCredentialsCommand*",
+                    "dev.dmigrate.cli.commands.ConfigCredentialsSetCommand*",
+                    "dev.dmigrate.cli.commands.ConfigCredentialsListCommand*",
                     // Hikari/Flyway/Postgres-Default — pro Definition
                     // integrationstest-bound (Hikari validiert beim
                     // Konstruktor mit `initializationFailTimeout=1ms`).

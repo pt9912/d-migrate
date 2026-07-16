@@ -2,6 +2,9 @@ package dev.dmigrate.cli.config
 
 import dev.dmigrate.connection.ConnectionConfigException
 import dev.dmigrate.connection.ConnectionConfigParser
+import dev.dmigrate.connection.defaultCredentialProviderRegistry
+import dev.dmigrate.server.ports.CredentialProviderRegistry
+import dev.dmigrate.server.ports.CredentialResolution
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -34,6 +37,11 @@ class NamedConnectionResolver(
     private val envLookup: (String) -> String? = System::getenv,
     /** Erlaubt Test-Override für das CWD beim Default-Lookup `./.d-migrate.yaml`. */
     private val defaultConfigPath: Path = Paths.get(".d-migrate.yaml"),
+    /**
+     * O4 (ADR 0035): geteilte Provider-Registry für die Map-Form-`credentialRef`-Auflösung
+     * (`env:`/`file:`). Default = [defaultCredentialProviderRegistry]; Test-injizierbar.
+     */
+    private val credentialRegistry: CredentialProviderRegistry = defaultCredentialProviderRegistry(),
 ) {
 
     /**
@@ -73,8 +81,7 @@ class NamedConnectionResolver(
             }
         }
 
-        val rawUrl = lookupConnectionUrl(configPath.path, source)
-        return substituteEnvVars(rawUrl, source)
+        return resolveConnectionName(configPath.path, source)
     }
 
     /**
@@ -110,6 +117,25 @@ class NamedConnectionResolver(
     }
 
     /**
+     * Der effektive Connection-**Name** für den LN-049-Stufe-4-Store-Lookup, oder `null` wenn keiner
+     * bestimmbar ist (Inline-URL, oder der Default zeigt auf eine URL, oder keine Config). [raw] ist der
+     * rohe `--source`/`--target`-Wert; ist er `null` (weggelassen), wird `database.[defaultKey]`
+     * konsultiert. Wirft **nicht** — ein Lookup-Fehler liefert `null` (kein Store, keine Störung des
+     * eigentlichen Verbindungsaufbaus).
+     */
+    fun connectionName(raw: String?, defaultKey: String): String? {
+        if (raw != null) return raw.takeUnless { it.contains("://") }
+        val configPath = resolveConfigPath()
+        if (!Files.isRegularFile(configPath.path)) return null
+        val default = try {
+            lookupDefaultValue(configPath.path, defaultKey)
+        } catch (_: ConfigResolveException) {
+            return null
+        } ?: return null
+        return default.takeUnless { it.contains("://") }
+    }
+
+    /**
      * Liest `database.<defaultKey>` aus der Config und löst den Wert als
      * URL oder Connection-Name auf.
      */
@@ -142,9 +168,43 @@ class NamedConnectionResolver(
         }
 
         // Default ist ein Connection-Name → über database.connections auflösen.
-        val rawUrl = lookupConnectionUrl(configPath.path, defaultValue)
-        return substituteEnvVars(rawUrl, defaultValue)
+        return resolveConnectionName(configPath.path, defaultValue)
     }
+
+    /**
+     * name → URL. O4 (ADR 0035): eine **Map-Form**-Connection mit `credentialRef` hat Vorrang und
+     * wird über die geteilte [CredentialProviderRegistry] zu einer **vollständigen** URL aufgelöst
+     * (fail-closed; **keine** `${VAR}`-Substitution — die aufgelöste URL ist final). Sonst
+     * String-Form + `${VAR}`-Substitution wie bisher.
+     */
+    private fun resolveConnectionName(configPath: Path, name: String): String {
+        // EIN Parse-Durchgang für beide Formen (Review F2): String-Form ODER Map-Form-credentialRef.
+        val entry = try {
+            ConnectionConfigParser.parseConnectionEntry(configPath, name)
+        } catch (e: ConnectionConfigException) {
+            throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
+        }
+        entry.credentialRef?.let { return resolveViaRegistry(it, name) }
+        val rawUrl = entry.stringUrl ?: throw ConfigResolveException(
+            "Connection name '$name' is not defined in $configPath under database.connections.",
+        )
+        return substituteEnvVars(rawUrl, name)
+    }
+
+    /**
+     * Löst einen Map-Form-`credentialRef` über die geteilte [CredentialProviderRegistry] zu einer
+     * **vollständigen** URL auf. **Fail-closed**: unauflösbar → [ConfigResolveException] (Exit 7) —
+     * der Operator hat eine Secret-Quelle explizit deklariert. Die Meldung bleibt secret-frei (nur
+     * `reason`/`detail` der Registry, nie die aufgelöste URL).
+     */
+    private fun resolveViaRegistry(credentialRef: String, name: String): String =
+        when (val outcome = credentialRegistry.resolve(credentialRef)) {
+            is CredentialResolution.Success -> outcome.url
+            is CredentialResolution.Failure -> throw ConfigResolveException(
+                "Failed to resolve credentialRef for connection '$name' (fail-closed): " +
+                    "${outcome.reason} — ${outcome.detail}",
+            )
+        }
 
     /**
      * Liest `database.<key>` aus der bereits geparsten Config-Datei.
@@ -170,25 +230,6 @@ class NamedConnectionResolver(
             envLookup = envLookup,
             defaultConfigPath = defaultConfigPath,
         ).resolve()
-
-    /**
-     * LF-012 / LN-038: das eigentliche YAML-Parsing wandert in den
-     * adapter-neutralen [ConnectionConfigParser]; dieser
-     * Resolver behält nur noch die CLI-spezifische
-     * Pfad-Resolution und die ENV-Substitution. Das `${VAR}`-
-     * Expansion bleibt CLI-only — der Discovery-Pfad (MCP) darf
-     * den Resolver nie aufrufen.
-     */
-    private fun lookupConnectionUrl(configPath: Path, name: String): String {
-        val connections = try {
-            ConnectionConfigParser.parseConnections(configPath)
-        } catch (e: ConnectionConfigException) {
-            throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
-        }
-        return connections[name] ?: throw ConfigResolveException(
-            "Connection name '$name' is not defined in $configPath under database.connections.",
-        )
-    }
 
     /**
      * Ersetzt `${VAR}` durch `System.getenv(VAR)` (bzw. die Test-`envLookup`).

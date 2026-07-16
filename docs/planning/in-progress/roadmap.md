@@ -635,22 +635,27 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 | Bereich   | Aufgabe                                              | LF-Ref | Status |
 | --------- | ---------------------------------------------------- | ------ | ------ |
-| Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | 🚧¹ |
+| Streaming | Streaming-Pipeline Optimierung (kein OOM bei >10 TB) | [`LN-005`](../../../spec/lastenheft-d-migrate.md#ln-005) | ✅¹ |
 | Streaming | Parallele Tabellenverarbeitung (`--parallel`, bounded ThreadPool) | [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007) | ✅⁸ |
 | Streaming | Partitionierte Tabellen: paralleler Export/Import    | [`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) | ✅⁸ |
 | Core      | SHA-256-Verifikation für Datenintegrität             | [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) | ✅² |
 | Core      | Atomare Rollbacks auf Checkpoint-Ebene               | [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) | ✅⁷ |
-| Security  | Verschlüsselte Credential-Speicherung (AES-256)      | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ⛔ |
+| Security  | Verschlüsselte Credential-Speicherung (AES-256-GCM)  | [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) | ✅⁹ |
+| Security  | Credential-Auflösung aus Quellen-Priorität (inkl. Store) | [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) | ✅¹⁰ |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) | ✅³ |
 | Security  | Audit-Logging aller Operationen                      | [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) | ✅⁴ |
 | QA        | Property-Based Testing (kotest-property, [ADR 0029](../../adr/0029-property-based-testing-framework.md)) | [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046) | ✅⁶ |
 | QA        | Performance-Regression-Tests                         | [`LN-044`](../../../spec/lastenheft-d-migrate.md#ln-044) | ✅⁵ |
 
-¹ Chunk-weise Pull-Streaming (`TableExporter`, `chunkSize=10_000`) + Resume/Checkpoint
-sind ausgeliefert (Basis seit 0.3.0); das „>10 TB ohne OOM"-Akzeptanzkriterium ist
-aber **nicht validiert** — der einzige Heap-Cap-/HeapDump-Test prüft die
-Schema-DDL-Render-Pipeline ([`LN-004`](../../../spec/lastenheft-d-migrate.md#ln-004)),
-nicht den Datenpfad.
+¹ Erledigt (2026-07-13): chunk-weises Pull-Streaming (`TableExporter`, `chunkSize=10_000`) +
+Resume/Checkpoint sind ausgeliefert (Basis seit 0.3.0); das „>10 TB ohne OOM"-Akzeptanzkriterium
+ist jetzt **validiert** durch einen heap-gedeckelten Datenpfad-Akzeptanztest (`test/perf-data-path`,
+opt-in `make docker-perf`): ein synthetischer lazy `DataReader` treibt ~1 GiB durch den echten
+Chunk-Loop + realen `CsvChunkWriter` unter `-Xmx 256m` (Volumen ~4× Heap) — eine „hält-alles"-
+Regression OOMt, der bounded Pfad läuft durch. Zusätzlich gehärtet: konfigurierbarer `fetchSize`
+([ADR 0033](../../adr/0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md)), explizite
+Parquet-Row-Group-Größe (R2) und ein Deckel auf die Import-`chunkFailures`-Detailliste (R4). Slice:
+[`ln005-streaming-oom-hardening.md`](../done/ln005-streaming-oom-hardening.md).
 ² Erledigt (2026-07-12, [ADR 0030](../../adr/0030-datenwert-kanonisierung-verify.md),
 ImpPlan [`ImpPlan-1.0.0-RC-ln009-sha256-verify.md`](../done/ImpPlan-1.0.0-RC-ln009-sha256-verify.md)):
 nutzerseitiges `data transfer --verify` mit dialekt-neutraler, reihenfolge-
@@ -708,6 +713,27 @@ Transfer/Import gruppieren FK-Ebenen; Export fächert einen partitionierten Pare
 Datei pro Kind. `--parallel 1` (Default) ist byte-identisch zum sequenziellen Pfad; SQLite
 wird auf 1 geklemmt (Pool-Size 1); `--parallel > 1` ⊥ `--resume` (Exit 2). Nicht-Scope:
 parallele `--resume`-Wiederaufnahme; Cross-Dialekt-Partitions-Fan-out (Fallback auf Parent).
+⁹ Erledigt (2026-07-14, [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) „O2",
+ImpPlan [`ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md`](../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md)):
+lokaler passphrase-verschlüsselter Store (`~/.d-migrate/credentials.enc`, AES-256-GCM,
+PBKDF2-HMAC-SHA256/600k, Header als AAD, kein Key auf Platte) + `config credentials set`/`list`.
+[`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) fordert nur die verschlüsselte
+**Speicherung** — die ist erfüllt. Das **Verwenden** gespeicherter Zugangsdaten beim
+Verbindungsaufbau (Auflösung aus der Quellen-Priorität) ist eine eigene Anforderung
+[`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) (s. ¹⁰), nicht Teil dieser Zeile.
+¹⁰ ✅ Erledigt (2026-07-15): Die Auflösungskette (connection-config-spec 4.1) ist auf dem CLI-Pfad
+vollständig auflösbar — Stufe 1 (Inline-URL), Stufe 2 (`D_MIGRATE_DB_PASSWORD`, alle Ops), Stufe 3
+(`${VAR}` = die „externe Secret-Referenz"), Stufe 4 (verschlüsselter Store — **alle 8 Ops** bei explizitem
+Namen **plus** `data import` über `database.default_target`; prozess-weite Session = **ein** Master-Prompt)
+und die interaktive Eingabe (über `config credentials set` → verschlüsselt abgelegt → konsumiert).
+Maskierung durchgängig (Passwörter nie im Klartext). Verifiziert: Zwei-Agenten-Review (1 Major
+profile-Env + 1 Minor Singleton-Wipe gefixt) + E2E-CLI gegen echte PG/MySQL (Testcontainers) grün. Der
+**wörtliche connect-Zeit-Prompt** (spec-4.1 Stufe 5) ist bewusst **nicht** implementiert — er würde
+passwortlose Auth (Postgres `peer`/`trust`/`.pgpass`) regressieren; die interaktive Eingabe erfolgt
+stattdessen store-seitig. ImpPlan
+[`ln049-credential-resolution`](../done/ImpPlan-1.0.0-RC-ln049-credential-resolution.md),
+[ADR 0034](../../adr/0034-master-key-architektur-credential-store.md). (`credentialRef`/`providerRef` =
+separater MCP-/Vault-Ausbau, keine der fünf Quellen der Anforderung.)
 
 **Profiling-DataSketches** (aus `profiling-datasketches.md` ausgegliedert, ADR 0024):
 gestaffelt — Phase 1 *Spike* (Ziel 0.9.9): HLL/CPC-Distinct-Count, KLL-Quantile,
@@ -975,6 +1001,6 @@ DB-Kombinationen, Cutover-Readiness, Betriebs-/Failure-Recovery-Doku.
 
 ---
 
-**Version**: 3.60
-**Stand**: 2026-07-13 (**0.9.12 released** — Patch aus der 1.0.0-RC-Linie: paralleler Datenpfad [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007)/[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) (`--parallel N`), atomarer Clean-Load [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) (`--atomic`) und Read-only-Quelle (`--read-only`); zuvor **0.9.11** mit [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) SHA-256-`--verify`, [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) First-Class SSL/TLS und [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) CLI-Audit-Logging; und 0.9.10-Patch SQLite-PK-NOT-NULL + Property-Based-Testing [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046). Develop nach jedem Patch zurück auf `1.0.0-RC-SNAPSHOT`.)
+**Version**: 3.61
+**Stand**: 2026-07-16 (**1.0.0-RC1 als Prerelease geschnitten** — der 1.0.0-RC-Feature-Milestone ist feature-komplett (alle Tabellen-Zeilen ✅); erste Vorabversion der 1.0.0-Linie, publiziert als GitHub-Prerelease + versioniertes OCI-Tag, `:latest`/Homebrew bleiben auf dem letzten Stable. Profiling-DataSketches (⛔) ist ein bewusster Carve-Out (ADR 0024), post-RC. Zuvor **0.9.12 released** — Patch aus der 1.0.0-RC-Linie: paralleler Datenpfad [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007)/[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008) (`--parallel N`), atomarer Clean-Load [`LN-013`](../../../spec/lastenheft-d-migrate.md#ln-013) (`--atomic`) und Read-only-Quelle (`--read-only`); zuvor **0.9.11** mit [`LN-009`](../../../spec/lastenheft-d-migrate.md#ln-009) SHA-256-`--verify`, [`LN-026`](../../../spec/lastenheft-d-migrate.md#ln-026) First-Class SSL/TLS und [`LN-027`](../../../spec/lastenheft-d-migrate.md#ln-027) CLI-Audit-Logging; und 0.9.10-Patch SQLite-PK-NOT-NULL + Property-Based-Testing [`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046). Develop nach jedem Patch zurück auf `1.0.0-RC-SNAPSHOT`.)
 **Status**: **0.9.11 (2026-07-12) und 0.9.12 (2026-07-13) sind als Patch-Releases aus der 1.0.0-RC-Linie veröffentlicht.** Milestone 0.1.0–0.9.7 abgeschlossen — 0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 veröffentlicht. **0.9.8 ist am 2026-06-14 als `v0.9.8` veröffentlicht** — produktiver Parquet „Cut A" (Sub-Slices S0..S9b closed), S3-kompatibler `ArtifactStore` (Verdict AWS SDK v2 + `url-connection-client`), BI-Demo unter `examples/bi-demo/`, plus die 0.9.8-Refactor-Slices (Atomic-Preserve Service-Mode A+E+SIGINT-Bridge, [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)); alle Closure-Plan-Docs in `docs/planning/done/` (Umbrella [`parquet-productive-cut-a.md`](../done-archive/parquet-productive-cut-a.md)). **0.9.9 ist am 2026-07-08 als `v0.9.9` veröffentlicht** — vollständige Beta-Dokumentation, menschliche ≥5-Tester-Pilot-Abnahme (LF 9.2) und alle P1/P2/P3-Cross-Dialect-Blocker aus fünf Pilot-Läufen behoben (strukturelle Transfer-Preflight, Array/`tsvector`-Bind, `CURRENT_DATE`-Defaults, View-Portabilität, Routinen-Emission, Post-Execute-Compare-Kanonisierung). **0.9.10 ist am 2026-07-11 als `v0.9.10` veröffentlicht** — Patch-Release aus der 1.0.0-Entwicklungslinie: SQLite-Round-Trip-Fix (PK-Spalten rendern jetzt `NOT NULL`, da SQLites `PRIMARY KEY` es — anders als PG/MySQL — nicht impliziert; m-trace-Consumer-Befund) plus Property-Based-Testing ([`LN-046`](../../../spec/lastenheft-d-migrate.md#ln-046), `kotest-property`, [ADR 0029](../../adr/0029-property-based-testing-framework.md)). Develop ist nach dem 0.9.10-Release auf `1.0.0-RC-SNAPSHOT` gebumpt; **1.0.0-RC ist jetzt der aktive Zyklus**. Inhalte 0.9.7: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)**, **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)**, **SQLite-Trigger-Reverse-Read (Sub-Slices A–E)** und **MySQL-Routine-Identity-Reverse-Read** sind umgesetzt; **Quality-Coverage-Expansion** komplett 2026-05-31 (Phasen A/B/C/D am 2026-05-30, E in vier Sub-Slices + Review-Fixes am 2026-05-31, F als Closure): `PerfMeasure`-Lib + 3 Hotpath-PerfSpecs + Bestands-Migration, Cross-Dialekt-Matrix-Sweep mit 7 gepinnten + permanenten Carve-outs (Phase F2 ergaenzt um `Kind.REPORT`/`ROLLBACK`/`FILE_MODE`), PG/MySQL/SQLite Sequence-Preserve-Race-Reproducer, Operational-MCP-Harness gegen file-SQLite mit `schema_compare_start` + MCP `resources/read` (Phase F1), Large-Schema-Scales N=100/1000 mit `HeapDumpOnOutOfMemoryError`-jvmArgs (Phase F5), Kover-Excludes-Ledger mit Disposition-Pflichtspalte + geschlossenem Token-Vokabular + fail-closed-Gradle-Scanner auf unbekannte Selectoren (Phase F4) + Formats-PerfTest-Migration auf `PerfMeasure`/`PerfReport` (Phase F3). D-N10k (N=10000 Nightly) bleibt opt-in-Folge-Thema. **Atomic-Preserve-Folge-Slice** zur 0.9.7-`preserveCurrentValue`-Serie ist 2026-06-01 mit Phasen A + B + C + D + E komplett geliefert: Probe + Restore + protected DDL in einer einzigen Transaktion unter Per-Dialekt-Lock (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`), drei Cross-Plan-Deadlock-Tests pinnen die deterministische Lock-Reihenfolge, `supportsAtomicPreserveAllInPlan = true` pro Dialekt, Stage-AllInPlan-Gate, CHANGELOG + User-Guide + KDoc-Sync. Backlog-Tracker `docs/planning/done-archive/atomic-preserve-followups.md` mit allen 6 Code-Review-Findings + Dead-Code-Cleanup (Interface gelöscht, Adapter-Singletons live) ebenfalls abgehakt — wandert zusammen mit dem Plan-Doc zum 0.9.7-Release-Tag nach `done/`. Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit Trino-Federation (1.1.0), gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

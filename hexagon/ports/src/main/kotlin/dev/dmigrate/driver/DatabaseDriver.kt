@@ -21,6 +21,16 @@ interface DatabaseDriver {
 
     fun ddlGenerator(): DdlGenerator
     fun dataReader(): DataReader
+
+    /**
+     * LN-005: Read-Pfad mit optionalem JDBC-`fetchSize`-Override (Cursor-Prefetch).
+     * `null` bedeutet „Dialekt-Default" — identisch zu [dataReader]. Der Wert ist
+     * ein Connection-/Cursor-Tuning und wird beim **Bau** des Readers fixiert
+     * (immutable pro Instanz → parallel-sicher). Die Default-Implementierung ignoriert
+     * den Wert und delegiert an [dataReader]; nur die JDBC-Treiber (PostgreSQL/MySQL/
+     * SQLite) werten ihn aus.
+     */
+    fun dataReader(fetchSize: Int?): DataReader = dataReader()
     fun tableLister(): TableLister
     fun dataWriter(): DataWriter
     fun urlBuilder(): JdbcUrlBuilder

@@ -5,6 +5,7 @@ import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.cli.config.ParquetExportConfigResolver
 import dev.dmigrate.cli.config.PipelineCheckpointResolver
 import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.cli.output.ProgressRenderer
@@ -13,6 +14,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
@@ -20,6 +22,7 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.ValueSerializationWarning
+import dev.dmigrate.format.parquet.ParquetChunkWriter
 import dev.dmigrate.format.parquet.ParquetChunkWriterFactory
 import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
 import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter
@@ -45,7 +48,12 @@ internal data class DataExportOptions(
     val encoding: String,
     val chunkSize: Int,
     val parallel: Int,
+    /** pipeline.parallelism-Slice: Origin (CLI-explizit?) + Label, s. DataExportRequest. */
+    val parallelFromCli: Boolean = false,
+    val parallelSourceLabel: String = "--parallel",
     val readOnly: Boolean,
+    /** LN-005: JDBC-Cursor-fetchSize für den Quell-Read (null = Dialekt-Default). */
+    val fetchSize: Int? = null,
     val splitFiles: Boolean,
     val csvDelimiter: String,
     val csvBom: Boolean,
@@ -56,6 +64,8 @@ internal data class DataExportOptions(
     val manifestSha256: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
 )
 
 /**
@@ -89,30 +99,21 @@ internal object DataExportWiring {
             System.err.println("Error: Invalid --filter expression${posHint}: ${err.message}")
             return 2
         }
-        val request = DataExportRequest(
-            source = options.source,
-            format = options.format,
-            output = options.output,
-            tables = options.tables,
-            filter = parsedFilter,
-            sinceColumn = options.sinceColumn,
-            since = options.since,
-            encoding = options.encoding,
-            chunkSize = options.chunkSize,
-            parallel = options.parallel,
-            readOnly = options.readOnly,
-            splitFiles = options.splitFiles,
-            csvDelimiter = options.csvDelimiter,
-            csvBom = options.csvBom,
-            csvNoHeader = options.csvNoHeader,
-            nullString = options.nullString,
-            cliConfigPath = options.configPath,
-            quiet = options.cliContext.quiet,
-            noProgress = options.cliContext.noProgress,
-            resume = options.resume,
-            checkpointDir = options.checkpointDir,
-            manifestSha256 = options.manifestSha256,
-        )
+        // LN-005 (R2): Parquet-Row-Group-Größe aus export.parquet.row_group_bytes (Config)
+        // > eingebauter Default (32 MiB) — NUR wenn tatsächlich nach Parquet exportiert wird
+        // (#1b: ein JSON/CSV/YAML-Export soll nicht an einem Parquet-Config-Fehler scheitern).
+        val parquetRowGroupBytes = if (options.format.equals("parquet", ignoreCase = true)) {
+            try {
+                ParquetExportConfigResolver(configPathFromCli = options.configPath).resolveRowGroupBytes()
+                    ?: ParquetChunkWriter.DEFAULT_ROW_GROUP_BYTES
+            } catch (e: ConfigResolveException) {
+                System.err.println("Error: ${e.message}")
+                return 7
+            }
+        } else {
+            ParquetChunkWriter.DEFAULT_ROW_GROUP_BYTES
+        }
+        val request = buildExportRequest(options, parsedFilter)
         // Thread-safe: on the parallel FilePerTable path N worker threads share this one
         // sink (baked into the writer factory) and append warnings concurrently (LN-007).
         val warnings = java.util.Collections.synchronizedList(mutableListOf<ValueSerializationWarning>())
@@ -124,12 +125,14 @@ internal object DataExportWiring {
                     throw IllegalArgumentException(e.message, e)
                 }
             },
-            urlParser = ConnectionUrlParser::parse,
-            poolFactory = HikariConnectionPoolFactory::create,
-            readerLookup = { DatabaseDriverRegistry.get(it).dataReader() },
+            urlParser = CredentialFilling(request.source).parser(),
+            // pool:-Wiring — die aus `database.pool:` aufgelöste PoolSettings in die
+            // ConnectionConfig injizieren; der Faktor klemmt SQLite weiterhin auf 1.
+            poolFactory = { config -> HikariConnectionPoolFactory.create(config.copy(pool = options.pool)) },
+            readerLookup = { DatabaseDriverRegistry.get(it).dataReader(options.fetchSize) },
             listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
             writerFactoryBuilder = { exportOutput ->
-                buildWriterFactoryForOutput(exportOutput, warnings)
+                buildWriterFactoryForOutput(exportOutput, warnings, parquetRowGroupBytes)
             },
             collectWarnings = {
                 warnings.map {
@@ -205,9 +208,40 @@ internal object DataExportWiring {
         return ExportPartitionExpansion.plan(readStructuralSchema(pool), tables)
     }
 
+    private fun buildExportRequest(
+        options: DataExportOptions,
+        parsedFilter: ParsedFilter?,
+    ): DataExportRequest = DataExportRequest(
+        source = options.source,
+        format = options.format,
+        output = options.output,
+        tables = options.tables,
+        filter = parsedFilter,
+        sinceColumn = options.sinceColumn,
+        since = options.since,
+        encoding = options.encoding,
+        chunkSize = options.chunkSize,
+        parallel = options.parallel,
+        parallelFromCli = options.parallelFromCli,
+        parallelSourceLabel = options.parallelSourceLabel,
+        readOnly = options.readOnly,
+        splitFiles = options.splitFiles,
+        csvDelimiter = options.csvDelimiter,
+        csvBom = options.csvBom,
+        csvNoHeader = options.csvNoHeader,
+        nullString = options.nullString,
+        cliConfigPath = options.configPath,
+        quiet = options.cliContext.quiet,
+        noProgress = options.cliContext.noProgress,
+        resume = options.resume,
+        checkpointDir = options.checkpointDir,
+        manifestSha256 = options.manifestSha256,
+    )
+
     private fun buildWriterFactoryForOutput(
         exportOutput: ExportOutput,
         warnings: MutableList<ValueSerializationWarning>,
+        rowGroupBytes: Long,
     ): DataChunkWriterFactory {
         val sink: (ValueSerializationWarning) -> Unit = { warnings += it }
         val parquetFactory = when (exportOutput) {
@@ -216,8 +250,12 @@ internal object DataExportWiring {
                 extraMetaDataProvider = ParquetSingleFileManifestWriter(
                     producerVersion = VersionInfo.PRODUCT_VERSION,
                 ).provider,
+                rowGroupBytes = rowGroupBytes,
             )
-            is ExportOutput.FilePerTable -> ParquetChunkWriterFactory(warningSink = sink)
+            is ExportOutput.FilePerTable -> ParquetChunkWriterFactory(
+                warningSink = sink,
+                rowGroupBytes = rowGroupBytes,
+            )
             is ExportOutput.Stdout -> UnreachableParquetWriterFactory
         }
         return CompositeDataChunkWriterFactory(

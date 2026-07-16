@@ -1,5 +1,8 @@
 package dev.dmigrate.cli.config
 
+import dev.dmigrate.connection.EnvCredentialProvider
+import dev.dmigrate.connection.FileCredentialProvider
+import dev.dmigrate.server.ports.CredentialProviderRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -453,6 +456,43 @@ class NamedConnectionResolverTest : FunSpec({
         resolver.resolveTarget(null) shouldBe "postgresql://u:p@staging/db"
     }
 
+    // ─── connectionName (LN-049 Stufe-4 Store-Key) ──────────────
+
+    test("connectionName: an explicit name is returned") {
+        NamedConnectionResolver().connectionName("prod", "default_target") shouldBe "prod"
+    }
+
+    test("connectionName: an inline URL returns null (no store key)") {
+        NamedConnectionResolver().connectionName("postgresql://u:p@host/db", "default_target") shouldBe null
+    }
+
+    test("connectionName: null falls back to the database.default_target name") {
+        val cfg = tempConfig(
+            """
+            database:
+              default_target: staging
+              connections:
+                staging: "postgresql://u:p@staging/db"
+            """.trimIndent()
+        )
+        NamedConnectionResolver(configPathFromCli = cfg).connectionName(null, "default_target") shouldBe "staging"
+    }
+
+    test("connectionName: null with a default that is a URL returns null") {
+        val cfg = tempConfig(
+            """
+            database:
+              default_target: "postgresql://u:p@host/db"
+            """.trimIndent()
+        )
+        NamedConnectionResolver(configPathFromCli = cfg).connectionName(null, "default_target") shouldBe null
+    }
+
+    test("connectionName: null without a config file returns null (no throw)") {
+        val missing = tempConfig("x: y").resolveSibling("does-not-exist.yaml")
+        NamedConnectionResolver(configPathFromCli = missing).connectionName(null, "default_target") shouldBe null
+    }
+
     test("resolveTarget: null without default_target throws ConfigResolveException") {
         val cfg = tempConfig(
             """
@@ -519,5 +559,103 @@ class NamedConnectionResolverTest : FunSpec({
         )
         val resolver = NamedConnectionResolver(configPathFromCli = cfg)
         resolver.resolve("n") shouldBe "sqlite:///tmp/compat.db"
+    }
+
+    // ─── O4 (ADR 0035): Map-Form credentialRef → Registry ─────────
+
+    fun registryWithEnv(envValue: String?) = CredentialProviderRegistry(
+        listOf(EnvCredentialProvider(envLookup = { envValue }), FileCredentialProvider()),
+    )
+
+    test("map-form credentialRef file: resolves to the URL read from the file (full URL, no \${VAR})") {
+        val secretFile = Files.createTempFile("dmigrate-cred-", ".url")
+        Files.writeString(secretFile, "postgresql://app:s3cret@host:5432/db\n")
+        val cfg = tempConfig(
+            """
+            database:
+              connections:
+                prod:
+                  credentialRef: "file:$secretFile"
+            """.trimIndent()
+        )
+        // default registry (real file provider) is enough for file:
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        resolver.resolve("prod") shouldBe "postgresql://app:s3cret@host:5432/db"
+    }
+
+    test("map-form credentialRef env: resolves via the injected registry") {
+        val cfg = tempConfig(
+            """
+            database:
+              connections:
+                prod:
+                  credentialRef: "env:PROD_DB_URL"
+            """.trimIndent()
+        )
+        val resolver = NamedConnectionResolver(
+            configPathFromCli = cfg,
+            credentialRegistry = registryWithEnv("mysql://u:p@host/db"),
+        )
+        resolver.resolve("prod") shouldBe "mysql://u:p@host/db"
+    }
+
+    test("map-form credentialRef resolves for a default_source name too") {
+        val cfg = tempConfig(
+            """
+            database:
+              default_source: prod
+              connections:
+                prod:
+                  credentialRef: "env:PROD_DB_URL"
+            """.trimIndent()
+        )
+        val resolver = NamedConnectionResolver(
+            configPathFromCli = cfg,
+            credentialRegistry = registryWithEnv("mysql://u:p@host/db"),
+        )
+        resolver.resolveSource(null) shouldBe "mysql://u:p@host/db"
+    }
+
+    test("map-form credentialRef is FAIL-CLOSED: unresolvable file: throws (no fallback), secret-free") {
+        val cfg = tempConfig(
+            """
+            database:
+              connections:
+                prod:
+                  credentialRef: "file:/no/such/dmigrate-${System.nanoTime()}.url"
+            """.trimIndent()
+        )
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        val ex = shouldThrow<ConfigResolveException> { resolver.resolve("prod") }
+        ex.message shouldContain "prod"
+        ex.message shouldContain "FILE_NOT_FOUND"
+    }
+
+    test("map-form credentialRef with an unsupported scheme is fail-closed (PROVIDER_MISSING)") {
+        val cfg = tempConfig(
+            """
+            database:
+              connections:
+                prod:
+                  credentialRef: "vault:secret/prod"
+            """.trimIndent()
+        )
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        val ex = shouldThrow<ConfigResolveException> { resolver.resolve("prod") }
+        ex.message shouldContain "PROVIDER_MISSING"
+    }
+
+    test("map-form without a credentialRef falls through to the not-defined string-form error") {
+        val cfg = tempConfig(
+            """
+            database:
+              connections:
+                prod:
+                  displayName: "Prod"
+            """.trimIndent()
+        )
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        val ex = shouldThrow<ConfigResolveException> { resolver.resolve("prod") }
+        ex.message shouldContain "not defined"
     }
 })

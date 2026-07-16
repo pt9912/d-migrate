@@ -1,9 +1,6 @@
 package dev.dmigrate.cli.config
 
 import dev.dmigrate.streaming.CheckpointConfig
-import org.snakeyaml.engine.v2.api.Load
-import org.snakeyaml.engine.v2.api.LoadSettings
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Duration
@@ -18,8 +15,8 @@ import java.time.Duration
  * damit der Runner ueber [CheckpointConfig.merge] CLI-Override
  * (`--checkpoint-dir`) und Config-Default zusammenfuehren kann.
  *
- * Pfad-Aufloesung folgt den gleichen Prioritaeten wie andere
- * Config-Abschnitte: `--config` > `D_MIGRATE_CONFIG` > Default.
+ * Pfad-/Lade-Boilerplate liegt seit LN-005 zentral in [loadEffectiveConfig]
+ * (`--config` > `D_MIGRATE_CONFIG` > Default).
  *
  * Mappings:
  *
@@ -40,45 +37,15 @@ class PipelineCheckpointResolver(
      * Config-Datei noch `pipeline.checkpoint`-Block vorhanden sind.
      */
     fun resolve(): CheckpointConfig? {
-        val effective = EffectiveConfigPathResolver(
-            configPathFromCli = configPathFromCli,
-            envLookup = envLookup,
-            defaultConfigPath = defaultConfigPath,
-        ).resolve()
-
-        if (!Files.isRegularFile(effective.path)) {
-            return when (effective.source) {
-                EffectiveConfigSource.DEFAULT -> null
-                EffectiveConfigSource.CLI ->
-                    throw ConfigResolveException("Config file not found: ${effective.path}")
-                EffectiveConfigSource.ENV ->
-                    throw ConfigResolveException(
-                        "D_MIGRATE_CONFIG points to non-existent file: ${effective.path}"
-                    )
-            }
-        }
-
-        val parsed: Any? = try {
-            val settings = LoadSettings.builder().build()
-            Files.newInputStream(effective.path).use { input ->
-                Load(settings).loadFromInputStream(input)
-            }
-        } catch (t: Throwable) {
-            throw ConfigResolveException(
-                "Failed to parse ${effective.path}: ${t.message ?: t::class.simpleName}",
-                cause = t,
-            )
-        }
-
-        val root = parsed as? Map<*, *> ?: return null
-        val pipeline = root["pipeline"] as? Map<*, *> ?: return null
+        val (root, source) = loadEffectiveConfig(configPathFromCli, envLookup, defaultConfigPath)
+        val pipeline = root?.get("pipeline") as? Map<*, *> ?: return null
         val checkpoint = pipeline["checkpoint"] as? Map<*, *> ?: return null
 
         val enabled = (checkpoint["enabled"] as? Boolean) ?: false
         val interval = (checkpoint["interval"] as? Number)?.toLong()
             ?: CheckpointConfig.DEFAULT_ROW_INTERVAL
         val maxIntervalRaw = checkpoint["max_interval"] as? String
-        val maxInterval = maxIntervalRaw?.let { parseDuration(it, effective.path) }
+        val maxInterval = maxIntervalRaw?.let { parseDuration(it, source) }
             ?: CheckpointConfig.DEFAULT_MAX_INTERVAL
         val directoryRaw = checkpoint["directory"] as? String
         val directory = directoryRaw?.let(Paths::get)

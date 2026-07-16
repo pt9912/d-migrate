@@ -175,6 +175,13 @@ The full release history (0.1.0–0.9.7) lives in
   transfer preflight, array/`tsvector` binding, `CURRENT_DATE`
   defaults, view portability, routine emission, post-execute
   compare canonicalisation). See [`CHANGELOG.md`](CHANGELOG.md).
+- **1.0.0-RC1 Release Candidate** · `Prerelease` (2026-07-16): the
+  1.0.0-RC feature milestone is feature-complete — streaming/OOM
+  hardening, parallel data path, SHA-256 `--verify`, atomic
+  clean-load, encrypted credential store + resolution, first-class
+  SSL/TLS, CLI audit logging, property-based testing. Published as a
+  GitHub prerelease + versioned OCI tag; `:latest` and Homebrew stay
+  on the last stable (0.9.12). See [`CHANGELOG.md`](CHANGELOG.md).
 - **1.0.0 Stable release** · `Planned`.
 
 For per-milestone task tables and ADR pointers see the canonical

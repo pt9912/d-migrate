@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.TestCancellationTokenSource
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
@@ -61,7 +62,8 @@ class DataProfileRunnerCancelCheckpointTest : FunSpec({
     fun buildRunner(reportWritten: AtomicInteger) = DataProfileRunner(
         connectionResolver = { it },
         dialectResolver = { DatabaseDialect.SQLITE },
-        poolFactory = { _, _ -> pool },
+        urlParser = { ConnectionConfig(DatabaseDialect.SQLITE, null, null, "test", null, null) },
+        poolFactory = { _ -> pool },
         adapterLookup = { adapters },
         databaseProduct = { "SQLite" },
         databaseVersion = { "3.x" },

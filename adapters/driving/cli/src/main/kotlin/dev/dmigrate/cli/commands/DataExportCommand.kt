@@ -13,6 +13,8 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectiveDataPipeline
 
 /**
  * `d-migrate data export` — streamt Tabellen aus einer Datenbank in eines
@@ -71,15 +73,22 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     val chunkSize by option(
         "--chunk-size",
-        help = "Rows per chunk (streaming buffer size); default: 10 000",
-    ).int().default(10_000)
+        help = "Rows per chunk (streaming buffer size); default: 10 000 " +
+            "(overrides pipeline.chunk_size in config)",
+    ).int()
+    val fetchSize by option(
+        "--fetch-size",
+        help = "JDBC cursor prefetch size for reading the source (default: dialect-specific 1000; " +
+            "overrides pipeline.fetch_size in config). SQLite: hint only.",
+    ).int()
 
     val parallel by option(
         "--parallel",
-        help = "Max tables/partitions to export concurrently (default: 1 = sequential). " +
-            "Keep <= the connection pool size (default 10); clamped to 1 for SQLite; " +
-            "incompatible with --resume. Per-child fan-out applies to --split-files only.",
-    ).int().default(1)
+        help = "Max tables/partitions to export concurrently (default: 1 = sequential; " +
+            "overrides pipeline.parallelism in config). Keep <= the connection pool size " +
+            "(default 10); clamped to 1 for SQLite; incompatible with --resume. " +
+            "Per-child fan-out applies to --split-files only.",
+    ).int()
 
     val readOnly by option(
         "--read-only",
@@ -133,6 +142,19 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
+        // LN-005 + pipeline.parallelism: chunk_size/fetch_size/parallelism in EINEM Config-Ladevorgang
+        // mergen (CLI-explizit > Config > Default), statt die YAML pro Resolver erneut zu parsen.
+        val pipeline = try {
+            resolveEffectiveDataPipeline(root?.config, chunkSize, fetchSize, parallel)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        } catch (e: IllegalArgumentException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(2)
+        }
+        val tuning = pipeline.tuning
+        val par = pipeline.parallelism
         val exitCode = DataExportWiring.execute(
             DataExportOptions(
                 source = source,
@@ -143,9 +165,12 @@ class DataExportCommand : CliktCommand(name = "export") {
                 sinceColumn = sinceColumn,
                 since = since,
                 encoding = encoding,
-                chunkSize = chunkSize,
-                parallel = parallel,
+                chunkSize = tuning.chunkSize,
+                parallel = par.degree,
+                parallelFromCli = par.fromCli,
+                parallelSourceLabel = par.sourceLabel,
                 readOnly = readOnly,
+                fetchSize = tuning.fetchSize,
                 splitFiles = splitFiles,
                 csvDelimiter = csvDelimiter,
                 csvBom = csvBom,
@@ -156,6 +181,7 @@ class DataExportCommand : CliktCommand(name = "export") {
                 manifestSha256 = manifestSha256,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
+                pool = pipeline.pool,
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

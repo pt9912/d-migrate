@@ -127,10 +127,17 @@ verpflichtender Masking-Test-Gate Teil der Abnahme.
 
 ## 4. Phase 2 — `config credentials set/list` + Credential-Resolution (sicherheitssensibel, eigener Slice)
 
+> **Supersedet (2026-07-13):** Phase 2 wird durch die O2/O4-Staffelung aus
+> [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) abgelöst — konkret durch
+> [`ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md`](../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md)
+> (Slice 1 = O2-Store) und die noch offene Slice 2 (O4-Naht). Der `master.key`-Datei-Ansatz unten (§4.1)
+> ist **verworfen**; die Resolution-Ketten-Integration (§4.4) bleibt Slice-2-Gegenstand.
+
 ### 4.1 Neuer Driven-Adapter `adapters/driven/credential-store`
-- AES-256-Verschlüsselung von `~/.d-migrate/credentials.enc`; Master-Key
-  `~/.d-migrate/master.key` (chmod 600, nur Benutzer-lesbar; Erzeugung beim
-  ersten `set`).
+- AES-256-GCM-Verschlüsselung von `~/.d-migrate/credentials.enc`; Schlüssel
+  **passphrase-abgeleitet** (PBKDF2 aus TTY-Prompt/`D_MIGRATE_MASTER_PASSWORD`, **keine**
+  Key-Datei) — Master-Key-Datei-Design (O1) ist verworfen, s.
+  [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md).
 - Port im Hexagon (`CredentialStorePort`: `put(name,user,password)` /
   `listNames()` / `resolve(name)`), Adapter als Implementierung.
 - Vor Implementierung den Store-Key-Vertrag festlegen: `name` muss eindeutig
@@ -229,6 +236,12 @@ verpflichtender Masking-Test-Gate Teil der Abnahme.
    OS-Keychain/`providerRef: secrets-manager` (konsistent mit dem
    [`LN-038`](../../../spec/lastenheft-d-migrate.md#ln-038)-Modell). Ggf. macht ein `providerRef`-basierter Ansatz den
    eigenen AES-Store teils überflüssig — vor Phase-2-Aktivierung klären.
+   - **Entschieden (2026-07-13, [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md)):**
+     **O2** (passphrase-abgeleiteter Store, kein Key auf Platte) **+ O4** (`credentialRef`-Delegation auf
+     den CLI-Pfad), **gestaffelt** — Slice 1 = O2-Store (kippt [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) ⛔→✅), Slice 2 = O4-Naht. Die
+     lokale `master.key`-Datei (§4.2-Wortlaut) ist **verworfen**, OS-Keychain **zurückgestellt**.
+     Phase 2 dieses Plans wird entsprechend auf O2/O4 umgeschrieben, sobald die Vorbedingungen
+     (Lastenheft-Backfill, `D_MIGRATE_DB_PASSWORD`-Klärung, Security-Review) angegangen werden.
 4. Output-Format `config show`: YAML-Echo vs. normalisierte Tabelle;
    `--json` für Skripting?
 5. `config show`-Masking-Policy: exakte Liste sensibler Key-Namen und

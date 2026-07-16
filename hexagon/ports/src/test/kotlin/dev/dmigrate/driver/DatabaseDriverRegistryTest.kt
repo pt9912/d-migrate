@@ -31,6 +31,16 @@ class DatabaseDriverRegistryTest : FunSpec({
         DatabaseDriverRegistry.get(DatabaseDialect.POSTGRESQL) shouldBe driver
     }
 
+    test("dataReader(fetchSize) default method delegates to dataReader() (LN-005)") {
+        val driver = StubDriver(DatabaseDialect.POSTGRESQL)
+        // The DatabaseDriver.dataReader(fetchSize) default ignores the value and
+        // delegates to dataReader(); StubDriver's dataReader() throws, so the
+        // delegation surfaces its error — proving the default reaches dataReader().
+        val ex = shouldThrow<IllegalStateException> { driver.dataReader(1234) }
+        ex.message shouldContain "does not provide a DataReader"
+        shouldThrow<IllegalStateException> { driver.dataReader(null) }
+    }
+
     test("register the same dialect twice keeps the most-recently-registered driver") {
         val first = StubDriver(DatabaseDialect.MYSQL)
         val second = StubDriver(DatabaseDialect.MYSQL)

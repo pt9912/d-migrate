@@ -31,4 +31,33 @@ class ParallelismClampTest : FunSpec({
         result shouldBe 1
         notes.shouldBeEmpty()
     }
+
+    test("fallbackIfIncompatible: config-sourced N>1 with an incompatible flag → 1 + origin-aware note") {
+        val notes = mutableListOf<String>()
+        val result = ParallelismClamp.fallbackIfIncompatible(
+            parallel = 8, fromCli = false, sourceLabel = "pipeline.parallelism: auto (= 8)",
+            incompatibleFlag = "--resume", onNote = { notes.add(it) },
+        )
+        result shouldBe 1
+        notes shouldContainExactly listOf(
+            "pipeline.parallelism: auto (= 8) ignored with --resume: running sequentially.",
+        )
+    }
+
+    test("fallbackIfIncompatible: CLI-explicit is NOT reduced (runner hard-fails instead)") {
+        val notes = mutableListOf<String>()
+        val result = ParallelismClamp.fallbackIfIncompatible(
+            parallel = 8, fromCli = true, sourceLabel = "--parallel 8",
+            incompatibleFlag = "--resume", onNote = { notes.add(it) },
+        )
+        result shouldBe 8
+        notes.shouldBeEmpty()
+    }
+
+    test("fallbackIfIncompatible: no incompatible flag and degree 1 are no-ops") {
+        val notes = mutableListOf<String>()
+        ParallelismClamp.fallbackIfIncompatible(8, false, "x", incompatibleFlag = null) { notes.add(it) } shouldBe 8
+        ParallelismClamp.fallbackIfIncompatible(1, false, "x", incompatibleFlag = "--atomic") { notes.add(it) } shouldBe 1
+        notes.shouldBeEmpty()
+    }
 })

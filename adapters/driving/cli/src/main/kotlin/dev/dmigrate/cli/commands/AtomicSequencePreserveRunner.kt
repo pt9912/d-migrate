@@ -5,7 +5,6 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
-import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
@@ -97,7 +96,7 @@ internal object AtomicSequencePreserveRunner {
             throw CompareConfigException(e.message ?: "Config resolution failed", e)
         }
         val config = try {
-            ConnectionUrlParser.parse(url)
+            CredentialFilling(target.source).fill(url)
         } catch (e: Exception) {
             throw CompareConfigException(e.message ?: "URL parse failed", e)
         }

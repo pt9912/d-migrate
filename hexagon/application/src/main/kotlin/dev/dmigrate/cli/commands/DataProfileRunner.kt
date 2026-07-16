@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingException
@@ -38,7 +39,10 @@ data class DataProfileRequest(
 class DataProfileRunner(
     private val connectionResolver: (String) -> String,
     private val dialectResolver: (String) -> DatabaseDialect,
-    private val poolFactory: (String, DatabaseDialect) -> ConnectionPool,
+    private val urlParser: (String) -> ConnectionConfig,
+    // LN-049 Stufe 4: config-Level-Fill-Seam (Env→Store), keyed nach --source. Identity-Default → Tests/MCP.
+    private val credentialFiller: (ConnectionConfig, String) -> ConnectionConfig = { config, _ -> config },
+    private val poolFactory: (ConnectionConfig) -> ConnectionPool,
     private val adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet,
     private val databaseProduct: (AutoCloseable) -> String = { "unknown" },
     private val databaseVersion: (AutoCloseable) -> String? = { null },
@@ -78,9 +82,15 @@ class DataProfileRunner(
             return 2
         }
 
-        // ─── 5. Create connection pool ──────────────────────────
+        // ─── 5. Resolve credentials (Env/Store) + create pool ───
+        val config = try {
+            credentialFiller(urlParser(url), request.source)
+        } catch (e: Exception) {
+            stderr("[ERROR] Failed to resolve credentials: ${e.message}")
+            return 7
+        }
         val pool = try {
-            poolFactory(url, dialect)
+            poolFactory(config)
         } catch (e: Exception) {
             stderr("[ERROR] Connection failed: ${e.message}")
             return 4

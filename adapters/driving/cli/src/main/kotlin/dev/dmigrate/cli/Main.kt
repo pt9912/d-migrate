@@ -20,6 +20,7 @@ import dev.dmigrate.cli.i18n.ResolvedI18nSettings
 import dev.dmigrate.text.UnicodeNormalizationMode
 import dev.dmigrate.text.UnicodeTextService
 import dev.dmigrate.text.icu.IcuUnicodeTextService
+import dev.dmigrate.cli.commands.ConfigCommand
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.McpCommand
@@ -152,7 +153,7 @@ fun registerDrivers() {
  * `exitProcess` instanziieren können.
  */
 internal fun buildRootCommand(): DMigrate =
-    DMigrate().subcommands(SchemaCommand(), DataCommand(), ExportCommand(), McpCommand())
+    DMigrate().subcommands(SchemaCommand(), DataCommand(), ExportCommand(), McpCommand(), ConfigCommand())
 
 /**
  * Test-freundlicher Einstieg: führt die Bootstrap-Sequenz aus und

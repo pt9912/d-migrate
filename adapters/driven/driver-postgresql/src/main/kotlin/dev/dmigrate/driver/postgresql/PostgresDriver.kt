@@ -21,7 +21,9 @@ import dev.dmigrate.driver.data.TableLister
 class PostgresDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.POSTGRESQL
     override fun ddlGenerator(): DdlGenerator = PostgresDdlGenerator()
-    override fun dataReader(): DataReader = PostgresDataReader()
+    override fun dataReader(): DataReader = dataReader(null)
+
+    override fun dataReader(fetchSize: Int?): DataReader = PostgresDataReader(fetchSize)
     override fun tableLister(): TableLister = PostgresTableLister()
     override fun dataWriter(): DataWriter = PostgresDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = PostgresJdbcUrlBuilder()

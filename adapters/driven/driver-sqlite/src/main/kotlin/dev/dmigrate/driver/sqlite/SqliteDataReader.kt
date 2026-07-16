@@ -14,7 +14,7 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  *   nicht — wir lassen den AbstractJdbcDataReader-Default greifen.
  * - Quoting: doppelte Anführungszeichen, identisch zu PostgreSQL.
  */
-class SqliteDataReader : AbstractJdbcDataReader() {
+class SqliteDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataReader() {
 
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
 
@@ -24,8 +24,9 @@ class SqliteDataReader : AbstractJdbcDataReader() {
     /**
      * SQLite hat keinen serverseitigen Cursor — ResultSet wird ohnehin lazy
      * aus der Datei gelesen. Default-fetchSize ist hier nur ein Hint.
+     * LN-005: per `dataReader(fetchSize)` überschreibbar (`null` = dieser Default).
      */
-    override val fetchSize: Int = 1_000
+    override val fetchSize: Int = fetchSizeOverride ?: 1_000
 
     override val needsAutoCommitFalse: Boolean = false
 

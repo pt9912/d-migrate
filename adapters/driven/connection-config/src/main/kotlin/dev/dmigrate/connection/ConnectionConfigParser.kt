@@ -54,6 +54,33 @@ object ConnectionConfigParser {
     }
 
     /**
+     * O4 (ADR 0035): liest EINEN Eintrag `database.connections.<name>` in **einem** Parse-Durchgang
+     * (statt String- und Map-Form getrennt zu parsen). String-Form → [ConnectionEntry.stringUrl]
+     * (rohe URL-Vorlage, `${VAR}` **unexpandiert**). Map-Form mit `credentialRef` →
+     * [ConnectionEntry.credentialRef] (secret-freier Zeiger, z. B. `file:/pfad`/`env:VAR`). Fehlt der
+     * Eintrag oder ist es eine Map **ohne** `credentialRef` → beide `null`. Wirft
+     * [ConnectionConfigException] bei non-string `credentialRef`.
+     */
+    fun parseConnectionEntry(configPath: Path, name: String): ConnectionEntry {
+        val root = parseRoot(configPath) ?: return ConnectionEntry()
+        val database = root["database"] as? Map<*, *> ?: return ConnectionEntry()
+        val connections = database["connections"] as? Map<*, *> ?: return ConnectionEntry()
+        return when (val value = connections[name]) {
+            is String -> ConnectionEntry(stringUrl = value)
+            is Map<*, *> -> ConnectionEntry(credentialRef = credentialRefOf(value, name, configPath))
+            else -> ConnectionEntry()
+        }
+    }
+
+    private fun credentialRefOf(entry: Map<*, *>, name: String, configPath: Path): String? {
+        val ref = entry["credentialRef"] ?: return null
+        return ref as? String ?: throw ConnectionConfigException(
+            "database.connections.$name.credentialRef in $configPath must be a string, " +
+                "got ${ref::class.simpleName}",
+        )
+    }
+
+    /**
      * Returns the raw `database.<key>` value (typically
      * `database.default_source` / `database.default_target`).
      * Returns `null` when the key is absent. Throws
@@ -87,6 +114,13 @@ object ConnectionConfigParser {
         )
     }
 }
+
+/**
+ * Ein aufgelöster `database.connections.<name>`-Eintrag (O4, ADR 0035): entweder eine
+ * String-Form-URL-Vorlage ([stringUrl]) **oder** ein Map-Form-`credentialRef` ([credentialRef]);
+ * höchstens eines ist gesetzt. Beide `null` = Eintrag fehlt / Map ohne `credentialRef`.
+ */
+data class ConnectionEntry(val stringUrl: String? = null, val credentialRef: String? = null)
 
 /**
  * Thrown when the legacy legacy YAML cannot be parsed or the

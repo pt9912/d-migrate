@@ -11,7 +11,7 @@
 > priorisiert, entsteht dafür ein eigener `next/`-Plan; der Eintrag hier
 > verweist dann darauf.
 
-## Heute nicht in der CLI registriert (`schema`/`data`/`export`/`mcp` sind es)
+## Heute nicht in der CLI registriert (`schema`/`data`/`export`/`config`/`mcp` sind es)
 
 | Befehl | cli-spec §6 | Requirement | Roadmap |
 | ------ | ----------- | ----------- | ------- |
@@ -20,10 +20,11 @@
 | `data seed` | 6.2 | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) | 1.3.0 (Testdaten) |
 | `validate data` | 6.6 | [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) | — (siehe auch [`validate-data-against-schema.md`](../next/validate-data-against-schema.md)) |
 | `validate procedure` | 6.6 | [`LN-034`](../../../spec/lastenheft-d-migrate.md#ln-034) | Phase 4 |
-| `config credentials set` / `config credentials list` / `config show` | 6.7 | Credential-Management (`connection-config-spec.md` §4) | 1.0.0-RC (AES-256-Credentials, [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025)) |
+| `config show` | 6.7 | Konfigurations-Anzeige, [`config-cli-management-surface.md`](../next/config-cli-management-surface.md) | 1.0.0-RC (eigener Slice; `config credentials set`/`list` sind mit [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) Slice 1 erledigt) |
 
 Die oberste Kommandogruppe `transform` existiert entsprechend ebenfalls noch
-nicht (nur `schema`/`data`/`export`/`mcp` sind registriert).
+nicht (registriert sind `schema`/`data`/`export`/`config`/`mcp`; unter `config`
+sind `credentials set`/`list` implementiert, `config show` noch nicht).
 
 ## Trigger-Rendering — noch nicht abgedeckte Erweiterungen (cli-spec §6 „schema migrate")
 

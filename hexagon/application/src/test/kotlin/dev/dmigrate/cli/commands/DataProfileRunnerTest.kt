@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.profiling.ProfilingAdapterSet
@@ -70,11 +71,15 @@ class DataProfileRunnerTest : FunSpec({
     fun runner(
         connectionResolver: (String) -> String = { "postgresql://localhost/test" },
         dialectResolver: (String) -> DatabaseDialect = { DatabaseDialect.POSTGRESQL },
-        poolFactory: (String, DatabaseDialect) -> ConnectionPool = { _, _ -> fakePool },
+        urlParser: (String) -> ConnectionConfig = {
+            ConnectionConfig(DatabaseDialect.POSTGRESQL, null, null, "test", null, null)
+        },
+        poolFactory: (ConnectionConfig) -> ConnectionPool = { fakePool },
         adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet = { fakeAdapters },
     ) = DataProfileRunner(
         connectionResolver = connectionResolver,
         dialectResolver = dialectResolver,
+        urlParser = urlParser,
         poolFactory = poolFactory,
         adapterLookup = adapterLookup,
         databaseProduct = { "PostgreSQL" },
@@ -134,7 +139,7 @@ class DataProfileRunnerTest : FunSpec({
 
     test("connection failure returns exit 4") {
         runner(
-            poolFactory = { _, _ -> throw RuntimeException("connection refused") }
+            poolFactory = { _ -> throw RuntimeException("connection refused") }
         ).execute(request()) shouldBe 4
         stderrLines.any { it.contains("Connection failed") } shouldBe true
     }

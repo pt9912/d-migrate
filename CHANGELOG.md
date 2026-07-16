@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-RC1] - 2026-07-16
+
+### Added
+
+- **`credentialRef`-Provider auf dem CLI-Pfad** ([`LN-025`](spec/lastenheft-d-migrate.md#ln-025) O4,
+  [ADR 0035](docs/adr/0035-credential-provider-scheme-registry.md)) — eine Verbindung kann statt einer
+  URL einen secret-freien **Zeiger** tragen: `database.connections.<name>: { credentialRef: "file:/pfad" }`
+  bzw. `"env:VAR"`. Die Auflösung liefert die **vollständige** Connect-URL (Datei-Inhalt bzw.
+  Umgebungsvariable). Neuer erster Nicht-`env:`-Provider `file:` (cross-platform, headless-tauglich,
+  k8s-Secret-Mounts). Umgesetzt als geteilte, principal-freie `CredentialProviderRegistry`, die der
+  CLI-`--source`/`--target`-Pfad **und** der MCP-Serve-Pfad nutzen (der bisherige
+  `EnvConnectionSecretResolver` wurde verhaltenserhaltend darauf refaktoriert). **Fail-closed**: ein
+  gesetzter, aber unauflösbarer `credentialRef` bricht mit Exit 7 ab (kein stiller Rückfall). `file:`
+  meldet nie den Datei-Inhalt, hat einen 1-MiB-Size-Cap und strippt ein UTF-8-BOM. `providerRef` bleibt
+  ein reservierter Backend-Selektor (Vault/Keychain-Zukunft; `keychain:` als Folge-Slice). 3-Agenten-
+  Security-Review: kein fail-open, Discovery-Trennung intakt.
+- **Gespeicherte Zugangsdaten werden beim Verbinden herangezogen** ([`LN-049`](spec/lastenheft-d-migrate.md#ln-049)
+  Stufe 4) — ein mit `config credentials set --name <n>` hinterlegtes Passwort wird jetzt von
+  `data export --source <n>` genutzt (Master-Passphrase via `D_MIGRATE_MASTER_PASSWORD` oder Prompt, je Lauf
+  einmal). Additiv nach Stufe 2 (Env), dialekt-gegatet, **kein** fail-closed (fehlt Eintrag/Master-Secret →
+  weiter ohne, mit secret-freier Notiz). Falsches Master-Secret / beschädigter Store → Exit 7 (secret-frei).
+  Verdrahtet für **alle 8 Ops** (`data export`/`import`/`transfer`/`profile`, `schema compare`/`reverse`/
+  `migrate`/`rollback`) bei explizitem `--source`/`--target`-Connection-Namen. Eine **prozess-weite**
+  Session beschafft das Master-Secret höchstens **einmal pro Lauf** — Ops mit mehreren Ziel-Verbindungen
+  bekommen so **einen** Prompt statt n. Auch bei **weggelassenem `--target`** (`data import`) greift der
+  Store über den `database.default_target`-Namen (`NamedConnectionResolver.connectionName`). Der
+  connect-Zeit-Prompt (Stufe 5 der Kette) ist bewusst nicht implementiert — die interaktive Eingabe eines
+  DB-Passworts erfolgt über `config credentials set` (→ verschlüsselt abgelegt → konsumiert).
+- **Konfigurierbarer JDBC-`fetchSize`** (`data export`/`transfer --fetch-size`, [`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  der Cursor-Prefetch für den Quell-Read ist nicht mehr eine pro Dialekt hart verdrahtete Konstante,
+  sondern per CLI-Flag bzw. `pipeline.fetch_size` einstellbar (für sehr breite Zeilen kleiner wählbar,
+  um die Peak-Speicherlast pro Chunk zu senken). Wird am Reader-Bau fixiert (immutable pro Instanz →
+  parallel-sicher); SQLite = nur Hint; gilt nicht für den Import (liest aus Format-Dateien); der
+  `data transfer --verify`-Read-Back nutzt denselben Wert. Präzedenz: CLI-explizit > Config >
+  Dialekt-Default; `≤ 0` → Exit 2. [ADR 0033](docs/adr/0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md).
+
+### Fixed
+
+- **`database.pool:` war auf dem Datenpfad ein stiller No-op** — der Pool-Block
+  (`max_size`/`min_idle`/`connection_timeout_ms`/`idle_timeout_ms`/`max_lifetime_ms`) war in der
+  Connection-Spec dokumentiert, wurde vom Datenpfad aber nie gelesen (`ConnectionConfig.pool` blieb
+  immer der HikariCP-Default). Diese fünf Keys werden jetzt über einen `PoolSettingsResolver` aus
+  `.d-migrate.yaml` aufgelöst und für `data export`/`import`/`transfer`/`profile` in die Verbindung
+  injiziert (Präzedenz Config > Default; kein CLI-Flag). Zugleich deckelt `pipeline.parallelism: auto`
+  nun gegen den konfigurierten `max_size` statt gegen den Hardcode-Default. Werte müssen positive
+  Ganzzahlen sein; ein **explizit** gesetztes `min_idle > max_size` ist ein Fehler (Exit 7), während
+  ein nur gesetztes `max_size` das Default-`min_idle` bei Bedarf herunterklemmt (`max_size: 1` allein
+  ist gültig). Unbekannte/vertippte Keys unter `pool:` werden **laut abgelehnt** (statt still auf
+  Default zurückzufallen). SQLite bleibt auf Pool-Größe 1 geklemmt. Die sicherheitskritischen
+  Cancel-Reaktions-Schranken (keepalive-/statement-/network-Timeout) bleiben bewusst nicht über diese
+  Sektion tunbar.
+- **`D_MIGRATE_DB_PASSWORD` war ein stiller No-op** ([`LN-049`](spec/lastenheft-d-migrate.md#ln-049)) —
+  die globale Fallback-Variable war in der Connection-Spec als Auflösungs-Stufe 2 dokumentiert, wurde vom
+  Runtime aber nie gelesen. Alle CLI-DB-Operationen (`data export`/`import`/`transfer`/`profile`,
+  `schema reverse`/`migrate`/`compare`/`rollback` inkl. der Preflight-/Sequenz-Probes) ergänzen jetzt ein
+  **fehlendes** DB-Passwort aus `D_MIGRATE_DB_PASSWORD` (rein additiv: explizit inline/`${VAR}` gesetztes
+  gewinnt; SQLite/no-auth wird übersprungen; ist die Variable leer/ungesetzt, bleibt es beim bisherigen
+  Verhalten — **kein** fail-closed, passwortlose Auth wie Postgres `peer`/`trust`/`.pgpass` bleibt möglich).
+  CLI-only; der MCP-Pfad ist bewusst ausgenommen. Store-Konsum (Stufe 4) + interaktiver Prompt (Stufe 5) folgen.
+- **`pipeline.chunk_size` war ein stiller No-op** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  der Config-Key war in der Connection-Spec dokumentiert, wurde vom Runtime aber ignoriert (nur
+  `--chunk-size` wirkte). `pipeline.chunk_size` (export/import/transfer) und der neue
+  `pipeline.fetch_size` (export/transfer) werden jetzt über einen `PipelineTuningResolver` echt
+  verdrahtet (Präzedenz CLI-explizit > Config > Default; ungültige Werte → Exit 2 bzw. 7).
+
+- **Parquet-Export: explizite Row-Group-Größe** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  der Parquet-Writer setzt jetzt eine explizite Row-Group-Größe (Default 32 MiB) statt auf den
+  parquet-java-~128-MB-Default zu fallen. Ohne das puffert jeder Writer eine ganze Row-Group im RAM;
+  im parallelen File-per-Table-Export (`--parallel N`) wäre der Peak ≈ `N × 128 MB`. Über
+  `export.parquet.row_group_bytes` in der Config überschreibbar.
+
+- **Import: `chunkFailures`-Detailliste gedeckelt** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)) —
+  bei `--on-error log` wuchs die Liste der Chunk-Fehler-Details unbounded (ein Eintrag je
+  fehlgeschlagenem Chunk → Memory-Leck bei sehr großen Tabellen). Sie ist jetzt auf ein Sample (1000)
+  gedeckelt; darüber hinausgehende Einträge werden verworfen. Die wahre Fehlerzahl trägt ohnehin
+  `rowsFailed`.
+
+- **`pipeline.parallelism` war ein stiller No-op** ([`LN-005`](spec/lastenheft-d-migrate.md#ln-005)-Folge) —
+  wie zuvor `chunk_size` war der Config-Key dokumentiert, aber unverdrahtet (nur `--parallel` wirkte).
+  `pipeline.parallelism` (export/import/transfer) wird jetzt echt verdrahtet: Ganzzahl oder `auto`
+  (= `min(CPU-Kerne, Pool-Größe)`), Präzedenz CLI-explizit > Config > Default 1. Kommt der Wert aus der
+  Config und ist mit `--resume`/`--atomic` inkompatibel, fällt der Lauf mit Hinweis auf 1 zurück statt
+  hart zu scheitern (harter Fehler nur bei explizitem `--parallel > 1`). Meldungstexte sind
+  herkunftsbewusst (`pipeline.parallelism: auto (= N)` statt `--parallel N`).
+
 ## [0.9.12] - 2026-07-13
 
 ### Added
