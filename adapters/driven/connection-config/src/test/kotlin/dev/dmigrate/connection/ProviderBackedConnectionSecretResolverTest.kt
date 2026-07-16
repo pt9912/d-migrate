@@ -8,15 +8,26 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.CredentialProviderRegistry
 import dev.dmigrate.server.ports.ResolvedConnection
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
 
-class EnvConnectionSecretResolverTest : FunSpec({
+/**
+ * Deckt den MCP-Wrapper ab: Principal-Authz + null-credentialRef + verbatim-Delegation an die
+ * [CredentialProviderRegistry] (ADR 0035). Ersetzt den früheren `EnvConnectionSecretResolverTest`;
+ * das `env:`-Verhalten (inkl. aller Reason-Codes) bleibt unverändert.
+ */
+class ProviderBackedConnectionSecretResolverTest : FunSpec({
 
     val tenant = TenantId("acme")
+
+    // Ein Resolver, dessen env:-Provider einen festen Wert liefert (oder null für ENV_NOT_SET).
+    fun resolverWithEnv(envValue: String? = "x") = ProviderBackedConnectionSecretResolver(
+        CredentialProviderRegistry(listOf(EnvCredentialProvider(envLookup = { envValue }))),
+    )
 
     fun ref(
         connectionId: String = "pg",
@@ -51,78 +62,62 @@ class EnvConnectionSecretResolverTest : FunSpec({
         expiresAt = Instant.MAX,
     )
 
-    test("env:VAR with value present yields Success carrying the URL") {
-        val sut = EnvConnectionSecretResolver(
-            envLookup = { if (it == "PG_PASS") "jdbc:postgresql://localhost:5432/prod?password=s3cret" else null },
-        )
-        val outcome = sut.resolve(ref(), principal())
-        outcome.shouldBeInstanceOf<ResolvedConnection.Success>()
+    test("env:VAR present yields Success carrying the URL (delegated to the registry)") {
+        val outcome = resolverWithEnv("jdbc:postgresql://localhost:5432/prod?password=s3cret")
+            .resolve(ref(), principal())
+            .shouldBeInstanceOf<ResolvedConnection.Success>()
         outcome.url shouldBe "jdbc:postgresql://localhost:5432/prod?password=s3cret"
     }
 
     test("env:VAR not set surfaces ENV_NOT_SET") {
-        val sut = EnvConnectionSecretResolver(envLookup = { null })
-        val outcome = sut.resolve(ref(), principal())
-        outcome.shouldBeInstanceOf<ResolvedConnection.Failure>()
+        val outcome = resolverWithEnv(envValue = null).resolve(ref(), principal())
+            .shouldBeInstanceOf<ResolvedConnection.Failure>()
         outcome.reason shouldBe ResolvedConnection.REASON_ENV_NOT_SET
     }
 
-    test("missing credentialRef surfaces NO_CREDENTIAL_REF") {
-        val sut = EnvConnectionSecretResolver(envLookup = { error("must not be called") })
-        val outcome = sut.resolve(ref(credentialRef = null), principal())
-        outcome.shouldBeInstanceOf<ResolvedConnection.Failure>()
+    test("missing credentialRef surfaces NO_CREDENTIAL_REF (before touching the registry)") {
+        val outcome = resolverWithEnv().resolve(ref(credentialRef = null), principal())
+            .shouldBeInstanceOf<ResolvedConnection.Failure>()
         outcome.reason shouldBe ResolvedConnection.REASON_NO_CREDENTIAL_REF
     }
 
-    test("non-env: provider scheme surfaces PROVIDER_MISSING") {
-        // LF-012 / LN-038: a connection-backed path without a wired
-        // provider MUST fail-closed.
-        val sut = EnvConnectionSecretResolver(envLookup = { error("must not be called") })
-        val outcome = sut.resolve(ref(credentialRef = "vault:secret/pg"), principal())
-        outcome.shouldBeInstanceOf<ResolvedConnection.Failure>()
+    test("unsupported provider scheme surfaces PROVIDER_MISSING (fail-closed)") {
+        val outcome = resolverWithEnv().resolve(ref(credentialRef = "vault:secret/pg"), principal())
+            .shouldBeInstanceOf<ResolvedConnection.Failure>()
         outcome.reason shouldBe ResolvedConnection.REASON_PROVIDER_MISSING
     }
 
     test("principal not in allowedPrincipalIds surfaces PRINCIPAL_NOT_AUTHORISED") {
-        val sut = EnvConnectionSecretResolver(envLookup = { "x" })
-        val outcome = sut.resolve(
+        val outcome = resolverWithEnv().resolve(
             ref(allowedPrincipalIds = setOf(PrincipalId("bob"))),
             principal(id = "alice"),
-        )
-        outcome.shouldBeInstanceOf<ResolvedConnection.Failure>()
+        ).shouldBeInstanceOf<ResolvedConnection.Failure>()
         outcome.reason shouldBe ResolvedConnection.REASON_PRINCIPAL_NOT_AUTHORISED
     }
 
     test("principal in allowedPrincipalIds resolves successfully") {
-        val sut = EnvConnectionSecretResolver(envLookup = { "x" })
-        val outcome = sut.resolve(
+        resolverWithEnv().resolve(
             ref(allowedPrincipalIds = setOf(PrincipalId("alice"))),
             principal(id = "alice"),
-        )
-        outcome.shouldBeInstanceOf<ResolvedConnection.Success>()
+        ).shouldBeInstanceOf<ResolvedConnection.Success>()
     }
 
     test("principal with matching allowedScopes resolves successfully") {
-        val sut = EnvConnectionSecretResolver(envLookup = { "x" })
-        val outcome = sut.resolve(
+        resolverWithEnv().resolve(
             ref(allowedScopes = setOf("dmigrate:data:write")),
             principal(scopes = setOf("dmigrate:data:write")),
-        )
-        outcome.shouldBeInstanceOf<ResolvedConnection.Success>()
+        ).shouldBeInstanceOf<ResolvedConnection.Success>()
     }
 
     test("admin principal bypasses the allowlist") {
-        val sut = EnvConnectionSecretResolver(envLookup = { "x" })
-        val outcome = sut.resolve(
+        resolverWithEnv().resolve(
             ref(allowedPrincipalIds = setOf(PrincipalId("bob"))),
             principal(id = "alice", admin = true),
-        )
-        outcome.shouldBeInstanceOf<ResolvedConnection.Success>()
+        ).shouldBeInstanceOf<ResolvedConnection.Success>()
     }
 
-    test("empty allowlists are treated as fully open (every principal in the tenant scope)") {
-        val sut = EnvConnectionSecretResolver(envLookup = { "x" })
-        val outcome = sut.resolve(ref(), principal())
-        outcome.shouldBeInstanceOf<ResolvedConnection.Success>()
+    test("empty allowlists are treated as fully open") {
+        resolverWithEnv().resolve(ref(), principal())
+            .shouldBeInstanceOf<ResolvedConnection.Success>()
     }
 })

@@ -54,6 +54,26 @@ object ConnectionConfigParser {
     }
 
     /**
+     * O4 (ADR 0035): Liest den `credentialRef` einer **Map-Form**-Connection
+     * `database.connections.<name>`. Gibt `null` zurück, wenn der Eintrag fehlt, String-Form ist
+     * oder eine Map **ohne** `credentialRef` ist (dann greift der String-Form-/Fehlerpfad des
+     * Aufrufers). Der `credentialRef` (z. B. `file:/pfad`, `env:VAR`) ist ein **secret-freier**
+     * Zeiger, nicht das Secret selbst. Wirft [ConnectionConfigException], wenn `credentialRef`
+     * present-but-not-a-string ist.
+     */
+    fun parseMapFormCredentialRef(configPath: Path, name: String): String? {
+        val root = parseRoot(configPath) ?: return null
+        val database = root["database"] as? Map<*, *> ?: return null
+        val connections = database["connections"] as? Map<*, *> ?: return null
+        val entry = connections[name] as? Map<*, *> ?: return null
+        val ref = entry["credentialRef"] ?: return null
+        return ref as? String ?: throw ConnectionConfigException(
+            "database.connections.$name.credentialRef in $configPath must be a string, " +
+                "got ${ref::class.simpleName}",
+        )
+    }
+
+    /**
      * Returns the raw `database.<key>` value (typically
      * `database.default_source` / `database.default_target`).
      * Returns `null` when the key is absent. Throws

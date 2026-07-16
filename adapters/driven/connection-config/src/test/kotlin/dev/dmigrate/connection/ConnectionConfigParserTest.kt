@@ -108,4 +108,52 @@ class ConnectionConfigParserTest : FunSpec({
             ConnectionConfigParser.parseConnections(tempYaml(yaml))
         }
     }
+
+    // ─── O4 (ADR 0035): parseMapFormCredentialRef ─────────────────
+
+    test("parseMapFormCredentialRef returns the credentialRef of a map-form connection") {
+        val yaml = """
+            database:
+              connections:
+                prod:
+                  credentialRef: "file:/run/secrets/prod_db_url"
+                  providerRef: "secrets-manager"
+                legacy: "postgresql://u:p@host/db"
+        """.trimIndent()
+        val path = tempYaml(yaml)
+        ConnectionConfigParser.parseMapFormCredentialRef(path, "prod") shouldBe "file:/run/secrets/prod_db_url"
+    }
+
+    test("parseMapFormCredentialRef returns null for a string-form connection") {
+        val yaml = """
+            database:
+              connections:
+                legacy: "postgresql://u:p@host/db"
+        """.trimIndent()
+        ConnectionConfigParser.parseMapFormCredentialRef(tempYaml(yaml), "legacy") shouldBe null
+    }
+
+    test("parseMapFormCredentialRef returns null for an absent connection or a map without credentialRef") {
+        val yaml = """
+            database:
+              connections:
+                prod:
+                  displayName: "Prod"
+        """.trimIndent()
+        val path = tempYaml(yaml)
+        ConnectionConfigParser.parseMapFormCredentialRef(path, "prod") shouldBe null
+        ConnectionConfigParser.parseMapFormCredentialRef(path, "absent") shouldBe null
+    }
+
+    test("parseMapFormCredentialRef throws when credentialRef is present-but-not-a-string") {
+        val yaml = """
+            database:
+              connections:
+                prod:
+                  credentialRef: 42
+        """.trimIndent()
+        shouldThrow<ConnectionConfigException> {
+            ConnectionConfigParser.parseMapFormCredentialRef(tempYaml(yaml), "prod")
+        }
+    }
 })

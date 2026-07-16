@@ -50,11 +50,11 @@ sealed interface ResolvedConnection {
     data class Success(val url: String) : ResolvedConnection
 
     /**
-     * Resolution failed. [reason] is one of [REASON_PROVIDER_MISSING],
-     * [REASON_ENV_NOT_SET], [REASON_PRINCIPAL_NOT_AUTHORISED],
-     * [REASON_NO_CREDENTIAL_REF]; [detail] carries an operator-
-     * facing message that MUST stay free of resolved secret
-     * fragments.
+     * Resolution failed. [reason] is an **open vocabulary** of stable string codes: the four
+     * resolver-level codes below plus provider-specific codes that a [CredentialProvider] may add
+     * and that [CredentialResolution] mirrors (e.g. [REASON_FILE_NOT_FOUND]) — the
+     * `ProviderBackedConnectionSecretResolver` passes those through verbatim. [detail] carries an
+     * operator-facing message that MUST stay free of resolved secret fragments.
      */
     data class Failure(val reason: String, val detail: String) : ResolvedConnection
 
@@ -63,5 +63,12 @@ sealed interface ResolvedConnection {
         const val REASON_ENV_NOT_SET: String = "ENV_NOT_SET"
         const val REASON_PRINCIPAL_NOT_AUTHORISED: String = "PRINCIPAL_NOT_AUTHORISED"
         const val REASON_NO_CREDENTIAL_REF: String = "NO_CREDENTIAL_REF"
+
+        // O4 (ADR 0035): provider-spezifische Codes, die der ProviderBackedConnectionSecretResolver
+        // aus [CredentialResolution] verbatim durchreicht. Single Source of Truth für das geteilte
+        // Vokabular — [CredentialResolution] referenziert diese Konstanten (kein String-Drift).
+        const val REASON_FILE_NOT_FOUND: String = "FILE_NOT_FOUND"
+        const val REASON_FILE_UNREADABLE: String = "FILE_UNREADABLE"
+        const val REASON_EMPTY_VALUE: String = "EMPTY_VALUE"
     }
 }

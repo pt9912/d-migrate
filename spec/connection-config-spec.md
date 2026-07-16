@@ -488,6 +488,35 @@ und liegt damit nicht neben dem Ciphertext.
   `D_MIGRATE_MASTER_PASSWORD` in einer CI-Umgebung ist **kein** Sicherheitsgewinn gegenüber den
   DB-Zugangsdaten direkt per Umgebungsvariable — dort die Delegation nutzen, nicht den lokalen Store.
 
+### 4.2.2 `credentialRef`-Provider (Delegation auf dem CLI-Pfad)
+
+Eine Verbindung kann statt einer URL-Zeichenkette einen **Zeiger** auf eine externe Secret-Quelle
+tragen (Map-Form). Der Zeiger ist secret-frei; die Auflösung liefert die **vollständige** Connect-URL:
+
+```yaml
+database:
+  connections:
+    prod:
+      credentialRef: "file:/run/secrets/prod_db_url"   # Datei-Inhalt = vollständige Connect-URL
+    staging:
+      credentialRef: "env:STAGING_DB_URL"              # Umgebungsvariable = vollständige Connect-URL
+```
+
+- **Schemes:** `env:<VAR>` (Prozess-Umgebungsvariable) und `file:<pfad>` (Datei-Inhalt, getrimmt).
+  Beide liefern eine **komplette** URL — es findet keine `${VAR}`-Substitution auf dem Ergebnis statt.
+- **Fail-closed:** ist ein `credentialRef` gesetzt, aber nicht auflösbar (Variable/ Datei fehlt,
+  unbekanntes Scheme), bricht die Operation mit Fehler ab (Exit 7) — **kein** stiller Rückfall auf eine
+  Verbindung ohne Secret. Das unterscheidet sich von `D_MIGRATE_DB_PASSWORD` (§4.1), das nur ein
+  *fehlendes* Passwort additiv ergänzt.
+- **`providerRef`** ist ein reservierter Backend-Selektor für künftige Provider (z. B. Secrets-Manager);
+  aktuell nicht auflösungs-relevant.
+- **`file:`-Sicherheit:** Fehlermeldungen nennen nur den Pfad, **nie** den Datei-Inhalt; eine
+  Größenobergrenze schützt vor versehentlich referenzierten Riesen-Dateien. Datei-Permissions werden
+  nicht erzwungen und Symlinks gefolgt (Kompatibilität mit k8s-Secret-Mounts).
+- Dieselbe Provider-Auflösung bedient den CLI-`--source`/`--target`-Pfad **und** die
+  Server-/Discovery-Ebene; letztere materialisiert `credentialRef`/`providerRef` weiterhin nicht in
+  ihre Auflistungen.
+
 ### 4.3 Sicherheitsregeln
 
 - Passwörter werden **nie** in Logs geschrieben (maskiert als `***`)

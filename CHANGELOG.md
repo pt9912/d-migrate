@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`credentialRef`-Provider auf dem CLI-Pfad** ([`LN-025`](spec/lastenheft-d-migrate.md#ln-025) O4,
+  [ADR 0035](docs/adr/0035-credential-provider-scheme-registry.md)) — eine Verbindung kann statt einer
+  URL einen secret-freien **Zeiger** tragen: `database.connections.<name>: { credentialRef: "file:/pfad" }`
+  bzw. `"env:VAR"`. Die Auflösung liefert die **vollständige** Connect-URL (Datei-Inhalt bzw.
+  Umgebungsvariable). Neuer erster Nicht-`env:`-Provider `file:` (cross-platform, headless-tauglich,
+  k8s-Secret-Mounts). Umgesetzt als geteilte, principal-freie `CredentialProviderRegistry`, die der
+  CLI-`--source`/`--target`-Pfad **und** der MCP-Serve-Pfad nutzen (der bisherige
+  `EnvConnectionSecretResolver` wurde verhaltenserhaltend darauf refaktoriert). **Fail-closed**: ein
+  gesetzter, aber unauflösbarer `credentialRef` bricht mit Exit 7 ab (kein stiller Rückfall). `file:`
+  meldet nie den Datei-Inhalt, hat einen 1-MiB-Size-Cap und strippt ein UTF-8-BOM. `providerRef` bleibt
+  ein reservierter Backend-Selektor (Vault/Keychain-Zukunft; `keychain:` als Folge-Slice). 3-Agenten-
+  Security-Review: kein fail-open, Discovery-Trennung intakt.
 - **Gespeicherte Zugangsdaten werden beim Verbinden herangezogen** ([`LN-049`](spec/lastenheft-d-migrate.md#ln-049)
   Stufe 4) — ein mit `config credentials set --name <n>` hinterlegtes Passwort wird jetzt von
   `data export --source <n>` genutzt (Master-Passphrase via `D_MIGRATE_MASTER_PASSWORD` oder Prompt, je Lauf

@@ -2,6 +2,9 @@ package dev.dmigrate.cli.config
 
 import dev.dmigrate.connection.ConnectionConfigException
 import dev.dmigrate.connection.ConnectionConfigParser
+import dev.dmigrate.connection.defaultCredentialProviderRegistry
+import dev.dmigrate.server.ports.CredentialProviderRegistry
+import dev.dmigrate.server.ports.CredentialResolution
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -34,6 +37,11 @@ class NamedConnectionResolver(
     private val envLookup: (String) -> String? = System::getenv,
     /** Erlaubt Test-Override für das CWD beim Default-Lookup `./.d-migrate.yaml`. */
     private val defaultConfigPath: Path = Paths.get(".d-migrate.yaml"),
+    /**
+     * O4 (ADR 0035): geteilte Provider-Registry für die Map-Form-`credentialRef`-Auflösung
+     * (`env:`/`file:`). Default = [defaultCredentialProviderRegistry]; Test-injizierbar.
+     */
+    private val credentialRegistry: CredentialProviderRegistry = defaultCredentialProviderRegistry(),
 ) {
 
     /**
@@ -73,8 +81,7 @@ class NamedConnectionResolver(
             }
         }
 
-        val rawUrl = lookupConnectionUrl(configPath.path, source)
-        return substituteEnvVars(rawUrl, source)
+        return resolveConnectionName(configPath.path, source)
     }
 
     /**
@@ -161,8 +168,42 @@ class NamedConnectionResolver(
         }
 
         // Default ist ein Connection-Name → über database.connections auflösen.
-        val rawUrl = lookupConnectionUrl(configPath.path, defaultValue)
-        return substituteEnvVars(rawUrl, defaultValue)
+        return resolveConnectionName(configPath.path, defaultValue)
+    }
+
+    /**
+     * name → URL. O4 (ADR 0035): eine **Map-Form**-Connection mit `credentialRef` hat Vorrang und
+     * wird über die geteilte [CredentialProviderRegistry] zu einer **vollständigen** URL aufgelöst
+     * (fail-closed; **keine** `${VAR}`-Substitution — die aufgelöste URL ist final). Sonst
+     * String-Form + `${VAR}`-Substitution wie bisher.
+     */
+    private fun resolveConnectionName(configPath: Path, name: String): String {
+        resolveMapFormUrl(configPath, name)?.let { return it }
+        val rawUrl = lookupConnectionUrl(configPath, name)
+        return substituteEnvVars(rawUrl, name)
+    }
+
+    /**
+     * Löst eine Map-Form-Connection `database.connections.<name>` mit `credentialRef` über die
+     * Registry auf. Gibt `null`, wenn [name] **keine** Map-Form-mit-`credentialRef` ist (→ der
+     * String-Form-Pfad übernimmt). **Fail-closed**: ein vorhandener, aber unauflösbarer
+     * `credentialRef` wirft [ConfigResolveException] (Exit 7) — der Operator hat eine Secret-Quelle
+     * explizit deklariert, ein stiller Rückfall auf String-Form wäre falsch. Die Meldung bleibt
+     * secret-frei (nur `reason`/`detail` der Registry, nie die aufgelöste URL).
+     */
+    private fun resolveMapFormUrl(configPath: Path, name: String): String? {
+        val credentialRef = try {
+            ConnectionConfigParser.parseMapFormCredentialRef(configPath, name)
+        } catch (e: ConnectionConfigException) {
+            throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
+        } ?: return null
+        return when (val outcome = credentialRegistry.resolve(credentialRef)) {
+            is CredentialResolution.Success -> outcome.url
+            is CredentialResolution.Failure -> throw ConfigResolveException(
+                "Failed to resolve credentialRef for connection '$name' (fail-closed): " +
+                    "${outcome.reason} — ${outcome.detail}",
+            )
+        }
     }
 
     /**
