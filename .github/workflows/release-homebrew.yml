@@ -23,6 +23,11 @@ jobs:
           VERSION="${TAG#v}"
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          # SemVer-Prerelease: Version enthält ein '-' (z. B. 1.0.0-RC1).
+          case "${VERSION}" in
+            *-*) echo "prerelease=true"  >> "${GITHUB_OUTPUT}" ;;
+            *)   echo "prerelease=false" >> "${GITHUB_OUTPUT}" ;;
+          esac
 
       - name: Build release assets
         run: make release-assets RELEASE_VERSION=${{ steps.meta.outputs.version }}
@@ -41,13 +46,21 @@ jobs:
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
           RELEASE_DIR="adapters/driving/cli/build/release"
+          # Prereleases (RC) als GitHub-Prerelease markieren — sonst würden sie als
+          # "Latest release" erscheinen und Nutzern eine Vorabversion als aktuell zeigen.
+          PRERELEASE_FLAG=""
+          [ "${{ steps.meta.outputs.prerelease }}" = "true" ] && PRERELEASE_FLAG="--prerelease"
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" "${RELEASE_DIR}"/* --clobber
+            [ -n "${PRERELEASE_FLAG}" ] && gh release edit "${TAG}" --prerelease
           else
-            gh release create "${TAG}" "${RELEASE_DIR}"/* --title "${TAG}" --generate-notes
+            gh release create "${TAG}" "${RELEASE_DIR}"/* --title "${TAG}" --generate-notes ${PRERELEASE_FLAG}
           fi
 
       - name: Publish to Homebrew tap
+        # Homebrew trackt nur Stable. Für Prereleases (RC) den Tap NICHT aktualisieren,
+        # sonst bekämen `brew install`-Nutzer eine Vorabversion.
+        if: steps.meta.outputs.prerelease != 'true'
         uses: Justintime50/homebrew-releaser@v3
         with:
           homebrew_owner: pt9912
@@ -70,6 +83,9 @@ jobs:
 
   verify-homebrew:
     needs: publish
+    # Nur für Stable — bei Prereleases wird der Homebrew-Tap nicht aktualisiert (s. o.),
+    # also gibt es nichts zu verifizieren.
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: macos-latest
 
     steps:
