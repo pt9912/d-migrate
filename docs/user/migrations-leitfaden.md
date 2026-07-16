@@ -326,5 +326,5 @@ Diese Checkliste ist Teil des 0.9.9-Pilot-Programms (Pilotanwender-Tests, LF 9.2
 
 ## Verwandte Dokumentation
 
-- [Anwenderhandbuch](anwenderhandbuch.md) · [Best-Practices-Leitfaden](best-practices-leitfaden.md) · [API-Referenz](api-referenz.md) · [Administrationshandbuch](administrationshandbuch.md) · [`guide.md`](guide.md)
+- [Anwenderhandbuch](anwenderhandbuch.md) · [Best-Practices-Leitfaden](best-practices-leitfaden.md) · [Troubleshooting-Leitfaden](troubleshooting-leitfaden.md) · [API-Referenz](api-referenz.md) · [Administrationshandbuch](administrationshandbuch.md) · [`guide.md`](guide.md)
 - [`spec/neutral-model-spec.md`](../../spec/neutral-model-spec.md), [`spec/type-mapping.md`](../../spec/type-mapping.md), [`spec/ddl-generation-rules.md`](../../spec/ddl-generation-rules.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/connection-config-spec.md`](../../spec/connection-config-spec.md)

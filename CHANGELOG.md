@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Performance-Tuning (das einzige konsolidierte `parallelism`/`chunk_size`/`fetch_size`/`pool`-Kapitel),
   Cross-Dialect-Typ-Fallstricke, Verifikation/sauberer Load, Rollback-Strategie, Credential-Handling und
   CI-Integration. Additiv zum Migrations-Leitfaden (verlinkt statt nacherzählt).
+- **Troubleshooting-Leitfaden** ([`docs/user/troubleshooting-leitfaden.md`](docs/user/troubleshooting-leitfaden.md)) —
+  schnelle Triage von Exit-Code bzw. Symptom zu Diagnose und Behebung: Exit-Code-Triage-Index (0–8/130),
+  Diagnose-Werkzeuge (`--report`/`--plan-only`/`--dry-run`/`--output-format json`) und Bereichs-Playbooks
+  (Verbindung/Zugangsdaten, Reverse/Generate/Migrate, Daten-Transfer/Verify, Cross-Dialect-Überraschungen).
+  Additiv zum Meldungskatalog in Anwenderhandbuch Abschnitt 5 (verlinkt statt nacherzählt).
 
 ## [1.0.0-RC1] - 2026-07-16
 

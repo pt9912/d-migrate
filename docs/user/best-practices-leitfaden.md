@@ -228,5 +228,5 @@ Zusätzlich:
 
 ## Verwandte Dokumentation
 
-- [Migrations-Leitfaden](migrations-leitfaden.md) · [Anwenderhandbuch](anwenderhandbuch.md) · [Administrationshandbuch](administrationshandbuch.md) · [API-Referenz](api-referenz.md) · [`guide.md`](guide.md)
+- [Migrations-Leitfaden](migrations-leitfaden.md) · [Troubleshooting-Leitfaden](troubleshooting-leitfaden.md) · [Anwenderhandbuch](anwenderhandbuch.md) · [Administrationshandbuch](administrationshandbuch.md) · [API-Referenz](api-referenz.md) · [`guide.md`](guide.md)
 - [`spec/type-mapping.md`](../../spec/type-mapping.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/connection-config-spec.md`](../../spec/connection-config-spec.md), [`spec/ddl-generation-rules.md`](../../spec/ddl-generation-rules.md)
