@@ -757,7 +757,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | Security  | Externer Security-Audit                                             | —      | ⛔     |
 | QA        | 1 Mio. Datensätze Export/Import ohne Datenverlust                   | 8.1    | ✅¹    |
 | QA        | DDL-Generierung 1.000 Tabellen < 30 Sekunden                        | 8.2    | ✅²    |
-| QA        | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite                    | 8.6    | ⛔³    |
+| QA        | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite                    | 8.6    | ✅³    |
 | Docs      | Best Practices Guide                                                | —      | ⛔     |
 | Docs      | Troubleshooting-Guide                                               | —      | ⛔     |
 | Community | Contributor Guide                                                   | —      | ⛔     |
@@ -776,9 +776,13 @@ untauglich, da `reverse` Spalten alphabetisiert). Slices:
 unter `PERF_GATE`. Slice: [`tpc-4d-ddl-1000-slice.md`](../done/tpc-4d-ddl-1000-slice.md).
 ³ Die **paarweisen** Cross-Dialect-Sprünge sind live + in CI (`sample-db-cross-smoke`
 MySQL→PG, `sample-db-cross-smoke-pg2my` PG→MySQL, `sample-db-sqlite-smoke`
-SQLite-Round-Trip). Die wörtliche **3-Hop-Kette** PG→MySQL→SQLite als *ein*
-verketteter Test steht noch aus (alternativ Wortlaut auf „paarweise Cross-Dialect"
-anpassen).
+SQLite-Round-Trip). Die wörtliche **3-Hop-Kette** PG→MySQL→SQLite als *ein* verketteter
+Test ist seit 2026-07-16 geliefert (`make sample-db-3hop-smoke`,
+`examples/sample-db/scripts/smoke-3hop.sh`): Pagila wandert PG→MySQL→SQLite mit
+End-to-End-Zeilen-Parität über alle logischen Tabellen plus den drei 8.6-Typ-Transformationen
+(Serial→AUTO_INCREMENT→AUTOINCREMENT, Array→JSON→JSON, ENUM→ENUM→CHECK). Der Test deckte
+zugleich den SQLite-Generator-Bug W135 auf (Identity-Spalte in einem zusammengesetzten
+Primärschlüssel → ungültiges Doppel-PRIMARY-KEY-DDL), der im selben Zug behoben wurde.
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 

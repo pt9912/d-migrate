@@ -155,6 +155,36 @@ class SqliteDdlGeneratorTableTest : FunSpec({
         sql shouldContain "PRIMARY KEY (\"order_id\", \"product_id\")"
     }
 
+    test("identity column inside a composite primary key drops AUTOINCREMENT (single valid PK clause)") {
+        // Reproduces the 3-hop MySQL->SQLite defect: a partitioned MySQL table forces the
+        // AUTO_INCREMENT column into a composite PK (payment_id, part_id). SQLite AUTOINCREMENT
+        // requires a *single-column* INTEGER PRIMARY KEY, so emitting an inline
+        // "INTEGER PRIMARY KEY AUTOINCREMENT" *and* a table-level composite PRIMARY KEY produces
+        // "table has more than one primary key" — invalid, unloadable DDL.
+        val s = schema(
+            tables = mapOf(
+                "payment" to table(
+                    columns = mapOf(
+                        "payment_id" to col(NeutralType.Identifier(autoIncrement = true), required = true),
+                        "part_id" to col(NeutralType.Integer, required = true),
+                        "amount" to col(NeutralType.Integer, required = true),
+                    ),
+                    primaryKey = listOf("payment_id", "part_id")
+                )
+            )
+        )
+        val result = generator.generate(s)
+        val sql = result.tableSql()
+
+        // Exactly one PRIMARY KEY, expressed once as the table-level composite clause.
+        Regex("PRIMARY KEY").findAll(sql).count() shouldBe 1
+        sql shouldContain "PRIMARY KEY (\"payment_id\", \"part_id\")"
+        sql shouldNotContain "AUTOINCREMENT"
+        // The identity column degrades to a plain INTEGER member of the composite key.
+        sql shouldContain "\"payment_id\" INTEGER NOT NULL"
+        result.notes.any { it.code == "W135" && it.objectName == "payment.payment_id" } shouldBe true
+    }
+
     test("inline foreign key produces REFERENCES with ON DELETE action") {
         val s = schema(
             tables = mapOf(

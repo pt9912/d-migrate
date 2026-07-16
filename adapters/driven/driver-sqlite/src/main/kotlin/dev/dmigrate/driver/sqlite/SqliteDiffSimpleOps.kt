@@ -49,8 +49,13 @@ internal object SqliteDiffSimpleOps {
             SqliteSpatialDiffOps.blockSpatialMetadata(op, ctx, tableName, "geometry-only table requires a non-spatial base column")
             return
         }
+        val solePrimaryKey = op.table.primaryKey.singleOrNull()
         for ((colName, col) in effectiveColumns.inOrdinalOrder()) {
-            lines += "    " + ctx.sql.columnLine(colName, col)
+            val isSolePrimaryKey = solePrimaryKey == colName
+            lines += "    " + ctx.sql.columnLine(colName, col, isSolePrimaryKey)
+            if (SqliteCompositePkIdentity.isDroppedAutoincrement(col.type, isSolePrimaryKey)) {
+                ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
+            }
         }
         ctx.sql.primaryKeyClause(op.table)?.let { lines += "    $it" }
         for (c in op.table.constraints.sortedBy { it.name }) {

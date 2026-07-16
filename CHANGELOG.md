@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ungültiges SQLite-DDL bei zusammengesetztem Primärschlüssel mit Identity-Spalte** (Warn-Code
+  **W135**) — eine Identity-/`AUTO_INCREMENT`-Spalte, die Teil eines **zusammengesetzten**
+  Primärschlüssels wird (z. B. weil eine partitionierte MySQL-Tabelle ihren Partitionsschlüssel in
+  den PK faltet), erzeugte in SQLite **zwei** PRIMARY-KEY-Deklarationen — inline
+  `INTEGER PRIMARY KEY AUTOINCREMENT` **und** table-level `PRIMARY KEY (…)` — und damit nicht
+  ladbares DDL (»table has more than one primary key«). Die Spalte wird jetzt als schlichtes
+  `INTEGER`-Mitglied des zusammengesetzten Schlüssels gerendert (AUTOINCREMENT entfällt, neuer
+  Warn-Code W135). Behoben auf allen drei SQLite-`CREATE TABLE`-Pfaden (generate, diff/migrate,
+  Table-Rebuild). Aufgedeckt vom neuen 3-Hop-Cross-Dialect-Smoke (Lastenheft 8.6).
+
+### Added
+
+- **3-Hop-Cross-Dialect-Smoke** (`make sample-db-3hop-smoke`, Lastenheft 8.6) — die wörtliche Kette
+  **PostgreSQL → MySQL → SQLite** als *ein* verketteter Test (Pagila-Quelle): End-to-End-Zeilen-Parität
+  über alle logischen Tabellen plus die drei 8.6-Typ-Transformationen
+  Serial→`AUTO_INCREMENT`→`AUTOINCREMENT`, Array→JSON→JSON und ENUM→ENUM→CHECK. Ergänzt die
+  bestehenden paarweisen Cross-Dialect-Smokes um die dritte Kaskadenstufe (MySQL→SQLite).
+
 ## [1.0.0-RC1] - 2026-07-16
 
 ### Added
