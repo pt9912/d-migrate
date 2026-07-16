@@ -1,6 +1,6 @@
 # Administrationshandbuch
 
-> **Software-Version:** 0.9.9 (Beta) · **Stand:** 16.06.2026
+> **Software-Version:** 1.0.0-RC-SNAPSHOT · **Stand:** 16.07.2026
 >
 > **Zielgruppe:** Personen, die d-migrate bereitstellen, konfigurieren und
 > betreiben. Aufgabenorientierte Anwender-Workflows stehen im
@@ -109,12 +109,12 @@ Tatsächlich vom Code gelesen (Stand 0.9.9):
 | `D_MIGRATE_SERVER_STATE_HIKARI_*` / `_MIGRATIONS_AUTO` | Pool-/Migrations-Konfiguration des Server-State |
 | `D_MIGRATE_SERVER_JOBS_EXECUTOR_*` | Job-Executor (siehe [§7](#7-asynchrone-jobs-und-job-executor)) |
 
-> 🔮 Die normative [`cli-spec.md`](../../spec/cli-spec.md) §9 listet zusätzlich
-> `D_MIGRATE_OUTPUT_FORMAT`, `D_MIGRATE_NO_COLOR`, `D_MIGRATE_ASSUME_YES`,
-> `D_MIGRATE_DB_PASSWORD` und `D_MIGRATE_AI_API_KEY` als Zielbild. Diese werden
-> vom aktuellen Code **nicht** gelesen. Passwörter kommen über die URL, eine
-> `${VAR}`-Referenz in `.d-migrate.yaml` oder den MCP-`env:`-Secret-Ref (siehe
-> [§4.6](#4-datenbank-verbindungen)).
+> ℹ️ `D_MIGRATE_DB_PASSWORD` (globale Passwort-Fallback-Variable) wird seit 1.0.0-RC
+> gelesen — Details und die vollständige Prioritätskette in
+> [Abschnitt 4.6](#46-credential-handling). Die weiteren in der
+> [`cli-spec.md`](../../spec/cli-spec.md) genannten `D_MIGRATE_OUTPUT_FORMAT`,
+> `D_MIGRATE_NO_COLOR`, `D_MIGRATE_ASSUME_YES` und `D_MIGRATE_AI_API_KEY` sind
+> Zielbild und werden vom aktuellen Code noch nicht gelesen.
 
 ### 3.4 Internationalisierung (i18n)
 
@@ -153,9 +153,18 @@ Verhalten von `pipeline.parallelism`:
   gehören ebenfalls in diese Sektion; vollständiges Schema:
   [`connection-config-spec.md`](../../spec/connection-config-spec.md).
 
-> ℹ️ Die weitergehende `pool:`-Sektion (`max_size`/`min_idle`) des Schemas wirkt
-> derzeit nur auf den MCP-Server-State, nicht auf den CLI-Datenpfad (dieser nutzt
-> die HikariCP-Defaults aus [Abschnitt 4.3](#43-connection-pool-defaults-hikaricp)).
+> ℹ️ Die `pool:`-Sektion (`max_size`/`min_idle`/`connection_timeout_ms`/
+> `idle_timeout_ms`/`max_lifetime_ms`) wirkt seit 1.0.0-RC auch auf den
+> **CLI-Datenpfad** (`data export`/`import`/`transfer`/`profile`): sie wird aus
+> `.d-migrate.yaml` gelesen und in die Verbindung injiziert (Präzedenz Config >
+> Default; kein CLI-Flag). Dadurch deckelt `pipeline.parallelism: auto` gegen den
+> konfigurierten `max_size` statt gegen den Default. Werte müssen positive
+> Ganzzahlen sein und unbekannte/vertippte Keys werden **laut** abgelehnt (Exit 7);
+> ein allein gesetztes `max_size: 1` ist gültig (das Default-`min_idle` wird
+> heruntergeklemmt). SQLite bleibt auf Pool-Größe 1 geklemmt. Die drei
+> Cancel-Reaktions-Schranken (keepalive-/statement-/network-Timeout aus
+> [Abschnitt 4.3](#43-connection-pool-defaults-hikaricp)) bleiben bewusst nicht über
+> diese Sektion tunbar.
 
 ---
 
@@ -204,25 +213,41 @@ Sonderzeichen in der URL müssen URL-encoded werden (`@`→`%40`, `:`→`%3A`,
 
 ### 4.6 Credential-Handling
 
-**Heute** stehen drei Quellen zur Verfügung:
+Ein DB-Passwort wird über eine Prioritätskette aufgelöst — die erste Quelle, die
+liefert, gewinnt (vollständige Reihenfolge in
+[`connection-config-spec.md`](../../spec/connection-config-spec.md), Abschnitt 4.1):
 
 1. **Inline in der Connection-URL** (`dialect://user:password@…`).
-2. **`${VAR}`-Referenz** in `.d-migrate.yaml` (`database.connections`) — das
-   Passwort kommt aus der Prozess-Umgebung, nicht aus der Datei.
-3. **MCP-Secret-Ref** `credentialRef: "env:<VAR_NAME>"` — der MCP-Secret-Resolver
-   ist **fail-closed**: eine Connection ohne verdrahteten Secret-Provider wird
-   abgelehnt, nicht ohne Secret geöffnet.
+2. **`D_MIGRATE_DB_PASSWORD`** — globale Fallback-Umgebungsvariable
+   ([`LN-049`](../../spec/lastenheft-d-migrate.md#ln-049)); ergänzt ein **fehlendes**
+   Passwort der gewählten Verbindung und überschreibt nichts Höherpriorisiertes.
+3. **`${VAR}`-Referenz** in `.d-migrate.yaml` (`database.connections`) — das Passwort
+   kommt aus der gleichnamigen Prozess-Umgebungsvariable, nicht aus der Datei.
+4. **`credentialRef`-Provider** in der Map-Form einer Verbindung — löst zu einer
+   **vollständigen** Connect-URL auf und ist **fail-closed** (ein gesetzter, aber
+   unauflösbarer Ref führt zum Abbruch, nicht zu einer Verbindung ohne Secret):
+   - `credentialRef: "env:<VAR>"` — die Variable enthält die URL,
+   - `credentialRef: "file:/pfad"` — der **Datei-Inhalt** ist die URL (z. B. ein
+     k8s-Secret-Mount; cross-platform, headless-tauglich).
+
+   Diese Auflösung gilt seit 1.0.0-RC sowohl auf dem CLI-`--source`/`--target`-Pfad
+   als auch im MCP-Serve-Pfad (gemeinsame Provider-Registry,
+   [ADR 0035](../adr/0035-credential-provider-scheme-registry.md)).
+5. **Verschlüsselter lokaler Store** (interaktiver Betrieb,
+   [`LN-025`](../../spec/lastenheft-d-migrate.md#ln-025)): `d-migrate config
+   credentials set --name <n> --user <u>` legt Benutzer/Passwort AES-256-GCM-
+   verschlüsselt in `~/.d-migrate/credentials.enc` ab; der Schlüssel wird aus einem
+   Master-Secret (`D_MIGRATE_MASTER_PASSWORD` oder TTY-Prompt) abgeleitet und liegt
+   **nicht als Datei** auf Platte. `d-migrate config credentials list` zeigt nur die
+   Namen (nie Werte). Beim Verbinden ergänzt der Store ein fehlendes Passwort.
 
 Passwörter und API-Keys werden in Logs/Audit **maskiert** (`***`); secret-freie
 Connection-Refs werden ohne URL/Passwort projiziert.
 
-> 🔮 **Geplant (1.0.0-RC, [`LN-025`](../../spec/lastenheft-d-migrate.md#ln-025)):** verschlüsselter Credential-Store
-> (`~/.d-migrate/credentials.enc`, AES-256) mit `config credentials set|list`
-> und die Umgebungsvariable `D_MIGRATE_DB_PASSWORD`. Die `config`-Command-Gruppe
-> und `D_MIGRATE_DB_PASSWORD` sind **noch nicht** implementiert; die Beschreibung
-> in [`connection-config-spec.md`](../../spec/connection-config-spec.md) §4.2 ist
-> insoweit Zielbild. Bis dahin gilt: `.d-migrate/`-Verzeichnis in `.gitignore`
-> aufnehmen.
+> **Schicht-Wahl:** interaktiv (Arbeitsplatz) → lokaler Store; headless (CI/Container)
+> → Delegation (Env/`${VAR}`/`credentialRef`), damit kein Secret im Klartext-
+> Ruhezustand liegt. `D_MIGRATE_MASTER_PASSWORD` in CI ist **kein** Gewinn gegenüber
+> den DB-Zugangsdaten direkt per Env. Nehmen Sie `~/.d-migrate/` in `.gitignore` auf.
 
 ---
 

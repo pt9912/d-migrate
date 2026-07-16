@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 0.9.9 (Beta)  ·  **Handbuch-Version:** 0.2 (Entwurf)  ·  **Stand:** 05.07.2026
+**Software-Version:** 1.0.0-RC-SNAPSHOT  ·  **Handbuch-Version:** 0.3 (Entwurf)  ·  **Stand:** 16.07.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
@@ -1878,9 +1878,18 @@ finden Sie in [Anhang A](#a1-globale-optionen). Die wichtigsten:
 ### 4.4 Sicherheit und Datenschutz
 
 - **Zugangsdaten** gehören nicht im Klartext in Skripte oder die
-  Versionsverwaltung. Hinterlegen Sie in der `.d-migrate.yaml` einen Platzhalter
-  `${VAR}`, den d-migrate aus der gleichnamigen Umgebungsvariable ersetzt
-  (`$${VAR}` bleibt literal).
+  Versionsverwaltung. Sie haben mehrere Möglichkeiten:
+  - Platzhalter `${VAR}` in der `.d-migrate.yaml`, den d-migrate aus der
+    gleichnamigen Umgebungsvariable ersetzt (`$${VAR}` bleibt literal);
+  - die globale Umgebungsvariable `D_MIGRATE_DB_PASSWORD` als Fallback für ein
+    fehlendes Passwort;
+  - das Passwort **verschlüsselt ablegen**: `d-migrate config credentials set
+    --name <verbindung> --user <benutzer>` — es wird beim Verbinden herangezogen;
+  - eine Verbindung per `credentialRef: "file:/pfad"` oder `"env:VAR"` auf eine
+    externe Secret-Quelle zeigen lassen (z. B. ein k8s-Secret-Mount).
+
+  Details und die Prioritätsreihenfolge stehen im
+  [Administrationshandbuch](administrationshandbuch.md#46-credential-handling).
 - **Exportierte Dateien** (JSON/CSV/Parquet) enthalten echte, möglicherweise
   personenbezogene Daten. Behandeln Sie sie wie die Datenbank selbst:
   Zugriffsschutz, sichere Ablage, Löschung nach Gebrauch.
@@ -1914,6 +1923,18 @@ Port in der URL.
 müssen diese in der URL kodiert werden (z. B. `@` → `%40`) — oder hinterlegen Sie
 das Passwort als `${VAR}` in einer benannten Verbindung der `.d-migrate.yaml`
 (wird aus der gleichnamigen Umgebungsvariable ersetzt).
+
+### „Failed to resolve credentialRef for connection '…' (fail-closed)"
+
+**Ursache:** Eine Verbindung verweist per `credentialRef` (`file:`/`env:`) auf eine
+Secret-Quelle, die nicht aufgelöst werden konnte — die Datei fehlt, die
+Umgebungsvariable ist nicht gesetzt oder das Schema ist unbekannt. d-migrate
+verbindet dann **bewusst nicht** ohne Secret (Exit 7), statt still weiterzumachen.
+
+**Lösung:** Prüfen Sie, dass die referenzierte Datei existiert und lesbar ist bzw.
+die Umgebungsvariable gesetzt ist, und dass der Datei-Inhalt/Variablenwert die
+vollständige Connect-URL enthält. Die Fehlermeldung nennt Pfad bzw. Grund
+(`FILE_NOT_FOUND`, `ENV_NOT_SET`, `PROVIDER_MISSING`), nie das Secret selbst.
 
 ### „Unknown database dialect 'xyz'"
 
@@ -1993,10 +2014,14 @@ Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
 benötigen Sie Java 21 oder neuer.
 
 **Wie gebe ich Passwörter sicher an?**
-Als `${VAR}`-Platzhalter in einer benannten Verbindung der `.d-migrate.yaml` —
-d-migrate ersetzt ihn aus der gleichnamigen Umgebungsvariable (z. B.
-`postgresql://app:${DB_PASSWORD}@…`, dann `export DB_PASSWORD=…`). Vermeiden Sie
-Passwörter im Klartext in Skripten.
+Am einfachsten als `${VAR}`-Platzhalter in einer benannten Verbindung der
+`.d-migrate.yaml` — d-migrate ersetzt ihn aus der gleichnamigen Umgebungsvariable
+(z. B. `postgresql://app:${DB_PASSWORD}@…`, dann `export DB_PASSWORD=…`).
+Alternativ können Sie das Passwort verschlüsselt ablegen
+(`d-migrate config credentials set`) oder eine Verbindung per
+`credentialRef: "file:/pfad"`/`"env:VAR"` auf eine externe Secret-Quelle zeigen
+lassen. Vermeiden Sie Passwörter im Klartext in Skripten; die Übersicht steht im
+[Administrationshandbuch](administrationshandbuch.md#46-credential-handling).
 
 **Was ist der Unterschied zwischen `schema generate` und `schema migrate`?**
 `generate` erzeugt ein komplettes Schema von Grund auf. `migrate` überträgt nur
@@ -2288,6 +2313,20 @@ Gibt das Keyring-YAML auf stdout aus (z. B. `… > keyring.yaml` umleiten).
 | ------ | ------------ |
 | `--cursor-keyring-file` | zu prüfende Keyring-YAML-Datei (Pflicht) |
 
+#### A.17 `config credentials`
+
+Verwaltet den verschlüsselten Zugangsdaten-Speicher (`~/.d-migrate/credentials.enc`).
+Das Master-Secret kommt aus `D_MIGRATE_MASTER_PASSWORD` oder einer interaktiven
+Abfrage. Details: [Administrationshandbuch](administrationshandbuch.md#46-credential-handling).
+
+| Befehl / Option | Beschreibung |
+| ------ | ------------ |
+| `config credentials set` | Zugangsdaten unter einem Verbindungsnamen ablegen |
+| `--name` | Verbindungsname (Pflicht) |
+| `--user` | Benutzername (Pflicht) |
+| `--password` | Passwort; ohne Angabe interaktiv abgefragt |
+| `config credentials list` | hinterlegte Namen anzeigen (nie Werte/Passwörter) |
+
 ### Anhang B — Exit-Codes
 
 | Code | Name | Bedeutung |
@@ -2568,6 +2607,7 @@ custom_types:
 | ---------------- | ----- | -------- |
 | 0.1 | 15.06.2026 | Erster aufgabenorientierter Entwurf für Software-Version 0.9.9 (Beta). |
 | 0.2 | 05.07.2026 | Fehlerbehebung: Hinweis zur Fingerabdruck-Versionsbindung von Rollback-Artefakten und Overlays (Abbruch mit Exit 8 nach einem Update) ergänzt. |
+| 0.3 | 16.07.2026 | Auf Software-Version 1.0.0-RC-SNAPSHOT aktualisiert. Zugangsdaten-Optionen erweitert (`D_MIGRATE_DB_PASSWORD`, verschlüsselter Store `config credentials`, `credentialRef: file:/env:`); neuer Fehlerfall „credentialRef fail-closed"; `config credentials` in die Befehlsreferenz (A.17) aufgenommen. |
 
 ---
 
