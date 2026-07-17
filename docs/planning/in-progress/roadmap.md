@@ -305,13 +305,16 @@ Tooling) ist dokumentiert und die Publish-Landkarte vorbereitet. Die Sicherheits
 offengehaltene Raw-SQL-Pfade) sind abgearbeitet, und die wartungs-
 kritischen Orchestrierungs-/Dialekt-Hotspots (`Data*Runner`,
 `StreamingImporter`, `SchemaComparator`, DDL-Generatoren mit
-`-- TODO:`-Platzhaltern) sind zerlegt, bevor 1.0.0 einen Publish-
-Vertrag festschreibt.
+`-- TODO:`-Platzhaltern) sind zerlegt.
 
 > Hinweis: Dieser Milestone bereitet wiederverwendbare Libraries für externe
 > Consumer wie `d-browser` vor. Ein öffentlicher Publish-Vertrag bleibt bewusst
-> **1.0.0** vorbehalten, damit Modulgrenzen, Koordinaten und API-Flächen erst
-> nach dem Refactor stabilisiert werden. Der Kanal dafür ist seit
+> zurückgestellt, damit Modulgrenzen, Koordinaten und API-Flächen erst
+> stabilisiert werden. Ursprünglich war er 1.0.0 vorbehalten; seit
+> [ADR 0037](../../adr/0037-database-agnostic-first-staffelung.md) (2026-07-17)
+> steht er hinter dem Treiber-Port-Umbau in
+> [Milestone 2.0.0](#milestone-200--langfristige-vision) — derselbe Grund, nur
+> ein Refactor weiter. Der Kanal ist seit
 > [ADR 0036](../../adr/0036-library-artefakte-github-packages.md) **GitHub
 > Packages** statt des ursprünglich vorgesehenen Maven-Central-Portals.
 
@@ -754,7 +757,6 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | Build    | GraalVM Native Image (Linux, macOS, Windows)                        | —      | ⛔      |
 | Build    | Docker Image auf Docker Hub                                         | —      | ⛔      |
 | Build    | SDKMAN-Distribution                                                 | —      | ⛔      |
-| Build    | GitHub-Packages Publish-Workflow für stabile Library-Artefakte⁴     | —      | ⛔      |
 | Security | Externer Security-Audit                                             | —      | ⛔      |
 | QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust                   | 8.1    | ✅¹     |
 | QA       | DDL-Generierung 1.000 Tabellen < 30 Sekunden                        | 8.2    | ✅²     |
@@ -782,18 +784,15 @@ End-to-End-Zeilen-Parität über alle logischen Tabellen plus den drei 8.6-Typ-T
 zugleich den SQLite-Generator-Bug W135 auf (Identity-Spalte in einem zusammengesetzten
 Primärschlüssel → ungültiges Doppel-PRIMARY-KEY-DDL), der im selben Zug behoben wurde.
 
-⁴ Kanalwechsel (2026-07-17,
-[ADR 0036](../../adr/0036-library-artefakte-github-packages.md)): Der ursprünglich geplante
-**Maven-Central-Portal**-Workflow entfällt; stabile Library-Artefakte werden über **GitHub
-Packages** veröffentlicht. Central verlangte für die Koordinate `dev.dmigrate` einen
-DNS-Nachweis der Domain `dmigrate.dev` (nicht verfügbar) oder einen Namespace-Wechsel, dazu
-GPG-Signing als Release-Dauerlast und unwiderrufliche Koordinaten — ein Preis, dem heute genau
-ein bekannter, projekteigener Consumer (`d-browser`) gegenübersteht. GitHub Packages nutzt
-dasselbe `GITHUB_TOKEN` wie der GHCR-Push. Bewusste Kehrseite: Konsumenten brauchen auch bei
-öffentlichen Paketen ein Token (`read:packages`) — der Library-Konsum ist damit ein Angebot an
-bekannte Consumer, kein offener Ökosystem-Kanal. Die Artefaktklassifikation in
-[`releasing.md`](../../user/releasing.md) bleibt gültig. Der Workflow selbst ist noch nicht
-gebaut, die Zeile bleibt daher ⛔.
+⁴ **Library-Publishing verschoben nach [Milestone 2.0.0](#milestone-200--langfristige-vision)**
+(2026-07-17). Die Zeile „Publish-Workflow für stabile Library-Artefakte" stand hier, weil 1.0.0 die
+API stabilisieren sollte. [ADR 0037](../../adr/0037-database-agnostic-first-staffelung.md) hat
+beschlossen, den Treiber-Port **nach** 1.0.0 umzubauen — eine Stabilitätszusage mit 1.0.0 träfe
+damit genau die Module, deren Bruch bereits entschieden ist. Details in Fußnote ⁶ dort; der Kanal
+(GitHub Packages statt Maven-Central-Portal,
+[ADR 0036](../../adr/0036-library-artefakte-github-packages.md)) und die Artefaktklassifikation in
+[`releasing.md`](../../user/releasing.md) bleiben davon unberührt und gültig. **1.0.0 liefert
+CLI, OCI-Image und MCP — keine Library-Artefakte.**
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 
@@ -954,10 +953,42 @@ Datenbanksystem.
 
 | Bereich   | Aufgabe                                        | LF-Ref                                                   |
 | --------- | ---------------------------------------------- | -------------------------------------------------------- |
+| Core      | „Database-Agnostic First" einlösen: Treiber-Port auf optionale Fähigkeiten⁵ | — |
+| Build     | GitHub-Packages Publish-Workflow für stabile Library-Artefakte⁶ | — |
 | GUI       | Grafische Benutzeroberfläche für Schema-Design | [`LF-018`](../../../spec/lastenheft-d-migrate.md#lf-018) |
 | Core      | Schema-Optimierungsvorschläge                  | [`LF-020`](../../../spec/lastenheft-d-migrate.md#lf-020) |
 | Core      | Rollenbasierte Zugriffskontrolle               | [`LN-028`](../../../spec/lastenheft-d-migrate.md#ln-028) |
 | Community | LTS-Support für 1.x-Linie (24 Monate)          | —                                                        |
+
+⁵ [ADR 0037](../../adr/0037-database-agnostic-first-staffelung.md) (accepted 2026-07-17): Das
+Leitprinzip „Database-Agnostic First" bleibt **unqualifiziert** gültig — d-migrate wird *nicht*
+nachträglich auf „relationale Datenbanken über JDBC" eingegrenzt. Eingelöst wird es nach 1.0.0:
+`DatabaseDriver` verlangt heute ohne Default `urlBuilder(): JdbcUrlBuilder`, `ddlGenerator()`,
+`tableLister()`, `schemaReader()`, `dataReader()`, `dataWriter()` — der Port abstrahiert nicht, er
+diktiert, und ein Adapter für MongoDB/Redis/Cassandra/Neo4j/Elasticsearch könnte ihn nur mit Lügen
+erfüllen. Ziel ist die Bauform, die der Port bereits kennt (`dataReader(fetchSize)`,
+`transferCompatibility()` u. a. tragen Defaults): Fähigkeiten, die ein Treiber **anbieten kann**
+statt erfüllen **muss**. Die JDBC-Typcode-Felder (`TargetColumn.jdbcType`, `JdbcTypeHint.jdbcType`,
+`JdbcTypeCodes`) sind Symptome derselben Ursache und werden hier **mitbehandelt** — nicht vorher
+einzeln (ADR 0037 dokumentiert drei am Code widerlegte Einzel-Heilmittel). **Prüfstein**: ein
+Adapter für eine Nicht-SQL-Datenbank, der den Vertrag erfüllt, ohne ihn anzulügen. Weil der Umbau
+Port-Signaturen bricht, ist 2.0.0 sein frühester Ort. Ist-Aufnahme:
+[`jdbc-kopplung-der-ports-ist-aufnahme.md`](../open/jdbc-kopplung-der-ports-ist-aufnahme.md).
+
+⁶ Verschoben aus Milestone 1.0.0 (2026-07-17). Kanal ist seit
+[ADR 0036](../../adr/0036-library-artefakte-github-packages.md) GitHub Packages statt
+Maven-Central-Portal. Die **Reihenfolge** ist der Grund für den Umzug: Publizieren heißt, SemVer-
+Stabilität zuzusagen — und die
+[1.0.0-Artefaktklassifikation](../../user/releasing.md) führt zehn Kernartefakte, von denen ADR 0037
+fünf namentlich anfasst (`hexagon:ports`, `ports-common`, `ports-read`, `ports-write`,
+`driver-common`); die drei Treiber implementieren `DatabaseDriver` und ziehen nach. Eine Zusage mit
+1.0.0 wäre also von Anfang an auf Verfall gebaut, und ein „sicheres Subset" bedient keinen Consumer
+(die Lesefläche laut [`test/consumer-read-probe`](../../../test/consumer-read-probe/build.gradle.kts)
+liegt zur Hälfte im Umbau-Radius). Publiziert wird, wenn die API die ist, die wir wollen.
+**Vorbedingung unabhängig davon**: eine API-Stabilitäts-Absicherung (`binary-compatibility-validator`
+/ `apiDump`) existiert im Repo nicht — ohne sie wäre jede Zusage unüberwachbar. Die
+Artefaktklassifikation selbst (welche Module publiziert werden) ist bereits entschieden und bleibt
+gültig.
 
 **Ergebnis**: Feature-Complete, Enterprise-ready, aktive Community.
 

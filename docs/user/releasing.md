@@ -8,9 +8,14 @@
 > Hinweis: Ein öffentlicher Library-Publish-Vertrag ist bewusst noch nicht Teil
 > dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
 > [`implementation-plan-0.9.1.md`](../planning/done-archive/implementation-plan-0.9.1.md)
-> beschrieben; das Publishing folgt erst mit 1.0.0 — als Kanal ist seit
-> [ADR 0036](../adr/0036-library-artefakte-github-packages.md) **GitHub Packages**
-> gesetzt, nicht das ursprünglich geplante Maven-Central-Portal.
+> beschrieben. Das Publishing steht seit
+> [ADR 0037](../adr/0037-database-agnostic-first-staffelung.md) (2026-07-17) **hinter dem
+> Treiber-Port-Umbau** (Milestone 2.0.0) und **nicht** mehr bei 1.0.0: Der Umbau bricht
+> Port-Signaturen, eine Stabilitätszusage mit 1.0.0 träfe also genau die Module, deren Bruch
+> bereits beschlossen ist. **1.0.0 liefert CLI, OCI-Image und MCP — keine Library-Artefakte.**
+> Als Kanal ist seit [ADR 0036](../adr/0036-library-artefakte-github-packages.md) **GitHub
+> Packages** gesetzt, nicht das ursprünglich geplante Maven-Central-Portal; die
+> Artefaktklassifikation unten bleibt gültig.
 >
 > **1.0.0-Artefaktklassifikation** — welche Module als Library veröffentlicht werden,
 > wenn der Publish-Workflow ([ADR 0036](../adr/0036-library-artefakte-github-packages.md):
