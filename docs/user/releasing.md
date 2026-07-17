@@ -447,6 +447,9 @@ git push origin vX.Y.Z
 5. Jib baut OCI-Image (`./gradlew :adapters:driving:cli:jibDockerBuild`)
 6. Login zu `ghcr.io` mit `GITHUB_TOKEN`
 7. Push zu `ghcr.io/pt9912/d-migrate:X.Y.Z` und `ghcr.io/pt9912/d-migrate:latest`
+8. Nur wenn das Secret `DOCKERHUB_TOKEN` gesetzt ist: derselbe Image-Push zusätzlich
+   nach Docker Hub (s. [4.4.1](#441-docker-hub-spiegel-optional)). Ohne das Secret
+   werden diese Schritte übersprungen — der Tag-Build bleibt grün.
 
 Auf den grünen Tag-Build warten, **bevor** der GitHub-Release veröffentlicht
 wird:
@@ -454,6 +457,32 @@ wird:
 ```bash
 gh run watch
 ```
+
+#### 4.4.1 Docker Hub-Spiegel (optional)
+
+Docker Hub ist ein **Spiegel**, keine zweite Build-Quelle: gepusht wird exakt
+dasselbe lokal gebaute Image, das auch nach GHCR geht. `ghcr.io` bleibt die
+Referenz-Registry, auf die README und Handbücher verweisen.
+
+Der Push ist an die Präsenz des Secrets `DOCKERHUB_TOKEN` gekoppelt. Ist es nicht
+gesetzt, überspringt der Tag-Build die Docker-Hub-Schritte mit einer Notice —
+absichtlich, damit ein fehlender Zusatzkanal keinen Release rot macht.
+
+Einmalige Einrichtung (nicht automatisierbar, erfordert ein Docker-Hub-Konto):
+
+1. Auf [hub.docker.com](https://hub.docker.com) anmelden und das Repository
+   `pt9912/d-migrate` anlegen (Public).
+2. Unter *Account Settings → Personal access tokens* ein Token mit dem Scope
+   **Read & Write** erzeugen.
+3. Im GitHub-Repository unter *Settings → Secrets and variables → Actions*
+   hinterlegen:
+   - Secret `DOCKERHUB_USERNAME` — der Docker-Hub-Benutzername
+   - Secret `DOCKERHUB_TOKEN` — das Token aus Schritt 2
+4. Optional Variable `DOCKERHUB_IMAGE`, falls das Ziel-Repository später von
+   `pt9912/d-migrate` abweichen soll (z. B. nach Umzug in eine Organisation).
+
+Die `:latest`-Regel ist identisch zu GHCR: Prerelease-Tags (Version enthält ein
+`-`, etwa `v1.0.0-RC1`) aktualisieren `:latest` **nicht**.
 
 ### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
 
@@ -613,6 +642,9 @@ anschließend als verifizierten Repo-Stand nachziehen.
   ```bash
   docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z --help
   ```
+- [ ] Nur wenn der Docker-Hub-Spiegel eingerichtet ist
+      (s. [4.4.1](#441-docker-hub-spiegel-optional)):
+      `docker pull pt9912/d-migrate:X.Y.Z` und `docker run --rm pt9912/d-migrate:X.Y.Z --help`
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
 - [ ] CI ist auf `main` und auf dem Tag grün
 

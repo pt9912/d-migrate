@@ -124,3 +124,44 @@ jobs:
             *)   docker tag dmigrate/d-migrate:latest ghcr.io/${{ github.repository }}:latest
                  docker push ghcr.io/${{ github.repository }}:latest ;;
           esac
+
+      # Docker Hub ist ein Spiegel von GHCR, kein eigener Build: gepusht wird
+      # exakt dasselbe lokal gebaute Image. GHCR bleibt die Referenz-Registry.
+      # Der `secrets`-Kontext ist in `if:` von Steps nicht verfügbar, daher wird
+      # die Secret-Präsenz hier in einen Output übersetzt. Fehlt das Secret,
+      # werden die beiden folgenden Steps übersprungen statt den Release-Tag
+      # rot zu machen — Docker Hub ist ein optionaler Zusatzkanal.
+      - name: Check for Docker Hub credentials
+        id: dockerhub
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_TOKEN nicht gesetzt — Docker-Hub-Push übersprungen."
+          fi
+
+      - name: Login to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        env:
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'pt9912/d-migrate' }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          docker tag dmigrate/d-migrate:latest "${DOCKERHUB_IMAGE}:${VERSION}"
+          docker push "${DOCKERHUB_IMAGE}:${VERSION}"
+          # :latest-Regel identisch zu GHCR — Prereleases fassen :latest nicht an.
+          case "$VERSION" in
+            *-*) echo "Prerelease $VERSION — :latest bleibt auf dem letzten Stable" ;;
+            *)   docker tag dmigrate/d-migrate:latest "${DOCKERHUB_IMAGE}:latest"
+                 docker push "${DOCKERHUB_IMAGE}:latest" ;;
+          esac
