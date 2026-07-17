@@ -5,10 +5,12 @@
 > Schritt-für-Schritt-Ablauf für GitHub-Release-Assets, OCI und Homebrew
 > sowie Rollback-Szenarien.
 >
-> Hinweis: Ein öffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
-> nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
+> Hinweis: Ein öffentlicher Library-Publish-Vertrag ist bewusst noch nicht Teil
+> dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
 > [`implementation-plan-0.9.1.md`](../planning/done-archive/implementation-plan-0.9.1.md)
-> beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
+> beschrieben; das Publishing folgt erst mit 1.0.0 — als Kanal ist seit
+> [ADR 0036](../adr/0036-library-artefakte-github-packages.md) **GitHub Packages**
+> gesetzt, nicht das ursprünglich geplante Maven-Central-Portal.
 >
 > **1.0.0-Artefaktklassifikation** (vorbereitet in 0.9.1 Phase G):
 >

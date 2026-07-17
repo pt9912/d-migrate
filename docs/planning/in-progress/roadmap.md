@@ -309,10 +309,11 @@ kritischen Orchestrierungs-/Dialekt-Hotspots (`Data*Runner`,
 Vertrag festschreibt.
 
 > Hinweis: Dieser Milestone bereitet wiederverwendbare Libraries für externe
-> Consumer wie `d-browser` vor. Ein öffentlicher Publish-Vertrag inklusive
-> Maven-Central-Portal-Workflow bleibt bewusst **1.0.0** vorbehalten, damit
-> Modulgrenzen, Koordinaten und API-Flächen erst nach dem Refactor
-> stabilisiert werden.
+> Consumer wie `d-browser` vor. Ein öffentlicher Publish-Vertrag bleibt bewusst
+> **1.0.0** vorbehalten, damit Modulgrenzen, Koordinaten und API-Flächen erst
+> nach dem Refactor stabilisiert werden. Der Kanal dafür ist seit
+> [ADR 0036](../../adr/0036-library-artefakte-github-packages.md) **GitHub
+> Packages** statt des ursprünglich vorgesehenen Maven-Central-Portals.
 
 ### Milestone 0.9.2 — Beta: DDL-Phasen und importfreundliche Schema-Artefakte
 
@@ -753,7 +754,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | Build    | GraalVM Native Image (Linux, macOS, Windows)                        | —      | ⛔      |
 | Build    | Docker Image auf Docker Hub                                         | —      | ⛔      |
 | Build    | SDKMAN-Distribution                                                 | —      | ⛔      |
-| Build    | Maven-Central-Portal Publish-Workflow für stabile Library-Artefakte | —      | ⛔      |
+| Build    | GitHub-Packages Publish-Workflow für stabile Library-Artefakte⁴     | —      | ⛔      |
 | Security | Externer Security-Audit                                             | —      | ⛔      |
 | QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust                   | 8.1    | ✅¹     |
 | QA       | DDL-Generierung 1.000 Tabellen < 30 Sekunden                        | 8.2    | ✅²     |
@@ -780,6 +781,19 @@ End-to-End-Zeilen-Parität über alle logischen Tabellen plus den drei 8.6-Typ-T
 (Serial→AUTO_INCREMENT→AUTOINCREMENT, Array→JSON→JSON, ENUM→ENUM→CHECK). Der Test deckte
 zugleich den SQLite-Generator-Bug W135 auf (Identity-Spalte in einem zusammengesetzten
 Primärschlüssel → ungültiges Doppel-PRIMARY-KEY-DDL), der im selben Zug behoben wurde.
+
+⁴ Kanalwechsel (2026-07-17,
+[ADR 0036](../../adr/0036-library-artefakte-github-packages.md)): Der ursprünglich geplante
+**Maven-Central-Portal**-Workflow entfällt; stabile Library-Artefakte werden über **GitHub
+Packages** veröffentlicht. Central verlangte für die Koordinate `dev.dmigrate` einen
+DNS-Nachweis der Domain `dmigrate.dev` (nicht verfügbar) oder einen Namespace-Wechsel, dazu
+GPG-Signing als Release-Dauerlast und unwiderrufliche Koordinaten — ein Preis, dem heute genau
+ein bekannter, projekteigener Consumer (`d-browser`) gegenübersteht. GitHub Packages nutzt
+dasselbe `GITHUB_TOKEN` wie der GHCR-Push. Bewusste Kehrseite: Konsumenten brauchen auch bei
+öffentlichen Paketen ein Token (`read:packages`) — der Library-Konsum ist damit ein Angebot an
+bekannte Consumer, kein offener Ökosystem-Kanal. Die Artefaktklassifikation in
+[`releasing.md`](../../user/releasing.md) bleibt gültig. Der Workflow selbst ist noch nicht
+gebaut, die Zeile bleibt daher ⛔.
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 
