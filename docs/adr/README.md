@@ -90,3 +90,4 @@ argumentiert werden.
 | 0034 | [Master-Key-Architektur für den verschlüsselten Credential-Store (LN-025)](0034-master-key-architektur-credential-store.md) | accepted |
 | 0035 | [Credential-Provider-Scheme-Registry (O4-Naht, LN-025 Slice 2)](0035-credential-provider-scheme-registry.md) | accepted |
 | 0036 | [Library-Artefakte über GitHub Packages statt Maven Central](0036-library-artefakte-github-packages.md) | accepted |
+| 0037 | [G2 — Port-Verträge tragen `NeutralType` statt JDBC-Typcodes](0037-g2-neutraler-transporttyp-statt-jdbc-typcodes.md) | proposed |
