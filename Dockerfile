@@ -390,7 +390,7 @@ ENTRYPOINT ["python3", "/usr/local/bin/kover-modules-summary.py", "/reports"]
 
 # ---- Stage 7: runtime ------------------------------------------------------
 # Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild
-FROM eclipse-temurin:21-jre-noble AS runtime
+FROM eclipse-temurin:25-jre-noble AS runtime
 
 
 LABEL org.opencontainers.image.title="d-migrate" \
