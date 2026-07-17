@@ -1,0 +1,55 @@
+# Dependabot keeps dependencies current and opens PRs for known CVEs.
+# Rationale and the security reporting channel: SECURITY.md
+version: 2
+
+updates:
+  # JVM dependencies. Versions live in gradle.properties and are consumed by
+  # 41 build.gradle.kts files; Dependabot resolves them across the build.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    groups:
+      # Patch/minor bumps are noise individually; batch them.
+      jvm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Major JDBC driver bumps change dialect behaviour and must be taken
+      # deliberately with the cross-dialect matrix, not via an automated PR.
+      - dependency-name: org.postgresql:postgresql
+        update-types: [version-update:semver-major]
+      - dependency-name: com.mysql:mysql-connector-j
+        update-types: [version-update:semver-major]
+      - dependency-name: org.xerial:sqlite-jdbc
+        update-types: [version-update:semver-major]
+
+  # GitHub Actions. Third-party actions run with repository credentials,
+  # so their updates are security-relevant.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # Docker base images used across the multi-stage Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - docker
