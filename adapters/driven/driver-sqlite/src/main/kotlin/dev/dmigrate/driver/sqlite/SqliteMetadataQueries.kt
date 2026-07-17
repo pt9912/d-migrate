@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.IndexSortDirection
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.*
 
@@ -47,7 +48,7 @@ object SqliteMetadataQueries {
     }
 
     fun listColumns(session: JdbcMetadataSession, table: String): List<ColumnProjection> {
-        val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table)})")
+        val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
         return rows.map { row ->
             val rawType = (row["type"] as? String) ?: ""
             ColumnProjection(
@@ -62,14 +63,14 @@ object SqliteMetadataQueries {
     }
 
     fun listPrimaryKeyColumns(session: JdbcMetadataSession, table: String): List<String> {
-        val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table)})")
+        val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
         return rows.filter { (it["pk"] as Number).toInt() > 0 }
             .sortedBy { (it["pk"] as Number).toInt() }
             .map { it["name"] as String }
     }
 
     fun listForeignKeys(session: JdbcMetadataSession, table: String): List<ForeignKeyProjection> {
-        val rows = session.queryList("PRAGMA foreign_key_list(${SqlIdentifiers.quoteStringLiteral(table)})")
+        val rows = session.queryList("PRAGMA foreign_key_list(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
         return rows.groupBy { it["id"] as Number }.map { (_, fkRows) ->
             val sorted = fkRows.sortedBy { (it["seq"] as Number).toInt() }
             val first = sorted.first()
@@ -85,7 +86,7 @@ object SqliteMetadataQueries {
     }
 
     fun listIndices(session: JdbcMetadataSession, table: String): List<IndexProjection> {
-        val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table)})")
+        val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
         return indexRows.mapNotNull { idx ->
             val indexName = idx["name"] as String
             // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints) —
@@ -120,7 +121,7 @@ object SqliteMetadataQueries {
      * PK autoindexes (`origin = 'pk'`) stay excluded.
      */
     fun listUniqueConstraintIndexes(session: JdbcMetadataSession, table: String): List<IndexProjection> {
-        val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table)})")
+        val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table, DatabaseDialect.SQLITE)})")
         return indexRows.mapNotNull { idx ->
             if ((idx["origin"] as? String) != "u") return@mapNotNull null
             val indexName = idx["name"] as String
@@ -132,7 +133,7 @@ object SqliteMetadataQueries {
 
     /** Key columns of an index (PRAGMA index_xinfo, `key = 1`, seqno-sortiert). */
     private fun keyColumnRows(session: JdbcMetadataSession, indexName: String): List<Map<String, Any?>> =
-        session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName)})")
+        session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName, DatabaseDialect.SQLITE)})")
             .filter { ((it["key"] as? Number)?.toInt() ?: 1) == 1 }
             .sortedBy { (it["seqno"] as Number).toInt() }
 

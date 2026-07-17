@@ -22,7 +22,8 @@ class SqliteSchemaIntrospectionAdapter(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
 ) : SchemaIntrospectionPort {
 
-    private fun ql(value: String): String = SqlIdentifiers.quoteStringLiteral(value)
+    private fun ql(value: String): String =
+        SqlIdentifiers.quoteStringLiteral(value, dev.dmigrate.driver.DatabaseDialect.SQLITE)
 
     private inline fun <T> withJdbc(pool: ConnectionPool, block: (JdbcOperations) -> T): T =
         pool.borrow().asJdbc().use { conn -> block(jdbcFactory(conn)) }

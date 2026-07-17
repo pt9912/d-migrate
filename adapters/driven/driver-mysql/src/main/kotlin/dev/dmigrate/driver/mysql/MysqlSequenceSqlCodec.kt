@@ -9,7 +9,7 @@ internal object MysqlSequenceSqlCodec {
         SqlIdentifiers.quoteIdentifier(value, DatabaseDialect.MYSQL)
 
     fun quoteStringLiteral(value: String): String =
-        SqlIdentifiers.quoteStringLiteral(value.replace("\\", "\\\\"))
+        SqlIdentifiers.quoteStringLiteral(value, DatabaseDialect.MYSQL)
 
     fun markerValue(value: String): String = buildString {
         value.toByteArray(Charsets.UTF_8).forEach { byte ->

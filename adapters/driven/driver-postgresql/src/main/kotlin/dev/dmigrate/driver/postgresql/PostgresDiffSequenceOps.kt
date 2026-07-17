@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 
 /**
@@ -154,7 +155,7 @@ internal object PostgresDiffSequenceOps {
         requireNotNull(isCalled) {
             "AlterSequenceCurrentValue on PG must carry isCalled (op-id=${op.id})"
         }
-        val literal = SqlIdentifiers.quoteStringLiteral(sequenceName)
+        val literal = SqlIdentifiers.quoteStringLiteral(sequenceName, DatabaseDialect.POSTGRESQL)
         ctx.emit(
             op,
             "SELECT setval($literal, $value, $isCalled);",

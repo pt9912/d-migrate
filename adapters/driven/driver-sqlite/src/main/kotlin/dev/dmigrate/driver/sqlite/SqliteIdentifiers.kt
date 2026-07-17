@@ -23,4 +23,4 @@ internal fun quoteSqliteIdentifier(name: String): String =
     dev.dmigrate.driver.SqlIdentifiers.quoteIdentifier(name, dev.dmigrate.driver.DatabaseDialect.SQLITE)
 
 internal fun quoteSqliteStringLiteral(value: String): String =
-    dev.dmigrate.driver.SqlIdentifiers.quoteStringLiteral(value)
+    dev.dmigrate.driver.SqlIdentifiers.quoteStringLiteral(value, dev.dmigrate.driver.DatabaseDialect.SQLITE)

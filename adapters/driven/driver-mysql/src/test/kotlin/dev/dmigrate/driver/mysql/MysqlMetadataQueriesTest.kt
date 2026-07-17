@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.metadata.JdbcOperations
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -461,7 +462,7 @@ class MysqlMetadataQueriesTest : FunSpec({
         val sequenceName = "odd seq\\'\u03a9"
         val tableName = "orders*/archive"
         val columnName = "invoice*/number"
-        val sequenceLiteral = SqlIdentifiers.quoteStringLiteral(sequenceName.replace("\\", "\\\\"))
+        val sequenceLiteral = SqlIdentifiers.quoteStringLiteral(sequenceName, DatabaseDialect.MYSQL)
 
         every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
             mapOf(

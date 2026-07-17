@@ -463,5 +463,5 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         colName: String,
         col: dev.dmigrate.core.model.ColumnDefinition,
         seqDefault: dev.dmigrate.core.model.DefaultValue.SequenceNextVal,
-    ): String = "DEFAULT nextval(${SqlIdentifiers.quoteStringLiteral(seqDefault.sequenceName)})"
+    ): String = "DEFAULT nextval(${SqlIdentifiers.quoteStringLiteral(seqDefault.sequenceName, DatabaseDialect.POSTGRESQL)})"
 }
