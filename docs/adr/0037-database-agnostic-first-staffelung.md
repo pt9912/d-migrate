@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-17
 decision-makers: pt9912
 consulted: spec/architecture.md, spec/lastenheft-d-migrate.md, docs/adr/0022-ports-jdbc-entkopplung.md, docs/adr/0028-a-check-architecture-gate-scope.md, docs/adr/0015-fulltext-tsvector-neutral-type.md, docs/planning/open/jdbc-kopplung-der-ports-ist-aufnahme.md
@@ -8,13 +8,15 @@ informed: hexagon/ports, hexagon/ports-common, hexagon/ports-read, hexagon/ports
 
 # „Database-Agnostic First": Zielbild bestätigt, Umsetzung nach 1.0.0
 
-> **Status: proposed (2026-07-17).** Vorschlag zur Ratifizierung; nichts hiervon ist beschlossen.
-> Diese ADR entscheidet **nicht**, wie die Ports datenbank-agnostisch werden. Sie entscheidet zwei
-> vorgelagerte Fragen: (1) ob das Leitprinzip „Database-Agnostic First" **verbindliches Zielbild
-> bleibt** — also *nicht* nachträglich auf „relationale Datenbanken über JDBC" eingegrenzt wird —
-> und (2) **wann** es eingelöst wird. Vorgeschlagen: Zielbild bleibt, Umsetzung **nach 1.0.0**.
-> Bis dahin ist die JDBC-Bindung des Treiber-Ports eine **benannte, ratifizierte Ausnahme** statt
-> eines unbemerkten Widerspruchs.
+> **Status: accepted (2026-07-17).** Diese ADR entscheidet **nicht**, wie die Ports
+> datenbank-agnostisch werden. Sie entscheidet zwei vorgelagerte Fragen: (1) Das Leitprinzip
+> „Database-Agnostic First" **bleibt verbindliches Zielbild** — es wird *nicht* nachträglich auf
+> „relationale Datenbanken über JDBC" eingegrenzt. (2) Eingelöst wird es **nach 1.0.0**, als eigenes
+> Architekturvorhaben. Bis dahin ist die JDBC-Bindung des Treiber-Ports eine **benannte, ratifizierte
+> Ausnahme** statt eines unbemerkten Widerspruchs.
+>
+> Der Konjunktiv in „Konsequenzen" ist beabsichtigt: die Entscheidung ist getroffen, ihre Umsetzung
+> steht aus (s. „Entscheidung"), die dort beschriebenen Wirkungen treten erst mit ihr ein.
 
 ## Kontext und Problemstellung
 
@@ -103,7 +105,7 @@ Abstand geschlossen?
 
 ## Entscheidung
 
-**Vorgeschlagen: Z2.**
+**Gewählt: Z2.**
 
 Das Leitprinzip bleibt unverändert und unqualifiziert gültig; es wird **nicht** auf „relational über
 JDBC" heruntergestuft. Die Einlösung erfolgt **nach 1.0.0** als eigenes Architekturvorhaben, dessen
