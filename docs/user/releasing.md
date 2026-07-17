@@ -57,6 +57,7 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 | Schreibrechte auf `main` und Tags im Remote   | —                                                                             |
 | Alle PRs für den Release sind gemerged        | GitHub-Milestone leer                                                         |
 | `HOMEBREW_TAP_GITHUB_TOKEN` nicht abgelaufen  | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — fine-grained PATs laufen ab; ein abgelaufener Token lässt den Tag-Publish mit `401` scheitern (nur der Homebrew-Tap-Push, nicht der GitHub-Release) |
+| `DOCKERHUB_TOKEN` vorhanden und nicht abgelaufen | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — Docker-Hub-PATs können ablaufen. **Fehlt** das Secret, wird der Docker-Hub-Push **still übersprungen** (grüner Build, kein Image, s. [4.4.1](#441-docker-hub-spiegel)); ist es **abgelaufen**, scheitert der Login und der Tag-Build wird rot |
 
 ---
 
@@ -449,9 +450,10 @@ git push origin vX.Y.Z
 5. Jib baut OCI-Image (`./gradlew :adapters:driving:cli:jibDockerBuild`)
 6. Login zu `ghcr.io` mit `GITHUB_TOKEN`
 7. Push zu `ghcr.io/pt9912/d-migrate:X.Y.Z` und `ghcr.io/pt9912/d-migrate:latest`
-8. Nur wenn das Secret `DOCKERHUB_TOKEN` gesetzt ist: derselbe Image-Push zusätzlich
-   nach Docker Hub (s. [4.4.1](#441-docker-hub-spiegel-optional)). Ohne das Secret
-   werden diese Schritte übersprungen — der Tag-Build bleibt grün.
+8. Login zu Docker Hub und derselbe Image-Push nach `pt9912/d-migrate:X.Y.Z`
+   (plus `:latest` bei Stable) — s. [4.4.1](#441-docker-hub-spiegel). Fehlt das
+   Secret `DOCKERHUB_TOKEN`, werden diese Schritte still übersprungen und der
+   Tag-Build bleibt grün.
 
 Auf den grünen Tag-Build warten, **bevor** der GitHub-Release veröffentlicht
 wird:
@@ -460,17 +462,28 @@ wird:
 gh run watch
 ```
 
-#### 4.4.1 Docker Hub-Spiegel (optional)
+#### 4.4.1 Docker-Hub-Spiegel
 
 Docker Hub ist ein **Spiegel**, keine zweite Build-Quelle: gepusht wird exakt
 dasselbe lokal gebaute Image, das auch nach GHCR geht. `ghcr.io` bleibt die
-Referenz-Registry, auf die README und Handbücher verweisen.
+Referenz-Registry, auf die README und Handbücher verweisen. Die `:latest`-Regel
+ist identisch zu GHCR: Prerelease-Tags (Version enthält ein `-`, etwa
+`v1.0.0-RC1`) aktualisieren `:latest` **nicht**.
+
+**Eingerichtet** (2026-07-17): Ziel-Repository ist das öffentliche
+[`pt9912/d-migrate`](https://hub.docker.com/r/pt9912/d-migrate); die Secrets
+liegen im GitHub-Repository. Es ist **keine Handarbeit pro Release nötig** — der
+Tag-Build pusht von allein.
 
 Der Push ist an die Präsenz des Secrets `DOCKERHUB_TOKEN` gekoppelt. Ist es nicht
-gesetzt, überspringt der Tag-Build die Docker-Hub-Schritte mit einer Notice —
-absichtlich, damit ein fehlender Zusatzkanal keinen Release rot macht.
+gesetzt (Fork, abgelaufenes oder rotiertes Token), überspringt der Tag-Build die
+Docker-Hub-Schritte mit einer Notice, statt rot zu werden — ein Zusatzkanal soll
+keinen Release blockieren. Kehrseite: **ein stillschweigend übersprungener Push
+fällt nicht auf**, deshalb steht der Docker-Hub-Pull fest in der
+Verifikationsliste ([4.8](#48-verifikation-des-releases)).
 
-Einmalige Einrichtung (nicht automatisierbar, erfordert ein Docker-Hub-Konto):
+Einrichtung von Grund auf — nur nötig, falls Konto, Repository oder Token neu
+aufgesetzt werden müssen:
 
 1. Auf [hub.docker.com](https://hub.docker.com) anmelden und das Repository
    `pt9912/d-migrate` anlegen (Public).
@@ -480,11 +493,8 @@ Einmalige Einrichtung (nicht automatisierbar, erfordert ein Docker-Hub-Konto):
    hinterlegen:
    - Secret `DOCKERHUB_USERNAME` — der Docker-Hub-Benutzername
    - Secret `DOCKERHUB_TOKEN` — das Token aus Schritt 2
-4. Optional Variable `DOCKERHUB_IMAGE`, falls das Ziel-Repository später von
+4. Optional Variable `DOCKERHUB_IMAGE`, falls das Ziel-Repository von
    `pt9912/d-migrate` abweichen soll (z. B. nach Umzug in eine Organisation).
-
-Die `:latest`-Regel ist identisch zu GHCR: Prerelease-Tags (Version enthält ein
-`-`, etwa `v1.0.0-RC1`) aktualisieren `:latest` **nicht**.
 
 ### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
 
@@ -644,9 +654,10 @@ anschließend als verifizierten Repo-Stand nachziehen.
   ```bash
   docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z --help
   ```
-- [ ] Nur wenn der Docker-Hub-Spiegel eingerichtet ist
-      (s. [4.4.1](#441-docker-hub-spiegel-optional)):
-      `docker pull pt9912/d-migrate:X.Y.Z` und `docker run --rm pt9912/d-migrate:X.Y.Z --help`
+- [ ] Docker-Hub-Spiegel ([4.4.1](#441-docker-hub-spiegel)) trägt dieselbe Version:
+      `docker pull pt9912/d-migrate:X.Y.Z` und `docker run --rm pt9912/d-migrate:X.Y.Z --help`.
+      Schlägt der Pull fehl, wurde der Push still übersprungen (Secret) — Tag-Build-Log
+      auf die Notice prüfen
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
 - [ ] CI ist auf `main` und auf dem Tag grün
 
@@ -663,17 +674,18 @@ Post-Release (§5) zurück auf die nächste Vorab-Entwicklungsversion, z. B.
 
 **Was die Pipeline für Prerelease-Tags abweichend tut** (automatisch, keine Handarbeit):
 
-- **Kein GHCR `:latest`** — [`build.yml`](../../.github/workflows/build.yml) pusht nur das
-  versionierte Tag; `:latest` bleibt auf dem letzten **Stable**.
+- **Kein `:latest`, in keiner Registry** — [`build.yml`](../../.github/workflows/build.yml) pusht
+  nur das versionierte Tag; `:latest` bleibt auf GHCR **und** auf dem
+  [Docker-Hub-Spiegel](#441-docker-hub-spiegel) auf dem letzten **Stable**.
 - **GitHub-Release als `--prerelease`** markiert
   ([`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) — erscheint nicht
   als „Latest release".
 - **Kein Homebrew-Tap-Update** und **kein `verify-homebrew`** — Homebrew trackt nur Stable.
 
-**Folge:** Die Homebrew-Schritte (§4.7) **entfallen** beim RC. Bei der Verifikation (§4.8) das
-**versionierte** GHCR-Tag ziehen (nicht `:latest`), den Homebrew-Punkt überspringen und prüfen,
-dass der GitHub-Release als Prerelease markiert ist. RC-Nutzer beziehen die Vorabversion über das
-versionierte GHCR-Tag bzw. den GitHub-Prerelease.
+**Folge:** Die Homebrew-Schritte (§4.7) **entfallen** beim RC. Bei der Verifikation (§4.8) die
+**versionierten** Image-Tags ziehen (nicht `:latest`) — GHCR und Docker Hub —, den Homebrew-Punkt
+überspringen und prüfen, dass der GitHub-Release als Prerelease markiert ist. RC-Nutzer beziehen
+die Vorabversion über das versionierte GHCR-Tag bzw. den GitHub-Prerelease.
 
 ---
 
@@ -732,17 +744,29 @@ gh release delete vX.Y.Z --yes
 # danach 6.2 ausführen, falls auch der Tag weg soll
 ```
 
-### 6.4 Image im GHCR überschreiben oder löschen
+### 6.4 Image überschreiben oder löschen (GHCR **und** Docker Hub)
+
+Ein fehlerhaftes Image liegt in **zwei** Registries — beide müssen bereinigt
+werden. Ein erneuter Tag-Push erledigt beide auf einmal, weil derselbe Job
+([`build.yml`](../../.github/workflows/build.yml)) in beide pusht:
 
 ```bash
-# Alternative 1: Image-Version löschen (Web-UI: Packages → d-migrate → Versions → Delete)
-# Alternative 2: Tag neu pushen — die CI baut und überschreibt automatisch
+# Alternative 1: Tag neu pushen — die CI baut und überschreibt in BEIDEN Registries
 git push --delete origin vX.Y.Z
 git push origin vX.Y.Z   # frischer Tag-Push triggert den Workflow
 ```
 
-`:latest` wird beim nächsten Tag-Push automatisch überschrieben — falls der
-korrupte Tag der jüngste war, sollte schnell ein Hotfix-Tag folgen.
+Alternative 2 — manuell löschen, dann **je Registry einzeln**:
+
+- **GHCR**: Web-UI → Packages → `d-migrate` → Versions → Delete
+- **Docker Hub**: Web-UI → [`pt9912/d-migrate`](https://hub.docker.com/r/pt9912/d-migrate)
+  → Tags → Delete
+
+`:latest` wird beim nächsten Tag-Push in beiden Registries automatisch
+überschrieben — falls der korrupte Tag der jüngste war, sollte schnell ein
+Hotfix-Tag folgen. Achtung: Ist der Docker-Hub-Push wegen eines fehlenden
+Secrets übersprungen worden ([4.4.1](#441-docker-hub-spiegel)), liegt das
+korrupte Image dort gar nicht — dann ist nur GHCR zu bereinigen.
 
 ### 6.5 Build nach Release fehlschlägt (rote CI auf `main`)
 
@@ -812,12 +836,14 @@ Für jeden Release abhaken:
 - [ ] CI für Tag grün
 - [ ] Workflow-Artefakt `release-assets` des grünen Tag-Builds verfügbar
 - [ ] Image auf `ghcr.io/pt9912/d-migrate:X.Y.Z` und `:latest` verfügbar
+- [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
 - [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
+- [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
 - [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)
