@@ -12,27 +12,34 @@
 
 **Datum:** 2026-07-17 · **Umfang:** Vollaudit über 12 Angriffsflächen (credential-store, mcp-auth, mcp-surface, sql-injection, jdbc-url, secret-leakage, path-traversal, s3-storage, deserialization, crypto, runtime-packaging, supply-chain) · **Verfahren:** Befund → 3-fache unabhängige Gegenprüfung (code-reality / exploitability / adr-context) → Severity-Konsens
 
-## Noch nicht wirksam: zwei GitHub-Schalter
+## Wirksamkeit der Security-Infrastruktur (Stand 2026-07-17)
 
-`SECURITY.md` und `.github/dependabot.yml` sind mit dem Audit angelegt worden,
-aber **GitHub liest beide ausschließlich vom Default-Branch `main`**. Auf
-`develop` sind sie wirkungslos. Das ist bewusst so entschieden (2026-07-17):
-der Branch-Workflow bleibt unangetastet, beide Dateien fließen mit dem
-regulären `develop` → `main`-Merge des 1.0.0-Releases mit (Schritt 4.3 in
-[`releasing.md`](../../user/releasing.md)) — dafür ist **kein** Sonderschritt
-in der Release-Prozedur nötig.
+**GitHub liest `SECURITY.md` und `.github/dependabot.yml` ausschließlich vom
+Default-Branch `main`** — auf `develop` sind sie wirkungslos. Das ist der Grund,
+warum die beiden Dateien unterschiedlich weit sind:
 
-**Zwei Dinge erledigt der Merge aber nicht** — sie sind Repo-Einstellungen und
-müssen von Hand gesetzt werden (Settings → Security and quality):
+| Artefakt | Stand |
+| -------- | ----- |
+| `.github/dependabot.yml` | **live auf `main`** (`64de223d`), byte-identisch zur Fassung auf `develop` — der Release-Merge ist für diese Datei ein No-op |
+| `SECURITY.md` | nur auf `develop`; GitHub zeigt „Security policy" bis zum 1.0.0-Merge als *Disabled*. Bewusst so — kommt mit Schritt 4.3 in [`releasing.md`](../../user/releasing.md) regulär mit, **kein** Sonderschritt nötig |
 
-- **Private vulnerability reporting** (derzeit *Disabled*) — solange es aus ist,
-  existiert der in `SECURITY.md` beschriebene „Report a vulnerability"-Button
-  nicht, und der Meldekanal läuft ins Leere. Kann sofort aktiviert werden,
-  unabhängig vom Release.
-- **Dependabot alerts** (derzeit *Disabled*) — ein **separater** Schalter.
-  `.github/dependabot.yml` konfiguriert nur Versions-Updates; die Warnung bei
-  bekannten CVEs in vorhandenen Dependencies hängt an diesem Toggle. Ohne ihn
-  bleibt die im supply-chain-Abschnitt bemängelte Lücke offen.
+**Repo-Einstellungen** (Settings → Security and quality). Ein Merge erledigt
+davon nichts; die Kette ist reihenfolge-abhängig, weil jede Stufe auf der
+vorigen sitzt:
+
+| Stufe | Stand | Bedeutung |
+| ----- | ----- | --------- |
+| Private vulnerability reporting | ✅ aktiv | Der in `SECURITY.md` beschriebene Meldekanal existiert. Funktioniert unabhängig von `main` |
+| Dependency graph | ✅ aktiv | Unterbau: ohne ihn wissen Alerts nicht, welche Dependencies existieren |
+| Automatic dependency submission | ❌ offen | **Für dieses Repo nicht optional.** 94 der 105 Dependencies deklarieren ihre Version dynamisch als `${rootProject.properties["…"]}` aus `gradle.properties`; ein statischer Parser kann das nicht auflösen. Ohne diese Option sieht der Graph nur die 11 literalen Versionen — und Alerts sind exakt so gut wie der Graph darunter |
+| Dependabot alerts | ❌ offen | Der eigentliche Sicherheitsgewinn: Warnung bei bekannten CVEs in vorhandenen Dependencies. Genau die im supply-chain-Abschnitt bemängelte Lücke |
+| Dependabot version updates | aktiviert | Liest `dependabot.yml`; wirkt, seit die Datei auf `main` liegt |
+
+Anmerkung zu **Dependabot security updates** (auto-PRs für Alerts, derzeit aus):
+Security-Updates ignorieren die `ignore`-Regeln der `dependabot.yml`. Bei einem
+CVE in einem JDBC-Treiber kommt der Major-Bump-PR also trotzdem — die bewusste
+Ausnahme „JDBC-Majors nur über die Cross-Dialect-Matrix" greift dort nicht.
+Vermutlich richtig so, sollte aber nicht überraschen.
 
 **Ausgeschnittene Tickets** — gruppiert nach gemeinsamer Wurzel bzw. Fix-Ort,
 nicht eins-je-Befund, damit ein Fix nicht über mehrere Einträge zersplittert:
