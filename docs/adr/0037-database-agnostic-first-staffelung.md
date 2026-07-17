@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-07-17
 decision-makers: pt9912
-consulted: spec/architecture.md, spec/lastenheft-d-migrate.md, docs/adr/0022-ports-jdbc-entkopplung.md, docs/adr/0028-a-check-architecture-gate-scope.md, docs/adr/0015-fulltext-tsvector-neutral-type.md, docs/planning/open/g2-neutrales-typmodell-jdbc-typcodes.md
+consulted: spec/architecture.md, spec/lastenheft-d-migrate.md, docs/adr/0022-ports-jdbc-entkopplung.md, docs/adr/0028-a-check-architecture-gate-scope.md, docs/adr/0015-fulltext-tsvector-neutral-type.md, docs/planning/open/jdbc-kopplung-der-ports-ist-aufnahme.md
 informed: hexagon/ports, hexagon/ports-common, hexagon/ports-read, hexagon/ports-write, hexagon/profiling, adapters/driven/driver-common, adapters/driven/formats, adapters/driven/streaming
 ---
 
@@ -185,5 +185,5 @@ damit der natürliche erste Angriffspunkt des Vorhabens.
 - [ADR 0022](0022-ports-jdbc-entkopplung.md) — neutralisierte die Connection; die URL blieb.
 - [ADR 0028](0028-a-check-architecture-gate-scope.md) — Ursprung der `jdbcType`-Interop-Ausnahme.
 - [ADR 0015](0015-fulltext-tsvector-neutral-type.md) — „first class statt Passthrough".
-- [`g2-neutrales-typmodell-jdbc-typcodes.md`](../planning/open/g2-neutrales-typmodell-jdbc-typcodes.md)
-  — Ist-Aufnahme der Typcode-Fläche.
+- [`jdbc-kopplung-der-ports-ist-aufnahme.md`](../planning/open/jdbc-kopplung-der-ports-ist-aufnahme.md)
+  — verifizierte Faktenlage: Ursache, Symptome und Fläche.

@@ -151,11 +151,6 @@ Zusätzlich, durch eine **Architektur-Fitness-Function** (Gate) statt durch Grad
   Produktive Driving-Quellen enthalten keine `java.sql`-/`javax.sql`-Imports,
   keine produktiven `java.sql.`-/`javax.sql.`-FQNs, kein `asJdbc` und keine
   direkte `JdbcDatabaseConnection`-Nutzung.
-- `jdbcType: Int` bleibt vorerst eine eng begrenzte Interop-/Persistenz-
-  Ausnahme in Transfer- und Formatverträgen (`TargetColumn`, `JdbcTypeHint`,
-  Parquet-Manifest-/Bundle-Vertrag). Das ist kein neutrales Typmodell und kein
-  Präzedenzfall für `hexagon:core`; eine vollständige Typcode-Neutralisierung
-  ist ein eigener G2-Slice.
 
 ### 1.3 Leitprinzipien
 
