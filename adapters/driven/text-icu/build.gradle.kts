@@ -9,7 +9,7 @@
 dependencies {
     api(project(":hexagon:ports-common"))
 
-    implementation("com.ibm.icu:icu4j:76.1")
+    implementation("com.ibm.icu:icu4j:78.3")
 
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 }
