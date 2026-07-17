@@ -128,9 +128,16 @@ Von 27 gemeldeten Befunden haben 18 die Gegenprüfung überlebt, 9 wurden als Fa
 
 ## P1 — Sofort beheben
 
+> **Beide P1 BEHOBEN 2026-07-17** (`447a9006` MySQL-Backslash, `d8b6d2de`
+> Export-Traversal; Docker `build koverVerify` je grün). Details in den Tickets
+> [`mysql-string-literal-backslash-escaping.md`](mysql-string-literal-backslash-escaping.md)
+> und [`export-filename-untrusted-identifier.md`](export-filename-untrusted-identifier.md).
+> Beim MySQL-Fix aufgetauchter, getrennt zu lösender Folgebefund (P2):
+> [`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md).
+
 ### 1. MySQL-DEFAULT-String-Literale escapen keinen Backslash → SQL-Injection aus fremdem Quell-Schema
 
-**Severity:** P1 · **CWE-89** · **Fläche:** sql-injection
+**Severity:** P1 · **CWE-89** · **Fläche:** sql-injection · **Status:** ✅ behoben (`447a9006`)
 
 **Fundstellen:**
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlTypeMapper.kt:49` (Defekt)
@@ -171,7 +178,7 @@ Backslash-Verdopplung dialekt-bewusst in `SqlIdentifiers.quoteStringLiteral` zie
 
 ### 2. Path-Traversal beim FilePerTable-Export: Tabellenname aus der untrusted Quell-DB wird ungeprüft zum Dateinamen
 
-**Severity:** P1 · **CWE-22** · **Fläche:** path-traversal
+**Severity:** P1 · **CWE-22** · **Fläche:** path-traversal · **Status:** ✅ behoben (`d8b6d2de`)
 
 **Fundstellen:**
 - `adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/StreamingExporter.kt:262` (sequentieller Pfad)

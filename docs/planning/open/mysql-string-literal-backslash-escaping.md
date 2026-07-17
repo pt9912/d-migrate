@@ -1,12 +1,22 @@
 # MySQL-String-Literale: Backslash-Escaping fehlt im DDL-Renderpfad (P1)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** BEHOBEN 2026-07-17 (`447a9006`)
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befund 1 = P1
-> und Befund 3 = P2). Beide teilen dieselbe Wurzel und werden gemeinsam
-> geschnitten, weil ein einziger Fix sie erledigt.
-> **Aktivierungsbedingung:** P1 — sollte vor 1.0.0-final priorisiert werden
-> → `next/`-Plan.
+> und Befund 3 = P2). Beide teilten dieselbe Wurzel und wurden gemeinsam
+> gelöst.
+>
+> **Umsetzung:** `SqlIdentifiers.quoteStringLiteral(value, dialect)` ist
+> dialekt-bewusst (MySQL verdoppelt Backslashes, PG/SQLite SQL-standardkonform);
+> Pflicht-Parameter statt Default. Beide Inline-Bug-Stellen
+> (`MysqlTypeMapper.toDefaultSql`, `MysqlEnumColumnRenderer.inline`) laufen
+> darüber, ~16 Aufrufer tragen ihren Dialekt, `MysqlSequenceSqlCodec` wurde zum
+> Wrapper. Tests: `SqlIdentifiersTest` (Backslash-Verdopplung/Breakout) +
+> `MysqlTypeMapperTest` (Bug-Stelle direkt). Docker `build koverVerify` grün.
+>
+> **Ausgeschnitten:** Der `PartitionLiteralGuard`-Punkt (unten AP4) ist eine
+> eigene Lücke mit anderem Fix-Mechanismus →
+> [`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md) (P2).
 
 ## Befund
 

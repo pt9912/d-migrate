@@ -1,10 +1,19 @@
 # Path-Traversal: Tabellenname aus untrusted Quell-DB wird zum Dateinamen (P1)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** BEHOBEN 2026-07-17 (`d8b6d2de`)
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befund 2 = P1).
-> **Aktivierungsbedingung:** P1 — sollte vor 1.0.0-final priorisiert werden
-> → `next/`-Plan.
+>
+> **Umsetzung:** `ExportOutput.resolveFileFor(directory, table, format)` löst auf,
+> normalisiert und verlangt `resolved.parent == base` — das fängt `..`-Traversal,
+> absolute Pfade und Unterverzeichnis-Trenner in einer Bedingung. Bei Ausbruch
+> laute `IllegalArgumentException` (Tabelle genannt); der bestehende
+> Top-Level-Export-`catch` mappt auf Fehler-Exit. Beide Schreibpfade (sequenziell
+> + parallel) validieren **alle** Namen vorab (Fail-fast vor jedem Schreiben).
+> Strategie „Containment + laut fehlschlagen" (nicht Sanitizing/Allowlist) —
+> legitime Sonderzeichen-Namen exportieren weiter. Tests in `StreamingPortsTest`
+> (ports-writes eigenes Modul, damit koverVerify die Funktion deckt). Docker
+> `build koverVerify` grün.
 
 ## Befund
 
