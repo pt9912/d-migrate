@@ -1,92 +1,94 @@
-# Security Policy
+# Sicherheitsrichtlinie
 
-## Reporting a Vulnerability
+## Schwachstellen melden
 
-**Please do not report security vulnerabilities through public GitHub
-issues, discussions, or pull requests.**
+**Bitte melden Sie Sicherheitslücken nicht über öffentliche GitHub-Issues,
+Diskussionen oder Pull Requests.**
 
-Report vulnerabilities through GitHub's private vulnerability reporting:
+Nutzen Sie stattdessen GitHubs private Schwachstellenmeldung:
 
-1. Go to the [Security tab](https://github.com/pt9912/d-migrate/security)
-2. Click **Report a vulnerability**
+1. Zum [Security-Tab](https://github.com/pt9912/d-migrate/security) gehen
+2. **Report a vulnerability** anklicken
 
-This creates a private advisory visible only to the maintainers.
+Das erzeugt ein privates Advisory, das nur die Maintainer sehen.
 
-Please include:
+Bitte geben Sie an:
 
-- The affected version (`d-migrate --version`) and dialect
-  (PostgreSQL / MySQL / SQLite), if relevant
-- A description of the issue and its impact
-- Steps to reproduce — a minimal schema YAML or CLI invocation is ideal
-- Any suggested mitigation you are aware of
+- Die betroffene Version (`d-migrate --version`) und, falls relevant, den
+  Dialekt (PostgreSQL / MySQL / SQLite)
+- Eine Beschreibung des Problems und seiner Auswirkung
+- Schritte zur Reproduktion — ideal ist ein minimales Schema-YAML oder ein
+  CLI-Aufruf
+- Eine Gegenmaßnahme, falls Sie eine kennen
 
-You can expect an initial response within **7 days**. We will keep you
-informed about the progress toward a fix and may ask for additional
-detail. Once a fix is released, we will credit you in the advisory
-unless you prefer to remain anonymous.
+Sie erhalten binnen **7 Tagen** eine erste Rückmeldung. Wir halten Sie über den
+Fortschritt zur Behebung auf dem Laufenden und fragen gegebenenfalls nach
+weiteren Details. Sobald ein Fix veröffentlicht ist, nennen wir Sie im Advisory
+— außer Sie möchten anonym bleiben.
 
-## Supported Versions
+## Unterstützte Versionen
 
-Security fixes are applied to the latest release line only. d-migrate
-has not yet reached 1.0.0; older minor versions do not receive
-backports.
+Sicherheitsfixes fließen ausschließlich in die aktuelle Release-Linie.
+d-migrate hat 1.0.0 noch nicht erreicht; ältere Minor-Versionen erhalten keine
+Backports.
 
-| Version   | Supported          |
-| --------- | ------------------ |
-| 1.0.0-RC  | ✅                 |
-| 0.9.x     | ❌ (upgrade to 1.0.0-RC) |
+| Version   | Unterstützt                    |
+| --------- | ------------------------------ |
+| 1.0.0-RC  | ✅                             |
+| 0.9.x     | ❌ (Upgrade auf 1.0.0-RC nötig) |
 
-## Threat Model
+## Bedrohungsmodell
 
-Knowing what d-migrate does and does not defend against will help you
-judge whether a given behaviour is a vulnerability.
+Wogegen d-migrate sich verteidigt und wogegen nicht — das hilft Ihnen zu
+beurteilen, ob ein beobachtetes Verhalten eine Schwachstelle ist.
 
-d-migrate is an operator-run tool. It is a CLI (and an MCP server)
-that an operator runs against databases they are authorised to access.
-The operator is **not** the adversary — the operator can already read
-their own connection credentials and issue arbitrary SQL against their
-own databases, so "the operator can see their own password" is not a
-vulnerability.
+d-migrate ist ein Werkzeug, das ein Operator selbst ausführt: eine CLI (und ein
+MCP-Server), die gegen Datenbanken laufen, auf die er ohnehin zugriffsberechtigt
+ist. **Der Operator ist nicht der Angreifer** — er kann seine eigenen
+Verbindungs-Credentials bereits lesen und beliebiges SQL gegen seine eigenen
+Datenbanken absetzen. „Der Operator kann sein eigenes Passwort sehen" ist daher
+keine Schwachstelle.
 
-**Untrusted inputs** — d-migrate is expected to defend against these:
+**Nicht vertrauenswürdige Eingaben** — hiergegen soll d-migrate sich verteidigen:
 
-- **The source database.** Schema and data read from a database are
-  untrusted. A database whose contents an attacker controls must not be
-  able to compromise the machine running d-migrate, nor inject SQL into
-  the target database. Identifiers such as table and column names are
-  the sharpest edge here.
-- **Input files.** Schema YAML, data files (CSV, JSON, Parquet), and
-  configuration files may come from an untrusted source.
-- **MCP requests.** When running `mcp serve`, requests and tool
-  parameters are untrusted. See
-  [ADR 0009](docs/adr/0009-mcp-resource-server-no-auth-server.md) for
-  the authentication model: d-migrate acts as a resource server and
-  validates externally issued tokens; it is deliberately not an
-  authorisation server.
-- **Credential storage.** The credential store
+- **Die Quell-Datenbank.** Schema und Daten, die aus einer Datenbank gelesen
+  werden, sind nicht vertrauenswürdig. Eine Datenbank, deren Inhalt ein
+  Angreifer kontrolliert, darf weder die Maschine kompromittieren, auf der
+  d-migrate läuft, noch SQL in die Zieldatenbank einschleusen. Die schärfste
+  Kante sind hier Identifier wie Tabellen- und Spaltennamen.
+- **Eingabedateien.** Schema-YAML, Datendateien (CSV, JSON, Parquet) und
+  Konfigurationsdateien können aus nicht vertrauenswürdiger Quelle stammen.
+- **MCP-Requests.** Bei laufendem `mcp serve` sind Requests und Tool-Parameter
+  nicht vertrauenswürdig. Das Authentifizierungsmodell beschreibt
+  [ADR 0009](docs/adr/0009-mcp-resource-server-no-auth-server.md): d-migrate ist
+  ein Resource-Server, der extern ausgestellte Token validiert — bewusst kein
+  Authorisierungsserver.
+- **Credential-Speicherung.** Der Credential-Store
   ([ADR 0034](docs/adr/0034-master-key-architektur-credential-store.md),
-  [ADR 0035](docs/adr/0035-credential-provider-scheme-registry.md))
-  protects credentials at rest against an attacker with read access to
-  the file, not against an attacker who already controls the operator's
-  session.
+  [ADR 0035](docs/adr/0035-credential-provider-scheme-registry.md)) schützt
+  Credentials im Ruhezustand gegen einen Angreifer mit Lesezugriff auf die
+  Datei — nicht gegen einen Angreifer, der die Sitzung des Operators bereits
+  kontrolliert.
 
-**Out of scope:**
+**Außerhalb des Bedrohungsmodells:**
 
-- Attacks requiring the operator's own privileges on their own machine
-- Denial of service against the local CLI process by its own operator
-- Vulnerabilities in the target databases themselves, or in the JDBC
-  drivers (report those upstream; tell us too if we can mitigate)
-- Deliberate design decisions recorded in `docs/adr/`. If you believe an
-  ADR's security reasoning is wrong, that is worth reporting — say which
-  ADR and why.
+- Angriffe, die die Rechte des Operators auf seiner eigenen Maschine
+  voraussetzen
+- Denial of Service gegen den lokalen CLI-Prozess durch den eigenen Operator
+- Schwachstellen in den Zieldatenbanken selbst oder in den JDBC-Treibern (bitte
+  dort upstream melden; sagen Sie uns trotzdem Bescheid, falls wir abmildern
+  können)
+- Bewusste Designentscheidungen, die in `docs/adr/` festgehalten sind. Wenn Sie
+  die Sicherheitsbegründung einer ADR für falsch halten, ist das sehr wohl eine
+  Meldung wert — nennen Sie die ADR und Ihre Begründung.
 
-## Security Measures
+## Sicherheitsmaßnahmen
 
-The build enforces several security gates, all runnable locally:
+Der Build erzwingt mehrere Sicherheits-Gates, die alle lokal laufen:
 
-- `make semgrep` — static analysis with a pinned, SHA256-verified
-  ruleset, run hermetically (`--network none`)
-- `make gates` — the full gate suite
+- `make semgrep` — statische Analyse mit gepinntem, SHA256-verifiziertem
+  Regelsatz, hermetisch ausgeführt (`--network none`)
+- `make gates` — die vollständige Gate-Suite
 
-Accepted findings are annotated inline with `# nosemgrep: <rule-id>`
-and a rationale.
+Bewusst akzeptierte Befunde sind inline mit `# nosemgrep: <rule-id>` und einer
+Begründung annotiert.
