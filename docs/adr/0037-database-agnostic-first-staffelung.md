@@ -40,13 +40,22 @@ verlangt von **jedem** Treiber, ohne Default:
 | `ddlGenerator(): DdlGenerator` | SQL-DDL |
 | `tableLister(): TableLister` | Tabellen |
 | `schemaReader(): SchemaReader` | ein relationales Schema |
-| `dataReader(fetchSize: Int?)` | JDBC-Cursor-Prefetch (so das KDoc) |
+| `dataReader(): DataReader` | einen SQL-Lesepfad |
+| `dataWriter(): DataWriter` | einen SQL-Schreibpfad |
 
 Formal ist `JdbcUrlBuilder` ein Interface, ein Nicht-JDBC-Treiber *könnte* es also implementieren.
 Praktisch müsste er aus einer Methode namens `baseJdbcUrl` etwas zurückgeben, das keine JDBC-URL
 ist, und einen `DdlGenerator` liefern, der wirft. **Der Port abstrahiert nicht, er diktiert** — er
 ist nur mit Lügen erfüllbar. Ein Redis- oder Neo4j-Adapter ist damit nicht „noch nicht gebaut",
 sondern vom Vertrag ausgeschlossen.
+
+**Der Port kann Optionalität allerdings ausdrücken — er tut es nur selten.** `dataReader(fetchSize:
+Int?)` trägt einen Default (`= dataReader()`), dessen KDoc ausdrücklich festhält, dass die
+Default-Implementierung den Wert ignoriert und „nur die JDBC-Treiber" ihn auswerten. Dieselbe
+Bauform haben `transferCompatibility()`, `typeCanonicalizer()` und `preGenerationValidator()`. Das
+ist genau die Gestalt, auf die das Post-1.0.0-Vorhaben hinauswill: eine Fähigkeit, die ein Treiber
+anbieten **kann**, statt einer, die er erfüllen **muss**. Die Bauform existiert also bereits — sie
+ist nur an den sechs tragenden Mitgliedern nicht angewandt.
 
 Dieselbe Krankheit in kleinerer Ausprägung tragen die Typcode-Felder:
 `TargetColumn.jdbcType: Int` (`ports-write`), `JdbcTypeHint.jdbcType: Int` und `JdbcTypeCodes`
@@ -57,6 +66,14 @@ Bemerkenswert: [ADR 0022](0022-ports-jdbc-entkopplung.md) hat genau diese Bewegu
 ersetzte `java.sql.Connection` durch ein neutrales `DatabaseConnection`, „das **genau** die von den
 Ports benötigten Fähigkeiten trägt". Dieselbe Logik auf `urlBuilder()` angewandt hätte
 `JdbcUrlBuilder` erfasst. Die Verbindung wurde neutralisiert, die URL blieb stehen.
+
+Der Abstand blieb dabei nicht unbemerkt, sondern wurde ins Zielbild geschrieben: `spec/architecture.md`
+trug bis 2026-07-17 die Aussage, `jdbcType: Int` bleibe „vorerst eine eng begrenzte
+Interop-/Persistenz-Ausnahme" und eine vollständige Neutralisierung sei „ein eigener G2-Slice" — ein
+Statusmarker und ein Abwärtsverweis auf einen Plan, beides in einem Zielbild konventionswidrig. Die
+Passage ist entfernt (unabhängig vom Ausgang dieser ADR, weil sie in jedem Fall dort nicht hingehört).
+Sie ist hier erwähnt, weil sie die Diagnose stützt: Das Zielbild wurde an die Umsetzung abgesenkt,
+statt den Abstand als Abstand zu führen.
 
 **Frage dieser ADR:** Bleibt „Database-Agnostic First" verbindliches Zielbild — und wann wird der
 Abstand geschlossen?
@@ -69,7 +86,9 @@ Abstand geschlossen?
 - **Stabilität der 1.0.0-Linie.** Die RC-Linie ist feature-komplett. Ein Umbau des Treiber-Ports
   kurz vor Stable ist ein Regressionsrisiko ohne Anwendernutzen.
 - **Verhältnismäßigkeit.** Kein Anwender fordert heute MongoDB; die geplanten Erweiterungen
-  (MS SQL Server, Oracle) sind JDBC-Datenbanken und passen in den Ist-Port.
+  (MS SQL Server, Oracle) sind JDBC-Datenbanken und passen in den Ist-Port. Gegenzurechnen ist
+  aber, dass Vertagen nicht kostenneutral ist (s. „Konsequenzen/negativ": das Parquet-Manifest
+  liefert mit 1.0.0 ein Schema aus, das `jdbcType` deklariert).
 - **Keine Symptombehandlung.** An `jdbcType` zu operieren, während `urlBuilder(): JdbcUrlBuilder`
   Pflicht bleibt, ändert an der Austauschbarkeit nichts.
 
@@ -97,8 +116,19 @@ verspricht Agnostik, der Port diktiert JDBC, und nichts dokumentiert das. Nach d
 **benannt**, mit Grund und Fälligkeit.
 
 Z1 wurde verworfen, weil die Eingrenzung eine echte Fähigkeit aufgäbe, die das Projekt als
-Leitprinzip führt — und zwar nur, um einen unbequemen Abstand zum Verschwinden zu bringen. Z3 wurde
-verworfen, weil es die 1.0.0-Linie gegen ein Vorhaben ohne Anwendernachfrage eintauschte.
+Leitprinzip führt — und zwar nur, um einen unbequemen Abstand zum Verschwinden zu bringen.
+
+Z3 wurde verworfen, **soweit es den Treiber-Port betrifft**: Ihn vor 1.0.0 auf optionale Fähigkeiten
+umzustellen, tauschte die feature-komplette RC-Linie gegen ein Vorhaben, dessen Nutzen erst mit dem
+ersten Nicht-SQL-Adapter anfällt — den niemand angefordert hat.
+
+Der Verwerfungsgrund trägt jedoch **nicht** für den `formats`-Zweig: dort ist der Schmerz heute
+belegbar (s. u.), es geht also nicht um Nutzen ohne Nachfrage. Ein schmaler Vorzieh-Slice scheitert
+dort an einer anderen Ursache — `formats` bezieht seinen Dispatch-Schlüssel über den Port aus
+`driver-common` und hat dorthin keine Compile-Kante. Jede Ablösung muss deshalb dieselbe Frage
+beantworten wie das Gesamtvorhaben (woher kommt der Schlüssel, wenn nicht aus einem Port-Feld) und
+wäre kein Vorziehen, sondern dessen erster Akt — mitten in der RC-Linie. Deshalb auch hier: nach
+1.0.0, aber als **erster** Angriffspunkt.
 
 ## Was daraus für „G2" folgt
 
@@ -155,10 +185,21 @@ damit der natürliche erste Angriffspunkt des Vorhabens.
 
 **Negativ — bewusst in Kauf genommen**
 
-- **Das Leitprinzip bleibt bis nach 1.0.0 uneingelöst.** Wer `spec/architecture.md` liest, liest ein
-  Versprechen, das der Code an seiner zentralsten Stelle nicht hält. Das ist der Preis von Z2 und
-  soll nicht schöngeredet werden.
-- 1.0.0 wird als faktisch JDBC-gebundenes Werkzeug ausgeliefert, ohne dass die Spec das sagt.
+- **Die Einlösung ist terminiert, aber nicht durchsetzbar.** Diese ADR setzt bewusst kein Gate
+  (s. „Confirmation"); „nach 1.0.0" ist eine Absicht, die niemand einklagt. Ein späterer Zyklus
+  kann sie folgenlos weiterschieben. Das ist der eigentliche Preis von Z2 — dass das Zielbild noch
+  aussteht, ist es **nicht**: `spec/` ist Zielbild ohne Status, ein noch nicht eingelöstes Ziel ist
+  dort der Normalfall und kein Mangel. (Genau deshalb war der „vorerst"-Satz in der Spec
+  konventionswidrig.)
+- **Vertagen ist nicht kostenneutral: 1.0.0 liefert eine Festlegung mit aus.** Der
+  Parquet-Manifest-Vertrag deklariert `jdbcType` als lesetolerantes Feld, und
+  [ADR 0028](0028-a-check-architecture-gate-scope.md) führt ihn ausdrücklich als Typcode-Träger. Mit
+  1.0.0 steht dieses Schema unter Kompatibilitätserwartung. Entschärft ist der Preis dadurch, dass
+  **kein geschriebenes Manifest das Feld enthält** (`ChunkSchemaToManifest` setzt `null`, der Writer
+  emittiert bedingt) und dass `CURRENT_FORMAT_VERSION` als Änderungsvehikel existiert: eine spätere
+  Entfernung wäre eine versionierte **Schema-Verengung**, keine Migration bestehender Bundles. Klein
+  genug, um die Entscheidung nicht zu kippen — aber nicht null, und vor 1.0.0 wäre er gar nicht
+  angefallen.
 - `jdbcType: Int` bleibt in `ports-write`/`ports-common` stehen; der ursprüngliche Einwand bleibt
   sachlich berechtigt und unerledigt.
 
@@ -167,18 +208,13 @@ damit der natürliche erste Angriffspunkt des Vorhabens.
 - Kein Code ändert sich durch diese ADR.
 - [ADR 0028](0028-a-check-architecture-gate-scope.md) behält seine Gültigkeit; seine
   `jdbcType`-Interop-Erlaubnis hat nun einen benannten Grund statt einer offenen Frage.
-- [`spec/architecture.md`](../../spec/architecture.md) trägt die Ausnahme heute mit den Worten
-  „vorerst" und „eigener G2-Slice" — ein Statusmarker und ein Abwärtsverweis auf einen Plan, beides
-  konventionswidrig in einem Zielbild. Die Passage ist **ersatzlos zu entfernen**: das Zielbild
-  beschreibt das Ziel, der Ist-Abstand gehört in ADRs und Planung, nicht in die Spec.
 
 ## Confirmation
 
 - Diese ADR ist eine **Richtungsentscheidung**; sie trägt kein Abnahmekriterium am Code.
 - Prüfbar wird sie durch das Folgevorhaben: ein Adapter für eine Nicht-SQL-Datenbank, der
   `DatabaseDriver` erfüllt, ohne `baseJdbcUrl` zu missbrauchen oder `DdlGenerator` werfen zu lassen.
-- Bis dahin nachvollziehbar: `spec/architecture.md` enthält keine „vorerst"-/Slice-Verweise mehr,
-  und der Ist-Abstand ist in `docs/planning/` sichtbar.
+- Der Ist-Abstand ist in `docs/planning/` sichtbar statt in der Spec.
 
 ## Weitere Informationen
 
