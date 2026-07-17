@@ -22,24 +22,53 @@ warum die beiden Dateien unterschiedlich weit sind:
 | -------- | ----- |
 | `.github/dependabot.yml` | **live auf `main`** (`64de223d`), byte-identisch zur Fassung auf `develop` — der Release-Merge ist für diese Datei ein No-op |
 | `SECURITY.md` | nur auf `develop`; GitHub zeigt „Security policy" bis zum 1.0.0-Merge als *Disabled*. Bewusst so — kommt mit Schritt 4.3 in [`releasing.md`](../../user/releasing.md) regulär mit, **kein** Sonderschritt nötig |
+| `.github/workflows/dependency-submission.yml` | nur auf `develop`; triggert auf `push: main` und läuft daher erst ab dem 1.0.0-Merge. Bis dahin sind **Gradle-Alerts blind** (siehe unten) |
 
 **Repo-Einstellungen** (Settings → Security and quality). Ein Merge erledigt
-davon nichts; die Kette ist reihenfolge-abhängig, weil jede Stufe auf der
-vorigen sitzt:
+davon nichts:
 
 | Stufe | Stand | Bedeutung |
 | ----- | ----- | --------- |
 | Private vulnerability reporting | ✅ aktiv | Der in `SECURITY.md` beschriebene Meldekanal existiert. Funktioniert unabhängig von `main` |
-| Dependency graph | ✅ aktiv | Unterbau: ohne ihn wissen Alerts nicht, welche Dependencies existieren |
-| Automatic dependency submission | ❌ offen | **Für dieses Repo nicht optional.** 94 der 105 Dependencies deklarieren ihre Version dynamisch als `${rootProject.properties["…"]}` aus `gradle.properties`; ein statischer Parser kann das nicht auflösen. Ohne diese Option sieht der Graph nur die 11 literalen Versionen — und Alerts sind exakt so gut wie der Graph darunter |
-| Dependabot alerts | ❌ offen | Der eigentliche Sicherheitsgewinn: Warnung bei bekannten CVEs in vorhandenen Dependencies. Genau die im supply-chain-Abschnitt bemängelte Lücke |
-| Dependabot version updates | aktiviert | Liest `dependabot.yml`; wirkt, seit die Datei auf `main` liegt |
+| Dependency graph | ✅ aktiv | Unterbau der Alerts |
+| Automatic dependency submission | ⛔ bewusst **aus** | Siehe „Warum nicht die Automatik" |
+| Dependabot alerts | ✅ aktiv | …aber derzeit nur für Actions/Docker wirksam, nicht für Gradle |
+| Dependabot version updates | ✅ live | Nutzt Dependabots **eigenen** Gradle-Parser, nicht den Dependency graph — funktioniert daher unabhängig vom Graph-Problem unten |
+
+### Warum nicht die Automatik
+
+GitHubs „Automatic dependency submission" wurde aktiviert und ist
+**fehlgeschlagen** (Run `29582554903`): sie ignoriert den Wrapper-Pin des
+Projekts (Gradle **8.12**) und fährt mit **Gradle 9.6.1**. Dagegen ist
+`com.github.johnrengelman.shadow:8.1.1` (`adapters/driving/cli/build.gradle.kts:11`)
+inkompatibel — `Could not set unknown property 'fileMode'`; das Property fiel in
+Gradle 9 weg. Der Build stirbt in der Konfigurationsphase, bevor irgendeine
+Dependency gemeldet wird.
+
+Ersetzt durch `.github/workflows/dependency-submission.yml` mit
+`gradle/actions/dependency-submission` <!-- d-check:ignore (GitHub-Action-Referenz, kein Repo-Pfad) --> (SHA-gepinnt), die den Wrapper des
+Projekts benutzt. Die Automatik ist deshalb bewusst ausgeschaltet — sonst
+scheitert sie bei jedem `main`-Push rot, ohne je etwas zu liefern.
+
+### Messbarer Ist-Zustand des Graphen
+
+Der SBOM (`gh api /repos/pt9912/d-migrate/dependency-graph/sbom`) enthält
+**6 Pakete**: 5 GitHub-Actions plus das Root-Projekt. **Null Gradle-Dependencies.**
+Grund: 94 der 105 Dependencies deklarieren ihre Version dynamisch als
+`${rootProject.properties["…"]}` aus `gradle.properties` (keine
+`libs.versions.toml`); statisches Parsen sieht davon nur die 11 literalen.
+Actions und Docker sind statisch parsebar und daher bereits abgedeckt.
+
+**Konsequenz bis 1.0.0:** Dependabot-Alerts sind aktiv, decken aber nur Actions
+und Docker ab. Ein CVE in Jackson, snakeyaml oder einem JDBC-Treiber löst
+**keine** Warnung aus. Das ist bewusst in Kauf genommen (Branch-Workflow bleibt
+unangetastet); mit dem 1.0.0-Merge läuft der Workflow und der Graph füllt sich.
+Verifikation danach: SBOM-Paketzahl muss deutlich über 6 liegen.
 
 Anmerkung zu **Dependabot security updates** (auto-PRs für Alerts, derzeit aus):
 Security-Updates ignorieren die `ignore`-Regeln der `dependabot.yml`. Bei einem
-CVE in einem JDBC-Treiber kommt der Major-Bump-PR also trotzdem — die bewusste
+CVE in einem JDBC-Treiber käme der Major-Bump-PR also trotzdem — die bewusste
 Ausnahme „JDBC-Majors nur über die Cross-Dialect-Matrix" greift dort nicht.
-Vermutlich richtig so, sollte aber nicht überraschen.
 
 **Ausgeschnittene Tickets** — gruppiert nach gemeinsamer Wurzel bzw. Fix-Ort,
 nicht eins-je-Befund, damit ein Fix nicht über mehrere Einträge zersplittert:
