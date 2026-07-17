@@ -28,18 +28,19 @@ Der Ist-Stand hält das auf Importebene ein und unterläuft es semantisch. Verif
    (`hexagon:ports-write`) und `JdbcTypeHint.jdbcType: Int` (`hexagon:ports-common`) transportieren
    `java.sql.Types`-Werte. Ein Import-/Schicht-Gate kann das prinzipiell nicht sehen — der
    Feldtyp ist `Int`.
-2. **Die JDBC-Typcode-Tabelle wurde in die Ports-Schicht kopiert.** Der G1-Fix legte
-   `JdbcTypeCodes` in `hexagon:ports-common` an — 30 Konstanten von `BIT = -7` bis
-   `TIMESTAMP_WITH_TIMEZONE = 2014`. Sein eigener KDoc sagt: „intentionally **mirrors the numeric
-   values of `java.sql.Types`** without importing `java.sql` into hexagon application code."
-   Vorher importierte `hexagon:application` `java.sql.Types`; danach deklariert das Hexagon
-   JDBCs Nummerierung als **eigenen Port-Vertrag**. Das Gate prüft Importe — Konstanten neu zu
-   deklarieren macht es grün, ohne die Kopplung zu verringern. Die Technologie sitzt danach
-   tiefer im Hexagon als zuvor, in genau einem der vier Module, die ADR 0022 namentlich nennt.
-3. **`TargetColumn` gibt es selbst zu.** Sein KDoc: „Lebt in `hexagon:ports` (nicht in
-   `hexagon:core`), weil `jdbcType` semantisch JDBC-coupled ist. `core.ColumnDescriptor` bleibt
-   JDBC-frei." Die Ports-Schicht diente als Ausweichquartier für einen Typ, den `core` nicht
-   haben durfte — obwohl ADR 0022 sie genauso JDBC-frei fordert.
+2. **Die JDBC-Typcode-Tabelle steht in der Ports-Schicht.** `JdbcTypeCodes` liegt in
+   `hexagon:ports-common` und deklariert Konstanten, deren Werte **identisch** mit denen von
+   `java.sql.Types` sind (`BIT = -7`, `OTHER = 1111`, `TIMESTAMP_WITH_TIMEZONE = 2014`, …) — die
+   Gleichheit ist Wert für Wert nachprüfbar, ein Kommentar wird dafür nicht gebraucht. Damit
+   deklariert das Hexagon JDBCs Nummerierung als **eigenen Port-Vertrag**, in genau einem der
+   vier Module, die ADR 0022 namentlich nennt. Das `ports-jdbc-free-gate` und a-check prüfen
+   **Importe**; Konstanten neu zu deklarieren statt sie zu importieren erfüllt beide Gates,
+   ohne die Kopplung zu verringern.
+3. **Der Typ mit dem JDBC-Feld liegt in der Ports-Schicht.** `TargetColumn` — und damit
+   `jdbcType: Int` — liegt in
+   [`hexagon/ports-write`](../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/driver/data/TargetColumn.kt).
+   ADR 0022 Entscheidung 1 nennt `hexagon:ports-write` ausdrücklich als JDBC-frei zu haltendes
+   Modul. Der Dateipfad genügt als Beleg; er widerspricht der Regel unmittelbar.
 4. **Das Zielbild wurde abgesenkt.** [`spec/architecture.md`](../../spec/architecture.md) trägt
    inzwischen die Ausnahme selbst: „`jdbcType: Int` bleibt **vorerst** eine eng begrenzte
    Interop-/Persistenz-Ausnahme … eine vollständige Typcode-Neutralisierung ist ein eigener
@@ -103,10 +104,20 @@ Stelle streng durchsetzt (`ports-jdbc-free-gate`, a-check, ADR 0022), und verlan
 abgesenktes Zielbild.
 
 Die Mapping-Hoheit liegt bei den **Dialekt-Treibern**, nicht beim vorhandenen
-`JdbcToNeutralTypeMapper`: der ist laut eigenem KDoc dialekt-blind und verlustbehaftet („Geometrie
-wird NICHT hier erkannt", „unbekannte JDBC-Typen werden konservativ auf `NeutralType.Text`
-gemappt"). Als gemeinsame Vorstufe darf er bleiben; die dialekt-spezifische Auflösung von `OTHER`
-und Geometrie gehört in die Treiber, analog zum bereits erprobten `probedColumns`-Muster.
+`JdbcToNeutralTypeMapper`. Dessen Grenzen sind am Code ablesbar, nicht nur behauptet:
+
+- Er erzeugt **nie** `NeutralType.Geometry` — der Typ kommt in
+  [`JdbcToNeutralTypeMapper`](../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/data/JdbcToNeutralTypeMapper.kt)
+  kein einziges Mal vor. Die Geometrie-Markierung entsteht dialekt-bewusst aus der
+  Metadaten-Vorabfrage (`probedColumnsFromMetaData` in
+  [`JdbcSelectQuerySupport`](../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/data/JdbcSelectQuerySupport.kt))
+  und überschreibt das Mapping erst danach.
+- Unbekannte Typen fallen **verlustbehaftet** auf `NeutralType.Text(maxLength = null)` — ein
+  `else`-Zweig, im Code als „konservativer Fallback" markiert.
+
+Als gemeinsame, dialekt-blinde Vorstufe darf er bleiben; die Auflösung von `OTHER` und Geometrie
+gehört in die Treiber, analog zum bereits erprobten `probedColumns`-Muster. Ein G2, das die
+Abbildung dem dialekt-blinden Mapper überlässt, würde Geometrie verlieren.
 
 ## Konsequenzen
 
