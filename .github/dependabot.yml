@@ -28,6 +28,21 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: org.xerial:sqlite-jdbc
         update-types: [version-update:semver-major]
+      # Kotlin toolchain: a minor bump changes compiler/Kover behaviour — Kotlin
+      # 2.1 -> 2.4 dropped :hexagon:ports coverage below the 90% gate. Upgraded
+      # deliberately as its own slice, not via an automated PR. Patch bumps pass.
+      - dependency-name: org.jetbrains.kotlin*
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+      - dependency-name: org.jetbrains.kotlinx.kover*
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+      # Gradle wrapper is pinned to 8.12 because shadow 8.1.1 breaks on Gradle 9.
+      # The Docker build uses the base-image gradle, so CI is blind to wrapper
+      # bumps — an automated wrapper PR would go green yet break local ./gradlew.
+      - dependency-name: gradle-wrapper
 
   # GitHub Actions. Third-party actions run with repository credentials,
   # so their updates are security-relevant.
@@ -53,3 +68,8 @@ updates:
     labels:
       - dependencies
       - docker
+    ignore:
+      # The gradle base image is the toolchain of the real Docker build; a major
+      # bump breaks shadow 8.1.1 (Gradle 9). Taken deliberately with the wrapper.
+      - dependency-name: gradle
+        update-types: [version-update:semver-major]

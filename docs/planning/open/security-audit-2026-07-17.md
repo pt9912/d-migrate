@@ -20,7 +20,7 @@ warum die beiden Dateien unterschiedlich weit sind:
 
 | Artefakt | Stand |
 | -------- | ----- |
-| `.github/dependabot.yml` | **live auf `main`** (`64de223d`), byte-identisch zur Fassung auf `develop` — der Release-Merge ist für diese Datei ein No-op |
+| `.github/dependabot.yml` | live auf `main` (`64de223d`). Die Fassung auf `develop` ist seit der Toolchain-Härtung (siehe unten) **weiter** — der 1.0.0-Merge trägt die Härtung nach `main`. Bis dahin öffnet Dependabot auf `main` weiter Toolchain-PRs |
 | `SECURITY.md` | nur auf `develop`; GitHub zeigt „Security policy" bis zum 1.0.0-Merge als *Disabled*. Bewusst so — kommt mit Schritt 4.3 in [`releasing.md`](../../user/releasing.md) regulär mit, **kein** Sonderschritt nötig |
 | `.github/workflows/dependency-submission.yml` | nur auf `develop`; triggert auf `push: main` und läuft daher erst ab dem 1.0.0-Merge. Bis dahin sind **Gradle-Alerts blind** (siehe unten) |
 
@@ -69,6 +69,33 @@ Anmerkung zu **Dependabot security updates** (auto-PRs für Alerts, derzeit aus)
 Security-Updates ignorieren die `ignore`-Regeln der `dependabot.yml`. Bei einem
 CVE in einem JDBC-Treiber käme der Major-Bump-PR also trotzdem — die bewusste
 Ausnahme „JDBC-Majors nur über die Cross-Dialect-Matrix" greift dort nicht.
+
+### Toolchain-Härtung (aus dem PR-Flut-Vorfall 2026-07-17)
+
+Beim Aktivieren öffnete Dependabot sofort 13 PRs. Drei davon waren
+Toolchain-Bumps, die kein Auto-PR sein dürfen — der Vorfall deckte eine Lücke in
+der ersten `dependabot.yml` auf (JDBC-Majors waren ausgenommen, die
+Kotlin/Gradle-Toolchain nicht):
+
+- **Kotlin 2.1.20 → 2.4.10** (`jvm-minor-patch`-Gruppe): CI rot. Ein Minor-Bump
+  ändert Compiler-/Kover-Verhalten — die Line-Coverage des winzigen
+  3-Datei-Aggregators `:hexagon:ports` fiel auf 72,22% unter das 90%-Gate. Kein
+  Flake, deterministisch an den Bump gekoppelt.
+- **Gradle-Base-Image 8.12 → 9.6** (`docker`): CI rot. `shadow:8.1.1` ist mit
+  Gradle 9 inkompatibel (`fileMode`). CI fängt es korrekt.
+- **Gradle-Wrapper 8.12 → 9.6.1** (`gradle`): CI **grün** — aber ein False-Green.
+  Der Docker-Build nutzt `gradle` aus dem Base-Image statt des Wrappers, CI ist <!-- d-check:ignore (Root-Datei außerhalb der codepaths.roots) -->
+  für den Wrapper blind. Merged bräche es das lokale Wrapper-Skript und den <!-- d-check:ignore (Root-Datei außerhalb der codepaths.roots) -->
+  Submission-Workflow (dasselbe shadow-Problem).
+
+Reaktion: `dependabot.yml` auf `develop` um Ignore-Regeln für Kotlin/Kover
+(Minor+Major), `gradle-wrapper` (alle) und das `gradle`-Base-Image (Major)
+erweitert; Patch-Bumps bleiben erlaubt. Alle 13 PRs geschlossen. Beides greift
+auf `main` erst mit dem 1.0.0-Merge.
+
+Randbefund: `com.github.johnrengelman.shadow` ist die unmaintainte Koordinate
+(Nachfolger `com.gradleup.shadow`) und ist die gemeinsame Ursache, dass Gradle 9
+blockiert. Eigenes Migrations-Ticket wert, sobald ein Gradle-9-Umstieg ansteht.
 
 **Ausgeschnittene Tickets** — gruppiert nach gemeinsamer Wurzel bzw. Fix-Ort,
 nicht eins-je-Befund, damit ein Fix nicht über mehrere Einträge zersplittert:
