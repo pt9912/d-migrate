@@ -12,8 +12,9 @@ informed: hexagon/core, hexagon/ports, adapters/driven/driver-common, .github/wo
 > **Maven-Central-Portal**-Publish-Workflow entfällt. Stabile Library-Artefakte werden
 > stattdessen über **GitHub Packages** (`maven.pkg.github.com`) veröffentlicht. Die Absicht,
 > wiederverwendbare Libraries anzubieten, bleibt bestehen — nur der Kanal wechselt. Die
-> **1.0.0-Artefaktklassifikation** in [`releasing.md`](../user/releasing.md) bleibt unverändert
-> gültig.
+> **1.0.0-Artefaktklassifikation** in [`releasing.md`](../user/releasing.md) bleibt gültig — der
+> Kanalwechsel berührt sie nicht. (Sie wurde am selben Tag aus einem **anderen** Grund
+> aktualisiert: sie war gegenüber dem tatsächlichen Modulschnitt veraltet.)
 
 ## Kontext und Problemstellung
 
@@ -88,7 +89,8 @@ Stände liefert und jeden Consumer an den Quellbaum bindet.
 - Kein GPG-Signing, keine Schlüsselrotation, kein Domain-Nachweis, kein Namespace-Wechsel.
 - Die Auth-Mechanik ist dieselbe wie beim GHCR-Push — kein neues Geheimnis in der Pipeline.
 - Fehlpublikationen sind revidierbar (Pakete löschbar).
-- Die Artefaktklassifikation in [`releasing.md`](../user/releasing.md) bleibt unverändert gültig.
+- Die Artefaktklassifikation in [`releasing.md`](../user/releasing.md) bleibt gültig; der
+  Kanalwechsel ändert nichts daran, welche Module publiziert werden.
 
 **Negativ — bewusst in Kauf genommen**
 

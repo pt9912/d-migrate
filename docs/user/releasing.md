@@ -12,15 +12,49 @@
 > [ADR 0036](../adr/0036-library-artefakte-github-packages.md) **GitHub Packages**
 > gesetzt, nicht das ursprünglich geplante Maven-Central-Portal.
 >
-> **1.0.0-Artefaktklassifikation** (vorbereitet in 0.9.1 Phase G):
+> **1.0.0-Artefaktklassifikation** — welche Module als Library veröffentlicht werden,
+> wenn der Publish-Workflow ([ADR 0036](../adr/0036-library-artefakte-github-packages.md):
+> GitHub Packages) gebaut wird. Angelegt in 0.9.1 Phase G, **aktualisiert 2026-07-17**
+> gegen den tatsächlichen Modulschnitt (die Erstfassung kannte den Port-Split noch nicht
+> und ließ 9 Module unerfasst).
 >
 > | Gruppe | Module | Publish-Ziel |
 > |--------|--------|-------------|
 > | Foundation | `hexagon:core` | Kernartefakt |
-> | Ports | `hexagon:ports` (später ports-common/-read/-write) | Kernartefakt |
-> | Driver Runtime | `driver-common`, `driver-postgresql/-mysql/-sqlite` | Kernartefakt |
-> | Optional Extensions | `hexagon:profiling`, `driver-*-profiling`, `formats`, `streaming` | Zusatzartefakt |
-> | Internal Tooling | `hexagon:application`, `adapters:driving:cli`, `integrations`, Tests | nicht publiziert |
+> | Ports | `hexagon:ports-common`, `hexagon:ports-read`, `hexagon:ports-write`, `hexagon:ports-execute` | Kernartefakt |
+> | Ports (Umbrella) | `hexagon:ports` | Kernartefakt — **Vorbehalt**, s. u. |
+> | Driver Runtime | `driver-common`, `driver-postgresql`, `driver-mysql`, `driver-sqlite` | Kernartefakt |
+> | Optional Extensions | `hexagon:profiling`, `driver-postgresql-profiling`, `driver-mysql-profiling`, `driver-sqlite-profiling`, `formats`, `streaming` | Zusatzartefakt |
+> | Optional Extensions | `formats-parquet` | Zusatzartefakt — **Vorbehalt**, s. u. |
+> | Anwendung | `hexagon:application`, `adapters:driving:cli`, `adapters:driving:mcp`, `integrations`, `connection-config`, `persistence-jdbc`, `audit-logging`, `storage-file`, `storage-s3`, `text-icu`, `test:*` | nicht publiziert |
+>
+> **Leitlinie**: Publiziert wird, was ein einbettender Fremd-Consumer braucht, um d-migrate
+> als Bibliothek zu *benutzen* — Domänenmodell, Port-Contracts, Treiber-Runtime, austauschbare
+> Codecs. Nicht publiziert wird, was *diese* Anwendung verdrahtet.
+>
+> Der Umkehrschluss „hängt nur an `ports-common`, also wiederverwendbar" trägt **nicht**:
+> `audit-logging`, `connection-config`, `storage-file`, `storage-s3` und `text-icu` haben ein
+> technisch makelloses Library-Profil (schmale Fläche, kaum Fremdlast), bedienen aber Ports mit
+> d-migrate-eigener Server-Semantik (Upload-Segmente, Artefakt-Content, `.d-migrate.yaml`-Schema).
+> Der Hexagon-Schnitt macht sie **austauschbar, nicht wiederverwendbar** — ein Fremd-Consumer
+> implementiert diese Ports selbst; genau dafür sind sie da.
+>
+> Die Lesefläche ist bereits ausführbar festgenagelt:
+> [`test/consumer-read-probe`](../../test/consumer-read-probe/build.gradle.kts) kompiliert gegen
+> `ports-read`, `ports-common`, `core`, `driver-common`, `formats` — „if this module compiles,
+> external read consumers can integrate".
+>
+> **Vorbehalte vor dem Publish** (beide sind Bedingungen, keine Blocker der Klassifikation):
+>
+> - `hexagon:ports` ist kein reiner Umbrella: es trägt zusätzlich `DatabaseDriver`,
+>   `DatabaseDriverRegistry` (globales, veränderliches Singleton) und `PreGenerationValidator`.
+>   Wer die Umbrella-Bequemlichkeit zieht, bekommt das Registry zwangsweise mit. Vor einem
+>   Publish klären, ob diese Typen nach `ports-common` (oder ein eigenes Modul) gehören.
+> - `formats-parquet` manipuliert den Dependency-Graphen (`constraints { rejectAll() }` auf
+>   parquet-avro/-protobuf/avro, `configurations.all { exclude … }` für snappy/zstd). Solche
+>   Footprint-Entscheidungen werden in die Gradle-Metadata publiziert und **schlagen auf den
+>   Consumer durch** — sie können den Graphen eines Consumers brechen, der Avro oder Snappy aus
+>   anderen Gründen braucht. Vor einem Publish aus dem publizierten Scope nehmen.
 
 ---
 
