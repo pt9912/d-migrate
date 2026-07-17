@@ -440,7 +440,7 @@ CMD ["--help"]
 #
 # Version gepinnt (Hermetik-Vertrag, vgl. SEMGREP_IMAGE-Digest). TODO: node-Image
 # zusätzlich per Digest pinnen, sobald ein Build den Digest bestätigt.
-FROM node:22-bookworm-slim AS ast-grep
+FROM node:26-bookworm-slim AS ast-grep
 RUN npm install -g @ast-grep/cli@0.44.0 \
     && npm cache clean --force
 WORKDIR /repo
