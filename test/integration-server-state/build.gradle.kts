@@ -27,7 +27,7 @@ dependencies {
     testImplementation("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")
     // Flyway-Core fuer den MigrateResult-Typ im JdbcMigrationRunner-
     // Aufruf (auch wenn der Test das Ergebnis ignoriert).
-    testImplementation("org.flywaydb:flyway-core:11.8.2")
+    testImplementation("org.flywaydb:flyway-core:12.11.0")
 }
 
 kover {
