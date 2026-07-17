@@ -53,7 +53,7 @@
 # ---- Stage: dependency warmup ---------------------------------------------
 # Copies only Gradle metadata first so dependency resolution can be cached
 # independently from source code changes.
-FROM gradle:8.12-jdk21 AS deps
+FROM gradle:9.6-jdk21 AS deps
 
 WORKDIR /src
 
@@ -237,7 +237,7 @@ ENTRYPOINT ["cat", "/src/release-assets.tar"]
 
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
 # Used by scripts/test-integration-docker.sh for the full runtime matrix.
-FROM gradle:8.12-jdk21 AS integration-test
+FROM gradle:9.6-jdk21 AS integration-test
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -258,7 +258,7 @@ COPY --chown=gradle:gradle . .
 # Runs only the non-integration test suite plus the aggregated Kover HTML
 # and XML reports so they can be published independently of the configured
 # coverage threshold.
-FROM gradle:8.12-jdk21 AS coverage-build
+FROM gradle:9.6-jdk21 AS coverage-build
 
 ARG COVERAGE_TASKS="test koverHtmlReport koverXmlReport"
 
