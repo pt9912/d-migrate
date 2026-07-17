@@ -303,7 +303,7 @@ ENTRYPOINT ["python3", "-m", "http.server", "8080", "--directory", "/srv/coverag
 # ---- Stage 6: coverage-json ------------------------------------------------
 # Prints the aggregated Kover JSON report to stdout so callers can redirect it
 # into a local file.
-FROM busybox:1.36 AS coverage-json
+FROM busybox:1.38 AS coverage-json
 
 WORKDIR /srv/coverage-json
 
