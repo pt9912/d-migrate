@@ -103,6 +103,45 @@ class StreamingPortsTest : FunSpec({
         ExportOutput.fileNameFor("items", DataExportFormat.CSV) shouldBe "items.csv"
     }
 
+    // ── ExportOutput.resolveFileFor: path-traversal guard (CWE-22) ──────
+    // Table names come from the untrusted source catalog; a name that would
+    // escape the output directory must be refused loudly, not written.
+
+    test("ExportOutput.resolveFileFor keeps an ordinary table inside the directory") {
+        val base = Path.of("/srv/exports")
+        val path = ExportOutput.resolveFileFor(base, "users", DataExportFormat.JSON)
+        path.parent shouldBe base.toAbsolutePath().normalize()
+        path.fileName.toString() shouldBe "users.json"
+    }
+
+    test("ExportOutput.resolveFileFor keeps a schema-qualified table inside the directory") {
+        val base = Path.of("/srv/exports")
+        val path = ExportOutput.resolveFileFor(base, "public.orders", DataExportFormat.CSV)
+        path.parent shouldBe base.toAbsolutePath().normalize()
+        path.fileName.toString() shouldBe "public.orders.csv"
+    }
+
+    test("ExportOutput.resolveFileFor refuses parent-directory traversal") {
+        val ex = shouldThrow<IllegalArgumentException> {
+            ExportOutput.resolveFileFor(Path.of("/srv/exports"), "../../etc/cron.d/pwned", DataExportFormat.JSON)
+        }
+        ex.message!! shouldContain "escape"
+        ex.message!! shouldContain "pwned"
+    }
+
+    test("ExportOutput.resolveFileFor refuses an absolute table name") {
+        val ex = shouldThrow<IllegalArgumentException> {
+            ExportOutput.resolveFileFor(Path.of("/srv/exports"), "/etc/passwd", DataExportFormat.JSON)
+        }
+        ex.message!! shouldContain "escape"
+    }
+
+    test("ExportOutput.resolveFileFor refuses an embedded separator that creates a subdirectory") {
+        shouldThrow<IllegalArgumentException> {
+            ExportOutput.resolveFileFor(Path.of("/srv/exports"), "a/b", DataExportFormat.JSON)
+        }
+    }
+
     // ── ImportInput ───────────────────────────────────────────────────
 
     test("ImportInput.Stdin carries table and stream") {

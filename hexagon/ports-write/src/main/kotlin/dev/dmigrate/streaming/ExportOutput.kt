@@ -94,5 +94,28 @@ sealed class ExportOutput {
          */
         fun fileNameFor(table: String, format: DataExportFormat): String =
             "$table.${format.cliName}"
+
+        /**
+         * Löst die Zieldatei für [table] innerhalb [directory] auf und stellt
+         * sicher, dass sie **direkt** in diesem Verzeichnis liegt.
+         *
+         * Tabellennamen aus dem Quell-Katalog sind nicht vertrauenswürdig: wer
+         * die Quell-Datenbank kontrolliert, kann eine Tabelle `../../etc/cron.d/x`
+         * oder mit absolutem Pfad anlegen. Ohne diese Prüfung flösse der Name
+         * direkt per [fileNameFor] in den Dateipfad (CWE-22). Ein Name, der aus
+         * [directory] ausbräche — über `..`, einen absoluten Pfad oder einen
+         * eingebetteten Trenner, der ein Unterverzeichnis erzeugt — wird laut
+         * abgelehnt (die CLI mappt das über den Top-Level-Export-Catch auf einen
+         * Fehler-Exit).
+         */
+        fun resolveFileFor(directory: Path, table: String, format: DataExportFormat): Path {
+            val base = directory.toAbsolutePath().normalize()
+            val resolved = base.resolve(fileNameFor(table, format)).normalize()
+            require(resolved.parent == base) {
+                "Refusing to export table '$table': its file name would escape " +
+                    "the output directory '$directory'."
+            }
+            return resolved
+        }
     }
 }
