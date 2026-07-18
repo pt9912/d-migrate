@@ -227,8 +227,11 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 > + Auth-vor-Body-Reorder, [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md))
 > und Befund 6 (Release-Supply-Chain: Action-SHA-Pinning + `GITHUB_TOKEN`-least-
 > privilege, [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
-> **P1 und P2 sind damit vollständig geschlossen.** Offen bleibt nur der P3-Backlog
-> (u.a. 13+14 Session/Principal-Bindung, 15/16/17 Supply-Chain-Downloads).
+> **P1 und P2 sind damit vollständig geschlossen.** P3-Backlog: **13+14**
+> (MCP-`DELETE`-Auth + Session/Principal-Bindung) behoben 2026-07-18
+> ([`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md)); offen bleiben
+> 15/16/17 (Supply-Chain-Downloads) und 8–11 (jdbc-ssl-Erzwingung, secret-leakage-
+> Residuen).
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 

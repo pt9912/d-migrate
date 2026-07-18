@@ -16,6 +16,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
@@ -43,17 +44,25 @@ private val JWKS_CONFIG = McpServerConfig(
     audience = "mcp.dmigrate",
 )
 
-private fun principalWithScopes(vararg scopes: String): PrincipalContext = PrincipalContext(
-    principalId = PrincipalId("test-user"),
+private fun principalWithScopes(vararg scopes: String): PrincipalContext = principalWithId("test-user", *scopes)
+
+private fun principalWithId(id: String, vararg scopes: String): PrincipalContext = PrincipalContext(
+    principalId = PrincipalId(id),
     homeTenantId = TenantId("tenant-A"),
     effectiveTenantId = TenantId("tenant-A"),
     allowedTenantIds = setOf(TenantId("tenant-A")),
     scopes = scopes.toSet(),
     isAdmin = "dmigrate:admin" in scopes,
-    auditSubject = "test-user",
+    auditSubject = id,
     authSource = AuthSource.OIDC,
     expiresAt = Instant.parse("2099-01-01T00:00:00Z"),
 )
+
+/** Maps each bearer token to its principal so a test can drive two distinct principals. */
+private class TokenRoutingAuthValidator(private val byToken: Map<String, PrincipalContext>) : AuthValidator {
+    override suspend fun validate(token: String): BearerValidationResult =
+        byToken[token]?.let { BearerValidationResult.Valid(it) } ?: BearerValidationResult.Invalid("unknown token")
+}
 
 private class FakeAuthValidator(private val result: BearerValidationResult) : AuthValidator {
     var lastToken: String? = null
@@ -384,6 +393,79 @@ class McpHttpAuthTest : FunSpec({
             body shouldContain "\"authorization_servers\":"
             body shouldContain "\"scopes_supported\":"
             body shouldContain "\"bearer_methods_supported\":[\"header\"]"
+        }
+    }
+
+    test("13: DELETE /mcp without a token is rejected 401 (CWE-306)") {
+        // DELETE terminates a session and must run the same Bearer chain as POST.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                )
+            }
+            val resp = client.delete("/mcp") {
+                headers { append("MCP-Session-Id", java.util.UUID.randomUUID().toString()) }
+            }
+            resp.status shouldBe HttpStatusCode.Unauthorized
+        }
+    }
+
+    test("13/14: a session is bound to its creating principal — cross-principal POST/DELETE rejected, owner can delete") {
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = TokenRoutingAuthValidator(
+                        mapOf(
+                            "tok-a" to principalWithId("user-a", "dmigrate:read"),
+                            "tok-b" to principalWithId("user-b", "dmigrate:read"),
+                        ),
+                    ),
+                )
+            }
+            // Principal A creates a session.
+            val init = client.post("/mcp") {
+                mcpAccept()
+                headers { append(HttpHeaders.Authorization, "Bearer tok-a") }
+                setBody(INITIALIZE_BODY)
+            }
+            init.status shouldBe HttpStatusCode.OK
+            val sessionId = init.headers["MCP-Session-Id"]!!
+
+            // Principal B (own valid token) cannot drive A's session — indistinguishable
+            // from an unknown session (404), so session ids don't leak across principals.
+            val bPost = client.post("/mcp") {
+                mcpAccept()
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer tok-b")
+                    append("MCP-Session-Id", sessionId)
+                    append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)
+                }
+                setBody("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
+            }
+            bPost.status shouldBe HttpStatusCode.NotFound
+
+            // Principal B cannot delete A's session either (405, same as unknown).
+            val bDelete = client.delete("/mcp") {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer tok-b")
+                    append("MCP-Session-Id", sessionId)
+                }
+            }
+            bDelete.status shouldBe HttpStatusCode.MethodNotAllowed
+
+            // The owner (A) can delete its own session.
+            val aDelete = client.delete("/mcp") {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer tok-a")
+                    append("MCP-Session-Id", sessionId)
+                }
+            }
+            aDelete.status shouldBe HttpStatusCode.OK
         }
     }
 })

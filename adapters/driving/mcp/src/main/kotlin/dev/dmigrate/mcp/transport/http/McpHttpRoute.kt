@@ -107,7 +107,7 @@ fun Application.installMcpHttpRoute(
             call.respond(HttpStatusCode.MethodNotAllowed)
         }
         delete("/mcp") {
-            handleMcpDelete(call, sessionManager)
+            handleMcpDelete(call, runtime)
         }
         get(METADATA_PATH) {
             call.respondText(
@@ -366,16 +366,24 @@ private suspend fun resolveContext(
         return ServiceContext(service, GenericEndpoint(service), principal)
     }
     val sessionId = parseSessionIdHeader(call)
-    val state = sessionId?.let { runtime.sessionManager.peek(it) } ?: run {
-        respondJsonRpcError(
-            call,
-            HttpStatusCode.NotFound,
-            id = (message as? RequestMessage)?.id,
-            code = JSONRPC_ERROR_SESSION_UNKNOWN,
-            message = "session expired or unknown",
-        )
-        return null
-    }
+    // §12.14 (CWE-488): the session is bound to the principal that created it. A
+    // request whose validated principal does not own the session is treated exactly
+    // like an unknown session (same 404) — a caller cannot probe another principal's
+    // session ids or drive dispatch inside a session it does not own, so the
+    // per-request bindPrincipal on this session's service only ever sees that principal.
+    val state = sessionId
+        ?.let { runtime.sessionManager.peek(it) }
+        ?.takeIf { it.principalContext.principalId == principal.principalId }
+        ?: run {
+            respondJsonRpcError(
+                call,
+                HttpStatusCode.NotFound,
+                id = (message as? RequestMessage)?.id,
+                code = JSONRPC_ERROR_SESSION_UNKNOWN,
+                message = "session expired or unknown",
+            )
+            return null
+        }
     val versionHeader = call.request.header(HEADER_MCP_PROTOCOL_VERSION)
     if (versionHeader != state.negotiatedProtocolVersion) {
         respondJsonRpcError(
@@ -495,12 +503,22 @@ private fun registerSessionAfterInitialize(
     call.response.headers.append(HEADER_MCP_PROTOCOL_VERSION, McpProtocol.MCP_PROTOCOL_VERSION)
 }
 
-private suspend fun handleMcpDelete(call: ApplicationCall, sessionManager: SessionManager) {
+private suspend fun handleMcpDelete(call: ApplicationCall, runtime: McpHttpRuntime) {
+    // §12.14 hardening (CWE-306/CWE-488): DELETE terminates a session, so it runs the
+    // same Origin + Bearer chain as POST and only lets a session's own principal remove
+    // it. A non-owner (or unauthenticated) caller cannot distinguish "not my session"
+    // from "unknown session" — both get 405 — so session ids don't leak across principals.
+    if (!checkOrigin(call, runtime.config)) return
+    val principal = validateBearer(call, runtime.config, runtime.authValidator) ?: return
     val sessionId = parseSessionIdHeader(call)
-    if (sessionId == null || !sessionManager.remove(sessionId)) {
+    val owned = sessionId
+        ?.let { runtime.sessionManager.peek(it) }
+        ?.principalContext?.principalId == principal.principalId
+    if (sessionId == null || !owned) {
         call.respond(HttpStatusCode.MethodNotAllowed)
         return
     }
+    runtime.sessionManager.remove(sessionId)
     call.respond(HttpStatusCode.OK)
 }
 
