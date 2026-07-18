@@ -1,6 +1,6 @@
 # JDBC: kein sicherer SSL-Default, CA-Pin als stiller No-Op (P3)
 
-> **Status:** Befund 9 BEHOBEN 2026-07-18; Befund 8 = bewusste offene Tiefenstufe.
+> **Status:** Befund 8 + 9 BEHOBEN 2026-07-18 (ADR 0038 + Warnung).
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 8 und
 > 9, beide P3). Konkretisiert die bekannte offene Tiefenstufe von [`LN-026`](../../../spec/lastenheft-d-migrate.md)
@@ -13,15 +13,22 @@
 > mehr in der emittierten URL überschreiben. TDD (PG + MySQL);
 > `:driver-common:check` grün.
 >
-> **Befund 8 — bewusst NICHT jetzt (dokumentierte Entscheidung):** (8a) Ein sicherer
-> Default (`verify-full`) ist ein **Breaking Change** für Selfsigned-Setups und
-> braucht ADR + CHANGELOG; der Audit hält `prefer` für spec-konform (libpq/pgjdbc-
-> Default). (8b) `sslrootcert` ohne verifizierenden `sslmode` als **harter** Fehler
-> wurde in der Audit-Gegenprüfung **widerlegt** (bräche das verbreitete
-> `sslmode=require&sslrootcert`); die sanktionierte Alternative — eine W-Code-
-> **Warnung** — bräuchte einen Note-Kanal durch `JdbcUrlBuilder.sslParams` (heute
-> reine `Map`), was der abgeschwächte P3 nicht rechtfertigt. Beides bleibt bewusst
-> als Tiefenstufe offen.
+> **Umsetzung (Befund 8):** (8a)
+> [ADR 0038](../../adr/0038-ssl-default-prefer-verify-full-opt-in.md) hält
+> **normativ** fest: d-migrate setzt keinen eigenen SSL-Default, der Treiber-Default
+> `prefer` bleibt, `verify-full` ist Opt-in — ein `verify-full`-Default wäre ein
+> Breaking für Selfsigned-Setups (spec-konform, libpq/pgjdbc). (8b) Der stille
+> No-Op — `sslrootcert` bei nicht-verifizierendem Modus — erzeugt jetzt eine
+> `WARN`-Logzeile am `ConnectionUrlParser`-Chokepoint (maskierte URL, via
+> `rootCertIneffective()`); **kein** harter Fehler, weil der in der Gegenprüfung
+> widerlegt wurde (bräche `sslmode=require&sslrootcert`). Ein Schema-Domänen-W-Code
+> war der falsche Kanal (W-Codes sind DDL-Transformations-Notizen) — ein slf4j-Logger
+> am Chokepoint ist die passende Verbindungs-Diagnose. TDD (Prädikat + parse-Branch);
+> `:driver-common:check` grün.
+>
+> **Noch offen (verwandt, nicht Befund 8/9):** AP4 unten — die Encoding-Asymmetrie
+> (`config.params` URL-encoded vs. `database`/`host` roh) ist ein separater
+> Prüfpunkt, kein bestätigter Befund.
 
 ## Befunde
 

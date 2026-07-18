@@ -238,10 +238,15 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 > Ebenfalls behoben 2026-07-18: **9** (SslSettingsParser case-insensitive Dup-Keys),
 > **10** (Masker + Connector/J-Keystore-Params) und **11** (Audit-JSONL `0600`),
 > [`jdbc-ssl-default-hardening.md`](jdbc-ssl-default-hardening.md) +
-> [`secret-leakage-residuals.md`](secret-leakage-residuals.md). Offen bleiben die
+> [`secret-leakage-residuals.md`](secret-leakage-residuals.md). **Befund 8** ist ebenfalls
+> behoben 2026-07-18: [ADR 0038](../../adr/0038-ssl-default-prefer-verify-full-opt-in.md)
+> hält den `prefer`-Default normativ fest (verify-full = opt-in, verify-full-Default
+> als Breaking verworfen), und der stille `sslrootcert`-No-Op erzeugt jetzt eine
+> slf4j-`WARN` am `ConnectionUrlParser`-Chokepoint. Offen bleiben nur noch die
 > Supply-Chain-Härtungs-APs (Gradle-Wrapper-/Base-Image-Digest, Dependency-
-> Verification) und **Befund 8** (sicherer SSL-Default = Breaking/ADR; sslrootcert-
-> Warnung = abgeschwächt) — bewusste Tiefenstufen, keine offenen Quick-Wins mehr.
+> Verification) und kleine dokumentierte Residuen (McpServerConfig-`toString`,
+> Masker-fail-open-Richtung, redundante Kover-Excludes) — allesamt bewusste
+> Tiefenstufen, keine offenen Quick-Wins mehr.
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 
