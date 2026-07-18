@@ -164,6 +164,53 @@ class McpServerConfigValidationTest : FunSpec({
         ).validate().shouldBeEmpty()
     }
 
+    test("JWT_JWKS with http jwksUrl on a routable host rejects (CWE-319, trust anchor)") {
+        // http:// on the JWKS URL lets a network MITM swap the key set and forge tokens
+        // that pass the otherwise-strict chain. 192.0.2.10 is RFC 5737 TEST-NET (a literal,
+        // so no DNS lookup; classified non-loopback).
+        val errs = validJwks().copy(jwksUrl = URI.create("http://192.0.2.10/jwks")).validate()
+        errs.forAtLeastOne { it shouldContain "jwksUrl" }
+        errs.forAtLeastOne { it shouldContain "https" }
+    }
+
+    test("JWT_JWKS with http jwksUrl on 127.0.0.1 validates (dev Keycloak)") {
+        validJwks().copy(
+            jwksUrl = URI.create("http://127.0.0.1:8080/realms/x/protocol/openid-connect/certs"),
+        ).validate().shouldBeEmpty()
+    }
+
+    test("JWT_JWKS with http jwksUrl on localhost validates (dev Keycloak)") {
+        validJwks().copy(
+            jwksUrl = URI.create("http://localhost:8080/realms/x/protocol/openid-connect/certs"),
+        ).validate().shouldBeEmpty()
+    }
+
+    test("JWT_JWKS with https jwksUrl validates") {
+        validJwks().copy(jwksUrl = URI.create("https://issuer.example/jwks")).validate().shouldBeEmpty()
+    }
+
+    test("JWT_JWKS with http jwksUrl on IPv6 loopback [::1] validates (bracket unwrap)") {
+        // URI.host yields the bracketed form for an IPv6 literal; the guard must unwrap it
+        // before resolving, otherwise a legitimate [::1] dev endpoint would be rejected.
+        validJwks().copy(jwksUrl = URI.create("http://[::1]:8080/certs")).validate().shouldBeEmpty()
+    }
+
+    test("JWT_INTROSPECTION with http introspectionUrl on a routable host rejects (CWE-319, Befund 12)") {
+        // Same scheme omission as jwksUrl; here plaintext also leaks the client_secret and
+        // the introspection `active` verdict is forgeable.
+        val errs = validIntrospection().copy(
+            introspectionUrl = URI.create("http://192.0.2.10/introspect"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "introspectionUrl" }
+        errs.forAtLeastOne { it shouldContain "https" }
+    }
+
+    test("JWT_INTROSPECTION with http introspectionUrl on a loopback host validates (dev)") {
+        validIntrospection().copy(
+            introspectionUrl = URI.create("http://localhost:8080/introspect"),
+        ).validate().shouldBeEmpty()
+    }
+
     test("allowedOrigins with literal '*' rejects (§12.6)") {
         val errs = validJwks().copy(
             allowedOrigins = setOf("*"),

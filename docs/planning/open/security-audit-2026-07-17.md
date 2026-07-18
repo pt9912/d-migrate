@@ -217,11 +217,14 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 
 ## P2 — Zeitnah beheben
 
-> **Stand 2026-07-18:** Von den fünf P2 sind zwei behoben — Befund 3
-> (MySQL-inline-ENUM-Backslash, gemeinsam mit P1-Befund 1 in `447a9006`) und der
-> beim P1-Fix aufgetauchte Partition-Bound-Backslash (2026-07-18,
-> [`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md)).
-> Offen: Befund 4 und 5 (MCP-HTTP-/Auth-Cluster) sowie 6 (Release-Supply-Chain).
+> **Stand 2026-07-18:** Von den fünf P2 sind drei behoben — Befund 3
+> (MySQL-inline-ENUM-Backslash, gemeinsam mit P1-Befund 1 in `447a9006`), der beim
+> P1-Fix aufgetauchte Partition-Bound-Backslash
+> ([`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md))
+> und Befund 5 (jwksUrl/introspectionUrl-https-Zwang,
+> [`mcp-auth-url-scheme-validation.md`](mcp-auth-url-scheme-validation.md) — schließt
+> als Folge die P3-Befunde 7 und 12 mit). Offen: Befund 4 (MCP-HTTP-Body-Limit) und
+> 6 (Release-Supply-Chain).
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 

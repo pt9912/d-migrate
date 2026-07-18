@@ -1,10 +1,36 @@
 # MCP-Auth: kein https-Zwang auf jwksUrl/introspectionUrl (P2)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** BEHOBEN 2026-07-18
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 5 = P2,
 > 7 = P3, 12 = P3). Eine systemische Scheme-Validierungs-Omission, ein Fix.
-> **Aktivierungsbedingung:** P2 — RC-Kandidat → `next/`-Plan.
+>
+> **Umsetzung:** Ein gemeinsamer Guard `authUrlSchemeError(label, url)` in
+> `McpServerConfig`, aufgerufen aus `jwksAuthErrors()` **und**
+> `introspectionAuthErrors()` — erzwingt `https`, außer der URL-**Host** ist
+> Loopback (kein pauschaler Zwang; `http://localhost/certs` als Dev-Keycloak-Form
+> bleibt gültig). Loopback-Klassifikation über das aus `bindIsLoopback()`
+> extrahierte, geteilte `isLoopbackHost(host)` (InetAddress, IPv6-Brackets
+> entpackt, unauflösbar → fail-closed = nicht-Loopback → https-Pflicht). Der
+> Fehler fließt in `validate()` und löst den bestehenden **Exit 2 vor dem ersten
+> Client-Request** aus (`McpServeRunner.doExecute` + Defense-in-depth in
+> `McpServerBootstrap.startHttp`) — kein neuer Exit-Pfad nötig. TDD in
+> `McpServerConfigValidationTest` (routbar-http → reject je URL; 127.0.0.1 +
+> localhost + https → ok). Docker `:mcp:check` + `:cli:check` grün.
+>
+> **Deckt zusätzlich ab:** Befund 12 (introspectionUrl-Schema) ist derselbe Guard;
+> Befund 7 (Bearer-/Secret-Klartext im Introspection-POST) entfällt als Folge, weil
+> `https` auf `introspectionUrl` den Klartext-Transport beseitigt.
+>
+> **Spec:** Regel in [`spec/mcp-server.md`](../../../spec/mcp-server.md)
+> „Validierungsregeln" ergänzt (https außer Loopback-Host für `jwks-url`/
+> `introspection-url`).
+>
+> **ADR 0009: keine Änderung nötig.** Die Entscheidung (reiner Resource-Server,
+> validiert extern ausgestellte JWTs) bleibt unberührt; der Transportsicherheits-
+> Zwang für den Vertrauensanker ist eine Validierungsregel *unter* dieser
+> Entscheidung und gehört normativ in die Spec, nicht als neue/geänderte
+> Architektur-Entscheidung.
 
 ## Befund
 

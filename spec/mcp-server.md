@@ -161,6 +161,11 @@ d-migrate mcp serve \
   und (je nach Modus) `jwks-url` oder `introspection-url` MÜSSEN
   gesetzt sein.
 - `publicBaseUrl != null` → MUSS `https`-Schema haben.
+- `jwks-url` bzw. `introspection-url` MÜSSEN `https`-Schema haben; ein
+  Loopback-Host (`localhost`, `127.0.0.0/8`, `::1`) darf `http` nutzen
+  (Dev-IdP). Ein routbarer `http`-Endpoint ist ein Startfehler — die
+  JWKS-URL ist der Vertrauensanker der Token-Prüfung, und der
+  Introspection-Endpoint trägt das Client-Secret im Klartext.
 - `allowedOrigins` darf `*` (Wildcard) nicht enthalten; bei
   Nicht-Loopback-Bind MUSS die Liste explizit gesetzt werden.
 - `algorithmAllowlist` darf `none` und `HS*` nicht enthalten.
