@@ -23,7 +23,6 @@ import dev.dmigrate.server.core.policy.PolicyDecision
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
-import dev.dmigrate.server.ports.ApprovalGrantStore
 import dev.dmigrate.server.ports.IdempotencyStore
 import dev.dmigrate.server.ports.JobStartTransaction
 import dev.dmigrate.server.ports.JobStartTransactionOutcome
@@ -81,7 +80,6 @@ class JobStartOrchestrator(
     private val idempotencyStore: IdempotencyStore,
     private val jobStartTransaction: JobStartTransaction,
     private val workerHandleRegistry: WorkerHandleRegistry,
-    private val approvalGrantStore: ApprovalGrantStore,
     private val approvedRetryService: ApprovedRetryService,
     private val policyService: PolicyService,
     private val payloadFingerprintService: PayloadFingerprintService,
@@ -394,10 +392,19 @@ class JobStartOrchestrator(
         fingerprint: String,
         durableChallenge: dev.dmigrate.server.core.approval.ApprovalChallenge?,
     ): JobStartHandlerOutcome {
+        // Härtung (Security-Audit #2, Anti-Replay): Ohne durable Challenge KANN
+        // der approvalRequestId-Anti-Replay-Check nicht laufen. Früher zog der
+        // Retry die approvalRequestId dann aus dem Grant selbst — ein
+        // Anti-Replay-Bypass (ApprovalRequestIdMismatch konnte nie feuern).
+        // Jetzt fail-closed: ein (stale) Token treibt keine Ausführung; wir
+        // re-decide die Policy und stellen eine frische Challenge. Die
+        // server-state-production-Wirebahn persistiert die Challenge immer
+        // (markAwaitingAndChallenge), also ist dieser Zweig rein defensiv.
+        if (durableChallenge == null) return reDecideAwaiting(request, scope, fingerprint)
         val token = request.approvalToken
         return if (token != null) {
             handleApprovedRetry(request, scope, fingerprint, token, durableChallenge)
-        } else if (durableChallenge != null) {
+        } else {
             // LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix Blocker #3): Replay-Pfad ohne Token
             // liefert die DURABLE-gespeicherte Challenge zurueck — gleicher
             // approvalRequestId, gleiche requiredScopes, kein
@@ -410,33 +417,40 @@ class JobStartOrchestrator(
                 requiredScopes = durableChallenge.requiredScopes,
                 reasons = durableChallenge.reasons,
             )
-        } else {
-            // Bestands-Pfad ohne durable Challenge (z.B. wenn ein
-            // Bestands-Caller markAwaitingApproval ohne challenge gerufen
-            // hat): re-decide Policy. Defensive — die server-state-production-
-            // Wirebahn liefert immer eine durable Challenge.
-            val attempt = PolicyAttempt(
-                tenantId = request.tenantId,
-                callerId = request.callerId,
-                toolName = request.toolName,
-                correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
-                correlationKey = request.idempotencyKey!!,
-                payloadFingerprint = fingerprint,
-                resourceRefs = request.refs.map { it.value },
-            )
-            when (val decision = policyService.decide(attempt)) {
-                is PolicyDecision.RequiresApproval ->
-                    JobStartHandlerOutcome.PolicyRequired(
-                        approvalRequestId = decision.approvalRequestId,
-                        correlationKind = decision.correlationKind,
-                        correlationKey = decision.correlationKey,
-                        payloadFingerprint = fingerprint,
-                        requiredScopes = decision.requiredScopes,
-                        reasons = decision.reasons,
-                    )
-                is PolicyDecision.Allowed -> commitJob(request, scope)
-                is PolicyDecision.Denied -> denyAndReturn(scope, decision.reasonCode, request.now)
-            }
+        }
+    }
+
+    /**
+     * Kein durable Challenge-Record vorhanden (defensiver Bestands-/Härtungs-
+     * Pfad, s. [handleExistingAwaitingApproval]): Policy neu entscheiden statt
+     * einen mitgeschickten Token gegen den Grant selbst zu prüfen.
+     */
+    private fun reDecideAwaiting(
+        request: JobStartRequest,
+        scope: IdempotencyScope,
+        fingerprint: String,
+    ): JobStartHandlerOutcome {
+        val attempt = PolicyAttempt(
+            tenantId = request.tenantId,
+            callerId = request.callerId,
+            toolName = request.toolName,
+            correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
+            correlationKey = request.idempotencyKey!!,
+            payloadFingerprint = fingerprint,
+            resourceRefs = request.refs.map { it.value },
+        )
+        return when (val decision = policyService.decide(attempt)) {
+            is PolicyDecision.RequiresApproval ->
+                JobStartHandlerOutcome.PolicyRequired(
+                    approvalRequestId = decision.approvalRequestId,
+                    correlationKind = decision.correlationKind,
+                    correlationKey = decision.correlationKey,
+                    payloadFingerprint = fingerprint,
+                    requiredScopes = decision.requiredScopes,
+                    reasons = decision.reasons,
+                )
+            is PolicyDecision.Allowed -> commitJob(request, scope)
+            is PolicyDecision.Denied -> denyAndReturn(scope, decision.reasonCode, request.now)
         }
     }
 
@@ -445,38 +459,27 @@ class JobStartOrchestrator(
         scope: IdempotencyScope,
         fingerprint: String,
         rawToken: String,
-        durableChallenge: dev.dmigrate.server.core.approval.ApprovalChallenge?,
+        durableChallenge: dev.dmigrate.server.core.approval.ApprovalChallenge,
     ): JobStartHandlerOutcome {
         val tokenFingerprint = ApprovalTokenFingerprint.compute(rawToken)
         // LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix Blocker #3): die Challenge wurde beim
-        // markAwaitingApproval durabel gespeichert. ApprovalAttempt
-        // benutzt JETZT die durable approvalRequestId + requiredScopes —
-        // damit greift der ApprovalGrantValidator-Anti-Replay-Check
-        // (LF-012 / LN-011 / LN-017 / LN-027 "Ein Grant fuer eine alte oder erneuerte
-        // approvalRequestId ist ungueltig") echt: ein Grant fuer einen
-        // anderen approvalRequestId wird via ApprovalRequestIdMismatch
-        // abgelehnt. ScopeMismatch greift ebenfalls — die durable
-        // requiredScopes sind nicht mehr empty.
-        //
-        // durableChallenge == null ist Bestands-Compat (Stores ohne
-        // Challenge-Persistierung); dann faellt der Service auf das
-        // alte LF-012 / LN-011 / LN-017 / LN-027-(3a)-Verhalten zurueck (Approval-Request-Id-Lookup
-        // im Grant — Anti-Replay-Bypass).
-        val approvalRequestId = durableChallenge?.approvalRequestId
-            ?: approvalGrantStore.findByTokenFingerprint(request.tenantId, tokenFingerprint)
-                ?.approvalRequestId
-                ?: ""
-        val requiredScopes = durableChallenge?.requiredScopes ?: emptySet()
+        // markAwaitingApproval durabel gespeichert. ApprovalAttempt benutzt die
+        // durable approvalRequestId + requiredScopes — damit greift der
+        // ApprovalGrantValidator-Anti-Replay-Check (LF-012 "Ein Grant fuer eine
+        // alte oder erneuerte approvalRequestId ist ungueltig") echt: ein Grant
+        // fuer einen anderen approvalRequestId wird via ApprovalRequestIdMismatch
+        // abgelehnt. `durableChallenge` ist non-null (der null-Fall fällt in
+        // [handleExistingAwaitingApproval] fail-closed auf re-decide zurück).
         val attempt = ApprovalAttempt(
             tokenFingerprint = tokenFingerprint,
-            approvalRequestId = approvalRequestId,
+            approvalRequestId = durableChallenge.approvalRequestId,
             tenantId = request.tenantId,
             callerId = request.callerId,
             toolName = request.toolName,
             correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
             correlationKey = request.idempotencyKey!!,
             payloadFingerprint = fingerprint,
-            requiredScopes = requiredScopes,
+            requiredScopes = durableChallenge.requiredScopes,
         )
         val outcome = approvedRetryService.retry(attempt, scope, request.now, request.jobBuilder)
         return outcome.toHandlerOutcome()

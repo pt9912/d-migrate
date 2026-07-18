@@ -57,7 +57,6 @@ class SchemaReverseStartHandlerTest : FunSpec({
             idempotencyStore = idempotencyStore,
             jobStartTransaction = transaction,
             workerHandleRegistry = workerHandleRegistry,
-            approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = policyService,
             payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),

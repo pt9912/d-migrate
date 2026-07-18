@@ -639,6 +639,40 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
 
 2. **Approval-Grant-Kette (Replay & Lebenszyklus).** Die **zweite Autorisierungsschranke** des Produkts — der Human-in-the-Loop-Gate vor destruktiven DB-Operationen durch einen KI-Agenten — ist komplett ungeprüft, während die erste (JWT) doppelt geprüft wurde. Beobachtung: `ApprovalGrantValidator.validate` bindet sauber (expiry/tenant/caller/tool/payloadFingerprint/scopes), aber der Port `ApprovalGrantStore` kennt nur `put`/`find`/`deleteExpired` — **keine Consumption-/Nonce-/markUsed-Semantik**. Ein erteilter Grant wäre innerhalb seiner TTL beliebig oft einlösbar. Ob der Idempotency-Store das abfängt oder es eine echte Replay-Lücke ist, klärt nur eine gezielte Prüfung.
 
+   > **Nachgeholt (Follow-up-Audit 2026-07-18) — Fläche geprüft; als Replay-Lücke
+   > WIDERLEGT, eine Härtung umgesetzt:**
+   >
+   > - **Kein Replay-Doppel-Effekt.** Die Beobachtung „`ApprovalGrantStore` ohne
+   >   `markUsed`/Nonce" stimmt wörtlich, führt aber nicht zu Mehrfach-Ausführung.
+   >   Der Einmal-Effekt wird strukturell **doppelt** erzwungen: (1) **Idempotenz an
+   >   der Ausführungs-Naht** — jede Einlösung läuft durch `AiToolOrchestrator.dispatch`
+   >   / `IdempotencyStore.reserve` atomar pro `(scope, payloadFingerprint)`; nach dem
+   >   ersten Commit wird ein terminaler Outcome 1:1 replayt statt re-executed, eine
+   >   Payload-Abweichung fängt der Validator (`PayloadMismatch`). (2) **Nonce-Bindung**
+   >   — der Grant ist an eine **frische Zufalls-`approvalRequestId` pro Challenge**
+   >   gebunden (`ConfiguredPolicyService`: `appr_${UUID}`), die nur im Challenge-Record
+   >   lebt; gegen eine andere/erneuerte Challenge → `ApprovalRequestIdMismatch`.
+   > - **Durabilitäts-Asymmetrie geprüft, kein Loch.** Der KI-Tool-Pfad paart einen
+   >   durablen (file-backed) Grant-Store mit einem **volatilen** In-Process-
+   >   `AiToolOutcomeStore` (keine JDBC-Variante). Ein Replay nach Neustart scheitert
+   >   trotzdem: die volatile Challenge ist weg, die Token-Einlösung verlangt eine
+   >   lebende Challenge, und eine neu abgeleitete trägt eine neue `approvalRequestId`
+   >   → alter Grant `ApprovalRequestIdMismatch`. Kosten: eine mittendrin genehmigte
+   >   KI-Op geht bei einem Crash verloren und muss re-genehmigt werden (Robustheit,
+   >   kein Sicherheitsbug).
+   > - **Härtung umgesetzt (`JobStartOrchestrator`):** Der Job-Pfad hatte einen
+   >   dokumentierten „Anti-Replay-Bypass"-Fallback — fehlte die durable Challenge, zog
+   >   der Retry die `approvalRequestId` **aus dem Grant selbst** (dann konnte
+   >   `ApprovalRequestIdMismatch` nie feuern). Im aktuellen Wiring tot, aber latent.
+   >   Fix: `handleApprovedRetry` nimmt jetzt eine **non-null** `ApprovalChallenge`; der
+   >   `null`-Fall fällt **fail-closed** auf `reDecideAwaiting` zurück (frische Challenge,
+   >   stale Token treibt keine Ausführung). Das redundante `approvalGrantStore`-Feld
+   >   aus dem Orchestrator entfernt. Regressionstest deckt genau die alte Bypass-
+   >   Aufstellung ab (alt → `Started`, neu → `PolicyRequired`).
+   > - **Nicht adressiert (offen als Härtung, kein Bug):** eine durable Variante des
+   >   `AiToolOutcomeStore` (damit eine mittendrin genehmigte KI-Op einen Restart
+   >   überlebt). Ticket [`approval-grant-antireplay-hardening.md`](approval-grant-antireplay-hardening.md).
+
 3. **`adapters/driven/persistence-jdbc/` (~1445 LOC) — Mandantentrennung und Nebenläufigkeit.** Enthält den gesamten persistenten Zustand des Mehrmandanten-MCP-Servers: Quota-Store (die einzige DoS-Bremse gegen einen authentifizierten Mandanten), Idempotency-Store (464 LOC, Replay-Schutz) und Job-Store. Der Reserve-Pfad ist als `INSERT … ON CONFLICT DO UPDATE WHERE limit-check` atomar **gedacht** — niemand hat verifiziert, ob der Limit-Check race-frei ist, ob der Release-Pfad einem Mandanten erlaubt, fremde Reservierungen freizugeben, oder ob die Owner-Zuordnung die Tenant-Grenze trägt.
 
 4. **MCP-Job-Ausführungspfad (`DataRunnerWorkers`, `McpCoreJobWorkerFactory`, `JobDispatcher`, `JobStartService`, `AiToolOrchestrator`).** Exakt die Naht, an der ein validierter MCP-Request in eine reale DB-Schreiboperation übersetzt wird. Geprüft wurden Auth und Request-Parsing — nicht, was der Worker danach damit macht. Ungeklärt: Läuft der Worker mit dem Principal des Aufrufers oder mit Server-Rechten? Werden Quota und Approval **vor** oder **nach** dem Dispatch ausgewertet?

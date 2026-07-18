@@ -101,7 +101,6 @@ class JobQuotaScenarioTest : FunSpec({
             idempotencyStore = idempotencyStore,
             jobStartTransaction = transaction,
             workerHandleRegistry = workerHandleRegistry,
-            approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyEffect),
             payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),

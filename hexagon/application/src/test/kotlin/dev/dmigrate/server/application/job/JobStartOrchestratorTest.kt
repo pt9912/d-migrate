@@ -61,7 +61,6 @@ class JobStartOrchestratorTest : FunSpec({
             idempotencyStore = idempotencyStore,
             jobStartTransaction = transaction,
             workerHandleRegistry = workerHandleRegistry,
-            approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = policyService,
             payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
@@ -213,6 +212,58 @@ class JobStartOrchestratorTest : FunSpec({
         val outcome = fx.orchestrator.start(fx.request(approvalToken = "bogus-token"))
         outcome.shouldBeInstanceOf<JobStartHandlerOutcome.PolicyDenied>()
         outcome.reason shouldBe "policy:grant-unknown"
+    }
+
+    test("Fail-closed (Security-Audit #2): AwaitingApproval OHNE durable Challenge + Token → keine Ausfuehrung") {
+        // Regression fuer den entfernten Anti-Replay-Bypass: fehlte die durable
+        // Challenge, zog der Retry die approvalRequestId frueher AUS dem Grant
+        // selbst — ApprovalRequestIdMismatch konnte nie feuern, ein angreifer-
+        // gewaehlter Grant lief durch (→ Started). Jetzt fail-closed: re-decide
+        // Policy → erneut Challenge, kein Job.
+        val fx = Fixture(policyDefault = PolicyEffect.Challenge(setOf("data.read")))
+        val fingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService())
+        val payload = JsonValue.obj("connectionId" to JsonValue.str("c1"))
+        val fingerprint = fingerprintService.fingerprint(
+            scope = dev.dmigrate.server.application.fingerprint.FingerprintScope.START_TOOL,
+            payload = payload,
+            bind = dev.dmigrate.server.application.fingerprint.BindContext(
+                tenantId = tenant, callerId = principal, toolName = tool,
+            ),
+        )
+        val scope = dev.dmigrate.server.core.idempotency.IdempotencyScope(
+            tenantId = tenant,
+            callerId = principal,
+            toolName = tool,
+            idempotencyKey = dev.dmigrate.server.core.idempotency.IdempotencyKey("k1"),
+        )
+        // AWAITING_APPROVAL OHNE durable Challenge (Record ohne Challenge-Persistierung).
+        fx.idempotencyStore.reserve(scope, fingerprint, now)
+        fx.idempotencyStore.markAwaitingApproval(scope, now)
+
+        // Grant, dessen approvalRequestId der alte Bypass 1:1 uebernommen haette
+        // (garantierter Match); alle uebrigen Bindungen passen ebenfalls.
+        val rawToken = "tok-forged"
+        fx.approvalGrantStore.save(
+            ApprovalGrant(
+                approvalRequestId = "appr-attacker-chosen",
+                correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
+                correlationKey = "k1",
+                approvalTokenFingerprint = ApprovalTokenFingerprint.compute(rawToken),
+                toolName = tool,
+                tenantId = tenant,
+                callerId = principal,
+                payloadFingerprint = fingerprint,
+                issuerFingerprint = "test-issuer",
+                issuedScopes = setOf("data.read"),
+                grantSource = "test",
+                expiresAt = now.plusSeconds(3600),
+            ),
+        )
+
+        val outcome = fx.orchestrator.start(fx.request(approvalToken = rawToken))
+        // Fail-closed: KEINE Ausfuehrung; der stale Token treibt keinen Job.
+        outcome.shouldBeInstanceOf<JobStartHandlerOutcome.PolicyRequired>()
+        fx.jobIdSeq.get() shouldBe 0
     }
 
     test("IdempotencyConflict: gleicher Scope, anderer Fingerprint → keine Policy") {
