@@ -34,6 +34,21 @@ class SslSettingsParserTest : FunSpec({
         pg(mapOf("SSLMODE" to "REQUIRE")).ssl.mode shouldBe SslMode.REQUIRE
     }
 
+    test("PG: case-abweichendes Duplikat wird vollständig konsumiert (Befund 9, CWE-178)") {
+        // `sslmode=verify-full` (erster Treffer) gewinnt; das case-abweichende
+        // Duplikat `sslMode=disable` darf NICHT in remainingParams überleben,
+        // sonst überschriebe es den validierten Modus in der emittierten URL.
+        val e = pg(mapOf("sslmode" to "verify-full", "sslMode" to "disable"))
+        e.ssl.mode shouldBe SslMode.VERIFY_FULL
+        e.remainingParams shouldBe emptyMap()
+    }
+
+    test("MySQL: case-abweichendes sslMode-Duplikat wird vollständig konsumiert (Befund 9)") {
+        val e = mysql(mapOf("sslMode" to "REQUIRED", "SSLMODE" to "DISABLED"))
+        e.ssl.mode shouldBe SslMode.REQUIRE
+        e.remainingParams shouldBe emptyMap()
+    }
+
     test("PG: ungültiger sslmode → Fehler mit gescrubbter URL") {
         val ex = shouldThrow<IllegalArgumentException> {
             SslSettingsParser.extract(

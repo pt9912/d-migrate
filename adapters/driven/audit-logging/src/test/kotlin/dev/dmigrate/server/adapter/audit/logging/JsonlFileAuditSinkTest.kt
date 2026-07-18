@@ -10,7 +10,9 @@ import io.kotest.matchers.string.shouldNotContain
 import io.mockk.every
 import io.mockk.mockk
 import org.slf4j.Logger
+import java.nio.file.FileSystems
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermission
 import java.time.Instant
 
 class JsonlFileAuditSinkTest : FunSpec({
@@ -24,6 +26,15 @@ class JsonlFileAuditSinkTest : FunSpec({
         durationMs = 12,
         exitCode = exitCode,
     )
+
+    test("legt eine neue Audit-Datei mit 0600-Rechten an (Befund 11, CWE-276)") {
+        val file = Files.createTempDirectory("audit-perms").resolve("audit.log")
+        JsonlFileAuditSink(file).emit(event("req-1"))
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            Files.getPosixFilePermissions(file) shouldBe
+                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
+        }
+    }
 
     test("legt das Parent-Verzeichnis an und schreibt eine JSONL-Zeile") {
         val file = Files.createTempDirectory("audit").resolve("nested/dir/audit.log")

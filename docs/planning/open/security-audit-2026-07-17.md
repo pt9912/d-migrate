@@ -235,8 +235,13 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 > testFixtures in ein echtes Adapter-Modul `:adapters:driven:persistence-memory` →
 > kein kotest/JUnit/byte-buddy/mockk mehr im CLI-Shadow-Jar,
 > [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
-> Offen bleiben die Härtungs-APs (Gradle-Wrapper-/Base-Image-Digest,
-> Dependency-Verification) und 8–11 (jdbc-ssl-Erzwingung, secret-leakage-Residuen).
+> Ebenfalls behoben 2026-07-18: **9** (SslSettingsParser case-insensitive Dup-Keys),
+> **10** (Masker + Connector/J-Keystore-Params) und **11** (Audit-JSONL `0600`),
+> [`jdbc-ssl-default-hardening.md`](jdbc-ssl-default-hardening.md) +
+> [`secret-leakage-residuals.md`](secret-leakage-residuals.md). Offen bleiben die
+> Supply-Chain-Härtungs-APs (Gradle-Wrapper-/Base-Image-Digest, Dependency-
+> Verification) und **Befund 8** (sicherer SSL-Default = Breaking/ADR; sslrootcert-
+> Warnung = abgeschwächt) — bewusste Tiefenstufen, keine offenen Quick-Wins mehr.
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 

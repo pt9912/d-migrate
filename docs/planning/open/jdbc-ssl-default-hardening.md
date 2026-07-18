@@ -1,11 +1,27 @@
 # JDBC: kein sicherer SSL-Default, CA-Pin als stiller No-Op (P3)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** Befund 9 BEHOBEN 2026-07-18; Befund 8 = bewusste offene Tiefenstufe.
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 8 und
 > 9, beide P3). Konkretisiert die bekannte offene Tiefenstufe von [`LN-026`](../../../spec/lastenheft-d-migrate.md)
 > („Erzwingung + Truststore").
-> **Aktivierungsbedingung:** P3 — Härtung, Backlog.
+>
+> **Umsetzung (Befund 9, CWE-178):** `SslSettingsParser` verbraucht jetzt **alle**
+> Case-Varianten eines SSL-Keys (kanonische Lowercase-Keys + case-insensitiver
+> `filterConsumed`); ein case-abweichendes Duplikat (`sslMode` neben `sslmode`)
+> überlebt nicht mehr in `remainingParams` und kann den validierten Modus nicht
+> mehr in der emittierten URL überschreiben. TDD (PG + MySQL);
+> `:driver-common:check` grün.
+>
+> **Befund 8 — bewusst NICHT jetzt (dokumentierte Entscheidung):** (8a) Ein sicherer
+> Default (`verify-full`) ist ein **Breaking Change** für Selfsigned-Setups und
+> braucht ADR + CHANGELOG; der Audit hält `prefer` für spec-konform (libpq/pgjdbc-
+> Default). (8b) `sslrootcert` ohne verifizierenden `sslmode` als **harter** Fehler
+> wurde in der Audit-Gegenprüfung **widerlegt** (bräche das verbreitete
+> `sslmode=require&sslrootcert`); die sanktionierte Alternative — eine W-Code-
+> **Warnung** — bräuchte einen Note-Kanal durch `JdbcUrlBuilder.sslParams` (heute
+> reine `Map`), was der abgeschwächte P3 nicht rechtfertigt. Beides bleibt bewusst
+> als Tiefenstufe offen.
 
 ## Befunde
 

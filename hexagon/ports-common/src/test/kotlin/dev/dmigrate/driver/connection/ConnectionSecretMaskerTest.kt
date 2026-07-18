@@ -46,6 +46,15 @@ class ConnectionSecretMaskerTest : FunSpec({
         }
     }
 
+    test("masks MySQL Connector/J keystore passwords (Befund 10, case-insensitive)") {
+        ConnectionSecretMasker.mask(
+            "jdbc:mysql://host:3306/db?trustCertificateKeyStorePassword=changeit" +
+                "&clientCertificateKeyStorePassword=privkeypw&useSSL=true",
+        ) shouldBe
+            "jdbc:mysql://host:3306/db?trustCertificateKeyStorePassword=***" +
+            "&clientCertificateKeyStorePassword=***&useSSL=true"
+    }
+
     test("leaves non-secret strings unchanged") {
         ConnectionSecretMasker.mask("analytics-prod") shouldBe "analytics-prod"
     }

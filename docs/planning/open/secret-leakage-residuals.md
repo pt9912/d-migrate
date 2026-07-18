@@ -1,11 +1,26 @@
 # Secret-Leakage: Masker-Lücke und Audit-Dateirechte (P3)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** Befund 10+11 BEHOBEN 2026-07-18; McpServerConfig-`toString` = Residuum.
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 10 und
 > 11, beide P3).
-> **Aktivierungsbedingung:** P3 — Härtung, Backlog. Klein und lokal; guter
-> Quick-Win-Kandidat.
+>
+> **Umsetzung:** (10, CWE-532) `ConnectionSecretMasker.sensitiveQueryKeys` um die
+> MySQL-Connector/J-Keystore-Passwörter `trustCertificateKeyStorePassword` +
+> `clientCertificateKeyStorePassword` ergänzt (Masker-Regex ist `(?i)` → camelCase
+> matcht). (11, CWE-276) `JsonlFileAuditSink` legt die Datei jetzt mit `0600` **beim
+> Anlegen** an (POSIX-`asFileAttribute`, guarded; Muster vom Credential-Store) statt
+> per chmod-Race. TDD (Masker-Param + POSIX-Rechte); `:ports-common:check` +
+> `:audit-logging:check` grün.
+>
+> **Residuum (dokumentiert, nicht jetzt):** `McpServerConfig` ist eine `data class`
+> mit Klartext-`introspectionClientSecret` ohne `toString()`-Override — der Leak ist
+> aber rein theoretisch: die Config wird **nirgends geloggt** (repo-weiter grep
+> leer). Ein verboser/fragiler `toString()`-Override über ~20 Felder ist bei null
+> aktueller Exposition nicht gerechtfertigt; ein künftiges Log-Statement sollte eine
+> maskierte Repräsentation nutzen (Gegenmuster `StoredCredential`/`ConnectionConfig`
+> im Repo). Ebenso offen: die **fail-open**-Richtung der Masker-Allowlist (Symptom;
+> tragfähiger wäre typisierte Secret-Führung — eigener Slice).
 
 ## Befunde
 
