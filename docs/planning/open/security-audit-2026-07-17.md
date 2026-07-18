@@ -227,7 +227,11 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 > + Auth-vor-Body-Reorder, [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md))
 > und Befund 6 (Release-Supply-Chain: Action-SHA-Pinning + `GITHUB_TOKEN`-least-
 > privilege, [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
-> **P1 und P2 sind damit vollständig geschlossen.** P3-Backlog behoben 2026-07-18:
+> **Der Erst-Audit-P1/P2-Ledger ist damit vollständig geschlossen.** Der Follow-up-
+> Audit der zuvor ungeprüften integrations-Fläche (2026-07-18) fand **einen weiteren
+> P2** — Liquibase-`changeSetId`-XML-Injection
+> ([`liquibase-changeset-id-xml-injection.md`](liquibase-changeset-id-xml-injection.md))
+> — ebenfalls behoben (Details in der „Nicht geprüft"-Sektion unten). P3-Backlog behoben 2026-07-18:
 > **13+14** (MCP-`DELETE`-Auth + Session/Principal-Bindung,
 > [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md)) und **15+16+17**
 > (Dockerfile-Download-Integrität + testFixtures-Leak: nodesource-GPG-Pin statt
@@ -609,6 +613,29 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
 **Hohe Priorität**
 
 1. **`adapters/driven/integrations/` — Nicht-SQL-Escaping-Matrix der Tool-Exporter (Flyway/Liquibase/Django/Knex).** Die einzige Stelle im Repo, die Schema-Inhalte in **XML, Python und JavaScript** rendert — eine völlig andere Escaping-Matrix als die geprüfte SQL-Seite. Konkrete Beobachtungen: `LiquibaseMigrationExporter` interpoliert `changeSetId` ungeescaped in ein XML-Attribut, und `RenderHelpers.escapeXml` escapet **nur** `&<>` — keine Quotes, kein `]]>`. `MigrationVersionValidator.validate` gibt für LIQUIBASE für **jeden** nicht-leeren String `true` zurück. `escapePython`/`escapeJavaScript` sind handgeschrieben (Backslash + Delimiter) — exakt die Klasse, in der dieses Audit bereits zwei bestätigte Backslash-Befunde (P1/P2) gefunden hat. Die Exploitierbarkeit hängt an der Provenienz von `version` (CLI-Flag vs. `schema.version` aus möglicherweise fremdbezogener Schema-YAML) — genau diese Herkunftsfrage muss ein Auditor entscheiden.
+
+   > **Nachgeholt (Follow-up-Audit 2026-07-18) — Fläche jetzt geprüft, gleiche
+   > 3-fach-Logik. Ein bestätigter Befund, drei Widerlegungen:**
+   >
+   > - **BEFUND (P2, CWE-91):** `LiquibaseMigrationExporter` interpolierte
+   >   `changeSetId` (`version-slug-dialect`) roh in `id="…"`. Die Liquibase-`version`
+   >   ist unvalidiert (`MigrationVersionValidator` → `true` für jeden non-blank
+   >   String) und kann via `schema.version`-Fallback aus einem **fremden Schema-File**
+   >   stammen (untrusted, SECURITY.md); ein `"` bricht das Attribut und injiziert
+   >   Geschwister-`changeSet`s in das Changelog, das der Operator dann per Liquibase
+   >   ausführt. **Behoben:** `RenderHelpers.escapeXmlAttribute` am Einbettungspunkt
+   >   (nicht die version-Validierung verengt — Liquibase erlaubt legitim beliebige
+   >   Versionen). TDD; Ticket
+   >   [`liquibase-changeset-id-xml-injection.md`](liquibase-changeset-id-xml-injection.md).
+   > - **Widerlegt:** (a) `escapeXml` im `<sql>`-**Text-Knoten** ist ausreichend
+   >   (`&<>`; `>`-Escaping bricht `]]>`; Quotes braucht ein Text-Knoten nicht — es ist
+   >   kein Attribut). (b) Der Knex-`*/`-Kommentar-Breakout ist **nicht ausbeutbar**:
+   >   `version` (Knex-Validator `[0-9_a-z]`) und `slug` (`MigrationSlugNormalizer` →
+   >   `[a-z0-9_]`) sind beide auf sichere Zeichensätze beschränkt. (c)
+   >   `escapePython`/`escapeJavaScript` sind robust (Backslash-Doubling +
+   >   `"""`/Backtick/`${`-Escaping, durchgespielt). Django interpoliert `version`/`slug`
+   >   nur in den (guarded) Dateinamen, Flyway erzeugt `.sql` mit rohem SQL — beide
+   >   ohne Injection-Fläche.
 
 2. **Approval-Grant-Kette (Replay & Lebenszyklus).** Die **zweite Autorisierungsschranke** des Produkts — der Human-in-the-Loop-Gate vor destruktiven DB-Operationen durch einen KI-Agenten — ist komplett ungeprüft, während die erste (JWT) doppelt geprüft wurde. Beobachtung: `ApprovalGrantValidator.validate` bindet sauber (expiry/tenant/caller/tool/payloadFingerprint/scopes), aber der Port `ApprovalGrantStore` kennt nur `put`/`find`/`deleteExpired` — **keine Consumption-/Nonce-/markUsed-Semantik**. Ein erteilter Grant wäre innerhalb seiner TTL beliebig oft einlösbar. Ob der Idempotency-Store das abfängt oder es eine echte Replay-Lücke ist, klärt nur eine gezielte Prüfung.
 

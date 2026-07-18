@@ -86,6 +86,18 @@ class LiquibaseMigrationExporterTest : FunSpec({
         result.artifacts[0].content shouldContain "</databaseChangeLog>"
     }
 
+    test("changeSetId is XML-attribute-escaped — a quote in the version cannot inject a sibling changeSet") {
+        // Liquibase-Versionen sind unvalidiert (jeder String); die version kann via
+        // schema.version aus einem fremden Schema-File kommen (untrusted, SECURITY.md).
+        // Ohne Escaping bräche `"` aus dem id="…"-Attribut aus und injizierte XML.
+        val version = """1"/><changeSet id="evil" author="x"/><x q="""
+        val xml = exporter.render(bundle(identity(version = version))).artifacts[0].content
+
+        xml shouldContain "&quot;"          // das Quote ist escaped
+        xml shouldNotContain """id="evil"""" // kein roher Attribut-Breakout
+        xml.split("<changeSet ").size shouldBe 2 // genau EIN changeSet; der injizierte wurde zu &lt;changeSet
+    }
+
     test("XML contains Liquibase namespace") {
         val result = exporter.render(bundle())
         result.artifacts[0].content shouldContain "http://www.liquibase.org/xml/ns/dbchangelog"

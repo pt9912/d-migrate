@@ -35,7 +35,7 @@ class LiquibaseMigrationExporter : ToolMigrationExporter {
             appendLine("""    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog""")
             appendLine("""        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">""")
             appendLine()
-            appendLine("""    <changeSet id="$changeSetId" author="d-migrate">""")
+            appendLine("""    <changeSet id="${RenderHelpers.escapeXmlAttribute(changeSetId)}" author="d-migrate">""")
             appendLine("""        <sql>""")
             append(indentSql(RenderHelpers.escapeXml(bundle.up.deterministicSql)))
             appendLine()
