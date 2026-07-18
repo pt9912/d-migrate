@@ -229,11 +229,14 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 > privilege, [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
 > **P1 und P2 sind damit vollständig geschlossen.** P3-Backlog behoben 2026-07-18:
 > **13+14** (MCP-`DELETE`-Auth + Session/Principal-Bindung,
-> [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md)) und **15+16**
-> (Dockerfile-Download-Integrität: nodesource-GPG-Pin statt `curl|bash` + yq/jq-
-> SHA256, [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
-> Offen bleiben 17 (testFixtures-Leak) + Wrapper-/Base-Image-Härtung und 8–11
-> (jdbc-ssl-Erzwingung, secret-leakage-Residuen).
+> [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md)) und **15+16+17**
+> (Dockerfile-Download-Integrität + testFixtures-Leak: nodesource-GPG-Pin statt
+> `curl|bash`, yq/jq-SHA256, und die in-memory Store-Impls raus aus ports-common-
+> testFixtures in ein echtes Adapter-Modul `:adapters:driven:persistence-memory` →
+> kein kotest/JUnit/byte-buddy/mockk mehr im CLI-Shadow-Jar,
+> [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
+> Offen bleiben die Härtungs-APs (Gradle-Wrapper-/Base-Image-Digest,
+> Dependency-Verification) und 8–11 (jdbc-ssl-Erzwingung, secret-leakage-Residuen).
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 

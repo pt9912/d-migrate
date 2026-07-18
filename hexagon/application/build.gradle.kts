@@ -20,6 +20,7 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":adapters:driven:streaming"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    testImplementation(project(":adapters:driven:persistence-memory"))
     // Parquet Cut A S0b: DataChunkWriter.begin(table, columns)-Bridge-Extension.
     testImplementation(testFixtures(project(":hexagon:ports-write")))
 

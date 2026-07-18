@@ -75,16 +75,21 @@ dependencies {
     // `.d-migrate.yaml` selektiert die S3-Byte-Stores im MCP-Wiring
     // (ArtifactsConfigLoader + S3ClientFactory + die beiden S3-Stores).
     implementation(project(":adapters:driven:storage-s3"))
-    // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default metadata stores still come from
-    // `:hexagon:ports-common` testFixtures, while `server.state.*`
-    // opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.
-    implementation(testFixtures(project(":hexagon:ports-common")))
+    // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default (in-memory) metadata stores;
+    // `server.state.*` opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.
+    // Befund 17: bezogen aus dem echten Adapter-Modul (kein testFixtures-/kotest-Leak
+    // in den Distributions-Shadow-Jar).
+    implementation(project(":adapters:driven:persistence-memory"))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
     // .d-migrate.yaml-Loader (LF-012 / LN-038 — minimaler NamedConnectionResolver)
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
     testImplementation("com.google.code.gson:gson:2.14.0")
+    // Test-only ports-common Fakes (z. B. FakeUnicodeTextService in
+    // OutputFormatterTest). Bewusst test-scope — kein testFixtures-/kotest-Leak
+    // in den Distributions-Shadow-Jar (Befund 17).
+    testImplementation(testFixtures(project(":hexagon:ports-common")))
 
     // Testcontainers-, Gson- und JSON-Schema-Validator-Test-Dependencies
     // wurden mit den E2E- und MCP-Scenario-Specs nach :test:e2e-cli

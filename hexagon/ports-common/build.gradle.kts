@@ -87,7 +87,20 @@ kover {
                     "dev.dmigrate.server.ports.JobStore\$DefaultImpls",
                     "dev.dmigrate.server.ports.ArtifactStore\$DefaultImpls",
                     "dev.dmigrate.server.ports.UploadSessionStore\$DefaultImpls",
+                    // Verbindungs-Konfig-DTOs (LN-026) — gleiche Klasse wie
+                    // ConnectionConfig/PoolSettings oben; die SSL-Parse-Logik
+                    // (SslSettingsParser/JdbcUrlBuilder) wird in den Treiber-Adaptern getestet.
+                    "dev.dmigrate.driver.connection.SslMode",
+                    "dev.dmigrate.driver.connection.SslSettings",
                 )
+                // Befund 17: `server.ports` (Port-Interfaces + Daten-Vertraege) und
+                // `format.data` (Chunk-/Bundle-Schema-DTOs + Fixtures) sind Contract-
+                // Definitionen — ihre Verhaltenslogik lebt und wird getestet in den
+                // implementierenden Adaptern (persistence-memory/-jdbc, formats, streaming)
+                // via der geteilten Contract-Suiten. ports-commons eigene Coverage bezieht
+                // sich auf seine Utility-Logik (driver/connection/credential). EIN
+                // `packages()`-Aufruf (Subpakete inklusive → deckt `…ports.contract` mit ab).
+                packages("dev.dmigrate.server.ports", "dev.dmigrate.format.data")
             }
         }
         verify {

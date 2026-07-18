@@ -1,7 +1,7 @@
 # Release-Supply-Chain: ungepinnte Actions und unverifizierte Downloads (P2)
 
-> **Status:** Befund 6 (P2) + 15+16 (P3) BEHOBEN 2026-07-18; P3 17 + Wrapper-/
-> Base-Image-Härtung offen.
+> **Status:** Befund 6 (P2) + 15+16+17 (P3) BEHOBEN 2026-07-18; Gradle-Wrapper-/
+> Base-Image-Digest-Härtung + Dependency-Verification offen.
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 6 = P2,
 > 15/16/17 = P3). Gemeinsame Wurzel: Artefakte aus fremder Hand werden ohne
@@ -31,9 +31,25 @@
 > 20.20.2 signaturverifiziert, pnpm/node-gyp installiert) + isolierter yq/jq-Build
 > (`sha256sum -c` OK).
 >
-> **Offen (P3, eigener Fix):** Befund 17 (testFixtures-Leak im CLI-Distributions-
-> artefakt) sowie die Härtungs-APs Gradle-Wrapper-`distributionSha256Sum`,
-> Base-Images per Digest und Gradle-Dependency-Verification.
+> **Umsetzung (Befund 17, testFixtures-Leak):** Wurzel behoben statt kaschiert —
+> die in-memory Store-Impls (`InMemory*`, Prod-Default wenn `server.state.*`
+> unkonfiguriert) sind aus `ports-common` testFixtures in ein echtes Adapter-Modul
+> **`:adapters:driven:persistence-memory`** (kein kotest) gewandert (Paket
+> `dev.dmigrate.server.ports.memory` unverändert → keine Import-Churn). Die CLI
+> hängt jetzt via `implementation(project(...))` daran statt an testFixtures;
+> Test-Konsumenten (mcp/application/e2e/integration + CLI-Test) via
+> `testImplementation`. Der InMemory-spezifische `AuditSinkContractTests` wanderte
+> mit (bricht den Projekt-Zyklus ports-common↔persistence-memory). **Verifiziert per
+> `jar tf` auf den CLI-Shadow-Jar: kotest/JUnit/byte-buddy/mockk = 0** (vorher
+> present); die InMemory-Stores bleiben als Prod-Default drin. (`com.sun.jna` bleibt
+> — das ist Clikt/Mordants Terminal-Abhängigkeit, kein testFixtures-Leak; der Audit
+> hatte JNA fehlattribuiert.) Coverage: die Contract-Suiten + Port-/`format.data`-
+> DTOs (bisher von den InMemory-Tests mitgezählt) sind jetzt in ports-commons kover
+> als Contract-Definitionen exkludiert (Logik lebt/testet in den Adaptern). Alle
+> betroffenen Module `:check` grün.
+>
+> **Offen (P3, eigener Fix):** Gradle-Wrapper-`distributionSha256Sum`, Base-Images
+> per Digest und Gradle-Dependency-Verification.
 
 ## Befunde
 

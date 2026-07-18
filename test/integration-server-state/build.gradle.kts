@@ -19,6 +19,7 @@ dependencies {
 
     // Test-Fixtures aus den Bestands-Suiten (Fixtures.NOW, jobRecord, …).
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    testImplementation(project(":adapters:driven:persistence-memory"))
     testImplementation(testFixtures(project(":hexagon:application")))
 
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
