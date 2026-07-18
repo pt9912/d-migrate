@@ -73,4 +73,38 @@ class MysqlPartitionBoundRendererTest : FunSpec({
     test("an unrecognized temporal form is passed through unchanged (no guessing)") {
         render("'not-a-date'", NeutralType.DateTime()) shouldBe ("'not-a-date'" to emptyList())
     }
+
+    test("a string bound ending in backslash gets the backslash doubled for MySQL (CWE-89)") {
+        // The model carries the literal already quoted ('a\'). MySQL treats a lone trailing
+        // backslash as escaping the closing quote, so the value would break out of its
+        // VALUES IN (…) / VALUES LESS THAN (…) clause. MySQL needs the backslash doubled;
+        // PG (standard_conforming_strings) does not, which is why this is a MySQL-render concern.
+        render("'a\\'", null) shouldBe ("'a\\\\'" to emptyList())
+    }
+
+    test("an embedded backslash in a string bound is doubled for MySQL") {
+        render("'a\\b'", null) shouldBe ("'a\\\\b'" to emptyList())
+    }
+
+    test("SQL-standard doubled quotes are preserved — only the backslash is MySQL-escaped") {
+        // '' is a valid embedded quote for MySQL too; the fix must not re-touch it (that would
+        // corrupt the value), only layer backslash doubling on top of the existing quoting.
+        render("'a''b'", null) shouldBe ("'a''b'" to emptyList())
+    }
+
+    test("a backslash directly adjacent to a doubled quote is escaped without corrupting the quote") {
+        // Value a\'b → model literal 'a\''b'. Only the backslash is doubled; the '' pair stays intact,
+        // so MySQL reads the value back as a\'b. This is the trickiest interaction of the two escapings.
+        render("'a\\''b'", null) shouldBe ("'a\\\\''b'" to emptyList())
+    }
+
+    test("a numeric (unquoted) bound is never backslash-touched") {
+        render("100", NeutralType.Integer) shouldBe ("100" to emptyList())
+    }
+
+    test("a temporal bound normalized to UTC is still backslash-safe (no backslash → unchanged)") {
+        val (out, notes) = render("'2022-02-01 00:00:00+00'", NeutralType.DateTime(timezone = true))
+        out shouldBe "'2022-02-01 00:00:00'"
+        notes.single().code shouldBe "W129"
+    }
 })

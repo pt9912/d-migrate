@@ -1,10 +1,29 @@
 # Partition-Bound-Literale: Backslash umgeht PartitionLiteralGuard (P2, CWE-89)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** BEHOBEN 2026-07-18
 > **Trigger:** Beim Fix von [`mysql-string-literal-backslash-escaping.md`](mysql-string-literal-backslash-escaping.md)
 > (P1, Commit `447a9006`) fiel der verwandte, aber getrennt zu lösende
 > Partition-Bound-Pfad auf.
-> **Aktivierungsbedingung:** P2 — RC-Kandidat → `next/`-Plan.
+>
+> **Umsetzung (Designfrage-Entscheid: dialekt-bewusstes Re-Escaping, kein
+> Denylist-Reject):** `MysqlPartitionBoundRenderer.renderColumnBoundLiteral`
+> verdoppelt abschließend Backslashes **innerhalb** des bereits gequoteten
+> Literals (`escapeBackslashForMysql`). Beide MySQL-Emit-Pfade — LIST
+> `VALUES IN (…)` und RANGE `VALUES LESS THAN (…)` — laufen durch diesen einen
+> Choke-Point. `SqlIdentifiers.quoteStringLiteral` ist bewusst **nicht**
+> wiederverwendet: es startet von einem unquotierten Wert und würde die bereits
+> SQL-standard verdoppelten Quotes (`''`) erneut escapen. `PartitionLiteralGuard`
+> bleibt dialekt-neutral; seine KDoc dokumentiert nun, warum `\` dort **nicht**
+> auf die Denylist gehört. Tests: `MysqlPartitionBoundRendererTest`
+> (Backslash-Verdopplung, `''`-Erhalt, numerisch unangetastet) +
+> `PartitionLiteralGuardTest` (Backslash bewusst nicht abgelehnt). Docker
+> `:driver-common:check` und `:driver-mysql:check` grün.
+>
+> **PG-Ziel nicht betroffen (verifiziert):** `PostgresDdlGenerator` emittiert die
+> Grenze per `ensureSafe`-Passthrough; `standard_conforming_strings=on`
+> (PostgreSQL-Default) behandelt `\` literal, also kein Escaping nötig und kein
+> Cross-Dialect-Drift. Der Fix ist genau deshalb MySQL-seitig, nicht in der
+> geteilten Denylist.
 
 ## Befund
 

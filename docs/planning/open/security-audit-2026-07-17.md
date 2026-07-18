@@ -132,8 +132,8 @@ Von 27 gemeldeten Befunden haben 18 die Gegenprüfung überlebt, 9 wurden als Fa
 > Export-Traversal; Docker `build koverVerify` je grün). Details in den Tickets
 > [`mysql-string-literal-backslash-escaping.md`](mysql-string-literal-backslash-escaping.md)
 > und [`export-filename-untrusted-identifier.md`](export-filename-untrusted-identifier.md).
-> Beim MySQL-Fix aufgetauchter, getrennt zu lösender Folgebefund (P2):
-> [`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md).
+> Beim MySQL-Fix aufgetauchter, getrennt gelöster Folgebefund (P2, BEHOBEN
+> 2026-07-18): [`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md).
 
 ### 1. MySQL-DEFAULT-String-Literale escapen keinen Backslash → SQL-Injection aus fremdem Quell-Schema
 
@@ -216,6 +216,12 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 ---
 
 ## P2 — Zeitnah beheben
+
+> **Stand 2026-07-18:** Von den fünf P2 sind zwei behoben — Befund 3
+> (MySQL-inline-ENUM-Backslash, gemeinsam mit P1-Befund 1 in `447a9006`) und der
+> beim P1-Fix aufgetauchte Partition-Bound-Backslash (2026-07-18,
+> [`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md)).
+> Offen: Befund 4 und 5 (MCP-HTTP-/Auth-Cluster) sowie 6 (Release-Supply-Chain).
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 

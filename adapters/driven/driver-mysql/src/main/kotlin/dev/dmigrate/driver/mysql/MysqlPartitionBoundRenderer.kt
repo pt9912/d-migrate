@@ -35,6 +35,7 @@ internal class MysqlPartitionBoundRenderer {
     /**
      * Rendert einen bereits gegen Injection geprüften (`PartitionLiteralGuard`) Literal passend
      * zum Schlüsseltyp. Temporal → tz-Normalisierung; sonst unverändert (das Modell trägt das Quoting).
+     * Abschließend werden Backslashes MySQL-gerecht verdoppelt (siehe [escapeBackslashForMysql]).
      */
     fun renderColumnBoundLiteral(
         safe: String,
@@ -42,8 +43,26 @@ internal class MysqlPartitionBoundRenderer {
         partitionName: String,
         notes: MutableList<TransformationNote>,
         emittedCodes: MutableSet<String>,
-    ): String =
-        if (isTemporal(keyType)) normalizeTimezone(safe, partitionName, notes, emittedCodes) else safe
+    ): String {
+        val rendered = if (isTemporal(keyType)) normalizeTimezone(safe, partitionName, notes, emittedCodes) else safe
+        return escapeBackslashForMysql(rendered)
+    }
+
+    /**
+     * MySQL-only: verdoppelt Backslashes **innerhalb** eines bereits gequoteten String-Literals.
+     *
+     * Das Modell trägt die Grenze fertig gequotet und SQL-standard-escaped (inneres `'` als `''`).
+     * MySQL behandelt — anders als PG mit `standard_conforming_strings` — `\` als Escape-Zeichen; ein
+     * auf `\` endender Wert escapte sonst sein schließendes Quote weg und ließe folgenden DDL-Text aus
+     * der `VALUES …`-Klausel ausbrechen (CWE-89). Wir legen deshalb **nur** die Backslash-Verdopplung
+     * auf das vorhandene Quoting; [dev.dmigrate.driver.SqlIdentifiers.quoteStringLiteral] passt hier
+     * bewusst **nicht** (es startet von einem unquotierten Wert und würde die bereits verdoppelten
+     * Quotes erneut escapen). Unquotierte Grenzen (numerisch, `MAXVALUE`) tragen keinen Backslash und
+     * bleiben unangetastet — PG braucht kein solches Escaping und emittiert das Literal verbatim, also
+     * entsteht kein Cross-Dialect-Drift.
+     */
+    private fun escapeBackslashForMysql(literal: String): String =
+        if (isSingleQuoted(literal)) "'${literal.substring(1, literal.length - 1).replace("\\", "\\\\")}'" else literal
 
     /** §2 (ADR 0020): siehe Klassen-KDoc. Entfernt nur einen UTC-Offset; quotet sonst nichts hinzu. */
     private fun normalizeTimezone(
@@ -82,8 +101,11 @@ internal class MysqlPartitionBoundRenderer {
     private fun isUtcOffset(offset: String): Boolean =
         offset.equals("Z", ignoreCase = true) || offset in UTC_OFFSETS
 
+    private fun isSingleQuoted(s: String): Boolean =
+        s.length >= 2 && s.first() == '\'' && s.last() == '\''
+
     private fun unwrapSingleQuotes(s: String): String =
-        if (s.length >= 2 && s.first() == '\'' && s.last() == '\'') s.substring(1, s.length - 1) else s
+        if (isSingleQuoted(s)) s.substring(1, s.length - 1) else s
 
     private companion object {
         /**
