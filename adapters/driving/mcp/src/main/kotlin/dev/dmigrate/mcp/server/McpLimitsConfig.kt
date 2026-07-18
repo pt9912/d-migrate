@@ -31,4 +31,15 @@ data class McpLimitsConfig(
      * `artifactRef` / `nextChunkUri` referral.
      */
     val maxInlineResourceContentBytes: Int = 49_152,
+    /**
+     * Hard cap on the raw `POST /mcp` request body, enforced by the HTTP
+     * transport **before** the body is read into memory (a `Content-Length`
+     * above this is rejected with `413`). Guards against a pre-auth
+     * heap-exhaustion POST. Must stay above the largest legitimate body —
+     * an `artifact_upload` request up to [maxUploadToolRequestBytes] plus
+     * JSON-RPC envelope overhead — so the default sits comfortably over the
+     * 6 MiB upload cap. Operators who raise [maxUploadToolRequestBytes] above
+     * this must raise this in lockstep.
+     */
+    val maxRequestBodyBytes: Int = 8_388_608,
 )

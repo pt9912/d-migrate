@@ -1,10 +1,30 @@
 # MCP-HTTP: unbegrenzter Pre-Auth-Body + ungebundene Sessions (P2)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** Befund 4 (P2) BEHOBEN 2026-07-18; Befund 13+14 (P3) offen.
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 4 = P2,
 > 13 = P3, 14 = P3). Gemeinsamer Fix-Ort: die HTTP-Transport-Schicht.
-> **Aktivierungsbedingung:** P2 — RC-Kandidat → `next/`-Plan.
+>
+> **Umsetzung (Befund 4):** Zwei Teile in `McpHttpRoute.handleMcpPost`. (1)
+> `checkBodySize` weist einen `POST /mcp` mit `Content-Length` über
+> `maxRequestBodyBytes` (neu in `McpLimitsConfig`, Default 8 MiB, über dem
+> 6-MiB-Upload-Cap) mit `413` ab — vor dem Body-Read, billigster Check zuerst.
+> (2) `validateBearer` wandert **vor** `parseBody`/`receiveText`, sodass ein
+> unauthentifizierter Request den Body nie puffert oder parst. `McpLimitsConfig`
+> ist in `installMcpHttpRoute` gefädelt (optionaler Param, Default für Tests). TDD
+> in `McpHttpAuthTest` (413 vor Auth; 401 statt 400 bei Token-los + Malformed-
+> Body). Spec-`Request-Härtung`-Regel ergänzt. Docker `:mcp:check` grün.
+>
+> **Restrisiko (dokumentiert, jenseits des P2):** Ein **authentifizierter** Client
+> mit `Transfer-Encoding: chunked` ohne `Content-Length` umgeht den
+> Content-Length-Cap. Der unauthentifizierte Pre-Auth-Vektor — der eigentliche
+> P2 — ist geschlossen, weil der Body-Read jetzt hinter der Bearer-Validierung
+> liegt. Ein harter gedeckelter Read (Chunked) wäre die nächste Tiefenstufe.
+>
+> **Offen (P3, eigener Fix-Mechanismus):** Befund 13 (`DELETE /mcp` ohne Auth) und
+> 14 (Session nicht an Principal gebunden, `currentPrincipal` geteilter mutabler
+> Zustand) — separate Arbeit an der Session-/Principal-Bindung, nicht Teil des
+> Body-Limit-Fixes.
 
 ## Befunde
 

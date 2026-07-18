@@ -151,6 +151,13 @@ d-migrate mcp serve \
 > ersten Client-Request gemeldet (Exit-Code 2, eine Zeile pro
 > Verstoß).
 
+**Request-Härtung:** Der `POST /mcp`-Body ist auf `maxRequestBodyBytes`
+(Default 8 MiB) begrenzt; ein größerer Body wird per `Content-Length` mit
+`413` abgewiesen, **bevor** er in den Speicher gelesen wird. Die
+Bearer-Validierung läuft **vor** dem Body-Read, damit ein
+unauthentifizierter Request den Server nicht über einen großen POST
+erschöpfen kann.
+
 #### Validierungsregeln (§12.12)
 
 - `port` ∈ `[0, 65535]`.

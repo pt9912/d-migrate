@@ -5,6 +5,7 @@ import dev.dmigrate.mcp.auth.BearerValidationResult
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.server.AuthMode
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.core.principal.AuthSource
 import dev.dmigrate.server.core.principal.PrincipalContext
@@ -135,6 +136,68 @@ class McpHttpAuthTest : FunSpec({
             val challenge = resp.headers[HttpHeaders.WWWAuthenticate]!!
             challenge shouldContain "error=\"invalid_token\""
             challenge shouldContain "token expired"
+        }
+    }
+
+    test("413 when Content-Length exceeds maxRequestBodyBytes — before auth or body read (CWE-770)") {
+        // Pre-auth heap-exhaustion guard: an oversized POST is rejected from its
+        // declared Content-Length, cheapest-check-first, without buffering the body
+        // and before the (more expensive) Bearer validation runs.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                    limits = McpLimitsConfig(maxRequestBodyBytes = 64),
+                )
+            }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("x".repeat(200))
+            }
+            resp.status shouldBe HttpStatusCode.PayloadTooLarge
+        }
+    }
+
+    test("a body exactly at maxRequestBodyBytes passes the size check (boundary is inclusive)") {
+        // Pins the comparison direction: Content-Length == cap must NOT be rejected.
+        // A 64-byte body under a 64-byte cap clears checkBodySize and reaches auth,
+        // so the (token-less) request fails at 401, not 413.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                    limits = McpLimitsConfig(maxRequestBodyBytes = 64),
+                )
+            }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("x".repeat(64))
+            }
+            resp.status shouldBe HttpStatusCode.Unauthorized
+        }
+    }
+
+    test("401 precedes body parse — no token + malformed body returns 401, not a 400 parse error (CWE-770)") {
+        // Bearer validation now runs before the body is read/parsed, so an
+        // unauthenticated request never makes the server parse (or buffer) its body.
+        // The old order returned 400 (JSON parse error) for this input.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                )
+            }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("this is not json at all")
+            }
+            resp.status shouldBe HttpStatusCode.Unauthorized
         }
     }
 
