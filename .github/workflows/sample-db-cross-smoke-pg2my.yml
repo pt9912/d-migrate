@@ -25,13 +25,16 @@ on:
       - 'Dockerfile'
       - '.github/workflows/sample-db-cross-smoke-pg2my.yml'
 
+permissions:
+  contents: read
+
 jobs:
   cross-smoke-pg2my:
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Verify docker compose available
         run: docker compose version

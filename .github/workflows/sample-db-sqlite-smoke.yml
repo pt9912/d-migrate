@@ -24,13 +24,16 @@ on:
       - 'Dockerfile'
       - '.github/workflows/sample-db-sqlite-smoke.yml'
 
+permissions:
+  contents: read
+
 jobs:
   sqlite-smoke:
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Ensure sqlite3 is available
         run: sqlite3 --version

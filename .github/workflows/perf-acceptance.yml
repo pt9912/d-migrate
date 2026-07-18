@@ -31,6 +31,9 @@ on:
     # Taeglich 04:47 UTC (versetzt gegen den 03:17-Scale-Job, Runner-Spitzen meiden).
     - cron: '47 4 * * *'
 
+permissions:
+  contents: read
+
 jobs:
   tpch-perf:
     # Designierter Runner per Repo-Variable; default ubuntu-latest (variabel -> diagnostisch).
@@ -41,7 +44,7 @@ jobs:
     # nicht das Job-Limit (sonst kein Collect/Upload). Start-Budget, im Lauf zu validieren.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Verify docker compose available
         run: docker compose version
@@ -87,7 +90,7 @@ jobs:
 
       - name: Upload perf results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           # run_attempt im Namen: github.run_id bleibt bei Re-runs gleich, upload-artifact
           # verlangt eindeutige Namen (ohne overwrite) -> sonst Kollision.

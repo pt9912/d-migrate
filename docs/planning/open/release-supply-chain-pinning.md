@@ -1,11 +1,30 @@
 # Release-Supply-Chain: ungepinnte Actions und unverifizierte Downloads (P2)
 
-> **Status:** Vorabklärung (2026-07-17)
+> **Status:** Befund 6 (P2) BEHOBEN 2026-07-18; P3 15/16/17 + Wrapper-/Base-Image-
+> Härtung offen.
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 6 = P2,
 > 15/16/17 = P3). Gemeinsame Wurzel: Artefakte aus fremder Hand werden ohne
 > Integritätsnachweis ausgeführt.
-> **Aktivierungsbedingung:** P2 — RC-Kandidat → `next/`-Plan.
+>
+> **Umsetzung (Befund 6 = AP1 + AP2):** (1) **Alle** mutable-Tag-Actions über die 14
+> Workflows auf Commit-SHA gepinnt (mit `# vX.Y.Z`-Kommentar; die
+> `github-actions`-Sektion der `.github/dependabot.yml` hält sie nach), priorisiert
+> die zwei secret-tragenden `docker/login-action` (`c94ce9fb…`, v3.7.0) und
+> `Justintime50/homebrew-releaser` (`a62d7a35…`, v3.3.0). (2) `GITHUB_TOKEN`-
+> Permissions je Workflow least-privilege: jeder der 14 Workflows hat jetzt einen
+> expliziten top-level `permissions:`-Block (`contents: read` als Default),
+> `packages: write` (GHCR-Push) ist auf den `docker`-Job von `build.yml` verengt,
+> `contents: write` (GitHub-Release) auf den `publish`-Job von
+> `release-homebrew.yml`. Der Tap-Write-Token (`homebrew-releaser`, die CWE-1357-
+> Wurzel) ist eine separate PAT — ihn mitigiert das SHA-Pinning, nicht die
+> Permissions. YAML validiert; `docs-check` grün.
+>
+> **Offen (P3, eigener Fix-Mechanismus):** Befund 15 (`curl|bash` nodesource,
+> `Dockerfile`), 16 (yq/jq per `ADD` ohne SHA256), 17 (testFixtures-Leak im
+> CLI-Distributionsartefakt) sowie die Härtungs-APs Gradle-Wrapper-
+> `distributionSha256Sum`, Base-Images per Digest und Gradle-Dependency-
+> Verification. Nicht Teil des Action-Pinning-/Permissions-P2.
 
 ## Befunde
 

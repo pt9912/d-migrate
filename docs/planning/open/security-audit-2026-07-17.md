@@ -217,16 +217,18 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 
 ## P2 — Zeitnah beheben
 
-> **Stand 2026-07-18:** Von den fünf P2 sind vier behoben — Befund 3
-> (MySQL-inline-ENUM-Backslash, gemeinsam mit P1-Befund 1 in `447a9006`), der beim
-> P1-Fix aufgetauchte Partition-Bound-Backslash
+> **Stand 2026-07-18: alle fünf P2 behoben** — Befund 3 (MySQL-inline-ENUM-
+> Backslash, gemeinsam mit P1-Befund 1 in `447a9006`), der beim P1-Fix aufgetauchte
+> Partition-Bound-Backslash
 > ([`partition-bound-literal-backslash.md`](partition-bound-literal-backslash.md)),
 > Befund 5 (jwksUrl/introspectionUrl-https-Zwang,
 > [`mcp-auth-url-scheme-validation.md`](mcp-auth-url-scheme-validation.md) — schließt
-> als Folge die P3-Befunde 7 und 12 mit) und Befund 4 (MCP-HTTP Pre-Auth-Body-Limit
-> + Auth-vor-Body-Reorder, [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md)).
-> Offen: **Befund 6** (Release-Supply-Chain). Die P3-Befunde 13+14 (DELETE-Auth,
-> Principal-Bindung) aus dem MCP-HTTP-Ticket bleiben im P3-Backlog.
+> als Folge die P3-Befunde 7 und 12 mit), Befund 4 (MCP-HTTP Pre-Auth-Body-Limit
+> + Auth-vor-Body-Reorder, [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md))
+> und Befund 6 (Release-Supply-Chain: Action-SHA-Pinning + `GITHUB_TOKEN`-least-
+> privilege, [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
+> **P1 und P2 sind damit vollständig geschlossen.** Offen bleibt nur der P3-Backlog
+> (u.a. 13+14 Session/Principal-Bindung, 15/16/17 Supply-Chain-Downloads).
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 
