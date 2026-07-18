@@ -227,11 +227,13 @@ Der Operator führt `d-migrate data export --source <fremde-db> --output ./out -
 > + Auth-vor-Body-Reorder, [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md))
 > und Befund 6 (Release-Supply-Chain: Action-SHA-Pinning + `GITHUB_TOKEN`-least-
 > privilege, [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
-> **P1 und P2 sind damit vollständig geschlossen.** P3-Backlog: **13+14**
-> (MCP-`DELETE`-Auth + Session/Principal-Bindung) behoben 2026-07-18
-> ([`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md)); offen bleiben
-> 15/16/17 (Supply-Chain-Downloads) und 8–11 (jdbc-ssl-Erzwingung, secret-leakage-
-> Residuen).
+> **P1 und P2 sind damit vollständig geschlossen.** P3-Backlog behoben 2026-07-18:
+> **13+14** (MCP-`DELETE`-Auth + Session/Principal-Bindung,
+> [`mcp-http-preauth-hardening.md`](mcp-http-preauth-hardening.md)) und **15+16**
+> (Dockerfile-Download-Integrität: nodesource-GPG-Pin statt `curl|bash` + yq/jq-
+> SHA256, [`release-supply-chain-pinning.md`](release-supply-chain-pinning.md)).
+> Offen bleiben 17 (testFixtures-Leak) + Wrapper-/Base-Image-Härtung und 8–11
+> (jdbc-ssl-Erzwingung, secret-leakage-Residuen).
 
 ### 3. MySQL inline-ENUM-Werte escapen keinen Backslash
 

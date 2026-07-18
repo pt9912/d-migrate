@@ -1,7 +1,7 @@
 # Release-Supply-Chain: ungepinnte Actions und unverifizierte Downloads (P2)
 
-> **Status:** Befund 6 (P2) BEHOBEN 2026-07-18; P3 15/16/17 + Wrapper-/Base-Image-
-> Härtung offen.
+> **Status:** Befund 6 (P2) + 15+16 (P3) BEHOBEN 2026-07-18; P3 17 + Wrapper-/
+> Base-Image-Härtung offen.
 > **Trigger:** Security-Vollaudit
 > ([`security-audit-2026-07-17.md`](security-audit-2026-07-17.md), Befunde 6 = P2,
 > 15/16/17 = P3). Gemeinsame Wurzel: Artefakte aus fremder Hand werden ohne
@@ -20,11 +20,20 @@
 > Wurzel) ist eine separate PAT — ihn mitigiert das SHA-Pinning, nicht die
 > Permissions. YAML validiert; `docs-check` grün.
 >
-> **Offen (P3, eigener Fix-Mechanismus):** Befund 15 (`curl|bash` nodesource,
-> `Dockerfile`), 16 (yq/jq per `ADD` ohne SHA256), 17 (testFixtures-Leak im
-> CLI-Distributionsartefakt) sowie die Härtungs-APs Gradle-Wrapper-
-> `distributionSha256Sum`, Base-Images per Digest und Gradle-Dependency-
-> Verification. Nicht Teil des Action-Pinning-/Permissions-P2.
+> **Umsetzung (Befund 15+16, Dockerfile-Download-Integrität):** (15) Der Node-
+> Install der `integration-test`-Stage nutzt kein `curl | bash` mehr — der
+> NodeSource-GPG-Key wird über HTTPS geholt, per SHA256 gepinnt (`b42e0321…`), als
+> `signed-by`-Keyring hinterlegt, danach installiert apt `nodejs` signatur-
+> verifiziert (Node 20 unverändert). (16) yq/jq werden weiter per `ADD` geladen,
+> aber **vor** `chmod`/Nutzung per `sha256sum -c` gegen gepinnte Hashes
+> (`YQ_SHA256`/`JQ_SHA256`) geprüft; ein Versions-Bump ohne Hash-Update schlägt laut
+> fehl. Verifiziert: `docker build --target integration-test` grün (Key-OK, Node
+> 20.20.2 signaturverifiziert, pnpm/node-gyp installiert) + isolierter yq/jq-Build
+> (`sha256sum -c` OK).
+>
+> **Offen (P3, eigener Fix):** Befund 17 (testFixtures-Leak im CLI-Distributions-
+> artefakt) sowie die Härtungs-APs Gradle-Wrapper-`distributionSha256Sum`,
+> Base-Images per Digest und Gradle-Dependency-Verification.
 
 ## Befunde
 
