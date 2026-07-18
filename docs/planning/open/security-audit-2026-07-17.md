@@ -610,6 +610,20 @@ Diese neun Meldungen wurden geprüft und als **False Positives** eingestuft. Sie
 
 Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten für ein Folge-Audit.
 
+> **Follow-up-Audit — Fortschritt (Stand 2026-07-18):** von 6 Flächen sind **3
+> nachgeholt** — #1 integrations (`272d61a3`, ein P2), #6 CSV-Formel-Injection
+> (`8c1f82f0`, CWE-1236) und #2 Approval-Grant-Kette (`43871e13`, als Replay
+> widerlegt + eine Härtung). **Offen: #3, #4, #5** (je ein „Nachgeholt"-Block fehlt
+> = ungeprüft).
+>
+> **Wiedereinstieg (empfohlene Reihenfolge nach Aufwand):** #4 MCP-Job-Ausführung
+> ist überwiegend statisch (Prinzipal-/Reihenfolge-Analyse über die Naht
+> `JobStartService`/`JobDispatcher`/`DataRunnerWorkers`/`McpCoreJobWorkerFactory`/
+> `AiToolOrchestrator`) → mittlerer Aufwand. #3 persistence-jdbc (Quota/Idempotency/
+> Job-Store, ~1600 LOC) und #5 `--parallel N` (`ParallelWorkExecutor`,
+> `TopologicalSorter`, `ParallelismClamp`) sind **Race-/TOCTOU-Analyse** → höchster
+> Aufwand, unsicherstes Urteil. Kein Kandidat ist mehr ein Quick-Win wie #2.
+
 **Hohe Priorität**
 
 1. **`adapters/driven/integrations/` — Nicht-SQL-Escaping-Matrix der Tool-Exporter (Flyway/Liquibase/Django/Knex).** Die einzige Stelle im Repo, die Schema-Inhalte in **XML, Python und JavaScript** rendert — eine völlig andere Escaping-Matrix als die geprüfte SQL-Seite. Konkrete Beobachtungen: `LiquibaseMigrationExporter` interpoliert `changeSetId` ungeescaped in ein XML-Attribut, und `RenderHelpers.escapeXml` escapet **nur** `&<>` — keine Quotes, kein `]]>`. `MigrationVersionValidator.validate` gibt für LIQUIBASE für **jeden** nicht-leeren String `true` zurück. `escapePython`/`escapeJavaScript` sind handgeschrieben (Backslash + Delimiter) — exakt die Klasse, in der dieses Audit bereits zwei bestätigte Backslash-Befunde (P1/P2) gefunden hat. Die Exploitierbarkeit hängt an der Provenienz von `version` (CLI-Flag vs. `schema.version` aus möglicherweise fremdbezogener Schema-YAML) — genau diese Herkunftsfrage muss ein Auditor entscheiden.
