@@ -22,6 +22,13 @@
 
 Die Lesefassung `spec/ledger.md` überspringt zusätzlich W127/W128 (W126→W129).
 
+> **Nachtrag 2026-07-18:** Zwei weitere ValueSerializationWarning-Codes aus dem
+> CSV-Writer gehören ebenfalls in den AP1-Backfill: **W202** (nicht-serialisierbarer
+> Java-Typ → String-Fallback, bereits vor diesem Datum emittiert) und **W203**
+> (formel-anfällige CSV-Text-Zelle, CWE-1236 Audit-Follow-up #6). Beide sind heute
+> nicht im Ledger; das Gate fängt sie mangels W-Code-Vollständigkeitsprüfung (AP2)
+> nicht.
+
 **Ursache:** `CodeLedgerValidationTest` erzwingt **E-Code**-Vollständigkeit
 (E001-E121) + Eintrags-Struktur, aber **keine W-Code-Vollständigkeit gegen den
 Source**. W-Drift sammelt sich daher still an — N8/W127 und K2/W128 kamen so

@@ -468,6 +468,29 @@ Heute: secret-freies MCP-`tools/call`-Audit (genau ein Event pro Aufruf, siehe
 🔮 **Geplant (1.0.0-RC, [`LN-027`](../../spec/lastenheft-d-migrate.md#ln-027)):** Audit-Logging **aller** Operationen
 (CLI + Server) als durchgängiges Feature.
 
+### 9.5 CSV-Export und Formel-Injection (CWE-1236)
+
+Daten aus einer Quell-DB sind im Bedrohungsmodell **untrusted** (siehe
+[`SECURITY.md`](../../SECURITY.md)). Ein Textwert, der mit `=`, `+`, `-`, `@`, Tab
+oder Wagenrücklauf beginnt, wird von Excel/LibreOffice beim Öffnen einer CSV-Datei
+als **Formel** ausgeführt (RFC-4180-Quoting verhindert das nicht). Der Export
+schreibt Werte standardmäßig **treu** (wie `pg_dump`) und meldet betroffene
+Spalten einmalig per Warnung `W203`.
+
+Für Exporte, die in einer Tabellenkalkulation geöffnet werden, aktiviert der
+**opt-in** Guard das `'`-Präfix (die Zelle wird nicht mehr als Formel gewertet):
+
+```yaml
+export:
+  csv:
+    formula_guard: true   # nur Text-Zellen; verändert den Wert (kein byte-treuer Roundtrip)
+```
+
+Präzedenz: `--csv-formula-guard` / `--no-csv-formula-guard` (CLI) >
+`export.csv.formula_guard` (Config) > Default `false`. Nur **Text**-Zellen tragen
+den Vektor — typisierte Zahlen/Booleans werden nie präfixt. Der Guard verändert den
+exportierten Wert; für einen byte-treuen Roundtrip (z. B. Re-Import) bleibt er aus.
+
 ---
 
 ## 10. Betrieb und Wartung

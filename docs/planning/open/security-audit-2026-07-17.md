@@ -649,6 +649,30 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
 
 6. **Ausgabe-Kodierung der Daten-Writer (`ValueSerializer`, CSV-/JSON-Writer) — CSV-Formel-Injection.** Die deserialization-Fläche prüfte ausdrücklich nur die **Lese**seite. d-migrate exportiert per Definition Inhalte aus einer fremden Quell-DB in Dateien, die danach in Excel/LibreOffice geöffnet werden: ein Zellwert `=cmd|'/c calc'!A1` bzw. `@`/`+`/`-`-Präfix ist Formel-Injection und wird von keiner CSV-Bibliothek per Default neutralisiert — korrektes RFC-4180-Quoting verhindert sie **nicht**. Dieselbe Vertrauensgrenze, die dieses Audit bereits zweimal als real bestätigt hat, nur auf der Ausgabeseite. Ebenfalls in diesem Modul ungeprüft: `SchemaFileResolver`.
 
+   > **Nachgeholt (Follow-up-Audit 2026-07-18) — CSV-Formel-Injection geprüft und
+   > adressiert:**
+   >
+   > - **BEFUND bestätigt (CWE-1236):** `CsvChunkWriter` schrieb Text-Zellwerte aus
+   >   der untrusted Quelle roh; ein führendes `=`/`+`/`-`/`@`/Tab/CR wird von
+   >   Excel/LibreOffice als Formel ausgeführt. `ValueSerializer` neutralisiert nichts
+   >   (`String → SerializedValue.Text` verbatim), uniVocity-Quoting ist RFC-4180 und
+   >   greift hier nicht.
+   > - **Design-Spannung (Treue vs. Sicherheit):** Ein stilles Präfixen würde jeden
+   >   Roundtrip/Re-Import brechen. Deshalb **zweistufig gelöst:** (1) Der Writer meldet
+   >   betroffene Spalten **immer** einmalig per Warnung **`W203`** (Default-Verhalten
+   >   bleibt treuer Dump — wie `pg_dump`); (2) der **opt-in** Guard
+   >   `--csv-formula-guard` / `export.csv.formula_guard` präfixt formel-anfällige
+   >   **Text**-Zellen mit `'` (typisierte Zahlen/Booleans nie). Präzedenz CLI > Config
+   >   > Default aus; der Resolver ist bewusst lenient (spiegelt
+   >   `ReverseAutoincrementResolver`). Der Guard fließt in den Resume-Fingerprint ein
+   >   (kein Mischen geschützter/ungeschützter Zeilen).
+   > - TDD (Writer- + Resolver- + Fingerprint-Tests); Doku in anwenderhandbuch (§3.6),
+   >   administrationshandbuch (§9.5), `cli-spec.md` und `connection-config-spec.md`.
+   >   Ticket [`csv-formula-injection-guard.md`](csv-formula-injection-guard.md).
+   > - **Weiterhin offen (nicht adressiert):** der in diesem Punkt ebenfalls genannte
+   >   `SchemaFileResolver` sowie die JSON/YAML-Writer-Ausgabeseite wurden in diesem
+   >   Durchlauf **nicht** geprüft.
+
 **Methodische Einschränkungen dieses Audits**
 
 - Der P1-Path-Traversal wurde **nicht** end-to-end gegen ein laufendes Binary demonstriert; verifiziert sind der Datenfluss (Code-Lektüre aller Zwischenstationen) und beide Schlüsselannahmen einzeln empirisch. Ein CLI-Repro gegen eine präparierte `.sqlite` ist der naheliegende nächste Schritt.

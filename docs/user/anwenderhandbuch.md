@@ -626,6 +626,10 @@ d-migrate data export --source staging --format json --tables orders \
 d-migrate data export --source staging --format csv --tables orders --output orders.csv \
     --csv-delimiter ";" --csv-bom --csv-no-header --null-string "NULL" --encoding utf-8
 
+# Untrusted-Daten, die jemand in Excel/LibreOffice öffnet, gegen Formel-Injection sichern
+d-migrate data export --source staging --format csv --tables comments --output comments.csv \
+    --csv-formula-guard
+
 # Chunk-Größe für sehr große Tabellen
 d-migrate data export --source staging --format json --tables orders \
     --output orders.json --chunk-size 50000
@@ -634,6 +638,16 @@ d-migrate data export --source staging --format json --tables orders \
 d-migrate data export --source staging --format parquet --tables customers,orders \
     --output ./export-parquet --manifest-sha256
 ```
+
+> **Formel-Injection (CSV + Tabellenkalkulation):** Ein Textwert aus der Quelle,
+> der mit `=`, `+`, `-`, `@`, Tab oder Wagenrücklauf beginnt, wird von Excel und
+> LibreOffice beim Öffnen als **Formel** ausgeführt. Standardmäßig exportiert
+> d-migrate den Wert **unverändert** (treuer Dump) und meldet betroffene Spalten
+> per Warnung `W203`. Wenn Sie **untrusted** Daten exportieren, die jemand in einer
+> Tabellenkalkulation öffnet, setzen Sie `--csv-formula-guard`: solche Zellen werden
+> dann mit einem `'` vorangestellt (die Formel wird nicht mehr ausgeführt). Das
+> **verändert** den exportierten Wert — für einen byte-treuen Roundtrip lassen Sie
+> den Guard aus.
 
 ### 3.7 Daten in eine Datenbank laden (Import)
 
@@ -1893,6 +1907,11 @@ finden Sie in [Anhang A](#a1-globale-optionen). Die wichtigsten:
 - **Exportierte Dateien** (JSON/CSV/Parquet) enthalten echte, möglicherweise
   personenbezogene Daten. Behandeln Sie sie wie die Datenbank selbst:
   Zugriffsschutz, sichere Ablage, Löschung nach Gebrauch.
+- **CSV-Export für Tabellenkalkulationen:** Öffnet jemand einen CSV-Export mit
+  Daten aus einer nicht vertrauenswürdigen Quelle in Excel/LibreOffice, können
+  formel-anfällige Textwerte (führendes `=`/`+`/`-`/`@`/Tab/CR) beim Öffnen
+  ausgeführt werden. Setzen Sie in diesem Fall `--csv-formula-guard` (siehe
+  [3.6](#36-daten-sichern-export)).
 - **Geringste Rechte:** Verwenden Sie pro Aufgabe ein Datenbankkonto mit nur den
   nötigen Rechten — Leserechte zum Auslesen/Exportieren, Schreibrechte zum
   Importieren, Struktur-(DDL-)Rechte zum Migrieren.
@@ -2201,6 +2220,7 @@ Fortschritt/Warnungen nach stderr.
 | `--read-only` / `--no-read-only` | Quelle schreibgeschützt öffnen (Standard an); SQLite ohne `-wal`/`-shm` |
 | `--encoding` | Output-Encoding (Standard `utf-8`) |
 | `--csv-delimiter` / `--csv-bom` / `--csv-no-header` / `--null-string` | CSV-Optionen |
+| `--csv-formula-guard` / `--no-csv-formula-guard` | CSV: formel-anfällige Text-Zellen für Tabellenkalkulationen entschärfen (`'`-Präfix); überschreibt `export.csv.formula_guard`; Standard aus (treuer Dump, meldet `W203`) |
 | `--resume` / `--checkpoint-dir` | Wiederaufnahme |
 | `--manifest-sha256` | Parquet: SHA-256 je Tabelle ins Manifest |
 

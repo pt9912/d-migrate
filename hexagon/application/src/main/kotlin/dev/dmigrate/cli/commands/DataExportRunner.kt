@@ -65,6 +65,14 @@ data class DataExportRequest(
      * andere Formate; Single-File hat keinen Closure-Hook).
      */
     val manifestSha256: Boolean = false,
+    /**
+     * CSV-Formel-Injection-Guard (CWE-1236, Audit-Follow-up #6). Bereits aufgelöst
+     * (CLI-Flag > `export.csv.formula_guard` > Default) durch den
+     * `CsvFormulaGuardResolver` in der CLI-Schicht. `true` = formel-anfällige Text-Zellen mit `'` präfixen
+     * (spreadsheet-safe, verändert den Wert); `false` (Default) = treuer Dump, der
+     * Writer meldet betroffene Spalten per W203.
+     */
+    val csvFormulaGuard: Boolean = false,
 )
 
 /**

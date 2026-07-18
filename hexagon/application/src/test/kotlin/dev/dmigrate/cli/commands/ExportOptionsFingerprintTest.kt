@@ -23,6 +23,7 @@ class ExportOptionsFingerprintTest : FunSpec({
         tables: List<String> = listOf("users", "orders"),
         outputMode: String = "file-per-table",
         outputPath: String = "/tmp/d-migrate-out",
+        csvFormulaGuard: Boolean = false,
     ) = ExportOptionsFingerprint.Input(
         format = format,
         encoding = encoding,
@@ -36,6 +37,7 @@ class ExportOptionsFingerprintTest : FunSpec({
         tables = tables,
         outputMode = outputMode,
         outputPath = outputPath,
+        csvFormulaGuard = csvFormulaGuard,
     )
 
     test("liefert stabilen 64-stelligen Hex-Hash") {
@@ -66,6 +68,19 @@ class ExportOptionsFingerprintTest : FunSpec({
         val comma = ExportOptionsFingerprint.compute(baseInput(csvDelimiter = ","))
         val semi = ExportOptionsFingerprint.compute(baseInput(csvDelimiter = ";"))
         comma shouldNotBe semi
+    }
+
+    test("aktiver csvFormulaGuard erzeugt anderen Hash (CWE-1236 #6)") {
+        val off = ExportOptionsFingerprint.compute(baseInput(csvFormulaGuard = false))
+        val on = ExportOptionsFingerprint.compute(baseInput(csvFormulaGuard = true))
+        off shouldNotBe on
+    }
+
+    test("csvFormulaGuard=false bleibt byte-gleich zum Default (nichts angehaengt)") {
+        // Der Default-Pfad haengt csvFormulaGuard NICHT an die kanonische Form an,
+        // damit bestehende Resume-Marker gueltig bleiben.
+        ExportOptionsFingerprint.compute(baseInput(csvFormulaGuard = false)) shouldBe
+            ExportOptionsFingerprint.compute(baseInput())
     }
 
     test("geaendertes csvBom erzeugt anderen Hash") {

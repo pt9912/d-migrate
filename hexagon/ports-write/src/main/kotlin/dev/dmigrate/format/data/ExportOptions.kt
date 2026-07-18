@@ -31,4 +31,15 @@ data class ExportOptions(
     val csvBom: Boolean = false,
     /** CSV: NULL-Repräsentation (Default: leerer String). */
     val csvNullString: String = "",
+    /**
+     * CSV: Formel-Injection-Guard (CWE-1236). Ein Text-Zellwert aus einer
+     * untrusted Quell-DB, der mit `=`/`+`/`-`/`@`/Tab/CR beginnt, wird von
+     * Excel/LibreOffice als **Formel** interpretiert (RFC-4180-Quoting verhindert
+     * das nicht). Default **`false`** = treuer Dump (wie `pg_dump`); der Writer
+     * meldet betroffene Spalten per W203, verändert den Wert aber nicht. Auf
+     * `true` (opt-in, projekt-deklarierbar) präfixt der Writer solche Zellen mit
+     * `'` (spreadsheet-safe) — das **verändert** den exportierten Wert, der
+     * Round-Trip ist dann nicht mehr byte-identisch.
+     */
+    val csvFormulaGuard: Boolean = false,
 )

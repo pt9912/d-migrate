@@ -231,6 +231,13 @@ export:
     null_string: ""                  # Darstellung von NULL-Werten
     header: true                     # Spaltenüberschriften schreiben
     line_separator: "\n"             # Zeilentrenner
+    formula_guard: false             # Formel-Injection-Guard (CWE-1236): true präfixt
+                                     # formel-anfällige Text-Zellen (führendes =/+/-/@/Tab/CR)
+                                     # mit ' — Tabellenkalkulationen führen sie dann nicht aus.
+                                     # Verändert den Wert (kein byte-treuer Roundtrip). Default
+                                     # false = treuer Dump; der Writer meldet betroffene Spalten
+                                     # per W203. Präzedenz: --csv-formula-guard (CLI) > diese
+                                     # Config > Default false.
   parquet:
     # LN-005 (R2): Parquet-Row-Group-Größe in Bytes. Kleiner = geringerer Heap-Peak
     # (v.a. bei parallelem File-per-Table-Export `--parallel N`), etwas geringere
