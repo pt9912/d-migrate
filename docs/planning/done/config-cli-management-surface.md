@@ -17,8 +17,9 @@ eingearbeitet: Phase 1 nur `config show` nach Spec-Präzisierung, Secret-Managem
 > - **Phase 2 abgelöst:** durch [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md)
 >   (O2-Store `115c546f`, [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049)-Konsum `9cbd1ff0`, O4-Naht `632c984a`, keychain-Provider `20509388`).
 >   Der `master.key`-Datei-Ansatz (§4.1 unten) ist **verworfen**.
-> - **Nicht in diesem Ticket** (bleibt bewusst offen): voller Multi-Source-Provenienz-Merge für
->   `config show` (Defaults + Datei + ENV + Flags pro Feld) — separater späterer Slice.
+> - **Nicht in diesem Ticket** (eigener Tracker): voller Multi-Source-Provenienz-Merge für
+>   `config show` (Defaults + Datei + ENV + Flags pro Feld) — abgespalten nach
+>   [`../open/config-show-full-source-merge.md`](../open/config-show-full-source-merge.md).
 
 **Trigger**: `spec/cli-spec.md` §6.7 spezifiziert drei `config`-Subkommandos
 (`config credentials set`, `config credentials list`, `config show`), die
