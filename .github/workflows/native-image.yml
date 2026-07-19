@@ -11,10 +11,6 @@ name: Native Image
 on:
   workflow_dispatch:
   push:
-    branches:
-      # TEMPORÄR (2026-07-19): einmaliger Native-CI-Beweis auf develop, da workflow_dispatch den
-      # Workflow erst nach Default-Branch-Registrierung kennt. NACH dem grünen Lauf WIEDER ENTFERNEN.
-      - develop
     tags:
       - 'v*'
 

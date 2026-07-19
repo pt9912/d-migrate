@@ -78,11 +78,14 @@ die Scope-Gabel „volle Adapter-Fläche vs. Core-CLI-Subset" (offene Frage 1) i
   Bruch. Kandidaten mit hohem Risiko: Parquet/Hadoop, Liquibase/Flyway-Export.
 
 ### Phase D — 3-OS-CI-Matrix
-- ✅ **Linux-Leg geliefert:** `.github/workflows/native-image.yml` (separat von `build.yml`, weil
-  native-image nicht cross-kompiliert + GraalVM-Toolchain statt Docker + zu schwer für jeden PR).
-  Trigger `workflow_dispatch` + `tags: v*` (wie `release-homebrew.yml`); `graalvm/setup-graalvm`
-  (Community JDK 21), `./gradlew :adapters:driving:cli:nativeCompile` (mit `DMIGRATE_ALLOW_LOCAL_GRADLE`),
-  Smoke (`schema validate` → `valid=true`) und Binary-Artifact-Upload. Matrix aktuell nur `ubuntu-latest`.
+- ✅ **Linux-Leg geliefert + in CI grün verifiziert** (2026-07-19): `.github/workflows/native-image.yml`
+  (separat von `build.yml`, weil native-image nicht cross-kompiliert + GraalVM-Toolchain statt Docker +
+  zu schwer für jeden PR). Trigger `workflow_dispatch` + `tags: v*` (wie `release-homebrew.yml`);
+  `graalvm/setup-graalvm` (Community JDK 21), `./gradlew :adapters:driving:cli:nativeCompile` (mit
+  `DMIGRATE_ALLOW_LOCAL_GRADLE`), Smoke (`schema validate` → `valid=true`) und Binary-Artifact-Upload.
+  Matrix aktuell nur `ubuntu-latest`. **Einmalig per temporärem `push: develop`-Trigger grün gelaufen**
+  (GraalVM in CI provisioniert, nativeCompile + Smoke bestanden), Trigger danach wieder entfernt —
+  `workflow_dispatch` greift erst nach Default-Branch-Registrierung (nächster Release-Merge).
 - **Offen:** macOS-/Windows-Legs in die Matrix (Windows braucht MSVC + liefert `d-migrate.exe`);
   statisches/`mostly-static`-Linken auf Linux (Portabilität); arm64 (macOS-arm64, Linux-arm64) —
   mindestens x64 je OS als 1.0.0-Ziel.
