@@ -757,7 +757,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | Build    | GraalVM Native Image (Linux, macOS, Windows)                        | —      | ⛔      |
 | Build    | Docker Image auf Docker Hub                                         | —      | ⛔      |
 | Build    | SDKMAN-Distribution                                                 | —      | ⛔      |
-| Security | Externer Security-Audit                                             | —      | ⛔      |
+| Security | Externer Security-Audit                                             | —      | ⛔⁵     |
 | QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust                   | 8.1    | ✅¹     |
 | QA       | DDL-Generierung 1.000 Tabellen < 30 Sekunden                        | 8.2    | ✅²     |
 | QA       | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite                    | 8.6    | ✅³     |
@@ -793,6 +793,16 @@ damit genau die Module, deren Bruch bereits entschieden ist. Details in Fußnote
 [ADR 0036](../../adr/0036-library-artefakte-github-packages.md)) und die Artefaktklassifikation in
 [`releasing.md`](../../user/releasing.md) bleiben davon unberührt und gültig. **1.0.0 liefert
 CLI, OCI-Image und MCP — keine Library-Artefakte.**
+
+⁵ **Externer Security-Audit ist kein 1.0.0-Gate** ([ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md),
+2026-07-19): Ein **externer** Audit heißt unabhängige Dritt-Prüfung — eine Beschaffungs-/Business-Handlung,
+kein Dev-Task, und durch das intern durchgeführte Audit **nicht** erfüllt. Die Zeile blockiert das
+Stable-Release daher **nicht**; sie bleibt `⛔`, weil ein Dritt-Audit tatsächlich aussteht, und wird erst
+durch einen beauftragten + gelieferten Bericht `✅`. **1.0.0-Sicherheits-Interimslatte:** internes
+adversariales Vollaudit ([`security-audit-2026-07-17.md`](../open/security-audit-2026-07-17.md), P1/P2
+remediiert, 6 Restflächen nachgeholt), [`SECURITY.md`](../../../SECURITY.md)-Bedrohungsmodell + die
+Security-Gates. Benannte Folgearbeit (kein Gate): das Audit-Readiness-Paket
+[`audit-readiness-package.md`](../open/audit-readiness-package.md).
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 
