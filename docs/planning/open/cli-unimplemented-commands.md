@@ -20,11 +20,15 @@
 | `data seed` | 6.2 | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) | 1.3.0 (Testdaten) |
 | `validate data` | 6.6 | [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) | — (siehe auch [`validate-data-against-schema.md`](../next/validate-data-against-schema.md)) |
 | `validate procedure` | 6.6 | [`LN-034`](../../../spec/lastenheft-d-migrate.md#ln-034) | Phase 4 |
-| `config show` | 6.7 | Konfigurations-Anzeige, [`config-cli-management-surface.md`](../next/config-cli-management-surface.md) | 1.0.0-RC (eigener Slice; `config credentials set`/`list` sind mit [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) Slice 1 erledigt) |
+
+`config show` ist seit 2026-07-19 implementiert (Phase 1 aus
+[`config-cli-management-surface.md`](../done/config-cli-management-surface.md), graduiert nach `done/`);
+`config credentials set`/`list` sind mit [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) Slice 1
+erledigt. Die gesamte `config`-Gruppe ist damit registriert.
 
 Die oberste Kommandogruppe `transform` existiert entsprechend ebenfalls noch
 nicht (registriert sind `schema`/`data`/`export`/`config`/`mcp`; unter `config`
-sind `credentials set`/`list` implementiert, `config show` noch nicht).
+sind `credentials set`/`list` **und** `show` implementiert).
 
 ## Trigger-Rendering — noch nicht abgedeckte Erweiterungen (cli-spec §6 „schema migrate")
 

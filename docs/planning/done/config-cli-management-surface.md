@@ -1,6 +1,24 @@
 # CLI-Verwaltungsoberfläche `config` (`config show` / `config credentials list` / `config credentials set`)
 
-**Status**: Entwurf (2026-06-09 — Scope aus cli-spec §6.7 + connection-config-spec §4 abgeleitet, Review-Findings eingearbeitet: Phase 1 nur `config show` nach Spec-Präzisierung, Secret-Management vollständig in Phase 2).
+**Status**: **ABGESCHLOSSEN** (2026-07-19). Beide Phasen sind erledigt: Phase 1 (`config show`)
+ausgeliefert, Phase 2 (`config credentials set/list`) durch die O2/O4-Staffelung aus
+[ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) / [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025) abgelöst. Ursprünglich
+Entwurf (2026-06-09 — Scope aus cli-spec §6.7 + connection-config-spec §4 abgeleitet, Review-Findings
+eingearbeitet: Phase 1 nur `config show` nach Spec-Präzisierung, Secret-Management vollständig in Phase 2).
+
+> **Abschluss (2026-07-19):**
+> - **Phase 1 `config show` geliefert:** reiner `ConfigShowRenderer` (rekursives Secret-Masking:
+>   sensibler Key-Name → `***` ohne Rekursion; sonstige Strings → `ConnectionSecretMasker.mask`; stabile
+>   Section-Reihenfolge; `--section`-Filter; `D_MIGRATE_*`-Override-Provenienz **nur Namen**) plus dünner
+>   Clikt-`ConfigShowCommand` (Exit `0`/`7`/`2`), registriert unter `ConfigCommand`. Renderer voll
+>   unit-getestet; Command Kover-exkludiert (+Ledger). `cli-spec.md §6.7` vorab auf den Phase-1-Vertrag
+>   präzisiert (effektiv aufgelöste Datei + erkennbare Runtime-Overrides, **kein** voller Multi-Source-Merge;
+>   Exit `2` bei unbekannter `--section`).
+> - **Phase 2 abgelöst:** durch [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md)
+>   (O2-Store `115c546f`, [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049)-Konsum `9cbd1ff0`, O4-Naht `632c984a`, keychain-Provider `20509388`).
+>   Der `master.key`-Datei-Ansatz (§4.1 unten) ist **verworfen**.
+> - **Nicht in diesem Ticket** (bleibt bewusst offen): voller Multi-Source-Provenienz-Merge für
+>   `config show` (Defaults + Datei + ENV + Flags pro Feld) — separater späterer Slice.
 
 **Trigger**: `spec/cli-spec.md` §6.7 spezifiziert drei `config`-Subkommandos
 (`config credentials set`, `config credentials list`, `config show`), die

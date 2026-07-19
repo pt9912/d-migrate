@@ -5,7 +5,7 @@
 
 **Quelle**: [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) O4-Staffel
 („`credentialRef`/`providerRef`-Delegation auf den CLI-Pfad, World-B-Modell ausdehnen") +
-[`../next/config-cli-management-surface.md`](../next/config-cli-management-surface.md) §4.4.
+[`../done/config-cli-management-surface.md`](../done/config-cli-management-surface.md) §4.4.
 Slice 1 (O2-Store) ist done ([`../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md`](../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md)).
 
 **Kein Lastenheft-Gap.** [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) (Credential-Auflösung)

@@ -91,6 +91,7 @@ Permanent reference tokens:
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigCredentialsCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell (`credentials` parent); subcommand wiring only. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigCredentialsListCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic in ConfigCredentialsWiring/CredentialCommandRunner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigCredentialsSetCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; console I/O only — confirm/mismatch logic in unit-tested `confirmedSecret`, set in ConfigCredentialsWiring/CredentialCommandRunner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigShowCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; rendering logic in unit-tested `ConfigShowRenderer`. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataExportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataImportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |

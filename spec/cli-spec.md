@@ -1653,7 +1653,9 @@ Exit: `0` bei Erfolg (auch bei leerem/fehlendem Store — leere Ausgabe, kein Ma
 
 #### `config show`
 
-Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
+Zeigt die **effektiv aufgelöste** Konfigurationsdatei (Pfad nach der `CLI > ENV > Default`-Regel)
+als eingerückten Section-Baum, plus eine kurze Übersicht aktiver `D_MIGRATE_*`-Runtime-Overrides
+(nur deren Namen).
 
 ```
 d-migrate config show [--section <section>]
@@ -1661,11 +1663,13 @@ d-migrate config show [--section <section>]
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--section` | Nein | String | Nur diesen Abschnitt zeigen (`database`, `ai`, `pipeline`, ...) |
+| `--section` | Nein | String | Nur diesen Top-Level-Abschnitt zeigen (`database`, `ai`, `pipeline`, ...) |
 
-Sensible Werte (Passwörter, API-Keys) werden maskiert als `***`.
+Sensible Werte werden maskiert: ein Feldname wie `password`/`secret`/`token`/`credentialRef`
+(**jede** Tiefe) → `***`; Passwörter in URL-Werten → `***`. `${VAR}`-Werte werden **nicht** aufgelöst
+(sie erscheinen literal, außer der Feldname ist selbst sensibel).
 
-Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
+Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern, `2` bei unbekanntem `--section`.
 
 ### 6.8 mcp
 
