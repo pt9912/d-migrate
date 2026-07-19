@@ -610,17 +610,19 @@ Diese neun Meldungen wurden geprüft und als **False Positives** eingestuft. Sie
 
 Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten für ein Folge-Audit.
 
-> **Follow-up-Audit — Fortschritt (Stand 2026-07-19):** von 6 Flächen sind **4
+> **Follow-up-Audit — Fortschritt (Stand 2026-07-19):** von 6 Flächen sind **5
 > nachgeholt** — #1 integrations (`272d61a3`, ein P2), #6 CSV-Formel-Injection
 > (`8c1f82f0`, CWE-1236), #2 Approval-Grant-Kette (`43871e13`, als Replay
-> widerlegt + eine Härtung) und **#4 MCP-Job-Ausführung (beide Kernfragen sauber,
-> kein Security-Befund; eine funktionale fail-safe-Lücke als Ticket).** **Offen:
-> #3, #5** (je ein „Nachgeholt"-Block fehlt = ungeprüft).
+> widerlegt + eine Härtung), #4 MCP-Job-Ausführung (`1a234e71`, beide Kernfragen
+> sauber; eine funktionale fail-safe-Lücke als Ticket) und **#3 persistence-jdbc
+> (race-frei + tenant-isoliert by design, kein Security-Befund; drei
+> funktionale/robustheit-Residuen).** **Offen: nur noch #5** (`--parallel N`
+> Race-/TOCTOU).
 >
-> **Wiedereinstieg (empfohlene Reihenfolge nach Aufwand):** #3 persistence-jdbc
-> (Quota/Idempotency/Job-Store, ~1600 LOC) und #5 `--parallel N` (`ParallelWorkExecutor`,
-> `TopologicalSorter`, `ParallelismClamp`) sind **Race-/TOCTOU-Analyse** → höchster
-> Aufwand, unsicherstes Urteil. Kein Kandidat ist mehr ein Quick-Win wie #2.
+> **Wiedereinstieg:** #5 `--parallel N` (`ParallelWorkExecutor`, `TopologicalSorter`,
+> `ParallelismClamp`) ist die letzte ungeprüfte Fläche — Race-/TOCTOU-Analyse des
+> Datenpfad-Parallelismus (Selbst-DoS gegen `maximumPoolSize`, FK-Barriere unter
+> Teilabbrüchen, `chunkFailures`-Deckel race-frei). Kein Quick-Win.
 
 **Hohe Priorität**
 
@@ -686,6 +688,56 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
    >   überlebt). Ticket [`approval-grant-antireplay-hardening.md`](approval-grant-antireplay-hardening.md).
 
 3. **`adapters/driven/persistence-jdbc/` (~1445 LOC) — Mandantentrennung und Nebenläufigkeit.** Enthält den gesamten persistenten Zustand des Mehrmandanten-MCP-Servers: Quota-Store (die einzige DoS-Bremse gegen einen authentifizierten Mandanten), Idempotency-Store (464 LOC, Replay-Schutz) und Job-Store. Der Reserve-Pfad ist als `INSERT … ON CONFLICT DO UPDATE WHERE limit-check` atomar **gedacht** — niemand hat verifiziert, ob der Limit-Check race-frei ist, ob der Release-Pfad einem Mandanten erlaubt, fremde Reservierungen freizugeben, oder ob die Owner-Zuordnung die Tenant-Grenze trägt.
+
+   > **Nachgeholt (Follow-up-Audit 2026-07-19) — Fläche geprüft; kein Security-Befund.
+   > Race-frei und tenant-isoliert by design; drei funktionale/robustheit-Residuen:**
+   >
+   > - **Quota-Reserve ist race-frei (Postgres).** `INSERT … SELECT … WHERE amount<=limit
+   >   ON CONFLICT (quota_key) DO UPDATE … WHERE used+EXCLUDED.used<=limit RETURNING used` ist
+   >   der kanonische atomare Upsert-mit-Limit: Postgres nimmt im ON-CONFLICT-Zweig den Row-Lock
+   >   und re-evaluiert die WHERE gegen die neueste committete Zeile → zwei parallele Reserves
+   >   können das Limit nie überschreiten (0 rows → `RateLimited`). Alle Branch-Kombinationen
+   >   (amount>limit leer/existierend, used+amount>limit) korrekt; `amount` ist server-fix (=1),
+   >   nicht caller-steuerbar. `GREATEST` verrät: Backing-Store ist Postgres-only.
+   > - **Release-Pfad: kein Fremd-Release, kein Doppel-Dekrement.** `markReleased` ist ein
+   >   terminal-absorbierendes CAS (`UPDATE … WHERE owner_id=? AND state=COMMITTED RETURNING
+   >   reservation`) → Doppel-Release dekrementiert genau einmal. Key **und** Amount kommen aus
+   >   dem gespeicherten Owner-Record, nicht aus Caller-Input; Owner-CAS + Counter-Decrement laufen
+   >   in **einer** DB-TX (`JdbcOwnerAwareQuotaService`). Release ist nicht caller-facing (interner
+   >   Lifecycle-Schritt).
+   > - **Owner-Zuordnung trägt die Tenant-Grenze.** `ownerId = "tenant:caller:tool:idempotencyKey"`
+   >   mit server-gesetztem tenant/caller (aus dem Principal) — ein Tenant-A-Caller kann keinen
+   >   `B:…`-ownerId erzeugen; nur das letzte Segment (idempotencyKey) ist caller-kontrolliert und
+   >   bleibt hinter dem festen Präfix. `quota_counters.quota_key` (serialisierte QuotaKey) trägt
+   >   den Tenant → keine Cross-Tenant-Counter-Kollision.
+   > - **Idempotency-Store race-frei + tenant-isoliert.** `reserve` = `INSERT … ON CONFLICT
+   >   (tenant,caller,tool,key) DO NOTHING RETURNING` (genau ein Gewinner) → bei Konflikt
+   >   `SELECT … FOR UPDATE` + zustandsbasierter Dispatch; alle Transitions (`commit`/`deny`/
+   >   `markFailed`/`markAwaitingApproval`/`claimApproved`) sind Single-Statement-CAS mit
+   >   `WHERE … AND state IN (…)`, row-lock-serialisiert und terminal-absorbierend → kein
+   >   Doppel-Commit, kein Doppel-Job. PK `(tenant_id,caller_id,tool_name,idempotency_key)`.
+   > - **Job-Store race-frei + tenant-isoliert.** `transitionStatus`/`markCancelRequested` =
+   >   `SELECT … FOR UPDATE` → Status-Check → `UPDATE` in einer TX (serialisiert QUEUED→RUNNING→
+   >   terminal). PK `(tenant_id,job_id)` → ein geratener fremder `job_id` liefert NotFound.
+   >   `JdbcJobStartTransaction` komponiert idempotency-commit-CAS (Gate) + job-save in **einer**
+   >   TX → kein Orphan-Job, kein Doppel-Job.
+   > - **Handler-seitige Tenant-Durchsetzung.** `resolveTenant`/`resolveTarget` (List/Status/
+   >   Cancel): expliziter `tenantId`/`resourceUri`-Tenant nur wenn in `allowedTenantIds`, sonst
+   >   `TENANT_SCOPE_DENIED` **vor** dem Store-Lookup; opake `jobId` nur im `effectiveTenantId`
+   >   (kein Cross-Tenant-Probe); Cancel zusätzlich owner/admin-gegatet (`ForbiddenPrincipal`);
+   >   No-oracle `RESOURCE_NOT_FOUND` (unbekannt vs. versteckt ununterscheidbar).
+   > - **Isolationslevel:** `JdbcTransactionRunner` setzt nur `autoCommit=false` → implizit
+   >   Postgres-READ-COMMITTED. Für alle obigen Muster ausreichend (jede Read-then-write-
+   >   Entscheidung ist FOR-UPDATE-gelockt oder atomares ON CONFLICT); kein Muster braucht
+   >   SERIALIZABLE.
+   > - **Residuen (funktional/robustheit, keine Vuln):** (1) COMMITTED-Quota-Owner werden bei
+   >   Job-Crash / Approved-Retry-no-dispatch nicht reclaimt (Sweeper `listExpiredPending` nur
+   >   PENDING) → Quota-Slot-Leak; **fail-safe** (überzählt = restriktiver; verstärkt Ticket
+   >   [`approved-retry-no-dispatch.md`](approved-retry-no-dispatch.md)). (2) `JdbcJobStore.list`
+   >   fetcht ALLE tenant-Zeilen in den Speicher vor der Offset-Pagination (kein SQL-LIMIT) — mild,
+   >   tenant-scoped, durch Quota×Retention beschränkt. (3) `reserve` gegen konkurrierendes
+   >   `cleanupExpired` auf derselben terminalen Zeile → transienter `error()` statt Retry
+   >   (fail-closed, seltenes Fenster).
 
 4. **MCP-Job-Ausführungspfad (`DataRunnerWorkers`, `McpCoreJobWorkerFactory`, `JobDispatcher`, `JobStartService`, `AiToolOrchestrator`).** Exakt die Naht, an der ein validierter MCP-Request in eine reale DB-Schreiboperation übersetzt wird. Geprüft wurden Auth und Request-Parsing — nicht, was der Worker danach damit macht. Ungeklärt: Läuft der Worker mit dem Principal des Aufrufers oder mit Server-Rechten? Werden Quota und Approval **vor** oder **nach** dem Dispatch ausgewertet?
 
