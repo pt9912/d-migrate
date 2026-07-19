@@ -92,3 +92,13 @@ Der Build erzwingt mehrere Sicherheits-Gates, die alle lokal laufen:
 
 Bewusst akzeptierte Befunde sind inline mit `# nosemgrep: <rule-id>` und einer
 Begründung annotiert.
+
+## Für Auditoren
+
+Ein konsolidiertes Onboarding (Angriffsfläche, Vertrauensgrenzen, schützenswerte
+Pfade, Krypto-/Auth-Orte, Build-/Gate-Anleitung) steht in
+[`docs/security/audit-scope.md`](docs/security/audit-scope.md); das aufgelöste
+Runtime-Dependency-Inventar in
+[`docs/security/dependency-inventory.md`](docs/security/dependency-inventory.md).
+Die interne Befundlage (Ausgangspunkt, nicht Obergrenze) liegt in
+[`docs/planning/open/security-audit-2026-07-17.md`](docs/planning/open/security-audit-2026-07-17.md).

@@ -1,8 +1,15 @@
 # Audit-Readiness-Paket (Folgearbeit zu ADR 0039)
 
-> **Status:** OFFEN, **kein 1.0.0-Gate** ([ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md)).
+> **Status:** Kern-Deliverables **GELIEFERT 2026-07-19**, **kein 1.0.0-Gate**
+> ([ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md)). Die
+> Roadmap-Zeile „Externer Security-Audit" schließt dieses Ticket **nicht** — nur ein
+> beauftragter + gelieferter Dritt-Audit-Bericht tut das.
 > **Zweck:** Einen späteren **externen** Security-Audit billig und glaubwürdig machen,
 > indem der Repo-Beitrag (das Einzige, was Dev liefern kann) vorbereitet ist.
+>
+> **Geliefert:** [`docs/security/audit-scope.md`](../../security/audit-scope.md)
+> (Auditor-Onboarding/Scope + Readiness-Index) · [`docs/security/dependency-inventory.md`](../../security/dependency-inventory.md)
+> (aufgelöstes Runtime-SBOM, 239 Artefakte). Pointer aus [`SECURITY.md`](../../../SECURITY.md).
 
 ## Kontext
 
@@ -19,19 +26,19 @@ Lücken.
   mit Remediation-Status, „Nicht geprüft"- und „Methodische Einschränkungen"-Sektion.
 - Security-Gates: semgrep (offline), a-check-Architektur, `dependency-submission`.
 
-## Zu liefern (die Lücken)
+## Geliefert (2026-07-19)
 
-1. **Auditor-Onboarding-/Scope-Doc.** Ein Dokument, das die Angriffsfläche
-   konsolidiert (heute über Spec/ADR/Bericht verstreut): Trust-Boundaries, Entry-Points
-   (MCP-HTTP/stdio, CLI-Datenpfad, Credential-Store, JWT/JWKS-Kette, Dialekt-SQL-
-   Generierung), Datenflüsse untrusted → privilegiert, Build-/Reproduktions-Anleitung,
-   wie man die Security-Gates lokal fährt.
-2. **SBOM-Vollständigkeit.** Der Dependency-Graph sieht nur ~6 Pakete, weil die
-   meisten Gradle-Deps ihre Version dynamisch aus `gradle.properties` interpolieren
-   (statisches Parsen blind); `dependency-submission.yml` triggert erst ab main-Merge.
-   Ein Auditor braucht ein vollständiges, aktuelles Dependency-Inventar (z. B.
-   generiertes SBOM/CycloneDX aus einem realen Resolve).
-3. **Readiness-Index.** Bericht + Tickets + Gates zu einem Einstiegspunkt bündeln.
+1. ✅ **Auditor-Onboarding-/Scope-Doc** → [`docs/security/audit-scope.md`](../../security/audit-scope.md):
+   Angriffsfläche konsolidiert — Trust-Boundaries, Entry-Points (MCP-HTTP-Pipeline/stdio,
+   CLI-Datenpfad, Credential-Store, JWT/JWKS, Dialekt-SQL-Generierung), Datenflüsse
+   untrusted → privilegiert (mit den bestätigten Befundklassen), Krypto-/Auth-Orte,
+   Build-/Reproduktions-Anleitung, Gate-Tabelle.
+2. ✅ **SBOM/Dependency-Inventar** → [`docs/security/dependency-inventory.md`](../../security/dependency-inventory.md):
+   239 aufgelöste Runtime-Artefakte des CLI-Shadow-Jars (via `docker build … cli:dependencies`),
+   Regenerier-Anleitung, Kern-Dep-Schnellzugriff. Schließt die „~6-Pakete"-Lücke des
+   Dependency-Graphen (`dependency-submission.yml` liefert es zusätzlich ab main-Push).
+3. ✅ **Readiness-Index** — als §9 + Querverweise in `audit-scope.md` realisiert (Bericht,
+   Tickets, Gates, SBOM an einem Einstiegspunkt); Pointer aus `SECURITY.md`.
 
 ## Nicht-Ziel
 
