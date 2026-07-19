@@ -1,7 +1,10 @@
 # `keychain:`-Credential-Provider (Folge-Slice der O4-Naht)
 
-**Status**: **Kern GELIEFERT 2026-07-19** ([ADR 0040](../../adr/0040-keychain-credential-provider-backend-port.md));
-verbleibend = opt-in-Native-Modul (Windows + volle Parität).
+**Status**: **ABGESCHLOSSEN 2026-07-19** — Kern-Slice geliefert (`20509388`,
+[ADR 0040](../../adr/0040-keychain-credential-provider-backend-port.md)), Plan nach `done/` graduiert.
+Das opt-in-Native-Modul (Windows + volle Parität) ist als **eigener** Tracker
+[`../open/keychain-native-provider-module.md`](../open/keychain-native-provider-module.md) ausgegliedert
+(nicht mehr offene Scope dieses Plans).
 Baute auf der **fertigen** `CredentialProviderRegistry` auf
 ([ADR 0035](../../adr/0035-credential-provider-scheme-registry.md), Slice 2 der
 [`LN-025`](../../../spec/lastenheft-d-migrate.md#ln-025)-O4-Staffel); kein Architekturwechsel.
@@ -16,8 +19,9 @@ Baute auf der **fertigen** `CredentialProviderRegistry` auf
 >
 > **Verbleibend = opt-in-Modul `keychain-native`** (Windows-DPAPI + volle Parität via eigene JNA
 > **oder** geprüfte Keyring-Lib): implementiert denselben `KeychainBackend`-Port, wird beim Wiring
-> bevorzugt falls vorhanden. Braucht eigenen Security-Review (Prompt-Verhalten, Native-Packaging,
-> GraalVM-Native-Image-Config) — die untenstehenden Vorbedingungen gelten für **dieses** Modul.
+> bevorzugt falls vorhanden. Als eigener Tracker ausgegliedert →
+> [`../open/keychain-native-provider-module.md`](../open/keychain-native-provider-module.md)
+> (inkl. eigenem Security-Review, Native-Packaging, GraalVM-Native-Image-Config).
 
 **Trigger**: [ADR 0035](../../adr/0035-credential-provider-scheme-registry.md) D4 hat `keychain:`
 bewusst aus dem RC-Slice ausgeschnitten (plattformspezifische Native-/CLI-Integration + zwingender
@@ -51,9 +55,15 @@ CI/Docker/Server haben **keinen** Keychain. `keychain:` muss dort **fail-closed*
 undiagnostizierbar hängt. Kein stiller Degrade. Doku muss die Schicht-Wahl aussprechen (headless →
 `env:`/`file:`, nicht `keychain:`), analog [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md)-Konsequenz „richtige Schicht wählen".
 
-## Vorbedingungen
+## Vorbedingungen (für den Kern-Slice — alle erfüllt)
 
-- ADR-Inkrement: Shell-out vs. native, Fallback-Semantik, unterstützte OS-Matrix.
-- Security-Review: Prozess-Argument-Leaks (Keychain-CLI-Args in `ps`), kein Secret in Logs,
-  Keychain-Prompt-Verhalten (interaktiver Unlock) im nicht-interaktiven Lauf.
-- Test-Strategie: Provider gegen ein injizierbares Keychain-Backend (kein echtes OS-Keychain im CI).
+- ✅ ADR-Inkrement: Mechanismus hinter `KeychainBackend`-Port, Fallback-Semantik, OS-Matrix
+  ([ADR 0040](../../adr/0040-keychain-credential-provider-backend-port.md)).
+- ✅ Security-Review: Secret über stdout (nicht in `ps`-Argumenten), kein Secret in Logs,
+  ProcessBuilder-Timeout gegen interaktiven Unlock-Hänger im nicht-interaktiven Lauf.
+- ✅ Test-Strategie: Provider + Backend gegen injizierte Kommando-Ausführung (kein echtes
+  OS-Keychain im CI).
+
+Die native-modul-spezifischen Vorbedingungen (Windows-Packaging, eigene JNA/Keyring-Lib-Prüfung,
+GraalVM-Native-Image-Config, eigener Security-Review) leben im Tracker
+[`../open/keychain-native-provider-module.md`](../open/keychain-native-provider-module.md).

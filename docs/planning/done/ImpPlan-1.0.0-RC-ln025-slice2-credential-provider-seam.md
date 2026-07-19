@@ -133,7 +133,7 @@ Geliefert wie geplant (E1–E6 unverändert; keychain → `../next/`).
   `McpServeWiring` × 2 mitgezogen). **AP3** `FileCredentialProvider` (Datei-Inhalt = URL). **AP4** CLI
   World-A-Anschluss: `NamedConnectionResolver` löst Map-Form-`credentialRef` via `defaultCredentialProviderRegistry()`
   auf (fail-closed, keine `${VAR}`-Substitution); `ConnectionConfigParser.parseMapFormCredentialRef`.
-  **AP6** keychain-Folge-Ticket `../next/credential-provider-keychain.md`.
+  **AP6** keychain-Folge-Ticket `../done/credential-provider-keychain.md`.
 - **AP5 Security-Review** (3 Agenten adversarial): kein fail-open, Authz-Ordering byte-identisch,
   Discovery-Trennung intakt. **Härtungen eingearbeitet:** (1) MED — `ConnectionUrlParser` re-appendete
   bei `URISyntaxException` die rohe URL via `e.message` → jetzt `e.reason`+`e.index` (maskiert);

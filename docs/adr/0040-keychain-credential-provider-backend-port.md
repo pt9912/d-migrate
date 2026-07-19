@@ -2,14 +2,14 @@
 status: accepted
 date: 2026-07-19
 decision-makers: pt9912
-consulted: docs/planning/next/credential-provider-keychain.md, docs/adr/0035-credential-provider-scheme-registry.md, docs/adr/0034-master-key-architektur-credential-store.md
+consulted: docs/planning/done/credential-provider-keychain.md, docs/adr/0035-credential-provider-scheme-registry.md, docs/adr/0034-master-key-architektur-credential-store.md
 informed: adapters/driven/connection-config, hexagon/ports-common
 ---
 
 # Keychain-Credential-Provider: Backend-Port mit Default-Shell-out und opt-in Native-Modul
 
 > **Status: accepted (2026-07-19).** Das von
-> [`credential-provider-keychain.md`](../planning/next/credential-provider-keychain.md)
+> [`credential-provider-keychain.md`](../planning/done/credential-provider-keychain.md)
 > geforderte ADR-Inkrement **vor** dem Bau: legt den Zugriffs-**Mechanismus** nicht als
 > Entweder-oder fest, sondern zieht ihn hinter einen Adapter-Port — Default native-frei,
 > Native als opt-in.
@@ -98,7 +98,7 @@ Registrierung + Fake-Backend + Tests. Der `-native`-Weg bleibt eine spätere, op
 
 ## Weitere Informationen
 
-- [`credential-provider-keychain.md`](../planning/next/credential-provider-keychain.md) —
+- [`credential-provider-keychain.md`](../planning/done/credential-provider-keychain.md) —
   der Plan (Scope, Plattform-Mechanismen, Headless-Fallback, Vorbedingungen).
 - [ADR 0035](0035-credential-provider-scheme-registry.md) — die `CredentialProviderRegistry`,
   auf der dieser Provider aufsitzt (Slice `ImpPlan-1.0.0-RC-ln025-slice2-credential-provider-seam.md`).
