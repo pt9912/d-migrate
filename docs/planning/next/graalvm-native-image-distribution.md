@@ -4,8 +4,8 @@
 gelaufen 2026-07-19**; Scope-Gabel entschieden (**Core-CLI-Subset zuerst**). **Phase-B-Kern-Viabilität
 BEWIESEN 2026-07-19** — der Kern native-kompiliert grün. **Punkt 1+2 GELIEFERT 2026-07-19:** nativer
 Entrypoint `NativeMain.kt` + Gradle-Plugin → `nativeCompile` erzeugt reproduzierbar ein grünes
-65-MB-`d-migrate`-Binary (`schema validate` läuft); normaler Build unberührt. Ergebnisse in
-„Phase A/B — Ergebnisse" unten. Verbleibend = `schema generate` + weitere Kommandos + GraalVM-CI (Phase D).
+65-MB-`d-migrate`-Binary (`schema validate` läuft); normaler Build unberührt. **`schema validate` + `schema generate` laufen nativ**, Linux-CI (`native-image.yml`) grün verifiziert.
+Ergebnisse in „Phase A/B — Ergebnisse" unten. Verbleibend = weitere Kommandos + macOS/Windows-Legs (Phase D).
 
 **Trigger**: Die [Roadmap](../in-progress/roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
@@ -172,9 +172,12 @@ nur den Kern; die Schwergewichte werden nicht kompiliert (bestätigt die Prune-H
 3. ✅ **GraalVM-CI (Linux) GELIEFERT:** `.github/workflows/native-image.yml` baut + smoked das
    Core-Binary auf `ubuntu-latest` (`graalvm/setup-graalvm`), tag-/dispatch-getriggert. Damit ist der
    native Build **CI-gedeckt** (Linux) statt nur lokal. macOS/Windows-Legs offen (Phase D).
-4. **Nächste Inkremente:** `schema generate` (braucht die per ServiceLoader gefüllte
-   `DatabaseDriverRegistry` + DDL-Rendering — Native-Viabilität als eigener Probe) und weitere
-   Kern-Kommandos.
+4. ✅ **`schema generate` GELIEFERT** (`d-migrate schema generate <FILE> --target <dialect>`): **DB-frei**
+   — statt die vollen Treiber via `DatabaseDriverRegistry`/ServiceLoader zu registrieren (die JDBC +
+   sqlite-JNI reinzögen), konstruiert `NativeMain` die **reinen `*DdlGenerator` direkt**. Das
+   Native-Binary bleibt JDBC-/sqlite-JNI-frei (nur +2 MB → 67 MB), **kein** neues native-image-Config.
+   Lokal grün: PG/MySQL/SQLite live gerendert (`CREATE TYPE … ENUM …` etc.), unbekannter Dialekt → Exit 2.
+   **Nächst:** weitere Kern-Kommandos + macOS/Windows-Matrix-Legs (Phase D).
 
 ## 4. Offene Fragen / Entscheidungen
 
