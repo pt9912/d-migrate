@@ -101,4 +101,4 @@ Pfade, Krypto-/Auth-Orte, Build-/Gate-Anleitung) steht in
 Runtime-Dependency-Inventar in
 [`docs/security/dependency-inventory.md`](docs/security/dependency-inventory.md).
 Die interne Befundlage (Ausgangspunkt, nicht Obergrenze) liegt in
-[`docs/planning/open/security-audit-2026-07-17.md`](docs/planning/open/security-audit-2026-07-17.md).
+[`docs/planning/done/security-audit-2026-07-17.md`](docs/planning/done/security-audit-2026-07-17.md).

@@ -22,7 +22,7 @@ Lücken.
 
 - [`SECURITY.md`](../../../SECURITY.md): Bedrohungsmodell (Operator ≠ Angreifer,
   in/out of scope), Meldeprozess, Sicherheitsmaßnahmen.
-- Interner Befund-Ledger [`security-audit-2026-07-17.md`](security-audit-2026-07-17.md)
+- Interner Befund-Ledger [`security-audit-2026-07-17.md`](../done/security-audit-2026-07-17.md)
   mit Remediation-Status, „Nicht geprüft"- und „Methodische Einschränkungen"-Sektion.
 - Security-Gates: semgrep (offline), a-check-Architektur, `dependency-submission`.
 

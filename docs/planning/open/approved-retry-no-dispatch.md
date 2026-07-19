@@ -3,7 +3,7 @@
 > **Status:** Beim Follow-up-Audit #4 (MCP-Job-Ausführung) 2026-07-19 entdeckt.
 > **Kein Sicherheitsbefund** (fail-safe), aber eine funktionale Ausführungslücke.
 > **Trigger:** Follow-up-Audit des MCP-Job-Ausführungspfads (aus der „Nicht geprüft /
-> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](security-audit-2026-07-17.md),
+> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](../done/security-audit-2026-07-17.md),
 > Punkt 4).
 
 ## Beobachtung
@@ -48,7 +48,7 @@ beiden Pfaden korrekt. Es ist ein Verfügbarkeits-/Korrektheitsloch, kein C/I-Ve
 
 1. **Ist das beabsichtigt?** Möglicherweise bewusste Unreife des Approval-/
    AI-Tool-Bereichs (vgl. offene Folgearbeit „durable `AiToolOutcomeStore`" in
-   [`approval-grant-antireplay-hardening.md`](approval-grant-antireplay-hardening.md)).
+   [`approval-grant-antireplay-hardening.md`](../done/approval-grant-antireplay-hardening.md)).
    Falls ja: als bekannte Einschränkung dokumentieren (Spec/Handbuch), damit ein
    Operator nicht auf still-hängende genehmigte Jobs läuft.
 2. **Falls nicht:** Approved-Retry symmetrisch zum Primärpfad auto-dispatchen —

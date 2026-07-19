@@ -8,7 +8,7 @@
 > [`audit-readiness-package.md`](../planning/open/audit-readiness-package.md).
 >
 > **Nicht** normativ: das Bedrohungsmodell ist in [`SECURITY.md`](../../SECURITY.md), die
-> internen Befunde in [`security-audit-2026-07-17.md`](../planning/open/security-audit-2026-07-17.md).
+> internen Befunde in [`security-audit-2026-07-17.md`](../planning/done/security-audit-2026-07-17.md).
 > Dieses Dokument verweist, statt zu duplizieren.
 
 ## 1. Was ist d-migrate, was wird ausgeliefert
@@ -176,7 +176,7 @@ ports-jdbc-free-gate a-check`):
 
 ## 9. Interne Befundlage (Ausgangspunkt für den externen Audit)
 
-Vollständig in [`security-audit-2026-07-17.md`](../planning/open/security-audit-2026-07-17.md):
+Vollständig in [`security-audit-2026-07-17.md`](../planning/done/security-audit-2026-07-17.md):
 27 Rohbefunde → 18 bestätigt (Multi-Agent, dreifach gegengeprüft), alle P1/P2 + P3-Backlog
 behoben; die 6 anfangs ungeprüften „Nicht geprüft"-Restflächen und zwei methodische
 Einschränkungen (P1-Live-Repro, Gson-Rekursionstiefe) nachgeholt. **Offen dokumentiert**

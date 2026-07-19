@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-18
 decision-makers: pt9912
-consulted: docs/planning/open/jdbc-ssl-default-hardening.md, docs/planning/open/security-audit-2026-07-17.md, spec/connection-config-spec.md, spec/lastenheft-d-migrate.md
+consulted: docs/planning/done/jdbc-ssl-default-hardening.md, docs/planning/done/security-audit-2026-07-17.md, spec/connection-config-spec.md, spec/lastenheft-d-migrate.md
 informed: hexagon/ports-common, adapters/driven/driver-common, adapters/driven/driver-postgresql
 ---
 
@@ -10,7 +10,7 @@ informed: hexagon/ports-common, adapters/driven/driver-common, adapters/driven/d
 
 > **Status: accepted (2026-07-18).** Löst die Deferral-Notiz zu
 > Security-Audit-Befund 8 in
-> [`jdbc-ssl-default-hardening.md`](../planning/open/jdbc-ssl-default-hardening.md)
+> [`jdbc-ssl-default-hardening.md`](../planning/done/jdbc-ssl-default-hardening.md)
 > ab und hält die bislang nur als Ticket-Zuschnitt getroffene Entscheidung
 > normativ fest.
 
@@ -78,7 +78,7 @@ verbreitete Form bräche.
 
 ## Weitere Informationen
 
-- [`jdbc-ssl-default-hardening.md`](../planning/open/jdbc-ssl-default-hardening.md)
+- [`jdbc-ssl-default-hardening.md`](../planning/done/jdbc-ssl-default-hardening.md)
   — Befunde 8/9 mit Umsetzung.
-- [`security-audit-2026-07-17.md`](../planning/open/security-audit-2026-07-17.md)
+- [`security-audit-2026-07-17.md`](../planning/done/security-audit-2026-07-17.md)
   — Audit-Bericht, Befund 8 mit dreifacher Gegenprüfung.

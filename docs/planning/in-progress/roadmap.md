@@ -795,7 +795,7 @@ damit genau die Module, deren Bruch bereits entschieden ist. Details in Fußnote
 CLI, OCI-Image und MCP — keine Library-Artefakte.**
 
 ⁵ **Interner Security-Audit ✅** (2026-07-17..19): adversariales Vollaudit
-([`security-audit-2026-07-17.md`](../open/security-audit-2026-07-17.md); Multi-Agent-Flächen, jeder
+([`security-audit-2026-07-17.md`](../done/security-audit-2026-07-17.md); Multi-Agent-Flächen, jeder
 Befund dreifach gegengeprüft) — 27 Roh → 18 bestätigt, **alle P1/P2 + P3-Backlog remediiert**, die 6
 anfangs ungeprüften „Nicht geprüft"-Restflächen und zwei methodische Einschränkungen (P1-Path-Traversal-
 Live-Repro, Gson-Rekursionstiefe) nachgeholt. Flankiert von [`SECURITY.md`](../../../SECURITY.md)

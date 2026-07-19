@@ -68,4 +68,4 @@ tragen den Vektor; typisierte Zahlen/Booleans werden nie präfixt.
 - Die JSON/YAML-Writer-Ausgabeseite (Formel-Injection ist CSV-spezifisch, aber die
   Ausgabe-Kodierungsprüfung der übrigen Writer steht noch aus).
 - Ledger-Backfill für `W202`/`W203` — verfolgt in
-  [`warn-code-ledger-completeness.md`](warn-code-ledger-completeness.md).
+  [`warn-code-ledger-completeness.md`](../open/warn-code-ledger-completeness.md).

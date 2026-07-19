@@ -4,7 +4,7 @@
 > **Kein Sicherheitsbefund** (`--parallel` ist CLI-operator-only, nicht MCP-exponiert;
 > Operator ≠ Angreifer), aber eine UX-/Robustheit-Lücke.
 > **Trigger:** Follow-up-Audit des parallelen Datenpfads (aus der „Nicht geprüft /
-> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](security-audit-2026-07-17.md),
+> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](../done/security-audit-2026-07-17.md),
 > Punkt 5, Frage „Ist N gegen `maximumPoolSize` gedeckelt?").
 
 ## Beobachtung

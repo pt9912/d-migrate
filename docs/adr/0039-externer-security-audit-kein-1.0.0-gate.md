@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-19
 decision-makers: pt9912
-consulted: docs/planning/open/security-audit-2026-07-17.md, SECURITY.md, docs/planning/in-progress/roadmap.md
+consulted: docs/planning/done/security-audit-2026-07-17.md, SECURITY.md, docs/planning/in-progress/roadmap.md
 informed: docs/planning/open/audit-readiness-package.md
 ---
 
@@ -22,7 +22,7 @@ Handlung (Anbieterauswahl, Budget, Terminierung) — **kein Entwicklungsschritt*
 und wird durch das intern durchgeführte Audit **nicht** erfüllt.
 
 d-migrate hat 2026-07-17..19 ein **internes** adversariales Vollaudit gefahren
-([`security-audit-2026-07-17.md`](../planning/open/security-audit-2026-07-17.md);
+([`security-audit-2026-07-17.md`](../planning/done/security-audit-2026-07-17.md);
 Multi-Agent-Flächen, jeder Befund dreifach gegengeprüft): 18 bestätigte Befunde
 (alle P1/P2 behoben), die 6 anfangs ungeprüften Restflächen nachgeholt, zwei der
 methodischen Einschränkungen (P1-Live-Repro, Gson-Rekursionstiefe) verifiziert. So
@@ -64,7 +64,7 @@ macht, dass die Zeile das Stable-Release **nicht blockiert**.
 Die **1.0.0-Sicherheits-Interimslatte** ist:
 
 1. das interne adversariale Vollaudit
-   ([`security-audit-2026-07-17.md`](../planning/open/security-audit-2026-07-17.md))
+   ([`security-audit-2026-07-17.md`](../planning/done/security-audit-2026-07-17.md))
    mit remediierten P1/P2-Befunden, nachgeholten Restflächen und geschlossenen
    Methoden-Lücken;
 2. [`SECURITY.md`](../../SECURITY.md) mit Bedrohungsmodell (Operator ≠ Angreifer),
@@ -97,7 +97,7 @@ ihn nur vom 1.0.0-Release.
 
 ## Weitere Informationen
 
-- [`security-audit-2026-07-17.md`](../planning/open/security-audit-2026-07-17.md) —
+- [`security-audit-2026-07-17.md`](../planning/done/security-audit-2026-07-17.md) —
   interner Audit-Bericht inkl. „Nicht geprüft"- und „Methodische Einschränkungen"-Sektion.
 - [`SECURITY.md`](../../SECURITY.md) — Bedrohungsmodell + Meldeprozess.
 - [`audit-readiness-package.md`](../planning/open/audit-readiness-package.md) — die
