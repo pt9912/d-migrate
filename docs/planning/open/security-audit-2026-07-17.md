@@ -610,17 +610,15 @@ Diese neun Meldungen wurden geprüft und als **False Positives** eingestuft. Sie
 
 Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten für ein Folge-Audit.
 
-> **Follow-up-Audit — Fortschritt (Stand 2026-07-18):** von 6 Flächen sind **3
+> **Follow-up-Audit — Fortschritt (Stand 2026-07-19):** von 6 Flächen sind **4
 > nachgeholt** — #1 integrations (`272d61a3`, ein P2), #6 CSV-Formel-Injection
-> (`8c1f82f0`, CWE-1236) und #2 Approval-Grant-Kette (`43871e13`, als Replay
-> widerlegt + eine Härtung). **Offen: #3, #4, #5** (je ein „Nachgeholt"-Block fehlt
-> = ungeprüft).
+> (`8c1f82f0`, CWE-1236), #2 Approval-Grant-Kette (`43871e13`, als Replay
+> widerlegt + eine Härtung) und **#4 MCP-Job-Ausführung (beide Kernfragen sauber,
+> kein Security-Befund; eine funktionale fail-safe-Lücke als Ticket).** **Offen:
+> #3, #5** (je ein „Nachgeholt"-Block fehlt = ungeprüft).
 >
-> **Wiedereinstieg (empfohlene Reihenfolge nach Aufwand):** #4 MCP-Job-Ausführung
-> ist überwiegend statisch (Prinzipal-/Reihenfolge-Analyse über die Naht
-> `JobStartService`/`JobDispatcher`/`DataRunnerWorkers`/`McpCoreJobWorkerFactory`/
-> `AiToolOrchestrator`) → mittlerer Aufwand. #3 persistence-jdbc (Quota/Idempotency/
-> Job-Store, ~1600 LOC) und #5 `--parallel N` (`ParallelWorkExecutor`,
+> **Wiedereinstieg (empfohlene Reihenfolge nach Aufwand):** #3 persistence-jdbc
+> (Quota/Idempotency/Job-Store, ~1600 LOC) und #5 `--parallel N` (`ParallelWorkExecutor`,
 > `TopologicalSorter`, `ParallelismClamp`) sind **Race-/TOCTOU-Analyse** → höchster
 > Aufwand, unsicherstes Urteil. Kein Kandidat ist mehr ein Quick-Win wie #2.
 
@@ -690,6 +688,55 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
 3. **`adapters/driven/persistence-jdbc/` (~1445 LOC) — Mandantentrennung und Nebenläufigkeit.** Enthält den gesamten persistenten Zustand des Mehrmandanten-MCP-Servers: Quota-Store (die einzige DoS-Bremse gegen einen authentifizierten Mandanten), Idempotency-Store (464 LOC, Replay-Schutz) und Job-Store. Der Reserve-Pfad ist als `INSERT … ON CONFLICT DO UPDATE WHERE limit-check` atomar **gedacht** — niemand hat verifiziert, ob der Limit-Check race-frei ist, ob der Release-Pfad einem Mandanten erlaubt, fremde Reservierungen freizugeben, oder ob die Owner-Zuordnung die Tenant-Grenze trägt.
 
 4. **MCP-Job-Ausführungspfad (`DataRunnerWorkers`, `McpCoreJobWorkerFactory`, `JobDispatcher`, `JobStartService`, `AiToolOrchestrator`).** Exakt die Naht, an der ein validierter MCP-Request in eine reale DB-Schreiboperation übersetzt wird. Geprüft wurden Auth und Request-Parsing — nicht, was der Worker danach damit macht. Ungeklärt: Läuft der Worker mit dem Principal des Aufrufers oder mit Server-Rechten? Werden Quota und Approval **vor** oder **nach** dem Dispatch ausgewertet?
+
+   > **Nachgeholt (Follow-up-Audit 2026-07-19) — Fläche geprüft; beide Kernfragen
+   > sauber, kein Security-Befund. Eine funktionale (fail-safe) Beobachtung als Ticket:**
+   >
+   > - **Frage 1 — der Worker läuft mit dem Caller-Principal, nicht mit Server-Rechten.**
+   >   Der authentifizierte Principal wird per `JobStartRequest.principalContext` (in allen
+   >   fünf Start-Handlern aus `context.principal` gesetzt) in die Job-Pipeline getragen und
+   >   **synchron beim `factory.create` auf dem Request-Thread** ins Worker-Closure eingefangen
+   >   — kein Thread-Local-Read zur Ausführungszeit, also **kein Principal-Bleed** auch bei
+   >   asynchronem Executor-Pool. Beide Worker-Familien materialisieren die Connection unter
+   >   diesem Principal: der Lesepfad (`McpCoreJobWorkerFactory`) explizit via
+   >   `require(ref.isReadableBy(principal, tenant))` **und** in `resolve()`; der Schreibpfad
+   >   (`DataRunnerWorkers`, `data_import`/`data_transfer`) allein über `resolve()`. Tenant ist
+   >   strukturell erzwungen (`findById(job.tenantId, …)`, `uri.tenantId == job.tenantId`) —
+   >   kein Cross-Tenant-Connection-Zugriff. Die DB-seitigen Rechte sind die der mandanten-
+   >   konfigurierten Connection-Credentials (per Design ein geteiltes, ACL-gegatetes Secret),
+   >   keine ambiente Server-Identität.
+   > - **Widerlegt (Bypass-Hypothese):** Dass der Schreibpfad das explizite `isReadableBy` des
+   >   Lesepfads nicht wiederholt, ist **kein** Autorisierungs-Loch — die ACL sitzt fail-closed
+   >   in `resolve()` selbst: `ProviderBackedConnectionSecretResolver.resolve` prüft
+   >   `isPrincipalAuthorised` (allowedPrincipalIds/allowedScopes/isAdmin, dieselbe Logik wie
+   >   `isReadableBy`) **zuerst** und liefert `REASON_PRINCIPAL_NOT_AUTHORISED`, bevor ein Secret
+   >   aufgelöst wird. Die explizite Prüfung im Lesepfad ist redundante Defense-in-Depth. Der
+   >   `principal ?: minimalPrincipal(job)`-Fallback eskaliert nichts: `minimalPrincipal` trägt
+   >   `principalId = job.ownerPrincipalId`, **keine** Scopes, **kein** `isAdmin` → er fällt
+   >   strikter zu als der echte Principal; in Produktion ist `principalContext` ohnehin non-null.
+   > - **Principal-Race (`currentPrincipal`, Befund 14):** Der geteilte `AtomicReference` auf der
+   >   Session-`McpServiceImpl` kann **keinen fremden** Principal einschleusen — `resolveContext`
+   >   bindet die Session an ihren Erzeuger-Principal und weist jeden Folge-Request mit
+   >   abweichender `principalId` als „unbekannte Session" (404) ab. Ein Restrace bliebe nur bei
+   >   **derselben** `principalId` mit abweichenden Scopes (der Caller rennt gegen seine eigenen
+   >   zwei Token) → keine Cross-Principal-Eskalation, vernachlässigbar.
+   > - **Frage 2 — Quota und Approval werden VOR dem Dispatch ausgewertet, in beiden
+   >   Start-Pfaden.** Primärpfad (`JobStartOrchestrator.commitJob`): Policy/Approval-Entscheid →
+   >   Admission-Permit → `reserveQuota` → **erst nach** erfolgreichem `JobStartTransaction.commit`
+   >   läuft `runAutoDispatch` (create + dispatch); `RateLimited`/`PolicyDenied`/`PolicyRequired`
+   >   kurzschließen **vor** dem Commit. Approved-Retry (`ApprovedRetryService`): Grant-Validierung
+   >   → `claimApproved` → `quota.reserve` → Commit. Der Dispatch (QUEUED→RUNNING→Worker) erfolgt
+   >   strikt **nach** einem committeten Job — kein Execute-before-authorize-Fenster.
+   > - **Beobachtung (funktional, kein Security-Vuln) → Ticket:** Der Approved-Retry-Pfad
+   >   committet den Job und registriert die Worker-Handle, **dispatcht aber nicht** —
+   >   `ApprovedRetryService` hat strukturell keinen `jobDispatcher`/`jobWorkerFactory`, und es
+   >   existiert kein Recovery-Poller für QUEUED-Jobs. Sobald ein Operator eine `RequiresApproval`-
+   >   Policy-Regel setzt (erreichbar; Default ist `Deny`), bleibt eine **genehmigte** Operation
+   >   nach dem Retry QUEUED und läuft nie; die dabei reservierte+committete Quota wird mangels
+   >   Terminal-Transition nicht freigegeben. **Fail-safe** (approval-gated ⇒ ohne Dispatch keine
+   >   Ausführung = keine unautorisierte Ausführung), daher kein Sicherheitsbefund, aber ein
+   >   Ausführungsloch. Verifizierungswürdig, ob beabsichtigt. Ticket
+   >   [`approved-retry-no-dispatch.md`](approved-retry-no-dispatch.md).
 
 **Mittlere Priorität**
 
