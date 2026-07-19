@@ -7,16 +7,19 @@ import dev.dmigrate.server.ports.CredentialProviderRegistry
  * CLI (`--source`/`--target`-Pfad), damit beide Welten exakt dieselben `credentialRef`-Schemes
  * unterstützen.
  *
- * Reihenfolge egal (Dispatch am Scheme-Prefix, kollisionsfrei). Aktuell: `env:` + `file:`.
+ * Reihenfolge egal (Dispatch am Scheme-Prefix, kollisionsfrei). Aktuell: `env:` + `file:` +
+ * `keychain:` (ADR 0040, Default-Backend native-freier Shell-out).
  *
  * Die Registry ist zustandslos/immutable (Provider halten nur Lambdas; `env:` liest die Umgebung
- * erst zur Auflösungszeit) → **eine** geteilte Instanz statt pro Aufrufer neu zu bauen (Review F3).
+ * erst zur Auflösungszeit; der Keychain-Shell-out prüft OS/Tool erst zur Auflösungszeit) → **eine**
+ * geteilte Instanz statt pro Aufrufer neu zu bauen (Review F3).
  */
 private val sharedCredentialProviderRegistry: CredentialProviderRegistry =
     CredentialProviderRegistry(
         listOf(
             EnvCredentialProvider(),
             FileCredentialProvider(),
+            KeychainCredentialProvider(ShelloutKeychainBackend()),
         ),
     )
 

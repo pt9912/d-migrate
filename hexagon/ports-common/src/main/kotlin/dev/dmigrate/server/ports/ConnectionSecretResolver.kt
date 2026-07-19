@@ -70,5 +70,10 @@ sealed interface ResolvedConnection {
         const val REASON_FILE_NOT_FOUND: String = "FILE_NOT_FOUND"
         const val REASON_FILE_UNREADABLE: String = "FILE_UNREADABLE"
         const val REASON_EMPTY_VALUE: String = "EMPTY_VALUE"
+
+        // ADR 0040 (keychain:-Provider): Backend nicht verfügbar (headless / OS-Tool fehlt /
+        // Timeout) bzw. Keychain-Eintrag nicht vorhanden. Fail-closed, kein stiller Degrade.
+        const val REASON_KEYCHAIN_UNAVAILABLE: String = "KEYCHAIN_UNAVAILABLE"
+        const val REASON_KEYCHAIN_ENTRY_NOT_FOUND: String = "KEYCHAIN_ENTRY_NOT_FOUND"
     }
 }

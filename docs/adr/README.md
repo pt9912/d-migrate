@@ -93,3 +93,4 @@ argumentiert werden.
 | 0037 | [„Database-Agnostic First": Zielbild bestätigt, Umsetzung nach 1.0.0](0037-database-agnostic-first-staffelung.md) | accepted |
 | 0038 | [PostgreSQL-SSL-Default bleibt `prefer` — `verify-full` ist opt-in](0038-ssl-default-prefer-verify-full-opt-in.md) | accepted |
 | 0039 | [Externer Security-Audit ist kein 1.0.0-Gate — Verschiebung auf Post-1.0.0](0039-externer-security-audit-kein-1.0.0-gate.md) | accepted |
+| 0040 | [Keychain-Credential-Provider: Backend-Port mit Default-Shell-out und opt-in Native-Modul](0040-keychain-credential-provider-backend-port.md) | accepted |

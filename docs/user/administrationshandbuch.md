@@ -229,6 +229,10 @@ liefert, gewinnt (vollständige Reihenfolge in
    - `credentialRef: "env:<VAR>"` — die Variable enthält die URL,
    - `credentialRef: "file:/pfad"` — der **Datei-Inhalt** ist die URL (z. B. ein
      k8s-Secret-Mount; cross-platform, headless-tauglich).
+   - `credentialRef: "keychain:<service>"` — der Eintrag im OS-Schlüsselbund ist die URL
+     (macOS/Linux, optional mit Account; [ADR 0040](../adr/0040-keychain-credential-provider-backend-port.md)).
+     Ohne verfügbaren Schlüsselbund (headless CI/Container/Server) scheitert die Auflösung
+     **fail-closed** — dort ist `env:`/`file:` die richtige Schicht.
 
    Diese Auflösung gilt seit 1.0.0-RC sowohl auf dem CLI-`--source`/`--target`-Pfad
    als auch im MCP-Serve-Pfad (gemeinsame Provider-Registry,
