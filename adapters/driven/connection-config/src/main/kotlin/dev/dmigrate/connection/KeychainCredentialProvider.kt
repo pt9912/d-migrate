@@ -15,8 +15,8 @@ import dev.dmigrate.server.ports.CredentialResolution
  * echot — nur der operator-taugliche Service-Name.
  *
  * Backend-Auswahl liegt beim Wiring (`defaultCredentialProviderRegistry`): Default ist der
- * native-freie [ShelloutKeychainBackend]; ein opt-in-`keychain-native`-Modul kann denselben
- * [KeychainBackend]-Port anders erfüllen (ADR 0040).
+ * native-freie [ShelloutKeychainBackend] (macOS/Linux/Windows); ein opt-in-`keychain-native`-Modul
+ * kann denselben [KeychainBackend]-Port für Nischen anders erfüllen (ADR 0040).
  */
 class KeychainCredentialProvider(
     private val backend: KeychainBackend,

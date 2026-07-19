@@ -522,8 +522,8 @@ database:
 - **`file:`-Sicherheit:** Fehlermeldungen nennen nur den Pfad, **nie** den Datei-Inhalt; eine
   Größenobergrenze schützt vor versehentlich referenzierten Riesen-Dateien. Datei-Permissions werden
   nicht erzwungen und Symlinks gefolgt (Kompatibilität mit k8s-Secret-Mounts).
-- **`keychain:`-Verfügbarkeit:** liest den Schlüsselbund-Eintrag (macOS/Linux) über das OS-Werkzeug —
-  der aufgelöste Wert kommt über dessen Ausgabe, **nie** über Prozess-Argumente. Ohne verfügbaren
+- **`keychain:`-Verfügbarkeit:** liest den Schlüsselbund-Eintrag (macOS, Linux, Windows) über das
+  OS-Werkzeug — der aufgelöste Wert kommt über dessen Ausgabe, **nie** über Prozess-Argumente. Ohne verfügbaren
   Schlüsselbund (headless CI/Container/Server oder fehlendes OS-Werkzeug) scheitert die Auflösung
   **fail-closed**, ohne stillen Rückfall; dort ist `env:`/`file:` die richtige Schicht. Fehlermeldungen
   nennen nur den Service-Namen, **nie** den Wert.

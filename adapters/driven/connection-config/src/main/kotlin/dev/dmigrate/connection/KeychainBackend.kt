@@ -3,8 +3,8 @@ package dev.dmigrate.connection
 /**
  * ADR 0040: austauschbares Backend für den `keychain:`-Zugriff. Der
  * [KeychainCredentialProvider] delegiert hierhin, sodass der Zugriffs-**Mechanismus**
- * (CLI-Shell-out heute; native/JNA als opt-in-Folge-Modul) ein reines Adapter-Detail
- * bleibt — ohne Rückwirkung auf Provider oder Registry.
+ * (native-freier Shell-out für macOS/Linux/Windows heute; native/JNA nur als opt-in-Nischen-Modul)
+ * ein reines Adapter-Detail bleibt — ohne Rückwirkung auf Provider oder Registry.
  *
  * Fail-closed und **wirft nicht**: jeder Fehler/Timeout/Nicht-Verfügbar wird als
  * [KeychainLookup.Unavailable] zurückgegeben. Implementierungen loggen weder den

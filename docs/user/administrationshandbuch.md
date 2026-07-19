@@ -230,7 +230,8 @@ liefert, gewinnt (vollständige Reihenfolge in
    - `credentialRef: "file:/pfad"` — der **Datei-Inhalt** ist die URL (z. B. ein
      k8s-Secret-Mount; cross-platform, headless-tauglich).
    - `credentialRef: "keychain:<service>"` — der Eintrag im OS-Schlüsselbund ist die URL
-     (macOS/Linux, optional mit Account; [ADR 0040](../adr/0040-keychain-credential-provider-backend-port.md)).
+     (macOS, Linux und Windows, optional mit Account;
+     [ADR 0040](../adr/0040-keychain-credential-provider-backend-port.md)).
      Ohne verfügbaren Schlüsselbund (headless CI/Container/Server) scheitert die Auflösung
      **fail-closed** — dort ist `env:`/`file:` die richtige Schicht.
 

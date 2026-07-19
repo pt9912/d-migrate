@@ -96,6 +96,33 @@ Registrierung + Fake-Backend + Tests. Der `-native`-Weg bleibt eine spätere, op
   mit eigenem Security-Review (Prompt-Verhalten, Native-Packaging, GraalVM-Config). Der
   Mechanismus **innerhalb** dieses Moduls (eigene JNA vs Keyring-Lib) wird dort entschieden.
 
+## Nachtrag (2026-07-19): Windows native-frei geliefert — JNA-Modul auf Nische reduziert
+
+Die oben als „nicht abgedeckt / opt-in-native" eingestufte **Windows-Unterstützung wurde native-frei
+geliefert** — als dritter Zweig des `ShelloutKeychainBackend`, nicht als JNA-Modul. Damit ist der
+**#1-Entscheidungstreiber (JNA inert halten, GraalVM-Native-Image-Ziel)** auch für Windows erfüllt.
+
+- Windows kennt **kein** CLI, das ein gespeichertes Secret ausgibt (`cmdkey /list` zeigt Passwörter
+  bewusst nicht). Der Shell-out ist deshalb `powershell.exe`, das die Win32-`CredReadW`-API aufruft und
+  den Blob (Unicode) nach stdout schreibt — **kein JNA, keine neue Dependency**, gleiches Härtungs-Muster
+  (Timeout, stderr verworfen, Secret über stdout).
+- Der Credential-Manager-`TargetName` (`<service>` bzw. `<service>/<account>`) geht über die
+  **Environment-Variable** `DM_KEYCHAIN_TARGET` ins Skript — **nicht** interpoliert (keine
+  PowerShell-Injection) und **nicht** in die Prozess-Args (`ps`). Das Skript ist **konstant** und wird
+  als `-EncodedCommand` (Base64/UTF-16LE) übergeben → umgeht das Windows-Argv-Quoting vollständig.
+
+**Restliche opt-in-Nische** (im Tracker `../planning/open/keychain-native-provider-module.md`): Ein
+`keychain-native`-Modul (JNA/DPAPI) bleibt nur noch für Umgebungen sinnvoll, in denen der
+PowerShell-Weg nicht greift — v. a. **Constrained Language Mode** (blockiert `Add-Type` → sauberes
+fail-closed `Unavailable`) — oder wenn ein echt-natives Backend bevorzugt wird. Die gemeinsame
+Windows-Unterstützung ist damit **kein** Blocker mehr dafür.
+
+**Grenze der CI-Verifikation:** Der echte Windows-Round-Trip (Blob-Kodierung, `CredReadW`-Verhalten,
+Exit-Codes) ist in der Linux-Docker-CI **nicht** ausführbar — wie bei macOS/Linux deckt der Unit-Test
+nur Kommando-Konstruktion, Env-Übergabe, Injection-Sicherheit und Ergebnis-Mapping ab (injizierte
+Kommando-Ausführung). Der Round-Trip wird manuell verifiziert (Protokoll im Plan
+`../planning/done/credential-provider-keychain.md`).
+
 ## Weitere Informationen
 
 - [`credential-provider-keychain.md`](../planning/done/credential-provider-keychain.md) —
