@@ -1,8 +1,10 @@
 # GraalVM Native Image (Linux/macOS/Windows) — 1.0.0-Stable-Gate
 
 **Status**: Entwurf (2026-07-19 — Scope aus dem Roadmap-1.0.0-Stable-Gate abgeleitet). **Phase-A-Spike
-gelaufen 2026-07-19**; Scope-Gabel entschieden (**Core-CLI-Subset zuerst**). Ergebnisse in
-„Phase A — Ergebnisse" unten; Aktivierungsbedingung damit erfüllt.
+gelaufen 2026-07-19**; Scope-Gabel entschieden (**Core-CLI-Subset zuerst**). **Phase-B-Kern-Viabilität
+BEWIESEN 2026-07-19** — der Kern (Schema-YAML → Modell → Validierung) native-kompiliert grün und läuft
+(42-MB-Binary). Ergebnisse in „Phase A/B — Ergebnisse" unten. Verbleibend = Packaging (nativer
+Core-Entrypoint + Gradle-Plugin + GraalVM-CI-Toolchain), nicht Machbarkeit.
 
 **Trigger**: Die [Roadmap](../in-progress/roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
@@ -125,6 +127,37 @@ Ausschluss statt Aufnahme in 1.0.0.
 **Bereit für `in-progress/`** (Spike gelaufen + Scope entschieden). Phase B braucht dann: das Plugin auf
 einem **Core-Entrypoint** (Schwergewichts-Module aus dem Native-Classpath ausgeschnitten),
 logback/slf4j-Init-Direktiven, sqlite über den echten Classpath, GraalVM-Toolchain in CI.
+
+## Phase B — Ergebnisse (2026-07-19): Kern-Native-Viabilität BEWIESEN
+
+Lokal (GraalVM CE 21.0.2) mit einem **minimalen Java-Entrypoint**, der nur den Kern anspricht
+(`SchemaFileResolver.codecForPath(p).read(…)` → `SchemaValidator().validate(schema)`) — also
+Core + `formats` (snakeyaml), **ohne** ICU/Treiber/clikt/Parquet. Reachability-Analyse zieht damit
+nur den Kern; die Schwergewichte werden nicht kompiliert (bestätigt die Prune-Hypothese).
+
+**Ergebnis: grün.** `native-image` lief durch alle 8 Phasen (Exit 0) → **42-MB-Binary**, das gegen
+`examples/sample-db/calib-schema.yaml` korrekt lief: `tables=6 valid=true errors=0`, Exit 0.
+
+**Rezept (was der Kern braucht):**
+- `--initialize-at-build-time=ch.qos.logback,org.slf4j` — der logback/slf4j-Standardfix. Der Kern
+  initialisiert einen Logger statisch (build-time); `--initialize-at-run-time` kollidiert damit, die
+  build-time-Deklaration löst den Konsistenz-Fehler.
+- **snakeyaml braucht KEINE manuelle Reflection-Config** — 2.790 Typen wurden automatisch für Reflection
+  registriert; der YAML-Parse-Pfad ist out-of-the-box native-fähig.
+- **sqlite** nur über den echten Modul-Classpath (Gradle-Plugin), nicht die Fat-JAR — im Probe per
+  `--exclude-config` umgangen (die gebündelte `native-image.properties` zeigt im gemergten Jar auf die
+  Multi-Release-Klasse, die nicht gefunden wird; s. Phase-A-Ergebnisse).
+
+**Damit ist die Feasibility keine Frage mehr** — der Kern ist native-image-fähig. Verbleibend ist reines
+**Packaging**, nicht Machbarkeit:
+1. **Nativer Core-Entrypoint im Repo** — ein `main`, der nur die Kern-Kommandos verdrahtet (schema
+   validate/generate) **ohne** die eager-ICU-Zeile (`Main.kt` `IcuUnicodeTextService()`) und ohne die
+   Export-/Parquet-/S3-/daten-schweren Pfade. `schema generate` braucht zusätzlich die gefüllte
+   `DatabaseDriverRegistry` (erreichbar; Native-Viabilität als nächster Probe zu bestätigen).
+2. **Gradle-Plugin `org.graalvm.buildtools.native`** auf diesem Entrypoint mit obigem Rezept →
+   reproduzierbarer `nativeCompile`.
+3. **GraalVM-Toolchain in CI** (Phase D) — bis dahin ist der native Build nur lokal verifizierbar
+   (CI-Image `gradle:8.12-jdk21` hat kein GraalVM).
 
 ## 4. Offene Fragen / Entscheidungen
 
