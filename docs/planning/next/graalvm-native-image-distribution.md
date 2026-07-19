@@ -1,7 +1,8 @@
 # GraalVM Native Image (Linux/macOS/Windows) — 1.0.0-Stable-Gate
 
-**Status**: Entwurf (2026-07-19 — Scope aus dem Roadmap-1.0.0-Stable-Gate abgeleitet; noch **kein**
-Machbarkeits-Spike gelaufen, daher Phasen mit vorgelagertem Feasibility-Schnitt).
+**Status**: Entwurf (2026-07-19 — Scope aus dem Roadmap-1.0.0-Stable-Gate abgeleitet). **Phase-A-Spike
+gelaufen 2026-07-19**; Scope-Gabel entschieden (**Core-CLI-Subset zuerst**). Ergebnisse in
+„Phase A — Ergebnisse" unten; Aktivierungsbedingung damit erfüllt.
 
 **Trigger**: Die [Roadmap](../in-progress/roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
@@ -83,11 +84,53 @@ die Scope-Gabel „volle Adapter-Fläche vs. Core-CLI-Subset" (offene Frage 1) i
   Homebrew — Native ersetzt **nichts**, es ergänzt. `docs/user/releasing.md` um die Native-Asset-Klasse
   ergänzen; Per-OS-Smoke (mindestens ein Core-Smoke) vor Attach.
 
+## Phase A — Ergebnisse (Spike 2026-07-19)
+
+Lokaler Spike mit GraalVM CE 21.0.2 (`native-image`) + gcc 13.3, 31 GiB RAM. Schnellster Weg zu echten
+Blockern: Direkt-Probe von `native-image` auf die lokal gebaute CLI-Fat-JAR (ohne Plugin).
+
+**Toolchain (Finding bestätigt):** Das Build-/CI-Image `gradle:8.12-jdk21` hat **kein** GraalVM → CI
+braucht eine GraalVM-/Mandrel-Toolchain je Ziel-OS. Lokal baut ein triviales Programm in ~18 s zu einem
+14-MB-Binary — Toolchain inkl. C-Linker (gcc/zlib) funktioniert.
+
+**Nicht die shadowJar füttern:** `native-image` auf die 137-MB-Fat-JAR bricht sofort in Phase [1/8] ab —
+sqlite-jdbc erzwingt per gebündelter Config das Feature `org.sqlite.nativeimage.SqliteJdbcFeature`, dessen
+Klasse im gemergten Jar nur als Multi-Release-Eintrag (unter META-INF/versions/9) liegt und nicht gefunden
+wird. **Konsequenz:** gegen den echten Modul-Classpath bauen (Gradle-Plugin `nativeCompile`), nicht gegen
+das gemergte Jar — ohnehin der vorgesehene Weg.
+
+**Kein fundamentaler Wall — Standard-Tuning:** Mit ausgeschlossener sqlite-Config läuft Phase [2/8]
+Analyse an (~22 s) und stoppt am nächsten Standard-Punkt: 10 **logback/slf4j**-Klassen wurden
+„unintentionally initialized at build time" → brauchen `--initialize-at-run-time`-Direktiven. Das ist die
+häufigste, gut gelöste native-image-Frage (reine Config), kein Code-Wall.
+
+**Metadaten-Landschaft (entscheidend für Scope):**
+- **Native-image-bewusst** (bringen Metadaten mit): netty, `software.amazon.awssdk` (aws-core),
+  sqlite-jdbc, mordant (inkl. `mordant-jvm-graal-ffi` = **JNA-freie** GraalVM-Variante → bestätigt: JNA
+  bleibt unter native-image inert), jansi.
+- **Null Metadaten** (die eigentliche Kosten-/Risikofläche): **Hadoop (12.392 Einträge)**, Parquet
+  (4.418), ICU4J (5.689, braucht Locale-Resource-Config), Flyway (498). Jede braucht agent-gesammelte
+  Metadaten oder eine Ausschluss-Entscheidung.
+- **Korrektur zum Planentwurf:** Liquibase ist **nicht** im CLI-Runtime-Jar (0 Einträge) — ein Blocker
+  weniger als angenommen; nur Flyway ist als Tool-Export-Fläche präsent.
+
+**Scope-Entscheidung (offene Frage 1): Core-CLI-Subset zuerst.** Der Kern (schema/data, drei Treiber,
+`formats`, clikt/mordant) ist analysierbar und weitgehend native-image-bewusst → er wird das
+1.0.0-Native-Binary. Die Null-Metadaten-Schwergewichte (Parquet/Hadoop, ICU-abhängige Textfeatures,
+Flyway-/Tool-Export, voller S3/netty-Stack) kommen **nicht** in den ersten Native-Cut; sie bleiben der
+JVM-Fat-JAR-Pfad (mit sauberer Laufzeit-Meldung im Binary), bis je Fläche eine Metadaten-Investition
+begründet ist. Hadoop (12k Klassen, keine Metadaten, notorisch native-feindlich) spricht klar für
+Ausschluss statt Aufnahme in 1.0.0.
+
+**Bereit für `in-progress/`** (Spike gelaufen + Scope entschieden). Phase B braucht dann: das Plugin auf
+einem **Core-Entrypoint** (Schwergewichts-Module aus dem Native-Classpath ausgeschnitten),
+logback/slf4j-Init-Direktiven, sqlite über den echten Classpath, GraalVM-Toolchain in CI.
+
 ## 4. Offene Fragen / Entscheidungen
 
-1. **Volle Adapter-Fläche vs. Core-CLI-Subset** im Native-Binary — die Kern-Gabel. Hadoop/Parquet, AWS-SDK,
-   ICU-Daten und Liquibase/Flyway-Export sind die Risiken. Ein Core-Subset (schema/data/formats/Treiber)
-   ist deutlich wahrscheinlicher in 1.0.0 zu schaffen; die Schwergewichte blieben dann JVM-Fat-JAR-only.
+1. ✅ **Entschieden (Phase-A-Spike): Core-CLI-Subset zuerst** (statt voller Adapter-Fläche). Begründung
+   s. „Phase A — Ergebnisse": Hadoop/Parquet/ICU/Flyway haben **null** native-image-Metadaten; der Kern
+   ist analysierbar und native-image-bewusst.
 2. **`sqlite-jdbc`-JNI**: Extrahiert zur Laufzeit eine Nativelib — funktioniert das aus einem
    Native-Image-Binary, oder braucht es Build-Zeit-Einbettung/Substitution?
 3. **Statisches Linken (Linux)**: `--static`/`--static-nolibc` (musl) für ein portables Binary vs.
