@@ -2,9 +2,10 @@
 
 **Status**: Entwurf (2026-07-19 — Scope aus dem Roadmap-1.0.0-Stable-Gate abgeleitet). **Phase-A-Spike
 gelaufen 2026-07-19**; Scope-Gabel entschieden (**Core-CLI-Subset zuerst**). **Phase-B-Kern-Viabilität
-BEWIESEN 2026-07-19** — der Kern (Schema-YAML → Modell → Validierung) native-kompiliert grün und läuft
-(42-MB-Binary). Ergebnisse in „Phase A/B — Ergebnisse" unten. Verbleibend = Packaging (nativer
-Core-Entrypoint + Gradle-Plugin + GraalVM-CI-Toolchain), nicht Machbarkeit.
+BEWIESEN 2026-07-19** — der Kern native-kompiliert grün. **Punkt 1+2 GELIEFERT 2026-07-19:** nativer
+Entrypoint `NativeMain.kt` + Gradle-Plugin → `nativeCompile` erzeugt reproduzierbar ein grünes
+65-MB-`d-migrate`-Binary (`schema validate` läuft); normaler Build unberührt. Ergebnisse in
+„Phase A/B — Ergebnisse" unten. Verbleibend = `schema generate` + weitere Kommandos + GraalVM-CI (Phase D).
 
 **Trigger**: Die [Roadmap](../in-progress/roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
@@ -150,13 +151,19 @@ nur den Kern; die Schwergewichte werden nicht kompiliert (bestätigt die Prune-H
 
 **Damit ist die Feasibility keine Frage mehr** — der Kern ist native-image-fähig. Verbleibend ist reines
 **Packaging**, nicht Machbarkeit:
-1. **Nativer Core-Entrypoint im Repo** — ein `main`, der nur die Kern-Kommandos verdrahtet (schema
-   validate/generate) **ohne** die eager-ICU-Zeile (`Main.kt` `IcuUnicodeTextService()`) und ohne die
-   Export-/Parquet-/S3-/daten-schweren Pfade. `schema generate` braucht zusätzlich die gefüllte
-   `DatabaseDriverRegistry` (erreichbar; Native-Viabilität als nächster Probe zu bestätigen).
-2. **Gradle-Plugin `org.graalvm.buildtools.native`** auf diesem Entrypoint mit obigem Rezept →
-   reproduzierbarer `nativeCompile`.
-3. **GraalVM-Toolchain in CI** (Phase D) — bis dahin ist der native Build nur lokal verifizierbar
+1. ✅ **Nativer Core-Entrypoint im Repo GELIEFERT** (`NativeMain.kt`, `dev.dmigrate.cli.NativeMainKt`):
+   reduzierter clikt-Baum `d-migrate schema validate <file>` **ohne** die eager-ICU-`DMigrate`-Wurzel
+   und ohne Export-/Parquet-/S3-Pfade. Reachability beschneidet ICU/Parquet/AWS automatisch. Die
+   Native-Shells sind Kover-exkludiert (+Ledger); die Logik (`SchemaFileResolver`/`SchemaValidator`)
+   ist in core/formats getestet.
+2. ✅ **Gradle-Plugin `org.graalvm.buildtools.native` (0.10.3) GELIEFERT + reproduzierbar grün:**
+   `graalvmNative`-Block auf `NativeMainKt`, `--initialize-at-build-time=ch.qos.logback,org.slf4j`,
+   `toolchainDetection=false` (hält den JDK-21-Build unberührt). `./gradlew :adapters:driving:cli:nativeCompile`
+   → **BUILD SUCCESSFUL**, 65-MB-Binary; `schema validate` läuft (`tables=6 valid=true`, Exit 0). Der
+   normale Build (test/koverVerify/detekt) bleibt grün — das Plugin ist opt-in.
+3. **Nächste Inkremente:** `schema generate` (braucht die per ServiceLoader gefüllte
+   `DatabaseDriverRegistry` + DDL-Rendering — Native-Viabilität als eigener Probe), weitere Kern-Kommandos,
+   und **GraalVM-Toolchain in CI** (Phase D) — bis dahin ist `nativeCompile` nur lokal verifizierbar
    (CI-Image `gradle:8.12-jdk21` hat kein GraalVM).
 
 ## 4. Offene Fragen / Entscheidungen

@@ -10,11 +10,30 @@ plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.google.cloud.tools.jib") version "3.4.5"
+    // GraalVM Native Image (1.0.0-Stable-Gate, docs/planning/next/graalvm-native-image-distribution.md).
+    // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
+    // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
+    id("org.graalvm.buildtools.native") version "0.10.3"
 }
 
 application {
     applicationName = "d-migrate"
     mainClass.set("dev.dmigrate.cli.MainKt")
+}
+
+// Native-Image-Bau des REDUZIERTEN Core-Entrypoints [dev.dmigrate.cli.NativeMain] (nicht der volle
+// `MainKt` — der zieht ICU/Parquet/S3 eager). Rezept aus dem Phase-B-Spike: logback/slf4j build-time.
+graalvmNative {
+    // Keine GraalVM-Toolchain-Suche zur Konfigurationszeit — hält den JDK-21-Build (ohne GraalVM) grün.
+    toolchainDetection.set(false)
+    binaries {
+        named("main") {
+            imageName.set("d-migrate")
+            mainClass.set("dev.dmigrate.cli.NativeMainKt")
+            buildArgs.add("--no-fallback")
+            buildArgs.add("--initialize-at-build-time=ch.qos.logback,org.slf4j")
+        }
+    }
 }
 
 val releaseVersion = project.version.toString()
@@ -184,6 +203,10 @@ kover {
                 // Clikt-free Wiring objects. Commands only parse flags and
                 // delegate. Tested via CliHelpAndBootstrapTest (help reachability).
                 classes(
+                    // GraalVM-Native-Image Core-Entrypoint (NativeMain.kt) — reine Clikt-Shells; die
+                    // Kern-Logik (SchemaFileResolver/SchemaValidator) ist in core/formats getestet.
+                    // Nur lokal per `nativeCompile` ausführbar (GraalVM), nicht im JVM-Testpfad.
+                    "dev.dmigrate.cli.Native*",
                     "dev.dmigrate.cli.commands.DataProfileCommand*",
                     "dev.dmigrate.cli.commands.ExportCommand*",
                     "dev.dmigrate.cli.commands.ExportFlywayCommand*",
