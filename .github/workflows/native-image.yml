@@ -1,0 +1,70 @@
+name: Native Image
+
+# GraalVM-Native-Image-Build des reduzierten Core-Entrypoints (dev.dmigrate.cli.NativeMainKt),
+# 1.0.0-Stable-Gate / Phase D — siehe docs/planning/next/graalvm-native-image-distribution.md.
+#
+# BEWUSST separat von build.yml: native-image cross-kompiliert nicht (jedes OS baut sein eigenes
+# Binary), braucht eine GraalVM-Toolchain statt des Docker-Pfads und ist zu schwer, um jeden PR zu
+# gaten. Daher tag-/dispatch-getriggert wie release-homebrew.yml. Erst Linux; macOS/Windows folgen
+# als Matrix-Legs (aktuell nur `ubuntu-latest`), sobald das Rezept pro OS steht.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux-first. Erweiterung: macos-latest, windows-latest ergänzen (native-image baut je OS
+        # lokal; Windows liefert d-migrate.exe). Der Upload-Glob unten deckt beide Namen ab.
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    # Der direkte ./gradlew-Aufruf (nicht über Docker) braucht den bewussten Override des
+    # Local-Gradle-Guards; native-image kann nicht im Docker-Build-Image (JDK 21 ohne GraalVM) laufen.
+    env:
+      DMIGRATE_ALLOW_LOCAL_GRADLE: '1'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up GraalVM (Community, JDK 21)
+        uses: graalvm/setup-graalvm@8c5543b71f44568342e106336639979e94a8f6de # v1.6.1
+        with:
+          java-version: '21'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+
+      - name: Native compile (core-subset entrypoint)
+        run: ./gradlew --no-daemon :adapters:driving:cli:nativeCompile
+
+      - name: Smoke-test the native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=$(ls adapters/driving/cli/build/native/nativeCompile/d-migrate*)
+          echo "binary: $BIN"
+          "$BIN" --help
+          out=$("$BIN" schema validate examples/sample-db/calib-schema.yaml)
+          echo "$out"
+          echo "$out" | grep -q "valid=true" || { echo "::error::unexpected validate output"; exit 1; }
+
+      - name: Upload native binary
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: d-migrate-native-${{ matrix.os }}
+          path: adapters/driving/cli/build/native/nativeCompile/d-migrate*
+          retention-days: 14

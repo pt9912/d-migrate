@@ -78,9 +78,14 @@ die Scope-Gabel „volle Adapter-Fläche vs. Core-CLI-Subset" (offene Frage 1) i
   Bruch. Kandidaten mit hohem Risiko: Parquet/Hadoop, Liquibase/Flyway-Export.
 
 ### Phase D — 3-OS-CI-Matrix
-- GitHub-Actions-Matrix `nativeCompile` für **Linux, macOS, Windows** (Toolchain je OS; Windows braucht
-  MSVC-Umgebung). Entscheidungen: statisches/`mostly-static`-Linken auf Linux (Portabilität),
-  arm64-Abdeckung (macOS-arm64, Linux-arm64) — mindestens x64 je OS als 1.0.0-Ziel.
+- ✅ **Linux-Leg geliefert:** `.github/workflows/native-image.yml` (separat von `build.yml`, weil
+  native-image nicht cross-kompiliert + GraalVM-Toolchain statt Docker + zu schwer für jeden PR).
+  Trigger `workflow_dispatch` + `tags: v*` (wie `release-homebrew.yml`); `graalvm/setup-graalvm`
+  (Community JDK 21), `./gradlew :adapters:driving:cli:nativeCompile` (mit `DMIGRATE_ALLOW_LOCAL_GRADLE`),
+  Smoke (`schema validate` → `valid=true`) und Binary-Artifact-Upload. Matrix aktuell nur `ubuntu-latest`.
+- **Offen:** macOS-/Windows-Legs in die Matrix (Windows braucht MSVC + liefert `d-migrate.exe`);
+  statisches/`mostly-static`-Linken auf Linux (Portabilität); arm64 (macOS-arm64, Linux-arm64) —
+  mindestens x64 je OS als 1.0.0-Ziel.
 
 ### Phase E — Release-Integration
 - Native-Binaries je OS als **zusätzliche** GitHub-Release-Assets (+ SHA-256), analog zu Fat-JAR/OCI/
@@ -161,10 +166,12 @@ nur den Kern; die Schwergewichte werden nicht kompiliert (bestätigt die Prune-H
    `toolchainDetection=false` (hält den JDK-21-Build unberührt). `./gradlew :adapters:driving:cli:nativeCompile`
    → **BUILD SUCCESSFUL**, 65-MB-Binary; `schema validate` läuft (`tables=6 valid=true`, Exit 0). Der
    normale Build (test/koverVerify/detekt) bleibt grün — das Plugin ist opt-in.
-3. **Nächste Inkremente:** `schema generate` (braucht die per ServiceLoader gefüllte
-   `DatabaseDriverRegistry` + DDL-Rendering — Native-Viabilität als eigener Probe), weitere Kern-Kommandos,
-   und **GraalVM-Toolchain in CI** (Phase D) — bis dahin ist `nativeCompile` nur lokal verifizierbar
-   (CI-Image `gradle:8.12-jdk21` hat kein GraalVM).
+3. ✅ **GraalVM-CI (Linux) GELIEFERT:** `.github/workflows/native-image.yml` baut + smoked das
+   Core-Binary auf `ubuntu-latest` (`graalvm/setup-graalvm`), tag-/dispatch-getriggert. Damit ist der
+   native Build **CI-gedeckt** (Linux) statt nur lokal. macOS/Windows-Legs offen (Phase D).
+4. **Nächste Inkremente:** `schema generate` (braucht die per ServiceLoader gefüllte
+   `DatabaseDriverRegistry` + DDL-Rendering — Native-Viabilität als eigener Probe) und weitere
+   Kern-Kommandos.
 
 ## 4. Offene Fragen / Entscheidungen
 
