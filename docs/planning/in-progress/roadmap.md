@@ -752,17 +752,17 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 
 > Status-Legende: ✅ erledigt · ⛔ ausstehend.
 
-| Bereich  | Aufgabe                                                             | LF-Ref | Status |
-| -------- | ------------------------------------------------------------------- | ------ | ------ |
-| Build    | GraalVM Native Image (Linux, macOS, Windows)                        | —      | ⛔      |
-| Build    | Docker Image auf Docker Hub                                         | —      | ⛔      |
-| Build    | SDKMAN-Distribution                                                 | —      | ⛔      |
-| Security | Externer Security-Audit                                             | —      | ⛔⁵     |
-| QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust                   | 8.1    | ✅¹     |
-| QA       | DDL-Generierung 1.000 Tabellen < 30 Sekunden                        | 8.2    | ✅²     |
-| QA       | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite                    | 8.6    | ✅³     |
-| Docs     | Best Practices Guide                                                | —      | ✅      |
-| Docs     | Troubleshooting-Guide                                               | —      | ✅      |
+| Bereich  | Aufgabe                                           | LF-Ref | Status |
+| -------- | ------------------------------------------------- | ------ | ------ |
+| Build    | GraalVM Native Image (Linux, macOS, Windows)      | —      | ⛔      |
+| Build    | Docker Image auf Docker Hub                       | —      | ⛔      |
+| Build    | SDKMAN-Distribution                               | —      | ⛔      |
+| Security | Interner Security-Audit                           | —      | ✅⁵     |
+| QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust | 8.1    | ✅¹     |
+| QA       | DDL-Generierung 1.000 Tabellen < 30 Sekunden      | 8.2    | ✅²     |
+| QA       | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite  | 8.6    | ✅³     |
+| Docs     | Best Practices Guide                              | —      | ✅      |
+| Docs     | Troubleshooting-Guide                             | —      | ✅      |
 
 ¹ Geliefert via TPC-Performance-Slice **4c** (Commit `9c4ffc3b`, Kalibrier-Guard
 `1a8f609c`): datei-basierter Export→Import von **1,73 Mio. Zeilen** unter genormten
@@ -794,15 +794,17 @@ damit genau die Module, deren Bruch bereits entschieden ist. Details in Fußnote
 [`releasing.md`](../../user/releasing.md) bleiben davon unberührt und gültig. **1.0.0 liefert
 CLI, OCI-Image und MCP — keine Library-Artefakte.**
 
-⁵ **Externer Security-Audit ist kein 1.0.0-Gate** ([ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md),
-2026-07-19): Ein **externer** Audit heißt unabhängige Dritt-Prüfung — eine Beschaffungs-/Business-Handlung,
-kein Dev-Task, und durch das intern durchgeführte Audit **nicht** erfüllt. Die Zeile blockiert das
-Stable-Release daher **nicht**; sie bleibt `⛔`, weil ein Dritt-Audit tatsächlich aussteht, und wird erst
-durch einen beauftragten + gelieferten Bericht `✅`. **1.0.0-Sicherheits-Interimslatte:** internes
-adversariales Vollaudit ([`security-audit-2026-07-17.md`](../open/security-audit-2026-07-17.md), P1/P2
-remediiert, 6 Restflächen nachgeholt), [`SECURITY.md`](../../../SECURITY.md)-Bedrohungsmodell + die
-Security-Gates. Benannte Folgearbeit (kein Gate): das Audit-Readiness-Paket
-[`audit-readiness-package.md`](../open/audit-readiness-package.md).
+⁵ **Interner Security-Audit ✅** (2026-07-17..19): adversariales Vollaudit
+([`security-audit-2026-07-17.md`](../open/security-audit-2026-07-17.md); Multi-Agent-Flächen, jeder
+Befund dreifach gegengeprüft) — 27 Roh → 18 bestätigt, **alle P1/P2 + P3-Backlog remediiert**, die 6
+anfangs ungeprüften „Nicht geprüft"-Restflächen und zwei methodische Einschränkungen (P1-Path-Traversal-
+Live-Repro, Gson-Rekursionstiefe) nachgeholt. Flankiert von [`SECURITY.md`](../../../SECURITY.md)
+(Bedrohungsmodell), den Security-Gates und einem Audit-Readiness-Paket
+([`docs/security/audit-scope.md`](../../security/audit-scope.md) +
+[`dependency-inventory.md`](../../security/dependency-inventory.md)). **Der _externe_ (unabhängige
+Dritt-)Audit ist per [ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md) kein
+1.0.0-Gate** (Beschaffung/Business, nicht durch das interne Audit erfüllt) und nach
+[Milestone 2.0.0](#milestone-200--langfristige-vision) verschoben.
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 
@@ -961,14 +963,15 @@ Datenbanksystem.
 
 ### Milestone 2.0.0 — Langfristige Vision
 
-| Bereich   | Aufgabe                                        | LF-Ref                                                   |
-| --------- | ---------------------------------------------- | -------------------------------------------------------- |
-| Core      | „Database-Agnostic First" einlösen: Treiber-Port auf optionale Fähigkeiten⁵ | — |
-| Build     | GitHub-Packages Publish-Workflow für stabile Library-Artefakte⁶ | — |
-| GUI       | Grafische Benutzeroberfläche für Schema-Design | [`LF-018`](../../../spec/lastenheft-d-migrate.md#lf-018) |
-| Core      | Schema-Optimierungsvorschläge                  | [`LF-020`](../../../spec/lastenheft-d-migrate.md#lf-020) |
-| Core      | Rollenbasierte Zugriffskontrolle               | [`LN-028`](../../../spec/lastenheft-d-migrate.md#ln-028) |
-| Community | LTS-Support für 1.x-Linie (24 Monate)          | —                                                        |
+| Bereich   | Aufgabe                                                                     | LF-Ref                                                   |
+| --------- | --------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Core      | „Database-Agnostic First" einlösen: Treiber-Port auf optionale Fähigkeiten⁵ | —                                                        |
+| Build     | GitHub-Packages Publish-Workflow für stabile Library-Artefakte⁶             | —                                                        |
+| GUI       | Grafische Benutzeroberfläche für Schema-Design                              | [`LF-018`](../../../spec/lastenheft-d-migrate.md#lf-018) |
+| Core      | Schema-Optimierungsvorschläge                                               | [`LF-020`](../../../spec/lastenheft-d-migrate.md#lf-020) |
+| Core      | Rollenbasierte Zugriffskontrolle                                            | [`LN-028`](../../../spec/lastenheft-d-migrate.md#ln-028) |
+| Community | LTS-Support für 1.x-Linie (24 Monate)                                       | —                                                        |
+| Security  | Externer Security-Audit (unabhängige Dritt-Prüfung)⁷                        | —                                                        |
 
 ⁵ [ADR 0037](../../adr/0037-database-agnostic-first-staffelung.md) (accepted 2026-07-17): Das
 Leitprinzip „Database-Agnostic First" bleibt **unqualifiziert** gültig — d-migrate wird *nicht*
@@ -999,6 +1002,14 @@ liegt zur Hälfte im Umbau-Radius). Publiziert wird, wenn die API die ist, die w
 / `apiDump`) existiert im Repo nicht — ohne sie wäre jede Zusage unüberwachbar. Die
 Artefaktklassifikation selbst (welche Module publiziert werden) ist bereits entschieden und bleibt
 gültig.
+
+⁷ **Verschoben aus Milestone 1.0.0** ([ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md),
+2026-07-19). Ein **externer** Audit heißt unabhängige Dritt-Prüfung — eine Beschaffungs-/Business-Handlung,
+kein Dev-Task, und durch das intern durchgeführte Audit **nicht** erfüllt; er ist damit **kein 1.0.0-Gate**.
+Vom Release-Milestone entkoppelt (kann jederzeit post-1.0.0 stattfinden, nicht an 2.0.0 gebunden); wird erst
+`✅`, wenn ein beauftragter + gelieferter Dritt-Bericht vorliegt. Die 1.0.0-Interimslatte (interner Audit ✅,
+s. Fußnote ⁵ im Stable-Milestone) und das Audit-Readiness-Paket
+([`audit-readiness-package.md`](../open/audit-readiness-package.md)) sind erfüllt.
 
 **Ergebnis**: Feature-Complete, Enterprise-ready, aktive Community.
 
