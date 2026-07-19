@@ -1,13 +1,14 @@
 # GraalVM Native Image (Linux/macOS/Windows) — 1.0.0-Stable-Gate
 
-**Status**: Entwurf (2026-07-19 — Scope aus dem Roadmap-1.0.0-Stable-Gate abgeleitet). **Phase-A-Spike
+**Status**: **IN UMSETZUNG** (`in-progress/`, 2026-07-19 — Scope aus dem Roadmap-1.0.0-Stable-Gate
+abgeleitet). Wiedereinstieg unten. **Phase-A-Spike
 gelaufen 2026-07-19**; Scope-Gabel entschieden (**Core-CLI-Subset zuerst**). **Phase-B-Kern-Viabilität
 BEWIESEN 2026-07-19** — der Kern native-kompiliert grün. **Punkt 1+2 GELIEFERT 2026-07-19:** nativer
 Entrypoint `NativeMain.kt` + Gradle-Plugin → `nativeCompile` erzeugt reproduzierbar ein grünes
 65-MB-`d-migrate`-Binary (`schema validate` läuft); normaler Build unberührt. **`schema validate` + `schema generate` laufen nativ**, Linux-CI (`native-image.yml`) grün verifiziert.
 Ergebnisse in „Phase A/B — Ergebnisse" unten. Verbleibend = weitere Kommandos + macOS/Windows-Legs (Phase D).
 
-**Trigger**: Die [Roadmap](../in-progress/roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
+**Trigger**: Die [Roadmap](roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
 Hub und SDKMAN. Der RC-Feature-Milestone ist feature-komplett (RC1 als Prerelease veröffentlicht); das
 Native-Image ist damit das **einzige technisch tiefe** der drei verbleibenden Gates. Dieser Plan deckt
@@ -17,6 +18,49 @@ nur das Native-Image ab (Docker Hub/SDKMAN sind separate, kleine Distributions-S
 die Scope-Gabel „volle Adapter-Fläche vs. Core-CLI-Subset" (offene Frage 1) ist entschieden.
 
 ---
+
+## Wiedereinstieg (Stand 2026-07-19) — morgen hier anknüpfen
+
+**Ist-Stand (geliefert + verifiziert, alle auf `develop`, CI grün):**
+- Nativer Core-Entrypoint `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/NativeMain.kt` (clikt,
+  DB-frei) + Gradle-Plugin
+  `graalvmNative` auf `NativeMainKt` (in `adapters/driving/cli/build.gradle.kts`). Rezept steckt schon
+  im Plugin: `--initialize-at-build-time=ch.qos.logback,org.slf4j`, `toolchainDetection=false`.
+- Nativ lauffähig: `d-migrate schema validate <FILE>` und
+  `d-migrate schema generate <FILE> --target {postgresql|mysql|sqlite}`. `generate` ist **DB-frei** —
+  konstruiert die reinen `*DdlGenerator` direkt (kein `DatabaseDriver`/JDBC/sqlite-JNI), Binary ~67 MB.
+- CI: `.github/workflows/native-image.yml` (Linux, `ubuntu-latest`, tag/dispatch) — in echter GitHub-CI
+  **grün verifiziert** (setup-graalvm → nativeCompile → Smoke).
+
+**Lokal reproduzieren** (native-image läuft **nicht** im docker-Build — braucht GraalVM):
+```
+# GraalVM CE 21 (Community) als JAVA_HOME + GRAALVM_HOME, dann:
+DMIGRATE_ALLOW_LOCAL_GRADLE=1 ./gradlew :adapters:driving:cli:nativeCompile
+# Binary: adapters/driving/cli/build/native/nativeCompile/d-migrate
+./…/d-migrate schema validate examples/sample-db/calib-schema.yaml
+./…/d-migrate schema generate examples/sample-db/calib-schema.yaml --target postgresql
+```
+
+**Nächste Schritte (priorisiert):**
+1. **macOS/Windows-Matrix-Legs** in `native-image.yml`: `matrix.os` auf
+   `[ubuntu-latest, macos-latest, windows-latest]`. Windows: `setup-graalvm` bringt den MSVC-Kontext,
+   Binary heißt `d-migrate.exe` (Upload-`path`-Glob `d-migrate*` deckt das ab); der Smoke-Step nutzt
+   `shell: bash` (auf Windows-Runnern via Git-Bash verfügbar). macOS/Windows sind **lokal nicht
+   verifizierbar** → der Smoke-Step ist die Selbstvalidierung. `fail-fast: false` steht schon.
+2. **Phase E — Release-Assets**: die Binaries bei `tags: v*` an den GitHub-Release hängen
+   (`contents: write`, SHA-256, `docs/user/releasing.md` um die Native-Asset-Klasse ergänzen). Native
+   **ergänzt** Fat-JAR/OCI/Homebrew.
+3. **Weitere native Kommandos** (optional/dünn): die DB-freie Fläche ist mit validate/generate weitgehend
+   ausgeschöpft; additiv wären `schema generate`-Flags (`--generate-rollback`, `--output`, `--split`).
+   reverse/compare/migrate/data brauchen eine DB → **nicht** Core-Subset.
+
+**Gotchas (in dieser Session gelernt):**
+- `workflow_dispatch`/`gh workflow run` greifen erst, wenn `native-image.yml` **einmal auf `main`** war
+  (Default-Branch-Registrierung; empirisch: nur-develop-Workflow fehlt in der API-Workflowliste → 404).
+  Bis dahin läuft der Native-CI nur via `tags: v*` oder einen temporären `push: develop`-Trigger.
+- **Nicht die shadowJar** nativ bauen (sqlite-`SqliteJdbcFeature` als Multi-Release-Eintrag bricht in
+  Phase [1/8]) — immer über den echten Modul-Classpath (Gradle-Plugin).
+- `Native*`-Klassen bleiben **Kover-exkludiert** (`build.gradle.kts` + `docs/coverage/excludes-ledger.md`).
 
 ## 1. Ausgangslage
 
@@ -219,5 +263,5 @@ nur den Kern; die Schwergewichte werden nicht kompiliert (bestätigt die Prune-H
   Distributionsklasse.
 - **Docker Hub** und **SDKMAN** sind eigene, kleine Distributions-Gates (Docker Hub ist über
   `DOCKERHUB_TOKEN`/`releasing.md` schon teil-verdrahtet) — nicht Teil dieses Plans.
-- Profiling-DataSketches bleibt ein bewusster Carve-Out (s. [Roadmap](../in-progress/roadmap.md),
+- Profiling-DataSketches bleibt ein bewusster Carve-Out (s. [Roadmap](roadmap.md),
   Stand-Notiz zu RC1), post-1.0.0 — kein Native-Image-Thema.

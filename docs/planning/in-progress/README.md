@@ -57,6 +57,7 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
+| [`graalvm-native-image-distribution.md`](graalvm-native-image-distribution.md) | Slice (in Umsetzung) | GraalVM-Native-Image des reduzierten Core-Entrypoints (1.0.0-Stable-Gate). Geliefert+CI-grün: `NativeMain.kt`+Plugin, `schema validate`/`generate` nativ, Linux-`native-image.yml`. Offen: macOS/Windows-Legs + Release-Assets. Wiedereinstieg im Plan-Kopf. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

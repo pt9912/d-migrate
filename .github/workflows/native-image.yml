@@ -1,7 +1,7 @@
 name: Native Image
 
 # GraalVM-Native-Image-Build des reduzierten Core-Entrypoints (dev.dmigrate.cli.NativeMainKt),
-# 1.0.0-Stable-Gate / Phase D — siehe docs/planning/next/graalvm-native-image-distribution.md.
+# 1.0.0-Stable-Gate / Phase D — siehe docs/planning/in-progress/graalvm-native-image-distribution.md.
 #
 # BEWUSST separat von build.yml: native-image cross-kompiliert nicht (jedes OS baut sein eigenes
 # Binary), braucht eine GraalVM-Toolchain statt des Docker-Pfads und ist zu schwer, um jeden PR zu
