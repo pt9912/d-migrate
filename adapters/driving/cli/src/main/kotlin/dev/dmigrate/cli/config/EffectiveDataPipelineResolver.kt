@@ -42,6 +42,7 @@ internal fun resolveEffectiveDataPipeline(
     readFetchSize: Boolean = true,
     availableProcessors: Int = Runtime.getRuntime().availableProcessors(),
     defaultChunkSize: Int = 10_000,
+    onNote: (String) -> Unit = {},
 ): EffectiveDataPipeline {
     val loaded = loadEffectiveConfig(configPath)
     // `database.pool:` im selben Ladevorgang auflösen — die effektive `max_size` deckelt
@@ -57,7 +58,7 @@ internal fun resolveEffectiveDataPipeline(
         )
     }
     val parallelism = resolveEffectiveParallelism(
-        configPath, cliParallel, availableProcessors, pool.maximumPoolSize, preloaded = loaded,
+        configPath, cliParallel, availableProcessors, pool.maximumPoolSize, preloaded = loaded, onNote = onNote,
     )
     return EffectiveDataPipeline(tuning, parallelism, pool)
 }

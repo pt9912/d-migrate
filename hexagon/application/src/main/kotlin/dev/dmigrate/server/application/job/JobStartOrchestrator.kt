@@ -481,7 +481,66 @@ class JobStartOrchestrator(
             payloadFingerprint = fingerprint,
             requiredScopes = durableChallenge.requiredScopes,
         )
+        return retryAndDispatch(request, scope, attempt)
+    }
+
+    /**
+     * Fix `approved-retry-no-dispatch.md`: der genehmigte Retry committet einen
+     * NEUEN Job (im [ApprovedRetryService]) und MUSS ihn — wie der Primärpfad in
+     * [commitJob] — auto-dispatchen. Ohne Dispatch bliebe eine genehmigte Operation
+     * dauerhaft `QUEUED` und ihre Quota ungefreed (es gibt keinen Recovery-Poller).
+     * Das Admission-Permit wird VOR dem Retry akquiriert (symmetrisch zu [commitJob]);
+     * bei `Started` läuft [runAutoDispatch] — der Handle-Register ist idempotent
+     * (der Retry hat ihn bereits gesetzt), und die Quota wird über den Terminal-Pfad
+     * ([JobDispatcher.applyTerminal]) bzw. den Setup-Failure-Pfad
+     * ([markExecutorSetupFailed]) freigegeben.
+     */
+    private fun retryAndDispatch(
+        request: JobStartRequest,
+        scope: IdempotencyScope,
+        attempt: ApprovalAttempt,
+    ): JobStartHandlerOutcome {
+        val factory = jobWorkerFactory
+        val dispatcher = jobDispatcher
+        val permit: JobDispatchPermit? = if (factory != null && dispatcher != null) {
+            when (val admission = dispatchAdmission.tryAcquire(request.now)) {
+                is JobDispatchAdmissionOutcome.Granted -> admission.permit
+                is JobDispatchAdmissionOutcome.Saturated ->
+                    return JobStartHandlerOutcome.RateLimited(
+                        retryAfter = admission.retryAfter,
+                        current = admission.current,
+                        limit = admission.limit,
+                        reason = JobStartReason.EXECUTOR_SATURATED,
+                    )
+                JobDispatchAdmissionOutcome.Closed -> {
+                    val expiresAt = request.now.plusSeconds(EXECUTOR_CLOSED_RETENTION_SECONDS)
+                    idempotencyStore.markFailed(
+                        scope = scope,
+                        reason = REASON_EXECUTOR_CLOSED,
+                        now = request.now,
+                        retentionUntil = expiresAt,
+                    )
+                    return JobStartHandlerOutcome.Failed(REASON_EXECUTOR_CLOSED, expiresAt)
+                }
+            }
+        } else {
+            null
+        }
+
         val outcome = approvedRetryService.retry(attempt, scope, request.now, request.jobBuilder)
+        if (outcome is JobStartOutcome.Started && factory != null && dispatcher != null) {
+            runAutoDispatch(
+                request = request,
+                record = outcome.record,
+                jobId = outcome.jobId,
+                source = outcome.cancellationSource,
+                factory = factory,
+                dispatcher = dispatcher,
+                permit = permit,
+            )
+        } else {
+            permit?.close()
+        }
         return outcome.toHandlerOutcome()
     }
 

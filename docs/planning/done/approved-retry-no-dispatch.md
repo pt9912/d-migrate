@@ -1,10 +1,19 @@
 # Approved-Retry committet ohne Auto-Dispatch (Security-Audit #4, funktionale Beobachtung)
 
-> **Status:** Beim Follow-up-Audit #4 (MCP-Job-Ausführung) 2026-07-19 entdeckt.
-> **Kein Sicherheitsbefund** (fail-safe), aber eine funktionale Ausführungslücke.
+> **Status:** **BEHOBEN 2026-07-19** (entdeckt beim Follow-up-Audit #4). War kein
+> Sicherheitsbefund (fail-safe), sondern eine funktionale Ausführungslücke.
 > **Trigger:** Follow-up-Audit des MCP-Job-Ausführungspfads (aus der „Nicht geprüft /
-> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](../done/security-audit-2026-07-17.md),
+> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](security-audit-2026-07-17.md),
 > Punkt 4).
+>
+> **Fix:** `JobStartOrchestrator.retryAndDispatch` (neu, aus `handleApprovedRetry`): der
+> genehmigte Retry akquiriert nun — symmetrisch zu `commitJob` — das Admission-Permit und
+> ruft bei `Started` `runAutoDispatch`. Der Worker läuft damit (QUEUED→RUNNING→Terminal),
+> und die Quota wird über den Terminal-Pfad (`JobDispatcher.applyTerminal` → `releaseForOwner`)
+> bzw. den Setup-Failure-Pfad freigegeben. Der Handle-Register ist idempotent (der Retry
+> hat ihn bereits gesetzt). Regressionstest in `JobStartOrchestratorTest` (dispatch-fähige
+> Fixture: genehmigter Retry → Worker invoked, Job SUCCEEDED). Kein `ApprovedRetryService`-
+> Umbau nötig.
 
 ## Beobachtung
 

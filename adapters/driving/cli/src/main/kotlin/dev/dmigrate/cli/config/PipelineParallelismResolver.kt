@@ -46,10 +46,24 @@ internal fun resolveEffectiveParallelism(
     availableProcessors: Int = Runtime.getRuntime().availableProcessors(),
     maxPoolSize: Int = PoolSettings().maximumPoolSize,
     preloaded: LoadedConfig? = null,
+    onNote: (String) -> Unit = {},
 ): ResolvedParallelism {
     if (cliParallel != null) {
         require(cliParallel >= 1) { "--parallel must be >= 1, got $cliParallel" }
-        return ResolvedParallelism(cliParallel, fromCli = true, sourceLabel = "--parallel $cliParallel")
+        // Fix parallel-vs-pool-size-clamp.md: ein explizites `--parallel N` gegen die
+        // effektive Pool-Größe deckeln. Jeder Work-Unit hält gleichzeitig JE EINE
+        // Source- UND Target-Connection, also braucht Grad N N Connections PRO Pool;
+        // N > max_size ließe die überzähligen Worker bis `connectionTimeout` blockieren
+        // und dann fail-fast scheitern (Selbst-DoS). Analog zur SQLite-Klemme: deckeln
+        // + herkunftsbewusster Hinweis. `auto` deckelt bereits ebenso.
+        val clamped = minOf(cliParallel, maxPoolSize).coerceAtLeast(1)
+        if (clamped < cliParallel) {
+            onNote(
+                "--parallel $cliParallel exceeds the connection pool size ($maxPoolSize); " +
+                    "clamped to $clamped. Raise database.pool.max_size to parallelize further.",
+            )
+        }
+        return ResolvedParallelism(clamped, fromCli = true, sourceLabel = "--parallel $cliParallel")
     }
     return when (
         val cfg = PipelineParallelismResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()

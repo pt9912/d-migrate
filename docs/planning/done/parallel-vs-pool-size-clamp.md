@@ -1,11 +1,19 @@
 # Explizites `--parallel N` nicht gegen Pool-`max_size` geklemmt (Security-Audit #5, UX/Robustheit)
 
-> **Status:** Beim Follow-up-Audit #5 (paralleler Datenpfad) 2026-07-19 entdeckt.
-> **Kein Sicherheitsbefund** (`--parallel` ist CLI-operator-only, nicht MCP-exponiert;
-> Operator ≠ Angreifer), aber eine UX-/Robustheit-Lücke.
+> **Status:** **BEHOBEN 2026-07-19** (entdeckt beim Follow-up-Audit #5). War kein
+> Sicherheitsbefund (`--parallel` ist CLI-operator-only, nicht MCP-exponiert;
+> Operator ≠ Angreifer), sondern eine UX-/Robustheit-Lücke.
 > **Trigger:** Follow-up-Audit des parallelen Datenpfads (aus der „Nicht geprüft /
-> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](../done/security-audit-2026-07-17.md),
+> offene Lücken"-Sektion des [`security-audit-2026-07-17.md`](security-audit-2026-07-17.md),
 > Punkt 5, Frage „Ist N gegen `maximumPoolSize` gedeckelt?").
+>
+> **Fix (Option Clamp+Note gewählt):** `resolveEffectiveParallelism` deckelt jetzt auch
+> ein **explizites** `--parallel N` auf `min(N, maxPoolSize)` (bislang nur `auto`) und
+> gibt bei Klemmung einen herkunftsbewussten Hinweis über einen neuen `onNote`-Callback
+> aus (via `resolveEffectiveDataPipeline` an die drei Data-Commands, `echo(err=true)`).
+> Kein connectionTimeout-Selbst-DoS mehr; „raise database.pool.max_size to parallelize
+> further". Tests in `PipelineParallelismResolverTest` (Clamp + Note bei N>max_size;
+> kein Clamp/Note bei N≤max_size).
 
 ## Beobachtung
 

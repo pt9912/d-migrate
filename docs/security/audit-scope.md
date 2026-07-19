@@ -148,7 +148,7 @@ READ COMMITTED.
   via `AtomicReference`), FK-sichere Layer-Barrieren, per-Tabelle-State. SQLite auf 1
   geklemmt (nested-borrow-Deadlock). Bekanntes Robustheit-Residuum: explizites
   `--parallel N` nicht gegen Pool-`max_size` geklemmt
-  ([`parallel-vs-pool-size-clamp.md`](../planning/open/parallel-vs-pool-size-clamp.md)).
+  ([`parallel-vs-pool-size-clamp.md`](../planning/done/parallel-vs-pool-size-clamp.md)).
 
 ## 8. Build, Reproduktion & Security-Gates
 
@@ -181,8 +181,8 @@ Vollständig in [`security-audit-2026-07-17.md`](../planning/done/security-audit
 behoben; die 6 anfangs ungeprüften „Nicht geprüft"-Restflächen und zwei methodische
 Einschränkungen (P1-Live-Repro, Gson-Rekursionstiefe) nachgeholt. **Offen dokumentiert**
 (kein Blocker): Gradle-Wrapper-JAR-Hash, Ktor-3.0.3-CVE-Spannen, Repo-Settings-Einsicht;
-Folge-Tickets [`approved-retry-no-dispatch.md`](../planning/open/approved-retry-no-dispatch.md),
-[`parallel-vs-pool-size-clamp.md`](../planning/open/parallel-vs-pool-size-clamp.md).
+Folge-Tickets [`approved-retry-no-dispatch.md`](../planning/done/approved-retry-no-dispatch.md),
+[`parallel-vs-pool-size-clamp.md`](../planning/done/parallel-vs-pool-size-clamp.md).
 
 **Wichtig für den Auditor:** Das interne Audit ist gründlich, aber **intern** — es sieht
 seine eigenen blinden Flecken nicht. Der externe Audit soll genau diese unabhängige

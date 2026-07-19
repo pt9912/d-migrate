@@ -739,7 +739,7 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
    > - **Residuen (funktional/robustheit, keine Vuln):** (1) COMMITTED-Quota-Owner werden bei
    >   Job-Crash / Approved-Retry-no-dispatch nicht reclaimt (Sweeper `listExpiredPending` nur
    >   PENDING) → Quota-Slot-Leak; **fail-safe** (überzählt = restriktiver; verstärkt Ticket
-   >   [`approved-retry-no-dispatch.md`](../open/approved-retry-no-dispatch.md)). (2) `JdbcJobStore.list`
+   >   [`approved-retry-no-dispatch.md`](approved-retry-no-dispatch.md)). (2) `JdbcJobStore.list`
    >   fetcht ALLE tenant-Zeilen in den Speicher vor der Offset-Pagination (kein SQL-LIMIT) — mild,
    >   tenant-scoped, durch Quota×Retention beschränkt. (3) `reserve` gegen konkurrierendes
    >   `cleanupExpired` auf derselben terminalen Zeile → transienter `error()` statt Retry
@@ -794,7 +794,7 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
    >   Terminal-Transition nicht freigegeben. **Fail-safe** (approval-gated ⇒ ohne Dispatch keine
    >   Ausführung = keine unautorisierte Ausführung), daher kein Sicherheitsbefund, aber ein
    >   Ausführungsloch. Verifizierungswürdig, ob beabsichtigt. Ticket
-   >   [`approved-retry-no-dispatch.md`](../open/approved-retry-no-dispatch.md).
+   >   [`approved-retry-no-dispatch.md`](approved-retry-no-dispatch.md).
 
 **Mittlere Priorität**
 
@@ -831,7 +831,7 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
    >   PG/MySQL → D Worker × (1 Source+1 Target-Connection) überzeichnen den Pool → Blockieren bis
    >   `connectionTimeout` (~30 s) → fail-fast. Recoverbar (Operator senkt `--parallel` oder erhöht
    >   `database.pool.max_size`), aber ein Preflight-Clamp/-Warnung analog zur SQLite-Klemme wäre
-   >   freundlicher → Ticket [`parallel-vs-pool-size-clamp.md`](../open/parallel-vs-pool-size-clamp.md).
+   >   freundlicher → Ticket [`parallel-vs-pool-size-clamp.md`](parallel-vs-pool-size-clamp.md).
    >   (2) Straggler-Join nutzt `shutdownNow()`+`awaitTermination(30 s)`, dessen Rückgabe ungeprüft
    >   bleibt; ein JDBC-Write, der `interrupt` ignoriert, kann `run()` kurz überleben — kein
    >   zerrissener Chunk (atomare Chunk-Commits) und keine FK-Verletzung (Layer-interne, unabhängige
