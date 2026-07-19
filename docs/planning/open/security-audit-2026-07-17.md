@@ -620,11 +620,15 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
 > race-frei; zwei Robustheit-Residuen, eines als Ticket).**
 >
 > **Wichtig — der Follow-up schließt die 6 benannten Restflächen, macht das Audit
-> aber NICHT vollständig:** die „Methodische Einschränkungen"-Sektion unten bleibt
-> gültig (kein Live-Repro, Gson-StackOverflow ungeprüft), das Audit bleibt **intern**
-> (kein Dritt-Audit). Roadmap „Externer Security-Audit ⛔" bleibt korrekt. Insgesamt
-> aus den 6 Flächen: 1 neuer P2 (#1) + CSV-Guard (#6); #2/#3/#4/#5 ohne Vuln (Befunde
-> widerlegt bzw. by-design sauber) plus mehrere funktionale/robustheit-Tickets.
+> aber NICHT vollständig:** aus der „Methodische Einschränkungen"-Sektion sind der
+> **P1-Live-Repro** und die **Gson-StackOverflow-Frage** inzwischen nachgeholt
+> (2026-07-19: P1 end-to-end gegen `d-migrate:dev` bestätigt; Gson als Live-Crash
+> widerlegt + `JsonNestingGuard`-Härtung). **Offen** bleiben Gradle-Wrapper-JAR-Hash,
+> Ktor-CVE-Spannen und die Repo-Settings-Einsicht; das Audit bleibt **intern** (kein
+> Dritt-Audit). Roadmap „Externer Security-Audit ⛔" bleibt korrekt. Insgesamt aus den
+> 6 Flächen: 1 neuer P2 (#1) + CSV-Guard (#6); #2/#3/#4/#5 ohne Vuln (Befunde widerlegt
+> bzw. by-design sauber) plus mehrere funktionale/robustheit-Tickets; Gson-Härtung
+> als Code (`JsonNestingGuard`).
 
 **Hohe Priorität**
 
@@ -861,8 +865,8 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
 
 **Methodische Einschränkungen dieses Audits**
 
-- Der P1-Path-Traversal wurde **nicht** end-to-end gegen ein laufendes Binary demonstriert; verifiziert sind der Datenfluss (Code-Lektüre aller Zwischenstationen) und beide Schlüsselannahmen einzeln empirisch. Ein CLI-Repro gegen eine präparierte `.sqlite` ist der naheliegende nächste Schritt.
+- ~~Der P1-Path-Traversal wurde **nicht** end-to-end gegen ein laufendes Binary demonstriert.~~ **Nachgeholt 2026-07-19 (Live-Repro gegen `d-migrate:dev`):** eine präparierte `.sqlite` mit einer Tabelle, deren Name eine Verzeichnis-Traversierung enthält (zwei Punkte + Slash + „pwned", als Quell-Katalog-Eintrag untrusted) + `data export --split-files` in ein Output-Verzeichnis → **Exit 5, fail-fast** mit der Meldung „Refusing to export table … its file name would escape the output directory". Das Ausbruchsziel eine Ebene über dem Output-Verzeichnis wird **nicht** angelegt, das Verzeichnis bleibt **leer** (der `resolveFileFor`-Preflight über alle Tabellen greift vor jedem Write). Positiv-Kontrolle: `--tables benign` exportiert normal (Exit 0). Fix `d8b6d2de` (`ExportOutput.resolveFileFor`-Containment) damit end-to-end bestätigt.
 - Der Gradle-Wrapper-JAR-Hash konnte mangels Netzwerk nicht gegen die offizielle Referenz verifiziert werden.
-- Gson-Rekursionstiefe im Pre-Auth-`parseMessage`: tief verschachteltes JSON könnte einen `StackOverflowError` auslösen, den `catch (e: Exception)` in `parseBody` **nicht** fängt (`Error`, keine `Exception`). Ohne Build nicht verifizierbar, daher bewusst nicht als Befund geführt — liegt auf derselben Naht wie Befund 4 und würde von einem Inbound-Cap teilweise mit-entschärft.
+- ~~Gson-Rekursionstiefe im Pre-Auth-`parseMessage`: tief verschachteltes JSON könnte einen `StackOverflowError` auslösen, den `catch (e: Exception)` in `parseBody` **nicht** fängt.~~ **Verifiziert 2026-07-19 (Test in `:adapters:driving:mcp`): als Live-Crash WIDERLEGT.** Die aufgelöste Gson erzwingt ein strukturelles Nesting-Limit → tief verschachteltes JSON wirft eine `MalformedJsonException`, die lsp4j in eine **`MessageIssueException`** (eine `Exception`) wrappt → `parseBody`s `catch (e: Exception)` liefert ein sauberes `400`, **kein** uncaught `StackOverflowError`. Zwei Präzisierungen: (1) Nach dem Befund-4-Reorder (`8e54cbb3`) läuft `validateBearer` **vor** `parseBody` → die Fläche ist auf authentifizierte Caller bzw. `authMode=DISABLED` (loopback) begrenzt, und ein SOE wäre per-Thread (kein Prozess-Crash). (2) Die Absicherung ist **transitiv** (hängt an Gson ≥2.11; lsp4j wrappt nur `JsonParseException`, **nicht** `Error`) — ein Gson-Downgrade unter das Limit ließe einen echten SOE durch den `catch` durch. **Härtung committet:** `JsonNestingGuard` am Transport-Boundary (Depth-Deckel 200, string-/escape-bewusst) macht die Schranke explizit/owned und rejektet Deep-JSON deterministisch mit `400`, unabhängig von der transitiven Gson-Version. Getestet (Unit + Route-E2E + empirischer Refutations-Test).
 - Ktor-3.0.3-CVEs wurden nicht behauptet, weil die betroffenen Spannen nicht sicher belegbar waren.
 - Repo-Security-Einstellungen (Dependabot-Alerts, Default-`GITHUB_TOKEN`-Scope) sind aus dem Repo nicht einsehbar. Acht Workflows ohne expliziten `permissions:`-Block erben den Repo-Default; sie triggern nur auf `push`/`schedule`/`dispatch` (keine Fork-Exposition) und nutzen keine Secrets — als Härtungsempfehlung vermerkt, nicht als Befund.

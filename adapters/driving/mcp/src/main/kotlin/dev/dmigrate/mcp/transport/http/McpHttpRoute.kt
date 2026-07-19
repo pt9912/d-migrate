@@ -271,6 +271,24 @@ private suspend fun parseBody(call: ApplicationCall, jsonHandler: MessageJsonHan
         )
         return null
     }
+    // §12.14 boundary guard (defense-in-depth): reject pathologically deep JSON
+    // BEFORE it reaches the recursive-descent Gson parser. The resolved Gson's
+    // nesting limit currently surfaces deep input as a MessageIssueException that
+    // the catch (e: Exception) below already handles — but that relies on a
+    // transitive default (lsp4j wraps only JsonParseException, not Error), so a
+    // Gson downgrade could let a StackOverflowError escape the catch. This owns
+    // the bound at the boundary. The byte cap (checkBodySize) does not close it:
+    // a length-bounded body can still nest hundreds of thousands deep.
+    if (JsonNestingGuard.exceedsMaxDepth(body)) {
+        respondJsonRpcError(
+            call,
+            HttpStatusCode.BadRequest,
+            id = null,
+            code = ResponseErrorCode.ParseError.value,
+            message = "JSON nesting exceeds the maximum depth of ${JsonNestingGuard.MAX_DEPTH}",
+        )
+        return null
+    }
     return try {
         jsonHandler.parseMessage(body)
     } catch (e: Exception) {
