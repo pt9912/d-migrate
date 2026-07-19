@@ -610,19 +610,21 @@ Diese neun Meldungen wurden geprüft und als **False Positives** eingestuft. Sie
 
 Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten für ein Folge-Audit.
 
-> **Follow-up-Audit — Fortschritt (Stand 2026-07-19):** von 6 Flächen sind **5
-> nachgeholt** — #1 integrations (`272d61a3`, ein P2), #6 CSV-Formel-Injection
-> (`8c1f82f0`, CWE-1236), #2 Approval-Grant-Kette (`43871e13`, als Replay
-> widerlegt + eine Härtung), #4 MCP-Job-Ausführung (`1a234e71`, beide Kernfragen
-> sauber; eine funktionale fail-safe-Lücke als Ticket) und **#3 persistence-jdbc
-> (race-frei + tenant-isoliert by design, kein Security-Befund; drei
-> funktionale/robustheit-Residuen).** **Offen: nur noch #5** (`--parallel N`
-> Race-/TOCTOU).
+> **Follow-up-Audit — Fortschritt (Stand 2026-07-19):** **alle 6 Flächen nachgeholt**
+> — #1 integrations (`272d61a3`, ein P2), #6 CSV-Formel-Injection (`8c1f82f0`,
+> CWE-1236), #2 Approval-Grant-Kette (`43871e13`, als Replay widerlegt + eine
+> Härtung), #4 MCP-Job-Ausführung (`1a234e71`, beide Kernfragen sauber; eine
+> funktionale fail-safe-Lücke als Ticket), #3 persistence-jdbc (`95fd6524`,
+> race-frei + tenant-isoliert by design, kein Befund) und **#5 `--parallel N`
+> (kein Befund; CLI-operator-only, FK-Barriere hält, chunkFailures per-Tabelle
+> race-frei; zwei Robustheit-Residuen, eines als Ticket).**
 >
-> **Wiedereinstieg:** #5 `--parallel N` (`ParallelWorkExecutor`, `TopologicalSorter`,
-> `ParallelismClamp`) ist die letzte ungeprüfte Fläche — Race-/TOCTOU-Analyse des
-> Datenpfad-Parallelismus (Selbst-DoS gegen `maximumPoolSize`, FK-Barriere unter
-> Teilabbrüchen, `chunkFailures`-Deckel race-frei). Kein Quick-Win.
+> **Wichtig — der Follow-up schließt die 6 benannten Restflächen, macht das Audit
+> aber NICHT vollständig:** die „Methodische Einschränkungen"-Sektion unten bleibt
+> gültig (kein Live-Repro, Gson-StackOverflow ungeprüft), das Audit bleibt **intern**
+> (kein Dritt-Audit). Roadmap „Externer Security-Audit ⛔" bleibt korrekt. Insgesamt
+> aus den 6 Flächen: 1 neuer P2 (#1) + CSV-Guard (#6); #2/#3/#4/#5 ohne Vuln (Befunde
+> widerlegt bzw. by-design sauber) plus mehrere funktionale/robustheit-Tickets.
 
 **Hohe Priorität**
 
@@ -793,6 +795,43 @@ Diese Bereiche wurden von keiner der 12 Flächen abgedeckt und sind Kandidaten f
 **Mittlere Priorität**
 
 5. **Nebenläufigkeit im parallelen Datenpfad (`--parallel N`) und Pool-Erschöpfung.** Alle 12 Flächen waren rein statisch-strukturell; Races/TOCTOU wurden nirgends adressiert. Das Projekt hat eine dokumentierte, bereits produktiv aufgetretene Deadlock-Klasse (verschachteltes Borrow bei SQLite mit `maximumPoolSize = 1`), und `--parallel N` erhöht genau diesen Druck. Zu prüfen: Ist N gegen `maximumPoolSize` gedeckelt (sonst Selbst-DoS bis `connectionTimeout`)? Hält die FK-Barriere unter Teilabbrüchen (halb geladene Zieltabellen bei provoziertem Chunk-Fehler)? Zählt der `chunkFailures`-Deckel race-frei? Für ein Werkzeug, dessen Kernversprechen die Integrität der Zieldatenbank ist, ist ein nebenläufigkeitsbedingter Teil-Load die schwerwiegendste Fehlerklasse.
+
+   > **Nachgeholt (Follow-up-Audit 2026-07-19) — Fläche geprüft; kein Security-Befund.
+   > Threat-Model-Einordnung zuerst, dann die drei Fragen, dann zwei Robustheit-Residuen:**
+   >
+   > - **Threat-Model: `--parallel` ist CLI-operator-only.** Der MCP-Datenpfad
+   >   (`McpDataTransferJobWorker`/`McpDataImportJobWorker`) baut den `DataTransferRequest`
+   >   **ohne** `parallel` → Default 1 (sequenziell). Ein authentifizierter Tenant kann die
+   >   Parallelität also NICHT setzen; sie ist operator-kontrolliert (Operator ≠ Angreifer,
+   >   SECURITY.md). „Selbst-DoS" ist damit ein Operator-Foot-Gun, kein Angriffsvektor.
+   > - **Frage 2 (FK-Barriere unter Teilabbruch) — hält.** `TransferExecutor.executeParallel` /
+   >   `StreamingImporter.importParallel` iterieren die FK-Layer und rufen `ParallelWorkExecutor.run`
+   >   **pro Layer**; `run` wirft bei jedem Unit-Fehler fail-fast (`AtomicReference`-`firstError` +
+   >   `compareAndSet`) → die Layer-Schleife propagiert → **Layer i+1 startet nie**. Kein
+   >   Child-vor-Parent. Der Partial-Load **innerhalb** des fehlschlagenden Layers ist dasselbe
+   >   Nicht-atomar-Profil wie der sequenzielle Pfad (Chunk-Commits sind atomar pro Chunk → kein
+   >   zerrissener Chunk); wer Atomarität braucht, nutzt `--atomic` (das auf sequenziell zwingt;
+   >   `--parallel`+`--atomic` inkompatibel).
+   > - **Frage 3 (`chunkFailures`-Race) — keiner.** Parallelität ist auf **Tabellen**-Ebene
+   >   (ein Unit = eine Tabelle/Partition). `ImportLoopState` (mit `chunkFailures`/`rowsFailed`)
+   >   wird pro `TableImporter.import()`-Aufruf **lokal** erzeugt; der geteilte `TableImporter`
+   >   hält nur immutable `val`-Kollaboratoren → re-entrant/thread-safe. Es gibt gar keinen globalen
+   >   „abort-after-N"-Zähler; `MAX_LOGGED_CHUNK_FAILURES=1000` ist nur ein per-Tabelle-Memory-Deckel
+   >   aufs Log-Sample. `summaries` wird ausschließlich auf dem Main-Thread nach jedem Layer befüllt;
+   >   Worker nutzen `NoOpProgressReporter` + `onChunkCommitted={}` → keine geteilten Callbacks.
+   > - **Frage 1 (N gegen `maximumPoolSize`) — nur `auto` gedeckelt.** `resolveEffectiveParallelism`
+   >   löst `pipeline.parallelism: auto` auf `min(cores, maxPoolSize)` auf; **explizites `--parallel N`
+   >   wird NICHT gegen die Pool-Größe geklemmt** (nur `require(N>=1)`). SQLite wird via
+   >   `ParallelismClamp` hart auf 1 geklemmt (nested-borrow-Deadlock vermieden).
+   > - **Residuen (Robustheit/UX, keine Vuln):** (1) Explizites `--parallel N > pool.max_size` auf
+   >   PG/MySQL → D Worker × (1 Source+1 Target-Connection) überzeichnen den Pool → Blockieren bis
+   >   `connectionTimeout` (~30 s) → fail-fast. Recoverbar (Operator senkt `--parallel` oder erhöht
+   >   `database.pool.max_size`), aber ein Preflight-Clamp/-Warnung analog zur SQLite-Klemme wäre
+   >   freundlicher → Ticket [`parallel-vs-pool-size-clamp.md`](parallel-vs-pool-size-clamp.md).
+   >   (2) Straggler-Join nutzt `shutdownNow()`+`awaitTermination(30 s)`, dessen Rückgabe ungeprüft
+   >   bleibt; ein JDBC-Write, der `interrupt` ignoriert, kann `run()` kurz überleben — kein
+   >   zerrissener Chunk (atomare Chunk-Commits) und keine FK-Verletzung (Layer-interne, unabhängige
+   >   Tabellen), gleiches Nicht-atomar-Profil.
 
 6. **Ausgabe-Kodierung der Daten-Writer (`ValueSerializer`, CSV-/JSON-Writer) — CSV-Formel-Injection.** Die deserialization-Fläche prüfte ausdrücklich nur die **Lese**seite. d-migrate exportiert per Definition Inhalte aus einer fremden Quell-DB in Dateien, die danach in Excel/LibreOffice geöffnet werden: ein Zellwert `=cmd|'/c calc'!A1` bzw. `@`/`+`/`-`-Präfix ist Formel-Injection und wird von keiner CSV-Bibliothek per Default neutralisiert — korrektes RFC-4180-Quoting verhindert sie **nicht**. Dieselbe Vertrauensgrenze, die dieses Audit bereits zweimal als real bestätigt hat, nur auf der Ausgabeseite. Ebenfalls in diesem Modul ungeprüft: `SchemaFileResolver`.
 
