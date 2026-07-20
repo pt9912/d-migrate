@@ -54,9 +54,14 @@ jobs:
 
       - name: Set up GraalVM (Community, JDK 21)
         # Bringt auf Windows auch den MSVC-Kontext mit, den native-image dort zum Linken braucht.
+        #
+        # Patch-genau gepinnt, nicht '21': native-image-Verhalten (Reachability-Analyse, erzeugte
+        # Metadaten) haengt an der GraalVM-Version. Ein floatendes '21' wuerde committete
+        # Reachability-Metadaten still gegen eine andere Version laufen lassen. graalvm-community
+        # JDK 21 endet bei 21.0.2 — der Pin entspricht damit dem heutigen Ist, macht ihn aber explizit.
         uses: graalvm/setup-graalvm@8c5543b71f44568342e106336639979e94a8f6de # v1.6.1
         with:
-          java-version: '21'
+          java-version: '21.0.2'
           distribution: 'graalvm-community'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'

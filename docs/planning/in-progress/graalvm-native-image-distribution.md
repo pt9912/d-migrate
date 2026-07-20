@@ -6,9 +6,10 @@ das Native-Binary soll dasselbe können wie die JVM-CLI (Schwelle in Abschnitt 0
 **Ob Native ein 1.0.0-Gate bleibt, ist OFFEN** (Frage 6). Alle abgeleiteten Aussagen im Dokument führen
 auf diesen Satz zurück; wo unten „1.0.0-Ziel" steht, ist es unter diesem Vorbehalt zu lesen.
 
-**Ausführungsreihenfolge**: A, B, D, E **(erledigt)** → **F (offen, der gesamte verbleibende Kern)** →
-G (nur falls F Ausschlüsse übriglässt). Die Buchstaben sind historisch gewachsen; die einzige offene
-Arbeit trägt den höchsten.
+**Ausführungsreihenfolge**: A, B, D, E **(erledigt — E jedoch nur unter der Annahme, dass Native
+optional ist)** → **F (offen, der gesamte verbleibende Kern)** → G (nur falls F Ausschlüsse übriglässt)
+→ H (nur falls Frage 6 = „Native bleibt 1.0.0-Gate"). Die Buchstaben sind historisch gewachsen; die
+einzige offene Arbeit trägt die höchsten.
 
 **Trigger**: Die [Roadmap](roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
@@ -114,8 +115,11 @@ Release; Dispatch-Läufe liefern reine Workflow-Artefakte. F.1 ändert die Aufru
   (`05f1a229`). **Verallgemeinert:** alles Default-Branch-Gebundene (auch die Dependabot-Config) wirkt
   nur, wenn es auf `main` liegt.
 - **Nicht die shadowJar** nativ bauen — immer über den echten Modul-Classpath (Gradle-Plugin).
-- **`--no-fallback` verschiebt Fehler in die Laufzeit.** Fehlende Reflection-/Resource-Metadaten brechen
-  **nicht** den Build. Ein grüner `nativeCompile` ist **kein** Blocker-Nachweis (s. F.0).
+- **Ein grüner `nativeCompile` ist KEIN Blocker-Nachweis.** Fehlende Reflection-/Resource-Metadaten
+  fallen typischerweise erst **bei Ausführung** auf — das gilt **unabhängig von `--no-fallback`**.
+  `--no-fallback` bewirkt lediglich, dass kein JVM-abhängiges Fallback-Image erzeugt wird: entweder ein
+  eigenständiges Binary oder ein Buildfehler. Es „verschiebt" nichts in die Laufzeit (frühere Fassungen
+  dieses Plans behaupteten das). Konsequenz bleibt dieselbe: kommandoweise ausführen (F.0 AP 3/AP 4).
 
 ## 1. Ausgangslage
 
@@ -129,9 +133,14 @@ Release; Dispatch-Läufe liefern reine Workflow-Artefakte. F.1 ändert die Aufru
   `RuntimeBootstrap.initialize()` → `DatabaseDriverRegistry.loadAll()` →
   `java.util.ServiceLoader.load(DatabaseDriver::class.java)` **unbedingt vor dem Argument-Parsing auf,
   auch bei `--help`/`--version`**. Ebenso ist `IcuUnicodeTextService()` eine **eager property** am
-  Wurzel-Command. Damit gaten ServiceLoader, die drei JDBC-Treiber (inkl. sqlite-JNI) und ICU **jeden
-  Aufruf** — sie sind nicht kommando-lokal. Der **ServiceLoader ist die tragendste Reflection-Naht der
-  CLI**.
+  Wurzel-Command. Damit gaten ServiceLoader-Auflösung, die Konstruktion der drei Treiber und die des
+  ICU-Providers **jeden Aufruf** — sie sind nicht kommando-lokal. Der **ServiceLoader ist die tragendste
+  Reflection-Naht der CLI**.
+- **Genau unterscheiden, was der Startpfad beweist.** Er zeigt *Klassen-Erreichbarkeit und
+  Provider-Konstruktion*, **nicht** die Funktion von JNI oder Ressourcen: `SqliteDriver` hat keinen
+  Konstruktor-Body und lädt beim Start **keine** Nativelib; `IcuUnicodeTextService` ist ebenfalls
+  konstruktionsseitig leer — ICU wird erst in `normalize`/`graphemeCount` benutzt. sqlite-JNI und
+  ICU-Daten-Resources brauchen deshalb **echte Nutzung** zum Nachweis, nicht `--help`.
 - Reflection-/resource-/JNI-lastig sind: logback + snakeyaml-engine, AWS SDK v2 via `storage-s3`,
   ICU4J via `text-icu`, `formats-parquet` (parquet-hadoop + hadoop-common — Hadoop ist notorisch
   native-image-feindlich), **Flyway via `persistence-jdbc`** und der **sqlite-jdbc-JNI-Nativelib**
@@ -161,16 +170,28 @@ Release; Dispatch-Läufe liefern reine Workflow-Artefakte. F.1 ändert die Aufru
   (flyway/liquibase/django/knex), `mcp serve` und S3-Ziele. Genau diese Flächen braucht Phase F.4.
   Korpus-Erweiterung ist damit ein eigener Arbeitspunkt (F.2), keine Voraussetzung, die schon erfüllt
   wäre.
+- **`export flyway` erreicht die Flyway-Library NICHT.** `ToolExportWiring.exporterFor` konstruiert den
+  projekteigenen `FlywayMigrationExporter` — reines Rendering, kein `org.flywaydb`-Import im CLI- oder
+  `integrations`-Quellpfad. Die **echte** Flyway-Library läuft ausschließlich über den
+  `JdbcMigrationRunner` beim JDBC-Server-State-Start von `mcp serve`
+  (`McpServeWiring.applyOrValidateMigrations`). Für Flyway-Metadaten braucht der Korpus deshalb einen
+  **MCP-Start mit PostgreSQL-Server-State und Migrate/Validate** — ein Tool-Export-Lauf oder ein
+  MCP-Standard-Handshake erzeugt sie nicht.
 - **Agent-Anbindung ist Container-Plumbing.** Die Smokes rufen die CLI als Compose-Service gegen das
   Image `d-migrate:dev` auf, nicht als nackte JVM. Der Agent muss in den containerisierten JVM-Start
   injiziert, die erzeugte Config aus dem Container herausgereicht und über ~19 Skripte per
   `--config-merge-dir` gemergt werden.
-- **Testnaht für das Binary**: `test/e2e-cli` startet die echte CLI bereits als Subprozess
-  (`RealCliSubprocess`), fest verdrahtet auf `java -cp <classpath> dev.dmigrate.cli.MainKt`. Ein
-  `DMIGRATE_CLI_BIN`-Override ist der billigste Weg, die **bestehende E2E-Suite** gegen das Native-Binary
-  zu fahren — besser als neue ad-hoc-Shell-Smokes.
-- **Reproduzierbarkeit**: Native-Build in CI mit gepinnter GraalVM-Version, nicht auf Entwickler-Laptops
-  als Quelle der Wahrheit.
+- **Testnaht für das Binary — teurer als zunächst angenommen.** `test/e2e-cli` enthält mit
+  `RealCliSubprocess` zwar einen echten Subprozess-Start (`java -cp <classpath> dev.dmigrate.cli.MainKt`),
+  aber **nur die MCP-Tests nutzen ihn**. Die Daten-/Parquet-E2Es instanziieren `DMigrate` direkt im
+  Testprozess (z. B. `DataParquetRoundTripE2EPostgresTest`: `fun cli() = DMigrate().subcommands(…)`).
+  Ein `DMIGRATE_CLI_BIN`-Override allein würde also **nur zwei Testklassen** auf das Binary umschalten.
+  Was es wirklich braucht: einen **generischen CLI-Subprozess-Adapter** plus die **tatsächliche Migration**
+  der relevanten E2Es darauf. Das ist ein eigener Arbeitspunkt, kein Einzeiler.
+- **Reproduzierbarkeit**: Native-Build in CI mit **patch-genau gepinnter** GraalVM-Version, nicht auf
+  Entwickler-Laptops als Quelle der Wahrheit. Bis 2026-07-20 stand dort `java-version: '21'` — nur die
+  Action war gepinnt, die JDK-Version floatete. Das ist deshalb keine Kosmetik, weil committete
+  Reachability-Metadaten sonst still gegen eine andere GraalVM-Version laufen. Jetzt `21.0.2`.
 
 ## 3. Phasen
 
@@ -200,6 +221,11 @@ Offene Architektur-/Linkfragen stehen ausschließlich unter Fragen 3 und 4 (kein
   (10 × 30 s) und wird danach rot.
 - Doku: `docs/user/releasing.md` 4.4.2, Verifikation 4.8, Release-Checkliste.
 - **Verifikation erst am nächsten Tag-Cut.**
+- ⚠️ **Abgeschlossen nur unter der Annahme „Native ist optional" (Frage 6 offen).** Die heutige Mechanik
+  ist bewusst **nicht** release-blockierend: `release-homebrew.yml` publiziert das Release unabhängig,
+  der Native-Workflow wartet nur darauf und lädt **nachträglich** hoch; `releasing.md` erklärt ein
+  fehlendes Native-Asset ausdrücklich für zulässig („der Release selbst bleibt gültig"). **Wird Frage 6
+  mit „Native bleibt 1.0.0-Gate" beantwortet, ist Phase E NICHT abgeschlossen** — dann fehlt Phase H.
 
 ### Phase F — Voller Funktionsumfang (der verbleibende Kern)
 
@@ -211,22 +237,33 @@ Die Konfiguration „voller Entrypoint gegen echten Modul-Classpath" ist **unget
 nur die shadowJar (brach an einem *Verpackungsfehler* ab — keine Machbarkeitsaussage), Phase B baute den
 reduzierten Entrypoint.
 
+**Scope-Grenze (wichtig, sonst zirkulär):** F.0 kann nur prüfen, was der **heutige** Korpus hergibt.
+Die kommando-lokalen Flächen (F.4) fehlen dort und werden erst in F.2 ergänzt — F.0 kann für sie also
+weder Blocker noch Reihenfolge liefern. F.0 ist deshalb auf **Bau- und Startpfad-Triage** begrenzt; die
+F.4-Reihenfolge ist Output der **Korpus-Erweiterung**, nicht von F.0.
+
 - **AP 1 — Bau**: `mainClass` auf `dev.dmigrate.cli.MainKt`, `nativeCompile` fahren. Als
   `workflow_dispatch`-Eingabe, damit `develop` keinen wissentlich roten Workflow trägt.
-- **AP 2 — Laufzeit, der eigentliche Nachweis**: Das erzeugte Binary **Kommando für Kommando** gegen den
-  Korpus ausführen und Laufzeitfehler protokollieren. Wegen `--no-fallback` bricht fehlende
-  Metadaten-Abdeckung erst hier — **ein grüner Build ist kein Blocker-Nachweis.**
-- **AP 3 — Startpfad zuerst**: `d-migrate --version` und `--help` sind der schärfste Einzeltest, weil sie
-  ServiceLoader, alle drei Treiber und ICU auslösen (s. Abschnitt 1). Schlägt das fehl, ist alles Weitere
-  gegenstandslos.
-- **AP 4 — Was steckt drin**: Aus dem Build-Report belegen, was tatsächlich erreichbar ist. Die bisherige
+- **AP 2 — Startpfad-Triage**: `d-migrate --version`/`--help` ausführen. Das ist der schärfste
+  *verfügbare* Einzeltest, weil es ServiceLoader-Auflösung, Treiber-**Instanziierung** und die
+  ICU-Provider-Konstruktion auslöst (s. Abschnitt 1). Schlägt es fehl, ist alles Weitere gegenstandslos.
+  **Grenze des Beweises**: es zeigt *Klassen-Erreichbarkeit und Provider-Konstruktion* — **nicht**, dass
+  sqlite-JNI oder ICU-Ressourcen funktionieren (s. AP 3).
+- **AP 3 — Ausführung dessen, was `--help` nicht beweist**: `SqliteDriver` lädt konstruktionsseitig
+  **keine** Nativelib, `IcuUnicodeTextService` hat einen leeren Konstruktor — beide brauchen echte
+  Nutzung. Also mindestens: eine SQLite-Operation gegen eine Datei (löst die JNI-Extraktion aus) und ein
+  Pfad über `normalize`/`graphemeCount` (löst ICU-Daten-Resources aus).
+- **AP 4 — Kern-Kommandos gegen den heutigen Korpus**: schema- und data-Pfade kommandoweise ausführen
+  und Laufzeitfehler protokollieren. Der Build allein ist kein Blocker-Nachweis (s. Gotcha zu
+  `--no-fallback`).
+- **AP 5 — Was steckt drin**: Aus dem Build-Report belegen, was tatsächlich erreichbar ist. Die bisherige
   Aussage „das Binary bleibt JDBC-frei" stützte sich allein auf ein Größendelta.
-- **AP 5 — Ressourcenbudget**: Bau-Zeit und Speicherbedarf messen. Das `timeout-minutes: 60` ist am
+- **AP 6 — Ressourcenbudget**: Bau-Zeit und Speicherbedarf messen. Das `timeout-minutes: 60` ist am
   **reduzierten** Entrypoint gemessen; der volle Bau zieht Hadoop, ICU und AWS SDK. Der Phase-A-Spike lief
   lokal auf 31 GiB RAM, GitHub-Runner haben rund 7 GB — ein `-J-Xmx`-Bedarf oder OOM ist ein absehbarer
   Ausfallmodus.
-- **Ergebnis**: konkrete Blockerliste plus Reihenfolge für F.3/F.4 — beides Voraussetzung, um Frage 6
-  seriös zu beantworten.
+- **Ergebnis**: Blockerliste und Reihenfolge **für den Startpfad (F.3)** plus Ressourcenbudget. Für
+  Frage 6 ist das die halbe Grundlage; die andere Hälfte liefert die Korpus-Erweiterung in F.2.
 
 #### F.1 — Entrypoint zusammenführen
 Rückbau-Liste, vollständig (fail-closed-Gates hängen daran):
@@ -297,6 +334,23 @@ Arbeitspunkte, falls gebraucht:
 Bedingung bleibt: das Binary **kennt** das Kommando und lehnt begründet ab — kein stilles Fehlen
 (Schwelle in Abschnitt 0).
 
+### Phase H — Release-Orchestrierung (nur falls Frage 6 = „Native bleibt 1.0.0-Gate")
+
+Heute ist der Native-Build **nicht** release-blockierend (Begründung unter Phase E). Solange Native
+optional ist, ist das korrekt und gewollt: ein Zusatzkanal soll keinen Release aufhalten — dieselbe
+Logik wie beim Docker-Hub-Spiegel.
+
+**Wird Native zum Gate, kehrt sich das um** und diese Phase wird nötig:
+- Reihenfolge umdrehen oder koppeln: der Release darf erst entstehen bzw. erst sichtbar werden, wenn
+  alle OS-Legs grün sind (Job-Abhängigkeit zwischen `native-image.yml` und `release-homebrew.yml` oder
+  Zusammenführung in einen Workflow).
+- `fail-fast: false` neu bewerten: heute darf ein rotes Leg die anderen weiterlaufen lassen und der
+  Release bleibt gültig — als Gate müsste ein rotes Leg den Release verhindern.
+- `docs/user/releasing.md` 4.4.2/4.8 nachziehen: dort steht ausdrücklich „der Release selbst bleibt
+  gültig", was dann nicht mehr stimmt.
+- Wirkung auf die Release-Dauer beachten: der Native-Bau lag bei 5–8 min je OS **am reduzierten**
+  Entrypoint; der volle Bau ist unbekannt (F.0 AP 6) und läge dann auf dem kritischen Pfad jedes Releases.
+
 ## Phase A — Ergebnisse (Spike 2026-07-19)
 
 > Die **Messungen** bleiben gültig; die daraus damals gezogene Scope-Folgerung ist durch Abschnitt 0
@@ -352,8 +406,10 @@ und ohne ICU — also gerade ohne die Flächen, die Abschnitt 1 als Startpfad-kr
    Offene Restfrage: **linux-arm64 ja/nein?**
 5. **MCP im Native-Binary**: `mcp serve` (stdio) ist ungeprüft — Bearbeitung in **F.4**.
 6. **Offen, Eigner-Entscheidung: bleibt Native ein 1.0.0-Gate?** Voller Funktionsumfang bedeutet
-   Metadaten-Arbeit mit offenem Ausgang. **F.0 liefert die Grundlage** — vorher ist die Frage nicht
-   seriös beantwortbar.
+   Metadaten-Arbeit mit offenem Ausgang. Grundlage: **F.0** (Startpfad + Ressourcenbudget) **plus die
+   Korpus-Erweiterung in F.2** — F.0 allein deckt die kommando-lokalen Flächen nicht ab.
+   **Zweite Konsequenz:** ein „Ja" macht **Phase H** nötig und Phase E unfertig, weil die heutige
+   Mechanik einen roten Native-Build ausdrücklich toleriert.
 7. **Spec-Lücken, die das Akzeptanzkriterium berühren**: `spec/cli-spec.md` listet
    `--sqlite-named-sequences` nicht in der `generate`-Flag-Tabelle (obwohl implementiert) und fordert
    `--source -` (stdin) für `schema validate`, was der Code nicht kann. „Identische Aufrufsyntax nach
@@ -361,7 +417,8 @@ und ohne ICU — also gerade ohne die Flächen, die Abschnitt 1 als Startpfad-kr
 
 ## 5. Vorbedingungen
 
-- **GraalVM-Toolchain in CI** (gepinnt, je OS) — **erfüllt**.
+- **GraalVM-Toolchain in CI** (patch-genau gepinnt auf `21.0.2`, je OS) — **erfüllt seit 2026-07-20**;
+  davor floatete die JDK-Version trotz gepinnter Action.
 - **Repräsentativer Smoke-Korpus** — **teilweise erfüllt**: der Kern ist abgedeckt, die
   Schwergewichts-Flächen (Parquet, Tool-Export, MCP, ICU, S3, `data profile`) **nicht**. Erweiterung ist
   Arbeitspunkt in F.2.
