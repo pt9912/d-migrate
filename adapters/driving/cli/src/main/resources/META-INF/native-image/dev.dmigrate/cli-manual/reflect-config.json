@@ -1,8 +1,734 @@
 [
   {
-    "condition": { "typeReachable": "com.zaxxer.hikari.HikariConfig" },
+    "condition": {
+      "typeReachable": "com.zaxxer.hikari.HikariConfig"
+    },
     "name": "com.zaxxer.hikari.HikariConfig",
     "allPublicMethods": true,
     "queryAllPublicMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.ConcurrentMessageProcessor$1",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.ConcurrentMessageProcessor",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.JsonRpcMethod",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.JsonRpcMethodProvider",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.MessageConstants",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.MethodProvider",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.ResponseJsonAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.StreamMessageConsumer",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.StreamMessageProducer$Headers",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.StreamMessageProducer",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.CollectionTypeAdapter$Factory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.CollectionTypeAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.CollectionTypeAdapterFactory$Adapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.CollectionTypeAdapterFactory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EitherTypeAdapter$EitherTypeArgument",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EitherTypeAdapter$Factory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EitherTypeAdapter$ListChecker",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EitherTypeAdapter$PropertyChecker",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EitherTypeAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EitherTypeAdapterFactory$Adapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EitherTypeAdapterFactory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EnumTypeAdapter$Factory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EnumTypeAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.EnumTypeAdapterFactory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.JsonElementTypeAdapter$Factory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.JsonElementTypeAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.MessageTypeAdapter$Factory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.MessageTypeAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.MessageTypeAdapterFactory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.ThrowableTypeAdapter$Factory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.ThrowableTypeAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.TupleTypeAdapters$TwoTypeAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.TupleTypeAdapters$TwoTypeAdapterFactory",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.TupleTypeAdapters",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.TypeUtils$ParameterizedTypeImpl",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.json.adapters.TypeUtils",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.CancelParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.Either",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.Either3",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.IdentifiableMessage",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.Message",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.MessageIssue",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.NotificationMessage",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.RequestMessage",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.ResponseError",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.ResponseMessage",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.Tuple$Two",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "org.eclipse.lsp4j.jsonrpc.messages.Tuple",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ToolsListResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptsGetParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ResourcesListParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ReadResourceResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ToolsCallResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ResourcesTemplatesListResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.Resource",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ResourcesListResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptsGetResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ToolMetadata",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ClientCapabilities",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.McpServiceImpl$1",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ResourceContents",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ResourcesTemplatesListParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ServerCapabilities",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.McpProtocol",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.StrictReadResourceParamsAdapter",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptListEntry",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.InitializeResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.StrictReadResourceParamsAdapter$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ToolsCallContent",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ToolsListParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptArgumentDescriptor",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ReadResourceParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ResourceTemplate",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.McpService",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ServerInfo",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptContent",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ToolsCallParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptsListResult",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.McpServiceImpl$Companion",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptsListParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.McpServiceImpl",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.PromptMessage",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.ClientInfo",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
+  },
+  {
+    "name": "dev.dmigrate.mcp.protocol.InitializeParams",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "queryAllDeclaredMethods": true,
+    "unsafeAllocated": true
   }
 ]
