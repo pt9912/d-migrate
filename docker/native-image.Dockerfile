@@ -1,0 +1,55 @@
+# Lokale GraalVM-Native-Image-Umgebung (Linux) fuer die Metadaten-Schleife des GraalVM-Slices
+# (docs/planning/in-progress/graalvm-native-image-distribution.md, Phase F).
+#
+# Warum ein eigenes Dockerfile und keine Stage in der Haupt-Dockerfile: dort leiten ALLE Stages von
+# `gradle:8.12-jdk21` ab. native-image braucht eine GraalVM-Toolchain, die dieses Image nicht hat —
+# eine GraalVM-basierte Stage wuerde die Toolchain-Annahme der Datei brechen. Ausserdem wuerde eine
+# angehaengte Stage die "letzte Stage"-Semantik von `docker build .` verschieben.
+#
+# Warum ueberhaupt lokal: eine CI-Messrunde kostet ~8 min (Linux) bis ~25 min (3 OS) plus
+# Dispatch-Overhead. Metadaten-Arbeit ist iterativ — lokal sind es Minuten (gemessen: 270 s gegen
+# 468 s in CI, bei 20 Kernen statt ~4). CI wird damit wieder die Bestaetigung auf allen drei
+# Plattformen statt das Experimentierwerkzeug.
+#
+# HERMETISCH wie der Haupt-Build: die Quellen werden KOPIERT, nicht gemountet. Ein Bind-Mount
+# liesse Gradle `.gradle/`, `.kotlin/` und `build/` in den Arbeitsbaum schreiben; die
+# Haupt-Dockerfile vermeidet das durchgaengig, und `.dockerignore` haelt den Kontext klein.
+
+# Gradle-Quelle: dasselbe Image und dieselbe Version wie jede Stage der Haupt-Dockerfile.
+FROM gradle:8.12-jdk21 AS gradle-dist
+
+# Basis patch-genau auf 21.0.2 gepinnt, identisch zu `java-version` in
+# .github/workflows/native-image.yml — sonst waeren lokale Ergebnisse nicht auf CI uebertragbar.
+FROM ghcr.io/graalvm/native-image-community:21.0.2 AS native-build
+
+# findutils liefert `xargs`. Gradle 8.12 verlangt es in SEINEM Startskript
+# (/opt/gradle/bin/gradle Zeile 222, "xargs is not available") — also nicht nur im Wrapper. Das
+# gradle-Basis-Image bringt findutils mit, das minimale GraalVM-Image nicht; ohne diese Zeile
+# kommt der Build gar nicht erst in Gang.
+RUN microdnf install -y findutils \
+    && microdnf clean all
+
+# Gradle aus dem offiziellen Image uebernehmen statt den Wrapper zu benutzen: die Haupt-Dockerfile
+# ruft ebenfalls `gradle --no-daemon`, und der Wrapper wuerde die Distribution bei jedem frischen
+# Container neu herunterladen, obwohl das Basis-Image sie fertig mitbringt.
+COPY --from=gradle-dist /opt/gradle /opt/gradle
+ENV GRADLE_HOME=/opt/gradle
+ENV PATH="/opt/gradle/bin:${PATH}"
+
+WORKDIR /src
+COPY . .
+
+# core = reduzierter NativeMain, full = voller MainKt (Messkonfiguration Phase F.0).
+ARG NATIVE_ENTRYPOINT=full
+# Leer = GraalVM-Default `Throw`. `Warn` ist der Diagnosemodus (s. make/native.mk), nie fuer ein
+# ausgeliefertes Binary.
+ARG NATIVE_MISSING_REG_MODE=
+RUN gradle --no-daemon :adapters:driving:cli:nativeCompile \
+      -PnativeEntrypoint=${NATIVE_ENTRYPOINT} \
+      $(test -n "${NATIVE_MISSING_REG_MODE}" \
+        && echo "-PnativeMissingRegistrationMode=${NATIVE_MISSING_REG_MODE}" || true)
+
+# Artefakt-Auslieferung wie die release-assets-Stage der Haupt-Dockerfile: die Stage gibt das
+# Artefakt auf stdout aus, der Aufrufer leitet es um. Kein Mount, kein Schreiben in den Arbeitsbaum.
+# nosemgrep: config.semgrep.missing-user -- ephemere lokale Build-Stage (cat eines Build-Artefakts), nie ein publiziertes Runtime-Image
+ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/native/nativeCompile/d-migrate"]

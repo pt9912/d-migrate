@@ -32,6 +32,20 @@ application {
 // Messung per `workflow_dispatch` angefordert wird. Nach Phase F.1 faellt der Schalter weg und `full`
 // wird der einzige Entrypoint.
 val nativeEntrypoint = providers.gradleProperty("nativeEntrypoint").getOrElse("core")
+
+// Diagnose-Schalter fuer Phase F.0: `-PnativeMissingRegistrationMode=Warn`.
+//
+// BEFUND F.0-Runde 2: WIRKUNGSLOS fuer den hier auftretenden Fall. Die Option wird vom Builder
+// akzeptiert (Build-Log: "origin(s): command line"), aendert aber nichts an den geworfenen
+// `MissingReflectionRegistrationError`s aus `forQueriedOnlyExecutable`. Die Hoffnung, damit alle
+// Luecken in EINEM Lauf zu erheben statt Schicht fuer Schicht, hat sich nicht erfuellt.
+//
+// Der Schalter bleibt, weil er fuer andere Fehlerklassen greifen kann und der Messapparat sonst
+// wieder von Hand zusammengesetzt werden muesste. Ausdruecklich NUR fuer Messlaeufe: im
+// ausgelieferten Binary muss eine fehlende Registrierung hart scheitern, nicht stillschweigend
+// weiterlaufen. Deshalb opt-in und NICHT an `nativeEntrypoint=full` gekoppelt — `full` wird
+// spaeter der ausgelieferte Entrypoint.
+val nativeMissingRegistrationMode = providers.gradleProperty("nativeMissingRegistrationMode").orNull
 val nativeMainClass = when (nativeEntrypoint) {
     "full" -> "dev.dmigrate.cli.MainKt"
     "core" -> "dev.dmigrate.cli.NativeMainKt"
@@ -43,8 +57,12 @@ graalvmNative {
     toolchainDetection.set(false)
 
     // GraalVM Reachability Metadata Repository: gepflegte Metadaten fuer verbreitete Bibliotheken.
-    // Adressiert ganze Klassen statt einzelner Befunde — der F.0-Messlauf 29723222968 zeigte
-    // HikariCP-Reflection (PropertyElf.getProperty) als Blocker, eine sehr verbreitete Abhaengigkeit.
+    //
+    // BEFUND F.0-Runde 1: aktiviert, aber ohne messbare Wirkung — weder im Build-Log noch im
+    // Verhalten. HikariCP-Reflection (PropertyElf.getProperty -> HikariConfig.getCredentials())
+    // blieb unveraendert ein Blocker. Bleibt aktiviert (schadet nicht, greift ggf. nach einem
+    // Plugin-/Versions-Abgleich), traegt die Loesung aber NICHT — die kommt ueber den
+    // Tracing-Agent in Phase F.2.
     metadataRepository {
         enabled.set(true)
     }
@@ -61,6 +79,9 @@ graalvmNative {
             // Vorlaeufig als buildArg: haelt das Fat-JAR unberuehrt. Die dauerhafte Form
             // (committetes reachability-metadata vs. buildArg) entscheidet Phase F.2.
             buildArgs.add("-H:IncludeResourceBundles=messages.messages")
+            if (nativeMissingRegistrationMode != null) {
+                buildArgs.add("-H:MissingRegistrationReportingMode=$nativeMissingRegistrationMode")
+            }
         }
     }
 }

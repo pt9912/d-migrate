@@ -178,6 +178,12 @@ include make/gate.mk
 # (v0.12.0) lebt dort.
 include make/a-check.mk
 
+# native — GraalVM-Native-Image lokal (Linux) im Container. native-image braucht eine
+# GraalVM-Toolchain, die `gradle:8.12-jdk21` nicht hat; deshalb ein eigenes Dockerfile mit
+# GraalVM-Basis + Gradle aus demselben Basis-Image wie der Haupt-Build. Pin (21.0.2) lebt dort
+# und muss zu .github/workflows/native-image.yml passen.
+include make/native.mk
+
 # ast-grep — syntax-bewusster (Tree-sitter) struktureller Such-/Rewrite-Helfer für
 # große mechanische Umbauten (Signatur-/Rename über viele Call-Sites), wo Regex an
 # Strings/Kommentaren/Formatvarianten scheitert (memory feedback_syntax_aware_refactor).
