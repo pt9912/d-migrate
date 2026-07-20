@@ -19,7 +19,7 @@ import java.nio.file.Path
 
 /**
  * **GraalVM-Native-Image Core-Entrypoint** (1.0.0-Stable-Gate,
- * `docs/planning/next/graalvm-native-image-distribution.md`, Phase B).
+ * `docs/planning/in-progress/graalvm-native-image-distribution.md`, Phase B).
  *
  * Bewusst **reduziert**: nur die native-image-fähigen, DB-freien Kern-Kommandos — **ohne** die
  * eager-`IcuUnicodeTextService`-Verdrahtung der vollen [DMigrate]-Wurzel und **ohne** die

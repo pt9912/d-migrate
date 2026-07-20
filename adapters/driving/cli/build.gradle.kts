@@ -10,7 +10,7 @@ plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.google.cloud.tools.jib") version "3.4.5"
-    // GraalVM Native Image (1.0.0-Stable-Gate, docs/planning/next/graalvm-native-image-distribution.md).
+    // GraalVM Native Image (docs/planning/in-progress/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
     id("org.graalvm.buildtools.native") version "0.10.3"
@@ -21,15 +21,30 @@ application {
     mainClass.set("dev.dmigrate.cli.MainKt")
 }
 
-// Native-Image-Bau des REDUZIERTEN Core-Entrypoints [dev.dmigrate.cli.NativeMain] (nicht der volle
-// `MainKt` — der zieht ICU/Parquet/S3 eager). Rezept aus dem Phase-B-Spike: logback/slf4j build-time.
+// Native-Image-Entrypoint, umschaltbar per `-PnativeEntrypoint=core|full`.
+//
+//   core (Default) — der reduzierte [dev.dmigrate.cli.NativeMain]. Reproduzierbar gruen.
+//   full           — der volle `MainKt`. Messkonfiguration fuer Phase F.0 des GraalVM-Slices
+//                    (docs/planning/in-progress/graalvm-native-image-distribution.md).
+//
+// Warum ein Schalter statt eines harten Wechsels: `full` ist erwartbar rot, solange die
+// Reachability-Metadaten fehlen. Der Default haelt `develop` und den Tag-Pfad gruen, waehrend die
+// Messung per `workflow_dispatch` angefordert wird. Nach Phase F.1 faellt der Schalter weg und `full`
+// wird der einzige Entrypoint.
+val nativeEntrypoint = providers.gradleProperty("nativeEntrypoint").getOrElse("core")
+val nativeMainClass = when (nativeEntrypoint) {
+    "full" -> "dev.dmigrate.cli.MainKt"
+    "core" -> "dev.dmigrate.cli.NativeMainKt"
+    else -> error("nativeEntrypoint must be 'core' or 'full', was '$nativeEntrypoint'")
+}
+
 graalvmNative {
     // Keine GraalVM-Toolchain-Suche zur Konfigurationszeit — hält den JDK-21-Build (ohne GraalVM) grün.
     toolchainDetection.set(false)
     binaries {
         named("main") {
             imageName.set("d-migrate")
-            mainClass.set("dev.dmigrate.cli.NativeMainKt")
+            mainClass.set(nativeMainClass)
             buildArgs.add("--no-fallback")
             buildArgs.add("--initialize-at-build-time=ch.qos.logback,org.slf4j")
         }

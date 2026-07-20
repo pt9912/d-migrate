@@ -13,6 +13,14 @@ name: Native Image
 
 on:
   workflow_dispatch:
+    inputs:
+      entrypoint:
+        description: 'core = reduzierter NativeMain (gruen). full = voller MainKt, Messlauf Phase F.0.'
+        type: choice
+        options:
+          - core
+          - full
+        default: core
   push:
     tags:
       - 'v*'
@@ -45,8 +53,10 @@ jobs:
 
     # Der direkte ./gradlew-Aufruf (nicht über Docker) braucht den bewussten Override des
     # Local-Gradle-Guards; native-image kann nicht im Docker-Build-Image (JDK 21 ohne GraalVM) laufen.
+    # Tag-Laeufe haben keine Inputs -> 'core'. Nur ein ausdruecklicher Dispatch waehlt 'full'.
     env:
       DMIGRATE_ALLOW_LOCAL_GRADLE: '1'
+      NATIVE_ENTRYPOINT: ${{ inputs.entrypoint || 'core' }}
 
     steps:
       - name: Checkout repository
@@ -66,8 +76,21 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'
 
-      - name: Native compile (core-subset entrypoint)
-        run: ./gradlew --no-daemon :adapters:driving:cli:nativeCompile
+      - name: Native compile
+        id: compile
+        # F.0 AP 6 (Ressourcenbudget): Wandzeit messen und den native-image-Bauabschluss (u. a. Peak RSS)
+        # aus dem Log herausziehen. Das 60-min-Timeout wurde am REDUZIERTEN Entrypoint gemessen; fuer
+        # `full` ist der Bedarf unbekannt, und GitHub-Runner haben ~7 GB gegen die 31 GiB des Spikes.
+        run: |
+          set -o pipefail
+          echo "entrypoint: ${NATIVE_ENTRYPOINT}"
+          start=$(date +%s)
+          ./gradlew --no-daemon :adapters:driving:cli:nativeCompile \
+            "-PnativeEntrypoint=${NATIVE_ENTRYPOINT}" 2>&1 | tee native-build.log
+          status=$?
+          end=$(date +%s)
+          echo "build_seconds=$(( end - start ))" >> "${GITHUB_OUTPUT}"
+          exit "${status}"
 
       - name: Stage binary under its platform asset name
         id: stage
@@ -128,9 +151,95 @@ jobs:
           echo "platform=${PLATFORM_OS}-${PLATFORM_ARCH}" >> "${GITHUB_OUTPUT}"
           ls -la dist
 
+      - name: Phase F.0 measurement (full entrypoint only)
+        if: env.NATIVE_ENTRYPOINT == 'full'
+        # MESSUNG, kein Gate: jede Sonde wird ausgefuehrt, ihr Exit-Code und stderr-Auszug
+        # protokolliert, und der Step endet bewusst gruen. Ein Fehlschlag ist hier ein BEFUND, kein
+        # Jobfehler — wuerde der Step abbrechen, bekaeme man nur den ersten Blocker statt der Liste.
+        #
+        # Exit-Codes einordnen: 2 = CLI-Usage (falsch aufgerufene Sonde, KEIN native-image-Blocker),
+        # 3 = fachliche Ablehnung, 1/134/andere = typischerweise fehlende Reachability-Metadaten.
+        shell: bash
+        run: |
+          set -uo pipefail
+          BIN="dist/${{ steps.stage.outputs.asset }}"
+          REPORT="f0-report-${{ steps.stage.outputs.platform }}.md"
+          SCHEMA="examples/sample-db/calib-schema.yaml"
+          PROBE_DB="$(pwd)/f0-probe.db"
+
+          {
+            echo "# Phase F.0 — Messlauf"
+            echo
+            echo "- Plattform: ${{ steps.stage.outputs.platform }}"
+            echo "- Entrypoint: full (dev.dmigrate.cli.MainKt)"
+            echo "- Bauzeit: ${{ steps.compile.outputs.build_seconds }} s"
+            echo
+            echo "| # | Sonde | Zweck | Exit | Ergebnis |"
+            echo "| --- | --- | --- | --- | --- |"
+          } > "${REPORT}"
+
+          n=0
+          probe() {
+            local purpose="$1"; shift
+            n=$((n + 1))
+            local out rc
+            out="$("$@" 2>&1)" && rc=0 || rc=$?
+            printf '%s\n' "--- probe ${n}: $* (exit ${rc})" >&2
+            printf '%s\n' "${out}" | tail -5 >&2
+            local verdict
+            case "${rc}" in
+              0) verdict="ok" ;;
+              2) verdict="usage (keine Aussage)" ;;
+              3) verdict="fachliche Ablehnung" ;;
+              *) verdict="**Blocker-Kandidat**" ;;
+            esac
+            local excerpt
+            excerpt="$(printf '%s' "${out}" | tail -1 | tr '|' '/' | cut -c1-90)"
+            printf '| %s | %s | %s | %s | %s — %s |\n' \
+              "${n}" "$*" "${purpose}" "${rc}" "${verdict}" "${excerpt}" >> "${REPORT}"
+          }
+
+          # AP 2 — Startpfad: loest ServiceLoader-Aufloesung + Treiber-/ICU-Provider-Konstruktion aus.
+          probe "Startpfad (ServiceLoader, Provider-Konstruktion)" "${BIN}" --version
+          probe "Startpfad (Kommandobaum)"                         "${BIN}" --help
+
+          # AP 3 — was --help NICHT beweist: ICU-Daten (norm() im Validierungs-Header) und sqlite-JNI.
+          probe "ICU-Resources (normalize im Header)" \
+            "${BIN}" schema validate --source "${SCHEMA}"
+          probe "sqlite-JNI Schreibpfad (Nativelib-Extraktion)" \
+            "${BIN}" schema migrate --source "${SCHEMA}" --target "db:sqlite:///${PROBE_DB}" \
+              --execute --report f0-migrate-report.yaml
+          probe "sqlite-JNI Lesepfad" \
+            "${BIN}" schema reverse --source "sqlite:///${PROBE_DB}" --output f0-reverse.yaml
+
+          # AP 4 — Kern-Kommandos gegen den HEUTIGEN Korpus (kommando-lokale Flaechen fehlen dort, F.2).
+          probe "DDL-Rendering PostgreSQL" \
+            "${BIN}" schema generate --source "${SCHEMA}" --target postgresql --output f0-pg.sql
+          probe "DDL-Rendering MySQL" \
+            "${BIN}" schema generate --source "${SCHEMA}" --target mysql --output f0-my.sql
+          probe "DDL-Rendering SQLite" \
+            "${BIN}" schema generate --source "${SCHEMA}" --target sqlite --output f0-lite.sql
+          probe "JSON-Ausgabepfad (zweiter Formatter-Zweig)" \
+            "${BIN}" --output-format json schema validate --source "${SCHEMA}"
+
+          {
+            echo
+            echo "## Bauabschluss (native-image)"
+            echo
+            grep -iE "Finished generating|Peak RSS|GB of memory|Build resources|Total memory" \
+              native-build.log | tail -20 | sed 's/^/    /' \
+              || echo "    (keine Kennzahlen im Log gefunden)"
+          } >> "${REPORT}"
+
+          echo "::group::F.0-Report"
+          cat "${REPORT}"
+          echo "::endgroup::"
+          cat "${REPORT}" >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Smoke-test the native binary
-        # Smoked das GESTAGTE Binary, also exakt das Artefakt, das ans Release geht.
-        # macOS/Windows sind lokal nicht verifizierbar — dieser Step ist dort die
+        if: env.NATIVE_ENTRYPOINT == 'core'
+        # Gate NUR fuer den Core-Entrypoint. Smoked das GESTAGTE Binary, also exakt das Artefakt, das
+        # ans Release geht. macOS/Windows sind lokal nicht verifizierbar — dieser Step ist dort die
         # einzige Selbstvalidierung, deshalb deckt er beide nativen Kommandos ab.
         run: |
           set -euo pipefail
@@ -150,11 +259,26 @@ jobs:
             || { echo "::error::generate produced no CREATE TABLE"; exit 1; }
 
       - name: Upload native binary
+        if: env.NATIVE_ENTRYPOINT == 'core'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: d-migrate-native-${{ steps.stage.outputs.platform }}
           path: dist/*
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload F.0 measurement artefacts
+        # `always()`: bei einem gescheiterten `full`-Bau ist das Build-Log GENAU das Messergebnis —
+        # ohne diesen Upload waere der Lauf ohne Befund. Nie am Release beteiligt (eigener Name).
+        if: always() && env.NATIVE_ENTRYPOINT == 'full'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: f0-measurement-${{ matrix.os }}
+          path: |
+            native-build.log
+            f0-report-*.md
+            adapters/driving/cli/build/native/nativeCompile/reports/**
+          if-no-files-found: warn
           retention-days: 14
 
   attach-release:
