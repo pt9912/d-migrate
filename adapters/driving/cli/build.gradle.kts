@@ -13,7 +13,7 @@ plugins {
     // GraalVM Native Image (docs/planning/in-progress/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
-    id("org.graalvm.buildtools.native") version "0.10.3"
+    id("org.graalvm.buildtools.native") version "1.1.5"
 }
 
 application {
@@ -65,12 +65,25 @@ graalvmNative {
 
     // GraalVM Reachability Metadata Repository: gepflegte Metadaten fuer verbreitete Bibliotheken.
     //
-    // BEFUND: zeigt KEINE messbare Wirkung — weder ohne noch MIT gepinnter `version` (0.3.15,
-    // beides gemessen) erscheint ein GRMR-Hinweis im Build-Log. Die Loesung der Metadaten-Blocker
-    // kam ausschliesslich ueber den Tracing-Agent (`make native-agent`). Bleibt aktiviert, weil es
-    // nicht schadet und kuenftige Plugin-Versionen es nutzen koennten — aber NICHT darauf verlassen.
+    // BEFUND: zeigte mit Plugin 0.10.3 KEINE messbare Wirkung — kein GRMR-Hinweis im Build-Log,
+    // weder ohne noch mit gepinnter `version`. **Die naheliegende Erklaerung war falsch:** GRMR
+    // deckt unsere HikariCP-Version (6.2.1) sehr wohl ab, und seine Metadaten enthalten genau den
+    // Eintrag `com.zaxxer.hikari.HikariConfig -> methods`, der den Blocker behoben haette.
+    //
+    // Aufgeklaerte Kette: Plugin 0.10.3 (2024) tat gar nichts mit dem Repository. Plugin 1.1.5 loest
+    // es auf und meldete zuerst "Requires GraalVM Reachability Metadata 0.3.33 or newer" (der Pin
+    // 0.3.15 war unbesehen aus einem Vergleichsprojekt uebernommen), dann mit GRMR 1.0.7
+    // "provides a reachability-metadata schema, but your GraalVM installation does not" — daher
+    // GraalVM 25.
+    //
+    // ERGEBNIS trotzdem ernuechternd: unter GraalVM 25 laeuft GRMR fehlerfrei, steuert fuer uns aber
+    // NICHTS bei. Gemessen mit erzwungenem DEBUG-Logging (das den reflektiven Hikari-Pfad ausloest):
+    // ohne unsere handgepflegte Registrierung bricht das Binary weiterhin mit
+    // "Cannot reflectively invoke method HikariConfig.isAllowPoolSuspension()". Die
+    // GRMR-Metadaten enthalten den passenden Eintrag zwar, er wird aber nicht wirksam.
+    // Bleibt aktiviert (kostet nichts), ersetzt jedoch KEINE eigene Konfiguration.
     metadataRepository {
-        version.set("0.3.15")
+        version.set("1.0.7")
         enabled.set(true)
     }
     binaries {

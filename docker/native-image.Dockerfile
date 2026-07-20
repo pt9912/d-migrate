@@ -18,9 +18,10 @@
 # Gradle-Quelle: dasselbe Image und dieselbe Version wie jede Stage der Haupt-Dockerfile.
 FROM gradle:8.12-jdk21 AS gradle-dist
 
-# Basis patch-genau auf 21.0.2 gepinnt, identisch zu `java-version` in
-# .github/workflows/native-image.yml — sonst waeren lokale Ergebnisse nicht auf CI uebertragbar.
-FROM ghcr.io/graalvm/native-image-community:21.0.2 AS native-build
+# GraalVM 25 als Basis. Noetig fuer das GraalVM Reachability Metadata Repository: dessen
+# vereinheitlichtes `reachability-metadata.json`-Schema kennt GraalVM 21.0.2 nicht
+# ("provides a reachability-metadata schema, but your GraalVM installation does not").
+FROM ghcr.io/graalvm/native-image-community:25 AS native-build
 
 # findutils liefert `xargs`. Gradle 8.12 verlangt es in SEINEM Startskript
 # (/opt/gradle/bin/gradle Zeile 222, "xargs is not available") — also nicht nur im Wrapper. Das
@@ -34,7 +35,27 @@ RUN microdnf install -y findutils \
 # Container neu herunterladen, obwohl das Basis-Image sie fertig mitbringt.
 COPY --from=gradle-dist /opt/gradle /opt/gradle
 ENV GRADLE_HOME=/opt/gradle
-ENV PATH="/opt/gradle/bin:${PATH}"
+
+# ZWEI JDKs, bewusst getrennt:
+#   JAVA_HOME    = JDK 21 -> hier laufen Gradle und der Kotlin-Compiler
+#   GRAALVM_HOME = GraalVM 25 -> hier laeuft native-image
+#
+# Grund: Kotlin 2.1.20 kann auf JDK 25 nicht STARTEN. Sein mitgeliefertes IntelliJ-`JavaVersion`
+# scheitert am Parsen der Versionsnummer:
+#   java.lang.IllegalArgumentException: 25.0.2
+#     at org.jetbrains.kotlin.com.intellij.util.lang.JavaVersion.parse
+#     at ...JavaVersionUtilsKt.isAtLeastJava9
+#     at ...KotlinCoreEnvironment.<init>
+# Das ist kein GraalVM-, Gradle- oder Plugin-Problem, sondern die Laufzeit-JVM des Compilers.
+#
+# Die Trennung ist moeglich, weil `toolchainDetection=false` gesetzt ist: das native-build-tools-
+# Plugin nimmt dann GRAALVM_HOME statt einer Gradle-Toolchain ("GraalVM location read from
+# environment variable: GRAALVM_HOME"). Das Projekt bleibt damit auf seinem JDK-21-Ziel — der
+# Sprung auf 25 betrifft ausschliesslich den native-image-Schritt.
+COPY --from=gradle-dist /opt/java/openjdk /opt/jdk21
+ENV JAVA_HOME=/opt/jdk21
+ENV GRAALVM_HOME=/usr/lib64/graalvm/graalvm-community-java25
+ENV PATH="/opt/jdk21/bin:/opt/gradle/bin:${PATH}"
 
 WORKDIR /src
 COPY . .

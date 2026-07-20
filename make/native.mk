@@ -34,22 +34,34 @@ native-build: ## Native: Binary im Container bauen (NATIVE_ENTRYPOINT=core|full)
 native-diagnose: ## Native: F.0-Diagnoselauf — alle fehlenden Registrierungen auf einmal erheben.
 	$(MAKE) native-probe NATIVE_MISSING_REG_MODE=Warn
 
-NATIVE_AGENT_OUT ?= build/native-agent
+# Direkt an den Bestimmungsort im QUELLBAUM — kein Zwischenlager.
+#
+# Die Agent-Ausgabe ist keine Build-Ausgabe, sondern committeter Quellcode: native-image liest sie
+# aus META-INF/native-image/. Ein Zwischenverzeichnis (weder `build/` im Repo noch ~/.cache) waere
+# nur unsichtbarer Zwischenzustand. Direkt hierher zu schreiben macht jede Aenderung als `git diff`
+# sichtbar — die beste verfuegbare Kontrolle, nicht die schlechteste.
+#
+# NICHT beruehrt wird das Nachbarverzeichnis `dev.dmigrate/cli-manual/`: dort liegt handgepflegte
+# Konfiguration, die ein Agent-Lauf sonst ueberschriebe.
+NATIVE_AGENT_OUT ?= adapters/driving/cli/src/main/resources/META-INF/native-image/dev.dmigrate/cli
 
 .PHONY: native-agent
 native-agent: ## Native: Reachability-Metadaten per Tracing-Agent erheben (Phase F.2).
 	$(DOCKER) build -f docker/native-image.Dockerfile --target native-agent \
 	  -t $(NATIVE_IMAGE_TAG)-agent .
-	rm -rf $(NATIVE_AGENT_OUT) && mkdir -p $(NATIVE_AGENT_OUT)
-	$(DOCKER) run --rm $(NATIVE_IMAGE_TAG)-agent | tar xf - -C $(NATIVE_AGENT_OUT)
-	@echo "--- Deckungsnachweis (Audit-Log): welche Operationen liefen wirklich? ---"
-	@if [ -f $(NATIVE_AGENT_OUT)/audit.log ]; then \
-	  cat $(NATIVE_AGENT_OUT)/audit.log; \
-	else \
-	  echo "KEIN Audit-Log erzeugt — Deckung unbelegt."; \
-	fi
-	@echo "--- erzeugte Metadaten ---"
-	@wc -l $(NATIVE_AGENT_OUT)/config/*.json 2>/dev/null || true
+	@# Einmal-Shell (Backslash-Fortsetzung): make faehrt sonst jede Zeile in einer eigenen Shell,
+	@# und das Temp-Verzeichnis waere in der naechsten Zeile schon vergessen.
+	@set -eu; \
+	tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
+	$(DOCKER) run --rm $(NATIVE_IMAGE_TAG)-agent | tar xf - -C "$$tmp"; \
+	echo "--- Deckungsnachweis (Audit-Log): welche Operationen liefen wirklich? ---"; \
+	if [ -s "$$tmp/audit.log" ]; then cat "$$tmp/audit.log"; \
+	else echo "KEIN Audit-Log erzeugt — Deckung UNBELEGT."; fi; \
+	echo "--- uebernommene Metadaten (nur die JSON-Konfiguration) ---"; \
+	mkdir -p $(NATIVE_AGENT_OUT); \
+	cp "$$tmp"/config/*.json $(NATIVE_AGENT_OUT)/; \
+	wc -l $(NATIVE_AGENT_OUT)/*.json; \
+	echo "--- Aenderung pruefen: git diff $(NATIVE_AGENT_OUT) ---"
 
 .PHONY: native-binary
 native-binary: native-build ## Native: gebautes Binary nach $(NATIVE_BIN) herausholen.
