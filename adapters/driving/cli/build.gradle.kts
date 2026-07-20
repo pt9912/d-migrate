@@ -46,6 +46,13 @@ val nativeEntrypoint = providers.gradleProperty("nativeEntrypoint").getOrElse("c
 // weiterlaufen. Deshalb opt-in und NICHT an `nativeEntrypoint=full` gekoppelt — `full` wird
 // spaeter der ausgelieferte Entrypoint.
 val nativeMissingRegistrationMode = providers.gradleProperty("nativeMissingRegistrationMode").orNull
+
+// Bau-Ressourcen (Begruendung an der Verwendungsstelle).
+val nativeMaxRamPercentage = providers.gradleProperty("nativeMaxRamPercentage").getOrElse("60.0")
+// Bewusst OHNE Default: `--parallelism` fest zu setzen hilft nur der Zeitreproduzierbarkeit, die
+// hier niemand braucht — auf CI-Runnern (~4 Kerne) wuerde ein fixes 8 ueberzeichnen. Ohne die
+// Option waehlt native-image die Kernzahl der jeweiligen Maschine, was ueberall das Richtige ist.
+val nativeParallelism = providers.gradleProperty("nativeParallelism").orNull
 val nativeMainClass = when (nativeEntrypoint) {
     "full" -> "dev.dmigrate.cli.MainKt"
     "core" -> "dev.dmigrate.cli.NativeMainKt"
@@ -58,12 +65,12 @@ graalvmNative {
 
     // GraalVM Reachability Metadata Repository: gepflegte Metadaten fuer verbreitete Bibliotheken.
     //
-    // BEFUND F.0-Runde 1: aktiviert, aber ohne messbare Wirkung — weder im Build-Log noch im
-    // Verhalten. HikariCP-Reflection (PropertyElf.getProperty -> HikariConfig.getCredentials())
-    // blieb unveraendert ein Blocker. Bleibt aktiviert (schadet nicht, greift ggf. nach einem
-    // Plugin-/Versions-Abgleich), traegt die Loesung aber NICHT — die kommt ueber den
-    // Tracing-Agent in Phase F.2.
+    // BEFUND: zeigt KEINE messbare Wirkung — weder ohne noch MIT gepinnter `version` (0.3.15,
+    // beides gemessen) erscheint ein GRMR-Hinweis im Build-Log. Die Loesung der Metadaten-Blocker
+    // kam ausschliesslich ueber den Tracing-Agent (`make native-agent`). Bleibt aktiviert, weil es
+    // nicht schadet und kuenftige Plugin-Versionen es nutzen koennten — aber NICHT darauf verlassen.
     metadataRepository {
+        version.set("0.3.15")
         enabled.set(true)
     }
     binaries {
@@ -78,7 +85,27 @@ graalvmNative {
             // Belegt durch Messlauf 29722018906 (identisch auf Linux/macOS/Windows).
             // Vorlaeufig als buildArg: haelt das Fat-JAR unberuehrt. Die dauerhafte Form
             // (committetes reachability-metadata vs. buildArg) entscheidet Phase F.2.
+            // Experimentelle -H:-Optionen freischalten. Ohne das warnt der Builder ("must be enabled
+            // via -H:+UnlockExperimentalVMOptions in the future") und wendet sie moeglicherweise
+            // nicht an — ein Verdacht fuer die Wirkungslosigkeit von MissingRegistrationReportingMode
+            // in F.0-Runde 2.
+            buildArgs.add("-H:+UnlockExperimentalVMOptions")
             buildArgs.add("-H:IncludeResourceBundles=messages.messages")
+
+            // d-migrate liest und schreibt Schemata mit expliziter `encoding:`-Angabe und
+            // transferiert Daten zwischen Dialekten. Ohne diese Option enthaelt das Image nur die
+            // Default-Charsets, und eine Nicht-UTF-8-Quelle scheitert erst zur Laufzeit.
+            buildArgs.add("-H:+AddAllCharsets")
+
+            // Speicherbudget des Builders. Ohne die Option nimmt native-image einen konservativen
+            // Anteil (lokal gemessen 8,62 GB von 31 GB) und GCt sich dumm: 319 GCs / 41,5 s gegen
+            // 134 GCs / 11,3 s mit 60 %. Der native-image-Schritt fiel dadurch von ~5 min auf 1m40s.
+            // Peak RSS lag bei 9,78 GB — auf einem 16-GB-Runner sind 60 % knapp, aber ausreichend.
+            buildArgs.add("-J-XX:MaxRAMPercentage=$nativeMaxRamPercentage")
+            if (nativeParallelism != null) {
+                buildArgs.add("--parallelism=$nativeParallelism")
+            }
+
             if (nativeMissingRegistrationMode != null) {
                 buildArgs.add("-H:MissingRegistrationReportingMode=$nativeMissingRegistrationMode")
             }

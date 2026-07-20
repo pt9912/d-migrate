@@ -22,7 +22,10 @@ NATIVE_MISSING_REG_MODE ?=
 
 .PHONY: native-build
 native-build: ## Native: Binary im Container bauen (NATIVE_ENTRYPOINT=core|full).
-	$(DOCKER) build -f docker/native-image.Dockerfile \
+	# --target ist PFLICHT: ohne ihn baut docker die LETZTE Stage der Datei. Als native-agent
+	# angehaengt wurde, lief `make native-probe` dadurch gegen das Agent-Image (mit dessen
+	# .d-migrate.yaml) statt gegen das Build-Image — der Messlauf war unbrauchbar.
+	$(DOCKER) build -f docker/native-image.Dockerfile --target native-build \
 	  --build-arg NATIVE_ENTRYPOINT=$(NATIVE_ENTRYPOINT) \
 	  --build-arg NATIVE_MISSING_REG_MODE=$(NATIVE_MISSING_REG_MODE) \
 	  -t $(NATIVE_IMAGE_TAG) .
@@ -30,6 +33,23 @@ native-build: ## Native: Binary im Container bauen (NATIVE_ENTRYPOINT=core|full)
 .PHONY: native-diagnose
 native-diagnose: ## Native: F.0-Diagnoselauf — alle fehlenden Registrierungen auf einmal erheben.
 	$(MAKE) native-probe NATIVE_MISSING_REG_MODE=Warn
+
+NATIVE_AGENT_OUT ?= build/native-agent
+
+.PHONY: native-agent
+native-agent: ## Native: Reachability-Metadaten per Tracing-Agent erheben (Phase F.2).
+	$(DOCKER) build -f docker/native-image.Dockerfile --target native-agent \
+	  -t $(NATIVE_IMAGE_TAG)-agent .
+	rm -rf $(NATIVE_AGENT_OUT) && mkdir -p $(NATIVE_AGENT_OUT)
+	$(DOCKER) run --rm $(NATIVE_IMAGE_TAG)-agent | tar xf - -C $(NATIVE_AGENT_OUT)
+	@echo "--- Deckungsnachweis (Audit-Log): welche Operationen liefen wirklich? ---"
+	@if [ -f $(NATIVE_AGENT_OUT)/audit.log ]; then \
+	  cat $(NATIVE_AGENT_OUT)/audit.log; \
+	else \
+	  echo "KEIN Audit-Log erzeugt — Deckung unbelegt."; \
+	fi
+	@echo "--- erzeugte Metadaten ---"
+	@wc -l $(NATIVE_AGENT_OUT)/config/*.json 2>/dev/null || true
 
 .PHONY: native-binary
 native-binary: native-build ## Native: gebautes Binary nach $(NATIVE_BIN) herausholen.

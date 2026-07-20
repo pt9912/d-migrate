@@ -1,0 +1,8 @@
+[
+  {
+    "condition": { "typeReachable": "com.zaxxer.hikari.HikariConfig" },
+    "name": "com.zaxxer.hikari.HikariConfig",
+    "allPublicMethods": true,
+    "queryAllPublicMethods": true
+  }
+]

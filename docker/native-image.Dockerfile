@@ -53,3 +53,48 @@ RUN gradle --no-daemon :adapters:driving:cli:nativeCompile \
 # Artefakt auf stdout aus, der Aufrufer leitet es um. Kein Mount, kein Schreiben in den Arbeitsbaum.
 # nosemgrep: config.semgrep.missing-user -- ephemere lokale Build-Stage (cat eines Build-Artefakts), nie ein publiziertes Runtime-Image
 ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/native/nativeCompile/d-migrate"]
+
+# ---- Stage: native-agent — Reachability-Metadaten per Tracing-Agent erheben (Phase F.2) --------
+#
+# Der Agent instrumentiert die JVM und zeichnet Reflection-, Ressourcen-, JNI- und Proxy-Zugriffe
+# auf. Er ist die EINZIGE Quelle, die diese Schicht sieht: GRMR zeigte keine Wirkung, und
+# `-H:MissingRegistrationReportingMode=Warn` aendert die geworfenen Fehler nicht (beides in
+# F.0-Runde 1/2 gemessen).
+#
+# Bewusst dieselben Sonden wie der native Lauf (scripts/native-probe.sh): was der Agent nicht
+# ausfuehrt, kann er nicht aufzeichnen — die erzeugten Metadaten waeren fuer die nicht beruehrte
+# Flaeche still unvollstaendig.
+FROM native-build AS native-agent
+
+# installDist liefert den Laufzeit-Klassenpfad, den der Agent instrumentieren soll.
+RUN gradle --no-daemon :adapters:driving:cli:installDist
+
+# Audit einschalten (LN-027, `logging.audit`, Default false). Zweck ist NICHT die Metadatenerhebung,
+# sondern der DECKUNGSNACHWEIS: eine Zeile je ausgefuehrter Operation. Fehlt eine erwartete Flaeche
+# im Audit-Log, wurde sie nicht getraced — und das faellt maschinell auf statt geglaubt zu werden.
+# Praezedenz aus F.0: `calib-schema.yaml` liess `migrate` fachlich blocken (DB entstand, aber kein
+# DDL) und `export flyway` beruehrt die echte Flyway-Library nie. Beide Male sah der Lauf richtig aus.
+RUN printf 'logging:\n  audit:\n    enabled: true\n    file: /tmp/agent/audit.log\n' \
+    > /src/.d-migrate.yaml \
+    && mkdir -p /tmp/agent
+
+# Wrapper: startet die CLI auf der JVM unter dem Agenten. native-probe.sh ruft sein "Binary" mit
+# den Sondenargumenten auf — ein Skript erfuellt denselben Vertrag wie das native Binary.
+RUN printf '#!/usr/bin/env bash\nexec java \\\n  -agentlib:native-image-agent=config-merge-dir=/tmp/agent/config \\\n  -cp "/src/adapters/driving/cli/build/install/d-migrate/lib/*" \\\n  dev.dmigrate.cli.MainKt "$@"\n' \
+    > /usr/local/bin/dmigrate-agent \
+    && chmod +x /usr/local/bin/dmigrate-agent
+
+# config-merge-dir braucht ein vorhandenes Verzeichnis; die Sonden mergen dann hinein.
+RUN mkdir -p /tmp/agent/config \
+    && printf '[]\n' > /tmp/agent/config/reflect-config.json \
+    && printf '[]\n' > /tmp/agent/config/jni-config.json \
+    && printf '[]\n' > /tmp/agent/config/proxy-config.json \
+    && printf '[]\n' > /tmp/agent/config/serialization-config.json \
+    && printf '{"resources":{"includes":[]},"bundles":[]}\n' > /tmp/agent/config/resource-config.json
+
+RUN /src/scripts/native-probe.sh /usr/local/bin/dmigrate-agent /tmp/agent/f0-report.md || true
+RUN tar cf /tmp/agent-out.tar -C /tmp/agent config audit.log f0-report.md 2>/dev/null \
+    || tar cf /tmp/agent-out.tar -C /tmp/agent config f0-report.md
+
+# nosemgrep: config.semgrep.missing-user -- ephemere lokale Build-Stage (cat eines Build-Artefakts), nie ein publiziertes Runtime-Image
+ENTRYPOINT ["cat", "/tmp/agent-out.tar"]
