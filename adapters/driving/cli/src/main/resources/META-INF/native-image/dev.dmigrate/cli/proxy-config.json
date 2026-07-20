@@ -1,8 +1,0 @@
-[
-  {
-    "interfaces":["com.github.ajalt.mordant.terminal.terminalinterface.jna.PosixLibC"]
-  },
-  {
-    "interfaces":["java.sql.Connection"]
-  }
-]

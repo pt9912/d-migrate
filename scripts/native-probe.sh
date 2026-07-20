@@ -112,6 +112,51 @@ probe "DDL-Rendering SQLite" \
 probe "JSON-Ausgabepfad (zweiter Formatter-Zweig)" \
   "${BIN}" --output-format json schema validate --source "${SCHEMA}"
 
+# AP 5 — die kommando-lokalen Schwergewichts-Flaechen (Phase F.4). Bis 2026-07-20 beruehrte der
+# Korpus KEINE davon: der Tracing-Agent konnte fuer sie folglich nichts aufzeichnen, und ihre
+# Metadaten waren still unvollstaendig. Genau diese Luecke schliessen die folgenden Sonden.
+#
+# Alle Aufrufe vorab gegen die JVM-CLI (`d-migrate:dev`) verifiziert — Exit 0. Zwei Fallstricke, die
+# dabei auffielen: `export django` verlangt eine 4-stellige Version, `export knex` eine numerische;
+# aus der Flag-Hilfe allein waere das nicht ersichtlich gewesen (beide scheitern sonst mit Exit 2).
+probe "data profile (Profiling-Pfad)" \
+  "${BIN}" data profile --source "${PROBE_DB_URL}" --output "${OUTDIR}/profile.json"
+probe "data export PARQUET (parquet-hadoop)" \
+  "${BIN}" data export --source "${PROBE_DB_URL}" --format parquet --output "${OUTDIR}/out.parquet"
+probe "export flyway (Tool-Export)" \
+  "${BIN}" export flyway --source "${SCHEMA}" --output "${OUTDIR}/fly" --target postgresql
+probe "export liquibase (Tool-Export)" \
+  "${BIN}" export liquibase --source "${SCHEMA}" --output "${OUTDIR}/lb" --target postgresql
+probe "export django (Tool-Export)" \
+  "${BIN}" export django --source "${SCHEMA}" --output "${OUTDIR}/dj" --target postgresql \
+    --version 0001
+probe "export knex (Tool-Export)" \
+  "${BIN}" export knex --source "${SCHEMA}" --output "${OUTDIR}/kx" --target postgresql \
+    --version 20260720120000
+
+# `mcp serve` laeuft als stdio-Server und beendet sich nicht von selbst — deshalb ein einzelner
+# initialize-Handshake ueber die Pipe statt eines normalen Aufrufs. Die Protokollversion ist die vom
+# Server geforderte; eine falsche liefert zwar auch eine Antwort, aber als JSON-RPC-Fehler.
+n=$((n + 1))
+mcp_log="${OUTDIR}/probe-${n}.log"
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
+  | "${BIN}" mcp serve --transport stdio > "${mcp_log}" 2>&1
+mcp_rc=$?
+# Der Exit-Code taugt hier NICHT als Signal: der Server beendet sich bei EOF sauber mit 0, auch
+# wenn er den Request mit einem Fehlerobjekt beantwortet hat. Bewertet wird die ANTWORT.
+mcp_response="$(grep -m1 -E '"jsonrpc"' "${mcp_log}" 2>/dev/null | tr '|' '/' | cut -c1-130)"
+if printf '%s' "${mcp_response}" | grep -q '"result"'; then
+  mcp_verdict="ok — initialize beantwortet"
+elif [ -n "${mcp_response}" ]; then
+  mcp_verdict="**Blocker** — Antwort ohne result: ${mcp_response}"
+else
+  mcp_verdict="**Blocker** — keine JSON-RPC-Antwort"
+fi
+printf '%s\n' "--- probe ${n} (exit ${mcp_rc}): mcp serve initialize" >&2
+sed -n '1,20p' "${mcp_log}" >&2
+printf '| %s | %s | %s | %s |\n' \
+  "${n}" "mcp serve (stdio-Handshake)" "${mcp_rc}" "${mcp_verdict}" >> "${REPORT}"
+
 echo
 cat "${REPORT}"
 exit 0

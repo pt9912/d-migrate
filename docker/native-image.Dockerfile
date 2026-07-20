@@ -101,17 +101,22 @@ RUN printf 'logging:\n  audit:\n    enabled: true\n    file: /tmp/agent/audit.lo
 
 # Wrapper: startet die CLI auf der JVM unter dem Agenten. native-probe.sh ruft sein "Binary" mit
 # den Sondenargumenten auf — ein Skript erfuellt denselben Vertrag wie das native Binary.
-RUN printf '#!/usr/bin/env bash\nexec java \\\n  -agentlib:native-image-agent=config-merge-dir=/tmp/agent/config \\\n  -cp "/src/adapters/driving/cli/build/install/d-migrate/lib/*" \\\n  dev.dmigrate.cli.MainKt "$@"\n' \
+# ${GRAALVM_HOME}/bin/java, NICHT das blosse `java`: seit der JAVA_HOME/GRAALVM_HOME-Trennung zeigt
+# `java` auf JDK 21, und dort gibt es libnative-image-agent.so nicht — die Bibliothek liegt in
+# GraalVM. Ohne diesen Pfad scheitert JEDE Sonde mit "Could not find agent library
+# native-image-agent on the library path", und der Lauf erzeugt leere Konfiguration.
+# Zum Kompilieren wird hier nichts gebraucht, nur zum Ausfuehren — GraalVM 25 ist dafuer richtig.
+RUN printf '#!/usr/bin/env bash\nexec "${GRAALVM_HOME}/bin/java" \\\n  -agentlib:native-image-agent=config-merge-dir=/tmp/agent/config \\\n  -cp "/src/adapters/driving/cli/build/install/d-migrate/lib/*" \\\n  dev.dmigrate.cli.MainKt "$@"\n' \
     > /usr/local/bin/dmigrate-agent \
     && chmod +x /usr/local/bin/dmigrate-agent
 
 # config-merge-dir braucht ein vorhandenes Verzeichnis; die Sonden mergen dann hinein.
-RUN mkdir -p /tmp/agent/config \
-    && printf '[]\n' > /tmp/agent/config/reflect-config.json \
-    && printf '[]\n' > /tmp/agent/config/jni-config.json \
-    && printf '[]\n' > /tmp/agent/config/proxy-config.json \
-    && printf '[]\n' > /tmp/agent/config/serialization-config.json \
-    && printf '{"resources":{"includes":[]},"bundles":[]}\n' > /tmp/agent/config/resource-config.json
+#
+# BEWUSST OHNE Saat-Dateien: ein frueherer Stand legte leere `reflect-config.json` usw. an. Unter
+# GraalVM 25 schreibt der Agent das vereinheitlichte `reachability-metadata.json`, die Altdateien
+# blieben also leer — wurden aber mitkopiert und ueberschrieben die committete Konfiguration mit
+# `[]`. Eine davon (proxy-config.json) loeste zudem eine Veraltungs-Warnung des Builders aus.
+RUN mkdir -p /tmp/agent/config
 
 RUN /src/scripts/native-probe.sh /usr/local/bin/dmigrate-agent /tmp/agent/f0-report.md || true
 RUN tar cf /tmp/agent-out.tar -C /tmp/agent config audit.log f0-report.md 2>/dev/null \

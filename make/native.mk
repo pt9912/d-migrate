@@ -57,7 +57,15 @@ native-agent: ## Native: Reachability-Metadaten per Tracing-Agent erheben (Phase
 	echo "--- Deckungsnachweis (Audit-Log): welche Operationen liefen wirklich? ---"; \
 	if [ -s "$$tmp/audit.log" ]; then cat "$$tmp/audit.log"; \
 	else echo "KEIN Audit-Log erzeugt — Deckung UNBELEGT."; fi; \
-	echo "--- uebernommene Metadaten (nur die JSON-Konfiguration) ---"; \
+	echo "--- Plausibilitaetspruefung vor der Uebernahme ---"; \
+	lines="$$(cat "$$tmp"/config/*.json 2>/dev/null | wc -l)"; \
+	if [ "$$lines" -lt 50 ]; then \
+	  echo "ABBRUCH: der Agent-Lauf hat praktisch nichts erhoben ($$lines Zeilen)."; \
+	  echo "Die committete Konfiguration bleibt UNVERAENDERT."; \
+	  echo "Typische Ursache: die Sonden liefen gar nicht — Sondenausgabe im Build-Log pruefen."; \
+	  exit 1; \
+	fi; \
+	echo "  $$lines Zeilen erhoben — plausibel, wird uebernommen."; \
 	mkdir -p $(NATIVE_AGENT_OUT); \
 	cp "$$tmp"/config/*.json $(NATIVE_AGENT_OUT)/; \
 	wc -l $(NATIVE_AGENT_OUT)/*.json; \
