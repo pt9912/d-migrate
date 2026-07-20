@@ -16,7 +16,6 @@
 
 NATIVE_IMAGE_TAG ?= d-migrate:native-build
 NATIVE_ENTRYPOINT ?= full
-NATIVE_BIN ?= build/native/d-migrate
 # Leer = GraalVM-Default `Throw`. `Warn` ist der F.0-Diagnosemodus: das Binary meldet fehlende
 # Registrierungen und laeuft weiter, statt an der ersten zu sterben — eine Messrunde erhebt damit
 # alle Luecken statt einer Schicht. NIE fuer ein ausgeliefertes Binary.
@@ -73,12 +72,16 @@ native-agent: ## Native: Reachability-Metadaten per Tracing-Agent erheben (Phase
 	wc -l $(NATIVE_AGENT_OUT)/*.json; \
 	echo "--- Aenderung pruefen: git diff $(NATIVE_AGENT_OUT) ---"
 
-.PHONY: native-binary
-native-binary: native-build ## Native: gebautes Binary nach $(NATIVE_BIN) herausholen.
-	mkdir -p $(dir $(NATIVE_BIN))
-	$(DOCKER) run --rm $(NATIVE_IMAGE_TAG) > $(NATIVE_BIN)
-	chmod +x $(NATIVE_BIN)
-	@echo "Binary: $(NATIVE_BIN)"
+.PHONY: native-e2e
+native-e2e: ## Native: die Subprozess-E2Es gegen das Native-Binary fahren (Slice native-e2e-regression-gate).
+	# Kein Host-Extract: DMIGRATE_NATIVE_E2E=1 laesst die Harness das Binary per COPY --from aus
+	# dem native-build-Image in die integration-test-native-Stage holen. Das Binary bleibt im
+	# Docker-Fluss. NATIVE_E2E_TESTS grenzt auf die Subprozess-Klassen ein (die einzigen, die
+	# tatsaechlich einen Kind-Prozess starten — die Szenario-Tests laufen in-process).
+	DMIGRATE_NATIVE_E2E=1 ./scripts/test-integration-docker.sh \
+	  ":test:e2e-cli:test $(NATIVE_E2E_TESTS) -PintegrationTests"
+
+NATIVE_E2E_TESTS ?= --tests '*McpRealCliSubprocessTest*' --tests '*McpS3SubprocessE2ETest*'
 
 .PHONY: native-probe
 native-probe: native-build ## Native: F.0-Sonden im Container gegen das Binary fahren.

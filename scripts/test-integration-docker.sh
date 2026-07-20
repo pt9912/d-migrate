@@ -43,8 +43,18 @@ if [[ -t 0 && -t 1 ]]; then
     TTY_FLAG="-t"
 fi
 
-echo "Building integration test image from Dockerfile (stage: integration-test)..."
-docker build --target integration-test -t "${IMAGE_TAG}" "${REPO_ROOT}"
+# DMIGRATE_NATIVE_E2E=1 fuehrt die Subprozess-E2Es gegen das GraalVM-Native-Binary statt einer
+# Kind-JVM. Das Binary bleibt im Docker-Fluss: die native-build-Stage baut es, die
+# integration-test-native-Stage holt es per COPY --from ins Test-Image. Kein Host-./build-Extract.
+BUILD_TARGET="integration-test"
+if [[ "${DMIGRATE_NATIVE_E2E:-0}" == "1" ]]; then
+    echo "Building native binary image (make native-build)..."
+    make -C "${REPO_ROOT}" native-build
+    BUILD_TARGET="integration-test-native"
+fi
+
+echo "Building integration test image from Dockerfile (stage: ${BUILD_TARGET})..."
+docker build --target "${BUILD_TARGET}" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
 LOG_FILE="${DMIGRATE_TEST_LOG:-/tmp/d-migrate-integration-$(date +%Y%m%d-%H%M%S).log}"
 
@@ -54,27 +64,11 @@ echo "  repo:         ${REPO_ROOT}"
 echo "  gradle tasks: ${GRADLE_TASKS}"
 echo "  log file:     ${LOG_FILE}"
 
-# Optionale Durchreichung eines GraalVM-Native-Binaries: ist DMIGRATE_CLI_BIN gesetzt, wird die
-# Datei in den Container gemountet und die Variable auf den Pfad DORT gesetzt. Die
-# Subprozess-E2Es (RealCliSubprocess) starten dann das Binary statt einer Kind-JVM — dieselben
-# Tests, anderes Artefakt. Ohne die Variable aendert sich nichts.
-NATIVE_MOUNT=()
-if [[ -n "${DMIGRATE_CLI_BIN:-}" ]]; then
-    if [[ ! -x "${DMIGRATE_CLI_BIN}" ]]; then
-        echo "DMIGRATE_CLI_BIN=${DMIGRATE_CLI_BIN} ist nicht ausfuehrbar." >&2
-        exit 1
-    fi
-    echo "  native binary: ${DMIGRATE_CLI_BIN} -> /native/d-migrate"
-    NATIVE_MOUNT=(-v "$(readlink -f "${DMIGRATE_CLI_BIN}")":/native/d-migrate:ro
-                  -e DMIGRATE_CLI_BIN=/native/d-migrate)
-fi
-
 docker run --rm ${TTY_FLAG} \
     --network=host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-    "${NATIVE_MOUNT[@]}" \
     -w /src \
     "${IMAGE_TAG}" \
     bash -lc "gradle --no-daemon ${GRADLE_TASKS}" 2>&1 | tee "${LOG_FILE}"

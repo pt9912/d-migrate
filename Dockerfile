@@ -268,6 +268,21 @@ COPY --chown=gradle:gradle . .
 # Runs only the non-integration test suite plus the aggregated Kover HTML
 # and XML reports so they can be published independently of the configured
 # coverage threshold.
+# ---- Stage: integration-test-native ----------------------------------------
+# Wie integration-test, aber mit dem GraalVM-Native-Binary im Image. Die
+# Subprozess-E2Es (RealCliSubprocess) fahren mit DMIGRATE_CLI_BIN gegen dieses
+# Binary statt einer Kind-JVM — dieselben Tests, anderes Artefakt.
+#
+# Das Binary kommt per COPY --from aus dem separaten Image `d-migrate:native-build`
+# (docker/native-image.Dockerfile, gebaut ueber `make native-build`). KEIN
+# Host-Extract nach ./build: das Binary bleibt im Docker-Fluss, exakt wie der
+# Rest der Pipeline. `COPY --from=<benanntes Image>` braucht die zwei Dockerfiles
+# nicht zusammenzufuehren — es referenziert das lokal vorhandene Image direkt.
+FROM integration-test AS integration-test-native
+COPY --from=d-migrate:native-build \
+     /src/adapters/driving/cli/build/native/nativeCompile/d-migrate /native/d-migrate
+ENV DMIGRATE_CLI_BIN=/native/d-migrate
+
 FROM gradle:8.12-jdk21 AS coverage-build
 
 ARG COVERAGE_TASKS="test koverHtmlReport koverXmlReport"
