@@ -4,8 +4,10 @@
 # (docs/planning/in-progress/graalvm-native-image-distribution.md) lokal fahren statt ueber CI.
 # Gemessen 270 s lokal gegen 468 s in CI; dazu entfaellt der Dispatch-/Wartezyklus.
 #
-# Die GraalVM-Version im Dockerfile ist auf 21.0.2 gepinnt — identisch zu `java-version` in
-# .github/workflows/native-image.yml. Weicht das ab, sind lokale Befunde nicht auf CI uebertragbar.
+# Die GraalVM-Version im Dockerfile (25) muss zu `java-version` in
+# .github/workflows/native-image.yml passen. Weicht das ab, sind lokale Befunde nicht auf CI
+# uebertragbar — und die erhobenen Metadaten haetten ein anderes Format (21 kennt
+# `reachability-metadata.json` nicht und ignoriert es STILL: Bau gruen, Binary kaputt).
 #
 # HERMETISCH: die Quellen werden ins Image kopiert, nicht gemountet. Ein Bind-Mount liesse Gradle
 # `.gradle/`, `.kotlin/` und `build/` in den Arbeitsbaum schreiben — die Haupt-Dockerfile vermeidet
@@ -81,3 +83,18 @@ native-binary: native-build ## Native: gebautes Binary nach $(NATIVE_BIN) heraus
 .PHONY: native-probe
 native-probe: native-build ## Native: F.0-Sonden im Container gegen das Binary fahren.
 	$(DOCKER) run --rm --entrypoint /src/scripts/native-probe.sh $(NATIVE_IMAGE_TAG)
+
+# GRMR-Abfrage: liefert eine Bibliothek gepflegte Reachability-Metadaten, oder muessen wir sie von
+# Hand registrieren? Beantwortet die Frage in Sekunden, die sonst als Handsuche im Repository-Index
+# endet — und ordnet vorhandene Handeintraege ein (unvermeidbar vs. Workaround).
+#
+# Auf einen Commit gepinnt, NICHT auf master: `curl | bash` fuehrt Fremdcode aus, und das Repo pinnt
+# Actions per SHA und semgrep-Regeln per SHA256 — ein `master`-Pipe waere dort ein Stilbruch.
+# Pin-Hebung ist ein bewusster Commit.
+GRMR_CHECK_REF ?= 4412a87988ded779c48714462be34eec5c27f057
+
+.PHONY: native-check-lib
+native-check-lib: ## Native: prueft, ob GRMR eine Bibliothek unterstuetzt (LIB=group:artifact:version).
+	@test -n "$(LIB)" || { echo "Aufruf: make native-check-lib LIB=com.zaxxer:HikariCP:6.2.1"; exit 2; }
+	@curl -sSL "https://raw.githubusercontent.com/oracle/graalvm-reachability-metadata/$(GRMR_CHECK_REF)/check-library-support.sh" \
+	  | bash -s "$(LIB)"

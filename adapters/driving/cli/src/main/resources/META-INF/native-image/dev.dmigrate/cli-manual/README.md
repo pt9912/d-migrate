@@ -46,3 +46,16 @@ Gson braucht **Konstruktoren**, um die DTOs zu instanziieren. Der Agent erfasste
 
 **Und der Exit-Code war 0.** Eine reine Exit-Code-Pruefung haette `mcp serve` als gruen
 durchgewinkt — deshalb bewertet die Sonde in `scripts/native-probe.sh` die Antwort, nicht den Code.
+
+## Bevor hier ein Eintrag dazukommt
+
+Erst pruefen, ob das GraalVM Reachability Metadata Repository die Bibliothek schon pflegt:
+
+```
+make native-check-lib LIB=com.zaxxer:HikariCP:6.2.1
+```
+
+Das beantwortet in Sekunden, was sonst als Handsuche im Repository-Index endet — und ordnet den
+Eintrag ein: unvermeidbare Eigenarbeit (Bibliothek nicht unterstuetzt) oder Symptom einer
+Fehlkonfiguration (unterstuetzt, greift aber nicht). Beide Faelle gibt es hier bereits, und sie
+verlangen unterschiedliche Folgearbeit.
