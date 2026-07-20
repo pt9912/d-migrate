@@ -7,9 +7,9 @@ das Native-Binary soll dasselbe können wie die JVM-CLI (Schwelle in Abschnitt 0
 auf diesen Satz zurück; wo unten „1.0.0-Ziel" steht, ist es unter diesem Vorbehalt zu lesen.
 
 **Ausführungsreihenfolge**: A, B, D, E **(erledigt — E jedoch nur unter der Annahme, dass Native
-optional ist)** → **F (offen, der gesamte verbleibende Kern)** → G (nur falls F Ausschlüsse übriglässt)
-→ H (nur falls Frage 6 = „Native bleibt 1.0.0-Gate"). Die Buchstaben sind historisch gewachsen; die
-einzige offene Arbeit trägt die höchsten.
+optional ist)** → F **(F.0/F.2/F.3 erledigt 2026-07-20; offen: F.1 Rückbau, F.4 Korpus)** → G (nur
+falls F Ausschlüsse übriglässt) → H (nur falls Frage 6 = „Native bleibt 1.0.0-Gate"). Die Buchstaben
+sind historisch gewachsen.
 
 **Trigger**: Die [Roadmap](roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
@@ -97,7 +97,19 @@ in diesen Plan.
 - Release-Asset-Anhang (Phase E) — verifiziert erst am nächsten Tag-Cut (nur bei `tags: v*` aktiv).
 - `workflow_dispatch` registriert (Config-Commit `05f1a229` auf `main`).
 
-**Nächster Schritt: Phase F.0** (Messung der vollen Fläche). Details unten.
+**Stand 2026-07-20 nach Phase F.0/F.2: die volle CLI läuft nativ auf allen drei Plattformen** —
+je neun von neun Sonden auf Exit 0 (Lauf 29727572204). Zusammenfassung in „Phase F — Ergebnisse".
+
+**Nächster Schritt: F.1** (Entrypoint zusammenführen) — rein mechanisch, Rückbauliste unten.
+Danach **F.4** (Korpus-Erweiterung: Parquet, Tool-Export, `mcp serve`, S3, `data profile`), das die
+Grundlage für Frage 6 vervollständigt.
+
+**Lokale Schleife** (~4 min pro Runde statt ~8–26 min in CI):
+```
+make native-build      # Binary im Container bauen (hermetisch, kein Bind-Mount)
+make native-probe      # F.0-Sonden dagegen fahren
+make native-agent      # Reachability-Metadaten per Tracing-Agent erheben
+```
 
 **Lokal reproduzieren** (native-image läuft **nicht** im docker-Build — braucht GraalVM):
 ```
@@ -228,6 +240,11 @@ Offene Architektur-/Linkfragen stehen ausschließlich unter Fragen 3 und 4 (kein
   mit „Native bleibt 1.0.0-Gate" beantwortet, ist Phase E NICHT abgeschlossen** — dann fehlt Phase H.
 
 ### Phase F — Voller Funktionsumfang (der verbleibende Kern)
+
+> **Ergebnis 2026-07-20: F.0 beantwortet, F.2 im Kern geliefert, F.3 als Nebenprodukt erledigt.**
+> Die volle CLI laeuft nativ auf **allen drei Plattformen** — je neun von neun Sonden auf Exit 0
+> (Lauf 29727572204). Zusammenfassung in „Phase F — Ergebnisse" unten; die Unterabschnitte behalten
+> ihren urspruenglichen Wortlaut als Nachweis dessen, was vorher geplant und angenommen war.
 
 Ersetzt die frühere Phase C. Statt „pro Fläche entscheiden, ob sie rausfliegt" gilt: **pro Fläche
 native-fähig machen.** Ein Ausschluss ist die Ausnahme und wandert nach Phase G.
@@ -395,22 +412,101 @@ korrekt gegen `examples/sample-db/calib-schema.yaml`.
 und ohne ICU — also gerade ohne die Flächen, die Abschnitt 1 als Startpfad-kritisch ausweist. Er trägt
 **nicht** auf die volle Fläche.
 
+## Phase F — Ergebnisse (2026-07-20): volle CLI laeuft nativ
+
+**Kernergebnis:** Der volle Funktionsumfang ist nativ machbar — gemessen, nicht geschaetzt. Je neun
+von neun Sonden auf Exit 0 unter Linux, macOS und Windows (Lauf 29727572204; Windows anfangs sieben,
+die beiden SQLite-Sonden scheiterten an einem Pfadfehler der Sonde selbst, nicht am Binary).
+Abgedeckt: Startpfad, ICU-Daten, sqlite-JNI in Schreib- **und** Lesepfad, DDL-Rendering fuer alle drei
+Dialekte, JSON-Ausgabe. `--version` liefert die echte Version statt `unknown`.
+
+**Damit ist die Grundlage der frueheren Subset-Entscheidung widerlegt.** Hadoop/Parquet waren nie ein
+Build-Blocker; die tatsaechlichen Blocker waren gewoehnliche Metadaten-Arbeit.
+
+### Was getragen hat — und was nicht
+
+| Mittel | Ergebnis |
+| --- | --- |
+| **Tracing-Agent** (`make native-agent`) | ✅ **Das war die Loesung.** reflect 199 / jni 205 / resource 46 Zeilen, committet unter `META-INF/native-image/dev.dmigrate/cli/` |
+| `-H:IncludeResourceBundles=messages.messages` | ✅ ohne das stirbt jedes Subkommando im Clikt-Dispatch |
+| Handgepflegte `HikariConfig`-Registrierung | ✅ s. u. |
+| **GRMR** (`metadataRepository`) | ❌ **keine messbare Wirkung**, weder ohne noch mit gepinnter `version` (0.3.15, beides gemessen) |
+| **`-H:MissingRegistrationReportingMode=Warn`** | ❌ **wirkungslos** fuer `forQueriedOnlyExecutable`; kein `-XX:`-Laufzeitpendant |
+
+### Die zirkulaere Fehlerkette (das lehrreichste Detail)
+
+Der Hikari-Blocker war ein **Folgefehler der fehlenden `logback.xml`-Ressource**. Nicht registriert →
+logback faellt auf seinen eingebauten Default **DEBUG** zurueck → `HikariConfig.logConfiguration()`
+laeuft → `PropertyElf.getProperty` → `Method.invoke(getCredentials)` →
+`MissingReflectionRegistrationError`. Auf der JVM gilt `logback.xml` mit `root level="WARN"`, der Pfad
+laeuft nie — **deshalb konnte der Agent diese Aufrufe prinzipiell nicht aufzeichnen**. Der Stacktrace
+zeigte auf Hikari, die Ursache lag bei logback.
+
+**Bleibende Fragilitaet:** schaltet ein Nutzer DEBUG-Logging ein, kehrt der Fehler zurueck — das
+Binary braeche ausgerechnet bei der Fehlerdiagnose. Deshalb zusaetzlich handgepflegt registriert
+unter `META-INF/native-image/dev.dmigrate/cli-manual/`, bewusst **getrennt** von der Agent-Ausgabe,
+die jeder Lauf ueberschreibt.
+
+### Lokale Schleife statt CI-Rundlauf
+
+`make native-build` / `native-binary` / `native-probe` / `native-diagnose` / `native-agent`
+(`docker/native-image.Dockerfile`, `make/native.mk`, `scripts/native-probe.sh`). Rundenzeit ~4 min
+lokal gegen ~8 min (Linux) bis ~26 min (macOS) in CI. Hermetisch per COPY wie der Haupt-Build, kein
+Bind-Mount. Das Sondenskript ist **eine** Quelle fuer lokal und CI.
+
+### Ressourcenbudget (AP 6) — mit einer selbst verursachten Regression
+
+| Plattform | Runner | native-image | GC-Anteil |
+| --- | --- | --- | --- |
+| Linux (CI) | 16 GB / 4 Kerne | ~5 min | — |
+| Windows (CI) | 16 GB / 4 Kerne | ~4,5 min | — |
+| macOS (CI) | **7 GB / 3 Kerne** | **26m20s** | **45,9 %** |
+| lokal | 31 GB / 20 Kerne | 1m35s | 12,8 % |
+
+`MaxRAMPercentage=60` war auf der 31-GB-Maschine grosszuegig (16,57 GB), auf dem macOS-Runner aber
+schaedlich (3,74 GB, 253 GCs). Auf 80 % korrigiert. **Lehre:** ein fester Prozentsatz wirkt auf
+kleinen Maschinen ganz anders als auf grossen — nicht aus einer Einzelmessung verallgemeinern.
+
+### Deckungsnachweis per Audit — und seine blinden Flecken
+
+Der Agent-Lauf faehrt mit eingeschaltetem `logging.audit`: eine Zeile je ausgefuehrter Operation
+belegt, was **wirklich** lief. Das fand sofort etwas — nur 2 von 9 Sonden im Log, weil Audit nur an
+**DB-Operationen** verdrahtet ist. **Konsequenz fuer F.4: `mcp serve` und Tool-Export sind ebenfalls
+nicht auditiert**, also gerade dort, wo der Nachweis am noetigsten waere.
+
+Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die es nicht hatte —
+`calib-schema.yaml` liess `schema migrate` fachlich blocken (DB entstand, aber **kein DDL**), und
+`export flyway` beruehrt die echte Flyway-Library **nie** (projekteigener Renderer).
+
+### Offen
+
+- **F.1** (Entrypoint zusammenfuehren) — unveraendert offen, jetzt rein mechanisch.
+- **F.4** — Parquet, Tool-Export, `mcp serve`, S3, `data profile` wurden **nie ausgefuehrt**, also nie
+  getraced. Ueber diese Flaechen sagen die Metadaten nichts.
+- **Binaergroesse 185 MB** (Core-Subset war 67 MB) — Produktfrage, nicht entschieden.
+
 ## 4. Offene Fragen / Entscheidungen
 
 1. ✅ **Entschieden 2026-07-20 (Projekt-Eigner): voller Funktionsumfang**, Schwelle in Abschnitt 0.
-2. **`sqlite-jdbc`-JNI** — jetzt in **F.3** (Startpfad), nicht hinter den kommando-lokalen Flächen:
-   die Treiberregistrierung läuft bei jedem Aufruf. Funktioniert die Laufzeit-Extraktion der Nativelib
-   aus einem Native-Image-Binary, oder braucht es Build-Zeit-Einbettung/Substitution?
+2. ✅ **Beantwortet 2026-07-20: `sqlite-jdbc`-JNI funktioniert nativ**, ohne Build-Zeit-Einbettung
+   oder Substitution — Schreib- und Lesepfad je Exit 0 auf allen drei Plattformen. Der Windows-Beleg
+   ist indirekt und dadurch besonders belastbar: eine fehlerhafte Pfadangabe ergab `SQLITE_CANTOPEN`,
+   also einen Fehlercode **aus der nativen Bibliothek selbst** — sie war folglich geladen.
 3. **Statisches Linken (Linux)**: `--static`/`--static-nolibc` (musl) vs. dynamisch gegen glibc.
 4. **Architekturen**: Ist-Stand ist eine Architektur je OS (`linux-x64`, `macos-arm64`, `windows-x64`).
    Offene Restfrage: **linux-arm64 ja/nein?**
-5. **MCP im Native-Binary**: `mcp serve` (stdio) ist ungeprüft — Bearbeitung in **F.4**.
-6. **Offen, Eigner-Entscheidung: bleibt Native ein 1.0.0-Gate?** Voller Funktionsumfang bedeutet
-   Metadaten-Arbeit mit offenem Ausgang. Grundlage: **F.0** (Startpfad + Ressourcenbudget) **plus die
-   Korpus-Erweiterung in F.2** — F.0 allein deckt die kommando-lokalen Flächen nicht ab.
-   **Zweite Konsequenz:** ein „Ja" macht **Phase H** nötig und Phase E unfertig, weil die heutige
-   Mechanik einen roten Native-Build ausdrücklich toleriert.
-7. **Spec-Lücken, die das Akzeptanzkriterium berühren**: `spec/cli-spec.md` listet
+5. **MCP im Native-Binary**: `mcp serve` (stdio) ist **weiterhin ungeprüft** — der Sondenkorpus
+   berührt ihn nicht, und das Audit deckt ihn als Nachweis ebenfalls nicht ab. Bearbeitung in **F.4**.
+6. **Offen, Eigner-Entscheidung: bleibt Native ein 1.0.0-Gate?** **Die Grundlage hat sich am
+   2026-07-20 deutlich verbessert**: der Kern laeuft nativ auf allen drei Plattformen, die
+   Metadaten-Arbeit war kleiner als geschaetzt. Was fuer die Entscheidung noch fehlt, ist die
+   Korpus-Erweiterung (F.4) — ueber Parquet, Tool-Export, `mcp serve` und S3 ist nichts bekannt.
+   **Zweite Konsequenz unveraendert:** ein „Ja" macht **Phase H** noetig und Phase E unfertig, weil
+   die heutige Mechanik einen roten Native-Build ausdruecklich toleriert.
+7. **Neu, offen: Binaergroesse.** 185 MB gegen 67 MB beim Core-Subset. Fuer eine
+   CLI-Distributionsklasse ist das viel; ob akzeptabel oder nacharbeitsbeduerftig (etwa durch
+   `--gc=serial`, Ausschluss ungenutzter Adapter oder UPX), ist nicht entschieden.
+8. **Spec-Lücken, die das Akzeptanzkriterium berühren**: `spec/cli-spec.md` listet
    `--sqlite-named-sequences` nicht in der `generate`-Flag-Tabelle (obwohl implementiert) und fordert
    `--source -` (stdin) für `schema validate`, was der Code nicht kann. „Identische Aufrufsyntax nach
    cli-spec.md" setzt voraus, dass die Spec selbst stimmt — beides ist separat zu klären.
