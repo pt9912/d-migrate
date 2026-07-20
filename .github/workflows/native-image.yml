@@ -105,9 +105,24 @@ jobs:
         run: |
           set -o pipefail
           echo "entrypoint: ${NATIVE_ENTRYPOINT}"
+
+          # macOS-Runner: 7,5 GB RAM und 3 Kerne — die knappste Maschine der Matrix. Unter GraalVM 25
+          # reichte das fuer die volle Flaeche NICHT: der Builder verbrachte 77,5 % der Zeit in GC und
+          # starb nach 42 min mit Exit 30 (Lauf 29741017853). Unter GraalVM 21.0.2 lief derselbe Bau
+          # noch durch (31,9 % GC, 26m20s) — der Mehrbedarf kommt mit der neuen Version.
+          #
+          # Weniger Compiler-Threads = weniger gleichzeitig gehaltene Arbeitsmengen. Bewusst nur hier
+          # gesetzt und nicht als Default: auf Linux/Windows (16 GB) ist die Drosselung unnoetig und
+          # wuerde nur den Bau verlangsamen.
+          EXTRA=""
+          if [ "$(uname -s)" = "Darwin" ]; then
+            EXTRA="-PnativeParallelism=2"
+            echo "macOS erkannt — drossele auf ${EXTRA}"
+          fi
+
           start=$(date +%s)
           ./gradlew --no-daemon :adapters:driving:cli:nativeCompile \
-            "-PnativeEntrypoint=${NATIVE_ENTRYPOINT}" 2>&1 | tee native-build.log
+            "-PnativeEntrypoint=${NATIVE_ENTRYPOINT}" ${EXTRA} 2>&1 | tee native-build.log
           status=$?
           end=$(date +%s)
           echo "build_seconds=$(( end - start ))" >> "${GITHUB_OUTPUT}"
