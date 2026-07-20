@@ -164,8 +164,14 @@ printf '| %s | %s | %s | %s |\n' \
 # Request gesendet. Der Endpunkt zeigt bewusst ins Leere.
 #
 # WAS DAS PRUEFT: Konstruktion des AWS-SDK-Clients samt Credential-Chain und Region-Aufloesung —
-# dort sitzt die Reflection. WAS ES NICHT PRUEFT: eine echte S3-Operation (Upload/Download/List);
-# dafuer braeuchte es einen laufenden MinIO/SeaweedFS und damit einen compose-Aufbau.
+# dort sitzt die Reflection.
+#
+# WAS ES NICHT PRUEFT: eine echte S3-Operation (Upload/Download/List). Das liegt NICHT an fehlender
+# Infrastruktur — das Projekt hat mit `newSeaweedS3Container()` (storage-s3/src/testFixtures)
+# Testcontainers-Unterstuetzung fuer SeaweedFS. Gegengeprueft 2026-07-20 mit einem LIVE laufenden
+# SeaweedFS: das Binary sendete NULL Requests. Der initialize-Handshake erzeugt keine Artefakte, und
+# der Startup-Sweep ueberspringt bei S3 die Segment-Laeufe. Ein echter Operationstest braeuchte einen
+# artefakt-erzeugenden MCP-tools/call — eigene Orchestrierung, offener Punkt.
 # Bewertet wird die Startzeile, nicht der Exit-Code: der Server endet bei EOF ohnehin mit 0.
 n=$((n + 1))
 s3_log="${OUTDIR}/probe-${n}.log"
