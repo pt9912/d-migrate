@@ -22,6 +22,19 @@ OUTDIR="$(dirname "${REPORT}")/f0-out"
 SCHEMA="examples/sample-db/calib-schema.yaml"
 PROBE_DB="${OUTDIR}/f0-probe.db"
 
+# Auf Windows laeuft dieses Skript unter Git-Bash, das POSIX-Pfade (/d/a/...) fuehrt — das native
+# Binary ist aber eine Windows-Anwendung und erwartet D:/a/... Ohne Umrechnung scheitert die
+# SQLite-Sonde mit SQLITE_CANTOPEN und sieht wie ein JNI-Befund aus, obwohl nur der Pfad falsch ist.
+# `cygpath -m` liefert die Mixed-Form (Laufwerksbuchstabe + Schraegstriche), die in eine JDBC-URL passt.
+# Der POSIX-Zweig behaelt bewusst exakt die bisher bewaehrte Form `sqlite:///` + absoluter Pfad
+# (ergibt vier Schraegstriche). Nicht "vereinheitlichen": die Slash-Anzahl ist bei URL-Parsing
+# bedeutungstragend, das Projekt hatte dort bereits einen Authority-Kollaps-Bug.
+if command -v cygpath >/dev/null 2>&1; then
+  PROBE_DB_URL="sqlite:///$(cygpath -m "${PROBE_DB}")"
+else
+  PROBE_DB_URL="sqlite:///${PROBE_DB}"
+fi
+
 mkdir -p "${OUTDIR}"
 
 # Minimal, dialektneutral, keine custom_types. calib-schema.yaml taugt als SQLite-JNI-Sonde NICHT:
@@ -85,9 +98,9 @@ probe "ICU-Resources (normalize im Header)" \
   "${BIN}" schema validate --source "${SCHEMA}"
 probe "sqlite-JNI Schreibpfad (DDL wird angewendet)" \
   "${BIN}" schema migrate --source "${OUTDIR}/f0-probe-schema.yaml" \
-    --target "db:sqlite:///${PROBE_DB}" --execute --report "${OUTDIR}/migrate-report.yaml"
+    --target "db:${PROBE_DB_URL}" --execute --report "${OUTDIR}/migrate-report.yaml"
 probe "sqlite-JNI Lesepfad" \
-  "${BIN}" schema reverse --source "sqlite:///${PROBE_DB}" --output "${OUTDIR}/reverse.yaml"
+  "${BIN}" schema reverse --source "${PROBE_DB_URL}" --output "${OUTDIR}/reverse.yaml"
 
 # AP 4 — Kern-Kommandos gegen den HEUTIGEN Korpus (kommando-lokale Flaechen fehlen dort, F.2).
 probe "DDL-Rendering PostgreSQL" \
