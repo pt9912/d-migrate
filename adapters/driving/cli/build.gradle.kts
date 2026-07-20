@@ -9,7 +9,7 @@ import java.security.MessageDigest
 plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
-    id("com.google.cloud.tools.jib") version "3.4.5"
+    id("com.google.cloud.tools.jib") version "3.5.4"
 }
 
 application {
