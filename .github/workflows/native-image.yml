@@ -21,6 +21,13 @@ on:
           - core
           - full
         default: core
+      os_scope:
+        description: 'all = 3-OS-Matrix. linux = nur ubuntu (schnelle Messrunde, ~8 statt ~25 min).'
+        type: choice
+        options:
+          - all
+          - linux
+        default: all
   push:
     tags:
       - 'v*'
@@ -39,7 +46,11 @@ jobs:
       # einem OS-spezifischen Native-Image-Problem ist die Information der anderen Legs wertvoll.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # `os_scope: linux` verkuerzt Messrunden auf ein Leg: macOS ist mit ~21 min der Taktgeber,
+        # liefert aber keine zusaetzliche Erkenntnis — die F.0-Blocker waren in beiden Laeufen auf
+        # allen drei Plattformen identisch. Die volle Matrix laeuft an Meilensteinen und bei Tags
+        # (Tag-Laeufe haben keine Inputs -> 'all').
+        os: ${{ fromJSON(inputs.os_scope == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     # native-image ist rechenintensiv; das Linux-Leg lag bei ~10 min. Grosszuegiges Dach, damit ein
     # langsameres OS-Leg nicht am Default-Limit stirbt.

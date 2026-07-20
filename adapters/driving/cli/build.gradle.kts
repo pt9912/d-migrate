@@ -41,6 +41,13 @@ val nativeMainClass = when (nativeEntrypoint) {
 graalvmNative {
     // Keine GraalVM-Toolchain-Suche zur Konfigurationszeit — hält den JDK-21-Build (ohne GraalVM) grün.
     toolchainDetection.set(false)
+
+    // GraalVM Reachability Metadata Repository: gepflegte Metadaten fuer verbreitete Bibliotheken.
+    // Adressiert ganze Klassen statt einzelner Befunde — der F.0-Messlauf 29723222968 zeigte
+    // HikariCP-Reflection (PropertyElf.getProperty) als Blocker, eine sehr verbreitete Abhaengigkeit.
+    metadataRepository {
+        enabled.set(true)
+    }
     binaries {
         named("main") {
             imageName.set("d-migrate")
