@@ -153,19 +153,38 @@ jobs:
 
       - name: Phase F.0 measurement (full entrypoint only)
         if: env.NATIVE_ENTRYPOINT == 'full'
-        # MESSUNG, kein Gate: jede Sonde wird ausgefuehrt, ihr Exit-Code und stderr-Auszug
-        # protokolliert, und der Step endet bewusst gruen. Ein Fehlschlag ist hier ein BEFUND, kein
-        # Jobfehler — wuerde der Step abbrechen, bekaeme man nur den ersten Blocker statt der Liste.
+        # MESSUNG, kein Gate: jede Sonde wird ausgefuehrt, ihr Ergebnis protokolliert, und der Step
+        # endet bewusst gruen. Ein Fehlschlag ist hier ein BEFUND, kein Jobfehler — wuerde der Step
+        # abbrechen, bekaeme man nur den ersten Blocker statt der Liste.
         #
-        # Exit-Codes einordnen: 2 = CLI-Usage (falsch aufgerufene Sonde, KEIN native-image-Blocker),
-        # 3 = fachliche Ablehnung, 1/134/andere = typischerweise fehlende Reachability-Metadaten.
+        # JVM-GRUNDLINIE: alle Sonden wurden vorab gegen `d-migrate:dev` (JVM-CLI) ausgefuehrt und
+        # liefern dort ausnahmslos Exit 0. Jeder Nicht-Null-Code hier ist damit ein
+        # native-image-Befund und KEIN Aufruffehler. Deshalb auch das eigene Sonden-Schema unten:
+        # calib-schema.yaml enthaelt einen Enum, an dem `schema migrate` gegen SQLite fachlich mit
+        # Exit 8 (DIALECT_UNSUPPORTED_OPERATION) blockt — das wuerde die JNI-Aussage verfaelschen.
         shell: bash
         run: |
           set -uo pipefail
-          BIN="dist/${{ steps.stage.outputs.asset }}"
+          BIN="$(pwd)/dist/${{ steps.stage.outputs.asset }}"
           REPORT="f0-report-${{ steps.stage.outputs.platform }}.md"
           SCHEMA="examples/sample-db/calib-schema.yaml"
           PROBE_DB="$(pwd)/f0-probe.db"
+          mkdir -p f0-out
+
+          # Minimal, dialektneutral, keine custom_types -> migrate/reverse gegen SQLite laufen sauber.
+          cat > f0-probe-schema.yaml <<'YAML'
+          schema_format: "1.0"
+          name: "f0_probe"
+          version: "1.0.0"
+          encoding: "utf-8"
+          tables:
+            probe_items:
+              columns:
+                id: { type: identifier, auto_increment: true }
+                label: { type: text, max_length: 80, required: true }
+                amount: { type: decimal, precision: 10, scale: 2 }
+              primary_key: [id]
+          YAML
 
           {
             echo "# Phase F.0 — Messlauf"
@@ -173,52 +192,49 @@ jobs:
             echo "- Plattform: ${{ steps.stage.outputs.platform }}"
             echo "- Entrypoint: full (dev.dmigrate.cli.MainKt)"
             echo "- Bauzeit: ${{ steps.compile.outputs.build_seconds }} s"
+            echo "- JVM-Grundlinie: alle Sonden Exit 0 (gegen d-migrate:dev)"
             echo
-            echo "| # | Sonde | Zweck | Exit | Ergebnis |"
-            echo "| --- | --- | --- | --- | --- |"
+            echo "| # | Zweck | Exit | Erste Fehlerzeile |"
+            echo "| --- | --- | --- | --- |"
           } > "${REPORT}"
 
           n=0
           probe() {
             local purpose="$1"; shift
             n=$((n + 1))
-            local out rc
-            out="$("$@" 2>&1)" && rc=0 || rc=$?
-            printf '%s\n' "--- probe ${n}: $* (exit ${rc})" >&2
-            printf '%s\n' "${out}" | tail -5 >&2
-            local verdict
-            case "${rc}" in
-              0) verdict="ok" ;;
-              2) verdict="usage (keine Aussage)" ;;
-              3) verdict="fachliche Ablehnung" ;;
-              *) verdict="**Blocker-Kandidat**" ;;
-            esac
-            local excerpt
-            excerpt="$(printf '%s' "${out}" | tail -1 | tr '|' '/' | cut -c1-90)"
-            printf '| %s | %s | %s | %s | %s — %s |\n' \
-              "${n}" "$*" "${purpose}" "${rc}" "${verdict}" "${excerpt}" >> "${REPORT}"
+            local log="f0-out/probe-${n}.log" rc
+            "$@" > "${log}" 2>&1 && rc=0 || rc=$?
+            printf '%s\n' "--- probe ${n} (exit ${rc}): $*" >&2
+            # KOPF, nicht tail: die erste Nicht-Stackframe-Zeile traegt den Exception-Typ. Ein
+            # `tail` zeigt nur den innersten Frame und verschweigt genau die Diagnose.
+            local first
+            first="$(grep -vE '^[[:space:]]*at |^[[:space:]]*\.\.\.' "${log}" | grep -vE '^\s*$' \
+              | head -1 | tr '|' '/' | cut -c1-120)"
+            sed -n '1,25p' "${log}" >&2
+            printf '| %s | %s | %s | %s |\n' \
+              "${n}" "${purpose}" "${rc}" "${first:-(keine Ausgabe)}" >> "${REPORT}"
           }
 
-          # AP 2 — Startpfad: loest ServiceLoader-Aufloesung + Treiber-/ICU-Provider-Konstruktion aus.
-          probe "Startpfad (ServiceLoader, Provider-Konstruktion)" "${BIN}" --version
-          probe "Startpfad (Kommandobaum)"                         "${BIN}" --help
+          # AP 2 — Startpfad: ServiceLoader-Aufloesung + Treiber-/ICU-Provider-Konstruktion.
+          probe "Startpfad \`--version\`"                        "${BIN}" --version
+          probe "Startpfad \`--help\`"                           "${BIN}" --help
 
           # AP 3 — was --help NICHT beweist: ICU-Daten (norm() im Validierungs-Header) und sqlite-JNI.
           probe "ICU-Resources (normalize im Header)" \
             "${BIN}" schema validate --source "${SCHEMA}"
-          probe "sqlite-JNI Schreibpfad (Nativelib-Extraktion)" \
-            "${BIN}" schema migrate --source "${SCHEMA}" --target "db:sqlite:///${PROBE_DB}" \
-              --execute --report f0-migrate-report.yaml
+          probe "sqlite-JNI Schreibpfad (DDL wird angewendet)" \
+            "${BIN}" schema migrate --source f0-probe-schema.yaml \
+              --target "db:sqlite:///${PROBE_DB}" --execute --report f0-out/migrate-report.yaml
           probe "sqlite-JNI Lesepfad" \
-            "${BIN}" schema reverse --source "sqlite:///${PROBE_DB}" --output f0-reverse.yaml
+            "${BIN}" schema reverse --source "sqlite:///${PROBE_DB}" --output f0-out/reverse.yaml
 
           # AP 4 — Kern-Kommandos gegen den HEUTIGEN Korpus (kommando-lokale Flaechen fehlen dort, F.2).
           probe "DDL-Rendering PostgreSQL" \
-            "${BIN}" schema generate --source "${SCHEMA}" --target postgresql --output f0-pg.sql
+            "${BIN}" schema generate --source "${SCHEMA}" --target postgresql --output f0-out/pg.sql
           probe "DDL-Rendering MySQL" \
-            "${BIN}" schema generate --source "${SCHEMA}" --target mysql --output f0-my.sql
+            "${BIN}" schema generate --source "${SCHEMA}" --target mysql --output f0-out/my.sql
           probe "DDL-Rendering SQLite" \
-            "${BIN}" schema generate --source "${SCHEMA}" --target sqlite --output f0-lite.sql
+            "${BIN}" schema generate --source "${SCHEMA}" --target sqlite --output f0-out/lite.sql
           probe "JSON-Ausgabepfad (zweiter Formatter-Zweig)" \
             "${BIN}" --output-format json schema validate --source "${SCHEMA}"
 
@@ -277,6 +293,7 @@ jobs:
           path: |
             native-build.log
             f0-report-*.md
+            f0-out/**
             adapters/driving/cli/build/native/nativeCompile/reports/**
           if-no-files-found: warn
           retention-days: 14
