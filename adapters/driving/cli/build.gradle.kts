@@ -48,7 +48,7 @@ val nativeEntrypoint = providers.gradleProperty("nativeEntrypoint").getOrElse("c
 val nativeMissingRegistrationMode = providers.gradleProperty("nativeMissingRegistrationMode").orNull
 
 // Bau-Ressourcen (Begruendung an der Verwendungsstelle).
-val nativeMaxRamPercentage = providers.gradleProperty("nativeMaxRamPercentage").getOrElse("60.0")
+val nativeMaxRamPercentage = providers.gradleProperty("nativeMaxRamPercentage").getOrElse("80.0")
 // Bewusst OHNE Default: `--parallelism` fest zu setzen hilft nur der Zeitreproduzierbarkeit, die
 // hier niemand braucht — auf CI-Runnern (~4 Kerne) wuerde ein fixes 8 ueberzeichnen. Ohne die
 // Option waehlt native-image die Kernzahl der jeweiligen Maschine, was ueberall das Richtige ist.
@@ -98,9 +98,15 @@ graalvmNative {
             buildArgs.add("-H:+AddAllCharsets")
 
             // Speicherbudget des Builders. Ohne die Option nimmt native-image einen konservativen
-            // Anteil (lokal gemessen 8,62 GB von 31 GB) und GCt sich dumm: 319 GCs / 41,5 s gegen
-            // 134 GCs / 11,3 s mit 60 %. Der native-image-Schritt fiel dadurch von ~5 min auf 1m40s.
-            // Peak RSS lag bei 9,78 GB — auf einem 16-GB-Runner sind 60 % knapp, aber ausreichend.
+            // Anteil (lokal 8,62 GB von 31 GB) und GCt sich dumm: 319 GCs / 41,5 s gegen 134 GCs /
+            // 11,3 s mit Deckel; der native-image-Schritt fiel lokal von ~5 min auf 1m40s.
+            //
+            // 80 %, NICHT 60 %: ein erster Anlauf mit 60 % war auf meiner 31-GB-Maschine grosszuegig
+            // (16,57 GB), auf dem macOS-Runner aber schaedlich — der hat 7 GB und 3 Kerne, 60 %
+            // ergaben 3,74 GB, und der Bau verbrachte **45,9 % seiner Gesamtzeit in 253 GCs**
+            // (Lauf 29727572204, 26m20s, Peak RSS nur 2,21 GB). GraalVM bat im Log ausdruecklich um
+            // mehr Speicher. Ein fester Prozentsatz wirkt auf kleinen Maschinen ganz anders als auf
+            // grossen — deshalb hoch genug, dass auch der kleinste Runner atmen kann.
             buildArgs.add("-J-XX:MaxRAMPercentage=$nativeMaxRamPercentage")
             if (nativeParallelism != null) {
                 buildArgs.add("--parallelism=$nativeParallelism")
