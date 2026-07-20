@@ -535,6 +535,61 @@ aufgesetzt werden müssen:
 4. Optional Variable `DOCKERHUB_IMAGE`, falls das Ziel-Repository von
    `pt9912/d-migrate` abweichen soll (z. B. nach Umzug in eine Organisation).
 
+#### 4.4.2 Native-Image-Binaries
+
+Der Tag-Push löst zusätzlich
+[`.github/workflows/native-image.yml`](../../.github/workflows/native-image.yml)
+aus. Der Workflow baut mit GraalVM je Betriebssystem ein eigenständiges
+Binary — native-image kompiliert nicht cross, jedes OS baut auf seinem
+eigenen Runner — und hängt die Ergebnisse an den GitHub-Release.
+
+Die Assets tragen Plattform und Version im Namen, jeweils mit
+Prüfsummen-Datei:
+
+| Asset | Runner |
+| --- | --- |
+| `d-migrate-X.Y.Z-linux-x64` + `.sha256` | `ubuntu-latest` |
+| `d-migrate-X.Y.Z-macos-arm64` + `.sha256` | `macos-latest` |
+| `d-migrate-X.Y.Z-windows-x64.exe` + `.sha256` | `windows-latest` |
+
+Plattform und Architektur werden im Workflow zur Laufzeit aus `uname`
+abgeleitet, nicht in der Matrix hinterlegt — wechselt GitHub die
+Runner-Architektur, ändert sich der Asset-Name mit, statt still falsch zu
+werden.
+
+Zur Einordnung:
+
+- Das Native-Binary ist eine **zusätzliche** Distributionsklasse. Es ersetzt
+  weder Fat-JAR noch OCI-Image noch Homebrew; alle bisherigen Kanäle bleiben
+  unverändert.
+- Es deckt das **Core-Subset** der CLI ab (`schema validate`,
+  `schema generate`) und braucht keine JVM. Kommandos mit
+  Datenbankzugriff — `reverse`, `compare`, `migrate`, `data` — sind nicht
+  enthalten; dafür bleibt das Fat-JAR bzw. das OCI-Image der Weg.
+- Jedes OS-Leg smoked sein eigenes Binary (`--help`, `schema validate`,
+  `schema generate`), bevor es hochgeladen wird. macOS und Windows sind
+  lokal nicht nachbaubar, deshalb ist dieser Smoke dort die einzige
+  Selbstvalidierung.
+- Der Anhänge-Job erstellt **kein** Release, er lädt nur hoch. Das Release
+  selbst kommt aus
+  [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml),
+  damit Titel, Notes und Prerelease-Flag in einer Hand bleiben. Findet der
+  Job kein Release, wartet er in zehn Versuchen à 30 s und wird danach rot.
+- `fail-fast` ist aus: ein rotes OS-Leg bricht die anderen nicht ab. Ein
+  fehlgeschlagenes Leg bedeutet, dass für diese Plattform **kein** Asset am
+  Release hängt — der Release selbst bleibt gültig. Deshalb steht die
+  Asset-Liste in der Verifikation ([4.8](#48-verifikation-des-releases)).
+
+Der Workflow lässt sich auch ohne Tag starten (`workflow_dispatch`), etwa um
+das Rezept gegen `develop` zu prüfen. Solche Läufe hängen nichts an ein
+Release; ihre Binaries tragen statt der Version die Commit-Kurz-SHA und
+liegen nur als Workflow-Artefakt vor.
+
+```bash
+gh workflow run native-image.yml --ref develop
+gh run watch
+```
+
 ### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
 
 ```bash
@@ -698,6 +753,15 @@ anschließend als verifizierten Repo-Stand nachziehen.
       Schlägt der Pull fehl, wurde der Push still übersprungen (Secret) — Tag-Build-Log
       auf die Notice prüfen
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
+- [ ] Native-Image-Assets ([4.4.2](#442-native-image-binaries)) hängen für **alle drei**
+      Plattformen am Release, je mit `.sha256`:
+  ```bash
+  gh release view vX.Y.Z --json assets --jq '.assets[].name' | grep -E 'linux-x64|macos-arm64|windows-x64'
+  ```
+      Fehlt eine Plattform, ist ihr Matrix-Leg rot geworden (`fail-fast` ist aus) —
+      Lauf von `native-image.yml` für den Tag prüfen
+- [ ] Native-Binary der eigenen Plattform startet: heruntergeladen, `chmod +x`,
+      `./d-migrate-X.Y.Z-<plattform> schema validate <schema.yaml>`
 - [ ] CI ist auf `main` und auf dem Tag grün
 
 ### 4.9 Vorabversionen (Release Candidates / Prereleases)
@@ -876,11 +940,14 @@ Für jeden Release abhaken:
 - [ ] Workflow-Artefakt `release-assets` des grünen Tag-Builds verfügbar
 - [ ] Image auf `ghcr.io/pt9912/d-migrate:X.Y.Z` und `:latest` verfügbar
 - [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
+- [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag grün — alle drei OS-Legs
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
 - [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
+- [ ] Release enthält die drei Native-Binaries (`linux-x64`, `macos-arm64`, `windows-x64.exe`) je mit `.sha256`
+- [ ] Native-Binary der eigenen Plattform lokal gesmoked (`schema validate`)
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
 - [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht

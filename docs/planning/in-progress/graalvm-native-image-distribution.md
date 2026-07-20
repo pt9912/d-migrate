@@ -6,7 +6,9 @@ gelaufen 2026-07-19**; Scope-Gabel entschieden (**Core-CLI-Subset zuerst**). **P
 BEWIESEN 2026-07-19** — der Kern native-kompiliert grün. **Punkt 1+2 GELIEFERT 2026-07-19:** nativer
 Entrypoint `NativeMain.kt` + Gradle-Plugin → `nativeCompile` erzeugt reproduzierbar ein grünes
 65-MB-`d-migrate`-Binary (`schema validate` läuft); normaler Build unberührt. **`schema validate` + `schema generate` laufen nativ**, Linux-CI (`native-image.yml`) grün verifiziert.
-Ergebnisse in „Phase A/B — Ergebnisse" unten. Verbleibend = weitere Kommandos + macOS/Windows-Legs (Phase D).
+Ergebnisse in „Phase A/B — Ergebnisse" unten. **2026-07-20: 3-OS-Matrix (Phase D) + Release-Asset-Anhang
+(Phase E) geliefert — Verifikation der macOS-/Windows-Legs via Dispatch-Lauf ausstehend.** Verbleibend
+danach = optionale weitere Kommandos und die Linien-Entscheidungen (statisches Linken, Linux-arm64).
 
 **Trigger**: Die [Roadmap](roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
@@ -42,22 +44,35 @@ DMIGRATE_ALLOW_LOCAL_GRADLE=1 ./gradlew :adapters:driving:cli:nativeCompile
 ```
 
 **Nächste Schritte (priorisiert):**
-1. **macOS/Windows-Matrix-Legs** in `native-image.yml`: `matrix.os` auf
-   `[ubuntu-latest, macos-latest, windows-latest]`. Windows: `setup-graalvm` bringt den MSVC-Kontext,
-   Binary heißt `d-migrate.exe` (Upload-`path`-Glob `d-migrate*` deckt das ab); der Smoke-Step nutzt
-   `shell: bash` (auf Windows-Runnern via Git-Bash verfügbar). macOS/Windows sind **lokal nicht
-   verifizierbar** → der Smoke-Step ist die Selbstvalidierung. `fail-fast: false` steht schon.
-2. **Phase E — Release-Assets**: die Binaries bei `tags: v*` an den GitHub-Release hängen
-   (`contents: write`, SHA-256, `docs/user/releasing.md` um die Native-Asset-Klasse ergänzen). Native
-   **ergänzt** Fat-JAR/OCI/Homebrew.
+1. ✅ **macOS/Windows-Matrix-Legs GELIEFERT** (2026-07-20) — `matrix.os` auf
+   `[ubuntu-latest, macos-latest, windows-latest]`, job-weites `defaults.run.shell: bash` (auf Windows
+   Git-Bash, damit das `gradlew`-Shellskript statt `gradlew.bat` läuft und alle Legs identische
+   Steps haben);
+   `setup-graalvm` bringt den MSVC-Kontext mit. **Verifikation via Dispatch-Lauf ausstehend** —
+   macOS/Windows sind lokal nicht nachbaubar, der Per-OS-Smoke ist dort die einzige Selbstvalidierung.
+2. ✅ **Phase E — Release-Assets GELIEFERT** (2026-07-20) — eigener `attach-release`-Job (`needs:
+   build-native`, nur bei `tags: v*`, `contents: write`), der die Artefakte aller Legs einsammelt und
+   per `gh release upload --clobber` anhängt. Er **erstellt kein Release**, sondern wartet auf das von
+   `release-homebrew.yml` erzeugte (10 × 30 s) — Titel/Notes/Prerelease bleiben in einer Hand.
+   `docs/user/releasing.md` 4.4.2 + Verifikation 4.8 + Checkliste ergänzt. Native **ergänzt**
+   Fat-JAR/OCI/Homebrew.
 3. **Weitere native Kommandos** (optional/dünn): die DB-freie Fläche ist mit validate/generate weitgehend
    ausgeschöpft; additiv wären `schema generate`-Flags (`--generate-rollback`, `--output`, `--split`).
    reverse/compare/migrate/data brauchen eine DB → **nicht** Core-Subset.
 
+**Asset-Namensschema** (Phase E): `d-migrate-<version>-<os>-<arch>[.exe]` + `.sha256`, also
+`…-linux-x64`, `…-macos-arm64`, `…-windows-x64.exe`. OS und Architektur werden **zur Laufzeit aus
+`uname`** abgeleitet, nicht in der Matrix hartcodiert — GitHub hat die macOS-Runner bereits auf arm64
+umgestellt, ein festes Label würde bei der nächsten Umstellung still lügen. Dispatch-Läufe (ohne Tag)
+tragen statt der Version die Commit-Kurz-SHA und hängen nichts an ein Release.
+
 **Gotchas (in dieser Session gelernt):**
-- `workflow_dispatch`/`gh workflow run` greifen erst, wenn `native-image.yml` **einmal auf `main`** war
-  (Default-Branch-Registrierung; empirisch: nur-develop-Workflow fehlt in der API-Workflowliste → 404).
-  Bis dahin läuft der Native-CI nur via `tags: v*` oder einen temporären `push: develop`-Trigger.
+- ~~`workflow_dispatch` greift erst nach Default-Branch-Registrierung~~ — **erledigt 2026-07-20**:
+  `native-image.yml` liegt per Config-Commit `05f1a229` auf `main`, `gh workflow list` zeigt „Native
+  Image" (vorher 404). `gh workflow run native-image.yml --ref develop` funktioniert jetzt; ein
+  temporärer `push: develop`-Trigger ist nicht mehr nötig. **Verallgemeinert:** alles
+  Default-Branch-Gebundene (auch die Dependabot-Config) wirkt nur, wenn es auf `main` liegt — `main`
+  lag 64 Commits hinter `develop`.
 - **Nicht die shadowJar** nativ bauen (sqlite-`SqliteJdbcFeature` als Multi-Release-Eintrag bricht in
   Phase [1/8]) — immer über den echten Modul-Classpath (Gradle-Plugin).
 - `Native*`-Klassen bleiben **Kover-exkludiert** (`build.gradle.kts` + `docs/coverage/excludes-ledger.md`).
@@ -130,14 +145,23 @@ DMIGRATE_ALLOW_LOCAL_GRADLE=1 ./gradlew :adapters:driving:cli:nativeCompile
   Matrix aktuell nur `ubuntu-latest`. **Einmalig per temporärem `push: develop`-Trigger grün gelaufen**
   (GraalVM in CI provisioniert, nativeCompile + Smoke bestanden), Trigger danach wieder entfernt —
   `workflow_dispatch` greift erst nach Default-Branch-Registrierung (nächster Release-Merge).
-- **Offen:** macOS-/Windows-Legs in die Matrix (Windows braucht MSVC + liefert `d-migrate.exe`);
-  statisches/`mostly-static`-Linken auf Linux (Portabilität); arm64 (macOS-arm64, Linux-arm64) —
-  mindestens x64 je OS als 1.0.0-Ziel.
+- ✅ **macOS-/Windows-Legs GELIEFERT** (2026-07-20, Verifikation via Dispatch ausstehend): Matrix auf
+  alle drei OS, `fail-fast: false`, `timeout-minutes: 60`, job-weites `shell: bash`. Der Per-OS-Smoke
+  deckt jetzt **beide** nativen Kommandos ab (`--help`, `schema validate`, `schema generate`) und läuft
+  gegen das **gestagte** Binary, also exakt das Artefakt, das ans Release geht.
+- **Offen:** statisches/`mostly-static`-Linken auf Linux (Portabilität); Linux-arm64 (macOS-arm64
+  kommt durch die Runner-Umstellung ohnehin). Mindestens x64 je OS bleibt das 1.0.0-Ziel.
 
 ### Phase E — Release-Integration
-- Native-Binaries je OS als **zusätzliche** GitHub-Release-Assets (+ SHA-256), analog zu Fat-JAR/OCI/
-  Homebrew — Native ersetzt **nichts**, es ergänzt. `docs/user/releasing.md` um die Native-Asset-Klasse
-  ergänzen; Per-OS-Smoke (mindestens ein Core-Smoke) vor Attach.
+- ✅ **GELIEFERT** (2026-07-20, Verifikation erst am nächsten Tag-Cut): eigener `attach-release`-Job
+  sammelt die Artefakte aller Legs (`download-artifact` mit `pattern` + `merge-multiple`) und hängt sie
+  per `gh release upload --clobber` an. Namensschema `d-migrate-<version>-<os>-<arch>[.exe]` + `.sha256`.
+- **Bewusst ein einzelner Uploader** statt Upload aus jedem Matrix-Leg: hält `contents: write` auf einen
+  Job begrenzt und vermeidet drei gleichzeitige Uploads auf dasselbe Release.
+- **Bewusst kein `gh release create`**: das Release kommt aus `release-homebrew.yml`; der Job wartet
+  darauf (10 × 30 s) und wird danach rot. Titel/Notes/Prerelease-Flag bleiben in einer Hand.
+- Native ersetzt **nichts**, es ergänzt Fat-JAR/OCI/Homebrew. `docs/user/releasing.md`: Abschnitt 4.4.2
+  (Asset-Tabelle + Einordnung + Dispatch-Rezept), Verifikation 4.8, Release-Checkliste.
 
 ## Phase A — Ergebnisse (Spike 2026-07-19)
 
