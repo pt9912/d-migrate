@@ -7,8 +7,9 @@ das Native-Binary soll dasselbe können wie die JVM-CLI (Schwelle in Abschnitt 0
 auf diesen Satz zurück; wo unten „1.0.0-Ziel" steht, ist es unter diesem Vorbehalt zu lesen.
 
 **Ausführungsreihenfolge**: A, B, D, E **(erledigt — E jedoch nur unter der Annahme, dass Native
-optional ist)** → F **(F.0/F.2/F.3 erledigt 2026-07-20; offen: F.1 Rückbau, F.4 Korpus)** → G (nur
-falls F Ausschlüsse übriglässt) → H (nur falls Frage 6 = „Native bleibt 1.0.0-Gate"). Die Buchstaben
+optional ist)** → F **(F.0/F.2/F.3/F.4 erledigt 2026-07-20 — die VOLLE Fläche läuft nativ, inkl.
+`mcp serve` + S3; offen: nur noch F.1 Rückbau)** → G **(vermutlich hinfällig — kein Ausschluss in
+Sicht, alle Flächen laufen)** → H (nur falls Frage 6 = „Native bleibt 1.0.0-Gate"). Die Buchstaben
 sind historisch gewachsen.
 
 **Trigger**: Die [Roadmap](roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
@@ -86,36 +87,49 @@ in diesen Plan.
 
 ---
 
-## Wiedereinstieg (Stand 2026-07-20)
+## Wiedereinstieg (EOD 2026-07-20) — morgen hier anknüpfen
 
-**Geliefert und verifiziert (auf `develop`):**
-- Gradle-Plugin `org.graalvm.buildtools.native` (0.10.3) mit `--no-fallback` und
-  `--initialize-at-build-time=ch.qos.logback,org.slf4j`, `toolchainDetection=false` (opt-in, hält den
-  JDK-21-Build unberührt).
-- 3-OS-CI-Matrix — **alle drei Legs grün verifiziert** (Dispatch-Lauf 29717820742, 2026-07-20:
-  ubuntu 5m34s, windows 7m41s, macos 8m11s). Artefakte bestätigen `macos-latest` = **arm64**.
-- Release-Asset-Anhang (Phase E) — verifiziert erst am nächsten Tag-Cut (nur bei `tags: v*` aktiv).
-- `workflow_dispatch` registriert (Config-Commit `05f1a229` auf `main`).
+**Die volle CLI läuft nativ auf allen drei Plattformen — ALLE Flächen, kein Ausschluss.** 17 von 17
+Sonden grün; die zwei Subprozess-E2Es (`McpRealCliSubprocessTest`, `McpS3SubprocessE2ETest`) grün
+gegen das Binary. F.0/F.2/F.3/F.4 sind erledigt.
 
-**Stand 2026-07-20 nach Phase F.0/F.2: die volle CLI läuft nativ auf allen drei Plattformen** —
-je neun von neun Sonden auf Exit 0 (Lauf 29727572204). Zusammenfassung in „Phase F — Ergebnisse".
+### MORGEN: nur noch F.1 (Entrypoint zusammenführen) — der eine wirklich offene Bau-Schritt
 
-**Nächster Schritt: F.1** (Entrypoint zusammenführen) — rein mechanisch, Rückbauliste unten.
-Danach **F.4** (Korpus-Erweiterung: Parquet, Tool-Export, `mcp serve`, S3, `data profile`), das die
-Grundlage für Frage 6 vervollständigt.
+**Kritisch, mit Release-Relevanz:** Der ausgelieferte Default ist noch `nativeEntrypoint=core` =
+`NativeMainKt` = das **reduzierte** Binary. Der Tag-Pfad in `native-image.yml`
+(`NATIVE_ENTRYPOINT: ${{ inputs.entrypoint || 'core' }}`) baut damit heute **das alte Subset**, nicht
+die volle CLI. F.1 macht die Voll-Scope-Entscheidung erst wirksam. Rückbauliste steht unter „F.1 —
+Entrypoint zusammenführen"; Kern: `mainClass` fest auf `MainKt`, `NativeMain.kt` löschen, den
+`nativeEntrypoint`-Schalter entfernen, Kover-Excludes auf **beiden** Seiten raus, `releasing.md` 4.4.2
++ README nachziehen. Danach ist der `full`-Bau der einzige, und `native-probe`/`native-e2e` gaten ihn.
 
-**Lokale Schleife** (~4 min pro Runde statt ~8–26 min in CI):
+### Was heute Nachmittag dazukam (nach dem „Phase F — Ergebnisse"-Commit)
+
+- **`mcp serve` nativ gefixt** (`3817e572`): leeres Fehlerobjekt → dreistufig (lsp4j-TypeAdapter +
+  MCP-DTO-Konstruktoren, beide handgepflegt in `cli-manual/`). Ursache rückwärts über einen DEBUG-Log
+  in `McpServiceImpl.renderError` gefunden.
+- **S3 nativ gefixt** (`ec9fa2fd`): `--enable-url-protocols=http,https` — das AWS SDK parst seine
+  Endpoint-URL über `java.net.URL`, native-image aktiviert http/https nicht per Default. Voller
+  S3-Round-Trip gegen echtes SeaweedFS grün.
+- **GraalVM 25 statt 21.0.2** (`57829f31`): nötig, weil GRMR 1.0.7 das neue `reachability-metadata.json`-
+  Schema verlangt, das 21 nicht kennt. Kotlin 2.1.20 kann auf JDK 25 nicht STARTEN → **JAVA_HOME (JDK 21,
+  Gradle+Kotlin) / GRAALVM_HOME (25, native-image) getrennt**, im Dockerfile UND Workflow.
+- **GRMR aktiviert** (1.0.7) — aber **nachweislich wirkungslos** für unsere Blocker (HikariCP:
+  unterstützt laut `make native-check-lib`, greift bei uns trotzdem nicht; lsp4j: nicht unterstützt).
+  Bleibt an, kostet nichts, trägt nichts. Metadaten sind Agent-erhoben + handgepflegt.
+- **`native-e2e` über COPY --from** (`afb1ebcd`): Stage `integration-test-native` holt das Binary aus
+  `d-migrate:native-build`, kein Host-`build/`-Extract. `make native-e2e` fährt die Subprozess-E2Es.
+- **`make native-check-lib LIB=…`** (`8ff76038`): GRMR-Unterstützungsabfrage, Skript SHA-gepinnt.
+- **Doku-Diagnose-Härtung** bleibt: `McpServiceImpl.renderError` DEBUG-Log, S3-Store-SizeMismatch-WARN,
+  E2E-Clue mit Kind-stderr.
+
+### Lokale Schleife (~4 min/Runde, alles make+docker, GraalVM 25 im Image)
 ```
-make native-build      # Binary im Container bauen (hermetisch, kein Bind-Mount)
-make native-probe      # F.0-Sonden dagegen fahren
-make native-agent      # Reachability-Metadaten per Tracing-Agent erheben
-```
-
-**Lokal reproduzieren** (native-image läuft **nicht** im docker-Build — braucht GraalVM):
-```
-# GraalVM CE 21 (Community) als JAVA_HOME + GRAALVM_HOME, dann:
-DMIGRATE_ALLOW_LOCAL_GRADLE=1 ./gradlew :adapters:driving:cli:nativeCompile
-# Binary: adapters/driving/cli/build/native/nativeCompile/d-migrate
+make native-build        # volles Binary bauen: -PnativeEntrypoint=full (Default im Makefile)
+make native-probe        # 17 Sonden dagegen (ICU, sqlite-JNI, DDL, Parquet, Tool-Export, mcp, S3)
+make native-agent        # Reachability-Metadaten per Tracing-Agent erheben -> META-INF/.../cli/
+make native-e2e          # Subprozess-E2Es gegen das Binary (COPY --from, kein Host-build/)
+make native-check-lib LIB=com.zaxxer:HikariCP:6.2.1   # GRMR-Unterstützung pruefen
 ```
 
 **Keine Kompatibilitätszusage für bisherige Artefakte.** Es hängt noch **kein** Native-Asset an einem
@@ -300,20 +314,19 @@ Rückbau-Liste, vollständig (fail-closed-Gates hängen daran):
 - Tote Pfadverweise in `adapters/driving/cli/build.gradle.kts` korrigieren: zwei Kommentare zeigen noch
   auf diesen Plan unter `planning/next/`, er liegt aber seit `b259cfad` in `planning/in-progress/`.
 
-#### F.2 — Metadaten-Grundlage
-- **GRMR aktivieren** (`metadataRepository` im `graalvmNative`-Block).
-- **Korpus erweitern** um Trace-Läufe für die in Abschnitt 2 genannten Lücken: `data profile`,
-  Parquet-Export, Tool-Export (vier Ziele), `mcp serve`-Handshake, ICU-Normalisierungspfad, S3-Ziel.
-  Ohne diese Erweiterung kann der Agent die von F.4 benötigten Metadaten nicht erzeugen.
-- **Agent-Anbindung** bauen (Container-Injektion, Config-Herausreichung, `--config-merge-dir` über alle
-  Skripte — s. Abschnitt 2).
-- Erzeugte `reachability-metadata`/`reflect-config`/`resource-config`/`jni-config`/`proxy-config` beim
-  CLI-Modul kolozieren und committen.
-- ✅ **`DMIGRATE_CLI_BIN`-Override GELIEFERT** (`6dc4e916`) — die bestehenden Subprozess-E2Es laufen
-  gegen das Binary. CI-Verdrahtung offen: [`native-e2e-regression-gate`](../next/native-e2e-regression-gate.md).
-- **JNA-Inertheit verifizieren**: kein erreichbarer `Native.load()`-Pfad im Binary.
-- **Nebenwirkung prüfen**: committete `META-INF/native-image/**`-Ressourcen landen auch im Fat-JAR und
-  im jib-Image. Ob das gegen das Footprint-Ziel aus `storage-s3` zählt, ist zu klären.
+#### F.2 — Metadaten-Grundlage  ✅ im Kern erledigt 2026-07-20
+- ✅ **GRMR aktiviert** (`metadataRepository`, version 1.0.7) — **aber wirkungslos** für unsere
+  Blocker (s. „Phase F — Ergebnisse"). Bleibt an, trägt nichts. Prüfhilfe: `make native-check-lib`.
+- ✅ **Korpus erweitert** (`scripts/native-probe.sh`, 17 Sonden) — alle Flächen abgedeckt.
+- ✅ **Agent-Anbindung** gebaut: `make native-agent` (`docker/native-image.Dockerfile`-Stage
+  `native-agent`, Tracing-Agent unter `${GRAALVM_HOME}/bin/java`, `logging.audit` als
+  Deckungsnachweis). Metadaten committet unter `META-INF/native-image/dev.dmigrate/cli/`
+  (`reachability-metadata.json`, GraalVM-25-Format) + handgepflegt in `cli-manual/`.
+- ✅ **`DMIGRATE_CLI_BIN`-Override GELIEFERT** (`6dc4e916`); CI-Verdrahtung ausgelagert:
+  [`native-e2e-regression-gate`](../next/native-e2e-regression-gate.md).
+- ⬜ **JNA-Inertheit verifizieren**: kein erreichbarer `Native.load()`-Pfad im Binary. **Noch offen.**
+- ⬜ **Footprint-Nebenwirkung**: committete `META-INF/native-image/**`-Ressourcen landen auch im
+  Fat-JAR und im jib-Image. Ob das gegen das storage-s3-Footprint-Ziel zählt, **noch offen**.
 
 #### F.3 — Startpfad-Flächen (blockierend, direkt nach F.1)
 Diese Flächen gaten **jeden** Aufruf inklusive `--help` (Begründung in Abschnitt 1) und sind daher
@@ -324,13 +337,15 @@ Diese Flächen gaten **jeden** Aufruf inklusive `--help` (Begründung in Abschni
 - **PostgreSQL-/MySQL-JDBC** — reines Java, gelten als unkritisch; zu belegen, nicht anzunehmen.
 - **`text-icu` (ICU4J)** — eager am Wurzel-Command, Locale-/Daten-Resources.
 
-#### F.4 — Kommando-lokale Flächen
-**Ungeordnete Menge** — die Reihenfolge ist Output von F.0, nicht Vorgabe (frühere Fassungen dieses Plans
-leiteten sie aus Metadaten-Eintragszählungen ab, also aus genau der Methode, die F.0 ersetzen soll):
-- `formats-parquet` (parquet-hadoop + hadoop-common)
-- **Flyway via `persistence-jdbc`** (nicht `integrations`, s. Abschnitt 1)
-- `storage-s3` (AWS SDK v2, `url-connection-client` — kein netty)
-- `mcp` (`mcp serve`, stdio) — ungeprüft; s. auch Frage 5
+#### F.4 — Kommando-lokale Flächen  ✅ erledigt 2026-07-20
+Alle nativ funktionsfähig, per Sonde und/oder E2E belegt:
+- ✅ `formats-parquet` (parquet-hadoop) — `data export --format parquet` erzeugt eine echte Datei.
+- ✅ **Flyway via `persistence-jdbc`** — Tool-Export (Renderer) läuft; die echte Flyway-Library läuft
+  nur über `mcp serve` mit JDBC-Server-State (nicht via `export flyway`, s. Abschnitt 2).
+- ✅ `storage-s3` (AWS SDK v2, `url-connection-client`) — voller Round-Trip gegen SeaweedFS grün, nach
+  `--enable-url-protocols=http,https` (`ec9fa2fd`).
+- ✅ `mcp` (`mcp serve`, stdio) — `initialize`-Handshake korrekt, nach lsp4j-/DTO-Registrierung
+  (`3817e572`).
 
 ### Phase G — Ausschluss-Mechanik (nur falls F Ausschlüsse übriglässt)
 
@@ -479,12 +494,13 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
 `calib-schema.yaml` liess `schema migrate` fachlich blocken (DB entstand, aber **kein DDL**), und
 `export flyway` beruehrt die echte Flyway-Library **nie** (projekteigener Renderer).
 
-### Offen
+### Offen (Stand mittags — durch Nachmittagsarbeit teils überholt, s. Wiedereinstieg)
 
-- **F.1** (Entrypoint zusammenfuehren) — unveraendert offen, jetzt rein mechanisch.
-- **F.4** — Parquet, Tool-Export, `mcp serve`, S3, `data profile` wurden **nie ausgefuehrt**, also nie
-  getraced. Ueber diese Flaechen sagen die Metadaten nichts.
-- **Binaergroesse 185 MB** (Core-Subset war 67 MB) — Produktfrage, nicht entschieden.
+- **F.1** (Entrypoint zusammenfuehren) — **weiterhin offen**, der einzige verbleibende Bau-Schritt.
+- ~~F.4~~ — **erledigt am Nachmittag**: Parquet, Tool-Export, `mcp serve`, S3, `data profile` sind
+  getraced UND nativ funktionsfähig; `mcp serve` und S3 waren defekt und wurden gefixt (`3817e572`,
+  `ec9fa2fd`).
+- **Binaergroesse ~190 MB** (Core-Subset war 67 MB) — Produktfrage, nicht entschieden (Frage 7).
 
 ## 4. Offene Fragen / Entscheidungen
 
@@ -496,14 +512,13 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
 3. **Statisches Linken (Linux)**: `--static`/`--static-nolibc` (musl) vs. dynamisch gegen glibc.
 4. **Architekturen**: Ist-Stand ist eine Architektur je OS (`linux-x64`, `macos-arm64`, `windows-x64`).
    Offene Restfrage: **linux-arm64 ja/nein?**
-5. **MCP im Native-Binary**: `mcp serve` (stdio) ist **weiterhin ungeprüft** — der Sondenkorpus
-   berührt ihn nicht, und das Audit deckt ihn als Nachweis ebenfalls nicht ab. Bearbeitung in **F.4**.
-6. **Offen, Eigner-Entscheidung: bleibt Native ein 1.0.0-Gate?** **Die Grundlage hat sich am
-   2026-07-20 deutlich verbessert**: der Kern laeuft nativ auf allen drei Plattformen, die
-   Metadaten-Arbeit war kleiner als geschaetzt. Was fuer die Entscheidung noch fehlt, ist die
-   Korpus-Erweiterung (F.4) — ueber Parquet, Tool-Export, `mcp serve` und S3 ist nichts bekannt.
-   **Zweite Konsequenz unveraendert:** ein „Ja" macht **Phase H** noetig und Phase E unfertig, weil
-   die heutige Mechanik einen roten Native-Build ausdruecklich toleriert.
+5. ✅ **Beantwortet 2026-07-20: `mcp serve` läuft nativ** (`3817e572`) — stdio-`initialize`-Handshake
+   liefert das korrekte `result`. Der Defekt (leeres Fehlerobjekt) brauchte handgepflegte
+   lsp4j-TypeAdapter- + MCP-DTO-Konstruktor-Registrierung; per E2E gegen das Binary verifiziert.
+6. **Offen, Eigner-Entscheidung: bleibt Native ein 1.0.0-Gate?** **Die Grundlage ist jetzt
+   VOLLSTÄNDIG** (nicht mehr „halb"): alle Flächen laufen nativ, inkl. Parquet/Tool-Export/`mcp
+   serve`/S3. Die Frage ist damit sauber entscheidbar. **Konsequenz:** ein „Ja" macht **Phase H**
+   nötig und Phase E unfertig, weil die heutige Mechanik einen roten Native-Build toleriert.
 7. **Neu, offen: Binaergroesse.** 185 MB gegen 67 MB beim Core-Subset. Fuer eine
    CLI-Distributionsklasse ist das viel; ob akzeptabel oder nacharbeitsbeduerftig (etwa durch
    `--gc=serial`, Ausschluss ungenutzter Adapter oder UPX), ist nicht entschieden.
@@ -514,11 +529,12 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
 
 ## 5. Vorbedingungen
 
-- **GraalVM-Toolchain in CI** (patch-genau gepinnt auf `21.0.2`, je OS) — **erfüllt seit 2026-07-20**;
-  davor floatete die JDK-Version trotz gepinnter Action.
-- **Repräsentativer Smoke-Korpus** — **teilweise erfüllt**: der Kern ist abgedeckt, die
-  Schwergewichts-Flächen (Parquet, Tool-Export, MCP, ICU, S3, `data profile`) **nicht**. Erweiterung ist
-  Arbeitspunkt in F.2.
+- **GraalVM-Toolchain in CI** — **erfüllt; Ist-Stand ist GraalVM 25** (nicht mehr 21.0.2). Der Sprung
+  kam am Nachmittag mit GRMR 1.0.7 (verlangt das neue Metadaten-Schema, das 21 nicht kennt). Kotlin
+  2.1.20 läuft weiter auf **JDK 21** (getrenntes `JAVA_HOME`), nur native-image auf 25 (`GRAALVM_HOME`).
+- **Repräsentativer Smoke-Korpus** — **erfüllt**: `scripts/native-probe.sh` deckt jetzt alle Flächen ab
+  (17 Sonden inkl. Parquet, Tool-Export, `mcp serve`, S3, `data profile`); die Subprozess-E2Es ergänzen
+  echte S3-/MCP-Operationen. Historischer „teilweise"-Stand war der Mittags-Stand.
 - **Scope-Entscheidung** — **erfüllt** (Abschnitt 0).
 
 ## 6. Akzeptanzkriterien
