@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run integration tests (all modules with @integration tag)
         # Plan §6.16: generischer Aufruf, sodass neue integration-Tests in

@@ -41,7 +41,7 @@ jobs:
     # nicht das Job-Limit (sonst kein Collect/Upload). Start-Budget, im Lauf zu validieren.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify docker compose available
         run: docker compose version
@@ -87,7 +87,7 @@ jobs:
 
       - name: Upload perf results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           # run_attempt im Namen: github.run_id bleibt bei Re-runs gleich, upload-artifact
           # verlangt eindeutige Namen (ohne overwrite) -> sonst Kollision.
