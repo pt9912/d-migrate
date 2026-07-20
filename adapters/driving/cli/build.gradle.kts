@@ -47,6 +47,13 @@ graalvmNative {
             mainClass.set(nativeMainClass)
             buildArgs.add("--no-fallback")
             buildArgs.add("--initialize-at-build-time=ch.qos.logback,org.slf4j")
+            // i18n-Bundles der CLI (MessageResolver -> ResourceBundle.getBundle("messages.messages")).
+            // Ohne diese Registrierung stirbt JEDES Subkommando in Phase F.0 an
+            // MissingResourceException, noch im Clikt-Dispatch — der Blocker maskiert alle weiteren.
+            // Belegt durch Messlauf 29722018906 (identisch auf Linux/macOS/Windows).
+            // Vorlaeufig als buildArg: haelt das Fat-JAR unberuehrt. Die dauerhafte Form
+            // (committetes reachability-metadata vs. buildArg) entscheidet Phase F.2.
+            buildArgs.add("-H:IncludeResourceBundles=messages.messages")
         }
     }
 }
