@@ -193,13 +193,14 @@ Release; Dispatch-Läufe liefern reine Workflow-Artefakte. F.1 ändert die Aufru
   Image `d-migrate:dev` auf, nicht als nackte JVM. Der Agent muss in den containerisierten JVM-Start
   injiziert, die erzeugte Config aus dem Container herausgereicht und über ~19 Skripte per
   `--config-merge-dir` gemergt werden.
-- **Testnaht für das Binary — teurer als zunächst angenommen.** `test/e2e-cli` enthält mit
-  `RealCliSubprocess` zwar einen echten Subprozess-Start (`java -cp <classpath> dev.dmigrate.cli.MainKt`),
-  aber **nur die MCP-Tests nutzen ihn**. Die Daten-/Parquet-E2Es instanziieren `DMigrate` direkt im
-  Testprozess (z. B. `DataParquetRoundTripE2EPostgresTest`: `fun cli() = DMigrate().subcommands(…)`).
-  Ein `DMIGRATE_CLI_BIN`-Override allein würde also **nur zwei Testklassen** auf das Binary umschalten.
-  Was es wirklich braucht: einen **generischen CLI-Subprozess-Adapter** plus die **tatsächliche Migration**
-  der relevanten E2Es darauf. Das ist ein eigener Arbeitspunkt, kein Einzeiler.
+- ✅ **Testnaht für das Binary GELIEFERT** (`6dc4e916`): `DMIGRATE_CLI_BIN` schaltet
+  `test/e2e-cli`-`RealCliSubprocess` auf das Native-Binary um; `scripts/test-integration-docker.sh`
+  reicht es in den Container. Die frühere Sorge „nur zwei Testklassen" war für den Zweck genau richtig:
+  die **Subprozess**-E2Es (`McpS3SubprocessE2ETest`, `McpRealCliSubprocessTest`, MCP-Szenarien) sind
+  der Kern — die in-process-E2Es (`DMigrate()` direkt) bringen gegen das Binary nichts. Genau diese
+  Suite hat **zwei native Defekte gefunden, die der Sondenlauf nicht fand**: `mcp serve` (leeres
+  Fehlerobjekt) und die S3-Operation (`--enable-url-protocols`). **Offen ist die CI-Verdrahtung** →
+  eigener Slice [`native-e2e-regression-gate`](../next/native-e2e-regression-gate.md).
 - **Reproduzierbarkeit**: Native-Build in CI mit **patch-genau gepinnter** GraalVM-Version, nicht auf
   Entwickler-Laptops als Quelle der Wahrheit. Bis 2026-07-20 stand dort `java-version: '21'` — nur die
   Action war gepinnt, die JDK-Version floatete. Das ist deshalb keine Kosmetik, weil committete
@@ -308,8 +309,8 @@ Rückbau-Liste, vollständig (fail-closed-Gates hängen daran):
   Skripte — s. Abschnitt 2).
 - Erzeugte `reachability-metadata`/`reflect-config`/`resource-config`/`jni-config`/`proxy-config` beim
   CLI-Modul kolozieren und committen.
-- **`DMIGRATE_CLI_BIN`-Override** in `test/e2e-cli` einziehen, damit die bestehende E2E-Suite gegen das
-  Binary läuft.
+- ✅ **`DMIGRATE_CLI_BIN`-Override GELIEFERT** (`6dc4e916`) — die bestehenden Subprozess-E2Es laufen
+  gegen das Binary. CI-Verdrahtung offen: [`native-e2e-regression-gate`](../next/native-e2e-regression-gate.md).
 - **JNA-Inertheit verifizieren**: kein erreichbarer `Native.load()`-Pfad im Binary.
 - **Nebenwirkung prüfen**: committete `META-INF/native-image/**`-Ressourcen landen auch im Fat-JAR und
   im jib-Image. Ob das gegen das Footprint-Ziel aus `storage-s3` zählt, ist zu klären.
