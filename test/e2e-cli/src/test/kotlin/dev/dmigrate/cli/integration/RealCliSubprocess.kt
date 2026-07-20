@@ -81,15 +81,24 @@ internal fun startRealCliSubprocess(
     extraArgs: List<String> = emptyList(),
     env: Map<String, String> = emptyMap(),
 ): CliSubprocess {
-    val javaBin = ProcessHandle.current().info().command().orElse("java")
-    val classpath = System.getProperty("java.class.path")
-        ?: error("test JVM has no java.class.path system property")
+    // `DMIGRATE_CLI_BIN` schaltet diese Suite auf ein GraalVM-Native-Binary um, statt die CLI als
+    // Kind-JVM zu starten. Zweck: die vorhandenen Subprozess-E2Es — darunter der volle
+    // S3-Round-Trip gegen SeaweedFS — gegen das native Artefakt fahren, statt eine zweite,
+    // schwaechere Sondensuite dafuer zu bauen. Ohne die Variable bleibt alles wie bisher.
+    //
+    // Der Rest des Aufrufs ist identisch: das Binary versteht dieselbe Kommandozeile wie MainKt.
+    val nativeBin = System.getenv("DMIGRATE_CLI_BIN")?.takeIf { it.isNotBlank() }
+    val launchPrefix = if (nativeBin != null) {
+        listOf(nativeBin)
+    } else {
+        val javaBin = ProcessHandle.current().info().command().orElse("java")
+        val classpath = System.getProperty("java.class.path")
+            ?: error("test JVM has no java.class.path system property")
+        listOf(javaBin, "-cp", classpath, "dev.dmigrate.cli.MainKt")
+    }
 
     val builder = ProcessBuilder(
-        listOf(
-            javaBin,
-            "-cp", classpath,
-            "dev.dmigrate.cli.MainKt",
+        launchPrefix + listOf(
             "mcp", "serve",
             "--transport", "stdio",
             "--mcp-state-dir", stateDir,
