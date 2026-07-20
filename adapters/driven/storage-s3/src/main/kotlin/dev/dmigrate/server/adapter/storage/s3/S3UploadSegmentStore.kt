@@ -3,6 +3,7 @@ package dev.dmigrate.server.adapter.storage.s3
 import dev.dmigrate.server.core.upload.UploadSegment
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.WriteSegmentOutcome
+import org.slf4j.LoggerFactory
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier
@@ -40,8 +41,13 @@ class S3UploadSegmentStore(
         try {
             val hashed = S3StorageSupport.copyAndHash(source, tmp)
             return when {
-                hashed.sizeBytes != segment.sizeBytes ->
+                hashed.sizeBytes != segment.sizeBytes -> {
+                    LOG.warn(
+                        "segment {} size mismatch: declared {} bytes, read {} bytes from the stream",
+                        segment.segmentIndex, segment.sizeBytes, hashed.sizeBytes,
+                    )
                     WriteSegmentOutcome.SizeMismatch(segment.segmentIndex, segment.sizeBytes, hashed.sizeBytes)
+                }
                 else -> storeOrResolve(segment, tmp, hashed)
             }
         } finally {
@@ -158,5 +164,6 @@ class S3UploadSegmentStore(
     private companion object {
         const val LOCK_STRIPES = 64
         const val DELETE_BATCH = 1000
+        private val LOG = LoggerFactory.getLogger(S3UploadSegmentStore::class.java)
     }
 }

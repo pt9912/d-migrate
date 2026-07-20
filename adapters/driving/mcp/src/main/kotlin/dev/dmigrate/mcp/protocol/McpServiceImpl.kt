@@ -338,6 +338,13 @@ class McpServiceImpl(
     }
 
     private fun renderError(e: Throwable, requestId: String, toolName: String): ToolsCallResult {
+        // Die Ausnahme wird gleich auf eine redigierte Huelle abgebildet (Vertrauensgrenze). Vorher
+        // die Ursache mit vollem Stacktrace loggen — sonst ist ein serverseitiger Defekt fuer den
+        // Betreiber unauffindbar (der Client sieht nur INTERNAL_AGENT_ERROR). DEBUG-Level, damit der
+        // WARN-Default-Betrieb ruhig bleibt; zur Diagnose `-Dlogback...=DEBUG`.
+        if (LOG.isDebugEnabled) {
+            LOG.debug("tool '{}' (req {}) failed before the trust boundary", toolName, requestId, e)
+        }
         val base = errorMapper.map(e)
         // Pre-LF-012 / LN-027 / LN-028 / LN-038 helpers attached `toolName` as a structured
         // detail only for the two early-failure paths (AUTH_REQUIRED,
@@ -689,6 +696,7 @@ class McpServiceImpl(
         )
 
     private companion object {
+        private val LOG = org.slf4j.LoggerFactory.getLogger(McpServiceImpl::class.java)
         fun generateDispatchRequestId(): String =
             "req-${java.util.UUID.randomUUID().toString().take(8)}"
     }

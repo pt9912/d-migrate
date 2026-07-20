@@ -110,6 +110,14 @@ graalvmNative {
             // Default-Charsets, und eine Nicht-UTF-8-Quelle scheitert erst zur Laufzeit.
             buildArgs.add("-H:+AddAllCharsets")
 
+            // http/https-URL-Protokolle einschalten. native-image aktiviert per Default nur
+            // file/resource ("available on demand: http,https" im Build-Output). Der AWS-SDK-
+            // S3-Endpoint-Provider parst die Endpoint-URL ueber java.net.URL und scheitert sonst
+            // nativ mit "Custom endpoint http://... was not a valid URI" — der `data`-/`mcp`-Pfad
+            // mit `artifacts.store: s3` bricht dann bei der ERSTEN echten S3-Operation ab.
+            // (Belegt 2026-07-20 ueber McpS3SubprocessE2ETest gegen das Native-Binary.)
+            buildArgs.add("--enable-url-protocols=http,https")
+
             // Speicherbudget des Builders. Ohne die Option nimmt native-image einen konservativen
             // Anteil (lokal 8,62 GB von 31 GB) und GCt sich dumm: 319 GCs / 41,5 s gegen 134 GCs /
             // 11,3 s mit Deckel; der native-image-Schritt fiel lokal von ~5 min auf 1m40s.
