@@ -157,6 +157,42 @@ sed -n '1,20p' "${mcp_log}" >&2
 printf '| %s | %s | %s | %s |\n' \
   "${n}" "mcp serve (stdio-Handshake)" "${mcp_rc}" "${mcp_verdict}" >> "${REPORT}"
 
+# AP 6 — S3-Artefaktablage (Phase F.4, letzte Flaeche). S3 ist KEIN eigenes Kommando, sondern die
+# Artefakt-Ablage von `mcp serve` (`artifacts.store: s3`, McpCliRuntimeWiring -> S3ByteStores.create).
+#
+# Braucht KEINEN Server: der Startup-Sweep ueberspringt bei S3 die Segment-Laeufe, es wird also kein
+# Request gesendet. Der Endpunkt zeigt bewusst ins Leere.
+#
+# WAS DAS PRUEFT: Konstruktion des AWS-SDK-Clients samt Credential-Chain und Region-Aufloesung —
+# dort sitzt die Reflection. WAS ES NICHT PRUEFT: eine echte S3-Operation (Upload/Download/List);
+# dafuer braeuchte es einen laufenden MinIO/SeaweedFS und damit einen compose-Aufbau.
+# Bewertet wird die Startzeile, nicht der Exit-Code: der Server endet bei EOF ohnehin mit 0.
+n=$((n + 1))
+s3_log="${OUTDIR}/probe-${n}.log"
+cat > "${OUTDIR}/s3-probe.yaml" <<'YAML'
+artifacts:
+  store: s3
+  s3:
+    bucket: "f0-probe-bucket"
+    endpoint: "http://127.0.0.1:1"
+    region: "eu-central-1"
+    pathStyle: true
+YAML
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
+  | AWS_ACCESS_KEY_ID=probe AWS_SECRET_ACCESS_KEY=probe \
+    "${BIN}" --config "${OUTDIR}/s3-probe.yaml" mcp serve --transport stdio > "${s3_log}" 2>&1
+s3_rc=$?
+if grep -q "S3-backed" "${s3_log}" 2>/dev/null; then
+  s3_verdict="ok — S3-Client konstruiert (keine Operation geprueft)"
+else
+  s3_first="$(grep -m1 -E '(Exception|Error)[: ]' "${s3_log}" | tr '|' '/' | cut -c1-120)"
+  s3_verdict="**Blocker** — ${s3_first:-keine S3-Startzeile}"
+fi
+printf '%s\n' "--- probe ${n} (exit ${s3_rc}): mcp serve mit artifacts.store=s3" >&2
+sed -n '1,20p' "${s3_log}" >&2
+printf '| %s | %s | %s | %s |\n' \
+  "${n}" "S3-Artefaktablage (AWS-SDK)" "${s3_rc}" "${s3_verdict}" >> "${REPORT}"
+
 echo
 cat "${REPORT}"
 exit 0
