@@ -626,6 +626,34 @@ docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native
 docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
 ```
 
+#### 4.4.4 SDKMAN
+
+Sobald ein Release **veröffentlicht** ist, publiziert
+[`sdkman-release.yml`](../../.github/workflows/sdkman-release.yml) die Version an
+SDKMAN (`sdk install d-migrate`). Ein **separater** Workflow (`on: release`), nicht
+Teil der Release-Erzeugung — analog zum Native-Image-Workflow.
+
+- **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
+  + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.5](#45-release-assets-aus-dem-grünen-tag-build-beziehen)).
+- **Mechanik:** offizielle Action `sdkman/sdkman-release-action` (SHA-gepinnt) für
+  `POST /release`; `PUT /default` nur bei **Stable** (RCs werden released, aber nicht
+  Default).
+- **Gated auf Secrets:** `SDKMAN_CONSUMER_KEY` / `SDKMAN_CONSUMER_TOKEN`. Fehlen sie,
+  überspringt der Workflow den Publish mit einer Notice (kein roter Release) — wie der
+  Docker-Hub-Spiegel.
+
+**Voraussetzung (einmalig, EXTERN):** d-migrate muss ein SDKMAN-Candidate sein — PR an
+`sdkman/sdkman-db-migrations` (legt den Candidate an, keine Versionen), dann armored
+GPG-Public-Key an `info@sdkman.io` → `Consumer-Key`/`Consumer-Token` → als GitHub-Secrets
+hinterlegen. Details + Erweiterungen (plattform-native Binaries, `checksum-sha-256`):
+[`docs/planning/next/sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
+
+```bash
+# nach grünem sdkman-release.yml-Lauf, auf einem Host mit `sdk` + Java:
+sdk install d-migrate X.Y.Z
+d-migrate --version
+```
+
 ### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
 
 ```bash
@@ -982,6 +1010,7 @@ Für jeden Release abhaken:
 - [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
 - [ ] Natives Container-Image `ghcr.io/pt9912/d-migrate:X.Y.Z-native` verfügbar (`:native` nur bei Stable), Docker-Hub-Spiegel dito
 - [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); macOS/Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
+- [ ] **SDKMAN** ([4.4.4](#444-sdkman)) — nur falls Candidate freigegeben + Secrets gesetzt: `sdkman-release.yml` grün, `sdk install d-migrate X.Y.Z` funktioniert. Sonst Skip (Notice im Log), Release bleibt gültig
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen

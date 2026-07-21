@@ -756,7 +756,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | -------- | ------------------------------------------------- | ------ | ------ |
 | Build    | GraalVM Native Image (Linux, macOS, Windows)      | [Slice](../done/graalvm-native-image-distribution.md) | ✅      |
 | Build    | Docker Image auf Docker Hub                       | —      | ⛔      |
-| Build    | SDKMAN-Distribution                               | —      | ⛔      |
+| Build    | SDKMAN-Distribution                               | [Slice](../next/sdkman-distribution.md) | ⛔      |
 | Security | Interner Security-Audit                           | —      | ✅⁵     |
 | QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust | 8.1    | ✅¹     |
 | QA       | DDL-Generierung 1.000 Tabellen < 30 Sekunden      | 8.2    | ✅²     |
