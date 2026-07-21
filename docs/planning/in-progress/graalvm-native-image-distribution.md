@@ -181,8 +181,12 @@ Release; Dispatch-Läufe liefern reine Workflow-Artefakte. F.1 ändert die Aufru
   `url-connection-client`); `mcp` nutzt ktor-**CIO**.
 - **Positiv — Native-Image-Disziplin existiert schon:** [`adapters/driven/formats-parquet/build.gradle.kts`](../../../adapters/driven/formats-parquet/build.gradle.kts)
   vermeidet bewusst Protobuf-Reflection; `storage-s3` nennt ausdrücklich ein Footprint-Ziel.
-- **JNA ist rein transitiv und inert** (kein Gradle-Eintrag, kein `Native.load()` im Repo). Der
-  `keychain:`-Zugriff ist native-frei (nur `ProcessBuilder`).
+- **JNA: kein `Native.load()` im eigenen Repo**, der `keychain:`-Zugriff ist native-frei (nur
+  `ProcessBuilder`). **Korrektur 2026-07-21:** „rein transitiv und inert" stimmte NICHT — clikt zieht
+  mordant-omnibus, das den JNA-Terminal-Provider per ServiceLoader registriert, den native-image
+  reachable machte (40 `com.sun.jna.*`-Klassen im Binary, verifiziert per `-H:+PrintAnalysisCallTree`).
+  Seit 2026-07-21 sind `net.java.dev.jna:jna` + `mordant-jvm-jna` aus dem CLI-Modul ausgeschlossen →
+  JNA nachweislich unreachable (Details: F.2 / Akzeptanzkriterien).
 - **Kein committetes Reachability-Metadata**; GRMR ist im Plugin **nicht** aktiviert.
 
 ## 2. Werkzeug und Ansatz
@@ -325,7 +329,13 @@ Rückbau-Liste, vollständig umgesetzt (fail-closed-Gates hängen daran):
   (`reachability-metadata.json`, GraalVM-25-Format) + handgepflegt in `cli-manual/`.
 - ✅ **`DMIGRATE_CLI_BIN`-Override GELIEFERT** (`6dc4e916`); CI-Verdrahtung ausgelagert:
   [`native-e2e-regression-gate`](../next/native-e2e-regression-gate.md).
-- ⬜ **JNA-Inertheit verifizieren**: kein erreichbarer `Native.load()`-Pfad im Binary. **Noch offen.**
+- ✅ **JNA-Inertheit verifiziert (2026-07-21)** — und war zunaechst NICHT gegeben: der
+  Reachability-Report (`-H:+PrintAnalysisCallTree`) zeigte `com.sun.jna.Native.invoke*` reachable,
+  eingeschleppt ueber den JNA-ServiceLoader-Provider von mordant-omnibus. Behoben durch Ausschluss von
+  `net.java.dev.jna:jna` + `mordant-jvm-jna` in `adapters/driving/cli/build.gradle.kts`; danach
+  `com.sun.jna.Native` 593 → 0 Strings im Binary, Terminal-Ausgabe unveraendert (mordant nutzt
+  ffm/graal-ffi auf JVM bzw. nativ). Stale jna-Eintraege aus der Agent-Metadata (reachability-metadata.json)
+  entfernt.
 - ⬜ **Footprint-Nebenwirkung**: committete `META-INF/native-image/**`-Ressourcen landen auch im
   Fat-JAR und im jib-Image. Ob das gegen das storage-s3-Footprint-Ziel zählt, **noch offen**.
 
@@ -521,9 +531,20 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
    VOLLSTÄNDIG** (nicht mehr „halb"): alle Flächen laufen nativ, inkl. Parquet/Tool-Export/`mcp
    serve`/S3. Die Frage ist damit sauber entscheidbar. **Konsequenz:** ein „Ja" macht **Phase H**
    nötig und Phase E unfertig, weil die heutige Mechanik einen roten Native-Build toleriert.
-7. **Neu, offen: Binaergroesse.** 185 MB gegen 67 MB beim Core-Subset. Fuer eine
-   CLI-Distributionsklasse ist das viel; ob akzeptabel oder nacharbeitsbeduerftig (etwa durch
-   `--gc=serial`, Ausschluss ungenutzter Adapter oder UPX), ist nicht entschieden.
+7. **Offen: Binaergroesse.** **Gemessen 2026-07-21 (volle CLI, MainKt):** Binary **182 MB**
+   (189.926.472 B) gegen 67 MB beim Core-Subset. Fuer eine CLI-Distributionsklasse ist das viel; ob
+   akzeptabel oder nacharbeitsbeduerftig (etwa durch `--gc=serial`, Ausschluss ungenutzter Adapter oder
+   UPX), ist nicht entschieden. **Einordnung:** als **Container** relativiert es sich — das native
+   OCI-Image ist **357 MB und damit kleiner als das JVM-OCI-Image (516 MB)** (kein JRE). **Startup-Payoff
+   (host-direkt, Median N=20):** `--version` 14 ms nativ vs 319 ms JVM, `--help` 12 vs 334 ms,
+   `schema validate --source` 17 vs 402 ms — durchweg **~20-28x schneller** (≈300-390 ms je Aufruf
+   gespart). Das ist der eigentliche Native-Payoff und ein Gegengewicht zur Groesse.
+   **Entscheidung 2026-07-21 (Eigner): das native Image bleibt wie es ist** (357 MB: Binary 190 MB +
+   SpatiaLite-Deps 89 MB + ubuntu-Basis 78 MB) — Paritaet mit dem JVM-Image (516 MB, traegt dasselbe
+   SpatiaLite + JRE), keine Verschlankung. Nicht gezogene Hebel (dokumentiert, nicht verworfen):
+   SpatiaLite optional (−89 MB, aber Paritaets-Luecke), debian-slim-Basis (−48 MB, braucht
+   glibc-passenden Bau), static/musl + scratch (Basis ~0, aber bricht die dynamische `mod_spatialite`
+   und haengt an Frage 3). Binary-Schrumpfung (`-O`/UPX/Adapter-Ausschluss) bleibt als eigener Hebel offen.
 8. **Spec-Lücken, die das Akzeptanzkriterium berühren**: `spec/cli-spec.md` listet
    `--sqlite-named-sequences` nicht in der `generate`-Flag-Tabelle (obwohl implementiert) und fordert
    `--source -` (stdin) für `schema validate`, was der Code nicht kann. „Identische Aufrufsyntax nach
@@ -552,8 +573,11 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
     Zeilen-Parität, mindestens ein Cross-Dialect-Sprung, reverse, profile.
   - **macOS/Windows**: SQLite- und dateibasierte Pfade (serverlos, damit ohne Container lauffähig) plus
     Startpfad-Smoke. Deutlich mehr als `--help`, aber nicht die volle Matrix.
-- Startup-Zeit und Binärgröße gemessen und festgehalten (der Native-Image-Payoff).
-- JNA bleibt **unerreichbar** (verifiziert).
+- ✅ Startup-Zeit und Binärgröße gemessen und festgehalten (der Native-Image-Payoff) — **erledigt
+  2026-07-21**, Zahlen in Frage 7 (Startup ~20-28x schneller; Binary 182 MB, natives OCI-Image
+  357 MB < JVM 516 MB).
+- ✅ JNA bleibt **unerreichbar** (verifiziert **2026-07-21** — war reachable via mordant-omnibus,
+  jetzt per Dependency-Ausschluss behoben; s. F.2).
 - Native-Binaries hängen als versionierte, SHA-256-geprüfte Assets am GitHub-Release; `releasing.md`
   deckt die Asset-Klasse ab.
 

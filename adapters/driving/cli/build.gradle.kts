@@ -191,7 +191,18 @@ dependencies {
     // Befund 17: bezogen aus dem echten Adapter-Modul (kein testFixtures-/kotest-Leak
     // in den Distributions-Shadow-Jar).
     implementation(project(":adapters:driven:persistence-memory"))
-    implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
+    implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}") {
+        // JNA aus dem nativen Binary heraushalten (Akzeptanzkriterium "JNA unerreichbar"): clikt zieht
+        // mordant-omnibus, das den JNA-Terminal-Provider (mordant-jvm-jna) per ServiceLoader
+        // registriert. native-image macht alle ServiceLoader-Provider reachable → 40 com.sun.jna.*-
+        // Klassen landen im Binary, obwohl mordant auf JDK 21 den FFM-/graal-ffi-Provider wählt und JNA
+        // nie aufruft (verifiziert 2026-07-21 per -H:+PrintAnalysisCallTree). Ausschluss des
+        // JNA-Providers + der jna-Bibliothek macht JNA truly unreachable (Akzeptanzkriterium); die
+        // Binärgröße ändert sich dabei nur marginal (~0,9 MB), der Wert ist die Unreachability. Die
+        // FFM-/graal-ffi-Backends bleiben, die Terminal-Ausgabe ist unverändert.
+        exclude(group = "net.java.dev.jna", module = "jna")
+        exclude(group = "com.github.ajalt.mordant", module = "mordant-jvm-jna")
+    }
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
     // .d-migrate.yaml-Loader (LF-012 / LN-038 — minimaler NamedConnectionResolver)
