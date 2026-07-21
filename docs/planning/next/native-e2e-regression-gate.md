@@ -3,7 +3,7 @@
 - **Status**: Draft mit Scope (nach `next/` 2026-07-20). Der Hebel ist gebaut und hat sich bewiesen;
   offen ist die **CI-Verdrahtung**. Aktiv erst beim ersten Implementierungs-Commit.
 - **Trigger**: Beim Härten des GraalVM-Native-Binaries
-  ([graalvm-native-image-distribution](../in-progress/graalvm-native-image-distribution.md), Phase F.4)
+  ([graalvm-native-image-distribution](../done/graalvm-native-image-distribution.md), Phase F.4)
   fielen **zwei native Defekte auf, die der Sondenlauf NICHT fand**: `mcp serve` antwortete mit einem
   leeren Fehlerobjekt (`ec…`-Vorlauf: fehlende lsp4j-/DTO-Konstruktor-Registrierung) und die
   S3-Artefaktablage brach bei der ersten echten Operation ab (`--enable-url-protocols=http,https`

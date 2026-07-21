@@ -57,7 +57,6 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`graalvm-native-image-distribution.md`](graalvm-native-image-distribution.md) | Slice (in Umsetzung) | GraalVM-Native-Image der vollen CLI (`MainKt`) je OS (1.0.0-Stable-Gate). Geliefert: 3-OS-`native-image.yml` + Release-Assets, Reachability-Metadaten (Agent+handgepflegt), **F.1-Entrypoint-Rückbau** (`NativeMain.kt` entfernt, nur noch `full`). Offen: Distributionszeilen (GraalVM/DockerHub/SDKMAN). Wiedereinstieg im Plan-Kopf. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

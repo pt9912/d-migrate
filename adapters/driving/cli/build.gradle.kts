@@ -10,7 +10,7 @@ plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.google.cloud.tools.jib") version "3.4.5"
-    // GraalVM Native Image (docs/planning/in-progress/graalvm-native-image-distribution.md).
+    // GraalVM Native Image (docs/planning/done/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
     id("org.graalvm.buildtools.native") version "1.1.5"
@@ -24,7 +24,7 @@ application {
 // Native-Image-Entrypoint: die VOLLE CLI `dev.dmigrate.cli.MainKt` — derselbe Einstieg wie der
 // JVM-Fat-JAR (application.mainClass oben). Bis Phase F.1 gab es hier einen `-PnativeEntrypoint`-
 // Schalter (core = reduzierter NativeMain, full = MainKt); F.1 hat ihn zurueckgebaut, seither ist
-// `full` der einzige Bau (docs/planning/in-progress/graalvm-native-image-distribution.md).
+// `full` der einzige Bau (docs/planning/done/graalvm-native-image-distribution.md).
 
 // Diagnose-Schalter fuer Phase F.0: `-PnativeMissingRegistrationMode=Warn`.
 //

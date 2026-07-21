@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Phase-F.0-Sonden fuer das GraalVM-Native-Binary
-# (docs/planning/in-progress/graalvm-native-image-distribution.md).
+# (docs/planning/done/graalvm-native-image-distribution.md).
 #
 # MESSUNG, kein Gate: jede Sonde laeuft, ihr Ergebnis wird protokolliert, das Skript endet mit 0.
 # Ein Fehlschlag ist hier ein BEFUND, kein Fehler — bräche das Skript ab, bekaeme man nur den

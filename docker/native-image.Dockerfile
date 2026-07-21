@@ -1,5 +1,5 @@
 # Lokale GraalVM-Native-Image-Umgebung (Linux) fuer die Metadaten-Schleife des GraalVM-Slices
-# (docs/planning/in-progress/graalvm-native-image-distribution.md, Phase F).
+# (docs/planning/done/graalvm-native-image-distribution.md, Phase F).
 #
 # Warum ein eigenes Dockerfile und keine Stage in der Haupt-Dockerfile: dort leiten ALLE Stages von
 # `gradle:8.12-jdk21` ab. native-image braucht eine GraalVM-Toolchain, die dieses Image nicht hat —

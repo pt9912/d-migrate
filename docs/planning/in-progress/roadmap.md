@@ -754,7 +754,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 
 | Bereich  | Aufgabe                                           | LF-Ref | Status |
 | -------- | ------------------------------------------------- | ------ | ------ |
-| Build    | GraalVM Native Image (Linux, macOS, Windows)      | —      | ⛔      |
+| Build    | GraalVM Native Image (Linux, macOS, Windows)      | [Slice](../done/graalvm-native-image-distribution.md) | ✅      |
 | Build    | Docker Image auf Docker Hub                       | —      | ⛔      |
 | Build    | SDKMAN-Distribution                               | —      | ⛔      |
 | Security | Interner Security-Audit                           | —      | ✅⁵     |

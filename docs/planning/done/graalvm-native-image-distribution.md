@@ -1,19 +1,20 @@
 # GraalVM Native Image (Linux/macOS/Windows)
 
-**Status**: **IN UMSETZUNG** (`in-progress/`). **Ziel-Scope seit 2026-07-20: voller Funktionsumfang** —
-das Native-Binary soll dasselbe können wie die JVM-CLI (Schwelle in Abschnitt 0).
+**Status**: **ABGESCHLOSSEN & graduiert 2026-07-21** (`done/`). Voller Funktionsumfang; alle Offenen
+Fragen 1–8 entschieden, Phasen A/B/D/E/F/H erledigt, Akzeptanzkriterien erfüllt. Das Native-Binary kann
+dasselbe wie die JVM-CLI (Schwelle in Abschnitt 0).
 
-**Ob Native ein 1.0.0-Gate bleibt, ist OFFEN** (Frage 6). Alle abgeleiteten Aussagen im Dokument führen
-auf diesen Satz zurück; wo unten „1.0.0-Ziel" steht, ist es unter diesem Vorbehalt zu lesen.
+**Frage 6 ist entschieden: HYBRID — nur das Linux-Native-Leg ist ein 1.0.0-Gate** (macOS/Windows
+best-effort; Details in Abschnitt 4 / Phase H).
 
 **Ausführungsreihenfolge**: A, B, D, E **(erledigt — E jedoch nur unter der Annahme, dass Native
 optional ist)** → F **(F.0/F.1/F.2/F.3/F.4 erledigt — die VOLLE Fläche läuft nativ, inkl. `mcp serve`
 + S3; F.1-Entrypoint-Rückbau erledigt 2026-07-21: `NativeMain.kt` entfernt, native `mainClass` fest
 auf `MainKt`, `nativeEntrypoint`-Schalter raus)** → G **(vermutlich hinfällig — kein Ausschluss in
-Sicht, alle Flächen laufen)** → H (nur falls Frage 6 = „Native bleibt 1.0.0-Gate"). Die Buchstaben
-sind historisch gewachsen.
+Sicht, alle Flächen laufen)** → H **(reduziert erledigt — Frage 6 = Hybrid: nur Linux-Gate)**. Die
+Buchstaben sind historisch gewachsen.
 
-**Trigger**: Die [Roadmap](roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
+**Trigger**: Die [Roadmap](../in-progress/roadmap.md) führt in **Milestone 1.0.0 — Stable Release** drei
 noch offene ⛔-Zeilen, alle Distribution/Build: **GraalVM Native Image (Linux, macOS, Windows)**, Docker
 Hub und SDKMAN. Der RC-Feature-Milestone ist feature-komplett (RC1 als Prerelease veröffentlicht); das
 Native-Image ist das **einzige technisch tiefe** der drei. Dieser Plan deckt nur das Native-Image ab.
@@ -315,7 +316,7 @@ Rückbau-Liste, vollständig umgesetzt (fail-closed-Gates hängen daran):
 - ✅ Per-OS-Smoke in `native-image.yml` auf die spec-konforme `--source`-Syntax der vollen CLI
   umgestellt (Assertion „Validation passed" statt des alten `valid=true`); F.0-Mess-Steps entfernt.
 - ✅ `docs/user/releasing.md` 4.4.2 nachgeführt (volle CLI statt Core-Subset).
-- ✅ [`docs/planning/in-progress/README.md`](README.md) nachgeführt.
+- ✅ [`docs/planning/in-progress/README.md`](../in-progress/README.md) nachgeführt.
 - ✅ Tote `planning/next/`-Pfadverweise in `adapters/driving/cli/build.gradle.kts`: bereits vor F.1
   bereinigt (keine mehr vorhanden).
 
@@ -379,7 +380,7 @@ Arbeitspunkte, falls gebraucht:
 - Meldungstext **plus i18n-Bundle-Eintrag** (die CLI ist lokalisiert).
 - Tests.
 - **ADR** für den permanenten Ausschluss **und** Eintrag in
-  [`carveout.md`](carveout.md) (dort führt das Projekt bewusste Scope-Cuts).
+  [`carveout.md`](../in-progress/carveout.md) (dort führt das Projekt bewusste Scope-Cuts).
 
 Bedingung bleibt: das Binary **kennt** das Kommando und lehnt begründet ab — kein stilles Fehlen
 (Schwelle in Abschnitt 0).
@@ -618,4 +619,4 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
   ersetzt es nicht (Details: [`docs/user/releasing.md`](../../user/releasing.md) 4.4.3).
 - **Docker Hub** und **SDKMAN** sind eigene Distributions-Gates — nicht Teil dieses Plans (das native
   Image nutzt lediglich den bestehenden `build.yml`-Docker-Hub-Spiegel mit).
-- Profiling-DataSketches bleibt ein bewusster Carve-Out (s. [Roadmap](roadmap.md)), post-1.0.0.
+- Profiling-DataSketches bleibt ein bewusster Carve-Out (s. [Roadmap](../in-progress/roadmap.md)), post-1.0.0.

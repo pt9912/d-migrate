@@ -1,7 +1,7 @@
 # native.mk — GraalVM-Native-Image lokal (Linux) im Container.
 #
 # Zweck: die Metadaten-Schleife von Phase F des GraalVM-Slices
-# (docs/planning/in-progress/graalvm-native-image-distribution.md) lokal fahren statt ueber CI.
+# (docs/planning/done/graalvm-native-image-distribution.md) lokal fahren statt ueber CI.
 # Gemessen 270 s lokal gegen 468 s in CI; dazu entfaellt der Dispatch-/Wartezyklus.
 #
 # Die GraalVM-Version im Dockerfile (25) muss zu `java-version` in
