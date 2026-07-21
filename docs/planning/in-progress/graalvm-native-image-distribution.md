@@ -385,18 +385,19 @@ Hybrid-Entscheidung (Frage 6) wird **nur das Linux-Leg** zum Gate; macOS/Windows
 „Zusatzkanal"-Mechanik (`fail-fast: false`, best-effort attach, ein fehlendes Asset ist zulässig —
 dieselbe Logik wie beim Docker-Hub-Spiegel).
 
-**Reduzierte Phase H (asymmetrisch), offen:**
-- **`fail-fast: false` bleibt** (macOS/Windows sollen sich nicht gegenseitig/Linux abbrechen) — das
-  Linux-Gating passiert **nicht** über die Matrix-Strategie, sondern gezielt.
-- **Linux-Leg als Gate sichtbar machen:** der `attach-release`-Job (oder ein dedizierter Gate-Job) muss
-  **hart scheitern, wenn das `linux-x64`-Native-Asset fehlt**, während fehlende macOS/Windows-Assets
-  weiter toleriert werden. Das färbt den Tag-Lauf rot, wenn der Linux-Build kippt.
-- **Kopplungsgrad entscheiden:** rein „rotes CI + Checkliste" (der Operator finalisiert nicht bei rotem
-  Linux-Leg) **vs.** echte Automatik (Release erst sichtbar, wenn Linux-Native grün — Job-Abhängigkeit
-  `native-image.yml` ↔ `release-homebrew.yml` oder Zusammenführung). Cross-Workflow-Kopplung bei
-  Tag-Triggern ist in GitHub Actions umständlich; der Kopplungsgrad ist eine eigene Entscheidung.
-- **`docs/user/releasing.md` 4.4.2/4.8 nachziehen:** „der Release selbst bleibt gültig" gilt dann nur
-  noch für **macOS/Windows**; das **Linux**-Native-Asset ist Pflicht.
+**Reduzierte Phase H (asymmetrisch) — ✅ erledigt 2026-07-21 via Stufe 1 (Signal + Checkliste):**
+- ✅ **`fail-fast: false` bleibt** — das Linux-Gating läuft **nicht** über die Matrix-Strategie, sondern
+  gezielt im `attach-release`-Job.
+- ✅ **Linux-Leg als Gate:** `attach-release` läuft jetzt best-effort (`if: !cancelled()`, damit
+  erfolgreiche Legs auch bei rotem Nachbar-Leg anhängen) und **scheitert hart, wenn das `linux-x64`-
+  Asset fehlt** (`native-image.yml`, Schritt „Gate"); fehlende macOS/Windows-Assets bleiben toleriert.
+  Rotes Linux-Leg → Tag-Lauf rot.
+- ✅ **Kopplungsgrad = Stufe 1 (Eigner-Entscheidung 2026-07-21):** „rotes CI + Checkliste", der Operator
+  finalisiert nicht bei rotem Linux-Leg. **Nicht** gewählt: echte Cross-Workflow-Automatik (Stufe 2,
+  `release-homebrew.yml`-Kopplung) — zu riskanter/untestbarer Pipeline-Umbau für seltene, operator-
+  getriebene Releases.
+- ✅ **`docs/user/releasing.md` 4.4.2/4.8 nachgezogen:** „der Release selbst bleibt gültig" gilt jetzt
+  nur noch für **macOS/Windows**; das **Linux**-Native-Asset ist Pflicht (Gate).
 - Wirkung auf die Release-Dauer beachten: der Native-Bau lag bei 5–8 min je OS **am reduzierten**
   Entrypoint; der volle Bau ist unbekannt (F.0 AP 6) und läge dann auf dem kritischen Pfad jedes Releases.
 

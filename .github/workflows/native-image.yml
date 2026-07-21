@@ -233,7 +233,11 @@ jobs:
 
   attach-release:
     needs: build-native
-    if: startsWith(github.ref, 'refs/tags/v')
+    # `!cancelled()` statt des impliziten `success()`: auch laufen, wenn ein OS-Leg rot ist — sonst
+    # verhinderte ein macOS/Windows-Flake das Anhaengen der ERFOLGREICHEN Legs mit (das waere kein
+    # "best-effort"). Frage 6 = HYBRID: macOS/Windows sind best-effort, aber das Linux-Leg ist ein
+    # 1.0.0-Gate — erzwungen im Schritt "Gate" unten (fehlt linux-x64 -> Job rot).
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     # Einzelner Uploader statt Upload aus jedem Matrix-Leg: haelt die Schreibrechte auf einen Job
     # begrenzt und vermeidet drei gleichzeitige Uploads auf dasselbe Release.
@@ -249,7 +253,19 @@ jobs:
           path: dist
 
       - name: List collected assets
-        run: ls -la dist
+        run: ls -la dist || true
+
+      - name: Gate — das Linux-Native-Binary ist Pflicht (Frage 6 = Hybrid)
+        # Nur das Linux-Leg ist ein 1.0.0-Release-Gate: fehlt das linux-x64-Asset, scheitert dieser Job
+        # -> der Tag-Lauf wird rot und der Operator finalisiert den Release nicht (releasing.md 4.8).
+        # macOS/Windows bleiben best-effort: fehlende Assets dort sind zulaessig (kein Fehler hier).
+        run: |
+          if ls dist/*-linux-x64* >/dev/null 2>&1; then
+            echo "Linux-Native-Binary vorhanden — Gate erfuellt."
+          else
+            echo "::error::Linux-Native-Binary (linux-x64) fehlt — 1.0.0-Gate verletzt (Frage 6: Hybrid). Release nicht finalisieren."
+            exit 1
+          fi
 
       - name: Wait for the GitHub release to exist
         # release-homebrew.yml erstellt das Release fuer denselben Tag. Dieser Job haengt nur an

@@ -578,10 +578,12 @@ Zur Einordnung:
   [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml),
   damit Titel, Notes und Prerelease-Flag in einer Hand bleiben. Findet der
   Job kein Release, wartet er in zehn Versuchen à 30 s und wird danach rot.
-- `fail-fast` ist aus: ein rotes OS-Leg bricht die anderen nicht ab. Ein
-  fehlgeschlagenes Leg bedeutet, dass für diese Plattform **kein** Asset am
-  Release hängt — der Release selbst bleibt gültig. Deshalb steht die
-  Asset-Liste in der Verifikation ([4.8](#48-verifikation-des-releases)).
+- **Nur das Linux-Leg ist ein Release-Gate** (Native-Slice Frage 6 = Hybrid): fehlt das
+  `linux-x64`-Asset, wird der `attach-release`-Job **rot** und der Release ist **nicht** zu
+  finalisieren. **macOS und Windows bleiben best-effort** — `fail-fast` ist aus, ein rotes
+  macOS/Windows-Leg bricht die anderen nicht ab, sein fehlendes Asset ist zulässig und der Release
+  selbst bleibt gültig. Deshalb steht die Asset-Liste in der Verifikation
+  ([4.8](#48-verifikation-des-releases)).
 
 Der Workflow lässt sich auch ohne Tag starten (`workflow_dispatch`), etwa um
 das Rezept gegen `develop` zu prüfen. Solche Läufe hängen nichts an ein
@@ -790,13 +792,14 @@ anschließend als verifizierten Repo-Stand nachziehen.
       Schlägt der Pull fehl, wurde der Push still übersprungen (Secret) — Tag-Build-Log
       auf die Notice prüfen
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
-- [ ] Native-Image-Assets ([4.4.2](#442-native-image-binaries)) hängen für **alle drei**
-      Plattformen am Release, je mit `.sha256`:
+- [ ] **`linux-x64`-Native-Asset ([4.4.2](#442-native-image-binaries)) hängt am Release** (Gate,
+      Frage 6 = Hybrid) — **fehlt es, den Release NICHT finalisieren** (`attach-release`-Job ist rot).
+      macOS/Windows sind best-effort, je mit `.sha256`:
   ```bash
   gh release view vX.Y.Z --json assets --jq '.assets[].name' | grep -E 'linux-x64|macos-arm64|windows-x64'
   ```
-      Fehlt eine Plattform, ist ihr Matrix-Leg rot geworden (`fail-fast` ist aus) —
-      Lauf von `native-image.yml` für den Tag prüfen
+      Fehlt `macos-arm64` oder `windows-x64`, ist nur ihr Matrix-Leg rot (`fail-fast` ist aus) — der
+      Release bleibt gültig; Lauf von `native-image.yml` für den Tag prüfen
 - [ ] Native-Binary der eigenen Plattform startet: heruntergeladen, `chmod +x`,
       `./d-migrate-X.Y.Z-<plattform> schema validate <schema.yaml>`
 - [ ] CI ist auf `main` und auf dem Tag grün
@@ -978,13 +981,13 @@ Für jeden Release abhaken:
 - [ ] Image auf `ghcr.io/pt9912/d-migrate:X.Y.Z` und `:latest` verfügbar
 - [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
 - [ ] Natives Container-Image `ghcr.io/pt9912/d-migrate:X.Y.Z-native` verfügbar (`:native` nur bei Stable), Docker-Hub-Spiegel dito
-- [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag grün — alle drei OS-Legs
+- [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); macOS/Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
 - [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
-- [ ] Release enthält die drei Native-Binaries (`linux-x64`, `macos-arm64`, `windows-x64.exe`) je mit `.sha256`
+- [ ] Release enthält das `linux-x64`-Native-Binary mit `.sha256` (**Pflicht/Gate**); `macos-arm64` und `windows-x64.exe` best-effort (je mit `.sha256`, sofern ihr Leg grün war)
 - [ ] Native-Binary der eigenen Plattform lokal gesmoked (`schema validate`)
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
