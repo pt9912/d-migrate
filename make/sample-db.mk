@@ -124,7 +124,8 @@ sample-db-tpcds-smoke:
 
 # Phase 4 (#2 Tool-Vergleich) — opt-in, NICHT im PR-Gate, INTERNER Sanity-Check (kein
 # Audit-Benchmark). Bewegt dieselbe TPC-H-Workload PG->PG mit COPY (native Decke),
-# d-migrate (CSV, gecappt) und pgloader (gepinnt, gecappt); rows/s + Anteil COPY-Decke.
-# WITH_PGLOADER=0 lässt pgloader weg. Doku: docs/planning/open/tool-comparison.md.
+# d-migrate (CSV, gecappt) und optional pgloader (gepinnt, gecappt); rows/s + Anteil COPY-Decke.
+# pgloader ist Default AUS (WITH_PGLOADER=1 schaltet den best-effort-Vergleich zu; sein SBCL-Heap
+# kann unter den Caps reißen — diagnostisch, kein Gate). Doku: docs/planning/open/tool-comparison.md.
 sample-db-tool-compare:
 	./examples/sample-db/scripts/smoke-tool-compare.sh

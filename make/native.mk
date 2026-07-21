@@ -35,6 +35,18 @@ native-build: ## Native: Binary im Container bauen (NATIVE_ENTRYPOINT=core|full)
 native-diagnose: ## Native: F.0-Diagnoselauf — alle fehlenden Registrierungen auf einmal erheben.
 	$(MAKE) native-probe NATIVE_MISSING_REG_MODE=Warn
 
+# Tag des lauffaehigen Native-Runtime-Images. Drop-in fuer d-migrate:dev im Sample-DB-Compose:
+#   make native-runtime-build && SAMPLE_DB_DMIGRATE_IMAGE=$(NATIVE_RUNTIME_TAG) make sample-db-smoke
+NATIVE_RUNTIME_TAG ?= d-migrate:native-dev
+
+.PHONY: native-runtime-build
+native-runtime-build: ## Native: lauffaehiges Runtime-Image bauen (Entrypoint = natives Binary; Drop-in fuer d-migrate:dev).
+	# --target native-runtime baut die lauffaehige Stage (Entrypoint = Binary), NICHT die
+	# cat-basierte native-build-Stage. NATIVE_ENTRYPOINT bleibt full (ARG-Default) = volle CLI.
+	$(DOCKER) build -f docker/native-image.Dockerfile --target native-runtime \
+	  --build-arg NATIVE_ENTRYPOINT=$(NATIVE_ENTRYPOINT) \
+	  -t $(NATIVE_RUNTIME_TAG) .
+
 # Direkt an den Bestimmungsort im QUELLBAUM — kein Zwischenlager.
 #
 # Die Agent-Ausgabe ist keine Build-Ausgabe, sondern committeter Quellcode: native-image liest sie

@@ -8,6 +8,10 @@
     "queryAllPublicMethods": true
   },
   {
+    "name": "org.postgresql.util.PGobject",
+    "methods": [{ "name": "getValue", "parameterTypes": [] }]
+  },
+  {
     "name": "org.eclipse.lsp4j.jsonrpc.json.ConcurrentMessageProcessor$1",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,

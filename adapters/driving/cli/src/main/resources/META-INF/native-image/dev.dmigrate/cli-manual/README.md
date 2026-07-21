@@ -24,6 +24,25 @@ Das GraalVM Reachability Metadata Repository fuehrt HikariCP 6.2.1 als **unterst
 (`check-library-support.sh`), und seine Metadaten enthalten den passenden `methods`-Eintrag — er
 wird bei uns aber nicht wirksam. Deshalb hier explizit.
 
+## `org.postgresql.util.PGobject` — `getValue()`
+
+Beim Cross-Dialect-Transfer **PostgreSQL → MySQL** reicht pgjdbc dialektfremde Werte (ein PG-Enum wie
+pagilas `mpaa_rating`, ein `tsvector`, `json`) als `PGobject` durch. `JdbcForeignValueNormalizer`
+(driver-common) normalisiert sie **reflektiv** zu ihrem String — `value.javaClass.getMethod("getValue")`
+in einem `runCatching{}`, damit driver-common keine Compile-Abhaengigkeit auf pgjdbc braucht.
+
+**Belegt (GraalVM 25):** ohne diesen Eintrag findet `getMethod("getValue")` nativ nichts, `runCatching`
+verschluckt den Fehler still, und der **rohe** PGobject erreicht `PreparedStatement.setObject` — worauf
+MySQL Connector/J in Java-Serialisierung faellt und das Binary mit
+`UnsupportedFeatureError: SerializationConstructorAccessor class not found for … PGobject` abbricht.
+Der Serialisierungsfehler ist nur das Symptom; die Ursache ist die fehlende Reflection-Registrierung.
+Reproduzierbar ueber `SAMPLE_DB_DMIGRATE_IMAGE=d-migrate:native-dev make sample-db-cross-smoke-pg2my`
+(ebenso `sample-db-3hop-smoke`, hop1). Mit dem Eintrag laeuft die Normalisierung nativ wie auf der JVM,
+der PGobject wird nie serialisiert.
+
+`serialization` zu registrieren waere der falsche Hebel: das baute nur einen Pfad nach, der bei
+funktionierender Reflection gar nicht erst betreten wird.
+
 ## `org.eclipse.lsp4j.jsonrpc.json.*` und `.messages.*` (50 Klassen)
 
 lsp4j serialisiert JSON-RPC per Gson und instanziiert dafuer TypeAdapter-Fabriken reflektiv. Das

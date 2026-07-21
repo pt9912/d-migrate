@@ -124,3 +124,40 @@ RUN tar cf /tmp/agent-out.tar -C /tmp/agent config audit.log f0-report.md 2>/dev
 
 # nosemgrep: config.semgrep.missing-user -- ephemere lokale Build-Stage (cat eines Build-Artefakts), nie ein publiziertes Runtime-Image
 ENTRYPOINT ["cat", "/tmp/agent-out.tar"]
+
+# ---- Stage: native-runtime — lauffaehiges Image mit dem NATIVEN Binary als Entrypoint ----------
+#
+# Spiegelt die `runtime`-Stage der Haupt-Dockerfile (`eclipse-temurin:21-jre-noble AS runtime`)
+# Zug um Zug: gleicher Entrypoint `d-migrate`, `/work`-Workdir, non-root uid 10001, `mod_spatialite`.
+# Damit ist dieses Image ein DROP-IN fuer `d-migrate:dev` im Sample-DB-Compose — dieselben Mounts,
+# dieselbe Env, derselbe Aufruf. Zweck: die vorhandene Shell-E2E-Harness (examples/sample-db,
+# make/sample-db.mk) OHNE Skript-Aenderung gegen das native Binary fahren
+# (SAMPLE_DB_DMIGRATE_IMAGE=d-migrate:native-dev) und sehen, was nativ noch bricht.
+#
+# Basis ubuntu:24.04 (Noble): dieselbe glibc/dieselben Systembibliotheken wie die temurin-noble-
+# runtime, aber ohne die JRE, die ein natives Binary nicht braucht. Der GraalVM-25-Build (Oracle
+# Linux 9, glibc 2.34) laeuft vorwaertskompatibel auf Noble (glibc 2.39). NATIVE_ENTRYPOINT bleibt
+# `full` (ARG-Default oben) = die volle CLI, nicht der reduzierte core-NativeMain.
+FROM ubuntu:24.04 AS native-runtime
+
+# mod_spatialite wie die JVM-runtime-Stage: die Spatial-Smokes (`?spatialite=true`) laden die
+# Extension zur Laufzeit ueber den Standard-Library-Pfad. Ohne das Paket schlaegt VA4 fehl.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libsqlite3-mod-spatialite \
+    && rm -rf /var/lib/apt/lists/*
+
+# Das native Binary aus der native-build-Stage. /usr/local/bin liegt auf dem Default-PATH, also
+# loest ENTRYPOINT ["d-migrate"] es genauso auf wie die JVM-runtime (dort via /opt/d-migrate/bin).
+COPY --from=native-build /src/adapters/driving/cli/build/native/nativeCompile/d-migrate /usr/local/bin/d-migrate
+
+# non-root, uid 10001 wie die JVM-runtime; /work gehoert diesem User. Bind-Mount-Schreibzugriff
+# regelt der Aufrufer per `--user $(id -u):$(id -g)` (Sample-DB: SAMPLE_DB_DMIGRATE_USER).
+RUN useradd --no-create-home --uid 10001 dmigrate \
+    && mkdir -p /work && chown dmigrate:dmigrate /work
+
+WORKDIR /work
+VOLUME ["/work"]
+
+USER dmigrate
+ENTRYPOINT ["d-migrate"]
+CMD ["--help"]
