@@ -527,9 +527,16 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
    oder Substitution — Schreib- und Lesepfad je Exit 0 auf allen drei Plattformen. Der Windows-Beleg
    ist indirekt und dadurch besonders belastbar: eine fehlerhafte Pfadangabe ergab `SQLITE_CANTOPEN`,
    also einen Fehlercode **aus der nativen Bibliothek selbst** — sie war folglich geladen.
-3. **Statisches Linken (Linux)**: `--static`/`--static-nolibc` (musl) vs. dynamisch gegen glibc.
-4. **Architekturen**: Ist-Stand ist eine Architektur je OS (`linux-x64`, `macos-arm64`, `windows-x64`).
-   Offene Restfrage: **linux-arm64 ja/nein?**
+3. ✅ **Entschieden 2026-07-21 (Eigner): dynamisch gegen glibc** (kein `--static`/musl). Grund: das
+   Binary lädt SpatiaLite zur Laufzeit per `load_extension('mod_spatialite')` (dlopen einer externen
+   `.so`); ein voll-statisches musl-Binary hat keinen dynamischen Loader → SpatiaLite (VA4) bräche.
+   Der einzige echte Vorteil (musl+`scratch` = winziges Image) wurde bei Frage 7 bereits abgelehnt.
+   Ist-Stand ist bereits dynamisch/glibc — keine Änderung nötig.
+4. ✅ **Entschieden 2026-07-21 (Eigner): linux-arm64 NICHT für 1.0.0** (auf später vertagt). Der
+   3-Plattform-Scope (`linux-x64`, `macos-arm64`, `windows-x64`) bleibt schlank; ARM64-Linux-Nutzer
+   haben JVM/OCI bzw. x64-Emulation als Brücke. Nicht slice-blockierend. Nachrüstbar: eine
+   `ubuntu-24.04-arm`-Matrix-Zeile fürs Binary (klein) + multi-arch für das native OCI-Image
+   (aufwändiger) — als eigener Post-1.0.0-Schritt.
 5. ✅ **Beantwortet 2026-07-20: `mcp serve` läuft nativ** (`3817e572`) — stdio-`initialize`-Handshake
    liefert das korrekte `result`. Der Defekt (leeres Fehlerobjekt) brauchte handgepflegte
    lsp4j-TypeAdapter- + MCP-DTO-Konstruktor-Registrierung; per E2E gegen das Binary verifiziert.
