@@ -254,11 +254,11 @@ Offene Architektur-/Linkfragen stehen ausschließlich unter Fragen 3 und 4 (kein
   (10 × 30 s) und wird danach rot.
 - Doku: `docs/user/releasing.md` 4.4.2, Verifikation 4.8, Release-Checkliste.
 - **Verifikation erst am nächsten Tag-Cut.**
-- ⚠️ **Abgeschlossen nur unter der Annahme „Native ist optional" (Frage 6 offen).** Die heutige Mechanik
-  ist bewusst **nicht** release-blockierend: `release-homebrew.yml` publiziert das Release unabhängig,
-  der Native-Workflow wartet nur darauf und lädt **nachträglich** hoch; `releasing.md` erklärt ein
-  fehlendes Native-Asset ausdrücklich für zulässig („der Release selbst bleibt gültig"). **Wird Frage 6
-  mit „Native bleibt 1.0.0-Gate" beantwortet, ist Phase E NICHT abgeschlossen** — dann fehlt Phase H.
+- ⚠️ **Frage 6 entschieden (2026-07-21): HYBRID.** Die heutige Mechanik (nicht release-blockierend:
+  `release-homebrew.yml` publiziert unabhängig, der Native-Workflow lädt **nachträglich** hoch) bleibt
+  **für macOS/Windows** korrekt und gewollt. **Für das Linux-Leg** ist sie NICHT ausreichend — der
+  Linux-Native-Build wird zum Gate. Phase E ist damit für die best-effort-Legs abgeschlossen; die
+  **Linux-Gate-Ergänzung ist die reduzierte Phase H** (offen).
 
 ### Phase F — Voller Funktionsumfang (der verbleibende Kern)
 
@@ -378,20 +378,25 @@ Arbeitspunkte, falls gebraucht:
 Bedingung bleibt: das Binary **kennt** das Kommando und lehnt begründet ab — kein stilles Fehlen
 (Schwelle in Abschnitt 0).
 
-### Phase H — Release-Orchestrierung (nur falls Frage 6 = „Native bleibt 1.0.0-Gate")
+### Phase H — Release-Orchestrierung (Frage 6 = HYBRID: **nur Linux-Native ist Gate**)
 
-Heute ist der Native-Build **nicht** release-blockierend (Begründung unter Phase E). Solange Native
-optional ist, ist das korrekt und gewollt: ein Zusatzkanal soll keinen Release aufhalten — dieselbe
-Logik wie beim Docker-Hub-Spiegel.
+Heute ist der Native-Build **gar nicht** release-blockierend (Begründung unter Phase E). Mit der
+Hybrid-Entscheidung (Frage 6) wird **nur das Linux-Leg** zum Gate; macOS/Windows behalten die tolerante
+„Zusatzkanal"-Mechanik (`fail-fast: false`, best-effort attach, ein fehlendes Asset ist zulässig —
+dieselbe Logik wie beim Docker-Hub-Spiegel).
 
-**Wird Native zum Gate, kehrt sich das um** und diese Phase wird nötig:
-- Reihenfolge umdrehen oder koppeln: der Release darf erst entstehen bzw. erst sichtbar werden, wenn
-  alle OS-Legs grün sind (Job-Abhängigkeit zwischen `native-image.yml` und `release-homebrew.yml` oder
-  Zusammenführung in einen Workflow).
-- `fail-fast: false` neu bewerten: heute darf ein rotes Leg die anderen weiterlaufen lassen und der
-  Release bleibt gültig — als Gate müsste ein rotes Leg den Release verhindern.
-- `docs/user/releasing.md` 4.4.2/4.8 nachziehen: dort steht ausdrücklich „der Release selbst bleibt
-  gültig", was dann nicht mehr stimmt.
+**Reduzierte Phase H (asymmetrisch), offen:**
+- **`fail-fast: false` bleibt** (macOS/Windows sollen sich nicht gegenseitig/Linux abbrechen) — das
+  Linux-Gating passiert **nicht** über die Matrix-Strategie, sondern gezielt.
+- **Linux-Leg als Gate sichtbar machen:** der `attach-release`-Job (oder ein dedizierter Gate-Job) muss
+  **hart scheitern, wenn das `linux-x64`-Native-Asset fehlt**, während fehlende macOS/Windows-Assets
+  weiter toleriert werden. Das färbt den Tag-Lauf rot, wenn der Linux-Build kippt.
+- **Kopplungsgrad entscheiden:** rein „rotes CI + Checkliste" (der Operator finalisiert nicht bei rotem
+  Linux-Leg) **vs.** echte Automatik (Release erst sichtbar, wenn Linux-Native grün — Job-Abhängigkeit
+  `native-image.yml` ↔ `release-homebrew.yml` oder Zusammenführung). Cross-Workflow-Kopplung bei
+  Tag-Triggern ist in GitHub Actions umständlich; der Kopplungsgrad ist eine eigene Entscheidung.
+- **`docs/user/releasing.md` 4.4.2/4.8 nachziehen:** „der Release selbst bleibt gültig" gilt dann nur
+  noch für **macOS/Windows**; das **Linux**-Native-Asset ist Pflicht.
 - Wirkung auf die Release-Dauer beachten: der Native-Bau lag bei 5–8 min je OS **am reduzierten**
   Entrypoint; der volle Bau ist unbekannt (F.0 AP 6) und läge dann auf dem kritischen Pfad jedes Releases.
 
@@ -527,10 +532,12 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
 5. ✅ **Beantwortet 2026-07-20: `mcp serve` läuft nativ** (`3817e572`) — stdio-`initialize`-Handshake
    liefert das korrekte `result`. Der Defekt (leeres Fehlerobjekt) brauchte handgepflegte
    lsp4j-TypeAdapter- + MCP-DTO-Konstruktor-Registrierung; per E2E gegen das Binary verifiziert.
-6. **Offen, Eigner-Entscheidung: bleibt Native ein 1.0.0-Gate?** **Die Grundlage ist jetzt
-   VOLLSTÄNDIG** (nicht mehr „halb"): alle Flächen laufen nativ, inkl. Parquet/Tool-Export/`mcp
-   serve`/S3. Die Frage ist damit sauber entscheidbar. **Konsequenz:** ein „Ja" macht **Phase H**
-   nötig und Phase E unfertig, weil die heutige Mechanik einen roten Native-Build toleriert.
+6. ✅ **Entschieden 2026-07-21 (Eigner): HYBRID — nur das Linux-Native-Leg ist ein 1.0.0-Gate**,
+   macOS/Windows bleiben best-effort. Begründung: der Linux-Build läuft über den verlässlichen
+   docker-Pfad und ist voll verifiziert (Sample-DB 18/18); ihn zu garantieren gibt ein Native-Binary
+   für die häufigste Server-Plattform, ohne den Gesamt-Release an die flake-anfälligen macOS/Windows-
+   Runner zu koppeln. **Konsequenz:** eine **reduzierte Phase H** (nur Linux-Gate, asymmetrisch) statt
+   der vollen 3-OS-Kopplung; macOS/Windows behalten die tolerante „Zusatzkanal"-Mechanik.
 7. **Offen: Binaergroesse.** **Gemessen 2026-07-21 (volle CLI, MainKt):** Binary **182 MB**
    (189.926.472 B) gegen 67 MB beim Core-Subset. Fuer eine CLI-Distributionsklasse ist das viel; ob
    akzeptabel oder nacharbeitsbeduerftig (etwa durch `--gc=serial`, Ausschluss ungenutzter Adapter oder
