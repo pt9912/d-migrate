@@ -336,8 +336,14 @@ Rückbau-Liste, vollständig umgesetzt (fail-closed-Gates hängen daran):
   `com.sun.jna.Native` 593 → 0 Strings im Binary, Terminal-Ausgabe unveraendert (mordant nutzt
   ffm/graal-ffi auf JVM bzw. nativ). Stale jna-Eintraege aus der Agent-Metadata (reachability-metadata.json)
   entfernt.
-- ⬜ **Footprint-Nebenwirkung**: committete `META-INF/native-image/**`-Ressourcen landen auch im
-  Fat-JAR und im jib-Image. Ob das gegen das storage-s3-Footprint-Ziel zählt, **noch offen**.
+- ✅ **Footprint-Nebenwirkung geprüft (2026-07-21): vernachlässigbar, kein Konflikt.** Die committeten
+  `META-INF/native-image/**`-Ressourcen (reachability-metadata + cli-manual, **zusammen 76 KB**) landen
+  bestätigt im `cli-*.jar` → Fat-JAR/jib. Das ist normal — viele Libs (aws-core, netty-*, sqlite-jdbc,
+  mordant, jansi) versenden eigene `META-INF/native-image`-Metadaten. Das storage-s3-„Footprint-Ziel"
+  ist **kein Byte-Limit**, sondern eine Dependency-Ausschluss-Strategie (Netty/Apache-HTTP-Clients aus
+  dem AWS-SDK raushalten, `storage-s3/build.gradle.kts`); 76 KB JSON in einem anderen Modul zählen nicht
+  dagegen. Keine Aktion (ein Fat-JAR-Ausschluss wäre inkonsistent zu allen anderen Libs und riskant ohne
+  messbaren Nutzen).
 
 #### F.3 — Startpfad-Flächen (blockierend, direkt nach F.1)
 Diese Flächen gaten **jeden** Aufruf inklusive `--help` (Begründung in Abschnitt 1) und sind daher
