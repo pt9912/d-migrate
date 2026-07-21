@@ -29,7 +29,10 @@ permissions:
   contents: read
 
 env:
-  SDKMAN_CANDIDATE: d-migrate
+  # SDKMAN-Candidate-Identifier: `dmigrate` OHNE Bindestrich — SDKMAN-Candidates sind ausschliesslich
+  # [a-z0-9] (0 von 83 bestehenden haben einen Bindestrich, empirisch geprueft 2026-07-21). Der
+  # Anzeigename bleibt "d-migrate" (im db-migrations-Changeset). Nutzer: `sdk install dmigrate`.
+  SDKMAN_CANDIDATE: dmigrate
 
 jobs:
   sdkman:
