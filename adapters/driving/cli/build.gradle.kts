@@ -21,17 +21,10 @@ application {
     mainClass.set("dev.dmigrate.cli.MainKt")
 }
 
-// Native-Image-Entrypoint, umschaltbar per `-PnativeEntrypoint=core|full`.
-//
-//   core (Default) — der reduzierte [dev.dmigrate.cli.NativeMain]. Reproduzierbar gruen.
-//   full           — der volle `MainKt`. Messkonfiguration fuer Phase F.0 des GraalVM-Slices
-//                    (docs/planning/in-progress/graalvm-native-image-distribution.md).
-//
-// Warum ein Schalter statt eines harten Wechsels: `full` ist erwartbar rot, solange die
-// Reachability-Metadaten fehlen. Der Default haelt `develop` und den Tag-Pfad gruen, waehrend die
-// Messung per `workflow_dispatch` angefordert wird. Nach Phase F.1 faellt der Schalter weg und `full`
-// wird der einzige Entrypoint.
-val nativeEntrypoint = providers.gradleProperty("nativeEntrypoint").getOrElse("core")
+// Native-Image-Entrypoint: die VOLLE CLI `dev.dmigrate.cli.MainKt` — derselbe Einstieg wie der
+// JVM-Fat-JAR (application.mainClass oben). Bis Phase F.1 gab es hier einen `-PnativeEntrypoint`-
+// Schalter (core = reduzierter NativeMain, full = MainKt); F.1 hat ihn zurueckgebaut, seither ist
+// `full` der einzige Bau (docs/planning/in-progress/graalvm-native-image-distribution.md).
 
 // Diagnose-Schalter fuer Phase F.0: `-PnativeMissingRegistrationMode=Warn`.
 //
@@ -43,8 +36,8 @@ val nativeEntrypoint = providers.gradleProperty("nativeEntrypoint").getOrElse("c
 // Der Schalter bleibt, weil er fuer andere Fehlerklassen greifen kann und der Messapparat sonst
 // wieder von Hand zusammengesetzt werden muesste. Ausdruecklich NUR fuer Messlaeufe: im
 // ausgelieferten Binary muss eine fehlende Registrierung hart scheitern, nicht stillschweigend
-// weiterlaufen. Deshalb opt-in und NICHT an `nativeEntrypoint=full` gekoppelt — `full` wird
-// spaeter der ausgelieferte Entrypoint.
+// weiterlaufen. Deshalb opt-in: im ausgelieferten Binary (`MainKt`) muss eine fehlende
+// Registrierung hart scheitern, nicht stillschweigend weiterlaufen.
 val nativeMissingRegistrationMode = providers.gradleProperty("nativeMissingRegistrationMode").orNull
 
 // Bau-Ressourcen (Begruendung an der Verwendungsstelle).
@@ -53,11 +46,6 @@ val nativeMaxRamPercentage = providers.gradleProperty("nativeMaxRamPercentage").
 // hier niemand braucht — auf CI-Runnern (~4 Kerne) wuerde ein fixes 8 ueberzeichnen. Ohne die
 // Option waehlt native-image die Kernzahl der jeweiligen Maschine, was ueberall das Richtige ist.
 val nativeParallelism = providers.gradleProperty("nativeParallelism").orNull
-val nativeMainClass = when (nativeEntrypoint) {
-    "full" -> "dev.dmigrate.cli.MainKt"
-    "core" -> "dev.dmigrate.cli.NativeMainKt"
-    else -> error("nativeEntrypoint must be 'core' or 'full', was '$nativeEntrypoint'")
-}
 
 graalvmNative {
     // Keine GraalVM-Toolchain-Suche zur Konfigurationszeit — hält den JDK-21-Build (ohne GraalVM) grün.
@@ -89,7 +77,7 @@ graalvmNative {
     binaries {
         named("main") {
             imageName.set("d-migrate")
-            mainClass.set(nativeMainClass)
+            mainClass.set("dev.dmigrate.cli.MainKt")
             buildArgs.add("--no-fallback")
             buildArgs.add("--initialize-at-build-time=ch.qos.logback,org.slf4j")
             // i18n-Bundles der CLI (MessageResolver -> ResourceBundle.getBundle("messages.messages")).
@@ -307,10 +295,6 @@ kover {
                 // Clikt-free Wiring objects. Commands only parse flags and
                 // delegate. Tested via CliHelpAndBootstrapTest (help reachability).
                 classes(
-                    // GraalVM-Native-Image Core-Entrypoint (NativeMain.kt) — reine Clikt-Shells; die
-                    // Kern-Logik (SchemaFileResolver/SchemaValidator) ist in core/formats getestet.
-                    // Nur lokal per `nativeCompile` ausführbar (GraalVM), nicht im JVM-Testpfad.
-                    "dev.dmigrate.cli.Native*",
                     "dev.dmigrate.cli.commands.DataProfileCommand*",
                     "dev.dmigrate.cli.commands.ExportCommand*",
                     "dev.dmigrate.cli.commands.ExportFlywayCommand*",

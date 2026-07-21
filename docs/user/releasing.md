@@ -562,14 +562,14 @@ Zur Einordnung:
 - Das Native-Binary ist eine **zusätzliche** Distributionsklasse. Es ersetzt
   weder Fat-JAR noch OCI-Image noch Homebrew; alle bisherigen Kanäle bleiben
   unverändert.
-- Es deckt das **Core-Subset** der CLI ab (`schema validate`,
-  `schema generate`) und braucht keine JVM. Kommandos mit
-  Datenbankzugriff — `reverse`, `compare`, `migrate`, `data` — sind nicht
-  enthalten; dafür bleibt das Fat-JAR bzw. das OCI-Image der Weg.
-- Jedes OS-Leg smoked sein eigenes Binary (`--help`, `schema validate`,
-  `schema generate`), bevor es hochgeladen wird. macOS und Windows sind
-  lokal nicht nachbaubar, deshalb ist dieser Smoke dort die einzige
-  Selbstvalidierung.
+- Es deckt die **volle CLI** ab (`schema`, `reverse`, `compare`, `migrate`,
+  `data`, `export`, `mcp` …) und braucht keine JVM. Bis Phase F.1 war der
+  native Entrypoint auf ein Core-Subset (`schema validate`/`generate`)
+  reduziert; seither ist der volle `MainKt` der einzige native Entrypoint.
+- Jedes OS-Leg smoked sein eigenes Binary (`--help`, `schema validate --source`,
+  `schema generate --source`), bevor es hochgeladen wird. Der Smoke bleibt
+  DB-frei (der Runner stellt keine Datenbank); macOS und Windows sind lokal
+  nicht nachbaubar, deshalb ist dieser Smoke dort die einzige Selbstvalidierung.
 - Der Anhänge-Job erstellt **kein** Release, er lädt nur hoch. Das Release
   selbst kommt aus
   [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml),

@@ -7,8 +7,9 @@ das Native-Binary soll dasselbe können wie die JVM-CLI (Schwelle in Abschnitt 0
 auf diesen Satz zurück; wo unten „1.0.0-Ziel" steht, ist es unter diesem Vorbehalt zu lesen.
 
 **Ausführungsreihenfolge**: A, B, D, E **(erledigt — E jedoch nur unter der Annahme, dass Native
-optional ist)** → F **(F.0/F.2/F.3/F.4 erledigt 2026-07-20 — die VOLLE Fläche läuft nativ, inkl.
-`mcp serve` + S3; offen: nur noch F.1 Rückbau)** → G **(vermutlich hinfällig — kein Ausschluss in
+optional ist)** → F **(F.0/F.1/F.2/F.3/F.4 erledigt — die VOLLE Fläche läuft nativ, inkl. `mcp serve`
++ S3; F.1-Entrypoint-Rückbau erledigt 2026-07-21: `NativeMain.kt` entfernt, native `mainClass` fest
+auf `MainKt`, `nativeEntrypoint`-Schalter raus)** → G **(vermutlich hinfällig — kein Ausschluss in
 Sicht, alle Flächen laufen)** → H (nur falls Frage 6 = „Native bleibt 1.0.0-Gate"). Die Buchstaben
 sind historisch gewachsen.
 
@@ -50,10 +51,10 @@ Ausschluss. Es gilt:
 
 ### Konsequenz für den bisherigen Bau
 
-Der reduzierte Entrypoint `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/NativeMain.kt` wird
-**zurückgebaut** (Phase F.1). Der native Entrypoint wird `dev.dmigrate.cli.MainKt` — derselbe wie beim
-Fat-JAR. Damit entfallen **drei** Divergenzen, die der zweite Kommandobaum eingeschleppt hatte und die
-am 2026-07-20 beim Abgleich gegen `spec/cli-spec.md` gefunden wurden:
+Der reduzierte Zweit-Entrypoint `NativeMain.kt` wurde in **Phase F.1 gelöscht** (erledigt 2026-07-21).
+Der native Entrypoint ist jetzt `dev.dmigrate.cli.MainKt` — derselbe wie beim Fat-JAR. Damit entfielen
+**drei** Divergenzen, die der zweite Kommandobaum eingeschleppt hatte und die am 2026-07-20 beim
+Abgleich gegen `spec/cli-spec.md` gefunden wurden:
 
 1. **Spec-Bruch in der Aufrufsyntax.** Die Spec schreibt `--source <path>` vor
    ([`spec/cli-spec.md`](../../../spec/cli-spec.md), Abschnitte zu `schema validate`/`schema generate`);
@@ -93,15 +94,16 @@ in diesen Plan.
 Sonden grün; die zwei Subprozess-E2Es (`McpRealCliSubprocessTest`, `McpS3SubprocessE2ETest`) grün
 gegen das Binary. F.0/F.2/F.3/F.4 sind erledigt.
 
-### MORGEN: nur noch F.1 (Entrypoint zusammenführen) — der eine wirklich offene Bau-Schritt
+### F.1 (Entrypoint zusammenführen) — ✅ ERLEDIGT 2026-07-21
 
-**Kritisch, mit Release-Relevanz:** Der ausgelieferte Default ist noch `nativeEntrypoint=core` =
-`NativeMainKt` = das **reduzierte** Binary. Der Tag-Pfad in `native-image.yml`
-(`NATIVE_ENTRYPOINT: ${{ inputs.entrypoint || 'core' }}`) baut damit heute **das alte Subset**, nicht
-die volle CLI. F.1 macht die Voll-Scope-Entscheidung erst wirksam. Rückbauliste steht unter „F.1 —
-Entrypoint zusammenführen"; Kern: `mainClass` fest auf `MainKt`, `NativeMain.kt` löschen, den
-`nativeEntrypoint`-Schalter entfernen, Kover-Excludes auf **beiden** Seiten raus, `releasing.md` 4.4.2
-+ README nachziehen. Danach ist der `full`-Bau der einzige, und `native-probe`/`native-e2e` gaten ihn.
+**War kritisch, mit Release-Relevanz:** Der ausgelieferte Default war `nativeEntrypoint=core` =
+`NativeMainKt` = das **reduzierte** Binary; der Tag-Pfad in `native-image.yml` baute damit **das alte
+Subset**, nicht die volle CLI. F.1 macht die Voll-Scope-Entscheidung wirksam. Umgesetzt: `mainClass`
+fest auf `dev.dmigrate.cli.MainKt`, `NativeMain.kt` gelöscht, den `nativeEntrypoint`-Schalter (gradle +
+`native-image.yml`-Input/Env) entfernt, Kover-Exclude `dev.dmigrate.cli.Native*` auf **beiden** Seiten
+raus (build.gradle.kts + excludes-ledger.md), Per-OS-Smoke auf `--source`-Syntax der vollen CLI,
+`releasing.md` 4.4.2 + README nachgezogen. Der `full`-Bau ist jetzt der einzige; der Per-OS-Smoke gatet
+ihn (DB-frei). Ongoing native-probe/native-e2e-CI-Gating bleibt der Slice `native-e2e-regression-gate`.
 
 ### Was heute Nachmittag dazukam (nach dem „Phase F — Ergebnisse"-Commit)
 
@@ -297,22 +299,21 @@ F.4-Reihenfolge ist Output der **Korpus-Erweiterung**, nicht von F.0.
 - **Ergebnis**: Blockerliste und Reihenfolge **für den Startpfad (F.3)** plus Ressourcenbudget. Für
   Frage 6 ist das die halbe Grundlage; die andere Hälfte liefert die Korpus-Erweiterung in F.2.
 
-#### F.1 — Entrypoint zusammenführen
-Rückbau-Liste, vollständig (fail-closed-Gates hängen daran):
-- `graalvmNative`-`mainClass` dauerhaft auf `dev.dmigrate.cli.MainKt`.
-- `NativeMain.kt` löschen.
-- **Kover-Exclude auf BEIDEN Seiten** entfernen: der Gradle-Eintrag `"dev.dmigrate.cli.Native*"` in
+#### F.1 — Entrypoint zusammenführen  ✅ erledigt 2026-07-21
+Rückbau-Liste, vollständig umgesetzt (fail-closed-Gates hängen daran):
+- ✅ `graalvmNative`-`mainClass` dauerhaft auf `dev.dmigrate.cli.MainKt`.
+- ✅ `NativeMain.kt` gelöscht.
+- ✅ **Kover-Exclude auf BEIDEN Seiten** entfernt: der Gradle-Eintrag `"dev.dmigrate.cli.Native*"` in
   `adapters/driving/cli/build.gradle.kts` **und** die Zeile in
   [`docs/coverage/excludes-ledger.md`](../../coverage/excludes-ledger.md).
   `scripts/verify-kover-excludes-ledger.py` prüft **in beide Richtungen** — nur eine Seite zu entfernen
-  bricht `make coverage-excludes-check`.
-- Per-OS-Smokes in `native-image.yml` auf die spec-konforme Syntax (`--source`) umstellen.
-- `docs/user/releasing.md` 4.4.2 nachführen (beschreibt das Binary noch als Core-Subset mit
-  „`reverse`, `compare`, `migrate`, `data` sind nicht enthalten") — steht unter dem `docs-check`-Gate.
-- [`docs/planning/in-progress/README.md`](README.md) nachführen (nennt den Slice noch „reduzierter
-  Core-Entrypoint", „Offen: macOS/Windows-Legs + Release-Assets" — beides geliefert).
-- Tote Pfadverweise in `adapters/driving/cli/build.gradle.kts` korrigieren: zwei Kommentare zeigen noch
-  auf diesen Plan unter `planning/next/`, er liegt aber seit `b259cfad` in `planning/in-progress/`.
+  bräche `make coverage-excludes-check`.
+- ✅ Per-OS-Smoke in `native-image.yml` auf die spec-konforme `--source`-Syntax der vollen CLI
+  umgestellt (Assertion „Validation passed" statt des alten `valid=true`); F.0-Mess-Steps entfernt.
+- ✅ `docs/user/releasing.md` 4.4.2 nachgeführt (volle CLI statt Core-Subset).
+- ✅ [`docs/planning/in-progress/README.md`](README.md) nachgeführt.
+- ✅ Tote `planning/next/`-Pfadverweise in `adapters/driving/cli/build.gradle.kts`: bereits vor F.1
+  bereinigt (keine mehr vorhanden).
 
 #### F.2 — Metadaten-Grundlage  ✅ im Kern erledigt 2026-07-20
 - ✅ **GRMR aktiviert** (`metadataRepository`, version 1.0.7) — **aber wirkungslos** für unsere
@@ -496,7 +497,8 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
 
 ### Offen (Stand mittags — durch Nachmittagsarbeit teils überholt, s. Wiedereinstieg)
 
-- **F.1** (Entrypoint zusammenfuehren) — **weiterhin offen**, der einzige verbleibende Bau-Schritt.
+- ~~**F.1** (Entrypoint zusammenfuehren)~~ — **erledigt 2026-07-21** (s. Wiedereinstieg oben): der
+  native Bau ist jetzt ausschliesslich die volle CLI (`MainKt`).
 - ~~F.4~~ — **erledigt am Nachmittag**: Parquet, Tool-Export, `mcp serve`, S3, `data profile` sind
   getraced UND nativ funktionsfähig; `mcp serve` und S3 waren defekt und wurden gefixt (`3817e572`,
   `ec9fa2fd`).

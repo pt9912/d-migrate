@@ -1,7 +1,8 @@
 name: Native Image
 
-# GraalVM-Native-Image-Build des reduzierten Core-Entrypoints (dev.dmigrate.cli.NativeMainKt),
-# 1.0.0-Stable-Gate / Phase D+E — siehe docs/planning/in-progress/graalvm-native-image-distribution.md.
+# GraalVM-Native-Image-Build der VOLLEN CLI (dev.dmigrate.cli.MainKt) je Betriebssystem,
+# 1.0.0-Stable-Gate — siehe docs/planning/in-progress/graalvm-native-image-distribution.md.
+# (Bis Phase F.1 gab es einen core/full-Entrypoint-Schalter; F.1 hat ihn zurueckgebaut.)
 #
 # BEWUSST separat von build.yml: native-image cross-kompiliert nicht (jedes OS baut sein eigenes
 # Binary), braucht eine GraalVM-Toolchain statt des Docker-Pfads und ist zu schwer, um jeden PR zu
@@ -14,15 +15,8 @@ name: Native Image
 on:
   workflow_dispatch:
     inputs:
-      entrypoint:
-        description: 'core = reduzierter NativeMain (gruen). full = voller MainKt, Messlauf Phase F.0.'
-        type: choice
-        options:
-          - core
-          - full
-        default: core
       os_scope:
-        description: 'all = 3-OS-Matrix. linux = nur ubuntu (schnelle Messrunde, ~8 statt ~25 min).'
+        description: 'all = 3-OS-Matrix. linux = nur ubuntu (schneller Dispatch-Check, ~8 statt ~25 min).'
         type: choice
         options:
           - all
@@ -46,9 +40,9 @@ jobs:
       # einem OS-spezifischen Native-Image-Problem ist die Information der anderen Legs wertvoll.
       fail-fast: false
       matrix:
-        # `os_scope: linux` verkuerzt Messrunden auf ein Leg: macOS ist mit ~21 min der Taktgeber,
-        # liefert aber keine zusaetzliche Erkenntnis — die F.0-Blocker waren in beiden Laeufen auf
-        # allen drei Plattformen identisch. Die volle Matrix laeuft an Meilensteinen und bei Tags
+        # `os_scope: linux` verkuerzt einen Dispatch-Check auf ein Leg: macOS ist mit ~21 min der
+        # Taktgeber, liefert aber selten zusaetzliche Erkenntnis — die frueheren Native-Blocker waren
+        # auf allen drei Plattformen identisch. Die volle Matrix laeuft an Meilensteinen und bei Tags
         # (Tag-Laeufe haben keine Inputs -> 'all').
         os: ${{ fromJSON(inputs.os_scope == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
@@ -64,10 +58,8 @@ jobs:
 
     # Der direkte ./gradlew-Aufruf (nicht über Docker) braucht den bewussten Override des
     # Local-Gradle-Guards; native-image kann nicht im Docker-Build-Image (JDK 21 ohne GraalVM) laufen.
-    # Tag-Laeufe haben keine Inputs -> 'core'. Nur ein ausdruecklicher Dispatch waehlt 'full'.
     env:
       DMIGRATE_ALLOW_LOCAL_GRADLE: '1'
-      NATIVE_ENTRYPOINT: ${{ inputs.entrypoint || 'core' }}
 
     steps:
       - name: Checkout repository
@@ -99,12 +91,10 @@ jobs:
 
       - name: Native compile
         id: compile
-        # F.0 AP 6 (Ressourcenbudget): Wandzeit messen und den native-image-Bauabschluss (u. a. Peak RSS)
-        # aus dem Log herausziehen. Das 60-min-Timeout wurde am REDUZIERTEN Entrypoint gemessen; fuer
-        # `full` ist der Bedarf unbekannt, und GitHub-Runner haben ~7 GB gegen die 31 GiB des Spikes.
+        # Baut die volle CLI (MainKt). native-image ist rechenintensiv (Linux ~10 min); das grosszuegige
+        # 60-min-Timeout gibt langsameren OS-Legs Luft. macOS wird unten gedrosselt (GC-Druck, s.u.).
         run: |
           set -o pipefail
-          echo "entrypoint: ${NATIVE_ENTRYPOINT}"
 
           # macOS-Runner: 7,5 GB RAM und 3 Kerne — die knappste Maschine der Matrix. Unter GraalVM 25
           # reichte das fuer die volle Flaeche NICHT: der Builder verbrachte 77,5 % der Zeit in GC und
@@ -122,7 +112,7 @@ jobs:
 
           start=$(date +%s)
           ./gradlew --no-daemon :adapters:driving:cli:nativeCompile \
-            "-PnativeEntrypoint=${NATIVE_ENTRYPOINT}" ${EXTRA} 2>&1 | tee native-build.log
+            ${EXTRA} 2>&1 | tee native-build.log
           status=$?
           end=$(date +%s)
           echo "build_seconds=$(( end - start ))" >> "${GITHUB_OUTPUT}"
@@ -187,35 +177,35 @@ jobs:
           echo "platform=${PLATFORM_OS}-${PLATFORM_ARCH}" >> "${GITHUB_OUTPUT}"
           ls -la dist
 
-      - name: Phase F.0 measurement (full entrypoint only)
-        if: env.NATIVE_ENTRYPOINT == 'full'
-        # Ruft DASSELBE Skript wie `make native-probe` lokal. Vorher trug dieser Step eine eigene,
-        # inline eingebettete Sondenliste — die Kopien liefen prompt auseinander: das Skript war auf
-        # 15 Sonden erweitert (Phase F.4: Parquet, Tool-Export, mcp serve), der Workflow blieb bei 9,
-        # und der 3-OS-Lauf 29743894894 pruefte die neuen Flaechen deshalb gar nicht.
-        #
-        # MESSUNG, kein Gate: das Skript endet bewusst mit 0, jede Sonde wird protokolliert. Ein
-        # Fehlschlag ist hier ein BEFUND — braeche der Step ab, bekaeme man nur den ersten Blocker.
-        shell: bash
+      - name: Native build metrics (step summary)
+        # Service-frei: zieht Bauzeit und die Ressourcenkennzahlen des native-image-Builders (Peak RSS,
+        # Speicher/Threads) aus dem getee'ten native-build.log in die Step-Summary — reine
+        # Log-Auswertung, kein Sonden-/Service-Bedarf. (Bis Phase F.1 haengte hier zusaetzlich
+        # `native-probe.sh`; das braucht Datenbank/S3-Services, die der Runner nicht stellt, und wurde
+        # daher entfernt — das durchgaengige Native-CI-Gating ist der Slice native-e2e-regression-gate.)
+        # `always()`: bei einem gescheiterten Bau ist das Log selbst der Befund.
+        if: always()
         run: |
-          set -uo pipefail
-          scripts/native-probe.sh "$(pwd)/dist/${{ steps.stage.outputs.asset }}" \
-            "$(pwd)/f0-report-${{ steps.stage.outputs.platform }}.md"
           {
+            echo "## Bauabschluss (native-image) — ${{ matrix.os }}"
             echo
-            echo "## Bauabschluss (native-image)"
+            echo "Bauzeit: ${{ steps.compile.outputs.build_seconds || 'n/a' }} s"
             echo
-            grep -iE "Finished generating|Peak RSS|GB of memory|Build resources|thread\(s\)" \
-              native-build.log | tail -20 | sed 's/^/    /' \
-              || echo "    (keine Kennzahlen im Log gefunden)"
-          } >> "f0-report-${{ steps.stage.outputs.platform }}.md"
-          cat "f0-report-${{ steps.stage.outputs.platform }}.md" >> "${GITHUB_STEP_SUMMARY}"
+            echo '```'
+            if [ -f native-build.log ]; then
+              grep -iE "Finished generating|Peak RSS|GB of memory|Build resources|thread\(s\)" \
+                native-build.log | tail -20 || echo "(keine Kennzahlen im Log gefunden)"
+            else
+              echo "(native-build.log fehlt — Bau nicht gestartet?)"
+            fi
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Smoke-test the native binary
-        if: env.NATIVE_ENTRYPOINT == 'core'
-        # Gate NUR fuer den Core-Entrypoint. Smoked das GESTAGTE Binary, also exakt das Artefakt, das
-        # ans Release geht. macOS/Windows sind lokal nicht verifizierbar — dieser Step ist dort die
-        # einzige Selbstvalidierung, deshalb deckt er beide nativen Kommandos ab.
+        # Gate fuer JEDEN Bau: smoked das GESTAGTE Binary, also exakt das Artefakt, das ans Release
+        # geht. macOS/Windows sind lokal nicht verifizierbar — dieser Step ist dort die einzige
+        # Selbstvalidierung. DB-freie Kommandos (der Runner hat keine Datenbank): `schema validate`
+        # und `schema generate` gegen die spec-konforme `--source`-Syntax der vollen CLI.
         run: |
           set -euo pipefail
           BIN="dist/${{ steps.stage.outputs.asset }}"
@@ -223,38 +213,22 @@ jobs:
 
           "${BIN}" --help
 
-          out=$("${BIN}" schema validate examples/sample-db/calib-schema.yaml)
+          out=$("${BIN}" schema validate --source examples/sample-db/calib-schema.yaml)
           echo "${out}"
-          echo "${out}" | grep -q "valid=true" \
+          echo "${out}" | grep -q "Validation passed" \
             || { echo "::error::unexpected validate output"; exit 1; }
 
-          ddl=$("${BIN}" schema generate examples/sample-db/calib-schema.yaml --target postgresql)
+          ddl=$("${BIN}" schema generate --source examples/sample-db/calib-schema.yaml --target postgresql)
           echo "${ddl}" | head -20
           echo "${ddl}" | grep -qi "CREATE TABLE" \
             || { echo "::error::generate produced no CREATE TABLE"; exit 1; }
 
       - name: Upload native binary
-        if: env.NATIVE_ENTRYPOINT == 'core'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: d-migrate-native-${{ steps.stage.outputs.platform }}
           path: dist/*
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload F.0 measurement artefacts
-        # `always()`: bei einem gescheiterten `full`-Bau ist das Build-Log GENAU das Messergebnis —
-        # ohne diesen Upload waere der Lauf ohne Befund. Nie am Release beteiligt (eigener Name).
-        if: always() && env.NATIVE_ENTRYPOINT == 'full'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: f0-measurement-${{ matrix.os }}
-          path: |
-            native-build.log
-            f0-report-*.md
-            f0-out/**
-            adapters/driving/cli/build/native/nativeCompile/reports/**
-          if-no-files-found: warn
           retention-days: 14
 
   attach-release:

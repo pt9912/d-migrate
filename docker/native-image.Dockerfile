@@ -60,13 +60,12 @@ ENV PATH="/opt/jdk21/bin:/opt/gradle/bin:${PATH}"
 WORKDIR /src
 COPY . .
 
-# core = reduzierter NativeMain, full = voller MainKt (Messkonfiguration Phase F.0).
-ARG NATIVE_ENTRYPOINT=full
+# Native-Entrypoint ist die volle CLI (dev.dmigrate.cli.MainKt), fest in build.gradle.kts (der
+# core/full-Schalter wurde in Phase F.1 zurueckgebaut).
 # Leer = GraalVM-Default `Throw`. `Warn` ist der Diagnosemodus (s. make/native.mk), nie fuer ein
 # ausgeliefertes Binary.
 ARG NATIVE_MISSING_REG_MODE=
 RUN gradle --no-daemon :adapters:driving:cli:nativeCompile \
-      -PnativeEntrypoint=${NATIVE_ENTRYPOINT} \
       $(test -n "${NATIVE_MISSING_REG_MODE}" \
         && echo "-PnativeMissingRegistrationMode=${NATIVE_MISSING_REG_MODE}" || true)
 
