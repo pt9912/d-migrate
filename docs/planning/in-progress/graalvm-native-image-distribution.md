@@ -69,10 +69,10 @@ Abgleich gegen `spec/cli-spec.md` gefunden wurden:
    Parse-Fehler ergeben in der JVM-CLI Exit 7 (`SchemaValidateWiring`), im Native-Baum nicht.
 
 **Nicht auf dieser Liste — bewusst korrigiert:** `--source -` (stdin) für `schema validate`. Die
-JVM-CLI kann das **ebenfalls nicht** (`SchemaValidateCommand` nutzt `.path(mustExist = true)`, was `-`
-ablehnt). Das ist eine **bestehende Lücke zwischen Spec und Code**, nicht von `NativeMain.kt`
-eingeschleppt — der Entrypoint-Merge löst sie **nicht**. Sie gehört als eigener Befund verfolgt, nicht
-in diesen Plan.
+JVM-CLI konnte das **ebenfalls nicht** (`SchemaValidateCommand` nutzte `.path(mustExist = true)`, was
+`-` ablehnte). Das war eine bestehende Lücke zwischen Spec und Code, nicht von `NativeMain.kt`
+eingeschleppt. **Behoben 2026-07-21 (Frage 8):** stdin ist jetzt implementiert (Format-Sniff), spec 10.3
+stimmt.
 
 ### Was von der bisherigen Arbeit trägt
 
@@ -545,10 +545,11 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
    SpatiaLite optional (−89 MB, aber Paritaets-Luecke), debian-slim-Basis (−48 MB, braucht
    glibc-passenden Bau), static/musl + scratch (Basis ~0, aber bricht die dynamische `mod_spatialite`
    und haengt an Frage 3). Binary-Schrumpfung (`-O`/UPX/Adapter-Ausschluss) bleibt als eigener Hebel offen.
-8. **Spec-Lücken, die das Akzeptanzkriterium berühren**: `spec/cli-spec.md` listet
-   `--sqlite-named-sequences` nicht in der `generate`-Flag-Tabelle (obwohl implementiert) und fordert
-   `--source -` (stdin) für `schema validate`, was der Code nicht kann. „Identische Aufrufsyntax nach
-   cli-spec.md" setzt voraus, dass die Spec selbst stimmt — beides ist separat zu klären.
+8. ✅ **Spec-Lücken behoben (2026-07-21)**: `--sqlite-named-sequences` in die `generate`-Flag-Tabelle
+   ergänzt (target-Gate „nur `--target sqlite`, sonst Exit 2" empirisch belegt); `schema validate
+   --source -` (stdin) implementiert (`SchemaValidateCommand`/`SchemaValidateWiring`, Format-Sniff
+   `{`/`[`→JSON sonst YAML), sodass spec 10.3 jetzt stimmt. „Identische Aufrufsyntax nach cli-spec.md"
+   ist für diese beiden Punkte erfüllt; fehlende Datei bleibt Exit 1 (`UsageError`), 3 neue stdin-Tests.
 
 ## 5. Vorbedingungen
 

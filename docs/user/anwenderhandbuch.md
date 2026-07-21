@@ -171,7 +171,8 @@ d-migrate [globale Optionen] <Gruppe> <Befehl> [Befehlsoptionen]
   `d-migrate schema generate --help`.
 - **Quelle/Ziel angeben:** `--source` und `--target` akzeptieren je nach Befehl
   einen Dateipfad, eine Datenbank-URL oder eine benannte Verbindung (siehe
-  [4.1](#41-verbindungen-benennen)).
+  [4.1](#41-verbindungen-benennen)); einige Befehle (z. B. `schema validate`)
+  akzeptieren `-` für stdin, sodass Sie ein Schema hineinpipen können.
 - **Ein- und Ausgabe:** Ergebnisse gehen nach „stdout", Meldungen und Fortschritt
   nach „stderr". So können Sie Ergebnisse weiterleiten (`… > datei`), ohne dass
   Statusmeldungen stören.

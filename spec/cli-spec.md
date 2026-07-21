@@ -363,7 +363,7 @@ d-migrate schema validate --source <path>
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad | Schema-Datei (YAML/JSON) |
+| `--source` | Ja | Pfad oder `-` | Schema-Datei (YAML/JSON), oder `-` für stdin (Format wird aus dem Inhalt erkannt; Details in 10.3) |
 
 Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
@@ -385,6 +385,7 @@ d-migrate schema generate --source <path> --target <dialect> [--output <path>] [
 | `--spatial-profile` | Nein | String | Spatial-Profil für `geometry`-Spalten (siehe unten) |
 | `--split` | Nein | `single` / `pre-post` | DDL-Ausgabemodus (Default: `single`). `pre-post` erzeugt importfreundliche Artefakte (pre-data/post-data) |
 | `--mysql-named-sequences` | Nein | `action_required` / `helper_table` | MySQL-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target mysql` zulaessig; bei PostgreSQL/SQLite: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences`, `dmg_nextval`/`dmg_setval`, `BEFORE INSERT`-Trigger). |
+| `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target sqlite` zulaessig; bei PostgreSQL/MySQL: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences` + Trigger); ohne Opt-in bleibt die Sequence action-required. |
 | `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
