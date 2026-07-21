@@ -493,6 +493,9 @@ git push origin vX.Y.Z
    (plus `:latest` bei Stable) — s. [4.4.1](#441-docker-hub-spiegel). Fehlt das
    Secret `DOCKERHUB_TOKEN`, werden diese Schritte still übersprungen und der
    Tag-Build bleibt grün.
+9. Parallel dazu baut der Job `native-image` das **native Container-Image** und
+   pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
+   [4.4.3](#443-natives-container-image).
 
 Auf den grünen Tag-Build warten, **bevor** der GitHub-Release veröffentlicht
 wird:
@@ -588,6 +591,37 @@ liegen nur als Workflow-Artefakt vor.
 ```bash
 gh workflow run native-image.yml --ref develop
 gh run watch
+```
+
+#### 4.4.3 Natives Container-Image
+
+Zusätzlich zum JVM-OCI-Image (oben) und den rohen Native-Binaries
+([4.4.2](#442-native-image-binaries)) publiziert der Tag-Build ein **natives
+Container-Image**: dieselbe volle CLI als GraalVM-Binary, verpackt in ein
+Runtime-Image (Entrypoint = Binary, Workdir `/work`, non-root, `mod_spatialite`).
+Gebaut vom Job `native-image` in
+[`build.yml`](../../.github/workflows/build.yml) über `make native-runtime-build`
+(Stage `native-runtime` in
+[`docker/native-image.Dockerfile`](../../docker/native-image.Dockerfile)).
+
+- **Tags:** `ghcr.io/pt9912/d-migrate:X.Y.Z-native` (versioniert) plus das
+  bewegliche `:native` (nur bei **Stable** — Prereleases fassen es nicht an,
+  dieselbe Regel wie `:latest`). Docker-Hub-Spiegel
+  `pt9912/d-migrate:X.Y.Z-native` unter derselben `DOCKERHUB_TOKEN`-Bedingung wie
+  das JVM-Image ([4.4.1](#441-docker-hub-spiegel)).
+- **Architektur:** nur `linux/amd64` — wie das JVM-Image.
+- **Vor dem Push** wird das Image DB-frei gesmoked (`--version`, `--help`,
+  `schema validate --source`); ein kaputtes Image blockiert den Push, nicht den
+  Release.
+- **Nur auf Tags:** der native Compile im Docker (~5–8 min) läuft nicht bei jedem
+  Push; auf `develop`/`main` verifiziert `native-image.yml` (Dispatch) den Bau.
+
+Das native Image ist eine **zusätzliche** Distributionsklasse — es ersetzt weder
+das JVM-OCI-Image noch die rohen Binaries.
+
+```bash
+docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native
+docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
 ```
 
 ### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
@@ -748,6 +782,9 @@ anschließend als verifizierten Repo-Stand nachziehen.
   ```bash
   docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z --help
   ```
+- [ ] Natives Container-Image ([4.4.3](#443-natives-container-image)):
+      `docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native` und
+      `docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help`.
 - [ ] Docker-Hub-Spiegel ([4.4.1](#441-docker-hub-spiegel)) trägt dieselbe Version:
       `docker pull pt9912/d-migrate:X.Y.Z` und `docker run --rm pt9912/d-migrate:X.Y.Z --help`.
       Schlägt der Pull fehl, wurde der Push still übersprungen (Secret) — Tag-Build-Log
@@ -940,6 +977,7 @@ Für jeden Release abhaken:
 - [ ] Workflow-Artefakt `release-assets` des grünen Tag-Builds verfügbar
 - [ ] Image auf `ghcr.io/pt9912/d-migrate:X.Y.Z` und `:latest` verfügbar
 - [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
+- [ ] Natives Container-Image `ghcr.io/pt9912/d-migrate:X.Y.Z-native` verfügbar (`:native` nur bei Stable), Docker-Hub-Spiegel dito
 - [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag grün — alle drei OS-Legs
 
 **Veröffentlichung**
@@ -950,6 +988,7 @@ Für jeden Release abhaken:
 - [ ] Native-Binary der eigenen Plattform lokal gesmoked (`schema validate`)
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
+- [ ] Natives Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z-native` ok (`--help`, `schema validate --source`)
 - [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)

@@ -565,5 +565,11 @@ Motiv fuer den Nachweis: zweimal taeuschte ein Kommando eine Abdeckung vor, die 
 - **Native ersetzt weder** das Fat-JAR **noch** das OCI-Image (jib) — es ist eine **zusätzliche**
   Distributionsklasse. Das bleibt auch bei voller Parität gültig: Fat-JAR und OCI bedienen andere
   Einsatzformen (JVM-Umgebungen, Container-Orchestrierung), nicht einen Funktionsrückstand des Binaries.
-- **Docker Hub** und **SDKMAN** sind eigene Distributions-Gates — nicht Teil dieses Plans.
+- **Native Distributionsformen (ergänzt 2026-07-21):** neben den rohen Binaries am GitHub-Release
+  (linux/macos/windows, `native-image.yml`) gibt es jetzt auch ein **natives Container-Image**
+  `…:X.Y.Z-native` (+ bewegliches `:native` bei Stable) auf GHCR/Docker-Hub, gebaut vom Job
+  `native-image` in `build.yml` (amd64, Stage `native-runtime`). Es tritt **neben** das JVM-OCI-Image,
+  ersetzt es nicht (Details: [`docs/user/releasing.md`](../../user/releasing.md) 4.4.3).
+- **Docker Hub** und **SDKMAN** sind eigene Distributions-Gates — nicht Teil dieses Plans (das native
+  Image nutzt lediglich den bestehenden `build.yml`-Docker-Hub-Spiegel mit).
 - Profiling-DataSketches bleibt ein bewusster Carve-Out (s. [Roadmap](roadmap.md)), post-1.0.0.
