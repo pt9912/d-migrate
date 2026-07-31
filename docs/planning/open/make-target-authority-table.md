@@ -17,6 +17,13 @@
 Fließtext. d-migrate dokumentiert seine Targets aber in einem **Code-Block** im README, und
 ein Autoritäts-Dokument (d-checks eigenes Beispiel nutzt `AGENTS.md`) existiert hier nicht.
 
+> **Quelle der Ausschließlichkeit: `DC-FA-TGT-001`** („Tabellen-Scoping (Erkennungs-Vertrag)")
+> im d-check-**Lastenheft**, wörtlich: `make X` *„gilt **nur in Tabellenzeilen** (Zeilen mit
+> `|`-Präfix) als Existenz-/Vollständigkeits-Behauptung"*. Im d-check-**Benutzerhandbuch**
+> steht das Wort „nur" **nicht** — dort nur die positive Regel („jedes in einer
+> Doku-Tabellenzeile behauptete `make X` ist eine Makefile-Regel"), aus der die
+> Ausschließlichkeit nicht folgt. Wer die Abgrenzung im Handbuch sucht, findet sie nicht.
+
 Die Messung dazu:
 
 | | Anzahl |
