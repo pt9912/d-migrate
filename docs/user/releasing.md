@@ -433,6 +433,10 @@ identifizieren. Befehle und jq-Filter: siehe
   „weitere Installationswege" hierher — fehlt der Eintrag, läuft der Verweis ins Leere
 - [`packaging/dockerhub/`](../../packaging/dockerhub/README.md): `description.txt` und
   `overview.md` prüfen, wenn sich Tags, Nutzung oder Image-Eigenschaften geändert haben
+- [`version.md`](../../version.md): „Aktuell"-Zeile, neue Verlaufs-Zeile **und** den
+  `<a id>`-Anker auf die neue Version verschieben. Die bisherige Zeile verliert ihn — das
+  ist beabsichtigt: feste Links auf die alte Version brechen dann als `anchor-missing`,
+  und ein vergessener Bump fällt auf
 - [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md) und [`docs/user/releasing.md`](releasing.md) auf den
   tatsächlichen Vertrag prüfen
 - [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss ZIP-basierte Installation, Java 21 und
