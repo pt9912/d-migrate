@@ -159,8 +159,8 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 ## Status
 
-The full release history (0.1.0–0.9.7) lives in
-[`CHANGELOG.md`](CHANGELOG.md). Current and upcoming milestones:
+The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
+Current and upcoming milestones:
 
 - **0.9.8 Analytics + storage anchor (Parquet Cut A + S3
   ArtifactStore + BI demo)** · `Released` (2026-06-14): productive
@@ -177,6 +177,14 @@ The full release history (0.1.0–0.9.7) lives in
   transfer preflight, array/`tsvector` binding, `CURRENT_DATE`
   defaults, view portability, routine emission, post-execute
   compare canonicalisation). See [`CHANGELOG.md`](CHANGELOG.md).
+- **0.9.10 – 0.9.12 patch line** · `Released` (2026-07-11 … 07-13):
+  three patches cut from the 1.0.0-RC development line —
+  SQLite round-trip fix (PK columns render `NOT NULL`) plus
+  property-based testing (0.9.10); SHA-256 `data transfer --verify`,
+  first-class SSL/TLS and CLI audit logging (0.9.11); parallel data
+  path (`--parallel N`), atomic clean-load (`--atomic`) and read-only
+  sources (0.9.12). **0.9.12 is the current stable** — `:latest` and
+  Homebrew track it.
 - **1.0.0-RC1 Release Candidate** · `Prerelease` (2026-07-16): the
   1.0.0-RC feature milestone is feature-complete — streaming/OOM
   hardening, parallel data path, SHA-256 `--verify`, atomic
