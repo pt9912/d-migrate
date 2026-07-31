@@ -46,15 +46,17 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**0.9.8** (stabil, veröffentlicht 2026-06-14).
+**0.9.12** (stabil, [veröffentlicht 2026-07-13](https://github.com/pt9912/d-migrate/releases/tag/v0.9.12)).
 
-> **In Entwicklung (`develop`, 0.9.9):** Eine mehrrundige
-> End-to-End-Pilot-Validierung (PostgreSQL / MySQL / SQLite gegen
-> Pagila/Sakila) hat die Cross-Dialect-Daten- und DDL-Treue
-> gehärtet — alle gemeldeten P1/P2-Cross-Dialect-Blocker sind
-> behoben (Transfer-Preflight strukturell aus der Ziel-Typ-Abbildung,
-> Array-/`tsvector`-Wertbindung, `CURRENT_DATE`-Defaults,
-> View-Portabilität, Routinen-Emission u. a.). Siehe `CHANGELOG.md`.
+> **Neu in 0.9.12:** ein paralleler Datenpfad (`data export`/`import`/`transfer
+> --parallel N`, LN-007/LN-008), der unabhängige Tabellen nebenläufig in
+> FK-sicheren topologischen Schichten fährt, mit Kind-Fan-out für partitionierte
+> Tabellen; atomarer Clean-Load-Rollback (`--atomic`, LN-013), der bei jedem
+> Fehler **alle** Zieltabellen per O(1)-Kompensation auf ihren leeren
+> Vor-Ladezustand zurücksetzt; und Read-only-Öffnen der Quelle (`--read-only`,
+> standardmäßig an) — SQLite-Quellen öffnen mit `SQLITE_OPEN_READONLY` und ohne
+> `-wal`/`-shm`-Nebendateien, sodass auch nicht beschreibbare Datenbanken
+> profilierbar sind. Siehe `CHANGELOG.md`.
 
 Die aktuellen Fähigkeiten:
 
@@ -170,51 +172,16 @@ Rezepte.
 ## Status
 
 Die vollständige Release-History steht in
-[`CHANGELOG.md`](CHANGELOG.md). Aktuelles und kommende Milestones:
+[`CHANGELOG.md`](CHANGELOG.md).
 
-- **0.9.8 Analytics- und Storage-Anschluss (Parquet Cut A + S3-
-  ArtifactStore + BI-Demo)** · `Released` (2026-06-14): produktiver
-  Parquet `data export` / `import` (Bundle + Single-File,
-  Checkpoint/Resume, `--table-order`, Exit-Code-Vertrag);
-  S3-kompatibler `ArtifactStore` (AWS SDK v2 +
-  `url-connection-client`, `artifacts.store: s3`); BI-Demo-Compose-
-  Stack (Postgres + Metabase + SeaweedFS). Alle Closure-Plan-Docs in
-  [`docs/planning/done/`](docs/planning/done/).
-- **0.9.9 Dokumentation + Pilot-Validierung + Cross-Dialect-
-  Fidelity-Härtung** · `Released` (2026-07-08): vollständige
-  Beta-Dokumentation, Pilot-Abnahme mit ≥5 Testern und alle
-  P1/P2/P3-Cross-Dialect-Blocker aus fünf Pilot-Läufen behoben
-  (struktureller Transfer-Preflight, Array-/`tsvector`-Bind,
-  `CURRENT_DATE`-Defaults, View-Portabilität, Routinen-Emission,
-  Post-Execute-Compare-Kanonisierung). Siehe
-  [`CHANGELOG.md`](CHANGELOG.md).
-- **0.9.10 – 0.9.12 Patch-Linie** · `Released` (2026-07-11 … 07-13):
-  drei Patches aus der 1.0.0-RC-Entwicklungslinie — SQLite-Round-Trip-
-  Fix (PK-Spalten rendern `NOT NULL`) plus Property-Based-Testing
-  (0.9.10); SHA-256-`data transfer --verify`, First-Class-SSL/TLS und
-  CLI-Audit-Logging (0.9.11); paralleler Datenpfad (`--parallel N`),
-  atomarer Clean-Load (`--atomic`) und Read-only-Quellen (0.9.12).
-  **0.9.12 ist das aktuelle Stable** — `:latest` und Homebrew folgen
-  ihm.
-- **1.0.0-RC1 Release Candidate** · `Prerelease` (2026-07-16): der
-  1.0.0-RC-Feature-Milestone ist feature-komplett — Streaming-/OOM-
-  Härtung, paralleler Datenpfad, SHA-256-`--verify`, atomarer
-  Clean-Load, verschlüsselter Credential-Store + Auflösung,
-  First-Class-SSL/TLS, CLI-Audit-Logging, Property-Based-Testing.
-  Veröffentlicht als GitHub-Prerelease + versioniertes OCI-Tag;
-  `:latest` und Homebrew bleiben auf dem letzten Stable (0.9.12).
-  Siehe [`CHANGELOG.md`](CHANGELOG.md).
-- **1.0.0-RC2 Release Candidate** · `Prerelease` (2026-07-31): bringt
-  die drei 1.0.0-Distributionszeilen jenseits der JVM-Artefakte —
-  **GraalVM-Native-Binaries** für `linux-x64` (release-blockierend),
-  `macos-arm64` und `windows-x64` (Best-Effort), je mit `.sha256`; ein
-  **natives Container-Image** (`:<version>-native`); und einen
-  **Docker-Hub-Spiegel** neben GHCR. Dazu `schema validate --source -`
-  (stdin), `config show` und ein `keychain:`-Credential-Provider.
-  Enthält das interne Security-Vollaudit (27 gemeldete Befunde, 18
-  bestätigt, alle behoben). `:latest` und Homebrew bleiben auf dem
-  letzten Stable (0.9.12). Siehe [`CHANGELOG.md`](CHANGELOG.md).
-- **1.0.0 Stable Release** · `Geplant`.
+- **Aktuelles Stable** · **0.9.12** (2026-07-13) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern.
+- **Aktuelle Vorabversion** · **1.0.0-RC2** (2026-07-31) — der
+  1.0.0-Release-Candidate: GraalVM-Native-Binaries für
+  Linux/macOS/Windows, ein `-native`-Container-Image und ein
+  Docker-Hub-Spiegel neben GHCR. Veröffentlicht als GitHub-Prerelease
+  + versioniertes OCI-Tag; bewegt `:latest` und Homebrew **nicht**.
+- **Als Nächstes** · **1.0.0 Stable** — `Geplant`.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter

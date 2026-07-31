@@ -160,48 +160,15 @@ See [Quick start](#quick-start) below for more concrete recipes.
 ## Status
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
-Current and upcoming milestones:
 
-- **0.9.8 Analytics + storage anchor (Parquet Cut A + S3
-  ArtifactStore + BI demo)** · `Released` (2026-06-14): productive
-  Parquet `data export` / `import` (bundle + single-file,
-  checkpoint/resume, `--table-order`, exit-code contract);
-  S3-compatible `ArtifactStore` (AWS SDK v2 +
-  `url-connection-client`, `artifacts.store: s3`); BI-demo Compose
-  stack (Postgres + Metabase + SeaweedFS). All closure plan-docs in
-  [`docs/planning/done/`](docs/planning/done/).
-- **0.9.9 Documentation + pilot validation + cross-dialect
-  fidelity hardening** · `Released` (2026-07-08): complete beta
-  documentation set, ≥5-tester pilot acceptance, and all P1/P2/P3
-  cross-dialect blockers from five pilot rounds fixed (structural
-  transfer preflight, array/`tsvector` binding, `CURRENT_DATE`
-  defaults, view portability, routine emission, post-execute
-  compare canonicalisation). See [`CHANGELOG.md`](CHANGELOG.md).
-- **0.9.10 – 0.9.12 patch line** · `Released` (2026-07-11 … 07-13):
-  three patches cut from the 1.0.0-RC development line —
-  SQLite round-trip fix (PK columns render `NOT NULL`) plus
-  property-based testing (0.9.10); SHA-256 `data transfer --verify`,
-  first-class SSL/TLS and CLI audit logging (0.9.11); parallel data
-  path (`--parallel N`), atomic clean-load (`--atomic`) and read-only
-  sources (0.9.12). **0.9.12 is the current stable** — `:latest` and
-  Homebrew track it.
-- **1.0.0-RC1 Release Candidate** · `Prerelease` (2026-07-16): the
-  1.0.0-RC feature milestone is feature-complete — streaming/OOM
-  hardening, parallel data path, SHA-256 `--verify`, atomic
-  clean-load, encrypted credential store + resolution, first-class
-  SSL/TLS, CLI audit logging, property-based testing. Published as a
-  GitHub prerelease + versioned OCI tag; `:latest` and Homebrew stay
-  on the last stable (0.9.12). See [`CHANGELOG.md`](CHANGELOG.md).
-- **1.0.0-RC2 Release Candidate** · `Prerelease` (2026-07-31): adds the
-  three 1.0.0 distribution lines beyond the JVM artefacts — **GraalVM
-  native binaries** for `linux-x64` (release-blocking), `macos-arm64` and
-  `windows-x64` (best-effort), each with a `.sha256`; a **native container
-  image** (`:<version>-native`); and a **Docker Hub mirror** alongside
-  GHCR. Also `schema validate --source -` (stdin), `config show`, and a
-  `keychain:` credential provider. Carries the internal security audit
-  (27 reported findings, 18 confirmed, all fixed). `:latest` and Homebrew
-  stay on the last stable (0.9.12). See [`CHANGELOG.md`](CHANGELOG.md).
-- **1.0.0 Stable release** · `Planned`.
+- **Current stable** · **0.9.12** (2026-07-13) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you.
+- **Current prerelease** · **1.0.0-RC2** (2026-07-31) — the 1.0.0
+  release candidate: GraalVM native binaries for Linux/macOS/Windows,
+  a `-native` container image, and a Docker Hub mirror alongside GHCR.
+  Published as a GitHub prerelease + versioned OCI tag; it does **not**
+  move `:latest` or Homebrew.
+- **Next** · **1.0.0 stable** — `Planned`.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at
