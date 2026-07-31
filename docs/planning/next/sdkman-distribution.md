@@ -4,8 +4,40 @@
   ([`.github/workflows/sdkman-release.yml`](../../../.github/workflows/sdkman-release.yml)), aber
   **inert bis zum externen Onboarding** (Candidate-Freigabe + Secrets) und einem Tag-Cut. Nur bei einem
   echten Release wirksam, **nicht lokal testbar**.
-- **Trigger**: Dritte der drei 1.0.0-Distributionszeilen (neben GraalVM Native Image ✅ und Docker Hub).
-  SDKMAN ist der idiomatische Kanal für JVM-CLIs: `sdk install dmigrate`.
+- **Trigger**: Dritte der drei 1.0.0-Distributionszeilen (neben GraalVM Native Image ✅ und Docker Hub
+  ✅). SDKMAN ist der idiomatische Kanal für JVM-CLIs: `sdk install dmigrate`.
+
+## Offener Punkt: Candidate-PR (Stand 2026-07-31)
+
+[**PR #794**](https://github.com/sdkman/sdkman-db-migrations/pull/794) ist offen — `MERGEABLE`,
+Merge-State `BLOCKED` wegen `REVIEW_REQUIRED` (Branch-Protection; das Repo lässt auf PRs keine CI
+laufen). Damit ist der **Merge selbst** der Wartepunkt, nicht die Candidate-Freigabe danach.
+
+**Entscheidung des Eigners (2026-07-31): bis zum 2026-08-05 auf den Merge warten.**
+Läuft die Frist ohne Merge ab, wird **1.0.0 ohne SDKMAN geschnitten** und die Zeile bleibt `⛔`.
+
+Das ist gefahrlos, weil der Publish **nachträglich** möglich ist: `sdkman-release.yml` hat neben dem
+Tag-Trigger ein `workflow_dispatch` mit `tag`-Input. Sobald Candidate und Secrets stehen, genügt für
+einen längst veröffentlichten Tag
+
+```bash
+gh workflow run sdkman-release.yml -f tag=v1.0.0
+```
+
+— kein Re-Release, keine Patch-Version. Der Dispatch-Pfad wurde am 2026-07-31 mit `tag=v1.0.0-RC2`
+real durchlaufen (Job grün, Skip-mit-Notice mangels Credentials).
+
+Normativ ist SDKMAN **kein 1.0.0-Gate**: das Lastenheft nennt es nicht, und
+[ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md) ordnet unter
+„Entscheidungstreiber" ausdrücklich auch SDKMAN als Fremdbeschaffung ein, an der 1.0.0 nicht hängt.
+Wird die Frist überschritten, gehört diese Verschiebung nach derselben ADR-Regel („ein permanenter
+Ausschluss/eine Verschiebung gehört in einen ADR") in einen eigenen kurzen ADR — **noch nicht
+geschrieben**, weil bis zum 2026-08-05 offen ist, ob er gebraucht wird.
+
+Merge-Kadenz zur Erwartungshaltung (aus der PR-Historie des Repos): `Jenesis`/`jextract` am selben
+Tag, `kUML` 1 Tag, `Atmosphere` 1 Woche, `TornadoVM` 3,5 Wochen, `Grace` 5, `dependency-watch` 6,
+`ksrc` 3 Monate, `Jeka` 6 Monate. Vor #794 liegen vier weitere Candidate-PRs, der älteste seit
+2026-07-06.
 
 ## Artefakt
 
