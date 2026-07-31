@@ -170,7 +170,7 @@ jobs:
           esac
 
       # Die Repository-Beschreibung auf Docker Hub ist sonst nur im Web-UI gepflegt und driftet
-      # unweigerlich vom Repo weg. Quelle ist packaging/dockerhub/description.md (reviewbar,
+      # unweigerlich vom Repo weg. Quelle ist packaging/dockerhub/overview.md (reviewbar,
       # versioniert) — dieselbe Rolle, die packaging/homebrew/d-migrate.rb fuer den Tap spielt.
       #
       # Docker Hub hat DREI getrennte Felder; diese Automatik deckt zwei davon:
@@ -191,7 +191,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/v}"
-          SRC="packaging/dockerhub/description.md"
+          SRC="packaging/dockerhub/overview.md"
           test -f "${SRC}"
           # Fail-fast: fehlt der Platzhalter, wurde die Datei umgebaut und die Beispiele
           # zeigen womoeglich einen veralteten Tag — das soll auffallen, nicht durchrutschen.
