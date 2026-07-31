@@ -17,14 +17,35 @@ Das **UNIVERSAL-JVM-Launcher-ZIP** `d-migrate-<version>.zip` (gradle-`applicatio
 
 ## Automatik (gebaut)
 
-[`sdkman-release.yml`](../../../.github/workflows/sdkman-release.yml), `on: release: [published,
-prereleased]` (kein Wait-Poll — das Release-Event feuert erst, wenn Release + Assets existieren):
+[`sdkman-release.yml`](../../../.github/workflows/sdkman-release.yml), **Tag-Push** (`on: push:
+tags: v*`) plus `workflow_dispatch` für einen manuellen Nachlauf, mit Warten auf das Release-Asset:
 - offizielle Action `sdkman/sdkman-release-action@…v0.2.0` (SHA-gepinnt) → `POST /release`
   (`candidate=dmigrate`, `version`, `url`, `platform=UNIVERSAL`).
 - `PUT /default` (separater `curl`) nur bei **Stable** — RCs werden released, aber nicht Default
   (dieselbe Regel wie `:latest`/Homebrew-nur-Stable).
 - Gated auf `SDKMAN_CONSUMER_KEY`/`SDKMAN_CONSUMER_TOKEN`; fehlen sie → Skip + Notice (kein roter
   Release), wie der Docker-Hub-Spiegel.
+
+### Warum Tag-Push und nicht `on: release`
+
+Der erste Entwurf hing an `on: release: [published, prereleased]` — der von SDKMAN empfohlene
+Trigger, der scheinbar ohne Wait-Poll auskommt, weil er erst feuert, wenn Release und Assets
+existieren. Beim ersten echten Einsatz (`v1.0.0-RC2`, 2026-07-31) hatte der Workflow **null Läufe**.
+Ursache ist dokumentiertes GitHub-Verhalten: *„events triggered by the `GITHUB_TOKEN` will not create
+a new workflow run, with the following exceptions: `workflow_dispatch` and `repository_dispatch`"*
+([Doku](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)).
+Das Release entsteht in `release-homebrew.yml` per `gh release create` mit `GH_TOKEN:
+${{ github.token }}`, also genau so. Der Defekt war **unabhängig von den Credentials**: auch mit
+freigegebenem Candidate wäre nichts passiert.
+
+Verworfen: ein PAT bzw. GitHub-App-Token in `release-homebrew.yml` (löst es laut Doku, kostet aber
+ein rotationspflichtiges Credential für einen optionalen Zusatzkanal) und ein `gh workflow run` aus
+`release-homebrew.yml` heraus (funktioniert, weil Dispatch von der Regel ausgenommen ist, koppelt
+aber den Release-Ersteller an diese Distributionsklasse).
+
+Gewartet wird auf das **Asset**, nicht nur auf das Release: die SDKMAN-API bekommt eine URL und lädt
+sie selbst — ein Release ohne das ZIP ergäbe einen Eintrag auf eine tote URL. Damit ist die Prüfung
+strenger als der `attach-release`-Job in `native-image.yml`, dem das bloße Release genügt.
 
 ## Voraussetzung (EXTERN, manuell — der eigentliche Gate)
 

@@ -628,10 +628,19 @@ docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
 
 #### 4.4.4 SDKMAN
 
-Sobald ein Release **veröffentlicht** ist, publiziert
+Mit dem Tag-Push publiziert
 [`sdkman-release.yml`](../../.github/workflows/sdkman-release.yml) die Version an
-SDKMAN (`sdk install dmigrate`). Ein **separater** Workflow (`on: release`), nicht
-Teil der Release-Erzeugung — analog zum Native-Image-Workflow.
+SDKMAN (`sdk install dmigrate`). Ein **separater** Workflow, nicht Teil der
+Release-Erzeugung — analog zum Native-Image-Workflow. Der Job wartet, bis das
+ZIP-Asset am Release liegt, bevor er die URL an SDKMAN meldet (die API lädt sie
+selbst herunter).
+
+> **Nicht auf `on: release` umstellen.** Genau so war es zuerst gebaut, und der
+> Workflow lief zum `v1.0.0-RC2`-Tag **gar nicht**: Releases, die dieser Repo per
+> `GITHUB_TOKEN` erzeugt, lösen laut
+> [GitHub-Doku](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+> keine weiteren Workflow-Läufe aus. Details und die verworfenen Alternativen:
+> [`sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
 
 - **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
   + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.5](#45-release-assets-aus-dem-grünen-tag-build-beziehen)).
