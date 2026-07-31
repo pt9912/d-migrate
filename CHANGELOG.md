@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Das Container-Image schreibt jetzt als `uid 10001` statt als `root` — bestehende Aufrufe
+  können dadurch fehlschlagen.** Bis einschließlich `1.0.0-RC2` lief das publizierte JVM-Image
+  als root (siehe *Fixed* unten) und durfte damit in jedes gemountete Host-Verzeichnis
+  schreiben. Wer Ausgaben in einen Bind-Mount schreibt — `schema generate --output`,
+  `schema reverse --output`, `data transfer` in Datei-Ziele — muss den aufrufenden Nutzer jetzt
+  mitgeben:
+
+  ```bash
+  docker run --rm --user "$(id -u):$(id -g)" -v "$(pwd):/work" \
+    ghcr.io/pt9912/d-migrate:<version> schema reverse --source mydb --output /work/reverse.yaml
+  ```
+
+  Reine Lesebefehle (`validate`, `compare`, `generate` nach stdout) sind nicht betroffen. Der
+  Zusatz war schon vorher dokumentiert und empfohlen — neu ist, dass er **nötig** ist. Im
+  Gegenzug gehört die erzeugte Datei jetzt Ihnen statt `root`.
+
 ### Fixed
+
+- **Ein nicht beschreibbarer Ausgabepfad endete im Stacktrace statt in Exit 7** — eine
+  `AccessDeniedException` (oder eine andere `IOException`) aus einem der Schreibpfade verließ
+  den Prozess unbehandelt. [`spec/cli-spec.md`](spec/cli-spec.md) ordnet „Ausgabepfad nicht
+  beschreibbar" ausdrücklich `7`/`LOCAL_ERROR` zu. Jetzt liefert die CLI Exit 7 mit einer
+  Meldung, die den Pfad nennt und bei fehlenden Rechten auf
+  `--user "$(id -u):$(id -g)"` hinweist. Der Defekt war vorhanden, seit es die Schreibpfade
+  gibt; aufgefallen ist er erst, als das Image aufhörte, als root zu laufen.
 
 - **Das publizierte JVM-Container-Image lief als `root` und ohne SpatiaLite**
   ([ADR 0041](docs/adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)) — veröffentlicht wurde
