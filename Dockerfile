@@ -16,10 +16,8 @@
 #       --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
 #       -t d-migrate:phase-a .
 #
-#   Build the Jib image tar inside Docker, then load it into the host daemon:
-#     docker build --target jib-image-tar -t d-migrate:jib-image-tar .
-#     docker run --rm d-migrate:jib-image-tar > jib-image.tar
-#     docker load -i jib-image.tar
+#   Build the image that gets PUBLISHED (identical to `make docker-oci-build`):
+#     docker build --target runtime -t dmigrate/d-migrate:latest .
 #
 #   Build and extract CI artifacts without host Gradle:
 #     docker build --target docker-coverage-modules-html -t d-migrate:coverage-modules-html .
@@ -175,17 +173,6 @@ FROM compile AS build
 ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
 
 RUN gradle --no-daemon ${GRADLE_TASKS}
-
-# ---- Stage 1b: Jib image tar ----------------------------------------------
-# `jibDockerBuild` requires a Docker daemon and cannot run inside a normal
-# Dockerfile build stage. Build the equivalent Jib tar instead; the existing
-# Jib container config, including OCI labels, is preserved in the tar.
-FROM compile AS jib-image-tar
-
-RUN gradle --no-daemon :adapters:driving:cli:jibBuildTar
-
-# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
-ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/jib-image.tar"]
 
 # ---- Stage 1c: coverage modules HTML --------------------------------------
 # Produces per-module Kover HTML reports and streams them as a tar archive so
@@ -421,7 +408,9 @@ RUN pip install --no-cache-dir defusedxml
 ENTRYPOINT ["python3", "/usr/local/bin/kover-modules-summary.py", "/reports"]
 
 # ---- Stage 7: runtime ------------------------------------------------------
-# Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild
+# Das PUBLIZIERTE JVM-Image (ADR 0041): `make docker-oci-build` baut genau diese
+# Stage, build.yml tagt sie auf die Registry-Namen um. Bis 1.0.0-RC2 wurde
+# stattdessen ein Jib-Image publiziert, das als root und ohne mod_spatialite lief.
 FROM eclipse-temurin:21-jre-noble AS runtime
 
 

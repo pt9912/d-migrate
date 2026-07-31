@@ -838,6 +838,18 @@ anschließend als verifizierten Repo-Stand nachziehen.
       Release bleibt gültig; Lauf von `native-image.yml` für den Tag prüfen
 - [ ] Native-Binary der eigenen Plattform startet: heruntergeladen, `chmod +x`,
       `./d-migrate-X.Y.Z-<plattform> schema validate <schema.yaml>`
+- [ ] **Runtime-Eigenschaften am publizierten Image** ([ADR 0041](../adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)):
+      non-root und `mod_spatialite` — für **beide** Image-Klassen. Bis `1.0.0-RC2` lief das
+      JVM-Image als root und ohne SpatiaLite, weil publiziert wurde, was **nicht** geprüft war;
+      dieser Schritt prüft deshalb das Artefakt, nicht das Dockerfile:
+  ```bash
+  for t in X.Y.Z X.Y.Z-native; do
+    echo "--- ${t}"
+    docker run --rm --entrypoint sh "ghcr.io/pt9912/d-migrate:${t}" -c \
+      'id -u; ls /usr/lib/*/mod_spatialite* >/dev/null 2>&1 && echo spatialite-ok || echo SPATIALITE-FEHLT'
+  done
+  # erwartet je Image: 10001 und spatialite-ok — eine 0 bedeutet root
+  ```
 - [ ] CI ist auf `main` und auf dem Tag grün
 
 ### 4.9 Vorabversionen (Release Candidates / Prereleases)
@@ -1029,6 +1041,7 @@ Für jeden Release abhaken:
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
 - [ ] Natives Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z-native` ok (`--help`, `schema validate --source`)
+- [ ] **Runtime-Eigenschaften am PUBLIZIERTEN Image geprüft** ([4.8](#48-verifikation-des-releases)) — non-root und `mod_spatialite`, für JVM- **und** natives Image
 - [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)
