@@ -41,5 +41,11 @@ sealed interface CredentialResolution {
 
         /** Aufgelöster Wert ist leer/whitespace-only (nach Trim). */
         const val REASON_EMPTY_VALUE: String = ResolvedConnection.REASON_EMPTY_VALUE
+
+        /** `keychain:`-Provider (ADR 0040): kein Keychain-Backend verfügbar (headless / Tool fehlt / Timeout). */
+        const val REASON_KEYCHAIN_UNAVAILABLE: String = ResolvedConnection.REASON_KEYCHAIN_UNAVAILABLE
+
+        /** `keychain:`-Provider (ADR 0040): Keychain-Eintrag für service/account nicht gefunden. */
+        const val REASON_KEYCHAIN_ENTRY_NOT_FOUND: String = ResolvedConnection.REASON_KEYCHAIN_ENTRY_NOT_FOUND
     }
 }

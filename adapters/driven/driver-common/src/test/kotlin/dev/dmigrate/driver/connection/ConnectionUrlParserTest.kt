@@ -24,6 +24,30 @@ class ConnectionUrlParserTest : FunSpec({
         ConnectionUrlParser.parse("postgres://localhost/db").dialect shouldBe DatabaseDialect.POSTGRESQL
     }
 
+    // ─── SSL: sslrootcert-No-Op-Erkennung (Befund 8b, ADR 0038) ──
+
+    test("rootCertIneffective: CA-Pin bei nicht-verifizierendem Modus ist wirkungslos") {
+        SslSettings(SslMode.PREFER, "/ca.pem").rootCertIneffective() shouldBe true
+        SslSettings(SslMode.REQUIRE, "/ca.pem").rootCertIneffective() shouldBe true
+        SslSettings(null, "/ca.pem").rootCertIneffective() shouldBe true // fehlender sslmode → Treiber-Default prefer
+    }
+
+    test("rootCertIneffective: verify-ca/verify-full nutzen den CA-Pin — kein No-Op") {
+        SslSettings(SslMode.VERIFY_CA, "/ca.pem").rootCertIneffective() shouldBe false
+        SslSettings(SslMode.VERIFY_FULL, "/ca.pem").rootCertIneffective() shouldBe false
+    }
+
+    test("rootCertIneffective: kein CA-Pin → nie ein No-Op") {
+        SslSettings(SslMode.REQUIRE, null).rootCertIneffective() shouldBe false
+        SslSettings(null, null).rootCertIneffective() shouldBe false
+    }
+
+    test("parse: sslrootcert ohne sslmode wird geparst (warnt, bricht nicht — ADR 0038)") {
+        val cfg = ConnectionUrlParser.parse("postgresql://h/db?sslrootcert=/ca.pem")
+        cfg.ssl.rootCert shouldBe "/ca.pem"
+        cfg.ssl.mode shouldBe null
+    }
+
     test("postgresql alias 'pg' is normalized") {
         ConnectionUrlParser.parse("pg://localhost/db").dialect shouldBe DatabaseDialect.POSTGRESQL
     }

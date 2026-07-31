@@ -43,8 +43,18 @@ if [[ -t 0 && -t 1 ]]; then
     TTY_FLAG="-t"
 fi
 
-echo "Building integration test image from Dockerfile (stage: integration-test)..."
-docker build --target integration-test -t "${IMAGE_TAG}" "${REPO_ROOT}"
+# DMIGRATE_NATIVE_E2E=1 fuehrt die Subprozess-E2Es gegen das GraalVM-Native-Binary statt einer
+# Kind-JVM. Das Binary bleibt im Docker-Fluss: die native-build-Stage baut es, die
+# integration-test-native-Stage holt es per COPY --from ins Test-Image. Kein Host-./build-Extract.
+BUILD_TARGET="integration-test"
+if [[ "${DMIGRATE_NATIVE_E2E:-0}" == "1" ]]; then
+    echo "Building native binary image (make native-build)..."
+    make -C "${REPO_ROOT}" native-build
+    BUILD_TARGET="integration-test-native"
+fi
+
+echo "Building integration test image from Dockerfile (stage: ${BUILD_TARGET})..."
+docker build --target "${BUILD_TARGET}" -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
 LOG_FILE="${DMIGRATE_TEST_LOG:-/tmp/d-migrate-integration-$(date +%Y%m%d-%H%M%S).log}"
 

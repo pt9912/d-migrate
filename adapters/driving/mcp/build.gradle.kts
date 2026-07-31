@@ -48,6 +48,7 @@ dependencies {
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
 
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    testImplementation(project(":adapters:driven:persistence-memory"))
 }
 
 kover {

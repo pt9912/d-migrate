@@ -23,4 +23,12 @@ class PartitionLiteralGuardTest : FunSpec({
     test("a block comment opener is rejected") {
         shouldThrow<IllegalArgumentException> { PartitionLiteralGuard.ensureSafe("1 /* x */", "p0") }
     }
+
+    test("a backslash is deliberately NOT rejected here — it is a MySQL-only render concern") {
+        // The guard is dialect-neutral: it rejects only tokens that break out on both PG and MySQL.
+        // A backslash is hazardous solely for MySQL and is doubled at the MySQL render layer
+        // (MysqlPartitionBoundRenderer). Rejecting it here would wrongly reject a legitimate PG bound
+        // (standard_conforming_strings keeps `\` literal).
+        PartitionLiteralGuard.ensureSafe("'a\\'", "p0") shouldBe "'a\\'"
+    }
 })

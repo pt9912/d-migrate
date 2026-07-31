@@ -90,6 +90,7 @@ internal class ExportPreflightValidator(
         val options = ExportOptions(
             encoding = charset, csvHeader = !request.csvNoHeader,
             csvDelimiter = delimiterChar, csvBom = request.csvBom, csvNullString = request.nullString,
+            csvFormulaGuard = request.csvFormulaGuard,
         )
         val filter = DataExportHelpers.resolveFilter(
             parsedFilter = request.filter, dialect = config.dialect,
@@ -103,6 +104,7 @@ internal class ExportPreflightValidator(
             csvBom = request.csvBom, csvNoHeader = request.csvNoHeader, csvNullString = request.nullString,
             filter = request.filter?.canonical, sinceColumn = request.sinceColumn, since = request.since,
             tables = tables, outputMode = canonicalOutputMode(output), outputPath = canonicalOutputPath(output),
+            csvFormulaGuard = request.csvFormulaGuard,
             primaryKeysByTable = pks,
         ))
         return PreparedResult.Ok(ExportPreparedContext(

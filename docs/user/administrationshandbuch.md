@@ -229,6 +229,11 @@ liefert, gewinnt (vollständige Reihenfolge in
    - `credentialRef: "env:<VAR>"` — die Variable enthält die URL,
    - `credentialRef: "file:/pfad"` — der **Datei-Inhalt** ist die URL (z. B. ein
      k8s-Secret-Mount; cross-platform, headless-tauglich).
+   - `credentialRef: "keychain:<service>"` — der Eintrag im OS-Schlüsselbund ist die URL
+     (macOS, Linux und Windows, optional mit Account;
+     [ADR 0040](../adr/0040-keychain-credential-provider-backend-port.md)).
+     Ohne verfügbaren Schlüsselbund (headless CI/Container/Server) scheitert die Auflösung
+     **fail-closed** — dort ist `env:`/`file:` die richtige Schicht.
 
    Diese Auflösung gilt seit 1.0.0-RC sowohl auf dem CLI-`--source`/`--target`-Pfad
    als auch im MCP-Serve-Pfad (gemeinsame Provider-Registry,
@@ -468,6 +473,29 @@ Heute: secret-freies MCP-`tools/call`-Audit (genau ein Event pro Aufruf, siehe
 🔮 **Geplant (1.0.0-RC, [`LN-027`](../../spec/lastenheft-d-migrate.md#ln-027)):** Audit-Logging **aller** Operationen
 (CLI + Server) als durchgängiges Feature.
 
+### 9.5 CSV-Export und Formel-Injection (CWE-1236)
+
+Daten aus einer Quell-DB sind im Bedrohungsmodell **untrusted** (siehe
+[`SECURITY.md`](../../SECURITY.md)). Ein Textwert, der mit `=`, `+`, `-`, `@`, Tab
+oder Wagenrücklauf beginnt, wird von Excel/LibreOffice beim Öffnen einer CSV-Datei
+als **Formel** ausgeführt (RFC-4180-Quoting verhindert das nicht). Der Export
+schreibt Werte standardmäßig **treu** (wie `pg_dump`) und meldet betroffene
+Spalten einmalig per Warnung `W203`.
+
+Für Exporte, die in einer Tabellenkalkulation geöffnet werden, aktiviert der
+**opt-in** Guard das `'`-Präfix (die Zelle wird nicht mehr als Formel gewertet):
+
+```yaml
+export:
+  csv:
+    formula_guard: true   # nur Text-Zellen; verändert den Wert (kein byte-treuer Roundtrip)
+```
+
+Präzedenz: `--csv-formula-guard` / `--no-csv-formula-guard` (CLI) >
+`export.csv.formula_guard` (Config) > Default `false`. Nur **Text**-Zellen tragen
+den Vektor — typisierte Zahlen/Booleans werden nie präfixt. Der Guard verändert den
+exportierten Wert; für einen byte-treuen Roundtrip (z. B. Re-Import) bleibt er aus.
+
 ---
 
 ## 10. Betrieb und Wartung
@@ -513,6 +541,6 @@ Migrationen erzeugen optional ein Rollback-Artefakt (`--generate-rollback`).
 
 ## Verwandte Dokumentation
 
-- [Anwenderhandbuch](anwenderhandbuch.md) · [API-Referenz](api-referenz.md) · [Migrations-Leitfaden](migrations-leitfaden.md)
+- [Anwenderhandbuch](anwenderhandbuch.md) · [Best-Practices-Leitfaden](best-practices-leitfaden.md) · [Troubleshooting-Leitfaden](troubleshooting-leitfaden.md) · [API-Referenz](api-referenz.md) · [Migrations-Leitfaden](migrations-leitfaden.md)
 - [`spec/architecture.md`](../../spec/architecture.md), [`spec/connection-config-spec.md`](../../spec/connection-config-spec.md), [`spec/mcp-server.md`](../../spec/mcp-server.md), [`spec/job-contract.md`](../../spec/job-contract.md), [`spec/ki-mcp.md`](../../spec/ki-mcp.md)
 - [`operations/job-executor.md`](../operations/job-executor.md) · [Changelog](../../CHANGELOG.md)

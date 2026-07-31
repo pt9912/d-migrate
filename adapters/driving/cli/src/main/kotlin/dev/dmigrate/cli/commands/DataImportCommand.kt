@@ -167,6 +167,7 @@ class DataImportCommand : CliktCommand(name = "import") {
         val pipeline = try {
             resolveEffectiveDataPipeline(
                 root?.config, chunkSize, cliFetchSize = null, cliParallel = parallel, readFetchSize = false,
+                onNote = { echo(it, err = true) },
             )
         } catch (e: ConfigResolveException) {
             echo("Error: ${e.message}", err = true)

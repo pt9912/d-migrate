@@ -10,11 +10,122 @@ plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.google.cloud.tools.jib") version "3.4.5"
+    // GraalVM Native Image (docs/planning/done/graalvm-native-image-distribution.md).
+    // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
+    // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
+    id("org.graalvm.buildtools.native") version "1.1.5"
 }
 
 application {
     applicationName = "d-migrate"
     mainClass.set("dev.dmigrate.cli.MainKt")
+}
+
+// Native-Image-Entrypoint: die VOLLE CLI `dev.dmigrate.cli.MainKt` — derselbe Einstieg wie der
+// JVM-Fat-JAR (application.mainClass oben). Bis Phase F.1 gab es hier einen `-PnativeEntrypoint`-
+// Schalter (core = reduzierter NativeMain, full = MainKt); F.1 hat ihn zurueckgebaut, seither ist
+// `full` der einzige Bau (docs/planning/done/graalvm-native-image-distribution.md).
+
+// Diagnose-Schalter fuer Phase F.0: `-PnativeMissingRegistrationMode=Warn`.
+//
+// BEFUND F.0-Runde 2: WIRKUNGSLOS fuer den hier auftretenden Fall. Die Option wird vom Builder
+// akzeptiert (Build-Log: "origin(s): command line"), aendert aber nichts an den geworfenen
+// `MissingReflectionRegistrationError`s aus `forQueriedOnlyExecutable`. Die Hoffnung, damit alle
+// Luecken in EINEM Lauf zu erheben statt Schicht fuer Schicht, hat sich nicht erfuellt.
+//
+// Der Schalter bleibt, weil er fuer andere Fehlerklassen greifen kann und der Messapparat sonst
+// wieder von Hand zusammengesetzt werden muesste. Ausdruecklich NUR fuer Messlaeufe: im
+// ausgelieferten Binary muss eine fehlende Registrierung hart scheitern, nicht stillschweigend
+// weiterlaufen. Deshalb opt-in: im ausgelieferten Binary (`MainKt`) muss eine fehlende
+// Registrierung hart scheitern, nicht stillschweigend weiterlaufen.
+val nativeMissingRegistrationMode = providers.gradleProperty("nativeMissingRegistrationMode").orNull
+
+// Bau-Ressourcen (Begruendung an der Verwendungsstelle).
+val nativeMaxRamPercentage = providers.gradleProperty("nativeMaxRamPercentage").getOrElse("80.0")
+// Bewusst OHNE Default: `--parallelism` fest zu setzen hilft nur der Zeitreproduzierbarkeit, die
+// hier niemand braucht — auf CI-Runnern (~4 Kerne) wuerde ein fixes 8 ueberzeichnen. Ohne die
+// Option waehlt native-image die Kernzahl der jeweiligen Maschine, was ueberall das Richtige ist.
+val nativeParallelism = providers.gradleProperty("nativeParallelism").orNull
+
+graalvmNative {
+    // Keine GraalVM-Toolchain-Suche zur Konfigurationszeit — hält den JDK-21-Build (ohne GraalVM) grün.
+    toolchainDetection.set(false)
+
+    // GraalVM Reachability Metadata Repository: gepflegte Metadaten fuer verbreitete Bibliotheken.
+    //
+    // BEFUND: zeigte mit Plugin 0.10.3 KEINE messbare Wirkung — kein GRMR-Hinweis im Build-Log,
+    // weder ohne noch mit gepinnter `version`. **Die naheliegende Erklaerung war falsch:** GRMR
+    // deckt unsere HikariCP-Version (6.2.1) sehr wohl ab, und seine Metadaten enthalten genau den
+    // Eintrag `com.zaxxer.hikari.HikariConfig -> methods`, der den Blocker behoben haette.
+    //
+    // Aufgeklaerte Kette: Plugin 0.10.3 (2024) tat gar nichts mit dem Repository. Plugin 1.1.5 loest
+    // es auf und meldete zuerst "Requires GraalVM Reachability Metadata 0.3.33 or newer" (der Pin
+    // 0.3.15 war unbesehen aus einem Vergleichsprojekt uebernommen), dann mit GRMR 1.0.7
+    // "provides a reachability-metadata schema, but your GraalVM installation does not" — daher
+    // GraalVM 25.
+    //
+    // ERGEBNIS trotzdem ernuechternd: unter GraalVM 25 laeuft GRMR fehlerfrei, steuert fuer uns aber
+    // NICHTS bei. Gemessen mit erzwungenem DEBUG-Logging (das den reflektiven Hikari-Pfad ausloest):
+    // ohne unsere handgepflegte Registrierung bricht das Binary weiterhin mit
+    // "Cannot reflectively invoke method HikariConfig.isAllowPoolSuspension()". Die
+    // GRMR-Metadaten enthalten den passenden Eintrag zwar, er wird aber nicht wirksam.
+    // Bleibt aktiviert (kostet nichts), ersetzt jedoch KEINE eigene Konfiguration.
+    metadataRepository {
+        version.set("1.0.7")
+        enabled.set(true)
+    }
+    binaries {
+        named("main") {
+            imageName.set("d-migrate")
+            mainClass.set("dev.dmigrate.cli.MainKt")
+            buildArgs.add("--no-fallback")
+            buildArgs.add("--initialize-at-build-time=ch.qos.logback,org.slf4j")
+            // i18n-Bundles der CLI (MessageResolver -> ResourceBundle.getBundle("messages.messages")).
+            // Ohne diese Registrierung stirbt JEDES Subkommando in Phase F.0 an
+            // MissingResourceException, noch im Clikt-Dispatch — der Blocker maskiert alle weiteren.
+            // Belegt durch Messlauf 29722018906 (identisch auf Linux/macOS/Windows).
+            // Vorlaeufig als buildArg: haelt das Fat-JAR unberuehrt. Die dauerhafte Form
+            // (committetes reachability-metadata vs. buildArg) entscheidet Phase F.2.
+            // Experimentelle -H:-Optionen freischalten. Ohne das warnt der Builder ("must be enabled
+            // via -H:+UnlockExperimentalVMOptions in the future") und wendet sie moeglicherweise
+            // nicht an — ein Verdacht fuer die Wirkungslosigkeit von MissingRegistrationReportingMode
+            // in F.0-Runde 2.
+            buildArgs.add("-H:+UnlockExperimentalVMOptions")
+            buildArgs.add("-H:IncludeResourceBundles=messages.messages")
+
+            // d-migrate liest und schreibt Schemata mit expliziter `encoding:`-Angabe und
+            // transferiert Daten zwischen Dialekten. Ohne diese Option enthaelt das Image nur die
+            // Default-Charsets, und eine Nicht-UTF-8-Quelle scheitert erst zur Laufzeit.
+            buildArgs.add("-H:+AddAllCharsets")
+
+            // http/https-URL-Protokolle einschalten. native-image aktiviert per Default nur
+            // file/resource ("available on demand: http,https" im Build-Output). Der AWS-SDK-
+            // S3-Endpoint-Provider parst die Endpoint-URL ueber java.net.URL und scheitert sonst
+            // nativ mit "Custom endpoint http://... was not a valid URI" — der `data`-/`mcp`-Pfad
+            // mit `artifacts.store: s3` bricht dann bei der ERSTEN echten S3-Operation ab.
+            // (Belegt 2026-07-20 ueber McpS3SubprocessE2ETest gegen das Native-Binary.)
+            buildArgs.add("--enable-url-protocols=http,https")
+
+            // Speicherbudget des Builders. Ohne die Option nimmt native-image einen konservativen
+            // Anteil (lokal 8,62 GB von 31 GB) und GCt sich dumm: 319 GCs / 41,5 s gegen 134 GCs /
+            // 11,3 s mit Deckel; der native-image-Schritt fiel lokal von ~5 min auf 1m40s.
+            //
+            // 80 %, NICHT 60 %: ein erster Anlauf mit 60 % war auf meiner 31-GB-Maschine grosszuegig
+            // (16,57 GB), auf dem macOS-Runner aber schaedlich — der hat 7 GB und 3 Kerne, 60 %
+            // ergaben 3,74 GB, und der Bau verbrachte **45,9 % seiner Gesamtzeit in 253 GCs**
+            // (Lauf 29727572204, 26m20s, Peak RSS nur 2,21 GB). GraalVM bat im Log ausdruecklich um
+            // mehr Speicher. Ein fester Prozentsatz wirkt auf kleinen Maschinen ganz anders als auf
+            // grossen — deshalb hoch genug, dass auch der kleinste Runner atmen kann.
+            buildArgs.add("-J-XX:MaxRAMPercentage=$nativeMaxRamPercentage")
+            if (nativeParallelism != null) {
+                buildArgs.add("--parallelism=$nativeParallelism")
+            }
+
+            if (nativeMissingRegistrationMode != null) {
+                buildArgs.add("-H:MissingRegistrationReportingMode=$nativeMissingRegistrationMode")
+            }
+        }
+    }
 }
 
 val releaseVersion = project.version.toString()
@@ -75,16 +186,32 @@ dependencies {
     // `.d-migrate.yaml` selektiert die S3-Byte-Stores im MCP-Wiring
     // (ArtifactsConfigLoader + S3ClientFactory + die beiden S3-Stores).
     implementation(project(":adapters:driven:storage-s3"))
-    // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default metadata stores still come from
-    // `:hexagon:ports-common` testFixtures, while `server.state.*`
-    // opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.
-    implementation(testFixtures(project(":hexagon:ports-common")))
-    implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
+    // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default (in-memory) metadata stores;
+    // `server.state.*` opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.
+    // Befund 17: bezogen aus dem echten Adapter-Modul (kein testFixtures-/kotest-Leak
+    // in den Distributions-Shadow-Jar).
+    implementation(project(":adapters:driven:persistence-memory"))
+    implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}") {
+        // JNA aus dem nativen Binary heraushalten (Akzeptanzkriterium "JNA unerreichbar"): clikt zieht
+        // mordant-omnibus, das den JNA-Terminal-Provider (mordant-jvm-jna) per ServiceLoader
+        // registriert. native-image macht alle ServiceLoader-Provider reachable → 40 com.sun.jna.*-
+        // Klassen landen im Binary, obwohl mordant auf JDK 21 den FFM-/graal-ffi-Provider wählt und JNA
+        // nie aufruft (verifiziert 2026-07-21 per -H:+PrintAnalysisCallTree). Ausschluss des
+        // JNA-Providers + der jna-Bibliothek macht JNA truly unreachable (Akzeptanzkriterium); die
+        // Binärgröße ändert sich dabei nur marginal (~0,9 MB), der Wert ist die Unreachability. Die
+        // FFM-/graal-ffi-Backends bleiben, die Terminal-Ausgabe ist unverändert.
+        exclude(group = "net.java.dev.jna", module = "jna")
+        exclude(group = "com.github.ajalt.mordant", module = "mordant-jvm-jna")
+    }
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
     // .d-migrate.yaml-Loader (LF-012 / LN-038 — minimaler NamedConnectionResolver)
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
     testImplementation("com.google.code.gson:gson:2.14.0")
+    // Test-only ports-common Fakes (z. B. FakeUnicodeTextService in
+    // OutputFormatterTest). Bewusst test-scope — kein testFixtures-/kotest-Leak
+    // in den Distributions-Shadow-Jar (Befund 17).
+    testImplementation(testFixtures(project(":hexagon:ports-common")))
 
     // Testcontainers-, Gson- und JSON-Schema-Validator-Test-Dependencies
     // wurden mit den E2E- und MCP-Scenario-Specs nach :test:e2e-cli
@@ -208,14 +335,17 @@ kover {
                     "dev.dmigrate.cli.commands.DataTransferCommand*",
                     "dev.dmigrate.cli.commands.SchemaCommand*",
                     "dev.dmigrate.cli.commands.DataCommand*",
-                    // `config` / `config credentials set`/`list` shells — flag
-                    // parsing + console I/O (readPassword) only. The pure
-                    // confirm/mismatch logic is extracted to the unit-tested
+                    // `config` / `config show` / `config credentials set`/`list`
+                    // shells — flag parsing + console I/O (readPassword) only. The
+                    // pure confirm/mismatch logic is extracted to the unit-tested
                     // `confirmedSecret` (MasterSecretResolver.kt); the set/list
                     // behaviour lives in the Clikt-free ConfigCredentialsWiring +
-                    // CredentialCommandRunner (both unit-tested); the top-level
-                    // `rootConfigPath` (ConfigCommandsKt) is thin Clikt-context glue.
+                    // CredentialCommandRunner (both unit-tested); the `config show`
+                    // rendering lives in the Clikt-free ConfigShowRenderer (unit-
+                    // tested); the top-level `rootConfigPath` (ConfigCommandsKt) is
+                    // thin Clikt-context glue.
                     "dev.dmigrate.cli.commands.ConfigCommand*",
+                    "dev.dmigrate.cli.commands.ConfigShowCommand*",
                     "dev.dmigrate.cli.commands.ConfigCredentialsCommand*",
                     "dev.dmigrate.cli.commands.ConfigCredentialsSetCommand*",
                     "dev.dmigrate.cli.commands.ConfigCredentialsListCommand*",

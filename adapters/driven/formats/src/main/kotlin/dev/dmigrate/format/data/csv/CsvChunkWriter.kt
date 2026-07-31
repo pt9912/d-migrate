@@ -50,6 +50,9 @@ class CsvChunkWriter(
      */
     private val sequenceWarnedColumns = HashSet<String>()
 
+    /** W203: pro `(table, column)` einmal melden, dass Text-Zellen formel-injektions-anfällig sind. */
+    private val formulaWarnedColumns = HashSet<String>()
+
     override fun begin(table: String, schema: ChunkSchema) {
         check(!beginCalled) { "begin() called twice on the same CsvChunkWriter" }
         beginCalled = true
@@ -106,7 +109,7 @@ class CsvChunkWriter(
                         )
                     }
                 }
-                rendered[i] = renderValue(serialized)
+                rendered[i] = renderCell(serialized, chunk.table, columnNames[i])
             }
             w.writeRow(rendered)
         }
@@ -147,6 +150,45 @@ class CsvChunkWriter(
         }
     }
 
+    /**
+     * Formel-Injection-Schutz (CWE-1236, Audit-Follow-up #6). Nur **Text**-Zellen
+     * tragen den Vektor — Zahlen/Bool sind typisiert. Ein Text-Wert, der mit einem
+     * Formel-Zeichen (`=`/`+`/`-`/`@`/Tab/CR) beginnt, wird von Tabellenkalkulationen
+     * als Formel ausgewertet (RFC-4180-Quoting verhindert das nicht).
+     * - `csvFormulaGuard=false` (Default, treu): Wert unverändert, Spalte einmal per
+     *   W203 gemeldet.
+     * - `csvFormulaGuard=true` (opt-in, spreadsheet-safe): Zelle mit `'` präfixt —
+     *   verändert den Wert; ebenfalls per W203 gemeldet (nicht stumm).
+     */
+    private fun renderCell(value: SerializedValue, table: String, column: String): String? {
+        if (value !is SerializedValue.Text || !isFormulaProne(value.value)) return renderValue(value)
+        warnFormula(table, column, guarded = options.csvFormulaGuard)
+        return if (options.csvFormulaGuard) FORMULA_GUARD_PREFIX + value.value else value.value
+    }
+
+    private fun isFormulaProne(s: String): Boolean = s.isNotEmpty() && s[0] in FORMULA_CHARS
+
+    private fun warnFormula(table: String, column: String, guarded: Boolean) {
+        if (!formulaWarnedColumns.add("$table|$column")) return
+        warningSink?.invoke(
+            ValueSerializationWarning(
+                code = "W203",
+                table = table,
+                column = column,
+                javaClass = "java.lang.String",
+                message = if (guarded) {
+                    "column has spreadsheet-formula-prone text values (leading =/+/-/@/tab/CR); " +
+                        "prefixed with ' for spreadsheet safety — the exported value differs from the source " +
+                        "(round-trip is not byte-identical)"
+                } else {
+                    "column has spreadsheet-formula-prone text values (leading =/+/-/@/tab/CR) written verbatim; " +
+                        "a spreadsheet may execute them on open — set export.csv.formula_guard (or " +
+                        "--csv-formula-guard) for a spreadsheet-safe export"
+                },
+            )
+        )
+    }
+
     private fun renderValue(value: SerializedValue): String? = when (value) {
         SerializedValue.Null -> null  // uniVocity schreibt das als nullValue (csvNullString)
         is SerializedValue.Bool -> value.value.toString()
@@ -158,5 +200,11 @@ class CsvChunkWriter(
         // F29: java.sql.Array kann CSV nicht darstellen → null. Die zugehörige
         // W201-Warnung wird in [write] vor dem Render emittiert.
         is SerializedValue.Sequence -> null
+    }
+
+    private companion object {
+        // Zeichen, mit denen ein Zellwert eine Tabellenkalkulations-Formel starten kann.
+        private const val FORMULA_CHARS = "=+-@\t\r"
+        private const val FORMULA_GUARD_PREFIX = "'"
     }
 }

@@ -5,20 +5,61 @@
 > Schritt-für-Schritt-Ablauf für GitHub-Release-Assets, OCI und Homebrew
 > sowie Rollback-Szenarien.
 >
-> Hinweis: Ein öffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
-> nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
+> Hinweis: Ein öffentlicher Library-Publish-Vertrag ist bewusst noch nicht Teil
+> dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
 > [`implementation-plan-0.9.1.md`](../planning/done-archive/implementation-plan-0.9.1.md)
-> beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
+> beschrieben. Das Publishing steht seit
+> [ADR 0037](../adr/0037-database-agnostic-first-staffelung.md) (2026-07-17) **hinter dem
+> Treiber-Port-Umbau** (Milestone 2.0.0) und **nicht** mehr bei 1.0.0: Der Umbau bricht
+> Port-Signaturen, eine Stabilitätszusage mit 1.0.0 träfe also genau die Module, deren Bruch
+> bereits beschlossen ist. **1.0.0 liefert CLI, OCI-Image und MCP — keine Library-Artefakte.**
+> Als Kanal ist seit [ADR 0036](../adr/0036-library-artefakte-github-packages.md) **GitHub
+> Packages** gesetzt, nicht das ursprünglich geplante Maven-Central-Portal; die
+> Artefaktklassifikation unten bleibt gültig.
 >
-> **1.0.0-Artefaktklassifikation** (vorbereitet in 0.9.1 Phase G):
+> **1.0.0-Artefaktklassifikation** — welche Module als Library veröffentlicht werden,
+> wenn der Publish-Workflow ([ADR 0036](../adr/0036-library-artefakte-github-packages.md):
+> GitHub Packages) gebaut wird. Angelegt in 0.9.1 Phase G, **aktualisiert 2026-07-17**
+> gegen den tatsächlichen Modulschnitt (die Erstfassung kannte den Port-Split noch nicht
+> und ließ 9 Module unerfasst).
 >
 > | Gruppe | Module | Publish-Ziel |
 > |--------|--------|-------------|
 > | Foundation | `hexagon:core` | Kernartefakt |
-> | Ports | `hexagon:ports` (später ports-common/-read/-write) | Kernartefakt |
-> | Driver Runtime | `driver-common`, `driver-postgresql/-mysql/-sqlite` | Kernartefakt |
-> | Optional Extensions | `hexagon:profiling`, `driver-*-profiling`, `formats`, `streaming` | Zusatzartefakt |
-> | Internal Tooling | `hexagon:application`, `adapters:driving:cli`, `integrations`, Tests | nicht publiziert |
+> | Ports | `hexagon:ports-common`, `hexagon:ports-read`, `hexagon:ports-write`, `hexagon:ports-execute` | Kernartefakt |
+> | Ports (Umbrella) | `hexagon:ports` | Kernartefakt — **Vorbehalt**, s. u. |
+> | Driver Runtime | `driver-common`, `driver-postgresql`, `driver-mysql`, `driver-sqlite` | Kernartefakt |
+> | Optional Extensions | `hexagon:profiling`, `driver-postgresql-profiling`, `driver-mysql-profiling`, `driver-sqlite-profiling`, `formats`, `streaming` | Zusatzartefakt |
+> | Optional Extensions | `formats-parquet` | Zusatzartefakt — **Vorbehalt**, s. u. |
+> | Anwendung | `hexagon:application`, `adapters:driving:cli`, `adapters:driving:mcp`, `integrations`, `connection-config`, `persistence-jdbc`, `audit-logging`, `storage-file`, `storage-s3`, `text-icu`, `test:*` | nicht publiziert |
+>
+> **Leitlinie**: Publiziert wird, was ein einbettender Fremd-Consumer braucht, um d-migrate
+> als Bibliothek zu *benutzen* — Domänenmodell, Port-Contracts, Treiber-Runtime, austauschbare
+> Codecs. Nicht publiziert wird, was *diese* Anwendung verdrahtet.
+>
+> Der Umkehrschluss „hängt nur an `ports-common`, also wiederverwendbar" trägt **nicht**:
+> `audit-logging`, `connection-config`, `storage-file`, `storage-s3` und `text-icu` haben ein
+> technisch makelloses Library-Profil (schmale Fläche, kaum Fremdlast), bedienen aber Ports mit
+> d-migrate-eigener Server-Semantik (Upload-Segmente, Artefakt-Content, `.d-migrate.yaml`-Schema).
+> Der Hexagon-Schnitt macht sie **austauschbar, nicht wiederverwendbar** — ein Fremd-Consumer
+> implementiert diese Ports selbst; genau dafür sind sie da.
+>
+> Die Lesefläche ist bereits ausführbar festgenagelt:
+> [`test/consumer-read-probe`](../../test/consumer-read-probe/build.gradle.kts) kompiliert gegen
+> `ports-read`, `ports-common`, `core`, `driver-common`, `formats` — „if this module compiles,
+> external read consumers can integrate".
+>
+> **Vorbehalte vor dem Publish** (beide sind Bedingungen, keine Blocker der Klassifikation):
+>
+> - `hexagon:ports` ist kein reiner Umbrella: es trägt zusätzlich `DatabaseDriver`,
+>   `DatabaseDriverRegistry` (globales, veränderliches Singleton) und `PreGenerationValidator`.
+>   Wer die Umbrella-Bequemlichkeit zieht, bekommt das Registry zwangsweise mit. Vor einem
+>   Publish klären, ob diese Typen nach `ports-common` (oder ein eigenes Modul) gehören.
+> - `formats-parquet` manipuliert den Dependency-Graphen (`constraints { rejectAll() }` auf
+>   parquet-avro/-protobuf/avro, `configurations.all { exclude … }` für snappy/zstd). Solche
+>   Footprint-Entscheidungen werden in die Gradle-Metadata publiziert und **schlagen auf den
+>   Consumer durch** — sie können den Graphen eines Consumers brechen, der Avro oder Snappy aus
+>   anderen Gründen braucht. Vor einem Publish aus dem publizierten Scope nehmen.
 
 ---
 
@@ -55,6 +96,7 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 | Schreibrechte auf `main` und Tags im Remote   | —                                                                             |
 | Alle PRs für den Release sind gemerged        | GitHub-Milestone leer                                                         |
 | `HOMEBREW_TAP_GITHUB_TOKEN` nicht abgelaufen  | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — fine-grained PATs laufen ab; ein abgelaufener Token lässt den Tag-Publish mit `401` scheitern (nur der Homebrew-Tap-Push, nicht der GitHub-Release) |
+| `DOCKERHUB_TOKEN` vorhanden und nicht abgelaufen | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — Docker-Hub-PATs können ablaufen. **Fehlt** das Secret, wird der Docker-Hub-Push **still übersprungen** (grüner Build, kein Image, s. [4.4.1](#441-docker-hub-spiegel)); ist es **abgelaufen**, scheitert der Login und der Tag-Build wird rot |
 
 ---
 
@@ -447,12 +489,168 @@ git push origin vX.Y.Z
 5. Jib baut OCI-Image (`./gradlew :adapters:driving:cli:jibDockerBuild`)
 6. Login zu `ghcr.io` mit `GITHUB_TOKEN`
 7. Push zu `ghcr.io/pt9912/d-migrate:X.Y.Z` und `ghcr.io/pt9912/d-migrate:latest`
+8. Login zu Docker Hub und derselbe Image-Push nach `pt9912/d-migrate:X.Y.Z`
+   (plus `:latest` bei Stable) — s. [4.4.1](#441-docker-hub-spiegel). Fehlt das
+   Secret `DOCKERHUB_TOKEN`, werden diese Schritte still übersprungen und der
+   Tag-Build bleibt grün.
+9. Parallel dazu baut der Job `native-image` das **native Container-Image** und
+   pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
+   [4.4.3](#443-natives-container-image).
 
 Auf den grünen Tag-Build warten, **bevor** der GitHub-Release veröffentlicht
 wird:
 
 ```bash
 gh run watch
+```
+
+#### 4.4.1 Docker-Hub-Spiegel
+
+Docker Hub ist ein **Spiegel**, keine zweite Build-Quelle: gepusht wird exakt
+dasselbe lokal gebaute Image, das auch nach GHCR geht. `ghcr.io` bleibt die
+Referenz-Registry, auf die README und Handbücher verweisen. Die `:latest`-Regel
+ist identisch zu GHCR: Prerelease-Tags (Version enthält ein `-`, etwa
+`v1.0.0-RC1`) aktualisieren `:latest` **nicht**.
+
+**Eingerichtet** (2026-07-17): Ziel-Repository ist das öffentliche
+[`pt9912/d-migrate`](https://hub.docker.com/r/pt9912/d-migrate); die Secrets
+liegen im GitHub-Repository. Es ist **keine Handarbeit pro Release nötig** — der
+Tag-Build pusht von allein.
+
+Der Push ist an die Präsenz des Secrets `DOCKERHUB_TOKEN` gekoppelt. Ist es nicht
+gesetzt (Fork, abgelaufenes oder rotiertes Token), überspringt der Tag-Build die
+Docker-Hub-Schritte mit einer Notice, statt rot zu werden — ein Zusatzkanal soll
+keinen Release blockieren. Kehrseite: **ein stillschweigend übersprungener Push
+fällt nicht auf**, deshalb steht der Docker-Hub-Pull fest in der
+Verifikationsliste ([4.8](#48-verifikation-des-releases)).
+
+Einrichtung von Grund auf — nur nötig, falls Konto, Repository oder Token neu
+aufgesetzt werden müssen:
+
+1. Auf [hub.docker.com](https://hub.docker.com) anmelden und das Repository
+   `pt9912/d-migrate` anlegen (Public).
+2. Unter *Account Settings → Personal access tokens* ein Token mit dem Scope
+   **Read & Write** erzeugen.
+3. Im GitHub-Repository unter *Settings → Secrets and variables → Actions*
+   hinterlegen:
+   - Secret `DOCKERHUB_USERNAME` — der Docker-Hub-Benutzername
+   - Secret `DOCKERHUB_TOKEN` — das Token aus Schritt 2
+4. Optional Variable `DOCKERHUB_IMAGE`, falls das Ziel-Repository von
+   `pt9912/d-migrate` abweichen soll (z. B. nach Umzug in eine Organisation).
+
+#### 4.4.2 Native-Image-Binaries
+
+Der Tag-Push löst zusätzlich
+[`.github/workflows/native-image.yml`](../../.github/workflows/native-image.yml)
+aus. Der Workflow baut mit GraalVM je Betriebssystem ein eigenständiges
+Binary — native-image kompiliert nicht cross, jedes OS baut auf seinem
+eigenen Runner — und hängt die Ergebnisse an den GitHub-Release.
+
+Die Assets tragen Plattform und Version im Namen, jeweils mit
+Prüfsummen-Datei:
+
+| Asset | Runner |
+| --- | --- |
+| `d-migrate-X.Y.Z-linux-x64` + `.sha256` | `ubuntu-latest` |
+| `d-migrate-X.Y.Z-macos-arm64` + `.sha256` | `macos-latest` |
+| `d-migrate-X.Y.Z-windows-x64.exe` + `.sha256` | `windows-latest` |
+
+Plattform und Architektur werden im Workflow zur Laufzeit aus `uname`
+abgeleitet, nicht in der Matrix hinterlegt — wechselt GitHub die
+Runner-Architektur, ändert sich der Asset-Name mit, statt still falsch zu
+werden.
+
+Zur Einordnung:
+
+- Das Native-Binary ist eine **zusätzliche** Distributionsklasse. Es ersetzt
+  weder Fat-JAR noch OCI-Image noch Homebrew; alle bisherigen Kanäle bleiben
+  unverändert.
+- Es deckt die **volle CLI** ab (`schema`, `reverse`, `compare`, `migrate`,
+  `data`, `export`, `mcp` …) und braucht keine JVM. Bis Phase F.1 war der
+  native Entrypoint auf ein Core-Subset (`schema validate`/`generate`)
+  reduziert; seither ist der volle `MainKt` der einzige native Entrypoint.
+- Jedes OS-Leg smoked sein eigenes Binary (`--help`, `schema validate --source`,
+  `schema generate --source`), bevor es hochgeladen wird. Der Smoke bleibt
+  DB-frei (der Runner stellt keine Datenbank); macOS und Windows sind lokal
+  nicht nachbaubar, deshalb ist dieser Smoke dort die einzige Selbstvalidierung.
+- Der Anhänge-Job erstellt **kein** Release, er lädt nur hoch. Das Release
+  selbst kommt aus
+  [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml),
+  damit Titel, Notes und Prerelease-Flag in einer Hand bleiben. Findet der
+  Job kein Release, wartet er in zehn Versuchen à 30 s und wird danach rot.
+- **Nur das Linux-Leg ist ein Release-Gate** (Native-Slice Frage 6 = Hybrid): fehlt das
+  `linux-x64`-Asset, wird der `attach-release`-Job **rot** und der Release ist **nicht** zu
+  finalisieren. **macOS und Windows bleiben best-effort** — `fail-fast` ist aus, ein rotes
+  macOS/Windows-Leg bricht die anderen nicht ab, sein fehlendes Asset ist zulässig und der Release
+  selbst bleibt gültig. Deshalb steht die Asset-Liste in der Verifikation
+  ([4.8](#48-verifikation-des-releases)).
+
+Der Workflow lässt sich auch ohne Tag starten (`workflow_dispatch`), etwa um
+das Rezept gegen `develop` zu prüfen. Solche Läufe hängen nichts an ein
+Release; ihre Binaries tragen statt der Version die Commit-Kurz-SHA und
+liegen nur als Workflow-Artefakt vor.
+
+```bash
+gh workflow run native-image.yml --ref develop
+gh run watch
+```
+
+#### 4.4.3 Natives Container-Image
+
+Zusätzlich zum JVM-OCI-Image (oben) und den rohen Native-Binaries
+([4.4.2](#442-native-image-binaries)) publiziert der Tag-Build ein **natives
+Container-Image**: dieselbe volle CLI als GraalVM-Binary, verpackt in ein
+Runtime-Image (Entrypoint = Binary, Workdir `/work`, non-root, `mod_spatialite`).
+Gebaut vom Job `native-image` in
+[`build.yml`](../../.github/workflows/build.yml) über `make native-runtime-build`
+(Stage `native-runtime` in
+[`docker/native-image.Dockerfile`](../../docker/native-image.Dockerfile)).
+
+- **Tags:** `ghcr.io/pt9912/d-migrate:X.Y.Z-native` (versioniert) plus das
+  bewegliche `:native` (nur bei **Stable** — Prereleases fassen es nicht an,
+  dieselbe Regel wie `:latest`). Docker-Hub-Spiegel
+  `pt9912/d-migrate:X.Y.Z-native` unter derselben `DOCKERHUB_TOKEN`-Bedingung wie
+  das JVM-Image ([4.4.1](#441-docker-hub-spiegel)).
+- **Architektur:** nur `linux/amd64` — wie das JVM-Image.
+- **Vor dem Push** wird das Image DB-frei gesmoked (`--version`, `--help`,
+  `schema validate --source`); ein kaputtes Image blockiert den Push, nicht den
+  Release.
+- **Nur auf Tags:** der native Compile im Docker (~5–8 min) läuft nicht bei jedem
+  Push; auf `develop`/`main` verifiziert `native-image.yml` (Dispatch) den Bau.
+
+Das native Image ist eine **zusätzliche** Distributionsklasse — es ersetzt weder
+das JVM-OCI-Image noch die rohen Binaries.
+
+```bash
+docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native
+docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
+```
+
+#### 4.4.4 SDKMAN
+
+Sobald ein Release **veröffentlicht** ist, publiziert
+[`sdkman-release.yml`](../../.github/workflows/sdkman-release.yml) die Version an
+SDKMAN (`sdk install dmigrate`). Ein **separater** Workflow (`on: release`), nicht
+Teil der Release-Erzeugung — analog zum Native-Image-Workflow.
+
+- **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
+  + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.5](#45-release-assets-aus-dem-grünen-tag-build-beziehen)).
+- **Mechanik:** offizielle Action `sdkman/sdkman-release-action` (SHA-gepinnt) für
+  `POST /release`; `PUT /default` nur bei **Stable** (RCs werden released, aber nicht
+  Default).
+- **Gated auf Secrets:** `SDKMAN_CONSUMER_KEY` / `SDKMAN_CONSUMER_TOKEN`. Fehlen sie,
+  überspringt der Workflow den Publish mit einer Notice (kein roter Release) — wie der
+  Docker-Hub-Spiegel.
+
+**Voraussetzung (einmalig, EXTERN):** d-migrate muss ein SDKMAN-Candidate sein — PR an `sdkman/sdkman-db-migrations` (legt den Candidate `dmigrate` an — Anzeigename „d-migrate", keine Versionen), dann armored
+GPG-Public-Key an `info@sdkman.io` → `Consumer-Key`/`Consumer-Token` → als GitHub-Secrets
+hinterlegen. Details + Erweiterungen (plattform-native Binaries, `checksum-sha-256`):
+[`docs/planning/next/sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
+
+```bash
+# nach grünem sdkman-release.yml-Lauf, auf einem Host mit `sdk` + Java:
+sdk install dmigrate X.Y.Z
+d-migrate --version
 ```
 
 ### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
@@ -613,7 +811,24 @@ anschließend als verifizierten Repo-Stand nachziehen.
   ```bash
   docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z --help
   ```
+- [ ] Natives Container-Image ([4.4.3](#443-natives-container-image)):
+      `docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native` und
+      `docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help`.
+- [ ] Docker-Hub-Spiegel ([4.4.1](#441-docker-hub-spiegel)) trägt dieselbe Version:
+      `docker pull pt9912/d-migrate:X.Y.Z` und `docker run --rm pt9912/d-migrate:X.Y.Z --help`.
+      Schlägt der Pull fehl, wurde der Push still übersprungen (Secret) — Tag-Build-Log
+      auf die Notice prüfen
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
+- [ ] **`linux-x64`-Native-Asset ([4.4.2](#442-native-image-binaries)) hängt am Release** (Gate,
+      Frage 6 = Hybrid) — **fehlt es, den Release NICHT finalisieren** (`attach-release`-Job ist rot).
+      macOS/Windows sind best-effort, je mit `.sha256`:
+  ```bash
+  gh release view vX.Y.Z --json assets --jq '.assets[].name' | grep -E 'linux-x64|macos-arm64|windows-x64'
+  ```
+      Fehlt `macos-arm64` oder `windows-x64`, ist nur ihr Matrix-Leg rot (`fail-fast` ist aus) — der
+      Release bleibt gültig; Lauf von `native-image.yml` für den Tag prüfen
+- [ ] Native-Binary der eigenen Plattform startet: heruntergeladen, `chmod +x`,
+      `./d-migrate-X.Y.Z-<plattform> schema validate <schema.yaml>`
 - [ ] CI ist auf `main` und auf dem Tag grün
 
 ### 4.9 Vorabversionen (Release Candidates / Prereleases)
@@ -629,17 +844,18 @@ Post-Release (§5) zurück auf die nächste Vorab-Entwicklungsversion, z. B.
 
 **Was die Pipeline für Prerelease-Tags abweichend tut** (automatisch, keine Handarbeit):
 
-- **Kein GHCR `:latest`** — [`build.yml`](../../.github/workflows/build.yml) pusht nur das
-  versionierte Tag; `:latest` bleibt auf dem letzten **Stable**.
+- **Kein `:latest`, in keiner Registry** — [`build.yml`](../../.github/workflows/build.yml) pusht
+  nur das versionierte Tag; `:latest` bleibt auf GHCR **und** auf dem
+  [Docker-Hub-Spiegel](#441-docker-hub-spiegel) auf dem letzten **Stable**.
 - **GitHub-Release als `--prerelease`** markiert
   ([`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) — erscheint nicht
   als „Latest release".
 - **Kein Homebrew-Tap-Update** und **kein `verify-homebrew`** — Homebrew trackt nur Stable.
 
-**Folge:** Die Homebrew-Schritte (§4.7) **entfallen** beim RC. Bei der Verifikation (§4.8) das
-**versionierte** GHCR-Tag ziehen (nicht `:latest`), den Homebrew-Punkt überspringen und prüfen,
-dass der GitHub-Release als Prerelease markiert ist. RC-Nutzer beziehen die Vorabversion über das
-versionierte GHCR-Tag bzw. den GitHub-Prerelease.
+**Folge:** Die Homebrew-Schritte (§4.7) **entfallen** beim RC. Bei der Verifikation (§4.8) die
+**versionierten** Image-Tags ziehen (nicht `:latest`) — GHCR und Docker Hub —, den Homebrew-Punkt
+überspringen und prüfen, dass der GitHub-Release als Prerelease markiert ist. RC-Nutzer beziehen
+die Vorabversion über das versionierte GHCR-Tag bzw. den GitHub-Prerelease.
 
 ---
 
@@ -698,17 +914,29 @@ gh release delete vX.Y.Z --yes
 # danach 6.2 ausführen, falls auch der Tag weg soll
 ```
 
-### 6.4 Image im GHCR überschreiben oder löschen
+### 6.4 Image überschreiben oder löschen (GHCR **und** Docker Hub)
+
+Ein fehlerhaftes Image liegt in **zwei** Registries — beide müssen bereinigt
+werden. Ein erneuter Tag-Push erledigt beide auf einmal, weil derselbe Job
+([`build.yml`](../../.github/workflows/build.yml)) in beide pusht:
 
 ```bash
-# Alternative 1: Image-Version löschen (Web-UI: Packages → d-migrate → Versions → Delete)
-# Alternative 2: Tag neu pushen — die CI baut und überschreibt automatisch
+# Alternative 1: Tag neu pushen — die CI baut und überschreibt in BEIDEN Registries
 git push --delete origin vX.Y.Z
 git push origin vX.Y.Z   # frischer Tag-Push triggert den Workflow
 ```
 
-`:latest` wird beim nächsten Tag-Push automatisch überschrieben — falls der
-korrupte Tag der jüngste war, sollte schnell ein Hotfix-Tag folgen.
+Alternative 2 — manuell löschen, dann **je Registry einzeln**:
+
+- **GHCR**: Web-UI → Packages → `d-migrate` → Versions → Delete
+- **Docker Hub**: Web-UI → [`pt9912/d-migrate`](https://hub.docker.com/r/pt9912/d-migrate)
+  → Tags → Delete
+
+`:latest` wird beim nächsten Tag-Push in beiden Registries automatisch
+überschrieben — falls der korrupte Tag der jüngste war, sollte schnell ein
+Hotfix-Tag folgen. Achtung: Ist der Docker-Hub-Push wegen eines fehlenden
+Secrets übersprungen worden ([4.4.1](#441-docker-hub-spiegel)), liegt das
+korrupte Image dort gar nicht — dann ist nur GHCR zu bereinigen.
 
 ### 6.5 Build nach Release fehlschlägt (rote CI auf `main`)
 
@@ -778,12 +1006,20 @@ Für jeden Release abhaken:
 - [ ] CI für Tag grün
 - [ ] Workflow-Artefakt `release-assets` des grünen Tag-Builds verfügbar
 - [ ] Image auf `ghcr.io/pt9912/d-migrate:X.Y.Z` und `:latest` verfügbar
+- [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
+- [ ] Natives Container-Image `ghcr.io/pt9912/d-migrate:X.Y.Z-native` verfügbar (`:native` nur bei Stable), Docker-Hub-Spiegel dito
+- [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); macOS/Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
+- [ ] **SDKMAN** ([4.4.4](#444-sdkman)) — nur falls Candidate freigegeben + Secrets gesetzt: `sdkman-release.yml` grün, `sdk install dmigrate X.Y.Z` funktioniert. Sonst Skip (Notice im Log), Release bleibt gültig
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
 - [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
+- [ ] Release enthält das `linux-x64`-Native-Binary mit `.sha256` (**Pflicht/Gate**); `macos-arm64` und `windows-x64.exe` best-effort (je mit `.sha256`, sofern ihr Leg grün war)
+- [ ] Native-Binary der eigenen Plattform lokal gesmoked (`schema validate`)
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
+- [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
+- [ ] Natives Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z-native` ok (`--help`, `schema validate --source`)
 - [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)

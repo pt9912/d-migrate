@@ -254,12 +254,17 @@ class StreamingExporter(
         tableSummaries: MutableList<TableExportSummary>,
     ): Long {
         Files.createDirectories(output.directory)
+        // Untrusted table names from the source catalog must not escape the
+        // output directory (CWE-22). Validate all up front so the export fails
+        // loudly before any file is written, not after a partial run.
+        val safePaths = discoveredTables.filterNot { it in skippedTables }
+            .associateWith { ExportOutput.resolveFileFor(output.directory, it, format) }
         val activeCount = discoveredTables.size
         val bundleClosureTables = mutableListOf<BundleClosureTable>()
         var totalBytes = 0L
         for ((index, table) in discoveredTables.withIndex()) {
             if (table in skippedTables) continue
-            val path = output.directory.resolve(ExportOutput.fileNameFor(table, format))
+            val path = safePaths.getValue(table)
             exportToFile(path, format, options) { counting, writer ->
                 val result = tableExporter.export(TableExportParams(
                     pool, table, filter, config, writer, counting,
@@ -303,6 +308,9 @@ class StreamingExporter(
         val unitTables: List<String> = active.flatMap { parent ->
             params.partitionChildren[parent]?.takeIf { it.isNotEmpty() } ?: listOf(parent)
         }
+        // Same CWE-22 guard as the sequential path: reject any escaping table
+        // name on this thread before dispatching workers (see exportOneFile).
+        unitTables.forEach { ExportOutput.resolveFileFor(params.output.directory, it, params.format) }
         val results = parallelExecutor.run(
             unitTables.map { table -> { exportOneFile(params, table) } },
             params.config.parallelism,
@@ -322,7 +330,7 @@ class StreamingExporter(
     }
 
     private fun exportOneFile(params: FilePerTableParallelParams, table: String): ExportUnitResult {
-        val path = params.output.directory.resolve(ExportOutput.fileNameFor(table, params.format))
+        val path = ExportOutput.resolveFileFor(params.output.directory, table, params.format)
         var captured: ExportUnitResult? = null
         exportToFile(path, params.format, params.options) { counting, writer ->
             val exported = params.tableExporter.export(

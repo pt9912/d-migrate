@@ -151,11 +151,6 @@ Zusätzlich, durch eine **Architektur-Fitness-Function** (Gate) statt durch Grad
   Produktive Driving-Quellen enthalten keine `java.sql`-/`javax.sql`-Imports,
   keine produktiven `java.sql.`-/`javax.sql.`-FQNs, kein `asJdbc` und keine
   direkte `JdbcDatabaseConnection`-Nutzung.
-- `jdbcType: Int` bleibt vorerst eine eng begrenzte Interop-/Persistenz-
-  Ausnahme in Transfer- und Formatverträgen (`TargetColumn`, `JdbcTypeHint`,
-  Parquet-Manifest-/Bundle-Vertrag). Das ist kein neutrales Typmodell und kein
-  Präzedenzfall für `hexagon:core`; eine vollständige Typcode-Neutralisierung
-  ist ein eigener G2-Slice.
 
 ### 1.3 Leitprinzipien
 
@@ -1316,7 +1311,7 @@ adapters/driven/formats/src/test/resources/fixtures/
 | 5   | Kotlin Coroutines statt Threads    | Akzeptiert    | Strukturierte Concurrency, leichtgewichtig             |
 | 6   | Jackson für Serialisierung         | Akzeptiert    | YAML + JSON Support, bewährt, performant               |
 | 7   | SPI für Driver-Plugin-System       | Akzeptiert    | Standard-Java-Mechanismus, kein Framework nötig        |
-| 8   | GraalVM Native Image               | Vorgeschlagen | Single-Binary, schneller Start, höherer Build-Aufwand  |
+| 8   | GraalVM Native Image               | Akzeptiert    | Single-Binary, schneller Start, höherer Build-Aufwand  |
 | 9   | Testcontainers für DB-Tests        | Akzeptiert    | Echte Datenbanken im Test, reproduzierbar              |
 | 10  | YAML als Schema-Definitionsformat  | Akzeptiert    | Menschenlesbar, Git-freundlich, kommentierbar          |
 

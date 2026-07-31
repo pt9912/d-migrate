@@ -1,14 +1,19 @@
 # .a-check.yml — Hexagon-Architektur-Gate (a-check). Ergänzt/verallgemeinert das
 # bestehende ports-jdbc-free-gate (ADR 0022) zu einem sprach-weiten Schicht-Gate.
 #
+# NORMATIV für Zuschnitt und Strenge dieses Gates:
+#   docs/adr/0028-a-check-architecture-gate-scope.md  (G1-vor-G2, strikte
+#                                                      Composition-Root-JDBC-Regel)
+#   docs/adr/0022-ports-jdbc-entkopplung.md           (JDBC-freie Port-Signaturen)
+# Ob das Gate im Aggregat läuft, sagt allein das Makefile (`gates:` in make/gate.mk);
+# die Tool-Version sagt allein der Pin in make/a-check.mk. Dieser Kommentar hält
+# BEWUSST keinen Zustand (Befundzahlen, Gate-Mitgliedschaft, Slice-Verweise) — er
+# erklärt nur die Modellierung unten. Zustand hier zu duplizieren hieße, ihn
+# veralten zu lassen.
+#
 # Braucht a-check >= v0.12.0 (deklarations-bewusste Split-Package-Auflösung, slice-031)
 # — d-migrate hat 9 schicht-übergreifende Split-Packages (dev.dmigrate.driver.* etc. in
 # ports- UND adapters-Modulen); ältere Versionen brechen dort mit Exit 2 ab.
-#
-# STRENGES Modell (2026-07-06): feine Adapter-Globs (driven/driving) + adapter_sink auf
-# die eine geteilte JDBC-Basis driver-common. Standalone-Target `make a-check`; NICHT im
-# gates-Aggregat, solange die 12 bekannten Befunde offen sind (5 java.sql + 7 lateral im
-# formats/streaming/parquet-Dreieck) — Slice docs/planning/*/a-check-architecture-gate.md.
 #
 # d-migrate ist ein JVM-Kotlin-Hexagon (src/main/kotlin, KEIN KMP). Die Packages sind
 # KONZEPT-basiert (dev.dmigrate.{driver,format,server,streaming,cli,…}) und spannen über
@@ -35,7 +40,9 @@ edges:
   - {from: profiling, to: ports}       # ... und spricht über Ports
   - {from: ports, to: domain}          # Ports sprechen die Sprache der Domäne
   - {from: adapters, to: ports}        # Adapter implementieren / rufen Ports
-  - {from: adapters, to: application}  # Driving-Adapter (cli/mcp) rufen Use Cases
+  - {from: adapters, to: application}  # Adapter rufen Use Cases — die Kante gilt für die
+                                       # GANZE adapters-Schicht (driven wie driving), nicht
+                                       # nur für die Driving-Roots cli/mcp
   - {from: adapters, to: domain}       # Adapter dürfen Domänentypen referenzieren
   - {from: adapters, to: profiling}    # Profiling-Adapter (driver-*-profiling) → Profiling
 
@@ -78,8 +85,8 @@ resolution:
 # von den Schicht-Regeln (lateral-adapter) ausgenommen.
 composition_root: ["adapters/driving/**"]
 # driver-common ist die EINE geteilte Adapter-Basis (JDBC), die alle Adapter importieren
-# dürfen. Streng: jede weitere adapter→adapter-Kante ist lateral-adapter (aktuell 7, im
-# formats/streaming/parquet-Dreieck — geteilte Typen, die in einen Port gehören).
+# dürfen. Streng: jede weitere adapter→adapter-Kante ist lateral-adapter — geteilte Typen
+# gehören in einen Port (ADR 0028). Der aktuelle Befundstand steht in `make a-check`.
 adapter_sink: "adapters/driven/driver-common"
 
 # JDBC gehört nur an die getriebenen Adapter (ADR 0022, hier hexagon-weit statt

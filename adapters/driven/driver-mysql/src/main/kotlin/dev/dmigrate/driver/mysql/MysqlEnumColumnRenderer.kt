@@ -3,6 +3,8 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 
 /**
  * Shared MySQL inline-`ENUM` column renderer.
@@ -32,7 +34,7 @@ internal object MysqlEnumColumnRenderer {
         values: List<String>,
         toDefaultSql: (DefaultValue, NeutralType) -> String,
     ): String {
-        val enumDef = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
+        val enumDef = values.joinToString(", ") { SqlIdentifiers.quoteStringLiteral(it, DatabaseDialect.MYSQL) }
         val parts = mutableListOf(quotedName, "ENUM($enumDef)")
         if (col.required) parts += "NOT NULL"
         col.default?.let { parts += "DEFAULT ${toDefaultSql(it, col.type)}" }

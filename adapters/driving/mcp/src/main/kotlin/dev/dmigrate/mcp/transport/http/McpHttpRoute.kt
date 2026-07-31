@@ -11,6 +11,7 @@ import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.server.AuthMode
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.mcp.transport.McpEndpointFactory
 import dev.dmigrate.server.application.audit.SecretScrubber
@@ -22,6 +23,7 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationStopping
 import io.ktor.server.plugins.origin
+import io.ktor.server.request.contentLength
 import io.ktor.server.request.header
 import io.ktor.server.request.host
 import io.ktor.server.request.port
@@ -67,9 +69,13 @@ import java.util.concurrent.CompletableFuture
  * 1. Origin → 403 if not in allowlist
  * 2. Accept → 406 unless `application/json` and `text/event-stream`
  *    are both advertised
- * 3. Body parse → 400 -32600 / -32700
- * 4. JSON-RPC parse (method + id known)
- * 5. Bearer-validation → 401 (skipped for `AuthMode.DISABLED`)
+ * 3. Body-size → 413 if `Content-Length` exceeds `maxRequestBodyBytes`
+ *    (checked before the body is read; guards against a pre-auth
+ *    heap-exhaustion POST)
+ * 4. Bearer-validation → 401 (skipped for `AuthMode.DISABLED`) —
+ *    **before** the body is read/parsed, so an unauthenticated request
+ *    never causes the server to buffer its body
+ * 5. Body parse → 400 -32600 / -32700 (+ JSON-RPC method/id known)
  * 6. Method-aware Session/Protocol headers (initialize is exempt)
  * 7. Scope-check (initialize / notifications/initialized are exempt)
  * 8. Dispatch (lsp4j RemoteEndpoint)
@@ -78,11 +84,15 @@ fun Application.installMcpHttpRoute(
     config: McpServerConfig,
     serviceFactory: () -> McpService,
     authValidatorOverride: AuthValidator? = null,
+    limits: McpLimitsConfig = McpLimitsConfig(),
 ) {
     val jsonHandler = McpEndpointFactory.jsonHandler()
     val sessionManager = SessionManager(idleTimeout = config.sessionIdleTimeout)
     val authValidator = authValidatorOverride ?: createAuthValidator(config)
-    val runtime = McpHttpRuntime(config, jsonHandler, sessionManager, authValidator, serviceFactory)
+    val runtime = McpHttpRuntime(
+        config, jsonHandler, sessionManager, authValidator, serviceFactory,
+        maxRequestBodyBytes = limits.maxRequestBodyBytes,
+    )
 
     monitor.subscribe(ApplicationStopping) {
         sessionManager.close()
@@ -97,7 +107,7 @@ fun Application.installMcpHttpRoute(
             call.respond(HttpStatusCode.MethodNotAllowed)
         }
         delete("/mcp") {
-            handleMcpDelete(call, sessionManager)
+            handleMcpDelete(call, runtime)
         }
         get(METADATA_PATH) {
             call.respondText(
@@ -121,6 +131,7 @@ private class McpHttpRuntime(
     val sessionManager: SessionManager,
     val authValidator: AuthValidator,
     val serviceFactory: () -> McpService,
+    val maxRequestBodyBytes: Int,
 )
 
 /**
@@ -141,6 +152,13 @@ private suspend fun handleMcpPost(
 ) {
     if (!checkOrigin(call, runtime.config)) return
     if (!checkAccept(call)) return
+    if (!checkBodySize(call, runtime.maxRequestBodyBytes)) return
+    // §12.14 hardening: validate the Bearer token BEFORE the body is read
+    // or parsed. An unauthenticated request must never make the server
+    // buffer and parse a (potentially huge) body — that was a pre-auth
+    // heap-exhaustion vector. Bearer validation only needs the
+    // Authorization header, so it can run ahead of the body read.
+    val principal = validateBearer(call, runtime.config, runtime.authValidator) ?: return
     val message = parseBody(call, runtime.jsonHandler) ?: return
     val isInitialize = message is RequestMessage && message.method == METHOD_INITIALIZE
     // §12.9 + §12.14: for `tools/call`, the scope check applies to
@@ -151,7 +169,6 @@ private suspend fun handleMcpPost(
     // breaking even `capabilities_list` for a legitimate
     // `dmigrate:read` token.
     val method = scopeLookupKey(message)
-    val principal = validateBearer(call, runtime.config, runtime.authValidator) ?: return
     val context = resolveContext(call, runtime, principal, message, isInitialize) ?: return
     if (!checkScopes(call, runtime.config, method, context.principal)) return
     dispatchAndRespond(call, runtime, context, message, isInitialize)
@@ -222,6 +239,26 @@ private suspend fun checkAccept(call: ApplicationCall): Boolean {
     return false
 }
 
+/**
+ * §12.14 hardening: reject an oversized request with `413` from the declared
+ * `Content-Length` **before** the body is read, so a large POST can't exhaust
+ * the heap. A length-delimited body larger than the cap is bounded here; a
+ * chunked body without `Content-Length` is bounded by the Bearer step, which
+ * now runs before the body is read (unauthenticated requests never reach it).
+ */
+private suspend fun checkBodySize(call: ApplicationCall, maxBytes: Int): Boolean {
+    val declared = call.request.contentLength() ?: return true
+    if (declared <= maxBytes.toLong()) return true
+    respondJsonRpcError(
+        call,
+        HttpStatusCode.PayloadTooLarge,
+        id = null,
+        code = ResponseErrorCode.InvalidRequest.value,
+        message = "request body exceeds the $maxBytes-byte limit (Content-Length $declared)",
+    )
+    return false
+}
+
 private suspend fun parseBody(call: ApplicationCall, jsonHandler: MessageJsonHandler): Message? {
     val body = call.receiveText()
     if (body.isBlank()) {
@@ -231,6 +268,24 @@ private suspend fun parseBody(call: ApplicationCall, jsonHandler: MessageJsonHan
             id = null,
             code = ResponseErrorCode.InvalidRequest.value,
             message = "empty body",
+        )
+        return null
+    }
+    // §12.14 boundary guard (defense-in-depth): reject pathologically deep JSON
+    // BEFORE it reaches the recursive-descent Gson parser. The resolved Gson's
+    // nesting limit currently surfaces deep input as a MessageIssueException that
+    // the catch (e: Exception) below already handles — but that relies on a
+    // transitive default (lsp4j wraps only JsonParseException, not Error), so a
+    // Gson downgrade could let a StackOverflowError escape the catch. This owns
+    // the bound at the boundary. The byte cap (checkBodySize) does not close it:
+    // a length-bounded body can still nest hundreds of thousands deep.
+    if (JsonNestingGuard.exceedsMaxDepth(body)) {
+        respondJsonRpcError(
+            call,
+            HttpStatusCode.BadRequest,
+            id = null,
+            code = ResponseErrorCode.ParseError.value,
+            message = "JSON nesting exceeds the maximum depth of ${JsonNestingGuard.MAX_DEPTH}",
         )
         return null
     }
@@ -329,16 +384,24 @@ private suspend fun resolveContext(
         return ServiceContext(service, GenericEndpoint(service), principal)
     }
     val sessionId = parseSessionIdHeader(call)
-    val state = sessionId?.let { runtime.sessionManager.peek(it) } ?: run {
-        respondJsonRpcError(
-            call,
-            HttpStatusCode.NotFound,
-            id = (message as? RequestMessage)?.id,
-            code = JSONRPC_ERROR_SESSION_UNKNOWN,
-            message = "session expired or unknown",
-        )
-        return null
-    }
+    // §12.14 (CWE-488): the session is bound to the principal that created it. A
+    // request whose validated principal does not own the session is treated exactly
+    // like an unknown session (same 404) — a caller cannot probe another principal's
+    // session ids or drive dispatch inside a session it does not own, so the
+    // per-request bindPrincipal on this session's service only ever sees that principal.
+    val state = sessionId
+        ?.let { runtime.sessionManager.peek(it) }
+        ?.takeIf { it.principalContext.principalId == principal.principalId }
+        ?: run {
+            respondJsonRpcError(
+                call,
+                HttpStatusCode.NotFound,
+                id = (message as? RequestMessage)?.id,
+                code = JSONRPC_ERROR_SESSION_UNKNOWN,
+                message = "session expired or unknown",
+            )
+            return null
+        }
     val versionHeader = call.request.header(HEADER_MCP_PROTOCOL_VERSION)
     if (versionHeader != state.negotiatedProtocolVersion) {
         respondJsonRpcError(
@@ -458,12 +521,22 @@ private fun registerSessionAfterInitialize(
     call.response.headers.append(HEADER_MCP_PROTOCOL_VERSION, McpProtocol.MCP_PROTOCOL_VERSION)
 }
 
-private suspend fun handleMcpDelete(call: ApplicationCall, sessionManager: SessionManager) {
+private suspend fun handleMcpDelete(call: ApplicationCall, runtime: McpHttpRuntime) {
+    // §12.14 hardening (CWE-306/CWE-488): DELETE terminates a session, so it runs the
+    // same Origin + Bearer chain as POST and only lets a session's own principal remove
+    // it. A non-owner (or unauthenticated) caller cannot distinguish "not my session"
+    // from "unknown session" — both get 405 — so session ids don't leak across principals.
+    if (!checkOrigin(call, runtime.config)) return
+    val principal = validateBearer(call, runtime.config, runtime.authValidator) ?: return
     val sessionId = parseSessionIdHeader(call)
-    if (sessionId == null || !sessionManager.remove(sessionId)) {
+    val owned = sessionId
+        ?.let { runtime.sessionManager.peek(it) }
+        ?.principalContext?.principalId == principal.principalId
+    if (sessionId == null || !owned) {
         call.respond(HttpStatusCode.MethodNotAllowed)
         return
     }
+    runtime.sessionManager.remove(sessionId)
     call.respond(HttpStatusCode.OK)
 }
 

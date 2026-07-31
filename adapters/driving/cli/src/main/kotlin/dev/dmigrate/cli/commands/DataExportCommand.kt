@@ -8,6 +8,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.split
+import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
@@ -114,6 +115,17 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     val csvNoHeader by option("--csv-no-header", help = "Omit the CSV header row").flag()
 
+    val csvFormulaGuard: Boolean? by option(
+        help = "CSV formula-injection guard (CWE-1236): prefix spreadsheet-formula-prone " +
+            "text cells (leading =/+/-/@/tab/CR) with an apostrophe so Excel/LibreOffice " +
+            "will not execute them on open. Overrides export.csv.formula_guard in .d-migrate.yaml. " +
+            "Default off = faithful dump (values unchanged; affected columns still reported " +
+            "via W203).",
+    ).switch(
+        "--csv-formula-guard" to true,
+        "--no-csv-formula-guard" to false,
+    )
+
     val nullString by option(
         "--null-string",
         help = "CSV NULL representation; default: empty string",
@@ -145,7 +157,9 @@ class DataExportCommand : CliktCommand(name = "export") {
         // LN-005 + pipeline.parallelism: chunk_size/fetch_size/parallelism in EINEM Config-Ladevorgang
         // mergen (CLI-explizit > Config > Default), statt die YAML pro Resolver erneut zu parsen.
         val pipeline = try {
-            resolveEffectiveDataPipeline(root?.config, chunkSize, fetchSize, parallel)
+            resolveEffectiveDataPipeline(
+                root?.config, chunkSize, fetchSize, parallel, onNote = { echo(it, err = true) },
+            )
         } catch (e: ConfigResolveException) {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(7)
@@ -175,6 +189,7 @@ class DataExportCommand : CliktCommand(name = "export") {
                 csvDelimiter = csvDelimiter,
                 csvBom = csvBom,
                 csvNoHeader = csvNoHeader,
+                csvFormulaGuardFlag = csvFormulaGuard,
                 nullString = nullString,
                 resume = resume,
                 checkpointDir = checkpointDir,

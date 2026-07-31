@@ -10,6 +10,13 @@ package dev.dmigrate.driver
  * statement terminator or comment opener could break out of its clause. This
  * rejects those characters on every generate path, identically for both
  * dialects (no per-dialect drift).
+ *
+ * The denylist is intentionally dialect-neutral: it lists only tokens that break
+ * out on **both** dialects. It deliberately does **not** list the backslash — `\`
+ * is an escape character only for MySQL, so doubling it belongs on the MySQL render
+ * layer (`MysqlPartitionBoundRenderer`), not here. Rejecting `\` here would wrongly
+ * reject a legitimate PostgreSQL bound, where `standard_conforming_strings` keeps
+ * the backslash literal.
  */
 object PartitionLiteralGuard {
 

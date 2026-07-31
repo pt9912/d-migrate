@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   DMIGRATE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
@@ -25,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Build, test, run detekt and verify coverage
         # --no-build-cache: kover-Verify konsumiert die `.exec`-Daten
@@ -39,7 +38,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: test-results
           path: '**/build/test-results/test/*.xml'
@@ -47,7 +46,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: coverage-reports
           path: '**/build/reports/kover/html/**'
@@ -55,7 +54,7 @@ jobs:
 
       - name: Upload detekt reports
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: detekt-reports
           path: '**/build/reports/detekt/**'
@@ -67,7 +66,7 @@ jobs:
 
       - name: Upload release assets
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-assets
           path: adapters/driving/cli/build/release/*
@@ -78,7 +77,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Verify Kover excludes ledger and Markdown links
         # Fail-closed Doku-Gate, das bisher nur lokal (`make gates`/`make ci`)
@@ -94,17 +93,21 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    # Nur dieser Job pusht nach GHCR (GITHUB_TOKEN); build/docs-check bleiben read-only.
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Build OCI image locally
         run: make docker-oci-build
 
       - name: Login to GitHub Container Registry
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -123,4 +126,135 @@ jobs:
             *-*) echo "Prerelease $VERSION — :latest bleibt auf dem letzten Stable" ;;
             *)   docker tag dmigrate/d-migrate:latest ghcr.io/${{ github.repository }}:latest
                  docker push ghcr.io/${{ github.repository }}:latest ;;
+          esac
+
+      # Docker Hub ist ein Spiegel von GHCR, kein eigener Build: gepusht wird
+      # exakt dasselbe lokal gebaute Image. GHCR bleibt die Referenz-Registry.
+      # Der `secrets`-Kontext ist in `if:` von Steps nicht verfügbar, daher wird
+      # die Secret-Präsenz hier in einen Output übersetzt. Fehlt das Secret,
+      # werden die beiden folgenden Steps übersprungen statt den Release-Tag
+      # rot zu machen — Docker Hub ist ein optionaler Zusatzkanal.
+      - name: Check for Docker Hub credentials
+        id: dockerhub
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_TOKEN nicht gesetzt — Docker-Hub-Push übersprungen."
+          fi
+
+      - name: Login to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        env:
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'pt9912/d-migrate' }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          docker tag dmigrate/d-migrate:latest "${DOCKERHUB_IMAGE}:${VERSION}"
+          docker push "${DOCKERHUB_IMAGE}:${VERSION}"
+          # :latest-Regel identisch zu GHCR — Prereleases fassen :latest nicht an.
+          case "$VERSION" in
+            *-*) echo "Prerelease $VERSION — :latest bleibt auf dem letzten Stable" ;;
+            *)   docker tag dmigrate/d-migrate:latest "${DOCKERHUB_IMAGE}:latest"
+                 docker push "${DOCKERHUB_IMAGE}:latest" ;;
+          esac
+
+  # Natives Container-Image (zusaetzliche Distributionsklasse neben dem JVM-Image oben).
+  # build.yml besitzt die Container-Images (JVM + nativ); native-image.yml die ROHEN
+  # Release-Binaries. Nur auf Tags: der native Compile im Docker (~5-8 min) ist zu schwer fuer
+  # jeden Push — auf develop/main verifiziert `native-image.yml` (dispatch) den nativen Bau.
+  # Bewusst ein zweiter native Compile (native-image.yml baut die Binaries): das haelt die beiden
+  # Workflows entkoppelt; Reuse des Binaries spraeche CI-Minuten, koppelte sie aber.
+  native-image:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Build the native runtime image
+        # Dieselbe Stage wie `make native-runtime-build` lokal: volle CLI nativ (GraalVM) im
+        # Runtime-Image (Entrypoint = Binary, /work, non-root, mod_spatialite). Single-Arch amd64 —
+        # gleich wie das JVM-Image oben (linux-arm64 = offene Frage 4 im Native-Slice).
+        run: make native-runtime-build NATIVE_RUNTIME_TAG=d-migrate:native
+
+      - name: Smoke-test the native runtime image
+        # Kein kaputtes Image publizieren: DB-frei gegen die volle CLI (analog native-image.yml).
+        run: |
+          set -euo pipefail
+          docker run --rm d-migrate:native --version
+          docker run --rm d-migrate:native --help >/dev/null
+          out=$(docker run --rm -v "$PWD":/work -w /work d-migrate:native \
+            schema validate --source examples/sample-db/calib-schema.yaml)
+          echo "${out}"
+          echo "${out}" | grep -q "Validation passed" \
+            || { echo "::error::native image validate smoke failed"; exit 1; }
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push native image to GHCR
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          docker tag d-migrate:native "ghcr.io/${{ github.repository }}:${VERSION}-native"
+          docker push "ghcr.io/${{ github.repository }}:${VERSION}-native"
+          # :native = bewegliches "latest native" (analog :latest). Prereleases (Version mit '-',
+          # z. B. 1.0.0-RC1) fassen es NICHT an, sonst zeigte `pull …:native` auf eine Vorabversion.
+          case "$VERSION" in
+            *-*) echo "Prerelease $VERSION — :native bleibt auf dem letzten Stable" ;;
+            *)   docker tag d-migrate:native "ghcr.io/${{ github.repository }}:native"
+                 docker push "ghcr.io/${{ github.repository }}:native" ;;
+          esac
+
+      # Docker Hub — Spiegel wie beim JVM-Image (optionaler Zusatzkanal, gleiche Secret-Logik).
+      - name: Check for Docker Hub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_TOKEN nicht gesetzt — Docker-Hub-Push (nativ) uebersprungen."
+          fi
+
+      - name: Login to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push native image to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        env:
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'pt9912/d-migrate' }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          docker tag d-migrate:native "${DOCKERHUB_IMAGE}:${VERSION}-native"
+          docker push "${DOCKERHUB_IMAGE}:${VERSION}-native"
+          case "$VERSION" in
+            *-*) echo "Prerelease $VERSION — :native bleibt auf dem letzten Stable" ;;
+            *)   docker tag d-migrate:native "${DOCKERHUB_IMAGE}:native"
+                 docker push "${DOCKERHUB_IMAGE}:native" ;;
           esac

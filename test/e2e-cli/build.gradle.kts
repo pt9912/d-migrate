@@ -38,6 +38,7 @@ dependencies {
     testImplementation("software.amazon.awssdk:url-connection-client")
     testImplementation(project(":adapters:driven:connection-config"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    testImplementation(project(":adapters:driven:persistence-memory"))
 
     testImplementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     testImplementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")

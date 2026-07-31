@@ -91,6 +91,7 @@ Permanent reference tokens:
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigCredentialsCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell (`credentials` parent); subcommand wiring only. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigCredentialsListCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic in ConfigCredentialsWiring/CredentialCommandRunner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigCredentialsSetCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; console I/O only — confirm/mismatch logic in unit-tested `confirmedSecret`, set in ConfigCredentialsWiring/CredentialCommandRunner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ConfigShowCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; rendering logic in unit-tested `ConfigShowRenderer`. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataExportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataImportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
@@ -244,6 +245,10 @@ Permanent reference tokens:
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$Granted` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$RateLimited` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.SslMode` | `permanent: dto-or-value-carrier` | Connection-config enum; SSL parse logic covered in the driver adapters. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.SslSettings` | `permanent: dto-or-value-carrier` | Connection-config value carrier; SSL parse logic covered in the driver adapters. |
+| `:hexagon:ports-common` | `packages` | `dev.dmigrate.server.ports` | `permanent: port-contract` | Port-definition tree (interfaces + data contracts + shared contract-test suites); behavioral logic lives and is tested in the implementing adapters (persistence-memory/-jdbc, audit-logging). Befund 17 — subsumes the individual `server.ports.*` class rows above. |
+| `:hexagon:ports-common` | `packages` | `dev.dmigrate.format.data` | `permanent: dto-or-value-carrier` | Data-chunk/bundle schema descriptors + fixtures; serialization logic covered in the format/streaming adapters. |
 | `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult` | `permanent: sealed-outcome` | Sealed outcome marker for the runner-internal protected-execution callback. |
 | `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers. |
 | `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch` | `permanent: dto-or-value-carrier` | Pure batch data carrier (requests + protected op IDs + internal follow-up IDs). |

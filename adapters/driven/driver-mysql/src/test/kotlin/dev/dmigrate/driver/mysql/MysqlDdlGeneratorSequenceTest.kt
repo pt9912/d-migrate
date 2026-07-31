@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.TransformationNote
 import io.kotest.core.spec.style.FunSpec
@@ -117,7 +118,7 @@ class MysqlDdlGeneratorSequenceTest : FunSpec({
         val seqName = "odd seq\\'\u03a9"
         val tableName = "orders*/archive"
         val colName = "invoice*/number"
-        val escapedSequenceName = SqlIdentifiers.quoteStringLiteral(seqName.replace("\\", "\\\\"))
+        val escapedSequenceName = SqlIdentifiers.quoteStringLiteral(seqName, DatabaseDialect.MYSQL)
         val result = generator.generate(seqSchema(seqName = seqName, tableName = tableName, colName = colName), helperOpts)
         val ddl = result.render()
 

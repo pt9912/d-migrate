@@ -45,7 +45,6 @@ class SchemaCompareStartHandlerTest : FunSpec({
             idempotencyStore = idempotencyStore,
             jobStartTransaction = transaction,
             workerHandleRegistry = workerHandleRegistry,
-            approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = PolicyEffect.Allow),
             payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),

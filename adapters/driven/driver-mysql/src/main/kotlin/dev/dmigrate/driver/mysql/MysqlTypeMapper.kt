@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.TypeMapper
 
 class MysqlTypeMapper : TypeMapper {
@@ -46,7 +47,7 @@ class MysqlTypeMapper : TypeMapper {
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {
-        is DefaultValue.StringLiteral -> "'${default.value.replace("'", "''")}'"
+        is DefaultValue.StringLiteral -> SqlIdentifiers.quoteStringLiteral(default.value, DatabaseDialect.MYSQL)
         is DefaultValue.NumberLiteral -> default.value.toString()
         is DefaultValue.BooleanLiteral -> if (default.value) "1" else "0"
         is DefaultValue.FunctionCall -> when (default.name) {

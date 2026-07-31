@@ -17,14 +17,24 @@ internal class SqliteColumnConstraintHelper(
         schema: SchemaDefinition,
         tableName: String,
         notes: MutableList<TransformationNote>,
-        deferredFks: Set<Pair<String, String>> = emptySet()
+        deferredFks: Set<Pair<String, String>> = emptySet(),
+        // SQLite AUTOINCREMENT is a single-column rowid alias: the inline
+        // `INTEGER PRIMARY KEY AUTOINCREMENT` form is only valid when this column
+        // is the whole primary key. In a composite PK the identity column degrades
+        // to a plain INTEGER (W135) and the composite key is emitted table-level.
+        isSolePrimaryKey: Boolean = true,
     ): String {
         val type = col.type
 
-        if (col.generation is ColumnGeneration.Identity && supportsRowidIdentity(type)) {
+        val isRowidIdentity = col.generation is ColumnGeneration.Identity && supportsRowidIdentity(type)
+        val isAutoIncrementIdentifier = type is NeutralType.Identifier && type.autoIncrement
+        if ((isRowidIdentity || isAutoIncrementIdentifier) && !isSolePrimaryKey) {
+            return generateCompositePkIdentityColumn(colName, col, type, tableName, notes)
+        }
+        if (isRowidIdentity) {
             return generateRowidIdentityColumn(colName, col)
         }
-        if (type is NeutralType.Identifier && type.autoIncrement) {
+        if (isAutoIncrementIdentifier) {
             return generateAutoIncrementColumn(colName, col, type)
         }
         if (type is NeutralType.Enum && type.refType != null) {
@@ -65,6 +75,33 @@ internal class SqliteColumnConstraintHelper(
 
     private fun generateAutoIncrementColumn(colName: String, col: ColumnDefinition, type: NeutralType): String {
         val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(type))
+        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
+        if (col.unique) parts += "UNIQUE"
+        return parts.joinToString(" ")
+    }
+
+    /**
+     * An identity/autoincrement column that is only *part* of a composite primary key.
+     * SQLite's AUTOINCREMENT is a single-column rowid alias, so it cannot back a composite
+     * key — the column degrades to a plain `INTEGER` member of the table-level `PRIMARY KEY`
+     * clause and loses server-side auto-generation (W135). Rendering both the inline
+     * `INTEGER PRIMARY KEY AUTOINCREMENT` and the composite clause would yield two primary
+     * keys, which SQLite rejects outright.
+     */
+    private fun generateCompositePkIdentityColumn(
+        colName: String,
+        col: ColumnDefinition,
+        type: NeutralType,
+        tableName: String,
+        notes: MutableList<TransformationNote>,
+    ): String {
+        notes += TransformationNote(
+            type = NoteType.WARNING, code = SqliteCompositePkIdentity.W_CODE, objectName = "$tableName.$colName",
+            message = SqliteCompositePkIdentity.message(colName),
+            hint = SqliteCompositePkIdentity.HINT,
+        )
+        val parts = mutableListOf(quoteIdentifier(colName), "INTEGER")
+        if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
         if (col.unique) parts += "UNIQUE"
         return parts.joinToString(" ")

@@ -98,22 +98,26 @@ internal class SqliteRebuildRenderer(
         emitRebuildSequence(plan, ctx)
         emitPreflightInfoDiagnostics(plan, ctx)
         emitCastPreflightInfoDiagnostics(plan, ctx)
-        warnRebuiltEnumColumns(plan, ctx)
+        warnRebuiltColumnDegradations(plan, ctx)
     }
 
     /**
-     * Enum-Degradations-Slice (AP3, W134). A rebuild recreates the target table
-     * through [SqliteDiffSqlBuilders.columnLine] ([buildCreateTempSql]), which
-     * renders SQLite enums as bare TEXT (no native enum). Make the value-
-     * enforcement loss loud rather than silent (DoD-Invariante). UP only — the
-     * DOWN rebuild restores the pre-reshape table, whose columns were already
-     * reported on the way up.
+     * Column-degradation warnings for a rebuilt target table. A rebuild recreates the table
+     * through [SqliteDiffSqlBuilders.columnLine] ([buildCreateTempSql]); make the losses loud
+     * rather than silent (DoD-Invariante). UP only — the DOWN rebuild restores the pre-reshape
+     * table, whose columns were already reported on the way up.
+     *  - W134 (enum → bare TEXT, no native enum type)
+     *  - W135 (identity column in a composite PK → AUTOINCREMENT dropped, [SqliteCompositePkIdentity])
      */
-    private fun warnRebuiltEnumColumns(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
+    private fun warnRebuiltColumnDegradations(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         if (ctx.direction != SqliteRenderDirection.UP) return
         val op = plan.bucketOperations.firstOrNull() ?: return
+        val solePrimaryKey = plan.newTable.primaryKey.singleOrNull()
         for ((colName, col) in plan.newTable.columns.inOrdinalOrder()) {
             SqliteEnumDegradation.warnIfEnum(op, ctx, colName, col)
+            if (SqliteCompositePkIdentity.isDroppedAutoincrement(col.type, solePrimaryKey == colName)) {
+                ctx.warning(op, SqliteCompositePkIdentity.message(colName), SqliteCompositePkIdentity.W_CODE)
+            }
         }
     }
 
@@ -591,11 +595,12 @@ internal class SqliteRebuildRenderer(
 
     private fun buildCreateTempSql(tempName: String, target: TableDefinition): String {
         val lines = mutableListOf<String>()
+        val solePrimaryKey = target.primaryKey.singleOrNull()
         for ((colName, col) in target.columns.inOrdinalOrder()) {
             // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
             // neutral model's "PK ⇒ required" invariant on the rebuilt table.
             val effectiveCol = SqlitePrimaryKeyNullability.materialize(colName, col, target.primaryKey)
-            lines += "    " + sql.columnLine(colName, effectiveCol)
+            lines += "    " + sql.columnLine(colName, effectiveCol, solePrimaryKey == colName)
         }
         sql.primaryKeyClause(target)?.let { lines += "    $it" }
         for (c in target.constraints.sortedBy { it.name }) {

@@ -108,7 +108,10 @@ services:
     working_dir: /work
 
   dmigrate:
-    image: d-migrate:dev
+    # Standard: das JVM-Image d-migrate:dev. Ueberschreibbar auf das Native-Runtime-Image
+    # (make native-runtime-build → d-migrate:native-dev), um dieselbe E2E-Harness gegen das
+    # native Binary zu fahren: `SAMPLE_DB_DMIGRATE_IMAGE=d-migrate:native-dev make sample-db-smoke`.
+    image: ${SAMPLE_DB_DMIGRATE_IMAGE:-d-migrate:dev}
     # Das Image läuft als non-root (uid 10001). Damit es in das gemountete
     # Host-Verzeichnis (out/) schreiben kann, läuft der Container als der
     # aufrufende Host-User — die smoke-Skripte exportieren
@@ -134,7 +137,7 @@ services:
   # bei `compose run` an (kein Swarm nötig). Die absoluten Zeit-/Durchsatz-Zahlen gelten
   # nur „unter Caps 2 CPU/4 GB".
   dmigrate-capped:
-    image: d-migrate:dev
+    image: ${SAMPLE_DB_DMIGRATE_IMAGE:-d-migrate:dev}
     user: "${SAMPLE_DB_DMIGRATE_USER:-0:0}"
     cpus: 2
     mem_limit: 4g

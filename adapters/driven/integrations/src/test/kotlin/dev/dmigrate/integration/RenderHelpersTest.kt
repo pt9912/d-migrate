@@ -42,6 +42,10 @@ class RenderHelpersTest : FunSpec({
         RenderHelpers.escapeXml("a < b > c") shouldBe "a &lt; b &gt; c"
     }
 
+    test("escapeXmlAttribute escapes quotes on top of text escaping") {
+        RenderHelpers.escapeXmlAttribute("""a"<>&'b""") shouldBe "a&quot;&lt;&gt;&amp;&apos;b"
+    }
+
     test("escapeXml handles combined special chars") {
         RenderHelpers.escapeXml("x < y & z > w") shouldBe "x &lt; y &amp; z &gt; w"
     }

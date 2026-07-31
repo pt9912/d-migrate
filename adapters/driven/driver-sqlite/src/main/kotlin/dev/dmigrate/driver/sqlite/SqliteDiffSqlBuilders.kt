@@ -36,10 +36,14 @@ internal class SqliteDiffSqlBuilders {
 
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.SQLITE)
 
-    fun columnLine(name: String, col: ColumnDefinition): String {
+    fun columnLine(name: String, col: ColumnDefinition, isSolePrimaryKey: Boolean = true): String {
         val parts = mutableListOf<String>()
         parts += quote(name)
-        parts += typeMapper.toSql(col.type)
+        // SQLite renders an `identifier` column inline as `INTEGER PRIMARY KEY AUTOINCREMENT`
+        // (single-column rowid alias). When it is only part of a *composite* PK the inline
+        // clause would collide with the table-level [primaryKeyClause]; degrade to a plain
+        // INTEGER instead (W135, SqliteCompositePkIdentity — warned by the emitting op).
+        parts += if (col.type is NeutralType.Identifier && !isSolePrimaryKey) "INTEGER" else typeMapper.toSql(col.type)
         if (col.required) parts += "NOT NULL"
         if (col.unique) parts += "UNIQUE"
         col.default?.let { parts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }

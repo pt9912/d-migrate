@@ -9,7 +9,7 @@
 # docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-3hop-smoke sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
 
@@ -33,6 +33,13 @@ sample-db-cross-smoke:
 
 sample-db-cross-smoke-pg2my:
 	./examples/sample-db/scripts/smoke-cross-pg2my.sh
+
+# Lastenheft-8.6 — 3-Hop-Kette PostgreSQL -> MySQL -> SQLite als EIN verketteter
+# Fluss (nicht nur paarweise): Pagila wandert PG->MySQL->SQLite, End-to-End-Paritaet
+# + die drei 8.6-Typ-Transformationen (Serial/Array/ENUM). Braucht compose postgres+
+# mysql + sqlite3 am Host + d-migrate:dev-Image.
+sample-db-3hop-smoke:
+	./examples/sample-db/scripts/smoke-3hop.sh
 
 sample-db-sqlite-smoke:
 	./examples/sample-db/scripts/smoke-sqlite.sh
@@ -117,7 +124,8 @@ sample-db-tpcds-smoke:
 
 # Phase 4 (#2 Tool-Vergleich) — opt-in, NICHT im PR-Gate, INTERNER Sanity-Check (kein
 # Audit-Benchmark). Bewegt dieselbe TPC-H-Workload PG->PG mit COPY (native Decke),
-# d-migrate (CSV, gecappt) und pgloader (gepinnt, gecappt); rows/s + Anteil COPY-Decke.
-# WITH_PGLOADER=0 lässt pgloader weg. Doku: docs/planning/open/tool-comparison.md.
+# d-migrate (CSV, gecappt) und optional pgloader (gepinnt, gecappt); rows/s + Anteil COPY-Decke.
+# pgloader ist Default AUS (WITH_PGLOADER=1 schaltet den best-effort-Vergleich zu; sein SBCL-Heap
+# kann unter den Caps reißen — diagnostisch, kein Gate). Doku: docs/planning/open/tool-comparison.md.
 sample-db-tool-compare:
 	./examples/sample-db/scripts/smoke-tool-compare.sh

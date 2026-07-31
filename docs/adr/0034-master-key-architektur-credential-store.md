@@ -14,7 +14,7 @@ informed: adapters/driven/connection-config, adapters/driving/cli, hexagon/ports
 > Entschieden: passphrase-abgeleiteter lokaler Store (**O2**) **plus** strukturierte
 > `credentialRef`/`providerRef`-Delegation (**O4**), **gestaffelt** ausgeliefert (Store zuerst); **O1
 > verworfen**, **O3 zurückgestellt**. Der Plan
-> [`config-cli-management-surface.md`](../planning/next/config-cli-management-surface.md) (§7.3) hielt
+> [`config-cli-management-surface.md`](../planning/done/config-cli-management-surface.md) (§7.3) hielt
 > diese Frage bewusst offen, weil ein falscher Ansatz die gesamte Krypto-Fläche prägt.
 
 ## Kontext und Problemstellung

@@ -4,6 +4,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.CsvFormulaGuardResolver
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.ParquetExportConfigResolver
 import dev.dmigrate.cli.config.PipelineCheckpointResolver
@@ -58,6 +59,12 @@ internal data class DataExportOptions(
     val csvDelimiter: String,
     val csvBom: Boolean,
     val csvNoHeader: Boolean,
+    /**
+     * CSV-Formel-Injection-Guard-Flag (CWE-1236, Audit-Follow-up #6): `true` =
+     * `--csv-formula-guard`, `false` = `--no-csv-formula-guard`, `null` = keins
+     * gesetzt → `CsvFormulaGuardResolver` fällt auf `export.csv.formula_guard` / Default.
+     */
+    val csvFormulaGuardFlag: Boolean? = null,
     val nullString: String,
     val resume: String?,
     val checkpointDir: Path?,
@@ -229,6 +236,8 @@ internal object DataExportWiring {
         csvDelimiter = options.csvDelimiter,
         csvBom = options.csvBom,
         csvNoHeader = options.csvNoHeader,
+        csvFormulaGuard = CsvFormulaGuardResolver(configPathFromCli = options.configPath)
+            .resolve(options.csvFormulaGuardFlag),
         nullString = options.nullString,
         cliConfigPath = options.configPath,
         quiet = options.cliContext.quiet,

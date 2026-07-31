@@ -5,6 +5,7 @@ import dev.dmigrate.mcp.auth.BearerValidationResult
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.server.AuthMode
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.core.principal.AuthSource
 import dev.dmigrate.server.core.principal.PrincipalContext
@@ -15,6 +16,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
@@ -42,17 +44,25 @@ private val JWKS_CONFIG = McpServerConfig(
     audience = "mcp.dmigrate",
 )
 
-private fun principalWithScopes(vararg scopes: String): PrincipalContext = PrincipalContext(
-    principalId = PrincipalId("test-user"),
+private fun principalWithScopes(vararg scopes: String): PrincipalContext = principalWithId("test-user", *scopes)
+
+private fun principalWithId(id: String, vararg scopes: String): PrincipalContext = PrincipalContext(
+    principalId = PrincipalId(id),
     homeTenantId = TenantId("tenant-A"),
     effectiveTenantId = TenantId("tenant-A"),
     allowedTenantIds = setOf(TenantId("tenant-A")),
     scopes = scopes.toSet(),
     isAdmin = "dmigrate:admin" in scopes,
-    auditSubject = "test-user",
+    auditSubject = id,
     authSource = AuthSource.OIDC,
     expiresAt = Instant.parse("2099-01-01T00:00:00Z"),
 )
+
+/** Maps each bearer token to its principal so a test can drive two distinct principals. */
+private class TokenRoutingAuthValidator(private val byToken: Map<String, PrincipalContext>) : AuthValidator {
+    override suspend fun validate(token: String): BearerValidationResult =
+        byToken[token]?.let { BearerValidationResult.Valid(it) } ?: BearerValidationResult.Invalid("unknown token")
+}
 
 private class FakeAuthValidator(private val result: BearerValidationResult) : AuthValidator {
     var lastToken: String? = null
@@ -135,6 +145,68 @@ class McpHttpAuthTest : FunSpec({
             val challenge = resp.headers[HttpHeaders.WWWAuthenticate]!!
             challenge shouldContain "error=\"invalid_token\""
             challenge shouldContain "token expired"
+        }
+    }
+
+    test("413 when Content-Length exceeds maxRequestBodyBytes — before auth or body read (CWE-770)") {
+        // Pre-auth heap-exhaustion guard: an oversized POST is rejected from its
+        // declared Content-Length, cheapest-check-first, without buffering the body
+        // and before the (more expensive) Bearer validation runs.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                    limits = McpLimitsConfig(maxRequestBodyBytes = 64),
+                )
+            }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("x".repeat(200))
+            }
+            resp.status shouldBe HttpStatusCode.PayloadTooLarge
+        }
+    }
+
+    test("a body exactly at maxRequestBodyBytes passes the size check (boundary is inclusive)") {
+        // Pins the comparison direction: Content-Length == cap must NOT be rejected.
+        // A 64-byte body under a 64-byte cap clears checkBodySize and reaches auth,
+        // so the (token-less) request fails at 401, not 413.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                    limits = McpLimitsConfig(maxRequestBodyBytes = 64),
+                )
+            }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("x".repeat(64))
+            }
+            resp.status shouldBe HttpStatusCode.Unauthorized
+        }
+    }
+
+    test("401 precedes body parse — no token + malformed body returns 401, not a 400 parse error (CWE-770)") {
+        // Bearer validation now runs before the body is read/parsed, so an
+        // unauthenticated request never makes the server parse (or buffer) its body.
+        // The old order returned 400 (JSON parse error) for this input.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                )
+            }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("this is not json at all")
+            }
+            resp.status shouldBe HttpStatusCode.Unauthorized
         }
     }
 
@@ -321,6 +393,79 @@ class McpHttpAuthTest : FunSpec({
             body shouldContain "\"authorization_servers\":"
             body shouldContain "\"scopes_supported\":"
             body shouldContain "\"bearer_methods_supported\":[\"header\"]"
+        }
+    }
+
+    test("13: DELETE /mcp without a token is rejected 401 (CWE-306)") {
+        // DELETE terminates a session and must run the same Bearer chain as POST.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
+                )
+            }
+            val resp = client.delete("/mcp") {
+                headers { append("MCP-Session-Id", java.util.UUID.randomUUID().toString()) }
+            }
+            resp.status shouldBe HttpStatusCode.Unauthorized
+        }
+    }
+
+    test("13/14: a session is bound to its creating principal — cross-principal POST/DELETE rejected, owner can delete") {
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = TokenRoutingAuthValidator(
+                        mapOf(
+                            "tok-a" to principalWithId("user-a", "dmigrate:read"),
+                            "tok-b" to principalWithId("user-b", "dmigrate:read"),
+                        ),
+                    ),
+                )
+            }
+            // Principal A creates a session.
+            val init = client.post("/mcp") {
+                mcpAccept()
+                headers { append(HttpHeaders.Authorization, "Bearer tok-a") }
+                setBody(INITIALIZE_BODY)
+            }
+            init.status shouldBe HttpStatusCode.OK
+            val sessionId = init.headers["MCP-Session-Id"]!!
+
+            // Principal B (own valid token) cannot drive A's session — indistinguishable
+            // from an unknown session (404), so session ids don't leak across principals.
+            val bPost = client.post("/mcp") {
+                mcpAccept()
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer tok-b")
+                    append("MCP-Session-Id", sessionId)
+                    append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)
+                }
+                setBody("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
+            }
+            bPost.status shouldBe HttpStatusCode.NotFound
+
+            // Principal B cannot delete A's session either (405, same as unknown).
+            val bDelete = client.delete("/mcp") {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer tok-b")
+                    append("MCP-Session-Id", sessionId)
+                }
+            }
+            bDelete.status shouldBe HttpStatusCode.MethodNotAllowed
+
+            // The owner (A) can delete its own session.
+            val aDelete = client.delete("/mcp") {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer tok-a")
+                    append("MCP-Session-Id", sessionId)
+                }
+            }
+            aDelete.status shouldBe HttpStatusCode.OK
         }
     }
 })

@@ -234,7 +234,7 @@ schema compare  --source <QUELLE> --target <ZIEL>   # Exit 1 = Unterschiede
 | **7.1 PostgreSQL → MySQL** | Sequenzen werden in MySQL über `dmg_sequences` emuliert; PG-`citext`/Extension-Typen prüfen ([§6.5](#6-spezialfälle-und-stolpersteine)) |
 | **7.2 MySQL → PostgreSQL** | `TINYINT(1)`↔`BOOLEAN`-Semantik prüfen; MySQL-Sequence-Emulation wird auf native PG-Sequenzen abgebildet |
 | **7.3 → SQLite** | `--sqlite-named-sequences helper_table` setzen, sonst E056-Skip; Materialized Views → View (W103) |
-| **7.4 Cross-DB Round-Trip PG → MySQL → SQLite** | 🔮 Abnahmeziel **8.6** für 1.0.0; jede Stufe einzeln mit `schema compare` abnehmen |
+| **7.4 Cross-DB Round-Trip PG → MySQL → SQLite** | Abnahmeziel **8.6** für 1.0.0 — als verketteter Smoke geliefert (`make sample-db-3hop-smoke`): End-to-End-Parität + Serial/Array/ENUM-Transformationen über die ganze Kette; jede Stufe zusätzlich einzeln mit `schema compare` abnehmbar |
 
 ---
 
@@ -326,5 +326,5 @@ Diese Checkliste ist Teil des 0.9.9-Pilot-Programms (Pilotanwender-Tests, LF 9.2
 
 ## Verwandte Dokumentation
 
-- [Anwenderhandbuch](anwenderhandbuch.md) · [API-Referenz](api-referenz.md) · [Administrationshandbuch](administrationshandbuch.md) · [`guide.md`](guide.md)
+- [Anwenderhandbuch](anwenderhandbuch.md) · [Best-Practices-Leitfaden](best-practices-leitfaden.md) · [Troubleshooting-Leitfaden](troubleshooting-leitfaden.md) · [API-Referenz](api-referenz.md) · [Administrationshandbuch](administrationshandbuch.md) · [`guide.md`](guide.md)
 - [`spec/neutral-model-spec.md`](../../spec/neutral-model-spec.md), [`spec/type-mapping.md`](../../spec/type-mapping.md), [`spec/ddl-generation-rules.md`](../../spec/ddl-generation-rules.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/connection-config-spec.md`](../../spec/connection-config-spec.md)

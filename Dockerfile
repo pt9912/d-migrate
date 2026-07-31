@@ -242,10 +242,20 @@ FROM gradle:8.12-jdk21 AS integration-test
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv \
-    curl ca-certificates \
+    curl ca-certificates gnupg \
     build-essential && \
     python3 -m pip install --break-system-packages --quiet django && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    # Node 20 aus dem NodeSource-Repo (CWE-494): kein `curl | bash`. Der GPG-Key
+    # wird ueber HTTPS geholt, per SHA256 gepinnt und als signed-by-Keyring
+    # hinterlegt; danach installiert apt `nodejs` signaturverifiziert.
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/nodesource.key && \
+    echo "b42e0321dabdc24e892115da705cf061167eac12a317f23d329862d0aa0a271d  /tmp/nodesource.key" | sha256sum -c - && \
+    gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg /tmp/nodesource.key && \
+    rm /tmp/nodesource.key && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+    > /etc/apt/sources.list.d/nodesource.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g pnpm node-gyp && \
     rm -rf /var/lib/apt/lists/*
@@ -258,6 +268,21 @@ COPY --chown=gradle:gradle . .
 # Runs only the non-integration test suite plus the aggregated Kover HTML
 # and XML reports so they can be published independently of the configured
 # coverage threshold.
+# ---- Stage: integration-test-native ----------------------------------------
+# Wie integration-test, aber mit dem GraalVM-Native-Binary im Image. Die
+# Subprozess-E2Es (RealCliSubprocess) fahren mit DMIGRATE_CLI_BIN gegen dieses
+# Binary statt einer Kind-JVM — dieselben Tests, anderes Artefakt.
+#
+# Das Binary kommt per COPY --from aus dem separaten Image `d-migrate:native-build`
+# (docker/native-image.Dockerfile, gebaut ueber `make native-build`). KEIN
+# Host-Extract nach ./build: das Binary bleibt im Docker-Fluss, exakt wie der
+# Rest der Pipeline. `COPY --from=<benanntes Image>` braucht die zwei Dockerfiles
+# nicht zusammenzufuehren — es referenziert das lokal vorhandene Image direkt.
+FROM integration-test AS integration-test-native
+COPY --from=d-migrate:native-build \
+     /src/adapters/driving/cli/build/native/nativeCompile/d-migrate /native/d-migrate
+ENV DMIGRATE_CLI_BIN=/native/d-migrate
+
 FROM gradle:8.12-jdk21 AS coverage-build
 
 ARG COVERAGE_TASKS="test koverHtmlReport koverXmlReport"
@@ -268,11 +293,18 @@ COPY --chown=gradle:gradle . .
 
 RUN gradle --no-daemon ${COVERAGE_TASKS}
 
+# yq/jq-Version + zugehoeriger SHA256 bewegen sich im Gleichschritt: ein
+# Versions-Bump ohne Hash-Update laesst `sha256sum -c` unten fehlschlagen (CWE-494).
 ARG YQ_VERSION=v4.44.6
 ARG JQ_VERSION=jq-1.8.1
+ARG YQ_SHA256=0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598
+ARG JQ_SHA256=020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d
 ADD https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 /usr/local/bin/yq
 ADD https://github.com/jqlang/jq/releases/download/${JQ_VERSION}/jq-linux-amd64 /usr/local/bin/jq
-RUN chmod +x /usr/local/bin/yq /usr/local/bin/jq && \
+# SHA256 pruefen, BEVOR die Binaries ausfuehrbar gemacht und ausgefuehrt werden.
+RUN echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c - && \
+    echo "${JQ_SHA256}  /usr/local/bin/jq" | sha256sum -c - && \
+    chmod +x /usr/local/bin/yq /usr/local/bin/jq && \
     test -f /src/build/reports/kover/report.xml && \
     yq -p xml -o json /src/build/reports/kover/report.xml | \
     jq -f /src/scripts/kover-report-to-json.jq > /src/build/reports/kover/report.json

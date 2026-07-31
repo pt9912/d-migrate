@@ -25,7 +25,8 @@ internal object SqliteSequenceEmulationTemplates {
     private fun q(name: String): String = "\"${name.replace("\"", "\"\"")}\""
 
     /** Single-quoted SQL string literal with embedded `'` escaping. */
-    private fun lit(value: String): String = SqlIdentifiers.quoteStringLiteral(value)
+    private fun lit(value: String): String =
+        SqlIdentifiers.quoteStringLiteral(value, dev.dmigrate.driver.DatabaseDialect.SQLITE)
 
     /**
      * `CREATE TABLE IF NOT EXISTS dmg_sequences` — the helper table

@@ -231,6 +231,13 @@ export:
     null_string: ""                  # Darstellung von NULL-Werten
     header: true                     # Spaltenüberschriften schreiben
     line_separator: "\n"             # Zeilentrenner
+    formula_guard: false             # Formel-Injection-Guard (CWE-1236): true präfixt
+                                     # formel-anfällige Text-Zellen (führendes =/+/-/@/Tab/CR)
+                                     # mit ' — Tabellenkalkulationen führen sie dann nicht aus.
+                                     # Verändert den Wert (kein byte-treuer Roundtrip). Default
+                                     # false = treuer Dump; der Writer meldet betroffene Spalten
+                                     # per W203. Präzedenz: --csv-formula-guard (CLI) > diese
+                                     # Config > Default false.
   parquet:
     # LN-005 (R2): Parquet-Row-Group-Größe in Bytes. Kleiner = geringerer Heap-Peak
     # (v.a. bei parallelem File-per-Table-Export `--parallel N`), etwas geringere
@@ -503,8 +510,9 @@ database:
       credentialRef: "env:STAGING_DB_URL"              # Umgebungsvariable = vollständige Connect-URL
 ```
 
-- **Schemes:** `env:<VAR>` (Prozess-Umgebungsvariable) und `file:<pfad>` (Datei-Inhalt, getrimmt).
-  Beide liefern eine **komplette** URL — es findet keine `${VAR}`-Substitution auf dem Ergebnis statt.
+- **Schemes:** `env:<VAR>` (Prozess-Umgebungsvariable), `file:<pfad>` (Datei-Inhalt, getrimmt) und
+  `keychain:` (Eintrag im OS-Schlüsselbund; die Referenz nennt einen Service und optional einen Account).
+  Alle liefern eine **komplette** URL — es findet keine `${VAR}`-Substitution auf dem Ergebnis statt.
 - **Fail-closed:** ist ein `credentialRef` gesetzt, aber nicht auflösbar (Variable/ Datei fehlt,
   unbekanntes Scheme), bricht die Operation mit Fehler ab (Exit 7) — **kein** stiller Rückfall auf eine
   Verbindung ohne Secret. Das unterscheidet sich von `D_MIGRATE_DB_PASSWORD` (§4.1), das nur ein
@@ -514,6 +522,11 @@ database:
 - **`file:`-Sicherheit:** Fehlermeldungen nennen nur den Pfad, **nie** den Datei-Inhalt; eine
   Größenobergrenze schützt vor versehentlich referenzierten Riesen-Dateien. Datei-Permissions werden
   nicht erzwungen und Symlinks gefolgt (Kompatibilität mit k8s-Secret-Mounts).
+- **`keychain:`-Verfügbarkeit:** liest den Schlüsselbund-Eintrag (macOS, Linux, Windows) über das
+  OS-Werkzeug — der aufgelöste Wert kommt über dessen Ausgabe, **nie** über Prozess-Argumente. Ohne verfügbaren
+  Schlüsselbund (headless CI/Container/Server oder fehlendes OS-Werkzeug) scheitert die Auflösung
+  **fail-closed**, ohne stillen Rückfall; dort ist `env:`/`file:` die richtige Schicht. Fehlermeldungen
+  nennen nur den Service-Namen, **nie** den Wert.
 - Dieselbe Provider-Auflösung bedient den CLI-`--source`/`--target`-Pfad **und** die
   Server-/Discovery-Ebene; letztere materialisiert `credentialRef`/`providerRef` weiterhin nicht in
   ihre Auflistungen.

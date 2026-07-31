@@ -122,3 +122,28 @@ entries:
         path_type: production
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt"
         path_type: production
+
+  # W135 — cross-dialect 3-hop finding: an identity/AUTO_INCREMENT column that lands in a
+  # *composite* primary key (e.g. a partitioned MySQL table whose partition key was folded
+  # into the PK) cannot keep AUTOINCREMENT in SQLite — that form requires a single-column
+  # INTEGER PRIMARY KEY. The column degrades to a plain INTEGER member of the table-level
+  # composite PRIMARY KEY (auto-generation lost); emitting both would produce two primary
+  # keys and unloadable DDL. SQLite mirror of the MySQL-side W118.
+  - code: W135
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteCompositePkIdentity.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTableDdlSupport.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSqlBuilders.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt"
+        path_type: production

@@ -121,3 +121,13 @@ Streaming-Import und Parquet-Manifest-Kompatibilitaet.
 
 - Planung: [`docs/planning/done/a-check-architecture-gate.md`](../planning/done/a-check-architecture-gate.md)
 - Vorentscheidung: [`ADR 0022`](0022-ports-jdbc-entkopplung.md)
+- **Nachfolge (2026-07-17): [`ADR 0037`](0037-database-agnostic-first-staffelung.md)** ordnet das hier
+  vertagte „G2" ein. Ergebnis: `jdbcType: Int` ist ein **Symptom**, nicht die Ursache — der
+  Treiber-Port selbst schreibt JDBC fest (`urlBuilder(): JdbcUrlBuilder` ist Pflichtmitglied). „G2"
+  als eigenständiger Umbau entfällt daher; die Typcode-Vertraege werden im Vorhaben zu
+  „Database-Agnostic First" **nach 1.0.0** mitbehandelt.
+  Die oben ratifizierte `jdbcType`-Ausnahme **bleibt bis dahin gueltig** und hat nun einen benannten
+  Grund und eine Faelligkeit statt einer offenen Frage. Unberuehrt bleibt ebenso die hier
+  entschiedene strikte Composition-Root-JDBC-Regel (D2) — ADR 0037 ersetzt diese ADR nicht.
+  Ist-Aufnahme der Fläche:
+  [`jdbc-kopplung-der-ports-ist-aufnahme.md`](../planning/open/jdbc-kopplung-der-ports-ist-aufnahme.md).

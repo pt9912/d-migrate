@@ -2,6 +2,7 @@ package dev.dmigrate.server.adapter.storage.s3
 
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
+import org.slf4j.LoggerFactory
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import java.io.ByteArrayInputStream
@@ -44,8 +45,13 @@ class S3ArtifactContentStore(
         try {
             val hashed = S3StorageSupport.copyAndHash(source, tmp)
             return when {
-                hashed.sizeBytes != expectedSizeBytes ->
+                hashed.sizeBytes != expectedSizeBytes -> {
+                    LOG.warn(
+                        "artifact {} size mismatch: declared {} bytes, read {} bytes from the stream",
+                        artifactId, expectedSizeBytes, hashed.sizeBytes,
+                    )
                     WriteArtifactOutcome.SizeMismatch(expectedSizeBytes, hashed.sizeBytes)
+                }
                 else -> storeOrResolve(artifactId, tmp, hashed)
             }
         } finally {
@@ -110,6 +116,7 @@ class S3ArtifactContentStore(
     private data class Existing(val sha256: String, val sizeBytes: Long)
 
     private companion object {
+        private val LOG = LoggerFactory.getLogger(S3ArtifactContentStore::class.java)
         const val LOCK_STRIPES = 64
     }
 }

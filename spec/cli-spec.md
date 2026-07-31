@@ -363,7 +363,7 @@ d-migrate schema validate --source <path>
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad | Schema-Datei (YAML/JSON) |
+| `--source` | Ja | Pfad oder `-` | Schema-Datei (YAML/JSON), oder `-` für stdin (Format wird aus dem Inhalt erkannt; Details in 10.3) |
 
 Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
@@ -385,6 +385,7 @@ d-migrate schema generate --source <path> --target <dialect> [--output <path>] [
 | `--spatial-profile` | Nein | String | Spatial-Profil für `geometry`-Spalten (siehe unten) |
 | `--split` | Nein | `single` / `pre-post` | DDL-Ausgabemodus (Default: `single`). `pre-post` erzeugt importfreundliche Artefakte (pre-data/post-data) |
 | `--mysql-named-sequences` | Nein | `action_required` / `helper_table` | MySQL-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target mysql` zulaessig; bei PostgreSQL/SQLite: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences`, `dmg_nextval`/`dmg_setval`, `BEFORE INSERT`-Trigger). |
+| `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target sqlite` zulaessig; bei PostgreSQL/MySQL: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences` + Trigger); ohne Opt-in bleibt die Sequence action-required. |
 | `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
@@ -1230,6 +1231,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
+| `--csv-formula-guard` / `--no-csv-formula-guard` | Nein | Boolean | aus | Formel-Injection-Guard (CWE-1236): präfixt formel-anfällige **Text**-Zellen (führendes `=`/`+`/`-`/`@`/Tab/CR) mit `'`, damit Tabellenkalkulationen sie nicht ausführen. Verändert den Wert (kein byte-treuer Roundtrip); Default aus = treuer Dump, betroffene Spalten werden per `W203` gemeldet. Präzedenz: CLI-Flag > `export.csv.formula_guard` (Config) > Default aus. |
 | `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz, inkl. Mid-Table-Wiederaufnahme. Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis endet der Aufruf mit Exit 7. Der Lauf uebernimmt `operationId` aus dem Manifest, skippt Tabellen mit Status `COMPLETED` und setzt unvollstaendige Tabellen fort. **Mid-Table**: ist `--since-column` gesetzt **und** hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; fehlt der PK, fallt der Lauf mit sichtbarem stderr-Hinweis auf Tabellen-Reexport zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei im Checkpoint-Verzeichnis geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume ignoriert den gespeicherten Marker und exportiert die Tabelle erneut von vorn. Kompatibilitaetsmismatch (Fingerprint inkl. PK-Signatur, Tabellenliste, Output-Modus, operationType; oder Manifest hat `resumePosition`, Request hat aber kein `--since-column`) → Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
@@ -1652,7 +1654,9 @@ Exit: `0` bei Erfolg (auch bei leerem/fehlendem Store — leere Ausgabe, kein Ma
 
 #### `config show`
 
-Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
+Zeigt die **effektiv aufgelöste** Konfigurationsdatei (Pfad nach der `CLI > ENV > Default`-Regel)
+als eingerückten Section-Baum, plus eine kurze Übersicht aktiver `D_MIGRATE_*`-Runtime-Overrides
+(nur deren Namen).
 
 ```
 d-migrate config show [--section <section>]
@@ -1660,11 +1664,13 @@ d-migrate config show [--section <section>]
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--section` | Nein | String | Nur diesen Abschnitt zeigen (`database`, `ai`, `pipeline`, ...) |
+| `--section` | Nein | String | Nur diesen Top-Level-Abschnitt zeigen (`database`, `ai`, `pipeline`, ...) |
 
-Sensible Werte (Passwörter, API-Keys) werden maskiert als `***`.
+Sensible Werte werden maskiert: ein Feldname wie `password`/`secret`/`token`/`credentialRef`
+(**jede** Tiefe) → `***`; Passwörter in URL-Werten → `***`. `${VAR}`-Werte werden **nicht** aufgelöst
+(sie erscheinen literal, außer der Feldname ist selbst sensibel).
 
-Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
+Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern, `2` bei unbekanntem `--section`.
 
 ### 6.8 mcp
 

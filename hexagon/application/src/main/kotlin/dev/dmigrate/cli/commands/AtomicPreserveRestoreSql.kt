@@ -48,7 +48,7 @@ internal object AtomicPreserveRestoreSql {
         sequenceRef: SequenceObjectRef,
         probe: SequenceCurrentValueProbeResult.Read,
     ): List<String> {
-        val literal = SqlIdentifiers.quoteStringLiteral(sequenceRef.name)
+        val literal = SqlIdentifiers.quoteStringLiteral(sequenceRef.name, DatabaseDialect.POSTGRESQL)
         val isCalled = requireNotNull(probe.isCalled) {
             "PG atomic-preserve restore requires isCalled on probe " +
                 "(sequence=${sequenceRef.name})"
@@ -60,11 +60,11 @@ internal object AtomicPreserveRestoreSql {
         sequenceRef: SequenceObjectRef,
         probe: SequenceCurrentValueProbeResult.Read,
     ): List<String> {
-        val nameLiteral = SqlIdentifiers.quoteStringLiteral(sequenceRef.name)
+        val nameLiteral = SqlIdentifiers.quoteStringLiteral(sequenceRef.name, DatabaseDialect.MYSQL)
         val managedByList = MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY
-            .joinToString(", ") { SqlIdentifiers.quoteStringLiteral(it) }
+            .joinToString(", ") { SqlIdentifiers.quoteStringLiteral(it, DatabaseDialect.MYSQL) }
         val formatVersionList = MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS
-            .joinToString(", ") { SqlIdentifiers.quoteStringLiteral(it) }
+            .joinToString(", ") { SqlIdentifiers.quoteStringLiteral(it, DatabaseDialect.MYSQL) }
         val supportTable = MysqlSequenceSupportNaming.SUPPORT_TABLE
         return listOf(
             "UPDATE `$supportTable` SET `next_value` = ${probe.value} " +
@@ -78,7 +78,7 @@ internal object AtomicPreserveRestoreSql {
         sequenceRef: SequenceObjectRef,
         probe: SequenceCurrentValueProbeResult.Read,
     ): List<String> {
-        val nameLiteral = SqlIdentifiers.quoteStringLiteral(sequenceRef.name)
+        val nameLiteral = SqlIdentifiers.quoteStringLiteral(sequenceRef.name, DatabaseDialect.SQLITE)
         return listOf(
             "UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} " +
                 "WHERE \"name\" = $nameLiteral;",

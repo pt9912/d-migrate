@@ -88,3 +88,9 @@ argumentiert werden.
 | 0032 | [Paralleler Datenpfad: Tabellen- und Partitions-Parallelität (`--parallel`, LN-007 + LN-008)](0032-paralleler-datenpfad-tabellen-partitionen.md) | accepted |
 | 0033 | [Konfigurierbarer JDBC-`fetchSize` + Verdrahtung von `pipeline.chunk_size`/`fetch_size` (LN-005)](0033-konfigurierbarer-fetchsize-und-pipeline-tuning.md) | accepted |
 | 0034 | [Master-Key-Architektur für den verschlüsselten Credential-Store (LN-025)](0034-master-key-architektur-credential-store.md) | accepted |
+| 0035 | [Credential-Provider-Scheme-Registry (O4-Naht, LN-025 Slice 2)](0035-credential-provider-scheme-registry.md) | accepted |
+| 0036 | [Library-Artefakte über GitHub Packages statt Maven Central](0036-library-artefakte-github-packages.md) | accepted |
+| 0037 | [„Database-Agnostic First": Zielbild bestätigt, Umsetzung nach 1.0.0](0037-database-agnostic-first-staffelung.md) | accepted |
+| 0038 | [PostgreSQL-SSL-Default bleibt `prefer` — `verify-full` ist opt-in](0038-ssl-default-prefer-verify-full-opt-in.md) | accepted |
+| 0039 | [Externer Security-Audit ist kein 1.0.0-Gate — Verschiebung auf Post-1.0.0](0039-externer-security-audit-kein-1.0.0-gate.md) | accepted |
+| 0040 | [Keychain-Credential-Provider: Backend-Port mit Default-Shell-out und opt-in Native-Modul](0040-keychain-credential-provider-backend-port.md) | accepted |

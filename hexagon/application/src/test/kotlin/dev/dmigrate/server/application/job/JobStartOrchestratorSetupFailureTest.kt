@@ -95,7 +95,6 @@ class JobStartOrchestratorSetupFailureTest : FunSpec({
             idempotencyStore = idempotencyStore,
             jobStartTransaction = transaction,
             workerHandleRegistry = workerHandleRegistry,
-            approvalGrantStore = grantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(emptyList(), PolicyEffect.Allow),
             payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),

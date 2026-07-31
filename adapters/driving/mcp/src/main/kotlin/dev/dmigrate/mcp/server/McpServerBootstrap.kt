@@ -156,6 +156,7 @@ object McpServerBootstrap {
                         )
                     },
                     authValidatorOverride = authValidatorOverride,
+                    limits = runtimeWiring?.limits ?: McpLimitsConfig(),
                 )
             },
         )

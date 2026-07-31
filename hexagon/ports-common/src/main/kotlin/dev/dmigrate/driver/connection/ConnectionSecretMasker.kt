@@ -12,6 +12,10 @@ object ConnectionSecretMasker {
         "passwd",
         "passphrase",
         "sslpassword",
+        // MySQL Connector/J keystore passwords (Befund 10). The pattern below is
+        // case-insensitive, so the camelCase spellings match too.
+        "trustCertificateKeyStorePassword",
+        "clientCertificateKeyStorePassword",
         "token",
         "access_token",
         "access-token",

@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.connection
 
 import dev.dmigrate.driver.DatabaseDialect
+import org.slf4j.LoggerFactory
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URLDecoder
@@ -88,6 +89,7 @@ object ConnectionUrlParser {
         // validieren; `remainingParams` trägt danach keine dialekt-eigenen ssl-Keys
         // mehr (Single Source of Truth — die JdbcUrlBuilder emittieren ssl aus config.ssl).
         val extracted = SslSettingsParser.extract(dialect, rawParams, url)
+        warnIfRootCertIneffective(extracted.ssl, url)
 
         return ConnectionConfig(
             dialect = dialect,
@@ -163,4 +165,28 @@ object ConnectionUrlParser {
 
     private fun decode(s: String): String =
         URLDecoder.decode(s, StandardCharsets.UTF_8)
+
+    /**
+     * Befund 8b (ADR 0038): Ein gesetzter `sslrootcert` bei einem Modus, der ihn
+     * nicht nutzt (kein `verify-ca`/`verify-full`, inkl. fehlendem `sslmode` →
+     * Treiber-Default `prefer`), ist ein stiller No-Op — der CA-Pin sieht sicher
+     * aus und wirkt nicht. Statt hart zu brechen (das bräche das verbreitete
+     * `sslmode=require&sslrootcert=…`) sagen wir es dem Operator an dieser einen
+     * Stelle, durch die jeder Verbindungsaufbau läuft.
+     */
+    private fun warnIfRootCertIneffective(ssl: SslSettings, url: String) {
+        if (!ssl.rootCertIneffective()) return
+        LOG.warn(
+            "sslrootcert is set but sslmode ({}) does not verify the server certificate " +
+                "(needs verify-ca or verify-full); the CA pin has no effect: {}",
+            ssl.mode?.name?.lowercase() ?: "unset → driver default",
+            LogScrubber.maskUrl(url),
+        )
+    }
+
+    private val LOG = LoggerFactory.getLogger("dev.dmigrate.driver.connection.ConnectionUrlParser")
 }
+
+/** True, wenn ein CA-Pin (`sslrootcert`) gesetzt ist, der Modus ihn aber nicht verifiziert. */
+internal fun SslSettings.rootCertIneffective(): Boolean =
+    rootCert != null && mode != SslMode.VERIFY_CA && mode != SslMode.VERIFY_FULL

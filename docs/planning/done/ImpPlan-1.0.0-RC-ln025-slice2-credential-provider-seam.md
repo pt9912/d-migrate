@@ -5,7 +5,7 @@
 
 **Quelle**: [ADR 0034](../../adr/0034-master-key-architektur-credential-store.md) O4-Staffel
 („`credentialRef`/`providerRef`-Delegation auf den CLI-Pfad, World-B-Modell ausdehnen") +
-[`../next/config-cli-management-surface.md`](../next/config-cli-management-surface.md) §4.4.
+[`../done/config-cli-management-surface.md`](../done/config-cli-management-surface.md) §4.4.
 Slice 1 (O2-Store) ist done ([`../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md`](../done/ImpPlan-1.0.0-RC-ln025-slice1-credential-store.md)).
 
 **Kein Lastenheft-Gap.** [`LN-049`](../../../spec/lastenheft-d-migrate.md#ln-049) (Credential-Auflösung)
@@ -133,7 +133,7 @@ Geliefert wie geplant (E1–E6 unverändert; keychain → `../next/`).
   `McpServeWiring` × 2 mitgezogen). **AP3** `FileCredentialProvider` (Datei-Inhalt = URL). **AP4** CLI
   World-A-Anschluss: `NamedConnectionResolver` löst Map-Form-`credentialRef` via `defaultCredentialProviderRegistry()`
   auf (fail-closed, keine `${VAR}`-Substitution); `ConnectionConfigParser.parseMapFormCredentialRef`.
-  **AP6** keychain-Folge-Ticket `../next/credential-provider-keychain.md`.
+  **AP6** keychain-Folge-Ticket `../done/credential-provider-keychain.md`.
 - **AP5 Security-Review** (3 Agenten adversarial): kein fail-open, Authz-Ordering byte-identisch,
   Discovery-Trennung intakt. **Härtungen eingearbeitet:** (1) MED — `ConnectionUrlParser` re-appendete
   bei `URISyntaxException` die rohe URL via `e.message` → jetzt `e.reason`+`e.index` (maskiert);

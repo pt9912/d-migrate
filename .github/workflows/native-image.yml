@@ -1,15 +1,27 @@
 name: Native Image
 
-# GraalVM-Native-Image-Build des reduzierten Core-Entrypoints (dev.dmigrate.cli.NativeMainKt),
-# 1.0.0-Stable-Gate / Phase D — siehe docs/planning/in-progress/graalvm-native-image-distribution.md.
+# GraalVM-Native-Image-Build der VOLLEN CLI (dev.dmigrate.cli.MainKt) je Betriebssystem,
+# 1.0.0-Stable-Gate — siehe docs/planning/done/graalvm-native-image-distribution.md.
+# (Bis Phase F.1 gab es einen core/full-Entrypoint-Schalter; F.1 hat ihn zurueckgebaut.)
 #
 # BEWUSST separat von build.yml: native-image cross-kompiliert nicht (jedes OS baut sein eigenes
 # Binary), braucht eine GraalVM-Toolchain statt des Docker-Pfads und ist zu schwer, um jeden PR zu
-# gaten. Daher tag-/dispatch-getriggert wie release-homebrew.yml. Erst Linux; macOS/Windows folgen
-# als Matrix-Legs (aktuell nur `ubuntu-latest`), sobald das Rezept pro OS steht.
+# gaten. Daher tag-/dispatch-getriggert wie release-homebrew.yml.
+#
+# Das Native-Binary ERSETZT weder Fat-JAR noch OCI-Image noch Homebrew — es ist eine zusaetzliche
+# Distributionsklasse (Abgrenzung im Plan). Deshalb haengt der attach-release-Job seine Assets nur
+# an ein bereits von release-homebrew.yml erstelltes Release an; er erstellt selbst keines.
 
 on:
   workflow_dispatch:
+    inputs:
+      os_scope:
+        description: 'all = 3-OS-Matrix. linux = nur ubuntu (schneller Dispatch-Check, ~8 statt ~25 min).'
+        type: choice
+        options:
+          - all
+          - linux
+        default: all
   push:
     tags:
       - 'v*'
@@ -24,12 +36,25 @@ concurrency:
 jobs:
   build-native:
     strategy:
+      # Ein rotes OS-Leg soll die anderen nicht abbrechen — die Legs sind unabhaengig, und bei
+      # einem OS-spezifischen Native-Image-Problem ist die Information der anderen Legs wertvoll.
       fail-fast: false
       matrix:
-        # Linux-first. Erweiterung: macos-latest, windows-latest ergänzen (native-image baut je OS
-        # lokal; Windows liefert d-migrate.exe). Der Upload-Glob unten deckt beide Namen ab.
-        os: [ubuntu-latest]
+        # `os_scope: linux` verkuerzt einen Dispatch-Check auf ein Leg: macOS ist mit ~21 min der
+        # Taktgeber, liefert aber selten zusaetzliche Erkenntnis — die frueheren Native-Blocker waren
+        # auf allen drei Plattformen identisch. Die volle Matrix laeuft an Meilensteinen und bei Tags
+        # (Tag-Laeufe haben keine Inputs -> 'all').
+        os: ${{ fromJSON(inputs.os_scope == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
+    # native-image ist rechenintensiv; das Linux-Leg lag bei ~10 min. Grosszuegiges Dach, damit ein
+    # langsameres OS-Leg nicht am Default-Limit stirbt.
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        # Auch auf Windows (Git-Bash). Haelt die Steps ueber alle drei Legs identisch und laesst
+        # ./gradlew (das Shell-Skript) statt gradlew.bat laufen.
+        shell: bash
 
     # Der direkte ./gradlew-Aufruf (nicht über Docker) braucht den bewussten Override des
     # Local-Gradle-Guards; native-image kann nicht im Docker-Build-Image (JDK 21 ohne GraalVM) laufen.
@@ -40,31 +65,232 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Set up GraalVM (Community, JDK 21)
+      # ZWEI JDKs, bewusst getrennt — dieselbe Aufteilung wie docker/native-image.Dockerfile:
+      #   GRAALVM_HOME = GraalVM 25 -> hier laeuft native-image
+      #   JAVA_HOME    = JDK 21     -> hier laufen Gradle und der Kotlin-Compiler
+      #
+      # Grund: Kotlin 2.1.20 kann auf JDK 25 nicht STARTEN (IllegalArgumentException: 25.0.2 aus
+      # seinem mitgelieferten IntelliJ-JavaVersion.parse). Reihenfolge ist wesentlich: setup-graalvm
+      # setzt JAVA_HOME mit, deshalb muss setup-java DANACH laufen und es ueberschreiben.
+      # GRAALVM_HOME bleibt dabei stehen, und `toolchainDetection=false` laesst das
+      # native-build-tools-Plugin genau diese Variable verwenden.
+      - name: Set up GraalVM 25 (fuer native-image)
+        # Bringt auf Windows auch den MSVC-Kontext mit, den native-image dort zum Linken braucht.
         uses: graalvm/setup-graalvm@8c5543b71f44568342e106336639979e94a8f6de # v1.6.1
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'graalvm-community'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'
 
-      - name: Native compile (core-subset entrypoint)
-        run: ./gradlew --no-daemon :adapters:driving:cli:nativeCompile
+      - name: Set up JDK 21 (fuer Gradle und den Kotlin-Compiler)
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
-      - name: Smoke-test the native binary
-        shell: bash
+      - name: Native compile
+        id: compile
+        # Baut die volle CLI (MainKt). native-image ist rechenintensiv (Linux ~10 min); das grosszuegige
+        # 60-min-Timeout gibt langsameren OS-Legs Luft. macOS wird unten gedrosselt (GC-Druck, s.u.).
+        run: |
+          set -o pipefail
+
+          # macOS-Runner: 7,5 GB RAM und 3 Kerne — die knappste Maschine der Matrix. Unter GraalVM 25
+          # reichte das fuer die volle Flaeche NICHT: der Builder verbrachte 77,5 % der Zeit in GC und
+          # starb nach 42 min mit Exit 30 (Lauf 29741017853). Unter GraalVM 21.0.2 lief derselbe Bau
+          # noch durch (31,9 % GC, 26m20s) — der Mehrbedarf kommt mit der neuen Version.
+          #
+          # Weniger Compiler-Threads = weniger gleichzeitig gehaltene Arbeitsmengen. Bewusst nur hier
+          # gesetzt und nicht als Default: auf Linux/Windows (16 GB) ist die Drosselung unnoetig und
+          # wuerde nur den Bau verlangsamen.
+          EXTRA=""
+          if [ "$(uname -s)" = "Darwin" ]; then
+            EXTRA="-PnativeParallelism=2"
+            echo "macOS erkannt — drossele auf ${EXTRA}"
+          fi
+
+          start=$(date +%s)
+          ./gradlew --no-daemon :adapters:driving:cli:nativeCompile \
+            ${EXTRA} 2>&1 | tee native-build.log
+          status=$?
+          end=$(date +%s)
+          echo "build_seconds=$(( end - start ))" >> "${GITHUB_OUTPUT}"
+          exit "${status}"
+
+      - name: Stage binary under its platform asset name
+        id: stage
         run: |
           set -euo pipefail
-          BIN=$(ls adapters/driving/cli/build/native/nativeCompile/d-migrate*)
-          echo "binary: $BIN"
-          "$BIN" --help
-          out=$("$BIN" schema validate examples/sample-db/calib-schema.yaml)
-          echo "$out"
-          echo "$out" | grep -q "valid=true" || { echo "::error::unexpected validate output"; exit 1; }
+
+          # Plattform zur LAUFZEIT ableiten statt in der Matrix hartzucodieren: die
+          # GitHub-Runner-Architektur ist nicht stabil (macos-latest ist inzwischen arm64).
+          # Ein hartcodiertes Label wuerde bei einem Runner-Wechsel still falsch werden.
+          case "$(uname -s)" in
+            Linux)                PLATFORM_OS=linux ;;
+            Darwin)               PLATFORM_OS=macos ;;
+            MINGW*|MSYS*|CYGWIN*) PLATFORM_OS=windows ;;
+            *) echo "::error::unsupported OS $(uname -s)"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64)  PLATFORM_ARCH=x64 ;;
+            arm64|aarch64) PLATFORM_ARCH=arm64 ;;
+            *) echo "::error::unsupported architecture $(uname -m)"; exit 1 ;;
+          esac
+
+          # Tag-Laeufe tragen die Release-Version; Dispatch-Laeufe haben keinen Tag und
+          # bekommen die Commit-Kurz-SHA, damit Artefaktnamen trotzdem eindeutig bleiben.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="dev-${GITHUB_SHA:0:7}"
+          fi
+
+          NATIVE_DIR="adapters/driving/cli/build/native/nativeCompile"
+          if [ -f "${NATIVE_DIR}/d-migrate.exe" ]; then
+            SRC="${NATIVE_DIR}/d-migrate.exe"; EXT=".exe"
+          elif [ -f "${NATIVE_DIR}/d-migrate" ]; then
+            SRC="${NATIVE_DIR}/d-migrate"; EXT=""
+          else
+            echo "::error::no native binary produced in ${NATIVE_DIR}"
+            ls -la "${NATIVE_DIR}" || true
+            exit 1
+          fi
+
+          ASSET="d-migrate-${VERSION}-${PLATFORM_OS}-${PLATFORM_ARCH}${EXT}"
+          mkdir -p dist
+          cp "${SRC}" "dist/${ASSET}"
+          chmod +x "dist/${ASSET}"
+
+          # sha256sum fehlt auf macOS; shasum ist dort das Pendant.
+          (
+            cd dist
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "${ASSET}" > "${ASSET}.sha256"
+            else
+              shasum -a 256 "${ASSET}" > "${ASSET}.sha256"
+            fi
+            cat "${ASSET}.sha256"
+          )
+
+          echo "asset=${ASSET}" >> "${GITHUB_OUTPUT}"
+          echo "platform=${PLATFORM_OS}-${PLATFORM_ARCH}" >> "${GITHUB_OUTPUT}"
+          ls -la dist
+
+      - name: Native build metrics (step summary)
+        # Service-frei: zieht Bauzeit und die Ressourcenkennzahlen des native-image-Builders (Peak RSS,
+        # Speicher/Threads) aus dem getee'ten native-build.log in die Step-Summary — reine
+        # Log-Auswertung, kein Sonden-/Service-Bedarf. (Bis Phase F.1 haengte hier zusaetzlich
+        # `native-probe.sh`; das braucht Datenbank/S3-Services, die der Runner nicht stellt, und wurde
+        # daher entfernt — das durchgaengige Native-CI-Gating ist der Slice native-e2e-regression-gate.)
+        # `always()`: bei einem gescheiterten Bau ist das Log selbst der Befund.
+        if: always()
+        run: |
+          {
+            echo "## Bauabschluss (native-image) — ${{ matrix.os }}"
+            echo
+            echo "Bauzeit: ${{ steps.compile.outputs.build_seconds || 'n/a' }} s"
+            echo
+            echo '```'
+            if [ -f native-build.log ]; then
+              grep -iE "Finished generating|Peak RSS|GB of memory|Build resources|thread\(s\)" \
+                native-build.log | tail -20 || echo "(keine Kennzahlen im Log gefunden)"
+            else
+              echo "(native-build.log fehlt — Bau nicht gestartet?)"
+            fi
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Smoke-test the native binary
+        # Gate fuer JEDEN Bau: smoked das GESTAGTE Binary, also exakt das Artefakt, das ans Release
+        # geht. macOS/Windows sind lokal nicht verifizierbar — dieser Step ist dort die einzige
+        # Selbstvalidierung. DB-freie Kommandos (der Runner hat keine Datenbank): `schema validate`
+        # und `schema generate` gegen die spec-konforme `--source`-Syntax der vollen CLI.
+        run: |
+          set -euo pipefail
+          BIN="dist/${{ steps.stage.outputs.asset }}"
+          echo "binary: ${BIN}"
+
+          "${BIN}" --help
+
+          out=$("${BIN}" schema validate --source examples/sample-db/calib-schema.yaml)
+          echo "${out}"
+          echo "${out}" | grep -q "Validation passed" \
+            || { echo "::error::unexpected validate output"; exit 1; }
+
+          ddl=$("${BIN}" schema generate --source examples/sample-db/calib-schema.yaml --target postgresql)
+          echo "${ddl}" | head -20
+          echo "${ddl}" | grep -qi "CREATE TABLE" \
+            || { echo "::error::generate produced no CREATE TABLE"; exit 1; }
 
       - name: Upload native binary
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: d-migrate-native-${{ matrix.os }}
-          path: adapters/driving/cli/build/native/nativeCompile/d-migrate*
+          name: d-migrate-native-${{ steps.stage.outputs.platform }}
+          path: dist/*
+          if-no-files-found: error
           retention-days: 14
+
+  attach-release:
+    needs: build-native
+    # `!cancelled()` statt des impliziten `success()`: auch laufen, wenn ein OS-Leg rot ist — sonst
+    # verhinderte ein macOS/Windows-Flake das Anhaengen der ERFOLGREICHEN Legs mit (das waere kein
+    # "best-effort"). Frage 6 = HYBRID: macOS/Windows sind best-effort, aber das Linux-Leg ist ein
+    # 1.0.0-Gate — erzwungen im Schritt "Gate" unten (fehlt linux-x64 -> Job rot).
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    # Einzelner Uploader statt Upload aus jedem Matrix-Leg: haelt die Schreibrechte auf einen Job
+    # begrenzt und vermeidet drei gleichzeitige Uploads auf dasselbe Release.
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download native binaries from all matrix legs
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          pattern: d-migrate-native-*
+          merge-multiple: true
+          path: dist
+
+      - name: List collected assets
+        run: ls -la dist || true
+
+      - name: Gate — das Linux-Native-Binary ist Pflicht (Frage 6 = Hybrid)
+        # Nur das Linux-Leg ist ein 1.0.0-Release-Gate: fehlt das linux-x64-Asset, scheitert dieser Job
+        # -> der Tag-Lauf wird rot und der Operator finalisiert den Release nicht (releasing.md 4.8).
+        # macOS/Windows bleiben best-effort: fehlende Assets dort sind zulaessig (kein Fehler hier).
+        run: |
+          if ls dist/*-linux-x64* >/dev/null 2>&1; then
+            echo "Linux-Native-Binary vorhanden — Gate erfuellt."
+          else
+            echo "::error::Linux-Native-Binary (linux-x64) fehlt — 1.0.0-Gate verletzt (Frage 6: Hybrid). Release nicht finalisieren."
+            exit 1
+          fi
+
+      - name: Wait for the GitHub release to exist
+        # release-homebrew.yml erstellt das Release fuer denselben Tag. Dieser Job haengt nur an
+        # (kein `gh release create`), damit Titel/Notes/Prerelease-Flag dort in einer Hand bleiben.
+        # Der native Build dauert laenger als das Publish, aber die Reihenfolge ist nicht garantiert.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              echo "Release ${GITHUB_REF_NAME} is present"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: release ${GITHUB_REF_NAME} not yet published; sleeping 30s"
+            sleep 30
+          done
+          echo "::error::release ${GITHUB_REF_NAME} did not appear within the polling window"
+          exit 1
+
+      - name: Attach native binaries to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber --repo "${GITHUB_REPOSITORY}"
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets \
+            --jq '.assets[].name'

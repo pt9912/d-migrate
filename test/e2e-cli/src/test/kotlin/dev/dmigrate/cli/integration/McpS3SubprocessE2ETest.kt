@@ -104,12 +104,25 @@ class McpS3SubprocessE2ETest : FunSpec({
 
                 val bytes = buildSchemaBytes(tableCount = 12)
                 val segments = listOf(bytes)
-                val sessionId = uploadInit(cli, bytes)
+                // Bei einem INTERNAL_AGENT_ERROR (Native-Defekt 2026-07-20: SizeMismatch im
+                // S3-ArtifactContentStore, JVM gruen) traegt die JSON-RPC-Antwort nur die generische
+                // Huelle. Die Ursache steht im stderr des Kind-Prozesses — deshalb hier bei jedem
+                // Fehlschlag der Upload-Kette mitgeliefert, statt ihn zu verschweigen.
+                val sessionId = withClue({ "uploadInit failed; child stderr:\n${cli.stderrSnapshot()}" }) {
+                    uploadInit(cli, bytes)
+                }
 
                 // Finales (einziges) Segment: Segment-Write nach S3, dann
                 // liest die Finalize-Assembly es von dort zurueck und
                 // persistiert das Artefakt nach S3.
-                val final = uploadSegment(cli, sessionId, segments, 0, isFinal = true)
+                val final = try {
+                    uploadSegment(cli, sessionId, segments, 0, isFinal = true)
+                } catch (e: IllegalStateException) {
+                    // Der Server hat die Ursache ins stderr geloggt; sie kommt asynchron ueber die
+                    // Pipe, deshalb aktiv darauf warten statt den Puffer einmalig zu lesen.
+                    cli.awaitStderrLine("size mismatch", 3000)
+                    throw IllegalStateException("${e.message}\n--- child stderr ---\n${cli.stderrSnapshot()}", e)
+                }
                 final.get("uploadSessionState").asString shouldBe "COMPLETED"
                 final.get("schemaRef").asString.startsWith("dmigrate://tenants/") shouldBe true
 

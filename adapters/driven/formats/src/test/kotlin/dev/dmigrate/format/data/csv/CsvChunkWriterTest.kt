@@ -43,6 +43,52 @@ class CsvChunkWriterTest : FunSpec({
         actual shouldBe "id,name\n1,alice\n2,bob\n"
     }
 
+    // ─── Formel-Injection-Guard (CWE-1236, Audit-Follow-up #6) ───
+
+    fun runWithWarnings(
+        options: ExportOptions,
+        rows: List<Array<Any?>>,
+    ): Pair<String, List<ValueSerializationWarning>> {
+        val warnings = mutableListOf<ValueSerializationWarning>()
+        val out = ByteArrayOutputStream()
+        CsvChunkWriter(out, options, warnings::add).use { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, rows, 0))
+            w.end()
+        }
+        return out.toString(options.encoding) to warnings
+    }
+
+    test("guard off (default): a formula-prone text cell is written verbatim + W203") {
+        val (csv, warnings) = runWithWarnings(ExportOptions(), listOf(arrayOf<Any?>(1, "=1+1")))
+        csv shouldContain "=1+1"        // treu: Wert unverändert
+        csv shouldNotContain "'=1+1"    // nicht präfixt
+        warnings.single().code shouldBe "W203"
+    }
+
+    test("guard on: a formula-prone text cell is prefixed with ' (spreadsheet-safe) + W203") {
+        val (csv, warnings) = runWithWarnings(
+            ExportOptions(csvFormulaGuard = true),
+            listOf(arrayOf<Any?>(1, "=1+1")),
+        )
+        csv shouldContain "'=1+1"
+        warnings.single().code shouldBe "W203"
+    }
+
+    test("a typed numeric -5 carries no formula vector — only text cells are checked") {
+        val (csv, warnings) = runWithWarnings(ExportOptions(), listOf(arrayOf<Any?>(-5, "safe")))
+        csv shouldContain "-5"
+        warnings.none { it.code == "W203" } shouldBe true
+    }
+
+    test("W203 is emitted once per column, not per row") {
+        val (_, warnings) = runWithWarnings(
+            ExportOptions(),
+            listOf(arrayOf<Any?>(1, "=a"), arrayOf<Any?>(2, "+b"), arrayOf<Any?>(3, "@c")),
+        )
+        warnings.count { it.code == "W203" } shouldBe 1
+    }
+
     test("golden: §6.17 empty table with header → only header line") {
         val actual = runWriter { w ->
             w.begin("empty", cols)

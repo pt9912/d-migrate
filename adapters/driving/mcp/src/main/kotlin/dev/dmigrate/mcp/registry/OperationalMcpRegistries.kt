@@ -25,7 +25,6 @@ object OperationalMcpRegistries {
             idempotencyStore = eWiring.idempotencyStore,
             jobStartTransaction = eWiring.jobStartTransaction,
             workerHandleRegistry = eWiring.workerHandleRegistry,
-            approvalGrantStore = eWiring.approvalGrantStore,
             approvedRetryService = eWiring.approvedRetryService,
             policyService = eWiring.policyService,
             payloadFingerprintService = eWiring.payloadFingerprintService,

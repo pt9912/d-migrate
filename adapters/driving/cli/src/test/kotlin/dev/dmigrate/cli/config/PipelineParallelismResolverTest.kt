@@ -59,6 +59,28 @@ class PipelineParallelismResolverTest : FunSpec({
         eff.degree shouldBe 4
     }
 
+    // --- CLI-Clamp gegen Pool-Größe (parallel-vs-pool-size-clamp.md) ---
+
+    test("CLI --parallel above pool size is clamped to pool size, with an origin-aware note") {
+        val notes = mutableListOf<String>()
+        val eff = resolveEffectiveParallelism(
+            configPath = null, cliParallel = 20, maxPoolSize = 10, onNote = { notes += it },
+        )
+        eff.degree shouldBe 10 // clamped from 20 → keine connectionTimeout-Selbst-DoS
+        eff.fromCli shouldBe true
+        notes.size shouldBe 1
+        notes.single() shouldContain "clamped to 10"
+    }
+
+    test("CLI --parallel at or below pool size is not clamped and emits no note") {
+        val notes = mutableListOf<String>()
+        val eff = resolveEffectiveParallelism(
+            configPath = null, cliParallel = 8, maxPoolSize = 10, onNote = { notes += it },
+        )
+        eff.degree shouldBe 8
+        notes shouldBe emptyList<String>()
+    }
+
     // --- Validierung ---
 
     test("CLI --parallel < 1 throws IllegalArgumentException (→ Exit 2)") {

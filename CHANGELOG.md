@@ -7,6 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-RC2] - 2026-07-31
+
+### Added
+
+- **Native Binaries (GraalVM Native Image)** — die **vollständige** CLI (kein Subset) wird als
+  eigenständiges, Java-freies Binary ausgeliefert und hängt an jedem Release:
+  `d-migrate-<version>-linux-x64`, `d-migrate-<version>-macos-arm64` und
+  `d-migrate-<version>-windows-x64.exe`, je mit `.sha256`. **Startzeit ~12–17 ms statt ~320–400 ms**
+  auf der JVM (~20–28×) — der Unterschied, der Aufrufe in Schleifen, Hooks und CI-Schritten dominiert.
+  Gebaut mit GraalVM 25; **dynamisch gegen glibc gelinkt** (kein statisches/musl-Binary — für Alpine
+  bleiben das JVM-Artefakt oder das Container-Image der Weg). Das **`linux-x64`-Binary ist
+  Release-Pflicht** (fehlt es, wird der Tag-Lauf rot und das Release nicht finalisiert);
+  `macos-arm64` und `windows-x64` sind best-effort, ein rotes Leg dort blockiert das Release nicht.
+  `linux-arm64` ist bewusst nicht enthalten. Nativ verifiziert sind auch die schweren Flächen:
+  `mcp serve`, S3-Zugriff (`--enable-url-protocols=http,https`) und der PostgreSQL-`PGobject`-Pfad
+  (Reflection-Registrierung); JNA wurde als nicht erreichbar nachgewiesen und ausgeschlossen. Die
+  bestehenden Artefakte (ZIP/TAR/Fat JAR, Container-Image, Homebrew) bleiben unverändert.
+- **Natives Container-Image** — zusätzlich zum JVM-Image erscheint je Release ein
+  `…/d-migrate:<version>-native` (GHCR und Docker Hub), das das Native-Binary statt einer JVM
+  enthält: gleicher CLI-Vertrag, deutlich schnellerer Start, kleineres Image.
+- **Docker-Hub-Spiegel** — die Container-Images werden zusätzlich zu GHCR nach
+  `pt9912/d-migrate` gespiegelt (`:<version>`, `:<version>-native`, `:latest` nur bei Stable). Der
+  Spiegel ist an Repository-Secrets gebunden; fehlen sie, überspringt der Tag-Build ihn mit einer
+  Notice, statt rot zu werden.
+- **`schema validate --source -` liest von stdin** — Schemas können in eine Pipe gegeben werden
+  (`cat schema.yaml | d-migrate schema validate --source -`), ohne den Umweg über eine temporäre
+  Datei. Schließt eine Lücke zwischen Spec und Implementierung.
+- **`config show`** ([`spec/cli-spec.md`](spec/cli-spec.md)) — zeigt die **effektiv aufgelöste**
+  Konfigurationsdatei (Pfad nach der `CLI > ENV > Default`-Regel) als eingerückten Section-Baum,
+  optional auf einen Abschnitt beschränkt (`--section <section>`), plus die **Namen** aktiver
+  `D_MIGRATE_*`-Runtime-Overrides. Sensible Felder (`password`/`secret`/`token`/`credentialRef` in
+  **jeder** Tiefe) und Passwörter in URL-Werten werden zu `***` maskiert; `${VAR}` wird **nicht**
+  aufgelöst. Bewusst **kein** Voll-Merge aller Quellen mit Provenienz je Feld — implizite Defaults
+  erscheinen nicht, und ENV-Overrides werden nur namentlich gelistet, nicht in den Baum eingespielt.
+- **`keychain:`-Credential-Provider** ([`LN-025`](spec/lastenheft-d-migrate.md#ln-025),
+  [ADR 0040](docs/adr/0040-keychain-credential-provider-backend-port.md)) — ein `credentialRef` kann
+  auf einen Eintrag im **OS-Schlüsselbund** zeigen (Service, optional Account) statt auf eine Datei
+  oder Umgebungsvariable. Umgesetzt über einen `KeychainBackend`-Port mit einem **native-freien**
+  Standard-Backend: macOS `security`, Linux `secret-tool`, Windows über PowerShell/`CredReadW` —
+  keine JNA-Abhängigkeit im ausgelieferten Artefakt (ein natives Backend-Modul existiert als
+  Opt-in und wird nicht mitgebaut). Reiht sich hinter `env:` und `file:` in dieselbe
+  `CredentialProviderRegistry` ein; dasselbe Fail-closed-Verhalten (unauflösbarer Ref → Exit 7).
+- **3-Hop-Cross-Dialect-Smoke** (`make sample-db-3hop-smoke`, Lastenheft 8.6) — die wörtliche Kette
+  **PostgreSQL → MySQL → SQLite** als *ein* verketteter Test (Pagila-Quelle): End-to-End-Zeilen-Parität
+  über alle logischen Tabellen plus die drei 8.6-Typ-Transformationen
+  Serial→`AUTO_INCREMENT`→`AUTOINCREMENT`, Array→JSON→JSON und ENUM→ENUM→CHECK. Ergänzt die
+  bestehenden paarweisen Cross-Dialect-Smokes um die dritte Kaskadenstufe (MySQL→SQLite).
+- **Best-Practices-Leitfaden** ([`docs/user/best-practices-leitfaden.md`](docs/user/best-practices-leitfaden.md)) —
+  verdichtete Empfehlungen, Faustregeln und Anti-Patterns quer über die Aufgaben: Pre-Flight,
+  Performance-Tuning (das einzige konsolidierte `parallelism`/`chunk_size`/`fetch_size`/`pool`-Kapitel),
+  Cross-Dialect-Typ-Fallstricke, Verifikation/sauberer Load, Rollback-Strategie, Credential-Handling und
+  CI-Integration. Additiv zum Migrations-Leitfaden (verlinkt statt nacherzählt).
+- **Troubleshooting-Leitfaden** ([`docs/user/troubleshooting-leitfaden.md`](docs/user/troubleshooting-leitfaden.md)) —
+  schnelle Triage von Exit-Code bzw. Symptom zu Diagnose und Behebung: Exit-Code-Triage-Index (0–8/130),
+  Diagnose-Werkzeuge (`--report`/`--plan-only`/`--dry-run`/`--output-format json`) und Bereichs-Playbooks
+  (Verbindung/Zugangsdaten, Reverse/Generate/Migrate, Daten-Transfer/Verify, Cross-Dialect-Überraschungen).
+  Additiv zum Meldungskatalog in Anwenderhandbuch Abschnitt 5 (verlinkt statt nacherzählt).
+
+### Security
+
+Ergebnis eines **internen Vollaudits** (2026-07-17) über den gesamten Codepfad: von 27 gemeldeten
+Befunden haben **18** die Gegenprüfung überlebt, 9 waren False Positives (mit Widerlegung
+dokumentiert). Alle bestätigten Befunde sind behoben. Ein **externer** Audit ist ausdrücklich
+**kein** 1.0.0-Gate ([ADR 0039](docs/adr/0039-externer-security-audit-kein-1.0.0-gate.md)) — das
+Bedrohungsmodell in [`SECURITY.md`](SECURITY.md) behandelt den Operator nicht als Angreifer.
+
+- **Pfad-Traversal über Export-Dateinamen** (P1, CWE-22) — Tabellennamen aus einer **fremden**
+  Quelldatenbank flossen ungefiltert in den Ziel-Dateinamen des Exports und konnten aus dem
+  Ausgabeverzeichnis ausbrechen. Namen werden jetzt eingedämmt.
+- **MySQL-String-Literale escapen Backslash** (P1, CWE-89) — MySQL behandelt `\` in Literalen als
+  Escape-Zeichen (anders als PostgreSQL im Standard-Modus); das bloße Verdoppeln von `'` reichte
+  dort nicht aus. Betrifft auch **Partition-Bound-Literale** (P2, CWE-89), die denselben Pfad
+  nutzen.
+- **Liquibase-`changeSetId` wird XML-escaped** (P2, CWE-91) — der Export interpolierte den Wert
+  ungeescaped in ein XML-Attribut.
+- **MCP-HTTP: Body-Limit vor der Authentifizierung, Authentifizierung vor dem Body-Read**
+  (P2, CWE-770) — ein unauthentifizierter Client konnte vorher beliebig große Bodies einspeisen.
+- **MCP-Auth-URLs erzwingen `https`** außer auf Loopback (P2, CWE-319); die **MCP-Session ist an
+  ihren Principal gebunden** und `DELETE` verlangt Authentifizierung (P3, CWE-306/CWE-488).
+- **Anti-Replay bei Approval-Grants ist fail-closed** — der Bypass-Pfad wurde geschlossen.
+- **Guard gegen tief verschachteltes JSON** (`JsonNestingGuard`) — abgeleitet aus einem live
+  reproduzierten Stack-Overflow im Gson-Parsing.
+- **CSV-Formel-Injection** (CWE-1236) — formel-anfällige **Text**-Zellen (führendes `=`/`+`/`-`/`@`,
+  Tab, CR) werden jetzt per **W203** gemeldet; der optionale Guard `--csv-formula-guard` bzw.
+  `export.csv.formula_guard` präfixt sie mit `'`. **Default aus**, weil er den Wert verändert (kein
+  byte-treuer Round-Trip) — der treue Dump bleibt das Standardverhalten.
+- **`sslrootcert` ohne `verify-ca`/`verify-full` ist ein stiller No-Op** und wird jetzt gemeldet.
+  Der SSL-Default bleibt bewusst der **Treiber-Default (`prefer`)**: `verify-full` als Default würde
+  jedes Setup mit internem/selbstsigniertem Zertifikat still brechen
+  ([ADR 0038](docs/adr/0038-ssl-default-prefer-verify-full-opt-in.md)). Zusätzlich behoben:
+  doppelte SSL-Parameter-Keys, Connector/J-Passwort-Masking und Audit-JSONL mit Modus `0600`
+  (P3, CWE-178/CWE-532/CWE-276).
+- **CI-Actions auf Commit-SHA gepinnt** + least-privilege `GITHUB_TOKEN` (P2, CWE-1357);
+  **Dockerfile-Downloads werden verifiziert** — kein `curl | bash` mehr, `yq`/`jq` per SHA256
+  (P3, CWE-494).
+- **In-memory-Store-Implementierungen in ein eigenes Adapter-Modul verschoben** (P3, CWE-1104) —
+  schließt einen `testFixtures`-Leak in Produktionsartefakte.
+- **Audit-Readiness-Paket** — [`docs/security/audit-scope.md`](docs/security/audit-scope.md)
+  (Auditor-Scope mit Vertrauensgrenzen) und
+  [`docs/security/dependency-inventory.md`](docs/security/dependency-inventory.md)
+  (Runtime-Abhängigkeiten), plus Dependabot-Abdeckung.
+
+### Fixed
+
+- **Ungültiges SQLite-DDL bei zusammengesetztem Primärschlüssel mit Identity-Spalte** (Warn-Code
+  **W135**) — eine Identity-/`AUTO_INCREMENT`-Spalte, die Teil eines **zusammengesetzten**
+  Primärschlüssels wird (z. B. weil eine partitionierte MySQL-Tabelle ihren Partitionsschlüssel in
+  den PK faltet), erzeugte in SQLite **zwei** PRIMARY-KEY-Deklarationen — inline
+  `INTEGER PRIMARY KEY AUTOINCREMENT` **und** table-level `PRIMARY KEY (…)` — und damit nicht
+  ladbares DDL (»table has more than one primary key«). Die Spalte wird jetzt als schlichtes
+  `INTEGER`-Mitglied des zusammengesetzten Schlüssels gerendert (AUTOINCREMENT entfällt, neuer
+  Warn-Code W135). Behoben auf allen drei SQLite-`CREATE TABLE`-Pfaden (generate, diff/migrate,
+  Table-Rebuild). Aufgedeckt vom neuen 3-Hop-Cross-Dialect-Smoke (Lastenheft 8.6).
+
 ## [1.0.0-RC1] - 2026-07-16
 
 ### Added

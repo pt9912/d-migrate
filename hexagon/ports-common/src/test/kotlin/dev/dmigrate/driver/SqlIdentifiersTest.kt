@@ -128,16 +128,44 @@ class SqlIdentifiersTest : FunSpec({
     // ── quoteStringLiteral ─────────────────────────────────────────
 
     test("simple string literal is single-quoted") {
-        SqlIdentifiers.quoteStringLiteral("users") shouldBe "'users'"
+        SqlIdentifiers.quoteStringLiteral("users", DatabaseDialect.POSTGRESQL) shouldBe "'users'"
     }
 
     test("embedded single-quote is escaped") {
-        SqlIdentifiers.quoteStringLiteral("O'Brien") shouldBe "'O''Brien'"
+        SqlIdentifiers.quoteStringLiteral("O'Brien", DatabaseDialect.POSTGRESQL) shouldBe "'O''Brien'"
     }
 
     test("SQL injection via single-quote breakout is neutralised") {
         val malicious = "users'); DROP TABLE users --"
-        val quoted = SqlIdentifiers.quoteStringLiteral(malicious)
+        val quoted = SqlIdentifiers.quoteStringLiteral(malicious, DatabaseDialect.POSTGRESQL)
         quoted shouldBe "'users''); DROP TABLE users --'"
+    }
+
+    // ── quoteStringLiteral: MySQL backslash escaping ───────────────
+    // MySQL treats `\` as an escape character in string literals (no
+    // NO_BACKSLASH_ESCAPES); a trailing backslash would otherwise escape the
+    // closing quote and break out of the literal. See the class KDoc.
+
+    test("MySQL: trailing backslash is doubled so it cannot escape the closing quote") {
+        // value is a single backslash → MySQL literal must double it
+        SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.MYSQL) shouldBe "'a\\\\'"
+    }
+
+    test("MySQL: backslash-quote breakout is neutralised") {
+        // Attacker-controlled DEFAULT ending in `\` followed by injected SQL.
+        val malicious = "a\\', x INT); DROP TABLE t; -- "
+        val quoted = SqlIdentifiers.quoteStringLiteral(malicious, DatabaseDialect.MYSQL)
+        // Backslash doubled AND quote doubled → the literal stays closed.
+        quoted shouldBe "'a\\\\'', x INT); DROP TABLE t; -- '"
+    }
+
+    test("MySQL: embedded single-quote still escaped as doubled quote") {
+        SqlIdentifiers.quoteStringLiteral("O'Brien", DatabaseDialect.MYSQL) shouldBe "'O''Brien'"
+    }
+
+    test("standard dialects leave the backslash untouched (literal per SQL standard)") {
+        // PostgreSQL (standard_conforming_strings) and SQLite treat `\` literally.
+        SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.POSTGRESQL) shouldBe "'a\\'"
+        SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.SQLITE) shouldBe "'a\\'"
     }
 })

@@ -99,12 +99,14 @@ private fun McpServerConfig.jwksAuthErrors(): List<String> = buildList {
     if (issuer == null) add("authMode=JWT_JWKS requires issuer")
     if (audience == null) add("authMode=JWT_JWKS requires audience")
     if (jwksUrl == null) add("authMode=JWT_JWKS requires jwksUrl")
+    authUrlSchemeError("jwksUrl", jwksUrl)?.let { add(it) }
 }
 
 private fun McpServerConfig.introspectionAuthErrors(bindIsLoopback: Boolean): List<String> = buildList {
     if (issuer == null) add("authMode=JWT_INTROSPECTION requires issuer")
     if (audience == null) add("authMode=JWT_INTROSPECTION requires audience")
     if (introspectionUrl == null) add("authMode=JWT_INTROSPECTION requires introspectionUrl")
+    authUrlSchemeError("introspectionUrl", introspectionUrl)?.let { add(it) }
     if ((introspectionClientId == null) != (introspectionClientSecret == null)) {
         add("introspectionClientId and introspectionClientSecret must both be set or both be null")
     }
@@ -188,10 +190,39 @@ private fun McpServerConfig.sharedErrors(): List<String> {
     return errors
 }
 
-private fun McpServerConfig.bindIsLoopback(): Boolean = runCatching {
-    InetAddress.getByName(bindAddress).isLoopbackAddress
+private fun McpServerConfig.bindIsLoopback(): Boolean = isLoopbackHost(bindAddress)
+
+/**
+ * True if [host] denotes a loopback address. Reuses the same resolution as the
+ * bind-address check so a URL host is classified identically (IPv4 literals and
+ * `localhost` resolve without a network call; a bracketed IPv6 literal `[::1]` is
+ * unwrapped first). An unresolvable host is treated as non-loopback (fail-closed):
+ * the caller then demands https.
+ */
+private fun isLoopbackHost(host: String): Boolean = runCatching {
+    InetAddress.getByName(host.removeSurrounding("[", "]")).isLoopbackAddress
 }.getOrElse { e ->
     if (e is UnknownHostException) false else throw e
+}
+
+/**
+ * §4.4 / [ADR 0009]: `jwksUrl` is the trust anchor of the entire token check, and
+ * `introspectionUrl` carries the `client_secret` plus the trusted `active` verdict.
+ * Neither may be reached over plaintext http on a routable host — a network MITM
+ * could swap the JWKS (forging tokens that pass the otherwise-strict chain) or read
+ * the client secret and forge the introspection response (CWE-319). Enforce https,
+ * exempting a loopback host so the common dev form `http://localhost:.../certs`
+ * (Keycloak) keeps working — mirroring the loopback waiver already used for the
+ * introspection client credentials. Returns null when [url] is absent (a missing-url
+ * error is raised separately by the caller) or acceptable.
+ */
+private fun authUrlSchemeError(label: String, url: URI?): String? {
+    if (url == null) return null
+    val scheme = url.scheme?.lowercase()
+    if (scheme == "https") return null
+    val host = url.host
+    if (scheme == "http" && host != null && isLoopbackHost(host)) return null
+    return "$label must use https (only a loopback host may use http); got '$url'"
 }
 
 private const val MAX_PORT = 65535

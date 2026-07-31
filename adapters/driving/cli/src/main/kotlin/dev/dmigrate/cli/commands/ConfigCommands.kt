@@ -7,6 +7,9 @@ import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.ConfigShowRenderer
+import dev.dmigrate.cli.config.loadEffectiveConfig
 import java.nio.file.Path
 
 /**
@@ -17,10 +20,47 @@ class ConfigCommand : CliktCommand(name = "config") {
     override fun help(context: Context) = "Configuration and credential management"
 
     init {
-        subcommands(ConfigCredentialsCommand())
+        subcommands(ConfigShowCommand(), ConfigCredentialsCommand())
     }
 
     override fun run() = Unit
+}
+
+/**
+ * `config show [--section <s>]` — zeigt die **effektiv aufgelöste** `.d-migrate.yaml` (Phase 1,
+ * `config-cli-management-surface.md §3`): sensible Werte maskiert, **kein** voller Multi-Source-Merge
+ * (der bleibt ein späterer Slice). Exit `0`; `7` bei Config-Fehler; `2` bei unbekannter `--section`.
+ */
+class ConfigShowCommand : CliktCommand(name = "show") {
+    override fun help(context: Context) = "Show the effective configuration (secrets masked)"
+
+    private val section: String? by option(
+        "--section",
+        help = "Show only this top-level section (e.g. database, pipeline, ai)",
+    )
+
+    // `config show` liegt zwei Ebenen unter der Wurzel (config → show), daher parent.parent.
+    private fun configPath(): Path? = (currentContext.parent?.parent?.command as? DMigrate)?.config
+
+    override fun run() {
+        val loaded = try {
+            loadEffectiveConfig(configPath())
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        }
+        when (val result = ConfigShowRenderer.render(loaded.root, loaded.path, section, System.getenv())) {
+            is ConfigShowRenderer.Result.Ok -> echo(result.text.trimEnd())
+            is ConfigShowRenderer.Result.UnknownSection -> {
+                echo(
+                    "Error: unknown section '${result.section}'. Available: " +
+                        result.available.joinToString(", "),
+                    err = true,
+                )
+                throw ProgramResult(2)
+            }
+        }
+    }
 }
 
 class ConfigCredentialsCommand : CliktCommand(name = "credentials") {

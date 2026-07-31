@@ -125,6 +125,22 @@ class MysqlTypeMapperTest : FunSpec({
         ex.message shouldContain "helper_table"
     }
 
+    test("StringLiteral escapes embedded single-quote") {
+        mapper.toDefaultSql(DefaultValue.StringLiteral("O'Brien"), NeutralType.Text()) shouldBe "'O''Brien'"
+    }
+
+    test("StringLiteral doubles a trailing backslash so it cannot escape the closing quote") {
+        // A DEFAULT ending in `\` from an untrusted source schema would otherwise
+        // escape the closing quote and let following DDL run as SQL (CWE-89).
+        mapper.toDefaultSql(DefaultValue.StringLiteral("a\\"), NeutralType.Text()) shouldBe "'a\\\\'"
+    }
+
+    test("StringLiteral neutralises a backslash-quote breakout payload") {
+        val payload = "a\\', x INT); DROP TABLE t; -- "
+        mapper.toDefaultSql(DefaultValue.StringLiteral(payload), NeutralType.Text()) shouldBe
+            "'a\\\\'', x INT); DROP TABLE t; -- '"
+    }
+
     // -- dialect --
 
     test("dialect is MYSQL") {

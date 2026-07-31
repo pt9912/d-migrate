@@ -61,7 +61,7 @@ class InMemoryIdempotencyStore(
         var outcome: IdempotencyReserveOutcome? = null
         entries.compute(scope) { _, existing ->
             outcome = computeReserveOutcome(scope, payloadFingerprint, now, existing)
-            buildEntry(scope, payloadFingerprint, now, existing, outcome!!)
+            buildEntry(scope, payloadFingerprint, existing, outcome!!)
         }
         return outcome!!
     }
@@ -100,7 +100,6 @@ class InMemoryIdempotencyStore(
     private fun buildEntry(
         scope: IdempotencyScope,
         fingerprint: String,
-        now: Instant,
         existing: Entry?,
         outcome: IdempotencyReserveOutcome,
     ): Entry = when (outcome) {

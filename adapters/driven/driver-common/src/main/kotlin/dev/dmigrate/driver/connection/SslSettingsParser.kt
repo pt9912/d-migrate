@@ -25,10 +25,14 @@ internal object SslSettingsParser {
         }
 
     private fun extractPg(params: Map<String, String>, url: String): Extracted {
+        // Kanonische (lowercase) Schluessel: filterConsumed entfernt ALLE Case-Varianten
+        // eines verbrauchten Keys (Befund 9, CWE-178) — sonst ueberlebte ein
+        // case-abweichendes Duplikat (`sslMode` neben `sslmode`) in den remainingParams
+        // und koennte den validierten Modus in der emittierten URL ueberschreiben.
         val consumed = mutableSetOf<String>()
-        val mode = findKey(params, "sslmode")?.let { (k, v) -> consumed += k; parsePgMode(v, url) }
-        val rootCert = findKey(params, "sslrootcert")?.let { (k, v) -> consumed += k; v }
-        return Extracted(SslSettings(mode, rootCert), params.filterKeys { it !in consumed })
+        val mode = findKey(params, "sslmode")?.let { (_, v) -> consumed += "sslmode"; parsePgMode(v, url) }
+        val rootCert = findKey(params, "sslrootcert")?.let { (_, v) -> consumed += "sslrootcert"; v }
+        return Extracted(SslSettings(mode, rootCert), filterConsumed(params, consumed))
     }
 
     private fun extractMysql(params: Map<String, String>, url: String): Extracted {
@@ -39,18 +43,22 @@ internal object SslSettingsParser {
         // konsumiert, wenn `sslMode` vorhanden ist.
         val mode = when {
             sslMode != null -> {
-                consumed += sslMode.first
-                ssl?.let { consumed += it.first }
+                consumed += "sslmode"
+                if (ssl != null) consumed += "ssl"
                 parseMysqlMode(sslMode.second, url)
             }
             ssl != null -> {
-                consumed += ssl.first
+                consumed += "ssl"
                 parseMysqlSslBool(ssl.second, url)
             }
             else -> null
         }
-        return Extracted(SslSettings(mode, null), params.filterKeys { it !in consumed })
+        return Extracted(SslSettings(mode, null), filterConsumed(params, consumed))
     }
+
+    /** Entfernt jeden Param, dessen Schluessel (case-insensitiv) einen verbrauchten kanonischen Key trifft. */
+    private fun filterConsumed(params: Map<String, String>, consumedLower: Set<String>): Map<String, String> =
+        params.filterKeys { it.lowercase() !in consumedLower }
 
     private fun parsePgMode(value: String, url: String): SslMode = when (value.lowercase()) {
         "disable" -> SslMode.DISABLE

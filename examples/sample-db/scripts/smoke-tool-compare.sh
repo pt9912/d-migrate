@@ -17,6 +17,11 @@
 # (d-migrate-JSON-Overhead bewusst neutralisiert). d-migrates Allein-Features
 # (Verlustfreiheits-Hash, Resume, Cross-Dialect) sind hier NICHT Teil des Speed-Vergleichs.
 #
+# pgloader ist per Default AUS (WITH_PGLOADER=1 schaltet es zu) und laeuft dann BEST-EFFORT:
+# als DIAGNOSTISCHER Peer kann sein SBCL-Heap bei hohem SF unter den Caps 2cpu/4g reissen
+# ("Heap exhausted") — das faerbt den Kern-Vergleich (COPY-Decke vs d-migrate) NICHT rot,
+# sondern wird nur laut gewarnt. Kein d-migrate-Befund.
+#
 # Opt-in (kein PR-Gate): `make sample-db-tool-compare`. Voraussetzung: docker, d-migrate:dev.
 
 set -euo pipefail
@@ -26,7 +31,8 @@ COMPOSE="docker compose -f $EXAMPLES_DIR/docker-compose.yml"
 OUT_DIR="$EXAMPLES_DIR/out"
 TPCH="$EXAMPLES_DIR/.cache/tpch"
 SF="${SF:-0.2}"
-WITH_PGLOADER="${WITH_PGLOADER:-1}"
+WITH_PGLOADER="${WITH_PGLOADER:-0}"            # diagnostischer Peer: Default AUS; =1 schaltet best-effort zu
+PGLOADER_TIMEOUT="${PGLOADER_TIMEOUT:-300}"   # Sicherheitsnetz: pgloader nie unbegrenzt haengen lassen
 
 log()  { printf '[cmp] %s\n' "$*"; }
 fail() { printf '[cmp] FAIL: %s\n' "$*" >&2; exit 1; }
@@ -106,16 +112,42 @@ parity tpch_dm_target
 log "[d-migrate] OK — export ${dm_exp}ms ($(rps "$total_rows" "$dm_exp") rows/s), import ${dm_imp}ms ($(rps "$total_rows" "$dm_imp") rows/s)"
 
 # --- 3. pgloader (direct PG->PG, gecappter Client) [Phase B] -------
+# DIAGNOSTISCHER Peer, per Default AUS. Eingeschaltet (WITH_PGLOADER=1) laeuft er BEST-EFFORT:
+# pgloader (SBCL) kann bei hohem SF unter dem 4g-Cap (ADR 0018) seinen Lisp-Heap erschoepfen
+# ("Heap exhausted") und sterben — ein bekanntes Limit des Peers, KEIN d-migrate-Befund. Fehler,
+# Timeout oder unvollstaendiger Load faerben den Kern-Vergleich (COPY-Decke vs d-migrate) NICHT
+# rot, sondern werden laut gewarnt (die pgloader-Zeile faellt im Report weg). Das `timeout` ist
+# das Sicherheitsnetz gegen ein haengendes pgloader (SBCL-LDB-Prompt); die Parity hier ist
+# bewusst NICHT-fatal (das globale `parity` wuerde den ganzen Lauf killen).
 pgl_total=""
 if [ "$WITH_PGLOADER" = "1" ]; then
-    log "[pgloader] direct PG->PG (capped) ..."
+    log "[pgloader] direct PG->PG (capped, diagnostic peer, best-effort) ..."
     mk_target tpch_pgloader_target
     t0=$(date +%s%3N)
-    $COMPOSE run --rm pgloader pgloader --with "data only" --with "include no drop" \
-        "$(PGURL tpch)" "$(PGURL tpch_pgloader_target)" > /tmp/cmp-pgl.log 2>&1 || { tail -15 /tmp/cmp-pgl.log; fail "[pgloader] load failed"; }
-    pgl_total=$(( $(date +%s%3N) - t0 ))
-    parity tpch_pgloader_target
-    log "[pgloader] OK — direct move ${pgl_total}ms ($(rps "$total_rows" "$pgl_total") rows/s)"
+    pgl_ok=1
+    # Fester Container-Name + explizites Aufraeumen: `compose run` raeumt bei einem timeout-SIGTERM
+    # den One-off-Container NICHT zuverlaessig ab (er ueberlebt als Orphan und laeuft weiter). Wir
+    # benennen ihn daher und entfernen ihn nach dem Lauf hart — bei Erfolg hat `--rm` ihn schon
+    # weg (rm -f = No-op), bei Timeout/Kill raeumt das rm die Leiche.
+    pgl_cname="sample-db-pgl-cmp"
+    docker rm -f "$pgl_cname" >/dev/null 2>&1 || true
+    timeout -k 10 "$PGLOADER_TIMEOUT" $COMPOSE run --rm --name "$pgl_cname" pgloader pgloader \
+        --with "data only" --with "include no drop" \
+        "$(PGURL tpch)" "$(PGURL tpch_pgloader_target)" > /tmp/cmp-pgl.log 2>&1 || pgl_ok=0
+    docker rm -f "$pgl_cname" >/dev/null 2>&1 || true
+    if [ "$pgl_ok" = "1" ]; then
+        for t in $tables; do
+            s=$(PGq tpch "SELECT count(*) FROM $t"); d=$(PGq tpch_pgloader_target "SELECT count(*) FROM $t")
+            { num "$s" && [ "$s" = "$d" ]; } || { pgl_ok=0; break; }
+        done
+    fi
+    if [ "$pgl_ok" = "1" ]; then
+        pgl_total=$(( $(date +%s%3N) - t0 ))
+        log "[pgloader] OK — direct move ${pgl_total}ms ($(rps "$total_rows" "$pgl_total") rows/s)"
+    else
+        printf '[cmp] WARN: pgloader-Leg uebersprungen (Fehler/Timeout/unvollstaendig — s. /tmp/cmp-pgl.log). DIAGNOSTISCHER Peer, KEIN Gate; typ. SBCL-Heap unter Caps 2cpu/4g bei SF=%s.\n' "$SF" >&2
+        tail -3 /tmp/cmp-pgl.log 2>/dev/null >&2 || true
+    fi
 fi
 
 # --- 4. Report -----------------------------------------------------

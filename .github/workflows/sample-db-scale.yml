@@ -24,13 +24,16 @@ on:
     # Taeglich 03:17 UTC (versetzt, um Runner-Spitzen zur vollen Stunde zu meiden).
     - cron: '17 3 * * *'
 
+permissions:
+  contents: read
+
 jobs:
   scale-smoke:
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Verify docker compose available
         run: docker compose version

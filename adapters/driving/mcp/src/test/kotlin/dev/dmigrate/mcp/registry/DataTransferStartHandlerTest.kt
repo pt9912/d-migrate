@@ -79,7 +79,6 @@ class DataTransferStartHandlerTest : FunSpec({
             idempotencyStore = idempotencyStore,
             jobStartTransaction = transaction,
             workerHandleRegistry = workerHandleRegistry,
-            approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyDefault),
             payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),

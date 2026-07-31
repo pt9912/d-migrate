@@ -75,6 +75,15 @@ object ExportOptionsFingerprint {
          */
         val outputPath: String,
         /**
+         * CSV-Formel-Injection-Guard (CWE-1236, Audit-Follow-up #6). Ändert die
+         * geschriebenen Bytes (formel-anfällige Zellen werden mit `'` präfixt), also
+         * darf ein Resume nicht geschützte und ungeschützte Zeilen mischen. Wird —
+         * wie `primaryKeysByTable` — nur bei `true` an die kanonische Form angehängt,
+         * damit der Default-Pfad (`false`) byte-gleich zum bestehenden Resume-Vertrag
+         * bleibt.
+         */
+        val csvFormulaGuard: Boolean = false,
+        /**
          * LF-013 / LN-006 / LN-012: PK-Spaltensignatur pro Tabelle
          * in der Reihenfolge von `tables`.
          * Ein Wechsel des Primaerschluessels invalidiert den Resume-
@@ -102,6 +111,12 @@ object ExportOptionsFingerprint {
         appendField("tables", input.tables.joinToString(separator = LIST_SEPARATOR))
         appendField("outputMode", input.outputMode)
         appendField("outputPath", input.outputPath)
+        // CWE-1236 Audit-Follow-up #6: Nur bei aktivem Guard anhängen. `false` hängt
+        // **nichts** an → der Hash bleibt byte-gleich zum bestehenden Resume-Vertrag,
+        // ein aktiver Guard erzeugt einen unterscheidbaren Fingerprint.
+        if (input.csvFormulaGuard) {
+            appendField("csvFormulaGuard", "true")
+        }
         // LF-013 / LN-006: PK-Signatur; Reihenfolge folgt `tables`, um
         // gegen Umsortierungen stabil zu sein. Wenn `primaryKeysByTable`
         // leer ist, wird **nichts** angehaengt — der Hash bleibt

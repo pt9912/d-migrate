@@ -100,11 +100,18 @@ internal class SqliteTableDdlSupport(
         val lines = mutableListOf<String>()
         val normalColumns = table.columns.filter { it.value.type !is NeutralType.Geometry }
         val effectiveColumns = if (isSpatiaLite) normalColumns else table.columns
+        // SQLite's `INTEGER PRIMARY KEY AUTOINCREMENT` is a *single-column* rowid alias;
+        // it may only be rendered inline when the column IS the entire primary key. For a
+        // composite PK the identity column must degrade to a plain INTEGER (AUTOINCREMENT
+        // dropped, W135) so the sole PRIMARY KEY is the table-level composite clause below —
+        // otherwise SQLite rejects the table with "more than one primary key".
+        val solePrimaryKey = table.primaryKey.singleOrNull()
         for ((columnName, column) in effectiveColumns.inOrdinalOrder()) {
             // SQLite's PRIMARY KEY does not imply NOT NULL; materialise the
             // neutral model's "PK ⇒ required" invariant before rendering.
             val col = SqlitePrimaryKeyNullability.materialize(columnName, column, table.primaryKey)
-            lines += columnConstraintHelper.generateColumnSql(columnName, col, schema, name, notes, deferredFks)
+            val isSolePrimaryKey = solePrimaryKey == columnName
+            lines += columnConstraintHelper.generateColumnSql(columnName, col, schema, name, notes, deferredFks, isSolePrimaryKey)
         }
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue

@@ -73,7 +73,9 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         // LN-005 + pipeline.parallelism: chunk_size/fetch_size/parallelism in EINEM Config-Ladevorgang
         // mergen (CLI-explizit > Config > Default), statt die YAML pro Resolver erneut zu parsen.
         val pipeline = try {
-            resolveEffectiveDataPipeline(root?.config, chunkSize, fetchSize, parallel)
+            resolveEffectiveDataPipeline(
+                root?.config, chunkSize, fetchSize, parallel, onNote = { echo(it, err = true) },
+            )
         } catch (e: ConfigResolveException) {
             echo("Error: ${e.message}", err = true)
             throw ProgramResult(7)

@@ -1,0 +1,37 @@
+# Meldet die aufgeloeste Gradle-Dependency-Liste an GitHubs Dependency graph.
+# Grundlage fuer Dependabot-Alerts: ohne Snapshot kennt GitHub die Dependencies
+# nicht und warnt entsprechend nicht.
+#
+# Warum nicht GitHubs "Automatic dependency submission": die ignoriert den
+# Wrapper-Pin und faehrt mit einer eigenen Gradle-Version. Diese Action nutzt
+# den Wrapper des Projekts (gradle-wrapper.properties).
+#
+# Statisches Parsen reicht hier nicht: die Versionen stehen in
+# gradle.properties und werden interpoliert; nur ein echter Build loest sie auf.
+name: Dependency Submission (Gradle)
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write # Dependency-Snapshot schreiben
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # Explizit, weil dieser Workflow als einziger Gradle direkt auf dem Runner
+      # faehrt statt im gradle:8.12-jdk21-Image wie der uebrige Build.
+      - name: Set up JDK 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Resolve and submit dependency graph
+        uses: gradle/actions/dependency-submission@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
