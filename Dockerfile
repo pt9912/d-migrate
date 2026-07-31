@@ -300,9 +300,12 @@ RUN echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c - && \
 # Optional hard gate for CI-style coverage enforcement. Keep this on the same
 # fresh test-run path as `make ci-build`; running verify after a prior report
 # generation stage can leave Kover consuming a different artifact set.
+#
+# Der Task-Satz spiegelt `CI_BUILD_TASKS` (Makefile) — beide muessen denselben
+# Graphen fahren, sonst prueft der lokale Gate etwas anderes als CI.
 FROM compile AS coverage-verify
 
-ARG COVERAGE_VERIFY_TASKS="test koverVerify --no-build-cache"
+ARG COVERAGE_VERIFY_TASKS="build koverVerify --no-build-cache"
 
 RUN gradle --no-daemon ${COVERAGE_VERIFY_TASKS}
 
@@ -408,9 +411,7 @@ RUN pip install --no-cache-dir defusedxml
 ENTRYPOINT ["python3", "/usr/local/bin/kover-modules-summary.py", "/reports"]
 
 # ---- Stage 7: runtime ------------------------------------------------------
-# Das PUBLIZIERTE JVM-Image (ADR 0041): `make docker-oci-build` baut genau diese
-# Stage, build.yml tagt sie auf die Registry-Namen um. Bis 1.0.0-RC2 wurde
-# stattdessen ein Jib-Image publiziert, das als root und ohne mod_spatialite lief.
+# Das publizierte JVM-Image (ADR 0041): Ziel von `make docker-oci-build`.
 FROM eclipse-temurin:21-jre-noble AS runtime
 
 
