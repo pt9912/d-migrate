@@ -169,6 +169,55 @@ jobs:
                  docker push "${DOCKERHUB_IMAGE}:latest" ;;
           esac
 
+      # Die Repository-Beschreibung auf Docker Hub ist sonst nur im Web-UI gepflegt und driftet
+      # unweigerlich vom Repo weg. Quelle ist packaging/dockerhub/description.md (reviewbar,
+      # versioniert) — dieselbe Rolle, die packaging/homebrew/d-migrate.rb fuer den Tap spielt.
+      #
+      # Docker Hub hat DREI getrennte Felder; diese Automatik deckt zwei davon:
+      #   - "Description"        -> `short-description` unten (Limit 100 Bytes)
+      #   - "Repository overview" -> `readme-filepath` unten (Limit 25.000 Bytes)
+      #   - "Category"           -> NICHT abgedeckt, die Action hat dafuer keinen Input.
+      #                             Einmalig im Web-UI zu setzen; aendert sich praktisch nie.
+      #
+      # `__VERSION__` wird hier durch den gerade veroeffentlichten Tag ersetzt, damit die
+      # `docker run`-Beispiele auf der Seite immer einen Tag zeigen, den es auf dem Spiegel
+      # WIRKLICH gibt. Ein hartkodierter Wert veraltete still beim naechsten Release; `:latest`
+      # taugt nicht, solange hier nur Prereleases liegen (Prereleases setzen :latest nicht).
+      #
+      # Bewusst auf JEDEM Tag (nicht nur Stable): die Beschreibung soll den Ist-Stand des
+      # Spiegels beschreiben, und der aktuellste Tag ist immer pullbar.
+      - name: Render Docker Hub description
+        if: steps.dockerhub.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          SRC="packaging/dockerhub/description.md"
+          test -f "${SRC}"
+          # Fail-fast: fehlt der Platzhalter, wurde die Datei umgebaut und die Beispiele
+          # zeigen womoeglich einen veralteten Tag — das soll auffallen, nicht durchrutschen.
+          grep -q '__VERSION__' "${SRC}"
+          sed "s/__VERSION__/${VERSION}/g" "${SRC}" > /tmp/dockerhub-description.md
+          echo "Beschreibung gerendert fuer ${VERSION} ($(wc -c < /tmp/dockerhub-description.md) Bytes)"
+
+      # `continue-on-error`, weil dieser Step ein anderes Recht braucht als die Push-Steps:
+      # die Description-API verlangt laut Action-Doku ein Token mit `read/write/DELETE`-Scope
+      # (oder das Konto-Passwort), waehrend `docker push` mit read/write auskommt. Reicht der
+      # Scope des vorhandenen DOCKERHUB_TOKEN nicht, soll das eine Warnung sein und NICHT den
+      # Tag-Build roetten — Docker Hub ist der optionale Zusatzkanal, und ein fehlgeschlagenes
+      # Seiten-Update darf ein fertiges Release nicht entwerten (gleiche Haltung wie der
+      # Skip-statt-Fehler-Pfad oben). Faellt es auf, wird der Token-Scope erweitert.
+      - name: Update Docker Hub description
+        if: steps.dockerhub.outputs.enabled == 'true'
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ vars.DOCKERHUB_IMAGE || 'pt9912/d-migrate' }}
+          # Limit 100 Bytes (Action truncated sonst still).
+          short-description: "Database-agnostic CLI for schema migration and data management across PostgreSQL, MySQL, SQLite"
+          readme-filepath: /tmp/dockerhub-description.md
+
   # Natives Container-Image (zusaetzliche Distributionsklasse neben dem JVM-Image oben).
   # build.yml besitzt die Container-Images (JVM + nativ); native-image.yml die ROHEN
   # Release-Binaries. Nur auf Tags: der native Compile im Docker (~5-8 min) ist zu schwer fuer

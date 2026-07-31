@@ -23,13 +23,14 @@ data export/import/transfer, and export to Flyway, Liquibase, Django, and Knex.
 | `<version>-native` | GraalVM native binary, **no JVM** — smaller image, starts in milliseconds instead of a few hundred |
 | `latest` | Most recent **stable** release. Prereleases never move it. |
 
-**Currently available here:** `1.0.0-RC2` and `1.0.0-RC2-native`.
+See the **Tags** tab for everything published here. The examples below use
+`__VERSION__` — the most recent release at the time this page was updated.
 
-The mirror went live with the `1.0.0-RC2` **prerelease**, so there is **no
-`latest` tag on Docker Hub yet** — `docker pull pt9912/d-migrate` without an
-explicit tag will fail. It will appear with the first stable release published
-after the mirror went live (1.0.0). For a stable image today, use
-`ghcr.io/pt9912/d-migrate:latest`. Always pin an explicit version in CI.
+**If you don't see a `latest` tag:** this mirror started with a *prerelease*, and
+prereleases deliberately never move `latest`, so it only appears once a stable
+release is published here. Until then `docker pull pt9912/d-migrate` **without an
+explicit tag will fail** — use `ghcr.io/pt9912/d-migrate:latest` for a stable
+image. Either way, pin an explicit version in CI rather than tracking `latest`.
 
 ## Quick start
 
@@ -38,19 +39,19 @@ image name. The default command is `--help`.
 
 ```bash
 # Validate a schema
-docker run --rm -v "$(pwd):/work" pt9912/d-migrate:1.0.0-RC2 \
+docker run --rm -v "$(pwd):/work" pt9912/d-migrate:__VERSION__ \
   schema validate --source /work/schema.yaml
 
 # Generate DDL for a target dialect
-docker run --rm -v "$(pwd):/work" pt9912/d-migrate:1.0.0-RC2 \
+docker run --rm -v "$(pwd):/work" pt9912/d-migrate:__VERSION__ \
   schema generate --source /work/schema.yaml --target postgresql
 
 # Compare two schema files
-docker run --rm -v "$(pwd):/work" pt9912/d-migrate:1.0.0-RC2 \
+docker run --rm -v "$(pwd):/work" pt9912/d-migrate:__VERSION__ \
   schema compare --source file:/work/schema.yaml --target file:/work/schema-new.yaml
 
 # Database-to-database data transfer
-docker run --rm -v "$(pwd):/work" pt9912/d-migrate:1.0.0-RC2 \
+docker run --rm -v "$(pwd):/work" pt9912/d-migrate:__VERSION__ \
   data transfer --source sourcedb --target targetdb --tables users,orders
 ```
 
@@ -58,7 +59,7 @@ The native variant is a drop-in replacement — same entrypoint, same flags, sam
 mounts:
 
 ```bash
-docker run --rm -v "$(pwd):/work" pt9912/d-migrate:1.0.0-RC2-native \
+docker run --rm -v "$(pwd):/work" pt9912/d-migrate:__VERSION__-native \
   schema validate --source /work/schema.yaml
 ```
 
@@ -75,7 +76,7 @@ ownership:
 
 ```bash
 docker run --rm --user "$(id -u):$(id -g)" -v "$(pwd):/work" \
-  pt9912/d-migrate:1.0.0-RC2 \
+  pt9912/d-migrate:__VERSION__ \
   schema reverse --source mydb --output /work/reverse.yaml
 ```
 
@@ -85,7 +86,7 @@ Connections are passed as URLs or as named connections from a config file. Mount
 the config alongside your work directory and point `--config` at it:
 
 ```bash
-docker run --rm -v "$(pwd):/work" pt9912/d-migrate:1.0.0-RC2 \
+docker run --rm -v "$(pwd):/work" pt9912/d-migrate:__VERSION__ \
   --config /work/.d-migrate.yaml \
   schema reverse --source mydb --output /work/reverse.yaml
 ```
