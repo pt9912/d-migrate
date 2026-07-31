@@ -106,7 +106,9 @@ Die aktuellen Fähigkeiten:
   Zeitzonen-/Temporal-Policy, CSV-/BOM-Encoding-Vertrag,
   phasenbezogene DDL via `--split pre-post`.
 - **OCI-Image** auf `ghcr.io/pt9912/d-migrate:<version>` und
-  `:latest`.
+  `:latest`, gespiegelt nach Docker Hub als `pt9912/d-migrate`. Zu
+  jedem Release erscheint zusätzlich eine `<version>-native`-Variante
+  aus dem GraalVM-Binary — ohne JVM, startet in Millisekunden.
 
 Der einfachste Weg, das Tool auszuprobieren, ist das veröffentlichte
 OCI-Image:
@@ -271,7 +273,8 @@ docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
 
 ### GitHub Release Assets
 
-Veröffentlichte Releases liefern ZIP, TAR und ein Fat JAR auf der
+Veröffentlichte Releases liefern ZIP, TAR, ein Fat JAR und — ab
+1.0.0-RC2 — **native Binaries**, die kein Java brauchen, auf der
 [Releases-Seite](https://github.com/pt9912/d-migrate/releases).
 
 ```bash
@@ -281,7 +284,17 @@ tar -xf d-migrate-<version>.tar
 
 # Oder Fat JAR direkt ausführen
 java -jar d-migrate-<version>-all.jar --help
+
+# Oder das native Binary — ohne JVM, startet in ~15 ms
+chmod +x d-migrate-<version>-linux-x64
+./d-migrate-<version>-linux-x64 --help
 ```
+
+Native Binaries erscheinen für `linux-x64`, `macos-arm64` und
+`windows-x64` (je mit `.sha256`); `linux-x64` ist pro Release
+garantiert, die beiden anderen sind Best-Effort. Sie sind dynamisch
+gegen glibc gelinkt — unter Alpine/musl bleiben die JVM-Artefakte oder
+das Container-Image der Weg.
 
 Hinweis: Die Homebrew-Formula wird ab 0.5.0 im Repository
 mitgeführt und pro Release über

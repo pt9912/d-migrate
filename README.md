@@ -101,7 +101,9 @@ The current capabilities:
   policy, CSV / BOM encoding contract, phased DDL via
   `--split pre-post`.
 - **OCI image** at `ghcr.io/pt9912/d-migrate:<version>` and
-  `:latest`.
+  `:latest`, mirrored to Docker Hub as `pt9912/d-migrate`. Each
+  release also ships a `<version>-native` variant built from the
+  GraalVM native binary — no JVM inside, starts in milliseconds.
 
 The simplest way to try the tool is the published OCI image:
 
