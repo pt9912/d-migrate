@@ -1311,7 +1311,7 @@ adapters/driven/formats/src/test/resources/fixtures/
 | 5   | Kotlin Coroutines statt Threads    | Akzeptiert    | Strukturierte Concurrency, leichtgewichtig             |
 | 6   | Jackson für Serialisierung         | Akzeptiert    | YAML + JSON Support, bewährt, performant               |
 | 7   | SPI für Driver-Plugin-System       | Akzeptiert    | Standard-Java-Mechanismus, kein Framework nötig        |
-| 8   | GraalVM Native Image               | Vorgeschlagen | Single-Binary, schneller Start, höherer Build-Aufwand  |
+| 8   | GraalVM Native Image               | Akzeptiert    | Single-Binary, schneller Start, höherer Build-Aufwand  |
 | 9   | Testcontainers für DB-Tests        | Akzeptiert    | Echte Datenbanken im Test, reproduzierbar              |
 | 10  | YAML als Schema-Definitionsformat  | Akzeptiert    | Menschenlesbar, Git-freundlich, kommentierbar          |
 

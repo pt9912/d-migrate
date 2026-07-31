@@ -182,6 +182,15 @@ The full release history (0.1.0–0.9.7) lives in
   SSL/TLS, CLI audit logging, property-based testing. Published as a
   GitHub prerelease + versioned OCI tag; `:latest` and Homebrew stay
   on the last stable (0.9.12). See [`CHANGELOG.md`](CHANGELOG.md).
+- **1.0.0-RC2 Release Candidate** · `Prerelease` (2026-07-31): adds the
+  three 1.0.0 distribution lines beyond the JVM artefacts — **GraalVM
+  native binaries** for `linux-x64` (release-blocking), `macos-arm64` and
+  `windows-x64` (best-effort), each with a `.sha256`; a **native container
+  image** (`:<version>-native`); and a **Docker Hub mirror** alongside
+  GHCR. Also `schema validate --source -` (stdin), `config show`, and a
+  `keychain:` credential provider. Carries the internal security audit
+  (27 reported findings, 18 confirmed, all fixed). `:latest` and Homebrew
+  stay on the last stable (0.9.12). See [`CHANGELOG.md`](CHANGELOG.md).
 - **1.0.0 Stable release** · `Planned`.
 
 For per-milestone task tables and ADR pointers see the canonical
@@ -272,7 +281,8 @@ docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
 
 ### GitHub Release assets
 
-Published releases ship ZIP, TAR, and a fat JAR on the
+Published releases ship ZIP, TAR, a fat JAR, and — from 1.0.0-RC2 on —
+**native binaries** that need no Java, on the
 [Releases page](https://github.com/pt9912/d-migrate/releases).
 
 ```bash
@@ -282,7 +292,17 @@ tar -xf d-migrate-<version>.tar
 
 # Or run the fat JAR directly
 java -jar d-migrate-<version>-all.jar --help
+
+# Or the native binary — no JVM required, starts in ~15 ms
+chmod +x d-migrate-<version>-linux-x64
+./d-migrate-<version>-linux-x64 --help
 ```
+
+Native binaries are published for `linux-x64`, `macos-arm64` and
+`windows-x64` (each with a `.sha256`); `linux-x64` is guaranteed per
+release, the other two are best-effort. They are dynamically linked
+against glibc — on Alpine/musl use the JVM artefacts or the container
+image.
 
 Note: the Homebrew formula is maintained in the repository from
 0.5.0 on and is verified per release via
