@@ -46,15 +46,17 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**0.9.8** (stabil, veröffentlicht 2026-06-14).
+**0.9.12** (stabil, [veröffentlicht 2026-07-13](https://github.com/pt9912/d-migrate/releases/tag/v0.9.12)).
 
-> **In Entwicklung (`develop`, 0.9.9):** Eine mehrrundige
-> End-to-End-Pilot-Validierung (PostgreSQL / MySQL / SQLite gegen
-> Pagila/Sakila) hat die Cross-Dialect-Daten- und DDL-Treue
-> gehärtet — alle gemeldeten P1/P2-Cross-Dialect-Blocker sind
-> behoben (Transfer-Preflight strukturell aus der Ziel-Typ-Abbildung,
-> Array-/`tsvector`-Wertbindung, `CURRENT_DATE`-Defaults,
-> View-Portabilität, Routinen-Emission u. a.). Siehe `CHANGELOG.md`.
+> **Neu in 0.9.12:** ein paralleler Datenpfad (`data export`/`import`/`transfer
+> --parallel N`, LN-007/LN-008), der unabhängige Tabellen nebenläufig in
+> FK-sicheren topologischen Schichten fährt, mit Kind-Fan-out für partitionierte
+> Tabellen; atomarer Clean-Load-Rollback (`--atomic`, LN-013), der bei jedem
+> Fehler **alle** Zieltabellen per O(1)-Kompensation auf ihren leeren
+> Vor-Ladezustand zurücksetzt; und Read-only-Öffnen der Quelle (`--read-only`,
+> standardmäßig an) — SQLite-Quellen öffnen mit `SQLITE_OPEN_READONLY` und ohne
+> `-wal`/`-shm`-Nebendateien, sodass auch nicht beschreibbare Datenbanken
+> profilierbar sind. Siehe `CHANGELOG.md`.
 
 Die aktuellen Fähigkeiten:
 
@@ -106,7 +108,9 @@ Die aktuellen Fähigkeiten:
   Zeitzonen-/Temporal-Policy, CSV-/BOM-Encoding-Vertrag,
   phasenbezogene DDL via `--split pre-post`.
 - **OCI-Image** auf `ghcr.io/pt9912/d-migrate:<version>` und
-  `:latest`.
+  `:latest`, gespiegelt nach Docker Hub als `pt9912/d-migrate`. Zu
+  jedem Release erscheint zusätzlich eine `<version>-native`-Variante
+  aus dem GraalVM-Binary — ohne JVM, startet in Millisekunden.
 
 Der einfachste Weg, das Tool auszuprobieren, ist das veröffentlichte
 OCI-Image:
@@ -167,19 +171,17 @@ Rezepte.
 
 ## Status
 
-Die vollständige Release-History (0.1.0–0.9.7) steht in
-[`CHANGELOG.md`](CHANGELOG.md). Aktuelles und kommende Milestones:
+Die vollständige Release-History steht in
+[`CHANGELOG.md`](CHANGELOG.md).
 
-- **0.9.8 Analytics- und Storage-Anschluss (Parquet Cut A + S3-
-  ArtifactStore + BI-Demo)** · `Released` (2026-06-14): produktiver
-  Parquet `data export` / `import` (Bundle + Single-File,
-  Checkpoint/Resume, `--table-order`, Exit-Code-Vertrag);
-  S3-kompatibler `ArtifactStore` (AWS SDK v2 +
-  `url-connection-client`, `artifacts.store: s3`); BI-Demo-Compose-
-  Stack (Postgres + Metabase + SeaweedFS). Alle Closure-Plan-Docs in
-  [`docs/planning/done/`](docs/planning/done/).
-- **0.9.9 Dokumentation + Pilot-Validierung** · `Geplant`.
-- **1.0.0 Stable Release** · `Geplant`.
+- **Aktuelles Stable** · **0.9.12** (2026-07-13) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern.
+- **Aktuelle Vorabversion** · **1.0.0-RC2** (2026-07-31) — der
+  1.0.0-Release-Candidate: GraalVM-Native-Binaries für
+  Linux/macOS/Windows, ein `-native`-Container-Image und ein
+  Docker-Hub-Spiegel neben GHCR. Veröffentlicht als GitHub-Prerelease
+  + versioniertes OCI-Tag; bewegt `:latest` und Homebrew **nicht**.
+- **Als Nächstes** · **1.0.0 Stable** — `Geplant`.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter
@@ -271,7 +273,8 @@ docker run --rm --user "$(id -u):$(id -g)" -v $(pwd):/work \
 
 ### GitHub Release Assets
 
-Veröffentlichte Releases liefern ZIP, TAR und ein Fat JAR auf der
+Veröffentlichte Releases liefern ZIP, TAR, ein Fat JAR und — ab
+1.0.0-RC2 — **native Binaries**, die kein Java brauchen, auf der
 [Releases-Seite](https://github.com/pt9912/d-migrate/releases).
 
 ```bash
@@ -281,7 +284,17 @@ tar -xf d-migrate-<version>.tar
 
 # Oder Fat JAR direkt ausführen
 java -jar d-migrate-<version>-all.jar --help
+
+# Oder das native Binary — ohne JVM, startet in ~15 ms
+chmod +x d-migrate-<version>-linux-x64
+./d-migrate-<version>-linux-x64 --help
 ```
+
+Native Binaries erscheinen für `linux-x64`, `macos-arm64` und
+`windows-x64` (je mit `.sha256`); `linux-x64` ist pro Release
+garantiert, die beiden anderen sind Best-Effort. Sie sind dynamisch
+gegen glibc gelinkt — unter Alpine/musl bleiben die JVM-Artefakte oder
+das Container-Image der Weg.
 
 Hinweis: Die Homebrew-Formula wird ab 0.5.0 im Repository
 mitgeführt und pro Release über

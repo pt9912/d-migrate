@@ -755,7 +755,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 | Bereich  | Aufgabe                                           | LF-Ref | Status |
 | -------- | ------------------------------------------------- | ------ | ------ |
 | Build    | GraalVM Native Image (Linux, macOS, Windows)      | [Slice](../done/graalvm-native-image-distribution.md) | ✅      |
-| Build    | Docker Image auf Docker Hub                       | —      | ⛔      |
+| Build    | Docker Image auf Docker Hub                       | —      | ✅⁶     |
 | Build    | SDKMAN-Distribution                               | [Slice](../next/sdkman-distribution.md) | ⛔      |
 | Security | Interner Security-Audit                           | —      | ✅⁵     |
 | QA       | 1 Mio. Datensätze Export/Import ohne Datenverlust | 8.1    | ✅¹     |
@@ -805,6 +805,15 @@ Live-Repro, Gson-Rekursionstiefe) nachgeholt. Flankiert von [`SECURITY.md`](../.
 Dritt-)Audit ist per [ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md) kein
 1.0.0-Gate** (Beschaffung/Business, nicht durch das interne Audit erfüllt) und nach
 [Milestone 2.0.0](#milestone-200--langfristige-vision) verschoben.
+
+⁶ **Docker-Hub-Spiegel ✅** — erstmals wirksam mit dem `v1.0.0-RC2`-Tag (2026-07-31): Der Spiegel
+war zum RC1-Tag zwar konfiguriert, der Mechanik-Commit lag aber **nach** RC1, weshalb das Repository
+leer blieb. Verifiziert wurde nicht die grüne CI, sondern der Endzustand: `docker pull
+pt9912/d-migrate:1.0.0-RC2` **und** `:1.0.0-RC2-native` gelingen, und die gezogene Image-ID ist
+**identisch** mit der von `ghcr.io/pt9912/d-migrate:1.0.0-RC2` — es ist also derselbe lokal gebaute
+Layer-Stack, kein Zweitbau (Vertrag „Spiegel, keine zweite Build-Quelle",
+[`releasing.md` 4.4.1](../../user/releasing.md)). `:latest` bleibt korrekt auf dem letzten Stable,
+da Prereleases es in keiner Registry setzen.
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 
