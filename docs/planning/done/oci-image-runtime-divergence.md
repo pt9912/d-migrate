@@ -1,12 +1,16 @@
-# Tracker: Das publizierte OCI-Image ist NICHT die Dockerfile-`runtime`-Stage
+# Das publizierte OCI-Image war NICHT die Dockerfile-`runtime`-Stage
 
-> **Status:** Befund (Draft) / **potenziell release-relevant** (2026-07-31)
-> **Trigger:** Beim Faktencheck für [`oci-image-multiarch-jvm.md`](oci-image-multiarch-jvm.md)
-> aufgefallen: das publizierte Image läuft **als root** und enthält **kein `mod_spatialite`** —
+> **Status:** BEHOBEN 2026-07-31 (`5346719e`, [ADR 0041](../../adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md))
+> **Trigger:** Beim Faktencheck für [`oci-image-multiarch-jvm.md`](../open/oci-image-multiarch-jvm.md)
+> aufgefallen: das publizierte Image lief **als root** und enthielt **kein `mod_spatialite`** —
 > beides im Widerspruch zur Dokumentation und zu einem als „bestätigt" abgehakten Audit-Punkt.
-> **Aktivierungsbedingung:** keine — hier ist zu **entscheiden**, nicht zu warten. Entweder die
-> Jib-Konfiguration wird an die Dockerfile-Runtime angeglichen, oder Doku und Audit-Eintrag werden
-> auf den Ist-Stand korrigiert. Beides zu lassen ist die einzige unzulässige Option.
+>
+> **Umsetzung:** Option 3 („die `runtime`-Stage publizieren, Jib entfernen"). `make docker-oci-build`
+> baut `--target runtime`; der Jib-Pfad ist ersatzlos entfallen (Plugin, `jib {}`-Block, Dockerfile-Stage
+> `jib-image-tar`). Am **gebauten** Image verifiziert: `id -u` = 10001 (`dmigrate`), `mod_spatialite`
+> vorhanden, Entrypoint `[d-migrate]`, `--spatial-profile spatialite` Exit 0. Preis: 432 MB → 516 MB.
+> `releasing.md` 4.8 prüft die Runtime-Eigenschaften ab sofort am **publizierten** Image — die
+> fehlende Prüfung war der Grund, warum der Auseinanderlauf zwei Releases unbemerkt blieb.
 
 ## Belegter Ist-Stand (2026-07-31, gegen die publizierten Images)
 

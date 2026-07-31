@@ -234,7 +234,7 @@ docker-resolve-deps:
 # native Image ueber docker/native-image.Dockerfile schon geht. Bis 1.0.0-RC2 kam das
 # publizierte Image aus Jib und lief deshalb als root und ohne mod_spatialite, waehrend
 # `runtime` (USER dmigrate, /work gechownt, SpatiaLite) nur lokal verwendet wurde
-# (open/oci-image-runtime-divergence.md). Ein Image-Bauweg statt zwei.
+# (ADR 0041). Ein Image-Bauweg statt zwei.
 docker-oci-build:
 	$(DOCKER) build --target runtime -t $(DOCKER_OCI_IMAGE) .
 

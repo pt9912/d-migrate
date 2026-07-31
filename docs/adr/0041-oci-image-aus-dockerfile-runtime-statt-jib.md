@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-07-31
 decision-makers: pt9912
-consulted: docs/planning/open/oci-image-runtime-divergence.md, docs/user/releasing.md, docker/native-image.Dockerfile
+consulted: docs/planning/done/oci-image-runtime-divergence.md, docs/user/releasing.md, docker/native-image.Dockerfile
 informed: Dockerfile, Makefile, .github/workflows/build.yml, adapters/driving/cli/build.gradle.kts, README.md, docs/user/anwenderhandbuch.md
 ---
 
@@ -100,6 +100,6 @@ tagt und pusht dieses Image unverändert weiter. Der Jib-Pfad wird entfernt: Plu
 
 ## Weitere Informationen
 
-- Befund und Beweisführung: [`oci-image-runtime-divergence.md`](../planning/open/oci-image-runtime-divergence.md)
+- Befund und Beweisführung: [`oci-image-runtime-divergence.md`](../planning/done/oci-image-runtime-divergence.md)
 - Multi-Arch baut auf dieser Vereinheitlichung auf:
   [`oci-image-multiarch-jvm.md`](../planning/open/oci-image-multiarch-jvm.md)

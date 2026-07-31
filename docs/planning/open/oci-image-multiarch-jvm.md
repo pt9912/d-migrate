@@ -8,8 +8,9 @@
 > **Aktivierungsbedingung** (Move nach `../next/`): Klärung der Registry-Naht (siehe „Der eigentliche
 > Knackpunkt") **plus** eine Entscheidung, ob die Digest-Identität des Docker-Hub-Spiegels erhalten
 > bleiben muss. Vorgelagert sinnvoll:
-> [`oci-image-runtime-divergence.md`](oci-image-runtime-divergence.md) — solange Jib- und
-> Dockerfile-Runtime auseinanderlaufen, verdoppelt Multi-Arch die Divergenz.
+> [`oci-image-runtime-divergence.md`](../done/oci-image-runtime-divergence.md) — **erledigt
+> 2026-07-31** ([ADR 0041](../../adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)): es gibt
+> jetzt nur noch **einen** Bauweg je Image-Klasse, worauf Multi-Arch aufsetzen kann.
 
 ## Ausgangslage
 

@@ -360,7 +360,20 @@ Smokes nur als Dateierzeugung, nicht als Runtime-Ausführung validiert.
 
 ### 3.4 CHANGELOG-Review
 
-- `[Unreleased]`-Block durchgehen — alles für diesen Release Wichtige enthalten?
+- `[Unreleased]`-Block **gegen den Commit-Bereich** abgleichen, nicht aus dem Gedächtnis:
+
+  ```bash
+  LAST=$(git describe --tags --abbrev=0)
+  git log --oneline "${LAST}..HEAD" | wc -l                      # wie viele Commits?
+  git log --oneline "${LAST}..HEAD" --grep='^feat\|^fix' | cat   # was davon ist nutzersichtbar?
+  ```
+
+  Jeder `feat:`/`fix:`-Commit muss sich im Block wiederfinden **oder** bewusst nicht
+  (rein interne Refactorings, Test-Infrastruktur). Beim `1.0.0-RC2`-Cut standen drei
+  Einträge im Block, während 102 Commits aufgelaufen waren — die gesamte
+  Native-Distribution, das Docker-Hub-Spiegeln und das Security-Vollaudit fehlten und
+  mussten am Cut-Tag nachgeschrieben werden. **Besser: den Eintrag mit dem Feature
+  committen**, dann ist dieser Abgleich nur noch eine Kontrolle.
 - Sind die Einträge nach `Added / Changed / Fixed / Deprecated / Removed / Security`
   gegliedert (Keep-a-Changelog)?
 - Stimmen die Test- und Coverage-Zahlen mit dem aktuellen Stand?
@@ -400,10 +413,26 @@ identifizieren. Befehle und jq-Filter: siehe
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 
-- [`README.md`](../../README.md) „Current Status"-Block auf den neuen Release umstellen
+> **Beide Sprachfassungen, immer.** Jede Änderung an [`README.md`](../../README.md) gehört
+> **im selben Commit** nach [`README.de.md`](../../README.de.md) und umgekehrt. Beim
+> `1.0.0-RC2`-Cut wurde nur die englische gepflegt; die deutsche nannte danach noch
+> Version 0.9.8 und führte 0.9.9 als „Geplant" — sechs Releases Rückstand, sichtbar auf
+> der Startseite. `docs-check` prüft Links, **nicht** Gleichstand.
+
+- [`README.md`](../../README.md) **und** [`README.de.md`](../../README.de.md): „Status"-Block
+  (aktuelles Stable / aktuelle Vorabversion / als Nächstes) und die Versionsangabe im Abschnitt
+  „What can I run today?" / „Was kann ich heute laufen lassen?" umstellen — **in beiden Dateien**
 - [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) Milestone als ✅ markieren, Footer-Stand aktualisieren
 - [`docs/user/guide.md`](guide.md) auf den aktuellen Funktionsumfang prüfen und ggf. aktualisieren
   (Modulliste, Beispielausgaben, neue CLI-Kommandos/Optionen)
+- [`docs/user/anwenderhandbuch.md`](anwenderhandbuch.md): neue **Aufgaben** und neue
+  Aufzählungsglieder (z. B. ein drittes `credentialRef`-Schema) einarbeiten, Befehlsreferenz
+  (Anhang A) um neue Kommandos ergänzen, Änderungshistorie fortschreiben
+- [`docs/user/administrationshandbuch.md`](administrationshandbuch.md): neue **Distributionswege**
+  und Betriebs-Schalter in die Deployment-Tabelle. Achtung: das Anwenderhandbuch delegiert
+  „weitere Installationswege" hierher — fehlt der Eintrag, läuft der Verweis ins Leere
+- [`packaging/dockerhub/`](../../packaging/dockerhub/README.md): `description.txt` und
+  `overview.md` prüfen, wenn sich Tags, Nutzung oder Image-Eigenschaften geändert haben
 - [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md) und [`docs/user/releasing.md`](releasing.md) auf den
   tatsächlichen Vertrag prüfen
 - [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss ZIP-basierte Installation, Java 21 und

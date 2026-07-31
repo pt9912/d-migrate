@@ -7,7 +7,7 @@
 # -smoke + integration aus dem Haupt-Makefile. Reihenfolge egal: make liest alle
 # includes vor dem ersten Build, Prerequisites werden erst dann aufgelöst.
 
-.PHONY: docs-check coverage-excludes-check semgrep-rules-fetch semgrep solid-suppression-gate ports-jdbc-free-gate gates docker-gates docker-full-gates
+.PHONY: docs-check coverage-excludes-check semgrep-rules-fetch semgrep solid-suppression-gate ports-jdbc-free-gate readme-parity-gate gates docker-gates docker-full-gates
 
 # docs-check bleibt die Schirm-ID (gates/ci hängen daran): aggregiert d-checks
 # doc-check (Docker-Befund-Gate) plus das projekt-lokale Kover-Excludes-Ledger.
@@ -42,7 +42,12 @@ solid-suppression-gate:
 ports-jdbc-free-gate:
 	./scripts/ports-jdbc-free-gate.sh
 
-gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate a-check
+# Sprachparitaet der beiden Root-READMEs. `docs-check` prueft Links, nicht Gleichstand —
+# beim 1.0.0-RC2-Cut blieb README.de.md dadurch sechs Releases zurueck (releasing.md 3.6).
+readme-parity-gate:
+	./scripts/readme-parity-gate.sh
+
+gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate readme-parity-gate a-check
 
 docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke semgrep a-check
 
