@@ -9,11 +9,11 @@ import java.security.MessageDigest
 plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
-    id("com.google.cloud.tools.jib") version "3.4.5"
+    id("com.google.cloud.tools.jib") version "3.5.4"
     // GraalVM Native Image (docs/planning/done/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
-    id("org.graalvm.buildtools.native") version "1.1.5"
+    id("org.graalvm.buildtools.native") version "1.1.6"
 }
 
 application {
