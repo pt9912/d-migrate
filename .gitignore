@@ -43,8 +43,11 @@ release-assets/
 # Codex
 .codex
 
-# Claude
-.claude/
+# Claude — lokale Einstellungen bleiben draussen, geteilte Skills gehoeren ins Repo.
+# `.claude/*` statt `.claude/`: mit Schrägstrich steigt Git nicht ins Verzeichnis ab,
+# und jede Negation darin bliebe wirkungslos.
+.claude/*
+!.claude/skills/
 
 #
 .kotlin/
