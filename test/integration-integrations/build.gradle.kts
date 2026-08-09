@@ -17,8 +17,8 @@ dependencies {
     testImplementation(project(":hexagon:application"))
     testImplementation(project(":hexagon:ports"))
 
-    testImplementation("org.flywaydb:flyway-core:11.8.2")
-    testImplementation("org.flywaydb:flyway-database-postgresql:11.8.2")
+    testImplementation("org.flywaydb:flyway-core:13.1.0")
+    testImplementation("org.flywaydb:flyway-database-postgresql:13.1.0")
     testImplementation("org.liquibase:liquibase-core:4.31.1")
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
