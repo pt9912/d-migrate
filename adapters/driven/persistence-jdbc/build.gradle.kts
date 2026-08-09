@@ -14,7 +14,7 @@ dependencies {
     api(project(":hexagon:application"))
     api("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")
     implementation("org.postgresql:postgresql:${rootProject.properties["postgresqlJdbcVersion"]}")
-    api("org.flywaydb:flyway-core:11.8.2")
+    implementation("org.flywaydb:flyway-core:11.8.2")
     implementation("org.flywaydb:flyway-database-postgresql:11.8.2")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
