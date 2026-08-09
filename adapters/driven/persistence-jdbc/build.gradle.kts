@@ -14,8 +14,8 @@ dependencies {
     api(project(":hexagon:application"))
     api("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")
     implementation("org.postgresql:postgresql:${rootProject.properties["postgresqlJdbcVersion"]}")
-    implementation("org.flywaydb:flyway-core:11.8.2")
-    implementation("org.flywaydb:flyway-database-postgresql:11.8.2")
+    implementation("org.flywaydb:flyway-core:13.1.0")
+    implementation("org.flywaydb:flyway-database-postgresql:13.1.0")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
     // LF-012 / LN-011 / LN-017 / LN-027: ApprovalChallenge JSON-Codec fuer JSONB-Persistenz
