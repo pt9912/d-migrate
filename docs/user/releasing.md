@@ -360,7 +360,20 @@ Smokes nur als Dateierzeugung, nicht als Runtime-Ausführung validiert.
 
 ### 3.4 CHANGELOG-Review
 
-- `[Unreleased]`-Block durchgehen — alles für diesen Release Wichtige enthalten?
+- `[Unreleased]`-Block **gegen den Commit-Bereich** abgleichen, nicht aus dem Gedächtnis:
+
+  ```bash
+  LAST=$(git describe --tags --abbrev=0)
+  git log --oneline "${LAST}..HEAD" | wc -l                      # wie viele Commits?
+  git log --oneline "${LAST}..HEAD" --grep='^feat\|^fix' | cat   # was davon ist nutzersichtbar?
+  ```
+
+  Jeder `feat:`/`fix:`-Commit muss sich im Block wiederfinden **oder** bewusst nicht
+  (rein interne Refactorings, Test-Infrastruktur). Beim `1.0.0-RC2`-Cut standen drei
+  Einträge im Block, während 102 Commits aufgelaufen waren — die gesamte
+  Native-Distribution, das Docker-Hub-Spiegeln und das Security-Vollaudit fehlten und
+  mussten am Cut-Tag nachgeschrieben werden. **Besser: den Eintrag mit dem Feature
+  committen**, dann ist dieser Abgleich nur noch eine Kontrolle.
 - Sind die Einträge nach `Added / Changed / Fixed / Deprecated / Removed / Security`
   gegliedert (Keep-a-Changelog)?
 - Stimmen die Test- und Coverage-Zahlen mit dem aktuellen Stand?
@@ -400,10 +413,30 @@ identifizieren. Befehle und jq-Filter: siehe
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 
-- [`README.md`](../../README.md) „Current Status"-Block auf den neuen Release umstellen
+> **Beide Sprachfassungen, immer.** Jede Änderung an [`README.md`](../../README.md) gehört
+> **im selben Commit** nach [`README.de.md`](../../README.de.md) und umgekehrt. Beim
+> `1.0.0-RC2`-Cut wurde nur die englische gepflegt; die deutsche nannte danach noch
+> Version 0.9.8 und führte 0.9.9 als „Geplant" — sechs Releases Rückstand, sichtbar auf
+> der Startseite. `docs-check` prüft Links, **nicht** Gleichstand.
+
+- [`README.md`](../../README.md) **und** [`README.de.md`](../../README.de.md): „Status"-Block
+  (aktuelles Stable / aktuelle Vorabversion / als Nächstes) und die Versionsangabe im Abschnitt
+  „What can I run today?" / „Was kann ich heute laufen lassen?" umstellen — **in beiden Dateien**
 - [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) Milestone als ✅ markieren, Footer-Stand aktualisieren
 - [`docs/user/guide.md`](guide.md) auf den aktuellen Funktionsumfang prüfen und ggf. aktualisieren
   (Modulliste, Beispielausgaben, neue CLI-Kommandos/Optionen)
+- [`docs/user/anwenderhandbuch.md`](anwenderhandbuch.md): neue **Aufgaben** und neue
+  Aufzählungsglieder (z. B. ein drittes `credentialRef`-Schema) einarbeiten, Befehlsreferenz
+  (Anhang A) um neue Kommandos ergänzen, Änderungshistorie fortschreiben
+- [`docs/user/administrationshandbuch.md`](administrationshandbuch.md): neue **Distributionswege**
+  und Betriebs-Schalter in die Deployment-Tabelle. Achtung: das Anwenderhandbuch delegiert
+  „weitere Installationswege" hierher — fehlt der Eintrag, läuft der Verweis ins Leere
+- [`packaging/dockerhub/`](../../packaging/dockerhub/README.md): `description.txt` und
+  `overview.md` prüfen, wenn sich Tags, Nutzung oder Image-Eigenschaften geändert haben
+- [`version.md`](../../version.md): „Aktuell"-Zeile, neue Verlaufs-Zeile **und** den
+  `<a id>`-Anker auf die neue Version verschieben. Die bisherige Zeile verliert ihn — das
+  ist beabsichtigt: feste Links auf die alte Version brechen dann als `anchor-missing`,
+  und ein vergessener Bump fällt auf
 - [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md) und [`docs/user/releasing.md`](releasing.md) auf den
   tatsächlichen Vertrag prüfen
 - [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss ZIP-basierte Installation, Java 21 und
@@ -628,10 +661,19 @@ docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
 
 #### 4.4.4 SDKMAN
 
-Sobald ein Release **veröffentlicht** ist, publiziert
+Mit dem Tag-Push publiziert
 [`sdkman-release.yml`](../../.github/workflows/sdkman-release.yml) die Version an
-SDKMAN (`sdk install dmigrate`). Ein **separater** Workflow (`on: release`), nicht
-Teil der Release-Erzeugung — analog zum Native-Image-Workflow.
+SDKMAN (`sdk install dmigrate`). Ein **separater** Workflow, nicht Teil der
+Release-Erzeugung — analog zum Native-Image-Workflow. Der Job wartet, bis das
+ZIP-Asset am Release liegt, bevor er die URL an SDKMAN meldet (die API lädt sie
+selbst herunter).
+
+> **Nicht auf `on: release` umstellen.** Genau so war es zuerst gebaut, und der
+> Workflow lief zum `v1.0.0-RC2`-Tag **gar nicht**: Releases, die dieser Repo per
+> `GITHUB_TOKEN` erzeugt, lösen laut
+> [GitHub-Doku](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+> keine weiteren Workflow-Läufe aus. Details und die verworfenen Alternativen:
+> [`sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
 
 - **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
   + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.5](#45-release-assets-aus-dem-grünen-tag-build-beziehen)).
@@ -829,6 +871,18 @@ anschließend als verifizierten Repo-Stand nachziehen.
       Release bleibt gültig; Lauf von `native-image.yml` für den Tag prüfen
 - [ ] Native-Binary der eigenen Plattform startet: heruntergeladen, `chmod +x`,
       `./d-migrate-X.Y.Z-<plattform> schema validate <schema.yaml>`
+- [ ] **Runtime-Eigenschaften am publizierten Image** ([ADR 0041](../adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)):
+      non-root und `mod_spatialite` — für **beide** Image-Klassen. Bis `1.0.0-RC2` lief das
+      JVM-Image als root und ohne SpatiaLite, weil publiziert wurde, was **nicht** geprüft war;
+      dieser Schritt prüft deshalb das Artefakt, nicht das Dockerfile:
+  ```bash
+  for t in X.Y.Z X.Y.Z-native; do
+    echo "--- ${t}"
+    docker run --rm --entrypoint sh "ghcr.io/pt9912/d-migrate:${t}" -c \
+      'id -u; ls /usr/lib/*/mod_spatialite* >/dev/null 2>&1 && echo spatialite-ok || echo SPATIALITE-FEHLT'
+  done
+  # erwartet je Image: 10001 und spatialite-ok — eine 0 bedeutet root
+  ```
 - [ ] CI ist auf `main` und auf dem Tag grün
 
 ### 4.9 Vorabversionen (Release Candidates / Prereleases)
@@ -1020,6 +1074,7 @@ Für jeden Release abhaken:
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
 - [ ] Natives Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z-native` ok (`--help`, `schema validate --source`)
+- [ ] **Runtime-Eigenschaften am PUBLIZIERTEN Image geprüft** ([4.8](#48-verifikation-des-releases)) — non-root und `mod_spatialite`, für JVM- **und** natives Image
 - [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)

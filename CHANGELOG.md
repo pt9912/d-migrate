@@ -5,7 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0-RC3] - 2026-08-09
+
+### Changed
+
+- **Das Container-Image schreibt jetzt als `uid 10001` statt als `root` — bestehende Aufrufe
+  können dadurch fehlschlagen.** Bis einschließlich `1.0.0-RC2` lief das publizierte JVM-Image
+  als root (siehe *Fixed* unten) und durfte damit in jedes gemountete Host-Verzeichnis
+  schreiben. Wer Ausgaben in einen Bind-Mount schreibt — `schema generate --output`,
+  `schema reverse --output`, `data transfer` in Datei-Ziele — muss den aufrufenden Nutzer jetzt
+  mitgeben:
+
+  ```bash
+  docker run --rm --user "$(id -u):$(id -g)" -v "$(pwd):/work" \
+    ghcr.io/pt9912/d-migrate:<version> schema reverse --source mydb --output /work/reverse.yaml
+  ```
+
+  Reine Lesebefehle (`validate`, `compare`, `generate` nach stdout) sind nicht betroffen. Der
+  Zusatz war schon vorher dokumentiert und empfohlen — neu ist, dass er **nötig** ist. Im
+  Gegenzug gehört die erzeugte Datei jetzt Ihnen statt `root`.
+
+### Fixed
+
+- **Ein nicht beschreibbarer Ausgabepfad endete im Stacktrace statt in Exit 7** — eine
+  `AccessDeniedException` (oder eine andere `IOException`) aus einem der Schreibpfade verließ
+  den Prozess unbehandelt. [`spec/cli-spec.md`](spec/cli-spec.md) ordnet „Ausgabepfad nicht
+  beschreibbar" ausdrücklich `7`/`LOCAL_ERROR` zu. Jetzt liefert die CLI Exit 7 mit einer
+  Meldung, die den Pfad nennt und bei fehlenden Rechten auf
+  `--user "$(id -u):$(id -g)"` hinweist. Der Defekt war vorhanden, seit es die Schreibpfade
+  gibt; aufgefallen ist er erst, als das Image aufhörte, als root zu laufen.
+
+- **Das publizierte JVM-Container-Image lief als `root` und ohne SpatiaLite**
+  ([ADR 0041](docs/adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)) — veröffentlicht wurde
+  bis einschließlich `1.0.0-RC2` **nicht** die Dockerfile-`runtime`-Stage, sondern ein per Jib
+  gebautes Image. Das lief als **uid 0**, hatte den `java …`-Entrypoint statt des
+  `d-migrate`-Launchers und enthielt **kein `mod_spatialite`**, sodass
+  `--spatial-profile spatialite` im Container nicht funktionieren konnte. README, Anwenderhandbuch
+  und die Docker-Hub-Seite beschrieben das Image durchgehend als non-root (`uid 10001`) — die
+  Zusage wird jetzt eingelöst statt zurückgenommen. Das **native** Image (`:<version>-native`) war
+  nie betroffen; es wird schon immer aus einem Dockerfile publiziert und lief korrekt als
+  `uid 10001`. Der Jib-Pfad entfällt ersatzlos, es gibt je Image-Klasse nur noch einen Bauweg.
+  **Nebenwirkung:** das JVM-Image wächst von ~432 MB auf ~516 MB (SpatiaLite samt apt-Layern,
+  `installDist`-Layout statt Jibs Layer-Schnitt); wer das Minimum braucht, nimmt das native Image
+  (~356 MB).
+- **Die SDKMAN-Publikation wurde nie ausgelöst** — `sdkman-release.yml` hing an `on: release`, und
+  GitHub startet für Releases, die per `GITHUB_TOKEN` erzeugt werden, keine Workflow-Läufe. Zum
+  `v1.0.0-RC2`-Tag hatte der Workflow **null Läufe**, unabhängig von den noch fehlenden
+  Vendor-Credentials. Jetzt tag-getriggert, mit Warten auf das Release-Asset (die SDKMAN-API lädt
+  die URL selbst herunter, ein Release ohne ZIP ergäbe einen Eintrag auf eine tote URL) und einem
+  `workflow_dispatch` für nachträgliche Publikation eines bereits veröffentlichten Tags.
 
 ## [1.0.0-RC2] - 2026-07-31
 

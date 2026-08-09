@@ -170,7 +170,37 @@ internal fun runCli(args: Array<String>) {
     buildRootCommand().parse(args)
 }
 
+/**
+ * Meldung für ein I/O-Problem, das kein Kommando abgefangen hat.
+ *
+ * `cli-spec.md` ordnet „Ausgabepfad nicht beschreibbar" dem Exit-Code `7`
+ * (`LOCAL_ERROR`) zu. Ohne diese Naht verlässt eine [IOException] aus einem der
+ * Schreibpfade den Prozess als roher Stacktrace — der Vertrag wäre gebrochen und
+ * die Ausgabe für Aufrufer unbrauchbar.
+ *
+ * [AccessDeniedException] bekommt einen eigenen Hinweis: im Container läuft die
+ * CLI als non-root, sodass Schreiben in ein gemountetes Host-Verzeichnis ohne
+ * `--user` scheitert. Das ist der häufigste Weg, auf dem dieser Fehler entsteht.
+ */
+internal fun localIoErrorMessage(e: java.io.IOException): String {
+    val path = (e as? java.nio.file.FileSystemException)?.file ?: e.message.orEmpty()
+    return when (e) {
+        is java.nio.file.AccessDeniedException ->
+            "Kein Schreibzugriff auf '$path'. Läuft d-migrate im Container, " +
+                "schreibt es als non-root (uid 10001) — für ein gemountetes " +
+                "Host-Verzeichnis `--user \"\$(id -u):\$(id -g)\"` ergänzen."
+        is java.nio.file.NoSuchFileException ->
+            "Pfad nicht gefunden: '$path'. Existiert das Zielverzeichnis?"
+        else -> "I/O-Fehler: ${e.message ?: e::class.simpleName}"
+    }
+}
+
 fun main(args: Array<String>) {
     registerDrivers()
-    buildRootCommand().main(args)
+    try {
+        buildRootCommand().main(args)
+    } catch (e: java.io.IOException) {
+        System.err.println("Error: ${localIoErrorMessage(e)}")
+        kotlin.system.exitProcess(7)
+    }
 }

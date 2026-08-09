@@ -12,8 +12,8 @@ DOCKER ?= docker
 
 IMAGE ?= d-migrate
 IMAGE_TAG ?= dev
-DOCKER_OCI_TAR_IMAGE ?= $(IMAGE):jib-image-tar
-DOCKER_OCI_TAR ?= build/docker/jib-image.tar
+# Name des publizierten JVM-Images. build.yml tagt genau diesen auf die Registry-Namen um.
+DOCKER_OCI_IMAGE ?= dmigrate/d-migrate:latest
 DOCKER_COVERAGE_MODULES_HTML_IMAGE ?= $(IMAGE):coverage-modules-html
 RELEASE_ASSETS_IMAGE ?= $(IMAGE):release-assets
 RELEASE_VERSION ?= $(DMIGRATE_VERSION)
@@ -81,7 +81,7 @@ help:
 		'  make ci-build         Run CI build tasks inside the Docker build stage' \
 		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
 		'  make docker-resolve-deps  Warm Gradle dependencies in Docker' \
-		'  make docker-oci-build Build the Jib OCI image via the Dockerfile stage' \
+		'  make docker-oci-build Build the publishable OCI image (runtime stage)' \
 		'  make docker-build     Build the runtime Docker image' \
 		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
 		'  make docker-test      Run :test inside Docker, targeted via MODULES' \
@@ -126,7 +126,7 @@ help:
 		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
-		'  DOCKER_OCI_TAR_IMAGE=d-migrate:jib-image-tar DOCKER_OCI_TAR=build/docker/jib-image.tar' \
+		'  DOCKER_OCI_IMAGE=dmigrate/d-migrate:latest' \
 		'  DOCKER_COVERAGE_MODULES_HTML_IMAGE=d-migrate:coverage-modules-html RELEASE_ASSETS_IMAGE=d-migrate:release-assets' \
 		'  RELEASE_VERSION=0.9.7' \
 		'  ARGS="schema validate --source schema.yaml"' \
@@ -151,14 +151,14 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.43.1, siehe
-# https://github.com/pt9912/d-check/releases/tag/v0.43.1). Die doc-*-Targets
+# Doku-Referenz-Checks via d-check (Digest-Pin auf v0.51.1, siehe
+# https://github.com/pt9912/d-check/releases/tag/v0.51.1). Die doc-*-Targets
 # (doc-check/-trace/-complete/-doctor/-repair/-immutable/-commits/-planning/-tracked/-targets/-help)
 # kommen aus make/d-check.mk, regeneriert via
-# `docker run --rm ghcr.io/pt9912/d-check:v0.43.1 --print-mk > make/d-check.mk`;
+# `docker run --rm ghcr.io/pt9912/d-check:v0.51.1 --print-mk > make/d-check.mk`;
 # der Image-Pin lebt dort. DCHECK_DIGEST MUSS vor dem include stehen — die .mk
 # wertet den Digest beim Parsen aus (ifeq → DCHECK_REF).
-DCHECK_DIGEST = sha256:718acb28b1992863b0a23b2e172144dccf3ada1c4552fcacc37478bc3e0fddd9
+DCHECK_DIGEST = sha256:fede3d027b2ebc1dd8534460853e57b67cc7a9a182cad2e2138c8eebf7a2d03c
 include make/d-check.mk
 
 # ── Quality-Gates ──────────────────────────────────────────────────
@@ -230,11 +230,13 @@ release-assets:
 docker-resolve-deps:
 	$(DOCKER) build --target deps -t $(IMAGE):deps .
 
+# Baut das zu PUBLIZIERENDE JVM-Image aus der `runtime`-Stage — derselbe Weg, den das
+# native Image ueber docker/native-image.Dockerfile schon geht. Bis 1.0.0-RC2 kam das
+# publizierte Image aus Jib und lief deshalb als root und ohne mod_spatialite, waehrend
+# `runtime` (USER dmigrate, /work gechownt, SpatiaLite) nur lokal verwendet wurde
+# (ADR 0041). Ein Image-Bauweg statt zwei.
 docker-oci-build:
-	$(DOCKER) build --target jib-image-tar -t $(DOCKER_OCI_TAR_IMAGE) .
-	mkdir -p $(dir $(DOCKER_OCI_TAR))
-	$(DOCKER) run --rm $(DOCKER_OCI_TAR_IMAGE) > $(DOCKER_OCI_TAR)
-	$(DOCKER) load -i $(DOCKER_OCI_TAR)
+	$(DOCKER) build --target runtime -t $(DOCKER_OCI_IMAGE) .
 
 docker-build:
 	$(DOCKER) build --target runtime -t $(IMAGE):$(IMAGE_TAG) .

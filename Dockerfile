@@ -16,10 +16,8 @@
 #       --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
 #       -t d-migrate:phase-a .
 #
-#   Build the Jib image tar inside Docker, then load it into the host daemon:
-#     docker build --target jib-image-tar -t d-migrate:jib-image-tar .
-#     docker run --rm d-migrate:jib-image-tar > jib-image.tar
-#     docker load -i jib-image.tar
+#   Build the image that gets PUBLISHED (identical to `make docker-oci-build`):
+#     docker build --target runtime -t dmigrate/d-migrate:latest .
 #
 #   Build and extract CI artifacts without host Gradle:
 #     docker build --target docker-coverage-modules-html -t d-migrate:coverage-modules-html .
@@ -176,17 +174,6 @@ ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
 
 RUN gradle --no-daemon ${GRADLE_TASKS}
 
-# ---- Stage 1b: Jib image tar ----------------------------------------------
-# `jibDockerBuild` requires a Docker daemon and cannot run inside a normal
-# Dockerfile build stage. Build the equivalent Jib tar instead; the existing
-# Jib container config, including OCI labels, is preserved in the tar.
-FROM compile AS jib-image-tar
-
-RUN gradle --no-daemon :adapters:driving:cli:jibBuildTar
-
-# nosemgrep: config.semgrep.missing-user -- ephemeral CI helper stage (cats a build artifact to stdout), never a published runtime image
-ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/jib-image.tar"]
-
 # ---- Stage 1c: coverage modules HTML --------------------------------------
 # Produces per-module Kover HTML reports and streams them as a tar archive so
 # GitHub Actions can upload them from the checked-out workspace.
@@ -313,9 +300,12 @@ RUN echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c - && \
 # Optional hard gate for CI-style coverage enforcement. Keep this on the same
 # fresh test-run path as `make ci-build`; running verify after a prior report
 # generation stage can leave Kover consuming a different artifact set.
+#
+# Der Task-Satz spiegelt `CI_BUILD_TASKS` (Makefile) — beide muessen denselben
+# Graphen fahren, sonst prueft der lokale Gate etwas anderes als CI.
 FROM compile AS coverage-verify
 
-ARG COVERAGE_VERIFY_TASKS="test koverVerify --no-build-cache"
+ARG COVERAGE_VERIFY_TASKS="build koverVerify --no-build-cache"
 
 RUN gradle --no-daemon ${COVERAGE_VERIFY_TASKS}
 
@@ -421,7 +411,7 @@ RUN pip install --no-cache-dir defusedxml
 ENTRYPOINT ["python3", "/usr/local/bin/kover-modules-summary.py", "/reports"]
 
 # ---- Stage 7: runtime ------------------------------------------------------
-# Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild
+# Das publizierte JVM-Image (ADR 0041): Ziel von `make docker-oci-build`.
 FROM eclipse-temurin:21-jre-noble AS runtime
 
 

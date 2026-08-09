@@ -1876,6 +1876,22 @@ d-migrate verwendet genau **eine** Datei, in dieser Reihenfolge:
 2. der Pfad aus der Umgebungsvariable `D_MIGRATE_CONFIG`
 3. die Datei `./.d-migrate.yaml` im aktuellen Verzeichnis <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
 
+Welche Datei tatsächlich gegriffen hat und was darin steht, zeigt Ihnen:
+
+```bash
+d-migrate config show
+```
+
+Die Ausgabe ist der Inhalt der **effektiv gewählten** Datei als eingerückter
+Abschnittsbaum; mit `--section database` schränken Sie auf einen Abschnitt ein.
+Passwörter, Token und `credentialRef`-Werte erscheinen als `***`, Sie können die
+Ausgabe also gefahrlos in ein Ticket kopieren. Beachten Sie zwei Grenzen:
+`${VAR}`-Platzhalter werden **nicht** aufgelöst (sie erscheinen wörtlich), und
+Werte, die Sie gar nicht in die Datei geschrieben haben, tauchen nicht auf —
+angezeigt wird die Datei, nicht die Summe aus Datei und Standardwerten. Aktive
+`D_MIGRATE_*`-Umgebungsvariablen listet der Befehl namentlich am Ende, ohne ihre
+Werte einzurechnen.
+
 Die vollständige Liste aller Konfigurationsfelder steht im
 [Administrationshandbuch](administrationshandbuch.md#3-konfiguration).
 
@@ -1900,8 +1916,11 @@ finden Sie in [Anhang A](#a1-globale-optionen). Die wichtigsten:
     fehlendes Passwort;
   - das Passwort **verschlüsselt ablegen**: `d-migrate config credentials set
     --name <verbindung> --user <benutzer>` — es wird beim Verbinden herangezogen;
-  - eine Verbindung per `credentialRef: "file:/pfad"` oder `"env:VAR"` auf eine
-    externe Secret-Quelle zeigen lassen (z. B. ein k8s-Secret-Mount).
+  - eine Verbindung per `credentialRef` auf eine externe Secret-Quelle zeigen
+    lassen: `"file:/pfad"` (z. B. ein k8s-Secret-Mount), `"env:VAR"` oder
+    `"keychain:<service>"` (Eintrag im Schlüsselbund Ihres Betriebssystems —
+    bequem am Arbeitsplatz, aber ungeeignet für CI und Server, weil dort kein
+    Schlüsselbund verfügbar ist).
 
   Details und die Prioritätsreihenfolge stehen im
   [Administrationshandbuch](administrationshandbuch.md#46-credential-handling).
@@ -1946,15 +1965,21 @@ das Passwort als `${VAR}` in einer benannten Verbindung der `.d-migrate.yaml`
 
 ### „Failed to resolve credentialRef for connection '…' (fail-closed)"
 
-**Ursache:** Eine Verbindung verweist per `credentialRef` (`file:`/`env:`) auf eine
-Secret-Quelle, die nicht aufgelöst werden konnte — die Datei fehlt, die
-Umgebungsvariable ist nicht gesetzt oder das Schema ist unbekannt. d-migrate
-verbindet dann **bewusst nicht** ohne Secret (Exit 7), statt still weiterzumachen.
+**Ursache:** Eine Verbindung verweist per `credentialRef` (`file:`/`env:`/`keychain:`)
+auf eine Secret-Quelle, die nicht aufgelöst werden konnte — die Datei fehlt, die
+Umgebungsvariable ist nicht gesetzt, der Schlüsselbund-Eintrag existiert nicht oder
+das Schema ist unbekannt. d-migrate verbindet dann **bewusst nicht** ohne Secret
+(Exit 7), statt still weiterzumachen.
 
 **Lösung:** Prüfen Sie, dass die referenzierte Datei existiert und lesbar ist bzw.
 die Umgebungsvariable gesetzt ist, und dass der Datei-Inhalt/Variablenwert die
 vollständige Connect-URL enthält. Die Fehlermeldung nennt Pfad bzw. Grund
 (`FILE_NOT_FOUND`, `ENV_NOT_SET`, `PROVIDER_MISSING`), nie das Secret selbst.
+
+Tritt der Fehler **nur in CI, im Container oder auf einem Server auf**, während er
+am Arbeitsplatz nicht auftrat, prüfen Sie, ob die Verbindung `keychain:` verwendet:
+dort gibt es keinen Schlüsselbund, und die Auflösung scheitert bewusst, statt ohne
+Secret weiterzumachen. Nutzen Sie in solchen Umgebungen `env:` oder `file:`.
 
 ### „Unknown database dialect 'xyz'"
 
@@ -2039,8 +2064,8 @@ Am einfachsten als `${VAR}`-Platzhalter in einer benannten Verbindung der
 (z. B. `postgresql://app:${DB_PASSWORD}@…`, dann `export DB_PASSWORD=…`).
 Alternativ können Sie das Passwort verschlüsselt ablegen
 (`d-migrate config credentials set`) oder eine Verbindung per
-`credentialRef: "file:/pfad"`/`"env:VAR"` auf eine externe Secret-Quelle zeigen
-lassen. Vermeiden Sie Passwörter im Klartext in Skripten; die Übersicht steht im
+`credentialRef: "file:/pfad"`/`"env:VAR"`/`"keychain:<service>"` auf eine externe
+Secret-Quelle zeigen lassen. Vermeiden Sie Passwörter im Klartext in Skripten; die Übersicht steht im
 [Administrationshandbuch](administrationshandbuch.md#46-credential-handling).
 
 **Was ist der Unterschied zwischen `schema generate` und `schema migrate`?**
@@ -2348,6 +2373,21 @@ Abfrage. Details: [Administrationshandbuch](administrationshandbuch.md#46-creden
 | `--password` | Passwort; ohne Angabe interaktiv abgefragt |
 | `config credentials list` | hinterlegte Namen anzeigen (nie Werte/Passwörter) |
 
+#### A.18 `config show`
+
+Zeigt die **effektiv gewählte** Konfigurationsdatei (Auflösung nach
+`--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`) als Abschnittsbaum, plus <!-- d-check:ignore (Nutzer-CWD-Pfad, kein Repo-Artefakt; ADR 0011) -->
+die Namen aktiver `D_MIGRATE_*`-Variablen. Siehe [4.2](#42-welche-konfigurationsdatei-gilt).
+
+| Befehl / Option | Beschreibung |
+| ------ | ------------ |
+| `config show` | effektiv gewählte Konfigurationsdatei anzeigen |
+| `--section` | nur einen Abschnitt zeigen (`database`, `pipeline`, `ai`, …); unbekannter Name → Exit 2 |
+
+Sensible Feldnamen (`password`, `secret`, `token`, `credentialRef`) und Passwörter
+in URLs erscheinen als `***`. `${VAR}` wird nicht aufgelöst; Standardwerte, die
+nicht in der Datei stehen, werden nicht ergänzt.
+
 ### Anhang B — Exit-Codes
 
 | Code | Name | Bedeutung |
@@ -2629,6 +2669,7 @@ custom_types:
 | 0.1 | 15.06.2026 | Erster aufgabenorientierter Entwurf für Software-Version 0.9.9 (Beta). |
 | 0.2 | 05.07.2026 | Fehlerbehebung: Hinweis zur Fingerabdruck-Versionsbindung von Rollback-Artefakten und Overlays (Abbruch mit Exit 8 nach einem Update) ergänzt. |
 | 0.3 | 16.07.2026 | Auf Software-Version 1.0.0-RC-SNAPSHOT aktualisiert. Zugangsdaten-Optionen erweitert (`D_MIGRATE_DB_PASSWORD`, verschlüsselter Store `config credentials`, `credentialRef: file:/env:`); neuer Fehlerfall „credentialRef fail-closed"; `config credentials` in die Befehlsreferenz (A.17) aufgenommen. |
+| 0.4 | 31.07.2026 | Auf Software-Version 1.0.0-RC2 aktualisiert. `credentialRef`-Aufzählungen um das dritte Schema `keychain:` ergänzt (inkl. Hinweis, dass es in CI/Container/Server fail-closed scheitert — neuer Absatz in der Fehlerbehebung). `config show` in 4.2 als Antwort auf „welche Konfiguration gilt gerade?" aufgenommen und als A.18 in die Befehlsreferenz. |
 
 ---
 

@@ -1,14 +1,31 @@
 name: SDKMAN Release
 
-# Publiziert d-migrate als SDKMAN-Candidate-Version, sobald ein GitHub-Release veroeffentlicht wird.
+# Publiziert d-migrate als SDKMAN-Candidate-Version zu einem Release-Tag.
 #
 # SEPARATER Workflow (nicht in release-homebrew.yml): eine Distributionsklasse pro Workflow,
-# unabhaengig schalt-/debug-bar. `on: release` ist der von SDKMAN empfohlene Trigger und feuert erst,
-# wenn das Release + seine Assets existieren → KEIN Wait-Poll noetig (anders als der attach-release-Job
-# in native-image.yml, der schon zur Tag-Zeit baut). release-homebrew.yml bleibt der Release-Ersteller.
+# unabhaengig schalt-/debug-bar. release-homebrew.yml bleibt der Release-Ersteller.
+#
+# TRIGGER: Tag-Push, NICHT `on: release`.
+#   Der erste Entwurf haing an `on: release: [published, prereleased]`, weil das Event erst feuert,
+#   wenn Release + Assets existieren — scheinbar ohne Wait-Poll. Beim ersten echten Einsatz
+#   (v1.0.0-RC2, 2026-07-31) hatte dieser Workflow NULL Laeufe. Grund ist dokumentiertes
+#   GitHub-Verhalten: "events triggered by the GITHUB_TOKEN will not create a new workflow run,
+#   with the following exceptions: workflow_dispatch and repository_dispatch". release-homebrew.yml
+#   erzeugt das Release per `gh release create` mit `GH_TOKEN: ${{ github.token }}` — das
+#   release-Event entsteht also nie als Trigger. Der Defekt war unabhaengig von den Secrets: auch
+#   mit freigegebenem Candidate waere nichts passiert.
+#
+#   Verworfene Alternativen:
+#     - PAT / GitHub-App-Token in release-homebrew.yml: loest es laut Doku, kostet aber ein
+#       zusaetzliches, rotationspflichtiges Credential fuer einen optionalen Zusatzkanal.
+#     - `gh workflow run` (workflow_dispatch) aus release-homebrew.yml heraus: funktioniert (Dispatch
+#       ist von der GITHUB_TOKEN-Regel ausgenommen), koppelt aber den Release-Ersteller an diese
+#       Distributionsklasse — genau die Trennung, die dieser Workflow bewahren soll.
+#   Tag-Trigger + Warten auf das Asset kommt ohne beides aus. Denselben Weg geht der
+#   attach-release-Job in native-image.yml, der zum RC2-Tag nachweislich funktioniert hat.
 #
 # VORAUSSETZUNG (einmalig, EXTERN — nicht automatisierbar): d-migrate muss ein SDKMAN-Candidate sein
-# (PR an sdkman-db-migrations, dann GPG-Key an info@sdkman.io → Consumer-Key/-Token), und die Secrets
+# (PR an sdkman-db-migrations, dann GPG-Key an info@sdkman.io -> Consumer-Key/-Token), und die Secrets
 # SDKMAN_CONSUMER_KEY / SDKMAN_CONSUMER_TOKEN muessen gesetzt sein. Fehlen sie, ueberspringt der
 # Workflow den Publish mit einer Notice (kein roter Release) — derselbe optionale-Zusatzkanal-Ansatz
 # wie beim Docker-Hub-Spiegel. Onboarding + Verifikation: docs/planning/next/sdkman-distribution.md,
@@ -20,10 +37,17 @@ name: SDKMAN Release
 # (Slice), kein 1.0.0-Scope.
 
 on:
-  release:
-    # `published` deckt Stable UND Prerelease ab; `prereleased` zusaetzlich als Absicherung (feuert bei
-    # RC-Releases). Ein etwaiges Doppel-Feuern ist unkritisch: der SDKMAN-Release-POST ist idempotent.
-    types: [published, prereleased]
+  push:
+    tags:
+      - 'v*'
+  # Manueller Nachlauf, wenn der Tag-Lauf fehlschlug oder die Credentials erst spaeter kamen.
+  # Der Publish ist idempotent, ein Wiederholen ist unkritisch.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release-Tag, z. B. v1.0.0-RC3'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -38,7 +62,7 @@ jobs:
   sdkman:
     runs-on: ubuntu-latest
     steps:
-      # secrets sind im Step-`if:` nicht verfuegbar → Praesenz in einen Output uebersetzen (Muster aus
+      # secrets sind im Step-`if:` nicht verfuegbar -> Praesenz in einen Output uebersetzen (Muster aus
       # build.yml Docker-Hub-Block). Ohne Credentials (Candidate noch nicht freigegeben): Skip + Notice.
       - name: Check for SDKMAN vendor credentials
         id: creds
@@ -53,15 +77,51 @@ jobs:
             echo "::notice::SDKMAN_CONSUMER_KEY/TOKEN nicht gesetzt — SDKMAN-Publish uebersprungen (Candidate noch nicht freigegeben?)."
           fi
 
-      - name: Derive version and asset URL
+      - name: Derive version, asset name and URL
         if: steps.creds.outputs.enabled == 'true'
         id: meta
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          set -euo pipefail
           VERSION="${TAG#v}"
+          ASSET="d-migrate-${VERSION}.zip"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "url=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/d-migrate-${VERSION}.zip" >> "$GITHUB_OUTPUT"
+          echo "asset=${ASSET}" >> "$GITHUB_OUTPUT"
+          echo "url=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ASSET}" >> "$GITHUB_OUTPUT"
+          # Prerelease-Erkennung nach SemVer ("Version enthaelt ein '-'") — dieselbe Regel wie der
+          # :latest-Ausschluss in build.yml. `github.event.release.prerelease` gibt es beim
+          # Tag-Trigger nicht.
+          case "${VERSION}" in
+            *-*) echo "prerelease=true"  >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      # Warten auf das ASSET, nicht nur auf das Release: die SDKMAN-API bekommt eine URL und laedt sie
+      # SELBST herunter. Ein Release ohne das ZIP wuerde einen kaputten Eintrag anlegen. Deshalb
+      # strenger als der attach-release-Job in native-image.yml, dem das blosse Release genuegt (er
+      # laedt ja hoch). release-homebrew.yml laeuft parallel zu diesem Workflow — Reihenfolge ist
+      # nicht garantiert.
+      - name: Wait for the release asset to be published
+        if: steps.creds.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          ASSET: ${{ steps.meta.outputs.asset }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets \
+                 --jq '.assets[].name' 2>/dev/null | grep -qx "${ASSET}"; then
+              echo "Asset ${ASSET} ist am Release ${TAG} vorhanden."
+              exit 0
+            fi
+            echo "Versuch ${attempt}: ${ASSET} noch nicht da; 30 s warten"
+            sleep 30
+          done
+          echo "::error::${ASSET} ist nach 10 Minuten nicht am Release ${TAG} aufgetaucht — SDKMAN-Publish abgebrochen (es wuerde eine tote URL registrieren)."
+          exit 1
 
       - name: Release version to SDKMAN
         if: steps.creds.outputs.enabled == 'true'
@@ -75,10 +135,10 @@ jobs:
           platform: UNIVERSAL
 
       # Die Action releast nur — Default setzen ist ein separater API-Aufruf (`PUT /default`). Nur bei
-      # Stable (kein Prerelease): dieselbe Regel wie `:latest`/Homebrew-nur-Stable. RCs bleiben per
-      # `sdk install d-migrate <version>` ziehbar, werden aber nicht die Default-Version.
+      # Stable: dieselbe Regel wie `:latest`/Homebrew-nur-Stable. RCs bleiben per
+      # `sdk install dmigrate <version>` ziehbar, werden aber nicht die Default-Version.
       - name: Set as SDKMAN default version (only stable)
-        if: steps.creds.outputs.enabled == 'true' && github.event.release.prerelease == false
+        if: steps.creds.outputs.enabled == 'true' && steps.meta.outputs.prerelease == 'false'
         env:
           KEY: ${{ secrets.SDKMAN_CONSUMER_KEY }}
           TOKEN: ${{ secrets.SDKMAN_CONSUMER_TOKEN }}

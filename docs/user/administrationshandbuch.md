@@ -52,11 +52,19 @@ datenbankunabhängiger Domain-Core, Output-Ports und austauschbare Adapter
 
 | Weg | Bezug | Hinweis |
 | --- | ----- | ------- |
-| **Docker / GHCR-Image** | [`README.md`](../../README.md), [`guide.md`](guide.md) | `ghcr.io/pt9912/d-migrate:0.9.8` bzw. `:latest`; read-only-Mount des Arbeitsverzeichnisses empfohlen |
+| **Docker / GHCR-Image** | [`README.md`](../../README.md), [`guide.md`](guide.md) | `ghcr.io/pt9912/d-migrate:<version>` bzw. `:latest`; read-only-Mount des Arbeitsverzeichnisses empfohlen |
+| **Docker Hub (Spiegel)** | [`README.md`](../../README.md) | `pt9912/d-migrate:<version>` — dasselbe Image wie auf GHCR (identischer Digest), für Umgebungen ohne GHCR-Login. GHCR bleibt die Referenz-Registry |
+| **Natives Container-Image** | [`releasing.md`](releasing.md) | `…/d-migrate:<version>-native` — enthält das GraalVM-Binary statt einer JVM: kleineres Image, Start in Millisekunden, gleicher CLI-Vertrag |
+| **Native Binaries** | [`releasing.md`](releasing.md) | eigenständige Binaries **ohne Java** am GitHub-Release: `linux-x64` (pro Release garantiert), `macos-arm64` und `windows-x64` (Best-Effort), je mit `.sha256`. Dynamisch gegen glibc gelinkt — unter Alpine/musl die JVM-Artefakte oder das Container-Image verwenden |
 | **GitHub-Release-Assets** | [`guide.md`](guide.md) Option A | Launcher-Skript bzw. Fat JAR (JVM 21) |
-| **Homebrew-Tap** | [`releasing.md`](releasing.md) | `brew tap pt9912/d-migrate …` dann `brew install d-migrate` |
+| **Homebrew-Tap** | [`releasing.md`](releasing.md) | `brew tap pt9912/d-migrate …` dann `brew install d-migrate`; folgt nur **stabilen** Releases, keine RCs |
 | **Aus Quellcode bauen** | [`README.md`](../../README.md) „Build, Test, Lint" | `make`-Targets; Build/Test laufen im Docker-Build (Stage `build`) |
 | **Image lokal aus dem Dockerfile** | [`guide.md`](guide.md) Option B | `make docker-build` |
+
+> **Vorabversionen:** Release Candidates (`1.0.0-RC3`) erscheinen als versioniertes
+> Tag und GitHub-Prerelease, bewegen aber **weder `:latest`** in einer Registry
+> **noch den Homebrew-Tap** — beide bleiben auf dem letzten stabilen Release. Wer
+> einen RC einsetzen will, zieht ihn ausdrücklich über seine Version.
 
 Für reproduzierbare Builds und Releases (Asset-Erzeugung, Tag-Workflow,
 Homebrew-Formula-Bump) ist [`releasing.md`](releasing.md) maßgeblich.

@@ -13,7 +13,7 @@
 scan:
   ignore: ["docs/planning/done-archive/**", "docs/archive/**"]
 
-modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids]
+modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids, pins, citations]
 
 # matrix: mechanisiert die Referenz-Richtung (Stable Dependencies
 # Principle, konventionen.md "Referenz-Richtung (SDP)"): Spec-Straten

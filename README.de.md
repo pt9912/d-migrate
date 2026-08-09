@@ -176,11 +176,14 @@ Die vollständige Release-History steht in
 
 - **Aktuelles Stable** · **0.9.12** (2026-07-13) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern.
-- **Aktuelle Vorabversion** · **1.0.0-RC2** (2026-07-31) — der
-  1.0.0-Release-Candidate: GraalVM-Native-Binaries für
-  Linux/macOS/Windows, ein `-native`-Container-Image und ein
-  Docker-Hub-Spiegel neben GHCR. Veröffentlicht als GitHub-Prerelease
-  + versioniertes OCI-Tag; bewegt `:latest` und Homebrew **nicht**.
+- **Aktuelle Vorabversion** · **1.0.0-RC3** (2026-08-09) — der
+  1.0.0-Release-Candidate. Das publizierte JVM-Image kommt jetzt aus
+  der Dockerfile-`runtime`-Stage: es läuft als **non-root**
+  (`uid 10001`) und enthält `mod_spatialite`; Schreiben in einen
+  Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Ein nicht
+  beschreibbarer Ausgabepfad endet jetzt in Exit `7` statt in einem
+  Stacktrace. Veröffentlicht als GitHub-Prerelease + versioniertes
+  OCI-Tag; bewegt `:latest` und Homebrew **nicht**.
 - **Als Nächstes** · **1.0.0 Stable** — `Geplant`.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
@@ -210,7 +213,7 @@ make docs-check        # Markdown-Link-Ziele + Kover-Excludes-Ledger prüfen
 make semgrep           # hermetischer semgrep-Scan mit gepinnten Regeln
 make integration       # Testcontainers-Integrationssuite
 make docker-full-gates # docker-gates plus Docker-gestützte Integrationstests
-make docker-oci-build  # Jib-OCI-Image-Tar via Dockerfile-Stage bauen
+make docker-oci-build  # das zu publizierende OCI-Image bauen (runtime-Stage)
 make release-assets    # ZIP, TAR, Fat JAR, SHA256 Release-Assets bauen
 ```
 
@@ -370,10 +373,10 @@ JDK-Installation auszuführen.
 - **`coverage-verify`**: hartes `koverVerify` (≥ 90 % pro Modul).
 - **`release-assets`**: ZIP / TAR / Fat JAR / SHA256 (Target von
   `make release-assets`).
-- **`jib-image-tar`**: Jib-OCI-Image als Tar (Target von
-  `make docker-oci-build`).
-- **`runtime`** (Default): schlankes
-  `eclipse-temurin:21-jre-noble`-Runtime-Image.
+- **`runtime`** (Default): das **publizierte** Image — schlankes
+  `eclipse-temurin:21-jre-noble`, non-root (`uid 10001`), mit
+  `mod_spatialite`. Target von `make docker-oci-build`
+  ([ADR 0041](docs/adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)).
 
 </details>
 
@@ -426,7 +429,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 .
 ├── .github/workflows/             ← GitHub Actions: Build, Integration, Demo/Sample-DB, Release
 ├── CHANGELOG.md
-├── Dockerfile                     ← Multi-Stage (deps, build, detekt, coverage, runtime, release-assets, jib-image-tar)
+├── Dockerfile                     ← Multi-Stage (deps, build, detekt, coverage, runtime, release-assets)
 ├── Makefile                       ← Build-/Test-Gates pro Dockerfile-Stage
 ├── README.md                      ← Englische Hauptversion
 ├── README.de.md                   ← Deutsche Version (dieses Dokument)

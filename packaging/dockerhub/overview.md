@@ -7,6 +7,8 @@ then validate, compare, generate DDL, and run live diff-based migrations against
 data export/import/transfer, and export to Flyway, Liquibase, Django, and Knex.
 
 - **Source & docs:** https://github.com/pt9912/d-migrate
+- **User guide** (task-oriented: "I need X → do Y"): https://github.com/pt9912/d-migrate/blob/main/docs/user/anwenderhandbuch.md
+- **Operations guide** (deployment, configuration, connections): https://github.com/pt9912/d-migrate/blob/main/docs/user/administrationshandbuch.md
 - **Changelog:** https://github.com/pt9912/d-migrate/blob/main/CHANGELOG.md
 - **License:** MIT
 

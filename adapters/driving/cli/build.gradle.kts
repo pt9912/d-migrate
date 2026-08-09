@@ -9,7 +9,6 @@ import java.security.MessageDigest
 plugins {
     application
     id("com.github.johnrengelman.shadow") version "8.1.1"
-    id("com.google.cloud.tools.jib") version "3.4.5"
     // GraalVM Native Image (docs/planning/done/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
@@ -276,27 +275,6 @@ tasks.register("assembleReleaseAssets") {
     dependsOn(writeReleaseChecksums)
 }
 
-jib {
-    from {
-        image = "eclipse-temurin:21-jre-noble"
-    }
-    to {
-        image = "dmigrate/d-migrate"
-        tags = setOf("latest", project.version.toString())
-    }
-    container {
-        mainClass = "dev.dmigrate.cli.MainKt"
-        jvmFlags = listOf("-XX:+UseZGC", "-XX:+ZGenerational")
-        workingDirectory = "/work"
-        volumes = listOf("/work")
-        labels = mapOf(
-            "org.opencontainers.image.title" to "d-migrate",
-            "org.opencontainers.image.description" to "Database-agnostic CLI tool for schema migration and data management",
-            "org.opencontainers.image.source" to "https://github.com/pt9912/d-migrate",
-            "org.opencontainers.image.licenses" to "MIT"
-        )
-    }
-}
 
 kover {
     reports {
