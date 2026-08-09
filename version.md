@@ -14,7 +14,7 @@
 ## Aktuell
 
 <a id="aktuell"></a>
-Aktuelle Version: [`v1.0.0-RC2`](#v1.0.0-RC2) — 2026-07-31 (Vorabversion).
+Aktuelle Version: [`v1.0.0-RC3`](#v1.0.0-RC3) — 2026-08-09 (Vorabversion).
 
 Aus anderen Dokumenten stabil referenzierbar als `version.md#aktuell` (zeigt immer hierher,
 nie auf eine feste Nummer). Pro Release sind diese Zeile, eine neue Tabellenzeile im Verlauf
@@ -29,7 +29,8 @@ sichtbar, welches der jüngste Stable-Eintrag ist.
 
 | Version | Datum | Art | Release |
 | ------- | ----- | --- | ------- |
-| `v1.0.0-RC2` <a id="v1.0.0-RC2"></a> | 2026-07-31 | Vorabversion | [Tag v1.0.0-RC2](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0-RC2) |
+| `v1.0.0-RC3` <a id="v1.0.0-RC3"></a> | 2026-08-09 | Vorabversion | [Tag v1.0.0-RC3](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0-RC3) |
+| `v1.0.0-RC2` | 2026-07-31 | Vorabversion | [Tag v1.0.0-RC2](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0-RC2) |
 | `v1.0.0-RC1` | 2026-07-16 | Vorabversion | [Tag v1.0.0-RC1](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0-RC1) |
 | `v0.9.12` | 2026-07-13 | Stable | [Tag v0.9.12](https://github.com/pt9912/d-migrate/releases/tag/v0.9.12) |
 | `v0.9.11` | 2026-07-12 | Stable | [Tag v0.9.11](https://github.com/pt9912/d-migrate/releases/tag/v0.9.11) |

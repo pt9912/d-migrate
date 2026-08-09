@@ -61,7 +61,7 @@ datenbankunabhängiger Domain-Core, Output-Ports und austauschbare Adapter
 | **Aus Quellcode bauen** | [`README.md`](../../README.md) „Build, Test, Lint" | `make`-Targets; Build/Test laufen im Docker-Build (Stage `build`) |
 | **Image lokal aus dem Dockerfile** | [`guide.md`](guide.md) Option B | `make docker-build` |
 
-> **Vorabversionen:** Release Candidates (`1.0.0-RC2`) erscheinen als versioniertes
+> **Vorabversionen:** Release Candidates (`1.0.0-RC3`) erscheinen als versioniertes
 > Tag und GitHub-Prerelease, bewegen aber **weder `:latest`** in einer Registry
 > **noch den Homebrew-Tap** — beide bleiben auf dem letzten stabilen Release. Wer
 > einen RC einsetzen will, zieht ihn ausdrücklich über seine Version.

@@ -163,11 +163,13 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
 - **Current stable** · **0.9.12** (2026-07-13) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you.
-- **Current prerelease** · **1.0.0-RC2** (2026-07-31) — the 1.0.0
-  release candidate: GraalVM native binaries for Linux/macOS/Windows,
-  a `-native` container image, and a Docker Hub mirror alongside GHCR.
-  Published as a GitHub prerelease + versioned OCI tag; it does **not**
-  move `:latest` or Homebrew.
+- **Current prerelease** · **1.0.0-RC3** (2026-08-09) — the 1.0.0
+  release candidate. The published JVM image now comes from the
+  Dockerfile `runtime` stage: it runs as **non-root** (`uid 10001`) and
+  ships `mod_spatialite`, so writing into a bind mount needs
+  `--user "$(id -u):$(id -g)"`. An unwritable output path now exits `7`
+  instead of printing a stack trace. Published as a GitHub prerelease +
+  versioned OCI tag; it does **not** move `:latest` or Homebrew.
 - **Next** · **1.0.0 stable** — `Planned`.
 
 For per-milestone task tables and ADR pointers see the canonical
