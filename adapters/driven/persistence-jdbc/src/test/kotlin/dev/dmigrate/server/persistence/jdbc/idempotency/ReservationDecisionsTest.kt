@@ -2,10 +2,13 @@ package dev.dmigrate.server.persistence.jdbc.idempotency
 
 import dev.dmigrate.server.core.approval.ApprovalChallenge
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
+import dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyKey
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
 import dev.dmigrate.server.core.idempotency.IdempotencyState
+import dev.dmigrate.server.core.idempotency.InitResumeOutcome
+import dev.dmigrate.server.core.idempotency.InitResumeScope
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import io.kotest.core.spec.style.FunSpec
@@ -149,5 +152,138 @@ class ReserveDecisionTest : FunSpec({
             val ungeclaimt = row(state, resultRef = "r", reason = "x", claimed = false)
             decide(geclaimt) shouldBe decide(ungeclaimt)
         }
+    }
+})
+
+/**
+ * Entscheidungstabelle des `claimApproved`-Pfads — ohne Datenbank.
+ */
+class ClaimDecisionTest : FunSpec({
+
+    val scope = IdempotencyScope(
+        tenantId = TenantId("acme"),
+        callerId = PrincipalId("svc-migrator"),
+        toolName = "schema_compare",
+        idempotencyKey = IdempotencyKey("key-1"),
+    )
+    val now = Instant.parse("2026-08-09T12:00:00Z")
+    val future = now.plusSeconds(60)
+    val past = now.minusSeconds(1)
+
+    fun row(
+        state: IdempotencyState,
+        expiresAt: Instant = future,
+        resultRef: String? = null,
+        reason: String? = null,
+        claimed: Boolean = false,
+    ) = ReservationRow(
+        state = state,
+        claimed = claimed,
+        fingerprint = "fp-abc",
+        expiresAt = expiresAt,
+        resultRef = resultRef,
+        challengeJson = null,
+        reason = reason,
+    )
+
+    fun outcomeOf(existing: ReservationRow?) =
+        decideClaim(scope, now, existing)
+            .shouldBeInstanceOf<ClaimDecision.Complete>().outcome
+
+    test("fehlende Zeile ist kein Fehler, sondern NotAwaitingApproval") {
+        outcomeOf(null) shouldBe IdempotencyClaimOutcome.NotAwaitingApproval(scope)
+    }
+
+    test("gueltige Freigabe wird eingeloest") {
+        decideClaim(scope, now, row(IdempotencyState.AWAITING_APPROVAL)) shouldBe
+            ClaimDecision.TransitionToClaimed
+    }
+
+    test("abgelaufene Freigabe wird NICHT eingeloest") {
+        // Sonst liefe die Claim-CAS (`expires_at > ?`) ins Leere und der
+        // check(updated == 1) in transitionToClaimed wuerde werfen.
+        outcomeOf(row(IdempotencyState.AWAITING_APPROVAL, expiresAt = past)) shouldBe
+            IdempotencyClaimOutcome.NotAwaitingApproval(scope)
+    }
+
+    test("die Freigabe-Grenze ist exklusiv — genau jetzt ist abgelaufen") {
+        outcomeOf(row(IdempotencyState.AWAITING_APPROVAL, expiresAt = now))
+            .shouldBeInstanceOf<IdempotencyClaimOutcome.NotAwaitingApproval>()
+        decideClaim(scope, now, row(IdempotencyState.AWAITING_APPROVAL, expiresAt = now.plusMillis(1))) shouldBe
+            ClaimDecision.TransitionToClaimed
+    }
+
+    test("nur eine bereits geclaimte PENDING-Zeile ist ein wiederholter Claim") {
+        outcomeOf(row(IdempotencyState.PENDING, claimed = true)) shouldBe
+            IdempotencyClaimOutcome.AlreadyClaimed(scope, future)
+        outcomeOf(row(IdempotencyState.PENDING, claimed = false)) shouldBe
+            IdempotencyClaimOutcome.NotAwaitingApproval(scope)
+    }
+
+    test("COMMITTED und DENIED liefern ihr terminales Ergebnis") {
+        outcomeOf(row(IdempotencyState.COMMITTED, resultRef = "job-9")) shouldBe
+            IdempotencyClaimOutcome.Committed(scope, "job-9")
+        outcomeOf(row(IdempotencyState.DENIED, reason = "policy")) shouldBe
+            IdempotencyClaimOutcome.Denied(scope, future, "policy")
+    }
+
+    test("FAILED ist nicht claimbar") {
+        outcomeOf(row(IdempotencyState.FAILED, reason = "boom")) shouldBe
+            IdempotencyClaimOutcome.NotAwaitingApproval(scope)
+    }
+
+    test("der Fingerprint spielt beim Claim keine Rolle") {
+        // Anders als bei reserve: geclaimt wird gegen eine bestehende Freigabe,
+        // nicht gegen einen erneut eingereichten Payload.
+        val a = row(IdempotencyState.AWAITING_APPROVAL).copy(fingerprint = "fp-1")
+        val b = row(IdempotencyState.AWAITING_APPROVAL).copy(fingerprint = "fp-2")
+        decideClaim(scope, now, a) shouldBe decideClaim(scope, now, b)
+    }
+})
+
+/**
+ * Init-Resume-Entscheidung und Retention-Regel — beide ohne Datenbank.
+ */
+class InitResumeAndRetentionTest : FunSpec({
+
+    val scope = InitResumeScope(
+        tenantId = TenantId("acme"),
+        callerId = PrincipalId("svc-migrator"),
+        toolName = "schema_compare",
+        clientRequestId = "req-1",
+    )
+    val now = Instant.parse("2026-08-09T12:00:00Z")
+    val expires = now.plusSeconds(600)
+
+    test("gleicher Fingerprint liefert dieselbe Session zurueck") {
+        decideInitResume(scope, "fp-1", InitResumeRow("sess-1", "fp-1", expires)) shouldBe
+            InitResumeOutcome.Existing(scope, "sess-1", expires)
+    }
+
+    test("abweichender Fingerprint ist ein Konflikt") {
+        decideInitResume(scope, "fp-2", InitResumeRow("sess-1", "fp-1", expires)) shouldBe
+            InitResumeOutcome.Conflict(scope, "fp-1")
+    }
+
+    test("terminalExpiry: ohne Wunsch gilt der Default") {
+        terminalExpiry(now, defaultSeconds = 600, retentionUntil = null) shouldBe now.plusSeconds(600)
+    }
+
+    test("terminalExpiry: eine spaetere Retention gewinnt") {
+        val laenger = now.plusSeconds(86_400)
+        terminalExpiry(now, defaultSeconds = 600, retentionUntil = laenger) shouldBe laenger
+    }
+
+    test("terminalExpiry: eine fruehere Retention kann nicht verkuerzen") {
+        // Sonst koennte ein Aufrufer die Aufbewahrung unter das Minimum druecken
+        // und terminale Ergebnisse frueher verschwinden lassen, als der Vertrag
+        // sie zusichert.
+        terminalExpiry(now, defaultSeconds = 600, retentionUntil = now.plusSeconds(60)) shouldBe
+            now.plusSeconds(600)
+    }
+
+    test("terminalExpiry: Gleichstand zaehlt nicht als spaeter") {
+        val gleich = now.plusSeconds(600)
+        terminalExpiry(now, defaultSeconds = 600, retentionUntil = gleich) shouldBe gleich
     }
 })

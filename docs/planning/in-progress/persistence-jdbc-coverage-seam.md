@@ -89,13 +89,25 @@ sonst verlöre man genau die Prüfung, die Postgres-Semantik (JSONB, `FOR UPDATE
 
 Reihenfolge nach Hebel und Musterwirkung.
 
-**Korrektur am ursprünglichen Akzeptanzkriterium (2026-08-09, beim Bau von S1):**
-„Je Sub-Slice ein Kover-Exclude weniger" geht nicht auf. Die Excludes sind
-**klassenweit** (`JdbcIdempotencyStore*`), S1 und S2 teilen sich aber dieselbe
-Klasse. Ein Exclude kann erst fallen, wenn **alle** Pfade seiner Klasse geschnitten
-sind — für `JdbcIdempotencyStore` also am Ende von S2, nicht von S1. Der Fortschritt
-je Sub-Slice misst sich stattdessen an den Zeilen, die aus dem Integrations-Schatten
-in den Standard-Lauf wandern.
+**Korrektur am ursprünglichen Akzeptanzkriterium (2026-08-09, gemessen nach S2):**
+„Je Sub-Slice ein Kover-Exclude weniger" geht nicht auf — und zwar grundsätzlicher,
+als es beim Schreiben des Plans aussah.
+
+Erstens sind die Excludes **klassenweit**, S1 und S2 teilen sich dieselbe Klasse.
+Zweitens, und entscheidend: **auch nach vollständigem Schnitt fällt der Exclude
+nicht.** Gemessen mit testweise entferntem Exclude steht `JdbcIdempotencyStore` bei
+**0/116** und das Modul bei **57,7 %** gegen ein Gate von 90. Die verbliebenen 116
+Zeilen sind `querySingle`/`executeUpdate` mit SQL-Literalen und Binding — sie laufen
+ohne Postgres nicht, und daran ändert kein Schnitt etwas.
+
+Der Grund liegt im Code-Stil: SQL-Literal, Binding und Ausführung stehen in **einem**
+Ausdruck. Es gibt keinen separaten „SQL-Bau", den man herauslösen könnte — anders als
+das Ursprungs-Ticket vermutete. Herauslösbar war ausschließlich die
+**Entscheidungslogik**, und die ist mit S1+S2 vollständig heraus.
+
+**Was Weg 3 also wirklich liefert**: nicht das Verschwinden der Excludes, sondern das
+Schrumpfen dessen, was hinter ihnen liegt. Die Messgröße ist die **gemessene Fläche**,
+nicht die Exclude-Anzahl.
 
 | # | Gegenstand | Warum hier |
 | --- | --- | --- |
@@ -129,11 +141,28 @@ Zeile) und die **Irrelevanz von `claimed`** für den reserve-Pfad.
 
 Contract-Suiten gegen echtes Postgres unverändert grün.
 
+**S2 geliefert (2026-08-09).** Die übrigen Pfade derselben Klasse. Herausgelöst:
+`decideClaim` (Zustandsmaschine des Claim-Pfads, inkl. fehlender Zeile),
+`decideInitResume` (Fingerprint-Vergleich der Init-Resume-Reservierung) und
+`terminalExpiry` (Retention-Regel). Der Store hält nur noch SQL.
+
+Gemessene Fläche jetzt **62 Zeilen** (`ReservationDecisionsKt` 46, `ReservationRow` 8,
+`InitResumeRow` 4, vier Entscheidungs-Varianten je 1), Modul 158/158. Vor S1 waren es
+96 gemessene Zeilen — die Fläche ist also um **65 %** gewachsen, ohne dass eine Zeile
+Produktivverhalten sich geändert hat.
+
+Zwei weitere Regeln sind dadurch erstmals gepinnt: die **Freigabe-Grenze** ist wie die
+Lease-Grenze exklusiv (sonst liefe die Claim-CAS `expires_at > ?` ins Leere und
+`check(updated == 1)` würde werfen), und **`retentionUntil` kann nur verlängern, nicht
+verkürzen** — ein Aufrufer kann terminale Ergebnisse nicht früher verschwinden lassen,
+als der Vertrag sie zusichert.
+
 ## Akzeptanzkriterien
 
-- Je Klasse (nicht je Sub-Slice): der Eintrag verschwindet aus den Kover-Excludes des
-  Moduls, sobald alle ihre Pfade geschnitten sind, und der Excludes-Ledger wird
-  entsprechend gepflegt.
+- Je Sub-Slice wächst die **gemessene Fläche** des Moduls um die herausgelöste
+  Entscheidungslogik, bei unverändertem Produktivverhalten (Contract-Suiten grün).
+- Der Kover-Exclude der jeweiligen Klasse **bleibt** — er deckt danach nur noch
+  SQL-Vollzug, was die ehrlichere Begründung ist als vorher.
 - `koverVerify` des Moduls bleibt durchgehend grün, ohne dass die `minBound(90)`
   gesenkt wird.
 - Die bestehenden Contract-Suiten laufen unverändert weiter und bleiben grün

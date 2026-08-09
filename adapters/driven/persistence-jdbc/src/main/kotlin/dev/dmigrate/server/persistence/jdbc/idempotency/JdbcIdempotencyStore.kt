@@ -153,7 +153,7 @@ class JdbcIdempotencyStore(
             """.trimIndent(),
             scope.tenantId.value, scope.callerId.value, scope.toolName, scope.clientRequestId,
             sessionId, payloadFingerprint, expiresAt, now, now,
-        ) { rs -> InitRow(rs.getString("session_id"), null, rs.getInstant("expires_at")) }
+        ) { rs -> InitResumeRow(rs.getString("session_id"), null, rs.getInstant("expires_at")) }
 
         if (inserted != null) {
             return@inTransaction InitResumeOutcome.Reserved(scope, inserted.sessionId, inserted.expiresAt)
@@ -168,25 +168,16 @@ class JdbcIdempotencyStore(
             """.trimIndent(),
             scope.tenantId.value, scope.callerId.value, scope.toolName, scope.clientRequestId,
         ) { rs ->
-            InitRow(
+            InitResumeRow(
                 rs.getString("session_id"),
                 rs.getString("payload_fingerprint"),
                 rs.getInstant("expires_at"),
             )
         } ?: error("Race: insert returned no row but SELECT found nothing for $scope")
 
-        if (existing.fingerprint != payloadFingerprint) {
-            InitResumeOutcome.Conflict(scope, existing.fingerprint!!)
-        } else {
-            InitResumeOutcome.Existing(scope, existing.sessionId, existing.expiresAt)
-        }
+        decideInitResume(scope, payloadFingerprint, existing)
     }
 
-    private data class InitRow(
-        val sessionId: String,
-        val fingerprint: String?,
-        val expiresAt: Instant,
-    )
 
     override fun markAwaitingApproval(
         scope: IdempotencyScope,
@@ -217,27 +208,9 @@ class JdbcIdempotencyStore(
         scope: IdempotencyScope,
         now: Instant,
     ): IdempotencyClaimOutcome = transactionRunner.inTransaction { conn ->
-        val existing = conn.lockExisting(scope)
-            ?: return@inTransaction IdempotencyClaimOutcome.NotAwaitingApproval(scope)
-        when (existing.state) {
-            IdempotencyState.COMMITTED ->
-                IdempotencyClaimOutcome.Committed(scope, existing.resultRef!!)
-            IdempotencyState.DENIED ->
-                IdempotencyClaimOutcome.Denied(scope, existing.expiresAt, existing.reason!!)
-            IdempotencyState.PENDING ->
-                if (existing.claimed) {
-                    IdempotencyClaimOutcome.AlreadyClaimed(scope, existing.expiresAt)
-                } else {
-                    IdempotencyClaimOutcome.NotAwaitingApproval(scope)
-                }
-            IdempotencyState.AWAITING_APPROVAL ->
-                if (existing.expiresAt.isAfter(now)) {
-                    transitionToClaimed(conn, scope, now)
-                } else {
-                    IdempotencyClaimOutcome.NotAwaitingApproval(scope)
-                }
-            IdempotencyState.FAILED ->
-                IdempotencyClaimOutcome.NotAwaitingApproval(scope)
+        when (val decision = decideClaim(scope, now, conn.lockExisting(scope))) {
+            is ClaimDecision.Complete -> decision.outcome
+            ClaimDecision.TransitionToClaimed -> transitionToClaimed(conn, scope, now)
         }
     }
 
@@ -387,18 +360,6 @@ class JdbcIdempotencyStore(
         deletedIdempotency + deletedInit
     }
 
-    private fun terminalExpiry(
-        now: Instant,
-        defaultSeconds: Long,
-        retentionUntil: Instant?,
-    ): Instant {
-        val defaultExpiresAt = now.plusSeconds(defaultSeconds)
-        return if (retentionUntil != null && retentionUntil.isAfter(defaultExpiresAt)) {
-            retentionUntil
-        } else {
-            defaultExpiresAt
-        }
-    }
 
 
     companion object {
