@@ -3,8 +3,8 @@ import io.gitlab.arturbosch.detekt.extensions.DetektExtension
 import org.gradle.api.tasks.testing.Test
 
 plugins {
-    kotlin("jvm") version "2.1.20" apply false
-    id("org.jetbrains.kotlinx.kover") version "0.9.8"
+    kotlin("jvm") version "2.4.10" apply false
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
 }
 
