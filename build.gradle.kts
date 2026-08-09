@@ -3,8 +3,8 @@ import io.gitlab.arturbosch.detekt.extensions.DetektExtension
 import org.gradle.api.tasks.testing.Test
 
 plugins {
-    kotlin("jvm") version "2.1.20" apply false
-    id("org.jetbrains.kotlinx.kover") version "0.9.8"
+    kotlin("jvm") version "2.4.10" apply false
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
 }
 
@@ -38,6 +38,13 @@ subprojects {
 
     configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(21)
+        compilerOptions {
+            // Interface-Default-Member ohne `$DefaultImpls`-Brueckenklassen (ADR 0043).
+            // Ab Kotlin 2.2 erzeugt der Compiler beides: die JVM-Default-Methode im Interface
+            // UND die alte Bruecke, die zur Laufzeit nie aufgerufen wird — sie zaehlt als
+            // ungedeckter Code und verwaessert das Coverage-Gate.
+            freeCompilerArgs.add("-jvm-default=no-compatibility")
+        }
     }
 
     configure<DetektExtension> {
