@@ -1,7 +1,6 @@
 # `persistence-jdbc`: Entscheidung von Ausführung trennen (Coverage-Naht)
 
-> **Status**: Draft mit Scope (2026-08-09) — aktiviert aus
-> [`open/`](../open/README.md) durch die Wegentscheidung des Eigners.
+> **Status**: In Progress (2026-08-09) — **S1 geliefert**, siehe *Fortschritt*.
 > **Ziel**: Die 421 Produktivzeilen des Moduls, die heute nur im Integrationslauf
 > gedeckt sind, im **Standard-Lauf** echt prüfbar machen — ohne das Gate um einen
 > Testcontainers-Lauf zu verlangsamen und ohne Kover-Excludes zu verbreitern.
@@ -88,8 +87,15 @@ sonst verlöre man genau die Prüfung, die Postgres-Semantik (JSONB, `FOR UPDATE
 
 ## Sub-Slices
 
-Reihenfolge nach Hebel und Musterwirkung. Jeder Sub-Slice endet mit einem
-Kover-Exclude **weniger**, nicht mit einem breiteren.
+Reihenfolge nach Hebel und Musterwirkung.
+
+**Korrektur am ursprünglichen Akzeptanzkriterium (2026-08-09, beim Bau von S1):**
+„Je Sub-Slice ein Kover-Exclude weniger" geht nicht auf. Die Excludes sind
+**klassenweit** (`JdbcIdempotencyStore*`), S1 und S2 teilen sich aber dieselbe
+Klasse. Ein Exclude kann erst fallen, wenn **alle** Pfade seiner Klasse geschnitten
+sind — für `JdbcIdempotencyStore` also am Ende von S2, nicht von S1. Der Fortschritt
+je Sub-Slice misst sich stattdessen an den Zeilen, die aus dem Integrations-Schatten
+in den Standard-Lauf wandern.
 
 | # | Gegenstand | Warum hier |
 | --- | --- | --- |
@@ -103,10 +109,31 @@ Kover-Exclude **weniger**, nicht mit einem breiteren.
 Flyway-Wrapper ohne Entscheidungslogik. Dort gibt es keine Naht zu ziehen, nur
 Ausführung.
 
+## Fortschritt
+
+**S1 geliefert (2026-08-09).** Der `reserve`-Pfad ist geschnitten: `ReserveDecision.kt`
+trägt `ReservationRow` (Zeilenstand als Daten), den Entscheidungstyp und
+`decideReserve`. Der Store liest, entscheidet, und schreibt nur noch bei
+`RecoverExpired`. Entfernt: `dispatchReserve`, `recoverOrExisting`, `recoverOrAwaiting`
+und die verschachtelte Row-Klasse (47 Zeilen).
+
+Gemessen am Modul-Report: die neue Naht steht bei **32/32 Zeilen** (`ReserveDecisionKt`
+22, `ReservationRow` 8, die beiden Entscheidungs-Varianten je 1) — Zeilen, die vorher
+ausschließlich im Integrationslauf gedeckt waren. Modul insgesamt 128/128.
+
+Die Entscheidungstabelle ist jetzt ohne Datenbank prüfbar, inklusive zweier Fälle, die
+vorher praktisch nicht zu testen waren: die **exklusive Lease-Grenze** (`expiresAt ==
+now` zählt als abgelaufen, deckungsgleich mit dem `expires_at <= ?` der Recovery-CAS —
+liefen beide auseinander, entschiede der Code Übernahme und das UPDATE fände keine
+Zeile) und die **Irrelevanz von `claimed`** für den reserve-Pfad.
+
+Contract-Suiten gegen echtes Postgres unverändert grün.
+
 ## Akzeptanzkriterien
 
-- Je Sub-Slice: der zugehörige Eintrag verschwindet aus den Kover-Excludes des
-  Moduls, und der Excludes-Ledger wird entsprechend gepflegt.
+- Je Klasse (nicht je Sub-Slice): der Eintrag verschwindet aus den Kover-Excludes des
+  Moduls, sobald alle ihre Pfade geschnitten sind, und der Excludes-Ledger wird
+  entsprechend gepflegt.
 - `koverVerify` des Moduls bleibt durchgehend grün, ohne dass die `minBound(90)`
   gesenkt wird.
 - Die bestehenden Contract-Suiten laufen unverändert weiter und bleiben grün
