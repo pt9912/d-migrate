@@ -7,6 +7,11 @@ updates:
   # 41 build.gradle.kts files; Dependabot resolves them across the build.
   - package-ecosystem: gradle
     directory: /
+    # `develop` integriert, `main` traegt nur Releases — ohne diese Zeile zielt
+    # Dependabot auf den Default-Branch (`main`) und ein Merge legte einen Bump
+    # ausserhalb eines Releases dorthin. Die Konfiguration selbst liest Dependabot
+    # weiterhin von `main`; Aenderungen hier werden erst dort wirksam.
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -28,9 +33,19 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: org.xerial:sqlite-jdbc
         update-types: [version-update:semver-major]
-      # Kotlin toolchain: a minor bump changes compiler/Kover behaviour — Kotlin
-      # 2.1 -> 2.4 dropped :hexagon:ports coverage below the 90% gate. Upgraded
-      # deliberately as its own slice, not via an automated PR. Patch bumps pass.
+      # Kotlin toolchain: a minor bump changes compiler/Kover behaviour and is
+      # upgraded deliberately as its own slice, not via an automated PR. Patch
+      # bumps pass. Hintergrund zur Codegenerierung: ADR 0043.
+      #
+      # `jvm` ist KEIN Tippfehler und darf nicht "aufgeraeumt" werden: Dependabot
+      # leitet den Namen aus der Kurzschreibweise `kotlin("jvm")` in
+      # build.gradle.kts ab und fuehrt das Plugin exakt so. `org.jetbrains.kotlin*`
+      # trifft es deshalb NIE — die Regel stand wirkungslos da, bis ein
+      # Gruppen-PR genau den Sprung durchliess, den sie verhindern sollte.
+      - dependency-name: jvm
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
       - dependency-name: org.jetbrains.kotlin*
         update-types:
           - version-update:semver-minor
@@ -48,6 +63,7 @@ updates:
   # so their updates are security-relevant.
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -62,6 +78,7 @@ updates:
   # Docker base images used across the multi-stage Dockerfile.
   - package-ecosystem: docker
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
