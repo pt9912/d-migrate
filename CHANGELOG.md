@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Toolchain auf Kotlin 2.4.10** (von 2.1.20), dazu Kover 0.9.9 und
+  GraalVM-Buildtools 1.1.7. Rein bauseitig — an der CLI, ihren Ausgaben und dem
+  Konfigurationsvertrag ändert sich nichts. Der Bump zieht eine Compiler-Änderung nach
+  sich: ab Kotlin 2.2 werden Interface-Default-Methoden zusätzlich als nie aufgerufene
+  `$DefaultImpls`-Brücken erzeugt; d-migrate unterdrückt sie über
+  `-jvm-default=no-compatibility`
+  ([ADR 0043](docs/adr/0043-interface-default-ohne-defaultimpls.md)). Relevant wird das
+  erst mit dem Library-Publishing (Milestone 2.0.0), heute werden keine Artefakte
+  veröffentlicht.
+- **Flyway 11.8.2 → 13.1.0** — die Engine, die beim Start von `mcp serve` das
+  **Server-State-Schema** von d-migrate anlegt bzw. prüft (`idempotency_reservations`,
+  `jobs`, Quota-Tabellen; History-Tabelle `flyway_server_state_history`). Sie berührt
+  **nicht** die Datenbanken, die Sie mit d-migrate migrieren.
+
+  **Für bestehende Installationen ist kein Eingriff nötig.** Der Upgrade-Pfad wurde
+  gegen echtes PostgreSQL 16 mit beiden Flyway-Majors geprüft: eine von der Vorversion
+  geschriebene History bleibt gültig (identische Prüfsumme), `validate` — der
+  Default-Startpfad — läuft durch, und `server.state.migrations.auto = true` meldet
+  „up to date" ohne die History anzufassen.
+
 ## [1.0.0-RC3] - 2026-08-09
 
 ### Changed
