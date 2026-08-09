@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.migration.preserve
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
@@ -92,6 +93,49 @@ class AtomicSequencePreserveContractTest : FunSpec({
         every { owned.autoCommit } returns true
         // Should not throw.
         AtomicSequencePreserveExecutor.requireOwnedConnection(owned)
+    }
+
+    test("execute defaults cancellationToken to CancellationToken.none()") {
+        // The KDoc on `execute` promises that omitting the token
+        // keeps CLI paths regression-free ("no behaviour change
+        // without an injected token"). That promise lives in a
+        // synthetic default-argument bridge, so only a call that
+        // OMITS the parameter pins it — passing
+        // `CancellationToken.none()` explicitly would compile to a
+        // different call and leave the default unverified.
+        var seen: CancellationToken? = null
+        val executor = object : AtomicSequencePreserveExecutor {
+            override fun execute(
+                connection: DatabaseConnection,
+                batch: AtomicSequencePreserveBatch,
+                lockTimeoutMillis: Long,
+                cancellationToken: CancellationToken,
+                executeProtectedOperations: (
+                    DatabaseConnection,
+                    List<ProtectedOperationId>,
+                ) -> AtomicProtectedExecutionResult,
+            ): AtomicSequencePreserveResult {
+                seen = cancellationToken
+                return AtomicSequencePreserveResult.Applied(batch.requests.map { it.sequenceRef })
+            }
+        }
+        val batch = AtomicSequencePreserveBatch(
+            requests = listOf(AtomicSequencePreserveRequest(pgSeq, { listOf("/* pg restore */") })),
+            protectedOperationIds = listOf(ProtectedOperationId("AlterSequenceCurrentValue")),
+            internalFollowUpIds = emptyList(),
+        )
+
+        val result = executor.execute(
+            connection = mockk<DatabaseConnection>(relaxed = true),
+            batch = batch,
+            lockTimeoutMillis = 5_000L,
+        ) { _, _ -> AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 1) }
+
+        result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
+        seen shouldBe CancellationToken.none()
+        seen!!.isCancellationRequested shouldBe false
+        seen!!.cancellationReason shouldBe null
+        seen!!.throwIfCancellationRequested()
     }
 
     test("requireOwnedConnection throws IllegalStateException for an enclosing transaction") {

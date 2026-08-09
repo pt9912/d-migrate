@@ -82,13 +82,3 @@ fun segmentForExecute(
         if (plainAfter.isNotEmpty()) add(PlainSqlSegment(plainAfter.toList()))
     }
 }
-
-private fun BooleanArray.indexOfFirst(predicate: (Boolean) -> Boolean): Int {
-    for (i in indices) if (predicate(this[i])) return i
-    return -1
-}
-
-private fun BooleanArray.indexOfLast(predicate: (Boolean) -> Boolean): Int {
-    for (i in indices.reversed()) if (predicate(this[i])) return i
-    return -1
-}
