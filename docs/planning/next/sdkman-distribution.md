@@ -7,14 +7,18 @@
 - **Trigger**: Dritte der drei 1.0.0-Distributionszeilen (neben GraalVM Native Image ✅ und Docker Hub
   ✅). SDKMAN ist der idiomatische Kanal für JVM-CLIs: `sdk install dmigrate`.
 
-## Offener Punkt: Candidate-PR (Stand 2026-07-31)
+## Offener Punkt: Candidate-PR (Stand 2026-08-09)
 
 [**PR #794**](https://github.com/sdkman/sdkman-db-migrations/pull/794) ist offen — `MERGEABLE`,
 Merge-State `BLOCKED` wegen `REVIEW_REQUIRED` (Branch-Protection; das Repo lässt auf PRs keine CI
 laufen). Damit ist der **Merge selbst** der Wartepunkt, nicht die Candidate-Freigabe danach.
 
-**Entscheidung des Eigners (2026-07-31): bis zum 2026-08-05 auf den Merge warten.**
-Läuft die Frist ohne Merge ab, wird **1.0.0 ohne SDKMAN geschnitten** und die Zeile bleibt `⛔`.
+**Die Wartefrist ist abgelaufen.** Der Eigner hatte am 2026-07-31 entschieden, bis zum 2026-08-05 auf
+den Merge zu warten; am 2026-08-09 ist der PR unverändert `OPEN` mit letzter Aktualisierung
+`2026-07-31T08:54Z`. Damit gilt [ADR 0042](../../adr/0042-sdkman-kein-1.0.0-gate.md): **1.0.0 wird
+ohne SDKMAN geschnitten**, die Roadmap-Zeile bleibt `⛔`, und es wird **keine neue Frist** gesetzt —
+der Wartepunkt liegt im fremden Repo. Der Slice bleibt in `next/` und ist unverändert scharf; zu tun
+ist nach dem Merge nur noch die Schrittfolge unter „Voraussetzung" plus der Nachlauf-Dispatch.
 
 Das ist gefahrlos, weil der Publish **nachträglich** möglich ist: `sdkman-release.yml` hat neben dem
 Tag-Trigger ein `workflow_dispatch` mit `tag`-Input. Sobald Candidate und Secrets stehen, genügt für
@@ -30,9 +34,9 @@ real durchlaufen (Job grün, Skip-mit-Notice mangels Credentials).
 Normativ ist SDKMAN **kein 1.0.0-Gate**: das Lastenheft nennt es nicht, und
 [ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md) ordnet unter
 „Entscheidungstreiber" ausdrücklich auch SDKMAN als Fremdbeschaffung ein, an der 1.0.0 nicht hängt.
-Wird die Frist überschritten, gehört diese Verschiebung nach derselben ADR-Regel („ein permanenter
-Ausschluss/eine Verschiebung gehört in einen ADR") in einen eigenen kurzen ADR — **noch nicht
-geschrieben**, weil bis zum 2026-08-05 offen ist, ob er gebraucht wird.
+Nach derselben ADR-Regel („ein permanenter Ausschluss/eine Verschiebung gehört in einen ADR") hält
+[ADR 0042](../../adr/0042-sdkman-kein-1.0.0-gate.md) das Ergebnis der abgelaufenen Frist fest,
+inklusive der fünfschrittigen Bedingung, unter der die Roadmap-Zeile `⛔` → `✅` wechselt.
 
 Merge-Kadenz zur Erwartungshaltung (aus der PR-Historie des Repos): `Jenesis`/`jextract` am selben
 Tag, `kUML` 1 Tag, `Atmosphere` 1 Woche, `TornadoVM` 3,5 Wochen, `Grace` 5, `dependency-watch` 6,

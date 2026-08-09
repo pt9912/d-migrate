@@ -94,3 +94,5 @@ argumentiert werden.
 | 0038 | [PostgreSQL-SSL-Default bleibt `prefer` — `verify-full` ist opt-in](0038-ssl-default-prefer-verify-full-opt-in.md) | accepted |
 | 0039 | [Externer Security-Audit ist kein 1.0.0-Gate — Verschiebung auf Post-1.0.0](0039-externer-security-audit-kein-1.0.0-gate.md) | accepted |
 | 0040 | [Keychain-Credential-Provider: Backend-Port mit Default-Shell-out und opt-in Native-Modul](0040-keychain-credential-provider-backend-port.md) | accepted |
+| 0041 | [Das publizierte JVM-OCI-Image kommt aus der Dockerfile-`runtime`-Stage, nicht aus Jib](0041-oci-image-aus-dockerfile-runtime-statt-jib.md) | accepted |
+| 0042 | [SDKMAN-Distribution ist kein 1.0.0-Gate — 1.0.0 wird ohne SDKMAN geschnitten](0042-sdkman-kein-1.0.0-gate.md) | accepted |
