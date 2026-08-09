@@ -12,7 +12,6 @@ dependencies {
     // LF-012 / LN-011 / LN-017 / LN-027: QuotaReservationOwnerStore + OwnerAwareQuotaService liegen
     // in hexagon:application; der JDBC-Adapter implementiert beide.
     api(project(":hexagon:application"))
-    api("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")
     implementation("org.postgresql:postgresql:${rootProject.properties["postgresqlJdbcVersion"]}")
     implementation("org.flywaydb:flyway-core:${rootProject.properties["flywayVersion"]}")
     implementation("org.flywaydb:flyway-database-postgresql:${rootProject.properties["flywayVersion"]}")
