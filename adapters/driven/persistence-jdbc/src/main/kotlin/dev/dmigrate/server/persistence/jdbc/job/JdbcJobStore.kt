@@ -161,15 +161,6 @@ class JdbcJobStore(
         }
     }
 
-    private fun paginate(items: List<JobRecord>, page: PageRequest): PageResult<JobRecord> {
-        val pageSize = page.pageSize.coerceAtLeast(1)
-        val offset = page.pageToken?.toIntOrNull()?.coerceAtLeast(0) ?: 0
-        val effectiveOffset = offset.coerceAtMost(items.size)
-        val end = (effectiveOffset + pageSize).coerceAtMost(items.size)
-        val slice = items.subList(effectiveOffset, end)
-        val nextToken = if (end < items.size) end.toString() else null
-        return PageResult(items = slice, nextPageToken = nextToken)
-    }
 
     override fun deleteExpired(now: Instant): Int = transactionRunner.inTransaction { conn ->
         conn.executeUpdate("DELETE FROM jobs WHERE expires_at < ?", now)
@@ -181,15 +172,13 @@ class JdbcJobStore(
         allowedFromStatuses: Set<JobStatus>,
         transformer: (ManagedJob) -> ManagedJob,
     ): JobTransitionOutcome = transactionRunner.inTransaction { conn ->
-        val locked = conn.lockRow(tenantId, jobId)
-            ?: return@inTransaction JobTransitionOutcome.NotFound
-        if (locked.managedJob.status !in allowedFromStatuses) {
-            return@inTransaction JobTransitionOutcome.IllegalTransition(locked.managedJob.status)
+        when (val d = decideTransition(conn.lockRow(tenantId, jobId), allowedFromStatuses, transformer)) {
+            is JobTransitionDecision.Complete -> d.outcome
+            is JobTransitionDecision.Write -> {
+                conn.writeUpdate(d.record)
+                JobTransitionOutcome.Applied(d.record)
+            }
         }
-        val updatedManaged = transformer(locked.managedJob)
-        val next = locked.copy(managedJob = updatedManaged)
-        conn.writeUpdate(next)
-        JobTransitionOutcome.Applied(next)
     }
 
     override fun markCancelRequested(
@@ -200,30 +189,16 @@ class JdbcJobStore(
         signalSource: String,
         reason: String?,
     ): JobTransitionOutcome = transactionRunner.inTransaction { conn ->
-        val locked = conn.lockRow(tenantId, jobId)
-            ?: return@inTransaction JobTransitionOutcome.NotFound
-        if (locked.managedJob.status.terminal) {
-            return@inTransaction JobTransitionOutcome.IllegalTransition(locked.managedJob.status)
-        }
-        // LF-012 / LN-011 / LN-017 / LN-027 Idempotenz: bei bereits requested = TRUE keine
-        // Reason-/Source-Ueberschreibung — ersten Wert behalten.
-        if (locked.managedJob.cancelRequest.requested) {
-            return@inTransaction JobTransitionOutcome.Applied(locked)
-        }
-        val updatedCancel = locked.managedJob.cancelRequest.copy(
-            requested = true,
-            requestedAt = requestedAt,
-            requestedBy = requestedBy,
-            requestedReason = reason,
-            signalSource = signalSource,
+        val decision = decideCancelRequest(
+            conn.lockRow(tenantId, jobId), requestedAt, requestedBy, signalSource, reason,
         )
-        val updatedManaged = locked.managedJob.copy(
-            updatedAt = requestedAt,
-            cancelRequest = updatedCancel,
-        )
-        val next = locked.copy(managedJob = updatedManaged)
-        conn.writeUpdate(next)
-        JobTransitionOutcome.Applied(next)
+        when (decision) {
+            is JobTransitionDecision.Complete -> decision.outcome
+            is JobTransitionDecision.Write -> {
+                conn.writeUpdate(decision.record)
+                JobTransitionOutcome.Applied(decision.record)
+            }
+        }
     }
 
     private fun Connection.lockRow(tenantId: TenantId, jobId: String): JobRecord? = querySingle(

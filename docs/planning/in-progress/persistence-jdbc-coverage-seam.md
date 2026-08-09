@@ -157,6 +157,24 @@ Lease-Grenze exklusiv (sonst liefe die Claim-CAS `expires_at > ?` ins Leere und
 verkürzen** — ein Aufrufer kann terminale Ergebnisse nicht früher verschwinden lassen,
 als der Vertrag sie zusichert.
 
+**S3 geliefert (2026-08-09).** `JdbcJobStore`. Herausgelöst: `paginate` (jetzt
+generisch über `List<T>`), `decideTransition` und `decideCancelRequest`. Gemessene
+Fläche **+34 Zeilen** (`JobDecisionsKt` 32, zwei Entscheidungs-Varianten je 1), Modul
+192/192.
+
+`paginate` war der Fund dieses Sub-Slices: ein reiner Algorithmus mit
+Off-by-one-Fläche, der nur deshalb einen Postgres-Lauf brauchte, weil er als
+`private` neben dem SQL lag. Neun Randfälle sind jetzt gepinnt, darunter drei, die
+vorher praktisch unerreichbar waren — **unlesbares Token** (`"abc"`, `""`, `"1.5"`,
+Überlauf) beginnt bei 0 statt zu werfen, **Token jenseits des Endes** liefert eine
+leere Seite, und **Seitengröße < 1** wird auf 1 angehoben (sonst stünde die
+Pagination still, ohne dass ein Aufrufer den Grund sähe).
+
+Zwei Verhaltensregeln sind zusätzlich festgehalten: der **Transformer wird nicht
+gerufen**, wenn der Ausgangszustand unerlaubt ist (er soll keine Zustände sehen, aus
+denen er nie hätte rechnen sollen), und ein **wiederholter Abbruch** behält den ersten
+Grund samt Quelle und schreibt nicht erneut.
+
 ## Akzeptanzkriterien
 
 - Je Sub-Slice wächst die **gemessene Fläche** des Moduls um die herausgelöste
