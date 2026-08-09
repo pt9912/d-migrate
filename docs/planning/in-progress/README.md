@@ -57,7 +57,6 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`persistence-jdbc-coverage-seam.md`](persistence-jdbc-coverage-seam.md) | Per-Feature-Umbrella | Entscheidung von Ausfuehrung trennen, damit die nur integrations-gedeckten Produktivzeilen im Standard-Lauf echt geprueft werden. Muster „entscheiden, dann ausfuehren"; Sub-Slices S1-S5, S1 (reserve-Pfad) geliefert. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

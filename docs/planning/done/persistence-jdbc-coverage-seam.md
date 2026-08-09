@@ -1,6 +1,6 @@
 # `persistence-jdbc`: Entscheidung von Ausführung trennen (Coverage-Naht)
 
-> **Status**: In Progress (2026-08-09) — **S1 geliefert**, siehe *Fortschritt*.
+> **Status**: DONE (2026-08-09) — S1–S3 geliefert, S4/S5 begruendet nicht gebaut; siehe *Closure*.
 > **Ziel**: Die 421 Produktivzeilen des Moduls, die heute nur im Integrationslauf
 > gedeckt sind, im **Standard-Lauf** echt prüfbar machen — ohne das Gate um einen
 > Testcontainers-Lauf zu verlangsamen und ohne Kover-Excludes zu verbreitern.
@@ -197,3 +197,59 @@ Grund samt Quelle und schreibt nicht erneut.
   `MigrationExecutorTestSupportKt` (152 Zeilen reiner Test-Support ohne
   Produktiv-Gegenstück) ist ein vertretbarer Exclude mit Ledger-Eintrag — getrennt
   zu entscheiden, kein Hebel.
+
+## Closure (2026-08-09)
+
+**Geliefert: S1–S3. S4 und S5 bewusst nicht gebaut** — Begründung unten, gemessen
+statt vermutet.
+
+Gemessene Fläche des Moduls: **96 → 192 Zeilen**, eine Verdopplung des im
+Standard-Lauf geprüften Produktivcodes, ohne eine einzige Verhaltensänderung. Die
+Contract-Suiten gegen echtes Postgres liefen nach jedem Sub-Slice unverändert grün.
+
+| Sub-Slice | Gegenstand | Fläche |
+| --- | --- | --- |
+| S1 | `reserve`-Entscheidung | +32 |
+| S2 | Claim, Init-Resume, Retention | +30 |
+| S3 | Pagination, Job-Übergänge | +34 |
+
+### Warum der Slice hier endet
+
+Die verbliebenen 157 offenen Zeilen zerfallen in zwei Gruppen, und für keine trägt das
+Muster dieses Slices:
+
+- **106 Zeilen hinter SQL** (`JdbcQuotaReservationOwnerStore` 76,
+  `JdbcQuotaStore` 30). Dort ist nichts zu entscheiden — die Limit-Prüfung steckt im
+  `INSERT … ON CONFLICT`, nicht in Kotlin. Das Muster „entscheiden, dann ausführen"
+  greift nur, wo es eine Entscheidung gibt.
+- **51 Zeilen ohne jedes SQL** (`JdbcOwnerAwareQuotaService` 36,
+  `JdbcJobStartTransaction` 15). Diese Klassen brauchen keine Datenbank; sie sind an
+  konkrete Stores und deren `*OnConnection`-Methoden gekoppelt. Ein Unit-Test mit
+  Mocks wäre hier aber **schwächer** als der Bestand: ihr ganzer Vertrag ist
+  Atomarität — beide Schreibvorgänge in einer TX oder keiner. Mocks könnten nur
+  Aufrufreihenfolge behaupten, der Integrationstest beweist das Rollback. Das wäre
+  Coverage-Zahl gegen Aussagekraft getauscht.
+
+### Was das über den Ursprungs-Befund sagt
+
+Das Ticket vermutete, der SQL-**Bau** sei nur deshalb ungeprüft, weil er mit der
+SQL-**Ausführung** in einer Klasse steckt. Das trifft für dieses Repo nicht zu:
+SQL-Literal, Binding und Ausführung stehen in **einem** Ausdruck, es gibt keinen
+Bau-Teil zum Herauslösen. Herauslösbar war ausschließlich Entscheidungslogik — davon
+gab es mehr als erwartet (96 Zeilen), aber sie ist mit S3 erschöpft.
+
+**Die Kover-Excludes bleiben alle bestehen.** Gemessen mit testweise entferntem
+Exclude stünde allein `JdbcIdempotencyStore` bei 0/116 und das Modul bei 57,7 % gegen
+ein Gate von 90. Weg 3 hat nicht die Excludes beseitigt, sondern das, was hinter ihnen
+liegt, halbiert.
+
+Mitgenommen: die Ledger-Begründungen für `JdbcOwnerAwareQuotaService` und
+`JdbcJobStartTransaction` standen als „Postgres-only" — das war falsch. Beide sind
+DB-frei und aus einem anderen Grund integrationsgebunden; korrigiert, damit die
+Begründung später niemand als Freibrief liest.
+
+### Nicht angegangen
+
+`MigrationExecutorTestSupportKt` (152 Zeilen reiner Test-Support ohne
+Produktiv-Gegenstück) — ein vertretbarer Exclude mit Ledger-Eintrag, getrennt zu
+entscheiden, kein Hebel.
