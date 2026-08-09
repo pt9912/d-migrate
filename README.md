@@ -163,12 +163,13 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
 - **Current stable** · **0.9.12** (2026-07-13) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you.
-- **Current prerelease** · **1.0.0-RC3** (2026-08-09) — the 1.0.0
-  release candidate. The published JVM image now comes from the
-  Dockerfile `runtime` stage: it runs as **non-root** (`uid 10001`) and
-  ships `mod_spatialite`, so writing into a bind mount needs
-  `--user "$(id -u):$(id -g)"`. An unwritable output path now exits `7`
-  instead of printing a stack trace. Published as a GitHub prerelease +
+- **Current prerelease** · **1.0.0-RC4** (2026-08-09) — the 1.0.0
+  release candidate. Build-side only: Kotlin 2.4.10 and Flyway 13. The
+  CLI, its output and the configuration contract are unchanged, and an
+  existing MCP server-state schema stays valid without intervention.
+  Carried over from RC3: the published JVM image runs as **non-root**
+  (`uid 10001`) and ships `mod_spatialite`, so writing into a bind mount
+  needs `--user "$(id -u):$(id -g)"`. Published as a GitHub prerelease +
   versioned OCI tag; it does **not** move `:latest` or Homebrew.
 - **Next** · **1.0.0 stable** — `Planned`.
 

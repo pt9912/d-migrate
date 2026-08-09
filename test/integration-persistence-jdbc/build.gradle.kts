@@ -16,6 +16,7 @@ dependencies {
     testImplementation(testFixtures(project(":hexagon:ports-common")))
     testImplementation(testFixtures(project(":hexagon:application")))
 
+    testImplementation("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
 }

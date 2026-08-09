@@ -60,7 +60,7 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
 
         result.success shouldBe true
         result.migrationsExecuted shouldBe 1
-        result.migrations.first().version shouldBe "1"
+        result.appliedVersions.first() shouldBe "1"
     }
 
     test("all 5 server-state tables exist after V1") {

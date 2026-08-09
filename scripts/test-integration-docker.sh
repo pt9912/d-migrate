@@ -13,10 +13,13 @@ Run integration tests in a disposable Docker container built from the
 `integration-test` stage of the project Dockerfile (JDK 21 + Python 3
 + Django + Node.js).
 
+`-PintegrationTests` wird automatisch ergaenzt, falls nicht angegeben — ohne die
+Property ueberspringt Gradle die Test-Tasks und meldet trotzdem Erfolg.
+
 Usage:
   ./scripts/test-integration-docker.sh
   ./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
-  ./scripts/test-integration-docker.sh -PintegrationTests :adapters:driven:integrations:test
+  ./scripts/test-integration-docker.sh :adapters:driven:integrations:test
 
 EOF
 }
@@ -30,6 +33,15 @@ if [[ $# -gt 0 ]]; then
     GRADLE_TASKS="$*"
 else
     GRADLE_TASKS="${DMIGRATE_GRADLE_TASKS:-$DEFAULT_TASKS}"
+fi
+
+# `-PintegrationTests` schaltet die onlyIf-Gates der :test:integration-*-Module frei.
+# Ohne die Property ueberspringt Gradle die Test-Tasks und meldet trotzdem
+# BUILD SUCCESSFUL — ein gruener Lauf, der nichts geprueft hat. Erzwungen statt dem
+# Aufrufer ueberlassen, weil eigene Tasks den Default ersetzen und die Property so
+# stillschweigend verlorengeht.
+if [[ "${GRADLE_TASKS}" != *"-PintegrationTests"* ]]; then
+    GRADLE_TASKS="-PintegrationTests ${GRADLE_TASKS}"
 fi
 
 if [[ ! -S /var/run/docker.sock ]]; then

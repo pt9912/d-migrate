@@ -23,8 +23,24 @@ class JdbcMigrationRunner(
     private val migrationLocations: Array<String> = arrayOf(DEFAULT_LOCATION),
 ) {
 
-    fun migrate(): MigrateResult =
-        configure().migrate()
+    fun migrate(): MigrationOutcome =
+        configure().migrate().let { result: MigrateResult ->
+            MigrationOutcome(
+                success = result.success,
+                migrationsExecuted = result.migrationsExecuted,
+                appliedVersions = result.migrations.map { it.version },
+            )
+        }
+
+    /**
+     * Adaptereigenes Ergebnis von [migrate] — haelt Flyway-Typen aus der
+     * oeffentlichen Signatur des Adapters.
+     */
+    data class MigrationOutcome(
+        val success: Boolean,
+        val migrationsExecuted: Int,
+        val appliedVersions: List<String>,
+    )
 
     /**
      * `validate` prueft Drift zwischen Classpath-Migrationen und der

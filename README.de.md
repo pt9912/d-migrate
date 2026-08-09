@@ -176,14 +176,15 @@ Die vollständige Release-History steht in
 
 - **Aktuelles Stable** · **0.9.12** (2026-07-13) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern.
-- **Aktuelle Vorabversion** · **1.0.0-RC3** (2026-08-09) — der
-  1.0.0-Release-Candidate. Das publizierte JVM-Image kommt jetzt aus
-  der Dockerfile-`runtime`-Stage: es läuft als **non-root**
-  (`uid 10001`) und enthält `mod_spatialite`; Schreiben in einen
-  Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Ein nicht
-  beschreibbarer Ausgabepfad endet jetzt in Exit `7` statt in einem
-  Stacktrace. Veröffentlicht als GitHub-Prerelease + versioniertes
-  OCI-Tag; bewegt `:latest` und Homebrew **nicht**.
+- **Aktuelle Vorabversion** · **1.0.0-RC4** (2026-08-09) — der
+  1.0.0-Release-Candidate. Rein bauseitig: Kotlin 2.4.10 und Flyway 13.
+  An der CLI, ihren Ausgaben und dem Konfigurationsvertrag ändert sich
+  nichts, und ein bestehendes MCP-Server-State-Schema bleibt ohne
+  Eingriff gültig. Aus RC3 übernommen: das publizierte JVM-Image läuft
+  als **non-root** (`uid 10001`) und enthält `mod_spatialite`; Schreiben
+  in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
+  Veröffentlicht als GitHub-Prerelease + versioniertes OCI-Tag; bewegt
+  `:latest` und Homebrew **nicht**.
 - **Als Nächstes** · **1.0.0 Stable** — `Geplant`.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
