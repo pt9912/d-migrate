@@ -401,6 +401,30 @@ rg -n "koverVerify|release-assets|assembleReleaseAssets" .github/workflows/build
 rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 ```
 
+**Publish-Pfad proben statt hoffen.** Die Fragen oben werden gelesen; die folgende
+wird ausgeführt. Der Probelauf baut das OCI-Image und meldet sich an beiden
+Registries an, veröffentlicht aber nichts:
+
+```bash
+gh workflow run build.yml --ref develop -f rehearse_publish=true
+gh run watch "$(gh run list --workflow build.yml --event workflow_dispatch \
+  --limit 1 --json databaseId --jq '.[0].databaseId')"
+```
+
+Grün heißt: Credentials gültig, beide Registries erreichbar, die Action-Pins
+funktionsfähig, und `packaging/dockerhub/overview.md` trägt noch den
+`__VERSION__`-Platzhalter samt gültiger Kurzbeschreibung. Rot heißt: derselbe
+Fehler wäre sonst erst am Tag aufgeschlagen — mit einem halb veröffentlichten
+Release als Ausgangslage.
+
+Ungeprobt bleibt der Push selbst, weil er die Registry verändert, und der
+`native-image`-Job wegen des ~8-minütigen nativen Compiles. Dessen beide Logins
+sind Wort für Wort dieselben wie im `docker`-Job.
+
+> **Nicht auf einem Tag-Ref dispatchen.** Nötig ist es nie — der Probelauf
+> gehört vor den Tag. Die Push-Schritte verlangen zusätzlich `event_name == 'push'`
+> und fielen deshalb auch dort nicht an; verlassen sollte man sich nicht darauf.
+
 Coverage-Breakdown auf Paketebene prüfen — Pakete unter 90% Line-Coverage
 identifizieren. Befehle und jq-Filter: siehe
 [`quality.md`](quality.md).
