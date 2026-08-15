@@ -29,6 +29,13 @@ on:
 permissions:
   contents: read
 
+env:
+  # An ein Release angehaengt wird ausschliesslich auf einem echten Tag-PUSH. Der
+  # `event_name`-Teil ist der Riegel: ohne ihn wuerde ein Dispatch auf einem
+  # Tag-Ref (`gh workflow run … --ref v1.0.0`) die Assets eines fertigen Releases
+  # ueberschreiben (`gh release upload --clobber`). Gleiches Muster wie build.yml.
+  IS_RELEASE: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+
 concurrency:
   group: native-image-${{ github.ref }}
   cancel-in-progress: true
@@ -222,7 +229,13 @@ jobs:
     # verhinderte ein macOS/Windows-Flake das Anhaengen der ERFOLGREICHEN Legs mit (das waere kein
     # "best-effort"). Frage 6 = HYBRID: macOS/Windows sind best-effort, aber das Linux-Leg ist ein
     # 1.0.0-Gate — erzwungen im Schritt "Gate" unten (fehlt linux-x64 -> Job rot).
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
+    #
+    # Laeuft auch bei jedem Dispatch, dann aber nur bis einschliesslich Gate: Einsammeln
+    # und Pruefen kosten Sekunden, und ohne diesen Zweig waeren `download-artifact` samt
+    # `pattern`/`merge-multiple` sowie die Gate-Logik ausschliesslich am Tag zu erleben —
+    # also nur dann, wenn sie zaehlen. Kein eigener Input noetig; die Kosten sind
+    # vernachlaessigbar, anders als beim Probelauf in build.yml.
+    if: ${{ !cancelled() && (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     # Einzelner Uploader statt Upload aus jedem Matrix-Leg: haelt die Schreibrechte auf einen Job
     # begrenzt und vermeidet drei gleichzeitige Uploads auf dasselbe Release.
@@ -252,10 +265,16 @@ jobs:
             exit 1
           fi
 
+      - name: Probelauf — hier endet der Dispatch
+        if: env.IS_RELEASE != 'true'
+        run: |
+          echo "::notice::Assets eingesammelt und geprueft; ohne Tag wird nichts an ein Release gehaengt."
+
       - name: Wait for the GitHub release to exist
         # release-homebrew.yml erstellt das Release fuer denselben Tag. Dieser Job haengt nur an
         # (kein `gh release create`), damit Titel/Notes/Prerelease-Flag dort in einer Hand bleiben.
         # Der native Build dauert laenger als das Publish, aber die Reihenfolge ist nicht garantiert.
+        if: env.IS_RELEASE == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -272,6 +291,7 @@ jobs:
           exit 1
 
       - name: Attach native binaries to the release
+        if: env.IS_RELEASE == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

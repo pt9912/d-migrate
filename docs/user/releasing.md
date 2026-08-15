@@ -640,6 +640,12 @@ das Rezept gegen `develop` zu prüfen. Solche Läufe hängen nichts an ein
 Release; ihre Binaries tragen statt der Version die Commit-Kurz-SHA und
 liegen nur als Workflow-Artefakt vor.
 
+Der Job `attach-release` läuft dabei mit, endet aber nach dem Einsammeln und
+dem Linux-Gate. Das ist Absicht: Sonst wären das Zusammenführen der Artefakte
+aus beiden OS-Legs und die Gate-Logik ausschließlich am Tag zu erleben — also
+nur dann, wenn sie zählen. `os_scope: all` prüft dabei mehr als `linux`, weil
+das Zusammenführen erst mit zwei Artefakten etwas zu tun bekommt.
+
 ```bash
 gh workflow run native-image.yml --ref develop
 gh run watch
