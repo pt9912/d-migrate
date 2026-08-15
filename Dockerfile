@@ -51,7 +51,7 @@
 # ---- Stage: dependency warmup ---------------------------------------------
 # Copies only Gradle metadata first so dependency resolution can be cached
 # independently from source code changes.
-FROM gradle:8.12-jdk21 AS deps
+FROM gradle:8.14-jdk21 AS deps
 
 WORKDIR /src
 
@@ -224,7 +224,7 @@ ENTRYPOINT ["cat", "/src/release-assets.tar"]
 
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
 # Used by scripts/test-integration-docker.sh for the full runtime matrix.
-FROM gradle:8.12-jdk21 AS integration-test
+FROM gradle:8.14-jdk21 AS integration-test
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -270,7 +270,7 @@ COPY --from=d-migrate:native-build \
      /src/adapters/driving/cli/build/native/nativeCompile/d-migrate /native/d-migrate
 ENV DMIGRATE_CLI_BIN=/native/d-migrate
 
-FROM gradle:8.12-jdk21 AS coverage-build
+FROM gradle:8.14-jdk21 AS coverage-build
 
 ARG COVERAGE_TASKS="test koverHtmlReport koverXmlReport"
 
