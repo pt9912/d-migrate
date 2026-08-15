@@ -14,18 +14,19 @@
 | --- | --- | --- |
 | **Dependabot** (Security- + Version-Updates) | GitHub-Dienst, `schedule: weekly, monday` | ja (außerhalb des Repos) |
 | **`dependency-submission.yml`** — speist den Dependency-Graph | `main`-Push | ja, war aber fünf Wochen defekt |
-| **semgrep** | `make gates`, `make docker-gates` | **nein** — in keinem Workflow |
-| **a-check** (Architektur-Gate) | `make gates`, `make docker-gates` | **nein** — in keinem Workflow |
+| **semgrep** | `make gates`, `make docker-gates` | ~~nein~~ **ja seit 2026-08-15** (Job `security-gates`) |
+| **a-check** (Architektur-Gate) | `make gates`, `make docker-gates` | ~~nein~~ **ja seit 2026-08-15** (Job `security-gates`) |
 | CodeQL / Trivy / Grype / OSV | — | nicht vorhanden |
 
 **Zeitgesteuert läuft nichts Sicherheitsrelevantes.** Die einzigen beiden Workflows
 mit `schedule:` sind `sample-db-scale.yml` und `perf-acceptance.yml`, beide zu
 Performance.
 
-Was die CI tatsächlich an `make`-Zielen fährt: `ci-build`, `docs-check`,
-`release-assets`, `docker-oci-build`, `native-runtime-build`. Das `gates`-Ziel, das
-semgrep und a-check bündelt, ist **kein** CI-Ziel — es existiert für den lokalen
-Aufruf.
+Was die CI an `make`-Zielen fuhr: `ci-build`, `docs-check`, `release-assets`,
+`docker-oci-build`, `native-runtime-build`. Das `gates`-Ziel, das semgrep und
+a-check buendelt, war **kein** CI-Ziel — es existierte fuer den lokalen Aufruf.
+*(Seit 2026-08-15 ruft der Job `security-gates` die beiden einzeln auf; `gates`
+als Buendel bleibt lokal, weil es zusaetzlich schwere Docker-Ziele enthaelt.)*
 
 ## Zwei Anliegen, nicht eines
 
@@ -39,6 +40,18 @@ als Teil der **1.0.0-Sicherheits-Interimslatte** — von den dreien lief zum
 
 **Entscheidungsfrei**: semgrep und a-check in einen Workflow zu heben braucht keine
 Vorabklärung, nur Arbeit. Dieser Teil kann jederzeit vorgezogen werden.
+
+> **ERLEDIGT 2026-08-15.** Beide laufen als blockierender Job `security-gates` in
+> [`build.yml`](../../../.github/workflows/build.yml) — bei jedem Push und jedem
+> Pull-Request. Vorher lokal gegengeprüft, dass sie überhaupt grün sind: semgrep
+> 0 Befunde, a-check 0 Befunde.
+>
+> Beim Verdrahten wurde der **Zuschnitt von semgrep** nachgesehen, statt ihn zu
+> unterstellen: Es laufen genau **zwei Regeln** (Dockerfile `missing-user`, Python
+> `use-defused-xml`) über vier Dateien. Kotlin-Regeln gibt es nicht. Das ist so
+> dokumentiert und gewollt — aber wer „semgrep läuft jetzt in der CI" liest, sollte
+> nicht glauben, damit sei der Produktivcode statisch analysiert. Für den steht
+> a-check (Architektur) und detekt (im Build).
 
 **2. Nichts prüft ohne Push.** CVEs tauchen auf, ohne dass sich das Repo ändert.
 Ein push-getriggertes Gate schweigt in genau diesem Fall: Zwischen RC4 (09.08.) und
@@ -100,8 +113,9 @@ Unabhaengig von der Pinning-Frage bleiben drei Luecken:
    bereits ein Muster (gecacht, SHA256-gepinnt, `--network none`).
 3. **Beides**: Dependabot für Abhängigkeiten, Nightly für das Image.
 
-Unabhängig vom gewählten Weg: **semgrep und a-check in die CI** (Anliegen 1) und
-ein Frühwarnsignal dafür, dass ein Security-Gate überhaupt läuft.
+Unabhängig vom gewählten Weg bleibt ein **Frühwarnsignal dafür, dass ein
+Security-Gate überhaupt läuft** — Anliegen 1 (semgrep und a-check in die CI) ist
+seit 2026-08-15 erledigt, deckt aber nur den Push-Fall ab.
 
 ## Warum das nicht als „roter Lauf" durchgeht
 

@@ -92,6 +92,12 @@ Die **1.0.0-Sicherheits-Interimslatte** ist:
 > [`security-gates-not-in-ci.md`](../planning/open/security-gates-not-in-ci.md)
 > geführt. Nichts prueft heute zeitgesteuert; ein push-getriggertes Gate ist gegen
 > CVEs prinzipiell blind, weil CVEs auftauchen, ohne dass sich das Repo aendert.
+>
+> **Teilbehebung noch am 2026-08-15:** `semgrep` und `a-check` laufen als
+> blockierender Job `security-gates` in
+> [`build.yml`](../../.github/workflows/build.yml), also bei jedem Push und jedem
+> Pull-Request. Von den drei Pfeilern des Punktes 3 tragen damit alle drei. Offen
+> bleibt der zeitgesteuerte Teil: Auch diese beiden Gates haengen an einem Push.
 
 Als **benannte Folgearbeit** (macht einen späteren externen Audit billig und
 glaubwürdig) wird ein **Audit-Readiness-Paket** geführt

@@ -110,6 +110,30 @@ jobs:
         # Spiegelt `make docs-check` 1:1; kein ghcr-Login nötig (Image public).
         run: make docs-check
 
+  # Beide Gates existierten nur als `make`-Ziel und hingen damit daran, dass jemand
+  # sie lokal tippt. ADR 0039 fuehrt sie als Teil der 1.0.0-Sicherheits-Interimslatte
+  # — erzwungen war davon nichts. Bewusst blockierend: ein Gate, das nur berichtet,
+  # ist genau das, was hier ohnehin schon fehlte.
+  security-gates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: semgrep — Dockerfile- und Python-Regeln, offline
+        # Zweistufig und Absicht: das Holen der Regeln braucht Netz (commit-gepinnt
+        # und SHA256-verifiziert, Details in config/semgrep/README.md), der Scan
+        # selbst laeuft dann `--network none` gegen die geholte Kopie. Die Regeln
+        # liegen NICHT im Repo, weil semgrep-rules unter LGPL-2.1 + Commons Clause
+        # steht und das mit der MIT-Lizenz dieses Repos kollidierte.
+        run: make semgrep
+
+      - name: a-check — Hexagon-Architekturregeln
+        # Netzloser, read-only Lauf gegen ein digest-gepinntes Image; ein Pin-Bump
+        # ist ein bewusster Commit. Kein ghcr-Login noetig (Image public).
+        run: make a-check
+
   docker:
     needs: build
     runs-on: ubuntu-latest
