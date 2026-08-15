@@ -299,8 +299,27 @@ Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel
 gegen glibc gelinkt — unter Alpine/musl bleiben die JVM-Artefakte oder
 das Container-Image der Weg.
 
-Hinweis: Die Homebrew-Formula wird ab 0.5.0 im Repository
-mitgeführt und pro Release über
+### Homebrew (macOS und Linux)
+
+d-migrate liegt in einem eigenen Tap, nicht in homebrew-core — `brew
+install d-migrate` allein findet es deshalb nicht. Aktuelle
+Homebrew-Versionen verweigern zusätzlich das Laden von Formulae aus nicht
+vertrauten Fremd-Taps. Es braucht also alle drei Schritte:
+
+```bash
+brew tap pt9912/d-migrate
+brew trust pt9912/d-migrate
+brew install d-migrate
+```
+
+`openjdk@21` kommt als Abhängigkeit mit. Der Tap folgt ausschließlich
+**stabilen** Releases — Release Candidates bewegen ihn nie.
+
+Unter macOS ist das der empfohlene Weg, weil es dort kein natives Binary
+gibt ([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)).
+
+Die Formula wird ab 0.5.0 in diesem Repository mitgeführt und pro Release
+über
 [`.github/workflows/verify-homebrew-formula.yml`](.github/workflows/verify-homebrew-formula.yml)
 verifiziert.
 

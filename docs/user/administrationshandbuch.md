@@ -57,7 +57,7 @@ datenbankunabhängiger Domain-Core, Output-Ports und austauschbare Adapter
 | **Natives Container-Image** | [`releasing.md`](releasing.md) | `…/d-migrate:<version>-native` — enthält das GraalVM-Binary statt einer JVM: kleineres Image, Start in Millisekunden, gleicher CLI-Vertrag |
 | **Native Binaries** | [`releasing.md`](releasing.md) | eigenständige Binaries **ohne Java** am GitHub-Release: `linux-x64` (pro Release garantiert) und `windows-x64` (Best-Effort), je mit `.sha256`. **Für macOS gibt es kein natives Binary** ([ADR 0044](../adr/0044-kein-macos-native-binary.md)) — dort Homebrew, JVM-Artefakte oder Container-Image. Dynamisch gegen glibc gelinkt — unter Alpine/musl die JVM-Artefakte oder das Container-Image verwenden |
 | **GitHub-Release-Assets** | [`guide.md`](guide.md) Option A | Launcher-Skript bzw. Fat JAR (JVM 21) |
-| **Homebrew-Tap** | [`releasing.md`](releasing.md) | `brew tap pt9912/d-migrate …` dann `brew install d-migrate`; folgt nur **stabilen** Releases, keine RCs |
+| **Homebrew-Tap** | [`releasing.md`](releasing.md) | drei Schritte, nicht einer: `brew tap pt9912/d-migrate`, dann `brew trust pt9912/d-migrate` (aktuelles Homebrew laedt Fremd-Taps sonst nicht), dann `brew install d-migrate`. Zieht `openjdk@21` mit; folgt nur **stabilen** Releases, keine RCs. Unter macOS der empfohlene Weg, da dort kein natives Binary existiert ([ADR 0044](../adr/0044-kein-macos-native-binary.md)) |
 | **Aus Quellcode bauen** | [`README.md`](../../README.md) „Build, Test, Lint" | `make`-Targets; Build/Test laufen im Docker-Build (Stage `build`) |
 | **Image lokal aus dem Dockerfile** | [`guide.md`](guide.md) Option B | `make docker-build` |
 
