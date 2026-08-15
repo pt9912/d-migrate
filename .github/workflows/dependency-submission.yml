@@ -14,6 +14,10 @@ on:
   push:
     branches:
       - main
+  # Ohne Dispatch laesst sich dieser Workflow nur durch einen main-Push pruefen —
+  # also nur bei einem Release. Genau deshalb blieb ein Dauerfehler hier fuenf
+  # Wochen unbemerkt.
+  workflow_dispatch:
 
 permissions:
   contents: write # Dependency-Snapshot schreiben
@@ -21,6 +25,15 @@ permissions:
 jobs:
   submit:
     runs-on: ubuntu-latest
+
+    # Der Local-Gradle-Guard in `gradlew` blockt direkte Aufrufe; die
+    # dependency-submission-Action ruft den Wrapper aber genau so auf. Ohne
+    # diesen Override bricht sie ab, bevor irgendetwas aufgeloest wird — und der
+    # Dependency-Graph bleibt leer, ohne dass ein Gate anschlaegt. Dieselbe
+    # Ausnahme setzt native-image.yml aus demselben Grund.
+    env:
+      DMIGRATE_ALLOW_LOCAL_GRADLE: '1'
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
