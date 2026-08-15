@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.0-RC-SNAPSHOT  ·  **Handbuch-Version:** 0.3 (Entwurf)  ·  **Stand:** 16.07.2026
+**Software-Version:** 1.0.0  ·  **Handbuch-Version:** 0.5  ·  **Stand:** 15.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
@@ -2670,6 +2670,7 @@ custom_types:
 | 0.2 | 05.07.2026 | Fehlerbehebung: Hinweis zur Fingerabdruck-Versionsbindung von Rollback-Artefakten und Overlays (Abbruch mit Exit 8 nach einem Update) ergänzt. |
 | 0.3 | 16.07.2026 | Auf Software-Version 1.0.0-RC-SNAPSHOT aktualisiert. Zugangsdaten-Optionen erweitert (`D_MIGRATE_DB_PASSWORD`, verschlüsselter Store `config credentials`, `credentialRef: file:/env:`); neuer Fehlerfall „credentialRef fail-closed"; `config credentials` in die Befehlsreferenz (A.17) aufgenommen. |
 | 0.4 | 31.07.2026 | Auf Software-Version 1.0.0-RC2 aktualisiert. `credentialRef`-Aufzählungen um das dritte Schema `keychain:` ergänzt (inkl. Hinweis, dass es in CI/Container/Server fail-closed scheitert — neuer Absatz in der Fehlerbehebung). `config show` in 4.2 als Antwort auf „welche Konfiguration gilt gerade?" aufgenommen und als A.18 in die Befehlsreferenz. |
+| 0.5 | 15.08.2026 | Auf Software-Version 1.0.0 (erstes Stable) aktualisiert. **Keine inhaltliche Änderung** — zwischen 1.0.0-RC2 und 1.0.0 kam kein neues Kommando und keine geänderte Option hinzu; die Releases dazwischen waren bauseitig. Nachgezogen wurde die Kopfzeile, die beim 0.4-Eintrag stehengeblieben war (sie nannte weiterhin Handbuch-Version 0.3 und den 16.07.). Sachlich relevant für Leser: der `--user`-Zusatz beim Docker-Aufruf (Abschnitt 1) ist ab 1.0.0 **nötig** und nicht mehr nur empfohlen — bis 0.9.12 lief das Image als root und schrieb auch ohne ihn. |
 
 ---
 

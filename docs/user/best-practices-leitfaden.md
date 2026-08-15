@@ -1,6 +1,6 @@
 # Best-Practices-Leitfaden
 
-> **Software-Version:** 1.0.0-RC-SNAPSHOT · **Stand:** 16.07.2026
+> **Software-Version:** 1.0.0 · **Stand:** 15.08.2026
 >
 > **Zielgruppe:** Personen, die d-migrate produktiv einsetzen und wiederkehrende
 > Entscheidungen (Performance, Sicherheit, Verifikation, Rollback) gut treffen
