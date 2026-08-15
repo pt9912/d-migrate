@@ -1,6 +1,6 @@
 # Migrations-Leitfaden
 
-> **Software-Version:** 0.9.9 (Beta) · **Stand:** 16.06.2026
+> **Software-Version:** 1.0.0 · **Stand:** 15.08.2026
 >
 > **Zielgruppe:** Personen, die eine konkrete Datenbank-Migration mit d-migrate
 > planen und durchführen. Grundkenntnisse aus dem
@@ -66,7 +66,8 @@ testbar. Format und Typsystem: [`spec/neutral-model-spec.md`](../../spec/neutral
 | --------- | ------------------------------ | -------------------------- |
 | Zwischenformat | keines (Stream) | Datei (JSON/YAML/CSV/Parquet) |
 | Audit/Reproduzierbarkeit | gering | hoch (Artefakt prüf-/aufbewahrbar) |
-| Resume nach Abbruch | nein | ja (`--resume` mit Checkpoint) |
+| Verhalten bei Abbruch | kein Resume; mit `--atomic` definierter Rücksetzpunkt (alle Zieltabellen leer) | Resume via `--resume` mit Checkpoint |
+| Nebenläufigkeit | `--parallel N` (nicht mit `--atomic` kombinierbar) | `--parallel N` beim Import |
 | Netzwerk | beide DBs gleichzeitig erreichbar | entkoppelbar |
 | Empfehlung | schnelle, einmalige Transfers | Pilot/Produktion, große Datenmengen, Offline-Schritt |
 
@@ -90,7 +91,16 @@ als direkte URL angeben. URL-Format, Aliase, Sonderzeichen und Pool-Verhalten:
 [`spec/connection-config-spec.md`](../../spec/connection-config-spec.md) §1–§3
 bzw. [Administrationshandbuch §3–§4](administrationshandbuch.md#3-konfiguration).
 
-### 3.3 Kompatibilität prüfen (Dialekt-Unterschiede)
+### 3.3 Die Quelle bleibt schreibgeschützt
+
+Lesende Operationen öffnen die Quelle standardmäßig read-only (`--read-only`, Default
+an; das Ziel ist immer schreibbar). Bei SQLite bedeutet das `SQLITE_OPEN_READONLY`
+**ohne** `-wal`/`-shm`-Nebendateien — eine nicht beschreibbare Datenbankdatei lässt
+sich damit ebenso analysieren wie eine, die nicht verändert werden darf.
+`--no-read-only` erzwingt das Gegenteil und ist nur nötig, wenn die Quelle
+ausnahmsweise beschrieben werden muss.
+
+### 3.4 Kompatibilität prüfen (Dialekt-Unterschiede)
 
 Typ-Mapping-Lücken und Präzisionsrisiken zwischen den Dialekten vorab sichten:
 [`spec/type-mapping.md`](../../spec/type-mapping.md) (String-Längenerhaltung,
@@ -133,6 +143,11 @@ Steuerflags (Import und Transfer):
 - `--disable-fk-checks` — Fremdschlüsselprüfung während des Imports aussetzen
   (für Bulk-Loads; danach Integrität verifizieren).
 - `--truncate` — Zieltabellen vor dem Laden leeren.
+- `--parallel N` — bis zu N Tabellen bzw. Partitionen nebenläufig übertragen
+  (Default 1 = sequenziell). Die topologische Ordnung bleibt erhalten: parallel
+  läuft nur, was innerhalb derselben FK-Schicht unabhängig ist. N sollte die
+  Größe des Verbindungspools (Default 10) nicht überschreiten; für SQLite wird
+  auf 1 geklemmt, und mit `--atomic` ist die Option **unverträglich**.
 
 ### 5.3 Trigger während des Imports deaktivieren
 
@@ -145,14 +160,27 @@ Import feuern — kombiniert mit der pre-data/post-data-Reihenfolge aus
 `--on-conflict update` (Default `abort`) aktualisiert vorhandene Datensätze statt
 abzubrechen — sicher für wiederholte Läufe.
 
-### 5.5 Inkrementelle Migration (LF-013)
+### 5.5 Atomarer Clean-Load (`--atomic`)
+
+`--atomic` macht das Laden zu einer Alles-oder-nichts-Operation: Bricht der Lauf an
+irgendeiner Stelle ab, werden **alle** Zieltabellen auf ihren leeren Vor-Ladezustand
+zurückgesetzt statt halb gefüllt liegenzubleiben. Die Option **setzt `--truncate`
+voraus** — sie definiert den Rücksetzpunkt als „leer", nicht als „Zustand von
+vorher".
+
+Damit ist sie das Gegenstück zu `--resume`: Der Artefakt-Pfad nimmt einen
+unterbrochenen Lauf wieder auf, der Direkt-Transfer räumt ihn sauber weg. Beides
+zusammen mit `--parallel` geht nicht — Nebenläufigkeit und garantierte
+Rücksetzbarkeit schließen sich aus.
+
+### 5.6 Inkrementelle Migration (LF-013)
 
 `--since-column <spalte> --since <wert>` exportiert/transferiert nur Zeilen
 oberhalb eines Markers (z. B. `updated_at`). Für unterbrochene Läufe steht
 zusätzlich `--resume` mit Checkpoint-Referenz bereit (Details und Grenzen:
 [`guide.md`](guide.md), [API-Referenz](api-referenz.md)).
 
-### 5.6 Parquet als Transportformat
+### 5.7 Parquet als Transportformat
 
 `--format parquet` für `data export`/`data import` — kompaktes, typstabiles
 Spaltenformat für große Datenmengen und Lakehouse-nahe Pipelines (siehe
@@ -234,7 +262,7 @@ schema compare  --source <QUELLE> --target <ZIEL>   # Exit 1 = Unterschiede
 | **7.1 PostgreSQL → MySQL** | Sequenzen werden in MySQL über `dmg_sequences` emuliert; PG-`citext`/Extension-Typen prüfen ([§6.5](#6-spezialfälle-und-stolpersteine)) |
 | **7.2 MySQL → PostgreSQL** | `TINYINT(1)`↔`BOOLEAN`-Semantik prüfen; MySQL-Sequence-Emulation wird auf native PG-Sequenzen abgebildet |
 | **7.3 → SQLite** | `--sqlite-named-sequences helper_table` setzen, sonst E056-Skip; Materialized Views → View (W103) |
-| **7.4 Cross-DB Round-Trip PG → MySQL → SQLite** | Abnahmeziel **8.6** für 1.0.0 — als verketteter Smoke geliefert (`make sample-db-3hop-smoke`): End-to-End-Parität + Serial/Array/ENUM-Transformationen über die ganze Kette; jede Stufe zusätzlich einzeln mit `schema compare` abnehmbar |
+| **7.4 Cross-DB Round-Trip PG → MySQL → SQLite** | Abnahmeziel **8.6**, mit 1.0.0 erfüllt — als verketteter Smoke geliefert (`make sample-db-3hop-smoke`): End-to-End-Parität + Serial/Array/ENUM-Transformationen über die ganze Kette; jede Stufe zusätzlich einzeln mit `schema compare` abnehmbar |
 
 ---
 
@@ -317,11 +345,13 @@ vergleich ([10.1](#10-validierung-und-abnahme)/[10.2](#10-validierung-und-abnahm
 - [ ] Quelle enthält Views/Trigger/Functions/Procedures? Dann beim Reverse `--include-all`/`--include-*` gesetzt (Default lässt sie aus).
 - [ ] Typ-Mapping-Warnungen ([§6.5](#6-spezialfälle-und-stolpersteine)) gesichtet und akzeptiert/behoben.
 - [ ] pre-data angelegt, Daten geladen, post-data angelegt.
+- [ ] Bei Direkt-Transfer entschieden: `--atomic` (sauberer Rücksetzpunkt, verlangt `--truncate`) **oder** `--parallel N` (Tempo) — beides zusammen geht nicht.
 - [ ] `schema compare` Quelle↔Ziel ohne unerwartete Unterschiede.
 - [ ] Zeilenzahlen + Stichproben verifiziert ([§10.2](#10-validierung-und-abnahme)).
 - [ ] Sequenz-Folgewerte korrekt ([§6.1](#6-spezialfälle-und-stolpersteine)/[§6.2](#6-spezialfälle-und-stolpersteine)).
 
-Diese Checkliste ist Teil des 0.9.9-Pilot-Programms (Pilotanwender-Tests, LF 9.2).
+Diese Checkliste stammt aus der Pilotanwender-Abnahme (LF 9.2) und gilt unverändert
+für Produktiv-Migrationen.
 
 ---
 
