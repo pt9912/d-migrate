@@ -133,6 +133,21 @@ dependencies {
                     "bleiben gruen ohne diese Klasse (parquet-libraries.md §6 AP1.b).",
             )
         }
+
+        // Anders als die Baeume oben werden diese beiden wirklich gebraucht —
+        // commons-beanutils von hadoop-common (Configuration), aircompressor von
+        // parquet-hadoop als reiner JVM-Codec (die JNI-Varianten snappy-java und
+        // zstd-jni sind weiter unten ausgeschlossen). Also heben statt entfernen.
+        // Ohne diese beiden Zeilen zieht die transitive Aufloesung wieder die
+        // verwundbaren Staende.
+        implementation("commons-beanutils:commons-beanutils") {
+            version { require("1.11.0") }
+            because("CVE-2025-48734 — hadoop-common 3.4.1 loest sonst auf 1.9.4 auf.")
+        }
+        implementation("io.airlift:aircompressor") {
+            version { require("2.0.3") }
+            because("CVE-2025-67721 — parquet-hadoop 1.17.1 loest sonst auf 2.0.2 auf.")
+        }
     }
 }
 
