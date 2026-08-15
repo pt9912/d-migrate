@@ -71,6 +71,28 @@ Die **1.0.0-Sicherheits-Interimslatte** ist:
    Meldeprozess und Sicherheitsmaßnahmen;
 3. die Security-Gates (semgrep offline, a-check-Architektur, `dependency-submission`).
 
+> **Nachtrag 2026-08-15 — Punkt 3 traf so nicht zu.** Beim 1.0.0-Cut wurde erhoben,
+> was von diesen drei Gates tatsaechlich lief: **keines verlaesslich.** `semgrep` und
+> `a-check` stehen in `make gates`/`make docker-gates`, werden aber von **keinem**
+> Workflow aufgerufen — die CI faehrt `ci-build`, `docs-check`, `release-assets`,
+> `docker-oci-build` und `native-runtime-build`; `gates` ist kein CI-Ziel. Beide
+> haengen also daran, dass jemand sie lokal tippt. `dependency-submission` lief zwar
+> in der CI, scheiterte aber seit mindestens 2026-07-31 bei **jedem** `main`-Push am
+> Local-Gradle-Guard (fehlendes `DMIGRATE_ALLOW_LOCAL_GRADLE=1`) — behoben am
+> 2026-08-15 mit `66a27d99`, seither wird der Dependency-Graph wieder eingereicht.
+>
+> **Die Entscheidung dieser ADR bleibt unberuehrt** — sie betrifft die Einordnung des
+> *externen* Audits, nicht den Zustand der Gates. Korrigiert wird nur die
+> Tatsachenbehauptung in Punkt 3: 1.0.0 ist mit einer Interimslatte herausgegangen,
+> deren dritter Pfeiler faktisch nicht trug. Punkt 1 (internes Vollaudit) und Punkt 2
+> ([`SECURITY.md`](../../SECURITY.md)) sind davon nicht betroffen.
+>
+> Die Behebung — Gates in die CI, zeitgesteuerte Pruefung, Fruehwarnung fuer
+> schweigende Gates — wird in
+> [`security-gates-not-in-ci.md`](../planning/open/security-gates-not-in-ci.md)
+> geführt. Nichts prueft heute zeitgesteuert; ein push-getriggertes Gate ist gegen
+> CVEs prinzipiell blind, weil CVEs auftauchen, ohne dass sich das Repo aendert.
+
 Als **benannte Folgearbeit** (macht einen späteren externen Audit billig und
 glaubwürdig) wird ein **Audit-Readiness-Paket** geführt
 ([`audit-readiness-package.md`](../planning/open/audit-readiness-package.md)):
