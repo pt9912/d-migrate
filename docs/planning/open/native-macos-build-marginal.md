@@ -1,6 +1,7 @@
 # Tracker: macOS-Native-Leg ist auch mit Drosselung marginal
 
-> **Status:** Befund mit Messreihe (Draft) / Trigger Watch (2026-08-09)
+> **Status:** Befund mit vollstaendiger Messreihe (2026-08-15) — Wege 1 und 2 widerlegt,
+> Entscheidung zwischen groesserem Runner und Verzicht steht aus
 > **Trigger:** Das `macos-latest`-Leg von
 > [`native-image.yml`](../../../.github/workflows/native-image.yml) fällt wiederholt
 > aus, obwohl die dafür eingebaute Drosselung aktiv ist. Es blockiert kein Release
@@ -46,19 +47,55 @@ ist älter als die neue Toolchain.
 Wert stammt von GraalVM 21.0.2 und aus der Zeit **vor** der Drosselung.
 `--parallelism=2` kauft Speicher mit Zeit; lange Läufe sind dort der Normalfall.
 
-## Wege
+## Messreihe 2026-08-15: alle drei Maschinen-Schrauben durchprobiert
 
-1. **Speicherbudget weiter anheben** (`nativeMaxRamPercentage` über 80 %). Billig zu
-   probieren, aber der Kopfraum ist dünn: bei 5,35 GB von 7,5 GB bleibt wenig für
-   alles andere, und ein OOM-Kill des Runners ersetzt Exit 30 nur durch einen
-   härteren Abbruch.
-2. **`--parallelism=1`.** Weniger gleichzeitig gehaltene Arbeitsmengen, also mehr
-   Kopfraum — auf Kosten der Laufzeit, die schon jetzt an der Geduldsgrenze liegt.
-3. **macOS als Native-Plattform streichen.** Ehrlichste Option, wenn 1 und 2 nicht
-   verlässlich tragen: kein Würfeln je Release, kein Rerun-Ritual. Kostet Nutzern das
-   `macos-arm64`-Binary; JVM-Artefakte und Container-Image bleiben. Eine Streichung
-   gehört nach [ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md)s
-   Regel in einen ADR, nicht in eine gelöschte Zeile.
+Die Wege 1 und 2 der ursprünglichen Fassung sind **gemessen und widerlegt**. Dafür
+wurden `max_ram_percentage`, `parallelism` und `gradle_heap` als
+`workflow_dispatch`-Inputs verfügbar gemacht (`503036f5`, `318b97cb`); Tag-Läufe
+haben keine Inputs und bleiben unverändert.
+
+| Lauf | Budget | Threads | Ergebnis |
+| --- | --- | --- | --- |
+| `31870585218` `parallelism=1` | 5,35 GB | 1 | **Exit 30** nach 27 min |
+| `31872022614` `gradle_heap=2g` | 5,35 GB | 2 | **Exit 30** nach 27 min |
+| `31873419273` `90 %` + `gradle_heap=2g` | **6,02 GB** | 2 | **Exit 30** nach 25 min |
+
+**Was jeder Versuch ausschließt:**
+
+- **Nebenläufigkeit ist nicht der Engpass.** Bei einem einzigen Compiler-Thread ist die
+  gleichzeitig gehaltene Arbeitsmenge minimal — es erstickt trotzdem. Der Engpass ist
+  die *Grundlast* des Analyse-Universums, nicht deren Aufteilung.
+- **Die Gradle-JVM nimmt dem Builder nichts weg.** Zwei Gigabyte weniger
+  Gradle-Anspruch ließen das Builder-Budget auf die Nachkommastelle **unverändert**:
+  `MaxRAMPercentage` rechnet gegen den physischen Speicher, nicht gegen den freien.
+  Die Überzeichnung (Builder + Gradle > Maschine) existiert real, steuert aber das
+  Budget nicht.
+- **Mehr Prozent bringt nichts.** +0,67 GB (12,5 % mehr Budget) bewegten den Ausgang
+  nicht. Die Lücke ist größer als das, was diese Maschine hergeben kann.
+
+**Nebenbefund zur Arithmetik:** 80 % ergaben 5,35 GB = 71,1 % des gemeldeten
+Systemspeichers, 90 % ergaben 6,02 GB = 80,1 %. Die JVM sieht also ~6,7 GB als
+physisch an, das Tool meldet 7,52 GB — kein Fehler, zwei Bezugsgrößen.
+
+**Zweiter Fehlermodus, vorher fehlinterpretiert:** Die Läufe vom 2026-08-09 (Dispatch
+und RC4-Tag) endeten bei **exakt 60 Minuten** und erschienen als `cancelled`. Das war
+kein Handabbruch, sondern `timeout-minutes: 60` des Jobs — GitHub meldet einen
+Job-Timeout als `cancelled`, nicht als `failure`.
+
+## Wege (revidiert)
+
+1. ~~Speicherbudget anheben~~ — **widerlegt**, s. o.
+2. ~~`--parallelism=1`~~ — **widerlegt**, s. o.
+3. **Größerer macOS-Runner.** GraalVM Native Image **cross-kompiliert nicht** — das
+   `macos-arm64`-Binary kann ausschließlich auf einem macOS-Runner entstehen, die
+   großzügige Linux-Maschine ist keine Alternative. GitHub bietet größere
+   macOS-Runner an (mehr Kerne und RAM), kostenpflichtig und mit höherem
+   Minuten-Multiplikator. Der einzige Weg, der das Problem *löst* statt es zu
+   verschieben. Größen und Kosten sind vor einer Entscheidung nachzusehen.
+4. **`macos-arm64` nicht mehr ausliefern.** Ehrlich und sofort wirksam: kein Würfeln je
+   Release, kein Rerun-Ritual. Kostet Nutzern das native macOS-Binary; JVM-Artefakte,
+   Container-Image und Homebrew bleiben. Eine Streichung gehört nach der Regel aus
+   [ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md) in einen ADR.
 
 ## Warum nicht „einfach weiter rerunnen"
 
