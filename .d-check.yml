@@ -63,15 +63,6 @@ matrix:
     - {from: spec, to: plan-roadmap, allow: false}
     - {from: spec, to: plan-internal, allow: false}
     - {from: user, to: plan-internal, allow: false}
-  # releasing.md und quality.md liegen zwar unter docs/user/, richten sich aber an
-  # MAINTAINER, nicht an Anwender: releasing.md IST die Release-Prozedur und weist
-  # an, in der Roadmap Haken zu setzen und Slices zu pflegen; quality.md leitet
-  # interne Pruefmechanik her. Ihre Plan-Verweise sind Arbeitsanweisungen, keine
-  # Anwender-Wegweiser. Die saubere Loesung waere, sie aus docs/user/ zu loesen —
-  # solange sie hier liegen, ist die Ausnahme ehrlicher als erzwungene Umbauten.
-  exempt-paths:
-    - "docs/user/releasing.md"
-    - "docs/user/quality.md"
   status:
     forbidden: [superseded, deprecated]
   exclude-sections: [Historie, Geschichte, Versionierung, Changelog, Änderungshistorie]

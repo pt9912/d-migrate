@@ -6,9 +6,7 @@
 > sowie Rollback-Szenarien.
 >
 > Hinweis: Ein öffentlicher Library-Publish-Vertrag ist bewusst noch nicht Teil
-> dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
-> [`implementation-plan-0.9.1.md`](../planning/done-archive/implementation-plan-0.9.1.md)
-> beschrieben. Das Publishing steht seit
+> dieses Dokuments. Das Publishing steht seit
 > [ADR 0037](../adr/0037-database-agnostic-first-staffelung.md) (2026-07-17) **hinter dem
 > Treiber-Port-Umbau** (Milestone 2.0.0) und **nicht** mehr bei 1.0.0: Der Umbau bricht
 > Port-Signaturen, eine Stabilitätszusage mit 1.0.0 träfe also genau die Module, deren Bruch
@@ -196,10 +194,6 @@ docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/s
 #### DB-basierte Smokes (Reverse, Compare, Transfer)
 
 Lokales Docker-Netzwerk mit PostgreSQL und MySQL aufsetzen:
-
-Hinweis: Für realistischere DB-Smokes über die eingebauten Fixture-Schemas
-hinaus siehe auch die priorisierte Kandidatenliste in
-[`test-database-candidates.md`](../planning/open/test-database-candidates.md).
 
 ```bash
 SMOKE_DIR="$(mktemp -d)"; chmod 777 "${SMOKE_DIR}"
@@ -409,7 +403,7 @@ rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 
 Coverage-Breakdown auf Paketebene prüfen — Pakete unter 90% Line-Coverage
 identifizieren. Befehle und jq-Filter: siehe
-[`docs/planning/done-archive/test-coverage.md`](../planning/done-archive/test-coverage.md).
+[`quality.md`](quality.md).
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 
@@ -671,8 +665,8 @@ selbst herunter).
 > Workflow lief zum `v1.0.0-RC2`-Tag **gar nicht**: Releases, die dieser Repo per
 > `GITHUB_TOKEN` erzeugt, lösen laut
 > [GitHub-Doku](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
-> keine weiteren Workflow-Läufe aus. Details und die verworfenen Alternativen:
-> [`sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
+> keine weiteren Workflow-Läufe aus. Einordnung des Kanals:
+> [ADR 0042](../adr/0042-sdkman-kein-1.0.0-gate.md).
 
 - **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
   + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.5](#45-release-assets-aus-dem-grünen-tag-build-beziehen)).
@@ -685,8 +679,8 @@ selbst herunter).
 
 **Voraussetzung (einmalig, EXTERN):** d-migrate muss ein SDKMAN-Candidate sein — PR an `sdkman/sdkman-db-migrations` (legt den Candidate `dmigrate` an — Anzeigename „d-migrate", keine Versionen), dann armored
 GPG-Public-Key an `info@sdkman.io` → `Consumer-Key`/`Consumer-Token` → als GitHub-Secrets
-hinterlegen. Details + Erweiterungen (plattform-native Binaries, `checksum-sha-256`):
-[`docs/planning/next/sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
+hinterlegen. Warum SDKMAN kein 1.0.0-Gate ist und unter welcher Bedingung die
+Roadmap-Zeile schliesst: [ADR 0042](../adr/0042-sdkman-kein-1.0.0-gate.md).
 
 ```bash
 # nach grünem sdkman-release.yml-Lauf, auf einem Host mit `sdk` + Java:
