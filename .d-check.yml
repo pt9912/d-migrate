@@ -38,12 +38,9 @@ matrix:
       direction: no-downward
     - name: adr
       paths: ["docs/adr/[0-9]*.md"]
-    # Der Planungsbaum ist in ZWEI Klassen geteilt statt einer, weil eine Klasse
-    # pro Datei gilt: ueberlappende `paths` lassen die engere Regel still
-    # ausfallen (gemessen 2026-08-15 — mit `plan: docs/planning/**` daneben
-    # feuerte `user -> plan-internal` NULL statt 10 Befunde). Die Vereinigung
-    # beider Klassen deckt docs/planning/** vollstaendig ab; ausserhalb der
-    # fuenf Unterordner liegen dort keine Dateien.
+    # Zwei Klassen statt einer, und NICHT zu `docs/planning/**` zusammenfassen:
+    # eine Datei gehoert zu genau einer Klasse, und eine ueberlappende breitere
+    # `paths` laesst die engere Regel still ausfallen.
     - name: plan-roadmap
       paths: ["docs/planning/in-progress/**"]
     - name: plan-internal
