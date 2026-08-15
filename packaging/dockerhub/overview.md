@@ -115,7 +115,7 @@ container, `localhost` is the container itself.
 ## Which artefact should I use?
 
 This image is one of several distributions. There is also a launcher ZIP/TAR, a
-fat JAR, standalone native binaries for Linux/macOS/Windows, and a Homebrew
+fat JAR, standalone native binaries for Linux and Windows, and a Homebrew
 formula — see the
 [release page](https://github.com/pt9912/d-migrate/releases) and the
 [README](https://github.com/pt9912/d-migrate#readme).

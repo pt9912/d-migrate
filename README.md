@@ -6,7 +6,7 @@
 
 ![Build](https://github.com/pt9912/d-migrate/actions/workflows/build.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-purple.svg)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple.svg)
 
 d-migrate is a database-agnostic tool for schema migration and data
 management, usable as a CLI **and** as an MCP server
@@ -42,17 +42,18 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.12**
-(stable, [released 2026-07-13](https://github.com/pt9912/d-migrate/releases/tag/v0.9.12)).
+d-migrate is a working production tool at version **1.0.0**
+(stable, [released 2026-08-15](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0)).
 
-> **New in 0.9.12:** a parallel data path (`data export`/`import`/`transfer
-> --parallel N`, LN-007/LN-008) running independent tables concurrently in
-> FK-safe topological layers, with per-child fan-out for partitioned tables;
-> atomic clean-load rollback (`--atomic`, LN-013) resetting **all** target
-> tables to their empty pre-load state on any failure via O(1) compensation;
-> and read-only source opening (`--read-only`, on by default) — SQLite sources
-> open with `SQLITE_OPEN_READONLY` and no `-wal`/`-shm` side files, so even
-> non-writable databases are profilable. See `CHANGELOG.md`.
+> **New in 1.0.0:** the first stable release of the 1.0 line. Standalone
+> **native binaries** (GraalVM) for `linux-x64` and `windows-x64` start in
+> milliseconds without a JVM; the container image is mirrored to **Docker Hub**
+> and also ships as a `<version>-native` variant. The published JVM image now
+> runs as **non-root** (`uid 10001`) and includes `mod_spatialite` — writing
+> into a bind mount needs `--user "$(id -u):$(id -g)"`. Credentials can come
+> from the OS keychain (`credentialRef: keychain:…`), and `config show` reports
+> the effective configuration. On macOS there is no native binary; use
+> Homebrew, the JVM artefacts or the container image. See `CHANGELOG.md`.
 
 The current capabilities:
 
@@ -161,17 +162,13 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **0.9.12** (2026-07-13) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you.
-- **Current prerelease** · **1.0.0-RC4** (2026-08-09) — the 1.0.0
-  release candidate. Build-side only: Kotlin 2.4.10 and Flyway 13. The
-  CLI, its output and the configuration contract are unchanged, and an
-  existing MCP server-state schema stays valid without intervention.
-  Carried over from RC3: the published JVM image runs as **non-root**
-  (`uid 10001`) and ships `mod_spatialite`, so writing into a bind mount
-  needs `--user "$(id -u):$(id -g)"`. Published as a GitHub prerelease +
-  versioned OCI tag; it does **not** move `:latest` or Homebrew.
-- **Next** · **1.0.0 stable** — `Planned`.
+- **Current stable** · **1.0.0** (2026-08-15) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. The container image
+  runs as **non-root** (`uid 10001`), so writing into a bind mount needs
+  `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and
+  `windows-x64`; on macOS use Homebrew, the JVM artefacts or the
+  container image.
+- **Next** · **1.0.x** — patch releases from the stable line.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at
@@ -278,9 +275,11 @@ chmod +x d-migrate-<version>-linux-x64
 ./d-migrate-<version>-linux-x64 --help
 ```
 
-Native binaries are published for `linux-x64`, `macos-arm64` and
-`windows-x64` (each with a `.sha256`); `linux-x64` is guaranteed per
-release, the other two are best-effort. They are dynamically linked
+Native binaries are published for `linux-x64` and `windows-x64` (each
+with a `.sha256`); `linux-x64` is guaranteed per release, `windows-x64`
+is best-effort. **There is no native macOS binary** — on macOS use
+Homebrew, the JVM artefacts or the container image
+([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)). They are dynamically linked
 against glibc — on Alpine/musl use the JVM artefacts or the container
 image.
 

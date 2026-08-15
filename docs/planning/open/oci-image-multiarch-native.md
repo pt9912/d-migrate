@@ -25,7 +25,8 @@ Slice-Frage 4 des GraalVM-Slices
 ([`graalvm-native-image-distribution.md`](../done/graalvm-native-image-distribution.md), Zeile 542):
 
 > ✅ **Entschieden 2026-07-21 (Eigner): linux-arm64 NICHT für 1.0.0** (auf später vertagt). Der
-> 3-Plattform-Scope (`linux-x64`, `macos-arm64`, `windows-x64`) bleibt schlank; ARM64-Linux-Nutzer
+> Plattform-Scope (seit [ADR 0044](../../adr/0044-kein-macos-native-binary.md) nur noch `linux-x64`
+> und `windows-x64`) bleibt schlank; ARM64-Linux-Nutzer
 > haben JVM/OCI bzw. x64-Emulation als Brücke. Nicht slice-blockierend. Nachrüstbar: eine
 > `ubuntu-24.04-arm`-Matrix-Zeile fürs Binary (klein) + multi-arch für das native OCI-Image
 > (aufwändiger) — als eigener Post-1.0.0-Schritt.

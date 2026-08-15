@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-08-15
+
+### Removed
+
+- **Kein natives macOS-Binary mehr** ([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)).
+  Native Binaries erscheinen weiterhin für `linux-x64` (pro Release garantiert) und
+  `windows-x64` (best-effort); `macos-arm64` entfällt.
+
+  **Auf macOS ändert sich der Bezugsweg, nicht der Funktionsumfang**: Homebrew
+  (`brew install d-migrate`), die JVM-Artefakte (ZIP/TAR/Fat JAR) und das
+  Container-Image liefern denselben CLI-Vertrag. Was entfällt, ist allein der
+  Java-freie Schnellstart.
+
+  Grund: Der GraalVM-Builder erstickte auf dem macOS-Runner reproduzierbar im GC
+  (3 Kerne, ~7,5 GB). Alle drei Stellschrauben der Maschine wurden gemessen und blieben
+  wirkungslos — ein einzelner Compiler-Thread, ein gedeckelter Gradle-Heap und ein um
+  12,5 % erhöhtes Speicherbudget führten jeweils zu demselben Abbruch. Da GraalVM
+  Native Image **nicht cross-kompiliert**, lässt sich das Binary nicht auf einer
+  größeren Maschine bauen.
+
 ## [1.0.0-RC4] - 2026-08-09
 
 ### Changed

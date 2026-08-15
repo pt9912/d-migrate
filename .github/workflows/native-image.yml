@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       os_scope:
-        description: 'all = 3-OS-Matrix. linux = nur ubuntu (schneller Dispatch-Check, ~8 statt ~25 min).'
+        description: 'all = Linux + Windows. linux = nur ubuntu (schneller Dispatch-Check).'
         type: choice
         options:
           - all
@@ -40,11 +40,11 @@ jobs:
       # einem OS-spezifischen Native-Image-Problem ist die Information der anderen Legs wertvoll.
       fail-fast: false
       matrix:
-        # `os_scope: linux` verkuerzt einen Dispatch-Check auf ein Leg: macOS ist mit ~21 min der
-        # Taktgeber, liefert aber selten zusaetzliche Erkenntnis — die frueheren Native-Blocker waren
-        # auf allen drei Plattformen identisch. Die volle Matrix laeuft an Meilensteinen und bei Tags
-        # (Tag-Laeufe haben keine Inputs -> 'all').
-        os: ${{ fromJSON(inputs.os_scope == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        # Kein macOS-Leg: das native Binary fuer macOS wird nicht mehr ausgeliefert (ADR 0044).
+        # `os_scope: linux` verkuerzt einen Dispatch-Check auf ein Leg; die frueheren
+        # Native-Blocker waren auf allen Plattformen identisch. Tag-Laeufe haben keine
+        # Inputs -> 'all'.
+        os: ${{ fromJSON(inputs.os_scope == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     # native-image ist rechenintensiv; das Linux-Leg lag bei ~10 min. Grosszuegiges Dach, damit ein
     # langsameres OS-Leg nicht am Default-Limit stirbt.
@@ -91,28 +91,13 @@ jobs:
 
       - name: Native compile
         id: compile
-        # Baut die volle CLI (MainKt). native-image ist rechenintensiv (Linux ~10 min); das grosszuegige
-        # 60-min-Timeout gibt langsameren OS-Legs Luft. macOS wird unten gedrosselt (GC-Druck, s.u.).
+        # Baut die volle CLI (MainKt). native-image ist rechenintensiv (Linux ~10 min); das
+        # grosszuegige 60-min-Timeout gibt dem langsameren Windows-Leg Luft.
         run: |
           set -o pipefail
 
-          # macOS-Runner: 7,5 GB RAM und 3 Kerne — die knappste Maschine der Matrix. Unter GraalVM 25
-          # reichte das fuer die volle Flaeche NICHT: der Builder verbrachte 77,5 % der Zeit in GC und
-          # starb nach 42 min mit Exit 30 (Lauf 29741017853). Unter GraalVM 21.0.2 lief derselbe Bau
-          # noch durch (31,9 % GC, 26m20s) — der Mehrbedarf kommt mit der neuen Version.
-          #
-          # Weniger Compiler-Threads = weniger gleichzeitig gehaltene Arbeitsmengen. Bewusst nur hier
-          # gesetzt und nicht als Default: auf Linux/Windows (16 GB) ist die Drosselung unnoetig und
-          # wuerde nur den Bau verlangsamen.
-          EXTRA=""
-          if [ "$(uname -s)" = "Darwin" ]; then
-            EXTRA="-PnativeParallelism=2"
-            echo "macOS erkannt — drossele auf ${EXTRA}"
-          fi
-
           start=$(date +%s)
-          ./gradlew --no-daemon :adapters:driving:cli:nativeCompile \
-            ${EXTRA} 2>&1 | tee native-build.log
+          ./gradlew --no-daemon :adapters:driving:cli:nativeCompile 2>&1 | tee native-build.log
           status=$?
           end=$(date +%s)
           echo "build_seconds=$(( end - start ))" >> "${GITHUB_OUTPUT}"

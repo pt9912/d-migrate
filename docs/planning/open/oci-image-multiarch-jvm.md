@@ -68,5 +68,5 @@ Optionen:
 
 Kein macOS-/Windows-Image: Container-Images tragen Linux-Userspace. macOS-Container existieren nicht,
 Windows-Container brauchen einen Windows-Host und einen eigenen Build — beides kein Scope. Die
-OS-Abdeckung liefern die **nativen Binaries** am GitHub-Release (`linux-x64`, `macos-arm64`,
-`windows-x64`).
+OS-Abdeckung liefern die **nativen Binaries** am GitHub-Release (`linux-x64`, `windows-x64` —
+für macOS gibt es keins, [ADR 0044](../../adr/0044-kein-macos-native-binary.md)).

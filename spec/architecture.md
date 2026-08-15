@@ -1208,19 +1208,26 @@ Distribution-Formate:
    → Kanonischer Build: `:adapters:driving:cli:assembleReleaseAssets`
    → Distribution: GitHub Releases
 
-2. OCI Image (ghcr.io/pt9912/d-migrate) ✅
+2. OCI Image (ghcr.io/pt9912/d-migrate)
    → docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
    → Basis: eclipse-temurin:21-jre-noble (Ubuntu 24.04, glibc, ZGC)
-   → Build: ./gradlew :adapters:driving:cli:jibDockerBuild (Jib, kein Dockerfile nötig)
+   → Kanonischer Build: Dockerfile-Stage `runtime` (docker build --target runtime)
+   → Ein Bauweg je Image-Klasse — dieselbe Stage, die lokal geprüft wird, wird publiziert
    → Für CI/CD-Pipelines und Nutzer ohne JDK
 
 3. Homebrew-Basis
    → Formula im Repository unter `packaging/homebrew/d-migrate.rb`
    → Konsumiert das publizierte GitHub-Release-ZIP
-   → Verifikation nach Publish via `brew install --formula`
+   → Verifikation nach Publish über einen ephemeren Tap:
+     brew tap-new <lokal>/<name> --no-git, Formula hineinkopieren, brew trust, brew install <lokal>/<name>/d-migrate
+     (ein Pfad-Aufruf `brew install --formula <datei>.rb` wird von Homebrew abgelehnt)
 
-4. Zukunftspfade
-   → GraalVM Native Image
+4. Native Binaries (GraalVM Native Image)
+   → Eigenständige, Java-freie Binaries für Linux und Windows, am GitHub-Release
+   → Dynamisch gegen glibc gelinkt — für musl/Alpine gelten JVM-Artefakt oder Container-Image
+   → Zusätzlich als Container-Image `…:<version>-native` (Binary statt JVM)
+
+5. Zukunftspfade
    → SDKMAN
    → Scoop
 ```
