@@ -16,12 +16,24 @@ on:
   workflow_dispatch:
     inputs:
       os_scope:
-        description: 'all = 3-OS-Matrix. linux = nur ubuntu (schneller Dispatch-Check, ~8 statt ~25 min).'
+        description: 'all = 3-OS-Matrix. linux = nur ubuntu (schneller Dispatch-Check). macos = nur macOS (Ressourcen-Experimente).'
         type: choice
         options:
           - all
           - linux
+          - macos
         default: all
+      # Die beiden Schrauben gegen den GC-Druck auf macOS, per Dispatch variierbar.
+      # Leer = die im Build hinterlegten Werte. Tag-Laeufe haben keine Inputs und
+      # bleiben damit unveraendert.
+      max_ram_percentage:
+        description: 'MaxRAMPercentage des native-image-Builders (leer = Build-Default).'
+        type: string
+        default: ''
+      parallelism:
+        description: 'native-image --parallelism auf macOS (leer = 2).'
+        type: string
+        default: ''
   push:
     tags:
       - 'v*'
@@ -44,7 +56,7 @@ jobs:
         # Taktgeber, liefert aber selten zusaetzliche Erkenntnis — die frueheren Native-Blocker waren
         # auf allen drei Plattformen identisch. Die volle Matrix laeuft an Meilensteinen und bei Tags
         # (Tag-Laeufe haben keine Inputs -> 'all').
-        os: ${{ fromJSON(inputs.os_scope == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        os: ${{ fromJSON(inputs.os_scope == 'linux' && '["ubuntu-latest"]' || inputs.os_scope == 'macos' && '["macos-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     # native-image ist rechenintensiv; das Linux-Leg lag bei ~10 min. Grosszuegiges Dach, damit ein
     # langsameres OS-Leg nicht am Default-Limit stirbt.
@@ -91,6 +103,9 @@ jobs:
 
       - name: Native compile
         id: compile
+        env:
+          IN_MAX_RAM: ${{ inputs.max_ram_percentage }}
+          IN_PARALLELISM: ${{ inputs.parallelism }}
         # Baut die volle CLI (MainKt). native-image ist rechenintensiv (Linux ~10 min); das grosszuegige
         # 60-min-Timeout gibt langsameren OS-Legs Luft. macOS wird unten gedrosselt (GC-Druck, s.u.).
         run: |
@@ -106,8 +121,12 @@ jobs:
           # wuerde nur den Bau verlangsamen.
           EXTRA=""
           if [ "$(uname -s)" = "Darwin" ]; then
-            EXTRA="-PnativeParallelism=2"
+            EXTRA="-PnativeParallelism=${IN_PARALLELISM:-2}"
             echo "macOS erkannt — drossele auf ${EXTRA}"
+          fi
+          if [ -n "${IN_MAX_RAM}" ]; then
+            EXTRA="${EXTRA} -PnativeMaxRamPercentage=${IN_MAX_RAM}"
+            echo "Speicherbudget per Dispatch gesetzt: ${IN_MAX_RAM} %"
           fi
 
           start=$(date +%s)
