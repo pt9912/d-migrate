@@ -80,7 +80,10 @@ Unabhaengig von der Pinning-Frage bleiben drei Luecken:
 1. **Zwischen Releases altert das Image.** Die Tag-Re-Push-Strategie wirkt nur beim
    naechsten Bau. `:latest` zeigt auf 1.0.0 und bleibt dort bis 1.0.1.
 2. **Die Exposition ist unbekannt.** Fixes werden geerbt, aber niemand weiss, welche
-   CVEs im ausgelieferten Image gerade stecken.
+   CVEs im ausgelieferten Image gerade stecken. *(Seit 2026-08-15 nicht mehr
+   unbekannt, sondern gemessen: 90 verwundbare Versionen im publizierten `1.0.0` —
+   siehe [dependency-cve-exposure-shipped-artifact.md](dependency-cve-exposure-shipped-artifact.md).
+   Der Punkt bleibt gueltig, denn gefunden hat sie ein Push, nicht ein Gate.)*
 3. **Der apt-Layer ist ungeprueft** — und war zum Audit-Zeitpunkt noch nicht einmal
    vorhanden.
 
