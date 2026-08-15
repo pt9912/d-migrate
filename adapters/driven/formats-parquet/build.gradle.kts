@@ -47,6 +47,21 @@ dependencies {
         // unten — kein Avro-/Protobuf-Reflection-Pfad im
         // runtimeClasspath.
         exclude(group = "org.apache.avro")
+
+        // Verteilte Hadoop-Infrastruktur raus. d-migrate liest lokale
+        // Parquet-Dateien ueber org.apache.hadoop.fs.Path/Configuration; ein
+        // HDFS-Cluster, dessen Hochverfuegbarkeit oder dessen
+        // SPNEGO/Kerberos-Pfad kommen nie vor. Mitgeliefert wurden sie
+        // trotzdem, samt ihrer Angriffsflaeche.
+        //
+        // Ein Versionszwang waere hier die schlechtere Haelfte: die
+        // Fix-Versionen dieser Baeume streuen ueber viele Patch-Staende, und
+        // das Nachziehen betraefe Code, der nie ausgefuehrt wird. Was nicht
+        // ausgeliefert wird, muss auch nicht gepflegt werden.
+        exclude(group = "org.apache.zookeeper")
+        exclude(group = "org.apache.curator")
+        exclude(group = "org.bouncycastle")
+        exclude(group = "io.netty")
     }
     // AP3-Befund (5ca1497f, in parquet-libraries.md §8 nachgezogen):
     // parquet-hadoop ParquetReader.builder triggert das
@@ -64,6 +79,26 @@ dependencies {
         // Avro kommt ueber hadoop-mapreduce-client-core ein zweites
         // Mal transitiv rein; auch hier exclude.
         exclude(group = "org.apache.avro")
+
+        // Hier sitzt der groesste Brocken: dieser Block zieht
+        // `io.netty:netty-all` — das Sammelartefakt, das JEDES Netty-Modul
+        // mitbringt. Daher lagen Codecs fuer Redis, SMTP, STOMP, MQTT, XML und
+        // HAProxy im Auslieferungsartefakt. d-migrate spricht keines dieser
+        // Protokolle; Netty dient hier dem HDFS-/YARN-RPC.
+        exclude(group = "io.netty")
+
+        // YARN wird nur fuer die Job-Submission gebraucht, die hier nie
+        // stattfindet — benoetigt wird allein FileInputFormat fuer den
+        // ParquetInputFormat-Klassenladepfad (Begruendung des Blocks oben).
+        exclude(group = "org.apache.hadoop", module = "hadoop-yarn-client")
+        exclude(group = "org.apache.hadoop", module = "hadoop-yarn-common")
+        exclude(group = "org.apache.hadoop", module = "hadoop-yarn-api")
+        // Eigener Eintrag, obwohl auch der YARN-Zweig darauf zeigt: dieser Block
+        // haengt zusaetzlich DIREKT an hadoop-hdfs-client, der YARN-Ausschluss
+        // allein liess es also im Artefakt. Gelesen wird ueber file://.
+        exclude(group = "org.apache.hadoop", module = "hadoop-hdfs-client")
+        exclude(group = "org.apache.zookeeper")
+        exclude(group = "org.apache.curator")
     }
 }
 
