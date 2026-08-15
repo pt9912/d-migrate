@@ -268,8 +268,9 @@ Body-Transformation gibt es heute zwei Wege:
   transformieren den Body über ein abstraktes Zwischenformat in den Zieldialekt.
 - **Manuell:** den als `action_required` markierten Body zielseitig nachbilden.
 
-Ein durchgängiges Beispiel (PostgreSQL → MySQL) steht in
-[`beispiel-stored-procedure-migration.md`](../planning/open/beispiel-stored-procedure-migration.md).
+Ein durchgängiges Beispiel (PostgreSQL → MySQL) wird im Planungsbaum als Worked
+Example gepflegt; der Weg über die MCP-Tools ist in der
+[API-Referenz §4.5](api-referenz.md#45-tool-katalog) beschrieben.
 
 > 🔮 Ein CLI-Kommando `d-migrate transform procedure` ist als Zielbild in
 > [`spec/ddl-generation-rules.md`](../../spec/ddl-generation-rules.md) genannt,

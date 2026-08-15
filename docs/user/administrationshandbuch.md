@@ -429,8 +429,8 @@ Default ist **aus**: ohne die Config entsteht keine Datei.
 ### 8.2 Telemetrie-/Observability-Port
 
 > 🔮 **Geplant:** ein neutraler Telemetry-/Observability-Port (Eventmodell +
-> JSONL-Referenzadapter) ist als eigener Plan skizziert
-> ([`telemetry-observability-port.md`](../planning/next/telemetry-observability-port.md)).
+> JSONL-Referenzadapter) ist als eigener Plan skizziert; den Stand führt die
+> [Roadmap](../planning/in-progress/roadmap.md).
 > Heute gibt es **keinen** HTTP-Health-Endpoint und keine Micrometer-/
 > OpenTelemetry-Integration; der Job-Executor liefert nur einen
 > Status-Snapshot über die interne API.

@@ -38,11 +38,40 @@ matrix:
       direction: no-downward
     - name: adr
       paths: ["docs/adr/[0-9]*.md"]
-    - name: plan
-      paths: ["docs/planning/**"]
+    # Der Planungsbaum ist in ZWEI Klassen geteilt statt einer, weil eine Klasse
+    # pro Datei gilt: ueberlappende `paths` lassen die engere Regel still
+    # ausfallen (gemessen 2026-08-15 — mit `plan: docs/planning/**` daneben
+    # feuerte `user -> plan-internal` NULL statt 10 Befunde). Die Vereinigung
+    # beider Klassen deckt docs/planning/** vollstaendig ab; ausserhalb der
+    # fuenf Unterordner liegen dort keine Dateien.
+    - name: plan-roadmap
+      paths: ["docs/planning/in-progress/**"]
+    - name: plan-internal
+      paths:
+        - "docs/planning/open/**"
+        - "docs/planning/next/**"
+        - "docs/planning/done/**"
+        - "docs/planning/done-archive/**"
+    # user darf auf roadmap.md zeigen (dauerhafter Top-Level-Aggregator, wandert
+    # laut in-progress/README nie), aber nicht in den beweglichen Teil des
+    # Planungsbaums: open/next/done/done-archive durchlaufen den Lebenszyklus aus
+    # ADR 0004, ihre Pfade sind instabil und ihr Inhalt ist Arbeitsmaterial.
+    - name: user
+      paths: ["docs/user/**"]
   rules:
     - {from: spec, to: adr, allow: false}
-    - {from: spec, to: plan, allow: false}
+    - {from: spec, to: plan-roadmap, allow: false}
+    - {from: spec, to: plan-internal, allow: false}
+    - {from: user, to: plan-internal, allow: false}
+  # releasing.md und quality.md liegen zwar unter docs/user/, richten sich aber an
+  # MAINTAINER, nicht an Anwender: releasing.md IST die Release-Prozedur und weist
+  # an, in der Roadmap Haken zu setzen und Slices zu pflegen; quality.md leitet
+  # interne Pruefmechanik her. Ihre Plan-Verweise sind Arbeitsanweisungen, keine
+  # Anwender-Wegweiser. Die saubere Loesung waere, sie aus docs/user/ zu loesen —
+  # solange sie hier liegen, ist die Ausnahme ehrlicher als erzwungene Umbauten.
+  exempt-paths:
+    - "docs/user/releasing.md"
+    - "docs/user/quality.md"
   status:
     forbidden: [superseded, deprecated]
   exclude-sections: [Historie, Geschichte, Versionierung, Changelog, Änderungshistorie]
