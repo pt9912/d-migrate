@@ -754,7 +754,7 @@ approx. vs. exakt; Phase 2 *Produktives Modul* (Ziel 1.0.0-RC): stabiles Modul
 
 | Bereich  | Aufgabe                                           | LF-Ref | Status |
 | -------- | ------------------------------------------------- | ------ | ------ |
-| Build    | GraalVM Native Image (Linux, macOS, Windows)      | [Slice](../done/graalvm-native-image-distribution.md) | ✅      |
+| Build    | GraalVM Native Image (Linux, Windows)             | [Slice](../done/graalvm-native-image-distribution.md) | ✅⁸     |
 | Build    | Docker Image auf Docker Hub                       | —      | ✅⁶     |
 | Build    | SDKMAN-Distribution                               | [Slice](../next/sdkman-distribution.md) | ⛔⁷     |
 | Security | Interner Security-Audit                           | —      | ✅⁵     |
@@ -825,6 +825,13 @@ der externe Audit wandert sie **nicht** in einen späteren Milestone, weil ein
 `gh workflow run sdkman-release.yml -f tag=vX.Y.Z` nachträglich für den 1.0.0-Tag publiziert (kein
 Re-Release, keine Patch-Version). `✅` erst, wenn `sdk install dmigrate X.Y.Z` tatsächlich
 funktioniert — dieselbe Latte wie beim Docker-Hub-Spiegel.
+
+⁸ **Kein natives macOS-Binary** ([ADR 0044](../../adr/0044-kein-macos-native-binary.md), 2026-08-15).
+Native Binaries erscheinen für `linux-x64` (Gate) und `windows-x64` (best-effort). Das macOS-Leg
+erstickte reproduzierbar im GC (`exit status 30`); alle drei Stellschrauben der Maschine wurden
+gemessen und blieben wirkungslos (`--parallelism=1`, Gradle-Heap-Deckel, 90 % Speicherbudget). Da
+GraalVM Native Image **nicht cross-kompiliert**, gibt es keinen Ausweg über eine andere Maschine.
+macOS bleibt vollwertige Laufzeitplattform über Homebrew, JVM-Artefakte und Container-Image.
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 

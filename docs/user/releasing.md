@@ -585,7 +585,6 @@ Prüfsummen-Datei:
 | Asset | Runner |
 | --- | --- |
 | `d-migrate-X.Y.Z-linux-x64` + `.sha256` | `ubuntu-latest` |
-| `d-migrate-X.Y.Z-macos-arm64` + `.sha256` | `macos-latest` |
 | `d-migrate-X.Y.Z-windows-x64.exe` + `.sha256` | `windows-latest` |
 
 Plattform und Architektur werden im Workflow zur Laufzeit aus `uname`
@@ -604,8 +603,8 @@ Zur Einordnung:
   reduziert; seither ist der volle `MainKt` der einzige native Entrypoint.
 - Jedes OS-Leg smoked sein eigenes Binary (`--help`, `schema validate --source`,
   `schema generate --source`), bevor es hochgeladen wird. Der Smoke bleibt
-  DB-frei (der Runner stellt keine Datenbank); macOS und Windows sind lokal
-  nicht nachbaubar, deshalb ist dieser Smoke dort die einzige Selbstvalidierung.
+  DB-frei (der Runner stellt keine Datenbank); Windows ist lokal nicht nachbaubar,
+  deshalb ist dieser Smoke dort die einzige Selbstvalidierung.
 - Der Anhänge-Job erstellt **kein** Release, er lädt nur hoch. Das Release
   selbst kommt aus
   [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml),
@@ -613,9 +612,9 @@ Zur Einordnung:
   Job kein Release, wartet er in zehn Versuchen à 30 s und wird danach rot.
 - **Nur das Linux-Leg ist ein Release-Gate** (Native-Slice Frage 6 = Hybrid): fehlt das
   `linux-x64`-Asset, wird der `attach-release`-Job **rot** und der Release ist **nicht** zu
-  finalisieren. **macOS und Windows bleiben best-effort** — `fail-fast` ist aus, ein rotes
-  macOS/Windows-Leg bricht die anderen nicht ab, sein fehlendes Asset ist zulässig und der Release
-  selbst bleibt gültig. Deshalb steht die Asset-Liste in der Verifikation
+  finalisieren. **Windows bleibt best-effort** — `fail-fast` ist aus, ein rotes Windows-Leg bricht
+  das andere nicht ab, sein fehlendes Asset ist zulässig und der Release selbst bleibt gültig.
+  Für macOS gibt es kein Native-Leg mehr ([ADR 0044](../adr/0044-kein-macos-native-binary.md)). Deshalb steht die Asset-Liste in der Verifikation
   ([4.8](#48-verifikation-des-releases)).
 
 Der Workflow lässt sich auch ohne Tag starten (`workflow_dispatch`), etwa um
@@ -863,11 +862,11 @@ anschließend als verifizierten Repo-Stand nachziehen.
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
 - [ ] **`linux-x64`-Native-Asset ([4.4.2](#442-native-image-binaries)) hängt am Release** (Gate,
       Frage 6 = Hybrid) — **fehlt es, den Release NICHT finalisieren** (`attach-release`-Job ist rot).
-      macOS/Windows sind best-effort, je mit `.sha256`:
+      Windows ist best-effort, je mit `.sha256`:
   ```bash
-  gh release view vX.Y.Z --json assets --jq '.assets[].name' | grep -E 'linux-x64|macos-arm64|windows-x64'
+  gh release view vX.Y.Z --json assets --jq '.assets[].name' | grep -E 'linux-x64|windows-x64'
   ```
-      Fehlt `macos-arm64` oder `windows-x64`, ist nur ihr Matrix-Leg rot (`fail-fast` ist aus) — der
+      Fehlt `windows-x64`, ist nur dessen Matrix-Leg rot (`fail-fast` ist aus) — der
       Release bleibt gültig; Lauf von `native-image.yml` für den Tag prüfen
 - [ ] Native-Binary der eigenen Plattform startet: heruntergeladen, `chmod +x`,
       `./d-migrate-X.Y.Z-<plattform> schema validate <schema.yaml>`
@@ -1062,14 +1061,14 @@ Für jeden Release abhaken:
 - [ ] Image auf `ghcr.io/pt9912/d-migrate:X.Y.Z` und `:latest` verfügbar
 - [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
 - [ ] Natives Container-Image `ghcr.io/pt9912/d-migrate:X.Y.Z-native` verfügbar (`:native` nur bei Stable), Docker-Hub-Spiegel dito
-- [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); macOS/Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
+- [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
 - [ ] **SDKMAN** ([4.4.4](#444-sdkman)) — nur falls Candidate freigegeben + Secrets gesetzt: `sdkman-release.yml` grün, `sdk install dmigrate X.Y.Z` funktioniert. Sonst Skip (Notice im Log), Release bleibt gültig
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
 - [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
-- [ ] Release enthält das `linux-x64`-Native-Binary mit `.sha256` (**Pflicht/Gate**); `macos-arm64` und `windows-x64.exe` best-effort (je mit `.sha256`, sofern ihr Leg grün war)
+- [ ] Release enthält das `linux-x64`-Native-Binary mit `.sha256` (**Pflicht/Gate**); `windows-x64.exe` best-effort (mit `.sha256`, sofern sein Leg grün war). Kein `macos-arm64` — [ADR 0044](../adr/0044-kein-macos-native-binary.md)
 - [ ] Native-Binary der eigenen Plattform lokal gesmoked (`schema validate`)
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok

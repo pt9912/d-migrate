@@ -1223,7 +1223,7 @@ Distribution-Formate:
      (ein Pfad-Aufruf `brew install --formula <datei>.rb` wird von Homebrew abgelehnt)
 
 4. Native Binaries (GraalVM Native Image)
-   → Eigenständige, Java-freie Binaries je Plattform, am GitHub-Release
+   → Eigenständige, Java-freie Binaries für Linux und Windows, am GitHub-Release
    → Dynamisch gegen glibc gelinkt — für musl/Alpine gelten JVM-Artefakt oder Container-Image
    → Zusätzlich als Container-Image `…:<version>-native` (Binary statt JVM)
 

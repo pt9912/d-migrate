@@ -1,7 +1,7 @@
 # Tracker: macOS-Native-Leg ist auch mit Drosselung marginal
 
-> **Status:** Befund mit vollstaendiger Messreihe (2026-08-15) — Wege 1 und 2 widerlegt,
-> Entscheidung zwischen groesserem Runner und Verzicht steht aus
+> **Status:** DONE (2026-08-15) — Weg 4 gewaehlt (ADR 0044), siehe *Closure*. Messreihe
+> vollstaendig, Wege 1 und 2 widerlegt
 > **Trigger:** Das `macos-latest`-Leg von
 > [`native-image.yml`](../../../.github/workflows/native-image.yml) fällt wiederholt
 > aus, obwohl die dafür eingebaute Drosselung aktiv ist. Es blockiert kein Release
@@ -102,3 +102,30 @@ Job-Timeout als `cancelled`, nicht als `failure`.
 Der Rerun funktioniert (RC3 belegt es), aber er ist Handarbeit an einer Stelle, die
 sonst automatisch läuft, und er verdeckt die Frage, ob das Leg überhaupt tragfähig
 ist. Zwei von drei scharfen Läufen brauchten einen zweiten Versuch.
+
+## Closure (2026-08-15)
+
+**Entschieden: Weg 4 — `macos-arm64` wird nicht mehr ausgeliefert**
+([ADR 0044](../../adr/0044-kein-macos-native-binary.md), Eigner-Entscheidung).
+
+`macos-latest` ist aus der Matrix von `native-image.yml` entfernt; die eigens für die
+Messreihe gebauten Dispatch-Schrauben (`max_ram_percentage`, `parallelism`,
+`gradle_heap`, `os_scope: macos`) sind mit entfallen — sie hatten keinen anderen
+Zweck. Ebenso die macOS-Drosselung im Compile-Step.
+
+Angepasst, damit nirgends ein Versprechen stehen bleibt: beide READMEs,
+`administrationshandbuch.md` (Deployment-Tabelle), `releasing.md` (Asset-Tabelle,
+Gate-Absatz, Verifikation, Checkliste), `spec/architecture.md`,
+`packaging/dockerhub/overview.md`, Roadmap-Zeile mit Fußnote ⁸, CHANGELOG unter
+*Removed*, sowie die beiden Multi-Arch-Tickets, die den alten 3-Plattform-Scope
+nannten.
+
+**Warum nicht Weg 3 (größerer Runner):** laufende Kosten für ein Artefakt, das eine
+Minderheit nutzt — während auf macOS mit Homebrew ohnehin der übliche Bezugsweg
+vollständig unterstützt bleibt. Der Weg bleibt offen: kehrt die Plattform zurück,
+genügt der Matrix-Eintrag.
+
+**Was das Ticket geliefert hat, unabhängig vom Ausgang:** drei Ursachen sind
+ausgeschlossen statt vermutet (Nebenläufigkeit, Gradle-Konkurrenz, Speicherbudget),
+und zwei Fehlinterpretationen sind richtiggestellt — Exit 30 als GC-Signatur statt
+Runner-Panne, und die 60-Minuten-Abbrüche als Job-Timeout statt Handabbruch.

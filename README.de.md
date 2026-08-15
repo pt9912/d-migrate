@@ -294,9 +294,11 @@ chmod +x d-migrate-<version>-linux-x64
 ./d-migrate-<version>-linux-x64 --help
 ```
 
-Native Binaries erscheinen für `linux-x64`, `macos-arm64` und
-`windows-x64` (je mit `.sha256`); `linux-x64` ist pro Release
-garantiert, die beiden anderen sind Best-Effort. Sie sind dynamisch
+Native Binaries erscheinen für `linux-x64` und `windows-x64` (je mit
+`.sha256`); `linux-x64` ist pro Release garantiert, `windows-x64` ist
+Best-Effort. **Für macOS gibt es kein natives Binary** — dort führen
+Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel
+([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)). Sie sind dynamisch
 gegen glibc gelinkt — unter Alpine/musl bleiben die JVM-Artefakte oder
 das Container-Image der Weg.
 
