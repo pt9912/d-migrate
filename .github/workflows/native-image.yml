@@ -34,6 +34,10 @@ on:
         description: 'native-image --parallelism auf macOS (leer = 2).'
         type: string
         default: ''
+      gradle_heap:
+        description: 'Deckel fuer die Gradle-JVM auf macOS, z. B. 2g (leer = gradle.properties, derzeit 4g). Gradle laeuft waehrend native-image weiter und konkurriert um denselben Speicher.'
+        type: string
+        default: ''
   push:
     tags:
       - 'v*'
@@ -106,6 +110,7 @@ jobs:
         env:
           IN_MAX_RAM: ${{ inputs.max_ram_percentage }}
           IN_PARALLELISM: ${{ inputs.parallelism }}
+          IN_GRADLE_HEAP: ${{ inputs.gradle_heap }}
         # Baut die volle CLI (MainKt). native-image ist rechenintensiv (Linux ~10 min); das grosszuegige
         # 60-min-Timeout gibt langsameren OS-Legs Luft. macOS wird unten gedrosselt (GC-Druck, s.u.).
         run: |
@@ -127,6 +132,10 @@ jobs:
           if [ -n "${IN_MAX_RAM}" ]; then
             EXTRA="${EXTRA} -PnativeMaxRamPercentage=${IN_MAX_RAM}"
             echo "Speicherbudget per Dispatch gesetzt: ${IN_MAX_RAM} %"
+          fi
+          if [ -n "${IN_GRADLE_HEAP}" ]; then
+            EXTRA="${EXTRA} -Dorg.gradle.jvmargs=-Xmx${IN_GRADLE_HEAP}"
+            echo "Gradle-JVM gedeckelt auf ${IN_GRADLE_HEAP} (sonst gradle.properties)"
           fi
 
           start=$(date +%s)
