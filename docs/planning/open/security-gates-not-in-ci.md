@@ -108,6 +108,49 @@ liegt. Der Fix hat deshalb einen `workflow_dispatch` mitbekommen. Dasselbe
 Strukturproblem trifft jedes Gate, das ausschließlich an einem seltenen Ereignis
 hängt.
 
+## Empfehlung (2026-08-15, noch keine Eigner-Entscheidung)
+
+**Ja zu einem Nightly — aber berichtend statt blockierend, auf das Image beschraenkt,
+und nicht als Erstes.**
+
+**Warum ja:** Das Argument ist strukturell, nicht graduell. Ein push-getriggertes
+Gate ist gegen CVEs prinzipiell blind, weil CVEs auftauchen, ohne dass sich das Repo
+aendert. Dazu die Eigenart dieses Produkts: `mcp serve --transport http` ist ein
+**langlaufender, netzexponierter Dienst mit JWT-Validierung**. Eine CVE in Ktor,
+`nimbus-jose-jwt` oder der JRE trifft dort anders als eine CLI, die drei Sekunden
+lebt.
+
+**Berichtend, nicht blockierend.** Ein Nightly, das an nicht behebbaren
+Basis-Image-CVEs rot wird, ist in zwei Wochen ein ignoriertes Abzeichen — und dann
+schlechter als nichts, weil es antrainiert, Sicherheitssignale wegzuklicken.
+Sinnvolle Schwelle fuer "jemand sieht hin": Critical **mit verfuegbarem Fix**.
+
+**Auf das Image beschraenkt.** Die Abhaengigkeiten sind Dependabots Aufgabe; ein
+Scanner, der dieselben Java-Dependencies nochmal meldet, produziert Doppelbefunde.
+Ungedeckt ist das ausgelieferte Image: Basis-OS, apt-Layer, JRE.
+
+**Reihenfolge — nicht der Scanner zuerst:**
+
+1. **semgrep + a-check in die CI.** Entscheidungsfrei und die groessere Luecke: zwei
+   Gates, die existieren, gepinnt und hermetisch sind — und nie laufen. Einen neuen
+   Scanner einzufuehren, waehrend die vorhandenen brachliegen, optimiert am falschen
+   Ende.
+2. **Nightly-Scan des publizierten Images** (Trivy oder Grype), berichtend.
+3. **Fruehwarnung, dass Gates ueberhaupt laufen.** Der Submission-Defekt blieb fuenf
+   Wochen unbemerkt, weil niemand merkt, wenn etwas *nicht* laeuft. Ein rotes Gate
+   faellt auf; ein schweigendes nicht.
+
+Punkte 1 und 3 sind unabhaengig von der Scanner-Entscheidung und jederzeit
+vorziehbar.
+
+**Verworfene Alternative — geplanter Rebuild statt Scan.** Wenn die Strategie ohnehin
+"Fixes bei jedem Bau erben" lautet, laege nahe, das Image geplant neu zu bauen: das
+*liefert* den Fix, statt nur darueber zu berichten. Der Haken ist Unveraenderlichkeit
+— man muesste `1.0.0` mit anderem Digest neu publizieren und damit einen
+Versions-Tag nachtraeglich veraendern. Praktikabel waere es nur fuer `:latest`, womit
+`:latest` und der Versions-Tag auseinanderliefen. Kein Ersatz fuer einen Scan, aber
+festgehalten, damit die Idee nicht als ungeprueft naheliegend wiederkehrt.
+
 ## Nachzuziehen
 
 [ADR 0039](../../adr/0039-externer-security-audit-kein-1.0.0-gate.md) braucht eine
