@@ -6,7 +6,7 @@
 
 ![Build](https://github.com/pt9912/d-migrate/actions/workflows/build.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-purple.svg)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple.svg)
 
 d-migrate ist ein datenbankunabhängiges Werkzeug für Schema-Migration
 und Datenmanagement — bedienbar als CLI **und** als MCP-Server
@@ -46,17 +46,19 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**0.9.12** (stabil, [veröffentlicht 2026-07-13](https://github.com/pt9912/d-migrate/releases/tag/v0.9.12)).
+**1.0.0** (stabil, [veröffentlicht 2026-08-15](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0)).
 
-> **Neu in 0.9.12:** ein paralleler Datenpfad (`data export`/`import`/`transfer
-> --parallel N`, LN-007/LN-008), der unabhängige Tabellen nebenläufig in
-> FK-sicheren topologischen Schichten fährt, mit Kind-Fan-out für partitionierte
-> Tabellen; atomarer Clean-Load-Rollback (`--atomic`, LN-013), der bei jedem
-> Fehler **alle** Zieltabellen per O(1)-Kompensation auf ihren leeren
-> Vor-Ladezustand zurücksetzt; und Read-only-Öffnen der Quelle (`--read-only`,
-> standardmäßig an) — SQLite-Quellen öffnen mit `SQLITE_OPEN_READONLY` und ohne
-> `-wal`/`-shm`-Nebendateien, sodass auch nicht beschreibbare Datenbanken
-> profilierbar sind. Siehe `CHANGELOG.md`.
+> **Neu in 1.0.0:** das erste stabile Release der 1.0-Linie. Eigenständige
+> **native Binaries** (GraalVM) für `linux-x64` und `windows-x64` starten ohne
+> JVM in Millisekunden; das Container-Image wird nach **Docker Hub** gespiegelt
+> und erscheint zusätzlich als `<version>-native`-Variante. Das publizierte
+> JVM-Image läuft jetzt als **non-root** (`uid 10001`) und enthält
+> `mod_spatialite` — Schreiben in einen Bind-Mount braucht
+> `--user "$(id -u):$(id -g)"`. Zugangsdaten können aus dem Betriebssystem-
+> Schlüsselbund kommen (`credentialRef: keychain:…`), und `config show` zeigt
+> die effektive Konfiguration. Für macOS gibt es kein natives Binary — dort
+> führen Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel. Siehe
+> `CHANGELOG.md`.
 
 Die aktuellen Fähigkeiten:
 
@@ -174,18 +176,13 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **0.9.12** (2026-07-13) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern.
-- **Aktuelle Vorabversion** · **1.0.0-RC4** (2026-08-09) — der
-  1.0.0-Release-Candidate. Rein bauseitig: Kotlin 2.4.10 und Flyway 13.
-  An der CLI, ihren Ausgaben und dem Konfigurationsvertrag ändert sich
-  nichts, und ein bestehendes MCP-Server-State-Schema bleibt ohne
-  Eingriff gültig. Aus RC3 übernommen: das publizierte JVM-Image läuft
-  als **non-root** (`uid 10001`) und enthält `mod_spatialite`; Schreiben
-  in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
-  Veröffentlicht als GitHub-Prerelease + versioniertes OCI-Tag; bewegt
-  `:latest` und Homebrew **nicht**.
-- **Als Nächstes** · **1.0.0 Stable** — `Geplant`.
+- **Aktuelles Stable** · **1.0.0** (2026-08-15) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. Das Container-Image
+  läuft als **non-root** (`uid 10001`); Schreiben in einen Bind-Mount
+  braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt es
+  für `linux-x64` und `windows-x64`; unter macOS führen Homebrew, die
+  JVM-Artefakte oder das Container-Image zum Ziel.
+- **Als Nächstes** · **1.0.x** — Patch-Releases aus der stabilen Linie.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter
