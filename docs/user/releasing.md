@@ -402,7 +402,14 @@ Vor jedem Release prüfen:
   `verify-homebrew-formula`-Workflow unverändert einsatzbereit?
 
 ```bash
-rg -n "koverVerify|release-assets|assembleReleaseAssets" .github/workflows/build.yml
+# Achtung: `koverVerify` und `assembleReleaseAssets` stehen NICHT woertlich in
+# build.yml — der Workflow ruft `make`-Ziele auf, die Tasks stecken in
+# CI_BUILD_TASKS bzw. in der release-assets-Stage des Dockerfiles. Ein Grep nur
+# auf build.yml findet sie nicht und sieht wie ein Befund aus, obwohl alles in
+# Ordnung ist.
+rg -n "release-assets|make ci-build" .github/workflows/build.yml
+rg -n "koverVerify|CI_BUILD_TASKS" Makefile
+rg -n "assembleReleaseAssets" Dockerfile
 rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 ```
 
