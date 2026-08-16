@@ -9,6 +9,7 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.format.data.SchemaOrigin
 import dev.dmigrate.format.data.SeekableChunkSource
+import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -135,6 +136,61 @@ class ParquetFallbackSchemaReadTest : FunSpec({
                 NeutralType.Date,
                 NeutralType.Binary,
             )
+        } finally {
+            Files.deleteIfExists(tmp)
+        }
+    }
+
+    test("Mit Footer-KV reisen die spezifischen Typen mit, die der Footer allein nicht traegt") {
+        // Gegenprobe zum Fallback: `Identifier`, `Geometry` und `Char` teilen
+        // sich ihre Physik mit `Integer`, `Binary` und `Text`. Aus dem
+        // MessageType allein sind sie NICHT rekonstruierbar — der Footer-KV
+        // traegt sie. Deshalb schreibt das CLI-Wiring ihn seit dieser Aenderung
+        // auch fuer Bundle-Mitglieder.
+        val tmp = Files.createTempFile("parquet-kv-specific-", ".parquet")
+        Files.deleteIfExists(tmp)
+        try {
+            val written = ChunkSchema(
+                table = "t",
+                origin = SchemaOrigin.JDBC_METADATA,
+                columns = listOf(
+                    ChunkColumnSchema("id", false, NeutralType.Identifier(autoIncrement = true)),
+                    ChunkColumnSchema("code", true, NeutralType.Char(length = 3)),
+                ),
+            )
+            Files.newOutputStream(tmp).use { out ->
+                ParquetChunkWriter(
+                    output = out,
+                    extraMetaDataProvider = ParquetSingleFileManifestWriter(producerVersion = "test").provider,
+                ).use { writer ->
+                    writer.begin("t", written)
+                    writer.write(DataChunk("t", emptyList(), listOf(arrayOf<Any?>(1, "abc")), 0L))
+                    writer.end()
+                }
+            }
+
+            val phase1 = ParquetSingleFilePreflight().phase1(tmp, explicitTable = "t")
+            phase1.manifestPresent shouldBe true
+            phase1.schema.columns.map { it.neutralType } shouldBe listOf(
+                NeutralType.Identifier(autoIncrement = true),
+                NeutralType.Char(length = 3),
+            )
+
+            // Ohne KV bliebe nur die Physik uebrig — das ist der Unterschied,
+            // den diese Aenderung fuer Bundle-Mitglieder aufhebt.
+            val bare = Files.createTempFile("parquet-kv-bare-", ".parquet")
+            Files.deleteIfExists(bare)
+            try {
+                writeBundleMemberStyle(bare, written, listOf(arrayOf<Any?>(1, "abc")))
+                val fallback = ParquetSingleFilePreflight().phase1(bare, explicitTable = "t")
+                fallback.manifestPresent shouldBe false
+                fallback.schema.columns.map { it.neutralType } shouldBe listOf(
+                    NeutralType.Integer,
+                    NeutralType.Text(),
+                )
+            } finally {
+                Files.deleteIfExists(bare)
+            }
         } finally {
             Files.deleteIfExists(tmp)
         }

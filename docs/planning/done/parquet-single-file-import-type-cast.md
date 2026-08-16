@@ -165,11 +165,22 @@ Ein Sprung auf **parquet-java 1.18.x** steht aus drei unabhängigen Gründen im 
 
 ## Offen
 
-- Ob der fehlende Footer-Key im Bundle-Export Absicht ist (das Manifest liegt ja
-  daneben) oder eine Lücke, ist **nicht geklärt**. Schriebe der Bundle-Export den
-  Key zusätzlich, wären seine Mitglieder ohne Fallback lesbar und trügen die
-  spezifischeren Typen (`Identifier`, `Enum`, `Geometry`) mit. Berührt das
-  Bundle-Format und ist deshalb nicht Teil dieser Behebung.
+- ~~Ob der fehlende Footer-Key im Bundle-Export Absicht ist.~~ **ERLEDIGT
+  2026-08-16 (Eigner-Entscheidung): Der Bundle-Export schreibt den Key jetzt
+  ebenfalls.** Damit ist ein Mitglied ohne Fallback lesbar und trägt die
+  spezifischeren Typen mit. Die Entscheidung fällt im CLI-Wiring
+  (`DataExportWiring`, `ExportOutput.FilePerTable`), nicht im Adapter — deshalb
+  liegt der Test auf CLI-Ebene und nicht als Container-E2E: Ein Adapter-Test kann
+  strukturell nicht sehen, welche Variante das Wiring wählt, und genau diese Naht
+  war der ursprüngliche Defekt.
+
+  Die `manifest.yaml` bleibt die Autorität für den Verbund (Reihenfolge,
+  Zeilenzahlen, optionale Hashes); der Key ist die Selbstbeschreibung der
+  einzelnen Datei. Beide stammen aus demselben `ChunkSchema`.
+
+  **Rückwärtskompatibel, gemessen:** Eine vor der Änderung exportierte Datei ohne
+  Key importiert weiterhin korrekt über den Footer-Fallback — alle vier
+  Import-Formen liefern identische Prüfsummen.
 - **`manifestPresent` wird von keinem Produktivpfad gelesen** — nur von Tests. Mit
   Typen aus dem Footer ist das keine Korrektheitslücke mehr, aber eine Warnung
   „Schema abgeleitet, semantische Details fehlen" wäre weiterhin sinnvoll.
