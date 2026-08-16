@@ -26,7 +26,7 @@ Cross-Dialekt-Matrix, Kanonisierer-/Fingerprint-Beteiligung (Postcompare v7 ist
 dialekt-parametrisiert) und sample-db-Smokes. Ein vierter Dialekt ist ein
 **Milestone in der Größenordnung mehrerer bisheriger Releases**, kein Feature.
 
-**Der Port verlangt** ([`DatabaseDriver`](../../../hexagon/ports-execute/src/main/kotlin/dev/dmigrate/driver/DatabaseDriver.kt)):
+**Der Port verlangt** ([`DatabaseDriver`](../../../hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDriver.kt)):
 `dialect`, `ddlGenerator()`, `dataReader()`, `tableLister()`, `dataWriter()`,
 `urlBuilder()`, `schemaReader()` als Pflicht. **Drei Fähigkeiten haben
 No-op-Defaults** (`transferCompatibility`, `typeCanonicalizer`,
