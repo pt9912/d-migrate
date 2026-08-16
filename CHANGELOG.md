@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Parquet: Ein einzelnes Mitglied eines `--split-files`-Bundles liess sich nicht
+  importieren.** `data import --format parquet --source datei.parquet --table t` brach
+  mit einer durchgereichten `ClassCastException` aus der Parquet-Bibliothek ab
+  (`IntegerValue cannot be cast to BinaryValue`) und schrieb keine Zeile. Betroffen war
+  **nur** dieser Fall: Einzeldatei-Export → Einzeldatei-Import und der Import des ganzen
+  Verzeichnisses liefen; CSV und JSON waren nie betroffen, SQLite und PostgreSQL
+  verhielten sich gleich.
+
+  Ursache war ein Platzhalter, der produktiv geworden ist. Ohne eingebettetes Manifest
+  fuellte der Preflight **jede** Spalte mit dem Typ `Text` — als Marker, den ein
+  spaeterer Schritt ueber das Ziel-Schema ersetzen sollte. Der Schritt kam nie, und der
+  Marker lief ungefiltert in den Lesepfad, der daraufhin eine INT32-Spalte als Text las.
+  Der vorhandene Waechter griff nicht, weil er nur Spaltenanzahl und -namen verglich,
+  nicht die Typen.
+
+  Die Typen kommen jetzt aus dem Footer der Datei selbst — sie traegt ihr Schema ohnehin.
+  Der Waechter vergleicht zusaetzlich die physische Zugriffsform, sodass eine Abweichung
+  als benannter Schema-Konflikt mit Spaltennamen auffaellt statt als roher Cast-Fehler.
+
+### Added
+
+- **Parquet: Bundle-Mitglieder tragen ihr Schema jetzt selbst.** Der
+  `--split-files`-Export bettet dasselbe Manifest in den Datei-Footer ein, das der
+  Einzeldatei-Export schon immer geschrieben hat. Dadurch ist ein einzelnes Mitglied
+  ohne die begleitende `manifest.yaml` vollstaendig lesbar und behaelt dabei die
+  praezisen Typen — Varianten mit gleicher Physik (`Identifier` gegen `Integer`,
+  `Geometry` gegen `Binary`, `Enum`/`Char` gegen `Text`) sind aus dem Datei-Schema
+  allein nicht unterscheidbar.
+
+  Die `manifest.yaml` bleibt die Autoritaet fuer den Verbund (Reihenfolge, Zeilenzahlen,
+  optionale Hashes). Aeltere Bundles ohne den Footer-Eintrag lassen sich unveraendert
+  importieren.
+
+### Security
+
+- **Das Auslieferungsartefakt enthaelt keine bekannten verwundbaren
+  Abhaengigkeitsversionen mehr** (Stand 1.0.0: eine kritische, 43 hohe, 46 mittlere und
+  niedrige — gemessen am publizierten Image, nicht am Abhaengigkeitsgraphen). Es
+  schrumpft dabei von 240 auf 177 Jars und von 143 auf 106 MB.
+
+  Gehoben wurden die direkt genutzten Bibliotheken: **PostgreSQL-Treiber 42.7.12**
+  (schliesst CVE-2026-54291 und CVE-2026-42198, beide in der Authentifizierung — SCRAM
+  und Channel Binding, also der Schicht, ueber die jede Verbindung laeuft),
+  **Jackson 2.21.5** und **Logback 1.5.34**.
+
+  Der weitaus groesste Teil kam jedoch nicht von eigenen Abhaengigkeiten, sondern aus
+  dem Hadoop-Gefolge des Parquet-Adapters. Ursache war `io.netty:netty-all` — ein
+  Sammelartefakt, das jedes Netty-Modul mitbringt und damit Codecs fuer Redis, SMTP,
+  STOMP, MQTT, XML und HAProxy in ein Schema-Migrationswerkzeug trug. Entfernt wurden
+  Netty, ZooKeeper, Curator, BouncyCastle, die YARN-Module, der HDFS-Client sowie Guice
+  und Guava; keines davon wird von d-migrate benutzt. Hadoop selbst bleibt
+  bibliotheksbedingt ([ADR 0046](docs/adr/0046-hadoop-bleibt-im-parquet-adapter.md)).
+
+  **Am Verhalten der CLI aendert sich dadurch nichts** — der Parquet-Pfad liest und
+  schreibt lokale Dateien und hat die entfernten Cluster-Bibliotheken nie angesprochen.
+
 ## [1.0.0] - 2026-08-15
 
 ### Removed
