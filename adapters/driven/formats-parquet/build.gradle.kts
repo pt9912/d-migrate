@@ -4,9 +4,15 @@
 //
 // Dependency-Skizze 1:1 aus parquet-libraries.md §8 uebernommen:
 // - parquet-hadoop + parquet-column als Core-Pfad
-// - hadoop-common 3.4.1 als Compile-Zeit-Bedarf
-//   (org.apache.hadoop.fs.Path, Configuration etc.); Schwergewichte
-//   (log4j 1.x, slf4j-log4j12, javax.servlet, Jetty) bewusst gezogen
+// - hadoop-common + hadoop-mapreduce-client-core: BIBLIOTHEKSBEDINGT, nicht
+//   aus eigenem Bedarf. Ein vollstaendiger Hadoop-Ausstieg wurde 2026-08-16
+//   durchgemessen und ist mit parquet-java 1.17.1 UND 1.18.0 nicht moeglich —
+//   `ParquetReader$Builder` verlangt FileInputFormat, `ParquetReadOptions$Builder`
+//   instanziiert HadoopParquetConfiguration. Bevor jemand es erneut versucht:
+//   docs/adr/0046-hadoop-bleibt-im-parquet-adapter.md nennt die drei Messpunkte
+//   und die zwei `javap`-Aufrufe, mit denen sich in Minuten pruefen laesst, ob
+//   eine neuere parquet-Version das aendert.
+//   Die Schwergewichte werden stattdessen per `exclude` klein gehalten.
 // - parquet-avro/parquet-protobuf werden via Constraints aus dem
 //   Klassenpfad gehalten (CVE-2025-30065/46762 vermieden, kein
 //   Reflection-Pfad)
