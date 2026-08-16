@@ -1,0 +1,45 @@
+# Begruendete Ausnahmen fuer `make image-scan`.
+#
+# YAML statt der einfachen `.trivyignore`, weil dort ein Eintrag die CVE GLOBAL
+# ausblendet — auch dort, wo sie behebbar waere. Hier bindet `paths` jede
+# Ausnahme an genau das Artefakt, fuer das die Begruendung gilt.
+#
+# REGEL: Jeder Eintrag traegt `statement` (warum tragbar) und `expired_at` (wann
+# neu zu bewerten). Ein Ignore ohne Begruendung ist eine stille
+# Risikouebernahme, eines ohne Ablauf wird nie wieder angesehen. Trivy laesst den
+# Befund nach `expired_at` von selbst wieder auflaufen. Entfaellt der Grund,
+# gehoert die Zeile geloescht statt verlaengert.
+#
+# NICHT hierher gehoeren behebbare Befunde — die werden behoben. Die Ausnahme
+# ist fuer Faelle, in denen der Fix nicht in unserer Hand liegt.
+vulnerabilities:
+  # Geshadetes Jackson in parquet-jackson. Trivy findet hier etwas, das
+  # Dependabot strukturell NICHT sehen kann: Jackson liegt nicht als eigenes
+  # Jar, sondern relokiert nach `shaded/parquet/com/fasterxml` (1100 Klassen)
+  # INNERHALB von parquet-jackson. Dessen pom.properties weisen 2.21.3 aus,
+  # waehrend das Projekt selbst 2.21.5 zieht. Kein eigener Pin erreicht diese
+  # Kopie; der Fix laege bei Apache Parquet.
+  #
+  # Warum tragbar: Die Klassen sind UMBENANNT. Eigener Code bindet gegen
+  # `com.fasterxml.jackson.*` und damit gegen das echte, gepatchte Jar; die
+  # geshadete Kopie ist nur fuer Parquet-internen Gebrauch erreichbar
+  # (Footer-/Schema-Metadaten). Dass ein PolymorphicTypeValidator-Angriff dort
+  # zusaetzlich aktiviertes polymorphes Typing voraussetzt, ist NICHT geprueft —
+  # daher das nahe Ablaufdatum.
+  #
+  # Der versionierte Pfad ist Absicht: nach einem Parquet-Upgrade greift die
+  # Ausnahme nicht mehr, und ein fortbestehender Befund laeuft wieder auf.
+  # Aufloesung waere parquet-java 1.18.x — dieselbe Bewegung, die
+  # dependency-cve-exposure-shipped-artifact.md als Weg 3 fuehrt.
+  - id: CVE-2026-54512
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Relokiert in parquet-jackson (shaded/parquet/com/fasterxml); eigener Code nutzt das gepatchte 2.21.5-Jar. Fix liegt bei Apache Parquet."
+    expired_at: 2026-11-15
+  - id: CVE-2026-54513
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie."
+    expired_at: 2026-11-15
+  - id: GHSA-r7wm-3cxj-wff9
+    paths: ["opt/d-migrate/lib/parquet-jackson-1.17.1.jar"]
+    statement: "Siehe CVE-2026-54512 — dieselbe geshadete Kopie (jackson-core)."
+    expired_at: 2026-11-15

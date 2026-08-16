@@ -47,6 +47,19 @@ ports-jdbc-free-gate:
 readme-parity-gate:
 	./scripts/readme-parity-gate.sh
 
+# Trivy gegen die PUBLIZIERTEN Images. Digest-gepinnt statt Tag-gepinnt: ein
+# Scanner, der sich unter der Hand aendert, macht Befund-Vergleiche ueber die Zeit
+# wertlos. Pin-Hebung ist ein bewusster Commit. Details und Policy in
+# scripts/image-scan.sh.
+TRIVY_IMAGE ?= aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+IMAGE_SCAN_REFS ?= ghcr.io/pt9912/d-migrate:latest ghcr.io/pt9912/d-migrate:native
+
+image-scan:
+	TRIVY_IMAGE="$(TRIVY_IMAGE)" IMAGE_SCAN_REFS="$(IMAGE_SCAN_REFS)" ./scripts/image-scan.sh
+
+# `image-scan` steht bewusst NICHT in `gates`: es prueft das publizierte Image,
+# nicht den Arbeitsbaum, und braucht Netz fuer die Vuln-DB. Sein Ort ist der
+# Nightly (.github/workflows/image-scan.yml).
 gates: docker-check docker-coverage-gate docs-check semgrep ports-jdbc-free-gate readme-parity-gate a-check
 
 docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke semgrep a-check

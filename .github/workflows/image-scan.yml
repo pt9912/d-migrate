@@ -1,0 +1,97 @@
+name: Image Scan (nightly)
+
+# Trivy gegen die PUBLIZIERTEN Container-Images.
+#
+# Warum zeitgesteuert: Alle uebrigen Sicherheitspruefungen dieses Repos haengen an
+# einem Push. Gegen CVEs ist das prinzipiell blind — sie tauchen auf, ohne dass
+# sich das Repo aendert, und zwischen zwei Releases altert das publizierte Image
+# weiter. Zwischen RC4 und 1.0.0 lag das Repo sechs Tage still; in dieser Zeit
+# haette nichts angeschlagen (docs/planning/open/security-gates-not-in-ci.md).
+#
+# Warum das publizierte Image und nicht der Arbeitsbaum: Geprueft werden soll,
+# was Anwender ziehen. Fuer Abhaengigkeiten im Arbeitsbaum ist Dependabot da.
+# Trivy findet zusaetzlich, was Dependabot strukturell NICHT sehen kann —
+# Bibliotheken, die GESHADET in fremden Jars stecken und die kein eigener Pin
+# erreicht (Praezedenz: Jackson in parquet-jackson, siehe .trivyignore.yaml).
+#
+# Policy (scripts/image-scan.sh): Vollbericht ueber alle Schweregrade, faellt
+# nie; rot NUR bei CRITICAL/HIGH mit verfuegbarem Fix. Ein Nightly, das an nicht
+# behebbaren Basis-Image-CVEs rot wird, ist in zwei Wochen ein weggeklicktes
+# Abzeichen und dann schlechter als nichts.
+#
+# `workflow_dispatch` ist Pflicht, nicht Komfort: ein Workflow, der nur an einem
+# seltenen Ereignis haengt, wird erst im Ernstfall auf die Probe gestellt —
+# genau so blieb ein Dauerfehler in dependency-submission.yml fuenf Wochen
+# unbemerkt.
+#
+# ACHTUNG Betrieb: GitHub deaktiviert `schedule`-Workflows in Repos ohne
+# Aktivitaet nach 60 Tagen. Ein still abgeschalteter Nightly sieht aus wie ein
+# gruener — bei laengeren Pausen im Actions-Reiter nachsehen.
+
+on:
+  schedule:
+    # 03:17 UTC — abseits der vollen Stunde, weil dort die Runner-Nachfrage
+    # (und damit die Wartezeit) am hoechsten ist.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # Befund-Issue anlegen
+
+jobs:
+  scan:
+    name: Trivy gegen :latest und :native
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Ausgabeverzeichnis anlegen
+        run: mkdir -p .tmp/security
+
+      - name: Trivy image scan
+        id: scan
+        # `continue-on-error`, damit Artefakt-Upload und Issue danach noch
+        # laufen; der Lauf wird im letzten Schritt bewusst rot gemacht.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make image-scan 2>&1 | tee .tmp/security/image-scan.log
+
+      - name: Bericht als Artefakt sichern
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-scan-${{ github.run_id }}
+          path: .tmp/security/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Zusammenfassung in den Lauf schreiben
+        if: always()
+        # Damit der Befundstand sichtbar ist, ohne das Artefakt herunterzuladen.
+        run: |
+          {
+            echo "## Trivy — publizierte Images"
+            echo
+            echo '```'
+            grep -E "^==|^--|^Total:|^OK —|^::error" .tmp/security/image-scan.log || echo "(kein Log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Befund-Issue eroeffnen (dedupliziert)
+        if: steps.scan.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          LOG_FILE: .tmp/security/image-scan.log
+        run: bash scripts/open-image-scan-issue.sh
+
+      - name: Lauf rot machen, wenn behebbare Befunde vorliegen
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "::error title=Image-Scan::Das publizierte Image enthaelt behebbare CRITICAL/HIGH-Befunde; siehe Issue und Artefakt."
+          exit 1
