@@ -68,6 +68,12 @@ dependencies {
         exclude(group = "org.apache.curator")
         exclude(group = "org.bouncycastle")
         exclude(group = "io.netty")
+
+        // Unshaded Guava raus. hadoop-common deklariert sie, bringt fuer den
+        // Eigengebrauch aber `hadoop-shaded-guava` mit — die unshaded Kopie ist
+        // Alt-Kompatibilitaet und traegt zwei CVEs (CVE-2020-8908,
+        // CVE-2023-2976, beide `Files.createTempDir()`).
+        exclude(group = "com.google.guava")
     }
     // AP3-Befund (5ca1497f, in parquet-libraries.md §8 nachgezogen):
     // parquet-hadoop ParquetReader.builder triggert das
@@ -105,6 +111,14 @@ dependencies {
         exclude(group = "org.apache.hadoop", module = "hadoop-hdfs-client")
         exclude(group = "org.apache.zookeeper")
         exclude(group = "org.apache.curator")
+        exclude(group = "com.google.guava")
+
+        // Guice ist ein Dependency-Injection-Framework, guice-servlet seine
+        // Servlet-Anbindung — beides fuer YARN-Webapps, beides hier ungenutzt;
+        // `javax.servlet` ist ohnehin schon ausgeschlossen. Guice war zugleich
+        // der zweite Pfad, ueber den Guava hereinkam.
+        exclude(group = "com.google.inject")
+        exclude(group = "com.google.inject.extensions")
     }
 }
 
@@ -153,6 +167,14 @@ dependencies {
         implementation("io.airlift:aircompressor") {
             version { require("2.0.3") }
             because("CVE-2025-67721 — parquet-hadoop 1.17.1 loest sonst auf 2.0.2 auf.")
+        }
+        implementation("org.apache.commons:commons-configuration2") {
+            version { require("2.15.0") }
+            because("CVE-2026-45205 — hadoop-common 3.4.1 loest sonst auf 2.10.1 auf.")
+        }
+        implementation("org.apache.commons:commons-lang3") {
+            version { require("3.18.0") }
+            because("CVE-2025-48924 — hadoop-common 3.4.1 loest sonst auf 3.14.0 auf.")
         }
     }
 }
