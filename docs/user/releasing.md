@@ -63,6 +63,11 @@
 
 ## 1. Branching-Modell
 
+> **Gilt bis einschließlich v1.0.1.** Danach entfällt `develop`; Entwicklung und
+> Releases finden auf `main` statt — Begründung und Umstellungsschritte in
+> [ADR 0045](../adr/0045-ein-branch-main-statt-develop-main.md). Wer v1.0.1
+> schneidet, arbeitet den dortigen Abschnitt „Umstellung" direkt nach dem Tag ab.
+
 `d-migrate` verwendet ein einfaches `develop → main`-Modell:
 
 - **`develop`** — aktiver Entwicklungsbranch, hier landen alle Features
