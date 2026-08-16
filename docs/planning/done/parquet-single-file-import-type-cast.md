@@ -1,8 +1,16 @@
 # Tracker: Parquet-Bundle-Mitglied im Einzeldatei-Import bricht mit ClassCastException ab
 
-> **Status:** Befund mit Repro und **eingegrenzter Ursache** (2026-08-16)
+> **BEHOBEN 2026-08-16** (`a01c4f07`, Weg 1). `buildSchemaFromFooter` leitet die
+> Typen jetzt aus dem Footer ab statt aus einem `Text`-Platzhalter; der Wächter
+> `verifyFooterMatchesSchema` vergleicht zusätzlich die Lese-Zugriffsform, sodass
+> ein Schema-Drift als `BUNDLE_SCHEMA_PARQUET_MISMATCH` auffällt statt als roher
+> Cast. Ende-zu-Ende über die gebaute CLI belegt: der brechende Aufruf liefert
+> 500 Zeilen mit korrekten Prüfsummen, und alle vier übrigen Import-Formen
+> bleiben grün.
+>
+> **Status:** Befund mit Repro und eingegrenzter Ursache (2026-08-16)
 > **Trigger:** Beim funktionalen Nachweis der Hadoop-Ausschlüsse
-> ([dependency-cve-exposure-shipped-artifact.md](dependency-cve-exposure-shipped-artifact.md))
+> ([dependency-cve-exposure-shipped-artifact.md](../open/dependency-cve-exposure-shipped-artifact.md))
 > als Nebenbefund aufgefallen. **Nicht** von jenem Eingriff verursacht — zwei
 > Kontrollläufe gegen das unveränderte `pt9912/d-migrate:1.0.0` scheitern identisch.
 > **Aktivierungsbedingung** (Move nach `../next/`): Entscheidung zwischen den Wegen
@@ -103,6 +111,12 @@ abgelehnt" (Weg 3).
 
 ## Wege
 
+> **Gewählt und umgesetzt: Weg 1**, plus der Typvergleich im Wächter. Weg 2 (S6
+> nachbauen) ist damit gegenstandslos und die entsprechende Zusage in der KDoc
+> entfernt. Weg 3 ist in abgeschwächter Form enthalten: Ein Drift führt jetzt zu
+> einer benannten Ausnahme mit Spaltennamen statt zu einer `ClassCastException` —
+> eine eigene Vorab-Ablehnung im CLI braucht es dafür nicht mehr.
+
 1. **Typen aus dem Footer ableiten.** Die Parquet-Datei trägt ihr physisches und
    logisches Schema selbst; `buildSchemaFromFooter` liest es bereits (für Namen und
    Nullability) und wirft die Typinformation weg. Das ist die eigentliche Auflösung
@@ -126,16 +140,36 @@ Typvergleich erweitern. Er ist die Stelle, die den Fehler hätte fangen sollen.
 Ein Sprung auf **parquet-java 1.18.x** steht aus drei unabhängigen Gründen im Raum:
 
 1. Der Hadoop-Klotz unter `formats-parquet` (Weg 3 in
-   [dependency-cve-exposure-shipped-artifact.md](dependency-cve-exposure-shipped-artifact.md)).
+   [dependency-cve-exposure-shipped-artifact.md](../open/dependency-cve-exposure-shipped-artifact.md)).
 2. **Geshadetes Jackson 2.21.3 in `parquet-jackson`** — drei HIGH, die kein eigener
    Pin erreicht; als begründete Ausnahme in `.trivyignore.yaml` hinterlegt.
 3. Dieser Defekt — allerdings **nur mittelbar**: Die Ursache liegt in eigenem Code
    (nicht aufgelöster Platzhalter), nicht in der Bibliothek. Ein Upgrade behebt ihn
    **nicht**.
 
+## Umsetzung (2026-08-16, `a01c4f07`)
+
+- **`ParquetMessageTypeToChunkSchema`** — Umkehrung von
+  `ChunkSchemaToParquetMessageType`. Der Vertrag ist bewusst schwächer als
+  „ursprünglichen Typ rekonstruieren": Die Vorwärtsrichtung ist **nicht injektiv**.
+  Kriterium ist, dass der abgeleitete Typ in `readColumn` denselben Zugriff auslöst;
+  bei Mehrdeutigkeit gewinnt die allgemeinste Variante.
+- **Wächter erweitert** um einen Vergleich der Lese-Zugriffsform — bewusst *nicht*
+  Typgleichheit, weil ein Manifest legitim den spezifischeren Typ tragen darf.
+- **Tests**: drei neue in `ParquetFallbackSchemaReadTest` (Zeilen *durch* ein
+  Fallback-Schema lesen, Typen stammen aus dem Footer, Drift wird abgewiesen). Der
+  alte Test, der `all { it.neutralType is NeutralType.Text }` festschrieb, ist
+  umgeschrieben.
+- **Aufgeräumt**: `markS4FallbackUsed` (No-op) entfernt, drei KDoc-Stellen
+  entdriftet, die den nie gebauten Ziel-Schema-Fallback weiter versprachen.
+
 ## Offen
 
 - Ob der fehlende Footer-Key im Bundle-Export Absicht ist (das Manifest liegt ja
   daneben) oder eine Lücke, ist **nicht geklärt**. Schriebe der Bundle-Export den
-  Key zusätzlich, wären seine Mitglieder eigenständig lesbar — das wäre ein vierter
-  Weg, berührt aber das Bundle-Format.
+  Key zusätzlich, wären seine Mitglieder ohne Fallback lesbar und trügen die
+  spezifischeren Typen (`Identifier`, `Enum`, `Geometry`) mit. Berührt das
+  Bundle-Format und ist deshalb nicht Teil dieser Behebung.
+- **`manifestPresent` wird von keinem Produktivpfad gelesen** — nur von Tests. Mit
+  Typen aus dem Footer ist das keine Korrektheitslücke mehr, aber eine Warnung
+  „Schema abgeleitet, semantische Details fehlen" wäre weiterhin sinnvoll.

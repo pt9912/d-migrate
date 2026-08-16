@@ -1,6 +1,5 @@
 package dev.dmigrate.format.parquet
 
-import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.format.data.ChunkColumnSchema
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.SchemaOrigin
@@ -32,8 +31,13 @@ import java.nio.file.Path
  *   Datei-Bytestrom (AP11 §6.4) — fuer Resume-Check; `null`
  *   wenn die Phase-1 ohne Resume-Aktivierung lief.
  * - [manifestPresent]: `true`, wenn der Footer-KV
- *   `d-migrate.manifest`-Key enthielt; `false` signalisiert
- *   den AP11 §5.3-Fallback (CLI-Warnung).
+ *   `d-migrate.manifest`-Key enthielt; `false` bedeutet, dass
+ *   [schema] aus dem Footer-`MessageType` abgeleitet wurde.
+ *   Das ist fuer das Lesen ausreichend, aber aermer: Varianten,
+ *   die sich dieselbe Physik teilen (`Identifier` vs. `Integer`,
+ *   `Geometry` vs. `Binary`, `Enum`/`Char` vs. `Text`), sind
+ *   dann nicht unterscheidbar. **Produktivcode wertet das Feld
+ *   heute nicht aus** — es steht fuer Diagnose und Tests.
  */
 data class ResolvedParquetSingleFile(
     val path: Path,
@@ -51,13 +55,17 @@ data class ResolvedParquetSingleFile(
  *   Parquet-Footer, parst `d-migrate.manifest` (oder faengt
  *   den Footer-`MessageType`-Fallback), validiert
  *   Tabellennamens-Precedence (AP11 §5.5).
- * - [phase2] laeuft **nach** dem DB-Connect: erlaubt
- *   Target-JDBC-Schema-Fallback bei fehlendem Footer-KV
- *   (AP11 §5.3) und persistiert den Inhalts-Hash, wenn
- *   Resume aktiv ist (AP11 §6.4).
+ * - [phase2] laeuft **nach** dem DB-Connect: prueft den
+ *   Inhalts-Hash, wenn Resume aktiv ist (AP11 §6.4).
  *
- * Beide Phasen sind reine Funktionen; CLI-Wiring (S6) ruft
- * sie nacheinander auf.
+ * Beide Phasen sind reine Funktionen; das CLI-Wiring ruft sie
+ * nacheinander auf.
+ *
+ * Ein frueher vorgesehener Target-JDBC-Schema-Fallback in
+ * [phase2] ist **entfallen**: Die Typen kommen jetzt aus dem
+ * Footer der Datei selbst. Aus dem Ziel abzuleiten waere
+ * schwaecher — es setzt eine existierende Zieltabelle voraus
+ * und liegt bei abweichender Spaltenreihenfolge still daneben.
  */
 class ParquetSingleFilePreflight {
 
@@ -109,10 +117,10 @@ class ParquetSingleFilePreflight {
     /**
      * Phase 2 — nach DB-Connect.
      *
-     * Heute (S4): nur Hash-Konsistenz-Check fuer Resume und
-     * Pass-Through. CLI-Wiring (S6) erweitert ihn bei
-     * Bedarf um Target-JDBC-Schema-Fallback fuer den
-     * Phase-1-Fallback-Fall (AP11 §5.3).
+     * Nur Hash-Konsistenz-Check fuer Resume, sonst
+     * Pass-Through. Eine Schema-Verbesserung findet hier
+     * bewusst NICHT mehr statt — [phase1] liefert bereits
+     * Typen aus dem Footer.
      *
      * @param phase1 Phase-1-Ergebnis.
      * @param resumeExpectedSha256 Erwarteter Inhalts-Hash
@@ -216,5 +224,3 @@ class ParquetSingleFileTableRequiredException(message: String) : RuntimeExceptio
 fun ResolvedParquetSingleFile.toSeekableSource(): SeekableChunkSource =
     SeekableChunkSource.Local(path)
 
-@Suppress("UnusedReceiverParameter")
-internal fun ColumnDescriptor.markS4FallbackUsed(): Unit = Unit
