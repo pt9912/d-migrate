@@ -59,3 +59,6 @@ scripts/__pycache__/
 # Cached semgrep rules (LGPL-2.1 + Commons Clause upstream → not vendored;
 # fetched + pinned + SHA256-verified by scripts/fetch-semgrep-rules.sh). README stays.
 config/semgrep/*.yml
+
+# Trivy-Vuln-DB (make image-scan) — Cache, kein Artefakt
+.cache/

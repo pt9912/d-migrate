@@ -1,5 +1,11 @@
 # Tracker: Security-Gates laufen nicht in der CI, und nichts läuft zeitgesteuert
 
+> **ERLEDIGT 2026-08-16.** Beide Anliegen geschlossen: semgrep + a-check laufen als
+> Job `security-gates` in `build.yml`, und der zeitgesteuerte Teil ist der
+> Trivy-Nightly [`image-scan.yml`](../../../.github/workflows/image-scan.yml)
+> (Eigner-Entscheidung: **Trivy**). Ticket bleibt bis zum ersten planmäßigen
+> Nachtlauf in `open/`.
+>
 > **Status:** Befund mit Erhebung (Draft) / Trigger Watch (2026-08-15)
 > **Trigger:** Beim v1.0.0-Tag fiel auf, dass `dependency-submission.yml` seit
 > mindestens dem 2026-07-31 bei **jedem** `main`-Push scheiterte (behoben `66a27d99`).
@@ -16,11 +22,12 @@
 | **`dependency-submission.yml`** — speist den Dependency-Graph | `main`-Push | ja, war aber fünf Wochen defekt |
 | **semgrep** | `make gates`, `make docker-gates` | ~~nein~~ **ja seit 2026-08-15** (Job `security-gates`) |
 | **a-check** (Architektur-Gate) | `make gates`, `make docker-gates` | ~~nein~~ **ja seit 2026-08-15** (Job `security-gates`) |
-| CodeQL / Trivy / Grype / OSV | — | nicht vorhanden |
+| **Trivy** (Image-Scan) | `make image-scan` | ~~nicht vorhanden~~ **ja seit 2026-08-16** (Nightly `image-scan.yml` + Dispatch) |
+| CodeQL / Grype / OSV | — | nicht vorhanden |
 
-**Zeitgesteuert läuft nichts Sicherheitsrelevantes.** Die einzigen beiden Workflows
-mit `schedule:` sind `sample-db-scale.yml` und `perf-acceptance.yml`, beide zu
-Performance.
+**Zeitgesteuert lief nichts Sicherheitsrelevantes.** Die einzigen beiden Workflows
+mit `schedule:` waren `sample-db-scale.yml` und `perf-acceptance.yml`, beide zu
+Performance. *(Seit 2026-08-16 kommt `image-scan.yml` dazu.)*
 
 Was die CI an `make`-Zielen fuhr: `ci-build`, `docs-check`, `release-assets`,
 `docker-oci-build`, `native-runtime-build`. Das `gates`-Ziel, das semgrep und
@@ -112,6 +119,30 @@ Unabhaengig von der Pinning-Frage bleiben drei Luecken:
    Fremdabhängigkeit mit Pin-/Offline-Frage mit — das semgrep-Gate hat dafür
    bereits ein Muster (gecacht, SHA256-gepinnt, `--network none`).
 3. **Beides**: Dependabot für Abhängigkeiten, Nightly für das Image.
+
+> **Gewählt 2026-08-16: Weg 3 mit Trivy.** Umgesetzt als `make image-scan` +
+> [`image-scan.yml`](../../../.github/workflows/image-scan.yml) (nächtlich 03:17 UTC
+> plus `workflow_dispatch`), gegen die publizierten `:latest` und `:native`.
+>
+> **Die Abgrenzung oben („ein Scanner meldet dieselben Java-Dependencies nochmal")
+> war falsch, und das zeigte sich sofort.** Trivy fand drei HIGH, die Dependabot
+> strukturell **nicht** sehen kann: Jackson 2.21.3 steckt relokiert *innerhalb* von
+> `parquet-jackson-1.17.1.jar`, während das Projekt selbst 2.21.5 zieht. Der
+> Dependency-Graph kennt nur deklarierte Koordinaten, nicht Jar-Inhalte — und kein
+> eigener Pin erreicht eine geshadete Kopie. Das ist kein Doppelbefund, sondern eine
+> eigene Klasse von Exposition.
+>
+> Policy wie empfohlen: Vollbericht über alle Schweregrade fällt nie, rot nur bei
+> **CRITICAL/HIGH mit verfügbarem Fix**. Ausnahmen brauchen `statement` und
+> `expired_at` in `.trivyignore.yaml` und sind per `paths` an genau ein Artefakt
+> gebunden — ein globales CVE-Ignore hätte dieselbe Lücke auch dort maskiert, wo sie
+> behebbar ist.
+>
+> **Erwartung für die ersten Nächte: rot.** `:latest` zeigt auf 1.0.0 und damit auf
+> den Stand *vor* den Abhängigkeits-Fixes vom 2026-08-15 (1 kritisch, 45 hoch). Das
+> ist kein Fehlalarm, sondern die zutreffende Aussage über das, was Anwender gerade
+> ziehen; mit 1.0.1 wird es grün. `:native` ist bereits sauber — dort liegen keine
+> Jars, nur die OS-Schicht, und die hat null kritische oder hohe Befunde.
 
 Unabhängig vom gewählten Weg bleibt ein **Frühwarnsignal dafür, dass ein
 Security-Gate überhaupt läuft** — Anliegen 1 (semgrep und a-check in die CI) ist

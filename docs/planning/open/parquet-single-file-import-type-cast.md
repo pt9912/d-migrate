@@ -75,6 +75,20 @@ Weg 1 ist die Auflösung, Weg 2 das Minimum. Beides ist besser als der heutige
 Zustand, in dem ein in `--help` angebotener Aufruf mit einer internen Cast-Meldung
 scheitert.
 
+## Verwandt — dieselbe Bewegung könnte drei Dinge lösen
+
+Ein Sprung auf **parquet-java 1.18.x** steht inzwischen aus drei unabhängigen Gründen
+im Raum, und dieser Defekt ist einer davon:
+
+1. Der Hadoop-Klotz unter `formats-parquet` (Weg 3 in
+   [dependency-cve-exposure-shipped-artifact.md](dependency-cve-exposure-shipped-artifact.md)).
+2. **Geshadetes Jackson 2.21.3 in `parquet-jackson`** — drei HIGH, die kein eigener
+   Pin erreicht; als begründete Ausnahme in `.trivyignore.yaml` hinterlegt.
+3. Dieser Lesepfad-Defekt, falls er in 1.18.x behoben oder anders geschnitten ist.
+
+Ob 1.18.x hier wirklich hilft, ist **nicht geprüft** — die drei Gründe rechtfertigen
+aber, es gemeinsam zu bewerten statt dreimal einzeln.
+
 ## Offen
 
 - Ob andere Ziel-Dialekte (PostgreSQL, MySQL) denselben Pfad nehmen, ist **nicht
