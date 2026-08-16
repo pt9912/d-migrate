@@ -38,11 +38,28 @@ matrix:
       direction: no-downward
     - name: adr
       paths: ["docs/adr/[0-9]*.md"]
-    - name: plan
-      paths: ["docs/planning/**"]
+    # Zwei Klassen statt einer, und NICHT zu `docs/planning/**` zusammenfassen:
+    # eine Datei gehoert zu genau einer Klasse, und eine ueberlappende breitere
+    # `paths` laesst die engere Regel still ausfallen.
+    - name: plan-roadmap
+      paths: ["docs/planning/in-progress/**"]
+    - name: plan-internal
+      paths:
+        - "docs/planning/open/**"
+        - "docs/planning/next/**"
+        - "docs/planning/done/**"
+        - "docs/planning/done-archive/**"
+    # user darf auf roadmap.md zeigen (dauerhafter Top-Level-Aggregator, wandert
+    # laut in-progress/README nie), aber nicht in den beweglichen Teil des
+    # Planungsbaums: open/next/done/done-archive durchlaufen den Lebenszyklus aus
+    # ADR 0004, ihre Pfade sind instabil und ihr Inhalt ist Arbeitsmaterial.
+    - name: user
+      paths: ["docs/user/**"]
   rules:
     - {from: spec, to: adr, allow: false}
-    - {from: spec, to: plan, allow: false}
+    - {from: spec, to: plan-roadmap, allow: false}
+    - {from: spec, to: plan-internal, allow: false}
+    - {from: user, to: plan-internal, allow: false}
   status:
     forbidden: [superseded, deprecated]
   exclude-sections: [Historie, Geschichte, Versionierung, Changelog, Änderungshistorie]

@@ -4,9 +4,15 @@
 //
 // Dependency-Skizze 1:1 aus parquet-libraries.md §8 uebernommen:
 // - parquet-hadoop + parquet-column als Core-Pfad
-// - hadoop-common 3.4.1 als Compile-Zeit-Bedarf
-//   (org.apache.hadoop.fs.Path, Configuration etc.); Schwergewichte
-//   (log4j 1.x, slf4j-log4j12, javax.servlet, Jetty) bewusst gezogen
+// - hadoop-common + hadoop-mapreduce-client-core: BIBLIOTHEKSBEDINGT, nicht
+//   aus eigenem Bedarf. Ein vollstaendiger Hadoop-Ausstieg wurde 2026-08-16
+//   durchgemessen und ist mit parquet-java 1.17.1 UND 1.18.0 nicht moeglich —
+//   `ParquetReader$Builder` verlangt FileInputFormat, `ParquetReadOptions$Builder`
+//   instanziiert HadoopParquetConfiguration. Bevor jemand es erneut versucht:
+//   docs/adr/0046-hadoop-bleibt-im-parquet-adapter.md nennt die drei Messpunkte
+//   und die zwei `javap`-Aufrufe, mit denen sich in Minuten pruefen laesst, ob
+//   eine neuere parquet-Version das aendert.
+//   Die Schwergewichte werden stattdessen per `exclude` klein gehalten.
 // - parquet-avro/parquet-protobuf werden via Constraints aus dem
 //   Klassenpfad gehalten (CVE-2025-30065/46762 vermieden, kein
 //   Reflection-Pfad)
@@ -47,6 +53,27 @@ dependencies {
         // unten — kein Avro-/Protobuf-Reflection-Pfad im
         // runtimeClasspath.
         exclude(group = "org.apache.avro")
+
+        // Verteilte Hadoop-Infrastruktur raus. d-migrate liest lokale
+        // Parquet-Dateien ueber org.apache.hadoop.fs.Path/Configuration; ein
+        // HDFS-Cluster, dessen Hochverfuegbarkeit oder dessen
+        // SPNEGO/Kerberos-Pfad kommen nie vor. Mitgeliefert wurden sie
+        // trotzdem, samt ihrer Angriffsflaeche.
+        //
+        // Ein Versionszwang waere hier die schlechtere Haelfte: die
+        // Fix-Versionen dieser Baeume streuen ueber viele Patch-Staende, und
+        // das Nachziehen betraefe Code, der nie ausgefuehrt wird. Was nicht
+        // ausgeliefert wird, muss auch nicht gepflegt werden.
+        exclude(group = "org.apache.zookeeper")
+        exclude(group = "org.apache.curator")
+        exclude(group = "org.bouncycastle")
+        exclude(group = "io.netty")
+
+        // Unshaded Guava raus. hadoop-common deklariert sie, bringt fuer den
+        // Eigengebrauch aber `hadoop-shaded-guava` mit — die unshaded Kopie ist
+        // Alt-Kompatibilitaet und traegt zwei CVEs (CVE-2020-8908,
+        // CVE-2023-2976, beide `Files.createTempDir()`).
+        exclude(group = "com.google.guava")
     }
     // AP3-Befund (5ca1497f, in parquet-libraries.md §8 nachgezogen):
     // parquet-hadoop ParquetReader.builder triggert das
@@ -64,6 +91,34 @@ dependencies {
         // Avro kommt ueber hadoop-mapreduce-client-core ein zweites
         // Mal transitiv rein; auch hier exclude.
         exclude(group = "org.apache.avro")
+
+        // Hier sitzt der groesste Brocken: dieser Block zieht
+        // `io.netty:netty-all` — das Sammelartefakt, das JEDES Netty-Modul
+        // mitbringt. Daher lagen Codecs fuer Redis, SMTP, STOMP, MQTT, XML und
+        // HAProxy im Auslieferungsartefakt. d-migrate spricht keines dieser
+        // Protokolle; Netty dient hier dem HDFS-/YARN-RPC.
+        exclude(group = "io.netty")
+
+        // YARN wird nur fuer die Job-Submission gebraucht, die hier nie
+        // stattfindet — benoetigt wird allein FileInputFormat fuer den
+        // ParquetInputFormat-Klassenladepfad (Begruendung des Blocks oben).
+        exclude(group = "org.apache.hadoop", module = "hadoop-yarn-client")
+        exclude(group = "org.apache.hadoop", module = "hadoop-yarn-common")
+        exclude(group = "org.apache.hadoop", module = "hadoop-yarn-api")
+        // Eigener Eintrag, obwohl auch der YARN-Zweig darauf zeigt: dieser Block
+        // haengt zusaetzlich DIREKT an hadoop-hdfs-client, der YARN-Ausschluss
+        // allein liess es also im Artefakt. Gelesen wird ueber file://.
+        exclude(group = "org.apache.hadoop", module = "hadoop-hdfs-client")
+        exclude(group = "org.apache.zookeeper")
+        exclude(group = "org.apache.curator")
+        exclude(group = "com.google.guava")
+
+        // Guice ist ein Dependency-Injection-Framework, guice-servlet seine
+        // Servlet-Anbindung — beides fuer YARN-Webapps, beides hier ungenutzt;
+        // `javax.servlet` ist ohnehin schon ausgeschlossen. Guice war zugleich
+        // der zweite Pfad, ueber den Guava hereinkam.
+        exclude(group = "com.google.inject")
+        exclude(group = "com.google.inject.extensions")
     }
 }
 
@@ -97,6 +152,29 @@ dependencies {
                     "d-migrate konsumiert keinen Hadoop-Avro-Code; AP3-Spike-Tests " +
                     "bleiben gruen ohne diese Klasse (parquet-libraries.md §6 AP1.b).",
             )
+        }
+
+        // Anders als die Baeume oben werden diese beiden wirklich gebraucht —
+        // commons-beanutils von hadoop-common (Configuration), aircompressor von
+        // parquet-hadoop als reiner JVM-Codec (die JNI-Varianten snappy-java und
+        // zstd-jni sind weiter unten ausgeschlossen). Also heben statt entfernen.
+        // Ohne diese beiden Zeilen zieht die transitive Aufloesung wieder die
+        // verwundbaren Staende.
+        implementation("commons-beanutils:commons-beanutils") {
+            version { require("1.11.0") }
+            because("CVE-2025-48734 — hadoop-common 3.4.1 loest sonst auf 1.9.4 auf.")
+        }
+        implementation("io.airlift:aircompressor") {
+            version { require("2.0.3") }
+            because("CVE-2025-67721 — parquet-hadoop 1.17.1 loest sonst auf 2.0.2 auf.")
+        }
+        implementation("org.apache.commons:commons-configuration2") {
+            version { require("2.15.0") }
+            because("CVE-2026-45205 — hadoop-common 3.4.1 loest sonst auf 2.10.1 auf.")
+        }
+        implementation("org.apache.commons:commons-lang3") {
+            version { require("3.18.0") }
+            because("CVE-2025-48924 — hadoop-common 3.4.1 loest sonst auf 3.14.0 auf.")
         }
     }
 }

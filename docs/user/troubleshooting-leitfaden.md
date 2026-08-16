@@ -1,6 +1,6 @@
 # Troubleshooting-Leitfaden
 
-> **Software-Version:** 1.0.0-RC-SNAPSHOT · **Stand:** 16.07.2026
+> **Software-Version:** 1.0.0 · **Stand:** 15.08.2026
 >
 > **Zielgruppe:** Personen, deren d-migrate-Lauf fehlschlägt, unerwartet abbricht
 > oder ein überraschendes Ergebnis liefert und die schnell zur Ursache kommen

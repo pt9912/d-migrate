@@ -6,11 +6,14 @@ import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.format.data.SchemaOrigin
+import dev.dmigrate.format.parquet.ParquetSingleFilePreflight
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayOutputStream
@@ -239,6 +242,44 @@ class CliDataExportTest : FunSpec({
             produced.map { it.fileName.toString() } shouldContainAll listOf("users.json", "empty_table.json")
             // §6.17: empty table → "[]"
             outDir.resolve("empty_table.json").readText().trim() shouldBe "[]"
+        } finally {
+            Files.deleteIfExists(db)
+            Files.walk(outDir).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+        }
+    }
+
+    test("--split-files parquet: jedes Mitglied traegt den Footer-KV und ist einzeln lesbar") {
+        // Deckt die Naht ab, an der der Defekt bis 1.0.0 entstand: Der Adapter
+        // kann den Footer-KV schreiben, aber ob er es TUT, entscheidet dieses
+        // CLI-Wiring (ExportOutput.FilePerTable vs. SingleFile). Ein Test auf
+        // Adapter-Ebene kann das strukturell nicht sehen — genau deshalb blieb
+        // unbemerkt, dass Bundle-Mitglieder ohne Selbstbeschreibung lagen.
+        val db = createSampleDatabase()
+        val outDir = Files.createTempDirectory("d-migrate-split-parquet-")
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "parquet",
+                        "--tables", "users",
+                        "--output", outDir.toString(),
+                        "--split-files",
+                    )
+                )
+            }
+            val member = outDir.resolve("users.parquet")
+            member.exists() shouldBe true
+            outDir.resolve("manifest.yaml").exists() shouldBe true
+
+            // Das Mitglied einzeln aufloesen — der Pfad, den ein
+            // `data import --source users.parquet` nimmt.
+            val resolved = ParquetSingleFilePreflight().phase1(member, explicitTable = null)
+            resolved.manifestPresent shouldBe true
+            resolved.schema.origin shouldNotBe SchemaOrigin.MANIFEST_FALLBACK
+            resolved.table shouldBe "users"
+            resolved.schema.columns.map { it.name } shouldBe listOf("id", "name")
         } finally {
             Files.deleteIfExists(db)
             Files.walk(outDir).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }

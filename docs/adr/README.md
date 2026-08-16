@@ -98,3 +98,5 @@ argumentiert werden.
 | 0042 | [SDKMAN-Distribution ist kein 1.0.0-Gate — 1.0.0 wird ohne SDKMAN geschnitten](0042-sdkman-kein-1.0.0-gate.md) | accepted |
 | 0043 | [Interface-Default-Methoden ohne `$DefaultImpls`-Brücke (`-jvm-default=no-compatibility`)](0043-interface-default-ohne-defaultimpls.md) | accepted |
 | 0044 | [Kein natives `macos-arm64`-Binary — GraalVM-Auslieferung auf Linux und Windows begrenzt](0044-kein-macos-native-binary.md) | accepted |
+| 0045 | [Ein Branch statt `develop` → `main` — Entwicklung nach v1.0.1 auf `main`](0045-ein-branch-main-statt-develop-main.md) | accepted |
+| 0046 | [Hadoop bleibt im Parquet-Adapter — parquet-java erzwingt es](0046-hadoop-bleibt-im-parquet-adapter.md) | accepted |

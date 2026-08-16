@@ -88,5 +88,13 @@ updates:
     ignore:
       # The gradle base image is the toolchain of the real Docker build; a major
       # bump breaks shadow 8.1.1 (Gradle 9). Taken deliberately with the wrapper.
+      #
+      # Beachte die Asymmetrie zum Wrapper-Pin oben: MINOR-Bumps dieses Images
+      # laufen frei durch, der Wrapper ist ganz ignoriert. CI baut deshalb mit
+      # der Image-Version, `./gradlew` lokal mit der Wrapper-Version — die beiden
+      # driften auseinander, und CI merkt es nicht, weil sie den Wrapper nie
+      # benutzt. Ein Gradle-Verhalten, das sich zwischen den beiden Versionen
+      # aendert, traefe lokale Arbeit und CI unterschiedlich. Beim Angleichen
+      # beide Seiten zusammen bewegen.
       - dependency-name: gradle
         update-types: [version-update:semver-major]

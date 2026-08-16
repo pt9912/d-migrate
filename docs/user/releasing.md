@@ -6,9 +6,7 @@
 > sowie Rollback-Szenarien.
 >
 > Hinweis: Ein öffentlicher Library-Publish-Vertrag ist bewusst noch nicht Teil
-> dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
-> [`implementation-plan-0.9.1.md`](../planning/done-archive/implementation-plan-0.9.1.md)
-> beschrieben. Das Publishing steht seit
+> dieses Dokuments. Das Publishing steht seit
 > [ADR 0037](../adr/0037-database-agnostic-first-staffelung.md) (2026-07-17) **hinter dem
 > Treiber-Port-Umbau** (Milestone 2.0.0) und **nicht** mehr bei 1.0.0: Der Umbau bricht
 > Port-Signaturen, eine Stabilitätszusage mit 1.0.0 träfe also genau die Module, deren Bruch
@@ -64,6 +62,11 @@
 ---
 
 ## 1. Branching-Modell
+
+> **Gilt bis einschließlich v1.0.1.** Danach entfällt `develop`; Entwicklung und
+> Releases finden auf `main` statt — Begründung und Umstellungsschritte in
+> [ADR 0045](../adr/0045-ein-branch-main-statt-develop-main.md). Wer v1.0.1
+> schneidet, arbeitet den dortigen Abschnitt „Umstellung" direkt nach dem Tag ab.
 
 `d-migrate` verwendet ein einfaches `develop → main`-Modell:
 
@@ -196,10 +199,6 @@ docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/s
 #### DB-basierte Smokes (Reverse, Compare, Transfer)
 
 Lokales Docker-Netzwerk mit PostgreSQL und MySQL aufsetzen:
-
-Hinweis: Für realistischere DB-Smokes über die eingebauten Fixture-Schemas
-hinaus siehe auch die priorisierte Kandidatenliste in
-[`test-database-candidates.md`](../planning/open/test-database-candidates.md).
 
 ```bash
 SMOKE_DIR="$(mktemp -d)"; chmod 777 "${SMOKE_DIR}"
@@ -403,13 +402,44 @@ Vor jedem Release prüfen:
   `verify-homebrew-formula`-Workflow unverändert einsatzbereit?
 
 ```bash
-rg -n "koverVerify|release-assets|assembleReleaseAssets" .github/workflows/build.yml
+# Achtung: `koverVerify` und `assembleReleaseAssets` stehen NICHT woertlich in
+# build.yml — der Workflow ruft `make`-Ziele auf, die Tasks stecken in
+# CI_BUILD_TASKS bzw. in der release-assets-Stage des Dockerfiles. Ein Grep nur
+# auf build.yml findet sie nicht und sieht wie ein Befund aus, obwohl alles in
+# Ordnung ist.
+rg -n "release-assets|make ci-build" .github/workflows/build.yml
+rg -n "koverVerify|CI_BUILD_TASKS" Makefile
+rg -n "assembleReleaseAssets" Dockerfile
 rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 ```
 
+**Publish-Pfad proben statt hoffen.** Die Fragen oben werden gelesen; die folgende
+wird ausgeführt. Der Probelauf baut das OCI-Image und meldet sich an beiden
+Registries an, veröffentlicht aber nichts:
+
+```bash
+gh workflow run build.yml --ref develop -f rehearse_publish=true
+gh run watch "$(gh run list --workflow build.yml --event workflow_dispatch \
+  --limit 1 --json databaseId --jq '.[0].databaseId')"
+```
+
+Grün heißt: Credentials gültig, beide Registries erreichbar, die Action-Pins
+funktionsfähig, und `packaging/dockerhub/overview.md` trägt noch den
+`__VERSION__`-Platzhalter samt gültiger Kurzbeschreibung. Rot heißt: derselbe
+Fehler wäre sonst erst am Tag aufgeschlagen — mit einem halb veröffentlichten
+Release als Ausgangslage.
+
+Ungeprobt bleibt der Push selbst, weil er die Registry verändert, und der
+`native-image`-Job wegen des ~8-minütigen nativen Compiles. Dessen beide Logins
+sind Wort für Wort dieselben wie im `docker`-Job.
+
+> **Nicht auf einem Tag-Ref dispatchen.** Nötig ist es nie — der Probelauf
+> gehört vor den Tag. Die Push-Schritte verlangen zusätzlich `event_name == 'push'`
+> und fielen deshalb auch dort nicht an; verlassen sollte man sich nicht darauf.
+
 Coverage-Breakdown auf Paketebene prüfen — Pakete unter 90% Line-Coverage
 identifizieren. Befehle und jq-Filter: siehe
-[`docs/planning/done-archive/test-coverage.md`](../planning/done-archive/test-coverage.md).
+[`quality.md`](quality.md).
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 
@@ -622,6 +652,12 @@ das Rezept gegen `develop` zu prüfen. Solche Läufe hängen nichts an ein
 Release; ihre Binaries tragen statt der Version die Commit-Kurz-SHA und
 liegen nur als Workflow-Artefakt vor.
 
+Der Job `attach-release` läuft dabei mit, endet aber nach dem Einsammeln und
+dem Linux-Gate. Das ist Absicht: Sonst wären das Zusammenführen der Artefakte
+aus beiden OS-Legs und die Gate-Logik ausschließlich am Tag zu erleben — also
+nur dann, wenn sie zählen. `os_scope: all` prüft dabei mehr als `linux`, weil
+das Zusammenführen erst mit zwei Artefakten etwas zu tun bekommt.
+
 ```bash
 gh workflow run native-image.yml --ref develop
 gh run watch
@@ -671,8 +707,8 @@ selbst herunter).
 > Workflow lief zum `v1.0.0-RC2`-Tag **gar nicht**: Releases, die dieser Repo per
 > `GITHUB_TOKEN` erzeugt, lösen laut
 > [GitHub-Doku](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
-> keine weiteren Workflow-Läufe aus. Details und die verworfenen Alternativen:
-> [`sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
+> keine weiteren Workflow-Läufe aus. Einordnung des Kanals:
+> [ADR 0042](../adr/0042-sdkman-kein-1.0.0-gate.md).
 
 - **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
   + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.5](#45-release-assets-aus-dem-grünen-tag-build-beziehen)).
@@ -685,8 +721,8 @@ selbst herunter).
 
 **Voraussetzung (einmalig, EXTERN):** d-migrate muss ein SDKMAN-Candidate sein — PR an `sdkman/sdkman-db-migrations` (legt den Candidate `dmigrate` an — Anzeigename „d-migrate", keine Versionen), dann armored
 GPG-Public-Key an `info@sdkman.io` → `Consumer-Key`/`Consumer-Token` → als GitHub-Secrets
-hinterlegen. Details + Erweiterungen (plattform-native Binaries, `checksum-sha-256`):
-[`docs/planning/next/sdkman-distribution.md`](../planning/next/sdkman-distribution.md).
+hinterlegen. Warum SDKMAN kein 1.0.0-Gate ist und unter welcher Bedingung die
+Roadmap-Zeile schliesst: [ADR 0042](../adr/0042-sdkman-kein-1.0.0-gate.md).
 
 ```bash
 # nach grünem sdkman-release.yml-Lauf, auf einem Host mit `sdk` + Java:

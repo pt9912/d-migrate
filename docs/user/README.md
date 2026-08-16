@@ -43,6 +43,5 @@ Die Handbücher leiten Inhalte aus den formalen Specs ab:
 
 - **Performance-Benchmarks dokumentiert** — Ergebnis-Doku aus der
   `PerfMeasure`/`PerfReport`-Infrastruktur. (🔲 zu erstellen)
-- **Pilotanwender-Tests (≥ 5 Tester)** — Testplan + Kandidaten-Datenbanken in
-  [`../planning/open/test-database-candidates.md`](../planning/open/test-database-candidates.md).
-  (🔲 Programm/Plan zu erstellen)
+- **Pilotanwender-Tests (≥ 5 Tester)** — Testplan und Kandidaten-Datenbanken
+  werden im Planungsbaum geführt. (🔲 Programm/Plan zu erstellen)

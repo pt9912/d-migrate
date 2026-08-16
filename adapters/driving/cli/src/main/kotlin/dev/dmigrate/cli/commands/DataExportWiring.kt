@@ -261,8 +261,25 @@ internal object DataExportWiring {
                 ).provider,
                 rowGroupBytes = rowGroupBytes,
             )
+            // Bundle-Mitglieder bekommen denselben Footer-KV wie ein
+            // Single-File-Export. Ohne ihn ist ein Mitglied nur IM Verbund
+            // lesbar: das Schema liegt dann allein in der `manifest.yaml`
+            // daneben, und wer eine einzelne Datei importiert, faellt auf das
+            // aus dem Footer abgeleitete Schema zurueck. Das ist seit
+            // `a01c4f07` korrekt, aber aermer — Varianten mit gleicher Physik
+            // (`Identifier` vs. `Integer`, `Geometry` vs. `Binary`,
+            // `Enum`/`Char` vs. `Text`) sind aus dem Footer-`MessageType`
+            // nicht unterscheidbar. Der KV traegt sie mit.
+            //
+            // Die `manifest.yaml` bleibt die Autoritaet fuer den Verbund
+            // (Reihenfolge, Zeilenzahlen, optionale Hashes); der KV ist die
+            // Selbstbeschreibung der einzelnen Datei. Beide stammen aus
+            // demselben `ChunkSchema`.
             is ExportOutput.FilePerTable -> ParquetChunkWriterFactory(
                 warningSink = sink,
+                extraMetaDataProvider = ParquetSingleFileManifestWriter(
+                    producerVersion = VersionInfo.PRODUCT_VERSION,
+                ).provider,
                 rowGroupBytes = rowGroupBytes,
             )
             is ExportOutput.Stdout -> UnreachableParquetWriterFactory

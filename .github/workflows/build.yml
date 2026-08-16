@@ -11,6 +11,17 @@ on:
     branches:
       - main
       - develop
+  # Der Publish-Pfad (Registry-Logins, Push nach GHCR und Docker Hub) lief bisher
+  # ausschliesslich auf einem Tag — also nur dann, wenn er zaehlt, und ohne je
+  # geprobt worden zu sein. Dieselbe Struktur liess einen Dauerfehler in
+  # dependency-submission.yml fuenf Wochen unbemerkt: ein Workflow, der nur an
+  # einem seltenen Ereignis haengt, wird erst im Ernstfall auf die Probe gestellt.
+  workflow_dispatch:
+    inputs:
+      rehearse_publish:
+        description: 'Publish-Pfad proben: Registry-Logins ausfuehren, aber NICHTS veroeffentlichen.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,13 +29,23 @@ permissions:
 env:
   DMIGRATE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
 
+  # Veroeffentlicht wird ausschliesslich auf einem echten Tag-PUSH. Der
+  # `event_name`-Teil ist der Riegel und nicht bloss Zierde: ohne ihn wuerde ein
+  # Dispatch auf einem Tag-Ref (`gh workflow run … --ref v1.0.0`) die
+  # Push-Schritte reaktivieren und ein bereits veroeffentlichtes Image mit neuem
+  # Digest ueberschreiben.
+  IS_RELEASE: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+  # Probelauf: alles bis einschliesslich Login, danach Schluss. Beantwortet die
+  # Frage "wuerde der Release-Push durchgehen?", ohne etwas zu bewegen.
+  IS_REHEARSAL: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearse_publish }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build, test, run detekt and verify coverage
         # --no-build-cache: kover-Verify konsumiert die `.exec`-Daten
@@ -38,7 +59,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: '**/build/test-results/test/*.xml'
@@ -46,7 +67,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-reports
           path: '**/build/reports/kover/html/**'
@@ -54,7 +75,7 @@ jobs:
 
       - name: Upload detekt reports
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: detekt-reports
           path: '**/build/reports/detekt/**'
@@ -66,7 +87,7 @@ jobs:
 
       - name: Upload release assets
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-assets
           path: adapters/driving/cli/build/release/*
@@ -77,7 +98,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify Kover excludes ledger and Markdown links
         # Fail-closed Doku-Gate, das bisher nur lokal (`make gates`/`make ci`)
@@ -89,10 +110,36 @@ jobs:
         # Spiegelt `make docs-check` 1:1; kein ghcr-Login nötig (Image public).
         run: make docs-check
 
+  # Beide Gates existierten nur als `make`-Ziel und hingen damit daran, dass jemand
+  # sie lokal tippt. ADR 0039 fuehrt sie als Teil der 1.0.0-Sicherheits-Interimslatte
+  # — erzwungen war davon nichts. Bewusst blockierend: ein Gate, das nur berichtet,
+  # ist genau das, was hier ohnehin schon fehlte.
+  security-gates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: semgrep — Dockerfile- und Python-Regeln, offline
+        # Zweistufig und Absicht: das Holen der Regeln braucht Netz (commit-gepinnt
+        # und SHA256-verifiziert, Details in config/semgrep/README.md), der Scan
+        # selbst laeuft dann `--network none` gegen die geholte Kopie. Die Regeln
+        # liegen NICHT im Repo, weil semgrep-rules unter LGPL-2.1 + Commons Clause
+        # steht und das mit der MIT-Lizenz dieses Repos kollidierte.
+        run: make semgrep
+
+      - name: a-check — Hexagon-Architekturregeln
+        # Netzloser, read-only Lauf gegen ein digest-gepinntes Image; ein Pin-Bump
+        # ist ein bewusster Commit. Kein ghcr-Login noetig (Image public).
+        run: make a-check
+
   docker:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    # Ausgeschrieben statt ueber IS_RELEASE/IS_REHEARSAL: das Job-`if:` kennt den
+    # `env`-Kontext nicht (nur github/needs/vars/inputs).
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.rehearse_publish
     # Nur dieser Job pusht nach GHCR (GITHUB_TOKEN); build/docs-check bleiben read-only.
     permissions:
       contents: read
@@ -100,21 +147,27 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build OCI image locally
         run: make docker-oci-build
 
+      - name: Probelauf — Umfang im Log festhalten
+        if: env.IS_REHEARSAL == 'true'
+        run: |
+          echo "::notice::Probelauf: Registry-Logins laufen, es wird NICHTS gepusht."
+          echo "::notice::Ungeprobt bleibt der Push selbst (mutiert die Registry) und der native-image-Job."
+
       - name: Login to GitHub Container Registry
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        if: env.IS_RELEASE == 'true' || env.IS_REHEARSAL == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push image to GHCR
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.IS_RELEASE == 'true'
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           docker tag dmigrate/d-migrate:latest ghcr.io/${{ github.repository }}:${VERSION}
@@ -136,7 +189,7 @@ jobs:
       # rot zu machen — Docker Hub ist ein optionaler Zusatzkanal.
       - name: Check for Docker Hub credentials
         id: dockerhub
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.IS_RELEASE == 'true' || env.IS_REHEARSAL == 'true'
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
@@ -149,13 +202,13 @@ jobs:
 
       - name: Login to Docker Hub
         if: steps.dockerhub.outputs.enabled == 'true'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Push image to Docker Hub
-        if: steps.dockerhub.outputs.enabled == 'true'
+        if: steps.dockerhub.outputs.enabled == 'true' && env.IS_RELEASE == 'true'
         env:
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'pt9912/d-migrate' }}
         run: |
@@ -191,6 +244,14 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/v}"
+          # Im Probelauf ist der Ref kein Tag — ohne diesen Zweig stuende
+          # "refs/heads/develop" als Version in den Beispielen. Der Platzhalter
+          # haelt die beiden Fail-fast-Pruefungen unten scharf, ohne eine
+          # Version vorzutaeuschen; hochgeladen wird das Ergebnis ohnehin nicht.
+          case "${GITHUB_REF}" in
+            refs/tags/v*) ;;
+            *) VERSION="0.0.0-probelauf" ;;
+          esac
           SRC="packaging/dockerhub/overview.md"
           test -f "${SRC}"
           # Fail-fast: fehlt der Platzhalter, wurde die Datei umgebaut und die Beispiele
@@ -220,7 +281,9 @@ jobs:
       # Seiten-Update darf ein fertiges Release nicht entwerten (gleiche Haltung wie der
       # Skip-statt-Fehler-Pfad oben). Faellt es auf, wird der Token-Scope erweitert.
       - name: Update Docker Hub description
-        if: steps.dockerhub.outputs.enabled == 'true'
+        # Zusaetzlich IS_RELEASE: dieser Step veraendert die oeffentliche
+        # Docker-Hub-Seite und gehoert damit auf die Push-Seite des Riegels.
+        if: steps.dockerhub.outputs.enabled == 'true' && env.IS_RELEASE == 'true'
         continue-on-error: true
         uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
         with:
@@ -239,14 +302,18 @@ jobs:
   native-image:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # `event_name`-Riegel wie bei IS_RELEASE (Job-`if:` kennt kein `env`). Bewusst
+    # NICHT im Probelauf: der native Compile kostet ~8 min, und die beiden Logins
+    # hier sind Wort fuer Wort dieselben wie im docker-Job — derselbe Action-Pin,
+    # dieselbe Registry, dieselben Credentials.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
       packages: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build the native runtime image
         # Dieselbe Stage wie `make native-runtime-build` lokal: volle CLI nativ (GraalVM) im
@@ -267,7 +334,7 @@ jobs:
             || { echo "::error::native image validate smoke failed"; exit 1; }
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -301,7 +368,7 @@ jobs:
 
       - name: Login to Docker Hub
         if: steps.dockerhub.outputs.enabled == 'true'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

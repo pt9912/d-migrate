@@ -70,9 +70,49 @@ wird.
 
 Die Docker-Stages `coverage`, `coverage-json`, `coverage-verify` und
 `docker-coverage-modules-html` sind in der [README](../../README.md)
-beschrieben. Das erledigte Analyse-Dokument
-[`test-coverage.md`](../planning/done-archive/test-coverage.md) enthaelt Befehle, um
-Pakete und Klassen unterhalb der 90%-Grenze aus dem JSON-Report zu ermitteln.
+beschrieben.
+
+#### Pakete und Klassen unter der 90%-Grenze ermitteln
+
+Die Stage `coverage-json` fuehrt den aggregierten Kover-XML-Report in ein
+normalisiertes, JaCoCo-artiges JSON ueber:
+
+```bash
+docker build --target coverage-json -t d-migrate:coverage-json .
+docker run --rm d-migrate:coverage-json > /tmp/coverage.json
+```
+
+Pakete unter 90% Line-Coverage, aufsteigend sortiert:
+
+```bash
+jq -r '
+  .report.packages[] |
+  .counters.LINE as $line |
+  select($line and (($line.missed + $line.covered) > 0)) |
+  { pkg: .name,
+    pct: (($line.covered * 1000 / ($line.missed + $line.covered)) | floor | . / 10),
+    missed: $line.missed } |
+  select(.pct < 90) |
+  "\(.pct)%\t\(.missed) missed\t\(.pkg)"
+' /tmp/coverage.json | sort -n
+```
+
+Dieselbe Aufstellung auf Klassenebene:
+
+```bash
+jq -r '
+  .report.packages[] as $pkg |
+  $pkg.classes[] |
+  .counters.LINE as $line |
+  select($line and (($line.missed + $line.covered) > 0)) |
+  { pkg: $pkg.name,
+    cls: (.sourceFile // .name),
+    pct: (($line.covered * 1000 / ($line.missed + $line.covered)) | floor | . / 10),
+    missed: $line.missed } |
+  select(.pct < 90) |
+  "\(.pct)%\t\(.missed) missed\t\(.pkg)/\(.cls)"
+' /tmp/coverage.json | sort -n
+```
 
 ### Tag-Steuerung
 
@@ -92,8 +132,7 @@ Large-Schema-Scale sind in
 [`../operations/performance-benchmarks.md`](../operations/performance-benchmarks.md)
 beschrieben; regulärer Lauf über `make docker-perf` (opt-in/Nightly;
 `PERF_GATE=true` macht die Baseline-Budgets zum harten Gate). Die frühen
-Format-Budget-Entscheidungen stehen im erledigten Planungsdokument
-[`0.4.0-phase-d-reorder.md`](../planning/done-archive/0.4.0-phase-d-reorder.md).
+Format-Budget-Entscheidungen stammen aus der 0.4.0-Reorder-Phase.
 Manueller Einzelmodul-Start (Beispiel Formats):
 
 ```bash

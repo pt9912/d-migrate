@@ -18,10 +18,12 @@ import java.io.OutputStream
  * - [warningSink] ist forward-compat; ParquetChunkWriter emittiert heute
  *   keine [ValueSerializationWarning].
  * - [extraMetaDataProvider] reicht den `d-migrate.manifest`-Footer-KV-
- *   Provider an [ParquetChunkWriter] durch. Single-File-Exports verdrahten
- *   `ParquetSingleFileManifestWriter(...).provider`, Bundle-Exports
- *   lassen den Default — die Output-Mode-Auswahl trifft das CLI-Wiring
- *   gemaess `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
+ *   Provider an [ParquetChunkWriter] durch. Single-File- **und**
+ *   Bundle-Exports verdrahten `ParquetSingleFileManifestWriter(...).provider`,
+ *   damit auch ein einzelnes Bundle-Mitglied sein Schema selbst traegt; der
+ *   Default (leer) bleibt fuer Aufrufer ohne Manifest-Bedarf. Die
+ *   Output-Mode-Auswahl trifft das CLI-Wiring gemaess
+ *   `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
  */
 class ParquetChunkWriterFactory(
     private val warningSink: ((ValueSerializationWarning) -> Unit)? = null,

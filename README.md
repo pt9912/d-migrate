@@ -42,18 +42,17 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.0.0**
-(stable, [released 2026-08-15](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0)).
+d-migrate is a working production tool at version **1.0.1**
+(stable, [released 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.1)).
 
-> **New in 1.0.0:** the first stable release of the 1.0 line. Standalone
-> **native binaries** (GraalVM) for `linux-x64` and `windows-x64` start in
-> milliseconds without a JVM; the container image is mirrored to **Docker Hub**
-> and also ships as a `<version>-native` variant. The published JVM image now
-> runs as **non-root** (`uid 10001`) and includes `mod_spatialite` — writing
-> into a bind mount needs `--user "$(id -u):$(id -g)"`. Credentials can come
-> from the OS keychain (`credentialRef: keychain:…`), and `config show` reports
-> the effective configuration. On macOS there is no native binary; use
-> Homebrew, the JVM artefacts or the container image. See `CHANGELOG.md`.
+> **New in 1.0.1:** a security and correctness patch. The shipped artefact no
+> longer contains any known-vulnerable dependency version (1.0.0 shipped one
+> critical and 43 high findings) and shrinks from 240 to 177 jars — the bulk was
+> Hadoop satellite libraries the Parquet adapter never called. The PostgreSQL
+> driver moves to 42.7.12, closing two findings in SCRAM and channel-binding
+> authentication. Fixed: importing a single member of a `--split-files` Parquet
+> bundle aborted; such members now also embed their own schema. **The CLI
+> contract is unchanged.** See `CHANGELOG.md`.
 
 The current capabilities:
 
@@ -162,7 +161,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.0.0** (2026-08-15) — what `:latest`,
+- **Current stable** · **1.0.1** (2026-08-16) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you. The container image
   runs as **non-root** (`uid 10001`), so writing into a bind mount needs
   `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and
@@ -283,8 +282,27 @@ Homebrew, the JVM artefacts or the container image
 against glibc — on Alpine/musl use the JVM artefacts or the container
 image.
 
-Note: the Homebrew formula is maintained in the repository from
-0.5.0 on and is verified per release via
+### Homebrew (macOS and Linux)
+
+d-migrate lives in its own tap, not in homebrew-core, so `brew install
+d-migrate` alone will not find it. Recent Homebrew versions additionally
+refuse to load formulae from untrusted third-party taps — you need all
+three steps:
+
+```bash
+brew tap pt9912/d-migrate
+brew trust pt9912/d-migrate
+brew install d-migrate
+```
+
+`openjdk@21` comes along as a dependency. The tap follows **stable**
+releases only — release candidates never move it.
+
+On macOS this is the recommended path, because there is no native macOS
+binary ([ADR 0044](docs/adr/0044-kein-macos-native-binary.md)).
+
+The formula is maintained in this repository from 0.5.0 on and verified
+per release via
 [`.github/workflows/verify-homebrew-formula.yml`](.github/workflows/verify-homebrew-formula.yml).
 
 ### Build from source
