@@ -95,6 +95,25 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Befund-Issue schliessen, wenn der Scan sauber ist
+        # Das Gegenstueck zum Eroeffnen: Der Issue-Text sagt "bleibt bis zum
+        # Release bestehen und schliesst sich danach" — das muss auch jemand
+        # TUN. Geschlossen wird nur bei status=ok, also nach einem Lauf, der
+        # wirklich geprueft hat (ein gescheiterter Scan schliesst nichts).
+        if: steps.scan.outputs.status == 'ok'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Image-Scan: behebbare CRITICAL/HIGH im publizierten Image"
+          existing="$(gh issue list --state open --search "\"${TITLE}\" in:title"             --json number,title --jq "[.[] | select(.title == \"${TITLE}\")] | .[0].number // empty")"
+          if [ -n "${existing}" ]; then
+            gh issue close "${existing}" --comment               "Der Scan meldet keine behebbaren CRITICAL/HIGH-Befunde mehr im publizierten Image: ${RUN_URL}"
+            echo "Issue #${existing} geschlossen."
+          else
+            echo "Kein offenes Befund-Issue."
+          fi
+
       - name: Befund-Issue eroeffnen (dedupliziert)
         # NUR bei echten Befunden. Ein gescheiterter Scan darf kein
         # Verwundbarkeits-Issue erzeugen — das waere eine Falschaussage genau
