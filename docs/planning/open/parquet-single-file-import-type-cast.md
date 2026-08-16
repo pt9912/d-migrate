@@ -1,19 +1,18 @@
-# Tracker: Parquet-Einzeldatei-Import bricht mit ClassCastException ab
+# Tracker: Parquet-Bundle-Mitglied im Einzeldatei-Import bricht mit ClassCastException ab
 
-> **Status:** Befund mit Repro (Draft) / Trigger Watch (2026-08-15)
+> **Status:** Befund mit Repro und **eingegrenzter Ursache** (2026-08-16)
 > **Trigger:** Beim funktionalen Nachweis der Hadoop-Ausschlüsse
 > ([dependency-cve-exposure-shipped-artifact.md](dependency-cve-exposure-shipped-artifact.md))
 > als Nebenbefund aufgefallen. **Nicht** von jenem Eingriff verursacht — zwei
 > Kontrollläufe gegen das unveränderte `pt9912/d-migrate:1.0.0` scheitern identisch.
-> **Aktivierungsbedingung** (Move nach `../next/`): Entscheidung, ob der
-> Einzeldatei-Import Typen aus dem Parquet-Schema ableiten soll oder ob er ohne
-> Manifest sauber abgelehnt gehört.
+> **Aktivierungsbedingung** (Move nach `../next/`): Entscheidung zwischen den Wegen
+> unten — Typen aus dem Footer ableiten, aus dem Ziel-JDBC-Schema nachziehen, oder
+> den Fall verständlich ablehnen.
 
 ## Symptom
 
 ```
-data import --target sqlite:///w/dst.db --format parquet \
-            --source /w/out/t.parquet --table t
+data import --format parquet --source /w/out/t.parquet --table t
 
 Error: Import failed: class org.apache.parquet.example.data.simple.IntegerValue
        cannot be cast to class org.apache.parquet.example.data.simple.BinaryValue
@@ -21,77 +20,93 @@ Error: Import failed: class org.apache.parquet.example.data.simple.IntegerValue
 
 Kein Datensatz wird geschrieben; die Zieltabelle bleibt leer.
 
-## Repro (vollständig, ohne Projektkontext)
+## Eingrenzung (2026-08-16, alles gemessen)
 
-Quelle: SQLite mit einer Tabelle aus `INTEGER PRIMARY KEY`, `TEXT`, `REAL`,
-gefüllt mit 500 Zeilen.
+Der ursprüngliche Titel „Einzeldatei-Import bricht ab" war **zu breit**. Gemessen
+gilt:
 
-```bash
-d-migrate data export --source "sqlite:///w/src.db" --format parquet \
-          --tables t -o /w/out --split-files      # -> t.parquet + manifest.yaml
-d-migrate data import --target "sqlite:///w/dst.db" --format parquet \
-          --source /w/out/t.parquet --table t     # -> ClassCastException
-```
+| Export | Import | Ergebnis |
+| --- | --- | --- |
+| Einzeldatei (`-o datei.parquet`) | dieselbe Datei | **läuft**, 500 Zeilen |
+| Bundle (`--split-files`) | Mitglied daraus, einzeln | **ClassCastException**, 0 Zeilen |
+| Bundle | ganzes Verzeichnis | **läuft**, 500 Zeilen |
 
-## Abgrenzung — was funktioniert
+- **Parquet-spezifisch.** Dieselbe Übung mit `--format csv` und `--format json`
+  läuft in beiden Fällen durch (je 500 Zeilen). Es ist kein allgemeiner Defekt des
+  Einzeldatei-Pfads.
+- **Ziel-unabhängig.** Gegen SQLite **und** gegen PostgreSQL 17 identisch: Bundle-
+  Mitglied bricht ab, Einzeldatei-Export läuft (je 500 Zeilen).
 
-Der **Verzeichnis-Import derselben Ausgabe** läuft in beiden Images fehlerfrei
-durch und schreibt alle 500 Zeilen mit korrekten Prüfsummen:
+## Ursache
 
-```bash
-d-migrate data import --target "sqlite:///w/dst.db" --source /w/out
-```
+Die Kette ist vollständig belegt:
 
-Der Unterschied ist die `manifest.yaml`, die beim Verzeichnis-Import die
-Spaltentypen mitliefert. Der Einzeldatei-Pfad hat sie nicht und leitet die Typen
-offenbar falsch ab: Eine Spalte, die als `IntegerValue` im Parquet steht, wird als
-`BinaryValue` gelesen. Die Vermutung ist eine Positions- statt Namenszuordnung oder
-ein pauschaler Fallback auf „Text", belegt ist sie nicht.
+1. **Bundle- und Einzeldatei-Export legen das Schema an verschiedene Orte.** Der
+   Einzeldatei-Export bettet ein Manifest als Footer-Key `d-migrate.manifest` ein
+   (nachweisbar an der Dateigröße: 3719 statt 3283 Bytes für dieselben 500 Zeilen);
+   `--split-files` schreibt stattdessen eine separate `manifest.yaml` und lässt den
+   Footer-Key **weg**.
+2. Ohne Footer-Key greift der Fallback
+   [`ParquetSingleFilePreflight.buildSchemaFromFooter`](../../../adapters/driven/formats-parquet/src/main/kotlin/dev/dmigrate/format/parquet/ParquetSingleFilePreflight.kt).
+   Er füllt **jede** Spalte mit `NeutralType.Text()`. Das ist kein Versehen, sondern
+   ein bewusster Platzhalter — der Kommentar dort sagt es:
 
-## Warum das nicht als „vom CVE-Eingriff verursacht" durchgeht
+   > „Footer-Fallback ohne Manifest: keine NeutralType-Aufloesung — Cut A fuellt mit
+   > Text als Marker. Der CLI-Resolver / Phase-2 darf das ueber das Target-
+   > JDBC-Schema verbessern (AP11 §5.3, **kommt mit S6**)."
 
-Der Befund tauchte unmittelbar nach dem Ausschluss der Hadoop-Bäume auf, und der
-erste Verdacht war eine fehlende Klasse. Er ist widerlegt:
+3. **S6 wurde nie gebaut.** `phase2` reicht das Ergebnis unverändert durch
+   („Heute (S4): nur Hash-Konsistenz-Check … CLI-Wiring (S6) erweitert ihn bei
+   Bedarf"), `markS4FallbackUsed` ist eine **No-op-Funktion** (`Unit = Unit` mit
+   `@Suppress`), und `manifestPresent` wird zwar bis in `ImportInput` durchgereicht,
+   aber **nirgends gelesen** — die in der KDoc versprochene CLI-Warnung existiert
+   nicht.
+4. Der vorhandene Wächter greift nicht: `verifyFooterMatchesSchema` vergleicht
+   ausschließlich **Spaltenanzahl und -namen**, nie die Typen. Ein Schema mit
+   richtigen Namen und durchgehend falschen Typen passiert ihn unbeanstandet.
+5. `ParquetGroupValueReader.readColumn` dispatcht auf den gelieferten `NeutralType`
+   und ruft für `Text` `group.getString(...)` auf — auf einer INT32-Spalte. Das ist
+   der Cast.
 
-1. Die Ausnahme ist ein **ClassCastException**, kein `NoClassDefFoundError` — es
-   fehlt nichts, es wird falsch gelesen.
-2. Derselbe Import mit dem **unveränderten** `pt9912/d-migrate:1.0.0` scheitert
-   zeichengleich.
-3. Auch ein reiner 1.0.0-Round-Trip (Export *und* Import mit 1.0.0, ohne jede
-   Beteiligung des neuen Images) scheitert zeichengleich.
-
-Der Defekt steckt also im veröffentlichten 1.0.0 und ist älter als dieser Tag.
+**Kurz:** Ein als temporär markierter Platzhalter ist produktiv geworden, weil der
+Schritt, der ihn ersetzen sollte, nie kam. Der Fehler tritt dadurch als roher
+Bibliotheks-Cast auf statt als Diagnose.
 
 ## Wege
 
-1. **Typen aus dem Parquet-Schema ableiten.** Die Datei trägt ihr Schema selbst; der
-   Einzeldatei-Pfad müsste es lesen, statt sich auf das Manifest zu verlassen. Macht
-   den dokumentierten Aufruf funktionsfähig.
-2. **Ohne Manifest sauber ablehnen.** Wenn der Einzeldatei-Import für Parquet nie
-   tragfähig gedacht war, gehört eine verständliche Fehlermeldung hin statt einer
-   durchgereichten ClassCastException — und der Hinweis auf den Verzeichnis-Import.
+1. **Typen aus dem Footer ableiten.** Die Parquet-Datei trägt ihr physisches und
+   logisches Schema selbst; `buildSchemaFromFooter` liest es bereits (für Namen und
+   Nullability) und wirft die Typinformation weg. Das ist die eigentliche Auflösung
+   und macht den Fall unabhängig von Manifest und Ziel.
+2. **S6 nachbauen** — Typen im `phase2` aus dem Ziel-JDBC-Schema nachziehen. Der
+   ursprünglich geplante Weg; schwächer als 1, weil er ein existierendes Ziel
+   voraussetzt und bei Spaltenreihenfolge-Abweichung erneut still danebenliegt.
+3. **Verständlich ablehnen.** Das Minimum: Wenn `manifestPresent == false` und die
+   Typen nicht aufgelöst werden können, mit klarer Meldung abbrechen statt eine
+   `ClassCastException` durchzureichen — samt Hinweis auf den Verzeichnis-Import.
 
-Weg 1 ist die Auflösung, Weg 2 das Minimum. Beides ist besser als der heutige
-Zustand, in dem ein in `--help` angebotener Aufruf mit einer internen Cast-Meldung
-scheitert.
+Weg 1 ist die Auflösung, Weg 3 das Minimum, und **Weg 3 sollte in jedem Fall
+kommen**: Auch mit Weg 1 bleibt der Wächter typblind, und der nächste Platzhalter
+fiele wieder als roher Cast auf.
+
+**Zusätzlich, unabhängig vom gewählten Weg:** `verifyFooterMatchesSchema` um einen
+Typvergleich erweitern. Er ist die Stelle, die den Fehler hätte fangen sollen.
 
 ## Verwandt — dieselbe Bewegung könnte drei Dinge lösen
 
-Ein Sprung auf **parquet-java 1.18.x** steht inzwischen aus drei unabhängigen Gründen
-im Raum, und dieser Defekt ist einer davon:
+Ein Sprung auf **parquet-java 1.18.x** steht aus drei unabhängigen Gründen im Raum:
 
 1. Der Hadoop-Klotz unter `formats-parquet` (Weg 3 in
    [dependency-cve-exposure-shipped-artifact.md](dependency-cve-exposure-shipped-artifact.md)).
 2. **Geshadetes Jackson 2.21.3 in `parquet-jackson`** — drei HIGH, die kein eigener
    Pin erreicht; als begründete Ausnahme in `.trivyignore.yaml` hinterlegt.
-3. Dieser Lesepfad-Defekt, falls er in 1.18.x behoben oder anders geschnitten ist.
-
-Ob 1.18.x hier wirklich hilft, ist **nicht geprüft** — die drei Gründe rechtfertigen
-aber, es gemeinsam zu bewerten statt dreimal einzeln.
+3. Dieser Defekt — allerdings **nur mittelbar**: Die Ursache liegt in eigenem Code
+   (nicht aufgelöster Platzhalter), nicht in der Bibliothek. Ein Upgrade behebt ihn
+   **nicht**.
 
 ## Offen
 
-- Ob andere Ziel-Dialekte (PostgreSQL, MySQL) denselben Pfad nehmen, ist **nicht
-  geprüft** — der Repro lief gegen SQLite.
-- Ob CSV/JSON/YAML im Einzeldatei-Import dieselbe Typableitung benutzen und dort
-  nur zufällig durchkommen (alles Text), ist ebenfalls **nicht geprüft**.
+- Ob der fehlende Footer-Key im Bundle-Export Absicht ist (das Manifest liegt ja
+  daneben) oder eine Lücke, ist **nicht geklärt**. Schriebe der Bundle-Export den
+  Key zusätzlich, wären seine Mitglieder eigenständig lesbar — das wäre ein vierter
+  Weg, berührt aber das Bundle-Format.
