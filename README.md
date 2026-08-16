@@ -42,10 +42,10 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.0.2**
-(stable, [released 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.2)).
+d-migrate is a working production tool at version **1.0.3**
+(stable, [released 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.3)).
 
-> **New in 1.0.2:** restores the native binaries (the 1.0.1 tag could not
+> **New in 1.0.3:** restores the native binaries (the 1.0.1 tag could not
 > build them) and makes Parquet **import** work in the native binary for the
 > first time — it had failed in every native binary released so far; both
 > native build legs now verify a full Parquet round trip. Also carries all of
@@ -161,7 +161,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.0.2** (2026-08-16) — what `:latest`,
+- **Current stable** · **1.0.3** (2026-08-16) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you. The container image
   runs as **non-root** (`uid 10001`), so writing into a bind mount needs
   `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and

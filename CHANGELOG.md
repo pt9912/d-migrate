@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-16
+
+### Fixed
+
+- **Native Binaries liegen wieder am Release.** Der v1.0.2-Tag baute beide
+  nativen Binaries erfolgreich und der neue Parquet-Round-Trip lief auf beiden
+  Plattformen korrekt durch — die Pruefung selbst las jedoch den falschen
+  Ausgabekanal und brach die Legs ab, bevor die Binaries hochgeladen waren.
+  Inhaltlich ist dieses Release identisch mit 1.0.2.
+
+**Hinweis zu v1.0.2:** vollstaendig fuer JVM-Distributionen (Assets,
+Container-Images, Homebrew), traegt aber keine nativen Binaries. v1.0.3 ist der
+vollstaendige Stand.
+
 ## [1.0.2] - 2026-08-16
 
 ### Fixed

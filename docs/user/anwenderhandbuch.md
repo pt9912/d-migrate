@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.2  ·  **Handbuch-Version:** 0.5  ·  **Stand:** 16.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.5  ·  **Stand:** 16.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata

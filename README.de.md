@@ -46,9 +46,9 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.0.2** (stabil, [veröffentlicht 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.2)).
+**1.0.3** (stabil, [veröffentlicht 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.3)).
 
-> **Neu in 1.0.2:** stellt die nativen Binaries wieder her (der 1.0.1-Tag
+> **Neu in 1.0.3:** stellt die nativen Binaries wieder her (der 1.0.1-Tag
 > konnte sie nicht bauen) und macht den Parquet-**Import** im nativen Binary
 > erstmals funktionsfähig — er scheiterte in jedem bisher veröffentlichten
 > nativen Binary; beide Native-Legs prüfen jetzt einen vollständigen
@@ -174,7 +174,7 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.0.2** (2026-08-16) — das, was `:latest`,
+- **Aktuelles Stable** · **1.0.3** (2026-08-16) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern. Das Container-Image
   läuft als **non-root** (`uid 10001`); Schreiben in einen Bind-Mount
   braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt es
