@@ -54,12 +54,25 @@ jobs:
 
       - name: Trivy image scan
         id: scan
-        # `continue-on-error`, damit Artefakt-Upload und Issue danach noch
-        # laufen; der Lauf wird im letzten Schritt bewusst rot gemacht.
-        continue-on-error: true
+        # Kein `continue-on-error`: der Schritt endet immer mit 0 und meldet
+        # seinen Ausgang ueber `status`. Grund ist die Unterscheidung unten —
+        # `outcome` kennt nur success/failure und koennte "Scan gescheitert"
+        # nicht von "Befunde gefunden" trennen.
         run: |
           set -o pipefail
-          make image-scan 2>&1 | tee .tmp/security/image-scan.log
+          rc=0
+          make image-scan 2>&1 | tee .tmp/security/image-scan.log || rc=$?
+          # make reicht den Exit des Skripts als 2 durch, wenn das Rezept faellt;
+          # deshalb den Wert aus dem Skript-Marker im Log lesen statt aus rc.
+          if grep -q "GESCHEITERT\|kein gueltiges JSON" .tmp/security/image-scan.log; then
+            echo "status=error" >> "$GITHUB_OUTPUT"
+          elif grep -q "behebbare CRITICAL/HIGH-Befunde" .tmp/security/image-scan.log; then
+            echo "status=findings" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" -eq 0 ]; then
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=error" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Bericht als Artefakt sichern
         if: always()
@@ -83,15 +96,24 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Befund-Issue eroeffnen (dedupliziert)
-        if: steps.scan.outcome == 'failure'
+        # NUR bei echten Befunden. Ein gescheiterter Scan darf kein
+        # Verwundbarkeits-Issue erzeugen — das waere eine Falschaussage genau
+        # dort, wo das Signal tragen muss.
+        if: steps.scan.outputs.status == 'findings'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           LOG_FILE: .tmp/security/image-scan.log
         run: bash scripts/open-image-scan-issue.sh
 
-      - name: Lauf rot machen, wenn behebbare Befunde vorliegen
-        if: steps.scan.outcome == 'failure'
+      - name: Lauf rot machen (Befunde ODER gescheiterter Scan)
+        # Beides ist rot, aber mit unterschiedlicher Aussage: ein gescheiterter
+        # Scan heisst "wir wissen es nicht", nicht "es ist sauber".
+        if: steps.scan.outputs.status != 'ok'
         run: |
-          echo "::error title=Image-Scan::Das publizierte Image enthaelt behebbare CRITICAL/HIGH-Befunde; siehe Issue und Artefakt."
+          if [ "${{ steps.scan.outputs.status }}" = "error" ]; then
+            echo "::error title=Image-Scan::Der Scan ist GESCHEITERT — es liegt KEINE Aussage ueber den Befundstand vor. Log im Artefakt."
+          else
+            echo "::error title=Image-Scan::Das publizierte Image enthaelt behebbare CRITICAL/HIGH-Befunde; siehe Issue und Artefakt."
+          fi
           exit 1
