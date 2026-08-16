@@ -122,6 +122,60 @@
       "type": "com.mysql.cj.jdbc.Driver"
     },
     {
+      "type": "com.sun.crypto.provider.AESCipher$General",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.sun.crypto.provider.ARCFOURCipher",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.sun.crypto.provider.ChaCha20Cipher$ChaCha20Poly1305",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.sun.crypto.provider.DESCipher",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.sun.crypto.provider.DESedeCipher",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.sun.crypto.provider.GaloisCounterMode$AESGCM",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
       "type": "com.sun.org.apache.xerces.internal.jaxp.SAXParserFactoryImpl",
       "methods": [
         {
@@ -129,6 +183,9 @@
           "parameterTypes": []
         }
       ]
+    },
+    {
+      "type": "com.sun.security.auth.UnixPrincipal"
     },
     {
       "type": "com.zaxxer.hikari.HikariConfig",
@@ -756,6 +813,12 @@
       ]
     },
     {
+      "type": "java.security.AlgorithmParametersSpi"
+    },
+    {
+      "type": "java.security.KeyStoreSpi"
+    },
+    {
       "type": "java.security.MessageDigestSpi"
     },
     {
@@ -778,6 +841,9 @@
     },
     {
       "type": "kotlin.SafePublicationLazyImpl"
+    },
+    {
+      "type": "kotlin.Unit"
     },
     {
       "type": "kotlin.jvm.internal.DefaultConstructorMarker"
@@ -805,6 +871,47 @@
     },
     {
       "type": "org.apache.hadoop.mapred.JobConfigurable"
+    },
+    {
+      "type": "org.apache.hadoop.net.DNSDomainNameResolver",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.hadoop.security.JniBasedUnixGroupsMappingWithFallback",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.hadoop.security.UserGroupInformation$UgiMetrics",
+      "fields": [
+        {
+          "name": "getGroups"
+        },
+        {
+          "name": "loginFailure"
+        },
+        {
+          "name": "loginSuccess"
+        },
+        {
+          "name": "registry"
+        },
+        {
+          "name": "renewalFailures"
+        },
+        {
+          "name": "renewalFailuresTotal"
+        }
+      ]
     },
     {
       "type": "org.apache.parquet.column.values.bitpacking.ByteBitPackingBE",
@@ -1031,6 +1138,9 @@
       ]
     },
     {
+      "type": "scala.util.Properties"
+    },
+    {
       "type": "shaded.parquet.com.fasterxml.jackson.databind.ext.Java7SupportImpl",
       "methods": [
         {
@@ -1082,6 +1192,24 @@
           "parameterTypes": [
             "java.lang.Class"
           ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.pkcs12.PKCS12KeyStore",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.pkcs12.PKCS12KeyStore$DualFormatPKCS12",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
         }
       ]
     },
@@ -1152,6 +1280,24 @@
     },
     {
       "type": "sun.security.rsa.RSASignature$SHA384withRSA",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.ssl.SSLContextImpl$TLSContext",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.ssl.TrustManagerFactoryImpl$PKIXFactory",
       "methods": [
         {
           "name": "<init>",
@@ -1244,6 +1390,30 @@
       ]
     },
     {
+      "type": "sun.security.x509.NetscapeCertTypeExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.x509.PrivateKeyUsageExtension",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.lang.Boolean",
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
       "type": "sun.security.x509.SubjectAlternativeNameExtension",
       "methods": [
         {
@@ -1283,6 +1453,13 @@
       "type": {
         "proxy": [
           "java.sql.Connection"
+        ]
+      }
+    },
+    {
+      "type": {
+        "proxy": [
+          "org.apache.hadoop.metrics2.MetricsSystem$Callback"
         ]
       }
     }
@@ -1357,6 +1534,39 @@
     },
     {
       "bundle": "messages.messages"
+    },
+    {
+      "glob": "META-INF/services/java.net.spi.URLStreamHandlerProvider"
+    },
+    {
+      "glob": "ch/qos/logback/classic/logback-classic-version.properties"
+    },
+    {
+      "glob": "ch/qos/logback/core/logback-core-version.properties"
+    },
+    {
+      "glob": "core-default.xml"
+    },
+    {
+      "glob": "core-site.xml"
+    },
+    {
+      "glob": "mapred-default.xml"
+    },
+    {
+      "glob": "mapred-site.xml"
+    },
+    {
+      "glob": "software/amazon/awssdk/global/handlers/execution.interceptors"
+    },
+    {
+      "glob": "software/amazon/awssdk/services/s3/execution.interceptors"
+    },
+    {
+      "glob": "yarn-default.xml"
+    },
+    {
+      "glob": "yarn-site.xml"
     }
   ]
 }

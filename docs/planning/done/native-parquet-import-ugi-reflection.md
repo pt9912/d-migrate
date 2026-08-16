@@ -1,5 +1,16 @@
 # Tracker: Parquet-Import im nativen Binary scheitert an fehlender UGI-Reflection
 
+> **BEHOBEN 2026-08-16.** Der Lesepfad geht jetzt über `LocalInputFile` statt
+> über Hadoop-`Path` — damit wird Hadoops `FileSystem` nie betreten und die
+> `UserGroupInformation` nie initialisiert. Das behebt zugleich den zweiten,
+> tieferen Fehler `getSubject is not supported` (auf dem JDK des
+> GraalVM-Builders entfernt), gegen den Reflection-Metadata nichts ausrichtet.
+> Die Sonde `native-probe.sh` übt den Import jetzt aus (in eine frische DB,
+> Exit-0-Vertrag), und `native-image.yml` fährt einen Parquet-Round-Trip-Smoke
+> über SQLite mit Zeilenzahl-Assertion auf beiden Legs. Funktional belegt:
+> alle drei Import-Formen liefern 500 Zeilen mit exakten Prüfsummen durch das
+> native Binary.
+>
 > **Status:** Befund mit Repro und Kontrollnachweis (2026-08-16)
 > **Trigger:** Beim Verifizieren der v1.0.1-Native-Fixes fiel auf, dass
 > `data import` einer Parquet-Quelle im nativen Binary abbricht.

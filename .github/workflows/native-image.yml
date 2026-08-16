@@ -215,6 +215,54 @@ jobs:
           echo "${ddl}" | grep -qi "CREATE TABLE" \
             || { echo "::error::generate produced no CREATE TABLE"; exit 1; }
 
+      - name: Smoke-test Parquet round trip (SQLite, no server)
+        # SQLite braucht keinen Server — der "DB-frei"-Vorbehalt des vorigen
+        # Steps gilt hier nicht. Der Parquet-LESEpfad hat im nativen Binary
+        # eigene Flaechen (Footer-Parse, Reader-Initialisierung), die weder
+        # validate/generate noch ein Export beruehren; deshalb geht der
+        # Round-Trip bis zum Import und prueft die eingefuegte Zeilenzahl.
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="dist/${{ steps.stage.outputs.asset }}"
+          S=$(mktemp -d)
+          cat > "$S/schema.yaml" <<'YAML'
+          schema_format: "1.0"
+          name: "native_smoke"
+          version: "1.0.0"
+          encoding: "utf-8"
+          tables:
+            probe_items:
+              columns:
+                id: { type: identifier, auto_increment: true }
+                label: { type: text, max_length: 80, required: true }
+                amount: { type: decimal, precision: 10, scale: 2 }
+              primary_key: [id]
+          YAML
+          cat > "$S/rows.json" <<'JSON'
+          [
+            {"id": 1, "label": "alpha", "amount": 1.50},
+            {"id": 2, "label": "beta",  "amount": 2.25},
+            {"id": 3, "label": "gamma", "amount": 3.75}
+          ]
+          JSON
+          # Windows-Leg (Git-Bash): das native Binary braucht Windows-Pfade.
+          if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+            A_URL="sqlite:///$(cygpath -m "$S/a.db")"; B_URL="sqlite:///$(cygpath -m "$S/b.db")"
+          else
+            A_URL="sqlite:///$S/a.db"; B_URL="sqlite:///$S/b.db"
+          fi
+          "${BIN}" schema migrate --source "$S/schema.yaml" --target "db:${A_URL}" --execute --report "$S/mig-a.yaml"
+          "${BIN}" schema migrate --source "$S/schema.yaml" --target "db:${B_URL}" --execute --report "$S/mig-b.yaml"
+          "${BIN}" data import --target "${A_URL}" --format json \
+            --source "$S/rows.json" --table probe_items
+          "${BIN}" data export --source "${A_URL}" --format parquet \
+            --tables probe_items -o "$S/bundle" --split-files
+          out=$("${BIN}" data import --target "${B_URL}" --source "$S/bundle")
+          echo "${out}"
+          echo "${out}" | grep -q "3 inserted" \
+            || { echo "::error::native parquet import did not insert 3 rows"; exit 1; }
+
       - name: Upload native binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -4,13 +4,10 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkReader
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path as HadoopPath
 import org.apache.parquet.example.data.Group
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.parquet.hadoop.ParquetReader
-import org.apache.parquet.hadoop.example.GroupReadSupport
-import org.apache.parquet.hadoop.util.HadoopInputFile
+import org.apache.parquet.io.LocalInputFile
 import org.apache.parquet.schema.MessageType
 import java.nio.file.Path
 
@@ -49,11 +46,9 @@ class ParquetChunkReader(
         verifyFooterMatchesSchema(file, schema)
     }
 
-    private val configuration = Configuration(false)
-    private val reader: ParquetReader<Group> = ParquetReader
-        .builder(GroupReadSupport(), HadoopPath(file.toUri()))
-        .withConf(configuration)
-        .build()
+    // InputFile statt Hadoop-Path: kein FileSystem, keine UGI-Initialisierung —
+    // Begruendung in GroupReaderBuilder.
+    private val reader: ParquetReader<Group> = GroupReaderBuilder(LocalInputFile(file)).build()
 
     private var closed: Boolean = false
     private var exhausted: Boolean = false
@@ -111,8 +106,7 @@ class ParquetChunkReader(
 class ParquetSchemaMismatchException(message: String) : RuntimeException(message)
 
 private fun verifyFooterMatchesSchema(file: Path, schema: ChunkSchema) {
-    val conf = Configuration(false)
-    val footer = ParquetFileReader.open(HadoopInputFile.fromPath(HadoopPath(file.toUri()), conf)).use {
+    val footer = ParquetFileReader.open(LocalInputFile(file)).use {
         it.fileMetaData.schema
     }
     val footerNames = footer.fields.map { it.name }

@@ -112,17 +112,34 @@ probe "DDL-Rendering SQLite" \
 probe "JSON-Ausgabepfad (zweiter Formatter-Zweig)" \
   "${BIN}" --output-format json schema validate --source "${SCHEMA}"
 
-# AP 5 — die kommando-lokalen Schwergewichts-Flaechen (Phase F.4). Bis 2026-07-20 beruehrte der
-# Korpus KEINE davon: der Tracing-Agent konnte fuer sie folglich nichts aufzeichnen, und ihre
-# Metadaten waren still unvollstaendig. Genau diese Luecke schliessen die folgenden Sonden.
+# AP 5 — die kommando-lokalen Schwergewichts-Flaechen. Der Tracing-Agent kann nur
+# aufzeichnen, was eine Sonde tatsaechlich betritt — jede hier fehlende Flaeche
+# hat still unvollstaendige Metadaten.
 #
-# Alle Aufrufe vorab gegen die JVM-CLI (`d-migrate:dev`) verifiziert — Exit 0. Zwei Fallstricke, die
-# dabei auffielen: `export django` verlangt eine 4-stellige Version, `export knex` eine numerische;
-# aus der Flag-Hilfe allein waere das nicht ersichtlich gewesen (beide scheitern sonst mit Exit 2).
+# `export django` verlangt eine 4-stellige Version, `export knex` eine numerische;
+# aus der Flag-Hilfe ist das nicht ersichtlich (sonst Exit 2 statt Sondenlauf).
 probe "data profile (Profiling-Pfad)" \
   "${BIN}" data profile --source "${PROBE_DB_URL}" --output "${OUTDIR}/profile.json"
 probe "data export PARQUET (parquet-hadoop)" \
   "${BIN}" data export --source "${PROBE_DB_URL}" --format parquet --output "${OUTDIR}/out.parquet"
+# Export und Import sind getrennte Flaechen: ParquetFileReader, GroupReadSupport
+# und die UserGroupInformation-Initialisierung laufen nur beim Lesen — eine
+# Export-Sonde traced sie nicht mit.
+# Import in eine FRISCHE Datenbank (gleiches Schema), nicht in die Quelle des
+# Exports zurueck — dort kollidierten die Primaerschluessel und die Sonde
+# verletzte den Exit-0-Vertrag der JVM-Grundlinie.
+IMPORT_DB="${OUTDIR}/f0-import.db"
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
+  IMPORT_DB_URL="sqlite:///$(cygpath -m "${IMPORT_DB}")"
+else
+  IMPORT_DB_URL="sqlite:///${IMPORT_DB}"
+fi
+"${BIN}" schema migrate --source "${OUTDIR}/f0-probe-schema.yaml" \
+  --target "db:${IMPORT_DB_URL}" --execute \
+  --report "${OUTDIR}/import-migrate-report.yaml" >/dev/null 2>&1 || true
+probe "data import PARQUET (Lesepfad: ParquetFileReader + UGI)" \
+  "${BIN}" data import --target "${IMPORT_DB_URL}" --format parquet \
+    --source "${OUTDIR}/out.parquet"
 probe "export flyway (Tool-Export)" \
   "${BIN}" export flyway --source "${SCHEMA}" --output "${OUTDIR}/fly" --target postgresql
 probe "export liquibase (Tool-Export)" \
@@ -166,12 +183,11 @@ printf '| %s | %s | %s | %s |\n' \
 # WAS DAS PRUEFT: Konstruktion des AWS-SDK-Clients samt Credential-Chain und Region-Aufloesung —
 # dort sitzt die Reflection.
 #
-# WAS ES NICHT PRUEFT: eine echte S3-Operation (Upload/Download/List). Das liegt NICHT an fehlender
-# Infrastruktur — das Projekt hat mit `newSeaweedS3Container()` (storage-s3/src/testFixtures)
-# Testcontainers-Unterstuetzung fuer SeaweedFS. Gegengeprueft 2026-07-20 mit einem LIVE laufenden
-# SeaweedFS: das Binary sendete NULL Requests. Der initialize-Handshake erzeugt keine Artefakte, und
-# der Startup-Sweep ueberspringt bei S3 die Segment-Laeufe. Ein echter Operationstest braeuchte einen
-# artefakt-erzeugenden MCP-tools/call — eigene Orchestrierung, offener Punkt.
+# WAS ES NICHT PRUEFT: eine echte S3-Operation (Upload/Download/List) — der
+# initialize-Handshake erzeugt keine Artefakte, und der Startup-Sweep ueberspringt
+# bei S3 die Segment-Laeufe; es geht also kein einziger Request raus. Ein echter
+# Operationstest braeuchte einen artefakt-erzeugenden MCP-tools/call — eigene
+# Orchestrierung, offener Punkt.
 # Bewertet wird die Startzeile, nicht der Exit-Code: der Server endet bei EOF ohnehin mit 0.
 n=$((n + 1))
 s3_log="${OUTDIR}/probe-${n}.log"

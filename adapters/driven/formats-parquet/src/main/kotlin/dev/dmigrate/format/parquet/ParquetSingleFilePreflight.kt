@@ -7,10 +7,8 @@ import dev.dmigrate.format.data.SeekableChunkSource
 import dev.dmigrate.format.parquet.manifest.ParquetManifestParseException
 import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestReader
 import dev.dmigrate.format.parquet.manifest.Sha256DigestCalculator
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path as HadoopPath
 import org.apache.parquet.hadoop.ParquetFileReader
-import org.apache.parquet.hadoop.util.HadoopInputFile
+import org.apache.parquet.io.LocalInputFile
 import org.apache.parquet.schema.MessageType
 import org.apache.parquet.schema.Type.Repetition
 import java.nio.file.Path
@@ -83,9 +81,9 @@ class ParquetSingleFilePreflight {
         explicitTable: String?,
         computeContentSha256: Boolean = false,
     ): ResolvedParquetSingleFile {
-        val configuration = Configuration(false)
-        val inputFile = HadoopInputFile.fromPath(HadoopPath(path.toUri()), configuration)
-        val (manifestSchema, footerSchema, extraMetaData) = ParquetFileReader.open(inputFile).use { reader ->
+        // LocalInputFile statt Hadoop-Path: kein FileSystem, keine
+        // UGI-Initialisierung — Begruendung in GroupReaderBuilder.
+        val (manifestSchema, footerSchema, extraMetaData) = ParquetFileReader.open(LocalInputFile(path)).use { reader ->
             val meta = reader.fileMetaData
             Triple(
                 ParquetSingleFileManifestReader().readSchema(meta.keyValueMetaData ?: emptyMap()),
