@@ -174,7 +174,15 @@ class ParquetSingleFileRoundTripTest : FunSpec({
             phase1.manifestPresent shouldBe false
             phase1.schema.origin shouldBe SchemaOrigin.MANIFEST_FALLBACK
             phase1.schema.columns.map { it.name } shouldBe listOf("id", "name")
-            phase1.schema.columns.all { it.neutralType is NeutralType.Text } shouldBe true
+            // Frueher stand hier `all { it.neutralType is NeutralType.Text }` —
+            // der Test schrieb damit den Platzhalter fest, der den Lesepfad
+            // sprengte, und waere bei jeder Verbesserung rot geworden. Geprueft
+            // gehoert, dass die Typen aus dem Footer stammen.
+            phase1.schema.columns.map { it.neutralType } shouldBe listOf(
+                NeutralType.Integer,
+                NeutralType.Text(),
+            )
+            phase1.schema.columns.map { it.nullable } shouldBe listOf(false, true)
         } finally {
             Files.deleteIfExists(tmp)
         }

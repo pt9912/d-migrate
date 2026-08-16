@@ -62,3 +62,8 @@ release-assets/
 
 README.md
 CHANGELOG.md
+
+# Trivy-Vuln-DB (make image-scan). Gehoert dem Container-root und ist fuer
+# den Build irrelevant; ohne diesen Eintrag scheitert JEDER docker build nach
+# einem lokalen Scan an "permission denied" beim Einlesen des Kontexts.
+.cache/

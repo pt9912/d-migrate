@@ -162,11 +162,19 @@ class ParquetSingleFilePreflight {
             ChunkColumnSchema(
                 name = field.name,
                 nullable = field.repetition != Repetition.REQUIRED,
-                // Footer-Fallback ohne Manifest: keine NeutralType-
-                // Aufloesung — Cut A fuellt mit Text als Marker. Der
-                // CLI-Resolver / Phase-2 darf das ueber das Target-
-                // JDBC-Schema verbessern (AP11 §5.3, kommt mit S6).
-                neutralType = dev.dmigrate.core.model.NeutralType.Text(),
+                // Der Typ kommt aus dem Footer, nicht aus einem Platzhalter.
+                // Vorher stand hier durchgehend `Text` als Marker, den ein
+                // spaeterer Schritt ueber das Ziel-JDBC-Schema ersetzen sollte;
+                // der Schritt kam nie, und der Marker lief ungefiltert in
+                // ParquetGroupValueReader.readColumn, das daraufhin getString
+                // auf einer INT32-Spalte aufrief (ClassCastException).
+                //
+                // Die Datei traegt ihr Schema selbst — dieselbe `field`-Instanz,
+                // aus der Name und Nullability stammen. Es aus dem Ziel
+                // abzuleiten waere schwaecher: das setzt eine existierende
+                // Zieltabelle voraus und liegt bei abweichender
+                // Spaltenreihenfolge still daneben, statt laut zu scheitern.
+                neutralType = ParquetMessageTypeToChunkSchema.neutralTypeOf(field.asPrimitiveType()),
             )
         }
         return ChunkSchema(
