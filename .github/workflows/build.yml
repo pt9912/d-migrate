@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - develop
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
-      - develop
   # Der Publish-Pfad (Registry-Logins, Push nach GHCR und Docker Hub) lief bisher
   # ausschliesslich auf einem Tag — also nur dann, wenn er zaehlt, und ohne je
   # geprobt worden zu sein. Dieselbe Struktur liess einen Dauerfehler in
@@ -245,7 +243,7 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/v}"
           # Im Probelauf ist der Ref kein Tag — ohne diesen Zweig stuende
-          # "refs/heads/develop" als Version in den Beispielen. Der Platzhalter
+          # "refs/heads/main" als Version in den Beispielen. Der Platzhalter
           # haelt die beiden Fail-fast-Pruefungen unten scharf, ohne eine
           # Version vorzutaeuschen; hochgeladen wird das Ergebnis ohnehin nicht.
           case "${GITHUB_REF}" in
@@ -296,7 +294,7 @@ jobs:
   # Natives Container-Image (zusaetzliche Distributionsklasse neben dem JVM-Image oben).
   # build.yml besitzt die Container-Images (JVM + nativ); native-image.yml die ROHEN
   # Release-Binaries. Nur auf Tags: der native Compile im Docker (~5-8 min) ist zu schwer fuer
-  # jeden Push — auf develop/main verifiziert `native-image.yml` (dispatch) den nativen Bau.
+  # jeden Push — auf main verifiziert `native-image.yml` (dispatch) den nativen Bau.
   # Bewusst ein zweiter native Compile (native-image.yml baut die Binaries): das haelt die beiden
   # Workflows entkoppelt; Reuse des Binaries spraeche CI-Minuten, koppelte sie aber.
   native-image:

@@ -8,20 +8,18 @@ name: Verify Homebrew Formula
 # version + sha256 to match the just-published ZIP.
 #
 # Triggers:
-#   - push on develop affecting the formula file (covers post-release bump)
-#   - pull_request targeting develop or main affecting the formula
+#   - push on main affecting the formula file (covers post-release bump)
+#   - pull_request targeting main affecting the formula
 #   - workflow_dispatch for manual verification after a release
 
 on:
   push:
     branches:
-      - develop
     paths:
       - 'packaging/homebrew/d-migrate.rb'
       - '.github/workflows/verify-homebrew-formula.yml'
   pull_request:
     branches:
-      - develop
       - main
     paths:
       - 'packaging/homebrew/d-migrate.rb'

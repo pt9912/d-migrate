@@ -63,25 +63,23 @@
 
 ## 1. Branching-Modell
 
-> **Gilt bis einschließlich v1.0.1.** Danach entfällt `develop`; Entwicklung und
-> Releases finden auf `main` statt — Begründung und Umstellungsschritte in
-> [ADR 0045](../adr/0045-ein-branch-main-statt-develop-main.md). Wer v1.0.1
-> schneidet, arbeitet den dortigen Abschnitt „Umstellung" direkt nach dem Tag ab.
+`d-migrate` arbeitet seit v1.0.1 mit **einem** Branch
+([ADR 0045](../adr/0045-ein-branch-main-statt-develop-main.md)):
 
-`d-migrate` verwendet ein einfaches `develop → main`-Modell:
+- **`main`** — Entwicklung, Integration **und** Releases. Der Default-Branch ist
+  damit zugleich das, was GitHub fuer Repo-Automatisierung liest
+  (`dependabot.yml`, `schedule:`, `workflow_dispatch`) — die Cherry-Pick-Rituale
+  des frueheren Modells entfallen.
+- **Tags** `vX.Y.Z` markieren Releases direkt auf `main`; die Release-Historie
+  liefern die Tags, nicht ein separater Branch.
+- **Versionierung** folgt [SemVer 2.0](https://semver.org/spec/v2.0.0.html);
+  zwischen Releases traegt [`build.gradle.kts`](../../build.gradle.kts) ein
+  `-SNAPSHOT`-Suffix.
 
-- **`develop`** — aktiver Entwicklungsbranch, hier landen alle Features
-- **`main`** — enthält ausschließlich Release-Stände, jeder Merge entspricht einem Release
-- **Tags** `vX.Y.Z` werden auf den Merge-Commit auf `main` gesetzt
-- **Versionierung** folgt [SemVer 2.0](https://semver.org/spec/v2.0.0.html); zwischen Releases trägt [`build.gradle.kts`](../../build.gradle.kts) ein `-SNAPSHOT`-Suffix
-
-Beispiel aus 0.1.0:
+Beispiel:
 
 ```
-develop:  ... → "Release 0.1.0" → (Bump 0.2.0-SNAPSHOT) → ...
-                      │
-                      ▼ merge
-main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
+main:  ... -> "Release X.Y.Z"  <- tag vX.Y.Z -> (Bump X.Y.(Z+1)-SNAPSHOT) -> ...
 ```
 
 ---
@@ -90,16 +88,15 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 
 | Voraussetzung                                 | Prüfung                                                                       |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
-| Sauberer Working-Tree auf `develop`           | `git status` zeigt keine Änderungen                                           |
-| `develop` ist auf dem aktuellen Stand         | `git pull --ff-only origin develop`                                           |
-| `main` ist auf dem aktuellen Stand            | `git checkout main && git pull --ff-only origin main && git checkout develop` |
+| Sauberer Working-Tree auf `main`              | `git status` zeigt keine Änderungen                                           |
+| `main` ist auf dem aktuellen Stand            | `git pull --ff-only origin main`                                              |
 | Docker verfügbar (lokaler Pre-Release-Build)  | `docker version`                                                              |
 | `gh` CLI authentifiziert                      | `gh auth status`                                                              |
 | `brew` verfügbar auf einem Verifikations-Host | `brew --version`                                                              |
 | Schreibrechte auf `main` und Tags im Remote   | —                                                                             |
 | Alle PRs für den Release sind gemerged        | GitHub-Milestone leer                                                         |
 | `HOMEBREW_TAP_GITHUB_TOKEN` nicht abgelaufen  | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — fine-grained PATs laufen ab; ein abgelaufener Token lässt den Tag-Publish mit `401` scheitern (nur der Homebrew-Tap-Push, nicht der GitHub-Release) |
-| `DOCKERHUB_TOKEN` vorhanden und nicht abgelaufen | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — Docker-Hub-PATs können ablaufen. **Fehlt** das Secret, wird der Docker-Hub-Push **still übersprungen** (grüner Build, kein Image, s. [4.4.1](#441-docker-hub-spiegel)); ist es **abgelaufen**, scheitert der Login und der Tag-Build wird rot |
+| `DOCKERHUB_TOKEN` vorhanden und nicht abgelaufen | `gh secret list --repo pt9912/d-migrate` (Update-Datum prüfen) — Docker-Hub-PATs können ablaufen. **Fehlt** das Secret, wird der Docker-Hub-Push **still übersprungen** (grüner Build, kein Image, s. [4.3.1](#431-docker-hub-spiegel)); ist es **abgelaufen**, scheitert der Login und der Tag-Build wird rot |
 
 ---
 
@@ -418,7 +415,7 @@ wird ausgeführt. Der Probelauf baut das OCI-Image und meldet sich an beiden
 Registries an, veröffentlicht aber nichts:
 
 ```bash
-gh workflow run build.yml --ref develop -f rehearse_publish=true
+gh workflow run build.yml --ref main -f rehearse_publish=true
 gh run watch "$(gh run list --workflow build.yml --event workflow_dispatch \
   --limit 1 --json databaseId --jq '.[0].databaseId')"
 ```
@@ -484,11 +481,11 @@ identifizieren. Befehle und jq-Filter: siehe
 
 ## 4. Release-Ablauf
 
-### 4.1 Version-Bump auf `develop`
+### 4.1 Version-Bump auf `main`
 
 ```bash
-git checkout develop
-git pull --ff-only origin develop
+git checkout main
+git pull --ff-only origin main
 ```
 
 Alle folgenden Dateien anpassen:
@@ -510,30 +507,18 @@ sowohl CLI als auch alle Produktiv-Konsumenten (`AbstractDdlGenerator`,
 Versions-Quelle ist [`build.gradle.kts`](../../build.gradle.kts) /
 `defaultProjectVersion`.
 
-### 4.2 Release-Commit auf `develop`
+### 4.2 Release-Commit auf `main`
 
 ```bash
 git add build.gradle.kts CHANGELOG.md README.md docs/planning/in-progress/roadmap.md
 git add docs/user/guide.md spec/cli-spec.md spec/architecture.md docs/user/releasing.md
 git commit -m "Release X.Y.Z"
-git push origin develop
+git push origin main
 ```
 
 Auf grünen CI-Build warten (`gh run watch` oder GitHub-UI).
 
-### 4.3 Merge `develop` → `main`
-
-Direkter Merge mit Merge-Commit (kein Fast-Forward, damit der Release-Punkt im
-Graph sichtbar bleibt — analog zum 0.1.0-Release):
-
-```bash
-git checkout main
-git pull --ff-only origin main
-git merge --no-ff develop -m "Merge develop into main for release X.Y.Z"
-git push origin main
-```
-
-### 4.4 Tag setzen und pushen
+### 4.3 Tag setzen und pushen
 
 ```bash
 git checkout main
@@ -553,12 +538,12 @@ git push origin vX.Y.Z
 6. Login zu `ghcr.io` mit `GITHUB_TOKEN`
 7. Push zu `ghcr.io/pt9912/d-migrate:X.Y.Z` und `ghcr.io/pt9912/d-migrate:latest`
 8. Login zu Docker Hub und derselbe Image-Push nach `pt9912/d-migrate:X.Y.Z`
-   (plus `:latest` bei Stable) — s. [4.4.1](#441-docker-hub-spiegel). Fehlt das
+   (plus `:latest` bei Stable) — s. [4.3.1](#431-docker-hub-spiegel). Fehlt das
    Secret `DOCKERHUB_TOKEN`, werden diese Schritte still übersprungen und der
    Tag-Build bleibt grün.
 9. Parallel dazu baut der Job `native-image` das **native Container-Image** und
    pusht `…:X.Y.Z-native` (+ `:native` bei Stable) nach GHCR und Docker Hub — s.
-   [4.4.3](#443-natives-container-image).
+   [4.3.3](#433-natives-container-image).
 
 Auf den grünen Tag-Build warten, **bevor** der GitHub-Release veröffentlicht
 wird:
@@ -567,7 +552,7 @@ wird:
 gh run watch
 ```
 
-#### 4.4.1 Docker-Hub-Spiegel
+#### 4.3.1 Docker-Hub-Spiegel
 
 Docker Hub ist ein **Spiegel**, keine zweite Build-Quelle: gepusht wird exakt
 dasselbe lokal gebaute Image, das auch nach GHCR geht. `ghcr.io` bleibt die
@@ -585,7 +570,7 @@ gesetzt (Fork, abgelaufenes oder rotiertes Token), überspringt der Tag-Build di
 Docker-Hub-Schritte mit einer Notice, statt rot zu werden — ein Zusatzkanal soll
 keinen Release blockieren. Kehrseite: **ein stillschweigend übersprungener Push
 fällt nicht auf**, deshalb steht der Docker-Hub-Pull fest in der
-Verifikationsliste ([4.8](#48-verifikation-des-releases)).
+Verifikationsliste ([4.7](#47-verifikation-des-releases)).
 
 Einrichtung von Grund auf — nur nötig, falls Konto, Repository oder Token neu
 aufgesetzt werden müssen:
@@ -601,7 +586,7 @@ aufgesetzt werden müssen:
 4. Optional Variable `DOCKERHUB_IMAGE`, falls das Ziel-Repository von
    `pt9912/d-migrate` abweichen soll (z. B. nach Umzug in eine Organisation).
 
-#### 4.4.2 Native-Image-Binaries
+#### 4.3.2 Native-Image-Binaries
 
 Der Tag-Push löst zusätzlich
 [`.github/workflows/native-image.yml`](../../.github/workflows/native-image.yml)
@@ -645,10 +630,10 @@ Zur Einordnung:
   finalisieren. **Windows bleibt best-effort** — `fail-fast` ist aus, ein rotes Windows-Leg bricht
   das andere nicht ab, sein fehlendes Asset ist zulässig und der Release selbst bleibt gültig.
   Für macOS gibt es kein Native-Leg mehr ([ADR 0044](../adr/0044-kein-macos-native-binary.md)). Deshalb steht die Asset-Liste in der Verifikation
-  ([4.8](#48-verifikation-des-releases)).
+  ([4.7](#47-verifikation-des-releases)).
 
 Der Workflow lässt sich auch ohne Tag starten (`workflow_dispatch`), etwa um
-das Rezept gegen `develop` zu prüfen. Solche Läufe hängen nichts an ein
+das Rezept gegen `main` zu prüfen. Solche Läufe hängen nichts an ein
 Release; ihre Binaries tragen statt der Version die Commit-Kurz-SHA und
 liegen nur als Workflow-Artefakt vor.
 
@@ -659,14 +644,14 @@ nur dann, wenn sie zählen. `os_scope: all` prüft dabei mehr als `linux`, weil
 das Zusammenführen erst mit zwei Artefakten etwas zu tun bekommt.
 
 ```bash
-gh workflow run native-image.yml --ref develop
+gh workflow run native-image.yml --ref main
 gh run watch
 ```
 
-#### 4.4.3 Natives Container-Image
+#### 4.3.3 Natives Container-Image
 
 Zusätzlich zum JVM-OCI-Image (oben) und den rohen Native-Binaries
-([4.4.2](#442-native-image-binaries)) publiziert der Tag-Build ein **natives
+([4.3.2](#432-native-image-binaries)) publiziert der Tag-Build ein **natives
 Container-Image**: dieselbe volle CLI als GraalVM-Binary, verpackt in ein
 Runtime-Image (Entrypoint = Binary, Workdir `/work`, non-root, `mod_spatialite`).
 Gebaut vom Job `native-image` in
@@ -678,13 +663,13 @@ Gebaut vom Job `native-image` in
   bewegliche `:native` (nur bei **Stable** — Prereleases fassen es nicht an,
   dieselbe Regel wie `:latest`). Docker-Hub-Spiegel
   `pt9912/d-migrate:X.Y.Z-native` unter derselben `DOCKERHUB_TOKEN`-Bedingung wie
-  das JVM-Image ([4.4.1](#441-docker-hub-spiegel)).
+  das JVM-Image ([4.3.1](#431-docker-hub-spiegel)).
 - **Architektur:** nur `linux/amd64` — wie das JVM-Image.
 - **Vor dem Push** wird das Image DB-frei gesmoked (`--version`, `--help`,
   `schema validate --source`); ein kaputtes Image blockiert den Push, nicht den
   Release.
 - **Nur auf Tags:** der native Compile im Docker (~5–8 min) läuft nicht bei jedem
-  Push; auf `develop`/`main` verifiziert `native-image.yml` (Dispatch) den Bau.
+  Push; auf `main` verifiziert `native-image.yml` (Dispatch) den Bau.
 
 Das native Image ist eine **zusätzliche** Distributionsklasse — es ersetzt weder
 das JVM-OCI-Image noch die rohen Binaries.
@@ -694,7 +679,7 @@ docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native
 docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help
 ```
 
-#### 4.4.4 SDKMAN
+#### 4.3.4 SDKMAN
 
 Mit dem Tag-Push publiziert
 [`sdkman-release.yml`](../../.github/workflows/sdkman-release.yml) die Version an
@@ -711,7 +696,7 @@ selbst herunter).
 > [ADR 0042](../adr/0042-sdkman-kein-1.0.0-gate.md).
 
 - **Artefakt:** das UNIVERSAL-JVM-Launcher-ZIP `d-migrate-X.Y.Z.zip` (`bin/d-migrate`
-  + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.5](#45-release-assets-aus-dem-grünen-tag-build-beziehen)).
+  + `lib/`; braucht Java). Es ist bereits ein Release-Asset ([4.4](#44-release-assets-aus-dem-grünen-tag-build-beziehen)).
 - **Mechanik:** offizielle Action `sdkman/sdkman-release-action` (SHA-gepinnt) für
   `POST /release`; `PUT /default` nur bei **Stable** (RCs werden released, aber nicht
   Default).
@@ -730,7 +715,7 @@ sdk install dmigrate X.Y.Z
 d-migrate --version
 ```
 
-### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
+### 4.4 Release-Assets aus dem grünen Tag-Build beziehen
 
 ```bash
 # Tag-Run anhand des Refs identifizieren (filtert Branch-/PR-Runs heraus):
@@ -753,7 +738,7 @@ Wichtig:
 - `gh release create` und `gh release upload` arbeiten nur mit
   `./release-assets/*`
 
-### 4.6 GitHub-Release erstellen
+### 4.5 GitHub-Release erstellen
 
 CHANGELOG-Inhalt für die Release-Notes extrahieren und veröffentlichen:
 
@@ -802,7 +787,7 @@ else
 fi
 ```
 
-### 4.7 Homebrew-Formula auf finale URL und SHA bringen
+### 4.6 Homebrew-Formula auf finale URL und SHA bringen
 
 Die Formula unter [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss auf das publizierte ZIP
 zeigen:
@@ -877,7 +862,7 @@ d-migrate --help
 Wenn die Formula-Änderung nicht bereits im Release-Branch vorbereitet wurde,
 anschließend als verifizierten Repo-Stand nachziehen.
 
-### 4.8 Verifikation des Releases
+### 4.7 Verifikation des Releases
 
 - [ ] GitHub-Release ist sichtbar unter `https://github.com/pt9912/d-migrate/releases/tag/vX.Y.Z`
 - [ ] GitHub-Release enthält ZIP, TAR, Fat JAR und SHA256
@@ -888,15 +873,15 @@ anschließend als verifizierten Repo-Stand nachziehen.
   ```bash
   docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z --help
   ```
-- [ ] Natives Container-Image ([4.4.3](#443-natives-container-image)):
+- [ ] Natives Container-Image ([4.3.3](#433-natives-container-image)):
       `docker pull ghcr.io/pt9912/d-migrate:X.Y.Z-native` und
       `docker run --rm ghcr.io/pt9912/d-migrate:X.Y.Z-native --help`.
-- [ ] Docker-Hub-Spiegel ([4.4.1](#441-docker-hub-spiegel)) trägt dieselbe Version:
+- [ ] Docker-Hub-Spiegel ([4.3.1](#431-docker-hub-spiegel)) trägt dieselbe Version:
       `docker pull pt9912/d-migrate:X.Y.Z` und `docker run --rm pt9912/d-migrate:X.Y.Z --help`.
       Schlägt der Pull fehl, wurde der Push still übersprungen (Secret) — Tag-Build-Log
       auf die Notice prüfen
 - [ ] Homebrew-Formula installiert und startet `d-migrate --help`
-- [ ] **`linux-x64`-Native-Asset ([4.4.2](#442-native-image-binaries)) hängt am Release** (Gate,
+- [ ] **`linux-x64`-Native-Asset ([4.3.2](#432-native-image-binaries)) hängt am Release** (Gate,
       Frage 6 = Hybrid) — **fehlt es, den Release NICHT finalisieren** (`attach-release`-Job ist rot).
       Windows ist best-effort, je mit `.sha256`:
   ```bash
@@ -920,7 +905,7 @@ anschließend als verifizierten Repo-Stand nachziehen.
   ```
 - [ ] CI ist auf `main` und auf dem Tag grün
 
-### 4.9 Vorabversionen (Release Candidates / Prereleases)
+### 4.8 Vorabversionen (Release Candidates / Prereleases)
 
 Ein Release Candidate (z. B. `1.0.0-RC1` vor `1.0.0`) durchläuft denselben Ablauf
 (§4.1–§4.6, §4.8), aber die Pipeline behandelt ihn **automatisch** als Prerelease.
@@ -935,7 +920,7 @@ Post-Release (§5) zurück auf die nächste Vorab-Entwicklungsversion, z. B.
 
 - **Kein `:latest`, in keiner Registry** — [`build.yml`](../../.github/workflows/build.yml) pusht
   nur das versionierte Tag; `:latest` bleibt auf GHCR **und** auf dem
-  [Docker-Hub-Spiegel](#441-docker-hub-spiegel) auf dem letzten **Stable**.
+  [Docker-Hub-Spiegel](#431-docker-hub-spiegel) auf dem letzten **Stable**.
 - **GitHub-Release als `--prerelease`** markiert
   ([`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) — erscheint nicht
   als „Latest release".
@@ -950,13 +935,12 @@ die Vorabversion über das versionierte GHCR-Tag bzw. den GitHub-Prerelease.
 
 ## 5. Post-Release
 
-Direkt nach dem erfolgreichen Release zurück auf `develop` und den nächsten
-Entwicklungszyklus starten:
+Direkt nach dem erfolgreichen Release den nächsten
+Entwicklungszyklus öffnen:
 
 ```bash
-git checkout develop
-git pull --ff-only origin develop
-git merge --ff-only origin/main   # main-Commits in develop nachziehen (falls nötig)
+git checkout main
+git pull --ff-only origin main
 ```
 
 Danach:
@@ -973,7 +957,7 @@ Danach:
 git add build.gradle.kts CHANGELOG.md docs/planning/in-progress/roadmap.md
 git add packaging/homebrew/d-migrate.rb
 git commit -m "Bump version to X.(Y+1).0-SNAPSHOT for next development cycle"
-git push origin develop
+git push origin main
 ```
 
 ---
@@ -1024,7 +1008,7 @@ Alternative 2 — manuell löschen, dann **je Registry einzeln**:
 `:latest` wird beim nächsten Tag-Push in beiden Registries automatisch
 überschrieben — falls der korrupte Tag der jüngste war, sollte schnell ein
 Hotfix-Tag folgen. Achtung: Ist der Docker-Hub-Push wegen eines fehlenden
-Secrets übersprungen worden ([4.4.1](#441-docker-hub-spiegel)), liegt das
+Secrets übersprungen worden ([4.3.1](#431-docker-hub-spiegel)), liegt das
 korrupte Image dort gar nicht — dann ist nur GHCR zu bereinigen.
 
 ### 6.5 Build nach Release fehlschlägt (rote CI auf `main`)
@@ -1041,7 +1025,7 @@ korrupte Image dort gar nicht — dann ist nur GHCR zu bereinigen.
 ### 6.6 `verify-homebrew`-Job eines Tags bleibt rot
 
 Ein `verify-homebrew`-Job, der auf einem bereits gepushten Tag scheitert,
-lässt sich **nicht** durch einen Workflow-Fix auf `develop`/`main`
+lässt sich **nicht** durch einen Workflow-Fix auf `main`
 retroaktiv grün machen: Ein Re-Run nutzt den Workflow-Stand **des
 Tag-Commits**, nicht den aktuellen. Da der Tag nicht verschoben werden darf
 (§6.5 Punkt 1), gilt:
@@ -1061,7 +1045,7 @@ Tag-Commits**, nicht den aktuellen. Da der Tag nicht verschoben werden darf
 Für jeden Release abhaken:
 
 **Vorbereitung**
-- [ ] `develop` und `main` auf Remote-Stand
+- [ ] `main` auf Remote-Stand
 - [ ] Working-Tree sauber
 - [ ] Alle Milestone-PRs gemerged
 - [ ] `docker build --target runtime -t d-migrate:pre-release .` grün (alle Tests + Smoke-Image; **nicht** `make docker-build`, s. §3.1)
@@ -1080,25 +1064,24 @@ Für jeden Release abhaken:
       in [`hexagon/core/build.gradle.kts`](../../hexagon/core/build.gradle.kts)
       ist intakt)
 
-**Version-Bump auf `develop`**
+**Version-Bump auf `main`**
 - [ ] [`build.gradle.kts`](../../build.gradle.kts) Version
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) Sektion + Datum
 - [ ] [`README.md`](../../README.md) Current-Status-Block
 - [ ] [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md), [`docs/user/releasing.md`](releasing.md) falls nötig angepasst
 - [ ] [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) Milestone-Status + Footer
 - [ ] Commit `Release X.Y.Z` gepusht
-- [ ] CI auf `develop` grün
+- [ ] CI auf `main` grün
 
-**Merge & Tag**
-- [ ] `develop` mit `--no-ff` in `main` gemerged und gepusht
-- [ ] Tag `vX.Y.Z` auf den Merge-Commit gesetzt und gepusht
+**Tag**
+- [ ] Tag `vX.Y.Z` auf den Release-Commit gesetzt und gepusht
 - [ ] CI für Tag grün
 - [ ] Workflow-Artefakt `release-assets` des grünen Tag-Builds verfügbar
 - [ ] Image auf `ghcr.io/pt9912/d-migrate:X.Y.Z` und `:latest` verfügbar
 - [ ] Image auf dem Docker-Hub-Spiegel `pt9912/d-migrate:X.Y.Z` verfügbar (`:latest` nur bei Stable)
 - [ ] Natives Container-Image `ghcr.io/pt9912/d-migrate:X.Y.Z-native` verfügbar (`:native` nur bei Stable), Docker-Hub-Spiegel dito
 - [ ] [`native-image.yml`](../../.github/workflows/native-image.yml) für den Tag: **Linux-Leg + `attach-release` grün** (Gate, Frage 6 = Hybrid); Windows best-effort (rotes Leg = kein Asset, Release bleibt gültig)
-- [ ] **SDKMAN** ([4.4.4](#444-sdkman)) — nur falls Candidate freigegeben + Secrets gesetzt: `sdkman-release.yml` grün, `sdk install dmigrate X.Y.Z` funktioniert. Sonst Skip (Notice im Log), Release bleibt gültig
+- [ ] **SDKMAN** ([4.3.4](#434-sdkman)) — nur falls Candidate freigegeben + Secrets gesetzt: `sdkman-release.yml` grün, `sdk install dmigrate X.Y.Z` funktioniert. Sonst Skip (Notice im Log), Release bleibt gültig
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
@@ -1109,7 +1092,7 @@ Für jeden Release abhaken:
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] Image-Smoke-Test gegen `pt9912/d-migrate:X.Y.Z` (Docker Hub) ok
 - [ ] Natives Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z-native` ok (`--help`, `schema validate --source`)
-- [ ] **Runtime-Eigenschaften am PUBLIZIERTEN Image geprüft** ([4.8](#48-verifikation-des-releases)) — non-root und `mod_spatialite`, für JVM- **und** natives Image
+- [ ] **Runtime-Eigenschaften am PUBLIZIERTEN Image geprüft** ([4.7](#47-verifikation-des-releases)) — non-root und `mod_spatialite`, für JVM- **und** natives Image
 - [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)

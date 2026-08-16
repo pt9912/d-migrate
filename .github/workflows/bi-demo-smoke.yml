@@ -16,7 +16,7 @@ name: BI-Demo Smoke (Best-Effort)
 on:
   workflow_dispatch:
   push:
-    branches: [develop, main]
+    branches: [main]
     paths:
       - 'examples/bi-demo/**'
       - 'Makefile'

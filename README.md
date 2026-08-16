@@ -523,11 +523,11 @@ Contributions are welcome! Please open an issue or a pull request on
 [GitHub](https://github.com/pt9912/d-migrate).
 
 1. Fork the repository
-2. Create a feature branch off `develop`
+2. Create a feature branch off `main`
 3. Write tests for your changes (≥ 90 % per-module Kover gate
    applies)
 4. Make sure the Docker CI gates pass (`make ci`)
-5. Submit a pull request against `develop`
+5. Submit a pull request against `main`
 
 ## License
 

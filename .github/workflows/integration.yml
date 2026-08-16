@@ -3,7 +3,7 @@ name: Integration Tests
 # Run Testcontainers-based integration tests for the JDBC drivers.
 # These need Docker (for the database containers) and are too slow for the
 # default Build & Test workflow (>5 min budget). They run on every push and PR
-# to develop/main, but in a separate job that does NOT block the main build.
+# to main, but in a separate job that does NOT block the main build.
 #
 # Activation: Tests tagged @Tag("integration") are excluded from the default
 # test task (see root build.gradle.kts) and only run when the
@@ -13,13 +13,11 @@ on:
   push:
     branches:
       - main
-      - develop
     tags:
       - "v*"
   pull_request:
     branches:
       - main
-      - develop
 
 permissions:
   contents: read

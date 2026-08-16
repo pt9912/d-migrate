@@ -15,7 +15,7 @@ name: Sample-DB Spatial Smoke (Best-Effort)
 on:
   workflow_dispatch:
   push:
-    branches: [develop, main]
+    branches: [main]
     paths:
       - 'examples/sample-db/**'
       - 'adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/data/**'

@@ -41,7 +41,7 @@ Damit ist das hier der **billige** der beiden Multi-Arch-Schritte; der teure ist
 ## Der eigentliche Knackpunkt: Registry-Naht vs. Spiegel-Garantie
 
 Der aktuelle Ablauf baut **einmal lokal** und pusht dasselbe Image zweimal. Genau daraus folgt die
-Spiegel-Zusage, die in `releasing.md` 4.4.1 steht und am RC2-Tag verifiziert wurde: GHCR und Docker
+Spiegel-Zusage, die in `releasing.md` 4.3.1 steht und am RC2-Tag verifiziert wurde: GHCR und Docker
 Hub tragen **denselben Manifest-Digest** (`sha256:c7304c16…`).
 
 Multi-Arch bricht diesen Ablauf, weil ein Multi-Plattform-Image **nicht** in den lokalen
@@ -62,7 +62,7 @@ Optionen:
 - `docker buildx imagetools inspect` zeigt einen Index mit beiden Plattformen.
 - GHCR und Docker Hub tragen weiterhin **denselben** Digest (oder die Zusage wird bewusst und
   dokumentiert aufgegeben).
-- `releasing.md` 4.4.1 und `packaging/dockerhub/overview.md` nachgezogen.
+- `releasing.md` 4.3.1 und `packaging/dockerhub/overview.md` nachgezogen.
 
 ## Abgrenzung
 

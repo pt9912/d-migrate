@@ -255,7 +255,7 @@ jobs:
 
       - name: Gate — das Linux-Native-Binary ist Pflicht (Frage 6 = Hybrid)
         # Nur das Linux-Leg ist ein 1.0.0-Release-Gate: fehlt das linux-x64-Asset, scheitert dieser Job
-        # -> der Tag-Lauf wird rot und der Operator finalisiert den Release nicht (releasing.md 4.8).
+        # -> der Tag-Lauf wird rot und der Operator finalisiert den Release nicht (releasing.md 4.7).
         # macOS/Windows bleiben best-effort: fehlende Assets dort sind zulaessig (kein Fehler hier).
         run: |
           if ls dist/*-linux-x64* >/dev/null 2>&1; then

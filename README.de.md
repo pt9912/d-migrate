@@ -538,11 +538,11 @@ Beiträge sind willkommen! Bitte öffne ein Issue oder einen Pull
 Request auf [GitHub](https://github.com/pt9912/d-migrate).
 
 1. Forke das Repository
-2. Erstelle einen Feature-Branch von `develop`
+2. Erstelle einen Feature-Branch von `main`
 3. Schreibe Tests für deine Änderungen (≥ 90 % Kover-Gate pro
    Modul gilt)
 4. Stelle sicher, dass die Docker-CI-Gates grün sind (`make ci`)
-5. Reiche einen Pull Request gegen `develop` ein
+5. Reiche einen Pull Request gegen `main` ein
 
 ## Lizenz
 

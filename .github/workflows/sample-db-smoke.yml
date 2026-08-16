@@ -16,7 +16,7 @@ name: Sample-DB Smoke (Best-Effort)
 on:
   workflow_dispatch:
   push:
-    branches: [develop, main]
+    branches: [main]
     paths:
       - 'examples/sample-db/**'
       - 'Makefile'

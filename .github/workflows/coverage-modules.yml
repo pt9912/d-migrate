@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - develop
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
-      - develop
 
 permissions:
   contents: read
