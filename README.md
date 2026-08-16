@@ -42,17 +42,17 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.0.1**
-(stable, [released 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.1)).
+d-migrate is a working production tool at version **1.0.2**
+(stable, [released 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.2)).
 
-> **New in 1.0.1:** a security and correctness patch. The shipped artefact no
-> longer contains any known-vulnerable dependency version (1.0.0 shipped one
-> critical and 43 high findings) and shrinks from 240 to 177 jars — the bulk was
-> Hadoop satellite libraries the Parquet adapter never called. The PostgreSQL
-> driver moves to 42.7.12, closing two findings in SCRAM and channel-binding
-> authentication. Fixed: importing a single member of a `--split-files` Parquet
-> bundle aborted; such members now also embed their own schema. **The CLI
-> contract is unchanged.** See `CHANGELOG.md`.
+> **New in 1.0.2:** restores the native binaries (the 1.0.1 tag could not
+> build them) and makes Parquet **import** work in the native binary for the
+> first time — it had failed in every native binary released so far; both
+> native build legs now verify a full Parquet round trip. Also carries all of
+> 1.0.1: the shipped artefact contains no known-vulnerable dependency version
+> (down from one critical and 43 high findings), the PostgreSQL driver moves
+> to 42.7.12, and single members of `--split-files` Parquet bundles import
+> correctly. **The CLI contract is unchanged.** See `CHANGELOG.md`.
 
 The current capabilities:
 
@@ -161,7 +161,7 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.0.1** (2026-08-16) — what `:latest`,
+- **Current stable** · **1.0.2** (2026-08-16) — what `:latest`,
   Homebrew and an unpinned `docker pull` give you. The container image
   runs as **non-root** (`uid 10001`), so writing into a bind mount needs
   `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and

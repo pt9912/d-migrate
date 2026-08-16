@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-16
+
+### Fixed
+
+- **Native Binaries wiederhergestellt und der Parquet-Import darin erstmals
+  funktionsfaehig.** Der v1.0.1-Tag konnte keine nativen Binaries liefern: der
+  GraalVM-Bau brach auf beiden Plattformen ab. Zwei voneinander unabhaengige
+  Ausloeser — die `commons-logging`-1.3-Umstellung aus dem beanutils-Update
+  (per striktem 1.2-Pin behoben) und Logback 1.5.34, dessen zur Bauzeit
+  geparste Konfiguration jetzt zulaessig im Image-Heap liegt.
+
+  Darueber hinaus scheiterte `data import` einer Parquet-Quelle im nativen
+  Binary **seit jeher** — in jedem bisher veroeffentlichten nativen Binary —
+  an Hadoops Sicherheitsinitialisierung. Der Lesepfad geht jetzt ueber
+  parquet-eigene Datei-Abstraktionen statt ueber Hadoops FileSystem; der
+  Import laeuft damit erstmals nativ. Beide Native-Legs pruefen das ab sofort
+  mit einem vollstaendigen Parquet-Round-Trip samt Zeilenzahl-Assertion.
+
+  JVM-Distributionen (Fat JAR, Container-Image, Homebrew) waren von alledem
+  nicht betroffen.
+
+### Changed
+
+- **Ein Branch statt `develop` → `main`**
+  ([ADR 0045](docs/adr/0045-ein-branch-main-statt-develop-main.md)):
+  Entwicklung, Integration und Releases finden auf `main` statt; `develop`
+  entfaellt. Fuer Anwender aendert sich nichts, fuer Beitragende der
+  Ziel-Branch von Pull Requests.
+
+**Hinweis zu v1.0.1:** Der Tag ist vollstaendig fuer JVM-Distributionen
+(GitHub-Release-Assets, Container-Images, Homebrew), traegt aber keine nativen
+Binaries. v1.0.2 ist der vollstaendige Stand.
+
 ## [1.0.1] - 2026-08-16
 
 ### Fixed
