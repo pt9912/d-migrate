@@ -1,6 +1,6 @@
 # Administrationshandbuch
 
-> **Software-Version:** 1.0.0 · **Stand:** 15.08.2026
+> **Software-Version:** 1.0.1 · **Stand:** 16.08.2026
 >
 > **Zielgruppe:** Personen, die d-migrate bereitstellen, konfigurieren und
 > betreiben. Aufgabenorientierte Anwender-Workflows stehen im

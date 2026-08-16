@@ -46,19 +46,17 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.0.0** (stabil, [veröffentlicht 2026-08-15](https://github.com/pt9912/d-migrate/releases/tag/v1.0.0)).
+**1.0.1** (stabil, [veröffentlicht 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.1)).
 
-> **Neu in 1.0.0:** das erste stabile Release der 1.0-Linie. Eigenständige
-> **native Binaries** (GraalVM) für `linux-x64` und `windows-x64` starten ohne
-> JVM in Millisekunden; das Container-Image wird nach **Docker Hub** gespiegelt
-> und erscheint zusätzlich als `<version>-native`-Variante. Das publizierte
-> JVM-Image läuft jetzt als **non-root** (`uid 10001`) und enthält
-> `mod_spatialite` — Schreiben in einen Bind-Mount braucht
-> `--user "$(id -u):$(id -g)"`. Zugangsdaten können aus dem Betriebssystem-
-> Schlüsselbund kommen (`credentialRef: keychain:…`), und `config show` zeigt
-> die effektive Konfiguration. Für macOS gibt es kein natives Binary — dort
-> führen Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel. Siehe
-> `CHANGELOG.md`.
+> **Neu in 1.0.1:** ein Sicherheits- und Korrektheits-Patch. Das ausgelieferte
+> Artefakt enthält keine bekannt verwundbare Abhängigkeitsversion mehr (1.0.0
+> lieferte einen kritischen und 43 hohe Befunde aus) und schrumpft von 240 auf
+> 177 Jars — der Großteil waren Hadoop-Trabanten, die der Parquet-Adapter nie
+> angesprochen hat. Der PostgreSQL-Treiber geht auf 42.7.12 und schließt zwei
+> Befunde in der SCRAM- und Channel-Binding-Authentifizierung. Behoben: Ein
+> einzelnes Mitglied eines `--split-files`-Parquet-Bundles ließ sich nicht
+> importieren; solche Mitglieder tragen ihr Schema jetzt selbst. **Am
+> CLI-Vertrag ändert sich nichts.** Siehe `CHANGELOG.md`.
 
 Die aktuellen Fähigkeiten:
 
@@ -176,7 +174,7 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.0.0** (2026-08-15) — das, was `:latest`,
+- **Aktuelles Stable** · **1.0.1** (2026-08-16) — das, was `:latest`,
   Homebrew und ein `docker pull` ohne Tag liefern. Das Container-Image
   läuft als **non-root** (`uid 10001`); Schreiben in einen Bind-Mount
   braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt es
