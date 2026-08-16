@@ -78,7 +78,17 @@ graalvmNative {
             imageName.set("d-migrate")
             mainClass.set("dev.dmigrate.cli.MainKt")
             buildArgs.add("--no-fallback")
-            buildArgs.add("--initialize-at-build-time=ch.qos.logback,org.slf4j")
+            // `org.xml.sax.helpers` musste mit Logback 1.5.34 dazu: Logback wird hier
+            // zur Bauzeit initialisiert und parst dabei seine XML-Konfiguration
+            // (Joran/SAX); seit 1.5.3x bleiben die geparsten SAX-Ereignisse als
+            // "safe fallback"-Schnappschuss erreichbar und liegen damit im
+            // Image-Heap. Die Klassen des Pakets (LocatorImpl, AttributesImpl, ...)
+            // sind reine Datenhalter und fuer Bauzeit-Initialisierung unbedenklich;
+            // einzelne Klassen freizugeben verschiebt den Fehler nur zur naechsten.
+            // Zweiter Teil desselben Befunds: der commons-logging-1.2-Pin in
+            // formats-parquet/build.gradle.kts. Beide zusammen behoben den
+            // v1.0.1-Tag-Ausfall beider Native-Legs.
+            buildArgs.add("--initialize-at-build-time=ch.qos.logback,org.slf4j,org.xml.sax.helpers")
             // i18n-Bundles der CLI (MessageResolver -> ResourceBundle.getBundle("messages.messages")).
             // Ohne diese Registrierung stirbt JEDES Subkommando in Phase F.0 an
             // MissingResourceException, noch im Clikt-Dispatch — der Blocker maskiert alle weiteren.

@@ -160,7 +160,24 @@ dependencies {
         // zstd-jni sind weiter unten ausgeschlossen). Also heben statt entfernen.
         // Ohne diese beiden Zeilen zieht die transitive Aufloesung wieder die
         // verwundbaren Staende.
-        implementation("commons-beanutils:commons-beanutils") {
+        // JCL strikt auf 1.2: beanutils 1.11.0 zieht commons-logging 1.3.x, und
+        // dessen Rewrite delegiert bei vorhandenem SLF4J direkt dorthin. Beim
+        // Native-Image-Bau sind org.slf4j/ch.qos.logback bauzeit-initialisiert —
+        // ueber die neue Bruecke lief damit die komplette Logback-Konfiguration
+        // (Joran/SAX) zur BAUZEIT, und die geparsten SAX-Ereignisse landeten im
+        // Image-Heap: "object of type org.xml.sax.helpers.LocatorImpl was found
+        // in the image heap". Genau daran scheiterte der v1.0.1-Tag (beide
+        // Native-Legs). Per Bisect auf diese eine Abhaengigkeit eingegrenzt;
+        // die SAX-Klassen freizugeben verschiebt den Fehler nur (LocatorImpl ->
+        // AttributesImpl). 1.2 war bis zum beanutils-Bump der gelebte Zustand.
+        implementation("commons-logging:commons-logging") {
+            version { strictly("1.2") }
+            because(
+                "JCL 1.3-SLF4J-Bruecke zieht Logbacks XML-Parse in den " +
+                    "Native-Image-Bau (SAX-Objekte im Image-Heap); 1.2 delegiert nicht.",
+            )
+        }
+                implementation("commons-beanutils:commons-beanutils") {
             version { require("1.11.0") }
             because("CVE-2025-48734 — hadoop-common 3.4.1 loest sonst auf 1.9.4 auf.")
         }
