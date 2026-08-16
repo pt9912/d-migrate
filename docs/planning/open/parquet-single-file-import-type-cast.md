@@ -72,6 +72,35 @@ Die Kette ist vollständig belegt:
 Schritt, der ihn ersetzen sollte, nie kam. Der Fehler tritt dadurch als roher
 Bibliotheks-Cast auf statt als Diagnose.
 
+## Testlage — warum es ausgeliefert wurde
+
+| Fall | Abdeckung |
+| --- | --- |
+| Einzeldatei -> Einzeldatei | ja (`ParquetSingleFileRoundTripTest`, `DataParquetRoundTripE2EPostgresTest`) |
+| Bundle -> Verzeichnis | ja (e2e „S7e Bundle-Roundtrip" gegen echtes PostgreSQL) |
+| **Bundle-Mitglied -> einzeln** | **keine** |
+
+Zwei Punkte wiegen schwerer als die bloße Lücke:
+
+1. **Kein Test liest Zeilen durch ein `MANIFEST_FALLBACK`-Schema.** Die Suche liefert
+   null Treffer. Der Fallback wird ausschließlich an der Preflight-Grenze geprüft —
+   also genau vor der Stelle, an der er bricht.
+2. **Der eine Test, der ihn anfasst, schreibt den Defekt fest.**
+   [`ParquetSingleFileRoundTripTest`](../../../adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/ParquetSingleFileRoundTripTest.kt)
+   legt eine Datei mit `id` als `NeutralType.Integer` an und behauptet danach:
+
+   ```kotlin
+   phase1.schema.columns.all { it.neutralType is NeutralType.Text } shouldBe true
+   ```
+
+   Das ist grün, weil es den **Platzhalter** beschreibt statt des Verhaltens. Wer S6
+   gebaut hätte, wäre über einen roten Test gestolpert, der die Krücke einfordert.
+
+**Folge für den Fix:** Ein Repro-Test für den Bundle-Mitglied-Fall gehört dazu, und
+der bestehende Fallback-Test ist umzuschreiben — von „alle Spalten sind Text" zu
+„die Typen entsprechen dem Footer" (Weg 1) bzw. „der Aufruf wird verständlich
+abgelehnt" (Weg 3).
+
 ## Wege
 
 1. **Typen aus dem Footer ableiten.** Die Parquet-Datei trägt ihr physisches und
