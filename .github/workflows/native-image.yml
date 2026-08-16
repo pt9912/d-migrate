@@ -258,7 +258,11 @@ jobs:
             --source "$S/rows.json" --table probe_items
           "${BIN}" data export --source "${A_URL}" --format parquet \
             --tables probe_items -o "$S/bundle" --split-files
-          out=$("${BIN}" data import --target "${B_URL}" --source "$S/bundle")
+          # 2>&1: die Fortschritts- und Ergebniszeilen des Imports gehen nach
+          # stderr — ohne die Umleitung ist die Capture leer und die Assertion
+          # faellt, obwohl der Import laeuft (so geschehen am v1.0.2-Tag: beide
+          # Legs importierten korrekt, die Pruefung sah nichts davon).
+          out=$("${BIN}" data import --target "${B_URL}" --source "$S/bundle" 2>&1)
           echo "${out}"
           echo "${out}" | grep -q "3 inserted" \
             || { echo "::error::native parquet import did not insert 3 rows"; exit 1; }
