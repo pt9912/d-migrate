@@ -412,7 +412,7 @@ ENTRYPOINT ["python3", "/usr/local/bin/kover-modules-summary.py", "/reports"]
 
 # ---- Stage 7: runtime ------------------------------------------------------
 # Das publizierte JVM-Image (ADR 0041): Ziel von `make docker-oci-build`.
-FROM eclipse-temurin:21-jre-noble AS runtime
+FROM eclipse-temurin:24-jre-noble AS runtime
 
 
 LABEL org.opencontainers.image.title="d-migrate" \
