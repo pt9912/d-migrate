@@ -1862,6 +1862,7 @@ database:
     pg:     "postgresql://user:${PG_PW}@host:5432/db"   # Aliase: postgres, pg
     my:     "mysql://user:${MY_PW}@host:3306/db"         # Aliase: maria, mariadb
     lokal:  "sqlite:///pfad/zur/datei.db"                # oder sqlite::memory:
+    ms:     "mssql://user:${MS_PW}@host:1433/db"         # Alias: sqlserver; aktuell nur schema reverse
 ```
 
 Die vollständige Liste der Parameter (SSL, Timeouts, Zeichensatz, Port-Defaults)

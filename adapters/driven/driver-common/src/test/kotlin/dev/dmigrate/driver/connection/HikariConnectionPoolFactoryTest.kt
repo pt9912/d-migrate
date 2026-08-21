@@ -220,6 +220,12 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         ) shouldBe "PRAGMA busy_timeout = 30000"
     }
 
+    test("connectionInitSqlFor builds MSSQL LOCK_TIMEOUT SQL") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.MSSQL, 30_000,
+        ) shouldBe "SET LOCK_TIMEOUT 30000"
+    }
+
     test("connectionInitSqlFor honors a custom positive timeout") {
         HikariConnectionPoolFactory.connectionInitSqlFor(
             DatabaseDialect.POSTGRESQL, 5_000,

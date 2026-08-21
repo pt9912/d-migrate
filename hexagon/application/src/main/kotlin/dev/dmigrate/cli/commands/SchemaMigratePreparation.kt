@@ -92,6 +92,11 @@ internal class SchemaMigratePreparation(
         val effectiveDialect = resolveDialect(request, targetResolved)
             ?: return SchemaMigratePreparationResult.ExitEarly(2)
 
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.SCHEMA_MIGRATE, effectiveDialect)?.let {
+            printError(it, request.source)
+            return SchemaMigratePreparationResult.ExitEarly(2)
+        }
+
         // Atomic-Preserve follow-up (Finding #4, 2026-06-01): mirror
         // `schema generate`'s dialect-context check. A
         // `--mysql-named-sequences` set against a non-MySQL target (or

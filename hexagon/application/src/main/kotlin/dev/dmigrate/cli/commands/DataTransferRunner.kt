@@ -110,8 +110,21 @@ class DataTransferRunner(
         }
 
         try {
+            refuseGatedDialect(connections)?.let { return it }
             return executeWithConnections(request, connections, cancellationToken)
         } finally { connections.close() }
+    }
+
+    private fun refuseGatedDialect(connections: TransferConnections): Int? {
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, connections.source.config.dialect)?.let {
+            userFacingPrintError(it, connections.source.ref)
+            return 2
+        }
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, connections.target.config.dialect)?.let {
+            userFacingPrintError(it, connections.target.ref)
+            return 2
+        }
+        return null
     }
 
     private fun executeWithConnections(

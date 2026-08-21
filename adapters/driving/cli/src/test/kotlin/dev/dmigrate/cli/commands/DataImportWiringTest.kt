@@ -193,7 +193,9 @@ class DataImportWiringTest : FunSpec({
 
             bundle.targetResolver("sqlite://import.db", null) shouldBe "sqlite://import.db"
             bundle.urlParser("sqlite://import.db").dialect shouldBe DatabaseDialect.SQLITE
-            DatabaseDialect.values().forEach { dialect ->
+            // MSSQL fehlt bewusst: kein DataWriter, data import weist mssql an
+            // der Kommando-Grenze ab (DialectCommandGate, ADR 0047).
+            listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
                 bundle.writerLookup(dialect).dialect shouldBe dialect
             }
             bundle.schemaCodec::class.simpleName shouldBe "YamlSchemaCodec"

@@ -342,6 +342,9 @@ object SequencePreserveStage {
         DatabaseDialect.POSTGRESQL -> RenameProjectionDialect.POSTGRESQL
         DatabaseDialect.MYSQL -> RenameProjectionDialect.MYSQL
         DatabaseDialect.SQLITE -> RenameProjectionDialect.SQLITE
+        DatabaseDialect.MSSQL -> error(
+            "unreachable: DialectCommandGate rejects mssql for schema migrate (ADR 0047)",
+        )
     }
 
     // ── Skip-path helpers ──────────────────────────────────────────────

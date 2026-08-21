@@ -36,7 +36,9 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
     }
 
     test("dispatcher reuses the same executor instance across calls (stateless reuse contract)") {
-        DatabaseDialect.values().forEach { dialect ->
+        // MSSQL fehlt bewusst: kein Executor, der Migrate-Pfad weist mssql an
+        // der Kommando-Grenze ab (DialectCommandGate, ADR 0047) — siehe Test unten.
+        listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
             val first = AtomicSequencePreserveDispatcher.executorFor(dialect)
             val second = AtomicSequencePreserveDispatcher.executorFor(dialect)
             // Identity, not equality — the dispatcher caches one
@@ -44,5 +46,12 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
             // per-request state surprises in future executors.
             (first === second) shouldBe true
         }
+    }
+
+    test("mssql asserts the command-boundary invariant instead of dispatching") {
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+            AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.MSSQL)
+        }
+        ex.message!!.contains("DialectCommandGate") shouldBe true
     }
 })

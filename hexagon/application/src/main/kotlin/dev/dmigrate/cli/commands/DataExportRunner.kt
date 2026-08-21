@@ -139,6 +139,10 @@ class DataExportRunner(
     fun execute(request: DataExportRequest): Int {
         validateRequest(request)?.let { return it }
         val connectionConfig = resolveConnection(request) ?: return 7
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_EXPORT, connectionConfig.dialect)?.let {
+            userFacingStderr("Error: $it")
+            return 2
+        }
         val charset = resolveCharset(request) ?: return 2
         val pool = connect(connectionConfig) ?: return 4
 

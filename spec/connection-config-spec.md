@@ -31,7 +31,7 @@ sqlite::memory:
 | `postgresql`, `postgres`, `pg` | `postgresql` | PostgreSQL |
 | `mysql`, `maria`, `mariadb` | `mysql` | MySQL / MariaDB |
 | `sqlite`, `sqlite3` | `sqlite` | SQLite |
-| `mssql`, `sqlserver` | `mssql` | MS SQL Server (geplant) |
+| `mssql`, `sqlserver` | `mssql` | MS SQL Server |
 | `oracle`, `ora` | `oracle` | Oracle (geplant) |
 
 Aliase werden beim Parsen sofort auf den kanonischen Wert normalisiert.
@@ -96,7 +96,30 @@ SQLite-URLs mit `foreign_keys=true` als Default, weil d-migrate auf referenziell
 
 **Read-only-Öffnung**: Reine Lese-Operationen (`data profile`, `data export`, die Quelle von `data transfer`) öffnen die SQLite-Quelle mit `SQLITE_OPEN_READONLY` über die URI-Form `file:<db>?mode=ro`, bewusst **ohne** `journal_mode=wal` (WAL braucht Schreibrecht). So sind auch nicht-schreibbare Quellen les-/profilierbar, ohne `-wal`/`-shm`-Nebendateien anzulegen; `:memory:` bleibt schreibbar/ephemer und ignoriert das Flag. Gesteuert über `--read-only`/`--no-read-only` (Default an), siehe [CLI-Spezifikation](./cli-spec.md).
 
-### 1.6 Timeout-Einheiten
+### 1.6 MS SQL Server
+
+```
+mssql://[user[:password]@]host[:port]/database[?params]
+```
+
+| Parameter | Default | Beschreibung |
+|---|---|---|
+| Port | `1433` | TCP-Port |
+| `encrypt` | Treiber-Default (`true` ab mssql-jdbc 10) | Transportverschlüsselung (`true`, `false`, `strict`) |
+| `trustServerCertificate` | `false` | Serverzertifikat ohne Validierung akzeptieren |
+| `applicationName` | `d-migrate` | Anwendungsname in der Server-Session |
+
+`sqlserver://` ist als Schema-Alias zulässig. Die SSL-Parameter (`encrypt`,
+`trustServerCertificate`) werden beim Parsen in das neutrale SSL-Modell
+übersetzt und ausschließlich aus diesem wieder emittiert;
+`hostNameInCertificate` wird unverändert an den Treiber durchgereicht.
+
+**JDBC-Mapping**: `mssql://user:pass@host:1433/db` →
+`jdbc:sqlserver://host:1433;databaseName=db;applicationName=d-migrate` —
+Properties sind Semikolon-getrennt (mssql-jdbc-Format), Credentials laufen
+über die Pool-Konfiguration, nicht über die URL.
+
+### 1.7 Timeout-Einheiten
 
 Die Timeout-Parameter in Connection-URLs verwenden die **native JDBC-Konvention** des jeweiligen Treibers. Diese ist nicht einheitlich:
 
@@ -108,7 +131,7 @@ Die Timeout-Parameter in Connection-URLs verwenden die **native JDBC-Konvention*
 
 Im Gegensatz dazu verwenden alle Konfigurationswerte in `.d-migrate.yaml` (§3.2) konsistent **Millisekunden** (Suffix `_ms`). d-migrate konvertiert automatisch zwischen den Einheiten.
 
-### 1.7 Sonderzeichen in Passwörtern
+### 1.8 Sonderzeichen in Passwörtern
 
 Passwörter mit Sonderzeichen müssen URL-encoded werden:
 
@@ -159,7 +182,7 @@ Für SQLite: Pool-Size auf `1` (SQLite unterstützt keine parallelen Schreibzugr
 
 | Fehler | Meldung | Hinweis |
 |---|---|---|
-| Unbekannter Dialekt | `Unknown database dialect 'xyz'` | `Supported: postgresql, mysql, sqlite` |
+| Unbekannter Dialekt | `Unknown database dialect 'xyz'` | `Supported: postgresql, mysql, sqlite, mssql` |
 | Verbindung verweigert | `Connection refused: host:port` | `Is the database running? Check host and port.` |
 | Authentifizierung | `Authentication failed for user 'x'` | `Check credentials or use D_MIGRATE_DB_PASSWORD` |
 | Datenbank existiert nicht | `Database 'x' does not exist` | `Create it first or check the database name.` |

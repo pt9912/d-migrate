@@ -224,7 +224,9 @@ class SchemaGenerateWiringTest : FunSpec({
             val result = DdlResult(listOf(DdlStatement("CREATE TABLE generated (id INT);")))
 
             schema.name shouldBe "Default Generate"
-            DatabaseDialect.values().forEach { dialect ->
+            // MSSQL fehlt bewusst: kein DdlGenerator, schema generate weist
+            // mssql an der Kommando-Grenze ab (DialectCommandGate, ADR 0047).
+            listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
                 bundle.generatorLookup(dialect).dialect shouldBe dialect
                 bundle.preGenerationValidatorLookup(dialect).validate(schema, DdlGenerationOptions()).isEmpty()
                     .shouldBeTrue()

@@ -90,6 +90,11 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         DatabaseDialect.MYSQL -> mysqlRules
         DatabaseDialect.SQLITE -> sqliteRules
         DatabaseDialect.POSTGRESQL -> postgresRules
+        // Kein T-SQL-Umschreibregelwerk: Bodies passieren unveraendert und
+        // Cross-Dialekt-Funktionen werden via W111/Portabilitaet markiert;
+        // Regeln folgen mit der Generate-Richtung
+        // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 2).
+        DatabaseDialect.MSSQL -> emptyList()
     }
 
     private val mysqlRules: List<ViewQueryRule> = listOf(
@@ -215,7 +220,9 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
 
     private fun knownFunctions(): Set<String> = when (targetDialect) {
         DatabaseDialect.MYSQL, DatabaseDialect.POSTGRESQL -> allKnown + mysqlPostgresPortableFunctions
-        DatabaseDialect.SQLITE -> allKnown
+        // Konservativ wie SQLite: nur die Grundmenge, bis ein T-SQL-Verdict
+        // die portablen Funktionen belegt.
+        DatabaseDialect.SQLITE, DatabaseDialect.MSSQL -> allKnown
     }
 
     private fun detectUnknownFunctions(tokens: List<ViewQueryToken>): List<String> {

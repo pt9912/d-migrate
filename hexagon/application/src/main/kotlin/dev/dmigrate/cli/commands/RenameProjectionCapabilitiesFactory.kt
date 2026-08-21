@@ -17,6 +17,11 @@ internal object RenameProjectionCapabilitiesFactory {
         DatabaseDialect.POSTGRESQL -> RenameProjectionDialect.POSTGRESQL
         DatabaseDialect.MYSQL -> RenameProjectionDialect.MYSQL
         DatabaseDialect.SQLITE -> RenameProjectionDialect.SQLITE
+        // Kein Spiegel-Wert in RenameProjectionDialect, solange der
+        // Migrate-Pfad mssql an der Kommando-Grenze abweist (ADR 0047).
+        DatabaseDialect.MSSQL -> error(
+            "unreachable: DialectCommandGate rejects mssql for schema migrate (ADR 0047)",
+        )
     }
 
     /**

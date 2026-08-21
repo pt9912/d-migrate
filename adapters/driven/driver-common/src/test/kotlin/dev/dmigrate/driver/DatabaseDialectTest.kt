@@ -6,11 +6,12 @@ import io.kotest.matchers.shouldBe
 
 class DatabaseDialectTest : FunSpec({
 
-    test("enum exposes exactly POSTGRESQL, MYSQL, SQLITE") {
+    test("enum exposes exactly POSTGRESQL, MYSQL, SQLITE, MSSQL") {
         DatabaseDialect.entries.toSet() shouldBe setOf(
             DatabaseDialect.POSTGRESQL,
             DatabaseDialect.MYSQL,
             DatabaseDialect.SQLITE,
+            DatabaseDialect.MSSQL,
         )
     }
 
@@ -50,6 +51,16 @@ class DatabaseDialectTest : FunSpec({
 
     test("fromString resolves alias sqlite3") {
         DatabaseDialect.fromString("sqlite3") shouldBe DatabaseDialect.SQLITE
+    }
+
+    // ─── MSSQL aliases ───────────────────────────────────────────
+
+    test("fromString resolves canonical mssql") {
+        DatabaseDialect.fromString("mssql") shouldBe DatabaseDialect.MSSQL
+    }
+
+    test("fromString resolves alias sqlserver") {
+        DatabaseDialect.fromString("sqlserver") shouldBe DatabaseDialect.MSSQL
     }
 
     // ─── Case-insensitivity ──────────────────────────────────────

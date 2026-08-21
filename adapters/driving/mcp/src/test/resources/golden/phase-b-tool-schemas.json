@@ -1343,7 +1343,8 @@
           "enum": [
             "POSTGRESQL",
             "MYSQL",
-            "SQLITE"
+            "SQLITE",
+            "MSSQL"
           ]
         },
         "executionOptions": {
@@ -1490,7 +1491,8 @@
           "enum": [
             "POSTGRESQL",
             "MYSQL",
-            "SQLITE"
+            "SQLITE",
+            "MSSQL"
           ]
         },
         "rules": {
@@ -1986,7 +1988,8 @@
           "enum": [
             "POSTGRESQL",
             "MYSQL",
-            "SQLITE"
+            "SQLITE",
+            "MSSQL"
           ]
         },
         "spatialProfile": {
@@ -2555,7 +2558,8 @@
           "enum": [
             "POSTGRESQL",
             "MYSQL",
-            "SQLITE"
+            "SQLITE",
+            "MSSQL"
           ]
         },
         "providerId": {

@@ -90,9 +90,20 @@ class SequenceCapabilityTest : FunSpec({
         // of getting the atomic path).
         DatabaseDialect.values().forEach { dialect ->
             val capability = SequenceCapabilityDefaults.forDialect(dialect)
-            capability.supportsAtomicPreserve shouldBe true
-            capability.supportsAtomicPreserveAllInPlan shouldBe true
-            capability.transactionalProtectedSequenceOperations shouldBe atomicPreserveAllowlist
+            if (dialect == DatabaseDialect.MSSQL) {
+                // Bewusste Ausnahme statt stillem Durchrutschen: fuer MSSQL
+                // existiert noch kein Sequenz-Renderer/-Executor — die
+                // Capability-Defaults spiegeln Renderer-Realitaet
+                // (docs/planning/in-progress/mssql-dialect-scoping.md).
+                capability.supportsAtomicPreserve shouldBe false
+                capability.supportsAtomicPreserveAllInPlan shouldBe false
+                capability.transactionalProtectedSequenceOperations shouldBe
+                    emptySet<ProtectedOperationId>()
+            } else {
+                capability.supportsAtomicPreserve shouldBe true
+                capability.supportsAtomicPreserveAllInPlan shouldBe true
+                capability.transactionalProtectedSequenceOperations shouldBe atomicPreserveAllowlist
+            }
         }
     }
 })

@@ -71,6 +71,7 @@ Permanent reference tokens:
 | `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.IndexProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
 | `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.PrimaryKeyProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
 | `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.TableRef` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
+| `:adapters:driven:driver-mssql` | `classes` | `dev.dmigrate.driver.mssql.MssqlDriver` | `refactor-plan: docs/planning/next/adapter-coverage-uplift.md` | Driver composition shell; covered through integration paths. |
 | `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDataReader` | `refactor-plan: docs/planning/next/adapter-coverage-uplift.md` | Live JDBC adapter; covered through integration paths. |
 | `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlAtomicSequencePreserveExecutor*` | `refactor-plan: docs/planning/next/adapter-coverage-uplift.md` | Atomic-preserve executor: I/O-bound `SELECT FOR UPDATE` + session-timeout paths covered by `:test:integration-mysql` (root-Kover-aggregated per E.3); pure helpers (classify/ceilDiv) keep unit tests. |
 | `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDriver` | `refactor-plan: docs/planning/next/adapter-coverage-uplift.md` | Driver composition shell; covered through integration paths. |

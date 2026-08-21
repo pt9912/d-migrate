@@ -221,4 +221,24 @@ class ConnectionUrlParserTest : FunSpec({
         val cfg = ConnectionUrlParser.parse("postgresql://admin@localhost/mydb")
         cfg.toString().contains("password=null") shouldBe true
     }
+
+    // ─── MSSQL ───────────────────────────────────────────────────
+
+    test("mssql full URL parses on the generic path incl. ssl extraction") {
+        val cfg = ConnectionUrlParser.parse(
+            "mssql://sa:pw@db.example.com:1433/shop" +
+                "?encrypt=true&trustServerCertificate=true&applicationName=x",
+        )
+        cfg.dialect shouldBe DatabaseDialect.MSSQL
+        cfg.host shouldBe "db.example.com"
+        cfg.port shouldBe 1433
+        cfg.database shouldBe "shop"
+        cfg.user shouldBe "sa"
+        cfg.ssl.mode shouldBe SslMode.REQUIRE
+        cfg.params shouldBe mapOf("applicationName" to "x")
+    }
+
+    test("sqlserver alias is normalized to MSSQL") {
+        ConnectionUrlParser.parse("sqlserver://h/db").dialect shouldBe DatabaseDialect.MSSQL
+    }
 })

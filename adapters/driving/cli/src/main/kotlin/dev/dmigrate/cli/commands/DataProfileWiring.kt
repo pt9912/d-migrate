@@ -98,6 +98,9 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
             SqliteProfilingDataAdapter(),
             SqliteLogicalTypeResolver(),
         )
+        DatabaseDialect.MSSQL -> error(
+            "unreachable: DialectCommandGate rejects mssql for data profile (ADR 0047)",
+        )
     }
 }
 

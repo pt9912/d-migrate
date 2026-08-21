@@ -27,7 +27,10 @@ class RenameProjectionCapabilitiesFactoryTest : FunSpec({
 
     test("capabilitiesFor returns FILE_ONLY regardless of dialect or request shape (T1 default)") {
         val request = SchemaMigrateRequest(source = "src.yaml", target = "tgt.yaml")
-        for (dialect in DatabaseDialect.values()) {
+        // MSSQL fehlt bewusst: schema migrate weist mssql an der
+        // Kommando-Grenze ab (DialectCommandGate, ADR 0047), die Projektion
+        // ist unerreichbar — siehe eigener Test unten.
+        for (dialect in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE)) {
             val capabilities = RenameProjectionCapabilitiesFactory.capabilitiesFor(request, dialect)
             capabilities.source shouldBe RenameCapabilitySource.FILE_ONLY
             capabilities.sqliteVersion shouldBe null
@@ -35,5 +38,13 @@ class RenameProjectionCapabilitiesFactoryTest : FunSpec({
             capabilities.mysqlServerFamily shouldBe null
             capabilities.mysqlVersion shouldBe null
         }
+    }
+
+    test("mssql asserts the command-boundary invariant instead of projecting") {
+        val request = SchemaMigrateRequest(source = "src.yaml", target = "tgt.yaml")
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+            RenameProjectionCapabilitiesFactory.capabilitiesFor(request, DatabaseDialect.MSSQL)
+        }
+        ex.message!!.contains("DialectCommandGate") shouldBe true
     }
 })

@@ -43,10 +43,20 @@ object RoutineCapabilityDefaults {
         procedure = RoutineKindCapability(enabled = false, minServerVersion = null),
     )
 
+    // Konservativ wie Oracle MySQL: Drop+Create-Fallback ist fuer T-SQL immer
+    // gueltig; ob der Renderer `CREATE OR ALTER` (2016 SP1+) nutzt, entscheidet
+    // der Routinen-Slice (docs/planning/in-progress/mssql-dialect-scoping.md,
+    // Slice 9).
+    private val Mssql = EffectiveRoutineCapability.Valid(
+        function = RoutineKindCapability(enabled = false, minServerVersion = null),
+        procedure = RoutineKindCapability(enabled = false, minServerVersion = null),
+    )
+
     fun forDialect(dialect: DatabaseDialect): EffectiveRoutineCapability.Valid = when (dialect) {
         DatabaseDialect.POSTGRESQL -> PostgreSQL
         DatabaseDialect.MYSQL -> OracleMySQL
         DatabaseDialect.SQLITE -> SQLite
+        DatabaseDialect.MSSQL -> Mssql
     }
 
     fun forMysqlServerVersion(version: MysqlServerVersion?): EffectiveRoutineCapability.Valid =

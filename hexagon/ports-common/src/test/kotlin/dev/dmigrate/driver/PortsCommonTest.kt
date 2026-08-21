@@ -11,20 +11,22 @@ class PortsCommonTest : FunSpec({
 
     // ── DatabaseDialect enum ──────────────────────────────────────────
 
-    test("DatabaseDialect has three values") {
-        DatabaseDialect.entries.map { it.name } shouldBe listOf("POSTGRESQL", "MYSQL", "SQLITE")
+    test("DatabaseDialect has four values") {
+        DatabaseDialect.entries.map { it.name } shouldBe listOf("POSTGRESQL", "MYSQL", "SQLITE", "MSSQL")
     }
 
     test("DatabaseDialect valueOf round-trips") {
         DatabaseDialect.valueOf("POSTGRESQL") shouldBe DatabaseDialect.POSTGRESQL
         DatabaseDialect.valueOf("MYSQL") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.valueOf("SQLITE") shouldBe DatabaseDialect.SQLITE
+        DatabaseDialect.valueOf("MSSQL") shouldBe DatabaseDialect.MSSQL
     }
 
     test("DatabaseDialect.fromString recognises canonical names") {
         DatabaseDialect.fromString("postgresql") shouldBe DatabaseDialect.POSTGRESQL
         DatabaseDialect.fromString("mysql") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.fromString("sqlite") shouldBe DatabaseDialect.SQLITE
+        DatabaseDialect.fromString("mssql") shouldBe DatabaseDialect.MSSQL
     }
 
     test("DatabaseDialect.fromString recognises aliases") {
@@ -33,12 +35,14 @@ class PortsCommonTest : FunSpec({
         DatabaseDialect.fromString("maria") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.fromString("mariadb") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.fromString("sqlite3") shouldBe DatabaseDialect.SQLITE
+        DatabaseDialect.fromString("sqlserver") shouldBe DatabaseDialect.MSSQL
     }
 
     test("DatabaseDialect.fromString is case-insensitive") {
         DatabaseDialect.fromString("PostgreSQL") shouldBe DatabaseDialect.POSTGRESQL
         DatabaseDialect.fromString("MYSQL") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.fromString("SQLite3") shouldBe DatabaseDialect.SQLITE
+        DatabaseDialect.fromString("SqlServer") shouldBe DatabaseDialect.MSSQL
     }
 
     test("DatabaseDialect.fromString throws on unknown dialect") {
@@ -83,6 +87,20 @@ class PortsCommonTest : FunSpec({
         caps.supportsSequences shouldBe false
         caps.supportsCustomTypes shouldBe false
         caps.supportsPartitioning shouldBe false
+    }
+
+    test("DialectCapabilities.forDialect returns correct capabilities for MSSQL") {
+        val caps = DialectCapabilities.forDialect(DatabaseDialect.MSSQL)
+        caps.supportsViews shouldBe true
+        caps.supportsFunctions shouldBe true
+        caps.supportsProcedures shouldBe true
+        caps.supportsTriggers shouldBe true
+        caps.supportsSequences shouldBe true
+        caps.supportsCustomTypes shouldBe false
+        caps.supportsPartitioning shouldBe true
+        caps.supportsDisableFkChecks shouldBe false
+        caps.supportsSchemaParameter shouldBe true
+        caps.partitionChildrenAreTables shouldBe false
     }
 
     test("DialectCapabilities data class equality") {

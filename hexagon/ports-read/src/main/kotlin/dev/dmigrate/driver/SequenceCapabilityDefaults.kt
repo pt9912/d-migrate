@@ -160,9 +160,28 @@ object SequenceCapabilityDefaults {
         ),
     )
 
+    // Die Defaults spiegeln Renderer-Realitaet (KDoc oben): fuer MSSQL existiert
+    // noch kein Sequenz-Renderer, obwohl SQL Server native Sequenzen hat —
+    // die Flags flippen mit dem Generate-/Diff-Ausbau
+    // (docs/planning/in-progress/mssql-dialect-scoping.md, Slices 2 und 5).
+    private val Mssql = SequenceCapability(
+        supportsNamedSequences = false,
+        supportsStart = false,
+        supportsMinMaxValue = false,
+        supportsCycle = false,
+        supportsCache = false,
+        emitsCachePreallocationWarning = false,
+        supportsCurrentValuePreserve = false,
+        supportsOwnedBy = false,
+        supportsAtomicPreserve = false,
+        supportsAtomicPreserveAllInPlan = false,
+        transactionalProtectedSequenceOperations = emptySet(),
+    )
+
     fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {
         DatabaseDialect.POSTGRESQL -> PostgreSQL
         DatabaseDialect.MYSQL -> MySQL
         DatabaseDialect.SQLITE -> SQLite
+        DatabaseDialect.MSSQL -> Mssql
     }
 }

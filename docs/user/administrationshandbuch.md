@@ -182,7 +182,7 @@ Verhalten von `pipeline.parallelism`:
 
 `dialect://user:password@host:port/db?params`. Unterstützte Dialekte/Aliase und
 dialektspezifische Parameter:
-[`connection-config-spec.md`](../../spec/connection-config-spec.md) §1.1–§1.5.
+[`connection-config-spec.md`](../../spec/connection-config-spec.md) Abschnitte 1.1–1.6.
 
 ### 4.2 Verbindungsaufbau
 

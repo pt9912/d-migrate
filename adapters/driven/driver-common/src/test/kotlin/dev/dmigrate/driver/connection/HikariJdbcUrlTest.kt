@@ -46,6 +46,43 @@ class HikariJdbcUrlTest : FunSpec({
         params = params,
     )
 
+    fun mssqlConfig(
+        params: Map<String, String> = emptyMap(),
+        ssl: SslSettings = SslSettings(),
+    ) = ConnectionConfig(
+        dialect = DatabaseDialect.MSSQL,
+        host = "mssql.example.com",
+        port = 1433,
+        database = "shop",
+        user = "sa",
+        password = "secret",
+        params = params,
+        ssl = ssl,
+    )
+
+    // ─── MSSQL (Fallback-Builder, Semikolon-Properties) ─────────
+
+    test("MSSQL JDBC URL uses semicolon properties, not query params") {
+        val url = HikariConnectionPoolFactory.buildJdbcUrl(mssqlConfig())
+        url shouldBe "jdbc:sqlserver://mssql.example.com:1433;databaseName=shop;applicationName=d-migrate"
+    }
+
+    test("MSSQL URL uses default port 1433 when not provided") {
+        val url = HikariConnectionPoolFactory.buildJdbcUrl(mssqlConfig().copy(port = null))
+        url shouldContain "jdbc:sqlserver://mssql.example.com:1433"
+    }
+
+    test("user can override MSSQL applicationName") {
+        val url = HikariConnectionPoolFactory.buildJdbcUrl(mssqlConfig(mapOf("applicationName" to "my-app")))
+        url shouldContain "applicationName=my-app"
+        url shouldNotContain "applicationName=d-migrate"
+    }
+
+    test("MSSQL property values with semicolons are brace-escaped") {
+        val url = HikariConnectionPoolFactory.buildJdbcUrl(mssqlConfig(mapOf("k" to "a;b")))
+        url shouldContain "k={a;b}"
+    }
+
     // ─── PostgreSQL defaults ────────────────────────────────────
 
     test("PostgreSQL JDBC URL injects ApplicationName=d-migrate by default") {

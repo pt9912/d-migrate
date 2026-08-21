@@ -168,4 +168,33 @@ class SqlIdentifiersTest : FunSpec({
         SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.POSTGRESQL) shouldBe "'a\\'"
         SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.SQLITE) shouldBe "'a\\'"
     }
+
+    // ── quoteIdentifier / quoteStringLiteral: MSSQL (brackets) ─────
+
+    test("MSSQL: simple name is bracket-quoted") {
+        SqlIdentifiers.quoteIdentifier("users", DatabaseDialect.MSSQL) shouldBe "[users]"
+    }
+
+    test("MSSQL: closing bracket is escaped by doubling") {
+        SqlIdentifiers.quoteIdentifier("a]b", DatabaseDialect.MSSQL) shouldBe "[a]]b]"
+    }
+
+    test("MSSQL: bracket breakout with injected SQL is neutralised") {
+        val malicious = "t]; DROP TABLE users; --"
+        SqlIdentifiers.quoteIdentifier(malicious, DatabaseDialect.MSSQL) shouldBe
+            "[t]]; DROP TABLE users; --]"
+    }
+
+    test("MSSQL: opening bracket needs no escaping inside the delimiter") {
+        SqlIdentifiers.quoteIdentifier("a[b", DatabaseDialect.MSSQL) shouldBe "[a[b]"
+    }
+
+    test("MSSQL: qualified identifier quotes each segment") {
+        SqlIdentifiers.quoteQualifiedIdentifier("dbo.users", DatabaseDialect.MSSQL) shouldBe "[dbo].[users]"
+    }
+
+    test("MSSQL: string literal follows the SQL standard (no backslash escape)") {
+        SqlIdentifiers.quoteStringLiteral("O'Brien", DatabaseDialect.MSSQL) shouldBe "'O''Brien'"
+        SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.MSSQL) shouldBe "'a\\'"
+    }
 })

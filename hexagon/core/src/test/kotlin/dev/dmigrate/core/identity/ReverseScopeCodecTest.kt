@@ -148,4 +148,24 @@ class ReverseScopeCodecTest : FunSpec({
     test("encodeComponent leaves plain strings unchanged") {
         ReverseScopeCodec.encodeComponent("simple_name") shouldBe "simple_name"
     }
+
+    // ── mssqlName ───────────────────────────────
+
+    test("mssqlName produces canonical format") {
+        ReverseScopeCodec.mssqlName("shop", "dbo") shouldBe
+            "__dmigrate_reverse__:mssql:database=shop;schema=dbo"
+    }
+
+    test("mssqlName round-trips through parseScope") {
+        val parsed = ReverseScopeCodec.parseScope(ReverseScopeCodec.mssqlName("shop", "dbo"))
+        parsed["dialect"] shouldBe "mssql"
+        parsed["database"] shouldBe "shop"
+        parsed["schema"] shouldBe "dbo"
+    }
+
+    test("mssqlName encodes special characters") {
+        val parsed = ReverseScopeCodec.parseScope(ReverseScopeCodec.mssqlName("a;b", "c=d"))
+        parsed["database"] shouldBe "a;b"
+        parsed["schema"] shouldBe "c=d"
+    }
 })

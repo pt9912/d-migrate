@@ -347,7 +347,10 @@ internal class SchemaMigrateRenderPipeline(
                     ?.let(SqliteNamedSequenceMode::fromCliName)
                     ?: SqliteNamedSequenceMode.ACTION_REQUIRED,
             )
-            DatabaseDialect.POSTGRESQL -> DdlDialectContext.None
+            // MSSQL trägt (wie PG) noch keinen dialektspezifischen Kontext;
+            // eine sealed Variante kommt erst mit einem Renderer, der sie
+            // braucht (Hexagon-DialectContext-Regel).
+            DatabaseDialect.POSTGRESQL, DatabaseDialect.MSSQL -> DdlDialectContext.None
         }
         // VA4: `--spatial-profile` (z. B. spatialite) hat Vorrang; null → Default.
         val spatialProfile = request.spatialProfile?.let { SpatialProfile.fromCliName(it) }

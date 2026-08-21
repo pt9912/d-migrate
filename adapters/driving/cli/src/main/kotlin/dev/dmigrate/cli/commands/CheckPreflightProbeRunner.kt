@@ -60,5 +60,8 @@ internal object CheckPreflightProbeRunner {
         DatabaseDialect.POSTGRESQL -> PostgresCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.MYSQL -> MysqlCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.SQLITE -> SqliteCheckPreflightProbe.probe(connection, plan)
+        DatabaseDialect.MSSQL -> error(
+            "unreachable: DialectCommandGate rejects mssql for schema migrate (ADR 0047)",
+        )
     }
 }

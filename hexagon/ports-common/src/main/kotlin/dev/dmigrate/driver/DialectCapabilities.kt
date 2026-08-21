@@ -77,6 +77,24 @@ data class DialectCapabilities(
                 supportsTriggerStrict = false,
                 supportsSchemaParameter = false,
             )
+            // Objekttyp-Flags = Faehigkeiten von SQL Server (2017+, ADR 0047);
+            // die Import-Modus-Flags (FK-/Trigger-Disable) beschreiben den
+            // Werkzeug-Pfad und bleiben false, bis der Datenpfad sie baut
+            // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 3).
+            DatabaseDialect.MSSQL -> DialectCapabilities(
+                supportsViews = true,
+                supportsFunctions = true,
+                supportsProcedures = true,
+                supportsTriggers = true,
+                supportsSequences = true,
+                supportsCustomTypes = false,
+                supportsPartitioning = true,
+                supportsDisableFkChecks = false,
+                supportsTriggerDisable = false,
+                supportsTriggerStrict = false,
+                supportsSchemaParameter = true,
+                partitionChildrenAreTables = false,
+            )
         }
     }
 }

@@ -13,7 +13,18 @@
 > `adapters/driven/driver-mssql` (Skeleton, `mssql-jdbc` 13.4.0), Spike-Modul
 > `test/integration-mssql` (Container-Start + Treiber-Connect +
 > `SELECT @@VERSION`), Dependabot-Major-Ignore, EULA-Doku in
-> [`quality.md`](../../user/quality.md).
+> [`quality.md`](../../user/quality.md). (Commit `5a07080b`, CI grün.)
+>
+> **Status-Update 2026-08-21 (2):** Slice 1 umgesetzt — `MSSQL` in
+> `DatabaseDialect` + alle exhaustiven Verzweigungen, `DialectCommandGate`
+> mit Kommando-Verfügbarkeits-Tabelle (unten), `MssqlJdbcUrlBuilder`
+> (Semikolon-Properties via `SqlServerJdbcUrl`, SSL-Mapping
+> `encrypt`/`trustServerCertificate`), `MssqlSchemaReader` über
+> `sys.*`-Sichten (Identity, Default-Paren-Unwrapping, gefilterte Indizes,
+> CHECKs, native Sequenzen, Views; Routinen/Trigger als `skippedObjects` +
+> `R342`), `MssqlTableLister`, ServiceLoader-Registrierung; Spec
+> (connection-config 1.6) + Handbücher; Unit- und Live-Integrationstests
+> grün (SQL Server 2022).
 
 ## Bestandsaufnahme — was ein vierter Dialekt kostet (gemessen)
 
@@ -102,7 +113,7 @@ Entscheidung 2):
 | Slice | Inhalt | Registrierbar ab / liefert |
 | --- | --- | --- |
 | **0** ✅ | Scoping-ADR ([ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)), Gradle-Modul `driver-mssql`, Testcontainers-Spike (Connect + `SELECT @@VERSION`), EULA-Doku, Dependabot-Ignore | — |
-| **1** | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) | ja — `schema reverse` funktioniert |
+| **1** ✅ | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) + `MSSQL`-Enum-Querschnitt + `DialectCommandGate` | ja — `schema reverse` funktioniert |
 | **2** | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
 | **3** | `DataReader`/`DataWriter` (Transfer; Fast-Path später) | `data export/import/transfer` |
 | **4** | Cross-Dialekt-Matrix, `NeutralTypeCanonicalizer`, Postcompare-Fingerprint, `transferCompatibility` | Matrix-Gate |
@@ -117,6 +128,26 @@ Jeder Slice endet CI-grün und einzeln nutzbar; die No-op-Defaults des Ports
 machen das möglich, ohne UNSUPPORTED-Stopgaps (No-Carveouts-Regel). Was ein
 Slice noch nicht kann, steht im Plan als späterer Slice — nicht als
 else-Zweig versteckt und nicht als ausgeschlossenes Ticket abgelegt.
+
+### Kommando-Verfügbarkeit je Slice (Eigner-Entscheidung 2026-08-21)
+
+Der Enum-Wert `MSSQL` macht ab Slice 1 alle Kommandopfade erreichbar. Damit
+kein Pfad einen unfertigen Treiber-Port trifft, weisen Kommandos ohne
+gebauten MSSQL-Pfad den Dialekt an ihrer **Kommando-Grenze** ab
+(`DialectCommandGate` in `hexagon/application`, Exit 2 mit klarer Meldung;
+MCP-Handler übersetzen in ihre Validation-Fehlerform). `when`-Zweige hinter
+einem Gate dürfen mit `error("unreachable: …")` auf das Gate verweisen. Der
+Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
+
+| Kommando | MSSQL verfügbar ab | bis dahin |
+| --- | --- | --- |
+| Verbindungsschicht (`mssql://`-URLs, Pool, SSL) | **Slice 1** | — |
+| `schema reverse` (CLI + MCP-Job) | **Slice 1** | — |
+| `schema compare` (MCP-Job, via Reverse) | **Slice 1** | — |
+| `schema generate` | Slice 2 | Gate (CLI-Runner + MCP-Handler) |
+| `data export` / `data import` / `data transfer` | Slice 3 | Gate |
+| `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` („No renderer registered") |
+| `data profile` (CLI + MCP-Job) | Slice 10 | Gate |
 
 ## Risiken
 

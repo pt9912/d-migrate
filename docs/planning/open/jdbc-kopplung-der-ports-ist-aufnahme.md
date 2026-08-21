@@ -97,3 +97,16 @@ Ausdrücklich als Nicht-Ziele in [ADR 0037](../../adr/0037-database-agnostic-fir
 `NeutralType.Enum.refType`/`Array.elementType` (`core`, Spannung zu
 [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md) — siehe
 [`pg-only-types-first-class-candidates.md`](pg-only-types-first-class-candidates.md)).
+
+**Nachtrag 2026-08-21 (MSSQL-Slice 1):**
+[`SqlIdentifiers`](../../../hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/SqlIdentifiers.kt)
+(`ports-common`) ist ein weiterer Dialekt-Träger dieser Familie: per-Dialekt
+Identifier-Quoting und String-Literal-Escaping (PG/SQLite-Doppelquotes,
+MySQL-Backticks + Backslash-Regel, MSSQL-`[]`-Klammern). Die Lage im Hexagon
+ist eine bewusste Konsolidierung — **eine** auditierbare Injection-Schutzfläche
+statt verstreuter Treiber-Implementierungen, konsumiert u. a. von
+Hexagon-eigenen SQL-Renderern wie `AtomicPreserveRestoreSql` — aber jeder neue
+Dialekt erweitert das `when` hier. Ein Auszug in treiber-gelieferte Ports
+gehört in die Optionsabwägung von
+[ADR 0037](../../adr/0037-database-agnostic-first-staffelung.md) (Option D),
+nicht in einen Dialekt-Slice.

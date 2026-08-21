@@ -168,6 +168,7 @@ dependencies {
     implementation(project(":adapters:driven:driver-mysql-profiling"))
     implementation(project(":adapters:driven:driver-sqlite"))
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
+    implementation(project(":adapters:driven:driver-mssql"))
     implementation(project(":adapters:driven:formats"))
     // Parquet Cut A S6: CLI wires ParquetSeekableDataChunkReaderFactory into
     // StreamingImporter and ParquetChunkWriterFactory into the export

@@ -64,6 +64,13 @@ object ReverseScopeCodec {
         "${PREFIX}sqlite:schema=${encodeComponent(schema)}"
 
     /**
+     * Build canonical reverse name for MSSQL.
+     * Format: `__dmigrate_reverse__:mssql:database=<db>;schema=<schema>`
+     */
+    fun mssqlName(database: String, schema: String): String =
+        "${PREFIX}mssql:database=${encodeComponent(database)};schema=${encodeComponent(schema)}"
+
+    /**
      * Check whether a schema was reverse-generated.
      * Both [name] and [version] must match the canonical marker set.
      */

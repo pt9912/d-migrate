@@ -27,6 +27,10 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             "postgresql" to DatabaseDialect.POSTGRESQL,
             "mysql" to DatabaseDialect.MYSQL,
             "sqlite" to DatabaseDialect.SQLITE,
+            // mssql wird angenommen und von der SchemaMigratePreparation mit
+            // der DialectCommandGate-Meldung abgewiesen (ADR 0047) — so ist
+            // die Fehlermeldung informativer als ein Clikt-Usage-Error.
+            "mssql" to DatabaseDialect.MSSQL,
         )
     val spatialProfile by option("--spatial-profile",
         help = "Spatial type handling profile (postgis, native, spatialite, none)")

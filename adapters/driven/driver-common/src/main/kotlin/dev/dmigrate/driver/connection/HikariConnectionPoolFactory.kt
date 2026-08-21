@@ -109,6 +109,9 @@ object HikariConnectionPoolFactory {
      * - SQLite: `PRAGMA busy_timeout = $ms` — Lock-Wait-Timeout. Lange
      *   Range-Scans benötigen zusätzlich `setQueryTimeout` aus dem
      *   gemeinsamen Layer.
+     * - MSSQL: `SET LOCK_TIMEOUT $ms` — Lock-Wait-Timeout; T-SQL hat kein
+     *   Session-Statement-Budget, das deckt der gemeinsame
+     *   `setQueryTimeout`-Layer ab.
      *
      * Wert `0` deaktiviert den Init-SQL-Pfad (Treiber-Default greift,
      * üblicherweise unbegrenzt). Negative Werte sind durch
@@ -133,6 +136,7 @@ object HikariConnectionPoolFactory {
             DatabaseDialect.POSTGRESQL -> "SET statement_timeout = $statementTimeoutMs"
             DatabaseDialect.MYSQL -> "SET SESSION MAX_EXECUTION_TIME = $statementTimeoutMs"
             DatabaseDialect.SQLITE -> "PRAGMA busy_timeout = $statementTimeoutMs"
+            DatabaseDialect.MSSQL -> "SET LOCK_TIMEOUT $statementTimeoutMs"
         }
     }
 
@@ -173,6 +177,9 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
             "useCursorFetch" to "true",
             "rewriteBatchedStatements" to "true",
         )
+        DatabaseDialect.MSSQL -> mapOf(
+            "applicationName" to "d-migrate",
+        )
     }
 
     override fun baseJdbcUrl(config: ConnectionConfig): String = when (config.dialect) {
@@ -185,7 +192,22 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
             "jdbc:mysql://${config.host}:$port/${config.database}"
         }
         DatabaseDialect.SQLITE -> "jdbc:sqlite:${config.database}"
+        DatabaseDialect.MSSQL ->
+            SqlServerJdbcUrl.base(config.host, config.port, config.database)
     }
+
+    override fun buildJdbcUrl(config: ConnectionConfig): String =
+        if (config.dialect == DatabaseDialect.MSSQL) {
+            // mssql-jdbc nutzt `;key=value`-Properties statt `?k=v&` — gleiche
+            // Merge-Praezedenz wie der Interface-Default (defaults < ssl < params).
+            val params = LinkedHashMap<String, String>()
+            params.putAll(defaultParams())
+            params.putAll(sslParams(config.ssl))
+            params.putAll(config.params)
+            SqlServerJdbcUrl.append(baseJdbcUrl(config), params)
+        } else {
+            super.buildJdbcUrl(config)
+        }
 }
 
 /**

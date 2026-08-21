@@ -18,5 +18,9 @@ internal object MigrateRendererRegistry {
         DatabaseDialect.POSTGRESQL -> PostgresDiffDdlGenerator()
         DatabaseDialect.MYSQL -> MysqlDiffDdlGenerator()
         DatabaseDialect.SQLITE -> SqliteDiffDdlGenerator()
+        // Kein MssqlDiffDdlGenerator — `null` nimmt den bestehenden
+        // "No renderer registered"-Exit-2-Pfad der SchemaMigratePreparation;
+        // zusätzlich weist DialectCommandGate mssql vorher ab (ADR 0047).
+        DatabaseDialect.MSSQL -> null
     }
 }

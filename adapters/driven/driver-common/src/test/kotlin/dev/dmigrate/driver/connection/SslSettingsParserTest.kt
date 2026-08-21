@@ -100,4 +100,55 @@ class SslSettingsParserTest : FunSpec({
         e.ssl shouldBe SslSettings()
         e.remainingParams shouldBe mapOf("applicationName" to "x")
     }
+
+    // ── MSSQL: encrypt / trustServerCertificate ─────────────────────
+
+    fun mssql(params: Map<String, String>) =
+        SslSettingsParser.extract(DatabaseDialect.MSSQL, params, "mssql://h:1433/db")
+
+    test("MSSQL: encrypt=false → DISABLE, Keys konsumiert") {
+        val e = mssql(mapOf("encrypt" to "false", "trustServerCertificate" to "true", "a" to "b"))
+        e.ssl.mode shouldBe SslMode.DISABLE
+        e.remainingParams shouldBe mapOf("a" to "b")
+    }
+
+    test("MSSQL: encrypt=true + trustServerCertificate=true → REQUIRE") {
+        mssql(mapOf("encrypt" to "true", "trustServerCertificate" to "true")).ssl.mode shouldBe SslMode.REQUIRE
+    }
+
+    test("MSSQL: encrypt=true ohne Trust-Override → VERIFY_FULL") {
+        mssql(mapOf("encrypt" to "true")).ssl.mode shouldBe SslMode.VERIFY_FULL
+        mssql(mapOf("encrypt" to "true", "trustServerCertificate" to "false")).ssl.mode shouldBe SslMode.VERIFY_FULL
+    }
+
+    test("MSSQL: encrypt=strict → VERIFY_FULL") {
+        mssql(mapOf("encrypt" to "strict")).ssl.mode shouldBe SslMode.VERIFY_FULL
+    }
+
+    test("MSSQL: nur trustServerCertificate (Treiber-Default encrypt=true) → REQUIRE/VERIFY_FULL") {
+        mssql(mapOf("trustServerCertificate" to "true")).ssl.mode shouldBe SslMode.REQUIRE
+        mssql(mapOf("trustServerCertificate" to "false")).ssl.mode shouldBe SslMode.VERIFY_FULL
+    }
+
+    test("MSSQL: hostNameInCertificate bleibt als Treiber-Hinweis in remainingParams") {
+        val e = mssql(mapOf("encrypt" to "true", "hostNameInCertificate" to "db.example"))
+        e.remainingParams shouldBe mapOf("hostNameInCertificate" to "db.example")
+    }
+
+    test("MSSQL: Keys case-insensitiv, case-abweichendes Duplikat konsumiert") {
+        val e = mssql(mapOf("Encrypt" to "false", "ENCRYPT" to "true"))
+        e.ssl.mode shouldBe SslMode.DISABLE
+        e.remainingParams shouldBe emptyMap()
+    }
+
+    test("MSSQL: ungültiger encrypt-Wert → Fehler mit erlaubten Werten") {
+        val ex = shouldThrow<IllegalArgumentException> { mssql(mapOf("encrypt" to "maybe")) }
+        ex.message!! shouldContain "true|false|strict"
+    }
+
+    test("MSSQL: kein SSL-Param → leeres SslSettings") {
+        val e = mssql(mapOf("applicationName" to "x"))
+        e.ssl shouldBe SslSettings()
+        e.remainingParams shouldBe mapOf("applicationName" to "x")
+    }
 })

@@ -9,6 +9,8 @@
 dependencies {
     testImplementation(project(":adapters:driven:driver-mssql"))
     testImplementation(project(":adapters:driven:driver-common"))
+    testImplementation(project(":hexagon:core"))
+    testImplementation(project(":hexagon:ports"))
 
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-mssqlserver:${rootProject.properties["testcontainersVersion"]}")

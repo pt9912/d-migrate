@@ -23,9 +23,15 @@ object TriggerCapabilityDefaults {
     private val MySQL = TriggerCapability(enabled = false)
     private val SQLite = TriggerCapability(enabled = false)
 
+    // Drop+Create ist auch fuer T-SQL immer gueltig; ob der Renderer
+    // `CREATE OR ALTER TRIGGER` (2016 SP1+) nutzt, entscheidet der
+    // Trigger-Slice (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 9).
+    private val Mssql = TriggerCapability(enabled = false)
+
     fun forDialect(dialect: DatabaseDialect): TriggerCapability = when (dialect) {
         DatabaseDialect.POSTGRESQL -> PostgreSQL
         DatabaseDialect.MYSQL -> MySQL
         DatabaseDialect.SQLITE -> SQLite
+        DatabaseDialect.MSSQL -> Mssql
     }
 }

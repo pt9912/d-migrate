@@ -21,6 +21,7 @@ internal object SslSettingsParser {
         when (dialect) {
             DatabaseDialect.POSTGRESQL -> extractPg(params, url)
             DatabaseDialect.MYSQL -> extractMysql(params, url)
+            DatabaseDialect.MSSQL -> extractMssql(params, url)
             DatabaseDialect.SQLITE -> Extracted(SslSettings(), params) // kein Netz-SSL — unberührt
         }
 
@@ -54,6 +55,44 @@ internal object SslSettingsParser {
             else -> null
         }
         return Extracted(SslSettings(mode, null), filterConsumed(params, consumed))
+    }
+
+    // mssql-jdbc: `encrypt` (true|false|strict) + `trustServerCertificate`.
+    // Neutral-Mapping: encrypt=false -> DISABLE; encrypt=true mit
+    // trustServerCertificate=true -> REQUIRE (verschluesselt, unverifiziert);
+    // encrypt=true ohne Trust-Override -> VERIFY_FULL (der Treiber validiert
+    // Kette UND Hostname); encrypt=strict (TDS 8.0) -> VERIFY_FULL. Fehlt
+    // `encrypt`, gilt der Treiber-Default encrypt=true (mssql-jdbc >= 10).
+    // `hostNameInCertificate` bleibt als reiner Treiber-Hinweis in den
+    // remainingParams (kein neutraler Modus).
+    private fun extractMssql(params: Map<String, String>, url: String): Extracted {
+        val consumed = mutableSetOf<String>()
+        val encrypt = findKey(params, "encrypt")
+        val trust = findKey(params, "trustServerCertificate")
+        val trustValue = trust?.let { (_, v) ->
+            consumed += "trustservercertificate"
+            parseMssqlBool("trustServerCertificate", v, url)
+        }
+        val mode = when {
+            encrypt != null -> {
+                consumed += "encrypt"
+                when (encrypt.second.lowercase()) {
+                    "false" -> SslMode.DISABLE
+                    "strict" -> SslMode.VERIFY_FULL
+                    "true" -> if (trustValue == true) SslMode.REQUIRE else SslMode.VERIFY_FULL
+                    else -> throw invalid("encrypt", encrypt.second, url, "true|false|strict")
+                }
+            }
+            trustValue != null -> if (trustValue) SslMode.REQUIRE else SslMode.VERIFY_FULL
+            else -> null
+        }
+        return Extracted(SslSettings(mode, null), filterConsumed(params, consumed))
+    }
+
+    private fun parseMssqlBool(key: String, value: String, url: String): Boolean = when (value.lowercase()) {
+        "true" -> true
+        "false" -> false
+        else -> throw invalid(key, value, url, "true|false")
     }
 
     /** Entfernt jeden Param, dessen Schluessel (case-insensitiv) einen verbrauchten kanonischen Key trifft. */

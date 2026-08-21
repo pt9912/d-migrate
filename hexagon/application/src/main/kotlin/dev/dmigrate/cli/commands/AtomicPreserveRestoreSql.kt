@@ -42,6 +42,10 @@ internal object AtomicPreserveRestoreSql {
         DatabaseDialect.POSTGRESQL -> postgres(sequenceRef, probe)
         DatabaseDialect.MYSQL -> mysql(sequenceRef, probe)
         DatabaseDialect.SQLITE -> sqlite(sequenceRef, probe)
+        DatabaseDialect.MSSQL -> error(
+            "unreachable: DialectCommandGate rejects mssql for schema migrate " +
+                "and SequenceCapabilityDefaults declares no mssql atomic preserve (ADR 0047)",
+        )
     }
 
     private fun postgres(
