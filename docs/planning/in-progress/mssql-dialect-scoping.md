@@ -1,14 +1,19 @@
 # Vorabklärung: MS SQL Server als vierter Dialekt (Milestone 1.7.0, vorgezogen)
 
-> **Status:** Ausgearbeiteter Plan (Entscheidungen getroffen 2026-08-21;
-> Draft 2026-08-16)
+> **Status:** In Progress (2026-08-21) — Entscheidungen getroffen und in
+> [ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md) festgehalten;
+> Draft 2026-08-16.
 > **Trigger:** Eigner-Entscheidung, MSSQL als nächsten großen Punkt vorzuziehen.
 > Die Roadmap führt 1.7.0 hinter Trino (1.1.0), gRPC (1.1.8), REST (1.2.0) u. a. —
 > diese Reihenfolge wird damit bewusst geändert; die Roadmap ist deskriptiv.
 > **Lastenheft:** [LF-019](../../../spec/lastenheft-d-migrate.md#lf-019)
 > (Kann-Anforderung: „weitere Datenbanksysteme … Oracle, MS SQL Server").
-> **Aktivierung:** Move nach `../in-progress/` beim ersten
-> Implementierungs-Commit (Slice 0).
+>
+> **Status-Update 2026-08-21:** Slice 0 umgesetzt — Modul
+> `adapters/driven/driver-mssql` (Skeleton, `mssql-jdbc` 13.4.0), Spike-Modul
+> `test/integration-mssql` (Container-Start + Treiber-Connect +
+> `SELECT @@VERSION`), Dependabot-Major-Ignore, EULA-Doku in
+> [`quality.md`](../../user/quality.md).
 
 ## Bestandsaufnahme — was ein vierter Dialekt kostet (gemessen)
 
@@ -85,8 +90,9 @@ sealed Varianten, keine nullable `mssql*`-Felder auf generischen Ports.
    main, nicht-blockierend neben dem Hauptbuild) — kein Sonderpfad, kein
    Drift-Risiko. `mcr.microsoft.com/mssql/server:2022-latest` braucht
    `ACCEPT_EULA=Y` und ist mit ~1,5 GB Image / 2 GB RAM der schwerste Container
-   im Haus; die EULA-Akzeptanz wird in Slice 0 dokumentiert
-   (Administrationshandbuch, Testcontainers-Setup).
+   im Haus; die EULA-Akzeptanz ist im Testcontainers-Setup dokumentiert
+   ([`quality.md`](../../user/quality.md)); ins Administrationshandbuch kommt
+   MSSQL erst mit nutzersichtbarem Support (ab Slice 1).
 
 ## Slice-Schnitt
 
@@ -95,7 +101,7 @@ Entscheidung 2):
 
 | Slice | Inhalt | Registrierbar ab / liefert |
 | --- | --- | --- |
-| **0** | Scoping-ADR (die drei Entscheidungen), Gradle-Modul `driver-mssql`, Testcontainers-Spike (Connect + `SELECT @@VERSION`), EULA-Doku, Dependabot-Ignore | — |
+| **0** ✅ | Scoping-ADR ([ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)), Gradle-Modul `driver-mssql`, Testcontainers-Spike (Connect + `SELECT @@VERSION`), EULA-Doku, Dependabot-Ignore | — |
 | **1** | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) | ja — `schema reverse` funktioniert |
 | **2** | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
 | **3** | `DataReader`/`DataWriter` (Transfer; Fast-Path später) | `data export/import/transfer` |

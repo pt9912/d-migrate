@@ -100,3 +100,4 @@ argumentiert werden.
 | 0044 | [Kein natives `macos-arm64`-Binary — GraalVM-Auslieferung auf Linux und Windows begrenzt](0044-kein-macos-native-binary.md) | accepted |
 | 0045 | [Ein Branch statt `develop` → `main` — Entwicklung nach v1.0.1 auf `main`](0045-ein-branch-main-statt-develop-main.md) | accepted |
 | 0046 | [Hadoop bleibt im Parquet-Adapter — parquet-java erzwingt es](0046-hadoop-bleibt-im-parquet-adapter.md) | accepted |
+| 0047 | [MS SQL Server als vierter Dialekt — 2017+, voller Umfang als Slices, CI in jedem Lauf](0047-mssql-vierter-dialekt-scoping.md) | accepted |

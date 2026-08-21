@@ -57,6 +57,7 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
+| [`mssql-dialect-scoping.md`](mssql-dialect-scoping.md) | Per-Feature-Umbrella | MS SQL Server als vierter Dialekt (Milestone 1.7.0, vorgezogen; [ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)): SQL Server 2017+, keine Carve-Outs (voller Funktionsumfang als Slices 0-10), Integrationsschiene in jedem CI-Lauf. Slice 0 (Modul-Skeleton, Testcontainers-Spike, Dependabot-Ignore, EULA-Doku) umgesetzt 2026-08-21. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.
