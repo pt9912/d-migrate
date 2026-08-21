@@ -289,13 +289,16 @@ class MssqlSchemaReaderTest : FunSpec({
         stubEmptyDefaults(jdbc)
         every { jdbc.queryList(match { it.contains("FROM sys.objects o") }, "dbo") } returns listOf(
             mapOf("object_type" to "P ", "object_name" to "usp_do"),
+            mapOf("object_type" to "PC", "object_name" to "usp_clr"),
             mapOf("object_type" to "FN", "object_name" to "fn_calc"),
+            mapOf("object_type" to "TA", "object_name" to "trg_clr"),
             mapOf("object_type" to "TR", "object_name" to "trg_audit"),
         )
         val (reader, pool) = rig(jdbc)
         val result = reader.read(pool)
         result.skippedObjects.map { it.type to it.name } shouldBe listOf(
-            "procedure" to "usp_do", "function" to "fn_calc", "trigger" to "trg_audit",
+            "procedure" to "usp_do", "procedure" to "usp_clr", "function" to "fn_calc",
+            "trigger" to "trg_clr", "trigger" to "trg_audit",
         )
         result.notes shouldHaveSize 3
         result.notes.forEach {

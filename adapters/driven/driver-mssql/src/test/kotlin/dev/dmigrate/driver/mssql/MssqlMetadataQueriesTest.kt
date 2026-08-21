@@ -155,17 +155,22 @@ class MssqlMetadataQueriesTest : FunSpec({
     }
 
     test("listUnreadObjects lists routines and triggers with trimmed type codes") {
+        val sql = slot<String>()
         val jdbc = mockk<JdbcOperations> {
-            every { queryList(match { it.contains("FROM sys.objects o") }, any()) } returns listOf(
+            every { queryList(capture(sql), any()) } returns listOf(
                 mapOf("object_type" to "P ", "object_name" to "usp_do"),
+                mapOf("object_type" to "PC", "object_name" to "usp_clr"),
                 mapOf("object_type" to "TR", "object_name" to "trg_audit"),
             )
         }
         val unread = MssqlMetadataQueries.listUnreadObjects(jdbc, "dbo")
         unread shouldBe listOf(
             MssqlMetadataQueries.UnreadObject("P", "usp_do"),
+            MssqlMetadataQueries.UnreadObject("PC", "usp_clr"),
             MssqlMetadataQueries.UnreadObject("TR", "trg_audit"),
         )
+        // CLR-Varianten gehoeren in den Scan — sonst fallen Objekte still weg.
+        listOf("'PC'", "'FS'", "'FT'", "'TA'").forEach { sql.captured shouldContain it }
     }
 
     test("listPrimaryKeyColumns keeps key ordinal order") {

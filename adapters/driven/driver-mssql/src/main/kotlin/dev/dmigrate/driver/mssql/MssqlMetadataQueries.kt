@@ -242,14 +242,18 @@ internal object MssqlMetadataQueries {
 
     data class UnreadObject(val type: String, val name: String)
 
-    /** Routinen/Trigger im Schema, die der Slice-1-Reader nicht liest. */
+    /**
+     * Routinen/Trigger im Schema, die der Reverse-Reader nicht liest —
+     * inklusive der CLR-Varianten (PC/FS/FT/TA), damit kein Objekt still
+     * aus dem Ergebnis fällt.
+     */
     fun listUnreadObjects(session: JdbcOperations, schema: String): List<UnreadObject> =
         session.queryList(
             """
             SELECT o.type AS object_type, o.name AS object_name
             FROM sys.objects o
             WHERE o.schema_id = SCHEMA_ID(?) AND o.is_ms_shipped = 0
-              AND o.type IN ('P', 'FN', 'IF', 'TF', 'TR')
+              AND o.type IN ('P', 'PC', 'FN', 'FS', 'FT', 'IF', 'TF', 'TR', 'TA')
             ORDER BY o.type, o.name
             """.trimIndent(),
             schema,

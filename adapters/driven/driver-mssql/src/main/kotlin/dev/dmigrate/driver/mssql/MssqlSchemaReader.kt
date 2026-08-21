@@ -227,10 +227,14 @@ class MssqlSchemaReader(
     ) {
         val kindOf = mapOf(
             "P" to "procedure",
+            "PC" to "procedure",
             "FN" to "function",
+            "FS" to "function",
+            "FT" to "function",
             "IF" to "function",
             "TF" to "function",
             "TR" to "trigger",
+            "TA" to "trigger",
         )
         val wanted = { kind: String ->
             when (kind) {

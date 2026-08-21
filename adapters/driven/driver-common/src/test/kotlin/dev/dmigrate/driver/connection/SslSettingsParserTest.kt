@@ -121,8 +121,12 @@ class SslSettingsParserTest : FunSpec({
         mssql(mapOf("encrypt" to "true", "trustServerCertificate" to "false")).ssl.mode shouldBe SslMode.VERIFY_FULL
     }
 
-    test("MSSQL: encrypt=strict → VERIFY_FULL") {
-        mssql(mapOf("encrypt" to "strict")).ssl.mode shouldBe SslMode.VERIFY_FULL
+    test("MSSQL: encrypt=strict → VERIFY_FULL, Property bleibt als Pass-Through erhalten") {
+        val e = mssql(mapOf("encrypt" to "strict"))
+        e.ssl.mode shouldBe SslMode.VERIFY_FULL
+        // strict darf beim Re-Emittieren nicht zu encrypt=true degradieren:
+        // die Property bleibt unkonsumiert und gewinnt im URL-Merge.
+        e.remainingParams shouldBe mapOf("encrypt" to "strict")
     }
 
     test("MSSQL: nur trustServerCertificate (Treiber-Default encrypt=true) → REQUIRE/VERIFY_FULL") {

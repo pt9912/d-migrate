@@ -83,6 +83,13 @@ class HikariJdbcUrlTest : FunSpec({
         url shouldContain "k={a;b}"
     }
 
+    test("MSSQL fallback emits the neutral ssl mode (no silent drop without a registered driver)") {
+        val url = HikariConnectionPoolFactory.buildJdbcUrl(
+            mssqlConfig(ssl = SslSettings(SslMode.DISABLE)),
+        )
+        url shouldContain "encrypt=false"
+    }
+
     // ─── PostgreSQL defaults ────────────────────────────────────
 
     test("PostgreSQL JDBC URL injects ApplicationName=d-migrate by default") {

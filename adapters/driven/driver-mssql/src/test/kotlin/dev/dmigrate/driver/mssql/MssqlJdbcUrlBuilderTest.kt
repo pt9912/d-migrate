@@ -106,6 +106,20 @@ class MssqlJdbcUrlBuilderTest : FunSpec({
         }
     }
 
+    test("encrypt=strict pass-through wins over the ssl-derived encrypt=true") {
+        val url = builder.buildJdbcUrl(
+            cfg(ssl = SslSettings(SslMode.VERIFY_FULL), params = mapOf("encrypt" to "strict")),
+        )
+        url shouldContain "encrypt=strict"
+        url shouldNotContain "encrypt=true"
+    }
+
+    test("property keys with structural characters are rejected (no property smuggling)") {
+        shouldThrow<IllegalArgumentException> {
+            builder.buildJdbcUrl(cfg(params = mapOf("a=1;encrypt" to "false")))
+        }
+    }
+
     test("driver exposes this builder") {
         MssqlDriver().urlBuilder()::class.simpleName shouldBe "MssqlJdbcUrlBuilder"
     }

@@ -25,7 +25,7 @@ class MssqlDriver : DatabaseDriver {
     override fun tableLister(): TableLister = MssqlTableLister()
 
     override fun ddlGenerator(): DdlGenerator =
-        error("unreachable: DialectCommandGate rejects mssql for schema generate (ADR 0047)")
+        error("unreachable: DialectCommandGate rejects mssql for schema generate and export <tool> (ADR 0047)")
 
     override fun dataReader(): DataReader =
         error("unreachable: DialectCommandGate rejects mssql for data export/transfer (ADR 0047)")

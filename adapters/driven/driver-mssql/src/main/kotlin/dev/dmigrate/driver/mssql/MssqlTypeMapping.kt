@@ -158,17 +158,45 @@ internal object MssqlTypeMapping {
         value.toDoubleOrNull()?.let { return DefaultValue.NumberLiteral(it) }
 
         NEXT_VALUE_FOR.find(value)?.let { match ->
-            val sequence = match.groupValues[1].split('.').last().trim().removeSurrounding("[", "]")
-            return DefaultValue.SequenceNextVal(sequence)
+            return DefaultValue.SequenceNextVal(sequenceNameOf(match.groupValues[1]))
         }
 
         // getdate()/sysdatetime() sind die T-SQL-Spellings des neutralen
-        // CURRENT_TIMESTAMP — kanonisieren für Cross-Dialekt-Portabilität.
+        // current_timestamp — kleingeschrieben kanonisieren, wie es die
+        // MySQL-/PG-Reverse-Parser tun (Compare/Fingerprint vergleichen
+        // case-sensitiv).
         return when (value.lowercase()) {
             "getdate()", "sysdatetime()", "current_timestamp" ->
-                DefaultValue.FunctionCall("CURRENT_TIMESTAMP")
+                DefaultValue.FunctionCall("current_timestamp")
             else -> DefaultValue.FunctionCall(value)
         }
+    }
+
+    // Letztes Segment einer ggf. schema-qualifizierten, ggf. eckig
+    // geklammerten Referenz; Punkte innerhalb von [..] trennen nicht und
+    // `]]` ist das Escape fuer `]`.
+    private fun sequenceNameOf(reference: String): String {
+        val text = reference.trim()
+        val segments = mutableListOf(StringBuilder())
+        var inBrackets = false
+        var index = 0
+        while (index < text.length) {
+            val ch = text[index]
+            when {
+                inBrackets && ch == ']' ->
+                    if (index + 1 < text.length && text[index + 1] == ']') {
+                        segments.last().append(']')
+                        index++
+                    } else {
+                        inBrackets = false
+                    }
+                !inBrackets && ch == '[' -> inBrackets = true
+                !inBrackets && ch == '.' -> segments += StringBuilder()
+                else -> segments.last().append(ch)
+            }
+            index++
+        }
+        return segments.last().toString().trim()
     }
 
     /**
@@ -189,18 +217,41 @@ internal object MssqlTypeMapping {
         return value.last() == ')' && coversWhole(value)
     }
 
+    // Klammern innerhalb von T-SQL-String-Literalen ('' = Escape) zaehlen
+    // nicht — sonst bliebe z. B. `('(')` fuer immer eingewickelt.
     private fun coversWhole(value: String): Boolean {
         var depth = 0
-        value.forEachIndexed { index, ch ->
-            when (ch) {
-                '(' -> depth++
+        var index = 0
+        while (index < value.length) {
+            when (value[index]) {
+                '\'' -> index = endOfStringLiteral(value, index)
+                '(' -> {
+                    depth++
+                    index++
+                }
                 ')' -> {
                     depth--
                     if (depth == 0 && index < value.length - 1) return false
+                    index++
                 }
+                else -> index++
             }
         }
         return depth == 0
+    }
+
+    // Index HINTER dem schliessenden Quote ('' = Escape); Stringende, wenn
+    // das Literal unterminiert ist.
+    private fun endOfStringLiteral(value: String, openQuote: Int): Int {
+        var index = openQuote + 1
+        while (index < value.length) {
+            index += when {
+                value[index] != '\'' -> 1
+                index + 1 < value.length && value[index + 1] == '\'' -> 2
+                else -> return index + 1
+            }
+        }
+        return index
     }
 
     // N'..' / '..' mit ''-Escape; alles andere ist kein String-Literal.

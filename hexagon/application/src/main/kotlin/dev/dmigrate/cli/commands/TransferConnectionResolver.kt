@@ -44,6 +44,12 @@ internal class TransferConnectionResolver(
     // LN-049 Stufe 4: Per-Connection-Filler, keyed nach dem rohen --source/--target. Identity-Default →
     // MCP füllt nicht; nur die CLI-Wiring injiziert den Store-Filler.
     private val credentialFiller: (ConnectionConfig, String) -> ConnectionConfig = { config, _ -> config },
+    // Kommando-Grenz-Gate (DialectCommandGate) VOR dem Pool-Aufbau: die
+    // Dialekte stehen nach dem URL-Parse fest — eine Ablehnung darf keine
+    // Logins kosten und nicht hinter einem Connect-Fehler (Exit 4)
+    // verschwinden. Liefert den Exit-Code oder null.
+    private val preConnectGate: (ConnectionConfig, ConnectionConfig, String, String) -> Int? =
+        { _, _, _, _ -> null },
 ) {
 
     fun resolve(request: DataTransferRequest): TransferConnectionResult {
@@ -80,6 +86,8 @@ internal class TransferConnectionResolver(
             printError("URL parse: ${e.message}", srcRef)
             return TransferConnectionResult.Exit(7)
         }
+
+        preConnectGate(srcCfg, tgtCfg, srcRef, tgtRef)?.let { return TransferConnectionResult.Exit(it) }
 
         val srcPool = try {
             poolFactory(srcCfg)

@@ -4,6 +4,7 @@ import dev.dmigrate.cli.commands.DataImportRequest
 import dev.dmigrate.cli.commands.DataImportRunner
 import dev.dmigrate.cli.commands.DataTransferRequest
 import dev.dmigrate.cli.commands.DataTransferRunner
+import dev.dmigrate.cli.commands.DialectCommandGate
 import dev.dmigrate.cli.commands.ImportExecutor
 import dev.dmigrate.cli.commands.parseFilter
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -87,6 +88,22 @@ internal data class BundleExtractionOk(
     val manifestFingerprint: String,
 )
 
+/**
+ * Kommando-Grenz-Gate-Vorprüfung für die Daten-Job-Worker: Auflösungs-/
+ * Parse-Fehler bleiben dem Runner überlassen (der meldet sie mit seinem
+ * eigenen Fehlerbild) — hier zählt nur eine eindeutige Dialekt-Ablehnung.
+ */
+internal fun dialectGateRefusal(
+    command: DialectCommandGate.GatedCommand,
+    ref: String?,
+    resolveUrl: (String) -> String,
+): String? {
+    if (ref.isNullOrEmpty()) return null
+    val dialect = runCatching { ConnectionUrlParser.parse(resolveUrl(ref)).dialect }
+        .getOrNull() ?: return null
+    return DialectCommandGate.refusal(command, dialect)
+}
+
 internal class McpDataImportJobWorker(
     private val requestPayload: JsonValue.Obj,
     private val principal: PrincipalContext?,
@@ -106,6 +123,14 @@ internal class McpDataImportJobWorker(
                 "MCP_DATA_IMPORT_UNSUPPORTED_FORMAT",
                 "MCP imports do not currently expose Parquet; use the CLI for Parquet imports."
             )
+        }
+        // Kommando-Grenz-Gate (DialectCommandGate): die Runner-Sinks sind hier
+        // bewusst No-ops — die Ablehnungs-Meldung muss deshalb VOR dem Runner
+        // als Job-Fehler formuliert werden, statt im Exit-Code zu verschwinden.
+        dialectGateRefusal(DialectCommandGate.GatedCommand.DATA_IMPORT, string("targetConnectionRef")) {
+            resolveConnection(it, job)
+        }?.let {
+            return JobWorkerOutcome.Failed("MCP_DATA_IMPORT_UNSUPPORTED_DIALECT", it, 2)
         }
         val artifactId = artifactId(job)
         val artifact = dependencies.artifactStore.findById(job.tenantId, artifactId)
@@ -367,6 +392,15 @@ internal class McpDataTransferJobWorker(
 
     override fun execute(job: JobRecord, token: dev.dmigrate.core.cancel.CancellationToken): JobWorkerOutcome {
         RuntimeBootstrap.initialize()
+        // Kommando-Grenz-Gate wie beim Import-Worker: Meldung als Job-Fehler,
+        // bevor der Runner sie in seine No-op-Sinks druckt.
+        listOf(string("sourceConnectionRef"), string("targetConnectionRef")).forEach { ref ->
+            dialectGateRefusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, ref) {
+                resolveConnection(it, job)
+            }?.let {
+                return JobWorkerOutcome.Failed("MCP_DATA_TRANSFER_UNSUPPORTED_DIALECT", it, 2)
+            }
+        }
         val runner = DataTransferRunner(
             sourceResolver = { source, _ -> resolveConnection(source, job) },
             targetResolver = { target, _ -> resolveConnection(target, job) },

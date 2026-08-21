@@ -78,6 +78,9 @@ class DataTransferRunner(
         userFacingErrors = userFacingErrors,
         printError = userFacingPrintError,
         credentialFiller = credentialFiller,
+        preConnectGate = { srcCfg, tgtCfg, srcRef, tgtRef ->
+            refuseGatedDialect(srcCfg, srcRef) ?: refuseGatedDialect(tgtCfg, tgtRef)
+        },
     )
     private val preflightPlanner = TransferPreflightPlanner()
 
@@ -110,18 +113,13 @@ class DataTransferRunner(
         }
 
         try {
-            refuseGatedDialect(connections)?.let { return it }
             return executeWithConnections(request, connections, cancellationToken)
         } finally { connections.close() }
     }
 
-    private fun refuseGatedDialect(connections: TransferConnections): Int? {
-        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, connections.source.config.dialect)?.let {
-            userFacingPrintError(it, connections.source.ref)
-            return 2
-        }
-        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, connections.target.config.dialect)?.let {
-            userFacingPrintError(it, connections.target.ref)
+    private fun refuseGatedDialect(config: ConnectionConfig, ref: String): Int? {
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, config.dialect)?.let {
+            userFacingPrintError(it, ref)
             return 2
         }
         return null

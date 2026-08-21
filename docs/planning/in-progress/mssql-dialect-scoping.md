@@ -145,6 +145,7 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 | `schema reverse` (CLI + MCP-Job) | **Slice 1** | — |
 | `schema compare` (MCP-Job, via Reverse) | **Slice 1** | — |
 | `schema generate` | Slice 2 | Gate (CLI-Runner + MCP-Handler) |
+| `export flyway/liquibase/django/knex` (Tool-Export) | Slice 2 | Gate (braucht den `DdlGenerator`) |
 | `data export` / `data import` / `data transfer` | Slice 3 | Gate |
 | `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` („No renderer registered") |
 | `data profile` (CLI + MCP-Job) | Slice 10 | Gate |

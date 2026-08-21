@@ -198,13 +198,11 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
 
     override fun buildJdbcUrl(config: ConnectionConfig): String =
         if (config.dialect == DatabaseDialect.MSSQL) {
-            // mssql-jdbc nutzt `;key=value`-Properties statt `?k=v&` — gleiche
-            // Merge-Praezedenz wie der Interface-Default (defaults < ssl < params).
-            val params = LinkedHashMap<String, String>()
-            params.putAll(defaultParams())
-            params.putAll(sslParams(config.ssl))
-            params.putAll(config.params)
-            SqlServerJdbcUrl.append(baseJdbcUrl(config), params)
+            // mssql-jdbc nutzt `;key=value`-Properties statt `?k=v&`; die
+            // Assemblierung inkl. SSL-Mapping teilt sich der Fallback mit dem
+            // produktiven MssqlJdbcUrlBuilder (Review-Befund: divergente Kopie
+            // liess encrypt/trustServerCertificate im Fallback fallen).
+            SqlServerJdbcUrl.assemble(config, defaultParams())
         } else {
             super.buildJdbcUrl(config)
         }

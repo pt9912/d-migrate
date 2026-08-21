@@ -140,11 +140,27 @@ class MssqlTypeMappingTest : FunSpec({
             DefaultValue.BooleanLiteral(false)
     }
 
-    test("parseDefault: getdate()/sysdatetime() canonicalise to CURRENT_TIMESTAMP") {
+    test("parseDefault: getdate()/sysdatetime() canonicalise to lowercase current_timestamp (MySQL/PG parity)") {
         MssqlTypeMapping.parseDefault("(getdate())", NeutralType.DateTime()) shouldBe
-            DefaultValue.FunctionCall("CURRENT_TIMESTAMP")
+            DefaultValue.FunctionCall("current_timestamp")
         MssqlTypeMapping.parseDefault("(sysdatetime())", NeutralType.DateTime()) shouldBe
-            DefaultValue.FunctionCall("CURRENT_TIMESTAMP")
+            DefaultValue.FunctionCall("current_timestamp")
+    }
+
+    test("parseDefault: string literals containing parentheses still unwrap and classify") {
+        MssqlTypeMapping.parseDefault("('(')", NeutralType.Text(null)) shouldBe
+            DefaultValue.StringLiteral("(")
+        MssqlTypeMapping.parseDefault("(')')", NeutralType.Text(null)) shouldBe
+            DefaultValue.StringLiteral(")")
+    }
+
+    test("parseDefault: bracketed sequence names keep embedded dots and escaped brackets") {
+        MssqlTypeMapping.parseDefault("(NEXT VALUE FOR [dbo].[my.seq])", NeutralType.BigInteger) shouldBe
+            DefaultValue.SequenceNextVal("my.seq")
+        MssqlTypeMapping.parseDefault("(NEXT VALUE FOR [a]]b])", NeutralType.BigInteger) shouldBe
+            DefaultValue.SequenceNextVal("a]b")
+        MssqlTypeMapping.parseDefault("(NEXT VALUE FOR dbo.plain_seq)", NeutralType.BigInteger) shouldBe
+            DefaultValue.SequenceNextVal("plain_seq")
     }
 
     test("parseDefault: other functions stay verbatim") {

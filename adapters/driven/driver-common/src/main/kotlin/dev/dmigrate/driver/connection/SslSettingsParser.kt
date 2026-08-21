@@ -74,14 +74,21 @@ internal object SslSettingsParser {
             parseMssqlBool("trustServerCertificate", v, url)
         }
         val mode = when {
-            encrypt != null -> {
-                consumed += "encrypt"
-                when (encrypt.second.lowercase()) {
-                    "false" -> SslMode.DISABLE
-                    "strict" -> SslMode.VERIFY_FULL
-                    "true" -> if (trustValue == true) SslMode.REQUIRE else SslMode.VERIFY_FULL
-                    else -> throw invalid("encrypt", encrypt.second, url, "true|false|strict")
+            encrypt != null -> when (encrypt.second.lowercase()) {
+                "false" -> {
+                    consumed += "encrypt"
+                    SslMode.DISABLE
                 }
+                "true" -> {
+                    consumed += "encrypt"
+                    if (trustValue == true) SslMode.REQUIRE else SslMode.VERIFY_FULL
+                }
+                // TDS-8-`strict` hat keine neutrale Entsprechung und darf beim
+                // Re-Emittieren nicht zu `true` degradieren: der Modus wird als
+                // VERIFY_FULL gespiegelt, die Property bleibt UNKONSUMIERT in
+                // den remainingParams und gewinnt im URL-Merge (params > ssl).
+                "strict" -> SslMode.VERIFY_FULL
+                else -> throw invalid("encrypt", encrypt.second, url, "true|false|strict")
             }
             trustValue != null -> if (trustValue) SslMode.REQUIRE else SslMode.VERIFY_FULL
             else -> null

@@ -21,6 +21,9 @@ object DialectCommandGate {
     /** Kommandos, deren MSSQL-Pfad noch nicht gebaut ist. */
     enum class GatedCommand(val display: String) {
         SCHEMA_GENERATE("schema generate"),
+        // export flyway/liquibase/django/knex — braucht wie generate den
+        // DdlGenerator des Ziel-Dialekts.
+        TOOL_EXPORT("export <tool>"),
         DATA_EXPORT("data export"),
         DATA_IMPORT("data import"),
         DATA_TRANSFER("data transfer"),
