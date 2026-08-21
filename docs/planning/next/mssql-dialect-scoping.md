@@ -1,13 +1,14 @@
 # Vorabklärung: MS SQL Server als vierter Dialekt (Milestone 1.7.0, vorgezogen)
 
-> **Status:** Entscheidungsvorlage (Draft, 2026-08-16)
+> **Status:** Ausgearbeiteter Plan (Entscheidungen getroffen 2026-08-21;
+> Draft 2026-08-16)
 > **Trigger:** Eigner-Entscheidung, MSSQL als nächsten großen Punkt vorzuziehen.
 > Die Roadmap führt 1.7.0 hinter Trino (1.1.0), gRPC (1.1.8), REST (1.2.0) u. a. —
 > diese Reihenfolge wird damit bewusst geändert; die Roadmap ist deskriptiv.
 > **Lastenheft:** [LF-019](../../../spec/lastenheft-d-migrate.md#lf-019)
 > (Kann-Anforderung: „weitere Datenbanksysteme … Oracle, MS SQL Server").
-> **Aktivierungsbedingung** (Move nach `../next/` als ausgearbeiteter Plan):
-> die drei Entscheidungen unten sind getroffen.
+> **Aktivierung:** Move nach `../in-progress/` beim ersten
+> Implementierungs-Commit (Slice 0).
 
 ## Bestandsaufnahme — was ein vierter Dialekt kostet (gemessen)
 
@@ -49,7 +50,7 @@ sealed Varianten, keine nullable `mssql*`-Felder auf generischen Ports.
 
 ## T-SQL-Inventar — was anders ist und wohin es fällt
 
-| Fläche | MSSQL-Realität | Einordnung für Cut A |
+| Fläche | MSSQL-Realität | Einordnung |
 | --- | --- | --- |
 | Auto-Increment | `IDENTITY(seed, increment)` an der Spalte; Sequenzen seit 2012 separat | Kern — `identifier`/`auto_increment` mappt auf IDENTITY |
 | Schemata | `dbo` als Default, Namen zweiteilig `schema.table` | Kern — wie PG-`public` behandeln |
@@ -58,47 +59,58 @@ sealed Varianten, keine nullable `mssql*`-Felder auf generischen Ports.
 | Temporal | `datetime2`, `datetimeoffset`, `date`, `time` | Kern — `DateTime(timezone=true)` → `datetimeoffset` |
 | UUID | `uniqueidentifier` | Kern |
 | Binary | `VARBINARY(MAX)` | Kern |
-| Indizes | clustered/nonclustered; **gefilterte** Indizes (WHERE) existieren | Kern ohne clustered-Steuerung; gefiltert = Folgearbeit |
-| Partitionierung | Partition Functions + Schemes + Filegroups — strukturell anders als PG | **Carve-Out** (wie beim PG-Slice: benannt, nicht still) |
-| Volltext | eigener Dienst (Full-Text Search), eigene Installation | **Carve-Out** — Muster aus dem Fulltext-Slice |
-| Routinen/Trigger | T-SQL-Prozeduren, `CREATE OR ALTER` | Folge-Slice, nicht Cut A |
+| Indizes | clustered/nonclustered; **gefilterte** Indizes (WHERE) existieren | Kern (Default nonclustered); gefiltert + clustered-Steuerung = Slice 6 |
+| Partitionierung | Partition Functions + Schemes + Filegroups — strukturell anders als PG | Slice 7 |
+| Volltext | eigener Dienst (Full-Text Search), eigene Installation | Slice 8 — Muster aus dem Fulltext-Slice |
+| Routinen/Trigger | T-SQL-Prozeduren, `CREATE OR ALTER` | Slice 9 |
 | Paginierung | `OFFSET … FETCH` (2012+), kein `LIMIT` | Kern — betrifft DataReader-Chunking |
 | Quoting | `[eckige Klammern]` oder `"` bei `QUOTED_IDENTIFIER ON` | **Entscheidung**: `[]` als kanonisch (Vertrag „Modell trägt Quotes" beachten) |
 
-## Die drei Entscheidungen
+## Die drei Entscheidungen (getroffen 2026-08-21)
 
-1. **Versions-Untergrenze.** Vorschlag: **SQL Server 2017+**. Begründung:
+1. **Versions-Untergrenze: SQL Server 2017+.** Begründung:
    Linux-Container erster Klasse (Testcontainers), `STRING_AGG`, und alles aus
    dem Inventar oben ist ab 2012 verfügbar — 2017 ist die älteste Version mit
    brauchbarer Container-Story, alles Ältere ist EOL.
-2. **Feature-Schnitt Cut A.** Vorschlag: Kern = Reverse-Read, DDL-Generate,
-   Datentransfer, Matrix-Teilnahme. **Ausdrücklich ausgeschlossen** (benannte
-   Carve-Outs, je ein Ticket): Partitionierung, Volltext, Routinen/Trigger,
-   gefilterte/clustered-gesteuerte Indizes, Profiling-Modul.
-3. **Test-Infrastruktur.** `mcr.microsoft.com/mssql/server:2022-latest` braucht
+2. **Feature-Schnitt: keine Carve-Outs.** Der Plan deckt den vollen
+   Funktionsumfang als Slices ab: Kern = Reverse-Read, DDL-Generate,
+   Datentransfer, Matrix-Teilnahme, Diff/Migrate (Slices 1–5); Partitionierung,
+   Volltext, Routinen/Trigger, gefilterte/clustered-gesteuerte Indizes und das
+   Profiling-Modul sind **eigene Slices (6–10)**, keine ausgeschlossenen
+   Tickets.
+3. **Test-Infrastruktur: MSSQL läuft in jedem CI-Lauf mit.** Das neue
+   Integrationstest-Modul (dem `test/integration-*`-Muster folgend) nimmt
+   automatisch am generischen
+   `-PintegrationTests`-Aufruf in `integration.yml` teil (jeder Push/PR auf
+   main, nicht-blockierend neben dem Hauptbuild) — kein Sonderpfad, kein
+   Drift-Risiko. `mcr.microsoft.com/mssql/server:2022-latest` braucht
    `ACCEPT_EULA=Y` und ist mit ~1,5 GB Image / 2 GB RAM der schwerste Container
-   im Haus. Zu entscheiden: läuft die MSSQL-Integrationsschiene in jedem
-   CI-Lauf mit (Laufzeit!) oder wie `perf-acceptance` gestaffelt? Die
-   EULA-Akzeptanz gehört dokumentiert (Administrationshandbuch,
-   Testcontainers-Setup).
+   im Haus; die EULA-Akzeptanz wird in Slice 0 dokumentiert
+   (Administrationshandbuch, Testcontainers-Setup).
 
-## Vorgeschlagener Slice-Schnitt
+## Slice-Schnitt
 
-Dem gewachsenen Muster folgend (Kern zuerst, Carve-Outs benannt):
+Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices —
+Entscheidung 2):
 
-| Slice | Inhalt | Registrierbar ab |
+| Slice | Inhalt | Registrierbar ab / liefert |
 | --- | --- | --- |
-| **0** | Scoping-ADR (die drei Entscheidungen), Gradle-Modul `driver-mssql`, Testcontainers-Spike (Connect + `SELECT @@VERSION`), Dependabot-Ignore | — |
+| **0** | Scoping-ADR (die drei Entscheidungen), Gradle-Modul `driver-mssql`, Testcontainers-Spike (Connect + `SELECT @@VERSION`), EULA-Doku, Dependabot-Ignore | — |
 | **1** | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) | ja — `schema reverse` funktioniert |
 | **2** | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
 | **3** | `DataReader`/`DataWriter` (Transfer; Fast-Path später) | `data export/import/transfer` |
 | **4** | Cross-Dialekt-Matrix, `NeutralTypeCanonicalizer`, Postcompare-Fingerprint, `transferCompatibility` | Matrix-Gate |
 | **5** | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) | `schema migrate` |
-| danach | Profiling-Modul, Carve-Out-Tickets nach Bedarf | — |
+| **6** | Gefilterte Indizes (WHERE) + clustered/nonclustered-Steuerung, Reverse + Generate + Diff | volle Index-Treue |
+| **7** | Partitionierung: Partition Functions + Schemes + Filegroups (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster des PG-Slices) | Partitionstabellen im Round-Trip |
+| **8** | Volltext: Full-Text Search (Muster aus dem Fulltext-Slice, `fullTextVectorColumn`-Modell) | Volltext-Indizes Generate + Reverse |
+| **9** | Routinen/Trigger: T-SQL-Prozeduren, `CREATE OR ALTER` | Routinen-Migration |
+| **10** | Profiling-Modul `driver-mssql-profiling` | `data profile` |
 
 Jeder Slice endet CI-grün und einzeln nutzbar; die No-op-Defaults des Ports
-machen das möglich, ohne UNSUPPORTED-Stopgaps (No-Carveouts-Regel: was Cut A
-nicht kann, ist als Carve-Out benannt statt als else-Zweig versteckt).
+machen das möglich, ohne UNSUPPORTED-Stopgaps (No-Carveouts-Regel). Was ein
+Slice noch nicht kann, steht im Plan als späterer Slice — nicht als
+else-Zweig versteckt und nicht als ausgeschlossenes Ticket abgelegt.
 
 ## Risiken
 
@@ -109,6 +121,8 @@ nicht kann, ist als Carve-Out benannt statt als else-Zweig versteckt).
   Slice 2, nicht erst in Slice 4.
 - **Collation-Semantik** (case-insensitive Default!) berührt Vergleiche im
   Postcompare — der Kanonisierer muss Namensvergleiche dialektbewusst falten.
-- **CI-Gewicht** des Containers (Entscheidung 3).
+- **CI-Gewicht** des Containers: mit Entscheidung 3 läuft MSSQL in jedem
+  Lauf — die Laufzeit von `integration.yml` ist zu beobachten; wächst sie
+  unzumutbar, ist Staffelung (wie `perf-acceptance`) der Ausweichpfad.
 - **Kein MSSQL-Wissen in den Goldens**: DDL-Goldens entstehen neu; der
   Regenerier-Weg läuft per CLI (nicht `make golden-update`).
