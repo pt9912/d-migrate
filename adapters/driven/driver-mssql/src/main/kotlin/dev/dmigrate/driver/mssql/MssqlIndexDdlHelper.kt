@@ -29,7 +29,13 @@ internal class MssqlIndexDdlHelper(
     fun generateIndices(tableName: String, table: TableDefinition, lobColumns: Set<String>): List<DdlStatement> =
         table.indices.map { generateIndex(tableName, table, it, lobColumns) }
 
-    private fun generateIndex(
+    /**
+     * Ein einzelner Index — der Eintrittspunkt fuer den Diff-Pfad, der Indizes
+     * operationsweise statt tabellenweise rendert. Bewusst dieselbe Funktion
+     * wie [generateIndices]: `generate` und `migrate` muessen denselben Index
+     * schreiben, sonst meldet der Postcompare Drift.
+     */
+    fun generateIndex(
         tableName: String,
         table: TableDefinition,
         index: IndexDefinition,

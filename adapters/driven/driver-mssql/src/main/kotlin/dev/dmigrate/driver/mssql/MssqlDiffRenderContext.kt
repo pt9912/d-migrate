@@ -101,6 +101,19 @@ internal class MssqlDiffRenderContext(
         return schema?.tables?.get(table)?.columns?.get(column)
     }
 
+    /**
+     * Kaskaden-Waechter gegen den ZIELZUSTAND. Der Generate-Pfad analysiert das
+     * Schema, das er schreibt; der Diff fuegt einzelne Fremdschluessel zu einer
+     * bestehenden Datenbank hinzu — ob dabei ein Mehrfachpfad entsteht
+     * (Fehler 1785), entscheidet die Vereinigung aus vorhandenen und neuen
+     * Kanten. Genau die steht im Schema der Zielrichtung.
+     */
+    fun cascadeGuard(): MssqlCascadePathGuard = cascadeGuardCache
+        ?: (schemaForDirection()?.let { MssqlCascadePathGuard.analyse(it) } ?: MssqlCascadePathGuard.NONE)
+            .also { cascadeGuardCache = it }
+
+    private var cascadeGuardCache: MssqlCascadePathGuard? = null
+
     /** Das Schema, das die Zielrichtung dieses Laufs beschreibt. */
     fun schemaForDirection(): SchemaDefinition? =
         if (direction == MssqlRenderDirection.UP) desiredSchema else currentSchema

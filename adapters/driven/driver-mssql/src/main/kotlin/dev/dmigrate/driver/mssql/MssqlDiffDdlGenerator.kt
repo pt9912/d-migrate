@@ -13,10 +13,10 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * T-SQL-Renderer fuer die Migrations-Pipeline (Sub-Slice 5a des
  * MSSQL-Ausbaus, [ADR 0047]).
  *
- * **Im Umfang dieses Sub-Slices**: Tabellen, Spalten und Primaerschluessel.
- * Alles andere meldet der Dispatcher als `DIALECT_UNSUPPORTED_OPERATION` —
- * teils, weil ein spaeterer Sub-Slice es liefert (Constraints und Indizes 5b,
- * Sichten und Custom Types 5c, Sequenzen 5d), teils, weil ein spaeterer Slice
+ * **Im Umfang**: Tabellen, Spalten und Primaerschluessel (5a), Constraints und
+ * Indizes (5b). Alles andere meldet der Dispatcher als
+ * `DIALECT_UNSUPPORTED_OPERATION` — teils, weil ein spaeterer Sub-Slice es
+ * liefert (Sichten und Custom Types 5c, Sequenzen 5d), teils, weil ein Slice
  * die ganze Flaeche besitzt (Routinen und Trigger Slice 9, Partitionierung
  * Slice 7) oder SQL Server sie gar nicht kennt (Materialized Views).
  *
@@ -80,6 +80,10 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> MssqlDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> MssqlDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> MssqlDiffTableOps.renderDropPrimaryKey(op, ctx)
+            is DiffOperation.AddIndex -> MssqlDiffObjectOps.renderAddIndex(op, ctx)
+            is DiffOperation.DropIndex -> MssqlDiffObjectOps.renderDropIndex(op, ctx)
+            is DiffOperation.AddConstraint -> MssqlDiffObjectOps.renderAddConstraint(op, ctx)
+            is DiffOperation.DropConstraint -> MssqlDiffObjectOps.renderDropConstraint(op, ctx)
             else -> blockUnsupported(op, ctx)
         }
     }
@@ -102,10 +106,6 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
     }
 
     private fun ownerOf(op: DiffOperation): String = when (op) {
-        is DiffOperation.AddConstraint, is DiffOperation.DropConstraint,
-        is DiffOperation.AddIndex, is DiffOperation.DropIndex,
-        -> "constraints and indices arrive with sub-slice 5b"
-
         is DiffOperation.CreateView, is DiffOperation.ReplaceView,
         is DiffOperation.DropView, is DiffOperation.RenameView,
         is DiffOperation.CreateCustomType, is DiffOperation.AlterCustomType,

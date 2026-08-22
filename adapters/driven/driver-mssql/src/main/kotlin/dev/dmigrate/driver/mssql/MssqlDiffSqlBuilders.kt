@@ -4,12 +4,15 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlStatement
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.SqlIdentifiers
 
 /**
@@ -31,11 +34,19 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
      * `NVARCHAR` + CHECK statt `NVARCHAR(MAX)`, Geometrie, Kaskaden samt
      * [MssqlCascadePathGuard] und die LOB-Schluessel-Hinweise.
      */
+    private val typeResolver = MssqlColumnTypeResolver(typeMapper)
+
     private val columnHelper = MssqlColumnConstraintHelper(
         quoteIdentifier = { SqlIdentifiers.quoteIdentifier(it, DatabaseDialect.MSSQL) },
         typeMapper = typeMapper,
-        typeResolver = MssqlColumnTypeResolver(typeMapper),
+        typeResolver = typeResolver,
         referentialActionSql = ::referentialActionSql,
+    )
+
+    /** Auch die Indizes rendert der Generate-Pfad — aus demselben Grund wie die Spalten. */
+    private val indexHelper = MssqlIndexDdlHelper(
+        quoteIdentifier = { SqlIdentifiers.quoteIdentifier(it, DatabaseDialect.MSSQL) },
+        typeMapper = typeMapper,
     )
 
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.MSSQL)
@@ -145,7 +156,43 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
         return "EXEC sp_rename ${stringLiteral(oldQualifiedName)}, ${stringLiteral(newBareName)}$typeArg;"
     }
 
-    fun constraintLine(table: String, c: ConstraintDefinition): String? = when (c.type) {
+
+    fun createIndexStatement(
+        table: String,
+        tableDef: TableDefinition,
+        index: IndexDefinition,
+        schema: SchemaDefinition,
+    ): DdlStatement = indexHelper.generateIndex(table, tableDef, index, typeResolver.lobColumns(tableDef, schema))
+
+    fun dropIndexSql(table: String, index: IndexDefinition): String {
+        val name = index.name ?: "idx_${table}_${index.columnNames.joinToString("_")}"
+        // T-SQL braucht die Tabelle im DROP INDEX — anders als PostgreSQL, wo
+        // Indexnamen schema-global eindeutig sind.
+        return "DROP INDEX IF EXISTS ${quote(name)} ON ${quote(table)};"
+    }
+
+    fun dropConstraintSql(table: String, name: String): String =
+        "ALTER TABLE ${quote(table)} DROP CONSTRAINT IF EXISTS ${quote(name)};"
+
+    /**
+     * Ein gefilterter Index verlangt beim Anlegen bestimmte SET-Optionen, sonst
+     * lehnt SQL Server ihn mit Msg 1934 ab. Im Skript setzt Slice 2a sie als
+     * eigenen Batch voran; hier muessen sie in dasselbe Statement, weil der
+     * Runner jedes Statement einzeln ausfuehrt und die Praeambel nie sieht.
+     */
+    fun withFilteredIndexSetOptions(index: IndexDefinition, sqlText: String): String =
+        if (index.where.isNullOrBlank()) {
+            sqlText
+        } else {
+            DialectCapabilities.forDialect(DatabaseDialect.MSSQL).scriptPreamble
+                ?.let { "$it\n$sqlText" } ?: sqlText
+        }
+
+    fun constraintLine(
+        table: String,
+        c: ConstraintDefinition,
+        guard: MssqlCascadePathGuard = MssqlCascadePathGuard.NONE,
+    ): String? = when (c.type) {
         ConstraintType.UNIQUE -> c.columns?.let { cols ->
             "CONSTRAINT ${quote(c.name)} UNIQUE (${cols.joinToString(", ") { quote(it) }})"
         }
@@ -155,8 +202,13 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
             if (cols == null || ref == null) {
                 null
             } else {
-                val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" }.orEmpty()
-                val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" }.orEmpty()
+                val neutralise = guard.mustNeutralise(c.name)
+                val onDelete = ref.onDelete
+                    ?.let { " ON DELETE ${referentialActionSql(if (neutralise) ReferentialAction.NO_ACTION else it)}" }
+                    .orEmpty()
+                val onUpdate = ref.onUpdate
+                    ?.let { " ON UPDATE ${referentialActionSql(if (neutralise) ReferentialAction.NO_ACTION else it)}" }
+                    .orEmpty()
                 "CONSTRAINT ${quote(c.name)} FOREIGN KEY (${cols.joinToString(", ") { quote(it) }}) " +
                     "REFERENCES ${quote(ref.table)}(${ref.columns.joinToString(", ") { quote(it) }})" +
                     onDelete + onUpdate

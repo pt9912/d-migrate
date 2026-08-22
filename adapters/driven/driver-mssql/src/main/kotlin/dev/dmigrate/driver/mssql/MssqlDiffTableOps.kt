@@ -34,12 +34,8 @@ internal object MssqlDiffTableOps {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(table)};")
             return
         }
-        // Indizes und Partitionierung gehoeren Sub-Slice 5b bzw. Slice 7. Eine
-        // Tabelle OHNE ihre Indizes anzulegen waere kein Teilerfolg, sondern
-        // ein stiller Verlust — der naechste Postcompare meldete Drift.
-        if (op.table.indices.isNotEmpty()) {
-            return blockDeferred(op, ctx, "table '$table' carries ${op.table.indices.size} index/indices", "5b")
-        }
+        // Partitionierung gehoert Slice 7. Eine Tabelle ohne sie anzulegen waere
+        // kein Teilerfolg, sondern ein stiller Verlust.
         if (op.table.partitioning != null) {
             return blockDeferred(op, ctx, "table '$table' is partitioned", "slice 7")
         }
@@ -61,6 +57,10 @@ internal object MssqlDiffTableOps {
         }
         ctx.emit(op, "CREATE TABLE ${ctx.sql.quote(table)} (\n" + lines.joinToString(",\n") + "\n);")
         ctx.carryOverNotes(op, notes)
+        for (index in op.table.indices) {
+            MssqlDiffObjectOps.emitCreateIndex(op, ctx, table, index)
+            if (ctx.isSkipped(op)) return
+        }
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: MssqlDiffRenderContext) {
@@ -227,10 +227,11 @@ internal object MssqlDiffTableOps {
         type: NeutralType,
         target: ColumnDefinition,
     ) {
-        if (blockDependentObjects(op, ctx, table, column, "altered")) return
+        val dependents = emitDependentDrops(ctx, op, table, column)
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
         target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
+        emitDependentRecreates(ctx, op, table, dependents)
     }
 
     private fun dropColumnStatements(
@@ -239,7 +240,9 @@ internal object MssqlDiffTableOps {
         table: String,
         column: String,
     ) {
-        if (blockDependentObjects(op, ctx, table, column, "dropped")) return
+        // Beim DROP COLUMN wird nur abgeraeumt, nicht wieder angelegt: die
+        // Spalte, auf der die Objekte hingen, gibt es danach nicht mehr.
+        emitDependentDrops(ctx, op, table, column)
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
@@ -297,32 +300,40 @@ internal object MssqlDiffTableOps {
      * eigener Generate-Pfad haengt an jede Enum-Spalte ein `ck_…` und an jede
      * `unique: true`-Spalte ein `uq_…`.
      *
-     * Die haben Sub-Slice 5b als Eigentuemer. Bis dahin wird geblockt: sie hier
-     * mit dynamischem SQL wegzuraeumen hiesse, Objekte zu loeschen, die der
-     * Plan gar nicht anfasst.
+     * Sie werden deshalb um die Aenderung herum abgeraeumt und wieder angelegt.
+     * Beim DROP COLUMN entfaellt das Wiederanlegen fuer alles, was genau diese
+     * Spalte trug — es gibt sie danach nicht mehr.
      */
-    private fun blockDependentObjects(
-        op: DiffOperation,
+    private fun emitDependentDrops(
         ctx: MssqlDiffRenderContext,
+        op: DiffOperation,
         table: String,
         column: String,
-        verb: String,
-    ): Boolean {
-        val tableDef = ctx.schemaForDirection()?.tables?.get(table) ?: return false
-        val dependents = mutableListOf<String>()
-        if (tableDef.columns[column]?.unique == true) dependents += "a UNIQUE constraint"
-        if (tableDef.constraints.any { column in (it.columns ?: emptyList()) }) dependents += "a table constraint"
-        if (tableDef.indices.any { idx -> idx.columns.any { it.name == column } }) dependents += "an index"
-        if (dependents.isEmpty()) return false
-        ctx.skip(
-            op,
-            "Column '$table.$column' cannot be $verb while ${dependents.joinToString(" and ")} depends on it; " +
-                "SQL Server rejects that with Msg 5074. Dropping and recreating those objects around the change " +
-                "is the subject of sub-slice 5b.",
-            code = "MSSQL_COLUMN_HAS_DEPENDENT_OBJECTS",
-        )
-        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-        return true
+    ): MssqlDiffObjectOps.Dependents {
+        val tableDef = ctx.schemaForDirection()?.tables?.get(table)
+            ?: return MssqlDiffObjectOps.Dependents(emptyList(), emptyList())
+        val dependents = MssqlDiffObjectOps.dependentsOf(tableDef, column)
+        for (constraint in dependents.constraints) {
+            ctx.emit(op, ctx.sql.dropConstraintSql(table, constraint.name))
+        }
+        for (index in dependents.indices) {
+            ctx.emit(op, ctx.sql.dropIndexSql(table, index))
+        }
+        return dependents
+    }
+
+    private fun emitDependentRecreates(
+        ctx: MssqlDiffRenderContext,
+        op: DiffOperation,
+        table: String,
+        dependents: MssqlDiffObjectOps.Dependents,
+    ) {
+        for (index in dependents.indices) {
+            MssqlDiffObjectOps.emitCreateIndex(op, ctx, table, index)
+        }
+        for (constraint in dependents.constraints) {
+            MssqlDiffObjectOps.emitAddConstraint(op, ctx, table, constraint)
+        }
     }
 
     /** Eine IDENTITY-Spalte laesst sich nicht neu deklarieren; `ALTER COLUMN` waere Msg 156. */
