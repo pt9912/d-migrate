@@ -1,5 +1,6 @@
 package dev.dmigrate.integration
 
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.migration.ArtifactRelativePath
 import dev.dmigrate.migration.MigrationArtifact
 import dev.dmigrate.migration.MigrationBundle
@@ -26,6 +27,7 @@ class DjangoMigrationExporter : ToolMigrationExporter {
     override fun render(bundle: MigrationBundle): ToolExportResult {
         val identity = bundle.identity
         val fileName = "${identity.version}.py"
+        val statementList = identity.dialect == DatabaseDialect.MSSQL
 
         val python = buildString {
             appendLine("from django.db import migrations")
@@ -37,16 +39,30 @@ class DjangoMigrationExporter : ToolMigrationExporter {
             appendLine()
             appendLine("    operations = [")
             appendLine("        migrations.RunSQL(")
-            appendLine("            sql=\"\"\"")
-            append(renderStatements(bundle.up))
-            appendLine("\"\"\"" + ",")
+            if (statementList) {
+                // SQL Server: jedes Statement als eigener RunSQL-Eintrag, damit Django
+                // sie einzeln ausfuehrt (CREATE VIEW/Routinen muessen allein im Batch stehen).
+                appendLine("            sql=[")
+                append(renderStatementList(bundle.up))
+                appendLine("            ],")
+            } else {
+                appendLine("            sql=\"\"\"")
+                append(renderStatements(bundle.up))
+                appendLine("\"\"\"" + ",")
+            }
 
             when (val rollback = bundle.rollback) {
                 is MigrationRollback.NotRequested -> {}
                 is MigrationRollback.Requested -> {
-                    appendLine("            reverse_sql=\"\"\"")
-                    append(renderStatements(rollback.down))
-                    appendLine("\"\"\",")
+                    if (statementList) {
+                        appendLine("            reverse_sql=[")
+                        append(renderStatementList(rollback.down))
+                        appendLine("            ],")
+                    } else {
+                        appendLine("            reverse_sql=\"\"\"")
+                        append(renderStatements(rollback.down))
+                        appendLine("\"\"\",")
+                    }
                 }
             }
 
@@ -67,6 +83,14 @@ class DjangoMigrationExporter : ToolMigrationExporter {
 
     internal companion object {
         private val COMMENT_ONLY = Regex("^(\\s*--[^\n]*\n?)*$")
+
+        fun renderStatementList(payload: MigrationDdlPayload): String = buildString {
+            for (statement in payload.result.statements) {
+                if (statement.sql.isBlank()) continue
+                if (COMMENT_ONLY.matches(statement.sql)) continue
+                appendLine("                \"\"\"" + RenderHelpers.escapePython(statement.sql) + "\"\"\",")
+            }
+        }
 
         fun renderStatements(payload: MigrationDdlPayload): String = buildString {
             for (statement in payload.result.statements) {

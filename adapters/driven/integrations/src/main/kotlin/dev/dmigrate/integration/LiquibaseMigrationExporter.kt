@@ -1,5 +1,6 @@
 package dev.dmigrate.integration
 
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.migration.ArtifactRelativePath
 import dev.dmigrate.migration.MigrationArtifact
 import dev.dmigrate.migration.MigrationBundle
@@ -26,6 +27,9 @@ class LiquibaseMigrationExporter : ToolMigrationExporter {
         val identity = bundle.identity
         val changeSetId = deriveChangeSetId(identity)
         val fileName = "changelog-${identity.version}-${identity.slug}.xml"
+        // T-SQL-Skripte tragen `GO`-Batch-Trenner (DdlScript); Liquibase trennt dann
+        // an `GO` statt an `;`, sodass jedes Statement seinen eigenen Batch behaelt.
+        val sqlAttributes = if (identity.dialect == DatabaseDialect.MSSQL) """ endDelimiter="GO"""" else ""
 
         val xml = buildString {
             appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
@@ -36,7 +40,7 @@ class LiquibaseMigrationExporter : ToolMigrationExporter {
             appendLine("""        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">""")
             appendLine()
             appendLine("""    <changeSet id="${RenderHelpers.escapeXmlAttribute(changeSetId)}" author="d-migrate">""")
-            appendLine("""        <sql>""")
+            appendLine("""        <sql$sqlAttributes>""")
             append(indentSql(RenderHelpers.escapeXml(bundle.up.deterministicSql)))
             appendLine()
             appendLine("""        </sql>""")
@@ -45,7 +49,7 @@ class LiquibaseMigrationExporter : ToolMigrationExporter {
                 is MigrationRollback.NotRequested -> {}
                 is MigrationRollback.Requested -> {
                     appendLine("""        <rollback>""")
-                    appendLine("""            <sql>""")
+                    appendLine("""            <sql$sqlAttributes>""")
                     append(indentSql(RenderHelpers.escapeXml(rollback.down.deterministicSql), 16))
                     appendLine()
                     appendLine("""            </sql>""")

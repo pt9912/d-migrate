@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlScript
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -329,7 +330,7 @@ class SchemaGenerateRunner(
 
         if (request.splitMode == SplitMode.PRE_POST) {
             if (request.output != null) {
-                outputWriter.writeSplitFileOutput(request, result, schema, dialectName, splitModeStr, options)
+                outputWriter.writeSplitFileOutput(request, result, schema, dialect, splitModeStr, options)
             }
             if (request.outputFormat == "json") {
                 stdout(
@@ -342,7 +343,8 @@ class SchemaGenerateRunner(
             }
             if (request.output == null && request.outputFormat != "json") return 2
         } else {
-            val ddl = result.render()
+            // Skript-Darstellung (Batch-Trenner je Dialekt), nicht das rohe render().
+            val ddl = DdlScript.render(result, dialect)
             when {
                 request.outputFormat == "json" ->
                     stdout(

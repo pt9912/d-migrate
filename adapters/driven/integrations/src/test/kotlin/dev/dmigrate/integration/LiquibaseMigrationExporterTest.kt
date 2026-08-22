@@ -164,4 +164,20 @@ class LiquibaseMigrationExporterTest : FunSpec({
         LiquibaseMigrationExporter.deriveChangeSetId(identity()) shouldBe
             "1.0-my_app-postgresql"
     }
+
+    test("mssql changelog sets endDelimiter=GO so Liquibase splits T-SQL batches") {
+        val result = exporter.render(
+            bundle(
+                identity = identity().copy(dialect = DatabaseDialect.MSSQL),
+                up = payload("CREATE TABLE [users] ([id] INT);\nGO\n\nCREATE OR ALTER VIEW [v] AS SELECT [id] FROM [users];\nGO"),
+            ),
+        )
+        val xml = result.artifacts.single().content
+        xml shouldContain """<sql endDelimiter="GO">"""
+        xml shouldContain "GO"
+    }
+
+    test("non-mssql changelog keeps the plain sql element") {
+        exporter.render(bundle()).artifacts.single().content shouldContain "<sql>\n"
+    }
 })

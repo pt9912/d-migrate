@@ -51,12 +51,18 @@ class MssqlSchemaGenerateE2ETest : FunSpec({
             run.exitCode shouldBe 0
         }
         val ddl = out.readText()
+        // Praeambel-Batch: ohne SET QUOTED_IDENTIFIER ON scheitert ein gefilterter
+        // Index unter sqlcmd (Msg 1934).
+        ddl shouldContain "SET QUOTED_IDENTIFIER ON;\nGO"
         ddl shouldContain "-- Target: mssql"
         ddl shouldContain "CREATE TABLE [customers] ("
         ddl shouldContain "[id] INT IDENTITY(1,1) NOT NULL"
         ddl shouldContain "[email] NVARCHAR(254) NOT NULL CONSTRAINT [uq_customers_email] UNIQUE"
         ddl shouldContain "CONSTRAINT [fk_orders_customer_id] FOREIGN KEY ([customer_id]) REFERENCES [customers] ([id])"
-        ddl shouldContain "CREATE INDEX [idx_orders_customer] ON [orders] ([customer_id]);"
+        ddl shouldContain "CREATE INDEX [idx_orders_customer] ON [orders] ([customer_id]);\nGO\n"
+        // Skript-Darstellung: jedes ausfuehrbare Statement in seinem eigenen Batch —
+        // die View darf in sqlcmd/SSMS/Flyway nicht im Batch der Tabellen stehen.
+        ddl shouldContain "CREATE OR ALTER VIEW [active_customers] AS\nSELECT id, email FROM customers;\nGO"
         ddl shouldNotContain "does not support dialect mssql"
         Files.exists(tmp.resolve("schema.report.yaml")) shouldBe true
     }
@@ -77,7 +83,11 @@ class MssqlSchemaGenerateE2ETest : FunSpec({
         }
         val migrations = outDir.listDirectoryEntries("V*.sql")
         migrations shouldHaveSize 1
-        migrations.single().readText() shouldContain "CREATE TABLE [customers] ("
+        val migration = migrations.single().readText()
+        migration shouldContain "CREATE TABLE [customers] ("
+        // Flyways SQL-Server-Parser trennt Batches nur an GO-Zeilen.
+        migration shouldContain ");\nGO\n"
+        migration shouldContain "CREATE OR ALTER VIEW [active_customers] AS\nSELECT id, email FROM customers;\nGO"
     }
 
     listOf(
@@ -138,4 +148,10 @@ private val SCHEMA = """
         indices:
           - name: idx_orders_customer
             columns: [customer_id]
+
+    views:
+      active_customers:
+        query: "SELECT id, email FROM customers"
+        dependencies:
+          tables: [customers]
 """.trimIndent()

@@ -375,6 +375,14 @@ Generiert datenbankspezifisches DDL aus einer Schema-Definition.
 d-migrate schema generate --source <path> --target <dialect> [--output <path>] [--split single|pre-post]
 ```
 
+**MSSQL-Skriptausgabe**: Für `--target mssql` sind Datei- und stdout-Ausgabe
+(auch `--split`-Dateien, Rollback-Datei und das `ddl`-Feld der JSON-Ausgabe)
+Skripte mit vorangestelltem SET-Options-Batch (u. a. `SET QUOTED_IDENTIFIER ON`,
+nötig für gefilterte Indizes) und `GO`-Trennern — nach jedem ausführbaren Statement folgt eine
+`GO`-Zeile, damit sqlcmd/SSMS/Flyway jedes Statement (insbesondere
+`CREATE OR ALTER VIEW`) in seinem eigenen Batch ausführen. Reine
+Hinweis-/Kommentarblöcke tragen kein `GO`.
+
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `--source` | Ja | Pfad | Schema-Datei (YAML/JSON) |
@@ -1545,7 +1553,7 @@ d-migrate export django --source schema.yaml --target mysql --version 0001 --out
 |---|---|---|---|
 | `--source` | Ja | Pfad | Schema-Datei (YAML/JSON) |
 | `--output` | Ja | Pfad | Ausgabeverzeichnis |
-| `--target` | Ja | Dialekt | Ziel-Datenbank (`postgresql`, `mysql`, `sqlite`) |
+| `--target` | Ja | Dialekt | Ziel-Datenbank (`postgresql`, `mysql`, `sqlite`, `mssql`) |
 | `--version` | Flyway/Liquibase: Nein; Django/Knex: Ja | String | Versionsnummer für Migration |
 | `--spatial-profile` | Nein | String | Spatial-Profil (wie bei `schema generate`) |
 | `--generate-rollback` | Nein | Boolean | Tool-spezifisches Down-Artefakt erzeugen |
@@ -1564,6 +1572,15 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 (Flyway-Undo, Liquibase-Rollback-Block, Django `reverse_sql`, Knex
 `exports.down`) auf Basis des bestehenden full-state-`generateRollback()`-Pfads.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
+
+**MSSQL-Batches**: T-SQL verlangt, dass `CREATE VIEW`/`CREATE OR ALTER …`
+und Routinen allein in einem Batch stehen, und Skript-Clients trennen
+Batches nur an `GO`-Zeilen. Für `--target mssql` ist das Flyway-Artefakt
+deshalb ein `GO`-getrenntes Skript (ein Batch je Statement), der
+Liquibase-`<sql>`-Block trägt `endDelimiter="GO"`, die Django-Migration
+listet jedes Statement als eigenen `RunSQL`-Eintrag, und Knex ruft ohnehin
+`knex.raw(...)` je Statement auf. `GO` ist nie Teil eines DDL-Statements
+selbst (d-migrate führt statementweise aus), sondern nur der Skript-Darstellung.
 
 **Liquibase-Format**: `export liquibase` erzeugt genau einen
 versionierten XML-Changelog mit genau einem deterministischen `changeSet`.

@@ -160,4 +160,23 @@ class DjangoMigrationExporterTest : FunSpec({
         content shouldContain "CREATE INDEX idx"
         content shouldNotContain "this should not appear"
     }
+
+    test("mssql migration lists every statement as its own RunSQL entry") {
+        val payload = MigrationDdlPayload(
+            result = DdlResult(
+                listOf(
+                    DdlStatement("CREATE TABLE [users] ([id] INT);"),
+                    DdlStatement("CREATE OR ALTER VIEW [v] AS SELECT [id] FROM [users];"),
+                ),
+            ),
+            deterministicSql = "ignored-for-django",
+        )
+        val result = exporter.render(bundle(identity = identity().copy(dialect = DatabaseDialect.MSSQL), up = payload))
+        val py = result.artifacts.single().content
+        py shouldContain "            sql=[\n"
+        py shouldContain "                \"\"\"CREATE TABLE [users] ([id] INT);\"\"\","
+        py shouldContain "                \"\"\"CREATE OR ALTER VIEW [v] AS SELECT [id] FROM [users];\"\"\","
+        py shouldContain "            ],"
+        py shouldNotContain "sql=\"\"\""
+    }
 })

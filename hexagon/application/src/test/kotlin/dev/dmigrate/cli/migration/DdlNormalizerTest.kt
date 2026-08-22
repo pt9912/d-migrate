@@ -1,11 +1,13 @@
 package dev.dmigrate.cli.migration
 
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
 
 class DdlNormalizerTest : FunSpec({
 
@@ -20,26 +22,26 @@ class DdlNormalizerTest : FunSpec({
     }
 
     test("timestamp stripped from header") {
-        val payload = DdlNormalizer.normalize(resultWithHeader())
+        val payload = DdlNormalizer.normalize(resultWithHeader(), DatabaseDialect.POSTGRESQL)
         payload.deterministicSql shouldNotContain "Generated:"
         payload.deterministicSql shouldContain "-- Target: postgresql"
     }
 
     test("different timestamps produce same deterministic SQL") {
-        val a = DdlNormalizer.normalize(resultWithHeader("2026-04-14T12:00:00Z"))
-        val b = DdlNormalizer.normalize(resultWithHeader("2026-04-14T18:30:00Z"))
+        val a = DdlNormalizer.normalize(resultWithHeader("2026-04-14T12:00:00Z"), DatabaseDialect.POSTGRESQL)
+        val b = DdlNormalizer.normalize(resultWithHeader("2026-04-14T18:30:00Z"), DatabaseDialect.POSTGRESQL)
         a.deterministicSql shouldBe b.deterministicSql
     }
 
     test("original DdlResult preserved in payload") {
         val result = resultWithHeader()
-        val payload = DdlNormalizer.normalize(result)
+        val payload = DdlNormalizer.normalize(result, DatabaseDialect.POSTGRESQL)
         payload.result shouldBe result
     }
 
     test("DDL without timestamp header passes through unchanged") {
         val result = DdlResult(listOf(DdlStatement("CREATE TABLE t (id INT);")))
-        val payload = DdlNormalizer.normalize(result)
+        val payload = DdlNormalizer.normalize(result, DatabaseDialect.POSTGRESQL)
         payload.deterministicSql shouldBe "CREATE TABLE t (id INT);"
     }
 
@@ -49,9 +51,26 @@ class DdlNormalizerTest : FunSpec({
             DdlStatement("CREATE TABLE a (id INT);"),
             DdlStatement("CREATE TABLE b (id INT);"),
         ))
-        val payload = DdlNormalizer.normalize(result)
+        val payload = DdlNormalizer.normalize(result, DatabaseDialect.MYSQL)
         payload.deterministicSql shouldContain "CREATE TABLE a"
         payload.deterministicSql shouldContain "CREATE TABLE b"
         payload.deterministicSql shouldNotContain "Generated:"
+    }
+
+    test("mssql payloads carry GO batch separators (script rendering for Flyway/sqlcmd)") {
+        val result = DdlResult(
+            listOf(
+                DdlStatement("-- Target: mssql | Generated: 2026-04-14T12:00:00Z"),
+                DdlStatement("CREATE TABLE [a] ([id] INT);"),
+                DdlStatement("CREATE OR ALTER VIEW [v] AS SELECT [id] FROM [a];"),
+            ),
+        )
+        val payload = DdlNormalizer.normalize(result, DatabaseDialect.MSSQL)
+        payload.deterministicSql shouldContain "CREATE TABLE [a] ([id] INT);\nGO"
+        payload.deterministicSql shouldContain "CREATE OR ALTER VIEW [v] AS SELECT [id] FROM [a];\nGO"
+        payload.deterministicSql shouldNotContain "Generated:"
+        // Der Header-Kommentar eroeffnet keinen Batch.
+        payload.deterministicSql shouldStartWith "SET ANSI_NULLS ON;"
+        payload.deterministicSql shouldContain "SET QUOTED_IDENTIFIER ON;\nGO\n\n-- Target: mssql\n\nCREATE TABLE"
     }
 })

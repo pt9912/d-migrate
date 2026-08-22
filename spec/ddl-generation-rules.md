@@ -413,6 +413,7 @@ Besonderheiten:
 - `DECIMAL`-Präzision > 38 → auf 38 gekappt + W139
 - Keine Tabellenoptionen (kein Engine/Charset)
 - Partitionierung wird nicht gerendert (E055, Tabelle plain; siehe §9)
+- Skript-Darstellung mit `GO`-Batch-Trennern (siehe §13.1)
 
 ---
 
@@ -1124,6 +1125,22 @@ unterstützt.
 - Constraints am Ende der Tabelle, jeweils eigene Zeile
 - Leere Zeile zwischen Tabellen-Definitionen
 - Kommentare: `-- ` Präfix
+- **MSSQL-Skripte**: in der Skript-Darstellung (Dateiausgabe von
+  `schema generate`, Tool-Export, MCP-Artefakt) folgt nach jedem
+  ausführbaren Statement eine eigene `GO`-Zeile (Batch-Trenner für
+  sqlcmd/SSMS/Flyway; `CREATE OR ALTER VIEW` und Routinen müssen allein im
+  Batch stehen). `GO` ist kein T-SQL und nie Teil eines `DdlStatement`;
+  Hinweis-/Kommentarblöcke tragen kein `GO`. Der d-migrate-Runner führt
+  Statements einzeln aus und braucht keinen Trenner.
+- **MSSQL-Präambel**: dieselbe Skript-Darstellung beginnt mit einem eigenen
+  SET-Options-Batch (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`,
+  `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL` je `ON`, `NUMERIC_ROUNDABORT OFF`,
+  `QUOTED_IDENTIFIER ON`). SQL Server verlangt diese Einstellungen für
+  gefilterte Indizes (auch für indizierte Sichten und Computed-Column-/
+  Spatial-Indizes); `sqlcmd` verbindet sich per Default mit
+  `QUOTED_IDENTIFIER OFF`, sodass ein `CREATE INDEX … WHERE` sonst mit
+  Msg 1934 abbricht. Dieselben Optionen gelten für spätere DML auf einer
+  Tabelle mit gefiltertem Index.
 
 ### 13.2 Beispiel
 

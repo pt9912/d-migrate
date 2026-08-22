@@ -213,10 +213,19 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 
 ## Offene Punkte aus Slice 2
 
-- **`GO`-Batch-Trenner im Tool-Export:** `CREATE VIEW`/`CREATE OR ALTER …`
-  muss in SQL Server allein im Batch stehen. Der d-migrate-Runner führt
-  Statements einzeln aus (kein Problem); Flyway/Liquibase-Artefakte für
-  `--target mssql` bräuchten `GO`-Zeilen zwischen View-/Routinen-Statements.
-  Einordnung: Tool-Export-Formatierung, nicht Generator — beim Slice-3-
-  Round-Trip mitprüfen, spätestens mit Slice 9 (Routinen) lösen.
+- ~~**`GO`-Batch-Trenner im Tool-Export**~~ — **erledigt als Slice 2a
+  (2026-08-22):** `DdlScript` (ports-read) rendert Skripte dialektbewusst
+  (`DialectCapabilities.batchSeparator`, mssql = `GO` nach jedem
+  ausführbaren Statement) für `schema generate`-Datei/stdout/Split/Rollback/
+  JSON, MCP-Artefakt und `DdlNormalizer` (→ Flyway); Liquibase
+  `endDelimiter="GO"`, Django Listenform je Statement, Knex unverändert
+  (statementweise). E2E `MssqlGenerateApplyE2ETest` wendet das Skript per
+  `sqlcmd` im Container an und liest es zurück — dieser Test fand zusätzlich,
+  dass `sqlcmd` per Default mit `QUOTED_IDENTIFIER OFF` verbindet und ein
+  gefilterter Index deshalb mit Msg 1934 scheitert; die Skript-Darstellung
+  beginnt seither mit einem SET-Options-Batch
+  (`DialectCapabilities.scriptPreamble`).
+- **Merken für Slice 3:** dieselben SET-Optionen gelten für DML auf Tabellen
+  mit gefiltertem Index — beim Import-Pfad (JDBC) prüfen, ob der Treiber sie
+  bereits richtig setzt.
 - **Clustered/nonclustered, INCLUDE-Spalten:** Slice 6.

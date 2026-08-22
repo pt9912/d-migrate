@@ -71,7 +71,7 @@ class MigrationBundleIntegrationTest : FunSpec({
         identity.slug shouldBe "my_e_commerce_app"
 
         val upResult = ddlResult()
-        val up = DdlNormalizer.normalize(upResult)
+        val up = DdlNormalizer.normalize(upResult, DatabaseDialect.POSTGRESQL)
 
         up.deterministicSql shouldNotContain "Generated:"
         up.deterministicSql shouldContain "-- Target: postgresql"
@@ -105,9 +105,10 @@ class MigrationBundleIntegrationTest : FunSpec({
         identity.versionSource shouldBe MigrationVersionSource.SCHEMA
         identity.slug shouldBe "shop"
 
-        val up = DdlNormalizer.normalize(ddlResult())
+        val up = DdlNormalizer.normalize(ddlResult(), DatabaseDialect.POSTGRESQL)
         val down = DdlNormalizer.normalize(
-            DdlResult(listOf(DdlStatement("DROP TABLE users;")))
+            DdlResult(listOf(DdlStatement("DROP TABLE users;"))),
+            DatabaseDialect.POSTGRESQL,
         )
 
         val bundle = MigrationBundle(
@@ -136,7 +137,7 @@ class MigrationBundleIntegrationTest : FunSpec({
         identity.version shouldBe "0001_initial"
         identity.versionSource shouldBe MigrationVersionSource.CLI
 
-        val up = DdlNormalizer.normalize(ddlResult())
+        val up = DdlNormalizer.normalize(ddlResult(), DatabaseDialect.POSTGRESQL)
         val bundle = MigrationBundle(
             identity = identity,
             schema = schema,
@@ -165,7 +166,7 @@ class MigrationBundleIntegrationTest : FunSpec({
         fun buildBundle(): MigrationBundle {
             val id = MigrationIdentityResolver.resolve(
                 MigrationTool.FLYWAY, DatabaseDialect.POSTGRESQL, "1.0", null, "My App")
-            val up = DdlNormalizer.normalize(ddlResult("2026-01-01T00:00:00Z"))
+            val up = DdlNormalizer.normalize(ddlResult("2026-01-01T00:00:00Z"), DatabaseDialect.POSTGRESQL)
             return MigrationBundle(id, schema, DdlGenerationOptions(), up, MigrationRollback.NotRequested)
         }
 
@@ -179,8 +180,8 @@ class MigrationBundleIntegrationTest : FunSpec({
     test("different timestamps produce same deterministic SQL in bundle") {
         val id = MigrationIdentityResolver.resolve(
             MigrationTool.FLYWAY, DatabaseDialect.POSTGRESQL, "1.0", null, "App")
-        val upA = DdlNormalizer.normalize(ddlResult("2026-04-14T08:00:00Z"))
-        val upB = DdlNormalizer.normalize(ddlResult("2026-04-14T23:59:59Z"))
+        val upA = DdlNormalizer.normalize(ddlResult("2026-04-14T08:00:00Z"), DatabaseDialect.POSTGRESQL)
+        val upB = DdlNormalizer.normalize(ddlResult("2026-04-14T23:59:59Z"), DatabaseDialect.POSTGRESQL)
 
         upA.deterministicSql shouldBe upB.deterministicSql
     }
@@ -191,7 +192,7 @@ class MigrationBundleIntegrationTest : FunSpec({
         val id = MigrationIdentityResolver.resolve(
             MigrationTool.LIQUIBASE, DatabaseDialect.POSTGRESQL, null, "1.0-rc1", "Shop")
         val result = ddlResult()
-        val up = DdlNormalizer.normalize(result)
+        val up = DdlNormalizer.normalize(result, DatabaseDialect.POSTGRESQL)
         val bundle = MigrationBundle(id, schema, DdlGenerationOptions(), up, MigrationRollback.NotRequested)
 
         bundle.up.result.notes shouldHaveSize 1
@@ -212,7 +213,7 @@ class MigrationBundleIntegrationTest : FunSpec({
     test("in-run collision detected before write") {
         val id = MigrationIdentityResolver.resolve(
             MigrationTool.FLYWAY, DatabaseDialect.POSTGRESQL, "1.0", null, "App")
-        val up = DdlNormalizer.normalize(ddlResult())
+        val up = DdlNormalizer.normalize(ddlResult(), DatabaseDialect.POSTGRESQL)
 
         val artifacts = listOf(
             MigrationArtifact(ArtifactRelativePath.of("V1_0__app.sql"), "up", up.deterministicSql),

@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
+import dev.dmigrate.driver.DdlScript
 import java.nio.file.Path
 
 internal data class GeneratedDdl(
@@ -31,21 +32,21 @@ internal class SchemaGenerateOutputWriter(
         request: SchemaGenerateRequest,
         result: DdlResult,
         schema: SchemaDefinition,
-        dialect: String,
+        dialect: DatabaseDialect,
         splitModeStr: String?,
         options: DdlGenerationOptions,
     ) {
         val outputPath = request.output!!
         val prePath = splitPath(outputPath, DdlPhase.PRE_DATA)
         val postPath = splitPath(outputPath, DdlPhase.POST_DATA)
-        val preDdl = result.renderPhase(DdlPhase.PRE_DATA)
-        val postDdl = result.renderPhase(DdlPhase.POST_DATA)
+        val preDdl = DdlScript.renderPhase(result, DdlPhase.PRE_DATA, dialect)
+        val postDdl = DdlScript.renderPhase(result, DdlPhase.POST_DATA, dialect)
         fileWriter(prePath, preDdl + "\n")
         if (!request.quiet) stderr("Pre-data DDL written to $prePath")
         fileWriter(postPath, postDdl + "\n")
         if (!request.quiet) stderr("Post-data DDL written to $postPath")
 
-        writeReport(request, result, schema, dialect, outputPath, splitModeStr, options)
+        writeReport(request, result, schema, dialect.name.lowercase(), outputPath, splitModeStr, options)
     }
 
     fun writeFileOutput(request: SchemaGenerateRequest, gen: GeneratedDdl, splitModeStr: String?) {
@@ -56,7 +57,7 @@ internal class SchemaGenerateOutputWriter(
         if (request.generateRollback) {
             val rollbackResult = gen.generator.generateRollback(gen.schema, gen.options)
             val rbPath = rollbackPath(outputPath)
-            fileWriter(rbPath, rollbackResult.render() + "\n")
+            fileWriter(rbPath, DdlScript.render(rollbackResult, gen.dialect) + "\n")
             if (!request.quiet) stderr("Rollback DDL written to $rbPath")
         }
 
@@ -77,7 +78,7 @@ internal class SchemaGenerateOutputWriter(
             stdout("\n-- ═══════════════════════════════════════")
             stdout("-- ROLLBACK")
             stdout("-- ═══════════════════════════════════════\n")
-            stdout(gen.generator.generateRollback(gen.schema, gen.options).render())
+            stdout(DdlScript.render(gen.generator.generateRollback(gen.schema, gen.options), gen.dialect))
         }
 
         if (request.report != null) {

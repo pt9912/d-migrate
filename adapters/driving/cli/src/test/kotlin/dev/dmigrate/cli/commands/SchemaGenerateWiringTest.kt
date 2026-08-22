@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.registerDrivers
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -27,6 +28,11 @@ import java.nio.file.Path
 import java.util.Comparator
 
 class SchemaGenerateWiringTest : FunSpec({
+
+    // Der Default-Factory-Test loest echte Generatoren ueber die Treiber-
+    // Registry auf; ohne eigene Registrierung haenge diese Spec an der
+    // Ausfuehrungsreihenfolge anderer Specs (leere Registry bei --tests-Filter).
+    beforeSpec { registerDrivers() }
 
     fun options(
         source: Path = Path.of("schema.yaml"),
@@ -262,6 +268,28 @@ class SchemaGenerateWiringTest : FunSpec({
                 DdlGenerationOptions(deterministic = true),
             )
             Files.readString(reportPath) shouldContain "Default Generate"
+        } finally {
+            deleteRecursively(output)
+        }
+    }
+
+    test("mssql file output is a GO-separated script while the generator result stays batch-free") {
+        val output = Files.createTempDirectory("dmigrate-generate-mssql-")
+        val ddl = output.resolve("schema.sql")
+        val factory = RecordingSchemaGenerateFactory(
+            result = DdlResult(
+                statements = listOf(
+                    DdlStatement("CREATE TABLE [generated] ([id] INT);"),
+                    DdlStatement("CREATE OR ALTER VIEW [v] AS SELECT [id] FROM [generated];"),
+                ),
+            ),
+        )
+        try {
+            SchemaGenerateWiring.execute(options(output = ddl, target = "mssql"), factory) shouldBe 0
+            val script = Files.readString(ddl)
+            script shouldContain "CREATE TABLE [generated] ([id] INT);\nGO\n"
+            script shouldContain "CREATE OR ALTER VIEW [v] AS SELECT [id] FROM [generated];\nGO\n"
+            factory.generators.single().dialect shouldBe DatabaseDialect.MSSQL
         } finally {
             deleteRecursively(output)
         }

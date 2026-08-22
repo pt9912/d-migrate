@@ -3,6 +3,7 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlScript
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -82,7 +83,7 @@ internal class SchemaGenerateHandler(
         // NOT a re-executable SQL source — operators who need a
         // verbatim DDL execute the generator with a sanitised
         // schema and consume the inline `ddl` field below.
-        val ddl = SecretScrubber.scrub(result.render())
+        val ddl = SecretScrubber.scrub(DdlScript.render(result, args.targetDialect))
         val ddlBytes = ddl.toByteArray(Charsets.UTF_8)
         val inlineThreshold = limits.maxToolResponseBytes / 2
         val ddlOverflow = ddlBytes.size > inlineThreshold

@@ -34,8 +34,39 @@ data class DialectCapabilities(
      * may a partitioned parent be transferred/exported one child at a time.
      */
     val partitionChildrenAreTables: Boolean = false,
+    /**
+     * Batch-Trenner für Skript-Darstellungen (Dateiausgabe, Tool-Export):
+     * T-SQL verlangt, dass `CREATE VIEW`/Routinen allein in einem Batch stehen,
+     * und Clients wie sqlcmd/SSMS/Flyway trennen Batches nur an `GO`-Zeilen.
+     * `null` = keine Batch-Semantik (Statements stehen mit `;` hintereinander).
+     */
+    val batchSeparator: String? = null,
+    /**
+     * Praeambel-Batch am Anfang einer Skript-Darstellung. SQL Server verlangt
+     * fuer gefilterte Indizes (und indizierte Sichten, Computed-Column-Indizes,
+     * Spatial-Indizes) bestimmte SET-Optionen; `sqlcmd` verbindet sich per
+     * Default mit `QUOTED_IDENTIFIER OFF` und laesst ein `CREATE INDEX … WHERE`
+     * sonst mit Msg 1934 scheitern. Der Block macht das Skript
+     * client-unabhaengig. `null` = keine Praeambel.
+     */
+    val scriptPreamble: String? = null,
 ) {
     companion object {
+        /**
+         * SET-Optionen, die SQL Server fuer gefilterte Indizes verlangt (und die
+         * `sqlcmd` nicht per Default setzt). Eigener Batch, damit sie fuer alle
+         * folgenden Batches der Sitzung gelten.
+         */
+        private val MSSQL_SCRIPT_PREAMBLE = listOf(
+            "SET ANSI_NULLS ON;",
+            "SET ANSI_PADDING ON;",
+            "SET ANSI_WARNINGS ON;",
+            "SET ARITHABORT ON;",
+            "SET CONCAT_NULL_YIELDS_NULL ON;",
+            "SET NUMERIC_ROUNDABORT OFF;",
+            "SET QUOTED_IDENTIFIER ON;",
+        ).joinToString("\n")
+
         fun forDialect(dialect: DatabaseDialect): DialectCapabilities = when (dialect) {
             DatabaseDialect.POSTGRESQL -> DialectCapabilities(
                 supportsViews = true,
@@ -94,6 +125,8 @@ data class DialectCapabilities(
                 supportsTriggerStrict = false,
                 supportsSchemaParameter = true,
                 partitionChildrenAreTables = false,
+                batchSeparator = "GO",
+                scriptPreamble = MSSQL_SCRIPT_PREAMBLE,
             )
         }
     }

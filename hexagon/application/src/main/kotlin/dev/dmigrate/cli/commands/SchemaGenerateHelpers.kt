@@ -3,7 +3,9 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.driver.DdlPhase
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlResult
+import dev.dmigrate.driver.DdlScript
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import java.nio.file.Path
@@ -74,6 +76,16 @@ object SchemaGenerateHelpers {
      * (kein Jackson/DSL-JSON im CLI-Modul) — alle String-Werte werden via
      * [escapeJson] korrekt escaped.
      */
+    // Skript-Darstellung (Batch-Trenner je Dialekt) auch im JSON-`ddl`-Feld; ein
+    // unbekannter Dialektname faellt auf das rohe render() zurueck.
+    private fun script(result: DdlResult, dialect: String): String =
+        runCatching { DatabaseDialect.fromString(dialect) }.getOrNull()
+            ?.let { DdlScript.render(result, it) } ?: result.render()
+
+    private fun scriptPhase(result: DdlResult, phase: DdlPhase, dialect: String): String =
+        runCatching { DatabaseDialect.fromString(dialect) }.getOrNull()
+            ?.let { DdlScript.renderPhase(result, phase, it) } ?: result.renderPhase(phase)
+
     fun formatJsonOutput(
         result: DdlResult,
         schema: SchemaDefinition,
@@ -115,11 +127,11 @@ object SchemaGenerateHelpers {
             if (isSplit) {
                 appendLine("""  "split_mode": "pre-post",""")
                 appendLine("""  "ddl_parts": {""")
-                appendLine("""    "pre_data": "${escapeJson(result.renderPhase(DdlPhase.PRE_DATA))}",""")
-                appendLine("""    "post_data": "${escapeJson(result.renderPhase(DdlPhase.POST_DATA))}"""")
+                appendLine("""    "pre_data": "${escapeJson(scriptPhase(result, DdlPhase.PRE_DATA, dialect))}",""")
+                appendLine("""    "post_data": "${escapeJson(scriptPhase(result, DdlPhase.POST_DATA, dialect))}"""")
                 appendLine("""  },""")
             } else {
-                appendLine("""  "ddl": "${escapeJson(result.render())}",""")
+                appendLine("""  "ddl": "${escapeJson(script(result, dialect))}",""")
             }
             appendLine("""  "warnings": ${result.notes.count { it.type == NoteType.WARNING }},""")
             appendLine("""  "action_required": $actionRequiredCount,""")

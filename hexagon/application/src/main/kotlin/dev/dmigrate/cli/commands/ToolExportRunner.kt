@@ -155,13 +155,13 @@ class ToolExportRunner(
     private fun executeWithPreflight(request: ToolExportRequest, pre: ResolvedPreflight): Int {
         val generator = generatorLookup(pre.dialect)
         val upResult = generator.generate(pre.schema, pre.options)
-        val up = DdlNormalizer.normalize(upResult)
+        val up = DdlNormalizer.normalize(upResult, pre.dialect)
 
         val downResult: DdlResult?
         val rollback = if (request.generateRollback) {
             val dr = generator.generateRollback(pre.schema, pre.options)
             downResult = dr
-            MigrationRollback.Requested(DdlNormalizer.normalize(dr))
+            MigrationRollback.Requested(DdlNormalizer.normalize(dr, pre.dialect))
         } else { downResult = null; MigrationRollback.NotRequested }
 
         val bundle = MigrationBundle(
