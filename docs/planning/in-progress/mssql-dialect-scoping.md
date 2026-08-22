@@ -25,6 +25,16 @@
 > `R342`), `MssqlTableLister`, ServiceLoader-Registrierung; Spec
 > (connection-config 1.6) + Handbücher; Unit- und Live-Integrationstests
 > grün (SQL Server 2022).
+>
+> **Status-Update 2026-08-22:** Slice 1a umgesetzt — CLI-E2E-Netz in
+> `test/e2e-cli`: `MssqlCommandGateE2ETest` (containerlos, echte CLI als
+> Kind-Prozess; alle Gate-Kommandos inkl. aller vier `export <tool>` enden
+> mit Exit 2 + Gate-Meldung, bevor eine Verbindung versucht wird) und
+> `MssqlSchemaReverseE2ETest` (`schema reverse` gegen den SQL-Server-
+> Testcontainer: Schema-Datei + Sidecar-Report, Credential-Scrubbing bei
+> falschem Passwort). Geteilter Runner `runRealCli` neben dem
+> MCP-Subprozess-Plumbing; Dockerfile-`deps`-Stage kennt jetzt auch die
+> beiden MSSQL-Module.
 
 ## Bestandsaufnahme — was ein vierter Dialekt kostet (gemessen)
 
@@ -114,7 +124,7 @@ Entscheidung 2):
 | --- | --- | --- |
 | **0** ✅ | Scoping-ADR ([ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)), Gradle-Modul `driver-mssql`, Testcontainers-Spike (Connect + `SELECT @@VERSION`), EULA-Doku, Dependabot-Ignore | — |
 | **1** ✅ | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) + `MSSQL`-Enum-Querschnitt + `DialectCommandGate` | ja — `schema reverse` funktioniert |
-| **1a** | CLI-E2E-Absicherung in `test/e2e-cli`: Gate-Ablehnungen als Subprozess-E2E (containerlos — generate/export/import/transfer/migrate/profile/`export <tool>` liefern Exit 2 + Gate-Meldung) und `schema reverse`-Subprozess-E2E gegen den Testcontainer | E2E-Netz für den nutzersichtbaren MSSQL-Pfad und die Gates; vor Slice 2, damit Gate-Wegfall pro Slice testgetrieben ist |
+| **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli`: Gate-Ablehnungen als Subprozess-E2E (containerlos — generate/export/import/transfer/migrate/profile/`export <tool>` liefern Exit 2 + Gate-Meldung) und `schema reverse`-Subprozess-E2E gegen den Testcontainer | E2E-Netz für den nutzersichtbaren MSSQL-Pfad und die Gates; vor Slice 2, damit Gate-Wegfall pro Slice testgetrieben ist |
 | **2** | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
 | **3** | `DataReader`/`DataWriter` (Transfer; Fast-Path später) + sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
 | **4** | Cross-Dialekt-Matrix, `NeutralTypeCanonicalizer`, Postcompare-Fingerprint, `transferCompatibility` + Cross-Dialekt-sample-db-Smoke (MSSQL↔PG analog `sample-db-cross-smoke`) | Matrix-Gate + Cross-Smoke |

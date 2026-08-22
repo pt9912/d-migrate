@@ -154,7 +154,7 @@ Der Output wird zusätzlich in eine Log-Datei geschrieben
 (`/tmp/d-migrate-integration-*.log`, konfigurierbar über
 `DMIGRATE_TEST_LOG`).
 
-Die MSSQL-Integrationstests (`test/integration-mssql`) starten
+Die MSSQL-Integrationstests (`test/integration-mssql`, `test/e2e-cli`) starten
 `mcr.microsoft.com/mssql/server` via Testcontainers. Dieses Image läuft nur
 mit akzeptierter Microsoft-EULA; die Tests setzen die Akzeptanz programmatisch
 (`MSSQLServerContainer.acceptLicense()`, entspricht `ACCEPT_EULA=Y`) — wer die

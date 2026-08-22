@@ -71,6 +71,74 @@ internal class CliSubprocess(
 }
 
 /**
+ * Launch-Praefix fuer die ECHTE CLI als Kind-Prozess. `DMIGRATE_CLI_BIN` schaltet
+ * auf ein GraalVM-Native-Binary um, statt die CLI als Kind-JVM zu starten. Zweck:
+ * die vorhandenen Subprozess-E2Es — darunter der volle S3-Round-Trip gegen
+ * SeaweedFS — gegen das native Artefakt fahren, statt eine zweite, schwaechere
+ * Sondensuite dafuer zu bauen. Ohne die Variable: `java -cp <test runtime
+ * classpath> dev.dmigrate.cli.MainKt`. Das Binary versteht dieselbe
+ * Kommandozeile wie MainKt, der Rest des Aufrufs ist identisch.
+ */
+internal fun cliLaunchPrefix(): List<String> {
+    val nativeBin = System.getenv("DMIGRATE_CLI_BIN")?.takeIf { it.isNotBlank() }
+    if (nativeBin != null) return listOf(nativeBin)
+    val javaBin = ProcessHandle.current().info().command().orElse("java")
+    val classpath = System.getProperty("java.class.path")
+        ?: error("test JVM has no java.class.path system property")
+    return listOf(javaBin, "-cp", classpath, "dev.dmigrate.cli.MainKt")
+}
+
+/**
+ * Ergebnis eines einmaligen CLI-Laufs (kein Langlaeufer wie `mcp serve`):
+ * Exit-Code plus vollstaendig eingesammeltes stdout/stderr.
+ */
+internal data class CliRunResult(val exitCode: Int, val stdout: String, val stderr: String)
+
+/**
+ * Startet die ECHTE CLI als Kind-Prozess mit [args] (z. B. `schema generate
+ * --source …`), wartet auf ihr Ende und liefert Exit-Code + Ausgabe. Gleicher
+ * Launch-Pfad wie [startRealCliSubprocess] ([cliLaunchPrefix]); stdin ist
+ * geschlossen. Konsumenten: `MssqlCommandGateE2ETest`,
+ * `MssqlSchemaReverseE2ETest` (MSSQL Slice 1a).
+ */
+internal fun runRealCli(
+    args: List<String>,
+    env: Map<String, String> = emptyMap(),
+    timeoutMs: Long = CLI_RUN_TIMEOUT_MS,
+): CliRunResult {
+    val builder = ProcessBuilder(cliLaunchPrefix() + args).redirectErrorStream(false)
+    builder.environment().putAll(env)
+    val process = builder.start()
+    process.outputStream.close()
+
+    val stdout = StringBuilder()
+    val stderr = StringBuilder()
+    val stdoutPump = pumpToBuffer(process.inputStream, stdout, "real-cli-run-stdout")
+    val stderrPump = pumpToBuffer(process.errorStream, stderr, "real-cli-run-stderr")
+
+    val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+    if (!finished) {
+        process.destroyForcibly()
+        error("real CLI subprocess did not finish within ${timeoutMs}ms (args=$args); stderr=$stderr")
+    }
+    stdoutPump.join(PUMP_JOIN_MS)
+    stderrPump.join(PUMP_JOIN_MS)
+    return CliRunResult(process.exitValue(), stdout.toString(), stderr.toString())
+}
+
+private fun pumpToBuffer(stream: java.io.InputStream, sink: StringBuilder, name: String): Thread =
+    Thread({
+        try {
+            BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8)).useLines { lines ->
+                lines.forEach { line -> synchronized(sink) { sink.appendLine(line) } }
+            }
+        } catch (_: Throwable) { /* subprocess exited */ }
+    }, name).apply { isDaemon = true; start() }
+
+private const val CLI_RUN_TIMEOUT_MS: Long = 120_000
+private const val PUMP_JOIN_MS: Long = 5_000
+
+/**
  * @param extraArgs zusaetzliche `mcp serve`-Argumente (z. B.
  *  `--connection-config`, `--stdio-token-file`).
  * @param env zusaetzliche Umgebungsvariablen fuer die Kind-JVM (z. B.
@@ -81,24 +149,8 @@ internal fun startRealCliSubprocess(
     extraArgs: List<String> = emptyList(),
     env: Map<String, String> = emptyMap(),
 ): CliSubprocess {
-    // `DMIGRATE_CLI_BIN` schaltet diese Suite auf ein GraalVM-Native-Binary um, statt die CLI als
-    // Kind-JVM zu starten. Zweck: die vorhandenen Subprozess-E2Es — darunter der volle
-    // S3-Round-Trip gegen SeaweedFS — gegen das native Artefakt fahren, statt eine zweite,
-    // schwaechere Sondensuite dafuer zu bauen. Ohne die Variable bleibt alles wie bisher.
-    //
-    // Der Rest des Aufrufs ist identisch: das Binary versteht dieselbe Kommandozeile wie MainKt.
-    val nativeBin = System.getenv("DMIGRATE_CLI_BIN")?.takeIf { it.isNotBlank() }
-    val launchPrefix = if (nativeBin != null) {
-        listOf(nativeBin)
-    } else {
-        val javaBin = ProcessHandle.current().info().command().orElse("java")
-        val classpath = System.getProperty("java.class.path")
-            ?: error("test JVM has no java.class.path system property")
-        listOf(javaBin, "-cp", classpath, "dev.dmigrate.cli.MainKt")
-    }
-
     val builder = ProcessBuilder(
-        launchPrefix + listOf(
+        cliLaunchPrefix() + listOf(
             "mcp", "serve",
             "--transport", "stdio",
             "--mcp-state-dir", stateDir,
