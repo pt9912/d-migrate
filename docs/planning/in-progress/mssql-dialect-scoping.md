@@ -377,9 +377,31 @@ Bestandsaufnahme, auf der er aufsetzt.
 - **Generate** meldet einen Volltext-Index als `E057`; der Spaltentyp
   degradiert nach [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md) zu
   `NVARCHAR(MAX)` (`W132`/`W137`).
-- SQL Server Full-Text Search ist ein eigener Dienst mit eigener Installation —
-  der Container-Spike aus Slice 0 deckt ihn nicht ab. Der Slice braucht also
-  zuerst eine Antwort darauf, wogegen er testet.
+- **Der gepinnte Container kann kein Full-Text Search.** Gemessen am
+  Harness-Digest (`mcr.microsoft.com/mssql/server`, 2022):
+  `SERVERPROPERTY('IsFullTextInstalled')` liefert `0`, und
+  `mssql-server-fts` ist im Image nicht auflösbar — die Microsoft-Paketquelle
+  ist zwar eingetragen, der Paketindex aber nicht eingelesen.
+- **Eigner-Entscheidung 2026-08-22: der Slice baut sich eine Testumgebung.**
+  Ein abgeleitetes Image auf dem digest-gepinnten Basis-Image installiert
+  Full-Text Search nach. Der Weg ist erprobt, nicht vermutet — im Container
+  nachgestellt:
+
+  ```
+  # Der prod-Feed des Basis-Images fuehrt das Paket NICHT; die Server-Pakete
+  # liegen in einem eigenen Repo.
+  deb [arch=amd64] https://packages.microsoft.com/ubuntu/22.04/mssql-server-2022 jammy main
+  apt-get update && apt-get install -y mssql-server-fts
+  ```
+
+  Der Simulationslauf zieht `mssql-server-fts` samt passender
+  `mssql-server`-Version (16.0.4265.3) — die Engine wird also mitgehoben, das
+  abgeleitete Image ist keine reine Ergaenzung.
+- Zwei Folgen, die der Slice mitentscheiden muss: der Bau braucht **Netz zur
+  Bauzeit**, und ein selbst gebautes Image hat keinen Upstream-Digest, an dem
+  die Harness sonst pinnt
+  ([ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)) — es
+  bleibt der Basis-Digest plus die Reproduzierbarkeit des Dockerfiles.
 
 ### Slice 9 — Routinen und Trigger
 
