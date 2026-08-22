@@ -6,7 +6,9 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.driver.NoteType
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DialectExecutionHints
 import dev.dmigrate.driver.migration.LockBehavior
@@ -97,6 +99,29 @@ internal class MssqlDiffRenderContext(
     fun columnFor(table: String, column: String): ColumnDefinition? {
         val schema = if (direction == MssqlRenderDirection.UP) desiredSchema else currentSchema
         return schema?.tables?.get(table)?.columns?.get(column)
+    }
+
+    /** Das Schema, das die Zielrichtung dieses Laufs beschreibt. */
+    fun schemaForDirection(): SchemaDefinition? =
+        if (direction == MssqlRenderDirection.UP) desiredSchema else currentSchema
+
+    /**
+     * Hinweise des Generate-Spalten-Helfers (W136, W140, E057 …) in die
+     * Diagnosen uebernehmen. Sie gelten im Migrate-Pfad genauso — eine Spalte,
+     * die beim Generieren eine Warnung wert war, ist es beim Migrieren auch.
+     */
+    fun carryOverNotes(op: DiffOperation, notes: List<TransformationNote>) {
+        for (note in notes) {
+            addDiagnostic(
+                code = note.code,
+                operationId = op.id,
+                message = note.message,
+                severity = when (note.type) {
+                    NoteType.ACTION_REQUIRED, NoteType.WARNING -> DiffDiagnostic.Severity.WARNING
+                    NoteType.INFO -> DiffDiagnostic.Severity.INFO
+                },
+            )
+        }
     }
 
     fun skip(op: DiffOperation, message: String, code: String = "MSSQL_RENDER_SKIP") {

@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
@@ -72,7 +73,10 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
             ),
             primaryKey = listOf("id"),
         )
-        val sqlText = up(SchemaDiff(tablesAdded = listOf(NamedTable("users", users)))).statements.single().sql
+        val sqlText = up(
+            SchemaDiff(tablesAdded = listOf(NamedTable("users", users))),
+            desired = schema("users" to users),
+        ).statements.single().sql
         sqlText shouldContainStr "CREATE TABLE [users] ("
         sqlText shouldContainStr "[id] INT IDENTITY(1,1) NOT NULL"
         // Der Default MUSS benannt sein — anonym koennte ihn kein spaeterer
@@ -89,23 +93,18 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("AddColumn uses T-SQL ADD (not ADD COLUMN); down drops the default first") {
+        val nick = ColumnDefinition(NeutralType.Text(20), default = DefaultValue.StringLiteral("x"))
+        val withNick = schema("users" to TableDefinition(columns = mapOf("nick" to nick)))
         val diff = SchemaDiff(
-            tablesChanged = listOf(
-                TableDiff(
-                    name = "users",
-                    columnsAdded = mapOf(
-                        "nick" to ColumnDefinition(NeutralType.Text(20), default = DefaultValue.StringLiteral("x")),
-                    ),
-                ),
-            ),
+            tablesChanged = listOf(TableDiff(name = "users", columnsAdded = mapOf("nick" to nick))),
         )
-        val upSql = up(diff).statements.single().sql
+        val upSql = up(diff, desired = withNick).statements.single().sql
         upSql shouldContainStr "ALTER TABLE [users] ADD [nick] NVARCHAR(20)"
         upSql.contains("ADD COLUMN") shouldBe false
 
         // Rueckwaerts: erst der Default-Constraint, dann die Spalte — sonst
         // scheitert DROP COLUMN an der Abhaengigkeit.
-        val downSqls = down(diff).statements.map { it.sql }
+        val downSqls = down(diff, current = withNick, desired = withNick).statements.map { it.sql }
         downSqls[0] shouldContainStr "FROM sys.default_constraints"
         downSqls[0] shouldContainStr "QUOTENAME(@df)"
         downSqls[1] shouldBe "ALTER TABLE [users] DROP COLUMN [nick];"
@@ -288,5 +287,113 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         val r = up(SchemaDiff(tablesRemoved = listOf(NamedTable("legacy", TableDefinition()))))
         r.statements.single().hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
         r.statements.single().hints.implicitCommitPossible shouldBe false
+    }
+
+    test("AlterColumnDefault without a resolvable type blocks cleanly instead of crashing") {
+        // Regression: das DROP wurde frueher VOR der Typaufloesung emittiert.
+        // Damit lag die Operation in `rendered` UND `skipped`, und
+        // MigrationDdlResult erzwingt per require(), dass die Mengen disjunkt
+        // sind — der Renderer flog mit IllegalArgumentException statt einen
+        // Blocker zu liefern.
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "nick", default = ValueChange(null, DefaultValue.StringLiteral("neu"))),
+                    ),
+                ),
+            ),
+        )
+        val r = up(diff)
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.operationsRendered.intersect(r.operationsSkipped).shouldBeEmpty()
+    }
+
+    test("CreateTable with indices or partitioning blocks instead of losing them silently") {
+        val indexed = TableDefinition(
+            columns = mapOf("nick" to ColumnDefinition(NeutralType.Text(20))),
+            indices = listOf(
+                IndexDefinition(name = "ix_nick", columns = listOf(IndexColumn("nick")), type = IndexType.BTREE),
+            ),
+        )
+        val r = up(
+            SchemaDiff(tablesAdded = listOf(NamedTable("t", indexed))),
+            desired = schema("t" to indexed),
+        )
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }.message shouldContainStr "5b"
+    }
+
+    test("a column with a dependent UNIQUE or index cannot be altered or dropped yet") {
+        // SQL Server weist ALTER/DROP COLUMN mit Msg 5074 auch wegen eines
+        // abhaengigen UNIQUE oder Index ab, nicht nur wegen des Defaults.
+        val withUnique = schema(
+            "users" to TableDefinition(
+                columns = mapOf("nick" to ColumnDefinition(NeutralType.Text(50), unique = true)),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "nick", type = ValueChange(NeutralType.Text(50), NeutralType.Text(80))),
+                    ),
+                ),
+            ),
+        )
+        val r = up(diff, current = withUnique, desired = withUnique)
+        r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_HAS_DEPENDENT_OBJECTS"
+    }
+
+    test("a nullability change on an IDENTITY column is blocked (ALTER COLUMN would be Msg 156)") {
+        val identity = schema(
+            "users" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true), required = true),
+                ),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(ColumnDiff(name = "id", required = ValueChange(false, true))),
+                ),
+            ),
+        )
+        val r = up(diff, current = identity, desired = identity)
+        r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code } shouldContain "MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD"
+    }
+
+    test("the diff path renders columns exactly like the generate path") {
+        // Identity aus `generation`, Enum als begrenztes NVARCHAR + CHECK: beides
+        // kann der Generate-Helfer, eine frisch geschriebene Kopie vergisst es.
+        val t = TableDefinition(
+            columns = linkedMapOf(
+                "mood" to ColumnDefinition(NeutralType.Enum(values = listOf("red", "green"))),
+                "big" to ColumnDefinition(NeutralType.BigInteger, generation = ColumnGeneration.Identity()),
+            ),
+        )
+        val sqlText = up(
+            SchemaDiff(tablesAdded = listOf(NamedTable("t", t))),
+            desired = schema("t" to t),
+        ).statements.single().sql
+        sqlText shouldContainStr "[mood] NVARCHAR(5)"
+        sqlText shouldContainStr "CHECK ([mood] IN ("
+        sqlText shouldContainStr "IDENTITY"
+    }
+
+    test("notes of the column renderer surface as diagnostics") {
+        // Ueber 4000 Zeichen weitet der Renderer auf NVARCHAR(MAX) und meldet
+        // W136 — im Migrate-Pfad ist das genauso eine Warnung wert.
+        val t = TableDefinition(columns = mapOf("bio" to ColumnDefinition(NeutralType.Text(5000))))
+        val r = up(SchemaDiff(tablesAdded = listOf(NamedTable("t", t))), desired = schema("t" to t))
+        r.diagnostics.map { it.code } shouldContain "W136"
     }
 })

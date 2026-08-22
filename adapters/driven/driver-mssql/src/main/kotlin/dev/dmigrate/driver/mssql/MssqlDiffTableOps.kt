@@ -2,7 +2,9 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -32,18 +34,33 @@ internal object MssqlDiffTableOps {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(table)};")
             return
         }
+        // Indizes und Partitionierung gehoeren Sub-Slice 5b bzw. Slice 7. Eine
+        // Tabelle OHNE ihre Indizes anzulegen waere kein Teilerfolg, sondern
+        // ein stiller Verlust — der naechste Postcompare meldete Drift.
+        if (op.table.indices.isNotEmpty()) {
+            return blockDeferred(op, ctx, "table '$table' carries ${op.table.indices.size} index/indices", "5b")
+        }
+        if (op.table.partitioning != null) {
+            return blockDeferred(op, ctx, "table '$table' is partitioned", "slice 7")
+        }
+        val schema = ctx.schemaForDirection()
+            ?: return blockMissingSchema(op, ctx, "rendering the columns of '$table'")
+        val notes = mutableListOf<TransformationNote>()
         val lines = mutableListOf<String>()
         for ((colName, col) in op.table.columns.inOrdinalOrder()) {
-            lines += "    " + ctx.sql.columnDeclaration(table, colName, col)
+            lines += "    " + ctx.sql.columnDeclaration(table, colName, col, op.table, schema, notes)
         }
         if (op.table.primaryKey.isNotEmpty()) {
             val cols = op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
             lines += "    CONSTRAINT ${ctx.sql.quote(MssqlConstraintNames.primaryKey(table))} PRIMARY KEY ($cols)"
         }
         for (constraint in op.table.constraints.sortedBy { it.name }) {
-            ctx.sql.constraintLine(table, constraint)?.let { lines += "    $it" }
+            val line = ctx.sql.constraintLine(table, constraint)
+                ?: return blockUnrenderableConstraint(op, ctx, table, constraint)
+            lines += "    $line"
         }
         ctx.emit(op, "CREATE TABLE ${ctx.sql.quote(table)} (\n" + lines.joinToString(",\n") + "\n);")
+        ctx.carryOverNotes(op, notes)
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: MssqlDiffRenderContext) {
@@ -85,8 +102,15 @@ internal object MssqlDiffTableOps {
             dropColumnStatements(op, ctx, table, column)
             return
         }
+        val schema = ctx.schemaForDirection()
+            ?: return blockMissingSchema(op, ctx, "rendering column '$table.$column'")
+        val tableDef = schema.tables[table]
+            ?: return blockMissingSchema(op, ctx, "rendering column '$table.$column'")
+        val notes = mutableListOf<TransformationNote>()
         // T-SQL: `ADD`, nicht `ADD COLUMN`.
-        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD ${ctx.sql.columnDeclaration(table, column, op.column)};")
+        val declaration = ctx.sql.columnDeclaration(table, column, op.column, tableDef, schema, notes)
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $declaration;")
+        ctx.carryOverNotes(op, notes)
     }
 
     fun renderDropColumn(op: DiffOperation.DropColumn, ctx: MssqlDiffRenderContext) {
@@ -114,6 +138,10 @@ internal object MssqlDiffTableOps {
         val targetRequired = if (ctx.direction == MssqlRenderDirection.UP) op.after else op.before
         val target = ctx.columnFor(table, column)
             ?: return blockMissingColumn(op, ctx, table, column, "its column type")
+        // Ohne diese Wache entstuende `ALTER COLUMN [id] INT IDENTITY(1,1) NOT NULL`
+        // — ungueltiges T-SQL (Msg 156). IDENTITY gehoert in die Spalten-Anlage,
+        // nicht in eine Neudeklaration.
+        if (blockIdentityColumn(op, ctx, table, column, target.type)) return
         alterColumnWithDefaultDance(
             op, ctx, table, column, target.type, target.copy(required = targetRequired),
         )
@@ -122,13 +150,22 @@ internal object MssqlDiffTableOps {
     fun renderAlterColumnDefault(op: DiffOperation.AlterColumnDefault, ctx: MssqlDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         val target = if (ctx.direction == MssqlRenderDirection.UP) op.after else op.before
+        // Erst aufloesen, DANN emittieren: ein Blocker nach dem ersten emit()
+        // legte die Operation in `rendered` UND `skipped`, und die beiden
+        // Mengen muessen disjunkt sein — MigrationDdlResult prueft das mit
+        // require() und der Renderer flaege mit IllegalArgumentException.
+        val type = if (target == null) {
+            null
+        } else {
+            // Der Spaltentyp entscheidet ueber die Literal-Form (z. B. tz-Defaults);
+            // ohne ihn waere `N'…'` vs. Zahl geraten.
+            ctx.columnFor(table, column)?.type
+                ?: return blockMissingColumn(op, ctx, table, column, "its column type")
+        }
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
-        if (target == null) return
-        // Der Spaltentyp entscheidet ueber die Literal-Form (z. B. tz-Defaults);
-        // ohne ihn waere `N'…'` vs. Zahl geraten.
-        val type = ctx.columnFor(table, column)?.type
-            ?: return blockMissingColumn(op, ctx, table, column, "its column type")
-        ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, target, type))
+        if (target != null && type != null) {
+            ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, target, type))
+        }
     }
 
     fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: MssqlDiffRenderContext) {
@@ -144,6 +181,17 @@ internal object MssqlDiffTableOps {
         val table = op.objectRef.rootName
         if (ctx.direction == MssqlRenderDirection.DOWN) {
             ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns))
+            // Aufwaerts wird der echte Name im Katalog nachgeschlagen, abwaerts
+            // kann er nicht rekonstruiert werden — das neutrale Modell traegt
+            // ihn nicht. Der Rollback stellt den Schluessel also her, aber
+            // unter d-migrates Namen.
+            ctx.addInfoDiagnostic(
+                code = "MSSQL_PK_NAME_NOT_RESTORED",
+                operationId = op.id,
+                message = "The rollback re-creates the primary key of '$table' as " +
+                    "'${MssqlConstraintNames.primaryKey(table)}'. If the original key had a different name, " +
+                    "the restored schema matches structurally but not by constraint name.",
+            )
             return
         }
         ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
@@ -179,6 +227,7 @@ internal object MssqlDiffTableOps {
         type: NeutralType,
         target: ColumnDefinition,
     ) {
+        if (blockDependentObjects(op, ctx, table, column, "altered")) return
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
         target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
@@ -190,6 +239,7 @@ internal object MssqlDiffTableOps {
         table: String,
         column: String,
     ) {
+        if (blockDependentObjects(op, ctx, table, column, "dropped")) return
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
@@ -235,6 +285,95 @@ internal object MssqlDiffTableOps {
             "Operation ${op.id} needs $missing of column '$table.$column', but the column is not in " +
                 "the schema for this rendering direction. ALTER COLUMN in T-SQL re-declares the whole " +
                 "column, so rendering without that value would silently change it.",
+            code = "MSSQL_COLUMN_NOT_IN_SCHEMA",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
+    }
+
+    /**
+     * SQL Server verweigert `ALTER COLUMN` und `DROP COLUMN` mit Msg 5074 nicht
+     * nur wegen eines Defaults, sondern ebenso wegen eines abhaengigen CHECK,
+     * eines UNIQUE-Constraints oder eines Index auf der Spalte — und d-migrates
+     * eigener Generate-Pfad haengt an jede Enum-Spalte ein `ck_…` und an jede
+     * `unique: true`-Spalte ein `uq_…`.
+     *
+     * Die haben Sub-Slice 5b als Eigentuemer. Bis dahin wird geblockt: sie hier
+     * mit dynamischem SQL wegzuraeumen hiesse, Objekte zu loeschen, die der
+     * Plan gar nicht anfasst.
+     */
+    private fun blockDependentObjects(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        verb: String,
+    ): Boolean {
+        val tableDef = ctx.schemaForDirection()?.tables?.get(table) ?: return false
+        val dependents = mutableListOf<String>()
+        if (tableDef.columns[column]?.unique == true) dependents += "a UNIQUE constraint"
+        if (tableDef.constraints.any { column in (it.columns ?: emptyList()) }) dependents += "a table constraint"
+        if (tableDef.indices.any { idx -> idx.columns.any { it.name == column } }) dependents += "an index"
+        if (dependents.isEmpty()) return false
+        ctx.skip(
+            op,
+            "Column '$table.$column' cannot be $verb while ${dependents.joinToString(" and ")} depends on it; " +
+                "SQL Server rejects that with Msg 5074. Dropping and recreating those objects around the change " +
+                "is the subject of sub-slice 5b.",
+            code = "MSSQL_COLUMN_HAS_DEPENDENT_OBJECTS",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+        return true
+    }
+
+    /** Eine IDENTITY-Spalte laesst sich nicht neu deklarieren; `ALTER COLUMN` waere Msg 156. */
+    private fun blockIdentityColumn(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        type: NeutralType,
+    ): Boolean {
+        if ((type as? NeutralType.Identifier)?.autoIncrement != true) return false
+        ctx.skip(
+            op,
+            "Column '$table.$column' is an IDENTITY column; SQL Server cannot re-declare it with ALTER COLUMN " +
+                "(Msg 156). Changing such a column requires rebuilding the table.",
+            code = "MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+        return true
+    }
+
+    private fun blockDeferred(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String, owner: String) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} is not rendered because $what, and that is the subject of $owner. Creating the " +
+                "table without it would be a silent loss, not a partial success.",
+            code = "DIALECT_UNSUPPORTED_OPERATION",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+    }
+
+    private fun blockUnrenderableConstraint(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        constraint: ConstraintDefinition,
+    ) {
+        ctx.skip(
+            op,
+            "Constraint '${constraint.name}' (${constraint.type}) on '$table' cannot be rendered in T-SQL — " +
+                "either the dialect has no equivalent (EXCLUDE) or the definition is incomplete. Emitting the " +
+                "table without it would drop the guarantee silently.",
+            code = "DIALECT_UNSUPPORTED_OPERATION",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+    }
+
+    private fun blockMissingSchema(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} needs the schema for $what, but the DiffResult carries none for this direction.",
             code = "MSSQL_COLUMN_NOT_IN_SCHEMA",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))

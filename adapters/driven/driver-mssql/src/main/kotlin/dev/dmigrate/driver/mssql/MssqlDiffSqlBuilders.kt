@@ -5,6 +5,9 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
@@ -20,6 +23,21 @@ import dev.dmigrate.driver.SqlIdentifiers
  */
 internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
 
+    /**
+     * Der Spalten-Helfer des GENERATE-Pfads. Der Diff rendert Spalten nicht
+     * selbst: `generate` und `migrate` muessen fuer dasselbe Schema dieselbe
+     * Tabelle bauen, und der Helfer kann bereits, was eine frisch geschriebene
+     * Kopie vergisst — `IDENTITY` aus `generation`, Enums als begrenztes
+     * `NVARCHAR` + CHECK statt `NVARCHAR(MAX)`, Geometrie, Kaskaden samt
+     * [MssqlCascadePathGuard] und die LOB-Schluessel-Hinweise.
+     */
+    private val columnHelper = MssqlColumnConstraintHelper(
+        quoteIdentifier = { SqlIdentifiers.quoteIdentifier(it, DatabaseDialect.MSSQL) },
+        typeMapper = typeMapper,
+        typeResolver = MssqlColumnTypeResolver(typeMapper),
+        referentialActionSql = ::referentialActionSql,
+    )
+
     fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.MSSQL)
 
     fun stringLiteral(value: String): String = SqlIdentifiers.quoteStringLiteral(value, DatabaseDialect.MSSQL)
@@ -29,29 +47,18 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
     fun toDefaultSql(default: DefaultValue, type: NeutralType): String = typeMapper.toDefaultSql(default, type)
 
     /**
-     * Spaltendeklaration fuer `CREATE TABLE` und `ALTER TABLE … ADD`.
-     *
-     * Der Default bekommt einen **benannten** Constraint
-     * ([MssqlConstraintNames]) — anonym koennte ihn kein spaeterer
-     * `ALTER COLUMN` mehr loesen.
+     * Spaltendeklaration fuer `CREATE TABLE` und `ALTER TABLE … ADD` — dieselbe,
+     * die `schema generate` schreiben wuerde. Die Hinweise des Helfers
+     * (W136/W140/E057 …) reicht der Aufrufer in seine Diagnosen weiter.
      */
-    fun columnDeclaration(table: String, name: String, col: ColumnDefinition): String {
-        val parts = mutableListOf(quote(name), toSql(col.type))
-        parts += if (col.required) "NOT NULL" else "NULL"
-        col.default?.let {
-            parts += "CONSTRAINT ${quote(MssqlConstraintNames.default(table, name))} " +
-                "DEFAULT ${toDefaultSql(it, col.type)}"
-        }
-        if (col.unique) {
-            parts += "CONSTRAINT ${quote(MssqlConstraintNames.unique(table, name))} UNIQUE"
-        }
-        col.references?.let { ref ->
-            val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" }.orEmpty()
-            val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" }.orEmpty()
-            parts += "REFERENCES ${quote(ref.table)}(${quote(ref.column)})$onDelete$onUpdate"
-        }
-        return parts.joinToString(" ")
-    }
+    fun columnDeclaration(
+        table: String,
+        name: String,
+        col: ColumnDefinition,
+        tableDef: TableDefinition,
+        schema: SchemaDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String = columnHelper.generateColumnSql(table, name, col, tableDef, schema, notes)
 
     /**
      * `ALTER TABLE … ALTER COLUMN` ist in T-SQL eine **Voll-Neudeklaration**:
@@ -94,7 +101,7 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
         append("        AND c.name = ${stringLiteral(column)};\n")
         append("IF @df IS NOT NULL\n")
         append("BEGIN\n")
-        append("    SET @sql = N'ALTER TABLE ${quote(table)} DROP CONSTRAINT ' + QUOTENAME(@df);\n")
+        append("    SET @sql = ${stringLiteral("ALTER TABLE ${quote(table)} DROP CONSTRAINT ")} + QUOTENAME(@df);\n")
         append("    EXEC sp_executesql @sql;\n")
         append("END;")
     }
@@ -122,7 +129,7 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
         append("    WHERE kc.type = 'PK' AND kc.parent_object_id = OBJECT_ID(${stringLiteral(table)});\n")
         append("IF @pk IS NOT NULL\n")
         append("BEGIN\n")
-        append("    SET @sql = N'ALTER TABLE ${quote(table)} DROP CONSTRAINT ' + QUOTENAME(@pk);\n")
+        append("    SET @sql = ${stringLiteral("ALTER TABLE ${quote(table)} DROP CONSTRAINT ")} + QUOTENAME(@pk);\n")
         append("    EXEC sp_executesql @sql;\n")
         append("END;")
     }
@@ -148,8 +155,11 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
             if (cols == null || ref == null) {
                 null
             } else {
+                val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" }.orEmpty()
+                val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" }.orEmpty()
                 "CONSTRAINT ${quote(c.name)} FOREIGN KEY (${cols.joinToString(", ") { quote(it) }}) " +
-                    "REFERENCES ${quote(ref.table)}(${ref.columns.joinToString(", ") { quote(it) }})"
+                    "REFERENCES ${quote(ref.table)}(${ref.columns.joinToString(", ") { quote(it) }})" +
+                    onDelete + onUpdate
             }
         }
         ConstraintType.CHECK -> c.expression?.takeIf { it.isNotBlank() }?.let {
