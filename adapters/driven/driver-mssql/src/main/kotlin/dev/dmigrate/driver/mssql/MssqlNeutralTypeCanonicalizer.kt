@@ -36,10 +36,25 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  * - **Enum columns are rendered by the column helper, not the type mapper**
  *   (`NVARCHAR(<longest value>)` + CHECK). [renderedColumnType] applies the
  *   shared [MssqlTypeMapper.enumWidth] rule so the projection matches the
- *   column the generator actually writes. An enum that only carries a
- *   `refType` stays identity: resolving it needs the schema's custom types
- *   (and may even land on the domain path), which a type-only projection
- *   does not have — same carve-out as the PG and MySQL canonicalisers.
+ *   column the generator actually writes.
+ *
+ * An enum carrying a `refType` stays identity — but NOT for the reason the PG
+ * and MySQL canonicalisers give. Those two carve it out because they emit a
+ * real custom type (`CREATE TYPE … AS ENUM`) that their reverse reconstructs,
+ * so identity is the accurate projection. T-SQL has no such path:
+ * [MssqlColumnConstraintHelper] degrades a `refType` enum to
+ * `NVARCHAR(width)` + CHECK and a `refType` domain to the domain's base type,
+ * so the reverse can never return the `refType` and identity WILL report drift
+ * on a lossless round trip.
+ *
+ * Folding it anyway is not the fix: the width comes from the custom type's
+ * values and the domain path from its base type, and a `(NeutralType) ->
+ * NeutralType` projection sees neither. Any fold chosen here would be wrong in
+ * a different way. Identity is therefore the port's prescribed conservative
+ * default — it never folds a type away, so the failure direction stays a loud
+ * post-compare drift instead of a masked one. Closing it needs schema context
+ * in the projection; tracked as a Slice-5 obligation in
+ * `docs/planning/in-progress/mssql-dialect-scoping.md`.
  */
 internal object MssqlNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
 

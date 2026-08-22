@@ -211,8 +211,10 @@ class MssqlTypeMappingTest : FunSpec({
         // Ein N INNERHALB eines Literals bleibt stehen ...
         MssqlTypeMapping.normalizeCheckExpression("([c]=N'ABN')") shouldBe "c='ABN'"
         MssqlTypeMapping.normalizeCheckExpression("([c]='N')") shouldBe "c='N'"
-        // ... ebenso ein N als Namensbestandteil.
-        MssqlTypeMapping.normalizeCheckExpression("([col_N]='x')") shouldBe "col_N='x'"
+        // ... ebenso ein N als Namensbestandteil (hier zusaetzlich quotiert,
+        // weil der Name nicht rein kleingeschrieben ist).
+        MssqlTypeMapping.normalizeCheckExpression("([col_N]='x')") shouldBe "\"col_N\"='x'"
+        MssqlTypeMapping.normalizeCheckExpression("([col_n]='x')") shouldBe "col_n='x'"
         // Verdoppelte Quotes sind das Escape, kein Literal-Ende.
         MssqlTypeMapping.normalizeCheckExpression("([c]=N'it''s N''ok''')") shouldBe "c='it''s N''ok'''"
         // Ausdruecke ohne Literale: nur Paren-Unwrap und Quoting.
@@ -249,5 +251,33 @@ class MssqlTypeMappingTest : FunSpec({
         // Ein fremder Funktions-Default bleibt unveraendert stehen.
         MssqlTypeMapping.parseDefault("(dbo.next_code())", NeutralType.Text()) shouldBe
             DefaultValue.FunctionCall("dbo.next_code()")
+    }
+
+    test("a reversed CHECK expression quotes anything but a plain lowercase name") {
+        // Die Generatoren quoten Spaltennamen IMMER: eine PascalCase-Spalte
+        // steht im PG-Ziel als "CustomerID", ein unquotiertes CustomerID im
+        // CHECK faltet dort auf customerid und das Apply scheitert.
+        MssqlTypeMapping.normalizeCheckExpression("([CustomerID]>(0))") shouldBe "\"CustomerID\">(0)"
+        MssqlTypeMapping.normalizeCheckExpression("([mixedCase]>(0))") shouldBe "\"mixedCase\">(0)"
+        // Rein kleingeschrieben bleibt unquotiert — das traegt auf allen Zielen.
+        MssqlTypeMapping.normalizeCheckExpression("([snake_case_9]>(0))") shouldBe "snake_case_9>(0)"
+    }
+
+    test("a function default is only canonicalised where the neutral name is valid for the column type") {
+        // gen_uuid gilt laut FunctionDefaultCompatibility nur auf uuid. Das
+        // haeufige T-SQL-Idiom CHAR(36)/NVARCHAR(36) DEFAULT NEWID() darf
+        // deshalb NICHT kanonisiert werden — sonst erbte das reverse-gelesene
+        // Schema einen E009-Validierungsfehler statt einer Ungenauigkeit.
+        MssqlTypeMapping.parseDefault("(newid())", NeutralType.Char(36)) shouldBe
+            DefaultValue.FunctionCall("newid()")
+        MssqlTypeMapping.parseDefault("(newid())", NeutralType.Text(maxLength = 36)) shouldBe
+            DefaultValue.FunctionCall("newid()")
+        MssqlTypeMapping.parseDefault("(newid())", NeutralType.Uuid) shouldBe
+            DefaultValue.FunctionCall("gen_uuid")
+        // current_date ist auf char nicht zulaessig, auf date/text schon.
+        MssqlTypeMapping.parseDefault("(CONVERT([date],getdate()))", NeutralType.Char(10)) shouldBe
+            DefaultValue.FunctionCall("CONVERT([date],getdate())")
+        MssqlTypeMapping.parseDefault("(CONVERT([date],getdate()))", NeutralType.Text()) shouldBe
+            DefaultValue.FunctionCall("current_date")
     }
 })

@@ -288,22 +288,14 @@ internal object SchemaColumnValidationRules {
             type is NeutralType.BigInteger || type is NeutralType.Float ||
             type is NeutralType.Decimal || type is NeutralType.Identifier
 
+    // Die Vertraeglichkeitstabelle steht in [FunctionDefaultCompatibility] und
+    // nicht hier, weil auch die Reverse-Parser sie brauchen: wer einen
+    // dialektspezifischen Default auf einen neutralen Namen zurueckfuehrt, darf
+    // das nur tun, wenn diese Pruefung danach noch traegt.
     private fun isFunctionDefaultCompatible(
         default: DefaultValue.FunctionCall,
         type: NeutralType,
-    ): Boolean = when (default.name) {
-        // I-02: SQLite legt Zeitstempel als TEXT ab (`text DEFAULT current_timestamp`).
-        "current_timestamp" ->
-            type is NeutralType.DateTime || type is NeutralType.Date ||
-                type is NeutralType.Time || type is NeutralType.Text
-        // N1: CURRENT_DATE / CURRENT_TIME als Funktions-Default.
-        "current_date" ->
-            type is NeutralType.Date || type is NeutralType.DateTime || type is NeutralType.Text
-        "current_time" ->
-            type is NeutralType.Time || type is NeutralType.DateTime || type is NeutralType.Text
-        "gen_uuid" -> type is NeutralType.Uuid
-        else -> true
-    }
+    ): Boolean = FunctionDefaultCompatibility.isCompatible(default.name, type)
 
     private fun isSequenceDefaultCompatible(type: NeutralType): Boolean =
         (type is NeutralType.Integer || type is NeutralType.SmallInt ||

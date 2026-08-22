@@ -154,12 +154,15 @@ Der Output wird zusätzlich in eine Log-Datei geschrieben
 (`/tmp/d-migrate-integration-*.log`, konfigurierbar über
 `DMIGRATE_TEST_LOG`).
 
-Die MSSQL-Tests (`test/integration-mssql`, `test/e2e-cli` und die beiden
-Sample-DB-Legs `make sample-db-cross-smoke-pg2ms` — SQL Server als Ziel — und
-`make sample-db-cross-smoke-ms2pg` — SQL Server als Quelle) starten
-`mcr.microsoft.com/mssql/server` via Testcontainers. Dieses Image läuft nur
-mit akzeptierter Microsoft-EULA; die Tests setzen die Akzeptanz programmatisch
-(`MSSQLServerContainer.acceptLicense()`, entspricht `ACCEPT_EULA=Y`) — wer die
-Integrationsschiene ausführt, akzeptiert damit die Lizenzbedingungen des
-Microsoft-Container-Images. Mit ~1,5 GB Image und ~2 GB RAM-Bedarf ist es der
-schwerste Testcontainer des Projekts ([ADR 0047](../adr/0047-mssql-vierter-dialekt-scoping.md)).
+Der MSSQL-Container läuft nur mit akzeptierter Microsoft-EULA. d-migrate setzt
+die Akzeptanz an zwei Stellen, je nachdem, wer den Container startet:
+
+| Wer startet | Wo die Akzeptanz steht |
+| ----------- | ---------------------- |
+| `test/integration-mssql`, `test/e2e-cli` (Testcontainers) | `MSSQLServerContainer.acceptLicense()` im Testcode |
+| die Sample-DB-Legs `make sample-db-cross-smoke-pg2ms` (SQL Server als Ziel) und `make sample-db-cross-smoke-ms2pg` (SQL Server als Quelle) | `ACCEPT_EULA: "Y"` im `mssql`-Service von `examples/sample-db/docker-compose.yml` |
+
+Beides entspricht `ACCEPT_EULA=Y` — wer eine dieser Schienen ausführt,
+akzeptiert damit die Lizenzbedingungen des Microsoft-Container-Images. Mit
+~1,5 GB Image und ~2 GB RAM-Bedarf ist es der schwerste Container des Projekts
+([ADR 0047](../adr/0047-mssql-vierter-dialekt-scoping.md)).

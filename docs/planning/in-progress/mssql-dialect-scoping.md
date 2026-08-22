@@ -313,6 +313,21 @@ die kein Unit-Test und kein kleines E2E-Schema gezeigt hatte:
 Die Regel dahinter steht jetzt in `spec/type-mapping.md` 6.2: der MSSQL-Reverse
 liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
 
+**Offen — Pflicht für Slice 5 (Migrate-Postcompare):**
+
+- **`Enum(refType)` liefert unter der MSSQL-Projektion falschen Drift.** Der
+  Kanonisierer lässt ihn als Identität stehen, weil eine
+  `(NeutralType) -> NeutralType`-Projektion die Custom-Types des Schemas nicht
+  sieht. T-SQL degradiert einen `refType`-Enum aber immer zu
+  `NVARCHAR(width)` + CHECK (und eine Domain zu ihrem Basistyp), der Reverse
+  kann den `refType` also nie zurückgeben. Anders als bei PostgreSQL/MySQL —
+  die einen echten Custom-Type emittieren und zurücklesen — ist Identität hier
+  **nicht** die genaue Projektion, sondern die konservative: sie meldet lieber
+  laut Drift, als eine Abflachung zu verstecken. Ein blinder Fold wäre
+  genauso falsch (Breite und Basistyp stehen im Schema, nicht im Typ). Auflösen
+  heißt: der Projektion Schema-Kontext geben. Muss fallen, bevor
+  `schema migrate --execute` für mssql Postcompare fährt.
+
 **Offen — nächste Arbeitsschritte:**
 
 - **Fremde Funktions-Defaults verlieren ihre Funktions-Natur:** das neutrale

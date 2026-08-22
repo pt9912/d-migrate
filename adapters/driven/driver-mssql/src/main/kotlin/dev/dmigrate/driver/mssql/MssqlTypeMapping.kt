@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FloatPrecision
+import dev.dmigrate.core.model.FunctionDefaultCompatibility
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.SchemaReadNote
@@ -195,15 +196,30 @@ internal object MssqlTypeMapping {
         // `CONVERT([date],getdate())`. Erkannt werden beide.
         return when (functionKey(value)) {
             "getdate()", "sysdatetime()", "sysdatetimeoffset()", "current_timestamp" ->
-                DefaultValue.FunctionCall("current_timestamp")
+                neutralFunctionDefault("current_timestamp", value, type)
             "convert([date],getdate())", "convert(date,getdate())", "cast(getdate() as date)" ->
-                DefaultValue.FunctionCall("current_date")
+                neutralFunctionDefault("current_date", value, type)
             "convert([time],getdate())", "convert(time,getdate())", "cast(getdate() as time)" ->
-                DefaultValue.FunctionCall("current_time")
-            "newid()" -> DefaultValue.FunctionCall("gen_uuid")
+                neutralFunctionDefault("current_time", value, type)
+            "newid()" -> neutralFunctionDefault("gen_uuid", value, type)
             else -> DefaultValue.FunctionCall(value)
         }
     }
+
+    /**
+     * Kanonisiert nur, wenn der neutrale Name auf DIESEM Spaltentyp zulaessig
+     * ist. Sonst waere der Reverse zwar neutraler, produzierte aber ein Schema,
+     * das die eigene Validierung mit E009 abweist: `gen_uuid` gilt nur auf
+     * `uuid`, ein `CHAR(36) DEFAULT NEWID()` (haeufiges T-SQL-Idiom) wuerde also
+     * einen Validierungsfehler statt einer Ungenauigkeit erben. In dem Fall
+     * bleibt der Default wortwoertlich stehen.
+     */
+    private fun neutralFunctionDefault(name: String, raw: String, type: NeutralType): DefaultValue =
+        if (FunctionDefaultCompatibility.isCompatible(name, type)) {
+            DefaultValue.FunctionCall(name)
+        } else {
+            DefaultValue.FunctionCall(raw)
+        }
 
     /**
      * Vergleichsform eines Funktions-Defaults: kleingeschrieben, Whitespace
@@ -214,7 +230,7 @@ internal object MssqlTypeMapping {
     private fun functionKey(value: String): String =
         value.lowercase().replace(COLLAPSE_WHITESPACE, " ").replace(WHITESPACE_AROUND_COMMA, ",").trim()
 
-    private val PLAIN_IDENTIFIER = Regex("""[A-Za-z_][A-Za-z0-9_]*""")
+    private val LOWERCASE_IDENTIFIER = Regex("""[a-z_][a-z0-9_]*""")
     private val COLLAPSE_WHITESPACE = Regex("""\s+""")
     private val WHITESPACE_AROUND_COMMA = Regex("""\s*,\s*""")
 
@@ -332,13 +348,25 @@ internal object MssqlTypeMapping {
     }
 
     /**
-     * `[col]` → `col`, sofern der Name ohne Quoting eindeutig ist; sonst
-     * ANSI-Doppelquote, das PostgreSQL und SQLite lesen (und aus dem der
-     * MSSQL-Generator wieder Klammern macht).
+     * `[col]` → `col`, aber NUR bei rein kleingeschriebenen Namen; sonst
+     * ANSI-Doppelquote.
+     *
+     * Die Kleinschreibung ist die Grenze, nicht die blosse Wohlgeformtheit:
+     * die Generatoren quoten Spaltennamen immer ([SqlIdentifiers]), eine
+     * PascalCase-Spalte steht im PostgreSQL-Ziel also als `"CustomerID"` und
+     * ein unquotiertes `CustomerID` im CHECK faltet dort auf `customerid` —
+     * `column "customerid" does not exist`. PascalCase ist in SQL Server die
+     * Regel, nicht die Ausnahme. Dieselbe Konvention liefert PostgreSQLs
+     * eigener Reverse (`pg_get_constraintdef` quotet genau diese Faelle).
+     *
+     * Bekannte Restluecke: ein kleingeschriebenes reserviertes Wort
+     * (`[order]`) bleibt unquotiert — dafuer braeuchte es eine
+     * zieldialekt-abhaengige Schluesselwortliste, die es im neutralen Modell
+     * nicht gibt.
      */
     private fun neutralIdentifier(bracketed: String): String {
         val name = bracketed.replace("]]", "]")
-        return if (PLAIN_IDENTIFIER.matches(name)) name else "\"" + name.replace("\"", "\"\"") + "\""
+        return if (LOWERCASE_IDENTIFIER.matches(name)) name else "\"" + name.replace("\"", "\"\"") + "\""
     }
 
     private fun isWrappedInParens(value: String): Boolean {
