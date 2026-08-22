@@ -21,11 +21,12 @@ class DialectCommandGateTest : FunSpec({
         }
     }
 
-    test("generate and tool export are no longer gated for mssql") {
+    test("only schema migrate and data profile remain gated for mssql") {
         DialectCommandGate.GatedCommand.entries.map { it.display } shouldBe listOf(
-            "data export", "data import", "data transfer", "schema migrate", "data profile",
+            "schema migrate", "data profile",
         )
         DialectCommandGate.AVAILABLE_FOR_MSSQL shouldContain "export flyway/liquibase/django/knex"
+        DialectCommandGate.AVAILABLE_FOR_MSSQL shouldContain "data export/import/transfer"
     }
 
     test("established dialects pass every gate") {

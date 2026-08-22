@@ -78,9 +78,6 @@ class DataTransferRunner(
         userFacingErrors = userFacingErrors,
         printError = userFacingPrintError,
         credentialFiller = credentialFiller,
-        preConnectGate = { srcCfg, tgtCfg, srcRef, tgtRef ->
-            refuseGatedDialect(srcCfg, srcRef) ?: refuseGatedDialect(tgtCfg, tgtRef)
-        },
     )
     private val preflightPlanner = TransferPreflightPlanner()
 
@@ -117,12 +114,24 @@ class DataTransferRunner(
         } finally { connections.close() }
     }
 
-    private fun refuseGatedDialect(config: ConnectionConfig, ref: String): Int? {
-        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, config.dialect)?.let {
-            userFacingPrintError(it, ref)
-            return 2
+    /** Layer-/Tabellenplan des Preflights (leere `layers` = sequenzieller Pfad). */
+    private class TransferPlan(val tables: List<String>, val layers: List<List<String>>)
+
+    private fun planTransfer(
+        request: DataTransferRequest,
+        srcSchema: SchemaDefinition,
+        tgtSchema: SchemaDefinition,
+        tgtDrv: DatabaseDriver,
+        tgtCfg: ConnectionConfig,
+        degree: Int,
+    ): TransferPlan {
+        val compat = tgtDrv.transferCompatibility()
+        val tgtCaps = DialectCapabilities.forDialect(tgtCfg.dialect)
+        if (degree > 1) {
+            val layers = preflightPlanner.planLayers(request, srcSchema, tgtSchema, compat, tgtCaps)
+            return TransferPlan(layers.flatten(), layers)
         }
-        return null
+        return TransferPlan(preflightPlanner.planTables(request, srcSchema, tgtSchema, compat, tgtCaps), emptyList())
     }
 
     private fun executeWithConnections(
@@ -158,14 +167,9 @@ class DataTransferRunner(
         val layers: List<List<String>>
         val tables: List<String>
         try {
-            val compat = tgtDrv.transferCompatibility()
-            if (degree > 1) {
-                layers = preflightPlanner.planLayers(request, srcSchema, tgtSchema, compat)
-                tables = layers.flatten()
-            } else {
-                layers = emptyList()
-                tables = preflightPlanner.planTables(request, srcSchema, tgtSchema, compat)
-            }
+            val plan = planTransfer(request, srcSchema, tgtSchema, tgtDrv, tgtCfg, degree)
+            layers = plan.layers
+            tables = plan.tables
         } catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
 
         // LN-008: fan a partitioned parent out per child only when BOTH dialects address

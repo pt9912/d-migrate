@@ -36,6 +36,23 @@
 > MCP-Subprozess-Plumbing; Dockerfile-`deps`-Stage kennt jetzt auch die
 > beiden MSSQL-Module.
 >
+> **Status-Update 2026-08-22 (4):** Slice 3 (Datenpfad) umgesetzt —
+> `MssqlDataReader` (adaptive Pufferung ohne offene Transaktion, Geometrie als
+> WKB über `.STAsBinary()`), `MssqlDataWriter` + `MssqlTableImportSession`
+> (`SET`-Optionen je Session für gefilterte Indizes, `SET IDENTITY_INSERT` wenn
+> der Chunk die Identity-Spalte trägt, `MERGE … OUTPUT $action` für
+> `skip`/`update` statt des in T-SQL fehlenden `INSERT IGNORE`,
+> `DBCC CHECKIDENT`-Reseed, `truncateTables` mit `NOCHECK CONSTRAINT`),
+> `MssqlInsertSql` (reine SQL-Erzeugung, mock-frei prüfbar) und
+> `MssqlSchemaSync`. Gate: `data export/import/transfer` entfernt (damit auch
+> die Transfer-Naht `preConnectGate` und die MCP-Worker-Vorprüfungen, die nur
+> dafür existierten); es bleiben `schema migrate` und `data profile`.
+> Geteilter `loadTargetColumns` nimmt jetzt die leere Zeilen-Klausel als
+> Parameter (T-SQL kennt kein `LIMIT 0`). Live: `MssqlDataPathIntegrationTest`
+> (Identity, MERGE-Modi, Reseed, Geometrie-Round-Trip, FK-sicheres Truncate)
+> und E2E `MssqlTransferE2ETest` (PostgreSQL → SQL Server über die echte CLI:
+> reverse → generate → sqlcmd-Apply → `data transfer`).
+
 > **Status-Update 2026-08-22 (2):** Slice 2 umgesetzt — `MssqlDdlGenerator`
 > (+ `MssqlTypeMapper`, Spalten-/Index-Helfer) im Treibermodul: Tabellen mit
 > benannten DF/UQ/CK/PK-Constraints, Identity, Enum/Domain inline, FKs
@@ -161,7 +178,7 @@ Entscheidung 2):
 | **1** ✅ | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) + `MSSQL`-Enum-Querschnitt + `DialectCommandGate` | ja — `schema reverse` funktioniert |
 | **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli`: Gate-Ablehnungen als Subprozess-E2E (containerlos — generate/export/import/transfer/migrate/profile/`export <tool>` liefern Exit 2 + Gate-Meldung) und `schema reverse`-Subprozess-E2E gegen den Testcontainer | E2E-Netz für den nutzersichtbaren MSSQL-Pfad und die Gates; vor Slice 2, damit Gate-Wegfall pro Slice testgetrieben ist |
 | **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
-| **3** | `DataReader`/`DataWriter` (Transfer; Fast-Path später) + sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
+| **3** ✅ | `DataReader`/`DataWriter` (Transfer; Fast-Path später); **3b** (offen): sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
 | **4** | Cross-Dialekt-Matrix, `NeutralTypeCanonicalizer`, Postcompare-Fingerprint, `transferCompatibility` + Cross-Dialekt-sample-db-Smoke (MSSQL↔PG analog `sample-db-cross-smoke`) | Matrix-Gate + Cross-Smoke |
 | **5** | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) | `schema migrate` |
 | **6** | Gefilterte Indizes (WHERE) + clustered/nonclustered-Steuerung, Reverse + Generate + Diff | volle Index-Treue |
@@ -192,7 +209,7 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 | `schema compare` (MCP-Job, via Reverse) | **Slice 1** | — |
 | `schema generate` | **Slice 2** | — |
 | `export flyway/liquibase/django/knex` (Tool-Export) | **Slice 2** | — |
-| `data export` / `data import` / `data transfer` | Slice 3 | Gate |
+| `data export` / `data import` / `data transfer` | **Slice 3** | — |
 | `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` („No renderer registered") |
 | `data profile` (CLI + MCP-Job) | Slice 10 | Gate |
 
@@ -229,3 +246,18 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
   mit gefiltertem Index — beim Import-Pfad (JDBC) prüfen, ob der Treiber sie
   bereits richtig setzt.
 - **Clustered/nonclustered, INCLUDE-Spalten:** Slice 6.
+- **Slice 3b — sample-db-MSSQL-Leg:** eigener Schritt nach Slice 3 (fetch +
+  compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md),
+  Reverse→Generate→Import-Smoke als Workflow). Der Datenpfad selbst ist mit
+  Slice 3 fertig und live getestet.
+- **Bulk-Fast-Path** (`BULK INSERT`/`SqlServerBulkCopy`) bleibt wie geplant
+  hinter dem generischen Batch-Insert zurückgestellt.
+- **SRID-Treue im Datenpfad:** WKB trägt keine SRID, SQL Server führt sie am
+  Wert (nicht an der Spalte) — übertragene Geometrien landen mit dem
+  Spalten-Default (0 bzw. 4326). Eine SRID-treue Übertragung bräuchte eine
+  eigene Projektion (Wert-SRID als Zusatzspalte oder EWKB-ähnliche Kodierung);
+  dokumentiert in `spec/type-mapping.md`, offen als Folgearbeit.
+- **`data import --on-conflict skip` ohne PK:** der Transfer-Pfad lehnt das im
+  Preflight ab (`DialectCapabilities.requiresPrimaryKeyForSkip`); der
+  Import-Pfad hat an dieser Stelle keinen Schema-Preflight und meldet es erst
+  beim Öffnen der Tabelle — dort aber mit klarer Meldung.

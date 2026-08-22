@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.dependency.sortTablesByDependency
 import dev.dmigrate.core.dependency.sortTablesIntoLayers
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.TransferTypeCompatibility
 
 internal class TransferPreflightPlanner {
@@ -17,8 +18,9 @@ internal class TransferPreflightPlanner {
         source: SchemaDefinition,
         target: SchemaDefinition,
         typeCompatibility: TransferTypeCompatibility,
+        targetCapabilities: DialectCapabilities,
     ): List<String> {
-        val candidates = validate(request, source, target, typeCompatibility)
+        val candidates = validate(request, source, target, typeCompatibility, targetCapabilities)
         val result = sortTablesByDependency(candidates.toSet(), SchemaFkEdges.of(target, candidates))
         if (result.circularEdges.isNotEmpty()) {
             throw TransferPreflightException("FK cycle: ${result.circularEdges.map { it.fromTable }.toSet().joinToString()}")
@@ -37,8 +39,9 @@ internal class TransferPreflightPlanner {
         source: SchemaDefinition,
         target: SchemaDefinition,
         typeCompatibility: TransferTypeCompatibility,
+        targetCapabilities: DialectCapabilities,
     ): List<List<String>> {
-        val candidates = validate(request, source, target, typeCompatibility)
+        val candidates = validate(request, source, target, typeCompatibility, targetCapabilities)
         val result = sortTablesIntoLayers(candidates.toSet(), SchemaFkEdges.of(target, candidates))
         if (result.circularEdges.isNotEmpty()) {
             val cyclic = result.circularEdges.map { it.fromTable }.toSet()
@@ -52,6 +55,7 @@ internal class TransferPreflightPlanner {
         source: SchemaDefinition,
         target: SchemaDefinition,
         typeCompatibility: TransferTypeCompatibility,
+        targetCapabilities: DialectCapabilities,
     ): List<String> {
         val candidates = if (request.tables != null) {
             for (table in request.tables) {
@@ -79,10 +83,16 @@ internal class TransferPreflightPlanner {
             }
         }
 
-        if (request.onConflict.equals("update", true)) {
+        // `update` braucht ueberall einen Schluessel; `skip` nur dort, wo der
+        // Zieldialekt keine schluesselfreie Form hat (SQL Server: MERGE).
+        val conflictNeedingKey = request.onConflict.equals("update", true) ||
+            (request.onConflict.equals("skip", true) && targetCapabilities.requiresPrimaryKeyForSkip)
+        if (conflictNeedingKey) {
             for (table in candidates) {
                 if (target.tables[table]!!.primaryKey.isEmpty()) {
-                    throw TransferPreflightException("Table '$table' needs PK for --on-conflict update")
+                    throw TransferPreflightException(
+                        "Table '$table' needs PK for --on-conflict ${request.onConflict!!.lowercase()}",
+                    )
                 }
             }
         }

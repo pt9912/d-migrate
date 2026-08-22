@@ -4,6 +4,8 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.SchemaReader
+import dev.dmigrate.driver.TransferTypeCompatibility
+import dev.dmigrate.driver.StructuralTransferTypeCompatibility
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
@@ -12,10 +14,10 @@ import dev.dmigrate.driver.data.TableLister
 /**
  * [DatabaseDriver] implementation for MSSQL.
  *
- * Reverse-read and DDL-generate surface: the data ports are unreachable
- * because `DialectCommandGate` (ADR 0047) rejects mssql at the command
- * boundary of every import/export/transfer/migrate/profile path; the
- * remaining capability methods keep their conservative interface defaults.
+ * Reverse-read, DDL-generate and data-path surface (Slices 1–3). Die
+ * verbleibenden Kommandos (`schema migrate`, `data profile`) weist
+ * `DialectCommandGate` (ADR 0047) weiterhin an der Kommando-Grenze ab; die
+ * uebrigen Capability-Methoden behalten ihre konservativen Interface-Defaults.
  */
 class MssqlDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.MSSQL
@@ -25,9 +27,19 @@ class MssqlDriver : DatabaseDriver {
 
     override fun ddlGenerator(): DdlGenerator = MssqlDdlGenerator()
 
-    override fun dataReader(): DataReader =
-        error("unreachable: DialectCommandGate rejects mssql for data export/transfer (ADR 0047)")
+    override fun dataReader(): DataReader = dataReader(null)
 
-    override fun dataWriter(): DataWriter =
-        error("unreachable: DialectCommandGate rejects mssql for data import/transfer (ADR 0047)")
+    /** LN-005: `pipeline.fetch_size` erreicht den Reader über diese Naht. */
+    override fun dataReader(fetchSize: Int?): DataReader = MssqlDataReader(fetchSize)
+
+    override fun dataWriter(): DataWriter = MssqlDataWriter()
+
+    /**
+     * Strukturelle Typ-Vertraeglichkeit wie bei den anderen Dialekten: der
+     * Transfer-Preflight vergleicht ueber den Typ-Mapper normalisiert (z. B.
+     * integer→biginteger, VARCHAR(100)→NVARCHAR(200)), statt strikte Gleichheit
+     * zu verlangen (Interface-Default).
+     */
+    override fun transferCompatibility(): TransferTypeCompatibility =
+        StructuralTransferTypeCompatibility(MssqlTypeMapper())
 }

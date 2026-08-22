@@ -386,7 +386,7 @@ Hinweis-/Kommentarblöcke tragen kein `GO`.
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `--source` | Ja | Pfad | Schema-Datei (YAML/JSON) |
-| `--target` | Ja | Dialekt | Zieldatenbank (`postgresql`, `mysql`, `sqlite`) |
+| `--target` | Ja | Dialekt | Zieldatenbank (`postgresql`, `mysql`, `sqlite`, `mssql`) |
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
 | `--generate-rollback` | Nein | Boolean | Zusätzlich Rollback-DDL generieren |
 | `--deterministic` | Nein | Boolean | Lässt den DDL-Header `Generated:`-Zeile weg und nutzt einen festen Zeitstempel (siehe unten). Auch der Sidecar-Report (`<output>.report.yaml`) und das JSON-Output-Feld `generated_at` folgen derselben Policy |
@@ -1572,6 +1572,16 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 (Flyway-Undo, Liquibase-Rollback-Block, Django `reverse_sql`, Knex
 `exports.down`) auf Basis des bestehenden full-state-`generateRollback()`-Pfads.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
+
+**MSSQL-Datenpfad**: `--on-conflict skip` verlangt für ein SQL-Server-Ziel
+einen Primärschlüssel (T-SQL hat keine schlüsselfreie Form wie
+`ON CONFLICT DO NOTHING`/`INSERT IGNORE`; d-migrate baut ein `MERGE`); der
+Transfer-Preflight lehnt eine Tabelle ohne Schlüssel mit Exit 3 ab.
+Computed Columns kann SQL Server nicht beschreiben — enthält der Chunk eine,
+bricht der Import mit einer benennenden Meldung ab, statt den Treiberfehler
+durchzureichen. Schlüsselwerte einer IDENTITY-Spalte werden mit
+`SET IDENTITY_INSERT` übernommen und der Zähler danach per `DBCC CHECKIDENT`
+auf den deklarierten `IDENTITY(seed, increment)`-Vertrag nachgeführt.
 
 **MSSQL-Batches**: T-SQL verlangt, dass `CREATE VIEW`/`CREATE OR ALTER …`
 und Routinen allein in einem Batch stehen, und Skript-Clients trennen

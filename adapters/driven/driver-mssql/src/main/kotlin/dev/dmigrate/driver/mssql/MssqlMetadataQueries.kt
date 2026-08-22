@@ -240,6 +240,62 @@ internal object MssqlMetadataQueries {
             schema,
         ).map { row -> ViewRow(name = row.string("view_name"), definition = row.string("definition")) }
 
+    /** IDENTITY-Spalte samt deklariertem Seed/Increment. */
+    data class IdentityColumn(val column: String, val seed: Long, val increment: Long)
+
+    /** IDENTITY-Spalte der Tabelle (`OBJECT_ID`-Form), oder `null`. */
+    fun identityColumn(session: JdbcOperations, qualifiedTable: String): IdentityColumn? =
+        session.querySingle(
+            """
+            SELECT TOP 1 c.name AS column_name,
+                   CAST(c.seed_value AS bigint) AS seed_value,
+                   CAST(c.increment_value AS bigint) AS increment_value
+            FROM sys.identity_columns c
+            WHERE c.object_id = OBJECT_ID(?)
+            """.trimIndent(),
+            qualifiedTable,
+        )?.let { row ->
+            val name = row["column_name"] as? String ?: return null
+            IdentityColumn(
+                column = name,
+                seed = (row["seed_value"] as? Number)?.toLong() ?: 1L,
+                increment = (row["increment_value"] as? Number)?.toLong() ?: 1L,
+            )
+        }
+
+    /**
+     * Computed Columns der Tabelle — SQL Server lehnt jedes explizite Schreiben
+     * darauf ab (Msg 271), auch mit `SET IDENTITY_INSERT`.
+     */
+    fun computedColumns(session: JdbcOperations, qualifiedTable: String): Set<String> =
+        session.queryList(
+            """
+            SELECT c.name AS column_name
+            FROM sys.computed_columns c
+            WHERE c.object_id = OBJECT_ID(?)
+            """.trimIndent(),
+            qualifiedTable,
+        ).mapNotNullTo(mutableSetOf()) { it["column_name"] as? String }
+
+    /** Alle IDENTITY-/Computed-Spalten, die ein Import nicht selbst schreiben darf. */
+    fun identityColumns(session: JdbcOperations, qualifiedTable: String): Set<String> =
+        session.queryList(
+            """
+            SELECT c.name AS column_name
+            FROM sys.identity_columns c
+            WHERE c.object_id = OBJECT_ID(?)
+            """.trimIndent(),
+            qualifiedTable,
+        ).mapNotNullTo(mutableSetOf()) { it["column_name"] as? String }
+
+    /** `MAX(<column>)` der Tabelle; `null` bei leerer Tabelle. */
+    fun maxValue(session: JdbcOperations, quotedTable: String, column: String): Long? =
+        (
+            session.querySingle(
+                "SELECT MAX(${MssqlIdentifiers.bracket(column)}) AS max_value FROM $quotedTable",
+            )?.get("max_value") as? Number
+            )?.toLong()
+
     data class UnreadObject(val type: String, val name: String)
 
     /**

@@ -20,10 +20,15 @@ inline fun Throwable.runSuppressing(action: () -> Unit) {
  * Shared utility for DataWriter implementations.
  *
  * Reads target column metadata from the database via `SELECT * LIMIT 0`
+ * (bzw. [emptyRowsClause] — T-SQL kennt kein `LIMIT`, dort `WHERE 1 = 0`)
  * and ResultSetMetaData — identical across all dialects.
  */
-fun loadTargetColumns(conn: Connection, quotedTablePath: String): List<TargetColumn> {
-    conn.prepareStatement("SELECT * FROM $quotedTablePath LIMIT 0").use { ps ->
+fun loadTargetColumns(
+    conn: Connection,
+    quotedTablePath: String,
+    emptyRowsClause: String = "LIMIT 0",
+): List<TargetColumn> {
+    conn.prepareStatement("SELECT * FROM $quotedTablePath $emptyRowsClause").use { ps ->
         ps.executeQuery().use { rs ->
             val md = rs.metaData
             return buildList(md.columnCount) {

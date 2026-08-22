@@ -22,20 +22,19 @@ import kotlin.io.path.writeText
  * pro Kommando belegt, dass das Gate an der Kommando-Grenze sitzt
  * (Kommando-Verfuegbarkeits-Tabelle im Plan-Dokument). Der Slice, der ein
  * Kommando fuer mssql liefert, nimmt es aus `GatedCommand` — und kippt
- * den zugehoerigen Fall hier in einen Funktions-E2E um (`schema generate`
- * und `export <tool>`: siehe `MssqlSchemaGenerateE2ETest`).
+ * den zugehoerigen Fall hier in einen Funktions-E2E um: `schema generate`
+ * und `export <tool>` liegen in `MssqlSchemaGenerateE2ETest`, der Datenpfad
+ * (`data export`/`import`/`transfer`) in `MssqlTransferE2ETest`.
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlCommandGateE2ETest : FunSpec({
 
     lateinit var tmp: Path
     lateinit var schemaYaml: Path
-    lateinit var rowsJson: Path
 
     beforeSpec {
         tmp = Files.createTempDirectory("dmigrate-e2e-mssql-gate-")
         schemaYaml = tmp.resolve("schema.yaml").apply { writeText(MINIMAL_SCHEMA) }
-        rowsJson = tmp.resolve("users.json").apply { writeText("""[{"id":1,"name":"alice"}]""") }
     }
 
     afterSpec {
@@ -50,56 +49,6 @@ class MssqlCommandGateE2ETest : FunSpec({
             run.stderr shouldContain "ADR 0047"
             run.stderr shouldContain "schema reverse"
         }
-    }
-
-    test("data export from an mssql source is refused before any connection attempt") {
-        expectGateRefusal(
-            "data export",
-            listOf(
-                "data", "export",
-                "--source", UNREACHABLE_MSSQL_URL,
-                "--tables", "users",
-                "--format", "json",
-                "--output", tmp.resolve("export.json").absolutePathString(),
-            ),
-        )
-    }
-
-    test("data import into an mssql target is refused before any connection attempt") {
-        expectGateRefusal(
-            "data import",
-            listOf(
-                "data", "import",
-                "--target", UNREACHABLE_MSSQL_URL,
-                "--source", rowsJson.absolutePathString(),
-                "--table", "users",
-                "--format", "json",
-            ),
-        )
-    }
-
-    test("data transfer refuses mssql as source before any connection attempt") {
-        expectGateRefusal(
-            "data transfer",
-            listOf(
-                "data", "transfer",
-                "--source", UNREACHABLE_MSSQL_URL,
-                "--target", "sqlite://" + tmp.resolve("transfer-target.db").absolutePathString(),
-                "--tables", "users",
-            ),
-        )
-    }
-
-    test("data transfer refuses mssql as target before any connection attempt") {
-        expectGateRefusal(
-            "data transfer",
-            listOf(
-                "data", "transfer",
-                "--source", "sqlite://" + tmp.resolve("transfer-source.db").absolutePathString(),
-                "--target", UNREACHABLE_MSSQL_URL,
-                "--tables", "users",
-            ),
-        )
     }
 
     test("schema migrate --dialect mssql against a file target is refused at the command boundary") {

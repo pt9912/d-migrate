@@ -1,10 +1,8 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.driver.DatabaseDialect
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
 
 class MssqlDriverTest : FunSpec({
 
@@ -14,17 +12,16 @@ class MssqlDriverTest : FunSpec({
         driver.dialect shouldBe DatabaseDialect.MSSQL
     }
 
-    test("reverse-read and generate ports are real implementations") {
+    test("all ports built through slice 3 are real implementations") {
         driver.urlBuilder()::class.simpleName shouldBe "MssqlJdbcUrlBuilder"
         driver.schemaReader()::class.simpleName shouldBe "MssqlSchemaReader"
         driver.tableLister()::class.simpleName shouldBe "MssqlTableLister"
         driver.ddlGenerator()::class.simpleName shouldBe "MssqlDdlGenerator"
+        driver.dataReader()::class.simpleName shouldBe "MssqlDataReader"
+        driver.dataWriter()::class.simpleName shouldBe "MssqlDataWriter"
     }
 
-    test("gated data ports assert the command-boundary invariant") {
-        shouldThrow<IllegalStateException> { driver.dataReader() }
-            .message!! shouldContain "DialectCommandGate"
-        shouldThrow<IllegalStateException> { driver.dataWriter() }
-            .message!! shouldContain "DialectCommandGate"
+    test("fetch-size override reaches the reader (LN-005)") {
+        driver.dataReader(500)::class.simpleName shouldBe "MssqlDataReader"
     }
 })

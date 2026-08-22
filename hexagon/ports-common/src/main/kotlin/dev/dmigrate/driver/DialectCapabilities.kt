@@ -50,6 +50,13 @@ data class DialectCapabilities(
      * client-unabhaengig. `null` = keine Praeambel.
      */
     val scriptPreamble: String? = null,
+    /**
+     * Ob `onConflict=skip` einen Primärschlüssel braucht. PostgreSQL/MySQL/SQLite
+     * haben mit `ON CONFLICT DO NOTHING`/`INSERT IGNORE` eine schlüsselfreie
+     * Form; SQL Server muss dafür `MERGE` mit einem Schlüsselprädikat bauen.
+     * Der Transfer-Preflight prüft das, bevor eine Verbindung aufgebaut wird.
+     */
+    val requiresPrimaryKeyForSkip: Boolean = false,
 ) {
     companion object {
         /**
@@ -127,6 +134,7 @@ data class DialectCapabilities(
                 partitionChildrenAreTables = false,
                 batchSeparator = "GO",
                 scriptPreamble = MSSQL_SCRIPT_PREAMBLE,
+                requiresPrimaryKeyForSkip = true,
             )
         }
     }

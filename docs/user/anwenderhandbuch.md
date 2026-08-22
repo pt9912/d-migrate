@@ -1862,7 +1862,7 @@ database:
     pg:     "postgresql://user:${PG_PW}@host:5432/db"   # Aliase: postgres, pg
     my:     "mysql://user:${MY_PW}@host:3306/db"         # Aliase: maria, mariadb
     lokal:  "sqlite:///pfad/zur/datei.db"                # oder sqlite::memory:
-    ms:     "mssql://user:${MS_PW}@host:1433/db"         # Alias: sqlserver; aktuell schema reverse/generate, export <tool>
+    ms:     "mssql://user:${MS_PW}@host:1433/db"         # Alias: sqlserver; Migrate/Profiling folgen
 ```
 
 Die vollständige Liste der Parameter (SSL, Timeouts, Zeichensatz, Port-Defaults)
@@ -2054,8 +2054,9 @@ beginnen Sie ohne `--resume` neu.
 
 **Welche Datenbanken unterstützt d-migrate?**
 PostgreSQL, MySQL/MariaDB und SQLite vollständig. MS SQL Server wird schrittweise
-ausgebaut — verfügbar sind `schema reverse`, `schema compare`, `schema generate`
-und `export <tool>`; Datentransfer, Migrate und Profiling folgen. Oracle ist geplant.
+ausgebaut — verfügbar sind `schema reverse`, `schema compare`, `schema generate`,
+`export <tool>` sowie `data export`/`import`/`transfer`; `schema migrate` und
+`data profile` folgen. Oracle ist geplant.
 
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
