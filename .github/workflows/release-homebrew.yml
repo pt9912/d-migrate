@@ -65,7 +65,7 @@ jobs:
         # Homebrew trackt nur Stable. Für Prereleases (RC) den Tap NICHT aktualisieren,
         # sonst bekämen `brew install`-Nutzer eine Vorabversion.
         if: steps.meta.outputs.prerelease != 'true'
-        uses: Justintime50/homebrew-releaser@a62d7a359683bfc047cdb2431f53ee58241464d1 # v3.3.0
+        uses: Justintime50/homebrew-releaser@454cc0d45a99949c9ea0bd9f03e6309df1617628 # v4.0.0
         with:
           homebrew_owner: pt9912
           homebrew_tap: homebrew-d-migrate
