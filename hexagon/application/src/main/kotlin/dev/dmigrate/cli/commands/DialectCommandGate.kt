@@ -20,10 +20,6 @@ object DialectCommandGate {
 
     /** Kommandos, deren MSSQL-Pfad noch nicht gebaut ist. */
     enum class GatedCommand(val display: String) {
-        SCHEMA_GENERATE("schema generate"),
-        // export flyway/liquibase/django/knex — braucht wie generate den
-        // DdlGenerator des Ziel-Dialekts.
-        TOOL_EXPORT("export <tool>"),
         DATA_EXPORT("data export"),
         DATA_IMPORT("data import"),
         DATA_TRANSFER("data transfer"),
@@ -40,8 +36,12 @@ object DialectCommandGate {
     fun refusal(command: GatedCommand, dialect: DatabaseDialect): String? =
         if (dialect == DatabaseDialect.MSSQL) {
             "${command.display} does not support dialect mssql yet " +
-                "(MSSQL rollout, ADR 0047). Commands available for mssql: schema reverse."
+                "(MSSQL rollout, ADR 0047). Commands available for mssql: $AVAILABLE_FOR_MSSQL."
         } else {
             null
         }
+
+    /** Nutzersichtbare Liste der für mssql freigeschalteten Kommandos (wächst mit jedem Slice). */
+    const val AVAILABLE_FOR_MSSQL: String =
+        "schema reverse, schema compare, schema generate, export flyway/liquibase/django/knex"
 }

@@ -35,6 +35,41 @@
 > falschem Passwort). Geteilter Runner `runRealCli` neben dem
 > MCP-Subprozess-Plumbing; Dockerfile-`deps`-Stage kennt jetzt auch die
 > beiden MSSQL-Module.
+>
+> **Status-Update 2026-08-22 (2):** Slice 2 umgesetzt — `MssqlDdlGenerator`
+> (+ `MssqlTypeMapper`, Spalten-/Index-Helfer) im Treibermodul: Tabellen mit
+> benannten DF/UQ/CK/PK-Constraints, Identity, Enum/Domain inline, FKs
+> (inkl. zirkulär/aufgeschoben), gefilterte Indizes, native Sequenzen +
+> `NEXT VALUE FOR`, `CREATE OR ALTER VIEW`, Spatial-Profil `native`
+> (`geography` bei geodätischem SRID 4000–4999/4326, sonst `geometry`;
+> Spatial-Index auf `geography` gerendert — Eigner-Einwand 2026-08-22),
+> Rollback mit `DROP INDEX … ON`. Nicht gerendert (sichtbar als
+> Notes/`skipped_objects`): Routinen/Trigger (E053, Slice 9), Aggregate
+> (E054), Partitionierung (E055, Slice 7), planare Spatial-Indizes (E057,
+> Slice 6), Volltext-Indizes (E057, Slice 8). Neue Codes W136–W141 (Ledger + Spec). Gate für
+> `schema generate` und `export <tool>` entfernt (CLI + MCP); Spatial-Policy
+> `mssql` → `native`/`none`; Reverse liest `geometry`/`geography` generisch.
+> Goldens `*.mssql.sql` (inkl. pre/post-data, spatial) per CLI erzeugt;
+> E2E `MssqlSchemaGenerateE2ETest` (generate + export flyway); Spec
+> (`type-mapping.md` §6, `ddl-generation-rules.md` §3.8/§16.9 u. a.) und
+> Handbuch nachgezogen. Review (`/code-review high`, 10 Befunde, alle
+> eingearbeitet): Schlüssel (UNIQUE/PK) auf LOB-Spalten → E057 statt
+> ungültigem DDL; View-Portabilität für mssql (`::`, `||`, `LIMIT` → E053);
+> Spatial-Index nur mit PK + genau einer Spalte; Domain-Basistypen über die
+> neutrale Typtabelle (PG-Katalognamen) statt Roh-Durchreichen, unauflösbar →
+> E053; `VALUE`-Ersetzung literal-bewusst; W138 mit PK-Ausnahme; Identity auf
+> nicht identity-fähigem Typ → W140; bracket-bewusster Inverter auch bei
+> „ on " im Indexnamen; `SequenceCapabilityDefaults.Mssql` auf Generate-
+> Realität (native Sequenzen) gehoben. Zweites Review (10 Befunde, 9
+> eingearbeitet): Kaskaden-Zyklus-/Mehrfachpfad-Wächter (`NO ACTION` + E057,
+> SQL-Server-Fehler 1785); `SYSDATETIMEOFFSET()` als tz-Default + Reverse-
+> Kanonisierung; View-Transformer mit T-SQL-Funktionsmenge, kontextsensitivem
+> `LIMIT`-Marker und Bracket-Erkennung für mssql-Quellen; Spatial-Index nur
+> mit tatsächlich gerendertem PK; Sequence-`CYCLE` mit expliziter Standard-
+> Schranke; `float`-Domain = double; `--split`-FK-Deferral über die Port-
+> Fähigkeit `supportsDeferredForeignKeys` (PG + MSSQL). Nebenbefund: Tool-Export-Artefakte
+> tragen keine `GO`-Batch-Trenner (Views/Routinen müssen in SQL Server allein
+> im Batch stehen) — Ticket siehe unten.
 
 ## Bestandsaufnahme — was ein vierter Dialekt kostet (gemessen)
 
@@ -125,7 +160,7 @@ Entscheidung 2):
 | **0** ✅ | Scoping-ADR ([ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)), Gradle-Modul `driver-mssql`, Testcontainers-Spike (Connect + `SELECT @@VERSION`), EULA-Doku, Dependabot-Ignore | — |
 | **1** ✅ | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) + `MSSQL`-Enum-Querschnitt + `DialectCommandGate` | ja — `schema reverse` funktioniert |
 | **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli`: Gate-Ablehnungen als Subprozess-E2E (containerlos — generate/export/import/transfer/migrate/profile/`export <tool>` liefern Exit 2 + Gate-Meldung) und `schema reverse`-Subprozess-E2E gegen den Testcontainer | E2E-Netz für den nutzersichtbaren MSSQL-Pfad und die Gates; vor Slice 2, damit Gate-Wegfall pro Slice testgetrieben ist |
-| **2** | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
+| **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
 | **3** | `DataReader`/`DataWriter` (Transfer; Fast-Path später) + sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
 | **4** | Cross-Dialekt-Matrix, `NeutralTypeCanonicalizer`, Postcompare-Fingerprint, `transferCompatibility` + Cross-Dialekt-sample-db-Smoke (MSSQL↔PG analog `sample-db-cross-smoke`) | Matrix-Gate + Cross-Smoke |
 | **5** | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) | `schema migrate` |
@@ -155,8 +190,8 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 | Verbindungsschicht (`mssql://`-URLs, Pool, SSL) | **Slice 1** | — |
 | `schema reverse` (CLI + MCP-Job) | **Slice 1** | — |
 | `schema compare` (MCP-Job, via Reverse) | **Slice 1** | — |
-| `schema generate` | Slice 2 | Gate (CLI-Runner + MCP-Handler) |
-| `export flyway/liquibase/django/knex` (Tool-Export) | Slice 2 | Gate (braucht den `DdlGenerator`) |
+| `schema generate` | **Slice 2** | — |
+| `export flyway/liquibase/django/knex` (Tool-Export) | **Slice 2** | — |
 | `data export` / `data import` / `data transfer` | Slice 3 | Gate |
 | `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` („No renderer registered") |
 | `data profile` (CLI + MCP-Job) | Slice 10 | Gate |
@@ -175,3 +210,13 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
   unzumutbar, ist Staffelung (wie `perf-acceptance`) der Ausweichpfad.
 - **Kein MSSQL-Wissen in den Goldens**: DDL-Goldens entstehen neu; der
   Regenerier-Weg läuft per CLI (nicht `make golden-update`).
+
+## Offene Punkte aus Slice 2
+
+- **`GO`-Batch-Trenner im Tool-Export:** `CREATE VIEW`/`CREATE OR ALTER …`
+  muss in SQL Server allein im Batch stehen. Der d-migrate-Runner führt
+  Statements einzeln aus (kein Problem); Flyway/Liquibase-Artefakte für
+  `--target mssql` bräuchten `GO`-Zeilen zwischen View-/Routinen-Statements.
+  Einordnung: Tool-Export-Formatierung, nicht Generator — beim Slice-3-
+  Round-Trip mitprüfen, spätestens mit Slice 9 (Routinen) lösen.
+- **Clustered/nonclustered, INCLUDE-Spalten:** Slice 6.

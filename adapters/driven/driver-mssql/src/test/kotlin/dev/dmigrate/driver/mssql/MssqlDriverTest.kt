@@ -14,15 +14,14 @@ class MssqlDriverTest : FunSpec({
         driver.dialect shouldBe DatabaseDialect.MSSQL
     }
 
-    test("reverse-read ports are real implementations") {
+    test("reverse-read and generate ports are real implementations") {
         driver.urlBuilder()::class.simpleName shouldBe "MssqlJdbcUrlBuilder"
         driver.schemaReader()::class.simpleName shouldBe "MssqlSchemaReader"
         driver.tableLister()::class.simpleName shouldBe "MssqlTableLister"
+        driver.ddlGenerator()::class.simpleName shouldBe "MssqlDdlGenerator"
     }
 
-    test("gated ports assert the command-boundary invariant") {
-        shouldThrow<IllegalStateException> { driver.ddlGenerator() }
-            .message!! shouldContain "DialectCommandGate"
+    test("gated data ports assert the command-boundary invariant") {
         shouldThrow<IllegalStateException> { driver.dataReader() }
             .message!! shouldContain "DialectCommandGate"
         shouldThrow<IllegalStateException> { driver.dataWriter() }

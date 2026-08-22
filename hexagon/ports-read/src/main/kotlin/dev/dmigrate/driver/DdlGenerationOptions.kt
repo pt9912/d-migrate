@@ -328,17 +328,15 @@ object SpatialProfilePolicy {
         DatabaseDialect.POSTGRESQL -> SpatialProfile.POSTGIS
         DatabaseDialect.MYSQL -> SpatialProfile.NATIVE
         DatabaseDialect.SQLITE -> SpatialProfile.NONE
-        // SQL Server hat native geometry/geography; ein NATIVE-Profil setzt
-        // die Generate-Typtabelle voraus
-        // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 2).
-        DatabaseDialect.MSSQL -> SpatialProfile.NONE
+        // SQL Server: native `geometry`-Spalten (spec/ddl-generation-rules.md, Spatial).
+        DatabaseDialect.MSSQL -> SpatialProfile.NATIVE
     }
 
     fun allowedFor(dialect: DatabaseDialect): Set<SpatialProfile> = when (dialect) {
         DatabaseDialect.POSTGRESQL -> setOf(SpatialProfile.POSTGIS, SpatialProfile.NONE)
         DatabaseDialect.MYSQL -> setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
         DatabaseDialect.SQLITE -> setOf(SpatialProfile.SPATIALITE, SpatialProfile.NONE)
-        DatabaseDialect.MSSQL -> setOf(SpatialProfile.NONE)
+        DatabaseDialect.MSSQL -> setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
     }
 
     /**

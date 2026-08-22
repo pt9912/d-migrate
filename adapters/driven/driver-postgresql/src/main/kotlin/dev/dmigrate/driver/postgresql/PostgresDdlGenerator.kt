@@ -8,6 +8,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     override val dialect = DatabaseDialect.POSTGRESQL
 
+    override val supportsDeferredForeignKeys: Boolean = true
+
     private val routineHelper = PostgresRoutineDdlHelper(::quoteIdentifier)
     private val typeSequenceSupport = PostgresTypeSequenceDdlSupport(
         quoteIdentifier = ::quoteIdentifier,

@@ -52,6 +52,8 @@ entries:
     evidence_paths:
       - source: "adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/IndexPrefixDropNote.kt"
         path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
+        path_type: production
   # W129 — AP6.2/ADR 0020: PG timestamptz partition bound normalized to UTC for MySQL DATETIME (tz suffix removed).
   - code: W129
     level: warning
@@ -98,6 +100,8 @@ entries:
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTableDdlSupport.kt"
         path_type: production
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
         path_type: production
 
   # W134 — enum-degradation slice (Option 2a): an enum column the migrate/diff path cannot
@@ -146,4 +150,60 @@ entries:
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
         path_type: production
       - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt"
+        path_type: production
+
+  # W136-W141 — MSSQL Generate (ADR 0047, Slice 2): SQL-Server-Grenzen und
+  # Semantik-Abweichungen, die der T-SQL-Generator sichtbar macht statt still
+  # zu degradieren. Evidence: MssqlColumnConstraintHelper / MssqlIndexDdlHelper.
+  - code: W136
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlTypeMapper.kt"
+        path_type: production
+  - code: W137
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+  - code: W138
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+  - code: W139
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlTypeMapper.kt"
+        path_type: production
+  - code: W140
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+  - code: W141
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorIndexTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
         path_type: production

@@ -73,7 +73,7 @@ class MssqlTypeMappingTest : FunSpec({
     }
 
     test("unknown type maps to text with R301 warning") {
-        val result = MssqlTypeMapping.mapColumn("t.geo", input("geography"))
+        val result = MssqlTypeMapping.mapColumn("t.h", input("hierarchyid"))
         result.type shouldBe NeutralType.Text(null)
         result.note.shouldNotBeNull()
         result.note!!.code shouldBe "R301"
@@ -176,5 +176,25 @@ class MssqlTypeMappingTest : FunSpec({
     test("parseDefault: null and empty yield null") {
         MssqlTypeMapping.parseDefault(null, NeutralType.Integer).shouldBeNull()
         MssqlTypeMapping.parseDefault("()", NeutralType.Integer).shouldBeNull()
+    }
+
+    test("geometry folds to the generic neutral geometry; geography carries the default SRID 4326 with R345") {
+        MssqlTypeMapping.mapColumn("t.g", input("geometry")).let {
+            it.type shouldBe NeutralType.Geometry()
+            it.note.shouldBeNull()
+        }
+        MssqlTypeMapping.mapColumn("t.g", input("geography")).let {
+            it.type shouldBe NeutralType.Geometry(srid = 4326)
+            it.note.shouldNotBeNull()
+            it.note!!.code shouldBe "R345"
+            it.note!!.severity shouldBe SchemaReadSeverity.INFO
+        }
+    }
+
+    test("sysdatetimeoffset() default canonicalises to current_timestamp like getdate()") {
+        MssqlTypeMapping.parseDefault("(sysdatetimeoffset())", NeutralType.DateTime(timezone = true)) shouldBe
+            DefaultValue.FunctionCall("current_timestamp")
+        MssqlTypeMapping.parseDefault("(getdate())", NeutralType.DateTime()) shouldBe
+            DefaultValue.FunctionCall("current_timestamp")
     }
 })

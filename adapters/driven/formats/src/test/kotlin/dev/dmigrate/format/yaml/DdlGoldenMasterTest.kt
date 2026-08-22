@@ -4,6 +4,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.SpatialProfile
+import dev.dmigrate.driver.mssql.MssqlDdlGenerator
 import dev.dmigrate.driver.mysql.MysqlDdlGenerator
 import dev.dmigrate.driver.postgresql.PostgresDdlGenerator
 import dev.dmigrate.driver.sqlite.SqliteDdlGenerator
@@ -18,7 +19,8 @@ class DdlGoldenMasterTest : FunSpec({
     val dialects: List<Pair<String, DdlGenerator>> = listOf(
         "postgresql" to PostgresDdlGenerator(),
         "mysql" to MysqlDdlGenerator(),
-        "sqlite" to SqliteDdlGenerator()
+        "sqlite" to SqliteDdlGenerator(),
+        "mssql" to MssqlDdlGenerator(),
     )
     val codec = YamlSchemaCodec()
 
@@ -52,6 +54,7 @@ class DdlGoldenMasterTest : FunSpec({
         Triple("postgresql", PostgresDdlGenerator(), DdlGenerationOptions(SpatialProfile.POSTGIS)),
         Triple("mysql", MysqlDdlGenerator(), DdlGenerationOptions(SpatialProfile.NATIVE)),
         Triple("sqlite", SqliteDdlGenerator(), DdlGenerationOptions(SpatialProfile.SPATIALITE)),
+        Triple("mssql", MssqlDdlGenerator(), DdlGenerationOptions(SpatialProfile.NATIVE)),
     )
 
     for ((dialectName, generator, options) in spatialProfiles) {

@@ -22,7 +22,8 @@ import kotlin.io.path.writeText
  * pro Kommando belegt, dass das Gate an der Kommando-Grenze sitzt
  * (Kommando-Verfuegbarkeits-Tabelle im Plan-Dokument). Der Slice, der ein
  * Kommando fuer mssql liefert, nimmt es aus `GatedCommand` — und kippt
- * den zugehoerigen Fall hier in einen Funktions-E2E um.
+ * den zugehoerigen Fall hier in einen Funktions-E2E um (`schema generate`
+ * und `export <tool>`: siehe `MssqlSchemaGenerateE2ETest`).
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlCommandGateE2ETest : FunSpec({
@@ -48,33 +49,6 @@ class MssqlCommandGateE2ETest : FunSpec({
             run.stderr shouldContain "$display does not support dialect mssql yet"
             run.stderr shouldContain "ADR 0047"
             run.stderr shouldContain "schema reverse"
-        }
-    }
-
-    test("schema generate --target mssql is refused at the command boundary") {
-        expectGateRefusal(
-            "schema generate",
-            listOf("schema", "generate", "--source", schemaYaml.absolutePathString(), "--target", "mssql"),
-        )
-    }
-
-    listOf(
-        "flyway" to "1.0.0",
-        "liquibase" to "1.0.0",
-        "django" to "0001_initial",
-        "knex" to "20260101000000",
-    ).forEach { (tool, version) ->
-        test("export $tool --target mssql is refused at the command boundary") {
-            expectGateRefusal(
-                "export <tool>",
-                listOf(
-                    "export", tool,
-                    "--source", schemaYaml.absolutePathString(),
-                    "--target", "mssql",
-                    "--output", tmp.resolve("out-$tool").absolutePathString(),
-                    "--version", version,
-                ),
-            )
         }
     }
 

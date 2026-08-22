@@ -92,9 +92,9 @@ class SequenceCapabilityTest : FunSpec({
             val capability = SequenceCapabilityDefaults.forDialect(dialect)
             if (dialect == DatabaseDialect.MSSQL) {
                 // Bewusste Ausnahme statt stillem Durchrutschen: fuer MSSQL
-                // existiert noch kein Sequenz-Renderer/-Executor — die
+                // existiert kein Migrate-Renderer/Preserve-Executor — die
                 // Capability-Defaults spiegeln Renderer-Realitaet
-                // (docs/planning/in-progress/mssql-dialect-scoping.md).
+                // (schema migrate ist fuer mssql am DialectCommandGate abgewiesen).
                 capability.supportsAtomicPreserve shouldBe false
                 capability.supportsAtomicPreserveAllInPlan shouldBe false
                 capability.transactionalProtectedSequenceOperations shouldBe

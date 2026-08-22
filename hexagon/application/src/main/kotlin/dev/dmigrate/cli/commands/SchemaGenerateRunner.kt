@@ -143,14 +143,18 @@ class SchemaGenerateRunner(
         }
 
         val generator = generatorLookup(dialect)
-        val result = generator.generate(schema, options)
+        // FKs als POST_DATA-ALTERs nur für Generatoren, die das umsetzen (PG, MSSQL).
+        val effectiveOptions = options.copy(
+            deferForeignKeys = request.splitMode == SplitMode.PRE_POST && generator.supportsDeferredForeignKeys,
+        )
+        val result = generator.generate(schema, effectiveOptions)
 
         val splitExit = checkSplitDiagnostics(request, result)
         if (splitExit != null) return splitExit
 
         printNotes(result, request.verbose)
 
-        return routeOutput(request, result, schema, generator, dialect, options)
+        return routeOutput(request, result, schema, generator, dialect, effectiveOptions)
     }
 
     private fun validateAndResolveOptions(request: SchemaGenerateRequest): Preflight {
@@ -161,11 +165,6 @@ class SchemaGenerateRunner(
             DatabaseDialect.fromString(request.target)
         } catch (e: IllegalArgumentException) {
             printError(e.message ?: "Unknown dialect", request.source.toString())
-            return Preflight.Exit(2)
-        }
-
-        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.SCHEMA_GENERATE, dialect)?.let {
-            printError(it, request.source.toString())
             return Preflight.Exit(2)
         }
 
@@ -205,7 +204,9 @@ class SchemaGenerateRunner(
             dialectContext = dialectContext,
             generatedAt = generatedAt.value,
             deterministic = request.deterministic,
-            deferForeignKeys = request.splitMode == SplitMode.PRE_POST && dialect == DatabaseDialect.POSTGRESQL,
+            // Deferral hängt an der Generator-Fähigkeit und wird nach dem (einzigen)
+            // Generator-Lookup in execute() gesetzt.
+            deferForeignKeys = false,
         )
 
         return Preflight.Ok(dialect, options)

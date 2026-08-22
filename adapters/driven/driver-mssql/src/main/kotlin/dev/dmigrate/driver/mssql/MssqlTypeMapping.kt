@@ -41,9 +41,25 @@ internal object MssqlTypeMapping {
         return MappingResult(
             type = mapBaseType(input),
             generation = null,
-            note = unknownTypeNote(columnName, input.typeName),
+            note = unknownTypeNote(columnName, input.typeName) ?: geographyNote(columnName, input.typeName),
         )
     }
+
+    // `geography` trägt den SRID je Wert; der SQL-Server-Default 4326 (WGS 84)
+    // hält den Round-Trip mit der Generate-Regel "geodätischer SRID → geography"
+    // stabil und wird als Annahme ausgewiesen.
+    private fun geographyNote(columnName: String, typeName: String): SchemaReadNote? =
+        if (typeName.equals("geography", ignoreCase = true)) {
+            SchemaReadNote(
+                severity = SchemaReadSeverity.INFO,
+                code = "R345",
+                objectName = columnName,
+                message = "geography column read as geometry with SRID 4326 (SQL Server default); " +
+                    "per-value SRIDs and the geometry subtype are not carried in the catalog.",
+            )
+        } else {
+            null
+        }
 
     // int IDENTITY(1,1) ist der 32-bit-identifier-Vertrag; größere/abweichende
     // Basistypen behalten ihren Typ und tragen die Erzeugung als
@@ -114,6 +130,11 @@ internal object MssqlTypeMapping {
         "uniqueidentifier" -> NeutralType.Uuid
         "varbinary", "binary", "image" -> NeutralType.Binary
         "xml" -> NeutralType.Xml
+        // Subtyp und SRID sind in SQL Server Eigenschaften des Werts, nicht
+        // der Spalte — der Reverse liest den generischen Geometrietyp; für
+        // `geography` gilt der Default-SRID 4326 (R345).
+        "geometry" -> NeutralType.Geometry()
+        "geography" -> NeutralType.Geometry(srid = MssqlTypeMapper.GEOGRAPHY_DEFAULT_SRID)
         else -> null
     }
 
@@ -122,6 +143,7 @@ internal object MssqlTypeMapping {
         "smallmoney", "float", "real", "nvarchar", "sysname", "varchar", "nchar", "char",
         "ntext", "text", "uniqueidentifier", "varbinary", "binary", "image", "date",
         "time", "datetime", "datetime2", "smalldatetime", "datetimeoffset", "xml",
+        "geometry", "geography",
     )
 
     private fun unknownTypeNote(columnName: String, typeName: String): SchemaReadNote? =
@@ -161,12 +183,12 @@ internal object MssqlTypeMapping {
             return DefaultValue.SequenceNextVal(sequenceNameOf(match.groupValues[1]))
         }
 
-        // getdate()/sysdatetime() sind die T-SQL-Spellings des neutralen
-        // current_timestamp — kleingeschrieben kanonisieren, wie es die
-        // MySQL-/PG-Reverse-Parser tun (Compare/Fingerprint vergleichen
-        // case-sensitiv).
+        // getdate()/sysdatetime()/sysdatetimeoffset() sind die T-SQL-Spellings
+        // des neutralen current_timestamp (der Spaltentyp entscheidet über den
+        // Offset) — kleingeschrieben kanonisieren, wie es die MySQL-/PG-
+        // Reverse-Parser tun (Compare/Fingerprint vergleichen case-sensitiv).
         return when (value.lowercase()) {
-            "getdate()", "sysdatetime()", "current_timestamp" ->
+            "getdate()", "sysdatetime()", "sysdatetimeoffset()", "current_timestamp" ->
                 DefaultValue.FunctionCall("current_timestamp")
             else -> DefaultValue.FunctionCall(value)
         }

@@ -109,6 +109,23 @@ class SchemaGenerateWiringTest : FunSpec({
         }
     }
 
+    test("pre-post split keeps foreign keys inline for a generator without deferral support") {
+        val output = Files.createTempDirectory("dmigrate-generate-split-nodefer-")
+        val ddl = output.resolve("schema.sql")
+        val factory = RecordingSchemaGenerateFactory(deferredForeignKeysSupported = false)
+        try {
+            val exit = SchemaGenerateWiring.execute(options(output = ddl, split = "pre-post"), factory)
+
+            exit shouldBe 0
+            // Die Deferral-Entscheidung folgt der Port-Faehigkeit (supportsDeferredForeignKeys),
+            // nicht mehr einem fest verdrahteten Dialekt.
+            factory.generators.single().generateOptions.single().deferForeignKeys shouldBe false
+            factory.generatorLookups shouldBe listOf(DatabaseDialect.POSTGRESQL)
+        } finally {
+            deleteRecursively(output)
+        }
+    }
+
     test("generate rollback writes rollback file and calls rollback generator") {
         val output = Files.createTempDirectory("dmigrate-generate-rollback-")
         val ddl = output.resolve("schema.sql")
@@ -224,9 +241,7 @@ class SchemaGenerateWiringTest : FunSpec({
             val result = DdlResult(listOf(DdlStatement("CREATE TABLE generated (id INT);")))
 
             schema.name shouldBe "Default Generate"
-            // MSSQL fehlt bewusst: kein DdlGenerator, schema generate weist
-            // mssql an der Kommando-Grenze ab (DialectCommandGate, ADR 0047).
-            listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
+            DatabaseDialect.entries.forEach { dialect ->
                 bundle.generatorLookup(dialect).dialect shouldBe dialect
                 bundle.preGenerationValidatorLookup(dialect).validate(schema, DdlGenerationOptions()).isEmpty()
                     .shouldBeTrue()
@@ -277,6 +292,7 @@ private class RecordingSchemaGenerateFactory(
         statements = listOf(DdlStatement("DROP TABLE generated;")),
     ),
     private val preGenerationErrors: List<ValidationError> = emptyList(),
+    private val deferredForeignKeysSupported: Boolean = true,
 ) : SchemaGenerateWiringFactory {
 
     val buildContexts = mutableListOf<CliContext>()
@@ -301,7 +317,8 @@ private class RecordingSchemaGenerateFactory(
             },
             generatorLookup = { dialect ->
                 generatorLookups.add(dialect)
-                FakeGenerateGenerator(dialect, result, rollbackResult).also { generators.add(it) }
+                FakeGenerateGenerator(dialect, result, rollbackResult, deferredForeignKeysSupported)
+                    .also { generators.add(it) }
             },
             preGenerationValidatorLookup = { dialect ->
                 preGenerationLookups.add(dialect)
@@ -345,6 +362,7 @@ private class FakeGenerateGenerator(
     override val dialect: DatabaseDialect,
     private val result: DdlResult,
     private val rollbackResult: DdlResult,
+    override val supportsDeferredForeignKeys: Boolean = true,
 ) : DdlGenerator {
     val generateOptions = mutableListOf<DdlGenerationOptions>()
     val rollbackOptions = mutableListOf<DdlGenerationOptions>()

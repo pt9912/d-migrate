@@ -160,16 +160,18 @@ object SequenceCapabilityDefaults {
         ),
     )
 
-    // Die Defaults spiegeln Renderer-Realitaet (KDoc oben): fuer MSSQL existiert
-    // noch kein Sequenz-Renderer, obwohl SQL Server native Sequenzen hat —
-    // die Flags flippen mit dem Generate-/Diff-Ausbau
-    // (docs/planning/in-progress/mssql-dialect-scoping.md, Slices 2 und 5).
+    // Die Defaults spiegeln Renderer-Realitaet (KDoc oben): der MSSQL-
+    // DDL-Generator rendert native Sequenzen (CREATE SEQUENCE … AS BIGINT
+    // mit START/INCREMENT/MIN/MAX/CYCLE/CACHE, spec/ddl-generation-rules.md);
+    // Preserve-/Atomic-Faehigkeiten bleiben false, solange es keinen MSSQL-
+    // Migrate-Renderer und keine Current-Value-Probe gibt (schema migrate ist
+    // fuer mssql am DialectCommandGate abgewiesen).
     private val Mssql = SequenceCapability(
-        supportsNamedSequences = false,
-        supportsStart = false,
-        supportsMinMaxValue = false,
-        supportsCycle = false,
-        supportsCache = false,
+        supportsNamedSequences = true,
+        supportsStart = true,
+        supportsMinMaxValue = true,
+        supportsCycle = true,
+        supportsCache = true,
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = false,
         supportsOwnedBy = false,

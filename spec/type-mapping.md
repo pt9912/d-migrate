@@ -21,6 +21,7 @@ Dateien:
 | PostgreSQL | `PostgresTypeMapper.kt` | `PostgresTypeMapping.kt` |
 | MySQL | `MysqlTypeMapper.kt` | `MysqlTypeMapping.kt` |
 | SQLite | `SqliteTypeMapper.kt` | `SqliteTypeMapping.kt` |
+| MSSQL | `MssqlTypeMapper.kt` | `MssqlTypeMapping.kt` |
 
 ---
 
@@ -37,24 +38,30 @@ NeutralType.Char(length: Int)             // CHAR(n)
 
 ### Reverse-Mapping (DB → Neutral)
 
-| DB-Typ | PostgreSQL | MySQL | SQLite |
-|--------|-----------|-------|--------|
-| `VARCHAR(n)` | `Text(maxLength=n)` ✅ | `Text(maxLength=n)` ✅ | `Text(maxLength=n)` ✅ |
-| `CHAR(n)` | `Char(length=n)` ✅ | `Char(length=n)` ✅ | `Char(length=n)` ✅ |
-| `TEXT` | `Text()` ✅ | `Text()` ✅ | `Text()` ✅ |
-| `MEDIUMTEXT` | — | `Text()` ✅ | — |
-| `LONGTEXT` | — | `Text()` ✅ | — |
-| `TINYTEXT` | — | `Text()` ✅ | — |
+| DB-Typ | PostgreSQL | MySQL | SQLite | MSSQL |
+|--------|-----------|-------|--------|-------|
+| `VARCHAR(n)` | `Text(maxLength=n)` ✅ | `Text(maxLength=n)` ✅ | `Text(maxLength=n)` ✅ | `Text(maxLength=n)` ✅ |
+| `CHAR(n)` | `Char(length=n)` ✅ | `Char(length=n)` ✅ | `Char(length=n)` ✅ | `Char(length=n)` ✅ |
+| `TEXT` | `Text()` ✅ | `Text()` ✅ | `Text()` ✅ | `Text()` ✅ |
+| `MEDIUMTEXT` | — | `Text()` ✅ | — | — |
+| `LONGTEXT` | — | `Text()` ✅ | — | — |
+| `TINYTEXT` | — | `Text()` ✅ | — | — |
+| `NVARCHAR(n)` | — | — | — | `Text(maxLength=n)` ✅ (Zeichen, nicht Bytes) |
+| `NVARCHAR(MAX)`, `NTEXT` | — | — | — | `Text()` ✅ |
+| `NCHAR(n)` | — | — | — | `Char(length=n)` ✅ |
 
 ### Forward-Mapping (Neutral → SQL)
 
-| Neutraler Typ | PostgreSQL | MySQL | SQLite |
-|---------------|-----------|-------|--------|
-| `Text(maxLength=100)` | `VARCHAR(100)` | `VARCHAR(100)` | `VARCHAR(100)` |
-| `Text()` | `TEXT` | `TEXT` | `TEXT` |
-| `Char(length=36)` | `CHAR(36)` | `CHAR(36)` | `CHAR(36)` |
+| Neutraler Typ | PostgreSQL | MySQL | SQLite | MSSQL |
+|---------------|-----------|-------|--------|-------|
+| `Text(maxLength=100)` | `VARCHAR(100)` | `VARCHAR(100)` | `VARCHAR(100)` | `NVARCHAR(100)` |
+| `Text()` | `TEXT` | `TEXT` | `TEXT` | `NVARCHAR(MAX)` |
+| `Char(length=36)` | `CHAR(36)` | `CHAR(36)` | `CHAR(36)` | `NCHAR(36)` |
 
-Länge geht in keiner Richtung verloren.
+Länge geht in keiner Richtung verloren — mit einer Ausnahme: MSSQL trägt in
+`NVARCHAR(n)`/`NCHAR(n)` höchstens 4000 Zeichen; eine größere deklarierte
+Länge wird als `NVARCHAR(MAX)` gerendert (Warnung W136), der Reverse liest
+dann `Text()` ohne Länge.
 
 ---
 
@@ -180,9 +187,88 @@ unverändert (keine Regression), der Fingerprint bleibt unberührt.
 
 ---
 
-## 6. Reverse-Mapping else-Fallback
+## 6. MSSQL (SQL Server): Entscheidungen und bekannte Lücken
 
-Alle drei Reverse-Mapper haben einen `else`-Fallback:
+### 6.1 Forward-Entscheidungen
+
+| Neutraler Typ | T-SQL | Hinweis |
+|---|---|---|
+| `identifier` (`auto_increment`) | `INT IDENTITY(1,1) NOT NULL` | Seed/Increment immer `(1,1)`; der Reverse meldet abweichende Werte als R340 |
+| `biginteger`/`integer`/`smallint` + `generation: identity` | `BIGINT`/`INT`/`SMALLINT IDENTITY(1,1) NOT NULL` | `BY DEFAULT` ist in T-SQL nicht abbildbar (W140: `SET IDENTITY_INSERT`) |
+| `text(n)`, `char(n)`, `email` | `NVARCHAR(n)`, `NCHAR(n)`, `NVARCHAR(254)` | Unicode-sicher; > 4000 → `NVARCHAR(MAX)` + W136 |
+| `boolean` | `BIT` | Defaults `true`/`false` → `1`/`0` |
+| `float` single/double | `REAL`/`FLOAT` | |
+| `decimal(p,s)` | `DECIMAL(p,s)` | p > 38 wird auf 38 gekappt (W139) |
+| `datetime` / `datetime(timezone)` | `DATETIME2` / `DATETIMEOFFSET` | `current_timestamp` → `CURRENT_TIMESTAMP` bzw. `SYSDATETIMEOFFSET()` (offset-tragend) |
+| `date`, `time` | `DATE`, `TIME` | `current_date`/`current_time` → `CAST(GETDATE() AS DATE/TIME)` |
+| `uuid` | `UNIQUEIDENTIFIER` | `gen_uuid` → `NEWID()` |
+| `json`, `array` | `NVARCHAR(MAX)` | kein nativer Typ (W137); Reverse liest `text` |
+| `xml` | `XML` | |
+| `binary` | `VARBINARY(MAX)` | |
+| `enum` (Werte) | `NVARCHAR(<längster Wert>)` + benannter `CHECK (… IN (…))` | kein Enum-Typ; begrenzte Breite hält die Spalte schlüssel-/indexfähig |
+| `fulltext` | `NVARCHAR(MAX)` | W132 |
+| `geometry` (Profil `native`) | `geography` bei geodätischem SRID (EPSG-Geographic-Block 4000–4999, z. B. 4326), sonst `geometry` | Subtyp/SRID sind Werteigenschaften (W120); `geography` + 4326 = SQL-Server-Default, keine Warnung |
+| `sequence_nextval` | `DEFAULT NEXT VALUE FOR [seq]` | native Sequenzen |
+
+String-Literale in Defaults werden als Unicode-Literal `N'…'` gerendert.
+
+### 6.2 Reverse-Entscheidungen
+
+| T-SQL | Neutral | Hinweis |
+|---|---|---|
+| `int IDENTITY` | `identifier` (`auto_increment`) | |
+| `bigint`/`smallint`/`tinyint`/`decimal` IDENTITY | Basistyp + `generation: identity` (`ALWAYS`) | T-SQL kennt keinen `BY DEFAULT`-Modus |
+| `bit` | `boolean` | |
+| `money`/`smallmoney` | `decimal(19,4)`/`decimal(10,4)` | |
+| `datetime`, `datetime2`, `smalldatetime` | `datetime` | Präzisionsunterschiede werden nicht modelliert |
+| `datetimeoffset` | `datetime(timezone)` | Default `sysdatetimeoffset()` → `current_timestamp` (wie `getdate()`) |
+| `nvarchar`/`nchar` | Länge in **Zeichen** (`max_length`/2) | `varchar`/`char` in Bytes |
+| `geometry` | `geometry` (generisch, ohne SRID) | Subtyp/SRID nicht lesbar (Werteigenschaft) |
+| `geography` | `geometry` mit `srid: 4326` | SQL-Server-Default-SRID als Annahme (R345); hält den Round-Trip zur Generate-Regel stabil |
+| `xml` | `xml` | |
+| `sysname` | `text(128)` | |
+
+### 6.3 Bekannte Lücken
+
+- `hierarchyid`, `sql_variant`, `rowversion`/`timestamp` und CLR-UDTs fallen
+  auf `Text()` + R301.
+- Computed Columns werden als normale Spalten gelesen (R343).
+- Collations werden nicht modelliert (Scoping-Entscheidung).
+
+### 6.4 Spatial: `geometry` vs. `geography`
+
+SQL Server hat zwei Spatial-Typen: **`geometry`** (planares Koordinatensystem)
+und **`geography`** (geodätisch, Ellipsoid — Längen-/Breitengrad). Das
+neutrale Modell kennt nur `geometry` mit optionalem `srid`; die Wahl des
+T-SQL-Typs fällt deshalb über den SRID:
+
+| Neutral (`type: geometry`) | T-SQL | Begründung |
+|---|---|---|
+| `srid` im EPSG-Geographic-Block **4000–4999** (z. B. **4326** WGS 84, 4258 ETRS89, 4269 NAD83) | `geography` | geodätisches Referenzsystem; SQL Server rechnet Distanzen/Flächen auf dem Ellipsoid |
+| `srid` außerhalb (projiziert, z. B. 3857 Web Mercator, 25832 UTM 32N) | `geometry` | planares System |
+| kein `srid` | `geometry` | ohne Referenzsystem gibt es keine geodätische Interpretation |
+
+Konsequenzen:
+
+- Subtyp (`geometry_type`) und SRID sind in SQL Server Eigenschaften des
+  Werts, nicht der Spalte. Ein Subtyp oder ein SRID abseits des
+  `geography`-Defaults 4326 wird nicht spaltenseitig erzwungen → W120;
+  `geography` mit SRID 4326 und generischem Subtyp bleibt ohne Warnung.
+- Reverse: `geography` → `geometry` mit `srid: 4326` (SQL-Server-Default,
+  Hinweis R345), `geometry` → `geometry` ohne SRID. Damit ist der Round-Trip
+  `srid: 4326 → geography → srid: 4326` stabil; andere geodätische SRIDs
+  (z. B. 4258) kommen als 4326 zurück — sichtbar über R345.
+- Räumliche Indizes: auf `geography` wird `CREATE SPATIAL INDEX` gerendert,
+  auf planarem `geometry` nicht (E057, BOUNDING_BOX nötig) — Details in
+  `ddl-generation-rules.md`, Abschnitt Spatial (MSSQL).
+- Die Schwelle ist eine Konstante (`MssqlTypeMapper.GEODETIC_SRID_RANGE`);
+  ESRI-Geographic-Codes (104xxx) gelten derzeit als planar.
+
+---
+
+## 7. Reverse-Mapping else-Fallback
+
+Alle vier Reverse-Mapper haben einen `else`-Fallback:
 
 ```kotlin
 else -> MappingResult(
@@ -198,7 +284,7 @@ Warning-Note damit der Nutzer die Zuordnung reviewen kann.
 
 ---
 
-## 7. Offene Verbesserungen
+## 8. Offene Verbesserungen
 
 | # | Beschreibung | Priorität | Aufwand |
 |---|-------------|-----------|---------|

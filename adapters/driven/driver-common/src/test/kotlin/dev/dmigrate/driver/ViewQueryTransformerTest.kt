@@ -206,4 +206,47 @@ class ViewQueryTransformerTest : FunSpec({
         val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
         transformer.assessPortability("SELECT 'a::b' AS x FROM t", "mysql").portable shouldBe true
     }
+
+    test("assessPortability: `::`, `||` and LIMIT are non-portable to MSSQL regardless of source dialect") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
+        transformer.assessPortability("SELECT id::text FROM t", "postgresql").let {
+            it.portable shouldBe false
+            it.reason shouldContain "::"
+        }
+        transformer.assessPortability("SELECT a || b FROM t", null).portable shouldBe false
+        transformer.assessPortability("SELECT id FROM t LIMIT 10", "sqlite").let {
+            it.portable shouldBe false
+            it.reason shouldContain "LIMIT"
+        }
+        // Inside string literals the markers are ignored.
+        transformer.assessPortability("SELECT 'a||b::c limit' AS s FROM t", "postgresql").portable shouldBe true
+        transformer.assessPortability("SELECT id, name FROM users WHERE id > 0", "postgresql").portable shouldBe true
+    }
+
+    test("assessPortability: PG/MySQL/SQLite-only functions are non-portable to MSSQL, T-SQL functions are known") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
+        transformer.assessPortability("SELECT date_trunc('month', created_at) FROM t", "postgresql").portable shouldBe false
+        transformer.assessPortability("SELECT now() FROM t", "postgresql").portable shouldBe false
+        transformer.assessPortability("SELECT strftime('%Y', d) FROM t", "sqlite").portable shouldBe false
+        transformer.assessPortability("SELECT COUNT(*), COALESCE(a, b), LEN(name) FROM t", "postgresql").portable shouldBe true
+        transformer.assessPortability("SELECT ROW_NUMBER() OVER (ORDER BY id) FROM t", "postgresql").portable shouldBe true
+    }
+
+    test("assessPortability: LIMIT as column name or alias is fine for MSSQL, LIMIT clause is not") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
+        transformer.assessPortability("SELECT quota AS limit FROM plans", "mssql").portable shouldBe true
+        transformer.assessPortability("SELECT p.limit FROM plans p", "postgresql").portable shouldBe true
+        transformer.assessPortability("SELECT id FROM t ORDER BY id LIMIT 5", "postgresql").portable shouldBe false
+    }
+
+    test("assessPortability: T-SQL bracket quoting from an mssql source is non-portable to PostgreSQL") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        transformer.assessPortability("SELECT [id] FROM [dbo].[users]", "mssql").let {
+            it.portable shouldBe false
+            it.reason shouldContain "bracket"
+        }
+        // PG array subscripts from a PG source are not brackets-as-quoting.
+        transformer.assessPortability("SELECT tags[1] FROM t", "postgresql").portable shouldBe true
+        transformer.assessPortability("SELECT '[x]' AS s FROM t", "mssql").portable shouldBe true
+    }
 })

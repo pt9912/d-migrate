@@ -107,7 +107,7 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
             }
             customers.columns.getValue("created_at").let {
                 it.type shouldBe NeutralType.DateTime(timezone = true)
-                it.default shouldBe DefaultValue.FunctionCall("sysdatetimeoffset()")
+                it.default shouldBe DefaultValue.FunctionCall("current_timestamp")
             }
             customers.constraints.first { it.name == "ck_customers_score" }
                 .expression.shouldNotBeNull() strShouldContain "score"

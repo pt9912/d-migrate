@@ -14,7 +14,7 @@ DDL-Statements werden in einer definierten Reihenfolge erzeugt, um Abhängigkeit
 
 ```
 1. Custom Types        (CREATE TYPE — nur PostgreSQL)
-2. Sequences           (CREATE SEQUENCE — nur PostgreSQL)
+2. Sequences           (CREATE SEQUENCE — PostgreSQL, MSSQL)
 3. Tabellen            (CREATE TABLE — topologisch sortiert nach Foreign Keys)
 4. Indizes             (CREATE INDEX — nach den zugehörigen Tabellen)
 5. Views               (CREATE VIEW — topologisch sortiert nach Abhängigkeiten)
@@ -68,11 +68,11 @@ stabilen, nicht zeitabhängigen Metadaten sichtbar.
 
 ### 2.1 Regeln pro Dialekt
 
-| Regel | PostgreSQL | MySQL | SQLite |
-|---|---|---|---|
-| Quote-Zeichen | `"` (Double Quote) | `` ` `` (Backtick) | `"` (Double Quote) |
-| Wann quoten | Reservierte Wörter, Sonderzeichen, Groß-/Kleinschreibung | Immer (konsistent) | Reservierte Wörter, Sonderzeichen |
-| Case-Sensitivity | Unquoted → lowercase | Systemabhängig | Case-insensitive |
+| Regel | PostgreSQL | MySQL | SQLite | MSSQL |
+|---|---|---|---|---|
+| Quote-Zeichen | `"` (Double Quote) | `` ` `` (Backtick) | `"` (Double Quote) | `[` `]` (eckige Klammern) |
+| Wann quoten | Reservierte Wörter, Sonderzeichen, Groß-/Kleinschreibung | Immer (konsistent) | Reservierte Wörter, Sonderzeichen | Immer (konsistent) |
+| Case-Sensitivity | Unquoted → lowercase | Systemabhängig | Case-insensitive | Collation-abhängig (Default case-insensitive) |
 
 ### 2.2 Quoting-Strategie
 
@@ -116,14 +116,21 @@ CREATE TABLE "customers" (
     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
     "email" TEXT NOT NULL
 );
+
+-- MSSQL
+CREATE TABLE [customers] (
+    [id] INT IDENTITY(1,1) NOT NULL,
+    [email] NVARCHAR(254) NOT NULL,
+    CONSTRAINT [pk_customers] PRIMARY KEY ([id])
+);
 ```
 
 ### 2.3 Escape-Regeln
 
-| Zeichen im Identifier | PostgreSQL | MySQL | SQLite |
-|---|---|---|---|
-| Quote-Zeichen selbst | `""` (verdoppeln) | ``` `` ``` (verdoppeln) | `""` (verdoppeln) |
-| Sonstige Sonderzeichen | Innerhalb Quotes erlaubt | Innerhalb Backticks erlaubt | Innerhalb Quotes erlaubt |
+| Zeichen im Identifier | PostgreSQL | MySQL | SQLite | MSSQL |
+|---|---|---|---|---|
+| Quote-Zeichen selbst | `""` (verdoppeln) | ``` `` ``` (verdoppeln) | `""` (verdoppeln) | `]]` (nur `]` verdoppeln) |
+| Sonstige Sonderzeichen | Innerhalb Quotes erlaubt | Innerhalb Backticks erlaubt | Innerhalb Quotes erlaubt | Innerhalb Klammern erlaubt |
 
 Beispiel:
 ```sql
@@ -133,6 +140,9 @@ Beispiel:
 
 -- MySQL:
 `user's name`
+
+-- MSSQL:
+[user's name]
 ```
 
 ---
@@ -347,6 +357,63 @@ aktuellen CLI-Funktionsumfangs.
 
 Für `schema generate` ist der Rebuild-Workaround also **nicht relevant** — er gehört zum `schema migrate`-Pfad.
 
+### 3.8 MSSQL (SQL Server)
+
+```sql
+CREATE TABLE [orders] (
+    [id] INT IDENTITY(1,1) NOT NULL,
+    [customer_id] INT NOT NULL,
+    [order_date] DATETIME2 NOT NULL,
+    [total_amount] DECIMAL(10,2),
+    [status] NVARCHAR(10) CONSTRAINT [df_orders_status] DEFAULT N'pending'
+             CONSTRAINT [ck_orders_status] CHECK ([status] IN (N'pending', N'processing', N'shipped', N'delivered', N'cancelled')),
+    [is_archived] BIT CONSTRAINT [df_orders_is_archived] DEFAULT 0,
+    CONSTRAINT [fk_orders_customer_id] FOREIGN KEY ([customer_id])
+        REFERENCES [customers] ([id]) ON DELETE NO ACTION,
+    CONSTRAINT [pk_orders] PRIMARY KEY ([id])
+);
+```
+
+Besonderheiten:
+- `identifier` → `INT IDENTITY(1,1) NOT NULL`; `generation: identity` auf
+  `integer`/`biginteger`/`smallint` → `<Typ> IDENTITY(1,1) NOT NULL`
+  (`BY DEFAULT` und Defaults auf Identity-Spalten → W140)
+- Text-Familie → `NVARCHAR(n)`/`NCHAR(n)`/`NVARCHAR(MAX)` (Unicode), Länge
+  > 4000 → `NVARCHAR(MAX)` + W136; String-Literale als `N'…'`
+- `boolean` → `BIT`, Defaults `true`/`false` → `1`/`0`
+- `json`, `array` → `NVARCHAR(MAX)` + W137 (kein nativer Typ)
+- `datetime` → `DATETIME2`, mit `timezone: true` → `DATETIMEOFFSET`
+  (nativer Zeitzonentyp, keine Warnung); Default `current_timestamp` →
+  `CURRENT_TIMESTAMP` bzw. auf `DATETIMEOFFSET` `SYSDATETIMEOFFSET()`
+  (offset-tragend; der Reverse kanonisiert `getdate()`/`sysdatetime()`/
+  `sysdatetimeoffset()` zurück auf `current_timestamp`)
+- `uuid` → `UNIQUEIDENTIFIER` (`gen_uuid` → `NEWID()`)
+- `enum` → `NVARCHAR(<längster Wert>)` + benannter `CHECK`
+  (`ck_<table>_<column>`), kein separater Typ (auch bei `ref_type`)
+- **Benannte Spalten-Constraints**: `DEFAULT` → `df_<table>_<column>`,
+  `UNIQUE` → `uq_<table>_<column>`, `PRIMARY KEY` → `pk_<table>`. SQL Server
+  vergäbe sonst Zufallsnamen (`DF__orders__3213E83F`), die ein Diff-Pfad nicht
+  deterministisch adressieren könnte.
+- `UNIQUE` auf NULL-fähigen Spalten → W138 (SQL Server erlaubt höchstens eine
+  NULL-Zeile pro UNIQUE-Constraint)
+- **Schlüssel auf LOB-Spalten** (`NVARCHAR(MAX)`, `VARBINARY(MAX)`, `XML` —
+  d. h. `text` ohne Länge, `json`, `array`, `binary`, `xml`, wertelose Enums,
+  Domains über solchen Basistypen): SQL Server erlaubt sie nicht als
+  Schlüsselspalten. `UNIQUE` (Spalte oder Constraint) und `PRIMARY KEY`
+  darauf werden **nicht** gerendert, sondern als `action_required` E057
+  ausgewiesen; ein Index darauf wird mit W141 übersprungen.
+- Identity-Generierung auf nicht identity-fähigen Typen (z. B. `decimal` mit
+  Skala > 0, `text`) wird fallen gelassen + W140
+- Domain-Basistypen werden über die neutrale Typtabelle aufgelöst (auch
+  PostgreSQL-Katalognamen wie `int8`, `timestamptz`, `bytea` und
+  hand-geschriebene Formen wie `VARCHAR(20)`/`DECIMAL(10,2)`); ein nicht
+  auflösbarer Basistyp wird als `NVARCHAR(MAX)` + `action_required` E053
+  gerendert, nie als roher Typname durchgereicht. Im Domain-CHECK wird
+  `VALUE` außerhalb von String-Literalen durch die Spalte ersetzt.
+- `DECIMAL`-Präzision > 38 → auf 38 gekappt + W139
+- Keine Tabellenoptionen (kein Engine/Charset)
+- Partitionierung wird nicht gerendert (E055, Tabelle plain; siehe §9)
+
 ---
 
 ## 4. Constraint-Generierung
@@ -385,6 +452,18 @@ CONSTRAINT `fk_orders_customer_id` FOREIGN KEY (`customer_id`)
 | `set_default` | `SET DEFAULT` |
 | `no_action` | `NO ACTION` |
 
+MSSQL kennt kein `RESTRICT`; `restrict` wird als `NO ACTION` gerendert
+(semantisch identisch, da SQL Server keine aufschiebbaren Constraints hat).
+Der Reverse liest entsprechend `no_action` zurück.
+
+MSSQL lehnt außerdem kaskadierende Aktionen (`cascade`, `set_null`,
+`set_default`) ab, die einen **Kaskaden-Zyklus** (auch selbstreferenzierend)
+oder einen **zweiten Kaskadenpfad** zwischen zwei Tabellen eröffnen würden
+(Fehler 1785). Der Generator spielt die Fremdschlüssel in Schema-Reihenfolge
+durch; der Fremdschlüssel, der Zyklus oder Mehrfachpfad schließt, wird mit
+`NO ACTION` gerendert und als `action_required` E057 ausgewiesen (Hinweis:
+Kaskade per Trigger nachbilden).
+
 ### 4.3 CHECK Constraint
 
 > **Trusted Input**: `constraint.expression` wird als Raw-SQL-Fragment direkt
@@ -419,7 +498,15 @@ CHECK ("total_amount" >= 0)
 
 -- Als benannter Constraint (multi-column)
 CONSTRAINT "uq_customer_date" UNIQUE ("customer_id", "order_date")
+
+-- MSSQL: auch einspaltig benannt
+[email] NVARCHAR(254) NOT NULL CONSTRAINT [uq_customers_email] UNIQUE
 ```
+
+MSSQL-Semantik: SQL Server behandelt `NULL` in UNIQUE-Constraints als Wert —
+höchstens eine NULL-Zeile ist zulässig (PostgreSQL/MySQL/SQLite erlauben
+beliebig viele). Ein UNIQUE auf NULL-fähigen Spalten erzeugt W138; wer mehrere
+NULL-Zeilen braucht, nutzt einen gefilterten Unique-Index (`WHERE … IS NOT NULL`).
 
 ### 4.5 Constraint-Positionierung
 
@@ -456,13 +543,24 @@ transportieren `DESC` verlustarm.
 
 ### 5.2 Index-Typen pro Dialekt
 
-| Neutral | PostgreSQL | MySQL (InnoDB) | SQLite |
-|---|---|---|---|
-| `btree` | `USING BTREE` (Default) | `USING BTREE` (Default) | Default |
-| `hash` | `USING HASH` | Explizites `USING HASH` auf InnoDB nicht unterstützt → `BTREE` + W102 | Nicht unterstützt → Default + W102 |
-| `gin` | `USING GIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 |
-| `gist` | `USING GIST` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 |
-| `brin` | `USING BRIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 |
+| Neutral | PostgreSQL | MySQL (InnoDB) | SQLite | MSSQL |
+|---|---|---|---|---|
+| `btree` | `USING BTREE` (Default) | `USING BTREE` (Default) | Default | nonclustered (Default) |
+| `hash` | `USING HASH` | Explizites `USING HASH` auf InnoDB nicht unterstützt → `BTREE` + W102 | Nicht unterstützt → Default + W102 | nonclustered + W102 |
+| `gin` | `USING GIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 |
+| `gist` | `USING GIST` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 |
+| `brin` | `USING BRIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 |
+
+MSSQL-Zusatzregeln: Indexnamen sind tabellenlokal (kein schema-globaler
+Allokator); ohne Modellname gilt `idx_<table>_<cols>`. Schlüsselspalten vom
+LOB-Typ (`NVARCHAR(MAX)`, `VARBINARY(MAX)`, `XML`) sind in SQL Server nicht
+indexierbar — der Index wird mit W141 übersprungen. Clustered/nonclustered
+wird nicht gesteuert (SQL-Server-Default nonclustered). Räumliche Indizes
+auf `geography`-Spalten werden als `CREATE SPATIAL INDEX` gerendert, wenn
+die Tabelle einen Primary Key hat (SQL Server verlangt einen clustered PK)
+und der Index genau eine Spalte umfasst; sonst — wie auf planaren
+`geometry`-Spalten (BOUNDING_BOX-Tessellation nötig) und bei Volltext-
+Indizes (Full-Text-Katalog) — E057.
 
 ### 5.3 Unique-Index
 
@@ -488,6 +586,7 @@ die Ziel-Engine. Es wird nicht geparst oder dialektuebergreifend transformiert.
 | PostgreSQL | `WHERE <predicate>` wird gerendert und per Reverse gelesen |
 | SQLite | `WHERE <predicate>` wird gerendert und per Reverse aus `sqlite_master.sql` gelesen |
 | MySQL | Kein stiller Predicate-Verlust: Index wird uebersprungen und `action_required` E057 erzeugt |
+| MSSQL | `WHERE <predicate>` wird als gefilterter Index gerendert und per Reverse aus `sys.indexes.filter_definition` gelesen |
 
 Partial-UNIQUE wird genauso behandelt. MySQL darf daraus keinen normalen
 Unique-Index erzeugen, weil das strenger waere als die Quelle.
@@ -516,6 +615,12 @@ CREATE TYPE "order_status" AS ENUM ('pending', 'processing', 'shipped', 'deliver
 "status" TEXT DEFAULT 'pending' CHECK ("status" IN ('pending','processing','shipped','delivered','cancelled'))
 ```
 
+```sql
+-- MSSQL (begrenzte NVARCHAR + benannter CHECK; auch bei ref_type kein separater Typ)
+[status] NVARCHAR(10) CONSTRAINT [df_orders_status] DEFAULT N'pending'
+    CONSTRAINT [ck_orders_status] CHECK ([status] IN (N'pending', N'processing', N'shipped', N'delivered', N'cancelled'))
+```
+
 ### 6.2 Composite-Typen
 
 ```sql
@@ -528,7 +633,7 @@ CREATE TYPE "address" AS (
 );
 ```
 
-Für MySQL/SQLite: Kein nativer Support. Verhalten abhängig von konfigurierter Fallback-Strategie:
+Für MySQL/SQLite/MSSQL: Kein nativer Support. Verhalten abhängig von konfigurierter Fallback-Strategie:
 - `json`: JSON-Spalte verwenden
 - `flatten`: Einzelne Spalten pro Feld erzeugen
 - `action_required`: Fehler mit Hinweis (Default)
@@ -541,6 +646,10 @@ CREATE DOMAIN "positive_amount" AS DECIMAL(10,2) CHECK (VALUE >= 0);
 ```
 
 Für MySQL/SQLite: Als Basistyp + CHECK Constraint inline an der Spalte.
+
+Für MSSQL: Basistyp + benannter CHECK (`ck_<table>_<column>`) inline an der
+Spalte; das PostgreSQL-Platzhalterwort `VALUE` wird durch die Spalte ersetzt:
+`[amount] DECIMAL(10,2) CONSTRAINT [ck_t_amount] CHECK ([amount] >= 0)`.
 
 ---
 
@@ -556,6 +665,21 @@ CREATE SEQUENCE "invoice_number_seq"
     NO CYCLE
     CACHE 20;
 ```
+
+MSSQL (native Unterstützung, immer `AS BIGINT`):
+
+```sql
+CREATE SEQUENCE [invoice_number_seq] AS BIGINT START WITH 10000 INCREMENT BY 1
+    MINVALUE 10000 MAXVALUE 99999999 NO CYCLE CACHE 20;
+```
+
+`MINVALUE`/`MAXVALUE` werden nur gerendert, wenn sie im Modell gesetzt sind
+(der Reverse blendet die BIGINT-Typgrenzen wieder zu „nicht gesetzt" aus) —
+mit einer Ausnahme: bei `cycle: true` bekommt eine aufsteigende Sequenz ohne
+`min_value` explizit `MINVALUE 1` (bzw. absteigend ohne `max_value`
+`MAXVALUE -1`, jeweils an `start` ausgerichtet), weil SQL Server sonst auf die
+BIGINT-Typgrenze umbräche statt wie PostgreSQL auf 1.
+`sequence_nextval`-Defaults werden als `DEFAULT NEXT VALUE FOR [seq]` gerendert.
 
 MySQL: Gesteuert ueber `--mysql-named-sequences`:
 
@@ -662,6 +786,13 @@ CREATE VIEW IF NOT EXISTS "active_orders" AS
     FROM "orders" o
     JOIN "customers" c ON o."customer_id" = c."id"
     WHERE o."status" NOT IN ('delivered', 'cancelled');
+
+-- MSSQL (2016 SP1+)
+CREATE OR ALTER VIEW [active_orders] AS
+    SELECT o.*, c.[name] AS customer_name
+    FROM [orders] o
+    JOIN [customers] c ON o.[customer_id] = c.[id]
+    WHERE o.[status] NOT IN ('delivered', 'cancelled');
 ```
 
 ### 8.2 Materialized Views
@@ -671,7 +802,7 @@ CREATE VIEW IF NOT EXISTS "active_orders" AS
 CREATE MATERIALIZED VIEW "monthly_revenue" AS
     SELECT ...;
 
--- MySQL/SQLite: Nicht unterstützt → Standard-View + W103
+-- MySQL/SQLite/MSSQL: Nicht unterstützt → Standard-View + W103
 ```
 
 Im diff-basierten `schema migrate`-Pfad werden Materialized Views nicht als
@@ -725,6 +856,17 @@ Funktionen die nicht in der obigen Tabelle stehen und dialektspezifisch sind, we
 
 Die Erkennung unbekannter Funktionen erfolgt über eine einfache Heuristik: Wenn der Query Funktionsnamen enthält, die weder in der Transformationstabelle noch in der transparenten Liste stehen, wird W111 erzeugt. Dies ist eine Best-Effort-Prüfung — false positives sind akzeptabel.
 
+#### MSSQL
+
+Für das Ziel `mssql` gibt es **keine** Funktionsumschreibung. Stattdessen
+entscheidet die Portabilitätsprüfung: `::`, `||`, eine `LIMIT`-Klausel und
+Funktionen, die T-SQL nicht kennt (`NOW()`, `DATE_TRUNC`, `EXTRACT`,
+`STRFTIME`, `SUBSTR`, `LENGTH`, …), machen den Body nicht portabel →
+`action_required` E053. T-SQL-eigene Funktionen (`LEN`, `GETDATE`,
+`DATEADD`, `ISNULL`, `ROW_NUMBER() OVER (…)`, …) gelten als bekannt.
+Umgekehrt ist ein `mssql`-stämmiger Body mit Klammer-Quoting
+(`[dbo].[users]`) für PostgreSQL/MySQL/SQLite nicht portabel (E053).
+
 #### Identifier-Quoting in View-Queries
 
 Identifier in View-Queries werden gemäß Ziel-Dialekt gequotet (§2). Der Query-String wird dafür nicht vollständig geparst, sondern nur die bekannten Tabellen- und Spaltennamen (aus `dependencies`) werden ersetzt.
@@ -773,11 +915,16 @@ SQLite unterstützt keine native Partitionierung. Bei `partitioning`-Konfigurati
 
 ### 9.4 Partitionstypen
 
-| Neutral | PostgreSQL | MySQL | SQLite |
-|---|---|---|---|
-| `range` | `PARTITION BY RANGE` | `PARTITION BY RANGE` | Nicht unterstützt |
-| `list` | `PARTITION BY LIST` | `PARTITION BY LIST` | Nicht unterstützt |
-| `hash` | `PARTITION BY HASH` | `PARTITION BY HASH` | Nicht unterstützt |
+| Neutral | PostgreSQL | MySQL | SQLite | MSSQL |
+|---|---|---|---|---|
+| `range` | `PARTITION BY RANGE` | `PARTITION BY RANGE` | Nicht unterstützt | Nicht gerendert (E055) |
+| `list` | `PARTITION BY LIST` | `PARTITION BY LIST` | Nicht unterstützt | Nicht gerendert (E055) |
+| `hash` | `PARTITION BY HASH` | `PARTITION BY HASH` | Nicht unterstützt | Nicht gerendert (E055) |
+
+MSSQL: SQL Server partitioniert über Partition Functions, Schemes und
+Filegroups — Objekte, die das neutrale Modell nicht trägt. Eine
+`partitioning`-Konfiguration erzeugt die Tabelle plain und `action_required`
+E055 mit dem Hinweis auf die manuelle Einrichtung.
 
 ---
 
@@ -879,6 +1026,10 @@ Trigger-Body → CREATE FUNCTION trg_fn_<name>() ... + CREATE TRIGGER ... EXECUT
 
 Wenn ein PostgreSQL-Trigger in einen anderen Dialekt transformiert werden soll, wird die Trigger-Function aufgelöst und der Body in den Trigger integriert (oder `action_required` bei komplexer Logik).
 
+**MSSQL**: Trigger werden nicht als T-SQL gerendert (SQL-Server-Trigger sind
+statement-basiert, kennen kein `FOR EACH ROW` und kein `BEFORE`); jeder
+Trigger landet als `action_required` E053 in `skipped_objects`.
+
 ---
 
 ## 11. Function- und Procedure-DDL
@@ -889,6 +1040,11 @@ Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL
 - **Wenn `source_dialect` = `target_dialect`**: Body wird 1:1 übernommen
 - **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [ki-mcp.md](./ki-mcp.md))
 - **Fallback ohne KI**: `action_required` (E053) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
+
+**MSSQL**: Functions und Procedures werden nicht als T-SQL gerendert — fremde
+Körper müssten übersetzt werden, für T-SQL-Körper fehlt der Hüllen-Vertrag
+(`@`-Parameter, `CREATE OR ALTER`); jede Routine landet als `action_required`
+E053 in `skipped_objects`, Aggregate (CLR-Assembly nötig) als E054.
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
 
@@ -919,9 +1075,9 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 | Up-Statement | Down-Statement |
 |---|---|
 | `CREATE TABLE "x"` | `DROP TABLE IF EXISTS "x"` |
-| `CREATE INDEX "i" ON "x"` | `DROP INDEX IF EXISTS "i"` |
+| `CREATE INDEX "i" ON "x"` | `DROP INDEX IF EXISTS "i"` (MSSQL: `DROP INDEX IF EXISTS [i] ON [x]`) |
 | `CREATE TYPE "t"` | `DROP TYPE IF EXISTS "t"` |
-| `CREATE VIEW "v"` | `DROP VIEW IF EXISTS "v"` |
+| `CREATE VIEW "v"` | `DROP VIEW IF EXISTS "v"` (MSSQL: auch für `CREATE OR ALTER VIEW`) |
 | `CREATE FUNCTION "f"` | `DROP FUNCTION IF EXISTS "f"` |
 | `CREATE SEQUENCE "s"` | `DROP SEQUENCE IF EXISTS "s"` |
 | `ALTER TABLE ADD COLUMN "c"` | `ALTER TABLE DROP COLUMN "c"` |
@@ -1143,28 +1299,30 @@ adapters/driven/formats/src/test/resources/fixtures/
     ├── e-commerce.sqlite.sql
     ├── all-types.postgresql.sql
     ├── all-types.mysql.sql
-    └── all-types.sqlite.sql
+    ├── all-types.sqlite.sql
+    └── all-types.mssql.sql
 ```
 
-**Namenskonvention**: `<schema>.<dialekt>.sql`
+**Namenskonvention**: `<schema>.<dialekt>.sql` — je Schema ein Golden pro
+Dialekt (`postgresql`, `mysql`, `sqlite`, `mssql`).
 
 ### 15.2 Coverage-Matrix
 
-| Schema | Feature-Schwerpunkt | PG | MY | SQ |
-|---|---|---|---|---|
-| minimal | Basis (1 Tabelle, PK, 2 Spalten) | ✓ | ✓ | ✓ |
-| e-commerce | FK, Enum (ref_type), Indizes, CHECK, Defaults | ✓ | ✓ | ✓ |
-| all-types | Alle 18 neutralen Typen | ✓ | ✓ | ✓ |
-| full-featured | Custom Types, Partitioning, Procedures, Functions, Views, Triggers, Sequences | ✓ | ✓ | ✓ |
+| Schema | Feature-Schwerpunkt | PG | MY | SQ | MS |
+|---|---|---|---|---|---|
+| minimal | Basis (1 Tabelle, PK, 2 Spalten) | ✓ | ✓ | ✓ | ✓ |
+| e-commerce | FK, Enum (ref_type), Indizes, CHECK, Defaults | ✓ | ✓ | ✓ | ✓ |
+| all-types | Alle 18 neutralen Typen | ✓ | ✓ | ✓ | ✓ |
+| full-featured | Custom Types, Partitioning, Procedures, Functions, Views, Triggers, Sequences | ✓ | ✓ | ✓ | ✓ |
 
-**Gesamt**: 4 Schemas × 3 Dialekte = **12 Golden-Master-Dateien**
+**Gesamt**: 4 Schemas × 4 Dialekte = **16 Golden-Master-Dateien**
 
 ### 15.3 Test-Methodik
 
 ```kotlin
 class DdlGoldenMasterTest : FunSpec({
     val schemas = listOf("minimal", "e-commerce", "all-types", "full-featured")
-    val dialects = listOf("postgresql", "mysql", "sqlite")
+    val dialects = listOf("postgresql", "mysql", "sqlite", "mssql")
 
     for (schema in schemas) {
         for (dialect in dialects) {
@@ -1232,12 +1390,14 @@ Zulässige Werte und Defaults je Zieldialekt:
 | `postgresql` | `postgis`, `none` | `postgis` |
 | `mysql` | `native`, `none` | `native` |
 | `sqlite` | `spatialite`, `none` | `none` |
+| `mssql` | `native`, `none` | `native` |
 
 Bedeutung der Profilwerte:
 
 - `postgis`: PostgreSQL-DDL wird mit PostGIS-kompatiblen Geometrietypen erzeugt.
 - `native`: MySQL-DDL wird mit den nativen Spatial Data Types von MySQL erzeugt.
 - `spatialite`: SQLite-DDL verwendet die `AddGeometryColumn()`-Strategie von SpatiaLite.
+- `native` (MSSQL): SQL-Server-DDL verwendet den eingebauten `geometry`-Typ (§16.9).
 - `none`: `geometry`-Spalten werden nicht generiert; die gesamte Tabelle wird als `action_required` (E052) markiert. Das ist fuer PostgreSQL, MySQL und SQLite ein zulaessiger Generatorpfad, wenn Spatial-DDL bewusst unterdrueckt werden soll.
 
 Unzulaessige Dialekt/Profil-Kombinationen (z.B. `--target mysql --spatial-profile postgis`)
@@ -1405,6 +1565,44 @@ Wenn Rollback generiert wird (`--generate-rollback`) und das Profil
 `spatialite` ist, werden die `DiscardGeometryColumn`-Aufrufe in umgekehrter
 Reihenfolge vor dem `DROP TABLE` emittiert.
 
+### 16.9 MSSQL (Profil: `native`)
+
+SQL Server bringt die Spatial-Typen `geometry` (planar) und `geography`
+(geodätisch) ohne Erweiterung mit. `schema generate` wählt den Typ nach dem
+SRID: ein geodätischer SRID (EPSG-Geographic-Block 4000–4999, insbesondere
+4326/WGS 84) ergibt `geography`, alles andere — auch eine Spalte ohne SRID —
+planares `geometry`:
+
+```sql
+CREATE TABLE [places] (
+    [id] INT IDENTITY(1,1) NOT NULL,
+    [location] geography NOT NULL,   -- geometry_type: point, srid: 4326
+    [outline] geometry,              -- srid: 25832 (UTM) oder ohne srid
+    CONSTRAINT [pk_places] PRIMARY KEY ([id])
+);
+```
+
+**Regeln**:
+
+- Subtyp (`geometry_type`) und `srid` sind in SQL Server Eigenschaften des
+  einzelnen Werts, nicht der Spalte. Ein Subtyp oder ein SRID, der nicht dem
+  `geography`-Default 4326 entspricht, wird nicht spaltenseitig erzwungen und
+  erzeugt W120 (Hinweis auf `STGeometryType()`/`STSrid`-CHECK).
+- Räumliche Indizes auf `geography`-Spalten werden als
+  `CREATE SPATIAL INDEX [name] ON [table] ([col]);` gerendert (Auto-Grid),
+  sofern die Tabelle einen Primary Key hat (SQL Server verlangt einen
+  clustered PK, den der benannte PK liefert) und der Index genau eine Spalte
+  umfasst. Auf planaren `geometry`-Spalten werden sie nicht gerendert (E057):
+  dort sind `BOUNDING_BOX`-Tessellationsparameter Pflicht, die das Modell
+  nicht trägt; fehlender PK oder mehrere Spalten führen ebenfalls zu E057.
+- Profil `none`: die gesamte Tabelle wird wie bei PostgreSQL/SQLite mit E052
+  blockiert (§16.3).
+- Rollback: Spalten als Teil von `DROP TABLE IF EXISTS [t]`; Spatial-Index
+  als `DROP INDEX IF EXISTS [name] ON [table]`.
+- Reverse: `geometry` wird als generischer `geometry`-Typ ohne SRID gelesen,
+  `geography` als `geometry` mit `srid: 4326` (SQL-Server-Default, R345) —
+  so bleibt der Round-Trip mit der Generate-Regel stabil.
+
 ### 16.8 Fehler- und Warnungs-Codes fuer Spatial
 
 Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E020, E120 und E121
@@ -1430,11 +1628,17 @@ entstehen bei `schema generate` (Generator-/Report-Regeln).
 | W116 | Warnung | `schema reverse` | Sequence metadata reconstructed, but required support objects (routines/triggers) are missing or degraded (MySQL + SQLite) |
 | W117 | Warnung | `schema generate` | Sequence values are transaction-bound in helper-table mode; rollback retracts increments (MySQL + SQLite) |
 | W119 | Warnung | `schema generate` | SQLite (`helper_table`): NOT NULL und CHECK-`IS NOT NULL` auf sequence-getragener Spalte werden unterdrückt, weil der `_bi`-Trigger NULL injizieren muss; Wert wird vom `_ai`-Trigger garantiert |
-| W120 | Warnung | `schema generate` / `schema reverse` | MySQL: SRID could not be fully transferred. SQLite (`helper_table`-Reverse): Marker stimmt, aber Trigger-Body wurde modifiziert; Sequence-Zuordnung bleibt, aber Emulation evtl. nicht funktional |
+| W120 | Warnung | `schema generate` / `schema reverse` | MySQL: SRID could not be fully transferred. MSSQL: Subtyp/SRID einer `geometry`/`geography`-Spalte nicht spaltenseitig erzwungen. SQLite (`helper_table`-Reverse): Marker stimmt, aber Trigger-Body wurde modifiziert; Sequence-Zuordnung bleibt, aber Emulation evtl. nicht funktional |
 | W121 | Info | `schema generate` | SQLite (`helper_table`): Conflict-Gap-INFO — `ON CONFLICT DO UPDATE`/`DO NOTHING`, `INSERT OR IGNORE`, `INSERT OR FAIL` (multi-row) verbrauchen einen Sequence-Wert ohne Insert |
 | W122 | Warnung | `schema generate` | SQLite (`helper_table`): AFTER INSERT-Sequence-Trigger führt `UPDATE` auf der Zieltabelle aus; bei `PRAGMA recursive_triggers = ON` feuern bestehende UPDATE-Trigger auf derselben Tabelle |
 | W123 | Warnung | `schema rollback` | SQLite (`helper_table`): ATTACHed Datenbanken detektiert; Rollback kann Abhängigkeiten über Schemen nicht prüfen — `--force-rollback` erforderlich |
 | W124 | Warnung | `schema reverse` | SQLite (`helper_table`): nutzerdefinierter BEFORE INSERT-Trigger auf der Zieltabelle ist vor dem kanonischen `_bi`-Trigger erzeugt worden; Sequence-Vergabe kann maskiert werden |
+| W136 | Warnung | `schema generate` | MSSQL: deklarierte Text-/Zeichenlänge > 4000 → `NVARCHAR(MAX)` (Längenschranke geht verloren) |
+| W137 | Warnung | `schema generate` | MSSQL: `json`/`array` → `NVARCHAR(MAX)` (kein nativer Typ; Reverse liest Text) |
+| W138 | Warnung | `schema generate` | MSSQL: UNIQUE auf NULL-fähiger Spalte — SQL Server erlaubt höchstens eine NULL-Zeile |
+| W139 | Warnung | `schema generate` | MSSQL: `DECIMAL`-Präzision > 38 auf 38 gekappt |
+| W140 | Warnung | `schema generate` | MSSQL: Identity `BY DEFAULT` bzw. Default auf Identity-Spalte nicht abbildbar (`SET IDENTITY_INSERT`) |
+| W141 | Warnung | `schema generate` | MSSQL: Index auf LOB-Schlüsselspalte (`NVARCHAR(MAX)`/`VARBINARY(MAX)`/`XML`) übersprungen |
 
 **E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in
 der zulaessigen Wertemenge liegt: `geometry`, `point`, `linestring`, `polygon`,
@@ -1465,8 +1669,12 @@ Partitionierung im Zieldialekt nicht unterstützt wird.
 im Zieldialekt nicht nativ erzeugt werden kann und manuelle Emulation oder
 Nacharbeit erforderlich ist.
 
-**E057 (Partial Index)**: Wird erzeugt, wenn ein Index ein `where`-Praedikat
-traegt, der Zieldialekt aber keine native Partial-Index-Semantik unterstuetzt.
+**E057 (Partial Index / nicht generierbare Kombination)**: Wird erzeugt, wenn ein Index ein `where`-Praedikat
+traegt, der Zieldialekt aber keine native Partial-Index-Semantik unterstuetzt;
+MSSQL meldet darunter auch Schluessel (UNIQUE/PRIMARY KEY) auf LOB-Spalten,
+Spatial-Indizes ohne renderbaren PK/auf planarem `geometry`/mehrspaltig,
+Volltext-Indizes sowie kaskadierende FK-Aktionen auf Zyklen/Mehrfachpfaden
+(zu `NO ACTION` degradiert).
 Der Index wird uebersprungen; insbesondere Partial-UNIQUE darf nicht als
 normaler Unique-Index ausgegeben werden.
 

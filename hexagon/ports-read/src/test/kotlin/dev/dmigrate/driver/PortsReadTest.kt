@@ -50,6 +50,7 @@ class PortsReadTest : FunSpec({
         SpatialProfilePolicy.defaultFor(DatabaseDialect.POSTGRESQL) shouldBe SpatialProfile.POSTGIS
         SpatialProfilePolicy.defaultFor(DatabaseDialect.MYSQL) shouldBe SpatialProfile.NATIVE
         SpatialProfilePolicy.defaultFor(DatabaseDialect.SQLITE) shouldBe SpatialProfile.NONE
+        SpatialProfilePolicy.defaultFor(DatabaseDialect.MSSQL) shouldBe SpatialProfile.NATIVE
     }
 
     test("SpatialProfilePolicy.allowedFor returns allowed sets") {
@@ -59,6 +60,8 @@ class PortsReadTest : FunSpec({
             setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
         SpatialProfilePolicy.allowedFor(DatabaseDialect.SQLITE) shouldBe
             setOf(SpatialProfile.SPATIALITE, SpatialProfile.NONE)
+        SpatialProfilePolicy.allowedFor(DatabaseDialect.MSSQL) shouldBe
+            setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
     }
 
     test("SpatialProfilePolicy.resolve returns default when rawProfile is null") {

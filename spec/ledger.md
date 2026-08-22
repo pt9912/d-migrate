@@ -66,6 +66,8 @@ neuen Version.
 | W132 | Cross-Dialect: `fulltext`-Spalte zu TEXT degradiert (Volltext-Suche nicht erhalten; manueller `FULLTEXT`-Index in MySQL bzw. FTS5-Virtual-Table in SQLite nötig) |
 | W133 | PostgreSQL-Generate: `FULLTEXT`-Index ohne `tsvector`-Spalte nicht expandierbar (keine GiST-Volltext-Spalte vorhanden; manuell `tsvector`-Spalte + `tsvector_update_trigger` ergänzen oder MySQL/SQLite als Ziel wählen) |
 | W134 | Migrate: `enum`-Spalte als bloßes `TEXT` migriert, Werte nicht durchgesetzt (PostgreSQL inline-`values`-Enum ohne `refType` sowie alle SQLite-Enums; nativ round-trippen nur MySQL `ENUM` und PG-`refType`-Typreferenz — für inline-Fidelity Custom-Type/`refType` verwenden) |
+| W135 | SQLite-Generate: Identity-/AUTO_INCREMENT-Spalte in zusammengesetztem PRIMARY KEY verliert AUTOINCREMENT (SQLite erlaubt die Form nur als einspaltigen `INTEGER PRIMARY KEY`) |
+| W136 - W141 | MSSQL-Generate (SQL Server): Länge > 4000 → `NVARCHAR(MAX)` (W136); JSON/Array → `NVARCHAR(MAX)` (W137); UNIQUE auf NULL-fähiger Spalte — höchstens eine NULL-Zeile (W138); `DECIMAL`-Präzision > 38 gekappt (W139); Identity `BY DEFAULT`/Default auf Identity-Spalte (W140); Index auf LOB-Schlüsselspalte übersprungen (W141) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

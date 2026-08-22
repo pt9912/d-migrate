@@ -47,6 +47,26 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
             if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
             if (crossDialect && codeOnly.contains("||")) markers += "PostgreSQL/SQLite-style concatenation (||)"
         }
+        // T-SQL kennt weder `::` noch `||` (String-Verkettung ist `+`) noch
+        // eine `LIMIT`-Klausel (`TOP`/`OFFSET … FETCH`); alle drei sind harte
+        // Syntaxfehler, unabhängig vom Quelldialekt.
+        if (targetDialect == DatabaseDialect.MSSQL) {
+            val codeOnly = tokens.joinToString("") {
+                if (it.type == ViewQueryTokenType.STRING) " " else it.text
+            }
+            if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
+            if (codeOnly.contains("||")) markers += "PostgreSQL/SQLite-style concatenation (||)"
+            if (hasLimitClause(tokens)) markers += "LIMIT clause (T-SQL uses TOP / OFFSET … FETCH)"
+        }
+        // Umgekehrt ist T-SQL-Klammer-Quoting (`[dbo].[users]`) in keinem
+        // anderen Dialekt gültig — ein mssql-stämmiger Body mit Klammern
+        // (außerhalb von Literalen) ist dort nicht portabel.
+        if (targetDialect != DatabaseDialect.MSSQL && sourceIs(sourceDialect, DatabaseDialect.MSSQL)) {
+            val codeOnly = tokens.joinToString("") {
+                if (it.type == ViewQueryTokenType.STRING) " " else it.text
+            }
+            if (codeOnly.contains("[")) markers += "T-SQL bracket quoting"
+        }
         if (crossDialect) {
             val unknown = detectUnknownFunctions(applyRules(tokens))
             if (unknown.isNotEmpty()) {
@@ -54,6 +74,32 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
             }
         }
         return ViewPortability(portable = markers.isEmpty(), reason = markers.joinToString("; ").ifEmpty { null })
+    }
+
+    private fun sourceIs(sourceDialect: String?, dialect: DatabaseDialect): Boolean =
+        sourceDialect != null && runCatching { DatabaseDialect.fromString(sourceDialect) }.getOrNull() == dialect
+
+    /**
+     * `LIMIT` als Klausel (gefolgt von einer Zahl, `ALL` oder `OFFSET`) — nicht
+     * als Spaltenname/Alias (`t.limit`, `AS limit`, `[limit]`), der in T-SQL
+     * erlaubt ist.
+     */
+    private fun hasLimitClause(tokens: List<ViewQueryToken>): Boolean {
+        for ((index, token) in tokens.withIndex()) {
+            if (token.type != ViewQueryTokenType.WORD || !token.text.equals("LIMIT", ignoreCase = true)) continue
+            val prev = tokens.take(index).lastOrNull { it.type != ViewQueryTokenType.WS }
+            val next = tokens.drop(index + 1).firstOrNull { it.type != ViewQueryTokenType.WS }
+            val prevBlocks = prev != null && (
+                prev.text == "." || prev.text == "[" ||
+                    (prev.type == ViewQueryTokenType.WORD && prev.text.equals("AS", ignoreCase = true))
+                )
+            val nextIsClauseArg = next != null && (
+                next.type == ViewQueryTokenType.NUMBER ||
+                    (next.type == ViewQueryTokenType.WORD && next.text.uppercase() in setOf("ALL", "OFFSET"))
+                )
+            if (!prevBlocks && nextIsClauseArg) return true
+        }
+        return false
     }
 
     fun transform(query: String, sourceDialect: String?): Pair<String, List<TransformationNote>> {
@@ -90,10 +136,9 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         DatabaseDialect.MYSQL -> mysqlRules
         DatabaseDialect.SQLITE -> sqliteRules
         DatabaseDialect.POSTGRESQL -> postgresRules
-        // Kein T-SQL-Umschreibregelwerk: Bodies passieren unveraendert und
-        // Cross-Dialekt-Funktionen werden via W111/Portabilitaet markiert;
-        // Regeln folgen mit der Generate-Richtung
-        // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 2).
+        // Kein T-SQL-Umschreibregelwerk: Bodies passieren unveraendert; was
+        // T-SQL nicht kennt (`::`, `||`, `LIMIT`, fremde Funktionen), meldet
+        // assessPortability als nicht portabel (E053 beim Aufrufer).
         DatabaseDialect.MSSQL -> emptyList()
     }
 
@@ -218,11 +263,32 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         "GREATEST", "LEAST", "LTRIM", "RTRIM",
     )
 
+    /**
+     * Funktionsaufrufe, die T-SQL kennt. Die generische Grundmenge enthält
+     * PG-/MySQL-/SQLite-Spellings (`NOW()`, `DATE_TRUNC`, `STRFTIME`, …), für
+     * die es keine MSSQL-Umschreibregel gibt — sie müssen hier als unbekannt
+     * gelten, sonst landet ein solcher Body verbatim in `CREATE OR ALTER VIEW`.
+     */
+    private val tsqlOnlyFunctions = setOf(
+        "LEN", "GETDATE", "GETUTCDATE", "SYSDATETIME", "SYSDATETIMEOFFSET", "SYSUTCDATETIME",
+        "DATEADD", "DATEDIFF", "DATEPART", "DATENAME", "DAY", "EOMONTH", "DATEFROMPARTS",
+        "ISNULL", "IIF", "CONVERT", "TRY_CAST", "TRY_CONVERT", "NEWID", "FORMAT", "STR",
+        "CHARINDEX", "PATINDEX", "STUFF", "REPLICATE", "REVERSE", "SPACE", "CONCAT_WS", "STRING_AGG",
+        "LEFT", "RIGHT", "LTRIM", "RTRIM", "FLOOR", "CEILING", "POWER", "SQRT", "SIGN", "EXP",
+        "LOG", "LOG10", "COUNT_BIG", "ISDATE", "ISNUMERIC", "ROW_NUMBER", "RANK", "DENSE_RANK",
+        "NTILE", "LAG", "LEAD", "OVER", "PARTITION",
+    )
+    private val notTsqlFunctions = setOf(
+        "NOW", "DATE_TRUNC", "EXTRACT", "LENGTH", "CHAR_LENGTH", "DATE_FORMAT", "CURDATE", "CURTIME",
+        "STRFTIME", "SUBSTR", "DATETIME", "DATE", "TIME", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME",
+    )
+
     private fun knownFunctions(): Set<String> = when (targetDialect) {
         DatabaseDialect.MYSQL, DatabaseDialect.POSTGRESQL -> allKnown + mysqlPostgresPortableFunctions
-        // Konservativ wie SQLite: nur die Grundmenge, bis ein T-SQL-Verdict
-        // die portablen Funktionen belegt.
-        DatabaseDialect.SQLITE, DatabaseDialect.MSSQL -> allKnown
+        // Konservativ: nur die Grundmenge, bis ein SQLite-Verdict die portablen
+        // Funktionen belegt.
+        DatabaseDialect.SQLITE -> allKnown
+        DatabaseDialect.MSSQL -> (allKnown - notTsqlFunctions) + tsqlOnlyFunctions
     }
 
     private fun detectUnknownFunctions(tokens: List<ViewQueryToken>): List<String> {

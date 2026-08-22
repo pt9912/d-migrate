@@ -4,6 +4,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
 class DialectCommandGateTest : FunSpec({
@@ -16,7 +17,15 @@ class DialectCommandGateTest : FunSpec({
             refusal shouldContain "mssql"
             refusal shouldContain "ADR 0047"
             refusal shouldContain "schema reverse"
+            refusal shouldContain "schema generate"
         }
+    }
+
+    test("generate and tool export are no longer gated for mssql") {
+        DialectCommandGate.GatedCommand.entries.map { it.display } shouldBe listOf(
+            "data export", "data import", "data transfer", "schema migrate", "data profile",
+        )
+        DialectCommandGate.AVAILABLE_FOR_MSSQL shouldContain "export flyway/liquibase/django/knex"
     }
 
     test("established dialects pass every gate") {

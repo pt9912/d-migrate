@@ -6,6 +6,14 @@ interface DdlGenerator {
     val dialect: DatabaseDialect
     fun generate(schema: SchemaDefinition, options: DdlGenerationOptions = DdlGenerationOptions()): DdlResult
     fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions = DdlGenerationOptions()): DdlResult
+
+    /**
+     * Ob der Generator [DdlGenerationOptions.deferForeignKeys] umsetzt (FKs als
+     * `ALTER TABLE … ADD CONSTRAINT` in POST_DATA statt inline). Der Split-Pfad
+     * von `schema generate` schaltet die Option nur für fähige Generatoren ein;
+     * der Default bleibt konservativ.
+     */
+    val supportsDeferredForeignKeys: Boolean get() = false
 }
 
 /** DDL output phase for import-friendly schema artifacts (0.9.2). */
