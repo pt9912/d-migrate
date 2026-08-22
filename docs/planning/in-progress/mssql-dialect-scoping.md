@@ -256,7 +256,7 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
   verbindet mit `ARITHABORT OFF`, was DML auf einer Tabelle mit gefiltertem
   Index sonst abweist.
 
-**Offen:**
+**Offen — nächste Arbeitsschritte:**
 
 - **Slice 3b — sample-db-MSSQL-Leg:** fetch + compose gemäß
   [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md),
@@ -268,13 +268,19 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
   eigene Projektion (Wert-SRID als Zusatzspalte oder EWKB-ähnliche Kodierung);
   dokumentiert in `spec/type-mapping.md`, keinem Slice zugeordnet.
 
-**Bewusst zurückgestellt / anderswo geplant:**
+**Offen — im Slice-Schnitt eingeplant:**
 
-- **Clustered/nonclustered-Steuerung und INCLUDE-Spalten:** Slice 6.
-- **Bulk-Fast-Path** (`BULK INSERT`/`SqlServerBulkCopy`): hinter dem
-  generischen Batch-Insert, wie im Slice-Schnitt vorgesehen.
-- **`data import --on-conflict skip` ohne PK:** Verhaltensnotiz, kein Rückstand
-  — der Transfer-Pfad lehnt es im Preflight ab
-  (`DialectCapabilities.requiresPrimaryKeyForSkip`), der Import-Pfad hat dort
-  keinen Schema-Preflight und meldet es beim Öffnen der Tabelle mit klarer
-  Meldung.
+- **Clustered/nonclustered-Steuerung und INCLUDE-Spalten:** Slice 6 (siehe
+  Slice-Tabelle oben). Der Reverse liest Indizes heute als `BTREE`, der
+  Generate rendert nonclustered — die Steuerung fehlt noch.
+
+**Offen — ohne Slice-Zuordnung, Priorisierung noch zu entscheiden:**
+
+- **Bulk-Fast-Path** (`BULK INSERT`/`SqlServerBulkCopy`): der Slice-Schnitt
+  notiert für Slice 3 nur „Fast-Path später", ohne Slice-Nummer. Der Import
+  läuft heute über gebatchte `INSERT`s; ein Bulk-Pfad wäre eine
+  Durchsatz-Optimierung analog PG-`COPY`.
+- **`data import --on-conflict skip` ohne PK:** der Transfer-Pfad lehnt das im
+  Preflight ab (`DialectCapabilities.requiresPrimaryKeyForSkip`); der
+  Import-Pfad hat an dieser Stelle keinen Schema-Preflight und meldet es erst
+  beim Öffnen der Tabelle. Ob er denselben frühen Check bekommt, ist offen.
