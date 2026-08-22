@@ -11,6 +11,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexColumn
@@ -19,6 +20,7 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionType
+import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -535,8 +537,145 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
             ),
         )
         val sqls = up(diff, current = withUnique, desired = withUnique).statements.map { it.sql }
-        sqls[0] shouldBe "ALTER TABLE [users] DROP CONSTRAINT IF EXISTS [uq_users_nick];"
+        // Der Name des UNIQUE steht NICHT im Modell (der Reverse hebt es auf
+        // column.unique), also wird er im Katalog nachgeschlagen statt geraten.
+        sqls[0] shouldContainStr "FROM sys.key_constraints"
+        sqls[0] shouldContainStr "kc.type = 'UQ'"
         sqls.any { it.contains("ALTER COLUMN [nick] NVARCHAR(80)") } shouldBe true
-        sqls.last() shouldContainStr "ADD CONSTRAINT [uq_users_nick] UNIQUE"
+        // Neu angelegt wird unter d-migrates Namen — das ist ein neues Objekt.
+        sqls.any { it.contains("ADD CONSTRAINT [uq_users_nick] UNIQUE") } shouldBe true
+    }
+
+    test("dropping a column finds its dependents in the schema that still describes it") {
+        // Regression: die Abhaengigkeiten wurden im Schema der Renderrichtung
+        // gesucht — bei einem DROP also im Soll-Schema, in dem die Spalte samt
+        // ihrer Indizes gerade nicht mehr steht. Der Abraeum-Code lief damit
+        // immer leer und DROP COLUMN scheiterte an Msg 5074.
+        val before = schema(
+            "users" to TableDefinition(
+                columns = mapOf("nick" to ColumnDefinition(NeutralType.Text(50))),
+                indices = listOf(
+                    IndexDefinition(name = "ix_nick", columns = listOf(IndexColumn("nick")), type = IndexType.BTREE),
+                ),
+            ),
+        )
+        val after = schema("users" to TableDefinition(columns = emptyMap()))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "users", columnsRemoved = mapOf("nick" to ColumnDefinition(NeutralType.Text(50)))),
+            ),
+        )
+        val sqls = up(diff, current = before, desired = after).statements.map { it.sql }
+        sqls[0] shouldBe "DROP INDEX IF EXISTS [ix_nick] ON [users];"
+        sqls.last() shouldBe "ALTER TABLE [users] DROP COLUMN [nick];"
+    }
+
+    test("an index the same plan adds is not recreated by the column dance") {
+        // COLUMNS rendert vor INDEXES. Wuerde der Tanz den Index aus dem
+        // Soll-Schema wiederherstellen, legte ihn die spaetere AddIndex-
+        // Operation ein zweites Mal an (Msg 1913).
+        val idx = IndexDefinition(name = "ix_nick", columns = listOf(IndexColumn("nick")), type = IndexType.BTREE)
+        val before = schema("users" to TableDefinition(columns = mapOf("nick" to ColumnDefinition(NeutralType.Text(50)))))
+        val after = schema(
+            "users" to TableDefinition(
+                columns = mapOf("nick" to ColumnDefinition(NeutralType.Text(80))),
+                indices = listOf(idx),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "nick", type = ValueChange(NeutralType.Text(50), NeutralType.Text(80))),
+                    ),
+                    indicesAdded = listOf(idx),
+                ),
+            ),
+        )
+        val sqls = up(diff, current = before, desired = after).statements.map { it.sql }
+        sqls.count { it.contains("CREATE INDEX [ix_nick]") } shouldBe 1
+    }
+
+    test("an inbound foreign key is dropped around a change to the referenced column") {
+        // SQL Server lehnt ALTER COLUMN auch ab, wenn die Abhaengigkeit von
+        // AUSSEN kommt — die eigene Tabelle allein zu betrachten reicht nicht.
+        val fk = ConstraintDefinition(
+            name = "fk_orders_user", type = ConstraintType.FOREIGN_KEY, columns = listOf("user_id"),
+            references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+        )
+        val both = schema(
+            "users" to TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true))),
+            "orders" to TableDefinition(
+                columns = mapOf("user_id" to ColumnDefinition(NeutralType.Integer)),
+                constraints = listOf(fk),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "id", type = ValueChange(NeutralType.Integer, NeutralType.BigInteger)),
+                    ),
+                ),
+            ),
+        )
+        val sqls = up(diff, current = both, desired = both).statements.map { it.sql }
+        sqls[0] shouldBe "ALTER TABLE [orders] DROP CONSTRAINT IF EXISTS [fk_orders_user];"
+        sqls.last() shouldContainStr "ALTER TABLE [orders] WITH CHECK ADD CONSTRAINT [fk_orders_user]"
+    }
+
+    test("a UNIQUE is not restored on a column that became a large object") {
+        // NVARCHAR(MAX) ist keine zulaessige Schluesselspalte (Msg 1919); der
+        // Generate-Pfad laesst das UNIQUE weg und meldet E057.
+        val before = schema(
+            "users" to TableDefinition(
+                columns = mapOf("bio" to ColumnDefinition(NeutralType.Text(50), unique = true)),
+            ),
+        )
+        val after = schema(
+            "users" to TableDefinition(
+                columns = mapOf("bio" to ColumnDefinition(NeutralType.Text(), unique = true)),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "bio", type = ValueChange(NeutralType.Text(50), NeutralType.Text())),
+                    ),
+                ),
+            ),
+        )
+        val r = up(diff, current = before, desired = after)
+        r.statements.map { it.sql }.any { it.contains("ADD CONSTRAINT [uq_users_bio]") } shouldBe false
+        r.diagnostics.map { it.code } shouldContain "E057"
+    }
+
+    test("CreateTable renders its foreign keys through the cascade guard") {
+        // Ein FK, der einen zweiten Kaskadenpfad schliesst, muss auch beim
+        // CREATE TABLE zu NO ACTION werden — sonst scheitert es an 1785, waehrend
+        // `schema generate` fuer dasselbe Schema NO ACTION schreibt.
+        val fk = ConstraintDefinition(
+            name = "fk_child_parent", type = ConstraintType.FOREIGN_KEY, columns = listOf("pid"),
+            references = ConstraintReferenceDefinition(
+                table = "child", columns = listOf("id"), onDelete = ReferentialAction.CASCADE,
+            ),
+        )
+        val child = TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "pid" to ColumnDefinition(NeutralType.Integer),
+            ),
+            primaryKey = listOf("id"),
+            constraints = listOf(fk),
+        )
+        val sqlText = up(
+            SchemaDiff(tablesAdded = listOf(NamedTable("child", child))),
+            desired = schema("child" to child),
+        ).statements.single().sql
+        sqlText shouldContainStr "FOREIGN KEY ([pid])"
     }
 })

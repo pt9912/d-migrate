@@ -146,6 +146,67 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
     }
 
     /**
+     * Loest das UNIQUE-Objekt auf genau dieser Spalte — per Katalog, weil sein
+     * Name im Modell nicht steht.
+     *
+     * Der Reverse hebt ein einspaltiges UNIQUE auf `column.unique` und wirft
+     * dabei den Objektnamen weg (`MssqlSchemaReader`). Bei einer Datenbank, die
+     * d-migrate angelegt hat, waere er `uq_<tabelle>_<spalte>`; bei jeder
+     * anderen heisst er `UQ__tabelle__spalte__1A2B3C4D`. Geraten wuerde also
+     * genau dort scheitern, wo es darauf ankommt — dieselbe Lehre wie beim
+     * Default-Constraint.
+     *
+     * Deckt beide Formen ab: UNIQUE als Constraint und als blosser eindeutiger
+     * Index.
+     */
+    fun dropUniqueOnColumnSql(table: String, column: String): String = buildString {
+        append("DECLARE @uq sysname, @sql nvarchar(max);\n")
+        append("SELECT TOP 1 @uq = kc.name FROM sys.key_constraints kc\n")
+        append("    JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id\n")
+        append("        AND ic.index_id = kc.unique_index_id\n")
+        append("    JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id\n")
+        append("    WHERE kc.type = 'UQ' AND kc.parent_object_id = OBJECT_ID(${stringLiteral(table)})\n")
+        append("        AND c.name = ${stringLiteral(column)};\n")
+        append("IF @uq IS NOT NULL\n")
+        append("BEGIN\n")
+        append("    SET @sql = ${stringLiteral("ALTER TABLE ${quote(table)} DROP CONSTRAINT ")} + QUOTENAME(@uq);\n")
+        append("    EXEC sp_executesql @sql;\n")
+        append("END\n")
+        append("ELSE\n")
+        append("BEGIN\n")
+        append("    SELECT TOP 1 @uq = i.name FROM sys.indexes i\n")
+        append("        JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id\n")
+        append("        JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id\n")
+        append("        WHERE i.is_unique = 1 AND i.is_primary_key = 0\n")
+        append("            AND i.object_id = OBJECT_ID(${stringLiteral(table)}) AND c.name = ${stringLiteral(column)};\n")
+        append("    IF @uq IS NOT NULL\n")
+        append("    BEGIN\n")
+        append("        SET @sql = N'DROP INDEX ' + QUOTENAME(@uq) + ${stringLiteral(" ON ${quote(table)}")};\n")
+        append("        EXEC sp_executesql @sql;\n")
+        append("    END\n")
+        append("END;")
+    }
+
+    /** Der Fremdschluessel auf dieser Spalte, dessen Name das Modell nicht traegt. */
+    fun dropForeignKeyOnColumnSql(table: String, column: String): String = buildString {
+        append("DECLARE @fk sysname, @sql nvarchar(max);\n")
+        append("SELECT TOP 1 @fk = fk.name FROM sys.foreign_keys fk\n")
+        append("    JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id\n")
+        append("    JOIN sys.columns c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id\n")
+        append("    WHERE fk.parent_object_id = OBJECT_ID(${stringLiteral(table)})\n")
+        append("        AND c.name = ${stringLiteral(column)};\n")
+        append("IF @fk IS NOT NULL\n")
+        append("BEGIN\n")
+        append("    SET @sql = ${stringLiteral("ALTER TABLE ${quote(table)} DROP CONSTRAINT ")} + QUOTENAME(@fk);\n")
+        append("    EXEC sp_executesql @sql;\n")
+        append("END;")
+    }
+
+    /** Ob eine UNIQUE-Zusage auf dieser Spalte in T-SQL ueberhaupt zulaessig ist (LOB-Spalten sind es nicht). */
+    fun isKeyEligible(col: ColumnDefinition, schema: SchemaDefinition): Boolean =
+        !typeResolver.isLobColumn(col, schema)
+
+    /**
      * Umbenennen laeuft in T-SQL ueber die Systemprozedur, nicht ueber
      * `ALTER TABLE … RENAME`. `sp_rename` nimmt den alten Namen als
      * String-**Literal** (dort ist Klammer-Quoting erlaubt) und den neuen

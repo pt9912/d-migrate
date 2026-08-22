@@ -51,7 +51,7 @@ internal object MssqlDiffTableOps {
             lines += "    CONSTRAINT ${ctx.sql.quote(MssqlConstraintNames.primaryKey(table))} PRIMARY KEY ($cols)"
         }
         for (constraint in op.table.constraints.sortedBy { it.name }) {
-            val line = ctx.sql.constraintLine(table, constraint)
+            val line = ctx.sql.constraintLine(table, constraint, ctx.cascadeGuard())
                 ?: return blockUnrenderableConstraint(op, ctx, table, constraint)
             lines += "    $line"
         }
@@ -230,10 +230,12 @@ internal object MssqlDiffTableOps {
         type: NeutralType,
         target: ColumnDefinition,
     ) {
-        val dependents = dependentsFor(ctx, table, column)
-        // Erst alles aufloesen, was scheitern kann, dann emittieren.
-        val recreates = resolveRecreates(ctx, op, table, dependents) ?: return
-        emitDependentDrops(ctx, op, table, dependents)
+        val deps = dependenciesFor(ctx, table, column, forDrop = false)
+        // Erst alles aufloesen, was scheitern kann, dann emittieren — sonst
+        // laege die Operation bei einem spaeten Blocker in `rendered` UND
+        // `skipped`.
+        val recreates = MssqlDiffColumnDependencies.recreateStatements(op, ctx, deps) ?: return
+        MssqlDiffColumnDependencies.dropStatements(ctx, deps).forEach { ctx.emit(op, it) }
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
         target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
@@ -246,9 +248,10 @@ internal object MssqlDiffTableOps {
         table: String,
         column: String,
     ) {
-        // Beim DROP COLUMN wird nur abgeraeumt, nicht wieder angelegt: die
-        // Spalte, auf der die Objekte hingen, gibt es danach nicht mehr.
-        emitDependentDrops(ctx, op, table, dependentsFor(ctx, table, column))
+        // Nur abraeumen, nicht wieder anlegen: die Spalte, auf der die Objekte
+        // hingen, gibt es danach nicht mehr.
+        val deps = dependenciesFor(ctx, table, column, forDrop = true)
+        MssqlDiffColumnDependencies.dropStatements(ctx, deps).forEach { ctx.emit(op, it) }
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
@@ -310,45 +313,22 @@ internal object MssqlDiffTableOps {
      * Beim DROP COLUMN entfaellt das Wiederanlegen fuer alles, was genau diese
      * Spalte trug — es gibt sie danach nicht mehr.
      */
-    private fun dependentsFor(
+    /**
+     * Die Abhaengigkeiten der Spalte. `bearing` ist das Schema, das die Spalte
+     * noch BESCHREIBT — bei einem Drop also das Gegenstueck zur Renderrichtung,
+     * weil die Zielrichtung sie gerade nicht mehr enthaelt.
+     */
+    private fun dependenciesFor(
         ctx: MssqlDiffRenderContext,
         table: String,
         column: String,
-    ): MssqlDiffObjectOps.Dependents {
-        val tableDef = ctx.schemaForDirection()?.tables?.get(table)
-            ?: return MssqlDiffObjectOps.Dependents(emptyList(), emptyList())
-        return MssqlDiffObjectOps.dependentsOf(table, tableDef, column)
-    }
-
-    private fun emitDependentDrops(
-        ctx: MssqlDiffRenderContext,
-        op: DiffOperation,
-        table: String,
-        dependents: MssqlDiffObjectOps.Dependents,
-    ) {
-        for (constraint in dependents.constraints) {
-            ctx.emit(op, ctx.sql.dropConstraintSql(table, constraint.name))
-        }
-        for (index in dependents.indices) {
-            ctx.emit(op, ctx.sql.dropIndexSql(table, index))
-        }
-    }
-
-    /** `null`, wenn eines der Objekte nicht wieder herstellbar ist — dann ist bereits geblockt. */
-    private fun resolveRecreates(
-        ctx: MssqlDiffRenderContext,
-        op: DiffOperation,
-        table: String,
-        dependents: MssqlDiffObjectOps.Dependents,
-    ): List<String>? {
-        val indexSqls = dependents.indices.map {
-            MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, it) ?: return null
-        }
-        val constraintSqls = dependents.constraints.map {
-            MssqlDiffObjectOps.resolveConstraintSql(op, ctx, table, it) ?: return null
-        }
-        return indexSqls + constraintSqls
-    }
+        forDrop: Boolean,
+    ): MssqlDiffColumnDependencies.ColumnDependencies = MssqlDiffColumnDependencies.of(
+        table = table,
+        column = column,
+        bearing = if (forDrop) ctx.schemaOppositeOfDirection() else ctx.schemaBeforeChange(),
+        surviving = if (forDrop) null else ctx.schemaForDirection(),
+    )
 
     /** Eine IDENTITY-Spalte laesst sich nicht neu deklarieren; `ALTER COLUMN` waere Msg 156. */
     private fun blockIdentityColumn(

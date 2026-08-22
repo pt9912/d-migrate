@@ -119,6 +119,20 @@ internal class MssqlDiffRenderContext(
         if (direction == MssqlRenderDirection.UP) desiredSchema else currentSchema
 
     /**
+     * Das Gegenstueck dazu — der Zustand VOR der Aenderung. Wer ein Objekt
+     * abraeumen will, muss es dort suchen: im Zielzustand steht eine geloeschte
+     * Spalte samt ihrer Indizes gerade nicht mehr.
+     */
+    fun schemaOppositeOfDirection(): SchemaDefinition? =
+        if (direction == MssqlRenderDirection.UP) currentSchema else desiredSchema
+
+    /**
+     * Fuer eine Aenderung (kein Drop) beschreibt der Ausgangszustand, was
+     * heute an der Spalte haengt; existiert er nicht, tut es der Zielzustand.
+     */
+    fun schemaBeforeChange(): SchemaDefinition? = schemaOppositeOfDirection() ?: schemaForDirection()
+
+    /**
      * Hinweise des Generate-Spalten-Helfers (W136, W140, E057 …) in die
      * Diagnosen uebernehmen. Sie gelten im Migrate-Pfad genauso — eine Spalte,
      * die beim Generieren eine Warnung wert war, ist es beim Migrieren auch.
