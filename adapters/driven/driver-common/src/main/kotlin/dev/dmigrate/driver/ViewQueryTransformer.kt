@@ -83,10 +83,11 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         sourceDialect != null && runCatching { DatabaseDialect.fromString(sourceDialect) }.getOrNull() == dialect
 
     /**
-     * Ein `ORDER BY` auf oberster Ebene ohne `TOP`/`OFFSET`/`FETCH`: PostgreSQL
-     * erlaubt es im View-Body, SQL Server lehnt die Sicht damit ab (Msg 1033).
-     * Ein `TOP 100 PERCENT` einzuschmuggeln waere keine Loesung — SQL Server
-     * verwirft die Sortierung dann trotzdem, nur eben unsichtbar.
+     * Ein `ORDER BY` auf oberster Ebene ohne eine der Klauseln, die SQL Server
+     * dafuer verlangt: PostgreSQL erlaubt es im View-Body, SQL Server lehnt die
+     * Sicht sonst ab (Msg 1033). Ein `TOP 100 PERCENT` einzuschmuggeln waere
+     * keine Loesung — SQL Server verwirft die Sortierung dann trotzdem, nur eben
+     * unsichtbar.
      *
      * Nur Tiefe 0 zaehlt: `OVER (ORDER BY …)` und Unterabfragen stehen in
      * Klammern und bleiben unberuehrt.
@@ -94,28 +95,66 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
     private fun hasBareTopLevelOrderBy(tokens: List<ViewQueryToken>): Boolean {
         var depth = 0
         var orderByAtTopLevel = false
-        var limiterAtTopLevel = false
-        var index = 0
-        while (index < tokens.size) {
-            val token = tokens[index]
+        var orderByPermitted = false
+        for ((index, token) in tokens.withIndex()) {
             when {
                 token.type == ViewQueryTokenType.LPAREN -> depth++
                 token.type == ViewQueryTokenType.RPAREN -> depth--
                 depth == 0 && token.type == ViewQueryTokenType.WORD -> {
-                    val word = token.text.uppercase()
-                    if (word == "TOP" || word == "OFFSET" || word == "FETCH") limiterAtTopLevel = true
-                    if (word == "ORDER") {
-                        val next = tokens.drop(index + 1).firstOrNull { it.type != ViewQueryTokenType.WS }
-                        if (next?.type == ViewQueryTokenType.WORD && next.text.equals("BY", ignoreCase = true)) {
-                            orderByAtTopLevel = true
-                        }
+                    if (permitsTopLevelOrderBy(tokens, index)) orderByPermitted = true
+                    if (token.text.equals("ORDER", ignoreCase = true) &&
+                        followingWord(tokens, index)?.equals("BY", ignoreCase = true) == true
+                    ) {
+                        orderByAtTopLevel = true
                     }
                 }
             }
-            index++
         }
-        return orderByAtTopLevel && !limiterAtTopLevel
+        return orderByAtTopLevel && !orderByPermitted
     }
+
+    /**
+     * Traegt das Wort an [index] eine der Klauseln, die SQL Server ein
+     * `ORDER BY` im View-Body erlauben — `SELECT TOP n`, `OFFSET n ROWS`,
+     * `FETCH NEXT/FIRST …`, `FOR XML`/`FOR JSON`?
+     *
+     * Die Wortform allein genuegt dafuer nicht: alle vier sind in T-SQL auch
+     * als Bezeichner zulaessig (`t.top`, `AS fetch`), und PostgreSQLs
+     * `OFFSET n` **ohne** `ROWS` ist gerade *kein* T-SQL-Limiter — eine Sicht
+     * mit `ORDER BY … OFFSET 10` waere ungueltiges T-SQL und muss als nicht
+     * portabel gelten.
+     */
+    private fun permitsTopLevelOrderBy(tokens: List<ViewQueryToken>, index: Int): Boolean {
+        val prev = tokens.take(index).lastOrNull { it.type != ViewQueryTokenType.WS }
+        val usedAsIdentifier = prev != null && (
+            prev.text == "." || prev.text == "[" ||
+                (prev.type == ViewQueryTokenType.WORD && prev.text.equals("AS", ignoreCase = true))
+            )
+        if (usedAsIdentifier) return false
+        val following = tokens.drop(index + 1).filter { it.type != ViewQueryTokenType.WS }
+        val next = following.firstOrNull()
+        return when (tokens[index].text.uppercase()) {
+            // TOP n / TOP (n) — ein blosses `TOP` ist ein Spaltenname.
+            "TOP" -> next != null &&
+                (next.type == ViewQueryTokenType.NUMBER || next.type == ViewQueryTokenType.LPAREN)
+            // OFFSET <expr> ROWS; das `ROWS` ist in T-SQL Pflicht.
+            "OFFSET" -> following.take(OFFSET_ROWS_LOOKAHEAD)
+                .any { it.type == ViewQueryTokenType.WORD && it.text.uppercase() in ROW_KEYWORDS }
+            "FETCH" -> next.isWordIn(FETCH_KEYWORDS)
+            "FOR" -> next.isWordIn(FOR_CLAUSE_KEYWORDS)
+            else -> false
+        }
+    }
+
+    private fun ViewQueryToken?.isWordIn(words: Set<String>): Boolean =
+        this != null && type == ViewQueryTokenType.WORD && text.uppercase() in words
+
+    /** Das naechste Wort nach [index], Whitespace uebersprungen. */
+    private fun followingWord(tokens: List<ViewQueryToken>, index: Int): String? =
+        tokens.drop(index + 1)
+            .firstOrNull { it.type != ViewQueryTokenType.WS }
+            ?.takeIf { it.type == ViewQueryTokenType.WORD }
+            ?.text
 
     /**
      * `LIMIT` als Klausel (gefolgt von einer Zahl, `ALL` oder `OFFSET`) — nicht
@@ -340,5 +379,13 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
             }
         }
         return unknown.distinct()
+    }
+
+    private companion object {
+        /** `OFFSET <expr> ROWS` — der Ausdruck ist praktisch immer ein Token, drei sind Puffer. */
+        const val OFFSET_ROWS_LOOKAHEAD = 4
+        val ROW_KEYWORDS = setOf("ROW", "ROWS")
+        val FETCH_KEYWORDS = setOf("NEXT", "FIRST")
+        val FOR_CLAUSE_KEYWORDS = setOf("XML", "JSON")
     }
 }

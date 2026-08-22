@@ -268,4 +268,29 @@ class ViewQueryTransformerTest : FunSpec({
         ).portable shouldBe true
         transformer.assessPortability("SELECT a FROM t", "postgresql").portable shouldBe true
     }
+
+    test("assessPortability: only a real T-SQL limiter clause lifts the Msg-1033 verdict") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
+        // PostgreSQLs `OFFSET n` ohne `ROWS` ist kein T-SQL-Limiter — der Body
+        // bliebe ungueltiges T-SQL und muss weiterhin als nicht portabel gelten.
+        transformer.assessPortability("SELECT a FROM t ORDER BY a OFFSET 10", "postgresql").let {
+            it.portable shouldBe false
+            it.reason shouldContain "ORDER BY"
+        }
+        transformer.assessPortability("SELECT a FROM t ORDER BY a OFFSET 10 ROWS", "mssql")
+            .portable shouldBe true
+        // Wortgleiche Bezeichner sind keine Klauseln.
+        transformer.assessPortability("SELECT t.top, t.fetch FROM t ORDER BY t.top", "mssql")
+            .portable shouldBe false
+        transformer.assessPortability("SELECT a AS top FROM t ORDER BY a", "mssql")
+            .portable shouldBe false
+        // TOP (n) ist die geklammerte T-SQL-Form.
+        transformer.assessPortability("SELECT TOP (10) a FROM t ORDER BY a", "mssql")
+            .portable shouldBe true
+        // FOR XML / FOR JSON erlauben ORDER BY ebenfalls (Msg 1033 nennt sie).
+        transformer.assessPortability("SELECT a FROM t ORDER BY a FOR XML PATH('')", "mssql")
+            .portable shouldBe true
+        transformer.assessPortability("SELECT a FROM t ORDER BY a FOR JSON PATH", "mssql")
+            .portable shouldBe true
+    }
 })

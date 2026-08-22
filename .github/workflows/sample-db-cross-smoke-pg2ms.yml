@@ -26,6 +26,9 @@ on:
     paths:
       - 'examples/sample-db/**'
       - 'adapters/driven/driver-mssql/**'
+      # Der View-Portabilitaets- und der Chunk-Lese-Pfad, die dieses Leg
+      # abdeckt, liegen in driver-common (beide Produktfixes aus Slice 3b).
+      - 'adapters/driven/driver-common/**'
       - 'Makefile'
       - 'make/**'
       - 'Dockerfile'

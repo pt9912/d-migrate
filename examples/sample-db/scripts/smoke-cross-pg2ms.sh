@@ -39,6 +39,10 @@ COMPOSE="docker compose -f $COMPOSE_FILE"
 OUT_DIR="$EXAMPLES_DIR/out"
 EXPECTED_DIR="$EXAMPLES_DIR/expected"
 NOTES_BASELINE="$EXPECTED_DIR/pagila-cross-ms.notes.txt"
+# `--verify` schliesst genau die Spalten aus, deren Wert der Cross-Dialect-Transfer
+# umformt (LN-009, familien-basiert). Die Zahl ist gepinnt wie die Notes-Baseline:
+# waeren es ploetzlich alle, liefe "Verify OK" ins Leere.
+EXPECTED_VERIFY_EXCLUSIONS=2
 
 log()  { printf '[cross-pg2ms] %s\n' "$*"; }
 fail() { printf '[cross-pg2ms] FAIL: %s\n' "$*" >&2; exit 1; }
@@ -53,6 +57,11 @@ else
     # Leg hat sie neu eingefuehrt). Fehlende Schluessel aus .env.example ergaenzen,
     # vorhandene Werte unangetastet lassen — sonst scheitert jeder Bestandsnutzer
     # an einer nackten "not set"-Meldung.
+    # Ohne abschliessenden Zeilenumbruch klebte der erste angehaengte Schluessel
+    # an die letzte bestehende Zeile — beide Variablen waeren zerstoert.
+    if [ -s "$EXAMPLES_DIR/.env" ] && [ -n "$(tail -c1 "$EXAMPLES_DIR/.env")" ]; then
+        printf '\n' >> "$EXAMPLES_DIR/.env"
+    fi
     added=""
     while IFS= read -r line; do
         case "$line" in
@@ -169,6 +178,8 @@ $COMPOSE run --rm dmigrate data transfer --source pagila_pg --target pagila_ms_t
 grep -q "Transfer complete" /tmp/cross-pg2ms-xfer.log || fail "transfer did not complete"
 grep -q "Verify OK" /tmp/cross-pg2ms-xfer.log || { tail -40 /tmp/cross-pg2ms-xfer.log; fail "--verify did not pass (LN-009 divergence)"; }
 xfer_excl=$(grep -c "verify excluded" /tmp/cross-pg2ms-xfer.log || true)
+[ "$xfer_excl" = "$EXPECTED_VERIFY_EXCLUSIONS" ] \
+    || fail "expected $EXPECTED_VERIFY_EXCLUSIONS verify exclusion(s), got $xfer_excl (see /tmp/cross-pg2ms-xfer.log)"
 log "  --verify OK (byte-reconciled; $xfer_excl column(s) excluded as cross-dialect transforms)"
 
 # --- 7. Per-Tabelle-Zeilen-Paritaet --------------------------------
@@ -182,8 +193,10 @@ src_table_list=$(psql_t pagila 0 -tAc "SELECT c.relname FROM pg_class c JOIN pg_
 [ -n "$src_table_list" ] || fail "source table list for parity is empty"
 while IFS= read -r t; do
     [ -n "$t" ] || continue
-    s=$(pg_val "SELECT count(*) FROM \"$t\"")
-    d=$(ms_val "SELECT COUNT(*) FROM [$t];")
+    # `set -e` wuerde eine fehlgeschlagene Zaehlabfrage hier ohne jede Meldung
+    # beenden; ms_exec haelt zusaetzlich den sqlcmd-Fehlerkanal offen.
+    s=$(pg_val "SELECT count(*) FROM \"$t\"") || s="<source query failed>"
+    d=$(ms_exec "SELECT COUNT(*) FROM [$t];") || d="<target query failed>"
     if [ "$s" != "$d" ]; then printf '[cross-pg2ms]   MISMATCH %s: src=%s dst=%s\n' "$t" "$s" "$d"; mismatch=1; fi
     compared=$((compared + 1))
 done <<< "$src_table_list"
