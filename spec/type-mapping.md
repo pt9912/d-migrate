@@ -228,6 +228,24 @@ String-Literale in Defaults werden als Unicode-Literal `N'…'` gerendert.
 | `xml` | `xml` | |
 | `sysname` | `text(128)` | |
 
+**Defaults**: die vier neutralen Funktions-Defaults werden aus ihrer T-SQL-Form
+zurückgewonnen — `getdate()`/`sysdatetime()`/`sysdatetimeoffset()` →
+`current_timestamp`, `CONVERT([date],getdate())` bzw. `CAST(GETDATE() AS DATE)`
+→ `current_date`, dieselbe Form mit `[time]` → `current_time`, `newid()` →
+`gen_uuid`. SQL Server speichert nicht die geschriebene, sondern seine eigene
+Form (aus `CAST(GETDATE() AS DATE)` wird im Katalog `CONVERT([date],getdate())`),
+deshalb sind beide Schreibweisen abgedeckt. Ein nicht erkannter Funktions-Default
+bleibt als Text stehen und wird beim Round-Trip über das neutrale Format zum
+String-Literal — das neutrale Modell kennt nur diese vier als Funktion.
+
+**CHECK-Ausdrücke** kommen in **neutraler Syntax** ins Modell, nicht in
+T-SQL-Oberflächensyntax: der Unicode-Literal-Präfix `N'…'` entfällt (er ist
+Syntax, kein Wert) und Klammer-Quoting `[col]` wird zum unquotierten Namen bzw.
+— wo der Name Quoting braucht — zum ANSI-Doppelquote `"col"`. Der Ausdruck wird
+darüber hinaus nicht umgeschrieben. Ohne diese Normalisierung liest die
+Validierung das `N` als Spaltenbezug (E012) und jedes andere Ziel scheitert am
+T-SQL-Quoting.
+
 ### 6.3 Bekannte Lücken
 
 - `hierarchyid`, `sql_variant`, `rowversion`/`timestamp` und CLR-UDTs fallen

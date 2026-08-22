@@ -41,6 +41,12 @@ sample-db-cross-smoke-pg2my:
 sample-db-cross-smoke-pg2ms:
 	./examples/sample-db/scripts/smoke-cross-pg2ms.sh
 
+# MSSQL-Leg Gegenrichtung (ADR 0047, Slice 4): SQL Server als QUELLE. Hop 0 saet
+# die Quelle mit der pg2ms-Mechanik, Hop 1 faehrt reverse/generate/transfer
+# MSSQL->PG und prueft dreifache Zeilen-Paritaet gegen die Original-Pagila.
+sample-db-cross-smoke-ms2pg:
+	./examples/sample-db/scripts/smoke-cross-ms2pg.sh
+
 # Lastenheft-8.6 — 3-Hop-Kette PostgreSQL -> MySQL -> SQLite als EIN verketteter
 # Fluss (nicht nur paarweise): Pagila wandert PG->MySQL->SQLite, End-to-End-Paritaet
 # + die drei 8.6-Typ-Transformationen (Serial/Array/ENUM). Braucht compose postgres+

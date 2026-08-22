@@ -125,7 +125,7 @@ class MssqlMetadataQueriesTest : FunSpec({
             )
         }
         val checks = MssqlMetadataQueries.listCheckConstraints(jdbc, "[dbo].[t]")
-        checks[0].expression shouldBe "[amount]>(0)"
+        checks[0].expression shouldBe "amount>(0)"
         checks[0].type shouldBe "CHECK"
     }
 

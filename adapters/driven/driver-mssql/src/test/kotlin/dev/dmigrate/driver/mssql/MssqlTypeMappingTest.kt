@@ -164,8 +164,10 @@ class MssqlTypeMappingTest : FunSpec({
     }
 
     test("parseDefault: other functions stay verbatim") {
-        MssqlTypeMapping.parseDefault("(newid())", NeutralType.Uuid) shouldBe
-            DefaultValue.FunctionCall("newid()")
+        // `newid()` gehoert seit Slice 4 zu den vier neutralen Funktions-
+        // Defaults (-> gen_uuid); verbatim bleibt, was T-SQL-eigen ist.
+        MssqlTypeMapping.parseDefault("(host_name())", NeutralType.Text()) shouldBe
+            DefaultValue.FunctionCall("host_name()")
     }
 
     test("parseDefault: NEXT VALUE FOR maps to SequenceNextVal") {
@@ -196,5 +198,56 @@ class MssqlTypeMappingTest : FunSpec({
             DefaultValue.FunctionCall("current_timestamp")
         MssqlTypeMapping.parseDefault("(getdate())", NeutralType.DateTime()) shouldBe
             DefaultValue.FunctionCall("current_timestamp")
+    }
+
+    test("a reversed CHECK expression drops the T-SQL Unicode literal prefix") {
+        // Live am Pagila-Leg gefunden: mit dem `N`-Praefix liest der Validator
+        // das N als Spaltenbezug und lehnt das reverse-gelesene Schema mit
+        // E012 ab (Slice 4).
+        MssqlTypeMapping.normalizeCheckExpression("([rating]=N'NC-17' OR [rating]=N'PG-13')") shouldBe
+            "rating='NC-17' OR rating='PG-13'"
+        // Kleinschreibung ist derselbe Praefix.
+        MssqlTypeMapping.normalizeCheckExpression("([c]=n'x')") shouldBe "c='x'"
+        // Ein N INNERHALB eines Literals bleibt stehen ...
+        MssqlTypeMapping.normalizeCheckExpression("([c]=N'ABN')") shouldBe "c='ABN'"
+        MssqlTypeMapping.normalizeCheckExpression("([c]='N')") shouldBe "c='N'"
+        // ... ebenso ein N als Namensbestandteil.
+        MssqlTypeMapping.normalizeCheckExpression("([col_N]='x')") shouldBe "col_N='x'"
+        // Verdoppelte Quotes sind das Escape, kein Literal-Ende.
+        MssqlTypeMapping.normalizeCheckExpression("([c]=N'it''s N''ok''')") shouldBe "c='it''s N''ok'''"
+        // Ausdruecke ohne Literale: nur Paren-Unwrap und Quoting.
+        MssqlTypeMapping.normalizeCheckExpression("([score]>=(0))") shouldBe "score>=(0)"
+    }
+
+    test("a reversed CHECK expression drops T-SQL bracket quoting") {
+        // Klammer-Quoting wird neutral: unquotiert, wo eindeutig.
+        MssqlTypeMapping.normalizeCheckExpression("([rating]=N'NC-17')") shouldBe "rating='NC-17'"
+        MssqlTypeMapping.normalizeCheckExpression("([dbo].[t].[c]>(0))") shouldBe "dbo.t.c>(0)"
+        // Quotierungsbeduerftige Namen bekommen ANSI-Doppelquotes; `]]` ist das
+        // T-SQL-Escape fuer eine schliessende Klammer.
+        MssqlTypeMapping.normalizeCheckExpression("([my col]<>'')") shouldBe "\"my col\"<>''"
+        MssqlTypeMapping.normalizeCheckExpression("([od]]d]<>'')") shouldBe "\"od]d\"<>''"
+        // Eine Klammer INNERHALB eines Literals bleibt stehen.
+        MssqlTypeMapping.normalizeCheckExpression("([c]='[x]')") shouldBe "c='[x]'"
+    }
+
+    test("the T-SQL catalog spellings of the four neutral function defaults are canonicalised") {
+        // SQL Server speichert nicht die geschriebene Form: aus dem von
+        // d-migrate erzeugten CAST(GETDATE() AS DATE) wird im Katalog
+        // CONVERT([date],getdate()). Ohne Erkennung landet der Default als
+        // String-Literal im Zielskript (live am Pagila-Leg gefunden, Slice 4).
+        MssqlTypeMapping.parseDefault("(CONVERT([date],getdate()))", NeutralType.Date) shouldBe
+            DefaultValue.FunctionCall("current_date")
+        MssqlTypeMapping.parseDefault("(CONVERT([date], getdate()))", NeutralType.Date) shouldBe
+            DefaultValue.FunctionCall("current_date")
+        MssqlTypeMapping.parseDefault("(CAST(GETDATE() AS DATE))", NeutralType.Date) shouldBe
+            DefaultValue.FunctionCall("current_date")
+        MssqlTypeMapping.parseDefault("(CONVERT([time],getdate()))", NeutralType.Time) shouldBe
+            DefaultValue.FunctionCall("current_time")
+        MssqlTypeMapping.parseDefault("(newid())", NeutralType.Uuid) shouldBe
+            DefaultValue.FunctionCall("gen_uuid")
+        // Ein fremder Funktions-Default bleibt unveraendert stehen.
+        MssqlTypeMapping.parseDefault("(dbo.next_code())", NeutralType.Text()) shouldBe
+            DefaultValue.FunctionCall("dbo.next_code()")
     }
 })

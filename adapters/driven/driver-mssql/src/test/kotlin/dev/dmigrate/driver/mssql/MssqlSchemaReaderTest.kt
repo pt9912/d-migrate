@@ -150,7 +150,11 @@ class MssqlSchemaReaderTest : FunSpec({
         fk.references!!.table shouldBe "customers"
         fk.columns shouldBe listOf("customer")
 
-        table.constraints.first { it.name == "ck_state" }.expression shouldBe "[state]<>N''"
+        // Der reverse-gelesene CHECK traegt neutrale Syntax, keine T-SQL-Oberflaeche:
+        // der Unicode-Praefix faellt weg (der Validator laese ihn sonst als
+        // Spaltenbezug, E012) und das Klammer-Quoting ebenso (sonst scheitert
+        // jedes andere Ziel an der Syntax).
+        table.constraints.first { it.name == "ck_state" }.expression shouldBe "state<>''"
 
         // Der einspaltige Unique-Index ist auf column.unique gehoben; nur der
         // gefilterte Index bleibt als Index-Definition stehen.

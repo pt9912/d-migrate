@@ -17,6 +17,10 @@ database:
     # MSSQL-Leg (Slice 3b) — SQL-Server-Ziel fuer Pagila PG -> MSSQL.
     # encrypt=false: der Container hat nur ein Self-Signed-Zertifikat.
     pagila_ms_target: "mssql://sa:${MSSQL_SA_PASSWORD}@mssql:1433/pagila_target?encrypt=false"
+    # MSSQL-Leg Gegenrichtung (Slice 4) — SQL Server als QUELLE, PG als Rueckziel.
+    # pagila_ms_src saet Hop 0 des Smokes; pagila_back nimmt Hop 1 auf.
+    pagila_ms_source: "mssql://sa:${MSSQL_SA_PASSWORD}@mssql:1433/pagila_ms_src?encrypt=false"
+    pagila_pg_back: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/pagila_back"
     # Phase 3 (Scale, Employees) — MySQL-Quelle + MySQL- und PG-Ziel.
     # Die DBs legt der Scale-Smoke selbst an (idempotent), da initdb nur
     # bei frischem Volume läuft.

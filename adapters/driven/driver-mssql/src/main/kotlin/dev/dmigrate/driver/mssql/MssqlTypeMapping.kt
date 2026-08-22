@@ -183,16 +183,40 @@ internal object MssqlTypeMapping {
             return DefaultValue.SequenceNextVal(sequenceNameOf(match.groupValues[1]))
         }
 
-        // getdate()/sysdatetime()/sysdatetimeoffset() sind die T-SQL-Spellings
-        // des neutralen current_timestamp (der Spaltentyp entscheidet über den
-        // Offset) — kleingeschrieben kanonisieren, wie es die MySQL-/PG-
-        // Reverse-Parser tun (Compare/Fingerprint vergleichen case-sensitiv).
-        return when (value.lowercase()) {
+        // Die T-SQL-Spellings der vier neutralen Funktions-Defaults zurueck auf
+        // den neutralen Namen. Das ist keine Kosmetik: das neutrale Format
+        // kennt nur diese vier als Funktion, jeder andere Text wird beim
+        // YAML-Round-Trip zum String-Literal. Ein nicht erkannter Default
+        // landete deshalb als `DEFAULT 'CONVERT([date],getdate())'` im
+        // Zielskript (live am Pagila-Leg gefunden).
+        //
+        // SQL Server speichert nicht die geschriebene Form, sondern seine
+        // eigene: aus `CAST(GETDATE() AS DATE)` wird im Katalog
+        // `CONVERT([date],getdate())`. Erkannt werden beide.
+        return when (functionKey(value)) {
             "getdate()", "sysdatetime()", "sysdatetimeoffset()", "current_timestamp" ->
                 DefaultValue.FunctionCall("current_timestamp")
+            "convert([date],getdate())", "convert(date,getdate())", "cast(getdate() as date)" ->
+                DefaultValue.FunctionCall("current_date")
+            "convert([time],getdate())", "convert(time,getdate())", "cast(getdate() as time)" ->
+                DefaultValue.FunctionCall("current_time")
+            "newid()" -> DefaultValue.FunctionCall("gen_uuid")
             else -> DefaultValue.FunctionCall(value)
         }
     }
+
+    /**
+     * Vergleichsform eines Funktions-Defaults: kleingeschrieben, Whitespace
+     * zusammengezogen und um Kommas entfernt. Damit fallen die Katalog-Form
+     * (`CONVERT([date],getdate())`) und die geschriebene Form
+     * (`CONVERT([date], getdate())`) auf denselben Schluessel.
+     */
+    private fun functionKey(value: String): String =
+        value.lowercase().replace(COLLAPSE_WHITESPACE, " ").replace(WHITESPACE_AROUND_COMMA, ",").trim()
+
+    private val PLAIN_IDENTIFIER = Regex("""[A-Za-z_][A-Za-z0-9_]*""")
+    private val COLLAPSE_WHITESPACE = Regex("""\s+""")
+    private val WHITESPACE_AROUND_COMMA = Regex("""\s*,\s*""")
 
     // Letztes Segment einer ggf. schema-qualifizierten, ggf. eckig
     // geklammerten Referenz; Punkte innerhalb von [..] trennen nicht und
@@ -232,6 +256,89 @@ internal object MssqlTypeMapping {
             value = value.substring(1, value.length - 1).trim()
         }
         return value
+    }
+
+    /**
+     * Bringt einen `sys.check_constraints.definition`-Ausdruck in die neutrale
+     * Form. Der Reverse liefert T-SQL-**Oberflaechensyntax**; im neutralen
+     * Modell steht derselbe Ausdruck in dialektfreier Schreibweise:
+     *
+     * - der Unicode-Literal-Praefix `N'…'` faellt weg — `N` ist Syntax, kein
+     *   Wert. Ohne das liest der Validator das `N` als Spaltenbezug und lehnt
+     *   jedes reverse-gelesene MSSQL-Schema mit einem String-CHECK mit E012 ab.
+     * - Klammer-Quoting `[col]` wird zum unquotierten Namen, bei
+     *   quotierungsbeduerftigen Namen zum ANSI-Doppelquote `"col"`. Ohne das
+     *   traegt jedes andere Ziel T-SQL-Quoting im CHECK und scheitert an der
+     *   Syntax.
+     *
+     * Beides live am Pagila-Leg gefunden (`[rating]=N'NC-17' OR …`, Slice 4).
+     * Der Ausdruck bleibt ansonsten unveraendert — das neutrale Modell
+     * transpiliert CHECK-Ausdruecke nicht.
+     *
+     * Literal-bewusst: ein `N` oder eine Klammer INNERHALB eines Literals
+     * (`'ABN'`, `'[x]'`) und ein `N` als Namensbestandteil bleiben unberuehrt.
+     */
+    fun normalizeCheckExpression(raw: String): String {
+        val value = unwrapOuterParens(raw)
+        val out = StringBuilder(value.length)
+        var index = 0
+        while (index < value.length) {
+            val char = value[index]
+            when {
+                char == '\'' -> {
+                    val end = endOfStringLiteral(value, index)
+                    out.append(value, index, end)
+                    index = end
+                }
+                startsUnicodeLiteral(value, index) -> {
+                    val end = endOfStringLiteral(value, index + 1)
+                    out.append(value, index + 1, end)
+                    index = end
+                }
+                char == '[' -> {
+                    val end = endOfBracketedName(value, index)
+                    out.append(neutralIdentifier(value.substring(index + 1, end - 1)))
+                    index = end
+                }
+                else -> {
+                    out.append(char)
+                    index++
+                }
+            }
+        }
+        return out.toString()
+    }
+
+    private fun startsUnicodeLiteral(value: String, index: Int): Boolean =
+        (value[index] == 'N' || value[index] == 'n') &&
+            index + 1 < value.length && value[index + 1] == '\'' &&
+            !isIdentifierPart(value.getOrNull(index - 1))
+
+    private fun isIdentifierPart(char: Char?): Boolean =
+        char != null && (char.isLetterOrDigit() || char == '_' || char == '@' || char == '#')
+
+    // Index HINTER der schliessenden Klammer (`]]` = Escape); Stringende, wenn
+    // die Klammer unterminiert ist.
+    private fun endOfBracketedName(value: String, openBracket: Int): Int {
+        var index = openBracket + 1
+        while (index < value.length) {
+            index += when {
+                value[index] != ']' -> 1
+                index + 1 < value.length && value[index + 1] == ']' -> 2
+                else -> return index + 1
+            }
+        }
+        return value.length
+    }
+
+    /**
+     * `[col]` → `col`, sofern der Name ohne Quoting eindeutig ist; sonst
+     * ANSI-Doppelquote, das PostgreSQL und SQLite lesen (und aus dem der
+     * MSSQL-Generator wieder Klammern macht).
+     */
+    private fun neutralIdentifier(bracketed: String): String {
+        val name = bracketed.replace("]]", "]")
+        return if (PLAIN_IDENTIFIER.matches(name)) name else "\"" + name.replace("\"", "\"\"") + "\""
     }
 
     private fun isWrappedInParens(value: String): Boolean {

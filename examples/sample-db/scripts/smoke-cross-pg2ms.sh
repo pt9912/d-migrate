@@ -149,8 +149,15 @@ grep -q "SET QUOTED_IDENTIFIER ON;" "$OUT_DIR/pagila.ms.pre-data.sql" \
     || fail "pre-data script lacks the SET-options preamble (Slice 2a regression)"
 grep -qx "GO" "$OUT_DIR/pagila.ms.pre-data.sql" \
     || fail "pre-data script lacks GO batch separators (Slice 2a regression)"
-grep -oE 'code: [A-Z][0-9]+' "$OUT_DIR/pagila.ms.report.yaml" | sort | uniq -c \
+# `|| true`: ein notes-freier Report ist ein gueltiges Ergebnis — ohne das
+# beendet der grep-Exit 1 unter `set -o pipefail` das Skript ohne Meldung.
+# Eine leere Datei faellt beim Baseline-Diff auf.
+{ grep -oE 'code: [A-Z][0-9]+' "$OUT_DIR/pagila.ms.report.yaml" || true; } | sort | uniq -c \
     | sed 's/^ *//' > "$OUT_DIR/pagila-cross-ms.notes.txt"
+# Eine LEERE Notes-Datei ist ein gueltiges Ergebnis, sieht aber aus wie
+# "nichts erfasst". Der Platzhalter macht die gepinnte Baseline lesbar und
+# faellt auf, wenn die Erfassung selbst kaputtgeht.
+[ -s "$OUT_DIR/pagila-cross-ms.notes.txt" ] || echo "0 notes" > "$OUT_DIR/pagila-cross-ms.notes.txt"
 if [ ! -f "$NOTES_BASELINE" ]; then
     cp "$OUT_DIR/pagila-cross-ms.notes.txt" "$NOTES_BASELINE"
     log "BASELINE BOOTSTRAP: wrote $NOTES_BASELINE — review + commit it, then re-run."

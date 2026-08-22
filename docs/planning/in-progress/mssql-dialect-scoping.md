@@ -214,7 +214,7 @@ Entscheidung 2):
 | **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli`: Gate-Ablehnungen als Subprozess-E2E (containerlos — generate/export/import/transfer/migrate/profile/`export <tool>` liefern Exit 2 + Gate-Meldung) und `schema reverse`-Subprozess-E2E gegen den Testcontainer | E2E-Netz für den nutzersichtbaren MSSQL-Pfad und die Gates; vor Slice 2, damit Gate-Wegfall pro Slice testgetrieben ist |
 | **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
 | **3** ✅ | `DataReader`/`DataWriter` (Transfer; Fast-Path später); **3b** ✅ sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
-| **4** | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg gegen echtes SQL Server, Spec-Sequenz-Matrix, `transferCompatibility` (bereits mit Slice 3 geliefert) + Cross-Dialekt-sample-db-Smoke in der Gegenrichtung (MSSQL→PG) | Vergleichs-Substrat für Slice 5 + Cross-Smoke |
+| **4** ✅ | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg gegen echtes SQL Server, Spec-Sequenz-Matrix, `transferCompatibility` (bereits mit Slice 3 geliefert) + Cross-Dialekt-sample-db-Smoke in der Gegenrichtung (MSSQL→PG) | Vergleichs-Substrat für Slice 5 + Cross-Smoke |
 | **5** | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) **inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep** (`test/cross-dialect-matrix`: Renderer und Matrix-Zellen gehören zusammen, sonst entstünden Wegwerf-Carve-outs) und Entscheidung zur Enum-CHECK-Kante ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md)) | `schema migrate` |
 | **6** | Gefilterte Indizes (WHERE) + clustered/nonclustered-Steuerung, Reverse + Generate + Diff | volle Index-Treue |
 | **7** | Partitionierung: Partition Functions + Schemes + Filegroups (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster des PG-Slices) | Partitionstabellen im Round-Trip |
@@ -263,7 +263,7 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 - **Kein MSSQL-Wissen in den Goldens**: DDL-Goldens entstehen neu; der
   Regenerier-Weg läuft per CLI (nicht `make golden-update`).
 
-## Offene Punkte (Stand nach Slice 3)
+## Offene Punkte (Stand nach Slice 4)
 
 **Erledigt:**
 
@@ -282,8 +282,46 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
   verbindet mit `ARITHABORT OFF`, was DML auf einer Tabelle mit gefiltertem
   Index sonst abweist.
 
+**In Slice 4 erledigt** (Vergleichs-Substrat + Gegenrichtung):
+
+- ~~`NeutralTypeCanonicalizer` + Postcompare-Fingerprint~~ — die Projektion ist
+  die lebende Komposition `reverse(toSql(t))`, belegt gegen echtes SQL Server
+  (`MssqlNeutralTypeCanonicalizerIntegrationTest`,
+  `MssqlPostCompareFingerprintIntegrationTest`). Abweichung von den anderen
+  Treibern: `Geometry` ist NICHT ausgenommen, weil SQL Server Subtyp und SRID am
+  Wert führt und der Reverse sie nicht rekonstruiert — Falten ist dort die
+  Speicherrealität.
+- ~~Cross-Dialekt-Smoke in der Gegenrichtung~~ — `smoke-cross-ms2pg.sh`
+  (`make sample-db-cross-smoke-ms2pg`) mit dreifacher Zeilen-Parität
+  PG-Original == SQL Server == PG-Rückziel.
+- ~~Spec-Sequenz-Matrix~~ — `neutral-model-spec.md` 9.1/9.2 haben die
+  MS-SQL-Server-Spalte.
+
+**Das Gegenrichtungs-Leg fand drei Reverse-Defekte** (alle in Slice 4 behoben),
+die kein Unit-Test und kein kleines E2E-Schema gezeigt hatte:
+
+1. Der Unicode-Literal-Präfix `N'…'` blieb im reverse-gelesenen CHECK stehen →
+   die Validierung las das `N` als Spaltenbezug und lehnte **jedes**
+   MSSQL-Reverse mit einem String-CHECK mit E012 ab.
+2. Klammer-Quoting `[col]` blieb im CHECK stehen → jedes andere Ziel scheiterte
+   an der Syntax.
+3. Der von d-migrate selbst erzeugte `current_date`-Default kam als
+   `CONVERT([date],getdate())` zurück (SQL Server speichert seine eigene Form)
+   und wurde beim YAML-Round-Trip zum String-Literal → `DEFAULT
+   'CONVERT([date],getdate())'` im Zielskript.
+
+Die Regel dahinter steht jetzt in `spec/type-mapping.md` 6.2: der MSSQL-Reverse
+liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
+
 **Offen — nächste Arbeitsschritte:**
 
+- **Fremde Funktions-Defaults verlieren ihre Funktions-Natur:** das neutrale
+  Format kennt nur `current_timestamp`/`current_date`/`current_time`/`gen_uuid`
+  (plus `nextval(...)`) als Funktion — jeder andere Default-Text wird beim
+  YAML-Round-Trip zum String-Literal
+  ([`SchemaNodeStructureParsers`](../../../adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaNodeStructureParsers.kt)).
+  Das ist dialektübergreifend und nicht MSSQL-spezifisch, fiel aber am
+  MSSQL-Leg auf. Keinem Slice zugeordnet.
 - **SRID-Treue im Datenpfad:** WKB trägt keine SRID, SQL Server führt sie am
   Wert (nicht an der Spalte) — übertragene Geometrien landen mit dem
   Spalten-Default (0 bzw. 4326). Eine SRID-treue Übertragung bräuchte eine

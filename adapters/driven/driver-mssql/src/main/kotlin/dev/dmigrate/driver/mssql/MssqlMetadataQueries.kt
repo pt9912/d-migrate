@@ -193,7 +193,7 @@ internal object MssqlMetadataQueries {
             ConstraintProjection(
                 name = row.string("constraint_name"),
                 type = "CHECK",
-                expression = MssqlTypeMapping.unwrapOuterParens(row.string("definition")),
+                expression = MssqlTypeMapping.normalizeCheckExpression(row.string("definition")),
             )
         }
 
