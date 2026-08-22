@@ -16,6 +16,8 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * 1. **Defaults sind benannte Constraint-Objekte.** `ALTER COLUMN` und
  *    `DROP COLUMN` scheitern, solange einer an der Spalte haengt — beide
  *    brauchen den Dreischritt bzw. das vorgeschaltete `DROP CONSTRAINT`.
+ *    Geloest wird ueber einen Katalog-Nachschlag, nicht ueber die
+ *    Namenskonvention: ein fremdes Schema traegt SQL Servers Auto-Namen.
  * 2. **`ALTER COLUMN` ist eine Voll-Neudeklaration.** Fehlt die Nullability,
  *    wird die Spalte still nullable. Die fehlende Haelfte kommt deshalb aus
  *    dem Schema ([MssqlDiffRenderContext.columnFor]) — und wenn sie dort nicht
@@ -132,7 +134,6 @@ internal object MssqlDiffTableOps {
     fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: MssqlDiffRenderContext) {
         val table = op.objectRef.rootName
         if (ctx.direction == MssqlRenderDirection.DOWN) {
-            emitDropPkAdvisory(op, ctx, table)
             ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
             return
         }
@@ -145,7 +146,6 @@ internal object MssqlDiffTableOps {
             ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns))
             return
         }
-        emitDropPkAdvisory(op, ctx, table)
         ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
     }
 
@@ -182,7 +182,6 @@ internal object MssqlDiffTableOps {
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
         target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
-        emitForeignDefaultNameAdvisory(op, ctx, table, column)
     }
 
     private fun dropColumnStatements(
@@ -193,7 +192,6 @@ internal object MssqlDiffTableOps {
     ) {
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
-        emitForeignDefaultNameAdvisory(op, ctx, table, column)
     }
 
     /**
@@ -240,38 +238,5 @@ internal object MssqlDiffTableOps {
             code = "MSSQL_COLUMN_NOT_IN_SCHEMA",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
-    }
-
-    /**
-     * Der Dreischritt adressiert den Default ueber die d-migrate-Konvention.
-     * Ein Schema, das SQL Server selbst benannt hat (`DF__t__c__1A2B3C4D`),
-     * traegt einen anderen Namen — das `IF EXISTS` schluckt den Fehlgriff, und
-     * das nachfolgende `ALTER COLUMN` scheitert dann mit Msg 5074. Laut, aber
-     * erst zur Laufzeit; deshalb der Hinweis schon im Plan.
-     */
-    private fun emitForeignDefaultNameAdvisory(
-        op: DiffOperation,
-        ctx: MssqlDiffRenderContext,
-        table: String,
-        column: String,
-    ) {
-        ctx.addInfoDiagnostic(
-            code = "MSSQL_DEFAULT_CONSTRAINT_NAME_CONVENTION",
-            operationId = op.id,
-            message = "Dropping the default constraint of '$table.$column' assumes d-migrate's name " +
-                "'${MssqlConstraintNames.default(table, column)}'. A schema created elsewhere carries " +
-                "SQL Server's auto-generated name instead; the IF EXISTS then matches nothing and the " +
-                "ALTER COLUMN fails with Msg 5074.",
-        )
-    }
-
-    private fun emitDropPkAdvisory(op: DiffOperation, ctx: MssqlDiffRenderContext, table: String) {
-        ctx.addInfoDiagnostic(
-            code = "MSSQL_PK_NAME_CONVENTION",
-            operationId = op.id,
-            message = "DropPrimaryKey for '$table' assumes d-migrate's constraint name " +
-                "'${MssqlConstraintNames.primaryKey(table)}'. Verify the target's actual PK name; a " +
-                "different one lets the IF EXISTS swallow the mismatch and leaves the key in place.",
-        )
     }
 }

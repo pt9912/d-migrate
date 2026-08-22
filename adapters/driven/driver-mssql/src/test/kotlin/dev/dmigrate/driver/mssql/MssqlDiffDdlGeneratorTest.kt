@@ -106,7 +106,8 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         // Rueckwaerts: erst der Default-Constraint, dann die Spalte — sonst
         // scheitert DROP COLUMN an der Abhaengigkeit.
         val downSqls = down(diff).statements.map { it.sql }
-        downSqls[0] shouldBe "ALTER TABLE [users] DROP CONSTRAINT IF EXISTS [df_users_nick];"
+        downSqls[0] shouldContainStr "FROM sys.default_constraints"
+        downSqls[0] shouldContainStr "QUOTENAME(@df)"
         downSqls[1] shouldBe "ALTER TABLE [users] DROP COLUMN [nick];"
     }
 
@@ -117,7 +118,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
             ),
         )
         val sqls = up(diff).statements.map { it.sql }
-        sqls[0] shouldBe "ALTER TABLE [users] DROP CONSTRAINT IF EXISTS [df_users_nick];"
+        sqls[0] shouldContainStr "FROM sys.default_constraints"
         sqls[1] shouldBe "ALTER TABLE [users] DROP COLUMN [nick];"
     }
 
@@ -146,7 +147,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
             ),
         )
         val sqls = up(diff, current, desired).statements.map { it.sql }
-        sqls[0] shouldBe "ALTER TABLE [users] DROP CONSTRAINT IF EXISTS [df_users_nick];"
+        sqls[0] shouldContainStr "FROM sys.default_constraints"
         sqls[1] shouldBe "ALTER TABLE [users] ALTER COLUMN [nick] NVARCHAR(100) NOT NULL;"
     }
 
@@ -215,11 +216,11 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
             ),
         )
         val sqls = up(diff, desired = desired).statements.map { it.sql }
-        sqls[0] shouldBe "ALTER TABLE [users] DROP CONSTRAINT IF EXISTS [df_users_nick];"
+        sqls[0] shouldContainStr "FROM sys.default_constraints"
         sqls[1] shouldBe "ALTER TABLE [users] ADD CONSTRAINT [df_users_nick] DEFAULT N'neu' FOR [nick];"
     }
 
-    test("primary keys use the pk_ convention and advise about a foreign name") {
+    test("AddPrimaryKey names the constraint; DropPrimaryKey looks the real name up") {
         val diff = SchemaDiff(
             tablesChanged = listOf(TableDiff(name = "users", primaryKey = ValueChange(emptyList(), listOf("id")))),
         )
@@ -229,9 +230,10 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         val dropDiff = SchemaDiff(
             tablesChanged = listOf(TableDiff(name = "users", primaryKey = ValueChange(listOf("id"), emptyList()))),
         )
+        // Auch der PK wird nachgeschlagen: ein fremdes Schema nennt ihn nicht pk_users.
         val r = up(dropDiff)
-        r.statements.single().sql shouldBe "ALTER TABLE [users] DROP CONSTRAINT IF EXISTS [pk_users];"
-        r.diagnostics.map { it.code } shouldContain "MSSQL_PK_NAME_CONVENTION"
+        r.statements.single().sql shouldContainStr "FROM sys.key_constraints"
+        r.statements.single().sql shouldContainStr "QUOTENAME(@pk)"
     }
 
     test("an IDENTITY change is blocked rather than silently dropped") {

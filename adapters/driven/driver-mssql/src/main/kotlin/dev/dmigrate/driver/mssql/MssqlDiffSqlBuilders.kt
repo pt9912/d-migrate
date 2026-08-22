@@ -64,10 +64,40 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
         "ALTER TABLE ${quote(table)} ALTER COLUMN ${quote(column)} ${toSql(type)} " +
             (if (required) "NOT NULL" else "NULL") + ";"
 
-    /** Erster Schritt des Dreischritts — idempotent, damit er auch ohne Default traegt. */
-    fun dropDefaultConstraintSql(table: String, column: String): String =
-        "ALTER TABLE ${quote(table)} DROP CONSTRAINT IF EXISTS " +
-            "${quote(MssqlConstraintNames.default(table, column))};"
+    /**
+     * Erster Schritt des Dreischritts: den Default-Constraint der Spalte
+     * loesen, **wie auch immer er heisst**.
+     *
+     * Ein `DROP CONSTRAINT IF EXISTS df_<tabelle>_<spalte>` traegt nur fuer
+     * Schemata, die d-migrate selbst angelegt hat. SQL Server vergibt sonst
+     * Namen wie `DF__tabelle__spalte__1A2B3C4D` — mit zufaelligem Suffix, also
+     * offline nicht vorhersagbar. Das `IF EXISTS` traefe dann nichts, und das
+     * nachfolgende `ALTER COLUMN` scheiterte mit Msg 5074. Genau der Fall, der
+     * bei einer FREMDEN Datenbank der Normalfall ist — und Migrieren fremder
+     * Datenbanken ist der Zweck des Kommandos.
+     *
+     * Deshalb schlaegt das Statement den Namen im Katalog nach. `QUOTENAME`
+     * uebernimmt das Quoting des gefundenen Namens; interpoliert wird nur, was
+     * aus `sys.default_constraints` kommt, nie Nutzereingabe.
+     *
+     * Die Zeichenkette entsteht in einer Variablen und laeuft ueber
+     * `sp_executesql`: `EXEC('… ' + QUOTENAME(@df))` waere ein Syntaxfehler,
+     * weil `EXEC(...)` in seiner Verkettung keine Funktionsaufrufe erlaubt.
+     * Live gefunden — dem Statement sieht man das nicht an.
+     */
+    fun dropDefaultConstraintSql(table: String, column: String): String = buildString {
+        append("DECLARE @df sysname, @sql nvarchar(max);\n")
+        append("SELECT @df = dc.name FROM sys.default_constraints dc\n")
+        append("    JOIN sys.columns c ON c.object_id = dc.parent_object_id\n")
+        append("        AND c.column_id = dc.parent_column_id\n")
+        append("    WHERE dc.parent_object_id = OBJECT_ID(${stringLiteral(table)})\n")
+        append("        AND c.name = ${stringLiteral(column)};\n")
+        append("IF @df IS NOT NULL\n")
+        append("BEGIN\n")
+        append("    SET @sql = N'ALTER TABLE ${quote(table)} DROP CONSTRAINT ' + QUOTENAME(@df);\n")
+        append("    EXEC sp_executesql @sql;\n")
+        append("END;")
+    }
 
     /** Dritter Schritt des Dreischritts. */
     fun addDefaultConstraintSql(table: String, column: String, default: DefaultValue, type: NeutralType): String =
@@ -79,9 +109,23 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
         "ALTER TABLE ${quote(table)} ADD CONSTRAINT ${quote(MssqlConstraintNames.primaryKey(table))} " +
             "PRIMARY KEY (${columns.joinToString(", ") { quote(it) }});"
 
-    fun dropPrimaryKeySql(table: String): String =
-        "ALTER TABLE ${quote(table)} DROP CONSTRAINT IF EXISTS " +
-            "${quote(MssqlConstraintNames.primaryKey(table))};"
+    /**
+     * Denselben Namensgriff braucht der Primaerschluessel: ein fremdes Schema
+     * nennt ihn nicht `pk_<tabelle>`, und ein `IF EXISTS` auf den falschen
+     * Namen liesse den Schluessel stehen — das anschliessende ADD scheiterte
+     * dann. Der Katalog kennt hoechstens einen PK je Tabelle, die Abfrage ist
+     * also eindeutig.
+     */
+    fun dropPrimaryKeySql(table: String): String = buildString {
+        append("DECLARE @pk sysname, @sql nvarchar(max);\n")
+        append("SELECT @pk = kc.name FROM sys.key_constraints kc\n")
+        append("    WHERE kc.type = 'PK' AND kc.parent_object_id = OBJECT_ID(${stringLiteral(table)});\n")
+        append("IF @pk IS NOT NULL\n")
+        append("BEGIN\n")
+        append("    SET @sql = N'ALTER TABLE ${quote(table)} DROP CONSTRAINT ' + QUOTENAME(@pk);\n")
+        append("    EXEC sp_executesql @sql;\n")
+        append("END;")
+    }
 
     /**
      * Umbenennen laeuft in T-SQL ueber die Systemprozedur, nicht ueber

@@ -279,9 +279,16 @@ nur mit Klammern" ist:
 - **Defaults sind benannte Constraint-Objekte, keine Spalteneigenschaft.**
   `ALTER TABLE … ALTER COLUMN` scheitert, solange ein Default-Constraint an der
   Spalte hängt. Jede Typ-/Nullability-Änderung ist also ein Dreischritt:
-  `DROP CONSTRAINT df_…` → `ALTER COLUMN` → `ADD CONSTRAINT df_…`. Dass Slice 2
-  die Constraints **benannt** rendert (`df_`/`uq_`/`ck_`/`pk_`), war genau die
-  Vorleistung dafür — anonyme Constraints wären hier nicht adressierbar.
+  Default lösen → `ALTER COLUMN` → Default zurück. Dass Slice 2 die Constraints
+  **benannt** rendert (`df_`/`uq_`/`ck_`/`pk_`), ist dafür die Vorleistung auf
+  der Anlege-Seite. Zum **Lösen** reicht die Konvention aber nicht: ein Schema,
+  das d-migrate nicht angelegt hat, trägt SQL Servers Auto-Namen
+  (`DF__tabelle__spalte__1A2B3C4D`, zufälliges Suffix) — und fremde Datenbanken
+  zu migrieren ist der Zweck des Kommandos. Der Renderer schlägt den Namen
+  deshalb im Katalog nach (`sys.default_constraints` bzw. `sys.key_constraints`)
+  und führt das `DROP CONSTRAINT` über `sp_executesql` aus. Das ist das erste
+  dynamische SQL in einem gerenderten Migrationsstatement; es interpoliert
+  ausschliesslich Katalogwerte, gequotet über `QUOTENAME`.
 - **Umbenennen ist `sp_rename`**, kein `ALTER TABLE … RENAME`. Der Aufruf nimmt
   String-Literale (kein Klammer-Quoting) und benennt Constraints und Indizes
   einer umbenannten Tabelle **nicht** mit; deren Namen driften damit von der
