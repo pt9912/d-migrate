@@ -196,7 +196,11 @@ sealed Varianten, keine nullable `mssql*`-Felder auf generischen Ports.
    `ACCEPT_EULA=Y` und ist mit ~1,5 GB Image / 2 GB RAM der schwerste Container
    im Haus; die EULA-Akzeptanz ist im Testcontainers-Setup dokumentiert
    ([`quality.md`](../../user/quality.md)); ins Administrationshandbuch kommt
-   MSSQL erst mit nutzersichtbarem Support (ab Slice 1).
+   MSSQL erst mit nutzersichtbarem Support (ab Slice 1) — nachgezogen nach
+   Slice 3b (`1d0142e5`) zusammen mit Anwenderhandbuch, Guide,
+   Migrations-Leitfaden, Best-Practices und der Release-Artefaktliste.
+   Massstab dafuer, was ein Handbuch behaupten darf, ist
+   `DialectCommandGate.AVAILABLE_FOR_MSSQL`.
 
 ## Slice-Schnitt
 
