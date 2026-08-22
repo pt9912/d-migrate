@@ -248,6 +248,92 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 | `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` („No renderer registered") |
 | `data profile` (CLI + MCP-Job) | Slice 10 | Gate |
 
+## Slice 5 im Detail — Diff/Migrate für MSSQL
+
+### Warum dieser Slice einen Schnitt braucht (gemessen 2026-08-22)
+
+`DiffOperation` hat **42 Arten**. Die drei gebauten Dialekte brauchen dafür
+2387 (PostgreSQL, 9 Dateien), 2582 (MySQL, 7) und 1923 Zeilen (SQLite, 6).
+Slice 5 ist damit grösser als die Slices 1–4 zusammen und passt weder in einen
+Commit noch in einen Review. Der Schnitt unten folgt der Familien-Gliederung,
+die der `renderOp`-Dispatch der drei bestehenden Renderer bereits hat — nicht
+einer erfundenen Reihenfolge.
+
+### Was Slice 5 ausser dem Renderer anfasst
+
+| Naht | Heute | Nach Slice 5 |
+| --- | --- | --- |
+| `MigrateRendererRegistry` | `MSSQL -> null` | liefert den Renderer |
+| `RenameProjectionCapabilitiesFactory` | `error("unreachable: DialectCommandGate …")` | Spiegelwert in `RenameProjectionDialect` |
+| `DialectCommandGate` | `SCHEMA_MIGRATE` gated | Eintrag entfällt (nur `DATA_PROFILE` bleibt) |
+| `SequenceCapabilityDefaults` | preserve/atomic `false` | preserve `true` (Sub-Slice 5d) |
+| `MatrixSweepRunner` / `MatrixCell.ALL_DIALECTS` | `MSSQL -> null`, nicht im Sweep | Renderer + Zellen (Eigner-Entscheidung Slice 4: beides zusammen) |
+| Neutral-Typ-Projektion | `Enum(refType)` bleibt Identität | braucht Schema-Kontext, siehe offene Punkte |
+
+### T-SQL-Eigenheiten, die den Diff-Pfad von den anderen drei trennen
+
+Diese Liste ist der eigentliche Grund, warum Slice 5 nicht „wie PostgreSQL,
+nur mit Klammern" ist:
+
+- **Defaults sind benannte Constraint-Objekte, keine Spalteneigenschaft.**
+  `ALTER TABLE … ALTER COLUMN` scheitert, solange ein Default-Constraint an der
+  Spalte hängt. Jede Typ-/Nullability-Änderung ist also ein Dreischritt:
+  `DROP CONSTRAINT df_…` → `ALTER COLUMN` → `ADD CONSTRAINT df_…`. Dass Slice 2
+  die Constraints **benannt** rendert (`df_`/`uq_`/`ck_`/`pk_`), war genau die
+  Vorleistung dafür — anonyme Constraints wären hier nicht adressierbar.
+- **Umbenennen ist `sp_rename`**, kein `ALTER TABLE … RENAME`. Der Aufruf nimmt
+  String-Literale (kein Klammer-Quoting) und benennt Constraints und Indizes
+  einer umbenannten Tabelle **nicht** mit; deren Namen driften damit von der
+  `df_<tabelle>_<spalte>`-Konvention ab.
+- **IDENTITY ist per ALTER unveränderlich.** Eine Spalte zu/von IDENTITY zu
+  ändern verlangt einen Tabellen-Neubau — die einzige Stelle, an der MSSQL ein
+  SQLite-artiges Rebuild-Muster braucht.
+- **Gefilterte Indizes brauchen SET-Optionen zur DDL-Zeit** (Msg 1934). Slice 2a
+  löst das für die Skript-Darstellung über die Präambel und Slice 3 für die
+  Import-Session; der Migrate-Pfad führt Statements **einzeln** über den Runner
+  aus und ist von beidem nicht abgedeckt.
+- **Der Kaskaden-Wächter muss den Live-Zustand sehen.** `MssqlCascadePathGuard`
+  analysiert heute das Soll-Schema. Ein Diff fügt einzelne FKs zu einer
+  bestehenden Datenbank hinzu; ob dabei ein Mehrfachpfad entsteht (Fehler 1785),
+  entscheidet die Vereinigung aus vorhandenen und neuen FKs.
+- **DDL ist transaktional** — wie PostgreSQL, anders als MySQL. Der
+  `transactionScope` der gerenderten Statements kann also überwiegend
+  `RUNNER_OWNED` bleiben.
+- **`CREATE OR ALTER VIEW` gibt es nativ**, `ReplaceView` ist damit billig.
+
+### Sub-Slice-Schnitt
+
+| Sub-Slice | Operationen | Kern der Arbeit | Abnahme |
+| --- | --- | --- | --- |
+| **5a** | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders) + der Default-Constraint-Dreischritt + `sp_rename` + IDENTITY-Rebuild | Unit-Tests je Operation und Richtung; Down-Pfad kehrt jede Operation um |
+| **5b** | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | `WITH CHECK`/`NOCHECK` beim Nachziehen auf Bestandsdaten; SET-Optionen im Migrate-Pfad; Kaskaden-Wächter gegen den Live-Zustand | Live-Integrationstest, der einen **gefilterten** Index per Migrate anlegt (Msg-1934-Regressionsschutz) |
+| **5c** | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW`; die View-Portabilitätsprüfung aus Slice 3b greift auch hier | Hier fällt die Enum-CHECK-Entscheidung ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md)) — sie ist im Diff-Pfad nicht mehr aufschiebbar |
+| **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; flippt `supportsCurrentValuePreserve` | Macht die Zeile wahr, die Slice 4 als Zielbild in [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 eingetragen hat |
+| **5e** | — | Abschluss: Schema-Kontext für die Typ-Projektion (`Enum(refType)`), Beitritt zum Matrix-Sweep, Registry + `RenameProjectionDialect`, **Gate-Fall**, Live-Round-Trip-Integrationstest analog den drei bestehenden Dialekten, CLI-E2E, Handbücher | `schema migrate` ist für mssql nutzbar |
+
+### Was in Slice 5 bewusst geblockt bleibt
+
+Nicht als Stopgap, sondern weil ein **anderer** Slice sie besitzt — genau die
+Trennung, die der Slice-Schnitt oben vorsieht. Die drei bestehenden Dialekte
+blocken an denselben Stellen (PostgreSQL 11, MySQL 17, SQLite 8 Fälle):
+
+- Routinen und Trigger (`Create/Replace/Drop/Rename` für Function, Procedure,
+  Trigger) → **Slice 9**; der Generate-Pfad meldet sie heute als `E053`.
+- Materialized Views → SQL Server hat kein Äquivalent; der Generate-Pfad
+  degradiert sie zur normalen View (`W103`), der Diff-Pfad blockt sie.
+- Partitionierung → **Slice 7** (`E055` im Generate).
+- Clustered-/INCLUDE-Feinsteuerung der Indizes → **Slice 6**; 5b rendert, was
+  das neutrale Modell heute trägt.
+
+### Wann das Gate fällt
+
+Erst mit **5e**. 5a–5d sind interne Zwischenstände: sie enden CI-grün und sind
+einzeln reviewbar, aber sie schalten `schema migrate` nicht frei. Ein
+Zwischenstand, der das Kommando mit halbem Renderer öffnet, wäre genau der
+`UNSUPPORTED`-Stopgap, den Entscheidung 2 ausschliesst. Mit 5e ist mssql dann
+auf Augenhöhe mit den anderen drei Dialekten — inklusive der Operationen, die
+dort ebenfalls einem späteren Slice gehören.
+
 ## Risiken
 
 - **Reverse-Read-Treue**: `INFORMATION_SCHEMA` reicht bei MSSQL nicht für
@@ -263,9 +349,9 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 - **Kein MSSQL-Wissen in den Goldens**: DDL-Goldens entstehen neu; der
   Regenerier-Weg läuft per CLI (nicht `make golden-update`).
 
-## Offene Punkte (Stand nach Slice 4)
+## Erledigte Punkte (Slices 2-4)
 
-**Erledigt:**
+**Aus Slice 2 und 3:**
 
 - ~~**`GO`-Batch-Trenner im Tool-Export**~~ — Slice 2a: `DdlScript`
   (ports-read) rendert Skripte dialektbewusst (`DialectCapabilities.batchSeparator`,
@@ -282,7 +368,7 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
   verbindet mit `ARITHABORT OFF`, was DML auf einer Tabelle mit gefiltertem
   Index sonst abweist.
 
-**In Slice 4 erledigt** (Vergleichs-Substrat + Gegenrichtung):
+**Aus Slice 4** (Vergleichs-Substrat + Gegenrichtung):
 
 - ~~`NeutralTypeCanonicalizer` + Postcompare-Fingerprint~~ — die Projektion ist
   die lebende Komposition `reverse(toSql(t))`, belegt gegen echtes SQL Server
@@ -313,7 +399,9 @@ die kein Unit-Test und kein kleines E2E-Schema gezeigt hatte:
 Die Regel dahinter steht jetzt in `spec/type-mapping.md` 6.2: der MSSQL-Reverse
 liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
 
-**Offen — Pflicht für Slice 5 (Migrate-Postcompare):**
+## Offene Punkte (Stand nach Slice 4)
+
+**Pflicht für Slice 5 (Migrate-Postcompare):**
 
 - **`Enum(refType)` liefert unter der MSSQL-Projektion falschen Drift.** Der
   Kanonisierer lässt ihn als Identität stehen, weil eine
@@ -328,7 +416,7 @@ liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
   heißt: der Projektion Schema-Kontext geben. Muss fallen, bevor
   `schema migrate --execute` für mssql Postcompare fährt.
 
-**Offen — nächste Arbeitsschritte:**
+**Nächste Arbeitsschritte:**
 
 - **Fremde Funktions-Defaults verlieren ihre Funktions-Natur:** das neutrale
   Format kennt nur `current_timestamp`/`current_date`/`current_time`/`gen_uuid`
@@ -343,13 +431,13 @@ liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
   eigene Projektion (Wert-SRID als Zusatzspalte oder EWKB-ähnliche Kodierung);
   dokumentiert in `spec/type-mapping.md`, keinem Slice zugeordnet.
 
-**Offen — im Slice-Schnitt eingeplant:**
+**Im Slice-Schnitt eingeplant:**
 
 - **Clustered/nonclustered-Steuerung und INCLUDE-Spalten:** Slice 6 (siehe
   Slice-Tabelle oben). Der Reverse liest Indizes heute als `BTREE`, der
   Generate rendert nonclustered — die Steuerung fehlt noch.
 
-**Offen — ohne Slice-Zuordnung, Priorisierung noch zu entscheiden:**
+**Ohne Slice-Zuordnung, Priorisierung noch zu entscheiden:**
 
 - **Bulk-Fast-Path** (`BULK INSERT`/`SqlServerBulkCopy`): der Slice-Schnitt
   notiert für Slice 3 nur „Fast-Path später", ohne Slice-Nummer. Der Import
