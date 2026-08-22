@@ -325,9 +325,10 @@ nur mit Klammern" ist:
 Routinen und Trigger, Partitionierung und die Index-Feinsteuerung gehören den
 Ausbau-Slices 9, 7 und 6 — was der gebaute Code über sie heute schon aussagt,
 steht bei den jeweiligen Slices weiter unten. Der Diff-Pfad blockt sie bis
-dahin, wie es auch die drei bestehenden Dialekte an denselben Stellen tun
-(PostgreSQL 11, MySQL 17, SQLite 8 Fälle). Ohne eigenen Slice bleibt nur eine
-Fläche: **Materialized Views** haben in SQL Server kein Äquivalent (siehe
+dahin. Das ist **nicht** dasselbe wie bei den drei bestehenden Dialekten:
+PostgreSQL rendert Routinen und Trigger im Diff (siehe Slice 9 unten), MSSQL
+kann es nur deshalb nicht, weil sein Reverse die Rümpfe noch nicht liest.
+Ohne eigenen Slice bleibt eine Fläche: **Materialized Views** haben in SQL Server kein Äquivalent (siehe
 T-SQL-Inventar), der Diff-Pfad blockt sie dauerhaft.
 
 ### Wann das Gate fällt
@@ -383,15 +384,37 @@ Bestandsaufnahme, auf der er aufsetzt.
 
 ### Slice 9 — Routinen und Trigger
 
-- **Reverse** liest Routinen-Rümpfe nicht und weist das als `R342` samt
-  `skippedObjects` aus.
-- **Generate** meldet Funktionen, Prozeduren und Trigger als `E053`.
-- **Diff** blockt die zwölf `Create`/`Replace`/`Drop`/`Rename`-Operationen
-  dieser drei Objektarten bis dahin — dieselbe Stelle, an der auch die drei
-  bestehenden Dialekte blocken.
-- `CREATE OR ALTER` gibt es für Prozeduren, Funktionen und Trigger nativ, der
-  Replace-Pfad ist also billig; der Aufwand liegt im Reverse (Rumpf lesen) und
-  in der Frage, wie viel T-SQL-Rumpf das neutrale Modell tragen soll.
+**Korrektur (2026-08-22):** hier stand, der MSSQL-Diff blocke Routinen „an
+derselben Stelle, an der auch die drei bestehenden Dialekte blocken". Das ist
+falsch. PostgreSQL **rendert** Funktionen, Prozeduren und Trigger im Diff-Pfad
+([`PostgresDiffFunctionOps`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffFunctionOps.kt),
+`PostgresDiffProcedureOps`); in seinem Dispatch ist einzig `AlterCustomType`
+`UNSUPPORTED`. Die Zahl „PostgreSQL 11 Fälle" stammte aus einem
+`grep -c DIALECT_UNSUPPORTED_OPERATION` und sagt nichts darüber aus, WELCHE
+Operationen blocken.
+
+Das PostgreSQL-Vorbild sieht so aus:
+
+| Stufe | PostgreSQL heute | MSSQL heute |
+| --- | --- | --- |
+| Modell | `FunctionDefinition.body`, `TriggerDefinition.body` (plus `language`, `sourceDialect`) | dieselben Felder — das Modell trägt Rümpfe bereits |
+| Reverse | liest `information_schema.routines.routine_definition` bzw. `triggers.action_statement` in `body` | liest Rümpfe **nicht**, meldet `R342` + `skippedObjects` |
+| Generate | rendert `CREATE OR REPLACE FUNCTION … $body$ … $body$` | `E053` |
+| Diff | rendert `CREATE OR REPLACE`; ein **fehlender Rumpf** ist der Blocker, nicht der Dialekt | blockt alles |
+
+Der eigentliche Aufwand liegt damit nicht im Diff-Renderer, sondern **im
+Reverse**: solange `body` leer ist, blockt der Diff aus demselben Grund wie
+PostgreSQL es täte — „body is unknown", nicht „dialect unsupported".
+
+- Der Rumpf steht in `sys.sql_modules.definition`; der MSSQL-Reverse fragt
+  diese Sicht für Views bereits ab, das Abfragemuster existiert also.
+- `CREATE OR ALTER` gibt es für Prozeduren, Funktionen und Trigger nativ. Der
+  Replace-Pfad ist damit **einfacher** als bei PostgreSQL, das dafür
+  Dollar-Quoting mit festem `$body$`-Tag braucht.
+- Die offene Frage ist keine T-SQL-Frage, sondern eine Modell-Frage: ein
+  reverse-gelesener T-SQL-Rumpf ist auf keinem anderen Ziel gültig. Für
+  View-Bodies löst das `ViewQueryTransformer.assessPortability`; für
+  Routinen-Rümpfe gibt es kein Gegenstück, auch nicht bei PostgreSQL.
 
 ### Slice 10 — Profiling
 

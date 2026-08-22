@@ -123,7 +123,8 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropProcedure, is DiffOperation.RenameProcedure,
         is DiffOperation.CreateTrigger, is DiffOperation.ReplaceTrigger,
         is DiffOperation.DropTrigger, is DiffOperation.RenameTrigger,
-        -> "routines and triggers are the subject of slice 9"
+        -> "routines and triggers wait for slice 9 — the MSSQL reverse does not read their bodies yet " +
+            "(R342), so there is nothing to render; PostgreSQL renders them because its reverse does"
 
         is DiffOperation.CreateMaterializedView, is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
