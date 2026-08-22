@@ -106,7 +106,7 @@ Damit werden alle Module kompiliert und ihre Tests ausgeführt:
 - `hexagon:ports` — Port-Interfaces (hexagonale Architektur)
 - `hexagon:application` — Runner/Use-Cases (SchemaValidateRunner, DataExportRunner, …)
 - `adapters:driven:driver-common` — gemeinsame DDL-Generator- und Daten-Abstraktionen
-- `adapters:driven:driver-postgresql` / `driver-mysql` / `driver-sqlite` — dialektspezifische Treiber (DDL, DataReader, DataWriter)
+- `adapters:driven:driver-postgresql` / `driver-mysql` / `driver-sqlite` / `driver-mssql` — dialektspezifische Treiber (DDL, DataReader, DataWriter)
 - `adapters:driven:formats` — YAML-/JSON-/CSV-Codecs für Schema und Daten
 - `adapters:driven:streaming` — Pull-basierte Streaming-Pipeline für Export/Import
 - `adapters:driving:cli` — Clikt-basiertes Command-Line-Interface
@@ -549,7 +549,7 @@ eine vollständige Migration siehe [Migrations-Leitfaden](migrations-leitfaden.m
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `--source`            | Pfad zur Schema-Datei (YAML, Pflicht)                     |
-| `--target`            | Zieldialekt: `postgresql`, `mysql`, `sqlite` (Pflicht)    |
+| `--target`            | Zieldialekt: `postgresql`, `mysql`, `sqlite`, `mssql` (Pflicht) |
 | `--output`            | Ausgabedatei (Standard: stdout)                           |
 | `--report`            | Report-Datei (Standard: `<output>.report.yaml`)           |
 | `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |

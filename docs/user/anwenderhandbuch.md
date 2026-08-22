@@ -1,7 +1,8 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.5  ·  **Stand:** 16.08.2026
-**Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.6  ·  **Stand:** 22.08.2026
+**Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
+(im Ausbau — dort noch nicht verfügbar: `schema migrate`, `data profile`)
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
 beschreiben, Datenbanken aufbauen, Daten übertragen und Migrationen ausrollen.
@@ -33,8 +34,9 @@ Befehls- und Optionsreferenz finden Sie im [Anhang](#8-anhang).
 d-migrate überträgt Datenbankschemata und -inhalte zwischen verschiedenen
 Datenbanksystemen. Sie beschreiben Ihr Schema einmal in einem
 **neutralen, herstellerunabhängigen Format** und erzeugen daraus das passende
-SQL für PostgreSQL, MySQL/MariaDB oder SQLite. Daten lassen sich exportieren,
-importieren und direkt von einer Datenbank in eine andere übertragen.
+SQL für PostgreSQL, MySQL/MariaDB, SQLite oder MS SQL Server. Daten lassen sich
+exportieren, importieren und direkt von einer Datenbank in eine andere
+übertragen.
 
 ### Zielgruppe dieses Handbuchs
 
@@ -296,7 +298,7 @@ Datenbank erzeugen.
        --output schema.sql
    ```
 
-   Für `--target` sind `postgresql`, `mysql` oder `sqlite` möglich.
+   Für `--target` sind `postgresql`, `mysql`, `sqlite` und `mssql` möglich.
 
 2. Optional: Erzeugen Sie zusätzlich ein Rücknahme-Skript:
 
@@ -1148,6 +1150,11 @@ Hilfsobjekte, die dasselbe Verhalten nachbilden.
 | `preserve_current_value` | `setval(...)` beim Ausrollen | `UPDATE dmg_sequences SET next_value = ...` unter Lock | `UPDATE dmg_sequences SET next_value = ...` unter Lock |
 | `cache` | native Cache-Semantik | Metadatum, keine Runtime-Preallocation | Metadatum, keine Runtime-Preallocation |
 
+**MS SQL Server** fehlt in dieser Matrix, weil dort nichts emuliert wird:
+`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem
+`CREATE SEQUENCE`, ein `sequence_nextval`-Default zu `NEXT VALUE FOR …`.
+Eine `helper_table`-Option gibt es deshalb nicht.
+
 Die vollständige Attributmatrix steht in der
 [Neutralmodell-Spezifikation](../../spec/neutral-model-spec.md#92-cross-dialect-capability-matrix).
 
@@ -1582,8 +1589,8 @@ SELECT AddGeometryColumn('places', 'area', 4326, 'POLYGON', 'XY');
    ```
 
 **Ergebnis:** Normale Views werden auf allen Dialekten erzeugt. Materialized
-Views sind nativ nur auf PostgreSQL; auf MySQL/SQLite werden sie als normale
-View erzeugt (Warnung **W103**).
+Views sind nativ nur auf PostgreSQL; auf MySQL, SQLite und MS SQL Server werden
+sie als normale View erzeugt (Warnung **W103**).
 
 **Hinweise:**
 
@@ -1757,8 +1764,8 @@ nennt).
 
 **Hinweise:**
 
-- **EXCLUDE**-Constraints sind PostgreSQL-spezifisch und auf MySQL/SQLite nicht
-  abbildbar (Blocker).
+- **EXCLUDE**-Constraints sind PostgreSQL-spezifisch und auf MySQL, SQLite und
+  MS SQL Server nicht abbildbar (Blocker).
 - Einfache Fremdschlüssel formuliert man direkt an der Spalte über `references`
   (siehe [3.1](#31-ein-schema-beschreiben-und-prüfen) /
   [Anhang F.5](#f5-referenzen)); ein Constraint vom Typ `foreign_key` dient
@@ -1821,13 +1828,15 @@ nennt).
 **Ergebnis:**
 
 - **Enum** → PostgreSQL `CREATE TYPE … ENUM`, MySQL inline `ENUM(…)`,
-  SQLite `TEXT` + `CHECK`.
+  SQLite `TEXT` + `CHECK`, MS SQL Server `NVARCHAR(n)` + `CHECK`.
 - **Composite** → PostgreSQL nativ (`CREATE TYPE … AS (…)`); MySQL/SQLite
   benötigen eine **konfigurierte Fallback-Strategie** (`json`, `flatten`,
   `action_required`) — ohne Konfiguration erfolgt kein stiller Fallback,
-  sondern `action_required`.
+  sondern `action_required`. MS SQL Server kennt keinen Composite-Typ; er
+  wird übersprungen (**E054**).
 - **Domain** → PostgreSQL nativ; bei anderen Dialekten nennt der
-  Transformations-Report die gewählte Abbildung.
+  Transformations-Report die gewählte Abbildung (MS SQL Server: Basistyp +
+  `CHECK`).
 
 **Hinweise:**
 
@@ -1986,8 +1995,8 @@ Secret weiterzumachen. Nutzen Sie in solchen Umgebungen `env:` oder `file:`.
 
 **Ursache:** In der URL steht ein nicht unterstützter Datenbanktyp.
 
-**Lösung:** Verwenden Sie `postgresql`, `mysql` oder `sqlite` (bzw. deren
-Aliase wie `pg` oder `mariadb`).
+**Lösung:** Verwenden Sie `postgresql`, `mysql`, `sqlite` oder `mssql` (bzw.
+deren Aliase wie `pg`, `mariadb` oder `sqlserver`).
 
 ### „Database 'x' does not exist"
 
@@ -2100,7 +2109,7 @@ und der Tool-Katalog stehen in der [API-Referenz](api-referenz.md).
 | Begriff | Bedeutung |
 | ------- | --------- |
 | **Neutrales Modell / Schema** | Herstellerunabhängige YAML-Beschreibung einer Datenbankstruktur; die Zwischenform zwischen Quelle und Ziel. |
-| **Dialekt** | Konkrete Datenbankvariante: PostgreSQL, MySQL oder SQLite. |
+| **Dialekt** | Konkrete Datenbankvariante: PostgreSQL, MySQL, SQLite oder MS SQL Server. |
 | **DDL** | „Data Definition Language" — SQL-Anweisungen, die Struktur anlegen (`CREATE TABLE` usw.). |
 | **Reverse Engineering** | Das Auslesen einer bestehenden Datenbank in ein neutrales Schema. |
 | **Round-Trip** | Hin- und Rückübertragung (z. B. Datenbank → Schema → Datenbank) zur Kontrolle der Verlustfreiheit. |
@@ -2156,7 +2165,7 @@ Fortschritt/Warnungen nach stderr.
 | Option | Beschreibung |
 | ------ | ------------ |
 | `--source` | Schema-Datei (Pflicht) |
-| `--target` | `postgresql`, `mysql`, `sqlite` (Pflicht) |
+| `--target` | `postgresql`, `mysql`, `sqlite`, `mssql` (Pflicht) |
 | `--output` | Ausgabedatei (Standard: stdout) |
 | `--report` | Report-Datei (Standard: `<output>.report.yaml`) |
 | `--generate-rollback` | Rollback-DDL erzeugen |
@@ -2227,7 +2236,7 @@ Fortschritt/Warnungen nach stderr.
 | ------ | ------------ |
 | `--source` | Schema-Datei (Pflicht) |
 | `--output` | Ausgabeverzeichnis (Pflicht) |
-| `--target` | `postgresql`, `mysql`, `sqlite` (Pflicht) |
+| `--target` | `postgresql`, `mysql`, `sqlite`, `mssql` (Pflicht) |
 | `--version` | Pflicht bei `django`/`knex`, optional bei `flyway`/`liquibase` |
 | `--generate-rollback` | Down-Artefakt erzeugen |
 | `--spatial-profile` | Spatial-Profil (wie `schema generate`) |
@@ -2411,28 +2420,35 @@ nicht in der Datei stehen, werden nicht ergänzt.
 
 ### Anhang C — Neutrales Typsystem
 
-| Neutraler Typ | PostgreSQL | MySQL | SQLite |
-| ------------- | ---------- | ----- | ------ |
-| `identifier` | SERIAL | INT AUTO_INCREMENT | INTEGER PRIMARY KEY AUTOINCREMENT |
-| `text` | VARCHAR(n) / TEXT | VARCHAR(n) / TEXT | TEXT |
-| `char` | CHAR(n) | CHAR(n) | TEXT |
-| `integer` | INTEGER | INT | INTEGER |
-| `smallint` | SMALLINT | SMALLINT | INTEGER |
-| `biginteger` | BIGINT | BIGINT | INTEGER |
-| `float` | REAL / DOUBLE PRECISION | FLOAT / DOUBLE | REAL |
-| `decimal` | DECIMAL(p,s) | DECIMAL(p,s) | REAL |
-| `boolean` | BOOLEAN | TINYINT(1) | INTEGER |
-| `datetime` | TIMESTAMP | DATETIME | TEXT (ISO 8601) |
-| `date` | DATE | DATE | TEXT (ISO 8601) |
-| `time` | TIME | TIME | TEXT (ISO 8601) |
-| `uuid` | UUID | CHAR(36) | TEXT |
-| `json` | JSONB | JSON | TEXT |
-| `xml` | XML | TEXT (Fallback) | TEXT |
-| `binary` | BYTEA | BLOB | BLOB |
-| `email` | VARCHAR(254) | VARCHAR(254) | TEXT |
-| `enum` | CREATE TYPE … ENUM | ENUM(…) | TEXT + CHECK |
-| `array` | type[] | JSON | TEXT (JSON) |
-| `geometry` | geometry(type, srid) | POINT / POLYGON / … | AddGeometryColumn() |
+| Neutraler Typ | PostgreSQL | MySQL | SQLite | MS SQL Server |
+| ------------- | ---------- | ----- | ------ | ------------- |
+| `identifier` | SERIAL | INT AUTO_INCREMENT | INTEGER PRIMARY KEY AUTOINCREMENT | INT IDENTITY(1,1) |
+| `text` | VARCHAR(n) / TEXT | VARCHAR(n) / TEXT | TEXT | NVARCHAR(n) / NVARCHAR(MAX) |
+| `char` | CHAR(n) | CHAR(n) | TEXT | NCHAR(n) |
+| `integer` | INTEGER | INT | INTEGER | INT |
+| `smallint` | SMALLINT | SMALLINT | INTEGER | SMALLINT |
+| `biginteger` | BIGINT | BIGINT | INTEGER | BIGINT |
+| `float` | REAL / DOUBLE PRECISION | FLOAT / DOUBLE | REAL | REAL / FLOAT |
+| `decimal` | DECIMAL(p,s) | DECIMAL(p,s) | REAL | DECIMAL(p,s) |
+| `boolean` | BOOLEAN | TINYINT(1) | INTEGER | BIT |
+| `datetime` | TIMESTAMP | DATETIME | TEXT (ISO 8601) | DATETIME2 / DATETIMEOFFSET (mit Zeitzone) |
+| `date` | DATE | DATE | TEXT (ISO 8601) | DATE |
+| `time` | TIME | TIME | TEXT (ISO 8601) | TIME |
+| `uuid` | UUID | CHAR(36) | TEXT | UNIQUEIDENTIFIER |
+| `json` | JSONB | JSON | TEXT | NVARCHAR(MAX) |
+| `xml` | XML | TEXT (Fallback) | TEXT | XML |
+| `binary` | BYTEA | BLOB | BLOB | VARBINARY(MAX) |
+| `email` | VARCHAR(254) | VARCHAR(254) | TEXT | NVARCHAR(254) |
+| `enum` | CREATE TYPE … ENUM | ENUM(…) | TEXT + CHECK | NVARCHAR(n) + CHECK |
+| `array` | type[] | JSON | TEXT (JSON) | NVARCHAR(MAX) (JSON) |
+| `geometry` | geometry(type, srid) | POINT / POLYGON / … | AddGeometryColumn() | geography (SRID 4000–4999) / geometry |
+
+Auf MS SQL Server tragen `NVARCHAR`/`NCHAR` höchstens 4000 Zeichen und
+`DECIMAL` höchstens Präzision 38; darüber weitet d-migrate auf `(MAX)` bzw.
+kappt auf 38 und meldet das im Transformationsbericht (**W136**, **W139**).
+Ob eine Geometriespalte `geography` oder `geometry` wird, entscheidet die
+SRID (siehe
+[Typ-Mapping](../../spec/type-mapping.md#64-spatial-geometry-vs-geography)).
 
 `identifier` ist der 32-bit-Auto-Increment-Vertrag; SQLites
 `INTEGER PRIMARY KEY AUTOINCREMENT` ist dagegen 64-bit — ein Cross-Dialect-

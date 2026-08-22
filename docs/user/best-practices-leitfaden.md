@@ -111,7 +111,7 @@ Abschnitte 2–4; hier die praxisrelevanten Empfehlungen und Anti-Patterns:
 
 | Fall | Worauf achten |
 | ---- | ------------- |
-| **PostgreSQL-Extension-Typen** (`citext`, `ltree`, `hstore`) | Keine native Entsprechung in MySQL/SQLite — vor der Migration entscheiden, ob sie fachlich nötig sind, sonst als `text`/`json` abbilden. |
+| **PostgreSQL-Extension-Typen** (`citext`, `ltree`, `hstore`) | Keine native Entsprechung in MySQL, SQLite oder MS SQL Server — vor der Migration entscheiden, ob sie fachlich nötig sind, sonst als `text`/`json` abbilden. |
 | **`TINYINT(1)` ↔ `BOOLEAN`** (MySQL ↔ PostgreSQL) | MySQL modelliert `BOOLEAN` als `TINYINT(1)`; prüfen Sie, dass die Semantik in beide Richtungen erhalten bleibt. |
 | **`DECIMAL`/Zeit-Präzision** | Präzision/Skala und Zeit-Sub-Sekunden sind dialektabhängig; SQLite bildet `DECIMAL` auf `REAL` ab (**W200**, Präzisionsverlust möglich). |
 | **String-Längen** | Längenerhaltung ist dialektabhängig; unbegrenzte `TEXT`-Indizes brauchen in MySQL eine Präfixlänge. |

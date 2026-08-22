@@ -1,6 +1,6 @@
 # Administrationshandbuch
 
-> **Software-Version:** 1.0.3 · **Stand:** 16.08.2026
+> **Software-Version:** 1.0.3 · **Stand:** 22.08.2026
 >
 > **Zielgruppe:** Personen, die d-migrate bereitstellen, konfigurieren und
 > betreiben. Aufgabenorientierte Anwender-Workflows stehen im
@@ -183,6 +183,9 @@ Verhalten von `pipeline.parallelism`:
 `dialect://user:password@host:port/db?params`. Unterstützte Dialekte/Aliase und
 dialektspezifische Parameter:
 [`connection-config-spec.md`](../../spec/connection-config-spec.md) Abschnitte 1.1–1.6.
+Für **MS SQL Server** (`mssql://`, Alias `sqlserver://`, Port-Default `1433`)
+werden die Parameter Semikolon-getrennt in die JDBC-URL geschrieben
+(`jdbc:sqlserver://host:1433;databaseName=db;…`), nicht als `?k=v&`-Query.
 
 ### 4.2 Verbindungsaufbau
 
@@ -205,7 +208,9 @@ Meldung mit Hinweis ([`connection-config-spec.md`](../../spec/connection-config-
 ### 4.4 Timeout-Einheiten und `--lock-timeout-ms`
 
 Connection-URL-Timeouts folgen der **nativen JDBC-Konvention je Treiber**
-(PostgreSQL: Sekunden; MySQL: Millisekunden; SQLite: `busy_timeout` in ms).
+(PostgreSQL: Sekunden; MySQL: Millisekunden; SQLite: `busy_timeout` in ms;
+MS SQL Server: Treiber-Konvention von mssql-jdbc, die Werte werden unverändert
+durchgereicht).
 Werte in `.d-migrate.yaml` verwenden konsistent **Millisekunden** (Suffix `_ms`);
 d-migrate konvertiert automatisch
 ([`connection-config-spec.md`](../../spec/connection-config-spec.md) §1.6).
@@ -461,7 +466,8 @@ Versionskontrolle ausschließen.
 SSL wird über die Connection-URL gesetzt, dialektspezifisch: **PostgreSQL**
 `?sslmode=disable|allow|prefer|require|verify-ca|verify-full` (+ `sslrootcert=`
 CA-Pfad); **MySQL** `?sslMode=DISABLED|PREFERRED|REQUIRED|VERIFY_CA|VERIFY_IDENTITY`
-(Legacy `?ssl=true` wird opportunistisch als `PREFERRED` interpretiert).
+(Legacy `?ssl=true` wird opportunistisch als `PREFERRED` interpretiert);
+**MS SQL Server** `?encrypt=true|false|strict` plus `?trustServerCertificate=`.
 Seit **[`LN-026`](../../spec/lastenheft-d-migrate.md#ln-026)** (2026-07-11) werden
 diese Modi **typisiert geparst und validiert** (ein ungültiger Modus ist ein
 Fehler, kein stiller Passthrough) und intern über ein neutrales `SslMode`-Modell
@@ -470,6 +476,14 @@ per Dialekt korrekt gemappt.
 > **Hinweis:** MySQL `VERIFY_CA`/`VERIFY_IDENTITY` benötigen eine CA im
 > Truststore. Truststore-/Keystore-Konfiguration ist noch nicht Teil dieser Stufe
 > (System-Truststore-Fallback); ohne CA schlägt der Connect fehl.
+>
+> **Hinweis:** mssql-jdbc kennt keine opportunistische Stufe. Ein neutrales
+> `allow`/`prefer`/`require` wird auf `encrypt=true` +
+> `trustServerCertificate=true` abgebildet (verschlüsselt, aber unverifiziert),
+> `verify-ca`/`verify-full` auf `encrypt=true` +
+> `trustServerCertificate=false`. Gegen ein Server-Zertifikat ohne gültige
+> Kette braucht es daher explizit `?encrypt=false` oder
+> `?trustServerCertificate=true`.
 
 🔮 **Geplant (nächste Tiefenstufen):** **Erzwingung** (require-SSL, fail-closed) und
 **Truststore/Keystore**-Konfiguration.

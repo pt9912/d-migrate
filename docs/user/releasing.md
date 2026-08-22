@@ -26,7 +26,7 @@
 > | Foundation | `hexagon:core` | Kernartefakt |
 > | Ports | `hexagon:ports-common`, `hexagon:ports-read`, `hexagon:ports-write`, `hexagon:ports-execute` | Kernartefakt |
 > | Ports (Umbrella) | `hexagon:ports` | Kernartefakt — **Vorbehalt**, s. u. |
-> | Driver Runtime | `driver-common`, `driver-postgresql`, `driver-mysql`, `driver-sqlite` | Kernartefakt |
+> | Driver Runtime | `driver-common`, `driver-postgresql`, `driver-mysql`, `driver-sqlite`, `driver-mssql` | Kernartefakt |
 > | Optional Extensions | `hexagon:profiling`, `driver-postgresql-profiling`, `driver-mysql-profiling`, `driver-sqlite-profiling`, `formats`, `streaming` | Zusatzartefakt |
 > | Optional Extensions | `formats-parquet` | Zusatzartefakt — **Vorbehalt**, s. u. |
 > | Anwendung | `hexagon:application`, `adapters:driving:cli`, `adapters:driving:mcp`, `integrations`, `connection-config`, `persistence-jdbc`, `audit-logging`, `storage-file`, `storage-s3`, `text-icu`, `test:*` | nicht publiziert |
