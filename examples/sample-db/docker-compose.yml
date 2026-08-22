@@ -107,6 +107,32 @@ services:
       - .:/work
     working_dir: /work
 
+  # MSSQL-Leg (Slice 3b des MSSQL-Ausbaus, ADR 0047): SQL-Server-Ziel fuer den
+  # Pagila-Cross-Dialect-Smoke PG -> MSSQL. Digest-gepinnt wie die uebrigen
+  # Tool-Container (ADR 0014: reproduzierbar, kein wanderndes :latest).
+  # Das Image verlangt die EULA-Akzeptanz (ACCEPT_EULA=Y) und laeuft als
+  # non-root uid 10001; Ziel-DBs legt smoke-cross-pg2ms.sh per sqlcmd an
+  # (SQL Server hat kein docker-entrypoint-initdb.d).
+  mssql:
+    image: mcr.microsoft.com/mssql/server@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+    env_file:
+      - .env
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_MSSQL_PORT}:1433"
+    volumes:
+      - sample-db-mssql-data:/var/opt/mssql
+    healthcheck:
+      # sqlcmd liegt im 2022-Image unter mssql-tools18 und braucht -C
+      # (Self-Signed-Zertifikat des Containers).
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
   dmigrate:
     # Standard: das JVM-Image d-migrate:dev. Ueberschreibbar auf das Native-Runtime-Image
     # (make native-runtime-build → d-migrate:native-dev), um dieselbe E2E-Harness gegen das
@@ -167,3 +193,4 @@ volumes:
   sample-db-pg-data:
   sample-db-mysql-data:
   sample-db-postgis-data:
+  sample-db-mssql-data:

@@ -51,4 +51,17 @@ open class MssqlDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataRea
      */
     override fun isGeometryTypeName(typeNameLower: String): Boolean =
         typeNameLower == "geometry" || typeNameLower == "geography"
+
+    /**
+     * mssql-jdbc liefert `DATETIMEOFFSET` als treibereigenes
+     * `microsoft.sql.DateTimeOffset`. Der neutrale Chunk-Strom soll nur
+     * Standardtypen tragen: sonst ist der Wert weder in der `--verify`-
+     * Kanonisierung (LN-009) noch beim Export sauber behandelbar — belegt vom
+     * Pagila-PG→MSSQL-Smoke, wo jede Tabelle mit `timestamptz` als
+     * „inconclusive" endete.
+     */
+    override fun mapValue(value: Any?): Any? = when (value) {
+        is microsoft.sql.DateTimeOffset -> value.offsetDateTime
+        else -> value
+    }
 }

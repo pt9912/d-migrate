@@ -9,7 +9,7 @@
 # docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-3hop-smoke sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-cross-smoke-pg2ms sample-db-3hop-smoke sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
 
@@ -33,6 +33,13 @@ sample-db-cross-smoke:
 
 sample-db-cross-smoke-pg2my:
 	./examples/sample-db/scripts/smoke-cross-pg2my.sh
+
+# MSSQL-Leg (ADR 0047, Slice 3b): Pagila PG -> SQL Server. Wendet das erzeugte
+# Skript per sqlcmd an (Batch-Trenner/SET-Praeambel aus Slice 2a) und transferiert
+# die Daten. Braucht compose postgres+mssql (~2 GB RAM, Microsoft-EULA, siehe
+# docs/user/quality.md) + d-migrate:dev-Image.
+sample-db-cross-smoke-pg2ms:
+	./examples/sample-db/scripts/smoke-cross-pg2ms.sh
 
 # Lastenheft-8.6 — 3-Hop-Kette PostgreSQL -> MySQL -> SQLite als EIN verketteter
 # Fluss (nicht nur paarweise): Pagila wandert PG->MySQL->SQLite, End-to-End-Paritaet

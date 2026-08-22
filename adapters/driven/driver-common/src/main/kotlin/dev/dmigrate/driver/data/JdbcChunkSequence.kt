@@ -36,6 +36,14 @@ internal class JdbcChunkSequence(
      * meldet. Leer (Default) → reines JDBC-Mapping wie bisher.
      */
     private val geometryColumns: Set<String> = emptySet(),
+    /**
+     * Wert-Naht des Treibers: uebersetzt treibereigene Rueckgabetypen in
+     * Standardtypen, bevor sie in den neutralen Chunk-Strom gelangen (z. B.
+     * mssql-jdbcs `microsoft.sql.DateTimeOffset` → [java.time.OffsetDateTime]).
+     * Sonst reichte der Fremdtyp bis in Verify-Kanonisierung und Export-
+     * Serialisierung durch. Default: unveraendert.
+     */
+    private val valueMapper: (Any?) -> Any? = { it },
 ) : ChunkSequence {
 
     private val log = LoggerFactory.getLogger(JdbcChunkSequence::class.java)
@@ -153,7 +161,7 @@ internal class JdbcChunkSequence(
             while (rows.size < chunkSize && rs.next()) {
                 val row = arrayOfNulls<Any?>(columnCount)
                 for (index in 0 until columnCount) {
-                    row[index] = rs.getObject(index + 1)
+                    row[index] = valueMapper(rs.getObject(index + 1))
                 }
                 rows += row
             }

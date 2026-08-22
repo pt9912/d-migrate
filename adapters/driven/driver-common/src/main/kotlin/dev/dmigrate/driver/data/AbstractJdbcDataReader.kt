@@ -69,6 +69,15 @@ abstract class AbstractJdbcDataReader : DataReader {
      */
     protected open fun isGeometryTypeName(typeNameLower: String): Boolean = false
 
+    /**
+     * Wert-Naht: uebersetzt treibereigene Rueckgabetypen in Standardtypen, bevor
+     * sie in den neutralen Chunk-Strom gelangen. Default: unveraendert. MSSQL
+     * nutzt sie fuer `microsoft.sql.DateTimeOffset` → [java.time.OffsetDateTime]
+     * — ohne das ist der Wert weder verify-kanonisierbar noch sauber
+     * serialisierbar.
+     */
+    protected open fun mapValue(value: Any?): Any? = value
+
     final override fun streamTable(
         pool: ConnectionPool,
         table: String,
@@ -143,6 +152,7 @@ abstract class AbstractJdbcDataReader : DataReader {
                 // statt `Geometry`. Die dialekt-bewusste Markierung aus der
                 // Vorabfrage überschreibt das im ChunkSchema.
                 geometryColumns = probedColumns.filter { it.isGeometry }.mapTo(HashSet()) { it.name },
+                valueMapper = ::mapValue,
             )
         } catch (t: Throwable) {
             // Cleanup bei Setup-Fehler — nicht den ChunkSequence-Lifecycle aufrufen,

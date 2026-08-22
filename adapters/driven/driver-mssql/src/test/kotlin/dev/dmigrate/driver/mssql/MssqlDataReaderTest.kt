@@ -17,6 +17,7 @@ private class ProbeReader(fetchSizeOverride: Int? = null) : MssqlDataReader(fetc
     fun probeGeometryExpression(quoted: String): String = geometryReadExpression(quoted)
     fun probeIsGeometryType(name: String): Boolean = isGeometryTypeName(name)
     fun probeSelectSql(table: String): String = buildSelectQuery(table, null).sql
+    fun probeMapValue(value: Any?): Any? = mapValue(value)
 }
 
 class MssqlDataReaderTest : FunSpec({
@@ -47,5 +48,19 @@ class MssqlDataReaderTest : FunSpec({
 
     test("select query brackets the qualified table path") {
         ProbeReader().probeSelectSql("sales.orders") shouldBe "SELECT * FROM [sales].[orders]"
+    }
+
+    test("driver-owned DATETIMEOFFSET becomes a standard OffsetDateTime") {
+        val reader = ProbeReader()
+        val offsetDateTime = java.time.OffsetDateTime.parse("2026-08-22T14:00+02:00")
+        val driverValue = microsoft.sql.DateTimeOffset.valueOf(
+            java.sql.Timestamp.from(offsetDateTime.toInstant()), 120,
+        )
+        // Ohne diese Naht landet der Treibertyp im neutralen Chunk-Strom und
+        // `data transfer --verify` meldet jede Tabelle als "inconclusive".
+        reader.probeMapValue(driverValue) shouldBe offsetDateTime
+        // Standardwerte bleiben unveraendert.
+        reader.probeMapValue("text") shouldBe "text"
+        reader.probeMapValue(null) shouldBe null
     }
 })

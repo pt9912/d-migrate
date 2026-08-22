@@ -57,6 +57,9 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
             if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
             if (codeOnly.contains("||")) markers += "PostgreSQL/SQLite-style concatenation (||)"
             if (hasLimitClause(tokens)) markers += "LIMIT clause (T-SQL uses TOP / OFFSET … FETCH)"
+            if (hasBareTopLevelOrderBy(tokens)) {
+                markers += "ORDER BY in a view body without TOP/OFFSET (SQL Server Msg 1033)"
+            }
         }
         // Umgekehrt ist T-SQL-Klammer-Quoting (`[dbo].[users]`) in keinem
         // anderen Dialekt gültig — ein mssql-stämmiger Body mit Klammern
@@ -78,6 +81,41 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
 
     private fun sourceIs(sourceDialect: String?, dialect: DatabaseDialect): Boolean =
         sourceDialect != null && runCatching { DatabaseDialect.fromString(sourceDialect) }.getOrNull() == dialect
+
+    /**
+     * Ein `ORDER BY` auf oberster Ebene ohne `TOP`/`OFFSET`/`FETCH`: PostgreSQL
+     * erlaubt es im View-Body, SQL Server lehnt die Sicht damit ab (Msg 1033).
+     * Ein `TOP 100 PERCENT` einzuschmuggeln waere keine Loesung — SQL Server
+     * verwirft die Sortierung dann trotzdem, nur eben unsichtbar.
+     *
+     * Nur Tiefe 0 zaehlt: `OVER (ORDER BY …)` und Unterabfragen stehen in
+     * Klammern und bleiben unberuehrt.
+     */
+    private fun hasBareTopLevelOrderBy(tokens: List<ViewQueryToken>): Boolean {
+        var depth = 0
+        var orderByAtTopLevel = false
+        var limiterAtTopLevel = false
+        var index = 0
+        while (index < tokens.size) {
+            val token = tokens[index]
+            when {
+                token.type == ViewQueryTokenType.LPAREN -> depth++
+                token.type == ViewQueryTokenType.RPAREN -> depth--
+                depth == 0 && token.type == ViewQueryTokenType.WORD -> {
+                    val word = token.text.uppercase()
+                    if (word == "TOP" || word == "OFFSET" || word == "FETCH") limiterAtTopLevel = true
+                    if (word == "ORDER") {
+                        val next = tokens.drop(index + 1).firstOrNull { it.type != ViewQueryTokenType.WS }
+                        if (next?.type == ViewQueryTokenType.WORD && next.text.equals("BY", ignoreCase = true)) {
+                            orderByAtTopLevel = true
+                        }
+                    }
+                }
+            }
+            index++
+        }
+        return orderByAtTopLevel && !limiterAtTopLevel
+    }
 
     /**
      * `LIMIT` als Klausel (gefolgt von einer Zahl, `ALL` oder `OFFSET`) — nicht

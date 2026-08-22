@@ -62,6 +62,28 @@
 > sie vergiftet zurückzugeben, die `NOCHECK`-Schleife liegt in der
 > Fehlerbehandlung, drei-/vierteilige Namen rendern wie im Lesepfad.
 
+> **Status-Update 2026-08-22 (5):** Slice 3b umgesetzt — MSSQL-Leg der
+> Sample-DB-Harness: digest-gepinnter `mssql`-Compose-Service, `.env`-Block,
+> Connection-Alias `pagila_ms_target`, `examples/sample-db/scripts/smoke-cross-pg2ms.sh`,
+> `make sample-db-cross-smoke-pg2ms` und ein Best-Effort-Workflow. Der Smoke
+> fährt Pagila PostgreSQL → SQL Server über das echte CLI: reverse → validate →
+> generate `--target mssql --split pre-post` → **Anwendung per `sqlcmd`**
+> (dem Client, der Batches nur an `GO` trennt) → `data transfer --verify` →
+> Per-Tabelle-Parität, Typ-Stichproben und IDENTITY-Treue gegen die gepinnte
+> Notes-Baseline `expected/pagila-cross-ms.notes.txt`.
+>
+> Der Leg fand sofort **zwei Produktdefekte**, die Unit-Tests und die kleinen
+> E2E-Schemata nicht zeigten: (1) PostgreSQL erlaubt `ORDER BY` im View-Body,
+> SQL Server lehnt die Sicht damit ab (Msg 1033) — der `ViewQueryTransformer`
+> meldet ein `ORDER BY` auf oberster Ebene ohne `TOP`/`OFFSET` jetzt als nicht
+> portabel (E053) statt ungültiges DDL zu erzeugen; ein eingeschmuggeltes
+> `TOP 100 PERCENT` hätte die Sortierung still verworfen. (2) mssql-jdbc liefert
+> `DATETIMEOFFSET` als treibereigenes `microsoft.sql.DateTimeOffset`, das bis in
+> die `--verify`-Kanonisierung durchlief und **jede** Tabelle mit `timestamptz`
+> als „inconclusive" abwies — der Lesepfad hat jetzt eine Wert-Naht
+> (`AbstractJdbcDataReader.mapValue`), die daraus `OffsetDateTime` macht; das
+> repariert zugleich die Export-Serialisierung.
+
 > **Status-Update 2026-08-22 (2):** Slice 2 umgesetzt — `MssqlDdlGenerator`
 > (+ `MssqlTypeMapper`, Spalten-/Index-Helfer) im Treibermodul: Tabellen mit
 > benannten DF/UQ/CK/PK-Constraints, Identity, Enum/Domain inline, FKs
@@ -187,7 +209,7 @@ Entscheidung 2):
 | **1** ✅ | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read, nur lesen) + `MSSQL`-Enum-Querschnitt + `DialectCommandGate` | ja — `schema reverse` funktioniert |
 | **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli`: Gate-Ablehnungen als Subprozess-E2E (containerlos — generate/export/import/transfer/migrate/profile/`export <tool>` liefern Exit 2 + Gate-Meldung) und `schema reverse`-Subprozess-E2E gegen den Testcontainer | E2E-Netz für den nutzersichtbaren MSSQL-Pfad und die Gates; vor Slice 2, damit Gate-Wegfall pro Slice testgetrieben ist |
 | **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→T-SQL (Generate-Richtung) | `schema generate --target mssql` |
-| **3** ✅ | `DataReader`/`DataWriter` (Transfer; Fast-Path später); **3b** (offen): sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
+| **3** ✅ | `DataReader`/`DataWriter` (Transfer; Fast-Path später); **3b** ✅ sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
 | **4** | Cross-Dialekt-Matrix, `NeutralTypeCanonicalizer`, Postcompare-Fingerprint, `transferCompatibility` + Cross-Dialekt-sample-db-Smoke (MSSQL↔PG analog `sample-db-cross-smoke`) | Matrix-Gate + Cross-Smoke |
 | **5** | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) | `schema migrate` |
 | **6** | Gefilterte Indizes (WHERE) + clustered/nonclustered-Steuerung, Reverse + Generate + Diff | volle Index-Treue |
@@ -258,10 +280,6 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 
 **Offen — nächste Arbeitsschritte:**
 
-- **Slice 3b — sample-db-MSSQL-Leg:** fetch + compose gemäß
-  [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md),
-  Reverse→Generate→Import-Smoke als eigener Workflow. Der Datenpfad selbst ist
-  mit Slice 3 fertig und live getestet.
 - **SRID-Treue im Datenpfad:** WKB trägt keine SRID, SQL Server führt sie am
   Wert (nicht an der Spalte) — übertragene Geometrien landen mit dem
   Spalten-Default (0 bzw. 4326). Eine SRID-treue Übertragung bräuchte eine

@@ -1,0 +1,56 @@
+name: Sample-DB Cross-Dialect Smoke PG→MSSQL (Best-Effort)
+
+# MSSQL-Leg der Sample-DB-Harness (ADR 0047, Slice 3b): Pagila PostgreSQL ->
+# SQL Server gegen das echte d-migrate:dev-CLI, symmetrisch zu
+# sample-db-cross-smoke-pg2my.yml (PG->MySQL).
+# Plan: docs/planning/in-progress/mssql-dialect-scoping.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-cross-smoke-pg2ms` (gepinnter Pagila-Dump -> postgres +
+# mssql up -> reverse/validate/generate --target mssql -> pre-data per sqlcmd
+# anwenden -> data transfer --verify -> Per-Tabelle-Paritaet, Typ-Stichproben und
+# IDENTITY-Treue gegen die gepinnte Notes-Baseline
+# examples/sample-db/expected/pagila-cross-ms.notes.txt).
+#
+# Das SQL-Server-Image laeuft nur mit akzeptierter Microsoft-EULA (ACCEPT_EULA=Y,
+# gesetzt im Compose-Service; siehe docs/user/quality.md) und ist mit ~1,5 GB
+# Image / 2 GB RAM der schwerste Container der Harness.
+#
+# Best-Effort: continue-on-error, damit transiente Netz-/Registry-Instabilitaeten
+# den Hauptbuild nicht rot machen.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/sample-db/**'
+      - 'adapters/driven/driver-mssql/**'
+      - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
+      - '.github/workflows/sample-db-cross-smoke-pg2ms.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cross-smoke-pg2ms:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB cross-dialect smoke (Pagila PG -> SQL Server)
+        run: make sample-db-cross-smoke-pg2ms
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true

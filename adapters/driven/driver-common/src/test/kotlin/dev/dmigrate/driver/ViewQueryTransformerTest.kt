@@ -249,4 +249,23 @@ class ViewQueryTransformerTest : FunSpec({
         transformer.assessPortability("SELECT tags[1] FROM t", "postgresql").portable shouldBe true
         transformer.assessPortability("SELECT '[x]' AS s FROM t", "mssql").portable shouldBe true
     }
+
+    test("assessPortability: a bare top-level ORDER BY is non-portable to MSSQL (Msg 1033)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
+        // PostgreSQL erlaubt ORDER BY im View-Body, SQL Server nicht.
+        transformer.assessPortability("SELECT a, b FROM t ORDER BY b DESC", "postgresql").let {
+            it.portable shouldBe false
+            it.reason shouldContain "ORDER BY"
+        }
+        // Mit TOP/OFFSET ist es gueltiges T-SQL.
+        transformer.assessPortability("SELECT TOP 10 a FROM t ORDER BY a", "mssql").portable shouldBe true
+        transformer.assessPortability(
+            "SELECT a FROM t ORDER BY a OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY", "mssql",
+        ).portable shouldBe true
+        // Fensterfunktionen und Unterabfragen tragen ihr ORDER BY in Klammern.
+        transformer.assessPortability(
+            "SELECT ROW_NUMBER() OVER (ORDER BY id) AS rn, id FROM t", "mssql",
+        ).portable shouldBe true
+        transformer.assessPortability("SELECT a FROM t", "postgresql").portable shouldBe true
+    }
 })
