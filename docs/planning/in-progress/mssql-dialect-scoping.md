@@ -170,6 +170,7 @@ sealed Varianten, keine nullable `mssql*`-Felder auf generischen Ports.
 | Binary | `VARBINARY(MAX)` | Kern |
 | Indizes | clustered/nonclustered; **gefilterte** Indizes (WHERE) existieren | Kern (Default nonclustered); gefiltert + clustered-Steuerung = Slice 6 |
 | Partitionierung | Partition Functions + Schemes + Filegroups — strukturell anders als PG | Slice 7 |
+| Materialized Views | kein Äquivalent; indizierte Sichten haben andere Semantik und Einschränkungen | **Dauerhafte Lücke** — Generate degradiert zur normalen View (`W103`), Diff blockt |
 | Volltext | eigener Dienst (Full-Text Search), eigene Installation | Slice 8 — Muster aus dem Fulltext-Slice |
 | Routinen/Trigger | T-SQL-Prozeduren, `CREATE OR ALTER` | Slice 9 |
 | Paginierung | `OFFSET … FETCH` (2012+), kein `LIMIT` | Kern — betrifft DataReader-Chunking |
@@ -313,17 +314,13 @@ nur mit Klammern" ist:
 
 ### Was in Slice 5 bewusst geblockt bleibt
 
-Nicht als Stopgap, sondern weil ein **anderer** Slice sie besitzt — genau die
-Trennung, die der Slice-Schnitt oben vorsieht. Die drei bestehenden Dialekte
-blocken an denselben Stellen (PostgreSQL 11, MySQL 17, SQLite 8 Fälle):
-
-- Routinen und Trigger (`Create/Replace/Drop/Rename` für Function, Procedure,
-  Trigger) → **Slice 9**; der Generate-Pfad meldet sie heute als `E053`.
-- Materialized Views → SQL Server hat kein Äquivalent; der Generate-Pfad
-  degradiert sie zur normalen View (`W103`), der Diff-Pfad blockt sie.
-- Partitionierung → **Slice 7** (`E055` im Generate).
-- Clustered-/INCLUDE-Feinsteuerung der Indizes → **Slice 6**; 5b rendert, was
-  das neutrale Modell heute trägt.
+Routinen und Trigger, Partitionierung und die Index-Feinsteuerung gehören den
+Ausbau-Slices 9, 7 und 6 — was der gebaute Code über sie heute schon aussagt,
+steht bei den jeweiligen Slices weiter unten. Der Diff-Pfad blockt sie bis
+dahin, wie es auch die drei bestehenden Dialekte an denselben Stellen tun
+(PostgreSQL 11, MySQL 17, SQLite 8 Fälle). Ohne eigenen Slice bleibt nur eine
+Fläche: **Materialized Views** haben in SQL Server kein Äquivalent (siehe
+T-SQL-Inventar), der Diff-Pfad blockt sie dauerhaft.
 
 ### Wann das Gate fällt
 
@@ -333,6 +330,64 @@ Zwischenstand, der das Kommando mit halbem Renderer öffnet, wäre genau der
 `UNSUPPORTED`-Stopgap, den Entscheidung 2 ausschliesst. Mit 5e ist mssql dann
 auf Augenhöhe mit den anderen drei Dialekten — inklusive der Operationen, die
 dort ebenfalls einem späteren Slice gehören.
+
+## Ausbau-Slices 6-10 — was heute schon feststeht
+
+Der Kern (Slices 0-5) lässt diese Flächen bewusst liegen. Damit die Slices
+nicht bei null anfangen, hält dieser Abschnitt fest, was der gebaute Code über
+sie schon aussagt: was Generate und Reverse heute tun, und was der Diff-Pfad
+aus Slice 5 bis dahin mit ihnen macht. Das ist kein Slice-Entwurf, sondern die
+Bestandsaufnahme, auf der er aufsetzt.
+
+### Slice 6 — Gefilterte Indizes, clustered/nonclustered, INCLUDE
+
+- **Reverse** liest `is_unique`, `has_filter` und `filter_definition` aus
+  `sys.indexes`; INCLUDE-Spalten liest er **nicht** und weist das als `R341`
+  aus. Clustered vs. nonclustered wird als generisches `BTREE` gelesen.
+- **Generate** rendert gefilterte Indizes bereits (der `WHERE`-Teil kommt aus
+  dem neutralen Modell) und immer nonclustered. Genau hier fand der
+  sqlcmd-Apply-E2E aus Slice 2a den Msg-1934-Fall.
+- **Diff** (Sub-Slice 5b) rendert `AddIndex`/`DropIndex` für das, was das
+  neutrale Modell heute trägt — die Feinsteuerung kommt mit diesem Slice.
+- Offen ist damit die **Steuerung**: ein neutrales Feld für clustered/INCLUDE,
+  plus Reverse und Diff dafür.
+
+### Slice 7 — Partitionierung
+
+- **Generate** meldet eine partitionierte Tabelle als `E055` und legt sie als
+  EINE plain Tabelle an; das Sample-DB-Leg belegt das an Pagilas `payment`.
+- **Diff** blockt Partitionierungs-Operationen bis dahin.
+- SQL Server modelliert Partitionierung über Partition Functions, Schemes und
+  Filegroups — strukturell anders als PostgreSQLs Partitionshierarchie. Das
+  neutrale Modell trägt diese Objekte heute nicht; das ist der eigentliche
+  Umfang des Slices, nicht das Rendern.
+
+### Slice 8 — Volltext
+
+- **Generate** meldet einen Volltext-Index als `E057`; der Spaltentyp
+  degradiert nach [ADR 0015](../../adr/0015-fulltext-tsvector-neutral-type.md) zu
+  `NVARCHAR(MAX)` (`W132`/`W137`).
+- SQL Server Full-Text Search ist ein eigener Dienst mit eigener Installation —
+  der Container-Spike aus Slice 0 deckt ihn nicht ab. Der Slice braucht also
+  zuerst eine Antwort darauf, wogegen er testet.
+
+### Slice 9 — Routinen und Trigger
+
+- **Reverse** liest Routinen-Rümpfe nicht und weist das als `R342` samt
+  `skippedObjects` aus.
+- **Generate** meldet Funktionen, Prozeduren und Trigger als `E053`.
+- **Diff** blockt die zwölf `Create`/`Replace`/`Drop`/`Rename`-Operationen
+  dieser drei Objektarten bis dahin — dieselbe Stelle, an der auch die drei
+  bestehenden Dialekte blocken.
+- `CREATE OR ALTER` gibt es für Prozeduren, Funktionen und Trigger nativ, der
+  Replace-Pfad ist also billig; der Aufwand liegt im Reverse (Rumpf lesen) und
+  in der Frage, wie viel T-SQL-Rumpf das neutrale Modell tragen soll.
+
+### Slice 10 — Profiling
+
+- `DialectCommandGate` weist `data profile` weiterhin ab; das ist nach Slice 5
+  der letzte verbleibende Gate-Eintrag.
+- Das Modul folgt dem Muster der drei bestehenden `driver-*-profiling`-Module.
 
 ## Risiken
 
