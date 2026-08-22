@@ -306,7 +306,8 @@ nur mit Klammern" ist:
 
 | Sub-Slice | Operationen | Kern der Arbeit | Abnahme |
 | --- | --- | --- | --- |
-| **5a** | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders) + der Default-Constraint-Dreischritt + `sp_rename` + IDENTITY-Rebuild | Unit-Tests je Operation und Richtung; Down-Pfad kehrt jede Operation um |
+| **5a** ✅ | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders) + der Default-Constraint-Dreischritt + `sp_rename` | Unit-Tests je Operation und Richtung; Down-Pfad kehrt jede Operation um |
+| **5a-2** | — | IDENTITY-Rebuild (create, copy, drop, rename) für `AlterColumnType` von/zu `identifier(auto_increment)`. Aus 5a herausgeschnitten: das ist ein eigener Renderer nach dem Muster der SQLite-Rebuild-Sequenz, kein Zusatz zum Skelett. 5a blockt den Fall laut (`MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD`), statt ein `ALTER COLUMN` zu schicken, das die Identity kommentarlos verlöre | Live-Test, dass Schlüssel und Zähler den Rebuild überleben |
 | **5b** | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | `WITH CHECK`/`NOCHECK` beim Nachziehen auf Bestandsdaten; SET-Optionen im Migrate-Pfad; Kaskaden-Wächter gegen den Live-Zustand | Live-Integrationstest, der einen **gefilterten** Index per Migrate anlegt (Msg-1934-Regressionsschutz) |
 | **5c** | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW`; die View-Portabilitätsprüfung aus Slice 3b greift auch hier | Hier fällt die Enum-CHECK-Entscheidung ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md)) — sie ist im Diff-Pfad nicht mehr aufschiebbar |
 | **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; flippt `supportsCurrentValuePreserve` | Macht die Zeile wahr, die Slice 4 als Zielbild in [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 eingetragen hat |
@@ -325,7 +326,9 @@ T-SQL-Inventar), der Diff-Pfad blockt sie dauerhaft.
 ### Wann das Gate fällt
 
 Erst mit **5e**. 5a–5d sind interne Zwischenstände: sie enden CI-grün und sind
-einzeln reviewbar, aber sie schalten `schema migrate` nicht frei. Ein
+einzeln reviewbar, aber sie schalten `schema migrate` nicht frei. Der Renderer
+aus 5a ist deshalb heute nur über seine Tests erreichbar — `MigrateRendererRegistry`
+liefert für mssql weiterhin `null` und das Gate weist das Kommando ab. Ein
 Zwischenstand, der das Kommando mit halbem Renderer öffnet, wäre genau der
 `UNSUPPORTED`-Stopgap, den Entscheidung 2 ausschliesst. Mit 5e ist mssql dann
 auf Augenhöhe mit den anderen drei Dialekten — inklusive der Operationen, die

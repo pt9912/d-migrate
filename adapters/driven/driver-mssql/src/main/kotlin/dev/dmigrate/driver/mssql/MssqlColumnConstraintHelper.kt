@@ -249,7 +249,12 @@ internal class MssqlColumnConstraintHelper(
         ctx.col.default?.let { parts += defaultClause(ctx.tableName, ctx.colName, it, ctx.col.type) }
         if (ctx.col.unique) {
             if (lob) {
-                ctx.notes += lobKeyNote(ctx.tableName, "uq_${ctx.tableName}_${ctx.colName}", "UNIQUE", listOf(ctx.colName))
+                ctx.notes += lobKeyNote(
+                    ctx.tableName,
+                    MssqlConstraintNames.unique(ctx.tableName, ctx.colName),
+                    "UNIQUE",
+                    listOf(ctx.colName),
+                )
             } else {
                 parts += uniqueClause(ctx.tableName, ctx.colName)
                 if (isNullable(ctx.table, ctx.colName)) {
@@ -261,12 +266,13 @@ internal class MssqlColumnConstraintHelper(
     }
 
     private fun defaultClause(tableName: String, colName: String, default: DefaultValue, type: NeutralType): String =
-        "CONSTRAINT ${quoteIdentifier("df_${tableName}_$colName")} DEFAULT ${typeMapper.toDefaultSql(default, type)}"
+        "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.default(tableName, colName))} " +
+            "DEFAULT ${typeMapper.toDefaultSql(default, type)}"
 
     private fun uniqueClause(tableName: String, colName: String): String =
-        "CONSTRAINT ${quoteIdentifier("uq_${tableName}_$colName")} UNIQUE"
+        "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.unique(tableName, colName))} UNIQUE"
 
-    private fun checkName(ctx: ColumnContext): String = "ck_${ctx.tableName}_${ctx.colName}"
+    private fun checkName(ctx: ColumnContext): String = MssqlConstraintNames.check(ctx.tableName, ctx.colName)
 
     /**
      * W138: SQL Server zählt NULL in UNIQUE-Constraints als Wert — höchstens

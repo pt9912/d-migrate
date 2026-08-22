@@ -1,0 +1,277 @@
+package dev.dmigrate.driver.mssql
+
+import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.driver.migration.MigrationBlockedReason
+
+/**
+ * Renderer fuer Tabellen-, Spalten- und Primaerschluessel-Operationen
+ * (Sub-Slice 5a). Zustandslos: nimmt den [MssqlDiffRenderContext] und schreibt
+ * Statements und Diagnosen dort hinein.
+ *
+ * Drei T-SQL-Eigenheiten praegen fast jede Methode hier:
+ *
+ * 1. **Defaults sind benannte Constraint-Objekte.** `ALTER COLUMN` und
+ *    `DROP COLUMN` scheitern, solange einer an der Spalte haengt — beide
+ *    brauchen den Dreischritt bzw. das vorgeschaltete `DROP CONSTRAINT`.
+ * 2. **`ALTER COLUMN` ist eine Voll-Neudeklaration.** Fehlt die Nullability,
+ *    wird die Spalte still nullable. Die fehlende Haelfte kommt deshalb aus
+ *    dem Schema ([MssqlDiffRenderContext.columnFor]) — und wenn sie dort nicht
+ *    steht, wird geblockt statt geraten.
+ * 3. **Umbenannt wird ueber `sp_rename`**, nicht ueber `ALTER TABLE`.
+ */
+internal object MssqlDiffTableOps {
+
+    fun renderCreateTable(op: DiffOperation.CreateTable, ctx: MssqlDiffRenderContext) {
+        val table = op.objectRef.rootName
+        if (ctx.direction == MssqlRenderDirection.DOWN) {
+            ctx.emit(op, "DROP TABLE ${ctx.sql.quote(table)};")
+            return
+        }
+        val lines = mutableListOf<String>()
+        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
+            lines += "    " + ctx.sql.columnDeclaration(table, colName, col)
+        }
+        if (op.table.primaryKey.isNotEmpty()) {
+            val cols = op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
+            lines += "    CONSTRAINT ${ctx.sql.quote(MssqlConstraintNames.primaryKey(table))} PRIMARY KEY ($cols)"
+        }
+        for (constraint in op.table.constraints.sortedBy { it.name }) {
+            ctx.sql.constraintLine(table, constraint)?.let { lines += "    $it" }
+        }
+        ctx.emit(op, "CREATE TABLE ${ctx.sql.quote(table)} (\n" + lines.joinToString(",\n") + "\n);")
+    }
+
+    fun renderDropTable(op: DiffOperation.DropTable, ctx: MssqlDiffRenderContext) {
+        val table = op.objectRef.rootName
+        val text = if (ctx.direction == MssqlRenderDirection.DOWN) {
+            "-- DropTable is NOT_REVERSIBLE; refusing to render an inverse."
+        } else {
+            "DROP TABLE ${ctx.sql.quote(table)};"
+        }
+        ctx.emit(op, text)
+    }
+
+    /**
+     * `sp_rename` benennt die Tabelle um, aber **nicht** ihre Constraints und
+     * Indizes. Deren Namen folgen danach nicht mehr der Konvention
+     * ([MssqlConstraintNames]) — der naechste Diff auf dieselbe Tabelle
+     * findet `df_<alterName>_<spalte>` statt `df_<neuerName>_<spalte>`.
+     * Das ist eine Aussage wert, kein stiller Nebeneffekt.
+     */
+    fun renderRenameTable(op: DiffOperation.RenameTable, ctx: MssqlDiffRenderContext) {
+        val (from, to) = if (ctx.direction == MssqlRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(op, ctx.sql.renameSql(from, to), MssqlDiffRenderContext.MSSQL_RENAME_HINTS)
+        ctx.addInfoDiagnostic(
+            code = "MSSQL_RENAME_KEEPS_CONSTRAINT_NAMES",
+            operationId = op.id,
+            message = "sp_rename renames table '$from' to '$to' but leaves the names of its " +
+                "constraints and indices untouched; they keep referring to '$from' and no longer " +
+                "match the naming convention a later migration looks them up by.",
+        )
+    }
+
+    fun renderAddColumn(op: DiffOperation.AddColumn, ctx: MssqlDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        if (ctx.direction == MssqlRenderDirection.DOWN) {
+            dropColumnStatements(op, ctx, table, column)
+            return
+        }
+        // T-SQL: `ADD`, nicht `ADD COLUMN`.
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD ${ctx.sql.columnDeclaration(table, column, op.column)};")
+    }
+
+    fun renderDropColumn(op: DiffOperation.DropColumn, ctx: MssqlDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        if (ctx.direction == MssqlRenderDirection.DOWN) {
+            // DropColumn ist NOT_REVERSIBLE — der Dispatcher filtert das vorher;
+            // der Platzhalter haelt den emit-Pfad total.
+            ctx.emit(op, "-- DropColumn is NOT_REVERSIBLE; refusing to render an inverse.")
+            return
+        }
+        dropColumnStatements(op, ctx, table, column)
+    }
+
+    fun renderAlterColumnType(op: DiffOperation.AlterColumnType, ctx: MssqlDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val targetType = if (ctx.direction == MssqlRenderDirection.UP) op.after else op.before
+        if (blockIdentityChange(op, ctx, table, column, op.before, op.after)) return
+        val target = ctx.columnFor(table, column)
+            ?: return blockMissingColumn(op, ctx, table, column, "its nullability")
+        alterColumnWithDefaultDance(op, ctx, table, column, targetType, target)
+    }
+
+    fun renderAlterColumnNullability(op: DiffOperation.AlterColumnNullability, ctx: MssqlDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val targetRequired = if (ctx.direction == MssqlRenderDirection.UP) op.after else op.before
+        val target = ctx.columnFor(table, column)
+            ?: return blockMissingColumn(op, ctx, table, column, "its column type")
+        alterColumnWithDefaultDance(
+            op, ctx, table, column, target.type, target.copy(required = targetRequired),
+        )
+    }
+
+    fun renderAlterColumnDefault(op: DiffOperation.AlterColumnDefault, ctx: MssqlDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val target = if (ctx.direction == MssqlRenderDirection.UP) op.after else op.before
+        ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
+        if (target == null) return
+        // Der Spaltentyp entscheidet ueber die Literal-Form (z. B. tz-Defaults);
+        // ohne ihn waere `N'…'` vs. Zahl geraten.
+        val type = ctx.columnFor(table, column)?.type
+            ?: return blockMissingColumn(op, ctx, table, column, "its column type")
+        ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, target, type))
+    }
+
+    fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: MssqlDiffRenderContext) {
+        val table = op.objectRef.rootName
+        if (ctx.direction == MssqlRenderDirection.DOWN) {
+            emitDropPkAdvisory(op, ctx, table)
+            ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
+            return
+        }
+        ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns))
+    }
+
+    fun renderDropPrimaryKey(op: DiffOperation.DropPrimaryKey, ctx: MssqlDiffRenderContext) {
+        val table = op.objectRef.rootName
+        if (ctx.direction == MssqlRenderDirection.DOWN) {
+            ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns))
+            return
+        }
+        emitDropPkAdvisory(op, ctx, table)
+        ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
+    }
+
+    /** `objectRef.path` ist `[tabelle, neuerName]`; `path[0]` ist rename-stabil. */
+    fun renderRenameColumn(op: DiffOperation.RenameColumn, ctx: MssqlDiffRenderContext) {
+        val table = op.objectRef.path[0]
+        val (from, to) = if (ctx.direction == MssqlRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(
+            op,
+            ctx.sql.renameSql("$table.$from", to, objectType = "COLUMN"),
+            MssqlDiffRenderContext.MSSQL_RENAME_HINTS,
+        )
+    }
+
+    // ── Gemeinsame Bausteine ─────────────────────
+
+    /**
+     * Der Dreischritt: Default loesen, Spalte neu deklarieren, Default zurueck.
+     * Ohne den ersten Schritt scheitert `ALTER COLUMN` mit Msg 5074 („The
+     * object 'df_…' is dependent on column '…'").
+     */
+    private fun alterColumnWithDefaultDance(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        type: NeutralType,
+        target: ColumnDefinition,
+    ) {
+        ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
+        ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
+        target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
+        emitForeignDefaultNameAdvisory(op, ctx, table, column)
+    }
+
+    private fun dropColumnStatements(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+    ) {
+        ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
+        emitForeignDefaultNameAdvisory(op, ctx, table, column)
+    }
+
+    /**
+     * IDENTITY laesst sich per `ALTER COLUMN` weder setzen noch entfernen; das
+     * verlangt einen Tabellen-Neubau. Der ist ein eigener Renderer (Muster:
+     * die SQLite-Rebuild-Sequenz) und gehoert nicht in den Skelett-Sub-Slice —
+     * bis dahin wird laut geblockt statt ein `ALTER COLUMN` zu schicken, das
+     * die Identity kommentarlos verlieren wuerde.
+     */
+    private fun blockIdentityChange(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        before: NeutralType,
+        after: NeutralType,
+    ): Boolean {
+        val wasIdentity = (before as? NeutralType.Identifier)?.autoIncrement == true
+        val willBeIdentity = (after as? NeutralType.Identifier)?.autoIncrement == true
+        if (wasIdentity == willBeIdentity) return false
+        ctx.skip(
+            op,
+            "Operation ${op.id} adds or removes IDENTITY on column '$table.$column'. SQL Server " +
+                "cannot do that with ALTER COLUMN — it requires rebuilding the table (create, copy, " +
+                "drop, rename). Rendering a plain ALTER COLUMN would silently drop the identity.",
+            code = "MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+        return true
+    }
+
+    private fun blockMissingColumn(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        missing: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} needs $missing of column '$table.$column', but the column is not in " +
+                "the schema for this rendering direction. ALTER COLUMN in T-SQL re-declares the whole " +
+                "column, so rendering without that value would silently change it.",
+            code = "MSSQL_COLUMN_NOT_IN_SCHEMA",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
+    }
+
+    /**
+     * Der Dreischritt adressiert den Default ueber die d-migrate-Konvention.
+     * Ein Schema, das SQL Server selbst benannt hat (`DF__t__c__1A2B3C4D`),
+     * traegt einen anderen Namen — das `IF EXISTS` schluckt den Fehlgriff, und
+     * das nachfolgende `ALTER COLUMN` scheitert dann mit Msg 5074. Laut, aber
+     * erst zur Laufzeit; deshalb der Hinweis schon im Plan.
+     */
+    private fun emitForeignDefaultNameAdvisory(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+    ) {
+        ctx.addInfoDiagnostic(
+            code = "MSSQL_DEFAULT_CONSTRAINT_NAME_CONVENTION",
+            operationId = op.id,
+            message = "Dropping the default constraint of '$table.$column' assumes d-migrate's name " +
+                "'${MssqlConstraintNames.default(table, column)}'. A schema created elsewhere carries " +
+                "SQL Server's auto-generated name instead; the IF EXISTS then matches nothing and the " +
+                "ALTER COLUMN fails with Msg 5074.",
+        )
+    }
+
+    private fun emitDropPkAdvisory(op: DiffOperation, ctx: MssqlDiffRenderContext, table: String) {
+        ctx.addInfoDiagnostic(
+            code = "MSSQL_PK_NAME_CONVENTION",
+            operationId = op.id,
+            message = "DropPrimaryKey for '$table' assumes d-migrate's constraint name " +
+                "'${MssqlConstraintNames.primaryKey(table)}'. Verify the target's actual PK name; a " +
+                "different one lets the IF EXISTS swallow the mismatch and leaves the key in place.",
+        )
+    }
+}

@@ -176,10 +176,10 @@ class MssqlDdlGenerator private constructor(
         if (table.primaryKey.isNotEmpty()) {
             val lobKeys = table.primaryKey.filter { it in lobColumns }
             if (lobKeys.isNotEmpty()) {
-                notes += columnHelper.lobKeyNote(name, "pk_$name", "PRIMARY KEY", lobKeys)
+                notes += columnHelper.lobKeyNote(name, MssqlConstraintNames.primaryKey(name), "PRIMARY KEY", lobKeys)
             } else {
                 val pkCols = table.primaryKey.joinToString(", ") { quoteIdentifier(it) }
-                lines += "CONSTRAINT ${quoteIdentifier("pk_$name")} PRIMARY KEY ($pkCols)"
+                lines += "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.primaryKey(name))} PRIMARY KEY ($pkCols)"
             }
         }
 
