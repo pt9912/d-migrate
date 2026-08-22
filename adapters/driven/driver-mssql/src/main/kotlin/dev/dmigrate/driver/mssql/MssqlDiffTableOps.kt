@@ -55,12 +55,15 @@ internal object MssqlDiffTableOps {
                 ?: return blockUnrenderableConstraint(op, ctx, table, constraint)
             lines += "    $line"
         }
+        // Die Indizes VOR dem CREATE TABLE aufloesen: ein nicht renderbarer
+        // Index (z. B. Volltext) muss blocken, bevor irgendetwas emittiert ist —
+        // sonst laege die Operation in `rendered` UND `skipped`.
+        val indexSqls = op.table.indices.map {
+            MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, it, op.table) ?: return
+        }
         ctx.emit(op, "CREATE TABLE ${ctx.sql.quote(table)} (\n" + lines.joinToString(",\n") + "\n);")
         ctx.carryOverNotes(op, notes)
-        for (index in op.table.indices) {
-            MssqlDiffObjectOps.emitCreateIndex(op, ctx, table, index)
-            if (ctx.isSkipped(op)) return
-        }
+        indexSqls.forEach { ctx.emit(op, it) }
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: MssqlDiffRenderContext) {
@@ -227,11 +230,14 @@ internal object MssqlDiffTableOps {
         type: NeutralType,
         target: ColumnDefinition,
     ) {
-        val dependents = emitDependentDrops(ctx, op, table, column)
+        val dependents = dependentsFor(ctx, table, column)
+        // Erst alles aufloesen, was scheitern kann, dann emittieren.
+        val recreates = resolveRecreates(ctx, op, table, dependents) ?: return
+        emitDependentDrops(ctx, op, table, dependents)
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
         target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
-        emitDependentRecreates(ctx, op, table, dependents)
+        recreates.forEach { ctx.emit(op, it) }
     }
 
     private fun dropColumnStatements(
@@ -242,7 +248,7 @@ internal object MssqlDiffTableOps {
     ) {
         // Beim DROP COLUMN wird nur abgeraeumt, nicht wieder angelegt: die
         // Spalte, auf der die Objekte hingen, gibt es danach nicht mehr.
-        emitDependentDrops(ctx, op, table, column)
+        emitDependentDrops(ctx, op, table, dependentsFor(ctx, table, column))
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
@@ -304,36 +310,44 @@ internal object MssqlDiffTableOps {
      * Beim DROP COLUMN entfaellt das Wiederanlegen fuer alles, was genau diese
      * Spalte trug — es gibt sie danach nicht mehr.
      */
-    private fun emitDependentDrops(
+    private fun dependentsFor(
         ctx: MssqlDiffRenderContext,
-        op: DiffOperation,
         table: String,
         column: String,
     ): MssqlDiffObjectOps.Dependents {
         val tableDef = ctx.schemaForDirection()?.tables?.get(table)
             ?: return MssqlDiffObjectOps.Dependents(emptyList(), emptyList())
-        val dependents = MssqlDiffObjectOps.dependentsOf(tableDef, column)
+        return MssqlDiffObjectOps.dependentsOf(table, tableDef, column)
+    }
+
+    private fun emitDependentDrops(
+        ctx: MssqlDiffRenderContext,
+        op: DiffOperation,
+        table: String,
+        dependents: MssqlDiffObjectOps.Dependents,
+    ) {
         for (constraint in dependents.constraints) {
             ctx.emit(op, ctx.sql.dropConstraintSql(table, constraint.name))
         }
         for (index in dependents.indices) {
             ctx.emit(op, ctx.sql.dropIndexSql(table, index))
         }
-        return dependents
     }
 
-    private fun emitDependentRecreates(
+    /** `null`, wenn eines der Objekte nicht wieder herstellbar ist — dann ist bereits geblockt. */
+    private fun resolveRecreates(
         ctx: MssqlDiffRenderContext,
         op: DiffOperation,
         table: String,
         dependents: MssqlDiffObjectOps.Dependents,
-    ) {
-        for (index in dependents.indices) {
-            MssqlDiffObjectOps.emitCreateIndex(op, ctx, table, index)
+    ): List<String>? {
+        val indexSqls = dependents.indices.map {
+            MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, it) ?: return null
         }
-        for (constraint in dependents.constraints) {
-            MssqlDiffObjectOps.emitAddConstraint(op, ctx, table, constraint)
+        val constraintSqls = dependents.constraints.map {
+            MssqlDiffObjectOps.resolveConstraintSql(op, ctx, table, it) ?: return null
         }
+        return indexSqls + constraintSqls
     }
 
     /** Eine IDENTITY-Spalte laesst sich nicht neu deklarieren; `ALTER COLUMN` waere Msg 156. */

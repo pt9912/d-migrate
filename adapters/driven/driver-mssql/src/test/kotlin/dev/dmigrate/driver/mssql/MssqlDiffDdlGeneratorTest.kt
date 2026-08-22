@@ -500,4 +500,43 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.statements.shouldBeEmpty()
         r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_NOT_IN_SCHEMA"
     }
+
+    test("a table whose index cannot be rendered blocks before anything is emitted") {
+        // Regression: der Volltext-Index blockte NACH dem CREATE TABLE — damit
+        // lag die Operation in `rendered` UND `skipped`, und MigrationDdlResult
+        // erzwingt per require(), dass die Mengen disjunkt sind.
+        val idx = IndexDefinition(name = "ft", columns = listOf(IndexColumn("bio")), type = IndexType.FULLTEXT)
+        val t = TableDefinition(
+            columns = mapOf("bio" to ColumnDefinition(NeutralType.Text())),
+            indices = listOf(idx),
+        )
+        val r = up(SchemaDiff(tablesAdded = listOf(NamedTable("t", t))), desired = schema("t" to t))
+        r.statements.shouldBeEmpty()
+        r.operationsRendered.intersect(r.operationsSkipped).shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+    }
+
+    test("a column-level unique is dropped around a column change too") {
+        // `unique: true` steht in keiner der beiden Modell-Listen — der
+        // Generate-Pfad rendert es als uq_-Constraint an der Spalte. Ohne das
+        // nachzubilden bliebe es beim ALTER COLUMN haengen (Msg 5074).
+        val tableDef = TableDefinition(
+            columns = mapOf("nick" to ColumnDefinition(NeutralType.Text(50), unique = true)),
+        )
+        val withUnique = schema("users" to tableDef)
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "nick", type = ValueChange(NeutralType.Text(50), NeutralType.Text(80))),
+                    ),
+                ),
+            ),
+        )
+        val sqls = up(diff, current = withUnique, desired = withUnique).statements.map { it.sql }
+        sqls[0] shouldBe "ALTER TABLE [users] DROP CONSTRAINT IF EXISTS [uq_users_nick];"
+        sqls.any { it.contains("ALTER COLUMN [nick] NVARCHAR(80)") } shouldBe true
+        sqls.last() shouldContainStr "ADD CONSTRAINT [uq_users_nick] UNIQUE"
+    }
 })

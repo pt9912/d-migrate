@@ -65,21 +65,26 @@ internal object MssqlDiffObjectOps {
     // ── Gemeinsam genutzt, auch vom Spalten-Pfad ─────────────
 
     /**
-     * Ein Index des Modells als `CREATE INDEX`. Die Entscheidung, was ein
-     * gefilterter, raeumlicher oder Volltext-Index wird, faellt im
-     * [MssqlIndexDdlHelper] des Generate-Pfads — hier wird sie nur konsumiert.
-     * Ein Index, den der Helfer als nicht renderbar meldet (leeres Statement
-     * mit ACTION_REQUIRED-Hinweis), wird zum Blocker statt zu verschwinden.
+     * Ein Index des Modells als `CREATE INDEX` — oder `null`, wenn er sich in
+     * T-SQL nicht rendern laesst (dann ist die Operation bereits als Blocker
+     * vermerkt).
+     *
+     * **Aufloesen vor dem ersten `emit`.** Wer erst emittiert und dann blockt,
+     * legt die Operation in `rendered` UND `skipped`; die beiden Mengen muessen
+     * disjunkt sein, und `MigrationDdlResult` erzwingt das mit `require()`.
+     * Der Renderer flaege dann mit IllegalArgumentException statt einen Blocker
+     * zu liefern.
      */
-    fun emitCreateIndex(
+    fun resolveIndexSql(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
         table: String,
         index: IndexDefinition,
-    ) {
+        tableDef: TableDefinition? = null,
+    ): String? {
         val schema = ctx.schemaForDirection()
-        val tableDef = schema?.tables?.get(table)
-        if (schema == null || tableDef == null) {
+        val effectiveTable = tableDef ?: schema?.tables?.get(table)
+        if (schema == null || effectiveTable == null) {
             ctx.skip(
                 op,
                 "Operation ${op.id} needs table '$table' in the schema to render its index, " +
@@ -87,9 +92,9 @@ internal object MssqlDiffObjectOps {
                 code = "MSSQL_COLUMN_NOT_IN_SCHEMA",
             )
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
-            return
+            return null
         }
-        val statement = ctx.sql.createIndexStatement(table, tableDef, index, schema)
+        val statement = ctx.sql.createIndexStatement(table, effectiveTable, index, schema)
         if (statement.sql.isBlank()) {
             ctx.skip(
                 op,
@@ -98,18 +103,19 @@ internal object MssqlDiffObjectOps {
                 code = "DIALECT_UNSUPPORTED_OPERATION",
             )
             ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-            return
+            return null
         }
-        ctx.emit(op, ctx.sql.withFilteredIndexSetOptions(index, statement.sql))
         ctx.carryOverNotes(op, statement.notes)
+        return ctx.sql.withFilteredIndexSetOptions(index, statement.sql)
     }
 
-    fun emitAddConstraint(
+    /** Wie [resolveIndexSql], aber fuer Constraints. */
+    fun resolveConstraintSql(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
         table: String,
         constraint: ConstraintDefinition,
-    ) {
+    ): String? {
         if (constraint.type == ConstraintType.EXCLUDE) {
             ctx.skip(
                 op,
@@ -117,7 +123,7 @@ internal object MssqlDiffObjectOps {
                 code = "DIALECT_UNSUPPORTED_OPERATION",
             )
             ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-            return
+            return null
         }
         val guard = ctx.cascadeGuard()
         val line = ctx.sql.constraintLine(table, constraint, guard)
@@ -129,14 +135,8 @@ internal object MssqlDiffObjectOps {
                 code = "DIALECT_UNSUPPORTED_OPERATION",
             )
             ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-            return
+            return null
         }
-        // `WITH CHECK` ist Absicht: SQL Server prueft einen nachtraeglich
-        // hinzugefuegten FK oder CHECK per Default NICHT gegen Bestandsdaten
-        // (der Constraint gilt dann als „not trusted"), und ein Constraint, dem
-        // der Optimizer nicht traut, ist ein Constraint, den die Migration nur
-        // scheinbar hergestellt hat.
-        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} WITH CHECK ADD $line;")
         if (guard.mustNeutralise(constraint.name)) {
             ctx.warning(
                 op,
@@ -145,13 +145,56 @@ internal object MssqlDiffObjectOps {
                 code = "E057",
             )
         }
+        // `WITH CHECK` ist Absicht: SQL Server prueft einen nachtraeglich
+        // hinzugefuegten FK oder CHECK per Default NICHT gegen Bestandsdaten
+        // (der Constraint gilt dann als „not trusted"), und ein Constraint, dem
+        // der Optimizer nicht traut, ist einer, den die Migration nur scheinbar
+        // hergestellt hat.
+        return "ALTER TABLE ${ctx.sql.quote(table)} WITH CHECK ADD $line;"
     }
 
-    /** Die Objekte, die einer Spaltenaenderung im Weg stehen (Msg 5074), als Drop/Create-Paar. */
-    fun dependentsOf(tableDef: TableDefinition, column: String): Dependents = Dependents(
-        indices = tableDef.indices.filter { idx -> idx.columns.any { it.name == column } },
-        constraints = tableDef.constraints.filter { column in (it.columns ?: emptyList()) },
-    )
+    private fun emitCreateIndex(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        resolveIndexSql(op, ctx, table, index)?.let { ctx.emit(op, it) }
+    }
+
+    private fun emitAddConstraint(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        constraint: ConstraintDefinition,
+    ) {
+        resolveConstraintSql(op, ctx, table, constraint)?.let { ctx.emit(op, it) }
+    }
+
+    /**
+     * Die Objekte, die einer Spaltenaenderung im Weg stehen (Msg 5074).
+     *
+     * Ein spaltenlevel `unique: true` steht in KEINER der beiden Modell-Listen —
+     * der Generate-Pfad rendert es als `uq_<tabelle>_<spalte>` an der Spalte.
+     * Es wird deshalb als Constraint nachgebildet, sonst bliebe es beim
+     * `ALTER COLUMN` haengen.
+     */
+    fun dependentsOf(table: String, tableDef: TableDefinition, column: String): Dependents {
+        val columnUnique = tableDef.columns[column]
+            ?.takeIf { it.unique }
+            ?.let {
+                ConstraintDefinition(
+                    name = MssqlConstraintNames.unique(table, column),
+                    type = ConstraintType.UNIQUE,
+                    columns = listOf(column),
+                )
+            }
+        return Dependents(
+            indices = tableDef.indices.filter { idx -> idx.columns.any { it.name == column } },
+            constraints = tableDef.constraints.filter { column in (it.columns ?: emptyList()) } +
+                listOfNotNull(columnUnique),
+        )
+    }
 
     data class Dependents(val indices: List<IndexDefinition>, val constraints: List<ConstraintDefinition>) {
         val isEmpty: Boolean get() = indices.isEmpty() && constraints.isEmpty()
