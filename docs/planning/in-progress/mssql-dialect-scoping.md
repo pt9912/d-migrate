@@ -325,9 +325,8 @@ nur mit Klammern" ist:
 Routinen und Trigger, Partitionierung und die Index-Feinsteuerung gehören den
 Ausbau-Slices 9, 7 und 6 — was der gebaute Code über sie heute schon aussagt,
 steht bei den jeweiligen Slices weiter unten. Der Diff-Pfad blockt sie bis
-dahin. Das ist **nicht** dasselbe wie bei den drei bestehenden Dialekten:
-PostgreSQL rendert Routinen und Trigger im Diff (siehe Slice 9 unten), MSSQL
-kann es nur deshalb nicht, weil sein Reverse die Rümpfe noch nicht liest.
+dahin — anders als PostgreSQL, das Routinen und Trigger im Diff rendert
+(siehe Slice 9 unten); MSSQL kann das erst, wenn sein Reverse die Rümpfe liest.
 Ohne eigenen Slice bleibt eine Fläche: **Materialized Views** haben in SQL Server kein Äquivalent (siehe
 T-SQL-Inventar), der Diff-Pfad blockt sie dauerhaft.
 
@@ -384,16 +383,11 @@ Bestandsaufnahme, auf der er aufsetzt.
 
 ### Slice 9 — Routinen und Trigger
 
-**Korrektur (2026-08-22):** hier stand, der MSSQL-Diff blocke Routinen „an
-derselben Stelle, an der auch die drei bestehenden Dialekte blocken". Das ist
-falsch. PostgreSQL **rendert** Funktionen, Prozeduren und Trigger im Diff-Pfad
+PostgreSQL ist hier das Vorbild, nicht der Mitblockierer: es **rendert**
+Funktionen, Prozeduren und Trigger im Diff-Pfad
 ([`PostgresDiffFunctionOps`](../../../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffFunctionOps.kt),
-`PostgresDiffProcedureOps`); in seinem Dispatch ist einzig `AlterCustomType`
-`UNSUPPORTED`. Die Zahl „PostgreSQL 11 Fälle" stammte aus einem
-`grep -c DIALECT_UNSUPPORTED_OPERATION` und sagt nichts darüber aus, WELCHE
-Operationen blocken.
-
-Das PostgreSQL-Vorbild sieht so aus:
+`PostgresDiffProcedureOps`) — in seinem Dispatch ist einzig `AlterCustomType`
+`UNSUPPORTED`. Über die vier Stufen verglichen:
 
 | Stufe | PostgreSQL heute | MSSQL heute |
 | --- | --- | --- |
