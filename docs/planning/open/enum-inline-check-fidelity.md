@@ -92,6 +92,37 @@ kein Bugfix).
    (`lower(col) IN …`), mehrspaltig. Zu gierig korrumpiert das Neutralmodell (Fremd-CHECK →
    falscher Enum), zu eng verfehlt d-migrates eigene Ausgabe.
 
+## MSSQL als vierter Dialekt — live belegt (2026-08-22, Slice 4)
+
+Der MSSQL-Slice verschiebt die Gabelung, weil SQL Server der erste Dialekt ist,
+dessen **generate**-Pfad den CHECK von Anfang an rendert und dessen Reverse ihn
+zurueckliest. Belegt vom Integrationstest
+[`MssqlPostCompareFingerprintIntegrationTest`](../../../test/integration-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlPostCompareFingerprintIntegrationTest.kt)
+gegen ein echtes SQL Server 2022:
+
+- authored `enum(values)` → generate `NVARCHAR(<laengster Wert>)` +
+  `CONSTRAINT ck_<t>_<c> CHECK (col IN (…))`
+  ([`MssqlColumnConstraintHelper`](../../../adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt)),
+- reverse liest `text(5)` **plus** einen eigenstaendigen CHECK,
+- die v7-Typprojektion faltet die TYP-Seite sauber
+  (`enum(red,green)` ≡ `text(5)`), die Constraint-Kante bleibt.
+
+Das ist genau der im Abschnitt „Der Kern-Konflikt" beschriebene Drift — bei
+PG/SQLite erst nach einem 2b-Bau, bei MSSQL **schon heute im generate-Pfad**.
+Der Unterschied ist praktisch: der Status quo „C" (bare `TEXT` + `W134`,
+driftfrei) existiert fuer MSSQL gar nicht, denn der Generator rendert bereits
+treu. Damit faellt die Entscheidung spaetestens mit dem MSSQL-Diff-Pfad
+(Slice 5 in [`mssql-dialect-scoping.md`](../in-progress/mssql-dialect-scoping.md)):
+
+- rendert `MssqlDiff*` den CHECK **wie generate**, ist der Post-Compare-Drift
+  ohne A oder B unvermeidbar;
+- rendert er ihn **nicht**, divergieren generate und migrate fuer MSSQL genauso
+  wie heute bei PG/SQLite — mit dem Zusatzproblem, dass die MSSQL-Goldens den
+  CHECK bereits enthalten.
+
+Das ist kein neues Ticket, sondern ein Datenpunkt zur Priorisierung: mit dem
+vierten Dialekt ist „C" nicht mehr fuer alle Dialekte kostenlos.
+
 ## Code-Fakten
 
 - Generate rendert bereits treu: PG

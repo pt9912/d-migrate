@@ -131,7 +131,7 @@ internal class MssqlColumnConstraintHelper(
      * damit die Spalte index- und schlüsselfähig bleibt (NVARCHAR(MAX) wäre es nicht).
      */
     private fun boundedEnumColumn(ctx: ColumnContext, values: List<String>): String {
-        val width = maxOf(values.maxOfOrNull { it.length } ?: 1, 1)
+        val width = MssqlTypeMapper.enumWidth(values)
         val parts = mutableListOf(quoteIdentifier(ctx.colName), typeMapper.unicodeText(width))
         parts += nullabilityDefaultUnique(ctx, lob = false)
         val allowed = values.joinToString(", ") { typeMapper.toDefaultSql(DefaultValue.StringLiteral(it), ctx.col.type) }

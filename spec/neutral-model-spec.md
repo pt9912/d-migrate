@@ -790,6 +790,7 @@ sequences:
 - PostgreSQL: `CREATE SEQUENCE ... START WITH ... INCREMENT BY ...`
 - MySQL: Emulation über dedizierte Sequenz-Tabelle oder generator-spezifische Hilfsstruktur
 - SQLite: Keine nativen benannten Sequenzen; Emulation nur über explizite Hilfstabelle/Trigger oder `action_required`
+- MS SQL Server: `CREATE SEQUENCE ... AS BIGINT START WITH ... INCREMENT BY ...`; der `sequence_nextval`-Default rendert als `NEXT VALUE FOR`
 
 ### 9.1 `preserve_current_value`
 
@@ -810,6 +811,7 @@ aus dem Live-Target übernimmt:
 | PostgreSQL | `SELECT setval('<seq>', <last_value>, <is_called>);` | `SELECT last_value, is_called FROM <seq>` |
 | MySQL (HELPER_TABLE-Mode) | `UPDATE dmg_sequences SET next_value = <v> WHERE name = <key> AND managed_by IN (…) AND format_version IN (…);` | `SELECT next_value, managed_by, format_version FROM dmg_sequences WHERE name = <key>` |
 | SQLite (HELPER_TABLE-Mode) | `UPDATE "dmg_sequences" SET "next_value" = <v> WHERE "name" = <key>;` (Up auf `applySequenceRef`, Down auf `probeSequenceRef`) | `SELECT "next_value", "managed_by", "format_version" FROM "dmg_sequences" WHERE "name" = <key>` |
+| MS SQL Server | `ALTER SEQUENCE <seq> RESTART WITH <v>;` | `SELECT current_value FROM sys.sequences WHERE name = <key>` |
 
 **Voraussetzungen**:
 
@@ -843,17 +845,25 @@ gerendert, welches blockt, welches emittiert nur eine Warnung?".
 Die Defaults sind die unterste Präzedenz-Schicht; eine spätere
 Tranche kann Overlay-/CLI-Overrides ergänzen.
 
-| Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`-Mode, opt-in via `--sqlite-named-sequences`) | Cross-Dialect-Verhalten |
-|---|---|---|---|---|
-| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` (`E056`-Skip im Default `action_required`-Mode) | Source = neutral; verlustfrei sobald Target-Renderer Sequenzen aktiviert |
-| `start` | `START WITH` | `dmg_sequences.next_value` (Seed) | `dmg_sequences.next_value` (Seed) | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand |
-| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen allen drei Dialekten |
-| `min_value` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | Verlustfrei in `helper_table` |
-| `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | Verlustfrei in `helper_table` |
-| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | `dmg_sequences.cycle_enabled` (`INTEGER`) | Verlustfrei in `helper_table` |
-| `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Alle Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
-| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | Execute-only; siehe §9.1 |
-| `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
+| Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`-Mode, opt-in via `--sqlite-named-sequences`) | MS SQL Server | Cross-Dialect-Verhalten |
+|---|---|---|---|---|---|
+| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` (`E056`-Skip im Default `action_required`-Mode) | nativ | Source = neutral; verlustfrei sobald Target-Renderer Sequenzen aktiviert |
+| `start` | `START WITH` | `dmg_sequences.next_value` (Seed) | `dmg_sequences.next_value` (Seed) | `START WITH` | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand |
+| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | `INCREMENT BY` | Verlustfrei zwischen allen Dialekten |
+| `min_value` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | `MINVALUE` | Verlustfrei in `helper_table` |
+| `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | `MAXVALUE` | Verlustfrei in `helper_table` |
+| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | `dmg_sequences.cycle_enabled` (`INTEGER`) | `CYCLE` / `NO CYCLE` | Verlustfrei in `helper_table` |
+| `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `CACHE n` (native Cache-Semantik) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Alle Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
+| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | `ALTER SEQUENCE … RESTART WITH <v>` | Execute-only; siehe §9.1 |
+| `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
+
+**MS-SQL-Server-Defaults**: SQL Server hat native benannte Sequenzen, es wird
+nichts emuliert — alle Attribute rendern direkt in `CREATE SEQUENCE`, und
+`CACHE n` ist eine echte Runtime-Preallocation, also ohne `W114`. Eine
+`helper_table`-Option gibt es dort folglich nicht. Fuer `identifier`-Spalten
+tritt `IDENTITY(1,1)` an die Stelle einer Sequenz; deren Laufzeitwert wird nach
+einem Datenimport ueber `DBCC CHECKIDENT` nachgefuehrt, nicht ueber den
+Sequenz-Pfad dieser Matrix.
 
 **SQLite-Defaults (Reality-First)**: die
 SQLite-Sequence-Emulation liefert eine vollständige `helper_table`-Variante

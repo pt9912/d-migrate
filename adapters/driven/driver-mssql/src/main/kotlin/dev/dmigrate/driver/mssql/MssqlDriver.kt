@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.TransferTypeCompatibility
 import dev.dmigrate.driver.StructuralTransferTypeCompatibility
@@ -42,4 +43,12 @@ class MssqlDriver : DatabaseDriver {
      */
     override fun transferCompatibility(): TransferTypeCompatibility =
         StructuralTransferTypeCompatibility(MssqlTypeMapper())
+
+    /**
+     * Neutral-Typ-Projektion fuer den v7-Postcompare-Fingerprint
+     * ([MssqlNeutralTypeCanonicalizer]). Sie wird erst mit dem
+     * MSSQL-Migrate-Pfad (Slice 5) konsumiert; ohne sie faellt der Fingerprint
+     * auf Identitaet zurueck und meldete jede T-SQL-Typabflachung als Drift.
+     */
+    override fun typeCanonicalizer(): NeutralTypeCanonicalizer = MssqlNeutralTypeCanonicalizer
 }

@@ -132,6 +132,15 @@ class MssqlTypeMapper : TypeMapper {
     }
 
     companion object {
+        /**
+         * Spaltenbreite einer Enum-Spalte: der laengste Wert, mindestens 1.
+         * T-SQL kennt keinen Enum-Typ, der Spalten-Helfer rendert stattdessen
+         * `NVARCHAR(<Breite>)` + CHECK. Die Regel steht hier und nicht im
+         * Helfer, weil auch [MssqlNeutralTypeCanonicalizer] genau die Spalte
+         * projizieren muss, die der Generator schreibt.
+         */
+        fun enumWidth(values: List<String>): Int = maxOf(values.maxOfOrNull { it.length } ?: 1, 1)
+
         const val MAX_UNICODE_LENGTH = 4000
         const val MAX_DECIMAL_PRECISION = 38
 

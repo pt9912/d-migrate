@@ -39,8 +39,10 @@ internal class MatrixSweepRunner {
             DatabaseDialect.POSTGRESQL -> PostgresDiffDdlGenerator()
             DatabaseDialect.MYSQL -> MysqlDiffDdlGenerator()
             DatabaseDialect.SQLITE -> SqliteDiffDdlGenerator()
-            // MSSQL nimmt erst mit der Matrix-Beteiligung am Sweep teil
-            // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 4);
+            // MSSQL tritt dem Sweep zusammen mit seinem Diff-Renderer bei
+            // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 5):
+            // ohne MssqlDiffDdlGenerator waere jede Zelle entweder ein
+            // Wegwerf-Carve-out oder ein gepinnter Fehlerpfad. Bis dahin
             // null = derselbe "No renderer registered"-Pfad wie produktiv.
             DatabaseDialect.MSSQL -> null
         }
