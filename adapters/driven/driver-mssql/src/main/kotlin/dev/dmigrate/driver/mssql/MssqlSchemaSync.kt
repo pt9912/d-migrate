@@ -17,10 +17,12 @@ import java.sql.Connection
  * `DBCC CHECKIDENT(t, RESEED, n)` gibt als **nächsten** Wert `n + increment`
  * aus; [SequenceAdjustment.newValue] meldet daher `max + increment` (der
  * Vertrag des Ports: „nächster ohne expliziten Generatorwert ausgegebener
- * Wert"). Ausnahme: eine nach `--truncate` leer gebliebene Tabelle wird auf
- * `seed - increment` zurückgesetzt, sodass der nächste Wert wieder der
- * deklarierte `IDENTITY(seed, increment)`-Startwert ist — analog MySQL/SQLite.
- * Seed und Increment kommen aus `sys.identity_columns`, nicht als 1/1 geraten.
+ * Wert"). Ausnahme: eine nach `--truncate` leer gebliebene Tabelle bekommt
+ * wieder den deklarierten `IDENTITY(seed, increment)`-Startwert — analog
+ * MySQL/SQLite. Dabei zählt, ob je eine Zeile eingefügt wurde:
+ * `sys.identity_columns.last_value` ist dann `null`, und SQL Server nimmt den
+ * RESEED-Wert **wörtlich** als ersten Wert (sonst `n + increment`). Seed,
+ * Increment und dieser Zustand kommen aus dem Katalog, nichts wird geraten.
  */
 class MssqlSchemaSync(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
@@ -51,7 +53,10 @@ class MssqlSchemaSync(
         val maxValue = MssqlMetadataQueries.maxValue(jdbc, qualified.quotedPath(), identity.column)
         if (maxValue == null) {
             if (!truncatePerformed) return emptyList()
-            reseed(jdbc, qualified, identity.seed - identity.increment)
+            // Nie befüllt → der RESEED-Wert ist der erste Wert; sonst kommt noch
+            // ein Increment obendrauf.
+            val reseedTo = if (identity.lastValue == null) identity.seed else identity.seed - identity.increment
+            reseed(jdbc, qualified, reseedTo)
             return listOf(adjustment(table, identity.column, newValue = identity.seed))
         }
         reseed(jdbc, qualified, maxValue)

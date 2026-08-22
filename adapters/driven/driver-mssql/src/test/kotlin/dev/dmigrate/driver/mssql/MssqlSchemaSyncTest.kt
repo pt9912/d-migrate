@@ -18,13 +18,17 @@ class MssqlSchemaSyncTest : FunSpec({
         maxValue: Long? = 42L,
         seed: Long = 1L,
         increment: Long = 1L,
+        lastValue: Long? = 7L,
     ): Pair<MssqlSchemaSync, JdbcOperations> {
         // `execute` liefert Int (kein Unit) — relaxUnitFun genuegt nicht.
         val jdbc = mockk<JdbcOperations>(relaxed = true)
         every { jdbc.querySingle(match { it.contains("SCHEMA_NAME()") }) } returns mapOf("schema_name" to "dbo")
         every { jdbc.querySingle(match { it.contains("sys.identity_columns") }, any()) } returns
             identityColumn?.let {
-                mapOf("column_name" to it, "seed_value" to seed, "increment_value" to increment)
+                mapOf(
+                    "column_name" to it, "seed_value" to seed,
+                    "increment_value" to increment, "last_value" to lastValue,
+                )
             }
         every { jdbc.querySingle(match { it.contains("MAX(") }) } returns
             maxValue?.let { mapOf("max_value" to it) } ?: mapOf("max_value" to null)
@@ -48,6 +52,15 @@ class MssqlSchemaSyncTest : FunSpec({
         sync.reseedGenerators(mockk<Connection>(), "orders", listOf(column("id")), false) shouldBe
             listOf(SequenceAdjustment("orders", "id", null, 110L))
         verify { jdbc.execute("DBCC CHECKIDENT ('[dbo].[orders]', RESEED, 100)") }
+    }
+
+    test("a table that never held a row reseeds to the seed verbatim") {
+        // sys.identity_columns.last_value = null → SQL Server nimmt den RESEED-Wert
+        // als ERSTEN Wert; ein `seed - increment` ergaebe hier 0 statt 1.
+        val (sync, jdbc) = rig(maxValue = null, seed = 1L, increment = 1L, lastValue = null)
+        sync.reseedGenerators(mockk<Connection>(), "orders", emptyList(), truncatePerformed = true) shouldBe
+            listOf(SequenceAdjustment("orders", "id", null, 1L))
+        verify { jdbc.execute("DBCC CHECKIDENT ('[dbo].[orders]', RESEED, 1)") }
     }
 
     test("truncated table resets to the declared IDENTITY seed") {

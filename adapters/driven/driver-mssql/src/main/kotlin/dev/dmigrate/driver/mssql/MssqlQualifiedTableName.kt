@@ -11,10 +11,17 @@ internal data class MssqlQualifiedTableName(
     val table: String,
     /** Datenbank-Teil eines dreiteiligen Namens; `null` = Datenbank der Verbindung. */
     val database: String? = null,
+    /** Verbindungsserver-Teil eines vierteiligen Namens; `null` = lokaler Server. */
+    val server: String? = null,
 ) {
 
-    /** `[db].[schema].[table]` für SQL-Interpolation (Datenbank nur wenn benannt). */
+    /**
+     * `[server].[db].[schema].[table]` für SQL-Interpolation (führende Teile nur,
+     * wenn benannt) — dieselbe Form, die der Lesepfad
+     * (`AbstractJdbcDataReader.quoteTablePath`) rendert.
+     */
     fun quotedPath(): String = buildString {
+        server?.let { append(MssqlIdentifiers.bracket(it)).append('.') }
         database?.let { append(MssqlIdentifiers.bracket(it)).append('.') }
         append(MssqlIdentifiers.qualified(schema, table))
     }
@@ -30,13 +37,15 @@ internal data class MssqlQualifiedTableName(
                 0 -> MssqlQualifiedTableName(defaultSchema, raw.trim())
                 1 -> MssqlQualifiedTableName(defaultSchema, segments[0])
                 2 -> MssqlQualifiedTableName(segments[0], segments[1])
-                // Dreiteilig `db.schema.table`: die Datenbank bleibt erhalten —
-                // der Lesepfad (AbstractJdbcDataReader.quoteTablePath) rendert
-                // sie ebenfalls, sonst zielten Lesen und Schreiben auseinander.
+                // Drei-/vierteilig (`db.schema.table`, `server.db.schema.table`):
+                // führende Teile bleiben erhalten — der Lesepfad
+                // (AbstractJdbcDataReader.quoteTablePath) rendert sie ebenfalls,
+                // sonst zielten Lesen und Schreiben auseinander.
                 else -> MssqlQualifiedTableName(
                     schema = segments[segments.size - 2],
                     table = segments.last(),
                     database = segments[segments.size - 3],
+                    server = segments.getOrNull(segments.size - 4),
                 )
             }
         }

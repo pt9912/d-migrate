@@ -240,8 +240,17 @@ internal object MssqlMetadataQueries {
             schema,
         ).map { row -> ViewRow(name = row.string("view_name"), definition = row.string("definition")) }
 
-    /** IDENTITY-Spalte samt deklariertem Seed/Increment. */
-    data class IdentityColumn(val column: String, val seed: Long, val increment: Long)
+    /**
+     * IDENTITY-Spalte samt deklariertem Seed/Increment. [lastValue] ist `null`,
+     * solange **nie** eine Zeile eingefügt wurde — `DBCC CHECKIDENT … RESEED n`
+     * verhält sich dann anders (erster Wert = `n` statt `n + increment`).
+     */
+    data class IdentityColumn(
+        val column: String,
+        val seed: Long,
+        val increment: Long,
+        val lastValue: Long?,
+    )
 
     /** IDENTITY-Spalte der Tabelle (`OBJECT_ID`-Form), oder `null`. */
     fun identityColumn(session: JdbcOperations, qualifiedTable: String): IdentityColumn? =
@@ -249,7 +258,8 @@ internal object MssqlMetadataQueries {
             """
             SELECT TOP 1 c.name AS column_name,
                    CAST(c.seed_value AS bigint) AS seed_value,
-                   CAST(c.increment_value AS bigint) AS increment_value
+                   CAST(c.increment_value AS bigint) AS increment_value,
+                   CAST(c.last_value AS bigint) AS last_value
             FROM sys.identity_columns c
             WHERE c.object_id = OBJECT_ID(?)
             """.trimIndent(),
@@ -260,6 +270,7 @@ internal object MssqlMetadataQueries {
                 column = name,
                 seed = (row["seed_value"] as? Number)?.toLong() ?: 1L,
                 increment = (row["increment_value"] as? Number)?.toLong() ?: 1L,
+                lastValue = (row["last_value"] as? Number)?.toLong(),
             )
         }
 

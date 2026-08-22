@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.JdbcDatabaseConnection
@@ -24,6 +25,9 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.ResultSetMetaData
 import java.sql.Types
+
+/** `microsoft.sql.Types.GEOGRAPHY` — der Typcode, den mssql-jdbc fuer geography meldet. */
+private const val GEOGRAPHY_TYPE_CODE = -158
 
 /**
  * Deckt die JDBC-Choreografie des MSSQL-Import-Pfads ab (SET-Optionen,
@@ -212,16 +216,39 @@ class MssqlDataWriterTest : FunSpec({
         verify { insert.setNull(2, Types.NVARCHAR) }
     }
 
-    test("geometry values bind as raw WKB bytes") {
-        val rig = Rig().withColumns(column("id"), column("name", "geography", Types.VARBINARY))
+    test("geometry values bind as raw WKB bytes, NULL as varbinary (not the GEOGRAPHY type code)") {
+        // mssql-jdbc meldet fuer geography den Spaltentyp -158; gebunden wird aber
+        // das varbinary-Argument von STGeomFromWKB.
+        val rig = Rig().withColumns(column("id"), column("name", "geography", GEOGRAPHY_TYPE_CODE))
         val insert = rig.withInsertStatement()
-        every { insert.executeBatch() } returns intArrayOf(1)
+        every { insert.executeBatch() } returns intArrayOf(1, 1)
         val wkb = byteArrayOf(1, 2, 3)
 
         rig.writer.openTable(rig.pool, "orders", ImportOptions(reseedSequences = false)).use { session ->
-            session.write(chunk(arrayOf(1, wkb)))
+            session.write(chunk(arrayOf(1, wkb), arrayOf(2, null)))
         }
         verify { insert.setBytes(2, wkb) }
+        verify { insert.setNull(2, Types.VARBINARY) }
+        verify(exactly = 0) { insert.setNull(2, GEOGRAPHY_TYPE_CODE) }
+    }
+
+    test("skip needs every primary key column in the chunk (the MERGE binds them)") {
+        val rig = Rig().withColumns(column("id"), column("name", "nvarchar", Types.NVARCHAR))
+            .withPrimaryKey("id")
+        rig.withInsertStatement()
+
+        rig.writer.openTable(
+            rig.pool, "orders", ImportOptions(onConflict = OnConflict.SKIP, reseedSequences = false),
+        ).use { session ->
+            val chunkWithoutPk = DataChunk(
+                table = "orders",
+                columns = listOf(ColumnDescriptor("name", nullable = true)),
+                rows = listOf(arrayOf<Any?>("a")),
+                chunkIndex = 0,
+            )
+            shouldThrow<ImportSchemaMismatchException> { session.write(chunkWithoutPk) }
+                .message!! shouldContain "requires all primary key columns"
+        }
     }
 
     test("truncateTables suspends the constraints, empties, and re-enables them") {
@@ -241,5 +268,17 @@ class MssqlDataWriterTest : FunSpec({
         val rig = Rig()
         rig.writer.truncateTables(rig.pool, emptyList())
         verify(exactly = 0) { rig.pool.borrow() }
+    }
+
+    test("a failure while suspending constraints still re-enables the tables it already suspended") {
+        val rig = Rig()
+        every { rig.jdbc.execute(match { it.contains("[bad]") && it.contains("NOCHECK") }) } throws
+            RuntimeException("no permission")
+
+        shouldThrow<RuntimeException> { rig.writer.truncateTables(rig.pool, listOf("good", "bad")) }
+        // `good` wurde ausgesetzt und muss wieder scharf sein; `bad` nie ausgesetzt.
+        verify { rig.jdbc.execute("ALTER TABLE [dbo].[good] WITH CHECK CHECK CONSTRAINT ALL") }
+        verify(exactly = 0) { rig.jdbc.execute("ALTER TABLE [dbo].[bad] WITH CHECK CHECK CONSTRAINT ALL") }
+        verify(exactly = 0) { rig.jdbc.execute(match { it.startsWith("DELETE FROM") }) }
     }
 })

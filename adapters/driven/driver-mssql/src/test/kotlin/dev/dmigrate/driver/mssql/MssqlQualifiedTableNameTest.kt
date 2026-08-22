@@ -20,9 +20,12 @@ class MssqlQualifiedTableNameTest : FunSpec({
         parse("[weird]]name]") shouldBe MssqlQualifiedTableName("dbo", "weird]name")
     }
 
-    test("three-part names keep the database, like the read path renders it") {
+    test("three- and four-part names keep their prefixes, like the read path renders them") {
         parse("shopdb.sales.orders") shouldBe MssqlQualifiedTableName("sales", "orders", database = "shopdb")
         parse("shopdb.sales.orders").quotedPath() shouldBe "[shopdb].[sales].[orders]"
+        parse("srv.shopdb.sales.orders") shouldBe
+            MssqlQualifiedTableName("sales", "orders", database = "shopdb", server = "srv")
+        parse("srv.shopdb.sales.orders").quotedPath() shouldBe "[srv].[shopdb].[sales].[orders]"
     }
 
     test("quotedPath brackets every part") {

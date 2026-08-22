@@ -51,7 +51,16 @@
 > Parameter (T-SQL kennt kein `LIMIT 0`). Live: `MssqlDataPathIntegrationTest`
 > (Identity, MERGE-Modi, Reseed, Geometrie-Round-Trip, FK-sicheres Truncate)
 > und E2E `MssqlTransferE2ETest` (PostgreSQL → SQL Server über die echte CLI:
-> reverse → generate → sqlcmd-Apply → `data transfer`).
+> reverse → generate → sqlcmd-Apply → `data transfer`). Zwei
+> `/code-review high`-Runden (8 + 6 Befunde, alle eingearbeitet): fehlendes
+> `transferCompatibility` (Interface-Default = strikte Gleichheit, hätte jede
+> Typweitung im Preflight abgelehnt), Identity-Seed/Increment und „nie befüllt"
+> (`last_value`) aus dem Katalog statt 1/1 geraten, Computed Columns benennend
+> abgelehnt, `skip` braucht einen PK (Preflight) **und** die PK-Spalten im
+> Chunk, NULL-Geometrie bindet als `varbinary` statt mit dem GEOMETRY-Typcode,
+> ein fehlgeschlagenes `SET IDENTITY_INSERT OFF` verwirft die Connection statt
+> sie vergiftet zurückzugeben, die `NOCHECK`-Schleife liegt in der
+> Fehlerbehandlung, drei-/vierteilige Namen rendern wie im Lesepfad.
 
 > **Status-Update 2026-08-22 (2):** Slice 2 umgesetzt — `MssqlDdlGenerator`
 > (+ `MssqlTypeMapper`, Spalten-/Index-Helfer) im Treibermodul: Tabellen mit

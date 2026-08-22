@@ -1574,9 +1574,12 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
 
 **MSSQL-Datenpfad**: `--on-conflict skip` verlangt für ein SQL-Server-Ziel
-einen Primärschlüssel (T-SQL hat keine schlüsselfreie Form wie
-`ON CONFLICT DO NOTHING`/`INSERT IGNORE`; d-migrate baut ein `MERGE`); der
-Transfer-Preflight lehnt eine Tabelle ohne Schlüssel mit Exit 3 ab.
+einen Primärschlüssel — und dass die übertragenen Spalten ihn enthalten
+(T-SQL hat keine schlüsselfreie Form wie `ON CONFLICT DO NOTHING`/
+`INSERT IGNORE`; d-migrate baut ein `MERGE`, dessen Prädikat die
+Schlüsselwerte bindet). Der Transfer-Preflight lehnt eine Tabelle ohne
+Schlüssel mit Exit 3 ab; fehlt der Schlüssel nur im Chunk, meldet es der
+Import benennend statt als Treiberfehler.
 Computed Columns kann SQL Server nicht beschreiben — enthält der Chunk eine,
 bricht der Import mit einer benennenden Meldung ab, statt den Treiberfehler
 durchzureichen. Schlüsselwerte einer IDENTITY-Spalte werden mit

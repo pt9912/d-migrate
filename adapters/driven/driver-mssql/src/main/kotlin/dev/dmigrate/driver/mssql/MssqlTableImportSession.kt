@@ -12,6 +12,7 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.Statement
+import java.sql.Types
 
 /**
  * Import-Session für SQL Server.
@@ -45,9 +46,29 @@ internal class MssqlTableImportSession(
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
     private var identityInsertEnabled: Boolean = false
+    private var discardConnection: Boolean = false
 
     override fun isGeometryTypeName(typeNameLower: String): Boolean =
         MssqlInsertSql.isGeometryTypeName(typeNameLower)
+
+    /**
+     * `MERGE` bindet die Schlüsselspalten aus der `src`-Zeile — fehlt eine im
+     * Chunk, gäbe es nur ein unverständliches „could not be bound" vom Treiber.
+     * Gilt hier auch für `skip` (die Basisklasse prüft nur `update`, weil
+     * PG/MySQL dort eine schlüsselfreie Form haben).
+     */
+    override fun validateUpsertColumns(resolvedTargetColumns: List<TargetColumn>) {
+        super.validateUpsertColumns(resolvedTargetColumns)
+        if (options.onConflict != OnConflict.SKIP || primaryKeyColumns.isEmpty()) return
+        val imported = resolvedTargetColumns.mapTo(mutableSetOf()) { it.name }
+        val missing = primaryKeyColumns.filterNot { it in imported }
+        if (missing.isNotEmpty()) {
+            throw ImportSchemaMismatchException(
+                "onConflict=skip for table '$table' requires all primary key columns on SQL Server " +
+                    "(the MERGE predicate binds them); missing ${missing.joinToString()}",
+            )
+        }
+    }
 
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         // Der einzige Hook, der einmalig vor dem ersten Chunk laeuft und die
@@ -74,6 +95,10 @@ internal class MssqlTableImportSession(
         importedTargetColumns.forEachIndexed { index, targetColumn ->
             val value = row[index]
             when {
+                // Geometriespalten binden an das `varbinary`-Argument von
+                // STGeomFromWKB — mssql-jdbc meldet als Spaltentyp aber GEOMETRY/
+                // GEOGRAPHY, was an dieser Bind-Position ein Typkonflikt waere.
+                value == null && isGeometryColumn(targetColumn) -> stmt.setNull(index + 1, Types.VARBINARY)
                 value == null -> stmt.setNull(index + 1, targetColumn.jdbcType)
                 // WKB explizit binär binden, damit STGeomFromWKB das Blob erhält.
                 isGeometryColumn(targetColumn) && value is ByteArray -> stmt.setBytes(index + 1, value)
@@ -136,8 +161,17 @@ internal class MssqlTableImportSession(
     override fun finishDialectCleanup(): Throwable? = disableIdentityInsert()
 
     override fun closeFinally() {
-        disableIdentityInsert()?.let(::recordCleanupFailure)
+        disableIdentityInsert()?.let {
+            // Die Connection traegt sonst IDENTITY_INSERT fuer DIESE Tabelle in den
+            // Pool zurueck; der naechste Borger scheitert dann an Msg 8107 mit einem
+            // fremden Tabellennamen. Lieber verwerfen als vergiften.
+            discardConnection = true
+            recordCleanupFailure(it)
+        }
         runCatching { conn.autoCommit = savedAutoCommit }.onFailure(::recordCleanupFailure)
+        if (discardConnection) {
+            runCatching { conn.abort(DIRECT_EXECUTOR) }.onFailure(::recordCleanupFailure)
+        }
     }
 
     /**

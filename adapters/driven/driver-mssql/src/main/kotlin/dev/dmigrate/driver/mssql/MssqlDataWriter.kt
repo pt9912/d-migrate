@@ -54,8 +54,7 @@ class MssqlDataWriter(
             val qualified = tables.map { MssqlQualifiedTableName.parse(it, schema) }
             try {
                 conn.autoCommit = true
-                for (t in qualified) jdbc.execute("ALTER TABLE ${t.quotedPath()} NOCHECK CONSTRAINT ALL")
-                deleteAndRecheck(jdbc, qualified)
+                suspendDeleteRecheck(jdbc, qualified)
             } finally {
                 conn.autoCommit = savedAutoCommit
             }
@@ -63,18 +62,24 @@ class MssqlDataWriter(
     }
 
     /**
-     * Leert die Tabellen und schaltet die Constraints **einzeln** wieder scharf:
-     * ein Fehler beim Re-Enable darf die restlichen Tabellen nicht dauerhaft mit
-     * `NOCHECK` zurücklassen und den ursprünglichen Fehler nicht verdecken.
+     * Setzt die Constraints aus, leert die Tabellen und schaltet **jede
+     * ausgesetzte** Tabelle einzeln wieder scharf. Auch ein Fehler mitten in der
+     * `NOCHECK`-Schleife darf keine Tabelle dauerhaft ungeprüft zurücklassen,
+     * und ein Fehler beim Re-Enable darf den ursprünglichen nicht verdecken.
      */
-    private fun deleteAndRecheck(jdbc: JdbcOperations, tables: List<MssqlQualifiedTableName>) {
+    private fun suspendDeleteRecheck(jdbc: JdbcOperations, tables: List<MssqlQualifiedTableName>) {
+        val suspended = mutableListOf<MssqlQualifiedTableName>()
         var failure: Throwable? = null
         try {
+            for (t in tables) {
+                jdbc.execute("ALTER TABLE ${t.quotedPath()} NOCHECK CONSTRAINT ALL")
+                suspended += t
+            }
             for (t in tables) jdbc.execute("DELETE FROM ${t.quotedPath()}")
         } catch (t: Throwable) {
             failure = t
         }
-        for (t in tables) {
+        for (t in suspended) {
             runCatching { jdbc.execute("ALTER TABLE ${t.quotedPath()} WITH CHECK CHECK CONSTRAINT ALL") }
                 .onFailure { reenable ->
                     failure?.addSuppressed(reenable) ?: run { failure = reenable }
