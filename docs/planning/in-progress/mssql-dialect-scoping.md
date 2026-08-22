@@ -237,36 +237,44 @@ Slice, der einen Pfad liefert, entfernt sein Kommando aus dem Gate.
 - **Kein MSSQL-Wissen in den Goldens**: DDL-Goldens entstehen neu; der
   Regenerier-Weg läuft per CLI (nicht `make golden-update`).
 
-## Offene Punkte aus Slice 2
+## Offene Punkte (Stand nach Slice 3)
 
-- ~~**`GO`-Batch-Trenner im Tool-Export**~~ — **erledigt als Slice 2a
-  (2026-08-22):** `DdlScript` (ports-read) rendert Skripte dialektbewusst
-  (`DialectCapabilities.batchSeparator`, mssql = `GO` nach jedem
-  ausführbaren Statement) für `schema generate`-Datei/stdout/Split/Rollback/
-  JSON, MCP-Artefakt und `DdlNormalizer` (→ Flyway); Liquibase
-  `endDelimiter="GO"`, Django Listenform je Statement, Knex unverändert
-  (statementweise). E2E `MssqlGenerateApplyE2ETest` wendet das Skript per
-  `sqlcmd` im Container an und liest es zurück — dieser Test fand zusätzlich,
-  dass `sqlcmd` per Default mit `QUOTED_IDENTIFIER OFF` verbindet und ein
-  gefilterter Index deshalb mit Msg 1934 scheitert; die Skript-Darstellung
-  beginnt seither mit einem SET-Options-Batch
-  (`DialectCapabilities.scriptPreamble`).
-- **Merken für Slice 3:** dieselben SET-Optionen gelten für DML auf Tabellen
-  mit gefiltertem Index — beim Import-Pfad (JDBC) prüfen, ob der Treiber sie
-  bereits richtig setzt.
-- **Clustered/nonclustered, INCLUDE-Spalten:** Slice 6.
-- **Slice 3b — sample-db-MSSQL-Leg:** eigener Schritt nach Slice 3 (fetch +
-  compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md),
-  Reverse→Generate→Import-Smoke als Workflow). Der Datenpfad selbst ist mit
-  Slice 3 fertig und live getestet.
-- **Bulk-Fast-Path** (`BULK INSERT`/`SqlServerBulkCopy`) bleibt wie geplant
-  hinter dem generischen Batch-Insert zurückgestellt.
+**Erledigt:**
+
+- ~~**`GO`-Batch-Trenner im Tool-Export**~~ — Slice 2a: `DdlScript`
+  (ports-read) rendert Skripte dialektbewusst (`DialectCapabilities.batchSeparator`,
+  mssql = `GO` nach jedem ausführbaren Statement) für `schema generate`-Datei/
+  stdout/Split/Rollback/JSON, MCP-Artefakt und `DdlNormalizer` (→ Flyway);
+  Liquibase `endDelimiter="GO"`, Django Listenform je Statement, Knex
+  unverändert (statementweise). Der E2E `MssqlGenerateApplyE2ETest` wendet das
+  Skript per `sqlcmd` an und fand dabei, dass `sqlcmd` mit
+  `QUOTED_IDENTIFIER OFF` verbindet und ein gefilterter Index deshalb mit
+  Msg 1934 scheitert — seither beginnt die Skript-Darstellung mit einem
+  SET-Options-Batch (`DialectCapabilities.scriptPreamble`).
+- ~~**SET-Optionen auch im Import-Pfad prüfen**~~ — Slice 3: jede Import-Session
+  setzt sie explizit (`MssqlDataWriter.SESSION_SET_OPTIONS`); mssql-jdbc
+  verbindet mit `ARITHABORT OFF`, was DML auf einer Tabelle mit gefiltertem
+  Index sonst abweist.
+
+**Offen:**
+
+- **Slice 3b — sample-db-MSSQL-Leg:** fetch + compose gemäß
+  [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md),
+  Reverse→Generate→Import-Smoke als eigener Workflow. Der Datenpfad selbst ist
+  mit Slice 3 fertig und live getestet.
 - **SRID-Treue im Datenpfad:** WKB trägt keine SRID, SQL Server führt sie am
   Wert (nicht an der Spalte) — übertragene Geometrien landen mit dem
   Spalten-Default (0 bzw. 4326). Eine SRID-treue Übertragung bräuchte eine
   eigene Projektion (Wert-SRID als Zusatzspalte oder EWKB-ähnliche Kodierung);
-  dokumentiert in `spec/type-mapping.md`, offen als Folgearbeit.
-- **`data import --on-conflict skip` ohne PK:** der Transfer-Pfad lehnt das im
-  Preflight ab (`DialectCapabilities.requiresPrimaryKeyForSkip`); der
-  Import-Pfad hat an dieser Stelle keinen Schema-Preflight und meldet es erst
-  beim Öffnen der Tabelle — dort aber mit klarer Meldung.
+  dokumentiert in `spec/type-mapping.md`, keinem Slice zugeordnet.
+
+**Bewusst zurückgestellt / anderswo geplant:**
+
+- **Clustered/nonclustered-Steuerung und INCLUDE-Spalten:** Slice 6.
+- **Bulk-Fast-Path** (`BULK INSERT`/`SqlServerBulkCopy`): hinter dem
+  generischen Batch-Insert, wie im Slice-Schnitt vorgesehen.
+- **`data import --on-conflict skip` ohne PK:** Verhaltensnotiz, kein Rückstand
+  — der Transfer-Pfad lehnt es im Preflight ab
+  (`DialectCapabilities.requiresPrimaryKeyForSkip`), der Import-Pfad hat dort
+  keinen Schema-Preflight und meldet es beim Öffnen der Tabelle mit klarer
+  Meldung.
