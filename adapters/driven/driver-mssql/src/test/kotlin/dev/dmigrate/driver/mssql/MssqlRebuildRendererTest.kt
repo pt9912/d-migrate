@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.ColumnDiff
+import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
@@ -15,6 +16,7 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -278,6 +280,106 @@ class MssqlRebuildRendererTest : FunSpec({
         sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user]") } shouldBe 1
     }
 
+    test("a column-level reference on a child table is dropped too — DROP TABLE would be Msg 3726") {
+        // `references` an der Spalte ist im Modell kein Constraint, in der
+        // Datenbank aber einer: der Generate-Pfad legt fk_<kind>_<spalte> an.
+        val orders = TableDefinition(
+            columns = linkedMapOf(
+                "user_id" to ColumnDefinition(
+                    NeutralType.Integer,
+                    references = ReferenceDefinition(table = "users", column = "id"),
+                ),
+            ),
+        )
+        val current = schema("users" to users(NeutralType.Integer), "orders" to orders)
+        val desired = schema("users" to users(NeutralType.Identifier(autoIncrement = true)), "orders" to orders)
+        val sqls = up(identityAddedDiff(), current, desired).statements.map { it.sql }
+
+        val drop = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [fk_orders_user_id]") }
+        val dropTable = sqls.indexOfFirst { it == "DROP TABLE [users];" }
+        val restore = sqls.indexOfFirst { it.contains("ADD CONSTRAINT [fk_orders_user_id]") }
+        (drop in 0 until dropTable) shouldBe true
+        (restore > dropTable) shouldBe true
+    }
+
+    test("a foreign key an earlier step of the same plan created is dropped as well, then restored once") {
+        // Eine neue Kindtabelle entsteht in einer FRUEHEREN Phase und bringt
+        // ihren Fremdschluessel gleich mit. Steht er beim `DROP TABLE` noch,
+        // ist das Msg 3726 — nur das Ist-Schema zu betrachten reicht nicht.
+        val fk = ConstraintDefinition(
+            name = "fk_orders_user",
+            type = ConstraintType.FOREIGN_KEY,
+            columns = listOf("user_id"),
+            references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+        )
+        val orders = TableDefinition(
+            columns = linkedMapOf("user_id" to ColumnDefinition(NeutralType.Integer)),
+            constraints = listOf(fk),
+        )
+        val current = schema("users" to users(NeutralType.Integer))
+        val desired = schema("users" to users(NeutralType.Identifier(autoIncrement = true)), "orders" to orders)
+        val diff = SchemaDiff(
+            tablesAdded = listOf(NamedTable("orders", orders)),
+            tablesChanged = identityAddedDiff().tablesChanged,
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+
+        val dropTable = sqls.indexOfFirst { it == "DROP TABLE [users];" }
+        val drop = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [fk_orders_user]") }
+        (drop in 0 until dropTable) shouldBe true
+        // Die Kindtabelle koennte es zu diesem Zeitpunkt auch NICHT geben —
+        // der Abraeumer muss das vertragen.
+        sqls[drop] shouldContainStr "IF OBJECT_ID('orders') IS NOT NULL"
+        // Und wiederhergestellt wird er genau einmal.
+        sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user]") } shouldBe 1
+    }
+
+    test("an unrenderable object leaves no absorbed operation out of the bookkeeping") {
+        val idx = IndexDefinition(name = "ix_nick", columns = listOf(IndexColumn("nick")), type = IndexType.BTREE)
+        val exclude = ConstraintDefinition(name = "ex_users", type = ConstraintType.EXCLUDE, expression = "x WITH =")
+        val current = schema("users" to users(NeutralType.Integer, "nick" to ColumnDefinition(NeutralType.Text(50))))
+        val desired = schema(
+            "users" to users(NeutralType.Identifier(autoIncrement = true), "nick" to ColumnDefinition(NeutralType.Text(50)))
+                .copy(indices = listOf(idx), constraints = listOf(exclude)),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = identityAddedDiff().tablesChanged.single().columnsChanged,
+                    indicesAdded = listOf(idx),
+                    constraintsAdded = listOf(exclude),
+                ),
+            ),
+        )
+        val plan = planner.plan(current, desired, diff)
+        val r = gen.generateUp(plan, DdlGenerationOptions())
+        r.statements.shouldBeEmpty()
+        // Weder gerendert noch uebersprungen waere ein spurloses Verschwinden.
+        (r.operationsRendered + r.operationsSkipped) shouldBe plan.operations.map { it.id }.toSet()
+    }
+
+    test("a nullability change on a `generation`-declared identity column is blocked, not rendered") {
+        // Ohne diese Wache liefe `ALTER COLUMN [id] INT NULL` gegen Msg 4928 —
+        // die Identity steht hier in `generation`, nicht im Typ.
+        val identity = ColumnDefinition(NeutralType.Integer, required = true, generation = ColumnGeneration.Identity())
+        val current = schema("users" to TableDefinition(columns = linkedMapOf("id" to identity)))
+        val desired = schema(
+            "users" to TableDefinition(columns = linkedMapOf("id" to identity.copy(required = false))),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(ColumnDiff(name = "id", required = ValueChange(true, false))),
+                ),
+            ),
+        )
+        val r = up(diff, current, desired)
+        r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code } shouldContain "MSSQL_IDENTITY_COLUMN_NOT_NULLABLE"
+    }
+
     test("identity declared through `generation` triggers the rebuild just as the type does") {
         // Sonst liefe ein ALTER COLUMN gegen Msg 156 — die Identity steht hier
         // nicht im Typ, sondern in `generation`.
@@ -310,6 +412,9 @@ class MssqlRebuildRendererTest : FunSpec({
         r.operationsSkipped.shouldBeEmpty()
         r.requiresConfirmation shouldBe true
         r.statements.all { it.risk.requiresTableRewrite && it.risk.destructive } shouldBe true
+        // Der Migrate-Report zaehlt `manualActions`, nicht das Risiko der
+        // Statements — sonst meldete ein Neubau null manuelle Schritte.
+        r.manualActions shouldBe plan.operations.map { it.id }.toSet()
     }
 
     test("--strict-gap-operations blocks the rebuild: the table is briefly absent") {

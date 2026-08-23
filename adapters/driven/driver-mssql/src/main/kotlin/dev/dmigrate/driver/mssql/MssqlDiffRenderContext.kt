@@ -106,6 +106,10 @@ internal class MssqlDiffRenderContext(
         )
         rendered += ids
         destructive += ids
+        // Wie in [emit]: was das Risiko als bestaetigungspflichtig ausweist,
+        // muss auch in `manualActions` stehen — der Migrate-Report zaehlt
+        // diese Menge, nicht das Risiko der Statements.
+        if (rebuildRisk(bucket).requiresManualConfirmation) manualActions += ids
         nonReversible += bucket.filter { it.reversibility == Reversibility.NOT_REVERSIBLE }.map { it.id }
     }
 

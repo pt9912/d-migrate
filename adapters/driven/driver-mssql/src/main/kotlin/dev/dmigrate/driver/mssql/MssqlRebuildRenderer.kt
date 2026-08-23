@@ -69,7 +69,8 @@ internal object MssqlRebuildRenderer {
                 reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
             )
         }
-        val resolved = resolve(rebuild, ctx, targetSchema, sourceSchema, target, source) ?: return
+        val resolved = resolve(rebuild, ctx, targetSchema, sourceSchema, target, source)
+            ?: return blockBucketRemainder(bucket, ctx, table)
         if (ctx.options.strictGapOperations) {
             return blockBucket(
                 bucket, ctx,
@@ -116,8 +117,8 @@ internal object MssqlRebuildRenderer {
             ?: return blockUnfillable(bucket, ctx, table, target, sources)
 
         val statements = mutableListOf<String>()
-        MssqlRebuildPlanner.inboundForeignKeys(sourceSchema, table).forEach {
-            statements += ctx.sql.dropConstraintSql(it.childTable, it.constraint.name)
+        MssqlRebuildPlanner.inboundForeignKeysToDrop(sourceSchema, targetSchema, table).forEach {
+            statements += ctx.sql.dropConstraintIfTableExistsSql(it.childTable, it.constraint.name)
         }
         statements += createTempTableSql(temp, declarations, ctx)
         statements += copy
@@ -131,7 +132,7 @@ internal object MssqlRebuildRenderer {
         for (index in target.indices) {
             statements += MssqlDiffObjectOps.resolveIndexSql(trigger, ctx, table, index, target) ?: return null
         }
-        for (inbound in MssqlRebuildPlanner.restorableInboundForeignKeys(sourceSchema, targetSchema, table)) {
+        for (inbound in MssqlRebuildPlanner.inboundForeignKeys(targetSchema, table)) {
             statements += MssqlDiffObjectOps
                 .resolveConstraintSql(trigger, ctx, inbound.childTable, inbound.constraint) ?: return null
         }
@@ -224,6 +225,31 @@ internal object MssqlRebuildRenderer {
             reason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
         )
         return null
+    }
+
+    /**
+     * Ein Teil der Sequenz liess sich nicht rendern. Der Aufloeser hat dafuer
+     * bereits die ausloesende Operation als Blocker vermerkt — der REST des
+     * Eimers darf jetzt aber nicht aus der Buchhaltung fallen: er waere weder
+     * `rendered` noch `skipped`, und ein Konsument, der beide Mengen liest,
+     * saehe die Operationen spurlos verschwinden.
+     */
+    private fun blockBucketRemainder(
+        bucket: List<DiffOperation>,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+    ) {
+        val rest = bucket.filterNot { ctx.isSkipped(it) }
+        if (rest.isEmpty()) return
+        rest.forEach {
+            ctx.skip(
+                it,
+                "Operation ${it.id} belongs to the rebuild of table '$table', which could not be rendered in " +
+                    "full; the reason is reported on the operation that triggered the rebuild.",
+                code = "MSSQL_REBUILD_NOT_RENDERABLE",
+            )
+        }
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, rest.map { it.id }.toSet())
     }
 
     private fun blockBucket(

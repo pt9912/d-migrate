@@ -148,7 +148,7 @@ internal object MssqlDiffTableOps {
         // Ohne diese Wache entstuende `ALTER COLUMN [id] INT IDENTITY(1,1) NOT NULL`
         // — ungueltiges T-SQL (Msg 156). IDENTITY gehoert in die Spalten-Anlage,
         // nicht in eine Neudeklaration.
-        if (blockIdentityColumn(op, ctx, table, column, target.type)) return
+        if (blockIdentityColumn(op, ctx, table, column, target)) return
         alterColumnWithDefaultDance(
             op, ctx, table, column, target.type, target.copy(required = targetRequired),
         )
@@ -319,9 +319,11 @@ internal object MssqlDiffTableOps {
         ctx: MssqlDiffRenderContext,
         table: String,
         column: String,
-        type: NeutralType,
+        col: ColumnDefinition,
     ): Boolean {
-        if ((type as? NeutralType.Identifier)?.autoIncrement != true) return false
+        // Die Spalte, nicht der Typ: IDENTITY kommt ebenso aus `generation`,
+        // und ein `ALTER COLUMN` darauf ist genauso unzulaessig.
+        if (!MssqlColumnConstraintHelper.isIdentity(col.type, col)) return false
         ctx.skip(
             op,
             "Column '$table.$column' is an IDENTITY column, and SQL Server requires those to be NOT NULL. " +

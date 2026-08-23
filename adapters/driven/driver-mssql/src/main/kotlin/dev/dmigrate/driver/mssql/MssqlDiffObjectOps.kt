@@ -174,14 +174,6 @@ internal object MssqlDiffObjectOps {
     }
 
     /**
-     * Die Objekte, die einer Spaltenaenderung im Weg stehen (Msg 5074).
-     *
-     * Ein spaltenlevel `unique: true` steht in KEINER der beiden Modell-Listen —
-     * der Generate-Pfad rendert es als `uq_<tabelle>_<spalte>` an der Spalte.
-     * Es wird deshalb als Constraint nachgebildet, sonst bliebe es beim
-     * `ALTER COLUMN` haengen.
-     */
-    /**
      * Ein `references` an der Spalte ist im Modell kein Constraint; der
      * Generate-Pfad macht daraus `fk_<tabelle>_<spalte>`. Wer den Fremdschluessel
      * abraeumt, muss ihn unter genau diesem Namen wieder anlegen — die Synthese
@@ -199,6 +191,14 @@ internal object MssqlDiffObjectOps {
         ),
     )
 
+    /**
+     * Die Objekte, die einer Spaltenaenderung im Weg stehen (Msg 5074).
+     *
+     * Ein spaltenlevel `unique: true` steht in KEINER der beiden Modell-Listen —
+     * der Generate-Pfad rendert es als `uq_<tabelle>_<spalte>` an der Spalte.
+     * Es wird deshalb als Constraint nachgebildet, sonst bliebe es beim
+     * `ALTER COLUMN` haengen.
+     */
     fun dependentsOf(table: String, tableDef: TableDefinition, column: String): Dependents {
         val columnUnique = tableDef.columns[column]
             ?.takeIf { it.unique }

@@ -252,6 +252,18 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
         return "DROP INDEX IF EXISTS ${quote(name)} ON ${quote(table)};"
     }
 
+    /**
+     * Wie [dropConstraintSql], aber vertraegt eine Tabelle, die es gerade nicht
+     * gibt. Der Tabellen-Neubau raeumt die Fremdschluessel BEIDER Zustaende ab;
+     * darunter koennen welche sein, deren Kindtabelle derselbe Plan erst
+     * anlegt oder schon geloescht hat. `DROP CONSTRAINT IF EXISTS` faengt nur
+     * den fehlenden Constraint ab, nicht die fehlende Tabelle — `ALTER TABLE`
+     * darauf waere Msg 4902.
+     */
+    fun dropConstraintIfTableExistsSql(table: String, name: String): String =
+        "IF OBJECT_ID(${stringLiteral(table)}) IS NOT NULL\n" +
+            "    ALTER TABLE ${quote(table)} DROP CONSTRAINT IF EXISTS ${quote(name)};"
+
     fun dropConstraintSql(table: String, name: String): String =
         "ALTER TABLE ${quote(table)} DROP CONSTRAINT IF EXISTS ${quote(name)};"
 
