@@ -312,6 +312,20 @@ internal class MssqlDiffRenderContext(
         )
 
         /**
+         * Katalog-DDL: `CREATE OR ALTER VIEW` und `DROP VIEW` schreiben in
+         * `sys.objects`/`sys.sql_modules` und nehmen eine Sperre auf die Sicht
+         * selbst, nicht auf die Tabellen darunter. Leser und Schreiber der
+         * Basistabellen laufen weiter.
+         */
+        internal val MSSQL_METADATA_DDL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.METADATA,
+            implicitCommitPossible = false,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = false,
+        )
+
+        /**
          * `sp_rename` ist eine Systemprozedur, kein DDL-Statement. Sie laeuft
          * ebenfalls in der Transaktion, beruehrt aber nur den Katalog — und sie
          * hat eine Nebenwirkung, die DDL nicht hat: bestehende Verweise

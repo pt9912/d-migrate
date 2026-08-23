@@ -15,9 +15,9 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  *
  * **Im Umfang**: Tabellen, Spalten und Primaerschluessel (5a), der
  * IDENTITY-Tabellen-Neubau (5a-2, [MssqlRebuildPlanner]), Constraints und
- * Indizes (5b). Alles andere meldet der Dispatcher als
+ * Indizes (5b), Sichten (5c). Alles andere meldet der Dispatcher als
  * `DIALECT_UNSUPPORTED_OPERATION` — teils, weil ein spaeterer Sub-Slice es
- * liefert (Sichten und Custom Types 5c, Sequenzen 5d), teils, weil ein Slice
+ * liefert (Custom Types 5c, Sequenzen 5d), teils, weil ein Slice
  * die ganze Flaeche besitzt (Routinen und Trigger Slice 9, Partitionierung
  * Slice 7) oder SQL Server sie gar nicht kennt (Materialized Views).
  *
@@ -148,6 +148,10 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.DropIndex -> MssqlDiffObjectOps.renderDropIndex(op, ctx)
             is DiffOperation.AddConstraint -> MssqlDiffObjectOps.renderAddConstraint(op, ctx)
             is DiffOperation.DropConstraint -> MssqlDiffObjectOps.renderDropConstraint(op, ctx)
+            is DiffOperation.CreateView -> MssqlDiffViewOps.renderCreateView(op, ctx)
+            is DiffOperation.ReplaceView -> MssqlDiffViewOps.renderReplaceView(op, ctx)
+            is DiffOperation.DropView -> MssqlDiffViewOps.renderDropView(op, ctx)
+            is DiffOperation.RenameView -> MssqlDiffViewOps.renderRenameView(op, ctx)
             else -> blockUnsupported(op, ctx)
         }
     }
@@ -170,11 +174,9 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
     }
 
     private fun ownerOf(op: DiffOperation): String = when (op) {
-        is DiffOperation.CreateView, is DiffOperation.ReplaceView,
-        is DiffOperation.DropView, is DiffOperation.RenameView,
         is DiffOperation.CreateCustomType, is DiffOperation.AlterCustomType,
         is DiffOperation.DropCustomType,
-        -> "views and custom types arrive with sub-slice 5c"
+        -> "custom types arrive with sub-slice 5c"
 
         is DiffOperation.CreateSequence, is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence, is DiffOperation.RenameSequence,

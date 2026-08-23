@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.ColumnDiff
+import dev.dmigrate.core.diff.NamedSequence
 import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.NamedView
 import dev.dmigrate.core.diff.SchemaDiff
@@ -23,6 +24,7 @@ import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -324,12 +326,12 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("an operation of a later sub-slice is blocked with a message naming its owner") {
-        val view = ViewDefinition(query = "SELECT 1 AS one")
-        val r = up(SchemaDiff(viewsAdded = listOf(NamedView("v", view))))
+        val seq = SequenceDefinition(start = 1, increment = 1)
+        val r = up(SchemaDiff(sequencesAdded = listOf(NamedSequence("s", seq))))
         r.statements.shouldBeEmpty()
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
         r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }
-            .message shouldContainStr "sub-slice 5c"
+            .message shouldContainStr "sub-slice 5d"
     }
 
     test("statements declare SQL Server's fully transactional DDL") {
