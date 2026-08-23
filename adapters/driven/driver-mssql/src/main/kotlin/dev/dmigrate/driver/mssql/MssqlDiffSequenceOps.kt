@@ -83,9 +83,30 @@ internal object MssqlDiffSequenceOps {
             )
             return
         }
+        // Die Schrittweite, nicht 1: eine Sequenz mit `INCREMENT BY 5` laege
+        // sonst neben ihrem Raster, und eine ABSTEIGENDE (`INCREMENT BY -1`)
+        // liefe rueckwaerts — sie gaebe bereits vergebene Werte ein zweites
+        // Mal aus. Ohne die Schrittweite laesst sich der Fortsetzungspunkt
+        // nicht sicher bestimmen, also wird geblockt statt geraten.
+        val increment = ctx.schemaForDirection()?.sequences?.get(ref.name)?.increment
+        if (increment == null) {
+            ctx.skip(
+                op,
+                "Resuming sequence '${ref.name}' needs its increment to compute the next value, but the " +
+                    "sequence is not in the schema for this direction. RESTART WITH sets the next value, and " +
+                    "guessing a step of 1 would put a wider sequence off its stride and a descending one " +
+                    "backwards onto values it already issued.",
+                code = "MSSQL_COLUMN_NOT_IN_SCHEMA",
+            )
+            ctx.addBlocker(
+                dev.dmigrate.driver.migration.MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+                setOf(op.id),
+            )
+            return
+        }
         ctx.emit(
             op,
-            MssqlSequenceDdl.restartSql(ref.name, value + 1),
+            MssqlSequenceDdl.restartSql(ref.name, value + increment),
             MssqlDiffRenderContext.MSSQL_METADATA_DDL_HINTS,
         )
         // Live gemessen: `RESTART WITH` schreibt auch `sys.sequences.start_value`

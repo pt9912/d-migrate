@@ -45,13 +45,13 @@ class MssqlDiffSequenceOpsTest : FunSpec({
         gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
 
     /** Ein DiffResult um eine von Hand gebaute Operation. */
-    fun diffOf(op: DiffOperation) = DiffResult(
+    fun diffOf(op: DiffOperation, vararg sequences: Pair<String, SequenceDefinition>) = DiffResult(
         current = DiffEndpoint(schemaName = "App"),
         desired = DiffEndpoint(schemaName = "App"),
         schemaDiff = SchemaDiff(),
         operations = listOf(op),
-        currentSchema = schema(),
-        desiredSchema = schema(),
+        currentSchema = schema(*sequences),
+        desiredSchema = schema(*sequences),
     )
 
     test("CreateSequence renders the native form; down drops it") {
@@ -130,11 +130,58 @@ class MssqlDiffSequenceOpsTest : FunSpec({
             currentValue = 41,
             restoreValue = 7,
         )
-        val r = gen.generateUp(diffOf(op), DdlGenerationOptions())
+        val r = gen.generateUp(diffOf(op, "sq" to counter), DdlGenerationOptions())
         r.statements.single().sql shouldBe "ALTER SEQUENCE [sq] RESTART WITH 42;"
         // RESTART WITH schreibt auch start_value um — der Reverse sieht das.
         r.diagnostics.map { it.code } shouldContain "MSSQL_RESTART_REWRITES_START"
-        gen.generateDown(diffOf(op), DdlGenerationOptions()).statements.single().sql shouldBe
+        gen.generateDown(diffOf(op, "sq" to counter), DdlGenerationOptions()).statements.single().sql shouldBe
             "ALTER SEQUENCE [sq] RESTART WITH 8;"
+    }
+
+    test("a descending sequence resumes DOWNWARDS — a step of 1 would reissue values") {
+        // `INCREMENT BY -1`, zuletzt ausgegeben 5: der naechste Wert ist 4.
+        // `RESTART WITH 6` gaebe 6 und 5 ein zweites Mal aus.
+        val descending = SequenceDefinition(start = 100, increment = -1)
+        val ref = SequenceObjectRef(name = "down", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "AlterSequenceCurrentValue:down",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("down")),
+            pairId = "p1",
+            probeSequenceRef = ref,
+            applySequenceRef = ref,
+            currentValue = 5,
+        )
+        gen.generateUp(diffOf(op, "down" to descending), DdlGenerationOptions())
+            .statements.single().sql shouldBe "ALTER SEQUENCE [down] RESTART WITH 4;"
+    }
+
+    test("a wider step keeps the sequence on its stride") {
+        val byFive = SequenceDefinition(start = 10, increment = 5)
+        val ref = SequenceObjectRef(name = "five", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "AlterSequenceCurrentValue:five",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("five")),
+            pairId = "p1",
+            probeSequenceRef = ref,
+            applySequenceRef = ref,
+            currentValue = 20,
+        )
+        gen.generateUp(diffOf(op, "five" to byFive), DdlGenerationOptions())
+            .statements.single().sql shouldBe "ALTER SEQUENCE [five] RESTART WITH 25;"
+    }
+
+    test("without the sequence in the schema the resume point is blocked, not guessed") {
+        val ref = SequenceObjectRef(name = "ghost", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "AlterSequenceCurrentValue:ghost",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("ghost")),
+            pairId = "p1",
+            probeSequenceRef = ref,
+            applySequenceRef = ref,
+            currentValue = 5,
+        )
+        val r = gen.generateUp(diffOf(op), DdlGenerationOptions())
+        r.statements.isEmpty() shouldBe true
+        r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_NOT_IN_SCHEMA"
     }
 })
