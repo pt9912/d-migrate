@@ -177,6 +177,28 @@ internal object MssqlRebuildPlanner {
         }
 
     /**
+     * Die eingehenden Fremdschluessel, die der Neubau wieder anlegen darf:
+     * die, die er auch abgeraeumt hat — also die in BEIDEN Schemata.
+     *
+     * Dieselbe Regel wie beim Spaltentanz ([MssqlDiffColumnDependencies],
+     * Regel 2), und aus demselben Grund: einen Fremdschluessel, den erst das
+     * Zielschema kennt, fuegt derselbe Plan mit einer eigenen
+     * `AddConstraint`-Operation hinzu. Die gehoert einer ANDEREN Tabelle und
+     * wird deshalb nicht absorbiert — der Neubau haette ihn sonst zusammen
+     * mit ihr zweimal angelegt (Msg 2714).
+     */
+    fun restorableInboundForeignKeys(
+        sourceSchema: SchemaDefinition?,
+        targetSchema: SchemaDefinition?,
+        table: String,
+    ): List<MssqlDiffColumnDependencies.InboundForeignKey> {
+        val dropped = inboundForeignKeys(sourceSchema, table)
+        return inboundForeignKeys(targetSchema, table).filter { target ->
+            dropped.any { it.childTable == target.childTable && it.constraint.name == target.constraint.name }
+        }
+    }
+
+    /**
      * Was der Neubau uebernimmt. Alles, was die Gestalt der Tabelle betrifft —
      * inklusive der Index- und Constraint-Operationen, anders als beim
      * SQLite-Pendant: dort ist `CREATE INDEX IF NOT EXISTS` moeglich, in T-SQL

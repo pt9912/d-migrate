@@ -131,7 +131,7 @@ internal object MssqlRebuildRenderer {
         for (index in target.indices) {
             statements += MssqlDiffObjectOps.resolveIndexSql(trigger, ctx, table, index, target) ?: return null
         }
-        for (inbound in MssqlRebuildPlanner.inboundForeignKeys(targetSchema, table)) {
+        for (inbound in MssqlRebuildPlanner.restorableInboundForeignKeys(sourceSchema, targetSchema, table)) {
             statements += MssqlDiffObjectOps
                 .resolveConstraintSql(trigger, ctx, inbound.childTable, inbound.constraint) ?: return null
         }

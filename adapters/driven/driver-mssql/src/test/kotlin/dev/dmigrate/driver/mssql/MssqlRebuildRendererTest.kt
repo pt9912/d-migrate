@@ -248,6 +248,36 @@ class MssqlRebuildRendererTest : FunSpec({
         (addFk > dropTable) shouldBe true
     }
 
+    test("a foreign key the same plan adds is left to its own operation, not created twice") {
+        // Der Neubau darf nur wiederherstellen, was er auch abgeraeumt hat.
+        // Einen erst im Zielschema stehenden FK fuegt eine eigene
+        // AddConstraint-Operation hinzu — sie gehoert einer ANDEREN Tabelle und
+        // wird deshalb nicht absorbiert. Beides zusammen waere Msg 2714.
+        val fk = ConstraintDefinition(
+            name = "fk_orders_user",
+            type = ConstraintType.FOREIGN_KEY,
+            columns = listOf("user_id"),
+            references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+        )
+        val ordersBefore = TableDefinition(columns = linkedMapOf("user_id" to ColumnDefinition(NeutralType.Integer)))
+        val current = schema("users" to users(NeutralType.Integer), "orders" to ordersBefore)
+        val desired = schema(
+            "users" to users(NeutralType.Identifier(autoIncrement = true)),
+            "orders" to ordersBefore.copy(constraints = listOf(fk)),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = identityAddedDiff().tablesChanged.single().columnsChanged,
+                ),
+                TableDiff(name = "orders", constraintsAdded = listOf(fk)),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user]") } shouldBe 1
+    }
+
     test("identity declared through `generation` triggers the rebuild just as the type does") {
         // Sonst liefe ein ALTER COLUMN gegen Msg 156 — die Identity steht hier
         // nicht im Typ, sondern in `generation`.
