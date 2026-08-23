@@ -2,8 +2,10 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -179,6 +181,24 @@ internal object MssqlDiffObjectOps {
      * Es wird deshalb als Constraint nachgebildet, sonst bliebe es beim
      * `ALTER COLUMN` haengen.
      */
+    /**
+     * Ein `references` an der Spalte ist im Modell kein Constraint; der
+     * Generate-Pfad macht daraus `fk_<tabelle>_<spalte>`. Wer den Fremdschluessel
+     * abraeumt, muss ihn unter genau diesem Namen wieder anlegen — die Synthese
+     * steht deshalb hier und nicht in jedem Aufrufer neu.
+     */
+    fun columnForeignKey(table: String, column: String, ref: ReferenceDefinition) = ConstraintDefinition(
+        name = "fk_${table}_$column",
+        type = ConstraintType.FOREIGN_KEY,
+        columns = listOf(column),
+        references = ConstraintReferenceDefinition(
+            table = ref.table,
+            columns = listOf(ref.column),
+            onDelete = ref.onDelete,
+            onUpdate = ref.onUpdate,
+        ),
+    )
+
     fun dependentsOf(table: String, tableDef: TableDefinition, column: String): Dependents {
         val columnUnique = tableDef.columns[column]
             ?.takeIf { it.unique }

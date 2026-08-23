@@ -3,8 +3,6 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
-import dev.dmigrate.core.model.ConstraintType
-import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.TableDefinition
@@ -200,25 +198,10 @@ internal object MssqlRebuildRenderer {
         }
     }
 
-    /**
-     * Ein `references` an der Spalte ist im Modell kein Constraint, der
-     * Generate-Pfad macht daraus aber `fk_<tabelle>_<spalte>`. Der Neubau muss
-     * ihn genauso wiederherstellen, sonst faellt die Beziehung beim Umbau weg.
-     */
+    /** Die `references` der Spalten als Constraints — sonst faellt die Beziehung beim Umbau weg. */
     private fun columnLevelForeignKeys(table: String, target: TableDefinition): List<ConstraintDefinition> =
         target.columns.mapNotNull { (name, col) ->
-            val ref = col.references ?: return@mapNotNull null
-            ConstraintDefinition(
-                name = "fk_${table}_$name",
-                type = ConstraintType.FOREIGN_KEY,
-                columns = listOf(name),
-                references = ConstraintReferenceDefinition(
-                    table = ref.table,
-                    columns = listOf(ref.column),
-                    onDelete = ref.onDelete,
-                    onUpdate = ref.onUpdate,
-                ),
-            )
+            col.references?.let { MssqlDiffObjectOps.columnForeignKey(table, name, it) }
         }
 
     private fun blockUnfillable(

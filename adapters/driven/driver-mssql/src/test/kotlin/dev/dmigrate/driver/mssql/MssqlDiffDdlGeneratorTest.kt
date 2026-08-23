@@ -19,6 +19,7 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
@@ -273,6 +274,51 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         sqls.any { it.startsWith("CREATE TABLE [users__dmg_rebuild_") } shouldBe true
         r.blockers.shouldBeEmpty()
         r.diagnostics.map { it.code } shouldContain "MSSQL_TABLE_REBUILT_FOR_IDENTITY"
+    }
+
+    test("a column-level foreign key is restored after the column change, not just dropped") {
+        // Es wird abgeraeumt, weil ALTER COLUMN sonst mit Msg 5074 scheitert —
+        // und wieder angelegt, weil die Beziehung sonst still verschwaende.
+        val orders = TableDefinition(
+            columns = linkedMapOf(
+                "user_id" to ColumnDefinition(
+                    NeutralType.Integer,
+                    references = ReferenceDefinition(table = "users", column = "id"),
+                ),
+            ),
+        )
+        val users = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val current = schema("users" to users, "orders" to orders)
+        val desired = schema(
+            "users" to users,
+            "orders" to orders.copy(
+                columns = linkedMapOf(
+                    "user_id" to ColumnDefinition(
+                        NeutralType.BigInteger,
+                        references = ReferenceDefinition(table = "users", column = "id"),
+                    ),
+                ),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "orders",
+                    columnsChanged = listOf(
+                        ColumnDiff(
+                            name = "user_id",
+                            type = ValueChange(NeutralType.Integer, NeutralType.BigInteger),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        sqls.any { it.contains("sys.foreign_keys") } shouldBe true
+        sqls.last() shouldContainStr "ADD CONSTRAINT [fk_orders_user_id] FOREIGN KEY ([user_id]) REFERENCES [users]([id])"
     }
 
     test("an operation of a later sub-slice is blocked with a message naming its owner") {

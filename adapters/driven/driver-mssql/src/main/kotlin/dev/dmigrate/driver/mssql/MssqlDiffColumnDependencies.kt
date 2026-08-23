@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 
@@ -108,6 +109,15 @@ internal object MssqlDiffColumnDependencies {
         fun survivingColumnUnique(): Boolean =
             hasColumnUnique && surviving?.columns?.get(column)?.unique == true
 
+        /**
+         * Das Gegenstueck zum `dropForeignKeyOnColumnSql` in [dropStatements].
+         * Ohne diese Zeile raeumt der Spaltentanz einen spaltenlevel
+         * Fremdschluessel ab und legt ihn nie wieder an — die Beziehung waere
+         * nach der Migration still verschwunden.
+         */
+        fun survivingColumnReference(): ReferenceDefinition? =
+            surviving?.columns?.get(column)?.references?.takeIf { hasColumnReference }
+
         fun survivingPrimaryKey(): List<String>? =
             surviving?.primaryKey?.takeIf { inPrimaryKey && it.isNotEmpty() }
 
@@ -166,6 +176,11 @@ internal object MssqlDiffColumnDependencies {
             out += "ALTER TABLE ${ctx.sql.quote(deps.table)} ADD CONSTRAINT " +
                 "${ctx.sql.quote(MssqlConstraintNames.unique(deps.table, deps.column))} " +
                 "UNIQUE (${ctx.sql.quote(deps.column)});"
+        }
+        deps.survivingColumnReference()?.let { ref ->
+            out += MssqlDiffObjectOps.resolveConstraintSql(
+                op, ctx, deps.table, MssqlDiffObjectOps.columnForeignKey(deps.table, deps.column, ref),
+            ) ?: return null
         }
         for (index in deps.survivingIndices()) {
             out += MssqlDiffObjectOps.resolveIndexSql(op, ctx, deps.table, index) ?: return null
