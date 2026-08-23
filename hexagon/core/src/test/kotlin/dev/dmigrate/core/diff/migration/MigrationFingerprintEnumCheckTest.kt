@@ -106,4 +106,43 @@ class MigrationFingerprintEnumCheckTest : FunSpec({
         )))
         MigrationFingerprint.project(ranged) shouldContain "constraints[1]"
     }
+
+    test("two matching checks on the same column fold NEITHER — one would vanish silently") {
+        // Welcher von beiden den Wertevorrat beschreibt, ist nicht
+        // entscheidbar. Einen zu falten liesse ihn spurlos verschwinden, samt
+        // dem Unterschied, den er ausmacht.
+        fun withChecks(vararg names: String) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("status" to ColumnDefinition(NeutralType.Text(5))),
+            constraints = names.map {
+                ConstraintDefinition(name = it, type = ConstraintType.CHECK, expression = "status IN ('a', 'b')")
+            },
+        )))
+        MigrationFingerprint.project(withChecks("chk_a", "chk_b")) shouldContain "constraints[2]"
+        // Und eine Tabelle mit nur einem darf davon unterscheidbar bleiben.
+        MigrationFingerprint.compute(withChecks("chk_a", "chk_b")) shouldNotBe
+            MigrationFingerprint.compute(withChecks("chk_a"))
+    }
+
+    test("the constraint ORDER does not decide which check is folded") {
+        fun inOrder(vararg exprs: String) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("status" to ColumnDefinition(NeutralType.Text(5))),
+            constraints = exprs.mapIndexed { i, e ->
+                ConstraintDefinition(name = "chk_$i", type = ConstraintType.CHECK, expression = e)
+            },
+        )))
+        // Zwei Treffer auf derselben Spalte: keiner faltet, egal wie herum.
+        MigrationFingerprint.project(inOrder("status IN ('a')", "status IN ('a','b')")) shouldContain
+            "enum_checks[0]"
+        MigrationFingerprint.project(inOrder("status IN ('a','b')", "status IN ('a')")) shouldContain
+            "enum_checks[0]"
+    }
+
+    test("values containing a comma cannot collide with two separate values") {
+        // Ohne Escaping haetten `["a,b"]` und `["a","b"]` denselben Text.
+        fun withValues(vararg v: String) = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("mood" to ColumnDefinition(NeutralType.Enum(values = v.toList()))),
+        )))
+        MigrationFingerprint.compute(withValues("a,b")) shouldNotBe
+            MigrationFingerprint.compute(withValues("a", "b"))
+    }
 })

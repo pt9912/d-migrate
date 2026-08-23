@@ -25,8 +25,7 @@ dabei zwei Darstellungen derselben Aussage gegenüber:
 - **authored**: `mood: enum(red, green)` — der Wertevorrat steckt im Spaltentyp,
   die Tabelle hat keinen Constraint.
 - **zurückgelesen**: eine Textspalte **plus** ein CHECK, der die erlaubten Werte
-  aufzählt — denn SQL Server hat keinen Enum-Typ, und PostgreSQL erzeugt für ein
-  Inline-Enum im Generate-Pfad dieselbe Konstruktion.
+  aufzählt — denn SQL Server hat keinen Enum-Typ.
 
 Die Typseite fiel schon mit ADR 0026: die dialektbewusste Projektion faltet
 `enum(red, green)` auf `text(5)`. Die Constraint-Seite blieb — und weil der
@@ -58,6 +57,11 @@ Drei Eigenschaften bestimmen die Regel:
   Formen werden erkannt, und die Werte gelten für den Abgleich als **Menge**.
   Der Spaltentyp behält dagegen seine Reihenfolge: MySQLs nativer `ENUM` hat
   Ordinal-Semantik.
+- **Eindeutigkeit vor Toleranz.** Passen **zwei** CHECKs auf dieselbe Spalte, ist
+  nicht entscheidbar, welcher den Wertevorrat beschreibt — dann faltet keiner.
+  Einen zu falten liesse ihn spurlos verschwinden, samt dem Unterschied, den er
+  ausmacht. Die Auswahl steht deshalb fest, bevor gefaltet wird, und hängt nicht
+  von der Reihenfolge der Constraints ab.
 - **Informationserhaltend.** Es wird nichts ignoriert, sondern zusammengeführt.
   Fehlt der CHECK im Ziel, meldet der Vergleich weiterhin Drift; ein CHECK, der
   dem Wertevorrat der Spalte **widerspricht**, bleibt ein eigener Constraint.
@@ -75,6 +79,30 @@ Drei Eigenschaften bestimmen die Regel:
   rekonstruieren soll, ist eine eigene Frage
   ([`enum-inline-check-fidelity.md`](../planning/open/enum-inline-check-fidelity.md),
   Weg A) — sie wird durch diese Entscheidung nicht vorweggenommen.
+
+## Bekannte Grenze: nur SQL Server und SQLite liefern eine erkennbare Form
+
+Gemessen gegen echte Container:
+
+| Dialekt | was der Reverse für `CHECK (mood IN ('red','green'))` liefert | erkannt |
+| --- | --- | --- |
+| MS SQL Server | `mood='green' OR mood='red'` | ja |
+| SQLite | der Text unverändert, wie geschrieben | ja |
+| PostgreSQL | `((mood = ANY (ARRAY['red'::text, 'green'::text])))` | **nein** |
+| MySQL | ``(`mood` in (_latin1'red',_latin1'green'))`` | **nein** |
+
+PostgreSQL und MySQL schreiben den Ausdruck beim Speichern in eine eigene
+Normalform um — mit `= ANY (ARRAY[...])` und Typ-Casts beziehungsweise mit
+Charset-Introducern vor jedem Literal. Beide werden von der Projektion nicht
+erkannt.
+
+Das ist **folgenlos für den Zweck dieser Entscheidung**: der Migrate-Pfad
+rendert bei PostgreSQL und SQLite ohnehin bare `TEXT` (`W134`), und MySQL hat
+einen nativen `ENUM` — die Kante entsteht dort gar nicht. Es ist aber die
+sichere Richtung und keine Vollständigkeit: ein von Hand auf PostgreSQL oder
+MySQL angelegter `IN`-CHECK faltet authored, aber nicht zurückgelesen. Sollten
+diese Formen einmal gebraucht werden, gehören sie in dieselbe Projektion — und
+sie müssen dann gegen echte Container gemessen werden, nicht angenommen.
 
 ## Verworfene Alternativen
 

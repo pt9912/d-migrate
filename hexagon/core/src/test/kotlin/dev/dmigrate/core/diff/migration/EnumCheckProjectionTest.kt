@@ -92,4 +92,14 @@ class EnumCheckProjectionTest : FunSpec({
         EnumCheckProjection.valuesOf("mood=other", "mood") shouldBe null
         EnumCheckProjection.valuesOf("mood>'red'", "mood") shouldBe null
     }
+
+    test("each side of the chain may carry its own parentheses") {
+        // Blindes Abschneiden des ersten und letzten Zeichens verstuemmelte
+        // diesen Ausdruck frueher zu etwas Unlesbarem.
+        EnumCheckProjection.valuesOf("(mood='a') OR (mood='b')", "mood") shouldBe listOf("a", "b")
+    }
+
+    test("nested outer parentheses are peeled, unbalanced ones are not") {
+        EnumCheckProjection.valuesOf("((mood='a'))", "mood") shouldBe listOf("a")
+    }
 })

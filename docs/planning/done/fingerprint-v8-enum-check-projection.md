@@ -60,6 +60,19 @@ Drei Eigenschaften, auf die es ankommt:
   strukturell streng — dieselbe Grenze, die [ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md)
   für die Typ-Kanonisierung gezogen hat.
 
+### Gemessen: welche Form welcher Dialekt zurückliefert
+
+| Dialekt | Rückgabe für `CHECK (mood IN ('red','green'))` | erkannt |
+| --- | --- | --- |
+| MS SQL Server | `mood='green' OR mood='red'` | ja |
+| SQLite | unverändert | ja |
+| PostgreSQL | `((mood = ANY (ARRAY['red'::text, 'green'::text])))` | nein |
+| MySQL | ``(`mood` in (_latin1'red',_latin1'green'))`` | nein |
+
+Folgenlos für den Zweck (PG/SQLite rendern im Migrate-Pfad bare `TEXT`, MySQL
+hat einen nativen `ENUM`), aber die sichere Richtung statt Vollständigkeit —
+siehe [ADR 0048](../../adr/0048-enum-wertevorrat-im-fingerprint.md).
+
 ### Was die Regel NICHT trifft
 
 - Ein CHECK über **mehrere** Spalten.

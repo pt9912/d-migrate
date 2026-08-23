@@ -36,7 +36,7 @@ internal object EnumCheckProjection {
      * kein Literal-Ende.
      */
     fun valuesOf(expression: String?, column: String): List<String>? {
-        val text = expression?.trim()?.removeSurrounding("(", ")")?.trim() ?: return null
+        val text = unwrapOuterParens(expression?.trim() ?: return null)
         return inListValues(text, column) ?: equalityChainValues(text, column)
     }
 
@@ -57,13 +57,37 @@ internal object EnumCheckProjection {
     private fun equalityChainValues(text: String, column: String): List<String>? {
         val values = mutableListOf<String>()
         for (term in splitTopLevelOr(text) ?: return null) {
-            val trimmed = term.trim().removeSurrounding("(", ")").trim()
+            val trimmed = unwrapOuterParens(term.trim())
             val afterColumn = stripLeadingIdentifier(trimmed, column) ?: return null
             if (!afterColumn.startsWith("=")) return null
             val literal = parseStringList(afterColumn.substring(1).trim())?.singleOrNull() ?: return null
             values += literal
         }
         return values.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Traegt aeussere Klammern ab — aber nur, wenn sie wirklich zusammengehoeren.
+     * Blindes Abschneiden des ersten und letzten Zeichens verstuemmelt
+     * `(mood='a') OR (mood='b')` zu etwas Unlesbarem.
+     */
+    private fun unwrapOuterParens(text: String): String {
+        var current = text.trim()
+        while (current.startsWith("(") && current.endsWith(")")) {
+            var depth = 0
+            var closesAtEnd = true
+            for ((i, ch) in current.withIndex()) {
+                if (ch == '(') depth++
+                if (ch == ')') depth--
+                if (depth == 0 && i < current.length - 1) {
+                    closesAtEnd = false
+                    break
+                }
+            }
+            if (!closesAtEnd) return current
+            current = current.substring(1, current.length - 1).trim()
+        }
+        return current
     }
 
     /** Zerlegt an `OR`, aber nicht innerhalb von String-Literalen. */

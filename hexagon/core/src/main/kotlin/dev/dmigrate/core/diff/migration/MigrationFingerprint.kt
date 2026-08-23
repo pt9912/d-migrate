@@ -183,7 +183,7 @@ object MigrationFingerprint {
             sb.append("custom_type=").append(name)
                 .append(SEP).append("kind=").append(def.kind.name)
                 .append(SEP).append("base=").append(def.baseType ?: "")
-                .append(SEP).append("values=").append(def.values?.joinToString(",") ?: "")
+                .append(SEP).append("values=").append(def.values?.let(::joinValues) ?: "")
                 .append(SEP).append("precision=").append(def.precision ?: "")
                 .append(SEP).append("scale=").append(def.scale ?: "")
                 .append(SEP).append("check=").append(def.check ?: "")
@@ -237,7 +237,7 @@ object MigrationFingerprint {
             sb.append("  enum_checks[").append(folded.enumValuesByColumn.size).append("]\n")
             for ((colName, values) in folded.enumValuesByColumn.entries.sortedBy { it.key }) {
                 sb.append("    enum_check=").append(colName)
-                    .append(SEP).append("values=").append(values.joinToString(","))
+                    .append(SEP).append("values=").append(joinValues(values))
                     .append('\n')
             }
             appendPartitioning(sb, table.partitioning)
@@ -281,6 +281,7 @@ object MigrationFingerprint {
         for ((colName, col) in table.columns) {
             (col.type as? NeutralType.Enum)?.values?.let { enumByCol[colName] = it.sorted() }
         }
+        val foldable = foldableEnumChecks(table, enumByCol)
         for (c in table.constraints) {
             // Fold only onto columns that exist — a constraint on an unknown column
             // must stay in the block, not silently vanish from the projection.
@@ -302,19 +303,14 @@ object MigrationFingerprint {
                     }
                 }
 
-                // v8: der zurueckgelesene Enum. Ein CHECK der Form
-                // `<spalte> IN (…)` ueber eine Spalte dieser Tabelle beschreibt
-                // denselben Wertevorrat, den die authored Seite am Spaltentyp
-                // fuehrt — er wandert in dieselbe Projektion statt in den
-                // Constraint-Block, damit beide Seiten gleich hashen.
-                //
-                // Nur, wenn er dem Spaltentyp nicht WIDERSPRICHT: ein
-                // handgeschriebener CHECK mit abweichenden Werten bleibt
-                // sichtbar, sonst verschwaende dieser Fold einen echten
-                // Unterschied.
-                c.type == ConstraintType.CHECK && matchingEnumColumn(table, c, enumByCol) != null -> {
-                    val (colName, values) = matchingEnumColumn(table, c, enumByCol)!!
-                    enumByCol[colName] = values
+                // v8: der zurueckgelesene Enum. Ein CHECK, der den Wertevorrat
+                // EINER Spalte aufzaehlt, beschreibt dasselbe wie ein
+                // `enum` am Spaltentyp — er wandert in dieselbe Projektion
+                // statt in den Constraint-Block, damit beide Seiten gleich
+                // hashen. Welche Constraints das sind, steht vorher fest
+                // ([foldableEnumChecks]); hier wird nur noch zugeordnet.
+                c.type == ConstraintType.CHECK && foldable.containsKey(c) -> {
+                    enumByCol[foldable.getValue(c).first] = foldable.getValue(c).second
                 }
 
                 // Comparator-Parität auch für den Rest: CHECK-/EXCLUDE-Expressions
@@ -327,26 +323,40 @@ object MigrationFingerprint {
     }
 
     /**
-     * Die Spalte samt Wertevorrat, wenn [c] ein `IN`-Listen-CHECK ueber genau
-     * eine Spalte dieser Tabelle ist — sonst `null`.
+     * Welche CHECK-Constraints als Wertevorrat gelten — **vor** dem Falten
+     * bestimmt, damit das Ergebnis nicht von der Reihenfolge in
+     * `table.constraints` abhaengt.
      *
-     * Fuehrt die Spalte bereits einen abweichenden Wertevorrat (authored
-     * `enum` mit anderen Werten), gibt es keinen Treffer: der Constraint
-     * bleibt dann im Block stehen und der Unterschied sichtbar.
+     * Zwei Faelle bleiben ausdruecklich ungefaltet:
+     *
+     * - **Mehr als ein passender CHECK auf derselben Spalte.** Dann ist nicht
+     *   entscheidbar, welcher den Wertevorrat beschreibt — und zwei Constraints
+     *   in eine Projektion zu falten liesse einen davon spurlos verschwinden,
+     *   samt dem Unterschied, den er ausmacht.
+     * - **Ein CHECK, der dem Spaltentyp widerspricht.** Ein handgeschriebener
+     *   CHECK mit anderen Werten als das authored `enum` bleibt sichtbar.
      */
-    private fun matchingEnumColumn(
+    private fun foldableEnumChecks(
         table: TableDefinition,
-        c: ConstraintDefinition,
-        known: Map<String, List<String>>,
-    ): Pair<String, List<String>>? {
-        for (colName in table.columns.keys) {
-            val values = EnumCheckProjection.valuesOf(c.expression, colName) ?: continue
-            val sorted = values.sorted()
-            val existing = known[colName]
-            if (existing != null && existing != sorted) return null
-            return colName to sorted
+        fromColumnTypes: Map<String, List<String>>,
+    ): Map<ConstraintDefinition, Pair<String, List<String>>> {
+        val candidates = mutableListOf<Pair<ConstraintDefinition, Pair<String, List<String>>>>()
+        for (c in table.constraints) {
+            if (c.type != ConstraintType.CHECK) continue
+            for (colName in table.columns.keys) {
+                val values = EnumCheckProjection.valuesOf(c.expression, colName)?.sorted() ?: continue
+                candidates += c to (colName to values)
+                break
+            }
         }
-        return null
+        val perColumn = candidates.groupBy { it.second.first }
+        return candidates
+            .filter { (_, hit) ->
+                val (colName, values) = hit
+                val declared = fromColumnTypes[colName]
+                perColumn.getValue(colName).size == 1 && (declared == null || declared == values)
+            }
+            .toMap()
     }
 
     /** Single-column FK signature — delegiert an [reference], damit es genau EIN
@@ -572,9 +582,18 @@ object MigrationFingerprint {
 
     private fun enumType(t: NeutralType.Enum): String = when {
         t.refType != null -> "enum(ref:${t.refType})"
-        t.values != null -> "enum(${t.values!!.joinToString(",")})"
+        t.values != null -> "enum(${joinValues(t.values!!)})"
         else -> "enum"
     }
+
+    /**
+     * Werte kollisionsfrei aneinanderreihen. Ein blosses Komma reicht nicht:
+     * die Werte sind beliebige Nutzer-Strings, und `["a,b"]` haette sonst
+     * denselben projizierten Text wie `["a", "b"]` — zwei verschiedene Schemata
+     * mit demselben Fingerprint.
+     */
+    private fun joinValues(values: List<String>): String =
+        values.joinToString(",") { it.replace("\\", "\\\\").replace(",", "\\,") }
 
     private fun geometryType(t: NeutralType.Geometry): String {
         val gt = t.geometryType.schemaName
