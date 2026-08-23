@@ -368,6 +368,17 @@ Zwei weitere Entscheidungen sind nicht offensichtlich:
   **letzten** Operation, damit alles erledigt ist, was der Planner davor
   einsortiert hat.
 
+**Die eingehenden Fremdschlüssel waren der Fehlerherd** (sieben Review-Runden,
+in jeder ein Befund darin). Tragfähig ist erst die Trennung zwischen dem, was
+ein Schema *führt*, und dem, was zur Laufzeit *dasteht*: abgeräumt wird, was
+der Ausgangszustand kennt plus alles, was eine schon gerenderte Operation oder
+ein früherer Neubau angelegt hat; wiederhergestellt davon, was das Ziel weiter
+vorsieht, plus die Fremdschlüssel, deren eigene Operation der Eimer absorbiert
+hat. Der RenderContext führt dafür Buch (`noteRendered`/`noteRebuilt`), und
+zwar auch ohne Neubau — der Spaltentanz stellt dieselbe Frage. Es gibt **drei**
+Erzeuger, und sie rendern unterschiedliche Modellformen: der Neubau beide, ein
+`CreateTable` nur die Constraint-Liste, ein `AddConstraint` genau seinen einen.
+
 Eine neue Spalte, die der Neubau nicht füllen kann (NOT NULL, kein Default),
 blockt ihn — `MSSQL_REBUILD_COLUMN_NOT_FILLABLE`; der Default-Constraint
 existiert während der Kopie noch nicht, der Wert muss also im `SELECT` stehen.

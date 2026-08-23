@@ -276,6 +276,53 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.diagnostics.map { it.code } shouldContain "MSSQL_TABLE_REBUILT_FOR_IDENTITY"
     }
 
+    test("the generated enum CHECK is cleared before ALTER COLUMN and restored for the target type") {
+        // Er steht in keiner Modell-Liste — er entsteht erst beim Rendern aus
+        // dem Spaltentyp. Ohne ihn abzuraeumen ist ALTER COLUMN Msg 5074.
+        val before = ColumnDefinition(NeutralType.Enum(values = listOf("red", "green")))
+        val after = ColumnDefinition(NeutralType.Text(50))
+        val current = schema("t" to TableDefinition(columns = linkedMapOf("mood" to before)))
+        val desired = schema("t" to TableDefinition(columns = linkedMapOf("mood" to after)))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "mood", type = ValueChange(before.type, after.type)),
+                    ),
+                ),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        val drop = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [ck_t_mood]") }
+        val alter = sqls.indexOfFirst { it.contains("ALTER COLUMN [mood]") }
+        (drop in 0 until alter) shouldBe true
+        // Das Ziel ist ein blanker Text — es gibt nichts wiederherzustellen.
+        sqls.none { it.contains("ADD CONSTRAINT [ck_t_mood]") } shouldBe true
+    }
+
+    test("a change BETWEEN enums restores the CHECK with the new values") {
+        val before = ColumnDefinition(NeutralType.Enum(values = listOf("red", "green")))
+        val after = ColumnDefinition(NeutralType.Enum(values = listOf("red", "green", "blue")))
+        val current = schema("t" to TableDefinition(columns = linkedMapOf("mood" to before)))
+        val desired = schema("t" to TableDefinition(columns = linkedMapOf("mood" to after)))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "t",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "mood", type = ValueChange(before.type, after.type)),
+                    ),
+                ),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        val alter = sqls.indexOfFirst { it.contains("ALTER COLUMN [mood]") }
+        val readd = sqls.indexOfFirst { it.contains("ADD CONSTRAINT [ck_t_mood]") }
+        (readd > alter) shouldBe true
+        sqls[readd] shouldContainStr "N'blue'"
+    }
+
     test("an operation of a later sub-slice is blocked with a message naming its owner") {
         val view = ViewDefinition(query = "SELECT 1 AS one")
         val r = up(SchemaDiff(viewsAdded = listOf(NamedView("v", view))))

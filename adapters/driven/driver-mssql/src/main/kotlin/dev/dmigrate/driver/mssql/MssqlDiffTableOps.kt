@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.core.model.inOrdinalOrder
@@ -281,11 +282,46 @@ internal object MssqlDiffTableOps {
         // laege die Operation bei einem spaeten Blocker in `rendered` UND
         // `skipped`.
         val recreates = MssqlDiffColumnDependencies.recreateStatements(op, ctx, deps) ?: return
+        val checks = generatedChecks(ctx, table, column, target, ctx.schemaForDirection())
+        val bearingChecks = generatedChecks(
+            ctx, table, column, ctx.schemaBeforeChange()?.tables?.get(table)?.columns?.get(column),
+            ctx.schemaBeforeChange(),
+        )
         MssqlDiffColumnDependencies.dropStatements(ctx, deps).forEach { ctx.emit(op, it) }
+        if (bearingChecks.isNotEmpty() || checks.isNotEmpty()) {
+            ctx.emit(op, ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column)))
+        }
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
         target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
+        checks.forEach { ctx.emit(op, it) }
         recreates.forEach { ctx.emit(op, it) }
+    }
+
+    /**
+     * Der CHECK, den der Generate-Pfad an eine Enum- oder Domain-Spalte
+     * haengt (`ck_<tabelle>_<spalte>`).
+     *
+     * Er steht in KEINER Modell-Liste — er entsteht erst beim Rendern aus dem
+     * Spaltentyp. Der Abhaengigkeits-Tanz konnte ihn deshalb nicht sehen und
+     * liess ihn stehen; `ALTER COLUMN` scheiterte dann an Msg 5074, genau wie
+     * bei einem Default. Abgeraeumt wird er ueber die Konvention (mit
+     * `IF EXISTS`, er muss nicht existieren), wiederhergestellt wird der des
+     * ZIELzustands — die Werte koennen sich geaendert haben.
+     */
+    private fun generatedChecks(
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        col: ColumnDefinition?,
+        schema: SchemaDefinition?,
+    ): List<String> {
+        if (col == null || schema == null) return emptyList()
+        val tableDef = schema.tables[table] ?: return emptyList()
+        val rendering = ctx.sql.renderColumn(table, column, col, tableDef, schema, mutableListOf())
+        return rendering.objects
+            .filter { it.kind == MssqlColumnObject.Kind.CHECK }
+            .map { ctx.sql.columnObjectStatement(table, column, it) }
     }
 
     private fun dropColumnStatements(
@@ -298,6 +334,15 @@ internal object MssqlDiffTableOps {
         // hingen, gibt es danach nicht mehr.
         val deps = dependenciesFor(ctx, table, column, forDrop = true)
         MssqlDiffColumnDependencies.dropStatements(ctx, deps).forEach { ctx.emit(op, it) }
+        // Wie beim ALTER COLUMN: der generierte CHECK haengt an der Spalte und
+        // steht in keiner Modell-Liste. `DROP COLUMN` scheitert an ihm ebenso
+        // (Msg 5074) — wiederhergestellt wird hier nichts.
+        val bearing = ctx.schemaOppositeOfDirection()
+        if (generatedChecks(ctx, table, column, bearing?.tables?.get(table)?.columns?.get(column), bearing)
+                .isNotEmpty()
+        ) {
+            ctx.emit(op, ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column)))
+        }
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
