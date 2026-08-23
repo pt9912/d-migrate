@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.ColumnDiff
+import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
@@ -190,5 +191,47 @@ class MssqlDiffColumnDependenciesTest : FunSpec({
         val r = up(diff, current, desired)
         r.statements.map { it.sql }.none { it.contains("FOREIGN KEY") } shouldBe true
         r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_REFERENCE_NOT_RENDERED"
+    }
+
+    test("CreateTable says it just as loudly as AddColumn") {
+        // Die haeufigere Form der Luecke: eine ganz neue Tabelle, deren Spalte
+        // ein `references` traegt.
+        val newCol = ColumnDefinition(
+            NeutralType.Integer,
+            references = ReferenceDefinition(table = "users", column = "id"),
+        )
+        val users = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val orders = TableDefinition(columns = linkedMapOf("user_id" to newCol))
+        val current = schema("users" to users)
+        val desired = schema("users" to users, "orders" to orders)
+        val r = up(SchemaDiff(tablesAdded = listOf(NamedTable("orders", orders))), current, desired)
+        r.statements.map { it.sql }.none { it.contains("FOREIGN KEY") } shouldBe true
+        r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_REFERENCE_NOT_RENDERED"
+    }
+
+    test("the warning stays quiet when the constraint list declares the same relationship") {
+        // Dann entsteht der Fremdschluessel ueber die eigene Operation — es
+        // fehlt nichts, und eine Warnung waere ein Fehlalarm.
+        val ref = ReferenceDefinition(table = "users", column = "id")
+        val declared = ConstraintDefinition(
+            name = "fk_orders_user_id",
+            type = ConstraintType.FOREIGN_KEY,
+            columns = listOf("user_id"),
+            references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+        )
+        val newCol = ColumnDefinition(NeutralType.Integer, references = ref)
+        val users = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val orders = TableDefinition(columns = linkedMapOf("user_id" to newCol), constraints = listOf(declared))
+        val current = schema("users" to users)
+        val desired = schema("users" to users, "orders" to orders)
+        val r = up(SchemaDiff(tablesAdded = listOf(NamedTable("orders", orders))), current, desired)
+        r.statements.map { it.sql }.any { it.contains("[fk_orders_user_id]") } shouldBe true
+        r.diagnostics.map { it.code }.none { it == "MSSQL_COLUMN_REFERENCE_NOT_RENDERED" } shouldBe true
     }
 })

@@ -132,8 +132,9 @@ internal object MssqlDiffColumnDependencies {
      *
      * - ein **Tabellen-Neubau** legt die Tabelle vollstaendig neu an, also
      *   BEIDE Formen — er ist richtungsunabhaengig, weil er auch abwaerts
-     *   baut. Er steht deshalb in [rebuiltTables], nicht in [renderedBefore]:
-     *   seine Operationen sagen nichts darueber, was er alles geschrieben hat.
+     *   baut. Seine absorbierten Operationen stehen wie alle anderen in
+     *   [renderedBefore]; [rebuiltTables] kommt hinzu, weil er MEHR schreibt,
+     *   als sie benennen.
      * - `CreateTable` rendert nur die Constraint-Liste
      *   ([InboundForeignKey.fromColumn] fällt weg, offener Punkt
      *   `mssql-column-level-foreign-keys.md`),
