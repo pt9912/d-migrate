@@ -269,7 +269,7 @@ internal object MssqlDiffTableOps {
      * Ohne den ersten Schritt scheitert `ALTER COLUMN` mit Msg 5074 („The
      * object 'df_…' is dependent on column '…'").
      */
-    private fun alterColumnWithDefaultDance(
+    internal fun alterColumnWithDefaultDance(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
         table: String,
@@ -292,7 +292,12 @@ internal object MssqlDiffTableOps {
             ctx.emit(op, ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column)))
         }
         ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
-        ctx.emit(op, ctx.sql.alterColumnSql(table, column, type, target.required))
+        // Nicht `toSql(type)`: der Mapper kennt nur den neutralen Typ und macht
+        // aus einem Enum `NVARCHAR(MAX)`. Der Spalten-Helfer kennt die SPALTE
+        // und liefert `NVARCHAR(<laengster Wert>)` — dieselbe Breite, die
+        // `schema generate` schreibt, und anders als MAX schluesselfaehig.
+        val sqlType = columnSqlType(ctx, table, column, target.copy(type = type)) ?: ctx.sql.toSql(type)
+        ctx.emit(op, ctx.sql.alterColumnSql(table, column, sqlType, target.required))
         target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
         checks.forEach { ctx.emit(op, it) }
         recreates.forEach { ctx.emit(op, it) }
@@ -309,6 +314,26 @@ internal object MssqlDiffTableOps {
      * `IF EXISTS`, er muss nicht existieren), wiederhergestellt wird der des
      * ZIELzustands — die Werte koennen sich geaendert haben.
      */
+    /**
+     * Der SQL-Typ, in dem diese Spalte landet — so, wie der Generate-Pfad ihn
+     * schreibt.
+     *
+     * Massgeblich ist der Typ der OPERATION, nicht der der Schema-Spalte: die
+     * Operation sagt, wohin geaendert wird. Die Spalte liefert den Kontext, den
+     * der neutrale Typ nicht hat — die Enum-Werte hinter einem `refType`, die
+     * Basis einer Domain.
+     */
+    private fun columnSqlType(
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        col: ColumnDefinition,
+    ): String? {
+        val schema = ctx.schemaForDirection() ?: return null
+        val tableDef = schema.tables[table] ?: return null
+        return ctx.sql.renderColumn(table, column, col, tableDef, schema, mutableListOf()).sqlType
+    }
+
     private fun generatedChecks(
         ctx: MssqlDiffRenderContext,
         table: String,

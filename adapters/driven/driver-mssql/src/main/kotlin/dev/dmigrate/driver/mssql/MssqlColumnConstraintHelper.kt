@@ -91,11 +91,24 @@ internal class MssqlColumnConstraintHelper(
                 plainColumn(ctx)
             }
         }
-        return ColumnRendering(declaration, ctx.objects.toList())
+        return ColumnRendering(declaration, ctx.objects.toList(), ctx.sqlType)
     }
 
-    /** Die Deklaration ohne benannte Objekte plus die Objekte, die zu ihr gehoeren. */
-    data class ColumnRendering(val declaration: String, val objects: List<MssqlColumnObject>)
+    /**
+     * Die Deklaration ohne benannte Objekte, die Objekte, die zu ihr gehoeren,
+     * und der reine SQL-Typ.
+     *
+     * [sqlType] ist nicht redundant zu `MssqlTypeMapper.toSql`: der Mapper
+     * kennt nur den neutralen Typ, der Helfer die SPALTE. Ein Enum wird beim
+     * Mapper zu `NVARCHAR(MAX)`, hier zu `NVARCHAR(<laengster Wert>)` — und
+     * nur die zweite Form ist schluesselfaehig und deckt sich mit dem, was
+     * `schema generate` schreibt. `null`, wenn der Zweig keinen Typ bestimmt.
+     */
+    data class ColumnRendering(
+        val declaration: String,
+        val objects: List<MssqlColumnObject>,
+        val sqlType: String? = null,
+    )
 
     private fun inlineClause(obj: MssqlColumnObject): String {
         val head = "CONSTRAINT ${quoteIdentifier(obj.name)}"
@@ -130,12 +143,16 @@ internal class MssqlColumnConstraintHelper(
     ) {
         /** Die benannten Objekte, die die Spalten-Zweige unterwegs einsammeln. */
         val objects = mutableListOf<MssqlColumnObject>()
+
+        /** Der reine SQL-Typ, den der jeweilige Zweig bestimmt hat. */
+        var sqlType: String? = null
     }
 
     // ── Identity ─────────────────────────────────
 
 
     private fun identityColumn(ctx: ColumnContext, baseType: String, mode: IdentityMode): String {
+        ctx.sqlType = baseType
         val parts = mutableListOf(quoteIdentifier(ctx.colName), "$baseType IDENTITY(1,1)", "NOT NULL")
         if (ctx.col.unique) ctx.objects += uniqueObject(ctx)
         if (mode == IdentityMode.BY_DEFAULT) {
@@ -184,6 +201,7 @@ internal class MssqlColumnConstraintHelper(
      */
     private fun boundedEnumColumn(ctx: ColumnContext, values: List<String>): String {
         val width = MssqlTypeMapper.enumWidth(values)
+        ctx.sqlType = typeMapper.unicodeText(width)
         val parts = mutableListOf(quoteIdentifier(ctx.colName), typeMapper.unicodeText(width))
         parts += nullabilityAndObjects(ctx, lob = false)
         val allowed = values.joinToString(", ") { typeMapper.toDefaultSql(DefaultValue.StringLiteral(it), ctx.col.type) }
@@ -210,6 +228,7 @@ internal class MssqlColumnConstraintHelper(
             ).toNote()
             "NVARCHAR(MAX)"
         }
+        ctx.sqlType = sqlType
         val parts = mutableListOf(quoteIdentifier(ctx.colName), sqlType)
         val lob = neutral?.let { typeMapper.isLargeObject(it) } ?: true
         parts += nullabilityAndObjects(ctx, lob)
@@ -226,6 +245,7 @@ internal class MssqlColumnConstraintHelper(
 
     private fun geometryColumn(ctx: ColumnContext, type: NeutralType.Geometry): String {
         val sqlType = typeMapper.spatialTypeSql(type)
+        ctx.sqlType = sqlType
         val parts = mutableListOf(quoteIdentifier(ctx.colName), sqlType)
         if (ctx.col.required) parts += "NOT NULL"
         // Bei `geography` ist 4326 der SQL-Server-Default-SRID der Werte — nur
@@ -249,6 +269,7 @@ internal class MssqlColumnConstraintHelper(
 
     private fun plainColumn(ctx: ColumnContext): String {
         val type = ctx.col.type
+        ctx.sqlType = typeMapper.toSql(type)
         val parts = mutableListOf(quoteIdentifier(ctx.colName), typeMapper.toSql(type))
         ctx.notes += typeNotes(ctx.tableName, ctx.colName, type)
         parts += nullabilityAndObjects(ctx, typeMapper.isLargeObject(type))

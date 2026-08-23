@@ -98,8 +98,8 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
      * auch wenn nur der Typ geaendert werden sollte. Der Aufrufer muss beide
      * Werte liefern; raten darf er nicht.
      */
-    fun alterColumnSql(table: String, column: String, type: NeutralType, required: Boolean): String =
-        "ALTER TABLE ${quote(table)} ALTER COLUMN ${quote(column)} ${toSql(type)} " +
+    fun alterColumnSql(table: String, column: String, sqlType: String, required: Boolean): String =
+        "ALTER TABLE ${quote(table)} ALTER COLUMN ${quote(column)} $sqlType " +
             (if (required) "NOT NULL" else "NULL") + ";"
 
     /**

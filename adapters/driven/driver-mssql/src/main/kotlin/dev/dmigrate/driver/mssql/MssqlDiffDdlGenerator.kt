@@ -15,9 +15,9 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  *
  * **Im Umfang**: Tabellen, Spalten und Primaerschluessel (5a), der
  * IDENTITY-Tabellen-Neubau (5a-2, [MssqlRebuildPlanner]), Constraints und
- * Indizes (5b), Sichten (5c). Alles andere meldet der Dispatcher als
+ * Indizes (5b), Sichten und Custom Types (5c). Alles andere meldet der Dispatcher als
  * `DIALECT_UNSUPPORTED_OPERATION` — teils, weil ein spaeterer Sub-Slice es
- * liefert (Custom Types 5c, Sequenzen 5d), teils, weil ein Slice
+ * liefert (Sequenzen 5d), teils, weil ein Slice
  * die ganze Flaeche besitzt (Routinen und Trigger Slice 9, Partitionierung
  * Slice 7) oder SQL Server sie gar nicht kennt (Materialized Views).
  *
@@ -132,6 +132,30 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, setOf(op.id))
             return
         }
+        // Ohne Down-Risikoprofil hat der Planner fuer diese Richtung keine
+        // Umkehr definiert. `emit` wuerde daran mit einer Exception scheitern
+        // statt einen Blocker zu liefern — was der Port verlangt.
+        if (ctx.direction == MssqlRenderDirection.DOWN && op.risks.down == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} carries no risk profile for the Down direction; the planner defines no " +
+                    "inverse for it, so the renderer cannot construct one either.",
+                code = "ROLLBACK_NOT_POSSIBLE",
+            )
+            ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, setOf(op.id))
+            return
+        }
+        val families = listOf(::renderTableOp, ::renderObjectOp, ::renderViewOp, ::renderCustomTypeOp)
+        if (families.none { it(op, ctx) }) blockUnsupported(op, ctx)
+    }
+
+    /**
+     * Der Dispatch ist nach denselben Familien geteilt, nach denen der
+     * Renderer selbst geschnitten ist — Tabellen und Spalten, Constraints und
+     * Indizes, Sichten, Custom Types. Jede Familie meldet, ob sie die
+     * Operation genommen hat; was keine nimmt, blockt der Aufrufer.
+     */
+    private fun renderTableOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
         when (op) {
             is DiffOperation.CreateTable -> MssqlDiffTableOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> MssqlDiffTableOps.renderDropTable(op, ctx)
@@ -144,16 +168,41 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> MssqlDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> MssqlDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> MssqlDiffTableOps.renderDropPrimaryKey(op, ctx)
+            else -> return false
+        }
+        return true
+    }
+
+    private fun renderObjectOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
+        when (op) {
             is DiffOperation.AddIndex -> MssqlDiffObjectOps.renderAddIndex(op, ctx)
             is DiffOperation.DropIndex -> MssqlDiffObjectOps.renderDropIndex(op, ctx)
             is DiffOperation.AddConstraint -> MssqlDiffObjectOps.renderAddConstraint(op, ctx)
             is DiffOperation.DropConstraint -> MssqlDiffObjectOps.renderDropConstraint(op, ctx)
+            else -> return false
+        }
+        return true
+    }
+
+    private fun renderViewOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
+        when (op) {
             is DiffOperation.CreateView -> MssqlDiffViewOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> MssqlDiffViewOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> MssqlDiffViewOps.renderDropView(op, ctx)
             is DiffOperation.RenameView -> MssqlDiffViewOps.renderRenameView(op, ctx)
-            else -> blockUnsupported(op, ctx)
+            else -> return false
         }
+        return true
+    }
+
+    private fun renderCustomTypeOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
+        when (op) {
+            is DiffOperation.CreateCustomType -> MssqlDiffCustomTypeOps.renderCreateCustomType(op, ctx)
+            is DiffOperation.AlterCustomType -> MssqlDiffCustomTypeOps.renderAlterCustomType(op, ctx)
+            is DiffOperation.DropCustomType -> MssqlDiffCustomTypeOps.renderDropCustomType(op, ctx)
+            else -> return false
+        }
+        return true
     }
 
     /**
@@ -174,10 +223,6 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
     }
 
     private fun ownerOf(op: DiffOperation): String = when (op) {
-        is DiffOperation.CreateCustomType, is DiffOperation.AlterCustomType,
-        is DiffOperation.DropCustomType,
-        -> "custom types arrive with sub-slice 5c"
-
         is DiffOperation.CreateSequence, is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence, is DiffOperation.RenameSequence,
         is DiffOperation.AlterSequenceCurrentValue,

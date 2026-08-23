@@ -321,9 +321,9 @@ nur mit Klammern" ist:
 | **5a** ✅ | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders) + der Default-Constraint-Dreischritt + `sp_rename` | Unit-Tests je Operation und Richtung; Down-Pfad kehrt jede Operation um |
 | **5a-2** ✅ | — | IDENTITY-Rebuild (create, copy, drop, rename) als eigener Renderer (`MssqlRebuildPlanner`/`MssqlRebuildRenderer`) nach dem Muster der SQLite-Rebuild-Sequenz. **Der Auslöser wurde beim Bau breiter als geplant** (siehe unten): nicht nur `identifier(auto_increment)` von/zu, sondern jede Typänderung an einer Spalte, die in SQL Server als IDENTITY landet — auch die aus `generation` | Live-Test, dass Schlüssel und Zähler den Rebuild überleben — erbracht (`MssqlDiffCatalogLookupIntegrationTest`, Werte 7/42 bleiben, die nächste Zeile bekommt 43) |
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | `WITH CHECK` beim Nachziehen auf Bestandsdaten (ohne das gilt ein nachtraeglicher FK/CHECK als *not trusted*); SET-Optionen im Migrate-Pfad; Kaskaden-Wächter gegen den Zielzustand statt gegen das Generate-Schema. Dazu die beiden Stellen, die 5a deswegen blockte: `CreateTable` rendert seine Indizes wieder, und abhängige Indizes und Constraints werden um eine Spaltenänderung herum abgeräumt und neu angelegt | Live-Integrationstest, der einen **gefilterten** Index per Migrate anlegt (Msg-1934-Regressionsschutz) — belegt zugleich, dass die SET-Optionen im selben Batch wirken |
-| **5c** | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW`; die View-Portabilitätsprüfung aus Slice 3b greift auch hier | Hier fällt die Enum-CHECK-Entscheidung ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md)) — sie ist im Diff-Pfad nicht mehr aufschiebbar |
+| **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW` (ein Statement, kein Fenster); Portabilitätsprüfung wie im Generate-Pfad; Custom Types haben in T-SQL kein Objekt — `AlterCustomType` fächert stattdessen auf jede nutzende Spalte auf | Unit-Tests je Operation und Richtung; die Enum-CHECK-Entscheidung fällt **nicht** hier, sondern mit 5e (siehe unten) |
 | **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; flippt `supportsCurrentValuePreserve` | Macht die Zeile wahr, die Slice 4 als Zielbild in [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 eingetragen hat |
-| **5e** | — | Abschluss: Schema-Kontext für die Typ-Projektion (`Enum(refType)`), Beitritt zum Matrix-Sweep, Registry + `RenameProjectionDialect`, **Gate-Fall**, Live-Round-Trip-Integrationstest analog den drei bestehenden Dialekten, CLI-E2E, Handbücher | `schema migrate` ist für mssql nutzbar |
+| **5e** | — | Abschluss: Schema-Kontext für die Typ-Projektion (`Enum(refType)`), **Enum-CHECK-Entscheidung** ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) A/B/C — hier erzwungen, weil der Postcompare erst jetzt läuft), Beitritt zum Matrix-Sweep, Registry + `RenameProjectionDialect`, **Gate-Fall**, Live-Round-Trip-Integrationstest analog den drei bestehenden Dialekten, CLI-E2E, Handbücher | `schema migrate` ist für mssql nutzbar |
 
 ### Wie der Neubau aussieht (gebaut in 5a-2)
 
@@ -389,6 +389,43 @@ Was **nicht** über den Neubau geht: die Nullability einer IDENTITY-Spalte. SQL
 Server kennt keine nullable IDENTITY-Spalte, ein Neubau schriebe sie wieder als
 `NOT NULL` und verschluckte die Abweichung still. Der Fall bleibt ein Blocker,
 jetzt unter `MSSQL_IDENTITY_COLUMN_NOT_NULLABLE` und mit dem echten Grund.
+
+### Was 5c gekostet hat — und wo die Enum-Entscheidung wirklich fällt
+
+Die Sichten waren der billige Teil: `CREATE OR ALTER VIEW` gibt es nativ,
+`ReplaceView` ist damit **ein** Statement ohne Fenster, in dem die Sicht fehlt.
+Materialized Views bleiben dauerhaft geblockt (kein Äquivalent), Rümpfe werden
+nicht übersetzt (E053 wie im Generate-Pfad), und `sp_rename` lässt den
+gespeicherten Rumpf in `sys.sql_modules` auf dem alten Namen stehen — für SQL
+Server folgenlos, für den Reverse nicht (`MSSQL_RENAME_KEEPS_VIEW_BODY`).
+
+Die Custom Types waren der teure. T-SQL hat für Enum und Domain **kein
+Objekt**: der Generate-Pfad löst beide an der Spalte auf. Anlegen und Löschen
+sind damit gegenstandslos — bezahlt wird beim Ändern. Wo PostgreSQL
+`ALTER TYPE … ADD VALUE` kennt, trägt in SQL Server jede nutzende Spalte ihre
+eigene Breite und ihren eigenen CHECK; `AlterCustomType` fächert deshalb auf
+und führt für jede Spalte denselben Tanz wie eine gewöhnliche Typänderung.
+
+**Drei Defekte aus 5a sind dabei aufgefallen** und mitbehoben worden, alle mit
+derselben Ursache — der Diff-Pfad hatte etwas selbst gerechnet, statt den
+Spalten-Helfer des Generate-Pfads zu fragen:
+
+1. Der generierte `ck_<t>_<c>` steht in keiner Modell-Liste; der
+   Abhängigkeits-Tanz sah ihn nicht und ließ ihn vor `ALTER COLUMN` stehen
+   (Msg 5074).
+2. `ALTER COLUMN` auf eine Enum-Spalte rendete `NVARCHAR(MAX)` statt der
+   begrenzten Breite — die Spalte wäre danach nicht mehr schlüsselfähig
+   gewesen und hätte von `schema generate` abgewichen.
+3. Eine Operation ohne Down-Risikoprofil ließ `emit` mit einer Exception
+   scheitern, statt einen Blocker zu liefern.
+
+**Die Enum-CHECK-Entscheidung** ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md))
+fällt entgegen der ursprünglichen Zeile **nicht** in 5c. Ob der Diff-Pfad den
+CHECK rendert, war nie offen: er tut es seit 5a, weil `CreateTable` und
+`AddColumn` den Spalten-Helfer nutzen. Offen ist der Round-Trip — der Reverse
+liest den CHECK als eigenständigen Constraint zurück, den das authored Schema
+nicht hat. Das trifft den Postcompare, und der läuft erst mit
+`schema migrate --execute` in **5e**.
 
 ### Was in Slice 5 bewusst geblockt bleibt
 
