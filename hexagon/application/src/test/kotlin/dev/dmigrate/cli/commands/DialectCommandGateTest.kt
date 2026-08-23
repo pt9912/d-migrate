@@ -21,10 +21,12 @@ class DialectCommandGateTest : FunSpec({
         }
     }
 
-    test("only schema migrate and data profile remain gated for mssql") {
-        DialectCommandGate.GatedCommand.entries.map { it.display } shouldBe listOf(
-            "schema migrate", "data profile",
-        )
+    test("only data profile remains gated for mssql") {
+        // Der Diff-Renderer fuer mssql ist vollstaendig und in der
+        // MigrateRendererRegistry eingetragen; gegated ist nur noch das
+        // Profiling, dessen MSSQL-Modul es noch nicht gibt.
+        DialectCommandGate.GatedCommand.entries.map { it.display } shouldBe listOf("data profile")
+        DialectCommandGate.AVAILABLE_FOR_MSSQL shouldContain "schema migrate"
         DialectCommandGate.AVAILABLE_FOR_MSSQL shouldContain "export flyway/liquibase/django/knex"
         DialectCommandGate.AVAILABLE_FOR_MSSQL shouldContain "data export/import/transfer"
     }

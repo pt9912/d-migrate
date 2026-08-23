@@ -9,7 +9,6 @@ import java.sql.SQLException
 
 /**
  * Liest den Laufzeitzustand einer SQL-Server-Sequenz aus `sys.sequences`
- * (Sub-Slice 5d).
  *
  * Anders als bei PostgreSQL wird die Sequenz nicht selbst abgefragt, sondern
  * die Katalogsicht — T-SQL kennt kein `SELECT … FROM <sequence>`. Damit gibt

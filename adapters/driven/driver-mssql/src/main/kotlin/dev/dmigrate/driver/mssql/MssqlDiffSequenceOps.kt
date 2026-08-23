@@ -4,7 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.SequenceDefinition
 
 /**
- * Sequenzen im Diff-Pfad (Sub-Slice 5d).
+ * Sequenzen im Diff-Pfad.
  *
  * SQL Server hat native Sequenzen — anders als MySQL und SQLite, die sie ueber
  * eine Hilfstabelle emulieren. Der Diff-Pfad ist damit nahe an PostgreSQL, mit

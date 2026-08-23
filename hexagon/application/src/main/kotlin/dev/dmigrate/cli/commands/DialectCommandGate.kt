@@ -20,7 +20,6 @@ object DialectCommandGate {
 
     /** Kommandos, deren MSSQL-Pfad noch nicht gebaut ist. */
     enum class GatedCommand(val display: String) {
-        SCHEMA_MIGRATE("schema migrate"),
         DATA_PROFILE("data profile"),
     }
 
@@ -40,6 +39,6 @@ object DialectCommandGate {
 
     /** Nutzersichtbare Liste der für mssql freigeschalteten Kommandos (wächst mit jedem Slice). */
     const val AVAILABLE_FOR_MSSQL: String =
-        "schema reverse, schema compare, schema generate, export flyway/liquibase/django/knex, " +
-            "data export/import/transfer"
+        "schema reverse, schema compare, schema generate, schema migrate, " +
+            "export flyway/liquibase/django/knex, data export/import/transfer"
 }

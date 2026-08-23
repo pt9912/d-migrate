@@ -23,7 +23,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * Sub-Slice 5c: Custom Types.
+ * Custom Types im Diff-Pfad.
  *
  * T-SQL hat fuer Enum und Domain kein eigenes Objekt — beide loest der
  * Generate-Pfad an der Spalte auf. Anlegen und Loeschen sind hier deshalb

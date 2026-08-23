@@ -33,12 +33,12 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * Sub-Slice 5a-2: der Tabellen-Neubau fuer IDENTITY.
+ * Der Tabellen-Neubau fuer IDENTITY.
  *
  * IDENTITY ist die eine Eigenschaft, die `ALTER TABLE … ALTER COLUMN` in
  * T-SQL weder setzen noch entfernen noch neu deklarieren kann (Msg 156). Wer
  * sie aendert, baut die Tabelle neu — und traegt dabei zwei Lasten, die den
- * Sub-Slice ausmachen:
+ * ausmachen:
  *
  * 1. **Die Zwischentabelle darf keine benannten Objekte tragen.** SQL Server
  *    fuehrt Constraints schema-global; `pk_users`, `df_users_nick` &c. sind
@@ -470,7 +470,7 @@ class MssqlRebuildRendererTest : FunSpec({
     }
 
     test("an operation that was BLOCKED does not count as having created anything") {
-        // Die Kindtabelle ist partitioniert, ihr CREATE TABLE blockt (Slice 7).
+        // Die Kindtabelle ist partitioniert, ihr CREATE TABLE blockt.
         // Wer sie trotzdem als angelegt zaehlt, schickt ein ADD CONSTRAINT
         // gegen eine Tabelle, die es nicht gibt.
         val fk = ConstraintDefinition(

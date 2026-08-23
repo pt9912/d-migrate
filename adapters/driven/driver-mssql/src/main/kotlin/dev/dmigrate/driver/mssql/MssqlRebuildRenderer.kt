@@ -58,13 +58,13 @@ internal object MssqlRebuildRenderer {
                 reason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
             )
         }
-        // Partitionierung gehoert Slice 7 — eine partitionierte Tabelle als
+        // Partitionierung rendert dieser Pfad nicht — eine partitionierte Tabelle als
         // gewoehnliche neu aufzubauen waere ein stiller Verlust, kein Teilerfolg.
         if (target.partitioning != null || source.partitioning != null) {
             return blockBucket(
                 bucket, ctx,
                 "Table '$table' is partitioned, and rebuilding it would drop the partitioning: the neutral " +
-                    "model carries no partition function or scheme for SQL Server (slice 7).",
+                    "model carries no partition function or scheme for SQL Server.",
                 code = "DIALECT_UNSUPPORTED_OPERATION",
                 reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
             )

@@ -43,8 +43,8 @@ internal object AtomicPreserveRestoreSql {
         DatabaseDialect.MYSQL -> mysql(sequenceRef, probe)
         DatabaseDialect.SQLITE -> sqlite(sequenceRef, probe)
         DatabaseDialect.MSSQL -> error(
-            "unreachable: DialectCommandGate rejects mssql for schema migrate " +
-                "and SequenceCapabilityDefaults declares no mssql atomic preserve (ADR 0047)",
+            "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
+                "mssql, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0047).",
         )
     }
 

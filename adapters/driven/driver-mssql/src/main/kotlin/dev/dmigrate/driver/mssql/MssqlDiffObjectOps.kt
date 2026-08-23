@@ -10,7 +10,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
- * Renderer fuer Constraint- und Index-Operationen (Sub-Slice 5b).
+ * Renderer fuer Constraint- und Index-Operationen.
  *
  * Zwei T-SQL-Eigenheiten bestimmen den Inhalt:
  *

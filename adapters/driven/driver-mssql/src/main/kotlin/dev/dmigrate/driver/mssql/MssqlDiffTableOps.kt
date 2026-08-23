@@ -13,7 +13,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
  * Renderer fuer Tabellen-, Spalten- und Primaerschluessel-Operationen
- * (Sub-Slice 5a). Zustandslos: nimmt den [MssqlDiffRenderContext] und schreibt
+ * Zustandslos: nimmt den [MssqlDiffRenderContext] und schreibt
  * Statements und Diagnosen dort hinein.
  *
  * Drei T-SQL-Eigenheiten praegen fast jede Methode hier:
@@ -37,10 +37,10 @@ internal object MssqlDiffTableOps {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(table)};")
             return
         }
-        // Partitionierung gehoert Slice 7. Eine Tabelle ohne sie anzulegen waere
+        // Partitionierung rendert dieser Pfad nicht. Eine Tabelle ohne sie anzulegen waere
         // kein Teilerfolg, sondern ein stiller Verlust.
         if (op.table.partitioning != null) {
-            return blockDeferred(op, ctx, "table '$table' is partitioned", "slice 7")
+            return blockDeferred(op, ctx, "table '$table' is partitioned")
         }
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering the columns of '$table'")
@@ -462,11 +462,11 @@ internal object MssqlDiffTableOps {
         return true
     }
 
-    private fun blockDeferred(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String, owner: String) {
+    private fun blockDeferred(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String) {
         ctx.skip(
             op,
-            "Operation ${op.id} is not rendered because $what, and that is the subject of $owner. Creating the " +
-                "table without it would be a silent loss, not a partial success.",
+            "Operation ${op.id} is not rendered because $what, and the migrate path does not render that for " +
+                "SQL Server. Creating the table without it would be a silent loss, not a partial success.",
             code = "DIALECT_UNSUPPORTED_OPERATION",
         )
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))

@@ -7,7 +7,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
- * Custom Types im Diff-Pfad (Sub-Slice 5c).
+ * Custom Types im Diff-Pfad.
  *
  * T-SQL hat für Enum und Domain **kein eigenes Objekt**. Der Generate-Pfad
  * loest beide an der Spalte auf — ein Enum wird `NVARCHAR(<laengster Wert>)`

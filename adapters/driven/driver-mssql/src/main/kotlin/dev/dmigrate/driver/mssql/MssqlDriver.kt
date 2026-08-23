@@ -47,7 +47,7 @@ class MssqlDriver : DatabaseDriver {
     /**
      * Neutral-Typ-Projektion fuer den v7-Postcompare-Fingerprint
      * ([MssqlNeutralTypeCanonicalizer]). Sie wird erst mit dem
-     * MSSQL-Migrate-Pfad (Slice 5) konsumiert; ohne sie faellt der Fingerprint
+     * MSSQL-Migrate-Pfad konsumiert; ohne sie faellt der Fingerprint
      * auf Identitaet zurueck und meldete jede T-SQL-Typabflachung als Drift.
      */
     override fun typeCanonicalizer(): NeutralTypeCanonicalizer = MssqlNeutralTypeCanonicalizer

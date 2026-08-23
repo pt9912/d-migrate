@@ -21,7 +21,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * Sub-Slice 5d: Sequenzen.
+ * Sequenzen im Diff-Pfad.
  *
  * SQL Server hat native Sequenzen, der Diff-Pfad liegt damit nahe an
  * PostgreSQL. Die Faelle hier halten fest, wo T-SQL trotzdem eigene Regeln
@@ -168,7 +168,7 @@ class MssqlDiffSequenceOpsTest : FunSpec({
         //
         // `dialect` ist hier ein Platzhalter: der MSSQL-Renderer liest das Feld
         // nicht, und `RenameProjectionDialect` bekommt seinen MSSQL-Eintrag erst
-        // mit Sub-Slice 5e.
+        // erst mit der Pipeline-Verdrahtung.
         val ref = SequenceObjectRef(name = "sq", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
         val op = DiffOperation.AlterSequenceCurrentValue(
             id = "AlterSequenceCurrentValue:sq",

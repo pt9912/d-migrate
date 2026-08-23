@@ -6,6 +6,7 @@ import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.mssql.MssqlCheckPreflightProbe
 import dev.dmigrate.driver.mysql.MysqlCheckPreflightProbe
 import dev.dmigrate.driver.postgresql.PostgresCheckPreflightProbe
 import dev.dmigrate.driver.sqlite.SqliteCheckPreflightProbe
@@ -60,8 +61,6 @@ internal object CheckPreflightProbeRunner {
         DatabaseDialect.POSTGRESQL -> PostgresCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.MYSQL -> MysqlCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.SQLITE -> SqliteCheckPreflightProbe.probe(connection, plan)
-        DatabaseDialect.MSSQL -> error(
-            "unreachable: DialectCommandGate rejects mssql for schema migrate (ADR 0047)",
-        )
+        DatabaseDialect.MSSQL -> MssqlCheckPreflightProbe.probe(connection, plan)
     }
 }

@@ -7,7 +7,7 @@ import dev.dmigrate.driver.ViewQueryTransformer
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
- * Sichten im Diff-Pfad (Sub-Slice 5c).
+ * Sichten im Diff-Pfad.
  *
  * T-SQL macht diesen Teil billiger als bei den anderen drei Dialekten:
  * `CREATE OR ALTER VIEW` gibt es nativ, `ReplaceView` ist damit ein einziges

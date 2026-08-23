@@ -33,8 +33,8 @@ internal object AtomicSequencePreserveDispatcher {
         DatabaseDialect.MYSQL -> mysql
         DatabaseDialect.SQLITE -> sqlite
         DatabaseDialect.MSSQL -> error(
-            "unreachable: DialectCommandGate rejects mssql for schema migrate " +
-                "and SequencePreserveStage allow-lists pg/mysql/sqlite (ADR 0047)",
+            "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
+                "mssql, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0047).",
         )
     }
 }

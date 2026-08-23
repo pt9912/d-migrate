@@ -21,7 +21,7 @@ import java.sql.Statement
  *
  * `dialect` ist in den Referenzen ein Platzhalter: die Probe liest das Feld
  * nicht, und `RenameProjectionDialect` bekommt seinen MSSQL-Eintrag erst mit
- * Sub-Slice 5e.
+ * die Pipeline-Verdrahtung.
  */
 class MssqlSequenceCurrentValueProbeTest : FunSpec({
 

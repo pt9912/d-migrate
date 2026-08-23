@@ -22,7 +22,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * Sub-Slice 5c: Sichten.
+ * Sichten im Diff-Pfad.
  *
  * Der Schwerpunkt liegt auf dem, was T-SQL hier anders macht als die drei
  * bestehenden Dialekte: `CREATE OR ALTER VIEW` gibt es nativ (also kein

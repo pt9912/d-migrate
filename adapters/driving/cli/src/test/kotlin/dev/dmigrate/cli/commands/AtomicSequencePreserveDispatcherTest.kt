@@ -48,10 +48,14 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
         }
     }
 
-    test("mssql asserts the command-boundary invariant instead of dispatching") {
+    test("mssql has no atomic executor — the capability, not the gate, keeps it unreachable") {
+        // Das DialectCommandGate weist `schema migrate` fuer mssql nicht ab.
+        // Unerreichbar bleibt der Atomic-Pfad, weil
+        // `SequenceCapabilityDefaults` fuer mssql kein Atomic-Preserve meldet;
+        // die Sperrstrategie dafuer ist weder entworfen noch belegt.
         val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
             AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.MSSQL)
         }
-        ex.message!!.contains("DialectCommandGate") shouldBe true
+        ex.message!!.contains("no atomic preserve") shouldBe true
     }
 })

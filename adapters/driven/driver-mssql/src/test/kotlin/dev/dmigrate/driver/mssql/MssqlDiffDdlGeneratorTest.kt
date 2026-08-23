@@ -37,7 +37,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * Sub-Slice 5a: Tabellen-, Spalten- und Primaerschluessel-Operationen.
+ * Tabellen-, Spalten- und Primaerschluessel-Operationen.
  *
  * Der Schwerpunkt liegt auf den drei T-SQL-Eigenheiten, an denen ein aus
  * PostgreSQL abgeschriebener Renderer falsch waere: der Default-Constraint-
@@ -278,13 +278,13 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.diagnostics.map { it.code } shouldContain "MSSQL_TABLE_REBUILT_FOR_IDENTITY"
     }
 
-    test("an operation of a later sub-slice is blocked with a message naming its owner") {
+    test("an operation this path does not render is blocked with a message naming what owns it") {
         val fn = FunctionDefinition(body = "RETURN 1", language = "sql")
         val r = up(SchemaDiff(functionsAdded = listOf(NamedFunction("f", fn))))
         r.statements.shouldBeEmpty()
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
         r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }
-            .message shouldContainStr "slice 9"
+            .message shouldContainStr "does not read routine and trigger bodies"
     }
 
     test("statements declare SQL Server's fully transactional DDL") {
@@ -470,14 +470,14 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
-    test("a partitioned CreateTable still blocks — that is slice 7") {
+    test("a partitioned CreateTable still blocks — this path does not render partitioning") {
         val t = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
             partitioning = PartitionConfig(type = PartitionType.RANGE, key = listOf("id")),
         )
         val r = up(SchemaDiff(tablesAdded = listOf(NamedTable("t", t))), desired = schema("t" to t))
         r.statements.shouldBeEmpty()
-        r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }.message shouldContainStr "slice 7"
+        r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }.message shouldContainStr "partitioned"
     }
 
     test("a full-text index blocks instead of vanishing") {

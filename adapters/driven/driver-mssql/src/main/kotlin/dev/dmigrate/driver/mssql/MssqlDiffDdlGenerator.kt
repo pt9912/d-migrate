@@ -10,21 +10,18 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
 
 /**
- * T-SQL-Renderer fuer die Migrations-Pipeline (Sub-Slice 5a des
- * MSSQL-Ausbaus, [ADR 0047]).
+ * T-SQL-Renderer fuer die Migrations-Pipeline ([ADR 0047]).
  *
- * **Im Umfang**: Tabellen, Spalten und Primaerschluessel (5a), der
- * IDENTITY-Tabellen-Neubau (5a-2, [MssqlRebuildPlanner]), Constraints und
- * Indizes (5b), Sichten und Custom Types (5c), Sequenzen (5d). Alles andere meldet der Dispatcher als
- * `DIALECT_UNSUPPORTED_OPERATION` — teils, weil ein spaeterer Sub-Slice es
- * liefert, teils, weil ein Slice
- * die ganze Flaeche besitzt (Routinen und Trigger Slice 9, Partitionierung
- * Slice 7) oder SQL Server sie gar nicht kennt (Materialized Views).
+ * **Im Umfang**: Tabellen, Spalten und Primaerschluessel samt dem
+ * IDENTITY-Tabellen-Neubau ([MssqlRebuildPlanner]), Constraints und Indizes,
+ * Sichten, Custom Types und Sequenzen.
  *
- * Solange dieser Renderer unvollstaendig ist, weist `DialectCommandGate`
- * `schema migrate` fuer mssql weiterhin an der Kommando-Grenze ab; das Gate
- * faellt erst mit Sub-Slice 5e. Der Renderer ist bis dahin ueber seine Tests
- * erreichbar, nicht ueber die CLI.
+ * Was er nicht rendert, meldet der Dispatcher als
+ * `DIALECT_UNSUPPORTED_OPERATION` mit dem Grund: Routinen und Trigger, weil
+ * der MSSQL-Reverse ihre Ruempfe nicht liest (R342) und es also nichts zu
+ * rendern gibt; Partitionierung, weil das neutrale Modell weder
+ * Partitionsfunktion noch -schema traegt; Materialized Views, weil SQL Server
+ * sie nicht kennt.
  *
  * Zustandslos und thread-sicher. `generateUp` konsumiert die topo-sortierten
  * Operationen des Planners unveraendert, `generateDown` laeuft dieselbe Liste
@@ -223,8 +220,7 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
     /**
      * Der Port verlangt fuer eine nicht gerenderte Operation einen
      * `DIALECT_UNSUPPORTED_OPERATION`-Blocker statt einer Exception. Die
-     * Meldung nennt den Grund und, wo es einen gibt, den Sub-Slice oder Slice,
-     * der die Flaeche besitzt — damit ein Operator nicht raten muss, ob er auf
+     * Meldung nennt den Grund — damit ein Operator nicht raten muss, ob er auf
      * etwas wartet oder etwas falsch gemacht hat.
      */
     private fun blockUnsupported(op: DiffOperation, ctx: MssqlDiffRenderContext) {
@@ -244,8 +240,8 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropProcedure, is DiffOperation.RenameProcedure,
         is DiffOperation.CreateTrigger, is DiffOperation.ReplaceTrigger,
         is DiffOperation.DropTrigger, is DiffOperation.RenameTrigger,
-        -> "routines and triggers wait for slice 9 — the MSSQL reverse does not read their bodies yet " +
-            "(R342), so there is nothing to render; PostgreSQL renders them because its reverse does"
+        -> "the MSSQL reverse does not read routine and trigger bodies (R342), so there is nothing to " +
+            "render; PostgreSQL renders them because its reverse does"
 
         is DiffOperation.CreateMaterializedView, is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
