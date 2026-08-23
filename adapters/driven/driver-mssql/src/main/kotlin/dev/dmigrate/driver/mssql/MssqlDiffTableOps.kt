@@ -277,30 +277,52 @@ internal object MssqlDiffTableOps {
         type: NeutralType,
         target: ColumnDefinition,
     ) {
+        columnChangeStatements(op, ctx, table, column, type, target)?.forEach { ctx.emit(op, it) }
+    }
+
+    /**
+     * Der Tanz als **Liste**, nicht als Emission: Abhaengigkeiten abraeumen,
+     * Spalte neu deklarieren, alles zurueck. `null`, wenn etwas davon nicht
+     * renderbar ist — dann ist die Operation bereits als Blocker vermerkt.
+     *
+     * Warum getrennt von [alterColumnWithDefaultDance]: `AlterCustomType`
+     * faechert auf MEHRERE Spalten auf. Emittiert der Tanz selbst, ist die
+     * Operation nach der ersten Spalte `rendered` — blockt dann die zweite,
+     * liegt sie in `rendered` UND `skipped`, und `MigrationDdlResult` bricht
+     * das mit einer Exception ab. Die Regel „erst aufloesen, dann emittieren"
+     * gilt fuer die ganze OPERATION, nicht je Aufruf.
+     */
+    internal fun columnChangeStatements(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        column: String,
+        type: NeutralType,
+        target: ColumnDefinition,
+    ): List<String>? {
         val deps = dependenciesFor(ctx, table, column, forDrop = false)
-        // Erst alles aufloesen, was scheitern kann, dann emittieren — sonst
-        // laege die Operation bei einem spaeten Blocker in `rendered` UND
-        // `skipped`.
-        val recreates = MssqlDiffColumnDependencies.recreateStatements(op, ctx, deps) ?: return
+        val recreates = MssqlDiffColumnDependencies.recreateStatements(op, ctx, deps) ?: return null
         val checks = generatedChecks(ctx, table, column, target, ctx.schemaForDirection())
         val bearingChecks = generatedChecks(
             ctx, table, column, ctx.schemaBeforeChange()?.tables?.get(table)?.columns?.get(column),
             ctx.schemaBeforeChange(),
         )
-        MssqlDiffColumnDependencies.dropStatements(ctx, deps).forEach { ctx.emit(op, it) }
+        val out = mutableListOf<String>()
+        out += MssqlDiffColumnDependencies.dropStatements(ctx, deps)
         if (bearingChecks.isNotEmpty() || checks.isNotEmpty()) {
-            ctx.emit(op, ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column)))
+            out += ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column))
         }
-        ctx.emit(op, ctx.sql.dropDefaultConstraintSql(table, column))
+        out += ctx.sql.dropDefaultConstraintSql(table, column)
         // Nicht `toSql(type)`: der Mapper kennt nur den neutralen Typ und macht
         // aus einem Enum `NVARCHAR(MAX)`. Der Spalten-Helfer kennt die SPALTE
         // und liefert `NVARCHAR(<laengster Wert>)` — dieselbe Breite, die
         // `schema generate` schreibt, und anders als MAX schluesselfaehig.
         val sqlType = columnSqlType(ctx, table, column, target.copy(type = type)) ?: ctx.sql.toSql(type)
-        ctx.emit(op, ctx.sql.alterColumnSql(table, column, sqlType, target.required))
-        target.default?.let { ctx.emit(op, ctx.sql.addDefaultConstraintSql(table, column, it, type)) }
-        checks.forEach { ctx.emit(op, it) }
-        recreates.forEach { ctx.emit(op, it) }
+        out += ctx.sql.alterColumnSql(table, column, sqlType, target.required)
+        target.default?.let { out += ctx.sql.addDefaultConstraintSql(table, column, it, type) }
+        out += checks
+        out += recreates
+        return out
     }
 
     /**

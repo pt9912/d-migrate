@@ -26,7 +26,10 @@ internal object MssqlDiffCustomTypeOps {
 
     fun renderCreateCustomType(op: DiffOperation.CreateCustomType, ctx: MssqlDiffRenderContext) {
         if (blockComposite(op, ctx, op.objectRef.rootName, op.customType)) return
-        noteResolvedAtColumn(op, ctx, op.objectRef.rootName, op.customType, "created")
+        // Abwaerts ist die Umkehr eines Create ein Entfernen — der Kommentar
+        // muss das sagen, sonst behauptet das Rollback-Skript das Gegenteil.
+        val verb = if (ctx.direction == MssqlRenderDirection.UP) "created" else "dropped"
+        noteResolvedAtColumn(op, ctx, op.objectRef.rootName, op.customType, verb)
     }
 
     fun renderDropCustomType(op: DiffOperation.DropCustomType, ctx: MssqlDiffRenderContext) {
@@ -53,11 +56,24 @@ internal object MssqlDiffCustomTypeOps {
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
             return
         }
+        // Nur Spalten, die es zum Zeitpunkt dieser Operation schon GIBT.
+        //
+        // `AlterCustomType` liegt in Phase TYPES und laeuft damit als
+        // allererstes — vor `TABLES` und `COLUMNS`. Eine Tabelle oder Spalte,
+        // die derselbe Plan erst anlegt, existiert hier noch nicht; ein
+        // `ALTER TABLE` darauf waere Msg 208. Noetig ist es ohnehin nicht:
+        // `CreateTable` und `AddColumn` rendern die Spalte ueber denselben
+        // Spalten-Helfer und damit bereits mit der neuen Breite und dem neuen
+        // CHECK. Massgeblich ist deshalb, was BEIDE Schemata kennen.
+        val existing = ctx.schemaOppositeOfDirection()
         val users = schema.tables.entries
             .sortedBy { it.key }
             .flatMap { (table, tableDef) ->
                 tableDef.columns.entries
-                    .filter { (_, col) -> (col.type as? NeutralType.Enum)?.refType == name }
+                    .filter { (column, col) ->
+                        (col.type as? NeutralType.Enum)?.refType == name &&
+                            existing?.tables?.get(table)?.columns?.containsKey(column) == true
+                    }
                     .sortedBy { it.key }
                     .map { (column, col) -> Triple(table, column, col) }
             }
@@ -69,9 +85,16 @@ internal object MssqlDiffCustomTypeOps {
             )
             return
         }
+        // Erst ALLE Spalten aufloesen, dann emittieren. Blockt eine spaetere,
+        // nachdem eine fruehere schon emittiert hat, laege die Operation in
+        // `rendered` UND `skipped` — das bricht `MigrationDdlResult` mit einer
+        // Exception ab, statt einen Blocker zu liefern.
+        val statements = mutableListOf<String>()
         for ((table, column, col) in users) {
-            MssqlDiffTableOps.alterColumnWithDefaultDance(op, ctx, table, column, col.type, col)
+            statements += MssqlDiffTableOps
+                .columnChangeStatements(op, ctx, table, column, col.type, col) ?: return
         }
+        statements.forEach { ctx.emit(op, it) }
         ctx.addInfoDiagnostic(
             code = "MSSQL_CUSTOM_TYPE_FANNED_OUT",
             operationId = op.id,

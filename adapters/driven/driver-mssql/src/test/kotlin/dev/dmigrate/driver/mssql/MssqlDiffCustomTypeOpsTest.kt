@@ -2,10 +2,13 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.diff.CustomTypeDiff
 import dev.dmigrate.core.diff.NamedCustomType
+import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.NeutralType
@@ -135,5 +138,59 @@ class MssqlDiffCustomTypeOpsTest : FunSpec({
         val r = down(diff, current, desired)
         r.statements.shouldBeEmpty()
         r.diagnostics.map { it.code } shouldContain "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("a column the same plan ADDS is left to its own operation, not altered before it exists") {
+        // `AlterCustomType` liegt in Phase TYPES und laeuft als allererstes.
+        // Ein ALTER TABLE auf eine Tabelle, die erst `CreateTable` anlegt,
+        // waere Msg 208 — und ueberfluessig, weil CreateTable die Spalte schon
+        // mit neuer Breite und neuem CHECK schreibt.
+        val current = schema(mapOf("mood" to mood), mapOf("users" to users("mood")))
+        val desired = schema(
+            mapOf("mood" to moodWide),
+            mapOf("users" to users("mood"), "guests" to users("mood")),
+        )
+        val diff = SchemaDiff(
+            customTypesChanged = listOf(
+                CustomTypeDiff(name = "mood", values = ValueChange(mood.values!!, moodWide.values!!)),
+            ),
+            tablesAdded = listOf(NamedTable("guests", users("mood"))),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        sqls.none { it.startsWith("ALTER TABLE [guests]") } shouldBe true
+        // Die bestehende Tabelle wird sehr wohl angefasst.
+        sqls.any { it.contains("ALTER TABLE [users] ALTER COLUMN [mood]") } shouldBe true
+        // ... und die neue entsteht gleich richtig.
+        sqls.single { it.startsWith("CREATE TABLE [guests]") } shouldContainStr "NVARCHAR(6)"
+    }
+
+    test("if one column of the fan-out cannot be rendered, the whole operation blocks — no crash") {
+        // Emittiert der Tanz je Spalte, ist die Operation nach der ersten
+        // `rendered`; blockt dann die zweite, liegt sie in BEIDEN Mengen und
+        // MigrationDdlResult bricht mit einer Exception ab.
+        val unrenderable = ConstraintDefinition(name = "ex_b", type = ConstraintType.EXCLUDE, expression = "x WITH =")
+        val tableB = users("mood").let {
+            it.copy(constraints = listOf(unrenderable.copy(columns = listOf("mood"))))
+        }
+        val current = schema(mapOf("mood" to mood), mapOf("a_users" to users("mood"), "b_users" to tableB))
+        val desired = schema(mapOf("mood" to moodWide), mapOf("a_users" to users("mood"), "b_users" to tableB))
+        val diff = SchemaDiff(
+            customTypesChanged = listOf(
+                CustomTypeDiff(name = "mood", values = ValueChange(mood.values!!, moodWide.values!!)),
+            ),
+        )
+        val r = up(diff, current, desired)
+        r.statements.shouldBeEmpty()
+        r.operationsRendered.shouldBeEmpty()
+        r.diagnostics.map { it.code } shouldContain "DIALECT_UNSUPPORTED_OPERATION"
+    }
+
+    test("down of a create says the type is dropped at its columns, not created") {
+        val r = down(
+            SchemaDiff(customTypesAdded = listOf(NamedCustomType("mood", mood))),
+            schema(emptyMap()),
+            schema(mapOf("mood" to mood)),
+        )
+        r.statements.single().sql shouldContainStr "is dropped at its columns"
     }
 })
