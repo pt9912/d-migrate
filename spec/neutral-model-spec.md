@@ -865,6 +865,18 @@ tritt `IDENTITY(1,1)` an die Stelle einer Sequenz; deren Laufzeitwert wird nach
 einem Datenimport ueber `DBCC CHECKIDENT` nachgefuehrt, nicht ueber den
 Sequenz-Pfad dieser Matrix.
 
+Zwei Eigenheiten praegen den `preserve_current_value`-Pfad bei SQL Server:
+
+- `sys.sequences.current_value` traegt den zuletzt ausgegebenen Wert — bei
+  einer nie benutzten Sequenz jedoch den Startwert, und der erste
+  `NEXT VALUE FOR` gibt genau diesen zurueck, ohne `current_value` zu bewegen.
+  Ein frischer und ein einmal benutzter Zustand sind daran nicht zu
+  unterscheiden. Fortgesetzt wird deshalb bei `current_value` + Schrittweite:
+  ein uebersprungener Wert ist folgenlos, ein doppelt vergebener nicht.
+- `ALTER SEQUENCE … RESTART WITH` setzt nicht nur den naechsten Wert, sondern
+  schreibt auch `sys.sequences.start_value` um. Ein Reverse nach dem Fortsetzen
+  meldet den fortgesetzten Wert als Startwert der Sequenz.
+
 **SQLite-Defaults (Reality-First)**: die
 SQLite-Sequence-Emulation liefert eine vollständige `helper_table`-Variante
 inklusive `preserveCurrentValue`-Pfad. Damit melden die SQLite-

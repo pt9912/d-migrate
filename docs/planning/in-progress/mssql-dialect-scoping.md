@@ -322,8 +322,8 @@ nur mit Klammern" ist:
 | **5a-2** ✅ | — | IDENTITY-Rebuild (create, copy, drop, rename) als eigener Renderer (`MssqlRebuildPlanner`/`MssqlRebuildRenderer`) nach dem Muster der SQLite-Rebuild-Sequenz. **Der Auslöser wurde beim Bau breiter als geplant** (siehe unten): nicht nur `identifier(auto_increment)` von/zu, sondern jede Typänderung an einer Spalte, die in SQL Server als IDENTITY landet — auch die aus `generation` | Live-Test, dass Schlüssel und Zähler den Rebuild überleben — erbracht (`MssqlDiffCatalogLookupIntegrationTest`, Werte 7/42 bleiben, die nächste Zeile bekommt 43) |
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | `WITH CHECK` beim Nachziehen auf Bestandsdaten (ohne das gilt ein nachtraeglicher FK/CHECK als *not trusted*); SET-Optionen im Migrate-Pfad; Kaskaden-Wächter gegen den Zielzustand statt gegen das Generate-Schema. Dazu die beiden Stellen, die 5a deswegen blockte: `CreateTable` rendert seine Indizes wieder, und abhängige Indizes und Constraints werden um eine Spaltenänderung herum abgeräumt und neu angelegt | Live-Integrationstest, der einen **gefilterten** Index per Migrate anlegt (Msg-1934-Regressionsschutz) — belegt zugleich, dass die SET-Optionen im selben Batch wirken |
 | **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW` (ein Statement, kein Fenster); Portabilitätsprüfung wie im Generate-Pfad; Custom Types haben in T-SQL kein Objekt — `AlterCustomType` fächert stattdessen auf jede nutzende Spalte auf | Unit-Tests je Operation und Richtung; die Enum-CHECK-Entscheidung fällt **nicht** hier, sondern mit 5e (siehe unten) |
-| **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; flippt `supportsCurrentValuePreserve` | Macht die Zeile wahr, die Slice 4 als Zielbild in [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 eingetragen hat |
-| **5e** | — | Abschluss: Schema-Kontext für die Typ-Projektion (`Enum(refType)`), **Enum-CHECK-Entscheidung** ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) A/B/C — hier erzwungen, weil der Postcompare erst jetzt läuft), Beitritt zum Matrix-Sweep, Registry + `RenameProjectionDialect`, **Gate-Fall**, Live-Round-Trip-Integrationstest analog den drei bestehenden Dialekten, CLI-E2E, Handbücher | `schema migrate` ist für mssql nutzbar |
+| **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; `supportsCurrentValuePreserve` steht auf `true` | Live-Test pinnt die gemessene Sequenz-Semantik; die Zeile aus [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 ist wahr. **Pipeline-Verdrahtung bleibt bei 5e** (siehe dort) |
+| **5e** | — | Abschluss: **`RenameProjectionDialect`-Eintrag + `SequencePreserveStage`-Dialektliste** (Übergabe aus 5d), Schema-Kontext für die Typ-Projektion (`Enum(refType)`), **Enum-CHECK-Entscheidung** ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) A/B/C — hier erzwungen, weil der Postcompare erst jetzt läuft), Beitritt zum Matrix-Sweep, Registry + `RenameProjectionDialect`, **Gate-Fall**, Live-Round-Trip-Integrationstest analog den drei bestehenden Dialekten, CLI-E2E, Handbücher | `schema migrate` ist für mssql nutzbar |
 
 ### Wie der Neubau aussieht (gebaut in 5a-2)
 
@@ -426,6 +426,34 @@ CHECK rendert, war nie offen: er tut es seit 5a, weil `CreateTable` und
 liest den CHECK als eigenständigen Constraint zurück, den das authored Schema
 nicht hat. Das trifft den Postcompare, und der läuft erst mit
 `schema migrate --execute` in **5e**.
+
+### Was 5d gemessen hat
+
+Zwei Eigenheiten der SQL-Server-Sequenzen entscheiden über den Preserve-Pfad
+und stehen in keinem Handbuch so:
+
+- `sys.sequences.current_value` trägt den zuletzt ausgegebenen Wert — bei einer
+  **nie benutzten** Sequenz aber den Startwert, und der erste `NEXT VALUE FOR`
+  gibt genau diesen zurück, ohne `current_value` zu bewegen. „Frisch" und
+  „einmal benutzt" sind daran nicht zu unterscheiden. Fortgesetzt wird deshalb
+  bei `current_value` + Schrittweite: ein übersprungener Wert ist folgenlos,
+  ein doppelt vergebener nicht.
+- `ALTER SEQUENCE … RESTART WITH` schreibt auch `start_value` um. Ein Reverse
+  nach dem Fortsetzen meldet den fortgesetzten Wert als Startwert
+  (`MSSQL_RESTART_REWRITES_START`).
+
+Dazu die Grenze, die `ALTER SEQUENCE` in T-SQL hat: **der Startwert ist
+unveränderlich.** Ändert das Schema ihn, wendet der Renderer die übrigen
+Attribute an und meldet `MSSQL_SEQUENCE_START_IMMUTABLE`, statt die Abweichung
+stehen zu lassen. Beides ist als Live-Test festgehalten, nicht als Kommentar.
+
+**Was 5d bewusst NICHT anfasst:** `SequencePreserveStage` schließt mssql heute
+an seiner Dialekt-Liste aus, und `SequenceObjectRef` braucht einen
+`RenameProjectionDialect`-Eintrag, den es für mssql noch nicht gibt. Beides
+gehört zur Pipeline-Verdrahtung von 5e — bis dahin beschreibt die Capability,
+was der Renderer **ausdrücken** kann, wie bei den anderen drei Dialekten auch.
+Die Atomic-Preserve-Fähigkeiten bleiben `false`: dafür wäre eine eigene
+Sperrstrategie zu entwerfen, und die ist weder entworfen noch belegt.
 
 ### Was in Slice 5 bewusst geblockt bleibt
 

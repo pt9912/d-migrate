@@ -162,10 +162,20 @@ object SequenceCapabilityDefaults {
 
     // Die Defaults spiegeln Renderer-Realitaet (KDoc oben): der MSSQL-
     // DDL-Generator rendert native Sequenzen (CREATE SEQUENCE … AS BIGINT
-    // mit START/INCREMENT/MIN/MAX/CYCLE/CACHE, spec/ddl-generation-rules.md);
-    // Preserve-/Atomic-Faehigkeiten bleiben false, solange es keinen MSSQL-
-    // Migrate-Renderer und keine Current-Value-Probe gibt (schema migrate ist
-    // fuer mssql am DialectCommandGate abgewiesen).
+    // mit START/INCREMENT/MIN/MAX/CYCLE/CACHE, spec/ddl-generation-rules.md).
+    //
+    // `supportsCurrentValuePreserve` steht seit dem MSSQL-Sub-Slice 5d auf
+    // `true`: `MssqlDiffSequenceOps.renderAlterSequenceCurrentValue` rendert
+    // `ALTER SEQUENCE … RESTART WITH`, und `MssqlSequenceCurrentValueProbe`
+    // liest den Laufzeitwert aus `sys.sequences`. Wie bei den anderen
+    // Dialekten beschreibt die Faehigkeit, was der Renderer AUSDRUECKEN kann,
+    // nicht welchen Pfad die Pipeline gerade nimmt — die Verdrahtung im
+    // `SequencePreserveStage` folgt mit Sub-Slice 5e, zusammen mit dem
+    // Gate-Fall und dem `RenameProjectionDialect`-Eintrag.
+    //
+    // Die Atomic-Faehigkeiten bleiben `false`: SQL Server haette dafuer eine
+    // eigene Sperrstrategie zu waehlen (Phase C.4 der anderen drei), und die
+    // ist weder entworfen noch belegt.
     private val Mssql = SequenceCapability(
         supportsNamedSequences = true,
         supportsStart = true,
@@ -173,7 +183,7 @@ object SequenceCapabilityDefaults {
         supportsCycle = true,
         supportsCache = true,
         emitsCachePreallocationWarning = false,
-        supportsCurrentValuePreserve = false,
+        supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
         supportsAtomicPreserve = false,
         supportsAtomicPreserveAllInPlan = false,

@@ -113,26 +113,8 @@ class MssqlDdlGenerator private constructor(
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> = schema.sequences.map { (name, seq) -> generateSequence(name, seq) }
 
-    private fun generateSequence(name: String, seq: SequenceDefinition): DdlStatement {
-        // SQL Server nimmt ohne MINVALUE/MAXVALUE die BIGINT-Typgrenzen; bei
-        // CYCLE würde eine aufsteigende Sequenz dann auf -2^63 statt (wie in
-        // PostgreSQL) auf 1 umbrechen — die Standard-Schranke wird dann explizit.
-        val minValue = seq.minValue ?: if (seq.cycle && seq.increment > 0) minOf(1L, seq.start) else null
-        val maxValue = seq.maxValue ?: if (seq.cycle && seq.increment < 0) maxOf(-1L, seq.start) else null
-        val sql = buildString {
-            // BIGINT trägt jeden neutralen Wertebereich; der Reverse blendet die
-            // Typgrenzen wieder zu "kein MINVALUE/MAXVALUE" aus.
-            append("CREATE SEQUENCE ${quoteIdentifier(name)} AS BIGINT")
-            append(" START WITH ${seq.start}")
-            append(" INCREMENT BY ${seq.increment}")
-            if (minValue != null) append(" MINVALUE $minValue")
-            if (maxValue != null) append(" MAXVALUE $maxValue")
-            if (seq.cycle) append(" CYCLE") else append(" NO CYCLE")
-            if (seq.cache != null) append(" CACHE ${seq.cache}")
-            append(";")
-        }
-        return DdlStatement(sql)
-    }
+    private fun generateSequence(name: String, seq: SequenceDefinition): DdlStatement =
+        DdlStatement(MssqlSequenceDdl.createSql(name, seq))
 
     // ── Tables ───────────────────────────────────
 

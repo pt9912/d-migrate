@@ -46,6 +46,10 @@ import java.sql.DriverManager
  * aufgeht, zeigt ein Unit-Test; dass **Schluesselwerte und Zaehler** sie
  * ueberleben, kann nur SQL Server selbst beantworten.
  *
+ * Sub-Slice 5d: die Sequenz-Semantik von SQL Server. Sie ist dem Handbuch
+ * nicht zu entnehmen und entscheidet, wie der Preserve-Pfad rechnen muss —
+ * deshalb steht sie hier als Messung, nicht als Annahme im Kommentar.
+ *
  * Sub-Slice 5b: ein **gefilterter** Index laesst sich ueber den Migrate-Pfad
  * anlegen. Das ist der Fall, an dem der sqlcmd-Apply in Slice 2a scheiterte
  * (Msg 1934) — und der Beleg, dass die SET-Optionen im selben Batch wirken.
@@ -276,5 +280,37 @@ class MssqlDiffCatalogLookupIntegrationTest : FunSpec({
 
         // 5. Die Zwischentabelle ist weg.
         query("SELECT COUNT(*) FROM sys.tables WHERE name LIKE '%__dmg_rebuild_%'") { it.getInt(1) } shouldBe 0
+    }
+
+    test("the sequence preserve path resumes without ever reissuing a value") {
+        // Diese Zusicherung haelt zwei gemessene Eigenheiten fest, auf denen
+        // `MssqlDiffSequenceOps.renderAlterSequenceCurrentValue` aufbaut.
+        exec("CREATE SEQUENCE sq_live AS BIGINT START WITH 10 INCREMENT BY 1 NO CYCLE;")
+
+        fun nextValue(): Long = query("SELECT NEXT VALUE FOR sq_live") { it.getLong(1) }
+        fun currentValue(): Long =
+            query("SELECT CAST(current_value AS BIGINT) FROM sys.sequences WHERE name = 'sq_live'") { it.getLong(1) }
+
+        // (a) Eine frische Sequenz traegt bereits den Startwert, und der erste
+        //     Aufruf gibt ihn zurueck, OHNE current_value zu bewegen. Frisch und
+        //     einmal benutzt sind daran also nicht zu unterscheiden.
+        currentValue() shouldBe 10L
+        nextValue() shouldBe 10L
+        currentValue() shouldBe 10L
+        nextValue() shouldBe 11L
+        currentValue() shouldBe 11L
+
+        // Der Renderer setzt bei current_value + Schrittweite fort.
+        val probed = currentValue()
+        exec("ALTER SEQUENCE [sq_live] RESTART WITH ${probed + 1};")
+
+        // Kein Wert wird ein zweites Mal ausgegeben — darauf kommt es an.
+        nextValue() shouldBe 12L
+
+        // (b) RESTART WITH schreibt auch start_value um. Ein Reverse nach der
+        //     Migration meldet damit den fortgesetzten Wert als Startwert.
+        query("SELECT CAST(start_value AS BIGINT) FROM sys.sequences WHERE name = 'sq_live'") {
+            it.getLong(1)
+        } shouldBe 12L
     }
 })

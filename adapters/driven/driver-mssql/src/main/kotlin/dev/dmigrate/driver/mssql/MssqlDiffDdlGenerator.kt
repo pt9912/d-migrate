@@ -15,9 +15,9 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  *
  * **Im Umfang**: Tabellen, Spalten und Primaerschluessel (5a), der
  * IDENTITY-Tabellen-Neubau (5a-2, [MssqlRebuildPlanner]), Constraints und
- * Indizes (5b), Sichten und Custom Types (5c). Alles andere meldet der Dispatcher als
+ * Indizes (5b), Sichten und Custom Types (5c), Sequenzen (5d). Alles andere meldet der Dispatcher als
  * `DIALECT_UNSUPPORTED_OPERATION` — teils, weil ein spaeterer Sub-Slice es
- * liefert (Sequenzen 5d), teils, weil ein Slice
+ * liefert, teils, weil ein Slice
  * die ganze Flaeche besitzt (Routinen und Trigger Slice 9, Partitionierung
  * Slice 7) oder SQL Server sie gar nicht kennt (Materialized Views).
  *
@@ -145,7 +145,9 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, setOf(op.id))
             return
         }
-        val families = listOf(::renderTableOp, ::renderObjectOp, ::renderViewOp, ::renderCustomTypeOp)
+        val families = listOf(
+            ::renderTableOp, ::renderObjectOp, ::renderViewOp, ::renderCustomTypeOp, ::renderSequenceOp,
+        )
         if (families.none { it(op, ctx) }) blockUnsupported(op, ctx)
     }
 
@@ -195,6 +197,19 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
         return true
     }
 
+    private fun renderSequenceOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
+        when (op) {
+            is DiffOperation.CreateSequence -> MssqlDiffSequenceOps.renderCreateSequence(op, ctx)
+            is DiffOperation.AlterSequence -> MssqlDiffSequenceOps.renderAlterSequence(op, ctx)
+            is DiffOperation.DropSequence -> MssqlDiffSequenceOps.renderDropSequence(op, ctx)
+            is DiffOperation.RenameSequence -> MssqlDiffSequenceOps.renderRenameSequence(op, ctx)
+            is DiffOperation.AlterSequenceCurrentValue ->
+                MssqlDiffSequenceOps.renderAlterSequenceCurrentValue(op, ctx)
+            else -> return false
+        }
+        return true
+    }
+
     private fun renderCustomTypeOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
         when (op) {
             is DiffOperation.CreateCustomType -> MssqlDiffCustomTypeOps.renderCreateCustomType(op, ctx)
@@ -223,11 +238,6 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
     }
 
     private fun ownerOf(op: DiffOperation): String = when (op) {
-        is DiffOperation.CreateSequence, is DiffOperation.AlterSequence,
-        is DiffOperation.DropSequence, is DiffOperation.RenameSequence,
-        is DiffOperation.AlterSequenceCurrentValue,
-        -> "sequences arrive with sub-slice 5d"
-
         is DiffOperation.CreateFunction, is DiffOperation.ReplaceFunction,
         is DiffOperation.DropFunction, is DiffOperation.RenameFunction,
         is DiffOperation.CreateProcedure, is DiffOperation.ReplaceProcedure,
