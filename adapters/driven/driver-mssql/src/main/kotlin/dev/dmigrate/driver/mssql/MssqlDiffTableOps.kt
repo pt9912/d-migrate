@@ -112,24 +112,7 @@ internal object MssqlDiffTableOps {
         val notes = mutableListOf<TransformationNote>()
         // T-SQL: `ADD`, nicht `ADD COLUMN`.
         val declaration = ctx.sql.columnDeclaration(table, column, op.column, tableDef, schema, notes)
-        // Ein `references` an der Spalte ist im Modell kein Constraint, der
-        // Generate-Pfad legt daraus aber `fk_<tabelle>_<spalte>` an. Ohne diese
-        // Zeile entstuende die Spalte OHNE ihre Beziehung — ein stiller
-        // Verlust, den erst ein Postcompare zeigte. Erst aufloesen, dann
-        // emittieren: ein Blocker nach dem ersten `emit` legte die Operation in
-        // `rendered` UND `skipped`.
-        val foreignKey = op.column.references
-            // Fuehrt das Modell denselben Fremdschluessel ZUSAETZLICH in der
-            // Constraint-Liste, hat er dort eine eigene Operation. Zweimal
-            // angelegt waere er Msg 2714.
-            ?.takeIf { tableDef.constraints.none { c -> c.name == MssqlConstraintNames.foreignKey(table, column) } }
-            ?.let {
-                MssqlDiffObjectOps.resolveConstraintSql(
-                    op, ctx, table, MssqlDiffObjectOps.columnForeignKey(table, column, it),
-                ) ?: return
-            }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $declaration;")
-        foreignKey?.let { ctx.emit(op, it) }
         ctx.carryOverNotes(op, notes)
     }
 

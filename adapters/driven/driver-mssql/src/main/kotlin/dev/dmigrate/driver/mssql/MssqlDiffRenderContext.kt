@@ -67,19 +67,18 @@ internal class MssqlDiffRenderContext(
      * die bei diesem Stand des Laufs schon in der Datenbank stehen, ohne dass
      * ein Schema sie an dieser Stelle fuehrt.
      *
-     * Abwaerts gibt es sie nicht: dort **entfernen** die vorangehenden
-     * Operationen, sie legen nichts an. Die einzige Ausnahme waere die Umkehr
-     * eines `DropConstraint`, und die absorbiert der Neubau.
+     * Welche Operation etwas anlegt, haengt an der Richtung — abwaerts ist es
+     * die Umkehr eines `DropConstraint`, aufwaerts sind es andere. Das
+     * entscheidet [MssqlDiffColumnDependencies.materialisedBy]; hier kommt nur
+     * zusammen, was es dafuer braucht.
      */
     fun inboundForeignKeysCreatedSoFar(
         table: String,
         column: String? = null,
     ): List<MssqlDiffColumnDependencies.InboundForeignKey> =
-        if (direction == MssqlRenderDirection.DOWN) {
-            emptyList()
-        } else {
-            MssqlDiffColumnDependencies.materialisedBy(renderedOps, schemaForDirection(), table, column)
-        }
+        MssqlDiffColumnDependencies.materialisedBy(
+            renderedOps, schemaForDirection(), table, column, direction,
+        )
 
     fun emit(
         op: DiffOperation,

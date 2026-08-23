@@ -581,6 +581,13 @@ liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
 
 **Nächste Arbeitsschritte:**
 
+- **Spaltenlevel `references` im Diff-Pfad** —
+  [`mssql-column-level-foreign-keys.md`](../open/mssql-column-level-foreign-keys.md).
+  `CreateTable` und `AddColumn` rendern sie nicht, der Generate-Pfad schon; eine
+  per `migrate` angelegte Tabelle verliert die Beziehung still. Beim Review von
+  5a-2 gefunden und dort bewusst ausgeschnitten: der Neubau umgeht die Lücke,
+  statt sie zu verdecken.
+
 - **Fremde Funktions-Defaults verlieren ihre Funktions-Natur:** das neutrale
   Format kennt nur `current_timestamp`/`current_date`/`current_time`/`gen_uuid`
   (plus `nextval(...)`) als Funktion — jeder andere Default-Text wird beim

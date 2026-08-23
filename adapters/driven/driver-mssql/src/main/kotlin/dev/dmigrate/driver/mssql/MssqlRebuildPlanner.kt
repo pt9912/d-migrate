@@ -34,14 +34,8 @@ internal object MssqlRebuildPlanner {
     /** Ein Neubau: die Tabelle, die ausloesende Operation und alles, was mitlaeuft. */
     data class Rebuild(val table: String, val trigger: DiffOperation, val ops: List<DiffOperation>)
 
-    data class Classification(
-        /** Die Neubauten, nach Tabellenname sortiert. */
-        val rebuilds: List<Rebuild>,
-        /** Alles andere, unveraendert in Planner-Reihenfolge. */
-        val simpleOps: List<DiffOperation>,
-    ) {
-        val hasRebuilds: Boolean get() = rebuilds.isNotEmpty()
-    }
+    /** Die Neubauten, nach Tabellenname sortiert. Alles Uebrige rendert der Dispatcher einzeln. */
+    data class Classification(val rebuilds: List<Rebuild>)
 
     fun classify(
         ops: List<DiffOperation>,
@@ -51,13 +45,12 @@ internal object MssqlRebuildPlanner {
         val triggers = ops
             .filter { requiresRebuild(it, currentSchema, desiredSchema) }
             .mapNotNull { op -> tableOf(op)?.let { it to op } }
-        if (triggers.isEmpty()) return Classification(emptyList(), ops)
+        if (triggers.isEmpty()) return Classification(emptyList())
         // Je Tabelle die ERSTE Typaenderung als Ausloeser: sie bestimmt nur, wem
         // die Diagnosen zugerechnet werden — gebaut wird die Tabelle ganz.
         val triggerByTable = triggers.groupBy({ it.first }, { it.second }).mapValues { it.value.first() }
         val buckets = LinkedHashMap<String, MutableList<DiffOperation>>()
         for (table in triggerByTable.keys.sorted()) buckets[table] = mutableListOf()
-        val simple = mutableListOf<DiffOperation>()
         for (op in ops) {
             val own = tableOf(op)
             val bucket = if (own != null && own in buckets && isAbsorbed(op)) {
@@ -65,11 +58,10 @@ internal object MssqlRebuildPlanner {
             } else {
                 referencedRebuildTable(op, buckets.keys)
             }
-            if (bucket != null) buckets.getValue(bucket) += op else simple += op
+            if (bucket != null) buckets.getValue(bucket) += op
         }
         return Classification(
-            rebuilds = buckets.map { (table, bucket) -> Rebuild(table, triggerByTable.getValue(table), bucket) },
-            simpleOps = simple,
+            buckets.map { (table, bucket) -> Rebuild(table, triggerByTable.getValue(table), bucket) },
         )
     }
 
@@ -161,21 +153,15 @@ internal object MssqlRebuildPlanner {
     }
 
     /**
-     * Fremdschluessel **anderer** Tabellen auf diese: sie muessen vor dem
-     * `DROP TABLE` weichen und danach wieder entstehen. Ohne den ersten Schritt
-     * lehnt SQL Server das `DROP TABLE` ab (Msg 3726).
-     */
-    /**
      * Die eingehenden Fremdschluessel, die bei Beginn des Neubaus
-     * **tatsaechlich in der Datenbank stehen** — und die er deshalb abraeumen
-     * muss, sonst scheitert sein `DROP TABLE` mit Msg 3726.
+     * **tatsaechlich in der Datenbank stehen**. Sie muessen vor dem
+     * `DROP TABLE` weichen, sonst lehnt SQL Server es mit Msg 3726 ab.
      *
      * Grundlage ist nicht die Phasenordnung, sondern was der Renderer bis
      * hierher wirklich geschrieben hat
      * ([MssqlDiffRenderContext.inboundForeignKeysCreatedSoFar]): der
-     * Ausgangszustand plus alles, was eine schon gerenderte Operation angelegt
-     * hat — eine neue Kindtabelle bringt ihre Fremdschluessel inline mit, eine
-     * neue Spalte ihren `references`.
+     * Ausgangszustand plus alles, was eine schon gerenderte Operation
+     * angelegt hat.
      */
     fun inboundForeignKeysPresent(
         sourceSchema: SchemaDefinition?,

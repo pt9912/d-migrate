@@ -38,8 +38,6 @@ internal object MssqlDiffColumnDependencies {
      * @param bearing das Schema, das die Spalte noch beschreibt (Regel 1)
      * @param surviving das Schema nach der Aenderung — bestimmt, was
      *   wiederhergestellt wird (Regel 2); `null` heisst „nichts wiederherstellen"
-     */
-    /**
      * @param alsoPresent Fremdschluessel, die kein Schema an dieser Stelle
      *   fuehrt, die aber eine schon gerenderte Operation angelegt hat
      *   ([materialisedBy]) — sie stehen im Weg wie jeder andere.
@@ -105,7 +103,13 @@ internal object MssqlDiffColumnDependencies {
         val fromColumns = child.columns.mapNotNull { (colName, col) ->
             col.references
                 ?.takeIf { it.table == table && (column == null || it.column == column) }
-                ?.let { InboundForeignKey(childName, MssqlDiffObjectOps.columnForeignKey(childName, colName, it)) }
+                ?.let {
+                    InboundForeignKey(
+                        childName,
+                        MssqlDiffObjectOps.columnForeignKey(childName, colName, it),
+                        fromColumn = true,
+                    )
+                }
         }
         declared + fromColumns
     }.distinctBy(::keyOf)
@@ -115,40 +119,58 @@ internal object MssqlDiffColumnDependencies {
 
     /**
      * Die eingehenden Fremdschluessel, die eine bereits gerenderte Operation
-     * angelegt hat — eine neue Kindtabelle bringt sie inline mit, eine neue
-     * Spalte ihren `references`.
+     * angelegt hat.
      *
      * Das Modell allein kann die Frage nicht beantworten: ob ein
      * Fremdschluessel JETZT dasteht, haengt daran, ob seine Operation schon
      * lief, nicht daran, in welchem Schema er steht. Wer sie ueberspringt,
      * laesst ihn beim `ALTER COLUMN` (Msg 5074) oder beim `DROP TABLE`
      * (Msg 3726) im Weg stehen.
+     *
+     * Die Richtung entscheidet, welche Operation etwas ANLEGT. Aufwaerts sind
+     * das `CreateTable` (die Kindtabelle bringt ihre Constraint-Liste inline
+     * mit — ihre spaltenlevel Fremdschluessel dagegen nicht, siehe
+     * [InboundForeignKey.fromColumn]) und `AddConstraint`. Abwaerts ist es
+     * genau eine: die Umkehr eines `DropConstraint` ist ein `ADD`. Alle
+     * anderen Umkehrungen entfernen.
      */
     fun materialisedBy(
         renderedBefore: List<DiffOperation>,
         schema: SchemaDefinition?,
         table: String,
-        column: String? = null,
+        column: String?,
+        direction: MssqlRenderDirection,
     ): List<InboundForeignKey> {
+        val candidates = inboundForeignKeys(schema, table, column)
+        if (direction == MssqlRenderDirection.DOWN) {
+            val undoneDrops = renderedBefore.filterIsInstance<DiffOperation.DropConstraint>()
+                .mapNotNull { op -> op.objectRef.path.firstOrNull()?.let { it to op.constraint.name } }
+                .toSet()
+            return candidates.filter { keyOf(it) in undoneDrops }
+        }
         val createdTables = renderedBefore.filterIsInstance<DiffOperation.CreateTable>()
             .map { it.objectRef.rootName }
             .toSet()
-        val addedColumns = renderedBefore.filterIsInstance<DiffOperation.AddColumn>()
-            .mapNotNull { op -> op.objectRef.path.takeIf { it.size >= 2 }?.let { it[0] to it[1] } }
-            .toSet()
-        // Auch ein bereits gerendertes `AddConstraint` hat ihn angelegt — und
-        // ein Neubau, der es absorbiert hat, ebenso.
         val addedConstraints = renderedBefore.filterIsInstance<DiffOperation.AddConstraint>()
             .mapNotNull { op -> op.objectRef.path.firstOrNull()?.let { it to op.constraint.name } }
             .toSet()
-        return inboundForeignKeys(schema, table, column).filter { fk ->
-            fk.childTable in createdTables ||
-                keyOf(fk) in addedConstraints ||
-                fk.constraint.columns.orEmpty().any { (fk.childTable to it) in addedColumns }
+        return candidates.filter { fk ->
+            (fk.childTable in createdTables && !fk.fromColumn) || keyOf(fk) in addedConstraints
         }
     }
 
-    data class InboundForeignKey(val childTable: String, val constraint: ConstraintDefinition)
+    /**
+     * @param fromColumn `true`, wenn er aus einem `references` an einer Spalte
+     *   stammt statt aus der Constraint-Liste. Der Unterschied ist nicht
+     *   kosmetisch: `renderCreateTable` rendert nur die Constraint-Liste, ein
+     *   spaltenlevel Fremdschluessel entsteht mit einer neuen Kindtabelle
+     *   also NICHT (offener Punkt `mssql-column-level-foreign-keys.md`).
+     */
+    data class InboundForeignKey(
+        val childTable: String,
+        val constraint: ConstraintDefinition,
+        val fromColumn: Boolean = false,
+    )
 
     data class ColumnDependencies(
         val table: String,
