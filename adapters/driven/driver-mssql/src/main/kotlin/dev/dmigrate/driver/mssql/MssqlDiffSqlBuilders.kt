@@ -259,9 +259,13 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
      * anlegt oder schon geloescht hat. `DROP CONSTRAINT IF EXISTS` faengt nur
      * den fehlenden Constraint ab, nicht die fehlende Tabelle — `ALTER TABLE`
      * darauf waere Msg 4902.
+     *
+     * `OBJECT_ID` bekommt dafuer den Typ `'U'` mit: ohne ihn traefe die Probe
+     * jedes schema-gebundene Objekt, also auch eine Sicht oder Prozedur
+     * gleichen Namens — der Waechter liesse das `ALTER TABLE` dann doch laufen.
      */
     fun dropConstraintIfTableExistsSql(table: String, name: String): String =
-        "IF OBJECT_ID(${stringLiteral(table)}) IS NOT NULL\n" +
+        "IF OBJECT_ID(${stringLiteral(table)}, ${stringLiteral("U")}) IS NOT NULL\n" +
             "    ALTER TABLE ${quote(table)} DROP CONSTRAINT IF EXISTS ${quote(name)};"
 
     fun dropConstraintSql(table: String, name: String): String =

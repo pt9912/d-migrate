@@ -278,17 +278,6 @@ internal object MssqlDiffTableOps {
     }
 
     /**
-     * SQL Server verweigert `ALTER COLUMN` und `DROP COLUMN` mit Msg 5074 nicht
-     * nur wegen eines Defaults, sondern ebenso wegen eines abhaengigen CHECK,
-     * eines UNIQUE-Constraints oder eines Index auf der Spalte — und d-migrates
-     * eigener Generate-Pfad haengt an jede Enum-Spalte ein `ck_…` und an jede
-     * `unique: true`-Spalte ein `uq_…`.
-     *
-     * Sie werden deshalb um die Aenderung herum abgeraeumt und wieder angelegt.
-     * Beim DROP COLUMN entfaellt das Wiederanlegen fuer alles, was genau diese
-     * Spalte trug — es gibt sie danach nicht mehr.
-     */
-    /**
      * Die Abhaengigkeiten der Spalte. `bearing` ist das Schema, das die Spalte
      * noch BESCHREIBT — bei einem Drop also das Gegenstueck zur Renderrichtung,
      * weil die Zielrichtung sie gerade nicht mehr enthaelt.

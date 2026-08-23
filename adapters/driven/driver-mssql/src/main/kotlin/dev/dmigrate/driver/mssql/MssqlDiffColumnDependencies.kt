@@ -62,24 +62,43 @@ internal object MssqlDiffColumnDependencies {
     }
 
     /**
-     * Fremdschluessel **anderer** Tabellen auf diese Spalte. SQL Server lehnt
+     * Fremdschluessel **anderer** Tabellen auf diese. SQL Server lehnt
      * `ALTER COLUMN` auch dann mit Msg 5074 ab, wenn die Abhaengigkeit von
-     * aussen kommt — die eigene Tabelle allein zu betrachten reicht nicht.
+     * aussen kommt — die eigene Tabelle allein zu betrachten reicht nicht;
+     * beim `DROP TABLE` des Neubaus waere es Msg 3726.
+     *
+     * Erfasst **beide** Formen, in denen das Modell einen Fremdschluessel
+     * fuehrt: als Eintrag in `constraints` und als `references` an einer
+     * Spalte. Die zweite ist im Modell kein Constraint, in der Datenbank aber
+     * sehr wohl einer — der Generate-Pfad legt sie als `fk_<kind>_<spalte>` an.
+     * Der Reverse liefert zwar immer die erste Form, das Soll-Schema kommt aber
+     * aus YAML und darf die zweite benutzen.
+     *
+     * @param column nur Fremdschluessel auf DIESE Spalte; `null` = alle auf die Tabelle
      */
-    private fun inboundForeignKeys(
-        schema: SchemaDefinition,
+    fun inboundForeignKeys(
+        schema: SchemaDefinition?,
         table: String,
-        column: String,
-    ): List<InboundForeignKey> = schema.tables.flatMap { (childName, child) ->
+        column: String? = null,
+    ): List<InboundForeignKey> = schema?.tables.orEmpty().flatMap { (childName, child) ->
         if (childName == table) {
-            emptyList()
-        } else {
-            child.constraints
-                .filter { it.type == ConstraintType.FOREIGN_KEY }
-                .filter { it.references?.table == table && column in (it.references?.columns ?: emptyList()) }
-                .map { InboundForeignKey(childName, it) }
+            return@flatMap emptyList()
         }
+        val declared = child.constraints
+            .filter { it.type == ConstraintType.FOREIGN_KEY }
+            .filter { it.references?.table == table }
+            .filter { column == null || column in (it.references?.columns ?: emptyList()) }
+            .map { InboundForeignKey(childName, it) }
+        val fromColumns = child.columns.mapNotNull { (colName, col) ->
+            col.references
+                ?.takeIf { it.table == table && (column == null || it.column == column) }
+                ?.let { InboundForeignKey(childName, MssqlDiffObjectOps.columnForeignKey(childName, colName, it)) }
+        }
+        declared + fromColumns
     }
+
+    /** Zwei Fremdschluessel sind derselbe, wenn Kindtabelle und Name gleich sind. */
+    fun keyOf(fk: InboundForeignKey): Pair<String, String> = fk.childTable to fk.constraint.name
 
     data class InboundForeignKey(val childTable: String, val constraint: ConstraintDefinition)
 
@@ -121,9 +140,9 @@ internal object MssqlDiffColumnDependencies {
         fun survivingPrimaryKey(): List<String>? =
             surviving?.primaryKey?.takeIf { inPrimaryKey && it.isNotEmpty() }
 
-        fun survivingInboundForeignKeys(): List<InboundForeignKey> = inboundForeignKeys.filter { inbound ->
-            survivingSchema?.tables?.get(inbound.childTable)
-                ?.constraints?.any { it.name == inbound.constraint.name } == true
+        fun survivingInboundForeignKeys(): List<InboundForeignKey> {
+            val surviving = inboundForeignKeys(survivingSchema, table, column).map(::keyOf).toSet()
+            return inboundForeignKeys.filter { keyOf(it) in surviving }
         }
 
         companion object {
@@ -136,7 +155,15 @@ internal object MssqlDiffColumnDependencies {
     }
 
     /**
-     * Die Abraeum-Statements. Reihenfolge: erst die Fremdschluessel von aussen,
+     * Die Abraeum-Statements.
+     *
+     * SQL Server verweigert `ALTER COLUMN` und `DROP COLUMN` mit Msg 5074 nicht
+     * nur wegen eines Defaults, sondern ebenso wegen eines abhaengigen CHECK,
+     * eines UNIQUE-Constraints oder eines Index auf der Spalte — und d-migrates
+     * eigener Generate-Pfad haengt an jede Enum-Spalte ein `ck_…` und an jede
+     * `unique: true`-Spalte ein `uq_…`.
+     *
+     * Reihenfolge: erst die Fremdschluessel von aussen,
      * dann die Constraints der Tabelle, zuletzt die Indizes — ein Index, der
      * einen Constraint traegt, verschwindet mit ihm.
      */

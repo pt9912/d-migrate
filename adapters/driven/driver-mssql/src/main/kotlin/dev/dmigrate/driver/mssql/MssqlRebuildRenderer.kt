@@ -101,7 +101,10 @@ internal object MssqlRebuildRenderer {
         target: TableDefinition,
         source: TableDefinition,
     ): Resolved? {
-        val (table, trigger, bucket) = rebuild
+        val table = rebuild.table
+        val trigger = rebuild.trigger
+        val bucket = rebuild.ops
+        val createdTables = rebuild.createdTables
         val temp = MssqlRebuildPlanner.tempTableName(table, bucket)
         val notes = mutableListOf<TransformationNote>()
         val sources = MssqlRebuildPlanner.columnSources(source, target, bucket, ctx.direction)
@@ -117,7 +120,7 @@ internal object MssqlRebuildRenderer {
             ?: return blockUnfillable(bucket, ctx, table, target, sources)
 
         val statements = mutableListOf<String>()
-        MssqlRebuildPlanner.inboundForeignKeysToDrop(sourceSchema, targetSchema, table).forEach {
+        MssqlRebuildPlanner.inboundForeignKeysPresent(sourceSchema, targetSchema, table, createdTables).forEach {
             statements += ctx.sql.dropConstraintIfTableExistsSql(it.childTable, it.constraint.name)
         }
         statements += createTempTableSql(temp, declarations, ctx)
@@ -132,7 +135,9 @@ internal object MssqlRebuildRenderer {
         for (index in target.indices) {
             statements += MssqlDiffObjectOps.resolveIndexSql(trigger, ctx, table, index, target) ?: return null
         }
-        for (inbound in MssqlRebuildPlanner.inboundForeignKeys(targetSchema, table)) {
+        val restorable = MssqlRebuildPlanner
+            .inboundForeignKeysToRestore(sourceSchema, targetSchema, table, createdTables, bucket)
+        for (inbound in restorable) {
             statements += MssqlDiffObjectOps
                 .resolveConstraintSql(trigger, ctx, inbound.childTable, inbound.constraint) ?: return null
         }

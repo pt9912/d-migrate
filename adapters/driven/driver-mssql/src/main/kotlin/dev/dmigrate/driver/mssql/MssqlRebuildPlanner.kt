@@ -31,8 +31,18 @@ import dev.dmigrate.core.util.sha256Hex
  */
 internal object MssqlRebuildPlanner {
 
-    /** Ein Neubau: die Tabelle, die ausloesende Operation und alles, was mitlaeuft. */
-    data class Rebuild(val table: String, val trigger: DiffOperation, val ops: List<DiffOperation>)
+    /**
+     * Ein Neubau: die Tabelle, die ausloesende Operation und alles, was
+     * mitlaeuft. [createdTables] sind die Tabellen, die derselbe Plan anlegt —
+     * der Neubau muss wissen, welche Fremdschluessel bei seinem Lauf schon
+     * dastehen ([inboundForeignKeysPresent]).
+     */
+    data class Rebuild(
+        val table: String,
+        val trigger: DiffOperation,
+        val ops: List<DiffOperation>,
+        val createdTables: Set<String>,
+    )
 
     data class Classification(
         /** Die Neubauten, nach Tabellenname sortiert. */
@@ -67,8 +77,13 @@ internal object MssqlRebuildPlanner {
             }
             if (bucket != null) buckets.getValue(bucket) += op else simple += op
         }
+        val createdTables = ops.filterIsInstance<DiffOperation.CreateTable>()
+            .map { it.objectRef.rootName }
+            .toSet()
         return Classification(
-            rebuilds = buckets.map { (table, bucket) -> Rebuild(table, triggerByTable.getValue(table), bucket) },
+            rebuilds = buckets.map { (table, bucket) ->
+                Rebuild(table, triggerByTable.getValue(table), bucket, createdTables)
+            },
             simpleOps = simple,
         )
     }
@@ -165,56 +180,61 @@ internal object MssqlRebuildPlanner {
      * `DROP TABLE` weichen und danach wieder entstehen. Ohne den ersten Schritt
      * lehnt SQL Server das `DROP TABLE` ab (Msg 3726).
      */
-    fun inboundForeignKeys(
-        schema: SchemaDefinition?,
-        table: String,
-    ): List<MssqlDiffColumnDependencies.InboundForeignKey> = schema?.tables.orEmpty()
-        .filterKeys { it != table }
-        .flatMap { (childName, child) ->
-            val declared = child.constraints
-                .filter { it.type == ConstraintType.FOREIGN_KEY }
-                .filter { it.references?.table == table }
-                .map { MssqlDiffColumnDependencies.InboundForeignKey(childName, it) }
-            // Ein `references` an der Spalte ist im Modell kein Constraint, in
-            // der Datenbank aber sehr wohl einer — der Generate-Pfad legt ihn
-            // als `fk_<kind>_<spalte>` an. Wer ihn hier uebersieht, laesst ihn
-            // beim `DROP TABLE` stehen und faehrt in Msg 3726.
-            val fromColumns = child.columns.mapNotNull { (colName, col) ->
-                col.references
-                    ?.takeIf { it.table == table }
-                    ?.let {
-                        MssqlDiffColumnDependencies.InboundForeignKey(
-                            childName,
-                            MssqlDiffObjectOps.columnForeignKey(childName, colName, it),
-                        )
-                    }
-            }
-            declared + fromColumns
-        }
-
     /**
-     * Was der Neubau abraeumen muss: alles, was im Ist- **oder** im Sollzustand
-     * auf die Tabelle zeigt.
+     * Die eingehenden Fremdschluessel, die zum Zeitpunkt des Neubaus
+     * **tatsaechlich in der Datenbank stehen** — und die er deshalb abraeumen
+     * muss, sonst scheitert sein `DROP TABLE` mit Msg 3726.
      *
-     * Die Sollseite gehoert dazu, weil derselbe Plan einen Fremdschluessel
-     * angelegt haben kann, BEVOR der Neubau laeuft — eine neue Kindtabelle
-     * entsteht in einer frueheren Phase und bringt ihre Fremdschluessel gleich
-     * mit. Steht der dann noch, scheitert das `DROP TABLE` mit Msg 3726.
+     * Das sind zwei Mengen. Die des Ausgangszustands, und die, die eine schon
+     * ausgefuehrte Operation desselben Plans angelegt hat: eine neue
+     * Kindtabelle entsteht in der Phase `TABLES` und bringt ihre
+     * Fremdschluessel inline mit, der Neubau laeuft fruehestens in `COLUMNS` —
+     * sie steht also immer schon da.
      *
-     * Wiederhergestellt wird anschliessend der ZIELzustand
-     * ([inboundForeignKeys] auf dem Sollschema), nicht die Schnittmenge: ein
-     * abgeraeumter Fremdschluessel, den das Ziel weiterhin vorsieht, muss
-     * zurueck — auch wenn der Ausgangszustand ihn noch nicht kannte. Dass er
-     * dabei nicht doppelt entsteht, sichert die Absorption seiner eigenen
-     * Operation in [classify].
+     * Was der Plan erst NACH dem Neubau anlegen wird, gehoert ausdruecklich
+     * nicht dazu. Es abzuraeumen waere wirkungslos, es wiederherzustellen
+     * dagegen schaedlich: ein Fremdschluessel auf eine Spalte, die es noch
+     * nicht gibt, ist Msg 1911.
      */
-    fun inboundForeignKeysToDrop(
+    fun inboundForeignKeysPresent(
         sourceSchema: SchemaDefinition?,
         targetSchema: SchemaDefinition?,
         table: String,
-    ): List<MssqlDiffColumnDependencies.InboundForeignKey> =
-        (inboundForeignKeys(sourceSchema, table) + inboundForeignKeys(targetSchema, table))
-            .distinctBy { it.childTable to it.constraint.name }
+        createdTables: Set<String>,
+    ): List<MssqlDiffColumnDependencies.InboundForeignKey> {
+        val fromNewChildren = MssqlDiffColumnDependencies
+            .inboundForeignKeys(targetSchema, table)
+            .filter { it.childTable in createdTables }
+        return (MssqlDiffColumnDependencies.inboundForeignKeys(sourceSchema, table) + fromNewChildren)
+            .distinctBy(MssqlDiffColumnDependencies::keyOf)
+    }
+
+    /**
+     * Was der Neubau nach dem Umbenennen wieder anlegt: was er abgeraeumt hat
+     * und das Ziel weiterhin vorsieht — plus die Fremdschluessel, deren eigene
+     * Operation er absorbiert hat und deren Arbeit er damit uebernommen hat.
+     *
+     * Beides zusammen ist genau die Menge, fuer die sonst niemand mehr ein
+     * Statement schreibt. Alles darueber hinaus entstuende doppelt (Msg 2714)
+     * oder zu frueh (Msg 1911).
+     */
+    fun inboundForeignKeysToRestore(
+        sourceSchema: SchemaDefinition?,
+        targetSchema: SchemaDefinition?,
+        table: String,
+        createdTables: Set<String>,
+        bucket: List<DiffOperation>,
+    ): List<MssqlDiffColumnDependencies.InboundForeignKey> {
+        val present = inboundForeignKeysPresent(sourceSchema, targetSchema, table, createdTables)
+            .map(MssqlDiffColumnDependencies::keyOf)
+            .toSet()
+        val absorbed = bucket.filterIsInstance<DiffOperation.AddConstraint>()
+            .mapNotNull { op -> op.objectRef.path.firstOrNull()?.let { it to op.constraint.name } }
+            .toSet()
+        return MssqlDiffColumnDependencies.inboundForeignKeys(targetSchema, table)
+            .filter { MssqlDiffColumnDependencies.keyOf(it) in present || MssqlDiffColumnDependencies.keyOf(it) in absorbed }
+            .distinctBy(MssqlDiffColumnDependencies::keyOf)
+    }
 
     /**
      * Eine Constraint-Operation auf einer ANDEREN Tabelle, die auf eine neu

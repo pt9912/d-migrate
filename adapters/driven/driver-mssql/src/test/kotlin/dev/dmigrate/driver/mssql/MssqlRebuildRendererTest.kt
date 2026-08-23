@@ -329,9 +329,62 @@ class MssqlRebuildRendererTest : FunSpec({
         (drop in 0 until dropTable) shouldBe true
         // Die Kindtabelle koennte es zu diesem Zeitpunkt auch NICHT geben —
         // der Abraeumer muss das vertragen.
-        sqls[drop] shouldContainStr "IF OBJECT_ID('orders') IS NOT NULL"
+        sqls[drop] shouldContainStr "IF OBJECT_ID('orders', 'U') IS NOT NULL"
         // Und wiederhergestellt wird er genau einmal.
         sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user]") } shouldBe 1
+    }
+
+    test("a foreign key only a LATER step will create is left alone, not restored early") {
+        // `zorders.user_id` entsteht erst in derselben Phase wie der Neubau und
+        // kann nach ihm liegen. Den Fremdschluessel darauf jetzt anzulegen waere
+        // Msg 1911 — die Spalte gaebe es noch nicht.
+        val zorders = TableDefinition(columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10))))
+        val newCol = ColumnDefinition(
+            NeutralType.Integer,
+            references = ReferenceDefinition(table = "users", column = "id"),
+        )
+        val current = schema("users" to users(NeutralType.Integer), "zorders" to zorders)
+        val desired = schema(
+            "users" to users(NeutralType.Identifier(autoIncrement = true)),
+            "zorders" to zorders.copy(
+                columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10)), "user_id" to newCol),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "users", columnsChanged = identityAddedDiff().tablesChanged.single().columnsChanged),
+                TableDiff(name = "zorders", columnsAdded = mapOf("user_id" to newCol)),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        sqls.none { it.contains("ADD CONSTRAINT [fk_zorders_user_id]") } shouldBe true
+    }
+
+    test("a child carrying the same foreign key in both model forms yields one statement, not two") {
+        // `references` an der Spalte UND ein gleichnamiger Eintrag in
+        // `constraints` beschreiben dasselbe Objekt — zweimal angelegt waere
+        // es Msg 2714.
+        val orders = TableDefinition(
+            columns = linkedMapOf(
+                "user_id" to ColumnDefinition(
+                    NeutralType.Integer,
+                    references = ReferenceDefinition(table = "users", column = "id"),
+                ),
+            ),
+            constraints = listOf(
+                ConstraintDefinition(
+                    name = "fk_orders_user_id",
+                    type = ConstraintType.FOREIGN_KEY,
+                    columns = listOf("user_id"),
+                    references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+                ),
+            ),
+        )
+        val current = schema("users" to users(NeutralType.Integer), "orders" to orders)
+        val desired = schema("users" to users(NeutralType.Identifier(autoIncrement = true)), "orders" to orders)
+        val sqls = up(identityAddedDiff(), current, desired).statements.map { it.sql }
+        sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user_id]") } shouldBe 1
+        sqls.count { it.contains("DROP CONSTRAINT IF EXISTS [fk_orders_user_id]") } shouldBe 1
     }
 
     test("an unrenderable object leaves no absorbed operation out of the bookkeeping") {
