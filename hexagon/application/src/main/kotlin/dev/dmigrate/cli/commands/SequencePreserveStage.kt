@@ -117,10 +117,7 @@ object SequencePreserveStage {
             return if (candidates.isEmpty()) Outcome.NotRun else requiresDbTargetBlocker(candidates, plan)
         }
         if (!request.execute) return Outcome.NotRun
-        if (dialect != DatabaseDialect.POSTGRESQL &&
-            dialect != DatabaseDialect.MYSQL &&
-            dialect != DatabaseDialect.SQLITE
-        ) {
+        if (dialect !in PRESERVE_DIALECTS) {
             return blockUnsupportedDialect(plan, dialect)
         }
         if (dialect == DatabaseDialect.SQLITE && candidates.isNotEmpty()) {
@@ -342,9 +339,7 @@ object SequencePreserveStage {
         DatabaseDialect.POSTGRESQL -> RenameProjectionDialect.POSTGRESQL
         DatabaseDialect.MYSQL -> RenameProjectionDialect.MYSQL
         DatabaseDialect.SQLITE -> RenameProjectionDialect.SQLITE
-        DatabaseDialect.MSSQL -> error(
-            "unreachable: DialectCommandGate rejects mssql for schema migrate (ADR 0047)",
-        )
+        DatabaseDialect.MSSQL -> RenameProjectionDialect.MSSQL
     }
 
     // ── Skip-path helpers ──────────────────────────────────────────────
@@ -514,3 +509,15 @@ object SequencePreserveStage {
         return plan.copy(operations = newOps)
     }
 }
+
+/**
+ * Die Dialekte, deren Renderer den Preserve-Pfad ausdruecken koennen. Steht als
+ * Menge und nicht als Bedingungskette da: mit dem vierten Dialekt war die
+ * Verkettung an Detekts Komplexitaetsschwelle.
+ */
+private val PRESERVE_DIALECTS = setOf(
+    DatabaseDialect.POSTGRESQL,
+    DatabaseDialect.MYSQL,
+    DatabaseDialect.SQLITE,
+    DatabaseDialect.MSSQL,
+)

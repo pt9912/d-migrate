@@ -62,6 +62,7 @@ internal interface RenameDependencyPolicy {
             RenameProjectionDialect.POSTGRESQL -> PostgresRenameDependencyPolicy
             RenameProjectionDialect.MYSQL -> MysqlRenameDependencyPolicy
             RenameProjectionDialect.SQLITE -> SqliteRenameDependencyPolicy
+            RenameProjectionDialect.MSSQL -> MssqlRenameDependencyPolicy
         }
     }
 }
@@ -344,6 +345,58 @@ internal object MysqlRenameDependencyPolicy : RenameDependencyPolicy {
         // The LIVE_TARGET vs FILE_ONLY gate the matrix describes for
         // FK constraint-name conflicts lands once the policy
         // enumerates FK refs from other tables (T4/T5 follow-up).
+        val views = RenameViewReprojector.reprojectViewsForTableRename(candidate, current, desired)
+        return RenameProjection(
+            explicit = views.operations,
+            absorbedViews = views.absorbedViews,
+            blockers = views.blockers,
+        )
+    }
+
+    override fun classifyColumnRename(
+        candidate: RenameColumnCandidate,
+        table: TableDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+        capabilities: RenameProjectionCapabilities,
+    ): RenameProjection {
+        val blockers = RenameDependencyProbes.functionCallReferencingOldColumnName(
+            candidateId = candidate.id,
+            tableName = candidate.tableName,
+            oldColumnName = candidate.fromColumn,
+            table = desired.tables[candidate.tableName],
+        )
+        return RenameProjection(blockers = blockers)
+    }
+}
+
+/**
+ * SQL Server benennt ueber `sp_rename` um — eine Katalogoperation, die die
+ * **Identitaet** der Tabelle behaelt. Fremdschluessel und Indizes haengen an
+ * der Objekt-ID und folgen deshalb von selbst; was sie NICHT tut, ist
+ * abhaengige Definitionen umschreiben:
+ *
+ * - **Sichten und Routinen** behalten in `sys.sql_modules` ihren alten Text,
+ *   also den alten Tabellennamen. SQL Server prueft das beim Umbenennen nicht,
+ *   die Sicht bricht erst bei ihrer naechsten Benutzung. Sie brauchen deshalb
+ *   dasselbe explizite Drop+Create wie bei MySQL, aus dem Rumpf des
+ *   Soll-Schemas.
+ * - **Constraint-Namen** driften: ein `df_alterName_spalte` heisst nach dem
+ *   Umbenennen weiterhin so. Das ist eine Namens-, keine Korrektheitsfrage —
+ *   der Renderer meldet sie als `MSSQL_RENAME_KEEPS_CONSTRAINT_NAMES`, und die
+ *   Katalog-Nachschlaege des Diff-Pfads finden die Objekte unabhaengig vom
+ *   Namen wieder.
+ */
+internal object MssqlRenameDependencyPolicy : RenameDependencyPolicy {
+    override val dialect: RenameProjectionDialect = RenameProjectionDialect.MSSQL
+
+    override fun classifyTableRename(
+        candidate: RenameTableCandidate,
+        diff: SchemaDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+        capabilities: RenameProjectionCapabilities,
+    ): RenameProjection {
         val views = RenameViewReprojector.reprojectViewsForTableRename(candidate, current, desired)
         return RenameProjection(
             explicit = views.operations,

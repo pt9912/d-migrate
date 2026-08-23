@@ -12,6 +12,7 @@ enum class RenameProjectionDialect {
     POSTGRESQL,
     MYSQL,
     SQLITE,
+    MSSQL,
 }
 
 /**
