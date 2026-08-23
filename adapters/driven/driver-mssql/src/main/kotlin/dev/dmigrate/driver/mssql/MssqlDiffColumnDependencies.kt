@@ -74,6 +74,10 @@ internal object MssqlDiffColumnDependencies {
      * Der Reverse liefert zwar immer die erste Form, das Soll-Schema kommt aber
      * aus YAML und darf die zweite benutzen.
      *
+     * Ein Kind darf denselben Fremdschluessel in beiden Formen fuehren — das
+     * beschreibt EIN Objekt, nicht zwei; die Liste ist deshalb entdoppelt.
+     * Ohne das legte der Wiederherstellungs-Pfad ihn zweimal an (Msg 2714).
+     *
      * @param column nur Fremdschluessel auf DIESE Spalte; `null` = alle auf die Tabelle
      */
     fun inboundForeignKeys(
@@ -95,7 +99,7 @@ internal object MssqlDiffColumnDependencies {
                 ?.let { InboundForeignKey(childName, MssqlDiffObjectOps.columnForeignKey(childName, colName, it)) }
         }
         declared + fromColumns
-    }
+    }.distinctBy(::keyOf)
 
     /** Zwei Fremdschluessel sind derselbe, wenn Kindtabelle und Name gleich sind. */
     fun keyOf(fk: InboundForeignKey): Pair<String, String> = fk.childTable to fk.constraint.name

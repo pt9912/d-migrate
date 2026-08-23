@@ -334,10 +334,10 @@ class MssqlRebuildRendererTest : FunSpec({
         sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user]") } shouldBe 1
     }
 
-    test("a foreign key only a LATER step will create is left alone, not restored early") {
-        // `zorders.user_id` entsteht erst in derselben Phase wie der Neubau und
-        // kann nach ihm liegen. Den Fremdschluessel darauf jetzt anzulegen waere
-        // Msg 1911 — die Spalte gaebe es noch nicht.
+    test("a foreign key whose column arrives LATER is created by that step, never before it") {
+        // Den Fremdschluessel beim Neubau anzulegen waere Msg 1911 — die Spalte
+        // gaebe es noch nicht. Anlegen muss ihn die Operation, die die Spalte
+        // bringt, und genau einmal.
         val zorders = TableDefinition(columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10))))
         val newCol = ColumnDefinition(
             NeutralType.Integer,
@@ -357,7 +357,66 @@ class MssqlRebuildRendererTest : FunSpec({
             ),
         )
         val sqls = up(diff, current, desired).statements.map { it.sql }
-        sqls.none { it.contains("ADD CONSTRAINT [fk_zorders_user_id]") } shouldBe true
+        sqls.count { it.contains("ADD CONSTRAINT [fk_zorders_user_id]") } shouldBe 1
+        val addColumn = sqls.indexOfFirst { it.contains("ALTER TABLE [zorders] ADD [user_id]") }
+        val addFk = sqls.indexOfFirst { it.contains("ADD CONSTRAINT [fk_zorders_user_id]") }
+        (addColumn in 0 until addFk) shouldBe true
+    }
+
+    test("a foreign key an EARLIER step created is dropped by the rebuild and put back") {
+        // Spiegelfall: die Kindspalte entsteht vor dem Neubau (`aorders` sortiert
+        // vor `users`), ihr Fremdschluessel steht beim `DROP TABLE` also schon —
+        // Msg 3726, wenn der Neubau ihn nicht abraeumt, stiller Verlust, wenn er
+        // ihn nicht zurueckbringt.
+        val aorders = TableDefinition(columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10))))
+        val newCol = ColumnDefinition(
+            NeutralType.Integer,
+            references = ReferenceDefinition(table = "users", column = "id"),
+        )
+        val current = schema("users" to users(NeutralType.Integer), "aorders" to aorders)
+        val desired = schema(
+            "users" to users(NeutralType.Identifier(autoIncrement = true)),
+            "aorders" to aorders.copy(
+                columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10)), "user_id" to newCol),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "aorders", columnsAdded = mapOf("user_id" to newCol)),
+                TableDiff(name = "users", columnsChanged = identityAddedDiff().tablesChanged.single().columnsChanged),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        val dropTable = sqls.indexOfFirst { it == "DROP TABLE [users];" }
+        val drop = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [fk_aorders_user_id]") }
+        (drop in 0 until dropTable) shouldBe true
+        // Angelegt wird er zweimal — einmal von der Spalte, einmal vom Neubau,
+        // der ihn dazwischen abgeraeumt hat. Nacheinander, nicht doppelt.
+        sqls.count { it.contains("ADD CONSTRAINT [fk_aorders_user_id]") } shouldBe 2
+        (sqls.indexOfLast { it.contains("ADD CONSTRAINT [fk_aorders_user_id]") } > dropTable) shouldBe true
+    }
+
+    test("down restores a foreign key whose DropConstraint the rebuild absorbed") {
+        // Aufwaerts entfaellt der Fremdschluessel, abwaerts muss er zurueck.
+        // Seine eigene Operation ist im Eimer und rendert ihre Umkehr nicht
+        // selbst — tut es der Neubau auch nicht, ist er still verloren.
+        val fk = ConstraintDefinition(
+            name = "fk_orders_user",
+            type = ConstraintType.FOREIGN_KEY,
+            columns = listOf("user_id"),
+            references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+        )
+        val orders = TableDefinition(columns = linkedMapOf("user_id" to ColumnDefinition(NeutralType.Integer)))
+        val current = schema("users" to users(NeutralType.Integer), "orders" to orders.copy(constraints = listOf(fk)))
+        val desired = schema("users" to users(NeutralType.Identifier(autoIncrement = true)), "orders" to orders)
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "users", columnsChanged = identityAddedDiff().tablesChanged.single().columnsChanged),
+                TableDiff(name = "orders", constraintsRemoved = listOf(fk)),
+            ),
+        )
+        val sqls = down(diff, current, desired).statements.map { it.sql }
+        sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user]") } shouldBe 1
     }
 
     test("a child carrying the same foreign key in both model forms yields one statement, not two") {

@@ -581,6 +581,7 @@ liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
 
 **Nächste Arbeitsschritte:**
 
+
 - **Fremde Funktions-Defaults verlieren ihre Funktions-Natur:** das neutrale
   Format kennt nur `current_timestamp`/`current_date`/`current_time`/`gen_uuid`
   (plus `nextval(...)`) als Funktion — jeder andere Default-Text wird beim

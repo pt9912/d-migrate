@@ -43,7 +43,11 @@ internal object MssqlRebuildRenderer {
         val notes: List<TransformationNote>,
     )
 
-    fun render(rebuild: MssqlRebuildPlanner.Rebuild, ctx: MssqlDiffRenderContext) {
+    fun render(
+        rebuild: MssqlRebuildPlanner.Rebuild,
+        ctx: MssqlDiffRenderContext,
+        renderedBefore: List<DiffOperation>,
+    ) {
         val (table, trigger, bucket) = rebuild
         val targetSchema = ctx.schemaForDirection()
         val sourceSchema = ctx.schemaOppositeOfDirection()
@@ -69,7 +73,7 @@ internal object MssqlRebuildRenderer {
                 reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
             )
         }
-        val resolved = resolve(rebuild, ctx, targetSchema, sourceSchema, target, source)
+        val resolved = resolve(rebuild, ctx, targetSchema, sourceSchema, target, source, renderedBefore)
             ?: return blockBucketRemainder(bucket, ctx, table)
         if (ctx.options.strictGapOperations) {
             return blockBucket(
@@ -100,11 +104,11 @@ internal object MssqlRebuildRenderer {
         sourceSchema: SchemaDefinition?,
         target: TableDefinition,
         source: TableDefinition,
+        renderedBefore: List<DiffOperation>,
     ): Resolved? {
         val table = rebuild.table
         val trigger = rebuild.trigger
         val bucket = rebuild.ops
-        val createdTables = rebuild.createdTables
         val temp = MssqlRebuildPlanner.tempTableName(table, bucket)
         val notes = mutableListOf<TransformationNote>()
         val sources = MssqlRebuildPlanner.columnSources(source, target, bucket, ctx.direction)
@@ -120,7 +124,9 @@ internal object MssqlRebuildRenderer {
             ?: return blockUnfillable(bucket, ctx, table, target, sources)
 
         val statements = mutableListOf<String>()
-        MssqlRebuildPlanner.inboundForeignKeysPresent(sourceSchema, targetSchema, table, createdTables).forEach {
+        MssqlRebuildPlanner
+            .inboundForeignKeysPresent(sourceSchema, targetSchema, table, renderedBefore, ctx.direction)
+            .forEach {
             statements += ctx.sql.dropConstraintIfTableExistsSql(it.childTable, it.constraint.name)
         }
         statements += createTempTableSql(temp, declarations, ctx)
@@ -129,14 +135,18 @@ internal object MssqlRebuildRenderer {
         statements += ctx.sql.renameSql(temp, table)
         if (target.primaryKey.isNotEmpty()) statements += ctx.sql.addPrimaryKeySql(table, target.primaryKey)
         statements += objectStatements
-        for (constraint in columnLevelForeignKeys(table, target) + target.constraints) {
+        // Auch hier kann dasselbe Objekt in beiden Modellformen stehen —
+        // Spiegelfall der eingehenden Seite, zweimal angelegt waere Msg 2714.
+        val outbound = (columnLevelForeignKeys(table, target) + target.constraints).distinctBy { it.name }
+        for (constraint in outbound) {
             statements += MssqlDiffObjectOps.resolveConstraintSql(trigger, ctx, table, constraint) ?: return null
         }
         for (index in target.indices) {
             statements += MssqlDiffObjectOps.resolveIndexSql(trigger, ctx, table, index, target) ?: return null
         }
-        val restorable = MssqlRebuildPlanner
-            .inboundForeignKeysToRestore(sourceSchema, targetSchema, table, createdTables, bucket)
+        val restorable = MssqlRebuildPlanner.inboundForeignKeysToRestore(
+            sourceSchema, targetSchema, table, renderedBefore, ctx.direction, bucket,
+        )
         for (inbound in restorable) {
             statements += MssqlDiffObjectOps
                 .resolveConstraintSql(trigger, ctx, inbound.childTable, inbound.constraint) ?: return null

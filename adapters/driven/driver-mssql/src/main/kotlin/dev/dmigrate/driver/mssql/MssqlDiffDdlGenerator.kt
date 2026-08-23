@@ -77,12 +77,17 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             .flatMap { rebuild -> rebuild.ops.map { it.id to rebuild } }
             .toMap()
         val lastOfBucket = classification.rebuilds.associate { it.table to it.ops.last().id }
+        // Der Neubau muss wissen, was vor ihm schon gerendert wurde: ob ein
+        // eingehender Fremdschluessel bei seinem Lauf dasteht, entscheidet
+        // nicht die Phasenordnung, sondern ob seine Operation schon lief.
+        val renderedBefore = mutableListOf<DiffOperation>()
         for (op in ops) {
             val rebuild = absorbedBy[op.id]
             if (rebuild == null) {
                 renderOp(op, ctx)
+                renderedBefore += op
             } else if (op.id == lastOfBucket[rebuild.table]) {
-                renderRebuild(rebuild, ctx)
+                renderRebuild(rebuild, ctx, renderedBefore.toList())
             }
         }
     }
@@ -93,7 +98,11 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
      * gar nicht erst laufen — er wuerde die Tabelle in einen Zustand bringen,
      * aus dem die Operation nicht zurueckfuehrt.
      */
-    private fun renderRebuild(rebuild: MssqlRebuildPlanner.Rebuild, ctx: MssqlDiffRenderContext) {
+    private fun renderRebuild(
+        rebuild: MssqlRebuildPlanner.Rebuild,
+        ctx: MssqlDiffRenderContext,
+        renderedBefore: List<DiffOperation>,
+    ) {
         val (table, _, bucket) = rebuild
         val irreversible = bucket.filter { it.reversibility == Reversibility.NOT_REVERSIBLE }
         if (ctx.direction == MssqlRenderDirection.DOWN && irreversible.isNotEmpty()) {
@@ -109,7 +118,7 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, bucket.map { it.id }.toSet())
             return
         }
-        MssqlRebuildRenderer.render(rebuild, ctx)
+        MssqlRebuildRenderer.render(rebuild, ctx, renderedBefore)
     }
 
     private fun renderOp(op: DiffOperation, ctx: MssqlDiffRenderContext) {
