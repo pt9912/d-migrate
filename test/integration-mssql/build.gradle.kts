@@ -12,6 +12,12 @@ dependencies {
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))
     testImplementation(project(":hexagon:ports-write"))
+    // Round-Trip-Smoke: SchemaMigrateRunner / SchemaRollbackRunner samt
+    // Request-DTOs und ResolvedSchemaOperand liegen in der Anwendungsschicht.
+    testImplementation(project(":hexagon:application"))
+    // `executeAgainstPool` (Gegenstueck zum CLI-internen JdbcMigrationExecutor)
+    // teilen sich die Integrationsmodule ueber die testFixtures.
+    testImplementation(testFixtures(project(":hexagon:application")))
 
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-mssqlserver:${rootProject.properties["testcontainersVersion"]}")
