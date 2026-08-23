@@ -233,4 +233,39 @@ class MssqlDiffSequenceOpsTest : FunSpec({
         r.statements.isEmpty() shouldBe true
         r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_NOT_IN_SCHEMA"
     }
+
+    test("a DESCENDING cycling sequence wraps to its maximum, not to its minimum") {
+        val descendingCycle = SequenceDefinition(
+            start = 5, increment = -1, minValue = 1, maxValue = 5, cycle = true,
+        )
+        val ref = SequenceObjectRef(name = "dc", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "AlterSequenceCurrentValue:dc",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("dc")),
+            pairId = "p1",
+            probeSequenceRef = ref,
+            applySequenceRef = ref,
+            currentValue = 1,
+        )
+        gen.generateUp(diffOf(op, "dc" to descendingCycle), DdlGenerationOptions())
+            .statements.single().sql shouldBe "ALTER SEQUENCE [dc] RESTART WITH 5;"
+    }
+
+    test("an unbounded sequence at the type limit does not overflow into a wrong value") {
+        // `Long.MAX_VALUE + 1` liefe ueber; ohne CYCLE gibt es keinen
+        // Fortsetzungspunkt, und geraten wird nicht.
+        val unbounded = SequenceDefinition(start = 1, increment = 1)
+        val ref = SequenceObjectRef(name = "big", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "AlterSequenceCurrentValue:big",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("big")),
+            pairId = "p1",
+            probeSequenceRef = ref,
+            applySequenceRef = ref,
+            currentValue = Long.MAX_VALUE,
+        )
+        val r = gen.generateUp(diffOf(op, "big" to unbounded), DdlGenerationOptions())
+        r.statements.isEmpty() shouldBe true
+        r.diagnostics.map { it.code } shouldContain "MSSQL_SEQUENCE_EXHAUSTED"
+    }
 })
