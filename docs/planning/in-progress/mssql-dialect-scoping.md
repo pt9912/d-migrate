@@ -323,7 +323,7 @@ nur mit Klammern" ist:
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | `WITH CHECK` beim Nachziehen auf Bestandsdaten (ohne das gilt ein nachtraeglicher FK/CHECK als *not trusted*); SET-Optionen im Migrate-Pfad; Kaskaden-Wächter gegen den Zielzustand statt gegen das Generate-Schema. Dazu die beiden Stellen, die 5a deswegen blockte: `CreateTable` rendert seine Indizes wieder, und abhängige Indizes und Constraints werden um eine Spaltenänderung herum abgeräumt und neu angelegt | Live-Integrationstest, der einen **gefilterten** Index per Migrate anlegt (Msg-1934-Regressionsschutz) — belegt zugleich, dass die SET-Optionen im selben Batch wirken |
 | **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW` (ein Statement, kein Fenster); Portabilitätsprüfung wie im Generate-Pfad; Custom Types haben in T-SQL kein Objekt — `AlterCustomType` fächert stattdessen auf jede nutzende Spalte auf | Unit-Tests je Operation und Richtung; die Enum-CHECK-Entscheidung fällt **nicht** hier, sondern mit 5e (siehe unten) |
 | **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; `supportsCurrentValuePreserve` steht auf `true` | Live-Test pinnt die gemessene Sequenz-Semantik; die Zeile aus [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 ist wahr. **Pipeline-Verdrahtung bleibt bei 5e** (siehe dort) |
-| **5e** | — | Abschluss: **`RenameProjectionDialect`-Eintrag + `SequencePreserveStage`-Dialektliste** (Übergabe aus 5d), Schema-Kontext für die Typ-Projektion (`Enum(refType)`), **hängt an [`fingerprint-v8-enum-check-projection.md`](../done/fingerprint-v8-enum-check-projection.md)** (Enum-CHECK-Entscheidung gefallen: Weg B; ohne den Schnitt meldet der Postcompare bei jeder Enum-Spalte Drift), Beitritt zum Matrix-Sweep, Registry + `RenameProjectionDialect`, **Gate-Fall**, Live-Round-Trip-Integrationstest analog den drei bestehenden Dialekten, CLI-E2E, Handbücher | `schema migrate` ist für mssql nutzbar |
+| **5e** (teilweise) | — | Abschluss. **Erledigt:** `RenameProjectionDialect`-Eintrag samt Rename-Abhängigkeitspolitik + `SequencePreserveStage`-Dialektliste, Schema-Kontext für die Typ-Projektion (`Enum(refType)`), Renderer-Registry, **Gate-Fall**, CLI-E2E (der Ablehnungsfall ist in einen Funktionsnachweis gekippt), Live-Round-Trip über die echten Runner. **Vorbedingung erfüllt:** [`fingerprint-v8-enum-check-projection.md`](../done/fingerprint-v8-enum-check-projection.md) gebaut ([ADR 0048]). **Offen:** Beitritt zum Cross-Dialekt-Matrix-Sweep und die Handbücher | `schema migrate` ist für mssql nutzbar |
 
 ### Wie der Neubau aussieht (gebaut in 5a-2)
 
@@ -454,6 +454,23 @@ gehört zur Pipeline-Verdrahtung von 5e — bis dahin beschreibt die Capability,
 was der Renderer **ausdrücken** kann, wie bei den anderen drei Dialekten auch.
 Die Atomic-Preserve-Fähigkeiten bleiben `false`: dafür wäre eine eigene
 Sperrstrategie zu entwerfen, und die ist weder entworfen noch belegt.
+
+### Wiedereinstieg in den Rest von 5e
+
+Zwei Punkte stehen aus, und der zweite ist dringlicher als er klingt.
+
+**Matrix-Sweep.** `MatrixCell.ALL_DIALECTS` und `MatrixSweepRunner` in
+[`test/cross-dialect-matrix`](../../../test/cross-dialect-matrix) führen mssql
+noch nicht. Slice 4 hatte den Beitritt vertagt, weil er ohne Diff-Renderer
+Wegwerf-Carve-outs erzeugt hätte — diese Bedingung ist mit dem Gate-Fall
+entfallen.
+
+**Handbücher — aktuell falsch, nicht nur unvollständig.** Der Gate-Fall hat
+`DialectCommandGate.AVAILABLE_FOR_MSSQL` um `schema migrate` erweitert; diese
+Konstante ist die autoritative Liste dafür, was `docs/user/` behaupten darf.
+Anwender- und Administrationshandbuch nennen SQL Server dort weiterhin als
+Dialekt **ohne** Migrate-Pfad. Wer die Handbücher liest, bekommt eine Aussage,
+die der Code widerlegt.
 
 ### Was in Slice 5 bewusst geblockt bleibt
 
