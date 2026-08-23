@@ -5,6 +5,8 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.diff.migration.RenameProjectionDialect
+import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
@@ -18,10 +20,12 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
+import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.connection.asJdbc
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
@@ -312,5 +316,45 @@ class MssqlDiffCatalogLookupIntegrationTest : FunSpec({
         query("SELECT CAST(start_value AS BIGINT) FROM sys.sequences WHERE name = 'sq_live'") {
             it.getLong(1)
         } shouldBe 12L
+    }
+
+    test("the sequence probe reads the live catalog, not a mock of it") {
+        // Die Unit-Tests pinnen Abfrageform und Fehlerzuordnung gegen Mocks.
+        // Ob die Abfrage gegen einen echten SQL Server ueberhaupt laeuft — CAST,
+        // Spaltenalias, Schemafilter — kann nur dieser Test sagen.
+        exec(
+            "CREATE SCHEMA sales;",
+            "CREATE SEQUENCE probe_seq AS BIGINT START WITH 7 INCREMENT BY 1 NO CYCLE;",
+            "CREATE SEQUENCE sales.probe_seq AS BIGINT START WITH 700 INCREMENT BY 1 NO CYCLE;",
+        )
+        exec("DECLARE @x BIGINT = NEXT VALUE FOR probe_seq; SET @x = NEXT VALUE FOR probe_seq;")
+
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            pool.borrow().asJdbc().use { conn ->
+                fun probe(name: String, schema: String? = null) =
+                    MssqlSequenceCurrentValueProbe.probe(
+                        conn,
+                        SequenceObjectRef(name = name, schema = schema, dialect = RenameProjectionDialect.POSTGRESQL),
+                    )
+
+                // Zwei Aufrufe: Startwert 7, danach steht current_value auf 8.
+                val read = probe("probe_seq", schema = "dbo")
+                read.shouldBeInstanceOf<SequenceCurrentValueProbeResult.Read>()
+                read.value shouldBe 8L
+                read.isCalled shouldBe null
+
+                // Der Schemafilter trifft die richtige der beiden gleichnamigen.
+                val sales = probe("probe_seq", schema = "sales")
+                sales.shouldBeInstanceOf<SequenceCurrentValueProbeResult.Read>()
+                sales.value shouldBe 700L
+
+                // Ohne Schemafilter sind zwei gleichnamige nicht entscheidbar.
+                val ambiguous = probe("probe_seq")
+                ambiguous.shouldBeInstanceOf<SequenceCurrentValueProbeResult.Failed>()
+                ambiguous.code shouldBe MssqlSequenceCurrentValueProbe.CODE_QUERY_FAILED
+
+                probe("does_not_exist") shouldBe SequenceCurrentValueProbeResult.NotFound
+            }
+        }
     }
 })
