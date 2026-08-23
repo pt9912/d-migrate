@@ -118,11 +118,16 @@ internal object MssqlDiffTableOps {
         // Verlust, den erst ein Postcompare zeigte. Erst aufloesen, dann
         // emittieren: ein Blocker nach dem ersten `emit` legte die Operation in
         // `rendered` UND `skipped`.
-        val foreignKey = op.column.references?.let {
-            MssqlDiffObjectOps.resolveConstraintSql(
-                op, ctx, table, MssqlDiffObjectOps.columnForeignKey(table, column, it),
-            ) ?: return
-        }
+        val foreignKey = op.column.references
+            // Fuehrt das Modell denselben Fremdschluessel ZUSAETZLICH in der
+            // Constraint-Liste, hat er dort eine eigene Operation. Zweimal
+            // angelegt waere er Msg 2714.
+            ?.takeIf { tableDef.constraints.none { c -> c.name == MssqlConstraintNames.foreignKey(table, column) } }
+            ?.let {
+                MssqlDiffObjectOps.resolveConstraintSql(
+                    op, ctx, table, MssqlDiffObjectOps.columnForeignKey(table, column, it),
+                ) ?: return
+            }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $declaration;")
         foreignKey?.let { ctx.emit(op, it) }
         ctx.carryOverNotes(op, notes)
@@ -304,6 +309,10 @@ internal object MssqlDiffTableOps {
         column = column,
         bearing = if (forDrop) ctx.schemaOppositeOfDirection() else ctx.schemaBeforeChange(),
         surviving = if (forDrop) null else ctx.schemaForDirection(),
+        // Kein Schema fuehrt sie an dieser Stelle, aber sie stehen da: ein
+        // Fremdschluessel, den eine schon gerenderte Operation angelegt hat.
+        // Uebersieht ihn der Tanz, scheitert `ALTER COLUMN` an Msg 5074.
+        alsoPresent = ctx.inboundForeignKeysCreatedSoFar(table, column),
     )
 
     /**

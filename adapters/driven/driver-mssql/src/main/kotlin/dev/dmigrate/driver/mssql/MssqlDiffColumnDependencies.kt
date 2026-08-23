@@ -39,12 +39,20 @@ internal object MssqlDiffColumnDependencies {
      * @param surviving das Schema nach der Aenderung — bestimmt, was
      *   wiederhergestellt wird (Regel 2); `null` heisst „nichts wiederherstellen"
      */
+    /**
+     * @param alsoPresent Fremdschluessel, die kein Schema an dieser Stelle
+     *   fuehrt, die aber eine schon gerenderte Operation angelegt hat
+     *   ([materialisedBy]) — sie stehen im Weg wie jeder andere.
+     */
     fun of(
         table: String,
         column: String,
         bearing: SchemaDefinition?,
         surviving: SchemaDefinition?,
+        alsoPresent: List<InboundForeignKey> = emptyList(),
     ): ColumnDependencies {
+        // Ohne die Tabelle im massgeblichen Schema gibt es keine Spalte zu
+        // aendern — dann steht auch nichts im Weg.
         val bearingTable = bearing?.tables?.get(table) ?: return ColumnDependencies.EMPTY
         val survivingTable = surviving?.tables?.get(table)
         return ColumnDependencies(
@@ -55,7 +63,8 @@ internal object MssqlDiffColumnDependencies {
             hasColumnUnique = bearingTable.columns[column]?.unique == true,
             hasColumnReference = bearingTable.columns[column]?.references != null,
             inPrimaryKey = column in bearingTable.primaryKey,
-            inboundForeignKeys = inboundForeignKeys(bearing, table, column),
+            inboundForeignKeys = (inboundForeignKeys(bearing, table, column) + alsoPresent)
+                .distinctBy(::keyOf),
             surviving = survivingTable,
             survivingSchema = surviving,
         )
@@ -103,6 +112,41 @@ internal object MssqlDiffColumnDependencies {
 
     /** Zwei Fremdschluessel sind derselbe, wenn Kindtabelle und Name gleich sind. */
     fun keyOf(fk: InboundForeignKey): Pair<String, String> = fk.childTable to fk.constraint.name
+
+    /**
+     * Die eingehenden Fremdschluessel, die eine bereits gerenderte Operation
+     * angelegt hat — eine neue Kindtabelle bringt sie inline mit, eine neue
+     * Spalte ihren `references`.
+     *
+     * Das Modell allein kann die Frage nicht beantworten: ob ein
+     * Fremdschluessel JETZT dasteht, haengt daran, ob seine Operation schon
+     * lief, nicht daran, in welchem Schema er steht. Wer sie ueberspringt,
+     * laesst ihn beim `ALTER COLUMN` (Msg 5074) oder beim `DROP TABLE`
+     * (Msg 3726) im Weg stehen.
+     */
+    fun materialisedBy(
+        renderedBefore: List<DiffOperation>,
+        schema: SchemaDefinition?,
+        table: String,
+        column: String? = null,
+    ): List<InboundForeignKey> {
+        val createdTables = renderedBefore.filterIsInstance<DiffOperation.CreateTable>()
+            .map { it.objectRef.rootName }
+            .toSet()
+        val addedColumns = renderedBefore.filterIsInstance<DiffOperation.AddColumn>()
+            .mapNotNull { op -> op.objectRef.path.takeIf { it.size >= 2 }?.let { it[0] to it[1] } }
+            .toSet()
+        // Auch ein bereits gerendertes `AddConstraint` hat ihn angelegt — und
+        // ein Neubau, der es absorbiert hat, ebenso.
+        val addedConstraints = renderedBefore.filterIsInstance<DiffOperation.AddConstraint>()
+            .mapNotNull { op -> op.objectRef.path.firstOrNull()?.let { it to op.constraint.name } }
+            .toSet()
+        return inboundForeignKeys(schema, table, column).filter { fk ->
+            fk.childTable in createdTables ||
+                keyOf(fk) in addedConstraints ||
+                fk.constraint.columns.orEmpty().any { (fk.childTable to it) in addedColumns }
+        }
+    }
 
     data class InboundForeignKey(val childTable: String, val constraint: ConstraintDefinition)
 

@@ -180,7 +180,7 @@ internal object MssqlDiffObjectOps {
      * steht deshalb hier und nicht in jedem Aufrufer neu.
      */
     fun columnForeignKey(table: String, column: String, ref: ReferenceDefinition) = ConstraintDefinition(
-        name = "fk_${table}_$column",
+        name = MssqlConstraintNames.foreignKey(table, column),
         type = ConstraintType.FOREIGN_KEY,
         columns = listOf(column),
         references = ConstraintReferenceDefinition(

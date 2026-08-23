@@ -6,6 +6,9 @@ import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintReferenceDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -118,5 +121,78 @@ class MssqlDiffColumnDependenciesTest : FunSpec({
         )
         val sqls = down(diff, current, desired).statements.map { it.sql }
         sqls.any { it.contains("DROP CONSTRAINT IF EXISTS [fk_orders_user_id]") } shouldBe true
+    }
+
+    test("a foreign key an earlier step created is dropped before ALTER COLUMN and put back") {
+        // Kein Neubau — nur eine Typweitung. Die Kindspalte entsteht in
+        // derselben Phase und sortiert davor, ihr Fremdschluessel steht beim
+        // ALTER COLUMN also schon: Msg 5074, wenn der Tanz ihn nicht sieht.
+        val aorders = TableDefinition(columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10))))
+        val newCol = ColumnDefinition(
+            NeutralType.Integer,
+            references = ReferenceDefinition(table = "users", column = "id"),
+        )
+        val usersBefore = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+        )
+        val current = schema("users" to usersBefore, "aorders" to aorders)
+        val desired = schema(
+            "users" to TableDefinition(
+                columns = linkedMapOf("id" to ColumnDefinition(NeutralType.BigInteger, required = true)),
+            ),
+            "aorders" to aorders.copy(
+                columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10)), "user_id" to newCol),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "aorders", columnsAdded = mapOf("user_id" to newCol)),
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "id", type = ValueChange(NeutralType.Integer, NeutralType.BigInteger)),
+                    ),
+                ),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        val alter = sqls.indexOfFirst { it.contains("ALTER COLUMN [id] BIGINT") }
+        val drop = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [fk_aorders_user_id]") }
+        (drop in 0 until alter) shouldBe true
+        // ... und danach wieder angelegt, sonst waere die Beziehung weg.
+        (sqls.indexOfLast { it.contains("ADD CONSTRAINT [fk_aorders_user_id]") } > alter) shouldBe true
+    }
+
+    test("a column carrying its foreign key in both model forms yields one ADD, not two") {
+        val ref = ReferenceDefinition(table = "users", column = "id")
+        val newCol = ColumnDefinition(NeutralType.Integer, references = ref)
+        val orders = TableDefinition(
+            columns = linkedMapOf("user_id" to newCol),
+            constraints = listOf(
+                ConstraintDefinition(
+                    name = "fk_orders_user_id",
+                    type = ConstraintType.FOREIGN_KEY,
+                    columns = listOf("user_id"),
+                    references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+                ),
+            ),
+        )
+        val users = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val current = schema("users" to users)
+        val desired = schema("users" to users, "orders" to orders)
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "orders",
+                    columnsAdded = mapOf("user_id" to newCol),
+                    constraintsAdded = orders.constraints,
+                ),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user_id]") } shouldBe 1
     }
 })

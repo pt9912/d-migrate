@@ -27,4 +27,7 @@ internal object MssqlConstraintNames {
     fun check(table: String, column: String): String = "ck_${table}_$column"
 
     fun primaryKey(table: String): String = "pk_$table"
+
+    /** Fuer ein `references` an der Spalte — im Modell kein Constraint, in der Datenbank einer. */
+    fun foreignKey(table: String, column: String): String = "fk_${table}_$column"
 }

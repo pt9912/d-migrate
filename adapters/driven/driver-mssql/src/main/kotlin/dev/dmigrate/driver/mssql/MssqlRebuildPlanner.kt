@@ -171,48 +171,19 @@ internal object MssqlRebuildPlanner {
      * muss, sonst scheitert sein `DROP TABLE` mit Msg 3726.
      *
      * Grundlage ist nicht die Phasenordnung, sondern was der Renderer bis
-     * hierher wirklich geschrieben hat ([renderedBefore]): der Ausgangszustand
-     * plus alles, was eine schon gerenderte Operation angelegt hat — eine neue
-     * Kindtabelle bringt ihre Fremdschluessel inline mit, eine neue Spalte
-     * ihren `references`.
-     *
-     * Abwaerts entfaellt der zweite Teil: dort **entfernen** die vorangehenden
-     * Operationen, sie legen nichts an. Die einzige Ausnahme waere die Umkehr
-     * eines `DropConstraint` — und genau die absorbiert der Eimer.
+     * hierher wirklich geschrieben hat
+     * ([MssqlDiffRenderContext.inboundForeignKeysCreatedSoFar]): der
+     * Ausgangszustand plus alles, was eine schon gerenderte Operation angelegt
+     * hat — eine neue Kindtabelle bringt ihre Fremdschluessel inline mit, eine
+     * neue Spalte ihren `references`.
      */
     fun inboundForeignKeysPresent(
         sourceSchema: SchemaDefinition?,
-        targetSchema: SchemaDefinition?,
         table: String,
-        renderedBefore: List<DiffOperation>,
-        direction: MssqlRenderDirection,
-    ): List<MssqlDiffColumnDependencies.InboundForeignKey> {
-        val fromSource = MssqlDiffColumnDependencies.inboundForeignKeys(sourceSchema, table)
-        if (direction == MssqlRenderDirection.DOWN) return fromSource
-        return (fromSource + materialisedBy(renderedBefore, targetSchema, table))
+        createdSoFar: List<MssqlDiffColumnDependencies.InboundForeignKey>,
+    ): List<MssqlDiffColumnDependencies.InboundForeignKey> =
+        (MssqlDiffColumnDependencies.inboundForeignKeys(sourceSchema, table) + createdSoFar)
             .distinctBy(MssqlDiffColumnDependencies::keyOf)
-    }
-
-    /** Die eingehenden Fremdschluessel, die eine bereits gerenderte Operation angelegt hat. */
-    private fun materialisedBy(
-        renderedBefore: List<DiffOperation>,
-        targetSchema: SchemaDefinition?,
-        table: String,
-    ): List<MssqlDiffColumnDependencies.InboundForeignKey> {
-        val createdTables = renderedBefore.filterIsInstance<DiffOperation.CreateTable>()
-            .map { it.objectRef.rootName }
-            .toSet()
-        val addedColumns = renderedBefore.filterIsInstance<DiffOperation.AddColumn>()
-            .mapNotNull { op ->
-                val path = op.objectRef.path
-                if (path.size >= 2) path[0] to path[1] else null
-            }
-            .toSet()
-        return MssqlDiffColumnDependencies.inboundForeignKeys(targetSchema, table).filter { fk ->
-            fk.childTable in createdTables ||
-                fk.constraint.columns.orEmpty().any { (fk.childTable to it) in addedColumns }
-        }
-    }
 
     /**
      * Was der Neubau nach dem Umbenennen wieder anlegt: was er abgeraeumt hat
@@ -232,11 +203,10 @@ internal object MssqlRebuildPlanner {
         sourceSchema: SchemaDefinition?,
         targetSchema: SchemaDefinition?,
         table: String,
-        renderedBefore: List<DiffOperation>,
-        direction: MssqlRenderDirection,
+        createdSoFar: List<MssqlDiffColumnDependencies.InboundForeignKey>,
         bucket: List<DiffOperation>,
     ): List<MssqlDiffColumnDependencies.InboundForeignKey> {
-        val present = inboundForeignKeysPresent(sourceSchema, targetSchema, table, renderedBefore, direction)
+        val present = inboundForeignKeysPresent(sourceSchema, table, createdSoFar)
             .map(MssqlDiffColumnDependencies::keyOf)
             .toSet()
         val absorbed = bucket.mapNotNull { op ->

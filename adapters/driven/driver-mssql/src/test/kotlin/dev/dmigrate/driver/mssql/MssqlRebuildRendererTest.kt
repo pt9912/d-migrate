@@ -16,6 +16,8 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -444,6 +446,79 @@ class MssqlRebuildRendererTest : FunSpec({
         val sqls = up(identityAddedDiff(), current, desired).statements.map { it.sql }
         sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user_id]") } shouldBe 1
         sqls.count { it.contains("DROP CONSTRAINT IF EXISTS [fk_orders_user_id]") } shouldBe 1
+    }
+
+    test("an operation that was BLOCKED does not count as having created anything") {
+        // Die Kindtabelle ist partitioniert, ihr CREATE TABLE blockt (Slice 7).
+        // Wer sie trotzdem als angelegt zaehlt, schickt ein ADD CONSTRAINT
+        // gegen eine Tabelle, die es nicht gibt.
+        val fk = ConstraintDefinition(
+            name = "fk_aorders_user",
+            type = ConstraintType.FOREIGN_KEY,
+            columns = listOf("user_id"),
+            references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+        )
+        val aorders = TableDefinition(
+            columns = linkedMapOf("user_id" to ColumnDefinition(NeutralType.Integer)),
+            constraints = listOf(fk),
+            partitioning = PartitionConfig(type = PartitionType.RANGE, key = listOf("user_id")),
+        )
+        val current = schema("users" to users(NeutralType.Integer))
+        val desired = schema("users" to users(NeutralType.Identifier(autoIncrement = true)), "aorders" to aorders)
+        val diff = SchemaDiff(
+            tablesAdded = listOf(NamedTable("aorders", aorders)),
+            tablesChanged = identityAddedDiff().tablesChanged,
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        sqls.none { it.contains("[fk_aorders_user]") } shouldBe true
+    }
+
+    test("a foreign key an EARLIER rebuild created is visible to the next one") {
+        // Zwei Neubauten: `aorders` bekommt seinen Fremdschluessel auf `users`
+        // von seinem eigenen Eimer. Sieht der Neubau von `users` ihn nicht,
+        // steht er beim DROP TABLE noch — Msg 3726.
+        //
+        // Ein Eimer laeuft an der Stelle seiner LETZTEN Operation. Der Index
+        // auf `users` (Phase INDEXES) schiebt dessen Eimer hinter den von
+        // `aorders` (letzte Operation in CONSTRAINTS) — genau die Reihenfolge,
+        // um die es hier geht.
+        val fk = ConstraintDefinition(
+            name = "fk_aorders_user",
+            type = ConstraintType.FOREIGN_KEY,
+            columns = listOf("user_id"),
+            references = ConstraintReferenceDefinition(table = "users", columns = listOf("id")),
+        )
+        val aordersBefore = TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "user_id" to ColumnDefinition(NeutralType.Integer),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val aordersAfter = aordersBefore.copy(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true), required = true),
+                "user_id" to ColumnDefinition(NeutralType.Integer),
+            ),
+            constraints = listOf(fk),
+        )
+        val idx = IndexDefinition(name = "ix_users_id", columns = listOf(IndexColumn("id")), type = IndexType.BTREE)
+        val current = schema("users" to users(NeutralType.Integer), "aorders" to aordersBefore)
+        val desired = schema(
+            "users" to users(NeutralType.Identifier(autoIncrement = true)).copy(indices = listOf(idx)),
+            "aorders" to aordersAfter,
+        )
+        val idChange = identityAddedDiff().tablesChanged.single().columnsChanged
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "aorders", columnsChanged = idChange, constraintsAdded = listOf(fk)),
+                TableDiff(name = "users", columnsChanged = idChange, indicesAdded = listOf(idx)),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        val dropUsers = sqls.indexOfFirst { it == "DROP TABLE [users];" }
+        val dropFk = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [fk_aorders_user]") }
+        (dropFk in 0 until dropUsers) shouldBe true
     }
 
     test("an unrenderable object leaves no absorbed operation out of the bookkeeping") {

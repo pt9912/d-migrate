@@ -50,6 +50,37 @@ internal class MssqlDiffRenderContext(
     private val blockers = mutableListOf<MigrationBlocker>()
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
+    private val renderedOps = mutableListOf<DiffOperation>()
+
+    /**
+     * Vermerkt eine Operation als abgearbeitet. Der Dispatcher ruft das nach
+     * jedem gerenderten Schritt — **nicht** nach einem geblockten: der hat
+     * nichts geschrieben, und wer ihn mitzaehlt, glaubt an eine Tabelle oder
+     * Spalte, die es nicht gibt.
+     */
+    fun noteRendered(op: DiffOperation) {
+        renderedOps += op
+    }
+
+    /**
+     * Die eingehenden Fremdschluessel auf [table] (optional: auf [column]),
+     * die bei diesem Stand des Laufs schon in der Datenbank stehen, ohne dass
+     * ein Schema sie an dieser Stelle fuehrt.
+     *
+     * Abwaerts gibt es sie nicht: dort **entfernen** die vorangehenden
+     * Operationen, sie legen nichts an. Die einzige Ausnahme waere die Umkehr
+     * eines `DropConstraint`, und die absorbiert der Neubau.
+     */
+    fun inboundForeignKeysCreatedSoFar(
+        table: String,
+        column: String? = null,
+    ): List<MssqlDiffColumnDependencies.InboundForeignKey> =
+        if (direction == MssqlRenderDirection.DOWN) {
+            emptyList()
+        } else {
+            MssqlDiffColumnDependencies.materialisedBy(renderedOps, schemaForDirection(), table, column)
+        }
+
     fun emit(
         op: DiffOperation,
         sqlText: String,

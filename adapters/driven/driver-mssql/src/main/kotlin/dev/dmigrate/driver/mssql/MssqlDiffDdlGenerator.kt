@@ -66,28 +66,31 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
      * erledigt, was der Planner vor irgendein Eimer-Mitglied sortiert hat —
      * etwa die Tabelle, auf die ein neuer Fremdschluessel der neu gebauten
      * Tabelle zeigt.
+     *
+     * Die Buchhaltung laeuft auch ohne Neubau: der Spaltentanz stellt
+     * dieselbe Frage — steht dieser Fremdschluessel schon? — und bekaeme sonst
+     * eine leere Antwort.
      */
     private fun renderAll(ops: List<DiffOperation>, ctx: MssqlDiffRenderContext, diff: DiffResult) {
         val classification = MssqlRebuildPlanner.classify(ops, diff.currentSchema, diff.desiredSchema)
-        if (!classification.hasRebuilds) {
-            for (op in ops) renderOp(op, ctx)
-            return
-        }
         val absorbedBy = classification.rebuilds
             .flatMap { rebuild -> rebuild.ops.map { it.id to rebuild } }
             .toMap()
         val lastOfBucket = classification.rebuilds.associate { it.table to it.ops.last().id }
-        // Der Neubau muss wissen, was vor ihm schon gerendert wurde: ob ein
-        // eingehender Fremdschluessel bei seinem Lauf dasteht, entscheidet
-        // nicht die Phasenordnung, sondern ob seine Operation schon lief.
-        val renderedBefore = mutableListOf<DiffOperation>()
+        // Der Kontext fuehrt Buch, was schon geschrieben wurde: ob ein
+        // eingehender Fremdschluessel bei einem spaeteren Neubau dasteht,
+        // entscheidet nicht die Phasenordnung, sondern ob seine Operation
+        // schon lief. Ein GEBLOCKTER Schritt zaehlt dabei nicht — er hat
+        // nichts geschrieben. Ein Eimer zaehlt mit allem, was er absorbiert
+        // hat: sein Neubau legt die Objekte seiner Tabelle mit an.
         for (op in ops) {
             val rebuild = absorbedBy[op.id]
             if (rebuild == null) {
                 renderOp(op, ctx)
-                renderedBefore += op
+                if (!ctx.isSkipped(op)) ctx.noteRendered(op)
             } else if (op.id == lastOfBucket[rebuild.table]) {
-                renderRebuild(rebuild, ctx, renderedBefore.toList())
+                renderRebuild(rebuild, ctx)
+                rebuild.ops.filterNot { ctx.isSkipped(it) }.forEach { ctx.noteRendered(it) }
             }
         }
     }
@@ -98,11 +101,7 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
      * gar nicht erst laufen — er wuerde die Tabelle in einen Zustand bringen,
      * aus dem die Operation nicht zurueckfuehrt.
      */
-    private fun renderRebuild(
-        rebuild: MssqlRebuildPlanner.Rebuild,
-        ctx: MssqlDiffRenderContext,
-        renderedBefore: List<DiffOperation>,
-    ) {
+    private fun renderRebuild(rebuild: MssqlRebuildPlanner.Rebuild, ctx: MssqlDiffRenderContext) {
         val (table, _, bucket) = rebuild
         val irreversible = bucket.filter { it.reversibility == Reversibility.NOT_REVERSIBLE }
         if (ctx.direction == MssqlRenderDirection.DOWN && irreversible.isNotEmpty()) {
@@ -118,7 +117,7 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, bucket.map { it.id }.toSet())
             return
         }
-        MssqlRebuildRenderer.render(rebuild, ctx, renderedBefore)
+        MssqlRebuildRenderer.render(rebuild, ctx)
     }
 
     private fun renderOp(op: DiffOperation, ctx: MssqlDiffRenderContext) {
