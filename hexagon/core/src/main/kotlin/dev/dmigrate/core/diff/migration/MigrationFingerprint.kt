@@ -129,7 +129,7 @@ object MigrationFingerprint {
      *
      * Plan: `docs/planning/done/postcompare-type-canonicalization-slice.md`.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v7"
+    const val ALGORITHM: String = "schema-fingerprint-v8"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -231,6 +231,15 @@ object MigrationFingerprint {
                     .append(c.references?.let { "${it.table}[${it.columns.joinToString(",")}]" } ?: "")
                     .append('\n')
             }
+            // v8: eine eigene Sektion statt einer Zeile im Constraint-Block —
+            // sonst haenge die Zaehlung `constraints[n]` davon ab, in welcher
+            // Form der Wertevorrat gerade vorliegt.
+            sb.append("  enum_checks[").append(folded.enumValuesByColumn.size).append("]\n")
+            for ((colName, values) in folded.enumValuesByColumn.entries.sortedBy { it.key }) {
+                sb.append("    enum_check=").append(colName)
+                    .append(SEP).append("values=").append(values.joinToString(","))
+                    .append('\n')
+            }
             appendPartitioning(sb, table.partitioning)
         }
     }
@@ -239,6 +248,11 @@ object MigrationFingerprint {
         val uniqueColumns: Set<String>,
         /** Column name → projected reference string (same shape as [reference]). */
         val foldedFkByColumn: Map<String, String>,
+        /**
+         * v8: Spalte → Wertevorrat, egal ob er authored als `enum` an der
+         * Spalte steht oder zurueckgelesen als `CHECK (spalte IN (…))`.
+         */
+        val enumValuesByColumn: Map<String, List<String>>,
         val remaining: List<ConstraintDefinition>,
     )
 
@@ -255,7 +269,18 @@ object MigrationFingerprint {
     private fun foldConstraints(table: TableDefinition): FoldedConstraints {
         val unique = mutableSetOf<String>()
         val fkByCol = mutableMapOf<String, String>()
+        val enumByCol = mutableMapOf<String, List<String>>()
         val remaining = mutableListOf<ConstraintDefinition>()
+        // v8: authored steht der Wertevorrat am Spaltentyp. Zuerst eintragen,
+        // damit ein zurueckgelesener CHECK dagegen abgeglichen werden kann.
+        //
+        // Sortiert wird nur fuer DIESEN Abgleich: welche Reihenfolge eine
+        // Datenbank in ihrem CHECK zurueckliefert, ist nicht zugesichert. Der
+        // Typ selbst behaelt seine Reihenfolge — MySQLs nativer ENUM hat
+        // Ordinal-Semantik, dort ist sie bedeutsam.
+        for ((colName, col) in table.columns) {
+            (col.type as? NeutralType.Enum)?.values?.let { enumByCol[colName] = it.sorted() }
+        }
         for (c in table.constraints) {
             // Fold only onto columns that exist — a constraint on an unknown column
             // must stay in the block, not silently vanish from the projection.
@@ -277,13 +302,51 @@ object MigrationFingerprint {
                     }
                 }
 
+                // v8: der zurueckgelesene Enum. Ein CHECK der Form
+                // `<spalte> IN (…)` ueber eine Spalte dieser Tabelle beschreibt
+                // denselben Wertevorrat, den die authored Seite am Spaltentyp
+                // fuehrt — er wandert in dieselbe Projektion statt in den
+                // Constraint-Block, damit beide Seiten gleich hashen.
+                //
+                // Nur, wenn er dem Spaltentyp nicht WIDERSPRICHT: ein
+                // handgeschriebener CHECK mit abweichenden Werten bleibt
+                // sichtbar, sonst verschwaende dieser Fold einen echten
+                // Unterschied.
+                c.type == ConstraintType.CHECK && matchingEnumColumn(table, c, enumByCol) != null -> {
+                    val (colName, values) = matchingEnumColumn(table, c, enumByCol)!!
+                    enumByCol[colName] = values
+                }
+
                 // Comparator-Parität auch für den Rest: CHECK-/EXCLUDE-Expressions
                 // werden wie in TableComparator.normalizeConstraints kanonisiert
                 // (CRLF→LF + trim), sonst driftet der Hash auf reiner Textform.
                 else -> remaining += ConstraintDiffContract.comparable(c)
             }
         }
-        return FoldedConstraints(unique, fkByCol, remaining)
+        return FoldedConstraints(unique, fkByCol, enumByCol, remaining)
+    }
+
+    /**
+     * Die Spalte samt Wertevorrat, wenn [c] ein `IN`-Listen-CHECK ueber genau
+     * eine Spalte dieser Tabelle ist — sonst `null`.
+     *
+     * Fuehrt die Spalte bereits einen abweichenden Wertevorrat (authored
+     * `enum` mit anderen Werten), gibt es keinen Treffer: der Constraint
+     * bleibt dann im Block stehen und der Unterschied sichtbar.
+     */
+    private fun matchingEnumColumn(
+        table: TableDefinition,
+        c: ConstraintDefinition,
+        known: Map<String, List<String>>,
+    ): Pair<String, List<String>>? {
+        for (colName in table.columns.keys) {
+            val values = EnumCheckProjection.valuesOf(c.expression, colName) ?: continue
+            val sorted = values.sorted()
+            val existing = known[colName]
+            if (existing != null && existing != sorted) return null
+            return colName to sorted
+        }
+        return null
     }
 
     /** Single-column FK signature — delegiert an [reference], damit es genau EIN

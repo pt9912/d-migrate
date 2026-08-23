@@ -1,7 +1,8 @@
 # Fingerprint v8: Enum und `IN`-CHECK auf eine kanonische Form bringen
 
-- **Status**: Scope geschnitten, Bau nicht begonnen. Die Design-Entscheidung ist
-  gefallen (Eigner, 2026-08-23, Weg B) und steht in
+- **Status**: **GEBAUT** (2026-08-23), AP0–AP5 durch,
+  [ADR 0048](../../adr/0048-enum-wertevorrat-im-fingerprint.md) accepted.
+  Die Design-Entscheidung (Eigner, Weg B) steht in
   [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md).
 - **Trigger**: MSSQL-Sub-Slice 5e
   ([`mssql-dialect-scoping.md`](../in-progress/mssql-dialect-scoping.md)) lässt
@@ -26,15 +27,24 @@ führt Constraints namentlich — die Fingerprints können also nicht gleich sei
 
 ## Die Projektion
 
-Eine Textspalte, über der **genau ein** CHECK der Form
-`<diese spalte> IN (<String-Literale>)` liegt, projiziert als `Enum(values)`,
-und dieser Constraint fällt aus der Constraint-Liste. Beide Darstellungen
-landen damit auf derselben kanonischen Form:
+Ein CHECK, der den Wertevorrat **einer** Spalte dieser Tabelle aufzählt,
+wandert aus dem Constraint-Block in dieselbe Projektion, in der auch der
+Spaltentyp seinen Wertevorrat abliefert.
+
+**Zwei Schreibweisen, dieselbe Aussage — beim Bau live gemessen.** Geschrieben
+wird `spalte IN ('a','b')`; SQL Server speichert daraus aber
+`spalte='b' OR spalte='a'`, normalisiert und umsortiert. Der erste Entwurf
+dieses Plans kannte nur die `IN`-Form und wäre gegen eine echte Datenbank nie
+angesprungen. Beide Formen zählen, die Werte gelten für den Abgleich als
+**Menge** — der Spaltentyp behält dagegen seine Reihenfolge, weil MySQLs
+nativer `ENUM` Ordinal-Semantik hat.
+
+Beide Darstellungen landen damit auf derselben kanonischen Form:
 
 | Seite | vorher | nachher |
 | --- | --- | --- |
-| authored | `mood: enum(red, green)` | `Enum([red, green])` |
-| zurückgelesen | `mood: text(5)` + `CHECK (mood IN ('red','green'))` | `Enum([red, green])` |
+| authored | `mood: enum(red, green)` | derselbe Wertevorrat |
+| zurückgelesen | `mood: text(5)` + `CHECK (mood='green' OR mood='red')` | derselbe Wertevorrat |
 
 Drei Eigenschaften, auf die es ankommt:
 

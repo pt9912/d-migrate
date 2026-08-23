@@ -173,16 +173,20 @@ class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
         }
     }
 
-    test("known gap: the enum CHECK is materialised by the reverse, the type itself folds") {
+    test("an enum round-trips without drift: the type folds, and v8 absorbs the CHECK") {
+        // Bis v7 war das die dokumentierte Luecke: die Typseite faltete sauber,
+        // die Constraint-Kante blieb — und jede Migration mit Enum-Spalte haette
+        // sich nach `--execute` als driftend gemeldet. Der v8-Fingerprint bringt
+        // beide Darstellungen des Wertevorrats auf dieselbe Form.
+        // Schnitt: docs/planning/done/fingerprint-v8-enum-check-projection.md
         HikariConnectionPoolFactory.create(enumConfig).use { pool ->
             val actual = MssqlSchemaReader().read(pool).schema.tables.getValue("probe")
-            // Die TYP-Seite stimmt: NVARCHAR(<laengster Wert>) faltet auf text(5).
+            // Die TYP-Seite: NVARCHAR(<laengster Wert>) faltet auf text(5).
             actual.columns.getValue("mood").type shouldBe
                 canonicalize(NeutralType.Enum(values = listOf("red", "green")))
-            // Die CONSTRAINT-Seite nicht: das gewuenschte Schema traegt den
-            // Wertevorrat im Typ, das Ziel als benannten CHECK. Der v7-Fingerprint
-            // absorbiert das nicht (Folds 2-4 decken UNIQUE/FK/required ab).
-            // Ticket: docs/planning/open/enum-inline-check-fidelity.md
+            // Am Reverse selbst aendert v8 nichts — er liefert den CHECK
+            // weiterhin als eigenstaendigen Constraint. Nur der Vergleich sieht
+            // ihn jetzt als das, was er ist.
             enumProbe.tables.getValue("probe").constraints.shouldBeEmpty()
             actual.constraints.map { it.type } shouldBe listOf(ConstraintType.CHECK)
             val reverseSchema = SchemaDefinition(
@@ -190,7 +194,10 @@ class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
                 version = enumProbe.version,
                 tables = mapOf("probe" to actual),
             )
-            MigrationFingerprint.compute(reverseSchema, canonicalize) shouldNotBe
+            // SQL Server speichert die Liste als OR-Kette, nicht als IN —
+            // daran lief die erste Fassung der Projektion vorbei.
+            actual.constraints.first().expression shouldBe "mood='green' OR mood='red'"
+            MigrationFingerprint.compute(reverseSchema, canonicalize) shouldBe
                 MigrationFingerprint.compute(enumProbe, canonicalize)
         }
     }
