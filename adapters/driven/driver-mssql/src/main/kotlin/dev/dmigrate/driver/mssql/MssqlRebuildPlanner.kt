@@ -160,8 +160,10 @@ internal object MssqlRebuildPlanner {
      * Grundlage ist nicht die Phasenordnung, sondern was der Renderer bis
      * hierher wirklich geschrieben hat
      * ([MssqlDiffRenderContext.inboundForeignKeysCreatedSoFar]): der
-     * Ausgangszustand plus alles, was eine schon gerenderte Operation
-     * angelegt hat.
+     * Ausgangszustand plus alles, was eine schon gerenderte Operation **oder
+     * ein frueherer Neubau** angelegt hat. Welche Erzeuger es gibt und welche
+     * Modellform jeder rendert, steht bei
+     * [MssqlDiffColumnDependencies.materialisedBy].
      */
     fun inboundForeignKeysPresent(
         sourceSchema: SchemaDefinition?,

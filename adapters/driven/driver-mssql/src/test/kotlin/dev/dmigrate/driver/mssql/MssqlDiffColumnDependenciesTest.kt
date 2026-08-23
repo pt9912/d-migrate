@@ -15,6 +15,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
@@ -162,5 +163,32 @@ class MssqlDiffColumnDependenciesTest : FunSpec({
         val drop = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [fk_orders_user]") }
         (readd in 0 until alter) shouldBe true
         (drop in readd until alter) shouldBe true
+    }
+
+    test("AddColumn says out loud that it does not render a column-level reference") {
+        // Die Luecke ist bekannt und vertagt — aber sie darf nicht wie voller
+        // Erfolg aussehen.
+        val newCol = ColumnDefinition(
+            NeutralType.Integer,
+            references = ReferenceDefinition(table = "users", column = "id"),
+        )
+        val users = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val orders = TableDefinition(columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10))))
+        val current = schema("users" to users, "orders" to orders)
+        val desired = schema(
+            "users" to users,
+            "orders" to orders.copy(
+                columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10)), "user_id" to newCol),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(TableDiff(name = "orders", columnsAdded = mapOf("user_id" to newCol))),
+        )
+        val r = up(diff, current, desired)
+        r.statements.map { it.sql }.none { it.contains("FOREIGN KEY") } shouldBe true
+        r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_REFERENCE_NOT_RENDERED"
     }
 })

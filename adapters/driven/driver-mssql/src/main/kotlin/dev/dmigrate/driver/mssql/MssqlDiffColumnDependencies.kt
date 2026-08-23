@@ -127,15 +127,25 @@ internal object MssqlDiffColumnDependencies {
      * laesst ihn beim `ALTER COLUMN` (Msg 5074) oder beim `DROP TABLE`
      * (Msg 3726) im Weg stehen.
      *
-     * Die Richtung entscheidet, welche Operation etwas ANLEGT. Aufwaerts sind
-     * das `CreateTable` (die Kindtabelle bringt ihre Constraint-Liste inline
-     * mit — ihre spaltenlevel Fremdschluessel dagegen nicht, siehe
-     * [InboundForeignKey.fromColumn]) und `AddConstraint`. Abwaerts ist es
-     * genau eine: die Umkehr eines `DropConstraint` ist ein `ADD`. Alle
-     * anderen Umkehrungen entfernen.
+     * Es gibt **drei** Erzeuger, und sie unterscheiden sich darin, welche
+     * Modellform sie rendern:
+     *
+     * - ein **Tabellen-Neubau** legt die Tabelle vollstaendig neu an, also
+     *   BEIDE Formen — er ist richtungsunabhaengig, weil er auch abwaerts
+     *   baut. Er steht deshalb in [rebuiltTables], nicht in [renderedBefore]:
+     *   seine Operationen sagen nichts darueber, was er alles geschrieben hat.
+     * - `CreateTable` rendert nur die Constraint-Liste
+     *   ([InboundForeignKey.fromColumn] fällt weg, offener Punkt
+     *   `mssql-column-level-foreign-keys.md`),
+     * - `AddConstraint` genau seinen einen.
+     *
+     * Abwaerts kommt statt der letzten beiden genau eine hinzu: die Umkehr
+     * eines `DropConstraint` ist ein `ADD`. Alle anderen Umkehrungen
+     * entfernen.
      */
     fun materialisedBy(
         renderedBefore: List<DiffOperation>,
+        rebuiltTables: Set<String>,
         schema: SchemaDefinition?,
         table: String,
         column: String?,
@@ -146,7 +156,7 @@ internal object MssqlDiffColumnDependencies {
             val undoneDrops = renderedBefore.filterIsInstance<DiffOperation.DropConstraint>()
                 .mapNotNull { op -> op.objectRef.path.firstOrNull()?.let { it to op.constraint.name } }
                 .toSet()
-            return candidates.filter { keyOf(it) in undoneDrops }
+            return candidates.filter { it.childTable in rebuiltTables || keyOf(it) in undoneDrops }
         }
         val createdTables = renderedBefore.filterIsInstance<DiffOperation.CreateTable>()
             .map { it.objectRef.rootName }
@@ -155,7 +165,9 @@ internal object MssqlDiffColumnDependencies {
             .mapNotNull { op -> op.objectRef.path.firstOrNull()?.let { it to op.constraint.name } }
             .toSet()
         return candidates.filter { fk ->
-            (fk.childTable in createdTables && !fk.fromColumn) || keyOf(fk) in addedConstraints
+            fk.childTable in rebuiltTables ||
+                (fk.childTable in createdTables && !fk.fromColumn) ||
+                keyOf(fk) in addedConstraints
         }
     }
 

@@ -415,6 +415,60 @@ class MssqlRebuildRendererTest : FunSpec({
         sqls.count { it.contains("DROP CONSTRAINT IF EXISTS [fk_orders_user_id]") } shouldBe 1
     }
 
+    test("a foreign key an earlier REBUILD created is dropped before a later column change") {
+        // Der dritte Erzeuger: der Neubau von `aorders` legt dessen
+        // spaltenlevel Fremdschluessel auf `users` mit an — `CreateTable` taete
+        // das nicht. Sieht die Buchhaltung nur die Operationen, steht er beim
+        // spaeteren ALTER COLUMN auf `users.id` noch: Msg 5074.
+        val aordersBefore = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val aordersAfter = TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true), required = true),
+                "user_id" to ColumnDefinition(
+                    NeutralType.Integer,
+                    references = ReferenceDefinition(table = "users", column = "id"),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val usersBefore = TableDefinition(
+            columns = linkedMapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val current = schema("users" to usersBefore, "aorders" to aordersBefore)
+        val desired = schema(
+            "users" to TableDefinition(
+                columns = linkedMapOf("id" to ColumnDefinition(NeutralType.BigInteger, required = true)),
+                primaryKey = listOf("id"),
+            ),
+            "aorders" to aordersAfter,
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "aorders",
+                    columnsAdded = mapOf("user_id" to aordersAfter.columns.getValue("user_id")),
+                    columnsChanged = identityAddedDiff().tablesChanged.single().columnsChanged,
+                ),
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(name = "id", type = ValueChange(NeutralType.Integer, NeutralType.BigInteger)),
+                    ),
+                ),
+            ),
+        )
+        val sqls = up(diff, current, desired).statements.map { it.sql }
+        val created = sqls.indexOfFirst { it.contains("ADD CONSTRAINT [fk_aorders_user_id]") }
+        val alter = sqls.indexOfFirst { it.contains("ALTER COLUMN [id] BIGINT") }
+        val drop = sqls.indexOfFirst { it.contains("DROP CONSTRAINT IF EXISTS [fk_aorders_user_id]") }
+        (created in 0 until alter) shouldBe true
+        (drop in created until alter) shouldBe true
+    }
+
     test("an operation that was BLOCKED does not count as having created anything") {
         // Die Kindtabelle ist partitioniert, ihr CREATE TABLE blockt (Slice 7).
         // Wer sie trotzdem als angelegt zaehlt, schickt ein ADD CONSTRAINT

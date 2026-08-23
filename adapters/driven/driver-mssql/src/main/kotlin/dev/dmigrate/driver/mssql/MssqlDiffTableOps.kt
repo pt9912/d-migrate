@@ -114,6 +114,21 @@ internal object MssqlDiffTableOps {
         val declaration = ctx.sql.columnDeclaration(table, column, op.column, tableDef, schema, notes)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $declaration;")
         ctx.carryOverNotes(op, notes)
+        // Der Generate-Pfad macht aus einem `references` an der Spalte
+        // `fk_<tabelle>_<spalte>`; der Diff-Pfad kann das hier noch nicht
+        // (offener Punkt `mssql-column-level-foreign-keys.md`). Bis dahin
+        // wenigstens laut: eine Beziehung, die nach der Migration fehlt, darf
+        // kein Ergebnis sein, das wie voller Erfolg aussieht.
+        if (op.column.references != null) {
+            ctx.warning(
+                op,
+                "Column '$table.$column' declares a reference to " +
+                    "'${op.column.references?.table}', but the migrate path does not render a foreign key for a " +
+                    "column-level reference yet — the column is added without it. Add the relationship as an " +
+                    "entry in the table's constraint list to have it created.",
+                code = "MSSQL_COLUMN_REFERENCE_NOT_RENDERED",
+            )
+        }
     }
 
     fun renderDropColumn(op: DiffOperation.DropColumn, ctx: MssqlDiffRenderContext) {

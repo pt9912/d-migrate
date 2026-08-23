@@ -90,7 +90,9 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
                 if (!ctx.isSkipped(op)) ctx.noteRendered(op)
             } else if (op.id == lastOfBucket[rebuild.table]) {
                 renderRebuild(rebuild, ctx)
-                rebuild.ops.filterNot { ctx.isSkipped(it) }.forEach { ctx.noteRendered(it) }
+                val done = rebuild.ops.filterNot { ctx.isSkipped(it) }
+                done.forEach { ctx.noteRendered(it) }
+                if (done.isNotEmpty()) ctx.noteRebuilt(rebuild.table)
             }
         }
     }

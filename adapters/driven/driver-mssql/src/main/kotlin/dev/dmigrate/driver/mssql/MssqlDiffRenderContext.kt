@@ -51,6 +51,7 @@ internal class MssqlDiffRenderContext(
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
     private val renderedOps = mutableListOf<DiffOperation>()
+    private val rebuiltTables = mutableSetOf<String>()
 
     /**
      * Vermerkt eine Operation als abgearbeitet. Der Dispatcher ruft das nach
@@ -60,6 +61,16 @@ internal class MssqlDiffRenderContext(
      */
     fun noteRendered(op: DiffOperation) {
         renderedOps += op
+    }
+
+    /**
+     * Vermerkt eine neu gebaute Tabelle. Getrennt von [noteRendered], weil ein
+     * Neubau mehr schreibt, als seine Operationen aussagen: er legt die
+     * Tabelle vollstaendig an, samt der Fremdschluessel, die im Modell nur als
+     * `references` an einer Spalte stehen.
+     */
+    fun noteRebuilt(table: String) {
+        rebuiltTables += table
     }
 
     /**
@@ -77,7 +88,7 @@ internal class MssqlDiffRenderContext(
         column: String? = null,
     ): List<MssqlDiffColumnDependencies.InboundForeignKey> =
         MssqlDiffColumnDependencies.materialisedBy(
-            renderedOps, schemaForDirection(), table, column, direction,
+            renderedOps, rebuiltTables, schemaForDirection(), table, column, direction,
         )
 
     fun emit(

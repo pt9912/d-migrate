@@ -30,7 +30,8 @@ Beide Pfade müssen für dasselbe Schema dieselbe Datenbank bauen.
 Nicht aufgefallen ist das bis 5a-2, weil der MSSQL-Reverse `column.references`
 nie setzt (er hebt jeden Fremdschlüssel auf die Constraint-Liste) und die
 Fixtures die Form nicht benutzten. Erreichbar ist sie über hand-geschriebene
-Schemata — und abwärts ist das maßgebliche Schema immer das Soll, also YAML.
+Schemata — und abwärts liest der Spaltentanz seine Abhängigkeiten aus dem
+Soll-Schema (`schemaOppositeOfDirection()`), also aus YAML.
 
 ## Was der Schnitt klären muss
 
