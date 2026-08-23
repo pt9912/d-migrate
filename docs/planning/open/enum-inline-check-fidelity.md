@@ -223,7 +223,8 @@ selbst in den Hash ein (`schema-fingerprint-v7`). Es braucht also einen
 `allowedPostUpFingerprints` und die Rollback-Drift-Prüfung.
 
 Das ist damit **kein Teil von MSSQL-5e**, sondern ein eigener, dialekt-
-übergreifender Schnitt, von dem 5e abhängt.
+übergreifender Schnitt, von dem 5e abhängt. Er ist geschnitten als
+[`fingerprint-v8-enum-check-projection.md`](../next/fingerprint-v8-enum-check-projection.md).
 
 ## Code-Fakten
 
