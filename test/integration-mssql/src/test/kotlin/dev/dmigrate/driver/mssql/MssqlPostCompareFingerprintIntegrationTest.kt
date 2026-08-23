@@ -49,7 +49,9 @@ class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
         .acceptLicense()
         .withUrlParam("encrypt", "false")
 
-    val canonicalize = MssqlDriver().typeCanonicalizer()::canonicalize
+    // Explizit typisiert: der Port hat seit dem Schema-Kontext zwei
+    // Ueberladungen, und eine blanke Methodenreferenz waere mehrdeutig.
+    val canonicalize: (NeutralType) -> NeutralType = MssqlDriver().typeCanonicalizer()::canonicalize
 
     fun column(type: NeutralType, required: Boolean = false) =
         ColumnDefinition(type = type, required = required)
