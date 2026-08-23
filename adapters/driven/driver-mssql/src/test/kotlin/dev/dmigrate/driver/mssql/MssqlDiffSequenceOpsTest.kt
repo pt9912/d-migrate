@@ -83,6 +83,55 @@ class MssqlDiffSequenceOpsTest : FunSpec({
         sql shouldBe "ALTER SEQUENCE [sq] INCREMENT BY 5 MINVALUE 1 NO MAXVALUE CYCLE CACHE 20;"
     }
 
+    test("an unspecified cache means the server default, not caching turned off") {
+        // Live gemessen: `CREATE SEQUENCE` ohne CACHE-Klausel legt die Sequenz
+        // mit `is_cached = true` an; ein blankes `ALTER … CACHE` stellt denselben
+        // Zustand her, `NO CACHE` schaltet es ab. Sonst baute `migrate` aus
+        // derselben Eingabe eine andere Sequenz als `generate`.
+        val after = counter.copy(increment = 2)
+        val diff = SchemaDiff(
+            sequencesChanged = listOf(
+                SequenceDiff(name = "sq", increment = ValueChange(counter.increment, after.increment)),
+            ),
+        )
+        val sql = up(diff, schema("sq" to counter), schema("sq" to after)).statements.single().sql
+        sql shouldContainStr " CACHE;"
+        sql.contains("NO CACHE") shouldBe false
+    }
+
+    test("a cycling sequence at its bound wraps — RESTART WITH outside the range is rejected") {
+        // Live belegt: „The start value for sequence object must be between the
+        // minimum and maximum value". `RESTART WITH` bricht nicht selbst um.
+        val cycling = SequenceDefinition(start = 1, increment = 1, minValue = 1, maxValue = 5, cycle = true)
+        val ref = SequenceObjectRef(name = "cyc", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "AlterSequenceCurrentValue:cyc",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("cyc")),
+            pairId = "p1",
+            probeSequenceRef = ref,
+            applySequenceRef = ref,
+            currentValue = 5,
+        )
+        gen.generateUp(diffOf(op, "cyc" to cycling), DdlGenerationOptions())
+            .statements.single().sql shouldBe "ALTER SEQUENCE [cyc] RESTART WITH 1;"
+    }
+
+    test("an exhausted non-cycling sequence blocks instead of rendering a rejected statement") {
+        val bounded = SequenceDefinition(start = 1, increment = 1, minValue = 1, maxValue = 5, cycle = false)
+        val ref = SequenceObjectRef(name = "fin", schema = null, dialect = RenameProjectionDialect.POSTGRESQL)
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "AlterSequenceCurrentValue:fin",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("fin")),
+            pairId = "p1",
+            probeSequenceRef = ref,
+            applySequenceRef = ref,
+            currentValue = 5,
+        )
+        val r = gen.generateUp(diffOf(op, "fin" to bounded), DdlGenerationOptions())
+        r.statements.isEmpty() shouldBe true
+        r.diagnostics.map { it.code } shouldContain "MSSQL_SEQUENCE_EXHAUSTED"
+    }
+
     test("a changed start is reported, not silently dropped — T-SQL cannot alter it") {
         val after = counter.copy(start = 500)
         val diff = SchemaDiff(

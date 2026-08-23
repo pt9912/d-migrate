@@ -52,6 +52,12 @@ internal object MssqlSequenceDdl {
      * Der geaenderte Startwert bleibt deshalb aussen vor; wer ihn wirklich
      * aendern will, muss die Sequenz neu anlegen. Der Renderer meldet das
      * ([MssqlDiffSequenceOps]), statt es stillschweigend fallen zu lassen.
+     *
+     * Jede uebrige Klausel steht ausdruecklich da: ein weggelassenes
+     * `MINVALUE` liesse die alte Schranke stehen, und der Zielzustand haenge
+     * dann davon ab, was vorher galt. Massstab ist immer, welche Sequenz
+     * `CREATE SEQUENCE` fuer dasselbe Modell erzeugt haette — auch beim Cache,
+     * wo „nicht angegeben" NICHT „aus" bedeutet.
      */
     fun alterSql(name: String, seq: SequenceDefinition): String = buildString {
         append("ALTER SEQUENCE ${quote(name)}")
@@ -61,7 +67,13 @@ internal object MssqlSequenceDdl {
         append(boundedMinValue(seq)?.let { " MINVALUE $it" } ?: " NO MINVALUE")
         append(boundedMaxValue(seq)?.let { " MAXVALUE $it" } ?: " NO MAXVALUE")
         if (seq.cycle) append(" CYCLE") else append(" NO CYCLE")
-        append(seq.cache?.let { " CACHE $it" } ?: " NO CACHE")
+        // `cache = null` heisst „nicht angegeben", nicht „aus". Live gemessen:
+        // ein `CREATE SEQUENCE` ohne CACHE-Klausel legt die Sequenz mit
+        // `is_cached = true` an (servergewaehlte Groesse), und ein blankes
+        // `ALTER SEQUENCE … CACHE` stellt genau diesen Zustand her. `NO CACHE`
+        // schaltet das Caching dagegen ab — damit haette dieselbe Eingabe ueber
+        // `migrate` eine andere Sequenz ergeben als ueber `generate`.
+        append(seq.cache?.let { " CACHE $it" } ?: " CACHE")
         append(";")
     }
 
