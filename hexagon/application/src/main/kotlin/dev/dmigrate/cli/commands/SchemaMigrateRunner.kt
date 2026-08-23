@@ -195,8 +195,16 @@ class SchemaMigrateRunner(
         // into BOTH (and into the post-compare below) for the same
         // parity reason.
         val canonicalizeType = typeCanonicalizerFor(prepared.effectiveDialect)
-        val currentFingerprint = MigrationFingerprint.compute(prepared.targetNormalized.schema, canonicalizeType)
-        val desiredFingerprint = MigrationFingerprint.compute(prepared.sourceNormalized.schema, canonicalizeType)
+        // Fingerprints schemagebunden: ein `Enum(refType)` loest gegen die
+        // Custom Types SEINER Seite auf (siehe registrySchemaAwareCanonicalizer).
+        val currentFingerprint = MigrationFingerprint.compute(
+            prepared.targetNormalized.schema,
+            registrySchemaAwareCanonicalizer(prepared.effectiveDialect, prepared.targetNormalized.schema),
+        )
+        val desiredFingerprint = MigrationFingerprint.compute(
+            prepared.sourceNormalized.schema,
+            registrySchemaAwareCanonicalizer(prepared.effectiveDialect, prepared.sourceNormalized.schema),
+        )
         val inlineResult = InlineRenameOverlayBuilder.build(
             renameTableFlags = request.renameTableFlags,
             renameColumnFlags = request.renameColumnFlags,
@@ -247,7 +255,11 @@ class SchemaMigrateRunner(
         )
         val withExecution = executionStage.applyExecutionTrace(render.executableCombined, executionTrace)
         val postCompareOutcome = if (executionTrace != null && executionTrace.executionError == null) {
-            executionStage.runPostCompare(request, prepared.sourceNormalized.schema, prepared.targetOp, canonicalizeType)
+            executionStage.runPostCompare(
+                request,
+                prepared.sourceNormalized.schema,
+                prepared.targetOp,
+            ) { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) }
         } else {
             null
         }

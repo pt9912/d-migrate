@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 
@@ -19,4 +20,25 @@ internal fun registryTypeCanonicalizer(dialect: DatabaseDialect): (NeutralType) 
     val driver = runCatching { DatabaseDriverRegistry.get(dialect) }.getOrNull()
         ?: return { it }
     return driver.typeCanonicalizer()::canonicalize
+}
+
+/**
+ * Dieselbe Projektion, aber an ein konkretes Schema gebunden.
+ *
+ * Ein `Enum(refType)` traegt seine Werte nicht selbst; welcher Typ daraus wird,
+ * steht in `schema.customTypes`. Gebunden wird deshalb **pro Schema** — jede
+ * Seite des Vergleichs loest gegen ihre eigenen Custom Types auf, und ein
+ * zurueckgelesenes Schema ohne Custom Types loest schlicht nichts auf.
+ *
+ * Nur der Fingerprint-Pfad nutzt das. Der strukturelle Vergleich bleibt bei
+ * der kontextfreien Projektion — dieselbe Grenze, die ADR 0026 zieht.
+ */
+internal fun registrySchemaAwareCanonicalizer(
+    dialect: DatabaseDialect,
+    schema: SchemaDefinition,
+): (NeutralType) -> NeutralType {
+    val driver = runCatching { DatabaseDriverRegistry.get(dialect) }.getOrNull()
+        ?: return { it }
+    val canonicalizer = driver.typeCanonicalizer()
+    return { type -> canonicalizer.canonicalize(type, schema.customTypes) }
 }

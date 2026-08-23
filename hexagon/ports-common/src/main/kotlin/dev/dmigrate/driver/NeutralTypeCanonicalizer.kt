@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.NeutralType
 
 /**
@@ -20,11 +21,29 @@ import dev.dmigrate.core.model.NeutralType
  * is the conservative [IDENTITY] so a driver without an explicit flattening
  * declaration never folds types away.
  */
-fun interface NeutralTypeCanonicalizer {
+interface NeutralTypeCanonicalizer {
     fun canonicalize(type: NeutralType): NeutralType
+
+    /**
+     * Dieselbe Projektion, aber mit den Custom Types des Schemas.
+     *
+     * Ein `Enum(refType)` traegt seine Werte nicht selbst — sie stehen im
+     * Schema. Ein Dialekt, der Enums an der Spalte aufloest (SQL Server: kein
+     * Enum-Typ, also `NVARCHAR(<laengster Wert>)` + CHECK), kann den Typ ohne
+     * diesen Kontext nicht projizieren und liesse ihn stehen; der Reverse gibt
+     * den `refType` aber nie zurueck, und der Post-Compare meldete Drift.
+     *
+     * Der Default ignoriert den Kontext: fuer Dialekte mit nativem Enum-Typ
+     * (PostgreSQL) waere ein Aufloesen sogar falsch — zwei verschiedene Typen
+     * mit denselben Werten sind dort verschiedene Typen.
+     */
+    fun canonicalize(type: NeutralType, customTypes: Map<String, CustomTypeDefinition>): NeutralType =
+        canonicalize(type)
 
     companion object {
         /** No-op canonicaliser: every type is its own canonical form. */
-        val IDENTITY: NeutralTypeCanonicalizer = NeutralTypeCanonicalizer { it }
+        val IDENTITY: NeutralTypeCanonicalizer = object : NeutralTypeCanonicalizer {
+            override fun canonicalize(type: NeutralType): NeutralType = type
+        }
     }
 }

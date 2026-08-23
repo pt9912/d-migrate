@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
@@ -38,36 +40,68 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  *   shared [MssqlTypeMapper.enumWidth] rule so the projection matches the
  *   column the generator actually writes.
  *
- * An enum carrying a `refType` stays identity — but NOT for the reason the PG
- * and MySQL canonicalisers give. Those two carve it out because they emit a
- * real custom type (`CREATE TYPE … AS ENUM`) that their reverse reconstructs,
- * so identity is the accurate projection. T-SQL has no such path:
- * [MssqlColumnConstraintHelper] degrades a `refType` enum to
- * `NVARCHAR(width)` + CHECK and a `refType` domain to the domain's base type,
- * so the reverse can never return the `refType` and identity WILL report drift
- * on a lossless round trip.
+ * **Ein `refType`-Enum wird aufgeloest, sobald das Schema mitkommt.** PG und
+ * MySQL lassen ihn stehen, weil sie einen echten Custom Type emittieren, den
+ * ihr Reverse rekonstruiert — dort ist Identitaet die genaue Projektion. T-SQL
+ * hat diesen Weg nicht: [MssqlColumnConstraintHelper] degradiert ein
+ * `refType`-Enum zu `NVARCHAR(width)` + CHECK und eine `refType`-Domain zu
+ * ihrem Basistyp, der Reverse kann den `refType` also nie zurueckgeben.
+ * Identitaet meldete deshalb Drift auf einem verlustfreien Round-Trip.
  *
- * Folding it anyway is not the fix: the width comes from the custom type's
- * values and the domain path from its base type, and a `(NeutralType) ->
- * NeutralType` projection sees neither. Any fold chosen here would be wrong in
- * a different way. Identity is therefore the port's prescribed conservative
- * default — it never folds a type away, so the failure direction stays a loud
- * post-compare drift instead of a masked one. Closing it needs schema context
- * in the projection; tracked as a Slice-5 obligation in
- * `docs/planning/in-progress/mssql-dialect-scoping.md`.
+ * Die Breite steht in den Werten des Custom Types und der Domain-Weg in seinem
+ * Basistyp — beides sieht eine `(NeutralType) -> NeutralType`-Projektion nicht.
+ * Die Ueberladung mit Schema-Kontext sieht es (`canonicalize(type,
+ * customTypes)`); ohne Kontext bleibt es beim konservativen Default, der nie
+ * einen Typ wegfaltet.
  */
 internal object MssqlNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
 
     private val typeMapper = MssqlTypeMapper()
 
-    override fun canonicalize(type: NeutralType): NeutralType = when {
-        type is NeutralType.Enum && type.refType != null -> type
+    override fun canonicalize(type: NeutralType): NeutralType = canonicalize(type, emptyMap())
+
+    /**
+     * Mit den Custom Types des Schemas laesst sich ein `refType` aufloesen —
+     * ohne sie bleibt er stehen (der konservative Default des Ports).
+     *
+     * Aufgeloest wird in die Form, die der Spalten-Helfer schreibt: ein Enum in
+     * `NVARCHAR(<laengster Wert>)`, eine Domain in ihren Basistyp. Danach
+     * greift dieselbe Round-Trip-Projektion wie fuer jeden anderen Typ.
+     */
+    override fun canonicalize(
+        type: NeutralType,
+        customTypes: Map<String, CustomTypeDefinition>,
+    ): NeutralType = when {
+        type is NeutralType.Enum && type.refType != null ->
+            resolveRefType(type, customTypes)?.let { canonicalize(it, customTypes) } ?: type
         else -> {
             val mapped = MssqlTypeMapping.mapColumn(
                 columnName = "",
                 input = toColumnInput(renderedColumnType(type)),
             )
             if (mapped.note?.code == "R301") type else mapped.type
+        }
+    }
+
+    /**
+     * Der Typ, in den der Spalten-Helfer einen `refType` aufloest — oder
+     * `null`, wenn das Schema ihn nicht kennt (dann bleibt er stehen, statt
+     * geraten zu werden).
+     */
+    private fun resolveRefType(
+        type: NeutralType.Enum,
+        customTypes: Map<String, CustomTypeDefinition>,
+    ): NeutralType? {
+        val custom = customTypes[type.refType] ?: return null
+        return when (custom.kind) {
+            CustomTypeKind.ENUM -> custom.values?.let { NeutralType.Enum(values = it) }
+            // Eine Domain wird zu ihrem Basistyp; kennt der Resolver ihn nicht,
+            // rendert der Helfer NVARCHAR(MAX) (E053) — dieselbe Entscheidung.
+            CustomTypeKind.DOMAIN -> custom.baseType?.let { base ->
+                MssqlColumnTypeResolver(typeMapper).resolveDomainBaseType(base, custom.precision, custom.scale)
+                    ?: NeutralType.Text()
+            }
+            CustomTypeKind.COMPOSITE -> null
         }
     }
 

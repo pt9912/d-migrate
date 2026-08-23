@@ -149,7 +149,7 @@ internal class SchemaMigrateExecutionStage(
         request: SchemaMigrateRequest,
         desired: SchemaDefinition,
         target: CompareOperand,
-        canonicalizeType: (NeutralType) -> NeutralType = { it },
+        canonicalizerFor: (SchemaDefinition) -> ((NeutralType) -> NeutralType) = { { it } },
     ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
         val dbOperand = target as? CompareOperand.Database ?: return null
@@ -168,8 +168,9 @@ internal class SchemaMigrateExecutionStage(
             printError("Post-execute reverse marker error: ${e.message}", request.target)
             return PostCompareOutcome.IntrospectionFailed
         }
-        val observed = fingerprint(postNormalized.schema, canonicalizeType)
-        val desiredFp = fingerprint(desired, canonicalizeType)
+        // Jede Seite loest ihre eigenen Custom Types auf.
+        val observed = fingerprint(postNormalized.schema, canonicalizerFor(postNormalized.schema))
+        val desiredFp = fingerprint(desired, canonicalizerFor(desired))
         return if (observed == desiredFp) {
             PostCompareOutcome.Clean(observed)
         } else {
