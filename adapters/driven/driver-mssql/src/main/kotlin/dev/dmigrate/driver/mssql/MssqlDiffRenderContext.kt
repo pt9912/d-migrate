@@ -81,6 +81,42 @@ internal class MssqlDiffRenderContext(
         if (riskFor(op).requiresManualConfirmation) manualActions += op.id
     }
 
+    /**
+     * Ein Statement des Tabellen-Neubaus. Anders als [emit] gehoert es nicht zu
+     * EINER Operation, sondern zum ganzen Eimer: der Neubau erledigt alles, was
+     * an der Tabelle haengt, in einer Sequenz. Wuerde nur die ausloesende
+     * Operation als gerendert gelten, faellt der Rest aus der Buchhaltung —
+     * weder `rendered` noch `skipped` — und ein Konsument, der beide Mengen
+     * liest, saehe Operationen spurlos verschwinden.
+     *
+     * Das Risiko ist das des Neubaus, nicht das der einzelnen Operation:
+     * die Tabelle wird geloescht und neu angelegt ([OperationRisk.destructive],
+     * [OperationRisk.requiresTableRewrite]), und zwischen `DROP` und
+     * `sp_rename` fehlt sie ([OperationRisk.hasGap]).
+     */
+    fun emitRebuild(bucket: List<DiffOperation>, trigger: DiffOperation, sqlText: String) {
+        val ids = bucket.map { it.id }.toSet()
+        statements += MigrationDdlStatement(
+            sql = sqlText,
+            operationIds = ids,
+            risk = rebuildRisk(bucket),
+            phase = trigger.phase,
+            transactionScope = TransactionScope.RUNNER_OWNED,
+            hints = MSSQL_TRANSACTIONAL_DDL_HINTS,
+        )
+        rendered += ids
+        destructive += ids
+        nonReversible += bucket.filter { it.reversibility == Reversibility.NOT_REVERSIBLE }.map { it.id }
+    }
+
+    private fun rebuildRisk(bucket: List<DiffOperation>): OperationRisk = OperationRisk(
+        destructive = true,
+        dataLossPossible = bucket.any { riskFor(it).dataLossPossible },
+        requiresTableRewrite = true,
+        requiresManualConfirmation = true,
+        hasGap = true,
+    )
+
     private fun riskFor(op: DiffOperation): OperationRisk =
         if (direction == MssqlRenderDirection.UP) {
             op.risks.up

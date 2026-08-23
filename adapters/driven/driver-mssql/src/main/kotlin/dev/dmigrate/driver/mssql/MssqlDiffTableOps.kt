@@ -127,10 +127,14 @@ internal object MssqlDiffTableOps {
         dropColumnStatements(op, ctx, table, column)
     }
 
+    /**
+     * IDENTITY-Spalten kommen hier nicht an: der Dispatcher schickt sie in den
+     * Tabellen-Neubau ([MssqlRebuildPlanner.requiresRebuild]), weil `ALTER
+     * COLUMN` sie weder setzen noch entfernen noch neu deklarieren kann.
+     */
     fun renderAlterColumnType(op: DiffOperation.AlterColumnType, ctx: MssqlDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         val targetType = if (ctx.direction == MssqlRenderDirection.UP) op.after else op.before
-        if (blockIdentityChange(op, ctx, table, column, op.before, op.after)) return
         val target = ctx.columnFor(table, column)
             ?: return blockMissingColumn(op, ctx, table, column, "its nullability")
         alterColumnWithDefaultDance(op, ctx, table, column, targetType, target)
@@ -256,35 +260,6 @@ internal object MssqlDiffTableOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
 
-    /**
-     * IDENTITY laesst sich per `ALTER COLUMN` weder setzen noch entfernen; das
-     * verlangt einen Tabellen-Neubau. Der ist ein eigener Renderer (Muster:
-     * die SQLite-Rebuild-Sequenz) und gehoert nicht in den Skelett-Sub-Slice —
-     * bis dahin wird laut geblockt statt ein `ALTER COLUMN` zu schicken, das
-     * die Identity kommentarlos verlieren wuerde.
-     */
-    private fun blockIdentityChange(
-        op: DiffOperation,
-        ctx: MssqlDiffRenderContext,
-        table: String,
-        column: String,
-        before: NeutralType,
-        after: NeutralType,
-    ): Boolean {
-        val wasIdentity = (before as? NeutralType.Identifier)?.autoIncrement == true
-        val willBeIdentity = (after as? NeutralType.Identifier)?.autoIncrement == true
-        if (wasIdentity == willBeIdentity) return false
-        ctx.skip(
-            op,
-            "Operation ${op.id} adds or removes IDENTITY on column '$table.$column'. SQL Server " +
-                "cannot do that with ALTER COLUMN — it requires rebuilding the table (create, copy, " +
-                "drop, rename). Rendering a plain ALTER COLUMN would silently drop the identity.",
-            code = "MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD",
-        )
-        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-        return true
-    }
-
     private fun blockMissingColumn(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
@@ -330,7 +305,15 @@ internal object MssqlDiffTableOps {
         surviving = if (forDrop) null else ctx.schemaForDirection(),
     )
 
-    /** Eine IDENTITY-Spalte laesst sich nicht neu deklarieren; `ALTER COLUMN` waere Msg 156. */
+    /**
+     * Die Nullability einer IDENTITY-Spalte zu aendern hat kein Ziel, das SQL
+     * Server kennt: eine IDENTITY-Spalte ist immer `NOT NULL`. Die Aenderung
+     * kann also nur nach nullable zeigen — ein Zustand, den weder `ALTER
+     * COLUMN` (Msg 156) noch der Tabellen-Neubau herstellen kann, weil auch
+     * dessen `CREATE TABLE` die Spalte als `IDENTITY(1,1) NOT NULL` schreiben
+     * muesste. Ein Neubau wuerde die Abweichung also still verschlucken statt
+     * sie zu erfuellen; deshalb bleibt es hier bei einem Blocker.
+     */
     private fun blockIdentityColumn(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
@@ -341,9 +324,10 @@ internal object MssqlDiffTableOps {
         if ((type as? NeutralType.Identifier)?.autoIncrement != true) return false
         ctx.skip(
             op,
-            "Column '$table.$column' is an IDENTITY column; SQL Server cannot re-declare it with ALTER COLUMN " +
-                "(Msg 156). Changing such a column requires rebuilding the table.",
-            code = "MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD",
+            "Column '$table.$column' is an IDENTITY column, and SQL Server requires those to be NOT NULL. " +
+                "The requested nullability cannot be reached — neither by ALTER COLUMN (Msg 156) nor by " +
+                "rebuilding the table, whose CREATE TABLE would declare the column NOT NULL again.",
+            code = "MSSQL_IDENTITY_COLUMN_NOT_NULLABLE",
         )
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
         return true

@@ -42,6 +42,10 @@ import java.sql.DriverManager
  * anlegen, das gerenderte Statement-Paar ausfuehren, Ergebnis im Katalog
  * pruefen.
  *
+ * Sub-Slice 5a-2: der IDENTITY-Tabellen-Neubau. Dass die Sequenz syntaktisch
+ * aufgeht, zeigt ein Unit-Test; dass **Schluesselwerte und Zaehler** sie
+ * ueberleben, kann nur SQL Server selbst beantworten.
+ *
  * Sub-Slice 5b: ein **gefilterter** Index laesst sich ueber den Migrate-Pfad
  * anlegen. Das ist der Fall, an dem der sqlcmd-Apply in Slice 2a scheiterte
  * (Msg 1934) — und der Beleg, dass die SET-Optionen im selben Batch wirken.
@@ -204,5 +208,73 @@ class MssqlDiffCatalogLookupIntegrationTest : FunSpec({
             "SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID('filtered') " +
                 "AND name = 'ix_filtered_nick' AND has_filter = 1",
         ) { it.getInt(1) } shouldBe 1
+    }
+
+    test("the IDENTITY rebuild keeps the key values and continues the counter") {
+        // Der Fall, den `ALTER COLUMN` nicht kann (Msg 156): aus einer
+        // gewoehnlichen Schluesselspalte wird eine IDENTITY-Spalte. Der
+        // Neubau muss dabei DREI Dinge halten, die ein Unit-Test nicht
+        // pruefen kann: die vorhandenen Schluesselwerte, den Zaehler und
+        // die Objekte, die an der Tabelle hingen.
+        exec(
+            "CREATE TABLE crew (id INT NOT NULL CONSTRAINT pk_crew PRIMARY KEY, " +
+                "nick NVARCHAR(50) NOT NULL CONSTRAINT uq_crew_nick UNIQUE);",
+            "INSERT INTO crew (id, nick) VALUES (7, N'ada'), (42, N'grace');",
+        )
+        val columns = linkedMapOf(
+            "id" to ColumnDefinition(NeutralType.Integer, required = true),
+            "nick" to ColumnDefinition(NeutralType.Text(50), required = true, unique = true),
+        )
+        val table = TableDefinition(columns = columns, primaryKey = listOf("id"))
+        val current = SchemaDefinition(name = "App", version = "1", tables = mapOf("crew" to table))
+        val desired = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf(
+                "crew" to table.copy(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true), required = true),
+                        "nick" to columns.getValue("nick"),
+                    ),
+                ),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "crew",
+                    columnsChanged = listOf(
+                        ColumnDiff(
+                            name = "id",
+                            type = ValueChange(NeutralType.Integer, NeutralType.Identifier(autoIncrement = true)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val rendered = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        exec(*rendered.statements.map { it.sql }.toTypedArray())
+
+        // 1. Die Spalte IST jetzt eine Identity-Spalte.
+        query("SELECT COLUMNPROPERTY(OBJECT_ID('crew'), 'id', 'IsIdentity')") { it.getInt(1) } shouldBe 1
+
+        // 2. Die Schluesselwerte sind dieselben geblieben — nicht neu vergeben.
+        query("SELECT MIN(id), MAX(id), COUNT(*) FROM crew") {
+            Triple(it.getInt(1), it.getInt(2), it.getInt(3))
+        } shouldBe Triple(7, 42, 2)
+
+        // 3. Der Zaehler steht auf dem hoechsten uebernommenen Wert: die
+        //    naechste Zeile bekommt 43, nicht 1 (und kollidiert nicht).
+        exec("INSERT INTO crew (nick) VALUES (N'hopper');")
+        query("SELECT id FROM crew WHERE nick = N'hopper'") { it.getInt(1) } shouldBe 43
+
+        // 4. Primaerschluessel und UNIQUE tragen wieder ihre endgueltigen
+        //    Namen — nicht die der Zwischentabelle.
+        query(
+            "SELECT COUNT(*) FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID('crew') " +
+                "AND name IN ('pk_crew', 'uq_crew_nick')",
+        ) { it.getInt(1) } shouldBe 2
+
+        // 5. Die Zwischentabelle ist weg.
+        query("SELECT COUNT(*) FROM sys.tables WHERE name LIKE '%__dmg_rebuild_%'") { it.getInt(1) } shouldBe 0
     }
 })

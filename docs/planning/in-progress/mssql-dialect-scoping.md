@@ -296,6 +296,11 @@ nur mit Klammern" ist:
 - **IDENTITY ist per ALTER unveränderlich.** Eine Spalte zu/von IDENTITY zu
   ändern verlangt einen Tabellen-Neubau — die einzige Stelle, an der MSSQL ein
   SQLite-artiges Rebuild-Muster braucht.
+- **Constraint-Namen sind schema-global, nicht tabellenlokal.** Sie liegen in
+  `sys.objects`; `pk_users` gibt es im Schema genau einmal. Das trifft nur den
+  Neubau, aber den hart: seine Zwischentabelle darf keinen benannten Constraint
+  tragen, solange die alte Tabelle lebt (Msg 2714). Indexnamen sind davon
+  ausgenommen — die sind tabellenlokal.
 - **Gefilterte Indizes brauchen SET-Optionen zur DDL-Zeit** (Msg 1934). Slice 2a
   löst das für die Skript-Darstellung über die Präambel und Slice 3 für die
   Import-Session; der Migrate-Pfad führt Statements **einzeln** über den Runner
@@ -314,11 +319,65 @@ nur mit Klammern" ist:
 | Sub-Slice | Operationen | Kern der Arbeit | Abnahme |
 | --- | --- | --- | --- |
 | **5a** ✅ | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders) + der Default-Constraint-Dreischritt + `sp_rename` | Unit-Tests je Operation und Richtung; Down-Pfad kehrt jede Operation um |
-| **5a-2** | — | IDENTITY-Rebuild (create, copy, drop, rename) für `AlterColumnType` von/zu `identifier(auto_increment)`. Aus 5a herausgeschnitten: das ist ein eigener Renderer nach dem Muster der SQLite-Rebuild-Sequenz, kein Zusatz zum Skelett. 5a blockt den Fall laut (`MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD`), statt ein `ALTER COLUMN` zu schicken, das die Identity kommentarlos verlöre | Live-Test, dass Schlüssel und Zähler den Rebuild überleben |
+| **5a-2** ✅ | — | IDENTITY-Rebuild (create, copy, drop, rename) als eigener Renderer (`MssqlRebuildPlanner`/`MssqlRebuildRenderer`) nach dem Muster der SQLite-Rebuild-Sequenz. **Der Auslöser wurde beim Bau breiter als geplant** (siehe unten): nicht nur `identifier(auto_increment)` von/zu, sondern jede Typänderung an einer Spalte, die in SQL Server als IDENTITY landet — auch die aus `generation` | Live-Test, dass Schlüssel und Zähler den Rebuild überleben — erbracht (`MssqlDiffCatalogLookupIntegrationTest`, Werte 7/42 bleiben, die nächste Zeile bekommt 43) |
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | `WITH CHECK` beim Nachziehen auf Bestandsdaten (ohne das gilt ein nachtraeglicher FK/CHECK als *not trusted*); SET-Optionen im Migrate-Pfad; Kaskaden-Wächter gegen den Zielzustand statt gegen das Generate-Schema. Dazu die beiden Stellen, die 5a deswegen blockte: `CreateTable` rendert seine Indizes wieder, und abhängige Indizes und Constraints werden um eine Spaltenänderung herum abgeräumt und neu angelegt | Live-Integrationstest, der einen **gefilterten** Index per Migrate anlegt (Msg-1934-Regressionsschutz) — belegt zugleich, dass die SET-Optionen im selben Batch wirken |
 | **5c** | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW`; die View-Portabilitätsprüfung aus Slice 3b greift auch hier | Hier fällt die Enum-CHECK-Entscheidung ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md)) — sie ist im Diff-Pfad nicht mehr aufschiebbar |
 | **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; flippt `supportsCurrentValuePreserve` | Macht die Zeile wahr, die Slice 4 als Zielbild in [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 eingetragen hat |
 | **5e** | — | Abschluss: Schema-Kontext für die Typ-Projektion (`Enum(refType)`), Beitritt zum Matrix-Sweep, Registry + `RenameProjectionDialect`, **Gate-Fall**, Live-Round-Trip-Integrationstest analog den drei bestehenden Dialekten, CLI-E2E, Handbücher | `schema migrate` ist für mssql nutzbar |
+
+### Wie der Neubau aussieht (gebaut in 5a-2)
+
+Die Sequenz folgt dem, was auch SSMS für einen Tabellen-Neubau schreibt, und
+sie fällt genau so aus, weil Constraint-Namen schema-global sind:
+
+1. eingehende Fremdschlüssel lösen (sonst lehnt SQL Server das `DROP TABLE` mit
+   Msg 3726 ab),
+2. `CREATE TABLE <tabelle>__dmg_rebuild_<hash>` — **nur Spalten**: Typ,
+   `IDENTITY`, `NULL`/`NOT NULL`, kein einziger benannter Constraint,
+3. `SET IDENTITY_INSERT … ON` + `INSERT … SELECT` + `OFF` in **einem**
+   Statement (der Schalter ist sitzungsweit; ein abgebrochener Lauf dürfte ihn
+   nicht offen lassen),
+4. `DROP TABLE`, dann `sp_rename`,
+5. die gesamte benannte Oberfläche unter ihren **endgültigen** Namen: PK,
+   `df_`/`uq_`/`ck_`, Fremdschlüssel, Indizes, eingehende Fremdschlüssel.
+
+**Der Auslöser ist breiter als der Schnitt vermuten ließ.** Geplant war
+„von/zu `identifier(auto_increment)`". Beim Bau fiel auf, dass 5a damit einen
+Fall offen ließ, der ungültiges T-SQL erzeugte: eine Typänderung an einer
+Spalte, die IDENTITY **bleibt** (`int identity` → `bigint identity`), lief in
+`alterColumnWithDefaultDance` und rendete ein `ALTER COLUMN`, das SQL Server
+mit Msg 156 ablehnt — eine IDENTITY-Spalte lässt sich überhaupt nicht neu
+deklarieren. Dazu kommt, dass IDENTITY nicht nur aus dem Typ stammt, sondern
+ebenso aus `generation`; der Auslöser muss deshalb die Spalte sehen, nicht nur
+den Typ. Beides deckt der Neubau jetzt ab.
+
+Zwei weitere Entscheidungen sind nicht offensichtlich:
+
+- **Woher die Spaltendeklaration kommt.** Nicht aus einer zweiten, für den
+  Neubau geschriebenen Kopie, sondern aus dem Spalten-Helfer des
+  Generate-Pfads. Der liefert seit 5a-2 Deklaration und benannte Objekte
+  getrennt (`MssqlColumnConstraintHelper.renderColumn`), beide aus derselben
+  Liste. Die Frage „welche Objekte hat diese Spalte" — kein UNIQUE auf LOB,
+  CHECK nur bei Enum und Domain, kein DEFAULT auf IDENTITY — wird damit
+  weiterhin an genau einer Stelle beantwortet. Die Generate-Ausgabe ist
+  zeichengleich geblieben (DDL-Goldens unverändert).
+- **Warum der Neubau die übrigen Operationen seiner Tabelle schluckt.** Er legt
+  die Tabelle im Zielzustand an; ein danach noch laufendes `CREATE INDEX` für
+  einen Index, den er schon angelegt hat, scheiterte mit Msg 1913 — T-SQL kennt
+  kein `IF NOT EXISTS` für Indizes. Der Eimer läuft an der Stelle seiner
+  **letzten** Operation, damit alles erledigt ist, was der Planner davor
+  einsortiert hat.
+
+Eine neue Spalte, die der Neubau nicht füllen kann (NOT NULL, kein Default),
+blockt ihn — `MSSQL_REBUILD_COLUMN_NOT_FILLABLE`; der Default-Constraint
+existiert während der Kopie noch nicht, der Wert muss also im `SELECT` stehen.
+Ebenso blockt `--strict-gap-operations`: zwischen `DROP` und `sp_rename` fehlt
+die Tabelle.
+
+Was **nicht** über den Neubau geht: die Nullability einer IDENTITY-Spalte. SQL
+Server kennt keine nullable IDENTITY-Spalte, ein Neubau schriebe sie wieder als
+`NOT NULL` und verschluckte die Abweichung still. Der Fall bleibt ein Blocker,
+jetzt unter `MSSQL_IDENTITY_COLUMN_NOT_NULLABLE` und mit dem echten Grund.
 
 ### Was in Slice 5 bewusst geblockt bleibt
 

@@ -43,11 +43,38 @@ internal class MssqlColumnConstraintHelper(
         table: TableDefinition,
         schema: SchemaDefinition,
         notes: MutableList<TransformationNote>,
-    ): String {
+    ): String = renderColumn(tableName, colName, col, table, schema, notes).let { rendering ->
+        (listOf(rendering.declaration) + rendering.objects.map { inlineClause(it) }).joinToString(" ")
+    }
+
+    /**
+     * Spaltendeklaration und die benannten Objekte der Spalte **getrennt**.
+     *
+     * Der Generate-Pfad setzt beides sofort zusammen ([generateColumnSql]);
+     * der Tabellen-Neubau des Diff-Pfads kann das nicht. SQL Server fuehrt
+     * Constraints schema-global: solange die alte Tabelle existiert, sind
+     * `df_`/`uq_`/`ck_<tabelle>_<spalte>` vergeben, und die Neubau-Tabelle
+     * scheiterte an Msg 2714. Sie legt die Spalte deshalb nackt an und holt
+     * die Objekte nach dem Umbenennen unter ihren endgueltigen Namen nach
+     * ([alterStatement]).
+     *
+     * Beide Formen entstehen aus DERSELBEN Liste. Die Entscheidung, welche
+     * Objekte eine Spalte hat — kein UNIQUE auf LOB (E057), CHECK nur bei
+     * Enum und Domain, kein DEFAULT auf IDENTITY — faellt damit an genau
+     * einer Stelle statt an zweien, die auseinanderlaufen koennen.
+     */
+    fun renderColumn(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        table: TableDefinition,
+        schema: SchemaDefinition,
+        notes: MutableList<TransformationNote>,
+    ): ColumnRendering {
         val type = col.type
         val generation = col.generation
         val ctx = ColumnContext(tableName, colName, col, table, notes)
-        return when {
+        val declaration = when {
             generation is ColumnGeneration.Identity && supportsIdentity(type) ->
                 identityColumn(ctx, typeMapper.toSql(type), generation.mode)
             type is NeutralType.Identifier && type.autoIncrement -> identityColumn(ctx, "INT", IdentityMode.ALWAYS)
@@ -64,6 +91,34 @@ internal class MssqlColumnConstraintHelper(
                 plainColumn(ctx)
             }
         }
+        return ColumnRendering(declaration, ctx.objects.toList())
+    }
+
+    /** Die Deklaration ohne benannte Objekte plus die Objekte, die zu ihr gehoeren. */
+    data class ColumnRendering(val declaration: String, val objects: List<MssqlColumnObject>)
+
+    private fun inlineClause(obj: MssqlColumnObject): String {
+        val head = "CONSTRAINT ${quoteIdentifier(obj.name)}"
+        return when (obj.kind) {
+            MssqlColumnObject.Kind.DEFAULT -> "$head DEFAULT ${obj.body}"
+            MssqlColumnObject.Kind.UNIQUE -> "$head UNIQUE"
+            MssqlColumnObject.Kind.CHECK -> "$head CHECK (${obj.body})"
+        }
+    }
+
+    /**
+     * Dasselbe Objekt als eigenstaendiges Statement — die Form, die der
+     * Tabellen-Neubau nach dem Umbenennen braucht. Der DEFAULT nennt seine
+     * Spalte im `FOR`, das UNIQUE in der Spaltenliste; der CHECK traegt sie
+     * bereits in seinem Ausdruck.
+     */
+    fun alterStatement(tableName: String, colName: String, obj: MssqlColumnObject): String {
+        val head = "ALTER TABLE ${quoteIdentifier(tableName)} ADD CONSTRAINT ${quoteIdentifier(obj.name)}"
+        return when (obj.kind) {
+            MssqlColumnObject.Kind.DEFAULT -> "$head DEFAULT ${obj.body} FOR ${quoteIdentifier(colName)};"
+            MssqlColumnObject.Kind.UNIQUE -> "$head UNIQUE (${quoteIdentifier(colName)});"
+            MssqlColumnObject.Kind.CHECK -> "$head CHECK (${obj.body});"
+        }
     }
 
     private class ColumnContext(
@@ -72,20 +127,17 @@ internal class MssqlColumnConstraintHelper(
         val col: ColumnDefinition,
         val table: TableDefinition,
         val notes: MutableList<TransformationNote>,
-    )
+    ) {
+        /** Die benannten Objekte, die die Spalten-Zweige unterwegs einsammeln. */
+        val objects = mutableListOf<MssqlColumnObject>()
+    }
 
     // ── Identity ─────────────────────────────────
 
-    private fun supportsIdentity(type: NeutralType): Boolean = when (type) {
-        is NeutralType.Integer, is NeutralType.BigInteger, is NeutralType.SmallInt -> true
-        // T-SQL IDENTITY auf DECIMAL nur mit Skala 0 (so liefert es auch der Reverse).
-        is NeutralType.Decimal -> type.scale == 0
-        else -> false
-    }
 
     private fun identityColumn(ctx: ColumnContext, baseType: String, mode: IdentityMode): String {
         val parts = mutableListOf(quoteIdentifier(ctx.colName), "$baseType IDENTITY(1,1)", "NOT NULL")
-        if (ctx.col.unique) parts += uniqueClause(ctx.tableName, ctx.colName)
+        if (ctx.col.unique) ctx.objects += uniqueObject(ctx)
         if (mode == IdentityMode.BY_DEFAULT) {
             ctx.notes += identityNote(
                 ctx.tableName, ctx.colName,
@@ -133,9 +185,13 @@ internal class MssqlColumnConstraintHelper(
     private fun boundedEnumColumn(ctx: ColumnContext, values: List<String>): String {
         val width = MssqlTypeMapper.enumWidth(values)
         val parts = mutableListOf(quoteIdentifier(ctx.colName), typeMapper.unicodeText(width))
-        parts += nullabilityDefaultUnique(ctx, lob = false)
+        parts += nullabilityAndObjects(ctx, lob = false)
         val allowed = values.joinToString(", ") { typeMapper.toDefaultSql(DefaultValue.StringLiteral(it), ctx.col.type) }
-        parts += "CONSTRAINT ${quoteIdentifier(checkName(ctx))} CHECK (${quoteIdentifier(ctx.colName)} IN ($allowed))"
+        ctx.objects += MssqlColumnObject(
+            MssqlColumnObject.Kind.CHECK,
+            checkName(ctx),
+            "${quoteIdentifier(ctx.colName)} IN ($allowed)",
+        )
         return parts.joinToString(" ")
     }
 
@@ -156,12 +212,12 @@ internal class MssqlColumnConstraintHelper(
         }
         val parts = mutableListOf(quoteIdentifier(ctx.colName), sqlType)
         val lob = neutral?.let { typeMapper.isLargeObject(it) } ?: true
-        parts += nullabilityDefaultUnique(ctx, lob)
+        parts += nullabilityAndObjects(ctx, lob)
         customType.check?.let { check ->
             // PostgreSQL-Domain-CHECKs adressieren den Wert als `VALUE`; in T-SQL
             // steht dort die Spalte selbst (String-Literale bleiben unangetastet).
             val expression = typeResolver.substituteValueToken(check, quoteIdentifier(ctx.colName))
-            parts += "CONSTRAINT ${quoteIdentifier(checkName(ctx))} CHECK ($expression)"
+            ctx.objects += MssqlColumnObject(MssqlColumnObject.Kind.CHECK, checkName(ctx), expression)
         }
         return parts.joinToString(" ")
     }
@@ -195,7 +251,7 @@ internal class MssqlColumnConstraintHelper(
         val type = ctx.col.type
         val parts = mutableListOf(quoteIdentifier(ctx.colName), typeMapper.toSql(type))
         ctx.notes += typeNotes(ctx.tableName, ctx.colName, type)
-        parts += nullabilityDefaultUnique(ctx, typeMapper.isLargeObject(type))
+        parts += nullabilityAndObjects(ctx, typeMapper.isLargeObject(type))
         return parts.joinToString(" ")
     }
 
@@ -240,13 +296,20 @@ internal class MssqlColumnConstraintHelper(
     }
 
     /**
-     * `NOT NULL`, benannter DEFAULT, benannter UNIQUE — letzterer mit W138 bei
+     * `NOT NULL` gehört in die Deklaration und bleibt dort; DEFAULT und UNIQUE
+     * sind benannte Objekte und wandern nach [ColumnContext.objects] — W138 bei
      * NULL-fähiger Spalte und als E057-Skip auf LOB-Spalten (kein Schlüssel möglich).
      */
-    private fun nullabilityDefaultUnique(ctx: ColumnContext, lob: Boolean): List<String> {
+    private fun nullabilityAndObjects(ctx: ColumnContext, lob: Boolean): List<String> {
         val parts = mutableListOf<String>()
         if (ctx.col.required) parts += "NOT NULL"
-        ctx.col.default?.let { parts += defaultClause(ctx.tableName, ctx.colName, it, ctx.col.type) }
+        ctx.col.default?.let {
+            ctx.objects += MssqlColumnObject(
+                MssqlColumnObject.Kind.DEFAULT,
+                MssqlConstraintNames.default(ctx.tableName, ctx.colName),
+                typeMapper.toDefaultSql(it, ctx.col.type),
+            )
+        }
         if (ctx.col.unique) {
             if (lob) {
                 ctx.notes += lobKeyNote(
@@ -256,7 +319,7 @@ internal class MssqlColumnConstraintHelper(
                     listOf(ctx.colName),
                 )
             } else {
-                parts += uniqueClause(ctx.tableName, ctx.colName)
+                ctx.objects += uniqueObject(ctx)
                 if (isNullable(ctx.table, ctx.colName)) {
                     ctx.notes += nullableUniqueNote(ctx.tableName, ctx.colName, ctx.colName)
                 }
@@ -265,12 +328,11 @@ internal class MssqlColumnConstraintHelper(
         return parts
     }
 
-    private fun defaultClause(tableName: String, colName: String, default: DefaultValue, type: NeutralType): String =
-        "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.default(tableName, colName))} " +
-            "DEFAULT ${typeMapper.toDefaultSql(default, type)}"
-
-    private fun uniqueClause(tableName: String, colName: String): String =
-        "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.unique(tableName, colName))} UNIQUE"
+    private fun uniqueObject(ctx: ColumnContext) = MssqlColumnObject(
+        MssqlColumnObject.Kind.UNIQUE,
+        MssqlConstraintNames.unique(ctx.tableName, ctx.colName),
+        body = "",
+    )
 
     private fun checkName(ctx: ColumnContext): String = MssqlConstraintNames.check(ctx.tableName, ctx.colName)
 
@@ -286,6 +348,32 @@ internal class MssqlColumnConstraintHelper(
             "constraints, so at most one NULL row is allowed (PostgreSQL/MySQL/SQLite allow many).",
         hint = "Use a filtered unique index (WHERE column IS NOT NULL) if multiple NULL rows must coexist.",
     )
+
+    companion object {
+        /**
+         * Ob T-SQL auf diesem Typ ueberhaupt IDENTITY kennt. Steht im Companion,
+         * weil nicht nur der Generate-Pfad die Frage stellt: der Diff-Pfad
+         * entscheidet daran, ob eine Typaenderung einen Tabellen-Neubau braucht
+         * ([MssqlRebuildPlanner]) — und eine zweite Kopie dieser Liste waere
+         * genau die Abweichung, die erst gegen eine echte Datenbank auffiele.
+         */
+        fun supportsIdentity(type: NeutralType): Boolean = when (type) {
+            is NeutralType.Integer, is NeutralType.BigInteger, is NeutralType.SmallInt -> true
+            // T-SQL IDENTITY auf DECIMAL nur mit Skala 0 (so liefert es auch der Reverse).
+            is NeutralType.Decimal -> type.scale == 0
+            else -> false
+        }
+
+        /**
+         * Ob diese Spalte in SQL Server als IDENTITY landet — aus dem Typ
+         * (`identifier` mit `auto_increment`) oder aus `generation`, sofern der
+         * Typ es traegt. Beide Wege fuehren zu derselben Spalte, und beide
+         * schliessen `ALTER COLUMN` aus (Msg 156).
+         */
+        fun isIdentity(type: NeutralType, col: ColumnDefinition?): Boolean =
+            (type as? NeutralType.Identifier)?.autoIncrement == true ||
+                (col?.generation is ColumnGeneration.Identity && supportsIdentity(type))
+    }
 
     /** E057: UNIQUE/PRIMARY KEY auf LOB-Spalten ist in SQL Server nicht erzeugbar. */
     fun lobKeyNote(tableName: String, constraintName: String, kind: String, columns: List<String>): TransformationNote =

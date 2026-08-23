@@ -243,7 +243,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.statements.single().sql shouldContainStr "QUOTENAME(@pk)"
     }
 
-    test("an IDENTITY change is blocked rather than silently dropped") {
+    test("an IDENTITY change rebuilds the table instead of rendering an ALTER COLUMN") {
         // ALTER COLUMN kann IDENTITY weder setzen noch entfernen; ein blankes
         // ALTER COLUMN wuerde die Identity kommentarlos verlieren.
         val current = schema(
@@ -268,9 +268,11 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
             ),
         )
         val r = up(diff, current, desired)
-        r.statements.shouldBeEmpty()
-        r.diagnostics.map { it.code } shouldContain "MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD"
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        val sqls = r.statements.map { it.sql }
+        sqls.none { it.contains("ALTER COLUMN") } shouldBe true
+        sqls.any { it.startsWith("CREATE TABLE [users__dmg_rebuild_") } shouldBe true
+        r.blockers.shouldBeEmpty()
+        r.diagnostics.map { it.code } shouldContain "MSSQL_TABLE_REBUILT_FOR_IDENTITY"
     }
 
     test("an operation of a later sub-slice is blocked with a message naming its owner") {
@@ -352,7 +354,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         sqls.last() shouldContainStr "CREATE INDEX [ix_nick]"
     }
 
-    test("a nullability change on an IDENTITY column is blocked (ALTER COLUMN would be Msg 156)") {
+    test("a nullability change on an IDENTITY column is blocked: SQL Server has no nullable IDENTITY") {
         val identity = schema(
             "users" to TableDefinition(
                 columns = mapOf(
@@ -370,7 +372,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         )
         val r = up(diff, current = identity, desired = identity)
         r.statements.shouldBeEmpty()
-        r.diagnostics.map { it.code } shouldContain "MSSQL_IDENTITY_CHANGE_NEEDS_REBUILD"
+        r.diagnostics.map { it.code } shouldContain "MSSQL_IDENTITY_COLUMN_NOT_NULLABLE"
     }
 
     test("the diff path renders columns exactly like the generate path") {

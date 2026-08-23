@@ -13,7 +13,8 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * T-SQL-Renderer fuer die Migrations-Pipeline (Sub-Slice 5a des
  * MSSQL-Ausbaus, [ADR 0047]).
  *
- * **Im Umfang**: Tabellen, Spalten und Primaerschluessel (5a), Constraints und
+ * **Im Umfang**: Tabellen, Spalten und Primaerschluessel (5a), der
+ * IDENTITY-Tabellen-Neubau (5a-2, [MssqlRebuildPlanner]), Constraints und
  * Indizes (5b). Alles andere meldet der Dispatcher als
  * `DIALECT_UNSUPPORTED_OPERATION` — teils, weil ein spaeterer Sub-Slice es
  * liefert (Sichten und Custom Types 5c, Sequenzen 5d), teils, weil ein Slice
@@ -54,8 +55,61 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             desiredSchema = diff.desiredSchema,
         )
         val ops = if (direction == MssqlRenderDirection.UP) diff.operations else diff.operations.reversed()
-        for (op in ops) renderOp(op, ctx)
+        renderAll(ops, ctx, diff)
         return ctx.toResult(diff)
+    }
+
+    /**
+     * Operationen der Reihe nach — bis auf die, die ein Tabellen-Neubau
+     * uebernimmt ([MssqlRebuildPlanner]). Deren Eimer laeuft als eine Sequenz,
+     * und zwar an der Stelle seiner **letzten** Operation: damit ist alles
+     * erledigt, was der Planner vor irgendein Eimer-Mitglied sortiert hat —
+     * etwa die Tabelle, auf die ein neuer Fremdschluessel der neu gebauten
+     * Tabelle zeigt.
+     */
+    private fun renderAll(ops: List<DiffOperation>, ctx: MssqlDiffRenderContext, diff: DiffResult) {
+        val classification = MssqlRebuildPlanner.classify(ops, diff.currentSchema, diff.desiredSchema)
+        if (!classification.hasRebuilds) {
+            for (op in ops) renderOp(op, ctx)
+            return
+        }
+        val absorbedBy = classification.rebuilds
+            .flatMap { rebuild -> rebuild.ops.map { it.id to rebuild } }
+            .toMap()
+        val lastOfBucket = classification.rebuilds.associate { it.table to it.ops.last().id }
+        for (op in ops) {
+            val rebuild = absorbedBy[op.id]
+            if (rebuild == null) {
+                renderOp(op, ctx)
+            } else if (op.id == lastOfBucket[rebuild.table]) {
+                renderRebuild(rebuild, ctx)
+            }
+        }
+    }
+
+    /**
+     * Abwaerts gilt fuer den Eimer, was fuer jede einzelne Operation gilt: ist
+     * eine davon nicht umkehrbar, gibt es keinen Rueckweg. Der Neubau darf dann
+     * gar nicht erst laufen — er wuerde die Tabelle in einen Zustand bringen,
+     * aus dem die Operation nicht zurueckfuehrt.
+     */
+    private fun renderRebuild(rebuild: MssqlRebuildPlanner.Rebuild, ctx: MssqlDiffRenderContext) {
+        val (table, _, bucket) = rebuild
+        val irreversible = bucket.filter { it.reversibility == Reversibility.NOT_REVERSIBLE }
+        if (ctx.direction == MssqlRenderDirection.DOWN && irreversible.isNotEmpty()) {
+            val ids = irreversible.joinToString(", ") { it.id }
+            bucket.forEach {
+                ctx.skip(
+                    it,
+                    "Rebuilding table '$table' would have to undo operation(s) $ids, which are NOT_REVERSIBLE; " +
+                        "the renderer cannot reconstruct an inverse for the rebuild as a whole.",
+                    code = "ROLLBACK_NOT_POSSIBLE",
+                )
+            }
+            ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, bucket.map { it.id }.toSet())
+            return
+        }
+        MssqlRebuildRenderer.render(rebuild, ctx)
     }
 
     private fun renderOp(op: DiffOperation, ctx: MssqlDiffRenderContext) {

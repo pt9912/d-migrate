@@ -72,6 +72,26 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
     ): String = columnHelper.generateColumnSql(table, name, col, tableDef, schema, notes)
 
     /**
+     * Dieselbe Spalte, aber Deklaration und benannte Objekte GETRENNT — was der
+     * Tabellen-Neubau braucht ([MssqlRebuildRenderer]): seine Zwischentabelle
+     * darf `df_`/`uq_`/`ck_` noch nicht tragen, weil die alte Tabelle die Namen
+     * bis zu ihrem `DROP` belegt.
+     */
+    fun renderColumn(
+        table: String,
+        name: String,
+        col: ColumnDefinition,
+        tableDef: TableDefinition,
+        schema: SchemaDefinition,
+        notes: MutableList<TransformationNote>,
+    ): MssqlColumnConstraintHelper.ColumnRendering =
+        columnHelper.renderColumn(table, name, col, tableDef, schema, notes)
+
+    /** Ein benanntes Spalten-Objekt als nachgelagertes `ALTER TABLE … ADD CONSTRAINT`. */
+    fun columnObjectStatement(table: String, column: String, obj: MssqlColumnObject): String =
+        columnHelper.alterStatement(table, column, obj)
+
+    /**
      * `ALTER TABLE … ALTER COLUMN` ist in T-SQL eine **Voll-Neudeklaration**:
      * was hier fehlt, ist danach weg. Vor allem gilt das fuer die
      * Nullability — ohne explizites `NOT NULL` wird die Spalte still nullable,
