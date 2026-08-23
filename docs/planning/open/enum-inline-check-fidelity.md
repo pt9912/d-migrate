@@ -123,6 +123,64 @@ treu. Damit faellt die Entscheidung spaetestens mit dem MSSQL-Diff-Pfad
 Das ist kein neues Ticket, sondern ein Datenpunkt zur Priorisierung: mit dem
 vierten Dialekt ist „C" nicht mehr fuer alle Dialekte kostenlos.
 
+## Nachtrag 2026-08-23: die Entscheidung blockiert MSSQL-Sub-Slice 5e
+
+Nach dem Bau der MSSQL-Sub-Slices 5a–5d ist die Lage schärfer als oben
+beschrieben — zwei Dinge sind jetzt belegt statt vermutet.
+
+**1. Der Diff-Pfad rendert den CHECK bereits.** Die frühere Formulierung „mit
+dem MSSQL-Diff-Pfad fällt die Entscheidung" unterstellte, das Rendern sei noch
+offen. Ist es nicht: `CreateTable` und `AddColumn` nutzen seit 5a den
+Spalten-Helfer des Generate-Pfads, `AlterCustomType` fächert seit 5c auf jede
+nutzende Spalte auf, und der CHECK ist seit 5c Teil des
+Abhängigkeits-Tanzes. Generate und migrate bauen dieselbe Tabelle — das war
+nie die Frage.
+
+**2. Der Postcompare schlägt dadurch bei JEDER Enum-Spalte an.**
+[`SchemaMigrateExecutionStage.runPostCompare`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaMigrateExecutionStage.kt)
+vergleicht das nach `--execute` frisch zurückgelesene Ziel gegen das authored
+Soll-Schema, und
+[`MigrationFingerprint`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/MigrationFingerprint.kt)
+führt Constraints namentlich (`constraints[n]`, `constraint=<name>`). Authored
+steht dort ein `enum` ohne Constraint, zurückgelesen ein `ck_<t>_<c>` — die
+Fingerprints unterscheiden sich zwangsläufig. Eine fehlerfrei gelaufene
+Migration meldet damit Drift.
+
+Für Sub-Slice 5e („`schema migrate` ist für mssql nutzbar") ist das kein
+Fidelity-Wunsch mehr, sondern ein Blocker: das Kommando wäre für jedes Schema
+mit Enum-Spalte unbenutzbar.
+
+### Was das für die Gabelung heißt
+
+- **A (Reverse-Rekonstruktion)** hat bei MSSQL einen Unterscheider, den PG und
+  SQLite nicht haben: d-migrate benennt den CHECK selbst
+  (`ck_<tabelle>_<spalte>`, [`MssqlConstraintNames`](../../../adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlConstraintNames.kt)).
+  Ein konventionsbenannter einspaltiger `IN`-Listen-CHECK auf einer
+  NVARCHAR-Spalte ist damit kein Ratespiel. Der Zielkonflikt aus B1 bleibt
+  aber: ADR 0027 verlangt einen konservativen Default, und mit „aus" bleibt der
+  Drift per Default bestehen — 5e wäre weiterhin blockiert.
+- **B (Fold im Vergleich)** löst genau den blockierenden Teil und sonst nichts.
+  Als **symmetrische Normalisierung vor dem Fingerprint** formuliert — auf
+  beiden Seiten Constraints entfernen, die dem Muster „konventionsbenannt +
+  einspaltig + `IN`-Liste über genau diese Spalte" entsprechen — ist die Regel
+  präzise statt heuristisch, und `schema reverse` bleibt zeichengleich.
+- **C (Status quo)** existiert für MSSQL nicht.
+- **D (Rückzug)**, hier der Vollständigkeit halber: den CHECK im
+  MSSQL-Generate-Pfad weglassen und wie PG/SQLite auf `W134` zurückfallen. Das
+  stellt Driftfreiheit her, gibt aber die Werte-Durchsetzung auf, die SQL
+  Server heute als einziger Dialekt hat, und ändert die Goldens.
+
+### Empfehlung
+
+**B, als symmetrische Vor-Fingerprint-Normalisierung** — schmalster Radius, kein
+Konflikt mit ADR 0027, und die Namenskonvention macht die Regel exakt. A bleibt
+danach als eigentlicher Root-Fix möglich, wenn ein treuer Enum-Round-Trip auch
+in `schema reverse` gewünscht ist; die beiden schließen sich nicht aus.
+
+Offen und vom Eigner zu entscheiden bleibt, ob die Normalisierung einen
+Fingerprint-Versionssprung erfordert (gespeicherte Plan-Artefakte tragen den
+Algorithmus-Stempel).
+
 ## Code-Fakten
 
 - Generate rendert bereits treu: PG
