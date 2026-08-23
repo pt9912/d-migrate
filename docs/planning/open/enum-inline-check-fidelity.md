@@ -177,9 +177,53 @@ Konflikt mit ADR 0027, und die Namenskonvention macht die Regel exakt. A bleibt
 danach als eigentlicher Root-Fix möglich, wenn ein treuer Enum-Round-Trip auch
 in `schema reverse` gewünscht ist; die beiden schließen sich nicht aus.
 
-Offen und vom Eigner zu entscheiden bleibt, ob die Normalisierung einen
-Fingerprint-Versionssprung erfordert (gespeicherte Plan-Artefakte tragen den
-Algorithmus-Stempel).
+### Wie die drei bestehenden Dialekte es heute halten (nachgesehen 2026-08-23)
+
+| Dialekt | Enum mit `refType` | Enum inline (nur Werte) |
+| --- | --- | --- |
+| **MySQL** | nativer `ENUM(...)` an der Spalte | nativer `ENUM(...)`; der Reverse liest ihn als `enum` zurück — **das Problem existiert dort nicht** |
+| **PostgreSQL** | nativer `CREATE TYPE … AS ENUM`, round-trippt sauber | *generate*: `TEXT + CHECK (col IN (…))` (unbenannt) — *migrate*: **bare TEXT ohne CHECK** plus lautes `W134` |
+| **SQLite** | wie PG inline | bare TEXT + `W134` |
+| **MS SQL Server** | NVARCHAR(n) + benannter CHECK (kein nativer Typ) | dasselbe |
+
+Zwei von drei Dialekten verzichten im Migrate-Pfad also **bewusst** auf die
+Durchsetzung, nehmen `generate ≠ migrate` in Kauf und machen es über `W134`
+sichtbar. MSSQL ist der Ausreißer, weil sein Spalten-Helfer zwischen beiden
+Pfaden geteilt ist.
+
+**Die Asymmetrie, die gegen ein blosses Nachziehen spricht:** PGs
+`W134`-Hinweis („model the enum as a custom type") ist ein echter Ausweg — dort
+entsteht dann ein nativer Typ. Bei MSSQL gibt es diesen Ausweg nicht, weil auch
+ein `refType`-Enum zu NVARCHAR + CHECK wird. Unter Weg D hätte SQL Server also
+**keine** Möglichkeit, Werte-Durchsetzung über `migrate` zu bekommen.
+
+## Entscheidung (Eigner, 2026-08-23): Weg B
+
+Der Vergleich wird normalisiert, die gerenderte Datenbank bleibt wie sie ist.
+
+**Verfeinerung gegenüber der ursprünglichen Formulierung:** nicht „den CHECK
+auf beiden Seiten entfernen" — das machte eine ganze Constraint-Form für die
+Drift-Erkennung unsichtbar. Stattdessen **beide Darstellungen auf dieselbe
+kanonische Form bringen**: eine Textspalte, über der genau ein CHECK der Form
+`<spalte> IN (<String-Literale>)` liegt, projiziert als `Enum(values)` **ohne**
+diesen Constraint. Damit gilt:
+
+- authored `enum(red, green)` → `Enum([red, green])`
+- zurückgelesen `text(5)` + `CHECK (mood IN ('red','green'))` → `Enum([red, green])`
+- ein absichtlich von Hand geschriebener `IN`-CHECK verhält sich auf beiden
+  Seiten gleich — fehlt er im Ziel, meldet der Vergleich weiterhin Drift.
+
+Die Regel ist formbasiert, nicht namensbasiert, und damit dialektunabhängig.
+
+**Konsequenz, die den Schnitt bestimmt:** die Projektion liegt in
+[`MigrationFingerprint`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/MigrationFingerprint.kt)
+(`hexagon/core`), gilt für **alle** Dialekte, und der Algorithmus-Stempel geht
+selbst in den Hash ein (`schema-fingerprint-v7`). Es braucht also einen
+**v8-Sprung**, und der berührt gespeicherte Plan-Artefakte,
+`allowedPostUpFingerprints` und die Rollback-Drift-Prüfung.
+
+Das ist damit **kein Teil von MSSQL-5e**, sondern ein eigener, dialekt-
+übergreifender Schnitt, von dem 5e abhängt.
 
 ## Code-Fakten
 
