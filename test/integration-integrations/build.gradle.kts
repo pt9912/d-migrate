@@ -19,7 +19,7 @@ dependencies {
 
     testImplementation("org.flywaydb:flyway-core:${rootProject.properties["flywayVersion"]}")
     testImplementation("org.flywaydb:flyway-database-postgresql:${rootProject.properties["flywayVersion"]}")
-    testImplementation("org.liquibase:liquibase-core:4.31.1")
+    testImplementation("org.liquibase:liquibase-core:5.0.4")
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
 }
