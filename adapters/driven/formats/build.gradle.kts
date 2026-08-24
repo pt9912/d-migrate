@@ -35,7 +35,7 @@ dependencies {
     // Vertrags-Guard: validiert ein Voll-Feature-Fixture gegen spec/schema.json
     // (SchemaJsonContractTest), damit das handgepflegte JSON-Schema nicht hinter
     // neutral-model-spec.md / dem Parser zurueckfaellt.
-    testImplementation("com.networknt:json-schema-validator:1.5.4")
+    testImplementation("com.networknt:json-schema-validator:3.0.7")
 }
 
 kover {
