@@ -16,7 +16,9 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -83,6 +85,52 @@ class MssqlRebuildRendererTest : FunSpec({
         columns = linkedMapOf("id" to ColumnDefinition(idType, required = true), *extra),
         primaryKey = listOf("id"),
     )
+
+    // Sub-Slice 7c: der Neubau nimmt die Partitionierung mit, statt zu blocken.
+    // Function und Scheme werden dabei NICHT neu angelegt — sie existieren
+    // bereits, und SQL Server laesst mehrere Tabellen an demselben Scheme
+    // haengen. Die Zwischentabelle haengt sich an das vorhandene.
+    fun partitionedUsers(idType: NeutralType) = users(idType).copy(
+        partitioning = PartitionConfig(
+            type = PartitionType.RANGE,
+            key = listOf("id"),
+            partitions = listOf(
+                PartitionDefinition(
+                    name = "p_low",
+                    from = listOf(PartitionBound.MinValue),
+                    to = listOf(PartitionBound.Value("100")),
+                ),
+                PartitionDefinition(
+                    name = "p_high",
+                    from = listOf(PartitionBound.Value("100")),
+                    to = listOf(PartitionBound.MaxValue),
+                ),
+            ),
+        ),
+    )
+
+    test("a rebuild carries the partitioning over instead of dropping it") {
+        val current = schema("users" to partitionedUsers(NeutralType.Integer))
+        val desired = schema("users" to partitionedUsers(NeutralType.Identifier(autoIncrement = true)))
+        val result = up(identityAddedDiff(), current, desired)
+        val sqls = result.statements.map { it.sql }
+
+        result.blockers.shouldBeEmpty()
+        val create = sqls.single { it.startsWith("CREATE TABLE [users__dmg_rebuild_") }
+        // Der Scheme-Name folgt der ECHTEN Tabelle, nicht dem Zwischennamen.
+        create shouldContainStr ") ON [ps_users] ([id]);"
+        // Das Scheme existiert bereits — der Neubau legt es nicht noch einmal an.
+        sqls.none { it.contains("CREATE PARTITION SCHEME") } shouldBe true
+        sqls.none { it.contains("CREATE PARTITION FUNCTION") } shouldBe true
+    }
+
+    test("a rebuild whose partitioning would change blocks — it can carry, not alter") {
+        val current = schema("users" to partitionedUsers(NeutralType.Integer))
+        val desired = schema("users" to users(NeutralType.Identifier(autoIncrement = true)))
+        val result = up(identityAddedDiff(), current, desired)
+
+        result.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+    }
 
     test("the sequence is create, copy, drop, rename — in that order") {
         val current = schema("users" to users(NeutralType.Integer))

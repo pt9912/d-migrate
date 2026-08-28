@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.0  ·  **Stand:** 28.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.1  ·  **Stand:** 28.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 (im Ausbau — dort noch nicht verfügbar: `data profile`)
 
@@ -1797,10 +1797,21 @@ nennt).
 
 **Ergebnis:** Partitionierungs-DDL für Ziele, die das Konzept unterstützen.
 
+**Das gilt für beide Wege** — `schema generate` aus einer Schemadatei **und**
+`schema migrate` gegen eine laufende Datenbank. Eine Tabelle, die neu entsteht,
+entsteht auf beiden Wegen gleich partitioniert.
+
 **Hinweise:**
 
 - Zielsysteme ohne Partitionierungsunterstützung blockieren mit **E055**
   („Partitioning is not supported in the target dialect").
+- **Kann ein Ziel die Partitionierung nicht ausdrücken, bricht `schema migrate`
+  ab, statt die Tabelle unpartitioniert anzulegen.** Das betrifft auch
+  Definitionen ohne Partitionsgrenzen: PostgreSQL nähme in eine solche Tabelle
+  keine einzige Zeile auf, und MySQL weist sie zurück.
+- **Bei MySQL schließen Partitionierung und Fremdschlüssel einander aus.** Eine
+  partitionierte Tabelle wird ohne ihre Fremdschlüssel angelegt, gemeldet mit
+  **E065** — MySQL unterstützt beides nicht gemeinsam.
 - **SQL Server partitioniert ausschließlich nach `range` über eine Spalte.**
   `list` und `hash` blockieren dort mit **E055**. Der Grund ist keine
   Einschränkung des Werkzeugs: SQL Server kennt nur RANGE.
@@ -2733,6 +2744,7 @@ custom_types:
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
 | 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
+| 1.1 | 28.08.2026 | `schema migrate` legt partitionierte Tabellen jetzt partitioniert an — auf allen Dialekten, die das Konzept kennen. Bis dahin erzeugte der Migrationspfad bei PostgreSQL und MySQL eine **unpartitionierte** Tabelle, ohne das zu melden; bei SQL Server brach er ab. Neu dokumentiert: der Abbruch bei nicht ausdrückbarer Partitionierung und der Ausschluss von Fremdschlüsseln auf partitionierten MySQL-Tabellen (**E065**). |
 | 1.0 | 28.08.2026 | Der Ablageort partitionierter Daten lässt sich jetzt auch in der Konfigurationsdatei hinterlegen (`ddl.mssql.partition_storage`) statt nur als Flag je Aufruf; Abschnitt 3.20 nennt die Vorrangregel und den Abbruch bei ungültigem Wert. |
 | 0.9 | 28.08.2026 | SQL Server partitioniert: Abschnitt 3.20 nennt die `range`-Beschränkung, die zwei zusätzlichen Objekte je Tabelle (**W144**) und die Filegroup-Frage; neue Option `--partition-storage` in der Befehlsreferenz. |
 

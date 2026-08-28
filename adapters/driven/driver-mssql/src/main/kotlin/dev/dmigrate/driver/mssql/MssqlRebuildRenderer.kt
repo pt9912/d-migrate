@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.TableDefinition
@@ -58,17 +59,31 @@ internal object MssqlRebuildRenderer {
                 reason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
             )
         }
-        // Der Neubau legt die Tabelle als gewoehnliche an — ohne `ON <scheme>`.
-        // Seit dem Generate-Pfad Partition Function und Scheme rendert, ist das
-        // keine Unmoeglichkeit mehr, sondern unfertige Arbeit: der Neubau muesste
-        // die Partitionierung mit anlegen. Bis dahin blockt er, denn eine
-        // partitionierte Tabelle als gewoehnliche neu aufzubauen waere ein
-        // stiller Verlust, kein Teilerfolg.
-        if (target.partitioning != null || source.partitioning != null) {
+        // Sub-Slice 7c: der Neubau erhaelt die Partitionierung, statt zu blocken.
+        //
+        // Anders als beim `CreateTable` werden Function und Scheme hier NICHT
+        // angelegt — sie existieren bereits, denn die Tabelle ist da. SQL Server
+        // laesst mehrere Tabellen an demselben Scheme haengen (genau dafuer sind
+        // es eigenstaendige Objekte), also haengt sich die Zwischentabelle an das
+        // vorhandene und behaelt es ueber den Rename hinweg.
+        //
+        // Zwei Faelle bleiben geblockt, und beide aus einem Grund: der Neubau
+        // kann die Partitionierung nicht AENDERN, nur mitnehmen.
+        val partitioning = target.partitioning
+        if (partitioning != source.partitioning) {
             return blockBucket(
                 bucket, ctx,
-                "Table '$table' is partitioned, and rebuilding it here would drop the partitioning: this " +
-                    "path recreates the table without its partition scheme.",
+                "Table '$table' would be rebuilt while its partitioning changes; this path carries the " +
+                    "existing partition scheme over and cannot alter it.",
+                code = "DIALECT_UNSUPPORTED_OPERATION",
+                reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
+            )
+        }
+        if (partitioning != null && !MssqlPartitionDdl.isRenderable(partitioning)) {
+            return blockBucket(
+                bucket, ctx,
+                "Table '$table' is partitioned in a way SQL Server cannot express, and rebuilding it here " +
+                    "would drop the partitioning.",
                 code = "DIALECT_UNSUPPORTED_OPERATION",
                 reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
             )
@@ -127,7 +142,7 @@ internal object MssqlRebuildRenderer {
         MssqlRebuildPlanner.inboundForeignKeysPresent(sourceSchema, table, createdSoFar).forEach {
             statements += ctx.sql.dropConstraintIfTableExistsSql(it.childTable, it.constraint.name)
         }
-        statements += createTempTableSql(temp, declarations, ctx)
+        statements += createTempTableSql(temp, table, declarations, target.partitioning, ctx)
         statements += copy
         statements += "DROP TABLE ${ctx.sql.quote(table)};"
         statements += ctx.sql.renameSql(temp, table)
@@ -157,12 +172,28 @@ internal object MssqlRebuildRenderer {
         return Resolved(statements, notes)
     }
 
+    /**
+     * Die Zwischentabelle haengt sich an das **bestehende** Scheme der Tabelle —
+     * das der Rebuild-Guard oben als unveraendert festgestellt hat. Der
+     * Scheme-Name folgt der Tabelle, nicht dem Zwischennamen; nach dem Rename
+     * steht die Tabelle also wieder auf demselben Objekt wie vorher.
+     */
     private fun createTempTableSql(
         temp: String,
+        table: String,
         declarations: List<String>,
+        partitioning: PartitionConfig?,
         ctx: MssqlDiffRenderContext,
-    ): String = "CREATE TABLE ${ctx.sql.quote(temp)} (\n" +
-        declarations.joinToString(",\n") { "    $it" } + "\n);"
+    ): String {
+        // Der Scheme-Name leitet sich vom ECHTEN Tabellennamen ab, nicht vom
+        // Zwischennamen: `tempTableName` kuerzt lange Namen, und aus dem
+        // Ergebnis liesse sich das Original nicht zurueckrechnen.
+        val onClause = partitioning
+            ?.let { MssqlPartitionDdl.onClause(table, it, ctx.sql::quote) }
+            .orEmpty()
+        return "CREATE TABLE ${ctx.sql.quote(temp)} (\n" +
+            declarations.joinToString(",\n") { "    $it" } + "\n)$onClause;"
+    }
 
     /**
      * Die Kopie. Eine Zielspalte ohne Quelle wird aus ihrem Default gefuellt —

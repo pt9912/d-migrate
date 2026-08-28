@@ -102,6 +102,11 @@ entries:
     evidence_paths:
       - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
         path_type: production
+      # Seit dem Partitions-Fix im Migrationspfad meldet auch der Diff diesen
+      # Code — vorher rendete er Partitionierung gar nicht und kam an die
+      # FK-Regel nie heran.
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDiffTableOps.kt"
+        path_type: production
 
   - code: E124
     level: error

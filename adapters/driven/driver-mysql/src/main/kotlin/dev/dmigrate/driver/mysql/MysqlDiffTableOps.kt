@@ -2,12 +2,14 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -39,9 +41,37 @@ internal object MysqlDiffTableOps {
         if (sequenceColumns.isNotEmpty() && !MysqlDiffSequenceOps.requireHelperModeForColumnDefault(op, ctx)) {
             return
         }
+        // Partitionierung VOR den Spalten aufloesen: sie entscheidet mit, ob eine
+        // Fremdschluessel-Klausel ueberhaupt gerendert werden darf, und ein nicht
+        // renderbarer Fall muss blocken, bevor irgendetwas emittiert ist.
+        // Vorher rendete dieser Pfad Partitionierung GAR NICHT — eine Migration
+        // legte die Tabelle flach an, ohne Blocker und ohne Diagnose.
+        val partitionNotes = mutableListOf<TransformationNote>()
+        val partitionClause = op.table.partitioning
+            ?.let { MysqlIndexPartitionDdlHelper(ctx.sql::quote).generatePartitionClause(it, op.table.columns, partitionNotes) }
+            .orEmpty()
+        if (op.table.partitioning != null && partitionClause.isBlank()) {
+            return blockUnrenderablePartitioning(op, ctx, tableName, partitionNotes)
+        }
+        val isPartitioned = partitionClause.isNotBlank()
         val lines = mutableListOf<String>()
         for ((colName, col) in op.table.columns.inOrdinalOrder()) {
-            lines += "    " + ctx.sql.columnLine(colName, col)
+            // ADR 0020: MySQL verbietet Fremdschluessel auf partitionierten
+            // Tabellen. Der Generate-Pfad laesst sie mit einer Note fallen; der
+            // Migrationspfad muss dasselbe tun, sonst erzeugt er DDL, die der
+            // Server zurueckweist.
+            val effective = if (isPartitioned && col.references != null) {
+                ctx.warning(
+                    op,
+                    "Foreign key on column '$colName' of partitioned table `$tableName` was dropped: " +
+                        "MySQL does not support foreign keys on partitioned tables.",
+                    code = "E065",
+                )
+                col.copy(references = null)
+            } else {
+                col
+            }
+            lines += "    " + ctx.sql.columnLine(colName, effective)
         }
         if (op.table.primaryKey.isNotEmpty()) {
             // I-07: an AUTO_INCREMENT column must lead a composite PK (ERROR 1075).
@@ -57,14 +87,28 @@ internal object MysqlDiffTableOps {
             lines += "    PRIMARY KEY (" + ordered.columns.joinToString(", ") { ctx.sql.quote(it) } + ")"
         }
         for (c in op.table.constraints.sortedBy { it.name }) {
+            if (isPartitioned && c.type == ConstraintType.FOREIGN_KEY) {
+                ctx.warning(
+                    op,
+                    "Foreign key constraint '${c.name}' on partitioned table `$tableName` was dropped: " +
+                        "MySQL does not support foreign keys on partitioned tables.",
+                    code = "E065",
+                )
+                continue
+            }
             ctx.sql.constraintLine(c)?.let { lines += "    $it" }
         }
         val text = buildString {
             append("CREATE TABLE ").append(ctx.sql.quote(tableName)).append(" (\n")
             append(lines.joinToString(",\n"))
-            append("\n);")
+            append("\n)")
+            if (isPartitioned) append("\n").append(partitionClause)
+            append(";")
         }
         ctx.emit(op, text)
+        partitionNotes.forEach { note ->
+            ctx.warning(op, note.message, code = note.code ?: "W112")
+        }
         for ((colName, col) in op.table.columns.inOrdinalOrder()) warnIfDegradingEnum(op, ctx, colName, col)
         for (idx in op.table.indices) {
             // VA3: ein Index auf eine Geometriespalte → MySQL SPATIAL INDEX (statt
@@ -95,6 +139,31 @@ internal object MysqlDiffTableOps {
                 op, ctx, tableName, colName, seqDefault.sequenceName,
             )
         }
+    }
+
+    /**
+     * Der Generate-Pfad faellt bei nicht renderbarer Partitionierung (leere
+     * RANGE/LIST-Definition, nicht abbildbarer Schluesseltyp) auf eine flache
+     * Tabelle zurueck und meldet `E055`/`E062`. Im Migrationspfad waere das
+     * falsch: die flache Tabelle bliebe stehen und naehme Daten auf, die nie
+     * partitioniert werden. Deshalb blockt es hier — mit dem Grund, den der
+     * Helfer ohnehin schon ermittelt hat.
+     */
+    private fun blockUnrenderablePartitioning(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        tableName: String,
+        notes: List<TransformationNote>,
+    ) {
+        val reason = notes.firstOrNull { it.type == dev.dmigrate.driver.NoteType.ACTION_REQUIRED }?.message
+            ?: "the partitioning definition cannot be rendered for MySQL"
+        ctx.skip(
+            op,
+            "Operation ${op.id} would create table `$tableName` with partitioning that MySQL cannot " +
+                "express: $reason Creating it unpartitioned would silently drop the partitioning.",
+            code = "PARTITIONING_UNRENDERABLE",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 
     /**

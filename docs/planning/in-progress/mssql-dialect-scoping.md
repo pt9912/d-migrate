@@ -753,8 +753,25 @@ Das Vorbild liefert gleich die ganze Bauform:
 | --- | --- | --- |
 | **7a** ✅ | Reverse: Partition Function, Scheme und Grenzen aus `sys.partition_*`; Kindnamen synthetisiert (`R346`). `RANGE LEFT` wird **nicht** umgerechnet, trägt aber die Partitionierung ohne Kinder (`R347`) — mit `null` wäre der Rebuild-Wächter blind, der eine partitionierte Tabelle vor dem Neubau schützt. Grenzliterale gegen **beide** Server gemessen: `datetime2` brauchte eine Korrektur (`java.sql.Timestamp` hängt `.0` an), `decimal` nicht (beide liefern `1.50`) | `schema reverse` liest partitionierte Tabellen |
 | **7b** ✅ | Generate RANGE: Function + Scheme + `ON ps(spalte)`, Filegroups über ein Profil in `DdlGenerationOptions` (Default `[PRIMARY]`). Dabei zu klären, was der Review offenließ: ob ein **clustered Columnstore**-Index eine `partition_ordinal`-Zeile führt (eine Tabelle mit clustered Index entsteht hier ohnehin); ob Function und Scheme, die in SQL Server **geteilte** Objekte sind, pro Tabelle dupliziert werden dürfen; und das `N`-Präfix für `nvarchar`-Grenzen | `schema generate --target mssql` partitioniert. Die drei offenen Fragen sind beantwortet: je Tabelle ein eigenes Function/Scheme-Paar (`W144`, die Teilung ist aus dem Modell nicht rekonstruierbar); `N`-Präfix für Zeichenketten-Grenzen; und eine Tabelle mit **clustered** Index findet ihre Partitionierungsspalte über `partition_ordinal` — live belegt, bis dahin waren alle Testtabellen Heaps |
-| **7c** | Diff: Partitionierungs-Operationen rendern statt blocken; `SPLIT`/`MERGE RANGE` für Grenzänderungen. **Dabei zu entscheiden:** ob der Tabellen-Neubau (`MssqlRebuildRenderer`) eine partitionierte Tabelle künftig mit ihrem Scheme neu anlegt oder bewusst geblockt bleibt. Er blockt heute, weil der Neubau die Partitionierung still verlöre — seit 7b ist das keine Unmöglichkeit mehr, sondern unfertige Arbeit | `schema migrate` führt Partitionierung aus |
+| **7c** ✅ | Diff: Partitionierungs-Operationen rendern statt blocken. **Entschieden:** der Neubau (`MssqlRebuildRenderer`) nimmt die Partitionierung mit, statt zu blocken — Function und Scheme existieren beim Neubau bereits, und SQL Server lässt mehrere Tabellen an demselben Scheme hängen, also hängt sich die Zwischentabelle an das vorhandene. Geblockt bleibt nur, was der Neubau nicht kann: die Partitionierung **ändern** | `schema migrate` legt partitionierte Tabellen an, live gegen echtes SQL Server belegt; der Rückbau entfernt Scheme und Function nach der Tabelle (`DROP TABLE` allein lässt sie stehen). **Nicht geliefert:** `SPLIT`/`MERGE RANGE` für Grenzänderungen — dafür gibt es im neutralen Modell keine Operation, siehe unten |
 | **7d** | HASH-Emulation als Modus-Gate nach Sequenz-Vorbild: persistierte berechnete Spalte + RANGE, modusspezifischer Validator, Bruchstellen als E-Codes | HASH-Partitionierung nutzbar |
+
+**Was 7c nicht liefern konnte, und warum es kein MSSQL-Thema ist:** Eine
+Grenzänderung an einer bestehenden Tabelle (`SPLIT`/`MERGE RANGE`) hat im
+neutralen Modell **keine** Operation. `OperationMapper.mapTablePartitioning`
+meldet für alle vier Dialekte eine Warnung (`PARTITIONING_CHANGE_NOT_APPLIED`)
+und emittiert nichts — die Partitionierung einer Tabelle lässt sich nicht in
+place ändern. Ein MSSQL-Renderer könnte das also nicht rendern, weil ihm nie
+etwas zu rendern gegeben wird. Der Weg dahin führt über eine neue
+`DiffOperation` im Hexagon und trifft alle Dialekte zugleich (PostgreSQL:
+`ATTACH`/`DETACH PARTITION`, MySQL: `ADD`/`DROP`/`REORGANIZE PARTITION`).
+
+**Nebenbefund aus 7c, cross-dialekt und schwerer als der Slice selbst:** Der
+Migrationspfad legte eine partitionierte Tabelle bei **PostgreSQL und MySQL
+unpartitioniert** an — ohne Blocker, ohne Diagnose. MSSQL war der einzige
+Dialekt, der das korrekt behandelte (durch Blocken). Gemessen und behoben,
+bevor 7c gebaut wurde; beide Generate-Pfade konnten es längst, nur die
+Diff-Pfade waren nie angeschlossen.
 
 **Ausgegliedert:** das `partition-mapping`-Overlay (Kindnamen und LIST→RANGE) —
 geplant als [`partition-mapping-overlay.md`](../next/partition-mapping-overlay.md).

@@ -555,6 +555,100 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
             tmp.toFile().deleteRecursively()
         }
     }
+
+    // Sub-Slice 7c: `schema migrate` legt eine partitionierte Tabelle an. Vorher
+    // blockte dieser Pfad. Der Beleg ist nicht das gerenderte DDL, sondern dass
+    // der Server es annimmt — Partition Function und Scheme sind eigenstaendige
+    // Objekte mit eigener Reihenfolge, und ein Fehler darin faellt erst hier auf.
+    test("migrate creates a partitioned table on the real server") {
+        val tmp = createTempDirectory("mssql-partition-migrate")
+        try {
+            val desired = SchemaDefinition(
+                name = "part-desired",
+                version = "1",
+                tables = mapOf(
+                    "events" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "bucket" to ColumnDefinition(NeutralType.Integer, required = true),
+                        ),
+                        partitioning = dev.dmigrate.core.model.PartitionConfig(
+                            type = dev.dmigrate.core.model.PartitionType.RANGE,
+                            key = listOf("bucket"),
+                            partitions = listOf(
+                                dev.dmigrate.core.model.PartitionDefinition(
+                                    name = "p_low",
+                                    from = listOf(dev.dmigrate.core.model.PartitionBound.MinValue),
+                                    to = listOf(dev.dmigrate.core.model.PartitionBound.Value("100")),
+                                ),
+                                dev.dmigrate.core.model.PartitionDefinition(
+                                    name = "p_high",
+                                    from = listOf(dev.dmigrate.core.model.PartitionBound.Value("100")),
+                                    to = listOf(dev.dmigrate.core.model.PartitionBound.MaxValue),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+
+            val errors = mutableListOf<String>()
+            val executed = mutableListOf<String>()
+            val migrateExit = SchemaMigrateRunner(
+                fileLoader = { _ ->
+                    ResolvedSchemaOperand(reference = "desired", schema = desired, validation = ValidationResult())
+                },
+                dbLoader = { _, _ -> liveOperand(pool) },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                targetAwareComparator = { left, right, canonicalize ->
+                    SchemaComparator(canonicalize).compare(left, right)
+                },
+                rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
+                executor = { _, _, segments, _, _ ->
+                    val stmts = segments.flatMap { it.statements }
+                    executed += stmts.map { it.sql }
+                    executeAgainstPool(pool, stmts)
+                },
+                renderReport = { r, _ -> r.toString() },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored-desired.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.MSSQL,
+                    report = tmp.resolve("report.json"),
+                    execute = true,
+                ),
+            )
+
+            withClue(
+                "migrate meldete $migrateExit\nausgefuehrt:\n" + executed.joinToString("\n") +
+                    "\nmeldungen:\n" + errors.joinToString("\n"),
+            ) {
+                // Exit 5 waere hier NICHT der Ausfuehrungsfehler, sondern der
+                // Post-Compare: die Kindnamen ueberleben SQL Server nicht (R346),
+                // der Server nummeriert sie. Genau der Fall, fuer den das
+                // partition-mapping-Overlay geplant ist.
+                (migrateExit == 0 || migrateExit == 5) shouldBe true
+            }
+            executed.any { it.contains("CREATE PARTITION FUNCTION") } shouldBe true
+
+            // Der eigentliche Nachweis: der Server hat die Tabelle partitioniert
+            // angelegt — zwei Grenzen, ein Schluessel.
+            val readBack = readSchema(pool).tables.getValue("events")
+            val partitioning = readBack.partitioning
+            withClue("die zurueckgelesene Tabelle traegt keine Partitionierung") {
+                (partitioning != null) shouldBe true
+            }
+            partitioning!!.key shouldBe listOf("bucket")
+            partitioning.partitions.size shouldBe 2
+        } finally {
+            execDdl(pool, "IF OBJECT_ID('events') IS NOT NULL DROP TABLE events")
+            runCatching { execDdl(pool, "DROP PARTITION SCHEME ps_events") }
+            runCatching { execDdl(pool, "DROP PARTITION FUNCTION pf_events") }
+            tmp.toFile().deleteRecursively()
+        }
+    }
 })
 
 private fun noRenderer(): DiffDdlGenerator = error("test wires only the MSSQL renderer")

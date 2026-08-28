@@ -470,14 +470,17 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
-    test("a partitioned CreateTable still blocks — this path does not render partitioning") {
+    // Seit Sub-Slice 7c rendert dieser Pfad RANGE-Partitionierung. Was bleibt,
+    // ist der Fall, den SQL Server nicht ausdruecken kann — hier: eine
+    // RANGE-Definition ohne Kinder.
+    test("partitioning SQL Server cannot express still blocks") {
         val t = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
             partitioning = PartitionConfig(type = PartitionType.RANGE, key = listOf("id")),
         )
         val r = up(SchemaDiff(tablesAdded = listOf(NamedTable("t", t))), desired = schema("t" to t))
         r.statements.shouldBeEmpty()
-        r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }.message shouldContainStr "partitioned"
+        r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }.message shouldContainStr "cannot express"
     }
 
     test("a full-text index blocks instead of vanishing") {

@@ -55,12 +55,34 @@ internal object PostgresDiffTableOps {
         for (c in op.table.constraints.sortedBy { it.name }) {
             ctx.sql.constraintLine(c)?.let { lines += "    $it" }
         }
+        // Partitionierung gehoert an die CREATE-TABLE-Klammer und ihre Kinder
+        // hinterher. Ohne das legte eine Migration die Tabelle FLACH an — ohne
+        // Blocker, ohne Diagnose, ohne dass irgendetwas fehlschluege. Der
+        // Generate-Pfad konnte es laengst; nur dieser hier nicht.
+        val partitioning = op.table.partitioning
+        val emitPartitioning = PostgresPartitionClauses.isRenderable(partitioning)
+        if (partitioning != null && !emitPartitioning) {
+            // Ein `PARTITION BY` ohne Kinder nimmt in PostgreSQL keine Zeile an.
+            // Der Generate-Pfad meldet das als E055; hier ist es ein Blocker,
+            // weil eine Migration die Tabelle sonst als brauchbar hinterliesse.
+            blockChildlessPartitioning(op, ctx, tableName, partitioning.type.name)
+            return
+        }
         val text = buildString {
             append("CREATE TABLE ").append(ctx.sql.quote(tableName)).append(" (\n")
             append(lines.joinToString(",\n"))
-            append("\n);")
+            append("\n)")
+            if (emitPartitioning) {
+                append(PostgresPartitionClauses.partitionByClause(partitioning!!, ctx.sql::quote))
+            }
+            append(";")
         }
         ctx.emit(op, text)
+        if (emitPartitioning) {
+            PostgresPartitionClauses
+                .childStatements(tableName, partitioning!!, ctx.sql::quote)
+                .forEach { ctx.emit(op, it) }
+        }
         for ((colName, col) in op.table.columns.inOrdinalOrder()) warnIfDegradingEnum(op, ctx, colName, col)
         for (index in resolvedIndices) {
             ctx.emit(op, ctx.sql.createIndexSql(tableName, index))
@@ -304,6 +326,29 @@ internal object PostgresDiffTableOps {
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
         return true
+    }
+
+    /**
+     * Eine Partitionierung ohne Kinder ist in PostgreSQL nicht renderbar: die
+     * Tabelle naehme keine Zeile an. Der Generate-Pfad faellt dafuer auf eine
+     * flache Tabelle zurueck und meldet `E055` — im Migrationspfad waere das
+     * falsch, weil die flache Tabelle danach benutzbar aussieht und Daten
+     * aufnimmt, die nie partitioniert werden.
+     */
+    private fun blockChildlessPartitioning(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        tableName: String,
+        strategy: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} would create table `$tableName` with $strategy partitioning but no child " +
+                "partitions; PostgreSQL would reject every insert into it. Define the partition boundaries " +
+                "or remove the partitioning configuration.",
+            code = "PARTITIONING_WITHOUT_CHILDREN",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 
     private fun blockSpatialIndex(

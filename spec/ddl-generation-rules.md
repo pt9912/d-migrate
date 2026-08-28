@@ -959,14 +959,20 @@ ausdrücken lässt; die Tabelle bleibt als partitioniert vermerkt (R347).
 
 | Neutral | PostgreSQL | MySQL | SQLite | MSSQL |
 |---|---|---|---|---|
-| `range` | `PARTITION BY RANGE` | `PARTITION BY RANGE` | Nicht unterstützt | Nicht gerendert (E055) |
-| `list` | `PARTITION BY LIST` | `PARTITION BY LIST` | Nicht unterstützt | Nicht gerendert (E055) |
-| `hash` | `PARTITION BY HASH` | `PARTITION BY HASH` | Nicht unterstützt | Nicht gerendert (E055) |
+| `range` | `PARTITION BY RANGE` | `PARTITION BY RANGE` | Nicht unterstützt | Partition Function + Scheme, `ON ps_<tabelle>` |
+| `list` | `PARTITION BY LIST` | `PARTITION BY LIST` | Nicht unterstützt | Abbildung auf `range` (Abschnitt 9.4) |
+| `hash` | `PARTITION BY HASH` | `PARTITION BY HASH` | Nicht unterstützt | Emulation über berechnete Spalte (Abschnitt 9.4) |
 
-MSSQL: SQL Server partitioniert über Partition Functions, Schemes und
-Filegroups — Objekte, die das neutrale Modell nicht trägt. Eine
-`partitioning`-Konfiguration erzeugt die Tabelle plain und `action_required`
-E055 mit dem Hinweis auf die manuelle Einrichtung.
+Die Regeln gelten für **beide** Wege, die DDL erzeugen: die Generierung aus
+einer Schemadatei und den Migrationspfad. Eine Tabelle, die auf einem der
+beiden Wege partitioniert entsteht, entsteht es auf dem anderen ebenso — wo
+ein Dialekt die Partitionierung nicht ausdrücken kann, bricht der Lauf ab,
+statt eine unpartitionierte Tabelle zu hinterlassen.
+
+Für SQL Server gilt dabei zusätzlich, dass Partition Function und Scheme
+eigenständige Datenbankobjekte sind: sie entstehen vor der Tabelle und werden
+beim Rückbau nach ihr wieder entfernt. `DROP TABLE` allein räumt sie nicht mit
+weg.
 
 ---
 
@@ -1721,7 +1727,10 @@ den Objekttyp nicht unterstützt, z. B. Composite Types, EXCLUDE-Constraints,
 SQLite-Functions oder SQLite-Procedures.
 
 **E055 (Partitionierung)**: Wird erzeugt, wenn die konfigurierte
-Partitionierung im Zieldialekt nicht unterstützt wird.
+Partitionierung im Zieldialekt nicht ausdrückbar ist — etwa eine Strategie, die
+er nicht kennt, oder eine Definition ohne Kinder. Im Migrationspfad ist das ein
+Abbruch: eine unpartitionierte Tabelle zurückzulassen wäre kein Teilerfolg,
+sondern ein stiller Verlust.
 
 **E056 (Sequence-/Emulationsfall)**: Wird erzeugt, wenn eine benannte Sequence
 im Zieldialekt nicht nativ erzeugt werden kann und manuelle Emulation oder

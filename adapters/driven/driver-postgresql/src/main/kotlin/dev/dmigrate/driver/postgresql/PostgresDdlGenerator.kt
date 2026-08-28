@@ -123,7 +123,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         // found for row"). Emit partitioning only when child partitions exist;
         // otherwise fall back to a plain table and flag it (like MySQL's E055).
         val partitioning = table.partitioning
-        val emitPartitioning = partitioning != null && partitioning.partitions.isNotEmpty()
+        val emitPartitioning = PostgresPartitionClauses.isRenderable(partitioning)
         if (partitioning != null && !emitPartitioning) {
             notes += TransformationNote(
                 type = NoteType.ACTION_REQUIRED,
@@ -141,8 +141,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             append(columnLines.joinToString(",\n") { "    $it" })
             append("\n)")
             if (emitPartitioning) {
-                val key = partitioning!!.key.joinToString(", ") { quoteIdentifier(it) }
-                append(" PARTITION BY ${partitioning.type.name} ($key)")
+                append(PostgresPartitionClauses.partitionByClause(partitioning!!, ::quoteIdentifier))
             }
             append(";")
         }
@@ -150,9 +149,9 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
         // Sub-partitions
         if (emitPartitioning) {
-            for (partition in partitioning!!.partitions) {
-                statements += generatePartitionStatement(name, partition, partitioning.type)
-            }
+            statements += PostgresPartitionClauses
+                .childStatements(name, partitioning!!, ::quoteIdentifier)
+                .map { DdlStatement(it) }
         }
 
         return statements
@@ -176,57 +175,6 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     private fun generateConstraintClause(constraint: ConstraintDefinition): String =
         columnConstraintHelper.generateConstraintClause(constraint)
-
-    private fun generatePartitionStatement(
-        parentTable: String,
-        partition: PartitionDefinition,
-        type: PartitionType
-    ): DdlStatement {
-        val sql = buildString {
-            append("CREATE TABLE ${quoteIdentifier(partition.name)} PARTITION OF ${quoteIdentifier(parentTable)}")
-            if (partition.isDefault) {
-                append(" DEFAULT")
-            } else when (type) {
-                PartitionType.RANGE -> {
-                    val from = renderRangeBounds(partition.from, "FROM", partition.name)
-                    val to = renderRangeBounds(partition.to, "TO", partition.name)
-                    append(" FOR VALUES FROM ($from) TO ($to)")
-                }
-                PartitionType.LIST -> {
-                    val vals = partition.values.orEmpty()
-                        .joinToString(", ") { PartitionLiteralGuard.ensureSafe(it, partition.name) }
-                    append(" FOR VALUES IN ($vals)")
-                }
-                PartitionType.HASH -> {
-                    val modulus = requireNotNull(partition.modulus) {
-                        "HASH partition '${partition.name}' must have a modulus"
-                    }
-                    val remainder = requireNotNull(partition.remainder) {
-                        "HASH partition '${partition.name}' must have a remainder"
-                    }
-                    append(" FOR VALUES WITH (MODULUS $modulus, REMAINDER $remainder)")
-                }
-            }
-            append(";")
-        }
-        return DdlStatement(sql)
-    }
-
-    private fun renderRangeBounds(
-        bounds: List<PartitionBound>?,
-        clause: String,
-        partitionName: String
-    ): String {
-        requireNotNull(bounds) { "Partition '$partitionName' $clause bound must not be null" }
-        require(bounds.isNotEmpty()) { "Partition '$partitionName' $clause bound must not be empty" }
-        return bounds.joinToString(", ") { bound ->
-            when (bound) {
-                PartitionBound.MinValue -> "MINVALUE"
-                PartitionBound.MaxValue -> "MAXVALUE"
-                is PartitionBound.Value -> PartitionLiteralGuard.ensureSafe(bound.literal, partitionName)
-            }
-        }
-    }
 
     // ── Indices ──────────────────────────────────
 
