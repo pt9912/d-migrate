@@ -1,0 +1,125 @@
+version: "1.1.0"
+entries:
+  # Uebernommen aus error-code-ledger-0.9.7.yaml: die Datei einer aelteren Version
+  # wird nicht mehr veraendert (spec/ledger.md, Dateikonvention).
+  - code: E125
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaSequenceValidationRulesTest.kt"
+    evidence_paths:
+      - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaSequenceValidationRules.kt"
+        path_type: production
+
+  - code: E059
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteHelperTableSequenceValidatorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteHelperTableSequenceValidator.kt"
+        path_type: production
+
+  - code: E057
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupportTriggerTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupport.kt"
+        path_type: production
+
+  - code: E058
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceRollbackPreflightTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceEmulationTemplates.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt"
+        path_type: production
+      - source: "test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceCompareIntegrationTest.kt"
+        path_type: test
+
+  - code: E060
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceRollbackPreflightTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceEmulationTemplates.kt"
+        path_type: production
+
+  # E061 — AP6.2/ADR 0020: non-UTC timezone offset on a partition bound; stripping would shift the boundary.
+  - code: E061
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+
+  # E062 — AP6.2/ADR 0020: partition key type unsupported by MySQL (RANGE/LIST COLUMNS need INT/DATE/CHAR; HASH needs integer).
+  - code: E062
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+
+  # E063 — AP6.2/ADR 0020: LIST DEFAULT partition has no MySQL equivalent → dropped (transfer data loss).
+  - code: E063
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+
+  # E064 — AP6.3/ADR 0020 §5: UNIQUE child-local partition index cannot be lifted to MySQL
+  # (would need every partition-key column / partition-local ≠ global uniqueness) → skipped.
+  - code: E064
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlPartitionIndexLiftTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+
+  # E065 — AP6.3/ADR 0020 §5: MySQL/InnoDB supports no foreign keys on partitioned tables
+  # (either direction); a FK on/referencing a partitioned table is skipped.
+  - code: E065
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlPartitionForeignKeyTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
+        path_type: production
+
+  - code: E124
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupportCollisionTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupport.kt"
+        path_type: production
+  # E066 — mehr als ein Index beansprucht die Ablage der Tabelle. Im neutralen
+  # Modell ausdrueckbar, in T-SQL nicht: SQL Server erlaubt genau einen.
+  - code: E066
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorIndexTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlClusteredStorage.kt"
+        path_type: production

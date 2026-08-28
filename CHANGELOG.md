@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fallen — angehaengt an die Schluesselspalten werden sie **nicht**, das
   aenderte bei `unique` die Eindeutigkeit.
 
+  Neu ist dabei ein Blocker **E066**: beanspruchen zwei Indizes derselben
+  Tabelle die Ablage, wird keiner von beiden gerendert. SQL Server erlaubt
+  genau einen clustered Index, und welcher gemeint ist, laesst sich nicht
+  raten.
+
   **Fingerprint-Algorithmus `schema-fingerprint-v8` → `v9`:** aeltere
   Rollback-Artefakte und Overlays sind nicht mehr vergleichbar und werden
   mit `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` abgelehnt statt still

@@ -518,6 +518,37 @@ class CodeLedgerValidationTest : FunSpec({
         }
     }
 
+    // ─── 1.1.0 Error Ledger Validation ──────────────────────────
+
+    test("1.1.0 error ledger exists with version 1.1.0") {
+        val content = readLedger("error-code-ledger-1.1.0.yaml")
+        content shouldNotBe ""
+        content shouldContain "version: \"1.1.0\""
+    }
+
+    test("1.1.0 error ledger carries the 0.9.7 codes forward and adds the clustered-conflict code") {
+        val previous = extractCodes(readLedger("error-code-ledger-0.9.7.yaml")).toSet()
+        val current = extractCodes(readLedger("error-code-ledger-1.1.0.yaml")).toSet()
+        current.containsAll(previous) shouldBe true
+        current.contains("E066") shouldBe true
+    }
+
+    test("1.1.0 error ledger: active entries have test_path + evidence_paths and the referenced files exist") {
+        val content = readLedger("error-code-ledger-1.1.0.yaml")
+        val activeCodes = extractCodes(content).filter { code ->
+            extractField(content, code, "status") == "active"
+        }
+        for (code in activeCodes) {
+            val testPath = extractField(content, code, "test_path")
+            testPath shouldNotBe null
+            File(repoRoot, testPath!!).exists() shouldBe true
+            hasEvidencePaths(content, code) shouldBe true
+            for (src in extractEvidenceSources(content, code)) {
+                File(repoRoot, src).exists() shouldBe true
+            }
+        }
+    }
+
     // ─── 1.1.0 Warning Ledger Validation ────────────────────────
 
     test("1.1.0 warning ledger exists with version 1.1.0") {

@@ -60,6 +60,18 @@ internal class MssqlIndexDdlHelper(
                 ),
             )
         }
+        // Genau eine Ablage je Tabelle. Beanspruchen sie zwei Indizes, ist nicht
+        // entscheidbar, welcher gemeint ist -- geraten waere schlimmer als geblockt.
+        if (index.clustered && MssqlClusteredStorage.hasConflictingClaims(table.indices)) {
+            return actionRequired(
+                ManualActionRequired(
+                    code = "E066", objectType = "index", objectName = indexName,
+                    reason = "Table '$tableName' declares more than one clustered index; SQL Server allows " +
+                        "exactly one, so '$indexName' is not rendered.",
+                    hint = "Decide which index carries the table's storage and drop `clustered` from the others.",
+                ),
+            )
+        }
         if (index.isSpatialGeometryIndex { columns[it]?.type }) {
             return spatialIndex(tableName, table, index, indexName, lobColumns)
         }

@@ -26,4 +26,49 @@ internal object MssqlClusteredStorage {
         if (indices.any { it.clustered }) "PRIMARY KEY NONCLUSTERED" else "PRIMARY KEY"
 
     fun primaryKeyClause(table: TableDefinition): String = primaryKeyClause(table.indices)
+
+    /**
+     * Mehr als ein Index beansprucht die Ablage. SQL Server erlaubt genau einen
+     * clustered Index je Tabelle; welcher gemeint ist, kann das Werkzeug nicht
+     * raten, und ein `CREATE CLUSTERED INDEX` auf den zweiten scheiterte mit
+     * Msg 1902. Der Fall ist im neutralen Modell ausdrueckbar, in T-SQL nicht.
+     */
+    fun hasConflictingClaims(indices: List<IndexDefinition>?): Boolean =
+        indices.orEmpty().count { it.clustered } > 1
+
+    /** Beansprucht in diesem Indexsatz einer die Ablage? */
+    fun claimedByIndex(indices: List<IndexDefinition>?): Boolean = indices.orEmpty().any { it.clustered }
+
+    /**
+     * Wechselt die Ablage von einer Tabelle die Ablage-Zustaendigkeit, ist der
+     * Primaerschluessel mitbetroffen -- und zwar VOR dem Index, der sie
+     * uebernimmt, beziehungsweise NACH dem, der sie abgibt.
+     *
+     * Der Grund ist die Reihenfolge, die T-SQL erzwingt: solange der clustered
+     * Primaerschluessel steht, scheitert jedes `CREATE CLUSTERED INDEX` mit
+     * Msg 1902. Umgekehrt kann der Primaerschluessel die Ablage erst
+     * zurueckbekommen, wenn kein Index sie mehr haelt.
+     *
+     * `null` heisst: an der Zustaendigkeit aendert sich nichts, es ist nichts zu
+     * tun. Das ist der Normalfall -- die allermeisten Index-Operationen fassen
+     * die Ablage nicht an.
+     */
+    fun flip(before: List<IndexDefinition>?, after: List<IndexDefinition>?): Flip? {
+        val heldBefore = claimedByIndex(before)
+        val heldAfter = claimedByIndex(after)
+        return when {
+            heldBefore == heldAfter -> null
+            heldAfter -> Flip.ToNonclustered
+            else -> Flip.ToClustered
+        }
+    }
+
+    /** Wohin der Primaerschluessel wechselt -- und wann relativ zur Index-Operation. */
+    enum class Flip {
+        /** Vor dem `CREATE CLUSTERED INDEX`: der Schluessel gibt die Ablage ab. */
+        ToNonclustered,
+
+        /** Nach dem `DROP INDEX`: der Schluessel bekommt sie zurueck. */
+        ToClustered,
+    }
 }

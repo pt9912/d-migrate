@@ -89,6 +89,17 @@ class MssqlDdlGeneratorIndexTest : FunSpec({
         ddl shouldContain "CREATE UNIQUE CLUSTERED INDEX [ux_storage] ON [t] ([state]);"
     }
 
+    test("two indexes claiming the storage are blocked with E066, not guessed") {
+        val result = render(
+            IndexDefinition("ix_a", listOf(IndexColumn("name")), clustered = true),
+            IndexDefinition("ix_b", listOf(IndexColumn("state")), clustered = true),
+        )
+        // Welcher gemeint ist, kann das Werkzeug nicht entscheiden — und der
+        // zweite `CREATE CLUSTERED INDEX` scheiterte mit Msg 1902.
+        result.render() shouldNotContain "CREATE CLUSTERED INDEX"
+        result.notes.filter { it.code == "E066" }.map { it.objectName } shouldBe listOf("ix_a", "ix_b")
+    }
+
     test("unnamed index gets idx_<table>_<cols>") {
         render(IndexDefinition(columns = listOf(IndexColumn("name"), IndexColumn("state")))).render() shouldContain
             "CREATE INDEX [idx_t_name_state] ON [t] ([name], [state]);"

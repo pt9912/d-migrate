@@ -47,6 +47,7 @@ neuen Version.
 | E059 | SQLite-helper_table: Sequence-backed column im PRIMARY KEY |
 | E060 | Split-Diagnostik (Phasenkonflikt); SQLite-helper_table-Rollback zusätzlich: ATTACHed Datenbanken detektiert |
 | E061 - E065 | Cross-Dialect-Partitionierung PG↔MySQL: Non-UTC-Grenze (Shift), nicht abbildbarer Schlüsseltyp, LIST-DEFAULT-Verwurf (Transfer-Verlust), nicht hebbarer UNIQUE-Partition-Index, FK auf partitionierter Tabelle |
+| E066 | MSSQL: mehr als ein Index beansprucht die Ablage der Tabelle (SQL Server erlaubt genau einen clustered Index; welcher gemeint ist, ist nicht entscheidbar — `clustered` an den übrigen entfernen) |
 | E120 - E121 | Erweiterte Validierung (Trigger, Views) |
 | E122 - E123 | Sequence-Default-Validierung |
 | E124 | Support-Namenskollision |

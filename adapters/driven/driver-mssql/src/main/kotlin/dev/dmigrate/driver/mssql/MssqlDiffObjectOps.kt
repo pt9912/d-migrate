@@ -31,7 +31,7 @@ internal object MssqlDiffObjectOps {
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: MssqlDiffRenderContext) {
         val table = op.objectRef.rootName
         if (ctx.direction == MssqlRenderDirection.DOWN) {
-            ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
+            emitDropIndex(op, ctx, table, op.index)
             return
         }
         emitCreateIndex(op, ctx, table, op.index)
@@ -43,7 +43,7 @@ internal object MssqlDiffObjectOps {
             emitCreateIndex(op, ctx, table, op.index)
             return
         }
-        ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
+        emitDropIndex(op, ctx, table, op.index)
     }
 
     fun renderAddConstraint(op: DiffOperation.AddConstraint, ctx: MssqlDiffRenderContext) {
@@ -161,7 +161,47 @@ internal object MssqlDiffObjectOps {
         table: String,
         index: IndexDefinition,
     ) {
-        resolveIndexSql(op, ctx, table, index)?.let { ctx.emit(op, it) }
+        val sql = resolveIndexSql(op, ctx, table, index) ?: return
+        // Der Schluessel gibt die Ablage ab, BEVOR der Index sie uebernimmt.
+        if (index.clustered) emitStorageFlip(op, ctx, table, MssqlClusteredStorage.Flip.ToNonclustered)
+        ctx.emit(op, sql)
+    }
+
+    private fun emitDropIndex(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        ctx.emit(op, ctx.sql.dropIndexSql(table, index))
+        // ... und bekommt sie zurueck, NACHDEM der Index sie abgegeben hat.
+        if (index.clustered) emitStorageFlip(op, ctx, table, MssqlClusteredStorage.Flip.ToClustered)
+    }
+
+    /**
+     * Der Primaerschluessel wechselt die Ablage-Zustaendigkeit: verwerfen und
+     * unter demselben Namen neu anlegen, mit der Klausel, die der Zielzustand
+     * verlangt. Ein eigenes `ALTER` gibt es dafuer nicht -- T-SQL laesst die
+     * Ablage eines bestehenden Schluessels nicht aendern.
+     *
+     * Uebersprungen wird der Wechsel, wenn die Tabelle gar keinen
+     * Primaerschluessel hat (dann ist sie ohne clustered Index schlicht ein
+     * Heap) oder wenn sich an der Zustaendigkeit nichts aendert -- etwa weil ein
+     * zweiter clustered Index sie ohnehin schon haelt.
+     */
+    private fun emitStorageFlip(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        expected: MssqlClusteredStorage.Flip,
+    ) {
+        val before = ctx.schemaOppositeOfDirection()?.tables?.get(table)?.indices
+        val afterTable = ctx.schemaForDirection()?.tables?.get(table) ?: return
+        if (MssqlClusteredStorage.flip(before, afterTable.indices) != expected) return
+        val pk = afterTable.primaryKey
+        if (pk.isEmpty()) return
+        ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
+        ctx.emit(op, ctx.sql.addPrimaryKeySql(table, pk, afterTable.indices))
     }
 
     private fun emitAddConstraint(
