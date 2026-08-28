@@ -21,6 +21,7 @@ import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.sqliteContext
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
@@ -46,6 +47,8 @@ class SchemaGenerateWiringTest : FunSpec({
         mysqlNamedSequences: String? = null,
         sqliteNamedSequences: String? = null,
         cliContext: CliContext = CliContext(quiet = true),
+        partitionStorage: String? = null,
+        configPath: Path? = null,
     ) = SchemaGenerateOptions(
         source = source,
         target = target,
@@ -53,13 +56,78 @@ class SchemaGenerateWiringTest : FunSpec({
         report = report,
         generateRollback = generateRollback,
         deterministic = deterministic,
-        partitionStorage = null,
+        partitionStorage = partitionStorage,
         spatialProfile = spatialProfile,
         split = split,
         mysqlNamedSequences = mysqlNamedSequences,
         sqliteNamedSequences = sqliteNamedSequences,
         cliContext = cliContext,
+        configPath = configPath,
     )
+
+    fun ddlConfig(storage: String): Path {
+        val file = Files.createTempFile("dmigrate-generate-ddlcfg-", ".yaml")
+        Files.writeString(
+            file,
+            """
+            ddl:
+              mssql:
+                partition_storage: $storage
+            """.trimIndent(),
+        )
+        return file
+    }
+
+    test("ddl.mssql.partition_storage from the config file reaches the generation options") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(target = "mssql", configPath = ddlConfig("FG_DATA")),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.preGenerationOptions.single().partitionStorage shouldBe "FG_DATA"
+    }
+
+    test("an explicit --partition-storage beats the config file") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(target = "mssql", partitionStorage = "FG_CLI", configPath = ddlConfig("FG_DATA")),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.preGenerationOptions.single().partitionStorage shouldBe "FG_CLI"
+    }
+
+    // `ddl.mssql.*` ist nach Dialekt geschachtelt: ein anderes Ziel darf den
+    // Wert nicht erben, sonst waere die Schachtelung nur Dekoration.
+    test("a non-mssql target ignores the mssql sub-block") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(target = "postgresql", configPath = ddlConfig("FG_DATA")),
+            factory,
+        )
+
+        exit shouldBe 0
+        factory.preGenerationOptions.single().partitionStorage shouldBe DdlGenerationOptions().partitionStorage
+    }
+
+    test("an invalid ddl value exits 7 instead of silently generating with PRIMARY") {
+        val factory = RecordingSchemaGenerateFactory()
+
+        val exit = SchemaGenerateWiring.execute(
+            options(target = "mssql", configPath = ddlConfig("\"FG]); DROP TABLE [orders\"")),
+            factory,
+        )
+
+        exit shouldBe 7
+        factory.printedErrors.single().first shouldContain "plain identifier"
+        factory.generatorLookups.shouldBeEmpty()
+    }
 
     test("wires single output through fake generator and report writer") {
         val output = Files.createTempDirectory("dmigrate-generate-single-")

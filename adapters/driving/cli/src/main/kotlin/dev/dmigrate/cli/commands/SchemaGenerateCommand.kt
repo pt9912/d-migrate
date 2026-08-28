@@ -70,6 +70,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 mysqlNamedSequences = mysqlNamedSequences,
                 sqliteNamedSequences = sqliteNamedSequences,
                 cliContext = root?.cliContext() ?: CliContext(),
+                configPath = root?.config,
             )
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

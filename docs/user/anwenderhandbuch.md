@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.9  ·  **Stand:** 28.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.0  ·  **Stand:** 28.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 (im Ausbau — dort noch nicht verfügbar: `data profile`)
 
@@ -1815,6 +1815,19 @@ nennt).
   alle Partitionen auf `PRIMARY`: die Partitionierung wirkt beim Abfragen
   (Partition Elimination), trennt aber die Ablage nicht. Legen Sie die
   Filegroups an und setzen Sie `--partition-storage <name>`.
+- **Damit Sie die Filegroup nicht bei jedem Aufruf wiederholen müssen**, können
+  Sie sie stattdessen in Ihre Konfigurationsdatei (Abschnitt 4.2) schreiben:
+
+  ```yaml
+  ddl:
+    mssql:
+      partition_storage: FG_DATA
+  ```
+
+  Ein mitgegebenes `--partition-storage` hat Vorrang vor der Datei, die Datei
+  vor dem Standardwert. Der Wert gilt nur für `--target mssql`; andere Ziele
+  kennen keine Filegroups und lesen ihn nicht. Ein leerer oder ungültiger Wert
+  bricht mit Exit 7 ab, statt still auf `PRIMARY` auszuweichen.
 - Vollständige Felder: [Anhang F.8](#f8-partitionierung).
 
 ### 3.21 Eigene Datentypen definieren (Enum, Composite, Domain)
@@ -2720,6 +2733,7 @@ custom_types:
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
 | 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
+| 1.0 | 28.08.2026 | Der Ablageort partitionierter Daten lässt sich jetzt auch in der Konfigurationsdatei hinterlegen (`ddl.mssql.partition_storage`) statt nur als Flag je Aufruf; Abschnitt 3.20 nennt die Vorrangregel und den Abbruch bei ungültigem Wert. |
 | 0.9 | 28.08.2026 | SQL Server partitioniert: Abschnitt 3.20 nennt die `range`-Beschränkung, die zwei zusätzlichen Objekte je Tabelle (**W144**) und die Filegroup-Frage; neue Option `--partition-storage` in der Befehlsreferenz. |
 
 ---

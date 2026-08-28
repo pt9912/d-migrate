@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectivePartitionStorage
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
@@ -33,6 +35,7 @@ internal data class SchemaGenerateOptions(
     val mysqlNamedSequences: String?,
     val sqliteNamedSequences: String?,
     val cliContext: CliContext,
+    val configPath: Path? = null,
 )
 
 internal data class SchemaGenerateWiringBundle(
@@ -101,12 +104,25 @@ internal object SchemaGenerateWiring {
         factory: SchemaGenerateWiringFactory = DefaultSchemaGenerateWiringFactory,
     ): Int {
         val bundle = factory.build(options.cliContext)
+        // Der `ddl:`-Block ist nach Dialekt geschachtelt; `ddl.mssql.*` wirkt
+        // deshalb nur, wenn auch gegen SQL Server generiert wird. Ein anderer
+        // Ziel-Dialekt sieht ausschliesslich das CLI-Flag.
+        val partitionStorage = if (options.target.equals("mssql", ignoreCase = true)) {
+            try {
+                resolveEffectivePartitionStorage(options.configPath, options.partitionStorage)
+            } catch (e: ConfigResolveException) {
+                bundle.printError(e.message ?: "Failed to resolve ddl configuration", "ddl")
+                return 7
+            }
+        } else {
+            options.partitionStorage
+        }
         val splitMode = if (options.split == "pre-post") SplitMode.PRE_POST else SplitMode.SINGLE
         val request = SchemaGenerateRequest(
             source = options.source,
             target = options.target,
             spatialProfile = options.spatialProfile,
-            partitionStorage = options.partitionStorage,
+            partitionStorage = partitionStorage,
             output = options.output,
             report = options.report,
             generateRollback = options.generateRollback,

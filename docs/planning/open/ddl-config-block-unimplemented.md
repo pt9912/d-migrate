@@ -1,6 +1,7 @@
 # Tracker: der `ddl:`-Konfigurationsblock wird nicht gelesen
 
-> **Status:** Tracker / Vorabklärung (2026-08-28)
+> **Status:** Teilweise umgesetzt (2026-08-28) — Leser steht, ein Schlüssel
+> von acht ist verdrahtet. Der Rest bleibt offen.
 > **Trigger:** Beim Verdrahten von `--partition-storage` (SQL-Server-Filegroup)
 > fiel auf, dass es für Generierungsoptionen zwar eine Konfigurationsfläche in
 > der Spec gibt, aber keinen Leser im Code.
@@ -22,9 +23,15 @@ ddl:
   mssql:      { partition_storage: PRIMARY }
 ```
 
-Keiner dieser Schlüssel taucht als Konfigurationsschlüssel im Code auf. Die
-entsprechenden Einstellungen sind heute ausschließlich über CLI-Flags
-erreichbar, soweit sie überhaupt existieren.
+**Stand nach dem ersten Schritt:** `DdlConfigResolver` liest den Block, und
+`ddl.mssql.partition_storage` wirkt auf `schema generate --target mssql`
+(Vorrang **CLI > Datei > Default**, ungültige Werte brechen mit Exit 7 ab).
+
+Die übrigen sieben Schlüssel — `inline_foreign_keys`, `include_comments`, die
+drei MySQL-Werte, die zwei SQLite-Werte, `postgresql.default_schema` — werden
+weiterhin **nicht** gelesen. Sie sind heute nur über CLI-Flags erreichbar,
+soweit sie überhaupt existieren; `include_comments` und
+`postgresql.default_schema` haben nicht einmal das.
 
 Als Zielbild ist das korrekt — die Spec beschreibt, wohin es geht. Der Punkt
 dieses Tickets ist, dass die Umsetzung nirgends terminiert ist: weder Slice noch
@@ -39,13 +46,28 @@ Ein CLI-Flag wirkt je Aufruf. Einstellungen, die für ein Ziel dauerhaft gelten
 Konfigurationsweg muss jeder Aufruf sie wiederholen, und ein vergessenes Flag
 erzeugt stillschweigend anderes DDL als der Lauf davor.
 
-## Arbeitspakete (Skizze)
+## Arbeitspakete
 
-1. Leser für `ddl:` samt Dialekt-Unterblöcken.
-2. Vorrangregel gegenüber CLI-Flags festlegen (die übrigen Blöcke haben eine:
-   Flag schlägt Datei).
-3. `config show` muss die aufgelösten Werte zeigen.
-4. Handbuch nachziehen — dort darf der Weg erst stehen, wenn er wirkt.
+1. ~~Leser für `ddl:` samt Dialekt-Unterblöcken.~~ — `DdlConfigResolver`
+   ([`DdlConfigResolver.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/DdlConfigResolver.kt)).
+   Der Rahmen trägt weitere Schlüssel, ohne sich zu ändern.
+2. ~~Vorrangregel gegenüber CLI-Flags festlegen.~~ — **CLI-explizit > Config >
+   Default**, dieselbe wie bei `pipeline:`.
+3. ~~`config show` muss die aufgelösten Werte zeigen.~~ — war nie eine Lücke:
+   `ConfigShowRenderer` rendert den Dateibaum generisch und führt `ddl` bereits
+   in seiner Sektions-Reihenfolge.
+4. ~~Handbuch nachziehen.~~ — für den verdrahteten Schlüssel geschehen.
+5. **Offen:** die restlichen sieben Schlüssel. Jeder braucht einen Konsumenten,
+   bevor er gelesen wird — ein Schlüssel, der gelesen wird und nichts bewirkt,
+   ist schlimmer als keiner. Bei mehreren davon ist die Vorarbeit nicht das
+   Lesen, sondern dass es die Einstellung im Generator noch gar nicht gibt.
+
+## Gelernt
+
+Der Aufwand lag nicht im Leser (eine Datei), sondern in der Frage, was ein
+Schlüssel überhaupt bewirken soll. `partition_storage` ging schnell, weil
+`DdlGenerationOptions.partitionStorage` und der Generator-Pfad aus Sub-Slice 7b
+schon standen — der Block brauchte nur noch einen zweiten Weg dorthin.
 
 ## Angrenzend
 
