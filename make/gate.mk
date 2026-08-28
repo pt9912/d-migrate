@@ -7,7 +7,7 @@
 # -smoke + integration aus dem Haupt-Makefile. Reihenfolge egal: make liest alle
 # includes vor dem ersten Build, Prerequisites werden erst dann aufgelöst.
 
-.PHONY: docs-check coverage-excludes-check semgrep-rules-fetch semgrep solid-suppression-gate ports-jdbc-free-gate readme-parity-gate gates docker-gates docker-full-gates
+.PHONY: docs-check coverage-excludes-check semgrep-rules-fetch semgrep solid-suppression-gate mssql-fts-image ports-jdbc-free-gate readme-parity-gate gates docker-gates docker-full-gates
 
 # docs-check bleibt die Schirm-ID (gates/ci hängen daran): aggregiert d-checks
 # doc-check (Docker-Befund-Gate) plus das projekt-lokale Kover-Excludes-Ledger.
@@ -37,6 +37,19 @@ semgrep: semgrep-rules-fetch
 
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
+
+# Slice 8a: SQL Server MIT Full-Text Search. Das gepinnte Basis-Image kann es
+# nicht (`IsFullTextInstalled` = 0, `mssql-server-fts` nicht aufloesbar), also
+# baut sich der Volltext-Slice seine Testumgebung selbst.
+#
+# Bewusst NICHT in `gates`: der Bau braucht Netz (528 MB Microsoft-Pakete) und
+# hat keinen Upstream-Digest, an dem die Harness sonst pinnt (ADR 0014).
+# Gepinnt bleibt der Basis-Digest im Dockerfile.
+MSSQL_FTS_TAG ?= d-migrate-mssql-fts:local
+
+.PHONY: mssql-fts-image
+mssql-fts-image: ## SQL-Server-Testimage mit Full-Text Search bauen (braucht Netz).
+	$(DOCKER) build -t $(MSSQL_FTS_TAG) test/integration-mssql/fts
 
 # Architektur-Fitness-Function (ADR 0022): hexagon:ports* ist java.sql-frei.
 ports-jdbc-free-gate:

@@ -812,6 +812,31 @@ Kindnamen-Fall im Reverse und der LIST-Fall im Generate entsteht.
   ([ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)) — es
   bleibt der Basis-Digest plus die Reproduzierbarkeit des Dockerfiles.
 
+#### Schnitt
+
+Derselbe Bruch wie bei der Partitionierung, und deshalb derselbe Aufbau: SQL
+Server verlangt zwei Dinge, die das neutrale Modell nicht trägt — einen
+**Volltext-Katalog** (eigenständiges Datenbankobjekt) und einen **eindeutigen
+Schlüsselindex** der Tabelle, an dem der Volltext-Index hängt.
+
+| Sub-Slice | Inhalt | Fertig, wenn |
+| --- | --- | --- |
+| **8a** ✅ | Testumgebung: abgeleitetes Image mit `mssql-server-fts` (`test/integration-mssql/fts/Dockerfile`, `make mssql-fts-image`), Beleg-Spec im Integrationslauf | Belegt: `IsFullTextInstalled` = `1`, und `CREATE FULLTEXT CATALOG` + `CREATE FULLTEXT INDEX … KEY INDEX` laufen durch. Gemessen kam dazu: **Volltext ist in `master`/`tempdb`/`model` verboten** — die Spec legt eine eigene Datenbank an. Das Paket hebt die Engine auf 16.0.4265.3 mit, das Image ist 3,63 GB |
+| **8b** | Generate: `CREATE FULLTEXT CATALOG` + `CREATE FULLTEXT INDEX … KEY INDEX …`. **Dabei zu entscheiden:** ein Katalog je Datenbank oder je Tabelle, und was passiert, wenn die Tabelle keinen einspaltigen eindeutigen Schlüssel hat | `schema generate --target mssql` erzeugt Volltext-DDL, das der Server annimmt |
+| **8c** | Reverse: Volltext-Indizes zurücklesen (`sys.fulltext_indexes`, `sys.fulltext_index_columns`) | Round-Trip trägt den Volltext-Index |
+| **8d** | Diff/Migrate | `schema migrate` legt Volltext-Indizes an und baut sie zurück |
+
+**Die Schlüsselindex-Regel ist die 7d-Regel in anderem Gewand.** SQL Server
+verlangt für `KEY INDEX` einen **einspaltigen**, eindeutigen, nicht-nullbaren
+Index. Ein Primärschlüssel über einer Spalte erfüllt das; ein zusammengesetzter
+nicht. Das ist entscheidbar und muss deshalb ein benannter Bruchpunkt werden,
+kein Raten — wie `E067` bei der HASH-Emulation.
+
+**Was 8a mitentscheidet:** der Bau braucht Netz und hat keinen Upstream-Digest
+([ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md) pinnt sonst
+darauf). Gepinnt bleibt der Basis-Digest; die Reproduzierbarkeit kommt aus dem
+Dockerfile. Das Image gehört deshalb **nicht** in die netzlosen Gates.
+
 ### Slice 9 — Routinen und Trigger
 
 PostgreSQL ist hier das Vorbild, nicht der Mitblockierer: es **rendert**
