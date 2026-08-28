@@ -665,11 +665,100 @@ sind je für sich CI-grün abschließbar.
 
 - **Generate** meldet eine partitionierte Tabelle als `E055` und legt sie als
   EINE plain Tabelle an; das Sample-DB-Leg belegt das an Pagilas `payment`.
+- **Reverse** liest Partitionierung für SQL Server gar nicht.
 - **Diff** blockt Partitionierungs-Operationen bis dahin.
-- SQL Server modelliert Partitionierung über Partition Functions, Schemes und
-  Filegroups — strukturell anders als PostgreSQLs Partitionshierarchie. Das
-  neutrale Modell trägt diese Objekte heute nicht; das ist der eigentliche
-  Umfang des Slices, nicht das Rendern.
+
+#### Die Partitionierungs-Fläche über alle vier Dialekte
+
+Der Bruch ist strukturell, nicht syntaktisch. PostgreSQL und MySQL partitionieren
+eine Tabelle in **benannte Kinder**; SQL Server beschreibt stattdessen zwei
+eigenständige Schemaobjekte und hängt die Tabelle daran:
+
+```sql
+CREATE PARTITION FUNCTION pf_orders (date) AS RANGE RIGHT FOR VALUES ('2024-01-01', '2025-01-01');
+CREATE PARTITION SCHEME  ps_orders AS PARTITION pf_orders TO ([PRIMARY], [PRIMARY], [PRIMARY]);
+CREATE TABLE orders (…) ON ps_orders (placed_on);
+```
+
+| Eigenschaft | PostgreSQL | MySQL | SQL Server | Neutrales Modell |
+| --- | --- | --- | --- | --- |
+| Strategie | RANGE, LIST, HASH | RANGE, LIST, HASH | **nur RANGE** | `PartitionType` |
+| Kinder | benannt | benannt | **nummeriert, namenlos** | `PartitionDefinition.name` |
+| Grenzen | `FROM`/`TO` | `VALUES LESS THAN` (nur obere) | Grenzwertliste + `LEFT`/`RIGHT` | `from`/`to`/`values` |
+| Ablageort | Tablespace (ungenutzt) | — | **Filegroup je Partition, Pflicht** | **fehlt** |
+| Partitionsobjekt | keins (Teil der Tabelle) | keins | **Function + Scheme, eigenständig** | **fehlt** |
+
+Vier Dinge folgen daraus, und drei davon sind Entscheidungen, keine Arbeit:
+
+1. **LIST und HASH haben kein Äquivalent.** SQL Server kennt ausschließlich
+   RANGE. Beide müssen blocken — dieselbe Lage wie Materialized Views.
+2. **Kindnamen überleben den Round-Trip nicht.** SQL Server nummeriert; ein
+   Reverse kann `p_2024` nicht zurückgeben. Das ist der MySQL-`W112`-Fall in
+   schärfer: dort geht eine Grenze verloren, hier die Identität jedes Kindes.
+3. **Filegroups sind Pflicht.** Das Scheme braucht je Partition eine Filegroup.
+   `[PRIMARY]` für alle ist gültiges DDL und der einzige Wert, den das neutrale
+   Modell heute hergibt — aber es ist auch der Wert, der die Partitionierung
+   ihres eigentlichen Zwecks beraubt (getrennte Ablage).
+4. **`RANGE LEFT` vs. `RANGE RIGHT`** ist kein Freiheitsgrad: `FROM x TO y` ist
+   das halboffene Intervall `[x, y)`, und das ist exakt `RANGE RIGHT`. Beim
+   Reverse eines `LEFT`-Funktions muss der Fall entschieden sein.
+
+#### Entscheidungen und Schnitt (Eigner-Gespräch, 2026-08-28)
+
+Der erste Entwurf wollte LIST und HASH blocken und die Filegroups ins neutrale
+Modell nehmen. Beides ist verworfen, und zwar gegen Präzedenzfälle im Repo:
+
+**Filegroups gehören nicht ins Modell, sondern an die Realisierung.**
+`DdlGenerationOptions.spatialProfile` löst dieselbe Art Problem — ein neutrales
+Konzept, das je Ziel verschieden realisiert wird, mit `defaultFor(dialect)` und
+`allowedFor(dialect)`. Ein `PartitionDefinition.storage` hätte drei von vier
+Dialekten mit einem Feld belastet, das sie ignorieren, und beim Cross-Dialekt-
+Vergleich nur Drift erzeugt. Der Ablageort ist eine Deployment-Eigenschaft.
+
+**Kindnamen und LIST bekommen ein Overlay, keinen Konfigurationsschalter.**
+`MigrationOverlayKinds` führt bereits `rename-mapping` für genau diese Lage: die
+Identität kennt nur der Anwender, das Werkzeug kann sie nicht ableiten. Ein
+`partition-mapping` ist die dritte Art derselben Sorte — und es *stellt Identität
+her*, statt Gleichheit zu lockern. Die Grenze aus
+[ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md) bleibt damit
+unangetastet: `schema compare` bleibt streng. Ein Schalter, der entscheidet, ob
+zwei Partitionssätze gleich sind, wäre das Gegenteil davon gewesen.
+
+Für LIST kann das Werkzeug die Zuordnung sogar **verifizieren**: eine
+LIST-Partitionierung ist genau dann RANGE-fähig, wenn die Wertemengen in
+Sortierreihenfolge zusammenhängend und überschneidungsfrei sind. Sortieren,
+prüfen, bei Verschränkung ablehnen — eine Zuordnung, die falsches Routing
+erzeugte, kommt nicht durch.
+
+**HASH wird nachgebaut, nicht geblockt.** Der Einwand „eine Emulation fügt
+Objekte hinzu, die im Schema nicht stehen" trägt nicht: MySQL und SQLite haben
+keine Sequenzen, und das Werkzeug baut sie nach — `dmg_sequences` plus
+`nextval`-Routine bzw. Trigger-Paar. Der zweite Einwand („Zeilen landen anders
+als in der Quelle") trägt ebenfalls nicht: genau das sagt `W130` für PG↔MySQL,
+und es ist dort akzeptiert, nicht geblockt.
+
+Das Vorbild liefert gleich die ganze Bauform:
+
+- ein **Modus-Gate** wie `SqliteNamedSequenceMode` (`ACTION_REQUIRED` /
+  `HELPER_TABLE`) statt einer festen Entscheidung,
+- ein **modusspezifischer Validator** wie `SqliteHelperTableSequenceValidator`,
+  der bewusst NICHT im dialekt-agnostischen `SchemaValidator` sitzt — dasselbe
+  Schema ist für andere Ziele einwandfrei,
+- und **benannte Bruchstellen** (`E058`, `E059`) für die Fälle, in denen der
+  Nachbau nicht trägt.
+
+#### Sub-Slice-Schnitt
+
+| Sub-Slice | Inhalt | Endet mit |
+| --- | --- | --- |
+| **7a** | Modell + Reverse: Partition Function, Scheme und Grenzen aus `sys.partition_*` lesen; `RANGE LEFT` auflösen; Kindnamen aus einem Muster synthetisieren und den Verlust melden | `schema reverse` liest partitionierte Tabellen |
+| **7b** | Generate RANGE: Function + Scheme + `ON ps(spalte)`, Filegroups über ein Profil in `DdlGenerationOptions` (Default `[PRIMARY]`) | `schema generate --target mssql` partitioniert |
+| **7c** | Diff: Partitionierungs-Operationen rendern statt blocken; `SPLIT`/`MERGE RANGE` für Grenzänderungen | `schema migrate` führt Partitionierung aus |
+| **7d** | HASH-Emulation als Modus-Gate nach Sequenz-Vorbild: persistierte berechnete Spalte + RANGE, modusspezifischer Validator, Bruchstellen als E-Codes | HASH-Partitionierung nutzbar |
+
+**Ausgegliedert:** das `partition-mapping`-Overlay (Kindnamen und LIST→RANGE).
+Es braucht ein neues Overlay-Format samt Verifikation und ist über SQL Server
+hinaus nützlich — eigener Slice, nicht Teil von 7.
 
 ### Slice 8 — Volltext
 
