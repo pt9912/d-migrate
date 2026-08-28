@@ -91,9 +91,22 @@ Zwei verschiedene Sorten, und nur eine hat ein Make-Target:
 
 ## Konventionen
 
-- **Detekt-Größenbefunde** (`LargeClass`, `TooManyFunctions`,
-  `CyclomaticComplexMethod`) werden durch echte Aufteilung gelöst, nie durch
-  `@Suppress`.
+- **Detekt-Größenbefunde** werden durch echte Aufteilung gelöst, nie durch
+  `@Suppress`. Welche Regeln dazuzählen, steht **nicht hier**, sondern in
+  `scripts/solid-suppression-gate.sh` (Liste `solid_rules`) — das ist die
+  Quelle, dieser Absatz nur der Hinweis darauf. Sie ist breiter, als man im
+  Kopf hat: neben `LargeClass`, `TooManyFunctions` und
+  `CyclomaticComplexMethod` fallen auch `LongParameterList`, `LongMethod`,
+  `ComplexMethod` und `NestedBlockDepth` darunter.
+
+  Diese Aufzählung stand hier einmal unvollständig, und das hatte Folgen: was
+  sie nicht nannte, wurde reflexhaft unterdrückt — `LongParameterList` ist so
+  von null auf ein Dutzend Stellen gewachsen, während die drei genannten
+  Regeln zurückgingen.
+
+  **`make solid-suppression-gate` läuft vor jedem Commit**, nicht erst vor dem
+  nächsten `@Suppress`. Ein Gate, das man nur bei Verdacht fährt, ist genau das
+  Gate, das den Zuwachs oben nicht verhindert hat.
 - **Strukturelle Umbauten** über viele Aufrufstellen (Signatur, Rename)
   laufen über `make ast-grep`, nicht über `grep`/`perl`.
 - **ADRs** in `docs/adr/` sind durchgehend deutsch; nur das
