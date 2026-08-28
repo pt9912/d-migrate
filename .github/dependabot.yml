@@ -93,3 +93,11 @@ updates:
       # beide Seiten zusammen bewegen.
       - dependency-name: gradle
         update-types: [version-update:semver-major]
+
+      # eclipse-temurin ist das JDK des ausgelieferten Runtime-Images. Nur
+      # LTS-Linien kommen infrage; Zwischenversionen sind sechs Monate nach
+      # Erscheinen ohne Sicherheitsupdates und wuerden Anwender auf ein
+      # ungepflegtes JDK ziehen. Der Sprung auf die naechste LTS-Linie wird
+      # bewusst gesetzt, zusammen mit Toolchain und Native-Image-Lauf.
+      - dependency-name: eclipse-temurin
+        update-types: [version-update:semver-major]
