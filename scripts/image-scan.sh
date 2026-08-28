@@ -34,7 +34,12 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TRIVY_IMAGE="${TRIVY_IMAGE:?TRIVY_IMAGE muss gesetzt sein (Pin steht in make/gate.mk)}"
 IMAGE_SCAN_REFS="${IMAGE_SCAN_REFS:?IMAGE_SCAN_REFS muss gesetzt sein}"
-CACHE="${ROOT}/.cache/trivy"
+# Der Scan-Cache liegt BEWUSST ausserhalb des Quellbaums. Trivy laeuft im
+# Container als root und legt dort Verzeichnisse mit Modus 0700 root an; lag der
+# Cache unter `${ROOT}/.cache/trivy`, brach anschliessend jedes Werkzeug ab, das
+# den Baum als non-root ablaeuft — a-check mit "permission denied", und in CI
+# faellt das nie auf, weil ein frischer Checkout keinen Cache hat.
+CACHE="${TRIVY_CACHE_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/d-migrate-trivy}"
 IGNOREFILE="${ROOT}/.trivyignore.yaml"
 
 mkdir -p "${CACHE}"
