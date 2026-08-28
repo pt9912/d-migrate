@@ -607,7 +607,7 @@ den `DdlGenerator` und den Diff-Builder. Daraus folgen die offenen Punkte:
 
 | Offen | Wirkung |
 | --- | --- |
-| `PostgresDiffSqlBuilders.createIndexSql` rendert kein `INCLUDE` | `schema generate` und `schema migrate` schreiben verschiedene Indizes; Post-Compare meldet Drift auf einem Lauf mit Exit 0 |
+| ~~`PostgresDiffSqlBuilders.createIndexSql` rendert kein `INCLUDE`~~ ✅ | behoben: die Klausel steht jetzt in `PostgresIndexClauses` und wird von beiden Pfaden benutzt; ein Paritätstest stellt Generate und Diff gegeneinander |
 | PG-Reverse liest über `unnest(ix.indkey)` ohne Schnitt bei `indnkeyatts` | `(a) INCLUDE (b)` kommt als `(a, b)` zurück; bei `unique` verschiebt sich die Eindeutigkeitsaussage |
 | `MssqlSchemaReader` verwirft ungefilterte Unique-Indizes samt beider Felder | `CREATE UNIQUE CLUSTERED INDEX` ist erzeugbar, aber nicht zurücklesbar |
 | W142/W143 hängen nur an den Generate-Helfern | MySQL/SQLite lassen im Migrate-Pfad still fallen, was sie beim Generieren melden |

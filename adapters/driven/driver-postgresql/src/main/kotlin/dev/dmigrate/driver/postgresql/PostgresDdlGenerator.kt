@@ -297,9 +297,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             // PostgreSQL traegt INCLUDE seit 11 nativ; die Steuerung der Ablage kennt
             // es nicht -- `CLUSTER` ist dort eine einmalige Reorganisation, keine
             // Eigenschaft des Index, und faellt deshalb mit einer Meldung weg.
-            if (index.includeColumns.isNotEmpty()) {
-                append(" INCLUDE (${index.includeColumns.joinToString(", ") { quoteIdentifier(it) }})")
-            }
+            append(PostgresIndexClauses.include(index, ::quoteIdentifier))
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }

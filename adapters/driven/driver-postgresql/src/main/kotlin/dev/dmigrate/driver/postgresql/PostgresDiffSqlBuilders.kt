@@ -111,8 +111,9 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
             quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
         }
         val name = effectiveIndexName(table, idx)
+        val includeClause = PostgresIndexClauses.include(idx, ::quote)
         val whereClause = idx.where?.let { " WHERE $it" } ?: ""
-        return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)}$using ($cols)$whereClause;"
+        return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)}$using ($cols)$includeClause$whereClause;"
     }
 
     /**
