@@ -46,6 +46,18 @@ internal object MssqlMetadataQueries {
         val indices: List<IndexProjection>,
     )
 
+    /**
+     * Der Rohbefund der Partitionierung. `boundaries` sind die Grenzwerte in
+     * Katalogreihenfolge; die Zahl der Partitionen ist stets `boundaries + 1`.
+     */
+    data class PartitionScan(
+        val functionName: String,
+        val schemeName: String,
+        val boundaryOnRight: Boolean,
+        val column: String,
+        val boundaries: List<String>,
+    )
+
     data class SequenceRow(
         val name: String,
         val typeName: String,
@@ -185,6 +197,90 @@ internal object MssqlMetadataQueries {
             )
         }
         return IndexScan(indices = indices)
+    }
+
+    /**
+     * Die Partitionierung einer Tabelle, wie SQL Server sie fuehrt.
+     *
+     * Anders als PostgreSQL und MySQL beschreibt SQL Server sie nicht an der
+     * Tabelle, sondern in zwei eigenstaendigen Objekten: einer Partition
+     * Function (Grenzwerte und die Seite, auf der sie liegen) und einem
+     * Partition Scheme (Zuordnung der Partitionen zu Filegroups). Die Tabelle
+     * haengt ueber die Ablage ihres clustered Index bzw. Heaps daran --
+     * `index_id IN (0, 1)` trifft genau diese beiden.
+     *
+     * `partition_ordinal = 1` liefert die Partitionierungsspalte; SQL Server
+     * partitioniert immer nach genau einer.
+     */
+    fun scanPartitioning(session: JdbcOperations, qualifiedTable: String): PartitionScan? {
+        val head = session.queryList(
+            """
+            SELECT pf.name AS function_name, ps.name AS scheme_name, pf.function_id,
+                   pf.boundary_value_on_right, col.name AS column_name
+            FROM sys.tables t
+            JOIN sys.indexes i ON i.object_id = t.object_id AND i.index_id IN (0, 1)
+            JOIN sys.partition_schemes ps ON ps.data_space_id = i.data_space_id
+            JOIN sys.partition_functions pf ON pf.function_id = ps.function_id
+            JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                AND ic.partition_ordinal = 1
+            JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+            WHERE t.object_id = OBJECT_ID(?)
+            """.trimIndent(),
+            qualifiedTable,
+        ).firstOrNull() ?: return null
+
+        val functionId = head.int("function_id") ?: return null
+        val boundaries = session.queryList(
+            """
+            SELECT prv.value
+            FROM sys.partition_range_values prv
+            WHERE prv.function_id = ?
+            ORDER BY prv.boundary_id
+            """.trimIndent(),
+            functionId,
+        ).map { boundaryLiteral(it["value"]) }
+
+        return PartitionScan(
+            functionName = head.string("function_name"),
+            schemeName = head.string("scheme_name"),
+            boundaryOnRight = head.bool("boundary_value_on_right"),
+            column = head.string("column_name"),
+            boundaries = boundaries,
+        )
+    }
+
+    /**
+     * Ein Grenzwert als kanonisches Literal in derselben Form, die der
+     * PostgreSQL-Reverse liefert: Zahlen blank, alles andere in einfachen
+     * Anfuehrungszeichen. Der Wert kommt als `sql_variant` und damit je nach
+     * Spaltentyp als Zahl, Datum oder Zeichenkette aus dem Treiber.
+     */
+    private fun boundaryLiteral(value: Any?): String = when (value) {
+        null -> error("partition boundary value is NULL; sys.partition_range_values does not allow it")
+        is java.sql.Timestamp -> "'" + timestampLiteral(value) + "'"
+        is Boolean -> if (value) "true" else "false"
+        is Number -> value.toString()
+        else -> "'" + value.toString().replace("'", "''") + "'"
+    }
+
+    /**
+     * Ein Zeitstempel in der Form, die der PostgreSQL-Reverse liefert:
+     * `2024-01-01 00:00:00`, Bruchteile nur wenn sie ungleich null sind.
+     *
+     * `java.sql.Timestamp.toString()` haengt **immer** mindestens `.0` an -- gegen
+     * echtes SQL Server gemessen, nicht vermutet. Damit verglichen zwei identische
+     * Schemata ueber Dialekte hinweg als verschieden, denn der Comparator
+     * vergleicht das Literal zeichenweise und der Fingerabdruck projiziert es
+     * woertlich (Vertrag in `MysqlPartitionBoundRenderer`).
+     */
+    private fun timestampLiteral(value: java.sql.Timestamp): String {
+        val moment = value.toLocalDateTime()
+        val base = "%04d-%02d-%02d %02d:%02d:%02d".format(
+            moment.year, moment.monthValue, moment.dayOfMonth,
+            moment.hour, moment.minute, moment.second,
+        )
+        if (moment.nano == 0) return base
+        return base + "." + "%09d".format(moment.nano).trimEnd('0')
     }
 
     fun listCheckConstraints(session: JdbcOperations, qualifiedTable: String): List<ConstraintProjection> =

@@ -60,3 +60,20 @@ ungeprüft durch.
   [`../done/fulltext-structural-cross-dialect.md`](../done/fulltext-structural-cross-dialect.md).
 - Validierung: `CodeLedgerValidationTest.kt` (`hexagon/core`); Ledger-YAMLs unter
   dem `ledger`-Verzeichnis (`warn-code-ledger-0.9.9.yaml` u. a.).
+
+## Nachtrag 2026-08-28: die R-Serie hat gar keinen Ledger
+
+Beim Anlegen von `R346`/`R347` (MSSQL-Partitionierungs-Reverse) fiel auf, dass
+die **Reverse-Notes überhaupt nicht geführt werden**. `ledger/` kennt nur
+`warn-code-ledger-*` und `error-code-ledger-*`; für R-Codes gibt es weder eine
+YAML-Datei noch eine Lesefassung.
+
+Dokumentiert sind heute nur die typbezogenen: `R340`, `R343` und `R345` stehen
+in `spec/type-mapping.md`, weil sie dort inhaltlich hingehören. `R341` (inzwischen
+zurückgenommen), `R342` (nicht gelesene Routinen-Rümpfe), `R346` und `R347`
+stehen nirgends.
+
+Damit fehlt der R-Serie, was die anderen beiden Serien haben: eine Stelle, an der
+Code, Bedeutung und Beleg zusammenstehen, und ein Test, der prüft, dass ein
+emittierter Code registriert ist. Ob die R-Serie einen eigenen Ledger bekommt oder
+in den bestehenden aufgeht, ist Teil dieses Tickets.

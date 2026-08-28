@@ -10,9 +10,11 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldContainKey
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.nulls.shouldBeNull
@@ -215,6 +217,38 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
     }
 
     // ── Tables ──────────────────────────────────
+
+    test("a numeric partition bound keeps its declared scale") {
+        // Gemessen, nicht angenommen: PostgreSQL erhaelt die Skala — aus
+        // `NUMERIC(10,2)` mit Grenze `1.50` wird `1.50`, nicht `1.5`. SQL Server
+        // liefert dieselbe Form. Die beiden stimmen also ueberein, und eine
+        // "Normalisierung" auf `1.5` wuerde die Drift erst erzeugen.
+        pool().use { pool ->
+            pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("DROP TABLE IF EXISTS measured_bounds")
+                    stmt.execute(
+                        "CREATE TABLE measured_bounds (amount NUMERIC(10,2) NOT NULL) PARTITION BY RANGE (amount)",
+                    )
+                    stmt.execute(
+                        "CREATE TABLE measured_bounds_lo PARTITION OF measured_bounds " +
+                            "FOR VALUES FROM (MINVALUE) TO (1.50)",
+                    )
+                }
+            }
+            try {
+                val partitioning = reader.read(pool).schema.tables
+                    .getValue("measured_bounds").partitioning.shouldNotBeNull()
+                withClue("PG-Grenze: ${partitioning.partitions[0].to}") {
+                    partitioning.partitions[0].to shouldBe listOf(PartitionBound.Value("1.50"))
+                }
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { it.execute("DROP TABLE IF EXISTS measured_bounds") }
+                }
+            }
+        }
+    }
 
     test("a covering index reads its INCLUDE columns beside the key, not inside it") {
         // `pg_index.indkey` fuehrt seit PostgreSQL 11 alle Attribute des Index,

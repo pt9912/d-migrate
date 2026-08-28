@@ -751,8 +751,8 @@ Das Vorbild liefert gleich die ganze Bauform:
 
 | Sub-Slice | Inhalt | Endet mit |
 | --- | --- | --- |
-| **7a** | Modell + Reverse: Partition Function, Scheme und Grenzen aus `sys.partition_*` lesen; `RANGE LEFT` auflösen; Kindnamen aus einem Muster synthetisieren und den Verlust melden | `schema reverse` liest partitionierte Tabellen |
-| **7b** | Generate RANGE: Function + Scheme + `ON ps(spalte)`, Filegroups über ein Profil in `DdlGenerationOptions` (Default `[PRIMARY]`) | `schema generate --target mssql` partitioniert |
+| **7a** ✅ | Reverse: Partition Function, Scheme und Grenzen aus `sys.partition_*`; Kindnamen synthetisiert (`R346`). `RANGE LEFT` wird **nicht** umgerechnet, trägt aber die Partitionierung ohne Kinder (`R347`) — mit `null` wäre der Rebuild-Wächter blind, der eine partitionierte Tabelle vor dem Neubau schützt. Grenzliterale gegen **beide** Server gemessen: `datetime2` brauchte eine Korrektur (`java.sql.Timestamp` hängt `.0` an), `decimal` nicht (beide liefern `1.50`) | `schema reverse` liest partitionierte Tabellen |
+| **7b** | Generate RANGE: Function + Scheme + `ON ps(spalte)`, Filegroups über ein Profil in `DdlGenerationOptions` (Default `[PRIMARY]`). Dabei zu klären, was der Review offenließ: ob ein **clustered Columnstore**-Index eine `partition_ordinal`-Zeile führt (eine Tabelle mit clustered Index entsteht hier ohnehin); ob Function und Scheme, die in SQL Server **geteilte** Objekte sind, pro Tabelle dupliziert werden dürfen; und das `N`-Präfix für `nvarchar`-Grenzen | `schema generate --target mssql` partitioniert |
 | **7c** | Diff: Partitionierungs-Operationen rendern statt blocken; `SPLIT`/`MERGE RANGE` für Grenzänderungen | `schema migrate` führt Partitionierung aus |
 | **7d** | HASH-Emulation als Modus-Gate nach Sequenz-Vorbild: persistierte berechnete Spalte + RANGE, modusspezifischer Validator, Bruchstellen als E-Codes | HASH-Partitionierung nutzbar |
 

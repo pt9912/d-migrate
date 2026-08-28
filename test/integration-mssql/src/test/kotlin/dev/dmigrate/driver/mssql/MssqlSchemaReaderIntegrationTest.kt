@@ -3,15 +3,20 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IdentityMode
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.nulls.shouldBeNull
@@ -104,6 +109,63 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
                     )
                     stmt.execute("CREATE UNIQUE CLUSTERED INDEX ux_tickets_code ON tickets(code)")
                     stmt.execute("CREATE UNIQUE INDEX ux_tickets_note ON tickets(note) INCLUDE (code)")
+                    // RANGE RIGHT: der Grenzwert gehoert zur oberen Partition,
+                    // also `[from, to)` — genau das, was das neutrale Modell sagt.
+                    stmt.execute(
+                        "CREATE PARTITION FUNCTION pf_events (INT) AS RANGE RIGHT FOR VALUES (100, 200)",
+                    )
+                    stmt.execute(
+                        "CREATE PARTITION SCHEME ps_events AS PARTITION pf_events ALL TO ([PRIMARY])",
+                    )
+                    stmt.execute(
+                        "CREATE TABLE events (id INT NOT NULL, payload NVARCHAR(50)) ON ps_events (id)",
+                    )
+                    // RANGE LEFT: nicht als halboffenes Intervall ausdrueckbar.
+                    stmt.execute(
+                        "CREATE PARTITION FUNCTION pf_legacy (INT) AS RANGE LEFT FOR VALUES (10)",
+                    )
+                    stmt.execute(
+                        "CREATE PARTITION SCHEME ps_legacy AS PARTITION pf_legacy ALL TO ([PRIMARY])",
+                    )
+                    stmt.execute(
+                        "CREATE TABLE legacy_events (id INT NOT NULL, payload NVARCHAR(50)) ON ps_legacy (id)",
+                    )
+                    // Datums-Grenzen sind der realistische Fall — und die Stelle,
+                    // an der sich zeigt, ob das Literal dieselbe Form hat wie beim
+                    // PostgreSQL-Reverse. `sql_variant` liefert je nach Treiber
+                    // Timestamp, Date oder String.
+                    stmt.execute(
+                        "CREATE PARTITION FUNCTION pf_daily (DATE) AS RANGE RIGHT " +
+                            "FOR VALUES ('2024-01-01', '2025-01-01')",
+                    )
+                    stmt.execute(
+                        "CREATE PARTITION SCHEME ps_daily AS PARTITION pf_daily ALL TO ([PRIMARY])",
+                    )
+                    stmt.execute(
+                        "CREATE TABLE daily_events (occurred_on DATE NOT NULL, note NVARCHAR(50)) " +
+                            "ON ps_daily (occurred_on)",
+                    )
+                    // Die beiden Typen, bei denen der Review Drift gegen die
+                    // PostgreSQL-Form vermutet — gemessen statt formatiert.
+                    stmt.execute(
+                        "CREATE PARTITION FUNCTION pf_stamped (DATETIME2(0)) AS RANGE RIGHT " +
+                            "FOR VALUES ('2024-01-01T00:00:00')",
+                    )
+                    stmt.execute(
+                        "CREATE PARTITION SCHEME ps_stamped AS PARTITION pf_stamped ALL TO ([PRIMARY])",
+                    )
+                    stmt.execute(
+                        "CREATE TABLE stamped_events (seen_at DATETIME2(0) NOT NULL) ON ps_stamped (seen_at)",
+                    )
+                    stmt.execute(
+                        "CREATE PARTITION FUNCTION pf_priced (DECIMAL(10,2)) AS RANGE RIGHT FOR VALUES (1.5)",
+                    )
+                    stmt.execute(
+                        "CREATE PARTITION SCHEME ps_priced AS PARTITION pf_priced ALL TO ([PRIMARY])",
+                    )
+                    stmt.execute(
+                        "CREATE TABLE priced_events (amount DECIMAL(10,2) NOT NULL) ON ps_priced (amount)",
+                    )
                     stmt.execute("CREATE SEQUENCE order_seq AS BIGINT START WITH 100 INCREMENT BY 5")
                     // CREATE VIEW/PROCEDURE muessen jeweils allein im Batch stehen.
                     stmt.execute("CREATE VIEW v_active AS SELECT id, name FROM customers WHERE active = 1")
@@ -165,7 +227,83 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
     test("table lister returns the dbo tables") {
         HikariConnectionPoolFactory.create(config).use { pool ->
-            MssqlTableLister().listTables(pool) shouldBe listOf("customers", "orders", "shipments", "tickets")
+            MssqlTableLister().listTables(pool) shouldBe
+                listOf(
+                    "customers", "daily_events", "events", "legacy_events", "orders",
+                    "priced_events", "shipments", "stamped_events", "tickets",
+                )
+        }
+    }
+
+    test("a RANGE RIGHT partitioned table is read with half-open bounds and synthesized names") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val result = MssqlSchemaReader().read(pool)
+            val partitioning = result.schema.tables.getValue("events").partitioning.shouldNotBeNull()
+
+            partitioning.type shouldBe PartitionType.RANGE
+            partitioning.key shouldBe listOf("id")
+            // Zwei Grenzwerte ergeben drei Partitionen.
+            partitioning.partitions.map { it.name } shouldBe listOf("p1", "p2", "p3")
+            partitioning.partitions[0].from shouldBe listOf(PartitionBound.MinValue)
+            partitioning.partitions[0].to shouldBe listOf(PartitionBound.Value("100"))
+            partitioning.partitions[1].from shouldBe listOf(PartitionBound.Value("100"))
+            partitioning.partitions[1].to shouldBe listOf(PartitionBound.Value("200"))
+            partitioning.partitions[2].to shouldBe listOf(PartitionBound.MaxValue)
+
+            // Der Namensverlust wird gemeldet, nicht verschwiegen.
+            result.notes.first { it.code == "R346" }.message strShouldContain "events"
+        }
+    }
+
+    test("a DATE boundary reads as the same literal shape PostgreSQL produces") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val partitioning = MssqlSchemaReader().read(pool)
+                .schema.tables.getValue("daily_events").partitioning.shouldNotBeNull()
+
+            // Der PostgreSQL-Reverse liefert Datumsgrenzen als `'2024-01-01'`.
+            // Kaeme hier `'2024-01-01 00:00:00.0'` heraus, meldete ein
+            // Cross-Dialekt-Vergleich Drift auf identischen Schemata.
+            partitioning.partitions[0].to shouldBe listOf(PartitionBound.Value("'2024-01-01'"))
+            partitioning.partitions[1].from shouldBe listOf(PartitionBound.Value("'2024-01-01'"))
+            partitioning.partitions[1].to shouldBe listOf(PartitionBound.Value("'2025-01-01'"))
+        }
+    }
+
+    test("datetime2 and decimal boundaries take the same shape PostgreSQL produces") {
+        // Beide Formen sind gegen echte Server gemessen, auf beiden Seiten:
+        //
+        // - `datetime2` kam als `'2024-01-01 00:00:00.0'` zurueck, weil
+        //   `java.sql.Timestamp.toString()` immer eine Nachkommastelle anhaengt.
+        //   PostgreSQL schreibt sie nie — das war echte Drift und ist behoben.
+        // - `decimal(10,2)` kommt als `1.50`, und PostgreSQL liefert fuer
+        //   `numeric(10,2)` ebenfalls `1.50`. Die beiden stimmen ueberein; eine
+        //   Normalisierung auf `1.5` haette die Drift erst erzeugt.
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val schema = MssqlSchemaReader().read(pool).schema
+            val stamped = schema.tables.getValue("stamped_events").partitioning.shouldNotBeNull()
+            val priced = schema.tables.getValue("priced_events").partitioning.shouldNotBeNull()
+
+            withClue("datetime2(0)-Grenze: ${stamped.partitions[0].to}") {
+                stamped.partitions[0].to shouldBe listOf(PartitionBound.Value("'2024-01-01 00:00:00'"))
+            }
+            withClue("decimal(10,2)-Grenze: ${priced.partitions[0].to}") {
+                priced.partitions[0].to shouldBe listOf(PartitionBound.Value("1.50"))
+            }
+        }
+    }
+
+    test("a RANGE LEFT partitioned table keeps the partitioning fact, with R347") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val result = MssqlSchemaReader().read(pool)
+            // Lieber unpartitioniert und laut, als Grenzen, die beim
+            // Regenerieren andere Zeilen routen.
+            // Ohne Kinder, aber NICHT null: sonst waere der Rebuild-Waechter blind,
+            // der eine partitionierte Tabelle vor dem Neubau schuetzt.
+            val partitioning = result.schema.tables.getValue("legacy_events").partitioning.shouldNotBeNull()
+            partitioning.partitions.shouldBeEmpty()
+            val note = result.notes.first { it.code == "R347" }
+            note.severity shouldBe SchemaReadSeverity.ACTION_REQUIRED
+            note.message strShouldContain "RANGE LEFT"
         }
     }
 

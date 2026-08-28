@@ -4,6 +4,10 @@ import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -170,7 +174,82 @@ class MssqlSchemaReader(
             primaryKey = primaryKey,
             indices = indices,
             constraints = constraints,
+            partitioning = readPartitioning(session, qualified, table, notes),
         )
+    }
+
+    /**
+     * Partitionierung aus `sys.partition_*` ins neutrale Modell.
+     *
+     * Zwei Dinge gehen dabei nicht eins zu eins:
+     *
+     * **Die Kinder haben keine Namen.** SQL Server nummeriert sie; PostgreSQL
+     * und MySQL benennen sie. Der Reverse vergibt deshalb `p1`, `p2`, … in
+     * Grenzreihenfolge und meldet das mit `R346` -- die urspruenglichen Namen
+     * stehen nicht in der Datenbank und lassen sich nicht erraten. Wer sie
+     * braucht, liefert sie als Overlay nach (siehe Plan).
+     *
+     * **`RANGE LEFT` liefert keine Grenzen.** Das neutrale Modell beschreibt eine
+     * Partition als halboffenes Intervall `[from, to)` -- das ist genau
+     * `RANGE RIGHT`. Bei `LEFT` gehoert der Grenzwert zur unteren Partition.
+     *
+     * Umrechenbar waere die Verschiebung fuer die meisten Schluesseltypen
+     * durchaus: `LEFT (10)` auf `int` ist wertgleich mit `RIGHT (11)`, und die
+     * noetige Granularitaet steht in `sys.partition_parameters` bzw. in den
+     * Spalten, die [readTable] ohnehin schon gelesen hat. Fuer Zeichenketten
+     * (kollationsabhaengig) und Gleitkomma gilt das nicht.
+     *
+     * Dieser Sub-Slice rechnet trotzdem nicht um: der Rueckweg braucht die
+     * inverse Umrechnung im Generate-Pfad, und beide zusammen gehoeren in
+     * denselben Schnitt. Bis dahin traegt das Modell die Tatsache der
+     * Partitionierung -- Strategie und Schluessel -- **ohne Kinder**, statt
+     * `null`. Der Unterschied ist nicht kosmetisch: `MssqlRebuildRenderer`
+     * blockt einen Tabellen-Neubau auf `partitioning != null`, weil er die
+     * Partitionierung sonst still abraeumte. Mit `null` waere genau dieser
+     * Waechter blind.
+     */
+    private fun readPartitioning(
+        session: JdbcOperations,
+        qualified: String,
+        table: String,
+        notes: MutableList<SchemaReadNote>,
+    ): PartitionConfig? {
+        val scan = MssqlMetadataQueries.scanPartitioning(session, qualified) ?: return null
+
+        if (!scan.boundaryOnRight) {
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.ACTION_REQUIRED,
+                code = "R347",
+                objectName = table,
+                message = "Table '$table' is partitioned with RANGE LEFT (function " +
+                    "'${scan.functionName}'); the neutral model describes a partition as the " +
+                    "half-open interval [from, to), which is RANGE RIGHT. The boundary shift " +
+                    "boundary shift is not converted in this slice, so the partitions are read " +
+                    "without bounds. The table is still marked as partitioned, which keeps the " +
+                    "table-rebuild guard effective.",
+            )
+            return PartitionConfig(type = PartitionType.RANGE, key = listOf(scan.column))
+        }
+
+        notes += SchemaReadNote(
+            severity = SchemaReadSeverity.INFO,
+            code = "R346",
+            objectName = table,
+            message = "SQL Server numbers partitions; the ${scan.boundaries.size + 1} partitions of " +
+                "'$table' were named p1…p${scan.boundaries.size + 1} in boundary order. The original " +
+                "names are not stored in the database.",
+        )
+
+        // n Grenzwerte ergeben n+1 Partitionen: (-inf, b1), [b1, b2), …, [bn, +inf).
+        val bounds: List<PartitionBound> = scan.boundaries.map { PartitionBound.Value(it) }
+        val partitions = (0..scan.boundaries.size).map { i ->
+            PartitionDefinition(
+                name = "p${i + 1}",
+                from = listOf(if (i == 0) PartitionBound.MinValue else bounds[i - 1]),
+                to = listOf(if (i == scan.boundaries.size) PartitionBound.MaxValue else bounds[i]),
+            )
+        }
+        return PartitionConfig(type = PartitionType.RANGE, key = listOf(scan.column), partitions = partitions)
     }
 
     private fun readViews(
