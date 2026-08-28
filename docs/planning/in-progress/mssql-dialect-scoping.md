@@ -757,9 +757,12 @@ Das Vorbild liefert gleich die ganze Bauform:
 | **7d** | HASH-Emulation als Modus-Gate nach Sequenz-Vorbild: persistierte berechnete Spalte + RANGE, modusspezifischer Validator, Bruchstellen als E-Codes | HASH-Partitionierung nutzbar |
 
 **Ausgegliedert:** das `partition-mapping`-Overlay (Kindnamen und LIST→RANGE) —
-abgelegt als [`partition-mapping-overlay.md`](../open/partition-mapping-overlay.md).
+geplant als [`partition-mapping-overlay.md`](../next/partition-mapping-overlay.md).
 Es braucht ein neues Overlay-Format samt Verifikation und ist über SQL Server
-hinaus nützlich, gehört also nicht in diesen Slice.
+hinaus nützlich, gehört also nicht in diesen Slice. Der Plan hält fest, was
+dabei zuerst zu entscheiden ist: das Overlay-Dokument bindet heute an ein
+Fingerabdruck**paar** und hängt nur an `schema migrate`, während der
+Kindnamen-Fall im Reverse und der LIST-Fall im Generate entsteht.
 
 ### Slice 8 — Volltext
 
