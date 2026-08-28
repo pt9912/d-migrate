@@ -412,6 +412,7 @@ ddl:
     default_schema: public           # Standard-Schema
   mssql:
     partition_storage: PRIMARY       # Filegroup, auf der partitionierte Daten liegen
+    hash_partitions: action_required # action_required | computed_column (HASH-Emulation)
 
 # ── Dokumentationsgenerierung ──────────────────
 documentation:

@@ -14,6 +14,8 @@ import java.nio.file.Paths
 internal data class DdlConfig(
     /** `ddl.mssql.partition_storage` — Filegroup, auf der partitionierte Daten liegen. */
     val mssqlPartitionStorage: String? = null,
+    /** `ddl.mssql.hash_partitions` — `action_required` oder `computed_column`. */
+    val mssqlHashPartitions: String? = null,
 )
 
 /**
@@ -42,6 +44,9 @@ internal class DdlConfigResolver(
         val mssql = ddl["mssql"] as? Map<*, *> ?: return DdlConfig()
         return DdlConfig(
             mssqlPartitionStorage = readIdentifier(mssql, "partition_storage", path),
+            mssqlHashPartitions = readChoice(
+                mssql, "hash_partitions", path, setOf("action_required", "computed_column"),
+            ),
         )
     }
 
@@ -65,6 +70,40 @@ internal class DdlConfigResolver(
         }
         return value
     }
+
+    /**
+     * Ein Wert aus einer festen Auswahl. Anders als beim CLI-Flag, wo Clikt die
+     * Auswahl erzwingt, kommt hier beliebiger Text an — ein Tippfehler darf
+     * nicht stillschweigend auf den Default fallen, sonst glaubte der Anwender,
+     * die Emulation sei eingeschaltet.
+     */
+    private fun readChoice(block: Map<*, *>, key: String, source: Path, allowed: Set<String>): String? {
+        if (!block.containsKey(key)) return null
+        val value = (block[key] as? String)?.trim()?.lowercase()
+        if (value == null || value !in allowed) {
+            throw ConfigResolveException(
+                "ddl.mssql.$key in $source must be one of ${allowed.sorted().joinToString(", ")}, " +
+                    "got: ${block[key]}",
+            )
+        }
+        return value
+    }
+}
+
+/**
+ * Der effektive HASH-Modus nach dem Merge **CLI-explizit > Config > Default**.
+ *
+ * Der Rueckgabewert bleibt die rohe Zeichenkette: die Abbildung auf
+ * `MssqlHashPartitionMode` macht der Runner, damit ein unbekannter CLI-Wert
+ * dieselbe Meldung bekommt wie bisher.
+ */
+internal fun resolveEffectiveHashPartitions(
+    configPath: Path?,
+    cliValue: String?,
+    preloaded: LoadedConfig? = null,
+): String? {
+    val config = DdlConfigResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
+    return cliValue ?: config.mssqlHashPartitions
 }
 
 /**

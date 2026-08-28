@@ -95,6 +95,49 @@ class DdlConfigResolverTest : FunSpec({
         ex.message!! shouldContain "plain identifier"
     }
 
+    test("ddl.mssql.hash_partitions is read") {
+        val file = tempConfig(
+            """
+            ddl:
+              mssql:
+                hash_partitions: computed_column
+            """.trimIndent()
+        )
+        resolverFor(file).resolve().mssqlHashPartitions shouldBe "computed_column"
+    }
+
+    // Beim CLI-Flag erzwingt Clikt die Auswahl; hier kommt beliebiger Text an.
+    // Ein Tippfehler darf nicht still auf den Default fallen — sonst glaubte
+    // der Anwender, die Emulation sei eingeschaltet.
+    test("a typo in hash_partitions fails loudly instead of silently defaulting") {
+        val file = tempConfig(
+            """
+            ddl:
+              mssql:
+                hash_partitions: computed_colum
+            """.trimIndent()
+        )
+        val ex = shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+        ex.message!! shouldContain "must be one of"
+    }
+
+    test("hash_partitions precedence: CLI beats config") {
+        val file = tempConfig(
+            """
+            ddl:
+              mssql:
+                hash_partitions: computed_column
+            """.trimIndent()
+        )
+        resolveEffectiveHashPartitions(file, cliValue = "action_required") shouldBe "action_required"
+        resolveEffectiveHashPartitions(file, cliValue = null) shouldBe "computed_column"
+        resolveEffectiveHashPartitions(
+            configPath = null,
+            cliValue = null,
+            preloaded = LoadedConfig(root = null, path = Path.of(".d-migrate.yaml")),
+        ) shouldBe null
+    }
+
     test("precedence: CLI beats config, config beats default") {
         val file = tempConfig(
             """

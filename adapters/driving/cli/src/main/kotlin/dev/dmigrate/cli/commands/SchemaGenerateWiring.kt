@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectiveHashPartitions
 import dev.dmigrate.cli.config.resolveEffectivePartitionStorage
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.model.SchemaDefinition
@@ -37,6 +38,12 @@ internal data class SchemaGenerateOptions(
     val mssqlHashPartitions: String?,
     val cliContext: CliContext,
     val configPath: Path? = null,
+)
+
+/** Die aus CLI und Konfigurationsdatei zusammengefuehrten `ddl:`-Werte. */
+private data class EffectiveDdlSettings(
+    val partitionStorage: String?,
+    val hashPartitions: String?,
 )
 
 internal data class SchemaGenerateWiringBundle(
@@ -108,22 +115,30 @@ internal object SchemaGenerateWiring {
         // Der `ddl:`-Block ist nach Dialekt geschachtelt; `ddl.mssql.*` wirkt
         // deshalb nur, wenn auch gegen SQL Server generiert wird. Ein anderer
         // Ziel-Dialekt sieht ausschliesslich das CLI-Flag.
-        val partitionStorage = if (options.target.equals("mssql", ignoreCase = true)) {
+        val isMssql = options.target.equals("mssql", ignoreCase = true)
+        val ddl = if (isMssql) {
             try {
-                resolveEffectivePartitionStorage(options.configPath, options.partitionStorage)
+                EffectiveDdlSettings(
+                    partitionStorage = resolveEffectivePartitionStorage(
+                        options.configPath, options.partitionStorage,
+                    ),
+                    hashPartitions = resolveEffectiveHashPartitions(
+                        options.configPath, options.mssqlHashPartitions,
+                    ),
+                )
             } catch (e: ConfigResolveException) {
                 bundle.printError(e.message ?: "Failed to resolve ddl configuration", "ddl")
                 return 7
             }
         } else {
-            options.partitionStorage
+            EffectiveDdlSettings(options.partitionStorage, options.mssqlHashPartitions)
         }
         val splitMode = if (options.split == "pre-post") SplitMode.PRE_POST else SplitMode.SINGLE
         val request = SchemaGenerateRequest(
             source = options.source,
             target = options.target,
             spatialProfile = options.spatialProfile,
-            partitionStorage = partitionStorage,
+            partitionStorage = ddl.partitionStorage,
             output = options.output,
             report = options.report,
             generateRollback = options.generateRollback,
@@ -133,7 +148,7 @@ internal object SchemaGenerateWiring {
             splitMode = splitMode,
             mysqlNamedSequences = options.mysqlNamedSequences,
             sqliteNamedSequences = options.sqliteNamedSequences,
-            mssqlHashPartitions = options.mssqlHashPartitions,
+            mssqlHashPartitions = ddl.hashPartitions,
             deterministic = options.deterministic,
         )
         val runner = SchemaGenerateRunner(

@@ -1,7 +1,7 @@
 # Tracker: der `ddl:`-Konfigurationsblock wird nicht gelesen
 
-> **Status:** Teilweise umgesetzt (2026-08-28) — Leser steht, ein Schlüssel
-> von acht ist verdrahtet. Der Rest bleibt offen.
+> **Status:** Teilweise umgesetzt (2026-08-28) — Leser steht, **zwei von zehn**
+> Schlüsseln sind verdrahtet. Der Rest bleibt offen.
 > **Trigger:** Beim Verdrahten von `--partition-storage` (SQL-Server-Filegroup)
 > fiel auf, dass es für Generierungsoptionen zwar eine Konfigurationsfläche in
 > der Spec gibt, aber keinen Leser im Code.
@@ -27,9 +27,13 @@ ddl:
 `ddl.mssql.partition_storage` wirkt auf `schema generate --target mssql`
 (Vorrang **CLI > Datei > Default**, ungültige Werte brechen mit Exit 7 ab).
 
-Die übrigen sieben Schlüssel — `inline_foreign_keys`, `include_comments`, die
-drei MySQL-Werte, die zwei SQLite-Werte, `postgresql.default_schema` — werden
-weiterhin **nicht** gelesen. Sie sind heute nur über CLI-Flags erreichbar,
+Seit 7d wird zusätzlich `ddl.mssql.hash_partitions` gelesen — er bekam mit der
+HASH-Emulation seinen Konsumenten und wirkt auf `schema generate` **und**
+`schema migrate`.
+
+Die übrigen acht Schlüssel — `inline_foreign_keys`, `include_comments`, die
+drei MySQL-Werte, die zwei SQLite-Werte und `postgresql.default_schema` —
+werden weiterhin **nicht** gelesen. Sie sind heute nur über CLI-Flags erreichbar,
 soweit sie überhaupt existieren; `include_comments` und
 `postgresql.default_schema` haben nicht einmal das.
 
@@ -57,7 +61,7 @@ erzeugt stillschweigend anderes DDL als der Lauf davor.
    `ConfigShowRenderer` rendert den Dateibaum generisch und führt `ddl` bereits
    in seiner Sektions-Reihenfolge.
 4. ~~Handbuch nachziehen.~~ — für den verdrahteten Schlüssel geschehen.
-5. **Offen:** die restlichen sieben Schlüssel. Jeder braucht einen Konsumenten,
+5. **Offen:** die restlichen acht Schlüssel. Jeder braucht einen Konsumenten,
    bevor er gelesen wird — ein Schlüssel, der gelesen wird und nichts bewirkt,
    ist schlimmer als keiner. Bei mehreren davon ist die Vorarbeit nicht das
    Lesen, sondern dass es die Einstellung im Generator noch gar nicht gibt.

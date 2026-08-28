@@ -3,7 +3,9 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
+import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.cli.config.resolveEffectiveHashPartitions
 import dev.dmigrate.cli.config.RoutineCapabilityConfigResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.cancel.CancellationTokenSource
@@ -124,7 +126,15 @@ internal object SchemaMigrateWiring {
             routineCapabilityResolver = routineCapabilityResolver::resolve,
             strictGapOperations = options.strictGapOperations,
             sqliteNamedSequences = options.sqliteNamedSequences,
-            mssqlHashPartitions = options.mssqlHashPartitions,
+            // Sub-Slice 7d: derselbe Weg wie bei `schema generate` — der
+            // `ddl:`-Block gilt fuer beide Befehle, sonst steuerte die Datei
+            // nur den einen.
+            mssqlHashPartitions = try {
+                resolveEffectiveHashPartitions(options.configPath, options.mssqlHashPartitions)
+            } catch (e: ConfigResolveException) {
+                System.err.println("Error: ${e.message}")
+                return 7
+            },
             lockTimeoutMillis = options.lockTimeoutMs,
         )
         val runner = SchemaMigrateRunner(
