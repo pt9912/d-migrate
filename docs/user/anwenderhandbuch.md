@@ -2601,12 +2601,10 @@ Spalten-Fremdschlüssel über `references`:
 | `full_text_vector_column` | PostgreSQL: vorberechnete `tsvector`-Spalte des Volltext-Index |
 | `full_text_access_method` | PostgreSQL: `gin` oder `gist` |
 
-Nicht jeder Dialekt trägt jedes Feld. Wo beim **Erzeugen** eines wegfällt, sagt
-es der Lauf: eine `prefix_length` außerhalb von MySQL meldet **W126**,
-weggelassene `include_columns` melden **W142**, ein nicht steuerbares
-`clustered` meldet **W143**. Beim Migrieren fallen dieselben Felder still weg —
-verlassen Sie sich dort nicht auf eine Meldung, sondern prüfen Sie das erzeugte
-Skript. Welcher Dialekt was kann, steht in
+Nicht jeder Dialekt trägt jedes Feld. Wo eines wegfällt, sagt es der Lauf —
+beim Erzeugen wie beim Migrieren: eine `prefix_length` außerhalb von MySQL
+meldet **W126**, weggelassene `include_columns` melden **W142**, ein nicht
+steuerbares `clustered` meldet **W143**. Welcher Dialekt was kann, steht in
 [`neutral-model-spec.md`](../../spec/neutral-model-spec.md).
 
 #### F.7 Constraints

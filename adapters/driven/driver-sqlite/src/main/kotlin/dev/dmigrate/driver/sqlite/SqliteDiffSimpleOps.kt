@@ -1,10 +1,13 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.isSpatialGeometryIndex
+import dev.dmigrate.driver.CoveringIndexDropNote
+import dev.dmigrate.driver.asDiffDiagnostic
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -234,7 +237,25 @@ internal object SqliteDiffSimpleOps {
             SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
             return
         }
+        noteCoveringDegradation(op, ctx, table, op.index)
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
+    }
+
+    /**
+     * Was `schema generate` an dieser Stelle meldet, meldet `schema migrate`
+     * auch: SQLite kennt weder INCLUDE-Spalten noch eine Steuerung der Ablage.
+     * Ohne diesen Aufruf warnte nur der Generate-Pfad vor dem Verlust.
+     */
+    private fun noteCoveringDegradation(
+        op: DiffOperation,
+        ctx: SqliteDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        val name = index.name ?: table
+        for (note in CoveringIndexDropNote.forDialect(index, name, "SQLite")) {
+            ctx.addDiagnostic(note.asDiffDiagnostic(op.id))
+        }
     }
 
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: SqliteDiffRenderContext) {

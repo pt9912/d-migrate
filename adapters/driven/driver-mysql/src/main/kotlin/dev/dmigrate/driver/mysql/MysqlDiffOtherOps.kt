@@ -7,9 +7,11 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
+import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlCheckEnforcementResolver
 import dev.dmigrate.driver.ViewQueryTransformer
+import dev.dmigrate.driver.asDiffDiagnostic
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 import dev.dmigrate.driver.mysqlContext
@@ -222,7 +224,27 @@ internal object MysqlDiffOtherOps {
             return
         }
         if (blockMissingPrefix(op, op.index, ctx, table)) return
+        noteCoveringDegradation(op, ctx, table, op.index)
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
+    }
+
+    /**
+     * Was `schema generate` an dieser Stelle meldet, meldet `schema migrate`
+     * auch: MySQL kennt weder INCLUDE-Spalten noch eine Steuerung der Ablage,
+     * und beides faellt beim Anlegen weg. Ohne diesen Aufruf warnte der
+     * Generate-Pfad vor einem Verlust, den der Migrate-Pfad stillschweigend
+     * hinnimmt.
+     */
+    private fun noteCoveringDegradation(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        val name = index.name ?: table
+        for (note in CoveringIndexDropNote.forDialect(index, name, "MySQL")) {
+            ctx.recordDiagnostic(note.asDiffDiagnostic(op.id))
+        }
     }
 
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: MysqlDiffRenderContext) {
@@ -233,6 +255,7 @@ internal object MysqlDiffOtherOps {
                 return
             }
             if (blockMissingPrefix(op, op.index, ctx, table)) return
+            noteCoveringDegradation(op, ctx, table, op.index)
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             return
         }

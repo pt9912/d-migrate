@@ -7,8 +7,10 @@ import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
+import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ViewQueryTransformer
+import dev.dmigrate.driver.asDiffDiagnostic
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
@@ -167,9 +169,35 @@ internal object PostgresDiffOtherOps {
         // (FULLTEXT_VECTOR_UNKNOWN) — see ctx.resolveFullTextIndex. A block here means UP
         // never creates a phantom index, so the DOWN `DROP INDEX` below stays symmetric.
         val index = ctx.resolveFullTextIndex(op, table, op.index) ?: return
+        noteStorageDegradation(op, ctx, table, index)
         // CREATE INDEX (non-CONCURRENTLY): SHARE lock — writes block,
         // reads proceed. Plan-2 §A.1.
         ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
+    }
+
+    /**
+     * Wie im Generate-Pfad: PostgreSQL traegt `INCLUDE` nativ, eine Steuerung der
+     * Ablage kennt es nicht -- `CLUSTER` ist dort eine einmalige Reorganisation.
+     * Gemeldet wird deshalb nur W143; die INCLUDE-Spalten werden ausgeblendet,
+     * damit kein W142 entsteht, das hier nichts zu sagen haette.
+     */
+    private fun noteStorageDegradation(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        if (!index.clustered) return
+        val name = index.name ?: table
+        for (note in CoveringIndexDropNote.forDialect(index.copy(includeColumns = emptyList()), name, "PostgreSQL")) {
+            val diagnostic = note.asDiffDiagnostic(op.id)
+            ctx.addDiagnostic(
+                code = diagnostic.code,
+                operationId = op.id,
+                message = diagnostic.message,
+                severity = diagnostic.severity,
+            )
+        }
     }
 
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: PostgresDiffRenderContext) {
