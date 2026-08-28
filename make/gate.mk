@@ -42,9 +42,9 @@ solid-suppression-gate:
 # nicht (`IsFullTextInstalled` = 0, `mssql-server-fts` nicht aufloesbar), also
 # baut sich der Volltext-Slice seine Testumgebung selbst.
 #
-# Bewusst NICHT in `gates`: der Bau braucht Netz (528 MB Microsoft-Pakete) und
-# hat keinen Upstream-Digest, an dem die Harness sonst pinnt (ADR 0014).
-# Gepinnt bleibt der Basis-Digest im Dockerfile.
+# Bewusst NICHT in `gates`: der Bau braucht Netz und hat keinen
+# Upstream-Digest, an dem die Harness sonst pinnt (ADR 0014). Gepinnt bleibt
+# der Basis-Digest im Dockerfile.
 MSSQL_FTS_TAG ?= d-migrate-mssql-fts:local
 
 .PHONY: mssql-fts-image

@@ -8,21 +8,14 @@ import java.sql.Connection
 import java.sql.DriverManager
 
 /**
- * Slice 8a: die Testumgebung fuer den Volltext-Slice.
+ * Prueft, dass das abgeleitete SQL-Server-Image Full-Text Search wirklich
+ * traegt: die Server-Eigenschaft meldet es, und ein Volltext-Katalog samt
+ * Index laesst sich anlegen.
  *
- * Das gepinnte Basis-Image kann **kein** Full-Text Search — `IsFullTextInstalled`
- * meldet dort `0`, und `mssql-server-fts` ist nicht aufloesbar. Der Slice baut
- * sich deshalb ein abgeleitetes Image (`test/integration-mssql/fts/Dockerfile`,
- * `make mssql-fts-image`).
- *
- * Diese Spec ist der Beleg, dass das Image haelt, was es soll. Sie ist bewusst
- * die **erste** Arbeit des Slice: alles Weitere — Katalog, Schluesselindex,
- * Reverse — waere ohne sie auf Annahmen gebaut.
- *
- * Uebersprungen, wenn das Image fehlt. Das ist keine Bequemlichkeit, sondern
- * Bedingung: das Image entsteht nur mit Netz (528 MB Microsoft-Pakete, 3,63 GB
- * Ergebnis) und wird deshalb nicht in jedem Lauf gebaut. Wer es hat, bekommt den
- * Beleg; wer nicht, sieht einen uebersprungenen Test mit dem Grund im Namen.
+ * Das Image entsteht ueber `make mssql-fts-image`
+ * (`test/integration-mssql/fts/Dockerfile`); fehlt es, ueberspringt sich die
+ * Spec. Warum es ein eigenes Image braucht, steht dort und in
+ * `docs/planning/in-progress/mssql-dialect-scoping.md` (Slice 8).
  */
 class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
 
@@ -87,10 +80,8 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
 })
 
 /**
- * Ob das Image lokal vorliegt. Bewusst `docker image inspect` statt eines
- * Pull-Versuchs: ein Pull gegen ein nur lokal gebautes Tag laeuft in einen
- * 404 der Registry, und der kostet Zeit und produziert eine irrefuehrende
- * Fehlermeldung ("repository does not exist").
+ * Ob das Image lokal vorliegt. `docker image inspect` statt eines
+ * Pull-Versuchs: ein nur lokal gebautes Tag kennt keine Registry.
  */
 private fun dockerImagePresent(image: String): Boolean = runCatching {
     ProcessBuilder("docker", "image", "inspect", image)
