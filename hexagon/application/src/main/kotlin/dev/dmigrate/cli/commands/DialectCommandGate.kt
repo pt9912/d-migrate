@@ -37,7 +37,10 @@ object DialectCommandGate {
             null
         }
 
-    /** Nutzersichtbare Liste der für mssql freigeschalteten Kommandos (wächst mit jedem Slice). */
+    /**
+     * Nutzersichtbare Liste der für mssql freigeschalteten Kommandos. Sie ist
+     * zugleich der Maßstab dafür, was `docs/user/` über SQL Server behaupten darf.
+     */
     const val AVAILABLE_FOR_MSSQL: String =
         "schema reverse, schema compare, schema generate, schema migrate, " +
             "export flyway/liquibase/django/knex, data export/import/transfer"

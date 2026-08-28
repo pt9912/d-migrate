@@ -127,6 +127,15 @@ carve_outs:
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffDdlGeneratorTest.kt
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
   - workstream: D.3
+    dialect: mssql
+    kind: positive
+    permanent: true
+    reason: "SQL Server has no MATERIALIZED VIEW and never will; the diff path blocks CreateMaterializedView at the dispatcher. Same shape as MySQL and SQLite: the BLOCKER cell carries the dialect contract."
+    planRef: docs/adr/0047-mssql-vierter-dialekt-scoping.md
+    ownerTests:
+      - adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDiffViewOpsTest.kt
+      - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
+  - workstream: D.3
     dialect: postgresql
     kind: blocker
     permanent: true
@@ -156,6 +165,14 @@ carve_outs:
     planRef: docs/planning/done-archive/diffresult-migration-plan-2.md §9 E.2
     ownerTests:
       - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelperTest.kt
+  - workstream: E.2
+    dialect: mssql
+    kind: positive
+    permanent: false
+    reason: "The MSSQL reverse does not read routine and trigger bodies, so the diff path has nothing to render and blocks CreateTrigger. Unlike the MV cell this is not structural: the cell becomes pinnable once the reverse reads bodies."
+    planRef: docs/adr/0047-mssql-vierter-dialekt-scoping.md
+    ownerTests:
+      - adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDiffDdlGeneratorTest.kt
   - workstream: E.2
     dialect: "*"
     kind: blocker

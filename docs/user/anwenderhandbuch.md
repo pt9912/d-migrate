@@ -1,8 +1,8 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.6  ·  **Stand:** 22.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.7  ·  **Stand:** 28.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
-(im Ausbau — dort noch nicht verfügbar: `schema migrate`, `data profile`)
+(im Ausbau — dort noch nicht verfügbar: `data profile`)
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
 beschreiben, Datenbanken aufbauen, Daten übertragen und Migrationen ausrollen.
@@ -2064,8 +2064,8 @@ beginnen Sie ohne `--resume` neu.
 **Welche Datenbanken unterstützt d-migrate?**
 PostgreSQL, MySQL/MariaDB und SQLite vollständig. MS SQL Server wird schrittweise
 ausgebaut — verfügbar sind `schema reverse`, `schema compare`, `schema generate`,
-`export <tool>` sowie `data export`/`import`/`transfer`; `schema migrate` und
-`data profile` folgen. Oracle ist geplant.
+`schema migrate`, `export <tool>` sowie `data export`/`import`/`transfer`;
+`data profile` folgt. Oracle ist geplant.
 
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
@@ -2691,6 +2691,8 @@ custom_types:
 | 0.3 | 16.07.2026 | Auf Software-Version 1.0.0-RC-SNAPSHOT aktualisiert. Zugangsdaten-Optionen erweitert (`D_MIGRATE_DB_PASSWORD`, verschlüsselter Store `config credentials`, `credentialRef: file:/env:`); neuer Fehlerfall „credentialRef fail-closed"; `config credentials` in die Befehlsreferenz (A.17) aufgenommen. |
 | 0.4 | 31.07.2026 | Auf Software-Version 1.0.0-RC2 aktualisiert. `credentialRef`-Aufzählungen um das dritte Schema `keychain:` ergänzt (inkl. Hinweis, dass es in CI/Container/Server fail-closed scheitert — neuer Absatz in der Fehlerbehebung). `config show` in 4.2 als Antwort auf „welche Konfiguration gilt gerade?" aufgenommen und als A.18 in die Befehlsreferenz. |
 | 0.5 | 15.08.2026 | Auf Software-Version 1.0.0 (erstes Stable) aktualisiert. **Keine inhaltliche Änderung** — zwischen 1.0.0-RC2 und 1.0.0 kam kein neues Kommando und keine geänderte Option hinzu; die Releases dazwischen waren bauseitig. Nachgezogen wurde die Kopfzeile, die beim 0.4-Eintrag stehengeblieben war (sie nannte weiterhin Handbuch-Version 0.3 und den 16.07.). Sachlich relevant für Leser: der `--user`-Zusatz beim Docker-Aufruf (Abschnitt 1) ist ab 1.0.0 **nötig** und nicht mehr nur empfohlen — bis 0.9.12 lief das Image als root und schrieb auch ohne ihn. |
+| 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
+| 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
 
 ---
 

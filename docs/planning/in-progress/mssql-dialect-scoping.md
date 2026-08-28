@@ -268,7 +268,7 @@ einer erfundenen Reihenfolge.
 | `RenameProjectionCapabilitiesFactory` | `error("unreachable: DialectCommandGate …")` | Spiegelwert in `RenameProjectionDialect` |
 | `DialectCommandGate` | `SCHEMA_MIGRATE` gated | Eintrag entfällt (nur `DATA_PROFILE` bleibt) |
 | `SequenceCapabilityDefaults` | preserve/atomic `false` | preserve `true` (Sub-Slice 5d) |
-| `MatrixSweepRunner` / `MatrixCell.ALL_DIALECTS` | `MSSQL -> null`, nicht im Sweep | Renderer + Zellen (Eigner-Entscheidung Slice 4: beides zusammen) |
+| `MatrixSweepRunner` / `MatrixCell.ALL_DIALECTS` | `MSSQL -> null`, nicht im Sweep | Renderer verdrahtet, mssql in der Dialektliste; zwei Zellen als Carve-out (siehe unten) |
 | Neutral-Typ-Projektion | `Enum(refType)` bleibt Identität | braucht Schema-Kontext, siehe offene Punkte |
 
 ### T-SQL-Eigenheiten, die den Diff-Pfad von den anderen drei trennen
@@ -323,7 +323,7 @@ nur mit Klammern" ist:
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | `WITH CHECK` beim Nachziehen auf Bestandsdaten (ohne das gilt ein nachtraeglicher FK/CHECK als *not trusted*); SET-Optionen im Migrate-Pfad; Kaskaden-Wächter gegen den Zielzustand statt gegen das Generate-Schema. Dazu die beiden Stellen, die 5a deswegen blockte: `CreateTable` rendert seine Indizes wieder, und abhängige Indizes und Constraints werden um eine Spaltenänderung herum abgeräumt und neu angelegt | Live-Integrationstest, der einen **gefilterten** Index per Migrate anlegt (Msg-1934-Regressionsschutz) — belegt zugleich, dass die SET-Optionen im selben Batch wirken |
 | **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR ALTER VIEW` (ein Statement, kein Fenster); Portabilitätsprüfung wie im Generate-Pfad; Custom Types haben in T-SQL kein Objekt — `AlterCustomType` fächert stattdessen auf jede nutzende Spalte auf | Unit-Tests je Operation und Richtung; die Enum-CHECK-Entscheidung fällt **nicht** hier, sondern mit 5e (siehe unten) |
 | **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE … RESTART WITH` plus Probe über `sys.sequences`; `supportsCurrentValuePreserve` steht auf `true` | Live-Test pinnt die gemessene Sequenz-Semantik; die Zeile aus [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.1 ist wahr. **Pipeline-Verdrahtung bleibt bei 5e** (siehe dort) |
-| **5e** (teilweise) | — | Abschluss. **Erledigt:** `RenameProjectionDialect`-Eintrag samt Rename-Abhängigkeitspolitik + `SequencePreserveStage`-Dialektliste, Schema-Kontext für die Typ-Projektion (`Enum(refType)`), Renderer-Registry, **Gate-Fall**, CLI-E2E (der Ablehnungsfall ist in einen Funktionsnachweis gekippt), Live-Round-Trip über die echten Runner. **Vorbedingung erfüllt:** [`fingerprint-v8-enum-check-projection.md`](../done/fingerprint-v8-enum-check-projection.md) gebaut ([ADR 0048]). **Offen:** Beitritt zum Cross-Dialekt-Matrix-Sweep und die Handbücher | `schema migrate` ist für mssql nutzbar |
+| **5e** ✅ | — | Abschluss. **Erledigt:** `RenameProjectionDialect`-Eintrag samt Rename-Abhängigkeitspolitik + `SequencePreserveStage`-Dialektliste, Schema-Kontext für die Typ-Projektion (`Enum(refType)`), Renderer-Registry, **Gate-Fall**, CLI-E2E (der Ablehnungsfall ist in einen Funktionsnachweis gekippt), Live-Round-Trip über die echten Runner. **Vorbedingung erfüllt:** [`fingerprint-v8-enum-check-projection.md`](../done/fingerprint-v8-enum-check-projection.md) gebaut ([ADR 0048]). Matrix-Sweep beigetreten, Handbücher berichtigt | `schema migrate` ist für mssql nutzbar |
 
 ### Wie der Neubau aussieht (gebaut in 5a-2)
 
@@ -455,22 +455,28 @@ was der Renderer **ausdrücken** kann, wie bei den anderen drei Dialekten auch.
 Die Atomic-Preserve-Fähigkeiten bleiben `false`: dafür wäre eine eigene
 Sperrstrategie zu entwerfen, und die ist weder entworfen noch belegt.
 
-### Wiedereinstieg in den Rest von 5e
+### Abschluss von 5e
 
-Zwei Punkte stehen aus, und der zweite ist dringlicher als er klingt.
+**Matrix-Sweep.** mssql steht in `MatrixCell.ALL_DIALECTS`, der
+`MatrixSweepRunner` in
+[`test/cross-dialect-matrix`](../../../test/cross-dialect-matrix) liefert den
+`MssqlDiffDdlGenerator`. Acht Zellen sind mit Fixtures gepinnt; sechs davon
+laufen für mssql gegen den echten Renderer und halten auf Anhieb. Die zwei
+übrigen fielen durch, und beide waren korrektes Verhalten statt einer Lücke:
+`D.3/mssql/positive` (Materialized View) und `E.2/mssql/positive` (Trigger)
+enden mit Exit 8 statt 0, weil der Renderer sie blockt — mit einer Diagnose,
+die benennt warum. Sie stehen jetzt als Carve-out in `fixtures/carve-outs.yaml`:
+die MV-Zelle dauerhaft wie bei MySQL und SQLite, die Trigger-Zelle vorläufig,
+denn sie wird pinnbar, sobald der Reverse Rümpfe liest. Die ungepinnten
+Workstreams deckten die bestehenden `dialect: "*"`-Einträge bereits ab.
 
-**Matrix-Sweep.** `MatrixCell.ALL_DIALECTS` und `MatrixSweepRunner` in
-[`test/cross-dialect-matrix`](../../../test/cross-dialect-matrix) führen mssql
-noch nicht. Slice 4 hatte den Beitritt vertagt, weil er ohne Diff-Renderer
-Wegwerf-Carve-outs erzeugt hätte — diese Bedingung ist mit dem Gate-Fall
-entfallen.
-
-**Handbücher — aktuell falsch, nicht nur unvollständig.** Der Gate-Fall hat
-`DialectCommandGate.AVAILABLE_FOR_MSSQL` um `schema migrate` erweitert; diese
-Konstante ist die autoritative Liste dafür, was `docs/user/` behaupten darf.
-Anwender- und Administrationshandbuch nennen SQL Server dort weiterhin als
-Dialekt **ohne** Migrate-Pfad. Wer die Handbücher liest, bekommt eine Aussage,
-die der Code widerlegt.
+**Handbücher.** `DialectCommandGate.AVAILABLE_FOR_MSSQL` ist die autoritative
+Liste dafür, was `docs/user/` behaupten darf. Nachgezogen sind die zwei Stellen
+des Anwenderhandbuchs, an denen `schema migrate` steht — Gültigkeitsbereich und
+FAQ — sowie die Dialekttabellen beider READMEs; ausstehend ist dort nur noch
+`data profile`. Das Administrationshandbuch braucht nichts: seine
+SQL-Server-Stellen betreffen Verbindungsform, Timeouts und SSL, keine
+Kommando-Verfügbarkeit.
 
 ### Was in Slice 5 bewusst geblockt bleibt
 

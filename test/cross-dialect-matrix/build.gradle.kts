@@ -17,6 +17,7 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-postgresql"))
     testImplementation(project(":adapters:driven:driver-mysql"))
     testImplementation(project(":adapters:driven:driver-sqlite"))
+    testImplementation(project(":adapters:driven:driver-mssql"))
     testImplementation(project(":adapters:driven:formats"))
 
     testImplementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")

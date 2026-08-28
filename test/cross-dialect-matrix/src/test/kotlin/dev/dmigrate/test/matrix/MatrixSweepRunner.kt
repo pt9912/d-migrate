@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.DiffDdlGenerator
+import dev.dmigrate.driver.mssql.MssqlDiffDdlGenerator
 import dev.dmigrate.driver.mysql.MysqlDiffDdlGenerator
 import dev.dmigrate.driver.postgresql.PostgresDiffDdlGenerator
 import dev.dmigrate.driver.sqlite.SqliteDiffDdlGenerator
@@ -18,8 +19,9 @@ import java.nio.file.Path
  * Executes one [MatrixCell] via [SchemaMigrateRunner] in file-mode
  * (no Testcontainers, no live DB probes). The runner is wired with
  * the real dialect renderers (`PostgresDiffDdlGenerator`,
- * `MysqlDiffDdlGenerator`, `SqliteDiffDdlGenerator`) so the matrix
- * detects regressions in actual dialect output, not just orchestration.
+ * `MysqlDiffDdlGenerator`, `SqliteDiffDdlGenerator`,
+ * `MssqlDiffDdlGenerator`) so the matrix detects regressions in
+ * actual dialect output, not just orchestration.
  *
  * Fixture layout (loaded from classpath via [MatrixFixtures]):
  *
@@ -39,12 +41,7 @@ internal class MatrixSweepRunner {
             DatabaseDialect.POSTGRESQL -> PostgresDiffDdlGenerator()
             DatabaseDialect.MYSQL -> MysqlDiffDdlGenerator()
             DatabaseDialect.SQLITE -> SqliteDiffDdlGenerator()
-            // MSSQL tritt dem Sweep zusammen mit seinem Diff-Renderer bei
-            // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 5):
-            // ohne MssqlDiffDdlGenerator waere jede Zelle entweder ein
-            // Wegwerf-Carve-out oder ein gepinnter Fehlerpfad. Bis dahin
-            // null = derselbe "No renderer registered"-Pfad wie produktiv.
-            DatabaseDialect.MSSQL -> null
+            DatabaseDialect.MSSQL -> MssqlDiffDdlGenerator()
         }
     }
 

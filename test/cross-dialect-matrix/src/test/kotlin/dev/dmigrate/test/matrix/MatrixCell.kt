@@ -87,6 +87,7 @@ data class MatrixCell(
             DatabaseDialect.POSTGRESQL,
             DatabaseDialect.MYSQL,
             DatabaseDialect.SQLITE,
+            DatabaseDialect.MSSQL,
         )
 
         val ALL_KINDS: List<Kind> = Kind.values().toList()
