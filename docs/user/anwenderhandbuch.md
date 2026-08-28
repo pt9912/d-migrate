@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.1  ·  **Stand:** 28.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.2  ·  **Stand:** 28.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 (im Ausbau — dort noch nicht verfügbar: `data profile`)
 
@@ -2662,7 +2662,33 @@ steuerbares `clustered` meldet **W143**. Welcher Dialekt was kann, steht in
 | ---- | ------------ |
 | `type` | `range`, `hash`, `list` |
 | `key` | Liste der Partitionierungs-Spalten |
-| `partitions` | Liste aus `{ name, from, to, values }` |
+| `partitions` | Liste der Kind-Partitionen (Felder unten) |
+
+Je Kind-Partition:
+
+| Feld | Gilt für | Beschreibung |
+| ---- | -------- | ------------ |
+| `name` | alle | Name der Partition (Pflicht) |
+| `from` | `range` | Untere Grenze als Werte-Tupel; `MINVALUE` als Sentinel |
+| `to` | `range` | Obere Grenze; `MAXVALUE` als Sentinel. Das Intervall ist halboffen — `to` gehört nicht mehr dazu |
+| `values` | `list` | Die Werte, die in diese Partition fallen |
+| `modulus` | `hash` | Anzahl der Eimer |
+| `remainder` | `hash` | Welcher Eimer diese Partition ist (`0` bis `modulus - 1`) |
+| `default` | `range`, `list` | Auffang-Partition für alles, was in keine andere fällt. Schließt `from`/`to`/`values`/`modulus` aus |
+| `indices` | alle | Indizes, die nur auf diesem Kind liegen (nicht die vom Elternteil geerbten) |
+
+Beispiel für `hash` — vier Eimer, vier Partitionen:
+
+```yaml
+partitioning:
+  type: hash
+  key: [customer_id]
+  partitions:
+    - { name: p0, modulus: 4, remainder: 0 }
+    - { name: p1, modulus: 4, remainder: 1 }
+    - { name: p2, modulus: 4, remainder: 2 }
+    - { name: p3, modulus: 4, remainder: 3 }
+```
 
 #### F.9 Custom Types
 
@@ -2744,6 +2770,7 @@ custom_types:
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
 | 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
+| 1.2 | 28.08.2026 | Anhang F.8 (Partitionierung) vervollständigt: Die Felder je Kind-Partition waren nur als `{ name, from, to, values }` genannt — das deckt `range` und `list` ab, aber nicht `hash`. Ergänzt wurden `modulus`, `remainder`, `default` und `indices`, mit Angabe, welches Feld zu welchem Partitionstyp gehört, sowie ein `hash`-Beispiel. |
 | 1.1 | 28.08.2026 | `schema migrate` legt partitionierte Tabellen jetzt partitioniert an — auf allen Dialekten, die das Konzept kennen. Bis dahin erzeugte der Migrationspfad bei PostgreSQL und MySQL eine **unpartitionierte** Tabelle, ohne das zu melden; bei SQL Server brach er ab. Neu dokumentiert: der Abbruch bei nicht ausdrückbarer Partitionierung und der Ausschluss von Fremdschlüsseln auf partitionierten MySQL-Tabellen (**E065**). |
 | 1.0 | 28.08.2026 | Der Ablageort partitionierter Daten lässt sich jetzt auch in der Konfigurationsdatei hinterlegen (`ddl.mssql.partition_storage`) statt nur als Flag je Aufruf; Abschnitt 3.20 nennt die Vorrangregel und den Abbruch bei ungültigem Wert. |
 | 0.9 | 28.08.2026 | SQL Server partitioniert: Abschnitt 3.20 nennt die `range`-Beschränkung, die zwei zusätzlichen Objekte je Tabelle (**W144**) und die Filegroup-Frage; neue Option `--partition-storage` in der Befehlsreferenz. |
