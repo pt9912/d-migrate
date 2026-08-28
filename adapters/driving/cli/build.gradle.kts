@@ -12,7 +12,7 @@ plugins {
     // GraalVM Native Image (docs/planning/done/graalvm-native-image-distribution.md).
     // Nur `nativeCompile`/`nativeRun` brauchen eine GraalVM-Toolchain; der normale Build (JDK 21) ist
     // unberührt. Bis Phase D (GraalVM in CI) wird `nativeCompile` nur lokal ausgeführt.
-    id("org.graalvm.buildtools.native") version "1.1.9"
+    id("org.graalvm.buildtools.native") version "1.1.10"
 }
 
 application {
