@@ -4,8 +4,9 @@
 > **Ziel:** Eine dritte Overlay-Art, mit der ein Anwender Partitions-Identität
 > beisteuert, die das Werkzeug nicht ableiten kann — Kindnamen, die ein Ziel
 > nicht trägt, und LIST-Wertemengen, die als RANGE-Grenzen ausdrückbar sind.
-> **Vorbedingungen:** Entscheidung E1 aus Abschnitt 3 (Bindung des Dokuments)
-> muss vor P1 fallen; sie bestimmt, ob ein ADR nötig wird.
+> **Vorbedingungen:** keine offenen mehr — die Bindungsfrage ist mit
+> [ADR 0050](../../adr/0050-overlay-bindung-uebergang-vs-darstellung.md)
+> entschieden.
 > **Aktivierung:** Beim ersten Implementierungs-Commit → `../in-progress/`.
 
 Absorbiert die Vorabklärung `open/partition-mapping-overlay.md`.
@@ -48,62 +49,57 @@ sind, wäre das Gegenteil: dieselbe Migration wäre je nach Datei sauber oder
 driftend, und der Fingerabdruck im Rollback-Artefakt hinge an einer
 Einstellung statt am Schema.
 
-## 3. Die Naht, die es noch nicht gibt
+## 3. Die Bindung — entschieden
 
-**Das ist die Entscheidung, die vor jeder Codezeile fällt.** Die
-Vorabklärung nahm an, der CLI-Weg sei „wie bei `rename-mapping`". Er ist es
-nicht, und der Unterschied ist strukturell:
+Die Vorabklärung nahm an, der CLI-Weg sei „wie bei `rename-mapping`". Er ist
+es nicht. `MigrationOverlay` trägt `sourceFingerprint` **und**
+`targetFingerprint`, gilt also für ein Schema*paar*, und ist nur an
+`schema migrate` verdrahtet
+([`SchemaMigrateCommand.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaMigrateCommand.kt)).
+Beide Partitionsfälle entstehen außerhalb: Kindnamen im Reverse, LIST→RANGE im
+Generate.
 
-- `MigrationOverlay` trägt `sourceFingerprint` **und** `targetFingerprint`.
-  Das Dokument gilt für ein Schema**paar**, nicht für ein Schema.
-- `--migration-overlay` gibt es ausschließlich an `schema migrate`
-  ([`SchemaMigrateCommand.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaMigrateCommand.kt)).
-  Weder `schema reverse` noch `schema generate` kennen Overlays.
+Naheliegend wäre gewesen, den Vertrag den Befehlen anzupassen. Das ist die
+falsche Reihenfolge. Maßgeblich ist, **wovon der Inhalt eines Overlays
+abhängt** — und da fällt die Antwort je Art verschieden aus: `using-expression`
+und `rename-mapping` sind Aussagen über *zwei* Zustände und ohne beide sinnlos.
+`partition-mapping` ist eine Aussage darüber, wie ein Sachverhalt in einem
+Dialekt *dargestellt* wird; der IST-Zustand einer laufenden Datenbank ist dafür
+belanglos — auch innerhalb eines `schema migrate`, denn die LIST-Partitionierung
+steht im SOLL-Schema.
 
-Beide Partitionsfälle treten **außerhalb** dieser Naht auf: Kindnamen bei
-`schema reverse` (eine Datenbank, kein Paar), LIST→RANGE bei `schema generate`
-(eine Datei, kein Zielschema). Nur der LIST-Fall *innerhalb* eines
-`schema migrate` passt heute schon.
+[ADR 0050](../../adr/0050-overlay-bindung-uebergang-vs-darstellung.md) hält
+daraus fest: eine sealed Bindung, `Transition` (Paar) für die bestehenden
+Arten, `Representation` (ein Schema) für `partition-mapping`, Format
+`migration-overlay.v2` mit v1-Dokumenten als `Transition`.
 
-### Entscheidung E1: Bindung des Dokuments
+Damit ist auch die zweite Frage beantwortet: **`schema generate` konsumiert
+das Overlay** — nicht als Zugeständnis, sondern weil die Bindung nie ein Paar
+brauchte. `E055` für `list` wird zu einem auflösbaren Abbruch statt einer
+Sackgasse.
 
-| Option | Bindung | Kosten | Risiko |
-| ------ | ------- | ------ | ------ |
-| **A** — Paarbindung bleibt Pflicht | Nur `schema migrate` bekommt `partition-mapping`; Reverse und Generate bleiben außen vor | Am wenigsten Arbeit, kein Formatbruch | Löst den Kindnamen-Fall **gar nicht** — der entsteht im Reverse |
-| **B** — Einschema-Bindung als zweite Dokumentform | `targetFingerprint` entfällt für Overlays, die auf ein einzelnes Schema wirken | Formatänderung (`formatVersion`), Preflight muss beide Formen prüfen | Zwei Dokumentformen, die man verwechseln kann |
-| **C** — Reverse-Overlay bindet an die gelesene Datenbank | `sourceFingerprint` = Fingerabdruck des gelesenen Schemas, `targetFingerprint` = derselbe | Kein Formatbruch, aber semantisch schief | Ein Feld trägt eine Bedeutung, die sein Name nicht hergibt |
-
-**Empfehlung: B**, und zwar bewusst gegen die billigere Variante. C erkauft
-sich die Vermeidung des Formatbruchs damit, dass `targetFingerprint` etwas
-anderes bedeutet als sein Name sagt — genau die Art stiller Doppelbedeutung,
-die später niemand mehr auflöst. A ist ehrlich, liefert aber nur die Hälfte;
-falls E1 auf A fällt, entfällt P3 und der Kindnamen-Fall braucht ein eigenes
-Ticket statt eines stillen Rests in diesem Plan.
-
-B verlangt einen ADR: die Dokumentform ist ein Vertrag mit Artefakt-Wirkung
-(`overlayHash`, `createdByVersion`), und eine zweite Form davon ist keine
-Implementierungsentscheidung.
-
-### Entscheidung E2: Wirkt das Overlay auf `schema generate`?
-
-Der LIST-Fall bricht heute im Generate mit `E055` ab — dort gibt es kein
-Zielschema und keinen Fingerabdruck, an den ein Dokument binden könnte.
-Entweder bekommt Generate eine eigene, schwächer gebundene Form (dann ist
-die Verifikation aus P2 die einzige Sicherung), oder der Fall bleibt auf
-`schema migrate` beschränkt und Generate meldet weiter `E055`. **Vorschlag:
-zunächst beschränken** — der Plan liefert dann keinen Weg für die reine
-DDL-Erzeugung, und das gehört so gesagt, nicht stillschweigend gelassen.
+Zwei Folgerungen, die der ADR benennt und die den Schnitt unten prägen: die
+Diagnose muss den Fingerabdruck nennen, an den zu binden ist (kein Befehl gibt
+ihn heute aus), und ein Reverse-Overlay bindet an den Zustand **vor** seiner
+Anwendung, weil Kindnamen im Fingerabdruck stehen und die Kinder nach Namen
+sortiert werden.
 
 ## 4. Arbeitspakete
 
-### P0 — Entscheidungen und ADR
-- E1 und E2 entschieden und begründet.
-- Bei E1 = B: ADR geschrieben und angenommen (Dokumentform, Migrationspfad
-  für bestehende Overlays, Verhalten des Preflights bei der jeweils anderen
-  Form).
-- **Abnahme:** ADR-Status `accepted`; `make docs-check` grün.
+### P0 — Bindung ✅ entschieden
+[ADR 0050](../../adr/0050-overlay-bindung-uebergang-vs-darstellung.md),
+`accepted`.
 
-### P1 — Overlay-Art und Eintragsform
+### P1 — Sealed Bindung im Format
+- `MigrationOverlayBinding` mit `Transition`/`Representation`; `formatVersion`
+  auf `migration-overlay.v2`; v1-Dokumente lesen sich flach als `Transition`.
+- Validator und Preflight prüfen die je `overlayKind` verlangte Bindungsart;
+  die falsche ist ein Blocker, kein Hinweis.
+- **Abnahme:** bestehende v1-Overlays validieren unverändert (Regressionstest
+  über die vorhandenen Fixtures); ein `partition-mapping` mit Paarbindung wird
+  abgelehnt; ein `rename-mapping` mit Einschema-Bindung ebenso.
+
+### P2 — Overlay-Art und Eintragsform
 - `MigrationOverlayKinds.PARTITION_MAPPING` und ein
   `PartitionMappingOverlayEntry` mit beiden Eintragsarten: Kind ↔ Bezeichner
   des Ziels sowie Wertemenge ↔ Grenze.
@@ -112,7 +108,7 @@ DDL-Erzeugung, und das gehört so gesagt, nicht stillschweigend gelassen.
 - **Abnahme:** Round-Trip-Test (schreiben → lesen → identischer Hash); ein
   Overlay mit unbekannter `kind` wird weiterhin abgelehnt, nicht ignoriert.
 
-### P2 — Verifikation des LIST-Falls
+### P3 — Verifikation des LIST-Falls
 - Prüfung: Wertemengen sortieren, auf Zusammenhang und
   Überschneidungsfreiheit prüfen, Grenzen daraus ableiten und mit den
   angegebenen vergleichen.
@@ -123,23 +119,33 @@ DDL-Erzeugung, und das gehört so gesagt, nicht stillschweigend gelassen.
   Partition routen würde, abgelehnt. Property-Test über zufällige
   Mengenpartitionen: akzeptiert genau dann, wenn zusammenhängend.
 
-### P3 — Naht im Reverse (entfällt bei E1 = A)
+### P4 — Die Diagnose nennt den Fingerabdruck
+- `R346` und `E055` tragen den Fingerabdruck des Schemas, an das ein Overlay
+  zu binden wäre, samt der erwarteten Eintragsart.
+- **Abnahme:** Der in der Meldung genannte Wert ist derselbe, den der
+  Validator anschließend erwartet — belegt durch einen Test, der die Meldung
+  parst und das daraus gebaute Overlay ohne weitere Angabe akzeptiert bekommt.
+
+### P5 — Naht im Reverse
 - `schema reverse` nimmt ein Overlay entgegen und setzt die Kindnamen daraus,
-  statt `p1`, `p2`, … zu vergeben.
+  statt `p1`, `p2`, … zu vergeben. Gebunden wird an den Zustand **vor** der
+  Anwendung (ADR 0050).
 - `R346` verstummt für die Kinder, die das Overlay benennt, und bleibt für
   die übrigen.
 - **Abnahme:** Live gegen echtes SQL Server — partitionierte Tabelle lesen,
   einmal ohne und einmal mit Overlay, Namen in der Ausgabe belegt.
 
-### P4 — Naht im Diff/Migrate
+### P6 — Naht im Diff/Migrate/Generate
 - Der Planer nutzt die Zuordnung für Identität; bei einer Zuordnung, die der
   Preflight ablehnt, entsteht ein Blocker, kein stiller Fallback.
 - **Abnahme:** Ein `schema migrate --plan-only` mit gültigem Overlay erzeugt
   keine Drop/Create-Paare für Partitionen, die einander entsprechen; mit
-  ungültigem Overlay bricht es mit benanntem Blocker ab.
+  ungültigem Overlay bricht es mit benanntem Blocker ab. `schema generate
+  --target mssql` erzeugt für ein LIST-Schema mit Overlay gültiges RANGE-DDL
+  statt `E055`.
 
-### P5 — CLI und Doku
-- Overlay-Weg an den betroffenen Befehlen (welche, entscheidet E1/E2).
+### P7 — CLI und Doku
+- Overlay-Weg an `schema reverse`, `schema generate` und `schema migrate`.
 - Handbuch **erst hier** — dort darf nur stehen, was wirkt.
 - **Abnahme:** Aufgabenorientierter Abschnitt („Ihre Partitionsnamen gehen
   beim Reverse verloren → …"); Feldreferenz im Anhang; `make docs-check` grün.

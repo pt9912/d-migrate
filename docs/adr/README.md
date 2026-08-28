@@ -101,3 +101,6 @@ argumentiert werden.
 | 0045 | [Ein Branch statt `develop` → `main` — Entwicklung nach v1.0.1 auf `main`](0045-ein-branch-main-statt-develop-main.md) | accepted |
 | 0046 | [Hadoop bleibt im Parquet-Adapter — parquet-java erzwingt es](0046-hadoop-bleibt-im-parquet-adapter.md) | accepted |
 | 0047 | [MS SQL Server als vierter Dialekt — 2017+, voller Umfang als Slices, CI in jedem Lauf](0047-mssql-vierter-dialekt-scoping.md) | accepted |
+| 0048 | [Der Wertevorrat eines Enums zählt im Fingerprint unabhängig von seiner Darstellung, `schema-fingerprint-v7` → `v8`](0048-enum-wertevorrat-im-fingerprint.md) | accepted |
+| 0049 | [Abdeckende und clustered Indizes stehen erstklassig im neutralen Modell, `schema-fingerprint-v8` → `v9`](0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) | accepted |
+| 0050 | [Overlay-Bindung: Übergang bindet an ein Paar, Darstellung an ein Schema](0050-overlay-bindung-uebergang-vs-darstellung.md) | accepted |
