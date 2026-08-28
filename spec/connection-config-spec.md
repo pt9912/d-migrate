@@ -410,6 +410,8 @@ ddl:
     journal_mode: wal                # WAL-Modus
   postgresql:
     default_schema: public           # Standard-Schema
+  mssql:
+    partition_storage: PRIMARY       # Filegroup, auf der partitionierte Daten liegen
 
 # ── Dokumentationsgenerierung ──────────────────
 documentation:

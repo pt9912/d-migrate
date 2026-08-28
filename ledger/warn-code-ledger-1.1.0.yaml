@@ -237,3 +237,15 @@ entries:
         path_type: production
       - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt"
         path_type: production
+  # W144 — Partition Function und Scheme sind in SQL Server datenbankweit und
+  # teilbar; das neutrale Modell traegt Partitionierung je Tabelle.
+  - code: W144
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlPartitionGenerateTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGenerator.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlPartitionDdl.kt"
+        path_type: production

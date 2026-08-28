@@ -39,6 +39,10 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         .flag()
     val spatialProfile by option("--spatial-profile",
         help = "Spatial type handling profile (postgis, native, spatialite, none)")
+    val partitionStorage by option(
+        "--partition-storage",
+        help = "Storage location for partitioned data (SQL Server: filegroup name; default PRIMARY)",
+    )
     val split by option("--split",
         help = "DDL output split mode: 'single' (default) or 'pre-post' for import-friendly artifacts")
         .choice("single", "pre-post")
@@ -61,6 +65,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 generateRollback = generateRollback,
                 deterministic = deterministic,
                 spatialProfile = spatialProfile,
+                partitionStorage = partitionStorage,
                 split = split,
                 mysqlNamedSequences = mysqlNamedSequences,
                 sqliteNamedSequences = sqliteNamedSequences,

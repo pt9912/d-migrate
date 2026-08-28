@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.8  ·  **Stand:** 28.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.9  ·  **Stand:** 28.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 (im Ausbau — dort noch nicht verfügbar: `data profile`)
 
@@ -1801,6 +1801,20 @@ nennt).
 
 - Zielsysteme ohne Partitionierungsunterstützung blockieren mit **E055**
   („Partitioning is not supported in the target dialect").
+- **SQL Server partitioniert ausschließlich nach `range` über eine Spalte.**
+  `list` und `hash` blockieren dort mit **E055**. Der Grund ist keine
+  Einschränkung des Werkzeugs: SQL Server kennt nur RANGE.
+- **Bei SQL Server entstehen zwei zusätzliche Objekte je Tabelle** — eine
+  Partition Function und ein Partition Scheme (`pf_<tabelle>`, `ps_<tabelle>`),
+  gemeldet mit **W144**. In SQL Server lassen sich diese Objekte zwischen
+  Tabellen teilen; aus einem Schema, das die Partitionierung je Tabelle
+  beschreibt, ist die Teilung nicht rekonstruierbar. Funktional gleichwertig,
+  physisch mehr Objekte — wenn Sie die Teilung brauchen, führen Sie die Schemes
+  hinterher zusammen.
+- **Getrennte Ablage** verlangt bei SQL Server Filegroups. Ohne Angabe liegen
+  alle Partitionen auf `PRIMARY`: die Partitionierung wirkt beim Abfragen
+  (Partition Elimination), trennt aber die Ablage nicht. Legen Sie die
+  Filegroups an und setzen Sie `--partition-storage <name>`.
 - Vollständige Felder: [Anhang F.8](#f8-partitionierung).
 
 ### 3.21 Eigene Datentypen definieren (Enum, Composite, Domain)
@@ -2174,6 +2188,7 @@ Fortschritt/Warnungen nach stderr.
 | `--mysql-named-sequences` | `action_required` (Standard) oder `helper_table` (nur `--target mysql`) |
 | `--sqlite-named-sequences` | `action_required` (Standard) oder `helper_table` (nur `--target sqlite`) |
 | `--spatial-profile` | `postgis`, `native`, `spatialite`, `none` |
+| `--partition-storage` | Ablageort partitionierter Daten; bei SQL Server der Filegroup-Name (Standard `PRIMARY`) |
 
 #### A.5 `schema reverse`
 
@@ -2705,6 +2720,7 @@ custom_types:
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
 | 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
+| 0.9 | 28.08.2026 | SQL Server partitioniert: Abschnitt 3.20 nennt die `range`-Beschränkung, die zwei zusätzlichen Objekte je Tabelle (**W144**) und die Filegroup-Frage; neue Option `--partition-storage` in der Befehlsreferenz. |
 
 ---
 

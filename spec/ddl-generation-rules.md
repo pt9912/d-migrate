@@ -412,7 +412,7 @@ Besonderheiten:
   `VALUE` außerhalb von String-Literalen durch die Spalte ersetzt.
 - `DECIMAL`-Präzision > 38 → auf 38 gekappt + W139
 - Keine Tabellenoptionen (kein Engine/Charset)
-- Partitionierung wird nicht gerendert (E055, Tabelle plain; siehe §9)
+- Partitionierung: `range` über eine Spalte wird gerendert, alles andere bleibt E055 (siehe §9)
 - Skript-Darstellung mit `GO`-Batch-Trennern (siehe §13.1)
 
 ---
@@ -914,7 +914,48 @@ Hinweis: MySQL erfordert, dass der Partitionsschlüssel Teil des Primary Key ist
 
 SQLite unterstützt keine native Partitionierung. Bei `partitioning`-Konfiguration wird `action_required` (E055) erzeugt.
 
-### 9.4 Partitionstypen
+### 9.4 SQL Server
+
+SQL Server beschreibt Partitionierung nicht an der Tabelle, sondern in zwei
+eigenständigen Datenbankobjekten, an die sich die Tabelle hängt:
+
+```sql
+CREATE PARTITION FUNCTION pf_orders (DATE) AS RANGE RIGHT FOR VALUES ('2024-01-01', '2025-01-01');
+CREATE PARTITION SCHEME  ps_orders AS PARTITION pf_orders ALL TO ([PRIMARY]);
+CREATE TABLE orders (…) ON ps_orders (order_date);
+```
+
+Regeln:
+
+- Partitioniert wird über **eine** Spalte. SQL Server kennt als Strategie nur
+  `range`; die beiden anderen werden darauf abgebildet:
+  - `list` über eine Zuordnung von Wertemengen auf Grenzen. Sie ist genau dann
+    möglich, wenn die Mengen in Sortierreihenfolge zusammenhängend und
+    überschneidungsfrei sind, und wird daraufhin geprüft — eine Zuordnung, die
+    anderes Routing erzeugte, wird abgelehnt.
+  - `hash` über eine persistierte berechnete Spalte, über der die RANGE-Funktion
+    liegt. Die Verteilung weicht dabei von der Quelle ab (andere Hash-Funktion),
+    ohne Datenverlust; die Emulation ist ein Modus mit konservativer Vorgabe,
+    wie bei den nachgebauten Sequenzen.
+- `RANGE RIGHT` ist festgelegt, nicht wählbar: eine Partition ist das halboffene
+  Intervall `[from, to)`, und das ist genau RIGHT.
+- Aus n Partitionen werden n−1 Grenzwerte; die obere Grenze der letzten Partition
+  (`MAXVALUE`) ist kein Schnittpunkt.
+- Zeichenketten-Grenzen erhalten das `N`-Präfix, damit SQL Server sie in Unicode
+  vergleicht statt in der Codepage der Datenbank.
+- Function und Scheme heißen `pf_<tabelle>` und `ps_<tabelle>` und entstehen je
+  Tabelle (W144). SQL Server teilt diese Objekte zwischen Tabellen; aus einer
+  Beschreibung je Tabelle ist die Teilung nicht rekonstruierbar.
+- Alle Partitionen liegen auf der Filegroup aus `ddl.mssql.partition_storage`
+  (Vorgabe `PRIMARY`). Die Partitionierung wirkt dann beim Abfragen, trennt aber
+  die Ablage nicht.
+
+Beim Zurücklesen gilt: Kindnamen vergibt SQL Server nicht, sie werden als
+`p1`, `p2`, … synthetisiert (R346). Eine `RANGE LEFT`-Funktion liefert keine
+Grenzen, weil sich das geschlossene obere Intervall nicht als `[from, to)`
+ausdrücken lässt; die Tabelle bleibt als partitioniert vermerkt (R347).
+
+### 9.5 Partitionstypen
 
 | Neutral | PostgreSQL | MySQL | SQLite | MSSQL |
 |---|---|---|---|---|

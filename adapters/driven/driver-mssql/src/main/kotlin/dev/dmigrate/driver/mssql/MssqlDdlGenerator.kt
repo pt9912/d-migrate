@@ -166,23 +166,62 @@ class MssqlDdlGenerator private constructor(
             }
         }
 
+        val partitionPrelude = mutableListOf<String>()
+        var onClause = ""
         table.partitioning?.let { partitioning ->
-            notes += ManualActionRequired(
-                code = "E055", objectType = "partitioning", objectName = name,
-                reason = "${partitioning.type.name} partitioning of table '$name' is not rendered for SQL Server " +
-                    "(partition function, scheme and filegroups are not carried in the neutral model); " +
-                    "created as a plain table.",
-                hint = "Create the partition function and scheme manually and rebuild the table on the scheme.",
-            ).toNote()
+            if (MssqlPartitionDdl.isRenderable(partitioning)) {
+                val keyColumn = partitioning.key.first()
+                val keyType = table.columns[keyColumn]
+                    ?.let { columnHelper.renderColumn(name, keyColumn, it, table, schema, notes).sqlType }
+                if (keyType == null) {
+                    notes += unrenderablePartitioning(name, partitioning.type.name, "its key column has no SQL type")
+                } else {
+                    partitionPrelude += MssqlPartitionDdl.createStatements(
+                        table = name,
+                        config = partitioning,
+                        columnType = keyType,
+                        storage = options.partitionStorage,
+                        quote = ::quoteIdentifier,
+                    )
+                    onClause = MssqlPartitionDdl.onClause(name, partitioning, ::quoteIdentifier)
+                    // Function und Scheme sind in SQL Server datenbankweit und
+                    // teilbar; das neutrale Modell traegt die Partitionierung je
+                    // Tabelle. Aus dieser Richtung ist die Teilung nicht
+                    // rekonstruierbar — je Tabelle ein eigenes Paar.
+                    notes += TransformationNote(
+                        type = NoteType.WARNING, code = "W144", objectName = name,
+                        message = "Partition function '${MssqlPartitionDdl.functionName(name)}' and scheme " +
+                            "'${MssqlPartitionDdl.schemeName(name)}' were created for table '$name' alone. " +
+                            "SQL Server shares these objects across tables; the neutral model carries " +
+                            "partitioning per table, so a shared original becomes one pair per table.",
+                        hint = "Functionally equivalent; consolidate the schemes manually if the sharing matters.",
+                    )
+                }
+            } else {
+                notes += unrenderablePartitioning(
+                    name, partitioning.type.name,
+                    "SQL Server partitions by RANGE over a single column only",
+                )
+            }
         }
 
         val sql = buildString {
             append("CREATE TABLE ${quoteIdentifier(name)} (\n")
             append(lines.joinToString(",\n") { "    $it" })
-            append("\n);")
+            append("\n)$onClause;")
         }
-        return listOf(DdlStatement(sql, notes))
+        // Function und Scheme muessen vor der Tabelle stehen, die sich an sie haengt.
+        return partitionPrelude.map { DdlStatement(it) } + DdlStatement(sql, notes)
     }
+
+    /** Warum eine Partitionierung nicht gerendert wird — Form wie bisher, Grund verschieden. */
+    private fun unrenderablePartitioning(table: String, strategy: String, why: String): TransformationNote =
+        ManualActionRequired(
+            code = "E055", objectType = "partitioning", objectName = table,
+            reason = "$strategy partitioning of table '$table' is not rendered for SQL Server: $why; " +
+                "created as a plain table.",
+            hint = "Create the partition function and scheme manually and rebuild the table on the scheme.",
+        ).toNote()
 
     override fun generateIndices(
         tableName: String,

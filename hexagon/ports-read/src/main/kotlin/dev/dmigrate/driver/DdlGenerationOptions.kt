@@ -22,6 +22,24 @@ import java.time.Instant
  */
 data class DdlGenerationOptions(
     val spatialProfile: SpatialProfile = SpatialProfile.NONE,
+    /**
+     * Ablageort, auf den partitionierte Daten gelegt werden.
+     *
+     * Das neutrale Modell beschreibt Partitionierung als Struktur -- Strategie,
+     * Schluessel, Grenzen -- und kennt keinen Speicherort. SQL Server verlangt
+     * aber je Partition eine Filegroup, und das Partition Scheme ist ohne sie
+     * nicht formulierbar. Der Ort ist damit eine Eigenschaft des Ziels, nicht
+     * des Schemas -- dieselbe Ebene wie [spatialProfile], das ebenfalls
+     * entscheidet, WIE ein neutrales Konzept realisiert wird.
+     *
+     * Der Default legt alle Partitionen auf die Standard-Filegroup: gueltiges
+     * DDL, und die Partitionierung wirkt logisch (Partition Elimination beim
+     * Abfragen). Was sie NICHT tut, ist die Ablage zu trennen -- wer das will,
+     * legt die Filegroups an und setzt sie hier.
+     *
+     * Dialekte ohne Filegroup-Begriff ignorieren den Wert.
+     */
+    val partitionStorage: String = "PRIMARY",
     /** Stable generation timestamp, typically derived from SOURCE_DATE_EPOCH. */
     val generatedAt: Instant? = null,
     /** Omit volatile provenance fields from generated artifacts. */

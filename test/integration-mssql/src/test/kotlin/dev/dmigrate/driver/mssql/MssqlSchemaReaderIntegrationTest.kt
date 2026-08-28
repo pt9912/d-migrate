@@ -5,6 +5,11 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionType
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadSeverity
@@ -288,6 +293,156 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
             }
             withClue("decimal(10,2)-Grenze: ${priced.partitions[0].to}") {
                 priced.partitions[0].to shouldBe listOf(PartitionBound.Value("1.50"))
+            }
+        }
+    }
+
+    test("generated partition DDL applies, and a clustered index keeps the partitioning readable") {
+        // Der Round-Trip in beide Richtungen: erzeugtes DDL anwenden, dann
+        // zurueckleben. Klaert zugleich die Frage, die der Review offenliess —
+        // ob eine Tabelle mit CLUSTERED Index (statt Heap) ihre
+        // Partitionierungsspalte ueber `partition_ordinal` findet. Alle
+        // bisherigen Testtabellen waren Heaps.
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val desired = SchemaDefinition(
+                name = "gen", version = "1",
+                tables = mapOf(
+                    "generated_parts" to TableDefinition(
+                        columns = linkedMapOf(
+                            "bucket" to ColumnDefinition(NeutralType.Integer, required = true),
+                            "payload" to ColumnDefinition(NeutralType.Text(maxLength = 30)),
+                        ),
+                        primaryKey = listOf("bucket"),
+                        partitioning = PartitionConfig(
+                            type = PartitionType.RANGE,
+                            key = listOf("bucket"),
+                            partitions = listOf(
+                                PartitionDefinition(
+                                    name = "p1",
+                                    from = listOf(PartitionBound.MinValue),
+                                    to = listOf(PartitionBound.Value("100")),
+                                ),
+                                PartitionDefinition(
+                                    name = "p2",
+                                    from = listOf(PartitionBound.Value("100")),
+                                    to = listOf(PartitionBound.MaxValue),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val ddl = MssqlDdlGenerator().generate(desired).render()
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        // Anwenden, wie es erzeugt wurde — der Server ist der Richter.
+                        ddl.lines()
+                            .filter { it.isNotBlank() && !it.trimStart().startsWith("--") }
+                            .joinToString("\n")
+                            .split(";")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .forEach { stmt.execute(it) }
+                    }
+                }
+
+                val readBack = MssqlSchemaReader().read(pool)
+                    .schema.tables.getValue("generated_parts").partitioning.shouldNotBeNull()
+                readBack.key shouldBe listOf("bucket")
+                readBack.partitions.map { it.to } shouldBe listOf(
+                    listOf(PartitionBound.Value("100")),
+                    listOf(PartitionBound.MaxValue),
+                )
+                // Der Primaerschluessel macht daraus einen CLUSTERED Index, keinen Heap —
+                // damit ist der Pfad belegt, den die bisherigen Heap-Tabellen offenliessen.
+                val storageForm = pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.executeQuery(
+                            "SELECT type_desc FROM sys.indexes " +
+                                "WHERE object_id = OBJECT_ID('generated_parts') AND index_id = 1",
+                        ).use { rs -> if (rs.next()) rs.getString(1) else null }
+                    }
+                }
+                storageForm shouldBe "CLUSTERED"
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("DROP TABLE IF EXISTS generated_parts")
+                        stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_schemes WHERE name = 'ps_generated_parts') " +
+                            "DROP PARTITION SCHEME ps_generated_parts")
+                        stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_functions WHERE name = 'pf_generated_parts') " +
+                            "DROP PARTITION FUNCTION pf_generated_parts")
+                    }
+                }
+            }
+        }
+    }
+
+    test("a generated function with a temporal key is accepted by the server") {
+        // Die N-Praefix-Regel lautet "einfach gequotetes Literal -> N davor", und
+        // Datumsgrenzen traegt das Modell als Zeichenkette. Ob SQL Server ein
+        // N'…' als Grenzwert einer DATETIMEOFFSET-Funktion annimmt, ist damit
+        // eine Annahme — und das DDL-Golden schreibt sie fest, ohne sie je gegen
+        // einen Server zu halten. Hier wird sie gehalten.
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val desired = SchemaDefinition(
+                name = "temporal", version = "1",
+                tables = mapOf(
+                    "temporal_parts" to TableDefinition(
+                        columns = linkedMapOf(
+                            "seen_at" to ColumnDefinition(NeutralType.DateTime(timezone = true), required = true),
+                            "note" to ColumnDefinition(NeutralType.Text(maxLength = 20)),
+                        ),
+                        partitioning = PartitionConfig(
+                            type = PartitionType.RANGE,
+                            key = listOf("seen_at"),
+                            partitions = listOf(
+                                PartitionDefinition(
+                                    name = "p1",
+                                    from = listOf(PartitionBound.MinValue),
+                                    to = listOf(PartitionBound.Value("'2025-01-01'")),
+                                ),
+                                PartitionDefinition(
+                                    name = "p2",
+                                    from = listOf(PartitionBound.Value("'2025-01-01'")),
+                                    to = listOf(PartitionBound.MaxValue),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val ddl = MssqlDdlGenerator().generate(desired).render()
+            withClue("erzeugt:\n$ddl") {
+                ddl strShouldContain "N'2025-01-01'"
+            }
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        ddl.lines()
+                            .filter { it.isNotBlank() && !it.trimStart().startsWith("--") }
+                            .joinToString("\n")
+                            .split(";")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .forEach { stmt.execute(it) }
+                    }
+                }
+                // Angenommen — und die Grenze steht so im Katalog, wie sie gemeint war.
+                val readBack = MssqlSchemaReader().read(pool)
+                    .schema.tables.getValue("temporal_parts").partitioning.shouldNotBeNull()
+                readBack.partitions.size shouldBe 2
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("DROP TABLE IF EXISTS temporal_parts")
+                        stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_schemes WHERE name = 'ps_temporal_parts') " +
+                            "DROP PARTITION SCHEME ps_temporal_parts")
+                        stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_functions WHERE name = 'pf_temporal_parts') " +
+                            "DROP PARTITION FUNCTION pf_temporal_parts")
+                    }
+                }
             }
         }
     }

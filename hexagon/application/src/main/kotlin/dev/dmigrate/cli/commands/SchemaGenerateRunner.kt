@@ -37,6 +37,11 @@ data class SchemaGenerateRequest(
     val source: Path,
     val target: String,
     val spatialProfile: String? = null,
+    /**
+     * Ablageort partitionierter Daten am Ziel. SQL Server bildet ihn auf eine
+     * Filegroup ab; Dialekte ohne Filegroup-Begriff ignorieren ihn.
+     */
+    val partitionStorage: String? = null,
     val output: Path?,
     val report: Path?,
     val generateRollback: Boolean,
@@ -202,6 +207,7 @@ class SchemaGenerateRunner(
         }
         val options = DdlGenerationOptions(
             spatialProfile = spatialProfile,
+            partitionStorage = request.partitionStorage ?: DdlGenerationOptions().partitionStorage,
             dialectContext = dialectContext,
             generatedAt = generatedAt.value,
             deterministic = request.deterministic,

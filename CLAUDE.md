@@ -52,6 +52,43 @@ den eigentlichen Fehler ab.
 Ein blankes `docker build .` baut dagegen die **letzte** Stage des
 `Dockerfile` (`ast-grep`) und liefert kein lauffähiges Runtime-Image.
 
+## Was wo steht
+
+- **`spec/` ist das Zielbild** und normativ. `spec/ddl-generation-rules.md` ist
+  die Autorität für Render-Regeln je Dialekt — wer eine Regel ändert, ändert sie
+  dort mit, nicht erst hinterher. Dass die Spec etwas beschreibt, das der Code
+  noch nicht kann, ist kein Befund; das ist ihre Aufgabe.
+- **`docs/user/` beschreibt den Ist-Zustand.** Dort darf nur stehen, was heute
+  wirkt — ein Handbuch, das eine geplante Faehigkeit beschreibt, ist falsch, kein
+  Vorgriff. Das **Anwenderhandbuch** ist dabei aufgabenorientiert („Brauchen Sie
+  X → tun Sie Y"); Feld- und Optionsreferenzen gehoeren in seine Anhaenge, das
+  **Administrationshandbuch** oder die **API-Referenz**.
+  Faustregel beim Bauen: aendert sich, was ein Anwender tun oder erwarten kann,
+  aendert sich hier etwas mit.
+- **`docs/planning/` ist deskriptiv**, nicht normativ. Eine Entscheidung dort
+  festzuhalten ersetzt den Spec-Eintrag nicht.
+
+Was das Gate prüft, steht in `.d-check.yml`. Sein `matrix`-Modul mechanisiert
+die Referenz-**Richtung**: Spec-Straten verweisen nie abwärts, weder auf ADRs
+noch auf Pläne, und die Rangordnung Vertrag › Technik › Sicht ist dort als
+`order` hinterlegt. Ein Link aus `spec/` auf einen ADR fällt also auf.
+
+Was es **nicht** prüfen kann, ist der Inhalt: eine Spec-Zeile, die das Gegenteil
+des Codes behauptet, ist strukturell einwandfrei und fällt niemandem auf. Genau
+das passierte, als der MSSQL-Generate-Pfad Partitionierung zu rendern begann und
+`ddl-generation-rules.md` weiter „wird nicht gerendert" sagte.
+
+## Goldens
+
+Zwei verschiedene Sorten, und nur eine hat ein Make-Target:
+
+- **JSON-Schema-Snapshots** (`src/test/resources/golden/**`, MCP-Tool-Schemata)
+  regeneriert `make golden-update` über die gleichnamige Docker-Stage.
+- **DDL-Goldens** (`adapters/driven/formats/src/test/resources/fixtures/ddl/`)
+  regeneriert es **nicht**. Sie entstehen über die CLI (`schema generate` gegen
+  die Fixture) und werden von `DdlGoldenMasterTest` verglichen. Ändert sich das
+  Rendern eines Dialekts, schlagen sie fehl — das ist der Zweck.
+
 ## Konventionen
 
 - **Detekt-Größenbefunde** (`LargeClass`, `TooManyFunctions`,

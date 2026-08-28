@@ -53,6 +53,7 @@ class SchemaGenerateWiringTest : FunSpec({
         report = report,
         generateRollback = generateRollback,
         deterministic = deterministic,
+        partitionStorage = null,
         spatialProfile = spatialProfile,
         split = split,
         mysqlNamedSequences = mysqlNamedSequences,
