@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.RoutineBodyDisplay
@@ -26,7 +27,7 @@ internal class SchemaMigrateExecutionStage(
     private val executor: SegmentAwareExecutorFn?,
     private val dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)?,
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand,
-    private val fingerprint: (SchemaDefinition, (NeutralType) -> NeutralType) -> String,
+    private val fingerprint: FingerprintOfSchema,
     private val printError: (message: String, source: String) -> Unit,
     private val lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS,
 ) {
@@ -149,6 +150,7 @@ internal class SchemaMigrateExecutionStage(
         request: SchemaMigrateRequest,
         desired: SchemaDefinition,
         target: CompareOperand,
+        canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
         canonicalizerFor: (SchemaDefinition) -> ((NeutralType) -> NeutralType) = { { it } },
     ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
@@ -169,8 +171,8 @@ internal class SchemaMigrateExecutionStage(
             return PostCompareOutcome.IntrospectionFailed
         }
         // Jede Seite loest ihre eigenen Custom Types auf.
-        val observed = fingerprint(postNormalized.schema, canonicalizerFor(postNormalized.schema))
-        val desiredFp = fingerprint(desired, canonicalizerFor(desired))
+        val observed = fingerprint(postNormalized.schema, canonicalizerFor(postNormalized.schema), canonicalizeIndex)
+        val desiredFp = fingerprint(desired, canonicalizerFor(desired), canonicalizeIndex)
         return if (observed == desiredFp) {
             PostCompareOutcome.Clean(observed)
         } else {

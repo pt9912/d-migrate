@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Abdeckende und clustered Indizes stehen im neutralen Modell**
+  ([ADR 0049](docs/adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md)).
+  `IndexDefinition` traegt `include_columns` (Nicht-Schluesselspalten eines
+  abdeckenden Index) und `clustered` (welcher Index die Ablage der Tabelle
+  bildet). Beide sind semantisch: `schema compare` sieht sie, und der
+  Diff-Pfad fuehrt einen Unterschied aus. PostgreSQL rendert `INCLUDE`
+  nativ, SQL Server beides; MySQL und SQLite lassen sie mit einer Warnung
+  fallen — angehaengt an die Schluesselspalten werden sie **nicht**, das
+  aenderte bei `unique` die Eindeutigkeit.
+
+  **Fingerprint-Algorithmus `schema-fingerprint-v8` → `v9`:** aeltere
+  Rollback-Artefakte und Overlays sind nicht mehr vergleichbar und werden
+  mit `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` abgelehnt statt still
+  falsch verglichen. Neu erzeugen.
+
 - **Ein Enum gilt im Post-Compare unabhaengig von seiner Darstellung**
   ([ADR 0048](docs/adr/0048-enum-wertevorrat-im-fingerprint.md)). Der
   Wertevorrat steht authored am Spaltentyp und zurueckgelesen als eigener

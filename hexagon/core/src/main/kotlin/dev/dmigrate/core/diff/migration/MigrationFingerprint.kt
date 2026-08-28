@@ -4,12 +4,10 @@ import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
-import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
-import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
@@ -127,9 +125,21 @@ object MigrationFingerprint {
      *    materialises it, the desired parser does not — same asymmetry family as
      *    the v3 effective PK).
      *
+     * v8 (ADR 0048): der **Wertevorrat eines Enums** bekommt eine eigene Sektion, unabhaengig davon, ob
+     * er authored als `enum`-Typ an der Spalte steht oder zurueckgelesen als CHECK-
+     * Constraint danebensteht. Dialekte, die keinen Enum-Typ kennen, bilden ihn als
+     * `col IN (…)` bzw. `col='a' OR col='b'` ab; ohne die Projektion las sich derselbe
+     * Wertevorrat je nach Herkunft verschieden.
+     *
+     * v9: **abdeckende und clustered Indizes.** `includeColumns` und `clustered` sind
+     * semantisch — INCLUDE aendert, was der Index traegt, `clustered` die Ablage der
+     * Tabelle — und stehen deshalb in derselben Projektion wie `where`. Dialekte, die
+     * sie nicht ausdruecken koennen, kanonisieren sie weg, damit ein verlustfreier
+     * Round-Trip weiterhin identisch hasht.
+     *
      * Plan: `docs/planning/done/postcompare-type-canonicalization-slice.md`.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v8"
+    const val ALGORITHM: String = "schema-fingerprint-v9"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -142,7 +152,8 @@ object MigrationFingerprint {
     fun compute(
         schema: SchemaDefinition,
         canonicalizeType: (NeutralType) -> NeutralType = { it },
-    ): String = sha256Hex(project(schema, canonicalizeType))
+        canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
+    ): String = sha256Hex(project(schema, canonicalizeType, canonicalizeIndex))
 
     /**
      * Returns the canonical projection string. Public for diagnostics.
@@ -162,11 +173,12 @@ object MigrationFingerprint {
     fun project(
         schema: SchemaDefinition,
         canonicalizeType: (NeutralType) -> NeutralType = { it },
+        canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
     ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
         appendCustomTypes(sb, schema.customTypes)
-        appendTables(sb, schema.tables, canonicalizeType)
+        appendTables(sb, canonicalizedIndices(schema.tables, canonicalizeIndex), canonicalizeType)
         appendViews(sb, schema.views)
         appendSequences(sb, schema.sequences)
         appendFunctions(sb, schema.functions)
@@ -192,6 +204,32 @@ object MigrationFingerprint {
     }
 
     // ── Tables ──────────────────────────────────────────────────────
+
+    /**
+     * Projiziert jeden Index -- auch die partitionslokalen -- durch die Sicht des
+     * Ziel-Dialekts, bevor irgendetwas angehaengt wird.
+     *
+     * Einmal am Eingang statt an jeder Anhaengestelle: die Projektion ist die
+     * gleiche fuer Tabellen- und Partitionsindizes, und ein zweiter Lambda durch
+     * die Anhaenge-Kette waere eine Naht mehr, an der die beiden auseinanderlaufen
+     * koennten. Fuer Dialekte ohne INCLUDE oder ohne clustered-Steuerung faellt das
+     * jeweilige Feld hier weg, damit ein verlustfreier Round-Trip identisch hasht.
+     */
+    private fun canonicalizedIndices(
+        tables: Map<String, TableDefinition>,
+        canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
+    ): Map<String, TableDefinition> = tables.mapValues { (_, table) ->
+        table.copy(
+            indices = table.indices.map(canonicalizeIndex),
+            partitioning = table.partitioning?.let { config ->
+                config.copy(
+                    partitions = config.partitions.map { part ->
+                        part.copy(indices = part.indices.map(canonicalizeIndex))
+                    },
+                )
+            },
+        )
+    }
 
     private fun appendTables(
         sb: StringBuilder,
@@ -415,6 +453,11 @@ object MigrationFingerprint {
             // reconstruction hints (excluded from `TableComparator.projectIndex` too), so a
             // hint-only difference must not read as DIFFERENT to `schema compare`.
             .append(SEP).append("textSearchConfig=").append(idx.textSearchConfig ?: "")
+            // v9: abdeckende und clustered Indizes. Beide sind semantisch und stehen
+            // deshalb in derselben Projektion wie `where` -- der Comparator sieht sie
+            // ueber die Datenklassen-Gleichheit, und der Fingerabdruck muss mitgehen.
+            .append(SEP).append("includeColumns=").append(idx.includeColumns.joinToString(","))
+            .append(SEP).append("clustered=").append(idx.clustered)
             .append('\n')
     }
 
@@ -551,78 +594,4 @@ object MigrationFingerprint {
 
     // ── Helpers ─────────────────────────────────────────────────────
 
-    private fun neutralType(t: NeutralType): String = when (t) {
-        is NeutralType.Identifier -> if (t.autoIncrement) "identifier(auto)" else "identifier"
-        is NeutralType.Text -> if (t.maxLength != null) "text(${t.maxLength})" else "text"
-        is NeutralType.Char -> "char(${t.length})"
-        is NeutralType.Float -> "float(${t.floatPrecision.name.lowercase()})"
-        is NeutralType.Decimal -> "decimal(${t.precision},${t.scale})"
-        is NeutralType.DateTime -> if (t.timezone) "datetime(tz)" else "datetime"
-        is NeutralType.Enum -> enumType(t)
-        is NeutralType.Array -> "array(${t.elementType})"
-        is NeutralType.Geometry -> geometryType(t)
-        else -> simpleNeutralType(t)
-    }
-
-    private fun simpleNeutralType(t: NeutralType): String = when (t) {
-        NeutralType.Integer -> "integer"
-        NeutralType.SmallInt -> "smallint"
-        NeutralType.BigInteger -> "biginteger"
-        NeutralType.BooleanType -> "boolean"
-        NeutralType.Date -> "date"
-        NeutralType.Time -> "time"
-        NeutralType.Uuid -> "uuid"
-        NeutralType.Json -> "json"
-        NeutralType.Xml -> "xml"
-        NeutralType.Binary -> "binary"
-        NeutralType.Email -> "email"
-        NeutralType.FullText -> "fulltext"
-        else -> error("simpleNeutralType called for non-simple variant: $t")
-    }
-
-    private fun enumType(t: NeutralType.Enum): String = when {
-        t.refType != null -> "enum(ref:${t.refType})"
-        t.values != null -> "enum(${joinValues(t.values!!)})"
-        else -> "enum"
-    }
-
-    /**
-     * Werte kollisionsfrei aneinanderreihen. Ein blosses Komma reicht nicht:
-     * die Werte sind beliebige Nutzer-Strings, und `["a,b"]` haette sonst
-     * denselben projizierten Text wie `["a", "b"]` — zwei verschiedene Schemata
-     * mit demselben Fingerprint.
-     */
-    private fun joinValues(values: List<String>): String =
-        values.joinToString(",") { it.replace("\\", "\\\\").replace(",", "\\,") }
-
-    private fun geometryType(t: NeutralType.Geometry): String {
-        val gt = t.geometryType.schemaName
-        return if (t.srid != null) "geometry($gt,${t.srid})" else "geometry($gt)"
-    }
-
-    private fun defaultValue(dv: DefaultValue?): String = when (dv) {
-        null -> ""
-        is DefaultValue.StringLiteral -> "str:${dv.value}"
-        is DefaultValue.NumberLiteral -> "num:${dv.value}"
-        is DefaultValue.BooleanLiteral -> "bool:${dv.value}"
-        is DefaultValue.FunctionCall -> "fn:${dv.name}"
-        is DefaultValue.SequenceNextVal -> "seq:${dv.sequenceName}"
-    }
-
-    private fun reference(ref: ReferenceDefinition?): String {
-        if (ref == null) return ""
-        val parts = mutableListOf("table=${ref.table}", "column=${ref.column}")
-        ref.onDelete?.let { parts += "onDelete=${it.name}" }
-        ref.onUpdate?.let { parts += "onUpdate=${it.name}" }
-        return parts.joinToString(",")
-    }
-
-    private fun generation(gen: ColumnGeneration?): String = when (gen) {
-        null -> ""
-        is ColumnGeneration.Identity -> buildString {
-            append("identity:mode=${gen.mode.name}")
-            gen.sequenceName?.let { append(",sequence=$it") }
-            if (gen.legacySerialSyntax) append(",legacy_serial=true")
-        }
-    }
 }

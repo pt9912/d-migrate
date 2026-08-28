@@ -53,6 +53,27 @@ data class IndexDefinition(
      * er die Volltext-*Fähigkeit* nicht verändert. Null für alle anderen Indextypen.
      */
     val fullTextAccessMethod: IndexType? = null,
+    /**
+     * Nicht-Schlüsselspalten eines abdeckenden Index (`INCLUDE (…)`). Sie stehen nur
+     * auf der Blattebene, gehen nicht in die Sortierung ein und zählen bei einem
+     * `unique`-Index nicht zur Eindeutigkeit — ein Index über `(a)` mit `INCLUDE (b)`
+     * ist etwas anderes als einer über `(a, b)`. PostgreSQL (ab 11) und SQL Server
+     * tragen sie nativ; MySQL und SQLite kennen sie nicht und lassen sie beim
+     * Generate mit einer Warnung fallen (nicht etwa an die Schlüsselspalten
+     * angehängt — das änderte bei `unique` die Semantik).
+     */
+    val includeColumns: List<String> = emptyList(),
+    /**
+     * Ob dieser Index die Ablage der Tabelle bildet (`CREATE CLUSTERED INDEX`).
+     * Nur SQL Server steuert das explizit; es gibt höchstens einen solchen Index
+     * je Tabelle, und ohne Angabe bekommt ihn der Primärschlüssel. Steht das Feld
+     * an einem Index, ist der Primärschlüssel derselben Tabelle folglich
+     * nonclustered — der Generate-Pfad leitet das her, statt es im Modell zu
+     * doppeln. MySQL (InnoDB, immer am PK) und SQLite (`rowid`) haben keine
+     * Steuerung; PostgreSQL kennt nur `CLUSTER` als einmalige Reorganisation,
+     * nicht als Eigenschaft.
+     */
+    val clustered: Boolean = false,
 ) {
     val columnNames: List<String>
         get() = columns.map { it.name }

@@ -57,6 +57,19 @@ data class DialectCapabilities(
      * Der Transfer-Preflight prüft das, bevor eine Verbindung aufgebaut wird.
      */
     val requiresPrimaryKeyForSkip: Boolean = false,
+    /**
+     * Ob der Dialekt Nicht-Schluesselspalten eines abdeckenden Index traegt
+     * (`INCLUDE (…)`). PostgreSQL ab 11 und SQL Server: ja; MySQL und SQLite
+     * kennen die Form nicht und lassen sie beim Generate fallen.
+     */
+    val supportsIndexIncludeColumns: Boolean = false,
+    /**
+     * Ob der Dialekt steuert, welcher Index die Ablage der Tabelle bildet
+     * (`CREATE CLUSTERED INDEX`). Nur SQL Server. MySQL legt sie in InnoDB
+     * unveraenderlich auf den Primaerschluessel, SQLite auf die `rowid`, und
+     * PostgreSQL kennt `CLUSTER` nur als einmalige Reorganisation.
+     */
+    val supportsClusteredIndexes: Boolean = false,
 ) {
     companion object {
         /**
@@ -88,6 +101,7 @@ data class DialectCapabilities(
                 supportsTriggerStrict = true,
                 supportsSchemaParameter = true,
                 partitionChildrenAreTables = true,
+                supportsIndexIncludeColumns = true,
             )
             DatabaseDialect.MYSQL -> DialectCapabilities(
                 supportsViews = true,
@@ -135,6 +149,8 @@ data class DialectCapabilities(
                 batchSeparator = "GO",
                 scriptPreamble = MSSQL_SCRIPT_PREAMBLE,
                 requiresPrimaryKeyForSkip = true,
+                supportsIndexIncludeColumns = true,
+                supportsClusteredIndexes = true,
             )
         }
     }

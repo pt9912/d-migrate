@@ -30,7 +30,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
         executor = executor,
         dbLoader = null,
         normalizer = { it },
-        fingerprint = { s, _ -> s.name + ":" + s.version },
+        fingerprint = { s, _, _ -> s.name + ":" + s.version },
         printError = { _, _ -> },
     )
 

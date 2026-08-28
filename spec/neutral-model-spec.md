@@ -342,6 +342,14 @@ tables:
         text_search_config: english       # optional: Text-Search-Config eines Volltext-Index
         full_text_vector_column: fulltext # optional: PostgreSQL-tsvector-Backing-Spalte (ADR 0025)
         full_text_access_method: gist     # optional: PostgreSQL-Zugriffsmethode gin|gist (ADR 0025)
+      - name: idx_orders_customer_covering
+        columns: [customer_id]
+        include_columns: [total_amount]   # optional: Nicht-Schluesselspalten eines abdeckenden
+                                          # Index; PostgreSQL ab 11 und SQL Server (ADR 0049)
+      - name: idx_orders_date_storage
+        columns: [order_date]
+        clustered: true                   # optional: dieser Index ist die Ablage der Tabelle;
+                                          # nur SQL Server, hoechstens einer je Tabelle (ADR 0049)
 
     # ── Constraints ──────────────────
     constraints:

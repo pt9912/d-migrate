@@ -48,7 +48,7 @@ class SchemaRollbackRunner(
     private val executor: ExecutorFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val fileReader: (Path) -> String = { Files.readString(it) },
-    private val fingerprint: (dev.dmigrate.core.model.SchemaDefinition, (NeutralType) -> NeutralType) -> String =
+    private val fingerprint: FingerprintOfSchema =
         MigrationFingerprint::compute,
     /** v7: target-dialect type canonicalisation — must match the migrate run that wrote the artefact. */
     private val typeCanonicalizerFor: (DatabaseDialect) -> (NeutralType) -> NeutralType =
@@ -206,7 +206,10 @@ class SchemaRollbackRunner(
         val dialect = targetResolved.dialect
             ?: runCatching { DatabaseDialect.valueOf(parsed.dialect) }.getOrNull()
         val canonicalizeType = dialect?.let(typeCanonicalizerFor) ?: { it }
-        val targetFingerprint = fingerprint(targetResolved.schema, canonicalizeType)
+        // Dieselbe Index-Projektion wie beim Migrate: das Artefakt haelt einen
+        // Fingerabdruck, der durch die Brille des Ziel-Dialekts entstanden ist.
+        val canonicalizeIndex = dialect?.let(::capabilityIndexCanonicalizer) ?: { it }
+        val targetFingerprint = fingerprint(targetResolved.schema, canonicalizeType, canonicalizeIndex)
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()
         } else {

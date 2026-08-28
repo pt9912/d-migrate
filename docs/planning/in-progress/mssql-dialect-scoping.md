@@ -517,8 +517,99 @@ Bestandsaufnahme, auf der er aufsetzt.
   sqlcmd-Apply-E2E aus Slice 2a den Msg-1934-Fall.
 - **Diff** (Sub-Slice 5b) rendert `AddIndex`/`DropIndex` für das, was das
   neutrale Modell heute trägt — die Feinsteuerung kommt mit diesem Slice.
-- Offen ist damit die **Steuerung**: ein neutrales Feld für clustered/INCLUDE,
-  plus Reverse und Diff dafür.
+
+#### Die Index-Fläche über alle vier Dialekte
+
+Der Slice ist keine T-SQL-Aufgabe, sondern eine Modellaufgabe. Diese Tabelle
+hält fest, was jeder Dialekt ausdrücken kann und was das neutrale Modell davon
+heute trägt — damit der Schnitt nicht wieder an einer Eigenschaft scheitert,
+die erst beim Bauen auffällt:
+
+| Eigenschaft | PostgreSQL | MySQL | SQLite | SQL Server | Neutrales Modell |
+| --- | --- | --- | --- | --- | --- |
+| Unique | ✓ | ✓ | ✓ | ✓ | `unique` |
+| Sortierrichtung je Spalte | ✓ | ✓ | ✓ | ✓ | `IndexColumn.direction` |
+| Teilindex (`WHERE`) | ✓ | — | ✓ | ✓ (gefiltert) | `where` |
+| Präfixlänge | — | `col(n)` | — | — | `IndexColumn.prefixLength` |
+| Zugriffsmethode | btree/gin/gist/brin/spgist | btree/hash | — | — | `type` |
+| Volltext-Details | tsvector + GIN/GiST | nativ | FTS5 | Slice 8 | `fullText*` |
+| **INCLUDE-Spalten** | ✓ (ab 11) | — | — | ✓ | **fehlt** |
+| **clustered-Steuerung** | — | implizit am PK | implizit `rowid` | ✓ explizit | **fehlt** |
+
+Zwei Lücken also, und sie sind verschieden geartet. **INCLUDE** ist echt
+cross-dialektal (PostgreSQL und SQL Server), **clustered** trägt nur SQL Server
+explizit.
+
+#### Was beim Lesen des Bestands auffiel
+
+`MssqlMetadataQueries.scanIndexes` liest `is_included_column` bereits und trennt
+Schlüssel- von eingeschlossenen Spalten; nur trägt die Projektion die Namen der
+betroffenen Indizes ausschließlich für die `R341`-Meldung und wirft die Spalten
+danach weg. Der Reverse-Anteil des Slices ist deshalb klein: die Spalten ins
+Modell durchreichen und `i.type` mitlesen.
+
+Größer ist eine Kante, die weder in der Slice-Zeile noch in dieser Rubrik stand:
+**`clustered` ist in SQL Server keine reine Index-Eigenschaft.** Der clustered
+Index *ist* die Ablage der Tabelle, es gibt höchstens einen, und der Primary Key
+bekommt ihn per Default. Ein Modell, das `clustered` nur am Index trägt, kann
+deshalb DDL erzeugen, die der Server ablehnt (Msg 1902, „Cannot create more than
+one clustered index"), sobald ein Index clustered sein will, während der PK es
+schon ist. Das neutrale `TableDefinition.primaryKey` ist heute eine blanke
+`List<String>` — es hat keinen Platz für „dieser PK ist nonclustered".
+
+Auflösen lässt sich das ohne Eingriff in das PK-Modell, weil die Bedingung
+*herleitbar* ist: trägt irgendein Index der Tabelle `clustered`, dann rendert der
+MSSQL-Pfad den PK als `PRIMARY KEY NONCLUSTERED`. Der Rückweg ist eindeutig — der
+Reverse vermerkt `clustered` genau dann am Index, wenn der clustered Index nicht
+der PK ist. Beide Richtungen schließen, und das Modell braucht ein einziges Feld
+statt eines aufgebohrten Primärschlüssels.
+
+#### Entscheidung: `clustered` wird verglichen und ausgeführt (Eigner, 2026-08-28)
+
+Zur Wahl standen drei Grade. **Generate-only** — wie `fullTextAccessMethod`
+getragen, aber aus der Vergleichs-Semantik ausgeschlossen — wurde verworfen,
+weil es denselben blinden Fleck erzeugt hätte, den die Enum-CHECK-Kante gerade
+gekostet hat: `schema compare` meldete zwei Schemata als gleich, die es nicht
+sind. **Erkennen, aber blocken** wurde ebenfalls verworfen.
+
+Gewählt ist die volle Treue: Comparator und Fingerprint sehen `clustered` und
+`includeColumns`, und der Diff-Pfad führt den Unterschied aus. Das ist der
+teuerste der drei Wege, und der Preis steht hier, damit er beim Bauen niemanden
+überrascht — das Umschalten des Primärschlüssels auf `NONCLUSTERED` verlangt,
+ihn zu verwerfen und neu anzulegen, und SQL Server baut dabei jeden
+nonclustered Index der Tabelle neu:
+
+```sql
+ALTER TABLE [orders] DROP CONSTRAINT [PK_orders];
+ALTER TABLE [orders] ADD CONSTRAINT [PK_orders] PRIMARY KEY NONCLUSTERED ([id]);
+DROP INDEX [idx_orders_date] ON [orders];
+CREATE CLUSTERED INDEX [idx_orders_date] ON [orders] ([date]);
+```
+
+Die Reihenfolge ist nicht frei wählbar: der clustered PK muss fallen, bevor ein
+anderer Index clustered werden darf, sonst antwortet der Server mit Msg 1902.
+
+`includeColumns` geht denselben Weg, ist aber unkritischer — INCLUDE-Spalten
+ändern nur den Index, nicht die Ablage der Tabelle.
+
+Für die drei anderen Dialekte gilt die bekannte Abstufung: PostgreSQL rendert
+`INCLUDE` nativ (ab 11) und kennt kein `clustered`; MySQL und SQLite können
+beides nicht und lassen es mit einer Warnung fallen. Damit der Cross-Dialekt-
+Vergleich daraus keine Drift macht, gehören beide Felder in die dialekt-bewusste
+Kanonisierung ([ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md)) — dasselbe
+Muster wie beim Enum-Wertevorrat.
+
+#### Sub-Slice-Schnitt
+
+| Sub-Slice | Inhalt | Endet mit |
+| --- | --- | --- |
+| **6a** | Neutrales Modell: `IndexDefinition.clustered` + `includeColumns`, Serialisierung samt `spec/schema.json`, [ADR 0049](../../adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) für die Vergleichs-Semantik, Fingerprint `v9`, Kanonisierung je Dialekt über `DialectCapabilities` | Modell trägt beides, Cross-Dialekt-Vergleich driftet nicht |
+| **6b** | MSSQL-Reverse: `i.type` mitlesen, INCLUDE-Spalten durchreichen statt sie für `R341` zu zählen; `R341` entfällt | `schema reverse` liest die volle Index-Treue |
+| **6c** | Generate: MSSQL rendert `CLUSTERED`/`INCLUDE` und leitet `PRIMARY KEY NONCLUSTERED` her; PostgreSQL rendert `INCLUDE`; MySQL/SQLite degradieren mit Warnung — dort entstehen die W-Codes samt Ledger-Eintrag, weil erst der Renderer sie emittiert | `schema generate` gibt zurück, was der Reverse gelesen hat |
+| **6d** | Diff: `AddIndex`/`DropIndex` tragen die neuen Felder, und der Wechsel der Ablage wird in der richtigen Reihenfolge gerendert (PK zuerst) | `schema migrate` führt den Wechsel aus |
+
+6a ist die einzige Stufe, die das Hexagon anfasst; 6b–6d hängen daran und
+sind je für sich CI-grün abschließbar.
 
 ### Slice 7 — Partitionierung
 

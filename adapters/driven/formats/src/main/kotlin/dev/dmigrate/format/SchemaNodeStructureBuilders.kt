@@ -158,6 +158,12 @@ private fun buildIndices(
         if (index.textSearchConfig != null) node.put("text_search_config", index.textSearchConfig)
         if (index.fullTextVectorColumn != null) node.put("full_text_vector_column", index.fullTextVectorColumn)
         index.fullTextAccessMethod?.let { node.put("full_text_access_method", it.name.lowercase()) }
+        if (index.includeColumns.isNotEmpty()) {
+            val includeNode = mapper.createArrayNode()
+            index.includeColumns.forEach { includeNode.add(it) }
+            node.set<ArrayNode>("include_columns", includeNode)
+        }
+        if (index.clustered) node.put("clustered", true)
         arrayNode.add(node)
     }
     return arrayNode

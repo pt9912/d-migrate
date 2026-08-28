@@ -307,6 +307,17 @@
           "type": "string",
           "enum": ["gin", "gist"],
           "description": "PostgreSQL access method of a fulltext index — gin or gist (ADR 0025). Generate-only reconstruction hint captured on PG reverse so the original method round-trips (GIN stays GIN); defaults to gist when absent. Excluded from schema comparison/fingerprint."
+        },
+        "include_columns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "description": "Non-key columns of a covering index (INCLUDE (…)). They live on the leaf level only, take no part in ordering, and do not count towards uniqueness of a unique index. PostgreSQL (11+) and SQL Server carry them natively; MySQL and SQLite drop them on generate with a warning."
+        },
+        "clustered": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this index is the table's physical storage (CREATE CLUSTERED INDEX). SQL Server only, at most one per table; without it the primary key gets it. When set, the primary key of the same table is rendered NONCLUSTERED — derived by the generate path, not duplicated in the model."
         }
       }
     },

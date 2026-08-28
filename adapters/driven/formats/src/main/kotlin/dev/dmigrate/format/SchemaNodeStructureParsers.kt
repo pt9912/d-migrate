@@ -182,7 +182,17 @@ private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
             textSearchConfig = childNode.optionalText("text_search_config"),
             fullTextVectorColumn = childNode.optionalText("full_text_vector_column"),
             fullTextAccessMethod = childNode.optionalText("full_text_access_method")?.toFullTextAccessMethod(),
+            includeColumns = parseIncludeColumns(childNode["include_columns"]),
+            clustered = childNode.boolOrDefault("clustered", false),
         )
+    }
+}
+
+private fun parseIncludeColumns(node: JsonNode?): List<String> {
+    if (node == null || !node.isArray) return emptyList()
+    return node.map { columnNode ->
+        require(columnNode.isTextual) { "Index 'include_columns' must be a list of column names" }
+        columnNode.asText()
     }
 }
 

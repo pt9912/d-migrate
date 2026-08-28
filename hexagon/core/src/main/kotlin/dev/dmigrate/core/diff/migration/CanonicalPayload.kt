@@ -77,6 +77,11 @@ internal object CanonicalPayload {
             // fullTextVectorColumn / fullTextAccessMethod hints are generate-only and
             // excluded, consistent with TableComparator.projectIndex.
             .append(SEP).append("textSearchConfig=").append(i.textSearchConfig ?: "")
+            // Abdeckende und clustered Indizes sind semantisch: INCLUDE-Spalten aendern,
+            // was der Index traegt, und `clustered` die Ablage der Tabelle. Beide stehen
+            // deshalb wie `where` in allen drei Projektionen.
+            .append(SEP).append("includeColumns=").append(i.includeColumns.joinToString(","))
+            .append(SEP).append("clustered=").append(i.clustered)
     }
 
     fun customType(t: CustomTypeDefinition): String = buildString {

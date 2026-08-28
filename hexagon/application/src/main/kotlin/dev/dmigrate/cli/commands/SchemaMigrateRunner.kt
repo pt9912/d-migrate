@@ -98,8 +98,7 @@ class SchemaMigrateRunner(
     private val printError: (message: String, source: String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
-    private val fingerprint: (SchemaDefinition, (NeutralType) -> NeutralType) -> String =
-        MigrationFingerprint::compute,
+    private val fingerprint: FingerprintOfSchema = MigrationFingerprint::compute,
     /**
      * v7: resolves the TARGET dialect's neutral-type canonicalisation for all
      * fingerprints of a run (plan endpoints, overlay pins, post-compare,
@@ -197,13 +196,16 @@ class SchemaMigrateRunner(
         val canonicalizeType = typeCanonicalizerFor(prepared.effectiveDialect)
         // Fingerprints schemagebunden: ein `Enum(refType)` loest gegen die
         // Custom Types SEINER Seite auf (siehe registrySchemaAwareCanonicalizer).
+        val canonicalizeIndex = capabilityIndexCanonicalizer(prepared.effectiveDialect)
         val currentFingerprint = MigrationFingerprint.compute(
             prepared.targetNormalized.schema,
             registrySchemaAwareCanonicalizer(prepared.effectiveDialect, prepared.targetNormalized.schema),
+            canonicalizeIndex,
         )
         val desiredFingerprint = MigrationFingerprint.compute(
             prepared.sourceNormalized.schema,
             registrySchemaAwareCanonicalizer(prepared.effectiveDialect, prepared.sourceNormalized.schema),
+            canonicalizeIndex,
         )
         val inlineResult = InlineRenameOverlayBuilder.build(
             renameTableFlags = request.renameTableFlags,
@@ -259,6 +261,7 @@ class SchemaMigrateRunner(
                 request,
                 prepared.sourceNormalized.schema,
                 prepared.targetOp,
+                canonicalizeIndex,
             ) { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) }
         } else {
             null
