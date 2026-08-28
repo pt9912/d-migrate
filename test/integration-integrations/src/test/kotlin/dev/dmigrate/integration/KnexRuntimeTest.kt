@@ -62,11 +62,18 @@ class KnexRuntimeTest : FunSpec({
                 "dependencies": {
                     "knex": "^3.1.0",
                     "better-sqlite3": "^11.0.0"
-                },
-                "pnpm": {
-                    "onlyBuiltDependencies": ["better-sqlite3"]
                 }
             }
+        """.trimIndent())
+
+        // better-sqlite3 ist eine native Erweiterung: ohne Freigabe seines
+        // Build-Skripts bricht pnpm den Install mit ERR_PNPM_IGNORED_BUILDS ab
+        // und knex findet keinen SQLite-Treiber. Die Freigabe steht in
+        // pnpm-workspace.yaml, nicht mehr im "pnpm"-Feld der package.json --
+        // dieses Feld liest pnpm nicht mehr, es wuerde nur eine Warnung geben.
+        projectDir.resolve("pnpm-workspace.yaml").writeText("""
+            onlyBuiltDependencies:
+              - better-sqlite3
         """.trimIndent())
 
         // Install dependencies

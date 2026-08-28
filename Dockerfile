@@ -246,7 +246,13 @@ RUN apt-get update && \
     > /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
-    npm install -g pnpm node-gyp && \
+    # pnpm gepinnt wie der Node-Zweig darueber. Ungepinnt zog `npm install -g`
+    # die jeweils neueste Version, und die kippte den Build gleich zweifach:
+    # sie liest die Einstellung onlyBuiltDependencies nicht mehr aus der
+    # package.json, und ab Hauptversion 11 verlangt sie Node >= 22.13.
+    # Die beiden Pins gehoeren deshalb zusammen -- wer die Node-Zeile hebt,
+    # darf pnpm mitheben, aber nicht umgekehrt.
+    npm install -g pnpm@10.34.5 node-gyp && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
