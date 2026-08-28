@@ -632,9 +632,14 @@ internal data class RenameOverlayIndex(
         private const val ROUTINE_KEY_INVALID: String = "RENAME_OVERLAY_ROUTINE_KEY_INVALID"
         private const val ROUTINE_SIGNATURE_MISMATCH: String = "RENAME_OVERLAY_ROUTINE_SIGNATURE_MISMATCH"
 
-        @Suppress("LongMethod")
-        fun build(documents: List<MigrationOverlayDocument>): RenameOverlayIndex {
-            if (documents.isEmpty()) return EMPTY
+        /**
+         * Der Zustand, der beim Einlesen der Overlays entsteht: je Objektart
+         * eine Liste und ein „schon gesehen"-Satz.
+         *
+         * Sechzehn lokale Sammler machten `build` lang, ohne dass die Methode
+         * viel taete — sie sind ein Gegenstand, nicht sechzehn.
+         */
+        private class RenameAccumulator {
             val tables = mutableListOf<TableRenameMapping>()
             val qualified = mutableMapOf<String, MutableList<ColumnRenameMapping>>()
             val unqualified = mutableListOf<ColumnRenameMapping>()
@@ -644,12 +649,12 @@ internal data class RenameOverlayIndex(
             val procedures = mutableListOf<RoutineRenameMapping>()
             val sequences = mutableListOf<SequenceRenameMapping>()
             val issues = mutableListOf<DiffDiagnostic>()
-            // Defensive dedupe: even though MigrationOverlayValidator blocks
-            // exact duplicates with RENAME_MAPPING_DUPLICATE before the mapper
-            // is invoked, tests (and any future caller that bypasses the
-            // preflight) must not be able to fold a rename twice. The seen
-            // sets are keyed by case-folded (objectType, fromName, toName)
-            // so duplicates short-circuit without an op being emitted.
+
+            // Defensive dedupe: auch wenn `MigrationOverlayValidator` exakte
+            // Dubletten mit RENAME_MAPPING_DUPLICATE vor dem Mapper abfaengt,
+            // darf kein Aufrufer (Tests, kuenftige Wege am Preflight vorbei)
+            // ein Rename zweimal falten. Die Saetze sind case-gefaltet nach
+            // (objectType, fromName, toName) verschluesselt.
             val seenTables = mutableSetOf<Pair<String, String>>()
             val seenColumns = mutableSetOf<Triple<String?, String, String>>()
             val seenViews = mutableSetOf<Pair<String, String>>()
@@ -657,27 +662,8 @@ internal data class RenameOverlayIndex(
             val seenFunctions = mutableSetOf<Pair<String, String>>()
             val seenProcedures = mutableSetOf<Pair<String, String>>()
             val seenSequences = mutableSetOf<Pair<String, String>>()
-            for (doc in documents) {
-                if (doc.overlay.overlayKind != MigrationOverlayKinds.RENAME_MAPPING) continue
-                for (entry in doc.overlay.entries.filterIsInstance<RenameMappingOverlayEntry>()) {
-                    when (entry.objectType.lowercase(Locale.ROOT)) {
-                        "table" -> addTableMapping(doc, entry, tables, seenTables)
-                        "column" -> indexColumnEntry(doc, entry, qualified, unqualified, issues, seenColumns)
-                        "view" -> addViewMapping(doc, entry, views, seenViews)
-                        "trigger" -> addTriggerMapping(doc, entry, triggers, issues, seenTriggers)
-                        "function" -> addRoutineMapping(
-                            doc, entry, functions, issues, seenFunctions, kindLabel = "function",
-                        )
-                        "procedure" -> addRoutineMapping(
-                            doc, entry, procedures, issues, seenProcedures, kindLabel = "procedure",
-                        )
-                        "sequence" -> addSequenceMapping(doc, entry, sequences, seenSequences)
-                        // Unknown objectType: silently skipped here — the overlay
-                        // validator's UNKNOWN_ENTRY_KIND blocker covers it.
-                    }
-                }
-            }
-            return RenameOverlayIndex(
+
+            fun toIndex() = RenameOverlayIndex(
                 tableMappings = tables,
                 qualifiedColumnMappings = qualified,
                 unqualifiedColumnMappings = unqualified,
@@ -688,6 +674,43 @@ internal data class RenameOverlayIndex(
                 sequenceMappings = sequences,
                 issues = issues,
             )
+        }
+
+        fun build(documents: List<MigrationOverlayDocument>): RenameOverlayIndex {
+            if (documents.isEmpty()) return EMPTY
+            val acc = RenameAccumulator()
+            for (doc in documents) {
+                if (doc.overlay.overlayKind != MigrationOverlayKinds.RENAME_MAPPING) continue
+                for (entry in doc.overlay.entries.filterIsInstance<RenameMappingOverlayEntry>()) {
+                    absorb(doc, entry, acc)
+                }
+            }
+            return acc.toIndex()
+        }
+
+        /** Eine Overlay-Zeile in den passenden Sammler. */
+        private fun absorb(
+            doc: MigrationOverlayDocument,
+            entry: RenameMappingOverlayEntry,
+            acc: RenameAccumulator,
+        ) {
+            when (entry.objectType.lowercase(Locale.ROOT)) {
+                "table" -> addTableMapping(doc, entry, acc.tables, acc.seenTables)
+                "column" -> indexColumnEntry(
+                    doc, entry, acc.qualified, acc.unqualified, acc.issues, acc.seenColumns,
+                )
+                "view" -> addViewMapping(doc, entry, acc.views, acc.seenViews)
+                "trigger" -> addTriggerMapping(doc, entry, acc.triggers, acc.issues, acc.seenTriggers)
+                "function" -> addRoutineMapping(
+                    doc, entry, acc.functions, acc.issues, acc.seenFunctions, kindLabel = "function",
+                )
+                "procedure" -> addRoutineMapping(
+                    doc, entry, acc.procedures, acc.issues, acc.seenProcedures, kindLabel = "procedure",
+                )
+                "sequence" -> addSequenceMapping(doc, entry, acc.sequences, acc.seenSequences)
+                // Unbekannter objectType: hier still uebergangen — der
+                // UNKNOWN_ENTRY_KIND-Blocker des Validators deckt ihn ab.
+            }
         }
 
         private fun addTableMapping(

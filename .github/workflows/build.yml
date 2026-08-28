@@ -132,6 +132,13 @@ jobs:
         # ist ein bewusster Commit. Kein ghcr-Login noetig (Image public).
         run: make a-check
 
+      - name: solid-suppression-gate — keine unterdrueckten Design-Befunde
+        # Reines Shell-Gate ohne Netz und ohne Container. Hing zuvor nur an
+        # `docker-detekt`/`docker-gates` — beides ruft CI nicht auf, das Gate war
+        # also seit seiner Einfuehrung unwirksam. Die Regelliste steht im Skript
+        # (`solid_rules`) und ist die Quelle, auf die CLAUDE.md verweist.
+        run: make solid-suppression-gate
+
   docker:
     needs: build
     runs-on: ubuntu-latest

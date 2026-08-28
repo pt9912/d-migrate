@@ -180,9 +180,11 @@ class StreamingExporter(
 
             is ExportOutput.FilePerTable -> {
                 totalBytes += dispatchFilePerTable(
-                    output, discoveredTables, skippedTables, format, options, pool, filter, config,
-                    progressReporter, resumeMarkers, onChunkProcessed, onTableCompleted, warningSink,
-                    onBundleClosure, partitionChildren, tableExporter, tableSummaries,
+                    FilePerTableParams(
+                        output, discoveredTables, skippedTables, format, options, pool, filter, config,
+                        progressReporter, resumeMarkers, onChunkProcessed, onTableCompleted, warningSink,
+                        onBundleClosure, partitionChildren, tableExporter, tableSummaries,
+                    )
                 )
             }
         }
@@ -199,60 +201,30 @@ class StreamingExporter(
     }
 
     /** Routes FilePerTable to the sequential or the parallel path (LN-007/LN-008, ADR 0032). */
-    @Suppress("LongParameterList")
-    private fun dispatchFilePerTable(
-        output: ExportOutput.FilePerTable,
-        discoveredTables: List<String>,
-        skippedTables: Set<String>,
-        format: DataExportFormat,
-        options: ExportOptions,
-        pool: ConnectionPool,
-        filter: DataFilter?,
-        config: PipelineConfig,
-        progressReporter: ProgressReporter,
-        resumeMarkers: Map<String, ResumeMarker>,
-        onChunkProcessed: (TableChunkProgress) -> Unit,
-        onTableCompleted: (TableExportSummary) -> Unit,
-        warningSink: (String) -> Unit,
-        onBundleClosure: (BundleClosureContext) -> Unit,
-        partitionChildren: Map<String, List<String>>,
-        tableExporter: TableExporter,
-        tableSummaries: MutableList<TableExportSummary>,
-    ): Long = if (config.parallelism > 1) {
-        exportFilePerTableParallel(
-            FilePerTableParallelParams(
-                output, discoveredTables, skippedTables, format, options, pool, filter,
-                config, warningSink, onTableCompleted, onBundleClosure, partitionChildren,
-                tableExporter, tableSummaries,
-            )
-        )
-    } else {
-        exportFilePerTable(
-            output, discoveredTables, skippedTables, format, options, pool, filter, config,
-            progressReporter, resumeMarkers, onChunkProcessed, onTableCompleted, warningSink,
-            onBundleClosure, tableExporter, tableSummaries,
-        )
-    }
+    private fun dispatchFilePerTable(params: FilePerTableParams): Long =
+        if (params.config.parallelism > 1) {
+            exportFilePerTableParallel(params.toParallel())
+        } else {
+            exportFilePerTable(params)
+        }
 
-    @Suppress("LongParameterList")
-    private fun exportFilePerTable(
-        output: ExportOutput.FilePerTable,
-        discoveredTables: List<String>,
-        skippedTables: Set<String>,
-        format: DataExportFormat,
-        options: ExportOptions,
-        pool: ConnectionPool,
-        filter: DataFilter?,
-        config: PipelineConfig,
-        progressReporter: ProgressReporter,
-        resumeMarkers: Map<String, ResumeMarker>,
-        onChunkProcessed: (TableChunkProgress) -> Unit,
-        onTableCompleted: (TableExportSummary) -> Unit,
-        warningSink: (String) -> Unit,
-        onBundleClosure: (BundleClosureContext) -> Unit,
-        tableExporter: TableExporter,
-        tableSummaries: MutableList<TableExportSummary>,
-    ): Long {
+    private fun exportFilePerTable(params: FilePerTableParams): Long {
+        val output = params.output
+        val discoveredTables = params.discoveredTables
+        val skippedTables = params.skippedTables
+        val format = params.format
+        val options = params.options
+        val pool = params.pool
+        val filter = params.filter
+        val config = params.config
+        val progressReporter = params.progressReporter
+        val resumeMarkers = params.resumeMarkers
+        val onChunkProcessed = params.onChunkProcessed
+        val onTableCompleted = params.onTableCompleted
+        val warningSink = params.warningSink
+        val onBundleClosure = params.onBundleClosure
+        val tableExporter = params.tableExporter
+        val tableSummaries = params.tableSummaries
         Files.createDirectories(output.directory)
         // Untrusted table names from the source catalog must not escape the
         // output directory (CWE-22). Validate all up front so the export fails
@@ -346,6 +318,40 @@ class StreamingExporter(
             )
         }
         return captured!!
+    }
+
+    /**
+     * Die Parameterform des FilePerTable-Wegs.
+     *
+     * `FilePerTableParallelParams` gab es fuer den parallelen Zweig laengst; der
+     * sequenzielle trug dieselben Werte weiter als Einzelparameter — siebzehn
+     * Stueck, in derselben Reihenfolge zweimal ausgeschrieben. Eine gemeinsame
+     * Form macht daraus einen Wert, der durchgereicht wird.
+     */
+    private data class FilePerTableParams(
+        val output: ExportOutput.FilePerTable,
+        val discoveredTables: List<String>,
+        val skippedTables: Set<String>,
+        val format: DataExportFormat,
+        val options: ExportOptions,
+        val pool: ConnectionPool,
+        val filter: DataFilter?,
+        val config: PipelineConfig,
+        val progressReporter: ProgressReporter,
+        val resumeMarkers: Map<String, ResumeMarker>,
+        val onChunkProcessed: (TableChunkProgress) -> Unit,
+        val onTableCompleted: (TableExportSummary) -> Unit,
+        val warningSink: (String) -> Unit,
+        val onBundleClosure: (BundleClosureContext) -> Unit,
+        val partitionChildren: Map<String, List<String>>,
+        val tableExporter: TableExporter,
+        val tableSummaries: MutableList<TableExportSummary>,
+    ) {
+        fun toParallel() = FilePerTableParallelParams(
+            output, discoveredTables, skippedTables, format, options, pool, filter,
+            config, warningSink, onTableCompleted, onBundleClosure, partitionChildren,
+            tableExporter, tableSummaries,
+        )
     }
 
     private data class FilePerTableParallelParams(

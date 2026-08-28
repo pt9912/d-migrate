@@ -111,7 +111,7 @@ internal object MssqlRebuildRenderer {
     }
 
     /** Die ganze Sequenz als Text — oder `null`, wenn etwas davon nicht renderbar ist. */
-    @Suppress("LongParameterList", "ReturnCount")
+    @Suppress("ReturnCount")
     private fun resolve(
         rebuild: MssqlRebuildPlanner.Rebuild,
         ctx: MssqlDiffRenderContext,

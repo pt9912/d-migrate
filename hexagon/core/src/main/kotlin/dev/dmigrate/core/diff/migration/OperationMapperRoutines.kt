@@ -126,7 +126,6 @@ internal object OperationMapperRoutines {
         }
     }
 
-    @Suppress("LongParameterList")
     fun mapTriggers(
         diff: SchemaDiff,
         current: SchemaDefinition,

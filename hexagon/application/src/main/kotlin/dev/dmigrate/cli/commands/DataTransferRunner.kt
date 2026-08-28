@@ -18,6 +18,7 @@ import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.cli.commands.verify.TransferVerifier
+import dev.dmigrate.cli.commands.verify.VerifySide
 import dev.dmigrate.cli.commands.verify.VerifyReport
 import dev.dmigrate.verify.ValueCanonicalizer
 import java.nio.file.Path
@@ -244,8 +245,13 @@ class DataTransferRunner(
 
         if (!request.verify) return 0
         return verifyTransfer(
-            request, tables, srcSchema, tgtSchema, reader, tgtDrv,
-            srcPool, tgtPool, filter, cancellationToken, srcRef, tgtRef,
+            request = request,
+            tables = tables,
+            source = VerifySide(reader, srcPool, srcSchema),
+            target = VerifySide(tgtDrv.dataReader(request.fetchSize), tgtPool, tgtSchema),
+            filter = filter,
+            cancellationToken = cancellationToken,
+            refs = TransferRefs(srcRef, tgtRef),
         )
     }
 
@@ -267,21 +273,20 @@ class DataTransferRunner(
         return ParallelismClamp.effective(requested, sqliteInvolved, request.parallelSourceLabel, onNote)
     }
 
-    @Suppress("LongParameterList") // spiegelt den Transfer-Kontext (Reader/Pools/Schemas/Refs je Seite)
+    /** Quell- und Ziel-Bezeichner fuer Meldungen; sie treten nur gemeinsam auf. */
+    private data class TransferRefs(val source: String, val target: String)
+
     private fun verifyTransfer(
         request: DataTransferRequest,
         tables: List<String>,
-        srcSchema: SchemaDefinition,
-        tgtSchema: SchemaDefinition,
-        sourceReader: DataReader,
-        tgtDrv: DatabaseDriver,
-        srcPool: ConnectionPool,
-        tgtPool: ConnectionPool,
+        source: VerifySide,
+        target: VerifySide,
         filter: DataFilter?,
         cancellationToken: CancellationToken,
-        srcRef: String,
-        tgtRef: String,
+        refs: TransferRefs,
     ): Int {
+        val srcRef = refs.source
+        val tgtRef = refs.target
         val canonicalizer = valueCanonicalizer ?: run {
             userFacingPrintError("--verify requires a value canonicalizer (internal wiring error)", srcRef)
             return 7
@@ -289,12 +294,8 @@ class DataTransferRunner(
         val report = try {
             TransferVerifier(canonicalizer).verify(
                 tables = tables,
-                sourceReader = sourceReader,
-                targetReader = tgtDrv.dataReader(request.fetchSize),
-                sourcePool = srcPool,
-                targetPool = tgtPool,
-                sourceSchema = srcSchema,
-                targetSchema = tgtSchema,
+                source = source,
+                target = target,
                 filter = filter,
                 chunkSize = request.chunkSize,
                 cancellationToken = cancellationToken,

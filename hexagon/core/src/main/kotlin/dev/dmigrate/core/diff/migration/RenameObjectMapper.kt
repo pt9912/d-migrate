@@ -504,7 +504,6 @@ internal object RenameObjectMapper {
         fallbackReason = rationale,
     )
 
-    @Suppress("LongParameterList")
     private fun blockedDiagnostic(
         kind: String,
         from: String,

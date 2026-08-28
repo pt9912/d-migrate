@@ -142,78 +142,83 @@ internal object SchemaMigrateMaterializedViewContractBuilder {
         return readyDecisionFor(op, rendered)
     }
 
-    @Suppress("CyclomaticComplexMethod", "ReturnCount")
+    /**
+     * Die Vorrangordnung als Daten. Reihenfolge = Vorrang, die erste
+     * zutreffende Regel gewinnt.
+     *
+     * Vorher standen die zehn Regeln als zehn `if`-Bloecke da — die
+     * Vorrangordnung war die Zeilenreihenfolge und damit nur beim Lesen des
+     * Kontrollflusses erkennbar. Als Liste ist sie sichtbar und erweiterbar,
+     * ohne dass die Methode waechst.
+     */
+    private val PRECEDENCE_RULES = listOf(
+        PrecedenceRule(
+            "BLOCKED_DIALECT_UNSUPPORTED", "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+            renderCode = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+        ),
+        PrecedenceRule(
+            "BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED",
+            "MATERIALIZED_VIEW_CONCURRENT_REFRESH_UNSUPPORTED",
+            planCode = "BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED",
+        ),
+        PrecedenceRule(
+            "BLOCKED_SCHEMA_REFRESH_UNSUPPORTED", "MATERIALIZED_VIEW_SCHEMA_REFRESH_UNSUPPORTED",
+            planCode = "BLOCKED_SCHEMA_REFRESH_UNSUPPORTED",
+        ),
+        PrecedenceRule(
+            "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED",
+            "VIEW_DEFINITION_REFRESH_SEMANTICS_UNSPECIFIED",
+            planCode = "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED",
+        ),
+        PrecedenceRule(
+            "BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
+            "MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
+            planCode = "BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
+            renderCode = "MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
+        ),
+        PrecedenceRule(
+            "BLOCKED_CONVERSION_UNSUPPORTED", "MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED",
+            planCode = "BLOCKED_CONVERSION_UNSUPPORTED",
+        ),
+        PrecedenceRule(
+            "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+            "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+            planCode = "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+            renderCode = "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+        ),
+        PrecedenceRule(
+            "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN", "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN",
+            planCode = "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN",
+            renderCode = "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN",
+        ),
+        PrecedenceRule(
+            "BLOCKED_DOWN_QUERY_UNKNOWN", "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN",
+            planCode = "BLOCKED_DOWN_QUERY_UNKNOWN",
+            renderCode = "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN",
+        ),
+        PrecedenceRule(
+            "BLOCKED_DEPENDENCY_UNRESOLVED", "MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED",
+        planCode = "BLOCKED_DEPENDENCY_UNRESOLVED",
+        ),
+    )
+
+    /** Eine Vorrangregel: welcher Code welche Entscheidung ausloest. */
+    private data class PrecedenceRule(
+        val decisionCode: String,
+        val diagnosticCode: String,
+        val planCode: String? = null,
+        val renderCode: String? = null,
+    )
+
     private fun precedenceLookup(
         planCodes: Set<String>,
         renderCodes: Set<String>,
-    ): MaterializedViewContractDecision? {
-        if ("MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT" in renderCodes) {
-            return blockedDecision("BLOCKED_DIALECT_UNSUPPORTED", "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT")
+    ): MaterializedViewContractDecision? = PRECEDENCE_RULES
+        .firstOrNull { rule ->
+            rule.planCode?.let { it in planCodes } == true ||
+                rule.renderCode?.let { it in renderCodes } == true
         }
-        if ("BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED" in planCodes) {
-            return blockedDecision(
-                "BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED",
-                "MATERIALIZED_VIEW_CONCURRENT_REFRESH_UNSUPPORTED",
-            )
-        }
-        if ("BLOCKED_SCHEMA_REFRESH_UNSUPPORTED" in planCodes) {
-            return blockedDecision(
-                "BLOCKED_SCHEMA_REFRESH_UNSUPPORTED",
-                "MATERIALIZED_VIEW_SCHEMA_REFRESH_UNSUPPORTED",
-            )
-        }
-        if ("BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED" in planCodes) {
-            return blockedDecision(
-                "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED",
-                "VIEW_DEFINITION_REFRESH_SEMANTICS_UNSPECIFIED",
-            )
-        }
-        if ("BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED" in planCodes ||
-            "MATERIALIZED_VIEW_METADATA_UNSUPPORTED" in renderCodes
-        ) {
-            return blockedDecision(
-                "BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
-                "MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
-            )
-        }
-        if ("BLOCKED_CONVERSION_UNSUPPORTED" in planCodes) {
-            return blockedDecision(
-                "BLOCKED_CONVERSION_UNSUPPORTED",
-                "MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED",
-            )
-        }
-        if ("BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED" in planCodes ||
-            "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED" in renderCodes
-        ) {
-            return blockedDecision(
-                "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
-                "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
-            )
-        }
-        if ("BLOCKED_REPLACE_DOWN_BODY_UNKNOWN" in planCodes ||
-            "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN" in renderCodes
-        ) {
-            return blockedDecision(
-                "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN",
-                "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN",
-            )
-        }
-        if ("BLOCKED_DOWN_QUERY_UNKNOWN" in planCodes ||
-            "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN" in renderCodes
-        ) {
-            return blockedDecision(
-                "BLOCKED_DOWN_QUERY_UNKNOWN",
-                "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN",
-            )
-        }
-        if ("BLOCKED_DEPENDENCY_UNRESOLVED" in planCodes) {
-            return blockedDecision(
-                "BLOCKED_DEPENDENCY_UNRESOLVED",
-                "MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED",
-            )
-        }
-        return null
-    }
+        ?.let { blockedDecision(it.decisionCode, it.diagnosticCode) }
 
     private fun blockedDecision(
         status: String,

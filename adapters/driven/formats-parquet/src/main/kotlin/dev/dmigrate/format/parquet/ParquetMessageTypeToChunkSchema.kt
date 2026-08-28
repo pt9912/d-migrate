@@ -63,23 +63,26 @@ internal object ParquetMessageTypeToChunkSchema {
      * in [ParquetGroupValueReader.readColumn] Zweig fuer Zweig. Wird
      * beides geaendert, muss beides zusammen geaendert werden.
      */
-    @Suppress("CyclomaticComplexMethod")
     fun readShape(type: NeutralType): ReadShape = when (type) {
         is NeutralType.BooleanType -> ReadShape.BOOLEAN
         is NeutralType.SmallInt, is NeutralType.Integer, is NeutralType.Identifier,
         is NeutralType.Date, is NeutralType.Time,
         -> ReadShape.INT32
         is NeutralType.BigInteger, is NeutralType.DateTime -> ReadShape.INT64
-        is NeutralType.Float -> when (type.floatPrecision) {
-            FloatPrecision.SINGLE -> ReadShape.FLOAT
-            FloatPrecision.DOUBLE -> ReadShape.DOUBLE
-        }
-        // Decimal-Physik haengt an der Precision (siehe readDecimal).
-        is NeutralType.Decimal -> when {
-            type.precision <= DECIMAL_INT32_MAX -> ReadShape.INT32
-            type.precision <= DECIMAL_INT64_MAX -> ReadShape.INT64
-            else -> ReadShape.BINARY
-        }
+        is NeutralType.Float -> floatShape(type)
+        is NeutralType.Decimal -> decimalShape(type)
+        else -> ReadShape.BINARY
+    }
+
+    private fun floatShape(type: NeutralType.Float): ReadShape = when (type.floatPrecision) {
+        FloatPrecision.SINGLE -> ReadShape.FLOAT
+        FloatPrecision.DOUBLE -> ReadShape.DOUBLE
+    }
+
+    /** Decimal-Physik haengt an der Precision (siehe readDecimal). */
+    private fun decimalShape(type: NeutralType.Decimal): ReadShape = when {
+        type.precision <= DECIMAL_INT32_MAX -> ReadShape.INT32
+        type.precision <= DECIMAL_INT64_MAX -> ReadShape.INT64
         else -> ReadShape.BINARY
     }
 

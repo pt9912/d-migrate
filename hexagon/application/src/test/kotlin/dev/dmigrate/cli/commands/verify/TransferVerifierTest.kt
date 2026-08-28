@@ -66,9 +66,8 @@ class TransferVerifierTest : FunSpec({
         canonicalizer: ValueCanonicalizer = toStringCanon,
     ) = TransferVerifier(canonicalizer).verify(
         tables = tables,
-        sourceReader = source, targetReader = target,
-        sourcePool = pool, targetPool = pool,
-        sourceSchema = sourceSchema, targetSchema = targetSchema,
+        source = VerifySide(source, pool, sourceSchema),
+        target = VerifySide(target, pool, targetSchema),
         filter = null, chunkSize = 10,
     )
 

@@ -31,46 +31,47 @@ import dev.dmigrate.verify.ValueCanonicalizer
  * getrunctes Ziel). Ein Wert, der nicht kanonisiert werden kann, macht die
  * Tabelle **inkonklusiv** (Fehler im Ergebnis) — nie ein stiller Pass.
  */
+/**
+ * Eine Seite des Vergleichs: woher gelesen wird und wonach.
+ *
+ * Reader, Pool und Schema traten immer gemeinsam auf, einmal fuer die Quelle
+ * und einmal fuer das Ziel — sechs Parameter, die drei Begriffe waren. Als
+ * eigener Typ ist ausserdem nicht mehr verwechselbar, welche Haelfte gemeint
+ * ist: `verify(source, target)` statt sechs gleichartiger Argumente in Folge.
+ */
+data class VerifySide(
+    val reader: DataReader,
+    val pool: ConnectionPool,
+    val schema: SchemaDefinition,
+)
+
 class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
 
-    @Suppress("LongParameterList") // spiegelt den Transfer-Kontext (Reader/Pools/Schemas je Seite)
     fun verify(
         tables: List<String>,
-        sourceReader: DataReader,
-        targetReader: DataReader,
-        sourcePool: ConnectionPool,
-        targetPool: ConnectionPool,
-        sourceSchema: SchemaDefinition,
-        targetSchema: SchemaDefinition,
+        source: VerifySide,
+        target: VerifySide,
         filter: DataFilter?,
         chunkSize: Int,
         cancellationToken: CancellationToken = CancellationToken.none(),
     ): VerifyReport {
         val results = tables.map { table ->
             cancellationToken.throwIfCancellationRequested()
-            verifyTable(
-                table, sourceReader, targetReader, sourcePool, targetPool,
-                sourceSchema, targetSchema, filter, chunkSize, cancellationToken,
-            )
+            verifyTable(table, source, target, filter, chunkSize, cancellationToken)
         }
         return VerifyReport(results)
     }
 
-    @Suppress("LongParameterList")
     private fun verifyTable(
         table: String,
-        sourceReader: DataReader,
-        targetReader: DataReader,
-        sourcePool: ConnectionPool,
-        targetPool: ConnectionPool,
-        sourceSchema: SchemaDefinition,
-        targetSchema: SchemaDefinition,
+        source: VerifySide,
+        target: VerifySide,
         filter: DataFilter?,
         chunkSize: Int,
         cancellationToken: CancellationToken,
     ): TableVerifyResult {
-        val sourceColumns = columnsFor(sourceSchema, table)
-        val targetColumns = columnsFor(targetSchema, table)
+        val sourceColumns = columnsFor(source.schema, table)
+        val targetColumns = columnsFor(target.schema, table)
         val shared = sourceColumns.keys.intersect(targetColumns.keys).sorted()
 
         val excluded = mutableListOf<ColumnExclusion>()
@@ -82,15 +83,16 @@ class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
         val sourceTypes = active.associateWith { sourceColumns.getValue(it).type }
         val targetTypes = active.associateWith { targetColumns.getValue(it).type }
 
+        val scope = ChecksumScope(table, filter, chunkSize, active, cancellationToken)
         return try {
-            val source = checksum(sourceReader, sourcePool, table, filter, chunkSize, active, sourceTypes, cancellationToken)
-            val target = checksum(targetReader, targetPool, table, filter, chunkSize, active, targetTypes, cancellationToken)
+            val sourceSum = checksum(source, scope, sourceTypes)
+            val targetSum = checksum(target, scope, targetTypes)
             TableVerifyResult(
                 table = table,
-                sourceRows = source.rowCount(),
-                targetRows = target.rowCount(),
-                sourceHash = source.digestHex(),
-                targetHash = target.digestHex(),
+                sourceRows = sourceSum.rowCount(),
+                targetRows = targetSum.rowCount(),
+                sourceHash = sourceSum.digestHex(),
+                targetHash = targetSum.digestHex(),
                 excluded = excluded,
             )
         } catch (e: ValueCanonicalizationException) {
@@ -98,25 +100,32 @@ class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
         }
     }
 
-    @Suppress("LongParameterList")
+    /**
+     * Was fuer beide Seiten gleich ist: welche Tabelle, welcher Ausschnitt,
+     * welche Spalten. Nur die Typen unterscheiden sich je Seite — sie bleiben
+     * deshalb eigener Parameter.
+     */
+    private data class ChecksumScope(
+        val table: String,
+        val filter: DataFilter?,
+        val chunkSize: Int,
+        val active: List<String>,
+        val cancellationToken: CancellationToken,
+    )
+
     private fun checksum(
-        reader: DataReader,
-        pool: ConnectionPool,
-        table: String,
-        filter: DataFilter?,
-        chunkSize: Int,
-        active: List<String>,
+        side: VerifySide,
+        scope: ChecksumScope,
         types: Map<String, NeutralType>,
-        cancellationToken: CancellationToken,
     ): TableChecksum {
         val checksum = TableChecksum()
-        reader.streamTable(pool, table, filter, chunkSize).use { sequence ->
+        side.reader.streamTable(side.pool, scope.table, scope.filter, scope.chunkSize).use { sequence ->
             for (chunk in sequence) {
-                cancellationToken.throwIfCancellationRequested()
+                scope.cancellationToken.throwIfCancellationRequested()
                 val indexByName = chunk.columns.withIndex().associate { (i, c) -> c.name to i }
                 for (row in chunk.rows) {
                     checksum.addRow(
-                        active.map { column ->
+                        scope.active.map { column ->
                             val index = indexByName[column] ?: return@map null
                             row[index]?.let { canonicalizer.canonicalize(it, types.getValue(column)) }
                         },

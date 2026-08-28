@@ -183,10 +183,13 @@ class MysqlSequenceCanonicityProbeAdapter(
                         val actualCache = rs.getInt("cache_size").takeUnless { rs.wasNull() }
                         classifySequenceRow(
                             operationId, sequenceName, sqlHash,
-                            expectedIncrement, expectedMinValue, expectedMaxValue,
-                            expectedCycle, expectedCache,
-                            actualIncrement, actualMin, actualMax,
-                            actualCycle, actualCache,
+                            expected = SequenceRowValues(
+                                expectedIncrement, expectedMinValue, expectedMaxValue,
+                                expectedCycle, expectedCache,
+                            ),
+                            actual = SequenceRowValues(
+                                actualIncrement, actualMin, actualMax, actualCycle, actualCache,
+                            ),
                         )
                     }
                 }
@@ -368,22 +371,37 @@ class MysqlSequenceCanonicityProbeAdapter(
         return expected == normalisedActual
     }
 
-    @Suppress("LongParameterList")
+    /**
+     * Die Werte einer `dmg_sequences`-Zeile. Sie traten zweimal auf — einmal
+     * erwartet, einmal gelesen — und waren als zehn Einzelparameter nicht nur
+     * lang, sondern verwechselbar: `expectedCache` und `actualCache` stehen im
+     * Aufruf fuenf Positionen auseinander.
+     */
+    private data class SequenceRowValues(
+        val increment: Long,
+        val minValue: Long?,
+        val maxValue: Long?,
+        val cycle: Boolean,
+        val cache: Int?,
+    )
+
     private fun classifySequenceRow(
         operationId: String,
         sequenceName: String,
         sqlHash: String,
-        expectedIncrement: Long,
-        expectedMinValue: Long?,
-        expectedMaxValue: Long?,
-        expectedCycle: Boolean,
-        expectedCache: Int?,
-        actualIncrement: Long,
-        actualMin: Long?,
-        actualMax: Long?,
-        actualCycle: Boolean,
-        actualCache: Int?,
+        expected: SequenceRowValues,
+        actual: SequenceRowValues,
     ): MysqlSequenceCanonicityDeclaration {
+        val expectedIncrement = expected.increment
+        val expectedMinValue = expected.minValue
+        val expectedMaxValue = expected.maxValue
+        val expectedCycle = expected.cycle
+        val expectedCache = expected.cache
+        val actualIncrement = actual.increment
+        val actualMin = actual.minValue
+        val actualMax = actual.maxValue
+        val actualCycle = actual.cycle
+        val actualCache = actual.cache
         if (actualIncrement != expectedIncrement) {
             return drift(operationId, MysqlSequenceCanonicityKind.SEQUENCE_ROW,
                 sequenceName, sqlHash,
@@ -451,7 +469,6 @@ class MysqlSequenceCanonicityProbeAdapter(
         sqlHash = sqlHash,
     )
 
-    @Suppress("LongParameterList")
     private fun drift(
         operationId: String,
         kind: MysqlSequenceCanonicityKind,

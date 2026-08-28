@@ -646,7 +646,6 @@ internal object OperationMapper {
         }
     }
 
-    @Suppress("LongParameterList")
     private fun mapViews(
         diff: SchemaDiff,
         current: SchemaDefinition,
