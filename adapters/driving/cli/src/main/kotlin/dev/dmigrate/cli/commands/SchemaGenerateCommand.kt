@@ -53,6 +53,10 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     val sqliteNamedSequences by option("--sqlite-named-sequences",
         help = "SQLite named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation")
         .choice("action_required", "helper_table")
+    val mssqlHashPartitions by option("--mssql-hash-partitions",
+        help = "SQL Server hash-partitioning strategy: 'action_required' (default) or 'computed_column' " +
+            "to emulate it with a persisted computed column")
+        .choice("action_required", "computed_column")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -69,6 +73,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 split = split,
                 mysqlNamedSequences = mysqlNamedSequences,
                 sqliteNamedSequences = sqliteNamedSequences,
+                mssqlHashPartitions = mssqlHashPartitions,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

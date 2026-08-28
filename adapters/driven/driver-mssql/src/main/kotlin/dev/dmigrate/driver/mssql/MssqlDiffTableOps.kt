@@ -6,9 +6,12 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.mssqlContext
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -35,6 +38,16 @@ internal object MssqlDiffTableOps {
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: MssqlDiffRenderContext) {
         val table = op.objectRef.rootName
         val partitioning = op.table.partitioning
+        // Sub-Slice 7d: die HASH-Emulation greift vor allem anderen, weil sie die
+        // eindeutigen Schluessel veraendert — SQL Server verlangt die
+        // Partitionsspalte in jedem davon. Sie steht auch VOR dem DOWN-Zweig:
+        // der muss wissen, ob im Vorwaertslauf Function und Scheme entstanden
+        // sind, und fuer HASH sagt `isRenderable` das nicht.
+        val hashOutcome = resolveHashPartitionPlan(
+            table, op.table,
+            ctx.options.mssqlContext?.hashPartitionMode ?: MssqlHashPartitionMode.ACTION_REQUIRED,
+            ctx.sql::quote, ctx.schemaForDirection(),
+        )
         if (ctx.direction == MssqlRenderDirection.DOWN) {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(table)};")
             // Function und Scheme sind eigenstaendige Datenbankobjekte, keine
@@ -42,31 +55,41 @@ internal object MssqlDiffTableOps {
             // Rueckbau scheiterte ein erneuter Vorwaertslauf am schon
             // vorhandenen Namen. Reihenfolge ist erzwungen — das Scheme haengt
             // an der Function, die Tabelle am Scheme.
-            if (partitioning != null && MssqlPartitionDdl.isRenderable(partitioning)) {
+            val created = hashOutcome is MssqlHashPartitionOutcome.Planned ||
+                (partitioning != null && MssqlPartitionDdl.isRenderable(partitioning))
+            if (created) {
                 ctx.emit(op, "DROP PARTITION SCHEME ${ctx.sql.quote(MssqlPartitionDdl.schemeName(table))};")
                 ctx.emit(op, "DROP PARTITION FUNCTION ${ctx.sql.quote(MssqlPartitionDdl.functionName(table))};")
             }
             return
         }
-        // LIST/HASH, mehrspaltiger Schluessel oder keine Kinder: SQL Server kann
-        // das nicht ausdruecken. Flach anzulegen waere kein Teilerfolg, sondern
-        // ein stiller Verlust — dieselbe Linie wie `E055` im Generate-Pfad.
-        if (partitioning != null && !MssqlPartitionDdl.isRenderable(partitioning)) {
+        if (hashOutcome is MssqlHashPartitionOutcome.Refused) {
+            return blockDeferred(op, ctx, "table '$table': ${hashOutcome.reason}")
+        }
+        val hashPlan = (hashOutcome as? MssqlHashPartitionOutcome.Planned)?.plan
+        // LIST/HASH ohne Emulation, mehrspaltiger Schluessel oder keine Kinder:
+        // SQL Server kann das nicht ausdruecken. Flach anzulegen waere kein
+        // Teilerfolg, sondern ein stiller Verlust — Linie wie `E055`.
+        if (hashPlan == null && partitioning != null && !MssqlPartitionDdl.isRenderable(partitioning)) {
             return blockDeferred(op, ctx, "table '$table' uses partitioning SQL Server cannot express")
         }
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering the columns of '$table'")
+        val effective = hashPlan?.table ?: op.table
         val notes = mutableListOf<TransformationNote>()
         val lines = mutableListOf<String>()
-        for ((colName, col) in op.table.columns.inOrdinalOrder()) {
-            lines += "    " + ctx.sql.columnDeclaration(table, colName, col, op.table, schema, notes)
+        for ((colName, col) in effective.columns.inOrdinalOrder()) {
+            lines += "    " + ctx.sql.columnDeclaration(table, colName, col, effective, schema, notes)
         }
-        if (op.table.primaryKey.isNotEmpty()) {
-            val cols = op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
-            val pkClause = MssqlClusteredStorage.primaryKeyClause(op.table)
+        // Die berechnete Spalte kennt das neutrale Modell nicht; ihre Zeile
+        // kommt direkt aus der Emulation.
+        hashPlan?.let { lines += "    " + it.bucketLine }
+        if (effective.primaryKey.isNotEmpty()) {
+            val cols = effective.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
+            val pkClause = MssqlClusteredStorage.primaryKeyClause(effective)
             lines += "    CONSTRAINT ${ctx.sql.quote(MssqlConstraintNames.primaryKey(table))} $pkClause ($cols)"
         }
-        for (constraint in op.table.constraints.sortedBy { it.name }) {
+        for (constraint in effective.constraints.sortedBy { it.name }) {
             val line = ctx.sql.constraintLine(table, constraint, ctx.cascadeGuard())
                 ?: return blockUnrenderableConstraint(op, ctx, table, constraint)
             lines += "    $line"
@@ -74,43 +97,21 @@ internal object MssqlDiffTableOps {
         // Die Indizes VOR dem CREATE TABLE aufloesen: ein nicht renderbarer
         // Index (z. B. Volltext) muss blocken, bevor irgendetwas emittiert ist —
         // sonst laege die Operation in `rendered` UND `skipped`.
-        val indexSqls = op.table.indices.map {
-            MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, it, op.table) ?: return
+        val indexSqls = effective.indices.map {
+            MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, it, effective) ?: return
         }
         // Function und Scheme muessen VOR der Tabelle stehen, die sich an sie
         // haengt. Der Schluesseltyp kommt aus derselben Spaltenwiedergabe wie
         // die Spaltenzeile darueber — geraten wird er nicht.
-        var onClause = ""
-        if (partitioning != null) {
-            val keyColumn = partitioning.key.first()
-            // Wegwerf-Senke fuer die Notizen: die Schluesselspalte wurde oben
-            // schon deklariert und hat ihre Notizen dort abgegeben. Dieselbe
-            // Liste ein zweites Mal zu fuellen, verdoppelte jede Meldung zu ihr.
-            val keyType = op.table.columns[keyColumn]
-                ?.let { ctx.sql.renderColumn(table, keyColumn, it, op.table, schema, mutableListOf()).sqlType }
-                ?: return blockDeferred(op, ctx, "partition key column '$keyColumn' of '$table' has no SQL type")
-            MssqlPartitionDdl.createStatements(
-                table = table,
-                config = partitioning,
-                columnType = keyType,
-                storage = ctx.options.partitionStorage,
-                quote = ctx.sql::quote,
-            ).forEach { ctx.emit(op, it) }
-            onClause = MssqlPartitionDdl.onClause(table, partitioning, ctx.sql::quote)
-            ctx.warning(
-                op,
-                "Partition function '${MssqlPartitionDdl.functionName(table)}' and scheme " +
-                    "'${MssqlPartitionDdl.schemeName(table)}' were created for table '$table' alone. " +
-                    "SQL Server shares these objects across tables; the neutral model carries " +
-                    "partitioning per table, so a shared original becomes one pair per table.",
-                code = "W144",
-            )
-        }
+        // `null` heisst: geblockt, es wurde nichts emittiert.
+        val onClause = MssqlDiffPartitionOps.emit(op, ctx, table, effective, schema, hashPlan, partitioning)
+            ?: return
+
         ctx.emit(op, "CREATE TABLE ${ctx.sql.quote(table)} (\n" + lines.joinToString(",\n") + "\n)$onClause;")
         ctx.carryOverNotes(op, notes)
         indexSqls.forEach { ctx.emit(op, it) }
-        for ((colName, col) in op.table.columns) {
-            warnUnrenderedReference(op, ctx, table, colName, col, op.table)
+        for ((colName, col) in effective.columns) {
+            warnUnrenderedReference(op, ctx, table, colName, col, effective)
         }
     }
 
@@ -513,7 +514,7 @@ internal object MssqlDiffTableOps {
         return true
     }
 
-    private fun blockDeferred(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String) {
+    internal fun blockDeferred(op: DiffOperation, ctx: MssqlDiffRenderContext, what: String) {
         ctx.skip(
             op,
             "Operation ${op.id} is not rendered because $what, and the migrate path does not render that for " +

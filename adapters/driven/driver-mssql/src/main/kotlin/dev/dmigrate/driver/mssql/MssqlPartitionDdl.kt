@@ -51,8 +51,22 @@ internal object MssqlPartitionDdl {
         columnType: String,
         storage: String,
         quote: (String) -> String,
+    ): List<String> = createStatementsForBoundaries(table, boundaryLiterals(config), columnType, storage, quote)
+
+    /**
+     * Dieselben zwei Objekte, aber mit vorgegebenen Grenzen.
+     *
+     * Die HASH-Emulation (Sub-Slice 7d) leitet ihre Grenzen nicht aus den
+     * Modell-Partitionen ab, sondern aus der Eimeranzahl — sie braucht diesen
+     * Einstieg, nicht [boundaryLiterals].
+     */
+    fun createStatementsForBoundaries(
+        table: String,
+        boundaries: List<String>,
+        columnType: String,
+        storage: String,
+        quote: (String) -> String,
     ): List<String> {
-        val boundaries = boundaryLiterals(config)
         val function = buildString {
             append("CREATE PARTITION FUNCTION ${quote(functionName(table))} ($columnType) ")
             append("AS RANGE RIGHT FOR VALUES (${boundaries.joinToString(", ")});")

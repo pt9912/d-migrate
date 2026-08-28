@@ -6,6 +6,8 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlDialectContext
+import dev.dmigrate.driver.SqliteCastPreflightDeclaration
+import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.ExecutionMode
@@ -308,50 +310,18 @@ internal class SchemaMigrateRenderPipeline(
             is MysqlSequenceCanonicityStage.Outcome.Succeeded -> mysqlSequenceOutcome.declarations
             else -> preflightPlan.mysqlSequenceCanonicity
         }
-        val dialectContext: DdlDialectContext = when (dialect) {
-            DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
-                routineCapability = routineCapability,
-                serverVersion = mysqlServerVersion,
-                sequenceCanonicity = mysqlSequenceDeclarations,
-                // C.5 follow-up: thread `--mysql-named-sequences`
-                // opt-in into the renderer so MysqlDiffSequenceOps.
-                // ensureHelperMode sees the operator-supplied choice.
-                // Null / unknown values stay on the default
-                // ACTION_REQUIRED branch where the renderer blocks with
-                // MANUAL_ACTION_REQUIRED — symmetric to the SQLite
-                // namedSequenceMode plumbing below.
-                namedSequenceMode = request.mysqlNamedSequences
-                    ?.let(dev.dmigrate.driver.MysqlNamedSequenceMode::fromCliName)
-                    ?: dev.dmigrate.driver.MysqlNamedSequenceMode.ACTION_REQUIRED,
-            )
-            DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
-                liveCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
-                catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
-                    SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
-                } else {
-                    SqliteCatalogProbeMode.SCHEMA_ONLY
-                },
-                castPreflights = when (castPreflightOutcome) {
-                    is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
-                    else -> preflightPlan.sqliteCastPreflights
-                },
-                // 0.9.7 SQLite preserve Folge-Slice: thread the
-                // `--sqlite-named-sequences` opt-in into the renderer
-                // so SqliteDiffSequenceOps.ensureHelperMode sees the
-                // operator-supplied choice. Unknown / null values
-                // default to ACTION_REQUIRED — the renderer keeps the
-                // existing block-with-MANUAL_ACTION_REQUIRED path for
-                // those, but the stage already issued a clearer
-                // SEQUENCE_PRESERVE_OPT_IN_REQUIRED upstream.
-                namedSequenceMode = request.sqliteNamedSequences
-                    ?.let(SqliteNamedSequenceMode::fromCliName)
-                    ?: SqliteNamedSequenceMode.ACTION_REQUIRED,
-            )
-            // MSSQL trägt (wie PG) noch keinen dialektspezifischen Kontext;
-            // eine sealed Variante kommt erst mit einem Renderer, der sie
-            // braucht (Hexagon-DialectContext-Regel).
-            DatabaseDialect.POSTGRESQL, DatabaseDialect.MSSQL -> DdlDialectContext.None
-        }
+        val dialectContext = dialectContextFor(
+            request = request,
+            dialect = dialect,
+            routineCapability = routineCapability,
+            mysqlServerVersion = mysqlServerVersion,
+            mysqlSequenceDeclarations = mysqlSequenceDeclarations,
+            probeOutcome = probeOutcome,
+            castPreflights = when (castPreflightOutcome) {
+                is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
+                else -> preflightPlan.sqliteCastPreflights
+            },
+        )
         // VA4: `--spatial-profile` (z. B. spatialite) hat Vorrang; null → Default.
         val spatialProfile = request.spatialProfile?.let { SpatialProfile.fromCliName(it) }
             ?: SpatialProfilePolicy.defaultFor(dialect)
@@ -551,6 +521,76 @@ internal class SchemaMigrateRenderPipeline(
                 ?: MigrationBlockedReason.TRANSACTION_SCOPE_UNSUPPORTED,
             diagnostics = rendered.diagnostics + diagnostic,
         )
+    }
+
+    companion object {
+        /**
+         * Der dialektspezifische Render-Kontext fuer den Migrationspfad.
+         *
+         * Eigene, modul-interne Funktion statt eines `when` mitten in
+         * `buildRenderOptions`: sie ist die Naht, an der ein Dialekt seine
+         * Modus-Schalter bekommt, und war genau deshalb pruefbar noetig — MSSQL
+         * fehlte hier, und der ganze HASH-Zweig des Renderers blieb dadurch
+         * unerreichbar, ohne dass ein Test es bemerkte.
+         */
+        internal fun dialectContextFor(
+            request: SchemaMigrateRequest,
+            dialect: DatabaseDialect,
+            routineCapability: EffectiveRoutineCapability,
+            mysqlServerVersion: MysqlServerVersion?,
+            mysqlSequenceDeclarations: List<MysqlSequenceCanonicityDeclaration>,
+            probeOutcome: SqliteProbeStage.Outcome?,
+            castPreflights: List<SqliteCastPreflightDeclaration>,
+        ): DdlDialectContext {
+            return when (dialect) {
+                DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
+                    routineCapability = routineCapability,
+                    serverVersion = mysqlServerVersion,
+                    sequenceCanonicity = mysqlSequenceDeclarations,
+                    // C.5 follow-up: thread `--mysql-named-sequences`
+                    // opt-in into the renderer so MysqlDiffSequenceOps.
+                    // ensureHelperMode sees the operator-supplied choice.
+                    // Null / unknown values stay on the default
+                    // ACTION_REQUIRED branch where the renderer blocks with
+                    // MANUAL_ACTION_REQUIRED — symmetric to the SQLite
+                    // namedSequenceMode plumbing below.
+                    namedSequenceMode = request.mysqlNamedSequences
+                        ?.let(dev.dmigrate.driver.MysqlNamedSequenceMode::fromCliName)
+                        ?: dev.dmigrate.driver.MysqlNamedSequenceMode.ACTION_REQUIRED,
+                )
+                DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
+                    liveCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
+                    catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
+                        SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
+                    } else {
+                        SqliteCatalogProbeMode.SCHEMA_ONLY
+                    },
+                    castPreflights = castPreflights,
+                    // 0.9.7 SQLite preserve Folge-Slice: thread the
+                    // `--sqlite-named-sequences` opt-in into the renderer
+                    // so SqliteDiffSequenceOps.ensureHelperMode sees the
+                    // operator-supplied choice. Unknown / null values
+                    // default to ACTION_REQUIRED — the renderer keeps the
+                    // existing block-with-MANUAL_ACTION_REQUIRED path for
+                    // those, but the stage already issued a clearer
+                    // SEQUENCE_PRESERVE_OPT_IN_REQUIRED upstream.
+                    namedSequenceMode = request.sqliteNamedSequences
+                        ?.let(SqliteNamedSequenceMode::fromCliName)
+                        ?: SqliteNamedSequenceMode.ACTION_REQUIRED,
+                )
+                // Sub-Slice 7d: SQL Server traegt den HASH-Emulationsmodus.
+                DatabaseDialect.MSSQL -> DdlDialectContext.MsSql(
+                    hashPartitionMode = request.mssqlHashPartitions
+                        ?.let(MssqlHashPartitionMode::fromCliName)
+                        ?: MssqlHashPartitionMode.ACTION_REQUIRED,
+                )
+                // PostgreSQL braucht (noch) keinen dialektspezifischen Kontext;
+                // eine sealed Variante kommt erst mit einem Renderer, der sie
+                // braucht (Hexagon-DialectContext-Regel).
+                DatabaseDialect.POSTGRESQL -> DdlDialectContext.None
+            }
+        }
+
     }
 }
 

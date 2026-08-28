@@ -61,6 +61,7 @@ class SchemaGenerateWiringTest : FunSpec({
         split = split,
         mysqlNamedSequences = mysqlNamedSequences,
         sqliteNamedSequences = sqliteNamedSequences,
+        mssqlHashPartitions = null,
         cliContext = cliContext,
         configPath = configPath,
     )

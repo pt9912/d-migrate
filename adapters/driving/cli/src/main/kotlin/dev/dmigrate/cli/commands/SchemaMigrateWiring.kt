@@ -47,6 +47,7 @@ internal data class SchemaMigrateOptions(
     val routineCapabilityFlags: List<String>,
     val strictGapOperations: Boolean,
     val sqliteNamedSequences: String?,
+    val mssqlHashPartitions: String? = null,
     val lockTimeoutMs: Long?,
     val cliContext: CliContext,
     val configPath: Path?,
@@ -123,6 +124,7 @@ internal object SchemaMigrateWiring {
             routineCapabilityResolver = routineCapabilityResolver::resolve,
             strictGapOperations = options.strictGapOperations,
             sqliteNamedSequences = options.sqliteNamedSequences,
+            mssqlHashPartitions = options.mssqlHashPartitions,
             lockTimeoutMillis = options.lockTimeoutMs,
         )
         val runner = SchemaMigrateRunner(

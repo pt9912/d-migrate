@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.2  ·  **Stand:** 28.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.3  ·  **Stand:** 28.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 (im Ausbau — dort noch nicht verfügbar: `data profile`)
 
@@ -1813,8 +1813,24 @@ entsteht auf beiden Wegen gleich partitioniert.
   partitionierte Tabelle wird ohne ihre Fremdschlüssel angelegt, gemeldet mit
   **E065** — MySQL unterstützt beides nicht gemeinsam.
 - **SQL Server partitioniert ausschließlich nach `range` über eine Spalte.**
-  `list` und `hash` blockieren dort mit **E055**. Der Grund ist keine
-  Einschränkung des Werkzeugs: SQL Server kennt nur RANGE.
+  `list` blockiert dort mit **E055** — der Grund ist keine Einschränkung des
+  Werkzeugs: SQL Server kennt nur RANGE.
+- **`hash` lässt sich für SQL Server nachbauen**, mit
+  `--mssql-hash-partitions computed_column`. Ohne die Option bleibt es beim
+  Abbruch mit **E055**. Der Nachbau legt eine berechnete Spalte
+  `dmg_hash_bucket` an und partitioniert nach ihr. Drei Dinge sollten Sie
+  vorher wissen:
+  - **Die Eimerspalte tritt in jeden eindeutigen Schlüssel der Tabelle** — SQL
+    Server verlangt die Partitionsspalte dort. Das ändert die Bedeutung des
+    Schlüssels nicht, solange die Hash-Spalte selbst darin vorkommt. Tut sie es
+    nicht, bricht der Lauf mit **E067** ab, statt Ihnen einen schwächeren
+    Schlüssel unterzuschieben.
+  - **Die Zeilen liegen in anderen Partitionen als in der Quelle** (**W145**).
+    SQL Server hasht anders. Für getrennte Ablage und Partition Elimination ist
+    das gleichwertig; verlassen Sie sich nicht auf eine bestimmte Zuordnung.
+  - **Ein Reverse liest die Tabelle als `range` zurück**, nicht als `hash`.
+  - Die Partitionen müssen einen vollständigen Eimersatz bilden: ein `modulus`,
+    die `remainder` von `0` bis `modulus − 1` je einmal. Sonst **E068**.
 - **Bei SQL Server entstehen zwei zusätzliche Objekte je Tabelle** — eine
   Partition Function und ein Partition Scheme (`pf_<tabelle>`, `ps_<tabelle>`),
   gemeldet mit **W144**. In SQL Server lassen sich diese Objekte zwischen
@@ -2213,6 +2229,7 @@ Fortschritt/Warnungen nach stderr.
 | `--sqlite-named-sequences` | `action_required` (Standard) oder `helper_table` (nur `--target sqlite`) |
 | `--spatial-profile` | `postgis`, `native`, `spatialite`, `none` |
 | `--partition-storage` | Ablageort partitionierter Daten; bei SQL Server der Filegroup-Name (Standard `PRIMARY`) |
+| `--mssql-hash-partitions` | `action_required` (Standard) oder `computed_column` für die HASH-Emulation (nur `--target mssql`) |
 
 #### A.5 `schema reverse`
 
@@ -2770,6 +2787,7 @@ custom_types:
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
 | 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
+| 1.3 | 28.08.2026 | `hash`-Partitionierung lässt sich für SQL Server nachbauen (`--mssql-hash-partitions computed_column`). Abschnitt 3.20 nennt die drei Punkte, die man vorher wissen sollte: die Eimerspalte tritt in jeden eindeutigen Schlüssel (**E067**, wenn das den Schlüssel schwächen würde), die Zeilenverteilung weicht von der Quelle ab (**W145**), und ein Reverse liest `range` zurück. Neue Option in der Befehlsreferenz. |
 | 1.2 | 28.08.2026 | Anhang F.8 (Partitionierung) vervollständigt: Die Felder je Kind-Partition waren nur als `{ name, from, to, values }` genannt — das deckt `range` und `list` ab, aber nicht `hash`. Ergänzt wurden `modulus`, `remainder`, `default` und `indices`, mit Angabe, welches Feld zu welchem Partitionstyp gehört, sowie ein `hash`-Beispiel. |
 | 1.1 | 28.08.2026 | `schema migrate` legt partitionierte Tabellen jetzt partitioniert an — auf allen Dialekten, die das Konzept kennen. Bis dahin erzeugte der Migrationspfad bei PostgreSQL und MySQL eine **unpartitionierte** Tabelle, ohne das zu melden; bei SQL Server brach er ab. Neu dokumentiert: der Abbruch bei nicht ausdrückbarer Partitionierung und der Ausschluss von Fremdschlüsseln auf partitionierten MySQL-Tabellen (**E065**). |
 | 1.0 | 28.08.2026 | Der Ablageort partitionierter Daten lässt sich jetzt auch in der Konfigurationsdatei hinterlegen (`ddl.mssql.partition_storage`) statt nur als Flag je Aufruf; Abschnitt 3.20 nennt die Vorrangregel und den Abbruch bei ungültigem Wert. |

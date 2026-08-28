@@ -128,3 +128,42 @@ entries:
         path_type: production
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlClusteredStorage.kt"
         path_type: production
+
+  # E067 — Sub-Slice 7d: SQL Server verlangt die Partitionsspalte in JEDEM
+  # eindeutigen Index ("Partition columns for a unique index must be a subset
+  # of the index key"). Enthaelt ein Schluessel den Hash-Schluessel nicht, wuerde
+  # der Eimer ihn schwaechen statt ihn zu erhalten.
+  - code: E067
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlHashPartitionTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlHashPartitionEmulation.kt"
+        path_type: production
+
+  # E068 — Sub-Slice 7d: der Eimersatz ist nicht emulierbar (verschiedene
+  # Moduli, Luecken unter den Resten, Modulus < 2) oder der Spaltenname ist
+  # bereits vergeben.
+  - code: E068
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlHashPartitionTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlHashPartitionEmulation.kt"
+        path_type: production
+
+  # E069 — Sub-Slice 7d: eine andere Tabelle verweist per Fremdschluessel auf
+  # die HASH-partitionierte. SQL Server verlangt fuer ein FK-Ziel einen
+  # eindeutigen Schluessel ueber genau den referenzierten Spalten (Msg 1776);
+  # der Eimer in jedem Schluessel nimmt genau den weg.
+  - code: E069
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlHashPartitionTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlHashPartitionEmulation.kt"
+        path_type: production
+

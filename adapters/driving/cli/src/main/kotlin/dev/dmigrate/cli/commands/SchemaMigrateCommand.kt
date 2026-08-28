@@ -98,6 +98,11 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             "targets — without it, candidate sequence ops block with " +
             "SEQUENCE_PRESERVE_OPT_IN_REQUIRED.",
     ).choice("action_required", "helper_table")
+    val mssqlHashPartitions by option(
+        "--mssql-hash-partitions",
+        help = "SQL Server hash-partitioning strategy: 'action_required' (default) or 'computed_column' " +
+            "to emulate it with a persisted computed column. Mirrors the flag on `schema generate`.",
+    ).choice("action_required", "computed_column")
     val lockTimeoutMs by option(
         "--lock-timeout-ms",
         help = "Atomic-preserve lock-timeout budget in milliseconds. Optional; defaults to " +
@@ -130,6 +135,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
                 routineCapabilityFlags = routineCapabilityFlags,
                 strictGapOperations = strictGapOperations,
                 sqliteNamedSequences = sqliteNamedSequences,
+                mssqlHashPartitions = mssqlHashPartitions,
                 lockTimeoutMs = lockTimeoutMs,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,

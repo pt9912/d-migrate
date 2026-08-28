@@ -34,6 +34,7 @@ internal data class SchemaGenerateOptions(
     val split: String,
     val mysqlNamedSequences: String?,
     val sqliteNamedSequences: String?,
+    val mssqlHashPartitions: String?,
     val cliContext: CliContext,
     val configPath: Path? = null,
 )
@@ -132,6 +133,7 @@ internal object SchemaGenerateWiring {
             splitMode = splitMode,
             mysqlNamedSequences = options.mysqlNamedSequences,
             sqliteNamedSequences = options.sqliteNamedSequences,
+            mssqlHashPartitions = options.mssqlHashPartitions,
             deterministic = options.deterministic,
         )
         val runner = SchemaGenerateRunner(

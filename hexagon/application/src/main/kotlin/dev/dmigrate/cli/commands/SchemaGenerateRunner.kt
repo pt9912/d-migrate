@@ -6,6 +6,7 @@ import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlScript
 import dev.dmigrate.driver.DdlDialectContext
+import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
@@ -51,6 +52,7 @@ data class SchemaGenerateRequest(
     val splitMode: SplitMode = SplitMode.SINGLE,
     val mysqlNamedSequences: String? = null,
     val sqliteNamedSequences: String? = null,
+    val mssqlHashPartitions: String? = null,
     val deterministic: Boolean = false,
 )
 
@@ -195,6 +197,7 @@ class SchemaGenerateRunner(
 
         val mysqlSeqMode = resolveMysqlSeqMode(request, dialect) ?: return Preflight.Exit(2)
         val sqliteSeqMode = resolveSqliteSeqMode(request, dialect) ?: return Preflight.Exit(2)
+        val mssqlHashMode = resolveMssqlHashMode(request, dialect) ?: return Preflight.Exit(2)
         val generatedAt = resolveGeneratedAt(request) ?: return Preflight.Exit(2)
         val dialectContext: DdlDialectContext = when (dialect) {
             DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
@@ -202,6 +205,9 @@ class SchemaGenerateRunner(
             )
             DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
                 namedSequenceMode = sqliteSeqMode.value ?: SqliteNamedSequenceMode.ACTION_REQUIRED,
+            )
+            DatabaseDialect.MSSQL -> DdlDialectContext.MsSql(
+                hashPartitionMode = mssqlHashMode.value ?: MssqlHashPartitionMode.ACTION_REQUIRED,
             )
             else -> DdlDialectContext.None
         }
@@ -221,6 +227,8 @@ class SchemaGenerateRunner(
 
     private data class OptionalMode(val value: MysqlNamedSequenceMode?)
     private data class OptionalSqliteMode(val value: SqliteNamedSequenceMode?)
+
+    private data class OptionalMssqlHashMode(val value: MssqlHashPartitionMode?)
     private data class OptionalInstant(val value: Instant?)
 
     private fun resolveGeneratedAt(request: SchemaGenerateRequest): OptionalInstant? {
@@ -288,6 +296,40 @@ class SchemaGenerateRunner(
         }
         return if (dialect == DatabaseDialect.SQLITE) OptionalSqliteMode(SqliteNamedSequenceMode.ACTION_REQUIRED)
         else OptionalSqliteMode(null)
+    }
+
+    /**
+     * Sub-Slice 7d: dieselbe Bauart wie [resolveSqliteSeqMode]. Ein Wert fuer
+     * einen anderen Ziel-Dialekt ist ein Fehler, keine stille Ignoranz — sonst
+     * glaubte der Aufrufer, die Emulation sei an.
+     */
+    private fun resolveMssqlHashMode(
+        request: SchemaGenerateRequest,
+        dialect: DatabaseDialect,
+    ): OptionalMssqlHashMode? {
+        if (request.mssqlHashPartitions != null) {
+            if (dialect != DatabaseDialect.MSSQL) {
+                printError(
+                    "--mssql-hash-partitions is only valid with --target mssql, " +
+                        "not ${dialect.name.lowercase()}. " +
+                        "Allowed values for SQL Server: action_required, computed_column.",
+                    request.source.toString(),
+                )
+                return null
+            }
+            val mode = MssqlHashPartitionMode.fromCliName(request.mssqlHashPartitions)
+            if (mode == null) {
+                printError(
+                    "Unknown --mssql-hash-partitions value '${request.mssqlHashPartitions}'. " +
+                        "Allowed: action_required, computed_column",
+                    request.source.toString(),
+                )
+                return null
+            }
+            return OptionalMssqlHashMode(mode)
+        }
+        return if (dialect == DatabaseDialect.MSSQL) OptionalMssqlHashMode(MssqlHashPartitionMode.ACTION_REQUIRED)
+        else OptionalMssqlHashMode(null)
     }
 
     private fun validateSplitModePreflight(request: SchemaGenerateRequest): Int? {

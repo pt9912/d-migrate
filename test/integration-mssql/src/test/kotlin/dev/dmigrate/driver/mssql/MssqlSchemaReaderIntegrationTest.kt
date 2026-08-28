@@ -12,6 +12,9 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlDialectContext
+import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -505,6 +508,82 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
             val filtered = schema.tables.getValue("orders").indices.first { it.name == "ix_orders_state_open" }
             filtered.includeColumns shouldBe emptyList()
             filtered.clustered shouldBe false
+        }
+    }
+
+    // Sub-Slice 7d: die HASH-Emulation gegen den echten Server. Der Beleg ist
+    // nicht das DDL, sondern dass der Server es annimmt UND die Zeilen sich
+    // wirklich auf die Eimer verteilen — eine Emulation, die alles in eine
+    // Partition legte, waere gueltiges DDL und trotzdem wertlos.
+    test("the hash emulation is accepted and actually distributes rows") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val desired = SchemaDefinition(
+                name = "hash", version = "1",
+                tables = mapOf(
+                    "hash_events" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                            "customer_id" to ColumnDefinition(NeutralType.Integer, required = true),
+                        ),
+                        primaryKey = listOf("id", "customer_id"),
+                        partitioning = PartitionConfig(
+                            type = PartitionType.HASH,
+                            key = listOf("customer_id"),
+                            partitions = (0 until 4).map {
+                                PartitionDefinition(name = "p$it", modulus = 4, remainder = it)
+                            },
+                        ),
+                    ),
+                ),
+            )
+            val ddl = MssqlDdlGenerator().generate(
+                desired,
+                DdlGenerationOptions(
+                    dialectContext = DdlDialectContext.MsSql(
+                        hashPartitionMode = MssqlHashPartitionMode.COMPUTED_COLUMN,
+                    ),
+                ),
+            ).render()
+            withClue("erzeugt:\n$ddl") { ddl strShouldContain "PERSISTED" }
+
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        ddl.lines()
+                            .filter { it.isNotBlank() && !it.trimStart().startsWith("--") }
+                            .joinToString("\n")
+                            .split(";")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .forEach { stmt.execute(it) }
+                        stmt.execute(
+                            "INSERT INTO hash_events (id, customer_id) VALUES " +
+                                "(1,10),(2,11),(3,12),(4,13),(5,14),(6,15),(7,16),(8,17)",
+                        )
+                    }
+                }
+                val populated = pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.executeQuery(
+                            "SELECT COUNT(*) FROM sys.partitions WHERE object_id = OBJECT_ID('hash_events') " +
+                                "AND index_id IN (0,1) AND rows > 0",
+                        ).use { rs -> rs.next(); rs.getInt(1) }
+                    }
+                }
+                withClue("acht Zeilen ueber vier Eimer fuellen mehr als eine Partition") {
+                    (populated > 1) shouldBe true
+                }
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("DROP TABLE IF EXISTS hash_events")
+                        stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_schemes WHERE name = 'ps_hash_events') " +
+                            "DROP PARTITION SCHEME ps_hash_events")
+                        stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_functions WHERE name = 'pf_hash_events') " +
+                            "DROP PARTITION FUNCTION pf_hash_events")
+                    }
+                }
+            }
         }
     }
 })

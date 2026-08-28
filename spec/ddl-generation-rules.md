@@ -934,9 +934,24 @@ Regeln:
     überschneidungsfrei sind, und wird daraufhin geprüft — eine Zuordnung, die
     anderes Routing erzeugte, wird abgelehnt.
   - `hash` über eine persistierte berechnete Spalte, über der die RANGE-Funktion
-    liegt. Die Verteilung weicht dabei von der Quelle ab (andere Hash-Funktion),
-    ohne Datenverlust; die Emulation ist ein Modus mit konservativer Vorgabe,
-    wie bei den nachgebauten Sequenzen.
+    liegt. Die Emulation ist ein Modus mit konservativer Vorgabe, wie bei den
+    nachgebauten Sequenzen. Für sie gilt zusätzlich:
+    - Die Eimerspalte heißt `dmg_hash_bucket`, ist `PERSISTED` (ohne das lehnt
+      SQL Server sie als Partitionsspalte ab) und trägt `ABS(CHECKSUM(<key>) %
+      <n>)` — erst teilen, dann Betrag, weil der Betrag des kleinsten `int`
+      überliefe.
+    - **Die Eimerspalte tritt in jeden eindeutigen Schlüssel der Tabelle**, weil
+      SQL Server die Partitionsspalte dort verlangt. Das ist genau dann
+      bedeutungserhaltend, wenn der Hash-Schlüssel in dem Schlüssel enthalten
+      ist — der Eimer ist dann durch ihn bestimmt. Andernfalls würde der
+      Schlüssel schwächer, und die Emulation wird abgelehnt (E067) statt still
+      etwas anderes zuzusichern.
+    - Der Eimersatz muss vollständig und gleichförmig sein: ein Modulus, die
+      Reste `0..n−1` je genau einmal (E068).
+    - Die Verteilung weicht von der Quelle ab (andere Hash-Funktion): dieselbe
+      Zeile landet in einem anderen Eimer. Für Ablagetrennung und Partition
+      Elimination gleichwertig, für eine zugesicherte Eimerzugehörigkeit nicht
+      (W145).
 - `RANGE RIGHT` ist festgelegt, nicht wählbar: eine Partition ist das halboffene
   Intervall `[from, to)`, und das ist genau RIGHT.
 - Aus n Partitionen werden n−1 Grenzwerte; die obere Grenze der letzten Partition

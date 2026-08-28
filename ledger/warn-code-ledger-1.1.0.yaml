@@ -245,7 +245,25 @@ entries:
     entry_type: standard
     test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlPartitionGenerateTest.kt"
     evidence_paths:
-      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGenerator.kt"
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlTablePartitioning.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDiffPartitionOps.kt"
         path_type: production
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlPartitionDdl.kt"
         path_type: production
+
+  # W145 — Sub-Slice 7d: HASH-Partitionierung wurde ueber eine persistierte
+  # berechnete Spalte emuliert. SQL Server hasht anders als die Quelle, die
+  # Zuordnung Zeile->Eimer ist also eine andere; der Eimer tritt ausserdem in
+  # jeden eindeutigen Schluessel, und ein Reverse liest RANGE zurueck.
+  - code: W145
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlHashPartitionTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlTablePartitioning.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDiffPartitionOps.kt"
+        path_type: production
+

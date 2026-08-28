@@ -11,7 +11,9 @@ import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -113,6 +115,71 @@ class MssqlDiffPartitioningTest : FunSpec({
 
     test("an unpartitioned table needs no teardown") {
         downFor(table(null)).statements.map { it.sql }.size shouldBe 1
+    }
+
+    // Was `generate` kann, muss `migrate` auch koennen — sonst haengt das
+    // Ergebnis davon ab, auf welchem Weg die Tabelle entsteht.
+    test("the hash emulation reaches the migration path too") {
+        val hash = PartitionConfig(
+            type = PartitionType.HASH,
+            key = listOf("bucket"),
+            partitions = (0 until 4).map {
+                PartitionDefinition(name = "p$it", modulus = 4, remainder = it)
+            },
+        )
+        val result = gen.generateUp(
+            planner.plan(
+                schema(),
+                schema("events" to table(hash)),
+                SchemaDiff(tablesAdded = listOf(NamedTable("events", table(hash)))),
+            ),
+            DdlGenerationOptions(
+                dialectContext = DdlDialectContext.MsSql(
+                    hashPartitionMode = MssqlHashPartitionMode.COMPUTED_COLUMN,
+                ),
+            ),
+        )
+        val sql = result.statements.joinToString("\n") { it.sql }
+
+        sql shouldContainStr "[dmg_hash_bucket] AS (ABS(CHECKSUM([bucket]) % 4)) PERSISTED"
+        sql shouldContainStr "AS RANGE RIGHT FOR VALUES (1, 2, 3);"
+        sql shouldContainStr ") ON [ps_events] ([dmg_hash_bucket]);"
+        result.diagnostics.count { it.code == "W145" } shouldBe 1
+    }
+
+    // D3: `DROP TABLE` laesst Function und Scheme stehen. Fuer den emulierten
+    // HASH-Fall sagte `isRenderable` faelschlich "nichts angelegt", der Rueckbau
+    // unterblieb, und der naechste Vorwaertslauf kollidierte am Namen.
+    test("the inverse of an emulated hash table drops scheme and function too") {
+        val hash = PartitionConfig(
+            type = PartitionType.HASH,
+            key = listOf("bucket"),
+            partitions = (0 until 4).map { PartitionDefinition(name = "p$it", modulus = 4, remainder = it) },
+        )
+        val t = table(hash)
+        val sqls = gen.generateDown(
+            planner.plan(schema(), schema("events" to t), SchemaDiff(tablesAdded = listOf(NamedTable("events", t)))),
+            DdlGenerationOptions(
+                dialectContext = DdlDialectContext.MsSql(
+                    hashPartitionMode = MssqlHashPartitionMode.COMPUTED_COLUMN,
+                ),
+            ),
+        ).statements.map { it.sql }
+
+        sqls.indexOfFirst { it.startsWith("DROP TABLE") } shouldBe 0
+        sqls[1] shouldContainStr "DROP PARTITION SCHEME [ps_events];"
+        sqls[2] shouldContainStr "DROP PARTITION FUNCTION [pf_events];"
+    }
+
+    test("without the mode the migration path still blocks a hash table") {
+        val hash = PartitionConfig(
+            type = PartitionType.HASH,
+            key = listOf("bucket"),
+            partitions = (0 until 4).map {
+                PartitionDefinition(name = "p$it", modulus = 4, remainder = it)
+            },
+        )
+        upFor(table(hash)).primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
     test("LIST partitioning blocks — SQL Server knows only RANGE") {

@@ -18,6 +18,8 @@ import dev.dmigrate.driver.AbstractDdlGenerator
 import dev.dmigrate.driver.CircularFkEdge
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.MssqlHashPartitionMode
+import dev.dmigrate.driver.mssqlContext
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.DeferredForeignKey
@@ -64,6 +66,7 @@ class MssqlDdlGenerator private constructor(
     private val columnHelper =
         MssqlColumnConstraintHelper(::quoteIdentifier, mssqlTypeMapper, typeResolver, ::mssqlReferentialActionSql)
     private val indexHelper = MssqlIndexDdlHelper(::quoteIdentifier, mssqlTypeMapper)
+    private val tablePartitioning = MssqlTablePartitioning(columnHelper, ::quoteIdentifier)
 
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         currentSchema = schema
@@ -128,13 +131,33 @@ class MssqlDdlGenerator private constructor(
     ): List<DdlStatement> {
         val notes = mutableListOf<TransformationNote>()
         val lines = mutableListOf<String>()
-        val lobColumns = typeResolver.lobColumns(table, schema)
 
-        for ((colName, col) in table.columns.inOrdinalOrder()) {
-            lines += columnHelper.generateColumnSql(name, colName, col, table, schema, notes)
+        // Sub-Slice 7d: HASH-Emulation. Sie greift VOR allem anderen, weil sie
+        // die eindeutigen Schluessel der Tabelle veraendert — SQL Server
+        // verlangt die Partitionsspalte in jedem davon. Ab hier arbeitet die
+        // Methode mit `effective`, nicht mit `table`.
+        val hashOutcome = resolveHashPartitionPlan(
+            name, table, options.mssqlContext?.hashPartitionMode ?: MssqlHashPartitionMode.ACTION_REQUIRED,
+            ::quoteIdentifier, schema,
+        )
+        val hashPlan = (hashOutcome as? MssqlHashPartitionOutcome.Planned)?.plan
+        if (hashOutcome is MssqlHashPartitionOutcome.Refused) {
+            notes += ManualActionRequired(
+                code = hashOutcome.code, objectType = "partitioning", objectName = name,
+                reason = hashOutcome.reason, hint = hashOutcome.hint,
+            ).toNote()
         }
+        val effective = hashPlan?.table ?: table
+        val lobColumns = typeResolver.lobColumns(effective, schema)
 
-        for ((colName, col) in table.columns.inOrdinalOrder()) {
+        for ((colName, col) in effective.columns.inOrdinalOrder()) {
+            lines += columnHelper.generateColumnSql(name, colName, col, effective, schema, notes)
+        }
+        // Die berechnete Spalte steht nicht im neutralen Modell; ihre Zeile
+        // kommt direkt aus der Emulation.
+        hashPlan?.let { lines += it.bucketLine }
+
+        for ((colName, col) in effective.columns.inOrdinalOrder()) {
             val ref = col.references ?: continue
             if (options.deferForeignKeys) continue
             if ((name to colName) in deferredFks) continue
@@ -148,80 +171,38 @@ class MssqlDdlGenerator private constructor(
             )
         }
 
-        for (constraint in table.constraints) {
+        for (constraint in effective.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue
             columnHelper.generateConstraintClause(cascadeGuard, name, table, constraint, lobColumns, notes)
                 ?.let { lines += it }
         }
 
-        if (table.primaryKey.isNotEmpty()) {
-            val lobKeys = table.primaryKey.filter { it in lobColumns }
+        if (effective.primaryKey.isNotEmpty()) {
+            val lobKeys = effective.primaryKey.filter { it in lobColumns }
             if (lobKeys.isNotEmpty()) {
                 notes += columnHelper.lobKeyNote(name, MssqlConstraintNames.primaryKey(name), "PRIMARY KEY", lobKeys)
             } else {
-                val pkCols = table.primaryKey.joinToString(", ") { quoteIdentifier(it) }
-                val pkClause = MssqlClusteredStorage.primaryKeyClause(table)
+                val pkCols = effective.primaryKey.joinToString(", ") { quoteIdentifier(it) }
+                val pkClause = MssqlClusteredStorage.primaryKeyClause(effective)
                 lines += "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.primaryKey(name))} $pkClause ($pkCols)"
             }
         }
 
-        val partitionPrelude = mutableListOf<String>()
-        var onClause = ""
-        table.partitioning?.let { partitioning ->
-            if (MssqlPartitionDdl.isRenderable(partitioning)) {
-                val keyColumn = partitioning.key.first()
-                val keyType = table.columns[keyColumn]
-                    ?.let { columnHelper.renderColumn(name, keyColumn, it, table, schema, notes).sqlType }
-                if (keyType == null) {
-                    notes += unrenderablePartitioning(name, partitioning.type.name, "its key column has no SQL type")
-                } else {
-                    partitionPrelude += MssqlPartitionDdl.createStatements(
-                        table = name,
-                        config = partitioning,
-                        columnType = keyType,
-                        storage = options.partitionStorage,
-                        quote = ::quoteIdentifier,
-                    )
-                    onClause = MssqlPartitionDdl.onClause(name, partitioning, ::quoteIdentifier)
-                    // Function und Scheme sind in SQL Server datenbankweit und
-                    // teilbar; das neutrale Modell traegt die Partitionierung je
-                    // Tabelle. Aus dieser Richtung ist die Teilung nicht
-                    // rekonstruierbar — je Tabelle ein eigenes Paar.
-                    notes += TransformationNote(
-                        type = NoteType.WARNING, code = "W144", objectName = name,
-                        message = "Partition function '${MssqlPartitionDdl.functionName(name)}' and scheme " +
-                            "'${MssqlPartitionDdl.schemeName(name)}' were created for table '$name' alone. " +
-                            "SQL Server shares these objects across tables; the neutral model carries " +
-                            "partitioning per table, so a shared original becomes one pair per table.",
-                        hint = "Functionally equivalent; consolidate the schemes manually if the sharing matters.",
-                    )
-                }
-            } else {
-                notes += unrenderablePartitioning(
-                    name, partitioning.type.name,
-                    "SQL Server partitions by RANGE over a single column only",
-                )
-            }
-        }
+        val partitions = tablePartitioning.render(
+            name, effective, schema, hashPlan,
+            hashRefused = hashOutcome is MssqlHashPartitionOutcome.Refused,
+            options = options, notes = notes,
+        )
 
         val sql = buildString {
             append("CREATE TABLE ${quoteIdentifier(name)} (\n")
             append(lines.joinToString(",\n") { "    $it" })
-            append("\n)$onClause;")
+            append("\n)${partitions.onClause};")
         }
         // Function und Scheme muessen vor der Tabelle stehen, die sich an sie haengt.
-        return partitionPrelude.map { DdlStatement(it) } + DdlStatement(sql, notes)
+        return partitions.prelude.map { DdlStatement(it) } + DdlStatement(sql, notes)
     }
-
-    /** Warum eine Partitionierung nicht gerendert wird — Form wie bisher, Grund verschieden. */
-    private fun unrenderablePartitioning(table: String, strategy: String, why: String): TransformationNote =
-        ManualActionRequired(
-            code = "E055", objectType = "partitioning", objectName = table,
-            reason = "$strategy partitioning of table '$table' is not rendered for SQL Server: $why; " +
-                "created as a plain table.",
-            hint = "Create the partition function and scheme manually and rebuild the table on the scheme.",
-        ).toNote()
 
     override fun generateIndices(
         tableName: String,
@@ -229,7 +210,19 @@ class MssqlDdlGenerator private constructor(
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
         val schema = currentSchema ?: SchemaDefinition(name = "", version = "", tables = mapOf(tableName to table))
-        return indexHelper.generateIndices(tableName, table, typeResolver.lobColumns(table, schema))
+        // Die Indizes kommen aus der Schema-Tabelle, nicht aus der in
+        // `generateTable` emulierten — der Eimer muss hier also erneut
+        // aufgeloest werden. Ohne das entstuende ein `CREATE UNIQUE INDEX` OHNE
+        // Partitionsspalte auf einer Tabelle, die an ihr haengt: genau der
+        // Serverfehler, um den die Emulation gebaut ist.
+        val effective = (
+            resolveHashPartitionPlan(
+                tableName, table,
+                options.mssqlContext?.hashPartitionMode ?: MssqlHashPartitionMode.ACTION_REQUIRED,
+                ::quoteIdentifier, schema,
+            ) as? MssqlHashPartitionOutcome.Planned
+            )?.plan?.table ?: table
+        return indexHelper.generateIndices(tableName, effective, typeResolver.lobColumns(effective, schema))
     }
 
     // ── Foreign keys outside CREATE TABLE ────────

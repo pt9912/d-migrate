@@ -618,6 +618,13 @@ data class SchemaMigrateRequest(
      */
     val mysqlNamedSequences: String? = null,
     /**
+     * Sub-Slice 7d: SQL Server `--mssql-hash-partitions`. `"computed_column"`
+     * schaltet die HASH-Emulation ueber eine persistierte berechnete Spalte
+     * frei; jeder andere Wert (oder `null`) laesst es beim Abbruch. Spiegel von
+     * [sqliteNamedSequences], gleiche Verdrahtung.
+     */
+    val mssqlHashPartitions: String? = null,
+    /**
      * Atomic-Preserve Service-Mode Sub-Slice A (plan-doc
      * `docs/planning/in-progress/atomic-preserve-service-mode.md`):
      * optional per-request override for the atomic-preserve

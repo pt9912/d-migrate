@@ -228,6 +228,19 @@ sealed interface DdlDialectContext {
         val catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
         val castPreflights: List<SqliteCastPreflightDeclaration> = emptyList(),
     ) : DdlDialectContext
+
+    /**
+     * SQL-Server-spezifischer Render-Kontext.
+     *
+     * - [hashPartitionMode]: ACTION_REQUIRED (Default) oder COMPUTED_COLUMN
+     *   (Emulation aktiv). Dieselbe Modus-Gate-Bauart wie
+     *   [MySql.namedSequenceMode] und [Sqlite.namedSequenceMode]: der
+     *   Default bleibt das heutige Abbruchverhalten, die Emulation ist
+     *   ausdruecklich anzufordern.
+     */
+    data class MsSql(
+        val hashPartitionMode: MssqlHashPartitionMode = MssqlHashPartitionMode.ACTION_REQUIRED,
+    ) : DdlDialectContext
 }
 
 /** Smart-Cast-freundlicher Accessor: gibt den MySQL-Kontext zurueck oder `null`. */
@@ -237,6 +250,10 @@ val DdlGenerationOptions.mysqlContext: DdlDialectContext.MySql?
 /** Smart-Cast-freundlicher Accessor: gibt den SQLite-Kontext zurueck oder `null`. */
 val DdlGenerationOptions.sqliteContext: DdlDialectContext.Sqlite?
     get() = dialectContext as? DdlDialectContext.Sqlite
+
+/** Smart-Cast-freundlicher Accessor: gibt den SQL-Server-Kontext zurueck oder `null`. */
+val DdlGenerationOptions.mssqlContext: DdlDialectContext.MsSql?
+    get() = dialectContext as? DdlDialectContext.MsSql
 
 /**
  * Phase H.3b: rendering target awareness — STANDALONE for SQL
@@ -377,5 +394,35 @@ object SpatialProfilePolicy {
         data class Resolved(val profile: SpatialProfile) : Result
         data class UnknownProfile(val raw: String) : Result
         data class NotAllowedForDialect(val profile: SpatialProfile, val dialect: DatabaseDialect) : Result
+    }
+}
+
+/**
+ * SQL-Server-Strategie fuer `hash`-Partitionierung (Sub-Slice 7d).
+ *
+ * SQL Server kennt ausschliesslich RANGE. Eine HASH-Partitionierung laesst
+ * sich aber nachbauen: eine **persistierte berechnete Spalte** haelt den
+ * Eimer, und eine RANGE-Funktion schneidet an den Eimergrenzen. Strukturell
+ * dasselbe Modus-Gate wie [MysqlNamedSequenceMode] / [SqliteNamedSequenceMode]
+ * — eigener Typ, damit ein Wert nicht zwischen Dialekten leaken kann.
+ *
+ * Was die Emulation NICHT herstellt, ist die Zuordnung von Zeile zu Partition:
+ * SQL Server hasht anders als PostgreSQL oder MySQL, dieselbe Zeile landet
+ * also in einem anderen Eimer. Fuer den Zweck der Partitionierung — Ablage
+ * trennen, Partition Elimination — ist das gleichwertig; wer sich auf eine
+ * bestimmte Eimerzugehoerigkeit verlaesst, bekommt sie nicht.
+ */
+enum class MssqlHashPartitionMode(val cliName: String) {
+    /** `hash`-Partitionierung bricht mit E055 ab (Default, ruecwaertskompatibel). */
+    ACTION_REQUIRED("action_required"),
+
+    /** Persistierte berechnete Spalte + RANGE-Funktion ueber die Eimergrenzen. */
+    COMPUTED_COLUMN("computed_column");
+
+    companion object {
+        private val BY_CLI_NAME = entries.associateBy { it.cliName }
+
+        fun fromCliName(name: String): MssqlHashPartitionMode? =
+            BY_CLI_NAME[name.lowercase(java.util.Locale.ROOT)]
     }
 }
