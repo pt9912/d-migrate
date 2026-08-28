@@ -509,8 +509,9 @@ internal object OperationMapper {
             } else {
                 null
             }
+            val dropId = OperationIdFactory.makeId("DropConstraint", refOld, CanonicalPayload.constraint(vc.before))
             ops += DiffOperation.DropConstraint(
-                id = OperationIdFactory.makeId("DropConstraint", refOld, CanonicalPayload.constraint(vc.before)),
+                id = dropId,
                 objectRef = refOld,
                 constraint = vc.before,
                 replacePairId = pairId,
@@ -520,6 +521,11 @@ internal object OperationMapper {
                 objectRef = refNew,
                 constraint = vc.after,
                 replacePairId = pairId,
+                // Siehe [ORDERING] unten: behaelt der Constraint seinen Namen --
+                // der Normalfall einer Definitionsaenderung -- teilen sich beide
+                // Operationen den Objektnamen, und ohne diese Kante legt der Plan
+                // ihn an, bevor er den alten verwirft.
+                dependencies = setOf(dropId),
             )
         }
     }
@@ -567,16 +573,17 @@ internal object OperationMapper {
         }
         for (vc in table.indicesChanged) {
             val refOld = indexRef(table.name, vc.before)
-            ops += DiffOperation.DropIndex(
-                id = OperationIdFactory.makeId("DropIndex", refOld, CanonicalPayload.index(vc.before)),
-                objectRef = refOld,
-                index = vc.before,
-            )
+            val dropId = OperationIdFactory.makeId("DropIndex", refOld, CanonicalPayload.index(vc.before))
+            ops += DiffOperation.DropIndex(id = dropId, objectRef = refOld, index = vc.before)
             val refNew = indexRef(table.name, vc.after)
             ops += DiffOperation.AddIndex(
                 id = OperationIdFactory.makeId("AddIndex", refNew, CanonicalPayload.index(vc.after)),
                 objectRef = refNew,
                 index = vc.after,
+                // Siehe [ORDERING] bei mapTablePrimaryKey. Fuer Indizes heisst der
+                // Ausgang: der Name existiert beim Anlegen schon, und der Server
+                // lehnt ab (SQL Server Msg 1913, PostgreSQL 42P07).
+                dependencies = setOf(dropId),
             )
         }
     }
@@ -592,21 +599,36 @@ internal object OperationMapper {
         return "anon_${cols}_${idx.type.name}_${idx.unique}_$whereHash"
     }
 
+    /**
+     * [ORDERING] Warum Anlegen und Loeschen desselben Objekts eine Kante brauchen.
+     *
+     * `TopologicalSorter.stableOrder` ordnet nach Phase, Objekttyp, Objektname --
+     * und bricht den Gleichstand ueber die Operations-ID. Die ID beginnt mit der
+     * Operationsart (`OperationIdFactory.makeId`), also steht `Add…`
+     * lexikografisch **immer** vor `Drop…`. Zwei Operationen auf demselben Objekt
+     * in derselben Phase kommen damit in der falschen Reihenfolge heraus, und
+     * zwar deterministisch, nicht mal so und mal so.
+     *
+     * Fuer den Primaerschluessel ist der Objektname immer gleich, fuer einen
+     * Constraint, wenn er seinen Namen behaelt. Ohne Kante rendert der Plan
+     * `ADD CONSTRAINT` vor `DROP CONSTRAINT` -- SQL Server antwortet mit
+     * Msg 1779 bzw. 2714, PostgreSQL mit 42P16 bzw. 42710.
+     */
     private fun mapTablePrimaryKey(table: TableDiff, ops: MutableList<DiffOperation>) {
         val pk = table.primaryKey ?: return
         val ref = DiffObjectRef(DiffObjectType.PRIMARY_KEY, listOf(table.name))
+        val dropId = OperationIdFactory.makeId("DropPrimaryKey", ref, pk.before.joinToString(","))
         if (pk.before.isNotEmpty()) {
-            ops += DiffOperation.DropPrimaryKey(
-                id = OperationIdFactory.makeId("DropPrimaryKey", ref, pk.before.joinToString(",")),
-                objectRef = ref,
-                columns = pk.before,
-            )
+            ops += DiffOperation.DropPrimaryKey(id = dropId, objectRef = ref, columns = pk.before)
         }
         if (pk.after.isNotEmpty()) {
             ops += DiffOperation.AddPrimaryKey(
                 id = OperationIdFactory.makeId("AddPrimaryKey", ref, pk.after.joinToString(",")),
                 objectRef = ref,
                 columns = pk.after,
+                // Nur wenn es auch etwas zu verwerfen gibt: eine Tabelle, die
+                // ihren ersten Primaerschluessel bekommt, wartet auf nichts.
+                dependencies = if (pk.before.isNotEmpty()) setOf(dropId) else emptySet(),
             )
         }
     }

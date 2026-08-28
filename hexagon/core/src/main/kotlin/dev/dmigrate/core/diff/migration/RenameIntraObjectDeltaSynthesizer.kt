@@ -258,8 +258,9 @@ internal object RenameIntraObjectDeltaSynthesizer {
         }
         for (vc in diff.constraintsChanged) {
             val refOld = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(tableName, vc.before.name))
+            val dropId = OperationIdFactory.makeId("DropConstraint", refOld, CanonicalPayload.constraint(vc.before))
             ops += DiffOperation.DropConstraint(
-                id = OperationIdFactory.makeId("DropConstraint", refOld, CanonicalPayload.constraint(vc.before)),
+                id = dropId,
                 objectRef = refOld,
                 constraint = vc.before,
                 dependencies = setOf(candidateId),
@@ -269,7 +270,10 @@ internal object RenameIntraObjectDeltaSynthesizer {
                 id = OperationIdFactory.makeId("AddConstraint", refNew, CanonicalPayload.constraint(vc.after)),
                 objectRef = refNew,
                 constraint = vc.after,
-                dependencies = setOf(candidateId),
+                // Dieselbe Ordnungskante wie im OperationMapper (siehe dort
+                // [ORDERING]) -- zusaetzlich zum Rename-Kandidaten, auf den beide
+                // ohnehin warten.
+                dependencies = setOf(candidateId, dropId),
             )
         }
     }
@@ -300,8 +304,9 @@ internal object RenameIntraObjectDeltaSynthesizer {
         }
         for (vc in diff.indicesChanged) {
             val refOld = indexRef(tableName, vc.before)
+            val dropId = OperationIdFactory.makeId("DropIndex", refOld, CanonicalPayload.index(vc.before))
             ops += DiffOperation.DropIndex(
-                id = OperationIdFactory.makeId("DropIndex", refOld, CanonicalPayload.index(vc.before)),
+                id = dropId,
                 objectRef = refOld,
                 index = vc.before,
                 dependencies = setOf(candidateId),
@@ -311,7 +316,7 @@ internal object RenameIntraObjectDeltaSynthesizer {
                 id = OperationIdFactory.makeId("AddIndex", refNew, CanonicalPayload.index(vc.after)),
                 objectRef = refNew,
                 index = vc.after,
-                dependencies = setOf(candidateId),
+                dependencies = setOf(candidateId, dropId),
             )
         }
     }
@@ -327,9 +332,10 @@ internal object RenameIntraObjectDeltaSynthesizer {
         // — the two `isNotEmpty()` guards are independent on purpose.
         val pk = diff.primaryKey ?: return
         val ref = DiffObjectRef(DiffObjectType.PRIMARY_KEY, listOf(tableName))
+        val dropId = OperationIdFactory.makeId("DropPrimaryKey", ref, pk.before.joinToString(","))
         if (pk.before.isNotEmpty()) {
             ops += DiffOperation.DropPrimaryKey(
-                id = OperationIdFactory.makeId("DropPrimaryKey", ref, pk.before.joinToString(",")),
+                id = dropId,
                 objectRef = ref,
                 columns = pk.before,
                 dependencies = setOf(candidateId),
@@ -340,7 +346,7 @@ internal object RenameIntraObjectDeltaSynthesizer {
                 id = OperationIdFactory.makeId("AddPrimaryKey", ref, pk.after.joinToString(",")),
                 objectRef = ref,
                 columns = pk.after,
-                dependencies = setOf(candidateId),
+                dependencies = if (pk.before.isNotEmpty()) setOf(candidateId, dropId) else setOf(candidateId),
             )
         }
     }

@@ -9,6 +9,10 @@ import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -21,6 +25,7 @@ import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.migration.DiffDdlGenerator
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -180,6 +185,191 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
             tmp.toFile().deleteRecursively()
         }
     }
+
+    test("a reshaped primary key and a changed UNIQUE are dropped before they are added") {
+        val tmp = createTempDirectory("mssql-replace-order")
+        try {
+            execDdl(
+                pool,
+                // Beide Seiten mehrspaltig: einspaltige UNIQUE-Constraints hebt der
+                // Reverse auf `column.unique`, daraus wuerden zwei verschiedene
+                // Objekte statt eines geaenderten Paares.
+                "CREATE TABLE replace_order (id BIGINT NOT NULL, tenant BIGINT NOT NULL, code NVARCHAR(50), " +
+                    "CONSTRAINT pk_replace_order PRIMARY KEY (id), " +
+                    "CONSTRAINT uq_code UNIQUE (code, tenant))",
+            )
+            val desired = SchemaDefinition(
+                name = "replace-order", version = "1",
+                tables = mapOf(
+                    "replace_order" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "tenant" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "code" to ColumnDefinition(NeutralType.Text(maxLength = 50)),
+                        ),
+                        primaryKey = listOf("id", "tenant"),
+                        constraints = listOf(ConstraintDefinition(
+                            name = "uq_code", type = ConstraintType.UNIQUE, columns = listOf("code", "id"),
+                        )),
+                    ),
+                ),
+            )
+
+            val errors = mutableListOf<String>()
+            val executed = mutableListOf<String>()
+            val exit = SchemaMigrateRunner(
+                fileLoader = { _ ->
+                    ResolvedSchemaOperand(reference = "desired", schema = desired, validation = ValidationResult())
+                },
+                dbLoader = { _, _ -> liveOperand(pool) },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                targetAwareComparator = { left, right, canonicalize ->
+                    SchemaComparator(canonicalize).compare(left, right)
+                },
+                rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
+                executor = { _, _, segments, _, _ ->
+                    val stmts = segments.flatMap { it.statements }
+                    executed += stmts.map { it.sql }
+                    executeAgainstPool(pool, stmts)
+                },
+                renderReport = { r, _ -> r.toString() },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.MSSQL,
+                    report = tmp.resolve("report.json"),
+                    execute = true,
+                ),
+            )
+            // Exit 5 traegt beide Ausgaenge der falschen Reihenfolge: der Server
+            // lehnt ab (Msg 1779 / 2714), oder der Post-Compare meldet Drift.
+            withClue(
+                "ausgefuehrt:\n" + executed.joinToString("\n") + "\nmeldungen:\n" + errors.joinToString("\n"),
+            ) { exit shouldBe 0 }
+
+            val dropPk = executed.indexOfFirst { it.contains("DROP CONSTRAINT") && it.contains("'PK'") }
+            val addPk = executed.indexOfFirst { it.contains("PRIMARY KEY") && it.contains("ADD CONSTRAINT") }
+            val dropUq = executed.indexOfFirst { it.contains("DROP CONSTRAINT") && it.contains("uq_code") }
+            val addUq = executed.indexOfFirst { it.contains("ADD CONSTRAINT") && it.contains("uq_code") }
+            withClue("ausgefuehrt:\n" + executed.joinToString("\n")) {
+                (dropPk >= 0 && addPk > dropPk) shouldBe true
+                (dropUq >= 0 && addUq > dropUq) shouldBe true
+            }
+        } finally {
+            execDdl(pool, "DROP TABLE IF EXISTS replace_order")
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
+    test("switching the table's storage round-trips against a real server") {
+        val tmp = createTempDirectory("mssql-clustered")
+        try {
+            // Ausgangslage wie ohne Zutun: der Primaerschluessel haelt die
+            // Ablage, der Index daneben ist nonclustered.
+            execDdl(
+                pool,
+                "CREATE TABLE storage_rt (id BIGINT NOT NULL CONSTRAINT pk_storage_rt PRIMARY KEY, " +
+                    "placed_on DATE NOT NULL)",
+                "CREATE INDEX ix_storage_rt_placed ON storage_rt (placed_on)",
+            )
+            indexStorageForm(pool, "storage_rt", "ix_storage_rt_placed") shouldBe "NONCLUSTERED"
+            primaryKeyStorageForm(pool, "storage_rt") shouldBe "CLUSTERED"
+
+            fun schemaWith(clustered: Boolean, version: String) = SchemaDefinition(
+                name = "storage-rt", version = version,
+                tables = mapOf(
+                    "storage_rt" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "placed_on" to ColumnDefinition(NeutralType.Date, required = true),
+                        ),
+                        primaryKey = listOf("id"),
+                        indices = listOf(
+                            IndexDefinition(
+                                name = "ix_storage_rt_placed",
+                                columns = listOf(IndexColumn("placed_on")),
+                                clustered = clustered,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val original = schemaWith(clustered = false, version = "0")
+            val desired = schemaWith(clustered = true, version = "1")
+
+            fingerprintOf(readSchema(pool)) shouldBe fingerprintOf(original)
+
+            val rollbackPath = tmp.resolve("rollback.sql")
+            val reportPath = tmp.resolve("report.json")
+            val errors = mutableListOf<String>()
+            val executed = mutableListOf<String>()
+            val migrateExit = SchemaMigrateRunner(
+                fileLoader = { _ ->
+                    ResolvedSchemaOperand(reference = "desired", schema = desired, validation = ValidationResult())
+                },
+                dbLoader = { _, _ -> liveOperand(pool) },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                targetAwareComparator = { left, right, canonicalize ->
+                    SchemaComparator(canonicalize).compare(left, right)
+                },
+                rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
+                executor = { _, _, segments, _, _ ->
+                    val stmts = segments.flatMap { it.statements }
+                    executed += stmts.map { it.sql }
+                    executeAgainstPool(pool, stmts)
+                },
+                renderReport = { r, _ -> r.toString() },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored-desired.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.MSSQL,
+                    report = reportPath,
+                    rollbackOutput = rollbackPath,
+                    generateRollback = true,
+                    execute = true,
+                ),
+            )
+            // Haette der Renderer die Reihenfolge verfehlt, waere der Lauf hier
+            // schon an Msg 1902 gescheitert statt an einer Zusicherung.
+            withClue(
+                "migrate meldete $migrateExit\nausgefuehrt:\n" + executed.joinToString("\n") +
+                    "\nmeldungen:\n" + errors.joinToString("\n"),
+            ) { migrateExit shouldBe 0 }
+            Files.readString(reportPath) shouldContain "executionError=null"
+
+            // Der eigentliche Nachweis: die Ablage ist gewandert. Im Modell ist
+            // davon nur die eine Haelfte sichtbar.
+            indexStorageForm(pool, "storage_rt", "ix_storage_rt_placed") shouldBe "CLUSTERED"
+            primaryKeyStorageForm(pool, "storage_rt") shouldBe "NONCLUSTERED"
+            fingerprintOf(readSchema(pool)) shouldBe fingerprintOf(desired)
+
+            val rollbackExit = SchemaRollbackRunner(
+                dbLoader = { _, _ -> liveOperand(pool) },
+                executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
+                printError = { msg, src -> System.err.println("[$src] $msg") },
+            ).execute(
+                SchemaRollbackRequest(
+                    source = rollbackPath,
+                    target = "db:placeholder",
+                    execute = true,
+                    allowDestructive = true,
+                ),
+            )
+            rollbackExit shouldBe 0
+
+            // Und zurueck — auch das ist im Fingerabdruck nur halb zu sehen.
+            indexStorageForm(pool, "storage_rt", "ix_storage_rt_placed") shouldBe "NONCLUSTERED"
+            primaryKeyStorageForm(pool, "storage_rt") shouldBe "CLUSTERED"
+            fingerprintOf(readSchema(pool)) shouldBe fingerprintOf(original)
+        } finally {
+            execDdl(pool, "DROP TABLE IF EXISTS storage_rt")
+            tmp.toFile().deleteRecursively()
+        }
+    }
 })
 
 private fun noRenderer(): DiffDdlGenerator = error("test wires only the MSSQL renderer")
@@ -191,6 +381,40 @@ private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
 }
 
 private fun readSchema(pool: ConnectionPool): SchemaDefinition = MssqlSchemaReader().read(pool).schema
+
+/**
+ * Die Ablageform eines Index direkt aus dem Katalog -- `CLUSTERED` oder
+ * `NONCLUSTERED`.
+ *
+ * Der Fingerabdruck taugt fuer diese Frage nicht: der Reverse liest die Indizes
+ * mit `is_primary_key = 0`, ueber die Ablageform des Primaerschluessels sagt das
+ * neutrale Modell also nichts. Eine Tabelle mit clustered Schluessel und eine
+ * mit nonclustered Schluessel plus Heap sehen darin gleich aus. Die Reihenfolge,
+ * die T-SQL erzwingt, laesst sich deshalb nur hier nachweisen.
+ */
+private fun indexStorageForm(pool: ConnectionPool, table: String, index: String): String? =
+    pool.borrow().asJdbc().use { conn ->
+        conn.prepareStatement(
+            "SELECT i.type_desc FROM sys.indexes i " +
+                "WHERE i.object_id = OBJECT_ID(?) AND i.name = ?",
+        ).use { stmt ->
+            stmt.setString(1, table)
+            stmt.setString(2, index)
+            stmt.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null }
+        }
+    }
+
+/** Die Ablageform des Primaerschluessels derselben Tabelle. */
+private fun primaryKeyStorageForm(pool: ConnectionPool, table: String): String? =
+    pool.borrow().asJdbc().use { conn ->
+        conn.prepareStatement(
+            "SELECT i.type_desc FROM sys.indexes i " +
+                "WHERE i.object_id = OBJECT_ID(?) AND i.is_primary_key = 1",
+        ).use { stmt ->
+            stmt.setString(1, table)
+            stmt.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null }
+        }
+    }
 
 /** Derselbe Kanonisierer, den der Migrate-Pfad fuer diesen Dialekt waehlt. */
 private fun fingerprintOf(schema: SchemaDefinition) = MigrationFingerprint.compute(

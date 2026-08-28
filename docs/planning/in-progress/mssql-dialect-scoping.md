@@ -217,7 +217,7 @@ Entscheidung 2):
 | **3** ✅ | `DataReader`/`DataWriter` (Transfer; Fast-Path später); **3b** ✅ sample-db-MSSQL-Leg im Harness (`examples/sample-db`, fetch+compose gemäß [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)): Reverse→Generate→Import-Roundtrip-Smoke als eigener Workflow | `data export/import/transfer` + MSSQL-Smoke in CI |
 | **4** ✅ | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg gegen echtes SQL Server, Spec-Sequenz-Matrix, `transferCompatibility` (bereits mit Slice 3 geliefert) + Cross-Dialekt-sample-db-Smoke in der Gegenrichtung (MSSQL→PG) | Vergleichs-Substrat für Slice 5 + Cross-Smoke |
 | **5** | Diff/Migrate (`MssqlDiff*Ops` — bei allen Dialekten der größte Brocken) **inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep** (`test/cross-dialect-matrix`: Renderer und Matrix-Zellen gehören zusammen, sonst entstünden Wegwerf-Carve-outs) und Entscheidung zur Enum-CHECK-Kante ([`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md)) | `schema migrate` |
-| **6** ✅ | Gefilterte Indizes (WHERE) + clustered/nonclustered-Steuerung + INCLUDE-Spalten, Reverse + Generate + Diff | volle Index-Treue |
+| **6** (teilweise) | Gefilterte Indizes (WHERE) + clustered/nonclustered-Steuerung + INCLUDE-Spalten, Reverse + Generate + Diff | für SQL Server nutzbar; für PostgreSQL erst der Generate-Pfad — siehe offene Punkte unten |
 | **7** | Partitionierung: Partition Functions + Schemes + Filegroups (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster des PG-Slices) | Partitionstabellen im Round-Trip |
 | **8** | Volltext: Full-Text Search (Muster aus dem Fulltext-Slice, `fullTextVectorColumn`-Modell) | Volltext-Indizes Generate + Reverse |
 | **9** | Routinen/Trigger: T-SQL-Prozeduren, `CREATE OR ALTER` | Routinen-Migration |
@@ -600,6 +600,39 @@ Vergleich daraus keine Drift macht, gehören beide Felder in die dialekt-bewusst
 Kanonisierung ([ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md)) — dasselbe
 Muster wie beim Enum-Wertevorrat.
 
+#### Was an Slice 6 offen ist (Review, 2026-08-28)
+
+Der Schnitt hat „Generate" als **eine** Naht behandelt. Jeder Dialekt hat zwei:
+den `DdlGenerator` und den Diff-Builder. Daraus folgen die offenen Punkte:
+
+| Offen | Wirkung |
+| --- | --- |
+| `PostgresDiffSqlBuilders.createIndexSql` rendert kein `INCLUDE` | `schema generate` und `schema migrate` schreiben verschiedene Indizes; Post-Compare meldet Drift auf einem Lauf mit Exit 0 |
+| PG-Reverse liest über `unnest(ix.indkey)` ohne Schnitt bei `indnkeyatts` | `(a) INCLUDE (b)` kommt als `(a, b)` zurück; bei `unique` verschiebt sich die Eindeutigkeitsaussage |
+| `MssqlSchemaReader` verwirft ungefilterte Unique-Indizes samt beider Felder | `CREATE UNIQUE CLUSTERED INDEX` ist erzeugbar, aber nicht zurücklesbar |
+| W142/W143 hängen nur an den Generate-Helfern | MySQL/SQLite lassen im Migrate-Pfad still fallen, was sie beim Generieren melden |
+| `DiffPlanner.endpoint()` rechnet ohne `canonicalizeIndex` | Plan-Fingerabdruck und Runner-Fingerabdruck driften auseinander; Rollback gegen MySQL kippt in `TARGET_STATE_MISMATCH` |
+| `emitStorageFlip` löst keine eingehenden Fremdschlüssel | `DROP CONSTRAINT pk` scheitert mit Msg 3725, sobald ein FK darauf zeigt |
+| Umbenannter clustered Index ist `indicesRemoved` + `indicesAdded` | verschiedene `displayName`, keine Ordnungskante — `CREATE CLUSTERED INDEX` läuft, während der alte noch steht (Msg 1902) |
+
+Vorrang hatte davor ein **älterer, dialektübergreifender** Defekt, den derselbe
+Review zutage gebracht hat: `OperationIdFactory.makeId` stellt die Operationsart
+voran, und `TopologicalSorter.stableOrder` bricht den Gleichstand über die ID.
+Damit stand `AddPrimaryKey` vor `DropPrimaryKey` und `AddConstraint` vor
+`DropConstraint` — deterministisch, nicht zufällig. **Behoben** über eine
+Abhängigkeitskante an allen drei Paaren, in `OperationMapper` wie in
+`RenameIntraObjectDeltaSynthesizer`.
+
+Der Live-Beleg fiel je Dialekt verschieden aus, und der Unterschied ist der
+Rede wert: PostgreSQL, MySQL und SQL Server rendern `ALTER`-Anweisungen, dort
+ist die Reihenfolge unmittelbar sichtbar. **SQLite** behandelt Primärschlüssel-
+und Constraint-Änderungen als Rebuild-Auslöser und absorbiert sie
+(`SqliteRebuildPlanner.isAbsorbedByRebuild`) — die Tabelle wird aus der
+Zieldefinition neu gebaut, eine Add/Drop-Reihenfolge erreicht das SQL nie.
+Index-Operationen stehen dort ausdrücklich **nicht** in der Absorptionsliste;
+der SQLite-Beleg prüft deshalb einen geänderten Index. Ein Test, der dort einen
+PK-Wechsel geprüft hätte, wäre grün geworden, ohne die Kante je zu berühren.
+
 #### Nebenbefund: der W-Code-Ledger trug einen veralteten Namen
 
 Beim Registrieren von W142/W143 fiel auf, dass `ledger/warn-code-ledger-0.9.9.yaml`
@@ -621,9 +654,9 @@ unverändert mit; sie gehört zu
 | Sub-Slice | Inhalt | Endet mit |
 | --- | --- | --- |
 | **6a** ✅ | Neutrales Modell: `IndexDefinition.clustered` + `includeColumns`, Serialisierung samt `spec/schema.json`, [ADR 0049](../../adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) für die Vergleichs-Semantik, Fingerprint `v9`, Kanonisierung je Dialekt über `DialectCapabilities` | Modell trägt beides, Cross-Dialekt-Vergleich driftet nicht |
-| **6b** ✅ | MSSQL-Reverse: `i.type` mitlesen, INCLUDE-Spalten durchreichen statt sie für `R341` zu zählen; `R341` entfällt. Die Sortierung braucht `ic.index_column_id` als drittes Kriterium — eingeschlossene Spalten haben alle `key_ordinal = 0`, ihre Reihenfolge wäre sonst unbestimmt | `schema reverse` liest die volle Index-Treue |
-| **6c** ✅ | Generate: MSSQL rendert `CLUSTERED`/`INCLUDE` und leitet `PRIMARY KEY NONCLUSTERED` über `MssqlClusteredStorage` her (vier Stellen, eine Quelle); PostgreSQL rendert `INCLUDE`; MySQL/SQLite degradieren mit W142/W143. Die eingeschlossenen Spalten werden **nicht** an den Schlüssel gehängt — das änderte bei `unique` die Eindeutigkeit | `schema generate` gibt zurück, was der Reverse gelesen hat |
-| **6d** ✅ | Diff: `AddIndex`/`DropIndex` tragen die neuen Felder (kostenlos, weil ein geänderter Index schon als Drop+Add abgebildet wird und beide denselben Renderer nutzen). Der Wechsel der Ablage kommt aus `MssqlClusteredStorage.flip` und rendert den Primärschlüssel **vor** dem übernehmenden und **nach** dem abgebenden Index. Dazu ein Blocker (`E066`) für den Fall, den das neutrale Modell ausdrücken kann und T-SQL nicht: zwei Indizes, die dieselbe Ablage beanspruchen | `schema migrate` führt den Wechsel aus |
+| **6b** (teilweise) | MSSQL-Reverse: `i.type` mitlesen, INCLUDE-Spalten durchreichen statt sie für `R341` zu zählen; `R341` entfällt. Die Sortierung braucht `ic.index_column_id` als drittes Kriterium — eingeschlossene Spalten haben alle `key_ordinal = 0`, ihre Reihenfolge wäre sonst unbestimmt | `schema reverse` liest die volle Index-Treue |
+| **6c** (teilweise) | Generate: MSSQL rendert `CLUSTERED`/`INCLUDE` und leitet `PRIMARY KEY NONCLUSTERED` über `MssqlClusteredStorage` her (vier Stellen, eine Quelle); PostgreSQL rendert `INCLUDE`; MySQL/SQLite degradieren mit W142/W143. Die eingeschlossenen Spalten werden **nicht** an den Schlüssel gehängt — das änderte bei `unique` die Eindeutigkeit | `schema generate` gibt zurück, was der Reverse gelesen hat |
+| **6d** (teilweise) | Diff: `AddIndex`/`DropIndex` tragen die neuen Felder (kostenlos, weil ein geänderter Index schon als Drop+Add abgebildet wird und beide denselben Renderer nutzen). Der Wechsel der Ablage kommt aus `MssqlClusteredStorage.flip` und rendert den Primärschlüssel **vor** dem übernehmenden und **nach** dem abgebenden Index. Dazu ein Blocker (`E066`) für den Fall, den das neutrale Modell ausdrücken kann und T-SQL nicht: zwei Indizes, die dieselbe Ablage beanspruchen | `schema migrate` führt den Wechsel aus |
 
 6a ist die einzige Stufe, die das Hexagon anfasst; 6b–6d hängen daran und
 sind je für sich CI-grün abschließbar.

@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Ein geaenderter Index wird wieder angelegt, nachdem er geloescht wurde**
+  — nicht davor. Der Diff bildet eine Index-Aenderung als `DropIndex` +
+  `AddIndex` ab; beide Operationen stehen in derselben Phase und tragen
+  denselben Objektnamen, und ohne Abhaengigkeitskante entschied die stabile
+  Ordnung nach der Operations-ID, welche zuerst kommt. Die ID beginnt mit der
+  Operationsart, also stand `AddIndex` **immer** vor `DropIndex` — der Name
+  existierte damit beim Anlegen schon, und der Server lehnte ab (SQL Server
+  Msg 1913, PostgreSQL 42P07). Die Transaktion rollte zurueck, die Migration
+  endete mit Exit 5, und am Ziel aenderte sich nichts.
+
+  Dieselbe fehlende Kante gab es bei **Constraints** und beim
+  **Primaerschluessel**: eine Aenderung an einem gleichnamigen Constraint oder
+  an den Schluesselspalten erzeugte `ADD` vor `DROP` (Msg 2714 / 1779 bzw.
+  42710 / 42P16). Betrifft alle vier Dialekte und jede dieser Aenderungen,
+  ohne Zutun eines neuen Feature-Feldes.
+
 - **Abdeckende und clustered Indizes stehen im neutralen Modell**
   ([ADR 0049](docs/adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md)).
   `IndexDefinition` traegt `include_columns` (Nicht-Schluesselspalten eines

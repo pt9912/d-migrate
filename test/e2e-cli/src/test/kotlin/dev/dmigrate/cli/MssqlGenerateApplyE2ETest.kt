@@ -106,6 +106,21 @@ class MssqlGenerateApplyE2ETest : FunSpec({
         schema.sequences.keys shouldContainAll listOf("order_seq")
         schema.tables.getValue("orders").indices.map { it.name } shouldContainAll listOf("idx_orders_customer")
         schema.tables.getValue("orders").constraints.map { it.name } shouldContainAll listOf("fk_orders_customer_id")
+
+        // Abdeckender und clustered Index ueberstehen den ganzen Weg: erzeugtes
+        // Skript -> sqlcmd -> Katalog -> Reverse. Der In-Process-Pfad wuerde hier
+        // nichts beweisen: was sqlcmd mit einem Batch macht, entscheidet sqlcmd.
+        val covering = schema.tables.getValue("orders").indices.first { it.name == "idx_orders_covering" }
+        covering.columns.map { it.name } shouldContainAll listOf("customer_id")
+        covering.includeColumns shouldContainAll listOf("number", "state")
+        val storage = schema.tables.getValue("orders").indices.first { it.name == "idx_orders_storage" }
+        storage.clustered shouldBe true
+        // Die Gegenprobe zur Herleitung: beansprucht ein Index die Ablage, muss
+        // der Primaerschluessel sie abgegeben haben — sonst haette sqlcmd das
+        // Skript mit Msg 1902 abgelehnt und der Lauf waere oben gescheitert.
+        script.readText() shouldContain "PRIMARY KEY NONCLUSTERED"
+        script.readText() shouldContain "CREATE CLUSTERED INDEX"
+        script.readText() shouldContain "INCLUDE ("
     }
 })
 
@@ -164,6 +179,12 @@ private val SCHEMA = """
           - name: idx_orders_open
             columns: [state]
             where: "[state] = N'open'"
+          - name: idx_orders_covering
+            columns: [customer_id]
+            include_columns: [number, state]
+          - name: idx_orders_storage
+            columns: [number]
+            clustered: true
 
     views:
       active_customers:

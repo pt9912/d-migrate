@@ -11,6 +11,8 @@ import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -21,6 +23,7 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -84,6 +87,87 @@ class MysqlMigrateRoundTripIntegrationTest : FunSpec({
     afterSpec {
         runCatching { pool.close() }
         container.stop()
+    }
+
+    test("a reshaped primary key and a changed UNIQUE are dropped before they are added") {
+        val tmp = createTempDirectory("mysql-replace-order")
+        try {
+            execDdl(
+                pool,
+                "DROP TABLE IF EXISTS replace_order",
+                // Beide Seiten mehrspaltig: einspaltige UNIQUE-Constraints hebt der
+                // Reverse auf `column.unique`, daraus wuerden zwei verschiedene
+                // Objekte statt eines geaenderten Paares.
+                "CREATE TABLE replace_order (id BIGINT NOT NULL, tenant BIGINT NOT NULL, code VARCHAR(50), " +
+                    "PRIMARY KEY (id), CONSTRAINT uq_code UNIQUE (code, tenant))",
+            )
+            val desired = SchemaDefinition(
+                name = "replace-order", version = "1",
+                tables = mapOf(
+                    "replace_order" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "tenant" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "code" to ColumnDefinition(NeutralType.Text(maxLength = 50)),
+                        ),
+                        primaryKey = listOf("id", "tenant"),
+                        constraints = listOf(ConstraintDefinition(
+                            name = "uq_code", type = ConstraintType.UNIQUE, columns = listOf("code", "id"),
+                        )),
+                    ),
+                ),
+            )
+
+            val errors = mutableListOf<String>()
+            val executed = mutableListOf<String>()
+            val exit = SchemaMigrateRunner(
+                fileLoader = { _ ->
+                    ResolvedSchemaOperand(reference = "desired", schema = desired, validation = ValidationResult())
+                },
+                dbLoader = { _, _ -> liveOperand(pool) },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                // Wie die CLI: MySQL meldet das PK-implizite `required` an der
+                // Spalte nicht. Ohne diese Naht plant der Lauf eine
+                // Nullability-Aenderung auf dem Schluessel und blockt sie dann
+                // selbst (MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE).
+                targetAwareComparator = { left, right, canonicalize ->
+                    SchemaComparator(canonicalize).compare(left, right)
+                },
+                rendererFor = { d -> if (d == DatabaseDialect.MYSQL) MysqlDiffDdlGenerator() else null },
+                executor = { _, _, segments, _, _ ->
+                    val stmts = segments.flatMap { it.statements }
+                    executed += stmts.map { it.sql }
+                    executeAgainstPool(pool, stmts)
+                },
+                renderReport = { r, _ -> r.toString() },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.MYSQL,
+                    report = tmp.resolve("report.json"),
+                    execute = true,
+                ),
+            )
+            withClue(
+                "ausgefuehrt:\n" + executed.joinToString("\n") +
+                    "\nmeldungen:\n" + errors.joinToString("\n") +
+                    "\nreport:\n" + java.nio.file.Files.readString(tmp.resolve("report.json")),
+            ) { exit shouldBe 0 }
+
+            val dropPk = executed.indexOfFirst { it.contains("DROP PRIMARY KEY") }
+            val addPk = executed.indexOfFirst { it.contains("ADD PRIMARY KEY") }
+            val dropUq = executed.indexOfFirst { it.contains("DROP") && it.contains("uq_code") }
+            val addUq = executed.indexOfFirst { it.contains("ADD") && it.contains("uq_code") }
+            withClue("ausgefuehrt:\n" + executed.joinToString("\n")) {
+                (dropPk >= 0 && addPk > dropPk) shouldBe true
+                (dropUq >= 0 && addUq > dropUq) shouldBe true
+            }
+        } finally {
+            execDdl(pool, "DROP TABLE IF EXISTS replace_order")
+            tmp.toFile().deleteRecursively()
+        }
     }
 
     test("AddColumn round-trip leaves Ist == Ausgangsschema (content fingerprints match)") {

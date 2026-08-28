@@ -11,6 +11,8 @@ import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -20,6 +22,7 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -80,6 +83,115 @@ class PostgresMigrateRoundTripIntegrationTest : FunSpec({
     afterSpec {
         runCatching { pool.close() }
         container.stop()
+    }
+
+    test("a reshaped primary key and a changed UNIQUE are dropped before they are added") {
+        // Beide Paare stehen in derselben Phase und tragen denselben Objektnamen.
+        // Ohne Ordnungskante legt der Plan sie an, bevor er die alten verwirft —
+        // PostgreSQL antwortet dann mit 42P16 (Primaerschluessel) bzw. 42710
+        // (Constraint), und der Lauf endet nicht mit 0.
+        val tmp = createTempDirectory("pg-replace-order")
+        try {
+            execDdl(
+                pool,
+                "DROP TABLE IF EXISTS replace_order",
+                // Der Primaerschluessel bleibt ungenannt: PostgreSQL vergibt dann
+                // `replace_order_pkey`, und nur diesen Konventionsnamen kann der
+                // Diff-Pfad verwerfen (PG_PK_NAME_CONVENTION). Ein abweichender Name
+                // ist eine eigene, dokumentierte Grenze und wuerde hier nur den
+                // Ordnungsbeweis verdecken.
+                // Beide Seiten mehrspaltig: einspaltige UNIQUE-Constraints hebt der
+                // Reverse auf `column.unique` und der Vergleich synthetisiert einen
+                // Namen — daraus wuerden zwei verschiedene Objekte statt eines
+                // geaenderten Paares, und die Ordnungskante griffe gar nicht.
+                "CREATE TABLE replace_order (id BIGINT NOT NULL, tenant BIGINT NOT NULL, code TEXT, " +
+                    "PRIMARY KEY (id), CONSTRAINT uq_code UNIQUE (code, tenant))",
+            )
+
+            // UNIQUE statt CHECK: dessen Round-Trip ist strukturell. Ein CHECK
+            // kaeme aus PostgreSQL als `((total > 0))` zurueck und der Post-Compare
+            // meldete eine Textabweichung — eine eigene Sache, die hier nur den
+            // Ordnungsbeweis verdecken wuerde.
+            val desired = SchemaDefinition(
+                name = "replace-order", version = "1",
+                tables = mapOf(
+                    "replace_order" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "tenant" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "code" to ColumnDefinition(NeutralType.Text()),
+                        ),
+                        primaryKey = listOf("id", "tenant"),
+                        constraints = listOf(ConstraintDefinition(
+                            name = "uq_code", type = ConstraintType.UNIQUE, columns = listOf("code", "id"),
+                        )),
+                    ),
+                ),
+            )
+
+            val errors = mutableListOf<String>()
+            val executed = mutableListOf<String>()
+            val exit = SchemaMigrateRunner(
+                fileLoader = { _ ->
+                    ResolvedSchemaOperand(reference = "desired", schema = desired, validation = ValidationResult())
+                },
+                dbLoader = { _, _ -> liveOperand(pool) },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                rendererFor = { d -> if (d == DatabaseDialect.POSTGRESQL) PostgresDiffDdlGenerator() else null },
+                executor = { _, _, segments, _, _ ->
+                    val stmts = segments.flatMap { it.statements }
+                    executed += stmts.map { it.sql }
+                    executeAgainstPool(pool, stmts)
+                },
+                renderReport = { r, _ -> r.toString() },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.POSTGRESQL,
+                    report = tmp.resolve("report.json"),
+                    execute = true,
+                ),
+            )
+            // Exit 5 waere der Ausfuehrungsfehler — genau das Symptom der falschen
+            // Reihenfolge. Geprueft wird deshalb zuerst, dass der Server die
+            // Anweisungen angenommen hat.
+            withClue(
+                "ausgefuehrt:\n" + executed.joinToString("\n") +
+                    "\nmeldungen:\n" + errors.joinToString("\n"),
+            ) { exit shouldBe 0 }
+
+            // Und dass beide Paare in der richtigen Reihenfolge standen.
+            val dropPk = executed.indexOfFirst { it.contains("DROP CONSTRAINT") && it.contains("_pkey") }
+            val addPk = executed.indexOfFirst { it.contains("ADD PRIMARY KEY") }
+            val dropCk = executed.indexOfFirst { it.contains("DROP CONSTRAINT") && it.contains("uq_code") }
+            val addCk = executed.indexOfFirst { it.contains("ADD CONSTRAINT") && it.contains("uq_code") }
+            withClue("ausgefuehrt:\n" + executed.joinToString("\n")) {
+                (dropPk >= 0 && addPk > dropPk) shouldBe true
+                (dropCk >= 0 && addCk > dropCk) shouldBe true
+            }
+
+            // Gegenprobe im Katalog: der Schluessel traegt jetzt beide Spalten.
+            val pkColumns = pool.borrow().asJdbc().use { conn ->
+                conn.prepareStatement(
+                    """
+                    SELECT a.attname FROM pg_index i
+                      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                      WHERE i.indrelid = 'replace_order'::regclass AND i.indisprimary
+                      ORDER BY a.attnum
+                    """.trimIndent(),
+                ).use { stmt ->
+                    stmt.executeQuery().use { rs ->
+                        buildList { while (rs.next()) add(rs.getString(1)) }
+                    }
+                }
+            }
+            pkColumns shouldBe listOf("id", "tenant")
+        } finally {
+            execDdl(pool, "DROP TABLE IF EXISTS replace_order")
+            tmp.toFile().deleteRecursively()
+        }
     }
 
     test("AddColumn round-trip leaves Ist == Ausgangsschema (content fingerprints match)") {

@@ -11,6 +11,8 @@ import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -23,6 +25,7 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
@@ -69,6 +72,68 @@ class SqliteMigrateRoundTripIntegrationTest : FunSpec({
             password = null,
         ),
     )
+
+    test("a changed index is dropped before it is recreated") {
+        // Bei SQLite sind Primaerschluessel- und Constraint-Aenderungen
+        // Rebuild-Ausloeser und werden absorbiert: die Tabelle wird aus der
+        // Zieldefinition neu gebaut, die Add/Drop-Reihenfolge erreicht das SQL
+        // nie. Index-Operationen werden ausdruecklich NICHT absorbiert
+        // (SqliteRebuildPlanner.isAbsorbedByRebuild) — hier greift die
+        // Ordnungskante, und ohne sie liefe `CREATE INDEX` auf einen Namen, den
+        // der nachfolgende `DROP` erst freigeben sollte.
+        val pool = newPool()
+        val tmp = createTempDirectory("sqlite-replace-order")
+        try {
+            execDdl(
+                pool,
+                "CREATE TABLE replace_order (id INTEGER PRIMARY KEY, code TEXT, tenant INTEGER)",
+                "CREATE INDEX ix_code ON replace_order (code)",
+            )
+            val desired = SchemaDefinition(
+                name = "replace-order", version = "1",
+                tables = mapOf(
+                    "replace_order" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.Integer),
+                            "code" to ColumnDefinition(NeutralType.Text()),
+                            "tenant" to ColumnDefinition(NeutralType.Integer),
+                        ),
+                        primaryKey = listOf("id"),
+                        indices = listOf(IndexDefinition(
+                            name = "ix_code",
+                            columns = listOf(IndexColumn("code"), IndexColumn("tenant")),
+                        )),
+                    ),
+                ),
+            )
+
+            val errors = mutableListOf<String>()
+            val exit = sqliteMigrateRunner(pool, desired, errors).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.SQLITE,
+                    report = tmp.resolve("report.json"),
+                    execute = true,
+                ),
+            )
+            withClue("meldungen:\n" + errors.joinToString("\n")) { exit shouldBe 0 }
+
+            // Gegenprobe im Katalog: der Index traegt jetzt beide Spalten.
+            val definition = pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("SELECT sql FROM sqlite_master WHERE type='index' AND name='ix_code'")
+                        .use { rs -> if (rs.next()) rs.getString(1) else null }
+                }
+            }
+            withClue("index-definition: $definition") {
+                definition.shouldNotBeNull() shouldContain "tenant"
+            }
+        } finally {
+            tmp.toFile().deleteRecursively()
+            pool.close()
+        }
+    }
 
     test("F.4.a — AddColumn round-trip via direct ALTER TABLE (no rebuild)") {
         val pool = newPool()
