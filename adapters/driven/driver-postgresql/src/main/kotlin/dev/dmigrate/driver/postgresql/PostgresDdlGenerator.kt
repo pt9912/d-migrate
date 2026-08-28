@@ -294,10 +294,21 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
                 append(" USING ${pgAccessMethod(index.type)}")
             }
             append(" ($cols)")
+            // PostgreSQL traegt INCLUDE seit 11 nativ; die Steuerung der Ablage kennt
+            // es nicht -- `CLUSTER` ist dort eine einmalige Reorganisation, keine
+            // Eigenschaft des Index, und faellt deshalb mit einer Meldung weg.
+            if (index.includeColumns.isNotEmpty()) {
+                append(" INCLUDE (${index.includeColumns.joinToString(", ") { quoteIdentifier(it) }})")
+            }
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
         val notes = IndexPrefixDropNote.forDialect(index, indexName, "PostgreSQL", "left(col, n)").toMutableList()
+        if (index.clustered) {
+            notes += CoveringIndexDropNote.forDialect(
+                index.copy(includeColumns = emptyList()), indexName, "PostgreSQL",
+            )
+        }
         if (index.name != null && index.name != indexName) {
             notes += TransformationNote(
                 type = NoteType.WARNING,

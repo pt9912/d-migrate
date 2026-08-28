@@ -59,6 +59,32 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
         references = references
     )
 
+    // ADR 0049: SQLite kennt weder abdeckende Indizes noch eine Steuerung der Ablage.
+
+    test("include columns are dropped with W142, not appended to the key") {
+        val result = generator.generate(schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Integer), "title" to col(NeutralType.Text())),
+            indices = listOf(IndexDefinition(
+                "ix_cover", listOf(IndexColumn("id")), unique = true, includeColumns = listOf("title"),
+            )),
+        ))))
+        // Angehaengt waere aus `UNIQUE (id)` ein `UNIQUE (id, title)` geworden —
+        // eine andere Aussage darueber, welche Zeilen erlaubt sind.
+        result.render() shouldContain """CREATE UNIQUE INDEX "ix_cover" ON "t" ("id");"""
+        val note = result.notes.single { it.code == "W142" }
+        note.message shouldContain "title"
+        note.message shouldContain "SQLite"
+    }
+
+    test("a clustered index is created as an ordinary one, with W143") {
+        val result = generator.generate(schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Integer)),
+            indices = listOf(IndexDefinition("ix_storage", listOf(IndexColumn("id")), clustered = true)),
+        ))))
+        result.render() shouldContain """CREATE INDEX "ix_storage" ON "t" ("id");"""
+        result.notes.any { it.code == "W143" && it.objectName == "ix_storage" } shouldBe true
+    }
+
     test("HASH index emits W102 warning and is skipped") {
         val s = schema(
             tables = mapOf(

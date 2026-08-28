@@ -127,7 +127,9 @@ internal object MssqlRebuildRenderer {
         statements += copy
         statements += "DROP TABLE ${ctx.sql.quote(table)};"
         statements += ctx.sql.renameSql(temp, table)
-        if (target.primaryKey.isNotEmpty()) statements += ctx.sql.addPrimaryKeySql(table, target.primaryKey)
+        if (target.primaryKey.isNotEmpty()) {
+            statements += ctx.sql.addPrimaryKeySql(table, target.primaryKey, target.indices)
+        }
         statements += objectStatements
         // Auch hier kann dasselbe Objekt in beiden Modellformen stehen —
         // Spiegelfall der eingehenden Seite, zweimal angelegt waere Msg 2714.

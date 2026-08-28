@@ -231,7 +231,9 @@ internal class SqliteTableDdlSupport(
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }
-        return listOf(DdlStatement(sql, IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)")))
+        val notes = IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)") +
+            CoveringIndexDropNote.forDialect(index, indexName, "SQLite")
+        return listOf(DdlStatement(sql, notes))
     }
 
     /**

@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.7  ·  **Stand:** 28.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 0.8  ·  **Stand:** 28.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 (im Ausbau — dort noch nicht verfügbar: `data profile`)
 
@@ -2591,10 +2591,21 @@ Spalten-Fremdschlüssel über `references`:
 | Feld | Beschreibung |
 | ---- | ------------ |
 | `name` | Indexname |
-| `columns` | Liste aus Spaltennamen **oder** `{ name, direction: asc\|desc }` |
-| `type` | `btree` (Default), `hash`, `gin`, `gist`, `brin` |
+| `columns` | Liste aus Spaltennamen **oder** `{ name, direction: asc\|desc, prefix_length: n }` |
+| `type` | `btree` (Default), `hash`, `gin`, `gist`, `brin`, `spgist`, `spatial`, `fulltext` |
 | `unique` | `true` für Unique-Index |
 | `where` | Prädikat für Partial-Index (Raw-SQL) |
+| `include_columns` | Nicht-Schlüsselspalten eines abdeckenden Index (`INCLUDE`) |
+| `clustered` | `true`, wenn dieser Index die Ablage der Tabelle bildet |
+| `text_search_config` | Text-Search-Konfiguration eines Volltext-Index (z. B. `english`) |
+| `full_text_vector_column` | PostgreSQL: vorberechnete `tsvector`-Spalte des Volltext-Index |
+| `full_text_access_method` | PostgreSQL: `gin` oder `gist` |
+
+Nicht jeder Dialekt trägt jedes Feld. Wo eines wegfällt, sagt es der Lauf: eine
+`prefix_length` außerhalb von MySQL meldet **W126**, weggelassene
+`include_columns` melden **W142**, ein nicht steuerbares `clustered` meldet
+**W143**. Welcher Dialekt was kann, steht in
+[`neutral-model-spec.md`](../../spec/neutral-model-spec.md).
 
 #### F.7 Constraints
 
@@ -2693,6 +2704,7 @@ custom_types:
 | 0.5 | 15.08.2026 | Auf Software-Version 1.0.0 (erstes Stable) aktualisiert. **Keine inhaltliche Änderung** — zwischen 1.0.0-RC2 und 1.0.0 kam kein neues Kommando und keine geänderte Option hinzu; die Releases dazwischen waren bauseitig. Nachgezogen wurde die Kopfzeile, die beim 0.4-Eintrag stehengeblieben war (sie nannte weiterhin Handbuch-Version 0.3 und den 16.07.). Sachlich relevant für Leser: der `--user`-Zusatz beim Docker-Aufruf (Abschnitt 1) ist ab 1.0.0 **nötig** und nicht mehr nur empfohlen — bis 0.9.12 lief das Image als root und schrieb auch ohne ihn. |
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
+| 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
 
 ---
 

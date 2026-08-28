@@ -16,9 +16,13 @@ import dev.dmigrate.driver.TransformationNote
 /**
  * `CREATE INDEX` für T-SQL. Indexnamen sind in SQL Server tabellenlokal
  * (wie MySQL), darum braucht es keinen schema-globalen Allokator; ohne
- * Modellname gilt `idx_<table>_<cols>`. Clustered/nonclustered wird nicht
- * gesteuert (SQL-Server-Default: nonclustered; Regeln in
+ * Modellname gilt `idx_<table>_<cols>` (Regeln in
  * `spec/ddl-generation-rules.md`).
+ *
+ * Trägt ein Index `clustered`, wird er als `CREATE CLUSTERED INDEX` gerendert;
+ * ohne Angabe gilt der SQL-Server-Default nonclustered. Der Primärschlüssel
+ * derselben Tabelle muss dann `NONCLUSTERED` sein — es gibt nur eine Ablage —,
+ * was der Tabellen-Renderer aus dem Indexsatz herleitet.
  */
 internal class MssqlIndexDdlHelper(
     private val quoteIdentifier: (String) -> String,
@@ -89,7 +93,11 @@ internal class MssqlIndexDdlHelper(
         val sql = buildString {
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
+            if (index.clustered) append("CLUSTERED ")
             append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} ($cols)")
+            if (index.includeColumns.isNotEmpty()) {
+                append(" INCLUDE (${index.includeColumns.joinToString(", ") { quoteIdentifier(it) }})")
+            }
             if (index.where != null) append(" WHERE ${index.where}")
             append(";")
         }

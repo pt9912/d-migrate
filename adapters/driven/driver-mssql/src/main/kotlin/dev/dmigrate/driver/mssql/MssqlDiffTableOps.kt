@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -51,7 +52,8 @@ internal object MssqlDiffTableOps {
         }
         if (op.table.primaryKey.isNotEmpty()) {
             val cols = op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
-            lines += "    CONSTRAINT ${ctx.sql.quote(MssqlConstraintNames.primaryKey(table))} PRIMARY KEY ($cols)"
+            val pkClause = MssqlClusteredStorage.primaryKeyClause(op.table)
+            lines += "    CONSTRAINT ${ctx.sql.quote(MssqlConstraintNames.primaryKey(table))} $pkClause ($cols)"
         }
         for (constraint in op.table.constraints.sortedBy { it.name }) {
             val line = ctx.sql.constraintLine(table, constraint, ctx.cascadeGuard())
@@ -188,13 +190,22 @@ internal object MssqlDiffTableOps {
             ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
             return
         }
-        ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns))
+        ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns, indicesOf(table, ctx)))
     }
+
+    /**
+     * Die Indizes der Tabelle in der gerenderten Richtung. Der Primaerschluessel
+     * braucht sie, um zu wissen, ob ihm die Ablage zusteht; fehlt das Schema,
+     * bleibt es beim Default clustered -- die Richtung, in die SQL Server ohne
+     * Angabe ohnehin geht.
+     */
+    private fun indicesOf(table: String, ctx: MssqlDiffRenderContext): List<IndexDefinition> =
+        ctx.schemaForDirection()?.tables?.get(table)?.indices.orEmpty()
 
     fun renderDropPrimaryKey(op: DiffOperation.DropPrimaryKey, ctx: MssqlDiffRenderContext) {
         val table = op.objectRef.rootName
         if (ctx.direction == MssqlRenderDirection.DOWN) {
-            ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns))
+            ctx.emit(op, ctx.sql.addPrimaryKeySql(table, op.columns, indicesOf(table, ctx)))
             // Aufwaerts wird der echte Name im Katalog nachgeschlagen, abwaerts
             // kann er nicht rekonstruiert werden — das neutrale Modell traegt
             // ihn nicht. Der Rollback stellt den Schluessel also her, aber

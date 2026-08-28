@@ -49,6 +49,46 @@ class MssqlDdlGeneratorIndexTest : FunSpec({
         ddl shouldContain "CREATE INDEX [ix_open] ON [t] ([state]) WHERE [state] = N'open';"
     }
 
+    // ADR 0049: abdeckende und clustered Indizes
+
+    test("include columns render as INCLUDE, outside the key") {
+        val ddl = render(
+            IndexDefinition("ix_cover", listOf(IndexColumn("name")), includeColumns = listOf("state", "doc")),
+        ).render()
+        ddl shouldContain "CREATE INDEX [ix_cover] ON [t] ([name]) INCLUDE ([state], [doc]);"
+    }
+
+    test("INCLUDE stands between the key and a filter, the order T-SQL demands") {
+        val ddl = render(
+            IndexDefinition(
+                "ix_cover_open", listOf(IndexColumn("name")),
+                where = "[state] = N'open'", includeColumns = listOf("state"),
+            ),
+        ).render()
+        ddl shouldContain "CREATE INDEX [ix_cover_open] ON [t] ([name]) INCLUDE ([state]) WHERE [state] = N'open';"
+    }
+
+    test("a clustered index renders as CLUSTERED and pushes the primary key to NONCLUSTERED") {
+        // Es gibt genau eine Ablage. Ohne das Umschalten des Primaerschluessels
+        // antwortet SQL Server mit Msg 1902.
+        val ddl = render(IndexDefinition("ix_storage", listOf(IndexColumn("state")), clustered = true)).render()
+        ddl shouldContain "CREATE CLUSTERED INDEX [ix_storage] ON [t] ([state]);"
+        ddl shouldContain "PRIMARY KEY NONCLUSTERED ([id])"
+    }
+
+    test("without a clustered index the primary key keeps the default storage") {
+        val ddl = render(IndexDefinition("ix_name", listOf(IndexColumn("name")))).render()
+        ddl shouldContain "PRIMARY KEY ([id])"
+        ddl shouldNotContain "NONCLUSTERED"
+    }
+
+    test("a unique clustered index keeps both keywords in T-SQL's order") {
+        val ddl = render(
+            IndexDefinition("ux_storage", listOf(IndexColumn("state")), unique = true, clustered = true),
+        ).render()
+        ddl shouldContain "CREATE UNIQUE CLUSTERED INDEX [ux_storage] ON [t] ([state]);"
+    }
+
     test("unnamed index gets idx_<table>_<cols>") {
         render(IndexDefinition(columns = listOf(IndexColumn("name"), IndexColumn("state")))).render() shouldContain
             "CREATE INDEX [idx_t_name_state] ON [t] ([name], [state]);"

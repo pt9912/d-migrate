@@ -143,9 +143,14 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
             "${quote(MssqlConstraintNames.default(table, column))} " +
             "DEFAULT ${toDefaultSql(default, type)} FOR ${quote(column)};"
 
-    fun addPrimaryKeySql(table: String, columns: List<String>): String =
+    /**
+     * @param indices die Indizes derselben Tabelle. Beansprucht einer die Ablage,
+     *   muss der Primaerschluessel `NONCLUSTERED` sein — sonst Msg 1902.
+     */
+    fun addPrimaryKeySql(table: String, columns: List<String>, indices: List<IndexDefinition>): String =
         "ALTER TABLE ${quote(table)} ADD CONSTRAINT ${quote(MssqlConstraintNames.primaryKey(table))} " +
-            "PRIMARY KEY (${columns.joinToString(", ") { quote(it) }});"
+            "${MssqlClusteredStorage.primaryKeyClause(indices)} " +
+            "(${columns.joinToString(", ") { quote(it) }});"
 
     /**
      * Denselben Namensgriff braucht der Primaerschluessel: ein fremdes Schema

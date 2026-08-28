@@ -517,4 +517,56 @@ class CodeLedgerValidationTest : FunSpec({
             }
         }
     }
+
+    // ─── 1.1.0 Warning Ledger Validation ────────────────────────
+
+    test("1.1.0 warning ledger exists with version 1.1.0") {
+        val content = readLedger("warn-code-ledger-1.1.0.yaml")
+        content shouldNotBe ""
+        content shouldContain "version: \"1.1.0\""
+    }
+
+    test("1.1.0 warning ledger carries the 0.9.9 codes forward and adds the covering-index codes") {
+        // Die Datei einer aelteren Version wird nicht mehr veraendert
+        // (spec/ledger.md); die neue traegt deshalb den ganzen Stand.
+        val previous = extractCodes(readLedger("warn-code-ledger-0.9.9.yaml")).toSet()
+        val current = extractCodes(readLedger("warn-code-ledger-1.1.0.yaml")).toSet()
+        current.containsAll(previous) shouldBe true
+        current.contains("W142") shouldBe true
+        current.contains("W143") shouldBe true
+    }
+
+    test("1.1.0 warning ledger has no duplicate codes") {
+        val codes = extractCodes(readLedger("warn-code-ledger-1.1.0.yaml"))
+        codes.size shouldBe codes.toSet().size
+    }
+
+    test("1.1.0 warning ledger: every entry has valid level, entry_type, and status") {
+        val content = readLedger("warn-code-ledger-1.1.0.yaml")
+        val invalid = extractCodes(content).filter { code ->
+            extractField(content, code, "level") !in allowedLevels ||
+                extractField(content, code, "entry_type") !in allowedEntryTypes ||
+                extractField(content, code, "status") !in allowedStatuses
+        }
+        invalid.shouldBeEmpty()
+    }
+
+    test("1.1.0 warning ledger: active entries have test_path + evidence_paths and the referenced files exist") {
+        val content = readLedger("warn-code-ledger-1.1.0.yaml")
+        val activeCodes = extractCodes(content).filter { code ->
+            extractField(content, code, "status") == "active"
+        }
+        for (code in activeCodes) {
+            val testPath = extractField(content, code, "test_path")
+            testPath shouldNotBe null
+            File(repoRoot, testPath!!).exists() shouldBe true
+            hasEvidencePaths(content, code) shouldBe true
+            for (src in extractEvidenceSources(content, code)) {
+                File(repoRoot, src).exists() shouldBe true
+            }
+            for (pt in extractPathTypes(content, code)) {
+                (pt in allowedPathTypes) shouldBe true
+            }
+        }
+    }
 })

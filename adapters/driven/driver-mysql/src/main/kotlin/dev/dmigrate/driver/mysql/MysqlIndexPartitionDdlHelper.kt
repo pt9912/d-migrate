@@ -11,6 +11,7 @@ import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
@@ -341,6 +342,10 @@ internal class MysqlIndexPartitionDdlHelper(
         }
 
         val columnsSql = index.columns.joinToString(", ") { renderIndexColumn(it) }
+        // Nur die Zweige, die einen gewoehnlichen Index anlegen, koennen etwas
+        // fallen lassen: SPATIAL und FULLTEXT tragen weder INCLUDE noch eine
+        // Ablage-Steuerung, und die uebrigen Zugriffsmethoden entfallen ohnehin.
+        val coveringNotes = CoveringIndexDropNote.forDialect(index, indexName, "MySQL")
 
         return when (index.type) {
             // VA3: räumlicher Index → natives `CREATE SPATIAL INDEX` (Spalten ohne
@@ -386,7 +391,7 @@ internal class MysqlIndexPartitionDdlHelper(
                             message = "HASH index '$indexName' is not supported on InnoDB; converted to BTREE.",
                             hint = "InnoDB only supports BTREE indexes. The HASH index has been automatically converted.",
                         )
-                    )
+                    ) + coveringNotes
                 )
             }
             IndexType.BTREE -> {
@@ -396,7 +401,7 @@ internal class MysqlIndexPartitionDdlHelper(
                     append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
                     append(" ($columnsSql);")
                 }
-                DdlStatement(sql)
+                DdlStatement(sql, coveringNotes)
             }
             // ADR 0025: Volltext-Index → natives MySQL `CREATE FULLTEXT INDEX` über die
             // Quelltext-Spalten (ohne Prefix/Richtung); MySQL-FULLTEXT kennt keine

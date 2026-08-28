@@ -60,6 +60,34 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
         partitioning = partitioning
     )
 
+    // ADR 0049: MySQL kennt weder abdeckende Indizes noch eine waehlbare Ablage —
+    // InnoDB clustert unveraenderlich auf den Primaerschluessel.
+
+    test("include columns are dropped with W142, not appended to the key") {
+        val result = generator.generate(emptySchema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Integer), "title" to col(NeutralType.Text(100))),
+            indices = listOf(IndexDefinition(
+                "ix_cover", listOf(IndexColumn("id")), unique = true, includeColumns = listOf("title"),
+            )),
+        ))))
+        result.render() shouldContain "CREATE UNIQUE INDEX `ix_cover` ON `t` (`id`);"
+        // Nicht auf das blosse Wort pruefen — die Warnung selbst nennt es. Es geht
+        // um die Klausel im Statement.
+        result.render() shouldNotContain "INCLUDE (`title`)"
+        val note = result.notes.single { it.code == "W142" }
+        note.type shouldBe NoteType.WARNING
+        note.message shouldContain "title"
+    }
+
+    test("a clustered index is created as an ordinary one, with W143") {
+        val result = generator.generate(emptySchema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Integer)),
+            indices = listOf(IndexDefinition("ix_storage", listOf(IndexColumn("id")), clustered = true)),
+        ))))
+        result.render() shouldContain "CREATE INDEX `ix_storage` ON `t` (`id`);"
+        result.notes.any { it.code == "W143" && it.objectName == "ix_storage" } shouldBe true
+    }
+
     test("HASH index emits W102 warning and converts to BTREE") {
         val schema = emptySchema(
             tables = mapOf(

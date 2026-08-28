@@ -223,6 +223,15 @@ internal object MssqlDiffColumnDependencies {
         fun survivingPrimaryKey(): List<String>? =
             surviving?.primaryKey?.takeIf { inPrimaryKey && it.isNotEmpty() }
 
+        /**
+         * ALLE Indizes, die die Tabelle nach der Aenderung traegt — nicht nur die
+         * aus dem Abhaengigkeitssatz, den [survivingIndices] filtert. Der wieder
+         * angelegte Primaerschluessel braucht sie, um zu wissen, ob ihm die Ablage
+         * zusteht: ein clustered Index beansprucht sie auch dann, wenn er an der
+         * geaenderten Spalte gar nicht haengt.
+         */
+        fun survivingTableIndices(): List<IndexDefinition> = surviving?.indices.orEmpty()
+
         fun survivingInboundForeignKeys(): List<InboundForeignKey> {
             val surviving = inboundForeignKeys(survivingSchema, table, column).map(::keyOf).toSet()
             return inboundForeignKeys.filter { keyOf(it) in surviving }
@@ -281,7 +290,9 @@ internal object MssqlDiffColumnDependencies {
     ): List<String>? {
         if (deps.isEmpty) return emptyList()
         val out = mutableListOf<String>()
-        deps.survivingPrimaryKey()?.let { out += ctx.sql.addPrimaryKeySql(deps.table, it) }
+        deps.survivingPrimaryKey()?.let {
+            out += ctx.sql.addPrimaryKeySql(deps.table, it, deps.survivingTableIndices())
+        }
         if (deps.survivingColumnUnique() && !skipLobUnique(op, ctx, deps)) {
             out += "ALTER TABLE ${ctx.sql.quote(deps.table)} ADD CONSTRAINT " +
                 "${ctx.sql.quote(MssqlConstraintNames.unique(deps.table, deps.column))} " +

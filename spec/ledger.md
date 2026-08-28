@@ -68,6 +68,7 @@ neuen Version.
 | W134 | Migrate: `enum`-Spalte als bloßes `TEXT` migriert, Werte nicht durchgesetzt (PostgreSQL inline-`values`-Enum ohne `refType` sowie alle SQLite-Enums; nativ round-trippen nur MySQL `ENUM` und PG-`refType`-Typreferenz — für inline-Fidelity Custom-Type/`refType` verwenden) |
 | W135 | SQLite-Generate: Identity-/AUTO_INCREMENT-Spalte in zusammengesetztem PRIMARY KEY verliert AUTOINCREMENT (SQLite erlaubt die Form nur als einspaltigen `INTEGER PRIMARY KEY`) |
 | W136 - W141 | MSSQL-Generate (SQL Server): Länge > 4000 → `NVARCHAR(MAX)` (W136); JSON/Array → `NVARCHAR(MAX)` (W137); UNIQUE auf NULL-fähiger Spalte — höchstens eine NULL-Zeile (W138); `DECIMAL`-Präzision > 38 gekappt (W139); Identity `BY DEFAULT`/Default auf Identity-Spalte (W140); Index auf LOB-Schlüsselspalte übersprungen (W141) |
+| W142 - W143 | Abdeckende und clustered Indizes: INCLUDE-Spalten fallen weg, weil der Dialekt keine abdeckenden Indizes kennt — die Schlüsselspalten werden indiziert, die eingeschlossenen **nicht** angehängt (das änderte bei `unique` die Eindeutigkeit) (W142); der Index wird gewöhnlich statt clustered angelegt, weil der Dialekt die Ablage der Tabelle nicht steuern lässt (W143) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

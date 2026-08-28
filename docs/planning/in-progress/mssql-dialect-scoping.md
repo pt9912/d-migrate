@@ -600,13 +600,29 @@ Vergleich daraus keine Drift macht, gehören beide Felder in die dialekt-bewusst
 Kanonisierung ([ADR 0026](../../adr/0026-fingerprint-kanonisierung-post-compare.md)) — dasselbe
 Muster wie beim Enum-Wertevorrat.
 
+#### Nebenbefund: der W-Code-Ledger trug einen veralteten Namen
+
+Beim Registrieren von W142/W143 fiel auf, dass `ledger/warn-code-ledger-0.9.9.yaml`
+seit der 1.0.x-Linie weiterbeschrieben wurde — die MSSQL-Codes W136–W141 kamen auf
+demselben Weg hinein. [`spec/ledger.md`](../../../spec/ledger.md) verlangt das
+Gegenteil: die Dateien einer älteren Version werden nicht verändert, neue Codes
+stehen in denen der neuen. Eigner-Entscheidung: Konvention bleibt, neue Datei
+`warn-code-ledger-1.1.0.yaml` mit dem fortgetragenen Stand; 0.9.9 ist eingefroren.
+
+`CodeLedgerValidationTest` prüft die Ledger-Dateien **namentlich**, nicht per
+Verzeichnis-Scan — eine neue Datei stünde also ungeprüft da. Der Test hat deshalb
+einen 1.1.0-Block bekommen, samt Zusicherung, dass die neue Datei den Stand der
+alten vollständig fortträgt. Die bekannte Lücke der W100er-Serie wandert
+unverändert mit; sie gehört zu
+[`warn-code-ledger-completeness.md`](../open/warn-code-ledger-completeness.md).
+
 #### Sub-Slice-Schnitt
 
 | Sub-Slice | Inhalt | Endet mit |
 | --- | --- | --- |
 | **6a** ✅ | Neutrales Modell: `IndexDefinition.clustered` + `includeColumns`, Serialisierung samt `spec/schema.json`, [ADR 0049](../../adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) für die Vergleichs-Semantik, Fingerprint `v9`, Kanonisierung je Dialekt über `DialectCapabilities` | Modell trägt beides, Cross-Dialekt-Vergleich driftet nicht |
 | **6b** ✅ | MSSQL-Reverse: `i.type` mitlesen, INCLUDE-Spalten durchreichen statt sie für `R341` zu zählen; `R341` entfällt. Die Sortierung braucht `ic.index_column_id` als drittes Kriterium — eingeschlossene Spalten haben alle `key_ordinal = 0`, ihre Reihenfolge wäre sonst unbestimmt | `schema reverse` liest die volle Index-Treue |
-| **6c** | Generate: MSSQL rendert `CLUSTERED`/`INCLUDE` und leitet `PRIMARY KEY NONCLUSTERED` her; PostgreSQL rendert `INCLUDE`; MySQL/SQLite degradieren mit Warnung — dort entstehen die W-Codes samt Ledger-Eintrag, weil erst der Renderer sie emittiert | `schema generate` gibt zurück, was der Reverse gelesen hat |
+| **6c** ✅ | Generate: MSSQL rendert `CLUSTERED`/`INCLUDE` und leitet `PRIMARY KEY NONCLUSTERED` über `MssqlClusteredStorage` her (vier Stellen, eine Quelle); PostgreSQL rendert `INCLUDE`; MySQL/SQLite degradieren mit W142/W143. Die eingeschlossenen Spalten werden **nicht** an den Schlüssel gehängt — das änderte bei `unique` die Eindeutigkeit | `schema generate` gibt zurück, was der Reverse gelesen hat |
 | **6d** | Diff: `AddIndex`/`DropIndex` tragen die neuen Felder, und der Wechsel der Ablage wird in der richtigen Reihenfolge gerendert (PK zuerst) | `schema migrate` führt den Wechsel aus |
 
 6a ist die einzige Stufe, die das Hexagon anfasst; 6b–6d hängen daran und

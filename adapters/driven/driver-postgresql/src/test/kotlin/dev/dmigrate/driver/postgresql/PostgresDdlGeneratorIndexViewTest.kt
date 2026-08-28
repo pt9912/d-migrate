@@ -26,6 +26,32 @@ class PostgresDdlGeneratorIndexViewTest : FunSpec({
 
     val generator = PostgresDdlGenerator()
 
+    // ADR 0049: PostgreSQL traegt INCLUDE seit 11 nativ, kennt aber keine
+    // Steuerung der Ablage — `CLUSTER` ist dort eine einmalige Reorganisation.
+
+    test("include columns render as a native INCLUDE clause") {
+        val s = schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Integer), "title" to col(NeutralType.Text())),
+            indices = listOf(IndexDefinition("ix_cover", listOf(IndexColumn("id")), includeColumns = listOf("title"))),
+        )))
+        val result = generator.generate(s)
+        result.render() shouldContain """CREATE INDEX "ix_cover" ON "t" ("id") INCLUDE ("title");"""
+        result.notes.any { it.code == "W142" } shouldBe false
+    }
+
+    test("a clustered index is created as an ordinary one, with W143") {
+        val s = schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Integer)),
+            indices = listOf(IndexDefinition("ix_storage", listOf(IndexColumn("id")), clustered = true)),
+        )))
+        val result = generator.generate(s)
+        result.render() shouldContain """CREATE INDEX "ix_storage" ON "t" ("id");"""
+        result.render() shouldNotContain "CLUSTERED"
+        result.notes.any { it.code == "W143" && it.objectName == "ix_storage" } shouldBe true
+        // INCLUDE traegt PG nativ — dafuer darf keine Degradierungsmeldung fallen.
+        result.notes.any { it.code == "W142" } shouldBe false
+    }
+
     test("view with non-portable cross-dialect body is skipped with E053 (I-09)") {
         val s = schema(
             views = mapOf(

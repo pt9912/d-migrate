@@ -1,0 +1,239 @@
+version: "1.1.0"
+entries:
+  # Uebernommen aus warn-code-ledger-0.9.9.yaml: die Datei einer aelteren Version
+  # wird nicht mehr veraendert (spec/ledger.md, Dateikonvention), neue Codes und
+  # Statuswechsel stehen ab hier. Die bekannte Luecke der W100er-Serie wandert
+  # unveraendert mit -- sie ist Gegenstand von
+  # docs/planning/open/warn-code-ledger-completeness.md, nicht dieses Schnitts.
+  # W112 — pre-existing MySQL RANGE-partition adjustment warning, never ledgered;
+  # backfilled in 0.9.9 alongside the new partition/index/prefix codes.
+  - code: W112
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/DdlGoldenMasterTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+  # W118 — I-07: AUTO_INCREMENT column moved to the front of a composite PK (ERROR 1075).
+  - code: W118
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlPrimaryKeyOrdering.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
+        path_type: production
+  # W123 — I-08: PG GIN/GIST index on a column without a default operator class.
+  - code: W123
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGeneratorIndexViewTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt"
+        path_type: production
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresIndexOpClass.kt"
+        path_type: production
+  # W125 — I-08: MySQL index on an unbounded TEXT/BLOB column without a prefix length (ERROR 1170).
+  - code: W125
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPrefix.kt"
+        path_type: production
+  # W126 — prefix-length slice: PG/SQLite drop a MySQL prefix length (full-column index instead).
+  - code: W126
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGeneratorIndexViewTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/IndexPrefixDropNote.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
+        path_type: production
+  # W129 — AP6.2/ADR 0020: PG timestamptz partition bound normalized to UTC for MySQL DATETIME (tz suffix removed).
+  - code: W129
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+  # W130 — AP6.2/ADR 0020: PG↔MySQL HASH placement differs (MySQL re-hashes; count/names kept, no data loss).
+  - code: W130
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTestPart2.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+  # W131 — AP6.3/ADR 0020 §5: lifted partition-local index renamed due to a name collision with an existing table index.
+  - code: W131
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlPartitionIndexLiftTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+  # W132 — ADR 0015/0025: cross-dialect fulltext degradation. Two related objects: (a) a
+  # fulltext column degraded to TEXT (no full-text vector type in MySQL/SQLite), and (b) on
+  # SQLite a FULLTEXT *index* skipped (no FTS5 virtual table yet, slice P4). Both point at the
+  # manual FULLTEXT/FTS5 path.
+  - code: W132
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteFullTextDegradation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTableDdlSupport.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+
+  # W134 — enum-degradation slice (Option 2a): an enum column the migrate/diff path cannot
+  # materialise natively is rendered as bare TEXT (declared values not enforced). Emitted for
+  # PostgreSQL inline-`values` enums (no refType) and for ALL SQLite enums, at every column-
+  # render site (CREATE TABLE, ADD COLUMN, table rebuild). NOT emitted for MySQL (native ENUM)
+  # nor PG refType (native CREATE TYPE reference) — those round-trip faithfully. Option 2b would
+  # add inline TEXT+CHECK fidelity + reverse reconstruction.
+  - code: W134
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffTableOpsEnumTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffTableOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDiffTableOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteEnumDegradation.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt"
+        path_type: production
+
+  # W135 — cross-dialect 3-hop finding: an identity/AUTO_INCREMENT column that lands in a
+  # *composite* primary key (e.g. a partitioned MySQL table whose partition key was folded
+  # into the PK) cannot keep AUTOINCREMENT in SQLite — that form requires a single-column
+  # INTEGER PRIMARY KEY. The column degrades to a plain INTEGER member of the table-level
+  # composite PRIMARY KEY (auto-generation lost); emitting both would produce two primary
+  # keys and unloadable DDL. SQLite mirror of the MySQL-side W118.
+  - code: W135
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteCompositePkIdentity.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTableDdlSupport.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSqlBuilders.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffSimpleOps.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteRebuildRenderer.kt"
+        path_type: production
+
+  # W136-W141 — MSSQL Generate (ADR 0047, Slice 2): SQL-Server-Grenzen und
+  # Semantik-Abweichungen, die der T-SQL-Generator sichtbar macht statt still
+  # zu degradieren. Evidence: MssqlColumnConstraintHelper / MssqlIndexDdlHelper.
+  - code: W136
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlTypeMapper.kt"
+        path_type: production
+  - code: W137
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+  - code: W138
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+  - code: W139
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlTypeMapper.kt"
+        path_type: production
+  - code: W140
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorTableTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlColumnConstraintHelper.kt"
+        path_type: production
+  - code: W141
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDdlGeneratorIndexTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
+        path_type: production
+  # W142/W143 — abdeckende und clustered Indizes: MySQL und SQLite kennen weder
+  # INCLUDE-Spalten noch eine Steuerung der Ablage, PostgreSQL traegt INCLUDE
+  # nativ, aber kein clustered.
+  - code: W142
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/CoveringIndexDropNoteTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/CoveringIndexDropNote.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlIndexPartitionDdlHelper.kt"
+        path_type: production
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTableDdlSupport.kt"
+        path_type: production
+  - code: W143
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/CoveringIndexDropNoteTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/CoveringIndexDropNote.kt"
+        path_type: production
+      - source: "adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt"
+        path_type: production

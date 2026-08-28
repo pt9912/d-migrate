@@ -161,7 +161,8 @@ class MssqlDdlGenerator private constructor(
                 notes += columnHelper.lobKeyNote(name, MssqlConstraintNames.primaryKey(name), "PRIMARY KEY", lobKeys)
             } else {
                 val pkCols = table.primaryKey.joinToString(", ") { quoteIdentifier(it) }
-                lines += "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.primaryKey(name))} PRIMARY KEY ($pkCols)"
+                val pkClause = MssqlClusteredStorage.primaryKeyClause(table)
+                lines += "CONSTRAINT ${quoteIdentifier(MssqlConstraintNames.primaryKey(name))} $pkClause ($pkCols)"
             }
         }
 
