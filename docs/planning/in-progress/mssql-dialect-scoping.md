@@ -610,10 +610,10 @@ den `DdlGenerator` und den Diff-Builder. Daraus folgen die offenen Punkte:
 | ~~`PostgresDiffSqlBuilders.createIndexSql` rendert kein `INCLUDE`~~ ✅ | behoben: die Klausel steht jetzt in `PostgresIndexClauses` und wird von beiden Pfaden benutzt; ein Paritätstest stellt Generate und Diff gegeneinander |
 | ~~PG-Reverse liest über `unnest(ix.indkey)` ohne Schnitt bei `indnkeyatts`~~ ✅ | behoben: `FILTER (WHERE k.n <= ix.indnkeyatts)` trennt Schlüssel- von eingeschlossenen Spalten; live gegen PG 16 belegt |
 | ~~`MssqlSchemaReader` verwirft ungefilterte Unique-Indizes samt beider Felder~~ ✅ | behoben: ein Unique-Index, der die Ablage beansprucht oder Spalten einschließt, ist als Constraint nicht ausdrückbar und bleibt Index |
-| W142/W143 hängen nur an den Generate-Helfern | MySQL/SQLite lassen im Migrate-Pfad still fallen, was sie beim Generieren melden |
+| W142/W143 hängen nur an den Generate-Helfern | MySQL/SQLite lassen im Migrate-Pfad still fallen, was sie beim Generieren melden. **Noch offen** — MySQLs Diff-Kontext hat keine Diagnose-Naht, PostgreSQL und SQLite haben eine; die fehlt zuerst |
 | ~~`DiffPlanner.endpoint()` rechnet ohne `canonicalizeIndex`~~ ✅ | behoben: die Projektion wird durchgereicht, Parität in `DiffPlannerCanonicalizationTest` festgehalten |
 | ~~`emitStorageFlip` löst keine eingehenden Fremdschlüssel~~ ✅ | behoben: gelöst und wiederhergestellt, aus **beiden** Zuständen — auch ein Fremdschlüssel, den dieselbe Migration kurz zuvor anlegt, hält den Schlüssel fest |
-| Umbenannter clustered Index ist `indicesRemoved` + `indicesAdded` | verschiedene `displayName`, keine Ordnungskante — `CREATE CLUSTERED INDEX` läuft, während der alte noch steht (Msg 1902) |
+| Umbenannter clustered Index ist `indicesRemoved` + `indicesAdded` | **gebaut, Live-Beleg offen:** die Ablage-Freigabe ordnet die Übernahme, Unit-Zusicherungen in `OperationMapperReplaceOrderTest`. Der Live-Lauf gegen SQL Server steht noch aus |
 
 Vorrang hatte davor ein **älterer, dialektübergreifender** Defekt, den derselbe
 Review zutage gebracht hat: `OperationIdFactory.makeId` stellt die Operationsart

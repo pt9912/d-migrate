@@ -555,12 +555,25 @@ internal object OperationMapper {
     private const val REPLACE_PAIR_HEX_LEN: Int = 12
 
     private fun mapTableIndices(table: TableDiff, ops: MutableList<DiffOperation>) {
+        // Eine Tabelle hat genau EINE Ablage. Wechselt sie von einem Index auf
+        // einen anderen -- etwa weil der Index umbenannt wurde und deshalb als
+        // Entfernen + Hinzufuegen erscheint --, muss der abgebende zuerst weichen.
+        // Die beiden tragen verschiedene Objektnamen, die Kante bei
+        // [ORDERING] greift also nicht; ohne diese hier laeuft das Anlegen des
+        // neuen, waehrend der alte die Ablage noch haelt (SQL Server Msg 1902).
+        // Dialekte ohne Ablage-Steuerung ignorieren `clustered` -- fuer sie ist
+        // die Kante folgenlos.
+        val storageReleaseIds = table.indicesRemoved.filter { it.clustered }.map { idx ->
+            OperationIdFactory.makeId("DropIndex", indexRef(table.name, idx), CanonicalPayload.index(idx))
+        }.toSet()
+
         for (idx in table.indicesAdded) {
             val ref = indexRef(table.name, idx)
             ops += DiffOperation.AddIndex(
                 id = OperationIdFactory.makeId("AddIndex", ref, CanonicalPayload.index(idx)),
                 objectRef = ref,
                 index = idx,
+                dependencies = if (idx.clustered) storageReleaseIds else emptySet(),
             )
         }
         for (idx in table.indicesRemoved) {

@@ -129,6 +129,56 @@ class OperationMapperReplaceOrderTest : FunSpec({
         plan.operations.first { it is DiffOperation.AddPrimaryKey }.dependencies shouldBe emptySet()
     }
 
+    test("a renamed clustered index releases the storage before taking it over") {
+        // Ein Namenswechsel ist kein geaendertes Paar, sondern Entfernen +
+        // Hinzufuegen mit VERSCHIEDENEN Objektnamen — die Kante oben greift nicht.
+        // Ohne eine eigene laeuft `CREATE CLUSTERED INDEX ix_a`, waehrend `ix_z`
+        // die Ablage noch haelt (SQL Server Msg 1902).
+        fun withStorageIndex(name: String) = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                    "label" to ColumnDefinition(NeutralType.Text()),
+                ),
+                primaryKey = listOf("id"),
+                indices = listOf(IndexDefinition(
+                    name = name, columns = listOf(IndexColumn("label")), clustered = true,
+                )),
+            )),
+        )
+        // Der neue Name sortiert VOR dem alten — genau der Fall, in dem die
+        // stabile Ordnung ohne Kante das Anlegen zuerst nimmt.
+        val current = withStorageIndex("ix_z")
+        val desired = withStorageIndex("ix_a")
+        val plan = planner.plan(current, desired, comparator.compare(current, desired))
+
+        val drop = plan.operations.first { it is DiffOperation.DropIndex }
+        val add = plan.operations.first { it is DiffOperation.AddIndex }
+        add.dependencies.contains(drop.id) shouldBe true
+        (plan.operations.indexOf(add) > plan.operations.indexOf(drop)) shouldBe true
+    }
+
+    test("a plain renamed index needs no storage edge") {
+        fun withIndex(name: String) = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                    "label" to ColumnDefinition(NeutralType.Text()),
+                ),
+                primaryKey = listOf("id"),
+                indices = listOf(IndexDefinition(name = name, columns = listOf(IndexColumn("label")))),
+            )),
+        )
+        val current = withIndex("ix_z")
+        val desired = withIndex("ix_a")
+        val plan = planner.plan(current, desired, comparator.compare(current, desired))
+        // Ohne Ablage-Anspruch gibt es nichts freizugeben — eine Kante hier waere
+        // eine Behauptung ueber eine Abhaengigkeit, die es nicht gibt.
+        plan.operations.first { it is DiffOperation.AddIndex }.dependencies shouldBe emptySet()
+    }
+
     test("an index that is only added carries no dependency") {
         val current = SchemaDefinition(
             name = "App", version = "1",

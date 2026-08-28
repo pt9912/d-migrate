@@ -30,6 +30,7 @@ import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.mssqlserver.MSSQLServerContainer
@@ -365,6 +366,84 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
             foreignKeyExists(pool, "children", "fk_children_parent") shouldBe true
         } finally {
             execDdl(pool, "DROP TABLE IF EXISTS children", "DROP TABLE IF EXISTS parents")
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
+    test("renaming the clustered index releases the storage before taking it over") {
+        // Ein Namenswechsel erscheint als Entfernen + Hinzufuegen mit
+        // verschiedenen Objektnamen. Der neue Name sortiert hier VOR dem alten —
+        // ohne Ordnungskante liefe `CREATE CLUSTERED INDEX` gegen Msg 1902,
+        // waehrend der alte die Ablage noch haelt.
+        val tmp = createTempDirectory("mssql-storage-rename")
+        try {
+            execDdl(
+                pool,
+                "CREATE TABLE renamed_storage (id BIGINT NOT NULL " +
+                    "CONSTRAINT pk_renamed_storage PRIMARY KEY NONCLUSTERED, label NVARCHAR(50) NOT NULL)",
+                "CREATE CLUSTERED INDEX ix_z_storage ON renamed_storage (label)",
+            )
+            indexStorageForm(pool, "renamed_storage", "ix_z_storage") shouldBe "CLUSTERED"
+
+            val desired = SchemaDefinition(
+                name = "storage-rename", version = "1",
+                tables = mapOf(
+                    "renamed_storage" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "label" to ColumnDefinition(NeutralType.Text(maxLength = 50), required = true),
+                        ),
+                        primaryKey = listOf("id"),
+                        indices = listOf(IndexDefinition(
+                            name = "ix_a_storage",
+                            columns = listOf(IndexColumn("label")),
+                            clustered = true,
+                        )),
+                    ),
+                ),
+            )
+
+            val errors = mutableListOf<String>()
+            val executed = mutableListOf<String>()
+            val exit = SchemaMigrateRunner(
+                fileLoader = { _ ->
+                    ResolvedSchemaOperand(reference = "desired", schema = desired, validation = ValidationResult())
+                },
+                dbLoader = { _, _ -> liveOperand(pool) },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                targetAwareComparator = { left, right, canonicalize ->
+                    SchemaComparator(canonicalize).compare(left, right)
+                },
+                rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
+                executor = { _, _, segments, _, _ ->
+                    val stmts = segments.flatMap { it.statements }
+                    executed += stmts.map { it.sql }
+                    executeAgainstPool(pool, stmts)
+                },
+                renderReport = { r, _ -> r.toString() },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.MSSQL,
+                    report = tmp.resolve("report.json"),
+                    execute = true,
+                ),
+            )
+            withClue(
+                "ausgefuehrt:\n" + executed.joinToString("\n") + "\nmeldungen:\n" + errors.joinToString("\n"),
+            ) { exit shouldBe 0 }
+
+            val dropAt = executed.indexOfFirst { it.contains("DROP INDEX") && it.contains("ix_z_storage") }
+            val createAt = executed.indexOfFirst { it.contains("CREATE CLUSTERED INDEX") }
+            withClue("ausgefuehrt:\n" + executed.joinToString("\n")) {
+                (dropAt >= 0 && createAt > dropAt) shouldBe true
+            }
+            indexStorageForm(pool, "renamed_storage", "ix_a_storage") shouldBe "CLUSTERED"
+            indexStorageForm(pool, "renamed_storage", "ix_z_storage").shouldBeNull()
+        } finally {
+            execDdl(pool, "DROP TABLE IF EXISTS renamed_storage")
             tmp.toFile().deleteRecursively()
         }
     }
