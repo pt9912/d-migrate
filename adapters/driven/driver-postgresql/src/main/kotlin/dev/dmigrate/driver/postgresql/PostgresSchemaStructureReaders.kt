@@ -125,6 +125,7 @@ private fun mapPostgresIndices(indexRows: List<dev.dmigrate.driver.metadata.Inde
             },
             unique = index.isUnique,
             where = index.where,
+            includeColumns = index.includeColumns,
         )
     }
 

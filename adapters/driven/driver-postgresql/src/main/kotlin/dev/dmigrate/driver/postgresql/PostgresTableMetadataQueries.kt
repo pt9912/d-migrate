@@ -178,11 +178,21 @@ internal object PostgresTableMetadataQueries {
         return session.queryList(
             """
             SELECT i.relname AS index_name,
-                   array_agg(a.attname ORDER BY k.n) AS columns,
+                   -- `indkey` fuehrt seit PostgreSQL 11 ALLE Attribute des Index,
+                   -- Schluessel- und eingeschlossene. Getrennt werden sie erst
+                   -- ueber `indnkeyatts`: die ersten so vielen sind der Schluessel,
+                   -- der Rest ist INCLUDE. Ohne den Schnitt kaeme ein
+                   -- `(a) INCLUDE (b)` als zusammengesetzter Index `(a, b)`
+                   -- zurueck -- bei `unique` mit anderer Aussage darueber, welche
+                   -- Zeilen erlaubt sind.
+                   array_agg(a.attname ORDER BY k.n)
+                       FILTER (WHERE k.n <= ix.indnkeyatts) AS columns,
+                   array_agg(a.attname ORDER BY k.n)
+                       FILTER (WHERE k.n > ix.indnkeyatts) AS include_columns,
                    array_agg(
                        CASE WHEN (ix.indoption[k.n - 1] & 1) = 1 THEN 'DESC' ELSE NULL END
                        ORDER BY k.n
-                   ) AS directions,
+                   ) FILTER (WHERE k.n <= ix.indnkeyatts) AS directions,
                    ix.indisunique AS is_unique,
                    am.amname AS index_type,
                    pg_get_expr(ix.indpred, ix.indrelid) AS predicate
@@ -200,7 +210,7 @@ internal object PostgresTableMetadataQueries {
                   WHERE c.conindid = ix.indexrelid
                     AND c.contype IN ('u', 'x')
               )
-            GROUP BY i.relname, ix.indisunique, am.amname, ix.indpred, ix.indrelid
+            GROUP BY i.relname, ix.indisunique, am.amname, ix.indpred, ix.indrelid, ix.indnkeyatts
             ORDER BY i.relname
             """.trimIndent(), schemaName, table,
         ).map { row ->
@@ -211,6 +221,7 @@ internal object PostgresTableMetadataQueries {
                 type = row["index_type"] as? String,
                 directions = parseDirectionArrayColumn(row["directions"]),
                 where = row["predicate"] as? String,
+                includeColumns = parseArrayColumn(row["include_columns"]),
             )
         }
     }

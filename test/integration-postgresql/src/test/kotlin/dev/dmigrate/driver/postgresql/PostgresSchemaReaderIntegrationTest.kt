@@ -216,6 +216,37 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
 
     // ── Tables ──────────────────────────────────
 
+    test("a covering index reads its INCLUDE columns beside the key, not inside it") {
+        // `pg_index.indkey` fuehrt seit PostgreSQL 11 alle Attribute des Index,
+        // Schluessel- und eingeschlossene. Ohne den Schnitt bei `indnkeyatts`
+        // kaeme `(name) INCLUDE (metadata)` als zusammengesetzter Index zurueck --
+        // bei `unique` waere das eine andere Aussage darueber, welche Zeilen
+        // erlaubt sind. Der Katalog entscheidet das, nicht die Doku.
+        pool().use { pool ->
+            pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("DROP INDEX IF EXISTS ix_customers_covering")
+                    stmt.execute(
+                        "CREATE INDEX ix_customers_covering ON customers (name) INCLUDE (metadata, uid)",
+                    )
+                }
+            }
+            try {
+                val index = reader.read(pool).schema.tables.getValue("customers")
+                    .indices.first { it.name == "ix_customers_covering" }
+                index.columns.map { it.name } shouldBe listOf("name")
+                index.includeColumns shouldBe listOf("metadata", "uid")
+                // Die Richtungen bleiben schluesselparallel: eine eingeschlossene
+                // Spalte traegt keine Sortierung und darf die Liste nicht verschieben.
+                index.columns.size shouldBe 1
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { it.execute("DROP INDEX IF EXISTS ix_customers_covering") }
+                }
+            }
+        }
+    }
+
     test("reads tables with columns and types") {
         pool().use { pool ->
             val result = reader.read(pool)

@@ -2,6 +2,8 @@ package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -33,6 +35,54 @@ class DiffPlannerCanonicalizationTest : FunSpec({
         result.desired.fingerprint shouldBe MigrationFingerprint.compute(desired, fold)
         // Die Faltung macht beide Endpunkte identisch — exakt die Post-Compare-Semantik.
         result.current.fingerprint shouldBe result.desired.fingerprint
+    }
+
+    // v9: dieselbe Parität für die Index-Projektion.
+
+    test("canonicalizeIndex flows into both endpoint fingerprints (runner parity)") {
+        // Ohne das rechnet der Plan roh und der Runner kanonisiert: das Artefakt
+        // truege einen Abdruck, gegen den ein spaeteres `schema rollback` nie
+        // passen kann (TARGET_STATE_MISMATCH auf einem stimmigen Zielzustand).
+        fun withIndex(include: List<String>) = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("probe" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(NeutralType.Integer),
+                    "label" to ColumnDefinition(NeutralType.Text()),
+                ),
+                indices = listOf(IndexDefinition(
+                    name = "ix", columns = listOf(IndexColumn("id")), includeColumns = include,
+                )),
+            )),
+        )
+        val current = withIndex(emptyList())
+        val desired = withIndex(listOf("label"))
+        // So sieht MySQL die Indizes: es kann INCLUDE nicht zurueckmelden.
+        val blind: (IndexDefinition) -> IndexDefinition = { it.copy(includeColumns = emptyList()) }
+
+        val result = DiffPlanner().plan(current, desired, SchemaDiff(), canonicalizeIndex = blind)
+        result.current.fingerprint shouldBe MigrationFingerprint.compute(current, { it }, blind)
+        result.desired.fingerprint shouldBe MigrationFingerprint.compute(desired, { it }, blind)
+        // Die Projektion macht beide Endpunkte identisch — der Zielserver kann den
+        // Unterschied nicht ausdruecken, also darf er keine Drift sein.
+        result.current.fingerprint shouldBe result.desired.fingerprint
+    }
+
+    test("without the index projection the endpoints stay distinct") {
+        fun withIndex(include: List<String>) = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("probe" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(NeutralType.Integer),
+                    "label" to ColumnDefinition(NeutralType.Text()),
+                ),
+                indices = listOf(IndexDefinition(
+                    name = "ix", columns = listOf(IndexColumn("id")), includeColumns = include,
+                )),
+            )),
+        )
+        val result = DiffPlanner().plan(withIndex(emptyList()), withIndex(listOf("label")), SchemaDiff())
+        (result.current.fingerprint == result.desired.fingerprint) shouldBe false
     }
 
     test("identity default keeps the endpoints dialekt-neutral distinct") {

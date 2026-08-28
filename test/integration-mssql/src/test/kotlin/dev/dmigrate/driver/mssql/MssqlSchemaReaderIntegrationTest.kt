@@ -13,6 +13,7 @@ import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -89,6 +90,20 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
                         """.trimIndent(),
                     )
                     stmt.execute("CREATE CLUSTERED INDEX ix_shipments_shipped ON shipments(shipped_on)")
+                    // Ein Unique-Index, der die Ablage beansprucht: als
+                    // UNIQUE-Constraint ist das nicht ausdrueckbar, gehoben ginge
+                    // die Ablage-Aussage verloren.
+                    stmt.execute(
+                        """
+                        CREATE TABLE tickets (
+                            id INT NOT NULL CONSTRAINT pk_tickets PRIMARY KEY NONCLUSTERED,
+                            code NVARCHAR(40) NOT NULL,
+                            note NVARCHAR(80)
+                        )
+                        """.trimIndent(),
+                    )
+                    stmt.execute("CREATE UNIQUE CLUSTERED INDEX ux_tickets_code ON tickets(code)")
+                    stmt.execute("CREATE UNIQUE INDEX ux_tickets_note ON tickets(note) INCLUDE (code)")
                     stmt.execute("CREATE SEQUENCE order_seq AS BIGINT START WITH 100 INCREMENT BY 5")
                     // CREATE VIEW/PROCEDURE muessen jeweils allein im Batch stehen.
                     stmt.execute("CREATE VIEW v_active AS SELECT id, name FROM customers WHERE active = 1")
@@ -150,7 +165,30 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
     test("table lister returns the dbo tables") {
         HikariConnectionPoolFactory.create(config).use { pool ->
-            MssqlTableLister().listTables(pool) shouldBe listOf("customers", "orders", "shipments")
+            MssqlTableLister().listTables(pool) shouldBe listOf("customers", "orders", "shipments", "tickets")
+        }
+    }
+
+    test("a unique index that carries storage or INCLUDE stays an index, not a constraint") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val tickets = MssqlSchemaReader().read(pool).schema.tables.getValue("tickets")
+
+            // Gehoben waere beides zu einem UNIQUE-Constraint geworden — und die
+            // Ablage bzw. die eingeschlossene Spalte waere still verschwunden.
+            val storage = tickets.indices.first { it.name == "ux_tickets_code" }
+            storage.unique shouldBe true
+            storage.clustered shouldBe true
+
+            val covering = tickets.indices.first { it.name == "ux_tickets_note" }
+            covering.unique shouldBe true
+            covering.includeColumns shouldBe listOf("code")
+
+            // Und sie stehen NICHT zusaetzlich als Constraint da.
+            tickets.constraints.map { it.name } shouldNotContain "ux_tickets_code"
+            tickets.constraints.map { it.name } shouldNotContain "ux_tickets_note"
+            // `code` ist unique, aber nicht ueber die Spaltenfahne — sonst waere die
+            // Aussage doppelt und der Generate-Pfad legte sie zweimal an.
+            tickets.columns.getValue("code").unique shouldBe false
         }
     }
 

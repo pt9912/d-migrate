@@ -84,7 +84,15 @@ class MssqlSchemaReader(
         val indexScan = MssqlMetadataQueries.scanIndexes(session, qualified)
         val checks = MssqlMetadataQueries.listCheckConstraints(session, qualified)
 
-        val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indexScan.indices)
+        // Ein ungefilterter Unique-Index wird zu `column.unique` bzw. einem
+        // UNIQUE-Constraint gehoben. Beansprucht er aber die Ablage der Tabelle
+        // oder schliesst er Spalten ein, laesst sich das als Constraint nicht
+        // ausdruecken -- gehoben ginge beides verloren, und was `schema generate`
+        // als `CREATE UNIQUE CLUSTERED INDEX … INCLUDE (…)` schreibt, kaeme nie
+        // zurueck. Solche Indizes bleiben deshalb Indizes.
+        val liftable = indexScan.indices.filter { !it.clustered && it.includeColumns.isEmpty() }
+
+        val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(liftable)
         val pkColumns = primaryKey.toSet()
 
         val columns = columnRows.associate { row ->
@@ -135,16 +143,16 @@ class MssqlSchemaReader(
         }
 
         val constraints = SchemaReaderUtils.buildForeignKeyConstraints(foreignKeys) +
-            SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indexScan.indices) +
+            SchemaReaderUtils.buildMultiColumnUniqueFromIndices(liftable) +
             SchemaReaderUtils.buildCheckConstraints(checks)
 
         // Einspaltige, ungefilterte Unique-Indizes sind bereits auf column.unique
         // gehoben. Der Zugriffsmethoden-Typ bleibt BTREE: SQL Server kennt keine
         // waehlbaren Methoden wie PostgreSQL, `type` unterscheidet dort clustered
         // von nonclustered — das traegt `clustered`, nicht `IndexType`.
+        val lifted = liftable.filter { it.isUnique && it.where == null }.toSet()
         val indices = indexScan.indices
-            .filterNot { it.isUnique && it.columns.size == 1 && it.where == null }
-            .filterNot { it.isUnique && it.columns.size > 1 && it.where == null }
+            .filterNot { it in lifted }
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,

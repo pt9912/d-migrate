@@ -195,13 +195,37 @@ internal object MssqlDiffObjectOps {
         table: String,
         expected: MssqlClusteredStorage.Flip,
     ) {
-        val before = ctx.schemaOppositeOfDirection()?.tables?.get(table)?.indices
+        val indicesBefore = ctx.schemaOppositeOfDirection()?.tables?.get(table)?.indices
         val afterTable = ctx.schemaForDirection()?.tables?.get(table) ?: return
-        if (MssqlClusteredStorage.flip(before, afterTable.indices) != expected) return
+        if (MssqlClusteredStorage.flip(indicesBefore, afterTable.indices) != expected) return
         val pk = afterTable.primaryKey
         if (pk.isEmpty()) return
+
+        // Ein Fremdschluessel, der auf diesen Primaerschluessel zeigt, haelt ihn
+        // fest: `DROP CONSTRAINT` scheitert mit Msg 3725. Er muss weichen und
+        // danach wieder stehen -- derselbe Tanz, den der Spaltenpfad fuehrt
+        // (MssqlDiffColumnDependencies), nur um den Schluessel herum statt um
+        // eine Spalte.
+        // Aus BEIDEN Zustaenden: der Schluessel wird auch von einem
+        // Fremdschluessel festgehalten, den dieselbe Migration kurz zuvor selbst
+        // angelegt hat -- die Constraint-Phase laeuft vor der Index-Phase. Nur
+        // den Ausgangszustand zu befragen liesse genau den stehen.
+        val inboundBefore = MssqlDiffColumnDependencies.inboundForeignKeys(ctx.schemaOppositeOfDirection(), table)
+        val inboundAfter = MssqlDiffColumnDependencies.inboundForeignKeys(ctx.schemaForDirection(), table)
+        val survivingKeys = inboundAfter.map(MssqlDiffColumnDependencies::keyOf).toSet()
+        val toDrop = (inboundBefore + inboundAfter).distinctBy(MssqlDiffColumnDependencies::keyOf)
+
+        for (fk in toDrop) {
+            ctx.emit(op, ctx.sql.dropConstraintSql(fk.childTable, fk.constraint.name))
+        }
         ctx.emit(op, ctx.sql.dropPrimaryKeySql(table))
         ctx.emit(op, ctx.sql.addPrimaryKeySql(table, pk, afterTable.indices))
+        // Wiederhergestellt wird nur, was den Zielzustand ueberlebt -- sonst legte
+        // der Wechsel eine Beziehung wieder an, die die Migration gerade loest.
+        for (fk in toDrop.filter { MssqlDiffColumnDependencies.keyOf(it) in survivingKeys }) {
+            val sql = resolveConstraintSql(op, ctx, fk.childTable, fk.constraint) ?: continue
+            ctx.emit(op, sql)
+        }
     }
 
     private fun emitAddConstraint(

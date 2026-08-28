@@ -608,11 +608,11 @@ den `DdlGenerator` und den Diff-Builder. Daraus folgen die offenen Punkte:
 | Offen | Wirkung |
 | --- | --- |
 | ~~`PostgresDiffSqlBuilders.createIndexSql` rendert kein `INCLUDE`~~ ✅ | behoben: die Klausel steht jetzt in `PostgresIndexClauses` und wird von beiden Pfaden benutzt; ein Paritätstest stellt Generate und Diff gegeneinander |
-| PG-Reverse liest über `unnest(ix.indkey)` ohne Schnitt bei `indnkeyatts` | `(a) INCLUDE (b)` kommt als `(a, b)` zurück; bei `unique` verschiebt sich die Eindeutigkeitsaussage |
-| `MssqlSchemaReader` verwirft ungefilterte Unique-Indizes samt beider Felder | `CREATE UNIQUE CLUSTERED INDEX` ist erzeugbar, aber nicht zurücklesbar |
+| ~~PG-Reverse liest über `unnest(ix.indkey)` ohne Schnitt bei `indnkeyatts`~~ ✅ | behoben: `FILTER (WHERE k.n <= ix.indnkeyatts)` trennt Schlüssel- von eingeschlossenen Spalten; live gegen PG 16 belegt |
+| ~~`MssqlSchemaReader` verwirft ungefilterte Unique-Indizes samt beider Felder~~ ✅ | behoben: ein Unique-Index, der die Ablage beansprucht oder Spalten einschließt, ist als Constraint nicht ausdrückbar und bleibt Index |
 | W142/W143 hängen nur an den Generate-Helfern | MySQL/SQLite lassen im Migrate-Pfad still fallen, was sie beim Generieren melden |
-| `DiffPlanner.endpoint()` rechnet ohne `canonicalizeIndex` | Plan-Fingerabdruck und Runner-Fingerabdruck driften auseinander; Rollback gegen MySQL kippt in `TARGET_STATE_MISMATCH` |
-| `emitStorageFlip` löst keine eingehenden Fremdschlüssel | `DROP CONSTRAINT pk` scheitert mit Msg 3725, sobald ein FK darauf zeigt |
+| ~~`DiffPlanner.endpoint()` rechnet ohne `canonicalizeIndex`~~ ✅ | behoben: die Projektion wird durchgereicht, Parität in `DiffPlannerCanonicalizationTest` festgehalten |
+| ~~`emitStorageFlip` löst keine eingehenden Fremdschlüssel~~ ✅ | behoben: gelöst und wiederhergestellt, aus **beiden** Zuständen — auch ein Fremdschlüssel, den dieselbe Migration kurz zuvor anlegt, hält den Schlüssel fest |
 | Umbenannter clustered Index ist `indicesRemoved` + `indicesAdded` | verschiedene `displayName`, keine Ordnungskante — `CREATE CLUSTERED INDEX` läuft, während der alte noch steht (Msg 1902) |
 
 Vorrang hatte davor ein **älterer, dialektübergreifender** Defekt, den derselbe

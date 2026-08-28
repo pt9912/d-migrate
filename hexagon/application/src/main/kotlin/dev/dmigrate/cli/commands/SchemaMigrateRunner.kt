@@ -351,6 +351,7 @@ class SchemaMigrateRunner(
                 capabilities = capabilities,
                 triggerPlanningContext = triggerPlanningContext,
                 canonicalizeType = canonicalizeType,
+                canonicalizeIndex = capabilityIndexCanonicalizer(prep.effectiveDialect),
             )
         }
         return plan to overlayPreflight

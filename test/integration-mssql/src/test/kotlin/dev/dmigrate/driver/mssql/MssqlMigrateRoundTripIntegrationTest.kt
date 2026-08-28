@@ -10,10 +10,13 @@ import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.ReferenceDefinition
+import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.validation.ValidationResult
@@ -263,6 +266,109 @@ class MssqlMigrateRoundTripIntegrationTest : FunSpec({
         }
     }
 
+    test("switching the storage frees the primary key from inbound foreign keys first") {
+        // Ein Fremdschluessel, der auf den Primaerschluessel zeigt, haelt ihn fest:
+        // `DROP CONSTRAINT` scheitert mit Msg 3725. Ohne den Tanz um ihn herum
+        // endet der Lauf mit Exit 5 statt 0 -- und die Beziehung muss danach
+        // wieder stehen, sonst verschwindet sie still.
+        val tmp = createTempDirectory("mssql-storage-fk")
+        try {
+            execDdl(
+                pool,
+                "CREATE TABLE parents (id BIGINT NOT NULL CONSTRAINT pk_parents PRIMARY KEY, " +
+                    "label NVARCHAR(50) NOT NULL)",
+                "CREATE INDEX ix_parents_label ON parents (label)",
+                "CREATE TABLE children (id BIGINT NOT NULL CONSTRAINT pk_children PRIMARY KEY, " +
+                    "parent_id BIGINT NOT NULL CONSTRAINT fk_children_parent REFERENCES parents(id))",
+            )
+
+            fun schema(clustered: Boolean) = SchemaDefinition(
+                name = "storage-fk", version = if (clustered) "1" else "0",
+                tables = mapOf(
+                    "parents" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "label" to ColumnDefinition(NeutralType.Text(maxLength = 50), required = true),
+                        ),
+                        primaryKey = listOf("id"),
+                        indices = listOf(IndexDefinition(
+                            name = "ix_parents_label",
+                            columns = listOf(IndexColumn("label")),
+                            clustered = clustered,
+                        )),
+                    ),
+                    "children" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                            "parent_id" to ColumnDefinition(NeutralType.BigInteger, required = true),
+                        ),
+                        primaryKey = listOf("id"),
+                        // Benannter Constraint statt `references` an der Spalte: die
+                        // Umbenennung eines spaltenlevel Fremdschluessels ist eine
+                        // eigene, dokumentierte Sache und wuerde hier nur den Beweis
+                        // verdecken.
+                        constraints = listOf(ConstraintDefinition(
+                            name = "fk_children_parent",
+                            type = ConstraintType.FOREIGN_KEY,
+                            columns = listOf("parent_id"),
+                            // Mit den Aktionen, die der Katalog meldet: ohne sie sieht
+                            // der Vergleich ein geaendertes Paar und der Plan tauscht
+                            // den Fremdschluessel zusaetzlich aus -- eine Churn, die
+                            // den Beweis verdeckt.
+                            references = ConstraintReferenceDefinition(
+                                table = "parents", columns = listOf("id"),
+                                onDelete = ReferentialAction.NO_ACTION,
+                                onUpdate = ReferentialAction.NO_ACTION,
+                            ),
+                        )),
+                    ),
+                ),
+            )
+
+            val errors = mutableListOf<String>()
+            val executed = mutableListOf<String>()
+            val exit = SchemaMigrateRunner(
+                fileLoader = { _ ->
+                    ResolvedSchemaOperand(
+                        reference = "desired", schema = schema(clustered = true), validation = ValidationResult(),
+                    )
+                },
+                dbLoader = { _, _ -> liveOperand(pool) },
+                comparator = { a, b -> SchemaComparator().compare(a, b) },
+                targetAwareComparator = { left, right, canonicalize ->
+                    SchemaComparator(canonicalize).compare(left, right)
+                },
+                rendererFor = { d -> if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else noRenderer() },
+                executor = { _, _, segments, _, _ ->
+                    val stmts = segments.flatMap { it.statements }
+                    executed += stmts.map { it.sql }
+                    executeAgainstPool(pool, stmts)
+                },
+                renderReport = { r, _ -> r.toString() },
+                printError = { msg, src -> errors += "[$src] $msg" },
+            ).execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.MSSQL,
+                    report = tmp.resolve("report.json"),
+                    execute = true,
+                ),
+            )
+            withClue(
+                "ausgefuehrt:\n" + executed.joinToString("\n") + "\nmeldungen:\n" + errors.joinToString("\n"),
+            ) { exit shouldBe 0 }
+
+            indexStorageForm(pool, "parents", "ix_parents_label") shouldBe "CLUSTERED"
+            primaryKeyStorageForm(pool, "parents") shouldBe "NONCLUSTERED"
+            // Und die Beziehung steht wieder — nicht abgeraeumt und vergessen.
+            foreignKeyExists(pool, "children", "fk_children_parent") shouldBe true
+        } finally {
+            execDdl(pool, "DROP TABLE IF EXISTS children", "DROP TABLE IF EXISTS parents")
+            tmp.toFile().deleteRecursively()
+        }
+    }
+
     test("switching the table's storage round-trips against a real server") {
         val tmp = createTempDirectory("mssql-clustered")
         try {
@@ -401,6 +507,18 @@ private fun indexStorageForm(pool: ConnectionPool, table: String, index: String)
             stmt.setString(1, table)
             stmt.setString(2, index)
             stmt.executeQuery().use { rs -> if (rs.next()) rs.getString(1) else null }
+        }
+    }
+
+/** Ob ein Fremdschluessel dieses Namens an der Tabelle haengt. */
+private fun foreignKeyExists(pool: ConnectionPool, table: String, name: String): Boolean =
+    pool.borrow().asJdbc().use { conn ->
+        conn.prepareStatement(
+            "SELECT 1 FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID(?) AND name = ?",
+        ).use { stmt ->
+            stmt.setString(1, table)
+            stmt.setString(2, name)
+            stmt.executeQuery().use { it.next() }
         }
     }
 
