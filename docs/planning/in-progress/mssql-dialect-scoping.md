@@ -832,6 +832,13 @@ Index. Ein Primärschlüssel über einer Spalte erfüllt das; ein zusammengesetz
 nicht. Das ist entscheidbar und muss deshalb ein benannter Bruchpunkt werden,
 kein Raten — wie `E067` bei der HASH-Emulation.
 
+**Die Spec überspringt sich, wenn das Image fehlt** (`docker image inspect`,
+nicht Pull-Versuch — ein Pull gegen ein nur lokal gebautes Tag läuft in einen
+404 der Registry). Ohne diesen Wächter riss der erste Push den CI-Job
+`Integration Tests`: das Image existiert dort nicht. Offen für 8d: ob CI das
+Image irgendwann selbst baut, oder ob der Volltext-Beleg dauerhaft ein
+lokaler/opt-in-Lauf bleibt.
+
 **Was 8a mitentscheidet:** der Bau braucht Netz und hat keinen Upstream-Digest
 ([ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md) pinnt sonst
 darauf). Gepinnt bleibt der Basis-Digest; die Reproduzierbarkeit kommt aus dem
