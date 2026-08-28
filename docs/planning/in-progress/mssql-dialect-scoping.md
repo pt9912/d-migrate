@@ -509,9 +509,10 @@ Bestandsaufnahme, auf der er aufsetzt.
 
 ### Slice 6 — Gefilterte Indizes, clustered/nonclustered, INCLUDE
 
-- **Reverse** liest `is_unique`, `has_filter` und `filter_definition` aus
-  `sys.indexes`; INCLUDE-Spalten liest er **nicht** und weist das als `R341`
-  aus. Clustered vs. nonclustered wird als generisches `BTREE` gelesen.
+- **Reverse** las `is_unique`, `has_filter` und `filter_definition` aus
+  `sys.indexes`; INCLUDE-Spalten wies er als `R341` aus, clustered vs.
+  nonclustered fiel auf ein generisches `BTREE` zusammen. Beides ist mit 6b
+  gebaut, `R341` entfällt.
 - **Generate** rendert gefilterte Indizes bereits (der `WHERE`-Teil kommt aus
   dem neutralen Modell) und immer nonclustered. Genau hier fand der
   sqlcmd-Apply-E2E aus Slice 2a den Msg-1934-Fall.
@@ -603,8 +604,8 @@ Muster wie beim Enum-Wertevorrat.
 
 | Sub-Slice | Inhalt | Endet mit |
 | --- | --- | --- |
-| **6a** | Neutrales Modell: `IndexDefinition.clustered` + `includeColumns`, Serialisierung samt `spec/schema.json`, [ADR 0049](../../adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) für die Vergleichs-Semantik, Fingerprint `v9`, Kanonisierung je Dialekt über `DialectCapabilities` | Modell trägt beides, Cross-Dialekt-Vergleich driftet nicht |
-| **6b** | MSSQL-Reverse: `i.type` mitlesen, INCLUDE-Spalten durchreichen statt sie für `R341` zu zählen; `R341` entfällt | `schema reverse` liest die volle Index-Treue |
+| **6a** ✅ | Neutrales Modell: `IndexDefinition.clustered` + `includeColumns`, Serialisierung samt `spec/schema.json`, [ADR 0049](../../adr/0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) für die Vergleichs-Semantik, Fingerprint `v9`, Kanonisierung je Dialekt über `DialectCapabilities` | Modell trägt beides, Cross-Dialekt-Vergleich driftet nicht |
+| **6b** ✅ | MSSQL-Reverse: `i.type` mitlesen, INCLUDE-Spalten durchreichen statt sie für `R341` zu zählen; `R341` entfällt. Die Sortierung braucht `ic.index_column_id` als drittes Kriterium — eingeschlossene Spalten haben alle `key_ordinal = 0`, ihre Reihenfolge wäre sonst unbestimmt | `schema reverse` liest die volle Index-Treue |
 | **6c** | Generate: MSSQL rendert `CLUSTERED`/`INCLUDE` und leitet `PRIMARY KEY NONCLUSTERED` her; PostgreSQL rendert `INCLUDE`; MySQL/SQLite degradieren mit Warnung — dort entstehen die W-Codes samt Ledger-Eintrag, weil erst der Renderer sie emittiert | `schema generate` gibt zurück, was der Reverse gelesen hat |
 | **6d** | Diff: `AddIndex`/`DropIndex` tragen die neuen Felder, und der Wechsel der Ablage wird in der richtigen Reihenfolge gerendert (PK zuerst) | `schema migrate` führt den Wechsel aus |
 

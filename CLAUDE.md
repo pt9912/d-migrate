@@ -17,6 +17,11 @@ make integration  INTEGRATION_TASKS=":test:integration-mssql:test"
 
 Ohne `MODULES` läuft der Task über das ganze Repo — deutlich langsamer.
 
+`MODULES=` lässt die `test/integration-*`-Module **aus**, auch die
+Kompilierung. Wer eine geteilte Signatur im Hexagon ändert (Modell, Port,
+Fingerprint), prüft deshalb einmal ohne `MODULES` — sonst bricht der Bau erst
+in CI, an einer Aufrufstelle, die lokal nie gebaut wurde.
+
 ## Zwei Gates, die der Build nicht abdeckt
 
 - **`make docs-check`** prüft Doku, Specs, ADRs und Planning (verlinkte

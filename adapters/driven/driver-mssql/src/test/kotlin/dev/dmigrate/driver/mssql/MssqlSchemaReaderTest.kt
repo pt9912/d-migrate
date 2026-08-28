@@ -201,7 +201,7 @@ class MssqlSchemaReaderTest : FunSpec({
         note.severity shouldBe SchemaReadSeverity.ACTION_REQUIRED
     }
 
-    test("index INCLUDE columns emit R341 info note") {
+    test("index INCLUDE columns are carried into the model, not merged into the key") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
         stubTableQueries(jdbc)
@@ -223,10 +223,32 @@ class MssqlSchemaReaderTest : FunSpec({
         )
         val (reader, pool) = rig(jdbc)
         val result = reader.read(pool)
-        val note = result.notes.single()
-        note.code shouldBe "R341"
-        note.severity shouldBe SchemaReadSeverity.INFO
-        result.schema.tables.getValue("t").indices.single().columns.map { it.name } shouldBe listOf("a")
+        result.notes.shouldBeEmpty()
+        val index = result.schema.tables.getValue("t").indices.single()
+        // Die eingeschlossene Spalte steht NEBEN dem Schluessel, nicht darin —
+        // angehaengt waere aus dem abdeckenden ein zusammengesetzter Index geworden.
+        index.columns.map { it.name } shouldBe listOf("a")
+        index.includeColumns shouldBe listOf("b")
+        index.clustered shouldBe false
+    }
+
+    test("a clustered index is read as the table's storage") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        stubTableQueries(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM sys.tables t") }, "dbo") } returns
+            listOf(mapOf("table_name" to "t", "schema_name" to "dbo"))
+        every { jdbc.queryList(match { it.contains("FROM sys.columns c") }, "[dbo].[t]") } returns
+            listOf(columnRow("a"))
+        every { jdbc.queryList(match { it.contains("FROM sys.indexes i") }, "[dbo].[t]") } returns listOf(
+            mapOf(
+                "index_name" to "ix_a", "is_unique" to false, "has_filter" to false,
+                "filter_definition" to null, "type" to 1, "column_name" to "a",
+                "key_ordinal" to 1, "is_descending_key" to false, "is_included_column" to false,
+            ),
+        )
+        val (reader, pool) = rig(jdbc)
+        reader.read(pool).schema.tables.getValue("t").indices.single().clustered shouldBe true
     }
 
     test("views are read with extracted query; includeViews=false skips them") {

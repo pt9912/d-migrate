@@ -88,7 +88,7 @@ class MssqlMetadataQueriesTest : FunSpec({
         fks[0].onUpdate shouldBe "NO ACTION"
     }
 
-    test("scanIndexes filters INCLUDE columns from keys and reports affected indexes") {
+    test("scanIndexes separates INCLUDE columns from the key and reads the storage form") {
         val jdbc = mockk<JdbcOperations> {
             every { queryList(match { it.contains("FROM sys.indexes i") }, any()) } returns listOf(
                 mapOf(
@@ -109,10 +109,15 @@ class MssqlMetadataQueriesTest : FunSpec({
             )
         }
         val scan = MssqlMetadataQueries.scanIndexes(jdbc, "[dbo].[t]")
-        scan.indexesWithIncludedColumns shouldBe listOf("ix_a")
         val ixA = scan.indices.first { it.name == "ix_a" }
         ixA.columns shouldBe listOf("a")
+        ixA.includeColumns shouldBe listOf("payload")
         ixA.directions shouldBe listOf(IndexSortDirection.DESC)
+        // Die Richtungen bleiben schluesselparallel — eine eingeschlossene Spalte
+        // traegt keine Sortierung und darf die Liste nicht verschieben.
+        ixA.directions.size shouldBe ixA.columns.size
+        // `type` fehlt in diesen Zeilen: der Scan liest daraus kein clustered.
+        ixA.clustered shouldBe false
         val uxB = scan.indices.first { it.name == "ux_b" }
         uxB.isUnique shouldBe true
         uxB.where shouldBe "([b] IS NOT NULL)"

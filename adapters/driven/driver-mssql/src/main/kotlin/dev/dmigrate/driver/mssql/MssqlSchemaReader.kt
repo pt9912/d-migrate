@@ -84,16 +84,6 @@ class MssqlSchemaReader(
         val indexScan = MssqlMetadataQueries.scanIndexes(session, qualified)
         val checks = MssqlMetadataQueries.listCheckConstraints(session, qualified)
 
-        indexScan.indexesWithIncludedColumns.forEach { indexName ->
-            notes += SchemaReadNote(
-                severity = SchemaReadSeverity.INFO,
-                code = "R341",
-                objectName = "$table.$indexName",
-                message = "Index INCLUDE columns are not carried in the neutral model; " +
-                    "only the key columns were read.",
-            )
-        }
-
         val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indexScan.indices)
         val pkColumns = primaryKey.toSet()
 
@@ -148,9 +138,10 @@ class MssqlSchemaReader(
             SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indexScan.indices) +
             SchemaReaderUtils.buildCheckConstraints(checks)
 
-        // Einspaltige, ungefilterte Unique-Indizes sind bereits auf
-        // column.unique gehoben; clustered/nonclustered-Steuerung liest erst
-        // der Index-Slice des Plans — bis dahin ist alles BTREE.
+        // Einspaltige, ungefilterte Unique-Indizes sind bereits auf column.unique
+        // gehoben. Der Zugriffsmethoden-Typ bleibt BTREE: SQL Server kennt keine
+        // waehlbaren Methoden wie PostgreSQL, `type` unterscheidet dort clustered
+        // von nonclustered — das traegt `clustered`, nicht `IndexType`.
         val indices = indexScan.indices
             .filterNot { it.isUnique && it.columns.size == 1 && it.where == null }
             .filterNot { it.isUnique && it.columns.size > 1 && it.where == null }
@@ -161,6 +152,8 @@ class MssqlSchemaReader(
                     type = IndexType.BTREE,
                     unique = idx.isUnique,
                     where = idx.where,
+                    includeColumns = idx.includeColumns,
+                    clustered = idx.clustered,
                 )
             }
 

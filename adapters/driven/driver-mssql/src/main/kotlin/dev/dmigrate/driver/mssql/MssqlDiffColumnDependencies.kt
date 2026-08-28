@@ -30,7 +30,7 @@ import dev.dmigrate.core.model.TableDefinition
  *    einspaltiges UNIQUE hebt er dagegen auf `column.unique` und wirft den
  *    Namen weg. Nur dort wird im Katalog nachgeschlagen — pauschal alles zu
  *    loeschen, was an der Spalte haengt, traefe auch Objekte, die das Modell
- *    gar nicht kennt (z. B. INCLUDE-Spalten, `R341`).
+ *    gar nicht kennt.
  */
 internal object MssqlDiffColumnDependencies {
 

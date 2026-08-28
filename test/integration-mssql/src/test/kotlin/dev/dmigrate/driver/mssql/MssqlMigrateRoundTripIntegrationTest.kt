@@ -193,9 +193,14 @@ private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
 private fun readSchema(pool: ConnectionPool): SchemaDefinition = MssqlSchemaReader().read(pool).schema
 
 /** Derselbe Kanonisierer, den der Migrate-Pfad fuer diesen Dialekt waehlt. */
-private fun fingerprintOf(schema: SchemaDefinition) = MigrationFingerprint.compute(schema) { type ->
-    MssqlDriver().typeCanonicalizer().canonicalize(type, schema.customTypes)
-}
+private fun fingerprintOf(schema: SchemaDefinition) = MigrationFingerprint.compute(
+    schema,
+    // Benannt statt als Trailing-Lambda: `compute` traegt seit v9 eine zweite
+    // Projektion, und ein nachgestelltes `{ … }` bezoege sich auf die letzte.
+    canonicalizeType = { type ->
+        MssqlDriver().typeCanonicalizer().canonicalize(type, schema.customTypes)
+    },
+)
 
 private fun liveOperand(pool: ConnectionPool): ResolvedSchemaOperand = ResolvedSchemaOperand(
     reference = "live-mssql",

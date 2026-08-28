@@ -16,6 +16,14 @@ import dev.dmigrate.driver.metadata.TableRef
  */
 internal object MssqlMetadataQueries {
 
+    /**
+     * `sys.indexes.type` = 1. SQL Server nummeriert die Ablageform dort statt sie
+     * zu benennen: 0 ist der Heap, 1 der clustered Index, 2 der nonclustered, und
+     * darueber folgen XML, raeumlich und Columnstore. Der Scan filtert `type > 0`,
+     * es bleiben also die echten Indizes.
+     */
+    private const val CLUSTERED_INDEX_TYPE = 1
+
     /** Spalten-Zeile inkl. Identity-/Default-/Computed-Metadaten. */
     data class ColumnRow(
         val name: String,
@@ -36,7 +44,6 @@ internal object MssqlMetadataQueries {
     /** Index-Scan: Projektionen plus Namen der Indizes mit INCLUDE-Spalten. */
     data class IndexScan(
         val indices: List<IndexProjection>,
-        val indexesWithIncludedColumns: List<String>,
     )
 
     data class SequenceRow(
@@ -150,21 +157,18 @@ internal object MssqlMetadataQueries {
     fun scanIndexes(session: JdbcOperations, qualifiedTable: String): IndexScan {
         val rows = session.queryList(
             """
-            SELECT i.name AS index_name, i.is_unique, i.has_filter, i.filter_definition,
+            SELECT i.name AS index_name, i.is_unique, i.has_filter, i.filter_definition, i.type,
                    col.name AS column_name, ic.key_ordinal, ic.is_descending_key, ic.is_included_column
             FROM sys.indexes i
             JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
             JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
             WHERE i.object_id = OBJECT_ID(?) AND i.type > 0
               AND i.is_primary_key = 0 AND i.is_hypothetical = 0
-            ORDER BY i.name, ic.key_ordinal
+            ORDER BY i.name, ic.key_ordinal, ic.index_column_id
             """.trimIndent(),
             qualifiedTable,
         )
         val byIndex = rows.groupBy { it.string("index_name") }
-        val withIncludes = byIndex.filterValues { group ->
-            group.any { it.bool("is_included_column") }
-        }.keys.sorted()
         val indices = byIndex.map { (name, group) ->
             val keyColumns = group.filterNot { it.bool("is_included_column") }
             IndexProjection(
@@ -175,9 +179,12 @@ internal object MssqlMetadataQueries {
                     if (row.bool("is_descending_key")) IndexSortDirection.DESC else null
                 },
                 where = group.first()["filter_definition"] as? String,
+                includeColumns = group.filter { it.bool("is_included_column") }
+                    .map { it.string("column_name") },
+                clustered = group.first().int("type") == CLUSTERED_INDEX_TYPE,
             )
         }
-        return IndexScan(indices = indices, indexesWithIncludedColumns = withIncludes)
+        return IndexScan(indices = indices)
     }
 
     fun listCheckConstraints(session: JdbcOperations, qualifiedTable: String): List<ConstraintProjection> =

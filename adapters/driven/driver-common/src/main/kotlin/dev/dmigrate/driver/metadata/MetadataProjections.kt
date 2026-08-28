@@ -51,6 +51,15 @@ data class IndexProjection(
     val where: String? = null,
     /** MySQL `SUB_PART` per column (prefix-index key length); index-parallel to [columns]. */
     val prefixLengths: List<Int?> = emptyList(),
+    /**
+     * Nicht-Schluesselspalten eines abdeckenden Index (`INCLUDE (…)`), in der
+     * Reihenfolge, die der Katalog fuehrt. Sie stehen bewusst NEBEN [columns]
+     * und nicht darin -- angehaengt waeren sie Schluesselspalten, und bei einem
+     * `unique`-Index aenderte das die Eindeutigkeit.
+     */
+    val includeColumns: List<String> = emptyList(),
+    /** Ob dieser Index die physische Ablage der Tabelle bildet (SQL Server: clustered). */
+    val clustered: Boolean = false,
 ) {
     val indexColumns: List<IndexColumn>
         get() = columns.mapIndexed { index, column ->

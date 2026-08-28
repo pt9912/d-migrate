@@ -20,9 +20,9 @@ import io.kotest.matchers.string.shouldContain as strShouldContain
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
-// Slice 1 (docs/planning/in-progress/mssql-dialect-scoping.md): Reverse-Read
-// gegen echtes SQL Server 2022 — Identity/Defaults/gefilterte Indizes kommen
-// aus sys.*-Sichten, nicht aus INFORMATION_SCHEMA (Plan-Risiko).
+// Reverse-Read gegen echtes SQL Server 2022. Identity, Defaults, gefilterte und
+// abdeckende Indizes kommen aus den sys.*-Sichten, nicht aus INFORMATION_SCHEMA —
+// letzteres kennt sie gar nicht.
 class MssqlSchemaReaderIntegrationTest : FunSpec({
 
     val container = MSSQLServerContainer("mcr.microsoft.com/mssql/server:2022-latest")
@@ -77,6 +77,18 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
                         """.trimIndent(),
                     )
                     stmt.execute("CREATE INDEX ix_orders_state_open ON orders(state) WHERE state = N'open'")
+                    stmt.execute("CREATE INDEX ix_orders_covering ON orders(customer_id) INCLUDE (state)")
+                    // Ein clustered Index auf einer Nicht-PK-Spalte verlangt, dass der
+                    // Primaerschluessel nonclustered ist — es gibt nur eine Ablage.
+                    stmt.execute(
+                        """
+                        CREATE TABLE shipments (
+                            id INT NOT NULL CONSTRAINT pk_shipments PRIMARY KEY NONCLUSTERED,
+                            shipped_on DATE NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    stmt.execute("CREATE CLUSTERED INDEX ix_shipments_shipped ON shipments(shipped_on)")
                     stmt.execute("CREATE SEQUENCE order_seq AS BIGINT START WITH 100 INCREMENT BY 5")
                     // CREATE VIEW/PROCEDURE muessen jeweils allein im Batch stehen.
                     stmt.execute("CREATE VIEW v_active AS SELECT id, name FROM customers WHERE active = 1")
@@ -138,7 +150,30 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
     test("table lister returns the dbo tables") {
         HikariConnectionPoolFactory.create(config).use { pool ->
-            MssqlTableLister().listTables(pool) shouldBe listOf("customers", "orders")
+            MssqlTableLister().listTables(pool) shouldBe listOf("customers", "orders", "shipments")
+        }
+    }
+
+    test("reverse reads INCLUDE columns and the clustered index from the catalog") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val schema = MssqlSchemaReader().read(pool).schema
+
+            val covering = schema.tables.getValue("orders").indices.first { it.name == "ix_orders_covering" }
+            // Die eingeschlossene Spalte steht NEBEN dem Schluessel. Haenge sie der
+            // Katalog an die Schluesselspalten, waere aus dem abdeckenden Index ein
+            // zusammengesetzter geworden — bei `unique` mit anderer Semantik.
+            covering.columns.map { it.name } shouldBe listOf("customer_id")
+            covering.includeColumns shouldBe listOf("state")
+            covering.clustered shouldBe false
+
+            val storage = schema.tables.getValue("shipments").indices.first { it.name == "ix_shipments_shipped" }
+            storage.clustered shouldBe true
+
+            // Der gefilterte Index traegt keine der beiden Eigenschaften — sonst
+            // liesse sich nicht unterscheiden, ob der Reverse liest oder raet.
+            val filtered = schema.tables.getValue("orders").indices.first { it.name == "ix_orders_state_open" }
+            filtered.includeColumns shouldBe emptyList()
+            filtered.clustered shouldBe false
         }
     }
 })
