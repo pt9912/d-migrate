@@ -1,7 +1,16 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain as strShouldContain
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import org.testcontainers.utility.DockerImageName
@@ -75,6 +84,59 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                     st.executeQuery("SELECT COUNT(*) FROM sys.fulltext_indexes").use { rs -> rs.next(); rs.getInt(1) }
                 }
                 count shouldBe 1
+            }
+        }
+
+        // Der Beleg fuer Sub-Slice 8b: nicht das erzeugte DDL, sondern dass der
+        // Server es annimmt — Katalog und Index sind eigenstaendige Objekte mit
+        // eigenen Regeln (einspaltiger, nicht nullbarer Schluesselindex).
+        test("generated full-text DDL is accepted by the server") {
+            val schema = SchemaDefinition(
+                name = "ft", version = "1",
+                tables = mapOf(
+                    "articles" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                            "body" to ColumnDefinition(NeutralType.Text()),
+                            "title" to ColumnDefinition(NeutralType.Text(200)),
+                        ),
+                        primaryKey = listOf("id"),
+                        indices = listOf(
+                            IndexDefinition(
+                                "fx_articles",
+                                listOf(IndexColumn("body"), IndexColumn("title")),
+                                type = IndexType.FULLTEXT,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val ddl = MssqlDdlGenerator().generate(schema).render()
+            withClue("erzeugt:\n$ddl") { ddl strShouldContain "CREATE FULLTEXT INDEX" }
+
+            DriverManager.getConnection(
+                "${container.jdbcUrl};databaseName=fts_probe", container.username, container.password,
+            ).use { db ->
+                try {
+                    db.createStatement().use { stmt ->
+                        ddl.lines()
+                            .filter { it.isNotBlank() && !it.trimStart().startsWith("--") }
+                            .joinToString("\n").split(";")
+                            .map { it.trim() }.filter { it.isNotEmpty() }
+                            .forEach { stmt.execute(it) }
+                    }
+                    val indexed = db.createStatement().use { stmt ->
+                        stmt.executeQuery(
+                            "SELECT COUNT(*) FROM sys.fulltext_index_columns " +
+                                "WHERE object_id = OBJECT_ID('articles')",
+                        ).use { rs -> rs.next(); rs.getInt(1) }
+                    }
+                    withClue("beide Spalten sollten im Volltext-Index liegen") { indexed shouldBe 2 }
+                } finally {
+                    runCatching { db.createStatement().use { it.execute("DROP FULLTEXT INDEX ON articles") } }
+                    runCatching { db.createStatement().use { it.execute("DROP TABLE articles") } }
+                    runCatching { db.createStatement().use { it.execute("DROP FULLTEXT CATALOG ftc_articles") } }
+                }
             }
         }
     }

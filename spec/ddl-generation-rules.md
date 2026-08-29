@@ -560,8 +560,28 @@ wird nicht gesteuert (SQL-Server-Default nonclustered). Räumliche Indizes
 auf `geography`-Spalten werden als `CREATE SPATIAL INDEX` gerendert, wenn
 die Tabelle einen Primary Key hat (SQL Server verlangt einen clustered PK)
 und der Index genau eine Spalte umfasst; sonst — wie auf planaren
-`geometry`-Spalten (BOUNDING_BOX-Tessellation nötig) und bei Volltext-
-Indizes (Full-Text-Katalog) — E057.
+`geometry`-Spalten (BOUNDING_BOX-Tessellation nötig) — E057.
+
+Volltext-Indizes werden gerendert, brauchen dafür aber zwei Objekte, die das
+neutrale Modell nicht trägt:
+
+```sql
+CREATE FULLTEXT CATALOG [ftc_docs];
+CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
+```
+
+- Der **Katalog** heißt `ftc_<tabelle>` und entsteht je Tabelle (**W146**). SQL
+  Server teilt Kataloge zwischen Tabellen; aus einer Beschreibung ohne Katalog
+  ist die Teilung nicht rekonstruierbar — dieselbe Lage wie bei Partition
+  Function und Scheme.
+- Der **Schlüsselindex** muss **einspaltig, eindeutig und nicht nullbar** sein.
+  Gesucht wird in dieser Reihenfolge: einspaltiger Primärschlüssel, einspaltiger
+  UNIQUE-Constraint, spaltenständiges `unique`, einspaltiger unique Index. Findet
+  sich keiner, wird nicht geraten, sondern mit **E070** abgebrochen.
+- Je Tabelle ist **genau ein** Volltext-Index zulässig; er darf mehrere Spalten
+  umfassen. Mehr als einer bricht mit **E071** ab.
+- `DROP TABLE` entfernt den Index mit, den Katalog **nicht** — der Rückbau löst
+  beides.
 
 ### 5.3 Unique-Index
 

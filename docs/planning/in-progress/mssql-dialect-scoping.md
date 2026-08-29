@@ -822,7 +822,7 @@ Schlüsselindex** der Tabelle, an dem der Volltext-Index hängt.
 | Sub-Slice | Inhalt | Fertig, wenn |
 | --- | --- | --- |
 | **8a** ✅ | Testumgebung: abgeleitetes Image mit `mssql-server-fts` (`test/integration-mssql/fts/Dockerfile`, `make mssql-fts-image`), Beleg-Spec im Integrationslauf | Belegt: `IsFullTextInstalled` = `1`, und `CREATE FULLTEXT CATALOG` + `CREATE FULLTEXT INDEX … KEY INDEX` laufen durch. Gemessen kam dazu: **Volltext ist in `master`/`tempdb`/`model` verboten** — die Spec legt eine eigene Datenbank an. Das Paket hebt die Engine auf 16.0.4265.3 mit, das Image ist 3,63 GB |
-| **8b** | Generate: `CREATE FULLTEXT CATALOG` + `CREATE FULLTEXT INDEX … KEY INDEX …`. **Dabei zu entscheiden:** ein Katalog je Datenbank oder je Tabelle, und was passiert, wenn die Tabelle keinen einspaltigen eindeutigen Schlüssel hat | `schema generate --target mssql` erzeugt Volltext-DDL, das der Server annimmt |
+| **8b** ✅ | Generate: `CREATE FULLTEXT CATALOG` + `CREATE FULLTEXT INDEX … KEY INDEX …`. **Entschieden:** Katalog je Tabelle (`ftc_<tabelle>`, **W146**) wie bei Function/Scheme; fehlt ein tauglicher Schlüssel, bricht es mit **E070** ab statt zu raten | Live belegt: der Server nimmt das erzeugte DDL an und indiziert beide Spalten. Gemessen kamen drei Regeln dazu, die ich falsch geraten hätte: ein **zusammengesetzter** Primärschlüssel taugt nicht als `KEY INDEX` (einspaltig, eindeutig, nicht nullbar), je Tabelle ist genau **ein** Volltext-Index zulässig (**E071**), und `DROP TABLE` lässt den **Katalog stehen** |
 | **8c** | Reverse: Volltext-Indizes zurücklesen (`sys.fulltext_indexes`, `sys.fulltext_index_columns`) | Round-Trip trägt den Volltext-Index |
 | **8d** | Diff/Migrate | `schema migrate` legt Volltext-Indizes an und baut sie zurück |
 

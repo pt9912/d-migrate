@@ -48,17 +48,43 @@ internal class MssqlIndexDdlHelper(
         val indexName = index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
         val columns = table.columns
 
-        // ADR 0025: Volltext braucht in SQL Server einen Full-Text-Katalog und
-        // einen eindeutigen Schlüsselindex — nichts davon trägt das Modell.
+        // ADR 0025: Volltext braucht in SQL Server einen Katalog und einen
+        // Schluesselindex — beides traegt das Modell nicht. Der Katalog wird je
+        // Tabelle angelegt, der Schluesselindex aus der Tabelle abgeleitet.
         if (index.type == IndexType.FULLTEXT) {
-            return actionRequired(
-                ManualActionRequired(
-                    code = "E057", objectType = "index", objectName = indexName,
-                    reason = "Full-text index '$indexName' on table '$tableName' is not rendered for SQL Server: " +
-                        "it requires a full-text catalog and a unique key index that the neutral model does not carry.",
-                    hint = "Create the full-text catalog and CREATE FULLTEXT INDEX manually on the target.",
-                ),
-            )
+            return when (val verdict = MssqlFullTextDdl.verdict(tableName, table)) {
+                is MssqlFullTextDdl.Verdict.Renderable -> DdlStatement(
+                    MssqlFullTextDdl.createStatement(
+                        tableName, index.columnNames, verdict.keyIndexName, quoteIdentifier,
+                    ),
+                    listOf(
+                        TransformationNote(
+                            type = NoteType.WARNING, code = "W146", objectName = indexName,
+                            message = "Full-text catalog '${MssqlFullTextDdl.catalogName(tableName)}' was created " +
+                                "for table '$tableName' alone. SQL Server shares catalogs across tables; the " +
+                                "neutral model carries no catalog, so a shared original becomes one per table.",
+                            hint = "Functionally equivalent; consolidate the catalogs manually if the sharing " +
+                                "matters.",
+                        ),
+                    ),
+                )
+                MssqlFullTextDdl.Verdict.NoKeyIndex -> actionRequired(
+                    ManualActionRequired(
+                        code = "E070", objectType = "index", objectName = indexName,
+                        reason = "Full-text index '$indexName' on table '$tableName' is not rendered: SQL Server " +
+                            "needs a single-column, unique, non-nullable index as its key, and the table has none.",
+                        hint = "Give the table a single-column primary key or a NOT NULL unique constraint.",
+                    ),
+                )
+                is MssqlFullTextDdl.Verdict.MoreThanOne -> actionRequired(
+                    ManualActionRequired(
+                        code = "E071", objectType = "index", objectName = indexName,
+                        reason = "Table '$tableName' declares ${verdict.count} full-text indexes; SQL Server " +
+                            "allows exactly one per table, and it is not decidable which one is meant.",
+                        hint = "Merge them into one full-text index over all the columns.",
+                    ),
+                )
+            }
         }
         // Genau eine Ablage je Tabelle. Beanspruchen sie zwei Indizes, ist nicht
         // entscheidbar, welcher gemeint ist -- geraten waere schlimmer als geblockt.

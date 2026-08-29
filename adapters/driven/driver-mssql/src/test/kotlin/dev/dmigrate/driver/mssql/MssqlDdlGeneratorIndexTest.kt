@@ -131,19 +131,17 @@ class MssqlDdlGeneratorIndexTest : FunSpec({
         result.notesWithCode("W126").single().objectName shouldBe "ix_pref"
     }
 
-    test("spatial indexes render on geography columns; planar geometry and full-text indexes are E057") {
+    test("spatial indexes render on geography columns; planar geometry is E057") {
         val result = render(
             IndexDefinition("sx_geo", listOf(IndexColumn("geo")), type = IndexType.SPATIAL),
             IndexDefinition("gx_geo", listOf(IndexColumn("geo")), type = IndexType.GIST),
             IndexDefinition("sx_shape", listOf(IndexColumn("shape")), type = IndexType.SPATIAL),
-            IndexDefinition("fx_name", listOf(IndexColumn("name")), type = IndexType.FULLTEXT),
         )
         val ddl = result.render()
         ddl shouldContain "CREATE SPATIAL INDEX [sx_geo] ON [t] ([geo]);"
         ddl shouldContain "CREATE SPATIAL INDEX [gx_geo] ON [t] ([geo]);"
         ddl shouldNotContain "CREATE SPATIAL INDEX [sx_shape]"
-        result.statements.joinToString("\n") { it.sql } shouldNotContain "FULLTEXT"
-        result.notesWithCode("E057").map { it.objectName } shouldBe listOf("sx_shape", "fx_name")
+        result.notesWithCode("E057").map { it.objectName } shouldBe listOf("sx_shape")
     }
 
     test("index on a domain-over-text enum column is a LOB key and skipped with W141") {

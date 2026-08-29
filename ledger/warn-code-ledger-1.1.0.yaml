@@ -267,3 +267,15 @@ entries:
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDiffPartitionOps.kt"
         path_type: production
 
+  # W146 — Slice 8b: der Volltext-Katalog entsteht je Tabelle. SQL Server teilt
+  # Kataloge zwischen Tabellen; das neutrale Modell traegt keinen, aus dieser
+  # Richtung ist die Teilung nicht rekonstruierbar.
+  - code: W146
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlFullTextTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
+        path_type: production
+

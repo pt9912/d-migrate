@@ -1,6 +1,6 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.4  ·  **Stand:** 28.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.5  ·  **Stand:** 29.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 (im Ausbau — dort noch nicht verfügbar: `data profile`)
 
@@ -2674,6 +2674,16 @@ Spalten-Fremdschlüssel über `references`:
 | `full_text_vector_column` | PostgreSQL: vorberechnete `tsvector`-Spalte des Volltext-Index |
 | `full_text_access_method` | PostgreSQL: `gin` oder `gist` |
 
+**Volltext bei SQL Server** verlangt zwei Dinge, die kein anderer Dialekt
+braucht. Ein Volltext-Index entsteht dort zusammen mit einem Katalog
+(`ftc_<tabelle>`, gemeldet mit **W146** — SQL Server teilt Kataloge zwischen
+Tabellen, das Schema kann diese Teilung nicht ausdrücken), und er hängt an
+einem Schlüsselindex, der **einspaltig, eindeutig und nicht nullbar** sein
+muss. Hat die Tabelle keinen — etwa weil ihr Primärschlüssel zusammengesetzt
+ist — bricht der Lauf mit **E070** ab, statt einen Schlüssel zu raten. Und je
+Tabelle ist genau **ein** Volltext-Index zulässig; er darf mehrere Spalten
+umfassen, zwei getrennte Indizes melden **E071**.
+
 Nicht jeder Dialekt trägt jedes Feld. Wo eines wegfällt, sagt es der Lauf —
 beim Erzeugen wie beim Migrieren: eine `prefix_length` außerhalb von MySQL
 meldet **W126**, weggelassene `include_columns` melden **W142**, ein nicht
@@ -2804,6 +2814,7 @@ custom_types:
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
 | 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
+| 1.5 | 29.08.2026 | SQL Server erzeugt jetzt Volltext-Indizes. Anhang F.6 nennt die drei Regeln, die dort gelten und sonst nirgends: der Katalog je Tabelle (**W146**), der einspaltige, nicht nullbare Schlüsselindex (**E070**, wenn keiner da ist) und höchstens ein Volltext-Index je Tabelle (**E071**). |
 | 1.4 | 28.08.2026 | Der HASH-Modus lässt sich auch in der Konfigurationsdatei hinterlegen (`ddl.mssql.hash_partitions`) und gilt dann für `schema generate` und `schema migrate`. Dazu der vierte Abbruchgrund **E069**: ein eingehender Fremdschlüssel verträgt sich nicht mit der Eimerspalte. |
 | 1.3 | 28.08.2026 | `hash`-Partitionierung lässt sich für SQL Server nachbauen (`--mssql-hash-partitions computed_column`). Abschnitt 3.20 nennt die drei Punkte, die man vorher wissen sollte: die Eimerspalte tritt in jeden eindeutigen Schlüssel (**E067**, wenn das den Schlüssel schwächen würde), die Zeilenverteilung weicht von der Quelle ab (**W145**), und ein Reverse liest `range` zurück. Neue Option in der Befehlsreferenz. |
 | 1.2 | 28.08.2026 | Anhang F.8 (Partitionierung) vervollständigt: Die Felder je Kind-Partition waren nur als `{ name, from, to, values }` genannt — das deckt `range` und `list` ab, aber nicht `hash`. Ergänzt wurden `modulus`, `remainder`, `default` und `indices`, mit Angabe, welches Feld zu welchem Partitionstyp gehört, sowie ein `hash`-Beispiel. |
