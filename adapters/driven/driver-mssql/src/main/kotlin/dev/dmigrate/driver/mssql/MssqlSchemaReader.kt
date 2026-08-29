@@ -2,6 +2,12 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.ProcedureDefinition
+import dev.dmigrate.core.model.TriggerDefinition
+import dev.dmigrate.core.model.TriggerEvent
+import dev.dmigrate.core.model.TriggerForEach
+import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
@@ -51,6 +57,7 @@ class MssqlSchemaReader(
             val tables = readTables(session, schema, notes)
             val views = if (options.includeViews) readViews(session, schema, notes) else emptyMap()
             val sequences = readSequences(session, schema)
+            val routines = readRoutines(session, schema, options)
             noteUnreadObjects(session, schema, options, notes, skipped)
 
             return SchemaReadResult(
@@ -60,6 +67,9 @@ class MssqlSchemaReader(
                     tables = tables,
                     views = views,
                     sequences = sequences,
+                    functions = routines.functions,
+                    procedures = routines.procedures,
+                    triggers = routines.triggers,
                 ),
                 notes = notes,
                 skippedObjects = skipped,
@@ -331,6 +341,71 @@ class MssqlSchemaReader(
             else -> null to null
         }
 
+    /** Die gelesenen Routinen, nach Art getrennt. */
+    private data class Routines(
+        val functions: Map<String, FunctionDefinition> = emptyMap(),
+        val procedures: Map<String, ProcedureDefinition> = emptyMap(),
+        val triggers: Map<String, TriggerDefinition> = emptyMap(),
+    )
+
+    /**
+     * Funktionen, Prozeduren und Trigger samt Rumpf.
+     *
+     * Der Rumpf ist die vollstaendige `CREATE`-Anweisung, wie SQL Server sie
+     * gespeichert hat — nicht nur der Block dazwischen. `sourceDialect` haelt
+     * fest, woher er stammt: auf einem anderen Ziel ist er nicht gueltig.
+     */
+    private fun readRoutines(
+        session: JdbcOperations,
+        schema: String,
+        options: SchemaReadOptions,
+    ): Routines {
+        val rows = MssqlMetadataQueries.listRoutines(session, schema)
+        val functions = mutableMapOf<String, FunctionDefinition>()
+        val procedures = mutableMapOf<String, ProcedureDefinition>()
+        val triggers = mutableMapOf<String, TriggerDefinition>()
+
+        for (row in rows) {
+            when (row.type) {
+                "P" -> if (options.includeProcedures) {
+                    procedures[row.name] = ProcedureDefinition(
+                        body = row.definition,
+                        language = "sql",
+                        sourceDialect = "mssql",
+                    )
+                }
+                "FN", "IF", "TF" -> if (options.includeFunctions) {
+                    functions[row.name] = FunctionDefinition(
+                        body = row.definition,
+                        language = "sql",
+                        sourceDialect = "mssql",
+                    )
+                }
+                "TR" -> if (options.includeTriggers) {
+                    val table = row.table ?: continue
+                    triggers[row.name] = TriggerDefinition(
+                        table = table,
+                        events = triggerEvents(row),
+                        // SQL Server kennt kein BEFORE: `AFTER` und
+                        // `INSTEAD OF` sind die beiden Zeitpunkte.
+                        timing = if (row.isInsteadOf) TriggerTiming.INSTEAD_OF else TriggerTiming.AFTER,
+                        // T-SQL-Trigger feuern je Anweisung, nicht je Zeile.
+                        forEach = TriggerForEach.STATEMENT,
+                        body = row.definition,
+                        sourceDialect = "mssql",
+                    )
+                }
+            }
+        }
+        return Routines(functions, procedures, triggers)
+    }
+
+    private fun triggerEvents(row: MssqlMetadataQueries.RoutineRow): Set<TriggerEvent> = buildSet {
+        if (row.isInsert) add(TriggerEvent.INSERT)
+        if (row.isUpdate) add(TriggerEvent.UPDATE)
+        if (row.isDelete) add(TriggerEvent.DELETE)
+    }
+
     private fun noteUnreadObjects(
         session: JdbcOperations,
         schema: String,
@@ -363,7 +438,7 @@ class MssqlSchemaReader(
             skipped += SkippedObject(
                 type = kind,
                 name = name,
-                reason = "Not read for mssql (MSSQL rollout, ADR 0047).",
+                reason = "No readable T-SQL body: the routine is CLR-based or was created WITH ENCRYPTION.",
                 code = "R342",
             )
         }
@@ -372,8 +447,8 @@ class MssqlSchemaReader(
                 severity = SchemaReadSeverity.WARNING,
                 code = "R342",
                 objectName = schema,
-                message = "${names.size} $kind object(s) exist but are not read for mssql " +
-                    "(MSSQL rollout, ADR 0047): ${names.joinToString(", ")}.",
+                message = "${names.size} $kind object(s) carry no readable T-SQL body (CLR-based or " +
+                    "created WITH ENCRYPTION) and were skipped: ${names.joinToString(", ")}.",
             )
         }
     }

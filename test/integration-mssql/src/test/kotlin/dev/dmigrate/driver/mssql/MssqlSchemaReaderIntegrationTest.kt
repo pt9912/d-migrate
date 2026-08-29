@@ -3,6 +3,9 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IdentityMode
+import dev.dmigrate.core.model.TriggerEvent
+import dev.dmigrate.core.model.TriggerForEach
+import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.PartitionConfig
@@ -183,7 +186,7 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    test("schema reverse reads tables, sequences, views and flags unread routines") {
+    test("schema reverse reads tables, sequences, views and routines") {
         HikariConnectionPoolFactory.create(config).use { pool ->
             val result = MssqlSchemaReader().read(pool)
 
@@ -228,8 +231,11 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
             result.schema.views.getValue("v_active").query.shouldNotBeNull() strShouldContain "SELECT"
 
-            result.skippedObjects.map { it.name } shouldContain "usp_noop"
-            result.notes.first { it.code == "R342" }.message strShouldContain "usp_noop"
+            // Seit Sub-Slice 9a wird der Rumpf gelesen, statt die Routine als
+            // ungelesen zu melden. `R342` bleibt fuer das, was wirklich keinen
+            // T-SQL-Rumpf hat (CLR, WITH ENCRYPTION).
+            result.schema.procedures.getValue("usp_noop").body.shouldNotBeNull() strShouldContain "SELECT"
+            result.skippedObjects.map { it.name } shouldNotContain "usp_noop"
         }
     }
 
@@ -581,6 +587,55 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
                             "DROP PARTITION SCHEME ps_hash_events")
                         stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_functions WHERE name = 'pf_hash_events') " +
                             "DROP PARTITION FUNCTION pf_hash_events")
+                    }
+                }
+            }
+        }
+    }
+
+    // Sub-Slice 9a: der Reverse liest Routinen-Ruempfe aus `sys.sql_modules`.
+    // Vorher meldete er sie pauschal als ungelesen (R342), und der Diff blockte
+    // mangels Rumpf.
+    test("routine and trigger bodies are read back") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("CREATE TABLE audit_src (id INT NOT NULL PRIMARY KEY, note NVARCHAR(50))")
+                        stmt.execute(
+                            "CREATE FUNCTION dbo.fn_double (@x INT) RETURNS INT AS BEGIN RETURN @x * 2 END",
+                        )
+                        stmt.execute("CREATE PROCEDURE dbo.sp_touch AS SELECT 1")
+                        stmt.execute(
+                            "CREATE TRIGGER trg_audit ON audit_src AFTER INSERT, UPDATE AS SELECT 1",
+                        )
+                    }
+                }
+
+                val result = MssqlSchemaReader().read(pool)
+
+                result.schema.functions.getValue("fn_double").body
+                    .shouldNotBeNull() strShouldContain "@x * 2"
+                result.schema.functions.getValue("fn_double").sourceDialect shouldBe "mssql"
+                result.schema.procedures.getValue("sp_touch").body
+                    .shouldNotBeNull() strShouldContain "SELECT 1"
+
+                val trigger = result.schema.triggers.getValue("trg_audit")
+                trigger.table shouldBe "audit_src"
+                trigger.timing shouldBe TriggerTiming.AFTER
+                trigger.events shouldBe setOf(TriggerEvent.INSERT, TriggerEvent.UPDATE)
+                // T-SQL-Trigger feuern je Anweisung, nicht je Zeile.
+                trigger.forEach shouldBe TriggerForEach.STATEMENT
+
+                // Und R342 meldet sie nicht mehr als ungelesen.
+                result.skippedObjects.none { it.name in setOf("fn_double", "sp_touch", "trg_audit") } shouldBe true
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        runCatching { stmt.execute("DROP TRIGGER trg_audit") }
+                        runCatching { stmt.execute("DROP PROCEDURE dbo.sp_touch") }
+                        runCatching { stmt.execute("DROP FUNCTION dbo.fn_double") }
+                        runCatching { stmt.execute("DROP TABLE audit_src") }
                     }
                 }
             }

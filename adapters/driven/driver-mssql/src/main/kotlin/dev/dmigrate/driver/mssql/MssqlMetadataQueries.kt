@@ -434,13 +434,74 @@ internal object MssqlMetadataQueries {
      * inklusive der CLR-Varianten (PC/FS/FT/TA), damit kein Objekt still
      * aus dem Ergebnis fällt.
      */
+    /**
+     * Eine gelesene Routine: Rumpf aus `sys.sql_modules`, plus die
+     * Trigger-Angaben, die nur fuer `TR` gefuellt sind.
+     */
+    data class RoutineRow(
+        val type: String,
+        val name: String,
+        val definition: String,
+        val table: String?,
+        val isInsert: Boolean,
+        val isUpdate: Boolean,
+        val isDelete: Boolean,
+        val isInsteadOf: Boolean,
+    )
+
+    /**
+     * Funktionen, Prozeduren und Trigger mit T-SQL-Rumpf.
+     *
+     * Der `JOIN` auf `sys.sql_modules` schliesst CLR-Routinen aus: ihr Code
+     * liegt in einer Assembly und steht dort nicht. Genau diese bleiben
+     * ungelesen und werden weiterhin gemeldet.
+     */
+    fun listRoutines(session: JdbcOperations, schema: String): List<RoutineRow> = session.queryList(
+        """
+        SELECT o.type AS object_type, o.name AS object_name, m.definition,
+               OBJECT_NAME(o.parent_object_id) AS parent_name,
+               OBJECTPROPERTY(o.object_id, 'ExecIsInsertTrigger') AS is_insert,
+               OBJECTPROPERTY(o.object_id, 'ExecIsUpdateTrigger') AS is_update,
+               OBJECTPROPERTY(o.object_id, 'ExecIsDeleteTrigger') AS is_delete,
+               OBJECTPROPERTY(o.object_id, 'ExecIsInsteadOfTrigger') AS is_instead_of
+        FROM sys.objects o
+        JOIN sys.sql_modules m ON m.object_id = o.object_id
+        WHERE o.schema_id = SCHEMA_ID(?) AND o.is_ms_shipped = 0
+          AND o.type IN ('P', 'FN', 'IF', 'TF', 'TR')
+        ORDER BY o.type, o.name
+        """.trimIndent(),
+        schema,
+    ).mapNotNull { row ->
+        val definition = row["definition"]?.toString() ?: return@mapNotNull null
+        RoutineRow(
+            type = row.string("object_type").trim(),
+            name = row.string("object_name"),
+            definition = definition,
+            table = row["parent_name"]?.toString(),
+            isInsert = row.int("is_insert") == 1,
+            isUpdate = row.int("is_update") == 1,
+            isDelete = row.int("is_delete") == 1,
+            isInsteadOf = row.int("is_instead_of") == 1,
+        )
+    }
+
+    /**
+     * Routinen **ohne** lesbaren T-SQL-Rumpf.
+     *
+     * Zwei Faelle fallen darunter, und beide bleiben ungelesen: CLR-Routinen
+     * (`PC`, `FS`, `FT`, `TA`) haben gar keine `sys.sql_modules`-Zeile, ihr Code
+     * liegt in einer .NET-Assembly; verschluesselte Routinen (`WITH ENCRYPTION`)
+     * haben eine Zeile, aber `definition IS NULL`. Der `LEFT JOIN` faengt beide.
+     */
     fun listUnreadObjects(session: JdbcOperations, schema: String): List<UnreadObject> =
         session.queryList(
             """
             SELECT o.type AS object_type, o.name AS object_name
             FROM sys.objects o
+            LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
             WHERE o.schema_id = SCHEMA_ID(?) AND o.is_ms_shipped = 0
               AND o.type IN ('P', 'PC', 'FN', 'FS', 'FT', 'IF', 'TF', 'TR', 'TA')
+              AND m.definition IS NULL
             ORDER BY o.type, o.name
             """.trimIndent(),
             schema,

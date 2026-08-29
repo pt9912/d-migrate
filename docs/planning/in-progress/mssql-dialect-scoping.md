@@ -873,6 +873,29 @@ PostgreSQL es täte — „body is unknown", nicht „dialect unsupported".
   View-Bodies löst das `ViewQueryTransformer.assessPortability`; für
   Routinen-Rümpfe gibt es kein Gegenstück, auch nicht bei PostgreSQL.
 
+#### Schnitt
+
+Die Reihenfolge folgt der Analyse oben: der Reverse ist der Engpass, alles
+andere hängt daran.
+
+| Sub-Slice | Inhalt | Fertig, wenn |
+| --- | --- | --- |
+| **9a** ✅ | Reverse liest Rümpfe aus `sys.sql_modules` (Funktionen, Prozeduren, Trigger) samt Trigger-Tabelle, -Zeitpunkt und -Ereignissen | Live belegt. `R342` schrumpft auf das, was wirklich keinen T-SQL-Rumpf hat — und das sind **zwei** Fälle, nicht einer: CLR-Routinen (keine `sql_modules`-Zeile) und `WITH ENCRYPTION` (Zeile mit `definition IS NULL`). Der zweite wäre sonst still verschwunden. Festgehalten: T-SQL-Trigger feuern je **Anweisung**, und SQL Server kennt kein `BEFORE` — nur `AFTER` und `INSTEAD OF` |
+| **9b** | Generate rendert `CREATE OR ALTER` statt `E053` | `schema generate --target mssql` erzeugt Routinen, die der Server annimmt |
+| **9c** | Diff/Migrate | `schema migrate` legt Routinen an, ersetzt und entfernt sie |
+
+**Was `R342` behalten muss:** CLR-basierte Routinen (`PC`, `FS`, `FT`, `TA`)
+haben keinen T-SQL-Rumpf — ihr Code liegt in einer .NET-Assembly und steht
+nicht in `sys.sql_modules`. Sie bleiben ungelesen, aber mit einem eigenen
+Grund statt des pauschalen „wird für MSSQL nicht gelesen".
+
+**Die Modell-Frage bleibt offen und gehört nicht in diesen Slice:** ein
+reverse-gelesener T-SQL-Rumpf ist auf keinem anderen Ziel gültig. Für
+View-Bodies gibt es `ViewQueryTransformer.assessPortability`, für
+Routinen-Rümpfe kein Gegenstück — auch nicht bei PostgreSQL. Slice 9 macht die
+Rümpfe lesbar und schreibbar; ob und wie sie *übersetzt* werden, ist eine
+cross-dialektale Frage.
+
 ### Slice 10 — Profiling
 
 - `DialectCommandGate` weist `data profile` weiterhin ab; das ist nach Slice 5
