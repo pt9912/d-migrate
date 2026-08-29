@@ -95,17 +95,7 @@ internal object MssqlDiffObjectOps {
         // DDL unveraendert, es ist nur nicht ueber `schema migrate` anwendbar,
         // solange der Runner keine Ausfuehrung ausserhalb seiner Transaktion
         // kennt (`MigrationStreamClassifier` weist NO_TRANSACTION heute ab).
-        if (index.type == IndexType.FULLTEXT) {
-            ctx.skip(
-                op,
-                "Operation ${op.id} would create a full-text index on '$table'. SQL Server refuses " +
-                    "CREATE FULLTEXT INDEX inside a transaction, and the migration runs in one. Generate the " +
-                    "DDL with `schema generate --target mssql` and apply it outside a transaction.",
-                code = "E072",
-            )
-            ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-            return null
-        }
+        if (index.type == IndexType.FULLTEXT) return blockFullTextInTransaction(op, ctx, table, "create")
         val schema = ctx.schemaForDirection()
         val effectiveTable = tableDef ?: schema?.tables?.get(table)
         if (schema == null || effectiveTable == null) {
@@ -189,18 +179,40 @@ internal object MssqlDiffObjectOps {
         ctx.emit(op, sql)
     }
 
+    /**
+     * Volltext-DDL ist in einer offenen Transaktion verboten — Anlegen wie
+     * Loeschen, Index wie Katalog. Der Migrationslauf klammert seine Statements
+     * in genau eine, also bricht er ab, statt mittendrin an einer Servermeldung
+     * zu scheitern.
+     */
+    internal fun blockFullTextInTransaction(
+        op: DiffOperation,
+        ctx: MssqlDiffRenderContext,
+        table: String,
+        verb: String,
+    ): String? {
+        ctx.skip(
+            op,
+            "Operation ${op.id} would $verb a full-text index on '$table'. SQL Server refuses full-text DDL " +
+                "inside a transaction, and the migration runs in one. Generate the DDL with " +
+                "`schema generate --target mssql` and apply it outside a transaction.",
+            code = "E072",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+        return null
+    }
+
     private fun emitDropIndex(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
         table: String,
         index: IndexDefinition,
     ) {
-        // Volltext hat eine eigene Loesch-Syntax: `DROP FULLTEXT INDEX ON t`
-        // ohne Indexnamen, und der Katalog geht nicht mit — er ist ein
-        // eigenstaendiges Objekt (am Server gemessen: er ueberlebt sogar
-        // `DROP TABLE`).
+        // Auch der Rueckbau geht nicht: `DROP FULLTEXT INDEX` und
+        // `DROP FULLTEXT CATALOG` sind in einer offenen Transaktion genauso
+        // verboten wie das Anlegen.
         if (index.type == IndexType.FULLTEXT) {
-            MssqlFullTextDdl.dropStatements(table, ctx.sql::quote).forEach { ctx.emit(op, it) }
+            blockFullTextInTransaction(op, ctx, table, "drop")
             return
         }
         ctx.emit(op, ctx.sql.dropIndexSql(table, index))

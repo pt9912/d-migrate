@@ -19,6 +19,8 @@ Am Server gemessen, mit offener Transaktion:
 | --- | --- |
 | `IF NOT EXISTS … CREATE FULLTEXT CATALOG` | geht |
 | `CREATE FULLTEXT INDEX` | **abgelehnt** |
+| `DROP FULLTEXT INDEX` | **abgelehnt** |
+| `DROP FULLTEXT CATALOG` | **abgelehnt** |
 
 Eine Migration ist damit gemischt: ein Statement muss außerhalb laufen, der
 Rest innerhalb. Genau das nennt der Klassifikator „mixed transaction scopes are

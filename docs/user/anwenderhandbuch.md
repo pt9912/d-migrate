@@ -2675,9 +2675,9 @@ Spalten-Fremdschlüssel über `references`:
 | `full_text_access_method` | PostgreSQL: `gin` oder `gist` |
 
 **Volltext bei SQL Server lässt sich nur über `schema generate` einrichten,
-nicht über `schema migrate`.** Der Server verbietet `CREATE FULLTEXT INDEX`
-innerhalb einer Transaktion, und `schema migrate` führt seine Anweisungen in
-genau einer aus. Der Lauf bricht deshalb mit **E072** ab, **bevor** er etwas
+nicht über `schema migrate`.** Der Server verbietet Volltext-DDL innerhalb einer
+Transaktion — Anlegen wie Löschen —, und `schema migrate` führt seine
+Anweisungen in genau einer aus. Der Lauf bricht deshalb mit **E072** ab, **bevor** er etwas
 anwendet — erzeugen Sie das DDL mit `schema generate --target mssql` und wenden
 Sie es außerhalb einer Transaktion an (etwa mit `sqlcmd`).
 

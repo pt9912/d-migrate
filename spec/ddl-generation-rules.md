@@ -588,13 +588,13 @@ CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
   beides, und beide Richtungen sind bedingt formuliert: der Katalog überlebt
   einen Tabellen-Neubau, ein unbedingtes `CREATE` scheiterte dort am schon
   vorhandenen Namen.
-- **`schema migrate` wendet Volltext nicht an.** SQL Server weist
-  `CREATE FULLTEXT INDEX` in einer offenen Transaktion ab, und der
-  Migrationslauf klammert seine Statements in genau eine; der Katalog dürfte
-  hinein, der Index nicht. Der Lauf bricht deshalb **vor** der Ausführung mit
-  `E072` ab und nennt den Weg: `schema generate` und das DDL außerhalb einer
-  Transaktion anwenden. Das ist keine Eigenschaft des Renderers, sondern eine
-  des Servers.
+- **`schema migrate` wendet Volltext nicht an — in keiner Richtung.** SQL Server
+  weist Volltext-DDL in einer offenen Transaktion ab (`CREATE FULLTEXT INDEX`,
+  `DROP FULLTEXT INDEX`, `DROP FULLTEXT CATALOG`; nur das Anlegen des Katalogs
+  wäre erlaubt), und der Migrationslauf klammert seine Statements in genau eine.
+  Der Lauf bricht deshalb **vor** der Ausführung mit `E072` ab und nennt den
+  Weg: `schema generate` und das DDL außerhalb einer Transaktion anwenden. Das
+  ist keine Eigenschaft des Renderers, sondern eine des Servers.
 - Beim **Zurücklesen** gilt: SQL Server benennt Volltext-Indizes nicht
   (`CREATE FULLTEXT INDEX ON t` kennt keinen Namen). Der Reverse vergibt
   `ft_<tabelle>` und meldet das mit `R348` — dieselbe Lage wie bei den

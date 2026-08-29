@@ -58,13 +58,6 @@ internal object MssqlDiffTableOps {
             // an der Function, die Tabelle am Scheme.
             val created = hashOutcome is MssqlHashPartitionOutcome.Planned ||
                 (partitioning != null && MssqlPartitionDdl.isRenderable(partitioning))
-            // Der Volltext-Katalog ist genauso eigenstaendig: `DROP TABLE`
-            // entfernt den Index, den Katalog laesst es stehen.
-            if (op.table.indices.any { it.type == IndexType.FULLTEXT }) {
-                MssqlFullTextDdl.dropStatements(table, ctx.sql::quote)
-                    .filter { it.contains("FULLTEXT CATALOG") }
-                    .forEach { ctx.emit(op, it) }
-            }
             if (created) {
                 ctx.emit(op, "DROP PARTITION SCHEME ${ctx.sql.quote(MssqlPartitionDdl.schemeName(table))};")
                 ctx.emit(op, "DROP PARTITION FUNCTION ${ctx.sql.quote(MssqlPartitionDdl.functionName(table))};")
@@ -368,6 +361,7 @@ internal object MssqlDiffTableOps {
             ctx.schemaBeforeChange(),
         )
         val out = mutableListOf<String>()
+        if (MssqlDiffColumnDependencies.carriesFullText(deps)) return null
         out += MssqlDiffColumnDependencies.dropStatements(ctx, deps)
         if (bearingChecks.isNotEmpty() || checks.isNotEmpty()) {
             out += ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column))
@@ -440,6 +434,10 @@ internal object MssqlDiffTableOps {
         // Nur abraeumen, nicht wieder anlegen: die Spalte, auf der die Objekte
         // hingen, gibt es danach nicht mehr.
         val deps = dependenciesFor(ctx, table, column, forDrop = true)
+        if (MssqlDiffColumnDependencies.carriesFullText(deps)) {
+            MssqlDiffObjectOps.blockFullTextInTransaction(op, ctx, deps.table, "drop")
+            return
+        }
         MssqlDiffColumnDependencies.dropStatements(ctx, deps).forEach { ctx.emit(op, it) }
         // Wie beim ALTER COLUMN: der generierte CHECK haengt an der Spalte und
         // steht in keiner Modell-Liste. `DROP COLUMN` scheitert an ihm ebenso

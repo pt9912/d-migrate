@@ -211,6 +211,30 @@ class MssqlFullTextTest : FunSpec({
         result.diagnostics.map { it.code } shouldContain "E072"
     }
 
+    // Die Behebung war zunaechst halb: das Anlegen blockte, die Loeschpfade
+    // emittierten weiter. Am Server gemessen ist BEIDES in einer Transaktion
+    // verboten — Index wie Katalog.
+    test("the migration path refuses dropping a full-text index too") {
+        val planner = dev.dmigrate.core.diff.migration.DiffPlanner()
+        val t = table()
+        val current = SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to t))
+        val result = MssqlDiffDdlGenerator().generateUp(
+            planner.plan(
+                current,
+                SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to t.copy(indices = emptyList()))),
+                dev.dmigrate.core.diff.SchemaDiff(
+                    tablesChanged = listOf(
+                        dev.dmigrate.core.diff.TableDiff(name = "docs", indicesRemoved = listOf(ftIndex)),
+                    ),
+                ),
+            ),
+            DdlGenerationOptions(),
+        )
+
+        result.statements.map { it.sql }.none { it.contains("FULLTEXT") } shouldBe true
+        result.diagnostics.map { it.code } shouldContain "E072"
+    }
+
     test("the teardown drops index and catalog — DROP TABLE leaves the catalog behind") {
         MssqlFullTextDdl.dropStatements("docs") { "[$it]" } shouldBe listOf(
             "IF EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('docs')) " +

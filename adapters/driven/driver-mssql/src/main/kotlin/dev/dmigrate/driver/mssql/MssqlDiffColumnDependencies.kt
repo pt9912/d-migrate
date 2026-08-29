@@ -260,6 +260,14 @@ internal object MssqlDiffColumnDependencies {
      * dann die Constraints der Tabelle, zuletzt die Indizes — ein Index, der
      * einen Constraint traegt, verschwindet mit ihm.
      */
+    /**
+     * Ob an der Spalte ein Volltext-Index haengt. Der Aufrufer muss das vor
+     * [dropStatements] pruefen: Volltext-DDL ist in der Transaktion des Laufs
+     * verboten, und hier steht kein Operationskontext zum Blocken bereit.
+     */
+    fun carriesFullText(deps: ColumnDependencies): Boolean =
+        deps.indices.any { it.type == IndexType.FULLTEXT }
+
     fun dropStatements(ctx: MssqlDiffRenderContext, deps: ColumnDependencies): List<String> {
         if (deps.isEmpty) return emptyList()
         val out = mutableListOf<String>()
@@ -273,14 +281,10 @@ internal object MssqlDiffColumnDependencies {
         if (deps.hasColumnUnique) out += ctx.sql.dropUniqueOnColumnSql(deps.table, deps.column)
         if (deps.hasColumnReference) out += ctx.sql.dropForeignKeyOnColumnSql(deps.table, deps.column)
         for (index in deps.indices) {
-            // Volltext hat eine eigene Loesch-Syntax; `DROP INDEX <name> ON <t>`
-            // ist dafuer ungueltig und laesst das nachfolgende ALTER COLUMN an
-            // dem noch haengenden Index scheitern.
-            if (index.type == IndexType.FULLTEXT) {
-                out += MssqlFullTextDdl.dropStatements(deps.table, ctx.sql::quote)
-            } else {
-                out += ctx.sql.dropIndexSql(deps.table, index)
-            }
+            // Volltext-DDL ist in der Transaktion des Laufs verboten. Hier
+            // steht kein Operationskontext zum Blocken zur Verfuegung; der
+            // Aufrufer fragt deshalb vorher [carriesFullText].
+            out += ctx.sql.dropIndexSql(deps.table, index)
         }
         return out
     }
