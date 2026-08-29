@@ -48,3 +48,18 @@ jobs:
 
       - name: Resolve and submit dependency graph
         uses: gradle/actions/dependency-submission@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        # Gemeldet wird, was ausgeliefert wird: die Distribution entsteht aus
+        # `:adapters:driving:cli:installDist`, also aus `runtimeClasspath`.
+        # Ohne Filter meldet die Action JEDEN aufloesbaren Klassenpfad — Test-
+        # und Build-Script-Konfigurationen eingeschlossen; Scopes, die das
+        # trennen wuerden, kennt das Format nicht.
+        #
+        # Build-Zeit-Abhaengigkeiten bleiben trotzdem sichtbar: dependabot.yml
+        # faehrt woechentliche `gradle`-Versions-Updates.
+        #
+        # Die Anker sind Absicht. Die Doku legt nicht fest, ob die Regexe voll
+        # oder teilweise matchen — `^runtimeClasspath$` trifft in beiden Faellen
+        # genau diese eine Konfiguration und nie `testRuntimeClasspath`.
+        with:
+          dependency-graph-include-configurations: '^runtimeClasspath$'
+          dependency-graph-exclude-projects: '^:test:.*'
