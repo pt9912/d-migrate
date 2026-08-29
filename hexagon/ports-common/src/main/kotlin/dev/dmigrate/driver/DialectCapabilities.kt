@@ -141,8 +141,7 @@ data class DialectCapabilities(
             )
             // Objekttyp-Flags = Faehigkeiten von SQL Server (2017+, ADR 0047);
             // die Import-Modus-Flags (FK-/Trigger-Disable) beschreiben den
-            // Werkzeug-Pfad und bleiben false, bis der Datenpfad sie baut
-            // (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 3).
+            // Werkzeug-Pfad, den d-migrate fuer MSSQL nicht faehrt.
             DatabaseDialect.MSSQL -> DialectCapabilities(
                 supportsViews = true,
                 supportsFunctions = true,

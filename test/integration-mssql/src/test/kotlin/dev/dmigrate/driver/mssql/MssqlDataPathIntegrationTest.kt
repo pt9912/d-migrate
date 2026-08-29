@@ -21,8 +21,7 @@ import io.kotest.matchers.shouldBe
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
-// Slice 3 (docs/planning/in-progress/mssql-dialect-scoping.md): Datenpfad gegen
-// echtes SQL Server 2022 — IDENTITY_INSERT, MERGE-Konfliktmodi, DBCC-Reseed,
+// Datenpfad gegen echtes SQL Server 2022 — IDENTITY_INSERT, MERGE-Konfliktmodi, DBCC-Reseed,
 // gefilterter Index (SET-Optionen) und Geometrie-WKB-Round-Trip.
 class MssqlDataPathIntegrationTest : FunSpec({
 

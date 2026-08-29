@@ -133,8 +133,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("AlterColumnType renders the three-step and keeps NOT NULL") {
-        // Der eigentliche Regressionsschutz: ALTER COLUMN ist in T-SQL eine
-        // Voll-Neudeklaration. Ohne das NOT NULL aus dem Soll-Schema waere die
+        // ALTER COLUMN ist in T-SQL eine Voll-Neudeklaration. Ohne das NOT NULL aus dem Soll-Schema waere die
         // Spalte nach der Migration still nullable.
         val desired = schema(
             "users" to TableDefinition(
@@ -296,10 +295,10 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("AlterColumnDefault without a resolvable type blocks cleanly instead of crashing") {
-        // Regression: das DROP wurde frueher VOR der Typaufloesung emittiert.
-        // Damit lag die Operation in `rendered` UND `skipped`, und
+        // Der Typ muss aufgeloest sein, BEVOR das DROP emittiert wird: sonst
+        // liegt die Operation in `rendered` UND `skipped`, und
         // MigrationDdlResult erzwingt per require(), dass die Mengen disjunkt
-        // sind — der Renderer flog mit IllegalArgumentException statt einen
+        // sind — der Renderer flaege mit IllegalArgumentException statt einen
         // Blocker zu liefern.
         val diff = SchemaDiff(
             tablesChanged = listOf(
@@ -424,7 +423,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("a filtered index carries the SET options into its own statement") {
-        // Im Skript setzt Slice 2a sie als eigenen Batch voran; der Migrate-Pfad
+        // Im Skript stehen sie als eigener Batch voran; der Migrate-Pfad
         // fuehrt einzeln aus und saehe die Praeambel nie — ohne die Optionen
         // scheitert der Index mit Msg 1934.
         val idx = IndexDefinition(
@@ -472,8 +471,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
-    // Seit Sub-Slice 7c rendert dieser Pfad RANGE-Partitionierung. Was bleibt,
-    // ist der Fall, den SQL Server nicht ausdruecken kann — hier: eine
+    // Dieser Pfad rendert RANGE-Partitionierung. Was er nicht rendert, ist der Fall, den SQL Server nicht ausdruecken kann — hier: eine
     // RANGE-Definition ohne Kinder.
     test("partitioning SQL Server cannot express still blocks") {
         val t = TableDefinition(
@@ -514,8 +512,8 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("a table whose index cannot be rendered blocks before anything is emitted") {
-        // Regression: der Volltext-Index blockte NACH dem CREATE TABLE — damit
-        // lag die Operation in `rendered` UND `skipped`, und MigrationDdlResult
+        // Ein nicht renderbarer Index muss VOR dem CREATE TABLE blocken: sonst
+        // liegt die Operation in `rendered` UND `skipped`, und MigrationDdlResult
         // erzwingt per require(), dass die Mengen disjunkt sind.
         val idx = IndexDefinition(name = "ft", columns = listOf(IndexColumn("bio")), type = IndexType.FULLTEXT)
         val t = TableDefinition(
@@ -557,10 +555,10 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("dropping a column finds its dependents in the schema that still describes it") {
-        // Regression: die Abhaengigkeiten wurden im Schema der Renderrichtung
-        // gesucht — bei einem DROP also im Soll-Schema, in dem die Spalte samt
-        // ihrer Indizes gerade nicht mehr steht. Der Abraeum-Code lief damit
-        // immer leer und DROP COLUMN scheiterte an Msg 5074.
+        // Abhaengigkeiten stehen im Schema, das die Spalte noch beschreibt —
+        // bei einem DROP also im Ist-Schema, nicht im Soll. Im Soll steht sie
+        // samt ihrer Indizes nicht mehr, der Abraeum-Code liefe leer und
+        // DROP COLUMN scheiterte an Msg 5074.
         val before = schema(
             "users" to TableDefinition(
                 columns = mapOf("nick" to ColumnDefinition(NeutralType.Text(50))),

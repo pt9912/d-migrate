@@ -134,7 +134,7 @@ class MssqlDdlGenerator private constructor(
         val notes = mutableListOf<TransformationNote>()
         val lines = mutableListOf<String>()
 
-        // Sub-Slice 7d: HASH-Emulation. Sie greift VOR allem anderen, weil sie
+        // Die HASH-Emulation greift VOR allem anderen, weil sie
         // die eindeutigen Schluessel der Tabelle veraendert — SQL Server
         // verlangt die Partitionsspalte in jedem davon. Ab hier arbeitet die
         // Methode mit `effective`, nicht mit `table`.

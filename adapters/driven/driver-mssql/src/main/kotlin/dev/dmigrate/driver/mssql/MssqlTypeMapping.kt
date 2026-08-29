@@ -13,8 +13,7 @@ import dev.dmigrate.driver.SchemaReadSeverity
  * T-SQL → NeutralType mapping plus default-constraint parsing for the
  * MSSQL reverse read.
  *
- * Mapping decisions from the scoping plan
- * (docs/planning/in-progress/mssql-dialect-scoping.md): `bit` folds to
+ * `bit` folds to
  * [NeutralType.BooleanType], `uniqueidentifier` to [NeutralType.Uuid],
  * Unicode and non-Unicode text both fold to the neutral text family
  * (the generate direction renders `NVARCHAR`), `datetimeoffset` is the
@@ -318,7 +317,6 @@ internal object MssqlTypeMapping {
      *   traegt jedes andere Ziel T-SQL-Quoting im CHECK und scheitert an der
      *   Syntax.
      *
-     * Beides live am Pagila-Leg gefunden (`[rating]=N'NC-17' OR …`, Slice 4).
      * Der Ausdruck bleibt ansonsten unveraendert — das neutrale Modell
      * transpiliert CHECK-Ausdruecke nicht.
      *

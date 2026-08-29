@@ -45,7 +45,7 @@ class MssqlSchemaReaderTest : FunSpec({
         every {
             jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("m.definition IS NULL") }, any())
         } returns emptyList()
-        // Slice 9a: gelesene Routinen und ihre Parameter — diese Specs decken
+        // Gelesene Routinen und ihre Parameter — diese Specs decken
         // sie nicht ab und lesen sie als leer.
         every {
             jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("JOIN sys.sql_modules m") &&
@@ -323,7 +323,7 @@ class MssqlSchemaReaderTest : FunSpec({
         boundedSeq.cycle shouldBe true
     }
 
-    // Slice 9a: Signatur aus `sys.parameters`, Rumpf aus dem Definitionstext.
+    // Signatur aus `sys.parameters`, Rumpf aus dem Definitionstext.
     test("routines are read with parameters from the catalog and the body cut at the top-level AS") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
@@ -430,9 +430,8 @@ class MssqlSchemaReaderTest : FunSpec({
         result.notes.any { it.code == "R349" } shouldBe true
     }
 
-    // Alle drei fielen vorher still aus dem Ergebnis oder — bei `EXECUTE AS` —
-    // mit falsch geschnittenem Rumpf hinein. Der letzte Fall ist ein Trigger,
-    // dessen Elterntabelle `OBJECT_NAME` nicht aufloesen konnte.
+    // Drei Konstrukte ohne Feld im neutralen Modell. Der letzte Fall ist ein
+    // Trigger, dessen Elterntabelle `OBJECT_NAME` nicht aufloesen konnte.
     test("options clause, table-valued parameter and unresolvable parent are reported instead of guessed") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)

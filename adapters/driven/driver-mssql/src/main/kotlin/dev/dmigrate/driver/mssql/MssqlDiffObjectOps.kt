@@ -16,8 +16,8 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * Zwei T-SQL-Eigenheiten bestimmen den Inhalt:
  *
  * 1. **Gefilterte Indizes brauchen SET-Optionen zur DDL-Zeit** (Msg 1934).
- *    Slice 2a loest das fuer die Skript-Darstellung ueber eine Praeambel und
- *    Slice 3 fuer die Import-Session; der Migrate-Pfad fuehrt Statements
+ *    Die Skript-Darstellung setzt sie ueber eine Praeambel, die
+ *    Import-Session ueber ihre Verbindung; der Migrate-Pfad fuehrt Statements
  *    einzeln ueber den Runner aus und ist von beidem nicht abgedeckt. Das
  *    gerenderte Statement traegt die Optionen deshalb selbst
  *    ([MssqlDiffSqlBuilders.withFilteredIndexSetOptions]).

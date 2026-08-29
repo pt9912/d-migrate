@@ -16,9 +16,8 @@ import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
 /**
- * Slice 4 (docs/planning/in-progress/mssql-dialect-scoping.md): proves the
- * MSSQL neutral-type projection against a REAL SQL Server instead of against
- * a second hand-written flattening table.
+ * Proves the MSSQL neutral-type projection against a REAL SQL Server instead
+ * of against a second hand-written flattening table.
  *
  * For every neutral type the test renders the column the generator would
  * write, creates it, reads it back with [MssqlSchemaReader], and asserts the

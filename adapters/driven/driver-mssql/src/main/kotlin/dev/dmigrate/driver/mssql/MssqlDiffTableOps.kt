@@ -39,7 +39,7 @@ internal object MssqlDiffTableOps {
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: MssqlDiffRenderContext) {
         val table = op.objectRef.rootName
         val partitioning = op.table.partitioning
-        // Sub-Slice 7d: die HASH-Emulation greift vor allem anderen, weil sie die
+        // Die HASH-Emulation greift vor allem anderen, weil sie die
         // eindeutigen Schluessel veraendert — SQL Server verlangt die
         // Partitionsspalte in jedem davon. Sie steht auch VOR dem DOWN-Zweig:
         // der muss wissen, ob im Vorwaertslauf Function und Scheme entstanden

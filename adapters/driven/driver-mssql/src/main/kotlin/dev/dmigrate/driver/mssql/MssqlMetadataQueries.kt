@@ -11,8 +11,7 @@ import dev.dmigrate.driver.metadata.TableRef
  * Katalog-Queries für den MSSQL-Reverse-Read. Bewusst `sys.*`-Sichten
  * statt `INFORMATION_SCHEMA`: Identity-Metadaten (Seed/Increment),
  * Default-Constraint-Definitionen, gefilterte Indizes und Computed
- * Columns sind dort nicht (vollständig) sichtbar — das Risiko aus dem
- * Scoping-Plan (docs/planning/in-progress/mssql-dialect-scoping.md).
+ * Columns sind dort nicht (vollständig) sichtbar.
  */
 internal object MssqlMetadataQueries {
 
@@ -284,9 +283,9 @@ internal object MssqlMetadataQueries {
      * Ein Zeitstempel in der Form, die der PostgreSQL-Reverse liefert:
      * `2024-01-01 00:00:00`, Bruchteile nur wenn sie ungleich null sind.
      *
-     * `java.sql.Timestamp.toString()` haengt **immer** mindestens `.0` an -- gegen
-     * echtes SQL Server gemessen, nicht vermutet. Damit verglichen zwei identische
-     * Schemata ueber Dialekte hinweg als verschieden, denn der Comparator
+     * `java.sql.Timestamp.toString()` haengt **immer** mindestens `.0` an. Damit
+     * vergleichen sich zwei identische Schemata ueber Dialekte hinweg als
+     * verschieden, denn der Comparator
      * vergleicht das Literal zeichenweise und der Fingerabdruck projiziert es
      * woertlich (Vertrag in `MysqlPartitionBoundRenderer`).
      */

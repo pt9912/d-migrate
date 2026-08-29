@@ -157,8 +157,8 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
                         "CREATE TABLE daily_events (occurred_on DATE NOT NULL, note NVARCHAR(50)) " +
                             "ON ps_daily (occurred_on)",
                     )
-                    // Die beiden Typen, bei denen der Review Drift gegen die
-                    // PostgreSQL-Form vermutet — gemessen statt formatiert.
+                    // Die beiden Typen, deren Grenzliteral gegen die
+                    // PostgreSQL-Form driften kann.
                     stmt.execute(
                         "CREATE PARTITION FUNCTION pf_stamped (DATETIME2(0)) AS RANGE RIGHT " +
                             "FOR VALUES ('2024-01-01T00:00:00')",
@@ -232,9 +232,8 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
             result.schema.views.getValue("v_active").query.shouldNotBeNull() strShouldContain "SELECT"
 
-            // Seit Sub-Slice 9a wird der Rumpf gelesen, statt die Routine als
-            // ungelesen zu melden. `R342` bleibt fuer das, was wirklich keinen
-            // T-SQL-Rumpf hat (CLR, WITH ENCRYPTION).
+            // Der Rumpf wird gelesen; `R342` bleibt fuer das, was wirklich
+            // keinen T-SQL-Rumpf hat (CLR, WITH ENCRYPTION).
             result.schema.procedures.getValue("usp_noop()").body.shouldNotBeNull() strShouldContain "SELECT"
             result.skippedObjects.map { it.name } shouldNotContain "usp_noop"
         }
@@ -285,7 +284,7 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
     }
 
     test("datetime2 and decimal boundaries take the same shape PostgreSQL produces") {
-        // Beide Formen sind gegen echte Server gemessen, auf beiden Seiten:
+        // Beide Formen, wie die Server sie liefern:
         //
         // - `datetime2` kam als `'2024-01-01 00:00:00.0'` zurueck, weil
         //   `java.sql.Timestamp.toString()` immer eine Nachkommastelle anhaengt.
@@ -309,10 +308,9 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
     test("generated partition DDL applies, and a clustered index keeps the partitioning readable") {
         // Der Round-Trip in beide Richtungen: erzeugtes DDL anwenden, dann
-        // zurueckleben. Klaert zugleich die Frage, die der Review offenliess —
-        // ob eine Tabelle mit CLUSTERED Index (statt Heap) ihre
-        // Partitionierungsspalte ueber `partition_ordinal` findet. Alle
-        // bisherigen Testtabellen waren Heaps.
+        // zurueckleben. Deckt zugleich ab, dass eine Tabelle mit CLUSTERED
+        // Index (statt Heap) ihre Partitionierungsspalte ueber
+        // `partition_ordinal` findet.
         HikariConnectionPoolFactory.create(config).use { pool ->
             val desired = SchemaDefinition(
                 name = "gen", version = "1",
@@ -518,7 +516,7 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // Sub-Slice 7d: die HASH-Emulation gegen den echten Server. Der Beleg ist
+    // Die HASH-Emulation gegen den echten Server. Der Beleg ist
     // nicht das DDL, sondern dass der Server es annimmt UND die Zeilen sich
     // wirklich auf die Eimer verteilen — eine Emulation, die alles in eine
     // Partition legte, waere gueltiges DDL und trotzdem wertlos.

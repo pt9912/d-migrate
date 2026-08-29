@@ -30,12 +30,11 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
 /**
- * Sub-Slice 9c: Routinen und Trigger im Diff-Pfad.
+ * Routinen und Trigger im Diff-Pfad.
  *
- * Der rote Faden ist, dass Diff- und Generate-Pfad **dasselbe** Urteil faellen.
- * Beim Partitionieren war das einmal nicht so — der Generate-Pfad rendert, der
- * Diff-Pfad schwieg —, und niemand hat es gemerkt, weil beide fuer sich gruen
- * waren.
+ * Der rote Faden ist, dass Diff- und Generate-Pfad **dasselbe** Urteil faellen:
+ * zwei getrennte Urteile ueber dieselbe Frage koennen auseinanderlaufen, ohne
+ * dass eine der beiden Seiten rot wird.
  */
 class MssqlDiffRoutineOpsTest : FunSpec({
 

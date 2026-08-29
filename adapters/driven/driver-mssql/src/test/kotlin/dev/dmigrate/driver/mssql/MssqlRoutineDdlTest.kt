@@ -55,8 +55,8 @@ class MssqlRoutineDdlTest : FunSpec({
         MssqlRoutineDdl.procedureSql("p", proc, "BEGIN END", quote) shouldContain "(@id INT, @id2 INT)"
     }
 
-    // Live gemessen: `CREATE PROCEDURE p () AS` scheitert an
-    // „Incorrect syntax near ')'"; Funktionen verlangen die Klammern dagegen.
+    // `CREATE PROCEDURE p () AS` scheitert an „Incorrect syntax near ')'";
+    // Funktionen verlangen die Klammern dagegen immer.
     test("a parameterless procedure renders without parentheses, a function with them") {
         MssqlRoutineDdl.procedureSql("p", ProcedureDefinition(), "BEGIN END", quote) shouldContain
             "CREATE OR ALTER PROCEDURE [p] AS"

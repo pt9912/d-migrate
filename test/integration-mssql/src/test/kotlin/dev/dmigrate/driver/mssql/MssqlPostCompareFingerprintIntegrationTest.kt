@@ -24,9 +24,7 @@ import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
 /**
- * Slice 4 (docs/planning/in-progress/mssql-dialect-scoping.md): the
- * post-compare invariant for SQL Server, one slice before the migrate path
- * that will consume it.
+ * The post-compare invariant for SQL Server.
  *
  * `schema migrate --execute` finishes by re-reading the target and comparing
  * the v7 fingerprint of the desired schema against the fingerprint of what
@@ -40,8 +38,7 @@ import java.sql.DriverManager
  * fingerprints must differ, otherwise the first would be vacuous.
  *
  * The third pins a gap the projection does NOT close and cannot close,
- * because it is about constraints rather than types:
- * `docs/planning/open/enum-inline-check-fidelity.md`.
+ * because it is about constraints rather than types.
  */
 class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
 
@@ -180,7 +177,6 @@ class MssqlPostCompareFingerprintIntegrationTest : FunSpec({
         // die Constraint-Kante blieb — und jede Migration mit Enum-Spalte haette
         // sich nach `--execute` als driftend gemeldet. Der v8-Fingerprint bringt
         // beide Darstellungen des Wertevorrats auf dieselbe Form.
-        // Schnitt: docs/planning/done/fingerprint-v8-enum-check-projection.md
         HikariConnectionPoolFactory.create(enumConfig).use { pool ->
             val actual = MssqlSchemaReader().read(pool).schema.tables.getValue("probe")
             // Die TYP-Seite: NVARCHAR(<laengster Wert>) faltet auf text(5).

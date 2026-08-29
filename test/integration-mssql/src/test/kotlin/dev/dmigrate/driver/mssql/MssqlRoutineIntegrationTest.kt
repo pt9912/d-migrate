@@ -59,9 +59,8 @@ class MssqlRoutineIntegrationTest : FunSpec({
 
     afterSpec { container.stop() }
 
-    // Sub-Slice 9a: der Reverse liest Routinen-Ruempfe aus `sys.sql_modules`.
-    // Vorher meldete er sie pauschal als ungelesen (R342), und der Diff blockte
-    // mangels Rumpf.
+    // Der Reverse liest Routinen-Ruempfe aus `sys.sql_modules`. `R342` bleibt
+    // fuer das, was dort keinen Text hat: CLR und `WITH ENCRYPTION`.
     test("routine and trigger bodies are read back") {
         HikariConnectionPoolFactory.create(config).use { pool ->
             try {
@@ -118,8 +117,8 @@ class MssqlRoutineIntegrationTest : FunSpec({
         }
     }
 
-    // Slice 9b: was der Reverse liest, muss der Generator wieder anwendbar
-    // machen — sonst ist der Rumpf-Vertrag nur auf dem Papier erfuellt.
+    // Was der Reverse liest, muss der Generator wieder anwendbar machen —
+    // sonst ist der Rumpf-Vertrag nur auf dem Papier erfuellt.
     test("generated T-SQL routines apply against SQL Server and read back unchanged") {
         HikariConnectionPoolFactory.create(config).use { pool ->
             try {
@@ -194,10 +193,9 @@ class MssqlRoutineIntegrationTest : FunSpec({
         }
     }
 
-    // Aus dem 9b-Review: vier T-SQL-Konstrukte, fuer die das neutrale Modell
-    // kein Feld hat. Vorher fielen sie still aus dem Ergebnis — `EXECUTE AS`
-    // sogar mit falsch geschnittenem Rumpf hinein, weil sein `AS` das erste
-    // auf oberster Ebene ist.
+    // Vier T-SQL-Konstrukte, fuer die das neutrale Modell kein Feld hat. Bei
+    // `WITH EXECUTE AS` verschoebe die Optionsklausel zusaetzlich den
+    // Rumpf-Schnitt, denn ihr `AS` ist das erste auf oberster Ebene.
     test("routines carrying constructs the neutral model has no field for are reported") {
         HikariConnectionPoolFactory.create(config).use { pool ->
             try {
@@ -248,8 +246,8 @@ class MssqlRoutineIntegrationTest : FunSpec({
         }
     }
 
-    // Sub-Slice 9c: was der Diff-Pfad rendert, muss der Server annehmen — und
-    // hinterher muss dastehen, was im Zielschema stand.
+    // Was der Diff-Pfad rendert, muss der Server annehmen — und hinterher muss
+    // dastehen, was im Zielschema stand.
     test("migrate creates, replaces and drops routines against SQL Server") {
         HikariConnectionPoolFactory.create(config).use { pool ->
             try {

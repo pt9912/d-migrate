@@ -42,9 +42,11 @@ import java.sql.Connection
  * views of the connection's default schema, read from `sys.*` catalog
  * views.
  *
- * Routines and triggers are not read yet; existing objects surface as
- * [SkippedObject]s plus an `R342` note so the gap is visible instead of
- * silent (rollout: docs/planning/in-progress/mssql-dialect-scoping.md).
+ * Routines and triggers are read with their bodies. What the neutral model
+ * cannot represent is reported and skipped, never guessed: see the `R349`
+ * to `R353` table in `spec/ddl-generation-rules.md`. Objects without a
+ * readable T-SQL body — CLR routines and `WITH ENCRYPTION` — surface as
+ * [SkippedObject]s plus an `R342` note.
  */
 class MssqlSchemaReader(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
@@ -214,9 +216,8 @@ class MssqlSchemaReader(
      * Spalten, die [readTable] ohnehin schon gelesen hat. Fuer Zeichenketten
      * (kollationsabhaengig) und Gleitkomma gilt das nicht.
      *
-     * Dieser Sub-Slice rechnet trotzdem nicht um: der Rueckweg braucht die
-     * inverse Umrechnung im Generate-Pfad, und beide zusammen gehoeren in
-     * denselben Schnitt. Bis dahin traegt das Modell die Tatsache der
+     * Der Reverse rechnet trotzdem nicht um: der Rueckweg braucht die inverse
+     * Umrechnung im Generate-Pfad. Das Modell traegt deshalb die Tatsache der
      * Partitionierung -- Strategie und Schluessel -- **ohne Kinder**, statt
      * `null`. Der Unterschied ist nicht kosmetisch: `MssqlRebuildRenderer`
      * blockt einen Tabellen-Neubau auf `partitioning != null`, weil er die

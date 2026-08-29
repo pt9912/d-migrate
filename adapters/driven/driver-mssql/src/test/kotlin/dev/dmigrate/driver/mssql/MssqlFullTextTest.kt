@@ -21,7 +21,7 @@ import io.kotest.matchers.string.shouldNotContain
  * Volltext-Indizes fuer SQL Server: Katalog, Schluesselindex und die Faelle,
  * die der Server ablehnt.
  *
- * Die Regeln sind am Server gemessen — ein `KEY INDEX` muss einspaltig,
+ * Ein `KEY INDEX` muss einspaltig,
  * eindeutig und nicht nullbar sein, und je Tabelle gibt es hoechstens einen
  * Volltext-Index.
  */
@@ -115,7 +115,7 @@ class MssqlFullTextTest : FunSpec({
 
     // Volltext hat eine eigene Loesch-Syntax; `DROP INDEX <name> ON <t>` ist
     // dafuer ungueltiges T-SQL.
-    // D1 aus dem Review: der gewaehlte Schluesselindex muss auch ENTSTEHEN.
+    // Der gewaehlte Schluesselindex muss auch entstehen.
     // Eine LOB-Schluesselspalte laesst SQL Server nicht indizieren, der
     // Primaerschluessel faellt dann weg — ein `KEY INDEX` darauf zeigte ins Leere.
     test("a LOB primary key is no valid key — E070, because the PK is not rendered") {
@@ -176,7 +176,7 @@ class MssqlFullTextTest : FunSpec({
         render(t).render() shouldContain "KEY INDEX [uq_docs_id]"
     }
 
-    // D3 aus dem Review: `invertStatement` kannte Volltext nicht, der
+    // Der Rueckbau muss Katalog und Index nehmen: `DROP TABLE` nimmt den
     // Generate-Rollback liess den Katalog als Leiche stehen.
     test("the generated rollback drops the full-text index and its catalog") {
         val result = generator.generateRollback(
@@ -189,7 +189,7 @@ class MssqlFullTextTest : FunSpec({
         down shouldContain "DROP FULLTEXT CATALOG [ftc_docs];"
     }
 
-    // Slice 8d: SQL Server weist `CREATE FULLTEXT INDEX` in einer offenen
+    // SQL Server weist `CREATE FULLTEXT INDEX` in einer offenen
     // Transaktion ab, und der Migrationslauf klammert seine Statements in
     // genau eine. Der Abbruch faellt deshalb vor der Ausfuehrung.
     test("the migration path refuses a full-text index with E072") {
@@ -212,7 +212,7 @@ class MssqlFullTextTest : FunSpec({
     }
 
     // Die Behebung war zunaechst halb: das Anlegen blockte, die Loeschpfade
-    // emittierten weiter. Am Server gemessen ist BEIDES in einer Transaktion
+    // emittierten weiter. BEIDES ist in einer Transaktion
     // verboten — Index wie Katalog.
     test("the migration path refuses dropping a full-text index too") {
         val planner = dev.dmigrate.core.diff.migration.DiffPlanner()

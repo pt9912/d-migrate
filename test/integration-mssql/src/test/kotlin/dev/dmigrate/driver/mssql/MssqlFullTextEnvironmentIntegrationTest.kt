@@ -41,8 +41,7 @@ import java.sql.DriverManager
  *
  * Das Image entsteht ueber `make mssql-fts-image`
  * (`test/integration-mssql/fts/Dockerfile`); fehlt es, ueberspringt sich die
- * Spec. Warum es ein eigenes Image braucht, steht dort und in
- * `docs/planning/in-progress/mssql-dialect-scoping.md` (Slice 8).
+ * Spec. Das Standard-Image von SQL Server bringt die Volltextsuche nicht mit.
  */
 class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
 
@@ -104,8 +103,8 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
             }
         }
 
-        // Der Beleg fuer Sub-Slice 8b: nicht das erzeugte DDL, sondern dass der
-        // Server es annimmt — Katalog und Index sind eigenstaendige Objekte mit
+        // Der Beleg ist nicht das erzeugte DDL, sondern dass der Server es
+        // annimmt — Katalog und Index sind eigenstaendige Objekte mit
         // eigenen Regeln (einspaltiger, nicht nullbarer Schluesselindex).
         test("generated full-text DDL is accepted by the server") {
             val schema = SchemaDefinition(
@@ -157,7 +156,7 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
             }
         }
 
-        // Sub-Slice 8c: der Reverse liest den Volltext-Index zurueck. SQL Server
+        // Der Reverse liest den Volltext-Index zurueck. SQL Server
         // benennt ihn nicht, der Name wird synthetisiert und gemeldet (R348).
         test("a full-text index survives the round trip") {
             val schema = SchemaDefinition(
@@ -227,7 +226,7 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
             }
         }
 
-        // Sub-Slice 8d: `schema migrate` kann Volltext NICHT anwenden, und das
+        // `schema migrate` kann Volltext NICHT anwenden, und das
         // ist eine Eigenschaft von SQL Server, keine Luecke im Renderer. Der
         // Server weist `CREATE FULLTEXT INDEX` in einer offenen Transaktion ab,
         // und der Lauf klammert seine Statements in genau eine. Der Abbruch

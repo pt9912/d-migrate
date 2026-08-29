@@ -16,8 +16,8 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * IDENTITY-Tabellen-Neubau ([MssqlRebuildPlanner]), Constraints und Indizes,
  * Sichten, Custom Types und Sequenzen.
  *
- * Seit Sub-Slice 9c auch Routinen und Trigger: `CREATE OR ALTER` macht den
- * Ersetzungsfall zu einem Statement, wie schon bei den Sichten.
+ * Ebenso Routinen und Trigger: `CREATE OR ALTER` macht den Ersetzungsfall zu
+ * einem Statement, wie schon bei den Sichten.
  *
  * Was er nicht rendert, meldet der Dispatcher als
  * `DIALECT_UNSUPPORTED_OPERATION` mit dem Grund: Partitionierung, weil das
