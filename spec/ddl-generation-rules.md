@@ -591,7 +591,10 @@ CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
 - Beim **Zurücklesen** gilt: SQL Server benennt Volltext-Indizes nicht
   (`CREATE FULLTEXT INDEX ON t` kennt keinen Namen). Der Reverse vergibt
   `ft_<tabelle>` und meldet das mit `R348` — dieselbe Lage wie bei den
-  Partitions-Kindnamen.
+  Partitions-Kindnamen. Damit ein Round-Trip daran nicht scheitert, fällt der
+  Name eines Volltext-Index im **Fingerabdruck-Pfad** weg, wo der Dialekt ihn
+  nicht speichert. Der strukturelle Vergleich (`schema compare`) bleibt streng —
+  dieselbe Grenze wie bei den übrigen Index-Projektionen.
 
 ### 5.3 Unique-Index
 

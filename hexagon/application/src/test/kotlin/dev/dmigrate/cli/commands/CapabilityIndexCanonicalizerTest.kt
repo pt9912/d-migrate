@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import io.kotest.core.spec.style.FunSpec
@@ -41,6 +42,27 @@ class CapabilityIndexCanonicalizerTest : FunSpec({
             projected.includeColumns.shouldBeEmpty()
             projected.clustered shouldBe false
         }
+    }
+
+    // SQL Server benennt Volltext-Indizes nicht; der Reverse synthetisiert einen
+    // Namen. Bliebe er im Vergleich, driftete jeder Round-Trip an einem Namen,
+    // den niemand vergeben hat.
+    test("the name of a full-text index is dropped where the dialect does not store one") {
+        val fullText = index.copy(name = "fx_articles", type = IndexType.FULLTEXT)
+
+        capabilityIndexCanonicalizer(DatabaseDialect.MSSQL)(fullText).name shouldBe null
+    }
+
+    test("the name survives for dialects that do name full-text indexes") {
+        val fullText = index.copy(name = "fx_articles", type = IndexType.FULLTEXT)
+
+        listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
+            capabilityIndexCanonicalizer(dialect)(fullText).name shouldBe "fx_articles"
+        }
+    }
+
+    test("a non-full-text index keeps its name even on SQL Server") {
+        capabilityIndexCanonicalizer(DatabaseDialect.MSSQL)(index).name shouldBe "ix"
     }
 
     test("everything else about the index is left alone") {

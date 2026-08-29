@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
@@ -57,23 +58,30 @@ internal fun registrySchemaAwareCanonicalizer(
 /**
  * Projiziert einen Index auf das, was der Ziel-Dialekt davon zurueckgeben kann.
  *
- * INCLUDE-Spalten und die clustered-Steuerung sind semantisch und stehen deshalb
- * im Vergleich; nur kann ein Dialekt, der sie nicht kennt, sie auch nicht
- * zurueckmelden. Ohne diese Projektion meldete der Post-Compare nach einem
+ * INCLUDE-Spalten, die clustered-Steuerung und der Name eines Volltext-Index sind
+ * semantisch und stehen deshalb im Vergleich; nur kann ein Dialekt, der sie
+ * nicht kennt oder nicht speichert, sie auch nicht zurueckmelden. Ohne diese Projektion meldete der Post-Compare nach einem
  * `migrate --execute` gegen MySQL oder SQLite Drift fuer etwas, das der Zielserver
  * gar nicht ausdruecken kann. Dieselbe Grenze wie bei der Typ-Projektion: der
  * strukturelle Vergleich (`schema compare`) bleibt streng, nur der
  * Fingerabdruck-Pfad kanonisiert.
  */
-internal fun capabilityIndexCanonicalizer(
+fun capabilityIndexCanonicalizer(
     dialect: DatabaseDialect,
 ): (IndexDefinition) -> IndexDefinition {
     val caps = DialectCapabilities.forDialect(dialect)
-    if (caps.supportsIndexIncludeColumns && caps.supportsClusteredIndexes) return { it }
+    if (caps.supportsIndexIncludeColumns && caps.supportsClusteredIndexes && caps.namesFullTextIndexes) {
+        return { it }
+    }
     return { index ->
         index.copy(
             includeColumns = if (caps.supportsIndexIncludeColumns) index.includeColumns else emptyList(),
             clustered = caps.supportsClusteredIndexes && index.clustered,
+            // Ein Dialekt, der Volltext-Indizes nicht benennt, kann den Namen
+            // auch nicht zurueckgeben — der Reverse synthetisiert ihn. Beide
+            // Seiten auf denselben Wert, sonst driftete der Round-Trip an einem
+            // Namen, den niemand vergeben hat.
+            name = if (index.type == IndexType.FULLTEXT && !caps.namesFullTextIndexes) null else index.name,
         )
     }
 }

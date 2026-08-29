@@ -11,6 +11,8 @@ import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as strShouldContain
+import dev.dmigrate.cli.commands.capabilityIndexCanonicalizer
+import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
@@ -189,6 +191,21 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                     // Der Name ist synthetisiert, nicht der aus dem Modell.
                     index.name shouldBe "ft_notes"
                     readBack.notes.any { it.code == "R348" } shouldBe true
+
+                    // Und deshalb der eigentliche Punkt: der Fingerabdruck traegt
+                    // den Indexnamen. Ohne Kanonisierung driftete jeder
+                    // Volltext-Round-Trip im Post-Compare — genau dort, wo
+                    // `migrate --execute` ihn prueft.
+                    val canonicalize = capabilityIndexCanonicalizer(DatabaseDialect.MSSQL)
+                    // Nur die eigene Tabelle: die Datenbank ist spec-weit geteilt.
+                    val onlyNotes = readBack.schema.copy(
+                        tables = mapOf("notes" to readBack.schema.tables.getValue("notes")),
+                    )
+                    val before = MigrationFingerprint.compute(schema, canonicalizeIndex = canonicalize)
+                    val after = MigrationFingerprint.compute(onlyNotes, canonicalizeIndex = canonicalize)
+                    withClue("Modellname 'fx_notes' vs. zurueckgelesener 'ft_notes'") {
+                        after shouldBe before
+                    }
                 } finally {
                     pool.borrow().asJdbc().use { conn ->
                         conn.createStatement().use { stmt ->

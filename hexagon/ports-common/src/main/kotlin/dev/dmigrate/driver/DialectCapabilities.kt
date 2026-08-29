@@ -70,6 +70,16 @@ data class DialectCapabilities(
      * PostgreSQL kennt `CLUSTER` nur als einmalige Reorganisation.
      */
     val supportsClusteredIndexes: Boolean = false,
+    /**
+     * Ob der Dialekt einen Volltext-Index **benennt**. PostgreSQL, MySQL und
+     * SQLite tun es; SQL Server nicht — `CREATE FULLTEXT INDEX ON t (…)` kennt
+     * keinen Namen, und der Katalog fuehrt keinen.
+     *
+     * Der Reverse muss dort synthetisieren. Ohne diese Faehigkeit ginge der
+     * erfundene Name in den Fingerabdruck ein und liesse jeden Round-Trip
+     * driften, obwohl sich nichts geaendert hat.
+     */
+    val namesFullTextIndexes: Boolean = true,
 ) {
     companion object {
         /**
@@ -151,6 +161,7 @@ data class DialectCapabilities(
                 requiresPrimaryKeyForSkip = true,
                 supportsIndexIncludeColumns = true,
                 supportsClusteredIndexes = true,
+                namesFullTextIndexes = false,
             )
         }
     }
