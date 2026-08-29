@@ -57,9 +57,16 @@ jobs:
         # Build-Zeit-Abhaengigkeiten bleiben trotzdem sichtbar: dependabot.yml
         # faehrt woechentliche `gradle`-Versions-Updates.
         #
+        # Auf das CLI-Modul beschraenkt, weil nur DESSEN `runtimeClasspath` der
+        # ausgelieferte Stand ist. Jedes Modul fuer sich aufgeloest landet zum
+        # Teil niedriger — `jackson-databind` etwa auf 2.12.7.1, waehrend die
+        # Konfliktaufloesung im CLI-Modul 2.21.5 zieht und genau das im Image
+        # liegt. Ohne diese Grenze meldet der Graph Versionen, die nie
+        # ausgeliefert werden.
+        #
         # Die Anker sind Absicht. Die Doku legt nicht fest, ob die Regexe voll
-        # oder teilweise matchen — `^runtimeClasspath$` trifft in beiden Faellen
-        # genau diese eine Konfiguration und nie `testRuntimeClasspath`.
+        # oder teilweise matchen — die verankerte Form trifft in beiden Faellen
+        # genau das Gemeinte und nie `testRuntimeClasspath`.
         with:
           dependency-graph-include-configurations: '^runtimeClasspath$'
-          dependency-graph-exclude-projects: '^:test:.*'
+          dependency-graph-include-projects: '^:adapters:driving:cli$'
