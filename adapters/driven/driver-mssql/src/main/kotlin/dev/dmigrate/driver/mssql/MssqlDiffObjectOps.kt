@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -173,6 +174,14 @@ internal object MssqlDiffObjectOps {
         table: String,
         index: IndexDefinition,
     ) {
+        // Volltext hat eine eigene Loesch-Syntax: `DROP FULLTEXT INDEX ON t`
+        // ohne Indexnamen, und der Katalog geht nicht mit — er ist ein
+        // eigenstaendiges Objekt (am Server gemessen: er ueberlebt sogar
+        // `DROP TABLE`).
+        if (index.type == IndexType.FULLTEXT) {
+            MssqlFullTextDdl.dropStatements(table, ctx.sql::quote).forEach { ctx.emit(op, it) }
+            return
+        }
         ctx.emit(op, ctx.sql.dropIndexSql(table, index))
         // ... und bekommt sie zurueck, NACHDEM der Index sie abgegeben hat.
         if (index.clustered) emitStorageFlip(op, ctx, table, MssqlClusteredStorage.Flip.ToClustered)

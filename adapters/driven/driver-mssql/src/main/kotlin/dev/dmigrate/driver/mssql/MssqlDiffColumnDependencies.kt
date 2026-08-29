@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -272,7 +273,14 @@ internal object MssqlDiffColumnDependencies {
         if (deps.hasColumnUnique) out += ctx.sql.dropUniqueOnColumnSql(deps.table, deps.column)
         if (deps.hasColumnReference) out += ctx.sql.dropForeignKeyOnColumnSql(deps.table, deps.column)
         for (index in deps.indices) {
-            out += ctx.sql.dropIndexSql(deps.table, index)
+            // Volltext hat eine eigene Loesch-Syntax; `DROP INDEX <name> ON <t>`
+            // ist dafuer ungueltig und laesst das nachfolgende ALTER COLUMN an
+            // dem noch haengenden Index scheitern.
+            if (index.type == IndexType.FULLTEXT) {
+                out += MssqlFullTextDdl.dropStatements(deps.table, ctx.sql::quote)
+            } else {
+                out += ctx.sql.dropIndexSql(deps.table, index)
+            }
         }
         return out
     }

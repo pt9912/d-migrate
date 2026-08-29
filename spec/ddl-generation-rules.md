@@ -566,7 +566,8 @@ Volltext-Indizes werden gerendert, brauchen dafür aber zwei Objekte, die das
 neutrale Modell nicht trägt:
 
 ```sql
-CREATE FULLTEXT CATALOG [ftc_docs];
+IF NOT EXISTS (SELECT 1 FROM sys.fulltext_catalogs WHERE name = 'ftc_docs')
+    CREATE FULLTEXT CATALOG [ftc_docs];
 CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
 ```
 
@@ -576,12 +577,17 @@ CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
   Function und Scheme.
 - Der **Schlüsselindex** muss **einspaltig, eindeutig und nicht nullbar** sein.
   Gesucht wird in dieser Reihenfolge: einspaltiger Primärschlüssel, einspaltiger
-  UNIQUE-Constraint, spaltenständiges `unique`, einspaltiger unique Index. Findet
-  sich keiner, wird nicht geraten, sondern mit **E070** abgebrochen.
+  UNIQUE-Constraint, spaltenständiges `unique`, einspaltiger unique Index. Ein
+  Kandidat zählt nur, wenn er im selben Lauf auch **entsteht** — eine
+  LOB-Schlüsselspalte lässt SQL Server nicht indizieren, der Kandidat fiele also
+  weg — und ein separat gerenderter Index nur, wenn er **vor** dem Volltext-Index
+  steht. Findet sich keiner, wird nicht geraten, sondern mit **E070** abgebrochen.
 - Je Tabelle ist **genau ein** Volltext-Index zulässig; er darf mehrere Spalten
   umfassen. Mehr als einer bricht mit **E071** ab.
-- `DROP TABLE` entfernt den Index mit, den Katalog **nicht** — der Rückbau löst
-  beides.
+- `DROP TABLE` entfernt den Index mit, den Katalog **nicht**. Der Rückbau löst
+  beides, und beide Richtungen sind bedingt formuliert: der Katalog überlebt
+  einen Tabellen-Neubau, ein unbedingtes `CREATE` scheiterte dort am schon
+  vorhandenen Namen.
 
 ### 5.3 Unique-Index
 

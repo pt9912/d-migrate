@@ -178,6 +178,8 @@ entries:
     evidence_paths:
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlFullTextDdl.kt"
         path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
+        path_type: production
 
   # E071 — Slice 8b: mehr als ein Volltext-Index je Tabelle. SQL Server erlaubt
   # genau einen; welcher gemeint ist, ist nicht entscheidbar.
@@ -188,5 +190,7 @@ entries:
     test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlFullTextTest.kt"
     evidence_paths:
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlFullTextDdl.kt"
+        path_type: production
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
         path_type: production
 

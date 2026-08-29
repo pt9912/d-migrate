@@ -383,6 +383,19 @@ class MssqlDdlGenerator private constructor(
                 DdlStatement("DROP SEQUENCE IF EXISTS ${bracketedNameAfter(sql, "CREATE SEQUENCE")};")
             sql.startsWith("CREATE OR ALTER VIEW", ignoreCase = true) ->
                 DdlStatement("DROP VIEW IF EXISTS ${bracketedNameAfter(sql, "CREATE OR ALTER VIEW")};")
+            // Volltext steht als Katalog+Index in EINEM Statement und traegt
+            // deshalb den Tabellennamen erst hinter `CREATE FULLTEXT INDEX ON`.
+            // Ohne diesen Zweig fiele der Rueckbau still weg und liesse den
+            // Katalog stehen — `DROP TABLE` nimmt ihn nicht mit.
+            sql.contains("CREATE FULLTEXT INDEX", ignoreCase = true) -> {
+                val at = sql.indexOf("CREATE FULLTEXT INDEX", ignoreCase = true)
+                val table = bracketedNameAfter(sql.substring(at), "CREATE FULLTEXT INDEX ON")
+                DdlStatement(
+                    MssqlFullTextDdl
+                        .dropStatements(table.removeSurrounding("[", "]")) { quoteIdentifier(it) }
+                        .joinToString("\n"),
+                )
+            }
             sql.startsWith("CREATE UNIQUE INDEX", ignoreCase = true) -> invertIndex(sql, "CREATE UNIQUE INDEX")
             sql.startsWith("CREATE SPATIAL INDEX", ignoreCase = true) -> invertIndex(sql, "CREATE SPATIAL INDEX")
             sql.startsWith("CREATE INDEX", ignoreCase = true) -> invertIndex(sql, "CREATE INDEX")

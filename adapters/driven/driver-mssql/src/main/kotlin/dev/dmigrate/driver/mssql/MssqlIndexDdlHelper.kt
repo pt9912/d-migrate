@@ -52,7 +52,7 @@ internal class MssqlIndexDdlHelper(
         // Schluesselindex — beides traegt das Modell nicht. Der Katalog wird je
         // Tabelle angelegt, der Schluesselindex aus der Tabelle abgeleitet.
         if (index.type == IndexType.FULLTEXT) {
-            return when (val verdict = MssqlFullTextDdl.verdict(tableName, table)) {
+            return when (val verdict = MssqlFullTextDdl.verdict(tableName, table, index, lobColumns)) {
                 is MssqlFullTextDdl.Verdict.Renderable -> DdlStatement(
                     MssqlFullTextDdl.createStatement(
                         tableName, index.columnNames, verdict.keyIndexName, quoteIdentifier,

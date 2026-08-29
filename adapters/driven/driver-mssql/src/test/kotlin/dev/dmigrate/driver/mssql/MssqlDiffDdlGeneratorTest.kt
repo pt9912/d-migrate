@@ -484,7 +484,7 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
     }
 
     test("a full-text index blocks instead of vanishing") {
-        // Der Generate-Helfer meldet E057 (SQL Server braucht Katalog und
+        // Der Generate-Helfer meldet E070 (SQL Server braucht einen einspaltigen
         // Schluesselindex); im Diff darf daraus kein leeres Statement werden.
         val idx = IndexDefinition(name = "ft", columns = listOf(IndexColumn("bio")), type = IndexType.FULLTEXT)
         val t = TableDefinition(columns = mapOf("bio" to ColumnDefinition(NeutralType.Text())), indices = listOf(idx))

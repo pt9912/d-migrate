@@ -111,20 +111,20 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                     ),
                 ),
             )
-            val ddl = MssqlDdlGenerator().generate(schema).render()
-            withClue("erzeugt:\n$ddl") { ddl strShouldContain "CREATE FULLTEXT INDEX" }
+            // Ganze Statements, NICHT an ';' gesplittet — genau so reicht der
+            // Runner sie an JDBC weiter. Nur so prueft der Test die Zusicherung,
+            // dass Katalog und Index in EINEM Batch zulaessig sind.
+            val result = MssqlDdlGenerator().generate(schema)
+            val statements = result.statements.map { it.sql }
+            withClue("erzeugt:\n${statements.joinToString("\n")}") {
+                statements.any { it.contains("CREATE FULLTEXT INDEX") } shouldBe true
+            }
 
             DriverManager.getConnection(
                 "${container.jdbcUrl};databaseName=fts_probe", container.username, container.password,
             ).use { db ->
                 try {
-                    db.createStatement().use { stmt ->
-                        ddl.lines()
-                            .filter { it.isNotBlank() && !it.trimStart().startsWith("--") }
-                            .joinToString("\n").split(";")
-                            .map { it.trim() }.filter { it.isNotEmpty() }
-                            .forEach { stmt.execute(it) }
-                    }
+                    db.createStatement().use { stmt -> statements.forEach { stmt.execute(it) } }
                     val indexed = db.createStatement().use { stmt ->
                         stmt.executeQuery(
                             "SELECT COUNT(*) FROM sys.fulltext_index_columns " +

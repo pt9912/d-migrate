@@ -55,6 +55,9 @@ class MssqlFullTextTest : FunSpec({
         val ddl = render(table()).render()
 
         ddl shouldContain "CREATE FULLTEXT CATALOG [ftc_docs];"
+        // Bedingt, weil der Katalog `DROP TABLE` ueberlebt und der
+        // Tabellen-Neubau sonst am vorhandenen Namen scheiterte.
+        ddl shouldContain "IF NOT EXISTS (SELECT 1 FROM sys.fulltext_catalogs WHERE name = 'ftc_docs')"
         ddl shouldContain "CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];"
     }
 
@@ -109,10 +112,88 @@ class MssqlFullTextTest : FunSpec({
         ddl shouldNotContain "CREATE FULLTEXT INDEX"
     }
 
+    // Volltext hat eine eigene Loesch-Syntax; `DROP INDEX <name> ON <t>` ist
+    // dafuer ungueltiges T-SQL.
+    // D1 aus dem Review: der gewaehlte Schluesselindex muss auch ENTSTEHEN.
+    // Eine LOB-Schluesselspalte laesst SQL Server nicht indizieren, der
+    // Primaerschluessel faellt dann weg — ein `KEY INDEX` darauf zeigte ins Leere.
+    test("a LOB primary key is no valid key — E070, because the PK is not rendered") {
+        val t = TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(NeutralType.Text(), required = true),
+                "body" to ColumnDefinition(NeutralType.Text()),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(ftIndex),
+        )
+        val ddl = render(t).render()
+
+        ddl shouldContain "E070"
+        ddl shouldNotContain "CREATE FULLTEXT INDEX"
+    }
+
+    test("the chosen key index is actually created in the same DDL") {
+        val t = table(
+            primaryKey = emptyList(),
+            constraints = listOf(
+                ConstraintDefinition(name = "uq_docs_id", type = ConstraintType.UNIQUE, columns = listOf("id")),
+            ),
+        )
+        val ddl = render(t).render()
+
+        ddl shouldContain "CONSTRAINT [uq_docs_id] UNIQUE"
+        ddl shouldContain "KEY INDEX [uq_docs_id]"
+    }
+
+    // D5: ein separat gerenderter Index taugt nur, wenn er VOR dem
+    // Volltext-Index steht — sonst verweist KEY INDEX auf etwas, das erst
+    // danach entsteht.
+    test("a unique index after the full-text index is no valid key") {
+        val late = IndexDefinition("ux_id", listOf(IndexColumn("id")), unique = true)
+        val t = table(primaryKey = emptyList(), indices = listOf(ftIndex, late))
+
+        render(t).render() shouldContain "E070"
+    }
+
+    test("a unique index before the full-text index serves as the key") {
+        val early = IndexDefinition("ux_id", listOf(IndexColumn("id")), unique = true)
+        val t = table(primaryKey = emptyList(), indices = listOf(early, ftIndex))
+        val ddl = render(t).render()
+
+        ddl shouldContain "CREATE UNIQUE INDEX [ux_id] ON [docs] ([id]);"
+        ddl shouldContain "KEY INDEX [ux_id]"
+    }
+
+    test("a column-level unique serves as the key") {
+        val t = TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true, unique = true),
+                "body" to ColumnDefinition(NeutralType.Text()),
+            ),
+            indices = listOf(ftIndex),
+        )
+        render(t).render() shouldContain "KEY INDEX [uq_docs_id]"
+    }
+
+    // D3 aus dem Review: `invertStatement` kannte Volltext nicht, der
+    // Generate-Rollback liess den Katalog als Leiche stehen.
+    test("the generated rollback drops the full-text index and its catalog") {
+        val result = generator.generateRollback(
+            SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to table())),
+            DdlGenerationOptions(),
+        )
+        val down = result.render()
+
+        down shouldContain "DROP FULLTEXT INDEX ON [docs];"
+        down shouldContain "DROP FULLTEXT CATALOG [ftc_docs];"
+    }
+
     test("the teardown drops index and catalog — DROP TABLE leaves the catalog behind") {
         MssqlFullTextDdl.dropStatements("docs") { "[$it]" } shouldBe listOf(
-            "DROP FULLTEXT INDEX ON [docs];",
-            "DROP FULLTEXT CATALOG [ftc_docs];",
+            "IF EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('docs')) " +
+                "DROP FULLTEXT INDEX ON [docs];",
+            "IF EXISTS (SELECT 1 FROM sys.fulltext_catalogs WHERE name = 'ftc_docs') " +
+                "DROP FULLTEXT CATALOG [ftc_docs];",
         )
     }
 })

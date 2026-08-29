@@ -1,8 +1,11 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 
 /**
  * Volltext-Indizes fuer SQL Server.
@@ -16,7 +19,7 @@ import dev.dmigrate.core.model.TableDefinition
  * CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
  * ```
  *
- * Die Regeln stammen aus Messungen am Server, nicht aus der Dokumentation:
+ * Es gelten drei Regeln:
  *
  * - Der Schluesselindex muss **einspaltig, eindeutig und nicht nullbar** sein.
  *   Ein zusammengesetzter Primaerschluessel wird abgelehnt, ein nullbarer
@@ -42,10 +45,16 @@ internal object MssqlFullTextDdl {
         data class MoreThanOne(val count: Int) : Verdict
     }
 
-    fun verdict(tableName: String, table: TableDefinition): Verdict {
+    fun verdict(
+        tableName: String,
+        table: TableDefinition,
+        fullTextIndex: IndexDefinition,
+        lobColumns: Set<String>,
+    ): Verdict {
         val fullTextCount = table.indices.count { it.type == IndexType.FULLTEXT }
         if (fullTextCount > 1) return Verdict.MoreThanOne(fullTextCount)
-        return keyIndexName(tableName, table)?.let { Verdict.Renderable(it) } ?: Verdict.NoKeyIndex
+        return keyIndexName(tableName, table, fullTextIndex, lobColumns)
+            ?.let { Verdict.Renderable(it) } ?: Verdict.NoKeyIndex
     }
 
     /**
@@ -58,23 +67,35 @@ internal object MssqlFullTextDdl {
      * eine Tabelle kann einen einspaltigen UNIQUE auf einer nullbaren Spalte
      * haben.
      */
-    private fun keyIndexName(tableName: String, table: TableDefinition): String? {
+    private fun keyIndexName(
+        tableName: String,
+        table: TableDefinition,
+        fullTextIndex: IndexDefinition,
+        lobColumns: Set<String>,
+    ): String? {
         table.primaryKey.singleOrNull()?.let { pkColumn ->
-            if (isNotNull(table, pkColumn)) return MssqlConstraintNames.primaryKey(tableName)
+            if (isNotNull(table, pkColumn) && pkColumn !in lobColumns) {
+                return MssqlConstraintNames.primaryKey(tableName)
+            }
         }
         table.constraints
             .firstOrNull { c ->
-                c.type == ConstraintType.UNIQUE &&
-                    c.columns?.singleOrNull()?.let { isNotNull(table, it) } == true
+                c.type == ConstraintType.UNIQUE && c.columns?.singleOrNull()
+                    ?.let { isNotNull(table, it) && it !in lobColumns } == true
             }
             ?.let { return it.name }
         table.columns.entries
-            .firstOrNull { (_, column) -> column.unique && column.required }
+            .firstOrNull { (name, column) -> column.unique && column.required && name !in lobColumns }
             ?.let { return MssqlConstraintNames.unique(tableName, it.key) }
+        // Ein separat gerenderter Index taugt nur, wenn er VOR dem Volltext-Index
+        // steht — sonst verweist `KEY INDEX` auf etwas, das erst danach entsteht.
+        val fullTextPosition = table.indices.indexOf(fullTextIndex)
         table.indices
+            .filterIndexed { position, _ -> fullTextPosition < 0 || position < fullTextPosition }
             .firstOrNull { idx ->
-                idx.unique && idx.name != null &&
-                    idx.columns.singleOrNull()?.name?.let { isNotNull(table, it) } == true
+                idx.unique && idx.name != null && !idx.clustered &&
+                    idx.columns.singleOrNull()?.name
+                        ?.let { isNotNull(table, it) && it !in lobColumns } == true
             }
             ?.let { return it.name }
         return null
@@ -88,9 +109,9 @@ internal object MssqlFullTextDdl {
         table.columns[column]?.required == true || column in table.primaryKey
 
     /**
-     * Katalog und Index in **einem** Statement. Am Server gemessen: beide
-     * duerfen in demselben Batch stehen. Ein Statement je Index haelt ausserdem
-     * alle Aufrufstellen unveraendert, die genau eines erwarten.
+     * Katalog und Index in **einem** Statement; beide duerfen in demselben
+     * Batch stehen. Das haelt alle Aufrufstellen unveraendert, die genau ein
+     * Statement je Index erwarten.
      */
     fun createStatement(
         tableName: String,
@@ -100,17 +121,27 @@ internal object MssqlFullTextDdl {
     ): String {
         val catalog = quote(catalogName(tableName))
         val columnList = columns.joinToString(", ") { quote(it) }
-        return "CREATE FULLTEXT CATALOG $catalog;\n" +
+        // Bedingt, weil der Katalog `DROP TABLE` ueberlebt: der Tabellen-Neubau
+        // legt die Tabelle neu an, und ein unbedingtes CREATE scheiterte dort
+        // am schon vorhandenen Namen.
+        return "IF NOT EXISTS (SELECT 1 FROM sys.fulltext_catalogs WHERE name = " +
+            "${SqlIdentifiers.quoteStringLiteral(catalogName(tableName), DatabaseDialect.MSSQL)}) CREATE FULLTEXT CATALOG $catalog;\n" +
             "CREATE FULLTEXT INDEX ON ${quote(tableName)} ($columnList) " +
             "KEY INDEX ${quote(keyIndexName)} ON $catalog;"
     }
 
     /**
-     * Der Rueckbau. `DROP TABLE` nimmt den Index mit, den Katalog aber nicht —
-     * am Server gemessen (er blieb nach dem Tabellen-Drop stehen).
+     * Der Rueckbau. `DROP TABLE` nimmt den Index mit, den Katalog aber nicht.
      */
     fun dropStatements(tableName: String, quote: (String) -> String): List<String> = listOf(
-        "DROP FULLTEXT INDEX ON ${quote(tableName)};",
-        "DROP FULLTEXT CATALOG ${quote(catalogName(tableName))};",
+        // Beide bedingt, symmetrisch zum bedingten Anlegen: das DOWN eines
+        // AddIndex loeschte sonst einen Katalog, den das UP wegen seines
+        // Waechters gar nicht angelegt hat.
+        "IF EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = " +
+            "OBJECT_ID(${SqlIdentifiers.quoteStringLiteral(tableName, DatabaseDialect.MSSQL)})) " +
+            "DROP FULLTEXT INDEX ON ${quote(tableName)};",
+        "IF EXISTS (SELECT 1 FROM sys.fulltext_catalogs WHERE name = " +
+            "${SqlIdentifiers.quoteStringLiteral(catalogName(tableName), DatabaseDialect.MSSQL)}) " +
+            "DROP FULLTEXT CATALOG ${quote(catalogName(tableName))};",
     )
 }
