@@ -34,6 +34,7 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as strShouldContain
+import io.kotest.matchers.string.shouldNotContain as strShouldNotContain
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import java.sql.DriverManager
 
@@ -614,11 +615,18 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
 
                 val result = MssqlSchemaReader().read(pool)
 
-                result.schema.functions.getValue("fn_double").body
-                    .shouldNotBeNull() strShouldContain "@x * 2"
-                result.schema.functions.getValue("fn_double").sourceDialect shouldBe "mssql"
-                result.schema.procedures.getValue("sp_touch").body
-                    .shouldNotBeNull() strShouldContain "SELECT 1"
+                // Der Rumpf ist der innere Block, nicht die ganze Anweisung:
+                // Signatur und Rueckgabetyp stehen als eigene Felder daneben.
+                val fn = result.schema.functions.getValue("fn_double")
+                fn.body.shouldNotBeNull() strShouldContain "@x * 2"
+                fn.body.shouldNotBeNull() strShouldNotContain "CREATE FUNCTION"
+                fn.parameters.map { it.name } shouldBe listOf("x")
+                fn.returns?.type shouldBe "int"
+                fn.sourceDialect shouldBe "mssql"
+
+                val sp = result.schema.procedures.getValue("sp_touch")
+                sp.body.shouldNotBeNull() strShouldContain "SELECT 1"
+                sp.body.shouldNotBeNull() strShouldNotContain "CREATE PROCEDURE"
 
                 val trigger = result.schema.triggers.getValue("trg_audit")
                 trigger.table shouldBe "audit_src"
@@ -626,6 +634,7 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
                 trigger.events shouldBe setOf(TriggerEvent.INSERT, TriggerEvent.UPDATE)
                 // T-SQL-Trigger feuern je Anweisung, nicht je Zeile.
                 trigger.forEach shouldBe TriggerForEach.STATEMENT
+                trigger.body.shouldNotBeNull() strShouldNotContain "CREATE TRIGGER"
 
                 // Und R342 meldet sie nicht mehr als ungelesen.
                 result.skippedObjects.none { it.name in setOf("fn_double", "sp_touch", "trg_audit") } shouldBe true

@@ -691,7 +691,13 @@ kanonische Keys normalisiert.
 
 ### 6.4 Hinweis zu Body und Transformation
 
-Das `body`-Feld enthält den Quell-Code im **Quell-Dialekt** (angegeben in `source_dialect`). Für die Generierung im Ziel-Dialekt gibt es zwei Wege:
+Das `body`-Feld enthält den Quell-Code im **Quell-Dialekt** (angegeben in `source_dialect`), und zwar **nur den Rumpf** — nicht die vollständige
+`CREATE`-Anweisung. Signatur und Kontext stehen als eigene Felder daneben:
+`parameters` und `returns` bei Funktionen und Prozeduren, `table`, `event` und
+`timing` bei Triggern (dort sogar als Pflichtfelder). Ein Reverse, der die
+gespeicherte Anweisung als Ganzes ablegt, machte diese Felder bedeutungslos.
+
+Für die Generierung im Ziel-Dialekt gibt es zwei Wege:
 
 1. **Regelbasiert**: Einfache Syntax-Transformationen (z.B. `:=` → `DEFAULT`, `GET DIAGNOSTICS` → `ROW_COUNT()`)
 2. **KI-gestützt**: Über `d-migrate transform procedure` wird der Body in ein abstraktes Markdown-Zwischenformat transformiert und dann im Ziel-Dialekt neu generiert

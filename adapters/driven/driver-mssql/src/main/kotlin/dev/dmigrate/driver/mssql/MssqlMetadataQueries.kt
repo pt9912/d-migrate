@@ -434,6 +434,46 @@ internal object MssqlMetadataQueries {
      * inklusive der CLR-Varianten (PC/FS/FT/TA), damit kein Objekt still
      * aus dem Ergebnis fällt.
      */
+    /** Ein Routinen-Parameter aus `sys.parameters`. */
+    data class RoutineParamRow(
+        val routine: String,
+        val name: String,
+        val typeName: String,
+        val isOutput: Boolean,
+        val isReturnValue: Boolean,
+    )
+
+    /**
+     * Parameter und Rueckgabetyp der Routinen eines Schemas.
+     *
+     * Aus dem Katalog statt aus dem Definitionstext: `sys.parameters` traegt
+     * Name, Typ und Richtung strukturiert, und der Rueckgabewert einer Funktion
+     * steht dort als Parameter mit `parameter_id = 0`.
+     */
+    fun listRoutineParameters(session: JdbcOperations, schema: String): List<RoutineParamRow> = session.queryList(
+        """
+        SELECT o.name AS routine_name, p.name AS param_name, t.name AS type_name,
+               p.is_output, p.parameter_id
+        FROM sys.objects o
+        JOIN sys.parameters p ON p.object_id = o.object_id
+        JOIN sys.types t ON t.user_type_id = p.user_type_id
+        WHERE o.schema_id = SCHEMA_ID(?) AND o.is_ms_shipped = 0
+          AND o.type IN ('P', 'FN', 'IF', 'TF')
+        ORDER BY o.name, p.parameter_id
+        """.trimIndent(),
+        schema,
+    ).map { row ->
+        val id = row.int("parameter_id") ?: 0
+        RoutineParamRow(
+            routine = row.string("routine_name"),
+            // Der Rueckgabewert traegt einen leeren Namen.
+            name = (row["param_name"]?.toString() ?: "").removePrefix("@"),
+            typeName = row.string("type_name"),
+            isOutput = row.bool("is_output") == true,
+            isReturnValue = id == 0,
+        )
+    }
+
     /**
      * Eine gelesene Routine: Rumpf aus `sys.sql_modules`, plus die
      * Trigger-Angaben, die nur fuer `TR` gefuellt sind.

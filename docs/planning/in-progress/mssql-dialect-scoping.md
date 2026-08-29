@@ -880,7 +880,7 @@ andere hängt daran.
 
 | Sub-Slice | Inhalt | Fertig, wenn |
 | --- | --- | --- |
-| **9a** ✅ | Reverse liest Rümpfe aus `sys.sql_modules` (Funktionen, Prozeduren, Trigger) samt Trigger-Tabelle, -Zeitpunkt und -Ereignissen | Live belegt. `R342` schrumpft auf das, was wirklich keinen T-SQL-Rumpf hat — und das sind **zwei** Fälle, nicht einer: CLR-Routinen (keine `sql_modules`-Zeile) und `WITH ENCRYPTION` (Zeile mit `definition IS NULL`). Der zweite wäre sonst still verschwunden. Festgehalten: T-SQL-Trigger feuern je **Anweisung**, und SQL Server kennt kein `BEFORE` — nur `AFTER` und `INSTEAD OF` |
+| **9a** ✅ | Reverse liest Rümpfe aus `sys.sql_modules`; **Signatur aus `sys.parameters`**, Rumpf aus dem Definitionstext geschnitten | Live belegt. `R342` schrumpft auf das, was wirklich keinen T-SQL-Rumpf hat — und das sind **zwei** Fälle, nicht einer: CLR-Routinen (keine `sql_modules`-Zeile) und `WITH ENCRYPTION` (Zeile mit `definition IS NULL`). Der zweite wäre sonst still verschwunden. Festgehalten: T-SQL-Trigger feuern je **Anweisung**, und SQL Server kennt kein `BEFORE` — nur `AFTER` und `INSTEAD OF`. **Der `body`-Vertrag war ungeschrieben** und wurde beim Bauen erst falsch getroffen: die Spec sagte nur „Quell-Code im Quell-Dialekt", nicht ob innerer Block oder ganze Anweisung. Entschieden über die Pflichtfelder des Triggers im JSON-Schema (`table`, `event`, `timing` wären sonst redundant) und in `neutral-model-spec.md` nachgetragen |
 | **9b** | Generate rendert `CREATE OR ALTER` statt `E053` | `schema generate --target mssql` erzeugt Routinen, die der Server annimmt |
 | **9c** | Diff/Migrate | `schema migrate` legt Routinen an, ersetzt und entfernt sie |
 

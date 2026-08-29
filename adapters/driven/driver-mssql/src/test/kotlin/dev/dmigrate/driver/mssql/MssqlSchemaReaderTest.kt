@@ -42,7 +42,16 @@ class MssqlSchemaReaderTest : FunSpec({
             jdbc.queryList(match { it.contains("FROM sys.fulltext_index_columns") }, any())
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.views v") }, any()) } returns emptyList()
-        every { jdbc.queryList(match { it.contains("FROM sys.objects o") }, any()) } returns emptyList()
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("m.definition IS NULL") }, any())
+        } returns emptyList()
+        // Slice 9a: gelesene Routinen und ihre Parameter — diese Specs decken
+        // sie nicht ab und lesen sie als leer.
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("JOIN sys.sql_modules m") &&
+                    !it.contains("m.definition IS NULL") }, any())
+        } returns emptyList()
+        every { jdbc.queryList(match { it.contains("JOIN sys.parameters p") }, any()) } returns emptyList()
     }
 
     fun stubTableQueries(jdbc: JdbcOperations) {
@@ -314,10 +323,82 @@ class MssqlSchemaReaderTest : FunSpec({
         boundedSeq.cycle shouldBe true
     }
 
+    // Slice 9a: Signatur aus `sys.parameters`, Rumpf aus dem Definitionstext.
+    test("routines are read with parameters from the catalog and the body cut at the top-level AS") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("JOIN sys.sql_modules m") &&
+                    !it.contains("m.definition IS NULL") }, "dbo")
+        } returns listOf(
+            mapOf(
+                "object_type" to "FN", "object_name" to "fn_double",
+                "definition" to "CREATE FUNCTION dbo.fn_double (@x INT) RETURNS INT AS BEGIN RETURN @x * 2 END",
+                "parent_name" to null, "is_insert" to 0, "is_update" to 0,
+                "is_delete" to 0, "is_instead_of" to 0,
+            ),
+            mapOf(
+                "object_type" to "TR", "object_name" to "trg_audit",
+                "definition" to "CREATE TRIGGER trg_audit ON t AFTER INSERT AS SELECT 1",
+                "parent_name" to "t", "is_insert" to 1, "is_update" to 0,
+                "is_delete" to 0, "is_instead_of" to 0,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("JOIN sys.parameters p") }, "dbo") } returns listOf(
+            mapOf(
+                "routine_name" to "fn_double", "param_name" to "", "type_name" to "int",
+                "is_output" to true, "parameter_id" to 0,
+            ),
+            mapOf(
+                "routine_name" to "fn_double", "param_name" to "@x", "type_name" to "int",
+                "is_output" to false, "parameter_id" to 1,
+            ),
+        )
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+
+        val fn = result.schema.functions.getValue("fn_double")
+        fn.body shouldBe "BEGIN RETURN @x * 2 END"
+        fn.parameters.map { it.name } shouldBe listOf("x")
+        fn.returns?.type shouldBe "int"
+        fn.sourceDialect shouldBe "mssql"
+
+        val trg = result.schema.triggers.getValue("trg_audit")
+        trg.body shouldBe "SELECT 1"
+        trg.table shouldBe "t"
+    }
+
+    // Lieber melden als raten: ohne oberstes `AS` laesst sich der Rumpf nicht
+    // von der Signatur trennen.
+    test("a definition without a top-level AS is skipped with R349") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("JOIN sys.sql_modules m") &&
+                    !it.contains("m.definition IS NULL") }, "dbo")
+        } returns listOf(
+            mapOf(
+                "object_type" to "P", "object_name" to "usp_odd",
+                "definition" to "CREATE PROCEDURE usp_odd", "parent_name" to null,
+                "is_insert" to 0, "is_update" to 0, "is_delete" to 0, "is_instead_of" to 0,
+            ),
+        )
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+
+        result.schema.procedures shouldBe emptyMap()
+        result.skippedObjects.single { it.name == "usp_odd" }.code shouldBe "R349"
+        result.notes.any { it.code == "R349" } shouldBe true
+    }
+
     test("unread routines and triggers surface as skippedObjects plus R342 notes") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM sys.objects o") }, "dbo") } returns listOf(
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("m.definition IS NULL") }, "dbo")
+        } returns listOf(
             mapOf("object_type" to "P ", "object_name" to "usp_do"),
             mapOf("object_type" to "PC", "object_name" to "usp_clr"),
             mapOf("object_type" to "FN", "object_name" to "fn_calc"),
@@ -340,7 +421,9 @@ class MssqlSchemaReaderTest : FunSpec({
     test("unread-object notes honour the read options") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM sys.objects o") }, "dbo") } returns listOf(
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("m.definition IS NULL") }, "dbo")
+        } returns listOf(
             mapOf("object_type" to "P ", "object_name" to "usp_do"),
             mapOf("object_type" to "TR", "object_name" to "trg_audit"),
         )

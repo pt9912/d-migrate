@@ -11,6 +11,9 @@ import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.core.model.ParameterDefinition
+import dev.dmigrate.core.model.ParameterDirection
+import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
@@ -57,7 +60,7 @@ class MssqlSchemaReader(
             val tables = readTables(session, schema, notes)
             val views = if (options.includeViews) readViews(session, schema, notes) else emptyMap()
             val sequences = readSequences(session, schema)
-            val routines = readRoutines(session, schema, options)
+            val routines = readRoutines(session, schema, options, notes, skipped)
             noteUnreadObjects(session, schema, options, notes, skipped)
 
             return SchemaReadResult(
@@ -359,24 +362,59 @@ class MssqlSchemaReader(
         session: JdbcOperations,
         schema: String,
         options: SchemaReadOptions,
+        notes: MutableList<SchemaReadNote>,
+        skipped: MutableList<SkippedObject>,
     ): Routines {
         val rows = MssqlMetadataQueries.listRoutines(session, schema)
+        val paramsByRoutine = MssqlMetadataQueries.listRoutineParameters(session, schema)
+            .groupBy { it.routine }
         val functions = mutableMapOf<String, FunctionDefinition>()
         val procedures = mutableMapOf<String, ProcedureDefinition>()
         val triggers = mutableMapOf<String, TriggerDefinition>()
 
         for (row in rows) {
+            // Der Rumpf ist das, was hinter dem einleitenden `AS` steht; Signatur
+            // und Trigger-Angaben stehen im Modell als eigene Felder daneben.
+            // Laesst sich der Schnitt nicht sicher setzen, wird gemeldet statt
+            // geraten.
+            val body = MssqlRoutineBody.extract(row.definition)
+            if (body == null) {
+                val kind = when (row.type) {
+                    "P" -> "procedure"
+                    "TR" -> "trigger"
+                    else -> "function"
+                }
+                skipped += SkippedObject(
+                    type = kind,
+                    name = row.name,
+                    reason = "The stored definition carries no top-level AS, so its body cannot be separated " +
+                        "from the signature.",
+                    code = "R349",
+                )
+                notes += SchemaReadNote(
+                    severity = SchemaReadSeverity.WARNING,
+                    code = "R349",
+                    objectName = row.name,
+                    message = "The $kind '${row.name}' was skipped: its stored definition carries no " +
+                        "top-level AS, so the body cannot be separated from the signature.",
+                )
+                continue
+            }
+            val params = paramsByRoutine[row.name].orEmpty()
             when (row.type) {
                 "P" -> if (options.includeProcedures) {
                     procedures[row.name] = ProcedureDefinition(
-                        body = row.definition,
+                        parameters = parametersOf(params),
+                        body = body,
                         language = "sql",
                         sourceDialect = "mssql",
                     )
                 }
                 "FN", "IF", "TF" -> if (options.includeFunctions) {
                     functions[row.name] = FunctionDefinition(
-                        body = row.definition,
+                        parameters = parametersOf(params),
+                        returns = params.firstOrNull { it.isReturnValue }?.let { ReturnType(it.typeName) },
+                        body = body,
                         language = "sql",
                         sourceDialect = "mssql",
                     )
@@ -391,7 +429,7 @@ class MssqlSchemaReader(
                         timing = if (row.isInsteadOf) TriggerTiming.INSTEAD_OF else TriggerTiming.AFTER,
                         // T-SQL-Trigger feuern je Anweisung, nicht je Zeile.
                         forEach = TriggerForEach.STATEMENT,
-                        body = row.definition,
+                        body = body,
                         sourceDialect = "mssql",
                     )
                 }
@@ -399,6 +437,16 @@ class MssqlSchemaReader(
         }
         return Routines(functions, procedures, triggers)
     }
+
+    /** Der Rueckgabewert steht in `sys.parameters` mit `parameter_id = 0` und zaehlt nicht als Parameter. */
+    private fun parametersOf(rows: List<MssqlMetadataQueries.RoutineParamRow>): List<ParameterDefinition> =
+        rows.filterNot { it.isReturnValue }.map { p ->
+            ParameterDefinition(
+                name = p.name,
+                type = p.typeName,
+                direction = if (p.isOutput) ParameterDirection.OUT else ParameterDirection.IN,
+            )
+        }
 
     private fun triggerEvents(row: MssqlMetadataQueries.RoutineRow): Set<TriggerEvent> = buildSet {
         if (row.isInsert) add(TriggerEvent.INSERT)
