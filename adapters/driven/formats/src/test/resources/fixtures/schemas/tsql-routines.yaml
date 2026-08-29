@@ -1,0 +1,77 @@
+version: "1.0.0"
+name: "T-SQL Routines"
+description: "Routinen mit T-SQL-Rumpf: Rumpf im Modell, Signatur daneben (Slice 9b)"
+
+tables:
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+        required: true
+      amount:
+        type: decimal
+        precision: 10
+        scale: 2
+    primary_key: [id]
+
+functions:
+  "order_total(in:integer)":
+    description: "Summe einer Bestellung"
+    parameters:
+      - name: order_id
+        type: integer
+        direction: in
+    returns:
+      type: decimal
+      precision: 10
+      scale: 2
+    language: sql
+    body: |
+      BEGIN
+          RETURN (SELECT SUM(amount) FROM orders WHERE id = @order_id);
+      END
+    source_dialect: mssql
+  "open_orders(in:integer)":
+    description: "Inline-Tabellenfunktion"
+    parameters:
+      - name: min_id
+        type: integer
+        direction: in
+    returns:
+      type: table
+    language: sql
+    body: |
+      RETURN (SELECT id, amount FROM orders WHERE id >= @min_id)
+    source_dialect: mssql
+
+procedures:
+  "bump_amount(in:integer,out:integer)":
+    description: "Erhoeht den Betrag und meldet die Zeilenzahl"
+    parameters:
+      - name: order_id
+        type: integer
+        direction: in
+      - name: affected
+        type: integer
+        direction: out
+    language: sql
+    body: |
+      BEGIN
+          UPDATE orders SET amount = amount + 1 WHERE id = @order_id;
+          SET @affected = @@ROWCOUNT;
+      END
+    source_dialect: mssql
+
+triggers:
+  "orders::trg_orders_audit":
+    description: "Feuert je Anweisung ueber inserted/deleted"
+    table: orders
+    event: [insert, update]
+    timing: after
+    for_each: statement
+    body: |
+      BEGIN
+          SET NOCOUNT ON;
+      END
+    source_dialect: mssql

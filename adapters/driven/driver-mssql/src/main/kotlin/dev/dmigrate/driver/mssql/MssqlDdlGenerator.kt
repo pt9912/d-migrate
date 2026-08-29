@@ -39,9 +39,11 @@ import dev.dmigrate.driver.ViewQueryTransformer
  * CHECK/PK, FKs inkl. zirkulärer und aufgeschobener), Indizes (inkl.
  * gefilterter), native Sequenzen (`CREATE SEQUENCE`, `NEXT VALUE FOR`),
  * Views (`CREATE OR ALTER VIEW`), Custom Types (Enum/Domain inline,
- * Composite E054), Spatial (Profil `native` → `geography`/`geometry`).
- * Routinen, Trigger und Aggregate werden nicht als T-SQL gerendert und landen
- * als E053/E054-`skipped_objects`; Partitionierung wird als E055 ausgewiesen
+ * Composite E054), Spatial (Profil `native` → `geography`/`geometry`),
+ * Routinen und Trigger mit T-SQL-Rumpf (`CREATE OR ALTER FUNCTION` /
+ * `… PROCEDURE` / `… TRIGGER`). Fremde Rümpfe, Trigger-Formen, die T-SQL nicht
+ * kennt, und schemaweite Trigger-Namenskollisionen landen als E053, Aggregate
+ * (CLR-Assembly nötig) als E054; Partitionierung wird als E055 ausgewiesen
  * (Tabelle plain); planare Spatial-/Volltext-Indizes und Schlüssel auf
  * LOB-Spalten als E057. Render-Regeln: `spec/ddl-generation-rules.md`
  * (Abschnitte MSSQL), Typtabelle: `spec/type-mapping.md`.
@@ -301,22 +303,68 @@ class MssqlDdlGenerator private constructor(
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> = functions.map { (key, fn) ->
-        routineNotRendered("function", ObjectKeyCodec.routineName(key), fn.body, fn.sourceDialect, skipped)
+        val name = ObjectKeyCodec.routineName(key)
+        val problem = bodyProblem("function", name, fn.body, fn.sourceDialect)
+            ?: MssqlRoutineDdl.unsupportedFunctionShape(name, fn)
+        if (problem != null) {
+            notRendered("function", name, problem, fn.sourceDialect, skipped)
+        } else {
+            DdlStatement(MssqlRoutineDdl.functionSql(name, fn, checkNotNull(fn.body)) { quoteIdentifier(it) })
+        }
     }
 
     override fun generateProcedures(
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> = procedures.map { (key, proc) ->
-        routineNotRendered("procedure", ObjectKeyCodec.routineName(key), proc.body, proc.sourceDialect, skipped)
+        val name = ObjectKeyCodec.routineName(key)
+        val problem = bodyProblem("procedure", name, proc.body, proc.sourceDialect)
+        if (problem != null) {
+            notRendered("procedure", name, problem, proc.sourceDialect, skipped)
+        } else {
+            DdlStatement(MssqlRoutineDdl.procedureSql(name, proc, checkNotNull(proc.body)) { quoteIdentifier(it) })
+        }
     }
 
+    /**
+     * SQL-Server-Triggernamen gelten schemaweit, nicht je Tabelle. Zwei
+     * gleichnamige Trigger auf verschiedenen Tabellen — im neutralen Modell
+     * durch den Key `table::name` unterscheidbar — wuerden hier
+     * uebereinandergeschrieben, der zweite `CREATE OR ALTER` ersetzte den
+     * ersten stillschweigend. Deshalb wird die Kollision gemeldet.
+     */
     override fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = triggers.map { (name, trigger) ->
-        routineNotRendered("trigger", name, trigger.body, trigger.sourceDialect, skipped)
+    ): List<DdlStatement> {
+        val colliding = triggers.keys
+            .groupBy { ObjectKeyCodec.triggerName(it) }
+            .filterValues { it.size > 1 }
+        return triggers.map { (key, trigger) ->
+            val name = ObjectKeyCodec.triggerName(key)
+            val collision = colliding[name]
+            if (collision != null) {
+                return@map notRendered(
+                    "trigger", name,
+                    MssqlRoutineDdl.Unrenderable(
+                        "Trigger name '$name' is used by ${collision.size} triggers " +
+                            "(${collision.joinToString(", ")}); SQL Server trigger names are schema-global.",
+                        "Rename the triggers so each carries a schema-wide unique name.",
+                    ),
+                    trigger.sourceDialect, skipped,
+                )
+            }
+            val problem = bodyProblem("trigger", name, trigger.body, trigger.sourceDialect)
+                ?: MssqlRoutineDdl.unsupportedTriggerShape(name, trigger)
+            if (problem != null) {
+                notRendered("trigger", name, problem, trigger.sourceDialect, skipped)
+            } else {
+                DdlStatement(
+                    MssqlRoutineDdl.triggerSql(name, trigger, checkNotNull(trigger.body)) { quoteIdentifier(it) },
+                )
+            }
+        }
     }
 
     override fun generateAggregates(
@@ -335,29 +383,45 @@ class MssqlDdlGenerator private constructor(
     }
 
     /**
-     * Routinen- und Trigger-Körper werden nicht als T-SQL gerendert: fremde
-     * Dialekte müssten übersetzt werden (macht d-migrate nicht), und für
-     * T-SQL-Körper fehlt dem Generator der Hüllen-Vertrag (Parameter-
-     * Präfixe, Trigger ohne FOR EACH ROW). Beides landet sichtbar als E053.
+     * Was einen Rumpf unrenderbar macht — oder null, wenn er sich rendern
+     * laesst.
+     *
+     * Ein fremder Dialekt bleibt liegen: d-migrate uebersetzt keine
+     * prozeduralen Koerper. Ein T-SQL-Rumpf dagegen wird gerendert, seit die
+     * Signatur neben ihm im Modell steht.
      */
-    private fun routineNotRendered(
+    private fun bodyProblem(
         kind: String,
         name: String,
         body: String?,
         sourceDialect: String?,
+    ): MssqlRoutineDdl.Unrenderable? {
+        val kindLabel = kind.replaceFirstChar { it.uppercase() }
+        return when {
+            body == null -> MssqlRoutineDdl.Unrenderable(
+                "$kindLabel '$name' has no body and must be manually implemented.",
+                "Provide a $kind body in the schema definition.",
+            )
+            sourceDialect != null && sourceDialect != "mssql" -> MssqlRoutineDdl.Unrenderable(
+                "$kindLabel '$name' was written for '$sourceDialect' and must be manually rewritten " +
+                    "for SQL Server.",
+                "Rewrite the $kind body using T-SQL syntax.",
+            )
+            else -> null
+        }
+    }
+
+    private fun notRendered(
+        kind: String,
+        name: String,
+        problem: MssqlRoutineDdl.Unrenderable,
+        sourceDialect: String?,
         skipped: MutableList<SkippedObject>,
     ): DdlStatement {
-        val kindLabel = kind.replaceFirstChar { it.uppercase() }
-        val reason = when {
-            body == null -> "$kindLabel '$name' has no body and must be manually implemented."
-            sourceDialect != null && sourceDialect != "mssql" ->
-                "$kindLabel '$name' was written for '$sourceDialect' and must be manually rewritten for SQL Server."
-            else -> "$kindLabel '$name' is not rendered for mssql: d-migrate does not generate T-SQL $kind DDL."
-        }
         val action = ManualActionRequired(
             code = "E053", objectType = kind, objectName = name,
-            reason = reason,
-            hint = "Create the $kind as T-SQL (CREATE OR ALTER …) manually on the target.",
+            reason = problem.reason,
+            hint = problem.hint,
             sourceDialect = sourceDialect,
         )
         skipped += action.toSkipped()
@@ -381,8 +445,9 @@ class MssqlDdlGenerator private constructor(
                 DdlStatement("DROP TABLE IF EXISTS ${bracketedNameAfter(sql, "CREATE TABLE")};")
             sql.startsWith("CREATE SEQUENCE", ignoreCase = true) ->
                 DdlStatement("DROP SEQUENCE IF EXISTS ${bracketedNameAfter(sql, "CREATE SEQUENCE")};")
-            sql.startsWith("CREATE OR ALTER VIEW", ignoreCase = true) ->
-                DdlStatement("DROP VIEW IF EXISTS ${bracketedNameAfter(sql, "CREATE OR ALTER VIEW")};")
+            sql.startsWith("CREATE OR ALTER", ignoreCase = true) ->
+                MssqlRoutineDdl.invert(sql, ::bracketedNameAfter)?.let { DdlStatement(it) }
+                    ?: super.invertStatement(stmt)
             // Volltext steht als Katalog+Index in EINEM Statement und traegt
             // deshalb den Tabellennamen erst hinter `CREATE FULLTEXT INDEX ON`.
             // Ohne diesen Zweig fiele der Rueckbau still weg und liesse den

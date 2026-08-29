@@ -21,7 +21,11 @@ internal object MssqlRoutineBody {
 
     fun extract(definition: String): String? {
         val at = topLevelAsIndex(definition) ?: return null
-        return definition.substring(at).trim().ifEmpty { null }
+        // Ein abschliessendes Semikolon beendet die `CREATE`-Anweisung und
+        // gehoert nicht zum Rumpf. Bliebe es stehen, wuechse der Rumpf bei
+        // jedem Reverse-Generate-Umlauf um ein weiteres `;`: SQL Server legt
+        // in `sys.sql_modules` den Text ab, wie er gesendet wurde.
+        return definition.substring(at).trim().trimEnd(';', ' ', '\t', '\n', '\r').ifEmpty { null }
     }
 
     private fun topLevelAsIndex(sql: String): Int? {

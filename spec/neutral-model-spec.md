@@ -619,6 +619,13 @@ Routinen (gleicher Name, unterschiedliche Signatur) erhalten
 unterschiedliche Keys und koennen damit verlustfrei nebeneinander im
 Schema existieren.
 
+Die Typnamen in `parameters` und `returns` sind **neutrale** Namen aus
+demselben Vokabular wie Spaltentypen (`integer`, `text`, `decimal`, …), nicht
+die des Quell-Dialekts: sie gehen in den Key ein, und ein nativer Name dort
+liesse dieselbe Routine je nach Herkunft unter einem anderen Key stehen. Eine
+Laenge tragen sie nicht — `varchar(50)` wird zu `text`; nur `returns` fuehrt
+`precision` und `scale`.
+
 **Trigger** verwenden einen tabellenqualifizierten Key:
 
 ```

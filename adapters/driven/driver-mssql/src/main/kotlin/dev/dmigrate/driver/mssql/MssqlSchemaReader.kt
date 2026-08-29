@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.FunctionDefinition
@@ -354,8 +355,8 @@ class MssqlSchemaReader(
     /**
      * Funktionen, Prozeduren und Trigger samt Rumpf.
      *
-     * Der Rumpf ist die vollstaendige `CREATE`-Anweisung, wie SQL Server sie
-     * gespeichert hat — nicht nur der Block dazwischen. `sourceDialect` haelt
+     * Der Rumpf ist der Block hinter dem einleitenden `AS`; Signatur und
+     * Trigger-Kontext stehen als eigene Felder daneben. `sourceDialect` haelt
      * fest, woher er stammt: auf einem anderen Ziel ist er nicht gueltig.
      */
     private fun readRoutines(
@@ -379,49 +380,54 @@ class MssqlSchemaReader(
             // geraten.
             val body = MssqlRoutineBody.extract(row.definition)
             if (body == null) {
-                val kind = when (row.type) {
-                    "P" -> "procedure"
-                    "TR" -> "trigger"
-                    else -> "function"
-                }
-                skipped += SkippedObject(
-                    type = kind,
-                    name = row.name,
-                    reason = "The stored definition carries no top-level AS, so its body cannot be separated " +
-                        "from the signature.",
+                reportSkippedRoutine(
+                    row = row,
                     code = "R349",
-                )
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R349",
-                    objectName = row.name,
-                    message = "The $kind '${row.name}' was skipped: its stored definition carries no " +
-                        "top-level AS, so the body cannot be separated from the signature.",
+                    reason = "The stored definition carries no top-level AS, so its body cannot be " +
+                        "separated from the signature.",
+                    notes = notes,
+                    skipped = skipped,
                 )
                 continue
             }
             val params = paramsByRoutine[row.name].orEmpty()
             when (row.type) {
                 "P" -> if (options.includeProcedures) {
-                    procedures[row.name] = ProcedureDefinition(
-                        parameters = parametersOf(params),
+                    val parameters = parametersOf(params)
+                    procedures[ObjectKeyCodec.routineKey(row.name, parameters)] = ProcedureDefinition(
+                        parameters = parameters,
                         body = body,
                         language = "sql",
                         sourceDialect = "mssql",
                     )
                 }
-                "FN", "IF", "TF" -> if (options.includeFunctions) {
-                    functions[row.name] = FunctionDefinition(
-                        parameters = parametersOf(params),
-                        returns = params.firstOrNull { it.isReturnValue }?.let { ReturnType(it.typeName) },
+                "FN", "IF" -> if (options.includeFunctions) {
+                    val parameters = parametersOf(params)
+                    functions[ObjectKeyCodec.routineKey(row.name, parameters)] = FunctionDefinition(
+                        parameters = parameters,
+                        returns = returnTypeOf(row, params),
                         body = body,
                         language = "sql",
                         sourceDialect = "mssql",
+                    )
+                }
+                // Eine mehrteilige Tabellenfunktion deklariert ihre Rueckgabe als
+                // `RETURNS @r TABLE (...)` vor dem `AS`. Weder `sys.parameters`
+                // noch `returns` im neutralen Modell tragen diese Tabellenform;
+                // gelesen abgelegt waere die Funktion nicht wieder herstellbar.
+                "TF" -> if (options.includeFunctions) {
+                    reportSkippedRoutine(
+                        row = row,
+                        code = "R350",
+                        reason = "A multi-statement table-valued function returns a table variable " +
+                            "(RETURNS @var TABLE (...)); the neutral model carries no return-table shape.",
+                        notes = notes,
+                        skipped = skipped,
                     )
                 }
                 "TR" -> if (options.includeTriggers) {
                     val table = row.table ?: continue
-                    triggers[row.name] = TriggerDefinition(
+                    triggers[ObjectKeyCodec.triggerKey(table, row.name)] = TriggerDefinition(
                         table = table,
                         events = triggerEvents(row),
                         // SQL Server kennt kein BEFORE: `AFTER` und
@@ -438,15 +444,57 @@ class MssqlSchemaReader(
         return Routines(functions, procedures, triggers)
     }
 
+    private fun reportSkippedRoutine(
+        row: MssqlMetadataQueries.RoutineRow,
+        code: String,
+        reason: String,
+        notes: MutableList<SchemaReadNote>,
+        skipped: MutableList<SkippedObject>,
+    ) {
+        val kind = when (row.type) {
+            "P" -> "procedure"
+            "TR" -> "trigger"
+            else -> "function"
+        }
+        skipped += SkippedObject(type = kind, name = row.name, reason = reason, code = code)
+        notes += SchemaReadNote(
+            severity = SchemaReadSeverity.WARNING,
+            code = code,
+            objectName = row.name,
+            message = "The $kind '${row.name}' was skipped: ${reason.replaceFirstChar { it.lowercase() }}",
+        )
+    }
+
     /** Der Rueckgabewert steht in `sys.parameters` mit `parameter_id = 0` und zaehlt nicht als Parameter. */
     private fun parametersOf(rows: List<MssqlMetadataQueries.RoutineParamRow>): List<ParameterDefinition> =
         rows.filterNot { it.isReturnValue }.map { p ->
             ParameterDefinition(
                 name = p.name,
-                type = p.typeName,
+                type = MssqlTypeMapping.mapParamType(p.typeName),
                 direction = if (p.isOutput) ParameterDirection.OUT else ParameterDirection.IN,
             )
         }
+
+    /**
+     * Eine Inline-Tabellenfunktion (`IF`) fuehrt ihre Rueckgabe nicht in
+     * `sys.parameters` — dort steht nur bei skalaren Funktionen eine Zeile mit
+     * `parameter_id = 0`. Ihr Rueckgabetyp ist die Tabelle selbst.
+     */
+    private fun returnTypeOf(
+        row: MssqlMetadataQueries.RoutineRow,
+        params: List<MssqlMetadataQueries.RoutineParamRow>,
+    ): ReturnType? {
+        if (row.type == "IF") return ReturnType(type = "table")
+        val returnValue = params.firstOrNull { it.isReturnValue } ?: return null
+        val neutral = MssqlTypeMapping.mapParamType(returnValue.typeName)
+        // Praezision und Skala traegt das Modell nur fuer `decimal`; fuer alle
+        // anderen Typen meldet `sys.parameters` dort 0.
+        return if (neutral == "decimal" && (returnValue.precision ?: 0) > 0) {
+            ReturnType(type = neutral, precision = returnValue.precision, scale = returnValue.scale)
+        } else {
+            ReturnType(type = neutral)
+        }
+    }
 
     private fun triggerEvents(row: MssqlMetadataQueries.RoutineRow): Set<TriggerEvent> = buildSet {
         if (row.isInsert) add(TriggerEvent.INSERT)

@@ -85,6 +85,34 @@ internal object MssqlTypeMapping {
         )
     }
 
+    /**
+     * T-SQL-Typname eines Routinen-Parameters auf den neutralen Typnamen.
+     *
+     * Das neutrale Modell fuehrt Parameter- und Rueckgabetypen als neutrale
+     * Namen, nicht als Dialekt-Typen: der kanonische Routinen-Key setzt sich
+     * aus ihnen zusammen (`calc(in:integer,in:integer)`,
+     * `spec/neutral-model-spec.md` Abschnitt 6.3), und ein nativer Name dort
+     * liesse dieselbe Routine je nach Quell-Dialekt unter einem anderen Key
+     * stehen. Laengen fallen dabei weg — PostgreSQL und MySQL bilden `varchar`
+     * ebenso auf `text` ab.
+     */
+    fun mapParamType(typeName: String): String = when (typeName.lowercase().trim()) {
+        "int" -> "integer"
+        "bigint" -> "biginteger"
+        "smallint", "tinyint" -> "smallint"
+        "bit" -> "boolean"
+        "decimal", "numeric", "money", "smallmoney" -> "decimal"
+        "float", "real" -> "float"
+        "varchar", "nvarchar", "char", "nchar", "text", "ntext", "sysname" -> "text"
+        "uniqueidentifier" -> "uuid"
+        "varbinary", "binary", "image" -> "binary"
+        "date" -> "date"
+        "time" -> "time"
+        "datetime", "datetime2", "smalldatetime", "datetimeoffset" -> "datetime"
+        "geometry", "geography" -> "geometry"
+        else -> typeName.lowercase()
+    }
+
     private fun mapBaseType(input: ColumnInput): NeutralType =
         mapNumeric(input)
             ?: mapTextual(input)

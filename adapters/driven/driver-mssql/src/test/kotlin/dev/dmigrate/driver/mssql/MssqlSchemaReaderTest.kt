@@ -358,15 +358,52 @@ class MssqlSchemaReaderTest : FunSpec({
         val (reader, pool) = rig(jdbc)
         val result = reader.read(pool)
 
-        val fn = result.schema.functions.getValue("fn_double")
+        // Kanonischer Key aus Name und Signatur, mit neutralen Typnamen —
+        // `int` steht dort nicht, sonst truege dieselbe Funktion je nach
+        // Quell-Dialekt einen anderen Key.
+        val fn = result.schema.functions.getValue("fn_double(in:integer)")
         fn.body shouldBe "BEGIN RETURN @x * 2 END"
         fn.parameters.map { it.name } shouldBe listOf("x")
-        fn.returns?.type shouldBe "int"
+        fn.parameters.map { it.type } shouldBe listOf("integer")
+        fn.returns?.type shouldBe "integer"
         fn.sourceDialect shouldBe "mssql"
 
-        val trg = result.schema.triggers.getValue("trg_audit")
+        val trg = result.schema.triggers.getValue("t::trg_audit")
         trg.body shouldBe "SELECT 1"
         trg.table shouldBe "t"
+    }
+
+    // Eine mehrteilige Tabellenfunktion deklariert `RETURNS @r TABLE (...)` vor
+    // dem `AS`; das neutrale Modell traegt diese Form nicht.
+    test("a multi-statement table-valued function is skipped with R350, an inline one returns table") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("JOIN sys.sql_modules m") &&
+                    !it.contains("m.definition IS NULL") }, "dbo")
+        } returns listOf(
+            mapOf(
+                "object_type" to "TF", "object_name" to "tf_rows",
+                "definition" to "CREATE FUNCTION dbo.tf_rows() RETURNS @r TABLE (id INT) AS BEGIN RETURN END",
+                "parent_name" to null, "is_insert" to 0, "is_update" to 0,
+                "is_delete" to 0, "is_instead_of" to 0,
+            ),
+            mapOf(
+                "object_type" to "IF", "object_name" to "if_rows",
+                "definition" to "CREATE FUNCTION dbo.if_rows() RETURNS TABLE AS RETURN (SELECT 1 AS id)",
+                "parent_name" to null, "is_insert" to 0, "is_update" to 0,
+                "is_delete" to 0, "is_instead_of" to 0,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("JOIN sys.parameters p") }, "dbo") } returns emptyList()
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+
+        result.schema.functions.keys shouldBe setOf("if_rows()")
+        result.schema.functions.getValue("if_rows()").returns?.type shouldBe "table"
+        result.skippedObjects.single { it.name == "tf_rows" }.code shouldBe "R350"
+        result.notes.single { it.code == "R350" }.objectName shouldBe "tf_rows"
     }
 
     // Lieber melden als raten: ohne oberstes `AS` laesst sich der Rumpf nicht

@@ -69,4 +69,12 @@ class MssqlRoutineBodyTest : FunSpec({
             "SELECT 'unterminated",
         )
     }
+
+    // Der Reverse-Generate-Umlauf haengt sonst je Runde ein `;` an: SQL Server
+    // legt den Definitionstext so ab, wie er gesendet wurde.
+    test("a trailing statement terminator is not part of the body") {
+        MssqlRoutineBody.extract("CREATE PROCEDURE p AS BEGIN SELECT 1 END\n;") shouldBe "BEGIN SELECT 1 END"
+        MssqlRoutineBody.extract("CREATE PROCEDURE p AS BEGIN SELECT 1 END;") shouldBe "BEGIN SELECT 1 END"
+        MssqlRoutineBody.extract("CREATE PROCEDURE p AS BEGIN SELECT 1 END\n;\n;") shouldBe "BEGIN SELECT 1 END"
+    }
 })

@@ -1129,9 +1129,22 @@ Trigger-Body → CREATE FUNCTION trg_fn_<name>() ... + CREATE TRIGGER ... EXECUT
 
 Wenn ein PostgreSQL-Trigger in einen anderen Dialekt transformiert werden soll, wird die Trigger-Function aufgelöst und der Body in den Trigger integriert (oder `action_required` bei komplexer Logik).
 
-**MSSQL**: Trigger werden nicht als T-SQL gerendert (SQL-Server-Trigger sind
-statement-basiert, kennen kein `FOR EACH ROW` und kein `BEFORE`); jeder
-Trigger landet als `action_required` E053 in `skipped_objects`.
+**MSSQL**: Ein Trigger mit T-SQL-Rumpf rendert als
+
+```
+CREATE OR ALTER TRIGGER [name] ON [tabelle]
+AFTER|INSTEAD OF <ereignisse> AS
+<rumpf>
+```
+
+Die Ereignisse stehen komma-getrennt in kanonischer Reihenfolge (`AFTER INSERT,
+UPDATE`) — `OR` ist die PostgreSQL-Form. Drei Formen kennt T-SQL nicht und
+landen als `action_required` E053 in `skipped_objects`, statt umgedeutet zu
+werden: `BEFORE` (es gibt nur `AFTER` und `INSTEAD OF`), `FOR EACH ROW`
+(SQL-Server-Trigger feuern je Anweisung) und eine `WHEN`-Bedingung. Ebenfalls
+E053 sind gleichnamige Trigger auf verschiedenen Tabellen: der Name gilt in SQL
+Server schemaweit, der zweite `CREATE OR ALTER` ersetzte sonst still den
+ersten.
 
 ---
 
@@ -1144,10 +1157,25 @@ Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL
 - **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [ki-mcp.md](./ki-mcp.md))
 - **Fallback ohne KI**: `action_required` (E053) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
 
-**MSSQL**: Functions und Procedures werden nicht als T-SQL gerendert — fremde
-Körper müssten übersetzt werden, für T-SQL-Körper fehlt der Hüllen-Vertrag
-(`@`-Parameter, `CREATE OR ALTER`); jede Routine landet als `action_required`
-E053 in `skipped_objects`, Aggregate (CLR-Assembly nötig) als E054.
+**MSSQL**: Ein T-SQL-Rumpf rendert als `CREATE OR ALTER FUNCTION` bzw.
+`CREATE OR ALTER PROCEDURE`. Die Hülle kommt aus den Feldern neben dem Rumpf:
+Parameter tragen das T-SQL-`@`-Präfix und bei Rückgaberichtung ein `OUTPUT`,
+Funktionen eine `RETURNS`-Klausel. Weil das neutrale Modell Parametertypen ohne
+Länge führt (siehe [neutral-model-spec.md](./neutral-model-spec.md), Abschnitt
+6.3), rendert die Textform als `NVARCHAR(MAX)` — ein enger deklarierter
+Quell-Parameter wird dabei weiter, nie enger. `returns.type: table` rendert als
+`RETURNS TABLE` (Inline-Tabellenfunktion; die Spalten stehen im Rumpf).
+
+`action_required` E053 bleiben: ein Rumpf aus einem fremden `source_dialect`,
+eine Funktion ohne Rückgabetyp (T-SQL verlangt `RETURNS`) und eine Routine ohne
+Rumpf. Aggregate (CLR-Assembly nötig) bleiben E054.
+
+Beim **Zurücklesen** kommt die Signatur aus `sys.parameters` und nur der Rumpf
+aus dem Definitionstext, geschnitten am ersten `AS` auf oberster Ebene. Zwei
+Fälle meldet der Reverse, statt zu raten: eine Definition ohne oberstes `AS`
+(`R349`) und eine mehrteilige Tabellenfunktion (`R350`) — deren
+`RETURNS @var TABLE (…)` steht vor dem `AS` und hat im neutralen Modell keine
+Entsprechung. Beide werden übersprungen.
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
 
@@ -1181,7 +1209,7 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 | `CREATE INDEX "i" ON "x"` | `DROP INDEX IF EXISTS "i"` (MSSQL: `DROP INDEX IF EXISTS [i] ON [x]`) |
 | `CREATE TYPE "t"` | `DROP TYPE IF EXISTS "t"` |
 | `CREATE VIEW "v"` | `DROP VIEW IF EXISTS "v"` (MSSQL: auch für `CREATE OR ALTER VIEW`) |
-| `CREATE FUNCTION "f"` | `DROP FUNCTION IF EXISTS "f"` |
+| `CREATE FUNCTION "f"` | `DROP FUNCTION IF EXISTS "f"` (MSSQL ebenso für `CREATE OR ALTER FUNCTION`/`PROCEDURE`/`TRIGGER`) |
 | `CREATE SEQUENCE "s"` | `DROP SEQUENCE IF EXISTS "s"` |
 | `ALTER TABLE ADD COLUMN "c"` | `ALTER TABLE DROP COLUMN "c"` |
 | `ALTER TABLE ADD CONSTRAINT "k"` | `ALTER TABLE DROP CONSTRAINT "k"` |

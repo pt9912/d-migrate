@@ -1731,6 +1731,12 @@ Report als **E054** vermerkt:
   geplant ([`LF-017`](../../spec/lastenheft-d-migrate.md#lf-017)).
 - **SQLite:** keine Stored Functions/Procedures (**E054**) — Logik gehört in die
   Anwendung; Trigger sind unterstützt.
+- **SQL Server:** T-SQL-Rümpfe rendern als `CREATE OR ALTER`. Was T-SQL nicht
+  kennt, bleibt **E053**: `BEFORE`-Trigger, zeilenweise Trigger und eine
+  `WHEN`-Bedingung gibt es dort nicht, und Triggernamen gelten schemaweit — zwei
+  gleichnamige Trigger auf verschiedenen Tabellen überschreiben sich sonst.
+  Parametertypen trägt das neutrale Modell ohne Länge; ein `varchar(50)` kommt
+  als `NVARCHAR(MAX)` wieder, also weiter, nie enger.
 - Ein Routine-Replace ohne bekannten alten Rumpf kann beim Rollback blockieren
   (siehe [3.5](#35-eine-schemaänderung-ausrollen-und-zurücknehmen)).
 - Reverse erfasst diese Objekte nur mit `--include-triggers`/`--include-procedures`/

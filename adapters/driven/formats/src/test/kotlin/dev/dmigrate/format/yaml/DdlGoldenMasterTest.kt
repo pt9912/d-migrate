@@ -49,6 +49,16 @@ class DdlGoldenMasterTest : FunSpec({
         }
     }
 
+    // Routinen mit T-SQL-Rumpf gibt es nur fuer ein Ziel: die anderen drei
+    // Dialekte melden sie als E053, was `full-featured` bereits in der
+    // Gegenrichtung abdeckt.
+    test("tsql-routines generates correct mssql DDL") {
+        val input = loadFixture("schemas/tsql-routines.yaml")
+        val expected = loadGoldenMaster("ddl/tsql-routines.mssql.sql")
+        val actual = MssqlDdlGenerator().generate(input).render()
+        stripHeader(actual) shouldBe stripHeader(expected)
+    }
+
     // Spatial schema: run with explicit dialect-appropriate profiles (§4.3)
     val spatialProfiles = listOf(
         Triple("postgresql", PostgresDdlGenerator(), DdlGenerationOptions(SpatialProfile.POSTGIS)),
