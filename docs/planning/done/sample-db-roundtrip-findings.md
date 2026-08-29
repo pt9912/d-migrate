@@ -35,11 +35,11 @@ bleibt am vollen Key eindeutig verankert. Regressionstest in
 Namensraum — dort ist der disambiguierte Name nötig; der Fix ist daher
 PG-spezifisch.
 
-**Offen (Restfläche):** der Diff-/Migrate-Pfad (`schema migrate`,
-`PostgresTriggerDdlHelper.emitCreate/emitDrop`) nutzt weiterhin
-`op.objectRef.rootName` (= Key) als Trigger-Namen. Gleiche Wurzel, aber separate
-Fläche mit eigenen Golden-Tests — nicht vom Phase-1-Harness (`schema generate`)
-verifizierbar, daher als eigener Fix-Slice mit Diff-Pfad-Test nachzuziehen.
+**Restfläche ausgeschnitten nach
+[`../open/pg-diff-object-key-leak.md`](../open/pg-diff-object-key-leak.md):** der
+Diff-/Migrate-Pfad nutzt weiterhin `op.objectRef.rootName` (= Key) als
+Bezeichner — bei Triggern **und**, wie dort gemessen, bei Funktionen und
+Prozeduren.
 
 ## F2 — Programmability-Ordering: Views vor Routinen/Aggregaten (K2-Klasse) · BEHOBEN 2026-06-18
 
@@ -92,10 +92,11 @@ matchen. Der Tracker hatte das überzeichnet.
 Harness-belegt: die 3 Funktions-Diffs verschwinden, Baseline schrumpft **4 → 1**
 (verbleibend nur die fundamentale tsvector/gist-Grenze, kein Bug).
 
-**Offene Restfläche (nicht F3-blockierend, kein Pagila-Vorkommen):** `search_path`
-auf SECURITY-DEFINER-Funktionen ist im Modell erfasst, wird aber von generate noch
-nicht emittiert; ebenso fehlen `security`/`definer`/`search_path`/`sql_mode` in der
-`schema.json`-`function`-Definition (vorbestehender Spec-Drift).
+**Restfläche ausgeschnitten nach
+[`../open/routine-identity-fields-not-in-schema-json.md`](../open/routine-identity-fields-not-in-schema-json.md):**
+`search_path` wird von generate nicht emittiert, und die vier Identitätsfelder
+fehlen in `schema.json` — dort mit `additionalProperties: false`, der Reverse
+schreibt sie also in eine Datei, die das eigene Schema ablehnt.
 
 ## F4 — Multi-Event-Trigger nicht modelliert · BEHOBEN 2026-06-19
 
@@ -179,15 +180,10 @@ geschrumpft.
 
 **Offene Folge-Slices (Forward-Pointer, nicht in dieser Closure).**
 
-- **F1-Restfläche (Diff-/Migrate-Pfad):** `schema migrate`
-  (`PostgresTriggerDdlHelper.emitCreate/emitDrop`) nutzt weiterhin
-  `op.objectRef.rootName` (= Composite-Key) als Trigger-Namen. Separate Fläche mit
-  eigenen Golden-Tests, vom Phase-1-Harness (`schema generate`) nicht
-  verifizierbar → eigener Fix-Slice mit Diff-Pfad-Test.
-- **F3-Restfläche (Spec-Drift):** `search_path` auf SECURITY-DEFINER-Funktionen
-  ist im Modell erfasst, wird von generate aber nicht emittiert; ebenso fehlen
-  `security`/`definer`/`search_path`/`sql_mode` in der `schema.json`-`function`-
-  Definition.
+- **F1-Restfläche (Diff-/Migrate-Pfad):**
+  [`../open/pg-diff-object-key-leak.md`](../open/pg-diff-object-key-leak.md).
+- **F3-Restfläche (Spec-Drift):**
+  [`../open/routine-identity-fields-not-in-schema-json.md`](../open/routine-identity-fields-not-in-schema-json.md).
 
 **Bleibender Reverse-Capture-Defekt (siehe Erratum oben):** `payment` →
 plain Tabelle (E055), weil die Kind-Partitionen nicht rekonstruiert werden. Das

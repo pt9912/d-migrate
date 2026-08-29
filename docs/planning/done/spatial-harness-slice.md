@@ -61,7 +61,7 @@ Generierung fehlen — Phase 5 muss sie zuerst bauen.
 | PG `geometry(Subtype,srid)`-DDL + GIST-Gate | ✅ implementiert | `PostgresTypeMapper.kt`, `PostgresIndexOpClass.kt` |
 | MySQL `GEOMETRY/POINT/…`-DDL + SRID-**Kommentar-Hint** | ✅ teilweise | `MysqlColumnConstraintHelper.kt` (`/*!80003 SRID … */` + Warnung W120) |
 | SQLite SpatiaLite `AddGeometryColumn`-DDL | ✅ teilweise | `SqliteDiffSimpleOps.kt` |
-| **Geometrie-Erkennung im Read-Pfad** | ❌ **fehlt** (→ Text) | `JdbcToNeutralTypeMapper.mapOther` fällt für Geometrie auf `NeutralType.Text` (AP3-TODO) → Chunk-/Parquet-Header trägt Text statt Geometry |
+| **Geometrie-Erkennung im Read-Pfad** | ❌ **fehlt** (→ Text), ausgeschnitten nach [`../open/spatial-read-path-geometry-detection.md`](../open/spatial-read-path-geometry-detection.md) | `JdbcToNeutralTypeMapper.mapOther` fällt für Geometrie auf `NeutralType.Text` (AP3-TODO) → Chunk-/Parquet-Header trägt Text statt Geometry |
 | **Geometrie-WERT-Bindung** (`data transfer`/`export`/`import`) | ❌ **fehlt** | `--spatial-profile` **nicht** auf `DataTransferCommand`/`DataImportCommand`; kein WKB/WKT-Konverter (vgl. `JdbcForeignValueNormalizer`); kein dialekt-spezifisches Geometrie-Binding in den `*TableImportSession` |
 | Import-Preflight für Geometrie | ⚠️ **permissiv** | `ImportTypeCompatibility` → `Geometry -> true` (bedingungslos; winkt auch Geometrie→Nicht-Geometrie durch) |
 | **MySQL SPATIAL-Index** | ✅ **VA3** | `IndexType.SPATIAL`; Reverse + `CREATE SPATIAL INDEX`-Emit (Block entfernt) |
