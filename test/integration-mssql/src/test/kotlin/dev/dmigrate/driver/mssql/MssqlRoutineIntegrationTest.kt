@@ -1,16 +1,22 @@
 package dev.dmigrate.driver.mssql
 
+import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.SslMode
 import dev.dmigrate.driver.connection.SslSettings
 import dev.dmigrate.driver.connection.asJdbc
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.nulls.shouldBeNull
@@ -236,6 +242,72 @@ class MssqlRoutineIntegrationTest : FunSpec({
                         runCatching { stmt.execute("DROP PROCEDURE dbo.opt_owner") }
                         runCatching { stmt.execute("DROP TYPE opt_tvp") }
                         runCatching { stmt.execute("DROP TABLE opt_src") }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sub-Slice 9c: was der Diff-Pfad rendert, muss der Server annehmen — und
+    // hinterher muss dastehen, was im Zielschema stand.
+    test("migrate creates, replaces and drops routines against SQL Server") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("CREATE TABLE mig_src (id INT NOT NULL PRIMARY KEY, amount DECIMAL(10,2))")
+                        stmt.execute(
+                            "CREATE FUNCTION dbo.mig_total (@id INT) RETURNS DECIMAL(10,2) " +
+                                "AS BEGIN RETURN 0 END",
+                        )
+                        stmt.execute("CREATE PROCEDURE dbo.mig_gone AS BEGIN SELECT 1 END")
+                    }
+                }
+
+                val current = MssqlSchemaReader().read(pool).schema
+                val fnKey = "mig_total(in:integer)"
+                val desired = current.copy(
+                    // Rumpf ersetzt, Prozedur entfernt, Trigger neu.
+                    functions = mapOf(
+                        fnKey to current.functions.getValue(fnKey).copy(body = "BEGIN RETURN 42 END"),
+                    ),
+                    procedures = emptyMap(),
+                    triggers = mapOf(
+                        "mig_src::mig_trg" to TriggerDefinition(
+                            table = "mig_src",
+                            events = setOf(TriggerEvent.INSERT),
+                            timing = TriggerTiming.AFTER,
+                            forEach = TriggerForEach.STATEMENT,
+                            body = "BEGIN SET NOCOUNT ON END",
+                            sourceDialect = "mssql",
+                        ),
+                    ),
+                )
+
+                val diff = SchemaComparator().compare(current, desired)
+                val plan = DiffPlanner().plan(current, desired, diff)
+                val migration = MssqlDiffDdlGenerator().generateUp(plan, DdlGenerationOptions())
+                withClue(migration.blockers.joinToString { it.toString() }) {
+                    migration.blockers.shouldBeEmpty()
+                }
+
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        migration.statements.forEach { stmt.execute(it.sql) }
+                    }
+                }
+
+                val after = MssqlSchemaReader().read(pool).schema
+                after.functions.getValue(fnKey).body.shouldNotBeNull() strShouldContain "RETURN 42"
+                after.procedures.keys shouldNotContain "mig_gone()"
+                after.triggers.keys shouldContain "mig_src::mig_trg"
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        runCatching { stmt.execute("DROP TRIGGER mig_trg") }
+                        runCatching { stmt.execute("DROP PROCEDURE dbo.mig_gone") }
+                        runCatching { stmt.execute("DROP FUNCTION dbo.mig_total") }
+                        runCatching { stmt.execute("DROP TABLE mig_src") }
                     }
                 }
             }

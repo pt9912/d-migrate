@@ -16,12 +16,13 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * IDENTITY-Tabellen-Neubau ([MssqlRebuildPlanner]), Constraints und Indizes,
  * Sichten, Custom Types und Sequenzen.
  *
+ * Seit Sub-Slice 9c auch Routinen und Trigger: `CREATE OR ALTER` macht den
+ * Ersetzungsfall zu einem Statement, wie schon bei den Sichten.
+ *
  * Was er nicht rendert, meldet der Dispatcher als
- * `DIALECT_UNSUPPORTED_OPERATION` mit dem Grund: Routinen und Trigger, weil
- * der MSSQL-Reverse ihre Ruempfe nicht liest (R342) und es also nichts zu
- * rendern gibt; Partitionierung, weil das neutrale Modell weder
- * Partitionsfunktion noch -schema traegt; Materialized Views, weil SQL Server
- * sie nicht kennt.
+ * `DIALECT_UNSUPPORTED_OPERATION` mit dem Grund: Partitionierung, weil das
+ * neutrale Modell weder Partitionsfunktion noch -schema traegt; Materialized
+ * Views, weil SQL Server sie nicht kennt.
  *
  * Zustandslos und thread-sicher. `generateUp` konsumiert die topo-sortierten
  * Operationen des Planners unveraendert, `generateDown` laeuft dieselbe Liste
@@ -144,6 +145,7 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
         }
         val families = listOf(
             ::renderTableOp, ::renderObjectOp, ::renderViewOp, ::renderCustomTypeOp, ::renderSequenceOp,
+            ::renderRoutineOp,
         )
         if (families.none { it(op, ctx) }) blockUnsupported(op, ctx)
     }
@@ -207,6 +209,25 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
         return true
     }
 
+    private fun renderRoutineOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
+        when (op) {
+            is DiffOperation.CreateFunction -> MssqlDiffRoutineOps.renderCreateFunction(op, ctx)
+            is DiffOperation.ReplaceFunction -> MssqlDiffRoutineOps.renderReplaceFunction(op, ctx)
+            is DiffOperation.DropFunction -> MssqlDiffRoutineOps.renderDropFunction(op, ctx)
+            is DiffOperation.RenameFunction -> MssqlDiffRoutineOps.renderRenameFunction(op, ctx)
+            is DiffOperation.CreateProcedure -> MssqlDiffRoutineOps.renderCreateProcedure(op, ctx)
+            is DiffOperation.ReplaceProcedure -> MssqlDiffRoutineOps.renderReplaceProcedure(op, ctx)
+            is DiffOperation.DropProcedure -> MssqlDiffRoutineOps.renderDropProcedure(op, ctx)
+            is DiffOperation.RenameProcedure -> MssqlDiffRoutineOps.renderRenameProcedure(op, ctx)
+            is DiffOperation.CreateTrigger -> MssqlDiffRoutineOps.renderCreateTrigger(op, ctx)
+            is DiffOperation.ReplaceTrigger -> MssqlDiffRoutineOps.renderReplaceTrigger(op, ctx)
+            is DiffOperation.DropTrigger -> MssqlDiffRoutineOps.renderDropTrigger(op, ctx)
+            is DiffOperation.RenameTrigger -> MssqlDiffRoutineOps.renderRenameTrigger(op, ctx)
+            else -> return false
+        }
+        return true
+    }
+
     private fun renderCustomTypeOp(op: DiffOperation, ctx: MssqlDiffRenderContext): Boolean {
         when (op) {
             is DiffOperation.CreateCustomType -> MssqlDiffCustomTypeOps.renderCreateCustomType(op, ctx)
@@ -234,15 +255,6 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
     }
 
     private fun ownerOf(op: DiffOperation): String = when (op) {
-        is DiffOperation.CreateFunction, is DiffOperation.ReplaceFunction,
-        is DiffOperation.DropFunction, is DiffOperation.RenameFunction,
-        is DiffOperation.CreateProcedure, is DiffOperation.ReplaceProcedure,
-        is DiffOperation.DropProcedure, is DiffOperation.RenameProcedure,
-        is DiffOperation.CreateTrigger, is DiffOperation.ReplaceTrigger,
-        is DiffOperation.DropTrigger, is DiffOperation.RenameTrigger,
-        -> "the MSSQL reverse does not read routine and trigger bodies (R342), so there is nothing to " +
-            "render; PostgreSQL renders them because its reverse does"
-
         is DiffOperation.CreateMaterializedView, is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
         -> "SQL Server has no materialized views; the generate path degrades them to a plain view (W103)"

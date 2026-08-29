@@ -278,13 +278,15 @@ class MssqlDiffDdlGeneratorTest : FunSpec({
         r.diagnostics.map { it.code } shouldContain "MSSQL_TABLE_REBUILT_FOR_IDENTITY"
     }
 
+    // Routinen sind seit 9c heraus aus dieser Liste; was bleibt, kennt SQL
+    // Server wirklich nicht.
     test("an operation this path does not render is blocked with a message naming what owns it") {
-        val fn = FunctionDefinition(body = "RETURN 1", language = "sql")
-        val r = up(SchemaDiff(functionsAdded = listOf(NamedFunction("f", fn))))
+        val view = ViewDefinition(query = "SELECT 1", materialized = true, sourceDialect = "mssql")
+        val r = up(SchemaDiff(viewsAdded = listOf(NamedView("stats", view))))
         r.statements.shouldBeEmpty()
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
         r.diagnostics.single { it.code == "DIALECT_UNSUPPORTED_OPERATION" }
-            .message shouldContainStr "does not read routine and trigger bodies"
+            .message shouldContainStr "materialized"
     }
 
     test("statements declare SQL Server's fully transactional DDL") {

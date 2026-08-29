@@ -1196,6 +1196,14 @@ raten:
 Nicht darunter fallen datenbankweite DDL-Trigger: sie sind nicht schemagebunden
 und erreichen den Reverse gar nicht.
 
+Im **Migrations-Pfad** gelten dieselben Urteile — was `schema generate` ablehnt,
+lehnt `schema migrate` ab, und aus demselben Grund. `CREATE OR ALTER` macht das
+Ersetzen dabei zu einem einzigen Statement: es gibt kein Fenster, in dem die
+Routine fehlt, wie schon bei den Sichten. Ein Umbenennen läuft über `sp_rename`
+und lässt den **Rumpf** unberührt — in `sys.sql_modules` steht danach weiterhin
+der alte Name. Für SQL Server ist das folgenlos, für einen Reverse-Read nicht;
+der Lauf weist es deshalb als `MSSQL_RENAME_KEEPS_ROUTINE_BODY` aus.
+
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
 
 ```sql
