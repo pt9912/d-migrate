@@ -1,11 +1,11 @@
 # Tracker: Dependabot meldet den Build-Graphen, nicht das Auslieferungsartefakt
 
-> **Status:** Tracker / Vorabklärung (28.08.2026)
+> **Status:** Abgeschlossen (29.08.2026) — siehe [Closure](#closure).
+> **Ursprünglich:** Tracker / Vorabklärung (28.08.2026)
 > **Trigger:** Die Dependabot-Seite zeigte 38 offene Alerts, davon 8 „high".
 > Gemessen am publizierten Image betrifft **keiner** die ausgelieferten
 > Versionen.
-> **Aktivierungsbedingung:** Wird priorisiert → `next/`-Plan; sonst
-> Trigger-Watch.
+> **Ergebnis:** 38 offene Alerts → **0**, ohne eine einzige Unterdrückung.
 
 ## Befund
 
@@ -59,5 +59,42 @@ kein Triage-Rückstand, sondern schlicht noch nicht gehobene Graph-Einträge.
 
 ## Angrenzend
 
-[`security-gates-not-in-ci.md`](security-gates-not-in-ci.md) betraf dieselbe
+[`security-gates-not-in-ci.md`](../open/security-gates-not-in-ci.md) betraf dieselbe
 Frage aus der anderen Richtung: ein Gate, das lief, aber nicht blockierte.
+
+## Closure
+
+Umgesetzt am 29.08.2026 in zwei Schritten, jeder einzeln gemessen.
+
+**Schritt 1 — nur `runtimeClasspath`** (`c65e818b`): 461 → 202 Pakete, 29
+Alerts fielen weg. Neun blieben, und sie waren der eigentliche Fund: der Graph
+führte **jede** Version doppelt.
+
+    jackson-core      2.12.7     und  2.21.5
+    jackson-databind  2.12.7.1   und  2.21.5
+    nimbus-jose-jwt   9.37.2     und  10.9
+
+**Schritt 2 — nur das CLI-Modul** (`08038c36`): 202 → 192 Pakete, die niedrigen
+Versionen verschwanden, Alerts auf 0.
+
+**Die Lehre: ein Modulstand ist kein Auslieferungsstand.** Für sich aufgelöst
+landet ein Modul niedriger; erst im CLI-Modul, aus dem `installDist` die
+Distribution baut, hebt Gradles Konfliktauflösung an. Der Graph muss deshalb
+genau **eine** Konfiguration melden — `:adapters:driving:cli:runtimeClasspath` —
+und nicht die Vereinigung aller Module.
+
+Verifiziert wurde **positiv** gegen die SBOM (Jackson muss bleiben, Netty
+verschwinden), nicht über die Alert-Zahl: ein zu enger Filter liefert einen
+leeren Graphen, und der sieht wie Erfolg aus. Die 192 gegenüber 177 Jars im
+Image sind BOM-Einträge, die keine Jars erzeugen.
+
+### Arbeitspakete
+
+1. ~~Konfigurationsfilter für die Submission.~~
+2. ~~Entscheiden, wie Build-Zeit-Abhängigkeiten sichtbar bleiben.~~ — sie
+   bleiben es über die wöchentlichen `gradle`-/`github-actions`-/`docker`-
+   Versions-Updates in `.github/dependabot.yml`. Der Filter nimmt ihnen die
+   falsche Einordnung als Produktrisiko, nicht die Aufmerksamkeit.
+3. Test-Abhängigkeiten heben — **entfällt als eigener Punkt**: sie kommen über
+   dieselben Versions-Updates mit. Was bleibt, ist der eine Fall, der eine
+   Entscheidung verlangt: [`kotlin-gradle-plugin-cve-beta.md`](../open/kotlin-gradle-plugin-cve-beta.md).
