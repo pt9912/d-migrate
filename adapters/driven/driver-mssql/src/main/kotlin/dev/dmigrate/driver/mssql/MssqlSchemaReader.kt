@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.PartitionBound
@@ -172,7 +173,7 @@ class MssqlSchemaReader(
         return TableDefinition(
             columns = columns,
             primaryKey = primaryKey,
-            indices = indices,
+            indices = indices + readFullText(session, qualified, table, notes),
             constraints = constraints,
             partitioning = readPartitioning(session, qualified, table, notes),
         )
@@ -208,6 +209,38 @@ class MssqlSchemaReader(
      * Partitionierung sonst still abraeumte. Mit `null` waere genau dieser
      * Waechter blind.
      */
+    /**
+     * Der Volltext-Index einer Tabelle, oder eine leere Liste.
+     *
+     * SQL Server benennt Volltext-Indizes nicht — `CREATE FULLTEXT INDEX ON t`
+     * kennt keinen Namen. Der Reverse vergibt deshalb `ft_<tabelle>` und meldet
+     * das; der urspruengliche Name steht nicht in der Datenbank.
+     */
+    private fun readFullText(
+        session: JdbcOperations,
+        qualified: String,
+        table: String,
+        notes: MutableList<SchemaReadNote>,
+    ): List<IndexDefinition> {
+        val columns = MssqlMetadataQueries.scanFullTextColumns(session, qualified)
+        if (columns.isEmpty()) return emptyList()
+
+        notes += SchemaReadNote(
+            severity = SchemaReadSeverity.INFO,
+            code = "R348",
+            objectName = table,
+            message = "SQL Server does not name full-text indexes; the one on '$table' was named " +
+                "'ft_$table'. The original name is not stored in the database.",
+        )
+        return listOf(
+            IndexDefinition(
+                name = "ft_$table",
+                columns = columns.map { IndexColumn(it) },
+                type = IndexType.FULLTEXT,
+            ),
+        )
+    }
+
     private fun readPartitioning(
         session: JdbcOperations,
         qualified: String,

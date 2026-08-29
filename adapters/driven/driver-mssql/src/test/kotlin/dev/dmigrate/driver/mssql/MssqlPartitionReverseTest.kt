@@ -46,6 +46,10 @@ class MssqlPartitionReverseTest : FunSpec({
             jdbc.queryList(match { it.contains("FROM sys.tables t") && !it.contains("partition_schemes") }, any())
         } returns listOf(mapOf("table_name" to "t", "schema_name" to "dbo"))
         every { jdbc.queryList(match { it.contains("FROM sys.sequences seq") }, any()) } returns emptyList()
+        // Diese Spec deckt Partitionierung ab; Volltext liest sie als leer.
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.fulltext_index_columns") }, any())
+        } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.views v") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.objects o") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.columns c") }, any()) } returns listOf(

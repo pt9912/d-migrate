@@ -70,8 +70,8 @@ YAML-Datei noch eine Lesefassung.
 
 Dokumentiert sind heute nur die typbezogenen: `R340`, `R343` und `R345` stehen
 in `spec/type-mapping.md`, weil sie dort inhaltlich hingehören. `R341` (inzwischen
-zurückgenommen), `R342` (nicht gelesene Routinen-Rümpfe), `R346` und `R347`
-stehen nirgends.
+zurückgenommen), `R342` (nicht gelesene Routinen-Rümpfe), `R346`, `R347` und
+`R348` (synthetisierter Name des Volltext-Index, Slice 8c) stehen nirgends.
 
 Damit fehlt der R-Serie, was die anderen beiden Serien haben: eine Stelle, an der
 Code, Bedeutung und Beleg zusammenstehen, und ein Test, der prüft, dass ein

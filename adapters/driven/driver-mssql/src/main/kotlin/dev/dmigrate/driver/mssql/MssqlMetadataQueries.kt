@@ -212,6 +212,23 @@ internal object MssqlMetadataQueries {
      * `partition_ordinal = 1` liefert die Partitionierungsspalte; SQL Server
      * partitioniert immer nach genau einer.
      */
+    /**
+     * Die Spalten des Volltext-Index einer Tabelle, in Katalogreihenfolge.
+     *
+     * Leer, wenn die Tabelle keinen traegt. SQL Server erlaubt hoechstens einen
+     * je Tabelle, deshalb genuegt eine Liste ohne Gruppierung.
+     */
+    fun scanFullTextColumns(session: JdbcOperations, qualifiedTable: String): List<String> = session.queryList(
+        """
+        SELECT col.name AS column_name
+        FROM sys.fulltext_index_columns ftc
+        JOIN sys.columns col ON col.object_id = ftc.object_id AND col.column_id = ftc.column_id
+        WHERE ftc.object_id = OBJECT_ID(?)
+        ORDER BY ftc.column_id
+        """.trimIndent(),
+        qualifiedTable,
+    ).mapNotNull { it.string("column_name") }
+
     fun scanPartitioning(session: JdbcOperations, qualifiedTable: String): PartitionScan? {
         val head = session.queryList(
             """

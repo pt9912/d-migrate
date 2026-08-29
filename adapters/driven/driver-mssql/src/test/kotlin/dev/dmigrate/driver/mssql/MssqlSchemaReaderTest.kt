@@ -37,6 +37,10 @@ class MssqlSchemaReaderTest : FunSpec({
             mapOf("schema_name" to "dbo")
         every { jdbc.queryList(match { it.contains("FROM sys.tables t") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.sequences seq") }, any()) } returns emptyList()
+        // Volltext: diese Specs decken ihn nicht ab und lesen ihn als leer.
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.fulltext_index_columns") }, any())
+        } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.views v") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.objects o") }, any()) } returns emptyList()
     }

@@ -11,6 +11,12 @@ import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as strShouldContain
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionConfig
+import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.connection.SslMode
+import dev.dmigrate.driver.connection.SslSettings
+import dev.dmigrate.driver.connection.asJdbc
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import org.testcontainers.utility.DockerImageName
@@ -136,6 +142,61 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                     runCatching { db.createStatement().use { it.execute("DROP FULLTEXT INDEX ON articles") } }
                     runCatching { db.createStatement().use { it.execute("DROP TABLE articles") } }
                     runCatching { db.createStatement().use { it.execute("DROP FULLTEXT CATALOG ftc_articles") } }
+                }
+            }
+        }
+
+        // Sub-Slice 8c: der Reverse liest den Volltext-Index zurueck. SQL Server
+        // benennt ihn nicht, der Name wird synthetisiert und gemeldet (R348).
+        test("a full-text index survives the round trip") {
+            val schema = SchemaDefinition(
+                name = "ft-rt", version = "1",
+                tables = mapOf(
+                    "notes" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                            "body" to ColumnDefinition(NeutralType.Text()),
+                        ),
+                        primaryKey = listOf("id"),
+                        indices = listOf(
+                            IndexDefinition("fx_notes", listOf(IndexColumn("body")), type = IndexType.FULLTEXT),
+                        ),
+                    ),
+                ),
+            )
+            val statements = MssqlDdlGenerator().generate(schema).statements.map { it.sql }
+
+            HikariConnectionPoolFactory.create(
+                ConnectionConfig(
+                    dialect = DatabaseDialect.MSSQL,
+                    host = container.host,
+                    port = container.firstMappedPort,
+                    database = "fts_probe",
+                    user = container.username,
+                    password = container.password,
+                    ssl = SslSettings(SslMode.DISABLE),
+                ),
+            ).use { pool ->
+                try {
+                    pool.borrow().asJdbc().use { conn ->
+                        conn.createStatement().use { stmt -> statements.forEach { stmt.execute(it) } }
+                    }
+                    val readBack = MssqlSchemaReader().read(pool)
+                    val index = readBack.schema.tables.getValue("notes").indices
+                        .single { it.type == IndexType.FULLTEXT }
+
+                    index.columns.map { it.name } shouldBe listOf("body")
+                    // Der Name ist synthetisiert, nicht der aus dem Modell.
+                    index.name shouldBe "ft_notes"
+                    readBack.notes.any { it.code == "R348" } shouldBe true
+                } finally {
+                    pool.borrow().asJdbc().use { conn ->
+                        conn.createStatement().use { stmt ->
+                            runCatching { stmt.execute("DROP FULLTEXT INDEX ON notes") }
+                            runCatching { stmt.execute("DROP TABLE notes") }
+                            runCatching { stmt.execute("DROP FULLTEXT CATALOG ftc_notes") }
+                        }
+                    }
                 }
             }
         }

@@ -588,6 +588,10 @@ CREATE FULLTEXT INDEX ON [docs] ([body]) KEY INDEX [pk_docs] ON [ftc_docs];
   beides, und beide Richtungen sind bedingt formuliert: der Katalog überlebt
   einen Tabellen-Neubau, ein unbedingtes `CREATE` scheiterte dort am schon
   vorhandenen Namen.
+- Beim **Zurücklesen** gilt: SQL Server benennt Volltext-Indizes nicht
+  (`CREATE FULLTEXT INDEX ON t` kennt keinen Namen). Der Reverse vergibt
+  `ft_<tabelle>` und meldet das mit `R348` — dieselbe Lage wie bei den
+  Partitions-Kindnamen.
 
 ### 5.3 Unique-Index
 
