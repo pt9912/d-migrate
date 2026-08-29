@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.mssql.MssqlDdlTestSupport.notesWithCode
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -186,6 +187,28 @@ class MssqlFullTextTest : FunSpec({
 
         down shouldContain "DROP FULLTEXT INDEX ON [docs];"
         down shouldContain "DROP FULLTEXT CATALOG [ftc_docs];"
+    }
+
+    // Slice 8d: SQL Server weist `CREATE FULLTEXT INDEX` in einer offenen
+    // Transaktion ab, und der Migrationslauf klammert seine Statements in
+    // genau eine. Der Abbruch faellt deshalb vor der Ausfuehrung.
+    test("the migration path refuses a full-text index with E072") {
+        val planner = dev.dmigrate.core.diff.migration.DiffPlanner()
+        val t = table()
+        val schema = SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to t))
+        val result = MssqlDiffDdlGenerator().generateUp(
+            planner.plan(
+                SchemaDefinition(name = "App", version = "1"),
+                schema,
+                dev.dmigrate.core.diff.SchemaDiff(
+                    tablesAdded = listOf(dev.dmigrate.core.diff.NamedTable("docs", t)),
+                ),
+            ),
+            DdlGenerationOptions(),
+        )
+
+        result.statements.map { it.sql }.none { it.contains("FULLTEXT") } shouldBe true
+        result.diagnostics.map { it.code } shouldContain "E072"
     }
 
     test("the teardown drops index and catalog — DROP TABLE leaves the catalog behind") {

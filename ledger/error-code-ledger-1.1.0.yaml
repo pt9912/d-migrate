@@ -194,3 +194,16 @@ entries:
       - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlIndexDdlHelper.kt"
         path_type: production
 
+  # E072 — Slice 8d: SQL Server weist `CREATE FULLTEXT INDEX` in einer offenen
+  # Transaktion ab; der Migrationslauf klammert seine Statements in genau eine.
+  # Der Katalog duerfte hinein, der Index nicht — deshalb Abbruch VOR der
+  # Ausfuehrung statt eines halb angewandten Volltexts.
+  - code: E072
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlFullTextTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDiffObjectOps.kt"
+        path_type: production
+

@@ -9,9 +9,18 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as strShouldContain
+import dev.dmigrate.cli.commands.ResolvedSchemaOperand
+import dev.dmigrate.cli.commands.SchemaMigrateRequest
+import dev.dmigrate.cli.commands.SchemaMigrateRunner
+import dev.dmigrate.cli.commands.SchemaRollbackRequest
+import dev.dmigrate.cli.commands.SchemaRollbackRunner
 import dev.dmigrate.cli.commands.capabilityIndexCanonicalizer
+import dev.dmigrate.cli.commands.testing.executeAgainstPool
+import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -216,6 +225,88 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                     }
                 }
             }
+        }
+
+        // Sub-Slice 8d: `schema migrate` kann Volltext NICHT anwenden, und das
+        // ist eine Eigenschaft von SQL Server, keine Luecke im Renderer. Der
+        // Server weist `CREATE FULLTEXT INDEX` in einer offenen Transaktion ab,
+        // und der Lauf klammert seine Statements in genau eine. Der Abbruch
+        // muss deshalb VOR der Ausfuehrung kommen — ein halb angewandter
+        // Volltext waere schlimmer.
+        test("migrate refuses a full-text index before executing anything") {
+            val tmp = kotlin.io.path.createTempDirectory("mssql-ft-migrate")
+            val desired = SchemaDefinition(
+                name = "ft-migrate", version = "1",
+                tables = mapOf(
+                    "papers" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                            "abstract" to ColumnDefinition(NeutralType.Text()),
+                        ),
+                        primaryKey = listOf("id"),
+                        indices = listOf(
+                            IndexDefinition("fx_papers", listOf(IndexColumn("abstract")), type = IndexType.FULLTEXT),
+                        ),
+                    ),
+                ),
+            )
+            DriverManager.getConnection(container.jdbcUrl, container.username, container.password).use { c ->
+                c.createStatement().use { st -> runCatching { st.execute("CREATE DATABASE ft_migrate") } }
+            }
+            val config = ConnectionConfig(
+                dialect = DatabaseDialect.MSSQL,
+                host = container.host,
+                port = container.firstMappedPort,
+                database = "ft_migrate",
+                user = container.username,
+                password = container.password,
+                ssl = SslSettings(SslMode.DISABLE),
+            )
+
+            HikariConnectionPoolFactory.create(config).use { pool ->
+                val executed = mutableListOf<String>()
+                val exit = SchemaMigrateRunner(
+                    fileLoader = { _ ->
+                        ResolvedSchemaOperand("desired", schema = desired, validation = ValidationResult())
+                    },
+                    dbLoader = { _, _ ->
+                        ResolvedSchemaOperand(
+                            reference = "live",
+                            schema = MssqlSchemaReader().read(pool).schema,
+                            validation = ValidationResult(),
+                            dialect = DatabaseDialect.MSSQL,
+                        )
+                    },
+                    comparator = { a, b -> SchemaComparator().compare(a, b) },
+                    targetAwareComparator = { l, r, canon -> SchemaComparator(canon).compare(l, r) },
+                    rendererFor = { d ->
+                        if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else error("nur MSSQL")
+                    },
+                    executor = { _, _, segments, _, _ ->
+                        val stmts = segments.flatMap { it.statements }
+                        executed += stmts.map { it.sql }
+                        executeAgainstPool(pool, stmts)
+                    },
+                    renderReport = { r, _ -> r.toString() },
+                    printError = { _, _ -> },
+                ).execute(
+                    SchemaMigrateRequest(
+                        source = "file:${tmp.resolve("ignored.yaml")}",
+                        target = "db:placeholder",
+                        dialect = DatabaseDialect.MSSQL,
+                        report = tmp.resolve("report.json"),
+                        execute = true,
+                    ),
+                )
+
+                // MIGRATION_BLOCKED (spec/cli-spec.md, Abschnitt 2) — nicht
+                // MIGRATION_ERROR: der Abbruch faellt vor der Ausfuehrung.
+                exit shouldBe 8
+                withClue("es darf nichts ausgefuehrt worden sein: $executed") {
+                    executed.shouldBeEmpty()
+                }
+            }
+            tmp.toFile().deleteRecursively()
         }
     }
 })

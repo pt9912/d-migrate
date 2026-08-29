@@ -85,6 +85,27 @@ internal object MssqlDiffObjectOps {
         index: IndexDefinition,
         tableDef: TableDefinition? = null,
     ): String? {
+        // SQL Server verbietet `CREATE FULLTEXT INDEX` in einer offenen
+        // Transaktion ("cannot be used inside a user transaction"), und der
+        // Migrationslauf klammert seine Statements in genau eine. Der Katalog
+        // duerfte hinein, der Index nicht — und ein halb angewandter Volltext
+        // waere schlimmer als ein Abbruch davor.
+        //
+        // Ausserhalb einer Transaktion geht es: `schema generate` erzeugt das
+        // DDL unveraendert, es ist nur nicht ueber `schema migrate` anwendbar,
+        // solange der Runner keine Ausfuehrung ausserhalb seiner Transaktion
+        // kennt (`MigrationStreamClassifier` weist NO_TRANSACTION heute ab).
+        if (index.type == IndexType.FULLTEXT) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} would create a full-text index on '$table'. SQL Server refuses " +
+                    "CREATE FULLTEXT INDEX inside a transaction, and the migration runs in one. Generate the " +
+                    "DDL with `schema generate --target mssql` and apply it outside a transaction.",
+                code = "E072",
+            )
+            ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+            return null
+        }
         val schema = ctx.schemaForDirection()
         val effectiveTable = tableDef ?: schema?.tables?.get(table)
         if (schema == null || effectiveTable == null) {

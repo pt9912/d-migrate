@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
@@ -57,6 +58,13 @@ internal object MssqlDiffTableOps {
             // an der Function, die Tabelle am Scheme.
             val created = hashOutcome is MssqlHashPartitionOutcome.Planned ||
                 (partitioning != null && MssqlPartitionDdl.isRenderable(partitioning))
+            // Der Volltext-Katalog ist genauso eigenstaendig: `DROP TABLE`
+            // entfernt den Index, den Katalog laesst es stehen.
+            if (op.table.indices.any { it.type == IndexType.FULLTEXT }) {
+                MssqlFullTextDdl.dropStatements(table, ctx.sql::quote)
+                    .filter { it.contains("FULLTEXT CATALOG") }
+                    .forEach { ctx.emit(op, it) }
+            }
             if (created) {
                 ctx.emit(op, "DROP PARTITION SCHEME ${ctx.sql.quote(MssqlPartitionDdl.schemeName(table))};")
                 ctx.emit(op, "DROP PARTITION FUNCTION ${ctx.sql.quote(MssqlPartitionDdl.functionName(table))};")
