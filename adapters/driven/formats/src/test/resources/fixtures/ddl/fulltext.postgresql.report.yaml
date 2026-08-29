@@ -1,0 +1,15 @@
+source:
+  schema: "Fulltext Schema"
+  version: "1.0.0"
+  file: "adapters/driven/formats/src/test/resources/fixtures/schemas/fulltext.yaml"
+target:
+  dialect: postgresql
+  generator: "d-migrate 1.0.3"
+
+summary:
+  statements: 3
+  notes: 0
+  warnings: 0
+  action_required: 0
+  skipped_objects: 0
+

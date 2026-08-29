@@ -1,0 +1,23 @@
+source:
+  schema: "Fulltext Schema"
+  version: "1.0.0"
+  file: "adapters/driven/formats/src/test/resources/fixtures/schemas/fulltext.yaml"
+target:
+  dialect: sqlite
+  generator: "d-migrate 1.0.3"
+  sqlite_named_sequences: action_required
+
+summary:
+  statements: 7
+  notes: 1
+  warnings: 1
+  action_required: 0
+  skipped_objects: 0
+
+notes:
+  - type: warning
+    code: W132
+    object: "articles.search_vector"
+    message: "Full-text column 'search_vector' degraded to TEXT; SQLite full-text search is an FTS5 virtual table, not a column type."
+    hint: "To restore full-text search, create an FTS5 virtual table over the source text with sync triggers; structural cross-dialect translation is a future slice."
+

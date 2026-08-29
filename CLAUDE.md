@@ -96,6 +96,12 @@ Zwei verschiedene Sorten, und nur eine hat ein Make-Target:
   die Fixture) und werden von `DdlGoldenMasterTest` verglichen. Ändert sich das
   Rendern eines Dialekts, schlagen sie fehl — das ist der Zweck.
 
+  Für **MSSQL** deckt sich der CLI-Weg nicht mehr mit dem Testformat: die
+  Dateiausgabe schreibt die `SET`-Präambel und `GO`-Batchtrenner, der Test
+  vergleicht aber gegen `render()`, das beides nicht kennt. Ein frisch
+  erzeugtes MSSQL-Golden braucht deshalb beides entfernt; die bestehenden
+  tragen es nicht.
+
 ## Konventionen
 
 - **Detekt-Größenbefunde** werden durch echte Aufteilung gelöst, nie durch

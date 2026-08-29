@@ -1,0 +1,27 @@
+source:
+  schema: "Fulltext Schema"
+  version: "1.0.0"
+  file: "adapters/driven/formats/src/test/resources/fixtures/schemas/fulltext.yaml"
+target:
+  dialect: mssql
+  generator: "d-migrate 1.0.3"
+
+summary:
+  statements: 3
+  notes: 2
+  warnings: 2
+  action_required: 0
+  skipped_objects: 0
+
+notes:
+  - type: warning
+    code: W132
+    object: "articles.search_vector"
+    message: "Full-text column 'search_vector' degraded to NVARCHAR(MAX); SQL Server has no full-text vector column type."
+    hint: "To restore full-text search, create a full-text catalog and index over the source text column(s) manually."
+  - type: warning
+    code: W146
+    object: "ft_articles"
+    message: "Full-text catalog 'ftc_articles' was created for table 'articles' alone. SQL Server shares catalogs across tables; the neutral model carries no catalog, so a shared original becomes one per table."
+    hint: "Functionally equivalent; consolidate the catalogs manually if the sharing matters."
+

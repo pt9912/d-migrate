@@ -1,0 +1,23 @@
+source:
+  schema: "Fulltext Schema"
+  version: "1.0.0"
+  file: "adapters/driven/formats/src/test/resources/fixtures/schemas/fulltext.yaml"
+target:
+  dialect: mysql
+  generator: "d-migrate 1.0.3"
+  mysql_named_sequences: action_required
+
+summary:
+  statements: 3
+  notes: 1
+  warnings: 1
+  action_required: 0
+  skipped_objects: 0
+
+notes:
+  - type: warning
+    code: W132
+    object: "search_vector"
+    message: "Full-text column 'search_vector' degraded to TEXT; MySQL has no full-text vector column type."
+    hint: "To restore full-text search, add a FULLTEXT index over the source text column(s); structural cross-dialect translation is a future slice."
+

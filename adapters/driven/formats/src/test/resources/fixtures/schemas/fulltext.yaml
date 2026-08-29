@@ -1,0 +1,31 @@
+schema_format: "1.0"
+name: "Fulltext Schema"
+version: "1.0.0"
+
+# Eigene Fixture statt eines Eintrags in full-featured.yaml: ein `fulltext`-Index
+# dort bewegte alle vier Dialekt-Goldens auf einmal, weil jeder Dialekt Volltext
+# anders realisiert. Hier bleibt der Diff lesbar, wenn sich am Volltext-Rendern
+# etwas aendert.
+tables:
+  articles:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      title:
+        type: text
+        max_length: 200
+        required: true
+      body:
+        type: text
+      # PostgreSQL indiziert nicht die Quelltextspalten, sondern eine
+      # vorberechnete tsvector-Spalte; die anderen drei Dialekte ignorieren sie.
+      search_vector:
+        type: fulltext
+    primary_key: [id]
+    indices:
+      - name: ft_articles
+        type: fulltext
+        columns: [title, body]
+        full_text_vector_column: search_vector
+        text_search_config: english

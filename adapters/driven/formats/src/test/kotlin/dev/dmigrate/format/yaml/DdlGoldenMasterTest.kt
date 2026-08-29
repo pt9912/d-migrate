@@ -15,7 +15,7 @@ import io.kotest.matchers.string.shouldNotContain
 
 class DdlGoldenMasterTest : FunSpec({
 
-    val schemas = listOf("minimal", "e-commerce", "all-types", "full-featured")
+    val schemas = listOf("minimal", "e-commerce", "all-types", "full-featured", "fulltext")
     val dialects: List<Pair<String, DdlGenerator>> = listOf(
         "postgresql" to PostgresDdlGenerator(),
         "mysql" to MysqlDdlGenerator(),
