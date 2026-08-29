@@ -17,6 +17,13 @@ make integration  INTEGRATION_TASKS=":test:integration-mssql:test"
 
 Ohne `MODULES` läuft der Task über das ganze Repo — deutlich langsamer.
 
+Der Integrationslauf fährt im `gradle`-Basisimage: der Docker-**Socket** ist
+gemountet (Testcontainers braucht ihn), eine `docker`-**CLI** gibt es dort
+nicht. Ein Test, der `docker` als Prozess aufruft, scheitert dort immer — und
+wenn er den Fehlschlag als „nicht vorhanden" deutet, überspringt er sich
+lautlos. Für solche Fragen den Client von Testcontainers nehmen
+(`DockerClientFactory.instance().client()`), nicht die Shell.
+
 `MODULES=` lässt die `test/integration-*`-Module **aus**, auch die
 Kompilierung. Wer eine geteilte Signatur im Hexagon ändert (Modell, Port,
 Fingerprint), prüft deshalb einmal ohne `MODULES` — sonst bricht der Bau erst

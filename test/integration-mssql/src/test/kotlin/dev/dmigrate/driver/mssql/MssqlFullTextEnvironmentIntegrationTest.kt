@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mssql
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import org.testcontainers.DockerClientFactory
 import org.testcontainers.mssqlserver.MSSQLServerContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.Connection
@@ -80,13 +81,15 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
 })
 
 /**
- * Ob das Image lokal vorliegt. `docker image inspect` statt eines
- * Pull-Versuchs: ein nur lokal gebautes Tag kennt keine Registry.
+ * Ob das Image vorliegt — gefragt ueber denselben Docker-Socket, den
+ * Testcontainers benutzt.
+ *
+ * Nicht ueber die `docker`-CLI: der Integrationslauf faehrt im
+ * `gradle`-Basisimage, das den Socket gemountet bekommt, aber kein
+ * `docker`-Binary hat. Ein Shell-Aufruf schluege dort immer fehl und die Spec
+ * uebersprunge sich immer — unbemerkt, weil ein uebersprungener Test gruen ist.
  */
 private fun dockerImagePresent(image: String): Boolean = runCatching {
-    ProcessBuilder("docker", "image", "inspect", image)
-        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-        .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
-        .waitFor() == 0
+    DockerClientFactory.instance().client().inspectImageCmd(image).exec()
+    true
 }.getOrDefault(false)
