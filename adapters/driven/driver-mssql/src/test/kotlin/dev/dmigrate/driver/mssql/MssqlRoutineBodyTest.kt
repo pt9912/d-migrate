@@ -77,4 +77,21 @@ class MssqlRoutineBodyTest : FunSpec({
         MssqlRoutineBody.extract("CREATE PROCEDURE p AS BEGIN SELECT 1 END;") shouldBe "BEGIN SELECT 1 END"
         MssqlRoutineBody.extract("CREATE PROCEDURE p AS BEGIN SELECT 1 END\n;\n;") shouldBe "BEGIN SELECT 1 END"
     }
+
+    // `WITH SCHEMABINDING` traegt kein `AS` und ging deshalb gut — `WITH
+    // EXECUTE AS OWNER` traegt eins, und es ist das erste auf oberster Ebene.
+    // Der Schnitt landete dort und lieferte "OWNER AS BEGIN … END".
+    test("a WITH options clause before the body is detected") {
+        MssqlRoutineBody.hasOptionsClause(
+            "CREATE PROCEDURE p WITH EXECUTE AS OWNER AS BEGIN SELECT 1 END",
+        ) shouldBe true
+        MssqlRoutineBody.hasOptionsClause(
+            "CREATE FUNCTION f () RETURNS INT WITH SCHEMABINDING AS BEGIN RETURN 1 END",
+        ) shouldBe true
+        MssqlRoutineBody.hasOptionsClause("CREATE PROCEDURE p AS BEGIN SELECT 1 END") shouldBe false
+        // Ein `WITH` hinter dem `AS` ist eine CTE im Rumpf.
+        MssqlRoutineBody.hasOptionsClause(
+            "CREATE FUNCTION f () RETURNS TABLE AS RETURN (WITH c AS (SELECT 1 AS x) SELECT x FROM c)",
+        ) shouldBe false
+    }
 })

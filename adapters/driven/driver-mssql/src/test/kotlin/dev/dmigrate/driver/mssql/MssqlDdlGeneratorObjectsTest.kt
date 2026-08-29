@@ -206,6 +206,41 @@ class MssqlDdlGeneratorObjectsTest : FunSpec({
         result.notesWithCode("E054").single().objectName shouldBe "agg"
     }
 
+    // Dieselbe Falle wie beim Trigger: das neutrale Modell haelt zwei
+    // Ueberladungen auseinander, T-SQL kann es nicht — der zweite
+    // `CREATE OR ALTER` ersetzte sonst still den ersten.
+    test("overloaded routines collide because T-SQL has no overloading") {
+        val result = generator.generate(
+            schema(
+                tables = mapOf("orders" to idTable()),
+                functions = mapOf(
+                    "calc(in:integer)" to FunctionDefinition(
+                        parameters = listOf(ParameterDefinition("a", "integer")),
+                        returns = ReturnType("integer"), body = "BEGIN RETURN 0 END", sourceDialect = "mssql",
+                    ),
+                    "calc(in:text)" to FunctionDefinition(
+                        parameters = listOf(ParameterDefinition("a", "text")),
+                        returns = ReturnType("integer"), body = "BEGIN RETURN 0 END", sourceDialect = "mssql",
+                    ),
+                ),
+                procedures = mapOf(
+                    "run(in:integer)" to ProcedureDefinition(
+                        parameters = listOf(ParameterDefinition("a", "integer")),
+                        body = "BEGIN END", sourceDialect = "mssql",
+                    ),
+                    "run(in:text)" to ProcedureDefinition(
+                        parameters = listOf(ParameterDefinition("a", "text")),
+                        body = "BEGIN END", sourceDialect = "mssql",
+                    ),
+                ),
+            ),
+        )
+        result.render() shouldNotContain "CREATE OR ALTER"
+        val e053 = result.notesWithCode("E053")
+        e053.size shouldBe 4
+        e053.first().message shouldContain "no routine overloading"
+    }
+
     test("identically named triggers on different tables collide on the schema-global T-SQL namespace") {
         val result = generator.generate(
             schema(

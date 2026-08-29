@@ -108,7 +108,10 @@ internal object MssqlTypeMapping {
         "varbinary", "binary", "image" -> "binary"
         "date" -> "date"
         "time" -> "time"
-        "datetime", "datetime2", "smalldatetime", "datetimeoffset" -> "datetime"
+        // `datetimeoffset` bleibt es selbst: das neutrale Vokabular kennt keinen
+        // zonentragenden Namen, und `datetime` machte aus dem Offset stillschweigend
+        // ein `DATETIME2` zurueck — Verengung, nicht Erweiterung.
+        "datetime", "datetime2", "smalldatetime" -> "datetime"
         "geometry", "geography" -> "geometry"
         else -> typeName.lowercase()
     }

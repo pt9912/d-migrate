@@ -115,4 +115,23 @@ class MssqlRoutineDdlTest : FunSpec({
         MssqlRoutineDdl.invert("CREATE OR ALTER VIEW [v] AS", nameAfter) shouldBe "DROP VIEW IF EXISTS [v];"
         MssqlRoutineDdl.invert("CREATE TABLE [t] (id INT)", nameAfter).shouldBeNull()
     }
+
+    // Der Fallback reicht unbekannte Namen durch — richtig fuer einen
+    // benutzerdefinierten T-SQL-Typ, falsch fuer einen neutralen Namen ohne
+    // Abbildung: `@x ARRAY` lehnt der Server mit „Cannot find data type" ab.
+    test("neutral type names without a T-SQL counterpart are reported, native names pass through") {
+        val withArray = ProcedureDefinition(parameters = listOf(ParameterDefinition("x", "array")))
+        MssqlRoutineDdl.unsupportedProcedureShape("p", withArray).shouldNotBeNull().reason shouldContain "array"
+
+        val withUdt = ProcedureDefinition(parameters = listOf(ParameterDefinition("x", "my_udt")))
+        MssqlRoutineDdl.unsupportedProcedureShape("p", withUdt).shouldBeNull()
+        MssqlRoutineDdl.procedureSql("p", withUdt, "BEGIN END", quote) shouldContain "@x MY_UDT"
+    }
+
+    test("identifier renders as INT, a precisionless decimal spells out the T-SQL default") {
+        val proc = ProcedureDefinition(
+            parameters = listOf(ParameterDefinition("id", "identifier"), ParameterDefinition("amount", "decimal")),
+        )
+        MssqlRoutineDdl.procedureSql("p", proc, "BEGIN END", quote) shouldContain "(@id INT, @amount DECIMAL(18,0))"
+    }
 })

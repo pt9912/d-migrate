@@ -302,60 +302,49 @@ class MssqlDdlGenerator private constructor(
     override fun generateFunctions(
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = functions.map { (key, fn) ->
-        val name = ObjectKeyCodec.routineName(key)
-        val problem = bodyProblem("function", name, fn.body, fn.sourceDialect)
-            ?: MssqlRoutineDdl.unsupportedFunctionShape(name, fn)
-        if (problem != null) {
-            notRendered("function", name, problem, fn.sourceDialect, skipped)
-        } else {
-            DdlStatement(MssqlRoutineDdl.functionSql(name, fn, checkNotNull(fn.body)) { quoteIdentifier(it) })
+    ): List<DdlStatement> {
+        val colliding = MssqlRoutineDdl.collidingNames(functions.keys, ObjectKeyCodec::routineName)
+        return functions.map { (key, fn) ->
+            val name = ObjectKeyCodec.routineName(key)
+            val problem = MssqlRoutineDdl.nameCollision("function", name, colliding)
+                ?: MssqlRoutineDdl.bodyProblem("function", name, fn.body, fn.sourceDialect)
+                ?: MssqlRoutineDdl.unsupportedFunctionShape(name, fn)
+            if (problem != null) {
+                notRendered("function", name, problem, fn.sourceDialect, skipped)
+            } else {
+                DdlStatement(MssqlRoutineDdl.functionSql(name, fn, checkNotNull(fn.body)) { quoteIdentifier(it) })
+            }
         }
     }
 
     override fun generateProcedures(
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = procedures.map { (key, proc) ->
-        val name = ObjectKeyCodec.routineName(key)
-        val problem = bodyProblem("procedure", name, proc.body, proc.sourceDialect)
-        if (problem != null) {
-            notRendered("procedure", name, problem, proc.sourceDialect, skipped)
-        } else {
-            DdlStatement(MssqlRoutineDdl.procedureSql(name, proc, checkNotNull(proc.body)) { quoteIdentifier(it) })
+    ): List<DdlStatement> {
+        val colliding = MssqlRoutineDdl.collidingNames(procedures.keys, ObjectKeyCodec::routineName)
+        return procedures.map { (key, proc) ->
+            val name = ObjectKeyCodec.routineName(key)
+            val problem = MssqlRoutineDdl.nameCollision("procedure", name, colliding)
+                ?: MssqlRoutineDdl.bodyProblem("procedure", name, proc.body, proc.sourceDialect)
+                ?: MssqlRoutineDdl.unsupportedProcedureShape(name, proc)
+            if (problem != null) {
+                notRendered("procedure", name, problem, proc.sourceDialect, skipped)
+            } else {
+                DdlStatement(MssqlRoutineDdl.procedureSql(name, proc, checkNotNull(proc.body)) { quoteIdentifier(it) })
+            }
         }
     }
 
-    /**
-     * SQL-Server-Triggernamen gelten schemaweit, nicht je Tabelle. Zwei
-     * gleichnamige Trigger auf verschiedenen Tabellen — im neutralen Modell
-     * durch den Key `table::name` unterscheidbar — wuerden hier
-     * uebereinandergeschrieben, der zweite `CREATE OR ALTER` ersetzte den
-     * ersten stillschweigend. Deshalb wird die Kollision gemeldet.
-     */
     override fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
-        val colliding = triggers.keys
-            .groupBy { ObjectKeyCodec.triggerName(it) }
-            .filterValues { it.size > 1 }
+        val colliding = MssqlRoutineDdl.collidingNames(triggers.keys, ObjectKeyCodec::triggerName)
         return triggers.map { (key, trigger) ->
             val name = ObjectKeyCodec.triggerName(key)
-            val collision = colliding[name]
-            if (collision != null) {
-                return@map notRendered(
-                    "trigger", name,
-                    MssqlRoutineDdl.Unrenderable(
-                        "Trigger name '$name' is used by ${collision.size} triggers " +
-                            "(${collision.joinToString(", ")}); SQL Server trigger names are schema-global.",
-                        "Rename the triggers so each carries a schema-wide unique name.",
-                    ),
-                    trigger.sourceDialect, skipped,
-                )
-            }
-            val problem = bodyProblem("trigger", name, trigger.body, trigger.sourceDialect)
+            val problem = MssqlRoutineDdl.nameCollision("trigger", name, colliding)
+                ?: MssqlRoutineDdl.bodyProblem("trigger", name, trigger.body, trigger.sourceDialect)
                 ?: MssqlRoutineDdl.unsupportedTriggerShape(name, trigger)
             if (problem != null) {
                 notRendered("trigger", name, problem, trigger.sourceDialect, skipped)
@@ -366,6 +355,7 @@ class MssqlDdlGenerator private constructor(
             }
         }
     }
+
 
     override fun generateAggregates(
         aggregates: Map<String, AggregateDefinition>,
@@ -382,34 +372,6 @@ class MssqlDdlGenerator private constructor(
         actionRequired(action)
     }
 
-    /**
-     * Was einen Rumpf unrenderbar macht — oder null, wenn er sich rendern
-     * laesst.
-     *
-     * Ein fremder Dialekt bleibt liegen: d-migrate uebersetzt keine
-     * prozeduralen Koerper. Ein T-SQL-Rumpf dagegen wird gerendert, seit die
-     * Signatur neben ihm im Modell steht.
-     */
-    private fun bodyProblem(
-        kind: String,
-        name: String,
-        body: String?,
-        sourceDialect: String?,
-    ): MssqlRoutineDdl.Unrenderable? {
-        val kindLabel = kind.replaceFirstChar { it.uppercase() }
-        return when {
-            body == null -> MssqlRoutineDdl.Unrenderable(
-                "$kindLabel '$name' has no body and must be manually implemented.",
-                "Provide a $kind body in the schema definition.",
-            )
-            sourceDialect != null && sourceDialect != "mssql" -> MssqlRoutineDdl.Unrenderable(
-                "$kindLabel '$name' was written for '$sourceDialect' and must be manually rewritten " +
-                    "for SQL Server.",
-                "Rewrite the $kind body using T-SQL syntax.",
-            )
-            else -> null
-        }
-    }
 
     private fun notRendered(
         kind: String,

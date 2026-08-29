@@ -32,15 +32,43 @@ internal object MssqlRoutineDdl {
      * `CREATE FUNCTION` verlangt eine `RETURNS`-Klausel; ohne Rueckgabetyp im
      * Modell gaebe es nichts, was dort stehen koennte.
      */
-    fun unsupportedFunctionShape(name: String, fn: FunctionDefinition): Unrenderable? =
-        if (fn.returns == null) {
-            Unrenderable(
-                "Function '$name' carries no return type; T-SQL requires a RETURNS clause.",
-                "Declare the function's return type in the schema definition.",
-            )
-        } else {
-            null
-        }
+    fun unsupportedFunctionShape(name: String, fn: FunctionDefinition): Unrenderable? = when {
+        fn.returns == null -> Unrenderable(
+            "Function '$name' carries no return type; T-SQL requires a RETURNS clause.",
+            "Declare the function's return type in the schema definition.",
+        )
+        else -> unsupportedTypes(name, fn.parameters, fn.returns?.type)
+    }
+
+    fun unsupportedProcedureShape(name: String, proc: ProcedureDefinition): Unrenderable? =
+        unsupportedTypes(name, proc.parameters, null)
+
+    /**
+     * Neutrale Typnamen, fuer die es in T-SQL keine Entsprechung gibt.
+     *
+     * Der Fallback in [paramTypeSql] reicht einen unbekannten Namen unveraendert
+     * durch — das ist fuer einen benutzerdefinierten T-SQL-Typ richtig, den der
+     * Reverse namentlich gelesen hat. Ein **neutraler** Name ohne Abbildung
+     * dagegen ergaebe `@x ARRAY`, was der Server mit „Cannot find data type"
+     * ablehnt. Deshalb faengt diese Liste sie vorher ab.
+     */
+    private fun unsupportedTypes(
+        name: String,
+        parameters: List<ParameterDefinition>,
+        returnType: String?,
+    ): Unrenderable? {
+        val offending = (parameters.map { it.type } + listOfNotNull(returnType))
+            .filter { it.lowercase() in UNRENDERABLE_NEUTRAL_TYPES }
+            .distinct()
+        if (offending.isEmpty()) return null
+        return Unrenderable(
+            "Routine '$name' uses the neutral type(s) ${offending.joinToString(", ")}, which SQL Server " +
+                "has no parameter type for.",
+            "Express the parameter as a concrete type (e.g. text, integer, binary).",
+        )
+    }
+
+    private val UNRENDERABLE_NEUTRAL_TYPES = setOf("array", "fulltext")
 
     /** Setzt [unsupportedFunctionShape] `== null` voraus. */
     fun functionSql(
@@ -68,6 +96,61 @@ internal object MssqlRoutineDdl {
         append("CREATE OR ALTER PROCEDURE ${quote(name)}$params AS\n")
         append(body.trim())
         append("\n;")
+    }
+
+    /**
+     * Keys, die auf denselben emittierten Namen fallen, nach diesem Namen.
+     *
+     * Das neutrale Modell unterscheidet Routinen ueber die Signatur
+     * (`calc(in:integer)` neben `calc(in:text)`) und Trigger ueber die Tabelle
+     * (`orders::touch` neben `items::touch`). T-SQL kann beides nicht: Routinen
+     * lassen sich nicht ueberladen, und Triggernamen gelten schemaweit. Beide
+     * `CREATE OR ALTER` traegen denselben Namen, der zweite ersetzte den ersten
+     * stillschweigend.
+     */
+    fun collidingNames(keys: Set<String>, nameOf: (String) -> String): Map<String, List<String>> =
+        keys.groupBy(nameOf).filterValues { it.size > 1 }
+
+    fun nameCollision(
+        kind: String,
+        name: String,
+        colliding: Map<String, List<String>>,
+    ): Unrenderable? {
+        val keys = colliding[name] ?: return null
+        val reason = if (kind == "trigger") "SQL Server trigger names are schema-global" else "SQL Server has no routine overloading"
+        return Unrenderable(
+            "The name '$name' is used by ${keys.size} ${kind}s (${keys.joinToString(", ")}); $reason.",
+            "Rename them so each carries a schema-wide unique name.",
+        )
+    }
+
+    /**
+     * Was einen Rumpf unrenderbar macht — oder null, wenn er sich rendern
+     * laesst.
+     *
+     * Ein fremder Dialekt bleibt liegen: d-migrate uebersetzt keine
+     * prozeduralen Koerper. Ein T-SQL-Rumpf dagegen wird gerendert, seit die
+     * Signatur neben ihm im Modell steht.
+     */
+    fun bodyProblem(
+        kind: String,
+        name: String,
+        body: String?,
+        sourceDialect: String?,
+    ): Unrenderable? {
+        val kindLabel = kind.replaceFirstChar { it.uppercase() }
+        return when {
+            body == null -> Unrenderable(
+                "$kindLabel '$name' has no body and must be manually implemented.",
+                "Provide a $kind body in the schema definition.",
+            )
+            sourceDialect != null && sourceDialect != "mssql" -> Unrenderable(
+                "$kindLabel '$name' was written for '$sourceDialect' and must be manually rewritten " +
+                    "for SQL Server.",
+                "Rewrite the $kind body using T-SQL syntax.",
+            )
+            else -> null
+        }
     }
 
     /** Setzt [unsupportedTriggerShape] `== null` voraus. */
@@ -156,13 +239,17 @@ internal object MssqlRoutineDdl {
      * nie enger.
      */
     private fun paramTypeSql(neutral: String): String = when (neutral.lowercase()) {
-        "integer" -> "INT"
+        // `identifier` ist der Surrogatschluessel des neutralen Modells; als
+        // Parameter ist davon der Zahlentyp uebrig, nicht die IDENTITY-Eigenschaft.
+        "integer", "identifier" -> "INT"
         "biginteger" -> "BIGINT"
         "smallint" -> "SMALLINT"
         "boolean" -> "BIT"
-        "decimal" -> "DECIMAL"
+        // Ohne Praezision ist `DECIMAL` in T-SQL `DECIMAL(18,0)` — ausgeschrieben
+        // steht das in der DDL, statt als stille Voreinstellung zu wirken.
+        "decimal" -> "DECIMAL(18,0)"
         "float" -> "FLOAT"
-        "text", "char", "email", "json" -> "NVARCHAR(MAX)"
+        "text", "char", "email", "json", "enum" -> "NVARCHAR(MAX)"
         "uuid" -> "UNIQUEIDENTIFIER"
         "binary" -> "VARBINARY(MAX)"
         "date" -> "DATE"
@@ -170,6 +257,9 @@ internal object MssqlRoutineDdl {
         "datetime" -> "DATETIME2"
         "xml" -> "XML"
         "geometry" -> "GEOMETRY"
+        // Alles Weitere ist ein nativer Typname, den der Reverse so gelesen hat
+        // (ein benutzerdefinierter Typ etwa). Neutrale Namen ohne Abbildung
+        // faengt `unsupportedTypes` vorher ab.
         else -> neutral.uppercase()
     }
 

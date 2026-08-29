@@ -15,9 +15,26 @@ package dev.dmigrate.driver.mssql
  * ueberspringt diese vier und zaehlt die Klammertiefe mit.
  *
  * Findet er keins, gibt er `null` zurueck — der Aufrufer meldet das, statt
- * einen falschen Rumpf abzulegen.
+ * einen falschen Rumpf abzulegen. Dasselbe gilt fuer eine Optionsklausel
+ * ([hasOptionsClause]): sie steht vor dem `AS` und faellt beim Schnitt weg.
  */
 internal object MssqlRoutineBody {
+
+    /**
+     * Ob die Definition eine `WITH`-Optionsklausel vor dem Rumpf traegt.
+     *
+     * `WITH SCHEMABINDING`, `WITH EXECUTE AS OWNER`, `WITH RETURNS NULL ON NULL
+     * INPUT` und Verwandte stehen zwischen Signatur und `AS` — und damit vor
+     * dem Schnitt. Das neutrale Modell hat kein Feld dafuer, also gingen sie
+     * beim Zurueckschreiben verloren: eine schemagebundene Funktion verloere
+     * ihre Bindung, und die indizierte Sicht darauf liesse sich nicht mehr
+     * anlegen. `WITH EXECUTE AS` wuerde zusaetzlich den Schnitt selbst
+     * verschieben, weil sein `AS` das erste auf oberster Ebene ist.
+     *
+     * Ein `WITH` **hinter** dem `AS` ist eine CTE im Rumpf und zaehlt nicht.
+     */
+    fun hasOptionsClause(definition: String): Boolean =
+        firstTopLevelKeyword(definition, listOf("WITH", "AS"))?.first == "WITH"
 
     fun extract(definition: String): String? {
         val at = topLevelAsIndex(definition) ?: return null
@@ -28,7 +45,11 @@ internal object MssqlRoutineBody {
         return definition.substring(at).trim().trimEnd(';', ' ', '\t', '\n', '\r').ifEmpty { null }
     }
 
-    private fun topLevelAsIndex(sql: String): Int? {
+    private fun topLevelAsIndex(sql: String): Int? =
+        firstTopLevelKeyword(sql, listOf("AS"))?.let { (keyword, at) -> at + keyword.length }
+
+    /** Das erste der [keywords] auf oberster Klammerebene, mit seinem Startindex. */
+    private fun firstTopLevelKeyword(sql: String, keywords: List<String>): Pair<String, Int>? {
         var i = 0
         var depth = 0
         while (i < sql.length) {
@@ -40,7 +61,7 @@ internal object MssqlRoutineBody {
             when {
                 sql[i] == '(' -> depth++
                 sql[i] == ')' -> depth--
-                depth == 0 && isAsKeywordAt(sql, i) -> return i + 2
+                depth == 0 -> keywords.firstOrNull { isKeywordAt(sql, i, it) }?.let { return it to i }
             }
             i++
         }
@@ -73,11 +94,12 @@ internal object MssqlRoutineBody {
         return sql.length
     }
 
-    private fun isAsKeywordAt(sql: String, i: Int): Boolean {
-        if (i + 2 > sql.length) return false
-        if (!sql.regionMatches(i, "AS", 0, 2, ignoreCase = true)) return false
+    private fun isKeywordAt(sql: String, i: Int, keyword: String): Boolean {
+        val end = i + keyword.length
+        if (end > sql.length) return false
+        if (!sql.regionMatches(i, keyword, 0, keyword.length, ignoreCase = true)) return false
         val before = if (i == 0) ' ' else sql[i - 1]
-        val after = if (i + 2 >= sql.length) ' ' else sql[i + 2]
+        val after = if (end >= sql.length) ' ' else sql[end]
         return !before.isLetterOrDigit() && before != '_' && !after.isLetterOrDigit() && after != '_'
     }
 }

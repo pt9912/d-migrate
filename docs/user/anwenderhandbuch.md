@@ -1733,10 +1733,14 @@ Report als **E054** vermerkt:
   Anwendung; Trigger sind unterstützt.
 - **SQL Server:** T-SQL-Rümpfe rendern als `CREATE OR ALTER`. Was T-SQL nicht
   kennt, bleibt **E053**: `BEFORE`-Trigger, zeilenweise Trigger und eine
-  `WHEN`-Bedingung gibt es dort nicht, und Triggernamen gelten schemaweit — zwei
-  gleichnamige Trigger auf verschiedenen Tabellen überschreiben sich sonst.
-  Parametertypen trägt das neutrale Modell ohne Länge; ein `varchar(50)` kommt
-  als `NVARCHAR(MAX)` wieder, also weiter, nie enger.
+  `WHEN`-Bedingung gibt es dort nicht; Triggernamen gelten schemaweit, und
+  überladene Routinen gibt es nicht — gleichnamige Objekte überschrieben sich
+  sonst gegenseitig. Parametertypen trägt das neutrale Modell ohne Länge; ein
+  `varchar(50)` kommt als `NVARCHAR(MAX)` wieder, also weiter, nie enger.
+  Beim Zurücklesen übersprungen (mit Meldung) werden Routinen mit einer
+  `WITH`-Optionsklausel wie `SCHEMABINDING` oder `EXECUTE AS`, mit einem
+  tabellenwertigen Parameter und mehrteilige Tabellenfunktionen: für alle drei
+  hat das neutrale Modell kein Feld, und ein Zurückschreiben verlöre sie still.
 - Ein Routine-Replace ohne bekannten alten Rumpf kann beim Rollback blockieren
   (siehe [3.5](#35-eine-schemaänderung-ausrollen-und-zurücknehmen)).
 - Reverse erfasst diese Objekte nur mit `--include-triggers`/`--include-procedures`/

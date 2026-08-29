@@ -440,6 +440,7 @@ internal object MssqlMetadataQueries {
         val name: String,
         val typeName: String,
         val isOutput: Boolean,
+        val isReadonly: Boolean = false,
         val isReturnValue: Boolean,
         val precision: Int? = null,
         val scale: Int? = null,
@@ -455,7 +456,7 @@ internal object MssqlMetadataQueries {
     fun listRoutineParameters(session: JdbcOperations, schema: String): List<RoutineParamRow> = session.queryList(
         """
         SELECT o.name AS routine_name, p.name AS param_name, t.name AS type_name,
-               p.is_output, p.parameter_id, p.precision, p.scale
+               p.is_output, p.is_readonly, p.parameter_id, p.precision, p.scale
         FROM sys.objects o
         JOIN sys.parameters p ON p.object_id = o.object_id
         JOIN sys.types t ON t.user_type_id = p.user_type_id
@@ -472,6 +473,8 @@ internal object MssqlMetadataQueries {
             name = (row["param_name"]?.toString() ?: "").removePrefix("@"),
             typeName = row.string("type_name"),
             isOutput = row.bool("is_output") == true,
+            // READONLY gibt es in T-SQL nur fuer tabellenwertige Parameter.
+            isReadonly = row.bool("is_readonly") == true,
             isReturnValue = id == 0,
             precision = row.int("precision"),
             scale = row.int("scale"),

@@ -378,6 +378,19 @@ class MssqlSchemaReader(
             // und Trigger-Angaben stehen im Modell als eigene Felder daneben.
             // Laesst sich der Schnitt nicht sicher setzen, wird gemeldet statt
             // geraten.
+            // Eine Optionsklausel steht vor dem `AS` und fiele beim Schnitt
+            // weg — bei `WITH EXECUTE AS` verschoebe sie den Schnitt sogar.
+            if (MssqlRoutineBody.hasOptionsClause(row.definition)) {
+                reportSkippedRoutine(
+                    row = row,
+                    code = "R351",
+                    reason = "The definition carries a WITH options clause (SCHEMABINDING, EXECUTE AS, …); " +
+                        "the neutral model has no field for it and regenerating would drop it.",
+                    notes = notes,
+                    skipped = skipped,
+                )
+                continue
+            }
             val body = MssqlRoutineBody.extract(row.definition)
             if (body == null) {
                 reportSkippedRoutine(
@@ -391,6 +404,20 @@ class MssqlSchemaReader(
                 continue
             }
             val params = paramsByRoutine[row.name].orEmpty()
+            // Ein tabellenwertiger Parameter verlangt in T-SQL `READONLY` und
+            // einen zuvor angelegten Tabellentyp; das neutrale Modell traegt
+            // beides nicht.
+            if (params.any { it.isReadonly }) {
+                reportSkippedRoutine(
+                    row = row,
+                    code = "R352",
+                    reason = "A table-valued parameter (READONLY) has no neutral representation; " +
+                        "regenerating would emit a parameter SQL Server rejects.",
+                    notes = notes,
+                    skipped = skipped,
+                )
+                continue
+            }
             when (row.type) {
                 "P" -> if (options.includeProcedures) {
                     val parameters = parametersOf(params)
@@ -426,7 +453,22 @@ class MssqlSchemaReader(
                     )
                 }
                 "TR" -> if (options.includeTriggers) {
-                    val table = row.table ?: continue
+                    // `OBJECT_NAME` liefert null, wenn der Aufrufer die
+                    // Elterntabelle nicht aufloesen darf. Ein datenbankweiter
+                    // DDL-Trigger kommt hier dagegen nie an — er ist nicht
+                    // schemagebunden und faellt schon aus `SCHEMA_ID(?)`.
+                    // Ohne Meldung fiele der Trigger still aus dem Ergebnis.
+                    val table = row.table ?: run {
+                        reportSkippedRoutine(
+                            row = row,
+                            code = "R353",
+                            reason = "The trigger's parent table could not be resolved (OBJECT_NAME returned " +
+                                "no name); the neutral model keys triggers by their table.",
+                            notes = notes,
+                            skipped = skipped,
+                        )
+                        continue
+                    }
                     triggers[ObjectKeyCodec.triggerKey(table, row.name)] = TriggerDefinition(
                         table = table,
                         events = triggerEvents(row),

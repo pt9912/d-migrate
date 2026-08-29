@@ -1166,16 +1166,35 @@ Länge führt (siehe [neutral-model-spec.md](./neutral-model-spec.md), Abschnitt
 Quell-Parameter wird dabei weiter, nie enger. `returns.type: table` rendert als
 `RETURNS TABLE` (Inline-Tabellenfunktion; die Spalten stehen im Rumpf).
 
+`identifier` rendert als `INT` (als Parameter bleibt vom Surrogatschlüssel der
+Zahlentyp übrig), `enum` als `NVARCHAR(MAX)`. Ein neutraler Typname ohne
+T-SQL-Entsprechung (`array`, `fulltext`) wird gemeldet statt geraten — ein
+unbekannter **nicht**-neutraler Name dagegen durchgereicht, denn er ist der
+benutzerdefinierte Typ, den der Reverse namentlich gelesen hat.
+
 `action_required` E053 bleiben: ein Rumpf aus einem fremden `source_dialect`,
-eine Funktion ohne Rückgabetyp (T-SQL verlangt `RETURNS`) und eine Routine ohne
-Rumpf. Aggregate (CLR-Assembly nötig) bleiben E054.
+eine Funktion ohne Rückgabetyp (T-SQL verlangt `RETURNS`), eine Routine ohne
+Rumpf, ein nicht abbildbarer neutraler Typ — und **überladene Routinen**: das
+neutrale Modell hält `calc(in:integer)` und `calc(in:text)` auseinander, T-SQL
+kennt keine Überladung, und beide `CREATE OR ALTER` trügen denselben Namen.
+Dieselbe Lage wie bei den schemaweiten Trigger-Namen. Aggregate (CLR-Assembly
+nötig) bleiben E054.
 
 Beim **Zurücklesen** kommt die Signatur aus `sys.parameters` und nur der Rumpf
-aus dem Definitionstext, geschnitten am ersten `AS` auf oberster Ebene. Zwei
-Fälle meldet der Reverse, statt zu raten: eine Definition ohne oberstes `AS`
-(`R349`) und eine mehrteilige Tabellenfunktion (`R350`) — deren
-`RETURNS @var TABLE (…)` steht vor dem `AS` und hat im neutralen Modell keine
-Entsprechung. Beide werden übersprungen.
+aus dem Definitionstext, geschnitten am ersten `AS` auf oberster Ebene. Was das
+neutrale Modell nicht trägt, meldet der Reverse und überspringt es, statt zu
+raten:
+
+| Code | Fall |
+|---|---|
+| `R349` | Definition ohne oberstes `AS` — Rumpf und Signatur sind nicht trennbar |
+| `R350` | Mehrteilige Tabellenfunktion: `RETURNS @var TABLE (…)` steht vor dem `AS` |
+| `R351` | `WITH`-Optionsklausel (`SCHEMABINDING`, `EXECUTE AS`, …) — steht ebenfalls vor dem `AS`, und bei `EXECUTE AS` verschöbe ihr `AS` den Schnitt |
+| `R352` | Tabellenwertiger Parameter (`READONLY`) — verlangt einen zuvor angelegten Tabellentyp |
+| `R353` | Elterntabelle eines Triggers nicht auflösbar (`OBJECT_NAME` ohne Namen) |
+
+Nicht darunter fallen datenbankweite DDL-Trigger: sie sind nicht schemagebunden
+und erreichen den Reverse gar nicht.
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
 

@@ -71,10 +71,10 @@ YAML-Datei noch eine Lesefassung.
 Dokumentiert sind heute nur die typbezogenen: `R340`, `R343` und `R345` stehen
 in `spec/type-mapping.md`, weil sie dort inhaltlich hingehören. `R341` (inzwischen
 zurückgenommen), `R342` (nicht gelesene Routinen-Rümpfe), `R346`, `R347`,
-`R348` (synthetisierter Name des Volltext-Index, Slice 8c), `R349` (Definition
-ohne oberstes `AS`) und `R350` (mehrteilige Tabellenfunktion, Slice 9b) stehen
-nirgends — die beiden letzten immerhin in `spec/ddl-generation-rules.md`
-Abschnitt 11, aber nicht in einem Ledger.
+`R348` (synthetisierter Name des Volltext-Index, Slice 8c) sowie `R349` bis
+`R353` (Routinen-Reverse, Slice 9a/9b) stehen nirgends — die R349–R353 immerhin
+als Tabelle in `spec/ddl-generation-rules.md` Abschnitt 11, aber nicht in einem
+Ledger.
 
 Damit fehlt der R-Serie, was die anderen beiden Serien haben: eine Stelle, an der
 Code, Bedeutung und Beleg zusammenstehen, und ein Test, der prüft, dass ein

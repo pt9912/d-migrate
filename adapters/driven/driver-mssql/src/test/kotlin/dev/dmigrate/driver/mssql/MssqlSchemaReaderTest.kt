@@ -430,6 +430,52 @@ class MssqlSchemaReaderTest : FunSpec({
         result.notes.any { it.code == "R349" } shouldBe true
     }
 
+    // Alle drei fielen vorher still aus dem Ergebnis oder — bei `EXECUTE AS` —
+    // mit falsch geschnittenem Rumpf hinein. Der letzte Fall ist ein Trigger,
+    // dessen Elterntabelle `OBJECT_NAME` nicht aufloesen konnte.
+    test("options clause, table-valued parameter and unresolvable parent are reported instead of guessed") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.objects o") && it.contains("JOIN sys.sql_modules m") &&
+                    !it.contains("m.definition IS NULL") }, "dbo")
+        } returns listOf(
+            mapOf(
+                "object_type" to "P", "object_name" to "usp_owner",
+                "definition" to "CREATE PROCEDURE usp_owner WITH EXECUTE AS OWNER AS BEGIN SELECT 1 END",
+                "parent_name" to null, "is_insert" to 0, "is_update" to 0,
+                "is_delete" to 0, "is_instead_of" to 0,
+            ),
+            mapOf(
+                "object_type" to "P", "object_name" to "usp_tvp",
+                "definition" to "CREATE PROCEDURE usp_tvp (@t my_type READONLY) AS BEGIN SELECT 1 END",
+                "parent_name" to null, "is_insert" to 0, "is_update" to 0,
+                "is_delete" to 0, "is_instead_of" to 0,
+            ),
+            mapOf(
+                "object_type" to "TR", "object_name" to "trg_orphan",
+                "definition" to "CREATE TRIGGER trg_orphan ON t AFTER INSERT AS SELECT 1",
+                "parent_name" to null, "is_insert" to 0, "is_update" to 0,
+                "is_delete" to 0, "is_instead_of" to 0,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("JOIN sys.parameters p") }, "dbo") } returns listOf(
+            mapOf(
+                "routine_name" to "usp_tvp", "param_name" to "@t", "type_name" to "my_type",
+                "is_output" to false, "is_readonly" to true, "parameter_id" to 1,
+            ),
+        )
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+
+        result.schema.procedures.shouldBeEmptyMap()
+        result.schema.triggers.shouldBeEmptyMap()
+        result.skippedObjects.single { it.name == "usp_owner" }.code shouldBe "R351"
+        result.skippedObjects.single { it.name == "usp_tvp" }.code shouldBe "R352"
+        result.skippedObjects.single { it.name == "trg_orphan" }.code shouldBe "R353"
+    }
+
     test("unread routines and triggers surface as skippedObjects plus R342 notes") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
