@@ -4,6 +4,9 @@ import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
@@ -15,6 +18,7 @@ import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MssqlHashPartitionMode
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
@@ -145,6 +149,53 @@ class MssqlDiffPartitioningTest : FunSpec({
         sql shouldContainStr "AS RANGE RIGHT FOR VALUES (1, 2, 3);"
         sql shouldContainStr ") ON [ps_events] ([dmg_hash_bucket]);"
         result.diagnostics.count { it.code == "W145" } shouldBe 1
+    }
+
+    // Der `AddIndex`-Weg sah eine andere Tabelle als der `CreateTable`-Weg: er
+    // fiel auf die rohe Schematabelle zurueck und wusste nichts von der
+    // Eimerspalte, die die Emulation in jeden eindeutigen Schluessel traegt.
+    // Ein Index, der NACHTRAeglich zu einer emulierten Tabelle kommt, traf
+    // genau das.
+    test("an index added later sees the same table the CREATE TABLE path saw") {
+        val hash = PartitionConfig(
+            type = PartitionType.HASH,
+            key = listOf("bucket"),
+            partitions = (0 until 4).map { PartitionDefinition(name = "p$it", modulus = 4, remainder = it) },
+        )
+        // Die Emulation verlangt, dass jeder eindeutige Schluessel die
+        // Partitionsspalte schon traegt — sonst lehnt sie mit E069 ab. Sie
+        // ergaenzt dann die berechnete Eimerspalte.
+        val base = table(hash).copy(primaryKey = listOf("id", "bucket"))
+        val withIndex = base.copy(
+            indices = listOf(
+                IndexDefinition(
+                    name = "uq_events_id",
+                    columns = listOf(IndexColumn("id"), IndexColumn("bucket")),
+                    unique = true,
+                ),
+            ),
+        )
+        val options = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MsSql(hashPartitionMode = MssqlHashPartitionMode.COMPUTED_COLUMN),
+        )
+        val result = gen.generateUp(
+            planner.plan(
+                schema("events" to base),
+                schema("events" to withIndex),
+                SchemaDiff(
+                    tablesChanged = listOf(
+                        TableDiff(name = "events", indicesAdded = withIndex.indices),
+                    ),
+                ),
+            ),
+            options,
+        )
+        val sql = result.statements.joinToString("\n") { it.sql }
+        val clue = sql + "\n--- diag ---\n" +
+            result.diagnostics.joinToString("\n") { it.code + ": " + it.message }
+        // Die Emulation verlangt die Partitionsspalte in jedem eindeutigen
+        // Schluessel — auch in dem, der spaeter dazukommt.
+        withClue(clue) { sql shouldContainStr "[dmg_hash_bucket]" }
     }
 
     // D3: `DROP TABLE` laesst Function und Scheme stehen. Fuer den emulierten

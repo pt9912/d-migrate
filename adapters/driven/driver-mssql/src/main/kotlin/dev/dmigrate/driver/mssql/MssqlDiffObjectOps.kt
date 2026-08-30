@@ -35,13 +35,13 @@ internal object MssqlDiffObjectOps {
             emitDropIndex(op, ctx, table, op.index)
             return
         }
-        emitCreateIndex(op, ctx, table, op.index)
+        emitCreateIndex(op, ctx, table, ctx.effectiveIndex(table, op.index))
     }
 
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: MssqlDiffRenderContext) {
         val table = op.objectRef.rootName
         if (ctx.direction == MssqlRenderDirection.DOWN) {
-            emitCreateIndex(op, ctx, table, op.index)
+            emitCreateIndex(op, ctx, table, ctx.effectiveIndex(table, op.index))
             return
         }
         emitDropIndex(op, ctx, table, op.index)
@@ -97,7 +97,11 @@ internal object MssqlDiffObjectOps {
         // kennt (`MigrationStreamClassifier` weist NO_TRANSACTION heute ab).
         if (index.type == IndexType.FULLTEXT) return blockFullTextInTransaction(op, ctx, table, "create")
         val schema = ctx.schemaForDirection()
-        val effectiveTable = tableDef ?: schema?.tables?.get(table)
+        // Ueber den Kontext, nicht ueber die rohe Schematabelle: eine
+        // HASH-emulierte Tabelle traegt eine Eimerspalte in ihren eindeutigen
+        // Schluesseln, und ein Index dagegen zu rendern ergaebe einen
+        // Schluessel, den es in der Datenbank nicht gibt.
+        val effectiveTable = tableDef ?: ctx.effectiveTable(table)
         if (schema == null || effectiveTable == null) {
             ctx.skip(
                 op,

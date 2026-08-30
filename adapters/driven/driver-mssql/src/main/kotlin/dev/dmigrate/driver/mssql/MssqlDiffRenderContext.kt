@@ -6,6 +6,10 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.driver.MssqlHashPartitionMode
+import dev.dmigrate.driver.mssqlContext
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.TransformationNote
@@ -177,6 +181,44 @@ internal class MssqlDiffRenderContext(
      * beschreibt: aufwaerts das Soll, abwaerts das Ist. `null` heisst „nicht
      * auffindbar" — der Aufrufer macht daraus einen Blocker.
      */
+    /**
+     * Die Tabelle, wie SQL Server sie traegt — mit den Umbauten, die der
+     * Dialekt erzwingt.
+     *
+     * Bei emulierter HASH-Partitionierung wandert eine berechnete Eimerspalte
+     * in jeden eindeutigen Schluessel; die rohe Schematabelle weiss davon
+     * nichts. Wer gegen sie rendert, erzeugt einen Index auf einem
+     * Primaerschluessel, den es in der Datenbank so nicht gibt.
+     *
+     * Die Aufloesung steht deshalb hier und nicht je Aufrufweg: der
+     * `CreateTable`-Pfad kannte die effektive Sicht, der `AddIndex`-Pfad fiel
+     * auf die rohe zurueck — zwei Antworten auf dieselbe Frage.
+     */
+    fun effectiveTable(name: String): TableDefinition? {
+        val schema = schemaForDirection() ?: return null
+        val raw = schema.tables[name] ?: return null
+        val outcome = resolveHashPartitionPlan(
+            name, raw,
+            options.mssqlContext?.hashPartitionMode ?: MssqlHashPartitionMode.ACTION_REQUIRED,
+            sql::quote, schema,
+        )
+        return (outcome as? MssqlHashPartitionOutcome.Planned)?.plan?.table ?: raw
+    }
+
+    /**
+     * Der Index, wie SQL Server ihn traegt.
+     *
+     * Die HASH-Emulation schreibt die Eimerspalte in jeden eindeutigen
+     * Schluessel — die umgeschriebene Fassung steht in der Indexliste der
+     * effektiven Tabelle. Wer stattdessen die rohe Definition aus der Operation
+     * rendert, erzeugt einen Schluessel ohne Partitionsspalte, den SQL Server
+     * auf einer partitionierten Tabelle ablehnt.
+     */
+    fun effectiveIndex(table: String, index: IndexDefinition): IndexDefinition {
+        val effective = effectiveTable(table) ?: return index
+        return effective.indices.firstOrNull { it.name != null && it.name == index.name } ?: index
+    }
+
     fun columnFor(table: String, column: String): ColumnDefinition? {
         val schema = if (direction == MssqlRenderDirection.UP) desiredSchema else currentSchema
         return schema?.tables?.get(table)?.columns?.get(column)

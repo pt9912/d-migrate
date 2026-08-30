@@ -6,6 +6,16 @@
 > **Aktivierungsbedingung:** Wird priorisiert → `next/`-Plan; sonst
 > Trigger-Watch.
 
+> **Behoben 2026-08-30.** Die dialektspezifische Tabellensicht wird jetzt an
+> **einer** Stelle aufgelöst — `MssqlDiffRenderContext.effectiveTable` —, und
+> beide Wege fragen sie.
+>
+> Beim Bauen zeigte sich, dass die Skizze unten nicht ausreicht: der
+> `AddIndex`-Weg rendert `op.index`, also die **rohe** Indexdefinition aus der
+> Operation. Die effektive Tabelle allein hätte daran nichts geändert. Es
+> braucht zusätzlich `effectiveIndex`, das den umgeschriebenen Index aus der
+> Indexliste der effektiven Tabelle nachschlägt.
+
 ## Befund
 
 Der Diff rendert Indizes auf zwei Wegen, und die beiden sehen **verschiedene
