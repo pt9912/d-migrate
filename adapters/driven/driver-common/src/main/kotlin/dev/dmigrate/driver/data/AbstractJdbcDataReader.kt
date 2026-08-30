@@ -52,6 +52,16 @@ abstract class AbstractJdbcDataReader : DataReader {
     protected open val supportsGeometryRead: Boolean = false
 
     /**
+     * Ob **diese Verbindung** Geometrie als WKB lesen kann.
+     *
+     * Bei den meisten Dialekten haengt das allein am Treiber, und die Antwort
+     * ist [supportsGeometryRead]. SQLite entscheidet es je Verbindung: die
+     * Geometriefunktionen kommen aus `mod_spatialite`, und das ist nur geladen,
+     * wenn die Verbindung es angefordert hat.
+     */
+    protected open fun supportsGeometryRead(conn: Connection): Boolean = supportsGeometryRead
+
+    /**
      * VA1b: dialekt-spezifischer Read-Ausdruck für eine Geometriespalte
      * (bereits gequotet), z. B. `ST_AsEWKB("g")` (PostGIS) oder `ST_AsBinary(\`g\`)`
      * (MySQL). Default: unverändert (kein Wrap) — nur relevant, wenn
@@ -128,7 +138,7 @@ abstract class AbstractJdbcDataReader : DataReader {
             // VA1b: Treiber mit Geometrie-Read-Support proben vorab die
             // Spaltentypen (billige WHERE-1=0-Query), damit Geometriespalten in
             // der Projektion in ein kanonisches Binärformat gewrappt werden.
-            val probedColumns = if (supportsGeometryRead) probeColumns(conn, table) else emptyList()
+            val probedColumns = if (supportsGeometryRead(conn)) probeColumns(conn, table) else emptyList()
             // buildSelectQuery liefert SQL + Bind-Parameter, damit Filter und
             // Resume-Marker ohne String-Konkatenation parametrisiert bleiben.
             val query = buildSelectQuery(table, filter, resumeMarker, probedColumns)

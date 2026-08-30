@@ -49,13 +49,17 @@ Aufwand liegt woanders:
 
 ## Umfang
 
-- Lesepfad: Geometriespalten erkennen und als WKB liefern (`ST_AsBinary`), nur
-  bei geladener Extension.
-- Schreibpfad: WKB als `GeomFromWKB(?, srid)` binden — PostgreSQL und MySQL
-  holen die SRID dafür aus dem Zielkatalog, SpatiaLite hat mit
-  `geometry_columns` eine eigene Quelle.
-- Testgerüst für SpatiaLite, damit der Weg live belegt ist und nicht nur
-  gerendert.
+- ~~Testgerüst für SpatiaLite~~ — **erledigt 2026-08-30**: die
+  `integration-test`-Stage bringt `libsqlite3-mod-spatialite` mit, die Tests
+  laufen ohne Testcontainers gegen eine Datei.
+- ~~Lesepfad: Geometriespalten erkennen und als WKB liefern~~ — **erledigt**:
+  `SqliteDataReader` fragt die Verbindung (`spatialite_version()`), wickelt in
+  `ST_AsBinary` und erkennt die Spalte am deklarierten Typnamen. Live belegt:
+  21 Byte WKB statt 60 Byte Eigenformat; ohne Extension bleibt der rohe BLOB,
+  statt an einer unbekannten Funktion zu scheitern.
+- **Offen — Schreibpfad:** WKB als `GeomFromWKB(?, srid)` binden. PostgreSQL und
+  MySQL holen die SRID aus dem Zielkatalog; SpatiaLite hat mit
+  `geometry_columns` eine eigene Quelle (`places.geom srid=4326`, gemessen).
 
 ## Was nicht mehr gilt
 

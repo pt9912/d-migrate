@@ -236,7 +236,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv \
     curl ca-certificates gnupg \
-    build-essential && \
+    build-essential \
+    # SpatiaLite-Extension fuer die SQLite-Integrationstests. Sie laeuft ohne
+    # Testcontainers gegen eine Datei, braucht die Bibliothek aber im Image:
+    # `load_extension('mod_spatialite')` sucht sie im Standard-Library-Pfad.
+    libsqlite3-mod-spatialite && \
     python3 -m pip install --break-system-packages --quiet django && \
     # Node 20 aus dem NodeSource-Repo (CWE-494): kein `curl | bash`. Der GPG-Key
     # wird ueber HTTPS geholt, per SHA256 gepinnt und als signed-by-Keyring

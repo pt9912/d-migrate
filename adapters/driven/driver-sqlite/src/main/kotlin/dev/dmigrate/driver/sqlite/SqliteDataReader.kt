@@ -1,8 +1,10 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.data.AbstractJdbcDataReader
+import java.sql.Connection
 
 /**
  * SQLite [dev.dmigrate.driver.data.DataReader].
@@ -30,8 +32,30 @@ class SqliteDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataReader(
 
     override val needsAutoCommitFalse: Boolean = false
 
-    // VA1b: kein Geometrie-Read-Wrapping (supportsGeometryRead bleibt false).
-    // SpatiaLite-Geometrie wird ohne geladenes mod_spatialite gar nicht als
-    // Geometriespalte erkannt; der SQLite-Read-Pfad (ST_AsBinary + Extension)
-    // folgt mit VA4 (mod_spatialite im CLI-Image).
+    /**
+     * SpatiaLite legt Geometrie in einem **eigenen** Binaerformat ab, nicht als
+     * WKB — der rohe BLOB einer 2D-Punktspalte misst 60 Bytes, ihr WKB 21. Roh
+     * gelesen und in eine PostGIS-Spalte geschrieben ergaebe das keinen Punkt.
+     * Der Lesepfad wickelt Geometriespalten deshalb in `ST_AsBinary`.
+     *
+     * Das geht nur mit geladener Extension, und die haengt an der Verbindung
+     * (`?spatialite=true`). Eine gewoehnliche SQLite-Datei mit einer als
+     * `POINT` deklarierten Spalte scheiterte sonst an der unbekannten Funktion.
+     */
+    override fun supportsGeometryRead(conn: Connection): Boolean =
+        runCatching {
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("SELECT spatialite_version()").use { it.next() }
+            }
+        }.getOrDefault(false)
+
+    override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
+
+    /**
+     * SQLite fuehrt keine Typen, sondern Affinitaeten; der JDBC-Treiber meldet
+     * den **deklarierten** Namen aus dem `CREATE TABLE` — bei einer von
+     * `AddGeometryColumn` angelegten Spalte also `POINT`, `LINESTRING`, …
+     */
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower in GeometryType.KNOWN_VALUES
 }
