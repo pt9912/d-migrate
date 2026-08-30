@@ -1892,6 +1892,22 @@ entsteht auf beiden Wegen gleich partitioniert.
   bricht mit Exit 7 ab, statt still auf `PRIMARY` auszuweichen.
 - Vollständige Felder: [Anhang F.8](#f8-partitionierung).
 
+**Tabellen-Optionen für MySQL-Ziele.** Erzeugte Tabellen tragen standardmäßig
+`ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`. Weicht Ihre
+Datenbank davon ab, schreiben Sie die Werte in die Konfigurationsdatei:
+
+```yaml
+ddl:
+  mysql:
+    engine: MyISAM
+    charset: latin1
+    collation: latin1_german2_ci
+```
+
+Ein CLI-Flag gibt es dafür nicht — die Angaben beschreiben das Ziel, nicht den
+einzelnen Aufruf. Sie gelten nur für `--target mysql`. Werte, die keine
+Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
+
 ### 3.21 Eigene Datentypen definieren (Enum, Composite, Domain)
 
 **Ziel:** Wiederverwendbare `custom_types` nutzen.

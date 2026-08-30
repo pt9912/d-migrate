@@ -11,6 +11,7 @@ import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.driver.MysqlTableOptions
 import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.NoteType
@@ -43,6 +44,11 @@ data class SchemaGenerateRequest(
      * Filegroup ab; Dialekte ohne Filegroup-Begriff ignorieren ihn.
      */
     val partitionStorage: String? = null,
+    /**
+     * Tabellen-Optionen fuer MySQL-Ziele (`ddl.mysql`). Sie beschreiben das
+     * Ziel und kommen deshalb aus der Konfiguration, nicht aus einem Flag.
+     */
+    val mysqlTableOptions: MysqlTableOptions = MysqlTableOptions(),
     val output: Path?,
     val report: Path?,
     val generateRollback: Boolean,
@@ -202,6 +208,7 @@ class SchemaGenerateRunner(
         val dialectContext: DdlDialectContext = when (dialect) {
             DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
                 namedSequenceMode = mysqlSeqMode.value ?: MysqlNamedSequenceMode.ACTION_REQUIRED,
+                tableOptions = request.mysqlTableOptions,
             )
             DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
                 namedSequenceMode = sqliteSeqMode.value ?: SqliteNamedSequenceMode.ACTION_REQUIRED,

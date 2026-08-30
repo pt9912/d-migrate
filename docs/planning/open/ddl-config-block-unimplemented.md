@@ -61,10 +61,26 @@ erzeugt stillschweigend anderes DDL als der Lauf davor.
    `ConfigShowRenderer` rendert den Dateibaum generisch und führt `ddl` bereits
    in seiner Sektions-Reihenfolge.
 4. ~~Handbuch nachziehen.~~ — für den verdrahteten Schlüssel geschehen.
-5. **Offen:** die restlichen acht Schlüssel. Jeder braucht einen Konsumenten,
-   bevor er gelesen wird — ein Schlüssel, der gelesen wird und nichts bewirkt,
-   ist schlimmer als keiner. Bei mehreren davon ist die Vorarbeit nicht das
-   Lesen, sondern dass es die Einstellung im Generator noch gar nicht gibt.
+5. ~~Die drei MySQL-Schlüssel (`engine`, `charset`, `collation`).~~ —
+   **erledigt 2026-08-30.** Sie waren der einfache Fall aus demselben Grund wie
+   `partition_storage`: die Wirkung stand schon, nur fest verdrahtet. Der
+   Generator schrieb `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+   COLLATE=utf8mb4_unicode_ci` als Literal; jetzt kommen die drei aus
+   `DdlDialectContext.MySql.tableOptions`, mit denselben Vorgaben. Ein CLI-Flag
+   gibt es nicht — sie beschreiben das Ziel.
+
+6. **Offen: die restlichen fünf.** Nachgemessen zerfallen sie in zwei Gruppen,
+   und keine davon ist „einen Schlüssel lesen":
+
+   - **Die Einstellung existiert noch gar nicht** — `include_comments`
+     (nirgends wird ein `COMMENT` gerendert), `postgresql.default_schema` (es
+     gibt keinen PostgreSQL-Renderkontext) und `inline_foreign_keys` (nur die
+     Spec-Zeile, keine Implementierung). Hier ist das Lesen der letzte Schritt,
+     nicht der erste.
+   - **Vermutlich am falschen Ort** — `sqlite.foreign_keys` und
+     `sqlite.journal_mode` sind Verbindungs-PRAGMAs, keine
+     Generierungsoptionen. Ob sie unter `ddl:` gehören oder zur
+     Verbindungsbeschreibung, ist eine Spec-Frage und vor dem Bauen zu klären.
 
 ## Gelernt
 

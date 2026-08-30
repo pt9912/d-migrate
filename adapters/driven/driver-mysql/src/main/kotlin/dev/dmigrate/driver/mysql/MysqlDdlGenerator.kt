@@ -168,7 +168,10 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             append("\n)")
             // Table options precede partition options per the MySQL grammar:
             //   CREATE TABLE ... (defs) [table_options] [partition_options]
-            append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
+            val tableOptions = options.mysqlContext?.tableOptions ?: MysqlTableOptions()
+            append("\nENGINE=${tableOptions.engine}")
+            append(" DEFAULT CHARSET=${tableOptions.charset}")
+            append(" COLLATE=${tableOptions.collation}")
             if (partitionClause.isNotBlank()) {
                 append("\n")
                 append(partitionClause)

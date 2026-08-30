@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.config
 
+import dev.dmigrate.driver.MysqlTableOptions
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -16,6 +17,12 @@ internal data class DdlConfig(
     val mssqlPartitionStorage: String? = null,
     /** `ddl.mssql.hash_partitions` — `action_required` oder `computed_column`. */
     val mssqlHashPartitions: String? = null,
+    /** `ddl.mysql.engine` — Storage Engine der erzeugten Tabellen. */
+    val mysqlEngine: String? = null,
+    /** `ddl.mysql.charset` — Standard-Zeichensatz der erzeugten Tabellen. */
+    val mysqlCharset: String? = null,
+    /** `ddl.mysql.collation` — Standard-Kollation der erzeugten Tabellen. */
+    val mysqlCollation: String? = null,
 )
 
 /**
@@ -41,12 +48,21 @@ internal class DdlConfigResolver(
     fun resolve(): DdlConfig {
         val (root, path) = preloaded ?: loadEffectiveConfig(configPathFromCli, envLookup, defaultConfigPath)
         val ddl = root?.get("ddl") as? Map<*, *> ?: return DdlConfig()
-        val mssql = ddl["mssql"] as? Map<*, *> ?: return DdlConfig()
+        // Jeder Dialektblock wird fuer sich gelesen: ein fehlender darf die
+        // anderen nicht mitnehmen.
+        val mssql = ddl["mssql"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val mysql = ddl["mysql"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
         return DdlConfig(
             mssqlPartitionStorage = readIdentifier(mssql, "partition_storage", path),
             mssqlHashPartitions = readChoice(
                 mssql, "hash_partitions", path, setOf("action_required", "computed_column"),
             ),
+            // Engine, Zeichensatz und Kollation gehen unquotiert in die
+            // Tabellen-Optionen von `CREATE TABLE` — dieselbe Pruefung wie beim
+            // Filegroup-Namen, aus demselben Grund.
+            mysqlEngine = readIdentifier(mysql, "engine", path),
+            mysqlCharset = readIdentifier(mysql, "charset", path),
+            mysqlCollation = readIdentifier(mysql, "collation", path),
         )
     }
 
@@ -104,6 +120,24 @@ internal fun resolveEffectiveHashPartitions(
 ): String? {
     val config = DdlConfigResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
     return cliValue ?: config.mssqlHashPartitions
+}
+
+/**
+ * Die effektiven MySQL-Tabellen-Optionen: was die Konfiguration nennt, sonst
+ * die Vorgabe. Ein CLI-Flag gibt es fuer diese drei nicht — sie beschreiben das
+ * Ziel, nicht den einzelnen Aufruf.
+ */
+internal fun resolveEffectiveMysqlTableOptions(
+    configPath: Path?,
+    preloaded: LoadedConfig? = null,
+): MysqlTableOptions {
+    val config = DdlConfigResolver(configPathFromCli = configPath, preloaded = preloaded).resolve()
+    val defaults = MysqlTableOptions()
+    return MysqlTableOptions(
+        engine = config.mysqlEngine ?: defaults.engine,
+        charset = config.mysqlCharset ?: defaults.charset,
+        collation = config.mysqlCollation ?: defaults.collation,
+    )
 }
 
 /**

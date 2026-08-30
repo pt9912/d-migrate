@@ -3,6 +3,8 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.resolveEffectiveHashPartitions
+import dev.dmigrate.cli.config.resolveEffectiveMysqlTableOptions
+import dev.dmigrate.driver.MysqlTableOptions
 import dev.dmigrate.cli.config.resolveEffectivePartitionStorage
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.model.SchemaDefinition
@@ -44,6 +46,7 @@ internal data class SchemaGenerateOptions(
 private data class EffectiveDdlSettings(
     val partitionStorage: String?,
     val hashPartitions: String?,
+    val mysqlTableOptions: MysqlTableOptions = MysqlTableOptions(),
 )
 
 internal data class SchemaGenerateWiringBundle(
@@ -112,13 +115,12 @@ internal object SchemaGenerateWiring {
         factory: SchemaGenerateWiringFactory = DefaultSchemaGenerateWiringFactory,
     ): Int {
         val bundle = factory.build(options.cliContext)
-        // Der `ddl:`-Block ist nach Dialekt geschachtelt; `ddl.mssql.*` wirkt
-        // deshalb nur, wenn auch gegen SQL Server generiert wird. Ein anderer
-        // Ziel-Dialekt sieht ausschliesslich das CLI-Flag.
-        val isMssql = options.target.equals("mssql", ignoreCase = true)
-        val ddl = if (isMssql) {
-            try {
-                EffectiveDdlSettings(
+        // Der `ddl:`-Block ist nach Dialekt geschachtelt: `ddl.mssql.*` wirkt
+        // nur gegen SQL Server, `ddl.mysql.*` nur gegen MySQL. Ein Ziel sieht
+        // seinen eigenen Unterblock und sonst nur die CLI-Flags.
+        val ddl = try {
+            when {
+                options.target.equals("mssql", ignoreCase = true) -> EffectiveDdlSettings(
                     partitionStorage = resolveEffectivePartitionStorage(
                         options.configPath, options.partitionStorage,
                     ),
@@ -126,12 +128,16 @@ internal object SchemaGenerateWiring {
                         options.configPath, options.mssqlHashPartitions,
                     ),
                 )
-            } catch (e: ConfigResolveException) {
-                bundle.printError(e.message ?: "Failed to resolve ddl configuration", "ddl")
-                return 7
+                options.target.equals("mysql", ignoreCase = true) -> EffectiveDdlSettings(
+                    partitionStorage = options.partitionStorage,
+                    hashPartitions = options.mssqlHashPartitions,
+                    mysqlTableOptions = resolveEffectiveMysqlTableOptions(options.configPath),
+                )
+                else -> EffectiveDdlSettings(options.partitionStorage, options.mssqlHashPartitions)
             }
-        } else {
-            EffectiveDdlSettings(options.partitionStorage, options.mssqlHashPartitions)
+        } catch (e: ConfigResolveException) {
+            bundle.printError(e.message ?: "Failed to resolve ddl configuration", "ddl")
+            return 7
         }
         val splitMode = if (options.split == "pre-post") SplitMode.PRE_POST else SplitMode.SINGLE
         val request = SchemaGenerateRequest(
@@ -139,6 +145,7 @@ internal object SchemaGenerateWiring {
             target = options.target,
             spatialProfile = options.spatialProfile,
             partitionStorage = ddl.partitionStorage,
+            mysqlTableOptions = ddl.mysqlTableOptions,
             output = options.output,
             report = options.report,
             generateRollback = options.generateRollback,

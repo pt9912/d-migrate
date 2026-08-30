@@ -203,6 +203,17 @@ sealed interface DdlDialectContext {
             RoutineCapabilityDefaults.forDialect(DatabaseDialect.MYSQL),
         val serverVersion: MysqlServerVersion? = null,
         val sequenceCanonicity: List<MysqlSequenceCanonicityDeclaration> = emptyList(),
+        /**
+         * Tabellen-Optionen fuer `CREATE TABLE`. Die Vorgaben sind die Werte,
+         * die der Generator zuvor fest schrieb — wer nichts einstellt, bekommt
+         * unveraendertes DDL.
+         *
+         * Sie beschreiben das Ziel, nicht den einzelnen Aufruf: eine Datenbank
+         * auf einer anderen Storage Engine oder Kollation braucht sie bei jedem
+         * Lauf gleich, und ein vergessenes Flag erzeugte sonst stillschweigend
+         * anderes DDL als der Lauf davor.
+         */
+        val tableOptions: MysqlTableOptions = MysqlTableOptions(),
     ) : DdlDialectContext
 
     /**
@@ -244,6 +255,13 @@ sealed interface DdlDialectContext {
 }
 
 /** Smart-Cast-freundlicher Accessor: gibt den MySQL-Kontext zurueck oder `null`. */
+/** MySQL-Tabellen-Optionen aus dem `ddl.mysql`-Block. */
+data class MysqlTableOptions(
+    val engine: String = "InnoDB",
+    val charset: String = "utf8mb4",
+    val collation: String = "utf8mb4_unicode_ci",
+)
+
 val DdlGenerationOptions.mysqlContext: DdlDialectContext.MySql?
     get() = dialectContext as? DdlDialectContext.MySql
 

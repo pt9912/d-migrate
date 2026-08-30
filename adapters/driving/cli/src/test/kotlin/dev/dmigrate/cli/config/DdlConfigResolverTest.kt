@@ -36,6 +36,51 @@ class DdlConfigResolverTest : FunSpec({
         resolverFor(file).resolve() shouldBe DdlConfig(mssqlPartitionStorage = "FG_DATA")
     }
 
+    test("the mysql sub-block is read alongside the mssql one") {
+        val file = tempConfig(
+            """
+            ddl:
+              mssql:
+                partition_storage: FG_DATA
+              mysql:
+                engine: MyISAM
+                charset: latin1
+                collation: latin1_german2_ci
+            """.trimIndent()
+        )
+        resolverFor(file).resolve() shouldBe DdlConfig(
+            mssqlPartitionStorage = "FG_DATA",
+            mysqlEngine = "MyISAM",
+            mysqlCharset = "latin1",
+            mysqlCollation = "latin1_german2_ci",
+        )
+    }
+
+    // Der Leser stieg frueher aus, sobald der mssql-Block fehlte — und haette
+    // damit jeden weiteren Dialektblock mitgenommen.
+    test("a missing mssql block does not swallow the mysql one") {
+        val file = tempConfig(
+            """
+            ddl:
+              mysql:
+                engine: MyISAM
+            """.trimIndent()
+        )
+        resolverFor(file).resolve() shouldBe DdlConfig(mysqlEngine = "MyISAM")
+    }
+
+    // Engine, Zeichensatz und Kollation gehen unquotiert in `CREATE TABLE`.
+    test("a mysql value that is not an identifier fails loudly") {
+        val file = tempConfig(
+            """
+            ddl:
+              mysql:
+                engine: "InnoDB; DROP TABLE users"
+            """.trimIndent()
+        )
+        shouldThrow<ConfigResolveException> { resolverFor(file).resolve() }
+    }
+
     test("ddl block without the mssql sub-block — null, not an error") {
         val file = tempConfig(
             """
