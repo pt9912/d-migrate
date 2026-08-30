@@ -1,6 +1,5 @@
 package dev.dmigrate.driver.sqlite
 
-import dev.dmigrate.core.model.GeometryType
 
 import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.ImportOptions
@@ -17,6 +16,7 @@ internal class SqliteTableImportSession(
     table: String,
     private val qualifiedTable: SqliteQualifiedTableName,
     targetColumns: List<TargetColumn>,
+    private val geometryColumns: Set<String>,
     primaryKeyColumns: List<String>,
     options: ImportOptions,
     private val schemaSync: SqliteSchemaSync,
@@ -38,12 +38,16 @@ internal class SqliteTableImportSession(
     override val geometryBindConstructor: String = "GeomFromWKB"
 
     /**
-     * SQLite fuehrt keine Typen, sondern Affinitaeten; der deklarierte Name
-     * einer von `AddGeometryColumn` angelegten Spalte ist `POINT`,
-     * `LINESTRING`, …
+     * Der Geometrie-Katalog entscheidet, nicht der deklarierte Typname.
+     *
+     * `ResultSetMetaData.getColumnTypeName` meldet den deklarierten Namen —
+     * auch ohne geladene Extension und auch fuer eine Spalte, die bloss `POINT`
+     * heisst. Auf ihn zu bauen hiesse, `GeomFromWKB` auf einer Verbindung ohne
+     * SpatiaLite zu emittieren; der Einsatz scheiterte dann an „no such
+     * function". Ist der Katalog leer, wickelt dieser Pfad nicht.
      */
-    override fun isGeometryTypeName(typeNameLower: String): Boolean =
-        typeNameLower in GeometryType.KNOWN_VALUES
+    override fun isGeometryColumn(column: TargetColumn): Boolean =
+        column.name.lowercase() in geometryColumns
 
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         if (importedTargetColumns.isEmpty()) {

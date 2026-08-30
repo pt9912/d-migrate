@@ -283,7 +283,7 @@ abstract class AbstractTableImportSession(
     }
 
     /** VA1c: ob die Zielspalte eine WKB-Geometriespalte ist (dialekt-bewusst). */
-    protected fun isGeometryColumn(column: TargetColumn): Boolean {
+    protected open fun isGeometryColumn(column: TargetColumn): Boolean {
         val typeName = column.sqlTypeName?.lowercase()
         return typeName != null && isGeometryTypeName(typeName)
     }

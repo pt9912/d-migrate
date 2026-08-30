@@ -94,6 +94,7 @@ class SqliteDataWriter : DataWriter {
                 table = table,
                 qualifiedTable = qualified,
                 targetColumns = targetColumns,
+                geometryColumns = SqliteGeometryCatalog.registeredColumns(conn, qualified).keys,
                 primaryKeyColumns = primaryKeyColumns,
                 options = options,
                 schemaSync = sync,
@@ -134,38 +135,21 @@ class SqliteDataWriter : DataWriter {
     }
 
     /**
-     * Reichert Geometrie-Zielspalten mit ihrer SRID aus SpatiaLites
-     * `geometry_columns` an, damit der Import WKB als `GeomFromWKB(?, srid)`
-     * bindet statt die SRID auf 0 fallen zu lassen.
+     * Reichert Geometrie-Zielspalten mit ihrer SRID aus dem Geometrie-Katalog
+     * an, damit der Import WKB als `GeomFromWKB(?, srid)` bindet.
      *
-     * Die Tabelle gibt es nur mit geladener Extension; ohne sie bleibt die
-     * Liste unveraendert und der Schreibpfad wickelt nicht.
+     * SRID 0 bleibt erhalten: anders als bei PostgreSQL und MySQL, wo 0 „nicht
+     * gesetzt" heisst, ist sie in SpatiaLite eine registrierbare SRID
+     * („Undefined – Cartesian").
      */
     private fun enrichGeometrySrid(
         conn: Connection,
         table: SqliteQualifiedTableName,
         columns: List<TargetColumn>,
     ): List<TargetColumn> {
-        val sridByColumn = runCatching {
-            conn.prepareStatement(
-                "SELECT f_geometry_column, srid FROM geometry_columns WHERE lower(f_table_name) = lower(?)",
-            ).use { ps ->
-                ps.setString(1, table.table)
-                ps.executeQuery().use { rs ->
-                    buildMap {
-                        while (rs.next()) {
-                            val srid = rs.getInt("srid").takeIf { it != 0 } ?: continue
-                            put(rs.getString("f_geometry_column"), srid)
-                        }
-                    }
-                }
-            }
-        }.getOrDefault(emptyMap())
+        val sridByColumn = SqliteGeometryCatalog.registeredColumns(conn, table)
         if (sridByColumn.isEmpty()) return columns
-        return columns.map { col ->
-            sridByColumn.entries.firstOrNull { it.key.equals(col.name, ignoreCase = true) }
-                ?.let { col.copy(srid = it.value) } ?: col
-        }
+        return columns.map { col -> sridByColumn[col.name.lowercase()]?.let { col.copy(srid = it) } ?: col }
     }
 
     private fun loadTargetColumns(

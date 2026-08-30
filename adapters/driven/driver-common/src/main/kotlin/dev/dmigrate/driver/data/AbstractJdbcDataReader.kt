@@ -300,10 +300,12 @@ abstract class AbstractJdbcDataReader : DataReader {
     /**
      * VA1b: billige Metadaten-Vorabfrage (`SELECT * … WHERE 1 = 0`, keine Zeilen),
      * um pro Spalte Name + Geometrie-Markierung zu ermitteln. Nur aufgerufen, wenn
-     * [supportsGeometryRead]. Die Auswertung der Metadaten ist in
+     * [supportsGeometryRead]. Ueberschreibbar fuer Dialekte, denen der Typname
+     * allein nicht genuegt — SQLite etwa erzwingt keine Typen, dort sagt erst
+     * der Geometrie-Katalog, welche Spalte wirklich eine ist. Die Auswertung der Metadaten ist in
      * [JdbcSelectQuerySupport.probedColumnsFromMetaData] isoliert (testbar).
      */
-    private fun probeColumns(conn: Connection, table: String): List<ProbedColumn> =
+    protected open fun probeColumns(conn: Connection, table: String): List<ProbedColumn> =
         conn.prepareStatement("SELECT * FROM ${quoteTablePath(table)} WHERE 1 = 0").use { ps ->
             ps.executeQuery().use { rs ->
                 JdbcSelectQuerySupport.probedColumnsFromMetaData(rs.metaData, ::isGeometryTypeName)

@@ -1,9 +1,9 @@
 package dev.dmigrate.driver.sqlite
 
-import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.data.AbstractJdbcDataReader
+import dev.dmigrate.driver.data.ProbedColumn
 import java.sql.Connection
 
 /**
@@ -52,10 +52,19 @@ class SqliteDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataReader(
     override fun geometryReadExpression(quotedColumn: String): String = "ST_AsBinary($quotedColumn)"
 
     /**
-     * SQLite fuehrt keine Typen, sondern Affinitaeten; der JDBC-Treiber meldet
-     * den **deklarierten** Namen aus dem `CREATE TABLE` — bei einer von
-     * `AddGeometryColumn` angelegten Spalte also `POINT`, `LINESTRING`, …
+     * Welche Spalte Geometrie traegt, sagt der Katalog — nicht der deklarierte
+     * Typname.
+     *
+     * SQLite erzwingt keine Typen: eine Spalte darf `POINT` heissen und Text
+     * enthalten. Durch `ST_AsBinary` geschickt liefert sie `NULL`, und die
+     * Daten waeren ohne Fehlermeldung weg. `geometry_columns` fuehrt genau die
+     * Spalten, die `AddGeometryColumn` angelegt hat.
      */
-    override fun isGeometryTypeName(typeNameLower: String): Boolean =
-        typeNameLower in GeometryType.KNOWN_VALUES
+    override fun probeColumns(conn: Connection, table: String): List<ProbedColumn> {
+        val registered = SqliteGeometryCatalog
+            .registeredColumns(conn, parseSqliteQualifiedTableName(table))
+        if (registered.isEmpty()) return super.probeColumns(conn, table).map { it.copy(isGeometry = false) }
+        return super.probeColumns(conn, table)
+            .map { it.copy(isGeometry = it.name.lowercase() in registered) }
+    }
 }

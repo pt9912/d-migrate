@@ -1507,6 +1507,18 @@ MySQL Spatial, SpatiaLite).
 
 **Ergebnis:** Die Geometrie wird ins zieltypische Format überführt.
 
+**Beim Übertragen von Geodaten nach oder aus SQLite** hängen `data export`,
+`data import` und `data transfer` an der Extension: Nur wenn die Verbindung sie
+anfordert (`sqlite:///pfad.db?spatialite=true`), liest d-migrate die Geometrie
+als WKB und schreibt sie als Geometrie zurück. Ohne den Parameter bewegt es den
+rohen Inhalt der Spalte — SpatiaLite führt dort ein eigenes Binärformat, das ein
+anderes Zielsystem nicht als Geometrie deuten kann. PostgreSQL, MySQL und SQL
+Server brauchen keinen solchen Schalter.
+
+Welche Spalten dabei als Geometrie gelten, entscheidet SpatiaLites
+`geometry_columns`, nicht der deklarierte Spaltentyp: SQLite erzwingt keine
+Typen, und eine Spalte, die nur `POINT` heißt, bleibt unberührt.
+
 PostgreSQL/PostGIS — die Geometrie-Spalten stehen **inline** in der Tabelle:
 
 ```sql
