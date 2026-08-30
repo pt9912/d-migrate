@@ -1,11 +1,34 @@
 # MSSQL: spaltenlevel `references` im Diff-Pfad
 
-> Status: **offen, nicht gebaut.** Gefunden beim Review von Sub-Slice 5a-2
+> Status: **behoben.** Gefunden beim Review von Sub-Slice 5a-2
 > ([`../in-progress/mssql-dialect-scoping.md`](../in-progress/mssql-dialect-scoping.md)),
 > dort bewusst **nicht** mitgelöst — die Fläche gehört zu Slice 5a/5b und braucht
 > einen eigenen Schnitt.
 > Severity: **stiller Verlust**, kein Fehlschlag. Die Migration läuft durch, die
 > Beziehung fehlt danach. Sichtbar erst im Postcompare.
+
+> **Behoben 2026-08-30.** `CreateTable` rendert die spaltenstaendige Form jetzt
+> inline zwischen den erklaerten Constraints, `AddColumn` als nachgelagertes
+> `ALTER TABLE`. Gebaut werden beide mit `MssqlDiffObjectOps.columnForeignKey`
+> — derselben Funktion, die die Abhaengigkeits-Buchhaltung fragt, damit Rendern
+> und Buchfuehren nicht auseinanderlaufen. Der Name ist derselbe wie im
+> Generate-Pfad (`fk_<tabelle>_<spalte>`).
+>
+> Die Warnung `MSSQL_COLUMN_REFERENCE_NOT_RENDERED`, die die Luecke bisher
+> meldete, ist damit gegenstandslos und entfernt.
+>
+> **Die offenen Fragen, beantwortet:**
+>
+> - *Wer rendert:* inline im `CREATE TABLE`, wie der Generate-Pfad — nicht als
+>   nachgelagertes `ALTER`. Bei `AddColumn` geht es nicht anders, dort steht die
+>   Spalte erst danach.
+> - *Die Doppelform:* traegt das Modell dieselbe Beziehung in beiden Formen,
+>   entsteht sie einmal — geprueft ueber den Constraint-Namen und ueber
+>   Zielspalte plus Zieltabelle (Msg 2714).
+> - *Andere Dialekte:* nicht betroffen. PostgreSQL, MySQL und SQLite rendern
+>   `REFERENCES` laengst in ihrer Spaltendeklaration; die Luecke war
+>   MSSQL-eigen, weil dessen Generate-Pfad die Form benennt statt sie inline zu
+>   schreiben, und der Diff-Pfad diese zweite Schleife nicht hatte.
 
 ## Der Befund
 

@@ -14,6 +14,9 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -586,6 +589,60 @@ class MssqlSchemaReaderIntegrationTest : FunSpec({
                             "DROP PARTITION SCHEME ps_hash_events")
                         stmt.execute("IF EXISTS (SELECT 1 FROM sys.partition_functions WHERE name = 'pf_hash_events') " +
                             "DROP PARTITION FUNCTION pf_hash_events")
+                    }
+                }
+            }
+        }
+    }
+
+    // Der Generate-Pfad rendert die spaltenstaendige `references`-Form, der
+    // Migrate-Pfad tat es nicht: die Tabelle entstand, die Beziehung fehlte —
+    // ohne Fehlschlag, sichtbar erst im Postcompare.
+    test("a column-level reference survives schema migrate") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("CREATE TABLE fk_parent (id INT NOT NULL PRIMARY KEY)")
+                    }
+                }
+                val current = MssqlSchemaReader().read(pool).schema
+                val child = TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                        "parent_id" to ColumnDefinition(
+                            NeutralType.Integer,
+                            references = ReferenceDefinition(table = "fk_parent", column = "id"),
+                        ),
+                    ),
+                    primaryKey = listOf("id"),
+                )
+                val desired = current.copy(tables = current.tables + ("fk_child" to child))
+                val diff = SchemaComparator().compare(current, desired)
+                val plan = DiffPlanner().plan(current, desired, diff)
+                val migration = MssqlDiffDdlGenerator().generateUp(plan, DdlGenerationOptions())
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        migration.statements.forEach { stmt.execute(it.sql) }
+                    }
+                }
+
+                // Der Server fuehrt die Beziehung — nicht nur das Modell.
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.executeQuery(
+                            "SELECT name FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('fk_child')",
+                        ).use { rs ->
+                            rs.next() shouldBe true
+                            rs.getString(1) shouldBe "fk_fk_child_parent_id"
+                        }
+                    }
+                }
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        runCatching { stmt.execute("DROP TABLE fk_child") }
+                        runCatching { stmt.execute("DROP TABLE fk_parent") }
                     }
                 }
             }

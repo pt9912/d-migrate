@@ -17,6 +17,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
@@ -166,9 +167,9 @@ class MssqlDiffColumnDependenciesTest : FunSpec({
         (drop in readd until alter) shouldBe true
     }
 
-    test("AddColumn says out loud that it does not render a column-level reference") {
-        // Die Luecke ist bekannt und vertagt — aber sie darf nicht wie voller
-        // Erfolg aussehen.
+    test("AddColumn creates the foreign key of a column-level reference") {
+        // Der Generate-Pfad rendert die spaltenstaendige Form; ohne sie hier
+        // verloere eine per `migrate` angelegte Spalte ihre Beziehung still.
         val newCol = ColumnDefinition(
             NeutralType.Integer,
             references = ReferenceDefinition(table = "users", column = "id"),
@@ -189,11 +190,14 @@ class MssqlDiffColumnDependenciesTest : FunSpec({
             tablesChanged = listOf(TableDiff(name = "orders", columnsAdded = mapOf("user_id" to newCol))),
         )
         val r = up(diff, current, desired)
-        r.statements.map { it.sql }.none { it.contains("FOREIGN KEY") } shouldBe true
-        r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_REFERENCE_NOT_RENDERED"
+        // Derselbe Name wie im Generate-Pfad, aus derselben Funktion.
+        r.statements.map { it.sql }.any {
+            it.contains("ADD CONSTRAINT [fk_orders_user_id] FOREIGN KEY")
+        } shouldBe true
+        r.diagnostics.map { it.code } shouldNotContain "MSSQL_COLUMN_REFERENCE_NOT_RENDERED"
     }
 
-    test("CreateTable says it just as loudly as AddColumn") {
+    test("CreateTable creates it inline, like the generate path") {
         // Die haeufigere Form der Luecke: eine ganz neue Tabelle, deren Spalte
         // ein `references` traegt.
         val newCol = ColumnDefinition(
@@ -208,8 +212,10 @@ class MssqlDiffColumnDependenciesTest : FunSpec({
         val current = schema("users" to users)
         val desired = schema("users" to users, "orders" to orders)
         val r = up(SchemaDiff(tablesAdded = listOf(NamedTable("orders", orders))), current, desired)
-        r.statements.map { it.sql }.none { it.contains("FOREIGN KEY") } shouldBe true
-        r.diagnostics.map { it.code } shouldContain "MSSQL_COLUMN_REFERENCE_NOT_RENDERED"
+        r.statements.map { it.sql }.any {
+            it.contains("CONSTRAINT [fk_orders_user_id] FOREIGN KEY")
+        } shouldBe true
+        r.diagnostics.map { it.code } shouldNotContain "MSSQL_COLUMN_REFERENCE_NOT_RENDERED"
     }
 
     test("the warning stays quiet when the constraint list declares the same relationship") {

@@ -384,12 +384,9 @@ class MssqlRebuildRendererTest : FunSpec({
         sqls.count { it.contains("ADD CONSTRAINT [fk_orders_user]") } shouldBe 1
     }
 
-    test("a foreign key on a column the plan adds is not created by the rebuild") {
-        // Ihn hier anzulegen waere Msg 1911 — die Spalte kann nach dem Neubau
-        // entstehen. Anlegen muesste ihn die Operation, die die Spalte bringt;
-        // dass die es heute nicht tut, ist eine eigene Luecke ausserhalb des
-        // Neubaus (`open/mssql-column-level-foreign-keys.md`). Der Test haelt
-        // fest, dass der Neubau sie nicht verdeckt.
+    test("the rebuild leaves a foreign key to the AddColumn operation that brings the column") {
+        // Ihn im Neubau anzulegen waere Msg 1911 — die Spalte entsteht erst
+        // danach. Anlegen muss ihn die Operation, die die Spalte bringt.
         val zorders = TableDefinition(columns = linkedMapOf("label" to ColumnDefinition(NeutralType.Text(10))))
         val newCol = ColumnDefinition(
             NeutralType.Integer,
@@ -410,7 +407,10 @@ class MssqlRebuildRendererTest : FunSpec({
         )
         val sqls = up(diff, current, desired).statements.map { it.sql }
         sqls.any { it.contains("ALTER TABLE [zorders] ADD [user_id]") } shouldBe true
-        sqls.none { it.contains("ADD CONSTRAINT [fk_zorders_user_id]") } shouldBe true
+        // Der Fremdschluessel kommt NACH der Spalte, aus der AddColumn-Operation.
+        val colAt = sqls.indexOfFirst { it.contains("ALTER TABLE [zorders] ADD [user_id]") }
+        val fkAt = sqls.indexOfFirst { it.contains("ADD CONSTRAINT [fk_zorders_user_id]") }
+        (fkAt > colAt) shouldBe true
     }
 
     test("down restores a foreign key whose DropConstraint the rebuild absorbed") {

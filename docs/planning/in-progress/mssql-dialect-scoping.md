@@ -998,7 +998,7 @@ liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
 **Nächste Arbeitsschritte:**
 
 - **Spaltenlevel `references` im Diff-Pfad** —
-  [`mssql-column-level-foreign-keys.md`](../open/mssql-column-level-foreign-keys.md).
+  [`mssql-column-level-foreign-keys.md`](../done/mssql-column-level-foreign-keys.md).
   `CreateTable` und `AddColumn` rendern sie nicht, der Generate-Pfad schon; eine
   per `migrate` angelegte Tabelle verliert die Beziehung still. Beim Review von
   5a-2 gefunden und dort bewusst ausgeschnitten: der Neubau umgeht die Lücke,

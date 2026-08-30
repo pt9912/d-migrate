@@ -90,7 +90,20 @@ internal object MssqlDiffTableOps {
             val pkClause = MssqlClusteredStorage.primaryKeyClause(effective)
             lines += "    CONSTRAINT ${ctx.sql.quote(MssqlConstraintNames.primaryKey(table))} $pkClause ($cols)"
         }
-        for (constraint in effective.constraints.sortedBy { it.name }) {
+        // Spaltenstaendige `references` sind dieselben Fremdschluessel, nur in
+        // der anderen Modellform. Der Generate-Pfad rendert beide; ohne diese
+        // Zeile verloere eine per `migrate` angelegte Tabelle die Beziehung
+        // still. Gebaut werden sie mit derselben Funktion, die auch die
+        // Abhaengigkeits-Buchhaltung fragt — sonst laufen Rendern und
+        // Buchfuehren auseinander.
+        val columnForeignKeys = effective.columns.inOrdinalOrder().mapNotNull { (colName, col) ->
+            col.references?.let { MssqlDiffObjectOps.columnForeignKey(table, colName, it) }
+        }
+        // Traegt das Modell denselben Fremdschluessel in beiden Formen unter
+        // demselben Namen, darf er nur einmal entstehen (Msg 2714).
+        val declaredNames = effective.constraints.mapTo(mutableSetOf()) { it.name }
+        val allConstraints = effective.constraints + columnForeignKeys.filterNot { it.name in declaredNames }
+        for (constraint in allConstraints.sortedBy { it.name }) {
             val line = ctx.sql.constraintLine(table, constraint, ctx.cascadeGuard())
                 ?: return blockUnrenderableConstraint(op, ctx, table, constraint)
             lines += "    $line"
@@ -111,9 +124,6 @@ internal object MssqlDiffTableOps {
         ctx.emit(op, "CREATE TABLE ${ctx.sql.quote(table)} (\n" + lines.joinToString(",\n") + "\n)$onClause;")
         ctx.carryOverNotes(op, notes)
         indexSqls.forEach { ctx.emit(op, it) }
-        for ((colName, col) in effective.columns) {
-            warnUnrenderedReference(op, ctx, table, colName, col, effective)
-        }
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: MssqlDiffRenderContext) {
@@ -164,7 +174,7 @@ internal object MssqlDiffTableOps {
         val declaration = ctx.sql.columnDeclaration(table, column, op.column, tableDef, schema, notes)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $declaration;")
         ctx.carryOverNotes(op, notes)
-        warnUnrenderedReference(op, ctx, table, column, op.column, tableDef)
+        emitColumnForeignKey(op, ctx, table, column, op.column, tableDef)
     }
 
     fun renderDropColumn(op: DiffOperation.DropColumn, ctx: MssqlDiffRenderContext) {
@@ -291,7 +301,15 @@ internal object MssqlDiffTableOps {
      * Constraint-Liste, entsteht sie ueber deren eigene Operation — dann fehlt
      * nichts und die Warnung waere ein Fehlalarm.
      */
-    private fun warnUnrenderedReference(
+    /**
+     * Der Fremdschluessel einer spaltenstaendigen `references`, als eigenes
+     * `ALTER TABLE`.
+     *
+     * Nur wenn die Constraint-Liste dieselbe Beziehung nicht schon fuehrt: dann
+     * entsteht sie ueber ihre eigene Operation, und ein zweites Anlegen
+     * scheiterte am belegten Namen (Msg 2714).
+     */
+    private fun emitColumnForeignKey(
         op: DiffOperation,
         ctx: MssqlDiffRenderContext,
         table: String,
@@ -300,19 +318,16 @@ internal object MssqlDiffTableOps {
         tableDef: TableDefinition,
     ) {
         val ref = col.references ?: return
+        val constraint = MssqlDiffObjectOps.columnForeignKey(table, column, ref)
+        if (tableDef.constraints.any { it.name == constraint.name }) return
         val alsoDeclared = tableDef.constraints.any {
             it.type == ConstraintType.FOREIGN_KEY &&
                 column in (it.columns ?: emptyList()) &&
                 it.references?.table == ref.table
         }
         if (alsoDeclared) return
-        ctx.warning(
-            op,
-            "Column '$table.$column' declares a reference to '${ref.table}', but the migrate path does not " +
-                "render a foreign key for a column-level reference yet — the column is created without it. " +
-                "Declare the relationship in the table's constraint list to have it created.",
-            code = "MSSQL_COLUMN_REFERENCE_NOT_RENDERED",
-        )
+        val line = ctx.sql.constraintLine(table, constraint, ctx.cascadeGuard()) ?: return
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $line;")
     }
 
     // ── Gemeinsame Bausteine ─────────────────────
