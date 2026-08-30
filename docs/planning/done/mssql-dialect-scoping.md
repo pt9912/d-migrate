@@ -1037,4 +1037,4 @@ ausgeschnitten und einzeln nachhaltbar:
 | [`routine-body-cross-dialect-portability.md`](../open/routine-body-cross-dialect-portability.md) | Routinen-Rümpfe werden nach Herkunft übersprungen statt inhaltlich beurteilt. Cross-dialektal. |
 | [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) | Enum-CHECK-Kante aus Slice 5; wartet auf eine Eigner-Entscheidung zwischen drei Varianten. |
 | [`no-transaction-execution-strategy.md`](../open/no-transaction-execution-strategy.md) | `CREATE FULLTEXT INDEX` verträgt keine offene Transaktion (Slice 8d, `E072`); dieselbe Naht wartet PGs `CREATE INDEX CONCURRENTLY` ab. |
-| [`partition-boundary-change-operation.md`](../open/partition-boundary-change-operation.md) | Grenzänderungen an Partitionen werden erkannt und gemeldet, aber nicht als Operation emittiert. |
+| [`partition-boundary-change-operation.md`](../in-progress/partition-boundary-change-operation.md) | Grenzänderungen an Partitionen werden erkannt und gemeldet, aber nicht als Operation emittiert. |

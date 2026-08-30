@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -257,6 +258,36 @@ sealed interface DiffOperation {
         override val dependencies: Set<String> = emptySet(),
         override val reversibility: Reversibility = Reversibility.AUTOMATIC,
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    // ── Partitions ──────────────────────────────────────────────────
+
+    /**
+     * Der Bestand an Kind-Partitionen ändert sich, Strategie und Schlüssel
+     * bleiben. Trägt beide Zustände **und** die Aufteilung dazwischen
+     * ([PartitionChangeClassifier]), weil ein Kind-Delta nicht in jedem
+     * Dialekt eine Kind-Anweisung ist: SQL Server rechnet es in Grenzwerte
+     * zurück (`SPLIT`/`MERGE`), PostgreSQL und MySQL rendern Kind-Anweisungen.
+     * Eine Operation je Kind zerschnitte den `SPLIT` in Teile, die einzeln
+     * nicht ausführbar sind.
+     *
+     * Das Risiko wird beim Bauen gesetzt und nicht hier voreingestellt: es
+     * hängt daran, ob Kinder wegfallen. Der Dialekt entscheidet, ob er das
+     * Delta ausführen kann — was er nicht kann, meldet er mit benanntem Grund.
+     */
+    data class AlterTablePartitions(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val before: PartitionConfig,
+        val after: PartitionConfig,
+        val delta: PartitionDelta,
+        override val phase: DiffPhase = DiffPhase.TABLES,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC_WITH_DATA_RISK,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
         override fun withId(id: String): DiffOperation = copy(id = id)

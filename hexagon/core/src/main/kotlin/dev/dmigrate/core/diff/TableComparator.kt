@@ -125,9 +125,15 @@ internal class TableComparator(
         return if (equivalent) null else ValueChange(left, right)
     }
 
-    /** Partitions as a set, each with its child-local indices in canonical order. */
+    /**
+     * Partitions as a set, each with its child-local indices in canonical order
+     * and its lower bound derived where the source left it out
+     * ([PartitionBoundNormalizer]) — MySQL describes a RANGE partition by its
+     * upper bound alone, its reverse reader computes the lower one, and without
+     * the equalisation the same table compares unequal to itself.
+     */
     private fun canonicalPartitions(config: PartitionConfig): Set<PartitionDefinition> =
-        config.partitions.map { partition ->
+        PartitionBoundNormalizer.withDerivedLowerBounds(config).partitions.map { partition ->
             // ADR 0025: project child-local indices too (drop the generate-only FULLTEXT
             // hints) so a partition's FULLTEXT index does not phantom-diff authored-vs-reversed
             // — same exclusion the table-level compareIndices applies.

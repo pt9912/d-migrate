@@ -127,6 +127,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterColumnDefault,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
+        is DiffOperation.AlterTablePartitions,
         -> OpCategory.TABLE
 
         is DiffOperation.AddConstraint,
@@ -188,6 +189,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> PostgresDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> PostgresDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> PostgresDiffTableOps.renderDropPrimaryKey(op, ctx)
+            is DiffOperation.AlterTablePartitions -> PostgresDiffPartitionOps.renderAlterTablePartitions(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised TABLE but renderTableOp does not handle it")
         }
     }

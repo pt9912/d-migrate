@@ -141,6 +141,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterColumnDefault,
         is DiffOperation.AddPrimaryKey,
         is DiffOperation.DropPrimaryKey,
+        is DiffOperation.AlterTablePartitions,
         -> OpCategory.TABLE
 
         is DiffOperation.AddConstraint,
@@ -216,6 +217,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> MysqlDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> MysqlDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> MysqlDiffTableOps.renderDropPrimaryKey(op, ctx)
+            is DiffOperation.AlterTablePartitions -> MysqlDiffPartitionOps.renderAlterTablePartitions(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised TABLE but renderTableOp does not handle it")
         }
     }

@@ -1819,6 +1819,30 @@ nennt).
 `schema migrate` gegen eine laufende Datenbank. Eine Tabelle, die neu entsteht,
 entsteht auf beiden Wegen gleich partitioniert.
 
+**Brauchen Sie eine weitere Partition — oder ist die älteste zu entfernen?**
+Tragen Sie sie in der Schemadatei ein bzw. streichen Sie sie dort, und fahren
+Sie `schema migrate`. Der Lauf führt die Änderung mit der Anweisung aus, die
+Ihr Ziel dafür kennt: PostgreSQL legt die Kindtabelle an bzw. verwirft sie,
+MySQL hängt sie an oder teilt die folgende auf (`REORGANIZE`), SQL Server
+verschiebt die Grenze der Partition Function (`SPLIT` bzw. `MERGE RANGE`).
+
+Vier Dinge dazu:
+
+- **Eine Partition zu entfernen ist zerstörend** und verlangt
+  `--allow-destructive`. Ohne die Option bricht der Lauf ab, ohne etwas
+  auszuführen.
+- **Eine Partition aufzuteilen oder zwei zusammenzulegen** — die neuen Grenzen
+  decken denselben Bereich wie die alte — führt nur SQL Server aus; dort
+  wandern die Zeilen mit. PostgreSQL und MySQL melden den Fall, statt ihn zu
+  rendern: sie können ihn nicht ausführen, ohne die Zeilen zu verlieren.
+- **Der Name einer Partition ist für die Zuordnung unerheblich**, ihre Grenzen
+  sind es. SQL Server speichert keine Partitionsnamen; ein Reverse vergibt
+  `p1`, `p2`, … in Grenzreihenfolge. Umbenennungen erzeugen deshalb keine
+  Operation.
+- **Strategie und Schlüssel lassen sich nicht ändern.** Wer `range` auf `list`
+  umstellt oder nach einer anderen Spalte partitionieren will, baut die Tabelle
+  neu; der Lauf meldet das und führt es nicht aus.
+
 **Hinweise:**
 
 - Zielsysteme ohne Partitionierungsunterstützung blockieren mit **E055**

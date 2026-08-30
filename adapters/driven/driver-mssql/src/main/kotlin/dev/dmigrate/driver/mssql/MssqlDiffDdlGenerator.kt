@@ -169,6 +169,7 @@ class MssqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> MssqlDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> MssqlDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> MssqlDiffTableOps.renderDropPrimaryKey(op, ctx)
+            is DiffOperation.AlterTablePartitions -> MssqlDiffPartitionOps.renderAlterTablePartitions(op, ctx)
             else -> return false
         }
         return true

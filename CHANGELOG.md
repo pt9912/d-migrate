@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Eine Partition hinzuzufuegen oder zu entfernen wird ausgefuehrt, nicht nur
+  gemeldet.** Bisher fiel jede Partitionierungsaenderung in dieselbe Warnung
+  (`PARTITIONING_CHANGE_NOT_APPLIED`) — mit einer Begruendung, die nur fuer den
+  Strategiewechsel stimmte: eine Tabelle laesst sich nicht in place
+  umpartitionieren. Fuer den haeufigsten Fall, die rollierende Partitionierung
+  (monatlich eine dazu, die aelteste weg), hat aber jeder Dialekt eine
+  gewoehnliche Anweisung. `schema migrate` fuehrt sie jetzt aus:
+  PostgreSQL legt die Kindtabelle an bzw. verwirft sie, MySQL haengt sie an
+  (`ADD PARTITION`) oder schneidet den Bereich neu (`REORGANIZE PARTITION`),
+  SQL Server verschiebt die Grenze der Partition Function (`SPLIT`/`MERGE
+  RANGE`). SQLite lehnt mit eigenem Grund ab statt mit der allgemeinen Meldung.
+
+  Die Zuordnung der Kinder laeuft ueber ihre **Grenzen**, nicht ihren Namen:
+  SQL Server speichert keine Partitionsnamen, der Reverse vergibt sie in
+  Grenzreihenfolge, und eine eingefuegte Grenze verschiebt jede Nummer dahinter.
+  Eine Partition zu **entfernen** bleibt zerstoerend und verlangt
+  `--allow-destructive`; eine Partition **aufzuteilen** oder zwei
+  **zusammenzulegen** ist keins von beidem — SQL Server und MySQL nehmen die
+  Zeilen dabei mit, PostgreSQL kann es nicht in place und meldet es.
+  Strategie- und Schluesselwechsel bleiben ohne Operation, die Warnung nennt
+  jetzt aber den Fall.
+
+### Fixed
+
+- **Eine MySQL-RANGE-Partitionierung aus einer Schemadatei vergleicht sich
+  wieder mit sich selbst.** MySQL beschreibt eine RANGE-Partition nur ueber
+  ihre Obergrenze (`VALUES LESS THAN`), und so schreibt man sie auch auf; der
+  Reverse rechnet die Untergrenze aus und liefert sie mit. Beide Seiten
+  beschrieben damit dieselbe Tabelle verschieden — `schema compare` und
+  `schema migrate` meldeten bei jedem Lauf eine Partitionierungsaenderung, die
+  es nicht gab. Die fehlende Untergrenze wird jetzt aus der Reihenfolge
+  ergaenzt (`fromₙ = toₙ₋₁`); angegebene Grenzen bleiben unangetastet.
+
 ### Changed
 
 - **Ein geaenderter Index wird wieder angelegt, nachdem er geloescht wurde**

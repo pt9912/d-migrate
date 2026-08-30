@@ -43,7 +43,7 @@ internal object PostgresPartitionClauses {
         childStatement(parentTable, child, partitioning.type, quote)
     }
 
-    private fun childStatement(
+    fun childStatement(
         parentTable: String,
         partition: PartitionDefinition,
         type: PartitionType,

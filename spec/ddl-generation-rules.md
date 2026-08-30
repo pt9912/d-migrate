@@ -1029,6 +1029,38 @@ eigenständige Datenbankobjekte sind: sie entstehen vor der Tabelle und werden
 beim Rückbau nach ihr wieder entfernt. `DROP TABLE` allein räumt sie nicht mit
 weg.
 
+### 9.6 Geänderter Partitionsbestand
+
+Die Partitionierung einer bestehenden Tabelle lässt sich nicht in place
+umstellen — es gibt kein `ALTER TABLE … PARTITION BY`. Ein Wechsel der
+Strategie oder des Schlüssels bleibt deshalb ohne Operation und wird gemeldet.
+
+Der **Bestand an Kindern** dagegen ändert sich mit einer gewöhnlichen
+Anweisung, und jeder partitionierende Dialekt hat dafür seine eigene:
+
+| Fall | PostgreSQL | MySQL | MSSQL |
+|---|---|---|---|
+| Kind kommt dazu | `CREATE TABLE <kind> PARTITION OF <eltern> FOR VALUES …` | hinter der letzten Grenze `ALTER TABLE … ADD PARTITION (…)`, dazwischen `ALTER TABLE … REORGANIZE PARTITION <folgende> INTO (…)` | `ALTER PARTITION SCHEME … NEXT USED <filegroup>` + `ALTER PARTITION FUNCTION … SPLIT RANGE (<grenze>)` |
+| Kind fällt weg | `DROP TABLE <kind>` | `ALTER TABLE … DROP PARTITION <kind>` | `ALTER PARTITION FUNCTION … MERGE RANGE (<grenze>)` |
+
+Die Zuordnung der Kinder läuft über ihre **Grenzen**, nicht über ihren Namen.
+SQL Server speichert keine Partitionsnamen; ein Reverse vergibt sie in
+Grenzreihenfolge, und eine eingefügte Grenze verschiebt jede Nummer dahinter.
+Ein umbenanntes Kind mit gleichen Grenzen ist deshalb keine Bestandsänderung
+und erzeugt keine Operation.
+
+Aus derselben Lage folgt die Behandlung von **Aufteilung und
+Zusammenlegung**: deckt der Bereich eines entfallenen Kindes sich lückenlos mit
+den hinzugekommenen, ist das kein Wegfall, sondern ein Schnitt. SQL Server
+führt ihn mit `SPLIT`/`MERGE RANGE` aus und behält die Zeilen; PostgreSQL und
+MySQL können ihn nicht in place ausführen und melden ihn statt ihn zu rendern.
+Ein Kind, dessen Bereich **nicht** wieder abgedeckt wird, gilt als
+zerstörend und verlangt `--allow-destructive`.
+
+Nicht gerendert werden: Grenzverschiebung eines bestehenden Kindes,
+Umbenennung eines Kindes, `HASH`-Bestandsänderungen (der Modulus verteilt jede
+Zeile neu) und jede Partitionsänderung auf SQLite.
+
 ---
 
 ## 10. Trigger-DDL

@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.isSpatialGeometryIndex
@@ -202,6 +203,12 @@ internal class MysqlDiffRenderContext(
      */
     fun recordDiagnostic(diagnostic: DiffDiagnostic) {
         diagnostics += diagnostic
+    }
+
+    /** Spalten von [table] auf der Seite, die diese Richtung liest (UP = SOLL, DOWN = IST). */
+    fun columnsOf(table: String): Map<String, ColumnDefinition> {
+        val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
+        return schema?.tables?.get(table)?.columns.orEmpty()
     }
 
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {

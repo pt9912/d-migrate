@@ -4,10 +4,12 @@ import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.util.sha256Hex
@@ -307,7 +309,7 @@ internal object OperationMapper {
             mapTableConstraints(changed, ops)
             mapTableIndices(changed, ops)
             mapTablePrimaryKey(changed, ops)
-            mapTablePartitioning(changed, diagnostics)
+            mapTablePartitioning(changed, diagnostics, ops)
         }
         return fold.absorbedViews
     }
@@ -337,20 +339,89 @@ internal object OperationMapper {
     }
 
     /**
-     * A table's partitioning cannot be altered in place (there is no
-     * `ALTER TABLE … PARTITION BY` round-trip), so the comparator-detected
-     * partitioning change (ADR 0019) has no [DiffOperation] counterpart. Without
-     * a diagnostic the change would be silently absent from the plan; emit a
-     * WARNING so the operator knows a detected difference was not applied (the
-     * post-`--execute` drift check then confirms it as residual).
+     * A partitioning change splits into two very different cases, and the
+     * mapper's job is to tell them apart ([PartitionChangeClassifier]).
+     *
+     * A table cannot be re-partitioned in place — there is no
+     * `ALTER TABLE … PARTITION BY` — so a changed strategy or key stays a
+     * WARNING, now naming which case it is. But a changed *set of children* is
+     * an ordinary statement in every partitioning dialect, and rolling
+     * partitioning (add this month, drop the oldest) is the common case: it
+     * becomes an [DiffOperation.AlterTablePartitions] the dialect renders.
+     *
+     * The risk follows the delta: losing a child means losing rows in
+     * PostgreSQL and MySQL (SQL Server's `MERGE RANGE` moves them into the
+     * neighbour). The classification cannot tell dialects apart, so it takes
+     * the conservative reading.
      */
-    private fun mapTablePartitioning(table: TableDiff, diagnostics: MutableList<DiffDiagnostic>) {
-        if (table.partitioning == null) return
-        diagnostics += DiffDiagnostic(
+    private fun mapTablePartitioning(
+        table: TableDiff,
+        diagnostics: MutableList<DiffDiagnostic>,
+        ops: MutableList<DiffOperation>,
+    ) {
+        val change = table.partitioning ?: return
+        when (val classified = PartitionChangeClassifier.classify(change.before, change.after)) {
+            is PartitionChange.ChildrenChanged -> ops += partitionOperation(table.name, change, classified.delta)
+            is PartitionChange.NotResolvable -> diagnostics += partitionDiagnostic(table.name, classified.reason)
+        }
+    }
+
+    private fun partitionOperation(
+        table: String,
+        change: ValueChange<PartitionConfig?>,
+        delta: PartitionDelta,
+    ): DiffOperation.AlterTablePartitions {
+        val before = requireNotNull(change.before) { "resolvable partition change without a before state" }
+        val after = requireNotNull(change.after) { "resolvable partition change without an after state" }
+        val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(table))
+        // Zerstörend ist nicht „ein Kind weniger", sondern „ein Bereich
+        // weniger": ein entfallenes Kind, dessen Bereich die hinzugekommenen
+        // wieder abdecken, ist eine Aufteilung. Ohne die Unterscheidung
+        // verlangte das Hinzufügen einer Partition in SQL Server
+        // `--allow-destructive`, weil dort jede eingefügte Grenze ein Kind
+        // ersetzt.
+        val losesChild = delta.droppedOutright.isNotEmpty()
+        val gainsChild = delta.addedOutright.isNotEmpty()
+        return DiffOperation.AlterTablePartitions(
+            id = OperationIdFactory.makeId("AlterTablePartitions", ref, CanonicalPayload.partitioning(before, after)),
+            objectRef = ref,
+            before = before,
+            after = after,
+            delta = delta,
+            risks = OperationRisks(
+                up = partitionRisk(losesChild),
+                down = partitionRisk(gainsChild),
+            ),
+        )
+    }
+
+    private fun partitionRisk(dropsPartition: Boolean): OperationRisk =
+        if (dropsPartition) {
+            OperationRisk(destructive = true, dataLossPossible = true, requiresManualConfirmation = true)
+        } else {
+            OperationRisk.SAFE
+        }
+
+    private fun partitionDiagnostic(table: String, reason: PartitionChangeReason): DiffDiagnostic {
+        val cause = when (reason) {
+            PartitionChangeReason.PARTITIONING_ADDED ->
+                "the table is not partitioned and cannot be partitioned in place"
+            PartitionChangeReason.PARTITIONING_REMOVED ->
+                "the table's partitioning cannot be removed in place"
+            PartitionChangeReason.STRATEGY_CHANGED ->
+                "the partitioning strategy changed"
+            PartitionChangeReason.KEY_CHANGED ->
+                "the partition key changed"
+            PartitionChangeReason.CHILD_NAMES_CHANGED ->
+                "the partition boundaries are unchanged and only the child names differ"
+            PartitionChangeReason.CHILD_INDICES_CHANGED ->
+                "the partition boundaries are unchanged and only the child-local indices differ"
+        }
+        return DiffDiagnostic(
             code = "PARTITIONING_CHANGE_NOT_APPLIED",
-            message = "Table '${table.name}': a partitioning change was detected but not emitted as a " +
-                "migration operation — a table's partitioning cannot be altered in place. Recreate the " +
-                "table with the desired partitioning manually if the change must be applied.",
+            message = "Table '$table': a partitioning change was detected but not emitted as a " +
+                "migration operation — $cause. Recreate the table with the desired partitioning " +
+                "manually if the change must be applied.",
             severity = DiffDiagnostic.Severity.WARNING,
         )
     }

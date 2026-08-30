@@ -135,6 +135,22 @@ internal class MysqlIndexPartitionDdlHelper(
         return partitioning.partitions
     }
 
+    /**
+     * Eine einzelne Partitionsklausel — `PARTITION `p` VALUES LESS THAN (…)`.
+     * Der Diff-Pfad braucht sie einzeln (`ADD PARTITION`, `REORGANIZE
+     * PARTITION … INTO (…)`), waehrend `generatePartitionClause` sie fuer die
+     * ganze Tabelle bündelt; beide rendern damit denselben Text.
+     */
+    fun renderSinglePartition(
+        partition: PartitionDefinition,
+        partitioning: PartitionConfig,
+        columns: Map<String, ColumnDefinition>,
+        notes: MutableList<TransformationNote>,
+    ): String {
+        val keyTypes = partitioning.key.map { columns[it]?.type }
+        return renderPartition(partition, partitioning.type, keyTypes, notes, mutableSetOf()).trimStart()
+    }
+
     private fun renderPartition(
         partition: PartitionDefinition,
         type: PartitionType,

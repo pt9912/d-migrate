@@ -7,6 +7,9 @@ import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -46,6 +49,41 @@ internal object CanonicalPayload {
         for (i in t.indices.sortedWith(indexOrder)) {
             append(SEP).append(index(i))
         }
+    }
+
+    /**
+     * Beide Zustände einer Partitionierung, Kinder in Grenzreihenfolge
+     * sortiert. Der Kindname geht **nicht** ein: SQL Server nummeriert
+     * Partitionen, und eine eingefügte Grenze verschiebt jede Nummer dahinter
+     * — die Operations-ID bliebe sonst nicht stabil, obwohl dieselbe Änderung
+     * vorliegt.
+     */
+    fun partitioning(before: PartitionConfig, after: PartitionConfig): String = buildString {
+        append("before=").append(partitionConfig(before))
+        append(SEP).append("after=").append(partitionConfig(after))
+    }
+
+    private fun partitionConfig(config: PartitionConfig): String = buildString {
+        append(config.type.name).append("(").append(config.key.joinToString(",")).append(")")
+        append("[").append(config.partitions.size).append("]")
+        for (partition in config.partitions.map { partitionBounds(it) }.sorted()) {
+            append(SEP).append(partition)
+        }
+    }
+
+    private fun partitionBounds(p: PartitionDefinition): String = buildString {
+        append("default=").append(p.isDefault)
+            .append(SEP).append("from=").append(p.from?.joinToString(",") { boundLiteral(it) } ?: "")
+            .append(SEP).append("to=").append(p.to?.joinToString(",") { boundLiteral(it) } ?: "")
+            .append(SEP).append("values=").append(p.values?.joinToString(",") ?: "")
+            .append(SEP).append("modulus=").append(p.modulus ?: "")
+            .append(SEP).append("remainder=").append(p.remainder ?: "")
+    }
+
+    private fun boundLiteral(bound: PartitionBound): String = when (bound) {
+        is PartitionBound.MinValue -> "MINVALUE"
+        is PartitionBound.MaxValue -> "MAXVALUE"
+        is PartitionBound.Value -> bound.literal
     }
 
     fun column(c: ColumnDefinition): String = buildString {

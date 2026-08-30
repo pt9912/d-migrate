@@ -217,6 +217,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.TRIGGER -> renderTriggerOp(op, ctx)
             OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
+            OpCategory.PARTITION -> blockPartitioning(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -269,6 +270,9 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
         -> OpCategory.MATERIALIZED_VIEW
+
+        is DiffOperation.AlterTablePartitions,
+        -> OpCategory.PARTITION
 
         is DiffOperation.CreateTrigger,
         is DiffOperation.ReplaceTrigger,
@@ -346,6 +350,21 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
      * [DiffOperation.DropMaterializedView] with a dialect-specific
      * diagnostic and an operation blocker.
      */
+    /**
+     * SQLite partitioniert nicht. Der Grund gehoert in die Meldung: die
+     * allgemeine „nicht in der ersten Matrix"-Ablehnung liesse offen, ob das
+     * ein Schnitt ist oder eine Eigenschaft der Datenbank.
+     */
+    private fun blockPartitioning(op: DiffOperation, ctx: SqliteDiffRenderContext) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} changes the partitions of table '${op.objectRef.rootName}'. " +
+                "SQLite has no table partitioning at all, so there is nothing to change.",
+            code = "PARTITIONING_NOT_SUPPORTED_BY_DIALECT",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+    }
+
     private fun blockMaterializedView(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         val name = op.objectRef.rootName
         ctx.skip(
@@ -462,5 +481,5 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         return true
     }
 
-    private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, SEQUENCE, MATERIALIZED_VIEW, UNSUPPORTED }
+    private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, SEQUENCE, MATERIALIZED_VIEW, PARTITION, UNSUPPORTED }
 }
