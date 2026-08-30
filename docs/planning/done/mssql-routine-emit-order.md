@@ -1,10 +1,26 @@
 ---
 id: mssql-routine-emit-order
 title: "MSSQL: Funktionen werden in Map-Reihenfolge emittiert, nicht nach Abhängigkeit"
-status: open
+status: done
 ---
 
 # MSSQL: Funktionen werden in Map-Reihenfolge emittiert
+
+> **Behoben 2026-08-30 — die Diagnose unten nannte den falschen Pfad.** Gemessen:
+> der **Generate**-Pfad ordnet längst richtig. `AbstractDdlGenerator` reicht
+> `generateFunctions` eine bereits sortierte Map
+> (`DdlGenerationSupport.sortFunctionsByDependencies`, Kanten aus dem Rumpftext).
+> Ich hatte `MssqlDdlGenerator.generateFunctions` isoliert gelesen.
+>
+> Der Defekt lag im **Migrate**-Pfad: dort ordnet `RoutineDependencyAnalyzer`
+> nach `DependencyInfo`, und die füllte der MSSQL-Reverse nicht. Der Analyzer
+> meldete das Paar sogar als `UNSAFE_DEPENDENCY_PAIR` — als Warnung, während die
+> Reihenfolge falsch blieb.
+>
+> Der Reverse liest die Kanten jetzt aus `sys.sql_expression_dependencies`:
+> Tabellen, Sichten und Routinen, für Funktionen, Prozeduren **und** Trigger.
+> Der Katalog löst den Verweis auf ein Objekt auf, wo ein regulärer Ausdruck
+> ihn raten müsste.
 
 ## Lage
 

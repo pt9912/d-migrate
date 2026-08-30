@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mssql
 import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DependencyInfo
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.TriggerDefinition
@@ -367,9 +368,11 @@ class MssqlSchemaReader(
         notes: MutableList<SchemaReadNote>,
         skipped: MutableList<SkippedObject>,
     ): Routines {
-        val rows = MssqlMetadataQueries.listRoutines(session, schema)
-        val paramsByRoutine = MssqlMetadataQueries.listRoutineParameters(session, schema)
+        val rows = MssqlRoutineQueries.listRoutines(session, schema)
+        val paramsByRoutine = MssqlRoutineQueries.listRoutineParameters(session, schema)
             .groupBy { it.routine }
+        val dependsByRoutine = MssqlRoutineQueries.listRoutineDependencies(session, schema)
+            .groupBy { it.referencing }
         val functions = mutableMapOf<String, FunctionDefinition>()
         val procedures = mutableMapOf<String, ProcedureDefinition>()
         val triggers = mutableMapOf<String, TriggerDefinition>()
@@ -419,26 +422,10 @@ class MssqlSchemaReader(
                 )
                 continue
             }
+            val depends = dependenciesOf(dependsByRoutine[row.name])
             when (row.type) {
-                "P" -> if (options.includeProcedures) {
-                    val parameters = parametersOf(params)
-                    procedures[ObjectKeyCodec.routineKey(row.name, parameters)] = ProcedureDefinition(
-                        parameters = parameters,
-                        body = body,
-                        language = "sql",
-                        sourceDialect = "mssql",
-                    )
-                }
-                "FN", "IF" -> if (options.includeFunctions) {
-                    val parameters = parametersOf(params)
-                    functions[ObjectKeyCodec.routineKey(row.name, parameters)] = FunctionDefinition(
-                        parameters = parameters,
-                        returns = returnTypeOf(row, params),
-                        body = body,
-                        language = "sql",
-                        sourceDialect = "mssql",
-                    )
-                }
+                "P" -> if (options.includeProcedures) addProcedure(row, params, body, depends, procedures)
+                "FN", "IF" -> if (options.includeFunctions) addFunction(row, params, body, depends, functions)
                 // Eine mehrteilige Tabellenfunktion deklariert ihre Rueckgabe als
                 // `RETURNS @r TABLE (...)` vor dem `AS`. Weder `sys.parameters`
                 // noch `returns` im neutralen Modell tragen diese Tabellenform;
@@ -454,41 +441,87 @@ class MssqlSchemaReader(
                     )
                 }
                 "TR" -> if (options.includeTriggers) {
-                    // `OBJECT_NAME` liefert null, wenn der Aufrufer die
-                    // Elterntabelle nicht aufloesen darf. Ein datenbankweiter
-                    // DDL-Trigger kommt hier dagegen nie an — er ist nicht
-                    // schemagebunden und faellt schon aus `SCHEMA_ID(?)`.
-                    // Ohne Meldung fiele der Trigger still aus dem Ergebnis.
-                    val table = row.table ?: run {
-                        reportSkippedRoutine(
-                            row = row,
-                            code = "R353",
-                            reason = "The trigger's parent table could not be resolved (OBJECT_NAME returned " +
-                                "no name); the neutral model keys triggers by their table.",
-                            notes = notes,
-                            skipped = skipped,
-                        )
-                        continue
-                    }
-                    triggers[ObjectKeyCodec.triggerKey(table, row.name)] = TriggerDefinition(
-                        table = table,
-                        events = triggerEvents(row),
-                        // SQL Server kennt kein BEFORE: `AFTER` und
-                        // `INSTEAD OF` sind die beiden Zeitpunkte.
-                        timing = if (row.isInsteadOf) TriggerTiming.INSTEAD_OF else TriggerTiming.AFTER,
-                        // T-SQL-Trigger feuern je Anweisung, nicht je Zeile.
-                        forEach = TriggerForEach.STATEMENT,
-                        body = body,
-                        sourceDialect = "mssql",
-                    )
+                    addTrigger(row, body, depends, triggers, notes, skipped)
                 }
             }
         }
         return Routines(functions, procedures, triggers)
     }
 
+    private fun addProcedure(
+        row: MssqlRoutineQueries.RoutineRow,
+        params: List<MssqlRoutineQueries.RoutineParamRow>,
+        body: String,
+        depends: DependencyInfo?,
+        into: MutableMap<String, ProcedureDefinition>,
+    ) {
+        val parameters = parametersOf(params)
+        into[ObjectKeyCodec.routineKey(row.name, parameters)] = ProcedureDefinition(
+            parameters = parameters,
+            body = body,
+            language = "sql",
+            dependencies = depends,
+            sourceDialect = "mssql",
+        )
+    }
+
+    private fun addFunction(
+        row: MssqlRoutineQueries.RoutineRow,
+        params: List<MssqlRoutineQueries.RoutineParamRow>,
+        body: String,
+        depends: DependencyInfo?,
+        into: MutableMap<String, FunctionDefinition>,
+    ) {
+        val parameters = parametersOf(params)
+        into[ObjectKeyCodec.routineKey(row.name, parameters)] = FunctionDefinition(
+            parameters = parameters,
+            returns = returnTypeOf(row, params),
+            body = body,
+            language = "sql",
+            dependencies = depends,
+            sourceDialect = "mssql",
+        )
+    }
+
+    private fun addTrigger(
+        row: MssqlRoutineQueries.RoutineRow,
+        body: String,
+        depends: DependencyInfo?,
+        into: MutableMap<String, TriggerDefinition>,
+        notes: MutableList<SchemaReadNote>,
+        skipped: MutableList<SkippedObject>,
+    ) {
+        // `OBJECT_NAME` liefert null, wenn der Aufrufer die Elterntabelle nicht
+        // aufloesen darf. Ein datenbankweiter DDL-Trigger kommt hier dagegen nie
+        // an — er ist nicht schemagebunden und faellt schon aus `SCHEMA_ID(?)`.
+        // Ohne Meldung fiele der Trigger still aus dem Ergebnis.
+        val table = row.table ?: run {
+            reportSkippedRoutine(
+                row = row,
+                code = "R353",
+                reason = "The trigger's parent table could not be resolved (OBJECT_NAME returned " +
+                    "no name); the neutral model keys triggers by their table.",
+                notes = notes,
+                skipped = skipped,
+            )
+            return
+        }
+        into[ObjectKeyCodec.triggerKey(table, row.name)] = TriggerDefinition(
+            table = table,
+            events = triggerEvents(row),
+            // SQL Server kennt kein BEFORE: `AFTER` und `INSTEAD OF` sind die
+            // beiden Zeitpunkte.
+            timing = if (row.isInsteadOf) TriggerTiming.INSTEAD_OF else TriggerTiming.AFTER,
+            // T-SQL-Trigger feuern je Anweisung, nicht je Zeile.
+            forEach = TriggerForEach.STATEMENT,
+            body = body,
+            dependencies = depends,
+            sourceDialect = "mssql",
+        )
+    }
+
     private fun reportSkippedRoutine(
-        row: MssqlMetadataQueries.RoutineRow,
+        row: MssqlRoutineQueries.RoutineRow,
         code: String,
         reason: String,
         notes: MutableList<SchemaReadNote>,
@@ -509,7 +542,7 @@ class MssqlSchemaReader(
     }
 
     /** Der Rueckgabewert steht in `sys.parameters` mit `parameter_id = 0` und zaehlt nicht als Parameter. */
-    private fun parametersOf(rows: List<MssqlMetadataQueries.RoutineParamRow>): List<ParameterDefinition> =
+    private fun parametersOf(rows: List<MssqlRoutineQueries.RoutineParamRow>): List<ParameterDefinition> =
         rows.filterNot { it.isReturnValue }.map { p ->
             ParameterDefinition(
                 name = p.name,
@@ -524,8 +557,8 @@ class MssqlSchemaReader(
      * `parameter_id = 0`. Ihr Rueckgabetyp ist die Tabelle selbst.
      */
     private fun returnTypeOf(
-        row: MssqlMetadataQueries.RoutineRow,
-        params: List<MssqlMetadataQueries.RoutineParamRow>,
+        row: MssqlRoutineQueries.RoutineRow,
+        params: List<MssqlRoutineQueries.RoutineParamRow>,
     ): ReturnType? {
         if (row.type == "IF") return ReturnType(type = "table")
         val returnValue = params.firstOrNull { it.isReturnValue } ?: return null
@@ -539,7 +572,38 @@ class MssqlSchemaReader(
         }
     }
 
-    private fun triggerEvents(row: MssqlMetadataQueries.RoutineRow): Set<TriggerEvent> = buildSet {
+    /**
+     * Die Objekte, die der Rumpf anspricht, nach Klasse getrennt.
+     *
+     * Der Migrations-Plan ordnet daran: eine Funktion, die eine andere ruft,
+     * muss nach ihr entstehen — SQL Server loest den Aufruf beim `CREATE` auf.
+     * Prozeduren stehen bei den Funktionen, weil `DependencyInfo` beide Arten
+     * in derselben Liste fuehrt.
+     */
+    private fun dependenciesOf(rows: List<MssqlRoutineQueries.RoutineDependencyRow>?): DependencyInfo? {
+        if (rows.isNullOrEmpty()) return null
+        val tables = mutableSetOf<String>()
+        val views = mutableSetOf<String>()
+        val routines = mutableSetOf<String>()
+        for (row in rows) {
+            when (row.referencedType) {
+                "U" -> tables += row.referenced
+                "V" -> views += row.referenced
+                "FN", "IF", "TF", "P" -> routines += row.referenced
+                // Ohne aufloesbaren Typ bleibt die Kante ungenutzt: ein Name
+                // ohne Klasse traegt keine Ordnung.
+                else -> {}
+            }
+        }
+        if (tables.isEmpty() && views.isEmpty() && routines.isEmpty()) return null
+        return DependencyInfo(
+            tables = tables.sorted(),
+            views = views.sorted(),
+            functions = routines.sorted(),
+        )
+    }
+
+    private fun triggerEvents(row: MssqlRoutineQueries.RoutineRow): Set<TriggerEvent> = buildSet {
         if (row.isInsert) add(TriggerEvent.INSERT)
         if (row.isUpdate) add(TriggerEvent.UPDATE)
         if (row.isDelete) add(TriggerEvent.DELETE)

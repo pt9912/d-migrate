@@ -52,6 +52,9 @@ class MssqlSchemaReaderTest : FunSpec({
                     !it.contains("m.definition IS NULL") }, any())
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("JOIN sys.parameters p") }, any()) } returns emptyList()
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.sql_expression_dependencies d") }, any())
+        } returns emptyList()
     }
 
     fun stubTableQueries(jdbc: JdbcOperations) {

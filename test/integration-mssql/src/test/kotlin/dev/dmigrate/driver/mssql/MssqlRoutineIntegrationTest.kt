@@ -311,4 +311,53 @@ class MssqlRoutineIntegrationTest : FunSpec({
             }
         }
     }
+
+    // SQL Server loest Funktionsaufrufe beim `CREATE` auf. Ohne die Kante aus
+    // `sys.sql_expression_dependencies` ordnet der Plan nach Namen — und
+    // `fn_a`, das `fn_b` ruft, kaeme zuerst.
+    test("a function that calls another is created after it") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("CREATE TABLE dep_src (id INT NOT NULL PRIMARY KEY)")
+                        stmt.execute(
+                            "CREATE FUNCTION dbo.fn_b (@x INT) RETURNS INT AS BEGIN RETURN @x END",
+                        )
+                        stmt.execute(
+                            "CREATE FUNCTION dbo.fn_a (@x INT) RETURNS INT AS " +
+                                "BEGIN RETURN dbo.fn_b(@x) + (SELECT COUNT(*) FROM dep_src) END",
+                        )
+                    }
+                }
+
+                val current = MssqlSchemaReader().read(pool).schema
+                val aKey = "fn_a(in:integer)"
+                // Der Reverse traegt die Kante jetzt im Modell.
+                current.functions.getValue(aKey).dependencies.shouldNotBeNull()
+                    .functions shouldContain "fn_b"
+                current.functions.getValue(aKey).dependencies.shouldNotBeNull()
+                    .tables shouldContain "dep_src"
+
+                // Ein Lauf, der beide neu anlegt: die Reihenfolge muss der
+                // Aufrufrichtung folgen, nicht dem Namen.
+                val empty = current.copy(functions = emptyMap(), tables = emptyMap())
+                val diff = SchemaComparator().compare(empty, current)
+                val plan = DiffPlanner().plan(empty, current, diff)
+                val sqlText = MssqlDiffDdlGenerator().generateUp(plan, DdlGenerationOptions())
+                    .statements.joinToString("\n") { it.sql }
+                val posB = sqlText.indexOf("FUNCTION [fn_b]")
+                val posA = sqlText.indexOf("FUNCTION [fn_a]")
+                withClue(sqlText) { (posB in 0 until posA) shouldBe true }
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        runCatching { stmt.execute("DROP FUNCTION dbo.fn_a") }
+                        runCatching { stmt.execute("DROP FUNCTION dbo.fn_b") }
+                        runCatching { stmt.execute("DROP TABLE dep_src") }
+                    }
+                }
+            }
+        }
+    }
 })

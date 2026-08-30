@@ -52,6 +52,9 @@ class MssqlPartitionReverseTest : FunSpec({
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.views v") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.objects o") }, any()) } returns emptyList()
+        every {
+            jdbc.queryList(match { it.contains("FROM sys.sql_expression_dependencies d") }, any())
+        } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.columns c") }, any()) } returns listOf(
             mapOf(
                 "column_name" to "id", "type_name" to "int", "max_length" to 4, "precision" to 10, "scale" to 0,
