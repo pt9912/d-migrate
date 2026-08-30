@@ -46,9 +46,7 @@ class DataProfileWiringTest : FunSpec({
     )
 
     context("happy path by dialect") {
-        // MSSQL fehlt bewusst: data profile weist mssql an der Kommando-
-        // Grenze ab (DialectCommandGate, ADR 0047) — eigener Test unten.
-        listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
+        DatabaseDialect.entries.forEach { dialect ->
             test("wires fake profiling adapters for ${dialect.name.lowercase()}") {
                 val tableName = tableNameFor(dialect)
                 val configPath = Path.of(".d-migrate-test.yaml")
@@ -137,27 +135,15 @@ class DataProfileWiringTest : FunSpec({
         bundle.dialectResolver("mysql://localhost/profile") shouldBe DatabaseDialect.MYSQL
         bundle.dialectResolver("sqlite::memory:") shouldBe DatabaseDialect.SQLITE
 
-        // MSSQL fehlt bewusst: keine Profiling-Adapter, das Gate weist mssql
-        // vorher ab (DialectCommandGate, ADR 0047).
-        listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
+        bundle.dialectResolver("mssql://localhost/profile") shouldBe DatabaseDialect.MSSQL
+
+        // Jeder Dialekt traegt jetzt ein vollstaendiges Adapter-Trio.
+        DatabaseDialect.entries.forEach { dialect ->
             val adapters = bundle.adapterLookup(dialect)
             adapters.introspection::class.simpleName?.isNotBlank() shouldBe true
             adapters.data::class.simpleName?.isNotBlank() shouldBe true
             adapters.typeResolver::class.simpleName?.isNotBlank() shouldBe true
         }
-    }
-
-    test("mssql is refused at the command boundary with exit 2") {
-        val factory = RecordingDataProfileFactory(DatabaseDialect.MSSQL)
-
-        val exit = DataProfileWiring.execute(
-            options(dialect = DatabaseDialect.MSSQL, tables = listOf("t")),
-            factory,
-        )
-
-        exit shouldBe 2
-        // Das Gate feuert vor Pool-/Adapter-Aufbau.
-        factory.createdPools shouldBe emptyList()
     }
 
     test("default factory report writer writes deterministic file output") {

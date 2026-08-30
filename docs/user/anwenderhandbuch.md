@@ -1,8 +1,7 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.6  ·  **Stand:** 29.08.2026
+**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.7  ·  **Stand:** 30.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
-(im Ausbau — dort noch nicht verfügbar: `data profile`)
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
 beschreiben, Datenbanken aufbauen, Daten übertragen und Migrationen ausrollen.
@@ -2143,10 +2142,8 @@ beginnen Sie ohne `--resume` neu.
 ## 6. Häufige Fragen (FAQ)
 
 **Welche Datenbanken unterstützt d-migrate?**
-PostgreSQL, MySQL/MariaDB und SQLite vollständig. MS SQL Server wird schrittweise
-ausgebaut — verfügbar sind `schema reverse`, `schema compare`, `schema generate`,
-`schema migrate`, `export <tool>` sowie `data export`/`import`/`transfer`;
-`data profile` folgt. Oracle ist geplant.
+PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server vollständig. Oracle ist
+geplant.
 
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
@@ -2830,6 +2827,7 @@ custom_types:
 | 0.5 | 15.08.2026 | Auf Software-Version 1.0.0 (erstes Stable) aktualisiert. **Keine inhaltliche Änderung** — zwischen 1.0.0-RC2 und 1.0.0 kam kein neues Kommando und keine geänderte Option hinzu; die Releases dazwischen waren bauseitig. Nachgezogen wurde die Kopfzeile, die beim 0.4-Eintrag stehengeblieben war (sie nannte weiterhin Handbuch-Version 0.3 und den 16.07.). Sachlich relevant für Leser: der `--user`-Zusatz beim Docker-Aufruf (Abschnitt 1) ist ab 1.0.0 **nötig** und nicht mehr nur empfohlen — bis 0.9.12 lief das Image als root und schrieb auch ohne ihn. |
 | 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
 | 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
+| 1.7 | 30.08.2026 | `data profile` steht für MS SQL Server zur Verfügung; damit ist der Dialekt vollständig. Gültigkeitsbereich und FAQ führen keine Einschränkung mehr. |
 | 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
 | 1.6 | 29.08.2026 | Klargestellt, dass Volltext bei SQL Server nur über `schema generate` einzurichten ist: der Server verbietet `CREATE FULLTEXT INDEX` in einer Transaktion, und `schema migrate` bricht deshalb mit **E072** ab, bevor es etwas anwendet. |
 | 1.5 | 29.08.2026 | SQL Server erzeugt jetzt Volltext-Indizes. Anhang F.6 nennt die drei Regeln, die dort gelten und sonst nirgends: der Katalog je Tabelle (**W146**), der einspaltige, nicht nullbare Schlüsselindex (**E070**, wenn keiner da ist) und höchstens ein Volltext-Index je Tabelle (**E071**). |

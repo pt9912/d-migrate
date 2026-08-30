@@ -37,7 +37,6 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
 
     test("dispatcher reuses the same executor instance across calls (stateless reuse contract)") {
         // MSSQL fehlt bewusst: kein Executor, der Migrate-Pfad weist mssql an
-        // der Kommando-Grenze ab (DialectCommandGate, ADR 0047) — siehe Test unten.
         listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach { dialect ->
             val first = AtomicSequencePreserveDispatcher.executorFor(dialect)
             val second = AtomicSequencePreserveDispatcher.executorFor(dialect)
@@ -49,7 +48,6 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
     }
 
     test("mssql has no atomic executor — the capability, not the gate, keeps it unreachable") {
-        // Das DialectCommandGate weist `schema migrate` fuer mssql nicht ab.
         // Unerreichbar bleibt der Atomic-Pfad, weil
         // `SequenceCapabilityDefaults` fuer mssql kein Atomic-Preserve meldet;
         // die Sperrstrategie dafuer ist weder entworfen noch belegt.

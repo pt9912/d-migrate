@@ -221,7 +221,7 @@ Entscheidung 2):
 | **7** ✅ | Partitionierung: Partition Functions + Schemes + Filegroups (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster des PG-Slices) | Partitionstabellen im Round-Trip |
 | **8** ✅ | Volltext: Full-Text Search (Muster aus dem Fulltext-Slice, `fullTextVectorColumn`-Modell) | Volltext-Indizes Generate + Reverse |
 | **9** ✅ | Routinen/Trigger: T-SQL-Prozeduren, `CREATE OR ALTER` | Routinen-Migration |
-| **10** | Profiling-Modul `driver-mssql-profiling` | `data profile` |
+| **10** ✅ | Profiling-Modul `driver-mssql-profiling` | Live belegt gegen echtes SQL Server. Das `DialectCommandGate` ist damit ohne Kommando und **entfernt** — kein Dialekt wird mehr an der Kommando-Grenze abgewiesen |
 
 Jeder Slice endet CI-grün und einzeln nutzbar; die No-op-Defaults des Ports
 machen das möglich, ohne UNSUPPORTED-Stopgaps (No-Carveouts-Regel). Was ein
@@ -897,11 +897,21 @@ Routinen-Rümpfe kein Gegenstück — auch nicht bei PostgreSQL. Slice 9 macht d
 Rümpfe lesbar und schreibbar; ob und wie sie *übersetzt* werden, ist eine
 cross-dialektale Frage.
 
-### Slice 10 — Profiling
+### Slice 10 — Profiling ✅
 
-- `DialectCommandGate` weist `data profile` weiterhin ab; das ist nach Slice 5
-  der letzte verbleibende Gate-Eintrag.
 - Das Modul folgt dem Muster der drei bestehenden `driver-*-profiling`-Module.
+- Der Ertrag lag nicht im Muster, sondern in **sechs Typen, die T-SQL nicht
+  vergleichen kann**: `geometry`, `geography`, `xml` und die LOB-Alttypen
+  `text`, `ntext`, `image` weisen `COUNT`, `COUNT(DISTINCT)`, `GROUP BY` und
+  `ORDER BY` ab. Die Aggregate laufen deshalb auf einer Textprojektion.
+  `image` braucht dabei einen eigenen Weg — es lässt sich nicht nach `nvarchar`
+  wandeln, nur über `varbinary`.
+- Dazu ein Semantikunterschied: T-SQL füllt beim Vergleich mit Leerzeichen auf,
+  `'   ' = ''` ist dort **wahr**. Der Test auf die leere Zeichenkette läuft
+  deshalb über `DATALENGTH`, sonst zählte jeder Leerraum-Wert als leer statt
+  als blank.
+- Mit dem letzten Kommando fällt das `DialectCommandGate` ganz weg: ein Gate
+  ohne Kommando ist toter Code.
 
 ## Risiken
 

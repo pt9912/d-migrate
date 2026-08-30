@@ -15,10 +15,8 @@ import dev.dmigrate.driver.data.TableLister
 /**
  * [DatabaseDriver] implementation for MSSQL.
  *
- * Reverse-read, DDL-generate and data-path surface (Slices 1–3). Die
- * verbleibenden Kommandos (`schema migrate`, `data profile`) weist
- * `DialectCommandGate` (ADR 0047) weiterhin an der Kommando-Grenze ab; die
- * uebrigen Capability-Methoden behalten ihre konservativen Interface-Defaults.
+ * Reverse-read, DDL-Generate, Diff/Migrate und Datenpfad. Die uebrigen
+ * Capability-Methoden behalten ihre konservativen Interface-Defaults.
  */
 class MssqlDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.MSSQL

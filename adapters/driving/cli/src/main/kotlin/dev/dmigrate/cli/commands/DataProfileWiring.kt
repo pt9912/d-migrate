@@ -12,6 +12,9 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.driver.mysql.profiling.MysqlLogicalTypeResolver
+import dev.dmigrate.driver.mssql.profiling.MssqlLogicalTypeResolver
+import dev.dmigrate.driver.mssql.profiling.MssqlProfilingDataAdapter
+import dev.dmigrate.driver.mssql.profiling.MssqlSchemaIntrospectionAdapter
 import dev.dmigrate.driver.mysql.profiling.MysqlProfilingDataAdapter
 import dev.dmigrate.driver.mysql.profiling.MysqlSchemaIntrospectionAdapter
 import dev.dmigrate.driver.postgresql.profiling.PostgresLogicalTypeResolver
@@ -98,8 +101,10 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
             SqliteProfilingDataAdapter(),
             SqliteLogicalTypeResolver(),
         )
-        DatabaseDialect.MSSQL -> error(
-            "unreachable: DialectCommandGate rejects mssql for data profile (ADR 0047)",
+        DatabaseDialect.MSSQL -> ProfilingAdapterSet(
+            MssqlSchemaIntrospectionAdapter(),
+            MssqlProfilingDataAdapter(),
+            MssqlLogicalTypeResolver(),
         )
     }
 }

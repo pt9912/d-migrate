@@ -94,7 +94,6 @@ class SequenceCapabilityTest : FunSpec({
                 // Bewusste Ausnahme statt stillem Durchrutschen: fuer MSSQL
                 // existiert kein Migrate-Renderer/Preserve-Executor — die
                 // Capability-Defaults spiegeln Renderer-Realitaet
-                // (schema migrate ist fuer mssql am DialectCommandGate abgewiesen).
                 capability.supportsAtomicPreserve shouldBe false
                 capability.supportsAtomicPreserveAllInPlan shouldBe false
                 capability.transactionalProtectedSequenceOperations shouldBe

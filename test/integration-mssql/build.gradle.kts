@@ -8,6 +8,8 @@
 
 dependencies {
     testImplementation(project(":adapters:driven:driver-mssql"))
+    testImplementation(project(":adapters:driven:driver-mssql-profiling"))
+    testImplementation(project(":hexagon:profiling"))
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))

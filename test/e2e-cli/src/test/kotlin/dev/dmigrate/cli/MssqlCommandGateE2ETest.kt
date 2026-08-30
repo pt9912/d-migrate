@@ -5,6 +5,7 @@ import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.absolutePathString
@@ -12,18 +13,15 @@ import kotlin.io.path.deleteRecursively
 import kotlin.io.path.writeText
 
 /**
- * Gate-Ablehnungen des `DialectCommandGate` ([ADR 0047]) als Subprozess-E2E
- * gegen die ECHTE CLI — containerlos.
+ * Kein Kommando lehnt mssql mehr an der Kommando-Grenze ab ([ADR 0047]) —
+ * Subprozess-E2E gegen die ECHTE CLI, containerlos.
  *
- * Jeder Ablehnungsfall muss mit Exit 2 + Gate-Meldung enden, BEVOR eine
- * Verbindung versucht wird: die mssql-URL zeigt auf einen Port, an dem niemand
- * lauscht — ein Verbindungsversuch waere Exit 4/7, nicht 2. Damit ist belegt,
- * dass das Gate an der Kommando-Grenze sitzt und nicht erst im Treiber.
- *
- * Wird ein Kommando fuer mssql geliefert, faellt es aus `GatedCommand` und der
- * Fall hier kippt in einen Funktions-E2E: `schema generate` und
- * `export <tool>` liegen in `MssqlSchemaGenerateE2ETest`, der Datenpfad in
- * `MssqlTransferE2ETest`, und `schema migrate` steht unten.
+ * Der Beleg laeuft ueber den Exit-Code: die mssql-URL zeigt auf einen Port, an
+ * dem niemand lauscht. Ein abgelehntes Kommando endete mit Exit 2 (Usage),
+ * bevor es die Verbindung ueberhaupt versucht; ein freigeschaltetes kommt bis
+ * zum Verbindungsversuch und endet mit Exit 4/7. Die Funktions-E2E liegen
+ * daneben: `schema generate` und `export <tool>` in
+ * `MssqlSchemaGenerateE2ETest`, der Datenpfad in `MssqlTransferE2ETest`.
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class MssqlCommandGateE2ETest : FunSpec({
@@ -38,16 +36,6 @@ class MssqlCommandGateE2ETest : FunSpec({
 
     afterSpec {
         tmp.deleteRecursively()
-    }
-
-    fun expectGateRefusal(display: String, args: List<String>) {
-        val run = runRealCli(args)
-        withClue("args=$args\n--- stdout ---\n${run.stdout}\n--- stderr ---\n${run.stderr}") {
-            run.exitCode shouldBe 2
-            run.stderr shouldContain "$display does not support dialect mssql yet"
-            run.stderr shouldContain "ADR 0047"
-            run.stderr shouldContain "schema reverse"
-        }
     }
 
     test("schema migrate --dialect mssql plans T-SQL instead of being refused") {
@@ -79,11 +67,15 @@ class MssqlCommandGateE2ETest : FunSpec({
         }
     }
 
-    test("data profile against an mssql source is refused before any connection attempt") {
-        expectGateRefusal(
-            "data profile",
-            listOf("data", "profile", "--source", UNREACHABLE_MSSQL_URL),
-        )
+    test("data profile against an mssql source reaches the connection instead of being refused") {
+        // Der Gegenbeweis zur frueheren Ablehnung: kein Exit 2 mit
+        // Gate-Meldung mehr, sondern der Verbindungsfehler des Ports, an dem
+        // niemand lauscht. Das Kommando kommt also bis zum Treiber.
+        val run = runRealCli(listOf("data", "profile", "--source", UNREACHABLE_MSSQL_URL))
+        withClue("--- stdout ---\n${run.stdout}\n--- stderr ---\n${run.stderr}") {
+            run.exitCode shouldBe 4
+            run.stderr shouldNotContain "does not support dialect mssql yet"
+        }
     }
 })
 

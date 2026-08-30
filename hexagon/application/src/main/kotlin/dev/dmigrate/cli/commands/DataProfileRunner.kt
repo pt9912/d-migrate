@@ -76,11 +76,7 @@ class DataProfileRunner(
             return 7
         }
 
-        // ─── 4. Validate dialect availability + schema flag ─────
-        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_PROFILE, dialect)?.let {
-            stderr("[ERROR] $it")
-            return 2
-        }
+        // ─── 4. Validate schema flag ────────────────────────────
         if (request.schema != null && !DialectCapabilities.forDialect(dialect).supportsSchemaParameter) {
             stderr("[ERROR] --schema is not supported for ${dialect.name.lowercase()}")
             return 2
