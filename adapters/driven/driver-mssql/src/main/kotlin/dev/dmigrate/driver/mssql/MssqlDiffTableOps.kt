@@ -111,8 +111,8 @@ internal object MssqlDiffTableOps {
         // Die Indizes VOR dem CREATE TABLE aufloesen: ein nicht renderbarer
         // Index (z. B. Volltext) muss blocken, bevor irgendetwas emittiert ist —
         // sonst laege die Operation in `rendered` UND `skipped`.
-        val indexSqls = effective.indices.map {
-            MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, it, effective) ?: return
+        val indexSqls = effective.indices.map { index ->
+            index to (MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, index, effective) ?: return)
         }
         // Function und Scheme muessen VOR der Tabelle stehen, die sich an sie
         // haengt. Der Schluesseltyp kommt aus derselben Spaltenwiedergabe wie
@@ -123,7 +123,16 @@ internal object MssqlDiffTableOps {
 
         ctx.emit(op, "CREATE TABLE ${ctx.sql.quote(table)} (\n" + lines.joinToString(",\n") + "\n)$onClause;")
         ctx.carryOverNotes(op, notes)
-        indexSqls.forEach { ctx.emit(op, it) }
+        // Volltext faellt aus der Transaktion des Laufs heraus — SQL Server
+        // lehnt die Anweisung darin ab. Sie steht hinter dem `CREATE TABLE`,
+        // und der Ausfuehrer committet die Tabelle, bevor er sie absetzt.
+        indexSqls.forEach { (index, sql) ->
+            if (index.type == IndexType.FULLTEXT) {
+                MssqlDiffObjectOps.emitOutsideTransaction(op, ctx, sql)
+            } else {
+                ctx.emit(op, sql)
+            }
+        }
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: MssqlDiffRenderContext) {
@@ -449,9 +458,13 @@ internal object MssqlDiffTableOps {
         // Nur abraeumen, nicht wieder anlegen: die Spalte, auf der die Objekte
         // hingen, gibt es danach nicht mehr.
         val deps = dependenciesFor(ctx, table, column, forDrop = true)
+        // Der Volltext-Index haengt an der Spalte und muss vor ihr weichen —
+        // aber ausserhalb der Transaktion des Laufs, weil SQL Server sein
+        // `DROP FULLTEXT INDEX` darin ablehnt. Reihenfolge bleibt gewahrt: der
+        // Ausfuehrer schneidet am Scope-Wechsel, in Planreihenfolge.
         if (MssqlDiffColumnDependencies.carriesFullText(deps)) {
-            MssqlDiffObjectOps.blockFullTextInTransaction(op, ctx, deps.table, "drop")
-            return
+            MssqlFullTextDdl.dropStatements(deps.table, ctx.sql::quote)
+                .forEach { MssqlDiffObjectOps.emitOutsideTransaction(op, ctx, it) }
         }
         MssqlDiffColumnDependencies.dropStatements(ctx, deps).forEach { ctx.emit(op, it) }
         // Wie beim ALTER COLUMN: der generierte CHECK haengt an der Spalte und

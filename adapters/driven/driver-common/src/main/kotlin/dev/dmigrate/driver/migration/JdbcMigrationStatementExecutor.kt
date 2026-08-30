@@ -31,11 +31,57 @@ object JdbcMigrationStatementExecutor {
     }
 
     fun runAll(conn: Connection, statements: List<MigrationDdlStatement>): MigrationExecutionTrace =
-        if (MigrationStreamClassifier.streamOwnsTransaction(statements)) {
-            runStreamOwnedTransaction(conn, statements)
-        } else {
-            runRunnerOwnedTransaction(conn, statements)
+        when (MigrationStreamClassifier.executionModel(statements)) {
+            StreamExecutionModel.NO_TRANSACTION -> runWithoutTransaction(conn, statements)
+            StreamExecutionModel.STREAM_TRANSACTION -> runStreamOwnedTransaction(conn, statements)
+            StreamExecutionModel.RUNNER_TRANSACTION -> runRunnerOwnedTransaction(conn, statements)
         }
+
+    /**
+     * Anweisungen, die die Datenbank in einer offenen Transaktion ablehnt —
+     * SQL Servers Volltext-DDL, PostgreSQLs `CREATE INDEX CONCURRENTLY`.
+     *
+     * Es gibt hier nichts zurückzurollen, und deshalb wird es auch nicht
+     * versucht: `autoCommit` steht an, jede Anweisung gilt sofort. Ein
+     * Fehlschlag lässt stehen, was vorher lief, und meldet das als
+     * Seiteneffekt — die Alternative wäre ein `ROLLBACK`, das nichts
+     * rückgängig macht und den Bericht belöge.
+     *
+     * Die Aufrufer bekommen einen einheitlichen Strom: [segmentForExecute]
+     * trennt am Scope-Wechsel, sodass hier nie gemischte Anweisungen ankommen.
+     */
+    @Suppress("ReturnCount")
+    private fun runWithoutTransaction(
+        conn: Connection,
+        statements: List<MigrationDdlStatement>,
+    ): MigrationExecutionTrace {
+        conn.autoCommit = true
+        var attempted = 0
+        var lastIds: Set<String> = emptySet()
+        try {
+            for (stmt in statements) {
+                lastIds = stmt.operationIds
+                attempted++
+                conn.createStatement().use { jdbcStmt -> jdbcStmt.execute(stmt.sql) }
+            }
+            return MigrationExecutionTrace(
+                executionStarted = true,
+                executionCompleted = true,
+                statementsAttempted = attempted,
+                lastStatementOperationIds = lastIds,
+            )
+        } catch (e: SQLException) {
+            return MigrationExecutionTrace(
+                executionStarted = true,
+                executionCompleted = false,
+                statementsAttempted = attempted,
+                lastStatementOperationIds = lastIds,
+                transactionRolledBack = false,
+                sideEffectsPossible = true,
+                executionError = e.message ?: e.toString(),
+            )
+        }
+    }
 
     @Suppress("ReturnCount")
     private fun runRunnerOwnedTransaction(

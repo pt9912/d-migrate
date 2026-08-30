@@ -14,6 +14,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import dev.dmigrate.driver.migration.preserve.ExecutableSegment
+import dev.dmigrate.driver.migration.preserve.NoTransactionSegment
 import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -272,6 +273,69 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
         // 2 (plainHead) + 1 (atomic) + 1 (plainTail) = 4
         trace.statementsAttempted shouldBe 4
         trace.lastStatementOperationIds shouldBe setOf("t1")
+    }
+
+    test("ein Abschnitt ausserhalb der Transaktion laeuft ueber denselben Ausfuehrer") {
+        val head = PlainSqlSegment(listOf(stmt("h1")))
+        val outside = NoTransactionSegment(listOf(stmt("ft", "CREATE FULLTEXT INDEX ON [docs] ([body]);")))
+        val seen = mutableListOf<String>()
+
+        val trace = SegmentAwareMigrationExecutor.execute(
+            target = target,
+            configPath = null,
+            segments = listOf(head, outside),
+            plainExecutor = { _, statements, _ ->
+                seen += statements.first().operationIds.first()
+                ExecutionTrace(
+                    executionStarted = true,
+                    executionCompleted = true,
+                    statementsAttempted = statements.size,
+                    lastStatementOperationIds = statements.last().operationIds,
+                )
+            },
+            atomicRunner = { _, _, _, _, _, _ -> error("no atomic segment in this plan") },
+        )
+
+        seen shouldBe listOf("h1", "ft")
+        trace.executionCompleted shouldBe true
+    }
+
+    test("scheitert ein spaeterer Abschnitt, bleibt der fruehere stehen") {
+        // Der zurueckgerollte Abschnitt meldet fuer sich einen sauberen
+        // Rueckbau. Was davor committet wurde, ist damit nicht weg — ohne die
+        // Aufsummierung meldete der Lauf einen Zustand, den es nicht gibt.
+        val head = PlainSqlSegment(listOf(stmt("h1")))
+        val tail = PlainSqlSegment(listOf(stmt("t1")))
+
+        val trace = SegmentAwareMigrationExecutor.execute(
+            target = target,
+            configPath = null,
+            segments = listOf(head, tail),
+            plainExecutor = { _, statements, _ ->
+                if (statements.first().operationIds.first() == "h1") {
+                    ExecutionTrace(
+                        executionStarted = true,
+                        executionCompleted = true,
+                        statementsAttempted = 1,
+                        lastStatementOperationIds = setOf("h1"),
+                    )
+                } else {
+                    ExecutionTrace(
+                        executionStarted = true,
+                        executionCompleted = false,
+                        statementsAttempted = 1,
+                        transactionRolledBack = true,
+                        sideEffectsPossible = false,
+                        executionError = "boom",
+                    )
+                }
+            },
+            atomicRunner = { _, _, _, _, _, _ -> error("no atomic segment in this plan") },
+        )
+
+        trace.executionCompleted shouldBe false
+        trace.transactionRolledBack shouldBe true
+        trace.sideEffectsPossible shouldBe true
     }
 
     test("multi-segment short-circuits on the first failing segment") {

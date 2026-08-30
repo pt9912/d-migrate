@@ -281,9 +281,11 @@ internal object MssqlDiffColumnDependencies {
         if (deps.hasColumnUnique) out += ctx.sql.dropUniqueOnColumnSql(deps.table, deps.column)
         if (deps.hasColumnReference) out += ctx.sql.dropForeignKeyOnColumnSql(deps.table, deps.column)
         for (index in deps.indices) {
-            // Volltext-DDL ist in der Transaktion des Laufs verboten. Hier
-            // steht kein Operationskontext zum Blocken zur Verfuegung; der
-            // Aufrufer fragt deshalb vorher [carriesFullText].
+            // Volltext-Indizes stehen hier NICHT: `DROP INDEX` ist fuer sie die
+            // falsche Anweisung, und sie muessen ausserhalb der Transaktion
+            // laufen. Der Aufrufer erkennt sie an [carriesFullText] und setzt
+            // sie selbst ab, mit eigenem Scope.
+            if (index.type == IndexType.FULLTEXT) continue
             out += ctx.sql.dropIndexSql(deps.table, index)
         }
         return out

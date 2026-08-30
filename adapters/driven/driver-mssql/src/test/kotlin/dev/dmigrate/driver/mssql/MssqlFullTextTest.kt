@@ -10,9 +10,11 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.TransactionScope
 import dev.dmigrate.driver.mssql.MssqlDdlTestSupport.notesWithCode
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain as shouldNotContainItem
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -189,10 +191,11 @@ class MssqlFullTextTest : FunSpec({
         down shouldContain "DROP FULLTEXT CATALOG [ftc_docs];"
     }
 
-    // SQL Server weist `CREATE FULLTEXT INDEX` in einer offenen
-    // Transaktion ab, und der Migrationslauf klammert seine Statements in
-    // genau eine. Der Abbruch faellt deshalb vor der Ausfuehrung.
-    test("the migration path refuses a full-text index with E072") {
+    // SQL Server weist `CREATE FULLTEXT INDEX` in einer offenen Transaktion ab.
+    // Der Lauf klammert deshalb nicht mehr alles in eine: die Anweisung traegt
+    // `NO_TRANSACTION`, und der Ausfuehrer setzt sie in einem eigenen
+    // Abschnitt ab.
+    test("the migration path renders a full-text index outside the transaction") {
         val planner = dev.dmigrate.core.diff.migration.DiffPlanner()
         val t = table()
         val schema = SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to t))
@@ -207,14 +210,19 @@ class MssqlFullTextTest : FunSpec({
             DdlGenerationOptions(),
         )
 
-        result.statements.map { it.sql }.none { it.contains("FULLTEXT") } shouldBe true
-        result.diagnostics.map { it.code } shouldContain "E072"
+        val fullText = result.statements.single { it.sql.contains("CREATE FULLTEXT INDEX") }
+        fullText.transactionScope shouldBe TransactionScope.NO_TRANSACTION
+        // Die Tabelle selbst bleibt in der Transaktion des Laufs — nur die
+        // Volltext-Anweisung faellt heraus.
+        result.statements.first { it.sql.startsWith("CREATE TABLE") }
+            .transactionScope shouldBe TransactionScope.RUNNER_OWNED
+        result.diagnostics.map { it.code } shouldNotContainItem "E072"
     }
 
     // Die Behebung war zunaechst halb: das Anlegen blockte, die Loeschpfade
-    // emittierten weiter. BEIDES ist in einer Transaktion
-    // verboten — Index wie Katalog.
-    test("the migration path refuses dropping a full-text index too") {
+    // Der Rueckbau steht unter derselben Regel — und `DROP INDEX` waere fuer
+    // einen Volltext-Index ohnehin die falsche Anweisung.
+    test("dropping a full-text index renders its own DDL outside the transaction") {
         val planner = dev.dmigrate.core.diff.migration.DiffPlanner()
         val t = table()
         val current = SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to t))
@@ -231,8 +239,11 @@ class MssqlFullTextTest : FunSpec({
             DdlGenerationOptions(),
         )
 
-        result.statements.map { it.sql }.none { it.contains("FULLTEXT") } shouldBe true
-        result.diagnostics.map { it.code } shouldContain "E072"
+        val statements = result.statements.filter { it.sql.contains("FULLTEXT") }
+        statements.map { it.sql }.any { it.contains("DROP FULLTEXT INDEX ON [docs]") } shouldBe true
+        statements.map { it.sql }.any { it.contains("DROP FULLTEXT CATALOG [ftc_docs]") } shouldBe true
+        statements.all { it.transactionScope == TransactionScope.NO_TRANSACTION } shouldBe true
+        result.diagnostics.map { it.code } shouldNotContainItem "E072"
     }
 
     test("the teardown drops index and catalog — DROP TABLE leaves the catalog behind") {

@@ -95,10 +95,17 @@ internal class MssqlDiffRenderContext(
             renderedOps, rebuiltTables, schemaForDirection(), table, column, direction,
         )
 
+    /**
+     * @param scope wer die Transaktion besitzt. Vorgabe ist die des Laufs;
+     *   `NO_TRANSACTION` ist fuer Anweisungen, die SQL Server in einer offenen
+     *   Transaktion ablehnt — der Ausfuehrer schneidet sie dann in einen
+     *   eigenen Abschnitt.
+     */
     fun emit(
         op: DiffOperation,
         sqlText: String,
         hints: DialectExecutionHints = MSSQL_TRANSACTIONAL_DDL_HINTS,
+        scope: TransactionScope = TransactionScope.RUNNER_OWNED,
     ) {
         if (options.strictGapOperations && riskFor(op).hasGap) {
             if (!isSkipped(op)) {
@@ -117,7 +124,7 @@ internal class MssqlDiffRenderContext(
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
-            transactionScope = TransactionScope.RUNNER_OWNED,
+            transactionScope = scope,
             hints = hints,
         )
         rendered += op.id
@@ -350,6 +357,19 @@ internal class MssqlDiffRenderContext(
             lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
             implicitCommitPossible = false,
             sideEffectsPossible = false,
+            requiresExclusiveAccess = true,
+        )
+
+        /**
+         * Volltext-DDL laeuft ausserhalb der Transaktion des Laufs, weil SQL
+         * Server sie darin ablehnt — und damit ohne Rueckrollen: was sie
+         * angerichtet hat, steht, wenn ein spaeterer Abschnitt scheitert.
+         */
+        internal val MSSQL_FULLTEXT_DDL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.NOT_TRANSACTIONAL,
+            lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
+            implicitCommitPossible = true,
+            sideEffectsPossible = true,
             requiresExclusiveAccess = true,
         )
 

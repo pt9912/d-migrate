@@ -15,7 +15,7 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
  * §5 Phase C / Sub-Slice C.2. The matching segmentation function
  * lives in [segmentForExecute].
  *
- * Two implementations exist today:
+ * Three implementations exist today:
  *
  * - [PlainSqlSegment] — statements that run on today's execute
  *   path: no lock, no Probe + Restore window. The runner consumes
@@ -24,6 +24,10 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
  *   [AtomicSequencePreserveExecutor.execute] window: one owned
  *   connection holds the lock, runs the protected statements
  *   between Probe and Restore, and commits or rolls back as a unit.
+ * - [NoTransactionSegment] — statements the database refuses inside an
+ *   open transaction (SQL Server's full-text DDL, PostgreSQL's
+ *   `CREATE INDEX CONCURRENTLY`). They run with `autoCommit` on and
+ *   cannot be rolled back.
  *
  * The hierarchy is sealed because the runner case-analyses the
  * subtype to pick its execution strategy; adding a third strategy
@@ -59,5 +63,21 @@ data class PlainSqlSegment(
  */
 data class AtomicPreserveSegment(
     val batch: AtomicSequencePreserveBatch,
+    override val statements: List<MigrationDdlStatement>,
+) : ExecutableSegment
+
+/**
+ * Statements that must run **outside** any transaction the runner owns.
+ *
+ * Not a preference but a property of the statement: SQL Server rejects
+ * `CREATE FULLTEXT INDEX` in an open transaction, PostgreSQL rejects
+ * `CREATE INDEX CONCURRENTLY`. The runner therefore commits what came before,
+ * runs these with `autoCommit` on, and continues with the next segment.
+ *
+ * The consequence belongs to the segment, not to a footnote: what ran here is
+ * **not** rolled back if a later segment fails. The runner reports that as
+ * [dev.dmigrate.driver.migration.ExecutionRecoverability.PARTIAL_STATE_POSSIBLE].
+ */
+data class NoTransactionSegment(
     override val statements: List<MigrationDdlStatement>,
 ) : ExecutableSegment

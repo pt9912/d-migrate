@@ -103,8 +103,27 @@ class MigrationStreamClassifierTest : FunSpec({
         MigrationStreamClassifier.unsupportedTransactionScopeReason(statements) shouldNotBe null
     }
 
-    test("§G.3 NO_TRANSACTION requires an explicit execution strategy") {
-        val statements = listOf(stmt("CREATE INDEX CONCURRENTLY ix ON t (c);", TransactionScope.NO_TRANSACTION))
+    test("NO_TRANSACTION laeuft — allein und neben der Transaktion des Laufs") {
+        // Der Ausfuehrer schneidet am Scope-Wechsel: erst die Transaktion des
+        // Laufs, dann die Anweisung, die die Datenbank darin ablehnt.
+        val alone = listOf(stmt("CREATE INDEX CONCURRENTLY ix ON t (c);", TransactionScope.NO_TRANSACTION))
+        MigrationStreamClassifier.unsupportedTransactionScopeReason(alone) shouldBe null
+
+        val mixed = listOf(
+            stmt("ALTER TABLE \"users\" ADD COLUMN \"email\" TEXT;", TransactionScope.RUNNER_OWNED),
+            stmt("CREATE INDEX CONCURRENTLY ix ON t (c);", TransactionScope.NO_TRANSACTION),
+        )
+        MigrationStreamClassifier.unsupportedTransactionScopeReason(mixed) shouldBe null
+    }
+
+    test("ein stream-eigener Strom vertraegt keinen Abschnitt daneben") {
+        // SQLites Rebuild bringt seine eigenen `BEGIN`/`COMMIT`-Marken mit; ein
+        // fremder Abschnitt laege darin oder daneben, ohne dass der Lauf es
+        // entscheiden koennte.
+        val statements = listOf(
+            stmt("BEGIN IMMEDIATE;", TransactionScope.STREAM_OWNED),
+            stmt("CREATE INDEX CONCURRENTLY ix ON t (c);", TransactionScope.NO_TRANSACTION),
+        )
 
         MigrationStreamClassifier.unsupportedTransactionScopeReason(statements) shouldNotBe null
     }

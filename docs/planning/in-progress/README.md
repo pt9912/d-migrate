@@ -58,6 +58,7 @@ festgehalten.
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
 | [`partition-boundary-change-operation.md`](partition-boundary-change-operation.md) | Per-Feature-Umbrella | Eine hinzugekommene oder entfallene Partition wird Operation statt Warnung. Klassifikation signaturbasiert im Hexagon (SQL Server nummeriert Partitionen), Ausfuehrung je Dialekt: PG Kind-Anweisungen, MySQL ADD/REORGANIZE/DROP, SQL Server SPLIT/MERGE. P0-P4 geliefert, P5 (Matrix/Doku) laeuft. |
+| [`no-transaction-execution-strategy.md`](no-transaction-execution-strategy.md) | Per-Feature-Umbrella | Anweisungen, die eine Datenbank in offener Transaktion ablehnt, laufen in einem eigenen Abschnitt (`NO_TRANSACTION`): Segmentierung am Scope-Wechsel, Ausfuehrung ohne Rueckrollversuch, `PARTIAL_STATE_POSSIBLE` im Report. Schaltet MSSQL-Volltext frei; PG `CREATE INDEX CONCURRENTLY` bleibt eigener Schnitt. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

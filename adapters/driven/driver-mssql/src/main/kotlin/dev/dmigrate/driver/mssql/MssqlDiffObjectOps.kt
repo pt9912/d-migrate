@@ -9,6 +9,7 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.TransactionScope
 
 /**
  * Renderer fuer Constraint- und Index-Operationen.
@@ -85,17 +86,6 @@ internal object MssqlDiffObjectOps {
         index: IndexDefinition,
         tableDef: TableDefinition? = null,
     ): String? {
-        // SQL Server verbietet `CREATE FULLTEXT INDEX` in einer offenen
-        // Transaktion ("cannot be used inside a user transaction"), und der
-        // Migrationslauf klammert seine Statements in genau eine. Der Katalog
-        // duerfte hinein, der Index nicht — und ein halb angewandter Volltext
-        // waere schlimmer als ein Abbruch davor.
-        //
-        // Ausserhalb einer Transaktion geht es: `schema generate` erzeugt das
-        // DDL unveraendert, es ist nur nicht ueber `schema migrate` anwendbar,
-        // solange der Runner keine Ausfuehrung ausserhalb seiner Transaktion
-        // kennt (`MigrationStreamClassifier` weist NO_TRANSACTION heute ab).
-        if (index.type == IndexType.FULLTEXT) return blockFullTextInTransaction(op, ctx, table, "create")
         val schema = ctx.schemaForDirection()
         // Ueber den Kontext, nicht ueber die rohe Schematabelle: eine
         // HASH-emulierte Tabelle traegt eine Eimerspalte in ihren eindeutigen
@@ -180,30 +170,29 @@ internal object MssqlDiffObjectOps {
         val sql = resolveIndexSql(op, ctx, table, index) ?: return
         // Der Schluessel gibt die Ablage ab, BEVOR der Index sie uebernimmt.
         if (index.clustered) emitStorageFlip(op, ctx, table, MssqlClusteredStorage.Flip.ToNonclustered)
+        if (index.type == IndexType.FULLTEXT) {
+            emitOutsideTransaction(op, ctx, sql)
+            return
+        }
         ctx.emit(op, sql)
     }
 
     /**
-     * Volltext-DDL ist in einer offenen Transaktion verboten — Anlegen wie
-     * Loeschen, Index wie Katalog. Der Migrationslauf klammert seine Statements
-     * in genau eine, also bricht er ab, statt mittendrin an einer Servermeldung
-     * zu scheitern.
+     * SQL Server lehnt Volltext-DDL in einer offenen Transaktion ab
+     * („cannot be used inside a user transaction"). Die Anweisung traegt
+     * deshalb `NO_TRANSACTION`; der Ausfuehrer committet, was davor lief, und
+     * setzt sie ausserhalb ab.
+     *
+     * Der Preis steht in den Hinweisen: was hier laeuft, wird nicht
+     * zurueckgerollt.
      */
-    internal fun blockFullTextInTransaction(
-        op: DiffOperation,
-        ctx: MssqlDiffRenderContext,
-        table: String,
-        verb: String,
-    ): String? {
-        ctx.skip(
+    internal fun emitOutsideTransaction(op: DiffOperation, ctx: MssqlDiffRenderContext, sql: String) {
+        ctx.emit(
             op,
-            "Operation ${op.id} would $verb a full-text index on '$table'. SQL Server refuses full-text DDL " +
-                "inside a transaction, and the migration runs in one. Generate the DDL with " +
-                "`schema generate --target mssql` and apply it outside a transaction.",
-            code = "E072",
+            sql,
+            hints = MssqlDiffRenderContext.MSSQL_FULLTEXT_DDL_HINTS,
+            scope = TransactionScope.NO_TRANSACTION,
         )
-        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-        return null
     }
 
     private fun emitDropIndex(
@@ -212,11 +201,12 @@ internal object MssqlDiffObjectOps {
         table: String,
         index: IndexDefinition,
     ) {
-        // Auch der Rueckbau geht nicht: `DROP FULLTEXT INDEX` und
+        // Der Rueckbau steht unter derselben Regel: `DROP FULLTEXT INDEX` und
         // `DROP FULLTEXT CATALOG` sind in einer offenen Transaktion genauso
-        // verboten wie das Anlegen.
+        // verboten wie das Anlegen — und `DROP INDEX` ist fuer sie ohnehin die
+        // falsche Anweisung.
         if (index.type == IndexType.FULLTEXT) {
-            blockFullTextInTransaction(op, ctx, table, "drop")
+            MssqlFullTextDdl.dropStatements(table, ctx.sql::quote).forEach { emitOutsideTransaction(op, ctx, it) }
             return
         }
         ctx.emit(op, ctx.sql.dropIndexSql(table, index))

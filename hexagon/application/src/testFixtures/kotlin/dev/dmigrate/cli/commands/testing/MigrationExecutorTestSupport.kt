@@ -8,11 +8,13 @@ import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.JdbcRunnerHookHandler as RunnerHookHandler
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.MigrationStreamClassifier
+import dev.dmigrate.driver.migration.StreamExecutionModel
 import dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import dev.dmigrate.driver.migration.preserve.ExecutableSegment
+import dev.dmigrate.driver.migration.preserve.NoTransactionSegment
 import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import java.sql.Connection
 import java.sql.SQLException
@@ -68,11 +70,53 @@ fun executeAgainstPool(
         return ExecutionTrace(executionStarted = true, executionCompleted = true)
     }
     return pool.borrow().jdbc().use { conn ->
-        if (MigrationStreamClassifier.streamOwnsTransaction(statements)) {
-            runStreamOwnedTransaction(conn, statements)
-        } else {
-            runRunnerOwnedTransaction(conn, statements)
+        // Dasselbe Modell wie im produktiven Ausfuehrer, aus derselben Quelle:
+        // `MigrationStreamClassifier.executionModel`. Eine eigene Fallunterscheidung
+        // hier hat schon einmal `NO_TRANSACTION` uebersehen, und der Live-Test
+        // fuhr die Anweisung dann in der Transaktion, die sie ablehnt.
+        when (MigrationStreamClassifier.executionModel(statements)) {
+            StreamExecutionModel.NO_TRANSACTION -> runWithoutTransaction(conn, statements)
+            StreamExecutionModel.STREAM_TRANSACTION -> runStreamOwnedTransaction(conn, statements)
+            StreamExecutionModel.RUNNER_TRANSACTION -> runRunnerOwnedTransaction(conn, statements)
         }
+    }
+}
+
+/**
+ * Anweisungen, die die Datenbank in einer offenen Transaktion ablehnt. Kein
+ * Rueckrollversuch: es gibt nichts zurueckzurollen, und ein `ROLLBACK` belöge
+ * den Bericht.
+ */
+@Suppress("ReturnCount")
+private fun runWithoutTransaction(
+    conn: Connection,
+    statements: List<MigrationDdlStatement>,
+): ExecutionTrace {
+    conn.autoCommit = true
+    var attempted = 0
+    var lastIds: Set<String> = emptySet()
+    return try {
+        for (s in statements) {
+            lastIds = s.operationIds
+            attempted++
+            conn.createStatement().use { jdbcStmt -> jdbcStmt.execute(s.sql) }
+        }
+        ExecutionTrace(
+            executionStarted = true,
+            executionCompleted = true,
+            statementsAttempted = attempted,
+            lastStatementOperationIds = lastIds,
+        )
+    } catch (e: SQLException) {
+        ExecutionTrace(
+            executionStarted = true,
+            executionCompleted = false,
+            statementsAttempted = attempted,
+            lastStatementOperationIds = lastIds,
+            transactionRolledBack = false,
+            sideEffectsPossible = true,
+            executionError = e.message ?: e.toString(),
+        )
     }
 }
 
@@ -237,10 +281,13 @@ fun executeSegmentsAgainstPool(
         )
     }
     var attempted = 0
+    var completedSegments = 0
     var lastOpIds: Set<String> = emptySet()
     for (segment in segments) {
         val segmentTrace = when (segment) {
-            is PlainSqlSegment -> executeAgainstPool(pool, segment.statements)
+            // Wie in der Produktion: derselbe Ausfuehrer, die Transaktionsform
+            // entscheidet der Scope der Anweisungen.
+            is PlainSqlSegment, is NoTransactionSegment -> executeAgainstPool(pool, segment.statements)
             is AtomicPreserveSegment -> runAtomicSegmentAgainstPool(
                 pool = pool,
                 segment = segment,
@@ -259,11 +306,13 @@ fun executeSegmentsAgainstPool(
                 statementsAttempted = attempted,
                 lastStatementOperationIds = lastOpIds,
                 transactionRolledBack = segmentTrace.transactionRolledBack,
-                sideEffectsPossible = segmentTrace.sideEffectsPossible,
+                // Ein frueherer Abschnitt hat committet und bleibt stehen.
+                sideEffectsPossible = segmentTrace.sideEffectsPossible || completedSegments > 0,
                 executionError = segmentTrace.executionError,
                 recoverability = segmentTrace.recoverability,
             )
         }
+        completedSegments++
     }
     return ExecutionTrace(
         executionStarted = true,

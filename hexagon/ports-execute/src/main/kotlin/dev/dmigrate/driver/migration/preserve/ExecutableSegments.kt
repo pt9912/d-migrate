@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.migration.preserve
 
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 
 /**
  * Atomic-Preserve Phase C (Sub-Slice C.2): derive the runner-internal
@@ -14,6 +15,12 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
  * behaviorally identical to today's path.
  *
  * Rules:
+ *
+ * - Statements rendered with `transactionScope = NO_TRANSACTION` form
+ *   their own [NoTransactionSegment]s. The split happens **first**, in
+ *   planner order, so what came before is committed before they run —
+ *   that is the whole point of the scope: the database refuses these
+ *   statements inside an open transaction.
  *
  * - When [atomicBatch] is `null` or carries neither protected nor
  *   internal follow-up IDs, the result is a single
@@ -46,7 +53,54 @@ fun segmentForExecute(
     atomicBatch: AtomicSequencePreserveBatch?,
 ): List<ExecutableSegment> {
     if (statements.isEmpty()) return emptyList()
-    val atomicOpIds: Set<String> = if (atomicBatch == null) {
+    val runs = splitByTransactionScope(statements)
+    val atomicRuns = runs.count { !it.outsideTransaction && carriesAtomic(it.statements, atomicBatch) }
+    check(atomicRuns <= 1) {
+        "AtomicPreserveSegment requires all protected statements in one contiguous block, but " +
+            "statements outside any transaction (NO_TRANSACTION) separate them into $atomicRuns blocks."
+    }
+    return runs.flatMap { run ->
+        if (run.outsideTransaction) {
+            listOf(NoTransactionSegment(run.statements))
+        } else {
+            transactionalSegments(run.statements, atomicBatch)
+        }
+    }
+}
+
+private data class ScopeRun(
+    val outsideTransaction: Boolean,
+    val statements: List<MigrationDdlStatement>,
+)
+
+/** Aufeinanderfolgende Anweisungen desselben Ausfuehrungsmodells, in Planreihenfolge. */
+private fun splitByTransactionScope(statements: List<MigrationDdlStatement>): List<ScopeRun> {
+    val runs = mutableListOf<ScopeRun>()
+    var current = mutableListOf<MigrationDdlStatement>()
+    var currentOutside = statements.first().transactionScope == TransactionScope.NO_TRANSACTION
+    for (statement in statements) {
+        val outside = statement.transactionScope == TransactionScope.NO_TRANSACTION
+        if (outside != currentOutside && current.isNotEmpty()) {
+            runs += ScopeRun(currentOutside, current.toList())
+            current = mutableListOf()
+        }
+        currentOutside = outside
+        current += statement
+    }
+    if (current.isNotEmpty()) runs += ScopeRun(currentOutside, current.toList())
+    return runs
+}
+
+private fun carriesAtomic(
+    statements: List<MigrationDdlStatement>,
+    atomicBatch: AtomicSequencePreserveBatch?,
+): Boolean {
+    val ids = atomicOperationIds(atomicBatch)
+    return ids.isNotEmpty() && statements.any { stmt -> stmt.operationIds.any { it in ids } }
+}
+
+private fun atomicOperationIds(atomicBatch: AtomicSequencePreserveBatch?): Set<String> =
+    if (atomicBatch == null) {
         emptySet()
     } else {
         buildSet {
@@ -54,6 +108,12 @@ fun segmentForExecute(
             addAll(atomicBatch.internalFollowUpIds)
         }
     }
+
+private fun transactionalSegments(
+    statements: List<MigrationDdlStatement>,
+    atomicBatch: AtomicSequencePreserveBatch?,
+): List<ExecutableSegment> {
+    val atomicOpIds = atomicOperationIds(atomicBatch)
     if (atomicOpIds.isEmpty()) {
         return listOf(PlainSqlSegment(statements.toList()))
     }

@@ -9,7 +9,6 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as strShouldContain
 import dev.dmigrate.cli.commands.ResolvedSchemaOperand
@@ -18,6 +17,7 @@ import dev.dmigrate.cli.commands.SchemaMigrateRunner
 import dev.dmigrate.cli.commands.SchemaRollbackRequest
 import dev.dmigrate.cli.commands.SchemaRollbackRunner
 import dev.dmigrate.cli.commands.capabilityIndexCanonicalizer
+import dev.dmigrate.cli.commands.ExecutionTrace
 import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.validation.ValidationResult
@@ -232,7 +232,7 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
         // und der Lauf klammert seine Statements in genau eine. Der Abbruch
         // muss deshalb VOR der Ausfuehrung kommen — ein halb angewandter
         // Volltext waere schlimmer.
-        test("migrate refuses a full-text index before executing anything") {
+        test("migrate legt einen Volltext-Index an — ausserhalb der Transaktion") {
             val tmp = kotlin.io.path.createTempDirectory("mssql-ft-migrate")
             val desired = SchemaDefinition(
                 name = "ft-migrate", version = "1",
@@ -281,10 +281,19 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                     rendererFor = { d ->
                         if (d == DatabaseDialect.MSSQL) MssqlDiffDdlGenerator() else error("nur MSSQL")
                     },
+                    // Je Abschnitt, wie in der Produktion: die
+                    // Volltext-Anweisung traegt `NO_TRANSACTION` und liegt
+                    // deshalb in einem eigenen Abschnitt. Wer die Abschnitte
+                    // flachklopft, faehrt sie in der Transaktion des Laufs —
+                    // und genau die lehnt SQL Server ab.
                     executor = { _, _, segments, _, _ ->
-                        val stmts = segments.flatMap { it.statements }
-                        executed += stmts.map { it.sql }
-                        executeAgainstPool(pool, stmts)
+                        var last = ExecutionTrace(executionStarted = true, executionCompleted = true)
+                        for (segment in segments) {
+                            executed += segment.statements.map { it.sql }
+                            last = executeAgainstPool(pool, segment.statements)
+                            if (last.executionError != null) break
+                        }
+                        last
                     },
                     renderReport = { r, _ -> r.toString() },
                     printError = { _, _ -> },
@@ -298,11 +307,31 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                     ),
                 )
 
-                // MIGRATION_BLOCKED (spec/cli-spec.md, Abschnitt 2) — nicht
-                // MIGRATION_ERROR: der Abbruch faellt vor der Ausfuehrung.
-                exit shouldBe 8
-                withClue("es darf nichts ausgefuehrt worden sein: $executed") {
-                    executed.shouldBeEmpty()
+                withClue("migrate meldete $exit\nausgefuehrt:\n" + executed.joinToString("\n")) {
+                    // Exit 5 waere der Post-Compare-Rest; die Ausfuehrung selbst
+                    // muss durchgelaufen sein.
+                    (exit == 0 || exit == 5) shouldBe true
+                    executed.any { it.contains("CREATE FULLTEXT INDEX") } shouldBe true
+                }
+
+                // Der Nachweis steht im Katalog des Servers, nicht im DDL-Text.
+                val state = pool.borrow().asJdbc().use { c ->
+                    fun scalar(sql: String) = c.createStatement().use { st ->
+                        st.executeQuery(sql).use { rs -> rs.next(); rs.getString(1) }
+                    }
+                    "db=" + scalar("SELECT DB_NAME()") +
+                        " tabellen=" + scalar("SELECT COUNT(*) FROM sys.tables WHERE name = 'papers'") +
+                        " kataloge=" + scalar("SELECT COUNT(*) FROM sys.fulltext_catalogs") +
+                        " indizes=" + scalar("SELECT COUNT(*) FROM sys.fulltext_indexes")
+                }
+                withClue("Serverzustand: $state\nausgefuehrt:\n" + executed.joinToString("\n")) {
+                    pool.borrow().asJdbc().use { c ->
+                        c.createStatement().use { st ->
+                            st.executeQuery(
+                                "SELECT COUNT(*) FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('papers')",
+                            ).use { rs -> rs.next(); rs.getInt(1) shouldBe 1 }
+                        }
+                    }
                 }
             }
             tmp.toFile().deleteRecursively()

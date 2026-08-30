@@ -12,6 +12,7 @@ import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import dev.dmigrate.driver.migration.preserve.ExecutableSegment
+import dev.dmigrate.driver.migration.preserve.NoTransactionSegment
 import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import java.nio.file.Path
 
@@ -80,11 +81,17 @@ internal object SegmentAwareMigrationExecutor {
             )
         }
         var attempted = 0
+        var completedSegments = 0
         var lastOpIds: Set<String> = emptySet()
         val groups = mutableListOf<MigrationExecutionStatementGroup>()
         for (segment in segments) {
             val segmentTrace = when (segment) {
-                is PlainSqlSegment -> plainExecutor(target, segment.statements, configPath)
+                // Derselbe Ausfuehrer: welche Transaktionsform gilt, entscheidet
+                // `JdbcMigrationStatementExecutor` am Scope der Anweisungen. Der
+                // eigene Segmenttyp trennt den Abschnitt, er fuehrt ihn nicht
+                // anders aus.
+                is PlainSqlSegment, is NoTransactionSegment ->
+                    plainExecutor(target, segment.statements, configPath)
                 is AtomicPreserveSegment -> runAtomicSegment(
                     target = target,
                     configPath = configPath,
@@ -106,12 +113,17 @@ internal object SegmentAwareMigrationExecutor {
                     statementsAttempted = attempted,
                     lastStatementOperationIds = lastOpIds,
                     transactionRolledBack = segmentTrace.transactionRolledBack,
-                    sideEffectsPossible = segmentTrace.sideEffectsPossible,
+                    // Ein frueherer Abschnitt hat committet und bleibt stehen —
+                    // sein Rueckbau ist nicht Sache der Transaktion, die eben
+                    // zurueckrollte. Ohne diese Zeile meldete der Lauf einen
+                    // sauberen Rueckbau, obwohl die Datenbank veraendert ist.
+                    sideEffectsPossible = segmentTrace.sideEffectsPossible || completedSegments > 0,
                     executionError = segmentTrace.executionError,
                     statementGroups = groups,
                     recoverability = segmentTrace.recoverability,
                 )
             }
+            completedSegments++
         }
         return ExecutionTrace(
             executionStarted = true,

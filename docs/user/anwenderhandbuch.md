@@ -2730,12 +2730,13 @@ Spalten-Fremdschlüssel über `references`:
 | `full_text_vector_column` | PostgreSQL: vorberechnete `tsvector`-Spalte des Volltext-Index |
 | `full_text_access_method` | PostgreSQL: `gin` oder `gist` |
 
-**Volltext bei SQL Server lässt sich nur über `schema generate` einrichten,
-nicht über `schema migrate`.** Der Server verbietet Volltext-DDL innerhalb einer
-Transaktion — Anlegen wie Löschen —, und `schema migrate` führt seine
-Anweisungen in genau einer aus. Der Lauf bricht deshalb mit **E072** ab, **bevor** er etwas
-anwendet — erzeugen Sie das DDL mit `schema generate --target mssql` und wenden
-Sie es außerhalb einer Transaktion an (etwa mit `sqlcmd`).
+**Volltext bei SQL Server richtet `schema migrate` ein — aber außerhalb seiner
+Transaktion.** Der Server verbietet Volltext-DDL innerhalb einer Transaktion,
+Anlegen wie Löschen. Der Lauf führt diese Anweisungen deshalb in einem eigenen
+Abschnitt aus: was davor steht, ist dann bereits festgeschrieben. Scheitert ein
+späterer Schritt, bleibt der Volltext-Teil stehen; der Report weist das als
+`PARTIAL_STATE_POSSIBLE` aus. Wenn Sie das nicht wollen, erzeugen Sie das DDL
+mit `schema generate --target mssql` und wenden es selbst an.
 
 **Volltext bei SQL Server** verlangt darüber hinaus zwei Dinge, die kein
 anderer Dialekt braucht. Ein Volltext-Index entsteht dort zusammen mit einem Katalog

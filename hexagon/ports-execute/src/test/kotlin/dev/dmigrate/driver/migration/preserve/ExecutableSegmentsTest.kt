@@ -7,6 +7,8 @@ import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -53,6 +55,43 @@ class ExecutableSegmentsTest : FunSpec({
         protectedOperationIds = protectedIds.map { ProtectedOperationId(it) },
         internalFollowUpIds = followUpIds,
     )
+
+    fun outsideStmt(id: String) = MigrationDdlStatement(
+        sql = "CREATE FULLTEXT INDEX ON [docs] ([body]) -- $id",
+        operationIds = setOf(id),
+        risk = OperationRisk.SAFE,
+        phase = DiffPhase.INDEXES,
+        transactionScope = TransactionScope.NO_TRANSACTION,
+    )
+
+    test("Anweisungen ausserhalb der Transaktion bekommen ihren eigenen Abschnitt") {
+        // Reihenfolge ist der Punkt: was davor steht, muss committet sein,
+        // bevor die Anweisung laeuft, die eine offene Transaktion ablehnt.
+        val statements = listOf(stmt("A"), outsideStmt("B"), stmt("C"))
+
+        val segments = segmentForExecute(statements, atomicBatch = null)
+
+        segments.map { it::class.simpleName } shouldBe
+            listOf("PlainSqlSegment", "NoTransactionSegment", "PlainSqlSegment")
+        segments.flatMap { it.statements } shouldBe statements
+    }
+
+    test("aufeinanderfolgende Anweisungen ausserhalb der Transaktion bilden EINEN Abschnitt") {
+        val statements = listOf(outsideStmt("A"), outsideStmt("B"))
+
+        val segments = segmentForExecute(statements, atomicBatch = null)
+
+        segments.map { it::class.simpleName } shouldBe listOf("NoTransactionSegment")
+        segments.single().statements shouldBe statements
+    }
+
+    test("ein Abschnitt ausserhalb der Transaktion darf den Atomic-Block nicht zerschneiden") {
+        val statements = listOf(stmt("P1"), outsideStmt("N"), stmt("P2"))
+
+        shouldThrow<IllegalStateException> {
+            segmentForExecute(statements, atomicBatch = batch(protectedIds = listOf("P1", "P2")))
+        }
+    }
 
     test("empty input → empty segment list") {
         segmentForExecute(emptyList(), atomicBatch = null) shouldBe emptyList()

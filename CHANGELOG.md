@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`schema migrate` kann Anweisungen ausfuehren, die eine offene Transaktion
+  nicht vertragen.** `TransactionScope.NO_TRANSACTION` stand im Modell, war
+  aber nicht ausfuehrbar — der Lauf wies solche Anweisungen ab, weil ihm die
+  Strategie dafuer fehlte. Jetzt zerfaellt ein gemischter Plan in Abschnitte in
+  Planreihenfolge: was in der Transaktion des Laufs laufen kann, laeuft dort;
+  was die Datenbank darin ablehnt, laeuft davor oder danach mit `autoCommit`.
+
+  **Volltext-Indizes bei SQL Server sind damit anwendbar.** Der Lauf brach
+  bisher mit `E072` ab und verwies auf `schema generate`; jetzt legt er den
+  Index an (live gegen echtes SQL Server belegt). Der Preis steht im Report:
+  was ausserhalb der Transaktion lief, wird bei einem spaeteren Fehlschlag
+  nicht zurueckgerollt — der Lauf meldet dann `PARTIAL_STATE_POSSIBLE`.
+  PostgreSQLs `CREATE INDEX CONCURRENTLY` wartet auf dieselbe Naht und ist ein
+  eigener Schnitt.
+
+
 - **Eine Partition hinzuzufuegen oder zu entfernen wird ausgefuehrt, nicht nur
   gemeldet.** Bisher fiel jede Partitionierungsaenderung in dieselbe Warnung
   (`PARTITIONING_CHANGE_NOT_APPLIED`) — mit einer Begruendung, die nur fuer den
