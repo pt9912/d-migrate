@@ -120,7 +120,11 @@ internal object SegmentAwareMigrationExecutor {
                     sideEffectsPossible = segmentTrace.sideEffectsPossible || completedSegments > 0,
                     executionError = segmentTrace.executionError,
                     statementGroups = groups,
-                    recoverability = segmentTrace.recoverability,
+                    // Die Einstufung des gescheiterten Abschnitts gilt fuer ihn
+                    // allein. Hat ein frueherer committet, ist sie fuer den Lauf
+                    // falsch — `FULL_ROLLBACK_CONFIRMED` behauptete dann eine
+                    // unveraenderte Datenbank. Dann lieber neu ableiten lassen.
+                    recoverability = segmentTrace.recoverability.takeIf { completedSegments == 0 },
                 )
             }
             completedSegments++

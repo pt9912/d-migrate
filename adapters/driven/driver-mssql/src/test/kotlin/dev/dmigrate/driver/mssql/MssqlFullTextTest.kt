@@ -220,6 +220,43 @@ class MssqlFullTextTest : FunSpec({
     }
 
     // Die Behebung war zunaechst halb: das Anlegen blockte, die Loeschpfade
+    test("eine Typaenderung an einer Volltext-Spalte wird benannt abgelehnt") {
+        // Der Index muesste weichen, die Spalte sich aendern, der Index
+        // zurueckkommen — zwei davon ausserhalb der Transaktion. Was hier
+        // NICHT passieren darf: die Operation faellt weg, ohne dass es jemand
+        // erfaehrt.
+        val planner = dev.dmigrate.core.diff.migration.DiffPlanner()
+        val t = table()
+        val changed = t.copy(columns = linkedMapOf(*t.columns.entries.map { (n, c) ->
+            n to if (n == "body") ColumnDefinition(NeutralType.Text(400)) else c
+        }.toTypedArray()))
+        val result = MssqlDiffDdlGenerator().generateUp(
+            planner.plan(
+                SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to t)),
+                SchemaDefinition(name = "App", version = "1", tables = mapOf("docs" to changed)),
+                dev.dmigrate.core.diff.SchemaDiff(
+                    tablesChanged = listOf(
+                        dev.dmigrate.core.diff.TableDiff(
+                            name = "docs",
+                            columnsChanged = listOf(
+                                dev.dmigrate.core.diff.ColumnDiff(
+                                    name = "body",
+                                    type = dev.dmigrate.core.diff.ValueChange(
+                                        NeutralType.Text(), NeutralType.Text(400),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            DdlGenerationOptions(),
+        )
+
+        result.diagnostics.map { it.code } shouldContain "MSSQL_FULLTEXT_COLUMN_CHANGE_NOT_APPLIED"
+        result.blockers.isNotEmpty() shouldBe true
+    }
+
     // Der Rueckbau steht unter derselben Regel — und `DROP INDEX` waere fuer
     // einen Volltext-Index ohnehin die falsche Anweisung.
     test("dropping a full-text index renders its own DDL outside the transaction") {

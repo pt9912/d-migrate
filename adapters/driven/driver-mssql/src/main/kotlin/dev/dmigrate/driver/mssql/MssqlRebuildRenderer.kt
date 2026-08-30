@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.PartitionConfig
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.TableDefinition
@@ -42,6 +43,12 @@ internal object MssqlRebuildRenderer {
     private data class Resolved(
         val statements: List<String>,
         val notes: List<TransformationNote>,
+        /**
+         * Anweisungen, die SQL Server in einer offenen Transaktion ablehnt —
+         * Volltext-DDL. Sie stehen hinter dem Neubau und laufen in einem
+         * eigenen Abschnitt; im Neubau-Batch waeren sie Msg 574.
+         */
+        val outsideTransaction: List<String> = emptyList(),
     )
 
     fun render(rebuild: MssqlRebuildPlanner.Rebuild, ctx: MssqlDiffRenderContext) {
@@ -100,6 +107,10 @@ internal object MssqlRebuildRenderer {
             )
         }
         resolved.statements.forEach { ctx.emitRebuild(bucket, trigger, it) }
+        // Nach dem Neubau, ausserhalb seiner Transaktion: der Volltext-Index
+        // haengt an der wiederhergestellten Tabelle, und SQL Server legt ihn
+        // in einer offenen Transaktion nicht an.
+        resolved.outsideTransaction.forEach { MssqlDiffObjectOps.emitOutsideTransaction(trigger, ctx, it) }
         ctx.carryOverNotes(trigger, resolved.notes)
         ctx.addInfoDiagnostic(
             code = "MSSQL_TABLE_REBUILT_FOR_IDENTITY",
@@ -159,8 +170,10 @@ internal object MssqlRebuildRenderer {
         for (constraint in outbound) {
             statements += MssqlDiffObjectOps.resolveConstraintSql(trigger, ctx, table, constraint) ?: return null
         }
+        val outsideTransaction = mutableListOf<String>()
         for (index in target.indices) {
-            statements += MssqlDiffObjectOps.resolveIndexSql(trigger, ctx, table, index, target) ?: return null
+            val sql = MssqlDiffObjectOps.resolveIndexSql(trigger, ctx, table, index, target) ?: return null
+            if (index.type == IndexType.FULLTEXT) outsideTransaction += sql else statements += sql
         }
         val restorable = MssqlRebuildPlanner.inboundForeignKeysToRestore(
             sourceSchema, targetSchema, table, createdSoFar, bucket,
@@ -169,7 +182,7 @@ internal object MssqlRebuildRenderer {
             statements += MssqlDiffObjectOps
                 .resolveConstraintSql(trigger, ctx, inbound.childTable, inbound.constraint) ?: return null
         }
-        return Resolved(statements, notes)
+        return Resolved(statements, notes, outsideTransaction)
     }
 
     /**

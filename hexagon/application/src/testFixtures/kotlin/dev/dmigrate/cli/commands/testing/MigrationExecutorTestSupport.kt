@@ -9,6 +9,7 @@ import dev.dmigrate.driver.migration.JdbcRunnerHookHandler as RunnerHookHandler
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.MigrationStreamClassifier
 import dev.dmigrate.driver.migration.StreamExecutionModel
+import dev.dmigrate.driver.migration.TransactionScope
 import dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment
 import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
@@ -69,17 +70,59 @@ fun executeAgainstPool(
     if (statements.isEmpty()) {
         return ExecutionTrace(executionStarted = true, executionCompleted = true)
     }
-    return pool.borrow().jdbc().use { conn ->
-        // Dasselbe Modell wie im produktiven Ausfuehrer, aus derselben Quelle:
-        // `MigrationStreamClassifier.executionModel`. Eine eigene Fallunterscheidung
-        // hier hat schon einmal `NO_TRANSACTION` uebersehen, und der Live-Test
-        // fuhr die Anweisung dann in der Transaktion, die sie ablehnt.
-        when (MigrationStreamClassifier.executionModel(statements)) {
-            StreamExecutionModel.NO_TRANSACTION -> runWithoutTransaction(conn, statements)
-            StreamExecutionModel.STREAM_TRANSACTION -> runStreamOwnedTransaction(conn, statements)
-            StreamExecutionModel.RUNNER_TRANSACTION -> runRunnerOwnedTransaction(conn, statements)
+    // Wie der produktive Ausfuehrer: gemischte Stroeme laufen Lauf fuer Lauf,
+    // jeder mit dem Modell, das seine Anweisungen verlangen, und jeder auf
+    // einer eigenen Verbindung. Eine eigene Fallunterscheidung hier hat schon
+    // einmal `NO_TRANSACTION` uebersehen, und der Live-Test fuhr die Anweisung
+    // dann in genau der Transaktion, die sie ablehnt.
+    var attempted = 0
+    var lastIds: Set<String> = emptySet()
+    var committedRuns = 0
+    for (run in splitByExecutionModel(statements)) {
+        val trace = pool.borrow().jdbc().use { conn ->
+            when (MigrationStreamClassifier.executionModel(run)) {
+                StreamExecutionModel.NO_TRANSACTION -> runWithoutTransaction(conn, run)
+                StreamExecutionModel.STREAM_TRANSACTION -> runStreamOwnedTransaction(conn, run)
+                StreamExecutionModel.RUNNER_TRANSACTION -> runRunnerOwnedTransaction(conn, run)
+            }
         }
+        attempted += trace.statementsAttempted
+        if (trace.lastStatementOperationIds.isNotEmpty()) lastIds = trace.lastStatementOperationIds
+        if (trace.executionError != null || trace.transactionRolledBack) {
+            return trace.copy(
+                statementsAttempted = attempted,
+                lastStatementOperationIds = lastIds,
+                sideEffectsPossible = trace.sideEffectsPossible || committedRuns > 0,
+            )
+        }
+        committedRuns++
     }
+    return ExecutionTrace(
+        executionStarted = true,
+        executionCompleted = true,
+        statementsAttempted = attempted,
+        lastStatementOperationIds = lastIds,
+    )
+}
+
+/** Aufeinanderfolgende Anweisungen desselben Ausfuehrungsmodells, in Reihenfolge. */
+private fun splitByExecutionModel(
+    statements: List<MigrationDdlStatement>,
+): List<List<MigrationDdlStatement>> {
+    val runs = mutableListOf<List<MigrationDdlStatement>>()
+    var current = mutableListOf<MigrationDdlStatement>()
+    var currentOutside = statements.first().transactionScope == TransactionScope.NO_TRANSACTION
+    for (statement in statements) {
+        val outside = statement.transactionScope == TransactionScope.NO_TRANSACTION
+        if (outside != currentOutside && current.isNotEmpty()) {
+            runs += current.toList()
+            current = mutableListOf()
+        }
+        currentOutside = outside
+        current += statement
+    }
+    if (current.isNotEmpty()) runs += current.toList()
+    return runs
 }
 
 /**
@@ -309,7 +352,7 @@ fun executeSegmentsAgainstPool(
                 // Ein frueherer Abschnitt hat committet und bleibt stehen.
                 sideEffectsPossible = segmentTrace.sideEffectsPossible || completedSegments > 0,
                 executionError = segmentTrace.executionError,
-                recoverability = segmentTrace.recoverability,
+                recoverability = segmentTrace.recoverability.takeIf { completedSegments == 0 },
             )
         }
         completedSegments++

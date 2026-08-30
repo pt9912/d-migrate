@@ -56,15 +56,23 @@ internal object MigrationExecutionStatusBuilder {
         }
     }
 
+    /**
+     * Seiteneffekte schlagen den Rueckbau: steht fest, dass etwas in der
+     * Datenbank geblieben ist, ist das die Aussage — auch wenn die
+     * Transaktion, die gerade scheiterte, sauber zurueckrollte. Genau diese
+     * Lage entsteht, wenn ein frueherer Abschnitt committet hat, etwa eine
+     * Anweisung ausserhalb der Transaktion des Laufs.
+     *
+     * Andersherum gelesen: `FULL_ROLLBACK_CONFIRMED` sagt „die Datenbank ist
+     * unveraendert" und darf deshalb nur gelten, wenn nichts stehen blieb.
+     */
     fun recoverability(trace: ExecutionTrace): ExecutionRecoverability? {
         if (trace.executionError == null) return null
         return when {
-            trace.transactionRolledBack && !trace.sideEffectsPossible ->
-                ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED
-            trace.transactionRolledBack ->
-                ExecutionRecoverability.ROLLBACK_ATTEMPTED
             trace.sideEffectsPossible ->
                 ExecutionRecoverability.PARTIAL_STATE_POSSIBLE
+            trace.transactionRolledBack ->
+                ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED
             else ->
                 ExecutionRecoverability.UNKNOWN
         }

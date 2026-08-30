@@ -85,4 +85,26 @@ class MigrationExecutionStatusBuilderTest : FunSpec({
             ),
         ) shouldBe ExecutionRecoverability.PARTIAL_STATE_POSSIBLE
     }
+
+    test("ein Rueckbau neben bekannten Seiteneffekten ist kein vollstaendiger Rueckbau") {
+        // Die Lage entsteht, sobald ein frueherer Abschnitt committet hat —
+        // etwa eine Anweisung, die ausserhalb der Transaktion laufen musste.
+        // Der gescheiterte Abschnitt rollt sauber zurueck, die Datenbank ist
+        // trotzdem veraendert.
+        MigrationExecutionStatusBuilder.recoverability(
+            ExecutionTrace(
+                executionStarted = true,
+                executionCompleted = false,
+                transactionRolledBack = true,
+                sideEffectsPossible = true,
+                executionError = "boom",
+            ),
+        ) shouldBe ExecutionRecoverability.PARTIAL_STATE_POSSIBLE
+    }
+
+    test("ohne Fehler gibt es keine Einstufung") {
+        MigrationExecutionStatusBuilder.recoverability(
+            ExecutionTrace(executionStarted = true, executionCompleted = true),
+        ) shouldBe null
+    }
 })

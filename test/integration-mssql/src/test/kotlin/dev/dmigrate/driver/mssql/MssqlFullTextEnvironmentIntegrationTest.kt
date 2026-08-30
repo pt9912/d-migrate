@@ -226,12 +226,11 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
             }
         }
 
-        // `schema migrate` kann Volltext NICHT anwenden, und das
-        // ist eine Eigenschaft von SQL Server, keine Luecke im Renderer. Der
-        // Server weist `CREATE FULLTEXT INDEX` in einer offenen Transaktion ab,
-        // und der Lauf klammert seine Statements in genau eine. Der Abbruch
-        // muss deshalb VOR der Ausfuehrung kommen — ein halb angewandter
-        // Volltext waere schlimmer.
+        // SQL Server weist `CREATE FULLTEXT INDEX` in einer offenen Transaktion
+        // ab. Der Lauf klammert deshalb nicht mehr alles in eine: die Anweisung
+        // traegt `NO_TRANSACTION` und laeuft in einem eigenen Abschnitt, nachdem
+        // die Tabelle committet ist. Der Nachweis dafuer steht im Katalog des
+        // Servers, nicht im gerenderten DDL.
         test("migrate legt einen Volltext-Index an — ausserhalb der Transaktion") {
             val tmp = kotlin.io.path.createTempDirectory("mssql-ft-migrate")
             val desired = SchemaDefinition(
@@ -251,6 +250,19 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
             )
             DriverManager.getConnection(container.jdbcUrl, container.username, container.password).use { c ->
                 c.createStatement().use { st -> runCatching { st.execute("CREATE DATABASE ft_migrate") } }
+            }
+            // Die Tabelle steht schon: die Migration fuegt eine Spalte hinzu
+            // UND den Volltext-Index. Nur so ist der Strom gemischt — mit einem
+            // `CREATE TABLE` liefe alles Uebrige in der Tabelle mit, und der
+            // Rueckbau waere ein blosses `DROP TABLE`, das den Volltext-Index
+            // ohnehin mitnimmt.
+            DriverManager.getConnection(
+                "${container.jdbcUrl};databaseName=ft_migrate", container.username, container.password,
+            ).use { c ->
+                c.createStatement().use { st ->
+                    runCatching { st.execute("DROP TABLE papers") }
+                    st.execute("CREATE TABLE papers (id INT NOT NULL CONSTRAINT pk_papers PRIMARY KEY)")
+                }
             }
             val config = ConnectionConfig(
                 dialect = DatabaseDialect.MSSQL,
@@ -304,6 +316,8 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                         dialect = DatabaseDialect.MSSQL,
                         report = tmp.resolve("report.json"),
                         execute = true,
+                        rollbackOutput = tmp.resolve("rollback.sql"),
+                        generateRollback = true,
                     ),
                 )
 
@@ -324,12 +338,53 @@ class MssqlFullTextEnvironmentIntegrationTest : FunSpec({
                         " kataloge=" + scalar("SELECT COUNT(*) FROM sys.fulltext_catalogs") +
                         " indizes=" + scalar("SELECT COUNT(*) FROM sys.fulltext_indexes")
                 }
+                fun fullTextIndexes() = pool.borrow().asJdbc().use { c ->
+                    c.createStatement().use { st ->
+                        st.executeQuery(
+                            "SELECT COUNT(*) FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('papers')",
+                        ).use { rs -> rs.next(); rs.getInt(1) }
+                    }
+                }
                 withClue("Serverzustand: $state\nausgefuehrt:\n" + executed.joinToString("\n")) {
+                    fullTextIndexes() shouldBe 1
+                }
+
+                // Und zurueck. Der Rueckbau reicht die Anweisungen FLACH an den
+                // Ausfuehrer — er segmentiert nicht wie der Migrationslauf. Das
+                // Artefakt traegt aber dieselben `NO_TRANSACTION`-Anweisungen,
+                // und `DROP FULLTEXT INDEX` ist in einer offenen Transaktion
+                // genauso verboten wie das Anlegen.
+                val rollbackExit = SchemaRollbackRunner(
+                    dbLoader = { _, _ ->
+                        ResolvedSchemaOperand(
+                            reference = "live",
+                            schema = MssqlSchemaReader().read(pool).schema,
+                            validation = ValidationResult(),
+                            dialect = DatabaseDialect.MSSQL,
+                        )
+                    },
+                    executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
+                    printError = { _, _ -> },
+                ).execute(
+                    SchemaRollbackRequest(
+                        source = tmp.resolve("rollback.sql"),
+                        target = "db:placeholder",
+                        execute = true,
+                        allowDestructive = true,
+                    ),
+                )
+
+                withClue("rollback meldete $rollbackExit") {
+                    rollbackExit shouldBe 0
+                    // Der Rueckbau ist gemischt: die Spalte faellt in der
+                    // Transaktion, der Volltext-Index ausserhalb. Die Tabelle
+                    // bleibt stehen — ein `DROP TABLE` haette den Index
+                    // ohnehin mitgenommen und nichts bewiesen.
+                    fullTextIndexes() shouldBe 0
                     pool.borrow().asJdbc().use { c ->
                         c.createStatement().use { st ->
-                            st.executeQuery(
-                                "SELECT COUNT(*) FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('papers')",
-                            ).use { rs -> rs.next(); rs.getInt(1) shouldBe 1 }
+                            st.executeQuery("SELECT COUNT(*) FROM sys.tables WHERE name = 'papers'")
+                                .use { rs -> rs.next(); rs.getInt(1) shouldBe 1 }
                         }
                     }
                 }

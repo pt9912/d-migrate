@@ -2734,7 +2734,8 @@ Spalten-Fremdschlüssel über `references`:
 Transaktion.** Der Server verbietet Volltext-DDL innerhalb einer Transaktion,
 Anlegen wie Löschen. Der Lauf führt diese Anweisungen deshalb in einem eigenen
 Abschnitt aus: was davor steht, ist dann bereits festgeschrieben. Scheitert ein
-späterer Schritt, bleibt der Volltext-Teil stehen; der Report weist das als
+späterer Schritt, bleibt der Volltext-Teil stehen — auch wenn der gescheiterte
+Schritt selbst sauber zurückrollt; der Report weist das als
 `PARTIAL_STATE_POSSIBLE` aus. Wenn Sie das nicht wollen, erzeugen Sie das DDL
 mit `schema generate --target mssql` und wenden es selbst an.
 

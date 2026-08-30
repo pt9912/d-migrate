@@ -14,6 +14,19 @@ import java.sql.SQLException
  */
 object JdbcMigrationStatementExecutor {
 
+    /**
+     * Fuehrt einen Strom aus, der beide Ausfuehrungsmodelle mischen darf.
+     *
+     * Getrennt wird hier, nicht beim Aufrufer: `schema migrate` schneidet den
+     * Plan zwar selbst in Abschnitte, `schema rollback` reicht die Anweisungen
+     * aber flach durch — und ein Rollback-Artefakt einer Volltext-Migration
+     * traegt genau die Anweisungen, die in einer offenen Transaktion scheitern.
+     * Was hier ankommt, laeuft deshalb Lauf fuer Lauf, jeder mit dem Modell,
+     * das seine Anweisungen verlangen.
+     *
+     * Jeder Lauf bekommt eine eigene Verbindung: eine Transaktion darf nicht
+     * offen bleiben, waehrend daneben mit `autoCommit` gearbeitet wird.
+     */
     fun execute(
         pool: ConnectionPool,
         statements: List<MigrationDdlStatement>,
@@ -25,9 +38,51 @@ object JdbcMigrationStatementExecutor {
                 statementsAttempted = 0,
             )
         }
-        return pool.borrow().asJdbc().use { conn ->
-            runAll(conn, statements)
+        val runs = splitByExecutionModel(statements)
+        var attempted = 0
+        var lastIds: Set<String> = emptySet()
+        var committedRuns = 0
+        for (run in runs) {
+            val trace = pool.borrow().asJdbc().use { conn -> runAll(conn, run) }
+            attempted += trace.statementsAttempted
+            if (trace.lastStatementOperationIds.isNotEmpty()) lastIds = trace.lastStatementOperationIds
+            if (trace.executionError != null || trace.transactionRolledBack) {
+                return trace.copy(
+                    statementsAttempted = attempted,
+                    lastStatementOperationIds = lastIds,
+                    // Was ein frueherer Lauf festgeschrieben hat, nimmt der
+                    // Rueckbau dieses Laufs nicht mit.
+                    sideEffectsPossible = trace.sideEffectsPossible || committedRuns > 0,
+                )
+            }
+            committedRuns++
         }
+        return MigrationExecutionTrace(
+            executionStarted = true,
+            executionCompleted = true,
+            statementsAttempted = attempted,
+            lastStatementOperationIds = lastIds,
+        )
+    }
+
+    /** Aufeinanderfolgende Anweisungen desselben Ausfuehrungsmodells, in Reihenfolge. */
+    private fun splitByExecutionModel(
+        statements: List<MigrationDdlStatement>,
+    ): List<List<MigrationDdlStatement>> {
+        val runs = mutableListOf<List<MigrationDdlStatement>>()
+        var current = mutableListOf<MigrationDdlStatement>()
+        var currentOutside = statements.first().transactionScope == TransactionScope.NO_TRANSACTION
+        for (statement in statements) {
+            val outside = statement.transactionScope == TransactionScope.NO_TRANSACTION
+            if (outside != currentOutside && current.isNotEmpty()) {
+                runs += current.toList()
+                current = mutableListOf()
+            }
+            currentOutside = outside
+            current += statement
+        }
+        if (current.isNotEmpty()) runs += current.toList()
+        return runs
     }
 
     fun runAll(conn: Connection, statements: List<MigrationDdlStatement>): MigrationExecutionTrace =

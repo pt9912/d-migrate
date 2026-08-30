@@ -25,6 +25,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.TransactionScope
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
@@ -108,6 +110,32 @@ class MssqlRebuildRendererTest : FunSpec({
             ),
         ),
     )
+
+    test("ein Neubau setzt den Volltext-Index ausserhalb der Transaktion ab") {
+        // Der Neubau laeuft in der Transaktion des Laufs; `CREATE FULLTEXT
+        // INDEX` darf das nicht. Stuende es im Neubau-Batch, antwortete SQL
+        // Server mit Msg 574 — mitten in der Migration.
+        val fullText = IndexDefinition(
+            name = "ft_users",
+            columns = listOf(IndexColumn("bio")),
+            type = IndexType.FULLTEXT,
+        )
+        val before = users(NeutralType.Integer, "bio" to ColumnDefinition(NeutralType.Text()))
+            .copy(indices = listOf(fullText))
+        val after = users(NeutralType.Identifier(autoIncrement = true), "bio" to ColumnDefinition(NeutralType.Text()))
+            .copy(indices = listOf(fullText))
+
+        val result = up(identityAddedDiff(), schema("users" to before), schema("users" to after))
+
+        val ftStatements = result.statements.filter { it.sql.contains("FULLTEXT") }
+        withClue("der Neubau rendert keinen Volltext-Index: " + result.statements.joinToString("\n") { it.sql }) {
+            ftStatements.isNotEmpty() shouldBe true
+        }
+        ftStatements.all { it.transactionScope == TransactionScope.NO_TRANSACTION } shouldBe true
+        // Der Neubau selbst bleibt in der Transaktion.
+        result.statements.filterNot { it.sql.contains("FULLTEXT") }
+            .all { it.transactionScope == TransactionScope.RUNNER_OWNED } shouldBe true
+    }
 
     test("a rebuild carries the partitioning over instead of dropping it") {
         val current = schema("users" to partitionedUsers(NeutralType.Integer))

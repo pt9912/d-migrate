@@ -109,8 +109,8 @@ internal object MssqlDiffTableOps {
             lines += "    $line"
         }
         // Die Indizes VOR dem CREATE TABLE aufloesen: ein nicht renderbarer
-        // Index (z. B. Volltext) muss blocken, bevor irgendetwas emittiert ist —
-        // sonst laege die Operation in `rendered` UND `skipped`.
+        // Index muss blocken, bevor irgendetwas emittiert ist — sonst laege die
+        // Operation in `rendered` UND `skipped`.
         val indexSqls = effective.indices.map { index ->
             index to (MssqlDiffObjectOps.resolveIndexSql(op, ctx, table, index, effective) ?: return)
         }
@@ -385,7 +385,23 @@ internal object MssqlDiffTableOps {
             ctx.schemaBeforeChange(),
         )
         val out = mutableListOf<String>()
-        if (MssqlDiffColumnDependencies.carriesFullText(deps)) return null
+        // Ein Volltext-Index auf der Spalte macht die Typaenderung zu einem
+        // eigenen Vorgang: er muss weichen (ausserhalb der Transaktion), die
+        // Spalte sich aendern (darin) und der Index zurueckkommen (wieder
+        // ausserhalb). Das ist mehr als diese Stelle traegt — sie liefert eine
+        // Liste ohne Scope. Also benannt ablehnen statt still nichts tun.
+        if (MssqlDiffColumnDependencies.carriesFullText(deps)) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} changes column '$column' of '$table', which carries a full-text index. " +
+                    "SQL Server needs the index dropped and re-created around the change, and that runs " +
+                    "outside the migration's transaction. Drop the full-text index, apply the change, and " +
+                    "re-create it.",
+                code = "MSSQL_FULLTEXT_COLUMN_CHANGE_NOT_APPLIED",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
+            return null
+        }
         out += MssqlDiffColumnDependencies.dropStatements(ctx, deps)
         if (bearingChecks.isNotEmpty() || checks.isNotEmpty()) {
             out += ctx.sql.dropConstraintSql(table, MssqlConstraintNames.check(table, column))
@@ -459,10 +475,29 @@ internal object MssqlDiffTableOps {
         // hingen, gibt es danach nicht mehr.
         val deps = dependenciesFor(ctx, table, column, forDrop = true)
         // Der Volltext-Index haengt an der Spalte und muss vor ihr weichen —
-        // aber ausserhalb der Transaktion des Laufs, weil SQL Server sein
-        // `DROP FULLTEXT INDEX` darin ablehnt. Reihenfolge bleibt gewahrt: der
-        // Ausfuehrer schneidet am Scope-Wechsel, in Planreihenfolge.
-        if (MssqlDiffColumnDependencies.carriesFullText(deps)) {
+        // ausserhalb der Transaktion des Laufs, weil SQL Server sein
+        // `DROP FULLTEXT INDEX` darin ablehnt.
+        //
+        // Deckt er noch andere Spalten ab, waere das Verwerfen mehr als der
+        // Auftrag: die Volltextsuche auf den uebrigen Spalten ginge mit weg.
+        // SQL Server kennt je Tabelle nur EINEN Volltext-Index, also gibt es
+        // hier kein Wiederanlegen ohne die entfallene Spalte — das ist ein
+        // eigener Vorgang.
+        val fullText = deps.indices.filter { it.type == IndexType.FULLTEXT }
+        val spansOtherColumns = fullText.any { index -> index.columns.any { it.name != column } }
+        if (spansOtherColumns) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} drops column '$column' of '$table', but its full-text index also covers " +
+                    "${fullText.flatMap { it.columns }.map { it.name }.filter { it != column }.distinct()
+                        .joinToString(", ")}. Dropping the index would take full-text search on those columns " +
+                    "with it. Re-define the full-text index without '$column' first.",
+                code = "MSSQL_FULLTEXT_INDEX_SPANS_OTHER_COLUMNS",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
+            return
+        }
+        if (fullText.isNotEmpty()) {
             MssqlFullTextDdl.dropStatements(deps.table, ctx.sql::quote)
                 .forEach { MssqlDiffObjectOps.emitOutsideTransaction(op, ctx, it) }
         }

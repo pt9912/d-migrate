@@ -50,7 +50,9 @@ committet für sich.
 eigene Transaktion zurück — die früheren nicht. Das ist keine Schwäche der
 Strategie, sondern die Eigenschaft, wegen der die Anweisung überhaupt außerhalb
 laufen muss. Der Lauf meldet dafür `PARTIAL_STATE_POSSIBLE`, und zwar auch
-dann, wenn der fehlgeschlagene Abschnitt selbst sauber zurückgerollt ist.
+dann, wenn der fehlgeschlagene Abschnitt selbst sauber zurückgerollt ist —
+bekannte Seiteneffekte schlagen die Rückbau-Aussage, sonst behauptete der
+Bericht eine unveränderte Datenbank.
 
 **`STREAM_OWNED` bleibt allein.** Ein Strom, der seine Transaktionsgrenzen
 selbst mitbringt (SQLites Rebuild), verträgt keinen fremden Abschnitt daneben;
@@ -105,3 +107,32 @@ Offen bleibt als eigener Schnitt
 [`pg-create-index-concurrently.md`](../open/pg-create-index-concurrently.md):
 PostgreSQL rendert die Klausel nicht, und sie bringt mit dem `INVALID`-Index
 nach einem Abbruch eine eigene Frage mit.
+
+## 7. Review-Nacharbeit (30.08.2026)
+
+Ein `/code-review high` fand drei schwere Befunde, alle an Stellen, die der
+erste Schnitt nicht mitgedacht hatte:
+
+- **Der Tabellen-Neubau** rendert seine Anweisungen über `emitRebuild`, das den
+  Scope fest auf `RUNNER_OWNED` setzt. Ein Neubau an einer Volltext-Tabelle
+  hätte `CREATE FULLTEXT INDEX` wieder in die Transaktion geschickt — Msg 574,
+  mitten im Lauf. Der Volltext-Teil verlässt den Neubau-Batch jetzt.
+- **`schema rollback` segmentiert nicht.** Es reicht die Anweisungen flach an
+  den Ausführer, und ein Rollback-Artefakt einer Volltext-Migration trägt genau
+  die Anweisungen, die eine offene Transaktion ablehnt. Die Trennung sitzt
+  deshalb jetzt im Ausführer selbst, nicht nur im Migrationspfad — dort erreicht
+  sie jeden Aufrufer.
+- **Eine Typänderung an einer Volltext-Spalte fiel still weg.** Der frühere
+  `E072`-Block hatte die Ablehnung nebenbei mitgeliefert; ohne ihn kehrte die
+  Stelle mit `null` zurück, ohne Meldung und ohne Blocker.
+
+Dazu zwei mittlere: der Report übernahm die Einstufung des gescheiterten
+Abschnitts (`FULL_ROLLBACK_CONFIRMED`, obwohl ein früherer committet hatte),
+und das Verwerfen einer Spalte hätte einen mehrspaltigen Volltext-Index samt
+Suche auf den übrigen Spalten mitgenommen.
+
+**Der erste Live-Test für den Rollback-Fall bewies nichts:** er ließ die
+Migration die Tabelle anlegen, und deren `DROP TABLE` nimmt den Volltext-Index
+ohnehin mit. Der Test läuft jetzt gegen eine bestehende Tabelle, sodass der
+Rückbau wirklich gemischt ist — gegengeprüft, indem die Trennung kurzzeitig
+entfernt wurde: dann scheitert er mit Exit 5.
