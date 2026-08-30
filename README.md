@@ -167,7 +167,11 @@ The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
   `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and
   `windows-x64`; on macOS use Homebrew, the JVM artefacts or the
   container image.
-- **Next** · **1.0.x** — patch releases from the stable line.
+- **In development** · **1.1.0** — MS SQL Server as the fourth dialect
+  (reverse, generate, migrate, data path, profiling), partition-set
+  changes applied as migration operations, and statements that a
+  database refuses inside an open transaction. See
+  [`CHANGELOG.md`](CHANGELOG.md) for the full unreleased set.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at

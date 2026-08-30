@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MS SQL Server ist der vierte Dialekt.** `schema reverse`, `generate`,
+  `migrate`, `data export`/`import`/`transfer` und `data profile` sprechen jetzt
+  T-SQL, jeweils live gegen echtes SQL Server belegt ([ADR 0047](docs/adr/0047-mssql-vierter-dialekt-scoping.md)).
+  Abgedeckt sind Tabellen und Constraints, Sichten, Routinen und Trigger
+  (`CREATE OR ALTER`), Indizes samt clustered/`INCLUDE`/gefiltert,
+  Partitionierung ueber Partition Function und Scheme, Volltext und das
+  Profiling.
+
+  Drei Eigenheiten von SQL Server bleiben sichtbar, weil sie sich nicht
+  wegabstrahieren lassen: der Server **nummeriert** Partitionen (Namen aus dem
+  Modell ueberleben den Round-Trip nicht, `R346`), er kennt als
+  Partitionsstrategie nur `range` ueber eine Spalte (`list` bricht mit `E055`
+  ab, `hash` ist per `--mssql-hash-partitions computed_column` emulierbar), und
+  er benennt Volltext-Indizes nicht (`R348`). Partition Function, Scheme und
+  Volltext-Katalog entstehen je Tabelle, weil das neutrale Modell ihre Teilung
+  nicht ausdrueckt (`W144`, `W146`).
+
 - **`schema migrate` kann Anweisungen ausfuehren, die eine offene Transaktion
   nicht vertragen.** `TransactionScope.NO_TRANSACTION` stand im Modell, war
   aber nicht ausfuehrbar — der Lauf wies solche Anweisungen ab, weil ihm die

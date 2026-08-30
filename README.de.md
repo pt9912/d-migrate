@@ -180,7 +180,11 @@ Die vollständige Release-History steht in
   braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt es
   für `linux-x64` und `windows-x64`; unter macOS führen Homebrew, die
   JVM-Artefakte oder das Container-Image zum Ziel.
-- **Als Nächstes** · **1.0.x** — Patch-Releases aus der stabilen Linie.
+- **In Arbeit** · **1.1.0** — MS SQL Server als vierter Dialekt (Reverse,
+  Generate, Migrate, Datenpfad, Profiling), Änderungen am Partitionsbestand
+  als Migrations-Operationen, und Anweisungen, die eine Datenbank in einer
+  offenen Transaktion ablehnt. Der vollständige unveröffentlichte Stand steht
+  im [`CHANGELOG.md`](CHANGELOG.md).
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter

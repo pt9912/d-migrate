@@ -395,6 +395,8 @@ Hinweis-/Kommentarblöcke tragen kein `GO`.
 | `--mysql-named-sequences` | Nein | `action_required` / `helper_table` | MySQL-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target mysql` zulaessig; bei PostgreSQL/SQLite: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences`, `dmg_nextval`/`dmg_setval`, `BEFORE INSERT`-Trigger). |
 | `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target sqlite` zulaessig; bei PostgreSQL/MySQL: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences` + Trigger); ohne Opt-in bleibt die Sequence action-required. |
 | `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
+| `--partition-storage` | Nein | String | Ablageort der Partitionen. Nur fuer `--target mssql`: der Name der Filegroup, auf der Partition Function und Scheme liegen (Default `PRIMARY`). Andere Ziele kennen keine Filegroups und lesen den Wert nicht. |
+| `--mssql-hash-partitions` | Nein | `action_required` / `computed_column` | SQL-Server-Strategie fuer `hash`-Partitionierung (Default: `action_required`, Abbruch mit `E055`). `computed_column` emuliert sie ueber eine persistierte berechnete Spalte und partitioniert nach ihr; die Eimerspalte tritt dabei in jeden eindeutigen Schluessel (`W145`, `E067`, `E068`, `E069`). |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
 
@@ -649,6 +651,9 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--routine-capability` | Nein | `<kind>:<key>=<value>[,<key>=<value>...]`, wiederholbar | Operator-Override fuer die Per-Routine-Kind-Capability von Stored Functions/Procedures. Erlaubte `<kind>`: `function`, `procedure`; erlaubte Keys: `enabled`, `minServerVersion`. Praezedenz, YAML-Aequivalent und Fehler-Routing siehe Abschnitt **Routine-Rendering** unten. |
 | `--strict-gap-operations` | Nein | Boolean | Blockt Operationen, die ueber einen Multi-Statement-Fallback mit Sichtbarkeitsluecke gerendert wuerden (heute: `ReplaceTrigger` via Drop+Create auf PostgreSQL < 14, MySQL und SQLite). Default `false` (lenient): der Pfad emittiert die Drop+Create-Statements und meldet die Luecke als `W_TRIGGER_REPLACE_GAP`-Warning im Report. Mit Flag wechselt der Renderer zu `MANUAL_ACTION_REQUIRED` (Exit `8`) und gibt keine Statements fuer die betroffene Operation aus. Wirkt allgemein auf `OperationRisk.hasGap = true`-Operationen; aktuell setzt nur der Trigger-Mapper diesen Flag. |
 | `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie fuer den `--execute`-Pfad (Default: `action_required`). Identisch zur gleichnamigen Option auf `schema generate`, aber hier auf der Migrate-Seite: nur mit `helper_table` aktiviert sich der `SequencePreserveStage`-Probe-Pfad fuer SQLite (`SqliteSequenceCurrentValueProbe` liest `dmg_sequences.next_value`); ohne Opt-in blockt jede `preserveCurrentValue`-Kandidat-Op vor der Probe-Connection mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (`primaryBlockedReason = MANUAL_ACTION_REQUIRED`). |
+| `--report-format` | Nein | `json` / `yaml` | Format des Report-Artefakts aus `--report` (Default: `json`). |
+| `--partition-storage` | Nein | String | Wie bei `schema generate`: die Filegroup fuer Partitionen (nur `mssql`). |
+| `--mssql-hash-partitions` | Nein | `action_required` / `computed_column` | Wie bei `schema generate`, hier auf der Migrate-Seite. |
 
 Begriffe:
 
@@ -1242,6 +1247,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--csv-formula-guard` / `--no-csv-formula-guard` | Nein | Boolean | aus | Formel-Injection-Guard (CWE-1236): präfixt formel-anfällige **Text**-Zellen (führendes `=`/`+`/`-`/`@`/Tab/CR) mit `'`, damit Tabellenkalkulationen sie nicht ausführen. Verändert den Wert (kein byte-treuer Roundtrip); Default aus = treuer Dump, betroffene Spalten werden per `W203` gemeldet. Präzedenz: CLI-Flag > `export.csv.formula_guard` (Config) > Default aus. |
 | `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz, inkl. Mid-Table-Wiederaufnahme. Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis endet der Aufruf mit Exit 7. Der Lauf uebernimmt `operationId` aus dem Manifest, skippt Tabellen mit Status `COMPLETED` und setzt unvollstaendige Tabellen fort. **Mid-Table**: ist `--since-column` gesetzt **und** hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; fehlt der PK, fallt der Lauf mit sichtbarem stderr-Hinweis auf Tabellen-Reexport zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei im Checkpoint-Verzeichnis geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume ignoriert den gespeicherten Marker und exportiert die Tabelle erneut von vorn. Kompatibilitaetsmismatch (Fingerprint inkl. PK-Signatur, Tabellenliste, Output-Modus, operationType; oder Manifest hat `resumePosition`, Request hat aber kein `--since-column`) → Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
+| `--manifest-sha256` | Nein | Boolean | aus | Nur Parquet-Bundles: berechnet je Tabellendatei einen SHA-256-Digest und schreibt ihn in die `manifest.yaml`. Kostet einen zweiten Lesedurchgang ueber jede exportierte Datei. |
 
 **Output-Auflösung**:
 
@@ -1347,6 +1353,8 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--parallel` | Nein | Integer | `1` | Max. Tabellen/Partitionen, die nebenläufig importiert werden (`1` = sequenziell). Unabhängige Tabellen laufen FK-sicher in Topo-Ebenen (Barriere zwischen Ebenen); Kind-Partitions-Dateien landen in ihren Kind-Tabellen. Für SQLite auf `1` geklemmt; inkompatibel mit `--resume` und `--atomic` (Exit `2`); `< 1` → Exit `2`; sollte die Verbindungspool-Größe (Default 10) nicht überschreiten. |
 | `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz. Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis → Exit 7. **Preflight** prueft `operationType == IMPORT`, den Options-Fingerprint (Format, Encoding, CSV-Header/NULL, `--on-error`/`--on-conflict`/`--trigger-mode`/`--truncate`/`--disable-fk-checks`/`--reseed-sequences`/`chunk-size`, Tabellenliste in Reihenfolge, Input-Topologie, Input-Pfad, Ziel-Dialekt und Ziel-URL; fuer Directory-Importe zusaetzlich die `table -> inputFile`-Bindung) sowie die Tabellenlisten-Gleichheit. Inkompatible Referenzen → Exit 3. **Wiederaufnahme** setzt an committed Chunk-Grenzen an: bereits als `COMPLETED` markierte Tabellen werden uebersprungen; teilweise bestaetigte Tabellen lesen die bereits bestaetigten Chunks aus dem Reader (ohne Schreib-/Commit-Aktion) und starten am naechsten offenen Chunk. `--truncate` wird fuer teilweise bestaetigte Tabellen automatisch unterbunden (sonst gingen bestaetigte Zeilen verloren). `--on-error abort/skip/log` behaelt seine Semantik auch beim Resume; nur erfolgreich committete Chunks treiben den Checkpoint vorwaerts. `failedFinish` laesst die Tabelle als `FAILED` markiert (nicht still als `COMPLETED`). Directory-Importe verlangen zusaetzlich, dass die `table -> inputFile`-Bindung des Manifests mit dem aktuellen Directory-Scan uebereinstimmt — umbenannte, hinzugefuegte oder entfernte Dateien → Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
+| `--table-order` | Nein | Liste | (aus `--schema` topologisch) | Explizite Import-Reihenfolge; nur fuer Verzeichnisquellen. Hat Vorrang vor der FK-topologischen Sortierung aus `--schema`, die dann nur noch validiert. Muss eine Permutation der importierten Tabellen sein. |
+| `--no-checkpoint` | Nein | Boolean | aus | Schaltet Checkpoint-Lesen und -Schreiben fuer diesen Lauf ab. Gegenseitig exklusiv mit `--resume` (Exit `2`); Phase 1 berechnet dann keinen `contentSha256`. |
 
 **Exit-Codes**:
 
@@ -1742,6 +1750,7 @@ d-migrate mcp serve [--transport stdio|http] [--bind <addr>] [--port <n>] \
 | `--auth-mode` | Nein | Choice | siehe oben |
 | `--issuer`, `--jwks-url`, `--introspection-url`, `--audience` | Modusabhängig | URL/String | Siehe Auth-Tabelle |
 | `--stdio-token-file` | Nein | Pfad | JSON/YAML-Token-Registry für Stdio (siehe `mcp-server.md` §12.10) |
+| `--introspection-client-id` / `--introspection-client-secret` | Modusabhängig | String | OAuth-Client-Zugangsdaten, mit denen sich der Server am RFC-7662-Introspection-Endpunkt anmeldet. Nur zusammen sinnvoll — eines ohne das andere ist ein Usage-Fehler. |
 | `--allow-origin` | Nein | String, mehrfach | Origin-Allowlist; Loopback-Defaults aktiv bei Loopback-Bind |
 | `--mcp-state-dir` | Nein | Pfad | State-Verzeichnis für file-backed Bytes. Gewinnt gegen `$DMIGRATE_MCP_STATE_DIR`; Default ist ein CLI-eigener Tempdir, der beim Stop gelöscht wird. Operator-bereitgestellte Verzeichnisse sind single-writer (advisory `.lock`) und überleben den Prozess |
 | `--mcp-state-orphan-retention` | Nein | Dauer | Retention für verwaiste Byte-Files beim Startup-Sweep. Werte: `never` (Forensik-Modus, kein Sweep), `0`/`0s` (alles löschen), `<n><ms\|s\|m\|h\|d>`, ISO-8601 `PT…`. Default 24h. Upload-Segmente ohne überlebende Session-Metadaten werden unter jeder nicht-`never`-Policy entfernt |
@@ -1800,6 +1809,10 @@ d-migrate mcp approval-grant issue --file <path> \
 #### `mcp cursor-key generate` / `mcp cursor-key validate`
 
 Erzeugt bzw. validiert YAML-Keyrings für die HMAC-Cursor von `mcp serve --cursor-keyring-file`. Diese Subkommandos sind Operations-Tools für Multi-Instanz-Deployments und werden im Detail in [`spec/mcp-server.md`](./mcp-server.md) dokumentiert.
+
+| Option | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `--kid` | Ja (`generate`) | String | Stabile Key-ID, die kuenftige Cursor-Umschlaege tragen. `generate` schreibt den Keyring mit genau diesem aktiven Schluessel auf stdout. |
 
 ---
 
