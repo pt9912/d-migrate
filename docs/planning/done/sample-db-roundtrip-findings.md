@@ -36,7 +36,7 @@ Namensraum — dort ist der disambiguierte Name nötig; der Fix ist daher
 PG-spezifisch.
 
 **Restfläche ausgeschnitten nach
-[`../open/pg-diff-object-key-leak.md`](../open/pg-diff-object-key-leak.md):** der
+[`pg-diff-object-key-leak.md`](pg-diff-object-key-leak.md):** der
 Diff-/Migrate-Pfad nutzt weiterhin `op.objectRef.rootName` (= Key) als
 Bezeichner — bei Triggern **und**, wie dort gemessen, bei Funktionen und
 Prozeduren.
@@ -93,7 +93,7 @@ Harness-belegt: die 3 Funktions-Diffs verschwinden, Baseline schrumpft **4 → 1
 (verbleibend nur die fundamentale tsvector/gist-Grenze, kein Bug).
 
 **Restfläche ausgeschnitten nach
-[`../open/routine-identity-fields-not-in-schema-json.md`](../open/routine-identity-fields-not-in-schema-json.md):**
+[`routine-identity-fields-not-in-schema-json.md`](routine-identity-fields-not-in-schema-json.md):**
 `search_path` wird von generate nicht emittiert, und die vier Identitätsfelder
 fehlen in `schema.json` — dort mit `additionalProperties: false`, der Reverse
 schreibt sie also in eine Datei, die das eigene Schema ablehnt.
@@ -181,9 +181,9 @@ geschrumpft.
 **Offene Folge-Slices (Forward-Pointer, nicht in dieser Closure).**
 
 - **F1-Restfläche (Diff-/Migrate-Pfad):**
-  [`../open/pg-diff-object-key-leak.md`](../open/pg-diff-object-key-leak.md).
+  [`pg-diff-object-key-leak.md`](pg-diff-object-key-leak.md).
 - **F3-Restfläche (Spec-Drift):**
-  [`../open/routine-identity-fields-not-in-schema-json.md`](../open/routine-identity-fields-not-in-schema-json.md).
+  [`routine-identity-fields-not-in-schema-json.md`](routine-identity-fields-not-in-schema-json.md).
 
 **Bleibender Reverse-Capture-Defekt (siehe Erratum oben):** `payment` →
 plain Tabelle (E055), weil die Kind-Partitionen nicht rekonstruiert werden. Das

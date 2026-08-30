@@ -115,6 +115,11 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             }
             if (fn.strict == true) append(" STRICT")
             if (fn.security == RoutineSecurity.DEFINER) append(" SECURITY DEFINER")
+            // Ein gepinnter `search_path` ist die uebliche Absicherung einer
+            // SECURITY-DEFINER-Funktion: ohne ihn entscheidet der Suchpfad des
+            // Aufrufers, welche Tabelle der Rumpf trifft. Der Reverse erfasst
+            // ihn; ohne diese Zeile fiel er beim Zurueckschreiben weg.
+            append(searchPathClause(fn.searchPath))
         }
 
         val sql = buildString {
@@ -124,6 +129,20 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
         return DdlStatement(sql)
     }
+
+    /**
+     * `SET search_path = …` als Funktions-Attribut, oder leer.
+     *
+     * Ein gepinnter Suchpfad ist die uebliche Absicherung einer
+     * SECURITY-DEFINER-Routine: ohne ihn entscheidet der Suchpfad des Aufrufers,
+     * welche Tabelle der Rumpf trifft. Die Eintraege werden gequotet, weil
+     * `"$user"` ohne Quotes nicht durchgeht.
+     */
+    private fun searchPathClause(searchPath: List<String>?): String =
+        searchPath?.takeIf { it.isNotEmpty() }
+            ?.joinToString(", ") { quoteIdentifier(it) }
+            ?.let { " SET search_path = $it" }
+            .orEmpty()
 
     // ── Aggregates (N7) ──────────────────────────
 
@@ -208,11 +227,17 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
             "$direction${quoteIdentifier(param.name)} ${param.type.uppercase()}"
         }
         val language = proc.language ?: "plpgsql"
+        // Dieselben Identitaets-Angaben wie bei Funktionen: eine Prozedur kann
+        // in PostgreSQL ebenso SECURITY DEFINER sein und einen Suchpfad pinnen.
+        val attributes = buildString {
+            if (proc.security == RoutineSecurity.DEFINER) append(" SECURITY DEFINER")
+            append(searchPathClause(proc.searchPath))
+        }
 
         val sql = buildString {
             append("CREATE OR REPLACE PROCEDURE ${quoteIdentifier(name)}($params) AS \$\$\n")
             append(body)
-            append("\n\$\$ LANGUAGE $language;")
+            append("\n\$\$ LANGUAGE $language$attributes;")
         }
         return DdlStatement(sql)
     }

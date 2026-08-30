@@ -95,6 +95,8 @@
       ],
       "language": "plpgsql",
       "body": "BEGIN END;",
+      "security": "invoker",
+      "sql_mode": "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION",
       "dependencies": { "tables": ["orders"], "columns": { "orders": ["status"] } },
       "source_dialect": "postgresql"
     }
@@ -108,6 +110,9 @@
       "volatility": "immutable",
       "strict": true,
       "body": "BEGIN RETURN 0; END;",
+      "security": "definer",
+      "definer": "app_owner",
+      "search_path": ["public", "pg_temp"],
       "dependencies": { "tables": ["orders"] },
       "source_dialect": "postgresql"
     }

@@ -1,10 +1,21 @@
 ---
 id: routine-identity-fields-not-in-schema-json
 title: "Der Reverse schreibt Routinen-Felder, die spec/schema.json verbietet"
-status: open
+status: done
 ---
 
 # Der Reverse schreibt Routinen-Felder, die `spec/schema.json` verbietet
+
+> **Behoben 2026-08-30.** `spec/schema.json` fuehrt `security`, `definer`,
+> `search_path` und `sql_mode` jetzt bei `function` und `procedure`; das
+> Voll-Feature-Fixture des Contract-Tests setzt sie, damit die Luecke nicht
+> wieder ungetestet bleibt. Ohne den Schema-Eintrag meldet der Test jetzt
+> `property 'security' is not defined in the schema`.
+>
+> Der PostgreSQL-Generate-Pfad emittiert den gepinnten `search_path` — und
+> Prozeduren tragen dieselben Attribute wie Funktionen, was vorher gar nicht
+> galt. Der **Diff**-Pfad hatte beides laengst; die Abweichung lag umgekehrt zu
+> der, die ich erwartet hatte.
 
 ## Lage
 

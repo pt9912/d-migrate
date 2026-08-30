@@ -39,5 +39,5 @@ nicht gedreht.
 ## Herkunft
 
 Aufgefallen beim Live-Test zum kanonischen Key
-([`pg-diff-object-key-leak.md`](pg-diff-object-key-leak.md)); dort
+([`../done/pg-diff-object-key-leak.md`](../done/pg-diff-object-key-leak.md)); dort
 herausgeschnitten, weil es eine andere Wurzel hat.

@@ -528,6 +528,24 @@
         },
         "language": { "type": "string" },
         "body": { "type": "string" },
+        "security": {
+          "type": "string",
+          "enum": ["invoker", "definer"],
+          "description": "Ausführungsrecht: als Aufrufer oder als Eigentümer der Routine"
+        },
+        "definer": {
+          "type": "string",
+          "description": "Eigentümer-Rolle bei security = definer"
+        },
+        "search_path": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "PostgreSQL: gepinnter SET search_path der Routine"
+        },
+        "sql_mode": {
+          "type": "string",
+          "description": "MySQL: sql_mode zum Zeitpunkt der Routinen-Erzeugung"
+        },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }
       }
@@ -563,6 +581,24 @@
           "description": "PostgreSQL STRICT / RETURNS NULL ON NULL INPUT"
         },
         "body": { "type": "string" },
+        "security": {
+          "type": "string",
+          "enum": ["invoker", "definer"],
+          "description": "Ausführungsrecht: als Aufrufer oder als Eigentümer der Routine"
+        },
+        "definer": {
+          "type": "string",
+          "description": "Eigentümer-Rolle bei security = definer"
+        },
+        "search_path": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "PostgreSQL: gepinnter SET search_path der Routine"
+        },
+        "sql_mode": {
+          "type": "string",
+          "description": "MySQL: sql_mode zum Zeitpunkt der Routinen-Erzeugung"
+        },
         "dependencies": { "$ref": "#/$defs/dependencies" },
         "source_dialect": { "type": "string" }
       }
