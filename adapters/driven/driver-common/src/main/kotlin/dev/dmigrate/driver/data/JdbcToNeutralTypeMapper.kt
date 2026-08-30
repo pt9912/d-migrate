@@ -80,8 +80,10 @@ internal object JdbcToNeutralTypeMapper {
         "uuid" -> NeutralType.Uuid
         "json", "jsonb" -> NeutralType.Json
         "xml" -> NeutralType.Xml
-        // Enum braucht noch dialektspezifische Erkennung (AP3). Geometrie wird
-        // bereits oben typeName-basiert erkannt (VA1a), erreicht mapOther nicht.
+        // Geometrie erreicht diesen Zweig zwar, wird aber danach ueberschrieben:
+        // die Markierung kommt aus der Metadaten-Vorabfrage des Lesepfads und
+        // ersetzt den Typ im `ChunkSchema`. Ein Dialekt ohne diese Vorabfrage
+        // liest Geometrie deshalb als Text.
         else -> NeutralType.Text(maxLength = null)
     }
 
