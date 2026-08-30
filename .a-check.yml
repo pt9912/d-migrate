@@ -70,6 +70,7 @@ resolution:
       - "adapters/driven/driver-mysql-profiling/src/main/kotlin/dev/dmigrate"
       - "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate"
       - "adapters/driven/driver-sqlite-profiling/src/main/kotlin/dev/dmigrate"
+      - "adapters/driven/driver-mssql-profiling/src/main/kotlin/dev/dmigrate"
       - "adapters/driven/formats/src/main/kotlin/dev/dmigrate"
       - "adapters/driven/formats-parquet/src/main/kotlin/dev/dmigrate"
       - "adapters/driven/integrations/src/main/kotlin/dev/dmigrate"

@@ -66,13 +66,20 @@ class MssqlSchemaIntrospectionAdapter(
                 """.trimIndent(),
                 schema, table,
             )
-            // Nur einspaltige Schluessel gelten als Spalten-Eigenschaft: eine
-            // Spalte aus einem zusammengesetzten Unique-Index ist fuer sich
-            // genommen nicht eindeutig.
-            val single = keyColumns.filter { (it["index_column_count"] as Number).toInt() == 1 }
-            val pkColumns = single.filter { it["is_primary_key"] == true }
+            // Am Primaerschluessel haengt jede beteiligte Spalte, auch bei einem
+            // zusammengesetzten — so melden es PostgreSQL und MySQL ebenfalls.
+            val pkColumns = keyColumns.filter { it["is_primary_key"] == true }
                 .mapTo(mutableSetOf()) { it["column_name"] as String }
-            val uniqueColumns = single.filter { it["is_unique"] == true }
+            // `isUnique` dagegen ist eine Aussage ueber die Spalte allein: aus
+            // einem zusammengesetzten Unique-Index folgt sie nicht. Und der
+            // Primaerschluessel zaehlt nicht mit — sein Index traegt
+            // `is_unique = 1`, aber die beiden Eigenschaften sind in den
+            // anderen Dialekten getrennt.
+            val uniqueColumns = keyColumns
+                .filter {
+                    it["is_unique"] == true && it["is_primary_key"] != true &&
+                        (it["index_column_count"] as Number).toInt() == 1
+                }
                 .mapTo(mutableSetOf()) { it["column_name"] as String }
 
             val fkColumns = jdbc.queryList(

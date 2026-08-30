@@ -77,6 +77,7 @@ COPY --chown=gradle:gradle adapters/driven/driver-mysql/build.gradle.kts adapter
 COPY --chown=gradle:gradle adapters/driven/driver-mysql-profiling/build.gradle.kts adapters/driven/driver-mysql-profiling/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/driver-sqlite-profiling/build.gradle.kts adapters/driven/driver-sqlite-profiling/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-mssql-profiling/build.gradle.kts adapters/driven/driver-mssql-profiling/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/driver-mssql/build.gradle.kts adapters/driven/driver-mssql/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/formats/build.gradle.kts adapters/driven/formats/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/formats-parquet/build.gradle.kts adapters/driven/formats-parquet/build.gradle.kts
@@ -196,6 +197,7 @@ ARG COVERAGE_MODULES_HTML_TASKS="\
 :adapters:driven:driver-mysql-profiling:koverHtmlReport \
 :adapters:driven:driver-sqlite:koverHtmlReport \
 :adapters:driven:driver-sqlite-profiling:koverHtmlReport \
+:adapters:driven:driver-mssql-profiling:koverHtmlReport \
 :adapters:driven:formats:koverHtmlReport \
 :adapters:driven:integrations:koverHtmlReport \
 :adapters:driven:streaming:koverHtmlReport \
@@ -374,6 +376,7 @@ ARG COVERAGE_MODULES_TASKS="\
 :adapters:driven:driver-mysql-profiling:koverXmlReport \
 :adapters:driven:driver-sqlite:koverXmlReport \
 :adapters:driven:driver-sqlite-profiling:koverXmlReport \
+:adapters:driven:driver-mssql-profiling:koverXmlReport \
 :adapters:driven:audit-logging:koverXmlReport \
 :adapters:driven:connection-config:koverXmlReport \
 :adapters:driven:formats:koverXmlReport \

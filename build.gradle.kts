@@ -197,6 +197,7 @@ dependencies {
     kover(project(":adapters:driven:driver-mysql-profiling"))
     kover(project(":adapters:driven:driver-sqlite"))
     kover(project(":adapters:driven:driver-sqlite-profiling"))
+    kover(project(":adapters:driven:driver-mssql-profiling"))
     kover(project(":adapters:driven:driver-mssql"))
     kover(project(":adapters:driven:audit-logging"))
     kover(project(":adapters:driven:formats"))

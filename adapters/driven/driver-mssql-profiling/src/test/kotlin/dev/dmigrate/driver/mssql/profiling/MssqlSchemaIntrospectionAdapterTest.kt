@@ -33,11 +33,12 @@ class MssqlSchemaIntrospectionAdapterTest : FunSpec({
         tables[0].schema shouldBe "dbo"
     }
 
-    // Eine Spalte aus einem zusammengesetzten Unique-Index ist fuer sich
-    // genommen nicht eindeutig — nur einspaltige Schluessel zaehlen.
-    test("only single-column keys count as a column property") {
+    // Der Primaerschluessel gilt fuer jede beteiligte Spalte; `isUnique` nur
+    // fuer einspaltige Indizes, und nicht fuer den Primaerschluessel selbst.
+    test("primary key spans all its columns, unique stays single-column and excludes the PK") {
         every { jdbc.queryList(match { it.contains("sys.indexes") }, any(), any()) } returns listOf(
             mapOf("column_name" to "id", "is_primary_key" to true, "is_unique" to true, "index_column_count" to 1),
+            mapOf("column_name" to "tenant", "is_primary_key" to true, "is_unique" to true, "index_column_count" to 2),
             mapOf("column_name" to "email", "is_primary_key" to false, "is_unique" to true, "index_column_count" to 1),
             mapOf("column_name" to "a", "is_primary_key" to false, "is_unique" to true, "index_column_count" to 2),
         )
@@ -46,6 +47,7 @@ class MssqlSchemaIntrospectionAdapterTest : FunSpec({
         )
         every { jdbc.queryList(match { it.contains("FROM sys.columns c") }, any(), any()) } returns listOf(
             mapOf("column_name" to "id", "type_name" to "int", "is_nullable" to false),
+            mapOf("column_name" to "tenant", "type_name" to "int", "is_nullable" to false),
             mapOf("column_name" to "email", "type_name" to "nvarchar", "is_nullable" to true),
             mapOf("column_name" to "a", "type_name" to "int", "is_nullable" to true),
             mapOf("column_name" to "customer_id", "type_name" to "int", "is_nullable" to false),
@@ -53,8 +55,13 @@ class MssqlSchemaIntrospectionAdapterTest : FunSpec({
 
         val columns = adapter.listColumns(pool, "orders").associateBy { it.name }
         columns.getValue("id").isPrimaryKey shouldBe true
+        // Auch die zweite Spalte des zusammengesetzten Schluessels.
+        columns.getValue("tenant").isPrimaryKey shouldBe true
         columns.getValue("id").nullable shouldBe false
         columns.getValue("email").isUnique shouldBe true
+        // Der Primaerschluessel-Index traegt `is_unique = 1`, zaehlt hier aber
+        // nicht — PostgreSQL und MySQL trennen die beiden Eigenschaften ebenso.
+        columns.getValue("id").isUnique shouldBe false
         columns.getValue("a").isUnique shouldBe false
         columns.getValue("customer_id").isForeignKey shouldBe true
         columns.getValue("email").dbType shouldBe "nvarchar"

@@ -189,6 +189,39 @@ class MssqlProfilingDataAdapterTest : FunSpec({
         result[0].exampleInvalidValues shouldBe listOf("abc", "xyz")
         result[0].determinationStatus shouldBe DeterminationStatus.FULL_SCAN
         sql.captured.contains("TRY_CONVERT(BIGINT") shouldBe true
+        // `TRY_CONVERT(BIGINT, '')` liefert 0, nicht NULL.
+        sql.captured.contains("LEN(TRIM(") shouldBe true
+    }
+
+    // Ohne Stil richtet sich die Wandlung nach der Sprache der Anmeldung:
+    // `13/02/2024` ist unter `british` ein Datum, unter `us_english` keins.
+    test("date compatibility pins ISO style 126 so the profile does not depend on the login language") {
+        val sql = slot<String>()
+        every { jdbc.querySingle(match { it.contains("type_name") }, *anyVararg()) } returns
+            mapOf("type_name" to "nvarchar")
+        every { jdbc.querySingle(capture(sql)) } returns mapOf("checked" to 1L, "compat" to 1L, "incompat" to 0L)
+
+        adapter.targetTypeCompatibility(pool, "t", "c", listOf(TargetLogicalType.DATE))
+        sql.captured.contains("TRY_CONVERT(DATE, CAST([c] AS NVARCHAR(4000)), 126)") shouldBe true
+
+        adapter.targetTypeCompatibility(pool, "t", "c", listOf(TargetLogicalType.DATETIME))
+        sql.captured.contains("TRY_CONVERT(DATETIME2, CAST([c] AS NVARCHAR(4000)), 126)") shouldBe true
+    }
+
+    // Sonst zaehlte topValues anders als der `distinctCount` derselben Spalte.
+    test("topValues groups over the same expression columnMetrics counts") {
+        val sql = slot<String>()
+        every { jdbc.querySingle(match { it.contains("count(*)") }) } returns mapOf("cnt" to 2L)
+        every { jdbc.querySingle(match { it.contains("type_name") }, *anyVararg()) } returns
+            mapOf("type_name" to "nvarchar")
+        every { jdbc.queryList(capture(sql), any()) } returns emptyList()
+        adapter.topValues(pool, "t", "c", 5)
+        sql.captured.contains("GROUP BY [c] ") shouldBe true
+
+        every { jdbc.querySingle(match { it.contains("type_name") }, *anyVararg()) } returns
+            mapOf("type_name" to "geometry")
+        adapter.topValues(pool, "t", "c", 5)
+        sql.captured.contains("GROUP BY CAST([c] AS NVARCHAR(4000))") shouldBe true
     }
 
     test("every target type renders a predicate, and a fully compatible column has no examples") {

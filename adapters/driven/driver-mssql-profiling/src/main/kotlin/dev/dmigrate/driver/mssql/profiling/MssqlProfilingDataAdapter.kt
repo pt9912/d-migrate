@@ -166,12 +166,17 @@ class MssqlProfilingDataAdapter(
             // Der Port reicht den Typ hier nicht durch; ohne ihn liesse sich die
             // Projektion nicht waehlen, und eine `geometry`-Spalte brachte das
             // GROUP BY zu Fall.
-            val display = displayExpr(c, columnTypeOf(jdbc, table, column, schema))
+            val dbType = columnTypeOf(jdbc, table, column, schema)
+            val display = displayExpr(c, dbType)
+            // Gruppiert wird ueber denselben Ausdruck wie in `columnMetrics`,
+            // sonst zaehlte diese Abfrage anders als der dort gemeldete
+            // `distinctCount`: zwei `nvarchar(max)`-Werte mit gleichen ersten
+            // 4000 Zeichen fielen in der Projektion zusammen.
             val rows = jdbc.queryList(
                 """
                 SELECT TOP (?) $display AS val, count(*) AS cnt
                 FROM $t WHERE $c IS NOT NULL
-                GROUP BY $display ORDER BY cnt DESC, val ASC
+                GROUP BY ${comparableExpr(c, dbType)} ORDER BY cnt DESC, val ASC
                 """.trimIndent(),
                 limit,
             )
@@ -296,16 +301,26 @@ class MssqlProfilingDataAdapter(
      * scheitern; `BOOLEAN` fragt zusaetzlich die Textformen ab, die andere
      * Dialekte fuer Wahrheitswerte fuehren, denn `bit` nimmt nur 0 und 1.
      */
-    private fun fitsExpression(text: String, targetType: TargetLogicalType): String =
-        when (targetType) {
-            TargetLogicalType.INTEGER -> "TRY_CONVERT(BIGINT, $text) IS NOT NULL"
-            TargetLogicalType.DECIMAL -> "TRY_CONVERT(FLOAT, $text) IS NOT NULL"
+    private fun fitsExpression(text: String, targetType: TargetLogicalType): String {
+        // T-SQL wandelt die leere und die reine Leerraum-Zeichenkette in `0`
+        // statt in NULL. Ohne diesen Vorbehalt gaelte eine Spalte aus lauter
+        // leeren Zeichenketten als vollstaendig zahl-vertraeglich — und stuende
+        // zugleich in `emptyStringCount`.
+        val nonBlank = "LEN(TRIM($text)) > 0"
+        return when (targetType) {
+            TargetLogicalType.INTEGER -> "$nonBlank AND TRY_CONVERT(BIGINT, $text) IS NOT NULL"
+            TargetLogicalType.DECIMAL -> "$nonBlank AND TRY_CONVERT(FLOAT, $text) IS NOT NULL"
             TargetLogicalType.BOOLEAN ->
                 "LOWER($text) IN ('0','1','true','false','yes','no')"
-            TargetLogicalType.DATE -> "TRY_CONVERT(DATE, $text) IS NOT NULL"
-            TargetLogicalType.DATETIME -> "TRY_CONVERT(DATETIME2, $text) IS NOT NULL"
+            // Stil 126 (ISO 8601) statt der Voreinstellung: ohne Stil richtet
+            // sich die Wandlung nach der Sprache der Anmeldung. `13/02/2024`
+            // ist unter `british` ein Datum und unter `us_english` keins — das
+            // Profil derselben Datenbank fiele je nach Rechner anders aus.
+            TargetLogicalType.DATE -> "TRY_CONVERT(DATE, $text, 126) IS NOT NULL"
+            TargetLogicalType.DATETIME -> "TRY_CONVERT(DATETIME2, $text, 126) IS NOT NULL"
             TargetLogicalType.STRING -> "1 = 1"
         }
+    }
 
     private companion object {
         /** Nicht vergleichbar: kein `COUNT(DISTINCT)`, `GROUP BY` oder `ORDER BY`. */

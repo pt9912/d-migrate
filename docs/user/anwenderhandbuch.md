@@ -1,6 +1,5 @@
 # Benutzerhandbuch: d-migrate
 
-**Software-Version:** 1.0.3  ·  **Handbuch-Version:** 1.7  ·  **Stand:** 30.08.2026
 **Gültigkeitsbereich:** PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server
 
 Dieses Handbuch zeigt, wie Sie mit d-migrate Ihre Aufgaben erledigen — Schemata
@@ -22,7 +21,6 @@ Befehls- und Optionsreferenz finden Sie im [Anhang](#8-anhang).
 6. [Häufige Fragen (FAQ)](#6-häufige-fragen-faq)
 7. [Glossar](#7-glossar)
 8. [Anhang](#8-anhang)
-9. [Änderungshistorie](#9-änderungshistorie)
 
 ---
 
@@ -2142,8 +2140,7 @@ beginnen Sie ohne `--resume` neu.
 ## 6. Häufige Fragen (FAQ)
 
 **Welche Datenbanken unterstützt d-migrate?**
-PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server vollständig. Oracle ist
-geplant.
+PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server.
 
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
@@ -2814,36 +2811,3 @@ custom_types:
 | `dependencies` | ✓ | ✓ | `tables`, `views`, `columns` |
 | `source_dialect` | ✓ | ✓ | Quell-DB des Rumpfs |
 
----
-
-## 9. Änderungshistorie
-
-| Handbuch-Version | Datum | Änderung |
-| ---------------- | ----- | -------- |
-| 0.1 | 15.06.2026 | Erster aufgabenorientierter Entwurf für Software-Version 0.9.9 (Beta). |
-| 0.2 | 05.07.2026 | Fehlerbehebung: Hinweis zur Fingerabdruck-Versionsbindung von Rollback-Artefakten und Overlays (Abbruch mit Exit 8 nach einem Update) ergänzt. |
-| 0.3 | 16.07.2026 | Auf Software-Version 1.0.0-RC-SNAPSHOT aktualisiert. Zugangsdaten-Optionen erweitert (`D_MIGRATE_DB_PASSWORD`, verschlüsselter Store `config credentials`, `credentialRef: file:/env:`); neuer Fehlerfall „credentialRef fail-closed"; `config credentials` in die Befehlsreferenz (A.17) aufgenommen. |
-| 0.4 | 31.07.2026 | Auf Software-Version 1.0.0-RC2 aktualisiert. `credentialRef`-Aufzählungen um das dritte Schema `keychain:` ergänzt (inkl. Hinweis, dass es in CI/Container/Server fail-closed scheitert — neuer Absatz in der Fehlerbehebung). `config show` in 4.2 als Antwort auf „welche Konfiguration gilt gerade?" aufgenommen und als A.18 in die Befehlsreferenz. |
-| 0.5 | 15.08.2026 | Auf Software-Version 1.0.0 (erstes Stable) aktualisiert. **Keine inhaltliche Änderung** — zwischen 1.0.0-RC2 und 1.0.0 kam kein neues Kommando und keine geänderte Option hinzu; die Releases dazwischen waren bauseitig. Nachgezogen wurde die Kopfzeile, die beim 0.4-Eintrag stehengeblieben war (sie nannte weiterhin Handbuch-Version 0.3 und den 16.07.). Sachlich relevant für Leser: der `--user`-Zusatz beim Docker-Aufruf (Abschnitt 1) ist ab 1.0.0 **nötig** und nicht mehr nur empfohlen — bis 0.9.12 lief das Image als root und schrieb auch ohne ihn. |
-| 0.6 | 22.08.2026 | MS SQL Server als vierten Dialekt aufgenommen: Verbindungsform (`mssql://`, Alias `sqlserver://`, Port 1433), `mssql` als `--target` der DDL-Generierung und des Tool-Exports, Datenexport/-import/-transfer sowie die Sequenz-Semantik (`identifier` wird zu `INT IDENTITY(1,1)`, benannte Sequenzen zu nativem `CREATE SEQUENCE`). |
-| 0.7 | 28.08.2026 | `schema migrate` steht für MS SQL Server zur Verfügung. Gültigkeitsbereich und FAQ führen dort nur noch `data profile` als ausstehend. |
-| 1.7 | 30.08.2026 | `data profile` steht für MS SQL Server zur Verfügung; damit ist der Dialekt vollständig. Gültigkeitsbereich und FAQ führen keine Einschränkung mehr. |
-| 0.8 | 28.08.2026 | Anhang F.6 (Indizes) vervollständigt: `include_columns`, `clustered`, `prefix_length`, `text_search_config`, `full_text_vector_column` und `full_text_access_method` aufgenommen, die Typliste um `spgist`, `spatial` und `fulltext` ergänzt. Dazu ein Hinweis, mit welchem W-Code ein Dialekt meldet, wenn er ein Feld nicht tragen kann. |
-| 1.6 | 29.08.2026 | Klargestellt, dass Volltext bei SQL Server nur über `schema generate` einzurichten ist: der Server verbietet `CREATE FULLTEXT INDEX` in einer Transaktion, und `schema migrate` bricht deshalb mit **E072** ab, bevor es etwas anwendet. |
-| 1.5 | 29.08.2026 | SQL Server erzeugt jetzt Volltext-Indizes. Anhang F.6 nennt die drei Regeln, die dort gelten und sonst nirgends: der Katalog je Tabelle (**W146**), der einspaltige, nicht nullbare Schlüsselindex (**E070**, wenn keiner da ist) und höchstens ein Volltext-Index je Tabelle (**E071**). |
-| 1.4 | 28.08.2026 | Der HASH-Modus lässt sich auch in der Konfigurationsdatei hinterlegen (`ddl.mssql.hash_partitions`) und gilt dann für `schema generate` und `schema migrate`. Dazu der vierte Abbruchgrund **E069**: ein eingehender Fremdschlüssel verträgt sich nicht mit der Eimerspalte. |
-| 1.3 | 28.08.2026 | `hash`-Partitionierung lässt sich für SQL Server nachbauen (`--mssql-hash-partitions computed_column`). Abschnitt 3.20 nennt die drei Punkte, die man vorher wissen sollte: die Eimerspalte tritt in jeden eindeutigen Schlüssel (**E067**, wenn das den Schlüssel schwächen würde), die Zeilenverteilung weicht von der Quelle ab (**W145**), und ein Reverse liest `range` zurück. Neue Option in der Befehlsreferenz. |
-| 1.2 | 28.08.2026 | Anhang F.8 (Partitionierung) vervollständigt: Die Felder je Kind-Partition waren nur als `{ name, from, to, values }` genannt — das deckt `range` und `list` ab, aber nicht `hash`. Ergänzt wurden `modulus`, `remainder`, `default` und `indices`, mit Angabe, welches Feld zu welchem Partitionstyp gehört, sowie ein `hash`-Beispiel. |
-| 1.1 | 28.08.2026 | `schema migrate` legt partitionierte Tabellen jetzt partitioniert an — auf allen Dialekten, die das Konzept kennen. Bis dahin erzeugte der Migrationspfad bei PostgreSQL und MySQL eine **unpartitionierte** Tabelle, ohne das zu melden; bei SQL Server brach er ab. Neu dokumentiert: der Abbruch bei nicht ausdrückbarer Partitionierung und der Ausschluss von Fremdschlüsseln auf partitionierten MySQL-Tabellen (**E065**). |
-| 1.0 | 28.08.2026 | Der Ablageort partitionierter Daten lässt sich jetzt auch in der Konfigurationsdatei hinterlegen (`ddl.mssql.partition_storage`) statt nur als Flag je Aufruf; Abschnitt 3.20 nennt die Vorrangregel und den Abbruch bei ungültigem Wert. |
-| 0.9 | 28.08.2026 | SQL Server partitioniert: Abschnitt 3.20 nennt die `range`-Beschränkung, die zwei zusätzlichen Objekte je Tabelle (**W144**) und die Filegroup-Frage; neue Option `--partition-storage` in der Befehlsreferenz. |
-
----
-
-**Weiterführend:** [Migrations-Leitfaden](migrations-leitfaden.md) ·
-[Best-Practices-Leitfaden](best-practices-leitfaden.md) ·
-[Troubleshooting-Leitfaden](troubleshooting-leitfaden.md) ·
-[Administrationshandbuch](administrationshandbuch.md) ·
-[API-Referenz](api-referenz.md) ·
-[BI-Demo-Stack](../../examples/bi-demo/README.md) ·
-[Changelog](../../CHANGELOG.md)
