@@ -1,8 +1,9 @@
 # Vorabklärung: MS SQL Server als vierter Dialekt (Milestone 1.7.0, vorgezogen)
 
-> **Status:** In Progress (2026-08-21) — Entscheidungen getroffen und in
-> [ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md) festgehalten;
-> Draft 2026-08-16.
+> **Status:** Abgeschlossen — Slices 0 bis 10 geliefert, Entscheidungen in
+> [ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md) festgehalten.
+> Was offen blieb, steht als Ticket in `../open/`; siehe
+> [Closure](#closure) am Ende.
 > **Trigger:** Eigner-Entscheidung, MSSQL als nächsten großen Punkt vorzuziehen.
 > Die Roadmap führt 1.7.0 hinter Trino (1.1.0), gRPC (1.1.8), REST (1.2.0) u. a. —
 > diese Reihenfolge wird damit bewusst geändert; die Roadmap ist deskriptiv.
@@ -892,10 +893,12 @@ Grund statt des pauschalen „wird für MSSQL nicht gelesen".
 
 **Die Modell-Frage bleibt offen und gehört nicht in diesen Slice:** ein
 reverse-gelesener T-SQL-Rumpf ist auf keinem anderen Ziel gültig. Für
-View-Bodies gibt es `ViewQueryTransformer.assessPortability`, für
-Routinen-Rümpfe kein Gegenstück — auch nicht bei PostgreSQL. Slice 9 macht die
-Rümpfe lesbar und schreibbar; ob und wie sie *übersetzt* werden, ist eine
-cross-dialektale Frage.
+View-Bodies beurteilt `ViewQueryTransformer.assessPortability` den Rumpf
+inhaltlich; Routinen-Rümpfe prüfen alle vier Dialekte nur nach Herkunft — ein
+fremder `sourceDialect` fällt als `E053` weg, ein fehlender geht ungeprüft
+durch. Slice 9 macht die Rümpfe lesbar und schreibbar; ob und wie sie
+*übersetzt* werden, ist eine cross-dialektale Frage:
+[`routine-body-cross-dialect-portability.md`](../open/routine-body-cross-dialect-portability.md).
 
 ### Slice 10 — Profiling ✅
 
@@ -978,58 +981,60 @@ die kein Unit-Test und kein kleines E2E-Schema gezeigt hatte:
 Die Regel dahinter steht jetzt in `spec/type-mapping.md` 6.2: der MSSQL-Reverse
 liefert **neutrale** Syntax, keine T-SQL-Oberfläche.
 
-## Offene Punkte (Stand nach Slice 4)
+## Offene Punkte
 
-**Pflicht für Slice 5 (Migrate-Postcompare):**
+Der Abschnitt trug den Stand nach Slice 4. Drei seiner Einträge waren
+inzwischen erledigt, ohne dass er es sagte; die übrigen sind als Tickets
+ausgeschnitten, damit sie auffindbar bleiben.
 
-- **`Enum(refType)` liefert unter der MSSQL-Projektion falschen Drift.** Der
-  Kanonisierer lässt ihn als Identität stehen, weil eine
-  `(NeutralType) -> NeutralType`-Projektion die Custom-Types des Schemas nicht
-  sieht. T-SQL degradiert einen `refType`-Enum aber immer zu
-  `NVARCHAR(width)` + CHECK (und eine Domain zu ihrem Basistyp), der Reverse
-  kann den `refType` also nie zurückgeben. Anders als bei PostgreSQL/MySQL —
-  die einen echten Custom-Type emittieren und zurücklesen — ist Identität hier
-  **nicht** die genaue Projektion, sondern die konservative: sie meldet lieber
-  laut Drift, als eine Abflachung zu verstecken. Ein blinder Fold wäre
-  genauso falsch (Breite und Basistyp stehen im Schema, nicht im Typ). Auflösen
-  heißt: der Projektion Schema-Kontext geben. Muss fallen, bevor
-  `schema migrate --execute` für mssql Postcompare fährt.
+**Erledigt:**
 
-**Nächste Arbeitsschritte:**
-
-- **Spaltenlevel `references` im Diff-Pfad** —
+- ~~`Enum(refType)` liefert unter der MSSQL-Projektion falschen Drift.~~ —
+  `MssqlNeutralTypeCanonicalizer` löst den `refType` auf, sobald das Schema
+  mitkommt (`canonicalize(type, customTypes)`), und `TypeCanonicalizerWiring`
+  reicht `schema.customTypes` durch. Das war die geforderte Auflösung: der
+  Projektion Schema-Kontext geben.
+- ~~Spaltenlevel `references` im Diff-Pfad.~~ —
   [`mssql-column-level-foreign-keys.md`](../done/mssql-column-level-foreign-keys.md).
-  `CreateTable` und `AddColumn` rendern sie nicht, der Generate-Pfad schon; eine
-  per `migrate` angelegte Tabelle verliert die Beziehung still. Beim Review von
-  5a-2 gefunden und dort bewusst ausgeschnitten: der Neubau umgeht die Lücke,
-  statt sie zu verdecken.
+- ~~Clustered/nonclustered-Steuerung und INCLUDE-Spalten.~~ — Slice 6, samt
+  der Review-Nacharbeit an beiden Generate-Nähten (`DdlGenerator` und
+  Diff-Builder).
 
-- **Fremde Funktions-Defaults verlieren ihre Funktions-Natur:** das neutrale
-  Format kennt nur `current_timestamp`/`current_date`/`current_time`/`gen_uuid`
-  (plus `nextval(...)`) als Funktion — jeder andere Default-Text wird beim
-  YAML-Round-Trip zum String-Literal
-  ([`SchemaNodeStructureParsers`](../../../adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaNodeStructureParsers.kt)).
-  Das ist dialektübergreifend und nicht MSSQL-spezifisch, fiel aber am
-  MSSQL-Leg auf. Keinem Slice zugeordnet.
-- **SRID-Treue im Datenpfad:** WKB trägt keine SRID, SQL Server führt sie am
-  Wert (nicht an der Spalte) — übertragene Geometrien landen mit dem
-  Spalten-Default (0 bzw. 4326). Eine SRID-treue Übertragung bräuchte eine
-  eigene Projektion (Wert-SRID als Zusatzspalte oder EWKB-ähnliche Kodierung);
-  dokumentiert in `spec/type-mapping.md`, keinem Slice zugeordnet.
+**Ausgeschnitten nach `open/`:**
 
-**Im Slice-Schnitt eingeplant:**
+- [`neutral-default-function-fidelity.md`](../open/neutral-default-function-fidelity.md)
+  — fremde Funktions-Defaults werden beim Round-Trip zum String-Literal.
+  Dialektübergreifend, am MSSQL-Leg aufgefallen.
+- [`mssql-bulk-import-fast-path.md`](../open/mssql-bulk-import-fast-path.md) —
+  der Import läuft über gebatchte `INSERT`s, ohne `BULK INSERT`-Weg.
+- [`mssql-import-skip-without-pk-preflight.md`](../open/mssql-import-skip-without-pk-preflight.md)
+  — `--on-conflict skip` ohne Primärschlüssel meldet sich im Import-Pfad später
+  als im Transfer-Pfad.
 
-- **Clustered/nonclustered-Steuerung und INCLUDE-Spalten:** Slice 6 (siehe
-  Slice-Tabelle oben). Der Reverse liest Indizes heute als `BTREE`, der
-  Generate rendert nonclustered — die Steuerung fehlt noch.
+- [`mssql-srid-fidelity-data-path.md`](../open/mssql-srid-fidelity-data-path.md)
+  — der Datenpfad schreibt Geometrien mit der Typ-Default-SRID; abweichende
+  Wert-SRIDs gehen verloren.
 
-**Ohne Slice-Zuordnung, Priorisierung noch zu entscheiden:**
+---
 
-- **Bulk-Fast-Path** (`BULK INSERT`/`SqlServerBulkCopy`): der Slice-Schnitt
-  notiert für Slice 3 nur „Fast-Path später", ohne Slice-Nummer. Der Import
-  läuft heute über gebatchte `INSERT`s; ein Bulk-Pfad wäre eine
-  Durchsatz-Optimierung analog PG-`COPY`.
-- **`data import --on-conflict skip` ohne PK:** der Transfer-Pfad lehnt das im
-  Preflight ab (`DialectCapabilities.requiresPrimaryKeyForSkip`); der
-  Import-Pfad hat an dieser Stelle keinen Schema-Preflight und meldet es erst
-  beim Öffnen der Tabelle. Ob er denselben frühen Check bekommt, ist offen.
+## Closure
+
+MS SQL Server ist der vierte Dialekt: `schema reverse`, `generate`, `migrate`,
+`data export`/`import`/`transfer` und `data profile` sind gebaut und live gegen
+echtes SQL Server belegt. Das `DialectCommandGate`, das unfertige Pfade an der
+Kommando-Grenze abwies, ist mit Slice 10 ohne Gegenstand und **entfernt** — kein
+Kommando weist MSSQL mehr ab.
+
+Der Plan wandert damit nach `done/`. Was er an offener Arbeit trug, ist
+ausgeschnitten und einzeln nachhaltbar:
+
+| Ticket | Gegenstand |
+| --- | --- |
+| [`neutral-default-function-fidelity.md`](../open/neutral-default-function-fidelity.md) | Fremde Funktions-Defaults werden beim Round-Trip zu String-Literalen. Dialektübergreifend. |
+| [`mssql-srid-fidelity-data-path.md`](../open/mssql-srid-fidelity-data-path.md) | Der Datenpfad schreibt Geometrien mit der Typ-Default-SRID; Wert-SRIDs gehen verloren. |
+| [`mssql-bulk-import-fast-path.md`](../open/mssql-bulk-import-fast-path.md) | Der Import schreibt gebatchte `INSERT`s, ohne `BULK INSERT`-Weg. Durchsatz, kein Defekt. |
+| [`mssql-import-skip-without-pk-preflight.md`](../open/mssql-import-skip-without-pk-preflight.md) | `--on-conflict skip` ohne Primärschlüssel meldet sich im Import-Pfad später als im Transfer-Pfad. |
+| [`routine-body-cross-dialect-portability.md`](../open/routine-body-cross-dialect-portability.md) | Routinen-Rümpfe werden nach Herkunft übersprungen statt inhaltlich beurteilt. Cross-dialektal. |
+| [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) | Enum-CHECK-Kante aus Slice 5; wartet auf eine Eigner-Entscheidung zwischen drei Varianten. |
+| [`no-transaction-execution-strategy.md`](../open/no-transaction-execution-strategy.md) | `CREATE FULLTEXT INDEX` verträgt keine offene Transaktion (Slice 8d, `E072`); dieselbe Naht wartet PGs `CREATE INDEX CONCURRENTLY` ab. |
+| [`partition-boundary-change-operation.md`](../open/partition-boundary-change-operation.md) | Grenzänderungen an Partitionen werden erkannt und gemeldet, aber nicht als Operation emittiert. |

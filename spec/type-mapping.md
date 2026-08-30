@@ -286,7 +286,7 @@ Konsequenzen:
   `geography::STGeomFromWKB(?, srid)` geschrieben. WKB trägt keine SRID, und
   SQL Server führt sie am Wert statt an der Spalte — beim Schreiben gilt
   deshalb 0 (`geometry`) bzw. 4326 (`geography`). Abweichende Wert-SRIDs
-  gehen dabei verloren; eine SRID-treue Übertragung ist offene Folgearbeit.
+  gehen dabei verloren.
 
 ---
 

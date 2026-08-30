@@ -3,7 +3,7 @@ name: Sample-DB Cross-Dialect Smoke PG→MSSQL (Best-Effort)
 # MSSQL-Leg der Sample-DB-Harness (ADR 0047, Slice 3b): Pagila PostgreSQL ->
 # SQL Server gegen das echte d-migrate:dev-CLI, symmetrisch zu
 # sample-db-cross-smoke-pg2my.yml (PG->MySQL).
-# Plan: docs/planning/in-progress/mssql-dialect-scoping.md
+# Plan: docs/planning/done/mssql-dialect-scoping.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Faehrt `make sample-db-cross-smoke-pg2ms` (gepinnter Pagila-Dump -> postgres +

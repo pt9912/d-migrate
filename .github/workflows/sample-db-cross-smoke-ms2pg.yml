@@ -3,7 +3,7 @@ name: Sample-DB Cross-Dialect Smoke MSSQL→PG (Best-Effort)
 # MSSQL-Leg der Sample-DB-Harness in der GEGENRICHTUNG (ADR 0047, Slice 4):
 # SQL Server als QUELLE, PostgreSQL als Ziel — der Pfad, den
 # sample-db-cross-smoke-pg2ms.yml (PG -> SQL Server) nicht abdeckt.
-# Plan: docs/planning/in-progress/mssql-dialect-scoping.md
+# Plan: docs/planning/done/mssql-dialect-scoping.md
 # ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
 #
 # Faehrt `make sample-db-cross-smoke-ms2pg`: Hop 0 saet die SQL-Server-Quelle mit

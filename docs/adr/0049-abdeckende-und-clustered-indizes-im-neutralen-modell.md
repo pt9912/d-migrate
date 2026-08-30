@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-28
 decision-makers: pt9912
-consulted: docs/planning/in-progress/mssql-dialect-scoping.md
+consulted: docs/planning/done/mssql-dialect-scoping.md
 informed: hexagon/core (IndexDefinition, MigrationFingerprint), hexagon/ports-common (DialectCapabilities), spec/schema.json, CHANGELOG.md
 ---
 

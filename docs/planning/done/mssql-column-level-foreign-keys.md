@@ -1,7 +1,7 @@
 # MSSQL: spaltenlevel `references` im Diff-Pfad
 
 > Status: **behoben.** Gefunden beim Review von Sub-Slice 5a-2
-> ([`../in-progress/mssql-dialect-scoping.md`](../in-progress/mssql-dialect-scoping.md)),
+> ([`mssql-dialect-scoping.md`](mssql-dialect-scoping.md)),
 > dort bewusst **nicht** mitgelöst — die Fläche gehört zu Slice 5a/5b und braucht
 > einen eigenen Schnitt.
 > Severity: **stiller Verlust**, kein Fehlschlag. Die Migration läuft durch, die

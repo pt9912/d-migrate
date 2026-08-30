@@ -155,7 +155,7 @@ sortiert werden.
 - **HASH.** Eine HASH-Partitionierung auf RANGE abzubilden verlangt, die
   Hash-Funktion des Quellsystems nachzubilden; das ist kein Mapping, sondern
   eine Emulation, und gehört zum Sub-Slice 7d
-  ([`mssql-dialect-scoping.md`](../in-progress/mssql-dialect-scoping.md)).
+  ([`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)).
 - **Automatische Herleitung.** Wenn das Werkzeug die Zuordnung selbst raten
   könnte, bräuchte es kein Overlay. Ein Vorschlagsmodus („so könnte die
   Zuordnung aussehen") ist denkbar, aber nicht Teil dieses Plans.

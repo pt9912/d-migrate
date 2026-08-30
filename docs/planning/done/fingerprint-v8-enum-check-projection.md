@@ -5,7 +5,7 @@
   Die Design-Entscheidung (Eigner, Weg B) steht in
   [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md).
 - **Trigger**: MSSQL-Sub-Slice 5e
-  ([`mssql-dialect-scoping.md`](../in-progress/mssql-dialect-scoping.md)) lässt
+  ([`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) lässt
   das `DialectCommandGate` für `schema migrate` fallen. Ab dann läuft der
   Post-Execute-Compare auch für SQL Server — und meldet bei **jeder**
   Enum-Spalte Drift.

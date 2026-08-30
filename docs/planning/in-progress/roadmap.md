@@ -968,15 +968,20 @@ Validierung deterministisch im Profiling-Kern bleiben.
 | Metadata  | Catalog-Publisher fuer Schema-Snapshots, Diffs, Profiling-Reports und Artefaktrefs planen — siehe [`catalog-publisher-lakehouse-targets.md`](../../../spec/catalog-publisher-lakehouse-targets.md) | —      |
 | Lakehouse | Iceberg-/Delta-Zieladapter als spaetere Option evaluieren, abhaengig von Parquet- und Object-Storage-Grundlagen                                                                                    | —      |
 
-### Milestone 1.7.0 — Weitere Datenbanken (MS SQL Server)
+### Milestone 1.7.0 — Weitere Datenbanken (MS SQL Server) ✅ (2026-08-30)
 
-| Bereich | Aufgabe                                     | LF-Ref                                                   |
-| ------- | ------------------------------------------- | -------------------------------------------------------- |
-| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support) | [`LF-019`](../../../spec/lastenheft-d-migrate.md#lf-019) |
-| Test    | Cross-DB-Tests mit 4 Datenbanksystemen      | 8.7                                                      |
+Vorgezogen vor die Milestones 1.1.0 bis 1.6.0 (Eigner-Entscheidung,
+[ADR 0047](../../adr/0047-mssql-vierter-dialekt-scoping.md)); geliefert in
+elf Slices, siehe [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md).
+
+| Bereich | Aufgabe                                     | LF-Ref                                                   | Status |
+| ------- | ------------------------------------------- | -------------------------------------------------------- | ------ |
+| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support) | [`LF-019`](../../../spec/lastenheft-d-migrate.md#lf-019) | ✅      |
+| Test    | Cross-DB-Tests mit 4 Datenbanksystemen      | 8.7                                                      | ✅      |
 
 **Ergebnis**: Unterstützung für MS SQL Server als viertes relationales
-Datenbanksystem.
+Datenbanksystem — `schema reverse`, `generate`, `migrate`, der Datenpfad und
+`data profile`, jeweils live gegen SQL Server belegt.
 
 ### Milestone 1.8.0 — Weitere Datenbanken (Oracle)
 

@@ -3,7 +3,7 @@ status: accepted
 date: 2026-08-23
 decision-makers: pt9912
 consulted: docs/planning/done/fingerprint-v8-enum-check-projection.md, docs/planning/open/enum-inline-check-fidelity.md
-informed: hexagon/core (MigrationFingerprint), docs/planning/in-progress/mssql-dialect-scoping.md, CHANGELOG.md
+informed: hexagon/core (MigrationFingerprint), docs/planning/done/mssql-dialect-scoping.md, CHANGELOG.md
 ---
 
 # Der Wertevorrat eines Enums zählt im Fingerprint unabhängig von seiner Darstellung, `schema-fingerprint-v7` → `v8`

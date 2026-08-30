@@ -112,7 +112,7 @@ PG/SQLite erst nach einem 2b-Bau, bei MSSQL **schon heute im generate-Pfad**.
 Der Unterschied ist praktisch: der Status quo „C" (bare `TEXT` + `W134`,
 driftfrei) existiert fuer MSSQL gar nicht, denn der Generator rendert bereits
 treu. Damit faellt die Entscheidung spaetestens mit dem MSSQL-Diff-Pfad
-(Slice 5 in [`mssql-dialect-scoping.md`](../in-progress/mssql-dialect-scoping.md)):
+(Slice 5 in [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)):
 
 - rendert `MssqlDiff*` den CHECK **wie generate**, ist der Post-Compare-Drift
   ohne A oder B unvermeidbar;

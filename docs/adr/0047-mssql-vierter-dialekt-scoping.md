@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-21
 decision-makers: pt9912
-consulted: docs/planning/in-progress/mssql-dialect-scoping.md, .github/workflows/integration.yml
+consulted: docs/planning/done/mssql-dialect-scoping.md, .github/workflows/integration.yml
 informed: .github/dependabot.yml, docs/user/quality.md
 ---
 
@@ -26,7 +26,7 @@ waren drei Fragen zu entscheiden: die Versions-Untergrenze, der
 Feature-Schnitt und die CI-Einbettung des mit ~1,5 GB Image / 2 GB RAM
 schwersten Containers im Haus. Bestandsaufnahme, T-SQL-Inventar und
 Slice-Schnitt trägt das Plan-Dokument
-[`mssql-dialect-scoping.md`](../planning/in-progress/mssql-dialect-scoping.md)
+[`mssql-dialect-scoping.md`](../planning/done/mssql-dialect-scoping.md)
 (deskriptiv).
 
 ## Entscheidung
