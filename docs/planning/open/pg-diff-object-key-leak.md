@@ -1,10 +1,23 @@
 ---
 id: pg-diff-object-key-leak
 title: "PostgreSQL-Diff-Pfad emittiert den kanonischen Key als Bezeichner"
-status: open
+status: done
 ---
 
 # PostgreSQL-Diff-Pfad emittiert den kanonischen Key als Bezeichner
+
+> **Behoben 2026-08-30.** Alle sieben Emissionsstellen dekodieren jetzt ueber
+> `ObjectKeyCodec` — `PostgresTriggerDdlHelper` (Create, Drop, Drop+Create-
+> Fallback), `PostgresDiffFunctionOps` und `PostgresDiffProcedureOps` (je Create
+> und Drop). Unit-Specs bauen den `objectRef` mit dem kanonischen Key;
+> `PostgresDiffCanonicalKeyIntegrationTest` belegt den Drop gegen echtes
+> PostgreSQL. Ohne den Fix meldet der Server dort
+> `trigger "users::last_updated" for table "users" does not exist`.
+>
+> MySQL und SQLite sind **nicht** betroffen: dort emittiert auch der
+> Generate-Pfad den Key, weil ihr Trigger-Namensraum schemaweit ist. Der
+> Widerspruch bestand nur in PostgreSQL, zwischen seinem eigenen Generate- und
+> Diff-Pfad.
 
 ## Lage
 

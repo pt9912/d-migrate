@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffObjectRef
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ParameterDirection
@@ -118,7 +119,7 @@ internal object PostgresDiffFunctionOps {
             append("CREATE ")
             if (orReplace) append("OR REPLACE ")
             append("FUNCTION ")
-            append(ctx.sql.quote(ref.rootName))
+            append(ctx.sql.quote(ObjectKeyCodec.routineName(ref.rootName)))
             append('(')
             append(renderParameters(fn.parameters))
             append(')')
@@ -148,7 +149,7 @@ internal object PostgresDiffFunctionOps {
     ) {
         val sql = buildString {
             append("DROP FUNCTION ")
-            append(ctx.sql.quote(ref.rootName))
+            append(ctx.sql.quote(ObjectKeyCodec.routineName(ref.rootName)))
             append('(')
             append(renderDropSignature(fn.parameters))
             append(");")

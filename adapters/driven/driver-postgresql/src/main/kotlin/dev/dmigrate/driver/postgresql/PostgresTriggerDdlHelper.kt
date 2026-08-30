@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
@@ -144,7 +145,7 @@ internal object PostgresTriggerDdlHelper {
             )
             return
         }
-        val sql = buildCreateSql(ref.rootName, trigger, ctx, orReplace = orReplace)
+        val sql = buildCreateSql(ObjectKeyCodec.triggerName(ref.rootName), trigger, ctx, orReplace = orReplace)
         ctx.emit(op, sql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
 
@@ -153,7 +154,8 @@ internal object PostgresTriggerDdlHelper {
         trigger: TriggerDefinition,
         ctx: PostgresDiffRenderContext,
     ) {
-        val sql = "DROP TRIGGER ${ctx.sql.quote(op.objectRef.rootName)} " +
+        val name = ObjectKeyCodec.triggerName(op.objectRef.rootName)
+        val sql = "DROP TRIGGER ${ctx.sql.quote(name)} " +
             "ON ${ctx.sql.quote(trigger.table)};"
         ctx.emit(op, sql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
@@ -181,9 +183,10 @@ internal object PostgresTriggerDdlHelper {
             )
             return
         }
-        val dropSql = "DROP TRIGGER ${ctx.sql.quote(op.objectRef.rootName)} " +
+        val name = ObjectKeyCodec.triggerName(op.objectRef.rootName)
+        val dropSql = "DROP TRIGGER ${ctx.sql.quote(name)} " +
             "ON ${ctx.sql.quote(before.table)};"
-        val createSql = buildCreateSql(op.objectRef.rootName, target, ctx, orReplace = false)
+        val createSql = buildCreateSql(name, target, ctx, orReplace = false)
         ctx.emit(op, dropSql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
         ctx.emit(op, createSql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
         // A.3 strict-mode guard: emit() short-circuits in strict mode
