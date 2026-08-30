@@ -25,8 +25,8 @@ Statusüberblick.
 - [`guide.md`](guide.md) — bestehende „Schnellstart-Anleitung". Wird in das
   **Anwenderhandbuch** überführt; bleibt vorerst als Quelle erhalten.
 - [`releasing.md`](releasing.md) — Release-Leitfaden (Maintainer).
-- [`quality.md`](quality.md) / [`quality-report.md`](quality-report.md) —
-  Qualität/Coverage (Contributor).
+- [`quality.md`](quality.md) — Qualität/Coverage: wie gemessen wird und welche
+  Gates gelten (Contributor).
 
 ## Spezifikationen (Quellmaterial)
 

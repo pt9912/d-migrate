@@ -1,8 +1,18 @@
 # Schnellstart-Anleitung
 
-Diese Anleitung beschreibt die ersten Schritte mit d-migrate: Installation,
+Diese Anleitung führt durch die ersten Schritte mit d-migrate: Installation,
 Schema validieren, Schemas vergleichen, DDL generieren sowie Daten exportieren
 und importieren.
+
+Sie ist ein **Einstieg, keine Referenz.** Das Werkzeug kann mehr als die hier
+gezeigten Wege — eine Migration gegen eine laufende Datenbank (`schema migrate`)
+samt Rückbau (`schema rollback`), den direkten Transfer zwischen zwei
+Datenbanken (`data transfer`), Datenprofilierung (`data profile`), den Export in
+Migrationswerkzeuge (`export flyway|liquibase|django|knex`), den MCP-Server
+(`mcp serve`) sowie Konfigurations- und Zugangsdaten-Verwaltung (`config`,
+`credentials`). Aufgabenorientiert beschrieben sind alle davon im
+[Anwenderhandbuch](anwenderhandbuch.md); der vollständige Kommando- und
+Optionsvertrag steht in der [CLI-Spezifikation](../../spec/cli-spec.md).
 
 ---
 
@@ -263,6 +273,9 @@ Nach erfolgreicher Validierung kann DDL für eine Zieldatenbank erzeugt werden:
 
 # SQLite
 ./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target sqlite"
+
+# SQL Server
+./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target mssql"
 ```
 
 ### DDL in Datei speichern
@@ -286,7 +299,7 @@ Den Report-Pfad explizit überschreiben:
 
 Erzeugt zusätzlich `schema.rollback.sql` mit den inversen DDL-Statements (DROP TABLE, DROP INDEX, etc.).
 
-### Importfreundliche Schema-Artefakte (0.9.2)
+### Importfreundliche Schema-Artefakte
 
 Wenn ein Schema Trigger, Functions oder Procedures enthält, kann `--split pre-post`
 die DDL in zwei Phasen aufteilen: `pre-data` (Tabellen, Constraints, Sequences,
@@ -346,7 +359,7 @@ Einschränkungen:
   bei vorhandenen Functions im Schema einen Fehler E060 (Exit 2). Lösung:
   `dependencies.functions` im Schema explizit deklarieren.
 
-### Sequence-basierte Spaltenwerte (0.9.3)
+### Sequence-basierte Spaltenwerte
 
 Spalten koennen ihren Default-Wert aus einer benannten Sequence beziehen.
 Dafuer wird im Schema die Objektform `default: { sequence_nextval: ... }`
@@ -516,7 +529,7 @@ dem Vertrag aus CHANGELOG `[0.9.8]`.
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `-c`, `--config`      | Pfad zu einer Konfigurationsdatei                         |
-| `--lang`              | Sprache der Ausgabe (`de`, `en`, plus Varianten `de-DE`, `de_DE`, `en-US`, `en_US`). Hat Vorrang vor `D_MIGRATE_LANG`, `LC_ALL`/`LANG` und `i18n.default_locale`. Unsupported Werte (z.B. `fr`) enden mit Exit 2 (seit 0.9.0 Phase A, `docs/planning/done-archive/ImpPlan-0.9.0-A.md` §4.1/§4.2). |
+| `--lang`              | Sprache der Ausgabe (`de`, `en`, plus Varianten `de-DE`, `de_DE`, `en-US`, `en_US`). Hat Vorrang vor `D_MIGRATE_LANG`, `LC_ALL`/`LANG` und `i18n.default_locale`. Unsupported Werte (z.B. `fr`) enden mit Exit 2 . |
 | `--output-format`     | Ausgabeformat: `plain` (Standard), `json`, `yaml`         |
 | `-v`, `--verbose`     | Erweiterte Ausgabe (DEBUG-Level)                          |
 | `-q`, `--quiet`       | Nur Fehler ausgeben                                       |
@@ -528,71 +541,18 @@ dem Vertrag aus CHANGELOG `[0.9.8]`.
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
 
-### Optionen für `schema reverse`
+### Optionen der einzelnen Kommandos
 
-`schema reverse` liest standardmäßig **nur** Tabellen, Sequenzen, Constraints
-und Indizes. Views, Trigger, Functions und Stored Procedures sind **opt-in**:
+Diese Anleitung führt die Optionen nicht auf. Sie stünden hier ein drittes Mal
+neben zwei Stellen, die sie vollständig führen — und die dritte Kopie ist die,
+die als Erstes veraltet:
 
-| Option                 | Wirkung                              |
-| ---------------------- | ------------------------------------ |
-| `--include-views`      | Views mitnehmen                      |
-| `--include-functions`  | User-Defined Functions mitnehmen     |
-| `--include-procedures` | Stored Procedures mitnehmen          |
-| `--include-triggers`   | Trigger mitnehmen                    |
-| `--include-all`        | alle optionalen Objekttypen mitnehmen |
+- **[Anwenderhandbuch](anwenderhandbuch.md)** — jede Option im Zusammenhang der
+  Aufgabe, für die man sie braucht.
+- **[CLI-Spezifikation](../../spec/cli-spec.md)** — der vollständige Vertrag je
+  Kommando: Pflicht, Typ, Default, Exit-Codes.
 
-Ohne diese Flags werden die genannten Objekte **ohne Fehler ausgelassen** — für
-eine vollständige Migration siehe [Migrations-Leitfaden](migrations-leitfaden.md).
-
-### Optionen für `schema generate`
-
-| Option                | Beschreibung                                              |
-| --------------------- | --------------------------------------------------------- |
-| `--source`            | Pfad zur Schema-Datei (YAML, Pflicht)                     |
-| `--target`            | Zieldialekt: `postgresql`, `mysql`, `sqlite`, `mssql` (Pflicht) |
-| `--output`            | Ausgabedatei (Standard: stdout)                           |
-| `--report`            | Report-Datei (Standard: `<output>.report.yaml`)           |
-| `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |
-| `--split`             | DDL-Ausgabemodus: `single` (Standard) oder `pre-post` fuer importfreundliche Trennung in `pre-data`/`post-data` |
-| `--mysql-named-sequences` | MySQL-Sequence-Modus: `action_required` (Standard, E056-Skip) oder `helper_table` (Emulation ueber Hilfsobjekte). Nur fuer `--target mysql`; bei PostgreSQL/SQLite Exit 2. |
-| `--sqlite-named-sequences` | SQLite-Sequence-Modus: `action_required` (Standard, E056-Skip) oder `helper_table` (Emulation ueber `dmg_sequences` + kanonisches `_bi`/`_ai`-Trigger-Paar). Nur fuer `--target sqlite`; bei PostgreSQL/MySQL Exit 2. |
-| `--spatial-profile`   | Spatial-Profil: `postgis`, `native`, `spatialite`, `none` |
-
-### Optionen für `data export`
-
-| Option                | Beschreibung                                              |
-| --------------------- | --------------------------------------------------------- |
-| `--source`            | Connection-URL oder Name aus `.d-migrate.yaml` (Pflicht)  |
-| `--format`            | Ausgabeformat: `json`, `yaml`, `csv`, `parquet` (Pflicht) |
-| `--output`, `-o`      | Ausgabedatei oder -verzeichnis (Standard: stdout)         |
-| `--tables`            | Nur diese Tabellen (kommasepariert)                       |
-| `--filter`            | Filter-DSL-Ausdruck (Vergleiche, IN, IS NULL, AND/OR/NOT, Funktionen) |
-| `--since-column`      | Marker-Spalte für inkrementellen Export ([`LF-013`](../../spec/lastenheft-d-migrate.md#lf-013))          |
-| `--since`             | Untere Grenze für `--since-column`                        |
-| `--split-files`       | Eine Datei pro Tabelle in `--output <dir>`                |
-| `--chunk-size`        | Rows pro Streaming-Chunk (Standard: 10000)                |
-| `--encoding`          | Output-Encoding (Standard: `utf-8`)                       |
-| `--csv-delimiter`     | CSV-Trennzeichen (Standard: `,`)                          |
-| `--csv-bom`           | BOM passend zu `--encoding` voranstellen (UTF-8, UTF-16 BE/LE); No-op bei Non-UTF-Encodings |
-| `--csv-no-header`     | CSV-Kopfzeile unterdrücken                                |
-| `--resume`            | Resume eines frueheren Exports aus einer Checkpoint-Referenz (seit 0.9.0 Phase C.1 produktiv; seit 0.9.0 Phase C.2 mit Mid-Table-Wiederaufnahme). Wert ist eine `checkpoint-id` oder ein Pfad innerhalb des effektiven Checkpoint-Verzeichnisses. Tabellen mit Status `COMPLETED` werden uebersprungen. Ist `--since-column` gesetzt und hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; ohne PK fallt die Tabelle mit stderr-Hinweis auf „neu exportieren" zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume re-exportiert die Tabelle von vorn (Mid-Table-Rebuild des Containers ist verschoben). Nicht unterstuetzt mit stdout-Output (Exit 2) oder ohne konfiguriertes Checkpoint-Verzeichnis (Exit 7). Kompatibilitaetsmismatch (inkl. PK-Signatur oder fehlendem `--since-column` bei gespeicherter Position) → Exit 3. |
-| `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
-
-### Optionen für `data import`
-
-| Option                | Beschreibung                                              |
-| --------------------- | --------------------------------------------------------- |
-| `--source`            | Datendatei oder -verzeichnis (Pflicht)                    |
-| `--target`            | Connection-URL oder Name aus `.d-migrate.yaml` (Pflicht)  |
-| `--format`            | Eingabeformat: `json`, `yaml`, `csv`, `parquet` (Pflicht) |
-| `--schema`            | Schema-Datei für Preflight-Validierung                    |
-| `--on-conflict`       | `abort` (Standard) oder `update` (UPSERT)                 |
-| `--truncate`          | Zieltabellen vor dem Import leeren                        |
-| `--trigger-mode`      | `enable` (Standard) oder `disable`                        |
-| `--chunk-size`        | Datensätze pro Transaktion (Standard: 10000)              |
-| `--encoding`          | Input-Encoding. Default `auto` sniffed BOM für UTF-8/UTF-16 BE/LE und fällt ohne BOM auf UTF-8 zurück. Für Non-UTF-Encodings (z.B. `iso-8859-1`) explizit setzen — keine Heuristik. |
-| `--resume`            | Resume eines frueheren Imports aus einer Checkpoint-Referenz (seit 0.9.0 Phase D produktiv: Manifest-Lifecycle, semantischer Preflight, ab-Commit-Fortsetzung, Directory-Bindung). Wert ist eine `checkpoint-id` oder ein Pfad innerhalb des effektiven Checkpoint-Verzeichnisses. **Preflight**: prueft `operationType == IMPORT`, Fingerprint ueber alle resume-relevanten Optionen (Format, Encoding, CSV-Header/NULL, `--on-error`/`--on-conflict`/`--trigger-mode`/`--truncate`/`--disable-fk-checks`/`--reseed-sequences`/`chunk-size`, Tabellenliste, Input-Topologie, Input-Pfad, Ziel; bei Directory-Importen zusaetzlich `table -> inputFile`) sowie die Tabellenlisten-Gleichheit. **Wiederaufnahme**: `COMPLETED` Tabellen werden uebersprungen; teilweise bestaetigte Tabellen starten am naechsten nicht committeten Chunk (der Importer liest die bereits committeten Chunks verwirft sie, schreibt sie nicht erneut). `--truncate` wird fuer teilweise bestaetigte Tabellen automatisch ignoriert, damit bestaetigte Zeilen nicht entwertet werden. `--on-error abort/skip/log` bleibt semantisch stabil — nur Chunks, die `session.commitChunk()` erfolgreich durchlaufen haben, treiben den Checkpoint vorwaerts. Nicht unterstuetzt mit stdin (`--source -`) → Exit 2. Ohne konfiguriertes Checkpoint-Verzeichnis → Exit 7. Kompatibilitaetsmismatch (inkl. geaenderter Directory-Dateimenge oder Reihenfolge) → Exit 3. |
-| `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
+`d-migrate <kommando> --help` zeigt sie ebenso, direkt aus dem Programm.
 
 ### Beispiel: JSON-Ausgabe
 
@@ -600,7 +560,7 @@ eine vollständige Migration siehe [Migrations-Leitfaden](migrations-leitfaden.m
 ./gradlew :adapters:driving:cli:run --args="--output-format json schema validate --source mein-schema.yaml"
 ```
 
-## MySQL-Sequence-Emulation: Reverse und Compare (0.9.4)
+## MySQL-Sequence-Emulation: Reverse und Compare
 
 Wenn du `schema generate --target mysql --mysql-named-sequences helper_table`
 verwendet hast, legt d-migrate kanonische Hilfsobjekte in der MySQL-Datenbank
@@ -638,7 +598,7 @@ den Exit-Code nicht: Exit 0 bei identischen Schemas, Exit 1 nur bei
 echten Schema-Unterschieden. In der JSON-/YAML-Ausgabe erscheint `W116`
 unter `target_operand.notes`, nicht als Diff-Eintrag.
 
-## SQLite-Sequence-Emulation: Reverse und Compare (0.9.7)
+## SQLite-Sequence-Emulation: Reverse und Compare
 
 Wenn du `schema generate --target sqlite --sqlite-named-sequences helper_table`
 verwendet hast, legt d-migrate kanonische Hilfsobjekte in der SQLite-Datenbank
@@ -703,7 +663,7 @@ Diagnose sichtbar, beeinflusst aber den Exit-Code nicht.
 > Sequence-Parameter ausschliesslich im neutralen Schema und generieren Sie
 > neu."
 
-### preserveCurrentValue (atomar unter Lock seit 0.9.7)
+### preserveCurrentValue (atomar unter Lock)
 
 Wenn deine Sequence im neutralen Schema mit `preserve_current_value: true`
 markiert ist, faltet `schema migrate --execute` den laufenden Wert-Lese-
@@ -735,7 +695,7 @@ unten:
 - SQLite: `BEGIN IMMEDIATE` (DB-weiter Write-Lock; xerial-spezifischer
   Lock-Wait per `setQueryTimeout`).
 
-Die maximale Lock-Wartezeit ist seit 0.9.8 über `--lock-timeout-ms <ms>`
+Die maximale Lock-Wartezeit ist über `--lock-timeout-ms <ms>`
 einstellbar (gültig 10–60000 ms). Läuft der Lock-Erwerb in den Timeout,
 bricht der Lauf kontrolliert mit einem `LockTimeout`-Ergebnis ab statt
 unbegrenzt zu warten.
@@ -774,7 +734,7 @@ und §6 fuer die vollstaendige Carve-Out-Liste.
 
 ## Neutrales Typsystem
 
-d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch übersetzt werden:
+d-migrate verwendet 21 neutrale Datentypen, die pro Zieldatenbank automatisch übersetzt werden:
 
 | Typ          | Beschreibung                 | Beispiel              |
 | ------------ | ---------------------------- | --------------------- |
@@ -787,6 +747,8 @@ d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch ü
 | `uuid`       | Universelle ID               | UUID / CHAR(36)       |
 | `json`       | JSON-Daten                   | JSONB / JSON          |
 | `enum`       | Aufzählungstyp               | ENUM / CHECK          |
+| `geometry`   | Geometrie mit optionaler SRID | PostGIS / SpatiaLite / `geography` |
+| `fulltext`   | Volltext-Suchvektor          | `tsvector` / FULLTEXT INDEX |
 | ...          | [Vollständige Liste](../../spec/neutral-model-spec.md#3-neutrales-typsystem) | |
 
 ## Nächste Schritte
@@ -794,7 +756,7 @@ d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch ü
 - [Schema-YAML-Referenz](../../spec/schema-reference.md) -- Kurzreferenz fuer das Schema-Format
 - [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md) -- Vollständige Typsystem-Referenz
 - [CLI-Spezifikation](../../spec/cli-spec.md) -- Alle Kommandos und Exit-Codes
-- [BI-Demo-Stack](../../examples/bi-demo/README.md) -- Analytics-Compose-Stack (Postgres + Metabase + SeaweedFS/S3) mit Parquet-Export in Object-Storage (0.9.8)
+- [BI-Demo-Stack](../../examples/bi-demo/README.md) -- Analytics-Compose-Stack (Postgres + Metabase + SeaweedFS/S3) mit Parquet-Export in Object-Storage
 - [Architektur-Dokument](../../spec/architecture.md) -- Architektur und Designentscheidungen
 - [Roadmap](../planning/in-progress/roadmap.md) -- Geplante Features und Meilensteine
 - [README (English)](../../README.md) -- Projektübersicht auf Englisch
