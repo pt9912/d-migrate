@@ -64,16 +64,17 @@ class PostgresDiffCanonicalKeyIntegrationTest : FunSpec({
 
     afterSpec { container.stop() }
 
-    test("a trigger read back under its canonical key is dropped by its bare name") {
+    test("trigger and its function are dropped by their bare names, in the order PostgreSQL demands") {
         HikariConnectionPoolFactory.create(config).use { pool ->
             val current = PostgresSchemaReader().read(pool).schema
             // Vorbedingung: der Reverse legt den kanonischen Key ab.
             current.triggers.keys shouldBe setOf("users::last_updated")
+            current.functions.keys shouldBe setOf("touch_updated_at()")
 
-            // Nur der Trigger: die Funktion mit abzuraeumen laeuft in eine
-            // andere Baustelle, die Drop-Reihenfolge
-            // ([`../open/pg-drop-order-routines-before-triggers.md`]).
-            val desired = current.copy(triggers = emptyMap())
+            // Trigger UND seine Funktion in einem Lauf: der Plan muss den
+            // Trigger zuerst abraeumen, sonst weist PostgreSQL das
+            // DROP FUNCTION ab.
+            val desired = current.copy(triggers = emptyMap(), functions = emptyMap())
             val diff = SchemaComparator().compare(current, desired)
             val plan = DiffPlanner().plan(current, desired, diff)
             val migration = PostgresDiffDdlGenerator().generateUp(plan, DdlGenerationOptions())
@@ -87,7 +88,9 @@ class PostgresDiffCanonicalKeyIntegrationTest : FunSpec({
                 }
             }
 
-            PostgresSchemaReader().read(pool).schema.triggers.keys.shouldBeEmpty()
+            val after = PostgresSchemaReader().read(pool).schema
+            after.triggers.keys.shouldBeEmpty()
+            after.functions.keys.shouldBeEmpty()
         }
     }
 })

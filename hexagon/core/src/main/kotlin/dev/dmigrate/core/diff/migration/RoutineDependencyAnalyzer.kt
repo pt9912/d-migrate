@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.DependencyInfo
 
 /**
@@ -72,8 +73,14 @@ internal object RoutineDependencyAnalyzer {
     private data class Indexes(
         val createTableId: Map<String, String>,
         val createViewId: Map<String, String>,
-        val createFunctionId: Map<String, String>,
-        val createProcedureId: Map<String, String>,
+        // Routinen tragen als Op-Key die Signatur (`calc(in:integer)`),
+        // `DependencyInfo.functions` dagegen den blanken Namen — der
+        // PostgreSQL-Reverse liest ihn aus `pg_proc.proname`. Beide Seiten
+        // werden deshalb ueber den blanken Namen gefuehrt, und als Menge:
+        // ueberladene Routinen fielen sonst aufeinander, und eine der Kanten
+        // ginge still verloren.
+        val createFunctionIds: Map<String, Set<String>>,
+        val createProcedureIds: Map<String, Set<String>>,
         val createSequenceId: Map<String, String>,
         // Drop-side: name → drop op id. Plus the per-name list of OTHER
         // Drop ops that still depend on this name (for reverse-topology
@@ -109,16 +116,22 @@ internal object RoutineDependencyAnalyzer {
                 ops.filterIsInstance<DiffOperation.ReplaceMaterializedView>()
                     .associate { it.objectRef.rootName to it.id }
             )
-        val createFunction = (
-            ops.filterIsInstance<DiffOperation.CreateFunction>().associate { it.objectRef.rootName to it.id } +
-                ops.filterIsInstance<DiffOperation.ReplaceFunction>()
-                    .associate { it.objectRef.rootName to it.id }
-            )
-        val createProcedure = (
-            ops.filterIsInstance<DiffOperation.CreateProcedure>().associate { it.objectRef.rootName to it.id } +
-                ops.filterIsInstance<DiffOperation.ReplaceProcedure>()
-                    .associate { it.objectRef.rootName to it.id }
-            )
+        val createFunction = mutableMapOf<String, MutableSet<String>>()
+        for (op in ops) {
+            when (op) {
+                is DiffOperation.CreateFunction, is DiffOperation.ReplaceFunction ->
+                    createFunction.getOrPut(routineName(op.objectRef.rootName)) { mutableSetOf() } += op.id
+                else -> {}
+            }
+        }
+        val createProcedure = mutableMapOf<String, MutableSet<String>>()
+        for (op in ops) {
+            when (op) {
+                is DiffOperation.CreateProcedure, is DiffOperation.ReplaceProcedure ->
+                    createProcedure.getOrPut(routineName(op.objectRef.rootName)) { mutableSetOf() } += op.id
+                else -> {}
+            }
+        }
         val createSequence = ops.filterIsInstance<DiffOperation.CreateSequence>()
             .associate { it.objectRef.rootName to it.id }
 
@@ -140,20 +153,20 @@ internal object RoutineDependencyAnalyzer {
             // matching Drop should wait for THIS op to complete.
             for (table in deps.tables) dropTableDeps.getOrPut(table) { mutableListOf() } += op.id
             for (view in deps.views) dropViewDeps.getOrPut(view) { mutableListOf() } += op.id
-            for (fn in deps.functions) dropFunctionDeps.getOrPut(fn) { mutableListOf() } += op.id
+            for (fn in deps.functions) dropFunctionDeps.getOrPut(routineName(fn)) { mutableListOf() } += op.id
             for (seq in deps.sequences) dropSequenceDeps.getOrPut(seq) { mutableListOf() } += op.id
             // No separate "procedure dependents" yet — `DependencyInfo`
             // models routines via the shared `functions` list today.
             // Procedures use the same list; the analyzer treats both
             // identically.
-            for (fn in deps.functions) dropProcedureDeps.getOrPut(fn) { mutableListOf() } += op.id
+            for (fn in deps.functions) dropProcedureDeps.getOrPut(routineName(fn)) { mutableListOf() } += op.id
         }
 
         return Indexes(
             createTableId = createTable,
             createViewId = createView,
-            createFunctionId = createFunction,
-            createProcedureId = createProcedure,
+            createFunctionIds = createFunction,
+            createProcedureIds = createProcedure,
             createSequenceId = createSequence,
             dropTableDependentsByTable = dropTableDeps,
             dropViewDependentsByTable = dropViewDeps,
@@ -200,15 +213,16 @@ internal object RoutineDependencyAnalyzer {
             idx.dropViewDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.CreateFunction -> routineCreateEdges(op.function.dependencies, op.id, idx)
         is DiffOperation.ReplaceFunction -> routineCreateEdges(op.after.dependencies, op.id, idx) +
-            idx.dropFunctionDependentsByFunction[op.objectRef.rootName].orEmpty().toSet()
+            idx.dropFunctionDependentsByFunction[routineName(op.objectRef.rootName)].orEmpty().toSet()
         is DiffOperation.CreateProcedure -> routineCreateEdges(op.procedure.dependencies, op.id, idx)
         is DiffOperation.ReplaceProcedure -> routineCreateEdges(op.after.dependencies, op.id, idx) +
-            idx.dropProcedureDependentsByProcedure[op.objectRef.rootName].orEmpty().toSet()
+            idx.dropProcedureDependentsByProcedure[routineName(op.objectRef.rootName)].orEmpty().toSet()
         is DiffOperation.CreateTrigger -> triggerCreateEdges(op.trigger, op.id, idx)
         is DiffOperation.ReplaceTrigger -> triggerCreateEdges(op.after, op.id, idx)
-        is DiffOperation.DropFunction -> idx.dropFunctionDependentsByFunction[op.objectRef.rootName].orEmpty().toSet()
+        is DiffOperation.DropFunction ->
+            idx.dropFunctionDependentsByFunction[routineName(op.objectRef.rootName)].orEmpty().toSet()
         is DiffOperation.DropProcedure ->
-            idx.dropProcedureDependentsByProcedure[op.objectRef.rootName].orEmpty().toSet()
+            idx.dropProcedureDependentsByProcedure[routineName(op.objectRef.rootName)].orEmpty().toSet()
         is DiffOperation.DropTable -> idx.dropTableDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.DropView -> idx.dropViewDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
         // DropMV reads the same dropViewDependentsByTable index because
@@ -226,8 +240,10 @@ internal object RoutineDependencyAnalyzer {
         val edges = mutableSetOf<String>()
         deps.tables.mapNotNull { idx.createTableId[it] }.filter { it != opId }.forEach { edges += it }
         deps.views.mapNotNull { idx.createViewId[it] }.filter { it != opId }.forEach { edges += it }
-        deps.functions.mapNotNull { idx.createFunctionId[it] }.filter { it != opId }.forEach { edges += it }
-        deps.functions.mapNotNull { idx.createProcedureId[it] }.filter { it != opId }.forEach { edges += it }
+        for (fn in deps.functions) {
+            edges += idx.createFunctionIds[routineName(fn)].orEmpty().filter { it != opId }
+            edges += idx.createProcedureIds[routineName(fn)].orEmpty().filter { it != opId }
+        }
         deps.sequences.mapNotNull { idx.createSequenceId[it] }.filter { it != opId }.forEach { edges += it }
         return edges
     }
@@ -237,8 +253,10 @@ internal object RoutineDependencyAnalyzer {
         val edges = mutableSetOf<String>()
         deps.tables.mapNotNull { idx.createTableId[it] }.filter { it != opId }.forEach { edges += it }
         deps.views.mapNotNull { idx.createViewId[it] }.filter { it != opId }.forEach { edges += it }
-        deps.functions.mapNotNull { idx.createFunctionId[it] }.filter { it != opId }.forEach { edges += it }
-        deps.functions.mapNotNull { idx.createProcedureId[it] }.filter { it != opId }.forEach { edges += it }
+        for (fn in deps.functions) {
+            edges += idx.createFunctionIds[routineName(fn)].orEmpty().filter { it != opId }
+            edges += idx.createProcedureIds[routineName(fn)].orEmpty().filter { it != opId }
+        }
         deps.sequences.mapNotNull { idx.createSequenceId[it] }.filter { it != opId }.forEach { edges += it }
         return edges
     }
@@ -253,10 +271,15 @@ internal object RoutineDependencyAnalyzer {
         // DependencyInfo — wire that edge unconditionally.
         idx.createTableId[trigger.table]?.takeIf { it != opId }?.let { edges += it }
         val deps = trigger.dependencies ?: return edges
-        deps.functions.mapNotNull { idx.createFunctionId[it] }.filter { it != opId }.forEach { edges += it }
-        deps.functions.mapNotNull { idx.createProcedureId[it] }.filter { it != opId }.forEach { edges += it }
+        for (fn in deps.functions) {
+            edges += idx.createFunctionIds[routineName(fn)].orEmpty().filter { it != opId }
+            edges += idx.createProcedureIds[routineName(fn)].orEmpty().filter { it != opId }
+        }
         return edges
     }
+
+    /** Der blanke Routinenname, auch wenn ein kanonischer Key hereinkommt. */
+    private fun routineName(nameOrKey: String): String = ObjectKeyCodec.routineName(nameOrKey)
 
     // ── Unsafe-pair detection ─────────────────────────────────────
 

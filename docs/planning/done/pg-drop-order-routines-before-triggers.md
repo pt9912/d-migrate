@@ -1,10 +1,27 @@
 ---
 id: pg-drop-order-routines-before-triggers
 title: "Der Plan raeumt Routinen vor den Triggern ab, die sie brauchen"
-status: open
+status: done
 ---
 
 # Der Plan räumt Routinen vor den Triggern ab, die sie brauchen
+
+> **Behoben 2026-08-30 — mit einer anderen Ursache als hier vermutet.** Die
+> Phasenordnung war nicht schuld: `RoutineDependencyAnalyzer` führt für Drops
+> längst eine Rückwärts-Topologie, und der PostgreSQL-Reverse füllt
+> `TriggerDefinition.dependencies.functions` aus `pg_trigger.tgfoid` genau
+> dafür.
+>
+> Die Kante griff trotzdem nicht: `pg_proc.proname` liefert den **blanken**
+> Funktionsnamen, die Operation trägt den **kanonischen Key**
+> (`touch_updated_at()`). Der Index wurde unter dem einen Namen gefüllt und
+> unter dem anderen gelesen. Dieselbe Klasse wie
+> [`pg-diff-object-key-leak.md`](pg-diff-object-key-leak.md).
+>
+> Beide Seiten laufen jetzt über den blanken Namen, und der Create-Index als
+> **Menge**: überladene Routinen fielen sonst aufeinander und eine Kante ginge
+> still verloren. Die Create-Richtung hing bisher allein an der Phasenordnung —
+> mit derselben Lücke darunter.
 
 ## Lage
 
@@ -39,5 +56,5 @@ nicht gedreht.
 ## Herkunft
 
 Aufgefallen beim Live-Test zum kanonischen Key
-([`../done/pg-diff-object-key-leak.md`](../done/pg-diff-object-key-leak.md)); dort
+([`pg-diff-object-key-leak.md`](pg-diff-object-key-leak.md)); dort
 herausgeschnitten, weil es eine andere Wurzel hat.

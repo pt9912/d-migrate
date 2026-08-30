@@ -134,6 +134,68 @@ class RoutineDependencyAnalyzerTest : FunSpec({
         result.operations.single { it.id == "drop-fn" }.dependencies shouldBe setOf("drop-t")
     }
 
+    // Der Reverse legt Routinen unter ihrem kanonischen Key ab
+    // (`name(in:typ)`), waehrend `DependencyInfo.functions` den blanken Namen
+    // traegt — PostgreSQL liest ihn aus `pg_proc.proname`. Ohne Angleich
+    // greift der Index ins Leere, und der Plan raeumt die Funktion vor dem
+    // Trigger ab, der sie noch braucht.
+    test("the reverse-topo edge holds when the routine op carries its canonical key") {
+        val dropTrigger = DiffOperation.DropTrigger(
+            id = "drop-t",
+            objectRef = ref(DiffObjectType.TRIGGER, "users::last_updated"),
+            trigger = trigger(table = "users").copy(
+                dependencies = DependencyInfo(functions = listOf("touch_updated_at")),
+            ),
+        )
+        val dropFn = DiffOperation.DropFunction(
+            id = "drop-fn",
+            objectRef = ref(DiffObjectType.FUNCTION, "touch_updated_at()"),
+            function = emptyFn,
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(dropTrigger, dropFn))
+        result.operations.single { it.id == "drop-fn" }.dependencies shouldBe setOf("drop-t")
+    }
+
+    // Ueberladene Routinen fallen auf denselben blanken Namen. Beide Drops
+    // muessen die Kante bekommen — ein einzelner Eintrag verloere eine davon.
+    test("both overloads of a name receive the edge") {
+        val dropTrigger = DiffOperation.DropTrigger(
+            id = "drop-t",
+            objectRef = ref(DiffObjectType.TRIGGER, "users::t"),
+            trigger = trigger(table = "users").copy(
+                dependencies = DependencyInfo(functions = listOf("calc")),
+            ),
+        )
+        val dropA = DiffOperation.DropFunction(
+            id = "drop-a", objectRef = ref(DiffObjectType.FUNCTION, "calc(in:integer)"), function = emptyFn,
+        )
+        val dropB = DiffOperation.DropFunction(
+            id = "drop-b", objectRef = ref(DiffObjectType.FUNCTION, "calc(in:text)"), function = emptyFn,
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(dropTrigger, dropA, dropB))
+        result.operations.single { it.id == "drop-a" }.dependencies shouldBe setOf("drop-t")
+        result.operations.single { it.id == "drop-b" }.dependencies shouldBe setOf("drop-t")
+    }
+
+    // Die Create-Richtung hing bisher allein an der Phasenordnung
+    // (ROUTINES vor TRIGGERS) — mit derselben Namensluecke darunter.
+    test("CreateTrigger waits for the create of the function it calls, canonical key or not") {
+        val createFn = DiffOperation.CreateFunction(
+            id = "create-fn",
+            objectRef = ref(DiffObjectType.FUNCTION, "touch_updated_at()"),
+            function = emptyFn,
+        )
+        val createTrigger = DiffOperation.CreateTrigger(
+            id = "create-t",
+            objectRef = ref(DiffObjectType.TRIGGER, "users::last_updated"),
+            trigger = trigger(table = "users").copy(
+                dependencies = DependencyInfo(functions = listOf("touch_updated_at")),
+            ),
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(createFn, createTrigger))
+        result.operations.single { it.id == "create-t" }.dependencies shouldBe setOf("create-fn")
+    }
+
     test("DropView drops before its referenced DropTable (reverse-topo edge)") {
         val dropView = DiffOperation.DropView(
             id = "drop-v",
