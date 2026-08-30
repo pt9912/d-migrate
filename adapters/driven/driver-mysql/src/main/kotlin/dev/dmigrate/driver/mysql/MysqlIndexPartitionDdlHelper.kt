@@ -136,19 +136,56 @@ internal class MysqlIndexPartitionDdlHelper(
     }
 
     /**
+     * Warum diese Partitionierung fuer MySQL **gar nicht** gerendert werden
+     * darf — oder `null`, wenn sie es darf.
+     *
+     * `generatePartitionClause` prueft das selbst und liefert dann eine leere
+     * Klausel, an der der Aufrufer den Abbruch erkennt. Der Diff-Pfad rendert
+     * einzelne Partitionen und haette diese Pruefung sonst nicht: er wuerde
+     * DDL erzeugen, die der Generate-Pfad verweigert.
+     */
+    fun partitioningSkipNote(
+        partitioning: PartitionConfig,
+        columns: Map<String, ColumnDefinition>,
+    ): TransformationNote? {
+        val keyTypes = partitioning.key.map { columns[it]?.type }
+        skipNote(partitioning, keyTypes)?.let { return it }
+        // Die DEFAULT-Partition einer LIST hat in MySQL keine Entsprechung.
+        // Der Generate-Pfad laesst sie weg und meldet E063; einzeln gerendert
+        // ergaebe sie `VALUES IN ()` — kein gueltiges SQL.
+        if (partitioning.type == PartitionType.LIST && partitioning.partitions.any { it.isDefault }) {
+            return ManualActionRequired(
+                code = "E063", objectType = "partition", objectName = partitionObjectName(partitioning),
+                reason = "LIST DEFAULT partition has no MySQL equivalent; rows that fall into it have no " +
+                    "target partition in MySQL.",
+                hint = "Replace the DEFAULT partition with explicit LIST values, or migrate those rows separately.",
+            ).toNote()
+        }
+        return null
+    }
+
+    /**
      * Eine einzelne Partitionsklausel — `PARTITION `p` VALUES LESS THAN (…)`.
      * Der Diff-Pfad braucht sie einzeln (`ADD PARTITION`, `REORGANIZE
      * PARTITION … INTO (…)`), waehrend `generatePartitionClause` sie fuer die
      * ganze Tabelle bündelt; beide rendern damit denselben Text.
+     *
+     * [emittedCodes] gehoert dem Aufrufer, nicht dem Aufruf: eine Meldung zur
+     * Wert-Normalisierung gilt der Partitionierung, nicht der einzelnen
+     * Partition. Ein Satz je Aufruf wiederholte sie fuer jede.
+     *
+     * Ob die Partitionierung ueberhaupt renderbar ist, klaert
+     * [partitioningSkipNote] — vorher, einmal.
      */
     fun renderSinglePartition(
         partition: PartitionDefinition,
         partitioning: PartitionConfig,
         columns: Map<String, ColumnDefinition>,
         notes: MutableList<TransformationNote>,
+        emittedCodes: MutableSet<String>,
     ): String {
         val keyTypes = partitioning.key.map { columns[it]?.type }
-        return renderPartition(partition, partitioning.type, keyTypes, notes, mutableSetOf()).trimStart()
+        return renderPartition(partition, partitioning.type, keyTypes, notes, emittedCodes).trimStart()
     }
 
     private fun renderPartition(

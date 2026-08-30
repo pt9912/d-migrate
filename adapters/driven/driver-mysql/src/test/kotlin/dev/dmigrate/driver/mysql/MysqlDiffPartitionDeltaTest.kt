@@ -15,6 +15,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
  * Eine Partition kommt dazu oder faellt weg. MySQL verlangt aufsteigende
@@ -88,6 +89,33 @@ class MysqlDiffPartitionDeltaTest : FunSpec({
         val sqls = renderUp(config(p100, p200, p300), config(p100, p200)).statements.map { it.sql }
 
         sqls shouldBe listOf("ALTER TABLE `events` DROP PARTITION `p300`;")
+    }
+
+    test("eine umbenannte Partition wird gemeldet, nicht stillschweigend uebergangen") {
+        // Gleiche Grenze, anderer Name — und daneben eine echte Neuaufnahme.
+        // Ohne Meldung liefe der Zugang durch und die Umbenennung fiele weg;
+        // sichtbar wuerde das erst im Post-Compare, ohne Grund.
+        val renamed = child("p200_neu", PartitionBound.Value("200"))
+        val result = renderUp(config(p100, p200), config(p100, renamed, p300))
+
+        result.statements.map { it.sql } shouldBe emptyList()
+        result.diagnostics.single { it.code == "PARTITION_RENAME_NOT_APPLIED" }
+            .message shouldContainStr "p200 → p200_neu"
+    }
+
+    test("eine LIST-DEFAULT-Partition verhindert die Anweisung, statt leeres SQL zu erzeugen") {
+        // MySQL kennt keine DEFAULT-Partition. Einzeln gerendert ergaebe sie
+        // `VALUES IN ()`; der Generate-Pfad laesst sie weg und meldet E063.
+        fun listConfig(vararg children: PartitionDefinition) =
+            PartitionConfig(PartitionType.LIST, listOf("bucket"), children.toList())
+        val a = PartitionDefinition(name = "p_a", values = listOf("1", "2"))
+        val b = PartitionDefinition(name = "p_b", values = listOf("3", "4"))
+        val fallback = PartitionDefinition(name = "p_rest", isDefault = true)
+
+        val result = renderUp(listConfig(a, fallback), listConfig(a, b, fallback))
+
+        result.statements.map { it.sql } shouldBe emptyList()
+        result.diagnostics.single { it.code == "E063" }.message shouldContainStr "DEFAULT"
     }
 
     test("der Rueckbau dreht Anhaengen und Verwerfen um") {

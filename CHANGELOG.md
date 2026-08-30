@@ -29,7 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **zusammenzulegen** ist keins von beidem — SQL Server und MySQL nehmen die
   Zeilen dabei mit, PostgreSQL kann es nicht in place und meldet es.
   Strategie- und Schluesselwechsel bleiben ohne Operation, die Warnung nennt
-  jetzt aber den Fall.
+  jetzt aber den Fall — ebenso eine geaenderte Zahl von `HASH`-Eimern, die
+  jede Zeile neu verteilt statt eine Grenze zu verschieben.
 
 ### Fixed
 

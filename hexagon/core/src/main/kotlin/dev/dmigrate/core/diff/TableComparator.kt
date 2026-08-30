@@ -110,6 +110,14 @@ internal class TableComparator(
      * the order-independent top-level index comparison and the sorted fingerprint
      * projection — without it the comparator and the post-`--execute` drift check
      * would disagree on a reordered index set.
+     *
+     * One step ahead of the set is order-*dependent*, and deliberately so: a
+     * missing lower bound is derived from the preceding partition's upper one
+     * ([PartitionBoundNormalizer]), because that is the only place the
+     * information exists — MySQL states a RANGE partition by its upper bound
+     * alone. A list whose partitions are out of ascending order therefore
+     * derives different bounds; MySQL rejects such a definition anyway, and a
+     * partition that states its lower bound is never touched.
      */
     private fun comparePartitioning(
         left: PartitionConfig?,

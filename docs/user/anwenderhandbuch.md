@@ -1832,16 +1832,17 @@ Vier Dinge dazu:
   `--allow-destructive`. Ohne die Option bricht der Lauf ab, ohne etwas
   auszuführen.
 - **Eine Partition aufzuteilen oder zwei zusammenzulegen** — die neuen Grenzen
-  decken denselben Bereich wie die alte — führt nur SQL Server aus; dort
-  wandern die Zeilen mit. PostgreSQL und MySQL melden den Fall, statt ihn zu
-  rendern: sie können ihn nicht ausführen, ohne die Zeilen zu verlieren.
+  decken denselben Bereich wie die alte — führen SQL Server und MySQL aus, und
+  die Zeilen wandern mit. PostgreSQL meldet den Fall, statt ihn zu rendern:
+  dort müsste die Kindtabelle weichen, und ihre Zeilen gingen mit.
 - **Der Name einer Partition ist für die Zuordnung unerheblich**, ihre Grenzen
   sind es. SQL Server speichert keine Partitionsnamen; ein Reverse vergibt
   `p1`, `p2`, … in Grenzreihenfolge. Umbenennungen erzeugen deshalb keine
   Operation.
-- **Strategie und Schlüssel lassen sich nicht ändern.** Wer `range` auf `list`
-  umstellt oder nach einer anderen Spalte partitionieren will, baut die Tabelle
-  neu; der Lauf meldet das und führt es nicht aus.
+- **Strategie und Schlüssel lassen sich nicht ändern**, und bei `hash` auch
+  nicht die Zahl der Eimer: ein anderer Modulus verteilt jede Zeile neu, statt
+  eine Grenze zu verschieben. Wer das braucht, baut die Tabelle neu; der Lauf
+  meldet es und führt es nicht aus.
 
 **Hinweise:**
 

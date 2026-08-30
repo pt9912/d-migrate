@@ -344,13 +344,6 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
     }
 
     /**
-     * Plan-2 §8 D.3b Sub-Slice A: SQLite has no native materialized-view
-     * support and §2 explicitly rules out an emulation strategy. The
-     * dispatcher blocks any [DiffOperation.CreateMaterializedView] /
-     * [DiffOperation.DropMaterializedView] with a dialect-specific
-     * diagnostic and an operation blocker.
-     */
-    /**
      * SQLite partitioniert nicht. Der Grund gehoert in die Meldung: die
      * allgemeine „nicht in der ersten Matrix"-Ablehnung liesse offen, ob das
      * ein Schnitt ist oder eine Eigenschaft der Datenbank.
@@ -365,6 +358,13 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
+    /**
+     * Plan-2 §8 D.3b Sub-Slice A: SQLite has no native materialized-view
+     * support and §2 explicitly rules out an emulation strategy. The
+     * dispatcher blocks any [DiffOperation.CreateMaterializedView] /
+     * [DiffOperation.DropMaterializedView] with a dialect-specific
+     * diagnostic and an operation blocker.
+     */
     private fun blockMaterializedView(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         val name = op.objectRef.rootName
         ctx.skip(

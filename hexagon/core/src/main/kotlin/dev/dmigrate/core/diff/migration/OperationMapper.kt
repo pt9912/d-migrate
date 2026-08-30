@@ -414,6 +414,9 @@ internal object OperationMapper {
                 "the partition key changed"
             PartitionChangeReason.CHILD_NAMES_CHANGED ->
                 "the partition boundaries are unchanged and only the child names differ"
+            PartitionChangeReason.HASH_BUCKETS_CHANGED ->
+                "the number of hash buckets changed, which redistributes every row rather than " +
+                    "moving a boundary"
             PartitionChangeReason.CHILD_INDICES_CHANGED ->
                 "the partition boundaries are unchanged and only the child-local indices differ"
         }

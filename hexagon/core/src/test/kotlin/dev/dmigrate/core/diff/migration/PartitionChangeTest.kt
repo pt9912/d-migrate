@@ -135,6 +135,20 @@ class PartitionChangeTest : FunSpec({
         delta.removed.shouldBeEmpty()
     }
 
+    test("eine andere Eimerzahl ist keine Grenzänderung") {
+        // HASH: ein anderer Modulus verteilt jede Zeile neu. Ohne diese
+        // Einstufung sähe der Kind-Abgleich zwei entfallene und vier
+        // hinzugekommene Kinder — und PostgreSQL rendete daraus `DROP TABLE`
+        // plus `CREATE TABLE`, also den Verlust jeder Zeile.
+        fun buckets(modulus: Int) = PartitionConfig(
+            PartitionType.HASH, listOf("id"),
+            (0 until modulus).map { PartitionDefinition(name = "h$it", modulus = modulus, remainder = it) },
+        )
+
+        PartitionChangeClassifier.classify(buckets(2), buckets(4)) shouldBe
+            PartitionChange.NotResolvable(PartitionChangeReason.HASH_BUCKETS_CHANGED)
+    }
+
     test("Strategie- und Schlüsselwechsel bleiben unauflösbar") {
         val before = range(child("p1", null, null))
         PartitionChangeClassifier.classify(before, before.copy(type = PartitionType.LIST)) shouldBe

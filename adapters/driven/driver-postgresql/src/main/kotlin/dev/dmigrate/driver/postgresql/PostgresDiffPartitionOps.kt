@@ -31,7 +31,7 @@ internal object PostgresDiffPartitionOps {
 
         if (blockReshape(op, ctx, table, created, dropped)) return
         if (blockSplitOrMerge(op, ctx, table)) return
-        if (blockRename(op, ctx, table, op.delta.retained)) return
+        if (blockRename(op, ctx, table, op.delta.retained, down)) return
 
         // Erst wegnehmen, dann anlegen: zwei Kinder duerfen sich nicht
         // ueberlappen, und der Zielzuschnitt darf den alten beruehren.
@@ -95,10 +95,15 @@ internal object PostgresDiffPartitionOps {
         ctx: PostgresDiffRenderContext,
         table: String,
         retained: List<RetainedPartition>,
+        down: Boolean,
     ): Boolean {
         val renamed = retained.filter { it.before.name != it.after.name }
         if (renamed.isEmpty()) return false
-        val pairs = renamed.joinToString(", ") { "${it.before.name} → ${it.after.name}" }
+        // Im Rueckbau laeuft die Umbenennung andersherum; die Meldung nennt
+        // sonst genau den Handgriff, der den Zustand weiter wegtruege.
+        val pairs = renamed.joinToString(", ") {
+            if (down) "${it.after.name} → ${it.before.name}" else "${it.before.name} → ${it.after.name}"
+        }
         ctx.skip(
             op,
             "Table '$table': partition(s) $pairs keep their boundaries and change their name. " +

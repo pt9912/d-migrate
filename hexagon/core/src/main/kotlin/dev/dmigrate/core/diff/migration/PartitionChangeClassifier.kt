@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionBoundNormalizer
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
+import dev.dmigrate.core.model.PartitionType
 
 /**
  * Ein Kind-Paar, das beide Seiten der Änderung überdauert: gleiche Grenzen,
@@ -76,6 +77,13 @@ enum class PartitionChangeReason {
     /** Gleiche Grenzen, andere Kindnamen. */
     CHILD_NAMES_CHANGED,
 
+    /**
+     * HASH: der Bestand an Eimern ändert sich. Das ist keine Grenzänderung —
+     * ein anderer Modulus verteilt **jede** Zeile neu, und kein Dialekt kann
+     * das mit einer Anweisung am Bestand erledigen.
+     */
+    HASH_BUCKETS_CHANGED,
+
     /** Gleiche Grenzen und Namen, andere kind-lokale Indizes. */
     CHILD_INDICES_CHANGED,
 }
@@ -113,6 +121,8 @@ object PartitionChangeClassifier {
         before == null || after == null -> PartitionChange.NotResolvable(PartitionChangeReason.STRATEGY_CHANGED)
         before.type != after.type -> PartitionChange.NotResolvable(PartitionChangeReason.STRATEGY_CHANGED)
         before.key != after.key -> PartitionChange.NotResolvable(PartitionChangeReason.KEY_CHANGED)
+        before.type == PartitionType.HASH ->
+            PartitionChange.NotResolvable(PartitionChangeReason.HASH_BUCKETS_CHANGED)
         else -> classifyChildren(before, after)
     }
 

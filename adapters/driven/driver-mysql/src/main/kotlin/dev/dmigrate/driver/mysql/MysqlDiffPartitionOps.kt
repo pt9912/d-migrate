@@ -2,9 +2,9 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.PartitionDelta
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
-import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -21,8 +21,9 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  *   dabei mit; `DROP` und neu anlegen verloere sie.
  * - Ein Bereich faellt ganz weg: `DROP PARTITION`, mitsamt seinen Zeilen.
  *
- * `HASH` bleibt aussen vor: dort aendert eine zusaetzliche Partition den
- * Modulus und verteilt jede Zeile neu — das ist kein Grenz-Delta.
+ * `HASH` erreicht diesen Weg nicht: eine geaenderte Eimerzahl verteilt jede
+ * Zeile neu und wird schon im Hexagon als nicht auflösbar eingestuft
+ * (`PartitionChangeReason.HASH_BUCKETS_CHANGED`).
  */
 internal object MysqlDiffPartitionOps {
 
@@ -30,27 +31,37 @@ internal object MysqlDiffPartitionOps {
         val table = op.objectRef.rootName
         val down = ctx.direction == MysqlRenderDirection.DOWN
         val target = if (down) op.before else op.after
-        if (blockHash(op, ctx, table, target)) return
+        val helper = MysqlIndexPartitionDdlHelper(ctx.sql::quote)
+        val columns = ctx.columnsOf(table)
+
+        if (blockUnrenderable(op, ctx, table, target, helper, columns)) return
+        if (blockRename(op, ctx, table, down)) return
 
         val dropped = if (down) op.delta.addedOutright else op.delta.droppedOutright
         val appended = if (down) op.delta.droppedOutright else op.delta.addedOutright
 
         val notes = mutableListOf<TransformationNote>()
-        val helper = MysqlIndexPartitionDdlHelper(ctx.sql::quote)
-        val columns = ctx.columnsOf(table)
+        // Ein Satz fuer den ganzen Aufruf: eine Meldung zur Wert-Normalisierung
+        // gilt der Partitionierung, nicht jeder Partition einzeln.
+        val emittedCodes = mutableSetOf<String>()
         val quoted = ctx.sql.quote(table)
+
+        fun clause(partition: PartitionDefinition) =
+            helper.renderSinglePartition(partition, target, columns, notes, emittedCodes)
 
         for (step in reorganisations(op.delta, down)) {
             val from = step.from.joinToString(", ") { ctx.sql.quote(it.name) }
-            val into = step.into.joinToString(", ") { helper.renderSinglePartition(it, target, columns, notes) }
-            ctx.emit(op, "ALTER TABLE $quoted REORGANIZE PARTITION $from INTO ($into);")
+            ctx.emit(
+                op,
+                "ALTER TABLE $quoted REORGANIZE PARTITION $from INTO " +
+                    "(${step.into.joinToString(", ") { clause(it) }});",
+            )
         }
         for (child in dropped) {
             ctx.emit(op, "ALTER TABLE $quoted DROP PARTITION ${ctx.sql.quote(child.name)};")
         }
         if (appended.isNotEmpty()) {
-            val clauses = appended.joinToString(", ") { helper.renderSinglePartition(it, target, columns, notes) }
-            ctx.emit(op, "ALTER TABLE $quoted ADD PARTITION ($clauses);")
+            ctx.emit(op, "ALTER TABLE $quoted ADD PARTITION (${appended.joinToString(", ") { clause(it) }});")
         }
         notes.forEach { note -> ctx.warning(op, note.message, code = note.code ?: "W112") }
     }
@@ -74,19 +85,54 @@ internal object MysqlDiffPartitionOps {
         val into: List<PartitionDefinition>,
     )
 
-    private fun blockHash(
+    /**
+     * Was der Generate-Pfad fuer MySQL nicht rendern wuerde, rendert der
+     * Diff-Pfad auch nicht — sonst entstuende DDL, die der Server ablehnt: ein
+     * `VALUES IN ()` aus einer LIST-DEFAULT-Partition oder eine Grenze auf
+     * einem Schluesseltyp, den MySQL nicht partitioniert.
+     */
+    private fun blockUnrenderable(
         op: DiffOperation.AlterTablePartitions,
         ctx: MysqlDiffRenderContext,
         table: String,
         target: PartitionConfig,
+        helper: MysqlIndexPartitionDdlHelper,
+        columns: Map<String, ColumnDefinition>,
     ): Boolean {
-        if (target.type != PartitionType.HASH) return false
+        val note = helper.partitioningSkipNote(target, columns) ?: return false
         ctx.skip(
             op,
-            "Table `$table` is HASH-partitioned. Adding or removing a HASH partition changes the " +
-                "modulus and redistributes every row; that is not a boundary change and is not " +
-                "applied automatically.",
-            code = "PARTITION_HASH_CHANGE_NOT_APPLIED",
+            "Table `$table`: the partitioning cannot be expressed in MySQL, so the change to its " +
+                "partitions was not applied. ${note.message}",
+            code = note.code ?: "E055",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+        return true
+    }
+
+    /**
+     * Ein Kind behaelt seine Grenzen und wechselt den Namen. MySQL benennt
+     * seine Partitionen, also ist das eine echte Aenderung — aber keine des
+     * Bestands, und ohne Meldung verschwaende sie still in einem Lauf, der
+     * nebenbei eine Partition hinzufuegt.
+     */
+    private fun blockRename(
+        op: DiffOperation.AlterTablePartitions,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+        down: Boolean,
+    ): Boolean {
+        val renamed = op.delta.retained.filter { it.before.name != it.after.name }
+        if (renamed.isEmpty()) return false
+        val pairs = renamed.joinToString(", ") {
+            if (down) "${it.after.name} → ${it.before.name}" else "${it.before.name} → ${it.after.name}"
+        }
+        ctx.skip(
+            op,
+            "Table `$table`: partition(s) $pairs keep their boundaries and change their name. MySQL " +
+                "renames a partition only by reorganising it; rename it manually " +
+                "(`ALTER TABLE … REORGANIZE PARTITION … INTO (…)`).",
+            code = "PARTITION_RENAME_NOT_APPLIED",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
         return true

@@ -1052,14 +1052,18 @@ und erzeugt keine Operation.
 Aus derselben Lage folgt die Behandlung von **Aufteilung und
 Zusammenlegung**: deckt der Bereich eines entfallenen Kindes sich lückenlos mit
 den hinzugekommenen, ist das kein Wegfall, sondern ein Schnitt. SQL Server
-führt ihn mit `SPLIT`/`MERGE RANGE` aus und behält die Zeilen; PostgreSQL und
-MySQL können ihn nicht in place ausführen und melden ihn statt ihn zu rendern.
-Ein Kind, dessen Bereich **nicht** wieder abgedeckt wird, gilt als
-zerstörend und verlangt `--allow-destructive`.
+führt ihn mit `SPLIT`/`MERGE RANGE` aus, MySQL mit `REORGANIZE PARTITION` —
+beide nehmen die Zeilen mit. PostgreSQL kennt keinen Schnitt in place und
+meldet den Fall (`PARTITION_SPLIT_OR_MERGE_NOT_APPLIED`), statt die
+Kindtabelle zu verwerfen und neu anzulegen. Ein Kind, dessen Bereich **nicht**
+wieder abgedeckt wird, gilt als zerstörend und verlangt `--allow-destructive`.
 
 Nicht gerendert werden: Grenzverschiebung eines bestehenden Kindes,
-Umbenennung eines Kindes, `HASH`-Bestandsänderungen (der Modulus verteilt jede
-Zeile neu) und jede Partitionsänderung auf SQLite.
+Umbenennung eines Kindes, `HASH`-Bestandsänderungen (eine andere Eimerzahl
+verteilt jede Zeile neu, statt eine Grenze zu verschieben) und jede
+Partitionsänderung auf SQLite. In MySQL gilt zusätzlich, was auch beim
+Erzeugen gilt: eine LIST-DEFAULT-Partition und ein nicht partitionierbarer
+Schlüsseltyp verhindern die Anweisung (E063, E062).
 
 ---
 
