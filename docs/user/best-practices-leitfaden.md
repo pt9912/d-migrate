@@ -1,7 +1,5 @@
 # Best-Practices-Leitfaden
 
-> **Software-Version:** 1.0.0 · **Stand:** 15.08.2026
->
 > **Zielgruppe:** Personen, die d-migrate produktiv einsetzen und wiederkehrende
 > Entscheidungen (Performance, Sicherheit, Verifikation, Rollback) gut treffen
 > wollen. Dieser Leitfaden bündelt **Empfehlungen, Faustregeln und Anti-Patterns**

@@ -1,8 +1,8 @@
 # API-Referenz: d-migrate (CLI + MCP)
 
-**Software-Version:** 0.9.9 (Beta)  ·  **Contract-Version:** `v1`  ·  **Stand:** 15.06.2026
-**Stabilität:** CLI und MCP-Server sind Beta (Contract `v1`). REST- (1.2.0) und
-gRPC-API (1.1.8) sind geplant und **nicht** Teil dieser Referenz.
+**Contract-Version:** `v1`
+**Stabilität:** CLI und MCP-Server sind Beta (Contract `v1`). REST- und
+gRPC-API sind **nicht** Teil dieser Referenz.
 
 Diese Referenz beschreibt die maschinennahen Schnittstellen von d-migrate so
 exakt, dass man dagegen automatisieren kann. Aufgabenorientierte Anleitungen
@@ -402,10 +402,3 @@ Umgebungsvariablen (2.6) konfigurierbar. Vollständige Flag-Tabellen:
 - [Anwenderhandbuch](anwenderhandbuch.md) — aufgabenorientierte Anleitungen + vollständige Optionstabellen (Anhang A)
 - [Changelog](../../CHANGELOG.md)
 
----
-
-## 7. Änderungshistorie
-
-| Version | Datum | Änderung |
-| ------- | ----- | -------- |
-| 0.1 | 15.06.2026 | Erste Fassung (CLI + MCP, Contract `v1`) für Software-Version 0.9.9 (Beta). |

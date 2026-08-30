@@ -1,7 +1,5 @@
 # Troubleshooting-Leitfaden
 
-> **Software-Version:** 1.0.0 · **Stand:** 15.08.2026
->
 > **Zielgruppe:** Personen, deren d-migrate-Lauf fehlschlägt, unerwartet abbricht
 > oder ein überraschendes Ergebnis liefert und die schnell zur Ursache kommen
 > wollen. Der Leitfaden führt von **Exit-Code bzw. Symptom → Diagnose → Behebung**.

@@ -1724,8 +1724,7 @@ Report als **E054** vermerkt:
 
 - **Body nicht auto-übersetzt:** Nur bei **passendem** `source_dialect` rendert
   d-migrate sauber; sonst **E053** (manuell umschreiben). Einfache Transformationen
-  greifen, komplexe Bodies nicht. Das KI-gestützte `transform procedure` ist
-  geplant ([`LF-017`](../../spec/lastenheft-d-migrate.md#lf-017)).
+  greifen, komplexe Bodies nicht.
 - **SQLite:** keine Stored Functions/Procedures (**E054**) — Logik gehört in die
   Anwendung; Trigger sind unterstützt.
 - **SQL Server:** T-SQL-Rümpfe rendern als `CREATE OR ALTER`. Was T-SQL nicht

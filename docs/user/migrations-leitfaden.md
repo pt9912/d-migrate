@@ -1,7 +1,5 @@
 # Migrations-Leitfaden
 
-> **Software-Version:** 1.0.0 · **Stand:** 15.08.2026
->
 > **Zielgruppe:** Personen, die eine konkrete Datenbank-Migration mit d-migrate
 > planen und durchführen. Grundkenntnisse aus dem
 > [Anwenderhandbuch](anwenderhandbuch.md) werden vorausgesetzt; exakte

@@ -454,7 +454,7 @@ identifizieren. Befehle und jq-Filter: siehe
   (Modulliste, Beispielausgaben, neue CLI-Kommandos/Optionen)
 - [`docs/user/anwenderhandbuch.md`](anwenderhandbuch.md): neue **Aufgaben** und neue
   Aufzählungsglieder (z. B. ein drittes `credentialRef`-Schema) einarbeiten, Befehlsreferenz
-  (Anhang A) um neue Kommandos ergänzen, Änderungshistorie fortschreiben
+  (Anhang A) um neue Kommandos ergänzen
 - [`docs/user/administrationshandbuch.md`](administrationshandbuch.md): neue **Distributionswege**
   und Betriebs-Schalter in die Deployment-Tabelle. Achtung: das Anwenderhandbuch delegiert
   „weitere Installationswege" hierher — fehlt der Eintrag, läuft der Verweis ins Leere

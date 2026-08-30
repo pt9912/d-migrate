@@ -218,26 +218,26 @@ Die Datei hat nicht das erwartete CSV-Format.
 4. Starten Sie den Import erneut.
 ```
 
-## 9. Version und Aktualität sicherstellen
+## 9. Aktualität sicherstellen
 
-Ein Handbuch veraltet schnell. Deshalb müssen diese Angaben rein:
+Ein Handbuch veraltet schnell. Der Schutz dagegen ist nicht ein Stempel, sondern
+die Regel, dass im Handbuch **nur der Ist-Zustand** steht: keine Chronik, keine
+Forensik, kein Ausblick. Ändert sich, was ein Anwender tun oder erwarten kann,
+ändert sich der beschreibende Text — nicht ein Changelog-Eintrag daneben.
 
-* Software-Version
-* Handbuch-Version
-* Änderungsdatum
-* Autor oder Team
-* Changelog oder Änderungshistorie
-* Gültigkeitsbereich
+Ein Versionsstempel im Dokument leistet das Gegenteil. Er behauptet Zustand und
+muss dafür gepflegt werden; bleibt die Pflege aus, steht dort eine Falschaussage
+statt einer fehlenden. In diesem Repository trugen sechs Nutzerdokumente einen
+solchen Stempel, und vier nannten die falsche Software-Version.
 
-Beispiel:
+Was ein Handbuch stattdessen führt:
 
-```markdown
-Software-Version: 2.4.1
-Handbuch-Version: 1.3
-Stand: 15.06.2026
-```
+* **Gültigkeitsbereich** — für welche Datenbanken und Schnittstellen es gilt
+* **Vertrags-Versionen**, wo sie Teil der Schnittstelle sind (etwa
+  `Contract-Version: v1`) — die beschreiben den Ist-Zustand, nicht seinen Verlauf
 
-Ohne Versionsbezug ist ein Handbuch bei produktiver Software schnell wertlos.
+Die Versionsgeschichte steht in der Versionsverwaltung und im Changelog des
+Projekts, nicht im Handbuch.
 
 ## 10. Rechtliche und organisatorische Punkte beachten
 
@@ -277,7 +277,6 @@ Praktisch sinnvoll:
 
 * Handbuch in Markdown, AsciiDoc oder einem Docs-System pflegen
 * Screenshots automatisiert oder halbautomatisiert aktualisieren
-* Doku-Version an Software-Version koppeln
 * Review-Prozess mit Releases verbinden
 * Verantwortliche Person oder Team festlegen
 * veraltete Abschnitte markieren oder entfernen
@@ -303,9 +302,7 @@ Der beste Test: Gib das Handbuch jemandem, der die Software nicht kennt. Wenn di
 ```markdown
 # Benutzerhandbuch: <Produktname>
 
-Version: <Handbuch-Version>  
-Software-Version: <Software-Version>  
-Stand: <Datum>
+Gültigkeitsbereich: <wofür dieses Handbuch gilt>
 
 ## 1. Einleitung
 
@@ -347,7 +344,6 @@ Stand: <Datum>
 
 ## 10. Support und Kontakt
 
-## 11. Änderungshistorie
 ```
 
 ## Kurz gesagt

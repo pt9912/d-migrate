@@ -1,7 +1,5 @@
 # Administrationshandbuch
 
-> **Software-Version:** 1.0.3 · **Stand:** 22.08.2026
->
 > **Zielgruppe:** Personen, die d-migrate bereitstellen, konfigurieren und
 > betreiben. Aufgabenorientierte Anwender-Workflows stehen im
 > [Anwenderhandbuch](anwenderhandbuch.md); die maschinennahen Schnittstellen in
@@ -443,9 +441,6 @@ Default ist **aus**: ohne die Config entsteht keine Datei.
 ---
 
 ## 9. Sicherheit
-
-> Mehrere Härtungen sind für 1.0.0-RC geplant (🔮). Hier steht der **aktuelle**
-> Stand.
 
 ### 9.1 Netzwerk-Exposition des MCP-Servers
 
