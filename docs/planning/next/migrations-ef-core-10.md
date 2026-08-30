@@ -8,6 +8,10 @@
 > Implementierung bleiben `spec/cli-spec.md`, `docs/archive/design.md` und
 > `spec/architecture.md` die massgeblichen Quellen fuer den produktiven
 > Nutzervertrag.
+>
+> **Zurueckgestellt am 2026-08-30** — Eigner-Entscheidung ueber die Reihenfolge,
+> kein fachlicher Einwand gegen den Vorschlag. Der Inhalt unten bleibt
+> unveraendert gueltig.
 
 ---
 
