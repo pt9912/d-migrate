@@ -1,6 +1,6 @@
 # Anweisungen, die außerhalb der Transaktion laufen müssen
 
-> **Status:** P0 bis P2 geliefert; live belegt gegen SQL Server.
+> **Status:** Abgeschlossen — P0 bis P2 geliefert, live belegt gegen SQL Server.
 > **Ziel:** Eine Migration darf Anweisungen enthalten, die eine Datenbank in
 > einer offenen Transaktion ablehnt. Sie laufen in einem eigenen Abschnitt, und
 > der Report sagt, was daran nicht zurückrollbar ist.
@@ -68,8 +68,8 @@ diese Mischung bleibt abgewiesen.
 
 - **PostgreSQL `CREATE INDEX CONCURRENTLY`.** Der Renderer kennt die Klausel
   heute gar nicht, und sie bringt eigene Fragen mit (ein fehlgeschlagener Lauf
-  hinterlässt einen `INVALID`-Index, der aufgeräumt werden will). Eigener
-  Schnitt, sobald diese Naht steht.
+  hinterlässt einen `INVALID`-Index, der aufgeräumt werden will). Ausgeschnitten
+  nach [`pg-create-index-concurrently.md`](../open/pg-create-index-concurrently.md).
 - **Rückrollen über Abschnittsgrenzen hinweg.** Ein Abschnitt, der außerhalb
   einer Transaktion lief, ist nicht zurückrollbar; ein Rollback-Artefakt
   beschreibt weiterhin nur, was die Migration rückgängig machen *würde*.
@@ -88,3 +88,20 @@ Rückbau gemeldet.** Der Ausführer übernahm die Flags des gescheiterten
 Abschnitts; dass ein früherer bereits festgeschrieben war, ging dabei
 verloren. Das betraf auch den Atomic-Preserve-Weg, der Abschnitte schon vorher
 kannte — es fiel nur nicht auf, weil dort selten mehr als einer vorkam.
+
+---
+
+## Closure
+
+Die Naht steht: ein Plan darf Anweisungen enthalten, die eine offene
+Transaktion nicht vertragen. Sie laufen in einem eigenen Abschnitt, in
+Planreihenfolge, und der Report sagt, was daran nicht zurückrollbar ist.
+
+Der erste Nutzer ist SQL Servers Volltext-DDL — `schema migrate` legt einen
+Volltext-Index jetzt an, statt mit `E072` darauf zu verweisen, dass man das DDL
+selbst anwenden möge. `E072` ist damit ohne Verwendung.
+
+Offen bleibt als eigener Schnitt
+[`pg-create-index-concurrently.md`](../open/pg-create-index-concurrently.md):
+PostgreSQL rendert die Klausel nicht, und sie bringt mit dem `INVALID`-Index
+nach einem Abbruch eine eigene Frage mit.
