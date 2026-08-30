@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.model.GeometryType
+
 import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
@@ -23,6 +25,26 @@ internal class SqliteTableImportSession(
 
     private var discardConnection: Boolean = false
 
+    /**
+     * SpatiaLite baut Geometrie aus WKB mit `GeomFromWKB`. Ohne diesen
+     * Konstruktor landete das WKB-`byte[]` als roher BLOB in der Spalte —
+     * SpatiaLite fuehrt sein eigenes Binaerformat und laese die Spalte
+     * unbrauchbar zurueck.
+     *
+     * Die Funktion gibt es nur mit geladener Extension. Ohne sie traegt keine
+     * Zielspalte einen Geometrie-Typnamen, und der Konstruktor kommt nie zum
+     * Einsatz.
+     */
+    override val geometryBindConstructor: String = "GeomFromWKB"
+
+    /**
+     * SQLite fuehrt keine Typen, sondern Affinitaeten; der deklarierte Name
+     * einer von `AddGeometryColumn` angelegten Spalte ist `POINT`,
+     * `LINESTRING`, …
+     */
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        typeNameLower in GeometryType.KNOWN_VALUES
+
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         if (importedTargetColumns.isEmpty()) {
             return when (options.onConflict) {
@@ -34,7 +56,9 @@ internal class SqliteTableImportSession(
         }
 
         val columnList = importedTargetColumns.joinToString(", ") { quoteSqliteIdentifier(it.name) }
-        val placeholders = importedTargetColumns.joinToString(", ") { "?" }
+        // Ueber [valuePlaceholder], nicht als blankes `?`: eine Geometriespalte
+        // braucht den Konstruktor um den gebundenen WKB-Wert herum.
+        val placeholders = importedTargetColumns.joinToString(", ") { valuePlaceholder(it) }
         val baseInsert = "INSERT INTO ${qualifiedTable.quotedPath()} ($columnList) VALUES ($placeholders)"
         return when (options.onConflict) {
             OnConflict.ABORT -> baseInsert

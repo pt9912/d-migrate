@@ -58,7 +58,7 @@ class SqliteDataWriter : DataWriter {
         var fkChecksDisabled = false
         try {
             savedAutoCommit = conn.autoCommit
-            val targetColumns = loadTargetColumns(conn, qualified)
+            val targetColumns = enrichGeometrySrid(conn, qualified, loadTargetColumns(conn, qualified))
             val primaryKeyColumns = if (options.onConflict == OnConflict.UPDATE) {
                 loadPrimaryKeyColumns(conn, qualified).also {
                     require(it.isNotEmpty()) {
@@ -130,6 +130,41 @@ class SqliteDataWriter : DataWriter {
                 t.addSuppressed(cleanup)
             }
             throw t
+        }
+    }
+
+    /**
+     * Reichert Geometrie-Zielspalten mit ihrer SRID aus SpatiaLites
+     * `geometry_columns` an, damit der Import WKB als `GeomFromWKB(?, srid)`
+     * bindet statt die SRID auf 0 fallen zu lassen.
+     *
+     * Die Tabelle gibt es nur mit geladener Extension; ohne sie bleibt die
+     * Liste unveraendert und der Schreibpfad wickelt nicht.
+     */
+    private fun enrichGeometrySrid(
+        conn: Connection,
+        table: SqliteQualifiedTableName,
+        columns: List<TargetColumn>,
+    ): List<TargetColumn> {
+        val sridByColumn = runCatching {
+            conn.prepareStatement(
+                "SELECT f_geometry_column, srid FROM geometry_columns WHERE lower(f_table_name) = lower(?)",
+            ).use { ps ->
+                ps.setString(1, table.table)
+                ps.executeQuery().use { rs ->
+                    buildMap {
+                        while (rs.next()) {
+                            val srid = rs.getInt("srid").takeIf { it != 0 } ?: continue
+                            put(rs.getString("f_geometry_column"), srid)
+                        }
+                    }
+                }
+            }
+        }.getOrDefault(emptyMap())
+        if (sridByColumn.isEmpty()) return columns
+        return columns.map { col ->
+            sridByColumn.entries.firstOrNull { it.key.equals(col.name, ignoreCase = true) }
+                ?.let { col.copy(srid = it.value) } ?: col
         }
     }
 

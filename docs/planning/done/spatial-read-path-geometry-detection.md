@@ -1,11 +1,21 @@
 ---
 id: spatial-read-path-geometry-detection
 title: "SpatiaLite fehlt im Datenpfad: Geometrie wird als BLOB gelesen"
-status: open
+status: done
 ---
 
 # SpatiaLite fehlt im Datenpfad
 
+> **Behoben 2026-08-30.** Lese- und Schreibpfad stehen, live belegt über einen
+> Round-Trip SpatiaLite → SpatiaLite: `AsText(geom)` liefert im Ziel wieder
+> `POINT(1 2)` mit SRID 4326.
+>
+> Beim Schreibpfad kam ein **vorbestehender** Fehler ans Licht:
+> `SqliteTableImportSession.buildInsertSql` schrieb feste `?`-Platzhalter statt
+> `valuePlaceholder(…)`. Damit war der Geometrie-Konstruktor-Haken der
+> Basisklasse für SQLite von Anfang an wirkungslos — er fiel nur nicht auf,
+> weil SQLite als einziger Dialekt bis jetzt keine Geometrie schrieb.
+>
 > **Neu geschnitten 2026-08-30.** Die frühere Fassung nannte drei Punkte aus der
 > Statustabelle des Spatial-Slices. Nachgemessen sind alle drei überholt — was
 > übrig bleibt, ist ein anderer, engerer Fall. Die widerlegten Punkte stehen
@@ -57,9 +67,10 @@ Aufwand liegt woanders:
   `ST_AsBinary` und erkennt die Spalte am deklarierten Typnamen. Live belegt:
   21 Byte WKB statt 60 Byte Eigenformat; ohne Extension bleibt der rohe BLOB,
   statt an einer unbekannten Funktion zu scheitern.
-- **Offen — Schreibpfad:** WKB als `GeomFromWKB(?, srid)` binden. PostgreSQL und
-  MySQL holen die SRID aus dem Zielkatalog; SpatiaLite hat mit
-  `geometry_columns` eine eigene Quelle (`places.geom srid=4326`, gemessen).
+- ~~Schreibpfad: WKB als `GeomFromWKB(?, srid)` binden~~ — **erledigt**: die SRID
+  kommt aus SpatiaLites `geometry_columns`. Ohne sie scheitert der Einsatz an
+  einem Trigger (`geom-type or SRID not allowed`) — gemessen, beide Formen
+  gegeneinander.
 
 ## Was nicht mehr gilt
 

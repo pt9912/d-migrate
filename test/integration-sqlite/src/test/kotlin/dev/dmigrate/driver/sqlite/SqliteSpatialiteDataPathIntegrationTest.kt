@@ -4,6 +4,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.driver.data.ImportOptions
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -75,6 +76,48 @@ class SqliteSpatialiteDataPathIntegrationTest : FunSpec({
                 val at = chunk.columns.indexOfFirst { it.name == "geom" }
                 // Das rohe SpatiaLite-Format, deutlich groesser als sein WKB.
                 (chunk.rows.single()[at] as ByteArray).size shouldBe 60
+            }
+        }
+    }
+
+    // Der Beleg, der zaehlt: gelesen, geschrieben, und im Ziel steht wieder ein
+    // Punkt — nicht ein BLOB, den SpatiaLite nicht deuten kann.
+    test("a geometry round-trips into a second SpatiaLite database") {
+        val targetFile = dir.resolve("target.db")
+        val targetConfig = ConnectionConfig(
+            dialect = DatabaseDialect.SQLITE,
+            host = null, port = null, database = targetFile.toString(),
+            user = null, password = null,
+            params = mapOf("spatialite" to "true"),
+        )
+        HikariConnectionPoolFactory.create(targetConfig).use { targetPool ->
+            targetPool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("SELECT InitSpatialMetaData(1)")
+                    stmt.execute("CREATE TABLE places (id INTEGER PRIMARY KEY, name TEXT)")
+                    stmt.execute("SELECT AddGeometryColumn('places','geom',4326,'POINT','XY')")
+                }
+            }
+
+            HikariConnectionPoolFactory.create(configFor(spatialite = true)).use { sourcePool ->
+                SqliteDataReader().streamTable(sourcePool, "places", null, 100).use { seq ->
+                    SqliteDataWriter().openTable(targetPool, "places", ImportOptions()).use { session ->
+                        seq.forEach { chunk -> session.write(chunk) }
+                        session.commitChunk()
+                        session.finishTable()
+                    }
+                }
+            }
+
+            targetPool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    // SpatiaLite deutet den Wert wieder als Geometrie.
+                    stmt.executeQuery("SELECT AsText(geom), ST_SRID(geom) FROM places").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getString(1) shouldBe "POINT(1 2)"
+                        rs.getInt(2) shouldBe 4326
+                    }
+                }
             }
         }
     }
