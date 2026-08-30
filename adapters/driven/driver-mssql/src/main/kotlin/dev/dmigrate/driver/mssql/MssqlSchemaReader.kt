@@ -422,7 +422,7 @@ class MssqlSchemaReader(
                 )
                 continue
             }
-            val depends = dependenciesOf(dependsByRoutine[row.name])
+            val depends = dependenciesOf(dependsByRoutine[row.name], schema)
             when (row.type) {
                 "P" -> if (options.includeProcedures) addProcedure(row, params, body, depends, procedures)
                 "FN", "IF" -> if (options.includeFunctions) addFunction(row, params, body, depends, functions)
@@ -580,16 +580,28 @@ class MssqlSchemaReader(
      * Prozeduren stehen bei den Funktionen, weil `DependencyInfo` beide Arten
      * in derselben Liste fuehrt.
      */
-    private fun dependenciesOf(rows: List<MssqlRoutineQueries.RoutineDependencyRow>?): DependencyInfo? {
+    private fun dependenciesOf(
+        rows: List<MssqlRoutineQueries.RoutineDependencyRow>?,
+        schema: String,
+    ): DependencyInfo? {
         if (rows.isNullOrEmpty()) return null
         val tables = mutableSetOf<String>()
         val views = mutableSetOf<String>()
         val routines = mutableSetOf<String>()
         for (row in rows) {
+            // Ein Ziel aus einem anderen Schema traegt hier keine Ordnung: der
+            // Reverse liest genau ein Schema, und der blanke Name kollidierte
+            // mit einem gleichnamigen Objekt darin.
+            if (row.referencedSchema != null && !row.referencedSchema.equals(schema, ignoreCase = true)) continue
             when (row.referencedType) {
                 "U" -> tables += row.referenced
                 "V" -> views += row.referenced
-                "FN", "IF", "TF", "P" -> routines += row.referenced
+                // NUR Funktionen: SQL Server loest Funktionsaufrufe beim
+                // `CREATE` auf, Prozeduraufrufe erst zur Laufzeit. Ein
+                // Prozedur-Ziel traegt deshalb keine Ordnung — und `p1 EXEC p2`
+                // neben `p2 EXEC p1` ist legal, stuende aber als Zyklus im Plan
+                // und braechte ihn mit einem Blocker zum Abbruch.
+                "FN", "IF", "TF" -> routines += row.referenced
                 // Ohne aufloesbaren Typ bleibt die Kante ungenutzt: ein Name
                 // ohne Klasse traegt keine Ordnung.
                 else -> {}

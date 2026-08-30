@@ -429,14 +429,6 @@ internal object MssqlMetadataQueries {
     data class UnreadObject(val type: String, val name: String)
 
     /**
-     * Routinen/Trigger im Schema, die der Reverse-Reader nicht liest —
-     * inklusive der CLR-Varianten (PC/FS/FT/TA), damit kein Objekt still
-     * aus dem Ergebnis fällt.
-     */
-
-
-
-    /**
      * Routinen **ohne** lesbaren T-SQL-Rumpf.
      *
      * Zwei Faelle fallen darunter, und beide bleiben ungelesen: CLR-Routinen

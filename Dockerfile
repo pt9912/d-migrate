@@ -184,6 +184,7 @@ FROM compile AS docker-coverage-modules-html
 
 ARG COVERAGE_MODULES_HTML_TASKS="\
 :hexagon:core:koverHtmlReport \
+:hexagon:ports:koverHtmlReport \
 :hexagon:ports-common:koverHtmlReport \
 :hexagon:ports-read:koverHtmlReport \
 :hexagon:ports-write:koverHtmlReport \
@@ -198,6 +199,7 @@ ARG COVERAGE_MODULES_HTML_TASKS="\
 :adapters:driven:driver-sqlite:koverHtmlReport \
 :adapters:driven:driver-sqlite-profiling:koverHtmlReport \
 :adapters:driven:driver-mssql-profiling:koverHtmlReport \
+:adapters:driven:driver-mssql:koverHtmlReport \
 :adapters:driven:formats:koverHtmlReport \
 :adapters:driven:integrations:koverHtmlReport \
 :adapters:driven:streaming:koverHtmlReport \
@@ -365,6 +367,7 @@ ARG COVERAGE_MODULES_TASKS="\
 :hexagon:core:koverXmlReport \
 :hexagon:application:koverXmlReport \
 :hexagon:profiling:koverXmlReport \
+:hexagon:ports:koverXmlReport \
 :hexagon:ports-common:koverXmlReport \
 :hexagon:ports-read:koverXmlReport \
 :hexagon:ports-write:koverXmlReport \
@@ -377,6 +380,7 @@ ARG COVERAGE_MODULES_TASKS="\
 :adapters:driven:driver-sqlite:koverXmlReport \
 :adapters:driven:driver-sqlite-profiling:koverXmlReport \
 :adapters:driven:driver-mssql-profiling:koverXmlReport \
+:adapters:driven:driver-mssql:koverXmlReport \
 :adapters:driven:audit-logging:koverXmlReport \
 :adapters:driven:connection-config:koverXmlReport \
 :adapters:driven:formats:koverXmlReport \

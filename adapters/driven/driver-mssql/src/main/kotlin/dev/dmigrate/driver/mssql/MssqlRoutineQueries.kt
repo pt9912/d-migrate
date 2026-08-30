@@ -76,11 +76,13 @@ internal object MssqlRoutineQueries {
             """
             SELECT o.name AS referencing_name,
                    COALESCE(ro.name, d.referenced_entity_name) AS referenced_name,
+                   COALESCE(rs.name, d.referenced_schema_name) AS referenced_schema,
                    ro.type AS referenced_type
             FROM sys.sql_expression_dependencies d
             JOIN sys.objects o ON o.object_id = d.referencing_id
             JOIN sys.schemas s ON s.schema_id = o.schema_id
             LEFT JOIN sys.objects ro ON ro.object_id = d.referenced_id
+            LEFT JOIN sys.schemas rs ON rs.schema_id = ro.schema_id
             WHERE s.name = ? AND o.is_ms_shipped = 0
               AND o.type IN ('P', 'FN', 'IF', 'TF', 'TR')
             ORDER BY o.name, referenced_name
@@ -90,6 +92,7 @@ internal object MssqlRoutineQueries {
             RoutineDependencyRow(
                 referencing = row.string("referencing_name"),
                 referenced = row.string("referenced_name"),
+                referencedSchema = row["referenced_schema"]?.toString(),
                 referencedType = row["referenced_type"]?.toString()?.trim(),
             )
         }
@@ -98,6 +101,8 @@ internal object MssqlRoutineQueries {
     data class RoutineDependencyRow(
         val referencing: String,
         val referenced: String,
+        /** Schema des Ziels; null, wenn der Rumpf unqualifiziert verweist und es nicht aufloesbar ist. */
+        val referencedSchema: String?,
         /** `U` Tabelle, `V` Sicht, `FN`/`IF`/`TF` Funktion, `P` Prozedur; null, wenn nicht aufloesbar. */
         val referencedType: String?,
     )

@@ -196,6 +196,23 @@ class RoutineDependencyAnalyzerTest : FunSpec({
         result.operations.single { it.id == "create-t" }.dependencies shouldBe setOf("create-fn")
     }
 
+    // Ein blanker Name unterscheidet die Ueberladungen nicht. Eine rekursive
+    // `f(integer)` nennt `f` — ohne Ausschluss der Gleichnamigen bekaeme sie
+    // eine Kante auf die unbeteiligte `f(text)`, und sind beide rekursiv,
+    // entstuende ein Zyklus, den es in der Datenbank nicht gibt.
+    test("a recursive routine does not wire itself to its own overload") {
+        val recursive = emptyFn.copy(dependencies = DependencyInfo(functions = listOf("f")))
+        val a = DiffOperation.CreateFunction(
+            id = "create-a", objectRef = ref(DiffObjectType.FUNCTION, "f(in:integer)"), function = recursive,
+        )
+        val b = DiffOperation.CreateFunction(
+            id = "create-b", objectRef = ref(DiffObjectType.FUNCTION, "f(in:text)"), function = recursive,
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(a, b))
+        result.operations.single { it.id == "create-a" }.dependencies.shouldBeEmpty()
+        result.operations.single { it.id == "create-b" }.dependencies.shouldBeEmpty()
+    }
+
     test("DropView drops before its referenced DropTable (reverse-topo edge)") {
         val dropView = DiffOperation.DropView(
             id = "drop-v",

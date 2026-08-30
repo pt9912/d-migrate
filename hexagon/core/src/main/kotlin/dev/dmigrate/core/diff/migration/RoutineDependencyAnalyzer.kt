@@ -211,12 +211,16 @@ internal object RoutineDependencyAnalyzer {
         is DiffOperation.CreateMaterializedView -> viewCreateEdges(op.view.dependencies, op.id, idx)
         is DiffOperation.ReplaceMaterializedView -> viewCreateEdges(op.after.dependencies, op.id, idx) +
             idx.dropViewDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
-        is DiffOperation.CreateFunction -> routineCreateEdges(op.function.dependencies, op.id, idx)
-        is DiffOperation.ReplaceFunction -> routineCreateEdges(op.after.dependencies, op.id, idx) +
-            idx.dropFunctionDependentsByFunction[routineName(op.objectRef.rootName)].orEmpty().toSet()
-        is DiffOperation.CreateProcedure -> routineCreateEdges(op.procedure.dependencies, op.id, idx)
-        is DiffOperation.ReplaceProcedure -> routineCreateEdges(op.after.dependencies, op.id, idx) +
-            idx.dropProcedureDependentsByProcedure[routineName(op.objectRef.rootName)].orEmpty().toSet()
+        is DiffOperation.CreateFunction ->
+            routineCreateEdges(op.function.dependencies, op.id, idx, routineName(op.objectRef.rootName))
+        is DiffOperation.ReplaceFunction ->
+            routineCreateEdges(op.after.dependencies, op.id, idx, routineName(op.objectRef.rootName)) +
+                idx.dropFunctionDependentsByFunction[routineName(op.objectRef.rootName)].orEmpty().toSet()
+        is DiffOperation.CreateProcedure ->
+            routineCreateEdges(op.procedure.dependencies, op.id, idx, routineName(op.objectRef.rootName))
+        is DiffOperation.ReplaceProcedure ->
+            routineCreateEdges(op.after.dependencies, op.id, idx, routineName(op.objectRef.rootName)) +
+                idx.dropProcedureDependentsByProcedure[routineName(op.objectRef.rootName)].orEmpty().toSet()
         is DiffOperation.CreateTrigger -> triggerCreateEdges(op.trigger, op.id, idx)
         is DiffOperation.ReplaceTrigger -> triggerCreateEdges(op.after, op.id, idx)
         is DiffOperation.DropFunction ->
@@ -248,15 +252,17 @@ internal object RoutineDependencyAnalyzer {
         return edges
     }
 
-    private fun routineCreateEdges(deps: DependencyInfo?, opId: String, idx: Indexes): Set<String> {
+    private fun routineCreateEdges(
+        deps: DependencyInfo?,
+        opId: String,
+        idx: Indexes,
+        selfName: String?,
+    ): Set<String> {
         if (deps == null) return emptySet()
         val edges = mutableSetOf<String>()
         deps.tables.mapNotNull { idx.createTableId[it] }.filter { it != opId }.forEach { edges += it }
         deps.views.mapNotNull { idx.createViewId[it] }.filter { it != opId }.forEach { edges += it }
-        for (fn in deps.functions) {
-            edges += idx.createFunctionIds[routineName(fn)].orEmpty().filter { it != opId }
-            edges += idx.createProcedureIds[routineName(fn)].orEmpty().filter { it != opId }
-        }
+        addRoutineEdges(deps, opId, idx, selfName, edges)
         deps.sequences.mapNotNull { idx.createSequenceId[it] }.filter { it != opId }.forEach { edges += it }
         return edges
     }
@@ -271,11 +277,34 @@ internal object RoutineDependencyAnalyzer {
         // DependencyInfo — wire that edge unconditionally.
         idx.createTableId[trigger.table]?.takeIf { it != opId }?.let { edges += it }
         val deps = trigger.dependencies ?: return edges
-        for (fn in deps.functions) {
-            edges += idx.createFunctionIds[routineName(fn)].orEmpty().filter { it != opId }
-            edges += idx.createProcedureIds[routineName(fn)].orEmpty().filter { it != opId }
-        }
+        // Ein Trigger traegt keinen Routinennamen, kann sich also nicht selbst
+        // nennen.
+        addRoutineEdges(deps, opId, idx, selfName = null, edges = edges)
         return edges
+    }
+
+    /**
+     * Kanten auf die genannten Routinen — ausser auf gleichnamige.
+     *
+     * Ein blanker Name in `DependencyInfo.functions` unterscheidet die
+     * Ueberladungen nicht. Eine rekursive `f(integer)` nennt `f`, und ohne
+     * diesen Ausschluss bekaeme sie eine Kante auf die unbeteiligte
+     * `f(text)` — sind beide rekursiv, entstuende daraus ein Zyklus, den es
+     * in der Datenbank nicht gibt.
+     */
+    private fun addRoutineEdges(
+        deps: DependencyInfo,
+        opId: String,
+        idx: Indexes,
+        selfName: String?,
+        edges: MutableSet<String>,
+    ) {
+        for (fn in deps.functions) {
+            val name = routineName(fn)
+            if (name == selfName) continue
+            edges += idx.createFunctionIds[name].orEmpty().filter { it != opId }
+            edges += idx.createProcedureIds[name].orEmpty().filter { it != opId }
+        }
     }
 
     /** Der blanke Routinenname, auch wenn ein kanonischer Key hereinkommt. */
@@ -319,9 +348,11 @@ internal object RoutineDependencyAnalyzer {
         if (b.id in a.dependencies || a.id in b.dependencies) return true
         val aDeps = routineDependencies(a)?.functions.orEmpty()
         val bDeps = routineDependencies(b)?.functions.orEmpty()
-        val bName = routineNameByOpId[b.id] ?: return false
-        val aName = routineNameByOpId[a.id] ?: return false
-        return bName in aDeps || aName in bDeps
+        // Dieselbe Angleichung wie in den Indizes: der Op-Key traegt die
+        // Signatur, `DependencyInfo.functions` den blanken Namen.
+        val bName = routineNameByOpId[b.id]?.let(::routineName) ?: return false
+        val aName = routineNameByOpId[a.id]?.let(::routineName) ?: return false
+        return aDeps.any { routineName(it) == bName } || bDeps.any { routineName(it) == aName }
     }
 
     private fun routineDependencies(op: DiffOperation): DependencyInfo? = when (op) {

@@ -360,4 +360,39 @@ class MssqlRoutineIntegrationTest : FunSpec({
             }
         }
     }
+
+    // T-SQL loest Prozeduraufrufe erst zur Laufzeit auf: `p1 EXEC p2` neben
+    // `p2 EXEC p1` ist legal und steht so im Katalog. Als Plan-Kanten gelesen
+    // ergaebe das einen Zyklus — und der Lauf braeche ab, wo vorher nichts war.
+    test("mutually recursive procedures carry no ordering edge and plan without a blocker") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            try {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute("CREATE PROCEDURE dbo.rec_p1 AS BEGIN EXEC dbo.rec_p2 END")
+                        stmt.execute("CREATE PROCEDURE dbo.rec_p2 AS BEGIN EXEC dbo.rec_p1 END")
+                    }
+                }
+
+                val current = MssqlSchemaReader().read(pool).schema
+                val p1 = current.procedures.getValue("rec_p1()")
+                // Die Kante steht im Katalog, aber nicht im Modell.
+                (p1.dependencies?.functions ?: emptyList()) shouldNotContain "rec_p2"
+
+                val empty = current.copy(procedures = emptyMap())
+                val diff = SchemaComparator().compare(empty, current)
+                val plan = DiffPlanner().plan(empty, current, diff)
+                plan.diagnostics.none { it.code == "DEPENDENCY_CYCLE" } shouldBe true
+                val migration = MssqlDiffDdlGenerator().generateUp(plan, DdlGenerationOptions())
+                withClue(migration.blockers.joinToString()) { migration.blockers.shouldBeEmpty() }
+            } finally {
+                pool.borrow().asJdbc().use { conn ->
+                    conn.createStatement().use { stmt ->
+                        runCatching { stmt.execute("DROP PROCEDURE dbo.rec_p1") }
+                        runCatching { stmt.execute("DROP PROCEDURE dbo.rec_p2") }
+                    }
+                }
+            }
+        }
+    }
 })

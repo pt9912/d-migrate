@@ -99,9 +99,9 @@ class MssqlProfilingDataAdapterTest : FunSpec({
         listOf("geometry", "geography", "xml", "text", "ntext").forEach { type ->
             adapter.columnMetrics(pool, "t", "c", type)
             withClue(type) {
-                sql.captured.contains("count(distinct CAST([c] AS NVARCHAR(4000)))") shouldBe true
+                sql.captured.contains("count(distinct CAST([c] AS NVARCHAR(MAX)))") shouldBe true
                 // Auch das blanke COUNT weist diese Typen ab.
-                sql.captured.contains("count(CAST([c] AS NVARCHAR(4000))) AS non_null_count") shouldBe true
+                sql.captured.contains("count(CAST([c] AS NVARCHAR(MAX))) AS non_null_count") shouldBe true
             }
         }
         // `image` laesst sich nicht nach nvarchar wandeln — nur ueber varbinary.
@@ -123,10 +123,10 @@ class MssqlProfilingDataAdapterTest : FunSpec({
             "empty_count" to 0L, "blank_count" to 0L, "min_len" to 1, "max_len" to 1,
         )
         adapter.columnMetrics(pool, "t", "c", "text")
-        sql.captured.contains("LEN(CAST([c] AS NVARCHAR(4000)))") shouldBe true
+        sql.captured.contains("LEN(CAST([c] AS NVARCHAR(MAX)))") shouldBe true
 
         // `'   ' = ''` ist in T-SQL wahr — der Leer-Test laeuft ueber DATALENGTH.
-        sql.captured.contains("DATALENGTH(CAST([c] AS NVARCHAR(4000))) = 0") shouldBe true
+        sql.captured.contains("DATALENGTH(CAST([c] AS NVARCHAR(MAX))) = 0") shouldBe true
 
         adapter.columnMetrics(pool, "t", "c", "nvarchar")
         sql.captured.contains("LEN([c])") shouldBe true
@@ -139,7 +139,7 @@ class MssqlProfilingDataAdapterTest : FunSpec({
             "min_val" to "0x01", "max_val" to "0x01",
         )
         adapter.columnMetrics(pool, "t", "c", "varbinary")
-        sql.captured.contains("CONVERT(NVARCHAR(4000), CONVERT(VARBINARY(MAX), [c]), 1)") shouldBe true
+        sql.captured.contains("CONVERT(NVARCHAR(MAX), CONVERT(VARBINARY(MAX), [c]), 1)") shouldBe true
     }
 
     test("numericStats casts to FLOAT and uses STDEVP") {
@@ -202,10 +202,12 @@ class MssqlProfilingDataAdapterTest : FunSpec({
         every { jdbc.querySingle(capture(sql)) } returns mapOf("checked" to 1L, "compat" to 1L, "incompat" to 0L)
 
         adapter.targetTypeCompatibility(pool, "t", "c", listOf(TargetLogicalType.DATE))
-        sql.captured.contains("TRY_CONVERT(DATE, CAST([c] AS NVARCHAR(4000)), 126)") shouldBe true
+        sql.captured.contains("TRY_CONVERT(DATE, CAST([c] AS NVARCHAR(MAX)), 126)") shouldBe true
+        // `20240213` ist eindeutig, aber nicht ISO-getrennt — Stil 112 nimmt es.
+        sql.captured.contains("TRY_CONVERT(DATE, CAST([c] AS NVARCHAR(MAX)), 112)") shouldBe true
 
         adapter.targetTypeCompatibility(pool, "t", "c", listOf(TargetLogicalType.DATETIME))
-        sql.captured.contains("TRY_CONVERT(DATETIME2, CAST([c] AS NVARCHAR(4000)), 126)") shouldBe true
+        sql.captured.contains("TRY_CONVERT(DATETIME2, CAST([c] AS NVARCHAR(MAX)), 126)") shouldBe true
     }
 
     // Sonst zaehlte topValues anders als der `distinctCount` derselben Spalte.
@@ -221,7 +223,7 @@ class MssqlProfilingDataAdapterTest : FunSpec({
         every { jdbc.querySingle(match { it.contains("type_name") }, *anyVararg()) } returns
             mapOf("type_name" to "geometry")
         adapter.topValues(pool, "t", "c", 5)
-        sql.captured.contains("GROUP BY CAST([c] AS NVARCHAR(4000))") shouldBe true
+        sql.captured.contains("GROUP BY CAST([c] AS NVARCHAR(MAX))") shouldBe true
     }
 
     test("every target type renders a predicate, and a fully compatible column has no examples") {

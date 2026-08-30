@@ -57,12 +57,17 @@ class MssqlProfilingDataAdapter(
     /**
      * Der Wert als Text fuers Profil. Bytefolgen erscheinen hexadezimal
      * (`0x01`) statt als Steuerzeichen — Stil 1 von `CONVERT`.
+     *
+     * `NVARCHAR(MAX)` statt einer festen Breite: bei 4000 Zeichen fielen zwei
+     * lange Werte mit gleichem Anfang in der Anzeige zusammen, waehrend die
+     * Gruppierung sie trennte — `topValues` lieferte denselben Text zweimal.
+     * SQL Server gruppiert und sortiert ueber `NVARCHAR(MAX)`.
      */
     private fun displayExpr(column: String, dbType: String): String =
         if (baseType(dbType) in BINARY_TYPES) {
-            "CONVERT(NVARCHAR(4000), CONVERT(VARBINARY(MAX), $column), 1)"
+            "CONVERT(NVARCHAR(MAX), CONVERT(VARBINARY(MAX), $column), 1)"
         } else {
-            "CAST($column AS NVARCHAR(4000))"
+            "CAST($column AS NVARCHAR(MAX))"
         }
 
     /**
@@ -77,12 +82,10 @@ class MssqlProfilingDataAdapter(
 
     /**
      * Der Ausdruck fuer Laengen- und Leerraum-Metriken. `text` und `ntext`
-     * weisen `LEN`, `TRIM` und den Vergleich mit `''` ab; die uebrigen
-     * Textspalten bleiben unprojiziert, damit `nvarchar(max)` jenseits von
-     * 4000 Zeichen nicht abgeschnitten gemessen wird.
+     * weisen `LEN`, `TRIM` und den Vergleich mit `''` ab.
      */
     private fun lengthExpr(column: String, dbType: String): String =
-        if (baseType(dbType) in LEGACY_TEXT) "CAST($column AS NVARCHAR(4000))" else column
+        if (baseType(dbType) in LEGACY_TEXT) "CAST($column AS NVARCHAR(MAX))" else column
 
     private fun baseType(dbType: String): String =
         dbType.lowercase().trim().substringBefore('(').trim()
@@ -312,15 +315,21 @@ class MssqlProfilingDataAdapter(
             TargetLogicalType.DECIMAL -> "$nonBlank AND TRY_CONVERT(FLOAT, $text) IS NOT NULL"
             TargetLogicalType.BOOLEAN ->
                 "LOWER($text) IN ('0','1','true','false','yes','no')"
-            // Stil 126 (ISO 8601) statt der Voreinstellung: ohne Stil richtet
-            // sich die Wandlung nach der Sprache der Anmeldung. `13/02/2024`
-            // ist unter `british` ein Datum und unter `us_english` keins — das
-            // Profil derselben Datenbank fiele je nach Rechner anders aus.
-            TargetLogicalType.DATE -> "TRY_CONVERT(DATE, $text, 126) IS NOT NULL"
-            TargetLogicalType.DATETIME -> "TRY_CONVERT(DATETIME2, $text, 126) IS NOT NULL"
+            // Feste Stile statt der Voreinstellung: ohne Stil richtet sich die
+            // Wandlung nach der Sprache der Anmeldung. `13/02/2024` ist unter
+            // `british` ein Datum und unter `us_english` keins — das Profil
+            // derselben Datenbank fiele je nach Rechner anders aus. Zugelassen
+            // sind die beiden eindeutigen Formen: 126 (ISO 8601, `2024-02-13`)
+            // und 112 (`20240213`). Die mehrdeutige Tagesform faellt bei beiden
+            // durch.
+            TargetLogicalType.DATE -> isoDateFits("DATE", text)
+            TargetLogicalType.DATETIME -> isoDateFits("DATETIME2", text)
             TargetLogicalType.STRING -> "1 = 1"
         }
     }
+
+    private fun isoDateFits(target: String, text: String): String =
+        "(TRY_CONVERT($target, $text, 126) IS NOT NULL OR TRY_CONVERT($target, $text, 112) IS NOT NULL)"
 
     private companion object {
         /** Nicht vergleichbar: kein `COUNT(DISTINCT)`, `GROUP BY` oder `ORDER BY`. */
