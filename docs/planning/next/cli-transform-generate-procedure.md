@@ -4,7 +4,7 @@
 > [`cli-spec.md`](../../../spec/cli-spec.md) §6.3/§6.4 spezifizierten,
 > bislang nicht registrierten Befehle (siehe Tracker
 > [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md)).
-> Geschwisterdokument zu [`cli-data-seed.md`](cli-data-seed.md) — gleiches
+> Geschwisterdokument zu [`cli-data-seed.md`](../in-progress/cli-data-seed.md) — gleiches
 > Grundmuster: MCP liefert die Fachlogik bereits, aber nur als
 > server-/artefaktgebundenes Tool-Paar, nicht als CLI-taugliche
 > Wiederverwendung.
@@ -32,7 +32,7 @@ Zieldialekt), synchron über die CLI nutzbar.
   registriert.
 - Voller Server-Approval-Challenge-/Quota-Mechanismus wird nicht 1:1
   übernommen (gleiche Grundhaltung wie in
-  [`cli-data-seed.md`](cli-data-seed.md) Designentscheidung 2 — Operator-
+  [`cli-data-seed.md`](../in-progress/cli-data-seed.md) Designentscheidung 2 — Operator-
   Vertrauensmodell der CLI, nicht Multi-Tenant-Server).
 - Semantische Äquivalenzprüfung generierter Prozeduren
   ([`LN-034`](../../../spec/lastenheft-d-migrate.md#ln-034), `validate
@@ -64,7 +64,7 @@ Zieldialekt), synchron über die CLI nutzbar.
    procedure` wirklich KI-frei, oder muss `cli-spec.md` nachgezogen
    werden? Bestimmt die gesamte Bauweise von P3.
 2. **Gate-Niveau für `--ai-backend`** — dieselbe offene Frage wie in
-   [`cli-data-seed.md`](cli-data-seed.md) Designentscheidung 2. Beide
+   [`cli-data-seed.md`](../in-progress/cli-data-seed.md) Designentscheidung 2. Beide
    Slices sollten dieselbe Antwort verwenden (ein gemeinsames
    CLI-KI-Gate-Bauteil statt zweier unabhängiger Lösungen).
 3. **Markdown-Zwischenformat als Dateicontract.** Heute nur implizit im
@@ -144,4 +144,4 @@ dahin bleibt der Eintrag hier (geplant, nicht aktiv).
 - [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017) — Requirement
 - [`../in-progress/roadmap.md`](../in-progress/roadmap.md) — Milestone-Zuordnung (Zeilen 943/944/949/950)
 - [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md) — Tracker-Eintrag
-- [`cli-data-seed.md`](cli-data-seed.md) — Geschwisterdokument, gleiche Design-Grundfragen (Gate-Niveau KI)
+- [`cli-data-seed.md`](../in-progress/cli-data-seed.md) — Geschwisterdokument, gleiche Design-Grundfragen (Gate-Niveau KI)

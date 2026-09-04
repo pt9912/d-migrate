@@ -57,6 +57,8 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
+| [`cli-data-seed.md`](cli-data-seed.md) | Per-Feature-Umbrella | `d-migrate data seed`: Testdaten generieren + importieren. Vier Phasen P1-P4; P1 (deterministischer Generator-Kern) aktiv, konkretisiert im ImpPlan; P2 (`--rules`) und P3 (`--ai-backend`) bleiben geplant. |
+| [`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md) | Aktives Per-Slice-ImpPlan | Umsetzungsplan fuer Phase P1: Datei-Liste, Architektur-Entscheidungen AE-1 bis AE-8, Phasen AP1-AP6, pruefbare Akzeptanzkriterien-Checkliste. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

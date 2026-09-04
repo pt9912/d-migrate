@@ -1,11 +1,10 @@
 # ImpPlan 1.3.0 — `data seed` Phase P1 (deterministischer Generator-Kern)
 
-> **Status:** Draft, bereit zur Umsetzung (2026-09-04). Kein
-> Implementierungs-Commit existiert bisher — bleibt deshalb in `next/`
-> (Konvention laut `../in-progress/README.md`: „Scope steht, aber kein
-> Implementierungs-Commit existiert" gehört nicht nach `in-progress/`).
-> Wandert zusammen mit [`cli-data-seed.md`](cli-data-seed.md) nach
-> `../in-progress/`, sobald der erste Code-Commit landet.
+> **Status:** In Arbeit (2026-09-04). Vorgezogen nach `in-progress/` per
+> Eigner-Entscheidung, vor dem ersten Code-Commit (Abweichung von der
+> Standard-Konvention in `../in-progress/README.md`, die den Move sonst
+> erst beim ersten Implementierungs-Commit vorsieht) — die Umsetzung von
+> AP1 beginnt im Anschluss an diesen Review.
 > **Vorbedingung:** Umsetzt Phase P1 aus
 > [`cli-data-seed.md`](cli-data-seed.md) (dort das übergeordnete
 > Vier-Phasen-Scope-Dokument P1–P4). Dieses ImpPlan konkretisiert **nur
@@ -176,13 +175,13 @@ existieren vor AP1–AP5 noch nicht (ADR 0011).
 - `docs/user/anwenderhandbuch.md` — aufgabenorientierter Abschnitt
   ("Brauchen Sie Testdaten für ein Schema → tun Sie ..."), inkl. Hinweis,
   dass `--rules`/`--ai-backend` noch nicht verfügbar sind.
-- `docs/planning/next/cli-data-seed.md` → verschoben nach
-  `docs/planning/in-progress/cli-data-seed.md` <!-- d-check:ignore (Zielbild: Move beim ersten Code-Commit; ADR 0011) --> (im selben Commit wie
-  dieses ImpPlan, sobald der erste Code-Commit landet).
 - `docs/planning/open/cli-unimplemented-commands.md` — Zeile `data seed`:
   Basisbefehl jetzt registriert (P1), Link zeigt auf
   `in-progress/cli-data-seed.md`, Hinweis dass `--rules`/`--ai-backend`
   noch fehlen.
+
+`cli-data-seed.md` liegt bereits (vorgezogen, siehe Status-Kopf) in
+diesem Verzeichnis.
 
 ## Phasen
 
@@ -232,9 +231,10 @@ existieren vor AP1–AP5 noch nicht (ADR 0011).
   (No-Carveouts-Check).
 - [ ] `docs/user/anwenderhandbuch.md` beschreibt den Befehl
   aufgabenorientiert inkl. Hinweis auf die noch fehlenden Flags.
-- [ ] `docs/planning/next/cli-data-seed.md` liegt (nach dem ersten
-  Code-Commit) in `in-progress/` mit aktualisiertem Status; Tracker in
-  `open/cli-unimplemented-commands.md` verweist korrekt.
+- [x] `cli-data-seed.md` liegt in `in-progress/` mit aktualisiertem
+  Status (vorgezogen 2026-09-04).
+- [ ] Tracker in `../open/cli-unimplemented-commands.md` verweist auf
+  `in-progress/cli-data-seed.md` (nicht mehr auf `next/`).
 - [ ] `make docker-check` grün für `:hexagon:core`,
   `:hexagon:application`, `:adapters:driving:cli` **und** einmal ohne
   `MODULES` (geteilte Registrierungsstelle `DataCommands.kt`).

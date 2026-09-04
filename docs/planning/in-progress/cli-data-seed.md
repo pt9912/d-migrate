@@ -1,13 +1,14 @@
 # CLI-Befehl `data seed` (Testdatengenerierung)
 
-> **Status:** Entwurf (2026-09-04). Erste Scope-Ausarbeitung des in
+> **Status:** In Arbeit (2026-09-04). Scope-Dokument für den in
 > [`cli-spec.md`](../../../spec/cli-spec.md) §6.2 spezifizierten, bislang
-> nicht registrierten Befehls (siehe Tracker
+> nicht registrierten Befehl (siehe Tracker
 > [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md)).
-> **Vorbedingung:** Keine harte Blockade; Aktivierung (Move nach
-> `../in-progress/`) frühestens bei Priorisierung des Milestones „1.3.0
-> (Testdaten)" laut [`roadmap.md`](../in-progress/roadmap.md) oder einem
-> konkreten Pilot-/Anwenderbedarf.
+> Vorgezogen nach `in-progress/` per Eigner-Entscheidung (2026-09-04, vor
+> dem regulären Aktivierungs-Trigger unten) — die Umsetzung von Phase P1
+> beginnt jetzt, konkretisiert in
+> [`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md).
+> **Vorbedingung:** Keine harte Blockade.
 
 ## Ziel
 
@@ -54,6 +55,12 @@ generieren und über die bestehende Import-Pipeline ins Ziel schreiben.
   für typ-bewusste Wertegeneratoren.
 
 ## Designentscheidungen und offene Folgefragen
+
+Für P1 sind die vier Fragen unten inzwischen entschieden — siehe AE-1
+bis AE-8 in
+[`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md).
+Sie bleiben hier als Ausgangslage stehen; für P2/P3 sind die Fragen 2
+und 3 weiterhin offen.
 
 1. **Generator-Engine.** Es existiert im Repo keine deterministische
    Wertegenerierung (kein Faker-Äquivalent) — der heutige MCP-Pfad ist
@@ -126,17 +133,18 @@ Bausteine, ohne die CLI unnötig an dieses Modell zu koppeln.
 - `../open/cli-unimplemented-commands.md`-Zeile `data seed` verweist auf
   dieses Dokument.
 
-## Aktivierungs-Trigger
+## Aktivierungs-Trigger für P2/P3
 
-Priorisierung des Milestones „1.3.0 (Testdaten)" laut
-[`roadmap.md`](../in-progress/roadmap.md), oder ein konkreter
-Pilot-/Anwenderbedarf für Testdaten-Generierung. Bis dahin bleibt der
-Eintrag hier (geplant, nicht aktiv).
+P1 ist aktiv (siehe Status-Kopf). P2 (`--rules`) und P3 (`--ai-backend`)
+bleiben geplant, nicht aktiv, bis Milestone „1.3.0 (Testdaten)" laut
+[`roadmap.md`](roadmap.md) priorisiert wird oder ein konkreter
+Pilot-/Anwenderbedarf dafür entsteht.
 
 ## Referenzen
 
 - [`spec/cli-spec.md` §6.2](../../../spec/cli-spec.md) — Befehls-Zielbild
 - [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) — Requirement
-- [`../in-progress/roadmap.md`](../in-progress/roadmap.md) — Milestone-Zuordnung
+- [`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md) — Umsetzungsplan für P1
+- [`roadmap.md`](roadmap.md) — Milestone-Zuordnung
 - [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md) — Tracker-Eintrag
 - [`../done-archive/mcp-followups-testdata-ai-approval-bundle-import.md`](../done-archive/mcp-followups-testdata-ai-approval-bundle-import.md) — Vorgänger/Hintergrund (MCP-Testdata-Tools)
