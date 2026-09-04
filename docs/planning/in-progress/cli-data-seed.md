@@ -3,8 +3,11 @@
 > **Status:** In Arbeit (2026-09-04). **P1 (deterministischer Generator-
 > Kern) geliefert** — siehe
 > [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md)
-> (graduiert nach `done/`, Closure-Sektion dort). P2 (`--rules`) und P3
-> (`--ai-backend`) bleiben geplant, nicht aktiv. Scope-Dokument für den in
+> (graduiert nach `done/`, Closure-Sektion dort). **P2 (`--rules`)
+> aktiviert** — siehe
+> [`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md)
+> (Draft, Umsetzung vor dem v1.2.0-Release). P3 (`--ai-backend`) bleibt
+> geplant, nicht aktiv. Scope-Dokument für den in
 > [`cli-spec.md`](../../../spec/cli-spec.md) §6.2 spezifizierten Befehl
 > (siehe Tracker
 > [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md)).
@@ -97,7 +100,9 @@ und 3 weiterhin offen.
   Closure): `data seed` erzeugt für ein Beispielschema reproduzierbare
   (gleicher `--seed` ⇒ byte-identische Daten), FK-konsistente Datensätze
   im Ziel.
-- **P2 — `--rules`-Regeldatei.** Format entscheiden (Designentscheidung 3),
+- **P2 — `--rules`-Regeldatei. AKTIVIERT (2026-09-04)** — siehe
+  [`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md)
+  für das entschiedene Format (Designentscheidung 3 dort aufgelöst),
   Parser + Validierung, Spalten-Overrides. **DoD:** Regeldatei überschreibt
   den Default-Generator je Spalte; ungültige Regeldatei = definierter
   Fehler-Exit mit klarer Meldung.
@@ -137,10 +142,12 @@ Bausteine, ohne die CLI unnötig an dieses Modell zu koppeln.
 
 ## Aktivierungs-Trigger für P2/P3
 
-P1 ist geliefert (siehe Status-Kopf). P2 (`--rules`) und P3 (`--ai-backend`)
-bleiben geplant, nicht aktiv, bis Milestone „1.3.0 (Testdaten)" laut
-[`roadmap.md`](roadmap.md) priorisiert wird oder ein konkreter
-Pilot-/Anwenderbedarf dafür entsteht.
+P1 ist geliefert (siehe Status-Kopf). **P2 (`--rules`) ist aktiviert**
+(konkreter Eigner-Wunsch vor dem v1.2.0-Release, 2026-09-04) — siehe
+[`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md).
+P3 (`--ai-backend`) bleibt geplant, nicht aktiv, bis Milestone „1.3.0
+(Testdaten)" laut [`roadmap.md`](roadmap.md) priorisiert wird oder ein
+konkreter Pilot-/Anwenderbedarf dafür entsteht.
 
 ## Referenzen
 

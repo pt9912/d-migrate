@@ -57,7 +57,8 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`cli-data-seed.md`](cli-data-seed.md) | Per-Feature-Umbrella | `d-migrate data seed`: Testdaten generieren + importieren. Vier Phasen P1-P4; P1 (deterministischer Generator-Kern) geliefert (siehe [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md) in `done/`); P2 (`--rules`) und P3 (`--ai-backend`) bleiben geplant. |
+| [`cli-data-seed.md`](cli-data-seed.md) | Per-Feature-Umbrella | `d-migrate data seed`: Testdaten generieren + importieren. Vier Phasen P1-P4; P1 (deterministischer Generator-Kern) geliefert (siehe [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md) in `done/`); P2 (`--rules`) aktiviert, siehe [`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md); P3 (`--ai-backend`) bleibt geplant. |
+| [`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md) | ImpPlan (Draft) | `data seed` P2: `--rules`-Regeldatei (Spalten-Overrides: Wertelisten+Gewichtungen, numerische Bereiche, Text-Vorlagen). Vor dem v1.2.0-Release aktiviert. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.
