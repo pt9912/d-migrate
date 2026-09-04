@@ -16,7 +16,13 @@ class DataCommand : CliktCommand(name = "data") {
     override fun help(context: Context) = "Data export, import, transfer and profiling commands"
 
     init {
-        subcommands(DataExportCommand(), DataImportCommand(), DataTransferCommand(), DataProfileCommand())
+        subcommands(
+            DataExportCommand(),
+            DataImportCommand(),
+            DataTransferCommand(),
+            DataProfileCommand(),
+            DataSeedCommand(),
+        )
     }
 
     override fun run() = Unit
