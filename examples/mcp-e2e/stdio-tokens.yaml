@@ -1,0 +1,24 @@
+# Stdio-Token-Registry fuer den MCP-E2E-Harness — TEST ONLY, NOT FOR
+# PRODUCTION. Rohe Tokens (siehe scripts/smoke-scope-matrix.sh) sind fest
+# verdrahtete Dev-Only-Werte, deren SHA-256-Fingerprint hier steht
+# (FileStdioTokenStore-Format, spec/mcp-server.md §12.10).
+#
+# admin: alle sieben Scopes via isAdmin (Positiv-Fall — beweist den echten
+#   Dispatch inkl. connections/list?checkLive=true gegen den echten
+#   postgres-Service). restricted: nur dmigrate:read (Negativ-Fall fuer
+#   connections/list, das einzige dmigrate:admin-gated Ziel).
+tokens:
+  - fingerprint: "36857d81bcab4dc179795479c7e32e45013e1feba0b1ec82500e71aa610317ee"
+    principalId: "mcp-e2e-admin"
+    tenantId: "default"
+    scopes: ["dmigrate:read"]
+    isAdmin: true
+    auditSubject: "mcp-e2e-admin@mcp-e2e"
+    expiresAt: "2030-01-01T00:00:00Z"
+  - fingerprint: "fd427fa1b7864261de84a4e3ffb4105e45f91f20e27699760db71ed80398c3b9"
+    principalId: "mcp-e2e-restricted"
+    tenantId: "default"
+    scopes: ["dmigrate:read"]
+    isAdmin: false
+    auditSubject: "mcp-e2e-restricted@mcp-e2e"
+    expiresAt: "2030-01-01T00:00:00Z"

@@ -1,0 +1,48 @@
+name: MCP-E2E Scope-Matrix Smoke (Best-Effort)
+
+# Teil B von docs/planning/next/mcp-real-e2e-scope-matrix.md: Scope-
+# Enforcement-Smoke gegen das echte, gebaute d-migrate:dev-MCP-Server-
+# Image (docker-compose + Bash/jq, kein Testcontainers, kein
+# Gradle-Testmodul) -- die Ebene, die weder die In-Process-Szenarien noch
+# der JVM-Real-Subprozess (Teil A, test/e2e-cli) anfasst.
+#
+# Best-Effort: continue-on-error, analog sample-db-smoke.yml/
+# bi-demo-smoke.yml -- transiente Docker-Hub-/Netz-Instabilitaeten sollen
+# den Hauptbuild nicht rot machen.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/mcp-e2e/**'
+      - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
+      - '.github/workflows/mcp-e2e-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify docker compose + jq available
+        run: |
+          docker compose version
+          jq --version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run MCP-E2E scope-matrix smoke (up + real subprocess + assertions)
+        run: make mcp-e2e-smoke
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make mcp-e2e-purge || true

@@ -1,0 +1,8 @@
+# Plan: docs/planning/next/mcp-real-e2e-scope-matrix.md Teil B
+
+# Local env file with (possibly customised) test credentials.
+.env
+
+# NDJSON-Request-/Response-Dateien des Smoke-Laufs.
+out/*
+!out/.gitkeep

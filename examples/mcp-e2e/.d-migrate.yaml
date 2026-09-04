@@ -1,0 +1,15 @@
+# Verbindungskonfiguration fuer den MCP-E2E-Harness (LF-012 / LN-038-
+# strukturierte Form -- die Legacy-String-Form `name: "postgresql://..."`
+# wird vom YamlConnectionReferenceLoader still verworfen, siehe
+# adapters/driven/connection-config/.../YamlConnectionReferenceLoader.kt).
+#
+# credentialRef verweist auf die Umgebungsvariable MCP_E2E_PG_URL, die der
+# dmigrate-Service-Aufruf setzt (volle URL, nicht nur ein Passwort — der
+# env:-Provider liefert den Wert verbatim als resolved URL zurueck).
+database:
+  connections:
+    mcp_e2e_pg:
+      displayName: "MCP E2E Postgres"
+      dialectId: postgresql
+      sensitivity: NON_PRODUCTION
+      credentialRef: "env:MCP_E2E_PG_URL"

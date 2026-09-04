@@ -1,6 +1,8 @@
 # MCP: Echte E2E-Absicherung der Scope-Matrix (`connections/list` + Rest)
 
-> **Status:** Draft, bereit zur Umsetzung (2026-09-04). Ausgelöst durch eine
+> **Status:** Geliefert (2026-09-04). Beide Teile vollständig umgesetzt,
+> alle Akzeptanzkriterien erfüllt (Details je Teil unten). Teil A:
+> `c031e002`. Teil B: siehe Commit unten. Ausgelöst durch eine
 > manuelle Live-Prüfung: `connections/list` (Slice B von
 > [`ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md`](../done/ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md))
 > wurde als "nicht erreichbar" gemeldet — tatsächlich war der Code korrekt
@@ -81,7 +83,7 @@
      In-Memory-Fixtures von Ebene 1). Unterstützt bereits einen
      `DMIGRATE_CLI_BIN`-Hebel, um statt der Kind-JVM das echte
      GraalVM-Native-Binary zu testen (siehe
-     [`native-e2e-regression-gate.md`](native-e2e-regression-gate.md), Status
+     [`native-e2e-regression-gate.md`](../next/native-e2e-regression-gate.md), Status
      Draft, noch nicht CI-verdrahtet — dieser Slice tastet das Dokument
      nicht an). **Wichtig: der bestehende Test authentifiziert nie** — er
      sendet nur `initialize` (auth-exempt, `ScopeChecker.kt:23-26`) und
@@ -315,18 +317,30 @@ wird.
 
 ### Akzeptanzkriterien
 
-- [ ] `make mcp-e2e-smoke` baut/nutzt `d-migrate:dev`, fährt den Stack hoch,
+- [x] `make mcp-e2e-smoke` baut/nutzt `d-migrate:dev`, fährt den Stack hoch,
       spielt die Scope-Matrix inkl. `connections/list` durch, räumt aggressiv
       keine Ressourcen weg (Stack bleibt stehen, `mcp-e2e-down`/`-purge`
-      analog Sample-DB).
-- [ ] `connections/list` mit `checkLive: true` liefert gegen den echten
-      `postgres`-Service `REACHABLE`.
-- [ ] `admin`-Token: `connections/list` liefert Daten, keine Scope-Ablehnung.
+      analog Sample-DB). Lokal grün verifiziert.
+- [x] `connections/list` mit `checkLive: true` liefert gegen den echten
+      `postgres`-Service `REACHABLE`. **Design-Delta:** die
+      `.d-migrate.yaml` musste auf die strukturierte
+      [LF-012](../../../spec/lastenheft-d-migrate.md#lf-012)/[LN-038](../../../spec/lastenheft-d-migrate.md#ln-038)-Form
+      umgestellt werden (`displayName`/`dialectId`/`sensitivity`/
+      `credentialRef: env:MCP_E2E_PG_URL`) — die im Sample-DB-Harness
+      übliche Legacy-String-Form (`name: "postgresql://..."`) wird vom
+      `YamlConnectionReferenceLoader` still verworfen (kein Fehler, leere
+      `connections/list`-Antwort). `MCP_E2E_PG_URL` trägt die volle URL,
+      nicht nur ein Passwort — der `env:`-Provider liefert seinen Wert
+      verbatim als resolved URL. Zusätzlich musste `stdio-tokens.yaml`s
+      `tenantId` auf `"default"` gesetzt werden (der CLI-Pfad bindet
+      `--connection-config` immer an `TenantId("default")`, nicht an das
+      Compose-Projekt).
+- [x] `admin`-Token: `connections/list` liefert Daten, keine Scope-Ablehnung.
       `restricted`-Token: `connections/list` liefert exakt die
-      `dmigrate:admin`-Scope-Ablehnung.
-- [ ] `.github/workflows/mcp-e2e-smoke.yml` läuft (best-effort) bei Push auf
+      `dmigrate:admin`-Scope-Ablehnung. Beides live verifiziert.
+- [x] `.github/workflows/mcp-e2e-smoke.yml` läuft (best-effort) bei Push auf
       `main` mit Pfadfilter, sowie `workflow_dispatch`.
-- [ ] `make docs-check` grün (neue Doku-Querverweise).
+- [x] `make docs-check` grün (neue Doku-Querverweise).
 
 ## Verifikation (beide Teile)
 
@@ -340,7 +354,7 @@ wird.
 - [`ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md`](../done/ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md)
   — Ursprung der `connections/list`-Implementierung, deren Live-Erreichbarkeit
   hier nachträglich automatisiert abgesichert wird.
-- [`native-e2e-regression-gate.md`](native-e2e-regression-gate.md) — verwandter,
+- [`native-e2e-regression-gate.md`](../next/native-e2e-regression-gate.md) — verwandter,
   aber unabhängiger offener Slice (native Binary statt JVM-Image).
 - `examples/sample-db/README.md`, `examples/bi-demo/README.md` — Vorbild-Muster
   für Teil B.

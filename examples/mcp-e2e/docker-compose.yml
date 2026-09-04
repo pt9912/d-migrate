@@ -1,0 +1,49 @@
+# MCP-E2E-Harness Compose-Stack — Plan: docs/planning/next/mcp-real-e2e-scope-matrix.md Teil B
+#
+# Ein postgres-Service (echte Verbindung fuer connections/list?checkLive=true)
+# und ein dmigrate-Service (echtes d-migrate:dev-MCP-Server-Image). Der
+# dmigrate-Service laeuft nur unter `--profile tools` (kein Auto-Start bei
+# `up`) — `mcp serve --transport stdio` wird per `docker compose run -T`
+# gefahren, NDJSON-Requests per stdin, analog `examples/sample-db/`.
+# Voraussetzung: einmaliger `make docker-build IMAGE_TAG=dev`.
+
+services:
+  postgres:
+    image: postgres:17.10-trixie
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${MCP_E2E_PG_PORT}:5432"
+    volumes:
+      - mcp-e2e-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  dmigrate:
+    # Standard: das JVM-Image d-migrate:dev. Ueberschreibbar auf das
+    # Native-Runtime-Image, analog examples/sample-db/.
+    image: ${MCP_E2E_DMIGRATE_IMAGE:-d-migrate:dev}
+    # Non-root-Image (uid 10001) — laeuft als aufrufender Host-User, damit
+    # es in das gemountete out/-Verzeichnis schreiben kann. Fallback 0:0
+    # fuer manuelle `docker compose run` ohne gesetzte Variable.
+    user: "${MCP_E2E_DMIGRATE_USER:-0:0}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    env_file:
+      - .env
+    # env:-CredentialProvider fuer .d-migrate.yaml's credentialRef (volle
+    # URL, nicht nur ein Passwort — siehe .d-migrate.yaml-Kommentar).
+    environment:
+      MCP_E2E_PG_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+    volumes:
+      - .:/work
+    working_dir: /work
+
+volumes:
+  mcp-e2e-pg-data:

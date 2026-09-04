@@ -124,6 +124,12 @@ help:
 		'  make sample-db-down   Stop containers (named volume survives)' \
 		'  make sample-db-purge  Stop containers and remove the named volume' \
 		'' \
+		'MCP-E2E-Harness (examples/mcp-e2e, Plan: docs/planning/next/mcp-real-e2e-scope-matrix.md Teil B):' \
+		'  make mcp-e2e-up       Start postgres (real connection for connections/list?checkLive=true)' \
+		'  make mcp-e2e-smoke    Scope-matrix smoke against the real d-migrate:dev image: mcp serve --transport stdio, one representative tool per scope + connections/list checkLive' \
+		'  make mcp-e2e-down     Stop containers (named volume survives)' \
+		'  make mcp-e2e-purge    Stop containers and remove the named volume' \
+		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
 		'  DOCKER_OCI_IMAGE=dmigrate/d-migrate:latest' \
@@ -360,3 +366,10 @@ include make/bi-demo.mk
 # sample-db-*-Targets). Der `include` bindet sie in dieselbe make-Invocation
 # ein — `make sample-db-…` funktioniert unverändert.
 include make/sample-db.mk
+
+# ── MCP-E2E-Harness (examples/mcp-e2e) ──────────────────────────────
+#
+# In make/mcp-e2e.mk ausgelagert (Variable MCP_E2E_COMPOSE, .PHONY und alle
+# mcp-e2e-*-Targets). Plan: docs/planning/next/mcp-real-e2e-scope-matrix.md
+# Teil B.
+include make/mcp-e2e.mk
