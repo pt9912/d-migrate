@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-04
+
 ### Added
 
 - **MS SQL Server ist der vierte Dialekt.** `schema reverse`, `generate`,
@@ -64,6 +66,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Strategie- und Schluesselwechsel bleiben ohne Operation, die Warnung nennt
   jetzt aber den Fall — ebenso eine geaenderte Zahl von `HASH`-Eimern, die
   jede Zeile neu verteilt statt eine Grenze zu verschieben.
+
+- **MySQL-Storage-Engine, -Zeichensatz und -Kollation kommen aus der
+  Konfiguration.** `schema generate` schrieb bisher `ENGINE=InnoDB DEFAULT
+  CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` als Literal; eine Datenbank auf
+  MyISAM oder mit anderer Kollation liess sich damit nicht ausdruecken. Die
+  drei Werte kommen jetzt aus `ddl.mysql` (kein CLI-Flag) — ohne Konfiguration
+  aendert sich das gerenderte DDL nicht. Wie der Filegroup-Name gehen sie
+  unquotiert in `CREATE TABLE` und werden deshalb als Bezeichner geprueft.
+
+- **SpatiaLite: Geometriespalten transferieren jetzt als WKB, nicht als
+  SpatiaLite-Eigenformat.** Sowohl Lese- als auch Schreibpfad sind neu:
+  `data transfer` liest ueber `ST_AsBinary` und schreibt ueber
+  `GeomFromWKB(?, srid)`, live per Round-Trip SpatiaLite → SpatiaLite belegt.
+  Wirksam nur bei `?spatialite=true` in der Verbindungs-URL; ohne die
+  Extension bleibt es beim rohen BLOB. Autoritativ fuer Spaltenerkennung und
+  SRID ist SpatiaLites `geometry_columns`-Katalog, nicht der deklarierte
+  Spaltentypname — SQLite fuehrt keine Typen, nur Affinitaeten.
 
 ### Fixed
 

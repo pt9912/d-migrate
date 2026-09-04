@@ -46,8 +46,15 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.0.3** (stabil, [veröffentlicht 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.3)).
+**1.1.0** (stabil, [veröffentlicht 2026-09-04](https://github.com/pt9912/d-migrate/releases/tag/v1.1.0)).
 
+> **Neu in 1.1.0:** MS SQL Server ist der vierte Dialekt (Reverse, Generate,
+> Migrate, Datenpfad, Profiling), `schema migrate` kann jetzt Anweisungen
+> ausführen, die eine offene Transaktion nicht vertragen (Volltext-Indizes bei
+> SQL Server), und Partitions-Änderungen (rollierend hinzufügen/entfernen)
+> werden ausgeführt statt nur gemeldet. Vollständige Liste im
+> [`CHANGELOG.md`](CHANGELOG.md).
+>
 > **Neu in 1.0.3:** stellt die nativen Binaries wieder her (der 1.0.1-Tag
 > konnte sie nicht bauen) und macht den Parquet-**Import** im nativen Binary
 > erstmals funktionsfähig — er scheiterte in jedem bisher veröffentlichten
@@ -174,17 +181,13 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.0.3** (2026-08-16) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. Das Container-Image
-  läuft als **non-root** (`uid 10001`); Schreiben in einen Bind-Mount
-  braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt es
-  für `linux-x64` und `windows-x64`; unter macOS führen Homebrew, die
+- **Aktuelles Stable** · **1.1.0** (2026-09-04) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. MS SQL Server ist jetzt der
+  vierte Dialekt (Reverse, Generate, Migrate, Datenpfad, Profiling); das
+  Container-Image läuft als **non-root** (`uid 10001`); Schreiben in einen
+  Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt
+  es für `linux-x64` und `windows-x64`; unter macOS führen Homebrew, die
   JVM-Artefakte oder das Container-Image zum Ziel.
-- **In Arbeit** · **1.1.0** — MS SQL Server als vierter Dialekt (Reverse,
-  Generate, Migrate, Datenpfad, Profiling), Änderungen am Partitionsbestand
-  als Migrations-Operationen, und Anweisungen, die eine Datenbank in einer
-  offenen Transaktion ablehnt. Der vollständige unveröffentlichte Stand steht
-  im [`CHANGELOG.md`](CHANGELOG.md).
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter

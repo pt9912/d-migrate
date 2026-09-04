@@ -42,9 +42,15 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.0.3**
-(stable, [released 2026-08-16](https://github.com/pt9912/d-migrate/releases/tag/v1.0.3)).
+d-migrate is a working production tool at version **1.1.0**
+(stable, [released 2026-09-04](https://github.com/pt9912/d-migrate/releases/tag/v1.1.0)).
 
+> **New in 1.1.0:** MS SQL Server as the fourth dialect (reverse, generate,
+> migrate, data path, profiling), `schema migrate` can now run statements a
+> database refuses inside an open transaction (SQL Server full-text indexes),
+> and partition-set changes (add/drop a rolling partition) are applied instead
+> of only reported. See [`CHANGELOG.md`](CHANGELOG.md) for the full list.
+>
 > **New in 1.0.3:** restores the native binaries (the 1.0.1 tag could not
 > build them) and makes Parquet **import** work in the native binary for the
 > first time — it had failed in every native binary released so far; both
@@ -161,17 +167,13 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.0.3** (2026-08-16) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. The container image
-  runs as **non-root** (`uid 10001`), so writing into a bind mount needs
-  `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64` and
-  `windows-x64`; on macOS use Homebrew, the JVM artefacts or the
-  container image.
-- **In development** · **1.1.0** — MS SQL Server as the fourth dialect
-  (reverse, generate, migrate, data path, profiling), partition-set
-  changes applied as migration operations, and statements that a
-  database refuses inside an open transaction. See
-  [`CHANGELOG.md`](CHANGELOG.md) for the full unreleased set.
+- **Current stable** · **1.1.0** (2026-09-04) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. MS SQL Server is now the
+  fourth dialect (reverse, generate, migrate, data path, profiling); the
+  container image runs as **non-root** (`uid 10001`), so writing into a bind
+  mount needs `--user "$(id -u):$(id -g)"`. Native binaries ship for
+  `linux-x64` and `windows-x64`; on macOS use Homebrew, the JVM artefacts or
+  the container image.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at
