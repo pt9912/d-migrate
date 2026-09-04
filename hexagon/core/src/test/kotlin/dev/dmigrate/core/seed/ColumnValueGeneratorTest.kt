@@ -125,9 +125,21 @@ class ColumnValueGeneratorTest : FunSpec({
         value.all { it is String } shouldBe true
     }
 
-    test("Array falls back to text for an unmapped element type") {
+    test("Array falls back to text for enum/array element types (insufficient metadata)") {
         val value = generatorFor(1).generate(NeutralType.Array(elementType = "enum")) as List<*>
         value.all { it is String } shouldBe true
+    }
+
+    test("Array throws UnsupportedSeedTypeException for an element type outside the schema vocabulary") {
+        shouldThrow<UnsupportedSeedTypeException> {
+            generatorFor(1).generate(NeutralType.Array(elementType = "bogus"))
+        }
+    }
+
+    test("Array throws UnsupportedSeedTypeException for geometry element type (excluded from the vocabulary)") {
+        shouldThrow<UnsupportedSeedTypeException> {
+            generatorFor(1).generate(NeutralType.Array(elementType = "geometry"))
+        }
     }
 
     test("de locale produces different words than en locale") {

@@ -19,10 +19,29 @@ import java.nio.file.Path
 import kotlin.random.Random
 
 /**
+ * Interner Abbruch-Kanal für [DataSeedRunner.execute]: [TableRowSeeder.seedEach]
+ * kennt keinen Exit-Code, verschränkt Generierung und Schreiben pro Tabelle
+ * aber in einer einzigen Schleife (Review-Fix "Whole schema materialized in
+ * memory before any write") — ein Schreibfehler in Tabelle N muss die Schleife
+ * abbrechen, ohne weitere Tabellen zu generieren. Wird ausschließlich intern
+ * geworfen und direkt um den `seedEach`-Aufruf gefangen.
+ */
+private class SeedWriteAbort(val exitCode: Int) : RuntimeException()
+
+/**
  * Kernlogik für `d-migrate data seed` P1
  * (ImpPlan-1.3.0-cli-data-seed-p1.md AP3). Alle externen Kollaborateure
  * sind konstruktorinjiziert (analog `DataImportRunner`), damit jeder
  * Zweig ohne echte Datenbank/CLI testbar ist.
+ *
+ * Generierung und Schreiben laufen Tabelle für Tabelle verschränkt
+ * (`TableRowSeeder.seedEach`): eine bereits geschriebene Tabelle muss
+ * ihre Zeilen nicht bis zum Ende des gesamten Laufs im Speicher halten.
+ * Kehrseite (dokumentierter Design-Delta, analog `data import` ohne
+ * `--atomic`): eine Datenbankverbindung wird VOR der Generierung
+ * geöffnet, und ein Preflight-/Eindeutigkeits-Fehler in einer späteren
+ * Tabelle lässt bereits geschriebene frühere Tabellen in der Zieldatenbank
+ * stehen — der Lauf ist nicht rückgängig gemacht.
  *
  * Exit-Codes (AE-6/AE-7, cli-spec §6-Konvention):
  * - 0 Erfolg
@@ -59,27 +78,48 @@ class DataSeedRunner(
         val effectiveSeed = request.seed ?: Random.nextLong()
         stdout("Verwendeter Seed: $effectiveSeed")
 
-        val rows = try {
-            TableRowSeeder(Random(effectiveSeed), locale).seedAll(schema, request.count)
-        } catch (e: SeedPreflightException) {
-            stderr("Error: ${e.message}")
-            return EXIT_PREFLIGHT_FAILED
-        } catch (e: SeedUniquenessExhaustedException) {
-            stderr("Error: ${e.message}")
-            return EXIT_WRITE_FAILED
-        }
-
         val pool = try {
             poolFactory(connectionConfig)
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             stderr("Error: Failed to connect to database: ${e.message}")
             return EXIT_CONNECTION_ERROR
         }
 
         return try {
-            writeAll(connectionConfig, pool, schema, rows)
+            seedAndWriteAll(connectionConfig, pool, schema, effectiveSeed, locale, request)
         } finally {
             runCatching { pool.close() }
+        }
+    }
+
+    private fun seedAndWriteAll(
+        connectionConfig: ConnectionConfig,
+        pool: ConnectionPool,
+        schema: SchemaDefinition,
+        effectiveSeed: Long,
+        locale: SeedLocale,
+        request: DataSeedRequest,
+    ): Int {
+        val writer = writerLookup(connectionConfig.dialect)
+        var totalRows = 0L
+        var tableCount = 0
+        return try {
+            TableRowSeeder(Random(effectiveSeed), locale).seedEach(schema, request.count) { tableName, tableRows ->
+                val exitCode = writeTable(writer, pool, schema, tableName, tableRows, request.chunkSize)
+                if (exitCode != EXIT_SUCCESS) throw SeedWriteAbort(exitCode)
+                totalRows += tableRows.size
+                tableCount++
+            }
+            stdout("$totalRows Zeile(n) in $tableCount Tabelle(n) erzeugt.")
+            EXIT_SUCCESS
+        } catch (e: SeedPreflightException) {
+            stderr("Error: ${e.message}")
+            EXIT_PREFLIGHT_FAILED
+        } catch (e: SeedUniquenessExhaustedException) {
+            stderr("Error: ${e.message}")
+            EXIT_WRITE_FAILED
+        } catch (e: SeedWriteAbort) {
+            e.exitCode
         }
     }
 
@@ -104,29 +144,13 @@ class DataSeedRunner(
         null
     }
 
-    private fun writeAll(
-        connectionConfig: ConnectionConfig,
-        pool: ConnectionPool,
-        schema: SchemaDefinition,
-        rows: Map<String, List<Map<String, Any?>>>,
-    ): Int {
-        val writer = writerLookup(connectionConfig.dialect)
-        var totalRows = 0L
-        for ((tableName, tableRows) in rows) {
-            val exitCode = writeTable(writer, pool, schema, tableName, tableRows)
-            if (exitCode != 0) return exitCode
-            totalRows += tableRows.size
-        }
-        stdout("$totalRows Zeile(n) in ${rows.size} Tabelle(n) erzeugt.")
-        return EXIT_SUCCESS
-    }
-
     private fun writeTable(
         writer: DataWriter,
         pool: ConnectionPool,
         schema: SchemaDefinition,
         tableName: String,
         tableRows: List<Map<String, Any?>>,
+        chunkSize: Int,
     ): Int {
         val session = try {
             writer.openTable(pool, tableName, ImportOptions())
@@ -141,7 +165,7 @@ class DataSeedRunner(
                 return@use EXIT_PREFLIGHT_FAILED
             }
             try {
-                writeRows(session, tableName, tableRows)
+                writeRows(session, tableName, tableRows, chunkSize)
                 session.finishTable()
                 EXIT_SUCCESS
             } catch (e: Exception) {
@@ -151,16 +175,20 @@ class DataSeedRunner(
         }
     }
 
+    /** Batcht in [chunkSize]-große `DataChunk`s (analog `pipeline.chunk_size` bei `data import`/`export`). */
     private fun writeRows(
         session: TableImportSession,
         tableName: String,
         tableRows: List<Map<String, Any?>>,
+        chunkSize: Int,
     ) {
         if (tableRows.isEmpty()) return
         val columns = session.targetColumns.map { ColumnDescriptor(it.name, it.nullable) }
-        val values = tableRows.map { row -> session.targetColumns.map { column -> row[column.name] }.toTypedArray() }
-        session.write(DataChunk(tableName, columns, values, chunkIndex = 0))
-        session.commitChunk()
+        tableRows.chunked(chunkSize).forEachIndexed { chunkIndex, batch ->
+            val values = batch.map { row -> session.targetColumns.map { column -> row[column.name] }.toTypedArray() }
+            session.write(DataChunk(tableName, columns, values, chunkIndex.toLong()))
+            session.commitChunk()
+        }
     }
 
     /** AE-3: Zielspalte, die im Quellschema fehlt und `NOT NULL` ohne Default ist, ist ein Preflight-Fehler. */

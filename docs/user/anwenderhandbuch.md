@@ -1995,11 +1995,10 @@ Schema angelegt sind (z. B. per `schema generate`/`schema migrate`).
    ```
 
 **Ergebnis:** 100 Zeilen je Basistabelle des Schemas, in Fremdschlüssel-
-sicherer Reihenfolge eingefügt — jeder Fremdschlüsselwert referenziert
-eine tatsächlich generierte Zeile der Zieltabelle. `unique`-Spalten
-enthalten keine Duplikate, `enum`-Spalten ausschließlich deklarierte
-Werte. Der Lauf gibt den verwendeten Seed aus (`Verwendeter Seed: 42`) —
-auch ohne `--seed` bleibt ein Lauf damit im Nachhinein reproduzierbar.
+sicherer Reihenfolge eingefügt. `unique`-Spalten enthalten keine
+Duplikate, `enum`-Spalten ausschließlich deklarierte Werte. Der Lauf
+gibt den verwendeten Seed aus (`Verwendeter Seed: 42`) — auch ohne
+`--seed` bleibt ein Lauf damit im Nachhinein reproduzierbar.
 
 **Hinweise:**
 
@@ -2007,6 +2006,11 @@ auch ohne `--seed` bleibt ein Lauf damit im Nachhinein reproduzierbar.
   Ohne `--seed` wird ein zufälliger Seed gezogen und ausgegeben.
 - **`--locale`** unterstützt aktuell `en` (Default) und `de`; ein anderer
   Wert bricht mit Exit 7 ab, statt still auf Englisch zurückzufallen.
+- **Fremdschlüsselwerte referenzieren nur bei spaltenmodellierten FKs**
+  (`column.references`) garantiert eine tatsächlich generierte Zeile der
+  Zieltabelle. Constraint-modellierte (ggf. mehrspaltige) Fremdschlüssel
+  fließen nur in die Tabellenreihenfolge ein — ihre Spalten erhalten
+  gewöhnliche, unabhängige Zufallswerte ohne FK-Bezug.
 - **Geometry- und Volltext-Spalten** (`tsvector`) werden in dieser Phase
   nicht generiert: nullable Spalten bleiben leer, eine `NOT NULL`-Spalte
   dieses Typs bricht den Lauf mit Exit 3 ab, statt einen falschen Wert

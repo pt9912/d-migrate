@@ -133,6 +133,7 @@ class DataSeedRunnerTest : FunSpec({
         count: Int = 5,
         locale: String = "en",
         target: String? = "sqlite:///tmp/x.db",
+        chunkSize: Int = DataSeedRequest.DEFAULT_CHUNK_SIZE,
     ) = DataSeedRequest(
         schema = Path.of("unused.yaml"),
         target = target,
@@ -140,6 +141,7 @@ class DataSeedRunnerTest : FunSpec({
         seed = seed,
         locale = locale,
         cliConfigPath = null,
+        chunkSize = chunkSize,
     )
 
     test("success: writes rows for every table, prints the seed and a summary") {
@@ -148,6 +150,45 @@ class DataSeedRunnerTest : FunSpec({
         exitCode shouldBe 0
         out.joined() shouldContain "Verwendeter Seed: 42"
         out.joined() shouldContain "10 Zeile(n) in 2 Tabelle(n) erzeugt."
+    }
+
+    test("chunkSize batches writes into multiple DataChunks with increasing chunkIndex") {
+        val onlyCustomers = SchemaDefinition(
+            name = "t", version = "1.0",
+            tables = mapOf("customers" to usersSchema.tables.getValue("customers")),
+        )
+        val session = fakeSession(listOf(TargetColumn("id", false, Types.INTEGER)))
+        val (r, _, _) = runner(schema = onlyCustomers, sessions = mapOf("customers" to session))
+        r.execute(request(count = 5, chunkSize = 2)) shouldBe 0
+        session.writtenChunks.map { it.rows.size } shouldBe listOf(2, 2, 1)
+        session.writtenChunks.map { it.chunkIndex } shouldBe listOf(0L, 1L, 2L)
+    }
+
+    test("a preflight failure in a later table leaves an earlier table's rows already written") {
+        val schema = SchemaDefinition(
+            name = "t", version = "1.0",
+            tables = linkedMapOf(
+                "first" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    ),
+                ),
+                "second" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                        "shape" to ColumnDefinition(type = NeutralType.Geometry(), required = true),
+                    ),
+                ),
+            ),
+        )
+        val firstSession = fakeSession(listOf(TargetColumn("id", false, Types.INTEGER)))
+        val sessions = mapOf(
+            "first" to firstSession,
+            "second" to fakeSession(listOf(TargetColumn("id", false, Types.INTEGER))),
+        )
+        val (r, _, _) = runner(schema = schema, sessions = sessions)
+        r.execute(request(count = 3)) shouldBe 3
+        firstSession.writtenChunks.sumOf { it.rows.size } shouldBe 3
     }
 
     test("determinism: two runs with the same seed write identical rows") {

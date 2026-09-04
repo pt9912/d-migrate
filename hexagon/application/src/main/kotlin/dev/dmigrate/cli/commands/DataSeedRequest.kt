@@ -14,4 +14,10 @@ data class DataSeedRequest(
     val seed: Long?,
     val locale: String,
     val cliConfigPath: Path?,
-)
+    /** Aus `pipeline.chunk_size` aufgelöst (Config > Default 10_000); Zeilen je `DataChunk`. */
+    val chunkSize: Int = DEFAULT_CHUNK_SIZE,
+) {
+    companion object {
+        const val DEFAULT_CHUNK_SIZE = 10_000
+    }
+}

@@ -2,15 +2,13 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
-import dev.dmigrate.cli.config.ConfigMissingDefaultException
-import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.connection.PoolSettings
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.SchemaCodec
 import dev.dmigrate.format.yaml.YamlSchemaCodec
@@ -28,6 +26,10 @@ internal data class DataSeedOptions(
     val seed: Long?,
     val locale: String,
     val configPath: Path?,
+    /** Aus `database.pool:` aufgelöst (Config > Default); wird in `ConnectionConfig.pool` injiziert. */
+    val pool: PoolSettings = PoolSettings(),
+    /** Aus `pipeline.chunk_size` aufgelöst (Config > Default). */
+    val chunkSize: Int = DataSeedRequest.DEFAULT_CHUNK_SIZE,
 )
 
 internal data class DataSeedWiringBundle(
@@ -44,26 +46,12 @@ internal fun interface DataSeedWiringFactory {
 
 internal object DefaultDataSeedWiringFactory : DataSeedWiringFactory {
     override fun build(): DataSeedWiringBundle {
-        val writerLookup: (DatabaseDialect) -> DataWriter = { dialect ->
-            DatabaseDriverRegistry.get(dialect).dataWriter()
-        }
         return DataSeedWiringBundle(
             schemaCodec = YamlSchemaCodec(),
-            targetResolver = { target, configPath ->
-                try {
-                    NamedConnectionResolver(configPathFromCli = configPath).resolveTarget(target)
-                } catch (e: ConfigMissingDefaultException) {
-                    throw CliUsageException(
-                        "--target is required when database.default_target is not set.",
-                        e,
-                    )
-                } catch (e: ConfigResolveException) {
-                    throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
-                }
-            },
+            targetResolver = defaultTargetResolver(),
             urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
             poolFactory = HikariConnectionPoolFactory::create,
-            writerLookup = writerLookup,
+            writerLookup = defaultWriterLookup(),
         )
     }
 }
@@ -87,6 +75,7 @@ internal object DataSeedWiring {
             seed = options.seed,
             locale = options.locale,
             cliConfigPath = options.configPath,
+            chunkSize = options.chunkSize,
         )
         val runner = DataSeedRunner(
             schemaCodec = bundle.schemaCodec,
@@ -97,7 +86,8 @@ internal object DataSeedWiring {
                     .connectionName(options.target, "default_target"),
                 bundle.urlParser,
             ),
-            poolFactory = bundle.poolFactory,
+            // pool:-Wiring — aus `database.pool:` aufgelöste PoolSettings injizieren (SQLite bleibt geklemmt).
+            poolFactory = { config -> bundle.poolFactory(config.copy(pool = options.pool)) },
             writerLookup = bundle.writerLookup,
         )
         return runner.execute(request)

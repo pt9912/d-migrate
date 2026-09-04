@@ -10,6 +10,9 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.long
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.resolveEffectiveChunkSize
+import dev.dmigrate.cli.config.resolveEffectivePoolSettings
 
 /**
  * `d-migrate data seed` — generiert deterministische Testdaten aus einem
@@ -52,6 +55,14 @@ class DataSeedCommand : CliktCommand(name = "seed") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
+        // pool:-/chunk_size-Wiring — `database.pool:`/`pipeline.chunk_size` auflösen (Config > Default).
+        // Kein Pipeline-Resolver (kein --chunk-size-Flag bei `seed`), also hier standalone; Config-Fehler → Exit 7.
+        val (pool, chunkSize) = try {
+            resolveEffectivePoolSettings(root?.config) to resolveEffectiveChunkSize(root?.config, cliChunkSize = null)
+        } catch (e: ConfigResolveException) {
+            echo("Error: ${e.message}", err = true)
+            throw ProgramResult(7)
+        }
         val exitCode = DataSeedWiring.execute(
             DataSeedOptions(
                 schema = schema,
@@ -60,6 +71,8 @@ class DataSeedCommand : CliktCommand(name = "seed") {
                 seed = seed,
                 locale = locale,
                 configPath = root?.config,
+                pool = pool,
+                chunkSize = chunkSize,
             ),
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

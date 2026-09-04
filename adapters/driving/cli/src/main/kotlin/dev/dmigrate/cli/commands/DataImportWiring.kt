@@ -3,14 +3,11 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
-import dev.dmigrate.cli.config.ConfigMissingDefaultException
-import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.config.PipelineCheckpointResolver
 import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.cli.output.ProgressRenderer
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
@@ -81,23 +78,10 @@ internal fun interface DataImportWiringFactory {
 internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
 
     override fun build(cliContext: CliContext): DataImportWiringBundle {
-        val writerLookup: (DatabaseDialect) -> DataWriter = { dialect ->
-            DatabaseDriverRegistry.get(dialect).dataWriter()
-        }
+        val writerLookup: (DatabaseDialect) -> DataWriter = defaultWriterLookup()
         val readerFactory = DefaultDataChunkReaderFactory()
         return DataImportWiringBundle(
-            targetResolver = { target, configPath ->
-                try {
-                    NamedConnectionResolver(configPathFromCli = configPath).resolveTarget(target)
-                } catch (e: ConfigMissingDefaultException) {
-                    throw CliUsageException(
-                        "--target is required when database.default_target is not set.",
-                        e,
-                    )
-                } catch (e: ConfigResolveException) {
-                    throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
-                }
-            },
+            targetResolver = defaultTargetResolver(),
             urlParser = EnvCredentialFiller().fillingParser(ConnectionUrlParser::parse),
             poolFactory = HikariConnectionPoolFactory::create,
             writerLookup = writerLookup,

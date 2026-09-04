@@ -53,16 +53,29 @@ class TableRowSeeder(private val random: Random, private val locale: SeedLocale)
 
     /** Generiert [countPerTable] Zeilen je Basistabelle, in FK-sicherer Reihenfolge. */
     fun seedAll(schema: SchemaDefinition, countPerTable: Int): Map<String, List<Map<String, Any?>>> {
+        val result = linkedMapOf<String, List<Map<String, Any?>>>()
+        seedEach(schema, countPerTable) { tableName, rows -> result[tableName] = rows }
+        return result
+    }
+
+    /**
+     * Wie [seedAll], ruft aber [onTable] sofort nach jeder fertig generierten
+     * Tabelle auf, statt alle Tabellen im Rückgabewert zu sammeln. Erlaubt dem
+     * Aufrufer, Generierung und Schreiben zu verschränken (Zeilen einer bereits
+     * geschriebenen Tabelle müssen dann nicht länger im Speicher gehalten
+     * werden) — `valuePools` bleibt unabhängig davon für die gesamte
+     * Schema-Laufzeit erhalten, da spätere Tabellen ggf. auf frühere
+     * FK-referenzieren.
+     */
+    fun seedEach(schema: SchemaDefinition, countPerTable: Int, onTable: (String, List<Map<String, Any?>>) -> Unit) {
         val tableNames = schema.tables.keys
         val order = sortTablesByDependency(tableNames, buildFkEdges(schema, tableNames))
         val circularEdges = order.circularEdges.toSet()
         val valuePools = mutableMapOf<Pair<String, String>, MutableList<Any?>>()
-        val result = linkedMapOf<String, List<Map<String, Any?>>>()
         for (tableName in order.sorted) {
             val table = schema.tables.getValue(tableName)
-            result[tableName] = seedTable(tableName, table, countPerTable, circularEdges, valuePools)
+            onTable(tableName, seedTable(tableName, table, countPerTable, circularEdges, valuePools))
         }
-        return result
     }
 
     private fun buildFkEdges(schema: SchemaDefinition, tables: Collection<String>): List<FkEdge> =

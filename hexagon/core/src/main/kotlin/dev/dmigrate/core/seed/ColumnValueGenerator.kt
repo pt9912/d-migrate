@@ -1,6 +1,7 @@
 package dev.dmigrate.core.seed
 
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.validation.SchemaValidator
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -125,34 +126,51 @@ class ColumnValueGenerator(private val random: Random, private val locale: SeedL
     }
 
     /**
-     * Bildet `NeutralType.Array.elementType` (validiert gegen
-     * `SchemaValidator.ARRAY_ELEMENT_TYPE_NAMES`, dasselbe Vokabular wie
-     * die Top-Level-Spalten-`type`-Angabe) auf einen internen
+     * Bildet `NeutralType.Array.elementType` auf einen internen
      * [NeutralType] ab. Lokal nachgebaut statt aus `formats` importiert,
      * weil `hexagon:core` nicht von `formats` abhängen darf (AE-11).
      * `enum`/`array` als Elementtyp tragen keine ausreichenden Metadaten
      * (Wertevorrat bzw. Verschachtelung) — Fallback auf `Text`, analog
      * `PostgresTypeMapper.resolveElementType`.
+     *
+     * Das Namensvokabular wird NICHT hier dupliziert: die Mitgliedschaft
+     * wird gegen [SchemaValidator.ARRAY_ELEMENT_TYPE_NAMES] geprüft (das
+     * bereits von der Schema-Validierung genutzte Vokabular), bevor die
+     * eigentliche Namen→Typ-Abbildung greift. Ein Name außerhalb dieses
+     * Vokabulars — z. B. weil `BASE_TYPE_NAMES` um einen neuen Basistyp
+     * erweitert wurde, ohne diese Abbildung nachzuziehen — wirft
+     * [UnsupportedSeedTypeException] statt still auf `Text`
+     * zurückzufallen (Konsistenz mit Geometry/FullText/wertlosem Enum).
      */
-    private fun arrayElementNeutralType(name: String): NeutralType = when (name.trim().lowercase()) {
-        "identifier" -> NeutralType.Identifier()
-        "text" -> NeutralType.Text()
-        "char" -> NeutralType.Char(DEFAULT_CHAR_LENGTH)
-        "integer" -> NeutralType.Integer
-        "smallint" -> NeutralType.SmallInt
-        "biginteger" -> NeutralType.BigInteger
-        "float" -> NeutralType.Float()
-        "decimal" -> NeutralType.Decimal(DEFAULT_DECIMAL_PRECISION, DEFAULT_DECIMAL_SCALE)
-        "boolean" -> NeutralType.BooleanType
-        "datetime" -> NeutralType.DateTime()
-        "date" -> NeutralType.Date
-        "time" -> NeutralType.Time
-        "uuid" -> NeutralType.Uuid
-        "json" -> NeutralType.Json
-        "xml" -> NeutralType.Xml
-        "binary" -> NeutralType.Binary
-        "email" -> NeutralType.Email
-        else -> NeutralType.Text()
+    private fun arrayElementNeutralType(name: String): NeutralType {
+        val normalized = name.trim().lowercase()
+        if (normalized !in SchemaValidator.ARRAY_ELEMENT_TYPE_NAMES) {
+            throw UnsupportedSeedTypeException(NeutralType.Array(name))
+        }
+        return when (normalized) {
+            "identifier" -> NeutralType.Identifier()
+            "text" -> NeutralType.Text()
+            "char" -> NeutralType.Char(DEFAULT_CHAR_LENGTH)
+            "integer" -> NeutralType.Integer
+            "smallint" -> NeutralType.SmallInt
+            "biginteger" -> NeutralType.BigInteger
+            "float" -> NeutralType.Float()
+            "decimal" -> NeutralType.Decimal(DEFAULT_DECIMAL_PRECISION, DEFAULT_DECIMAL_SCALE)
+            "boolean" -> NeutralType.BooleanType
+            "datetime" -> NeutralType.DateTime()
+            "date" -> NeutralType.Date
+            "time" -> NeutralType.Time
+            "uuid" -> NeutralType.Uuid
+            "json" -> NeutralType.Json
+            "xml" -> NeutralType.Xml
+            "binary" -> NeutralType.Binary
+            "email" -> NeutralType.Email
+            "enum", "array" -> NeutralType.Text()
+            else -> error(
+                "arrayElementNeutralType: '$normalized' besteht die ARRAY_ELEMENT_TYPE_NAMES-Mitgliedschaft, " +
+                    "hat aber keinen expliziten Zweig -- Abbildung nachziehen.",
+            )
+        }
     }
 
     private fun pow10(digits: Int): Long {

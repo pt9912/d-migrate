@@ -259,4 +259,33 @@ class TableRowSeederTest : FunSpec({
             seederFor(1).seedAll(schema, countPerTable = 10)
         }
     }
+
+    test("seedEach yields the same rows as seedAll, table by table in dependency order") {
+        val schema = schemaOf(
+            "customers" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                ),
+            ),
+            "orders" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    "customer_id" to ColumnDefinition(
+                        type = NeutralType.Integer,
+                        required = true,
+                        references = ReferenceDefinition(table = "customers", column = "id"),
+                    ),
+                ),
+            ),
+        )
+        val expected = seederFor(3).seedAll(schema, countPerTable = 5)
+        val seenTables = mutableListOf<String>()
+        val streamed = linkedMapOf<String, List<Map<String, Any?>>>()
+        seederFor(3).seedEach(schema, countPerTable = 5) { tableName, rows ->
+            seenTables += tableName
+            streamed[tableName] = rows
+        }
+        seenTables shouldBe listOf("customers", "orders")
+        streamed shouldBe expected
+    }
 })
