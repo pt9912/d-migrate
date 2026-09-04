@@ -22,6 +22,20 @@ class SeedPreflightException(message: String, cause: Throwable? = null) : Runtim
 class SeedUniquenessExhaustedException(message: String) : RuntimeException(message)
 
 /**
+ * Gebündelter Seeding-Zustand für eine einzelne Tabelle — hält
+ * `columnValue`/`referencedValue`/`uniqueAwareValue` unter der
+ * Detekt-Parameterlisten-Grenze (bündelt, was sonst als 6-8
+ * Einzelparameter durchgereicht werden müsste).
+ */
+private class TableSeedContext(
+    val tableName: String,
+    val generator: ColumnValueGenerator,
+    val circularEdges: Set<FkEdge>,
+    val valuePools: Map<Pair<String, String>, List<Any?>>,
+    val usedValues: MutableMap<String, MutableSet<Any?>>,
+)
+
+/**
  * Orchestriert die Zeilengenerierung für ein ganzes Schema in
  * FK-sicherer Reihenfolge (`data seed` P1, ImpPlan-1.3.0-cli-data-seed-p1.md
  * AP2). Pure Domänenlogik — kein JDBC-Bezug, deshalb in `hexagon:core`.
@@ -70,14 +84,18 @@ class TableRowSeeder(private val random: Random, private val locale: SeedLocale)
         circularEdges: Set<FkEdge>,
         valuePools: MutableMap<Pair<String, String>, MutableList<Any?>>,
     ): List<Map<String, Any?>> {
-        val generator = ColumnValueGenerator(random, locale)
-        val usedValues = mutableMapOf<String, MutableSet<Any?>>()
+        val ctx = TableSeedContext(
+            tableName = tableName,
+            generator = ColumnValueGenerator(random, locale),
+            circularEdges = circularEdges,
+            valuePools = valuePools,
+            usedValues = mutableMapOf(),
+        )
         val rows = ArrayList<Map<String, Any?>>(count)
         repeat(count) {
             val row = linkedMapOf<String, Any?>()
             for ((columnName, column) in table.columns) {
-                row[columnName] =
-                    columnValue(tableName, columnName, column, generator, circularEdges, valuePools, usedValues)
+                row[columnName] = columnValue(columnName, column, ctx)
             }
             rows += row
             for ((columnName, _) in table.columns) {
@@ -87,27 +105,20 @@ class TableRowSeeder(private val random: Random, private val locale: SeedLocale)
         return rows
     }
 
-    private fun columnValue(
-        tableName: String,
-        columnName: String,
-        column: ColumnDefinition,
-        generator: ColumnValueGenerator,
-        circularEdges: Set<FkEdge>,
-        valuePools: Map<Pair<String, String>, List<Any?>>,
-        usedValues: MutableMap<String, MutableSet<Any?>>,
-    ): Any? {
+    private fun columnValue(columnName: String, column: ColumnDefinition, ctx: TableSeedContext): Any? {
         val reference = column.references
         if (reference != null) {
-            return referencedValue(tableName, columnName, column, reference.table, reference.column, circularEdges, valuePools)
+            return referencedValue(columnName, column, reference.table, reference.column, ctx)
         }
         return try {
-            uniqueAwareValue(tableName, columnName, column, generator, usedValues)
+            uniqueAwareValue(columnName, column, ctx)
         } catch (e: UnsupportedSeedTypeException) {
             if (!column.required) {
                 null
             } else {
                 throw SeedPreflightException(
-                    "Spalte '$tableName.$columnName' (${e.type}) kann in P1 nicht generiert werden und ist NOT NULL.",
+                    "Spalte '${ctx.tableName}.$columnName' (${e.type}) kann in P1 nicht generiert werden " +
+                        "und ist NOT NULL.",
                     e,
                 )
             }
@@ -115,49 +126,58 @@ class TableRowSeeder(private val random: Random, private val locale: SeedLocale)
     }
 
     private fun referencedValue(
-        tableName: String,
         columnName: String,
         column: ColumnDefinition,
         targetTable: String,
         targetColumn: String,
-        circularEdges: Set<FkEdge>,
-        valuePools: Map<Pair<String, String>, List<Any?>>,
+        ctx: TableSeedContext,
     ): Any? {
-        val isCircular = circularEdges.any { it.fromTable == tableName && it.toTable == targetTable }
+        // Selbstreferenzen (targetTable == tableName) sind in `circularEdges` nie enthalten
+        // (TableDependencySort filtert Self-Edges vor Kahn heraus), aber fuer die erste(n)
+        // Zeile(n) einer Tabelle gibt es zwangslaeufig noch keinen eigenen Wert zum
+        // Referenzieren -- dieselbe Behandlung wie ein echter Zyklus (AE-4).
+        val isCircular = targetTable == ctx.tableName ||
+            ctx.circularEdges.any { it.fromTable == ctx.tableName && it.toTable == targetTable }
         if (isCircular) {
             if (!column.required) return null
             throw SeedPreflightException(
-                "Spalte '$tableName.$columnName' ist Teil eines echten FK-Zyklus und NOT NULL " +
-                    "-- kann in P1 nicht ohne Datenverlust befüllt werden.",
+                "Spalte '${ctx.tableName}.$columnName' ist Teil eines echten FK-Zyklus (oder referenziert " +
+                    "die eigene, noch leere Tabelle) und NOT NULL -- kann in P1 nicht ohne " +
+                    "Datenverlust befüllt werden.",
             )
         }
-        val pool = valuePools[targetTable to targetColumn]
+        val pool = ctx.valuePools[targetTable to targetColumn]
         if (pool.isNullOrEmpty()) {
             throw SeedPreflightException(
-                "Spalte '$tableName.$columnName' referenziert '$targetTable.$targetColumn', " +
+                "Spalte '${ctx.tableName}.$columnName' referenziert '$targetTable.$targetColumn', " +
                     "dort wurden aber noch keine Werte generiert (FK-Reihenfolge inkonsistent).",
             )
         }
-        return pool.random(random)
-    }
+        if (!column.unique) return pool.random(random)
 
-    private fun uniqueAwareValue(
-        tableName: String,
-        columnName: String,
-        column: ColumnDefinition,
-        generator: ColumnValueGenerator,
-        usedValues: MutableMap<String, MutableSet<Any?>>,
-    ): Any? {
-        val mustBeUnique = column.unique || column.type is NeutralType.Identifier
-        if (!mustBeUnique) return generator.generate(column.type)
-
-        val used = usedValues.getOrPut(columnName) { mutableSetOf() }
+        val used = ctx.usedValues.getOrPut(columnName) { mutableSetOf() }
         repeat(MAX_UNIQUE_ATTEMPTS) {
-            val candidate = generator.generate(column.type)
+            val candidate = pool.random(random)
             if (used.add(candidate)) return candidate
         }
         throw SeedUniquenessExhaustedException(
-            "Spalte '$tableName.$columnName' ist eindeutig, aber nach $MAX_UNIQUE_ATTEMPTS Versuchen " +
+            "Spalte '${ctx.tableName}.$columnName' ist eindeutig (FK auf '$targetTable.$targetColumn'), aber " +
+                "nach $MAX_UNIQUE_ATTEMPTS Versuchen wurde kein neuer Wert gefunden (zu wenige Werte im " +
+                "Ziel-Pool für die gewünschte Zeilenzahl).",
+        )
+    }
+
+    private fun uniqueAwareValue(columnName: String, column: ColumnDefinition, ctx: TableSeedContext): Any? {
+        val mustBeUnique = column.unique || column.type is NeutralType.Identifier
+        if (!mustBeUnique) return ctx.generator.generate(column.type)
+
+        val used = ctx.usedValues.getOrPut(columnName) { mutableSetOf() }
+        repeat(MAX_UNIQUE_ATTEMPTS) {
+            val candidate = ctx.generator.generate(column.type)
+            if (used.add(candidate)) return candidate
+        }
+        throw SeedUniquenessExhaustedException(
+            "Spalte '${ctx.tableName}.$columnName' ist eindeutig, aber nach $MAX_UNIQUE_ATTEMPTS Versuchen " +
                 "wurde kein neuer Wert gefunden (Wertebereich zu klein für die gewünschte Zeilenzahl).",
         )
     }

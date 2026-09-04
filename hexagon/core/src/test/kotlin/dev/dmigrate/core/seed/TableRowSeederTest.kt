@@ -164,4 +164,99 @@ class TableRowSeederTest : FunSpec({
             seederFor(1).seedAll(cyclic, countPerTable = 3)
         }
     }
+
+    test("nullable self-referencing FK column becomes null instead of aborting (review fix)") {
+        val schema = schemaOf(
+            "categories" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    "parent_id" to ColumnDefinition(
+                        type = NeutralType.Integer,
+                        required = false,
+                        references = ReferenceDefinition(table = "categories", column = "id"),
+                    ),
+                ),
+            ),
+        )
+        val result = seederFor(1).seedAll(schema, countPerTable = 5)
+        result.getValue("categories") shouldHaveSize 5
+        result.getValue("categories").all { it.getValue("parent_id") == null } shouldBe true
+    }
+
+    test("required self-referencing FK column throws SeedPreflightException (structurally unseedable)") {
+        val schema = schemaOf(
+            "categories" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    "parent_id" to ColumnDefinition(
+                        type = NeutralType.Integer,
+                        required = true,
+                        references = ReferenceDefinition(table = "categories", column = "id"),
+                    ),
+                ),
+            ),
+        )
+        shouldThrow<SeedPreflightException> {
+            seederFor(1).seedAll(schema, countPerTable = 5)
+        }
+    }
+
+    test("unique FK column contains no duplicate values (review fix)") {
+        // Pool und Zeilenzahl sind zwangslaeufig gleich gross (ein `countPerTable` fuer alle
+        // Tabellen) -- das ist volle Pool-Ausschoepfung (Coupon-Collector). Klein gehalten,
+        // damit die letzte(n) Ziehung(en) den bounded Retry (50 Versuche) nicht sprengen.
+        val schema = schemaOf(
+            "seats" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                ),
+            ),
+            "assignments" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    "seat_id" to ColumnDefinition(
+                        type = NeutralType.Integer,
+                        required = true,
+                        unique = true,
+                        references = ReferenceDefinition(table = "seats", column = "id"),
+                    ),
+                ),
+            ),
+        )
+        val result = seederFor(3).seedAll(schema, countPerTable = 5)
+        val seatIds = result.getValue("assignments").map { it.getValue("seat_id") }
+        seatIds.toSet() shouldHaveSize seatIds.size
+    }
+
+    test("unique FK column exhaustion throws SeedUniquenessExhaustedException (review fix)") {
+        // `seedAll` kennt nur ein countPerTable fuer alle Tabellen -- die Erschoepfung kommt
+        // hier nicht aus einer kleineren Elterntabelle, sondern aus einem Ziel-Pool mit wenigen
+        // DISTINCT Werten: "zone" ist ein Enum mit nur 2 moeglichen Werten, aber 10 Zeilen fragen
+        // 10 EINDEUTIGE Referenzen darauf an -- muss nach spaetestens 2 Treffern erschoepfen.
+        val schema = schemaOf(
+            "seats" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    "zone" to ColumnDefinition(
+                        type = NeutralType.Enum(values = listOf("left", "right")),
+                        required = true,
+                    ),
+                ),
+            ),
+            "assignments" to TableDefinition(
+                columns = mapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    "seat_zone" to ColumnDefinition(
+                        type = NeutralType.Enum(values = listOf("left", "right")),
+                        required = true,
+                        unique = true,
+                        references = ReferenceDefinition(table = "seats", column = "zone"),
+                    ),
+                ),
+            ),
+        )
+        shouldThrow<SeedUniquenessExhaustedException> {
+            seederFor(1).seedAll(schema, countPerTable = 10)
+        }
+    }
 })
