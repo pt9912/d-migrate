@@ -15,9 +15,9 @@
 
 | Befehl | cli-spec §6 | Requirement | Roadmap |
 | ------ | ----------- | ----------- | ------- |
-| `transform procedure` | 6.3 | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017) | Phase 4 (KI-Integration) |
-| `generate procedure` | 6.4 | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017) | Phase 4 (KI-Integration) |
-| `data seed` | 6.2 | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) | 1.3.0 (Testdaten) |
+| `transform procedure` | 6.3 | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017) | Phase 4 (KI-Integration) — Scope in [`cli-transform-generate-procedure.md`](../next/cli-transform-generate-procedure.md) |
+| `generate procedure` | 6.4 | [`LF-017`](../../../spec/lastenheft-d-migrate.md#lf-017) | Phase 4 (KI-Integration) — Scope in [`cli-transform-generate-procedure.md`](../next/cli-transform-generate-procedure.md) |
+| `data seed` | 6.2 | [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) | 1.3.0 (Testdaten) — Scope in [`cli-data-seed.md`](../next/cli-data-seed.md) |
 | `validate data` | 6.6 | [`LF-027`](../../../spec/lastenheft-d-migrate.md#lf-027) | — (siehe auch [`validate-data-against-schema.md`](../next/validate-data-against-schema.md)) |
 | `validate procedure` | 6.6 | [`LN-034`](../../../spec/lastenheft-d-migrate.md#ln-034) | Phase 4 |
 
