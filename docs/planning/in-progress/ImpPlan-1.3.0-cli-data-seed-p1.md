@@ -10,6 +10,12 @@
 > Vier-Phasen-Scope-Dokument P1–P4). Dieses ImpPlan konkretisiert **nur
 > P1** bis auf Datei- und Kriterien-Ebene, damit es reviewbar ist und
 > gegen die Akzeptanzkriterien unten verifiziert werden kann.
+> **Review-Nachzug (2026-09-04):** unabhängiger Codebase-Review vor
+> Implementierungsstart fand zwei bisher unadressierte Lücken (Geometry-
+> Generierung braucht WKB, das der Repo nirgends erzeugt; Wertbindung
+> muss `TargetColumn.jdbcType`/`sqlTypeName` einbeziehen, nicht nur
+> `NeutralType`) — beide unten in AE-9/AE-10/AE-11 aufgelöst, siehe auch
+> die erweiterten Akzeptanzkriterien.
 
 ## Kontext / Ist-Stand (verifiziert)
 
@@ -134,6 +140,53 @@ betroffen ist.
 **AE-8 — Alle Basistabellen, `--count` pro Tabelle.** Default 100 (wie
 Spec).
 
+**AE-9 — Wertbindung nach `NeutralType` UND `TargetColumn`-Hint.**
+`DataChunk.rows` sind Java-native Werte, die die jeweilige
+`DataWriter`-Implementierung per `value::class` zur Laufzeit bindet —
+`NeutralType` bestimmt die *Werte-Semantik*, `TargetColumn.jdbcType`/
+`sqlTypeName` (aus `targetColumns`, ohnehin schon für AE-3 gelesen)
+bestimmt die *Bindungsform*. Konkret für P1: `Uuid` erzeugt
+`java.util.UUID`-Objekte (nicht `String`) — bindet über denselben
+`else -> stmt.setObject(...)`-Fallback, den der bestehende
+`data import`-Pfad für UUIDs bereits nutzt (`TypeConverters.kt`
+`OtherTypeConverter`), kein neues Risiko. `Enum`/`Json`/`Xml` binden als
+einfacher `String` (bestehender Pfad packt sie selbst ins `PGobject`,
+siehe `PostgresTableImportSession.bindValue`) — unproblematisch.
+
+**AE-10 — Geometry und FullText: keine Werte-Generierung in P1.** Im
+Repo existiert kein WKB-*Encoder* (nur Lesen von `ST_AsBinary` aus
+Quell-DBs); alle drei `DataWriter`-Implementierungen verlangen für
+Geometriespalten rohes WKB als `ByteArray`. Ein Encoder ist eigener
+Aufwand, kein CLI-Wiring-Detail. P1-Verhalten (analog zum FK-Zyklus-
+Preflight in AE-4, kein stilles Weglassen): Ziel-Spalte vom Typ
+`Geometry` oder `FullText` → nullable: `null`; sonst Preflight-Fehler
+Exit 3 mit benanntem Grund ("Geometry-/FullText-Generierung wird in P1
+nicht unterstützt"). `FullText` (`tsvector`) ist ohnehin i. d. R.
+trigger-populiert, selten `required`. Ein WKB-Encoder ist ein mögliches
+Folge-Ticket ([`carveout.md`](carveout.md)), kein P1-Blocker.
+
+**AE-11 — `Array`: Element-Typ-String auf internen `NeutralType`
+mappen.** `NeutralType.Array.elementType` ist ein roher, gegen
+`SchemaValidator.ARRAY_ELEMENT_TYPE_NAMES` validierter String (kein
+`NeutralType`). `ColumnValueGenerator` übersetzt ihn selbst auf einen
+internen `NeutralType` (analog zum Präzedenzmuster
+`CanonicalValueCodec.elementTypeToNeutral()` im `formats`-Adapter, hier
+aber lokal in `hexagon/core` nachgebaut, da `core` nicht von `formats`
+abhängen darf) und erzeugt 1–3 Elementwerte rekursiv über denselben
+Generator. Bindung als `List<*>` (Postgres-Writer erwartet das für
+Array-Spalten), Elementtyp-Hint kommt vom Writer selbst aus
+`targetColumn.sqlTypeName` (AE-9) — der generierte `List<*>`-Wert muss
+also nur inhaltlich zum validierten `elementType` passen, nicht die
+Bindungsform selbst festlegen.
+
+**AE-12 — Generator-Aufteilung gegen Detekt-Komplexität.**
+`ColumnValueGenerator` deckt nicht alle 21 Zweige in einem `when` ab,
+sondern folgt dem im Repo etablierten Split-Muster
+(`PostgresTypeMapper`: parametrische Typen vs. literale Typen getrennt,
+Kommentar dort erklärt die Begründung) — sonst reales Risiko für
+`CyclomaticComplexMethod`/`LongMethod` (Detekt-Schwellen in
+`detekt.yml`).
+
 ## Neue Dateien
 
 Alle Pfade in diesem Abschnitt sind das **Zielbild dieses ImpPlans** und
@@ -185,10 +238,16 @@ diesem Verzeichnis.
 
 ## Phasen
 
-- **AP1 — Wertegenerator-Kern.** `ColumnValueGenerator` (alle 21
-  `NeutralType`-Zweige) + `SeedLocale`. Unit-Tests: Determinismus bei
-  gleichem `Random`-Seed, ein Test je Typ-Zweig, `unique`-Retry-Pfad,
-  `Enum`-Auswahl respektiert `values`.
+- **AP1 — Wertegenerator-Kern.** `ColumnValueGenerator`, aufgeteilt nach
+  AE-12 (parametrisch/literal), für alle 21 `NeutralType`-Zweige +
+  `SeedLocale`; `Array`-Elementmapping nach AE-11; `Geometry`/`FullText`
+  liefern gemäß AE-10 bewusst keinen Wert (das Preflight-Verhalten dafür
+  entsteht erst in AP3, hier nur der Vertrag: Generator liefert für
+  diese zwei Typen `null` bzw. signalisiert "nicht generierbar"). `Uuid`
+  erzeugt `java.util.UUID` (AE-9). Unit-Tests: Determinismus bei
+  gleichem `Random`-Seed, ein Test je Typ-Zweig (inkl. `Array` mit
+  mind. zwei Elementtypen), `unique`-Retry-Pfad, `Enum`-Auswahl
+  respektiert `values`.
 - **AP2 — `TableRowSeeder` + FK-Orchestrierung.** Nutzt `SchemaFkEdges`/
   `sortTablesByDependency`; baut Werte-Pools pro (Tabelle, Spalte) für
   FK-Konsumenten; behandelt `circularEdges` (nullable→null, sonst
@@ -225,6 +284,13 @@ diesem Verzeichnis.
   Exit 3 mit klarer Preflight-Meldung (kein Absturz/Stacktrace).
 - [ ] Echter Cross-Table-FK-Zyklus: nullable Spalte → `null`, sonst
   Exit 3 mit klarer Meldung (kein stiller Datenverlust, kein Crash).
+- [ ] `Array`-Spalten (mind. zwei verschiedene `elementType`-Werte)
+  werden erfolgreich generiert und importiert.
+- [ ] `Geometry`- und `FullText`-Zielspalten: nullable → `null`, sonst
+  Preflight-Fehler Exit 3 mit benanntem Grund (AE-10) — kein Crash, kein
+  falsch generierter Wert.
+- [ ] `Uuid`-Spalten binden ohne Fehler (Test verifiziert `java.util.UUID`
+  als Laufzeittyp, AE-9).
 - [ ] CLI-Smoke: `data seed --help`, fehlendes `--schema`/`--target` →
   Clikt-Usage-Fehler; erfolgreicher Lauf gegen SQLite → Exit 0.
 - [ ] Kein neues `--rules`/`--ai-backend`-Flag in dieser Phase vorhanden
@@ -243,6 +309,10 @@ diesem Verzeichnis.
 
 ## Nicht-Scope
 
+- **WKB-Encoder für `Geometry`-Werte-Generierung** (AE-10) — eigener
+  Aufwand; P1 behandelt `Geometry`/`FullText` als Preflight-Grenze
+  (nullable → `null`, sonst Exit 3), kein echter Blocker für P1 selbst.
+  Folge-Ticket bei konkretem Bedarf.
 - `--rules`-Regeldatei (P2 in `cli-data-seed.md`) — eigenes
   Dateiformat-Design, eigener Slice.
 - `--ai-backend` (P3 in `cli-data-seed.md`) — Gate-Niveau-Frage noch
