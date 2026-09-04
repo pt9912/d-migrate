@@ -12,7 +12,7 @@
 > Testprinzipien sind hart auf `isAdmin: true`/volle Scopes verdrahtet
 > (`IntegrationFixtures.INTEGRATION_PRINCIPAL`).
 > **Review-Korrektur (2026-09-04):** die ursprüngliche Risikobegründung war
-> für den größeren Teil der Fläche falsch gerahmt — für die 19 als
+> für den größeren Teil der Fläche falsch gerahmt — für die 24 als
 > `tools/call`-Namen dispatchten Einträge gibt es sehr wohl ein zentrales
 > Gate (`McpServiceImpl.kt:261`), das ein neuer Tool-Handler nicht vergessen
 > kann. Der reale Wert dieses Slices ist nicht "eine Architekturlücke
@@ -28,7 +28,7 @@
 - **Scope-Mapping-Autorität**:
   `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/server/McpServerConfig.kt`
   (`buildDefaultScopeMapping()`, `DEFAULT_SCOPE_MAPPING`, Zeile 56) — **sieben**
-  Scopes über 26 Einträge: `dmigrate:read` (19 Einträge, u. a.
+  Scopes über 31 Einträge: `dmigrate:read` (19 Einträge, u. a.
   `tools/list`/`resources/list`/`resources/read`/`resources/templates/list`/
   `prompts/list`/`prompts/get` sowie 13 Tool-Namen wie `schema_validate`,
   `job_list`, `artifact_list`), `dmigrate:job:start`, `dmigrate:job:cancel`,
@@ -47,7 +47,7 @@
      JSON-RPC-Protokollfehler. Hier gibt es tatsächlich **keine zentrale
      Vor-Dispatch-Prüfung**; ein neuer Protokollmethoden-Handler könnte den
      Aufruf theoretisch vergessen.
-  2. **Tool-Namen** (die übrigen 19 Einträge, dispatcht über den einzigen
+  2. **Tool-Namen** (die übrigen 24 Einträge, dispatcht über den einzigen
      `tools/call`-Handler, `McpServiceImpl.kt:233-277`) — **ein zentrales
      Gate** (`scopeViolation(params.name, resolvedPrincipal)` an Zeile 261,
      läuft vor jedem Tool-Dispatch). Bei fehlendem Scope wirft es eine
@@ -187,7 +187,7 @@ vom Klassifizierungszweig aus AE-A1:
   `connections/list`): JSON-RPC-Fehlerobjekt, `error.code == -32600`
   (`InvalidRequest`), `error.message` enthält `"lacks required scope(s) for
   '<method>'"` und den erwarteten Scope-Namen.
-- **Tool-Namen** (die übrigen 19 Einträge, via `tools/call`): JSON-RPC-
+- **Tool-Namen** (die übrigen 24 Einträge, via `tools/call`): JSON-RPC-
   **Erfolgs**-Antwort mit `result.isError == true`, Envelope-`code ==
   "FORBIDDEN_PRINCIPAL"`, Detail-`reason` enthält `"missing scope(s)"` und
   den erwarteten Scope-Namen.
@@ -206,7 +206,7 @@ umgehen, ohne sie zu beweisen) für den Positiv-Fall, und einem Prinzipal mit
 Prinzipale in **derselben** Datei stehen und `DMIGRATE_MCP_STDIO_TOKEN` pro
 Subprozess-Umgebungsvariable exakt einen Token wählt, braucht die Matrix nur
 **zwei** Subprozess-Starts insgesamt (einer je Prinzipal), nicht einen pro
-Scope/Tool-Kombination — der Positiv-Subprozess durchläuft alle 26 Einträge
+Scope/Tool-Kombination — der Positiv-Subprozess durchläuft alle 31 Einträge
 in einer Session (ein Aufruf pro Eintrag, `notifications/initialized`
 dazwischen nicht nötig), ebenso der Negativ-Subprozess.
 
@@ -224,24 +224,28 @@ dazwischen nicht nötig), ebenso der Negativ-Subprozess.
 
 ### Akzeptanzkriterien
 
-- [ ] Für jeden der sieben Scopes: ein Prinzipal **mit** diesem Scope (im
+- [x] Für jeden der sieben Scopes: ein Prinzipal **mit** diesem Scope (im
       Voll-Scope-Token aus AE-A4) löst bei mindestens einem zugeordneten
       Eintrag keine Scope-Ablehnung aus — für `*_start`-Tools zählt ein
       `POLICY_DENIED`-Ergebnis explizit als "keine Scope-Ablehnung" (AE-A2).
-- [ ] Für jeden der sieben Scopes: der Null-Scope-Prinzipal aus AE-A4 bekommt
+      **Übererfüllt:** der Test prüft alle 31 Einträge, nicht nur einen
+      Vertreter pro Scope.
+- [x] Für jeden der sieben Scopes: der Null-Scope-Prinzipal aus AE-A4 bekommt
       für mindestens einen zugeordneten Eintrag die AE-A3-passende
       Ablehnungsform (Protokollmethode → `InvalidRequest`/Message-Substring;
       Tool-Name → `ToolsCallResult.isError`/`FORBIDDEN_PRINCIPAL`) mit dem
-      korrekten Scope-Namen.
-- [ ] `connections/list` ist explizit Teil der Matrix (schließt die
+      korrekten Scope-Namen. Ebenfalls alle 31 Einträge.
+- [x] `connections/list` ist explizit Teil der Matrix (schließt die
       auslösende Lücke) — Protokollmethoden-Form.
-- [ ] Mindestens ein Tool-Namen-Eintrag pro der fünf Scopes, die nur
+- [x] Mindestens ein Tool-Namen-Eintrag pro der fünf Scopes, die nur
       Tool-Namen mappen (`dmigrate:job:start`, `dmigrate:job:cancel`,
       `dmigrate:data:write`, `dmigrate:artifact:upload`,
       `dmigrate:ai:execute`), beweist die Tool-Namen-Ablehnungsform.
-- [ ] `make integration INTEGRATION_TASKS=":test:e2e-cli:test --tests '*McpScopeEnforcementMatrixTest*'"`
-      grün.
-- [ ] Kein neues Gradle-Modul; genau ein neuer Fixture-Baustein
+- [x] `make integration INTEGRATION_TASKS=":test:e2e-cli:test --tests '*McpScopeEnforcementMatrixTest*'"`
+      grün — verifiziert per absichtlich fehlschlagender Zusicherung (kurz
+      eingebaut, Fehlschlag beobachtet: "2 tests completed, 1 failed" mit
+      exakt der erwarteten `AssertionFailedError`, dann entfernt).
+- [x] Kein neues Gradle-Modul; genau ein neuer Fixture-Baustein
       (AE-A4/`ScopeMatrixTokenFile.kt`).
 
 ## Teil B — Docker-Image-Harness (`examples/mcp-e2e/` <!-- d-check:ignore (Zielbild: entsteht in Teil B; ADR 0011) -->)
