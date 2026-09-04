@@ -1321,7 +1321,9 @@ die CLI als MCP-Tools an:
 - **Lang laufend als Job** (asynchron, Fortschritt per Job-Status):
   `schema_reverse_start`, `schema_compare_start`, `data_export_start`,
   `data_import_start`, `data_transfer_start`, `data_profile_start`
-- **Discovery:** `capabilities_list` sowie `resources/list` und `resources/read`
+- **Discovery:** `capabilities_list` sowie `resources/list` und `resources/read`;
+  `connections/list` zusätzlich für `dmigrate:admin`-Aufrufer (konfigurierte
+  Verbindungen auflisten, optional mit echtem Erreichbarkeits-Check)
 
 Welche Tools ein Aufrufer tatsächlich sieht, hängt von seinen Scopes ab
 (read-only vs. schreibend). Den vollständigen Katalog mit Ein-/Ausgabe-Verträgen

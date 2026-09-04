@@ -431,6 +431,59 @@ Refs in `adapters/driven/connection-config`:
 Wire-Projektion. Discovery-Konsumenten sehen ausschliesslich
 `connectionId`, `tenantId`, `displayName`, `dialectId`, `sensitivity`.
 
+### `connections/list`
+
+Eigener Protokoll-Slot (kein `tools/call`-Tool, aus `tools/list`
+ausgeschlossen wie `resources/list`), Scope `dmigrate:admin`
+(ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md Slice B).
+
+```jsonc
+// Input
+{
+  "tenantId": "<optional — Default: eigener Tenant>",
+  "pageSize": 50,
+  "cursor": "<optional, HMAC-versiegelt>",
+  "checkLive": false
+}
+
+// Output
+{
+  "connections": [
+    {
+      "connectionId": "conn-1",
+      "displayName": "Local DB",
+      "dialectId": "postgresql",
+      "sensitivity": "NON_PRODUCTION",
+      "status": null
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+Zwei Abweichungen von den übrigen Discovery-Pfaden, beide bewusst und
+scope-begründet:
+
+- **Cross-Tenant-Adressierung.** `resources/list`/`resources/read`
+  zeigen ausschliesslich `principal.effectiveTenantId`. `tenantId` bei
+  `connections/list` darf jeden Tenant aus `allowedTenantIds`
+  adressieren (nicht mehrere gleichzeitig — ein Tenant pro Aufruf, wie
+  bei den `*_list`-Tools) — das ist der Sinn des `dmigrate:admin`-Scopes
+  für genau diese Methode.
+- **`checkLive=true` ruft den `ConnectionSecretResolver` auf.** Der
+  Satz „Discovery darf den Resolver NIE aufrufen" oben gilt für den
+  metadaten-only Pfad (`checkLive=false`, Default) unverändert.
+  `checkLive=true` ist die einzige dokumentierte Ausnahme: ein kurzer
+  (2s Timeout), unbewaffneter (`maximumPoolSize=1`) Verbindungsversuch
+  pro Connection. Das Ergebnis ist ausschließlich eine grobe
+  Statuskategorie — `REACHABLE`, `UNREACHABLE` oder
+  `CREDENTIAL_ERROR` — nie die rohe Exception-Message (kein Host/Port/
+  Netzwerkdetail auf dem Wire; volle Details nur serverseitig im Log
+  bei DEBUG).
+
+Response-Projektion ist wie bei `resources/read` minimal: kein
+`credentialRef`/`providerRef`/`allowedPrincipalIds`/`allowedScopes`.
+
 ---
 
 ## Konfigurations-Flags-Referenz

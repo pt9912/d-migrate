@@ -1,14 +1,15 @@
 # ImpPlan 1.2.0 — MCP: Policy-Datei-Konfiguration + `connections/list` mit Live-Status
 
-> **Status:** Draft, bereit zur Umsetzung (2026-09-04). Zwei unabhängig
-> voneinander gefundene, bislang unbekannte Lücken im MCP-Server-Adapter
+> **Status:** Geliefert (2026-09-04). Zwei unabhängig voneinander
+> gefundene, bislang unbekannte Lücken im MCP-Server-Adapter
 > (`adapters/driving/mcp`), beide vom Eigner zur Behebung freigegeben.
 > Zwei Slices in einem Dokument, weil beide dieselbe Herkunft (Faktencheck
 > gegen `capabilities_list`/Admin-Scope-Aussagen) und denselben Adapter
 > betreffen — aber unabhängig lieferbar: **Slice A zuerst** (klein, fast
 > 1:1 präzediert), **Slice B danach** (neues Sicherheits-Feature, eigene
-> offene Entwurfsfragen).
-> **Vorbedingung:** Keine harte Blockade.
+> offene Entwurfsfragen). Beide Slices vollständig umgesetzt, alle
+> Akzeptanzkriterien erfüllt (Details je Slice unten unter "Geliefert").
+> Slice A: `eafb95be`. Slice B: `5981df8e`.
 > **Review-Nachzug (2026-09-04):** unabhängiger Codebase-Review vor
 > Implementierungsstart fand drei blockierende Lücken (Exit-Code-Konvention
 > von `mcp serve` ist 2, nicht 7; das genannte Grant-Store-"Vorbild" hat
@@ -386,24 +387,87 @@ aber explizit als Begründung festgehalten (nicht implizit vorausgesetzt).
 
 ### Akzeptanzkriterien
 
-- [ ] `connections/list` (ohne `checkLive`) liefert die konfigurierten
-  Verbindungen ohne Live-Connect, schnell.
-- [ ] `connections/list` mit `checkLive: true` liefert pro Connection
+- [x] `connections/list` (ohne `checkLive`) liefert die konfigurierten
+  Verbindungen ohne Live-Connect, schnell (Test: „checkLive=false lässt
+  status null").
+- [x] `connections/list` mit `checkLive: true` liefert pro Connection
   einen Status; eine absichtlich falsch konfigurierte Verbindung liefert
-  `UNREACHABLE`/`CREDENTIAL_ERROR`, nie eine rohe Exception-Message.
-- [ ] Aufruf ohne `dmigrate:admin`-Scope → JSON-RPC-Scope-Fehler, keine
-  Daten.
-- [ ] Ein Admin kann per `tenantId`-Parameter gezielt jede in
+  `UNREACHABLE`/`CREDENTIAL_ERROR`, nie eine rohe Exception-Message
+  (Test: „checkLive=true with a failing pool factory ... no exception
+  message leaks", verifiziert explizit gegen eine Host/Port tragende
+  Fehlermeldung).
+- [x] Aufruf ohne `dmigrate:admin`-Scope → JSON-RPC-Scope-Fehler, keine
+  Daten (Test: „connections/list without dmigrate:admin scope fails").
+- [x] Ein Admin kann per `tenantId`-Parameter gezielt jede in
   `allowedTenantIds` erlaubte Tenant-Sicht abfragen (nicht nur die
   eigene); ein nicht erlaubter `tenantId`-Wert → `TenantScopeDeniedException`
-  (AE-B7).
-- [ ] `nextCursor` ist HMAC-versiegelt (`McpCursorCodec`), nicht roh
+  (AE-B7, Tests in `ConnectionsListHandlerTest`).
+- [x] `nextCursor` ist HMAC-versiegelt (Wiederverwendung von
+  `SealedListToolCursor`/`McpCursorCodec` — Design-Delta: kein neuer
+  `SealedConnectionsListCursor`-Typ nötig, siehe Closure) statt roh
   manipulierbar (AE-B8).
-- [ ] `tools/list` projiziert `connections/list` weiterhin nicht
-  (bestehender Test bleibt grün).
-- [ ] `make docker-check` grün für `:adapters:driving:mcp` **und**
-  einmal ohne `MODULES` (geteilte `McpService`-Interface-Änderung).
-- [ ] `make docs-check` grün.
+- [x] `tools/list` projiziert `connections/list` weiterhin nicht
+  (bestehender Test `McpContractRegistriesTest.kt` bleibt grün).
+- [x] `make docker-check` grün für `:adapters:driving:mcp` +
+  `:adapters:driving:cli` **und** einmal ohne `MODULES` (geteilte
+  `McpService`-Interface-Änderung).
+- [x] `make docs-check` grün.
+
+**Geliefert** (Code): `ConnectionsListHandler.kt` + Test
+(`adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry`);
+`ConnectionsMessages.kt`
+(`ConnectionsListParams`/`ConnectionsListResult`/`ConnectionListEntry`,
+`adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/protocol`); `@JsonRequest("connections/list")`
+in `McpService.kt`; Dispatch + Konstruktor-Erweiterung
+(`connectionSecretResolver`, `connectionPoolFactory`) in
+`McpServiceImpl.kt` + zwei neue Tests; `NotConfiguredConnectionSecretResolver`
+(Default-Stub); `McpServerBootstrap.startStdio`/`startHttp` um dieselben
+zwei Parameter erweitert; `McpCliServerWiring`
+(`adapters/driving/cli`) trägt jetzt den echten
+`ProviderBackedConnectionSecretResolver` bis zum Bootstrap durch.
+Doku: `spec/mcp-server.md` neuer Abschnitt „`connections/list`" (unter
+„Discovery und Ressourcen"), `anwenderhandbuch.md` §3.15,
+`api-referenz.md` §4.4.
+
+**Design-Deltas gegenüber der Planung** (bei der Umsetzung entschieden,
+keine davon blockierte etwas):
+
+1. **Kein neuer `SealedConnectionsListCursor`-Typ** (AE-B8 sah das vor)
+   — `SealedListToolCursor` (bereits für `job_list`/`artifact_list`/etc.
+   gebaut) ist generisch genug (`cursorType`/`tenantId`/`family`/
+   `filters`/`pageSize`/`resumeToken`), direkt wiederverwendet mit
+   `cursorType="connections_list"`, `family="connections"`,
+   `filters={"checkLive": "<bool>"}`.
+2. **`McpServiceImpl` traf beim Hinzufügen von `connectionsList` exakt
+   die Detekt-`TooManyFunctions`-Schwelle (24→25).** Echte Aufteilung
+   statt Suppress: drei reine, zustandslose Wire-Mapping-Funktionen
+   (`toWireTemplate`/`toMetadata`/`toWireContent`) aus der Klasse in
+   file-scope (nicht-Member) Funktionen derselben Datei gehoben — sie
+   nutzten nirgends `this`, der Aufruf bleibt unqualifiziert
+   funktionsgleich.
+3. **`checkLive` ohne konfigurierten `ConnectionSecretResolver`
+   degradiert zu `CREDENTIAL_ERROR` pro Connection**, nicht zu einem
+   neuen `UNKNOWN`-Wire-Wert — der 3-Werte-Vertrag aus AE-B3 bleibt
+   dadurch unverändert; `NotConfiguredConnectionSecretResolver` ist
+   nur der Default, wenn ein Aufrufer (Test, alternativer Bootstrap)
+   keinen echten Resolver injiziert.
+4. **Threading bis zum Bootstrap war größer als geplant.** AE-B10
+   sprach nur von einer injizierbaren `poolFactory` in
+   `ConnectionsListHandler`; tatsächlich musste der echte
+   `ConnectionSecretResolver` zusätzlich durch `McpCliServerWiring` →
+   `DefaultMcpServeLauncher` → `McpServerBootstrap.startStdio`/
+   `startHttp` bis zur `McpServiceImpl`-Konstruktion durchgereicht
+   werden — sonst hätte `checkLive` in Produktion still den
+   `NotConfigured`-Stub benutzt statt echter Credentials.
+
+**Tests.** `ConnectionsListHandlerTest` (Metadaten ohne Live-Check,
+AE-B7-Tenant-Adressierung, drei Live-Check-Ausgänge inkl. explizitem
+Redaction-Beleg — Testfehlermeldung mit Host/Port darf nicht im Status
+auftauchen), `McpServiceImplConnectionsTest` (Scope-Durchsetzung,
+Happy-Path-Dispatch). Kein volles `mcp serve`-Live-Smoke (anders als
+bei Slice A) — die Live-Check-Pfade sind über injizierte Fakes
+(Erfolg/Fehlschlag/Credential-Failure) abgedeckt, ein echter
+JSON-RPC-über-stdio-Lauf war für den Umfang dieser Phase nicht nötig.
 
 ## Verifikation (beide Slices)
 

@@ -245,6 +245,7 @@ bzw. Protokoll-Methoden mit JSON-RPC `-32600`.
 | `tools/list` | je Tool: `name`, `title`, `description`, `inputSchema`/`outputSchema` (JSON Schema 2020-12), `requiredScopes` |
 | `tools/call` | führt ein Tool aus |
 | `resources/list`, `resources/templates/list`, `resources/read` | Jobs/Artifacts/Schemas/Profiles/Diffs/Connections (secret-frei), Pagination per opaquem `nextCursor` |
+| `connections/list` (Scope `dmigrate:admin`) | Verbindungen, optional mit `tenantId` (jeder erlaubte Tenant, nicht nur der eigene) und `checkLive` (echter Erreichbarkeits-Check: `REACHABLE`/`UNREACHABLE`/`CREDENTIAL_ERROR`, nie eine rohe Fehlermeldung) |
 
 **Resource-URI-Templates** (7, tenant-scoped):
 
