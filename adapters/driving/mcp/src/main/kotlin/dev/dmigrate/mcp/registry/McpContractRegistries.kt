@@ -114,7 +114,7 @@ object McpContractRegistries {
             name = name,
             title = TITLES[name] ?: name,
             description = DESCRIPTIONS[name]
-                ?: "0.9.6 contract tool '$name' (registered, not implemented).",
+                ?: "MCP contract tool '$name' — see spec/mcp-server.md for details.",
             requiredScopes = scopes,
             inputSchema = schemas.inputSchema,
             outputSchema = schemas.outputSchema,
