@@ -308,6 +308,7 @@ wird.
 
 - `examples/mcp-e2e/docker-compose.yml`, `.env.example`, `.d-migrate.yaml` <!-- d-check:ignore (Zielbild: entsteht in Teil B; ADR 0011) -->
 - `examples/mcp-e2e/stdio-tokens.yaml` <!-- d-check:ignore (Zielbild: entsteht in Teil B; ADR 0011) -->
+- `examples/mcp-e2e/policy-rules.yaml` (Nachtrag, universelle Allow-Regel) <!-- d-check:ignore (Zielbild: entsteht in Teil B; ADR 0011) -->
 - `examples/mcp-e2e/scripts/smoke-scope-matrix.sh` — treibt Teil As Matrix <!-- d-check:ignore (Zielbild: entsteht in Teil B; ADR 0011) -->
   (positiv/negativ pro Scope-Bucket) gegen das echte Image; `connections/list`
   zusätzlich mit `checkLive: true` gegen `sandbox_pg`.
@@ -350,11 +351,37 @@ wird.
       `dmigrate:admin`-Scope-Ablehnung. Beides live verifiziert.
 - [x] **Nachtrag (Erweiterung auf volle Deckung):** alle 31
       `DEFAULT_SCOPE_MAPPING`-Einträge einzeln gegen das echte Image
-      geprüft, beide Richtungen (`admin` nie scope-verweigert,
-      `POLICY_DENIED` bei den fünf `*_start`-Tools toleriert; `noscope`
+      geprüft, beide Richtungen (`admin` nie scope-verweigert; `noscope`
       immer scope-verweigert, in der jeweils passenden Fehlerform). Mit
       absichtlich verfälschter Erwartung (`job_cancel` → falscher Scope)
       verifiziert, dass die Prüfschleife wirklich pro Eintrag greift.
+- [x] **Zweiter Nachtrag (echte Policy-Prüfung statt Toleranz).**
+      `POLICY_DENIED` bei den `*_start`-Tools zu tolerieren war eine
+      Krücke, keine echte Prüfung — auf Eigner-Einwand korrigiert:
+      `policy-rules.yaml` (universelle Allow-Regel) wird jetzt per
+      `--policy-file` verdrahtet, `POLICY_DENIED` ist ein echter
+      Fehlschlag. Dabei ein **echter Fehler in der eigenen Zusicherung**
+      gefunden: mit leeren Argumenten wird `VALIDATION_ERROR` VOR
+      `PolicyService.decide()` geworfen (Handler validiert eigene
+      Pflichtfelder, bevor `JobStartOrchestrator` — und damit Policy —
+      je aufgerufen wird) — ein `VALIDATION_ERROR` bewies also gar nicht,
+      dass Policy durchlief. Fix: vier der fünf `*_start`-Tools
+      (`schema_reverse_start`, `schema_compare_start`,
+      `data_profile_start`, `data_transfer_start`) bekommen jetzt echte,
+      tenant-scoped Argumente (`dmigrate://tenants/default/connections/mcp_e2e_pg`
+      + Pflicht-`idempotencyKey`, uniform für alle `*_start`-Tools laut
+      `JobStartInputValidator`) und laufen **echt durch**: `isError:
+      false`, echte `jobId` + `resourceUri` gegen die echte
+      `postgres`-Verbindung. `data_import_start` bleibt bewusst bei
+      `VALIDATION_ERROR` — sein Handler löst `artifactId`/
+      `sourceArtifactRef` gegen den Artefakt-Store auf, bevor
+      `JobStartOrchestrator` je aufgerufen wird; das bräuchte eine vorab
+      per `artifact_upload_init`/`artifact_upload` angelegte echte
+      Upload-Session (mehrere zusätzliche Aufrufe), kein
+      Argument-Fix — dokumentierte, bewusste Grenze, keine Auslassung
+      aus Bequemlichkeit. Erneut mit doppeltem Gegencheck verifiziert
+      (`--policy-file` entfernt → `POLICY_DENIED` korrekt als
+      Fehlschlag erkannt; wieder eingebaut → grün).
 - [x] `.github/workflows/mcp-e2e-smoke.yml` läuft (best-effort) bei Push auf
       `main` mit Pfadfilter, sowie `workflow_dispatch`.
 - [x] `make docs-check` grün (neue Doku-Querverweise).

@@ -29,11 +29,18 @@ stdin, Stdin-EOF beendet den Server sauber):
   `McpServerConfig.DEFAULT_SCOPE_MAPPING` (dieselbe Matrix wie Teil As
   `McpScopeEnforcementMatrixTest.kt` — hier im Skript gespiegelt, da Bash
   die Kotlin-Map nicht zur Laufzeit introspektieren kann) dürfen nicht
-  scope-verweigert werden. Für die fünf `*_start`-Tools
-  (`schema_reverse_start`, `schema_compare_start`, `data_profile_start`,
-  `data_import_start`, `data_transfer_start`) zählt `POLICY_DENIED` (kein
-  `--policy-file` verdrahtet, fail-closed-Default) ausdrücklich als
-  Erfolg — es beweist, dass die Scope-Prüfung durchließ.
+  scope-verweigert werden. `policy-rules.yaml` (universelle Allow-Regel)
+  hebt zusätzlich den fail-closed-Policy-Default auf — vier der fünf
+  `*_start`-Tools (`schema_reverse_start`, `schema_compare_start`,
+  `data_profile_start`, `data_transfer_start`) bekommen echte,
+  tenant-scoped Argumente und laufen damit **wirklich durch**: kein
+  `POLICY_DENIED`, keine `VALIDATION_ERROR`, sondern ein echter Job
+  (`jobId` + `resourceUri`) gegen die echte `postgres`-Verbindung.
+  `data_import_start` bleibt bewusst bei `VALIDATION_ERROR` stehen — sein
+  Handler löst `artifactId`/`sourceArtifactRef` gegen den Artefakt-Store
+  auf, bevor `PolicyService` je aufgerufen wird; das bräuchte eine vorab
+  angelegte Upload-Session (mehrere zusätzliche Aufrufe), keinen
+  Argument-Fix.
 - **`connections/list?checkLive=true`** gegen den echten `postgres`-Service
   — erwartet `REACHABLE` für die konfigurierte `mcp_e2e_pg`-Verbindung.
 - **`noscope`-Token** (keine Scopes): **alle 31 Einträge** müssen

@@ -1,0 +1,10 @@
+# Policy-Regeln für den MCP-E2E-Harness — TEST ONLY, NOT FOR PRODUCTION.
+#
+# Universelle Allow-Regel (kein tenantId/toolName-Filter = Wildcard),
+# damit die *_start-Tools nach der Scope-Prüfung nicht mehr am
+# fail-closed-Default (Deny("policy:no-rule")) hängenbleiben — der
+# Scope-Matrix-Smoke soll die echte Dispatch-Logik hinter der
+# Policy-Schicht sehen, nicht nur "Policy hat noch nicht entschieden".
+# Format: adapters/driving/mcp/.../registry/PolicyRuleFileLoader.kt.
+rules:
+  - effect: allow

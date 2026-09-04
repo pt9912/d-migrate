@@ -12,11 +12,16 @@
 # `connections/list?checkLive=true` gegen den echten postgres-Service.
 #
 # admin-Token (isAdmin, stdio-tokens.yaml): kein Aufruf darf scope-verweigert
-# werden. Für die fünf *_start-Tools (schema_reverse_start,
-# schema_compare_start, data_profile_start, data_import_start,
-# data_transfer_start) ist ein POLICY_DENIED-Ergebnis erwartet und KEIN
-# Fehlschlag (kein --policy-file verdrahtet — fail-closed-Default): das
-# beweist weiterhin, dass die Scope-Prüfung durchließ.
+# werden. policy-rules.yaml (universelle Allow-Regel) hebt den
+# fail-closed-Policy-Default auf. Vier der fünf *_start-Tools
+# (schema_reverse_start, schema_compare_start, data_profile_start,
+# data_transfer_start) bekommen echte, tenant-scoped Argumente
+# (real_start_args_for) und laufen damit ECHT durch — kein POLICY_DENIED,
+# keine VALIDATION_ERROR, sondern ein echter Job (jobId + resourceUri)
+# gegen die echte postgres-Verbindung. data_import_start bleibt bewusst
+# bei VALIDATION_ERROR stehen (siehe POLICY_PROVABLE_START_TOOLS-Kommentar
+# unten — braucht eine vorab angelegte Upload-Session, kein
+# Argument-Fix).
 # noscope-Token (keine Scopes): JEDER der 31 Einträge muss scope-verweigert
 # werden, in der jeweils passenden Form (7 JSON-RPC-Protokollmethoden →
 # InvalidRequest, 24 Tool-Namen via tools/call → FORBIDDEN_PRINCIPAL).
@@ -76,7 +81,18 @@ declare -A SCOPE_OF=(
     [testdata_plan]="dmigrate:ai:execute" [testdata_execute]="dmigrate:ai:execute"
     [connections/list]="dmigrate:admin"
 )
-POLICY_TOLERANT=(schema_reverse_start schema_compare_start data_profile_start data_import_start data_transfer_start)
+# Vier der fünf *_start-Tools bekommen echte, tenant-scoped Refs
+# (real_start_args_for) und erreichen damit tatsächlich
+# PolicyService.decide() -- data_import_start NICHT: sein Handler
+# löst artifactId/sourceArtifactRef gegen den artifactStore auf, BEVOR
+# JobStartOrchestrator (und damit Policy) je aufgerufen wird
+# (DataImportStartHandler.kt) -- ein fabrizierter Artefakt-Ref schlägt
+# dort fehl, egal wie er aussieht. Ohne eine echte, vorab per
+# artifact_upload_init/artifact_upload angelegte Upload-Session (mehrere
+# zusätzliche Aufrufe, eigener Sub-Slice) bleibt data_import_start bei
+# VALIDATION_ERROR stehen -- das ist eine dokumentierte, bewusste
+# Grenze dieses Harness-Durchlaufs, keine Auslassung aus Bequemlichkeit.
+POLICY_PROVABLE_START_TOOLS=(schema_reverse_start schema_compare_start data_profile_start data_transfer_start)
 
 is_protocol_method() {
     case "$1" in
@@ -85,9 +101,9 @@ is_protocol_method() {
     esac
 }
 
-is_policy_tolerant() {
+is_policy_provable_start_tool() {
     local name="$1" p
-    for p in "${POLICY_TOLERANT[@]}"; do [ "$p" = "$name" ] && return 0; done
+    for p in "${POLICY_PROVABLE_START_TOOLS[@]}"; do [ "$p" = "$name" ] && return 0; done
     return 1
 }
 
@@ -119,26 +135,53 @@ INIT_REQ='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersi
 INITIALIZED_NOTIF='{"jsonrpc":"2.0","method":"notifications/initialized"}'
 LIVE_CHECK_ID=$(( ${#ENTRY_NAMES[@]} + 1 ))
 
-request_line_for() {  # request_line_for <id> <name>
-    local id="$1" name="$2"
+# Für 4 der 5 *_start-Tools reicht KEIN leeres/synthetisches Argument, um
+# tatsächlich die Policy-Entscheidung zu erreichen: JobStartInputValidator
+# verlangt zwingend `idempotencyKey` (uniform für ALLE *_start-Tools) und
+# jede Ref muss eine volle tenant-scoped URI sein
+# (`dmigrate://tenants/<tenant>/<kind>/<id>`), kein bloßer Name — sonst
+# wirft der Handler selbst VALIDATION_ERROR, bevor PolicyService.decide()
+# je aufgerufen wird (per Recherche verifiziert:
+# adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartInputValidator.kt).
+# Mit der einen echten Verbindung (mcp_e2e_pg, Tenant default) reichen
+# vier Tools echt bis zur Policy-Entscheidung durch — job_cancel und
+# data_import_start bewusst NICHT (siehe unten).
+CONN_URI="dmigrate://tenants/default/connections/mcp_e2e_pg"
+
+real_start_args_for() {  # real_start_args_for <name>
+    case "$1" in
+        schema_reverse_start|data_profile_start)
+            printf '{"connectionId":"%s","idempotencyKey":"e2e-%s"}' "$CONN_URI" "$1" ;;
+        schema_compare_start)
+            printf '{"sourceUri":"%s","targetUri":"%s","idempotencyKey":"e2e-%s"}' "$CONN_URI" "$CONN_URI" "$1" ;;
+        data_transfer_start)
+            printf '{"sourceConnectionRef":"%s","targetConnectionRef":"%s","idempotencyKey":"e2e-%s"}' "$CONN_URI" "$CONN_URI" "$1" ;;
+        *) return 1 ;;
+    esac
+}
+
+request_line_for() {  # request_line_for <id> <name> [--real-start-args]
+    local id="$1" name="$2" real_start_args="${3:-}" args
     if [ "$name" = "prompts/get" ]; then
         printf '{"jsonrpc":"2.0","id":%d,"method":"%s","params":{"name":""}}\n' "$id" "$name"
     elif is_protocol_method "$name"; then
         printf '{"jsonrpc":"2.0","id":%d,"method":"%s","params":{}}\n' "$id" "$name"
+    elif [ "$real_start_args" = "--real-start-args" ] && args="$(real_start_args_for "$name")"; then
+        printf '{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"%s","arguments":%s}}\n' "$id" "$name" "$args"
     else
         printf '{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"%s"}}\n' "$id" "$name"
     fi
 }
 
-build_requests_file() {  # build_requests_file <out-file> [--with-live-check]
-    local out="$1" with_live="${2:-}"
+build_requests_file() {  # build_requests_file <out-file> [--with-live-check] [--real-start-args]
+    local out="$1" with_live="${2:-}" real_start_args="${3:-}"
     {
         echo "$INIT_REQ"
         echo "$INITIALIZED_NOTIF"
         local i id name
         for i in "${!ENTRY_NAMES[@]}"; do
             id=$((i + 1)); name="${ENTRY_NAMES[$i]}"
-            request_line_for "$id" "$name"
+            request_line_for "$id" "$name" "$real_start_args"
         done
         if [ "$with_live" = "--with-live-check" ]; then
             printf '{"jsonrpc":"2.0","id":%d,"method":"connections/list","params":{"checkLive":true}}\n' "$LIVE_CHECK_ID"
@@ -147,7 +190,7 @@ build_requests_file() {  # build_requests_file <out-file> [--with-live-check]
 }
 
 admin_requests_file="$OUT_DIR/admin-requests.ndjson"
-build_requests_file "$admin_requests_file" --with-live-check
+build_requests_file "$admin_requests_file" --with-live-check --real-start-args
 
 noscope_requests_file="$OUT_DIR/noscope-requests.ndjson"
 build_requests_file "$noscope_requests_file"
@@ -160,6 +203,7 @@ run_session() {  # run_session <token> <requests-file> <responses-file>
         dmigrate mcp serve --transport stdio \
         --stdio-token-file /work/stdio-tokens.yaml \
         --connection-config /work/.d-migrate.yaml \
+        --policy-file /work/policy-rules.yaml \
         < "$requests_file" > "$responses_file"
 }
 
@@ -198,6 +242,13 @@ is_policy_denied() {  # is_policy_denied <response-json>
     ' <<<"$1" >/dev/null
 }
 
+is_validation_error() {  # is_validation_error <response-json>
+    jq -e '
+        .result.isError == true and
+        (.result.content[0].text | fromjson | .code) == "VALIDATION_ERROR"
+    ' <<<"$1" >/dev/null
+}
+
 # true wenn die Antwort exakt in der zum Eintrag passenden Form
 # scope-verweigert ist — für den noscope-Negativ-Fall.
 is_scope_denied() {  # is_scope_denied <response-json> <name> <expected-scope>
@@ -226,15 +277,26 @@ for i in "${!ENTRY_NAMES[@]}"; do
     id=$((i + 1)); name="${ENTRY_NAMES[$i]}"
     resp="$(response_for_id "$admin_responses_file" "$id")"
     [ -n "$resp" ] || fail "admin: no response for id=$id ('$name')"
-    if not_scope_denied "$resp"; then
-        continue
+    not_scope_denied "$resp" \
+        || fail "admin: '$name' was scope-rejected (response=$resp)"
+    # policy-rules.yaml (universelle Allow-Regel) muss greifen -- ein
+    # POLICY_DENIED waere jetzt ein echter Fehlschlag, kein toleriertes
+    # Zwischenergebnis mehr. Fuer die vier POLICY_PROVABLE_START_TOOLS
+    # (echte, tenant-scoped Refs via real_start_args_for) muessen wir
+    # ECHT hinter der Policy-Entscheidung landen -- weder POLICY_DENIED
+    # noch VALIDATION_ERROR sind dort akzeptabel, sonst haben wir nur
+    # den vorherigen Fehler erneut. data_import_start bleibt bewusst
+    # aussen vor (siehe POLICY_PROVABLE_START_TOOLS-Kommentar oben).
+    if is_policy_denied "$resp"; then
+        fail "admin: '$name' hit POLICY_DENIED despite policy-rules.yaml's Allow rule (response=$resp)"
     fi
-    if is_policy_tolerant "$name" && is_policy_denied "$resp"; then
-        continue
+    if is_policy_provable_start_tool "$name"; then
+        is_validation_error "$resp" \
+            && fail "admin: '$name' still hit VALIDATION_ERROR with real tenant-scoped args -- did not genuinely reach the policy decision (response=$resp)"
+        log "admin: '$name' cleared scope + policy for real (response=$resp)"
     fi
-    fail "admin: '$name' was scope-rejected (response=$resp)"
 done
-log "admin: all ${#ENTRY_NAMES[@]} entries passed (no scope rejection; POLICY_DENIED tolerated for *_start)."
+log "admin: all ${#ENTRY_NAMES[@]} entries passed (no scope rejection, no POLICY_DENIED; the four policy-provable *_start tools genuinely cleared both gates with real tenant-scoped args -- data_import_start intentionally stops at VALIDATION_ERROR, see comment)."
 
 live_resp="$(response_for_id "$admin_responses_file" "$LIVE_CHECK_ID")"
 [ -n "$live_resp" ] || fail "admin: no response for connections/list?checkLive=true"
