@@ -1,13 +1,11 @@
 # ImpPlan 1.3.0 — `data seed` Phase P1 (deterministischer Generator-Kern)
 
-> **Status:** In Arbeit (2026-09-04). Vorgezogen nach `in-progress/` per
-> Eigner-Entscheidung, vor dem ersten Code-Commit (Abweichung von der
-> Standard-Konvention in `../in-progress/README.md`, die den Move sonst
-> erst beim ersten Implementierungs-Commit vorsieht) — die Umsetzung von
-> AP1 beginnt im Anschluss an diesen Review.
+> **Status:** ERLEDIGT + graduiert nach `done/` (2026-09-04, `33c7e606`).
+> Alle Arbeitspakete AP1–AP6 geliefert und live gegen echtes SQLite
+> verifiziert. Siehe „## Closure" am Ende.
 > **Vorbedingung:** Umsetzt Phase P1 aus
-> [`cli-data-seed.md`](cli-data-seed.md) (dort das übergeordnete
-> Vier-Phasen-Scope-Dokument P1–P4). Dieses ImpPlan konkretisiert **nur
+> [`cli-data-seed.md`](../in-progress/cli-data-seed.md) (dort das
+> übergeordnete Vier-Phasen-Scope-Dokument P1–P4). Dieses ImpPlan konkretisiert **nur
 > P1** bis auf Datei- und Kriterien-Ebene, damit es reviewbar ist und
 > gegen die Akzeptanzkriterien unten verifiziert werden kann.
 > **Review-Nachzug (2026-09-04):** unabhängiger Codebase-Review vor
@@ -52,7 +50,11 @@
   ans Ende angehängt, `circularEdges` gefüllt). Kantenbau bereits
   vorhanden als `SchemaFkEdges.of(schema, tables)` (internal object in
   `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaPartitionSupport.kt:34`,
-  genutzt von `TransferPreflightPlanner`/`ImportLayerPlanner`).
+  genutzt von `TransferPreflightPlanner`/`ImportLayerPlanner`). **Korrektur
+  (Umsetzung):** `SchemaFkEdges` liegt in `hexagon:application`, das von
+  `hexagon:core` aus nicht erreichbar ist (Abhängigkeitsrichtung nur
+  application→core) — `TableRowSeeder` baut die Kanten deshalb lokal
+  selbst (wenige Zeilen, siehe Closure).
 - **Schreibpfad** (kein neuer Import-Mechanismus nötig): `DataWriter`
   (`hexagon/ports-write/src/main/kotlin/dev/dmigrate/driver/data/DataWriter.kt`) —
   `openTable(pool, table, options: ImportOptions): TableImportSession`.
@@ -163,7 +165,7 @@ Preflight in AE-4, kein stilles Weglassen): Ziel-Spalte vom Typ
 Exit 3 mit benanntem Grund ("Geometry-/FullText-Generierung wird in P1
 nicht unterstützt"). `FullText` (`tsvector`) ist ohnehin i. d. R.
 trigger-populiert, selten `required`. Ein WKB-Encoder ist ein mögliches
-Folge-Ticket ([`carveout.md`](carveout.md)), kein P1-Blocker.
+Folge-Ticket ([`carveout.md`](../in-progress/carveout.md)), kein P1-Blocker.
 
 **AE-11 — `Array`: Element-Typ-String auf internen `NeutralType`
 mappen.** `NeutralType.Array.elementType` ist ein roher, gegen
@@ -189,52 +191,50 @@ Kommentar dort erklärt die Begründung) — sonst reales Risiko für
 
 ## Neue Dateien
 
-Alle Pfade in diesem Abschnitt sind das **Zielbild dieses ImpPlans** und
-existieren vor AP1–AP5 noch nicht (ADR 0011).
+Alle Pfade unten wurden geliefert (Stand siehe Closure).
 
-- `hexagon/core/src/main/kotlin/dev/dmigrate/core/seed/ColumnValueGenerator.kt` <!-- d-check:ignore (Zielbild: entsteht in AP1; ADR 0011) -->
-  — `NeutralType` + `Random` + `SeedLocale` (+ optionaler Werte-Pool für
-  FK-Spalten) → `Any?`. `when (type)` über alle 21 `NeutralType`-Zweige.
-- `hexagon/core/src/main/kotlin/dev/dmigrate/core/seed/SeedLocale.kt` <!-- d-check:ignore (Zielbild: entsteht in AP1; ADR 0011) -->
+- `hexagon/core/src/main/kotlin/dev/dmigrate/core/seed/ColumnValueGenerator.kt`
+  — `NeutralType` + `Random` + `SeedLocale` → `Any?`, aufgeteilt nach
+  AE-12. `Array`-Elementmapping (AE-11) lokal in derselben Datei.
+- `hexagon/core/src/main/kotlin/dev/dmigrate/core/seed/SeedLocale.kt`
   — `enum class SeedLocale { EN, DE }` + Wortlisten; `fromFlag(value:
   String): SeedLocale?` (null bei unbekanntem Wert → Runner mapped auf
   Exit 7).
-- `hexagon/core/src/main/kotlin/dev/dmigrate/core/seed/TableRowSeeder.kt` <!-- d-check:ignore (Zielbild: entsteht in AP2; ADR 0011) -->
-  — orchestriert Zeilengenerierung für eine Tabelle: `required`/`unique`/
-  `references`/`Enum`-Constraints, liefert generierte Zeilen plus die
-  Werte-Pools für nachfolgende FK-Konsumenten.
-- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedRunner.kt` <!-- d-check:ignore (Zielbild: entsteht in AP3; ADR 0011) -->
-  — Business-Logik: Schema lesen, FK-Reihenfolge (`SchemaFkEdges` +
-  `sortTablesByDependency`), pro Tabelle `TableRowSeeder` aufrufen, über
+- `hexagon/core/src/main/kotlin/dev/dmigrate/core/seed/TableRowSeeder.kt`
+  — orchestriert Zeilengenerierung für ein ganzes Schema in FK-sicherer
+  Reihenfolge: `required`/`unique`/`references`/`Enum`-Constraints,
+  lokal gebaute FK-Kanten (Korrektur, s. o.), Werte-Pools für
+  FK-Konsumenten.
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedRunner.kt`
+  — Business-Logik: Schema lesen, `TableRowSeeder` aufrufen, über
   `DataWriter` schreiben, Exit-Code liefern (DI-Stil wie
   `DataImportRunner`).
-- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedRequest.kt` <!-- d-check:ignore (Zielbild: entsteht in AP3; ADR 0011) -->
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedRequest.kt`
   — Options-DTO (schema: Path, target: String?, count: Int, seed: Long?,
-  locale: String, cliContext, configPath).
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedCommand.kt` <!-- d-check:ignore (Zielbild: entsteht in AP4; ADR 0011) -->
+  locale: String, cliConfigPath).
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedCommand.kt`
   — Clikt-Schale, analog `DataImportCommand.kt`.
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedWiring.kt` <!-- d-check:ignore (Zielbild: entsteht in AP4; ADR 0011) -->
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataSeedWiring.kt`
   — Composition Root (`schemaCodec = YamlSchemaCodec()`, `urlParser`,
   `poolFactory = HikariConnectionPoolFactory::create`, `writerLookup`
   via `DatabaseDriverRegistry`).
-- `hexagon/core/src/test/kotlin/dev/dmigrate/core/seed/ColumnValueGeneratorTest.kt` <!-- d-check:ignore (Zielbild: entsteht in AP1; ADR 0011) -->
-- `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/DataSeedRunnerTest.kt` <!-- d-check:ignore (Zielbild: entsteht in AP5; ADR 0011) -->
-- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataSeedSmokeTest.kt` <!-- d-check:ignore (Zielbild: entsteht in AP5; ADR 0011) -->
+- `hexagon/core/src/test/kotlin/dev/dmigrate/core/seed/ColumnValueGeneratorTest.kt`
+- `hexagon/core/src/test/kotlin/dev/dmigrate/core/seed/TableRowSeederTest.kt`
+- `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/DataSeedRunnerTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataSeedSmokeTest.kt`
 
 ## Geänderte Dateien
 
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataCommands.kt:19`
-  — `DataSeedCommand()` zur `subcommands(...)`-Liste ergänzen.
-- `docs/user/anwenderhandbuch.md` — aufgabenorientierter Abschnitt
-  ("Brauchen Sie Testdaten für ein Schema → tun Sie ..."), inkl. Hinweis,
-  dass `--rules`/`--ai-backend` noch nicht verfügbar sind.
-- `docs/planning/open/cli-unimplemented-commands.md` — Zeile `data seed`:
-  Basisbefehl jetzt registriert (P1), Link zeigt auf
-  `in-progress/cli-data-seed.md`, Hinweis dass `--rules`/`--ai-backend`
-  noch fehlen.
-
-`cli-data-seed.md` liegt bereits (vorgezogen, siehe Status-Kopf) in
-diesem Verzeichnis.
+  — `DataSeedCommand()` zur `subcommands(...)`-Liste ergänzt.
+- `docs/user/anwenderhandbuch.md` — Abschnitt 3.22 "Testdaten erzeugen
+  (Seed)", aufgabenorientiert, inkl. Hinweis, dass `--rules`/
+  `--ai-backend` noch nicht verfügbar sind.
+- `docs/planning/open/cli-unimplemented-commands.md` — Zeile `data seed`
+  entfernt (Befehl jetzt registriert, analog zum `config show`-Präzedenz),
+  Ersatz-Hinweis mit Link auf `cli-data-seed.md` + dieses ImpPlan.
+- `docs/planning/in-progress/cli-data-seed.md` — P1-Zeile als geliefert
+  markiert.
 
 ## Phasen
 
@@ -265,50 +265,62 @@ diesem Verzeichnis.
 
 ## Akzeptanzkriterien
 
-- [ ] `data seed --schema <path> --target <url>` erzeugt und importiert
-  `--count` (Default 100) Zeilen pro Basistabelle des Schemas.
-- [ ] Determinismus: zwei Läufe mit identischem `--seed` und identischem
-  Schema erzeugen byte-identische generierte Werte (Test belegt es
-  direkt am Generator, nicht nur am Gesamtlauf).
-- [ ] FK-Konsistenz: bei ≥ 2 Tabellen mit FK-Beziehung referenzieren alle
+- [x] `data seed --schema <path> --target <url>` erzeugt und importiert
+  `--count` (Default 100) Zeilen pro Basistabelle des Schemas. Live gegen
+  echtes SQLite verifiziert (2 Tabellen, 40 Zeilen).
+- [x] Determinismus: zwei Läufe mit identischem `--seed` und identischem
+  Schema erzeugen byte-identische generierte Werte (Unit-Test am
+  Generator/Seeder/Runner **und** live: zwei unabhängige SQLite-Datenbanken,
+  exportierte JSON-Dumps byte-identisch).
+- [x] FK-Konsistenz: bei ≥ 2 Tabellen mit FK-Beziehung referenzieren alle
   generierten FK-Werte tatsächlich existierende Werte der Zielspalte
-  (Test mit mind. zwei abhängigen Tabellen).
-- [ ] `unique`-Spalten enthalten in der generierten Zeilenmenge keine
+  (Unit-Test + live verifiziert).
+- [x] `unique`-Spalten enthalten in der generierten Zeilenmenge keine
   Duplikate; Erschöpfung des Wertebereichs → Exit 5 mit Spalten-/
   Tabellenname in der Meldung.
-- [ ] `Enum`-Spalten enthalten ausschließlich Werte aus
+- [x] `Enum`-Spalten enthalten ausschließlich Werte aus
   `NeutralType.Enum.values`.
-- [ ] `--locale de`/`--locale en` erzeugen sichtbar unterschiedliche
-  Text-/Email-Werte; ein unbekannter Locale-Wert → Exit 7.
-- [ ] Zielspalte `NOT NULL` ohne Default, die im Quellschema fehlt →
+- [x] `--locale de`/`--locale en` erzeugen sichtbar unterschiedliche
+  Text-/Email-Werte; ein unbekannter Locale-Wert → Exit 7. Live
+  verifiziert (`beispiel.de`-Domains, deutsche Wortliste).
+- [x] Zielspalte `NOT NULL` ohne Default, die im Quellschema fehlt →
   Exit 3 mit klarer Preflight-Meldung (kein Absturz/Stacktrace).
-- [ ] Echter Cross-Table-FK-Zyklus: nullable Spalte → `null`, sonst
+- [x] Echter Cross-Table-FK-Zyklus: nullable Spalte → `null`, sonst
   Exit 3 mit klarer Meldung (kein stiller Datenverlust, kein Crash).
-- [ ] `Array`-Spalten (mind. zwei verschiedene `elementType`-Werte)
-  werden erfolgreich generiert und importiert.
-- [ ] `Geometry`- und `FullText`-Zielspalten: nullable → `null`, sonst
+- [x] `Array`-Spalten (mind. zwei verschiedene `elementType`-Werte)
+  werden erfolgreich generiert und importiert (Unit-Test).
+- [x] `Geometry`- und `FullText`-Zielspalten: nullable → `null`, sonst
   Preflight-Fehler Exit 3 mit benanntem Grund (AE-10) — kein Crash, kein
   falsch generierter Wert.
-- [ ] `Uuid`-Spalten binden ohne Fehler (Test verifiziert `java.util.UUID`
+- [x] `Uuid`-Spalten binden ohne Fehler (Test verifiziert `java.util.UUID`
   als Laufzeittyp, AE-9).
-- [ ] CLI-Smoke: `data seed --help`, fehlendes `--schema`/`--target` →
+- [x] CLI-Smoke: `data seed --help`, fehlendes `--schema`/`--target` →
   Clikt-Usage-Fehler; erfolgreicher Lauf gegen SQLite → Exit 0.
-- [ ] Kein neues `--rules`/`--ai-backend`-Flag in dieser Phase vorhanden
-  (No-Carveouts-Check).
-- [ ] `docs/user/anwenderhandbuch.md` beschreibt den Befehl
+- [x] Kein neues `--rules`/`--ai-backend`-Flag in dieser Phase vorhanden
+  (No-Carveouts-Check — `DataSeedCommand` hat genau 5 Optionen).
+- [x] `docs/user/anwenderhandbuch.md` beschreibt den Befehl
   aufgabenorientiert inkl. Hinweis auf die noch fehlenden Flags.
 - [x] `cli-data-seed.md` liegt in `in-progress/` mit aktualisiertem
-  Status (vorgezogen 2026-09-04).
-- [ ] Tracker in `../open/cli-unimplemented-commands.md` verweist auf
-  `in-progress/cli-data-seed.md` (nicht mehr auf `next/`).
-- [ ] `make docker-check` grün für `:hexagon:core`,
+  Status (P1 als geliefert markiert).
+- [x] Tracker in `../open/cli-unimplemented-commands.md`: `data seed`-Zeile
+  entfernt (Befehl registriert), Ersatz-Hinweis verlinkt korrekt.
+- [x] `make docker-check` grün für `:hexagon:core`,
   `:hexagon:application`, `:adapters:driving:cli` **und** einmal ohne
   `MODULES` (geteilte Registrierungsstelle `DataCommands.kt`).
-- [ ] `make docs-check` grün; `make solid-suppression-gate` grün vor
+- [x] `make docs-check` grün; `make solid-suppression-gate` grün vor
   Commit.
 
 ## Nicht-Scope
 
+- **Constraint-modellierte (ggf. mehrspaltige) Fremdschlüssel**
+  (`ConstraintType.FOREIGN_KEY` + `ConstraintReferenceDefinition`) fließen
+  nur in die Tabellen-Reihenfolge ein (für die Topo-Sortierung gebraucht),
+  nicht in die Werte-Generierung — nur `column.references` bekommt
+  FK-konsistentes Werte-Pool-Sampling. Bei der Umsetzung erkannt (nicht
+  im ursprünglichen AE-4 bedacht): eine saubere Behandlung bräuchte
+  Mehrspalten-Tupel-Sampling, das für P1 zu viel Zusatzaufwand gewesen
+  wäre. Betrifft nur Schemata, die FKs ausschließlich über Constraints
+  (nicht über `column.references`) modellieren.
 - **WKB-Encoder für `Geometry`-Werte-Generierung** (AE-10) — eigener
   Aufwand; P1 behandelt `Geometry`/`FullText` als Preflight-Grenze
   (nullable → `null`, sonst Exit 3), kein echter Blocker für P1 selbst.
@@ -345,10 +357,57 @@ diesem Verzeichnis.
 8. Build-/Test-Output in `/tmp/build.log` umleiten und greppen; Exit-Code
    von `make`-Targets direkt prüfen (nicht via nachgelagertem `echo`).
 
+## Closure
+
+**Gelieferte Artefakte** (`33c7e606`): `ColumnValueGenerator`/`SeedLocale`/
+`TableRowSeeder` (`hexagon:core`, `dev.dmigrate.core.seed`);
+`DataSeedRunner`/`DataSeedRequest` (`hexagon:application`);
+`DataSeedCommand`/`DataSeedWiring` (`adapters:driving:cli`);
+Registrierung in `DataCommands.kt`. Anwenderhandbuch-Abschnitt 3.22
+"Testdaten erzeugen (Seed)"; Tracker-Zeile in
+`open/cli-unimplemented-commands.md` entfernt (Befehl registriert);
+`cli-data-seed.md` als P1-geliefert markiert — alle drei in einem
+separaten Doku-Commit im Anschluss an diesen.
+
+**Design-Delta zur Planung.** Zwei Korrekturen gegenüber AE-4/„Neue
+Dateien": (1) `SchemaFkEdges` (`hexagon:application`) ist von
+`hexagon:core` aus nicht erreichbar — `TableRowSeeder` baut die
+FK-Kanten stattdessen lokal selbst (identische Logik, wenige Zeilen).
+(2) Constraint-modellierte, ggf. mehrspaltige Fremdschlüssel
+(`ConstraintType.FOREIGN_KEY`) bekommen kein Werte-Pool-Sampling — nur
+`column.references` (bei der Umsetzung erkannt, jetzt in „Nicht-Scope"
+dokumentiert statt stillschweigend anders zu generieren). Beide waren
+im ursprünglichen ImpPlan nicht bedacht; keins davon blockierte P1.
+
+**Review vor Implementierungsstart** fand zwei blockierende Lücken
+(Geometry-WKB, Wertbindung nach `TargetColumn`-Hint statt nur
+`NeutralType`) — aufgelöst in AE-9/AE-10/AE-11 (siehe oben), vor jedem
+Code-Commit.
+
+**Tests.** `ColumnValueGeneratorTest` (Determinismus, alle 21
+`NeutralType`-Zweige inkl. `Array`/`Enum`/`Geometry`/`FullText`-
+Exceptions), `TableRowSeederTest` (FK-Konsistenz, Unique-Erschöpfung,
+FK-Zyklus, Preflight), `DataSeedRunnerTest` (jeder Exit-Code-Pfad mit
+Fakes, analog `DataImportRunnerCallbackTest`), `CliDataSeedSmokeTest`
+(Clikt-Parse-Pfad). Alle drei Module (`:hexagon:core`,
+`:hexagon:application`, `:adapters:driving:cli`) grün inkl. Detekt und
+Kover-Schwelle; einmal `make docker-check` ohne `MODULES` grün.
+
+**Live.** Schema mit zwei Tabellen (FK, `unique`, `enum`) gegen echtes
+SQLite: `data seed --count 20 --seed 42` erzeugte 40 FK-konsistente,
+eindeutige Zeilen; ein zweiter, unabhängiger Lauf mit demselben `--seed`
+erzeugte einen byte-identischen `data export`-Dump (Determinismus
+end-to-end, nicht nur in Unit-Tests); `--locale de` erzeugte sichtbar
+deutsche Werte (`beispiel.de`-Domains).
+
+**Folgearbeit** (kein P1-Blocker): P2 (`--rules`), P3 (`--ai-backend`),
+WKB-Encoder für `Geometry` (bei Bedarf), Mehrspalten-Constraint-FK-
+Werte-Konsistenz (bei Bedarf) — siehe „Nicht-Scope".
+
 ## Referenzen
 
-- [`cli-data-seed.md`](cli-data-seed.md) — übergeordnetes Vier-Phasen-
-  Scope-Dokument (P1–P4).
+- [`cli-data-seed.md`](../in-progress/cli-data-seed.md) — übergeordnetes
+  Vier-Phasen-Scope-Dokument (P1–P4).
 - [`spec/cli-spec.md` §6.2](../../../spec/cli-spec.md) — Befehls-Zielbild.
 - [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) — Requirement.
 - [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007)/[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008)

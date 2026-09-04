@@ -1,13 +1,13 @@
 # CLI-Befehl `data seed` (Testdatengenerierung)
 
-> **Status:** In Arbeit (2026-09-04). Scope-Dokument für den in
-> [`cli-spec.md`](../../../spec/cli-spec.md) §6.2 spezifizierten, bislang
-> nicht registrierten Befehl (siehe Tracker
+> **Status:** In Arbeit (2026-09-04). **P1 (deterministischer Generator-
+> Kern) geliefert** — siehe
+> [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md)
+> (graduiert nach `done/`, Closure-Sektion dort). P2 (`--rules`) und P3
+> (`--ai-backend`) bleiben geplant, nicht aktiv. Scope-Dokument für den in
+> [`cli-spec.md`](../../../spec/cli-spec.md) §6.2 spezifizierten Befehl
+> (siehe Tracker
 > [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md)).
-> Vorgezogen nach `in-progress/` per Eigner-Entscheidung (2026-09-04, vor
-> dem regulären Aktivierungs-Trigger unten) — die Umsetzung von Phase P1
-> beginnt jetzt, konkretisiert in
-> [`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md).
 > **Vorbedingung:** Keine harte Blockade.
 
 ## Ziel
@@ -58,7 +58,7 @@ generieren und über die bestehende Import-Pipeline ins Ziel schreiben.
 
 Für P1 sind die vier Fragen unten inzwischen entschieden — siehe AE-1
 bis AE-8 in
-[`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md).
+[`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md).
 Sie bleiben hier als Ausgangslage stehen; für P2/P3 sind die Fragen 2
 und 3 weiterhin offen.
 
@@ -88,13 +88,15 @@ und 3 weiterhin offen.
 
 ## Scope-Skizze (Phasen)
 
-- **P1 — Deterministischer Generator-Kern (ohne KI).** `NeutralType`-
-  bewusste Wertegeneratoren, `--count`, `--seed` (reproduzierbarer RNG),
-  `--locale`. FK-Topo-Reihenfolge wiederverwendet aus
-  [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007)/[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008).
-  Schreiben über bestehende Import-Pipeline. **DoD:** `data seed` erzeugt
-  für ein Beispielschema reproduzierbare (gleicher `--seed` ⇒ identische
-  Daten), FK-konsistente Datensätze im Ziel.
+- **P1 — Deterministischer Generator-Kern (ohne KI). GELIEFERT (2026-09-04).**
+  `NeutralType`-bewusste Wertegeneratoren, `--count`, `--seed`
+  (reproduzierbarer RNG), `--locale`. FK-Topo-Reihenfolge wiederverwendet
+  aus [`LN-007`](../../../spec/lastenheft-d-migrate.md#ln-007)/[`LN-008`](../../../spec/lastenheft-d-migrate.md#ln-008).
+  **DoD erfüllt** (live gegen echtes SQLite verifiziert, siehe
+  [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md)
+  Closure): `data seed` erzeugt für ein Beispielschema reproduzierbare
+  (gleicher `--seed` ⇒ byte-identische Daten), FK-konsistente Datensätze
+  im Ziel.
 - **P2 — `--rules`-Regeldatei.** Format entscheiden (Designentscheidung 3),
   Parser + Validierung, Spalten-Overrides. **DoD:** Regeldatei überschreibt
   den Default-Generator je Spalte; ungültige Regeldatei = definierter
@@ -135,7 +137,7 @@ Bausteine, ohne die CLI unnötig an dieses Modell zu koppeln.
 
 ## Aktivierungs-Trigger für P2/P3
 
-P1 ist aktiv (siehe Status-Kopf). P2 (`--rules`) und P3 (`--ai-backend`)
+P1 ist geliefert (siehe Status-Kopf). P2 (`--rules`) und P3 (`--ai-backend`)
 bleiben geplant, nicht aktiv, bis Milestone „1.3.0 (Testdaten)" laut
 [`roadmap.md`](roadmap.md) priorisiert wird oder ein konkreter
 Pilot-/Anwenderbedarf dafür entsteht.
@@ -144,7 +146,7 @@ Pilot-/Anwenderbedarf dafür entsteht.
 
 - [`spec/cli-spec.md` §6.2](../../../spec/cli-spec.md) — Befehls-Zielbild
 - [`LF-024`](../../../spec/lastenheft-d-migrate.md#lf-024) — Requirement
-- [`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md) — Umsetzungsplan für P1
+- [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md) — Umsetzungsplan für P1
 - [`roadmap.md`](roadmap.md) — Milestone-Zuordnung
 - [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md) — Tracker-Eintrag
 - [`../done-archive/mcp-followups-testdata-ai-approval-bundle-import.md`](../done-archive/mcp-followups-testdata-ai-approval-bundle-import.md) — Vorgänger/Hintergrund (MCP-Testdata-Tools)

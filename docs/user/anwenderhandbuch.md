@@ -1973,6 +1973,47 @@ Bezeichner sind, brechen mit Exit 7 ab; sie gehen unquotiert in `CREATE TABLE`.
 - Vollständige Custom-Type-Felder (inkl. `composite`/`domain`-Beispiele):
   [Anhang F.9](#f9-custom-types).
 
+### 3.22 Testdaten erzeugen (Seed)
+
+**Ziel:** Für ein Schema deterministisch reproduzierbare Testdaten
+generieren und in eine Zieldatenbank einspielen — ohne eigene INSERT-
+Skripte zu schreiben.
+
+**Voraussetzungen:** Eine Zieldatenbank, deren Tabellen bereits gemäß dem
+Schema angelegt sind (z. B. per `schema generate`/`schema migrate`).
+`data seed` legt keine Tabellen an, es befüllt sie.
+
+**Vorgehen:**
+
+1. Erzeugen und importieren Sie Testdaten:
+
+   ```bash
+   d-migrate data seed --schema schema.yaml --target meine-db \
+       --count 100 --seed 42 --locale de
+   ```
+
+**Ergebnis:** 100 Zeilen je Basistabelle des Schemas, in Fremdschlüssel-
+sicherer Reihenfolge eingefügt — jeder Fremdschlüsselwert referenziert
+eine tatsächlich generierte Zeile der Zieltabelle. `unique`-Spalten
+enthalten keine Duplikate, `enum`-Spalten ausschließlich deklarierte
+Werte. Der Lauf gibt den verwendeten Seed aus (`Verwendeter Seed: 42`) —
+auch ohne `--seed` bleibt ein Lauf damit im Nachhinein reproduzierbar.
+
+**Hinweise:**
+
+- **`--seed`** macht zwei Läufe mit demselben Schema byte-identisch.
+  Ohne `--seed` wird ein zufälliger Seed gezogen und ausgegeben.
+- **`--locale`** unterstützt aktuell `en` (Default) und `de`; ein anderer
+  Wert bricht mit Exit 7 ab, statt still auf Englisch zurückzufallen.
+- **Geometry- und Volltext-Spalten** (`tsvector`) werden in dieser Phase
+  nicht generiert: nullable Spalten bleiben leer, eine `NOT NULL`-Spalte
+  dieses Typs bricht den Lauf mit Exit 3 ab, statt einen falschen Wert
+  einzusetzen.
+- **`--rules`** (eigene Generierungsregeln je Spalte) und
+  **`--ai-backend`** (KI-gestützte, kontextrelevante Werte) sind in
+  dieser Phase noch keine Flags von `data seed` — sie kommen mit den
+  Folgephasen des Befehls.
+
 ---
 
 ## 4. Konfiguration
