@@ -57,7 +57,6 @@ festgehalten.
 | ----- | --- | ---------- |
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
-| [`partition-boundary-change-operation.md`](partition-boundary-change-operation.md) | Per-Feature-Umbrella | Eine hinzugekommene oder entfallene Partition wird Operation statt Warnung. Klassifikation signaturbasiert im Hexagon (SQL Server nummeriert Partitionen), Ausfuehrung je Dialekt: PG Kind-Anweisungen, MySQL ADD/REORGANIZE/DROP, SQL Server SPLIT/MERGE. P0-P4 geliefert, P5 (Matrix/Doku) laeuft. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

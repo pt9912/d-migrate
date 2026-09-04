@@ -1,6 +1,10 @@
 # Grenzänderungen an einer Partitionierung als Operation
 
-> **Status:** In Arbeit — P0 bis P4 geliefert, P5 (Matrix, Spec, Handbuch) läuft.
+> **Status:** ERLEDIGT + graduiert nach `done/` (2026-09-04). Alle
+> Arbeitspakete P0–P5 geliefert (`727f1bda3` + Review-Härtung `19d6801b8`);
+> live gegen PostgreSQL, MySQL und SQL Server verifiziert. Teil des
+> v1.1.0-Releases (2026-09-04, siehe `CHANGELOG.md`). Siehe „## Closure"
+> am Ende.
 > **Ziel:** Eine hinzugekommene oder entfallene Partition wird als
 > Migrations-Operation ausgeführt statt als Warnung gemeldet. Der Wechsel der
 > Strategie oder des Schlüssels bleibt, was er ist: nur über Neubau erreichbar.
@@ -151,3 +155,41 @@ der Fehlbefund lag nicht am neuen Schnitt, sondern bestand vorher.
   in MySQL ein `REORGANIZE` — nicht Drop+Create.
 - Ein Strategiewechsel erzeugt weiterhin keine Operation, und die Warnung
   benennt den Grund.
+
+## Closure
+
+**Gelieferte Artefakte.** Hexagon-Klassifikation (`PartitionDelta`,
+`PartitionRecut`-Unterscheidung) in
+`hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/PartitionChangeClassifier.kt`,
+Grenz-Ausgleich in
+`hexagon/core/src/main/kotlin/dev/dmigrate/core/model/PartitionBoundNormalizer.kt`;
+dialektspezifische Ausführung in
+`adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffPartitionOps.kt`,
+`adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDiffPartitionOps.kt`,
+`adapters/driven/driver-mssql/src/main/kotlin/dev/dmigrate/driver/mssql/MssqlDiffPartitionOps.kt`;
+benannte Ablehnung in
+`adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffDdlGenerator.kt`.
+Spec-Matrix in
+[`ddl-generation-rules.md` §9.6](../../../spec/ddl-generation-rules.md)
+(„Geänderter Partitionsbestand"); Anwenderhandbuch-Abschnitt „Brauchen Sie
+eine weitere Partition — oder ist die älteste zu entfernen?"; eigener
+`CHANGELOG.md`-Eintrag unter `[1.1.0]`.
+
+**Review-Härtung** (`19d6801b8`, 8 Befunde aus `/code-review high`, alle
+behoben): schwerster Fund war eine fehlende HASH-Eimerzahl-Schranke im
+Hexagon (PostgreSQL hätte sonst bei geänderter Eimerzahl `DROP`+`CREATE`
+gerendert und Zeilen verloren) — jetzt zentral als
+`HASH_BUCKETS_CHANGED` klassifiziert, statt dialektlokal geprüft. MySQL
+teilte sich danach dieselbe Preflight-Stelle
+(`partitioningSkipNote`) wie der Generate-Pfad. Spec/Handbuch korrigiert:
+MySQL rendert den Neuschnitt (`REORGANIZE`) tatsächlich, entgegen der
+ersten Planungsannahme.
+
+**Tests.** Je Dialekt ein `*DiffPartitionDeltaTest.kt`
+(PostgreSQL/MySQL/SQL Server/SQLite); live gegen echtes PostgreSQL, MySQL
+und SQL Server belegt (Kind hinzu/weg, Split/Merge, DEFAULT-Partition,
+HASH-Schranke).
+
+**Nicht-Scope bleibt offen** wie geplant (Grenzverschiebung eines
+bestehenden Kindes, Sub-Partitionen, RANGE LEFT, HASH-Umverteilung) —
+keine Folge-Tickets, da kein konkreter Bedarf vorliegt.
