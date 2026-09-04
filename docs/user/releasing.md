@@ -534,7 +534,8 @@ git push origin vX.Y.Z
 2. Coverage-Verify
 3. Build der Release-Assets über `:adapters:driving:cli:assembleReleaseAssets`
 4. Upload des Workflow-Artefakts `release-assets`
-5. Jib baut OCI-Image (`./gradlew :adapters:driving:cli:jibDockerBuild`)
+5. `make docker-oci-build` baut das OCI-Image lokal aus der Dockerfile-`runtime`-Stage
+   ([ADR 0041](../adr/0041-oci-image-aus-dockerfile-runtime-statt-jib.md)) — kein Jib mehr
 6. Login zu `ghcr.io` mit `GITHUB_TOKEN`
 7. Push zu `ghcr.io/pt9912/d-migrate:X.Y.Z` und `ghcr.io/pt9912/d-migrate:latest`
 8. Login zu Docker Hub und derselbe Image-Push nach `pt9912/d-migrate:X.Y.Z`
