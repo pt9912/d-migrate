@@ -5,6 +5,15 @@
 > geliefert). Aktiviert laut
 > [`cli-data-seed.md`](cli-data-seed.md) Aktivierungs-Trigger durch
 > expliziten Eigner-Wunsch vor dem v1.2.0-Release.
+> **Review-Nachzug (2026-09-04):** unabhängiger Codebase-Review vor
+> Implementierungsstart fand einen blockierenden Fehler (AE-6s
+> Wiederverwendung des Rejection-Sampling-Loops erzeugt bei
+> `values.size` nahe `--count` mathematisch erwartbare
+> Spontanfehlschläge, nicht nur bei echt zu kleinen Listen) sowie vier
+> wichtige Klärungen (AE-2-Schattierungs-Reihenfolge,
+> AE-1/AE-7-Widerspruch pure-vs-mutable, `{digits:N}`-Führungsnullen,
+> Template-Syntaxfehler-Zeitpunkt). Alle fünf unten in AE-1, AE-2,
+> AE-4, AE-6 und den Akzeptanzkriterien aufgelöst.
 > **Vorbedingung:** Keine harte Blockade.
 
 ## Kontext / Ist-Stand (verifiziert)
@@ -61,12 +70,24 @@ Default-Generator aus P1 pro Tabelle.Spalte ersetzt. Additiv: ohne
 
 **AE-1 — Regelmodell bleibt in `hexagon:core`, keine neue
 Abstraktionsebene.** `SeedRuleSet`/`ColumnRule` sind reine
-Datenklassen + eine pure `resolve(tableName, columnName): ColumnRule?`-
-Matching-Funktion, analog zu `SeedLocale`. `TableRowSeeder` bekommt
-einen optionalen `rules: SeedRuleSet?`-Konstruktorparameter
-(Default `null` = P1-Verhalten unverändert) statt eines
-Plugin-Interfaces — es gibt in P2 nur eine Regelquelle (die Datei),
-eine Abstraktion für mehrere wäre spekulativ.
+Datenklassen. `resolve(tableName, columnName): ColumnRule?` bleibt
+**seiteneffektfrei** (keine Mutation), analog zu `SeedLocale`.
+`TableRowSeeder` bekommt einen optionalen `rules: SeedRuleSet?`-
+Konstruktorparameter (Default `null` = P1-Verhalten unverändert)
+statt eines Plugin-Interfaces — es gibt in P2 nur eine Regelquelle
+(die Datei), eine Abstraktion für mehrere wäre spekulativ.
+**Review-Korrektur — expliziter Zwei-Schritt-Vertrag für AE-7s
+Tracking** (löst den Widerspruch "pure `resolve()`" vs. "mutable
+`markUsed`/`unused()`" auf `SeedRuleSet` auf): `resolve()` liefert nur
+die Regel zurück, mutiert nichts. `markUsed(rule)` ist ein
+**separater, idempotenter** Aufruf (Set-basiert — `SeedRuleSet` hält
+selbst ein `MutableSet<ColumnRule>` der je verwendeten Regeln) — der
+Aufrufer ruft ihn immer dann auf, wenn eine per `resolve()`
+gefundene Regel tatsächlich zur Wertegenerierung verwendet wird.
+Da `columnValue()` pro Zeile (nicht nur einmal pro Spalte) aufgerufen
+wird, ruft die Integration `markUsed()` entsprechend oft für dieselbe
+Regel auf — durch die Set-Semantik unschädlich, kein neuer
+Synchronisationsbedarf.
 
 **AE-2 — Erste passende Regel gewinnt, `table` optional (Wildcard).**
 Gleiches Matching-Prinzip wie `PolicyRule` (`tenantId`/`toolName`
@@ -76,6 +97,22 @@ Slice: Regeln werden in Dateireihenfolge geprüft,
 in genau dieser Tabelle" als auch "jede Spalte namens `email`,
 egal in welcher Tabelle" ab, ohne zwei getrennte Match-Modi zu
 brauchen.
+**Review-Ergänzung — Reihenfolge-Falle explizit dokumentiert.** Anders
+als bei `PolicyRule` (Betreiber-authored, `toolName` selten über
+viele unabhängige Regeln wiederverwendet) sind Spaltennamen in
+Schemata typischerweise **tabellenübergreifend wiederverwendet**
+(`email`, `status`, `created_at` — genau das AE-2-Beispiel). Eine
+Wildcard-Regel VOR einer tabellenspezifischen Regel für denselben
+Spaltennamen schattiert diese vollständig, ohne Diagnose außer dem
+AE-7-"nie angewendet"-Hinweis (die schattierte Regel wird nie
+`resolve()`t, landet also korrekt dort — aber der Zusammenhang
+"warum" ist nicht offensichtlich). **Verbindliche Autorenregel:**
+tabellenspezifische Regeln stehen in der Datei vor Wildcard-Regeln für
+denselben Spaltennamen — dokumentiert in AE-4-Nachbarschaft im
+Anwenderhandbuch/`cli-spec.md`-Beispiel, und `SeedRulesTest.kt`s
+"erste-Regel-gewinnt"-Test deckt explizit den
+Spezifisch-durch-Wildcard-schattiert-Fall ab (nicht nur
+Wildcard-gegen-Wildcard).
 
 **AE-3 — Regeln greifen NICHT bei FK-referenzierenden Spalten.**
 `columnValue()` verzweigt für `column.references != null` immer in
@@ -97,6 +134,15 @@ wäre eine neue Runtime-Dependency (CVE-/Lizenz-Prüfung Pflicht,
 Historie Dependency-CVE-Reduktion 90→0) für einen Bedarf, den niemand
 konkret angefragt hat. `cli-spec.md` nennt nur "Muster", kein
 Regex-Vertrag.
+**Review-Ergänzung — `{digits:N}` exakt spezifiziert.** `N`
+**unabhängige** Ziffer-Ziehungen (0-9), Führungsnullen bleiben
+erhalten — exakt analog zu `ColumnValueGenerator.randomLetters(length)`
+(zeichenweise gebaut), **nicht** ein beschränkter Integer-Zug mit
+anschließendem `.toString()` (verliert Führungsnullen, liefert bei
+`N ≥ 2` in ~90 % der Ziehungen einen kürzeren String als `N` Zeichen —
+naheliegende, aber falsche Umsetzung direkt neben `randomLetters` im
+selben File). `N = 0` ist erlaubt (leerer String, kein Sonderfall);
+keine Obergrenze für `N`.
 
 **AE-5 — Typ-Kompatibilität wird bei Anwendung geprüft, nicht beim
 Laden.** Der Loader kennt das Schema nicht (Datei wird unabhängig vom
@@ -107,15 +153,43 @@ Zeilenbau eine `SeedPreflightException` (Exit 3) — gleiche Kategorie
 wie P1s bestehende Preflight-Fehler (FK-Zyklus, nicht generierbare
 Typen), kein neuer Fehler-Exit.
 
-**AE-6 — `unique`/Identifier-Spalten mit `values`-Strategie nutzen
-denselben Wiederholungs-Mechanismus wie P1.** Kein neuer
-Eindeutigkeits-Code: `uniqueAwareValue()`s bestehende
-`usedValues`/`MAX_UNIQUE_ATTEMPTS`-Schleife wird unverändert
-wiederverwendet, nur die innere `generate(...)`-Quelle wechselt (Regel
-statt `ColumnValueGenerator`, wenn eine matcht). Eine `values`-Liste
-kleiner als `--count` für eine `unique`-Spalte läuft also in die
-bestehende `SeedUniquenessExhaustedException` (Exit 5) — erwartetes,
-nicht neu zu bauendes Verhalten.
+**AE-6 — `unique`/Identifier-Spalten mit `values`-Strategie brauchen
+Sampling OHNE Zurücklegen, nicht den bestehenden
+Rejection-Sampling-Loop (Review-Korrektur, ursprünglich blockierender
+Befund).** Die ursprüngliche Annahme — `uniqueAwareValue()`s
+bestehende `usedValues`/`MAX_UNIQUE_ATTEMPTS`(=50)-Schleife
+unverändert wiederzuverwenden, nur die innere `generate(...)`-Quelle
+zu tauschen — ist für P1s Generatoren korrekt (Wertebereiche wie
+`IDENTIFIER_BOUND = 1_000_000` sind riesig relativ zu typischem
+`--count`, Kollisionswahrscheinlichkeit gegen Lauf-Ende
+vernachlässigbar), aber **falsch für eine handkuratierte
+`values`-Liste nahe `--count`**: die Schleife zieht mit
+Zurücklegen aus einem NICHT schrumpfenden Pool. Bei
+`values.size == count == 100` braucht die letzte Zeile den einen noch
+unbenutzten von 100 Werten (p = 1/100 pro Versuch); die
+Fehlschlagwahrscheinlichkeit für alle 50 Versuche liegt bei
+`(0,99)^50 ≈ 60 %` — eine `values`-Liste, die **exakt** groß genug
+ist (der naheliegendste Weg, die Regel zu schreiben), schlägt also
+öfter fehl als sie gelingt, rein als Stichproben-Artefakt, nicht weil
+die Liste tatsächlich zu klein wäre.
+
+**Fix:** `values`-Strategie + `unique`/Identifier-Spalte nutzt
+**Sampling ohne Zurücklegen** statt Rejection-Sampling: die
+Werteliste wird **einmal pro Spalte** (beim ersten Treffer für diese
+Tabelle.Spalte in der `repeat(count)`-Schleife) mit dem
+seed-gebundenen `Random` gemischt (Fisher-Yates über `random`) und
+danach index-/warteschlangenweise konsumiert — ein Wert wird nie
+zweimal gezogen. Dieser Konsum-Zustand lebt pro (Tabelle, Spalte) in
+`TableSeedContext`, exakt wie das bestehende
+`usedValues: MutableMap<String, MutableSet<Any?>>` bereits pro Spalte
+mutable Zustand hält (kein neues Strukturmuster). Erschöpfung
+(Warteschlange leer, `values.size < count`) wirft weiterhin die
+bestehende `SeedUniquenessExhaustedException` (Exit 5) — gleicher
+Exit-Code, aber jetzt eine Meldung, die explizit zwischen "Regel-Liste
+erschöpft" und P1s generischem "Wertebereich zu klein" unterscheidet.
+Nicht-`unique`-Spalten mit `values`-Regel bleiben unverändert
+Sampling MIT Zurücklegen (`pool.random(random)`-artig, gewichtet nach
+`weights` falls gesetzt) — dort gibt es kein Eindeutigkeits-Problem.
 
 **AE-7 — Ungenutzte Regeln sind ein Hinweis, kein Fehler.** Eine
 Regel, die nie auf eine tatsächlich vorhandene Tabelle.Spalte
@@ -159,11 +233,14 @@ Konventionen im Projekt.
   zu erwarten, kein Hinweis nötig).
 - `spec/cli-spec.md` — Format-Beispiel unter der `data seed`-Flag-Tabelle
   (normativ, wie `--policy-file`s YAML-Beispiel im Administrationshandbuch).
-- Tests: `SeedRulesTest.kt` (Matching, Wildcard, erste-Regel-gewinnt),
-  `SeedRulesFileLoaderTest.kt` (gültige/ungültige Dateien),
-  `TableRowSeederTest.kt`-Ergänzungen (Regel überschreibt Default,
-  FK-Spalte ignoriert Regel, `unique` + zu kleine `values`-Liste wirft
-  weiterhin `SeedUniquenessExhaustedException`), `DataSeedRunnerTest.kt`-
+- Tests: `SeedRulesTest.kt` (Matching, Wildcard, erste-Regel-gewinnt
+  **inkl. Spezifisch-durch-Wildcard-schattiert-Fall, AE-2**),
+  `SeedRulesFileLoaderTest.kt` (gültige/ungültige Dateien **inkl.
+  fehlerhafter Template-Syntax**), `TableRowSeederTest.kt`-Ergänzungen
+  (Regel überschreibt Default, FK-Spalte ignoriert Regel, `unique` +
+  zu kleine `values`-Liste wirft weiterhin
+  `SeedUniquenessExhaustedException`, **`unique` + `values.size ==
+  count` gelingt zuverlässig, AE-6**), `DataSeedRunnerTest.kt`-
   Ergänzung (AE-7-Hinweis-Ausgabe), `CliDataSeedSmokeTest.kt`-Ergänzung.
 
 ## Phasen
@@ -199,10 +276,20 @@ Konventionen im Projekt.
       inkompatible Strategie nennt.
 - [ ] `values`-Liste kleiner als `--count` auf einer `unique`-Spalte →
       `SeedUniquenessExhaustedException` (Exit 5), wie in P1.
+- [ ] **Review-Ergänzung (AE-6-Grenzfall):** `values`-Liste mit
+      `values.size == count` auf einer `unique`-Spalte gelingt
+      **zuverlässig** (kein Rejection-Sampling-Zufallsfehlschlag) —
+      Regressionstest, der genau den in AE-6 durchgerechneten
+      Beinahe-Fehlerfall abdeckt, nicht nur den trivialen
+      `size < count`-Fall.
 - [ ] Ungültige `--rules`-Datei (kaputtes YAML, unbekannte Strategie,
       fehlende strategie-spezifische Pflichtfelder,
-      `values`/`weights`-Längen-Mismatch) → Exit 7 mit klarer Meldung,
-      **vor** jeder Zeilengenerierung.
+      `values`/`weights`-Längen-Mismatch, **fehlerhafte
+      Template-Token-Syntax — nicht geschlossene `{`, unbekannter
+      Token-Name**) → Exit 7 mit klarer Meldung, **vor** jeder
+      Zeilengenerierung. Template-Syntax ist schemaunabhängig prüfbar
+      (anders als AE-5s Typ-Kompatibilität) und gehört deshalb an die
+      Lade-Zeit, nicht an die Anwendungs-Zeit.
 - [ ] `make docker-check` (targeted, dann einmal ohne `MODULES` wegen
       `hexagon:core`-Signaturänderung) grün.
 - [ ] `make docs-check` grün.
