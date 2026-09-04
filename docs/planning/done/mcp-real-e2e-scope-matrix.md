@@ -141,10 +141,10 @@ Zwei unabhängig lieferbare, sich ergänzende Teile:
   Modul, keine neue Infrastruktur.
 - **Teil B** — Docker-Image-Ebene: neuer `examples/mcp-e2e/`-Harness <!-- d-check:ignore (Zielbild: entsteht in Teil B; ADR 0011) --> nach dem
   `sample-db`/`bi-demo`-Muster, der `connections/list` (inkl. `checkLive`
-  gegen eine echte PG-Verbindung) und mindestens einen Vertreter pro Scope
-  gegen das **echte gebaute Runtime-Image** durchspielt — genau die Ebene,
-  die die ursprüngliche "Info"-Meldung eigentlich hätte automatisiert prüfen
-  sollen.
+  gegen eine echte PG-Verbindung) und (nach Erweiterung, siehe AE-B1-Nachtrag)
+  **alle 31 Einträge** aus `DEFAULT_SCOPE_MAPPING` gegen das **echte gebaute
+  Runtime-Image** durchspielt — genau die Ebene, die die ursprüngliche
+  "Info"-Meldung eigentlich hätte automatisiert prüfen sollen.
 
 ## Teil A — Scope-Enforcement-Matrix in `test/e2e-cli`
 
@@ -257,11 +257,21 @@ dazwischen nicht nötig), ebenso der Negativ-Subprozess.
 **AE-B1 — Struktur spiegelt `examples/sample-db/` 1:1.** Eigenes
 `docker-compose.yml` (Service `dmigrate` = `${MCP_E2E_DMIGRATE_IMAGE:-d-migrate:dev}`,
 Service `postgres` für einen echten `connections/list?checkLive=true`-Beleg),
-`.env.example`, `scripts/smoke-*.sh`, `stdio-tokens.yaml` (zwei Einträge:
-`admin` mit `dmigrate:admin` + `isAdmin: true`, `restricted` mit
-`dmigrate:read` — kein Scope-freier Eintrag nötig, `restricted` reicht als
-Negativ-Fall für `connections/list`). Kein Testcontainers, kein
+`.env.example`, `scripts/smoke-*.sh`, `stdio-tokens.yaml`. Kein Testcontainers, kein
 Gradle-Testmodul (Kontext-Begründung oben).
+
+**Nachtrag (2026-09-04, Eigner-Wunsch nach vollständiger Deckung):**
+ursprünglich `admin`+`restricted` (nur `dmigrate:read`, ein Vertreter pro
+Scope) — auf ausdrücklichen Wunsch auf **volle 31-Einträge-Matrix** (wie
+Teil A) erweitert: `stdio-tokens.yaml` trägt jetzt `admin`
+(`isAdmin: true`) + `noscope` (keine Scopes). `restricted` entfällt —
+`noscope`s Negativ-Fall deckt `connections/list` mit ab und ist strenger.
+`examples/mcp-e2e/scripts/smoke-scope-matrix.sh` spiegelt `DEFAULT_SCOPE_MAPPING` als
+Bash-Arrays (`ENTRY_NAMES`/`SCOPE_OF`, händisch gepflegt — Bash kann die
+Kotlin-Map nicht introspektieren, anders als Teil As Test). Mit
+absichtlich verfälschter Scope-Zuordnung (`job_cancel` →
+`dmigrate:artifact:upload`) verifiziert, dass die Prüfschleife echte
+Abweichungen erkennt (Fehlschlag beobachtet, dann zurückgesetzt).
 
 **AE-B2 — Bash-NDJSON statt Python-Probe.** Mein manueller Beleg heute nutzte
 Python für Kontrolle/Timeouts; das Projekt-Idiom ist reines Bash+`jq`
@@ -336,8 +346,15 @@ wird.
       `--connection-config` immer an `TenantId("default")`, nicht an das
       Compose-Projekt).
 - [x] `admin`-Token: `connections/list` liefert Daten, keine Scope-Ablehnung.
-      `restricted`-Token: `connections/list` liefert exakt die
+      `noscope`-Token: `connections/list` liefert exakt die
       `dmigrate:admin`-Scope-Ablehnung. Beides live verifiziert.
+- [x] **Nachtrag (Erweiterung auf volle Deckung):** alle 31
+      `DEFAULT_SCOPE_MAPPING`-Einträge einzeln gegen das echte Image
+      geprüft, beide Richtungen (`admin` nie scope-verweigert,
+      `POLICY_DENIED` bei den fünf `*_start`-Tools toleriert; `noscope`
+      immer scope-verweigert, in der jeweils passenden Fehlerform). Mit
+      absichtlich verfälschter Erwartung (`job_cancel` → falscher Scope)
+      verifiziert, dass die Prüfschleife wirklich pro Eintrag greift.
 - [x] `.github/workflows/mcp-e2e-smoke.yml` läuft (best-effort) bei Push auf
       `main` mit Pfadfilter, sowie `workflow_dispatch`.
 - [x] `make docs-check` grün (neue Doku-Querverweise).

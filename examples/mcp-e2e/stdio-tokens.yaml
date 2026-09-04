@@ -4,9 +4,10 @@
 # (FileStdioTokenStore-Format, spec/mcp-server.md §12.10).
 #
 # admin: alle sieben Scopes via isAdmin (Positiv-Fall — beweist den echten
-#   Dispatch inkl. connections/list?checkLive=true gegen den echten
-#   postgres-Service). restricted: nur dmigrate:read (Negativ-Fall fuer
-#   connections/list, das einzige dmigrate:admin-gated Ziel).
+#   Dispatch für ALLE 31 DEFAULT_SCOPE_MAPPING-Einträge inkl.
+#   connections/list?checkLive=true gegen den echten postgres-Service).
+# noscope: keine Scopes (Negativ-Fall — beweist, dass ALLE 31 Einträge
+#   korrekt scope-verweigert werden, in der jeweils passenden Form).
 tokens:
   - fingerprint: "36857d81bcab4dc179795479c7e32e45013e1feba0b1ec82500e71aa610317ee"
     principalId: "mcp-e2e-admin"
@@ -15,10 +16,10 @@ tokens:
     isAdmin: true
     auditSubject: "mcp-e2e-admin@mcp-e2e"
     expiresAt: "2030-01-01T00:00:00Z"
-  - fingerprint: "fd427fa1b7864261de84a4e3ffb4105e45f91f20e27699760db71ed80398c3b9"
-    principalId: "mcp-e2e-restricted"
+  - fingerprint: "e41300094ec855caba79cc0a42ceca4b9b8085395bac5a0783fc8ba3d09ea418"
+    principalId: "mcp-e2e-noscope"
     tenantId: "default"
-    scopes: ["dmigrate:read"]
+    scopes: []
     isAdmin: false
-    auditSubject: "mcp-e2e-restricted@mcp-e2e"
+    auditSubject: "mcp-e2e-noscope@mcp-e2e"
     expiresAt: "2030-01-01T00:00:00Z"
