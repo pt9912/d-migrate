@@ -146,11 +146,22 @@ Fehlerbehandlungs-Vorbild — es parst lazy pro Lookup (nicht einmalig
 beim Start) und wirft bei Fehlern nur ungefangene `error(...)`/
 `require(...)`; `McpServeWiring.approvalGrantStore()` (Zeile 282-283)
 konstruiert nur, liest nie. AE-A1 (einmaliges Laden, fail loud) braucht
-deshalb eine **neue** `parsePolicyFileOrExit()`-artige Methode in
-`McpServeRunner.kt`, die `loadPolicyRules(path)` in `try/catch` wrappt
-und bei Fehler `McpServeExit(2)` wirft — dasselbe Muster wie die
-bestehenden `parse*OrExit()`-Methoden, aber neu zu schreiben, nicht
-wiederzuverwenden.
+deshalb eine neue Fehlerbehandlung.
+
+**Umsetzungs-Ort (Design-Delta gegenüber der ersten Fassung dieser
+AE):** nicht in `McpServeRunner.kt` — die anderen `parse*OrExit()`-
+Methoden dort laufen zwar in `doExecute()`, aber der `launcher`-
+Konstruktorparameter von `McpServeRunner` baut `McpServeWiring(...)`
+bereits als **Default-Parameter-Ausdruck**, der bei der
+Objekt-Konstruktion ausgewertet wird — **vor** `execute()`/`doExecute()`.
+Eine dort geworfene `McpServeExit` würde `execute()`s
+`try { doExecute() } catch (e: McpServeExit)` gar nicht erreichen. Die
+Policy-Datei wird deshalb in `McpServeWiring.build()` selbst geladen
+(private `loadPolicyRulesOrExit()`, ganz am Anfang von `build()` — läuft
+also weiterhin vor jedem tatsächlichen Request, nur eine Ebene tiefer
+als ursprünglich geplant) und dort in `try/catch` auf `McpServeExit(2)`
+gemappt; `McpServeExit` ist `internal` im selben Package
+(`dev.dmigrate.cli.commands`), direkt referenzierbar.
 
 ### Neue/geänderte Dateien
 
@@ -163,11 +174,12 @@ wiederzuverwenden.
   — `McpServeOptions.policyFile: Path?` durchreichen (analog
   `approvalGrantsFile`, Zeile 48/75).
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/McpServeWiring.kt`
-  — an **beiden** `OperationalMcpWiring(...)`-Konstruktionsstellen
-  (Zeile 197 und 261) `policyService = ConfiguredPolicyService(rules =
-  policyRules)` übergeben, wobei `policyRules` bereits vorab in
-  `McpServeRunner` per neuer `parsePolicyFileOrExit()` geladen wurde
-  (AE-A4) — `McpServeExit(2)` bei Fehler.
+  — neuer Konstruktorparameter `policyFile: Path?`; neue private
+  `loadPolicyRulesOrExit()` am Anfang von `build()` (AE-A4); an
+  **beiden** `OperationalMcpWiring(...)`-Konstruktionsstellen (Zeile 197
+  und 261, letztere über `buildInMemory(..., policyRules)`)
+  `policyService = ConfiguredPolicyService(rules = policyRules)`
+  übergeben.
 - Tests: `PolicyRuleFileLoaderTest.kt` (gültige YAML/JSON, fehlende
   optionale Felder = Wildcard, ungültiger `effect`-Wert wirft), ein
   Wiring-Test, der belegt, dass geladene Regeln tatsächlich bei
@@ -188,18 +200,29 @@ wiederzuverwenden.
 
 ### Akzeptanzkriterien
 
-- [ ] `mcp serve --policy-file rules.yaml` mit einer `Allow`-Regel für
+- [x] `mcp serve --policy-file rules.yaml` mit einer `Allow`-Regel für
   ein Tool lässt den zugehörigen `*_start`-Job ohne Challenge durch;
-  ohne passende Regel bleibt der Default `Deny`.
-- [ ] Ungültige Policy-Datei (kaputtes YAML, unbekannter `effect`-Wert,
+  ohne passende Regel bleibt der Default `Deny` (Test: „--policy-file
+  rules flow into OperationalMcpWiring.policyService", verifiziert über
+  einen echten `policyService.decide(...)`-Aufruf).
+- [x] Ungültige Policy-Datei (kaputtes YAML, unbekannter `effect`-Wert,
   fehlendes `reasonCode`/`requiredScopes`) lässt `mcp serve` mit klarer
-  Fehlermeldung gar nicht erst starten (`McpServeExit(2)`, AE-A4).
-- [ ] Kein `--policy-file` → Verhalten unverändert (leere Regelliste,
+  Fehlermeldung gar nicht erst starten (`McpServeExit(2)`, AE-A4; Test:
+  „invalid --policy-file exits 2 with stderr message").
+- [x] Kein `--policy-file` → Verhalten unverändert (leere Regelliste,
   fail-closed) — rein additive Erweiterung, bestehende Tests bleiben
   grün.
-- [ ] `make docker-check` grün für `:adapters:driving:mcp` und
-  `:adapters:driving:cli`.
-- [ ] `make docs-check` grün.
+- [x] `make docker-check` grün für `:adapters:driving:mcp` und
+  `:adapters:driving:cli` **und** einmal ohne `MODULES`.
+- [x] `make docs-check` grün.
+
+**Geliefert** (Code): `PolicyRuleFileLoader.kt` + Test (`adapters/driving/mcp`);
+`--policy-file`-Flag (`McpCommands.kt`), `McpServeOptions.policyFile`
+(`McpServeRunner.kt`), `loadPolicyRulesOrExit()` + zwei neue Wiring-Tests
+(`McpServeWiring.kt`/`McpServeWiringTest.kt`, `adapters/driving/cli`).
+Doku: `administrationshandbuch.md` §6.7, `anwenderhandbuch.md` Anhang
+A.13, `api-referenz.md` §4.12, `spec/mcp-server.md`
+„Policy-Regeln konfigurieren" (neuer normativer Abschnitt).
 
 ## Slice B — `connections/list` mit optionalem Live-Status
 

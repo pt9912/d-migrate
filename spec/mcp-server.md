@@ -450,6 +450,7 @@ Wire-Projektion. Discovery-Konsumenten sehen ausschliesslich
 | `--allow-origin`            | Origin-Allowlist-Eintrag (mehrfach setzbar).                     |
 | `--connection-config`       | Project/server YAML fuer Connection-Refs. Wenn nicht gesetzt, wird ein globales `--config <path>` wiederverwendet. |
 | `--cursor-keyring-file`     | YAML-Keyring fuer deterministische HMAC-Cursor in Multi-Instanz-Deployments. |
+| `--policy-file`             | JSON/YAML mit `PolicyRule`-Eintraegen (Allow/Challenge/Deny pro Tool/Tenant/Aufrufer), einmal beim Start geladen. Ohne Angabe bleibt die Regelliste leer (fail-closed Default, siehe „Policy-Regeln konfigurieren" unten). |
 
 ---
 
@@ -526,6 +527,40 @@ Aussteller einholen und im Retry mitsenden.
   `issuerFingerprint = "demo-auto-approval"` damit `IssuerCheck.AllowList`
   den Demo-Mode aussortieren kann. Transport-Restriktion (loopback only)
   erzwingt das Bootstrap-Wiring, nicht der Issuer selbst.
+
+### Policy-Regeln konfigurieren
+
+Die Entscheidung `Allowed` / `RequiresApproval` / `Denied` je Start-
+Versuch trifft eine geordnete Liste von `PolicyRule`-Einträgen: die
+erste Regel, deren `tenantId`/`toolName`/`callerId` passt (`null` =
+Wildcard), bestimmt den Effekt; matcht keine, greift der Default
+`Deny("policy:no-rule")` — fail-closed.
+
+Die Regelliste wird über `--policy-file <pfad>` befüllt: eine JSON-/
+YAML-Datei mit einem `rules`-Array, **einmal beim Start** geladen
+(kein Hot-Reload — eine Änderung verlangt einen Neustart, damit sich
+das Sicherheitsverhalten nicht unbemerkt mitten im Betrieb ändert):
+
+```yaml
+rules:
+  - tenantId: acme            # optional, weggelassen = alle Tenants
+    toolName: schema_reverse_start
+    effect: allow
+  - toolName: data_import_start
+    effect: challenge
+    requiredScopes: [dmigrate:writer]
+    reasons: ["writes require approval"]
+  - effect: deny
+    reasonCode: policy:blocked-by-operator
+```
+
+Ein Eintrag mit `effect: challenge` erzeugt `PolicyDecision
+.RequiresApproval` (siehe „Approval-Flow" oben) mit den angegebenen
+`requiredScopes`/`reasons`; `effect: deny` erzeugt `PolicyDecision
+.Denied(reasonCode)`. Eine ungültige Datei (kaputtes YAML/JSON,
+unbekannter `effect`-Wert, fehlendes `reasonCode`/`requiredScopes`)
+lässt den Server nicht starten, statt still auf den fail-closed-Default
+zurückzufallen.
 
 ### Quotas + Rate-Limiting
 

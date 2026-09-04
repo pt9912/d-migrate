@@ -2508,6 +2508,7 @@ Fortschritt/Warnungen nach stderr.
 | `--connection-config` | Server-YAML für secret-freie Verbindungsreferenzen (Standard: Root-`--config`) |
 | `--cursor-keyring-file` | YAML-Keyring für HMAC-versiegelte Cursor (Mehrinstanz-Betrieb) |
 | `--approval-grants-file` | JSON/YAML-Store für Freigaben (mit `mcp approval-grant issue`) |
+| `--policy-file` | JSON/YAML mit `Allow`/`Challenge`/`Deny`-Regeln pro Tool/Tenant/Aufrufer; einmal beim Start geladen. Ohne Angabe bleibt die Regelliste leer (fail-closed, siehe [§6.7](administrationshandbuch.md#67-policy-gesteuerte-datenoperationen)) |
 | `--operation-timeout-seconds` | Timeout (s) für Upload-Finalisierung und Stale-Sweeper |
 
 #### A.14 `mcp approval-grant issue`

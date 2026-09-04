@@ -46,6 +46,7 @@ internal data class McpServeOptions(
     val mcpStateOrphanRetention: String? = null,
     val cursorKeyringFile: Path? = null,
     val approvalGrantsFile: Path? = null,
+    val policyFile: Path? = null,
     val operationTimeoutSeconds: Long = McpServerConfig.DEFAULT_OPERATION_TIMEOUT.toSeconds(),
 )
 
@@ -73,6 +74,7 @@ internal class McpServeRunner(
         wiring = McpServeWiring(
             effectiveConnectionConfigPath = effectiveConnectionConfigPath,
             approvalGrantsFile = options.approvalGrantsFile,
+            policyFile = options.policyFile,
             stderr = stderr,
         ),
         stderr = stderr,

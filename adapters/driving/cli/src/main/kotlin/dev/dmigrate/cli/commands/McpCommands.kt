@@ -168,6 +168,12 @@ class McpServeCommand : CliktCommand(name = "serve") {
         help = "JSON/YAML ApprovalGrant store. Use with 'd-migrate mcp approval-grant issue' to approve pending jobs.",
     ).path()
 
+    private val policyFile by option(
+        "--policy-file",
+        help = "JSON/YAML PolicyRule file (Allow/Challenge/Deny per tool/tenant/caller). Loaded once at " +
+            "startup; without it every *_start job stays at the fail-closed default (Deny).",
+    ).path()
+
     private val operationTimeoutSeconds by option(
         "--operation-timeout-seconds",
         help = "Timeout in seconds for upload finalisation leases and the stale-finalisation sweeper.",
@@ -194,6 +200,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
             mcpStateOrphanRetention = mcpStateOrphanRetention,
             cursorKeyringFile = cursorKeyringFile,
             approvalGrantsFile = approvalGrantsFile,
+            policyFile = policyFile,
             operationTimeoutSeconds = operationTimeoutSeconds,
         )
         val runner = McpServeRunner(

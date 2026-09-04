@@ -369,6 +369,7 @@ bleiben secret-frei (`connectionId` + `sensitivity`, keine URLs/Secrets).
 | `--connection-config` | Server-YAML mit secret-freien Connection-Refs (sonst Root-`--config`) |
 | `--cursor-keyring-file` | HMAC-Cursor-Keyring (Multi-Instanz) |
 | `--approval-grants-file` | Freigabe-Store |
+| `--policy-file` | Allow/Challenge/Deny-Regeln pro Tool/Tenant/Aufrufer (einmal beim Start geladen) |
 | `--mcp-state-dir` / `--mcp-state-orphan-retention` | dateibasierter Zustand + Aufräum-Retention |
 | `--operation-timeout-seconds` | Upload-Finalisierung/Sweeper-Timeout |
 

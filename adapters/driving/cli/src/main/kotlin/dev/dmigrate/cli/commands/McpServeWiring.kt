@@ -9,7 +9,10 @@ import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
 import dev.dmigrate.mcp.registry.McpCoreJobWorkerFactory
 import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.registry.OperationalMcpWiring
+import dev.dmigrate.mcp.registry.loadPolicyRules
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.application.policy.ConfiguredPolicyService
+import dev.dmigrate.server.application.policy.PolicyRule
 import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
 import dev.dmigrate.server.application.artifact.ArtifactRetentionService
 import dev.dmigrate.server.application.quota.DefaultQuotaService
@@ -157,6 +160,7 @@ internal class DefaultServerStateFactory(
 internal class McpServeWiring(
     private val effectiveConnectionConfigPath: Path?,
     private val approvalGrantsFile: Path?,
+    private val policyFile: Path?,
     private val stderr: (String) -> Unit,
     private val serverStateFactory: ServerStateFactory = DefaultServerStateFactory(stderr),
 ) {
@@ -173,6 +177,7 @@ internal class McpServeWiring(
         cursorKeyring: CursorKeyring?,
         artifacts: ArtifactStorageConfig = ArtifactStorageConfig.File,
     ): McpCliServerWiring {
+        val policyRules = loadPolicyRulesOrExit()
         val phaseC = McpCliRuntimeWiring.runtimeWiring(
             stateDir = owner.resolved.path,
             connectionConfigPath = effectiveConnectionConfigPath,
@@ -180,7 +185,7 @@ internal class McpServeWiring(
             operationTimeout = config.operationTimeout,
             artifacts = artifacts,
         )
-        val state = resolveServerStateConfigOrExit() ?: return buildInMemory(config, owner, phaseC)
+        val state = resolveServerStateConfigOrExit() ?: return buildInMemory(config, owner, phaseC, policyRules)
 
         val bundle = serverStateFactory.build(state, phaseC)
         var artifactRetention: AutoCloseable? = null
@@ -200,6 +205,7 @@ internal class McpServeWiring(
                 jobStartTransaction = bundle.jobStartTransaction,
                 workerHandleRegistry = InMemoryWorkerHandleRegistry(),
                 approvalGrantStore = approvalGrantStore(),
+                policyService = ConfiguredPolicyService(rules = policyRules),
                 quotaReservationOwnerStore = bundle.quotaReservationOwnerStore,
                 ownerAwareQuotaService = bundle.ownerAwareQuotaService,
                 executorBundle = executorBundle,
@@ -251,6 +257,7 @@ internal class McpServeWiring(
         config: McpServerConfig,
         owner: StateDirOwner,
         phaseC: McpRuntimeWiring,
+        policyRules: List<PolicyRule>,
     ): McpCliServerWiring {
         val artifactRetention = startArtifactRetentionLoop(phaseC)
         val finalisationTimeout = startFinalisationTimeoutLoop(phaseC)
@@ -264,6 +271,7 @@ internal class McpServeWiring(
             jobStartTransaction = InMemoryJobStartTransaction(phaseC.jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
             approvalGrantStore = approvalGrantStore(),
+            policyService = ConfiguredPolicyService(rules = policyRules),
             fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseC, connectionSecretResolver),
             connectionSecretResolver = connectionSecretResolver,
             dataRunnerTempDirectory = owner.resolved.path,
@@ -281,6 +289,25 @@ internal class McpServeWiring(
 
     fun approvalGrantStore() =
         approvalGrantsFile?.let(::FileBackedApprovalGrantStore) ?: InMemoryApprovalGrantStore()
+
+    /**
+     * AE-A1/AE-A4 (ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md):
+     * loaded once here (not lazily per-lookup like [approvalGrantStore] —
+     * policy rules are operator config, not live-issued grants) so a
+     * broken `--policy-file` fails the server start instead of silently
+     * keeping the fail-closed default. `McpServeExit` lives in the same
+     * package (`McpServeRunner.kt`), so it can be thrown directly here.
+     */
+    private fun loadPolicyRulesOrExit(): List<PolicyRule> {
+        val file = policyFile ?: return emptyList()
+        return try {
+            loadPolicyRules(file)
+        } catch (failure: IllegalStateException) {
+            stderr("MCP server configuration is invalid:")
+            stderr("  - ${failure.message}")
+            throw McpServeExit(2)
+        }
+    }
 
     private fun mcpCoreJobWorkerFactory(
         phaseC: McpRuntimeWiring,

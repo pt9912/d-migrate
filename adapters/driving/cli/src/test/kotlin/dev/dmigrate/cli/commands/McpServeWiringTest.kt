@@ -6,7 +6,13 @@ import dev.dmigrate.server.adapter.storage.s3.ArtifactStorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3ArtifactContentStore
 import dev.dmigrate.server.adapter.storage.s3.S3StorageConfig
 import dev.dmigrate.server.adapter.storage.s3.S3UploadSegmentStore
+import dev.dmigrate.server.application.policy.PolicyAttempt
+import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
+import dev.dmigrate.server.core.policy.PolicyDecision
+import dev.dmigrate.server.core.principal.PrincipalId
+import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -26,11 +32,13 @@ class McpServeWiringTest : FunSpec({
     fun newWiring(
         connectionConfigPath: Path? = null,
         approvalGrantsFile: Path? = null,
+        policyFile: Path? = null,
         stderr: (String) -> Unit = {},
         serverStateFactory: ServerStateFactory = DefaultServerStateFactory(stderr),
     ) = McpServeWiring(
         effectiveConnectionConfigPath = connectionConfigPath,
         approvalGrantsFile = approvalGrantsFile,
+        policyFile = policyFile,
         stderr = stderr,
         serverStateFactory = serverStateFactory,
     )
@@ -143,6 +151,65 @@ class McpServeWiringTest : FunSpec({
                 }
             } finally {
                 owner.cleanupIfOwned()
+                runCatching {
+                    Files.walk(stateDir)
+                        .sorted(Comparator.reverseOrder())
+                        .forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
+        test("invalid --policy-file exits 2 with stderr message (AE-A4)") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-policy-bad-")
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            val policyFile = Files.createTempFile("dmigrate-policy-bad-", ".yaml")
+            Files.writeString(policyFile, "rules:\n  - effect: maybe\n")
+            val messages = mutableListOf<String>()
+            try {
+                val ex = shouldThrow<McpServeExit> {
+                    newWiring(policyFile = policyFile, stderr = { messages += it })
+                        .build(McpServerConfig(), owner, cursorKeyring = null)
+                }
+                ex.code shouldBe 2
+                messages.any { it.contains("effect") } shouldBe true
+            } finally {
+                owner.cleanupIfOwned()
+                Files.deleteIfExists(policyFile)
+                runCatching {
+                    Files.walk(stateDir)
+                        .sorted(Comparator.reverseOrder())
+                        .forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
+        test("--policy-file rules flow into OperationalMcpWiring.policyService") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-policy-ok-")
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            val policyFile = Files.createTempFile("dmigrate-policy-ok-", ".yaml")
+            Files.writeString(
+                policyFile,
+                """
+                rules:
+                  - toolName: schema_reverse_start
+                    effect: allow
+                """.trimIndent(),
+            )
+            try {
+                newWiring(policyFile = policyFile).build(McpServerConfig(), owner, cursorKeyring = null).use { wiring ->
+                    val attempt = PolicyAttempt(
+                        tenantId = TenantId("t1"),
+                        callerId = PrincipalId("c1"),
+                        toolName = "schema_reverse_start",
+                        correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
+                        correlationKey = "key-1",
+                        payloadFingerprint = "fp",
+                    )
+                    wiring.aiWiring.operationalWiring.policyService.decide(attempt) shouldBe PolicyDecision.Allowed
+                }
+            } finally {
+                owner.cleanupIfOwned()
+                Files.deleteIfExists(policyFile)
                 runCatching {
                     Files.walk(stateDir)
                         .sorted(Comparator.reverseOrder())

@@ -368,6 +368,38 @@ Schreibende Tools (`data_import_start`, `data_transfer_start`) sind
 policy-gesteuert und scope-gegated (`dmigrate:data:write`). Read-only-Tools
 (`dmigrate:read`) bleiben davon getrennt — Prinzip der geringsten Rechte.
 
+**Policy-Regeln konfigurieren.** Ohne `--policy-file` ist die Regelliste
+leer: jeder `*_start`-Job landet beim fail-closed-Default (`Deny`,
+`reasonCode=policy:no-rule`) — der Server startet, aber kein Job läuft
+ohne Freigabe durch. `--policy-file <pfad>` lädt beim Serverstart eine
+JSON-/YAML-Datei mit `Allow`/`Challenge`/`Deny`-Regeln pro Tool/Tenant/
+Aufrufer:
+
+```yaml
+rules:
+  - tenantId: acme            # optional, weggelassen = alle Tenants
+    toolName: schema_reverse_start
+    effect: allow
+  - toolName: data_import_start
+    effect: challenge
+    requiredScopes: [dmigrate:writer]
+    reasons: ["writes require approval"]
+  - effect: deny
+    reasonCode: policy:blocked-by-operator
+```
+
+Regeln werden in Dateireihenfolge geprüft, die erste passende gewinnt.
+Eine ungültige Datei (kaputtes YAML, unbekannter `effect`-Wert, fehlendes
+`reasonCode`/`requiredScopes`) lässt den Server gar nicht erst starten
+(Exit 2) — nicht mit einem stillen Fallback auf `Deny`.
+
+**Sicherheitshinweis:** Eine zu freizügige Datei (z. B. `effect: allow`
+ohne Filter) hebt den fail-closed-Default vollständig auf. Das ist eine
+legitime Betriebsart für Sandbox-/Demo-Umgebungen — betreiben Sie sie
+bewusst, nicht versehentlich. Die Datei wird **einmal beim Start**
+geladen, nicht während des Betriebs neu eingelesen; eine Änderung
+verlangt einen Neustart.
+
 ---
 
 ## 7. Asynchrone Jobs und Job-Executor
