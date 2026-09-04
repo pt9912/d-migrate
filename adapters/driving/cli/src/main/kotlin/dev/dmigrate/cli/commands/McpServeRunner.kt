@@ -389,6 +389,7 @@ internal class DefaultMcpServeLauncher(
                 resourceStores = runtime.resourceStores,
                 promptRegistry = runtime.promptRegistry,
                 promptHygieneService = runtime.aiWiring.promptHygieneService,
+                connectionSecretResolver = runtime.connectionSecretResolver,
             )) {
                 is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
                 is McpStartOutcome.Started -> {
@@ -414,6 +415,7 @@ internal class DefaultMcpServeLauncher(
                 resourceStores = runtime.resourceStores,
                 promptRegistry = runtime.promptRegistry,
                 promptHygieneService = runtime.aiWiring.promptHygieneService,
+                connectionSecretResolver = runtime.connectionSecretResolver,
             )) {
                 is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
                 is McpStartOutcome.Started -> {
@@ -436,6 +438,13 @@ internal data class McpCliServerWiring(
     val aiWiring: AiMcpWiring,
     val components: McpRuntimeRegistries.McpServiceComponents,
     private val closeable: AutoCloseable?,
+    /**
+     * ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md Slice B:
+     * threaded to `McpServerBootstrap.startStdio`/`startHttp` so
+     * `connections/list?checkLive=true` resolves real credentials in
+     * production, not the always-`CREDENTIAL_ERROR` stub default.
+     */
+    val connectionSecretResolver: dev.dmigrate.server.ports.ConnectionSecretResolver,
     val resourceStores: ResourceStores = ResourceStores.fromMcpRuntimeWiring(
         runtimeWiring,
         aiWiring.aiArtifactMetadataStore,

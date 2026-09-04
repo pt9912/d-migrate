@@ -1,9 +1,14 @@
 package dev.dmigrate.mcp.protocol
 
 import com.google.gson.GsonBuilder
+import dev.dmigrate.driver.connection.ConnectionConfig
+import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.mcp.auth.ScopeChecker
+import dev.dmigrate.mcp.registry.ConnectionsListHandler
 import dev.dmigrate.mcp.registry.McpContractRegistries
 import dev.dmigrate.mcp.registry.ResourceRegistry
+import dev.dmigrate.mcp.registry.SealedListToolCursor
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
 import dev.dmigrate.mcp.registry.ResponseLimitEnforcer
 import dev.dmigrate.mcp.registry.ToolCallContext
@@ -24,6 +29,8 @@ import dev.dmigrate.server.application.error.AuthRequiredException
 import dev.dmigrate.server.application.error.DefaultErrorMapper
 import dev.dmigrate.server.application.error.ErrorMapper
 import dev.dmigrate.server.core.principal.PrincipalContext
+import dev.dmigrate.server.ports.ConnectionSecretResolver
+import dev.dmigrate.server.ports.ResolvedConnection
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -54,6 +61,23 @@ import java.util.concurrent.atomic.AtomicReference
  * principal, but the scaffolding is here so LF-012 / LN-038 handlers drop
  * in unchanged.
  */
+
+/**
+ * Default [ConnectionSecretResolver] for `connections/list?checkLive=true`
+ * when no real resolver is wired (tests, or a bootstrap caller that
+ * doesn't configure one). Always fails fast with a stable reason code —
+ * [dev.dmigrate.mcp.registry.ConnectionsListHandler] maps that to
+ * `CREDENTIAL_ERROR` per connection, never a silent `REACHABLE`. Shared
+ * between [McpServiceImpl] and `McpServerBootstrap` so the same default
+ * doesn't drift between the two construction sites.
+ */
+internal object NotConfiguredConnectionSecretResolver : ConnectionSecretResolver {
+    override fun resolve(
+        reference: dev.dmigrate.server.core.connection.ConnectionReference,
+        principal: PrincipalContext,
+    ) = ResolvedConnection.Failure("NOT_CONFIGURED", "connection secret resolver not wired")
+}
+
 class McpServiceImpl(
     private val serverVersion: String,
     private val toolRegistry: ToolRegistry = ToolRegistry.builder().build(),
@@ -108,6 +132,19 @@ class McpServiceImpl(
      * wenn [promptRegistry] gesetzt ist.
      */
     private val promptHygieneService: dev.dmigrate.server.application.audit.prompt.PromptHygieneService? = null,
+    /**
+     * ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md Slice B:
+     * resolves a [dev.dmigrate.server.core.connection.ConnectionReference]
+     * to a connectable URL for `connections/list?checkLive=true`.
+     * Defaults to an always-`Failure` stub so `checkLive` degrades to
+     * `CREDENTIAL_ERROR` per connection instead of failing to compile
+     * every existing test/bootstrap call site that doesn't wire a real
+     * resolver; production bootstrap ([McpServeWiring]) always supplies
+     * the real `ProviderBackedConnectionSecretResolver`.
+     */
+    private val connectionSecretResolver: ConnectionSecretResolver = NotConfiguredConnectionSecretResolver,
+    /** AE-B10: injectable so `checkLive` is unit-testable without a real database. */
+    private val connectionPoolFactory: (ConnectionConfig) -> ConnectionPool = HikariConnectionPoolFactory::create,
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
@@ -118,6 +155,12 @@ class McpServiceImpl(
     private val sealedListCursor = cursorCodec?.let {
         dev.dmigrate.mcp.resources.SealedResourcesListCursor(it)
     }
+    private val connectionsListHandler = ConnectionsListHandler(
+        connectionStore = resourceStores.connectionStore,
+        connectionSecretResolver = connectionSecretResolver,
+        poolFactory = connectionPoolFactory,
+    )
+    private val sealedConnectionsListCursor = cursorCodec?.let { SealedListToolCursor(it) }
     private val promptsHandler: dev.dmigrate.mcp.prompts.PromptsHandler? =
         if (promptRegistry != null && promptHygieneService != null) {
             dev.dmigrate.mcp.prompts.PromptsHandler(promptRegistry, promptHygieneService)
@@ -478,6 +521,83 @@ class McpServiceImpl(
         }
     }
 
+    /**
+     * ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md Slice B.
+     * `dmigrate:admin`-gated; AE-B7 lets an admin address any tenant in
+     * `allowedTenantIds` via `params.tenantId`, not just their own.
+     */
+    override fun connectionsList(params: ConnectionsListParams?): CompletableFuture<ConnectionsListResult> {
+        enforceScope("connections/list")?.let { return CompletableFuture.failedFuture(it) }
+        val principal = currentPrincipal.get()
+            ?: return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
+                ),
+            )
+        val tenant = try {
+            dev.dmigrate.mcp.registry.ListToolHelpers.resolveTenant(params?.tenantId, principal)
+        } catch (e: dev.dmigrate.server.application.error.TenantScopeDeniedException) {
+            return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.InvalidParams.value,
+                        e.message ?: "tenant scope denied",
+                        mapOf("dmigrateCode" to "VALIDATION_ERROR"),
+                    ),
+                ),
+            )
+        }
+        val pageSize = params?.pageSize?.takeIf { it > 0 }
+            ?: dev.dmigrate.mcp.registry.ListToolHelpers.DEFAULT_PAGE_SIZE
+        val checkLive = params?.checkLive ?: false
+        val filters = mapOf(CONNECTIONS_LIST_FILTER_CHECK_LIVE to checkLive.toString())
+
+        val resumeToken = try {
+            params?.cursor?.let { sealed ->
+                sealedConnectionsListCursor?.unseal(
+                    sealed, CONNECTIONS_LIST_CURSOR_TYPE, tenant, CONNECTIONS_LIST_FAMILY, filters, pageSize,
+                ) ?: sealed
+            }
+        } catch (e: dev.dmigrate.server.application.error.ValidationErrorException) {
+            return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.InvalidParams.value,
+                        e.message ?: "invalid cursor",
+                        mapOf("dmigrateCode" to "VALIDATION_ERROR"),
+                    ),
+                ),
+            )
+        }
+
+        val page = connectionsListHandler.list(
+            principal = principal,
+            tenant = tenant,
+            pageSize = pageSize,
+            resumeToken = resumeToken,
+            checkLive = checkLive,
+        )
+        val nextCursor = page.nextResumeToken?.let { token ->
+            sealedConnectionsListCursor?.seal(
+                CONNECTIONS_LIST_CURSOR_TYPE, tenant, CONNECTIONS_LIST_FAMILY, filters, pageSize, token,
+            ) ?: token
+        }
+        return CompletableFuture.completedFuture(
+            ConnectionsListResult(
+                connections = page.connections.map {
+                    ConnectionListEntry(
+                        connectionId = it.connectionId,
+                        displayName = it.displayName,
+                        dialectId = it.dialectId,
+                        sensitivity = it.sensitivity,
+                        status = it.status,
+                    )
+                },
+                nextCursor = nextCursor,
+            ),
+        )
+    }
+
     override fun resourcesTemplatesList(
         params: ResourcesTemplatesListParams?,
     ): CompletableFuture<ResourcesTemplatesListResult> {
@@ -614,30 +734,6 @@ class McpServiceImpl(
             ),
         )
 
-    private fun toWireTemplate(descriptor: ResourceTemplateDescriptor): ResourceTemplate =
-        ResourceTemplate(
-            uriTemplate = descriptor.uriTemplate,
-            name = descriptor.name,
-            mimeType = descriptor.mimeType,
-            description = descriptor.description,
-        )
-
-    private fun toMetadata(descriptor: ToolDescriptor): ToolMetadata = ToolMetadata(
-        name = descriptor.name,
-        title = descriptor.title,
-        description = descriptor.description,
-        inputSchema = descriptor.inputSchema,
-        outputSchema = descriptor.outputSchema,
-        requiredScopes = descriptor.requiredScopes.sorted(),
-    )
-
-    private fun toWireContent(content: ToolContent): ToolsCallContent = ToolsCallContent(
-        type = content.type,
-        text = content.text,
-        data = content.data,
-        mimeType = content.mimeType,
-    )
-
     /**
      * Serializes an envelope to the §12.16 wire shape:
      * `{"code", "message", "details": [{"key", "value"}, ...], "requestId"?}`.
@@ -699,5 +795,41 @@ class McpServiceImpl(
         private val LOG = org.slf4j.LoggerFactory.getLogger(McpServiceImpl::class.java)
         fun generateDispatchRequestId(): String =
             "req-${java.util.UUID.randomUUID().toString().take(8)}"
+
+        // ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md AE-B8:
+        // cursor binding for `connections/list`, sealed via the shared
+        // SealedListToolCursor (same wrapper the `*_list` tools use).
+        private const val CONNECTIONS_LIST_CURSOR_TYPE = "connections_list"
+        private const val CONNECTIONS_LIST_FAMILY = "connections"
+        private const val CONNECTIONS_LIST_FILTER_CHECK_LIVE = "checkLive"
     }
 }
+
+// File-scope (not class members) on purpose: pure wire-mapping functions with
+// no instance state, hoisted out of McpServiceImpl to keep it under Detekt's
+// TooManyFunctions threshold (real split, not a suppression) when
+// `connectionsList` (ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md)
+// was added.
+private fun toWireTemplate(descriptor: ResourceTemplateDescriptor): ResourceTemplate =
+    ResourceTemplate(
+        uriTemplate = descriptor.uriTemplate,
+        name = descriptor.name,
+        mimeType = descriptor.mimeType,
+        description = descriptor.description,
+    )
+
+private fun toMetadata(descriptor: ToolDescriptor): ToolMetadata = ToolMetadata(
+    name = descriptor.name,
+    title = descriptor.title,
+    description = descriptor.description,
+    inputSchema = descriptor.inputSchema,
+    outputSchema = descriptor.outputSchema,
+    requiredScopes = descriptor.requiredScopes.sorted(),
+)
+
+private fun toWireContent(content: ToolContent): ToolsCallContent = ToolsCallContent(
+    type = content.type,
+    text = content.text,
+    data = content.data,
+    mimeType = content.mimeType,
+)

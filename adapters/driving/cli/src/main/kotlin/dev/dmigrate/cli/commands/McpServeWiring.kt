@@ -225,6 +225,7 @@ internal class McpServeWiring(
                 runtimeWiring = phaseCWithJdbc,
                 aiWiring = phaseG,
                 components = components,
+                connectionSecretResolver = connectionSecretResolver,
                 // ownedResources (z. B. S3-Client-Buendel) zuletzt: erst
                 // Loops/DataSource stoppen, dann Adapter-Ressourcen freigeben.
                 closeable = CloseStack(
@@ -284,6 +285,7 @@ internal class McpServeWiring(
             closeable = CloseStack(
                 listOf(artifactRetention, finalisationTimeout) + phaseC.ownedResources,
             ),
+            connectionSecretResolver = connectionSecretResolver,
         )
     }
 

@@ -47,12 +47,20 @@ internal object ListToolHelpers {
      * per request, even for principals with multiple allowed
      * tenants.
      */
-    fun resolveTenant(args: JsonObject?, principal: PrincipalContext): TenantId {
-        val explicit = args?.optStringField(FIELD_TENANT_ID)
-        if (explicit == null || explicit.isBlank()) {
+    fun resolveTenant(args: JsonObject?, principal: PrincipalContext): TenantId =
+        resolveTenant(args?.optStringField(FIELD_TENANT_ID), principal)
+
+    /**
+     * Same resolution as the `JsonObject`-based overload, for callers
+     * with an already-typed `tenantId` field instead of raw
+     * `tools/call` arguments (e.g. `connections/list`, a protocol slot
+     * with its own params type, not a `tools/call` payload).
+     */
+    fun resolveTenant(explicitTenantId: String?, principal: PrincipalContext): TenantId {
+        if (explicitTenantId == null || explicitTenantId.isBlank()) {
             return principal.effectiveTenantId
         }
-        val candidate = TenantId(explicit)
+        val candidate = TenantId(explicitTenantId)
         if (candidate !in principal.allowedTenantIds) {
             throw TenantScopeDeniedException(candidate)
         }

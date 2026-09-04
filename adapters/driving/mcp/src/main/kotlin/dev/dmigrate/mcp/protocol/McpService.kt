@@ -43,6 +43,18 @@ interface McpService {
     fun resourcesRead(params: ReadResourceParams): CompletableFuture<ReadResourceResult>
 
     /**
+     * ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md Slice B:
+     * lists configured connections, optionally with a live
+     * reachability check (`checkLive`). Scope-gated on
+     * `dmigrate:admin` (per `McpServerConfig.DEFAULT_SCOPE_MAPPING`) —
+     * a protocol method like `resources/list`, not a `tools/call` tool
+     * (excluded from `tools/list` via
+     * `McpContractRegistries.PROTOCOL_METHODS`).
+     */
+    @JsonRequest("connections/list")
+    fun connectionsList(params: ConnectionsListParams?): CompletableFuture<ConnectionsListResult>
+
+    /**
      * LF-017 / LF-024 / LN-030 / LN-031: MCP-`prompts/list`. Scope-gated auf
      * `dmigrate:read`. Discovery aller server-seitig registrierten
      * Prompts.

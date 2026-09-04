@@ -114,6 +114,11 @@ object McpServerBootstrap {
         // callers leave this `null`; the route falls back to the
         // built-in `createAuthValidator(config)`.
         authValidatorOverride: dev.dmigrate.mcp.auth.AuthValidator? = null,
+        /** ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md Slice B: resolves credentials for `connections/list?checkLive=true`. */
+        connectionSecretResolver: dev.dmigrate.server.ports.ConnectionSecretResolver =
+            dev.dmigrate.mcp.protocol.NotConfiguredConnectionSecretResolver,
+        connectionPoolFactory: (dev.dmigrate.driver.connection.ConnectionConfig) -> dev.dmigrate.driver.connection.ConnectionPool =
+            dev.dmigrate.driver.connection.HikariConnectionPoolFactory::create,
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry
         val responseLimitEnforcer = components.responseLimitEnforcer
@@ -153,6 +158,8 @@ object McpServerBootstrap {
                             cursorCodec = components.cursorCodec,
                             promptRegistry = promptRegistry,
                             promptHygieneService = promptHygieneService,
+                            connectionSecretResolver = connectionSecretResolver,
+                            connectionPoolFactory = connectionPoolFactory,
                         )
                     },
                     authValidatorOverride = authValidatorOverride,
@@ -190,6 +197,11 @@ object McpServerBootstrap {
         resourceRegistry: ResourceRegistry = McpContractRegistries.resourceRegistry(),
         promptRegistry: PromptRegistry? = null,
         promptHygieneService: PromptHygieneService? = null,
+        /** ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md Slice B: resolves credentials for `connections/list?checkLive=true`. */
+        connectionSecretResolver: dev.dmigrate.server.ports.ConnectionSecretResolver =
+            dev.dmigrate.mcp.protocol.NotConfiguredConnectionSecretResolver,
+        connectionPoolFactory: (dev.dmigrate.driver.connection.ConnectionConfig) -> dev.dmigrate.driver.connection.ConnectionPool =
+            dev.dmigrate.driver.connection.HikariConnectionPoolFactory::create,
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry
         val responseLimitEnforcer = components.responseLimitEnforcer
@@ -221,6 +233,8 @@ object McpServerBootstrap {
             cursorCodec = components.cursorCodec,
             promptRegistry = promptRegistry,
             promptHygieneService = promptHygieneService,
+            connectionSecretResolver = connectionSecretResolver,
+            connectionPoolFactory = connectionPoolFactory,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }
