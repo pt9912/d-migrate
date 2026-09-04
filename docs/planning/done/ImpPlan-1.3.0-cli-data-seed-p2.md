@@ -1,9 +1,9 @@
 # ImpPlan 1.3.0 — `data seed` P2: `--rules`-Regeldatei
 
-> **Status:** Draft, bereit zur Umsetzung (2026-09-04). Setzt auf P1
-> auf ([`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md),
+> **Status:** Geliefert (2026-09-04, siehe Closure unten). Setzt auf P1
+> auf ([`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md),
 > geliefert). Aktiviert laut
-> [`cli-data-seed.md`](cli-data-seed.md) Aktivierungs-Trigger durch
+> [`cli-data-seed.md`](../in-progress/cli-data-seed.md) Aktivierungs-Trigger durch
 > expliziten Eigner-Wunsch vor dem v1.2.0-Release.
 > **Review-Nachzug (2026-09-04):** unabhängiger Codebase-Review vor
 > Implementierungsstart fand einen blockierenden Fehler (AE-6s
@@ -316,10 +316,70 @@ Konventionen im Projekt.
 
 ## Referenzen
 
-- [`cli-data-seed.md`](cli-data-seed.md) — Umbrella-Plan, P2-Skizze.
-- [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md)
+- [`cli-data-seed.md`](../in-progress/cli-data-seed.md) — Umbrella-Plan, P2-Skizze.
+- [`ImpPlan-1.3.0-cli-data-seed-p1.md`](ImpPlan-1.3.0-cli-data-seed-p1.md)
   — P1, Closure-Sektion mit AE-1 bis AE-12.
-- `spec/cli-spec.md` — `data seed`-Flag-Tabelle (`--rules`-Zeile ohne
-  Format).
+- `spec/cli-spec.md` — `data seed`-Flag-Tabelle (mit `--rules`-Format-Beispiel).
 - `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/PolicyRuleFileLoader.kt`
   — Datei-Lade-Vorbild (Extension-Mapper, `error()`-Konvention).
+
+## Closure
+
+**Gelieferte Artefakte** (uncommitted zum Zeitpunkt dieses Abschnitts,
+Commit folgt): `SeedRules.kt` (`ColumnRule`/`SeedRuleEntry`/`SeedRuleSet`/
+`parseSeedTemplate`, `hexagon:core`); `TableRowSeeder.kt`-Integration
+(`applyRule`/`applyValuesRule`/`applyRangeRule`/`applyTemplateRule`,
+AE-3/AE-5/AE-6/AE-7 vollständig); `ColumnValueGenerator.renderTemplate()`
+(AP3); `SeedRulesFileLoader.kt` (`adapters:driving:cli`); `--rules`-Flag
+in `DataSeedCommand.kt`; Exit-7-Mapping in `DataSeedWiring.kt`;
+`DataSeedRequest.rules` + AE-7-Hinweisausgabe in `DataSeedRunner.kt`.
+`docs/user/anwenderhandbuch.md` §3.22 und `spec/cli-spec.md` ergänzt.
+
+**Design-Delta zur Planung.** Der Loader-Vorbild-Verweis (`PolicyRuleFileLoader.kt`,
+Jackson-basiert) trägt für `adapters:driving:cli` nicht: `jackson-databind`
+ist dort nicht auf dem Klassenpfad (nur `adapters:driving:mcp` hat es,
+`implementation`-Scope, nicht transitiv). `SeedRulesFileLoader.kt` nutzt
+stattdessen `snakeyaml-engine` (bereits `cli`-Abhängigkeit für
+`.d-migrate.yaml`, s. `EffectiveConfigLoader.kt`) — spart eine neue
+Runtime-Dependency samt CVE-/Lizenz-Prüfung. JSON ist eine YAML-Teilmenge,
+ein separater JSON-Codepfad war deshalb nicht nötig (Format-Doku spricht
+entsprechend nur noch von YAML). Ausschließlich `error(...)`
+(`IllegalStateException`), Konvention wie geplant erhalten.
+
+**AE-6 (Sampling ohne Zurücklegen) live verifiziert**, nicht nur per
+Property-artigem Regressionstest: ein `values`-Regel mit
+`values.size == count == 3` auf einer `unique`-Spalte lief gegen echtes
+SQLite fehlerfrei durch (Live-Smoke unten) — exakt der Grenzfall, den die
+Review-Korrektur adressierte.
+
+**Tests.** `SeedRulesTest.kt` (Matching, Wildcard, Spezifisch-durch-
+Wildcard-schattiert, `markUsed`/`unused`, `parseSeedTemplate` inkl. aller
+Fehlerfälle), `TableRowSeederTest.kt`-Ergänzungen (Regel überschreibt
+Default, FK-Spalte ignoriert Regel + `unused()`, `range`-Typ-Mismatch,
+`values`-Typ-Mismatch, `values.size < count` wirft weiterhin,
+**`values.size == count`-Regressionstest über 20 verschiedene Seeds,
+AE-6**), `ColumnValueGeneratorTest.kt`-Ergänzungen (`renderTemplate`
+inkl. `{digits:N}`-Führungsnullen/-Länge, Determinismus),
+`SeedRulesFileLoaderTest.kt` (gültige Datei mit allen drei Strategien,
+jede Validierungsfehler-Klasse inkl. Template-Syntax **zur Lade-Zeit**),
+`DataSeedWiringTest.kt`-Ergänzungen (ungültige `--rules`-Datei → Exit 7
+ohne Factory-Aufruf; gültige Datei wird angewendet),
+`CliDataSeedSmokeTest.kt`-Ergänzungen (`--rules`-Clikt-Pfad). Alle vier
+betroffenen Module (`:hexagon:core`, `:hexagon:application`,
+`:adapters:driving:cli`, plus einmal ohne `MODULES` wegen der geteilten
+`TableRowSeeder`-Konstruktorsignatur) grün inkl. Detekt und
+Kover-Schwelle.
+
+**Live.** Schema mit zwei Tabellen (FK `orders.customer_id` →
+`customers.id`, `unique`-Spalte, `range`-Spalte, `template`-Spalte) über
+`schema migrate --execute` gegen echtes SQLite angelegt, dann
+`data seed --count 3 --seed 42 --rules ...`: `customers.email` erhielt
+exakt die 3 konfigurierten Werte je einmal (Sampling ohne Zurücklegen,
+AE-6-Grenzfall live bestanden), `customers.age` lag für alle Zeilen in
+`[18, 65]`, `orders.handle` rendert `user-{digits:6}` exakt (6 Ziffern
+inkl. Erhalt von Führungsnullen), die auf die FK-Spalte `customer_id`
+gelegte Regel griff **nicht** (Pool-Sampling blieb maßgeblich, echte
+`customers.id`-Werte) und erschien korrekt im "1 Regel(n) nie angewendet"-
+Hinweis. Ein zweiter, unabhängiger Lauf mit demselben `--seed` erzeugte
+einen byte-identischen `data export --format csv`-Dump (Determinismus
+bestätigt, `diff` leer).

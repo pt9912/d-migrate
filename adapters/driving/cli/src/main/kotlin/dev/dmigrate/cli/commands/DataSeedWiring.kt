@@ -30,6 +30,8 @@ internal data class DataSeedOptions(
     val pool: PoolSettings = PoolSettings(),
     /** Aus `pipeline.chunk_size` aufgelöst (Config > Default). */
     val chunkSize: Int = DataSeedRequest.DEFAULT_CHUNK_SIZE,
+    /** `--rules`-Pfad (P2); `null` = P1-Verhalten unverändert. */
+    val rulesFile: Path? = null,
 )
 
 internal data class DataSeedWiringBundle(
@@ -67,6 +69,12 @@ internal object DataSeedWiring {
     }
 
     private fun executeInner(options: DataSeedOptions, factory: DataSeedWiringFactory): Int {
+        val rules = try {
+            options.rulesFile?.let(::loadSeedRules)
+        } catch (e: IllegalStateException) {
+            System.err.println("Error: ${e.message}")
+            return EXIT_CONFIG_ERROR
+        }
         val bundle = factory.build()
         val request = DataSeedRequest(
             schema = options.schema,
@@ -76,6 +84,7 @@ internal object DataSeedWiring {
             locale = options.locale,
             cliConfigPath = options.configPath,
             chunkSize = options.chunkSize,
+            rules = rules,
         )
         val runner = DataSeedRunner(
             schemaCodec = bundle.schemaCodec,
@@ -92,4 +101,6 @@ internal object DataSeedWiring {
         )
         return runner.execute(request)
     }
+
+    private const val EXIT_CONFIG_ERROR = 7
 }

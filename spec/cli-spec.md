@@ -1466,7 +1466,33 @@ d-migrate data seed --schema <path> --target <url>
 | `--rules` | Nein | Pfad | Regeldatei für Generierung |
 | `--ai-backend` | Nein | String | KI-Provider für kontextrelevante Daten |
 
-Exit: `0` bei Erfolg.
+`--rules` überschreibt den Default-Generator für einzelne Tabelle.Spalte-
+Kombinationen, YAML, drei Strategien (`values`, `range`, `template`):
+
+```yaml
+rules:
+  - table: users            # optional, weggelassen = alle Tabellen
+    column: email
+    values: ["a@example.com", "b@example.com"]
+    weights: [0.7, 0.3]     # optional, Default Gleichverteilung
+  - column: age
+    range:
+      min: 18
+      max: 65
+  - column: handle
+    template: "user-{digits:6}"   # {word}, {digits:N}, {uuid}
+```
+
+Genau eine Strategie je Regel. Erste in Dateireihenfolge passende Regel
+gewinnt — tabellenspezifische Regeln (`table` gesetzt) müssen deshalb vor
+Wildcard-Regeln (`table` weggelassen) für denselben Spaltennamen stehen,
+sonst schattiert die Wildcard-Regel die spezifische vollständig. Regeln
+auf einer Fremdschlüsselspalte greifen nicht (referenzielle Integrität hat
+Vorrang) und werden nach dem Lauf als "nie angewendet" gemeldet.
+
+Exit: `0` bei Erfolg, `3` bei Preflight-Fehlern (u. a. eine Regel, die
+nicht zum Spaltentyp passt), `5` bei Eindeutigkeitsverletzungen, `7` bei
+Konfigurationsfehlern (u. a. eine ungültige `--rules`-Datei).
 
 #### `data profile`
 

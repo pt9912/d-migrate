@@ -17,9 +17,9 @@ import dev.dmigrate.cli.config.resolveEffectivePoolSettings
 /**
  * `d-migrate data seed` — generiert deterministische Testdaten aus einem
  * Schema und importiert sie in eine Zieldatenbank (P1,
- * ImpPlan-1.3.0-cli-data-seed-p1.md). Kein `--rules`, kein
- * `--ai-backend` in dieser Phase (No-Carveouts — beide Flags kommen erst,
- * wenn ihre Phase gebaut ist).
+ * ImpPlan-1.3.0-cli-data-seed-p1.md; `--rules` kam mit P2,
+ * ImpPlan-1.3.0-cli-data-seed-p2.md). Kein `--ai-backend` in dieser Phase
+ * (No-Carveouts — das Flag kommt erst, wenn P3 gebaut ist).
  *
  * Dünne Clikt-Schale: sammelt die CLI-Argumente in [DataSeedOptions] und
  * delegiert an [DataSeedWiring], die die gesamte Geschäftslogik hält.
@@ -53,6 +53,11 @@ class DataSeedCommand : CliktCommand(name = "seed") {
         help = "Locale for generated data: en, de (default: en)",
     ).default("en")
 
+    val rules by option(
+        "--rules",
+        help = "Path to a rules file overriding the default generator for matched columns (P2)",
+    ).path(mustExist = true)
+
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         // pool:-/chunk_size-Wiring — `database.pool:`/`pipeline.chunk_size` auflösen (Config > Default).
@@ -73,6 +78,7 @@ class DataSeedCommand : CliktCommand(name = "seed") {
                 configPath = root?.config,
                 pool = pool,
                 chunkSize = chunkSize,
+                rulesFile = rules,
             ),
         )
         if (exitCode != 0) throw ProgramResult(exitCode)

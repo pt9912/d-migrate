@@ -6,6 +6,8 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlin.random.Random
 
 /**
@@ -33,6 +35,9 @@ private class TableSeedContext(
     val circularEdges: Set<FkEdge>,
     val valuePools: Map<Pair<String, String>, List<Any?>>,
     val usedValues: MutableMap<String, MutableSet<Any?>>,
+    val rules: SeedRuleSet?,
+    /** AE-6: pro Spalte einmalig (Fisher-Yates) gemischte, dann konsumierte `values`-Warteschlange für `unique`. */
+    val valueQueues: MutableMap<String, ArrayDeque<Any?>> = mutableMapOf(),
 )
 
 /**
@@ -49,7 +54,12 @@ private class TableSeedContext(
  * die Tabellen-Reihenfolge ein, nicht in die Wertegenerierung (Nicht-Scope,
  * siehe ImpPlan).
  */
-class TableRowSeeder(private val random: Random, private val locale: SeedLocale) {
+class TableRowSeeder(
+    private val random: Random,
+    private val locale: SeedLocale,
+    /** `--rules`-Regelmenge (P2); `null` = P1-Verhalten unverändert (AE-1). */
+    private val rules: SeedRuleSet? = null,
+) {
 
     /** Generiert [countPerTable] Zeilen je Basistabelle, in FK-sicherer Reihenfolge. */
     fun seedAll(schema: SchemaDefinition, countPerTable: Int): Map<String, List<Map<String, Any?>>> {
@@ -103,6 +113,7 @@ class TableRowSeeder(private val random: Random, private val locale: SeedLocale)
             circularEdges = circularEdges,
             valuePools = valuePools,
             usedValues = mutableMapOf(),
+            rules = rules,
         )
         val rows = ArrayList<Map<String, Any?>>(count)
         repeat(count) {
@@ -181,6 +192,12 @@ class TableRowSeeder(private val random: Random, private val locale: SeedLocale)
     }
 
     private fun uniqueAwareValue(columnName: String, column: ColumnDefinition, ctx: TableSeedContext): Any? {
+        val entry = ctx.rules?.resolve(ctx.tableName, columnName)
+        if (entry != null) {
+            ctx.rules.markUsed(entry)
+            return applyRule(entry.rule, columnName, column, ctx)
+        }
+
         val mustBeUnique = column.unique || column.type is NeutralType.Identifier
         if (!mustBeUnique) return ctx.generator.generate(column.type)
 
@@ -193,6 +210,112 @@ class TableRowSeeder(private val random: Random, private val locale: SeedLocale)
             "Spalte '${ctx.tableName}.$columnName' ist eindeutig, aber nach $MAX_UNIQUE_ATTEMPTS Versuchen " +
                 "wurde kein neuer Wert gefunden (Wertebereich zu klein für die gewünschte Zeilenzahl).",
         )
+    }
+
+    // ---- --rules-Anwendung (P2, AE-4/AE-5/AE-6) -------------------------------------
+
+    private fun applyRule(rule: ColumnRule, columnName: String, column: ColumnDefinition, ctx: TableSeedContext): Any? =
+        when (rule) {
+            is ColumnRule.Values -> applyValuesRule(rule, columnName, column, ctx)
+            is ColumnRule.Range -> applyRangeRule(rule, columnName, column, ctx)
+            is ColumnRule.Template -> applyTemplateRule(rule, columnName, column, ctx)
+        }
+
+    private fun applyValuesRule(
+        rule: ColumnRule.Values,
+        columnName: String,
+        column: ColumnDefinition,
+        ctx: TableSeedContext,
+    ): Any? {
+        val incompatible = rule.values.firstOrNull { !isValueTypeCompatible(it, column.type) }
+        if (incompatible != null || rule.values.isEmpty()) {
+            throw SeedPreflightException(
+                "Spalte '${ctx.tableName}.$columnName' hat eine --rules values-Regel mit einem Wert, " +
+                    "der nicht zum Spaltentyp ${column.type} passt.",
+            )
+        }
+        val mustBeUnique = column.unique || column.type is NeutralType.Identifier
+        return if (mustBeUnique) sampleValuesWithoutReplacement(rule, columnName, ctx) else sampleValuesWeighted(rule)
+    }
+
+    /**
+     * AE-6 (Review-Fix): `unique`-Spalten ziehen aus der `values`-Liste OHNE
+     * Zurücklegen (einmal pro Spalte Fisher-Yates-gemischt, dann per
+     * Warteschlange konsumiert) statt über den bestehenden
+     * Rejection-Sampling-Loop -- der schlägt bei `values.size` nahe `count`
+     * mathematisch erwartbar häufig fehl (s. ImpPlan AE-6). `weights` wird
+     * hier bewusst ignoriert: eine gewichtete Ziehung ohne Zurücklegen hat
+     * keine über den ganzen Lauf stabile Bedeutung.
+     */
+    private fun sampleValuesWithoutReplacement(rule: ColumnRule.Values, columnName: String, ctx: TableSeedContext): Any? {
+        val queue = ctx.valueQueues.getOrPut(columnName) { ArrayDeque(rule.values.shuffled(random)) }
+        if (queue.isEmpty()) {
+            throw SeedUniquenessExhaustedException(
+                "Spalte '${ctx.tableName}.$columnName' ist eindeutig und nutzt eine --rules values-Liste " +
+                    "(${rule.values.size} Wert(e)), die für die gewünschte Zeilenzahl erschöpft ist.",
+            )
+        }
+        return queue.removeFirst()
+    }
+
+    private fun sampleValuesWeighted(rule: ColumnRule.Values): Any? {
+        val weights = rule.weights ?: return rule.values[random.nextInt(rule.values.size)]
+        val total = weights.sum()
+        var draw = random.nextDouble() * total
+        for (index in rule.values.indices) {
+            draw -= weights[index]
+            if (draw <= 0.0) return rule.values[index]
+        }
+        return rule.values.last()
+    }
+
+    private fun applyRangeRule(rule: ColumnRule.Range, columnName: String, column: ColumnDefinition, ctx: TableSeedContext): Any? =
+        renderRangeValue(rule, column.type) ?: throw SeedPreflightException(
+            "Spalte '${ctx.tableName}.$columnName' hat eine --rules range-Regel, ist aber vom Typ " +
+                "${column.type} (nicht numerisch) -- range passt nur auf numerische Spalten.",
+        )
+
+    private fun renderRangeValue(rule: ColumnRule.Range, type: NeutralType): Any? = when (type) {
+        is NeutralType.Identifier, NeutralType.Integer, NeutralType.SmallInt, NeutralType.BigInteger ->
+            random.nextLong(rule.min.toLong(), rule.max.toLong() + 1)
+        is NeutralType.Float -> boundedRandomDouble(rule.min, rule.max)
+        is NeutralType.Decimal -> BigDecimal.valueOf(boundedRandomDouble(rule.min, rule.max))
+            .setScale(type.scale.coerceAtLeast(0), RoundingMode.HALF_UP)
+        else -> null
+    }
+
+    private fun boundedRandomDouble(min: Double, max: Double): Double =
+        if (min >= max) min else random.nextDouble(min, max)
+
+    private fun applyTemplateRule(
+        rule: ColumnRule.Template,
+        columnName: String,
+        column: ColumnDefinition,
+        ctx: TableSeedContext,
+    ): String {
+        if (!isValueTypeCompatible("", column.type)) {
+            throw SeedPreflightException(
+                "Spalte '${ctx.tableName}.$columnName' hat eine --rules template-Regel, ist aber vom Typ " +
+                    "${column.type} (nicht textuell) -- template erzeugt nur Text.",
+            )
+        }
+        return ctx.generator.renderTemplate(rule.segments)
+    }
+
+    /** AE-5: Typ-Kompatibilität einer `--rules`-`values`/`template`-Ausprägung mit dem Spaltentyp. `null` passt immer. */
+    private fun isValueTypeCompatible(value: Any?, type: NeutralType): Boolean {
+        if (value == null) return true
+        return when (type) {
+            is NeutralType.Identifier, NeutralType.Integer, NeutralType.SmallInt, NeutralType.BigInteger ->
+                value is Long || value is Int
+            is NeutralType.Float -> value is Double || value is Long || value is Int
+            is NeutralType.Decimal -> value is BigDecimal || value is Double || value is Long || value is Int
+            NeutralType.BooleanType -> value is Boolean
+            is NeutralType.Text, is NeutralType.Char, NeutralType.Email, NeutralType.Json, NeutralType.Xml ->
+                value is String
+            NeutralType.Uuid, NeutralType.Date, NeutralType.Time, is NeutralType.DateTime -> value is String
+            else -> true
+        }
     }
 
     companion object {

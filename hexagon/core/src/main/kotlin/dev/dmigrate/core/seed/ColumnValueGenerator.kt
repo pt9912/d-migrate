@@ -73,6 +73,24 @@ class ColumnValueGenerator(private val random: Random, private val locale: SeedL
     private fun randomLong(fromInclusive: Long, untilExclusive: Long): Long =
         random.nextLong(fromInclusive, untilExclusive)
 
+    /**
+     * Rendert eine `--rules`-`template`-Regel (P2, AP3) aus bereits geparsten
+     * [TemplateSegment]en. Nutzt denselben [random]-Zustand wie alle anderen
+     * `generate`-Zweige -- deterministisch bei gleichem Seed. `{digits:N}`
+     * zieht `N` unabhängige Ziffern zeichenweise (Führungsnullen bleiben
+     * erhalten), analog [randomLetters].
+     */
+    fun renderTemplate(segments: List<TemplateSegment>): String = buildString {
+        for (segment in segments) {
+            when (segment) {
+                is TemplateSegment.Literal -> append(segment.text)
+                TemplateSegment.Word -> append(randomWord())
+                is TemplateSegment.Digits -> repeat(segment.count) { append(random.nextInt(0, DIGIT_BOUND)) }
+                TemplateSegment.Uuid -> append(randomUuid())
+            }
+        }
+    }
+
     private fun randomWord(): String = locale.words[random.nextInt(locale.words.size)]
 
     private fun randomText(maxLength: Int?): String {
@@ -197,6 +215,7 @@ class ColumnValueGenerator(private val random: Random, private val locale: SeedL
         private const val MAX_ARRAY_ELEMENTS = 3
         private const val JSON_SEED_BOUND = 1_000
         private const val EMAIL_SUFFIX_BOUND = 1_000
+        private const val DIGIT_BOUND = 10
         private const val SECONDS_PER_DAY = 86_400L
         private val EPOCH_DAY_MIN = LocalDate.of(2000, 1, 1).toEpochDay()
         private val EPOCH_DAY_MAX = LocalDate.of(2035, 1, 1).toEpochDay()

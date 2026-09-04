@@ -13,7 +13,7 @@ import kotlin.random.Random
 
 class TableRowSeederTest : FunSpec({
 
-    fun seederFor(seed: Long) = TableRowSeeder(Random(seed), SeedLocale.EN)
+    fun seederFor(seed: Long, rules: SeedRuleSet? = null) = TableRowSeeder(Random(seed), SeedLocale.EN, rules)
 
     fun schemaOf(vararg tables: Pair<String, TableDefinition>) =
         SchemaDefinition(name = "test", version = "1.0", tables = tables.toMap())
@@ -287,5 +287,156 @@ class TableRowSeederTest : FunSpec({
         }
         seenTables shouldBe listOf("customers", "orders")
         streamed shouldBe expected
+    }
+
+    context("--rules integration (P2, ImpPlan-1.3.0-cli-data-seed-p2.md AP2)") {
+
+        test("without --rules, behaviour is byte-identical to a P1 run (regression)") {
+            val schema = schemaOf(
+                "users" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                        "name" to ColumnDefinition(type = NeutralType.Text(maxLength = 40), required = true),
+                    ),
+                ),
+            )
+            val withoutRulesParam = TableRowSeeder(Random(5), SeedLocale.EN).seedAll(schema, countPerTable = 10)
+            val withNullRules = seederFor(5, rules = null).seedAll(schema, countPerTable = 10)
+            withoutRulesParam shouldBe withNullRules
+        }
+
+        test("a values rule overrides the default generator for the matched column") {
+            val schema = schemaOf(
+                "posts" to TableDefinition(
+                    columns = mapOf(
+                        "status" to ColumnDefinition(type = NeutralType.Text(maxLength = 20), required = true),
+                    ),
+                ),
+            )
+            val rules = SeedRuleSet(
+                listOf(SeedRuleEntry("posts", "status", ColumnRule.Values(listOf("draft", "published")))),
+            )
+            val result = seederFor(1, rules).seedAll(schema, countPerTable = 20)
+            result.getValue("posts").all { it.getValue("status") in setOf("draft", "published") } shouldBe true
+        }
+
+        test("a rule on a FK-referencing column does not apply (AE-3) -- pool sampling stays authoritative") {
+            val schema = schemaOf(
+                "customers" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                    ),
+                ),
+                "orders" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true, unique = true),
+                        "customer_id" to ColumnDefinition(
+                            type = NeutralType.Integer,
+                            required = true,
+                            references = ReferenceDefinition(table = "customers", column = "id"),
+                        ),
+                    ),
+                ),
+            )
+            val rules = SeedRuleSet(listOf(SeedRuleEntry("orders", "customer_id", ColumnRule.Range(1.0, 2.0))))
+            val result = seederFor(1, rules).seedAll(schema, countPerTable = 20)
+            val customerIds = result.getValue("customers").map { it.getValue("id") }.toSet()
+            val orderCustomerIds = result.getValue("orders").map { it.getValue("customer_id") }
+            orderCustomerIds.all { it in customerIds } shouldBe true
+            rules.unused().map { it.column } shouldBe listOf("customer_id")
+        }
+
+        test("a range rule produces values within [min, max] for every row") {
+            val schema = schemaOf(
+                "prices" to TableDefinition(
+                    columns = mapOf(
+                        "amount" to ColumnDefinition(type = NeutralType.Integer, required = true),
+                    ),
+                ),
+            )
+            val rules = SeedRuleSet(listOf(SeedRuleEntry(null, "amount", ColumnRule.Range(10.0, 20.0))))
+            val result = seederFor(1, rules).seedAll(schema, countPerTable = 30)
+            result.getValue("prices").all { (it.getValue("amount") as Long) in 10L..20L } shouldBe true
+        }
+
+        test("a range rule on a non-numeric column throws SeedPreflightException (AE-5)") {
+            val schema = schemaOf(
+                "prices" to TableDefinition(
+                    columns = mapOf(
+                        "amount" to ColumnDefinition(type = NeutralType.Text(maxLength = 10), required = true),
+                    ),
+                ),
+            )
+            val rules = SeedRuleSet(listOf(SeedRuleEntry(null, "amount", ColumnRule.Range(1.0, 2.0))))
+            shouldThrow<SeedPreflightException> {
+                seederFor(1, rules).seedAll(schema, countPerTable = 1)
+            }
+        }
+
+        test("a values entry incompatible with the column type throws SeedPreflightException (AE-5)") {
+            val schema = schemaOf(
+                "counters" to TableDefinition(
+                    columns = mapOf(
+                        "n" to ColumnDefinition(type = NeutralType.Integer, required = true),
+                    ),
+                ),
+            )
+            val rules = SeedRuleSet(listOf(SeedRuleEntry(null, "n", ColumnRule.Values(listOf("not-a-number")))))
+            shouldThrow<SeedPreflightException> {
+                seederFor(1, rules).seedAll(schema, countPerTable = 1)
+            }
+        }
+
+        test("a template rule renders deterministically for the same seed") {
+            val schema = schemaOf(
+                "users" to TableDefinition(
+                    columns = mapOf(
+                        "handle" to ColumnDefinition(type = NeutralType.Text(maxLength = 40), required = true),
+                    ),
+                ),
+            )
+            val rules = { SeedRuleSet(listOf(SeedRuleEntry(null, "handle", ColumnRule.Template("u-{digits:4}")))) }
+            val first = seederFor(9, rules()).seedAll(schema, countPerTable = 5)
+            val second = seederFor(9, rules()).seedAll(schema, countPerTable = 5)
+            first shouldBe second
+            val values = first.getValue("users").map { it.getValue("handle") as String }
+            values.all { it.matches(Regex("u-\\d{4}")) } shouldBe true
+        }
+
+        test("unique column with a values list smaller than count still throws SeedUniquenessExhaustedException") {
+            val schema = schemaOf(
+                "codes" to TableDefinition(
+                    columns = mapOf(
+                        "code" to ColumnDefinition(type = NeutralType.Text(maxLength = 10), required = true, unique = true),
+                    ),
+                ),
+            )
+            val rules = SeedRuleSet(listOf(SeedRuleEntry(null, "code", ColumnRule.Values(listOf("a", "b", "c")))))
+            shouldThrow<SeedUniquenessExhaustedException> {
+                seederFor(1, rules).seedAll(schema, countPerTable = 10)
+            }
+        }
+
+        test(
+            "AE-6 regression: unique column with values.size == count succeeds reliably " +
+                "(no rejection-sampling flake near the boundary)",
+        ) {
+            val valueCount = 100
+            val schema = schemaOf(
+                "codes" to TableDefinition(
+                    columns = mapOf(
+                        "code" to ColumnDefinition(type = NeutralType.Text(maxLength = 10), required = true, unique = true),
+                    ),
+                ),
+            )
+            repeat(20) { seed ->
+                val rules = SeedRuleSet(
+                    listOf(SeedRuleEntry(null, "code", ColumnRule.Values((1..valueCount).map { "code-$it" }))),
+                )
+                val result = seederFor(seed.toLong(), rules).seedAll(schema, countPerTable = valueCount)
+                val values = result.getValue("codes").map { it.getValue("code") }
+                values.toSet() shouldHaveSize valueCount
+            }
+        }
     }
 })

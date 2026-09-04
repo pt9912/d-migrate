@@ -22,6 +22,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Types
 
@@ -68,6 +69,7 @@ class DataSeedWiringTest : FunSpec({
         pool: PoolSettings = PoolSettings(),
         chunkSize: Int = DataSeedRequest.DEFAULT_CHUNK_SIZE,
         count: Int = 5,
+        rulesFile: Path? = null,
     ) = DataSeedOptions(
         schema = Path.of("unused.yaml"),
         target = "sqlite:///tmp/x.db",
@@ -77,6 +79,7 @@ class DataSeedWiringTest : FunSpec({
         configPath = null,
         pool = pool,
         chunkSize = chunkSize,
+        rulesFile = rulesFile,
     )
 
     class RecordingFactory(private val session: TableImportSession) : DataSeedWiringFactory {
@@ -127,5 +130,29 @@ class DataSeedWiringTest : FunSpec({
     test("default factory reuses the shared target resolver and writer lookup") {
         val bundle = DefaultDataSeedWiringFactory.build()
         bundle.targetResolver("sqlite:///tmp/x.db", null) shouldBe "sqlite:///tmp/x.db"
+    }
+
+    test("an invalid --rules file maps to exit 7 without ever calling the factory (AP4)") {
+        val rulesFile = Files.createTempFile("data-seed-wiring-test-", ".yaml")
+        Files.writeString(rulesFile, "notRules: []\n")
+        val factory = RecordingFactory(fakeSession())
+
+        val exit = DataSeedWiring.execute(options(rulesFile = rulesFile), factory)
+
+        exit shouldBe 7
+        factory.poolConfigs shouldBe emptyList()
+    }
+
+    test("a valid --rules file is loaded and applied by the runner (AP4)") {
+        val rulesFile = Files.createTempFile("data-seed-wiring-test-", ".yaml")
+        Files.writeString(rulesFile, "rules:\n  - column: id\n    range:\n      min: 1\n      max: 1\n")
+        val session = fakeSession()
+        val factory = RecordingFactory(session)
+
+        val exit = DataSeedWiring.execute(options(rulesFile = rulesFile, count = 1), factory)
+
+        exit shouldBe 0
+        val written = session.writtenChunks.single().rows.single().single()
+        written shouldBe 1L
     }
 })

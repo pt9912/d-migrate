@@ -4,10 +4,10 @@
 > Kern) geliefert** — siehe
 > [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md)
 > (graduiert nach `done/`, Closure-Sektion dort). **P2 (`--rules`)
-> aktiviert** — siehe
-> [`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md)
-> (Draft, Umsetzung vor dem v1.2.0-Release). P3 (`--ai-backend`) bleibt
-> geplant, nicht aktiv. Scope-Dokument für den in
+> geliefert** — siehe
+> [`ImpPlan-1.3.0-cli-data-seed-p2.md`](../done/ImpPlan-1.3.0-cli-data-seed-p2.md)
+> (graduiert nach `done/`, Closure-Sektion dort). P3 (`--ai-backend`)
+> bleibt geplant, nicht aktiv. Scope-Dokument für den in
 > [`cli-spec.md`](../../../spec/cli-spec.md) §6.2 spezifizierten Befehl
 > (siehe Tracker
 > [`../open/cli-unimplemented-commands.md`](../open/cli-unimplemented-commands.md)).
@@ -100,12 +100,14 @@ und 3 weiterhin offen.
   Closure): `data seed` erzeugt für ein Beispielschema reproduzierbare
   (gleicher `--seed` ⇒ byte-identische Daten), FK-konsistente Datensätze
   im Ziel.
-- **P2 — `--rules`-Regeldatei. AKTIVIERT (2026-09-04)** — siehe
-  [`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md)
+- **P2 — `--rules`-Regeldatei. GELIEFERT (2026-09-04).** Siehe
+  [`ImpPlan-1.3.0-cli-data-seed-p2.md`](../done/ImpPlan-1.3.0-cli-data-seed-p2.md)
   für das entschiedene Format (Designentscheidung 3 dort aufgelöst),
-  Parser + Validierung, Spalten-Overrides. **DoD:** Regeldatei überschreibt
-  den Default-Generator je Spalte; ungültige Regeldatei = definierter
-  Fehler-Exit mit klarer Meldung.
+  Parser + Validierung, Spalten-Overrides. **DoD erfüllt** (live gegen
+  echtes SQLite verifiziert, siehe Closure dort): Regeldatei überschreibt
+  den Default-Generator je Spalte (`values`/`range`/`template`);
+  ungültige Regeldatei = Exit 7 mit klarer Meldung, vor jeder
+  Zeilengenerierung.
 - **P3 — `--ai-backend` (optional, additiv).** Wiederverwendung von
   `AiProviderPort`; Gate-Niveau aus Designentscheidung 2 umgesetzt;
   Fallback auf P1 bei Ausfall (Designentscheidung 4). **DoD:**
@@ -142,12 +144,11 @@ Bausteine, ohne die CLI unnötig an dieses Modell zu koppeln.
 
 ## Aktivierungs-Trigger für P2/P3
 
-P1 ist geliefert (siehe Status-Kopf). **P2 (`--rules`) ist aktiviert**
-(konkreter Eigner-Wunsch vor dem v1.2.0-Release, 2026-09-04) — siehe
-[`ImpPlan-1.3.0-cli-data-seed-p2.md`](ImpPlan-1.3.0-cli-data-seed-p2.md).
-P3 (`--ai-backend`) bleibt geplant, nicht aktiv, bis Milestone „1.3.0
-(Testdaten)" laut [`roadmap.md`](roadmap.md) priorisiert wird oder ein
-konkreter Pilot-/Anwenderbedarf dafür entsteht.
+P1 und P2 sind geliefert (siehe Status-Kopf; P2 auf konkreten
+Eigner-Wunsch vor dem v1.2.0-Release, 2026-09-04, aktiviert und
+umgesetzt). P3 (`--ai-backend`) bleibt geplant, nicht aktiv, bis
+Milestone „1.3.0 (Testdaten)" laut [`roadmap.md`](roadmap.md) priorisiert
+wird oder ein konkreter Pilot-/Anwenderbedarf dafür entsteht.
 
 ## Referenzen
 

@@ -2015,10 +2015,60 @@ gibt den verwendeten Seed aus (`Verwendeter Seed: 42`) — auch ohne
   nicht generiert: nullable Spalten bleiben leer, eine `NOT NULL`-Spalte
   dieses Typs bricht den Lauf mit Exit 3 ab, statt einen falschen Wert
   einzusetzen.
-- **`--rules`** (eigene Generierungsregeln je Spalte) und
-  **`--ai-backend`** (KI-gestützte, kontextrelevante Werte) sind in
-  dieser Phase noch keine Flags von `data seed` — sie kommen mit den
-  Folgephasen des Befehls.
+- **`--ai-backend`** (KI-gestützte, kontextrelevante Werte) ist noch kein
+  Flag von `data seed` — es kommt mit einer Folgephase des Befehls.
+
+**Eigene Generierungsregeln je Spalte (`--rules`):**
+
+Ohne `--rules` generiert `data seed` für jede Spalte einen typtypischen
+Zufallswert. Mit `--rules <pfad>` überschreiben Sie das gezielt für
+einzelne Tabelle.Spalte-Kombinationen — z. B. um realistischere
+E-Mail-Domänen, einen plausiblen Altersbereich oder ein festes
+Namensschema zu erzwingen:
+
+```bash
+d-migrate data seed --schema schema.yaml --target meine-db \
+    --count 100 --seed 42 --rules rules.yaml
+```
+
+```yaml
+# rules.yaml
+rules:
+  - table: users            # optional; weggelassen = gilt für jede Tabelle
+    column: email
+    values: ["a@example.com", "b@example.com"]
+    weights: [0.7, 0.3]     # optional, Default Gleichverteilung
+  - column: age
+    range:
+      min: 18
+      max: 65
+  - column: handle
+    template: "user-{digits:6}"   # {word}, {digits:N}, {uuid}
+```
+
+- Genau eine Strategie je Regel: **`values`** (feste Liste, optional mit
+  `weights`), **`range`** (numerischer Bereich `min`/`max`) oder
+  **`template`** (Text aus `{word}`, `{digits:N}`, `{uuid}` und
+  Literaltext).
+- Die **erste** in der Datei passende Regel gewinnt. Da Spaltennamen
+  (`email`, `status`, `created_at`, …) typischerweise über mehrere
+  Tabellen hinweg wiederverwendet werden, stehen tabellenspezifische
+  Regeln (`table` gesetzt) **vor** Wildcard-Regeln (`table` weggelassen)
+  für denselben Spaltennamen in der Datei — sonst schattiert die
+  Wildcard-Regel die spezifischere Regel vollständig.
+- Eine Regel auf einer **Fremdschlüsselspalte** greift nicht — dort hat
+  referenzielle Integrität Vorrang (Pool-Sampling gegen die Zieltabelle,
+  wie ohne `--rules`).
+- Passt eine Regel nicht zum Spaltentyp (z. B. `range` auf einer
+  Text-Spalte, ein Text-Wert in einer `values`-Liste für eine
+  Integer-Spalte), bricht der Lauf mit Exit 3 ab.
+- Nach dem Lauf listet `data seed` Regeln auf, die auf keine tatsächlich
+  vorhandene Tabelle.Spalte gepasst haben (Tippfehler im Tabellen- oder
+  Spaltennamen, FK-Spalte) — das ist kein Fehler, nur ein Hinweis.
+- Eine ungültige `--rules`-Datei (kaputtes YAML, unbekannte Strategie,
+  fehlende Pflichtfelder, `values`/`weights`-Längen-Mismatch, fehlerhafte
+  `template`-Token-Syntax) bricht **vor** jeder Zeilengenerierung mit
+  Exit 7 ab.
 
 ---
 

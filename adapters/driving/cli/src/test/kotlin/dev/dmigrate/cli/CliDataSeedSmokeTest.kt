@@ -88,4 +88,44 @@ class CliDataSeedSmokeTest : FunSpec({
             Files.deleteIfExists(schemaFile)
         }
     }
+
+    test("data seed with a nonexistent --rules file → Clikt usage error (P2)") {
+        val schemaFile = Files.createTempFile("d-migrate-seed-smoke-", ".yaml")
+        try {
+            shouldThrow<CliktError> {
+                cli().parse(
+                    listOf(
+                        "data", "seed",
+                        "--schema", schemaFile.toString(),
+                        "--target", "sqlite:///tmp/x.db",
+                        "--rules", "/nope/nonexistent-rules.yaml",
+                    ),
+                )
+            }
+        } finally {
+            Files.deleteIfExists(schemaFile)
+        }
+    }
+
+    test("data seed with an invalid --rules file → Exit 7 (P2)") {
+        val schemaFile = Files.createTempFile("d-migrate-seed-smoke-", ".yaml")
+        val rulesFile = Files.createTempFile("d-migrate-seed-smoke-rules-", ".yaml")
+        Files.writeString(rulesFile, "notRules: []\n")
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "seed",
+                        "--schema", schemaFile.toString(),
+                        "--target", "sqlite:///tmp/d-migrate-seed-smoke.db",
+                        "--rules", rulesFile.toString(),
+                    ),
+                )
+            }
+            ex.statusCode shouldBe 7
+        } finally {
+            Files.deleteIfExists(schemaFile)
+            Files.deleteIfExists(rulesFile)
+        }
+    }
 })

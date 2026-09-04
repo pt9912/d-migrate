@@ -4,6 +4,7 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.seed.SeedLocale
+import dev.dmigrate.core.seed.SeedRuleSet
 import dev.dmigrate.core.seed.SeedPreflightException
 import dev.dmigrate.core.seed.SeedUniquenessExhaustedException
 import dev.dmigrate.core.seed.TableRowSeeder
@@ -104,13 +105,17 @@ class DataSeedRunner(
         var totalRows = 0L
         var tableCount = 0
         return try {
-            TableRowSeeder(Random(effectiveSeed), locale).seedEach(schema, request.count) { tableName, tableRows ->
+            TableRowSeeder(Random(effectiveSeed), locale, request.rules).seedEach(
+                schema,
+                request.count,
+            ) { tableName, tableRows ->
                 val exitCode = writeTable(writer, pool, schema, tableName, tableRows, request.chunkSize)
                 if (exitCode != EXIT_SUCCESS) throw SeedWriteAbort(exitCode)
                 totalRows += tableRows.size
                 tableCount++
             }
             stdout("$totalRows Zeile(n) in $tableCount Tabelle(n) erzeugt.")
+            reportUnusedRules(request.rules)
             EXIT_SUCCESS
         } catch (e: SeedPreflightException) {
             stderr("Error: ${e.message}")
@@ -121,6 +126,14 @@ class DataSeedRunner(
         } catch (e: SeedWriteAbort) {
             e.exitCode
         }
+    }
+
+    /** AE-7: Regeln, die nie auf eine tatsächlich vorhandene Tabelle.Spalte gematcht haben, sind ein Hinweis, kein Fehler. */
+    private fun reportUnusedRules(rules: SeedRuleSet?) {
+        val unused = rules?.unused() ?: return
+        if (unused.isEmpty()) return
+        stdout("${unused.size} Regel(n) nie angewendet:")
+        unused.forEach { entry -> stdout("  - ${entry.table ?: "*"}.${entry.column}") }
     }
 
     private fun readSchema(request: DataSeedRequest): SchemaDefinition? = try {

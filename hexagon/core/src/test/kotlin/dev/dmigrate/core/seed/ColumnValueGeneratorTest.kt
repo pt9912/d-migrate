@@ -158,4 +158,29 @@ class ColumnValueGeneratorTest : FunSpec({
         val value = generatorFor(1).generate(NeutralType.Json) as String
         value shouldContain "\"seed\""
     }
+
+    test("renderTemplate concatenates literal text, word, digits:N and uuid segments (AP3)") {
+        val segments = parseSeedTemplate("u-{word}-{digits:5}-{uuid}")
+        val value = generatorFor(1).renderTemplate(segments)
+        value shouldContain "u-"
+        Regex("u-[a-z]+-\\d{5}-[0-9a-f-]{36}").matches(value) shouldBe true
+    }
+
+    test("renderTemplate {digits:N} preserves leading zeros and exact length") {
+        val segments = listOf(TemplateSegment.Digits(6))
+        repeat(20) {
+            val value = generatorFor(it.toLong()).renderTemplate(segments)
+            value.length shouldBe 6
+            value.all { c -> c.isDigit() } shouldBe true
+        }
+    }
+
+    test("renderTemplate {digits:0} yields an empty string") {
+        generatorFor(1).renderTemplate(listOf(TemplateSegment.Digits(0))) shouldBe ""
+    }
+
+    test("renderTemplate is deterministic for the same seed") {
+        val segments = parseSeedTemplate("{word}-{digits:3}")
+        generatorFor(3).renderTemplate(segments) shouldBe generatorFor(3).renderTemplate(segments)
+    }
 })
