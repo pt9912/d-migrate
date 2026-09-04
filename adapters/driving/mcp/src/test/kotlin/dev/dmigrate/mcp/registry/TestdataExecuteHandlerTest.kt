@@ -506,6 +506,7 @@ class TestdataExecuteHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.POLICY_REQUIRED
         val details = err.envelope.details.associate { it.key to it.value }
         details["correlationKind"] shouldBe ApprovalCorrelationKind.APPROVAL_KEY.name
+        details["payloadFingerprint"].isNullOrBlank() shouldBe false
         details["requiredScopes"] shouldBe "ai.execute"
         details["reasons"] shouldBe "policy:manual-review"
     }

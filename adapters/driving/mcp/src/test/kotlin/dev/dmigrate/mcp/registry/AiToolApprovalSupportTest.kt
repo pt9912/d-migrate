@@ -64,6 +64,7 @@ class AiToolApprovalSupportTest : FunSpec({
                 requiredScopes = setOf("artifact:read", "ai:plan"),
                 reasons = listOf("policy:manual-review", "policy:second-reason"),
             ),
+            fingerprint,
         )
 
         result.toolErrorCode shouldBe ToolErrorCode.POLICY_REQUIRED
@@ -81,6 +82,7 @@ class AiToolApprovalSupportTest : FunSpec({
             ApprovalCorrelationKind.APPROVAL_KEY.name,
         )
         result.details shouldContain ToolErrorDetail("correlationKey", "approval-key-1")
+        result.details shouldContain ToolErrorDetail("payloadFingerprint", fingerprint)
         result.details shouldContain ToolErrorDetail("requiredScopes", "ai:plan,artifact:read")
         result.details shouldContain ToolErrorDetail(
             "reasons",
@@ -125,6 +127,8 @@ class AiToolApprovalSupportTest : FunSpec({
         // Aggregierte Form, nicht die ursprünglichen Singular-Einträge.
         replay.details shouldContain ToolErrorDetail("requiredScopes", "ai:plan")
         replay.details shouldContain ToolErrorDetail("reasons", "policy:manual-review")
+        // Review-Fund: payloadFingerprint muss auch beim Replay durchgereicht werden.
+        replay.details shouldContain ToolErrorDetail("payloadFingerprint", fingerprint)
         val replayKeys = replay.details.map { it.key }
         replayKeys shouldNotContain "requiredScope"
         replayKeys shouldNotContain "reason"

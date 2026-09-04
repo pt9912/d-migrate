@@ -14,7 +14,19 @@ import dev.dmigrate.server.core.policy.PolicyDecision
 
 internal object AiToolApprovalSupport {
 
-    fun requiresApproval(decision: PolicyDecision.RequiresApproval): AiToolWorkResult.FailedRetryable =
+    /**
+     * @param payloadFingerprint deterministischer Fingerprint des Tool-Payloads
+     *   (bereits vom Aufrufer berechnet, z. B. via `computePayloadFingerprint`).
+     *   `PolicyDecision.RequiresApproval` traegt selbst keinen Fingerprint — anders
+     *   als der Job-Start-Pfad (`JobStartOrchestrator.markAwaitingAndChallenge`)
+     *   muss der Aufrufer ihn hier explizit durchreichen, sonst fehlt er in der
+     *   POLICY_REQUIRED-Antwort und `mcp approval-grant issue --payload-fingerprint`
+     *   hat keine Quelle (Review-Fund, s. Anwenderhandbuch §3.15).
+     */
+    fun requiresApproval(
+        decision: PolicyDecision.RequiresApproval,
+        payloadFingerprint: String,
+    ): AiToolWorkResult.FailedRetryable =
         AiToolWorkResult.FailedRetryable(
             ToolErrorCode.POLICY_REQUIRED,
             "approval required",
@@ -22,6 +34,7 @@ internal object AiToolApprovalSupport {
                 approvalRequestId = decision.approvalRequestId,
                 correlationKind = decision.correlationKind,
                 correlationKey = decision.correlationKey,
+                payloadFingerprint = payloadFingerprint,
                 requiredScopes = decision.requiredScopes,
                 reasons = decision.reasons,
             ),
@@ -99,6 +112,7 @@ internal object AiToolApprovalSupport {
             approvalRequestId = approvalRequestId,
             correlationKind = correlationKind,
             correlationKey = correlationKey,
+            payloadFingerprint = challenge.payloadFingerprint,
             requiredScopes = challenge.requiredScopes,
             reasons = challenge.reasons,
         )
@@ -115,12 +129,14 @@ internal object AiToolApprovalSupport {
         approvalRequestId: String,
         correlationKind: ApprovalCorrelationKind,
         correlationKey: String,
+        payloadFingerprint: String,
         requiredScopes: Set<String>,
         reasons: List<String>,
     ): List<ToolErrorDetail> = listOf(
         ToolErrorDetail("approvalRequestId", approvalRequestId),
         ToolErrorDetail("correlationKind", correlationKind.name),
         ToolErrorDetail("correlationKey", correlationKey),
+        ToolErrorDetail("payloadFingerprint", payloadFingerprint),
         ToolErrorDetail("requiredScopes", requiredScopes.sorted().joinToString(",")),
         ToolErrorDetail("reasons", reasons.joinToString("|")),
     )

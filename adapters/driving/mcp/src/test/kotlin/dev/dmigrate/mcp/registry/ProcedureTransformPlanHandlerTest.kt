@@ -335,6 +335,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         details["approvalRequestId"].isNullOrBlank() shouldBe false
         details["correlationKind"] shouldBe ApprovalCorrelationKind.APPROVAL_KEY.name
         details["correlationKey"] shouldBe "k"
+        details["payloadFingerprint"].isNullOrBlank() shouldBe false
         // LF-017 / LF-024 / LN-030 / LN-031: aggregierte Felder analog Job-/Upload-Pfade.
         details["requiredScopes"] shouldBe "ai.execute,artifact.read"
         details["reasons"] shouldBe "policy:manual-review|policy:audit-required"

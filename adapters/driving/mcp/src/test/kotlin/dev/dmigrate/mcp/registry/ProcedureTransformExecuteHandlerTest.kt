@@ -476,6 +476,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         details["approvalRequestId"].isNullOrBlank() shouldBe false
         details["correlationKind"] shouldBe ApprovalCorrelationKind.APPROVAL_KEY.name
         details["correlationKey"] shouldBe "k"
+        details["payloadFingerprint"].isNullOrBlank() shouldBe false
         details["requiredScopes"] shouldBe "ai.execute,artifact.read"
         details["reasons"] shouldBe "policy:manual-review|policy:audit-required"
         val keys = err.envelope.details.map { it.key }

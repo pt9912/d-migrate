@@ -311,7 +311,7 @@ internal class TestdataExecuteHandler(
                 "policy decision: ${decision.reasonCode}",
             )
             is PolicyDecision.RequiresApproval ->
-                AiToolApprovalSupport.requiresApproval(decision)
+                AiToolApprovalSupport.requiresApproval(decision, payloadFingerprint)
         }
     }
 

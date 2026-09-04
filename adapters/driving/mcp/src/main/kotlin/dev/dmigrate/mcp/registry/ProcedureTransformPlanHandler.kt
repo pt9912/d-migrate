@@ -367,7 +367,8 @@ internal class ProcedureTransformPlanHandler(
                 ToolErrorCode.POLICY_DENIED,
                 "policy decision: ${decision.reasonCode}",
             )
-            is PolicyDecision.RequiresApproval -> AiToolApprovalSupport.requiresApproval(decision)
+            is PolicyDecision.RequiresApproval ->
+                AiToolApprovalSupport.requiresApproval(decision, payloadFingerprint)
         }
     }
 
