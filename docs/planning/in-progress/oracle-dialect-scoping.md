@@ -70,7 +70,7 @@ trägt bislang **keinen** `ORACLE`-Wert, auch nicht vorbereitend.
 | Auto-Increment | Sequences (klassisch) + `IDENTITY`-Spalten (12c+) | Kern |
 | Schemata | Schema = User, kein separates `dbo`-Konzept | Kern |
 | Text/Unicode | `VARCHAR2`/`NVARCHAR2`, Byte- vs. Zeichen-Semantik | **Entscheidung im Typmapping** |
-| Boolean | kein nativer Typ; Konvention `NUMBER(1)` oder `CHAR(1)` | Kern — Reverse muss falten |
+| Boolean | kein nativer Typ; Konvention `NUMBER(1)` (0/1) oder `CHAR(1)` ('Y'/'N' u. ä.) | **Entscheidung im Typmapping (Slice 1):** `NUMBER(1)` faltet auf `BooleanType`, analog MySQLs `tinyint(1)`. `CHAR(1)` NICHT — kein ebenso enges Signal wie bei `NUMBER(1)`, ein Einzelzeichen trägt oft einen echten Status-/Kategorie-Code |
 | Temporal | `DATE` (**trägt Uhrzeit!**), `TIMESTAMP [WITH [LOCAL] TIME ZONE]` | Kern — `DATE`-Eigenheit dokumentieren |
 | UUID | kein nativer Typ; `RAW(16)` oder `VARCHAR2(36)` | **Entscheidung** |
 | Binary | `BLOB`, `RAW` | Kern |

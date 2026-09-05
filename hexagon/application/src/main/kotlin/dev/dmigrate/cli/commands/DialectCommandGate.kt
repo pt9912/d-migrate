@@ -21,6 +21,7 @@ object DialectCommandGate {
     /** Kommandos, deren Oracle-Pfad noch nicht gebaut ist. */
     enum class GatedCommand(val display: String) {
         SCHEMA_GENERATE("schema generate"),
+        TOOL_EXPORT("export"),
         DATA_EXPORT("data export"),
         DATA_IMPORT("data import"),
         DATA_TRANSFER("data transfer"),

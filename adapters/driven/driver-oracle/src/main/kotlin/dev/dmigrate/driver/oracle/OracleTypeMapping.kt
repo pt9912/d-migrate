@@ -79,6 +79,8 @@ internal object OracleTypeMapping {
     private fun mapNumberPrecision(precision: Int?, scale: Int?): NeutralType = when {
         precision == null -> NeutralType.Decimal(38, 10)
         scale != null && scale > 0 -> NeutralType.Decimal(precision, scale)
+        // NUMBER(1) ist Oracles Boolean-Konvention (0/1).
+        precision == 1 -> NeutralType.BooleanType
         precision <= 4 -> NeutralType.SmallInt
         precision <= 9 -> NeutralType.Integer
         precision <= 18 -> NeutralType.BigInteger

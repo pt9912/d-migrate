@@ -102,6 +102,10 @@ class ToolExportRunner(
             stderr("[ERROR] ${e.message}"); return PreflightResult.Exit(2)
         }
 
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.TOOL_EXPORT, dialect)?.let {
+            stderr("[ERROR] $it"); return PreflightResult.Exit(2)
+        }
+
         val spatialProfile = when (val profileResult = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)) {
             is SpatialProfilePolicy.Result.Resolved -> profileResult.profile
             is SpatialProfilePolicy.Result.UnknownProfile -> {
