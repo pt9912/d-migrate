@@ -910,6 +910,18 @@ KI-nahe Endpunkte nur bei echtem Bedarf. (Aus `rest-service.md` ausgegliedert, A
 
 **Ergebnis**: Automatische Generierung realistischer Testdaten.
 
+**Status 2026-09-05**: Core/CLI-Zeilen mit **v1.2.0** ausgeliefert —
+`d-migrate data seed` (deterministischer Generator-Kern, seed-basiert
+reproduzierbar, `--locale` fuer mehrsprachige Testdaten) plus
+regelbasierte Steuerung per `--rules` (`values`/`range`/`template`,
+[`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md),
+[`ImpPlan-1.3.0-cli-data-seed-p2.md`](../done/ImpPlan-1.3.0-cli-data-seed-p2.md)).
+Offen bleibt nur die **KI-gestuetzte Generierung** (Zeile „AI" oben) —
+`testdata_plan`/`testdata_execute` (MCP) liefern bislang nur einen
+NOOP-Platzhalter statt echten Modell-Output, siehe
+[`../next/ollama-lm-studio-provider-adapter.md`](../next/ollama-lm-studio-provider-adapter.md).
+Milestone bleibt deshalb ohne ✅, bis diese Zeile auch geliefert ist.
+
 ### Milestone 1.4.0 — Erweiterte Features
 
 | Bereich   | Aufgabe                                                  | LF-Ref                                                                                                             |
@@ -1103,8 +1115,20 @@ DB-Kombinationen, Cutover-Readiness, Betriebs-/Failure-Recovery-Doku.
 
 ---
 
-**Version**: 3.66
-**Stand**: 2026-09-04 (**1.1.0 veröffentlicht** (`v1.1.0`) — **Milestone
+**Version**: 3.67
+**Stand**: 2026-09-05 (**1.2.0 veröffentlicht** (`v1.2.0`) — kein einzelner
+Milestone, sondern gebündelte Fortsetzungsarbeit: die Core/CLI-Zeilen aus
+**Milestone 1.3.0 — Testdaten-Generierung** (`d-migrate data seed`,
+seed-basiert reproduzierbar, `--rules`-Regeldatei; die KI-Zeile bleibt
+offen, siehe [`../next/ollama-lm-studio-provider-adapter.md`](../next/ollama-lm-studio-provider-adapter.md))
+sowie vier operative Härtungen des bereits **Milestone 0.9.6 — MCP-Server**
+zugehörigen Server-Adapters: `mcp serve --policy-file` (Policy-Regeln für
+`*_start`-Jobs konfigurierbar statt immer fail-closed), `connections/list`
+mit optionalem Live-Status, JDBC-Persistenz auch für reverse-engineerte
+Schemas/Artefakte unter `--server-state`, und ein Fix für eine Datei-
+Rechte-Regression, die `approval-grants.yaml` nach jeder erteilten
+Freigabe für den Server unlesbar machte. Zuvor **1.1.0 veröffentlicht**
+(`v1.1.0`) — **Milestone
 1.7.0 — MS SQL Server — ist damit ausgeliefert**: Reverse, Generate, Migrate,
 Datenpfad und Profiling sprechen T-SQL, live gegen echtes SQL Server belegt;
 das `DialectCommandGate`, das unfertige Pfade abwies, ist ohne Gegenstand und

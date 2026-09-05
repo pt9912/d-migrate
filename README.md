@@ -42,9 +42,17 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **1.1.0**
-(stable, [released 2026-09-04](https://github.com/pt9912/d-migrate/releases/tag/v1.1.0)).
+d-migrate is a working production tool at version **1.2.0**
+(stable, [released 2026-09-05](https://github.com/pt9912/d-migrate/releases/tag/v1.2.0)).
 
+> **New in 1.2.0:** `data seed` generates deterministic, FK-safe test data
+> straight from the neutral schema (an optional `--rules` file steers values
+> per column); `mcp serve` gains a configurable `--policy-file` for `*_start`
+> job policy and a `connections/list` method with an optional live-status
+> check; `--server-state` now persists reverse-engineered schemas and
+> generated artifacts too, not just jobs/quota. See
+> [`CHANGELOG.md`](CHANGELOG.md) for the full list.
+>
 > **New in 1.1.0:** MS SQL Server as the fourth dialect (reverse, generate,
 > migrate, data path, profiling), `schema migrate` can now run statements a
 > database refuses inside an open transaction (SQL Server full-text indexes),
@@ -167,13 +175,16 @@ See [Quick start](#quick-start) below for more concrete recipes.
 
 The full release history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Current stable** · **1.1.0** (2026-09-04) — what `:latest`,
-  Homebrew and an unpinned `docker pull` give you. MS SQL Server is now the
-  fourth dialect (reverse, generate, migrate, data path, profiling); the
-  container image runs as **non-root** (`uid 10001`), so writing into a bind
-  mount needs `--user "$(id -u):$(id -g)"`. Native binaries ship for
-  `linux-x64` and `windows-x64`; on macOS use Homebrew, the JVM artefacts or
-  the container image.
+- **Current stable** · **1.2.0** (2026-09-05) — what `:latest`,
+  Homebrew and an unpinned `docker pull` give you. `data seed` generates
+  deterministic test data, `mcp serve` gains a configurable `--policy-file`
+  and a `connections/list` method, and `--server-state` now persists
+  reverse-engineered schemas and artefacts too. MS SQL Server is the fourth
+  dialect (reverse, generate, migrate, data path, profiling); the container
+  image runs as **non-root** (`uid 10001`), so writing into a bind mount
+  needs `--user "$(id -u):$(id -g)"`. Native binaries ship for `linux-x64`
+  and `windows-x64`; on macOS use Homebrew, the JVM artefacts or the
+  container image.
 
 For per-milestone task tables and ADR pointers see the canonical
 roadmap at

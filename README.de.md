@@ -46,8 +46,16 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**1.1.0** (stabil, [veröffentlicht 2026-09-04](https://github.com/pt9912/d-migrate/releases/tag/v1.1.0)).
+**1.2.0** (stabil, [veröffentlicht 2026-09-05](https://github.com/pt9912/d-migrate/releases/tag/v1.2.0)).
 
+> **Neu in 1.2.0:** `data seed` erzeugt deterministische, FK-sichere Testdaten
+> direkt aus dem Neutralschema (optional per `--rules`-Datei steuerbar);
+> `mcp serve` bekommt ein konfigurierbares `--policy-file` für die Policy von
+> `*_start`-Jobs sowie `connections/list` mit optionalem Live-Status;
+> `--server-state` persistiert jetzt auch reverse-engineerte Schemas und
+> generierte Artefakte, nicht nur Jobs/Quota. Vollständige Liste im
+> [`CHANGELOG.md`](CHANGELOG.md).
+>
 > **Neu in 1.1.0:** MS SQL Server ist der vierte Dialekt (Reverse, Generate,
 > Migrate, Datenpfad, Profiling), `schema migrate` kann jetzt Anweisungen
 > ausführen, die eine offene Transaktion nicht vertragen (Volltext-Indizes bei
@@ -181,13 +189,16 @@ Rezepte.
 Die vollständige Release-History steht in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-- **Aktuelles Stable** · **1.1.0** (2026-09-04) — das, was `:latest`,
-  Homebrew und ein `docker pull` ohne Tag liefern. MS SQL Server ist jetzt der
-  vierte Dialekt (Reverse, Generate, Migrate, Datenpfad, Profiling); das
-  Container-Image läuft als **non-root** (`uid 10001`); Schreiben in einen
-  Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`. Native Binaries gibt
-  es für `linux-x64` und `windows-x64`; unter macOS führen Homebrew, die
-  JVM-Artefakte oder das Container-Image zum Ziel.
+- **Aktuelles Stable** · **1.2.0** (2026-09-05) — das, was `:latest`,
+  Homebrew und ein `docker pull` ohne Tag liefern. `data seed` erzeugt
+  deterministische Testdaten, `mcp serve` bekommt ein konfigurierbares
+  `--policy-file` und eine `connections/list`-Methode, und `--server-state`
+  persistiert jetzt auch reverse-engineerte Schemas und Artefakte. MS SQL
+  Server ist der vierte Dialekt (Reverse, Generate, Migrate, Datenpfad,
+  Profiling); das Container-Image läuft als **non-root** (`uid 10001`);
+  Schreiben in einen Bind-Mount braucht daher `--user "$(id -u):$(id -g)"`.
+  Native Binaries gibt es für `linux-x64` und `windows-x64`; unter macOS
+  führen Homebrew, die JVM-Artefakte oder das Container-Image zum Ziel.
 
 Für Per-Milestone-Tasktabellen und ADR-Verweise siehe die
 kanonische Roadmap unter
