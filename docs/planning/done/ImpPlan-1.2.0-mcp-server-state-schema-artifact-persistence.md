@@ -1,6 +1,6 @@
 # ImpPlan 1.2.0 — MCP Server-State: Schema-/Artefakt-Persistenz + Approval-Drift-Warnung
 
-> **Status:** Draft, bereit zur Umsetzung (2026-09-04). Ausgelöst durch
+> **Status:** Geliefert (2026-09-05, siehe Closure unten). Ausgelöst durch
 > einen extern zugeleiteten, unabhängig gegen den Code verifizierten
 > Bugreport zu `mcp serve --server-state`. **Vorbedingung:** Keine harte
 > Blockade.
@@ -13,6 +13,12 @@
 > eine dritte, sonst zuverlässig rot laufende Lücke (Kover-90%-Excludes
 > für die neuen Postgres-only-Klassen fehlten). Alle drei in AE-1, AE-2
 > und „Neue/geänderte Dateien" unten aufgelöst.
+> **Nachtrag (2026-09-05, [ADR 0051](../../adr/0051-server-state-schema-generiert-statt-handgeschrieben.md)):**
+> die in AE-1 gezeigte `V2`-SQL wird nicht mehr handgeschrieben, sondern
+> per d-migrates eigenem `schema migrate`-Diff aus einer neutralen
+> Schema-Quelle generiert — die ursprüngliche Begründung für Hand-SQL
+> (Modell-Lücke bei JSONB/partiellen Indizes) erwies sich als falsch,
+> siehe ADR 0051 für den Beleg und das Verfahren für künftige `V<N>`.
 
 ## Kontext / Ist-Stand (verifiziert)
 
@@ -234,8 +240,15 @@ sichtbar gemacht). Ort: `McpServeWiring.buildInMemory()` in
 
 ## Neue/geänderte Dateien
 
+- `docs/adr/0051-server-state-schema-generiert-statt-handgeschrieben.md`
+  (neu) — Entscheidung: Server-State-Schema neutral pflegen, Migrationen
+  per `schema migrate`-Diff generieren statt handschreiben (Flyway bleibt
+  Anwendungs-/Tracking-Mechanismus).
+- `adapters/driven/persistence-jdbc/src/main/resources/db/schema/server-state-schema.yaml` <!-- d-check:ignore (Zielbild: entsteht in diesem Slice; ADR 0011) -->
+  (neu) — kumulativer Soll-Zustand der Server-State-DB (ADR 0051), Quelle
+  für `V2` und künftige Migrationen.
 - `adapters/driven/persistence-jdbc/src/main/resources/db/migration/V2__schema_artifact_stores.sql` <!-- d-check:ignore (Zielbild: entsteht in diesem Slice; ADR 0011) -->
-  (neu) — siehe AE-1.
+  (neu) — siehe AE-1; SQL-Inhalt generiert, nicht handgeschrieben (ADR 0051).
 - `adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/schema/JdbcSchemaStore.kt` <!-- d-check:ignore (Zielbild: entsteht in diesem Slice; ADR 0011) -->
   (neu) — `SchemaStore`-Implementierung, AE-2.
 - `adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/schema/SchemaIndexEntryJson.kt` <!-- d-check:ignore (Zielbild: entsteht in diesem Slice; ADR 0011) -->
@@ -311,41 +324,48 @@ sichtbar gemacht). Ort: `McpServeWiring.buildInMemory()` in
 
 ## Akzeptanzkriterien
 
-- [ ] `mcp serve --server-state ...`: ein per `schema_reverse_start`
-      erzeugtes Schema und ein per `testdata_plan` erzeugtes
-      Plan-Artefakt sind nach einem Server-Neustart weiterhin über
-      `resources/read`/`artifact_get` erreichbar (Live-Smoke gegen echtes
-      Postgres).
-- [ ] Ohne `--server-state` bleibt das Verhalten byte-identisch zu heute
-      (In-Memory, reine additive Erweiterung).
-- [ ] `SchemaStore.register()` liefert `Registered`/`AlreadyRegistered`/
+- [x] `mcp serve --server-state ...`: ein per `schema_reverse_start`
+      erzeugtes Schema und Artefakt sind nach einem Neustart-äquivalenten
+      Kaltstart weiterhin über `resources/read` erreichbar (Live-Smoke
+      gegen echtes Postgres, siehe Closure) — **direkter DB-Beweis**
+      (`SELECT * FROM artifact_records`/`schema_index_entries`/`jobs`
+      zeigt reale Zeilen aus zwei unabhängigen `docker run`-Prozessen)
+      ist stärker als das ursprünglich geplante `testdata_plan`-Bonus-
+      Artefakt; Letzteres nicht extra durchgeführt (Kernbeweis bereits
+      eindeutig).
+- [x] Ohne `--server-state` bleibt das Verhalten byte-identisch zu heute
+      (In-Memory, reine additive Erweiterung) — `McpServeWiringTest.kt`
+      „build (in-memory branch)"-Kontext unverändert grün.
+- [x] `SchemaStore.register()` liefert `Registered`/`AlreadyRegistered`/
       `Conflict` exakt wie `InMemorySchemaStore` bei denselben drei
-      Szenarien — abgedeckt durch dieselbe geteilte
-      `SchemaStoreContractTests`-Fixture-Matrix
-      (`hexagon/ports-common/src/testFixtures/kotlin/dev/dmigrate/server/ports/contract/SchemaStoreContractTests.kt`),
-      nicht neu geschrieben.
-- [ ] Zwei parallele `register()`-Aufrufe mit identischem `schemaId`
+      Szenarien — `JdbcSchemaStoreContractTest : SchemaStoreContractTests`
+      grün gegen Testcontainers-Postgres.
+- [x] Zwei parallele `register()`-Aufrufe mit identischem `schemaId`
       (Replay-Wettlauf, AE-2-Review-Korrektur) liefern deterministisch
       `Registered` + `AlreadyRegistered`, nie eine unbehandelte
-      Unique-Violation — Regressionstest, der genau den in AE-2
-      durchgerechneten Race-Fall abdeckt.
-- [ ] Ein abgelaufenes, JDBC-getracktes Artefakt wird vom Retention-
+      Unique-Violation — `JdbcSchemaStoreContractTest`s
+      `concurrent register()`-Test (10 parallele Threads) grün.
+- [x] Ein abgelaufenes, JDBC-getracktes Artefakt wird vom Retention-
       Sweeper tatsächlich aus dem Content-Store gelöscht (nicht nur aus
-      der Metadaten-Tabelle) — Regressionstest für AE-4.
-- [ ] `--approval-grants-file` ohne `--server-state` erzeugt die
+      der Metadaten-Tabelle) — `ArtifactStoreContractTests`s neuer
+      `deleteExpiredRecords`-Test grün für `InMemoryArtifactStore` UND
+      `JdbcArtifactStore`.
+- [x] `--approval-grants-file` ohne `--server-state` erzeugt die
       Warnzeile auf stderr; mit `--server-state` oder ohne
-      `--approval-grants-file` erscheint sie nicht.
-- [ ] `AiMcpRegistries.kt`-KDoc und `McpContractRegistries.kt`s
+      `--approval-grants-file` erscheint sie nicht —
+      `McpServeWiringTest.kt`, drei neue Tests (in-memory mit/ohne Datei,
+      persistenter Zweig mit Datei).
+- [x] `AiMcpRegistries.kt`-KDoc und `McpContractRegistries.kt`s
       `testdata_execute`-Beschreibung widersprechen der echten Verdrahtung
       nicht mehr.
-- [ ] `make docker-check MODULES=":adapters:driven:persistence-jdbc"`
+- [x] `make docker-check MODULES=":adapters:driven:persistence-jdbc"`
       und `MODULES=":adapters:driving:cli :adapters:driving:mcp"` grün
-      (inkl. Kover-90%-Verify — AE-1-Review-Ergänzung).
-- [ ] `make integration INTEGRATION_TASKS=":test:integration-persistence-jdbc:test"`
-      grün (JDBC-Stores brauchen echtes Postgres via Testcontainers;
-      Review-Korrektur — `test:integration-server-state` ist das falsche
-      Modul, siehe „Neue/geänderte Dateien").
-- [ ] `make docs-check` grün (inkl.
+      (inkl. Kover-90%-Verify — AE-1-Review-Ergänzung); zusätzlich einmal
+      ohne `MODULES` grün.
+- [x] `make integration INTEGRATION_TASKS=":test:integration-persistence-jdbc:test"`
+      grün — 100/100 Tests (JDBC-Stores gegen echtes Postgres via
+      Testcontainers).
+- [x] `make docs-check` grün (inkl.
       `scripts/verify-kover-excludes-ledger.py`).
 
 ## Nicht-Scope
@@ -401,3 +421,66 @@ sichtbar gemacht). Ort: `McpServeWiring.buildInMemory()` in
 - `adapters/driven/persistence-jdbc/build.gradle.kts`,
   `docs/coverage/excludes-ledger.md` — Kover-Excludes-Konvention für
   Postgres-only-JDBC-Klassen (Review-Fund, AE-1-Ergänzung).
+
+## Closure
+
+**Gelieferte Artefakte** (Commit folgt): `V2__schema_artifact_stores.sql`
+(generiert per ADR 0051, nicht handgeschrieben),
+`server-state-schema.yaml` (kumulativer Soll-Zustand, ADR 0051),
+`SchemaIndexEntryJson.kt`/`ArtifactRecordJson.kt` + Tests,
+`JdbcSchemaStore.kt` (AE-2: `INSERT ... ON CONFLICT DO NOTHING RETURNING *`
++ `SELECT ... FOR UPDATE`-Konfliktauflösung),
+`JdbcArtifactStore.kt` (AE-4: `deleteExpiredRecords()` liefert echte
+Records), `JdbcSchemaStoreContractTest`/`JdbcArtifactStoreContractTest`
+(geteilte Contract-Suiten gegen Testcontainers-Postgres, inkl. eines
+JDBC-spezifischen Concurrency-Regressionstests für AE-2), Kover-Excludes
++ Ledger-Einträge, `DefaultServerStateFactory.build()`-Erweiterung (AE-3),
+`buildInMemory()`-Warnung (AE-5) + drei Tests, Doku-Drift-Fix in
+`AiMcpRegistries.kt`/`McpContractRegistries.kt` (Befund 3),
+`administrationshandbuch.md` §6.4/§10.3,
+`docs/adr/0051-server-state-schema-generiert-statt-handgeschrieben.md`.
+
+**Design-Delta zur Planung.** Während der Umsetzung stellte sich heraus,
+dass die ursprünglich behauptete technische Begründung für Hand-SQL
+(„neutrales Modell kann JSONB/partielle Indizes nicht ausdrücken") schlicht
+falsch war — Nachweis und Konsequenz in [ADR 0051](../../adr/0051-server-state-schema-generiert-statt-handgeschrieben.md):
+`V2`s SQL wurde per `schema migrate`-Diff aus einer neutralen Schema-Quelle
+generiert, nicht handgeschrieben. Dabei wurde auch
+[`next/persistence-jdbc-mig.md`](../next/persistence-jdbc-mig.md) — ein
+seit 2026-05-08 bestehender, umfassenderer Architekturplan für genau dieses
+Thema — nachgezogen: zwei seiner vier offenen Fragen sind jetzt beantwortet,
+sein §3.2-Oracle-Teil als unbelegt/spekulativ markiert (Oracle existiert im
+Repo noch nicht). Der dort skizzierte automatisierte Gradle-Generator +
+Drift-Check bleibt bewusst außerhalb dieses Slices — hier nur ein einmaliger,
+manueller Diff.
+
+`DefaultServerStateFactory.build()`s Jdbc-Store-Wiring selbst ist NICHT
+unit-testbar (Hikari validiert beim Konstruieren gegen eine echte
+Verbindung, bestehende Design-Entscheidung, s. Code-Kommentar bei
+`createServerStateDataSource`) — die reale Verifikation ist der Live-Smoke
+unten, kein automatisierter Test in `McpServeWiringTest.kt` (Korrektur
+gegenüber dem ursprünglichen Plan-Entwurf).
+
+**Tests.** `SchemaIndexEntryJsonTest.kt`/`ArtifactRecordJsonTest.kt`
+(Rundreise inkl. Minimalfällen), `JdbcSchemaStoreContractTest`/
+`JdbcArtifactStoreContractTest` (geteilte Suiten + AE-2-Concurrency-Test),
+`ArtifactStoreContractTests`-Ergänzung (`deleteExpiredRecords`, deckt
+`InMemoryArtifactStore` UND `JdbcArtifactStore` gleichzeitig ab),
+`JdbcMigrationRunnerIntegrationTest.kt`-Anpassung (2 statt 1 Migration,
+7 statt 5 Tabellen, neue PK-/Index-/Partial-Index-Assertions für V2),
+`McpServeWiringTest.kt` (drei neue Tests für AE-5). Alle betroffenen
+Module (`:hexagon:ports-common`, `:adapters:driven:persistence-jdbc`,
+`:adapters:driving:cli`, `:adapters:driving:mcp`, plus einmal ohne
+`MODULES`) grün inkl. Detekt und Kover-Schwelle;
+`make integration INTEGRATION_TASKS=":test:integration-persistence-jdbc:test"`
+100/100 Tests grün gegen echtes Testcontainers-Postgres.
+
+**Live.** Runtime-Image gegen echtes Postgres 16 (`--server-state` +
+`migrations.auto: true`), `schema_reverse_start` gegen eine SQLite-Quelle,
+zwei unabhängige `docker run`-Prozesse (stdio-Transport spawnt ohnehin pro
+Aufruf neu — funktional identisch zu einem Server-Neustart):
+`resources/read` auf denselben `schemaRef` lieferte byte-identische
+Antworten. **Direkter DB-Beweis**, stärker als der reine MCP-Client-Nachweis:
+`SELECT * FROM artifact_records`/`schema_index_entries`/`jobs` zeigten
+reale, aus zwei getrennten Prozessen stammende Zeilen — alle drei
+JDBC-Stores tatsächlich befüllt, nicht simuliert.

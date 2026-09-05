@@ -1,0 +1,125 @@
+# Kumulativer Soll-Zustand der d-migrate Server-State-DB (ADR 0051).
+# Quelle fuer neue Flyway-Migrationen: den zuletzt committeten Stand
+# dieser Datei sichern, hier die neue(n) Tabelle(n)/Spalte(n) ergaenzen,
+# dann `schema migrate --source server-state-schema.yaml --target
+# file:<gesicherter-alter-Stand> --dialect postgresql --dry-run` fuer
+# das Delta -- Verfahren im Detail in ADR 0051. Flyway bleibt der
+# Anwendungs-/Tracking-Mechanismus; diese Datei ist nur die SQL-Quelle.
+schema_format: "1.0"
+name: "d-migrate Server-State"
+version: "2.0.0"
+
+tables:
+  idempotency_reservations:
+    columns:
+      tenant_id: { type: text, required: true }
+      caller_id: { type: text, required: true }
+      tool_name: { type: text, required: true }
+      idempotency_key: { type: text, required: true }
+      state: { type: text, required: true }
+      claimed: { type: boolean, required: true, default: false }
+      payload_fingerprint: { type: text, required: true }
+      result_ref: { type: text }
+      challenge: { type: json }
+      reason: { type: text }
+      expires_at: { type: datetime, timezone: true, required: true }
+      retention_until: { type: datetime, timezone: true, required: true }
+      created_at: { type: datetime, timezone: true, required: true }
+      updated_at: { type: datetime, timezone: true, required: true }
+    primary_key: [tenant_id, caller_id, tool_name, idempotency_key]
+    indices:
+      - columns: [retention_until]
+        name: idempotency_expiry
+
+  init_resume_reservations:
+    columns:
+      tenant_id: { type: text, required: true }
+      caller_id: { type: text, required: true }
+      tool_name: { type: text, required: true }
+      client_request_id: { type: text, required: true }
+      session_id: { type: text, required: true }
+      payload_fingerprint: { type: text, required: true }
+      expires_at: { type: datetime, timezone: true, required: true }
+      created_at: { type: datetime, timezone: true, required: true }
+      updated_at: { type: datetime, timezone: true, required: true }
+    primary_key: [tenant_id, caller_id, tool_name, client_request_id]
+    indices:
+      - columns: [expires_at]
+        name: init_resume_expiry
+
+  jobs:
+    columns:
+      tenant_id: { type: text, required: true }
+      job_id: { type: text, required: true }
+      status: { type: text, required: true }
+      managed_job: { type: json, required: true }
+      cancel_requested: { type: boolean, required: true, default: false }
+      cancel_source: { type: text }
+      created_at: { type: datetime, timezone: true, required: true }
+      updated_at: { type: datetime, timezone: true, required: true }
+      expires_at: { type: datetime, timezone: true, required: true }
+    primary_key: [tenant_id, job_id]
+    indices:
+      - columns: [expires_at]
+        name: jobs_expiry
+      - columns: [tenant_id, status]
+        name: jobs_status
+
+  quota_reservation_owners:
+    columns:
+      owner_id: { type: text, required: true }
+      reservation: { type: json, required: true }
+      state: { type: text, required: true }
+      lease_expires_at: { type: datetime, timezone: true, required: true }
+      created_at: { type: datetime, timezone: true, required: true }
+      updated_at: { type: datetime, timezone: true, required: true }
+    primary_key: [owner_id]
+    indices:
+      - columns: [lease_expires_at]
+        name: quota_owners_expiry
+        where: "state = 'PENDING'"
+
+  quota_counters:
+    columns:
+      quota_key: { type: text, required: true }
+      used: { type: biginteger, required: true }
+      updated_at: { type: datetime, timezone: true, required: true }
+    primary_key: [quota_key]
+
+  schema_index_entries:
+    columns:
+      tenant_id: { type: text, required: true }
+      schema_id: { type: text, required: true }
+      entry: { type: json, required: true }
+      job_ref: { type: text }
+      created_at: { type: datetime, timezone: true, required: true }
+      expires_at: { type: datetime, timezone: true, required: true }
+    primary_key: [tenant_id, schema_id]
+    indices:
+      - columns: [expires_at]
+        name: schema_index_expiry
+      - columns: [tenant_id, job_ref]
+        name: schema_index_job_ref
+        where: "job_ref IS NOT NULL"
+
+  artifact_records:
+    columns:
+      tenant_id: { type: text, required: true }
+      artifact_id: { type: text, required: true }
+      record: { type: json, required: true }
+      kind: { type: text, required: true }
+      owner_principal_id: { type: text, required: true }
+      job_ref: { type: text }
+      created_at: { type: datetime, timezone: true, required: true }
+      expires_at: { type: datetime, timezone: true, required: true }
+    primary_key: [tenant_id, artifact_id]
+    indices:
+      - columns: [expires_at]
+        name: artifact_records_expiry
+      - columns: [tenant_id, owner_principal_id]
+        name: artifact_records_owner
+      - columns: [tenant_id, kind]
+        name: artifact_records_kind
+      - columns: [tenant_id, job_ref]
+        name: artifact_records_job_ref
+        where: "job_ref IS NOT NULL"

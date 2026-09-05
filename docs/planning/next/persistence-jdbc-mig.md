@@ -9,6 +9,35 @@
 > - `adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/`
 > - `hexagon/ports-common/src/testFixtures/kotlin/dev/dmigrate/server/ports/contract/`
 > - `spec/port-atomicity.md`
+>
+> **Status-Update 2026-09-05** ([ADR 0051](../../adr/0051-server-state-schema-generiert-statt-handgeschrieben.md)):
+> §3.2s Prämisse „PostgreSQL braucht ein Dialekt-Overlay für
+> JSONB/TIMESTAMPTZ/partielle Indizes" ist für PostgreSQL **widerlegt** —
+> `NeutralType.Json` rendert bereits `JSONB`, `IndexDefinition.where`
+> rendert bereits partielle Indizes, beides ohne jede Overlay-
+> Erweiterung (belegt in ADR 0051). Für PostgreSQL ist daher **kein**
+> Overlay nötig.
+>
+> **§3.2s Oracle-Teil ist spekulativ, nicht durch Arbeit gedeckt**: Es
+> gibt im Repo noch keine Oracle-Unterstützung — keinen Treiber, keinen
+> Dialekt-Code, keine `NeutralType`-Verifikation gegen eine echte
+> Oracle-Instanz. Konkrete Aussagen wie „JSON oder CLOB plus
+> JSON-Constraint" oder „function-based indexes oder alternative
+> Indexstrategie" sind Vermutungen ohne verifizierte Grundlage, keine
+> Analyseergebnisse. Die eigentliche Overlay-Frage für Oracle bleibt
+> offen und ungeprüft — zu beantworten erst, wenn echte Oracle-
+> Treiberarbeit beginnt (Milestone 1.8.0 laut `roadmap.md`), nicht vorher.
+>
+> Ad hoc angewendet (ohne den hier skizzierten Gradle-Generator/Drift-
+> Check): `V2__schema_artifact_stores.sql`
+> (ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md) wählt
+> genau die in §3.3 vorgeschlagene **"Eingefrorene Legacy-V1"**-Variante
+> — V1 bleibt unverändert Hand-SQL/Legacy-Baseline, V2 wurde einmalig
+> per manuellem `schema migrate --source ... --target file:... --dry-run`-
+> Diff generiert und der SQL-Text von Hand in die Migrationsdatei
+> übernommen. Kein Gradle-Task, kein automatisierter Drift-Check, keine
+> Dialekt-Overlay-Struktur — dieser Plan bleibt für all das die
+> maßgebliche Quelle, sollte das automatisiert werden.
 
 ---
 
@@ -283,10 +312,19 @@ Hilfen und ggf. Jdbi-Basisklassen. Die dialektspezifischen Module enthalten:
 
 ## 9. Offene Fragen
 
-- Soll das interne Server-State-Schema dasselbe neutrale Modell wie
-  Anwender-Schemata nutzen oder ein kleineres internes Modell?
-- Wird die bestehende PostgreSQL-V1 byte-identisch generiert oder als
-  eingefrorene Legacy-Baseline behandelt?
+- ~~Soll das interne Server-State-Schema dasselbe neutrale Modell wie
+  Anwender-Schemata nutzen oder ein kleineres internes Modell?~~
+  **Beantwortet (2026-09-05, ADR 0051):** dasselbe Modell. Der komplette
+  V1-Ist-Zustand (fuenf Tabellen, inkl. JSONB-Spalte und partiellem Index)
+  liess sich verlustfrei mit dem regulaeren `SchemaDefinition`/
+  `TableDefinition`/`NeutralType`-Modell nachbilden und per
+  `schema generate`/`schema migrate` (denselben Befehlen wie fuer
+  Anwenderschemata) verarbeiten — kein kleineres internes Modell noetig.
+- ~~Wird die bestehende PostgreSQL-V1 byte-identisch generiert oder als
+  eingefrorene Legacy-Baseline behandelt?~~
+  **Beantwortet (2026-09-05, ADR 0051):** eingefrorene Legacy-Baseline.
+  V1 bleibt unveraendertes Hand-SQL; `V2__schema_artifact_stores.sql`
+  ist die erste per Diff generierte Migration.
 - Welche Oracle-Version ist Mindestziel?
 - Ist Jdbi3 ein eigener Refactoring-Schritt vor Oracle oder Teil der
   Oracle-Einfuehrung?

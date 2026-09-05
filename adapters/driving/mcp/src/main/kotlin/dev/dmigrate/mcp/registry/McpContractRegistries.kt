@@ -158,7 +158,11 @@ object McpContractRegistries {
             "Plan synthetic test data from a schema, optional profiling summary and structured " +
                 "rules. Approval-driven; produces an immutable plan artifact, not actual database writes."
             ),
-        "testdata_execute" to "Execute test data generation (AI) — not part of 0.9.6 scope",
+        "testdata_execute" to (
+            "Execute a previously approved testdata plan and produce the generated synthetic " +
+                "test data as an artifact (single table or SEED_DATA_BUNDLE). Approval-driven; " +
+                "the plan reference is the only source of truth — no database writes."
+            ),
     )
 
     private val DESCRIPTIONS: Map<String, String> = mapOf(

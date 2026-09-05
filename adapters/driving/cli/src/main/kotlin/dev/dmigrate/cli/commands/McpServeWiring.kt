@@ -19,6 +19,7 @@ import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
 import dev.dmigrate.server.application.quota.QuotaReservationOwnerStore
 import dev.dmigrate.server.application.upload.UploadSessionService
+import dev.dmigrate.server.persistence.jdbc.artifact.JdbcArtifactStore
 import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction
@@ -27,6 +28,7 @@ import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
+import dev.dmigrate.server.persistence.jdbc.schema.JdbcSchemaStore
 import dev.dmigrate.server.ports.IdempotencyStore
 import dev.dmigrate.server.ports.JobStartTransaction
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
@@ -91,6 +93,11 @@ internal class DefaultServerStateFactory(
             val phaseCWithJdbc = phaseC.copy(
                 jobStore = jobStore,
                 quotaService = quotaService,
+                // ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md AE-3:
+                // schemaStore/artifactStore blieben hier bislang unbedingt In-Memory,
+                // auch mit --server-state gesetzt (verifizierter Bugreport-Befund).
+                schemaStore = JdbcSchemaStore(runner),
+                artifactStore = JdbcArtifactStore(runner),
             )
             return ServerStateBundle(
                 phaseCWithPersistence = phaseCWithJdbc,
@@ -260,6 +267,7 @@ internal class McpServeWiring(
         phaseC: McpRuntimeWiring,
         policyRules: List<PolicyRule>,
     ): McpCliServerWiring {
+        warnIfApprovalGrantsDurableButChallengesEphemeral()
         val artifactRetention = startArtifactRetentionLoop(phaseC)
         val finalisationTimeout = startFinalisationTimeoutLoop(phaseC)
         val idempotencyStore = InMemoryIdempotencyStore()
@@ -291,6 +299,26 @@ internal class McpServeWiring(
 
     fun approvalGrantStore() =
         approvalGrantsFile?.let(::FileBackedApprovalGrantStore) ?: InMemoryApprovalGrantStore()
+
+    /**
+     * AE-5 (ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md):
+     * `--approval-grants-file` macht nur den Grant durabel, nicht die
+     * wartende Approval-Challenge, gegen die er validiert wird -- die lebt
+     * im `IdempotencyStore`, der in diesem (In-Memory-)Zweig ephemer ist
+     * (`JobStartOrchestrator.markAwaitingAndChallenge` ->
+     * `idempotencyStore.markAwaitingApproval`). Kein Hard-Fail: beide
+     * Flags sind fuer sich genommen gueltig, nur die Divergenz-Falle wird
+     * sichtbar gemacht.
+     */
+    private fun warnIfApprovalGrantsDurableButChallengesEphemeral() {
+        if (approvalGrantsFile != null) {
+            stderr(
+                "Warning: --approval-grants-file is set without --server-state — " +
+                    "grants are durable, but the pending approval requests they validate " +
+                    "against are not. They do not survive a restart.",
+            )
+        }
+    }
 
     /**
      * AE-A1/AE-A4 (ImpPlan-1.2.0-mcp-policy-file-and-connections-list.md):

@@ -345,6 +345,14 @@ Verlangt die Policy eine Freigabe, antwortet ein `*_start`-Tool mit
 CLI-seitig stellt `mcp approval-grant issue` Grants in den
 `--approval-grants-file`-Store aus.
 
+**Achtung bei `--approval-grants-file` ohne `--server-state`:** der Store
+macht nur den *Grant* durabel — die wartende Approval-Challenge, gegen
+die ein Grant validiert wird, lebt im `IdempotencyStore` und bleibt ohne
+`--server-state` In-Memory. Ein Server-Neustart lässt dann jeden
+ausstehenden `POLICY_REQUIRED`-Vorgang verwaisen, selbst wenn der später
+ausgestellte Grant selbst den Neustart überlebt hätte. `mcp serve` gibt
+in diesem Fall beim Start eine Warnzeile auf stderr aus.
+
 ### 6.5 Quotas und Rate-Limiting
 
 Aktive Jobs werden pro `(tenantId, principalId, operation)` gezählt. Bei
@@ -585,6 +593,14 @@ Migrationen erzeugen optional ein Rollback-Artefakt (`--generate-rollback`).
   (`pg_dump --schema=public` oder kontinuierliche WAL-Archivierung). Wichtig:
   Idempotency-COMMITTED-Einträge dienen als Wire-Replay-Cache — ein Restore muss die
   Retention-Spalte einbeziehen.
+- **Schema-/Artefakt-Katalog** (`schema_index_entries`/`artifact_records`, seit
+  `V2__schema_artifact_stores.sql`): mit `--server-state` durabel im selben
+  Server-State-Backup enthalten. Die Katalog-Metadaten (JSONB) und die
+  eigentlichen Bytes (Datei-Store oder S3, s. o.) müssen **konsistent
+  zueinander** gesichert/wiederhergestellt werden — ein Restore der einen
+  Seite ohne die andere lässt entweder Metadaten ohne Bytes (nicht
+  auflösbar) oder Bytes ohne Metadaten (nur diagnostisch über die
+  Orphan-Sweep-Logik erreichbar) zurück.
 
 ---
 

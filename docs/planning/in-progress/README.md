@@ -58,7 +58,6 @@ festgehalten.
 | [`roadmap.md`](roadmap.md) | Top-Level-Aggregator | Gesamt-Milestone-Sicht. |
 | [`carveout.md`](carveout.md) | Top-Level-Aggregator | Living Tracker fuer bewusste Scope-Cut-Entscheidungen mit Verweis aufs Quelldokument. |
 | [`cli-data-seed.md`](cli-data-seed.md) | Per-Feature-Umbrella | `d-migrate data seed`: Testdaten generieren + importieren. Vier Phasen P1-P4; P1 (deterministischer Generator-Kern) und P2 (`--rules`) geliefert (siehe [`ImpPlan-1.3.0-cli-data-seed-p1.md`](../done/ImpPlan-1.3.0-cli-data-seed-p1.md)/[`ImpPlan-1.3.0-cli-data-seed-p2.md`](../done/ImpPlan-1.3.0-cli-data-seed-p2.md) in `done/`); P3 (`--ai-backend`) bleibt geplant. |
-| [`ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md`](ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md) | ImpPlan (Draft) | `mcp serve --server-state`: `schemaStore`/`artifactStore` bleiben trotz `--server-state` In-Memory (bestätigter Bugreport-Befund) — `JdbcSchemaStore`/`JdbcArtifactStore` analog `JdbcJobStore` ergänzen; zusätzlich Startup-Warnung bei `--approval-grants-file` ohne `--server-state`. |
 
 Graduierte/geschlossene Slices stehen unter `../done/` bzw. `../done-archive/`
 (mit eigener `## Closure`-Sektion), nicht als Verweis hier.

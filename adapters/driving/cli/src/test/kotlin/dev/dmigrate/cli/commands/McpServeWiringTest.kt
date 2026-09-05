@@ -218,6 +218,43 @@ class McpServeWiringTest : FunSpec({
             }
         }
 
+        test("--approval-grants-file without --server-state prints the divergence warning (AE-5)") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-grants-warn-")
+            val grantsFile = Files.createTempFile("dmigrate-grants-warn-", ".yaml")
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            val (lines, sink) = stderrCapture()
+            try {
+                newWiring(approvalGrantsFile = grantsFile, stderr = sink)
+                    .build(McpServerConfig(), owner, cursorKeyring = null).use { }
+                lines.joinToString("\n") shouldContain "grants are durable, but the pending approval requests"
+            } finally {
+                owner.cleanupIfOwned()
+                Files.deleteIfExists(grantsFile)
+                runCatching {
+                    Files.walk(stateDir)
+                        .sorted(Comparator.reverseOrder())
+                        .forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
+        test("no --approval-grants-file prints no divergence warning") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-grants-nowarn-")
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            val (lines, sink) = stderrCapture()
+            try {
+                newWiring(stderr = sink).build(McpServerConfig(), owner, cursorKeyring = null).use { }
+                lines.none { it.contains("pending approval requests") } shouldBe true
+            } finally {
+                owner.cleanupIfOwned()
+                runCatching {
+                    Files.walk(stateDir)
+                        .sorted(Comparator.reverseOrder())
+                        .forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
         test("file-backed approval grant store gets used when configured") {
             val stateDir = Files.createTempDirectory("dmigrate-build-grants-")
             val grantsFile = Files.createTempFile("dmigrate-grants-build-", ".yaml")
@@ -301,6 +338,58 @@ class McpServeWiringTest : FunSpec({
             } finally {
                 owner.cleanupIfOwned()
                 Files.deleteIfExists(configFile)
+                runCatching {
+                    Files.walk(stateDir)
+                        .sorted(Comparator.reverseOrder())
+                        .forEach { runCatching { Files.deleteIfExists(it) } }
+                }
+            }
+        }
+
+        test("--approval-grants-file with --server-state configured prints no divergence warning (AE-5)") {
+            val stateDir = Files.createTempDirectory("dmigrate-build-jdbc-grants-")
+            val configFile = Files.createTempFile("dmigrate-build-jdbc-grants-cfg-", ".yaml")
+            val grantsFile = Files.createTempFile("dmigrate-build-jdbc-grants-", ".yaml")
+            Files.writeString(
+                configFile,
+                """
+                server:
+                  state:
+                    jdbcUrl: jdbc:postgresql://localhost/dmigrate-test
+                """.trimIndent(),
+            )
+            val owner = StateDirOwner.of(StateDirResolver.resolve(cliOption = stateDir))
+            val fakeFactory = ServerStateFactory { _, phaseC ->
+                ServerStateBundle(
+                    phaseCWithPersistence = phaseC,
+                    idempotencyStore = dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore(),
+                    jobStartTransaction = dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction(
+                        phaseC.jobStore,
+                        dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore(),
+                    ),
+                    quotaReservationOwnerStore =
+                        dev.dmigrate.server.application.quota.InMemoryQuotaReservationOwnerStore(),
+                    ownerAwareQuotaService = dev.dmigrate.server.application.quota.OwnerAwareQuotaService(
+                        delegate = phaseC.quotaService,
+                        ownerStore =
+                            dev.dmigrate.server.application.quota.InMemoryQuotaReservationOwnerStore(),
+                    ),
+                    cleanup = AutoCloseable { },
+                )
+            }
+            val (lines, sink) = stderrCapture()
+            try {
+                newWiring(
+                    connectionConfigPath = configFile,
+                    approvalGrantsFile = grantsFile,
+                    stderr = sink,
+                    serverStateFactory = fakeFactory,
+                ).build(McpServerConfig(), owner, cursorKeyring = null).use { }
+                lines.none { it.contains("pending approval requests") } shouldBe true
+            } finally {
+                owner.cleanupIfOwned()
+                Files.deleteIfExists(configFile)
+                Files.deleteIfExists(grantsFile)
                 runCatching {
                     Files.walk(stateDir)
                         .sorted(Comparator.reverseOrder())

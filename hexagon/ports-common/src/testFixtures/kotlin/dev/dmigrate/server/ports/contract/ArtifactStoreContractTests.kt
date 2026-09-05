@@ -52,4 +52,18 @@ abstract class ArtifactStoreContractTests(factory: () -> ArtifactStore) : FunSpe
         store.deleteExpired(Fixtures.NOW) shouldBe 1
         store.findById(Fixtures.tenant("acme"), "drop") shouldBe null
     }
+
+    // AE-4 (ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md):
+    // the retention sweeper needs the deleted records themselves (to release
+    // byte quotas and content-store payloads), not just a count.
+    test("deleteExpiredRecords returns the actual deleted records") {
+        val store = factory()
+        val kept = Fixtures.artifactRecord("keep", expiresAt = Fixtures.NOW.plusSeconds(10_000))
+        val dropped = Fixtures.artifactRecord("drop", expiresAt = Fixtures.NOW.minusSeconds(10))
+        store.save(kept)
+        store.save(dropped)
+        store.deleteExpiredRecords(Fixtures.NOW) shouldBe listOf(dropped)
+        store.findById(Fixtures.tenant("acme"), "drop") shouldBe null
+        store.findById(Fixtures.tenant("acme"), "keep") shouldBe kept
+    }
 })

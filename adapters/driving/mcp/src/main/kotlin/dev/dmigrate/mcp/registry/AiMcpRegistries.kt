@@ -13,11 +13,13 @@ import dev.dmigrate.server.application.audit.AuditScope
  *
  * LF-012 / LN-011 / LN-017 / LN-027 line 1132 sinngemäß: "Tool-Registry von Unsupported-
  * Handlern auf produktive Handler umstellen". LF-017 / LF-024 / LN-030 / LN-031 überschreibt
- * exakt die drei KI-nahen Slots
- * (`procedure_transform_plan`, `procedure_transform_execute`,
- * `testdata_plan`); `testdata_execute` bleibt bewusst auf
- * [UnsupportedToolHandler] (LF-017 / LF-024 / LN-030 / LN-031 Carve-out — separate
- * Daten-Schreiboperation, nicht in 0.9.6).
+ * alle vier KI-nahen Slots (`procedure_transform_plan`,
+ * `procedure_transform_execute`, `testdata_plan`, `testdata_execute`) —
+ * `testdata_execute` ist real verdrahtet, nicht mehr auf
+ * [UnsupportedToolHandler] (Doku-Drift-Fund,
+ * ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md
+ * Kontext-Befund 3: dieser Kommentar behauptete das Gegenteil, während
+ * die Verdrahtung unten testdata_execute längst produktiv schaltet).
  *
  * Layering: nimmt eine bereits gebaute LF-012 / LN-011 / LN-017 / LN-027-Registry (die
  * LF-012 / LN-038/C/D/E-Tools verdrahtet) und überschreibt nur die drei

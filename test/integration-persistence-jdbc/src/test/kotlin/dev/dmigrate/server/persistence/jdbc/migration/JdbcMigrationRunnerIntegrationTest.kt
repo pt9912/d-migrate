@@ -10,14 +10,16 @@ import javax.sql.DataSource
 
 
 /**
- * Integration test for the LF-012 / LN-011 / LN-017 / LN-027 Flyway initial migration.
+ * Integration test for the Flyway server-state migrations.
  *
  * Verifies:
- * - V1__server_state_initial.sql applies cleanly against a fresh
- *   PostgreSQL 16 container
- * - All 5 tables (idempotency_reservations, init_resume_reservations,
- *   jobs, quota_reservation_owners, quota_counters) exist with the
- *   expected primary-key columns and supporting indexes
+ * - V1__server_state_initial.sql and
+ *   V2__schema_artifact_stores.sql (ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md
+ *   AP1) apply cleanly, in order, against a fresh PostgreSQL 16 container
+ * - All 7 tables (idempotency_reservations, init_resume_reservations,
+ *   jobs, quota_reservation_owners, quota_counters, schema_index_entries,
+ *   artifact_records) exist with the expected primary-key columns and
+ *   supporting indexes
  * - The migration is idempotent: re-running migrate() against an
  *   already-migrated DB is a no-op (Plan LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz)
  * - validate() passes without drift
@@ -52,18 +54,18 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
         container.stop()
     }
 
-    test("first migrate() applies V1 and reports success=true with 1 migration") {
+    test("first migrate() applies V1+V2 and reports success=true with 2 migrations") {
         val ds = dataSource!!
         val runner = JdbcMigrationRunner(ds)
 
         val result = runner.migrate()
 
         result.success shouldBe true
-        result.migrationsExecuted shouldBe 1
-        result.appliedVersions.first() shouldBe "1"
+        result.migrationsExecuted shouldBe 2
+        result.appliedVersions shouldBe listOf("1", "2")
     }
 
-    test("all 5 server-state tables exist after V1") {
+    test("all 7 server-state tables exist after V1+V2") {
         val ds = dataSource!!
         val tables = listTables(ds, schema = "public")
         tables shouldContainAll listOf(
@@ -72,6 +74,8 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
             "jobs",
             "quota_reservation_owners",
             "quota_counters",
+            "schema_index_entries",
+            "artifact_records",
         )
     }
 
@@ -104,6 +108,31 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
         // Postgres pretty-prints the predicate; assert it constrains state to PENDING.
         (partial?.contains("state") ?: false) shouldBe true
         (partial?.contains("PENDING") ?: false) shouldBe true
+    }
+
+    test("V2: primary keys and indexes are wired for schema_index_entries/artifact_records") {
+        val ds = dataSource!!
+
+        primaryKeyColumns(ds, "schema_index_entries") shouldBe listOf("tenant_id", "schema_id")
+        primaryKeyColumns(ds, "artifact_records") shouldBe listOf("tenant_id", "artifact_id")
+
+        val indexes = listIndexes(ds, schema = "public")
+        indexes shouldContainAll listOf(
+            "schema_index_expiry",
+            "schema_index_job_ref",
+            "artifact_records_expiry",
+            "artifact_records_owner",
+            "artifact_records_kind",
+            "artifact_records_job_ref",
+        )
+    }
+
+    test("V2: partial indexes filter on job_ref IS NOT NULL") {
+        val ds = dataSource!!
+        for (indexName in listOf("schema_index_job_ref", "artifact_records_job_ref")) {
+            val partial = readPartialIndexPredicate(ds, indexName)
+            (partial?.contains("job_ref") ?: false) shouldBe true
+        }
     }
 
     test("flyway history table uses the dedicated server-state name") {

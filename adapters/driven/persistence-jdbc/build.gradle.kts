@@ -62,6 +62,15 @@ kover {
                     "dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore*",
                     "dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore*",
                     "dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService*",
+                    // ImpPlan-1.2.0-mcp-server-state-schema-artifact-persistence.md AE-1:
+                    // Postgres-only JDBC-Logik (JSONB, SELECT FOR UPDATE,
+                    // INSERT...ON CONFLICT...RETURNING), gedeckt durch
+                    // JdbcSchemaStoreContractTest/JdbcArtifactStoreContractTest
+                    // unter -PintegrationTests. Die begleitenden JSON-Codecs
+                    // (SchemaIndexEntryJson/ArtifactRecordJson) bleiben bewusst
+                    // NICHT exkludiert -- eigene modul-lokale Unit-Tests.
+                    "dev.dmigrate.server.persistence.jdbc.schema.JdbcSchemaStore*",
+                    "dev.dmigrate.server.persistence.jdbc.artifact.JdbcArtifactStore*",
                 )
                 // LF-012 / LN-011 / LN-017 / LN-027: Quota-Stack (JdbcQuotaStore +
                 // JdbcQuotaReservationOwnerStore + JdbcOwnerAwareQuotaService
