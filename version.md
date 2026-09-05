@@ -16,9 +16,15 @@
 <a id="aktuell"></a>
 Aktuelle Version: [`v1.2.0`](#v1.2.0) — 2026-09-05 (Stable).
 
+<a id="docker-tag"></a>
+Aktuelles Docker-Image-Tag: `1.2.0` — Docker-Tags tragen anders als der
+Git-Tag/GitHub-Release kein führendes `v` (`ghcr.io/pt9912/d-migrate:1.2.0`,
+nicht `:v1.2.0`).
+
 Aus anderen Dokumenten stabil referenzierbar als `version.md#aktuell` (zeigt immer hierher,
 nie auf eine feste Nummer). Pro Release sind diese Zeile, eine neue Tabellenzeile im Verlauf
-**und der `<a id>`-Anker** nachzuziehen — der einzige Bump-Punkt.
+**und der `<a id>`-Anker** nachzuziehen — der einzige Bump-Punkt. Der `docker-tag`-Anker
+wandert im selben Schritt mit (siehe `.d-check.yml`, Modul `versions`).
 
 Welche Version `:latest`, der Homebrew-Tap und ein `docker pull` ohne Tag liefern, steht
 nicht hier: Vorabversionen bewegen diese Zeiger bewusst nicht

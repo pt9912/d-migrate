@@ -13,7 +13,7 @@
 scan:
   ignore: ["docs/planning/done-archive/**", "docs/archive/**"]
 
-modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids, pins, citations]
+modules: [links, anchors, matrix, hostpaths, spans, codepaths, ids, pins, citations, workflows, versions]
 
 # matrix: mechanisiert die Referenz-Richtung (Stable Dependencies
 # Principle, konventionen.md "Referenz-Richtung (SDP)"): Spec-Straten
@@ -103,3 +103,38 @@ ids:
     - regex: 'L[FN]-\d{3}'
       target: "spec/lastenheft-d-migrate.md"
       link-policy: always
+
+# workflows: Actions-Referenzen SHA-gepinnt (Supply-Chain), lokale
+# Reusable-Workflow-Aufrufe rechte-gedeckt. Wir haben keine lokalen
+# `uses: ./.github/workflows/...`-Aufrufe (geprüft 2026-09-05) -- das Modul
+# deckt bei uns nur die SHA-Pin-Pflicht ab, die schon durchgängig gelebt wird.
+workflows:
+  dir: .github/workflows
+
+# versions: gepinnte ghcr-Image-Verweise gegen die aktuelle Version. Docker-
+# Tags tragen (anders als der Git-Tag) kein führendes "v" -- current-from
+# zeigt deshalb auf einen eigenen `docker-tag`-Anker in version.md, nicht auf
+# `#aktuell` (das "v1.2.0" trägt, ein reiner String-Vergleich ohne
+# Praefix-Normalisierung würde sonst JEDEN echten Pin als veraltet melden;
+# empirisch gegen den Digest sha256:e31a372b... verifiziert 2026-09-05).
+# exempt-paths: zwei historische Pins in bereits geschlossenen Untersuchungen
+# (ein exaktes Terminal-Protokoll in einem Codefence + ein Roadmap-
+# Rueckblick-Absatz) -- beide referenzieren absichtlich eine alte Version.
+versions:
+  pin-pattern: 'ghcr\.io/pt9912/d-migrate:(\d+\.\d+\.\d+)'
+  current-from: version.md#docker-tag
+  exempt-paths:
+    - "docs/planning/done/oci-image-runtime-divergence.md"
+    - "docs/planning/in-progress/roadmap.md"
+
+# vcs: git-Diff-Immutabilitaet fuer akzeptierte ADRs (nicht in `modules:` --
+# braucht eine Commit-Range, nicht Teil des hermetischen `make docs-check`-
+# Laufs; nur ueber `make doc-immutable RANGE=<base>..<head>` bzw. gezieltes
+# `--enable vcs --range` genutzt). Unsere ADRs tragen den Status im
+# YAML-Frontmatter (`status: accepted`), nicht als Body-Zeile `**Status:**` --
+# status-line/immutable-when/head-allow entsprechend angepasst.
+vcs:
+  paths: ["docs/adr/[0-9]*.md"]
+  immutable-when: '^status: accepted'
+  status-line: '^status:'
+  head-allow: '^status: (accepted|superseded by ADR-\d{4})'

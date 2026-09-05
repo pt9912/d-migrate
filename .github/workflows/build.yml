@@ -118,6 +118,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # vcs unten braucht die volle Historie, um eine beliebig alte
+          # github.event.before-SHA aufzuloesen -- ein Shallow-Clone (Default)
+          # kennt sie nicht und liesse d-check fail-closed (Exit 2) abbrechen.
+          fetch-depth: 0
+
+      - name: vcs — ADR-Immutabilitaet ueber die Push-/PR-Range
+        # git-Diff-Immutabilitaet (Modul vcs, DC-FA-VCS-001): eine akzeptierte
+        # ADR (status: accepted im Frontmatter) darf ihren Core zwischen dem
+        # vorherigen und dem aktuellen Stand nicht mehr aendern -- bislang nur
+        # ueber `make doc-immutable RANGE=...` von Hand pruefbar. Nur bei Push
+        # auf main und bei Pull Requests: workflow_dispatch kennt kein
+        # `before`, und bei einem Tag-Push ist `before` die Zero-SHA (kein
+        # sinnvoller Vorstand) -- beides wuerde mit einer ungueltigen Range
+        # fail-closed (Exit 2) abbrechen und damit den Release-/
+        # Rehearse-Dispatch-Pfad brechen, den releasing.md §3.5 dafuer nutzt.
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'pull_request'
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          make doc-immutable RANGE="$RANGE"
 
       - name: semgrep — Dockerfile- und Python-Regeln, offline
         # Zweistufig und Absicht: das Holen der Regeln braucht Netz (commit-gepinnt
