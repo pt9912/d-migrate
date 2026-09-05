@@ -155,9 +155,8 @@ verstecktes else, aber auch keine falsche Terminzusage.
   (Slice 0):** keine EULA-Zustimmung nötig, anders als beim MSSQL-Image.
 - ~~FUTC-Lizenztext dokumentieren~~ — **erledigt (Slice 0):**
   [`THIRD-PARTY-NOTICES.md`](../../../THIRD-PARTY-NOTICES.md) im Repo-Root.
-  **Weiterhin offen:** die mechanisierte Bündelung dieser Datei in den
-  Release-Artefakten (Docker-Image, Fat-JAR/ZIP) — kein bestehendes Muster im
-  Repo, braucht einen eigenen kleinen Schnitt.
+  Die Bündelung dieser Datei in Release-Artefakten ist ein separates Thema,
+  siehe [`third-party-notices-release-bundling.md`](../open/third-party-notices-release-bundling.md).
 - Testcontainers-Ressourcenbedarf (RAM) real messen, nicht nur Image-Größe
   (Slice-0-Spike lief containerisiert durch, aber ohne RAM-Messung).
 - **Neu (Slice 0, live entdeckt):** `gvenzl/oracle-free`s gleitende

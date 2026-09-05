@@ -25,8 +25,3 @@ dabei aber:
 d-migrate bindet `ojdbc11` ausschließlich unmodifiziert über Maven Central
 (`com.oracle.database.jdbc:ojdbc11`, siehe `gradle.properties`) ein; es
 werden keine Oracle-Programmdateien verändert oder eigenständig verteilt.
-
-**Offen (Tracking):** die konkrete Bündelung dieser Datei in den
-Release-Artefakten (Docker-Image, Fat-JAR/ZIP) ist noch nicht mechanisiert —
-siehe [`oracle-dialect-scoping.md`](docs/planning/in-progress/oracle-dialect-scoping.md),
-Abschnitt „Offene Punkte".
