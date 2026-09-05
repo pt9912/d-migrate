@@ -1321,6 +1321,12 @@ die CLI als MCP-Tools an:
 - **Lang laufend als Job** (asynchron, Fortschritt per Job-Status):
   `schema_reverse_start`, `schema_compare_start`, `data_export_start`,
   `data_import_start`, `data_transfer_start`, `data_profile_start`
+- **KI-gestützt** (Scope `dmigrate:ai:execute`, synchron, genehmigungspflichtig):
+  `testdata_plan`/`testdata_execute` (synthetische Testdaten aus einem
+  Schema planen und erzeugen), `procedure_transform_plan`/
+  `procedure_transform_execute` (gespeicherte Prozedur in einen anderen
+  Dialekt übersetzen) — Vorgehen siehe unten
+  ["Beispiel: Testdaten über MCP erzeugen"](#beispiel-testdaten-über-mcp-erzeugen).
 - **Discovery:** `capabilities_list` sowie `resources/list` und `resources/read`;
   `connections/list` zusätzlich für `dmigrate:admin`-Aufrufer (konfigurierte
   Verbindungen auflisten, optional mit echtem Erreichbarkeits-Check)
@@ -1432,6 +1438,84 @@ d-migrate mcp approval-grant issue --file /etc/d-migrate/approval-grants.yaml \
     --issuer-fingerprint ops-team --grant-source manual-review
 # statt --expires-at alternativ: --ttl-seconds 600
 ```
+
+#### Beispiel: Testdaten über MCP erzeugen
+
+**Ziel:** Aus einer bereits konfigurierten Verbindung (`--connection-config`)
+automatisiert synthetische Testdaten erzeugen lassen — derselbe Ablauf, den
+ein KI-Agent für "erzeuge mir Testdaten für Tabelle X" durchläuft. Fünf
+Tool-Aufrufe, in dieser Reihenfolge:
+
+1. **Schema reverse-engineeren** (`schema_reverse_start`, Job-Tool):
+
+   ```json
+   {"connectionId": "dmigrate://tenants/default/connections/<name>",
+    "idempotencyKey": "seed-run-1"}
+   ```
+
+   Liefert `jobId` + `resourceUri`.
+
+2. **Job pollen** (`job_status_get`) mit derselben `jobId`, bis `status`
+   `SUCCEEDED` ist. Die Antwort trägt `artifacts[]` mit der Artefakt-Referenz
+   des reverse-engineerten Schemas.
+
+3. **Katalogisiertes Schema finden** (`schema_list`) mit `jobId` aus Schritt 1:
+
+   ```json
+   {"jobId": "<jobId aus Schritt 1>"}
+   ```
+
+   Die Antwort trägt `schemas[].resourceUri` — das ist die `schemaRef`,
+   die `testdata_plan` erwartet (**nicht** die rohe Artefakt-URI aus
+   Schritt 2).
+
+4. **Plan erzeugen** (`testdata_plan`, KI-Tool, Scope `dmigrate:ai:execute`):
+
+   ```json
+   {"approvalKey": "seed-run-1", "schemaRef": "<resourceUri aus Schritt 3>",
+    "targetDialect": "POSTGRESQL"}
+   ```
+
+   Liefert `testdataPlanResourceUri` — ein unveränderliches Plan-Artefakt,
+   noch keine Daten.
+
+5. **Plan ausführen** (`testdata_execute`, KI-Tool, Scope `dmigrate:ai:execute`):
+
+   ```json
+   {"approvalKey": "seed-run-1", "targetDialect": "POSTGRESQL",
+    "planRef": "<testdataPlanResourceUri aus Schritt 4>",
+    "targetTable": "<tabelle>", "outputFormat": "csv"}
+   ```
+
+   Verlangt die Policy für `testdata_execute` eine Freigabe, kommt
+   `POLICY_REQUIRED` mit `approvalRequestId` + `payloadFingerprint` zurück
+   — genau der oben beschriebene Fall. Freigabe erteilen (Operator, aus
+   einem separaten Terminal mit Zugriff auf `--approval-grants-file`):
+
+   ```bash
+   d-migrate mcp approval-grant issue --file /etc/d-migrate/approval-grants.yaml \
+       --tenant default --caller <principal-id aus dem Token> \
+       --tool testdata_execute \
+       --approval-request-id <aus POLICY_REQUIRED> \
+       --payload-fingerprint <aus POLICY_REQUIRED> \
+       --approval-key seed-run-1 --scope dmigrate:ai:execute
+   # Ausgabe: approvalToken=appr_…
+   ```
+
+   `testdata_execute` mit demselben `approvalKey` und zusätzlich
+   `"approvalToken": "<Ausgabe von oben>"` erneut aufrufen — liefert jetzt
+   `testdataArtifactId` + `testdataResourceUri` (das erzeugte Testdaten-
+   Artefakt, importierbar z. B. über `data_import_start`).
+
+**Stolperstein bei containerisiertem Betrieb:** Läuft `mcp serve` unter
+einer anderen OS-User-ID als der Aufruf von `mcp approval-grant issue`
+(typisch: Server im Container, CLI auf dem Host), muss
+`--approval-grants-file` für **beide** Prozesse lesbar bleiben — d-migrate
+sorgt selbst dafür, dass die Datei nach jedem `issue` für alle lesbar
+bleibt (`rw-r--r--`); bei einem manuell abweichend gesetzten Dateimodus
+(z. B. über ein Bind-Mount mit restriktiveren Rechten) meldet der Server
+`POLICY_REQUIRED`/den Retry weiterhin, aber die Freigabe wird nie
+gefunden.
 
 #### Weitere Server-Optionen — mit Beispiel
 
