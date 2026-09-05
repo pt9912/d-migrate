@@ -301,11 +301,25 @@ class SchemaGenerateHandlerTest : FunSpec({
             sut.handle(
                 ToolCallContext(
                     "schema_generate",
-                    args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"oracle"}"""),
+                    args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"db2"}"""),
                     PRINCIPAL,
                 ),
             )
         }
+    }
+
+    test("targetDialect oracle is rejected by DialectCommandGate (ADR 0052, Slice 2 offen)") {
+        val (sut, _, _) = handler(FakeDdlGenerator(DatabaseDialect.POSTGRESQL, DdlResult(emptyList())))
+        val ex = shouldThrow<ValidationErrorException> {
+            sut.handle(
+                ToolCallContext(
+                    "schema_generate",
+                    args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"ORACLE"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "targetDialect"
     }
 
     test("CLI-style dialect aliases (pg, postgres, maria, sqlite3) are rejected on the wire") {

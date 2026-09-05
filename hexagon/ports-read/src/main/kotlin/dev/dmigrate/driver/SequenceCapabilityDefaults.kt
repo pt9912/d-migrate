@@ -190,10 +190,31 @@ object SequenceCapabilityDefaults {
         transactionalProtectedSequenceOperations = emptySet(),
     )
 
+    // Oracle-Sequenzen sind wie PG nativ (echte Laufzeit-Preallokation bei
+    // CACHE, kein Metadata-Only-Emulation-Pfad wie MySQL/SQLite) -- deshalb
+    // emitsCachePreallocationWarning=false. supportsOwnedBy=false: Oracle
+    // kennt keine `SEQUENCE OWNED BY column`-Verknuepfung wie PG.
+    // supportsCurrentValuePreserve/Atomic-Faehigkeiten bleiben false: es
+    // existiert noch kein OracleDiffSequenceOps (kein Slice 5 gebaut).
+    private val Oracle = SequenceCapability(
+        supportsNamedSequences = true,
+        supportsStart = true,
+        supportsMinMaxValue = true,
+        supportsCycle = true,
+        supportsCache = true,
+        emitsCachePreallocationWarning = false,
+        supportsCurrentValuePreserve = false,
+        supportsOwnedBy = false,
+        supportsAtomicPreserve = false,
+        supportsAtomicPreserveAllInPlan = false,
+        transactionalProtectedSequenceOperations = emptySet(),
+    )
+
     fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {
         DatabaseDialect.POSTGRESQL -> PostgreSQL
         DatabaseDialect.MYSQL -> MySQL
         DatabaseDialect.SQLITE -> SQLite
         DatabaseDialect.MSSQL -> Mssql
+        DatabaseDialect.ORACLE -> Oracle
     }
 }

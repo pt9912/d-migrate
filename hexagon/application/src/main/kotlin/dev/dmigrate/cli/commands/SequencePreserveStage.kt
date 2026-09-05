@@ -340,6 +340,7 @@ object SequencePreserveStage {
         DatabaseDialect.MYSQL -> RenameProjectionDialect.MYSQL
         DatabaseDialect.SQLITE -> RenameProjectionDialect.SQLITE
         DatabaseDialect.MSSQL -> RenameProjectionDialect.MSSQL
+        DatabaseDialect.ORACLE -> RenameProjectionDialect.ORACLE
     }
 
     // ── Skip-path helpers ──────────────────────────────────────────────

@@ -105,6 +105,16 @@ class SqlIdentifiersTest : FunSpec({
         }
     }
 
+    // ── quoteIdentifier: Oracle (same as PostgreSQL) ────────────────
+
+    test("Oracle: simple name is double-quoted") {
+        SqlIdentifiers.quoteIdentifier("users", DatabaseDialect.ORACLE) shouldBe "\"users\""
+    }
+
+    test("Oracle: embedded double-quote is escaped") {
+        SqlIdentifiers.quoteIdentifier("""x"y""", DatabaseDialect.ORACLE) shouldBe "\"x\"\"y\""
+    }
+
     // ── quoteQualifiedIdentifier ───────────────────────────────────
 
     test("PostgreSQL: qualified name quotes each segment") {
@@ -164,9 +174,12 @@ class SqlIdentifiersTest : FunSpec({
     }
 
     test("standard dialects leave the backslash untouched (literal per SQL standard)") {
-        // PostgreSQL (standard_conforming_strings) and SQLite treat `\` literally.
+        // PostgreSQL (standard_conforming_strings), SQLite, MSSQL and Oracle
+        // treat `\` literally.
         SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.POSTGRESQL) shouldBe "'a\\'"
         SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.SQLITE) shouldBe "'a\\'"
+        SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.MSSQL) shouldBe "'a\\'"
+        SqlIdentifiers.quoteStringLiteral("a\\", DatabaseDialect.ORACLE) shouldBe "'a\\'"
     }
 
     // ── quoteIdentifier / quoteStringLiteral: MSSQL (brackets) ─────

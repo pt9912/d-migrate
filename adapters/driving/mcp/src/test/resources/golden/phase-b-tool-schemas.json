@@ -1344,7 +1344,8 @@
             "POSTGRESQL",
             "MYSQL",
             "SQLITE",
-            "MSSQL"
+            "MSSQL",
+            "ORACLE"
           ]
         },
         "executionOptions": {
@@ -1492,7 +1493,8 @@
             "POSTGRESQL",
             "MYSQL",
             "SQLITE",
-            "MSSQL"
+            "MSSQL",
+            "ORACLE"
           ]
         },
         "rules": {
@@ -1989,7 +1991,8 @@
             "POSTGRESQL",
             "MYSQL",
             "SQLITE",
-            "MSSQL"
+            "MSSQL",
+            "ORACLE"
           ]
         },
         "spatialProfile": {
@@ -2559,7 +2562,8 @@
             "POSTGRESQL",
             "MYSQL",
             "SQLITE",
-            "MSSQL"
+            "MSSQL",
+            "ORACLE"
           ]
         },
         "providerId": {

@@ -89,11 +89,11 @@ class CheckPreflightProbeRunnerTest : FunSpec({
 
     test("probe() throws CompareConfigException when the URL has an unsupported dialect") {
         // URL contains `://` so we skip the file-based resolver but the
-        // URL parser then rejects `oracle://...` as unsupported, which
+        // URL parser then rejects `db2://...` as unsupported, which
         // the runner re-throws as CompareConfigException.
         shouldThrow<CompareConfigException> {
             CheckPreflightProbeRunner.probe(
-                target = CompareOperand.Database("oracle://localhost/db"),
+                target = CompareOperand.Database("db2://localhost/db"),
                 configPath = null,
                 plan = emptyPlan(),
                 dialect = DatabaseDialect.SQLITE,

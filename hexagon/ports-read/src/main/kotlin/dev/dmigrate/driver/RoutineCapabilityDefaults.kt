@@ -52,11 +52,19 @@ object RoutineCapabilityDefaults {
         procedure = RoutineKindCapability(enabled = false, minServerVersion = null),
     )
 
+    // Oracle unterstuetzt CREATE OR REPLACE FUNCTION/PROCEDURE nativ (anders
+    // als MySQL/MSSQL) -- kein Drop+Create-Fallback noetig.
+    private val Oracle = EffectiveRoutineCapability.Valid(
+        function = RoutineKindCapability(enabled = true, minServerVersion = null),
+        procedure = RoutineKindCapability(enabled = true, minServerVersion = null),
+    )
+
     fun forDialect(dialect: DatabaseDialect): EffectiveRoutineCapability.Valid = when (dialect) {
         DatabaseDialect.POSTGRESQL -> PostgreSQL
         DatabaseDialect.MYSQL -> OracleMySQL
         DatabaseDialect.SQLITE -> SQLite
         DatabaseDialect.MSSQL -> Mssql
+        DatabaseDialect.ORACLE -> Oracle
     }
 
     fun forMysqlServerVersion(version: MysqlServerVersion?): EffectiveRoutineCapability.Valid =

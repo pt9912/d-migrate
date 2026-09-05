@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
+import dev.dmigrate.cli.commands.DialectCommandGate
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlScript
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -68,6 +69,9 @@ internal class SchemaGenerateHandler(
         )
         val schemaDef = contentLoader.load(source, format = args.format)
         val options = buildOptions(args)
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.SCHEMA_GENERATE, args.targetDialect)?.let {
+            throw ValidationErrorException(listOf(ValidationViolation("targetDialect", it)))
+        }
         val generator = lookupGenerator(args.targetDialect)
         val result = generator.generate(schemaDef, options)
         // LF-012 / LN-027 / LN-028 / LN-038: scrub DDL through the same SecretScrubber pipe as

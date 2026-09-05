@@ -11,8 +11,8 @@ class PortsCommonTest : FunSpec({
 
     // ── DatabaseDialect enum ──────────────────────────────────────────
 
-    test("DatabaseDialect has four values") {
-        DatabaseDialect.entries.map { it.name } shouldBe listOf("POSTGRESQL", "MYSQL", "SQLITE", "MSSQL")
+    test("DatabaseDialect has five values") {
+        DatabaseDialect.entries.map { it.name } shouldBe listOf("POSTGRESQL", "MYSQL", "SQLITE", "MSSQL", "ORACLE")
     }
 
     test("DatabaseDialect valueOf round-trips") {
@@ -20,6 +20,7 @@ class PortsCommonTest : FunSpec({
         DatabaseDialect.valueOf("MYSQL") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.valueOf("SQLITE") shouldBe DatabaseDialect.SQLITE
         DatabaseDialect.valueOf("MSSQL") shouldBe DatabaseDialect.MSSQL
+        DatabaseDialect.valueOf("ORACLE") shouldBe DatabaseDialect.ORACLE
     }
 
     test("DatabaseDialect.fromString recognises canonical names") {
@@ -27,6 +28,7 @@ class PortsCommonTest : FunSpec({
         DatabaseDialect.fromString("mysql") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.fromString("sqlite") shouldBe DatabaseDialect.SQLITE
         DatabaseDialect.fromString("mssql") shouldBe DatabaseDialect.MSSQL
+        DatabaseDialect.fromString("oracle") shouldBe DatabaseDialect.ORACLE
     }
 
     test("DatabaseDialect.fromString recognises aliases") {
@@ -43,14 +45,15 @@ class PortsCommonTest : FunSpec({
         DatabaseDialect.fromString("MYSQL") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.fromString("SQLite3") shouldBe DatabaseDialect.SQLITE
         DatabaseDialect.fromString("SqlServer") shouldBe DatabaseDialect.MSSQL
+        DatabaseDialect.fromString("Oracle") shouldBe DatabaseDialect.ORACLE
     }
 
     test("DatabaseDialect.fromString throws on unknown dialect") {
         val ex = shouldThrow<IllegalArgumentException> {
-            DatabaseDialect.fromString("oracle")
+            DatabaseDialect.fromString("db2")
         }
         ex.message!! shouldContain "Unknown database dialect"
-        ex.message!! shouldContain "oracle"
+        ex.message!! shouldContain "db2"
     }
 
     // ── DialectCapabilities ───────────────────────────────────────────
@@ -101,6 +104,25 @@ class PortsCommonTest : FunSpec({
         caps.supportsDisableFkChecks shouldBe false
         caps.supportsSchemaParameter shouldBe true
         caps.partitionChildrenAreTables shouldBe false
+    }
+
+    test("DialectCapabilities.forDialect returns correct capabilities for Oracle") {
+        val caps = DialectCapabilities.forDialect(DatabaseDialect.ORACLE)
+        caps.supportsViews shouldBe true
+        caps.supportsFunctions shouldBe true
+        caps.supportsProcedures shouldBe true
+        caps.supportsTriggers shouldBe true
+        caps.supportsSequences shouldBe true
+        caps.supportsCustomTypes shouldBe false
+        caps.supportsPartitioning shouldBe true
+        caps.supportsDisableFkChecks shouldBe true
+        caps.supportsSchemaParameter shouldBe true
+        caps.partitionChildrenAreTables shouldBe false
+        caps.batchSeparator shouldBe "/"
+        caps.requiresPrimaryKeyForSkip shouldBe true
+        caps.supportsIndexIncludeColumns shouldBe false
+        caps.supportsClusteredIndexes shouldBe false
+        caps.namesFullTextIndexes shouldBe true
     }
 
     test("DialectCapabilities data class equality") {

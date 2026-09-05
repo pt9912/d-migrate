@@ -316,7 +316,7 @@ class MysqlSequenceCanonicityProbeRunnerTest : FunSpec({
         // IllegalArgumentException that the runner wraps.
         shouldThrow<CompareConfigException> {
             MysqlSequenceCanonicityProbeRunner.probe(
-                target = CompareOperand.Database("oracle://localhost/db"),
+                target = CompareOperand.Database("db2://localhost/db"),
                 configPath = null,
                 plan = planOf(),
             )

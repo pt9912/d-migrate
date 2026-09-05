@@ -106,6 +106,10 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
             MssqlProfilingDataAdapter(),
             MssqlLogicalTypeResolver(),
         )
+        DatabaseDialect.ORACLE -> error(
+            "unreachable: DataProfileRunner weist oracle vor der Adapter-Auswahl ab " +
+                "(DialectCommandGate, ADR 0052)",
+        )
     }
 }
 

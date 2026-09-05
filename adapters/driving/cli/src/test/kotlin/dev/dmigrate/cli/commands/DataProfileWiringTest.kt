@@ -46,7 +46,9 @@ class DataProfileWiringTest : FunSpec({
     )
 
     context("happy path by dialect") {
-        DatabaseDialect.entries.forEach { dialect ->
+        // Oracle: DialectCommandGate weist data profile an der Kommando-
+        // Grenze ab (ADR 0052, Slice 10 offen) -- kein "happy path" bis dahin.
+        (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
             test("wires fake profiling adapters for ${dialect.name.lowercase()}") {
                 val tableName = tableNameFor(dialect)
                 val configPath = Path.of(".d-migrate-test.yaml")
@@ -137,8 +139,10 @@ class DataProfileWiringTest : FunSpec({
 
         bundle.dialectResolver("mssql://localhost/profile") shouldBe DatabaseDialect.MSSQL
 
-        // Jeder Dialekt traegt jetzt ein vollstaendiges Adapter-Trio.
-        DatabaseDialect.entries.forEach { dialect ->
+        // Jeder Dialekt traegt jetzt ein vollstaendiges Adapter-Trio -- ausser
+        // Oracle: DialectCommandGate weist data profile bislang ab (ADR 0052,
+        // Slice 10 offen), profilingAdaptersFor(ORACLE) ist ein "unreachable"-Stub.
+        (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
             val adapters = bundle.adapterLookup(dialect)
             adapters.introspection::class.simpleName?.isNotBlank() shouldBe true
             adapters.data::class.simpleName?.isNotBlank() shouldBe true

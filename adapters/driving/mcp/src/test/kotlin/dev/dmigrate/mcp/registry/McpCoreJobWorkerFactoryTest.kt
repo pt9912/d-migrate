@@ -12,6 +12,8 @@ import dev.dmigrate.server.application.job.SchemaReverseJobWorker
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 import dev.dmigrate.server.core.approval.ApprovalGrant
 import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.connection.ConnectionReference
+import dev.dmigrate.server.core.connection.ConnectionSensitivity
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.artifact.ManagedArtifact
 import dev.dmigrate.server.core.job.JobStatus
@@ -23,6 +25,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.JobWorkerOutcome
 import dev.dmigrate.server.ports.ConnectionSecretResolver
+import dev.dmigrate.server.ports.ResolvedConnection
 import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.contract.Fixtures
 import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
@@ -163,6 +166,55 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         shouldThrow<IllegalStateException> {
             profile.execute(operationRecord("job-profile", DataProfileStartHandler.OPERATION), token)
         }.message shouldBe "connectionRef not found: dmigrate://tenants/acme/connections/c1"
+    }
+
+    test("McpCoreJobWorkerFactory profile worker rejects oracle via DialectCommandGate before opening a pool") {
+        // ADR 0052 / oracle-dialect-scoping.md, Slice 10 offen: data profile
+        // ist fuer oracle noch nicht gebaut. Der Gate-Check muss VOR
+        // HikariConnectionPoolFactory.create(...) greifen -- eine echte
+        // Oracle-URL, die nie verbunden wird, belegt das.
+        val connectionStore = InMemoryConnectionReferenceStore()
+        connectionStore.save(
+            ConnectionReference(
+                connectionId = "c1",
+                tenantId = TENANT,
+                resourceUri = ServerResourceUri(TENANT, ResourceKind.CONNECTIONS, "c1"),
+                displayName = "oracle-test",
+                dialectId = "oracle",
+                sensitivity = ConnectionSensitivity.NON_PRODUCTION,
+                providerRef = "stub:provider",
+                credentialRef = "stub:cred",
+                allowedScopes = setOf("dmigrate:data:read"),
+                allowedPrincipalIds = setOf(PRINCIPAL),
+            ),
+        )
+        val resolver = object : ConnectionSecretResolver {
+            override fun resolve(
+                reference: dev.dmigrate.server.core.connection.ConnectionReference,
+                principal: dev.dmigrate.server.core.principal.PrincipalContext,
+            ): ResolvedConnection = ResolvedConnection.Success("oracle://unreachable-host/orclpdb1")
+        }
+        val factory = McpCoreJobWorkerFactory(
+            connectionStore = connectionStore,
+            connectionSecretResolver = resolver,
+            artifactStore = InMemoryArtifactStore(),
+            artifactContentStore = InMemoryArtifactContentStore(),
+            schemaStore = InMemorySchemaStore(),
+            profileStore = InMemoryProfileStore(),
+            diffStore = InMemoryDiffStore(),
+            limits = McpLimitsConfig(),
+            clock = Clock.fixed(NOW, ZoneOffset.UTC),
+        )
+        val token = CancellationTokenSource.create().token
+
+        val profile = factory.create(
+            operationRecord("job-profile", DataProfileStartHandler.OPERATION),
+            connectionRequest(DataProfileStartHandler.TOOL_NAME),
+        ).shouldNotBeNull()
+
+        shouldThrow<IllegalArgumentException> {
+            profile.execute(operationRecord("job-profile", DataProfileStartHandler.OPERATION), token)
+        }.message shouldStartWith "data profile does not support dialect oracle yet"
     }
 
     test("McpCoreJobWorkerFactory compare worker rejects unsupported refs") {

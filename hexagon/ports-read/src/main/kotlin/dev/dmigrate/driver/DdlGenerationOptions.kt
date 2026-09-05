@@ -383,6 +383,10 @@ object SpatialProfilePolicy {
         DatabaseDialect.SQLITE -> SpatialProfile.NONE
         // SQL Server: native `geometry`-Spalten (spec/ddl-generation-rules.md, Spatial).
         DatabaseDialect.MSSQL -> SpatialProfile.NATIVE
+        // Oracle hat mit SDO_GEOMETRY einen nativen Spatial-Typ, aber das ist im
+        // Oracle-Inventar (oracle-dialect-scoping.md) kein geplanter Slice --
+        // konservativ NONE, keine ungeprüfte Faehigkeit behaupten.
+        DatabaseDialect.ORACLE -> SpatialProfile.NONE
     }
 
     fun allowedFor(dialect: DatabaseDialect): Set<SpatialProfile> = when (dialect) {
@@ -390,6 +394,7 @@ object SpatialProfilePolicy {
         DatabaseDialect.MYSQL -> setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
         DatabaseDialect.SQLITE -> setOf(SpatialProfile.SPATIALITE, SpatialProfile.NONE)
         DatabaseDialect.MSSQL -> setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
+        DatabaseDialect.ORACLE -> setOf(SpatialProfile.NONE)
     }
 
     /**

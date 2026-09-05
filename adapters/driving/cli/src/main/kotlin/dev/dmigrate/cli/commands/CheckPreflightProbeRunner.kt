@@ -62,5 +62,12 @@ internal object CheckPreflightProbeRunner {
         DatabaseDialect.MYSQL -> MysqlCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.SQLITE -> SqliteCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.MSSQL -> MssqlCheckPreflightProbe.probe(connection, plan)
+        // `schema migrate` ist fuer oracle hinter DialectCommandGate + dem
+        // "No renderer registered"-Pfad der MigrateRendererRegistry bis
+        // Slice 5 (docs/planning/in-progress/oracle-dialect-scoping.md) --
+        // dieser Zweig wird davor nie erreicht.
+        DatabaseDialect.ORACLE -> error(
+            "unreachable: DialectCommandGate blocks schema migrate for oracle before Slice 5 (ADR 0052).",
+        )
     }
 }

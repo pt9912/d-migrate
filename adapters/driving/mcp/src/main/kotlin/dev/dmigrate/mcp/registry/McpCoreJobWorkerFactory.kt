@@ -1,6 +1,7 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
+import dev.dmigrate.cli.commands.DialectCommandGate
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.SchemaDefinition
@@ -102,6 +103,9 @@ class McpCoreJobWorkerFactory(
             connectionRef = request.requiredString("connectionId"),
             materializer = materializer(request),
             runProfile = { config, token ->
+                DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_PROFILE, config.dialect)?.let {
+                    throw IllegalArgumentException(it)
+                }
                 HikariConnectionPoolFactory.create(config).use { pool ->
                     val adapters = profilingAdapters(config.dialect)
                     ProfileDatabaseService(adapters, ProfileTableService(adapters))
@@ -209,6 +213,10 @@ class McpCoreJobWorkerFactory(
             dev.dmigrate.driver.mssql.profiling.MssqlSchemaIntrospectionAdapter(),
             dev.dmigrate.driver.mssql.profiling.MssqlProfilingDataAdapter(),
             dev.dmigrate.driver.mssql.profiling.MssqlLogicalTypeResolver(),
+        )
+        DatabaseDialect.ORACLE -> error(
+            "unreachable: der data_profile-Worker weist oracle vor der " +
+                "Adapter-Auswahl ab (DialectCommandGate, ADR 0052)",
         )
     }
 

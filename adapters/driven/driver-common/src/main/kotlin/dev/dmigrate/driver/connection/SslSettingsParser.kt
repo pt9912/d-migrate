@@ -23,6 +23,10 @@ internal object SslSettingsParser {
             DatabaseDialect.MYSQL -> extractMysql(params, url)
             DatabaseDialect.MSSQL -> extractMssql(params, url)
             DatabaseDialect.SQLITE -> Extracted(SslSettings(), params) // kein Netz-SSL — unberührt
+            // Oracle (ojdbc) modelliert TLS ueber Wallet-/Truststore-Properties,
+            // nicht ueber ein einfaches sslmode-Query-Param wie PG/MySQL/MSSQL --
+            // noch nicht abgebildet (Slice 1); Params bleiben unkonsumiert.
+            DatabaseDialect.ORACLE -> Extracted(SslSettings(), params)
         }
 
     private fun extractPg(params: Map<String, String>, url: String): Extracted {

@@ -36,5 +36,9 @@ internal object AtomicSequencePreserveDispatcher {
             "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
                 "mssql, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0047).",
         )
+        DatabaseDialect.ORACLE -> error(
+            "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
+                "oracle, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0052).",
+        )
     }
 }

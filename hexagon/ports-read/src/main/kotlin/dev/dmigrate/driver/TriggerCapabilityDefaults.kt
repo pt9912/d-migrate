@@ -28,10 +28,15 @@ object TriggerCapabilityDefaults {
     // Trigger-Slice (docs/planning/in-progress/mssql-dialect-scoping.md, Slice 9).
     private val Mssql = TriggerCapability(enabled = false)
 
+    // Oracle unterstuetzt CREATE OR REPLACE TRIGGER nativ und unversioniert
+    // (anders als PG erst ab 14, und anders als MySQL/SQLite gar nicht).
+    private val Oracle = TriggerCapability(enabled = true)
+
     fun forDialect(dialect: DatabaseDialect): TriggerCapability = when (dialect) {
         DatabaseDialect.POSTGRESQL -> PostgreSQL
         DatabaseDialect.MYSQL -> MySQL
         DatabaseDialect.SQLITE -> SQLite
         DatabaseDialect.MSSQL -> Mssql
+        DatabaseDialect.ORACLE -> Oracle
     }
 }

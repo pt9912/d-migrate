@@ -109,7 +109,7 @@ class ToolExportRunnerTest : FunSpec({
     // ── Exit 2: CLI validation ───────────────────────────────
 
     test("invalid dialect returns exit 2") {
-        val exit = runner().execute(request(target = "oracle"))
+        val exit = runner().execute(request(target = "db2"))
         exit shouldBe 2
         stderrLines.any { it.contains("Unknown") } shouldBe true
     }

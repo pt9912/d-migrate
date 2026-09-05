@@ -42,6 +42,7 @@ internal class MatrixSweepRunner {
             DatabaseDialect.MYSQL -> MysqlDiffDdlGenerator()
             DatabaseDialect.SQLITE -> SqliteDiffDdlGenerator()
             DatabaseDialect.MSSQL -> MssqlDiffDdlGenerator()
+            DatabaseDialect.ORACLE -> null
         }
     }
 

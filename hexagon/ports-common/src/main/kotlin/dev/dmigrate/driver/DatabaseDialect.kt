@@ -1,7 +1,7 @@
 package dev.dmigrate.driver
 
 enum class DatabaseDialect {
-    POSTGRESQL, MYSQL, SQLITE, MSSQL;
+    POSTGRESQL, MYSQL, SQLITE, MSSQL, ORACLE;
 
     companion object {
         fun fromString(value: String): DatabaseDialect = when (value.lowercase()) {
@@ -9,8 +9,9 @@ enum class DatabaseDialect {
             "mysql", "maria", "mariadb" -> MYSQL
             "sqlite", "sqlite3" -> SQLITE
             "mssql", "sqlserver" -> MSSQL
+            "oracle" -> ORACLE
             else -> throw IllegalArgumentException(
-                "Unknown database dialect: '$value'. Supported: postgresql, mysql, sqlite, mssql"
+                "Unknown database dialect: '$value'. Supported: postgresql, mysql, sqlite, mssql, oracle"
             )
         }
     }

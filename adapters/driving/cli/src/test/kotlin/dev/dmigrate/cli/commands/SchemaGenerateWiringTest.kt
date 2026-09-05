@@ -317,7 +317,10 @@ class SchemaGenerateWiringTest : FunSpec({
             val result = DdlResult(listOf(DdlStatement("CREATE TABLE generated (id INT);")))
 
             schema.name shouldBe "Default Generate"
-            DatabaseDialect.entries.forEach { dialect ->
+            // Oracle: DialectCommandGate weist schema generate an der
+            // Kommando-Grenze ab (ADR 0052, Slice 2 offen) --
+            // OracleDriver.ddlGenerator() ist bewusst ein "unreachable"-Stub.
+            (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
                 bundle.generatorLookup(dialect).dialect shouldBe dialect
                 bundle.preGenerationValidatorLookup(dialect).validate(schema, DdlGenerationOptions()).isEmpty()
                     .shouldBeTrue()

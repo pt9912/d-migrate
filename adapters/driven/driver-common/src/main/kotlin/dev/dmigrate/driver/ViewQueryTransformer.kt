@@ -217,6 +217,9 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         // T-SQL nicht kennt (`::`, `||`, `LIMIT`, fremde Funktionen), meldet
         // assessPortability als nicht portabel (E053 beim Aufrufer).
         DatabaseDialect.MSSQL -> emptyList()
+        // Noch kein Oracle-Umschreibregelwerk (Slice 1) -- analog MSSQL
+        // passieren Bodies unveraendert, Nicht-Portabilitaet meldet E053.
+        DatabaseDialect.ORACLE -> emptyList()
     }
 
     private val mysqlRules: List<ViewQueryRule> = listOf(
@@ -366,6 +369,10 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         // Funktionen belegt.
         DatabaseDialect.SQLITE -> allKnown
         DatabaseDialect.MSSQL -> (allKnown - notTsqlFunctions) + tsqlOnlyFunctions
+        // Konservativ wie SQLite: nur die Grundmenge, bis ein Oracle-Verdict
+        // die portablen/Oracle-eigenen Funktionen belegt (analog tsqlOnly-
+        // /notTsqlFunctions fuer MSSQL).
+        DatabaseDialect.ORACLE -> allKnown
     }
 
     private fun detectUnknownFunctions(tokens: List<ViewQueryToken>): List<String> {

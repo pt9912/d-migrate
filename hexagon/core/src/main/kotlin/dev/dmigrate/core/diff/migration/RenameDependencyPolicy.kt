@@ -63,6 +63,12 @@ internal interface RenameDependencyPolicy {
             RenameProjectionDialect.MYSQL -> MysqlRenameDependencyPolicy
             RenameProjectionDialect.SQLITE -> SqliteRenameDependencyPolicy
             RenameProjectionDialect.MSSQL -> MssqlRenameDependencyPolicy
+            // `schema migrate` ist fuer oracle hinter DialectCommandGate bis
+            // Slice 5 (docs/planning/in-progress/oracle-dialect-scoping.md) --
+            // dieser Zweig wird vor dem Gate nie ausgewaehlt.
+            RenameProjectionDialect.ORACLE -> error(
+                "unreachable: DialectCommandGate blocks schema migrate for oracle before Slice 5 (ADR 0052).",
+            )
         }
     }
 }

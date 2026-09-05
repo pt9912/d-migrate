@@ -193,7 +193,10 @@ class DataImportWiringTest : FunSpec({
 
             bundle.targetResolver("sqlite://import.db", null) shouldBe "sqlite://import.db"
             bundle.urlParser("sqlite://import.db").dialect shouldBe DatabaseDialect.SQLITE
-            DatabaseDialect.entries.forEach { dialect ->
+            // Oracle: DialectCommandGate weist data import an der Kommando-
+            // Grenze ab (ADR 0052, Slice 3 offen) -- OracleDriver.dataWriter()
+            // ist bewusst ein "unreachable"-Stub, kein echter Writer.
+            (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
                 bundle.writerLookup(dialect).dialect shouldBe dialect
             }
             bundle.schemaCodec::class.simpleName shouldBe "YamlSchemaCodec"

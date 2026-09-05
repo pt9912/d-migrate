@@ -71,6 +71,15 @@ object ReverseScopeCodec {
         "${PREFIX}mssql:database=${encodeComponent(database)};schema=${encodeComponent(schema)}"
 
     /**
+     * Build canonical reverse name for Oracle. Oracle hat kein von der
+     * Schema-Ebene getrenntes "Datenbank"-Konzept (Schema = User) —
+     * einparametrig wie [sqliteName]/[mysqlName].
+     * Format: `__dmigrate_reverse__:oracle:schema=<schema>`
+     */
+    fun oracleName(schema: String): String =
+        "${PREFIX}oracle:schema=${encodeComponent(schema)}"
+
+    /**
      * Check whether a schema was reverse-generated.
      * Both [name] and [version] must match the canonical marker set.
      */

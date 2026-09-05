@@ -36,6 +36,7 @@ object SqlIdentifiers {
             DatabaseDialect.MYSQL -> "`${name.replace("`", "``")}`"
             DatabaseDialect.POSTGRESQL,
             DatabaseDialect.SQLITE,
+            DatabaseDialect.ORACLE,
                 -> "\"${name.replace("\"", "\"\"")}\""
             // T-SQL-Klammern als kanonisches Quoting (ADR 0047); nur `]`
             // braucht Escaping (`]]`), `[` ist im Delimiter-Kontext neutral.
@@ -70,10 +71,11 @@ object SqlIdentifiers {
             // how MySQL itself resolves escapes.
             DatabaseDialect.MYSQL ->
                 "'${value.replace("\\", "\\\\").replace("'", "''")}'"
-            // T-SQL folgt dem SQL-Standard: kein Backslash-Escape.
+            // T-SQL und Oracle folgen dem SQL-Standard: kein Backslash-Escape.
             DatabaseDialect.POSTGRESQL,
             DatabaseDialect.SQLITE,
             DatabaseDialect.MSSQL,
+            DatabaseDialect.ORACLE,
                 -> "'${value.replace("'", "''")}'"
         }
 }

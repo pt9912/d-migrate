@@ -6,12 +6,13 @@ import io.kotest.matchers.shouldBe
 
 class DatabaseDialectTest : FunSpec({
 
-    test("enum exposes exactly POSTGRESQL, MYSQL, SQLITE, MSSQL") {
+    test("enum exposes exactly POSTGRESQL, MYSQL, SQLITE, MSSQL, ORACLE") {
         DatabaseDialect.entries.toSet() shouldBe setOf(
             DatabaseDialect.POSTGRESQL,
             DatabaseDialect.MYSQL,
             DatabaseDialect.SQLITE,
             DatabaseDialect.MSSQL,
+            DatabaseDialect.ORACLE,
         )
     }
 
@@ -63,21 +64,28 @@ class DatabaseDialectTest : FunSpec({
         DatabaseDialect.fromString("sqlserver") shouldBe DatabaseDialect.MSSQL
     }
 
+    // ─── Oracle ──────────────────────────────────────────────────
+
+    test("fromString resolves canonical oracle") {
+        DatabaseDialect.fromString("oracle") shouldBe DatabaseDialect.ORACLE
+    }
+
     // ─── Case-insensitivity ──────────────────────────────────────
 
     test("fromString is case-insensitive") {
         DatabaseDialect.fromString("PostgreSQL") shouldBe DatabaseDialect.POSTGRESQL
         DatabaseDialect.fromString("MYSQL") shouldBe DatabaseDialect.MYSQL
         DatabaseDialect.fromString("SQLite") shouldBe DatabaseDialect.SQLITE
+        DatabaseDialect.fromString("Oracle") shouldBe DatabaseDialect.ORACLE
     }
 
     // ─── Error cases ─────────────────────────────────────────────
 
     test("fromString throws on unknown dialect") {
         val ex = shouldThrow<IllegalArgumentException> {
-            DatabaseDialect.fromString("oracle")
+            DatabaseDialect.fromString("db2")
         }
-        ex.message!!.contains("oracle") shouldBe true
+        ex.message!!.contains("db2") shouldBe true
         ex.message!!.contains("postgresql") shouldBe true
     }
 

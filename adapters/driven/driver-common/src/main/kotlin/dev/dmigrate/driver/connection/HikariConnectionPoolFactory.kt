@@ -137,6 +137,11 @@ object HikariConnectionPoolFactory {
             DatabaseDialect.MYSQL -> "SET SESSION MAX_EXECUTION_TIME = $statementTimeoutMs"
             DatabaseDialect.SQLITE -> "PRAGMA busy_timeout = $statementTimeoutMs"
             DatabaseDialect.MSSQL -> "SET LOCK_TIMEOUT $statementTimeoutMs"
+            // Oracle hat kein einfaches Session-Statement-Budget per SQL-
+            // Init-Statement (das naechste Aequivalent waere Resource-Manager-
+            // Konfiguration, DBA-seitig) -- der gemeinsame setQueryTimeout-
+            // Layer traegt hier allein, analog zu MySQLs Write-Pfad-Luecke.
+            DatabaseDialect.ORACLE -> null
         }
     }
 
@@ -180,6 +185,9 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
         DatabaseDialect.MSSQL -> mapOf(
             "applicationName" to "d-migrate",
         )
+        // Kein Oracle-spezifischer Default-Tuning-Parameter identifiziert
+        // (Slice 1) -- leer statt eines ungeprueften ojdbc-Property-Namens.
+        DatabaseDialect.ORACLE -> emptyMap()
     }
 
     override fun baseJdbcUrl(config: ConnectionConfig): String = when (config.dialect) {
@@ -194,6 +202,12 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
         DatabaseDialect.SQLITE -> "jdbc:sqlite:${config.database}"
         DatabaseDialect.MSSQL ->
             SqlServerJdbcUrl.base(config.host, config.port, config.database)
+        DatabaseDialect.ORACLE -> {
+            // ojdbc "thin"-Treiber, EZConnect-Form; config.database ist der
+            // Service-Name (nicht die SID) -- Standard-Listener-Port 1521.
+            val port = config.port ?: 1521
+            "jdbc:oracle:thin:@//${config.host}:$port/${config.database}"
+        }
     }
 
     override fun buildJdbcUrl(config: ConnectionConfig): String =

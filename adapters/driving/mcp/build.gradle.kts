@@ -24,6 +24,7 @@ dependencies {
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:driver-mssql-profiling"))
     runtimeOnly(project(":adapters:driven:driver-mssql"))
+    runtimeOnly(project(":adapters:driven:driver-oracle"))
 
     // §12.1 — JSON-RPC-Layer (AP 6.4 Initialize-Handler + NDJSON-Framing)
     implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:${rootProject.properties["lsp4jJsonrpcVersion"]}")

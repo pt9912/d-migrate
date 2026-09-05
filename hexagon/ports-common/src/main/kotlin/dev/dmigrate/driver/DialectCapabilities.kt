@@ -162,6 +162,35 @@ data class DialectCapabilities(
                 supportsClusteredIndexes = true,
                 namesFullTextIndexes = false,
             )
+            // Objekttyp-Flags nach heutigem Oracle-Inventar
+            // (docs/planning/in-progress/oracle-dialect-scoping.md, ADR 0052).
+            // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen
+            // (CREATE TYPE) sind nicht Teil des heutigen Slice-Schnitts.
+            // batchSeparator "/" ist die SQL*Plus/SQLcl-Konvention fuer
+            // PL/SQL-Bloecke (Prozeduren/Funktionen/Trigger, Slice 9).
+            // partitionChildrenAreTables=false: Oracle-Partitionen brauchen wie
+            // bei MySQL die `PARTITION (name)`-Klausel, sind keine eigenstaendig
+            // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-
+            // Indizes (CONTEXT/CTXCAT) tragen anders als MSSQL einen Namen.
+            DatabaseDialect.ORACLE -> DialectCapabilities(
+                supportsViews = true,
+                supportsFunctions = true,
+                supportsProcedures = true,
+                supportsTriggers = true,
+                supportsSequences = true,
+                supportsCustomTypes = false,
+                supportsPartitioning = true,
+                supportsDisableFkChecks = true,
+                supportsTriggerDisable = false,
+                supportsTriggerStrict = false,
+                supportsSchemaParameter = true,
+                partitionChildrenAreTables = false,
+                batchSeparator = "/",
+                requiresPrimaryKeyForSkip = true,
+                supportsIndexIncludeColumns = false,
+                supportsClusteredIndexes = false,
+                namesFullTextIndexes = true,
+            )
         }
     }
 }

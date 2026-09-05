@@ -90,10 +90,12 @@ class SequenceCapabilityTest : FunSpec({
         // of getting the atomic path).
         DatabaseDialect.values().forEach { dialect ->
             val capability = SequenceCapabilityDefaults.forDialect(dialect)
-            if (dialect == DatabaseDialect.MSSQL) {
-                // Bewusste Ausnahme statt stillem Durchrutschen: fuer MSSQL
-                // existiert kein Migrate-Renderer/Preserve-Executor — die
-                // Capability-Defaults spiegeln Renderer-Realitaet
+            if (dialect == DatabaseDialect.MSSQL || dialect == DatabaseDialect.ORACLE) {
+                // Explizite Ausnahme statt stillem Durchrutschen: weder MSSQL
+                // noch Oracle haben einen Atomic-Sequence-Preserve-Executor
+                // (docs/planning/done-archive/sequence-preserve-atomic-lock-plan.md
+                // deckte nur PG/MySQL/SQLite). Nachruest-Slice fuer beide:
+                // docs/planning/next/atomic-preserve-mssql-oracle.md.
                 capability.supportsAtomicPreserve shouldBe false
                 capability.supportsAtomicPreserveAllInPlan shouldBe false
                 capability.transactionalProtectedSequenceOperations shouldBe

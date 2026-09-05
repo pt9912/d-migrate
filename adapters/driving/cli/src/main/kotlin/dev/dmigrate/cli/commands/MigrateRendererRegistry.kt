@@ -11,15 +11,19 @@ import dev.dmigrate.driver.sqlite.SqliteDiffDdlGenerator
  * Wiring-side renderer lookup for the `schema migrate` command.
  * Direct instantiation rather than ServiceLoader because the
  * renderers are stateless and cheap, and the CLI module already depends
- * on every driver adapter. Jeder Dialekt hat einen Renderer — der
- * Rueckgabetyp ist deshalb nicht nullable.
+ * on every driver adapter. Nullable again since Oracle joined ohne
+ * eigenen Renderer (Slice 5 offen, ADR 0052) — `null` nimmt den
+ * bestehenden "No renderer registered"-Exit-2-Pfad der
+ * `SchemaMigratePreparation`; `DialectCommandGate` weist oracle davor
+ * ohnehin schon ab.
  */
 internal object MigrateRendererRegistry {
 
-    fun forDialect(dialect: DatabaseDialect): DiffDdlGenerator = when (dialect) {
+    fun forDialect(dialect: DatabaseDialect): DiffDdlGenerator? = when (dialect) {
         DatabaseDialect.POSTGRESQL -> PostgresDiffDdlGenerator()
         DatabaseDialect.MYSQL -> MysqlDiffDdlGenerator()
         DatabaseDialect.SQLITE -> SqliteDiffDdlGenerator()
         DatabaseDialect.MSSQL -> MssqlDiffDdlGenerator()
+        DatabaseDialect.ORACLE -> null
     }
 }

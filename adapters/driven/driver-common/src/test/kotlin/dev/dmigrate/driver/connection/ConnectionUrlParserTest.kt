@@ -177,9 +177,9 @@ class ConnectionUrlParserTest : FunSpec({
 
     test("unsupported dialect throws") {
         val ex = shouldThrow<IllegalArgumentException> {
-            ConnectionUrlParser.parse("oracle://localhost/mydb")
+            ConnectionUrlParser.parse("db2://localhost/mydb")
         }
-        ex.message!!.contains("oracle") shouldBe true
+        ex.message!!.contains("db2") shouldBe true
     }
 
     test("postgresql without database throws") {
@@ -202,7 +202,7 @@ class ConnectionUrlParserTest : FunSpec({
 
     test("error messages mask the password (LogScrubber integration)") {
         val ex = shouldThrow<IllegalArgumentException> {
-            ConnectionUrlParser.parse("oracle://admin:secret@host/db")
+            ConnectionUrlParser.parse("db2://admin:secret@host/db")
         }
         ex.message!!.contains("secret") shouldBe false
         ex.message!!.contains("***") shouldBe true

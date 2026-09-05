@@ -588,6 +588,10 @@ internal class SchemaMigrateRenderPipeline(
                 // eine sealed Variante kommt erst mit einem Renderer, der sie
                 // braucht (Hexagon-DialectContext-Regel).
                 DatabaseDialect.POSTGRESQL -> DdlDialectContext.None
+                // Oracle hat noch kein Slice-5-Diff/Migrate (docs/planning/
+                // in-progress/oracle-dialect-scoping.md) -- kein Renderer
+                // braucht bislang einen Oracle-eigenen Kontext.
+                DatabaseDialect.ORACLE -> DdlDialectContext.None
             }
         }
 

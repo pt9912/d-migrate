@@ -188,10 +188,10 @@ class SchemaCompareWiringTest : FunSpec({
         val bundle = DefaultSchemaCompareWiringFactory.build(CliContext(quiet = true))
 
         val failure = shouldThrow<CompareConfigException> {
-            bundle.dbLoader(CompareOperand.Database("oracle://localhost/db"), null)
+            bundle.dbLoader(CompareOperand.Database("db2://localhost/db"), null)
         }
 
-        failure.message shouldContain "oracle"
+        failure.message shouldContain "db2"
     }
 
     test("default factory exposes renderers comparator and scrubber") {
