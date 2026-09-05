@@ -12,6 +12,7 @@ import dev.dmigrate.server.ports.ApprovalGrantStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 
 /**
@@ -61,7 +62,12 @@ class FileBackedApprovalGrantStore(
     private fun loadGrants(): List<ApprovalGrant> {
         if (!Files.exists(path)) return emptyList()
         if (!Files.isReadable(path)) {
-            error("approval grants file is not readable: $path")
+            error(
+                "approval grants file is not readable: $path " +
+                    "(check ownership/permissions -- the file may have been rewritten by a " +
+                    "different OS user, e.g. the CLI issuing a grant as a different UID than " +
+                    "the running server process)",
+            )
         }
         val root = mapper.readTree(path.toFile()) ?: return emptyList()
         val grants = root.get("grants") ?: return emptyList()
@@ -81,9 +87,32 @@ class FileBackedApprovalGrantStore(
         val tmp = Files.createTempFile(path.parent ?: Path.of("."), path.fileName.toString(), ".tmp")
         try {
             mapper.writerWithDefaultPrettyPrinter().writeValue(tmp.toFile(), root)
+            widenReadPermissions(tmp)
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } finally {
             Files.deleteIfExists(tmp)
+        }
+    }
+
+    /**
+     * `Files.createTempFile` defaults to owner-only (`rw-------`) on
+     * POSIX filesystems, and `ATOMIC_MOVE` carries that onto the
+     * replaced target regardless of its previous permissions. The CLI
+     * (`mcp approval-grant issue`) and the running `mcp serve` process
+     * commonly run as different OS users (containerised server, host-
+     * invoked CLI, or vice versa) -- an owner-only grants file becomes
+     * unreadable to the server the moment an operator issues the next
+     * grant, surfacing as an unhandled `IllegalStateException` deep in
+     * the approval-validation path (found live: server UID 10001 could
+     * not read a file just written by CLI UID 1000). The file holds
+     * only token fingerprints, never raw secrets (see class KDoc), so
+     * widening read access is safe.
+     */
+    private fun widenReadPermissions(file: Path) {
+        try {
+            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"))
+        } catch (_: UnsupportedOperationException) {
+            // Non-POSIX filesystem (e.g. Windows) -- nothing to adjust.
         }
     }
 

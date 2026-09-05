@@ -52,6 +52,7 @@ class AiToolOrchestrator(
     private val outcomeStore: AiToolOutcomeStore,
     private val leaseDuration: Duration = Duration.ofSeconds(60),
 ) {
+    private val log = org.slf4j.LoggerFactory.getLogger(AiToolOrchestrator::class.java)
 
     /**
      * Akquiriert den Single-Writer-Claim für [envelope] und
@@ -109,6 +110,12 @@ class AiToolOrchestrator(
         val workResult = try {
             work.perform(claim)
         } catch (e: Throwable) {
+            // Ohne dieses Log ist ein Bug in AiToolWork.perform (Policy-/Provider-/Artefakt-Pfad)
+            // nur als "tool work threw <ClassName>" ohne jede weitere Information sichtbar --
+            // ein realer Vorfall (Datei-Berechtigungs-Mismatch zwischen CLI-Operator- und
+            // Server-Prozess-UID beim FileBackedApprovalGrantStore) brauchte eine mehrstufige
+            // Live-Debug-Session, um das nachzuvollziehen, weil der Stacktrace nirgends landete.
+            log.error("AiToolWork.perform threw an unhandled exception for scope {}", envelope.scope(), e)
             AiToolWorkResult.FailedTerminal(
                 toolErrorCode = ToolErrorCode.INTERNAL_AGENT_ERROR,
                 scrubbedMessage = "tool work threw ${e.javaClass.simpleName}",
