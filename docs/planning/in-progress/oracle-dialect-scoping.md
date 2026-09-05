@@ -1,7 +1,8 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
 > **Status:** In Progress (2026-09-05). Scope skizziert, alle fünf
-> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0 geliefert**.
+> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0 und
+> Slice 1 geliefert**.
 >
 > **Status-Update 2026-09-05:** Slice 0 umgesetzt — Modul
 > `adapters/driven/driver-oracle` (Skeleton, `ojdbc11` 23.26.3.0.0),
@@ -12,6 +13,16 @@
 > Live-Fund: die gleitenden `slim-faststart`-Tags liefern inzwischen „26ai"
 > statt „23ai" aus (Banner „Oracle AI Database", nicht mehr „Oracle
 > Database") — Spike pinnt deshalb explizit auf `23-slim-faststart`.
+>
+> **Status-Update 2026-09-05 (Slice 1):** `ORACLE`-Enum-Querschnitt,
+> `DialectCommandGate` wiedereingeführt (schema generate/migrate, data
+> export/import/transfer/profile bis zum jeweiligen Slice gesperrt), reale
+> `OracleSchemaReader`/`OracleTableLister`/`OracleJdbcUrlBuilder` — `schema
+> reverse` und `schema compare` funktionieren gegen Oracle. Unabhängiges
+> Review vor dem Push fand drei P1- und zwei P2-Befunde (fehlende Tests +
+> Kover-Gate, `export`-Kommandos ungegattert, `NUMBER(1)`-Boolean-Faltung
+> fehlte); alle behoben, CI (Build & Test, Integration Tests, Per-Module
+> Coverage) grün.
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
