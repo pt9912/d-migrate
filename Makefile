@@ -181,7 +181,7 @@ include make/gate.mk
 # `.a-check.yml`. `make a-check` ist Teil von `gates`/`docker-gates`; der
 # Befund-Bereinigungs-Slice ist in docs/planning/done/a-check-architecture-gate.md
 # dokumentiert. make/a-check.mk ist via `a-check --print-mk` erzeugt; Digest-Pin
-# (v0.12.0) lebt dort.
+# (v0.19.0) lebt dort.
 include make/a-check.mk
 
 # native — GraalVM-Native-Image lokal (Linux) im Container. native-image braucht eine
