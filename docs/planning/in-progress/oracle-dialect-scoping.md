@@ -1,8 +1,17 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
-> **Status:** Skeleton — Pending Slice-0-Baubeginn (2026-09-05). Scope
-> skizziert, alle fünf Grundsatzentscheidungen getroffen (siehe ADR 0052),
-> **noch keine aktive Slice-Arbeit** im Code.
+> **Status:** In Progress (2026-09-05). Scope skizziert, alle fünf
+> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0 geliefert**.
+>
+> **Status-Update 2026-09-05:** Slice 0 umgesetzt — Modul
+> `adapters/driven/driver-oracle` (Skeleton, `ojdbc11` 23.26.3.0.0),
+> Spike-Modul `test/integration-oracle` (Container-Start gegen
+> `gvenzl/oracle-free:23-slim-faststart` + Treiber-Connect +
+> `SELECT banner FROM v$version`, live grün gelaufen), Dependabot-Major-Ignore,
+> FUTC-Lizenzdoku in [`THIRD-PARTY-NOTICES.md`](../../../THIRD-PARTY-NOTICES.md).
+> Live-Fund: die gleitenden `slim-faststart`-Tags liefern inzwischen „26ai"
+> statt „23ai" aus (Banner „Oracle AI Database", nicht mehr „Oracle
+> Database") — Spike pinnt deshalb explizit auf `23-slim-faststart`.
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -92,7 +101,7 @@ trägt bislang **keinen** `ORACLE`-Wert, auch nicht vorbereitend.
    werden bis auf Weiteres als entpackte Einzelroutinen erfasst (siehe
    [ADR 0052](../../adr/0052-oracle-fuenfter-dialekt-scoping.md), Konsequenzen).
 5. **Test-Infrastruktur: Oracle läuft in jedem CI-Lauf mit**, analog MSSQL
-   Entscheidung 3. Das neue Integrationstest-Modul (`test/integration-oracle` <!-- d-check:ignore (Zielbild: entsteht in Slice 0; ADR 0011) -->,
+   Entscheidung 3. Das neue Integrationstest-Modul (`test/integration-oracle`,
    dem `test/integration-*`-Muster folgend) nimmt automatisch am generischen
    `-PintegrationTests`-Mechanismus in `integration.yml` teil (jeder Push/PR
    auf main, nicht-blockierend neben dem Hauptbuild) — kein Sonderpfad. Der
@@ -107,7 +116,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 
 | Slice | Inhalt | Registrierbar ab / liefert |
 | --- | --- | --- |
-| **0** | Scoping-ADR (0052), Gradle-Modul `driver-oracle`, Testcontainers-Spike (Connect + `SELECT * FROM v$version` oder `SELECT banner FROM v$version`), FUTC-Lizenztext-Doku, Dependabot-Ignore | — |
+| **0** ✅ | Scoping-ADR (0052), Gradle-Modul `driver-oracle`, Testcontainers-Spike (Connect + `SELECT banner FROM v$version`), FUTC-Lizenztext-Doku, Dependabot-Ignore | — |
 | **1** | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read) + `ORACLE`-Enum-Querschnitt + `DialectCommandGate` **wiedereinführen** (die Klasse wurde in Commit `ec3f2d06` beim MSSQL-Slice-10-Abschluss gelöscht, weil ihr letzter Eintrag wegfiel — Oracle braucht sie neu, nicht nur einen weiteren Eintrag) | `schema reverse` funktioniert |
 | **1a** | CLI-E2E-Absicherung in `test/e2e-cli` (Gate-Ablehnungen + `schema reverse`-Subprozess-E2E), analog MSSQL Slice 1a | E2E-Netz vor Slice 2 |
 | **2** | `DdlGenerator` + Typtabelle NeutralType→Oracle-Typen (Kern-Typen; Materialized Views bewusst **nicht** hier, siehe Slice 10) | `schema generate --target oracle` |
@@ -140,13 +149,22 @@ verstecktes else, aber auch keine falsche Terminzusage.
 | `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` |
 | `data profile` (CLI + MCP-Job) | Slice 11 | Gate |
 
-## Offene Punkte vor Slice-0-Baubeginn
+## Offene Punkte
 
-- FUTC-Lizenztext-Bündelung im Docker-Image/Release-Assets konkret ausarbeiten
-  (welche Datei, welcher Pfad — analog zu bestehenden Lizenz-Artefakten, falls
-  vorhanden).
-- `gvenzl/oracle-free`-EULA-/Zustimmungsmechanik verifizieren (vor Slice 0).
-- Testcontainers-Ressourcenbedarf (RAM) real messen, nicht nur Image-Größe.
+- ~~`gvenzl/oracle-free`-EULA-/Zustimmungsmechanik verifizieren~~ — **erledigt
+  (Slice 0):** keine EULA-Zustimmung nötig, anders als beim MSSQL-Image.
+- ~~FUTC-Lizenztext dokumentieren~~ — **erledigt (Slice 0):**
+  [`THIRD-PARTY-NOTICES.md`](../../../THIRD-PARTY-NOTICES.md) im Repo-Root.
+  **Weiterhin offen:** die mechanisierte Bündelung dieser Datei in den
+  Release-Artefakten (Docker-Image, Fat-JAR/ZIP) — kein bestehendes Muster im
+  Repo, braucht einen eigenen kleinen Schnitt.
+- Testcontainers-Ressourcenbedarf (RAM) real messen, nicht nur Image-Größe
+  (Slice-0-Spike lief containerisiert durch, aber ohne RAM-Messung).
+- **Neu (Slice 0, live entdeckt):** `gvenzl/oracle-free`s gleitende
+  `slim-faststart`-Tags liefern inzwischen „26ai" statt „23ai" aus, und der
+  Versions-Banner heißt jetzt „Oracle AI Database" statt „Oracle Database" —
+  der Spike pinnt deshalb explizit auf `23-slim-faststart`
+  (siehe `OracleContainerConnectIntegrationTest.kt`).
 
 ## Risiken
 

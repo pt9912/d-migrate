@@ -66,7 +66,7 @@ Einordnung von PL/SQL Packages.
    (Package-Zugehörigkeit geht verloren).
 5. **Test-Infrastruktur: Oracle läuft in jedem CI-Lauf mit**, analog
    [ADR 0047](0047-mssql-vierter-dialekt-scoping.md) Punkt 3. Das neue
-   Integrationstest-Modul `test/integration-oracle` <!-- d-check:ignore (Zielbild: entsteht in Slice 0; ADR 0011) --> nimmt automatisch am
+   Integrationstest-Modul `test/integration-oracle` nimmt automatisch am
    generischen `-PintegrationTests`-Mechanismus in
    [`integration.yml`](../../.github/workflows/integration.yml) teil (jeder
    Push/PR auf main, nicht-blockierend neben dem Hauptbuild) — kein

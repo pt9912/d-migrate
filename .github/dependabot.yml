@@ -30,6 +30,8 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: com.microsoft.sqlserver:mssql-jdbc
         update-types: [version-update:semver-major]
+      - dependency-name: com.oracle.database.jdbc:ojdbc11
+        update-types: [version-update:semver-major]
       # Kotlin toolchain: a minor bump changes compiler/Kover behaviour and is
       # upgraded deliberately as its own slice, not via an automated PR. Patch
       # bumps pass. Hintergrund zur Codegenerierung: ADR 0043.

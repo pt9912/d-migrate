@@ -104,3 +104,5 @@ argumentiert werden.
 | 0048 | [Der Wertevorrat eines Enums zählt im Fingerprint unabhängig von seiner Darstellung, `schema-fingerprint-v7` → `v8`](0048-enum-wertevorrat-im-fingerprint.md) | accepted |
 | 0049 | [Abdeckende und clustered Indizes stehen erstklassig im neutralen Modell, `schema-fingerprint-v8` → `v9`](0049-abdeckende-und-clustered-indizes-im-neutralen-modell.md) | accepted |
 | 0050 | [Overlay-Bindung: Übergang bindet an ein Paar, Darstellung an ein Schema](0050-overlay-bindung-uebergang-vs-darstellung.md) | accepted |
+| 0051 | [Server-State-Schema wird neutral gepflegt, Flyway-Migrationen werden generiert statt handgeschrieben](0051-server-state-schema-generiert-statt-handgeschrieben.md) | accepted |
+| 0052 | [Oracle als fünfter Dialekt — 23ai Free als Testziel, voller Umfang als Slices, PL/SQL-Packages ohne Liefertermin](0052-oracle-fuenfter-dialekt-scoping.md) | accepted |

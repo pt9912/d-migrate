@@ -166,3 +166,12 @@ Beides entspricht `ACCEPT_EULA=Y` — wer eine dieser Schienen ausführt,
 akzeptiert damit die Lizenzbedingungen des Microsoft-Container-Images. Mit
 ~1,5 GB Image und ~2 GB RAM-Bedarf ist es der schwerste Container des Projekts
 ([ADR 0047](../adr/0047-mssql-vierter-dialekt-scoping.md)).
+
+Die Oracle-Integrationstests (`test/integration-oracle`) starten
+`gvenzl/oracle-free:slim-faststart` via Testcontainers. Anders als das
+MSSQL-Image verlangt dieses Image **keine** programmatische EULA-Akzeptanz.
+Der Treiber `com.oracle.database.jdbc:ojdbc11` steht unter den Oracle Free
+Use Terms and Conditions (FUTC), nicht MIT — Weiterverbreitung des
+unmodifizierten Treibers ist erlaubt, verlangt aber, den Lizenztext
+mitzuführen und Oracle-Eigentumsvermerke nicht zu entfernen
+([ADR 0052](../adr/0052-oracle-fuenfter-dialekt-scoping.md)).

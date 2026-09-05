@@ -79,6 +79,7 @@ COPY --chown=gradle:gradle adapters/driven/driver-sqlite/build.gradle.kts adapte
 COPY --chown=gradle:gradle adapters/driven/driver-sqlite-profiling/build.gradle.kts adapters/driven/driver-sqlite-profiling/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/driver-mssql-profiling/build.gradle.kts adapters/driven/driver-mssql-profiling/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/driver-mssql/build.gradle.kts adapters/driven/driver-mssql/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-oracle/build.gradle.kts adapters/driven/driver-oracle/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/formats/build.gradle.kts adapters/driven/formats/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/formats-parquet/build.gradle.kts adapters/driven/formats-parquet/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/audit-logging/build.gradle.kts adapters/driven/audit-logging/build.gradle.kts
@@ -95,6 +96,7 @@ COPY --chown=gradle:gradle test/integration-postgresql/build.gradle.kts test/int
 COPY --chown=gradle:gradle test/integration-mysql/build.gradle.kts test/integration-mysql/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-sqlite/build.gradle.kts test/integration-sqlite/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-mssql/build.gradle.kts test/integration-mssql/build.gradle.kts
+COPY --chown=gradle:gradle test/integration-oracle/build.gradle.kts test/integration-oracle/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-server-state/build.gradle.kts test/integration-server-state/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-integrations/build.gradle.kts test/integration-integrations/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-persistence-jdbc/build.gradle.kts test/integration-persistence-jdbc/build.gradle.kts
@@ -200,6 +202,7 @@ ARG COVERAGE_MODULES_HTML_TASKS="\
 :adapters:driven:driver-sqlite-profiling:koverHtmlReport \
 :adapters:driven:driver-mssql-profiling:koverHtmlReport \
 :adapters:driven:driver-mssql:koverHtmlReport \
+:adapters:driven:driver-oracle:koverHtmlReport \
 :adapters:driven:formats:koverHtmlReport \
 :adapters:driven:integrations:koverHtmlReport \
 :adapters:driven:streaming:koverHtmlReport \
@@ -385,6 +388,7 @@ ARG COVERAGE_MODULES_TASKS="\
 :adapters:driven:driver-sqlite-profiling:koverXmlReport \
 :adapters:driven:driver-mssql-profiling:koverXmlReport \
 :adapters:driven:driver-mssql:koverXmlReport \
+:adapters:driven:driver-oracle:koverXmlReport \
 :adapters:driven:audit-logging:koverXmlReport \
 :adapters:driven:connection-config:koverXmlReport \
 :adapters:driven:formats:koverXmlReport \
