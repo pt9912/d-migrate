@@ -1005,6 +1005,10 @@ Datenbanksystem — `schema reverse`, `generate`, `migrate`, der Datenpfad und
 
 **Ergebnis**: Unterstützung für die 5 wichtigsten relationalen Datenbanken.
 
+**Status 2026-09-05:** Scoping abgeschlossen ([ADR 0052](../../adr/0052-oracle-fuenfter-dialekt-scoping.md),
+[`oracle-dialect-scoping.md`](oracle-dialect-scoping.md)), Slice-0-Baubeginn
+noch aus.
+
 ### Milestone 2.0.0 — Langfristige Vision
 
 | Bereich   | Aufgabe                                                                     | LF-Ref                                                   |
