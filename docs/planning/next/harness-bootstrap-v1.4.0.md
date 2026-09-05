@@ -40,7 +40,7 @@ Klasse wie ein undeklariertes Gate).
 | Carveout-Tracking | `CO-<NNN>`-Pro-Datei + `Letzte Prüfung` + Audit-Slice | Single-File-Aggregator `carveout.md` (Permanent/Provisional/Promoted/Resolved) | funktional nah, strukturell abweichend → Entscheidung nötig |
 | `harness/README.md` | Pflicht-Einstiegspunkt | fehlt | **Lücke** |
 | `harness/conventions.md` | Pflicht (Baseline + Adaptions-Block `MR-NNN` + Modus pro Sub-Area) | fehlt | **Lücke** |
-| `AGENTS.md` | Agenten-Konventionen als Repo-Datei | fehlt (lebt im Memory) | **Lücke** |
+| `AGENTS.md` | Agenten-Konventionen als Repo-Datei | seit 2026-09-05 vorhanden, aber nur Doku-Auffindbarkeit + Verweis auf `CLAUDE.md` — Codestil/Layering/Source-Precedence-Rang fehlen noch | **Teil-Lücke** |
 | Durchsetzungsschicht | PreToolUse-/Stop-Hooks + Workflow-Slash-Command | nur `.claude/settings.local.json` | **Lücke** |
 | `check-references`-Gate | fail-closed Token-Richtungs-Check | `docs-check` (Codepath-Validierung) deckt anderes ab | Teilabdeckung → prüfen |
 
@@ -63,7 +63,13 @@ Klasse wie ein undeklariertes Gate).
   unabhängig vom Datei-Layout).
 - **AP4 — `AGENTS.md`.** Maschinell lesbare Agenten-Konventionen als Repo-Datei
   (Codestil, Tool-Regeln, Layering, Verbote) — Source-Precedence-Rang. Abgrenzung
-  zum Memory-System klären (keine Doppelquelle/Drift).
+  zum Memory-System klären (keine Doppelquelle/Drift). **Teilstart 2026-09-05**:
+  [`AGENTS.md`](../../../AGENTS.md) existiert bereits, deckt aber nur einen
+  anderen Auslöser ab (Code-Agenten fanden die Anwenderhandbücher über GitHub
+  schlecht) — ein Doku-Auffindbarkeits-Index mit Verweis auf `CLAUDE.md`, keine
+  Source-Precedence-Formalisierung. AP4 bleibt offen für die Erweiterung um
+  Codestil/Layering/Source-Precedence-Rang; diese Datei nur ergänzen, nicht neu
+  anlegen.
 - **AP5 — Durchsetzungsschicht** (optional, höchster Aufwand). PreToolUse-Gate
   (Befehls-Guard), Stop-/Handoff-Gate (Gate-Nachweis über Working-Tree-Hash),
   Workflow-Slash-Command. Bootstrap-aware: erzwingt nur die Gates, die schon
