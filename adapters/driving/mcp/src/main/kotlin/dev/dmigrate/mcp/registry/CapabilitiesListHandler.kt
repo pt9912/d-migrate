@@ -13,7 +13,7 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
  * LF-012 / LN-027 / LN-028 / LN-038: LF-012 / LN-038 `capabilities_list` per
  * LF-012 / LN-027 / LN-028 / LN-038.
  *
- * Output shape (stable across 0.9.6):
+ * Output shape (`dialects` reflects [DatabaseDialect.entries]):
  * ```json
  * {
  *   "mcpProtocolVersion": "2025-11-25",
@@ -21,7 +21,7 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
  *   "serverName": "d-migrate",
  *   "tools": [ ... ],
  *   "scopeTable": { ... },
- *   "dialects": [ "POSTGRESQL", "MYSQL", "SQLITE" ],
+ *   "dialects": [ "POSTGRESQL", "MYSQL", "SQLITE", "MSSQL" ],
  *   "formats": [ "json", "yaml" ],
  *   "limits": { "maxToolResponseBytes": 65536, ... },
  *   "executionMeta": { "requestId": "req-…" }

@@ -76,10 +76,13 @@ data class ToolContent(
 
 /**
  * Tool handler interface per §3.1 ("Handler-Schnittstelle fuer
- * spaetere Anforderungen definieren"). LF-012 / LN-038's only real handler is
- * `capabilities_list`; every other 0.9.6 tool is wired to
- * [UnsupportedToolHandler] so unknown tools and known-but-unimplemented
- * ones produce different errors (§6.8 acceptance).
+ * spaetere Anforderungen definieren"). [UnsupportedToolHandler] is the
+ * fallback for a tool name the registry knows about but has no real
+ * handler for (the contract-only `McpContractRegistries.toolRegistry`,
+ * see [dev.dmigrate.mcp.server.McpServerBootstrap]) — it produces a
+ * different error than a genuinely unknown tool name (§6.8 acceptance).
+ * Supplying `runtimeWiring` swaps most tools onto real handlers
+ * (`McpRuntimeRegistries`/`OperationalMcpRegistries`/`AiMcpRegistries`).
  *
  * Handlers may run blocking IO once LF-012 / LN-038 ships them — the
  * `tools/call` dispatch path in `McpServiceImpl` runs them on a
