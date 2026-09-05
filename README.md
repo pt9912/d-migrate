@@ -8,6 +8,12 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple.svg)
 
+📖 **Documentation** (German): [Anwenderhandbuch](docs/user/anwenderhandbuch.md)
+(task-oriented user guide) · [Administrationshandbuch](docs/user/administrationshandbuch.md)
+(deployment/ops) · [CLI spec](spec/cli-spec.md) · [MCP server spec](spec/mcp-server.md)
+— full index: [docs/user/README.md](docs/user/README.md). See
+["Documentation"](#documentation) below for the complete list.
+
 d-migrate is a database-agnostic tool for schema migration and data
 management, usable as a CLI **and** as an MCP server
 (`mcp serve --transport stdio|http`, MCP 2025-11-25). You define your
