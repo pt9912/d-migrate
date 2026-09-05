@@ -157,8 +157,14 @@ verstecktes else, aber auch keine falsche Terminzusage.
   [`THIRD-PARTY-NOTICES.md`](../../../THIRD-PARTY-NOTICES.md) im Repo-Root.
   Die Bündelung dieser Datei in Release-Artefakten ist ein separates Thema,
   siehe [`third-party-notices-release-bundling.md`](../open/third-party-notices-release-bundling.md).
-- Testcontainers-Ressourcenbedarf (RAM) real messen, nicht nur Image-Größe
-  (Slice-0-Spike lief containerisiert durch, aber ohne RAM-Messung).
+- ~~Testcontainers-Ressourcenbedarf (RAM) real messen~~ — **erledigt (Slice
+  1, live entdeckt):** kein RAM-Problem, sondern ein zu knapper Default:
+  `org.testcontainers.oracle.OracleContainer` setzt `withStartupTimeout` auf
+  nur 60s, ausreichend für ein bereits gezogenes Image auf einer warmen
+  lokalen Maschine, zu knapp für einen kalten Pull + Kaltstart auf dem
+  GitHub-Actions-Runner (real gemessen: Timeout nach 60s in CI, ~2-3 min bis
+  „DATABASE IS READY TO USE!" lokal). Fix: `.withStartupTimeout(Duration
+  .ofMinutes(5))` in `OracleContainerConnectIntegrationTest.kt`.
 - **Neu (Slice 0, live entdeckt):** `gvenzl/oracle-free`s gleitende
   `slim-faststart`-Tags liefern inzwischen „26ai" statt „23ai" aus, und der
   Versions-Banner heißt jetzt „Oracle AI Database" statt „Oracle Database" —
