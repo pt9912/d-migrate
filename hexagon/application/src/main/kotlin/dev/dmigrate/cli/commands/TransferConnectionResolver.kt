@@ -81,6 +81,19 @@ internal class TransferConnectionResolver(
             return TransferConnectionResult.Exit(7)
         }
 
+        // Kommando-Grenz-Gate VOR jedem Verbindungsversuch (nicht danach): ein
+        // Pool-Bau schlaegt fuer eine nicht erreichbare Adresse ohnehin fehl,
+        // aber undeterministisch je nach Treiber-/HikariCP-Fail-Fast-Timing --
+        // das darf nicht mit der Gate-Ablehnung verwechselt werden (Exit 4 statt 2).
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, srcCfg.dialect)?.let {
+            printError(it, srcRef)
+            return TransferConnectionResult.Exit(2)
+        }
+        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_TRANSFER, tgtCfg.dialect)?.let {
+            printError(it, tgtRef)
+            return TransferConnectionResult.Exit(2)
+        }
+
         val srcPool = try {
             poolFactory(srcCfg)
         } catch (e: Exception) {

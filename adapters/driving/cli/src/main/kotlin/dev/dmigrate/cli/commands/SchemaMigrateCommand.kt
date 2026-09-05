@@ -28,6 +28,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             "mysql" to DatabaseDialect.MYSQL,
             "sqlite" to DatabaseDialect.SQLITE,
             "mssql" to DatabaseDialect.MSSQL,
+            "oracle" to DatabaseDialect.ORACLE,
         )
     val spatialProfile by option("--spatial-profile",
         help = "Spatial type handling profile (postgis, native, spatialite, none)")

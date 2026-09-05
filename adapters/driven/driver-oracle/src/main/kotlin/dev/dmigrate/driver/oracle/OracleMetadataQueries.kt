@@ -133,16 +133,19 @@ internal object OracleMetadataQueries {
     }
 
     /**
-     * Indizes ohne die, die bereits eine PK-/UNIQUE-Constraint tragen
+     * Indizes ohne die, die bereits die PK-Constraint tragen
      * (`ALL_CONSTRAINTS.INDEX_NAME` -- Oracles Aequivalent zu MSSQLs
-     * `is_primary_key`-Flag, hier zusaetzlich fuer UNIQUE-Constraints).
+     * `is_primary_key`-Flag). UNIQUE-Constraint-Indizes bleiben ABSICHTLICH
+     * erhalten (anders als PK): es gibt keine gesonderte Oracle-Abfrage fuer
+     * UNIQUE-Constraints, `singleColumnUniqueFromIndices`/
+     * `buildMultiColumnUniqueFromIndices` heben sie aus genau diesem Scan.
      */
     fun scanIndexes(session: JdbcOperations, schema: String, table: String): IndexScan {
-        val constraintIndexNames = session.queryList(
+        val primaryKeyIndexNames = session.queryList(
             """
             SELECT index_name
             FROM all_constraints
-            WHERE owner = ? AND table_name = ? AND constraint_type IN ('P', 'U') AND index_name IS NOT NULL
+            WHERE owner = ? AND table_name = ? AND constraint_type = 'P' AND index_name IS NOT NULL
             """.trimIndent(),
             schema,
             table,
@@ -161,7 +164,7 @@ internal object OracleMetadataQueries {
             table,
         )
         val indices = rows.groupBy { it.string("index_name") }
-            .filterKeys { it !in constraintIndexNames }
+            .filterKeys { it !in primaryKeyIndexNames }
             .map { (name, group) ->
                 IndexProjection(
                     name = name,

@@ -89,10 +89,10 @@ class OracleMetadataQueriesTest : FunSpec({
         fks[0].onUpdate.shouldBeNull()
     }
 
-    test("scanIndexes excludes indexes that already back a PK/UNIQUE constraint") {
+    test("scanIndexes excludes the PK-backing index but keeps UNIQUE-constraint-backing ones") {
         val jdbc = mockk<JdbcOperations> {
             every {
-                queryList(match { it.contains("constraint_type IN ('P', 'U')") }, "APP", "T")
+                queryList(match { it.contains("constraint_type = 'P'") }, "APP", "T")
             } returns listOf(mapOf("index_name" to "SYS_C001"))
             every {
                 queryList(match { it.contains("FROM all_indexes i") }, "APP", "T")
@@ -102,15 +102,24 @@ class OracleMetadataQueriesTest : FunSpec({
                     "column_name" to "ID", "column_position" to 1, "descend" to "ASC",
                 ),
                 mapOf(
+                    "index_name" to "SYS_C002", "uniqueness" to "UNIQUE",
+                    "column_name" to "EMAIL", "column_position" to 1, "descend" to "ASC",
+                ),
+                mapOf(
                     "index_name" to "IX_NAME", "uniqueness" to "NONUNIQUE",
                     "column_name" to "NAME", "column_position" to 1, "descend" to "DESC",
                 ),
             )
         }
         val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
-        scan.indices.map { it.name } shouldBe listOf("IX_NAME")
-        scan.indices[0].isUnique shouldBe false
-        scan.indices[0].directions shouldBe listOf(IndexSortDirection.DESC)
+        // SYS_C001 traegt die PK und ist ausgeschlossen (schon ueber
+        // listPrimaryKeyColumns erfasst); SYS_C002 traegt eine UNIQUE-
+        // Constraint und bleibt erhalten -- dafuer gibt es keine gesonderte
+        // Oracle-Abfrage.
+        scan.indices.map { it.name } shouldBe listOf("SYS_C002", "IX_NAME")
+        scan.indices[0].isUnique shouldBe true
+        scan.indices[1].isUnique shouldBe false
+        scan.indices[1].directions shouldBe listOf(IndexSortDirection.DESC)
     }
 
     test("listCheckConstraints drops Oracle's implicit NOT-NULL checks") {

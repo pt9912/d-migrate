@@ -41,10 +41,12 @@ class OracleSchemaReaderTest : FunSpec({
 
     fun stubTableQueries(jdbc: JdbcOperations) {
         every { jdbc.queryList(match { it.contains("FROM all_tab_columns c") }, any(), any()) } returns emptyList()
-        every { jdbc.queryList(match { it.contains("constraint_type = 'P'") }, any(), any()) } returns emptyList()
+        every {
+            jdbc.queryList(match { it.contains("JOIN all_cons_columns cc") && it.contains("constraint_type = 'P'") }, any(), any())
+        } returns emptyList()
         every { jdbc.queryList(match { it.contains("constraint_type = 'R'") }, any(), any()) } returns emptyList()
         every {
-            jdbc.queryList(match { it.contains("constraint_type IN ('P', 'U')") }, any(), any())
+            jdbc.queryList(match { it.contains("SELECT index_name") && it.contains("constraint_type = 'P'") }, any(), any())
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("constraint_type = 'C'") }, any(), any()) } returns emptyList()
@@ -89,8 +91,9 @@ class OracleSchemaReaderTest : FunSpec({
                 "identity_generation" to null, "identity_sequence" to null,
             ),
         )
-        every { jdbc.queryList(match { it.contains("constraint_type = 'P'") }, "APP", "ORDERS") } returns
-            listOf(mapOf("column_name" to "ID"))
+        every {
+            jdbc.queryList(match { it.contains("JOIN all_cons_columns cc") && it.contains("constraint_type = 'P'") }, "APP", "ORDERS")
+        } returns listOf(mapOf("column_name" to "ID"))
         every { jdbc.queryList(match { it.contains("constraint_type = 'R'") }, "APP", "ORDERS") } returns listOf(
             mapOf(
                 "constraint_name" to "FK_ORDERS_CUSTOMER", "column_name" to "CUSTOMER", "position" to 1,
@@ -98,7 +101,7 @@ class OracleSchemaReaderTest : FunSpec({
             ),
         )
         every {
-            jdbc.queryList(match { it.contains("constraint_type IN ('P', 'U')") }, "APP", "ORDERS")
+            jdbc.queryList(match { it.contains("SELECT index_name") && it.contains("constraint_type = 'P'") }, "APP", "ORDERS")
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, "APP", "ORDERS") } returns listOf(
             mapOf(

@@ -1,8 +1,8 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
 > **Status:** In Progress (2026-09-05). Scope skizziert, alle fünf
-> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0 und
-> Slice 1 geliefert**.
+> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0, Slice 1
+> und Slice 1a geliefert**.
 >
 > **Status-Update 2026-09-05:** Slice 0 umgesetzt — Modul
 > `adapters/driven/driver-oracle` (Skeleton, `ojdbc11` 23.26.3.0.0),
@@ -23,6 +23,19 @@
 > Kover-Gate, `export`-Kommandos ungegattert, `NUMBER(1)`-Boolean-Faltung
 > fehlte); alle behoben, CI (Build & Test, Integration Tests, Per-Module
 > Coverage) grün.
+>
+> **Status-Update 2026-09-05 (Slice 1a):** CLI-E2E-Netz in `test/e2e-cli`
+> (`OracleCommandGateE2ETest`, `OracleSchemaReverseE2ETest`) — fand drei
+> reale Bugs, die keiner der bisherigen Unit-/Reviewschichten sah: (1)
+> `--dialect` bei `schema migrate` hatte "oracle" nicht in seiner
+> Clikt-`choice()`-Liste, (2) `TransferConnectionResolver` prüfte das
+> Gate ERST NACH dem Pool-Aufbau — bei `data transfer` schlug die
+> Verbindung schon fehl, bevor das Gate greifen konnte (Fix: Gate direkt
+> nach der URL-Auflösung, vor jedem `poolFactory`-Aufruf), (3)
+> `OracleMetadataQueries.scanIndexes` schloss faelschlich auch
+> UNIQUE-Constraint-Indizes aus (nur PK-Indizes gehören ausgeschlossen —
+> es gibt keine gesonderte Oracle-Abfrage für UNIQUE-Constraints, der
+> Index-Scan ist ihr einziger Weg ins Modell). Alle drei behoben, CI grün.
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -128,8 +141,8 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | Slice | Inhalt | Registrierbar ab / liefert |
 | --- | --- | --- |
 | **0** ✅ | Scoping-ADR (0052), Gradle-Modul `driver-oracle`, Testcontainers-Spike (Connect + `SELECT banner FROM v$version`), FUTC-Lizenztext-Doku, Dependabot-Ignore | — |
-| **1** | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read) + `ORACLE`-Enum-Querschnitt + `DialectCommandGate` **wiedereinführen** (die Klasse wurde in Commit `ec3f2d06` beim MSSQL-Slice-10-Abschluss gelöscht, weil ihr letzter Eintrag wegfiel — Oracle braucht sie neu, nicht nur einen weiteren Eintrag) | `schema reverse` funktioniert |
-| **1a** | CLI-E2E-Absicherung in `test/e2e-cli` (Gate-Ablehnungen + `schema reverse`-Subprozess-E2E), analog MSSQL Slice 1a | E2E-Netz vor Slice 2 |
+| **1** ✅ | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read) + `ORACLE`-Enum-Querschnitt + `DialectCommandGate` **wiedereinführen** (die Klasse wurde in Commit `ec3f2d06` beim MSSQL-Slice-10-Abschluss gelöscht, weil ihr letzter Eintrag wegfiel — Oracle braucht sie neu, nicht nur einen weiteren Eintrag) | `schema reverse` funktioniert |
+| **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli` (Gate-Ablehnungen + `schema reverse`-Subprozess-E2E), analog MSSQL Slice 1a | E2E-Netz vor Slice 2 |
 | **2** | `DdlGenerator` + Typtabelle NeutralType→Oracle-Typen (Kern-Typen; Materialized Views bewusst **nicht** hier, siehe Slice 10) | `schema generate --target oracle` |
 | **3** | `DataReader`/`DataWriter` (Transfer); **3b** sample-db-Oracle-Leg im Harness (analog [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)) | `data export/import/transfer` + Oracle-Smoke in CI |
 | **4** | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg, `transferCompatibility`, Cross-Dialekt-sample-db-Smoke | Vergleichs-Substrat für Slice 5 |

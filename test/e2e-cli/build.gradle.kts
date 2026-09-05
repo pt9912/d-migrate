@@ -21,6 +21,9 @@ dependencies {
     // MSSQL Slice 1a: Gate-Ablehnungs-E2Es (containerlos) + schema-reverse-
     // Subprozess-E2E gegen den SQL-Server-Testcontainer (ADR 0047).
     testImplementation(project(":adapters:driven:driver-mssql"))
+    // Oracle Slice 1a: Gate-Ablehnungs-E2Es (containerlos) + schema-reverse-
+    // Subprozess-E2E gegen den Oracle-Testcontainer (ADR 0052).
+    testImplementation(project(":adapters:driven:driver-oracle"))
     testImplementation(project(":adapters:driven:formats"))
     // S7-Review-Fix Finding 10: erlaubt dem DataParquetRoundTripE2EPostgresTest,
     // den Footer-KV der exportierten Parquet-Datei via
@@ -53,6 +56,8 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-mssqlserver:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("com.microsoft.sqlserver:mssql-jdbc:${rootProject.properties["mssqlJdbcVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-oracle-free:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("com.oracle.database.jdbc:ojdbc11:${rootProject.properties["oracleJdbcVersion"]}")
 
     // Integration-test harnesses build JSON-RPC payloads with Gson and
     // validate tool runtime outputs against McpToolSchemas (JSON Schema
