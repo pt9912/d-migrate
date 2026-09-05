@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`data seed`**: neuer Befehl generiert Testdaten deterministisch aus dem
+  Neutralschema und importiert sie FK-sicher ins Ziel (`--schema`, `--target`,
+  `--count`, `--seed`, `--locale`). Optional steuert `--rules <datei>` den
+  Generator je Tabelle/Spalte gezielt (`values` mit Gewichtung, `range`,
+  `template`); Regeln auf Fremdschluesselspalten greifen nicht (referenzielle
+  Integritaet hat Vorrang) und werden als "nie angewendet" gemeldet.
+- **`mcp serve --policy-file <pfad>`**: Policy-Regeln (Allow/Challenge/Deny je
+  Tool/Tenant/Aufrufer) fuer `*_start`-Jobs sind jetzt konfigurierbar, statt
+  immer auf den fail-closed-Default zu fallen. Ohne das Flag bleibt das
+  Verhalten unveraendert.
+- **`connections/list`** (MCP, Scope `dmigrate:admin`): liefert konfigurierte
+  Verbindungen je Tenant; `checkLive=true` testet zusaetzlich jede Verbindung
+  live und liefert einen redigierten Status (`REACHABLE`/`UNREACHABLE`/
+  `CREDENTIAL_ERROR`), nie eine rohe Fehlermeldung.
+- **`mcp serve --server-state`** persistiert jetzt auch reverse-engineerte
+  Schemas und generierte Artefakte per JDBC (`JdbcSchemaStore`/
+  `JdbcArtifactStore`) -- beide ueberlebten bislang keinen Server-Neustart,
+  obwohl Job/Quota/Idempotency laengst persistiert wurden.
+
+### Fixed
+
+- `data seed`: selbstreferenzierende nullable Fremdschluessel (z. B.
+  `categories.parent_id`) brachen immer mit einem Preflight-Fehler ab,
+  unabhaengig von `nullable`; `unique`-Fremdschluesselspalten konnten
+  Duplikate ziehen. Beide Faelle laufen jetzt ueber die bestehende
+  Zyklus-/Unique-Behandlung.
+- Die `POLICY_REQUIRED`-Antwort der KI-Tools (`testdata_plan`/`_execute`,
+  `procedure_transform_plan`/`_execute`) enthielt keinen `payloadFingerprint`
+  -- der Freigabe-Flow ueber `mcp approval-grant issue
+  --payload-fingerprint` war dadurch unbedienbar.
+- Nach jeder erteilten Freigabe wurde `approval-grants.yaml` fuer den
+  laufenden `mcp serve`-Prozess unlesbar, sobald CLI und Server als
+  unterschiedliche Betriebssystem-Benutzer laufen (jeder containerisierte
+  Betrieb) -- eine restriktive Datei-Berechtigung ueberlebte den atomaren
+  Schreib-Move. Betroffene Freigaben fuehrten zu einem `INTERNAL_AGENT_ERROR`
+  ohne jedes Detail im Log.
+
 ## [1.1.0] - 2026-09-04
 
 ### Added
