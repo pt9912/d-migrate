@@ -274,7 +274,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli` (Gate-Ablehnungen + `schema reverse`-Subprozess-E2E), analog MSSQL Slice 1a | E2E-Netz vor Slice 2 |
 | **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→Oracle-Typen (Kern-Typen; Materialized Views bewusst **nicht** hier, siehe Slice 10) | `schema generate --target oracle` |
 | **3** ✅ | `DataReader`/`DataWriter` (Transfer). **3b** (sample-db-Oracle-Leg im Harness, analog [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)) bewusst **nicht** Teil dieses Slices — separater Folge-Schnitt | `data export/import/transfer` funktioniert |
-| **4a** | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg (`transferCompatibility` bereits Slice 3) | Vergleichs-Substrat für Slice 5 |
+| **4a** ✅ | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg (`transferCompatibility` bereits Slice 3) | Vergleichs-Substrat für Slice 5 |
 | **4b** | Cross-Dialekt-sample-db-Smoke — strukturell blockiert auf **3b** ([`oracle-sample-db-leg.md`](../next/oracle-sample-db-leg.md)), das den Harness-Anschluss erst liefert | Cross-Dialekt-Beleg im Harness |
 | **5** | Diff/Migrate (`OracleDiff*Ops`) inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep. Voraussichtlich größter Slice (bei MSSQL größer als Slices 1–4 zusammen) — Sub-Slice-Schnitt folgt Familien-Gliederung, sobald der Slice beginnt | `schema migrate` |
 | **6** | Function-based- + Bitmap-Indizes, Reverse + Generate + Diff | volle Index-Treue |
