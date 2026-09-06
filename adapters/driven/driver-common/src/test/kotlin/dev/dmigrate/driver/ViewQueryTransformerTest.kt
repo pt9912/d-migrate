@@ -223,6 +223,33 @@ class ViewQueryTransformerTest : FunSpec({
         transformer.assessPortability("SELECT id, name FROM users WHERE id > 0", "postgresql").portable shouldBe true
     }
 
+    test("assessPortability: `::` and LIMIT are non-portable to Oracle; `||` stays portable (native concat)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.ORACLE)
+        transformer.assessPortability("SELECT id::text FROM t", "postgresql").let {
+            it.portable shouldBe false
+            it.reason shouldContain "::"
+        }
+        transformer.assessPortability("SELECT id FROM t LIMIT 10", "sqlite").let {
+            it.portable shouldBe false
+            it.reason shouldContain "LIMIT"
+        }
+        // Oracle unterstuetzt || nativ als Stringverkettung, wie PostgreSQL/SQLite.
+        transformer.assessPortability("SELECT a || b FROM t", "postgresql").portable shouldBe true
+        // Inside string literals the markers are ignored.
+        transformer.assessPortability("SELECT 'a||b::c limit' AS s FROM t", "postgresql").portable shouldBe true
+        transformer.assessPortability("SELECT id, name FROM users WHERE id > 0", "postgresql").portable shouldBe true
+    }
+
+    test("assessPortability: `||` from a MySQL source is non-portable to Oracle (logical OR, not concat)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.ORACLE)
+        transformer.assessPortability("SELECT a || b FROM t", "mysql").let {
+            it.portable shouldBe false
+            it.reason shouldContain "||"
+        }
+        // Same source dialect (oracle) is unaffected -- native concatenation.
+        transformer.assessPortability("SELECT a || b FROM t", "oracle").portable shouldBe true
+    }
+
     test("assessPortability: PG/MySQL/SQLite-only functions are non-portable to MSSQL, T-SQL functions are known") {
         val transformer = ViewQueryTransformer(DatabaseDialect.MSSQL)
         transformer.assessPortability("SELECT date_trunc('month', created_at) FROM t", "postgresql").portable shouldBe false

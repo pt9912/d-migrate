@@ -42,7 +42,7 @@ neuen Version.
 |---------|-----------|
 | E001 - E020 | Schema-Validierung (SchemaValidator) |
 | E052 - E056 | Dialekt-Inkompatibilitaeten (Composite, Routine, Sequence) |
-| E057 | Multi-Dialekt action_required: MySQL Partial-Index-Predicate, SQLite-helper_table `WITHOUT ROWID` + `SequenceNextVal` |
+| E057 | Multi-Dialekt action_required: MySQL Partial-Index-Predicate, SQLite-helper_table `WITHOUT ROWID` + `SequenceNextVal`, Oracle LOB-Schlüsselspalte (UNIQUE/PRIMARY KEY, ORA-02329) + Oracle-Volltext-Index (Oracle Text nicht gerendert) |
 | E058 | SQLite-helper_table: externe Objekte referenzieren `dmg_sequences`; Rollback-Preflight bricht ab |
 | E059 | SQLite-helper_table: Sequence-backed column im PRIMARY KEY |
 | E060 | Split-Diagnostik (Phasenkonflikt); SQLite-helper_table-Rollback zusätzlich: ATTACHed Datenbanken detektiert |
@@ -71,6 +71,7 @@ neuen Version.
 | W136 - W141 | MSSQL-Generate (SQL Server): Länge > 4000 → `NVARCHAR(MAX)` (W136); JSON/Array → `NVARCHAR(MAX)` (W137); UNIQUE auf NULL-fähiger Spalte — höchstens eine NULL-Zeile (W138); `DECIMAL`-Präzision > 38 gekappt (W139); Identity `BY DEFAULT`/Default auf Identity-Spalte (W140); Index auf LOB-Schlüsselspalte übersprungen (W141) |
 | W142 - W143 | Abdeckende und clustered Indizes: INCLUDE-Spalten fallen weg, weil der Dialekt keine abdeckenden Indizes kennt — die Schlüsselspalten werden indiziert, die eingeschlossenen **nicht** angehängt (das änderte bei `unique` die Eindeutigkeit) (W142); der Index wird gewöhnlich statt clustered angelegt, weil der Dialekt die Ablage der Tabelle nicht steuern lässt (W143) |
 | W144 | MSSQL: Partition Function und Scheme je Tabelle angelegt (SQL Server teilt diese Objekte datenbankweit; das neutrale Modell traegt Partitionierung je Tabelle, eine geteilte Vorlage wird deshalb zu einem Paar je Tabelle — funktional gleichwertig, physisch mehr Objekte) |
+| W145 - W153 | Oracle-Generate: deklarierte Text-/Zeichenlaenge ueber dem VARCHAR2/CHAR-Limit → `CLOB` (W145); `time`-Spalte → `VARCHAR2(8)`-Text, kein natives Zeit-Typ (W146); `date`-Spalte → Oracle `DATE` mit Uhrzeitkomponente, Reverse liefert `datetime` (W147, INFO); `NUMBER`-Praezision > 38 gekappt (W148); `array`-Spalte → `JSON`, kein natives Array (W149); `gen_uuid`-Default → `RAWTOHEX(SYS_GUID())` ohne Bindestriche (W150, INFO); Identity-Generierung bzw. DEFAULT auf Identity-Spalte verworfen (W151); Index auf LOB-Schluesselspalte uebersprungen (W152); `ON DELETE SET DEFAULT` ohne Oracle-Aequivalent verworfen (W153) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

@@ -26,6 +26,7 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-mysql"))
     testImplementation(project(":adapters:driven:driver-sqlite"))
     testImplementation(project(":adapters:driven:driver-mssql"))
+    testImplementation(project(":adapters:driven:driver-oracle"))
     // Parquet Cut A S0b: DataChunkWriter.begin(table, columns)-Bridge-Extension.
     testImplementation(testFixtures(project(":hexagon:ports-write")))
     testImplementation(testFixtures(project(":hexagon:ports-common")))

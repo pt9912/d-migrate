@@ -114,12 +114,6 @@ class ToolExportRunnerTest : FunSpec({
         stderrLines.any { it.contains("Unknown") } shouldBe true
     }
 
-    test("oracle target is rejected by DialectCommandGate before the generator runs (ADR 0052, Slice 2 offen)") {
-        val exit = runner().execute(request(target = "oracle"))
-        exit shouldBe 2
-        stderrLines.any { it.contains("export <tool> does not support dialect oracle yet") } shouldBe true
-    }
-
     test("Django without --version returns exit 2") {
         val exit = runner().execute(request(tool = MigrationTool.DJANGO, version = null))
         exit shouldBe 2

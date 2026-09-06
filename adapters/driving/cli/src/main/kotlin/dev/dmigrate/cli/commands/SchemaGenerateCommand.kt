@@ -27,7 +27,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     val source by option("--source", help = "Path to schema file (YAML/JSON)")
         .path(mustExist = true, canBeDir = false)
         .required()
-    val target by option("--target", help = "Target database dialect (postgresql, mysql, sqlite, mssql)")
+    val target by option("--target", help = "Target database dialect (postgresql, mysql, sqlite, mssql, oracle)")
         .required()
     val output by option("--output", help = "Output file path (default: stdout)")
         .path()

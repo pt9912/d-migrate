@@ -157,12 +157,20 @@ internal object OracleTypeMapping {
             return DefaultValue.SequenceNextVal(match.groupValues[1].trim().removeSurrounding("\"", "\""))
         }
 
+        // Generate-Gegenstuecke aus OracleTypeMapper.functionDefaultSql --
+        // ohne diese Erkennung wuerde ein schema-generate/schema-reverse-
+        // Rundgang die neutrale Default-Bedeutung verlieren (opaker
+        // FunctionCall statt gen_uuid/current_date/current_time).
+        if (GEN_UUID.matches(value)) return DefaultValue.FunctionCall("gen_uuid")
+        if (CURRENT_DATE.matches(value)) return DefaultValue.FunctionCall("current_date")
+        if (CURRENT_TIME.matches(value)) return DefaultValue.FunctionCall("current_time")
+
         // sysdate/systimestamp/current_timestamp sind Oracle-Spellings des
         // neutralen CURRENT_TIMESTAMP -- kanonisieren fuer Cross-Dialekt-
         // Portabilitaet.
         return when (value.lowercase()) {
             "sysdate", "systimestamp", "current_timestamp" ->
-                DefaultValue.FunctionCall("CURRENT_TIMESTAMP")
+                DefaultValue.FunctionCall("current_timestamp")
             else -> DefaultValue.FunctionCall(value)
         }
     }
@@ -177,4 +185,8 @@ internal object OracleTypeMapping {
 
     // <schema>.<sequence>.NEXTVAL oder <sequence>.NEXTVAL
     private val NEXT_VALUE_FOR = Regex("""(?i)^"?(?:[A-Za-z0-9_$#]+"?\.)?"?([A-Za-z0-9_$#]+)"?\.NEXTVAL$""")
+
+    private val GEN_UUID = Regex("""(?i)^RAWTOHEX\s*\(\s*SYS_GUID\s*\(\s*\)\s*\)$""")
+    private val CURRENT_DATE = Regex("""(?i)^TRUNC\s*\(\s*SYSDATE\s*\)$""")
+    private val CURRENT_TIME = Regex("""(?i)^TO_CHAR\s*\(\s*SYSDATE\s*,\s*'HH24:MI:SS'\s*\)$""")
 }

@@ -158,11 +158,28 @@ class OracleTypeMappingTest : FunSpec({
             DefaultValue.SequenceNextVal("MY_SEQ")
     }
 
-    test("parseDefault canonicalizes sysdate/systimestamp to CURRENT_TIMESTAMP") {
+    test("parseDefault canonicalizes sysdate/systimestamp to the cross-dialect current_timestamp") {
+        // Lowercase, wie bei MySQL/MSSQL -- toDefaultSql-Dispatchtabellen matchen
+        // case-sensitiv auf diesen kanonischen Namen (siehe PostgresTypeMapper).
         OracleTypeMapping.parseDefault("sysdate", NeutralType.DateTime(false)) shouldBe
-            DefaultValue.FunctionCall("CURRENT_TIMESTAMP")
+            DefaultValue.FunctionCall("current_timestamp")
         OracleTypeMapping.parseDefault("systimestamp", NeutralType.DateTime(false)) shouldBe
-            DefaultValue.FunctionCall("CURRENT_TIMESTAMP")
+            DefaultValue.FunctionCall("current_timestamp")
+    }
+
+    test("parseDefault recognizes gen_uuid/current_date/current_time from their Oracle generate-direction spellings") {
+        // Gegenstuecke zu OracleTypeMapper.functionDefaultSql -- ohne diese
+        // Erkennung wuerde ein schema-generate/schema-reverse-Rundgang die
+        // neutrale Default-Bedeutung verlieren.
+        OracleTypeMapping.parseDefault("RAWTOHEX(SYS_GUID())", NeutralType.Uuid) shouldBe
+            DefaultValue.FunctionCall("gen_uuid")
+        OracleTypeMapping.parseDefault("TRUNC(SYSDATE)", NeutralType.Date) shouldBe
+            DefaultValue.FunctionCall("current_date")
+        OracleTypeMapping.parseDefault("TO_CHAR(SYSDATE, 'HH24:MI:SS')", NeutralType.Time) shouldBe
+            DefaultValue.FunctionCall("current_time")
+        // Case-/Whitespace-tolerant, wie im Katalog gemeldet.
+        OracleTypeMapping.parseDefault("trunc(sysdate)", NeutralType.Date) shouldBe
+            DefaultValue.FunctionCall("current_date")
     }
 
     test("parseDefault falls back to a raw function call for anything else") {

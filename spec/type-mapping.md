@@ -290,9 +290,75 @@ Konsequenzen:
 
 ---
 
-## 7. Reverse-Mapping else-Fallback
+## 7. Oracle: Entscheidungen und bekannte Lücken
 
-Alle vier Reverse-Mapper haben einen `else`-Fallback:
+### 7.1 Forward-Entscheidungen
+
+| Neutraler Typ | Oracle-DDL | Hinweis |
+|---|---|---|
+| `identifier` (`auto_increment`) | `NUMBER(9) GENERATED ALWAYS AS IDENTITY` | Symmetrisch zum Reverse (`precision <= 9 -> integer`) |
+| `integer`/`smallint`/`biginteger` + `generation: identity` | `NUMBER(9)`/`NUMBER(4)`/`NUMBER(18) GENERATED ALWAYS/BY DEFAULT AS IDENTITY` | Oracle kennt (anders als MSSQL) `BY DEFAULT` nativ |
+| `text(n)`, `char(n)` | `VARCHAR2(n)`, `CHAR(n)` | > 4000 bzw. > 2000 Byte → `CLOB` (W145) |
+| `boolean` | `NUMBER(1)` | Oracles 0/1-Konvention; Defaults `true`/`false` → `1`/`0` |
+| `float` single/double | `BINARY_FLOAT`/`BINARY_DOUBLE` | |
+| `decimal(p,s)` | `NUMBER(p,s)` | p > 38 wird auf 38 gekappt (W148) |
+| `datetime` / `datetime(timezone)` | `DATE` / `TIMESTAMP WITH TIME ZONE` | `current_timestamp` → `SYSDATE` bzw. `SYSTIMESTAMP` (zonentragend) |
+| `date` | `DATE` | Oracle `DATE` trägt immer eine Uhrzeit (W147, INFO) |
+| `time` | `VARCHAR2(8)` (`HH24:MI:SS`-Text) | kein nativer Zeit-Typ ohne Datum (W146) |
+| `uuid` | `VARCHAR2(36)` | `gen_uuid` → `RAWTOHEX(SYS_GUID())` (W150: 32 Hex-Zeichen ohne Bindestriche, INFO) |
+| `json` | `JSON` | nativer Oracle-21c+-Typ, kein Text-Fallback |
+| `xml` | `XMLTYPE` | nativer Typ |
+| `array` | `JSON` | kein nativer Array-Typ (W149); Werte als JSON-Array |
+| `binary` | `BLOB` | |
+| `enum` (Werte) | `VARCHAR2(<längster Wert>)` + benannter `CHECK (… IN (…))` | kein Enum-Typ; `refType` auf eine `DOMAIN` faltet auf `CLOB` + E053 (Basistyp-Auflösung noch nicht gebaut) |
+| `fulltext` | `CLOB` | W132 (geteilter Cross-Dialekt-Pool) |
+| `sequence_nextval` | `DEFAULT <seq>.NEXTVAL` | native Sequenzen |
+
+String-Literale in Defaults werden mit `''`-Escaping als `'…'` gerendert
+(kein `N'…'`-Präfix wie bei MSSQL — Oracle kennt ihn nicht). `ON DELETE`
+kennt nur `CASCADE`/`SET NULL`; `RESTRICT`/`NO_ACTION` entsprechen dem
+Oracle-Default (keine Klausel) und werden ohne Notiz weggelassen,
+`SET_DEFAULT` hat kein Äquivalent und wird verworfen (W153).
+
+### 7.2 Reverse-Entscheidungen
+
+| Oracle | Neutral | Hinweis |
+|---|---|---|
+| `NUMBER` GENERATED ALWAYS/BY DEFAULT AS IDENTITY | Basistyp (`smallint`/`integer`/`biginteger`/`decimal`) + `generation: identity` | `ALL_TAB_IDENTITY_COLS.SEQUENCE_NAME` liefert den echten Sequenznamen (höhere Fidelity als MSSQLs unbenannte IDENTITY) |
+| `NUMBER(1)` (nicht identity) | `boolean` | Oracles 0/1-Konvention, analog MySQL `tinyint(1)` |
+| `NUMBER` (kein Precision/Scale) | `decimal(38,10)` | konservativ: eine ungebundene NUMBER kann Ganz- oder Bruchzahlen tragen |
+| `VARCHAR2`/`NVARCHAR2` | Länge in Zeichen | keine Byte/Unicode-Aufspaltung wie bei MSSQL |
+| `DATE` | `datetime(timezone=false)` | trägt eine Uhrzeitkomponente |
+| `TIMESTAMP [WITH [LOCAL] TIME ZONE]` | `datetime` bzw. `datetime(timezone=true)` | |
+| `sysdate`/`systimestamp` (Default) | `current_timestamp` | kanonisiert für Cross-Dialekt-Portabilität (lowercase, wie bei MySQL/MSSQL) |
+| `TRUNC(SYSDATE)` (Default) | `current_date` | |
+| `TO_CHAR(SYSDATE, 'HH24:MI:SS')` (Default) | `current_time` | |
+| `RAWTOHEX(SYS_GUID())` (Default) | `gen_uuid` | |
+| `<seq>.NEXTVAL` (Default) | `sequence_nextval` | |
+
+### 7.3 Bekannte Lücken
+
+- Routinen, Trigger und Packages werden nicht gelesen; vorhandene
+  Objekte erscheinen als `skippedObjects` + R342-Notiz.
+- Materialized Views werden als reguläre Views gelesen.
+- `ALL_SEQUENCES` führt nur `LAST_NUMBER`, nicht den ursprünglichen
+  `START WITH`-Wert (R345).
+- Function-based- und Bitmap-Indizes werden noch nicht unterschieden —
+  alle Indizes gelten als `BTREE`.
+- `CHAR(1)` faltet **nicht** auf `boolean` (anders als `NUMBER(1)`): kein
+  ebenso enges Signal, ein Einzelzeichen trägt oft einen echten
+  Status-/Kategorie-Code.
+- `NUMBER(p,0)` faltet unabhängig von seiner Herkunft auf
+  `smallint`/`integer`/`biginteger` (wie bei `identifier`/Identity) —
+  Oracles eigene Konvention, eine gebundene Ganzzahl-`NUMBER` ohne Skala
+  als Integer-Typ zu lesen. Ein generiertes `decimal(p,0)` kommt beim
+  Rückweg deshalb nicht als `decimal`, sondern als Integer-Typ zurück.
+
+---
+
+## 8. Reverse-Mapping else-Fallback
+
+Alle fünf Reverse-Mapper haben einen `else`-Fallback:
 
 ```kotlin
 else -> MappingResult(
@@ -308,7 +374,7 @@ Warning-Note damit der Nutzer die Zuordnung reviewen kann.
 
 ---
 
-## 8. Offene Verbesserungen
+## 9. Offene Verbesserungen
 
 | # | Beschreibung | Priorität | Aufwand |
 |---|-------------|-----------|---------|

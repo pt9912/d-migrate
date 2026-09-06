@@ -12,7 +12,7 @@ import kotlin.io.path.deleteRecursively
 import kotlin.io.path.writeText
 
 /**
- * Oracle Slice 1a (docs/planning/in-progress/oracle-dialect-scoping.md):
+ * Oracle Slice 1a/2 (docs/planning/in-progress/oracle-dialect-scoping.md):
  * Gate-Ablehnungen des `DialectCommandGate` (ADR 0052) als Subprozess-E2E
  * gegen die ECHTE CLI — containerlos.
  *
@@ -22,7 +22,8 @@ import kotlin.io.path.writeText
  * pro Kommando belegt, dass das Gate an der Kommando-Grenze sitzt
  * (Kommando-Verfuegbarkeits-Tabelle im Plan-Dokument). Der Slice, der ein
  * Kommando fuer oracle liefert, nimmt es aus `GatedCommand` — und kippt
- * den zugehoerigen Fall hier in einen Funktions-E2E um.
+ * den zugehoerigen Fall hier in einen Funktions-E2E um (`schema generate`
+ * und `export <tool>`: Slice 2, siehe `OracleSchemaGenerateE2ETest`).
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class OracleCommandGateE2ETest : FunSpec({
@@ -48,33 +49,6 @@ class OracleCommandGateE2ETest : FunSpec({
             run.stderr shouldContain "$display does not support dialect oracle yet"
             run.stderr shouldContain "ADR 0052"
             run.stderr shouldContain "schema reverse"
-        }
-    }
-
-    test("schema generate --target oracle is refused at the command boundary") {
-        expectGateRefusal(
-            "schema generate",
-            listOf("schema", "generate", "--source", schemaYaml.absolutePathString(), "--target", "oracle"),
-        )
-    }
-
-    listOf(
-        "flyway" to "1.0.0",
-        "liquibase" to "1.0.0",
-        "django" to "0001_initial",
-        "knex" to "20260101000000",
-    ).forEach { (tool, version) ->
-        test("export $tool --target oracle is refused at the command boundary") {
-            expectGateRefusal(
-                "export <tool>",
-                listOf(
-                    "export", tool,
-                    "--source", schemaYaml.absolutePathString(),
-                    "--target", "oracle",
-                    "--output", tmp.resolve("out-$tool").absolutePathString(),
-                    "--version", version,
-                ),
-            )
         }
     }
 

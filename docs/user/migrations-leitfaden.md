@@ -112,7 +112,7 @@ dialektspezifische Lücken).
 | Schritt | Kommando (Details: [`guide.md`](guide.md), [API-Referenz §3](api-referenz.md#3-cli-referenz)) |
 | ------- | --------------------------------------------------------------------------------------------- |
 | **4.1 Reverse Engineering der Quelle** | `schema reverse` → neutrales Schema (YAML/JSON). **Default: nur Tabellen/Sequenzen/Constraints/Indizes** — Views/Trigger/Functions/Procedures per `--include-all` bzw. den einzelnen `--include-*`-Flags mitnehmen, sonst werden sie ohne Fehler ausgelassen. |
-| **4.2 Ziel-DDL generieren** | `schema generate --target <postgresql\|mysql\|sqlite\|mssql>` |
+| **4.2 Ziel-DDL generieren** | `schema generate --target <postgresql\|mysql\|sqlite\|mssql\|oracle>` |
 | **4.3 Split-DDL** | `schema generate --split pre-post` trennt **pre-data** (Tabellen, Sequenzen, Indizes, Constraints, einfache Views) von **post-data** (Trigger, Functions, Procedures, Views mit Routinen-Abhängigkeiten) |
 | **4.4 Verifikation** | `schema compare` Quelle↔Ziel (Exit `1` = Unterschiede gefunden) |
 

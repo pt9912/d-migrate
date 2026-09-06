@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SequenceCapabilityDefaults
 import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
 import dev.dmigrate.driver.mysql.MysqlAtomicSequencePreserveExecutor
 import dev.dmigrate.driver.postgresql.PostgresAtomicSequencePreserveExecutor
@@ -28,17 +29,21 @@ internal object AtomicSequencePreserveDispatcher {
     private val mysql: AtomicSequencePreserveExecutor = MysqlAtomicSequencePreserveExecutor()
     private val sqlite: AtomicSequencePreserveExecutor = SqliteAtomicSequencePreserveExecutor()
 
-    fun executorFor(dialect: DatabaseDialect): AtomicSequencePreserveExecutor = when (dialect) {
-        DatabaseDialect.POSTGRESQL -> postgres
-        DatabaseDialect.MYSQL -> mysql
-        DatabaseDialect.SQLITE -> sqlite
-        DatabaseDialect.MSSQL -> error(
+    // Capability-gefuehrt statt hartcodierter Dialekt-Aufzaehlung: ein
+    // Dialekt, der spaeter Atomic-Preserve bekommt (siehe
+    // docs/planning/next/atomic-preserve-mssql-oracle.md), braucht hier
+    // keine Anpassung -- nur einen echten `when`-Zweig weiter unten.
+    fun executorFor(dialect: DatabaseDialect): AtomicSequencePreserveExecutor {
+        check(SequenceCapabilityDefaults.forDialect(dialect).supportsAtomicPreserve) {
             "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
-                "mssql, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0047).",
-        )
-        DatabaseDialect.ORACLE -> error(
-            "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
-                "oracle, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0052).",
-        )
+                "${dialect.name.lowercase()}, der Atomic-Pfad waehlt den Dialekt also nie aus."
+        }
+        return when (dialect) {
+            DatabaseDialect.POSTGRESQL -> postgres
+            DatabaseDialect.MYSQL -> mysql
+            DatabaseDialect.SQLITE -> sqlite
+            DatabaseDialect.MSSQL, DatabaseDialect.ORACLE ->
+                error("unreachable: guarded by the supportsAtomicPreserve check above")
+        }
     }
 }

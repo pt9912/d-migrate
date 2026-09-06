@@ -95,7 +95,7 @@ class CliGenerateTest : FunSpec({
 
     test("schema generate with invalid target exits with code 2") {
         val ex = shouldThrow<ProgramResult> {
-            cli().parse(listOf("schema", "generate", "--source", resourcePath("valid-schema.yaml"), "--target", "oracle"))
+            cli().parse(listOf("schema", "generate", "--source", resourcePath("valid-schema.yaml"), "--target", "db2"))
         }
         ex.statusCode shouldBe 2
     }

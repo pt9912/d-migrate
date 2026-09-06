@@ -28,6 +28,12 @@ class AtomicPreserveRestoreSqlTest : FunSpec({
     fun sqliteRef(name: String = "items_seq") =
         SequenceObjectRef(name = name, dialect = RenameProjectionDialect.SQLITE)
 
+    fun mssqlRef(name: String = "invoice_seq") =
+        SequenceObjectRef(name = name, dialect = RenameProjectionDialect.MSSQL)
+
+    fun oracleRef(name: String = "invoice_seq") =
+        SequenceObjectRef(name = name, dialect = RenameProjectionDialect.ORACLE)
+
     test("PG: SELECT setval('<name>', <value>, <isCalled>);") {
         val sql = AtomicPreserveRestoreSql.forDialect(
             dialect = DatabaseDialect.POSTGRESQL,
@@ -84,5 +90,27 @@ class AtomicPreserveRestoreSqlTest : FunSpec({
         val s = sql.single()
         s shouldContain "UPDATE \"dmg_sequences\" SET \"next_value\" = 142"
         s shouldContain "WHERE \"name\" = 'items_seq'"
+    }
+
+    test("MSSQL: no atomic-preserve support -- forDialect throws IllegalStateException") {
+        val ex = shouldThrow<IllegalStateException> {
+            AtomicPreserveRestoreSql.forDialect(
+                dialect = DatabaseDialect.MSSQL,
+                sequenceRef = mssqlRef(),
+                probe = SequenceCurrentValueProbeResult.Read(value = 1L, isCalled = null),
+            )
+        }
+        ex.message!! shouldContain "mssql"
+    }
+
+    test("Oracle: no atomic-preserve support -- forDialect throws IllegalStateException") {
+        val ex = shouldThrow<IllegalStateException> {
+            AtomicPreserveRestoreSql.forDialect(
+                dialect = DatabaseDialect.ORACLE,
+                sequenceRef = oracleRef(),
+                probe = SequenceCurrentValueProbeResult.Read(value = 1L, isCalled = null),
+            )
+        }
+        ex.message!! shouldContain "oracle"
     }
 })

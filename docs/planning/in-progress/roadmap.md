@@ -1006,8 +1006,11 @@ Datenbanksystem — `schema reverse`, `generate`, `migrate`, der Datenpfad und
 **Ergebnis**: Unterstützung für die 5 wichtigsten relationalen Datenbanken.
 
 **Status 2026-09-05:** Scoping abgeschlossen ([ADR 0052](../../adr/0052-oracle-fuenfter-dialekt-scoping.md),
-[`oracle-dialect-scoping.md`](oracle-dialect-scoping.md)), Slice-0-Baubeginn
-noch aus.
+[`oracle-dialect-scoping.md`](oracle-dialect-scoping.md)); Slices 0, 1, 1a
+und 2 geliefert (`schema reverse`, `schema compare`, `schema generate`,
+`export flyway/liquibase/django/knex`). Offen: Slices 3-11 (Datenpfad,
+Diff/Migrate, Indizes, Partitionierung, Volltext, Routinen/Trigger,
+Materialized Views, Profiling).
 
 ### Milestone 2.0.0 — Langfristige Vision
 

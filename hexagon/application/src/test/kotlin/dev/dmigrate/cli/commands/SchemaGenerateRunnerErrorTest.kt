@@ -148,8 +148,8 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
 
     test("Exit 2: unknown --target dialect") {
         val h = harness()
-        h.runner().execute(request(target = "oracle")) shouldBe 2
-        h.stderr.joined() shouldContain "oracle"
+        h.runner().execute(request(target = "db2")) shouldBe 2
+        h.stderr.joined() shouldContain "db2"
         h.generator.generateCalls shouldBe 0
     }
 

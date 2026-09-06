@@ -50,17 +50,14 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         // T-SQL kennt weder `::` noch `||` (String-Verkettung ist `+`) noch
         // eine `LIMIT`-Klausel (`TOP`/`OFFSET … FETCH`); alle drei sind harte
         // Syntaxfehler, unabhängig vom Quelldialekt.
-        if (targetDialect == DatabaseDialect.MSSQL) {
-            val codeOnly = tokens.joinToString("") {
-                if (it.type == ViewQueryTokenType.STRING) " " else it.text
-            }
-            if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
-            if (codeOnly.contains("||")) markers += "PostgreSQL/SQLite-style concatenation (||)"
-            if (hasLimitClause(tokens)) markers += "LIMIT clause (T-SQL uses TOP / OFFSET … FETCH)"
-            if (hasBareTopLevelOrderBy(tokens)) {
-                markers += "ORDER BY in a view body without TOP/OFFSET (SQL Server Msg 1033)"
-            }
-        }
+        if (targetDialect == DatabaseDialect.MSSQL) markers += mssqlMarkers(tokens)
+        // Oracle kennt weder `::` noch eine `LIMIT`-Klausel (`FETCH FIRST n
+        // ROWS ONLY`/`ROWNUM`) -- harte Syntaxfehler, unabhaengig vom
+        // Quelldialekt. `||` bleibt fuer die meisten Quelldialekte unmarkiert
+        // (Oracle unterstuetzt es nativ als Stringverkettung, wie PostgreSQL/
+        // SQLite) -- nur aus MySQL ist `||` per Default logisches OR, siehe
+        // [oracleMarkers].
+        if (targetDialect == DatabaseDialect.ORACLE) markers += oracleMarkers(tokens, sourceDialect)
         // Umgekehrt ist T-SQL-Klammer-Quoting (`[dbo].[users]`) in keinem
         // anderen Dialekt gültig — ein mssql-stämmiger Body mit Klammern
         // (außerhalb von Literalen) ist dort nicht portabel.
@@ -81,6 +78,33 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
 
     private fun sourceIs(sourceDialect: String?, dialect: DatabaseDialect): Boolean =
         sourceDialect != null && runCatching { DatabaseDialect.fromString(sourceDialect) }.getOrNull() == dialect
+
+    private fun mssqlMarkers(tokens: List<ViewQueryToken>): List<String> {
+        val markers = mutableListOf<String>()
+        val codeOnly = tokens.joinToString("") { if (it.type == ViewQueryTokenType.STRING) " " else it.text }
+        if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
+        if (codeOnly.contains("||")) markers += "PostgreSQL/SQLite-style concatenation (||)"
+        if (hasLimitClause(tokens)) markers += "LIMIT clause (T-SQL uses TOP / OFFSET … FETCH)"
+        if (hasBareTopLevelOrderBy(tokens)) {
+            markers += "ORDER BY in a view body without TOP/OFFSET (SQL Server Msg 1033)"
+        }
+        return markers
+    }
+
+    private fun oracleMarkers(tokens: List<ViewQueryToken>, sourceDialect: String?): List<String> {
+        val markers = mutableListOf<String>()
+        val codeOnly = tokens.joinToString("") { if (it.type == ViewQueryTokenType.STRING) " " else it.text }
+        if (codeOnly.contains("::")) markers += "PostgreSQL-style cast (::)"
+        if (hasLimitClause(tokens)) markers += "LIMIT clause (Oracle uses FETCH FIRST n ROWS ONLY / ROWNUM)"
+        // MySQL-Default: `||` ist logisches OR, nicht Konkatenation (anders
+        // als PostgreSQL/SQLite, wo `||` bereits Oracles Bedeutung traegt).
+        // Unveraendert nach Oracle uebernommen wuerde die Bedeutung still
+        // von OR auf Verkettung kippen.
+        if (sourceIs(sourceDialect, DatabaseDialect.MYSQL) && codeOnly.contains("||")) {
+            markers += "MySQL-style logical OR (||), reinterpreted as concatenation in Oracle"
+        }
+        return markers
+    }
 
     /**
      * Ein `ORDER BY` auf oberster Ebene ohne eine der Klauseln, die SQL Server

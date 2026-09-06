@@ -68,11 +68,11 @@ stabilen, nicht zeitabhängigen Metadaten sichtbar.
 
 ### 2.1 Regeln pro Dialekt
 
-| Regel | PostgreSQL | MySQL | SQLite | MSSQL |
-|---|---|---|---|---|
-| Quote-Zeichen | `"` (Double Quote) | `` ` `` (Backtick) | `"` (Double Quote) | `[` `]` (eckige Klammern) |
-| Wann quoten | Reservierte Wörter, Sonderzeichen, Groß-/Kleinschreibung | Immer (konsistent) | Reservierte Wörter, Sonderzeichen | Immer (konsistent) |
-| Case-Sensitivity | Unquoted → lowercase | Systemabhängig | Case-insensitive | Collation-abhängig (Default case-insensitive) |
+| Regel | PostgreSQL | MySQL | SQLite | MSSQL | Oracle |
+|---|---|---|---|---|---|
+| Quote-Zeichen | `"` (Double Quote) | `` ` `` (Backtick) | `"` (Double Quote) | `[` `]` (eckige Klammern) | `"` (Double Quote) |
+| Wann quoten | Reservierte Wörter, Sonderzeichen, Groß-/Kleinschreibung | Immer (konsistent) | Reservierte Wörter, Sonderzeichen | Immer (konsistent) | Immer (konsistent) |
+| Case-Sensitivity | Unquoted → lowercase | Systemabhängig | Case-insensitive | Collation-abhängig (Default case-insensitive) | Unquoted → UPPERCASE |
 
 ### 2.2 Quoting-Strategie
 
@@ -123,19 +123,26 @@ CREATE TABLE [customers] (
     [email] NVARCHAR(254) NOT NULL,
     CONSTRAINT [pk_customers] PRIMARY KEY ([id])
 );
+
+-- Oracle
+CREATE TABLE "customers" (
+    "id" NUMBER(9) GENERATED ALWAYS AS IDENTITY,
+    "email" VARCHAR2(254) NOT NULL,
+    CONSTRAINT "pk_customers" PRIMARY KEY ("id")
+);
 ```
 
 ### 2.3 Escape-Regeln
 
-| Zeichen im Identifier | PostgreSQL | MySQL | SQLite | MSSQL |
-|---|---|---|---|---|
-| Quote-Zeichen selbst | `""` (verdoppeln) | ``` `` ``` (verdoppeln) | `""` (verdoppeln) | `]]` (nur `]` verdoppeln) |
-| Sonstige Sonderzeichen | Innerhalb Quotes erlaubt | Innerhalb Backticks erlaubt | Innerhalb Quotes erlaubt | Innerhalb Klammern erlaubt |
+| Zeichen im Identifier | PostgreSQL | MySQL | SQLite | MSSQL | Oracle |
+|---|---|---|---|---|---|
+| Quote-Zeichen selbst | `""` (verdoppeln) | ``` `` ``` (verdoppeln) | `""` (verdoppeln) | `]]` (nur `]` verdoppeln) | `""` (verdoppeln) |
+| Sonstige Sonderzeichen | Innerhalb Quotes erlaubt | Innerhalb Backticks erlaubt | Innerhalb Quotes erlaubt | Innerhalb Klammern erlaubt | Innerhalb Quotes erlaubt |
 
 Beispiel:
 ```sql
 -- Spalte heißt "user's name"
--- PostgreSQL/SQLite:
+-- PostgreSQL/SQLite/Oracle:
 "user's name"
 
 -- MySQL:
@@ -414,6 +421,85 @@ Besonderheiten:
 - Keine Tabellenoptionen (kein Engine/Charset)
 - Partitionierung: `range` über eine Spalte wird gerendert, alles andere bleibt E055 (siehe §9)
 - Skript-Darstellung mit `GO`-Batch-Trennern (siehe §13.1)
+
+### 3.9 Oracle
+
+```sql
+CREATE TABLE "orders" (
+    "id" NUMBER(9) GENERATED ALWAYS AS IDENTITY,
+    "customer_id" NUMBER(9) NOT NULL,
+    "order_date" TIMESTAMP WITH TIME ZONE NOT NULL,
+    "total_amount" NUMBER(10,2),
+    "status" VARCHAR2(10) DEFAULT 'pending'
+             CONSTRAINT "ck_orders_status" CHECK ("status" IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled')),
+    "is_archived" NUMBER(1) DEFAULT 0,
+    CONSTRAINT "fk_orders_customer_id" FOREIGN KEY ("customer_id")
+        REFERENCES "customers" ("id"),
+    CONSTRAINT "pk_orders" PRIMARY KEY ("id")
+);
+```
+
+Besonderheiten:
+- `identifier` → `NUMBER(9) GENERATED ALWAYS AS IDENTITY`; `generation:
+  identity` auf `integer`/`biginteger`/`smallint`/`decimal` (Skala 0) →
+  `<Typ> GENERATED ALWAYS/BY DEFAULT AS IDENTITY` — Oracle kennt (anders
+  als MSSQL) `BY DEFAULT` nativ, keine Warnung dafür nötig
+- `text(n)`/`char(n)` → `VARCHAR2(n)`/`CHAR(n)`, Länge > 4000 bzw.
+  > 2000 Byte → `CLOB` + W145; String-Literale als `'…'` (kein `N'…'`-Präfix
+  wie bei MSSQL)
+- `boolean` → `NUMBER(1)` (Oracles 0/1-Konvention), Defaults `true`/`false`
+  → `1`/`0`
+- `json` → `JSON` (nativer Oracle-21c+-Typ, kein Text-Fallback); `array` →
+  `JSON` + W149 (kein nativer Array-Typ)
+- `datetime` → `DATE` (trägt bereits eine Uhrzeit), mit `timezone: true` →
+  `TIMESTAMP WITH TIME ZONE`; Default `current_timestamp` → `SYSDATE` bzw.
+  auf `TIMESTAMP WITH TIME ZONE` `SYSTIMESTAMP` (zonentragend)
+- `date` → `DATE` (trägt immer eine Uhrzeit, W147 INFO); `time` → kein
+  nativer Typ, Fallback `VARCHAR2(8)` (`HH24:MI:SS`-Text, W146)
+- `uuid` → `VARCHAR2(36)` (`gen_uuid` → `RAWTOHEX(SYS_GUID())`, W150 INFO:
+  32 Hex-Zeichen ohne Bindestriche)
+- `enum` → `VARCHAR2(<längster Wert>)` + benannter `CHECK`
+  (`ck_<table>_<column>`), kein separater Typ; `ref_type` auf eine
+  `DOMAIN` faltet auf `CLOB` + `action_required` E053 (keine
+  Basistyp-Auflösung)
+- **Benannte Spalten-Constraints**: `UNIQUE` → `uq_<table>_<column>`,
+  `PRIMARY KEY` → `pk_<table>`. **Kein** benanntes `DEFAULT` — Oracle kennt
+  (anders als MSSQL) keine benannten DEFAULT-Constraints, `DEFAULT` ist
+  eine reine Spalteneigenschaft
+- `UNIQUE` auf NULL-fähigen Spalten trägt **keine** Warnung (Oracle zählt
+  NULL nicht als Wert in UNIQUE-Constraints, wie PostgreSQL/MySQL/SQLite —
+  anders als MSSQL)
+- **Schlüssel auf LOB-Spalten** (`CLOB`/`BLOB` — d. h. `text`/`char` über
+  dem Limit, `binary`, `fulltext`, wertelose Enums): Oracle erlaubt sie
+  nicht als Schlüsselspalten (ORA-02329). `UNIQUE` (Spalte oder
+  Constraint) und `PRIMARY KEY` darauf werden **nicht** gerendert, sondern
+  als `action_required` E057 ausgewiesen; ein Index darauf wird mit W152
+  übersprungen
+- `ON DELETE` kennt nur `CASCADE`/`SET NULL`; `RESTRICT`/`NO_ACTION`
+  entsprechen dem Oracle-Default (keine Klausel) und werden ohne Notiz
+  weggelassen, `SET_DEFAULT` wird verworfen + W153. Oracle kennt kein
+  `ON UPDATE` für Fremdschlüssel.
+- Identity-Generierung auf nicht identity-fähigen Typen sowie ein
+  `DEFAULT` auf einer Identity-Spalte werden fallen gelassen + W151
+- `NUMBER`-Präzision > 38 → auf 38 gekappt + W148
+- Composite-Typen sind nicht unterstützt → `action_required` E054
+- Partitionierung wird nicht gerendert (Tabelle bleibt plain) → E055
+- Routinen, Trigger und Aggregate werden nicht als PL/SQL gerendert →
+  `action_required` E053/E054
+- Views werden als `CREATE OR REPLACE FORCE VIEW` gerendert (nicht
+  `CREATE OR REPLACE VIEW`): Oracle validiert referenzierte Objekte sofort
+  und lehnt sonst eine Sicht ab, die auf eine übersprungene Abhängigkeit
+  (E053/E054/E055) verweist — anders als MSSQLs Deferred Name Resolution
+- Materialized Views werden als reguläre View gerendert → W103
+- Volltext-Indizes werden nicht gerendert (Oracle Text) →
+  `action_required` E057
+- Function-based- und Bitmap-Indizes werden noch nicht unterschieden —
+  jeder Index gilt als `BTREE`, ein ursprünglich anderer Indextyp → W102
+- Spatial ist nicht gescoped — jede Tabelle mit `geometry`-Spalten wird
+  vor der Generierung geblockt (E052)
+- Keine Tabellenoptionen (kein Tablespace/Storage-Clause)
+- Skript-Darstellung mit `/`-Batch-Trennern nach jedem Statement (siehe
+  §13.1) — kein Präambel-Batch wie bei MSSQL
 
 ---
 

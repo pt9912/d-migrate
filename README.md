@@ -443,7 +443,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 | PostgreSQL | DDL generation, reverse engineering, data export/import/transfer    |
 | MySQL      | DDL generation, reverse engineering, data export/import/transfer    |
 | SQLite     | DDL generation, reverse engineering, data export/import/transfer    |
-| Oracle     | Planned                                                             |
+| Oracle     | Reverse engineering, DDL generation, tool export (rollout, ADR 0052) |
 | MSSQL      | Reverse engineering, DDL generation, schema migration, tool export, data export/import/transfer (rollout, ADR 0047) |
 
 ## Project Structure

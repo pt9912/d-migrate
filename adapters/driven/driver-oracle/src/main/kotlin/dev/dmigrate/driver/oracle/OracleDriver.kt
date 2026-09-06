@@ -12,20 +12,18 @@ import dev.dmigrate.driver.data.TableLister
 /**
  * [DatabaseDriver]-Implementierung für Oracle.
  *
- * Nur die Reverse-Read-Fläche: die Schreib-/Generate-Ports sind
- * unerreichbar, weil `DialectCommandGate` (ADR 0052) oracle an der
- * Kommando-Grenze jedes generate-/export-/import-/transfer-/migrate-/
- * profile-Pfads abweist; die übrigen Fähigkeitsmethoden behalten ihre
- * konservativen Interface-Defaults.
+ * Reverse-Read (Slice 1) und DDL-Generate (Slice 2). Die Datenpfad-Ports
+ * bleiben unerreichbar, weil `DialectCommandGate` (ADR 0052) oracle an der
+ * Kommando-Grenze jedes export-/import-/transfer-/migrate-/profile-Pfads
+ * abweist; die übrigen Fähigkeitsmethoden behalten ihre konservativen
+ * Interface-Defaults.
  */
 class OracleDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.ORACLE
     override fun urlBuilder(): JdbcUrlBuilder = OracleJdbcUrlBuilder()
     override fun schemaReader(): SchemaReader = OracleSchemaReader()
     override fun tableLister(): TableLister = OracleTableLister()
-
-    override fun ddlGenerator(): DdlGenerator =
-        error("unreachable: DialectCommandGate rejects oracle for schema generate (ADR 0052)")
+    override fun ddlGenerator(): DdlGenerator = OracleDdlGenerator()
 
     override fun dataReader(): DataReader =
         error("unreachable: DialectCommandGate rejects oracle for data export/transfer (ADR 0052)")

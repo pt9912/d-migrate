@@ -1,8 +1,8 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
 > **Status:** In Progress (2026-09-05). Scope skizziert, alle fünf
-> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0, Slice 1
-> und Slice 1a geliefert**.
+> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0, Slice 1,
+> Slice 1a und Slice 2 geliefert**.
 >
 > **Status-Update 2026-09-05:** Slice 0 umgesetzt — Modul
 > `adapters/driven/driver-oracle` (Skeleton, `ojdbc11` 23.26.3.0.0),
@@ -36,6 +36,40 @@
 > UNIQUE-Constraint-Indizes aus (nur PK-Indizes gehören ausgeschlossen —
 > es gibt keine gesonderte Oracle-Abfrage für UNIQUE-Constraints, der
 > Index-Scan ist ihr einziger Weg ins Modell). Alle drei behoben, CI grün.
+>
+> **Status-Update 2026-09-05 (Slice 2):** `OracleDdlGenerator` +
+> `OracleTypeMapper` + `OracleColumnConstraintHelper` — `schema generate`
+> und `export flyway/liquibase/django/knex` funktionieren gegen Oracle
+> (Tabellen, benannte UNIQUE/CHECK/PK/FK-Constraints, einfache B-Tree-
+> Indizes, native Sequenzen, Views). Routinen/Trigger/Aggregate → E053,
+> Composite-Typen → E054, Partitionierung → E055 (Tabelle plain),
+> Volltext-Indizes → E057 (Slice 6/7/8/9 noch nicht gebaut).
+> Neue Codes W145-W153 (`spec/ledger.md`). DDL-Goldens für neun
+> Fixture-Kombinationen per CLI erzeugt. `AtomicPreserveRestoreSql` +
+> `AtomicSequencePreserveDispatcher` beim Review auf
+> `SequenceCapabilityDefaults.supportsAtomicPreserve`-Check umgestellt
+> statt hartcodierter MSSQL/ORACLE-Aufzählung (Eigner-Fund); zwei weitere
+> Capability-Architektur-Fragen (ViewQueryTransformer-Dialektzweige,
+> Capability-Tabellen ins `DatabaseDriver`-Interface) als eigene
+> `next/`-Pläne dokumentiert, nicht Teil dieses Slices. CI grün.
+>
+> **Review-Nachtrag (unabhängiges Review, gleicher Tag):** fünf P1-Funde
+> behoben — Sequenz-Default-Quoting (`invoice_seq.NEXTVAL` →
+> `"invoice_seq".NEXTVAL`, sonst ORA-02289 gegen echtes Oracle), fehlendes
+> `FORCE` bei `CREATE OR REPLACE VIEW` (eine Sicht, die eine übersprungene
+> Abhängigkeit referenziert, scheitert sonst sofort mit ORA-00942/ORA-00904
+> statt wie bei MSSQL erst bei Nutzung), Reverse-Erkennung für
+> `gen_uuid`/`current_date`/`current_time` ergänzt (sonst Round-Trip-
+> Bedeutungsverlust), `spec/`-Slice-Referenzen entfernt (Zielbild-
+> Konvention). Ein architektonischer Fund (unquoted Bezeichner in
+> CHECK-Ausdrücken/View-Bodies bricht nur bei Oracle, da es der einzige
+> Dialekt mit Uppercase-Faltung ist — betrifft alle fünf Dialekte
+> gleichermaßen, kein Oracle-Slice-2-Bug) als
+> [`open/oracle-uppercase-folding-unquoted-identifier-references.md`](../open/oracle-uppercase-folding-unquoted-identifier-references.md)
+> dokumentiert statt in diesem Slice gefixt. Drei P2-Funde behoben
+> (`isLargeObject`-Enum-Fehlklassifikation, `||` aus MySQL-Quelle non-portable
+> zu Oracle, fehlende Oracle/MSSQL-Testabdeckung für den
+> Atomic-Preserve-Guard). CI grün.
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -143,7 +177,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **0** ✅ | Scoping-ADR (0052), Gradle-Modul `driver-oracle`, Testcontainers-Spike (Connect + `SELECT banner FROM v$version`), FUTC-Lizenztext-Doku, Dependabot-Ignore | — |
 | **1** ✅ | `JdbcUrlBuilder` + `SchemaReader`/`TableLister` (Reverse-Read) + `ORACLE`-Enum-Querschnitt + `DialectCommandGate` **wiedereinführen** (die Klasse wurde in Commit `ec3f2d06` beim MSSQL-Slice-10-Abschluss gelöscht, weil ihr letzter Eintrag wegfiel — Oracle braucht sie neu, nicht nur einen weiteren Eintrag) | `schema reverse` funktioniert |
 | **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli` (Gate-Ablehnungen + `schema reverse`-Subprozess-E2E), analog MSSQL Slice 1a | E2E-Netz vor Slice 2 |
-| **2** | `DdlGenerator` + Typtabelle NeutralType→Oracle-Typen (Kern-Typen; Materialized Views bewusst **nicht** hier, siehe Slice 10) | `schema generate --target oracle` |
+| **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→Oracle-Typen (Kern-Typen; Materialized Views bewusst **nicht** hier, siehe Slice 10) | `schema generate --target oracle` |
 | **3** | `DataReader`/`DataWriter` (Transfer); **3b** sample-db-Oracle-Leg im Harness (analog [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)) | `data export/import/transfer` + Oracle-Smoke in CI |
 | **4** | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg, `transferCompatibility`, Cross-Dialekt-sample-db-Smoke | Vergleichs-Substrat für Slice 5 |
 | **5** | Diff/Migrate (`OracleDiff*Ops`) inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep. Voraussichtlich größter Slice (bei MSSQL größer als Slices 1–4 zusammen) — Sub-Slice-Schnitt folgt Familien-Gliederung, sobald der Slice beginnt | `schema migrate` |

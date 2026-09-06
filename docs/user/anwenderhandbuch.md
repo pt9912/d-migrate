@@ -295,7 +295,7 @@ Datenbank erzeugen.
        --output schema.sql
    ```
 
-   Für `--target` sind `postgresql`, `mysql`, `sqlite` und `mssql` möglich.
+   Für `--target` sind `postgresql`, `mysql`, `sqlite`, `mssql` und `oracle` möglich.
 
 2. Optional: Erzeugen Sie zusätzlich ein Rücknahme-Skript:
 
@@ -2473,7 +2473,7 @@ Fortschritt/Warnungen nach stderr.
 | Option | Beschreibung |
 | ------ | ------------ |
 | `--source` | Schema-Datei (Pflicht) |
-| `--target` | `postgresql`, `mysql`, `sqlite`, `mssql` (Pflicht) |
+| `--target` | `postgresql`, `mysql`, `sqlite`, `mssql`, `oracle` (Pflicht) |
 | `--output` | Ausgabedatei (Standard: stdout) |
 | `--report` | Report-Datei (Standard: `<output>.report.yaml`) |
 | `--generate-rollback` | Rollback-DDL erzeugen |
@@ -2546,7 +2546,7 @@ Fortschritt/Warnungen nach stderr.
 | ------ | ------------ |
 | `--source` | Schema-Datei (Pflicht) |
 | `--output` | Ausgabeverzeichnis (Pflicht) |
-| `--target` | `postgresql`, `mysql`, `sqlite`, `mssql` (Pflicht) |
+| `--target` | `postgresql`, `mysql`, `sqlite`, `mssql`, `oracle` (Pflicht) |
 | `--version` | Pflicht bei `django`/`knex`, optional bei `flyway`/`liquibase` |
 | `--generate-rollback` | Down-Artefakt erzeugen |
 | `--spatial-profile` | Spatial-Profil (wie `schema generate`) |

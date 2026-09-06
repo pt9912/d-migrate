@@ -182,11 +182,6 @@ class SchemaGenerateRunner(
             return Preflight.Exit(2)
         }
 
-        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.SCHEMA_GENERATE, dialect)?.let {
-            printError(it, request.source.toString())
-            return Preflight.Exit(2)
-        }
-
         val spatialProfile = when (val profileResult = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)) {
             is SpatialProfilePolicy.Result.Resolved -> profileResult.profile
             is SpatialProfilePolicy.Result.UnknownProfile -> {

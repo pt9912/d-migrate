@@ -56,4 +56,11 @@ class AtomicSequencePreserveDispatcherTest : FunSpec({
         }
         ex.message!!.contains("no atomic preserve") shouldBe true
     }
+
+    test("oracle has no atomic executor — the capability, not the gate, keeps it unreachable") {
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+            AtomicSequencePreserveDispatcher.executorFor(DatabaseDialect.ORACLE)
+        }
+        ex.message!!.contains("no atomic preserve") shouldBe true
+    }
 })

@@ -462,7 +462,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 | PostgreSQL | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
 | MySQL      | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
 | SQLite     | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| Oracle     | Geplant                                                             |
+| Oracle     | Reverse Engineering, DDL-Generierung, Tool-Export (Ausbau, ADR 0052) |
 | MSSQL      | Reverse Engineering, DDL-Generierung, Schema-Migration, Tool-Export, Datentransfer (Ausbau, ADR 0047) |
 
 ## Projektstruktur

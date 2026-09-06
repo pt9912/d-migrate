@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
+import dev.dmigrate.driver.SequenceCapabilityDefaults
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.SqlIdentifiers
 
@@ -38,18 +39,22 @@ internal object AtomicPreserveRestoreSql {
         dialect: DatabaseDialect,
         sequenceRef: SequenceObjectRef,
         probe: SequenceCurrentValueProbeResult.Read,
-    ): List<String> = when (dialect) {
-        DatabaseDialect.POSTGRESQL -> postgres(sequenceRef, probe)
-        DatabaseDialect.MYSQL -> mysql(sequenceRef, probe)
-        DatabaseDialect.SQLITE -> sqlite(sequenceRef, probe)
-        DatabaseDialect.MSSQL -> error(
+    ): List<String> {
+        // Capability-gefuehrt statt hartcodierter Dialekt-Aufzaehlung: ein
+        // Dialekt, der spaeter Atomic-Preserve bekommt (siehe
+        // docs/planning/next/atomic-preserve-mssql-oracle.md), braucht hier
+        // keine Anpassung -- nur einen echten `when`-Zweig weiter unten.
+        check(SequenceCapabilityDefaults.forDialect(dialect).supportsAtomicPreserve) {
             "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
-                "mssql, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0047).",
-        )
-        DatabaseDialect.ORACLE -> error(
-            "unreachable: SequenceCapabilityDefaults declares no atomic preserve for " +
-                "oracle, der Atomic-Pfad waehlt den Dialekt also nie aus (ADR 0052).",
-        )
+                "${dialect.name.lowercase()}, der Atomic-Pfad waehlt den Dialekt also nie aus."
+        }
+        return when (dialect) {
+            DatabaseDialect.POSTGRESQL -> postgres(sequenceRef, probe)
+            DatabaseDialect.MYSQL -> mysql(sequenceRef, probe)
+            DatabaseDialect.SQLITE -> sqlite(sequenceRef, probe)
+            DatabaseDialect.MSSQL, DatabaseDialect.ORACLE ->
+                error("unreachable: guarded by the supportsAtomicPreserve check above")
+        }
     }
 
     private fun postgres(

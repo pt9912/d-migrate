@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.mssql.MssqlDdlGenerator
 import dev.dmigrate.driver.mysql.MysqlDdlGenerator
+import dev.dmigrate.driver.oracle.OracleDdlGenerator
 import dev.dmigrate.driver.postgresql.PostgresDdlGenerator
 import dev.dmigrate.driver.sqlite.SqliteDdlGenerator
 import io.kotest.core.spec.style.FunSpec
@@ -21,6 +22,7 @@ class DdlGoldenMasterTest : FunSpec({
         "mysql" to MysqlDdlGenerator(),
         "sqlite" to SqliteDdlGenerator(),
         "mssql" to MssqlDdlGenerator(),
+        "oracle" to OracleDdlGenerator(),
     )
     val codec = YamlSchemaCodec()
 

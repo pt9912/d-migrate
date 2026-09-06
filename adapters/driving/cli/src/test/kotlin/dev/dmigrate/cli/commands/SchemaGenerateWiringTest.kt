@@ -290,10 +290,10 @@ class SchemaGenerateWiringTest : FunSpec({
     test("invalid target uses injected error formatter before reading schema") {
         val factory = RecordingSchemaGenerateFactory()
 
-        val exit = SchemaGenerateWiring.execute(options(target = "oracle"), factory)
+        val exit = SchemaGenerateWiring.execute(options(target = "db2"), factory)
 
         exit shouldBe 2
-        factory.printedErrors.single().first shouldContain "oracle"
+        factory.printedErrors.single().first shouldContain "db2"
         factory.schemaReads shouldBe emptyList()
         factory.generatorLookups shouldBe emptyList()
     }
@@ -317,10 +317,7 @@ class SchemaGenerateWiringTest : FunSpec({
             val result = DdlResult(listOf(DdlStatement("CREATE TABLE generated (id INT);")))
 
             schema.name shouldBe "Default Generate"
-            // Oracle: DialectCommandGate weist schema generate an der
-            // Kommando-Grenze ab (ADR 0052, Slice 2 offen) --
-            // OracleDriver.ddlGenerator() ist bewusst ein "unreachable"-Stub.
-            (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
+            DatabaseDialect.entries.forEach { dialect ->
                 bundle.generatorLookup(dialect).dialect shouldBe dialect
                 bundle.preGenerationValidatorLookup(dialect).validate(schema, DdlGenerationOptions()).isEmpty()
                     .shouldBeTrue()
