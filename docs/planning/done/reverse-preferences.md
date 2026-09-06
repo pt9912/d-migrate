@@ -111,7 +111,7 @@ generisches Framework zu bauen — genau **eine** Präferenz wird implementiert.
 - **Neue ADR** (nächste freie Nummer, vorauss. 0027): das Prinzip D1 (Präferenz statt
   Fold/Heuristik für inhärente Reverse-Mehrdeutigkeit) + die Ablehnung der v8-Fold-Option
   mit Begründung.
-- **Neues Zielbild-Spec `reverse-preference-mechanism.md` (neu, unter spec/):** der generische Mechanismus
+- **Neues Zielbild-Spec `dialect-preference-mechanism.md` (neu, unter spec/):** der generische Mechanismus
   (Präzedenz Config↔Flag, Default-konservativ-Invariante) + eine **Registry der
   Mehrdeutigkeiten** (Eintrag 1: SQLite-AUTOINCREMENT-Breite, Querverweis auf
   `type-mapping.md`). Reines Zielbild, keine Phasen/Status, keine Abwärts-Verweise (SDP).
@@ -182,7 +182,7 @@ Flag-Stellung. Zusätzlich Assert, dass der R202-Hint den Key nennt.
 `.d-migrate.yaml`-`reverse:`-Block parsen + mergen (Flag > Config > Default). Tests:
 Präzedenz, Default-Weglassbarkeit.
 
-**AP4 — Muster-Verankerung + Doku.** Neue ADR (D5); `reverse-preference-mechanism.md`
+**AP4 — Muster-Verankerung + Doku.** Neue ADR (D5); `dialect-preference-mechanism.md`
 (neu, unter spec/) (Mechanismus + Registry); Oberflächen-Specs (`connection-config-spec`
 3.2, `cli-spec`, `type-mapping`); Anwenderhandbuch-Notiz; CHANGELOG. Das 64bit-Ticket auf
 „Option 2 durch Präferenz-Muster abgelöst" aktualisieren **und dabei die geänderte
@@ -224,7 +224,7 @@ Preflight-Compat-Read; ein SQLite-als-Ziel-Sensor ist **optionaler Kann-Assert**
    sodass die Zielgruppe die Fluchtluke findet.
 6. **Kein Fingerprint-Change** (`schema-fingerprint-v7` unverändert); der
    authored-`identifier`→SQLite-Post-Compare (aus dem PK-Slice) bleibt grün.
-7. Tests grün; Kover ≥ 90 % je berührtem Modul; ADR + `reverse-preference-mechanism.md`
+7. Tests grün; Kover ≥ 90 % je berührtem Modul; ADR + `dialect-preference-mechanism.md`
    + Oberflächen-Specs + Folge-Ticket angelegt; `make docs-check` grün.
 
 ## Nicht-Scope
@@ -274,7 +274,7 @@ Beide offenen Fragen entschieden:
   Detail-Spec-Verweis; die Registry-Zeilen verweisen **nur lateral** auf Detail-Specs
   (SDP — das Spec verweist nie abwärts auf ADR/Plan; Review-Hinweis zu R5). Form beim Bau.
 - **R5 — Muster-Ambition: ENTSCHIEDEN — eigenes Spec jetzt**, mit **distinktem Namen**
-  `reverse-preference-mechanism.md` (Review F4, vermeidet die Basename-Kollision mit diesem
+  `dialect-preference-mechanism.md` (Review F4, vermeidet die Basename-Kollision mit diesem
   Plan) und SDP-lateral gehaltener Registry.
 
 ## Umsetzungs-Stand (2026-07-05)
@@ -293,7 +293,7 @@ keine Golden-Regression), **`make docs-check` grün**, **Live-Abnahme grün**.
   `data transfer` + `.d-migrate.yaml`-`reverse:`-Block via `ReverseAutoincrementResolver`
   (Flag > Config > Default).
 - **AP4** [ADR-0027](../../adr/0027-reverse-preferences-inhaerente-mehrdeutigkeit.md) +
-  Zielbild-Spec `reverse-preference-mechanism.md` (Registry) + Oberflächen-Specs
+  Zielbild-Spec `dialect-preference-mechanism.md` (Registry) + Oberflächen-Specs
   (`connection-config-spec` 3.2, `cli-spec`, `type-mapping` 5.3) + Anwenderhandbuch +
   CHANGELOG; 64bit-Ticket „Option 2 abgelöst"; Folge-Ticket
   [`sqlite-migrate-biginteger-identity-render-gap.md`](../open/sqlite-migrate-biginteger-identity-render-gap.md)

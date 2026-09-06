@@ -3,7 +3,7 @@ status: accepted
 date: 2026-07-05
 decision-makers: pt9912
 consulted: docs/planning/done/reverse-preferences.md (Slice-Plan, drei Review-Runden), docs/planning/open/sqlite-reverse-identifier-64bit-narrowing.md (Ur-Ticket)
-informed: spec/reverse-preference-mechanism.md, spec/type-mapping.md, spec/connection-config-spec.md, spec/cli-spec.md
+informed: spec/dialect-preference-mechanism.md, spec/type-mapping.md, spec/connection-config-spec.md, spec/cli-spec.md
 ---
 
 # Reverse-Präferenzen: inhärente Reverse-Mehrdeutigkeiten per deklarierter Anwender-Präferenz auflösen — nicht per Heuristik oder Post-Compare-Fold
@@ -79,7 +79,7 @@ inhärenten Reverse-Mehrdeutigkeiten strukturell auf** — nicht nur diesen eine
    nicht verstecken.
 
 Der generische Mechanismus + eine wachsende **Registry** der Mehrdeutigkeiten sind
-im Zielbild-Spec `reverse-preference-mechanism.md` festgehalten; die konkrete
+im Zielbild-Spec `dialect-preference-mechanism.md` festgehalten; die konkrete
 Oberfläche in `connection-config-spec.md`, `cli-spec.md` und `type-mapping.md`.
 
 ## Konsequenzen

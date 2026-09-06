@@ -50,7 +50,7 @@ beim Reverse zurück in den Enum gefaltet werden — das ist der „größte Rev
 Der Plan-Review (B1–B5) hat die Kosten von **Ansatz A** höher belegt als zunächst
 dargestellt und die Balance verschoben. **Wenn** 2b gebaut wird, bleibt A (Reverse-
 Rekonstruktion als Registry-Eintrag,
-[`reverse-preference-mechanism.md`](../../../spec/reverse-preference-mechanism.md))
+[`dialect-preference-mechanism.md`](../../../spec/dialect-preference-mechanism.md))
 der prinzipiellste Root-Fix — aber mit drei geschärften Vorbehalten:
 
 - **Default MUSS „aus" sein (B1).** [ADR 0027](../../adr/0027-reverse-preferences-inhaerente-mehrdeutigkeit.md)

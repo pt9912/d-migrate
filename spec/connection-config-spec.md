@@ -304,7 +304,7 @@ pipeline:
     backoff_multiplier: 2.0          # Exponentieller Backoff-Faktor (Delay × Faktor^Versuch)
 
 # ── Reverse-Engineering-Praeferenzen ───────────
-# Aufloesung inhaerenter Reverse-Mehrdeutigkeiten (reverse-preference-mechanism.md).
+# Aufloesung inhaerenter Reverse-Mehrdeutigkeiten (dialect-preference-mechanism.md).
 reverse:
   sqlite:
     # Wie der SQLite-Reverse einen AUTOINCREMENT-Primaerschluessel ins neutrale
@@ -312,6 +312,19 @@ reverse:
     # + generation: identity (64-bit-treu). Prioritaet: CLI-Flag
     # `--sqlite-autoincrement-width` > Config-Wert > Default.
     autoincrement_width: 32
+
+# ── Schreib-Praeferenzen ───────────────────────
+# Aufloesung inhaerenter Schreib-Mehrdeutigkeiten (dialect-preference-mechanism.md):
+# der Quellwert ist eindeutig, der Zieldialekt kann ihn nicht darstellen.
+write:
+  oracle:
+    # Oracle setzt den leeren String mit NULL gleich. Trifft ein leerer
+    # Quellwert auf eine NOT-NULL-Spalte, ist er nicht schreibbar.
+    #   error  → Lauf bricht mit benannter Meldung ab (Default, aendert keine Daten)
+    #   null   → als NULL schreiben (nur bei nullbarer Spalte zulaessig)
+    #   <text> → dieser Wert tritt an die Stelle des leeren Strings
+    # Prioritaet: CLI-Flag `--oracle-empty-string` > Config-Wert > Default.
+    empty_string: error
 
 # ── Inkrementelle Migration ────────────────────
 incremental:

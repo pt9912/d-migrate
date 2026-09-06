@@ -510,7 +510,7 @@ denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
 | `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
 | `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults |
 | `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` |
-| `--sqlite-autoincrement-width` | Nein | `32`\|`64` | SQLite-Reverse: AUTOINCREMENT-Primärschlüssel als 32-bit `identifier` (Default) oder 64-bit `biginteger`+`identity` schreiben (inhärente Mehrdeutigkeit, `reverse-preference-mechanism.md`); übersteuert `reverse.sqlite.autoincrement_width` |
+| `--sqlite-autoincrement-width` | Nein | `32`\|`64` | SQLite-Reverse: AUTOINCREMENT-Primärschlüssel als 32-bit `identifier` (Default) oder 64-bit `biginteger`+`identity` schreiben (inhärente Mehrdeutigkeit, `dialect-preference-mechanism.md`); übersteuert `reverse.sqlite.autoincrement_width` |
 
 **Reverse-Ausgabe und Reverse-Report**:
 
@@ -1341,6 +1341,7 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--tables` | Nein | Liste | alle | Kommaseparierte Import-Reihenfolge; nur für Verzeichnisquellen |
 | `--on-error` | Nein | String | `abort` | Chunk-Fehlerbehandlung: `abort`, `skip`, `log` |
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
+| `--oracle-empty-string` | Nein | String | `error` | Oracle-Ziel: was mit einem leeren Quell-String in einer `NOT NULL`-Spalte geschieht — Oracle setzt `''` mit NULL gleich (inhaerente Schreib-Mehrdeutigkeit, [`dialect-preference-mechanism.md`](dialect-preference-mechanism.md)). `error` bricht mit benannter Meldung ab, `null` schreibt NULL (nur bei nullbarer Spalte), jeder andere Wert tritt an die Stelle des leeren Strings. Uebersteuert `write.oracle.empty_string` |
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Verhalten: `fire`, `disable`, `strict` |
 | `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
 | `--atomic` | Nein | Boolean | aus | Atomarer Clean-Load: bei einem Fehler werden **alle** Tabellen der Operation auf den leeren Vor-Import-Zustand zurückgesetzt (Kompensations-Truncate) → „alle Tabellen oder keine". Erfordert explizit `--truncate` (sonst Exit `2`) und ist inkompatibel mit `--resume` (Exit `2`). Die Kompensation ist eine O(1)-Metadaten-Operation (streaming-verträglich für große Datenmengen). Nicht-Scope: Append in ein nicht-leeres Ziel. |
@@ -1390,6 +1391,7 @@ kanonisch beschrieben.
 | `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer ([`LF-013`](lastenheft-d-migrate.md#lf-013)) |
 | `--since` | Nein | String | — | Untere Marker-Grenze (nur zusammen mit `--since-column`) |
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
+| `--oracle-empty-string` | Nein | String | `error` | Oracle-Ziel: was mit einem leeren Quell-String in einer `NOT NULL`-Spalte geschieht — Oracle setzt `''` mit NULL gleich (inhaerente Schreib-Mehrdeutigkeit, [`dialect-preference-mechanism.md`](dialect-preference-mechanism.md)). `error` bricht mit benannter Meldung ab, `null` schreibt NULL (nur bei nullbarer Spalte), jeder andere Wert tritt an die Stelle des leeren Strings. Uebersteuert `write.oracle.empty_string` |
 | `--trigger-mode` | Nein | String | `fire` | Trigger-Handling: `fire`, `disable`, `strict` |
 | `--truncate` | Nein | Boolean | aus | Zieltabellen vor dem Transfer leeren |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk. Präzedenz: CLI-explizit > `pipeline.chunk_size` (Config) > Default; `≤ 0` → Exit `2`. |

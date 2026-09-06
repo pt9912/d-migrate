@@ -24,7 +24,7 @@ data class SchemaReadOptions(
      * both (PG/MySQL distinguish by column width), so the tool cannot infer the
      * intent — the user declares it. Default is conservative (no regression);
      * the driver honours it, other readers ignore the field. See the
-     * `reverse-preferences` slice / `reverse-preference-mechanism` spec.
+     * `reverse-preferences` slice / `dialect-preference-mechanism` spec.
      */
     val sqliteAutoincrement: SqliteAutoincrementReverse = SqliteAutoincrementReverse.IDENTIFIER,
 )

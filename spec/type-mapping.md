@@ -174,7 +174,7 @@ ununterscheidbar** vom 32-bit-`identifier`-Vertrag (PG `SERIAL`, MySQL `INT
 AUTO_INCREMENT`) und von 64-bit `biginteger` + `generation: identity`. SQLite
 trägt die Information nicht, die die Wahl entscheiden würde — anders als PG/MySQL,
 die per Spaltenbreite (int4/int8) unterscheiden. Der Reverse löst das über eine
-**deklarierte Präferenz** (`reverse-preference-mechanism.md`):
+**deklarierte Präferenz** (`dialect-preference-mechanism.md`):
 
 | Breite | Reverse-Ergebnis | Note |
 |--------|------------------|------|

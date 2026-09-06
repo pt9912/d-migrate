@@ -46,31 +46,53 @@ Unterschiede sichtbar zu machen ist die Aufgabe des Werkzeugs.
 Der Generate-Pfad kann es nicht vorhersagen: er sieht die Spalte
 (`text NOT NULL`), nicht die Daten. Der Transfer-Pfad sieht die Daten.
 
-## Moegliche Loesungsrichtungen (nicht vorentschieden)
+## Richtung (Eigner-Entscheidung 2026-09-06)
 
-1. **Benannte Diagnose statt roher ORA-Meldung.** Der Oracle-Schreibpfad
-   faengt `ORA-01400` ab und meldet, dass die Quelle einen leeren String
-   in einer NOT-NULL-Spalte fuehrt und Oracle beides gleichsetzt.
-   Aendert nichts am Ausgang, aber der Anwender weiss, was zu tun ist.
-2. **Preflight.** Vor dem Transfer je NOT-NULL-Textspalte auf leere
-   Strings pruefen und den Lauf mit einer Liste der betroffenen
-   Spalten/Zeilen abbrechen, bevor die Haelfte der Tabellen geschrieben
-   ist.
-3. **Opt-in-Ersetzung** (z. B. `--oracle-empty-string <wert>`), die den
-   leeren String beim Schreiben durch einen definierten Wert ersetzt.
-   Aendert Daten und braucht deshalb eine ausdrueckliche Ansage.
-4. **Nichts im Code**, nur Doku — dann bleibt die rohe ORA-Meldung.
+Das gehoert **in die Einstellungen**, nicht in eine Sonderbehandlung im
+Oracle-Schreibpfad. Der Mechanismus dafuer existiert bereits:
+[`dialect-preference-mechanism.md`](../../../spec/dialect-preference-mechanism.md)
+loest „inhaerente Mehrdeutigkeiten" durch eine **deklarierte
+Anwender-Praeferenz** statt durch eine Heuristik, mit
+`reverse.sqlite.autoincrement_width` als lebendem Praezedenzfall. Seine
+Prinzipien passen unveraendert:
 
-Richtung 1 und 2 aendern keine Daten und sind unabhaengig voneinander
-umsetzbar; 3 ist eine Produktentscheidung.
+- *Deklaration statt Heuristik* — nur der Anwender kennt die Absicht.
+- *Konservativer Default* — ohne Deklaration bleibt das Verhalten, wie es
+  ist (der Transfer scheitert), also keine stille Datenaenderung.
+- *Nicht stumm* — weicht der Lauf per Praeferenz vom Default ab, haelt
+  eine INFO-Note im Report das fest.
+- Praezedenz: **CLI-Flag > `.d-migrate.yaml` > Default**.
+
+Ein Unterschied bleibt und ist beim Umsetzen zu entscheiden: jener
+Mechanismus ist auf **Reverse**-Mehrdeutigkeiten zugeschnitten (die
+Datenbank traegt die Information nicht, die die Wahl entscheiden wuerde).
+Der leere String ist die **Schreib**-Seite — die Quelle ist eindeutig, das
+Ziel kann sie nicht darstellen. Entweder bekommt die Spec einen
+Schreib-Abschnitt mit eigener Registry, oder ihr Geltungsbereich wird auf
+beide Richtungen erweitert. Eine eigene, dritte Mechanik waere falsch.
+
+Unabhaengig davon bleiben zwei Punkte, die **keine** Daten aendern und
+deshalb ohnehin gelten sollten:
+
+1. **Benannte Diagnose** statt roher `ORA-01400`: die Meldung muss sagen,
+   dass die Quelle einen leeren String fuehrt und Oracle ihn mit NULL
+   gleichsetzt.
+2. **Preflight** vor dem ersten Schreibzugriff. Ohne ihn bricht der Lauf
+   mitten drin ab (gemessen: nach `actor`) und laesst ein halb befuelltes
+   Ziel zurueck; mit ihm nennt er alle betroffenen Spalten auf einmal.
 
 ## Auswirkung auf den Sample-DB-Harness
 
 Das Oracle-Leg (`make sample-db-cross-smoke-pg2ora`, Slice 3b) laeuft bis
 einschliesslich DDL-Anwendung und Tabellenzahl-Paritaet durch und bricht
-dann an dieser Stelle ab. Es ist damit **rot**, solange die Entscheidung
-aussteht — bewusst, statt den Transferschritt zu ueberspringen und einen
-gruenen Lauf zu melden, der die Haelfte nicht geprueft hat.
+dann an dieser Stelle ab. Es ist damit **rot**, solange die Praeferenz
+nicht umgesetzt ist — bewusst, statt den Transferschritt zu ueberspringen
+und einen gruenen Lauf zu melden, der die Haelfte nicht geprueft hat.
+
+Sobald es sie gibt, **deklariert das Leg sie in seiner
+`.d-migrate.yaml`** — sichtbar und begruendet, statt dass das Smoke-Skript
+die fuenf Zeilen still in der Quelle umschreibt. Damit ist auch **4b**
+entblockt, das einen durchlaufenden Transfer voraussetzt.
 
 ## Herkunft
 
