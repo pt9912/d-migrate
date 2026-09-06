@@ -53,7 +53,7 @@ internal object OracleDiffTableOps {
             .takeIf { it.isNotEmpty() }
             ?.let { return blockSpatial(op, ctx, tableName, it) }
         val notes = mutableListOf<TransformationNote>()
-        val lobColumns = table.columns.filterValues { typeMapper.isLargeObject(it.type) }.keys
+        val unkeyableColumns = table.columns.filterValues { typeMapper.isUnkeyable(it.type) }.keys
         val lines = mutableListOf<String>()
 
         for ((colName, col) in table.columns.inOrdinalOrder()) {
@@ -66,12 +66,12 @@ internal object OracleDiffTableOps {
             )
         }
         for (constraint in table.constraints.sortedBy { it.name }) {
-            columnHelper.generateConstraintClause(tableName, constraint, lobColumns, notes)?.let { lines += it }
+            columnHelper.generateConstraintClause(tableName, constraint, unkeyableColumns, notes)?.let { lines += it }
         }
         if (table.primaryKey.isNotEmpty()) {
-            val lobKeys = table.primaryKey.filter { it in lobColumns }
+            val lobKeys = table.primaryKey.filter { it in unkeyableColumns }
             if (lobKeys.isNotEmpty()) {
-                notes += columnHelper.lobKeyNote(tableName, "pk_$tableName", "PRIMARY KEY", lobKeys)
+                notes += columnHelper.unkeyableKeyNote(tableName, "pk_$tableName", "PRIMARY KEY", lobKeys)
             } else {
                 val pkCols = table.primaryKey.joinToString(", ") { ctx.sql.quote(it) }
                 lines += "CONSTRAINT ${ctx.sql.quote("pk_$tableName")} PRIMARY KEY ($pkCols)"
@@ -94,7 +94,7 @@ internal object OracleDiffTableOps {
         ctx.emit(op, sql)
         ctx.carryOverNotes(op, notes)
         for (index in table.indices) {
-            val stmt = indexBuilder.render(tableName, table, index, lobColumns)
+            val stmt = indexBuilder.render(tableName, table, index, unkeyableColumns)
             if (stmt.sql.isNotBlank()) ctx.emit(op, stmt.sql)
             ctx.carryOverNotes(op, stmt.notes)
         }

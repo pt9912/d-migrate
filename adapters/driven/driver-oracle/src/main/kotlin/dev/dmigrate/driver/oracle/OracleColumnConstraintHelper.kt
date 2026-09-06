@@ -216,9 +216,19 @@ internal class OracleColumnConstraintHelper(
         return notes
     }
 
+    /**
+     * Reihenfolge ist in Oracle **nicht** frei: die DEFAULT-Klausel gehoert
+     * VOR die Inline-Constraint. `NOT NULL DEFAULT x` scheitert mit
+     * `ORA-03076: unexpected item DEFAULT in a column definition or inline
+     * constraint` -- anders als in PostgreSQL, MySQL und SQL Server, wo
+     * beide Reihenfolgen durchgehen.
+     *
+     * Live aufgefallen, als der Sample-DB-Harness das erste Mal ein reales
+     * Schema (Pagila) gegen Oracle anwendete: jede Spalte mit NOT NULL UND
+     * Default liess das `CREATE TABLE` scheitern.
+     */
     private fun nullabilityDefaultUnique(ctx: ColumnContext, lob: Boolean): List<String> {
         val parts = mutableListOf<String>()
-        if (ctx.col.required) parts += "NOT NULL"
         ctx.col.default?.let { default ->
             if (default is DefaultValue.FunctionCall && default.name.lowercase() == "gen_uuid") {
                 ctx.notes += TransformationNote(
@@ -230,9 +240,10 @@ internal class OracleColumnConstraintHelper(
             }
             parts += "DEFAULT ${typeMapper.toDefaultSql(default, ctx.col.type)}"
         }
+        if (ctx.col.required) parts += "NOT NULL"
         if (ctx.col.unique) {
             if (lob) {
-                ctx.notes += lobKeyNote(ctx.tableName, "uq_${ctx.tableName}_${ctx.colName}", "UNIQUE", listOf(ctx.colName))
+                ctx.notes += unkeyableKeyNote(ctx.tableName, "uq_${ctx.tableName}_${ctx.colName}", "UNIQUE", listOf(ctx.colName))
             } else {
                 parts += uniqueClause(ctx.tableName, ctx.colName)
             }
@@ -244,13 +255,14 @@ internal class OracleColumnConstraintHelper(
         "CONSTRAINT ${quoteIdentifier("uq_${tableName}_$colName")} UNIQUE"
 
     /** E057: UNIQUE/PRIMARY KEY auf LOB-Spalten ist in Oracle nicht erzeugbar (ORA-02329). */
-    fun lobKeyNote(tableName: String, constraintName: String, kind: String, columns: List<String>): TransformationNote =
+    fun unkeyableKeyNote(tableName: String, constraintName: String, kind: String, columns: List<String>): TransformationNote =
         ManualActionRequired(
             code = "E057", objectType = "constraint", objectName = constraintName,
             reason = "$kind constraint '$constraintName' on table '$tableName' was skipped: column(s) " +
-                "'${columns.joinToString(", ")}' are large-object types (CLOB/BLOB) which Oracle does not allow " +
-                "as key columns (ORA-02329).",
-            hint = "Bound the column (e.g. max_length <= 4000) so it becomes key-eligible, or enforce uniqueness manually.",
+                "'${columns.joinToString(", ")}' have a type Oracle does not allow as a key column " +
+                "(ORA-02329) — large objects (CLOB/BLOB) or TIMESTAMP WITH TIME ZONE.",
+            hint = "Bound a textual column (max_length <= 4000), or drop the time zone from a timestamp key, " +
+                "or enforce the constraint manually.",
         ).toNote()
 
     // ── Foreign keys / table constraints ─────────
@@ -293,16 +305,16 @@ internal class OracleColumnConstraintHelper(
     fun generateConstraintClause(
         tableName: String,
         constraint: ConstraintDefinition,
-        lobColumns: Set<String>,
+        unkeyableColumns: Set<String>,
         notes: MutableList<TransformationNote>,
     ): String? = when (constraint.type) {
         ConstraintType.CHECK ->
             "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
         ConstraintType.UNIQUE -> {
             val columns = constraint.columns.orEmpty()
-            val lob = columns.filter { it in lobColumns }
+            val lob = columns.filter { it in unkeyableColumns }
             if (lob.isNotEmpty()) {
-                notes += lobKeyNote(tableName, constraint.name, "UNIQUE", lob)
+                notes += unkeyableKeyNote(tableName, constraint.name, "UNIQUE", lob)
                 null
             } else {
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} UNIQUE (${columns.joinToString(", ") { quoteIdentifier(it) }})"

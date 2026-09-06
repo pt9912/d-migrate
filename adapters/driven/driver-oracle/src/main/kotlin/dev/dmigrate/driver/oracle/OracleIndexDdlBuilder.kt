@@ -31,7 +31,7 @@ internal class OracleIndexDdlBuilder(
     fun effectiveName(tableName: String, index: IndexDefinition): String =
         index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
 
-    fun render(tableName: String, table: TableDefinition, index: IndexDefinition, lobColumns: Set<String>): DdlStatement {
+    fun render(tableName: String, table: TableDefinition, index: IndexDefinition, unkeyableColumns: Set<String>): DdlStatement {
         val indexName = effectiveName(tableName, index)
         val columns = table.columns
 
@@ -59,7 +59,7 @@ internal class OracleIndexDdlBuilder(
                 ),
             )
         }
-        index.columns.firstOrNull { it.name in lobColumns }?.let { offending ->
+        index.columns.firstOrNull { it.name in unkeyableColumns }?.let { offending ->
             return DdlStatement(
                 "",
                 listOf(

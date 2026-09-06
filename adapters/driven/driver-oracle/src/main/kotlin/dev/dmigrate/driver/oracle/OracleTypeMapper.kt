@@ -98,6 +98,20 @@ class OracleTypeMapper : TypeMapper {
      * ohne Schema-Zugriff nicht aufloesen kann, ob die Domain tatsaechlich
      * auf CLOB faellt.
      */
+    /**
+     * Ob Oracle die Spalte als **Schluesselspalte** ablehnt (`ORA-02329`).
+     *
+     * Zwei Gruende, dieselbe Fehlernummer:
+     * - Large Objects (CLOB/BLOB) -- [isLargeObject];
+     * - `TIMESTAMP WITH TIME ZONE`. Das ist die weniger bekannte Haelfte:
+     *   PostgreSQL, MySQL und SQL Server erlauben eine solche Spalte im
+     *   Primaerschluessel, Oracle nicht. Live aufgefallen, als Pagilas
+     *   `payment`-Tabelle (PK ueber `payment_date`) das erste Mal gegen
+     *   Oracle angewendet wurde.
+     */
+    fun isUnkeyable(type: NeutralType): Boolean =
+        isLargeObject(type) || (type is NeutralType.DateTime && type.timezone)
+
     fun isLargeObject(type: NeutralType): Boolean = when (type) {
         is NeutralType.Text -> type.maxLength?.let { it > MAX_VARCHAR2_LENGTH } ?: true
         is NeutralType.Char -> type.length > MAX_CHAR_LENGTH

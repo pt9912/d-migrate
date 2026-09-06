@@ -25,6 +25,9 @@ import dev.dmigrate.driver.SqlIdentifiers
  */
 internal object OracleSequenceDdl {
 
+    /** Kleinster von Oracle akzeptierter CACHE-Wert (`ORA-04010` darunter). */
+    private const val MIN_CACHE = 2
+
     private fun quote(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.ORACLE)
 
     fun createSql(name: String, seq: SequenceDefinition): String = buildString {
@@ -64,6 +67,13 @@ internal object OracleSequenceDdl {
         if (seq.minValue != null) append(" MINVALUE ${seq.minValue}") else append(" NOMINVALUE")
         if (seq.maxValue != null) append(" MAXVALUE ${seq.maxValue}") else append(" NOMAXVALUE")
         if (seq.cycle) append(" CYCLE") else append(" NOCYCLE")
-        if (seq.cache != null) append(" CACHE ${seq.cache}") else append(" NOCACHE")
+        // Oracle kennt kein `CACHE 1`: der Wert muss >= 2 sein, sonst
+        // `ORA-04010`. PostgreSQLs Sequenz-DEFAULT ist aber genau 1, sodass
+        // jede reverse-gelesene PG-Sequenz sonst unanwendbare DDL ergaebe
+        // (live im Sample-DB-Harness aufgefallen). `NOCACHE` ist dafuer die
+        // treue Entsprechung -- beide bedeuten "kein Vorrat, jeder Zugriff
+        // geht an die Sequenz".
+        val cache = seq.cache
+        if (cache != null && cache >= MIN_CACHE) append(" CACHE $cache") else append(" NOCACHE")
     }
 }

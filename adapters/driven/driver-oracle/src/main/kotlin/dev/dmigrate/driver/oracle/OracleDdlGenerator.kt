@@ -109,7 +109,7 @@ class OracleDdlGenerator private constructor(
     ): List<DdlStatement> {
         val notes = mutableListOf<TransformationNote>()
         val lines = mutableListOf<String>()
-        val lobColumns = lobColumns(table)
+        val unkeyableColumns = unkeyableColumns(table)
 
         for ((colName, col) in table.columns.inOrdinalOrder()) {
             lines += columnHelper.generateColumnSql(name, colName, col, schema, notes)
@@ -127,13 +127,13 @@ class OracleDdlGenerator private constructor(
         for (constraint in table.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue
-            columnHelper.generateConstraintClause(name, constraint, lobColumns, notes)?.let { lines += it }
+            columnHelper.generateConstraintClause(name, constraint, unkeyableColumns, notes)?.let { lines += it }
         }
 
         if (table.primaryKey.isNotEmpty()) {
-            val lobKeys = table.primaryKey.filter { it in lobColumns }
+            val lobKeys = table.primaryKey.filter { it in unkeyableColumns }
             if (lobKeys.isNotEmpty()) {
-                notes += columnHelper.lobKeyNote(name, "pk_$name", "PRIMARY KEY", lobKeys)
+                notes += columnHelper.unkeyableKeyNote(name, "pk_$name", "PRIMARY KEY", lobKeys)
             } else {
                 val pkCols = table.primaryKey.joinToString(", ") { quoteIdentifier(it) }
                 lines += "CONSTRAINT ${quoteIdentifier("pk_$name")} PRIMARY KEY ($pkCols)"
@@ -158,8 +158,8 @@ class OracleDdlGenerator private constructor(
     }
 
     /** Spalten, die als LOB (`CLOB`/`BLOB`) gerendert werden -- keine zulaessigen Schluessel-/Indexspalten. */
-    private fun lobColumns(table: TableDefinition): Set<String> =
-        table.columns.filterValues { oracleTypeMapper.isLargeObject(it.type) }.keys
+    private fun unkeyableColumns(table: TableDefinition): Set<String> =
+        table.columns.filterValues { oracleTypeMapper.isUnkeyable(it.type) }.keys
 
     // ── Indices ──────────────────────────────────
 
@@ -168,8 +168,8 @@ class OracleDdlGenerator private constructor(
         table: TableDefinition,
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
-        val lobColumns = lobColumns(table)
-        return table.indices.map { indexBuilder.render(tableName, table, it, lobColumns) }
+        val unkeyableColumns = unkeyableColumns(table)
+        return table.indices.map { indexBuilder.render(tableName, table, it, unkeyableColumns) }
     }
 
     // ── Circular / deferred foreign keys ──────────

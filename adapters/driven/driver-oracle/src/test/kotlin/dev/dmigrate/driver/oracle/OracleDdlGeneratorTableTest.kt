@@ -34,6 +34,64 @@ class OracleDdlGeneratorTableTest : FunSpec({
     fun createTableSql(result: dev.dmigrate.driver.DdlResult): String =
         result.statements.single { it.sql.startsWith("CREATE TABLE") }.sql
 
+    // Oracle ist an dieser Stelle strenger als die vier anderen Dialekte:
+    // die DEFAULT-Klausel MUSS vor der Inline-Constraint stehen.
+    // `NOT NULL DEFAULT x` scheitert mit ORA-03076. Kein Golden deckte die
+    // Kombination ab (dort ist keine DEFAULT-Spalte zugleich NOT NULL) --
+    // aufgefallen erst, als der Sample-DB-Harness Pagila anwendete.
+    test("a required column with a default renders DEFAULT before NOT NULL (ORA-03076)") {
+        val table = TableDefinition(
+            columns = mapOf(
+                "last_update" to ColumnDefinition(
+                    type = NeutralType.DateTime(timezone = true),
+                    required = true,
+                    default = dev.dmigrate.core.model.DefaultValue.FunctionCall("current_timestamp"),
+                    ordinal = 1,
+                ),
+            ),
+        )
+        val sql = tableSql(schema(mapOf("t" to table)))
+        sql shouldContain "\"last_update\" TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL"
+        sql shouldNotContain "NOT NULL DEFAULT"
+    }
+
+    // Oracle kennt kein `CACHE 1` (ORA-04010, Minimum ist 2) -- PostgreSQLs
+    // Sequenz-Default ist aber genau 1, sodass jede reverse-gelesene
+    // PG-Sequenz sonst unanwendbare DDL ergibt.
+    test("a sequence with cache 1 renders NOCACHE, not CACHE 1 (ORA-04010)") {
+        val schemaDef = SchemaDefinition(
+            name = "s", version = "1.0",
+            sequences = mapOf(
+                "s_one" to dev.dmigrate.core.model.SequenceDefinition(start = 1, increment = 1, cache = 1),
+                "s_two" to dev.dmigrate.core.model.SequenceDefinition(start = 1, increment = 1, cache = 2),
+            ),
+        )
+        val sql = generator.generate(schemaDef).render()
+        sql shouldContain "\"s_one\""
+        sql shouldNotContain "CACHE 1 "
+        sql shouldNotContain "CACHE 1;"
+        // Der zulaessige Wert bleibt unangetastet.
+        sql shouldContain "CACHE 2"
+    }
+
+    // Oracle laesst TIMESTAMP WITH TIME ZONE nicht als Schluesselspalte zu
+    // (ORA-02329) -- dieselbe Fehlernummer wie bei CLOB/BLOB, aber die
+    // weniger bekannte Haelfte: PG, MySQL und SQL Server erlauben es.
+    test("a primary key over a TIMESTAMP WITH TIME ZONE column is skipped with a note (ORA-02329)") {
+        val table = TableDefinition(
+            columns = mapOf(
+                "payment_date" to ColumnDefinition(type = NeutralType.DateTime(timezone = true), ordinal = 1),
+                "payment_id" to ColumnDefinition(type = NeutralType.Identifier(), ordinal = 2),
+            ),
+            primaryKey = listOf("payment_date", "payment_id"),
+        )
+        val result = generator.generate(schema(mapOf("payment" to table)))
+        createTableSql(result) shouldNotContain "PRIMARY KEY"
+        val note = result.notes.single { it.code == "E057" }
+        note.message shouldContain "payment_date"
+        note.message shouldContain "ORA-02329"
+    }
+
     test("plain columns render NOT NULL, DEFAULT and inline named UNIQUE") {
         val table = TableDefinition(
             columns = mapOf(

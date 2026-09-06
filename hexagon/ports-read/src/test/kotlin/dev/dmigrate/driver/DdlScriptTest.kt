@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -48,10 +49,16 @@ class DdlScriptTest : FunSpec({
             "CREATE OR ALTER VIEW [v] AS\nSELECT 1;\nGO"
     }
 
-    test("batchSeparator capability is GO for mssql only") {
+    // Ueber ALLE Dialekte, nicht ueber eine Aufzaehlung: die frueher hier
+    // stehende Liste nannte PG/MySQL/SQLite einzeln, sodass Oracle beim
+    // Hinzukommen unbemerkt einen Trenner bekommen konnte -- und bekam
+    // (`/`, was in SQL*Plus die Anweisung ein zweites Mal ausfuehrt).
+    test("mssql is the only dialect with a batch separator") {
         DialectCapabilities.forDialect(DatabaseDialect.MSSQL).batchSeparator shouldBe "GO"
-        listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE).forEach {
-            DialectCapabilities.forDialect(it).batchSeparator shouldBe null
+        (DatabaseDialect.entries - DatabaseDialect.MSSQL).forEach {
+            withClue("dialect=$it") {
+                DialectCapabilities.forDialect(it).batchSeparator shouldBe null
+            }
         }
     }
 })

@@ -9,7 +9,7 @@
 # docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-cross-smoke-pg2ms sample-db-cross-smoke-ms2pg sample-db-3hop-smoke sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-cross-smoke-pg2ms sample-db-cross-smoke-ms2pg sample-db-cross-smoke-pg2ora sample-db-3hop-smoke sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
 
@@ -40,6 +40,13 @@ sample-db-cross-smoke-pg2my:
 # docs/user/quality.md) + d-migrate:dev-Image.
 sample-db-cross-smoke-pg2ms:
 	./examples/sample-db/scripts/smoke-cross-pg2ms.sh
+
+# Oracle-Leg (ADR 0052, Slice 3b): Pagila PG -> Oracle. Wendet das erzeugte
+# Skript per sqlplus an (`/`-Batchtrenner aus Slice 2) und transferiert die
+# Daten. Braucht compose postgres+oracle (~2 GB RAM, ~2-3 Min Kaltstart) +
+# d-migrate:dev-Image. Nicht Teil des Standard-Smokes.
+sample-db-cross-smoke-pg2ora:
+	./examples/sample-db/scripts/smoke-cross-pg2ora.sh
 
 # MSSQL-Leg Gegenrichtung (ADR 0047, Slice 4): SQL Server als QUELLE. Hop 0 saet
 # die Quelle mit der pg2ms-Mechanik, Hop 1 faehrt reverse/generate/transfer

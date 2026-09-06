@@ -118,7 +118,10 @@ class PortsCommonTest : FunSpec({
         caps.supportsDisableFkChecks shouldBe true
         caps.supportsSchemaParameter shouldBe true
         caps.partitionChildrenAreTables shouldBe false
-        caps.batchSeparator shouldBe "/"
+        // Kein Trenner: `/` fuehrt in SQL*Plus den Puffer ein ZWEITES Mal aus,
+        // anders als T-SQLs `GO`, das nur einen Batch beendet. Hinter einer
+        // mit `;` abgeschlossenen Anweisung liefe damit jede DDL doppelt.
+        caps.batchSeparator shouldBe null
         caps.requiresPrimaryKeyForSkip shouldBe true
         caps.supportsIndexIncludeColumns shouldBe false
         caps.supportsClusteredIndexes shouldBe false

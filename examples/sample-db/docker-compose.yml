@@ -133,6 +133,31 @@ services:
       retries: 18
       start_period: 30s
 
+  # Oracle-Leg (ADR 0052, Slice 3b): Pagila PG -> Oracle.
+  # Digest-gepinnt wie die uebrigen Dienste -- das Tag `23-slim-faststart`
+  # ist bereits einmal umgezogen (der Produktpfad im Image lautet `26ai`),
+  # ein reines Tag waere also kein fester Bezugspunkt.
+  #
+  # Der Kaltstart dauert ~2-3 Minuten; das Leg ist deshalb nicht Teil des
+  # Standard-Smokes, sondern hat ein eigenes Make-Target.
+  oracle:
+    image: gvenzl/oracle-free@sha256:f5ff19033860d662c821cb04eb10483fa94f14f78eae252d054291ea07028093
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_ORACLE_PORT}:1521"
+    volumes:
+      - sample-db-oracle-data:/opt/oracle/oradata
+    healthcheck:
+      # Das Image bringt seinen eigenen Healthcheck mit, der zwischen
+      # "startet noch", "PDBs werden angelegt" und "bereit" unterscheidet --
+      # ein blosser TCP-Check meldete zu frueh gesund.
+      test: ["CMD-SHELL", "/opt/oracle/healthcheck.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
   dmigrate:
     # Standard: das JVM-Image d-migrate:dev. Ueberschreibbar auf das Native-Runtime-Image
     # (make native-runtime-build → d-migrate:native-dev), um dieselbe E2E-Harness gegen das
@@ -194,3 +219,4 @@ volumes:
   sample-db-mysql-data:
   sample-db-postgis-data:
   sample-db-mssql-data:
+  sample-db-oracle-data:

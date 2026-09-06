@@ -147,7 +147,7 @@ internal object OracleDiffObjectOps {
             )
         }
         val notes = mutableListOf<TransformationNote>()
-        val clause = columnHelper.generateConstraintClause(table, constraint, tableDef?.let(::lobColumns).orEmpty(), notes)
+        val clause = columnHelper.generateConstraintClause(table, constraint, tableDef?.let(::unkeyableColumns).orEmpty(), notes)
             ?: return blockConstraint(
                 op, ctx,
                 "Constraint '${constraint.name}' on '$table' is not renderable for Oracle" +
@@ -197,7 +197,7 @@ internal object OracleDiffObjectOps {
                 "ORACLE_TABLE_NOT_IN_SCHEMA",
                 MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
             )
-        val stmt = indexBuilder.render(table, tableDef, index, lobColumns(tableDef))
+        val stmt = indexBuilder.render(table, tableDef, index, unkeyableColumns(tableDef))
         if (stmt.sql.isBlank()) {
             // Leeres SQL heisst: der Index ist nicht renderbar (E057 Volltext,
             // E052 Spatial, W152 LOB-Spalte). Die Notiz traegt den Grund.
@@ -215,8 +215,8 @@ internal object OracleDiffObjectOps {
 
     // ── Shared ───────────────────────────────────
 
-    private fun lobColumns(table: TableDefinition): Set<String> =
-        table.columns.filterValues { typeMapper.isLargeObject(it.type) }.keys
+    private fun unkeyableColumns(table: TableDefinition): Set<String> =
+        table.columns.filterValues { typeMapper.isUnkeyable(it.type) }.keys
 
     private fun blockConstraint(
         op: DiffOperation,

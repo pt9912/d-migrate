@@ -21,6 +21,9 @@ database:
     # pagila_ms_src saet Hop 0 des Smokes; pagila_back nimmt Hop 1 auf.
     pagila_ms_source: "mssql://sa:${MSSQL_SA_PASSWORD}@mssql:1433/pagila_ms_src?encrypt=false"
     pagila_pg_back: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/pagila_back"
+    # Oracle-Leg (Slice 3b) — Oracle-Ziel fuer Pagila PG -> Oracle.
+    # Pfadteil ist der SERVICE-NAME der PDB, nicht die SID.
+    pagila_ora_target: "oracle://${APP_USER}:${APP_USER_PASSWORD}@oracle:1521/FREEPDB1"
     # Phase 3 (Scale, Employees) — MySQL-Quelle + MySQL- und PG-Ziel.
     # Die DBs legt der Scale-Smoke selbst an (idempotent), da initdb nur
     # bei frischem Volume läuft.

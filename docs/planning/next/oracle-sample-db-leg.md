@@ -8,6 +8,44 @@
 > eingebettet (anders als beim MSSQL-Vorbild, das 3+3b gemeinsam
 > geliefert hat, `docs/planning/done/mssql-dialect-scoping.md` Zeile 218).
 
+> **Status-Update 2026-09-06:** P0–P4 gebaut (Compose-Service, `.env`,
+> `.d-migrate.yaml`-Verbindung, `smoke-cross-pg2ora.sh`,
+> `make sample-db-cross-smoke-pg2ora`). Der Lauf kommt bis einschliesslich
+> **DDL-Anwendung per sqlplus und Tabellenzahl-Paritaet (15 = 15)** und
+> bricht dann im Datentransfer ab. Er ist damit **rot** — bewusst, statt
+> den Transferschritt zu ueberspringen.
+>
+> **Der Lauf hat fuenf Defekte im ausgelieferten Oracle-Generate-Pfad
+> aufgedeckt**, die alle behoben sind. Keiner davon war durch die
+> DDL-Goldens abgedeckt, weil deren Fixtures die noetigen Kombinationen
+> nicht enthalten:
+> - `NOT NULL DEFAULT x` — Oracle verlangt die DEFAULT-Klausel VOR der
+>   Constraint (`ORA-03076`). Betraf jede Spalte mit beidem; im Golden ist
+>   keine DEFAULT-Spalte zugleich NOT NULL.
+> - `CACHE 1` — Oracle verlangt >= 2 oder `NOCACHE` (`ORA-04010`).
+>   PostgreSQLs Sequenz-Default IST 1, also traf es jede reverse-gelesene
+>   PG-Sequenz; im Golden stehen nur 20 und `NOCACHE`.
+> - **`TIMESTAMP WITH TIME ZONE` als Schluesselspalte** (`ORA-02329`) —
+>   dieselbe Fehlernummer wie CLOB/BLOB, aber die weniger bekannte Haelfte:
+>   PG, MySQL und SQL Server erlauben es. Pagilas `payment`-PK laeuft ueber
+>   `payment_date`.
+> - **Jede Anweisung lief doppelt.** Die Skript-Darstellung setzte hinter
+>   jede `;`-terminierte Anweisung ein `/`. In SQL*Plus beendet `/` keinen
+>   Batch (wie T-SQLs `GO`), sondern fuehrt den Puffer ERNEUT aus. Bei DDL
+>   fiel das als `ORA-00955` auf; bei einem Datenskript waere es ein
+>   doppelter INSERT gewesen. `batchSeparator` ist fuer Oracle jetzt `null`;
+>   `/` gehoert erst zu PL/SQL-Bloecken (Slice 9) und dort ANSTELLE des `;`.
+> - Der Test, der das haette fangen sollen, hiess „batchSeparator is GO for
+>   mssql only", zaehlte die uebrigen Dialekte aber einzeln auf und liess
+>   Oracle aus. Er laeuft jetzt ueber `DatabaseDialect.entries`.
+>
+> **Offen und entscheidungsbeduerftig:** der Transfer scheitert an
+> [`oracle-empty-string-is-null-transfer.md`](../open/oracle-empty-string-is-null-transfer.md)
+> — Oracle setzt `''` mit NULL gleich, Pagila fuehrt in zwei `NOT NULL`-
+> Textspalten fuenf leere Strings. Das ist keine Harness-Frage, sondern
+> eine Produktentscheidung ueber den Datenpfad. **4b bleibt bis dahin
+> blockiert.**
+
 ## Ist-Zustand
 
 `examples/sample-db/` ist der Cross-Dialekt-Round-Trip-Harness (ADR 0013
