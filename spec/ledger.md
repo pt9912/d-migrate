@@ -46,7 +46,7 @@ neuen Version.
 | E058 | SQLite-helper_table: externe Objekte referenzieren `dmg_sequences`; Rollback-Preflight bricht ab |
 | E059 | SQLite-helper_table: Sequence-backed column im PRIMARY KEY |
 | E060 | Split-Diagnostik (Phasenkonflikt); SQLite-helper_table-Rollback zusätzlich: ATTACHed Datenbanken detektiert |
-| E061 - E065 | Cross-Dialect-Partitionierung PG↔MySQL: Non-UTC-Grenze (Shift), nicht abbildbarer Schlüsseltyp, LIST-DEFAULT-Verwurf (Transfer-Verlust), nicht hebbarer UNIQUE-Partition-Index, FK auf partitionierter Tabelle |
+| E061 - E065 | Cross-Dialect-Partitionierung PG↔MySQL↔Oracle: Grenze, die der Zieldialekt nicht exakt ausdrücken kann (Non-UTC-Offset; Oracle zusätzlich Bruchteilsekunden) — jeweils Shift, nicht abbildbarer Schlüsseltyp (Oracle zusätzlich: LOB `ORA-14135`, `TIMESTAMP WITH TIME ZONE` `ORA-03001`), LIST-DEFAULT-Verwurf (Transfer-Verlust), nicht hebbarer UNIQUE-Partition-Index, FK auf partitionierter Tabelle |
 | E066 | MSSQL: mehr als ein Index beansprucht die Ablage der Tabelle (SQL Server erlaubt genau einen clustered Index; welcher gemeint ist, ist nicht entscheidbar — `clustered` an den übrigen entfernen) |
 | E120 - E121 | Erweiterte Validierung (Trigger, Views) |
 | E122 - E123 | Sequence-Default-Validierung |
@@ -63,7 +63,7 @@ neuen Version.
 | W123 | SQLite-helper_table-Rollback: ATTACHed Datenbanken detektiert |
 | W124 | SQLite-helper_table-Reverse: User-BEFORE-INSERT-Trigger maskiert kanonisches `_bi`-Paar |
 | W125 - W126 | Index-Präfixlängen: MySQL-Index auf TEXT/BLOB ohne Präfix übersprungen; PG/SQLite verwerfen eine MySQL-Präfixlänge (Voll-Spalten-Index) |
-| W129 - W131 | Cross-Dialect-Partitionierung PG↔MySQL: timestamptz→UTC-Normalisierung, HASH-Platzierungsdivergenz, gehobener Partition-Index umbenannt |
+| W129 - W131 | Cross-Dialect-Partitionierung PG↔MySQL↔Oracle: timestamptz→UTC-Normalisierung, HASH-Platzierungsdivergenz, gehobener Partition-Index umbenannt |
 | W132 | Cross-Dialect: `fulltext`-Spalte zu TEXT degradiert (Volltext-Suche nicht erhalten; manueller `FULLTEXT`-Index in MySQL bzw. FTS5-Virtual-Table in SQLite nötig) |
 | W133 | PostgreSQL-Generate: `FULLTEXT`-Index ohne `tsvector`-Spalte nicht expandierbar (keine GiST-Volltext-Spalte vorhanden; manuell `tsvector`-Spalte + `tsvector_update_trigger` ergänzen oder MySQL/SQLite als Ziel wählen) |
 | W134 | Migrate: `enum`-Spalte als bloßes `TEXT` migriert, Werte nicht durchgesetzt (PostgreSQL inline-`values`-Enum ohne `refType` sowie alle SQLite-Enums; nativ round-trippen nur MySQL `ENUM` und PG-`refType`-Typreferenz — für inline-Fidelity Custom-Type/`refType` verwenden) |

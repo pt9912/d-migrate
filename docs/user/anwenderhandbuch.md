@@ -2380,9 +2380,37 @@ arbeiten `schema reverse`, `schema compare`, `schema generate`,
 
 `schema migrate` blockt für Oracle benannt, statt unvollständige DDL zu
 erzeugen, wenn eine Änderung Routinen, Trigger, Materialized Views,
-Volltext-Indizes, Partitionierung oder Geometrie-Spalten betrifft. Ebenso
-beim Versuch, eine bestehende Spalte nachträglich zur Identity-Spalte zu
-machen — Oracle lässt das nicht zu.
+Volltext-Indizes oder Geometrie-Spalten betrifft. Ebenso beim Versuch, eine
+bestehende Spalte nachträglich zur Identity-Spalte zu machen — Oracle lässt
+das nicht zu.
+
+**Kann ich partitionierte Tabellen nach Oracle migrieren?**
+Ja, für `range`, `list` und `hash`. Zwei Dinge sehen auf Oracle anders aus
+als in Ihrer Schemadatei, und beide werden gemeldet: eine **untere**
+Bereichsgrenze fällt weg (`W112`) — Oracle leitet sie aus der
+vorhergehenden Partition ab, Ihre Partitionen müssen deshalb aufsteigend
+geordnet sein —, und bei `hash` verteilt Oracle die Zeilen mit seiner
+eigenen Funktion (`W130`): Anzahl und Namen bleiben, eine einzelne Zeile
+kann in einer anderen Partition landen.
+
+Abgebrochen wird, wenn die Partitionierung auf Oracle gar nicht ausdrückbar
+ist: ohne jede Partition, mit einer Bereichspartition ohne obere Grenze, bei
+einer `list`-Partitionierung über mehrere Spalten (`E055`) — oder wenn die
+Schlüsselspalte einen Typ hat, den Oracle nicht als Partitionsschlüssel
+zulässt: große Objekte und `datetime` **mit** Zeitzone (`E062`). Dann meldet
+`schema generate` den Grund und legt die Tabelle flach an; `schema migrate`
+führt sie gar nicht erst aus.
+
+**Den Partitionsbestand einer bestehenden Oracle-Tabelle zu ändern, geht
+noch nicht.** Eine Tabelle partitioniert neu anzulegen funktioniert; eine
+Partition später hinzuzufügen oder zu entfernen bricht `schema migrate`
+benannt ab. Für Oracle ist das seit dem Zurücklesen der Partitionierung
+überhaupt erst erreichbar — vorher meldete `schema reverse` sie gar nicht.
+
+Beim Zurücklesen mit `schema reverse` gibt es zwei Oracle-Formen, für die
+d-migrate keinen Begriff hat: **INTERVAL**-Partitionierung, die neue
+Partitionen selbsttätig anlegt (`R355`, gelesen werden nur die vorhandenen),
+und **Subpartitionen** (`R356`, nur die oberste Ebene wird gelesen).
 
 **Was passiert mit Oracle-Bitmap-Indizes?**
 Sie bleiben erhalten. `schema reverse` liest sie als eigenen Indextyp, und

@@ -370,7 +370,33 @@ class OracleDiffDdlGeneratorTest : FunSpec({
     // Solange `DialectCommandGate` `schema migrate` fuer Oracle abwies, fiel
     // das nicht auf; seit 5e-2 wuerde es ausgefuehrt.
 
-    test("CreateTable with partitioning blocks instead of silently creating a flat table") {
+    test("CreateTable renders the partitioning Oracle can express") {
+        // Seit Slice 7 ist Partitionierung kein Pauschal-Blocker mehr. Der
+        // Diff-Pfad nutzt denselben Builder wie der Generate-Pfad -- ohne
+        // diese Zusicherung koennte er still auf eine flache Tabelle
+        // zurueckfallen, waehrend `schema generate` partitioniert.
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier()),
+                "st" to ColumnDefinition(type = NeutralType.Text(maxLength = 10)),
+            ),
+            partitioning = dev.dmigrate.core.model.PartitionConfig(
+                type = dev.dmigrate.core.model.PartitionType.LIST,
+                key = listOf("st"),
+                partitions = listOf(
+                    dev.dmigrate.core.model.PartitionDefinition(name = "l_a", values = listOf("'A'")),
+                    dev.dmigrate.core.model.PartitionDefinition(name = "l_rest", isDefault = true),
+                ),
+            ),
+        )
+        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("events", table))))
+        r.blockers.shouldBeEmpty()
+        val sql = r.statements.single().sql
+        sql shouldContain "PARTITION BY LIST (\"st\")"
+        sql shouldContain "PARTITION \"l_rest\" VALUES (DEFAULT)"
+    }
+
+    test("CreateTable with partitioning Oracle cannot express blocks instead of creating a flat table") {
         val table = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier())),
             primaryKey = listOf("id"),

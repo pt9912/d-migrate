@@ -50,6 +50,8 @@ class OracleDdlGenerator private constructor(
     override val dialect = DatabaseDialect.ORACLE
     override val supportsDeferredForeignKeys: Boolean = true
 
+    private val partitionBuilder = OraclePartitionDdlBuilder(::quoteIdentifier)
+
     private val columnHelper = OracleColumnConstraintHelper(
         quoteIdentifier = ::quoteIdentifier,
         typeMapper = oracleTypeMapper,
@@ -140,19 +142,16 @@ class OracleDdlGenerator private constructor(
             }
         }
 
-        table.partitioning?.let { partitioning ->
-            notes += ManualActionRequired(
-                code = "E055", objectType = "partitioning", objectName = name,
-                reason = "${partitioning.type.name} partitioning of table '$name' is not rendered for Oracle " +
-                    "(partition clauses are not carried in the neutral model); created as a plain table.",
-                hint = "Add PARTITION BY manually and rebuild the table.",
-            ).toNote()
-        }
+        val partitionClause = table.partitioning
+            ?.let { partitionBuilder.clause(name, it, table.columns, notes) }
+            .orEmpty()
 
         val sql = buildString {
             append("CREATE TABLE ${quoteIdentifier(name)} (\n")
             append(lines.joinToString(",\n") { "    $it" })
-            append("\n);")
+            append("\n)")
+            if (partitionClause.isNotEmpty()) append("\n$partitionClause")
+            append(";")
         }
         return listOf(DdlStatement(sql, notes))
     }

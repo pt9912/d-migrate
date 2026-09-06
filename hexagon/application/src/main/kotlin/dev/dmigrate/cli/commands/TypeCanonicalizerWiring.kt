@@ -4,10 +4,13 @@ import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionBound
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.core.model.PartitionTemporalLiteral
 
 /**
  * Der Fingerabdruck eines Schemas, gesehen durch die Projektionen des
@@ -20,6 +23,7 @@ internal typealias FingerprintOfSchema = (
     (NeutralType) -> NeutralType,
     (IndexDefinition) -> IndexDefinition,
     (ColumnGeneration?) -> ColumnGeneration?,
+    (PartitionConfig) -> PartitionConfig,
 ) -> String
 
 /**
@@ -111,6 +115,62 @@ fun capabilityIndexCanonicalizer(
         )
     }
 }
+
+/**
+ * Projiziert die Partitionierung auf das, was der Ziel-Dialekt davon
+ * zurueckmelden **kann**.
+ *
+ * Zwei Angaben stehen im neutralen Modell, die nicht jeder Dialekt fuehrt:
+ * die **untere** Grenze einer RANGE-Partition (Oracle und MySQL kennen nur
+ * `VALUES LESS THAN`) und Modulus/Remainder einer HASH-Partition (Oracle
+ * verteilt selbst). Wo der Zielserver sie nicht ablegt, liest sein Reverse
+ * sie auch nicht zurueck — ohne diese Projektion meldete der Post-Compare
+ * nach jedem `migrate --execute` Drift fuer eine Migration, die genau das
+ * getan hat, was verlangt war. Dieselbe Naht wie
+ * [capabilityIndexCanonicalizer].
+ */
+fun capabilityPartitionCanonicalizer(
+    dialect: DatabaseDialect,
+): (PartitionConfig) -> PartitionConfig {
+    val caps = DialectCapabilities.forDialect(dialect)
+    if (caps.carriesPartitionLowerBounds && caps.carriesPartitionHashModulus &&
+        caps.separatesDateFromDateTime
+    ) {
+        return { it }
+    }
+    return { config ->
+        config.copy(
+            partitions = config.partitions.map { part ->
+                part.copy(
+                    from = if (caps.carriesPartitionLowerBounds) foldBounds(part.from, caps) else null,
+                    to = foldBounds(part.to, caps),
+                    values = part.values?.map { foldMidnight(it, caps) },
+                    modulus = if (caps.carriesPartitionHashModulus) part.modulus else null,
+                    remainder = if (caps.carriesPartitionHashModulus) part.remainder else null,
+                )
+            },
+        )
+    }
+}
+
+private fun foldBounds(bounds: List<PartitionBound>?, caps: DialectCapabilities): List<PartitionBound>? =
+    bounds?.map { bound ->
+        if (bound is PartitionBound.Value) PartitionBound.Value(foldMidnight(bound.literal, caps)) else bound
+    }
+
+/**
+ * Ein Zeitstempel um Mitternacht auf das reine Datum, wo der Dialekt beides
+ * nicht unterscheiden kann. Beide Seiten des Vergleichs laufen durch dieselbe
+ * Funktion, es ist also gleich, welche Schreibweise sie mitbringen.
+ */
+private fun foldMidnight(literal: String, caps: DialectCapabilities): String {
+    if (caps.separatesDateFromDateTime) return literal
+    val parts = PartitionTemporalLiteral.parse(literal) ?: return literal
+    if (parts.offset != null || parts.time == null) return literal
+    return if (parts.time == MIDNIGHT) "'${parts.date}'" else literal
+}
+
+private const val MIDNIGHT = "00:00:00"
 
 /**
  * Projiziert die Erzeugungsart einer Spalte auf das, was der Ziel-Dialekt

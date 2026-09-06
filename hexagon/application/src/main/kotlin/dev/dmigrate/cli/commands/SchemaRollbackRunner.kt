@@ -213,8 +213,12 @@ class SchemaRollbackRunner(
         // system-vergebenen Identity-Sequenznamen enthielte, waere gegen den
         // im Artefakt nie erreichbar.
         val canonicalizeGeneration = dialect?.let(::capabilityGenerationCanonicalizer) ?: { it }
+        // Und dieselbe Projektion der Partitionierung -- Oracle meldet weder
+        // untere RANGE-Grenzen noch HASH-Modulus zurueck.
+        val canonicalizePartitioning = dialect?.let(::capabilityPartitionCanonicalizer) ?: { it }
         val targetFingerprint = fingerprint(
             targetResolved.schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
+            canonicalizePartitioning,
         )
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()

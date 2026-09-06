@@ -95,6 +95,46 @@ data class DialectCapabilities(
      */
     val supportsBitmapIndexes: Boolean = false,
     /**
+     * Ob der Dialekt die **untere** Grenze einer RANGE-Partition fuehrt.
+     * PostgreSQL tut es (`FOR VALUES FROM … TO …`); Oracle und MySQL kennen
+     * nur `VALUES LESS THAN` und leiten die untere Grenze aus der
+     * vorhergehenden Partition ab — ihr Reverse kann sie deshalb nicht
+     * zurueckmelden.
+     */
+    val carriesPartitionLowerBounds: Boolean = true,
+    /**
+     * Ob der Dialekt Modulus und Remainder einer HASH-Partition fuehrt.
+     * PostgreSQL tut es; Oracle verteilt selbst und fuehrt nur die Anzahl
+     * (live gemessen: `ALL_TAB_PARTITIONS.HIGH_VALUE` ist bei HASH `null`).
+     *
+     * Wie [namesFullTextIndexes]: was der Zielserver nicht fuehrt, kann sein
+     * Reverse nicht zurueckgeben, und ohne die Projektion meldete der
+     * Post-Compare nach jedem `migrate --execute` Drift.
+     *
+     * **Der Default `true` ist fuer MySQL und SQL Server nicht geprueft** —
+     * beide verlieren dieselben Angaben, ihre Fingerabdruecke jetzt zu
+     * aendern entwertete aber bereits erzeugte Rollback-Artefakte. Das ist
+     * eine eigene Entscheidung, kein Beifang des Oracle-Rollouts:
+     * `docs/planning/open/partition-fingerprint-lossy-dialects.md`.
+     */
+    val carriesPartitionHashModulus: Boolean = true,
+    /**
+     * Ob der Dialekt einen reinen Datumswert von einem Zeitstempel um
+     * Mitternacht unterscheiden kann.
+     *
+     * Oracle kann es **nicht**: sein `DATE` traegt immer eine Uhrzeit, und
+     * der Katalog fuehrt sie mit (`… 00:00:00`). Eine als `'2024-01-01'`
+     * geschriebene Partitionsgrenze kommt deshalb als `'2024-01-01 00:00:00'`
+     * zurueck — derselbe Wert, andere Schreibweise. Ohne die Angleichung im
+     * Fingerabdruck meldete der Post-Compare nach jedem `migrate --execute`
+     * Drift.
+     *
+     * Das ist die Grenzwert-Seite derselben Faltung, die der
+     * Typ-Kanonisierer auf der Spalten-Seite vornimmt (`date` → `datetime`
+     * fuer Oracle).
+     */
+    val separatesDateFromDateTime: Boolean = true,
+    /**
      * Ob der Fingerabdruck sich auf den Namen der Sequenz hinter einer
      * IDENTITY-Spalte stuetzen darf.
      *
@@ -243,6 +283,9 @@ data class DialectCapabilities(
                 namesFullTextIndexes = true,
                 namesIdentitySequences = false,
                 supportsBitmapIndexes = true,
+                carriesPartitionLowerBounds = false,
+                carriesPartitionHashModulus = false,
+                separatesDateFromDateTime = false,
                 batchSeparator = null,
             )
         }

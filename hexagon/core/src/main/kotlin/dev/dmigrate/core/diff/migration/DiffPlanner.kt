@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -114,6 +115,12 @@ open class DiffPlanner {
         // Soll-Schema nicht erwarten -- ohne diese Projektion truege das
         // Artefakt einen Abdruck, den der Post-Compare nie erreicht.
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
+        // Und dieselbe fuer die Partitionierung, aus demselben Grund: was der
+        // Zielserver von einer Partitionierung nicht ablegt, kann sein Reverse
+        // nicht zurueckgeben. Fehlte sie hier, verglichen Artefakt und
+        // Post-Compare zwei VERSCHIEDEN projizierte Abdruecke -- schlimmer als
+        // gar keine Projektion.
+        canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         // F.5 Sub-Slice A (2026-05-19): the planner-level block
@@ -215,8 +222,12 @@ open class DiffPlanner {
         }
 
         return DiffResult(
-            current = endpoint(current, canonicalizeType, canonicalizeIndex, canonicalizeGeneration),
-            desired = endpoint(desired, canonicalizeType, canonicalizeIndex, canonicalizeGeneration),
+            current = endpoint(
+                current, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+            ),
+            desired = endpoint(
+                desired, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+            ),
             schemaDiff = schemaDiff,
             operations = sortResult.sorted,
             diagnostics = diagnostics,
@@ -233,12 +244,13 @@ open class DiffPlanner {
         canonicalizeType: (NeutralType) -> NeutralType,
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
+        canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
     ): DiffEndpoint =
         DiffEndpoint(
             schemaName = schema.name,
             schemaVersion = schema.version,
             fingerprint = MigrationFingerprint.compute(
-                schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
+                schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
             ),
         )
 

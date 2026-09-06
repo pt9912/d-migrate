@@ -359,6 +359,16 @@ mehr sicher bindbar. `TIMESTAMP WITH TIME ZONE` liest als Standard-
   gemeldet. Bitmap-Indizes dagegen werden als eigener Typ gelesen
   (`INDEX_TYPE` enthält `BITMAP`), und ein absteigender Index — in Oracle
   intern ebenfalls function-based — wird auf seine Spalte zurückgefaltet.
+- **INTERVAL-Partitionierung** (`PARTITION BY RANGE … INTERVAL (…)`) hat im
+  neutralen Modell keine Entsprechung: gelesen werden nur die heute
+  vorhandenen Partitionen, gemeldet mit `R355`. Eine wieder erzeugte Tabelle
+  legt keine neuen Partitionen mehr selbsttätig an.
+- **Composite-Partitionierung** (`SUBPARTITION BY …`) wird nur auf der
+  obersten Ebene gelesen; die Subpartitionen fallen weg → `R356`.
+- **HASH-Partitionen** tragen weder Modulus noch Remainder — Oracle führt sie
+  nicht (`ALL_TAB_PARTITIONS.HIGH_VALUE` ist dort `NULL`). Der
+  Fingerabdruck blendet beide Felder für Oracle aus, sonst meldete jeder
+  Round-Trip Drift.
 - `CHAR(1)` faltet **nicht** auf `boolean` (anders als `NUMBER(1)`): kein
   ebenso enges Signal, ein Einzelzeichen trägt oft einen echten
   Status-/Kategorie-Code.

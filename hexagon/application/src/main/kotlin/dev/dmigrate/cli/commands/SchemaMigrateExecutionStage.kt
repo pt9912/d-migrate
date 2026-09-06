@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -154,6 +155,7 @@ internal class SchemaMigrateExecutionStage(
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
         canonicalizerFor: (SchemaDefinition) -> ((NeutralType) -> NeutralType) = { { it } },
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
+        canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
     ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
         val dbOperand = target as? CompareOperand.Database ?: return null
@@ -178,8 +180,11 @@ internal class SchemaMigrateExecutionStage(
             canonicalizerFor(postNormalized.schema),
             canonicalizeIndex,
             canonicalizeGeneration,
+            canonicalizePartitioning,
         )
-        val desiredFp = fingerprint(desired, canonicalizerFor(desired), canonicalizeIndex, canonicalizeGeneration)
+        val desiredFp = fingerprint(
+            desired, canonicalizerFor(desired), canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+        )
         return if (observed == desiredFp) {
             PostCompareOutcome.Clean(observed)
         } else {

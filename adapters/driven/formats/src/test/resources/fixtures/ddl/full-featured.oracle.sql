@@ -17,8 +17,8 @@ CREATE TABLE "customers" (
 
 -- [W150] Default 'gen_uuid' on column 'uuid_field' is rendered as RAWTOHEX(SYS_GUID()): 32 hex characters without dashes, unlike the standard UUID text format.
 -- Hint: Wrap with REGEXP_REPLACE to insert dashes if the standard UUID format is required.
--- [E055] RANGE partitioning of table 'orders' is not rendered for Oracle (partition clauses are not carried in the neutral model); created as a plain table.
--- Hint: Add PARTITION BY manually and rebuild the table.
+-- [E062] Partition key column 'date' of table 'orders' has a type Oracle does not allow as a partitioning column (large objects: ORA-14135; TIMESTAMP WITH TIME ZONE: ORA-03001); the table was created unpartitioned.
+-- Hint: Partition on a different column, or store the value in a type Oracle can partition on.
 CREATE TABLE "orders" (
     "id" NUMBER(9) GENERATED ALWAYS AS IDENTITY,
     "customer_id" NUMBER(9) NOT NULL,

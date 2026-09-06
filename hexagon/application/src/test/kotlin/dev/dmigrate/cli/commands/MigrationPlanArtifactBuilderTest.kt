@@ -114,7 +114,7 @@ class MigrationPlanArtifactBuilderTest : FunSpec({
         artifact.dMigrateVersion shouldBe dMigrateVersion
         artifact.sourceFingerprint shouldBe "src-fp"
         artifact.targetFingerprint shouldBe "dst-fp"
-        artifact.fingerprintAlgorithm shouldBe "schema-fingerprint-v9"
+        artifact.fingerprintAlgorithm shouldBe "schema-fingerprint-v10"
         artifact.dialect shouldBe "postgresql"
         artifact.operations shouldBe emptyList()
         artifact.diagnostics shouldBe emptyList()

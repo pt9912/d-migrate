@@ -141,12 +141,49 @@ class OracleSchemaReader(
             )
         }
 
+        val partitioning = OraclePartitionReader.read(session, schema, table)
+        partitioning?.let { notePartitionGaps(table, it, notes) }
+
         return TableDefinition(
             columns = columns,
             primaryKey = primaryKey,
             indices = indices,
             constraints = constraints,
+            partitioning = partitioning?.config,
         )
+    }
+
+    /**
+     * Die beiden Oracle-Formen, fuer die das neutrale Modell keinen Begriff
+     * hat. Beide aendern das Verhalten der Zieltabelle, wenn sie beim
+     * Wiedererzeugen fehlen — sie stumm wegzulassen waere der schlimmere Fall.
+     */
+    private fun notePartitionGaps(
+        table: String,
+        scan: OraclePartitionReader.PartitionScan,
+        notes: MutableList<SchemaReadNote>,
+    ) {
+        scan.interval?.let { interval ->
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R355",
+                objectName = table,
+                message = "Table '$table' is INTERVAL-partitioned (`$interval`); the neutral model has no " +
+                    "such concept, so only the partitions that exist today were read.",
+                hint = "A regenerated table will not create new partitions automatically; add the INTERVAL " +
+                    "clause manually if that behaviour is required.",
+            )
+        }
+        scan.subpartitioningType?.let { sub ->
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R356",
+                objectName = table,
+                message = "Table '$table' is composite-partitioned (SUBPARTITION BY $sub); the neutral model " +
+                    "carries only the top level, so the subpartitions were not read.",
+                hint = "A regenerated table keeps the top-level partitioning; recreate the subpartitions manually.",
+            )
+        }
     }
 
     /**

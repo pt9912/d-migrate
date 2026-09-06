@@ -483,7 +483,36 @@ Besonderheiten:
   `DEFAULT` auf einer Identity-Spalte werden fallen gelassen + W151
 - `NUMBER`-Präzision > 38 → auf 38 gekappt + W148
 - Composite-Typen sind nicht unterstützt → `action_required` E054
-- Partitionierung wird nicht gerendert (Tabelle bleibt plain) → E055
+- **Partitionierung** wird gerendert (Abschnitt 9.5). Zwei Unterschiede zum
+  neutralen Modell sind dabei unvermeidlich und werden gemeldet:
+  - RANGE kennt nur `VALUES LESS THAN`; eine im Modell vorhandene **untere**
+    Grenze fällt weg → `W112`. Oracle leitet sie aus der vorhergehenden
+    Partition ab, die Partitionen müssen deshalb aufsteigend geordnet sein.
+  - HASH führt weder Modulus noch Remainder; Oracle verteilt selbst. Anzahl
+    und Namen bleiben erhalten, die Platzierung einer einzelnen Zeile ändert
+    sich → `W130`.
+
+  Nicht renderbar und deshalb `E055` (Tabelle bleibt plain): eine
+  Partitionierung ohne Partitionen, eine RANGE-Partition ohne obere Grenze,
+  `MINVALUE` als obere Grenze — Letzteres als `MAXVALUE` zu rendern kehrte
+  die Bedeutung der Partition um — und eine LIST-Partitionierung über
+  mehrere Schlüsselspalten, die Oracle nicht kennt.
+
+  `E062` trifft die **Schlüsselspalte**: Oracle lässt große Objekte
+  (`ORA-14135`) und `TIMESTAMP WITH TIME ZONE` (`ORA-03001`) nicht als
+  Partitionsschlüssel zu — beides live gemessen; `TIMESTAMP WITH LOCAL TIME
+  ZONE` wäre zulässig, wird vom neutralen Modell aber nicht unterschieden.
+  Es ist dieselbe Menge, die `isUnkeyable` für Index- und Schlüsselspalten
+  beschreibt.
+
+  Eine RANGE-Partition mit `default: true` rendert `VALUES LESS THAN
+  (MAXVALUE)` — dieselbe Auflösung wie in MySQL.
+
+  **Temporale Grenzwerte** setzt der Renderer in eine explizite
+  `TO_DATE`/`TO_TIMESTAMP`-Form mit mitgegebener Maske. Ein blankes
+  `'2024-01-01'` gegen eine `DATE`-Spalte wird sonst gegen `NLS_DATE_FORMAT`
+  gelesen (Default `DD-MON-RR`) und scheitert sitzungsabhängig mit
+  `ORA-01861` — live gemessen.
 - Routinen, Trigger und Aggregate werden nicht als PL/SQL gerendert →
   `action_required` E053/E054
 - Views werden als `CREATE OR REPLACE FORCE VIEW` gerendert (nicht
@@ -1118,11 +1147,11 @@ ausdrücken lässt; die Tabelle bleibt als partitioniert vermerkt (R347).
 
 ### 9.5 Partitionstypen
 
-| Neutral | PostgreSQL | MySQL | SQLite | MSSQL |
-|---|---|---|---|---|
-| `range` | `PARTITION BY RANGE` | `PARTITION BY RANGE` | Nicht unterstützt | Partition Function + Scheme, `ON ps_<tabelle>` |
-| `list` | `PARTITION BY LIST` | `PARTITION BY LIST` | Nicht unterstützt | Abbildung auf `range` (Abschnitt 9.4) |
-| `hash` | `PARTITION BY HASH` | `PARTITION BY HASH` | Nicht unterstützt | Emulation über berechnete Spalte (Abschnitt 9.4) |
+| Neutral | PostgreSQL | MySQL | SQLite | MSSQL | Oracle |
+|---|---|---|---|---|---|
+| `range` | `PARTITION BY RANGE` | `PARTITION BY RANGE` | Nicht unterstützt | Partition Function + Scheme, `ON ps_<tabelle>` | `PARTITION BY RANGE`, `VALUES LESS THAN` |
+| `list` | `PARTITION BY LIST` | `PARTITION BY LIST` | Nicht unterstützt | Abbildung auf `range` (Abschnitt 9.4) | `PARTITION BY LIST`, `DEFAULT` nativ |
+| `hash` | `PARTITION BY HASH` | `PARTITION BY HASH` | Nicht unterstützt | Emulation über berechnete Spalte (Abschnitt 9.4) | `PARTITION BY HASH`, ohne Modulus/Remainder |
 
 Die Regeln gelten für **beide** Wege, die DDL erzeugen: die Generierung aus
 einer Schemadatei und den Migrationspfad. Eine Tabelle, die auf einem der
@@ -1167,7 +1196,10 @@ wieder abgedeckt wird, gilt als zerstörend und verlangt `--allow-destructive`.
 Nicht gerendert werden: Grenzverschiebung eines bestehenden Kindes,
 Umbenennung eines Kindes, `HASH`-Bestandsänderungen (eine andere Eimerzahl
 verteilt jede Zeile neu, statt eine Grenze zu verschieben) und jede
-Partitionsänderung auf SQLite. In MySQL gilt zusätzlich, was auch beim
+Partitionsänderung auf SQLite. **Für Oracle ist eine Änderung des
+Partitionsbestands noch nicht gebaut**: eine partitionierte Tabelle entsteht
+neu, aber `AlterTablePartitions` bricht benannt ab, statt einen
+Teilzustand zu hinterlassen. In MySQL gilt zusätzlich, was auch beim
 Erzeugen gilt: eine LIST-DEFAULT-Partition und ein nicht partitionierbarer
 Schlüsseltyp verhindern die Anweisung (E063, E062).
 

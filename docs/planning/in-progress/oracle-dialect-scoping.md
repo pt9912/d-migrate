@@ -2,12 +2,13 @@
 
 > **Status:** In Progress (Stand 2026-09-06). Alle fünf
 > Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0,
-> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e) und 6a.** `schema migrate` ist damit für
-> Oracle nutzbar, der Sample-DB-Harness fährt Pagila in **beide**
-> Richtungen, und Bitmap-Indizes gehen über alle fünf Dialekte durch. Offen
-> sind **6b** (Indizes über echten Ausdrücken) und die Ausbau-Slices **7–11**
-> (Partitionierung, Volltext, Routinen/Trigger, Materialized Views,
-> Profiling); `DialectCommandGate` führt nur noch `data profile`.
+> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e), 6a und 7.** `schema migrate` ist damit
+> für Oracle nutzbar, der Sample-DB-Harness fährt Pagila in **beide**
+> Richtungen, Bitmap-Indizes gehen über alle fünf Dialekte durch, und
+> partitionierte Tabellen entstehen und werden zurückgelesen. Offen sind
+> **6b** (Indizes über echten Ausdrücken) und die Ausbau-Slices **8–11**
+> (Volltext, Routinen/Trigger, Materialized Views, Profiling);
+> `DialectCommandGate` führt nur noch `data profile`.
 >
 > Die datierten Status-Blöcke unten sind **Momentaufnahmen** und werden nicht
 > rückwirkend umgeschrieben — was dort „bis Slice 5 gesperrt" heißt, war zum
@@ -718,7 +719,7 @@ trägt bislang **keinen** `ORACLE`-Wert, auch nicht vorbereitend.
 | Paginierung | `ROWNUM` (klassisch), `FETCH FIRST n ROWS ONLY` (12c+) | Kern — betrifft DataReader-Chunking |
 | Quoting | `"Anführungszeichen"`; **UPPERCASE-Default ohne Quoting** (Gegenteil von PG/MySQL/SQLite) | **Entscheidung** — Case-Fallstrick, siehe ADR 0052 |
 | Indizes | Bitmap-Indizes (Slice 6a, gebaut), Function-based-Indizes | Ausbau-Slice (6b) |
-| Partitionierung | Range/List/Hash/Composite — strukturell reichhaltiger als PG | Ausbau-Slice |
+| Partitionierung | Range/List/Hash (Slice 7, gebaut); Composite und INTERVAL gemeldet, nicht dargestellt | ✅ |
 | Materialized Views | **nativ vorhanden**, echtes Refresh-Modell (FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Ausbau-Slice (10) — Anschluss ans bestehende Modell, keine Lücke |
 | Volltext | Oracle Text, eigene Indextypen (`CONTEXT`/`CTXCAT`) | Ausbau-Slice — Muster aus dem Fulltext-Slice |
 | Routinen/Trigger (standalone) | PL/SQL, `CREATE OR REPLACE` | Ausbau-Slice |
@@ -774,7 +775,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **5e-3** ✅ | Cross-Dialekt-Matrix-Sweep-Beitritt, Live-Round-Trip, Handbücher (der CLI-E2E kam bereits mit 5e-2) | Matrix-Abdeckung + Live-Beleg + Doku |
 | **6a** ✅ | Bitmap-Indizes als eigener neutraler Typ: Reverse (`INDEX_TYPE`), Generate + Diff (`CREATE BITMAP INDEX`), Rückfall + `W102` auf den vier anderen Dialekten, Wire-Format (`schema.json`, Parser). Dazu die Rückfaltung des DESC-Index, der in Oracle intern function-based ist | Bitmap-Treue über alle Dialekte |
 | **6b** | Indizes über echten Ausdrücken (`UPPER(nm)`): Darstellung im neutralen Modell (`IndexColumn` trägt heute keinen Ausdruck), Generate je Dialekt (PG/SQLite/MySQL 8 können es nativ, MSSQL braucht eine berechnete Spalte). Bis dahin lässt der Reverse sie aus und meldet `R354` | volle Index-Treue |
-| **7** | Partitionierung: Range/List/Hash/Composite (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster) | Partitionstabellen im Round-Trip |
+| **7** ✅ | Partitionierung Range/List/Hash: Generate, Reverse und Diff über einen geteilten Builder; Grenzwert-Umsetzung (`TO_DATE`) und -Rückfaltung; Fingerabdruck-Projektion für die Felder, die Oracle nicht führt. Composite und INTERVAL werden gemeldet (`R355`/`R356`), nicht dargestellt | Partitionstabellen im Round-Trip |
 | **8** | Volltext: Oracle Text (`CONTEXT`/`CTXCAT`, Muster aus dem Fulltext-Slice) | Volltext-Indizes Generate + Reverse |
 | **9** | Routinen/Trigger (standalone PL/SQL, `CREATE OR REPLACE`) | Routinen-Migration |
 | **10** | Materialized Views: Anschluss ans bestehende 0.9.7-D.3b-Modell (Refresh-Modi FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Materialized Views im Round-Trip |
@@ -869,10 +870,11 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
   bereits) — `ReplaceView` ist billig wie bei MSSQLs `CREATE OR ALTER VIEW`.
 - **Geblockt bis zum jeweiligen Ausbau-Slice**, identisch zum Generate-Pfad:
   Routinen/Trigger/Aggregate/Composite-Typen (E053/E054, Slice 9),
-  Partitionierung (E055, Slice 7), Materialized Views (nicht gebaut,
-  Slice 10). **Nicht** dazu gehören Bitmap-Indizes: die rendert der
-  geteilte `OracleIndexDdlBuilder` seit Slice 6a in beiden Pfaden; E057
-  trägt im Index-Pfad nur noch der Volltext-Fall.
+  Materialized Views (nicht gebaut, Slice 10). **Nicht** dazu gehören
+  Bitmap-Indizes und Partitionierung: beide rendert der
+  jeweils geteilte Builder seit Slice 6a bzw. 7 in beiden Pfaden. `E057`
+  trägt im Index-Pfad nur noch der Volltext-Fall; `E055` nur noch
+  Partitionierungs-Formen, die Oracle gar nicht ausdrücken kann.
 
 ### Sub-Slice-Schnitt
 
@@ -941,6 +943,95 @@ Indizes über echten Ausdrücken. Bis dahin sind sie nicht still verloren,
 sondern gemeldet (`R354`). PostgreSQL, SQLite und MySQL 8 können sie nativ,
 SQL Server braucht eine berechnete Spalte — der Schnitt liegt also im
 Generate-Pfad, nicht im Reverse.
+
+## Slice 7 im Detail — Partitionierung
+
+### Was die Messung entschieden hat
+
+Gemessen gegen `gvenzl/oracle-free:23-slim-faststart` (2026-09-06):
+
+| angelegt als | `HIGH_VALUE` |
+| --- | --- |
+| `RANGE` auf `DATE` | `TO_DATE(' 2024-01-01 00:00:00', 'SYYYY-MM-DD HH24:MI:SS', 'NLS_CALENDAR=GREGORIAN')` |
+| `RANGE` mehrspaltig | `10, 100` bzw. `MAXVALUE, MAXVALUE` |
+| `LIST` | `'A', 'B'` bzw. `DEFAULT` |
+| `HASH` | `null`, Partitionsnamen `SYS_P679…` |
+| `INTERVAL` | `PARTITION_COUNT` = 1048575 |
+
+Vier Folgerungen, die den Schnitt bestimmt haben:
+
+1. Die `TO_DATE`-Form trägt **selbst Kommata**. Ein mehrspaltiger Wert darf
+   deshalb nur auf oberster Ebene getrennt werden — dafür gibt es bereits
+   `PartitionBoundScanner`.
+2. Oracle-**HASH** führt weder Modulus noch Remainder. Die Felder des
+   neutralen Modells bleiben leer, und der Fingerabdruck muss sie ausblenden,
+   sonst driftet jeder Round-Trip.
+3. **LIST kann `DEFAULT`** — anders als MySQL, das die Partition verwerfen
+   muss (`E063`). Oracle steht dem Modell hier näher als MySQL.
+4. **INTERVAL und Composite** haben keine neutrale Entsprechung. Sie werden
+   gemeldet (`R355`/`R356`), nicht geraten.
+
+### Was der Live-Test gefunden hat
+
+Der erste Entwurf rendete den Grenzwert wörtlich. Das lief gegen die eigene
+Fixture, weil die Oracle-Syntax enthielt — mit der **kanonischen** Form, die
+PostgreSQL und MySQL liefern (`'2024-01-01'`), antwortet Oracle dagegen mit
+`ORA-01861`: ein blanker String wird gegen `NLS_DATE_FORMAT` gelesen, per
+Default `DD-MON-RR`. Der Renderer setzt Temporalgrenzen deshalb in eine
+explizite `TO_DATE`/`TO_TIMESTAMP`-Form; die Sabotage-Gegenprobe zeigt den
+Fehler unmittelbar wieder.
+
+Die Zerlegung des Literals teilt sich Oracle jetzt mit MySQL
+(`PartitionTemporalLiteral` in `driver-common`) statt sie zu kopieren —
+dieselbe Zusammenlegung, die `PartitionBoundScanner` schon einmal erfahren
+hat.
+
+### Was die unabhängige Prüfung gefunden hat
+
+Drei Blocker, alle im ersten Entwurf enthalten:
+
+1. **Die Fingerabdruck-Projektion erreichte drei von vier Stellen.**
+   `DiffPlanner.endpoint()` hat eine eigene Signatur und blieb übrig — der
+   Typalias-Zwang, der die anderen drei erwischt hatte, greift dort nicht.
+   Folge wäre gewesen: Artefakt und Post-Compare vergleichen zwei
+   **verschieden** projizierte Abdrücke, und `schema rollback` scheiterte an
+   einem korrekten Ziel. Schlimmer als gar keine Projektion.
+2. **RANGE mit `DEFAULT`-Partition rendete `VALUES LESS THAN ()`**
+   (`ORA-14019`). Erreichbar, nicht theoretisch: PostgreSQL setzt `isDefault`
+   vor der Strategie-Fallunterscheidung, ein RANGE-Schema mit Catch-all ist
+   also eine gewöhnliche neutrale Form. MySQL löst sie identisch als
+   `MAXVALUE`.
+3. **Der `keyType`-Zweig im Leser war tot.** Oracles Reverse liefert nie
+   `NeutralType.Date` (Oracles `DATE` trägt eine Uhrzeit, die Faltung ist
+   `date` → `datetime`), also lief die Mitternacht-Abschneidung nie. Eine als
+   `'2024-01-01'` geschriebene Grenze driftete damit gegen die zurückgelesene
+   `'2024-01-01 00:00:00'` — genau der Drift, den die Projektion verhindern
+   soll. Die Faltung sitzt jetzt in der Projektion, wo sie eine
+   Dialekt-Eigenschaft ist (`separatesDateFromDateTime`), statt im Leser, wo
+   sie geraten wäre.
+
+Dazu die Fingerabdruck-Version: `ALGORITHM` ist auf `v10` angehoben. Der
+Oracle-Reverse meldet Partitionierung, die er vorher verschwieg — ein vor
+dem Slice erzeugtes Artefakt passte sonst still nicht mehr, und der Betreiber
+sähe ein blankes `TARGET_STATE_MISMATCH` statt des Hinweises, es neu zu
+erzeugen.
+
+Ein vierter Punkt kam aus einer Messung, die die Prüfung angestoßen hat:
+Oracle **nimmt** eine Grenze mit Bruchteilsekunden an und schneidet sie ab —
+die Grenze verschiebt sich still. Sie bleibt deshalb unumgesetzt stehen, die
+Anweisung scheitert laut (`E061`), derselbe Mechanismus wie beim
+Nicht-UTC-Offset.
+
+### Was offen bleibt
+
+- Ausdrucksbasierte Partitionierung und `REFERENCE`/`SYSTEM`-Strategien
+  werden nicht gelesen (die Tabelle erscheint unpartitioniert).
+- **Der Partitionsbestand einer bestehenden Tabelle lässt sich nicht ändern**:
+  `AlterTablePartitions` blockt für Oracle benannt. Neu ist, dass der Fall
+  überhaupt erreichbar ist — vorher meldete der Reverse keine Partitionierung.
+- MySQL und SQL Server verlieren dieselben Felder wie Oracle, blenden sie im
+  Fingerabdruck aber nicht aus:
+  [`partition-fingerprint-lossy-dialects.md`](../open/partition-fingerprint-lossy-dialects.md).
 
 ## Offene Punkte
 

@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.core.model.PartitionTemporalLiteral
 import dev.dmigrate.driver.TransformationNote
 
 /**
@@ -71,9 +72,9 @@ internal class MysqlPartitionBoundRenderer {
         notes: MutableList<TransformationNote>,
         emittedCodes: MutableSet<String>,
     ): String {
-        val match = TEMPORAL_LITERAL.matchEntire(unwrapSingleQuotes(literal)) ?: return literal
-        val offset = match.groupValues[OFFSET_GROUP].ifEmpty { null } ?: return literal
-        if (!isUtcOffset(offset)) {
+        val parts = PartitionTemporalLiteral.parse(literal) ?: return literal
+        val offset = parts.offset ?: return literal
+        if (!PartitionTemporalLiteral.isUtcOffset(offset)) {
             notes += ManualActionRequired(
                 code = "E061", objectType = "partition", objectName = partitionName,
                 reason = "Partition '$partitionName' bound carries a non-UTC timezone offset '$offset'; " +
@@ -92,34 +93,8 @@ internal class MysqlPartitionBoundRenderer {
             )
         }
         // Instant ohne Offset, ursprüngliches Quoting beibehalten (Strip-Pfad = Transformation).
-        val time = match.groupValues[TIME_GROUP]
-        val instant = if (time.isEmpty()) match.groupValues[DATE_GROUP] else "${match.groupValues[DATE_GROUP]} $time"
-        return "'$instant'"
+        return "'${parts.instant}'"
     }
 
-    /** `Z`/`z` (Zulu) und die expliziten +00-Schreibweisen sind UTC. */
-    private fun isUtcOffset(offset: String): Boolean =
-        offset.equals("Z", ignoreCase = true) || offset in UTC_OFFSETS
-
-    private fun isSingleQuoted(s: String): Boolean =
-        s.length >= 2 && s.first() == '\'' && s.last() == '\''
-
-    private fun unwrapSingleQuotes(s: String): String =
-        if (isSingleQuoted(s)) s.substring(1, s.length - 1) else s
-
-    private companion object {
-        /**
-         * `date[ T|t]time[offset]`, vollständig verankert (`^…$`). Der Offset (`±HH[:MM]` oder `Z`)
-         * sitzt **innerhalb** der zeit-tragenden Gruppe, wird also nur erkannt, wenn eine
-         * Zeitkomponente vorausgeht (verhindert den Phantom-Offset-Bug aus AP6-Review #1). Akzeptiert
-         * Leerzeichen, `T` und `t` als ISO-8601-Trenner.
-         */
-        val TEMPORAL_LITERAL = Regex(
-            "^(\\d{4}-\\d{2}-\\d{2})(?:[ Tt](\\d{2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?)([+-]\\d{2}(?::?\\d{2})?|[Zz])?)?$",
-        )
-        const val DATE_GROUP = 1
-        const val TIME_GROUP = 2
-        const val OFFSET_GROUP = 3
-        val UTC_OFFSETS = setOf("+00", "+0000", "+00:00", "-00", "-0000", "-00:00")
-    }
+    private fun isSingleQuoted(s: String): Boolean = PartitionTemporalLiteral.isSingleQuoted(s)
 }

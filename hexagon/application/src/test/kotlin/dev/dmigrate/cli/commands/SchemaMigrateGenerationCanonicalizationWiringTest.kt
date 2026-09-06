@@ -69,6 +69,8 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
      */
     class CapturingPlanner : DiffPlanner() {
         var captured: ((ColumnGeneration?) -> ColumnGeneration?)? = null
+        var capturedPartitioning: ((dev.dmigrate.core.model.PartitionConfig) ->
+        dev.dmigrate.core.model.PartitionConfig)? = null
 
         override fun plan(
             current: SchemaDefinition,
@@ -80,11 +82,14 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
             canonicalizeType: (NeutralType) -> NeutralType,
             canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
             canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
+            canonicalizePartitioning: (dev.dmigrate.core.model.PartitionConfig) ->
+            dev.dmigrate.core.model.PartitionConfig,
         ): DiffResult {
             captured = canonicalizeGeneration
+            capturedPartitioning = canonicalizePartitioning
             return super.plan(
                 current, desired, schemaDiff, migrationOverlays, capabilities, triggerPlanningContext,
-                canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
+                canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
             )
         }
     }
@@ -144,6 +149,29 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
         // Der Default `{ it }` gaebe den Namen unveraendert zurueck -- genau
         // das passiert, wenn eine Aufrufstelle das Argument weglaesst.
         (captured(systemGenerated) as ColumnGeneration.Identity).sequenceName.shouldBeNull()
+    }
+
+    test("the runner hands the planner Oracle's partition projection, not the identity default") {
+        // Der Planner rechnet die Abdruecke, die ins ARTEFAKT gehen. Bekaeme
+        // er die Projektion nicht, verglichen Artefakt und Post-Compare zwei
+        // verschieden projizierte Abdruecke -- und `schema rollback` scheiterte
+        // an einem korrekten Ziel.
+        val planner = CapturingPlanner()
+        runnerFor(planner).first.execute(request(DatabaseDialect.ORACLE))
+
+        val captured = planner.capturedPartitioning.shouldNotBeNull()
+        val withLowerBound = dev.dmigrate.core.model.PartitionConfig(
+            type = dev.dmigrate.core.model.PartitionType.RANGE,
+            key = listOf("d"),
+            partitions = listOf(
+                dev.dmigrate.core.model.PartitionDefinition(
+                    name = "p1",
+                    from = listOf(dev.dmigrate.core.model.PartitionBound.MinValue),
+                    to = listOf(dev.dmigrate.core.model.PartitionBound.MaxValue),
+                ),
+            ),
+        )
+        captured(withLowerBound).partitions.single().from.shouldBeNull()
     }
 
     test("for PostgreSQL the runner hands through the identity projection") {

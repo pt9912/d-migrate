@@ -9,6 +9,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
@@ -184,6 +185,7 @@ class SchemaMigrateRunner(
         val desired: String,
         val canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         val canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
+        val canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
     )
 
     // Schemagebunden: ein `Enum(refType)` loest gegen die Custom Types
@@ -192,21 +194,25 @@ class SchemaMigrateRunner(
         val dialect = prepared.effectiveDialect
         val canonicalizeIndex = capabilityIndexCanonicalizer(dialect)
         val canonicalizeGeneration = capabilityGenerationCanonicalizer(dialect)
+        val canonicalizePartitioning = capabilityPartitionCanonicalizer(dialect)
         return EndpointFingerprints(
             current = MigrationFingerprint.compute(
                 prepared.targetNormalized.schema,
                 registrySchemaAwareCanonicalizer(dialect, prepared.targetNormalized.schema),
                 canonicalizeIndex,
                 canonicalizeGeneration,
+                canonicalizePartitioning,
             ),
             desired = MigrationFingerprint.compute(
                 prepared.sourceNormalized.schema,
                 registrySchemaAwareCanonicalizer(dialect, prepared.sourceNormalized.schema),
                 canonicalizeIndex,
                 canonicalizeGeneration,
+                canonicalizePartitioning,
             ),
             canonicalizeIndex = canonicalizeIndex,
             canonicalizeGeneration = canonicalizeGeneration,
+            canonicalizePartitioning = canonicalizePartitioning,
         )
     }
 
@@ -295,6 +301,7 @@ class SchemaMigrateRunner(
                 endpoints.canonicalizeIndex,
                 { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) },
                 endpoints.canonicalizeGeneration,
+                endpoints.canonicalizePartitioning,
             )
         } else {
             null
@@ -386,6 +393,7 @@ class SchemaMigrateRunner(
                 canonicalizeType = canonicalizeType,
                 canonicalizeIndex = capabilityIndexCanonicalizer(prep.effectiveDialect),
                 canonicalizeGeneration = capabilityGenerationCanonicalizer(prep.effectiveDialect),
+                canonicalizePartitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
             )
         }
         return plan to overlayPreflight

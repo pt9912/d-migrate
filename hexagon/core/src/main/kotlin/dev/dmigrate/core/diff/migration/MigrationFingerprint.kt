@@ -138,9 +138,22 @@ object MigrationFingerprint {
      * sie nicht ausdruecken koennen, kanonisieren sie weg, damit ein verlustfreier
      * Round-Trip weiterhin identisch hasht.
      *
+     * v10: **Partitionierung.** Der Oracle-Reverse liest sie seit Slice 7 —
+     * vorher meldete er sie gar nicht, ein Abdruck einer partitionierten
+     * Oracle-Tabelle aendert sich damit auch ohne Projektion. Dazu die
+     * Projektion selbst: was ein Dialekt von einer Partitionierung nicht
+     * ablegt (untere RANGE-Grenze, HASH-Modulus, die Unterscheidung von
+     * Datum und Mitternacht-Zeitstempel), kann sein Reverse nicht
+     * zurueckgeben und wird weggerechnet.
+     *
+     * Die Anhebung ist der Punkt: ohne sie passte ein vor dem Slice
+     * erzeugtes Artefakt still nicht mehr, und der Betreiber saehe ein
+     * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
+     * zu erzeugen.
+     *
      * Plan: `docs/planning/done/postcompare-type-canonicalization-slice.md`.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v9"
+    const val ALGORITHM: String = "schema-fingerprint-v10"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -155,7 +168,10 @@ object MigrationFingerprint {
         canonicalizeType: (NeutralType) -> NeutralType = { it },
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
-    ): String = sha256Hex(project(schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration))
+        canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
+    ): String = sha256Hex(
+        project(schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning),
+    )
 
     /**
      * Returns the canonical projection string. Public for diagnostics.
@@ -177,11 +193,16 @@ object MigrationFingerprint {
         canonicalizeType: (NeutralType) -> NeutralType = { it },
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
+        canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
     ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
         appendCustomTypes(sb, schema.customTypes)
-        appendTables(sb, canonicalizedTables(schema.tables, canonicalizeIndex, canonicalizeGeneration), canonicalizeType)
+        appendTables(
+            sb,
+            canonicalizedTables(schema.tables, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning),
+            canonicalizeType,
+        )
         appendViews(sb, schema.views)
         appendSequences(sb, schema.sequences)
         appendFunctions(sb, schema.functions)
@@ -223,6 +244,7 @@ object MigrationFingerprint {
         tables: Map<String, TableDefinition>,
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
+        canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
     ): Map<String, TableDefinition> = tables.mapValues { (_, table) ->
         table.copy(
             columns = table.columns.mapValues { (_, col) ->
@@ -230,11 +252,13 @@ object MigrationFingerprint {
             },
             indices = table.indices.map(canonicalizeIndex),
             partitioning = table.partitioning?.let { config ->
-                config.copy(
-                    partitions = config.partitions.map { part ->
-                        part.copy(indices = part.indices.map(canonicalizeIndex))
-                    },
-                )
+                canonicalizePartitioning(config).let { projected ->
+                    projected.copy(
+                        partitions = projected.partitions.map { part ->
+                            part.copy(indices = part.indices.map(canonicalizeIndex))
+                        },
+                    )
+                }
             },
         )
     }

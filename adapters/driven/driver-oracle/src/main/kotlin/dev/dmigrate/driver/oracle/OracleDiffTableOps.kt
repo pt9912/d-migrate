@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -39,6 +40,7 @@ internal object OracleDiffTableOps {
     private fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.ORACLE)
     private val columnHelper = OracleColumnConstraintHelper(quoteIdentifier = ::quoteIdentifier, typeMapper = typeMapper)
     private val indexBuilder = OracleIndexDdlBuilder(quoteIdentifier = ::quoteIdentifier)
+    private val partitionBuilder = OraclePartitionDdlBuilder(quoteIdentifier = ::quoteIdentifier)
 
     fun renderCreateTable(op: DiffOperation.CreateTable, ctx: OracleDiffRenderContext) {
         val tableName = op.objectRef.rootName
@@ -77,19 +79,35 @@ internal object OracleDiffTableOps {
                 lines += "CONSTRAINT ${ctx.sql.quote("pk_$tableName")} PRIMARY KEY ($pkCols)"
             }
         }
-        // Der Generate-Pfad legt die Tabelle hier flach an und meldet E055 --
-        // dort bekommt der Anwender ein Skript, das er vor dem Ausfuehren
-        // liest. Der Migrate-Pfad fuehrt aus, und eine grosse Tabelle still
-        // unpartitioniert anzulegen ist keine Notiz wert, sondern ein
-        // Blocker. PostgreSQLs Diff-Pfad blockt an derselben Stelle, und das
-        // Anwenderhandbuch sagt genau das zu.
-        table.partitioning?.let {
-            return blockPartitioning(op, ctx, tableName, it.type.name)
-        }
+        // Seit Slice 7 rendert Oracle die Partitionierung. Geblockt wird
+        // deshalb nur noch, was der GEMEINSAME Builder ablehnt -- der
+        // Generate-Pfad meldet dort E055 und legt flach an; auf dem
+        // Migrate-Pfad waere dasselbe eine stille Layout-Aenderung an einer
+        // Tabelle, die der Anwender partitioniert haben wollte.
+        val partitionClause = table.partitioning?.let { partitioning ->
+            partitionBuilder.skipNote(tableName, partitioning, table.columns)?.let { note ->
+                return blockPartitioning(op, ctx, tableName, note.message)
+            }
+            val partitionNotes = mutableListOf<TransformationNote>()
+            val clause = partitionBuilder.clause(tableName, partitioning, table.columns, partitionNotes)
+            // Der Renderer kann auch beim Rendern noch abbrechen -- eine
+            // Grenze mit Nicht-UTC-Offset bleibt stehen (E061), und das
+            // erzeugte DDL scheitert dann auf dem Server. Auf dem
+            // Generate-Pfad liest der Anwender das vorher; hier wird es
+            // ausgefuehrt, also blockt es.
+            partitionNotes.firstOrNull { it.type == NoteType.ACTION_REQUIRED }?.let { note ->
+                return blockPartitioning(op, ctx, tableName, note.message)
+            }
+            notes += partitionNotes
+            clause
+        }.orEmpty()
+
         val sql = buildString {
             append("CREATE TABLE ${ctx.sql.quote(tableName)} (\n")
             append(lines.joinToString(",\n") { "    $it" })
-            append("\n);")
+            append("\n)")
+            if (partitionClause.isNotEmpty()) append("\n$partitionClause")
+            append(";")
         }
         ctx.emit(op, sql)
         ctx.carryOverNotes(op, notes)
@@ -294,23 +312,25 @@ internal object OracleDiffTableOps {
     private fun isIdentity(type: NeutralType): Boolean = type is NeutralType.Identifier && type.autoIncrement
 
     /**
-     * Oracle-Partitionierung ist nicht gescoped (Slice 7). Der Generate-Pfad
-     * rendert die Tabelle deshalb flach und meldet `E055`; auf dem
-     * Migrate-Pfad waere dasselbe eine stille Layout-Aenderung an einer
-     * Tabelle, die der Anwender partitioniert haben wollte.
+     * Nur fuer Partitionierungs-Formen, die Oracle nicht ausdruecken kann
+     * (Begruendung aus dem geteilten Builder). Der Generate-Pfad legt die
+     * Tabelle dann flach an und meldet `E055` -- dort liest der Anwender ein
+     * Skript, bevor er es ausfuehrt. Der Migrate-Pfad fuehrt aus, und eine
+     * grosse Tabelle still unpartitioniert anzulegen ist keine Notiz wert,
+     * sondern ein Blocker.
      */
     private fun blockPartitioning(
         op: DiffOperation,
         ctx: OracleDiffRenderContext,
         table: String,
-        strategy: String,
+        reason: String,
     ) {
         ctx.skip(
             op,
-            "Operation ${op.id} creates table '$table' with $strategy partitioning, which the Oracle " +
-                "renderer cannot express (partition clauses are not carried in the neutral model). " +
-                "Creating the table unpartitioned instead would silently change its physical layout, so " +
-                "the operation is blocked; create the partitioned table manually and re-run.",
+            "Operation ${op.id} creates table '$table' with partitioning the Oracle renderer cannot " +
+                "express: $reason Creating the table unpartitioned instead would silently change its " +
+                "physical layout, so the operation is blocked; create the partitioned table manually " +
+                "and re-run.",
             code = "ORACLE_PARTITIONING_UNSUPPORTED",
         )
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))

@@ -29,7 +29,7 @@ class MigrationFingerprintTest : FunSpec({
     ) = SchemaDefinition(name = name, version = version, tables = tables, sequences = sequences)
 
     test("project starts with the algorithm identifier") {
-        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v9\n")
+        MigrationFingerprint.project(schema()).shouldStartWith("algorithm=schema-fingerprint-v10\n")
     }
 
     // v3: identifier-implied PK canonicalisation
@@ -347,7 +347,7 @@ class MigrationFingerprintTest : FunSpec({
     }
 
     test("ALGORITHM constant is the version-9 string") {
-        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v9"
+        MigrationFingerprint.ALGORITHM shouldBe "schema-fingerprint-v10"
     }
 
     test("child-local partition indices are projected (AP2a)") {

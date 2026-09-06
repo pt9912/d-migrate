@@ -32,7 +32,7 @@ class SchemaMigrateExecutionStagePlanShapeTest : FunSpec({
         executor = executor,
         dbLoader = null,
         normalizer = { it },
-        fingerprint = { s, _, _, _ -> s.name + ":" + s.version },
+        fingerprint = { s, _, _, _, _ -> s.name + ":" + s.version },
         printError = { _, _ -> },
     )
 

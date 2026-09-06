@@ -54,6 +54,10 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_ind_expressions") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("constraint_type = 'C'") }, any(), any()) } returns emptyList()
+        // Unpartitioniert ist der Normalfall: keine Zeile in ALL_PART_TABLES.
+        every { jdbc.querySingle(match { it.contains("FROM all_part_tables") }, any(), any()) } returns null
+        every { jdbc.queryList(match { it.contains("FROM all_part_key_columns") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_tab_partitions") }, any(), any()) } returns emptyList()
     }
 
     test("empty schema yields reverse-scoped name and empty maps") {
