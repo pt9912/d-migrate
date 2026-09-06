@@ -11,17 +11,18 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
 
 /**
  * Oracle-flavoured renderer for the migration pipeline (ADR 0052, Sub-Slices
- * 5a + 5b). Covers two of the [DiffOperation] families so far:
+ * 5a-5c). Covers three of the [DiffOperation] families so far:
  *
  * In scope: the table/column/primary-key family (5a) — `CreateTable`,
  * `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`,
  * `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`,
  * `AddPrimaryKey`, `DropPrimaryKey` — plus the constraint/index family (5b):
- * `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex`.
+ * `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex`; and the
+ * view/custom-type family (5c): `CreateView`, `ReplaceView`, `DropView`,
+ * `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType`.
  *
- * Everything else surfaces as `DIALECT_UNSUPPORTED_OPERATION` — views and
- * custom types (5c), sequences (5d), and the remaining families follow in
- * later sub-slices per
+ * Everything else surfaces as `DIALECT_UNSUPPORTED_OPERATION` — sequences
+ * (5d) and the remaining families follow in later sub-slices per
  * `docs/planning/in-progress/oracle-dialect-scoping.md`.
  *
  * Not yet wired into `MigrateRendererRegistry`/`DialectCommandGate` — like
@@ -37,6 +38,7 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  *   [OracleColumnConstraintHelper] / [OracleIndexDdlBuilder] from the
  *   Generate path).
  * - [OracleDiffObjectOps] — constraint / index ops, same reuse.
+ * - [OracleDiffViewOps] / [OracleDiffCustomTypeOps] — views and custom types.
  * - [OracleDiffRenderContext] — bookkeeping for one render pass.
  */
 class OracleDiffDdlGenerator : DiffDdlGenerator {
@@ -70,9 +72,24 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
+        // Ohne Down-Risikoprofil hat der Planner fuer diese Richtung keine
+        // Umkehr definiert (`MANUAL_REQUIRED`, etwa `AlterCustomType`). Ohne
+        // diesen Waechter liefe der Renderer in `riskFor`s `error(...)` --
+        // eine Exception statt des Blockers, den der Port verlangt.
+        if (ctx.direction == OracleRenderDirection.DOWN && op.risks.down == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} carries no risk profile for the Down direction; the planner defines no " +
+                    "inverse for it, so the renderer cannot construct one either.",
+                code = "ROLLBACK_NOT_POSSIBLE",
+            )
+            ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, setOf(op.id))
+            return
+        }
         when (categorize(op)) {
             OpCategory.TABLE -> renderTableOp(op, ctx)
             OpCategory.OBJECT -> renderObjectOp(op, ctx)
+            OpCategory.VIEW_OR_TYPE -> renderViewOrTypeOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -104,19 +121,21 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropIndex,
         -> OpCategory.OBJECT
 
-        is DiffOperation.AlterTablePartitions,
+        is DiffOperation.CreateView,
+        is DiffOperation.ReplaceView,
+        is DiffOperation.DropView,
+        is DiffOperation.RenameView,
         is DiffOperation.CreateCustomType,
         is DiffOperation.AlterCustomType,
         is DiffOperation.DropCustomType,
+        -> OpCategory.VIEW_OR_TYPE
+
+        is DiffOperation.AlterTablePartitions,
         is DiffOperation.CreateSequence,
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
         is DiffOperation.RenameSequence,
         is DiffOperation.AlterSequenceCurrentValue,
-        is DiffOperation.CreateView,
-        is DiffOperation.ReplaceView,
-        is DiffOperation.DropView,
-        is DiffOperation.RenameView,
         is DiffOperation.CreateMaterializedView,
         is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
@@ -162,10 +181,23 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderViewOrTypeOp(op: DiffOperation, ctx: OracleDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateView -> OracleDiffViewOps.renderCreateView(op, ctx)
+            is DiffOperation.ReplaceView -> OracleDiffViewOps.renderReplaceView(op, ctx)
+            is DiffOperation.DropView -> OracleDiffViewOps.renderDropView(op, ctx)
+            is DiffOperation.RenameView -> OracleDiffViewOps.renderRenameView(op, ctx)
+            is DiffOperation.CreateCustomType -> OracleDiffCustomTypeOps.renderCreateCustomType(op, ctx)
+            is DiffOperation.AlterCustomType -> OracleDiffCustomTypeOps.renderAlterCustomType(op, ctx)
+            is DiffOperation.DropCustomType -> OracleDiffCustomTypeOps.renderDropCustomType(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised VIEW_OR_TYPE but renderViewOrTypeOp does not handle it")
+        }
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: OracleDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not yet supported by the Oracle migrate renderer.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OBJECT, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OBJECT, VIEW_OR_TYPE, UNSUPPORTED }
 }

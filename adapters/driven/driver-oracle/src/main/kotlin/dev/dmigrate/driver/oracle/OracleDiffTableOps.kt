@@ -99,14 +99,23 @@ internal object OracleDiffTableOps {
         }
     }
 
+    /**
+     * Die Down-Richtung blockt, statt einen SQL-Kommentar als Platzhalter zu
+     * emittieren. Ueber den Planner ist sie ohnehin unerreichbar (`DropTable`
+     * ist `NOT_REVERSIBLE`, der Dispatcher springt vorher ab) -- aber ein
+     * handgebautes `DiffResult` koennte sie erreichen, und dann waere ein
+     * Kommentar die falsche Antwort: `JdbcMigrationStatementExecutor` fuehrt
+     * JEDE Anweisung aus, und Oracle lehnt eine reine Kommentar-Anweisung ab
+     * (`ORA-00900`, gemessen). Siehe
+     * `docs/planning/open/diff-comment-as-statement.md`.
+     */
     fun renderDropTable(op: DiffOperation.DropTable, ctx: OracleDiffRenderContext) {
-        val tableName = op.objectRef.rootName
-        val text = if (ctx.direction == OracleRenderDirection.DOWN) {
-            "-- DropTable is NOT_REVERSIBLE; refusing to render an inverse."
-        } else {
-            "DROP TABLE ${ctx.sql.quote(tableName)};"
+        if (ctx.direction == OracleRenderDirection.DOWN) {
+            ctx.skip(op, "Operation ${op.id} drops a table; there is no inverse to render.")
+            ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, setOf(op.id))
+            return
         }
-        ctx.emit(op, text)
+        ctx.emit(op, "DROP TABLE ${ctx.sql.quote(op.objectRef.rootName)};")
     }
 
     /**

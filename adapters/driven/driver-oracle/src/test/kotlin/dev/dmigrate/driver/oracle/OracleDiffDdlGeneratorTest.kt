@@ -2,7 +2,7 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.NamedTable
-import dev.dmigrate.core.diff.NamedView
+import dev.dmigrate.core.diff.NamedSequence
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
@@ -17,7 +17,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.ViewDefinition
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.TransactionBehavior
@@ -28,9 +28,10 @@ import io.kotest.matchers.string.shouldContain
 
 /**
  * Sub-Slice 5a: the table/column/primary-key operation family. Constraints
- * and indices (5b) have their own spec, [OracleDiffObjectOpsTest]; the
- * families still ahead (views and custom types 5c, sequences 5d, routines,
- * triggers) are asserted UNSUPPORTED here.
+ * and indices (5b) live in [OracleDiffObjectOpsTest], views and custom types
+ * (5c) in [OracleDiffViewOpsTest] / [OracleDiffCustomTypeOpsTest]; the
+ * families still ahead (sequences 5d, routines, triggers) are asserted
+ * UNSUPPORTED here.
  */
 class OracleDiffDdlGeneratorTest : FunSpec({
 
@@ -307,9 +308,8 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         planAndDown(diff).statements.single().sql shouldBe "ALTER TABLE \"users\" ADD CONSTRAINT \"pk_users\" PRIMARY KEY (\"id\");"
     }
 
-    test("CreateView is not yet supported (Sub-Slice 5c) and blocks DIALECT_UNSUPPORTED_OPERATION") {
-        val view = ViewDefinition(query = "SELECT 1 FROM dual")
-        val diff = SchemaDiff(viewsAdded = listOf(NamedView("v_x", view)))
+    test("CreateSequence is not yet supported (Sub-Slice 5d) and blocks DIALECT_UNSUPPORTED_OPERATION") {
+        val diff = SchemaDiff(sequencesAdded = listOf(NamedSequence("seq_x", SequenceDefinition())))
         val r = planAndUp(diff)
         r.isBlocked shouldBe true
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION

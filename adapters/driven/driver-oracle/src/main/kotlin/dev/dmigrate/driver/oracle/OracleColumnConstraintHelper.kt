@@ -135,9 +135,24 @@ internal class OracleColumnConstraintHelper(
     private fun boundedEnumColumn(ctx: ColumnContext, values: List<String>): String {
         val parts = mutableListOf(quoteIdentifier(ctx.colName), "VARCHAR2(${OracleTypeMapper.enumWidth(values)})")
         parts += nullabilityDefaultUnique(ctx, lob = false)
-        val allowed = values.joinToString(", ") { typeMapper.toDefaultSql(DefaultValue.StringLiteral(it), ctx.col.type) }
-        parts += "CONSTRAINT ${quoteIdentifier(checkName(ctx))} CHECK (${quoteIdentifier(ctx.colName)} IN ($allowed))"
+        parts += enumCheckClause(ctx.tableName, ctx.colName, values)
         return parts.joinToString(" ")
+    }
+
+    /**
+     * Die benannte CHECK-Klausel einer wertebasierten Enum-Spalte. Einzige
+     * Quelle fuer den Generate-Pfad (inline im `CREATE TABLE`) und den
+     * Diff-Pfad (`OracleDiffCustomTypeOps`, das sie beim Fan-out eines
+     * geaenderten Custom Types einzeln droppen und neu anlegen muss) --
+     * berechneten beide den Namen getrennt, droppte der Fan-out einen
+     * Constraint, den es unter diesem Namen nicht gibt.
+     */
+    fun enumCheckClause(tableName: String, colName: String, values: List<String>): String {
+        // `toDefaultSql` ignoriert den Typ fuer String-Literale; ihn hier
+        // durchzureichen taeuschte eine Abhaengigkeit vor, die es nicht gibt.
+        val allowed = values.joinToString(", ") { typeMapper.toDefaultSql(DefaultValue.StringLiteral(it), NeutralType.Text()) }
+        return "CONSTRAINT ${quoteIdentifier(enumCheckName(tableName, colName))} " +
+            "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
     }
 
     // ── Plain columns ────────────────────────────
@@ -228,8 +243,6 @@ internal class OracleColumnConstraintHelper(
     private fun uniqueClause(tableName: String, colName: String): String =
         "CONSTRAINT ${quoteIdentifier("uq_${tableName}_$colName")} UNIQUE"
 
-    private fun checkName(ctx: ColumnContext): String = "ck_${ctx.tableName}_${ctx.colName}"
-
     /** E057: UNIQUE/PRIMARY KEY auf LOB-Spalten ist in Oracle nicht erzeugbar (ORA-02329). */
     fun lobKeyNote(tableName: String, constraintName: String, kind: String, columns: List<String>): TransformationNote =
         ManualActionRequired(
@@ -307,5 +320,10 @@ internal class OracleColumnConstraintHelper(
             val ref = constraint.references!!
             buildForeignKeyClause(constraint.name, constraint.columns.orEmpty(), ref.table, ref.columns, ref.onDelete, notes)
         }
+    }
+
+    companion object {
+        /** Namensschema des Enum-CHECKs -- siehe [enumCheckClause]. */
+        fun enumCheckName(tableName: String, colName: String): String = "ck_${tableName}_$colName"
     }
 }

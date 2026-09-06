@@ -61,6 +61,28 @@ internal class OracleDiffRenderContext(
         if (riskFor(op).requiresManualConfirmation) manualActions += op.id
     }
 
+    /**
+     * Bucht eine Operation als erledigt, OHNE eine Anweisung zu erzeugen.
+     *
+     * Fuer Faelle, in denen Oracle strukturell nichts zu tun hat -- ein
+     * ENUM/DOMAIN-Custom-Type etwa hat hier kein Datenbankobjekt, er lebt an
+     * der Spalte. Der Vertrag laesst das ausdruecklich zu: [MigrationDdlResult]
+     * verlangt nur, dass jede ANWEISUNG eine gerenderte Operation hat, nicht
+     * umgekehrt. Die Begruendung gehoert in die Diagnosen, nicht als
+     * Pseudo-Anweisung ins SQL-Skript -- `statements` traegt auszufuehrendes
+     * SQL, `diagnostics` traegt Erklaerungen.
+     *
+     * Die Risiko-Buchfuehrung laeuft wie bei [emit] weiter: die Risiken
+     * stehen an der Operation, nicht am Dialekt, und duerfen nicht dadurch
+     * verschwinden, dass dieser Dialekt nichts auszufuehren hat.
+     */
+    fun markRendered(op: DiffOperation) {
+        rendered += op.id
+        if (riskFor(op).destructive) destructive += op.id
+        if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
+        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+    }
+
     private fun riskFor(op: DiffOperation): OperationRisk =
         if (direction == OracleRenderDirection.UP) {
             op.risks.up
@@ -113,6 +135,19 @@ internal class OracleDiffRenderContext(
     fun schemaForDirection(): SchemaDefinition? =
         if (direction == OracleRenderDirection.UP) desiredSchema else currentSchema
 
+    /** Das Schema der GEGENrichtung (UP=current, DOWN=desired). */
+    fun schemaOppositeOfDirection(): SchemaDefinition? =
+        if (direction == OracleRenderDirection.UP) currentSchema else desiredSchema
+
+    fun addInfoDiagnostic(code: String, operationId: String, message: String) {
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = DiffDiagnostic.Severity.INFO,
+            operationId = operationId,
+        )
+    }
+
     /** Spaltendefinition von `table.column` auf der Seite, die diese Richtung liest. */
     fun columnFor(table: String, column: String): ColumnDefinition? =
         schemaForDirection()?.tables?.get(table)?.columns?.get(column)
@@ -156,6 +191,20 @@ internal class OracleDiffRenderContext(
             implicitCommitPossible = true,
             sideEffectsPossible = true,
             requiresExclusiveAccess = true,
+        )
+
+        /**
+         * View- und Custom-Type-DDL fasst keine Nutzdaten an -- sie schreibt
+         * nur den Katalog. `IMPLICIT_COMMIT` bleibt (auch diese Anweisungen
+         * committen in Oracle implizit), aber die Sperre ist leichter und
+         * kein exklusiver Zugriff noetig.
+         */
+        internal val ORACLE_METADATA_DDL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.IMPLICIT_COMMIT,
+            lockBehavior = LockBehavior.METADATA,
+            implicitCommitPossible = true,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = false,
         )
     }
 }

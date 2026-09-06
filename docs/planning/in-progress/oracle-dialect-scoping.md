@@ -267,6 +267,49 @@
 > Default-Validierung sorgt ohnehin dafür, dass eine verletzte Bedingung
 > nicht durchrutscht.
 >
+> **Status-Update 2026-09-06 (Slice 5c):** `OracleDiffViewOps` +
+> `OracleDiffCustomTypeOps` — Views und Custom Types in beiden Richtungen.
+> Sieben Oracle-Eigenheiten live gemessen; die drei, die das Design
+> bestimmt haben:
+> - **Kein Signatur-Wächter.** Oracles `CREATE OR REPLACE VIEW` darf die
+>   Spaltenliste frei ändern (Anzahl UND Namen, verifiziert) — PostgreSQL
+>   blockt genau das, weil es dort nicht geht. Ein kopierter Wächter wäre
+>   hier zudem wirkungslos: `ViewDefinition.columns` befüllen nur PGs
+>   Reverse und der Datei-Parser, Oracles Reverse nie.
+> - **`ALTER VIEW ... RENAME TO` existiert nicht** (`ORA-00922`) —
+>   umbenannt wird mit der freistehenden Anweisung `RENAME alt TO neu`.
+> - **ENUM und DOMAIN haben in Oracle kein Datenbankobjekt**, sie leben an
+>   der Spalte. `CreateCustomType`/`DropCustomType` erzeugen deshalb keine
+>   Anweisung, buchen die Operation aber als erledigt
+>   (`OracleDiffRenderContext.markRendered`) und legen die Begründung als
+>   INFO-Diagnose ab. Eine geänderte ENUM fächert auf die nutzenden Spalten
+>   auf: CHECK lösen, Breite anpassen, CHECK neu — in dieser Reihenfolge,
+>   und den ersten Schritt nur, wenn es vorher überhaupt einen CHECK gab.
+>
+> **Ein Muster aus dem MSSQL-Vorbild wurde dabei verworfen, nicht
+> übernommen:** dort (und in MySQL/PostgreSQL) emittieren Diff-Renderer
+> SQL-Kommentare als Anweisung, um eine Operation als erledigt zu buchen.
+> Der Vertrag verlangt das nicht — die Invariante in `MigrationDdlResult`
+> ist einseitig, eine gerenderte Operation braucht keine Anweisung — und
+> für Oracle wäre es ein Ausführungsfehler: `JdbcMigrationStatementExecutor`
+> führt jede Anweisung aus, und Oracle lehnt eine reine Kommentar-Anweisung
+> mit `ORA-00900` ab (in Slice 4a am Header-Kommentar gemessen). Der
+> Oracle-Treiber enthält deshalb keine Kommentar-Anweisung mehr, auch die
+> unerreichbare `DropTable`-Down-Attrappe aus 5a nicht;
+> [`diff-comment-as-statement.md`](../open/diff-comment-as-statement.md)
+> hält das dialektübergreifende Muster fest.
+>
+> Ein unabhängiges Review fand einen echten Absturz: `AlterCustomType` ist
+> `MANUAL_REQUIRED` mit `risks.down = null` und passierte den
+> `NOT_REVERSIBLE`-Wächter des Dispatchers — der Renderer lief dann in
+> `riskFor`s `error(...)` statt in einen Blocker. Der fehlende
+> Down-Risiko-Wächter ist ergänzt und per Sabotage-Test belegt. Weitere
+> Befunde behoben: der Materialized-View-Wächter griff nur auf der
+> Zielseite (ein View-/MV-Wechsel entsteht als gewöhnliches `ReplaceView`),
+> `blockComposite` prüfte nur `op.after`, und der Fan-out hätte in drei
+> erreichbaren Fällen ein `DROP CONSTRAINT` auf einen nie angelegten CHECK
+> abgesetzt.
+>
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -485,9 +528,9 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | **5a** ✅ | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders). Kein Default-Dreischritt nötig. `RENAME TO`/`RENAME COLUMN` sind native Syntax. Identity-Typ-/Modus-Änderungen live bestätigt in-place — kein Rebuild-Zweig; das *Hinzufügen* von Identity blockt benannt (siehe oben) | Unit-Tests je Operation und Richtung |
 | ~~5a-2~~ | — | **Entfällt** — die Live-Sonde bestätigte, dass Oracle Identity-Typänderungen per `ALTER TABLE ... MODIFY` in-place erlaubt (siehe oben); MSSQLs Rebuild-Sub-Slice hat kein Oracle-Äquivalent. Der einzige Rest-Fall (Identity *hinzufügen*) ist in [`oracle-add-identity-requires-rebuild.md`](../open/oracle-add-identity-requires-rebuild.md) ausgelagert | — |
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes — ein nicht-BTREE-Indextyp rendert als B-Tree mit `W102` (so wie im Generate-Pfad, `spec/ddl-generation-rules.md`); Constraint-Namen kommen aus dem Operations-Payload, kein Katalog-Lookup nötig. Kein `WITH CHECK`-Äquivalent: Oracle validiert per Default gegen den Bestand (siehe oben) | Unit-Tests je Operation und Richtung |
-| **5c** | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
+| **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
 | **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
-| **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingung:** [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss vorher gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |
+| **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingungen:** (1) `RenameDependencyPolicy.forDialect(ORACLE)` ist heute ein `error(...)`-Stub und `ObjectRenamePolicyRegistry` führt Oracle nicht — sobald der Gate-Fall `schema migrate` öffnet, wählt `SchemaMigrateRunner` diese Policy aus und läuft hinein ([`oracle-view-dependencies-not-read.md`](../open/oracle-view-dependencies-not-read.md)); (2) [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |
 
 ## Offene Punkte
 
