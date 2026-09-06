@@ -24,6 +24,10 @@ database:
     # Oracle-Leg (Slice 3b) — Oracle-Ziel fuer Pagila PG -> Oracle.
     # Pfadteil ist der SERVICE-NAME der PDB, nicht die SID.
     pagila_ora_target: "oracle://${APP_USER}:${APP_USER_PASSWORD}@oracle:1521/FREEPDB1"
+    # Oracle-Leg Gegenrichtung (Slice 4b) — Oracle als QUELLE. Oracle hat ein
+    # Schema je Benutzer, also dieselbe Verbindung wie oben; der eigene Name
+    # macht im Skript sichtbar, welche Rolle sie gerade spielt.
+    pagila_ora_source: "oracle://${APP_USER}:${APP_USER_PASSWORD}@oracle:1521/FREEPDB1"
     # Phase 3 (Scale, Employees) — MySQL-Quelle + MySQL- und PG-Ziel.
     # Die DBs legt der Scale-Smoke selbst an (idempotent), da initdb nur
     # bei frischem Volume läuft.

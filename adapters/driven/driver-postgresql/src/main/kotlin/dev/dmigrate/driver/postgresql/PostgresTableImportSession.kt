@@ -255,6 +255,11 @@ internal class PostgresTableImportSession(
         return buildReturningInsert(baseInsert, buildUpsertClause(importedTargetColumns))
     }
 
+    /** PostgreSQLs `boolean`/`bool` -- unabhaengig davon, welchen JDBC-Code der Treiber dafuer meldet. */
+    private fun isBooleanColumn(targetColumn: TargetColumn): Boolean =
+        targetColumn.sqlTypeName.equals("bool", ignoreCase = true) ||
+            targetColumn.sqlTypeName.equals("boolean", ignoreCase = true)
+
     private fun bindValue(
         stmt: PreparedStatement,
         parameterIndex: Int,
@@ -267,6 +272,19 @@ internal class PostgresTableImportSession(
         }
 
         when {
+            // Ein Dialekt ohne BOOLEAN-Spaltentyp liefert seine Wahrheitswerte
+            // als Zahl (Oracle: NUMBER(1)). Der Reverse rekonstruiert daraus
+            // korrekt `boolean`, das Ziel entsteht also als `boolean` -- und
+            // PostgreSQL nimmt in eine solche Spalte KEINE Zahl an
+            // ("column is of type boolean but expression is of type numeric").
+            // Die Umsetzung gehoert an diese Grenze: hier ist der Zieltyp
+            // bekannt, und 0/nicht-0 ist eindeutig.
+            // Auf den Typnamen abgestellt, nicht auf den JDBC-Code: pgjdbc
+            // meldet `boolean` je nach Version als BOOLEAN ODER als BIT, und
+            // BIT allein waere zu breit (echte Bitfelder).
+            isBooleanColumn(targetColumn) && value is Number ->
+                stmt.setBoolean(parameterIndex, value.toDouble() != 0.0)
+
             // VA1c/W1: WKB-Geometriespalte. Explizit als bytea binden (setBytes),
             // nicht via setObject-Default — `ST_GeomFromWKB(?)` erwartet bytea, und
             // setBytes ist pgjdbc-versionsunabhängig. MUSS vor dem Enum-Zweig

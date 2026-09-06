@@ -45,6 +45,30 @@
 > nicht durch eine stille Umformung. Der Harness deklariert seine Wahl in
 > der eigenen `.d-migrate.yaml`. **4b ist damit entblockt.**
 
+> **Status-Update 2026-09-06 (Slice 4b):** die Gegenrichtung laeuft
+> ebenfalls — `smoke-cross-ora2pg.sh`, dreifache Zeilen-Paritaet
+> (Original == Oracle == Rueckziel), `--verify OK`,
+> Rueckwaerts-Konvertierungen datenbelegt.
+>
+> **Ein siebter Defekt, den nur die Rueckrichtung zeigen konnte:** Oracle
+> hat keinen BOOLEAN-Spaltentyp, der Hinweg legt `NUMBER(1)` an — und der
+> Oracle-Reverse rekonstruiert daraus wieder `boolean`, das PG-Rueckziel
+> entsteht also mit `boolean`. Der Datenpfad reichte die rohe Zahl aber
+> unveraendert weiter, und PostgreSQL nimmt in eine `boolean`-Spalte keine
+> Zahl an (*column is of type boolean but expression is of type numeric*).
+> Schema und Daten sagten Verschiedenes. Die Umsetzung sitzt jetzt an der
+> Schreibgrenze, wo der Zieltyp bekannt ist.
+>
+> Nebenbefund beim Beheben: die Bedingung am JDBC-Typcode griff nicht —
+> pgjdbc meldet `boolean` je nach Version als `BOOLEAN` **oder** als `BIT`.
+> Der Typname ist der belastbare Anker.
+>
+> **Was das Leg bewusst nicht prueft**, und das steht auch im Skript: Wert-
+> Identitaet Original == Rueckziel. Oracle setzt `''` mit NULL gleich; ein
+> leerer String kommt als NULL zurueck (nullbare Spalten) bzw. als der
+> erklaerte Ersatztext (NOT NULL). Dieser Verlust ist Oracles Semantik,
+> nicht ein Fehler des Werkzeugs.
+
 ## Ist-Zustand
 
 `examples/sample-db/` ist der Cross-Dialekt-Round-Trip-Harness (ADR 0013
