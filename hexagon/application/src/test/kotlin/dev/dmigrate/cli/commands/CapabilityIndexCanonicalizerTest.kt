@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
@@ -69,5 +70,31 @@ class CapabilityIndexCanonicalizerTest : FunSpec({
         val projected = capabilityIndexCanonicalizer(DatabaseDialect.SQLITE)(index)
         projected.name shouldBe "ix"
         projected.columns shouldContainExactly listOf(IndexColumn("id"))
+    }
+
+    test("only Oracle keeps the bitmap access method; the rest project it to btree") {
+        val bitmap = IndexDefinition(
+            name = "bm", columns = listOf(IndexColumn("status")), type = IndexType.BITMAP,
+        )
+        capabilityIndexCanonicalizer(DatabaseDialect.ORACLE)(bitmap).type shouldBe IndexType.BITMAP
+        // Die vier anderen legen einen gewoehnlichen Index an (W102) und
+        // lesen genau den zurueck. Ohne die Projektion meldete der
+        // Post-Compare nach jedem Oracle->X-`migrate --execute` Drift.
+        (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
+            withClue(dialect.name) {
+                capabilityIndexCanonicalizer(dialect)(bitmap).type shouldBe IndexType.BTREE
+            }
+        }
+    }
+
+    test("the projection leaves every other index type alone") {
+        // Sonst faltete die Bitmap-Regel versehentlich auch HASH/GIN/GIST
+        // und verdeckte echte Drift.
+        (IndexType.entries - IndexType.BITMAP).forEach { type ->
+            val idx = IndexDefinition(name = "ix", columns = listOf(IndexColumn("id")), type = type)
+            withClue(type.name) {
+                capabilityIndexCanonicalizer(DatabaseDialect.POSTGRESQL)(idx).type shouldBe type
+            }
+        }
     }
 })

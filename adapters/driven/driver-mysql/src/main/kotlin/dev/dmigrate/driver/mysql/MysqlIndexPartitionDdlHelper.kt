@@ -11,6 +11,7 @@ import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.ManualActionRequired
@@ -340,6 +341,25 @@ internal class MysqlIndexPartitionDdlHelper(
             hint = "The index now covers all partitions; it is a non-unique performance index, so coverage only widens.",
         )
 
+    /**
+     * Die gewoehnliche `CREATE INDEX`-Form. Drei Zweige teilen sie sich --
+     * BTREE unveraendert, HASH mit `USING BTREE` (InnoDB kennt kein HASH) und
+     * BITMAP als Rueckfall auf den Standardtyp.
+     */
+    private fun plainIndexSql(
+        index: IndexDefinition,
+        indexName: String,
+        tableName: String,
+        columnsSql: String,
+        using: String? = null,
+    ): String = buildString {
+        append("CREATE ")
+        if (index.unique) append("UNIQUE ")
+        append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
+        if (using != null) append(" USING $using")
+        append(" ($columnsSql);")
+    }
+
     private fun generateIndex(
         tableName: String,
         index: IndexDefinition,
@@ -375,8 +395,12 @@ internal class MysqlIndexPartitionDdlHelper(
         // I-08: an unbounded TEXT/BLOB column needs a prefix length in MySQL
         // (ERROR 1170). When none is carried, the index cannot be rendered as
         // valid DDL — skip it with a note rather than guess a length. Only the
-        // emitted BTREE/HASH types are affected; GIN/GIST/BRIN/SP-GiST are skipped below.
-        val emitsBtree = index.type == IndexType.BTREE || index.type == IndexType.HASH
+        // emitted types are affected; GIN/GIST/BRIN/SP-GiST are skipped below.
+        // BITMAP gehört seit Slice 6a dazu: es rendert einen echten Index und
+        // liefe sonst am Wächter vorbei in ERROR 1170 — die Liste hier muss
+        // deckungsgleich mit den Zweigen sein, die unten `plainIndexSql` rufen.
+        val emitsBtree = index.type == IndexType.BTREE || index.type == IndexType.HASH ||
+            index.type == IndexType.BITMAP
         val missingPrefix = if (emitsBtree) MysqlIndexPrefix.columnNeedingPrefix(index) { columns[it]?.type } else null
         missingPrefix?.let { offending ->
             return DdlStatement(
@@ -427,15 +451,8 @@ internal class MysqlIndexPartitionDdlHelper(
                 )
             }
             IndexType.HASH -> {
-                val sql = buildString {
-                    append("CREATE ")
-                    if (index.unique) append("UNIQUE ")
-                    append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
-                    append(" USING BTREE")
-                    append(" ($columnsSql);")
-                }
                 DdlStatement(
-                    sql,
+                    plainIndexSql(index, indexName, tableName, columnsSql, using = "BTREE"),
                     listOf(
                         TransformationNote(
                             type = NoteType.WARNING,
@@ -447,14 +464,17 @@ internal class MysqlIndexPartitionDdlHelper(
                     ) + coveringNotes
                 )
             }
-            IndexType.BTREE -> {
-                val sql = buildString {
-                    append("CREATE ")
-                    if (index.unique) append("UNIQUE ")
-                    append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
-                    append(" ($columnsSql);")
-                }
-                DdlStatement(sql, coveringNotes)
+            IndexType.BTREE ->
+                DdlStatement(plainIndexSql(index, indexName, tableName, columnsSql), coveringNotes)
+            // Anders als GIN/GIST/BRIN NICHT weglassen: ein Bitmap-Index ist ein
+            // gewoehnlicher Index ueber gewoehnliche Spalten -- nur die
+            // Zugriffsmethode ist Oracle-eigen. Ihn zu verwerfen naehme dem
+            // Ziel einen Index, der dort sinnvoll bleibt.
+            IndexType.BITMAP -> {
+                DdlStatement(
+                    plainIndexSql(index, indexName, tableName, columnsSql),
+                    BitmapIndexFallbackNote.forDialect(index, indexName, tableName, "MySQL") + coveringNotes,
+                )
             }
             // ADR 0025: Volltext-Index → natives MySQL `CREATE FULLTEXT INDEX` über die
             // Quelltext-Spalten (ohne Prefix/Richtung); MySQL-FULLTEXT kennt keine

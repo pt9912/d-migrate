@@ -28,7 +28,19 @@ internal object OracleMetadataQueries {
         val ordinal: Int,
     )
 
-    data class IndexScan(val indices: List<IndexProjection>)
+    /**
+     * [indices] traegt die darstellbaren Indizes; [expressionIndexes] die Namen
+     * derer, deren Schluessel ein echter Ausdruck ist (`UPPER(nm)`). Fuer die
+     * gibt es im neutralen Modell noch keine Spaltendarstellung, und Oracle
+     * fuehrt an ihrer Stelle eine unsichtbare Systemspalte (`SYS_NC00006$`) --
+     * die als Spaltenname weiterzureichen ergaebe DDL, die auf keinem Ziel
+     * lauffaehig ist. Sie werden deshalb ausgelassen und gemeldet (R354),
+     * nicht stumm verfaelscht.
+     */
+    data class IndexScan(
+        val indices: List<IndexProjection>,
+        val expressionIndexes: List<String> = emptyList(),
+    )
 
     data class SequenceRow(
         val name: String,
@@ -191,7 +203,7 @@ internal object OracleMetadataQueries {
 
         val rows = session.queryList(
             """
-            SELECT i.index_name, i.uniqueness, ic.column_name, ic.column_position, ic.descend
+            SELECT i.index_name, i.index_type, i.uniqueness, ic.column_name, ic.column_position, ic.descend
             FROM all_indexes i
             JOIN all_ind_columns ic
                 ON ic.index_owner = i.owner AND ic.index_name = i.index_name
@@ -201,24 +213,87 @@ internal object OracleMetadataQueries {
             schema,
             table,
         )
-        val indices = rows.groupBy { it.string("index_name") }
+        val expressions = indexExpressions(session, schema, table)
+        val indices = mutableListOf<IndexProjection>()
+        val expressionIndexes = mutableListOf<String>()
+        rows.groupBy { it.string("index_name") }
             .filterKeys { it !in primaryKeyIndexNames }
-            .map { (name, group) ->
-                IndexProjection(
-                    name = name,
-                    columns = group.map { it.string("column_name") },
-                    isUnique = group.first().string("uniqueness") == "UNIQUE",
-                    directions = group.map { row ->
-                        if (row["descend"] as? String == "DESC") {
-                            dev.dmigrate.core.model.IndexSortDirection.DESC
-                        } else {
-                            null
-                        }
-                    },
-                )
+            .forEach { (name, group) ->
+                val columns = resolveIndexColumns(name, group, expressions)
+                if (columns == null) {
+                    expressionIndexes += name
+                } else {
+                    indices += IndexProjection(
+                        name = name,
+                        columns = columns,
+                        isUnique = group.first().string("uniqueness") == "UNIQUE",
+                        type = group.first().string("index_type"),
+                        directions = group.map { row ->
+                            if (row["descend"] as? String == "DESC") {
+                                dev.dmigrate.core.model.IndexSortDirection.DESC
+                            } else {
+                                null
+                            }
+                        },
+                    )
+                }
             }
-        return IndexScan(indices = indices)
+        return IndexScan(indices = indices, expressionIndexes = expressionIndexes)
     }
+
+    /**
+     * `ALL_IND_EXPRESSIONS.COLUMN_EXPRESSION` je (Indexname, Spaltenposition).
+     * Gefuellt fuer jede Spalte eines Function-based-Index -- und das ist
+     * Oracle auch bei `CREATE INDEX … (spalte DESC)`: absteigende Indizes sind
+     * intern function-based (live gemessen: `INDEX_TYPE = FUNCTION-BASED
+     * NORMAL`), ihr Ausdruck ist dann aber nur der Spaltenname selbst.
+     */
+    private fun indexExpressions(
+        session: JdbcOperations,
+        schema: String,
+        table: String,
+    ): Map<Pair<String, Int>, String> = session.queryList(
+        """
+        SELECT index_name, column_position, column_expression
+        FROM all_ind_expressions
+        WHERE index_owner = ? AND table_name = ?
+        """.trimIndent(),
+        schema,
+        table,
+    ).mapNotNull { row ->
+        val expression = row["column_expression"]?.toString() ?: return@mapNotNull null
+        (row.string("index_name") to (row["column_position"] as Number).toInt()) to expression
+    }.toMap()
+
+    /**
+     * Loest die Schluesselspalten eines Index auf; `null`, wenn mindestens eine
+     * davon ein echter Ausdruck ist (siehe [IndexScan.expressionIndexes]).
+     */
+    private fun resolveIndexColumns(
+        indexName: String,
+        group: List<Map<String, Any?>>,
+        expressions: Map<Pair<String, Int>, String>,
+    ): List<String>? {
+        val columns = group.map { row ->
+            val position = (row["column_position"] as Number).toInt()
+            val expression = expressions[indexName to position]
+                ?: return@map row.string("column_name")
+            // Ein Ausdruck, der nur aus einem zitierten Bezeichner besteht, IST
+            // die Spalte -- so sieht ein DESC-Index von innen aus. Alles andere
+            // ist ein echter Ausdruck und im Modell (noch) nicht darstellbar.
+            PLAIN_COLUMN_EXPRESSION.matchEntire(expression.trim())?.groupValues?.get(1)?.replace("\"\"", "\"")
+        }
+        return if (columns.any { it == null }) null else columns.filterNotNull()
+    }
+
+    /**
+     * Ein Ausdruck, der NUR aus einem zitierten Bezeichner besteht. Oracle
+     * verdoppelt ein Anfuehrungszeichen im Namen (`A"B` steht als `"A""B"`),
+     * deshalb erlaubt das Muster `""` innerhalb — sonst gaelte ein
+     * DESC-Index auf einer so benannten Spalte faelschlich als
+     * Ausdrucks-Index und verschwaende mit R354.
+     */
+    private val PLAIN_COLUMN_EXPRESSION = Regex("""^"((?:[^"]|"")+)"$""")
 
     /**
      * CHECK-Constraints ohne die von Oracle implizit fuer jede NOT-NULL-

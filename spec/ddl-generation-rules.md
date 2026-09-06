@@ -493,8 +493,20 @@ Besonderheiten:
 - Materialized Views werden als reguläre View gerendert → W103
 - Volltext-Indizes werden nicht gerendert (Oracle Text) →
   `action_required` E057
-- Function-based- und Bitmap-Indizes werden noch nicht unterschieden —
-  jeder Index gilt als `BTREE`, ein ursprünglich anderer Indextyp → W102
+- **Bitmap-Indizes** sind ein eigener neutraler Indextyp (`bitmap`). Oracle
+  rendert `CREATE BITMAP INDEX` und liest `USER_INDEXES.INDEX_TYPE = 'BITMAP'`
+  zurück. Ein Bitmap-Index ist in Oracle **nie eindeutig** — `UNIQUE BITMAP`
+  ist keine gültige Syntax (`ORA-00968`); ein als `unique` deklarierter
+  Bitmap-Index wird deshalb als eindeutiger B-Tree gerendert, mit W102.
+- **Function-based-Indizes** kennt das neutrale Modell nicht. Oracle führt
+  an der Stelle des Ausdrucks eine unsichtbare Systemspalte (`SYS_NC…$`);
+  die als Spaltenname zu übernehmen ergäbe DDL, die auf keinem Ziel läuft.
+  Der Reverse lässt einen solchen Index deshalb aus und meldet `R354`.
+  Ausgenommen ist der Sonderfall, in dem der „Ausdruck" nur der
+  Spaltenname selbst ist: **ein absteigender Index (`… DESC`) ist in Oracle
+  intern function-based** (`INDEX_TYPE = FUNCTION-BASED NORMAL`), sein
+  Ausdruck ist `"SPALTE"`. Der wird auf die Spalte zurückgefaltet und
+  behält seine Richtung, statt als Ausdruck zu gelten.
 - Spatial ist nicht gescoped — jede Tabelle mit `geometry`-Spalten wird
   vor der Generierung geblockt (E052)
 - Keine Tabellenoptionen (kein Tablespace/Storage-Clause)
@@ -630,13 +642,21 @@ transportieren `DESC` verlustarm.
 
 ### 5.2 Index-Typen pro Dialekt
 
-| Neutral | PostgreSQL | MySQL (InnoDB) | SQLite | MSSQL |
-|---|---|---|---|---|
-| `btree` | `USING BTREE` (Default) | `USING BTREE` (Default) | Default | nonclustered (Default) |
-| `hash` | `USING HASH` | Explizites `USING HASH` auf InnoDB nicht unterstützt → `BTREE` + W102 | Nicht unterstützt → Default + W102 | nonclustered + W102 |
-| `gin` | `USING GIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 |
-| `gist` | `USING GIST` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 |
-| `brin` | `USING BRIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 |
+| Neutral | PostgreSQL | MySQL (InnoDB) | SQLite | MSSQL | Oracle |
+|---|---|---|---|---|---|
+| `btree` | `USING BTREE` (Default) | `USING BTREE` (Default) | Default | nonclustered (Default) | Default |
+| `hash` | `USING HASH` | Explizites `USING HASH` auf InnoDB nicht unterstützt → `BTREE` + W102 | Nicht unterstützt → Default + W102 | nonclustered + W102 | Nicht unterstützt → B-Tree + W102 |
+| `gin` | `USING GIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 | Nicht unterstützt → B-Tree + W102 |
+| `gist` | `USING GIST` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 | Nicht unterstützt → B-Tree + W102 |
+| `brin` | `USING BRIN` | Nicht unterstützt → Weglassen + W102 | Nicht unterstützt → Weglassen + W102 | nonclustered + W102 | Nicht unterstützt → B-Tree + W102 |
+| `bitmap` | Nicht unterstützt → `BTREE` + W102 | Nicht unterstützt → `BTREE` + W102 | Nicht unterstützt → Default + W102 | nonclustered + W102 | `CREATE BITMAP INDEX` |
+
+`bitmap` ist dabei der einzige nicht-`btree`-Typ, der auf **keinem** Ziel
+verworfen wird — auch nicht in SQLite, das `gin`/`gist`/`brin` weglässt. Der
+Grund ist inhaltlich: ein Bitmap-Index liegt über gewöhnlichen Spalten und
+beantwortet dieselben Abfragen wie ein B-Tree darüber; nur die Ablageform ist
+Oracle-eigen. Ihn wegzulassen nähme dem Ziel einen Index ohne Not, während ein
+GIN-Index ohne GIN-Zugriffsmethode inhaltlich nichts mehr leistet.
 
 MSSQL-Zusatzregeln: Indexnamen sind tabellenlokal (kein schema-globaler
 Allokator); ohne Modellname gilt `idx_<table>_<cols>`. Schlüsselspalten vom

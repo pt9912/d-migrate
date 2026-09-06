@@ -285,7 +285,7 @@
         },
         "type": {
           "type": "string",
-          "enum": ["btree", "hash", "gin", "gist", "brin", "spgist", "spatial", "fulltext"],
+          "enum": ["btree", "hash", "gin", "gist", "brin", "spgist", "spatial", "fulltext", "bitmap"],
           "default": "btree"
         },
         "unique": {

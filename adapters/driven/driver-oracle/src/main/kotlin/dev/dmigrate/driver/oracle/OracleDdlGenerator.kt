@@ -32,7 +32,7 @@ import dev.dmigrate.driver.ViewQueryTransformer
  *
  * Geltungsbereich: Tabellen (Spalten, Identity, benannte UNIQUE/CHECK/PK,
  * FKs inkl. zirkulaerer und aufgeschobener), einfache B-Tree-Indizes
- * (Function-based/Bitmap folgen in Slice 6), native Sequenzen
+ * (Bitmap nativ; Ausdrucks-Indizes folgen in Slice 6b), native Sequenzen
  * (`CREATE SEQUENCE`, `.NEXTVAL`), Views (`CREATE OR REPLACE VIEW`).
  * Routinen, Trigger und Aggregate werden nicht als PL/SQL gerendert und
  * landen als E053/E054-`skipped_objects` (Slice 9); Partitionierung als

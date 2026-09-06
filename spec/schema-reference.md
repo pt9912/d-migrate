@@ -141,7 +141,7 @@ tables:
           - col1
           - name: col2
             direction: desc   # Optional: asc | desc
-        type: btree            # btree | hash | gin | gist | brin
+        type: btree            # btree | hash | gin | gist | brin | spgist | spatial | fulltext | bitmap
         unique: false          # Default: false
         where: "col2 IS NOT NULL" # Optionales Partial-Index-Praedikat (Raw-SQL)
 

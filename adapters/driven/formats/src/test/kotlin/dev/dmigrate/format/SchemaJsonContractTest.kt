@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.networknt.schema.JsonSchema
 import com.networknt.schema.JsonSchemaFactory
 import com.networknt.schema.SpecVersion
+import dev.dmigrate.core.model.IndexType
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -69,6 +70,21 @@ class SchemaJsonContractTest : FunSpec({
         val doc = loadFixture() as ObjectNode
         doc.put("totally_unknown_top_level", "x")
         schema.validate(doc).size shouldNotBe 0
+    }
+
+    // Der Vertrag geht in BEIDE Richtungen: das Schema muss jeden Indextyp
+    // zulassen, den der Code schreiben kann. Sonst erzeugt d-migrate ein
+    // Modell, das sein eigenes Schema zurueckweist -- und zwar erst beim
+    // Wiedereinlesen, nicht beim Erzeugen.
+    test("schema.json laesst genau die Indextypen zu, die das Modell kennt") {
+        val declared = mapper.readTree(File(repoRoot, "spec/schema.json"))
+            .findParents("enum")
+            .asSequence()
+            .map { it.path("enum") }
+            .first { node -> node.any { it.asText() == "btree" } }
+            .map { it.asText() }
+            .toSet()
+        declared shouldBe IndexType.entries.map { it.name.lowercase() }.toSet()
     }
 
     test("unzulaessiger geometry_type wird abgelehnt") {

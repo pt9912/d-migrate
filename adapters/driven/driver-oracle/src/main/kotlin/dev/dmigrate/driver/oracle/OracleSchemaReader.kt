@@ -118,8 +118,7 @@ class OracleSchemaReader(
             SchemaReaderUtils.buildCheckConstraints(checks)
 
         // Einspaltige, ungefilterte Unique-Indizes sind bereits auf
-        // column.unique gehoben; Function-based-/Bitmap-Steuerung liest
-        // erst der Index-Slice des Plans -- bis dahin ist alles BTREE.
+        // column.unique gehoben, mehrspaltige auf eine UNIQUE-Constraint.
         val indices = indexScan.indices
             .filterNot { it.isUnique && it.columns.size == 1 }
             .filterNot { it.isUnique && it.columns.size > 1 }
@@ -127,10 +126,20 @@ class OracleSchemaReader(
                 IndexDefinition(
                     name = idx.name,
                     columns = idx.indexColumns,
-                    type = IndexType.BTREE,
+                    type = indexTypeOf(idx.type),
                     unique = idx.isUnique,
                 )
             }
+        indexScan.expressionIndexes.forEach { name ->
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R354",
+                objectName = name,
+                message = "Index '$name' on table '$table' is function-based over an expression, " +
+                    "which the neutral model cannot represent; the index was skipped.",
+                hint = "Recreate it manually on the target, or index a generated column instead.",
+            )
+        }
 
         return TableDefinition(
             columns = columns,
@@ -139,6 +148,18 @@ class OracleSchemaReader(
             constraints = constraints,
         )
     }
+
+    /**
+     * `ALL_INDEXES.INDEX_TYPE` auf den neutralen Indextyp. Live gemessen kommen
+     * vier Werte vor: `NORMAL`, `BITMAP` und beide mit `FUNCTION-BASED `
+     * davor -- der Praefix betrifft die Schluesseldarstellung, nicht die
+     * Indexart, deshalb entscheidet allein das Vorkommen von `BITMAP`.
+     * Andere Arten (`DOMAIN`, `IOT - TOP`, `CLUSTER`, `LOB`) fuehrt Oracle zwar
+     * ebenfalls, keine davon ist ein neutral darstellbarer Sekundaerindex; sie
+     * fallen auf [IndexType.BTREE].
+     */
+    private fun indexTypeOf(catalogType: String?): IndexType =
+        if (catalogType?.contains("BITMAP") == true) IndexType.BITMAP else IndexType.BTREE
 
     private fun readViews(
         session: JdbcOperations,

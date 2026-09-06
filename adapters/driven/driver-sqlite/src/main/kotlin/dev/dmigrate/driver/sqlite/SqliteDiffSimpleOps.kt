@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.core.model.isSpatialGeometryIndex
+import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.asDiffDiagnostic
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -98,6 +99,7 @@ internal object SqliteDiffSimpleOps {
                 val geomCol = idx.columnNames.first { op.table.columns[it]?.type is NeutralType.Geometry }
                 SqliteSpatialDiffOps.emitCreateSpatialIndex(op, ctx, tableName, geomCol)
             } else {
+                noteCoveringDegradation(op, ctx, tableName, idx)
                 ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
             }
         }
@@ -243,8 +245,9 @@ internal object SqliteDiffSimpleOps {
 
     /**
      * Was `schema generate` an dieser Stelle meldet, meldet `schema migrate`
-     * auch: SQLite kennt weder INCLUDE-Spalten noch eine Steuerung der Ablage.
-     * Ohne diesen Aufruf warnte nur der Generate-Pfad vor dem Verlust.
+     * auch: SQLite kennt weder INCLUDE-Spalten noch eine Steuerung der Ablage
+     * noch eine Bitmap-Zugriffsmethode. Ohne diesen Aufruf warnte nur der
+     * Generate-Pfad vor dem Verlust.
      */
     private fun noteCoveringDegradation(
         op: DiffOperation,
@@ -253,7 +256,9 @@ internal object SqliteDiffSimpleOps {
         index: IndexDefinition,
     ) {
         val name = index.name ?: table
-        for (note in CoveringIndexDropNote.forDialect(index, name, "SQLite")) {
+        val notes = CoveringIndexDropNote.forDialect(index, name, "SQLite") +
+            BitmapIndexFallbackNote.forDialect(index, name, table, "SQLite")
+        for (note in notes) {
             ctx.addDiagnostic(note.asDiffDiagnostic(op.id))
         }
     }
@@ -270,6 +275,9 @@ internal object SqliteDiffSimpleOps {
                 SqliteSpatialDiffOps.createSpatialIndex(op, ctx, table, op.index)
                 return
             }
+            // Die DOWN-Richtung LEGT den Index an; sie meldet den Verlust
+            // deshalb genauso wie die UP-Richtung.
+            noteCoveringDegradation(op, ctx, table, op.index)
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             return
         }

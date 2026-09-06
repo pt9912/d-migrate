@@ -74,7 +74,19 @@ internal class OracleIndexDdlBuilder(
         }
 
         val notes = mutableListOf<TransformationNote>()
-        if (index.type != IndexType.BTREE) {
+        // Bitmap ist der einzige Nicht-BTREE-Typ, den Oracle nativ rendert.
+        // `UNIQUE BITMAP` gibt es aber nicht (live gemessen: `ORA-00968`) --
+        // ein als eindeutig deklarierter Bitmap-Index wird deshalb ein
+        // eindeutiger B-Tree, denn die Eindeutigkeit ist die staerkere Zusage.
+        val bitmap = index.type == IndexType.BITMAP && !index.unique
+        if (index.type == IndexType.BITMAP && index.unique) {
+            notes += TransformationNote(
+                type = NoteType.WARNING, code = "W102", objectName = indexName,
+                message = "BITMAP index '$indexName' is declared unique, which Oracle does not allow " +
+                    "(there is no UNIQUE BITMAP INDEX); created as a unique B-tree index instead.",
+                hint = "Drop `unique` to get a bitmap index, or keep it and accept the B-tree.",
+            )
+        } else if (index.type != IndexType.BTREE && index.type != IndexType.BITMAP) {
             notes += TransformationNote(
                 type = NoteType.WARNING, code = "W102", objectName = indexName,
                 message = "${index.type.name} index '$indexName' has no Oracle equivalent; created as a " +
@@ -86,6 +98,7 @@ internal class OracleIndexDdlBuilder(
         val sql = buildString {
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
+            if (bitmap) append("BITMAP ")
             append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} ($cols);")
         }
         return DdlStatement(sql, notes)

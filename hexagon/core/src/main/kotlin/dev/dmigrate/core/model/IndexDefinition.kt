@@ -94,6 +94,22 @@ enum class IndexType {
     BTREE, HASH, GIN, GIST, BRIN,
 
     /**
+     * Oracle-Bitmap-Index (`CREATE BITMAP INDEX`). Eigener neutraler Typ statt
+     * Verlust auf [BTREE] beim Reverse: Oracle fuehrt ihn in
+     * `USER_INDEXES.INDEX_TYPE` als eigene Art, er hat andere Eigenschaften
+     * (Speicherform, Sperrverhalten) und ist in Data-Warehouse-Schemata
+     * verbreitet.
+     *
+     * **Nie eindeutig**: `UNIQUE BITMAP INDEX` ist keine gueltige Oracle-Syntax
+     * (live gemessen, `ORA-00968`). Ein als `unique` deklarierter Bitmap-Index
+     * wird deshalb als eindeutiger B-Tree gerendert, mit `W102`.
+     *
+     * Die uebrigen Dialekte kennen ihn nicht und fallen auf ihren Standardtyp
+     * zurueck (`W102`).
+     */
+    BITMAP,
+
+    /**
      * VA3: PostgreSQL/PostGIS SP-GiST-Zugriffsmethode (`USING SPGIST`).
      * SP-GiST = „Space-Partitioned Generalized Search Tree" — generische Indexierung
      * mehrdimensionaler Typen über partitionierte Suchbäume (Quad-Tree, k-d-Tree,

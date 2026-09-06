@@ -2384,6 +2384,19 @@ Volltext-Indizes, Partitionierung oder Geometrie-Spalten betrifft. Ebenso
 beim Versuch, eine bestehende Spalte nachträglich zur Identity-Spalte zu
 machen — Oracle lässt das nicht zu.
 
+**Was passiert mit Oracle-Bitmap-Indizes?**
+Sie bleiben erhalten. `schema reverse` liest sie als eigenen Indextyp, und
+`schema generate` legt sie auf einem Oracle-Ziel wieder als
+`CREATE BITMAP INDEX` an. Auf einem anderen Ziel entsteht ein gewöhnlicher
+Index über denselben Spalten — die Meldung `W102` sagt Ihnen, wo das
+geschehen ist.
+
+Ein Index über einem **Ausdruck** (etwa `UPPER(name)`) lässt sich dagegen
+nicht übertragen; `schema reverse` lässt ihn aus und meldet ihn mit `R354`,
+damit Sie ihn auf dem Ziel von Hand nachziehen können. Ein absteigender
+Index (`… DESC`) ist davon nicht betroffen: er kommt mitsamt seiner
+Sortierrichtung zurück.
+
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
 benötigen Sie Java 21 oder neuer.
@@ -2912,7 +2925,7 @@ Spalten-Fremdschlüssel über `references`:
 | ---- | ------------ |
 | `name` | Indexname |
 | `columns` | Liste aus Spaltennamen **oder** `{ name, direction: asc\|desc, prefix_length: n }` |
-| `type` | `btree` (Default), `hash`, `gin`, `gist`, `brin`, `spgist`, `spatial`, `fulltext` |
+| `type` | `btree` (Default), `hash`, `gin`, `gist`, `brin`, `spgist`, `spatial`, `fulltext`, `bitmap` |
 | `unique` | `true` für Unique-Index |
 | `where` | Prädikat für Partial-Index (Raw-SQL) |
 | `include_columns` | Nicht-Schlüsselspalten eines abdeckenden Index (`INCLUDE`) |

@@ -144,6 +144,26 @@ class OracleDiffObjectOpsTest : FunSpec({
         down(diff).statements.single().sql shouldBe "DROP INDEX \"idx_users_email\";"
     }
 
+    test("AddIndex: a bitmap index keeps its access method in the diff path too") {
+        // Generate und Diff teilen sich OracleIndexDdlBuilder -- diese
+        // Zusicherung haelt fest, dass der Diff-Pfad die Naht wirklich nutzt
+        // und nicht still auf einen gewoehnlichen Index zurueckfaellt.
+        val idx = IndexDefinition(name = "bm_email", columns = listOf(IndexColumn("email")), type = IndexType.BITMAP)
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "users", indicesAdded = listOf(idx))))
+        up(diff).statements.single().sql shouldBe "CREATE BITMAP INDEX \"bm_email\" ON \"users\" (\"email\");"
+        down(diff).statements.single().sql shouldBe "DROP INDEX \"bm_email\";"
+    }
+
+    test("AddIndex: a unique bitmap index falls back to a unique B-tree (there is no UNIQUE BITMAP)") {
+        val idx = IndexDefinition(
+            name = "uq_bm", columns = listOf(IndexColumn("email")), type = IndexType.BITMAP, unique = true,
+        )
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "users", indicesAdded = listOf(idx))))
+        val r = up(diff)
+        r.statements.single().sql shouldBe "CREATE UNIQUE INDEX \"uq_bm\" ON \"users\" (\"email\");"
+        r.diagnostics.any { it.code == "W102" } shouldBe true
+    }
+
     test("DropIndex: up drops, down recreates") {
         val idx = IndexDefinition(name = "idx_users_email", columns = listOf(IndexColumn("email")), type = IndexType.BTREE)
         val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "users", indicesRemoved = listOf(idx))))

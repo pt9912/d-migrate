@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.isSpatialGeometryIndex
+import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.IndexPrefixDropNote
 import dev.dmigrate.driver.ManualActionRequired
@@ -119,7 +120,10 @@ internal class MssqlIndexDdlHelper(
         val notes = IndexPrefixDropNote
             .forDialect(index, indexName, "SQL Server", "a computed column over LEFT(col, n)")
             .toMutableList()
-        if (index.type != IndexType.BTREE) {
+        // BITMAP hat einen eigenen, dialektuebergreifend gleichlautenden
+        // Hinweis -- sonst stuenden hier zwei W102 zur selben Sache.
+        notes += BitmapIndexFallbackNote.forDialect(index, indexName, tableName, "SQL Server")
+        if (index.type != IndexType.BTREE && index.type != IndexType.BITMAP) {
             notes += TransformationNote(
                 type = NoteType.WARNING, code = "W102", objectName = indexName,
                 message = "${index.type.name} index '$indexName' has no SQL Server equivalent; created as a " +

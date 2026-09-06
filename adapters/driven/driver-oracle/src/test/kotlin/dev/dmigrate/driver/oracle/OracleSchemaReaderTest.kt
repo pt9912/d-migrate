@@ -52,6 +52,7 @@ class OracleSchemaReaderTest : FunSpec({
             jdbc.queryList(match { it.contains("SELECT index_name") && it.contains("constraint_type = 'P'") }, any(), any())
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_ind_expressions") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("constraint_type = 'C'") }, any(), any()) } returns emptyList()
     }
 
@@ -66,6 +67,47 @@ class OracleSchemaReaderTest : FunSpec({
         result.schema.views.shouldBeEmptyMap()
         result.schema.sequences.shouldBeEmptyMap()
         result.notes.shouldBeEmpty()
+    }
+
+    test("a bitmap index keeps its type, an expression index is reported instead of guessed") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        stubTableQueries(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_tables") }, "APP") } returns
+            listOf(mapOf("table_name" to "FACTS"))
+        every { jdbc.queryList(match { it.contains("FROM all_tab_columns c") }, "APP", "FACTS") } returns listOf(
+            mapOf(
+                "column_name" to "STATUS", "data_type" to "VARCHAR2", "data_length" to 10,
+                "data_precision" to null, "data_scale" to null, "nullable" to "Y",
+                "column_id" to 1, "data_default" to null,
+                "identity_generation" to null, "identity_sequence" to null,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, "APP", "FACTS") } returns listOf(
+            mapOf(
+                "index_name" to "BM_STATUS", "index_type" to "BITMAP", "uniqueness" to "NONUNIQUE",
+                "column_name" to "STATUS", "column_position" to 1, "descend" to "ASC",
+            ),
+            mapOf(
+                "index_name" to "IX_FN", "index_type" to "FUNCTION-BASED NORMAL", "uniqueness" to "NONUNIQUE",
+                "column_name" to "SYS_NC00006\$", "column_position" to 1, "descend" to "ASC",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_ind_expressions") }, "APP", "FACTS") } returns listOf(
+            mapOf("index_name" to "IX_FN", "column_position" to 1, "column_expression" to "UPPER(\"STATUS\")"),
+        )
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+
+        val indices = result.schema.tables.getValue("FACTS").indices
+        indices.map { it.name } shouldBe listOf("BM_STATUS")
+        indices.single().type shouldBe IndexType.BITMAP
+        // Der Ausdrucks-Index verschwindet nicht stumm: ohne die Meldung
+        // stuende im Ziel eine Tabelle ohne ihn, ohne dass es irgendwo steht.
+        val note = result.notes.single { it.code == "R354" }
+        note.objectName shouldBe "IX_FN"
+        note.severity shouldBe SchemaReadSeverity.WARNING
     }
 
     test("single table with identity pk, fk, unique and non-unique index, check constraint") {
@@ -108,11 +150,11 @@ class OracleSchemaReaderTest : FunSpec({
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, "APP", "ORDERS") } returns listOf(
             mapOf(
-                "index_name" to "UX_EMAIL", "uniqueness" to "UNIQUE",
+                "index_name" to "UX_EMAIL", "index_type" to "NORMAL", "uniqueness" to "UNIQUE",
                 "column_name" to "EMAIL", "column_position" to 1, "descend" to "ASC",
             ),
             mapOf(
-                "index_name" to "IX_CUSTOMER", "uniqueness" to "NONUNIQUE",
+                "index_name" to "IX_CUSTOMER", "index_type" to "NORMAL", "uniqueness" to "NONUNIQUE",
                 "column_name" to "CUSTOMER", "column_position" to 1, "descend" to "ASC",
             ),
         )

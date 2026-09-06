@@ -71,13 +71,26 @@ internal fun registrySchemaAwareCanonicalizer(
  * strukturelle Vergleich (`schema compare`) bleibt streng, nur der
  * Fingerabdruck-Pfad kanonisiert.
  */
+/**
+ * Ob der Dialekt jede Index-Eigenschaft traegt, die das neutrale Modell
+ * fuehrt — dann ist die Projektion unten die Identitaet. Als eigene
+ * Eigenschaft statt als Bedingungskette: die Liste waechst mit jeder neuen
+ * Faehigkeit, und eine vergessene Ergaenzung faellt hier auf, statt sich in
+ * einem `&&`-Ausdruck zu verstecken.
+ */
+private val DialectCapabilities.carriesEveryIndexProperty: Boolean
+    get() = listOf(
+        supportsIndexIncludeColumns,
+        supportsClusteredIndexes,
+        namesFullTextIndexes,
+        supportsBitmapIndexes,
+    ).all { it }
+
 fun capabilityIndexCanonicalizer(
     dialect: DatabaseDialect,
 ): (IndexDefinition) -> IndexDefinition {
     val caps = DialectCapabilities.forDialect(dialect)
-    if (caps.supportsIndexIncludeColumns && caps.supportsClusteredIndexes && caps.namesFullTextIndexes) {
-        return { it }
-    }
+    if (caps.carriesEveryIndexProperty) return { it }
     return { index ->
         index.copy(
             includeColumns = if (caps.supportsIndexIncludeColumns) index.includeColumns else emptyList(),
@@ -87,6 +100,14 @@ fun capabilityIndexCanonicalizer(
             // Seiten auf denselben Wert, sonst driftete der Round-Trip an einem
             // Namen, den niemand vergeben hat.
             name = if (index.type == IndexType.FULLTEXT && !caps.namesFullTextIndexes) null else index.name,
+            // Dasselbe fuer die Zugriffsmethode: wo kein Bitmap-Index
+            // ablegbar ist, legt der Generate-Pfad einen gewoehnlichen an
+            // (mit W102), und genau den liest der Reverse zurueck.
+            type = if (index.type == IndexType.BITMAP && !caps.supportsBitmapIndexes) {
+                IndexType.BTREE
+            } else {
+                index.type
+            },
         )
     }
 }

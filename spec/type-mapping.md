@@ -354,8 +354,11 @@ mehr sicher bindbar. `TIMESTAMP WITH TIME ZONE` liest als Standard-
 - Materialized Views werden als reguläre Views gelesen.
 - `ALL_SEQUENCES` führt nur `LAST_NUMBER`, nicht den ursprünglichen
   `START WITH`-Wert (R345).
-- Function-based- und Bitmap-Indizes werden noch nicht unterschieden —
-  alle Indizes gelten als `BTREE`.
+- Indizes über einem echten Ausdruck (`UPPER(nm)`) haben im neutralen
+  Modell keine Entsprechung; sie werden ausgelassen und mit `R354`
+  gemeldet. Bitmap-Indizes dagegen werden als eigener Typ gelesen
+  (`INDEX_TYPE` enthält `BITMAP`), und ein absteigender Index — in Oracle
+  intern ebenfalls function-based — wird auf seine Spalte zurückgefaltet.
 - `CHAR(1)` faltet **nicht** auf `boolean` (anders als `NUMBER(1)`): kein
   ebenso enges Signal, ein Einzelzeichen trägt oft einen echten
   Status-/Kategorie-Code.

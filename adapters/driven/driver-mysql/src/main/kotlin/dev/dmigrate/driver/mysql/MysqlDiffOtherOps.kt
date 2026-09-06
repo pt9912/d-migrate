@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
+import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlCheckEnforcementResolver
@@ -230,10 +231,10 @@ internal object MysqlDiffOtherOps {
 
     /**
      * Was `schema generate` an dieser Stelle meldet, meldet `schema migrate`
-     * auch: MySQL kennt weder INCLUDE-Spalten noch eine Steuerung der Ablage,
-     * und beides faellt beim Anlegen weg. Ohne diesen Aufruf warnte der
-     * Generate-Pfad vor einem Verlust, den der Migrate-Pfad stillschweigend
-     * hinnimmt.
+     * auch: MySQL kennt weder INCLUDE-Spalten noch eine Steuerung der Ablage
+     * noch eine Bitmap-Zugriffsmethode, und alle drei fallen beim Anlegen weg.
+     * Ohne diesen Aufruf warnte der Generate-Pfad vor einem Verlust, den der
+     * Migrate-Pfad stillschweigend hinnimmt.
      */
     private fun noteCoveringDegradation(
         op: DiffOperation,
@@ -242,7 +243,9 @@ internal object MysqlDiffOtherOps {
         index: IndexDefinition,
     ) {
         val name = index.name ?: table
-        for (note in CoveringIndexDropNote.forDialect(index, name, "MySQL")) {
+        val notes = CoveringIndexDropNote.forDialect(index, name, "MySQL") +
+            BitmapIndexFallbackNote.forDialect(index, name, table, "MySQL")
+        for (note in notes) {
             ctx.recordDiagnostic(note.asDiffDiagnostic(op.id))
         }
     }

@@ -2,11 +2,12 @@
 
 > **Status:** In Progress (Stand 2026-09-06). Alle fünf
 > Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0,
-> 1, 1a, 2, 3, 3b, 4a, 4b und 5 (5a–5e).** `schema migrate` ist damit für
-> Oracle nutzbar, und der Sample-DB-Harness fährt Pagila in **beide**
-> Richtungen. Offen sind die Ausbau-Slices **6–11** (funktionsbasierte/
-> Bitmap-Indizes, Partitionierung, Volltext, Routinen/Trigger, Materialized
-> Views, Profiling); `DialectCommandGate` führt nur noch `data profile`.
+> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e) und 6a.** `schema migrate` ist damit für
+> Oracle nutzbar, der Sample-DB-Harness fährt Pagila in **beide**
+> Richtungen, und Bitmap-Indizes gehen über alle fünf Dialekte durch. Offen
+> sind **6b** (Indizes über echten Ausdrücken) und die Ausbau-Slices **7–11**
+> (Partitionierung, Volltext, Routinen/Trigger, Materialized Views,
+> Profiling); `DialectCommandGate` führt nur noch `data profile`.
 >
 > Die datierten Status-Blöcke unten sind **Momentaufnahmen** und werden nicht
 > rückwirkend umgeschrieben — was dort „bis Slice 5 gesperrt" heißt, war zum
@@ -716,7 +717,7 @@ trägt bislang **keinen** `ORACLE`-Wert, auch nicht vorbereitend.
 | Binary | `BLOB`, `RAW` | Kern |
 | Paginierung | `ROWNUM` (klassisch), `FETCH FIRST n ROWS ONLY` (12c+) | Kern — betrifft DataReader-Chunking |
 | Quoting | `"Anführungszeichen"`; **UPPERCASE-Default ohne Quoting** (Gegenteil von PG/MySQL/SQLite) | **Entscheidung** — Case-Fallstrick, siehe ADR 0052 |
-| Indizes | Function-based-Indizes, Bitmap-Indizes | Ausbau-Slice |
+| Indizes | Bitmap-Indizes (Slice 6a, gebaut), Function-based-Indizes | Ausbau-Slice (6b) |
 | Partitionierung | Range/List/Hash/Composite — strukturell reichhaltiger als PG | Ausbau-Slice |
 | Materialized Views | **nativ vorhanden**, echtes Refresh-Modell (FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Ausbau-Slice (10) — Anschluss ans bestehende Modell, keine Lücke |
 | Volltext | Oracle Text, eigene Indextypen (`CONTEXT`/`CTXCAT`) | Ausbau-Slice — Muster aus dem Fulltext-Slice |
@@ -771,7 +772,8 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **5e-1** ✅ | Rename-Policies (Objekt + Abhängigkeit) und View-Abhängigkeiten aus `ALL_DEPENDENCIES` — Vorbedingung für den Gate-Fall | dito |
 | **5e-2** ✅ | Verdrahtung: `MigrateRendererRegistry`, `DialectCommandGate`, CHECK-Preflight-Sonde, `ColumnGeneration`-Kanonisierung im Fingerprint, `SequenceCapabilityDefaults` | **`schema migrate` ist nutzbar** |
 | **5e-3** ✅ | Cross-Dialekt-Matrix-Sweep-Beitritt, Live-Round-Trip, Handbücher (der CLI-E2E kam bereits mit 5e-2) | Matrix-Abdeckung + Live-Beleg + Doku |
-| **6** | Function-based- + Bitmap-Indizes, Reverse + Generate + Diff | volle Index-Treue |
+| **6a** ✅ | Bitmap-Indizes als eigener neutraler Typ: Reverse (`INDEX_TYPE`), Generate + Diff (`CREATE BITMAP INDEX`), Rückfall + `W102` auf den vier anderen Dialekten, Wire-Format (`schema.json`, Parser). Dazu die Rückfaltung des DESC-Index, der in Oracle intern function-based ist | Bitmap-Treue über alle Dialekte |
+| **6b** | Indizes über echten Ausdrücken (`UPPER(nm)`): Darstellung im neutralen Modell (`IndexColumn` trägt heute keinen Ausdruck), Generate je Dialekt (PG/SQLite/MySQL 8 können es nativ, MSSQL braucht eine berechnete Spalte). Bis dahin lässt der Reverse sie aus und meldet `R354` | volle Index-Treue |
 | **7** | Partitionierung: Range/List/Hash/Composite (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster) | Partitionstabellen im Round-Trip |
 | **8** | Volltext: Oracle Text (`CONTEXT`/`CTXCAT`, Muster aus dem Fulltext-Slice) | Volltext-Indizes Generate + Reverse |
 | **9** | Routinen/Trigger (standalone PL/SQL, `CREATE OR REPLACE`) | Routinen-Migration |
@@ -867,8 +869,10 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
   bereits) — `ReplaceView` ist billig wie bei MSSQLs `CREATE OR ALTER VIEW`.
 - **Geblockt bis zum jeweiligen Ausbau-Slice**, identisch zum Generate-Pfad:
   Routinen/Trigger/Aggregate/Composite-Typen (E053/E054, Slice 9),
-  Partitionierung (E055, Slice 7), Function-based-/Bitmap-Indizes (E057,
-  Slice 6), Materialized Views (nicht gebaut, Slice 10).
+  Partitionierung (E055, Slice 7), Materialized Views (nicht gebaut,
+  Slice 10). **Nicht** dazu gehören Bitmap-Indizes: die rendert der
+  geteilte `OracleIndexDdlBuilder` seit Slice 6a in beiden Pfaden; E057
+  trägt im Index-Pfad nur noch der Volltext-Fall.
 
 ### Sub-Slice-Schnitt
 
@@ -882,6 +886,61 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | **5e-1** ✅ | — | Rename-Vorbedingung: `OracleRenameDependencyPolicy` + `OracleObjectRenamePolicy` (beide Registries) und View-Abhängigkeiten aus `ALL_DEPENDENCIES`. Oracle-Besonderheit: auch `classifyColumnRename` projiziert Sichten neu | Unit-Tests + Planer-Durchlauf, der die View-Absorption pinnt |
 | **5e-2** ✅ | — | Verdrahtung: `MigrateRendererRegistry` liefert den Oracle-Renderer, `DialectCommandGate` verliert `SCHEMA_MIGRATE`, Oracle-CHECK-Preflight-Sonde, `canonicalizeGeneration`-Hook im Fingerprint, `supportsCurrentValuePreserve` → `true` und Beitritt zu `PRESERVE_DIALECTS`. Alle drei Vorbedingungen damit erledigt (Rename-Policies in 5e-1, Fingerprint-Drift und `CheckPreflightProbeRunner`-Stub hier) | **`schema migrate` ist für oracle nutzbar** |
 | **5e-3** ✅ | — | Beitritt zum Cross-Dialekt-Matrix-Sweep (Carve-outs auf D.3/E.2), Live-Round-Trip über die echten Runner, Handbücher und `connection-config-spec` | Matrix-Abdeckung + Doku |
+
+## Slice 6 im Detail — Indizes
+
+### Warum der Schnitt bei 6a/6b liegt
+
+Eine Messung gegen `gvenzl/oracle-free:23-slim-faststart` (2026-09-06) zeigt,
+dass „function-based" und „bitmap" in `ALL_INDEXES.INDEX_TYPE` **zwei
+unabhängige Achsen** sind, nicht eine Liste:
+
+| Angelegt als | `INDEX_TYPE` | Spalte laut `ALL_IND_COLUMNS` |
+| --- | --- | --- |
+| `CREATE BITMAP INDEX (status)` | `BITMAP` | `STATUS` |
+| `CREATE INDEX (UPPER(nm))` | `FUNCTION-BASED NORMAL` | `SYS_NC00006$` |
+| `CREATE BITMAP INDEX (LOWER(status))` | `FUNCTION-BASED BITMAP` | `SYS_NC00007$` |
+| `CREATE INDEX (amt DESC)` | `FUNCTION-BASED NORMAL` | `SYS_NC00005$`, `DESCEND=DESC` |
+| `CREATE UNIQUE BITMAP INDEX (amt)` | — | **ORA-00968** |
+
+Daraus folgt der Schnitt: die Bitmap-Achse ist eine reine
+Zugriffsmethoden-Frage und über alle fünf Dialekte darstellbar (6a). Die
+Ausdrucks-Achse verlangt dagegen ein Feld im neutralen Modell, das es nicht
+gibt — `IndexColumn` trägt Name, Richtung und Prefix-Länge, keinen Ausdruck
+(6b).
+
+Die vierte Zeile ist der Grund, warum 6a mehr umfasst als „Bitmap": ein
+absteigender Index ist in Oracle **intern** function-based, und sein
+Ausdruck ist nur der Spaltenname. Ohne Rückfaltung liest der Reverse dort
+`SYS_NC00005$` — einen Spaltennamen, den kein Ziel kennt. Das war der Befund
+aus `oracle-desc-index-becomes-function-based.md` (mit 6a erledigt und
+entfernt).
+
+### Was 6a anfasst
+
+- **Reverse:** `OracleMetadataQueries.scanIndexes` liest `INDEX_TYPE` mit und
+  löst `ALL_IND_EXPRESSIONS` auf. Ein Ausdruck, der nur aus einem zitierten
+  Bezeichner besteht, ist die Spalte selbst und wird zurückgefaltet; jeder
+  andere macht den Index undarstellbar → ausgelassen, `R354`.
+- **Neutrales Modell:** `IndexType.BITMAP`, dazu `spec/schema.json` und
+  `toIndexType()`. Beide Listen waren handgepflegt — ein neuer Enum-Wert war
+  schreibbar, aber nicht lesbar. Zwei erschöpfende Tests über
+  `IndexType.entries` schließen das für künftige Zuwächse.
+- **Generate + Diff (Oracle):** `CREATE BITMAP INDEX` über den geteilten
+  `OracleIndexDdlBuilder`; `unique` + `bitmap` fällt auf einen eindeutigen
+  B-Tree zurück (ORA-00968) mit `W102`.
+- **Die vier anderen Dialekte:** gewöhnlicher Index + `W102` über den
+  geteilten `BitmapIndexFallbackNote`. Für SQLite ist das eine bewusste
+  **Ausnahme** von seiner pauschalen Nicht-BTREE-Regel: `gin`/`gist`/`brin`
+  lässt es weg, weil sie ohne ihre Zugriffsmethode nichts mehr leisten — ein
+  Bitmap-Index dagegen liegt über gewöhnlichen Spalten.
+
+### Was 6b offen lässt
+
+Indizes über echten Ausdrücken. Bis dahin sind sie nicht still verloren,
+sondern gemeldet (`R354`). PostgreSQL, SQLite und MySQL 8 können sie nativ,
+SQL Server braucht eine berechnete Spalte — der Schnitt liegt also im
+Generate-Pfad, nicht im Reverse.
 
 ## Offene Punkte
 

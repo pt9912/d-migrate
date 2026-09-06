@@ -20,6 +20,7 @@ internal fun String.toIndexType(): IndexType = when (lowercase()) {
     "spgist" -> IndexType.SPGIST
     "spatial" -> IndexType.SPATIAL
     "fulltext" -> IndexType.FULLTEXT
+    "bitmap" -> IndexType.BITMAP
     else -> throw IllegalArgumentException("Unknown index type: $this")
 }
 

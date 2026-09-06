@@ -19,6 +19,20 @@ internal fun pgAccessMethod(type: IndexType): String =
     if (type == IndexType.SPATIAL) "GIST" else type.name
 
 /**
+ * Die `USING …`-Klausel eines Index — leer, wenn PostgreSQLs Standardmethode
+ * gilt. Einzige Stelle, die darüber entscheidet, damit Generate- und
+ * Diff-Pfad nicht auseinanderlaufen.
+ *
+ * Leer bleibt sie für [IndexType.BTREE] (ohnehin der Default) **und** für
+ * [IndexType.BITMAP]: eine Zugriffsmethode `bitmap` gibt es in PostgreSQL
+ * nicht, `USING BITMAP` wäre schlicht ungültiges SQL. Der Index wird deshalb
+ * als gewöhnlicher B-Tree über dieselben Spalten gelegt; sichtbar gemacht wird
+ * das über [dev.dmigrate.driver.BitmapIndexFallbackNote].
+ */
+internal fun pgUsingClause(type: IndexType): String =
+    if (type == IndexType.BTREE || type == IndexType.BITMAP) "" else " USING ${pgAccessMethod(type)}"
+
+/**
  * ADR 0025: the PostgreSQL access method a [IndexType.FULLTEXT] index expands to — the
  * recorded [IndexDefinition.fullTextAccessMethod] **clamped** to GIN/GiST (GiST by default).
  * A model carrying any other value (e.g. a hand-authored `full_text_access_method: btree`

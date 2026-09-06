@@ -106,7 +106,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         }
         // VA3: der neutrale räumliche Index (SPATIAL) wird in PostGIS als GIST-
         // Zugriffsmethode emittiert (PostgreSQL kennt kein `USING SPATIAL`).
-        val using = if (idx.type != IndexType.BTREE) " USING ${pgAccessMethod(idx.type)}" else ""
+        val using = pgUsingClause(idx.type)
         val cols = idx.columns.joinToString(", ") { col ->
             quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
         }

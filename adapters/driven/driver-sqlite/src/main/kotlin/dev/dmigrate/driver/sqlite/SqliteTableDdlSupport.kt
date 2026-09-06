@@ -199,7 +199,11 @@ internal class SqliteTableDdlSupport(
         if (geometryColumn != null) {
             return listOf(spatialIndexStatement(tableName, geometryColumn, indexName, options))
         }
-        if (index.type != IndexType.BTREE) {
+        // Bitmap ist von der pauschalen Regel darunter ausgenommen: er
+        // indiziert gewoehnliche Spalten, nur die Ablageform ist Oracle-eigen --
+        // ein B-Tree darueber beantwortet dieselben Abfragen. Ihn zu verwerfen
+        // naehme dem Ziel einen Index ohne Not.
+        if (index.type != IndexType.BTREE && index.type != IndexType.BITMAP) {
             return listOf(
                 DdlStatement(
                     "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",
@@ -232,7 +236,8 @@ internal class SqliteTableDdlSupport(
             append(";")
         }
         val notes = IndexPrefixDropNote.forDialect(index, indexName, "SQLite", "substr(col, 1, n)") +
-            CoveringIndexDropNote.forDialect(index, indexName, "SQLite")
+            CoveringIndexDropNote.forDialect(index, indexName, "SQLite") +
+            BitmapIndexFallbackNote.forDialect(index, indexName, tableName, "SQLite")
         return listOf(DdlStatement(sql, notes))
     }
 

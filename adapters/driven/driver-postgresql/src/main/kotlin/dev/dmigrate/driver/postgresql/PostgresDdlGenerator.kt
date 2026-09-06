@@ -237,10 +237,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
             append("INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}")
-            // Omit USING for BTREE since it's the default. VA3: SPATIAL → GIST.
-            if (index.type != IndexType.BTREE) {
-                append(" USING ${pgAccessMethod(index.type)}")
-            }
+            append(pgUsingClause(index.type))
             append(" ($cols)")
             // PostgreSQL traegt INCLUDE seit 11 nativ; die Steuerung der Ablage kennt
             // es nicht -- `CLUSTER` ist dort eine einmalige Reorganisation, keine
@@ -250,6 +247,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             append(";")
         }
         val notes = IndexPrefixDropNote.forDialect(index, indexName, "PostgreSQL", "left(col, n)").toMutableList()
+        notes += BitmapIndexFallbackNote.forDialect(index, indexName, tableName, "PostgreSQL")
         if (index.clustered) {
             notes += CoveringIndexDropNote.forDialect(
                 index.copy(includeColumns = emptyList()), indexName, "PostgreSQL",

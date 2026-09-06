@@ -98,18 +98,21 @@ class OracleMetadataQueriesTest : FunSpec({
                 queryList(match { it.contains("FROM all_indexes i") }, "APP", "T")
             } returns listOf(
                 mapOf(
-                    "index_name" to "SYS_C001", "uniqueness" to "UNIQUE",
+                    "index_name" to "SYS_C001", "index_type" to "NORMAL", "uniqueness" to "UNIQUE",
                     "column_name" to "ID", "column_position" to 1, "descend" to "ASC",
                 ),
                 mapOf(
-                    "index_name" to "SYS_C002", "uniqueness" to "UNIQUE",
+                    "index_name" to "SYS_C002", "index_type" to "NORMAL", "uniqueness" to "UNIQUE",
                     "column_name" to "EMAIL", "column_position" to 1, "descend" to "ASC",
                 ),
                 mapOf(
-                    "index_name" to "IX_NAME", "uniqueness" to "NONUNIQUE",
+                    "index_name" to "IX_NAME", "index_type" to "NORMAL", "uniqueness" to "NONUNIQUE",
                     "column_name" to "NAME", "column_position" to 1, "descend" to "DESC",
                 ),
             )
+            every {
+                queryList(match { it.contains("FROM all_ind_expressions") }, "APP", "T")
+            } returns emptyList()
         }
         val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
         // SYS_C001 traegt die PK und ist ausgeschlossen (schon ueber
@@ -120,6 +123,48 @@ class OracleMetadataQueriesTest : FunSpec({
         scan.indices[0].isUnique shouldBe true
         scan.indices[1].isUnique shouldBe false
         scan.indices[1].directions shouldBe listOf(IndexSortDirection.DESC)
+    }
+
+    // Die Katalogwerte stammen aus einer Messung gegen gvenzl/oracle-free:23:
+    // `CREATE BITMAP INDEX (status)` -> BITMAP, `(LOWER(status))` ->
+    // FUNCTION-BASED BITMAP, `(amt DESC)` -> FUNCTION-BASED NORMAL mit der
+    // unsichtbaren Spalte SYS_NC00005$ und dem Ausdruck "AMT".
+    test("scanIndexes carries the catalog index type through") {
+        val jdbc = indexMock(
+            rows = listOf(
+                indexRow("BM_STATUS", "BITMAP", "STATUS"),
+                indexRow("IX_PLAIN", "NORMAL", "AMT"),
+            ),
+        )
+        val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
+        scan.indices.map { it.name to it.type } shouldBe listOf(
+            "BM_STATUS" to "BITMAP",
+            "IX_PLAIN" to "NORMAL",
+        )
+        scan.expressionIndexes shouldBe emptyList()
+    }
+
+    test("scanIndexes folds a DESC index back onto its real column") {
+        val jdbc = indexMock(
+            rows = listOf(indexRow("IX_DESC", "FUNCTION-BASED NORMAL", "SYS_NC00005\$", descend = "DESC")),
+            expressions = listOf(expressionRow("IX_DESC", "\"AMT\"")),
+        )
+        val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
+        // Ohne die Rueckfaltung stuende hier der Systemspaltenname, und der
+        // Generate-Pfad schriebe einen Index auf eine nicht existente Spalte.
+        scan.indices.single().columns shouldBe listOf("AMT")
+        scan.indices.single().directions shouldBe listOf(IndexSortDirection.DESC)
+        scan.expressionIndexes shouldBe emptyList()
+    }
+
+    test("scanIndexes reports an index over a genuine expression instead of emitting it") {
+        val jdbc = indexMock(
+            rows = listOf(indexRow("IX_FN", "FUNCTION-BASED NORMAL", "SYS_NC00006\$")),
+            expressions = listOf(expressionRow("IX_FN", "UPPER(\"NM\")")),
+        )
+        val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
+        scan.indices shouldBe emptyList()
+        scan.expressionIndexes shouldBe listOf("IX_FN")
     }
 
     test("listCheckConstraints drops Oracle's implicit NOT-NULL checks") {
@@ -186,3 +231,27 @@ class OracleMetadataQueriesTest : FunSpec({
         sql.captured shouldContain "'PROCEDURE', 'FUNCTION', 'TRIGGER', 'PACKAGE'"
     }
 })
+
+private fun indexRow(
+    name: String,
+    type: String,
+    column: String,
+    position: Int = 1,
+    descend: String = "ASC",
+    uniqueness: String = "NONUNIQUE",
+): Map<String, Any?> = mapOf(
+    "index_name" to name, "index_type" to type, "uniqueness" to uniqueness,
+    "column_name" to column, "column_position" to position, "descend" to descend,
+)
+
+private fun expressionRow(name: String, expression: String, position: Int = 1): Map<String, Any?> =
+    mapOf("index_name" to name, "column_position" to position, "column_expression" to expression)
+
+private fun indexMock(
+    rows: List<Map<String, Any?>>,
+    expressions: List<Map<String, Any?>> = emptyList(),
+): JdbcOperations = mockk {
+    every { queryList(match { it.contains("constraint_type = 'P'") }, "APP", "T") } returns emptyList()
+    every { queryList(match { it.contains("FROM all_indexes i") }, "APP", "T") } returns rows
+    every { queryList(match { it.contains("FROM all_ind_expressions") }, "APP", "T") } returns expressions
+}

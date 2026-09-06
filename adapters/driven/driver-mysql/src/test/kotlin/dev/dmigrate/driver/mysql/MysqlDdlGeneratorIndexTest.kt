@@ -376,4 +376,28 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
 
         ddl shouldContain "CREATE UNIQUE INDEX `idx_cache_hash` ON `cache` USING BTREE (`hash_key`);"
     }
+
+    test("a BITMAP index on unbounded TEXT hits the same W125 guard (I-08)") {
+        // Der Waechter haengt an den Typen, die wirklich ein CREATE INDEX
+        // emittieren -- BITMAP tut das seit Slice 6a. Ohne den Eintrag lief
+        // es daran vorbei und MySQL antwortete mit ERROR 1170, ohne dass
+        // irgendetwas gemeldet worden waere.
+        val schema = emptySchema(
+            tables = mapOf(
+                "docs" to table(
+                    columns = mapOf("body" to col(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "bm_docs_body",
+                            columns = listOf(IndexColumn("body")),
+                            type = IndexType.BITMAP,
+                        )
+                    )
+                )
+            )
+        )
+        val result = generator.generate(schema)
+        result.render() shouldNotContain "INDEX `bm_docs_body` ON"
+        result.notes.any { it.code == "W125" && it.objectName == "bm_docs_body" } shouldBe true
+    }
 })

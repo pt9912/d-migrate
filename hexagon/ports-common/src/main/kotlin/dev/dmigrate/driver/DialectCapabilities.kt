@@ -81,6 +81,20 @@ data class DialectCapabilities(
      */
     val namesFullTextIndexes: Boolean = true,
     /**
+     * Ob der Dialekt einen Bitmap-Index als eigene Zugriffsmethode traegt.
+     * Nur Oracle (`CREATE BITMAP INDEX`); die uebrigen vier legen einen
+     * gewoehnlichen Index an und melden das (`W102`).
+     *
+     * Fuer den Fingerabdruck heisst das: was der Zielserver nicht als
+     * Bitmap ablegt, kann sein Reverse auch nicht als Bitmap zurueckgeben —
+     * er liest `btree`. Ohne die Projektion meldete der Post-Compare nach
+     * jedem `migrate --execute` eines Oracle-Schemas gegen PostgreSQL,
+     * MySQL, SQLite oder SQL Server Drift fuer eine Migration, die genau
+     * das getan hat, was verlangt war. Dieselbe Begruendung wie bei
+     * [namesFullTextIndexes].
+     */
+    val supportsBitmapIndexes: Boolean = false,
+    /**
      * Ob der Fingerabdruck sich auf den Namen der Sequenz hinter einer
      * IDENTITY-Spalte stuetzen darf.
      *
@@ -228,6 +242,7 @@ data class DialectCapabilities(
                 supportsClusteredIndexes = false,
                 namesFullTextIndexes = true,
                 namesIdentitySequences = false,
+                supportsBitmapIndexes = true,
                 batchSeparator = null,
             )
         }

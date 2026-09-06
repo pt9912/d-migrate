@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
+import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ViewQueryTransformer
@@ -179,7 +180,9 @@ internal object PostgresDiffOtherOps {
      * Wie im Generate-Pfad: PostgreSQL traegt `INCLUDE` nativ, eine Steuerung der
      * Ablage kennt es nicht -- `CLUSTER` ist dort eine einmalige Reorganisation.
      * Gemeldet wird deshalb nur W143; die INCLUDE-Spalten werden ausgeblendet,
-     * damit kein W142 entsteht, das hier nichts zu sagen haette.
+     * damit kein W142 entsteht, das hier nichts zu sagen haette. Dazu der
+     * Wechsel der Zugriffsmethode bei einem Bitmap-Index (W102), den
+     * PostgreSQL nicht kennt.
      */
     private fun noteStorageDegradation(
         op: DiffOperation,
@@ -187,9 +190,14 @@ internal object PostgresDiffOtherOps {
         table: String,
         index: IndexDefinition,
     ) {
-        if (!index.clustered) return
         val name = index.name ?: table
-        for (note in CoveringIndexDropNote.forDialect(index.copy(includeColumns = emptyList()), name, "PostgreSQL")) {
+        val notes = BitmapIndexFallbackNote.forDialect(index, name, table, "PostgreSQL") +
+            if (index.clustered) {
+                CoveringIndexDropNote.forDialect(index.copy(includeColumns = emptyList()), name, "PostgreSQL")
+            } else {
+                emptyList()
+            }
+        for (note in notes) {
             val diagnostic = note.asDiffDiagnostic(op.id)
             ctx.addDiagnostic(
                 code = diagnostic.code,
@@ -206,6 +214,9 @@ internal object PostgresDiffOtherOps {
             if (!guardSpatialIndex(op, op.index, ctx, table)) return
             if (!guardIndexOpClass(op, op.index, ctx, table)) return
             val index = ctx.resolveFullTextIndex(op, table, op.index) ?: return
+            // Die DOWN-Richtung LEGT den Index an; sie meldet den Verlust
+            // deshalb genauso wie die UP-Richtung.
+            noteStorageDegradation(op, ctx, table, index)
             ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
             return
         }
