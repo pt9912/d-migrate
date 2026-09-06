@@ -303,6 +303,77 @@ verstecktes else, aber auch keine falsche Terminzusage.
 | `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` |
 | `data profile` (CLI + MCP-Job) | Slice 11 | Gate |
 
+## Slice 5 im Detail — Diff/Migrate für Oracle
+
+### Warum dieser Slice einen Schnitt braucht
+
+`DiffOperation` hat 42 Arten (identisch zur MSSQL-Zählung). Slice 5 ist damit
+auch für Oracle größer als Slices 1–4 zusammen. Der Schnitt unten folgt der
+Familien-Gliederung, die MSSQLs `renderOp`-Dispatch bereits etabliert hat
+(`MssqlDiffTableOps`/`MssqlDiffObjectOps`/`MssqlDiffSequenceOps`/
+`MssqlDiffViewOps`/`MssqlDiffCustomTypeOps`) — nicht einer erfundenen
+Reihenfolge. Renderer implementieren `DiffDdlGenerator`
+(`DiffDdlGenerator.kt`, `generateUp`/`generateDown`, dialektunabhängig).
+
+### Was Slice 5 ausser dem Renderer anfasst
+
+| Naht | Heute | Nach Slice 5 |
+| --- | --- | --- |
+| `MigrateRendererRegistry.forDialect` | `ORACLE -> null` | liefert `OracleDiffDdlGenerator()` |
+| `DialectCommandGate` | `SCHEMA_MIGRATE` gated | Eintrag entfällt (nur `DATA_PROFILE` bleibt, Slice 11) |
+| `SequenceCapabilityDefaults` (Oracle-Block) | `supportsCurrentValuePreserve = false` | `true` (Sub-Slice 5d) |
+| `MatrixCell.ALL_DIALECTS` | Oracle fehlt in der Liste | beitreten, mit Carve-outs für die Zellen, die Oracle heute schon blockt (Materialized View, Trigger) |
+| `RenameProjectionCapabilitiesFactory` | **bereits verdrahtet** (`ORACLE -> RenameProjectionDialect.ORACLE`) | keine Änderung nötig — nur Verifikation unter echtem Sequence-/Tabellen-Rename |
+| `spec/neutral-model-spec.md` §9 (Sequence-Capability-Matrix) | Oracle-Spalte fehlt (seit Slice 1 als Beifang vertagt) | Spalte ergänzt, spiegelt `supportsCurrentValuePreserve = true` |
+
+### Oracle-Eigenheiten, die den Schnitt gegenüber MSSQL verschieben
+
+- **DEFAULT ist Spalteneigenschaft, kein benanntes Objekt** (wie PostgreSQL,
+  siehe Kommentar in `OracleColumnConstraintHelper`) — MSSQLs teuerster Fund
+  (Default-Constraint-Dreischritt mit Katalog-Namenssuche) entfällt
+  strukturell. `ALTER TABLE ... MODIFY <col> DEFAULT <x>` direkt möglich.
+- **Named-Constraint-Auflösung im Fremdschema entfällt.** Oracle rendert
+  PK/UNIQUE/CHECK/FK bereits durchgehend konventionsbasiert benannt
+  (`pk_`/`uq_`/`ck_`, seit Slice 2) — kein MSSQL-artiges Auto-Namensproblem.
+- **Identity-Änderung vermutlich ohne Tabellen-Neubau möglich.** Slice 3 nutzt
+  bereits produktiv `ALTER TABLE ... MODIFY <col> GENERATED <mode> AS
+  IDENTITY` (Generation-Toggle während Import) — das spricht dafür, dass
+  Oracle Typ-/Generation-Änderungen an Identity-Spalten in-place erlaubt,
+  anders als MSSQLs harte Immutabilität (Msg 156, Rebuild-Zwang). **Live am
+  Testcontainer zu verifizieren, bevor 5a beginnt** — dieser Dialekt hat in
+  Slice 3 bereits zweimal eine ähnliche Annahme live widerlegt (kein
+  `OVERRIDING SYSTEM VALUE`, `ALTER SEQUENCE` scheitert an
+  System-Sequenzen). Bestätigt sich die In-place-Änderung, entfällt Oracles
+  Äquivalent zu MSSQLs Sub-Slice 5a-2 (IDENTITY-Rebuild) ersatzlos.
+- **Sequenzen: zwei getrennte Welten, nicht verwechseln.** Sub-Slice 5ds
+  `CreateSequence`/`AlterSequence`/`AlterSequenceCurrentValue` betreffen
+  eigenständige, benannte `SequenceDefinition`-Objekte (Slice 2 rendert sie
+  bereits) — nicht die system-generierten Identity-Sequenzen (`ISEQ$$_n`),
+  die in Slice 3 das `ORA-32793`-Problem verursachten. Eine normale benannte
+  Sequenz sollte `ALTER SEQUENCE seq RESTART START WITH n` klaglos
+  akzeptieren — live zu verifizieren, aber strukturell ein anderer Fall.
+- **Enum/Domain haben kein Objekt** (wie MSSQL) — `AlterCustomType` fächert
+  analog auf jede nutzende Spalte auf. Oracle-DOMAIN faltet laut
+  Slice-4a-Fund aber IMMER auf CLOB (kein Basistyp-Versuch, anders als
+  MSSQL) — vereinfacht `AlterCustomType` für DOMAIN-Fälle.
+- **`CREATE OR REPLACE VIEW FORCE` existiert nativ** (Slice 2 nutzt es
+  bereits) — `ReplaceView` ist billig wie bei MSSQLs `CREATE OR ALTER VIEW`.
+- **Geblockt bis zum jeweiligen Ausbau-Slice**, identisch zum Generate-Pfad:
+  Routinen/Trigger/Aggregate/Composite-Typen (E053/E054, Slice 9),
+  Partitionierung (E055, Slice 7), Function-based-/Bitmap-Indizes (E057,
+  Slice 6), Materialized Views (nicht gebaut, Slice 10).
+
+### Sub-Slice-Schnitt
+
+| Sub-Slice | Operationen | Kern der Arbeit | Abnahme |
+| --- | --- | --- | --- |
+| **5a** | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders). Kein Default-Dreischritt nötig. `RENAME TO`/`RENAME COLUMN` sind native Syntax. **Erster Schritt: live klären, ob eine Identity-Typänderung in-place geht** — entscheidet, ob 5a-2 gebraucht wird | Unit-Tests je Operation und Richtung; Live-Probe zur Identity-Frage |
+| **5a-2** *(bedingt)* | — | Nur falls die Live-Probe aus 5a einen Tabellen-Neubau für Identity-Typänderungen zeigt (analog MSSQLs Rebuild-Renderer) — sonst entfällt dieser Sub-Slice ersatzlos | Live-Test, dass Schlüssel/Zähler den Rebuild überleben (falls gebraucht) |
+| **5b** | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes (Function-based/Bitmap bleiben E057-geblockt); Constraint-Namen sind bereits konventionsbasiert, kein Katalog-Lookup nötig | Unit-Tests je Operation und Richtung |
+| **5c** | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
+| **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
+| **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingung:** [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss vorher gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |
+
 ## Offene Punkte
 
 - ~~`gvenzl/oracle-free`-EULA-/Zustimmungsmechanik verifizieren~~ — **erledigt
