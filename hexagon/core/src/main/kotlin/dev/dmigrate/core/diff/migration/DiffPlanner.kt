@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.CrossTableCheckHeuristic
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -108,6 +109,11 @@ open class DiffPlanner {
         // ohne sie, truege das Artefakt einen Abdruck, gegen den ein spaeteres
         // `schema rollback` nie passen kann.
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
+        // v9: und dieselbe fuer die Erzeugungsart. Ein Dialekt, der den
+        // Sequenznamen einer IDENTITY-Spalte selbst vergibt, kann ihn im
+        // Soll-Schema nicht erwarten -- ohne diese Projektion truege das
+        // Artefakt einen Abdruck, den der Post-Compare nie erreicht.
+        canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         // F.5 Sub-Slice A (2026-05-19): the planner-level block
@@ -209,8 +215,8 @@ open class DiffPlanner {
         }
 
         return DiffResult(
-            current = endpoint(current, canonicalizeType, canonicalizeIndex),
-            desired = endpoint(desired, canonicalizeType, canonicalizeIndex),
+            current = endpoint(current, canonicalizeType, canonicalizeIndex, canonicalizeGeneration),
+            desired = endpoint(desired, canonicalizeType, canonicalizeIndex, canonicalizeGeneration),
             schemaDiff = schemaDiff,
             operations = sortResult.sorted,
             diagnostics = diagnostics,
@@ -226,11 +232,14 @@ open class DiffPlanner {
         schema: SchemaDefinition,
         canonicalizeType: (NeutralType) -> NeutralType,
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
+        canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
     ): DiffEndpoint =
         DiffEndpoint(
             schemaName = schema.name,
             schemaVersion = schema.version,
-            fingerprint = MigrationFingerprint.compute(schema, canonicalizeType, canonicalizeIndex),
+            fingerprint = MigrationFingerprint.compute(
+                schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
+            ),
         )
 
     /**

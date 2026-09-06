@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.inOrdinalOrder
 import dev.dmigrate.driver.DatabaseDialect
@@ -48,6 +49,9 @@ internal object OracleDiffTableOps {
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering the columns of '$tableName'")
         val table = op.table
+        geometryColumns(table.columns)
+            .takeIf { it.isNotEmpty() }
+            ?.let { return blockSpatial(op, ctx, tableName, it) }
         val notes = mutableListOf<TransformationNote>()
         val lobColumns = table.columns.filterValues { typeMapper.isLargeObject(it.type) }.keys
         val lines = mutableListOf<String>()
@@ -73,17 +77,14 @@ internal object OracleDiffTableOps {
                 lines += "CONSTRAINT ${ctx.sql.quote("pk_$tableName")} PRIMARY KEY ($pkCols)"
             }
         }
-        // Wie im Generate-Pfad (Slice 2): eine Partitionierung wird nicht
-        // gerendert, aber die Tabelle deswegen NICHT geblockt -- sie entsteht
-        // flach, mit E055-Notiz. Anders als PostgreSQLs Diff-Pfad, der eine
-        // kindlose Partitionierung hart blockt.
+        // Der Generate-Pfad legt die Tabelle hier flach an und meldet E055 --
+        // dort bekommt der Anwender ein Skript, das er vor dem Ausfuehren
+        // liest. Der Migrate-Pfad fuehrt aus, und eine grosse Tabelle still
+        // unpartitioniert anzulegen ist keine Notiz wert, sondern ein
+        // Blocker. PostgreSQLs Diff-Pfad blockt an derselben Stelle, und das
+        // Anwenderhandbuch sagt genau das zu.
         table.partitioning?.let {
-            notes += ManualActionRequired(
-                code = "E055", objectType = "partitioning", objectName = tableName,
-                reason = "${it.type.name} partitioning of table '$tableName' is not rendered for Oracle " +
-                    "(partition clauses are not carried in the neutral model); created as a plain table.",
-                hint = "Add PARTITION BY manually and rebuild the table.",
-            ).toNote()
+            return blockPartitioning(op, ctx, tableName, it.type.name)
         }
         val sql = buildString {
             append("CREATE TABLE ${ctx.sql.quote(tableName)} (\n")
@@ -148,6 +149,7 @@ internal object OracleDiffTableOps {
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
             return
         }
+        if (op.column.type is NeutralType.Geometry) return blockSpatial(op, ctx, table, listOf(column))
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering column '$table.$column'")
         val notes = mutableListOf<TransformationNote>()
@@ -201,6 +203,9 @@ internal object OracleDiffTableOps {
         val up = ctx.direction == OracleRenderDirection.UP
         val sourceType = if (up) op.before else op.after
         val targetType = if (up) op.after else op.before
+        if (targetType is NeutralType.Geometry || sourceType is NeutralType.Geometry) {
+            return blockSpatial(op, ctx, table, listOf(column))
+        }
         if (isIdentity(targetType) && !isIdentity(sourceType)) {
             return blockAddIdentity(op, ctx, table, column)
         }
@@ -287,6 +292,55 @@ internal object OracleDiffTableOps {
      * Operation und deshalb hier auch nicht sichtbar.
      */
     private fun isIdentity(type: NeutralType): Boolean = type is NeutralType.Identifier && type.autoIncrement
+
+    /**
+     * Oracle-Partitionierung ist nicht gescoped (Slice 7). Der Generate-Pfad
+     * rendert die Tabelle deshalb flach und meldet `E055`; auf dem
+     * Migrate-Pfad waere dasselbe eine stille Layout-Aenderung an einer
+     * Tabelle, die der Anwender partitioniert haben wollte.
+     */
+    private fun blockPartitioning(
+        op: DiffOperation,
+        ctx: OracleDiffRenderContext,
+        table: String,
+        strategy: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} creates table '$table' with $strategy partitioning, which the Oracle " +
+                "renderer cannot express (partition clauses are not carried in the neutral model). " +
+                "Creating the table unpartitioned instead would silently change its physical layout, so " +
+                "the operation is blocked; create the partitioned table manually and re-run.",
+            code = "ORACLE_PARTITIONING_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+    }
+
+    /**
+     * Spatial ist fuer Oracle nicht gescoped -- `OracleDdlGenerator
+     * .canGenerateSpatial` liefert `false`. Diese Faehigkeit wertet aber nur
+     * der Generate-Pfad aus (`AbstractDdlGenerator`); der Diff-Pfad fragt sie
+     * nie und wuerde `SDO_GEOMETRY` aus der Typtabelle rendern. Solange das
+     * Gate `schema migrate` fuer Oracle abwies, war das unerreichbar.
+     */
+    private fun blockSpatial(
+        op: DiffOperation,
+        ctx: OracleDiffRenderContext,
+        table: String,
+        columns: Collection<String>,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} touches geometry column(s) ${columns.sorted().joinToString(", ")} on " +
+                "'$table'. Spatial support is not scoped for Oracle, so the renderer will not emit " +
+                "SDO_GEOMETRY DDL.",
+            code = "ORACLE_SPATIAL_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
+    }
+
+    private fun geometryColumns(columns: Map<String, ColumnDefinition>): Set<String> =
+        columns.filterValues { it.type is NeutralType.Geometry }.keys
 
     private fun blockAddIdentity(op: DiffOperation, ctx: OracleDiffRenderContext, table: String, column: String) {
         ctx.skip(

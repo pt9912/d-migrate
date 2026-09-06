@@ -20,7 +20,6 @@ object DialectCommandGate {
 
     /** Kommandos, deren Oracle-Pfad noch nicht gebaut ist. */
     enum class GatedCommand(val display: String) {
-        SCHEMA_MIGRATE("schema migrate"),
         DATA_PROFILE("data profile"),
     }
 
@@ -40,6 +39,6 @@ object DialectCommandGate {
 
     /** Nutzersichtbare Liste der für oracle freigeschalteten Kommandos (wächst mit jedem Slice). */
     const val AVAILABLE_FOR_ORACLE: String =
-        "schema reverse, schema compare, schema generate, export flyway/liquibase/django/knex, " +
-            "data export, data import, data transfer"
+        "schema reverse, schema compare, schema generate, schema migrate, " +
+            "export flyway/liquibase/django/knex, data export, data import, data transfer"
 }

@@ -6,6 +6,8 @@ import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.model.ColumnGeneration
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
@@ -167,6 +169,47 @@ class SchemaMigrateRunner(
 
     private val rollbackComposer = SchemaMigrateRollbackComposer(createdByVersion)
 
+    /**
+     * Die beiden Endpunkt-Abdruecke plus die Projektionen, aus denen sie
+     * entstanden sind.
+     *
+     * Zusammen berechnet und zusammen weitergereicht, weil sie zusammen
+     * stimmen muessen: dieselben Projektionen gehen in den
+     * Pre-Plan-Overlay, in `DiffPlanner.endpoint()` und in den
+     * Post-Compare. Zwei davon getrennt zu bilden hiesse, zwei Schemata
+     * durch verschiedene Brillen zu vergleichen.
+     */
+    private data class EndpointFingerprints(
+        val current: String,
+        val desired: String,
+        val canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
+        val canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
+    )
+
+    // Schemagebunden: ein `Enum(refType)` loest gegen die Custom Types
+    // SEINER Seite auf (siehe registrySchemaAwareCanonicalizer).
+    private fun endpointFingerprints(prepared: SchemaMigratePrepared): EndpointFingerprints {
+        val dialect = prepared.effectiveDialect
+        val canonicalizeIndex = capabilityIndexCanonicalizer(dialect)
+        val canonicalizeGeneration = capabilityGenerationCanonicalizer(dialect)
+        return EndpointFingerprints(
+            current = MigrationFingerprint.compute(
+                prepared.targetNormalized.schema,
+                registrySchemaAwareCanonicalizer(dialect, prepared.targetNormalized.schema),
+                canonicalizeIndex,
+                canonicalizeGeneration,
+            ),
+            desired = MigrationFingerprint.compute(
+                prepared.sourceNormalized.schema,
+                registrySchemaAwareCanonicalizer(dialect, prepared.sourceNormalized.schema),
+                canonicalizeIndex,
+                canonicalizeGeneration,
+            ),
+            canonicalizeIndex = canonicalizeIndex,
+            canonicalizeGeneration = canonicalizeGeneration,
+        )
+    }
+
     fun execute(
         request: SchemaMigrateRequest,
         cancellationToken: CancellationToken = CancellationToken.none(),
@@ -194,24 +237,12 @@ class SchemaMigrateRunner(
         // into BOTH (and into the post-compare below) for the same
         // parity reason.
         val canonicalizeType = typeCanonicalizerFor(prepared.effectiveDialect)
-        // Fingerprints schemagebunden: ein `Enum(refType)` loest gegen die
-        // Custom Types SEINER Seite auf (siehe registrySchemaAwareCanonicalizer).
-        val canonicalizeIndex = capabilityIndexCanonicalizer(prepared.effectiveDialect)
-        val currentFingerprint = MigrationFingerprint.compute(
-            prepared.targetNormalized.schema,
-            registrySchemaAwareCanonicalizer(prepared.effectiveDialect, prepared.targetNormalized.schema),
-            canonicalizeIndex,
-        )
-        val desiredFingerprint = MigrationFingerprint.compute(
-            prepared.sourceNormalized.schema,
-            registrySchemaAwareCanonicalizer(prepared.effectiveDialect, prepared.sourceNormalized.schema),
-            canonicalizeIndex,
-        )
+        val endpoints = endpointFingerprints(prepared)
         val inlineResult = InlineRenameOverlayBuilder.build(
             renameTableFlags = request.renameTableFlags,
             renameColumnFlags = request.renameColumnFlags,
-            sourceFingerprint = currentFingerprint,
-            targetFingerprint = desiredFingerprint,
+            sourceFingerprint = endpoints.current,
+            targetFingerprint = endpoints.desired,
             dialect = prepared.effectiveDialect.name.lowercase(java.util.Locale.ROOT),
             version = createdByVersion,
         )
@@ -227,8 +258,8 @@ class SchemaMigrateRunner(
         val (plan, overlayPreflight) = computePlanAndOverlay(
             request, prepared,
             mergedOverlays = mergedOverlays,
-            currentFingerprint = currentFingerprint,
-            desiredFingerprint = desiredFingerprint,
+            currentFingerprint = endpoints.current,
+            desiredFingerprint = endpoints.desired,
             canonicalizeType = canonicalizeType,
         )
         val render = renderPipeline.run(
@@ -261,8 +292,10 @@ class SchemaMigrateRunner(
                 request,
                 prepared.sourceNormalized.schema,
                 prepared.targetOp,
-                canonicalizeIndex,
-            ) { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) }
+                endpoints.canonicalizeIndex,
+                { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) },
+                endpoints.canonicalizeGeneration,
+            )
         } else {
             null
         }
@@ -352,6 +385,7 @@ class SchemaMigrateRunner(
                 triggerPlanningContext = triggerPlanningContext,
                 canonicalizeType = canonicalizeType,
                 canonicalizeIndex = capabilityIndexCanonicalizer(prep.effectiveDialect),
+                canonicalizeGeneration = capabilityGenerationCanonicalizer(prep.effectiveDialect),
             )
         }
         return plan to overlayPreflight

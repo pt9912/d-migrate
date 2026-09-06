@@ -27,10 +27,9 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * (Slice 7), materialized views (Slice 10), routines and triggers (Slice 9)
  * per `docs/planning/in-progress/oracle-dialect-scoping.md`.
  *
- * Not yet wired into `MigrateRendererRegistry`/`DialectCommandGate` — like
- * every dialect before it, that happens in the closing sub-slice (5e), not
- * as each operation family lands. Until then this renderer is reachable
- * only via direct instantiation (unit/integration tests).
+ * Seit Sub-Slice 5e-2 in `MigrateRendererRegistry` verdrahtet und damit
+ * ueber `schema migrate` erreichbar; `DialectCommandGate` fuehrt das
+ * Kommando fuer oracle nicht mehr.
  *
  * Implementation is split across helpers to satisfy Detekt's
  * `TooManyFunctions` threshold while keeping the dispatch focused:

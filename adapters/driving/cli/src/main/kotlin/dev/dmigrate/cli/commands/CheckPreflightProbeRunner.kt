@@ -7,6 +7,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.DatabaseConnection
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mssql.MssqlCheckPreflightProbe
+import dev.dmigrate.driver.oracle.OracleCheckPreflightProbe
 import dev.dmigrate.driver.mysql.MysqlCheckPreflightProbe
 import dev.dmigrate.driver.postgresql.PostgresCheckPreflightProbe
 import dev.dmigrate.driver.sqlite.SqliteCheckPreflightProbe
@@ -62,12 +63,6 @@ internal object CheckPreflightProbeRunner {
         DatabaseDialect.MYSQL -> MysqlCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.SQLITE -> SqliteCheckPreflightProbe.probe(connection, plan)
         DatabaseDialect.MSSQL -> MssqlCheckPreflightProbe.probe(connection, plan)
-        // `schema migrate` ist fuer oracle hinter DialectCommandGate + dem
-        // "No renderer registered"-Pfad der MigrateRendererRegistry bis
-        // Slice 5 (docs/planning/in-progress/oracle-dialect-scoping.md) --
-        // dieser Zweig wird davor nie erreicht.
-        DatabaseDialect.ORACLE -> error(
-            "unreachable: DialectCommandGate blocks schema migrate for oracle before Slice 5 (ADR 0052).",
-        )
+        DatabaseDialect.ORACLE -> OracleCheckPreflightProbe.probe(connection, plan)
     }
 }

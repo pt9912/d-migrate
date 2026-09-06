@@ -47,7 +47,8 @@ internal class OracleIndexDdlBuilder(
             )
         }
         // Spatial ist nicht gescoped; eine Tabelle mit Geometry-Spalten ist
-        // bereits vor generateIndices geblockt (canGenerateSpatial=false).
+        // bereits vorher geblockt -- im Generate-Pfad ueber
+        // canGenerateSpatial=false, im Diff-Pfad ueber blockSpatial.
         if (index.isSpatialGeometryIndex { columns[it]?.type }) {
             return actionRequired(
                 ManualActionRequired(

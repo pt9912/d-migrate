@@ -194,19 +194,19 @@ object SequenceCapabilityDefaults {
     // CACHE, kein Metadata-Only-Emulation-Pfad wie MySQL/SQLite) -- deshalb
     // emitsCachePreallocationWarning=false. supportsOwnedBy=false: Oracle
     // kennt keine `SEQUENCE OWNED BY column`-Verknuepfung wie PG.
-    // supportsCurrentValuePreserve bleibt false, obwohl Sub-Slice 5d den
-    // Renderer gebaut hat (`OracleDiffSequenceOps
-    // .renderAlterSequenceCurrentValue` kann `ALTER SEQUENCE ... RESTART
-    // START WITH n` ausdruecken). Das Feld sagt laut seinem eigenen KDoc mehr
-    // zu als den Renderer: es "backs the SequencePreserveStage
-    // preserveCurrentValue contract", und das dort gegebene SQLite-Beispiel
-    // nennt drei verdrahtete Teile -- Probe-Adapter, Zweig in der
-    // Stage-Dialektliste UND Renderer. Oracle hat bislang nur den dritten.
-    // Der Wechsel auf true gehoert deshalb in den Sub-Slice, der die Stage
-    // verdrahtet (5e) -- und der muss wissen: Oracle allein in
-    // PRESERVE_DIALECTS einzutragen macht aus dem heutigen sauberen Skip
-    // einen harten Blocker, weil transactionalProtectedSequenceOperations
-    // leer ist.
+    // supportsCurrentValuePreserve steht auf true, seit Sub-Slice 5d den
+    // Renderer gebaut hat: `OracleDiffSequenceOps
+    // .renderAlterSequenceCurrentValue` drueckt den Preserve-Pfad als
+    // `ALTER SEQUENCE ... RESTART START WITH n` aus, und die
+    // preserve_current_value-Zeile in spec/neutral-model-spec.md
+    // Abschnitt 9 fuehrt Oracle mit genau dieser Form.
+    //
+    // Der atomare Ausfuehrungspfad fehlt weiterhin -- deshalb bleiben die
+    // Atomic-Faehigkeiten false und transactionalProtectedSequenceOperations
+    // leer. Oracle steht trotzdem in SequencePreserveStage.PRESERVE_DIALECTS:
+    // ein Preserve-Kandidat blockt so oder so, aber nur dort mit einer
+    // wahren Begruendung (SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED statt
+    // "not supported on ORACLE", was seit 5d falsch waere).
     private val Oracle = SequenceCapability(
         supportsNamedSequences = true,
         supportsStart = true,
@@ -214,7 +214,7 @@ object SequenceCapabilityDefaults {
         supportsCycle = true,
         supportsCache = true,
         emitsCachePreallocationWarning = false,
-        supportsCurrentValuePreserve = false,
+        supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
         supportsAtomicPreserve = false,
         supportsAtomicPreserveAllInPlan = false,

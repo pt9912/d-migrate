@@ -55,7 +55,7 @@ class SchemaMigrateExecutionStagePostCompareTest : FunSpec({
         { t -> if (t == NeutralType.SmallInt) NeutralType.Integer else t }
 
     test("post-compare with target canonicalisation reads a flattened type as Clean") {
-        stage().runPostCompare(request, desired, target) { sqliteLike }
+        stage().runPostCompare(request, desired, target, canonicalizerFor = { sqliteLike })
             .shouldBeInstanceOf<PostCompareOutcome.Clean>()
     }
 

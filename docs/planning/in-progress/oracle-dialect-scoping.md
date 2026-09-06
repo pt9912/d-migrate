@@ -161,9 +161,8 @@
 > würde nach `--execute` als Drift gemeldet. Aktuell **dormant** (Gate
 > blockt `schema migrate` für Oracle bis Slice 5) und kein Slice-4a-Fix (der
 > `(NeutralType) -> NeutralType`-Hook sieht `ColumnGeneration` gar nicht) —
-> dokumentiert in
-> [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md)
-> für Slice 5.
+> als Ticket für Slice 5 festgehalten (dort in Sub-Slice 5e-2 über den
+> neuen `canonicalizeGeneration`-Hook gelöst, Ticket entfällt).
 >
 > **Status-Update 2026-09-06 (Slice 5a):** `OracleDiffDdlGenerator` +
 > `OracleDiffTableOps`/`OracleDiffRenderContext`/`OracleDiffSqlBuilders` —
@@ -451,6 +450,99 @@
 > Sicht den Spalten-Rename auf den destruktiven Drop+Add-Pfad — das ist
 > jetzt ausgenommen, weil es dort nichts neu zu projizieren gibt.
 
+> **Status-Update 2026-09-06 (Slice 5e-2):** der Gate-Fall — `schema
+> migrate` ist für Oracle nutzbar. `MigrateRendererRegistry` liefert den
+> Renderer statt `null`, `DialectCommandGate` führt `SCHEMA_MIGRATE` nicht
+> mehr, und die drei `error("unreachable")`-Stubs auf dem Migrate-Pfad sind
+> weg (Rename-Policies in 5e-1, `CheckPreflightProbeRunner` hier).
+>
+> **Neu: ein `canonicalizeGeneration`-Hook im Fingerprint-Vertrag.** Damit
+> ist der Slice-4a-Befund gelöst, und zwar dort, wo er hingehört: nicht
+> Oracle-lokal, sondern als dritte Achse neben `canonicalizeType` und
+> `canonicalizeIndex`. Die Faltung selbst hängt an einer neuen Fähigkeit
+> `DialectCapabilities.namesIdentitySequences`, und die ist gemessen, nicht
+> angenommen — vier Belege gegen `gvenzl/oracle-free:23-slim-faststart`:
+> - `GENERATED ALWAYS AS IDENTITY (SEQUENCE NAME s)` → `ORA-02000`
+>   (PostgreSQL kennt genau diese Form, Oracle nicht),
+> - `… AS IDENTITY USING <eigene_sequenz>` → `ORA-03076`,
+> - der Name ist **nicht einmal stabil**: dieselbe Tabelle gelöscht und
+>   identisch neu angelegt ergab `ISEQ$$_73345`, dann `ISEQ$$_73349`,
+> - nachträglich umbenennen → `ORA-32799: cannot rename a system-generated
+>   sequence`.
+>
+> Der Name ist also weder vergebbar noch stabil noch korrigierbar. Ihn im
+> Abdruck zu führen hieße, jede frisch angelegte Oracle-IDENTITY-Spalte
+> nach `--execute` als Drift zu melden. `schema compare` bleibt streng und
+> zeigt ihn weiterhin — dieselbe Grenze wie bei Typ- und Index-Projektion.
+>
+> **`supportsCurrentValuePreserve` steht jetzt auf `true`**, und Oracle ist
+> in `PRESERVE_DIALECTS`. Beides folgt aus der Korrektur am 5d-Eintrag
+> oben: das Feld hat keinen Leser, die normative Quelle ist Abschnitt 9 der
+> `neutral-model-spec.md`, und der Eintritt in die Dialektliste ändert
+> nicht *ob* ein Preserve-Kandidat blockt, sondern *womit* — jetzt mit
+> `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`, was zutrifft, statt mit
+> „not supported on ORACLE", was seit 5d falsch war. Der atomare
+> Ausführungspfad fehlt weiterhin; das wäre ein eigener Schnitt nach dem
+> Muster der Phase C.4 der anderen drei Dialekte.
+>
+> Der in Slice 1a gesetzte Gate-Ablehnungsfall für `schema migrate` ist
+> nach der Vorgabe der Testdatei selbst in einen Funktions-E2E gekippt
+> (`OracleSchemaMigrateE2ETest`); in `OracleCommandGateE2ETest` bleibt nur
+> noch `data profile` (Slice 11). Die CHECK-Preflight-Sonde ist gegen ein
+> echtes Oracle belegt (bestandene Prüfung, gezählte Verletzerzeilen,
+> Sondenfehler) — eine gestubbte Verbindung könnte dafür nichts zeigen.
+>
+> Im Anwenderhandbuch stand „`schema migrate` … folgt"; das ist mit diesem
+> Sub-Slice falsch geworden und nachgezogen, samt der Liste der Objektarten,
+> die für Oracle noch benannt blocken.
+
+> **Nachtrag zum 5e-2-Review:** der Gate-Fall hat drei Zusicherungen
+> freigelegt, die bis dahin **das Gate** getragen hat, nicht die Renderer:
+> - **Partitionierung.** Der Generate-Pfad legt eine partitionierte Tabelle
+>   flach an und meldet `E055` — dort liest der Anwender ein Skript, bevor
+>   er es ausführt. Auf dem Migrate-Pfad wäre dasselbe eine stille
+>   Layout-Änderung an einer Tabelle, die partitioniert sein sollte, und
+>   das Anwenderhandbuch sagt an dieser Stelle ausdrücklich Abbruch zu.
+>   `CreateTable` blockt jetzt (`ORACLE_PARTITIONING_UNSUPPORTED`).
+> - **Spatial.** `canGenerateSpatial()` wertet **nur** der Generate-Pfad
+>   aus (`AbstractDdlGenerator`); der Diff-Pfad fragt es nie und hätte
+>   `SDO_GEOMETRY` aus der Typtabelle gerendert — für eine Fähigkeit, die
+>   das Projekt für Oracle als ungescoped führt. `CreateTable`, `AddColumn`
+>   und `AlterColumnType` blocken jetzt (`ORACLE_SPATIAL_UNSUPPORTED`).
+> - **Die Handbuch-Liste war zweimal falsch.** Bitmap-Indizes blocken
+>   nicht (das neutrale Modell kennt den Typ gar nicht — jeder Nicht-BTREE
+>   rendert als B-Tree mit `W102`), funktionsbasierte Indizes sind nicht
+>   darstellbar (`IndexColumn` hat kein Ausdrucksfeld). Beides stand als
+>   Zusicherung im Handbuch und ist ersetzt durch das, was wirklich blockt.
+>
+> **Der neue Hook war sabotierbar grün.** `canonicalizeGeneration` ist an
+> vier Nähten ein Parameter mit Default `{ it }`; ein Aufrufer, der ihn
+> weglässt, kompiliert. Kein Test hätte das bemerkt — der
+> Kanonisierer-Test ruft die Funktion direkt auf. Der neue
+> `SchemaMigrateGenerationCanonicalizationWiringTest` prüft deshalb, was
+> der Runner dem Planer tatsächlich mitgibt; das Entfernen des Arguments
+> bringt ihn zu Fall (verifiziert).
+>
+> **Meine Begründung für das Capability-Flag war falsch.** Sie sagte,
+> PostgreSQL könne den Sequenznamen über `(SEQUENCE NAME …)` vergeben —
+> `SEQUENCE NAME` kommt im PG-Renderer nirgends vor. PG schreibt den Namen
+> ebenso wenig wie Oracle und liest ihn beim Reverse trotzdem, sodass die
+> Drift dort genauso auftritt. Sie zu schließen ändert bestehende
+> PG-Fingerabdrücke und damit die Gültigkeit erzeugter Rollback-Artefakte
+> — das ist eine Entscheidung über Artefakt-Kompatibilität, kein Beifang
+> des Oracle-Rollouts:
+> [`pg-identity-sequence-name-fingerprint.md`](../open/pg-identity-sequence-name-fingerprint.md).
+> Der Vermerk stand im 4a-Ticket und wäre mit dessen Löschung
+> verschwunden.
+>
+> Zwei weitere Befunde als Ticket, beide dialektübergreifend und nicht von
+> diesem Slice verursacht:
+> [`migrate-spatial-profile-not-validated.md`](../open/migrate-spatial-profile-not-validated.md)
+> (ein Tippfehler in `--spatial-profile` fällt auf dem Migrate-Pfad still
+> auf den Default zurück) und
+> [`check-preflight-probe-duplication.md`](../open/check-preflight-probe-duplication.md)
+> (die fünfte zeichengleiche Kopie derselben Sonde).
+
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -562,7 +654,13 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **3** ✅ | `DataReader`/`DataWriter` (Transfer). **3b** (sample-db-Oracle-Leg im Harness, analog [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)) bewusst **nicht** Teil dieses Slices — separater Folge-Schnitt | `data export/import/transfer` funktioniert |
 | **4a** ✅ | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg (`transferCompatibility` bereits Slice 3) | Vergleichs-Substrat für Slice 5 |
 | **4b** | Cross-Dialekt-sample-db-Smoke — strukturell blockiert auf **3b** ([`oracle-sample-db-leg.md`](../next/oracle-sample-db-leg.md)), das den Harness-Anschluss erst liefert | Cross-Dialekt-Beleg im Harness |
-| **5** | Diff/Migrate (`OracleDiff*Ops`) inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep. Voraussichtlich größter Slice (bei MSSQL größer als Slices 1–4 zusammen) — Sub-Slice-Schnitt folgt Familien-Gliederung, sobald der Slice beginnt | `schema migrate` |
+| **5a** ✅ | Diff-Gerüst + Tabellen-/Spalten-Operationen | nur über Tests erreichbar (Registry-Verdrahtung erst 5e) |
+| **5b** ✅ | Constraint- und Index-Operationen | dito |
+| **5c** ✅ | Views und Custom Types | dito |
+| **5d** ✅ | Sequenzen | dito |
+| **5e-1** ✅ | Rename-Policies (Objekt + Abhängigkeit) und View-Abhängigkeiten aus `ALL_DEPENDENCIES` — Vorbedingung für den Gate-Fall | dito |
+| **5e-2** ✅ | Verdrahtung: `MigrateRendererRegistry`, `DialectCommandGate`, CHECK-Preflight-Sonde, `ColumnGeneration`-Kanonisierung im Fingerprint, `SequenceCapabilityDefaults` | **`schema migrate` ist nutzbar** |
+| **5e-3** | Cross-Dialekt-Matrix-Sweep-Beitritt, CLI-E2E, Handbücher | Matrix-Abdeckung + Doku |
 | **6** | Function-based- + Bitmap-Indizes, Reverse + Generate + Diff | volle Index-Treue |
 | **7** | Partitionierung: Range/List/Hash/Composite (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster) | Partitionstabellen im Round-Trip |
 | **8** | Volltext: Oracle Text (`CONTEXT`/`CTXCAT`, Muster aus dem Fulltext-Slice) | Volltext-Indizes Generate + Reverse |
@@ -671,7 +769,9 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes — ein nicht-BTREE-Indextyp rendert als B-Tree mit `W102` (so wie im Generate-Pfad, `spec/ddl-generation-rules.md`); Constraint-Namen kommen aus dem Operations-Payload, kein Katalog-Lookup nötig. Kein `WITH CHECK`-Äquivalent: Oracle validiert per Default gegen den Bestand (siehe oben) | Unit-Tests je Operation und Richtung |
 | **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
 | **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
-| **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingungen:** (1) Rename-Policies + View-Abhängigkeiten — **erledigt in Sub-Slice 5e-1**; (3) `CheckPreflightProbeRunner.dispatch` ist für Oracle ein weiterer `error("unreachable")`-Stub auf demselben Migrate-Pfad — der Gate-Fall braucht eine Oracle-CHECK-Preflight-Sonde; (2) [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |
+| **5e-1** ✅ | — | Rename-Vorbedingung: `OracleRenameDependencyPolicy` + `OracleObjectRenamePolicy` (beide Registries) und View-Abhängigkeiten aus `ALL_DEPENDENCIES`. Oracle-Besonderheit: auch `classifyColumnRename` projiziert Sichten neu | Unit-Tests + Planer-Durchlauf, der die View-Absorption pinnt |
+| **5e-2** ✅ | — | Verdrahtung: `MigrateRendererRegistry` liefert den Oracle-Renderer, `DialectCommandGate` verliert `SCHEMA_MIGRATE`, Oracle-CHECK-Preflight-Sonde, `canonicalizeGeneration`-Hook im Fingerprint, `supportsCurrentValuePreserve` → `true` und Beitritt zu `PRESERVE_DIALECTS`. Alle drei Vorbedingungen damit erledigt (Rename-Policies in 5e-1, Fingerprint-Drift und `CheckPreflightProbeRunner`-Stub hier) | **`schema migrate` ist für oracle nutzbar** |
+| **5e-3** | — | Beitritt zum Cross-Dialekt-Matrix-Sweep (mit Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher | Matrix-Abdeckung + Doku |
 
 ## Offene Punkte
 

@@ -209,7 +209,13 @@ class SchemaRollbackRunner(
         // Dieselbe Index-Projektion wie beim Migrate: das Artefakt haelt einen
         // Fingerabdruck, der durch die Brille des Ziel-Dialekts entstanden ist.
         val canonicalizeIndex = dialect?.let(::capabilityIndexCanonicalizer) ?: { it }
-        val targetFingerprint = fingerprint(targetResolved.schema, canonicalizeType, canonicalizeIndex)
+        // Und dieselbe Projektion der Erzeugungsart -- ein Abdruck, der den
+        // system-vergebenen Identity-Sequenznamen enthielte, waere gegen den
+        // im Artefakt nie erreichbar.
+        val canonicalizeGeneration = dialect?.let(::capabilityGenerationCanonicalizer) ?: { it }
+        val targetFingerprint = fingerprint(
+            targetResolved.schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
+        )
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()
         } else {

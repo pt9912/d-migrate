@@ -34,8 +34,9 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  * [NeutralTypeCanonicalizer.canonicalize] mit Kontext-Parameter), eine
  * `(NeutralType) -> NeutralType`-Projektion sieht sie nicht.
  * [NeutralType.Geometry] bleibt ebenfalls Identitaet -- in der Praxis
- * unerreichbar (`canGenerateSpatial()` = `false` blockt jede Tabelle mit
- * Geometrie-Spalten vor der Generierung), aber definiert fuer
+ * unerreichbar, weil Geometrie-Spalten auf beiden Pfaden vorher blocken
+ * (Generate ueber `canGenerateSpatial() = false`, Diff ueber
+ * `OracleDiffTableOps.blockSpatial`), aber definiert fuer
  * Vollstaendigkeit, analog den anderen vier Treibern.
  */
 internal object OracleNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {

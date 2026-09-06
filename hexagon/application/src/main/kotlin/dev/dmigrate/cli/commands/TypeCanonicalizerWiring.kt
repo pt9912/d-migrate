@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -14,8 +15,12 @@ import dev.dmigrate.driver.DialectCapabilities
  * zusammen -- ein Aufrufer, der nur eine von beiden setzt, vergliche zwei
  * Schemata durch verschiedene Brillen.
  */
-internal typealias FingerprintOfSchema =
-    (SchemaDefinition, (NeutralType) -> NeutralType, (IndexDefinition) -> IndexDefinition) -> String
+internal typealias FingerprintOfSchema = (
+    SchemaDefinition,
+    (NeutralType) -> NeutralType,
+    (IndexDefinition) -> IndexDefinition,
+    (ColumnGeneration?) -> ColumnGeneration?,
+) -> String
 
 /**
  * Resolves the TARGET dialect's neutral-type canonicalisation projection for
@@ -83,5 +88,33 @@ fun capabilityIndexCanonicalizer(
             // Namen, den niemand vergeben hat.
             name = if (index.type == IndexType.FULLTEXT && !caps.namesFullTextIndexes) null else index.name,
         )
+    }
+}
+
+/**
+ * Projiziert die Erzeugungsart einer Spalte auf das, was der Ziel-Dialekt
+ * davon zurueckmelden **kann**.
+ *
+ * Betroffen ist nur der Sequenzname einer IDENTITY-Spalte. Wo er nicht
+ * vergebbar ist, vergibt ihn der Server (Oracle: `ISEQ${'$'}${'$'}_n`) — ein
+ * user-authored Soll-Schema kann ihn nicht kennen, weil er erst beim
+ * `CREATE TABLE` entsteht, der Reverse liest ihn aber. Beide Seiten auf
+ * denselben Wert, sonst meldete der Post-Compare nach jedem
+ * `migrate --execute` Drift fuer eine Spalte, die genau so angelegt wurde
+ * wie gewuenscht.
+ *
+ * Dieselbe Grenze wie bei Typ- und Index-Projektion: `schema compare`
+ * bleibt streng und zeigt den Namen, nur der Fingerabdruck-Pfad faltet ihn
+ * weg.
+ */
+fun capabilityGenerationCanonicalizer(
+    dialect: DatabaseDialect,
+): (ColumnGeneration?) -> ColumnGeneration? {
+    if (DialectCapabilities.forDialect(dialect).namesIdentitySequences) return { it }
+    return { generation ->
+        when (generation) {
+            null -> null
+            is ColumnGeneration.Identity -> generation.copy(sequenceName = null)
+        }
     }
 }

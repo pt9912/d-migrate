@@ -521,4 +521,5 @@ private val PRESERVE_DIALECTS = setOf(
     DatabaseDialect.MYSQL,
     DatabaseDialect.SQLITE,
     DatabaseDialect.MSSQL,
+    DatabaseDialect.ORACLE,
 )

@@ -80,6 +80,36 @@ data class DialectCapabilities(
      * driften, obwohl sich nichts geaendert hat.
      */
     val namesFullTextIndexes: Boolean = true,
+    /**
+     * Ob der Fingerabdruck sich auf den Namen der Sequenz hinter einer
+     * IDENTITY-Spalte stuetzen darf.
+     *
+     * Fuer Oracle **nein**, und das ist gemessen (2026-09-06), nicht
+     * angenommen — vier Belege:
+     * - `GENERATED ALWAYS AS IDENTITY (SEQUENCE NAME s)` scheitert mit
+     *   `ORA-02000`, `… USING <eigene_sequenz>` mit `ORA-03076`;
+     * - der vergebene Name ist **nicht einmal stabil**: dieselbe Tabelle
+     *   geloescht und identisch neu angelegt bekam `ISEQ${'$'}${'$'}_73345`
+     *   und danach `ISEQ${'$'}${'$'}_73349`;
+     * - nachtraeglich umbenennen geht auch nicht
+     *   (`ORA-32799: cannot rename a system-generated sequence`).
+     *
+     * Dieselbe Begruendung wie bei [namesFullTextIndexes]: was im
+     * Soll-Schema nicht stehen kann, der Reverse aber liest, driftet nach
+     * jedem `migrate --execute`.
+     *
+     * **Der Default `true` ist fuer MySQL/SQLite/MSSQL wirkungslos** —
+     * deren Reverse setzt `ColumnGeneration.Identity.sequenceName` nie.
+     * Fuer **PostgreSQL** ist er eine offene Frage, keine Zusicherung: der
+     * PG-Renderer schreibt den Namen ebenfalls nie (`GENERATED … AS
+     * IDENTITY` ohne `SEQUENCE NAME`), der PG-Reverse liest ihn aber
+     * schema-qualifiziert. PG auf `false` zu stellen aendert bestehende
+     * PG-Fingerabdruecke und damit die Gueltigkeit bereits erzeugter
+     * Rollback-Artefakte — das ist eine eigene Entscheidung, kein Beifang
+     * des Oracle-Rollouts:
+     * `docs/planning/open/pg-identity-sequence-name-fingerprint.md`.
+     */
+    val namesIdentitySequences: Boolean = true,
 ) {
     companion object {
         /**
@@ -190,6 +220,7 @@ data class DialectCapabilities(
                 supportsIndexIncludeColumns = false,
                 supportsClusteredIndexes = false,
                 namesFullTextIndexes = true,
+                namesIdentitySequences = false,
             )
         }
     }

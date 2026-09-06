@@ -24,7 +24,11 @@ import kotlin.io.path.writeText
  * Kommando fuer oracle liefert, nimmt es aus `GatedCommand` — und kippt
  * den zugehoerigen Fall hier in einen Funktions-E2E um (`schema generate`
  * und `export <tool>`: Slice 2, siehe `OracleSchemaGenerateE2ETest`;
- * `data export/import/transfer`: Slice 3, siehe `OracleTransferE2ETest`).
+ * `data export/import/transfer`: Slice 3, siehe `OracleTransferE2ETest`;
+ * `schema migrate`: Sub-Slice 5e-2, siehe `OracleSchemaMigrateE2ETest`).
+ *
+ * Uebrig bleibt hier nur `data profile` (Slice 11) — faellt der letzte
+ * Eintrag aus `GatedCommand`, entfaellt diese Datei mit ihm.
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class OracleCommandGateE2ETest : FunSpec({
@@ -49,19 +53,6 @@ class OracleCommandGateE2ETest : FunSpec({
             run.stderr shouldContain "ADR 0052"
             run.stderr shouldContain "schema reverse"
         }
-    }
-
-    test("schema migrate --dialect oracle against a file target is refused at the command boundary") {
-        expectGateRefusal(
-            "schema migrate",
-            listOf(
-                "schema", "migrate",
-                "--source", schemaYaml.absolutePathString(),
-                "--target", "file:" + schemaYaml.absolutePathString(),
-                "--dialect", "oracle",
-                "--plan-only",
-            ),
-        )
     }
 
     test("data profile against an oracle source is refused before any connection attempt") {

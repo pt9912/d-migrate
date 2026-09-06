@@ -2373,10 +2373,16 @@ beginnen Sie ohne `--resume` neu.
 ## 6. Häufige Fragen (FAQ)
 
 **Welche Datenbanken unterstützt d-migrate?**
-PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server vollständig. Oracle wird
-schrittweise ausgebaut — verfügbar sind `schema reverse`, `schema compare`,
-`schema generate`, `export <tool>` sowie `data export`/`import`/`transfer`;
-`schema migrate` und `data profile` folgen.
+PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server vollständig. Für Oracle
+arbeiten `schema reverse`, `schema compare`, `schema generate`,
+`schema migrate`, `export <tool>` sowie `data export`/`import`/`transfer`;
+`data profile` weist Oracle mit einer Meldung ab.
+
+`schema migrate` blockt für Oracle benannt, statt unvollständige DDL zu
+erzeugen, wenn eine Änderung Routinen, Trigger, Materialized Views,
+Volltext-Indizes, Partitionierung oder Geometrie-Spalten betrifft. Ebenso
+beim Versuch, eine bestehende Spalte nachträglich zur Identity-Spalte zu
+machen — Oracle lässt das nicht zu.
 
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
@@ -2509,7 +2515,7 @@ Fortschritt/Warnungen nach stderr.
 | ------ | ------------ |
 | `--source` | Soll-Schema (Datei, Pflicht) |
 | `--target` | `db:<url-or-alias>` oder `file:<current.yaml>` (Pflicht) |
-| `--dialect` | `postgresql`/`mysql`/`sqlite` (Pflicht bei Datei-Ziel) |
+| `--dialect` | `postgresql`/`mysql`/`sqlite`/`mssql`/`oracle` (Pflicht bei Datei-Ziel) |
 | `--output` | Up-SQL-Ausgabedatei |
 | `--rollback-output` | Down-SQL-Ausgabedatei (Pflicht bei `--generate-rollback` ohne `--plan-only`) |
 | `--report` | Plan-/Risiko-Report (**Pflicht bei `--execute`**) |

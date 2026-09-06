@@ -2,6 +2,7 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -13,8 +14,11 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldStartWith
+import io.kotest.matchers.types.shouldBeInstanceOf
 import org.testcontainers.oracle.OracleContainer
 import java.sql.Connection
 import java.time.Duration
@@ -47,16 +51,14 @@ class OraclePostCompareFingerprintIntegrationTest : FunSpec({
     // Fingerprint deckt auch Constraints/Indizes ab, deren
     // Reverse-Materialisierung eine eigene Frage ist. Hier soll die
     // TYP-Projektion die einzige Variable sein. Eine `IDENTITY`-PK waere
-    // KEIN geeigneter Fixpunkt -- Oracles Identity-Spalte haengt an einer
-    // echten, aber system-generierten Sequenz (`ISEQ$$_n`), deren Name beim
-    // Reverse in `ColumnGeneration.Identity.sequenceName` landet (siehe
-    // OracleSchemaReaderTest). Das ist eine METADATEN-, keine TYP-Frage --
-    // der Kanonisierer dieser Slice kann sie nicht schliessen, und der
-    // generische [MigrationFingerprint] bietet dafuer aktuell keinen
-    // Kanonisierungs-Hook (nur `canonicalizeType`/`canonicalizeIndex`).
+    // hier KEIN geeigneter Fixpunkt -- Oracles Identity-Spalte haengt an
+    // einer echten, aber system-generierten Sequenz (`ISEQ$$_n`), deren Name
+    // beim Reverse in `ColumnGeneration.Identity.sequenceName` landet. Das
+    // ist eine METADATEN-, keine TYP-Frage; sie hat mit Sub-Slice 5e-2 einen
+    // eigenen Hook bekommen (`canonicalizeGeneration`), und der
+    // Identity-Test unten belegt die Oracle-Seite davon.
     // `f_plain_id` unten deckt `Identifier(autoIncrement=false)` bereits ab
-    // (keine IDENTITY-Klausel, kein Sequenzname). Siehe
-    // `docs/planning/open/oracle-identity-sequence-fingerprint-drift.md`.
+    // (keine IDENTITY-Klausel, kein Sequenzname).
     // Kein Geometry-Probe: Oracle Spatial ist unscoped (canGenerateSpatial()
     // = false blockt jede Tabelle mit Geometrie-Spalten vor der Generierung).
     val typeProbe = SchemaDefinition(
@@ -155,4 +157,51 @@ class OraclePostCompareFingerprintIntegrationTest : FunSpec({
             MigrationFingerprint.compute(actual) shouldNotBe MigrationFingerprint.compute(typeProbe)
         }
     }
+
+    /**
+     * Die gemessene Praemisse, auf der `canonicalizeGeneration` beruht: der
+     * Reverse liefert fuer eine IDENTITY-Spalte einen Sequenznamen, den das
+     * Soll-Schema nicht tragen kann -- er entsteht erst beim `CREATE TABLE`
+     * und ist system-vergeben.
+     *
+     * Die VERDRAHTUNG des Hooks steht woanders
+     * (`SchemaMigrateGenerationCanonicalizationWiringTest`, sabotage-belegt);
+     * dieses Modul kennt `hexagon:application` nicht und soll es auch nicht
+     * kennen. Hier zaehlt allein die Oracle-Tatsache.
+     */
+    test("an IDENTITY column reverse-reads a system-generated sequence name the desired cannot carry") {
+        val identityProbe = SchemaDefinition(
+            name = "identity_probe",
+            version = "1.0.0",
+            tables = mapOf(
+                "id_probe" to TableDefinition(
+                    columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true))),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        applySchema(typeConfig, identityProbe)
+
+        HikariConnectionPoolFactory.create(typeConfig).use { pool ->
+            val actual = OracleSchemaReader().read(pool).schema
+            val identity = actual.tables.getValue("id_probe").columns.getValue("id").generation
+                .shouldBeInstanceOf<ColumnGeneration.Identity>()
+            // System-vergeben: das kann ein Anwender im Soll nicht
+            // hinschreiben, und der Wert wechselt bei jedem Neuanlegen.
+            identity.sequenceName.shouldNotBeNull().shouldStartWith("ISEQ")
+
+            // Ohne Faltung driftet der Abdruck genau daran -- die beiden
+            // Schemata unterscheiden sich in nichts sonst.
+            MigrationFingerprint.compute(onlyIdProbe(actual), canonicalize) shouldNotBe
+                MigrationFingerprint.compute(identityProbe, canonicalize)
+        }
+    }
 })
+
+/** Reduziert das reverse-gelesene Schema auf die Identity-Probe, damit der Vergleich nur sie sieht. */
+private fun onlyIdProbe(schema: SchemaDefinition): SchemaDefinition =
+    SchemaDefinition(
+        name = "identity_probe",
+        version = "1.0.0",
+        tables = mapOf("id_probe" to schema.tables.getValue("id_probe")),
+    )

@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.EffectivePrimaryKey
 import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
@@ -153,7 +154,8 @@ object MigrationFingerprint {
         schema: SchemaDefinition,
         canonicalizeType: (NeutralType) -> NeutralType = { it },
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
-    ): String = sha256Hex(project(schema, canonicalizeType, canonicalizeIndex))
+        canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
+    ): String = sha256Hex(project(schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration))
 
     /**
      * Returns the canonical projection string. Public for diagnostics.
@@ -174,11 +176,12 @@ object MigrationFingerprint {
         schema: SchemaDefinition,
         canonicalizeType: (NeutralType) -> NeutralType = { it },
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
+        canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
     ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
         appendCustomTypes(sb, schema.customTypes)
-        appendTables(sb, canonicalizedIndices(schema.tables, canonicalizeIndex), canonicalizeType)
+        appendTables(sb, canonicalizedTables(schema.tables, canonicalizeIndex, canonicalizeGeneration), canonicalizeType)
         appendViews(sb, schema.views)
         appendSequences(sb, schema.sequences)
         appendFunctions(sb, schema.functions)
@@ -206,8 +209,9 @@ object MigrationFingerprint {
     // ── Tables ──────────────────────────────────────────────────────
 
     /**
-     * Projiziert jeden Index -- auch die partitionslokalen -- durch die Sicht des
-     * Ziel-Dialekts, bevor irgendetwas angehaengt wird.
+     * Projiziert jeden Index -- auch die partitionslokalen -- und die
+     * Erzeugungsart jeder Spalte durch die Sicht des Ziel-Dialekts, bevor
+     * irgendetwas angehaengt wird.
      *
      * Einmal am Eingang statt an jeder Anhaengestelle: die Projektion ist die
      * gleiche fuer Tabellen- und Partitionsindizes, und ein zweiter Lambda durch
@@ -215,11 +219,15 @@ object MigrationFingerprint {
      * koennten. Fuer Dialekte ohne INCLUDE oder ohne clustered-Steuerung faellt das
      * jeweilige Feld hier weg, damit ein verlustfreier Round-Trip identisch hasht.
      */
-    private fun canonicalizedIndices(
+    private fun canonicalizedTables(
         tables: Map<String, TableDefinition>,
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
+        canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
     ): Map<String, TableDefinition> = tables.mapValues { (_, table) ->
         table.copy(
+            columns = table.columns.mapValues { (_, col) ->
+                col.copy(generation = canonicalizeGeneration(col.generation))
+            },
             indices = table.indices.map(canonicalizeIndex),
             partitioning = table.partitioning?.let { config ->
                 config.copy(

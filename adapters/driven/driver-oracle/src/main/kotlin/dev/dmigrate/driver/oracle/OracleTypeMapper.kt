@@ -38,7 +38,8 @@ class OracleTypeMapper : TypeMapper {
         is NeutralType.Enum -> "VARCHAR2($MAX_VARCHAR2_LENGTH)"
         is NeutralType.Array -> "JSON"
         // Spatial ist fuer Oracle nicht gescoped (SpatialProfile bleibt NONE,
-        // canGenerateSpatial() blockt jede Tabelle mit Geometry-Spalten davor)
+        // der Generate-Pfad blockt sie ueber canGenerateSpatial(), der
+        // Diff-Pfad ueber OracleDiffTableOps.blockSpatial)
         // -- dieser Zweig ist derzeit unerreichbar.
         is NeutralType.Geometry -> "SDO_GEOMETRY"
         else -> simpleToSql(type)
