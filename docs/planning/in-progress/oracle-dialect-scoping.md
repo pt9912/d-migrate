@@ -117,6 +117,54 @@
 >
 > `DialectCommandGate` hält nur noch `schema migrate` und `data profile`.
 >
+> **Status-Update 2026-09-06 (Slice 4a):** `OracleNeutralTypeCanonicalizer`
+> als lebende Komposition `reverse(toSql(t))` von `OracleTypeMapper` und
+> `OracleTypeMapping` — kein zweiter, handgepflegter Falt-Tisch. Zwei echte
+> Vorab-Bugs beim Bau entdeckt und behoben, keiner davon in der
+> Canonicalizer-Substanz selbst:
+> - **`JSON`/`XMLTYPE` fehlten im Reverse-Read** (seit Slice 1): beide
+>   fielen auf `Text(maxLength=null)` samt spurioser R301-Warnung zurück,
+>   statt auf `Json`/`Xml`. Ergänzt in `OracleTypeMapping.mapOpaque` +
+>   `KNOWN_TYPES`; ohne den Fix hätte der Kanonisierer beide Typen künstlich
+>   als Identity-Carve-out führen müssen.
+> - **`resolveRefType` blieb bei einem unaufloesbaren `refType` untätig**
+>   (Custom Type fehlt im Schema oder ist ein wertloser `COMPOSITE`):
+>   anders als `OracleColumnConstraintHelper.enumColumn`, das in jedem
+>   dieser Fälle auf `plainColumn` (ungebundenes `VARCHAR2(4000)`) fällt,
+>   hätte der Kanonisierer den Typ unverändert stehen lassen — eine
+>   Divergenz, die im unabhängigen Review auffiel. Behoben: `resolveRefType`
+>   liefert nie mehr `null`, sondern bildet alle drei Zweige von
+>   `enumColumn` nach. Dieselbe Struktur existiert unverändert (und
+>   unbehoben) in `MssqlNeutralTypeCanonicalizer` —
+>   [`mssql-enum-reftype-unresolved-fallback-gap.md`](../open/mssql-enum-reftype-unresolved-fallback-gap.md)
+>   dokumentiert das für den eigenen, separat zu verifizierenden Fix.
+>
+> `enumWidth` aus `OracleColumnConstraintHelper.boundedEnumColumn`
+> extrahiert nach `OracleTypeMapper` (geteilte Quelle mit dem Kanonisierer,
+> analog MSSQL). `Identifier(autoIncrement=true)` ist bewusst KEIN
+> Identity-Carve-out (anders als PostgreSQL) — Oracles Reverse-Read faltet
+> jede Identity-Spalte ohnehin auf ihren Basistyp, die Komposition liefert
+> das schon richtig.
+>
+> Zwei Live-Belege in `test/integration-oracle` (gegen den echten
+> Testcontainer, nicht nur eine zweite Tabelle): eine Typ-für-Typ-Sonde
+> (analog `MssqlNeutralTypeCanonicalizerIntegrationTest`) und ein
+> Postcompare-Fingerprint-Beleg (analog
+> `MssqlPostCompareFingerprintIntegrationTest`, inkl. der diskriminierenden
+> Gegenprobe „ohne Projektion driftet derselbe Round-Trip"). Letzterer
+> deckte einen weiteren, echten aber **außerhalb der Canonicalizer-Substanz
+> liegenden** Befund auf:
+> `FingerprintValueProjection.generation()` bettet
+> `ColumnGeneration.Identity.sequenceName` roh ein; Oracles Identity-Sequenz
+> ist system-generiert (`ISEQ$$_n`) und für ein user-authored `desired`-
+> Schema nie im Voraus bekannt — jede frisch angelegte Oracle-IDENTITY-Spalte
+> würde nach `--execute` als Drift gemeldet. Aktuell **dormant** (Gate
+> blockt `schema migrate` für Oracle bis Slice 5) und kein Slice-4a-Fix (der
+> `(NeutralType) -> NeutralType`-Hook sieht `ColumnGeneration` gar nicht) —
+> dokumentiert in
+> [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md)
+> für Slice 5.
+>
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -226,7 +274,8 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **1a** ✅ | CLI-E2E-Absicherung in `test/e2e-cli` (Gate-Ablehnungen + `schema reverse`-Subprozess-E2E), analog MSSQL Slice 1a | E2E-Netz vor Slice 2 |
 | **2** ✅ | `DdlGenerator` + Typtabelle NeutralType→Oracle-Typen (Kern-Typen; Materialized Views bewusst **nicht** hier, siehe Slice 10) | `schema generate --target oracle` |
 | **3** ✅ | `DataReader`/`DataWriter` (Transfer). **3b** (sample-db-Oracle-Leg im Harness, analog [ADR 0013](../../adr/0013-sample-db-sourcing.md)/[ADR 0014](../../adr/0014-sample-db-harness-fetch-and-compose.md)) bewusst **nicht** Teil dieses Slices — separater Folge-Schnitt | `data export/import/transfer` funktioniert |
-| **4** | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg, `transferCompatibility`, Cross-Dialekt-sample-db-Smoke | Vergleichs-Substrat für Slice 5 |
+| **4a** | `NeutralTypeCanonicalizer` + Postcompare-Fingerprint-Beleg (`transferCompatibility` bereits Slice 3) | Vergleichs-Substrat für Slice 5 |
+| **4b** | Cross-Dialekt-sample-db-Smoke — strukturell blockiert auf **3b** ([`oracle-sample-db-leg.md`](../next/oracle-sample-db-leg.md)), das den Harness-Anschluss erst liefert | Cross-Dialekt-Beleg im Harness |
 | **5** | Diff/Migrate (`OracleDiff*Ops`) inkl. Beitritt zum Cross-Dialekt-Matrix-Sweep. Voraussichtlich größter Slice (bei MSSQL größer als Slices 1–4 zusammen) — Sub-Slice-Schnitt folgt Familien-Gliederung, sobald der Slice beginnt | `schema migrate` |
 | **6** | Function-based- + Bitmap-Indizes, Reverse + Generate + Diff | volle Index-Treue |
 | **7** | Partitionierung: Range/List/Hash/Composite (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster) | Partitionstabellen im Round-Trip |

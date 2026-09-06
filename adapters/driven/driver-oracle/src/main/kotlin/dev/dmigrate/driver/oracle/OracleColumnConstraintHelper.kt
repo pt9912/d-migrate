@@ -133,8 +133,7 @@ internal class OracleColumnConstraintHelper(
     }
 
     private fun boundedEnumColumn(ctx: ColumnContext, values: List<String>): String {
-        val width = maxOf(values.maxOfOrNull { it.length } ?: 1, 1)
-        val parts = mutableListOf(quoteIdentifier(ctx.colName), "VARCHAR2($width)")
+        val parts = mutableListOf(quoteIdentifier(ctx.colName), "VARCHAR2(${OracleTypeMapper.enumWidth(values)})")
         parts += nullabilityDefaultUnique(ctx, lob = false)
         val allowed = values.joinToString(", ") { typeMapper.toDefaultSql(DefaultValue.StringLiteral(it), ctx.col.type) }
         parts += "CONSTRAINT ${quoteIdentifier(checkName(ctx))} CHECK (${quoteIdentifier(ctx.colName)} IN ($allowed))"

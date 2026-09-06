@@ -3,6 +3,7 @@ package dev.dmigrate.driver.oracle
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.NeutralTypeCanonicalizer
 import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.StructuralTransferTypeCompatibility
 import dev.dmigrate.driver.TransferTypeCompatibility
@@ -14,8 +15,9 @@ import dev.dmigrate.driver.data.TableLister
 /**
  * [DatabaseDriver]-Implementierung für Oracle.
  *
- * Reverse-Read (Slice 1), DDL-Generate (Slice 2) und Datenpfad (Slice 3,
- * `data export`/`import`/`transfer`). Die verbleibenden Kommandos
+ * Reverse-Read (Slice 1), DDL-Generate (Slice 2), Datenpfad (Slice 3,
+ * `data export`/`import`/`transfer`) und Postcompare-Vergleichssubstrat
+ * (Slice 4a, `typeCanonicalizer()`). Die verbleibenden Kommandos
  * (`schema migrate`, `data profile`) bleiben unerreichbar, weil
  * `DialectCommandGate` (ADR 0052) oracle dort noch an der Kommando-Grenze
  * abweist; die übrigen Fähigkeitsmethoden behalten ihre konservativen
@@ -35,4 +37,6 @@ class OracleDriver : DatabaseDriver {
 
     override fun transferCompatibility(): TransferTypeCompatibility =
         StructuralTransferTypeCompatibility(OracleTypeMapper())
+
+    override fun typeCanonicalizer(): NeutralTypeCanonicalizer = OracleNeutralTypeCanonicalizer
 }

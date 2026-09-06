@@ -108,12 +108,20 @@ internal object OracleTypeMapping {
 
     private fun mapOpaque(typeName: String): NeutralType? = when (typeName.uppercase()) {
         "RAW", "LONG RAW", "BLOB" -> NeutralType.Binary
+        // Native Oracle-21c+-Typen (OracleTypeMapper.simpleToSql rendert Json/Xml
+        // dorthin); ohne diese Zweige fielen beide auf den generischen
+        // Text(maxLength=null)-Fallback zurueck -- ein echter Fidelity-Verlust,
+        // nicht nur eine Kanonisierungs-Feinheit (Slice 4 beim NeutralType-
+        // Canonicalizer-Bau gefunden).
+        "JSON" -> NeutralType.Json
+        "XMLTYPE" -> NeutralType.Xml
         else -> null
     }
 
     private val KNOWN_TYPES = setOf(
         "NUMBER", "FLOAT", "BINARY_DOUBLE", "BINARY_FLOAT", "VARCHAR2", "NVARCHAR2",
         "CHAR", "NCHAR", "CLOB", "NCLOB", "LONG", "DATE", "RAW", "LONG RAW", "BLOB",
+        "JSON", "XMLTYPE",
     )
 
     private fun unknownTypeNote(columnName: String, typeName: String): SchemaReadNote? {

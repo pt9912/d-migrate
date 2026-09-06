@@ -89,6 +89,17 @@ class OracleTypeMappingTest : FunSpec({
         }
     }
 
+    test("JSON and XMLTYPE map to their native neutral types, not the text fallback") {
+        OracleTypeMapping.mapColumn("c", input("JSON")).let {
+            it.type shouldBe NeutralType.Json
+            it.note.shouldBeNull()
+        }
+        OracleTypeMapping.mapColumn("c", input("XMLTYPE")).let {
+            it.type shouldBe NeutralType.Xml
+            it.note.shouldBeNull()
+        }
+    }
+
     test("an unknown type falls back to text and emits an R301 warning note") {
         val result = OracleTypeMapping.mapColumn("weird_col", input("SDO_GEOMETRY"))
         result.type shouldBe NeutralType.Text(maxLength = null)

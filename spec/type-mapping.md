@@ -330,6 +330,8 @@ Oracle-Default (keine Klausel) und werden ohne Notiz weggelassen,
 | `VARCHAR2`/`NVARCHAR2` | Länge in Zeichen | keine Byte/Unicode-Aufspaltung wie bei MSSQL |
 | `DATE` | `datetime(timezone=false)` | trägt eine Uhrzeitkomponente |
 | `TIMESTAMP [WITH [LOCAL] TIME ZONE]` | `datetime` bzw. `datetime(timezone=true)` | |
+| `JSON` | `json` | nativer Oracle-21c+-Typ |
+| `XMLTYPE` | `xml` | nativer Typ |
 | `sysdate`/`systimestamp` (Default) | `current_timestamp` | kanonisiert für Cross-Dialekt-Portabilität (lowercase, wie bei MySQL/MSSQL) |
 | `TRUNC(SYSDATE)` (Default) | `current_date` | |
 | `TO_CHAR(SYSDATE, 'HH24:MI:SS')` (Default) | `current_time` | |

@@ -142,5 +142,14 @@ class OracleTypeMapper : TypeMapper {
         const val MAX_NUMBER_PRECISION = 38
         const val UUID_LENGTH = 36
         const val TIME_TEXT_LENGTH = 8
+
+        /**
+         * `VARCHAR2`-Breite fuer eine wertebasierte Enum-Spalte -- der
+         * laengste Wert, mindestens 1. Einzige Quelle fuer
+         * [OracleColumnConstraintHelper] (Generate) und
+         * [OracleNeutralTypeCanonicalizer] (Postcompare-Projektion), damit
+         * beide dieselbe Spalte meinen.
+         */
+        fun enumWidth(values: List<String>): Int = maxOf(values.maxOfOrNull { it.length } ?: 1, 1)
     }
 }
