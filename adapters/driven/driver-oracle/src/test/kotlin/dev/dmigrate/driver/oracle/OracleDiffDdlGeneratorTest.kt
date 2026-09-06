@@ -2,14 +2,13 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.NamedTable
+import dev.dmigrate.core.diff.NamedView
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.model.ColumnDefinition
-import dev.dmigrate.core.model.ConstraintDefinition
-import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
@@ -18,6 +17,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.TransactionBehavior
@@ -27,10 +27,10 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
 /**
- * Sub-Slice 5a: covers only the table/column/primary-key operation family.
- * Everything else (constraints, indices on existing tables, views, custom
- * types, sequences, routines, triggers) is asserted UNSUPPORTED here and
- * lands in later sub-slices.
+ * Sub-Slice 5a: the table/column/primary-key operation family. Constraints
+ * and indices (5b) have their own spec, [OracleDiffObjectOpsTest]; the
+ * families still ahead (views and custom types 5c, sequences 5d, routines,
+ * triggers) are asserted UNSUPPORTED here.
  */
 class OracleDiffDdlGeneratorTest : FunSpec({
 
@@ -307,9 +307,9 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         planAndDown(diff).statements.single().sql shouldBe "ALTER TABLE \"users\" ADD CONSTRAINT \"pk_users\" PRIMARY KEY (\"id\");"
     }
 
-    test("AddConstraint is not yet supported (Sub-Slice 5b) and blocks DIALECT_UNSUPPORTED_OPERATION") {
-        val c = ConstraintDefinition(name = "uq_email", type = ConstraintType.UNIQUE, columns = listOf("email"))
-        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "users", constraintsAdded = listOf(c))))
+    test("CreateView is not yet supported (Sub-Slice 5c) and blocks DIALECT_UNSUPPORTED_OPERATION") {
+        val view = ViewDefinition(query = "SELECT 1 FROM dual")
+        val diff = SchemaDiff(viewsAdded = listOf(NamedView("v_x", view)))
         val r = planAndUp(diff)
         r.isBlocked shouldBe true
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION

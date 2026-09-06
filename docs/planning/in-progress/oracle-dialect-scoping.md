@@ -204,6 +204,69 @@
 > Behauptung zur Index-Namensstabilität unter `RENAME TO` — letztere ist
 > jetzt gemessen und stimmt.
 >
+> **Status-Update 2026-09-06 (Slice 5b):** `OracleDiffObjectOps` —
+> `AddConstraint`/`DropConstraint`/`AddIndex`/`DropIndex` in beiden
+> Richtungen. Zwölf Oracle-Eigenheiten live gemessen, bevor irgendetwas
+> verdrahtet wurde; die drei, die den Renderer geprägt haben:
+> - **Kein `WITH CHECK`-Äquivalent nötig.** Oracle validiert einen
+>   nachgezogenen CHECK/FK per Default gegen den Bestand und scheitert an
+>   verletzenden Zeilen (`ORA-02293`/`ORA-02298`) — genau die strenge
+>   Semantik, die MSSQL sich mit `WITH CHECK` erst erkaufen muss. Die
+>   Gegenrichtung (`ENABLE NOVALIDATE`) existiert und funktioniert (künftige
+>   DML wird geprüft, Altbestand nicht), wäre aber eine stille Abschwächung
+>   und wird deshalb bewusst NICHT gerendert.
+> - **Ein UNIQUE-Constraint trägt seinen Index selbst**: `ADD CONSTRAINT`
+>   legt ihn unter dem Constraint-Namen an, `DROP CONSTRAINT` räumt ihn mit
+>   weg; einzeln droppen lässt Oracle ihn nicht (`ORA-02429`). Der Fall kann
+>   im Diff aber gar nicht entstehen, weil der Reverse Unique-Indizes nie
+>   als Index führt — `SchemaReaderUtils` hebt sie auf `column.unique` bzw.
+>   einen UNIQUE-Constraint, und zwar geteilt für vier Dialekte.
+> - **`DROP INDEX` nennt keinen Tabellennamen** (anders als MySQL), und es
+>   gibt **kein `IF EXISTS`** (`ORA-02443`) — die Down-Richtung darf nicht
+>   auf Idempotenz bauen.
+>
+> Weitere gemessene Randbedingungen, die der Renderer nicht abfangen kann und
+> die deshalb nur dokumentiert sind: Constraint- und Indexnamen sind
+> **schema-global** (`ORA-02264`/`ORA-00955`, dieselbe Falle wie MSSQLs
+> Msg 2714), und ein UNIQUE, auf das ein Fremdschlüssel zeigt, lässt sich
+> nicht droppen (`ORA-02273`) — beides entscheidet sich erst beim Ausführen
+> bzw. an der Operationsreihenfolge des Planners.
+>
+> Vorprüfungen vor dem Generate-Helfer: der rechnet mit wohlgeformten
+> Schemata und würde einen fehlenden CHECK-Ausdruck als `CHECK (null)`
+> interpolieren bzw. bei fehlendem `references` mit einer NPE abbrechen. 5b
+> blockt beide Fälle benannt, ebenso `EXCLUDE` (E054 war bis dahin nur eine
+> Notiz) und UNIQUE auf LOB-Spalten (E057).
+>
+> **Zur Rename-Warnung aus 5a:** sie war in der Begründung falsch, im Kern
+> aber zu harmlos formuliert. `DropConstraint` trägt zwar einen Namen im
+> Payload (`ConstraintDefinition.name`, nicht-nullbar) — nur ist der bei
+> einspaltigen Constraints **erfunden**: `TableComparator.normalizeConstraints`
+> zieht JEDES einspaltige UNIQUE und jeden einspaltigen FK auf
+> `singleColumnUnique`/`singleColumnForeignKeys` zusammen, **auch benannte
+> Tabellen-Constraints**, und `compareConstraints` materialisiert das Delta
+> anschließend über `syntheticUniqueConstraint`/`syntheticFkConstraint` mit
+> den Platzhaltern `_unique_<spalte>` bzw. `_fk_<spalte>` neu. Der Renderer
+> gibt genau diesen Platzhalter aus (`DROP CONSTRAINT "_unique_email"`), und
+> nichts bildet ihn auf den Katalognamen zurück — gegen eine echte Datenbank
+> endet das in `ORA-02443`. Das ist **dialektübergreifend und älter als
+> Oracle** (PostgreSQL und MSSQL rendern identisch, der Name geht schon beim
+> Reverse verloren); 5b ist nur der Slice, in dem Oracle es erbt. Ticket:
+> [`single-column-constraint-synthetic-name.md`](../open/single-column-constraint-synthetic-name.md).
+>
+> Der zweite schmale Fall bleibt bestehen: ein **anonymer Index**
+> (`IndexDefinition.name == null`, entsteht nur bei handgeschriebenen
+> Schemata, weil der Reverse den Namen immer setzt). Add- und Drop-Pfad
+> teilen sich dafür jetzt eine Namensauflösung
+> (`OracleIndexDdlBuilder.effectiveName`), damit ein `DROP INDEX` nicht einen
+> anderen Namen sucht, als das `CREATE INDEX` vergeben hat.
+>
+> **Nicht verdrahtet, bewusst:** `CheckPreflightGate` (PostgreSQL/MySQL/
+> SQLite nutzen ihn für `AddConstraint(CHECK)`, MSSQL nicht). Er ist eine
+> Vorab-Diagnose gegen Live-Daten, kein Korrektheitsbaustein — Oracles
+> Default-Validierung sorgt ohnehin dafür, dass eine verletzte Bedingung
+> nicht durchrutscht.
+>
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -421,7 +484,7 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | --- | --- | --- | --- |
 | **5a** ✅ | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders). Kein Default-Dreischritt nötig. `RENAME TO`/`RENAME COLUMN` sind native Syntax. Identity-Typ-/Modus-Änderungen live bestätigt in-place — kein Rebuild-Zweig; das *Hinzufügen* von Identity blockt benannt (siehe oben) | Unit-Tests je Operation und Richtung |
 | ~~5a-2~~ | — | **Entfällt** — die Live-Sonde bestätigte, dass Oracle Identity-Typänderungen per `ALTER TABLE ... MODIFY` in-place erlaubt (siehe oben); MSSQLs Rebuild-Sub-Slice hat kein Oracle-Äquivalent. Der einzige Rest-Fall (Identity *hinzufügen*) ist in [`oracle-add-identity-requires-rebuild.md`](../open/oracle-add-identity-requires-rebuild.md) ausgelagert | — |
-| **5b** | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes (Function-based/Bitmap bleiben E057-geblockt); Constraint-Namen sind bereits konventionsbasiert, kein Katalog-Lookup nötig. **Achtung:** Constraint- und Indexnamen überleben ein `RENAME TO` unverändert (live gemessen) und driften damit von der tabellennamen-tragenden Konvention ab — ein aus dem *aktuellen* Tabellennamen gebildeter `DROP CONSTRAINT`/`DROP INDEX` liefe nach einem Rename ins Leere | Unit-Tests je Operation und Richtung |
+| **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes — ein nicht-BTREE-Indextyp rendert als B-Tree mit `W102` (so wie im Generate-Pfad, `spec/ddl-generation-rules.md`); Constraint-Namen kommen aus dem Operations-Payload, kein Katalog-Lookup nötig. Kein `WITH CHECK`-Äquivalent: Oracle validiert per Default gegen den Bestand (siehe oben) | Unit-Tests je Operation und Richtung |
 | **5c** | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
 | **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
 | **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingung:** [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss vorher gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |

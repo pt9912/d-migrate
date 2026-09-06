@@ -13,7 +13,7 @@ import dev.dmigrate.driver.TransformationNote
 /**
  * Index-DDL fuer Oracle, aus [OracleDdlGenerator] ausgelagert (Slice 5a):
  * einzige Quelle fuer sowohl den Generate-Pfad (`generateIndices`) als auch
- * den Diff-Pfad (`OracleDiffTableOps.renderCreateTable`, `OracleDiffOtherOps`
+ * den Diff-Pfad (`OracleDiffTableOps.renderCreateTable`, `OracleDiffObjectOps`
  * ab Sub-Slice 5b) -- ein neu angelegter Index soll unabhaengig vom Aufrufer
  * dieselbe SQL bekommen, nicht eine zweite, moeglicherweise driftende Kopie.
  */
@@ -21,8 +21,18 @@ internal class OracleIndexDdlBuilder(
     private val quoteIdentifier: (String) -> String,
 ) {
 
+    /**
+     * Der Name, unter dem der Index tatsaechlich entsteht -- fuer einen
+     * anonymen Index aus Tabellen- und Spaltennamen gebildet. Einzige Quelle
+     * fuer Anlegen UND Loeschen (`OracleDiffObjectOps`): berechneten beide
+     * Seiten ihn getrennt, koennte ein `DROP INDEX` einen anderen Namen
+     * treffen als das `CREATE INDEX` vergeben hat.
+     */
+    fun effectiveName(tableName: String, index: IndexDefinition): String =
+        index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+
     fun render(tableName: String, table: TableDefinition, index: IndexDefinition, lobColumns: Set<String>): DdlStatement {
-        val indexName = index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+        val indexName = effectiveName(tableName, index)
         val columns = table.columns
 
         // Oracle Text (Slice 8) baut Volltext-Indizes noch nicht.

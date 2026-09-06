@@ -10,17 +10,18 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
 
 /**
- * Oracle-flavoured renderer for the migration pipeline (ADR 0052 Sub-Slice
- * 5a). Covers only the table/column/primary-key family of [DiffOperation]s
- * so far:
+ * Oracle-flavoured renderer for the migration pipeline (ADR 0052, Sub-Slices
+ * 5a + 5b). Covers two of the [DiffOperation] families so far:
  *
- * In scope: `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`,
- * `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`,
- * `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey`.
+ * In scope: the table/column/primary-key family (5a) — `CreateTable`,
+ * `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`,
+ * `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`,
+ * `AddPrimaryKey`, `DropPrimaryKey` — plus the constraint/index family (5b):
+ * `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex`.
  *
- * Everything else surfaces as `DIALECT_UNSUPPORTED_OPERATION` — constraints
- * and indices (Sub-Slice 5b), views and custom types (5c), sequences (5d),
- * and the remaining families follow in later sub-slices per
+ * Everything else surfaces as `DIALECT_UNSUPPORTED_OPERATION` — views and
+ * custom types (5c), sequences (5d), and the remaining families follow in
+ * later sub-slices per
  * `docs/planning/in-progress/oracle-dialect-scoping.md`.
  *
  * Not yet wired into `MigrateRendererRegistry`/`DialectCommandGate` — like
@@ -35,6 +36,7 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * - [OracleDiffTableOps] — table / column / primary-key ops (reuses
  *   [OracleColumnConstraintHelper] / [OracleIndexDdlBuilder] from the
  *   Generate path).
+ * - [OracleDiffObjectOps] — constraint / index ops, same reuse.
  * - [OracleDiffRenderContext] — bookkeeping for one render pass.
  */
 class OracleDiffDdlGenerator : DiffDdlGenerator {
@@ -70,6 +72,7 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         }
         when (categorize(op)) {
             OpCategory.TABLE -> renderTableOp(op, ctx)
+            OpCategory.OBJECT -> renderObjectOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -95,11 +98,13 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropPrimaryKey,
         -> OpCategory.TABLE
 
-        is DiffOperation.AlterTablePartitions,
         is DiffOperation.AddConstraint,
         is DiffOperation.DropConstraint,
         is DiffOperation.AddIndex,
         is DiffOperation.DropIndex,
+        -> OpCategory.OBJECT
+
+        is DiffOperation.AlterTablePartitions,
         is DiffOperation.CreateCustomType,
         is DiffOperation.AlterCustomType,
         is DiffOperation.DropCustomType,
@@ -147,10 +152,20 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderObjectOp(op: DiffOperation, ctx: OracleDiffRenderContext) {
+        when (op) {
+            is DiffOperation.AddConstraint -> OracleDiffObjectOps.renderAddConstraint(op, ctx)
+            is DiffOperation.DropConstraint -> OracleDiffObjectOps.renderDropConstraint(op, ctx)
+            is DiffOperation.AddIndex -> OracleDiffObjectOps.renderAddIndex(op, ctx)
+            is DiffOperation.DropIndex -> OracleDiffObjectOps.renderDropIndex(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised OBJECT but renderObjectOp does not handle it")
+        }
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: OracleDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not yet supported by the Oracle migrate renderer.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OBJECT, UNSUPPORTED }
 }
