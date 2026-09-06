@@ -319,10 +319,13 @@ reverse:
 write:
   oracle:
     # Oracle setzt den leeren String mit NULL gleich. Trifft ein leerer
-    # Quellwert auf eine NOT-NULL-Spalte, ist er nicht schreibbar.
-    #   error  → Lauf bricht mit benannter Meldung ab (Default, aendert keine Daten)
-    #   null   → als NULL schreiben (nur bei nullbarer Spalte zulaessig)
-    #   <text> → dieser Wert tritt an die Stelle des leeren Strings
+    # Quellwert auf eine NOT-NULL-Spalte, ist er nicht schreibbar. Bei einer
+    # nullbaren Spalte speichert Oracle NULL -- das ist keine Wahl.
+    #   error          → Lauf bricht mit benannter Meldung ab (Default, aendert keine Daten)
+    #   literal:<text> → dieser Text tritt an die Stelle des leeren Strings
+    # Das `literal:`-Praefix ist Pflicht: ohne es waere jeder Tippfehler ein
+    # gueltiger Ersatztext. Ein nicht erkannter Wert ist ein Konfigurationsfehler
+    # (Exit 7), kein stiller Rueckfall auf den Default.
     # Prioritaet: CLI-Flag `--oracle-empty-string` > Config-Wert > Default.
     empty_string: error
 

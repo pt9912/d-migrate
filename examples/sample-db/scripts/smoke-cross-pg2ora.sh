@@ -239,10 +239,16 @@ ora_act=$(ora_val "SELECT SUM(\"activebool\") FROM \"customer\";")
 [ "$pg_act" = "$ora_act" ] || fail "boolean->NUMBER mismatch: src=$pg_act dst=$ora_act"
 log "  boolean->NUMBER(1) OK (true-count $pg_act)"
 
-# text/varchar -> VARCHAR2
-[ "$(ora_type customer email)" = "VARCHAR2" ] \
-    || fail "customer.email expected VARCHAR2, got $(ora_type customer email)"
-log "  text->VARCHAR2 OK"
+# Begrenztes text/varchar -> VARCHAR2, UNbegrenztes -> CLOB. Der Unterschied
+# ist die Aussage: Oracles VARCHAR2 endet bei 4000 Zeichen, ein `text` ohne
+# Laengenangabe passt dort nicht hinein.
+# In diesem Pagila-Dump ist `language.name` die EINZIGE laengenbegrenzte
+# Textspalte (character(20)); alles andere ist unbegrenztes `text`.
+[ "$(ora_type language name)" = "CHAR" ] \
+    || fail "language.name (character(20)) expected CHAR, got $(ora_type language name)"
+[ "$(ora_type customer email)" = "CLOB" ] \
+    || fail "customer.email (unbounded text) expected CLOB, got $(ora_type customer email)"
+log "  bounded char->CHAR, unbounded text->CLOB OK"
 
 # timestamptz -> TIMESTAMP WITH TIME ZONE
 ptz=$(ora_type payment payment_date)

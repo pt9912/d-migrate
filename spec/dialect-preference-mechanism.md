@@ -77,7 +77,7 @@ Abbildungen sind gewöhnliche Reverse-Notes, keine Präferenzen.
 
 | Dialekt | Mehrdeutigkeit | Präferenz-Werte | Default | Detail |
 | ------- | -------------- | --------------- | ------- | ------ |
-| Oracle | Der leere String `''` ist in Oracle **identisch mit NULL**. Trifft ein leerer Quellwert auf eine `NOT NULL`-Spalte, ist er nicht schreibbar; welcher Ersatz gemeint ist, weiß nur der Anwender | `error` (Lauf bricht mit benannter Meldung ab) · `null` (als NULL schreiben, nur bei nullbarer Spalte) · beliebiger Literalwert (z. B. `" "`), der an die Stelle des leeren Strings tritt | `error` | [`type-mapping.md`](type-mapping.md) |
+| Oracle | Der leere String `''` ist in Oracle **identisch mit NULL**. Trifft ein leerer Quellwert auf eine `NOT NULL`-Spalte, ist er nicht schreibbar; welcher Ersatz gemeint ist, weiß nur der Anwender | `error` (Lauf bricht mit benannter Meldung ab) · `literal:<text>` (dieser Text tritt an die Stelle des leeren Strings) | `error` | [`type-mapping.md`](type-mapping.md) |
 
 ## 6. Was hier hineingehört
 
@@ -104,3 +104,13 @@ Der Default `error` ist die konservative Wahl im Sinne von Abschnitt 1: ohne
 Deklaration ändert d-migrate **keine Daten** und schreibt nichts, was der Anwender
 nicht angeordnet hat. Er muss dafür eine Meldung tragen, die die Ursache nennt —
 eine rohe Treibermeldung (`ORA-01400`) genügt nicht.
+
+Die Präferenz gilt **nur für `NOT NULL`-Spalten**. Ist die Zielspalte nullbar,
+speichert Oracle den leeren String als NULL — das ist Oracles Semantik und keine
+Wahl, die d-migrate anbietet; es gäbe keine zweite vertretbare Antwort.
+
+Der Ersatzwert trägt bewusst das Präfix `literal:` statt frei zu stehen. Ohne die
+Markierung wäre jeder Tippfehler (`eror`) ein gültiger Ersatztext und landete
+stillschweigend in der Spalte — genau die Überraschung, die dieser Mechanismus
+verhindern soll. **Ein nicht erkannter Wert ist ein Konfigurationsfehler**
+(Exit 7), keine stille Rückkehr zum Default.

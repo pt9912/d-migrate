@@ -12,6 +12,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
+import dev.dmigrate.driver.data.OracleEmptyString
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.core.data.DataFilter
@@ -31,6 +32,11 @@ data class DataTransferRequest(
     val tables: List<String>? = null, val filter: ParsedFilter? = null,
     val sinceColumn: String? = null, val since: String? = null,
     val onConflict: String = "abort", val triggerMode: String = "fire",
+    // Schreib-Praeferenz fuer den leeren String gegen ein Oracle-Ziel
+    // (dialect-preference-mechanism.md). Roh, wie vom CLI-Flag kommend;
+    // aufgeloest wird in der CLI-Schicht, die die Config kennt.
+    val oracleEmptyString: dev.dmigrate.driver.data.OracleEmptyString =
+        dev.dmigrate.driver.data.OracleEmptyString.Error,
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
     // LN-007/LN-008: max. Nebenläufigkeit für unabhängige Tabellen/Partitionen (Default 1 = sequenziell).
     val parallel: Int = 1,
@@ -194,8 +200,7 @@ class DataTransferRunner(
             userFacingPrintError("--trigger-mode strict is not supported for dialect ${tgtCfg.dialect}", tgtRef); return 2
         }
 
-        val opts = ImportOptions(triggerMode = triggerMode,
-            truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
+        val opts = importOptionsFor(request, triggerMode)
         val filter = DataExportHelpers.resolveFilter(
             parsedFilter = request.filter,
             dialect = srcCfg.dialect,
@@ -260,6 +265,15 @@ class DataTransferRunner(
      * + `--atomic` fällt auf 1 zurück (CLI-explizit fängt [validate] hart ab), danach die
      * SQLite-Klemme. Extrahiert, damit `executeWithConnections` unter der detekt-LongMethod-Grenze bleibt.
      */
+    /** Die Schreib-Optionen eines Transfers -- alles, was das Ziel beim Schreiben steuert. */
+    private fun importOptionsFor(request: DataTransferRequest, triggerMode: TriggerMode): ImportOptions =
+        ImportOptions(
+            triggerMode = triggerMode,
+            truncate = request.truncate,
+            onConflict = OnConflict.valueOf(request.onConflict.uppercase()),
+            oracleEmptyString = request.oracleEmptyString,
+        )
+
     private fun effectiveTransferParallelism(
         request: DataTransferRequest,
         sqliteInvolved: Boolean,
@@ -292,7 +306,11 @@ class DataTransferRunner(
             return 7
         }
         val report = try {
-            TransferVerifier(canonicalizer).verify(
+            TransferVerifier(
+                canonicalizer,
+                substitutesEmptyStrings = request.oracleEmptyString is OracleEmptyString.Literal,
+                targetFoldsEmptyStringToNull = target.reader.dialect == DatabaseDialect.ORACLE,
+            ).verify(
                 tables = tables,
                 source = source,
                 target = target,

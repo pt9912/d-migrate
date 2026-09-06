@@ -52,3 +52,15 @@ database:
     # (runtime-generierte DuckDB-schema.sql + CSVs, kein TPC-Artefakt im Repo).
     tpcds_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpcds"
     tpcds_pg_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/tpcds_target"
+
+# Schreib-Praeferenzen (dialect-preference-mechanism.md).
+write:
+  oracle:
+    # Pagila fuehrt in zwei NOT-NULL-Textspalten leere Strings
+    # (address.district: 3 Zeilen, address.phone: 2 von 603). Oracle setzt
+    # den leeren String mit NULL gleich, sie sind dort also nicht
+    # schreibbar. Der Harness erklaert deshalb ausdruecklich, was an ihre
+    # Stelle tritt -- statt dass das Smoke-Skript die Quelle still
+    # umschreibt und der Lauf gruen aussieht, ohne dass jemand den
+    # Unterschied gesehen haette.
+    empty_string: "literal: "

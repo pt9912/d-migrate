@@ -31,6 +31,12 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         .default("abort")
     val triggerMode by option("--trigger-mode", help = "Trigger handling: fire|disable|strict")
         .default("fire")
+    val oracleEmptyString by option(
+        "--oracle-empty-string",
+        help = "Oracle target: what happens to an empty source string in a NOT NULL column — " +
+            "Oracle treats '' as NULL. `error` (default) aborts with a named message; " +
+            "`literal:<text>` substitutes that text. Overrides write.oracle.empty_string.",
+    )
     val truncate by option("--truncate", help = "Truncate target tables before transfer")
         .flag()
     val verify by option(
@@ -95,6 +101,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
                 since = since,
                 onConflict = onConflict,
                 triggerMode = triggerMode,
+                oracleEmptyString = oracleEmptyString,
                 truncate = truncate,
                 verify = verify,
                 atomic = atomic,

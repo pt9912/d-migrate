@@ -8,43 +8,42 @@
 > eingebettet (anders als beim MSSQL-Vorbild, das 3+3b gemeinsam
 > geliefert hat, `docs/planning/done/mssql-dialect-scoping.md` Zeile 218).
 
-> **Status-Update 2026-09-06:** P0–P4 gebaut (Compose-Service, `.env`,
-> `.d-migrate.yaml`-Verbindung, `smoke-cross-pg2ora.sh`,
-> `make sample-db-cross-smoke-pg2ora`). Der Lauf kommt bis einschliesslich
-> **DDL-Anwendung per sqlplus und Tabellenzahl-Paritaet (15 = 15)** und
-> bricht dann im Datentransfer ab. Er ist damit **rot** — bewusst, statt
-> den Transferschritt zu ueberspringen.
+> **Status-Update 2026-09-06: erledigt.** P0–P5 gebaut, der Lauf ist
+> **gruen**: Pagila PG → Oracle mit `sqlplus`-angewandter DDL,
+> `--verify OK` (18 Ausschluesse gepinnt), Paritaet ueber alle 15 Tabellen,
+> datenbelegte Typkonvertierungen, Schluesseltreue.
 >
-> **Der Lauf hat fuenf Defekte im ausgelieferten Oracle-Generate-Pfad
-> aufgedeckt**, die alle behoben sind. Keiner davon war durch die
-> DDL-Goldens abgedeckt, weil deren Fixtures die noetigen Kombinationen
-> nicht enthalten:
+> **Der Weg dorthin hat sechs Defekte im ausgelieferten Pfad aufgedeckt.**
+> Keiner war durch die DDL-Goldens abgedeckt — deren Fixtures enthalten die
+> noetigen Kombinationen nicht:
 > - `NOT NULL DEFAULT x` — Oracle verlangt die DEFAULT-Klausel VOR der
->   Constraint (`ORA-03076`). Betraf jede Spalte mit beidem; im Golden ist
->   keine DEFAULT-Spalte zugleich NOT NULL.
+>   Constraint (`ORA-03076`). Im Golden ist keine DEFAULT-Spalte NOT NULL.
 > - `CACHE 1` — Oracle verlangt >= 2 oder `NOCACHE` (`ORA-04010`).
 >   PostgreSQLs Sequenz-Default IST 1, also traf es jede reverse-gelesene
->   PG-Sequenz; im Golden stehen nur 20 und `NOCACHE`.
+>   PG-Sequenz.
 > - **`TIMESTAMP WITH TIME ZONE` als Schluesselspalte** (`ORA-02329`) —
 >   dieselbe Fehlernummer wie CLOB/BLOB, aber die weniger bekannte Haelfte:
->   PG, MySQL und SQL Server erlauben es. Pagilas `payment`-PK laeuft ueber
->   `payment_date`.
-> - **Jede Anweisung lief doppelt.** Die Skript-Darstellung setzte hinter
->   jede `;`-terminierte Anweisung ein `/`. In SQL*Plus beendet `/` keinen
->   Batch (wie T-SQLs `GO`), sondern fuehrt den Puffer ERNEUT aus. Bei DDL
->   fiel das als `ORA-00955` auf; bei einem Datenskript waere es ein
->   doppelter INSERT gewesen. `batchSeparator` ist fuer Oracle jetzt `null`;
->   `/` gehoert erst zu PL/SQL-Bloecken (Slice 9) und dort ANSTELLE des `;`.
-> - Der Test, der das haette fangen sollen, hiess „batchSeparator is GO for
->   mssql only", zaehlte die uebrigen Dialekte aber einzeln auf und liess
->   Oracle aus. Er laeuft jetzt ueber `DatabaseDialect.entries`.
+>   PG, MySQL und SQL Server erlauben es. Pagilas `payment`-PK laeuft
+>   darueber.
+> - **Jede Anweisung lief doppelt.** Hinter jeder `;`-terminierten Anweisung
+>   stand ein `/`. In SQL*Plus beendet `/` keinen Batch (wie T-SQLs `GO`),
+>   sondern fuehrt den Puffer ERNEUT aus. Bei DDL fiel es als `ORA-00955`
+>   auf; bei einem Datenskript waere es ein doppelter INSERT gewesen. Ueber
+>   JDBC waere es nie sichtbar geworden.
+> - **JSON-Spalten waren nicht lesbar.** ojdbc verlangt
+>   `oracle.jdbc.jsonDefaultGetObjectType`; ohne sie scheitert JEDER
+>   Lesezugriff mit `ORA-18722` — betraf Oracle als Transfer-Quelle,
+>   `data export` und den `--verify`-Rueckleseweg, weil `Array` und `Json`
+>   beide auf `JSON` abbilden.
+> - **`--verify` meldete Abweichungen, die keine sind.** Oracle speichert
+>   `''` als NULL; eine nullbare Textspalte mit leerem Quellwert wich damit
+>   immer ab. Der Vergleich faltet beides jetzt zusammen.
 >
-> **Offen und entscheidungsbeduerftig:** der Transfer scheitert an
-> [`oracle-empty-string-is-null-transfer.md`](../open/oracle-empty-string-is-null-transfer.md)
-> — Oracle setzt `''` mit NULL gleich, Pagila fuehrt in zwei `NOT NULL`-
-> Textspalten fuenf leere Strings. Das ist keine Harness-Frage, sondern
-> eine Produktentscheidung ueber den Datenpfad. **4b bleibt bis dahin
-> blockiert.**
+> Der leere String in **NOT-NULL**-Spalten ist ueber den
+> Praeferenz-Mechanismus geloest (`write.oracle.empty_string`,
+> [`dialect-preference-mechanism.md`](../../../spec/dialect-preference-mechanism.md)),
+> nicht durch eine stille Umformung. Der Harness deklariert seine Wahl in
+> der eigenen `.d-migrate.yaml`. **4b ist damit entblockt.**
 
 ## Ist-Zustand
 

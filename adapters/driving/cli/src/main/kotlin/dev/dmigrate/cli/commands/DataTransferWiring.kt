@@ -4,6 +4,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.audit.CliAuditRecorder
 import dev.dmigrate.cli.audit.cliAuditRecorder
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.cli.config.OracleEmptyStringResolver
 import dev.dmigrate.cli.config.ReverseAutoincrementResolver
 import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -37,6 +38,8 @@ internal data class DataTransferOptions(
     val cliContext: CliContext,
     val configPath: Path?,
     val sqliteAutoincrementWidth: Int? = null,
+    /** Roher Wert des `--oracle-empty-string`-Flags; aufgeloest gegen die Config. */
+    val oracleEmptyString: String? = null,
     /** Aus `database.pool:` aufgelöst (Config > Default); wird in beide `ConnectionConfig.pool` injiziert. */
     val pool: PoolSettings = PoolSettings(),
 )
@@ -93,6 +96,8 @@ internal object DataTransferWiring {
             noProgress = options.cliContext.noProgress,
             sqliteAutoincrement = ReverseAutoincrementResolver(configPathFromCli = options.configPath)
                 .resolve(options.sqliteAutoincrementWidth),
+            oracleEmptyString = OracleEmptyStringResolver(configPathFromCli = options.configPath)
+                .resolve(options.oracleEmptyString),
         )
         val runner = DataTransferRunner(
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },

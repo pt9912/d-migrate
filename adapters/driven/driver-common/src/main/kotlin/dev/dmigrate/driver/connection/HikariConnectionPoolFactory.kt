@@ -62,6 +62,17 @@ object HikariConnectionPoolFactory {
             idleTimeout = effectivePool.idleTimeoutMs
             maxLifetime = effectivePool.maxLifetimeMs
             keepaliveTime = effectivePool.keepaliveTimeMs
+            // ojdbc verlangt fuer JSON-Spalten eine ausdrueckliche Ansage, als
+            // WAS `getObject()` sie liefern soll -- ohne sie scheitert JEDER
+            // Lesezugriff auf eine solche Spalte mit `ORA-18722`, nicht erst
+            // die Umwandlung. Das trifft d-migrate an mehreren Stellen (Oracle
+            // als Transfer-Quelle, `data export`, der `--verify`-Rueckleseweg),
+            // weil `NeutralType.Array` und `NeutralType.Json` beide auf `JSON`
+            // abbilden. `String` ist die Form, in der der neutrale Datenpfad
+            // den Wert ohnehin fuehrt.
+            if (config.dialect == DatabaseDialect.ORACLE) {
+                addDataSourceProperty("oracle.jdbc.jsonDefaultGetObjectType", "java.lang.String")
+            }
             if (spatialite) {
                 // busy_timeout steckt für SpatiaLite-Connections in der URL (s.o.).
                 connectionInitSql = "SELECT load_extension('mod_spatialite')"

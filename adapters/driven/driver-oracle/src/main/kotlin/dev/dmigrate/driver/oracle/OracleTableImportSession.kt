@@ -5,6 +5,7 @@ import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.JdbcForeignValueNormalizer
 import dev.dmigrate.driver.data.OnConflict
+import dev.dmigrate.driver.data.OracleEmptyString
 import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.WriteResult
@@ -105,12 +106,33 @@ internal class OracleTableImportSession(
         row: Array<Any?>,
     ) {
         importedTargetColumns.forEachIndexed { index, targetColumn ->
-            val value = row[index]
+            val value = emptyStringSubstitute(targetColumn, row[index])
             if (value == null) {
                 stmt.setNull(index + 1, targetColumn.jdbcType)
             } else {
                 stmt.setObject(index + 1, JdbcForeignValueNormalizer.normalize(value))
             }
+        }
+    }
+
+    /**
+     * Oracle setzt den leeren String mit `NULL` gleich. In einer
+     * `NOT NULL`-Spalte ist er damit nicht schreibbar -- der Treiber meldete
+     * bisher nur `ORA-01400: cannot insert NULL`, was weder die Ursache
+     * nennt (der Wert ist nicht NULL, er ist leer) noch den Ausweg.
+     *
+     * Was stattdessen geschieht, erklaert der Anwender
+     * (`dialect-preference-mechanism.md`); ohne Deklaration bricht der Lauf
+     * mit der Meldung unten ab, statt Daten zu aendern.
+     *
+     * Nullbare Spalten bleiben unberuehrt: dort speichert Oracle NULL, und
+     * eine zweite vertretbare Antwort gibt es nicht.
+     */
+    private fun emptyStringSubstitute(targetColumn: TargetColumn, value: Any?): Any? {
+        if (targetColumn.nullable || value != "") return value
+        return when (val preference = options.oracleEmptyString) {
+            is OracleEmptyString.Literal -> preference.text
+            OracleEmptyString.Error -> throw OracleEmptyStringNotWritable(targetColumn.name)
         }
     }
 

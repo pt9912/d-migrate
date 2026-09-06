@@ -45,7 +45,26 @@ data class VerifySide(
     val schema: SchemaDefinition,
 )
 
-class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
+class TransferVerifier(
+    private val canonicalizer: ValueCanonicalizer,
+    /**
+     * Ob der Lauf eine **erklaerte Ersetzung** des leeren Strings vornimmt
+     * (Oracle-Ziel, `write.oracle.empty_string: literal:<text>`). Dann ist
+     * eine `NOT NULL`-Textspalte nicht mehr byte-verifizierbar -- d-migrate
+     * hat den Wert auf Anweisung des Anwenders geaendert, genau wie bei den
+     * Darstellungs-Umformungen unten. Ohne Ersetzung (Default `error`) aendert
+     * sich nichts.
+     */
+    private val substitutesEmptyStrings: Boolean = false,
+    /**
+     * Ob das Ziel den leeren String als NULL speichert (Oracle). Dann sind
+     * `''` in der Quelle und `NULL` im Ziel **derselbe** Wert, und der
+     * Vergleich muss sie gleich behandeln -- sonst meldet er eine Abweichung,
+     * die keine ist. Betrifft nullbare Spalten und gilt unabhaengig von jeder
+     * Praeferenz; bei `NOT NULL` greift stattdessen der Ausschluss oben.
+     */
+    private val targetFoldsEmptyStringToNull: Boolean = false,
+) {
 
     fun verify(
         tables: List<String>,
@@ -77,7 +96,10 @@ class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
         val excluded = mutableListOf<ColumnExclusion>()
         val active = mutableListOf<String>()
         for (column in shared) {
-            val reason = exclusionReason(sourceColumns.getValue(column).type, targetColumns.getValue(column).type)
+            val reason = exclusionReason(
+                sourceColumns.getValue(column),
+                targetColumns.getValue(column),
+            )
             if (reason != null) excluded.add(ColumnExclusion(table, column, reason)) else active.add(column)
         }
         val sourceTypes = active.associateWith { sourceColumns.getValue(it).type }
@@ -127,7 +149,7 @@ class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
                     checksum.addRow(
                         scope.active.map { column ->
                             val index = indexByName[column] ?: return@map null
-                            row[index]?.let { canonicalizer.canonicalize(it, types.getValue(column)) }
+                            foldEmptyString(row[index])?.let { canonicalizer.canonicalize(it, types.getValue(column)) }
                         },
                     )
                 }
@@ -135,6 +157,10 @@ class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
         }
         return checksum
     }
+
+    /** `''` und `NULL` sind im Ziel derselbe Wert -- beide Seiten auf NULL bringen. */
+    private fun foldEmptyString(value: Any?): Any? =
+        if (targetFoldsEmptyStringToNull && value == "") null else value
 
     /** Spalten einer (ggf. schema-qualifizierten) Tabelle aus dem Schema. */
     private fun columnsFor(schema: SchemaDefinition, table: String): Map<String, ColumnDefinition> {
@@ -145,7 +171,16 @@ class TransferVerifier(private val canonicalizer: ValueCanonicalizer) {
     }
 
     /** Grund für einen Spalten-Ausschluss, oder null wenn beide Seiten byte-verifizierbar sind. */
-    private fun exclusionReason(source: NeutralType, target: NeutralType): String? {
+    private fun exclusionReason(sourceColumn: ColumnDefinition, targetColumn: ColumnDefinition): String? {
+        val source = sourceColumn.type
+        val target = targetColumn.type
+        // Eine erklaerte Ersetzung veraendert genau die Spalten, die NOT NULL
+        // und textartig sind -- dort kann ein leerer Quellwert durch den
+        // Ersatztext ersetzt worden sein. Welche Zeile es traf, weiss der
+        // Vergleich nicht; byte-verifizierbar ist die Spalte damit nicht mehr.
+        if (substitutesEmptyStrings && targetColumn.required && canonicalFamily(target) == "text") {
+            return "declared empty-string substitution (write.oracle.empty_string), not byte-verifiable"
+        }
         val sourceFamily = canonicalFamily(source)
         val targetFamily = canonicalFamily(target)
         if (sourceFamily != targetFamily) {

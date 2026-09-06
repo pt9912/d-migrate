@@ -58,6 +58,14 @@ data class ImportOptions(
      * sind immer ABORT, unabhängig von diesem Wert (M6 / §3.6.1).
      */
     val onError: OnError = OnError.ABORT,
+
+    /**
+     * Was mit einem leeren Quell-String in einer `NOT NULL`-Spalte eines
+     * Oracle-Ziels geschieht (`dialect-preference-mechanism.md`). Default
+     * konservativ: der Lauf bricht ab, statt Daten zu aendern. Andere
+     * Dialekte ignorieren das Feld -- sie unterscheiden `''` von NULL.
+     */
+    val oracleEmptyString: OracleEmptyString = OracleEmptyString.Error,
 )
 
 /** Trigger-Modus für den Import (§6.7). */
