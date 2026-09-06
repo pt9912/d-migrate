@@ -246,14 +246,34 @@ internal object OracleMetadataQueries {
             )
         }
 
+    /**
+     * Benannte Sequenzen des Schemas -- **ohne** die Sequenzen hinter
+     * IDENTITY-Spalten.
+     *
+     * Oracle fuehrt die identity-gestuetzte Sequenz (`ISEQ$$_n`) in
+     * `ALL_SEQUENCES` wie jede andere. Sie ist aber kein Objekt, das ein
+     * Anwender deklariert hat: sie entsteht mit der Spalte, verschwindet mit
+     * ihr, und `ALTER SEQUENCE` fasst sie nicht an (`ORA-32793`). Ungefiltert
+     * traegt jedes reverse-gelesene Schema mit IDENTITY-Spalte eine Sequenz,
+     * die im Soll-Schema niemals steht -- der Vergleich meldete sie als
+     * fehlend, und `schema migrate` plante ein `DROP SEQUENCE`, das Oracle
+     * ohnehin ablehnt.
+     *
+     * PostgreSQL loest dasselbe ueber `pg_depend.deptype IN ('a','i')`; das
+     * Oracle-Gegenstueck ist `ALL_TAB_IDENTITY_COLS.SEQUENCE_NAME`.
+     */
     fun listSequences(session: JdbcOperations, schema: String): List<SequenceRow> =
         session.queryList(
             """
-            SELECT sequence_name, last_number, increment_by, min_value, max_value,
-                   cycle_flag, cache_size
-            FROM all_sequences
-            WHERE sequence_owner = ?
-            ORDER BY sequence_name
+            SELECT s.sequence_name, s.last_number, s.increment_by, s.min_value, s.max_value,
+                   s.cycle_flag, s.cache_size
+            FROM all_sequences s
+            WHERE s.sequence_owner = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM all_tab_identity_cols i
+                  WHERE i.owner = s.sequence_owner AND i.sequence_name = s.sequence_name
+              )
+            ORDER BY s.sequence_name
             """.trimIndent(),
             schema,
         ).map { row ->

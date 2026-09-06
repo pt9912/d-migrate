@@ -312,6 +312,32 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         planAndDown(diff).statements.single().sql shouldBe "ALTER TABLE \"users\" ADD CONSTRAINT \"pk_users\" PRIMARY KEY (\"id\");"
     }
 
+    // Der Cross-Dialekt-Matrix-Sweep traegt fuer Oracle einen Carve-out
+    // auf der E.2-Zelle und verweist als Deckung hierher -- die Zusage
+    // muss belegt sein, nicht nur behauptet.
+    test("a family still ahead (triggers, Slice 9) blocks DIALECT_UNSUPPORTED_OPERATION") {
+        val op = DiffOperation.CreateTrigger(
+            id = "create-trigger",
+            objectRef = DiffObjectRef(DiffObjectType.TRIGGER, listOf("trg_audit")),
+            trigger = dev.dmigrate.core.model.TriggerDefinition(
+                table = "orders",
+                timing = dev.dmigrate.core.model.TriggerTiming.BEFORE,
+                events = setOf(dev.dmigrate.core.model.TriggerEvent.INSERT),
+                body = "BEGIN NULL; END;",
+            ),
+        )
+        val plan = DiffResult(
+            current = DiffEndpoint(schemaName = "App"),
+            desired = DiffEndpoint(schemaName = "App"),
+            schemaDiff = SchemaDiff(),
+            operations = listOf(op),
+        )
+        val r = gen.generateUp(plan, DdlGenerationOptions())
+        r.isBlocked shouldBe true
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.statements.shouldBeEmpty()
+    }
+
     test("a family still ahead (materialized views, Slice 10) blocks DIALECT_UNSUPPORTED_OPERATION") {
         val op = DiffOperation.CreateMaterializedView(
             id = "create-mv",

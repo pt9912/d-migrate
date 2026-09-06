@@ -11,6 +11,8 @@ dependencies {
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))
     testImplementation(project(":hexagon:ports-write"))
+    testImplementation(project(":hexagon:application"))
+    testImplementation(testFixtures(project(":hexagon:application")))
 
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-oracle-free:${rootProject.properties["testcontainersVersion"]}")

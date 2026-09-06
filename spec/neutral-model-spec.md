@@ -1282,8 +1282,8 @@ Der Parser soll den Quell-Dialekt automatisch erkennen:
 | `SERIAL`, `BIGSERIAL`, `$$`, `LANGUAGE plpgsql` | PostgreSQL              |
 | `AUTO_INCREMENT`, `ENGINE=`, `DELIMITER //`     | MySQL                   |
 | `AUTOINCREMENT`, `WITHOUT ROWID`                | SQLite                  |
-| `IDENTITY`, `NVARCHAR`, `GO`                    | MS SQL Server (geplant) |
-| `NUMBER`, `VARCHAR2`, `PL/SQL`                  | Oracle (geplant)        |
+| `IDENTITY`, `NVARCHAR`, `GO`                    | MS SQL Server           |
+| `NUMBER`, `VARCHAR2`, `PL/SQL`                  | Oracle                  |
 
 Akzeptierte CLI-Aliase wie `postgres` werden intern auf kanonische Modellwerte normalisiert (`postgresql`, `mysql`, `sqlite`, `mssql`, `oracle`).
 

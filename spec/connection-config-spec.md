@@ -32,7 +32,7 @@ sqlite::memory:
 | `mysql`, `maria`, `mariadb` | `mysql` | MySQL / MariaDB |
 | `sqlite`, `sqlite3` | `sqlite` | SQLite |
 | `mssql`, `sqlserver` | `mssql` | MS SQL Server |
-| `oracle`, `ora` | `oracle` | Oracle (geplant) |
+| `oracle`, `ora` | `oracle` | Oracle |
 
 Aliase werden beim Parsen sofort auf den kanonischen Wert normalisiert.
 

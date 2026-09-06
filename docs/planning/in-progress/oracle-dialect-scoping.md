@@ -543,6 +543,107 @@
 > [`check-preflight-probe-duplication.md`](../open/check-preflight-probe-duplication.md)
 > (die fünfte zeichengleiche Kopie derselben Sonde).
 
+> **Status-Update 2026-09-06 (Slice 5e-3):** Oracle ist im
+> Cross-Dialekt-Matrix-Sweep. `MatrixCell.ALL_DIALECTS` führt es, und der
+> Sweep fährt damit jede gepinnte Workstream-Fixture auch gegen den
+> Oracle-Renderer.
+>
+> **Der erste Lauf legte eine zweite Registry frei.** Acht Zellen fielen
+> mit „No renderer registered for dialect ORACLE" — `MatrixSweepRunner`
+> hält seine eigene Dialekt→Renderer-Zuordnung, unabhängig von
+> `MigrateRendererRegistry`. Ein Dialekt, der in der CLI verdrahtet ist,
+> ist im Sweep noch nicht verdrahtet; das steht jetzt als Kommentar an der
+> Stelle, damit der sechste Dialekt es nicht wieder herausfindet.
+>
+> Nach der Verdrahtung blieben **zwei** Zellen: `D.3/oracle/positive`
+> (Materialized Views) und `E.2/oracle/positive` (Trigger) — beide mit
+> benanntem `DIALECT_UNSUPPORTED_OPERATION` statt unvollständiger DDL. Die
+> übrigen sechs (G.1, G.2, G.3, A.1, F.5 und `D.3/blocker`) laufen ohne
+> Zutun durch.
+>
+> Beide Carve-outs sind **`permanent: false`**, und der Unterschied zu
+> MSSQL ist der Punkt: SQL Servers D.3-Carve-out ist strukturell („has no
+> MATERIALIZED VIEW and never will"). **Oracle hat Materialized Views** —
+> die Zelle wird pinnbar, sobald Slice 10 sie baut, Trigger entsprechend
+> mit Slice 9.
+>
+> Der Trigger-Carve-out verwies als Deckung auf
+> `OracleDiffDdlGeneratorTest` — dort stand für `CreateTrigger` aber gar
+> nichts, nur für Materialized Views. Die Zusage ist jetzt belegt statt
+> behauptet.
+>
+> **Eine Lücke im Sweep selbst geschlossen:** ein Dialekt, der nicht in
+> `ALL_DIALECTS` steht, erzeugt keine Kandidaten und damit auch keine
+> `MATRIX_GAP`-Meldung — die Abdeckung schrumpft still, und alles bleibt
+> grün. Genau so kam Oracle bis hierher gar nicht im Sweep vor. Ein Test
+> pinnt jetzt `ALL_DIALECTS` gegen `DatabaseDialect.entries` (Sabotage
+> verifiziert).
+>
+> **Doku:** `connection-config-spec.md` führte Oracle als „Oracle
+> (geplant)" — Statussprache, die in `spec/` ohnehin nichts zu suchen hat
+> und seit 5e-2 auch falsch ist. Das Administrationshandbuch kannte Oracle
+> gar nicht; es beschreibt jetzt die URL-Form (Pfadteil ist der
+> **Service-Name**, nicht die SID, Port-Default 1521), und die
+> Treibermodul-Liste im Entwickler-Guide führt `driver-oracle`.
+
+> **Nachtrag zum 5e-3-Review:** der Sweep prüfte für Oracle weniger, als
+> es aussah. Gemessen: **fünf der sechs grünen Zellen bleiben grün, wenn
+> der Renderer gar nichts emittiert**, und alle sechs blieben grün, wenn
+> dort der MSSQL-Renderer stünde — der Sweep vergleicht nur Exit-Codes.
+> Die Zuordnung Dialekt→Renderer ist deshalb jetzt selbst gepinnt
+> (Sabotage mit dem MSSQL-Renderer verifiziert).
+>
+> **Meine Carve-out-Begründung war empirisch widerlegt, bevor ich sie
+> schrieb.** Sie sagte, die E.2-Zelle werde pinnbar, sobald Slice 9 die
+> Trigger-Rümpfe liest. MSSQL **hat** Slice 9 — und die Zelle ist trotzdem
+> gecarvt: die geteilte Fixture trägt `source_dialect: postgresql`, und
+> jeder Dialekt, der Rumpf-Portabilität prüft, blockt daran. Oracle liefe
+> in dieselbe Wand. Der Carve-out steht jetzt auf `permanent: true` mit dem
+> tatsächlichen Grund, und MSSQLs Eintrag — der seit Slice 9 sachlich
+> falsch ist — gleich mit, bevor die Begründung ein drittes Mal kopiert
+> wird.
+>
+> **Slice 5 galt als fertig ohne einen einzigen Live-Beleg für
+> `schema migrate`.** Der Diff-Pfad war ausschließlich gegen Unit-Tests und
+> einen Datei-Modus-E2E belegt; MSSQL hatte den Round-Trip über die echten
+> Runner in seiner Abnahme. Der nachgezogene
+> `OracleMigrateRoundTripIntegrationTest` fand sofort zwei Dinge, die kein
+> Unit-Test zeigen konnte:
+> - **Die system-generierte Identity-Sequenz erschien im Reverse als
+>   eigenständige Sequenz.** `ALL_SEQUENCES` führt `ISEQ$$_n` wie jede
+>   andere; ungefiltert trägt jedes zurückgelesene Schema mit
+>   IDENTITY-Spalte eine Sequenz, die im Soll nie steht — `schema migrate`
+>   plante ein `DROP SEQUENCE`, das Oracle ohnehin ablehnt (`ORA-32793`).
+>   Jetzt über `ALL_TAB_IDENTITY_COLS` ausgeschlossen, wie PostgreSQL es
+>   über `pg_depend` tut. Das wirkte schon auf `schema reverse`, seit
+>   Slice 1.
+> - **Zwei Schreibweisen für dieselbe Identity-Spalte.** Der Reverse liefert
+>   `integer + generation`; die naheliegende Form `identifier +
+>   auto_increment` plant gegen eine **unveränderte** Tabelle ein
+>   `AlterColumnType`, das mit `ORACLE_ADD_IDENTITY_UNSUPPORTED` blockt
+>   (gemessen: Exit 8 gegen Exit 0). Im Fingerabdruck sind beide Formen
+>   äquivalent, im Vergleich nicht:
+>   [`identity-column-shape-mismatch.md`](../open/identity-column-shape-mismatch.md).
+>
+> Der Round-Trip hängt nachweislich am `canonicalizeGeneration`-Hook aus
+> 5e-2: setzt man `namesIdentitySequences` für Oracle auf `true`, fällt er.
+>
+> Beim Doku-Durchgang fielen weitere Stellen auf, die Oracle als
+> nicht-verfügbar führten und seit 5e-2 falsch sind: beide READMEs (Oracle
+> ohne „schema migration", während das FAQ es nennt), die nutzersichtbare
+> Dialektliste in `ConnectionUrlParser` (seit Slice 1 ohne Oracle — ein
+> Tippfehler in einer Oracle-URL las sich als „nicht unterstützt"), die
+> Treiber-Runtime-Liste in `releasing.md`, und `neutral-model-spec.md`, das
+> **auch MSSQL** noch als „geplant" führte. Ein Testmodul schloss Oracle
+> mit einer doppelt falschen Begründung aus (`DataImportWiringTest`:
+> `data import` sei gegated — ist es seit Slice 3 nicht — und
+> `dataWriter()` sei ein Stub — ist er nicht).
+>
+> Mein eigener Handbuch-Absatz behauptete außerdem den Alias `ora://`. Den
+> führt `spec/connection-config-spec.md` als **Zielbild**;
+> `DatabaseDialect.fromString` kennt ihn nicht. In `docs/user/` ist das eine
+> falsche Ist-Aussage und deshalb gestrichen.
+
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -660,7 +761,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **5d** ✅ | Sequenzen | dito |
 | **5e-1** ✅ | Rename-Policies (Objekt + Abhängigkeit) und View-Abhängigkeiten aus `ALL_DEPENDENCIES` — Vorbedingung für den Gate-Fall | dito |
 | **5e-2** ✅ | Verdrahtung: `MigrateRendererRegistry`, `DialectCommandGate`, CHECK-Preflight-Sonde, `ColumnGeneration`-Kanonisierung im Fingerprint, `SequenceCapabilityDefaults` | **`schema migrate` ist nutzbar** |
-| **5e-3** | Cross-Dialekt-Matrix-Sweep-Beitritt, CLI-E2E, Handbücher | Matrix-Abdeckung + Doku |
+| **5e-3** ✅ | Cross-Dialekt-Matrix-Sweep-Beitritt, Live-Round-Trip, Handbücher (der CLI-E2E kam bereits mit 5e-2) | Matrix-Abdeckung + Live-Beleg + Doku |
 | **6** | Function-based- + Bitmap-Indizes, Reverse + Generate + Diff | volle Index-Treue |
 | **7** | Partitionierung: Range/List/Hash/Composite (Anschluss an `PartitionBoundScanner`/Cross-Dialekt-Muster) | Partitionstabellen im Round-Trip |
 | **8** | Volltext: Oracle Text (`CONTEXT`/`CTXCAT`, Muster aus dem Fulltext-Slice) | Volltext-Indizes Generate + Reverse |
@@ -771,7 +872,7 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
 | **5e-1** ✅ | — | Rename-Vorbedingung: `OracleRenameDependencyPolicy` + `OracleObjectRenamePolicy` (beide Registries) und View-Abhängigkeiten aus `ALL_DEPENDENCIES`. Oracle-Besonderheit: auch `classifyColumnRename` projiziert Sichten neu | Unit-Tests + Planer-Durchlauf, der die View-Absorption pinnt |
 | **5e-2** ✅ | — | Verdrahtung: `MigrateRendererRegistry` liefert den Oracle-Renderer, `DialectCommandGate` verliert `SCHEMA_MIGRATE`, Oracle-CHECK-Preflight-Sonde, `canonicalizeGeneration`-Hook im Fingerprint, `supportsCurrentValuePreserve` → `true` und Beitritt zu `PRESERVE_DIALECTS`. Alle drei Vorbedingungen damit erledigt (Rename-Policies in 5e-1, Fingerprint-Drift und `CheckPreflightProbeRunner`-Stub hier) | **`schema migrate` ist für oracle nutzbar** |
-| **5e-3** | — | Beitritt zum Cross-Dialekt-Matrix-Sweep (mit Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher | Matrix-Abdeckung + Doku |
+| **5e-3** ✅ | — | Beitritt zum Cross-Dialekt-Matrix-Sweep (Carve-outs auf D.3/E.2), Live-Round-Trip über die echten Runner, Handbücher und `connection-config-spec` | Matrix-Abdeckung + Doku |
 
 ## Offene Punkte
 

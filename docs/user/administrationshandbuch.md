@@ -185,6 +185,11 @@ Für **MS SQL Server** (`mssql://`, Alias `sqlserver://`, Port-Default `1433`)
 werden die Parameter Semikolon-getrennt in die JDBC-URL geschrieben
 (`jdbc:sqlserver://host:1433;databaseName=db;…`), nicht als `?k=v&`-Query.
 
+Für **Oracle** (`oracle://`, Port-Default `1521`) ist der
+Pfadteil der **Service-Name**, nicht die SID: `oracle://user:pw@host:1521/FREEPDB1`
+wird zu `jdbc:oracle:thin:@//host:1521/FREEPDB1`. Gelesen und geschrieben wird
+das Schema des verbundenen Benutzers.
+
 ### 4.2 Verbindungsaufbau
 
 URL parsen → Dialekt-Alias normalisieren → JDBC-URL konstruieren → HikariCP-Pool

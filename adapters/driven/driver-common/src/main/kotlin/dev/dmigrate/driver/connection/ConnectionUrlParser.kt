@@ -66,7 +66,7 @@ object ConnectionUrlParser {
         } catch (e: IllegalArgumentException) {
             throw IllegalArgumentException(
                 "Unknown database dialect '$scheme' in URL ${LogScrubber.maskUrl(url)}. " +
-                    "Supported: postgresql, mysql, sqlite, mssql",
+                    "Supported: postgresql, mysql, sqlite, mssql, oracle",
                 e,
             )
         }

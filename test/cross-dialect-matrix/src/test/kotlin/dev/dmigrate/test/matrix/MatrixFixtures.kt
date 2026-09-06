@@ -3,7 +3,7 @@ package dev.dmigrate.test.matrix
 /**
  * Classpath loader for the cell's `current.yaml` + `desired.yaml`
  * fixture pair. The fixtures live under
- * `src/test/resources/fixtures/<workstream>/<dialect>/<kind>/`.
+ * `src/test/resources/fixtures/<workstream>/<kind>/`.
  *
  * Missing fixtures surface as [MatrixFixtureMissing] so the sweep
  * can classify the cell as `MATRIX_GAP` instead of producing an

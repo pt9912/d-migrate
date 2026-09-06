@@ -28,11 +28,16 @@ data class MatrixCell(
         get() = "${workstream}/${dialect.fixtureSlug()}/${kind.slug}"
 
     /**
-     * Classpath base for the fixture pair. Dialect-independent: the
-     * neutral YAML schema reads the same across PostgreSQL, MySQL
-     * and SQLite. Dialect-specific blockers come from the renderer,
-     * not the fixture, so a shared current+desired pair is enough
-     * to exercise the cross-dialect surface.
+     * Classpath base for the fixture pair. **Dialektunabhaengig** --
+     * es gibt kein `<dialect>`-Verzeichnis; alle Dialekte teilen sich
+     * dasselbe current+desired-Paar.
+     *
+     * Das ist eine Staerke und eine Grenze zugleich: dialektspezifische
+     * Blocker kommen aus dem Renderer und werden so sichtbar, aber eine
+     * Fixture, die dialektgebundenen Inhalt traegt, ist fuer die anderen
+     * Dialekte nicht neutral. Die E.2-Fixture etwa deklariert
+     * `source_dialect: postgresql`, weshalb ihre POSITIVE-Zelle fuer
+     * PostgreSQL, SQLite, MSSQL und Oracle gecarvt ist -- vier von fuenf.
      */
     val fixtureBaseResource: String
         get() = "/fixtures/${workstream}/${kind.slug}"
@@ -88,6 +93,7 @@ data class MatrixCell(
             DatabaseDialect.MYSQL,
             DatabaseDialect.SQLITE,
             DatabaseDialect.MSSQL,
+            DatabaseDialect.ORACLE,
         )
 
         val ALL_KINDS: List<Kind> = Kind.values().toList()

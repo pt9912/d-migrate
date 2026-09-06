@@ -136,6 +136,14 @@ carve_outs:
       - adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDiffViewOpsTest.kt
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
   - workstream: D.3
+    dialect: oracle
+    kind: positive
+    permanent: false
+    reason: "Oracle HAT Materialized Views -- anders als MySQL, SQLite und SQL Server ist das keine strukturelle Luecke, sondern eine noch nicht gebaute (Oracle-Rollout Slice 10, ADR 0052). Der Diff-Pfad blockt CreateMaterializedView benannt mit DIALECT_UNSUPPORTED_OPERATION, statt unvollstaendige DDL zu erzeugen. Mit Slice 10 wird diese Zelle gepinnt UND `D.3/oracle/blocker` permanent gecarvt -- ein Zellentausch, kein blosses Pinning: die blocker-Zelle ist heute nur gruen, weil Oracle MVs als nicht-gebaut blockt, und liefert danach Exit 0 (dieselbe Lage, die PostgreSQL bereits mit `permanent: true` festhaelt)."
+    planRef: docs/adr/0052-oracle-fuenfter-dialekt-scoping.md
+    ownerTests:
+      - adapters/driven/driver-oracle/src/test/kotlin/dev/dmigrate/driver/oracle/OracleDiffDdlGeneratorTest.kt
+  - workstream: D.3
     dialect: postgresql
     kind: blocker
     permanent: true
@@ -169,10 +177,18 @@ carve_outs:
     dialect: mssql
     kind: positive
     permanent: false
-    reason: "The MSSQL reverse does not read routine and trigger bodies, so the diff path has nothing to render and blocks CreateTrigger. Unlike the MV cell this is not structural: the cell becomes pinnable once the reverse reads bodies."
+    reason: "Ueberholt seit MSSQL-Slice 9: der Reverse liest Rumpfe und MssqlDiffRoutineOps rendert CreateTrigger. Die Zelle bleibt trotzdem gecarvt, und zwar aus demselben Grund wie bei PostgreSQL und SQLite -- die geteilte Fixture traegt `source_dialect: postgresql`, und der Renderer weigert sich, einen PG-Trigger-Rumpf zu portieren (E053). Pinnbar wird die Zelle erst mit einer dialektspezifischen Fixture, nicht mit einem weiteren Slice."
     planRef: docs/adr/0047-mssql-vierter-dialekt-scoping.md
     ownerTests:
       - adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDiffDdlGeneratorTest.kt
+  - workstream: E.2
+    dialect: oracle
+    kind: positive
+    permanent: true
+    reason: "Zwei Gruende, gestapelt. Heute blockt der Oracle-Diff-Pfad CreateTrigger benannt mit DIALECT_UNSUPPORTED_OPERATION, weil der Reverse Routinen und Trigger nicht liest (SkippedObject plus R342) -- Oracle-Rollout Slice 9. Faellt dieser Grund weg, bleibt der zweite: die geteilte Fixture traegt `source_dialect: postgresql`, und Oracle prueft Rumpf-Portabilitaet ebenso hart wie PostgreSQL, SQLite und MSSQL, die aus genau diesem Grund gecarvt sind. Die Zelle wird deshalb nicht durch einen Slice pinnbar, sondern erst durch eine dialektspezifische Fixture -- gemessen an MSSQL, das Slice 9 hat und trotzdem gecarvt bleibt."
+    planRef: docs/adr/0052-oracle-fuenfter-dialekt-scoping.md
+    ownerTests:
+      - adapters/driven/driver-oracle/src/test/kotlin/dev/dmigrate/driver/oracle/OracleDiffDdlGeneratorTest.kt
   - workstream: E.2
     dialect: "*"
     kind: blocker

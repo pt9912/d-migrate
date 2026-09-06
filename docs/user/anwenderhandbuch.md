@@ -2306,7 +2306,7 @@ Secret weiterzumachen. Nutzen Sie in solchen Umgebungen `env:` oder `file:`.
 
 **Ursache:** In der URL steht ein nicht unterstützter Datenbanktyp.
 
-**Lösung:** Verwenden Sie `postgresql`, `mysql`, `sqlite` oder `mssql` (bzw.
+**Lösung:** Verwenden Sie `postgresql`, `mysql`, `sqlite`, `mssql` oder `oracle` (bzw.
 deren Aliase wie `pg`, `mariadb` oder `sqlserver`).
 
 ### „Database 'x' does not exist"

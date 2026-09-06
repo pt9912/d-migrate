@@ -3,7 +3,7 @@
 //
 // Reines Test-Modul: kein Production-Code, keine Testcontainers. Der
 // Sweep instanziiert SchemaMigrateRunner im File-Mode mit den echten
-// Diff-Renderern (PG/MySQL/SQLite) und prueft pro
+// Diff-Renderern (alle Dialekte, siehe MatrixSweepRunner.rendererFor) und prueft pro
 // (Workstream × Dialekt × Kind)-Zelle den Exit-Code gegen das Pinning.
 //
 // Plan-Doc: docs/planning/done-archive/quality-coverage-expansion-plan.md
@@ -18,6 +18,7 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-mysql"))
     testImplementation(project(":adapters:driven:driver-sqlite"))
     testImplementation(project(":adapters:driven:driver-mssql"))
+    testImplementation(project(":adapters:driven:driver-oracle"))
     testImplementation(project(":adapters:driven:formats"))
 
     testImplementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")

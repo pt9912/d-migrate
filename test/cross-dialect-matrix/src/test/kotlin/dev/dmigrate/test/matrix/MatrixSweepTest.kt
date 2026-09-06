@@ -1,5 +1,7 @@
 package dev.dmigrate.test.matrix
 
+import dev.dmigrate.driver.DatabaseDialect
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
@@ -41,7 +43,7 @@ class MatrixSweepTest : FunSpec({
                 "MATRIX_GAP — ${gaps.size} cell(s) have neither a fixture pair nor a carve-out entry:\n" +
                     gaps.joinToString("\n") { "  - $it" } +
                     "\nFix by either pinning fixtures under " +
-                    "src/test/resources/fixtures/<workstream>/<dialect>/<kind>/ " +
+                    "src/test/resources/fixtures/<workstream>/<kind>/ " +
                     "or by adding an entry to fixtures/carve-outs.yaml with a reason + planRef."
             )
         }
@@ -60,6 +62,29 @@ class MatrixSweepTest : FunSpec({
             }
             if (!hasAnyFixture) {
                 error("PINNED workstream '$workstream' has zero fixture pairs on classpath.")
+            }
+        }
+    }
+
+    // Ohne diese Zusicherung ist der Sweep still verkleinerbar: ein
+    // Dialekt, der nicht in ALL_DIALECTS steht, erzeugt keine Kandidaten,
+    // also auch keine MATRIX_GAP-Meldung -- die Abdeckung schrumpft, und
+    // alles bleibt gruen. Genau so kam Oracle bis Sub-Slice 5e-3 gar nicht
+    // im Sweep vor.
+    test("the sweep covers every dialect the product knows") {
+        MatrixCell.ALL_DIALECTS.toSet() shouldBe DatabaseDialect.entries.toSet()
+    }
+
+    // Der Sweep vergleicht nur Exit-Codes. Gemessen: fuenf der sechs
+    // gruenen Oracle-Zellen bleiben gruen, wenn der Renderer GAR NICHTS
+    // emittiert, und alle sechs blieben gruen, wenn hier der MSSQL-Renderer
+    // stuende. Die Zuordnung Dialekt→Renderer ist deshalb selbst zu pinnen
+    // -- sie ist eine zweite Registry neben `MigrateRendererRegistry`, und
+    // ein falscher Eintrag faellt sonst nirgends auf.
+    test("each dialect is swept with its own renderer") {
+        MatrixCell.ALL_DIALECTS.forEach { dialect ->
+            withClue("dialect=$dialect") {
+                sweepRunner.rendererFor(dialect)?.dialect shouldBe dialect
             }
         }
     }

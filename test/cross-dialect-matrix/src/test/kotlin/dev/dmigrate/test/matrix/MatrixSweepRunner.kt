@@ -9,6 +9,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.mssql.MssqlDiffDdlGenerator
 import dev.dmigrate.driver.mysql.MysqlDiffDdlGenerator
+import dev.dmigrate.driver.oracle.OracleDiffDdlGenerator
 import dev.dmigrate.driver.postgresql.PostgresDiffDdlGenerator
 import dev.dmigrate.driver.sqlite.SqliteDiffDdlGenerator
 import dev.dmigrate.format.SchemaFileResolver
@@ -20,13 +21,19 @@ import java.nio.file.Path
  * (no Testcontainers, no live DB probes). The runner is wired with
  * the real dialect renderers (`PostgresDiffDdlGenerator`,
  * `MysqlDiffDdlGenerator`, `SqliteDiffDdlGenerator`,
- * `MssqlDiffDdlGenerator`) so the matrix detects regressions in
- * actual dialect output, not just orchestration.
+ * `MssqlDiffDdlGenerator`, `OracleDiffDdlGenerator`) so the matrix
+ * detects regressions in actual dialect output, not just orchestration.
+ *
+ * Diese Zuordnung ist eine ZWEITE Registry neben
+ * `MigrateRendererRegistry` der CLI. Ein Dialekt, der dort verdrahtet
+ * wird, ist hier noch nicht verdrahtet -- der Sweep meldet das als
+ * "No renderer registered for dialect X" und damit Exit 2 statt des
+ * erwarteten Codes.
  *
  * Fixture layout (loaded from classpath via [MatrixFixtures]):
  *
  * ```
- * src/test/resources/fixtures/<workstream>/<dialect>/<kind>/
+ * src/test/resources/fixtures/<workstream>/<kind>/
  *   ├── current.yaml      # source schema for the migrate run
  *   └── desired.yaml      # target schema for the migrate run
  * ```
@@ -36,13 +43,19 @@ import java.nio.file.Path
 internal class MatrixSweepRunner {
 
     private val validator = SchemaValidator()
-    private val rendererFor: (DatabaseDialect) -> DiffDdlGenerator? = { dialect ->
+    /**
+     * Sichtbar fuer den Test, der sie gegen [MatrixCell.ALL_DIALECTS]
+     * pinnt. Ohne diesen Pin waere die Zuordnung frei erfindbar: der Sweep
+     * vergleicht nur Exit-Codes, und die meisten Zellen blieben auch mit
+     * einem fremden oder leeren Renderer gruen.
+     */
+    val rendererFor: (DatabaseDialect) -> DiffDdlGenerator? = { dialect ->
         when (dialect) {
             DatabaseDialect.POSTGRESQL -> PostgresDiffDdlGenerator()
             DatabaseDialect.MYSQL -> MysqlDiffDdlGenerator()
             DatabaseDialect.SQLITE -> SqliteDiffDdlGenerator()
             DatabaseDialect.MSSQL -> MssqlDiffDdlGenerator()
-            DatabaseDialect.ORACLE -> null
+            DatabaseDialect.ORACLE -> OracleDiffDdlGenerator()
         }
     }
 

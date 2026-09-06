@@ -17,6 +17,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldBeEmpty as shouldBeEmptyMap
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
 import java.sql.Connection
@@ -168,6 +169,36 @@ class OracleSchemaReaderTest : FunSpec({
         note.code shouldBe "R345"
         note.severity shouldBe SchemaReadSeverity.INFO
         note.objectName shouldBe "ORDER_SEQ"
+    }
+
+    /**
+     * Oracle fuehrt die Sequenz hinter einer IDENTITY-Spalte in
+     * `ALL_SEQUENCES` wie jede andere. Sie ist aber kein deklariertes
+     * Objekt -- ungefiltert traegt jedes reverse-gelesene Schema mit
+     * IDENTITY-Spalte eine Sequenz, die im Soll niemals steht, und
+     * `schema migrate` plante ein `DROP SEQUENCE`, das Oracle ablehnt
+     * (`ORA-32793`). Live beim Migrate-Round-Trip aufgefallen.
+     */
+    test("the sequence behind an IDENTITY column is not read as a schema sequence") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        val captured = mutableListOf<String>()
+        every { jdbc.queryList(match { it.contains("FROM all_sequences") }, "APP") } answers {
+            captured += firstArg<String>()
+            listOf(
+                mapOf(
+                    "sequence_name" to "ORDER_SEQ", "last_number" to 7L, "increment_by" to 1L,
+                    "min_value" to 1L, "max_value" to 9999L, "cycle_flag" to "N", "cache_size" to 20,
+                ),
+            )
+        }
+        val (reader, pool) = rig(jdbc)
+        reader.read(pool).schema.sequences.keys shouldBe setOf("ORDER_SEQ")
+
+        // Der Ausschluss steht in der Abfrage, nicht in einer
+        // Nachfilterung -- sonst laege er im Ergebnis des Stubs.
+        captured.single() shouldContain "all_tab_identity_cols"
+        captured.single() shouldContain "NOT EXISTS"
     }
 
     test("views are read with the raw select text; includeViews=false skips them") {
