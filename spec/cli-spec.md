@@ -1620,6 +1620,30 @@ durchzureichen. Schlüsselwerte einer IDENTITY-Spalte werden mit
 `SET IDENTITY_INSERT` übernommen und der Zähler danach per `DBCC CHECKIDENT`
 auf den deklarierten `IDENTITY(seed, increment)`-Vertrag nachgeführt.
 
+**Oracle-Datenpfad**: `--on-conflict skip`/`update` verlangen für ein
+Oracle-Ziel einen Primärschlüssel (Oracle kennt kein `INSERT IGNORE`/
+`ON CONFLICT`; d-migrate baut ein `MERGE`, dessen Prädikat die
+Schlüsselwerte bindet). `skip` unterscheidet eingefügte von übersprungenen
+Zeilen exakt (Batch-Zeilenzahl 1 bzw. 0, ohne `WHEN MATCHED`-Zweig);
+`update` kann eingefügt nicht von aktualisiert unterscheiden (beide melden
+1) und bucht das als `rowsUnknown`. Oracle kennt (anders als PostgreSQL/
+DB2) kein `OVERRIDING SYSTEM VALUE` für `INSERT`/`MERGE` (`ORA-00926`) —
+ein `GENERATED ALWAYS AS IDENTITY`-Wert im Chunk schaltet die Spalte
+deshalb vor dem ersten Insert per `ALTER TABLE ... MODIFY <col> GENERATED
+BY DEFAULT AS IDENTITY` temporär um und beim Abschluss zurück. Die
+zugrundeliegende Sequenz ist system-generiert (`ALTER SEQUENCE` scheitert
+mit `ORA-32793`); das Nachführen läuft deshalb ebenfalls über die
+Identity-Klausel der Tabelle (`ALTER TABLE ... MODIFY <col> GENERATED
+<Modus> AS IDENTITY (START WITH n)`). Virtuelle Spalten (`GENERATED ALWAYS
+AS (...) VIRTUAL`) kann Oracle nicht beschreiben — enthält der Chunk eine,
+bricht der Import benennend ab. `--disable-fk-checks` gibt es (anders als
+MySQL/SQLite) nicht als globalen Schalter: die Zieltabelle setzt ihre
+eigenen FK-Constraints einzeln aus (`ALTER TABLE ... DISABLE CONSTRAINT
+<name>`) und schaltet sie im Cleanup mit `ENABLE NOVALIDATE` wieder scharf
+— Oracles Default `ENABLE VALIDATE` würde am während der Deaktivierung
+bewusst nicht constraint-konform eingefügten Bestand mit `ORA-02298`
+scheitern.
+
 **MSSQL-Batches**: T-SQL verlangt, dass `CREATE VIEW`/`CREATE OR ALTER …`
 und Routinen allein in einem Batch stehen, und Skript-Clients trennen
 Batches nur an `GO`-Zeilen. Für `--target mssql` ist das Flyway-Artefakt

@@ -117,42 +117,6 @@ class DataTransferRunnerTest : FunSpec({
         noProgress = noProgress, sinceColumn = sinceColumn, since = since,
         filter = parseFilter(filter))
 
-    // ── DialectCommandGate (ADR 0052) ────────────
-
-    test("oracle source is rejected by DialectCommandGate before any pool is opened") {
-        val errors = Capture()
-        var poolFactoryCalls = 0
-        val runner = DataTransferRunner(
-            sourceResolver = { s, _ -> s }, targetResolver = { s, _ -> s },
-            urlParser = { url -> if (url.contains("oracle")) fakeCfg.copy(dialect = DatabaseDialect.ORACLE) else fakeCfg },
-            poolFactory = { poolFactoryCalls++; fakePool },
-            driverLookup = { fakeDriver },
-            urlScrubber = { it },
-            printError = { msg, src -> errors.sink("[$src] $msg") },
-        )
-        val exit = runner.execute(request(source = "oracle://u:p@h/db"))
-        exit shouldBe 2
-        poolFactoryCalls shouldBe 0
-        errors.joined() shouldContain "data transfer does not support dialect oracle yet"
-    }
-
-    test("oracle target is rejected by DialectCommandGate before any pool is opened") {
-        val errors = Capture()
-        var poolFactoryCalls = 0
-        val runner = DataTransferRunner(
-            sourceResolver = { s, _ -> s }, targetResolver = { s, _ -> s },
-            urlParser = { url -> if (url.contains("oracle")) fakeCfg.copy(dialect = DatabaseDialect.ORACLE) else fakeCfg },
-            poolFactory = { poolFactoryCalls++; fakePool },
-            driverLookup = { fakeDriver },
-            urlScrubber = { it },
-            printError = { msg, src -> errors.sink("[$src] $msg") },
-        )
-        val exit = runner.execute(request(target = "oracle://u:p@h/db"))
-        exit shouldBe 2
-        poolFactoryCalls shouldBe 0
-        errors.joined() shouldContain "data transfer does not support dialect oracle yet"
-    }
-
     // ── Exit 0 ──────────────────────────────────
 
     test("successful transfer returns exit 0") {

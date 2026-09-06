@@ -1,7 +1,7 @@
 package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.driver.DatabaseDialect
-import io.kotest.assertions.throwables.shouldThrow
+import dev.dmigrate.driver.StructuralTransferTypeCompatibility
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
@@ -13,17 +13,17 @@ class OracleDriverTest : FunSpec({
         driver.dialect shouldBe DatabaseDialect.ORACLE
     }
 
-    test("Slice 1+2 ports (reverse-read, DDL-generate) are real implementations") {
+    test("Slice 1+2+3 ports (reverse-read, DDL-generate, data path) are real implementations") {
         driver.urlBuilder()::class.simpleName shouldBe "OracleJdbcUrlBuilder"
         driver.schemaReader()::class.simpleName shouldBe "OracleSchemaReader"
         driver.tableLister()::class.simpleName shouldBe "OracleTableLister"
         driver.ddlGenerator()::class.simpleName shouldBe "OracleDdlGenerator"
+        driver.dataReader()::class.simpleName shouldBe "OracleDataReader"
+        driver.dataWriter()::class.simpleName shouldBe "OracleDataWriter"
+        driver.transferCompatibility()::class shouldBe StructuralTransferTypeCompatibility::class
     }
 
-    test("data-path ports are unreachable stubs, gated by DialectCommandGate") {
-        shouldThrow<IllegalStateException> { driver.dataReader() }
-            .message shouldBe "unreachable: DialectCommandGate rejects oracle for data export/transfer (ADR 0052)"
-        shouldThrow<IllegalStateException> { driver.dataWriter() }
-            .message shouldBe "unreachable: DialectCommandGate rejects oracle for data import/transfer (ADR 0052)"
+    test("fetch-size override reaches the reader (LN-005)") {
+        driver.dataReader(500)::class.simpleName shouldBe "OracleDataReader"
     }
 })

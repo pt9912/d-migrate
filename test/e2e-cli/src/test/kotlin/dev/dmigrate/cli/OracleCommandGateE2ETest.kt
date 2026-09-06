@@ -12,7 +12,7 @@ import kotlin.io.path.deleteRecursively
 import kotlin.io.path.writeText
 
 /**
- * Oracle Slice 1a/2 (docs/planning/in-progress/oracle-dialect-scoping.md):
+ * Oracle Slice 1a/2/3 (docs/planning/in-progress/oracle-dialect-scoping.md):
  * Gate-Ablehnungen des `DialectCommandGate` (ADR 0052) als Subprozess-E2E
  * gegen die ECHTE CLI — containerlos.
  *
@@ -23,19 +23,18 @@ import kotlin.io.path.writeText
  * (Kommando-Verfuegbarkeits-Tabelle im Plan-Dokument). Der Slice, der ein
  * Kommando fuer oracle liefert, nimmt es aus `GatedCommand` — und kippt
  * den zugehoerigen Fall hier in einen Funktions-E2E um (`schema generate`
- * und `export <tool>`: Slice 2, siehe `OracleSchemaGenerateE2ETest`).
+ * und `export <tool>`: Slice 2, siehe `OracleSchemaGenerateE2ETest`;
+ * `data export/import/transfer`: Slice 3, siehe `OracleTransferE2ETest`).
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class OracleCommandGateE2ETest : FunSpec({
 
     lateinit var tmp: Path
     lateinit var schemaYaml: Path
-    lateinit var rowsJson: Path
 
     beforeSpec {
         tmp = Files.createTempDirectory("dmigrate-e2e-oracle-gate-")
         schemaYaml = tmp.resolve("schema.yaml").apply { writeText(MINIMAL_SCHEMA) }
-        rowsJson = tmp.resolve("users.json").apply { writeText("""[{"id":1,"name":"alice"}]""") }
     }
 
     afterSpec {
@@ -50,56 +49,6 @@ class OracleCommandGateE2ETest : FunSpec({
             run.stderr shouldContain "ADR 0052"
             run.stderr shouldContain "schema reverse"
         }
-    }
-
-    test("data export from an oracle source is refused before any connection attempt") {
-        expectGateRefusal(
-            "data export",
-            listOf(
-                "data", "export",
-                "--source", UNREACHABLE_ORACLE_URL,
-                "--tables", "users",
-                "--format", "json",
-                "--output", tmp.resolve("export.json").absolutePathString(),
-            ),
-        )
-    }
-
-    test("data import into an oracle target is refused before any connection attempt") {
-        expectGateRefusal(
-            "data import",
-            listOf(
-                "data", "import",
-                "--target", UNREACHABLE_ORACLE_URL,
-                "--source", rowsJson.absolutePathString(),
-                "--table", "users",
-                "--format", "json",
-            ),
-        )
-    }
-
-    test("data transfer refuses oracle as source before any connection attempt") {
-        expectGateRefusal(
-            "data transfer",
-            listOf(
-                "data", "transfer",
-                "--source", UNREACHABLE_ORACLE_URL,
-                "--target", "sqlite://" + tmp.resolve("transfer-target.db").absolutePathString(),
-                "--tables", "users",
-            ),
-        )
-    }
-
-    test("data transfer refuses oracle as target before any connection attempt") {
-        expectGateRefusal(
-            "data transfer",
-            listOf(
-                "data", "transfer",
-                "--source", "sqlite://" + tmp.resolve("transfer-source.db").absolutePathString(),
-                "--target", UNREACHABLE_ORACLE_URL,
-                "--tables", "users",
-            ),
-        )
     }
 
     test("schema migrate --dialect oracle against a file target is refused at the command boundary") {

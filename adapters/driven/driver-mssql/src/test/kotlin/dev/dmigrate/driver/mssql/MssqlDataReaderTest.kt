@@ -17,7 +17,7 @@ private class ProbeReader(fetchSizeOverride: Int? = null) : MssqlDataReader(fetc
     fun probeGeometryExpression(quoted: String): String = geometryReadExpression(quoted)
     fun probeIsGeometryType(name: String): Boolean = isGeometryTypeName(name)
     fun probeSelectSql(table: String): String = buildSelectQuery(table, null).sql
-    fun probeMapValue(value: Any?): Any? = mapValue(value)
+    fun probeMapValue(value: Any?): Any? = mapValue(value, io.mockk.mockk())
 }
 
 class MssqlDataReaderTest : FunSpec({

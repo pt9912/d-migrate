@@ -336,6 +336,15 @@ Oracle-Default (keine Klausel) und werden ohne Notiz weggelassen,
 | `RAWTOHEX(SYS_GUID())` (Default) | `gen_uuid` | |
 | `<seq>.NEXTVAL` (Default) | `sequence_nextval` | |
 
+**Datenpfad (`data export`/`import`/`transfer`)**: Oracle-JDBC liefert
+`CLOB`/`BLOB`-Spalten über `getObject()` als live `java.sql.Clob`/
+`java.sql.Blob`-Locator statt als materialisierten `String`/`ByteArray` —
+anders als die anderen vier Dialekte. Der Reader materialisiert deshalb
+sofort beim Lesen, während der Cursor noch auf der Zeile steht; ein Locator,
+der die Chunk-Grenze überlebt, wäre gegen einen fremden Ziel-Treiber nicht
+mehr sicher bindbar. `TIMESTAMP WITH TIME ZONE` liest als Standard-
+`OffsetDateTime`.
+
 ### 7.3 Bekannte Lücken
 
 - Routinen, Trigger und Packages werden nicht gelesen; vorhandene

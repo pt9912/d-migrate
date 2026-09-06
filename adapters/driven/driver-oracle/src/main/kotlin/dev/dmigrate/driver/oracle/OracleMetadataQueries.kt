@@ -44,6 +44,14 @@ internal object OracleMetadataQueries {
 
     data class UnreadObject(val type: String, val name: String)
 
+    /** Identity-Spalte fuer den Datenpfad: Name, Erzeugungsmodus, Sequenzname, Increment. */
+    data class IdentityColumnRow(
+        val column: String,
+        val generation: String,
+        val sequenceName: String,
+        val increment: Long,
+    )
+
     fun listTableRefs(session: JdbcOperations, schema: String): List<TableRef> =
         session.queryList(
             """
@@ -253,6 +261,47 @@ internal object OracleMetadataQueries {
             """.trimIndent(),
             schema,
         ).map { row -> UnreadObject(type = row.string("object_type"), name = row.string("object_name")) }
+
+    /** Identity-Spalten der Tabelle (Datenpfad: ALWAYS/BY-DEFAULT-Toggle, Reseed). */
+    fun identityColumns(session: JdbcOperations, schema: String, table: String): List<IdentityColumnRow> =
+        session.queryList(
+            """
+            SELECT ic.column_name, ic.generation_type, ic.sequence_name, s.increment_by
+            FROM all_tab_identity_cols ic
+            JOIN all_sequences s
+                ON s.sequence_owner = ic.owner AND s.sequence_name = ic.sequence_name
+            WHERE ic.owner = ? AND ic.table_name = ?
+            """.trimIndent(),
+            schema,
+            table,
+        ).map { row ->
+            IdentityColumnRow(
+                column = row.string("column_name"),
+                generation = row.string("generation_type"),
+                sequenceName = row.string("sequence_name"),
+                increment = row.long("increment_by") ?: 1L,
+            )
+        }
+
+    /** Virtuelle (`GENERATED ALWAYS AS (...) VIRTUAL`) Spalten -- der Import darf sie nicht schreiben. */
+    fun virtualColumns(session: JdbcOperations, schema: String, table: String): Set<String> =
+        session.queryList(
+            """
+            SELECT column_name
+            FROM all_tab_cols
+            WHERE owner = ? AND table_name = ? AND virtual_column = 'YES'
+            """.trimIndent(),
+            schema,
+            table,
+        ).mapNotNullTo(mutableSetOf()) { it["column_name"] as? String }
+
+    /** `MAX(<column>)` der Tabelle; `null` bei leerer Tabelle. */
+    fun maxValue(session: JdbcOperations, quotedTable: String, column: String): Long? =
+        (
+            session.querySingle(
+                "SELECT MAX(${OracleIdentifiers.quote(column)}) AS max_value FROM $quotedTable",
+            )?.get("max_value") as? Number
+            )?.toLong()
 
     private fun deleteRuleToAction(rule: String?): String? = when (rule) {
         "CASCADE" -> "CASCADE"

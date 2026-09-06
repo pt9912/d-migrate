@@ -39,11 +39,15 @@ internal class JdbcChunkSequence(
     /**
      * Wert-Naht des Treibers: uebersetzt treibereigene Rueckgabetypen in
      * Standardtypen, bevor sie in den neutralen Chunk-Strom gelangen (z. B.
-     * mssql-jdbcs `microsoft.sql.DateTimeOffset` → [java.time.OffsetDateTime]).
-     * Sonst reichte der Fremdtyp bis in Verify-Kanonisierung und Export-
-     * Serialisierung durch. Default: unveraendert.
+     * mssql-jdbcs `microsoft.sql.DateTimeOffset` → [java.time.OffsetDateTime],
+     * Oracles `oracle.sql.TIMESTAMPTZ` → [java.time.OffsetDateTime]). Sonst
+     * reichte der Fremdtyp bis in Verify-Kanonisierung und Export-
+     * Serialisierung durch. Die Connection wird mitgereicht, weil Oracles
+     * Konvertierung sie fuer die Aufloesung benannter Zeitzonen braucht
+     * (`TIMESTAMPTZ.offsetDateTimeValue(conn)`) -- ohne Connection-Parameter
+     * waere diese Naht fuer Oracle nicht implementierbar. Default: unveraendert.
      */
-    private val valueMapper: (Any?) -> Any? = { it },
+    private val valueMapper: (Any?, Connection) -> Any? = { v, _ -> v },
 ) : ChunkSequence {
 
     private val log = LoggerFactory.getLogger(JdbcChunkSequence::class.java)
@@ -161,7 +165,7 @@ internal class JdbcChunkSequence(
             while (rows.size < chunkSize && rs.next()) {
                 val row = arrayOfNulls<Any?>(columnCount)
                 for (index in 0 until columnCount) {
-                    row[index] = valueMapper(rs.getObject(index + 1))
+                    row[index] = valueMapper(rs.getObject(index + 1), conn)
                 }
                 rows += row
             }

@@ -19,11 +19,14 @@ class DialectCommandGateTest : FunSpec({
         }
     }
 
-    test("oracle refusal lists schema generate and export as already available (Slice 2)") {
+    test("oracle refusal lists schema generate/export and the data path as already available (Slice 2+3)") {
         val refusal = DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_PROFILE, DatabaseDialect.ORACLE)
         refusal.shouldNotBeNull()
         refusal shouldContain "schema generate"
         refusal shouldContain "export flyway/liquibase/django/knex"
+        refusal shouldContain "data export"
+        refusal shouldContain "data import"
+        refusal shouldContain "data transfer"
     }
 
     test("established dialects (including MSSQL) pass every gate") {

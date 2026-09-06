@@ -411,11 +411,6 @@ internal object DataImportHelpers {
         dialect: DatabaseDialect,
         stderr: (String) -> Unit,
     ): Int? {
-        DialectCommandGate.refusal(DialectCommandGate.GatedCommand.DATA_IMPORT, dialect)?.let {
-            stderr("Error: $it")
-            return 2
-        }
-
         val caps = DialectCapabilities.forDialect(dialect)
 
         if (request.disableFkChecks && !caps.supportsDisableFkChecks) {

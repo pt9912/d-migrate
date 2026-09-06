@@ -84,9 +84,12 @@ abstract class AbstractJdbcDataReader : DataReader {
      * sie in den neutralen Chunk-Strom gelangen. Default: unveraendert. MSSQL
      * nutzt sie fuer `microsoft.sql.DateTimeOffset` → [java.time.OffsetDateTime]
      * — ohne das ist der Wert weder verify-kanonisierbar noch sauber
-     * serialisierbar.
+     * serialisierbar. Die Connection ist Teil der Signatur, weil Oracles
+     * `TIMESTAMPTZ` → `OffsetDateTime`-Konvertierung sie zwingend braucht
+     * (benannte Zeitzonen-Aufloesung); Treiber, die sie nicht brauchen,
+     * ignorieren den Parameter.
      */
-    protected open fun mapValue(value: Any?): Any? = value
+    protected open fun mapValue(value: Any?, conn: Connection): Any? = value
 
     final override fun streamTable(
         pool: ConnectionPool,

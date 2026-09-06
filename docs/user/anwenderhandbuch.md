@@ -2373,7 +2373,10 @@ beginnen Sie ohne `--resume` neu.
 ## 6. Häufige Fragen (FAQ)
 
 **Welche Datenbanken unterstützt d-migrate?**
-PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server.
+PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server vollständig. Oracle wird
+schrittweise ausgebaut — verfügbar sind `schema reverse`, `schema compare`,
+`schema generate`, `export <tool>` sowie `data export`/`import`/`transfer`;
+`schema migrate` und `data profile` folgen.
 
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker

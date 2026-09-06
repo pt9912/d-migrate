@@ -60,7 +60,7 @@ open class MssqlDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataRea
      * Pagila-PG→MSSQL-Smoke, wo jede Tabelle mit `timestamptz` als
      * „inconclusive" endete.
      */
-    override fun mapValue(value: Any?): Any? = when (value) {
+    override fun mapValue(value: Any?, conn: java.sql.Connection): Any? = when (value) {
         is microsoft.sql.DateTimeOffset -> value.offsetDateTime
         else -> value
     }
