@@ -1,8 +1,16 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
-> **Status:** In Progress (2026-09-05). Scope skizziert, alle fünf
-> Grundsatzentscheidungen getroffen (siehe ADR 0052), **Slice 0, Slice 1,
-> Slice 1a, Slice 2 und Slice 3 geliefert**.
+> **Status:** In Progress (Stand 2026-09-06). Alle fünf
+> Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0,
+> 1, 1a, 2, 3, 3b, 4a, 4b und 5 (5a–5e).** `schema migrate` ist damit für
+> Oracle nutzbar, und der Sample-DB-Harness fährt Pagila in **beide**
+> Richtungen. Offen sind die Ausbau-Slices **6–11** (funktionsbasierte/
+> Bitmap-Indizes, Partitionierung, Volltext, Routinen/Trigger, Materialized
+> Views, Profiling); `DialectCommandGate` führt nur noch `data profile`.
+>
+> Die datierten Status-Blöcke unten sind **Momentaufnahmen** und werden nicht
+> rückwirkend umgeschrieben — was dort „bis Slice 5 gesperrt" heißt, war zum
+> Zeitpunkt des Eintrags richtig.
 >
 > **Status-Update 2026-09-05:** Slice 0 umgesetzt — Modul
 > `adapters/driven/driver-oracle` (Skeleton, `ojdbc11` 23.26.3.0.0),
@@ -786,7 +794,7 @@ verstecktes else, aber auch keine falsche Terminzusage.
 | `schema generate` | **Slice 2** | — |
 | `export flyway/liquibase/django/knex` | **Slice 2** | — |
 | `data export` / `data import` / `data transfer` | **Slice 3** | — |
-| `schema migrate` | Slice 5 | Gate + `MigrateRendererRegistry` → `null` |
+| `schema migrate` | **Slice 5** | — |
 | `data profile` (CLI + MCP-Job) | Slice 11 | Gate |
 
 ## Slice 5 im Detail — Diff/Migrate für Oracle
@@ -902,5 +910,10 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 - UPPERCASE-Default-Bezeichner ohne Quoting sind ein Cross-Cutting-Risiko für
   Reverse-/Postcompare-Kanonisierung, ähnlich MSSQLs Collation-Fallstrick.
 - PL/SQL Packages bleiben zeitlich unbestimmt unvollständig abgebildet (siehe
-  Entscheidung 4) — muss in Anwenderhandbuch/Administrationshandbuch als
-  bekannte Grenze stehen, sobald Oracle nutzersichtbar wird (ab Slice 1).
+  Entscheidung 4). **Für den Anwender ist das seit Slice 5e-2 gedeckt**, ohne
+  dass die Packages eigens genannt werden: das Anwenderhandbuch sagt, dass
+  `schema migrate` bei Routinen und Triggern benannt blockt, und der Reverse
+  meldet vorhandene Packages zur Laufzeit als `R342`-Notiz. Die
+  darüberhinausgehende Aussage — dass Packages auch nach Slice 9 unabgebildet
+  blieben — gehört **nicht** ins Handbuch: dort steht der Ist-Zustand, keine
+  Planung.
