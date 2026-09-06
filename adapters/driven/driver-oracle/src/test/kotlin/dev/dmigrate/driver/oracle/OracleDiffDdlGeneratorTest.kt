@@ -2,10 +2,13 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.NamedTable
-import dev.dmigrate.core.diff.NamedSequence
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
+import dev.dmigrate.core.diff.migration.DiffEndpoint
+import dev.dmigrate.core.diff.migration.DiffObjectRef
+import dev.dmigrate.core.diff.migration.DiffObjectType
+import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.model.ColumnDefinition
@@ -17,7 +20,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
-import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.TransactionBehavior
@@ -30,8 +33,9 @@ import io.kotest.matchers.string.shouldContain
  * Sub-Slice 5a: the table/column/primary-key operation family. Constraints
  * and indices (5b) live in [OracleDiffObjectOpsTest], views and custom types
  * (5c) in [OracleDiffViewOpsTest] / [OracleDiffCustomTypeOpsTest]; the
- * families still ahead (sequences 5d, routines, triggers) are asserted
- * UNSUPPORTED here.
+ * families still ahead (materialized views Slice 10, partitioning Slice 7,
+ * routines and triggers Slice 9) are asserted UNSUPPORTED here; sequences
+ * (5d) live in [OracleDiffSequenceOpsTest].
  */
 class OracleDiffDdlGeneratorTest : FunSpec({
 
@@ -308,9 +312,19 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         planAndDown(diff).statements.single().sql shouldBe "ALTER TABLE \"users\" ADD CONSTRAINT \"pk_users\" PRIMARY KEY (\"id\");"
     }
 
-    test("CreateSequence is not yet supported (Sub-Slice 5d) and blocks DIALECT_UNSUPPORTED_OPERATION") {
-        val diff = SchemaDiff(sequencesAdded = listOf(NamedSequence("seq_x", SequenceDefinition())))
-        val r = planAndUp(diff)
+    test("a family still ahead (materialized views, Slice 10) blocks DIALECT_UNSUPPORTED_OPERATION") {
+        val op = DiffOperation.CreateMaterializedView(
+            id = "create-mv",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("mv_x")),
+            view = ViewDefinition(query = "SELECT 1 FROM dual", materialized = true),
+        )
+        val plan = DiffResult(
+            current = DiffEndpoint(schemaName = "App"),
+            desired = DiffEndpoint(schemaName = "App"),
+            schemaDiff = SchemaDiff(),
+            operations = listOf(op),
+        )
+        val r = gen.generateUp(plan, DdlGenerationOptions())
         r.isBlocked shouldBe true
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }

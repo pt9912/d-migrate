@@ -833,6 +833,7 @@ aus dem Live-Target übernimmt:
 | MySQL (HELPER_TABLE-Mode) | `UPDATE dmg_sequences SET next_value = <v> WHERE name = <key> AND managed_by IN (…) AND format_version IN (…);` | `SELECT next_value, managed_by, format_version FROM dmg_sequences WHERE name = <key>` |
 | SQLite (HELPER_TABLE-Mode) | `UPDATE "dmg_sequences" SET "next_value" = <v> WHERE "name" = <key>;` (Up auf `applySequenceRef`, Down auf `probeSequenceRef`) | `SELECT "next_value", "managed_by", "format_version" FROM "dmg_sequences" WHERE "name" = <key>` |
 | MS SQL Server | `ALTER SEQUENCE <seq> RESTART WITH <v>;` | `SELECT current_value FROM sys.sequences WHERE name = <key>` |
+| Oracle | `ALTER SEQUENCE <seq> RESTART START WITH <v>;` | `SELECT last_number FROM all_sequences WHERE sequence_owner = <schema> AND sequence_name = <key>` |
 
 **Voraussetzungen**:
 
@@ -866,17 +867,53 @@ gerendert, welches blockt, welches emittiert nur eine Warnung?".
 Die Defaults sind die unterste Präzedenz-Schicht; eine spätere
 Tranche kann Overlay-/CLI-Overrides ergänzen.
 
-| Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`-Mode, opt-in via `--sqlite-named-sequences`) | MS SQL Server | Cross-Dialect-Verhalten |
-|---|---|---|---|---|---|
-| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` (`E056`-Skip im Default `action_required`-Mode) | nativ | Source = neutral; verlustfrei sobald Target-Renderer Sequenzen aktiviert |
-| `start` | `START WITH` | `dmg_sequences.next_value` (Seed) | `dmg_sequences.next_value` (Seed) | `START WITH` | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand |
-| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | `INCREMENT BY` | Verlustfrei zwischen allen Dialekten |
-| `min_value` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | `MINVALUE` | Verlustfrei in `helper_table` |
-| `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | `MAXVALUE` | Verlustfrei in `helper_table` |
-| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | `dmg_sequences.cycle_enabled` (`INTEGER`) | `CYCLE` / `NO CYCLE` | Verlustfrei in `helper_table` |
-| `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `CACHE n` (native Cache-Semantik) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Alle Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
-| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | `ALTER SEQUENCE … RESTART WITH <v>` | Execute-only; siehe §9.1 |
-| `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
+| Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`-Mode, opt-in via `--sqlite-named-sequences`) | MS SQL Server | Oracle | Cross-Dialect-Verhalten |
+|---|---|---|---|---|---|---|
+| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` (`E056`-Skip im Default `action_required`-Mode) | nativ | nativ | Source = neutral; verlustfrei sobald Target-Renderer Sequenzen aktiviert |
+| `start` | `START WITH` | `dmg_sequences.next_value` (Seed) | `dmg_sequences.next_value` (Seed) | `START WITH` | `START WITH` | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand |
+| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | `INCREMENT BY` | `INCREMENT BY` | Verlustfrei zwischen allen Dialekten |
+| `min_value` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | `MINVALUE` | `MINVALUE` / `NOMINVALUE` | Verlustfrei in `helper_table` |
+| `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | `MAXVALUE` | `MAXVALUE` / `NOMAXVALUE` | Verlustfrei in `helper_table` |
+| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | `dmg_sequences.cycle_enabled` (`INTEGER`) | `CYCLE` / `NO CYCLE` | `CYCLE` / `NOCYCLE` | Verlustfrei in `helper_table` |
+| `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `CACHE n` (native Cache-Semantik) | `CACHE n` (native Preallocation) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Alle Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
+| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | `ALTER SEQUENCE … RESTART WITH <v>` | `ALTER SEQUENCE … RESTART START WITH <v>` | Execute-only; siehe Abschnitt 9.1 |
+| `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
+
+**Oracle-Defaults**: Oracle hat native benannte Sequenzen, es wird nichts
+emuliert, und `CACHE n` ist eine echte Runtime-Preallokation — also kein
+`W114`. Die Verneinungen schreibt Oracle zusammen (`NOMINVALUE`,
+`NOMAXVALUE`, `NOCYCLE`, `NOCACHE`), anders als T-SQLs `NO MINVALUE`.
+
+Zwei Eigenheiten praegen den Umgang mit dem Laufzeitstand. Erstens laesst
+sich der **Startwert einer bestehenden Sequenz nicht aendern**
+(`ORA-02283`); `ALTER SEQUENCE` traegt deshalb jede Klausel ausser
+`START WITH`, und eine Start-Abweichung wird gemeldet statt gerendert.
+Zweitens fuehrt `ALL_SEQUENCES.LAST_NUMBER` den **naechsten auszugebenden**
+Wert, nicht den zuletzt ausgegebenen wie T-SQLs `sys.sequences
+.current_value` — der Fortsetzungspunkt ist der gelesene Wert selbst, ohne
+Addition der Schrittweite. Bei `CACHE n` springt `LAST_NUMBER` blockweise
+voraus; auf ihm fortzusetzen laesst die reservierten Werte aus (eine
+Luecke), waehrend eine Rueckrechnung auf den zuletzt ausgegebenen Wert sie
+ein zweites Mal vergaebe.
+
+Der Reverse kann den urspruenglichen Startwert nicht zurueckgewinnen, weil
+Oracle ihn nicht aufbewahrt: `ALL_SEQUENCES` hat keine entsprechende Spalte
+(gefuehrt werden `MIN_VALUE`, `MAX_VALUE`, `INCREMENT_BY`, `CYCLE_FLAG`,
+`ORDER_FLAG`, `CACHE_SIZE`, `LAST_NUMBER` und einige Flags), und auch
+`DBMS_METADATA.GET_DDL` — Oracles eigene DDL-Rueckgewinnung — rekonstruiert
+den Wert nicht, sondern schreibt den aktuellen Stand hin: eine mit
+`START WITH 42` angelegte und zweimal gezogene Sequenz liefert dort
+`START WITH 44`. Der Reader liest deshalb `LAST_NUMBER` als `start` und
+meldet `R345`. Fuer eine noch nie gezogene Sequenz stimmt das ueberein —
+auch bei `CACHE n`, wo `LAST_NUMBER` erst mit der ersten Ziehung
+blockweise vorspringt.
+
+Der Startwert ist dabei nicht das einzige, was der Round-Trip nicht
+zurueckgewinnt: `NOMINVALUE`/`NOMAXVALUE` materialisieren in
+`ALL_SEQUENCES` als konkrete Zahlen (aufsteigend `1` bzw. ein 28-stelliger
+Hoechstwert), die der Reader als deklarierte Schranken liest. Ein Modell,
+das keine Schranken deklariert, erscheint nach dem Reverse deshalb
+beschrankt.
 
 **MS-SQL-Server-Defaults**: SQL Server hat native benannte Sequenzen, es wird
 nichts emuliert — alle Attribute rendern direkt in `CREATE SEQUENCE`, und

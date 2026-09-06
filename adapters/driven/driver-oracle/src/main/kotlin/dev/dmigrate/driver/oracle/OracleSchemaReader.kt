@@ -155,11 +155,15 @@ class OracleSchemaReader(
         notes: MutableList<SchemaReadNote>,
     ): Map<String, SequenceDefinition> =
         OracleMetadataQueries.listSequences(session, schema).associate { seq ->
-            // Oracle vergisst den urspruenglichen START WITH-Wert, sobald eine
-            // Sequenz je gezogen wurde -- ALL_SEQUENCES fuehrt nur den
-            // naechsten auszugebenden Wert (LAST_NUMBER). Fuer frische,
-            // ungezogene Sequenzen entspricht das dem Start; sonst ist es der
-            // aktuelle Stand, keine historische Wahrheit.
+            // Oracle BEWAHRT den urspruenglichen START WITH-Wert nicht auf:
+            // ALL_SEQUENCES hat keine solche Spalte, und selbst
+            // DBMS_METADATA.GET_DDL rekonstruiert ihn nicht, sondern schreibt
+            // den aktuellen Stand hin (gemessen: START WITH 42, zweimal
+            // gezogen -> GET_DDL meldet START WITH 44). Gefuehrt wird nur
+            // LAST_NUMBER, der naechste auszugebende Wert. Fuer frische,
+            // ungezogene Sequenzen entspricht das dem Start -- auch bei
+            // CACHE n, das erst mit der ersten Ziehung vorspringt; sonst ist
+            // es der aktuelle Stand, keine historische Wahrheit.
             notes += SchemaReadNote(
                 severity = SchemaReadSeverity.INFO,
                 code = "R345",

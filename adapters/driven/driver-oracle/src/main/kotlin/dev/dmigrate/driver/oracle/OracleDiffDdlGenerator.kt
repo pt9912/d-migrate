@@ -11,7 +11,7 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
 
 /**
  * Oracle-flavoured renderer for the migration pipeline (ADR 0052, Sub-Slices
- * 5a-5c). Covers three of the [DiffOperation] families so far:
+ * 5a-5d). Covers four of the [DiffOperation] families so far:
  *
  * In scope: the table/column/primary-key family (5a) — `CreateTable`,
  * `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`,
@@ -19,11 +19,13 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * `AddPrimaryKey`, `DropPrimaryKey` — plus the constraint/index family (5b):
  * `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex`; and the
  * view/custom-type family (5c): `CreateView`, `ReplaceView`, `DropView`,
- * `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType`.
+ * `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType`; and
+ * the sequence family (5d): `CreateSequence`, `AlterSequence`,
+ * `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue`.
  *
- * Everything else surfaces as `DIALECT_UNSUPPORTED_OPERATION` — sequences
- * (5d) and the remaining families follow in later sub-slices per
- * `docs/planning/in-progress/oracle-dialect-scoping.md`.
+ * Everything else surfaces as `DIALECT_UNSUPPORTED_OPERATION` — partitioning
+ * (Slice 7), materialized views (Slice 10), routines and triggers (Slice 9)
+ * per `docs/planning/in-progress/oracle-dialect-scoping.md`.
  *
  * Not yet wired into `MigrateRendererRegistry`/`DialectCommandGate` — like
  * every dialect before it, that happens in the closing sub-slice (5e), not
@@ -39,6 +41,7 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  *   Generate path).
  * - [OracleDiffObjectOps] — constraint / index ops, same reuse.
  * - [OracleDiffViewOps] / [OracleDiffCustomTypeOps] — views and custom types.
+ * - [OracleDiffSequenceOps] — sequences (shares [OracleSequenceDdl] with Generate).
  * - [OracleDiffRenderContext] — bookkeeping for one render pass.
  */
 class OracleDiffDdlGenerator : DiffDdlGenerator {
@@ -90,6 +93,7 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.TABLE -> renderTableOp(op, ctx)
             OpCategory.OBJECT -> renderObjectOp(op, ctx)
             OpCategory.VIEW_OR_TYPE -> renderViewOrTypeOp(op, ctx)
+            OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -130,12 +134,14 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropCustomType,
         -> OpCategory.VIEW_OR_TYPE
 
-        is DiffOperation.AlterTablePartitions,
         is DiffOperation.CreateSequence,
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
         is DiffOperation.RenameSequence,
         is DiffOperation.AlterSequenceCurrentValue,
+        -> OpCategory.SEQUENCE
+
+        is DiffOperation.AlterTablePartitions,
         is DiffOperation.CreateMaterializedView,
         is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
@@ -194,10 +200,22 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderSequenceOp(op: DiffOperation, ctx: OracleDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateSequence -> OracleDiffSequenceOps.renderCreateSequence(op, ctx)
+            is DiffOperation.AlterSequence -> OracleDiffSequenceOps.renderAlterSequence(op, ctx)
+            is DiffOperation.DropSequence -> OracleDiffSequenceOps.renderDropSequence(op, ctx)
+            is DiffOperation.RenameSequence -> OracleDiffSequenceOps.renderRenameSequence(op, ctx)
+            is DiffOperation.AlterSequenceCurrentValue ->
+                OracleDiffSequenceOps.renderAlterSequenceCurrentValue(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised SEQUENCE but renderSequenceOp does not handle it")
+        }
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: OracleDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not yet supported by the Oracle migrate renderer.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OBJECT, VIEW_OR_TYPE, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OBJECT, VIEW_OR_TYPE, SEQUENCE, UNSUPPORTED }
 }

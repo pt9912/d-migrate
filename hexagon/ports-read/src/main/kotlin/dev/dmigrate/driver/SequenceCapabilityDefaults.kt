@@ -194,8 +194,19 @@ object SequenceCapabilityDefaults {
     // CACHE, kein Metadata-Only-Emulation-Pfad wie MySQL/SQLite) -- deshalb
     // emitsCachePreallocationWarning=false. supportsOwnedBy=false: Oracle
     // kennt keine `SEQUENCE OWNED BY column`-Verknuepfung wie PG.
-    // supportsCurrentValuePreserve/Atomic-Faehigkeiten bleiben false: es
-    // existiert noch kein OracleDiffSequenceOps (kein Slice 5 gebaut).
+    // supportsCurrentValuePreserve bleibt false, obwohl Sub-Slice 5d den
+    // Renderer gebaut hat (`OracleDiffSequenceOps
+    // .renderAlterSequenceCurrentValue` kann `ALTER SEQUENCE ... RESTART
+    // START WITH n` ausdruecken). Das Feld sagt laut seinem eigenen KDoc mehr
+    // zu als den Renderer: es "backs the SequencePreserveStage
+    // preserveCurrentValue contract", und das dort gegebene SQLite-Beispiel
+    // nennt drei verdrahtete Teile -- Probe-Adapter, Zweig in der
+    // Stage-Dialektliste UND Renderer. Oracle hat bislang nur den dritten.
+    // Der Wechsel auf true gehoert deshalb in den Sub-Slice, der die Stage
+    // verdrahtet (5e) -- und der muss wissen: Oracle allein in
+    // PRESERVE_DIALECTS einzutragen macht aus dem heutigen sauberen Skip
+    // einen harten Blocker, weil transactionalProtectedSequenceOperations
+    // leer ist.
     private val Oracle = SequenceCapability(
         supportsNamedSequences = true,
         supportsStart = true,

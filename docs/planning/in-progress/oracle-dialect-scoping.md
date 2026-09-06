@@ -310,6 +310,62 @@
 > erreichbaren Fällen ein `DROP CONSTRAINT` auf einen nie angelegten CHECK
 > abgesetzt.
 >
+> **Status-Update 2026-09-06 (Slice 5d):** `OracleDiffSequenceOps` + das
+> geteilte `OracleSequenceDdl` (Generate- und Diff-Pfad rendern
+> `CREATE SEQUENCE` aus einer Quelle, byte-identisch per Test gepinnt).
+> Acht Eigenheiten live gemessen; zwei haben das Design bestimmt:
+> - **`START WITH` ist unveränderlich** (`ORA-02283`). `ALTER SEQUENCE`
+>   schreibt deshalb jede Klausel außer dem Startwert aus; eine
+>   Start-Abweichung wird gemeldet. Für Oracle trifft das häufiger als
+>   anderswo, weil der Reverse `LAST_NUMBER` als `start` liest (`R345`) —
+>   jede je gezogene Sequenz erscheint im Diff mit abweichendem Startwert,
+>   ohne dass sich am Modell etwas geändert hätte.
+> - **`LAST_NUMBER` ist der NÄCHSTE Wert, nicht der zuletzt ausgegebene.**
+>   T-SQLs `sys.sequences.current_value` meint das Gegenteil, weshalb MSSQL
+>   dort die Schrittweite addiert. Hätte ich das übernommen, wäre es falsch
+>   gewesen — und der Cache-Fall zeigt, wie falsch: nach *einer* Ziehung mit
+>   `CACHE 20` steht `LAST_NUMBER` auf 21, Oracle hat 1–20 reserviert. Bei
+>   21 fortzusetzen lässt sie aus (Lücke); von „zuletzt ausgegeben + 1" zu
+>   rechnen ergäbe 2 und vergäbe 2–20 ein zweites Mal.
+>
+> Der Rest folgt daraus: `RESTART START WITH` (nicht `RESTART WITH`),
+> Umbenennen über die freistehende Anweisung wie bei Views, kein
+> `IF EXISTS` (`ORA-02289`).
+>
+> **`supportsCurrentValuePreserve` bleibt bewusst `false`** — anders als
+> diese Zeile es ursprünglich vorsah. Das Review hielt den Plan gegen den
+> Vertrag, und der Vertrag gewinnt: das Feld sagt laut seinem eigenen KDoc
+> den ganzen `SequencePreserveStage`-Vertrag zu, und das dort gegebene
+> SQLite-Beispiel nennt drei verdrahtete Teile — Probe, Zweig in der
+> Dialektliste, Renderer. Oracle hat nur den dritten. Der Wechsel gehört
+> deshalb in 5e, zusammen mit der Stage-Verdrahtung.
+>
+> **Warnung für 5e:** Oracle allein in `SequencePreserveStage`s
+> `PRESERVE_DIALECTS` einzutragen macht aus dem heutigen sauberen Skip einen
+> **harten Blocker** — `transactionalProtectedSequenceOperations` ist leer,
+> und der atomare Pfad lehnt dann jeden Kandidaten ab. Beides gehört
+> zusammen entschieden.
+>
+> **Kein `OracleSequenceCurrentValueProbe` gebaut.** MSSQL hat einen, aber
+> er hat repo-weit keinen Aufrufer — ihn nachzubauen hieße, unreferenzierten
+> Code allein mit dem Vorbild zu begründen. Die gemessene `LAST_NUMBER`-Semantik steht
+> stattdessen dort, wo sie trägt: im Renderer und in
+> [`neutral-model-spec.md`](../../../spec/neutral-model-spec.md) Abschnitt 9.
+>
+> Dort ist auch die seit Slice 1 fehlende Oracle-Spalte der
+> Sequenz-Capability-Matrix ergänzt, samt Renderer-/Probe-Zeile in 9.1 und
+> einem Oracle-Defaults-Absatz.
+>
+> Das Review förderte dabei einen **Fehler im Reverse** zutage, der älter
+> ist als Slice 5: `NOMAXVALUE` liefert Oracle als 28-stelligen Wert, den
+> `BigDecimal.toLong()` still auf `4477988020393345023` verkürzt — eine
+> unbegrenzte Sequenz kommt als begrenzt zurück. Kein Test hat das je
+> gesehen, weil der Stub `Long.MAX_VALUE` verwendet, einen Wert, den echtes
+> Oracle dort nie liefert. Zusammen mit der Beobachtung, dass
+> `NOMINVALUE`/`NOMAXVALUE` ohnehin als Zahlen materialisieren und als
+> deklarierte Schranken zurückgelesen werden, steht das in
+> [`oracle-sequence-bounds-not-round-trippable.md`](../open/oracle-sequence-bounds-not-round-trippable.md).
+>
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -529,7 +585,7 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | ~~5a-2~~ | — | **Entfällt** — die Live-Sonde bestätigte, dass Oracle Identity-Typänderungen per `ALTER TABLE ... MODIFY` in-place erlaubt (siehe oben); MSSQLs Rebuild-Sub-Slice hat kein Oracle-Äquivalent. Der einzige Rest-Fall (Identity *hinzufügen*) ist in [`oracle-add-identity-requires-rebuild.md`](../open/oracle-add-identity-requires-rebuild.md) ausgelagert | — |
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes — ein nicht-BTREE-Indextyp rendert als B-Tree mit `W102` (so wie im Generate-Pfad, `spec/ddl-generation-rules.md`); Constraint-Namen kommen aus dem Operations-Payload, kein Katalog-Lookup nötig. Kein `WITH CHECK`-Äquivalent: Oracle validiert per Default gegen den Bestand (siehe oben) | Unit-Tests je Operation und Richtung |
 | **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
-| **5d** | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
+| **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
 | **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingungen:** (1) `RenameDependencyPolicy.forDialect(ORACLE)` ist heute ein `error(...)`-Stub und `ObjectRenamePolicyRegistry` führt Oracle nicht — sobald der Gate-Fall `schema migrate` öffnet, wählt `SchemaMigrateRunner` diese Policy aus und läuft hinein ([`oracle-view-dependencies-not-read.md`](../open/oracle-view-dependencies-not-read.md)); (2) [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |
 
 ## Offene Punkte

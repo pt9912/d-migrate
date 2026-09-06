@@ -93,20 +93,8 @@ class OracleDdlGenerator private constructor(
     override fun generateSequences(
         schema: SchemaDefinition,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = schema.sequences.map { (name, seq) -> generateSequence(name, seq) }
-
-    private fun generateSequence(name: String, seq: SequenceDefinition): DdlStatement {
-        val sql = buildString {
-            append("CREATE SEQUENCE ${quoteIdentifier(name)}")
-            append(" START WITH ${seq.start}")
-            append(" INCREMENT BY ${seq.increment}")
-            if (seq.minValue != null) append(" MINVALUE ${seq.minValue}") else append(" NOMINVALUE")
-            if (seq.maxValue != null) append(" MAXVALUE ${seq.maxValue}") else append(" NOMAXVALUE")
-            if (seq.cycle) append(" CYCLE") else append(" NOCYCLE")
-            if (seq.cache != null) append(" CACHE ${seq.cache}") else append(" NOCACHE")
-            append(";")
-        }
-        return DdlStatement(sql)
+    ): List<DdlStatement> = schema.sequences.map { (name, seq) ->
+        DdlStatement(OracleSequenceDdl.createSql(name, seq))
     }
 
     // ── Tables ───────────────────────────────────
