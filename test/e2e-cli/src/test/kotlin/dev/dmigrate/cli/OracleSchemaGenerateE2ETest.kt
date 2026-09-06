@@ -56,10 +56,15 @@ class OracleSchemaGenerateE2ETest : FunSpec({
         ddl shouldContain "\"id\" NUMBER(9) GENERATED ALWAYS AS IDENTITY"
         ddl shouldContain "\"email\" VARCHAR2(254) NOT NULL CONSTRAINT \"uq_customers_email\" UNIQUE"
         ddl shouldContain "CONSTRAINT \"fk_orders_customer_id\" FOREIGN KEY (\"customer_id\") REFERENCES \"customers\" (\"id\")"
-        // Skript-Darstellung: jedes ausfuehrbare Statement bekommt einen eigenen
-        // `/`-Batch-Trenner (DialectCapabilities.batchSeparator).
-        ddl shouldContain "CREATE INDEX \"idx_orders_customer\" ON \"orders\" (\"customer_id\");\n/\n"
-        ddl shouldContain "CREATE OR REPLACE FORCE VIEW \"active_customers\" AS\nSELECT id, email FROM customers;\n/"
+        ddl shouldContain "CREATE INDEX \"idx_orders_customer\" ON \"orders\" (\"customer_id\");"
+        ddl shouldContain "CREATE OR REPLACE FORCE VIEW \"active_customers\" AS\nSELECT id, email FROM customers;"
+        // KEIN `/`-Trenner hinter den `;`-terminierten Anweisungen: in SQL*Plus
+        // fuehrt `/` den Puffer ein ZWEITES Mal aus, anders als T-SQLs `GO`, das
+        // nur einen Batch beendet. Frueher stand hier die umgekehrte Zusicherung
+        // -- der Fehler fiel erst auf, als der Sample-DB-Harness das Skript
+        // wirklich per sqlplus anwandte (jedes CREATE meldete beim zweiten
+        // Durchlauf ORA-00955).
+        ddl.lines().none { it.trim() == "/" } shouldBe true
         ddl shouldNotContain "does not support dialect oracle"
         Files.exists(tmp.resolve("schema.report.yaml")) shouldBe true
     }
