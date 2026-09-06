@@ -114,26 +114,33 @@ internal class RenameDependencyProjector(
         // dropping. A `kind = "EXPLICIT"` entry tells report
         // consumers "the projector emitted an explicit follow-up,
         // dialect-specific kind not yet classified".
-        explicit = projection.explicit.map { op ->
-            ExplicitProjectionRef(
-                kind = when (op) {
-                    is DiffOperation.CreateView -> "VIEW_CREATE"
-                    is DiffOperation.DropView -> "VIEW_DROP"
-                    // Plan-2 §8 D.3b Sub-Slices A/B: surface MV
-                    // reprojection explicitly so report consumers can
-                    // distinguish a materialized-view drop+create (or
-                    // replace, Sub-Slice B) from a regular view
-                    // drop+create.
-                    is DiffOperation.CreateMaterializedView -> "MATERIALIZED_VIEW_CREATE"
-                    is DiffOperation.ReplaceMaterializedView -> "MATERIALIZED_VIEW_REPLACE"
-                    is DiffOperation.DropMaterializedView -> "MATERIALIZED_VIEW_DROP"
-                    else -> "EXPLICIT"
-                },
-                path = op.objectRef.path,
-                operationId = op.id,
-            )
-        },
+        explicit = projection.explicit.map(::explicitRef),
         blockers = emptyList(),
+    )
+
+    /**
+     * T5 emits `DropView` + `CreateView` today, but other kinds
+     * (trigger drop+create, etc.) will land in later tranches —
+     * surface them with a generic kind rather than silently dropping.
+     * A `kind = "EXPLICIT"` entry tells report consumers "the
+     * projector emitted an explicit follow-up, dialect-specific kind
+     * not yet classified".
+     *
+     * Plan-2 §8 D.3b Sub-Slices A/B: materialized-view reprojection
+     * gets its own kinds so report consumers can tell an MV
+     * drop+create (or replace, Sub-Slice B) from a regular one.
+     */
+    private fun explicitRef(op: DiffOperation): ExplicitProjectionRef = ExplicitProjectionRef(
+        kind = when (op) {
+            is DiffOperation.CreateView -> "VIEW_CREATE"
+            is DiffOperation.DropView -> "VIEW_DROP"
+            is DiffOperation.CreateMaterializedView -> "MATERIALIZED_VIEW_CREATE"
+            is DiffOperation.ReplaceMaterializedView -> "MATERIALIZED_VIEW_REPLACE"
+            is DiffOperation.DropMaterializedView -> "MATERIALIZED_VIEW_DROP"
+            else -> "EXPLICIT"
+        },
+        path = op.objectRef.path,
+        operationId = op.id,
     )
 
     private fun tableFallbackReport(
@@ -165,6 +172,7 @@ internal class RenameDependencyProjector(
         val diagnostics = mutableListOf<DiffDiagnostic>()
         val absorbedFrom = mutableSetOf<String>()
         val absorbedTo = mutableSetOf<String>()
+        val absorbedViews = mutableSetOf<String>()
         val reports = mutableListOf<RenameProjectionReport>()
         for (item in items) {
             val candidate = item.candidate
@@ -184,12 +192,14 @@ internal class RenameDependencyProjector(
                     if (projection.isAutomatic) {
                         ops += RenameOverlayMapper.buildRenameColumnOperation(candidate)
                         ops += item.postRenameDeltaOperations
-                        // T5 carve-out: column-rename view-reprojection
-                        // is not yet implemented (`explicit` should be
-                        // empty for column candidates). Append
-                        // defensively so a future tranche that
-                        // populates it does not silently drop ops.
+                        // Dialekte, deren Engine abhaengige Sichten beim
+                        // Spalten-Rename invalid zuruecklaesst (Oracle,
+                        // gemessen), projizieren sie hier neu. Die
+                        // absorbierten Namen MUESSEN mitwandern, sonst
+                        // emittiert `mapViews` zusaetzlich ein
+                        // `ReplaceView` auf demselben Objekt.
                         ops += projection.explicit
+                        absorbedViews += projection.absorbedViews
                         absorbedFrom += candidate.fromColumn
                         absorbedTo += candidate.toColumn
                         reports += columnSuccessReport(candidate, projection)
@@ -202,7 +212,7 @@ internal class RenameDependencyProjector(
                 }
             }
         }
-        return RenameColumnProjection(ops, diagnostics, absorbedFrom, absorbedTo, reports)
+        return RenameColumnProjection(ops, diagnostics, absorbedFrom, absorbedTo, reports, absorbedViews)
     }
 
     private fun columnSuccessReport(
@@ -220,7 +230,10 @@ internal class RenameDependencyProjector(
         fallbackOperationIds = emptyList(),
         fallbackReason = null,
         automatic = projection.automatic,
-        explicit = emptyList(),
+        // Frueher hart `emptyList()` -- mit der Spalten-Reprojektion
+        // stehen hier echte Folge-Operationen im Plan, und der Report
+        // ist der Audit-Traeger dafuer.
+        explicit = projection.explicit.map(::explicitRef),
         blockers = emptyList(),
     )
 

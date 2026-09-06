@@ -40,10 +40,34 @@ internal object ObjectRenamePolicyRegistry {
         RenameProjectionDialect.POSTGRESQL to PostgresObjectRenamePolicy,
         RenameProjectionDialect.MYSQL to MysqlObjectRenamePolicy,
         RenameProjectionDialect.SQLITE to SqliteObjectRenamePolicy,
+        RenameProjectionDialect.ORACLE to OracleObjectRenamePolicy,
     )
 
+    /**
+     * Ein fehlender Eintrag ist ein noch nicht gebauter Dialekt, kein
+     * Programmierfehler — die Registry waechst pro Dialekt. `getValue`
+     * haette daraus eine `NoSuchElementException` mitten im Planer
+     * gemacht: ein Abbruch ohne Diagnose-Code, wo der Vertrag einen
+     * Blocker vorsieht. Betrifft heute MSSQL
+     * (`docs/planning/open/mssql-object-rename-policy-missing.md`).
+     */
     fun forDialect(dialect: RenameProjectionDialect): ObjectRenamePolicy =
-        policies.getValue(dialect)
+        policies[dialect] ?: UnsupportedObjectRenamePolicy(dialect)
+}
+
+internal class UnsupportedObjectRenamePolicy(
+    override val dialect: RenameProjectionDialect,
+) : ObjectRenamePolicy {
+
+    override fun classify(
+        candidate: ObjectRenameCandidate,
+        capabilities: RenameProjectionCapabilities,
+    ): RenameSupport = RenameSupport.Blocked(
+        code = "OBJECT_RENAME_UNSUPPORTED",
+        message = "d-migrate has no object-rename policy for ${dialect.name}; the rename of " +
+            "${candidate.objectType} '${candidate.fromName}' → '${candidate.toName}' cannot be " +
+            "classified. Remove the rename mapping for this object, or drop and recreate it explicitly.",
+    )
 }
 
 /**
@@ -158,6 +182,69 @@ internal object MysqlObjectRenamePolicy : ObjectRenamePolicy {
             )
         }
         return RenameSupport.DropCreateFallback(rationale = rationale)
+    }
+}
+
+/**
+ * Oracle benennt Sichten und Sequenzen mit der freistehenden Anweisung
+ * `RENAME alt TO neu` um — ein `ALTER VIEW … RENAME` gibt es nicht.
+ * Fuer beide ist das damit ein nativer Rename. (Tabellen kann dieselbe
+ * Anweisung ebenfalls, d-migrate rendert sie dort aber als
+ * `ALTER TABLE … RENAME TO`, siehe `OracleDiffTableOps`.)
+ *
+ * Die uebrigen Objektarten blocken, und der Grund liegt bei d-migrate,
+ * nicht bei Oracle: Routinen, Trigger und Materialized Views liest der
+ * Oracle-Reader nicht und der Generator schreibt sie nicht (Slices 9
+ * bzw. 10, ADR 0052). Ein Rename-Vertrag fuer Objekte, die auf keinem
+ * anderen Pfad existieren, waere nicht pruefbar.
+ */
+internal object OracleObjectRenamePolicy : ObjectRenamePolicy {
+
+    override val dialect: RenameProjectionDialect = RenameProjectionDialect.ORACLE
+
+    override fun classify(
+        candidate: ObjectRenameCandidate,
+        capabilities: RenameProjectionCapabilities,
+    ): RenameSupport {
+        if (candidate.objectType == DiffObjectType.VIEW && candidate.materializedView) {
+            return RenameSupport.Blocked(
+                code = "OBJECT_RENAME_UNSUPPORTED",
+                message = "d-migrate does not read or render Oracle materialized views yet " +
+                    "(Oracle rollout, ADR 0052); a rename contract for them would be untestable.",
+            )
+        }
+        return when (candidate.objectType) {
+            DiffObjectType.VIEW, DiffObjectType.SEQUENCE -> oracleNativeRename(candidate)
+            DiffObjectType.TRIGGER, DiffObjectType.FUNCTION, DiffObjectType.PROCEDURE ->
+                RenameSupport.Blocked(
+                    code = "OBJECT_RENAME_UNSUPPORTED",
+                    message = "d-migrate does not read or render Oracle " +
+                        "${candidate.objectType.name.lowercase()} objects yet (Oracle rollout, " +
+                        "ADR 0052); a rename contract for them would be untestable.",
+                )
+            else -> RenameSupport.Blocked(
+                code = "OBJECT_RENAME_UNSUPPORTED",
+                message = "Oracle policy: object type ${candidate.objectType} is not a rename target.",
+            )
+        }
+    }
+
+    /**
+     * `RENAME` fasst den Rumpf nicht an. Ein Rename, der gleichzeitig den
+     * Rumpf aendert, wuerde die Rumpfaenderung deshalb still verschlucken —
+     * er gehoert in ein `Replace` plus einen eigenen Rename.
+     */
+    private fun oracleNativeRename(candidate: ObjectRenameCandidate): RenameSupport {
+        if (candidate.objectType.isBodyBearing() && candidate.hasBodyDrift()) {
+            return RenameSupport.Blocked(
+                code = "OBJECT_RENAME_UNSUPPORTED",
+                message = "Body-drift detected for Oracle ${candidate.objectType} rename " +
+                    "'${candidate.fromName}' → '${candidate.toName}': source and target bodies differ. " +
+                    "Oracle's `RENAME` leaves the body untouched, so the body change would be lost. " +
+                    "Split the change into a body-change Replace plus a separate rename.",
+            )
+        }
+        return RenameSupport.Native
     }
 }
 

@@ -4,9 +4,11 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.DependencyInfo
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.ViewDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
@@ -408,6 +410,113 @@ class RenameDependencyProjectorTest : FunSpec({
 
             projection.operations.shouldBeEmpty()
             projection.diagnostics.shouldHaveSize(1)
+        }
+    }
+
+    // ── Oracle ──────────────────────────────────────────────────────
+    //
+    // Live gemessen (2026-09-06, gvenzl/oracle-free:23-slim-faststart):
+    // ein Tabellen-Rename invalidiert ALLE abhaengigen Sichten, ein
+    // Spalten-Rename genau die, die die Spalte nennen. Der Rumpf in
+    // `user_views.text` bleibt in beiden Faellen auf dem alten Namen
+    // stehen und die Sicht heilt sich beim Zugriff nicht (`ORA-04063`,
+    // auch beim zweiten Versuch).
+    context("Oracle policy") {
+        val oracleCaps = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.ORACLE)
+
+        fun schemaWithView(viewBody: String, dependsOn: String) = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to simpleTable(), "users_old" to simpleTable()),
+            views = mapOf(
+                "v_users" to ViewDefinition(
+                    query = viewBody,
+                    dependencies = DependencyInfo(tables = listOf(dependsOn)),
+                ),
+            ),
+        )
+
+        test("table rename reprojects a dependent view as Drop+Create") {
+            val current = schemaWithView("SELECT email FROM users_old", dependsOn = "users_old")
+            val desired = schemaWithView("SELECT email FROM users", dependsOn = "users")
+            val projection = OracleRenameDependencyPolicy.classifyTableRename(
+                tableCandidate(), SchemaDiff(), current, desired, oracleCaps,
+            )
+            projection.explicit shouldHaveSize 2
+            projection.explicit[0].shouldBeInstanceOf<DiffOperation.DropView>()
+            projection.explicit[1].shouldBeInstanceOf<DiffOperation.CreateView>()
+            projection.absorbedViews shouldContainExactly setOf("v_users")
+            projection.blockers.shouldBeEmpty()
+        }
+
+        // Der Oracle-spezifische Teil: die vier anderen Policies
+        // projizieren beim SPALTEN-Rename keine Sicht neu.
+        test("column rename also reprojects dependent views -- unlike the other dialects") {
+            val current = schemaWithView("SELECT email_addr FROM users", dependsOn = "users")
+            val desired = schemaWithView("SELECT email FROM users", dependsOn = "users")
+            val projection = OracleRenameDependencyPolicy.classifyColumnRename(
+                columnCandidate(), TableDiff(name = "users"), current, desired, oracleCaps,
+            )
+            projection.explicit shouldHaveSize 2
+            projection.explicit[0].shouldBeInstanceOf<DiffOperation.DropView>()
+            projection.explicit[1].shouldBeInstanceOf<DiffOperation.CreateView>()
+
+            // Gegenprobe auf demselben Schema: MSSQL laesst die Sicht stehen.
+            MssqlRenameDependencyPolicy.classifyColumnRename(
+                columnCandidate(), TableDiff(name = "users"), current, desired,
+                RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MSSQL),
+            ).explicit.shouldBeEmpty()
+        }
+
+        test("column rename keeps the FunctionCall default blocker") {
+            val current = schemaWithView("SELECT email_addr FROM users", dependsOn = "users")
+            val desired = SchemaDefinition(
+                name = "App",
+                version = "1",
+                tables = mapOf("users" to simpleTable(DefaultValue.FunctionCall("normalize_email_addr"))),
+                // Bewusst ein EIGENES Objekt mit anderem Rumpf: mit
+                // `current.views` koennte der Test nicht zeigen, aus
+                // welcher Seite reprojiziert wird.
+                views = schemaWithView("SELECT email FROM users", dependsOn = "users").views,
+            )
+            val projection = OracleRenameDependencyPolicy.classifyColumnRename(
+                columnCandidate(), TableDiff(name = "users"), current, desired, oracleCaps,
+            )
+            projection.blockers shouldHaveSize 1
+            projection.blockers.single().message shouldContain "normalize_email_addr"
+        }
+
+        test("column rename names the column in its blocker, not the table") {
+            val current = schemaWithView("SELECT email_addr FROM users", dependsOn = "users")
+            // Sicht ohne Rumpf im Soll -> Blocker, aber die Sicht bleibt
+            // im Soll-Schema (sonst greift die Drop-Ausnahme).
+            val desired = SchemaDefinition(
+                name = "App",
+                version = "1",
+                tables = mapOf("users" to simpleTable()),
+                views = mapOf("v_users" to ViewDefinition(query = null)),
+            )
+            val projection = OracleRenameDependencyPolicy.classifyColumnRename(
+                columnCandidate(), TableDiff(name = "users"), current, desired, oracleCaps,
+            )
+            projection.blockers shouldHaveSize 1
+            val message = projection.blockers.single().message
+            message shouldContain "users.email_addr"
+            message shouldContain "email"
+        }
+
+        test("a view the desired schema no longer carries blocks instead of guessing") {
+            val current = schemaWithView("SELECT email FROM users_old", dependsOn = "users_old")
+            val desired = SchemaDefinition(
+                name = "App", version = "1",
+                tables = mapOf("users" to simpleTable()),
+            )
+            val projection = OracleRenameDependencyPolicy.classifyTableRename(
+                tableCandidate(), SchemaDiff(), current, desired, oracleCaps,
+            )
+            projection.explicit.shouldBeEmpty()
+            projection.blockers shouldHaveSize 1
+            projection.blockers.single().code shouldBe RENAME_DEPENDENCY_UNPROJECTABLE
         }
     }
 })

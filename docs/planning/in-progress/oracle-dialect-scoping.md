@@ -332,19 +332,29 @@
 > Umbenennen über die freistehende Anweisung wie bei Views, kein
 > `IF EXISTS` (`ORA-02289`).
 >
-> **`supportsCurrentValuePreserve` bleibt bewusst `false`** — anders als
-> diese Zeile es ursprünglich vorsah. Das Review hielt den Plan gegen den
-> Vertrag, und der Vertrag gewinnt: das Feld sagt laut seinem eigenen KDoc
-> den ganzen `SequencePreserveStage`-Vertrag zu, und das dort gegebene
-> SQLite-Beispiel nennt drei verdrahtete Teile — Probe, Zweig in der
-> Dialektliste, Renderer. Oracle hat nur den dritten. Der Wechsel gehört
-> deshalb in 5e, zusammen mit der Stage-Verdrahtung.
+> **`supportsCurrentValuePreserve` blieb in 5d auf `false`, und die
+> Begründung dafür war falsch.** Sie stützte sich auf das KDoc des Feldes —
+> ein Kommentar, also beschreibend und nicht normativ. Nachgemessen am Code
+> gilt: **das Feld hat repo-weit keinen Leser.** Es wird nur in
+> `SequenceCapabilityDefaults` gesetzt und in `SequenceCapabilityTest`
+> gegen sich selbst geprüft; kein Produktivpfad verzweigt darauf. Beide
+> Werte ändern also kein Verhalten, und die Frage ist allein, welcher
+> Wert wahr ist. Normativ ist `neutral-model-spec.md` Abschnitt 9, und
+> dessen `preserve_current_value`-Zeile trägt für Oracle den Renderer.
+> Der Wert gehört damit auf `true`; er wird zusammen mit der Verdrahtung
+> gesetzt (5e).
 >
-> **Warnung für 5e:** Oracle allein in `SequencePreserveStage`s
-> `PRESERVE_DIALECTS` einzutragen macht aus dem heutigen sauberen Skip einen
-> **harten Blocker** — `transactionalProtectedSequenceOperations` ist leer,
-> und der atomare Pfad lehnt dann jeden Kandidaten ab. Beides gehört
-> zusammen entschieden.
+> **Korrektur der 5d-Warnung zu `PRESERVE_DIALECTS`:** dort stand, Oracle
+> einzutragen mache aus einem „sauberen Skip" einen harten Blocker. Das ist
+> nicht so. `SequencePreserveStage.blockUnsupportedDialect` liefert
+> `Outcome.NotRun` nur, wenn es gar keine Preserve-Kandidaten gibt —
+> andernfalls schon **heute** ein `Outcome.Failed` mit BLOCKER-Diagnose. Der
+> Eintritt in `PRESERVE_DIALECTS` ändert nicht *ob*, sondern *womit*
+> geblockt wird, und zwar zum Wahren hin: die heutige Meldung
+> „preserveCurrentValue is not supported on ORACLE" ist seit 5d falsch (der
+> Renderer kann es ausdrücken), während `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`
+> zutrifft — was Oracle fehlt, ist der atomare Ausführungspfad, nicht der
+> Renderer.
 >
 > **Kein `OracleSequenceCurrentValueProbe` gebaut.** MSSQL hat einen, aber
 > er hat repo-weit keinen Aufrufer — ihn nachzubauen hieße, unreferenzierten
@@ -365,7 +375,82 @@
 > `NOMINVALUE`/`NOMAXVALUE` ohnehin als Zahlen materialisieren und als
 > deklarierte Schranken zurückgelesen werden, steht das in
 > [`oracle-sequence-bounds-not-round-trippable.md`](../open/oracle-sequence-bounds-not-round-trippable.md).
+
+> **Status-Update 2026-09-06 (Slice 5e-1):** die Rename-Vorbedingung —
+> **beide** Teile des dafür geführten Tickets (Policy *und* Daten), nicht
+> die dort als Zwischenschritt vorgeschlagene Policy ohne Daten; das Ticket
+> ist mit diesem Commit gelöst und entfällt. Eine Policy, die den Reprojector ruft
+> und mangels Abhängigkeiten nie etwas findet, hätte den `error(...)`-Stub
+> durch etwas Schlimmeres ersetzt: eine umbenannte Tabelle ließe ihre
+> Sichten still invalid zurück.
 >
+> Vorab live gemessen, weil MSSQLs Policy nichts über Oracle beweist:
+> - **Tabellen-Rename:** FK bleibt `ENABLED` und zeigt auf den neuen Namen,
+>   Index-/Constraint-Namen bleiben stehen — FK und Index brauchen keine
+>   Projektion. **Alle** abhängigen Sichten gehen auf `INVALID`, ihr Rumpf in
+>   `user_views.text` bleibt auf dem alten Namen, `SELECT` scheitert mit
+>   `ORA-04063` — auch beim zweiten Versuch, die Sicht heilt sich beim
+>   Zugriff also nicht.
+> - **Spalten-Rename:** `user_cons_columns`/`user_ind_columns` folgen, und
+>   den **CHECK-Ausdruck schreibt Oracle selbst um** (`"note" IS NOT NULL`
+>   wurde zu `"remark" IS NOT NULL`). Von den Sichten bricht genau die, die
+>   die Spalte nennt; eine andere Sicht auf derselben Tabelle bleibt `VALID`.
+>
+> Daraus die eine Stelle, an der Oracle von allen vier bestehenden Policies
+> abweicht: **auch `classifyColumnRename` projiziert Sichten neu.** Der
+> dialektunabhängige `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`-Wächter des
+> Planers deckt diesen Fall nicht ab — er greift für `DropColumn` /
+> `AlterColumnType` / `AlterColumnNullability`, nicht für `RenameColumn`.
+> Neu dafür ist `RenameViewReprojector.reprojectViewsForColumnRename`.
+>
+> **Abhängigkeitsdaten** kommen aus `ALL_DEPENDENCIES`, gefiltert auf das
+> eigene Schema. Zwei Messungen bestimmen die Übersetzung ins Modell:
+> - Es gibt **keine spaltengenaue Quelle** — `ALL_DEPENDENCY_COLUMNS`
+>   existiert nicht, und unter allen `SYS`-Sichten mit `DEPENDENC` im Namen
+>   ist keine spaltenbezogene. `DependencyInfo.columns` bleibt deshalb leer,
+>   womit der genannte Wächter greift: eine Spaltenänderung unter einer
+>   Oracle-Sicht blockt. Das ist gewollt — dieselbe Lage wie bei MySQL.
+> - **Jede Sicht trägt mindestens eine `ALL_DEPENDENCIES`-Zeile**, selbst
+>   eine über `dual` (dort `PUBLIC.DUAL` als `SYNONYM`). Gar keine Zeile
+>   heißt deshalb nicht „hängt von nichts ab", sondern fehlende Sichtbarkeit
+>   → `INCOMPLETE_PRIVILEGE`, und der Planer blockt `ReplaceView` statt zu
+>   raten. Leere In-Schema-Listen bei vorhandener Zeile sind dagegen
+>   `EMPTY_VERIFIED`.
+>
+> Beim Bau fiel ein **ausgelieferter Defekt in einem anderen Dialekt** auf:
+> `ObjectRenamePolicyRegistry` führt nur PostgreSQL/MySQL/SQLite und greift
+> mit `getValue` zu — für **MSSQL** wirft das `NoSuchElementException` statt
+> einen Blocker zu liefern, und `OperationMapper` ruft die Rename-Folds ohne
+> Dialekt-Wächter auf. Ein Rename-Overlay, das für MSSQL eine Sicht, Sequenz,
+> Routine oder einen Trigger mappt, bricht den Lauf ab. Nicht hier behoben
+> (MSSQLs Policy-Inhalt bräuchte eigene Messungen gegen SQL Server):
+> [`mssql-object-rename-policy-missing.md`](../open/mssql-object-rename-policy-missing.md).
+> Der **Absturz** selbst ist es doch: `forDialect` liefert für einen
+> Dialekt ohne Policy jetzt einen `OBJECT_RENAME_UNSUPPORTED`-Blocker
+> statt `NoSuchElementException`. Das braucht keine Messung, und einen
+> bekannten Abbruch als Ticket weiterleben zu lassen wäre die falsche
+> Reihenfolge.
+>
+> **Das Review fand einen P1, den ich selbst gebaut hatte.** Die
+> Spalten-Reprojektion gab ihre `absorbedViews` zurück, aber der Weg
+> dorthin verlor sie: `RenameColumnProjection` hatte das Feld gar nicht,
+> `projectColumns` hängte nur `explicit` an. Ergebnis wäre ein Plan mit
+> `DropView` + `CreateView` **und** einem dritten, an nichts geketteten
+> `ReplaceView` auf demselben Objekt gewesen. Der Vertrag steht wörtlich
+> im selben Modul (`RenameProjection.absorbedViews`) und ist für den
+> Tabellen-Pfad per Test festgenagelt — für den neuen Spalten-Pfad gab es
+> kein Gegenstück. Der neue Test fährt deshalb durch `DiffPlanner.plan`
+> statt an der Policy vorbei; eine Sabotage der Durchreichung bringt ihn
+> zum Fallen.
+>
+> Zwei weitere Befunde wären stille Brüche gewesen: eine Sicht, die ihre
+> Tabelle über ein **Synonym** erreicht, galt als „verifiziert leer" (der
+> Reprojector hätte beim Rename nichts gefunden), und eine Sicht mit
+> **unbrauchbarer** Projektion wurde still übersprungen statt geblockt.
+> Umgekehrt eskalierte eine im selben Lauf **gelöschte, unbeteiligte**
+> Sicht den Spalten-Rename auf den destruktiven Drop+Add-Pfad — das ist
+> jetzt ausgenommen, weil es dort nichts neu zu projizieren gibt.
+
 > **Trigger:** Eigner-Entscheidung, Oracle nach MSSQL (siehe
 > [`mssql-dialect-scoping.md`](../done/mssql-dialect-scoping.md)) als nächsten
 > Dialekt zu bauen — dem dort etablierten Muster folgend.
@@ -586,7 +671,7 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes — ein nicht-BTREE-Indextyp rendert als B-Tree mit `W102` (so wie im Generate-Pfad, `spec/ddl-generation-rules.md`); Constraint-Namen kommen aus dem Operations-Payload, kein Katalog-Lookup nötig. Kein `WITH CHECK`-Äquivalent: Oracle validiert per Default gegen den Bestand (siehe oben) | Unit-Tests je Operation und Richtung |
 | **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
 | **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |
-| **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingungen:** (1) `RenameDependencyPolicy.forDialect(ORACLE)` ist heute ein `error(...)`-Stub und `ObjectRenamePolicyRegistry` führt Oracle nicht — sobald der Gate-Fall `schema migrate` öffnet, wählt `SchemaMigrateRunner` diese Policy aus und läuft hinein ([`oracle-view-dependencies-not-read.md`](../open/oracle-view-dependencies-not-read.md)); (2) [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |
+| **5e** | — | Abschluss: Renderer-Registry, Gate-Fall, `SequenceCapabilityDefaults`, Matrix-Sweep-Beitritt (+ Carve-outs für Materialized-View-/Trigger-Zellen), CLI-E2E, Handbücher. **Vorbedingungen:** (1) Rename-Policies + View-Abhängigkeiten — **erledigt in Sub-Slice 5e-1**; (3) `CheckPreflightProbeRunner.dispatch` ist für Oracle ein weiterer `error("unreachable")`-Stub auf demselben Migrate-Pfad — der Gate-Fall braucht eine Oracle-CHECK-Preflight-Sonde; (2) [`oracle-identity-sequence-fingerprint-drift.md`](../open/oracle-identity-sequence-fingerprint-drift.md) muss gelöst sein (neuer `ColumnGeneration`-Kanonisierungs-Hook im geteilten `MigrationFingerprint`-Vertrag) — sonst meldet `schema migrate --execute` für jede neu angelegte Oracle-IDENTITY-Spalte sofort false-positive Drift, und der Gate-Fall wäre nicht sicher freischaltbar | `schema migrate` ist für oracle nutzbar |
 
 ## Offene Punkte
 

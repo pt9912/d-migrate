@@ -303,15 +303,20 @@ internal object OperationMapper {
                 table = removed.definition,
             )
         }
+        // Sichten, die ein SPALTEN-Rename selbst neu projiziert hat,
+        // muessen genauso aus `viewsChanged` fallen wie die eines
+        // Tabellen-Renames -- sonst steht ein zusaetzliches
+        // `ReplaceView` neben dem emittierten Drop+Create.
+        val absorbedViews = mutableSetOf<String>()
         for (changed in diff.tablesChanged) {
             if (changed.name in blockedTables) continue
-            mapTableColumns(changed, ctx, renameIndex, diagnostics, ops, renameProjections)
+            absorbedViews += mapTableColumns(changed, ctx, renameIndex, diagnostics, ops, renameProjections)
             mapTableConstraints(changed, ops)
             mapTableIndices(changed, ops)
             mapTablePrimaryKey(changed, ops)
             mapTablePartitioning(changed, diagnostics, ops)
         }
-        return fold.absorbedViews
+        return fold.absorbedViews + absorbedViews
     }
 
     /**
@@ -464,10 +469,10 @@ internal object OperationMapper {
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
         renameProjections: MutableList<RenameProjectionReport>,
-    ) {
-        val (renamedAddedCols, renamedRemovedCols) = mapRenameColumns(
-            table, ctx, renameIndex, diagnostics, ops, renameProjections,
-        )
+    ): Set<String> {
+        val fold = mapRenameColumns(table, ctx, renameIndex, diagnostics, ops, renameProjections)
+        val renamedAddedCols = fold.absorbedToColumns
+        val renamedRemovedCols = fold.absorbedFromColumns
         for ((name, def) in table.columnsAdded) {
             if (name in renamedAddedCols) continue
             val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, name))
@@ -487,6 +492,7 @@ internal object OperationMapper {
             )
         }
         for (cd in table.columnsChanged) mapColumnChange(table.name, cd, ops)
+        return fold.absorbedViews
     }
 
     /**
@@ -501,7 +507,7 @@ internal object OperationMapper {
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
         renameProjections: MutableList<RenameProjectionReport>,
-    ): Pair<Set<String>, Set<String>> =
+    ): RenameOverlayMapper.ColumnFoldResult =
         RenameOverlayMapper.foldRenameColumns(
             table = table,
             renameIndex = renameIndex,

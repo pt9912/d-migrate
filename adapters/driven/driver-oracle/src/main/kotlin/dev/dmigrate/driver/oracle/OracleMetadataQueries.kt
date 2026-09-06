@@ -42,6 +42,36 @@ internal object OracleMetadataQueries {
 
     data class ViewRow(val name: String, val text: String)
 
+    /**
+     * Die Objekte, von denen eine View abhaengt, aufgeteilt nach dem, was
+     * die Projektion belegen kann.
+     *
+     * [tables]/[views] fuehren nur Objekte **desselben Schemas** —
+     * `ALL_DEPENDENCIES` liefert auch schemafremde Verweise (gemessen: eine
+     * `SELECT 1 FROM dual`-View traegt `PUBLIC.DUAL` als `SYNONYM`), die im
+     * neutralen Modell keine Entsprechung haben.
+     *
+     * Eine View, die im Ergebnis GAR NICHT vorkommt, ist etwas anderes als
+     * eine mit leeren Listen: **gemessen (2026-09-06) traegt jede View
+     * mindestens eine `ALL_DEPENDENCIES`-Zeile** — selbst die ueber `dual`.
+     * Fehlt sie ganz, sieht der lesende Nutzer die Abhaengigkeiten nicht
+     * (fehlende Rechte auf die referenzierten Objekte).
+     *
+     * [unmappedInSchema] zaehlt die Zeilen, die im eigenen Schema liegen,
+     * aber weder `TABLE` noch `VIEW` sind — vor allem **Synonyme**, die
+     * gemessen als eigener `referenced_type` auftreten. Ohne diese Zahl
+     * liesse sich „referenziert wirklich nichts im Schema" nicht von
+     * „referenziert eine Tabelle ueber ein Synonym" unterscheiden, und der
+     * zweite Fall wuerde faelschlich als verifiziert leer gelten: der
+     * Reprojector faende dann beim Rename nichts und liesse die Sicht still
+     * invalid zurueck.
+     */
+    data class ViewDependencyRow(
+        val tables: List<String>,
+        val views: List<String>,
+        val unmappedInSchema: Int,
+    )
+
     data class UnreadObject(val type: String, val name: String)
 
     /** Identity-Spalte fuer den Datenpfad: Name, Erzeugungsmodus, Sequenzname, Increment. */
@@ -250,6 +280,48 @@ internal object OracleMetadataQueries {
             schema,
         ).map { row -> ViewRow(name = row.string("view_name"), text = row.string("text")) }
 
+    /**
+     * View-Abhaengigkeiten aus `ALL_DEPENDENCIES`, je View gebuendelt.
+     *
+     * Die Sicht ist **objektgenau, nicht spaltengenau** — eine
+     * spaltengranulare Quelle gibt es in Oracle nicht (gemessen: es existiert
+     * kein `ALL_DEPENDENCY_COLUMNS`, und unter den `SYS`-Sichten mit
+     * `DEPENDENC` im Namen ist keine spaltenbezogene). `DependencyInfo.columns`
+     * bleibt fuer Oracle deshalb leer, und der dialektunabhaengige
+     * `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`-Waechter des Planers greift —
+     * dieselbe Lage wie bei MySQL.
+     *
+     * Der `referenced_owner`-Filter laeuft absichtlich NICHT in der
+     * `WHERE`-Klausel: sonst liesse sich „keine Zeile im Schema" nicht von
+     * „gar keine Zeile" (fehlende Rechte) unterscheiden.
+     */
+    fun listViewDependencies(session: JdbcOperations, schema: String): Map<String, ViewDependencyRow> {
+        val rows = session.queryList(
+            """
+            SELECT name, referenced_owner, referenced_name, referenced_type
+            FROM all_dependencies
+            WHERE owner = ? AND type = 'VIEW'
+            ORDER BY name, referenced_name
+            """.trimIndent(),
+            schema,
+        )
+        return rows.groupBy { it.string("name") }.mapValues { (_, viewRows) ->
+            val inSchema = viewRows.filter { it.stringOrNull("referenced_owner") == schema }
+            val tables = inSchema.filter { it.stringOrNull("referenced_type") == "TABLE" }
+                .map { it.string("referenced_name") }
+                .distinct()
+            val views = inSchema.filter { it.stringOrNull("referenced_type") == "VIEW" }
+                .map { it.string("referenced_name") }
+                .distinct()
+            ViewDependencyRow(
+                tables = tables,
+                views = views,
+                unmappedInSchema = inSchema.size -
+                    inSchema.count { it.stringOrNull("referenced_type") in MAPPED_REFERENCED_TYPES },
+            )
+        }
+    }
+
     /** Routinen/Trigger im Schema, die der Slice-1-Reader nicht liest. */
     fun listUnreadObjects(session: JdbcOperations, schema: String): List<UnreadObject> =
         session.queryList(
@@ -315,8 +387,19 @@ internal object OracleMetadataQueries {
     // (seltener Grenzfall, dokumentiert statt verschwiegen).
     private val IMPLICIT_NOT_NULL_CHECK = Regex("""(?i)^"?[A-Za-z0-9_$#]+"?\s+IS\s+NOT\s+NULL$""")
 
+    /** Die `referenced_type`-Werte, die im neutralen Modell eine Entsprechung haben. */
+    private val MAPPED_REFERENCED_TYPES = setOf("TABLE", "VIEW")
+
     private fun Map<String, Any?>.string(key: String): String =
         requireNotNull(this[key] as? String) { "missing '$key' in catalog row" }
+
+    /**
+     * Fuer Katalogspalten, die NULL sein duerfen. `ALL_DEPENDENCIES
+     * .REFERENCED_OWNER` ist nicht als NOT NULL deklariert; ein einziger
+     * NULL-Wert wuerde ueber [string] den ganzen Reverse-Lauf abbrechen
+     * statt die Zeile zu ignorieren.
+     */
+    private fun Map<String, Any?>.stringOrNull(key: String): String? = this[key] as? String
 
     private fun Map<String, Any?>.int(key: String): Int? = (this[key] as? Number)?.toInt()
 

@@ -90,6 +90,20 @@ internal object RenameOverlayMapper {
      * column names so the destructuring at the
      * [OperationMapper.mapTableColumns] call site stays correct.
      */
+    /**
+     * Was ein Spalten-Rename-Fold an die Aufrufstelle zurueckgibt.
+     *
+     * Benannt statt `Pair`, weil mit [absorbedViews] ein dritter Wert
+     * dazukam — der Rueckgabewert eines Folds ist damit nicht mehr aus
+     * der Signatur ablesbar, und die beiden Spaltenmengen sind
+     * verwechselbar (beide `Set<String>`).
+     */
+    data class ColumnFoldResult(
+        val absorbedToColumns: Set<String>,
+        val absorbedFromColumns: Set<String>,
+        val absorbedViews: Set<String>,
+    )
+
     fun foldRenameColumns(
         table: TableDiff,
         renameIndex: RenameOverlayIndex,
@@ -97,14 +111,18 @@ internal object RenameOverlayMapper {
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
         reports: MutableList<RenameProjectionReport>,
-    ): Pair<Set<String>, Set<String>> {
+    ): ColumnFoldResult {
         val items = prepareColumnItems(table, renameIndex)
         val projection = RenameDependencyProjector(ctx.capabilities)
             .projectColumns(items, table, ctx.current, ctx.desired)
         ops += projection.operations
         diagnostics += projection.diagnostics
         reports += projection.reports
-        return projection.absorbedToColumns to projection.absorbedFromColumns
+        return ColumnFoldResult(
+            absorbedToColumns = projection.absorbedToColumns,
+            absorbedFromColumns = projection.absorbedFromColumns,
+            absorbedViews = projection.absorbedViews,
+        )
     }
 
     /**

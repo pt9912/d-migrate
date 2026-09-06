@@ -2,6 +2,8 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DependencyInfo
+import dev.dmigrate.core.model.DependencyProjectionStatus
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -141,13 +143,70 @@ class OracleSchemaReader(
     private fun readViews(
         session: JdbcOperations,
         schema: String,
-    ): Map<String, ViewDefinition> =
-        OracleMetadataQueries.listViews(session, schema).associate { view ->
+    ): Map<String, ViewDefinition> {
+        val dependencies = OracleMetadataQueries.listViewDependencies(session, schema)
+        return OracleMetadataQueries.listViews(session, schema).associate { view ->
             view.name to ViewDefinition(
                 query = view.text.trim(),
+                dependencies = dependencyInfo(dependencies[view.name]),
                 sourceDialect = "oracle",
             )
         }
+    }
+
+    /**
+     * Uebersetzt die Katalogzeilen in die Projektion, auf die der Planer
+     * seine Waechter stuetzt.
+     *
+     * `columns` bleibt leer, weil Oracle keine spaltengenaue
+     * Abhaengigkeitsquelle hat — das laesst den dialektunabhaengigen
+     * `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`-Waechter greifen, und das
+     * ist die gewollte, konservative Wahl: gemessen ist, dass ein
+     * Spalten-RENAME die Sichten bricht, die die Spalte nennen; fuer
+     * `DropColumn`/`AlterColumnType`/`AlterColumnNullability` ist es nicht
+     * gemessen, aber ohne Spalteninformation kann der Planer ohnehin nicht
+     * entscheiden, ob genau diese Spalte betroffen ist.
+     *
+     * Keine einzige Zeile heisst nicht „keine Abhaengigkeiten", sondern
+     * fehlende Sichtbarkeit — dann ist die Projektion unvollstaendig und der
+     * Planer blockt `ReplaceView` statt zu raten.
+     */
+    private fun dependencyInfo(row: OracleMetadataQueries.ViewDependencyRow?): DependencyInfo {
+        // Fehlt die View im Katalogergebnis komplett, sieht der lesende
+        // Nutzer ihre Abhaengigkeiten nicht -- gemessen traegt jede View
+        // mindestens eine Zeile. Das als "keine Abhaengigkeiten" zu lesen
+        // waere die gefaehrliche Deutung, also wird es als unvollstaendige
+        // Projektion gemeldet und der Planer blockt `ReplaceView`.
+        if (row == null) {
+            return DependencyInfo(
+                projectionComplete = false,
+                tableProjectionStatus = DependencyProjectionStatus.INCOMPLETE_PRIVILEGE,
+                projectionSources = listOf(DEPENDENCY_SOURCE),
+            )
+        }
+        return DependencyInfo(
+            tables = row.tables,
+            views = row.views,
+            tableProjectionStatus = tableProjectionStatus(row),
+            projectionSources = listOf(DEPENDENCY_SOURCE),
+        )
+    }
+
+    /**
+     * `EMPTY_VERIFIED` darf nur stehen, wenn im eigenen Schema
+     * **wirklich nichts** referenziert wird. Eine View, die ihre Tabelle
+     * ueber ein Synonym erreicht, traegt dagegen eine In-Schema-Zeile, die
+     * nur nicht auf `tables`/`views` abbildbar ist — sie als verifiziert
+     * leer zu melden hiesse, den Reprojector beim Rename nichts finden zu
+     * lassen und die Sicht still invalid zurueckzulassen.
+     */
+    private fun tableProjectionStatus(
+        row: OracleMetadataQueries.ViewDependencyRow,
+    ): DependencyProjectionStatus = when {
+        row.tables.isNotEmpty() || row.views.isNotEmpty() -> DependencyProjectionStatus.COMPLETE
+        row.unmappedInSchema > 0 -> DependencyProjectionStatus.UNKNOWN
+        else -> DependencyProjectionStatus.EMPTY_VERIFIED
+    }
 
     private fun readSequences(
         session: JdbcOperations,
@@ -221,5 +280,9 @@ class OracleSchemaReader(
                     "(Oracle rollout, ADR 0052): ${names.joinToString(", ")}.",
             )
         }
+    }
+
+    private companion object {
+        const val DEPENDENCY_SOURCE = "ALL_DEPENDENCIES"
     }
 }

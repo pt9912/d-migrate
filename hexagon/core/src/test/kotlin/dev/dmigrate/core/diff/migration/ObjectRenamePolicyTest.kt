@@ -17,6 +17,7 @@ class ObjectRenamePolicyTest : FunSpec({
     val capsPostgres = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.POSTGRESQL)
     val capsMysql = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL)
     val capsSqlite = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.SQLITE)
+    val capsOracle = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.ORACLE)
 
     fun viewCandidate(materialized: Boolean = false, sourceBody: String? = "h1", targetBody: String? = "h1") =
         ObjectRenameCandidate(
@@ -173,11 +174,69 @@ class ObjectRenamePolicyTest : FunSpec({
         r.shouldBeInstanceOf<RenameSupport.Blocked>()
     }
 
+    // ── Oracle ─────────────────────────────────────────────────────
+
+    // `RENAME alt TO neu` deckt Tabellen, Sichten und Sequenzen ab; ein
+    // `ALTER VIEW … RENAME` gibt es nicht.
+    test("Oracle: view rename is Native (standalone RENAME)") {
+        OracleObjectRenamePolicy.classify(viewCandidate(), capsOracle) shouldBe RenameSupport.Native
+    }
+
+    test("Oracle: sequence rename is Native (same RENAME statement)") {
+        OracleObjectRenamePolicy.classify(sequenceCandidate(), capsOracle) shouldBe RenameSupport.Native
+    }
+
+    // RENAME fasst den Rumpf nicht an -- eine gleichzeitige
+    // Rumpfaenderung ginge sonst still verloren.
+    test("Oracle: view rename with body drift is Blocked") {
+        val r = OracleObjectRenamePolicy.classify(
+            viewCandidate(sourceBody = "h1", targetBody = "h2"),
+            capsOracle,
+        )
+        r.shouldBeInstanceOf<RenameSupport.Blocked>()
+        r.message shouldContain "leaves the body untouched"
+    }
+
+    // Trigger/Routinen/MVs liest und schreibt der Oracle-Pfad nicht
+    // (Slices 9/10) -- ein Rename-Vertrag dafuer waere nicht pruefbar.
+    test("Oracle: trigger, routine and materialized-view renames are Blocked") {
+        OracleObjectRenamePolicy.classify(triggerCandidate(), capsOracle)
+            .shouldBeInstanceOf<RenameSupport.Blocked>()
+        OracleObjectRenamePolicy.classify(functionCandidate(), capsOracle)
+            .shouldBeInstanceOf<RenameSupport.Blocked>()
+        OracleObjectRenamePolicy.classify(viewCandidate(materialized = true), capsOracle)
+            .shouldBeInstanceOf<RenameSupport.Blocked>()
+    }
+
+    // Ein unbekannter Rumpf ist KEINE Drift -- `RENAME` laesst den Rumpf
+    // ohnehin unberuehrt, es gibt also nichts zu verlieren. Oracle folgt
+    // hier PostgreSQL; MySQL und SQLite blocken, weil ihr Drop+Create-
+    // Ersatz den Rumpf braucht.
+    test("Oracle: unknown body hashes are not drift -- rename stays Native") {
+        OracleObjectRenamePolicy.classify(
+            viewCandidate(sourceBody = null, targetBody = null),
+            capsOracle,
+        ) shouldBe RenameSupport.Native
+    }
+
     // ── Registry ───────────────────────────────────────────────────
 
     test("Registry returns the right policy per dialect") {
         ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.POSTGRESQL) shouldBe PostgresObjectRenamePolicy
         ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.MYSQL) shouldBe MysqlObjectRenamePolicy
         ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.SQLITE) shouldBe SqliteObjectRenamePolicy
+        ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.ORACLE) shouldBe OracleObjectRenamePolicy
+    }
+
+    // Ein noch nicht gebauter Dialekt ist kein Programmierfehler. Frueher
+    // griff die Registry mit `getValue` zu und warf mitten im Planer eine
+    // NoSuchElementException -- ein Abbruch ohne Diagnose-Code, wo der
+    // Vertrag einen Blocker vorsieht. Betrifft heute MSSQL.
+    test("a dialect without a policy yields a Blocked classification, not an exception") {
+        val policy = ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.MSSQL)
+        val support = policy.classify(viewCandidate(), capsPostgres)
+        support.shouldBeInstanceOf<RenameSupport.Blocked>()
+        support.code shouldBe "OBJECT_RENAME_UNSUPPORTED"
+        support.message shouldContain "MSSQL"
     }
 })

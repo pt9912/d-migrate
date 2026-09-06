@@ -63,12 +63,7 @@ internal interface RenameDependencyPolicy {
             RenameProjectionDialect.MYSQL -> MysqlRenameDependencyPolicy
             RenameProjectionDialect.SQLITE -> SqliteRenameDependencyPolicy
             RenameProjectionDialect.MSSQL -> MssqlRenameDependencyPolicy
-            // `schema migrate` ist fuer oracle hinter DialectCommandGate bis
-            // Slice 5 (docs/planning/in-progress/oracle-dialect-scoping.md) --
-            // dieser Zweig wird vor dem Gate nie ausgewaehlt.
-            RenameProjectionDialect.ORACLE -> error(
-                "unreachable: DialectCommandGate blocks schema migrate for oracle before Slice 5 (ADR 0052).",
-            )
+            RenameProjectionDialect.ORACLE -> OracleRenameDependencyPolicy
         }
     }
 }
@@ -113,32 +108,110 @@ internal object RenameViewReprojector {
         candidate: RenameTableCandidate,
         current: SchemaDefinition,
         desired: SchemaDefinition,
+    ): ViewReprojection = reprojectViewsDependingOn(
+        // Match `fromName` only. The current schema is pre-rename
+        // by definition — a view declaring a dep on `toName` here
+        // is either a stale forward reference or catalog noise and
+        // would drag unrelated views into reprojection. T6/T7 may
+        // revisit this if a legitimate forward-rename case
+        // emerges.
+        tableName = candidate.fromName,
+        candidateId = candidate.id,
+        renameDescription = "the renamed table '${candidate.fromName}' -> '${candidate.toName}'",
+        current = current,
+        desired = desired,
+    )
+
+    /**
+     * Wie [reprojectViewsForTableRename], nur fuer einen SPALTEN-Rename:
+     * dieselbe Drop+Create-Neuprojektion, ausgeloest ueber die Tabelle, auf
+     * der die Spalte sitzt.
+     *
+     * Gedacht fuer Dialekte, die den Rumpf einer abhaengigen Sicht beim
+     * Spalten-Rename NICHT nachziehen. Der dialektunabhaengige
+     * `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`-Waechter des Planers deckt
+     * diesen Fall nicht ab — er greift fuer `DropColumn` /
+     * `AlterColumnType` / `AlterColumnNullability`, nicht fuer
+     * `RenameColumn`.
+     *
+     * Ohne spaltengenaue Abhaengigkeiten laesst sich nicht eingrenzen,
+     * welche Sicht die umbenannte Spalte wirklich nennt; neu projiziert wird
+     * deshalb jede Sicht auf der Tabelle. Das ist eine Obermenge — der
+     * Preis ist ein ueberfluessiges Drop+Create, nicht eine gebrochene Sicht.
+     */
+    fun reprojectViewsForColumnRename(
+        candidate: RenameColumnCandidate,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+    ): ViewReprojection {
+        val projection = reprojectViewsDependingOn(
+            tableName = candidate.tableName,
+            candidateId = candidate.id,
+            renameDescription = "the renamed column '${candidate.tableName}.${candidate.fromColumn}' -> " +
+                "'${candidate.toColumn}'",
+            current = current,
+            desired = desired,
+        )
+        // Eine Sicht, die das Soll-Schema gar nicht mehr fuehrt, wird
+        // ohnehin gedroppt -- es gibt nichts neu zu projizieren. Beim
+        // Tabellen-Rename ist der Blocker trotzdem gerechtfertigt: dort
+        // haengt die Sicht per Definition an genau dem umbenannten Objekt.
+        // Hier gilt das nicht, weil mangels spaltengenauer Abhaengigkeiten
+        // JEDE Sicht der Tabelle einbezogen wird -- eine unbeteiligte, im
+        // selben Lauf geloeschte Sicht wuerde den Rename sonst auf den
+        // destruktiven Drop+Add-Pfad zwingen.
+        val droppedAnyway = projection.blockers.filter { it.path.firstOrNull() !in desired.views.keys }
+        if (droppedAnyway.isEmpty()) return projection
+        return projection.copy(blockers = projection.blockers - droppedAnyway.toSet())
+    }
+
+    private fun reprojectViewsDependingOn(
+        tableName: String,
+        candidateId: String,
+        renameDescription: String,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
     ): ViewReprojection {
         if (current.views.isEmpty()) return ViewReprojection.EMPTY
         val ops = mutableListOf<DiffOperation>()
         val blockers = mutableListOf<RenameProjectionBlocker>()
         val absorbed = mutableSetOf<String>()
         for ((viewName, currentView) in current.views) {
-            val deps = currentView.dependencies?.tables ?: continue
-            // Match `fromName` only. The current schema is pre-rename
-            // by definition — a view declaring a dep on `toName` here
-            // is either a stale forward reference or catalog noise and
-            // would drag unrelated views into reprojection. T6/T7 may
-            // revisit this if a legitimate forward-rename case
-            // emerges.
-            if (candidate.fromName !in deps) continue
+            val dependencies = currentView.dependencies ?: continue
+            // Eine unbrauchbare Projektion darf nicht wie „haengt an nichts"
+            // behandelt werden: `tables` ist dann leer, ohne dass das etwas
+            // ueber die Sicht aussagt. Still zu ueberspringen hiesse, sie
+            // nach dem Rename gebrochen zurueckzulassen — der Adapter hat
+            // ja gerade gemeldet, dass er es nicht weiss.
+            if (!dependencies.dependencyProjectionUsable()) {
+                blockers += RenameProjectionBlocker(
+                    code = RENAME_DEPENDENCY_UNPROJECTABLE,
+                    candidateId = candidateId,
+                    path = listOf(viewName),
+                    message = "View '$viewName' carries an unusable dependency projection " +
+                        "(projectionComplete=${dependencies.projectionComplete}, " +
+                        "table=${dependencies.tableProjectionStatus}, " +
+                        "column=${dependencies.columnProjectionStatus}, " +
+                        "routine=${dependencies.routineProjectionStatus}), so d-migrate cannot tell " +
+                        "whether it depends on $renameDescription. Grant the reading user visibility " +
+                        "of the view's dependencies, supply them in the schema file, or remove the " +
+                        "rename mapping.",
+                )
+                continue
+            }
+            if (tableName !in dependencies.tables) continue
             val desiredView = desired.views[viewName]
             if (desiredView == null || desiredView.query.isNullOrBlank()) {
                 blockers += RenameProjectionBlocker(
                     code = RENAME_DEPENDENCY_UNPROJECTABLE,
-                    candidateId = candidate.id,
+                    candidateId = candidateId,
                     path = listOf(viewName),
-                    message = "View '$viewName' declares a dependency on the renamed table " +
-                        "'${candidate.fromName}' -> '${candidate.toName}', but the desired schema does " +
+                    message = "View '$viewName' declares a dependency on " +
+                        "$renameDescription, but the desired schema does " +
                         "not carry the view${if (desiredView == null) "" else " body (`query` is empty)"}. " +
                         "d-migrate cannot reproject the view without the post-rename body — supply the " +
-                        "view in the desired schema with a body referencing the new table name, or " +
-                        "remove the rename mapping.",
+                        "view in the desired schema with a body that already uses the post-rename " +
+                        "names, or remove the rename mapping.",
                 )
                 continue
             }
@@ -163,14 +236,14 @@ internal object RenameViewReprojector {
                     id = OperationIdFactory.makeId(dropOpName, dropRef, CanonicalPayload.view(currentView)),
                     objectRef = dropRef,
                     view = currentView,
-                    dependencies = setOf(candidate.id),
+                    dependencies = setOf(candidateId),
                 )
             } else {
                 DiffOperation.DropView(
                     id = OperationIdFactory.makeId(dropOpName, dropRef, CanonicalPayload.view(currentView)),
                     objectRef = dropRef,
                     view = currentView,
-                    dependencies = setOf(candidate.id),
+                    dependencies = setOf(candidateId),
                 )
             }
             val createRef = DiffObjectRef(refType, listOf(viewName))
@@ -179,14 +252,14 @@ internal object RenameViewReprojector {
                     id = OperationIdFactory.makeId(createOpName, createRef, CanonicalPayload.view(desiredView)),
                     objectRef = createRef,
                     view = desiredView,
-                    dependencies = setOf(candidate.id, drop.id),
+                    dependencies = setOf(candidateId, drop.id),
                 )
             } else {
                 DiffOperation.CreateView(
                     id = OperationIdFactory.makeId(createOpName, createRef, CanonicalPayload.view(desiredView)),
                     objectRef = createRef,
                     view = desiredView,
-                    dependencies = setOf(candidate.id, drop.id),
+                    dependencies = setOf(candidateId, drop.id),
                 )
             }
             ops += drop
@@ -425,6 +498,75 @@ internal object MssqlRenameDependencyPolicy : RenameDependencyPolicy {
             table = desired.tables[candidate.tableName],
         )
         return RenameProjection(blockers = blockers)
+    }
+}
+
+/**
+ * Oracle benennt ueber `ALTER TABLE … RENAME TO` / `… RENAME COLUMN`
+ * um. Was dabei mitgeht und was bricht, ist live gemessen (2026-09-06,
+ * `gvenzl/oracle-free:23-slim-faststart`):
+ *
+ * - **Fremdschluessel, Indizes und Constraints folgen von selbst.** Nach
+ *   dem Tabellen-Rename verweist der FK unveraendert und `ENABLED` auf den
+ *   neuen Namen; nach einem Spalten-Rename zeigen `user_cons_columns` und
+ *   `user_ind_columns` auf die neue Spalte. Die Objektnamen selbst bleiben
+ *   stehen — eine Namens-, keine Korrektheitsfrage.
+ * - **CHECK-Ausdruecke schreibt Oracle beim Spalten-Rename selbst um**
+ *   (`"note" IS NOT NULL` wurde zu `"remark" IS NOT NULL`).
+ * - **Sichten brechen, und Oracle repariert sie nicht.** Beim
+ *   Tabellen-Rename gehen ALLE abhaengigen Sichten auf `INVALID`, beim
+ *   Spalten-Rename genau die, die die Spalte nennen. Der Rumpf in
+ *   `user_views.text` bleibt in beiden Faellen unveraendert auf dem alten
+ *   Namen stehen, und ein `SELECT` scheitert mit `ORA-04063` — auch beim
+ *   zweiten Versuch, die Sicht heilt sich beim Zugriff also nicht.
+ *
+ * Daraus folgen die beiden Zweige unten: FK/Index brauchen keine
+ * Projektion, Sichten brauchen ein explizites Drop+Create aus dem
+ * Soll-Rumpf — und zwar **bei beiden Rename-Arten**, nicht nur beim
+ * Tabellen-Rename.
+ */
+internal object OracleRenameDependencyPolicy : RenameDependencyPolicy {
+    override val dialect: RenameProjectionDialect = RenameProjectionDialect.ORACLE
+
+    override fun classifyTableRename(
+        candidate: RenameTableCandidate,
+        diff: SchemaDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+        capabilities: RenameProjectionCapabilities,
+    ): RenameProjection {
+        val views = RenameViewReprojector.reprojectViewsForTableRename(candidate, current, desired)
+        return RenameProjection(
+            explicit = views.operations,
+            absorbedViews = views.absorbedViews,
+            blockers = views.blockers,
+        )
+    }
+
+    override fun classifyColumnRename(
+        candidate: RenameColumnCandidate,
+        table: TableDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+        capabilities: RenameProjectionCapabilities,
+    ): RenameProjection {
+        // Oracle-spezifisch gegenueber den vier anderen Policies: auch ein
+        // Spalten-Rename invalidiert abhaengige Sichten (gemessen), und
+        // Oracle liefert keine spaltengenauen Abhaengigkeiten, mit denen
+        // sich die betroffenen eingrenzen liessen. Neu projiziert wird
+        // deshalb jede Sicht auf der Tabelle.
+        val views = RenameViewReprojector.reprojectViewsForColumnRename(candidate, current, desired)
+        val blockers = views.blockers + RenameDependencyProbes.functionCallReferencingOldColumnName(
+            candidateId = candidate.id,
+            tableName = candidate.tableName,
+            oldColumnName = candidate.fromColumn,
+            table = desired.tables[candidate.tableName],
+        )
+        return RenameProjection(
+            explicit = views.operations,
+            absorbedViews = views.absorbedViews,
+            blockers = blockers,
+        )
     }
 }
 

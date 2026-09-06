@@ -2,6 +2,7 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.DependencyProjectionStatus
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -36,6 +37,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_tables") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_sequences") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_views") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_objects") }, any()) } returns emptyList()
     }
 
@@ -182,6 +184,107 @@ class OracleSchemaReaderTest : FunSpec({
 
         val (reader2, pool2) = rig(jdbc)
         reader2.read(pool2, SchemaReadOptions(includeViews = false)).schema.views.shouldBeEmptyMap()
+    }
+
+    /**
+     * Die drei Faelle, die `ALL_DEPENDENCIES` je View liefern kann, und
+     * warum sie sich unterscheiden muessen: gemessen traegt JEDE View
+     * mindestens eine Zeile (die ueber `dual` verweist auf `PUBLIC.DUAL`),
+     * also heisst „gar keine Zeile" fehlende Sichtbarkeit und nicht
+     * „haengt von nichts ab".
+     */
+    test("view dependencies come from ALL_DEPENDENCIES, filtered to the own schema") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
+            mapOf("view_name" to "V_JOIN", "text" to "SELECT 1 FROM ORDERS, ITEMS"),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns listOf(
+            mapOf(
+                "name" to "V_JOIN", "referenced_owner" to "APP",
+                "referenced_name" to "ORDERS", "referenced_type" to "TABLE",
+            ),
+            mapOf(
+                "name" to "V_JOIN", "referenced_owner" to "APP",
+                "referenced_name" to "V_BASE", "referenced_type" to "VIEW",
+            ),
+            // Schemafremd -- faellt raus, belegt aber Sichtbarkeit.
+            mapOf(
+                "name" to "V_JOIN", "referenced_owner" to "PUBLIC",
+                "referenced_name" to "DUAL", "referenced_type" to "SYNONYM",
+            ),
+        )
+        val (reader, pool) = rig(jdbc)
+        val deps = reader.read(pool).schema.views.getValue("V_JOIN").dependencies!!
+        deps.tables shouldBe listOf("ORDERS")
+        deps.views shouldBe listOf("V_BASE")
+        deps.projectionComplete shouldBe true
+        deps.tableProjectionStatus shouldBe DependencyProjectionStatus.COMPLETE
+        deps.projectionSources shouldBe listOf("ALL_DEPENDENCIES")
+        // Oracle hat keine spaltengenaue Quelle -- das laesst den
+        // VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS-Waechter greifen.
+        deps.columns.shouldBeEmptyMap()
+    }
+
+    test("a view with no ALL_DEPENDENCIES row at all reports an incomplete projection") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
+            mapOf("view_name" to "V_HIDDEN", "text" to "SELECT 1 FROM SOMEWHERE"),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns emptyList()
+        val (reader, pool) = rig(jdbc)
+        val deps = reader.read(pool).schema.views.getValue("V_HIDDEN").dependencies!!
+        // Nicht als "keine Abhaengigkeiten" lesen -- das waere die
+        // gefaehrliche Deutung. Unbrauchbar melden, damit der Planer
+        // `ReplaceView` blockt statt zu raten.
+        deps.projectionComplete shouldBe false
+        deps.tableProjectionStatus shouldBe DependencyProjectionStatus.INCOMPLETE_PRIVILEGE
+        deps.dependencyProjectionUsable() shouldBe false
+    }
+
+    test("a view reaching its table through a synonym is not reported as verified empty") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
+            mapOf("view_name" to "V_SYN", "text" to "SELECT 1 FROM MY_SYN"),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns listOf(
+            // Eigenes Schema, aber weder TABLE noch VIEW -- faellt aus
+            // `tables`/`views` heraus, ohne dass die Sicht deshalb nichts
+            // referenziert.
+            mapOf(
+                "name" to "V_SYN", "referenced_owner" to "APP",
+                "referenced_name" to "MY_SYN", "referenced_type" to "SYNONYM",
+            ),
+        )
+        val (reader, pool) = rig(jdbc)
+        val deps = reader.read(pool).schema.views.getValue("V_SYN").dependencies!!
+        deps.tables.shouldBeEmpty()
+        // Als EMPTY_VERIFIED gemeldet faende der Reprojector beim Rename
+        // nichts und liesse die Sicht still invalid zurueck.
+        deps.tableProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
+        deps.dependencyProjectionUsable() shouldBe false
+    }
+
+    test("a view referencing only foreign objects reports an empty but verified projection") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
+            mapOf("view_name" to "V_CONST", "text" to "SELECT 1 FROM dual"),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns listOf(
+            mapOf(
+                "name" to "V_CONST", "referenced_owner" to "PUBLIC",
+                "referenced_name" to "DUAL", "referenced_type" to "SYNONYM",
+            ),
+        )
+        val (reader, pool) = rig(jdbc)
+        val deps = reader.read(pool).schema.views.getValue("V_CONST").dependencies!!
+        deps.tables.shouldBeEmpty()
+        deps.tableProjectionStatus shouldBe DependencyProjectionStatus.EMPTY_VERIFIED
+        deps.projectionComplete shouldBe true
+        deps.dependencyProjectionUsable() shouldBe true
     }
 
     test("unread routines, functions, triggers and packages surface as skippedObjects plus R342 notes") {

@@ -130,6 +130,14 @@ internal data class RenameTableProjection(
  * Outcome of folding a batch of [RenameColumnPlanningItem]s for one
  * table. `absorbed*Columns` carry the column names whose drop/add
  * pair was replaced.
+ *
+ * [absorbedViews] carries the same contract as
+ * [RenameProjection.absorbedViews] and for the same reason: a policy
+ * that reprojects views on a COLUMN rename (Oracle does — the engine
+ * leaves the dependent view invalid) emits `DropView` + `CreateView`
+ * itself, and `mapViews` must then skip that view in `viewsChanged`.
+ * Without this field the plan would carry a third, unanchored
+ * `ReplaceView` on the same object.
  */
 internal data class RenameColumnProjection(
     val operations: List<DiffOperation>,
@@ -137,6 +145,7 @@ internal data class RenameColumnProjection(
     val absorbedFromColumns: Set<String>,
     val absorbedToColumns: Set<String>,
     val reports: List<RenameProjectionReport> = emptyList(),
+    val absorbedViews: Set<String> = emptySet(),
 )
 
 /**
