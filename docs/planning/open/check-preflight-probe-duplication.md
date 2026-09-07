@@ -1,10 +1,26 @@
 ---
 id: check-preflight-probe-duplication
 title: "Die CHECK-Preflight-Sonde steht fuenfmal zeichengleich im Repo"
-status: open
+status: resolved
 ---
 
 # Fuenf identische CHECK-Preflight-Sonden
+
+> **Erledigt.** Die Schleife liegt jetzt einmal in
+> `driver-common` (`JdbcCheckPreflightProbe`) und nimmt den Dialekt entgegen.
+> Er war die **einzige** Variable: `SqlIdentifiers.quoteIdentifier(name,
+> dialect)` ist ohnehin schon generisch, sodass der Quoter kein eigener
+> Parameter sein muss.
+>
+> Die fuenf `<Dialekt>CheckPreflightProbe`-Objekte bleiben als Einstiegspunkte
+> — die CLI verdrahtet sie namentlich —, sind aber von je ~70 auf ~30 Zeilen
+> geschrumpft, von denen zwei die Arbeit tun.
+>
+> Die Schleife hat jetzt **ihren eigenen Test**
+> (`JdbcCheckPreflightProbeTest`), und der prueft genau das, was vorher in
+> keinem Test stand: dass ein Fehlschlag der lesenden Vorabfrage ein Status
+> ist und keine Ausnahme, und dass eine kaputte Sonde die uebrigen nicht
+> mitreisst.
 
 ## Befund
 
