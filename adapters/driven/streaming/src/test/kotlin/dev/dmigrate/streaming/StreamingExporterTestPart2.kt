@@ -380,38 +380,54 @@ internal class FakeTableLister(private val tables: List<String>) : TableLister {
  * Marker, weil der Tabellenname unbekannt ist.
  */
 internal class RecordingChunkWriterFactory : DataChunkWriterFactory {
-    val events = mutableListOf<String>()
+    private val recorded = mutableListOf<String>()
+
+    /**
+     * Der Ereignisstrom aller Writer, in der Reihenfolge, in der sie
+     * geschlossen wurden.
+     *
+     * Jeder Writer schreibt zunaechst in ein **eigenes** Protokoll und haengt
+     * es beim `close()` unter Sperre an. Der parallele FilePerTable-Pfad faehrt
+     * mehrere Writer gleichzeitig; teilten sie sich eine `ArrayList`, brachen
+     * ihre `add`-Aufrufe einander ab — beobachtet als
+     * `ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 0`,
+     * sporadisch und nur im Voll-Lauf. Sequenziell ist die Reihenfolge
+     * unveraendert: ein Writer ist dort zu Ende, bevor der naechste anfaengt.
+     */
+    val events: List<String> get() = synchronized(recorded) { recorded.toList() }
 
     override fun create(format: DataExportFormat, output: OutputStream, options: ExportOptions): DataChunkWriter {
         return object : DataChunkWriter {
             private var table: String = "?"
+            private val own = mutableListOf("create:?")
 
             override fun begin(table: String, schema: ChunkSchema) {
                 this.table = table
-                if (events.lastOrNull() == "create:?") {
+                if (own.lastOrNull() == "create:?") {
                     // Aktualisiere "create:?" auf "create:<table>"
-                    events[events.lastIndex] = "create:$table"
+                    own[own.lastIndex] = "create:$table"
                 } else {
-                    events += "create:$table"
+                    own += "create:$table"
                 }
-                events += "begin:$table"
+                own += "begin:$table"
             }
 
             override fun write(chunk: DataChunk) {
-                events += "write:$table:${chunk.rows.size}"
+                own += "write:$table:${chunk.rows.size}"
                 for (row in chunk.rows) {
                     output.write("$table:${row.joinToString(",")}\n".toByteArray())
                 }
             }
 
             override fun end() {
-                events += "end:$table"
+                own += "end:$table"
             }
 
             override fun close() {
-                events += "close:$table"
+                own += "close:$table"
+                synchronized(recorded) { recorded += own }
             }
-        }.also { events += "create:?" }
+        }
     }
 }
 

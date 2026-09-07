@@ -318,14 +318,14 @@ class StreamingExporterTest : FunSpec({
     test("FilePerTable parallel fans out a partitioned parent into one file per child (LN-008)") {
         val tmpDir = Files.createTempDirectory("streaming-parallel-")
         try {
+            val children = (1..8).map { "payment_p$it" }
             val reader = FakeDataReader(
-                mapOf(
-                    "payment_p1" to listOf(chunk("payment_p1", 0, arrayOf<Any?>(1, "a"))),
-                    "payment_p2" to listOf(chunk("payment_p2", 0, arrayOf<Any?>(2, "b"))),
-                    "users" to listOf(chunk("users", 0, arrayOf<Any?>(3, "c"))),
-                )
+                (children + "users").withIndex().associate { (index, table) ->
+                    table to listOf(chunk(table, 0, arrayOf<Any?>(index, "v$index")))
+                }
             )
-            val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
+            val factory = RecordingChunkWriterFactory()
+            val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), factory)
 
             val result = exporter.export(
                 pool = pool,
@@ -333,14 +333,20 @@ class StreamingExporterTest : FunSpec({
                 output = ExportOutput.FilePerTable(tmpDir),
                 format = DataExportFormat.JSON,
                 config = PipelineConfig(parallelism = 4),
-                partitionChildren = mapOf("payment" to listOf("payment_p1", "payment_p2")),
+                partitionChildren = mapOf("payment" to children),
             )
 
-            Files.exists(tmpDir.resolve("payment_p1.json")) shouldBe true
-            Files.exists(tmpDir.resolve("payment_p2.json")) shouldBe true
+            children.forEach { Files.exists(tmpDir.resolve("$it.json")) shouldBe true }
             Files.exists(tmpDir.resolve("payment.json")) shouldBe false // parent not written directly
             Files.exists(tmpDir.resolve("users.json")) shouldBe true
-            result.tables.map { it.table }.toSet() shouldBe setOf("payment_p1", "payment_p2", "users")
+            result.tables.map { it.table }.toSet() shouldBe (children + "users").toSet()
+
+            // Jeder Writer protokolliert vollstaendig: create/begin/write/end/close.
+            // Teilten sich die neun Writer eine Sammlung, rissen ihre Anhaenge
+            // einander die Eintraege weg -- beobachtet als
+            // ArrayIndexOutOfBoundsException, sporadisch und nur im Voll-Lauf.
+            factory.events.size shouldBe (children.size + 1) * 5
+            factory.events.count { it.startsWith("close:") } shouldBe children.size + 1
         } finally {
             Files.walk(tmpDir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.delete(it) } }
         }
