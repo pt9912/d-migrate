@@ -1,10 +1,35 @@
 ---
 id: pg-create-index-concurrently
 title: "PostgreSQL rendert `CREATE INDEX CONCURRENTLY` nicht"
-status: open
+status: resolved
 ---
 
 # `CREATE INDEX CONCURRENTLY` wird nicht gerendert
+
+> **Erledigt.** `schema migrate --pg-concurrent-indexes` rendert es, mit
+> `transactionScope = NO_TRANSACTION` auf der Naht, die der
+> No-Transaction-Slice gebaut hat.
+>
+> Die vier Fragen, gemessen beantwortet (PostgreSQL 16, live):
+>
+> | Frage | Entscheidung |
+> | --- | --- |
+> | Woher die Entscheidung kommt | Eine Option des **Laufs** (`--pg-concurrent-indexes`), global, kein Feld am Index. Per-Index waere eine Schema-Angabe — und `CONCURRENTLY` sagt nichts ueber das Schema, sondern darueber, wie migriert wird. |
+> | Was nach einem Fehlschlag uebrig bleibt | Ein Index mit `pg_index.indisvalid = false` unter demselben Namen. Vor jedem nebenlaeufigen `CREATE` steht deshalb ein `DROP INDEX CONCURRENTLY IF EXISTS`: der naechste Lauf raeumt selbst auf, statt am Namen zu scheitern. Auf einem nicht vorhandenen Index kostet die Anweisung nichts (`NOTICE`, sonst nichts). |
+> | Was der Rueckbau tut | Dasselbe: `DROP INDEX CONCURRENTLY`, ebenfalls ausserhalb der Transaktion. Die Option gilt fuer beide Richtungen. |
+> | Wie der Report das sagt | Eine INFO-Diagnose `POSTGRES_INDEX_CONCURRENTLY` je Operation, die den `INVALID`-Rest und das Aufraeumkommando benennt — damit `PARTIAL_STATE_POSSIBLE` auf etwas Konkretes zeigt. |
+>
+> **Gemessen, nicht abgeschrieben:** dass die Anweisung in einer Transaktion
+> abgelehnt wird, dass ein gescheiterter eindeutiger Index als `indisvalid =
+> false` liegen bleibt, und dass `DROP INDEX CONCURRENTLY` derselben Regel
+> unterliegt. `PostgresConcurrentIndexIntegrationTest` haelt alle drei fest,
+> und dazu den Wiederanlauf: derselbe Plan ein zweites Mal scheitert an den
+> Dubletten — nicht am schon vorhandenen Namen.
+>
+> Nicht dabei: der **Generate**-Pfad. Er schreibt eine Skriptdatei, die ein
+> fremder Runner anwendet — moeglicherweise in einer Transaktion, in der die
+> Anweisung scheitert. Die Option bleibt deshalb auf `schema migrate`, wo das
+> Ausfuehrungsmodell bekannt ist.
 
 ## Lage
 

@@ -2,7 +2,9 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.driver.postgresContext
 import dev.dmigrate.driver.migration.DialectExecutionHints
+import dev.dmigrate.driver.migration.TransactionScope
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
@@ -103,7 +105,8 @@ internal object PostgresDiffTableOps {
         index: IndexDefinition,
         hints: DialectExecutionHints = PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
     ) {
-        val sql = ctx.sql.createIndexSql(table, index)
+        val concurrently = ctx.options.postgresContext?.concurrentIndexes == true
+        val sql = ctx.sql.createIndexSql(table, index, concurrently)
         if (sql == null) {
             ctx.markRendered(op)
             ctx.addInfoDiagnostic(
@@ -114,7 +117,34 @@ internal object PostgresDiffTableOps {
             )
             return
         }
-        ctx.emit(op, sql, hints)
+        if (!concurrently) {
+            ctx.emit(op, sql, hints)
+            return
+        }
+        // Ein abgebrochenes `CREATE INDEX CONCURRENTLY` hinterlaesst einen
+        // ungueltigen Index unter demselben Namen; ohne das Aufraeumen
+        // scheiterte der naechste Lauf daran. Auf einem nicht vorhandenen
+        // Index kostet die Anweisung nichts.
+        ctx.emit(
+            op,
+            ctx.sql.dropIndexSql(table, index, concurrently = true, ifExists = true),
+            PostgresDiffRenderContext.POSTGRES_CONCURRENT_INDEX_HINTS,
+            TransactionScope.NO_TRANSACTION,
+        )
+        ctx.emit(
+            op,
+            sql,
+            PostgresDiffRenderContext.POSTGRES_CONCURRENT_INDEX_HINTS,
+            TransactionScope.NO_TRANSACTION,
+        )
+        ctx.addInfoDiagnostic(
+            code = "POSTGRES_INDEX_CONCURRENTLY",
+            operationId = op.id,
+            message = "Index '${ctx.sql.effectiveIndexName(table, index)}' is built with CONCURRENTLY, " +
+                "outside any transaction. A failed run leaves an INVALID index of that name behind; " +
+                "the next run drops it first, or you can drop it yourself with " +
+                "DROP INDEX CONCURRENTLY IF EXISTS.",
+        )
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: PostgresDiffRenderContext) {

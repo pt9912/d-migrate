@@ -743,6 +743,17 @@ einem **Reverse** stammen können, also aus einer fremden Datenbank.) In einen
 Bezeichner geht der Ausdruck nie roh ein: für die Namensbildung wird er auf
 Buchstaben, Ziffern und Unterstriche verkürzt.
 
+**Nebenläufiges Anlegen (nur PostgreSQL).** `schema migrate
+--pg-concurrent-indexes` rendert `CREATE INDEX CONCURRENTLY` bzw.
+`DROP INDEX CONCURRENTLY` statt der gewöhnlichen Form. Die Anweisung ist in
+einer offenen Transaktion verboten (`CREATE INDEX CONCURRENTLY cannot run
+inside a transaction block`) und läuft deshalb mit
+`transactionScope = NO_TRANSACTION`. Vor jedem nebenläufigen `CREATE` steht
+ein `DROP INDEX CONCURRENTLY IF EXISTS` desselben Namens: ein abgebrochener
+Lauf hinterlässt einen Index mit `pg_index.indisvalid = false`, an dem der
+nächste Lauf sonst scheiterte. Es ist eine Option des **Laufs**, kein Feld am
+Index — im neutralen Modell steht dazu nichts.
+
 **Zurücklesen.** Woher der Ausdruckstext stammt, ist je Dialekt verschieden,
 und der Reverse muss ihn vollständig liefern — ein Index, dem eine
 Schlüsselposition fehlt, ist kein kürzerer Index, sondern ein anderer:

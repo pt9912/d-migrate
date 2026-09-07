@@ -5,6 +5,8 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.driver.migration.TransactionScope
+import dev.dmigrate.driver.postgresContext
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.BitmapIndexFallbackNote
@@ -158,10 +160,7 @@ internal object PostgresDiffOtherOps {
             // DROP INDEX: AccessExclusiveLock on the index,
             // ShareUpdateExclusiveLock on the parent table. Use the
             // default TABLE_EXCLUSIVE hint (conservative).
-            ctx.emit(
-                op,
-                "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};",
-            )
+            emitDropIndex(op, ctx, table, op.index)
             return
         }
         if (!guardSpatialIndex(op, op.index, ctx, table)) return
@@ -224,7 +223,31 @@ internal object PostgresDiffOtherOps {
             )
             return
         }
-        ctx.emit(op, "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};")
+        emitDropIndex(op, ctx, table, op.index)
+    }
+
+    /**
+     * `DROP INDEX` — nebenlaeufig, wenn der Lauf es so verlangt. Dann laeuft
+     * die Anweisung ausserhalb jeder Transaktion; PostgreSQL lehnt sie darin
+     * ab.
+     */
+    private fun emitDropIndex(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+    ) {
+        val concurrently = ctx.options.postgresContext?.concurrentIndexes == true
+        if (!concurrently) {
+            ctx.emit(op, ctx.sql.dropIndexSql(table, index))
+            return
+        }
+        ctx.emit(
+            op,
+            ctx.sql.dropIndexSql(table, index, concurrently = true),
+            PostgresDiffRenderContext.POSTGRES_CONCURRENT_INDEX_HINTS,
+            TransactionScope.NO_TRANSACTION,
+        )
     }
 
     /**

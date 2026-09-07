@@ -96,8 +96,9 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
      * Operation dann als erledigt und legt die Begruendung in die Diagnosen;
      * ein SQL-Kommentar an dieser Stelle ginge als Anweisung an die Datenbank.
      */
-    fun createIndexSql(table: String, idx: IndexDefinition): String? {
+    fun createIndexSql(table: String, idx: IndexDefinition, concurrently: Boolean = false): String? {
         val unique = if (idx.unique) "UNIQUE " else ""
+        val concurrent = if (concurrently) "CONCURRENTLY " else ""
         // ADR 0025: a neutral FULLTEXT index expands to a GiST index over the precomputed
         // `tsvector` column (recorded in fullTextVectorColumn); `columns` holds the human
         // source columns that MySQL/SQLite index. The caller's FULLTEXT guard resolves /
@@ -106,7 +107,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
             val vec = idx.fullTextVectorColumn ?: return null
             // ADR 0025: restore the recorded access method, clamped to GIN/GiST.
             val method = pgFullTextAccessMethod(idx.fullTextAccessMethod).name
-            return "CREATE ${unique}INDEX ${quote(effectiveIndexName(table, idx))} " +
+            return "CREATE ${unique}INDEX $concurrent${quote(effectiveIndexName(table, idx))} " +
                 "ON ${quote(table)} USING $method (${quote(vec)});"
         }
         // VA3: der neutrale räumliche Index (SPATIAL) wird in PostGIS als GIST-
@@ -118,7 +119,28 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         val name = effectiveIndexName(table, idx)
         val includeClause = PostgresIndexClauses.include(idx, ::quote)
         val whereClause = idx.where?.let { " WHERE $it" } ?: ""
-        return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)}$using ($cols)$includeClause$whereClause;"
+        return "CREATE ${unique}INDEX $concurrent${quote(name)} " +
+            "ON ${quote(table)}$using ($cols)$includeClause$whereClause;"
+    }
+
+    /**
+     * `DROP INDEX`, wahlweise nebenlaeufig und/oder nachsichtig.
+     *
+     * `IF EXISTS` braucht der Aufraeumschritt vor einem nebenlaeufigen
+     * Anlegen: ein abgebrochener Lauf hinterlaesst einen ungueltigen Index
+     * unter demselben Namen, und ohne das Aufraeumen scheiterte der naechste
+     * Lauf daran. Auf einem nicht vorhandenen Index ist die Anweisung ein
+     * `NOTICE` und sonst nichts (live gemessen).
+     */
+    fun dropIndexSql(
+        table: String,
+        idx: IndexDefinition,
+        concurrently: Boolean = false,
+        ifExists: Boolean = false,
+    ): String {
+        val concurrent = if (concurrently) "CONCURRENTLY " else ""
+        val lenient = if (ifExists) "IF EXISTS " else ""
+        return "DROP INDEX $concurrent$lenient${quote(effectiveIndexName(table, idx))};"
     }
 
     /**

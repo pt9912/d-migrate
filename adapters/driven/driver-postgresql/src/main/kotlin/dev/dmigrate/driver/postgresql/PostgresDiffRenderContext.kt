@@ -64,6 +64,7 @@ internal class PostgresDiffRenderContext(
         op: DiffOperation,
         sqlText: String,
         hints: DialectExecutionHints = POSTGRES_TRANSACTIONAL_DDL_HINTS,
+        scope: TransactionScope = TransactionScope.RUNNER_OWNED,
     ) {
         // E.2 Sub-Slice A.3 strict-mode lift: when the active-direction
         // risk has `hasGap = true` and the operator asked for strict
@@ -96,14 +97,15 @@ internal class PostgresDiffRenderContext(
         //   - CREATE/DROP TYPE, CREATE/DROP/REPLACE VIEW →
         //     pg_type / view catalog only →
         //     [POSTGRES_METADATA_HINTS]
-        // CREATE INDEX CONCURRENTLY (TransactionScope.NO_TRANSACTION +
-        // NOT_TRANSACTIONAL) is not yet rendered by this adapter.
+        //   - CREATE/DROP INDEX CONCURRENTLY → [POSTGRES_CONCURRENT_INDEX_HINTS]
+        //     mit `scope = NO_TRANSACTION`; die Anweisung ist in einer offenen
+        //     Transaktion verboten.
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
-            transactionScope = TransactionScope.RUNNER_OWNED,
+            transactionScope = scope,
             hints = hints,
         )
         rendered += op.id
@@ -456,6 +458,23 @@ internal class PostgresDiffRenderContext(
             lockBehavior = LockBehavior.TABLE_SHARED,
             implicitCommitPossible = false,
             sideEffectsPossible = false,
+            requiresExclusiveAccess = false,
+        )
+
+        /**
+         * `CREATE`/`DROP INDEX CONCURRENTLY`: laeuft **ausserhalb** einer
+         * Transaktion — PostgreSQL lehnt sie darin mit
+         * `CREATE INDEX CONCURRENTLY cannot run inside a transaction block`
+         * ab (live gemessen). Deshalb `NOT_TRANSACTIONAL` und
+         * `sideEffectsPossible`: was hier scheitert, laesst sich nicht
+         * zurueckrollen, und ein abgebrochener Lauf hinterlaesst einen
+         * ungueltigen Index (`pg_index.indisvalid = false`).
+         */
+        internal val POSTGRES_CONCURRENT_INDEX_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.NOT_TRANSACTIONAL,
+            lockBehavior = LockBehavior.TABLE_SHARED,
+            implicitCommitPossible = false,
+            sideEffectsPossible = true,
             requiresExclusiveAccess = false,
         )
 

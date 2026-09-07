@@ -50,6 +50,7 @@ internal data class SchemaMigrateOptions(
     val strictGapOperations: Boolean,
     val sqliteNamedSequences: String?,
     val mssqlHashPartitions: String? = null,
+    val pgConcurrentIndexes: Boolean = false,
     val lockTimeoutMs: Long?,
     val cliContext: CliContext,
     val configPath: Path?,
@@ -129,6 +130,7 @@ internal object SchemaMigrateWiring {
             // Sub-Slice 7d: derselbe Weg wie bei `schema generate` — der
             // `ddl:`-Block gilt fuer beide Befehle, sonst steuerte die Datei
             // nur den einen.
+            pgConcurrentIndexes = options.pgConcurrentIndexes,
             mssqlHashPartitions = try {
                 resolveEffectiveHashPartitions(options.configPath, options.mssqlHashPartitions)
             } catch (e: ConfigResolveException) {

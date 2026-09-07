@@ -21,7 +21,12 @@ import java.nio.file.Path
  */
 class SchemaMigrateDialectContextTest : FunSpec({
 
-    fun request(mssqlHash: String? = null, sqliteSeq: String? = null, mysqlSeq: String? = null) =
+    fun request(
+        mssqlHash: String? = null,
+        sqliteSeq: String? = null,
+        mysqlSeq: String? = null,
+        pgConcurrent: Boolean = false,
+    ) =
         SchemaMigrateRequest(
             source = "file:${Path.of("schema.yaml")}",
             target = "db:placeholder",
@@ -29,6 +34,7 @@ class SchemaMigrateDialectContextTest : FunSpec({
             mssqlHashPartitions = mssqlHash,
             sqliteNamedSequences = sqliteSeq,
             mysqlNamedSequences = mysqlSeq,
+            pgConcurrentIndexes = pgConcurrent,
         )
 
     fun contextFor(dialect: DatabaseDialect, request: SchemaMigrateRequest) =
@@ -59,8 +65,17 @@ class SchemaMigrateDialectContextTest : FunSpec({
         ctx shouldBe DdlDialectContext.MsSql(MssqlHashPartitionMode.ACTION_REQUIRED)
     }
 
+    test("postgres carries whether indices are built concurrently") {
+        // Ohne Flag bleibt es beim gewoehnlichen `CREATE INDEX`: `CONCURRENTLY`
+        // ist eine Aussage darueber, WIE migriert wird, und die trifft der
+        // Aufrufer, nicht der Default.
+        contextFor(DatabaseDialect.POSTGRESQL, request()) shouldBe
+            DdlDialectContext.Postgres(concurrentIndexes = false)
+        contextFor(DatabaseDialect.POSTGRESQL, request(pgConcurrent = true)) shouldBe
+            DdlDialectContext.Postgres(concurrentIndexes = true)
+    }
+
     test("the other dialects are unaffected") {
-        contextFor(DatabaseDialect.POSTGRESQL, request()) shouldBe DdlDialectContext.None
         (contextFor(DatabaseDialect.SQLITE, request(sqliteSeq = "helper_table")) as DdlDialectContext.Sqlite)
             .namedSequenceMode shouldBe SqliteNamedSequenceMode.HELPER_TABLE
         (contextFor(DatabaseDialect.MYSQL, request(mysqlSeq = "helper_table")) as DdlDialectContext.MySql)

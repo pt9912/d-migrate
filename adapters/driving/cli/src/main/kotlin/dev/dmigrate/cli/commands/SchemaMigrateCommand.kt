@@ -101,6 +101,12 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         help = "SQL Server hash-partitioning strategy: 'action_required' (default) or 'computed_column' " +
             "to emulate it with a persisted computed column. Mirrors the flag on `schema generate`.",
     ).choice("action_required", "computed_column")
+    val pgConcurrentIndexes by option(
+        "--pg-concurrent-indexes",
+        help = "Build and drop PostgreSQL indices with CONCURRENTLY, outside any transaction. " +
+            "A statement about HOW to migrate, not about the schema — the index keeps a lighter " +
+            "lock, but a failed run leaves an INVALID index behind that the next run drops first.",
+    ).flag()
     val lockTimeoutMs by option(
         "--lock-timeout-ms",
         help = "Atomic-preserve lock-timeout budget in milliseconds. Optional; defaults to " +
@@ -134,6 +140,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
                 strictGapOperations = strictGapOperations,
                 sqliteNamedSequences = sqliteNamedSequences,
                 mssqlHashPartitions = mssqlHashPartitions,
+                pgConcurrentIndexes = pgConcurrentIndexes,
                 lockTimeoutMs = lockTimeoutMs,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,

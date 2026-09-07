@@ -591,10 +591,10 @@ internal class SchemaMigrateRenderPipeline(
                         ?.let(MssqlHashPartitionMode::fromCliName)
                         ?: MssqlHashPartitionMode.ACTION_REQUIRED,
                 )
-                // PostgreSQL braucht (noch) keinen dialektspezifischen Kontext;
-                // eine sealed Variante kommt erst mit einem Renderer, der sie
-                // braucht (Hexagon-DialectContext-Regel).
-                DatabaseDialect.POSTGRESQL -> DdlDialectContext.None
+                // PostgreSQL traegt, ob Indizes nebenlaeufig angelegt werden.
+                DatabaseDialect.POSTGRESQL -> DdlDialectContext.Postgres(
+                    concurrentIndexes = request.pgConcurrentIndexes,
+                )
                 // Auch der Oracle-Renderer braucht bislang keinen
                 // dialekteigenen Kontext -- dieselbe Lage wie bei PostgreSQL.
                 DatabaseDialect.ORACLE -> DdlDialectContext.None

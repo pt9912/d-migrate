@@ -163,6 +163,13 @@ Round-Trip ist nicht zeichengleich.
   **zusammengesetzten** Primärschlüssel (**W135**, siehe
   [Best-Practices-Leitfaden, Abschnitt 4](best-practices-leitfaden.md#4-cross-dialect-typ-fallstricke)) —
   die IDs müssen dann explizit geliefert werden.
+- **PostgreSQL: ein Index ist da, wird aber nicht benutzt (`INVALID`).** Nach
+  einem abgebrochenen Lauf mit `--pg-concurrent-indexes`. `CREATE INDEX
+  CONCURRENTLY` läuft außerhalb jeder Transaktion und lässt sich nicht
+  zurückrollen; der halbfertige Index bleibt stehen. Der nächste Lauf räumt ihn
+  selbst weg, oder Sie tun es mit
+  `DROP INDEX CONCURRENTLY IF EXISTS <name>`. Welche Indizes betroffen sind:
+  `SELECT c.relname FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid WHERE NOT i.indisvalid`.
 - **Grundregel:** Warnungen sind das Diagnosewerkzeug. Ein Lauf mit Exit 0 **und**
   `W…`-Notes ist erfolgreich, aber nicht folgenlos — lesen Sie die Notes, bevor Sie
   abnehmen.

@@ -603,6 +603,14 @@ data class SchemaMigrateRequest(
      * frei. CLI-String, im Renderer über [SpatialProfile.fromCliName] aufgelöst.
      */
     val spatialProfile: String? = null,
+    /**
+     * `--pg-concurrent-indexes`: legt und baut Indizes auf PostgreSQL mit
+     * `CONCURRENTLY` ab, ausserhalb jeder Transaktion.
+     *
+     * Eine Aussage darueber, WIE migriert wird, nicht ueber das Schema —
+     * deshalb eine Option des Laufs und kein Feld am Index.
+     */
+    val pgConcurrentIndexes: Boolean = false,
     val output: Path? = null,
     val report: Path? = null,
     val rollbackOutput: Path? = null,

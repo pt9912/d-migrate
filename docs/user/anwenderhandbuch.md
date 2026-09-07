@@ -581,7 +581,31 @@ d-migrate schema migrate --source desired.yaml --target db:staging \
 # Routine-Capability übersteuern und Routine-Bodies im Report sichtbar machen (UNSAFE)
 d-migrate schema migrate --source desired.yaml --target db:staging --report plan.yaml \
     --routine-capability "function:enabled=true" --debug-body
+
+# PostgreSQL: Index auf einer großen, benutzten Tabelle anlegen, ohne Schreibzugriffe
+# zu sperren
+d-migrate schema migrate --source desired.yaml --target db:staging \
+    --execute --report plan.yaml --pg-concurrent-indexes
 ```
+
+**Index ohne Schreibsperre (nur PostgreSQL).** Ein Index auf einer großen,
+benutzten Tabelle sperrt sie normalerweise gegen Schreibzugriffe, solange er
+gebaut wird. `--pg-concurrent-indexes` legt ihn stattdessen mit `CONCURRENTLY`
+an — die Tabelle bleibt schreibbar, der Bau dauert länger.
+
+Der Preis steht im Fehlerfall: die Anweisung läuft **außerhalb jeder
+Transaktion** und lässt sich deshalb nicht zurückrollen. Bricht sie ab, bleibt
+ein unbrauchbarer Index unter demselben Namen zurück (PostgreSQL nennt ihn
+`INVALID`). Der nächste Lauf räumt ihn selbst weg, bevor er es erneut versucht;
+wer es von Hand tun will, nimmt:
+
+```bash
+psql -c 'DROP INDEX CONCURRENTLY IF EXISTS ix_name'
+```
+
+Die Option gilt für den ganzen Lauf und für beide Richtungen — auch das
+Zurücknehmen benutzt dann `DROP INDEX CONCURRENTLY`. Sie beschreibt, **wie**
+migriert wird, nicht das Schema; im Schema steht dazu nichts.
 
 ### 3.6 Daten sichern (Export)
 

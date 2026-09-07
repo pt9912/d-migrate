@@ -252,7 +252,23 @@ sealed interface DdlDialectContext {
     data class MsSql(
         val hashPartitionMode: MssqlHashPartitionMode = MssqlHashPartitionMode.ACTION_REQUIRED,
     ) : DdlDialectContext
+
+    /**
+     * PostgreSQL-spezifischer Render-Kontext.
+     *
+     * - [concurrentIndexes]: ob Indizes mit `CONCURRENTLY` angelegt und
+     *   abgebaut werden. Das ist keine Eigenschaft des Schemas, sondern eine
+     *   Aussage darueber, WIE migriert werden soll — deshalb eine Option des
+     *   Laufs und kein Feld am Index.
+     */
+    data class Postgres(
+        val concurrentIndexes: Boolean = false,
+    ) : DdlDialectContext
 }
+
+/** Smart-Cast-freundlicher Accessor: gibt den PostgreSQL-Kontext zurueck oder `null`. */
+val DdlGenerationOptions.postgresContext: DdlDialectContext.Postgres?
+    get() = dialectContext as? DdlDialectContext.Postgres
 
 /** Smart-Cast-freundlicher Accessor: gibt den MySQL-Kontext zurueck oder `null`. */
 /** MySQL-Tabellen-Optionen aus dem `ddl.mysql`-Block. */

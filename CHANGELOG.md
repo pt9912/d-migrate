@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`schema migrate --pg-concurrent-indexes`** legt und baut PostgreSQL-Indizes
+  mit `CONCURRENTLY` ab — die Tabelle bleibt beim Indexbau schreibbar. Die
+  Anweisung läuft außerhalb jeder Transaktion; ein abgebrochener Lauf
+  hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
+  (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
+  Laufs, kein Feld am Index.
+
 ### Fixed
 
 - **Oracle: partieller Index verlor sein Prädikat stumm.** Oracle kennt kein
