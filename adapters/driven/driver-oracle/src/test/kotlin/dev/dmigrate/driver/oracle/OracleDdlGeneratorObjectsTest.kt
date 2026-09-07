@@ -8,7 +8,9 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ProcedureDefinition
+import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -17,6 +19,7 @@ import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.ViewDefinition
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -182,21 +185,56 @@ class OracleDdlGeneratorObjectsTest : FunSpec({
 
     // ── Routines / aggregates (Slice 9 out of scope) ──
 
-    test("functions/procedures/triggers are not rendered and land as E053 skipped objects") {
+    test("functions, procedures and triggers render as PL/SQL with a `/` script terminator") {
         val result = generator.generate(
             schema(
-                functions = mapOf("f" to FunctionDefinition(body = "BEGIN RETURN 1; END;")),
-                procedures = mapOf("p" to ProcedureDefinition(body = "BEGIN NULL; END;")),
+                functions = mapOf(
+                    "f(in:integer)" to FunctionDefinition(
+                        parameters = listOf(ParameterDefinition("x", "integer")),
+                        returns = ReturnType("integer"),
+                        body = "BEGIN RETURN x; END;",
+                    ),
+                ),
+                procedures = mapOf("p()" to ProcedureDefinition(body = "BEGIN NULL; END;")),
                 triggers = mapOf(
-                    "trg" to TriggerDefinition(
+                    "t::trg" to TriggerDefinition(
                         table = "t", event = TriggerEvent.INSERT, timing = TriggerTiming.AFTER, body = "BEGIN NULL; END;",
                     ),
                 ),
                 tables = mapOf("t" to TableDefinition(columns = mapOf("a" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1)))),
             ),
         )
-        result.skippedObjects.map { it.code }.toSet() shouldBe setOf("E053")
-        result.skippedObjects.map { it.name } shouldBe listOf("f", "p", "trg")
+        result.skippedObjects.shouldBeEmpty()
+        val sql = result.statements.map { it.sql }
+        // Parameter- und Rueckgabetyp ohne Laenge: `IN NUMBER(10)` und
+        // `RETURN NUMBER(10)` erzeugen die Routine INVALID (live gemessen).
+        sql.single { it.startsWith("CREATE OR REPLACE FUNCTION") } shouldBe
+            "CREATE OR REPLACE FUNCTION \"f\"(\"x\" IN NUMBER)\nRETURN NUMBER IS\nBEGIN RETURN x; END;"
+        // Leere Parameterliste ohne Klammern: `PROCEDURE p()` ist ein
+        // Uebersetzungsfehler.
+        sql.single { it.startsWith("CREATE OR REPLACE PROCEDURE") } shouldBe
+            "CREATE OR REPLACE PROCEDURE \"p\" IS\nBEGIN NULL; END;"
+        sql.single { it.startsWith("CREATE OR REPLACE TRIGGER") } shouldBe
+            "CREATE OR REPLACE TRIGGER \"trg\"\nAFTER INSERT ON \"t\"\nFOR EACH ROW\nBEGIN NULL; END;"
+        // Das `/` gehoert in die Skriptdarstellung, nicht ins SQL.
+        result.statements.filter { it.sql.startsWith("CREATE OR REPLACE ") }
+            .forEach { it.scriptTerminator shouldBe "/" }
+    }
+
+    test("a body from another dialect is not translated but reported as E053") {
+        val result = generator.generate(
+            schema(
+                functions = mapOf(
+                    "f()" to FunctionDefinition(
+                        returns = ReturnType("integer"),
+                        body = "BEGIN RETURN 1; END",
+                        sourceDialect = "postgresql",
+                    ),
+                ),
+            ),
+        )
+        result.skippedObjects.single().code shouldBe "E053"
+        result.skippedObjects.single().name shouldBe "f"
     }
 
     test("aggregates are rejected with E054 (no ODCI implementation type carried by the model)") {

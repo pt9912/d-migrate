@@ -94,6 +94,63 @@ internal object OracleTypeMapping {
         else -> null
     }
 
+    /**
+     * Oracle-Typname eines Routinen-Parameters auf den neutralen Namen.
+     *
+     * Getrennt von [mapColumn], weil ein Parametertyp keine Laenge und keine
+     * Praezision traegt: PL/SQL lehnt `IN VARCHAR2(10)` und `RETURN
+     * NUMBER(10)` ab, und `ALL_ARGUMENTS` fuehrt die Werte, die dort stehen,
+     * nur als Speichergroesse. Alle Zahlen fallen deshalb auf `decimal`
+     * statt auf die von der Praezision abhaengigen Namen, die [mapColumn]
+     * vergibt — sonst kaeme aus dem Round-Trip ein engerer Typ zurueck, als
+     * der Autor geschrieben hat.
+     *
+     * Ein unbekannter Name bleibt er selbst: das ist ein benutzerdefinierter
+     * Typ, den der Reverse namentlich gelesen hat.
+     */
+    /**
+     * Der neutrale Name eines Arguments, dessen Typ **benutzerdefiniert** ist.
+     *
+     * `ALL_ARGUMENTS.DATA_TYPE` trägt dann nicht den Typnamen, sondern die
+     * Kategorie (`OBJECT`, `VARRAY`, `TABLE`, `REF`) — der Name steht in
+     * `TYPE_NAME`. Ihn zu nehmen ist dasselbe Durchreichen eines nativen
+     * Namens, das [mapParamType] für unbekannte Namen tut; die Kategorie
+     * dagegen wäre kein Typ und ergäbe `IN OBJECT`.
+     *
+     * `null` für Kategorien ohne verwendbaren Namen (`REF CURSOR`,
+     * `PL/SQL RECORD`): der Aufrufer meldet die Routine, statt zu raten.
+     */
+    fun mapUserDefinedParamType(dataType: String, typeName: String?): String? = when {
+        dataType.uppercase().trim() !in USER_DEFINED_CATEGORIES -> null
+        typeName.isNullOrBlank() -> null
+        else -> typeName.lowercase()
+    }
+
+    /** Ob [dataType] eine Kategorie statt eines Typnamens ist. */
+    fun isUserDefinedCategory(dataType: String): Boolean =
+        dataType.uppercase().trim() in USER_DEFINED_CATEGORIES ||
+            dataType.uppercase().trim() in UNNAMEABLE_CATEGORIES
+
+    private val USER_DEFINED_CATEGORIES = setOf("OBJECT", "VARRAY", "TABLE", "REF", "NAMED COLLECTION")
+
+    /** Kategorien, zu denen `TYPE_NAME` keinen in einer Signatur nennbaren Namen führt. */
+    private val UNNAMEABLE_CATEGORIES = setOf("REF CURSOR", "PL/SQL RECORD", "PL/SQL TABLE", "OPAQUE", "UNDEFINED")
+
+    fun mapParamType(typeName: String): String = when (typeName.uppercase().trim()) {
+        "NUMBER", "FLOAT" -> "decimal"
+        "BINARY_INTEGER", "PLS_INTEGER" -> "integer"
+        "BINARY_DOUBLE", "BINARY_FLOAT" -> "float"
+        "VARCHAR2", "NVARCHAR2", "CHAR", "NCHAR", "CLOB", "NCLOB", "LONG", "VARCHAR" -> "text"
+        "RAW", "LONG RAW", "BLOB" -> "binary"
+        // Oracles DATE traegt eine Uhrzeit; `date` waere die stille Verengung,
+        // die [mapTemporal] fuer Spalten schon vermeidet.
+        "DATE" -> "datetime"
+        "JSON" -> "json"
+        "XMLTYPE" -> "xml"
+        "BOOLEAN" -> "boolean"
+        else -> if (typeName.uppercase().startsWith("TIMESTAMP")) "datetime" else typeName.lowercase()
+    }
+
     private fun mapTemporal(typeName: String): NeutralType? = when {
         typeName.equals("DATE", ignoreCase = true) ->
             // Oracle DATE traegt eine Uhrzeit-Komponente -- anders als der

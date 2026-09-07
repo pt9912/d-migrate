@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.oracle
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.AggregateDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
@@ -28,18 +29,18 @@ import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.ViewQueryTransformer
 
 /**
- * Oracle-[dev.dmigrate.driver.DdlGenerator] (ADR 0052 Slice 2).
+ * Oracle-[dev.dmigrate.driver.DdlGenerator] (ADR 0052).
  *
  * Geltungsbereich: Tabellen (Spalten, Identity, benannte UNIQUE/CHECK/PK,
- * FKs inkl. zirkulaerer und aufgeschobener), einfache B-Tree-Indizes
- * (Bitmap nativ; Ausdrucks-Indizes folgen in Slice 6b), native Sequenzen
- * (`CREATE SEQUENCE`, `.NEXTVAL`), Views (`CREATE OR REPLACE VIEW`).
- * Routinen, Trigger und Aggregate werden nicht als PL/SQL gerendert und
- * landen als E053/E054-`skipped_objects` (Slice 9); Partitionierung als
- * E055/E062 (Tabelle plain), Volltext ueber Oracle Text (mehrspaltig E057);
- * Composite-Typen als E054. Spatial ist nicht gescoped (`canGenerateSpatial`
- * bleibt `false`). Render-Regeln: `spec/ddl-generation-rules.md`
- * (Abschnitte Oracle), Typtabelle: `spec/type-mapping.md`.
+ * FKs inkl. zirkulaerer und aufgeschobener), Indizes (B-Tree, Bitmap,
+ * Ausdruecke), native Sequenzen (`CREATE SEQUENCE`, `.NEXTVAL`), Views
+ * (`CREATE OR REPLACE VIEW`) sowie Funktionen, Prozeduren und Trigger als
+ * PL/SQL. Aggregate landen als E054, ein Rumpf aus einem fremden Dialekt als
+ * E053; Partitionierung als E055/E062 (Tabelle plain), Volltext ueber Oracle
+ * Text (mehrspaltig E057); Composite-Typen als E054. Spatial ist nicht
+ * gescoped (`canGenerateSpatial` bleibt `false`). Render-Regeln:
+ * `spec/ddl-generation-rules.md` (Abschnitte Oracle), Typtabelle:
+ * `spec/type-mapping.md`.
  */
 class OracleDdlGenerator private constructor(
     private val oracleTypeMapper: OracleTypeMapper,
@@ -251,29 +252,78 @@ class OracleDdlGenerator private constructor(
         return DdlStatement("CREATE OR REPLACE FORCE VIEW ${quoteIdentifier(name)} AS\n$transformedQuery;", notes)
     }
 
-    // ── Routines, aggregates, triggers (Slice 9) ──
+    // ── Routines, aggregates, triggers ──
 
     override fun generateFunctions(
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = functions.map { (key, fn) ->
-        routineNotRendered("function", key, fn.body, fn.sourceDialect, skipped)
+    ): List<DdlStatement> {
+        val colliding = OracleRoutineShape.collidingNames(functions.keys, ObjectKeyCodec::routineName)
+        return functions.map { (key, fn) ->
+            val name = ObjectKeyCodec.routineName(key)
+            val problem = OracleRoutineShape.nameCollision("function", name, colliding)
+                ?: OracleRoutineShape.bodyProblem("function", name, fn.body, fn.sourceDialect)
+                ?: OracleRoutineShape.unsupportedFunctionShape(name, fn)
+            if (problem != null) {
+                routineNotRendered("function", name, problem, fn.sourceDialect, skipped)
+            } else {
+                plsqlBlock(OracleRoutineDdl.functionSql(name, fn, checkNotNull(fn.body)) { quoteIdentifier(it) })
+            }
+        }
     }
 
     override fun generateProcedures(
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = procedures.map { (key, proc) ->
-        routineNotRendered("procedure", key, proc.body, proc.sourceDialect, skipped)
+    ): List<DdlStatement> {
+        val colliding = OracleRoutineShape.collidingNames(procedures.keys, ObjectKeyCodec::routineName)
+        return procedures.map { (key, proc) ->
+            val name = ObjectKeyCodec.routineName(key)
+            val problem = OracleRoutineShape.nameCollision("procedure", name, colliding)
+                ?: OracleRoutineShape.bodyProblem("procedure", name, proc.body, proc.sourceDialect)
+                ?: OracleRoutineShape.unsupportedProcedureShape(name, proc)
+            if (problem != null) {
+                routineNotRendered("procedure", name, problem, proc.sourceDialect, skipped)
+            } else {
+                plsqlBlock(
+                    OracleRoutineDdl.procedureSql(name, proc, checkNotNull(proc.body)) { quoteIdentifier(it) },
+                )
+            }
+        }
     }
 
     override fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = triggers.map { (name, trigger) ->
-        routineNotRendered("trigger", name, trigger.body, trigger.sourceDialect, skipped)
+    ): List<DdlStatement> {
+        // `triggerName` statt `parseTriggerKey`: ein handgeschriebenes Schema
+        // darf einen Trigger unter seinem blanken Namen fuehren, und der
+        // Parser wirft dafuer.
+        val colliding = OracleRoutineShape.collidingNames(triggers.keys, ObjectKeyCodec::triggerName)
+        return triggers.map { (key, trigger) ->
+            val name = ObjectKeyCodec.triggerName(key)
+            val problem = OracleRoutineShape.nameCollision("trigger", name, colliding)
+                ?: OracleRoutineShape.bodyProblem("trigger", name, trigger.body, trigger.sourceDialect)
+                ?: OracleRoutineShape.unsupportedTriggerShape(name, trigger, tables)
+            if (problem != null) {
+                routineNotRendered("trigger", name, problem, trigger.sourceDialect, skipped)
+            } else {
+                plsqlBlock(
+                    OracleRoutineDdl.triggerSql(name, trigger, checkNotNull(trigger.body)) { quoteIdentifier(it) },
+                )
+            }
+        }
     }
+
+    /**
+     * Ein PL/SQL-Block traegt kein abschliessendes `;` und kein `/` in seinem
+     * SQL: ueber JDBC gesendet meldet `execute()` damit zwar Erfolg, laesst
+     * die Routine aber `INVALID` zurueck. Das `/` fuer SQL*Plus haengt erst
+     * die Skriptdarstellung an.
+     */
+    private fun plsqlBlock(sql: String): DdlStatement =
+        DdlStatement(sql, scriptTerminator = PLSQL_SCRIPT_TERMINATOR)
 
     override fun generateAggregates(
         aggregates: Map<String, AggregateDefinition>,
@@ -291,28 +341,21 @@ class OracleDdlGenerator private constructor(
     }
 
     /**
-     * Routinen- und Trigger-Koerper werden nicht als PL/SQL gerendert:
-     * fremde Dialekte muessten uebersetzt werden (macht d-migrate nicht),
-     * fuer PL/SQL-Koerper fehlt dem Generator der Huellen-Vertrag (Slice 9).
+     * Was [OracleRoutineShape] nicht darstellbar findet, wird als
+     * Handarbeit gemeldet statt geraten — mit demselben Urteil, das der
+     * Diff-Pfad faellt.
      */
     private fun routineNotRendered(
         kind: String,
         name: String,
-        body: String?,
+        problem: OracleRoutineShape.Unrenderable,
         sourceDialect: String?,
         skipped: MutableList<SkippedObject>,
     ): DdlStatement {
-        val kindLabel = kind.replaceFirstChar { it.uppercase() }
-        val reason = when {
-            body == null -> "$kindLabel '$name' has no body and must be manually implemented."
-            sourceDialect != null && sourceDialect != "oracle" ->
-                "$kindLabel '$name' was written for '$sourceDialect' and must be manually rewritten for Oracle."
-            else -> "$kindLabel '$name' is not rendered for oracle: d-migrate does not generate PL/SQL $kind DDL yet."
-        }
         val action = ManualActionRequired(
             code = "E053", objectType = kind, objectName = name,
-            reason = reason,
-            hint = "Create the $kind as PL/SQL (CREATE OR REPLACE ...) manually on the target.",
+            reason = problem.reason,
+            hint = problem.hint,
             sourceDialect = sourceDialect,
         )
         skipped += action.toSkipped()
@@ -338,6 +381,15 @@ class OracleDdlGenerator private constructor(
                 DdlStatement("DROP INDEX ${nameAfter(sql, "CREATE INDEX")};")
             sql.startsWith("CREATE OR REPLACE FORCE VIEW", ignoreCase = true) ->
                 DdlStatement("DROP VIEW ${nameAfter(sql, "CREATE OR REPLACE FORCE VIEW")};")
+            // Die drei Routinen-Formen: `DROP` ist gewoehnliches DDL und
+            // braucht deshalb weder das `/` noch den PL/SQL-Trenner, den das
+            // `CREATE` traegt.
+            sql.startsWith("CREATE OR REPLACE FUNCTION", ignoreCase = true) ->
+                DdlStatement("DROP FUNCTION ${nameAfter(sql, "CREATE OR REPLACE FUNCTION")};")
+            sql.startsWith("CREATE OR REPLACE PROCEDURE", ignoreCase = true) ->
+                DdlStatement("DROP PROCEDURE ${nameAfter(sql, "CREATE OR REPLACE PROCEDURE")};")
+            sql.startsWith("CREATE OR REPLACE TRIGGER", ignoreCase = true) ->
+                DdlStatement("DROP TRIGGER ${nameAfter(sql, "CREATE OR REPLACE TRIGGER")};")
             sql.startsWith("CREATE SEQUENCE", ignoreCase = true) ->
                 DdlStatement("DROP SEQUENCE ${nameAfter(sql, "CREATE SEQUENCE")};")
             sql.startsWith("ALTER TABLE", ignoreCase = true) && sql.contains("ADD CONSTRAINT", ignoreCase = true) -> {
@@ -353,4 +405,9 @@ class OracleDdlGenerator private constructor(
 
     private fun nameAfter(sql: String, keyword: String): String =
         sql.substring(keyword.length).trimStart().split(Regex("[\\s(]"), limit = 2).first()
+
+    private companion object {
+        /** SQL*Plus beendet einen PL/SQL-Block an einem `/` in eigener Zeile. */
+        const val PLSQL_SCRIPT_TERMINATOR = "/"
+    }
 }

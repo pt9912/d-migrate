@@ -27,7 +27,14 @@ class DjangoMigrationExporter : ToolMigrationExporter {
     override fun render(bundle: MigrationBundle): ToolExportResult {
         val identity = bundle.identity
         val fileName = "${identity.version}.py"
-        val statementList = identity.dialect == DatabaseDialect.MSSQL
+        // Die Listenform fuehrt jede Anweisung einzeln aus. SQL Server braucht
+        // sie, weil `CREATE VIEW`/Routinen allein im Batch stehen muessen; ein
+        // PL/SQL-Block braucht sie, weil er selbst Semikola traegt und Django
+        // den einen Text sonst als eine Anweisung sendet.
+        val statementList = identity.dialect == DatabaseDialect.MSSQL ||
+            bundle.up.result.statements.any { it.scriptTerminator != null } ||
+            (bundle.rollback as? MigrationRollback.Requested)
+                ?.down?.result?.statements?.any { it.scriptTerminator != null } == true
 
         val python = buildString {
             appendLine("from django.db import migrations")

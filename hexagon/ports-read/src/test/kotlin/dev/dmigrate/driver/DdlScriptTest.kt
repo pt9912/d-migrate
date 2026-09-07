@@ -61,4 +61,35 @@ class DdlScriptTest : FunSpec({
             }
         }
     }
+
+    // ── Trenner je Anweisung ──────────────────────
+
+    val plsql = DdlResult(
+        listOf(
+            DdlStatement("CREATE TABLE \"t\" (\"id\" NUMBER);"),
+            DdlStatement(
+                "CREATE OR REPLACE FUNCTION \"f\" RETURN NUMBER IS\nBEGIN RETURN 1; END;",
+                scriptTerminator = "/",
+            ),
+        ),
+    )
+
+    test("a statement's own terminator applies in a dialect without a batch separator") {
+        // SQL*Plus erkennt das Ende eines PL/SQL-Blocks nur an einem `/` in
+        // eigener Zeile; die Tabelle daneben braucht keins.
+        DdlScript.render(plsql, DatabaseDialect.ORACLE) shouldBe
+            "CREATE TABLE \"t\" (\"id\" NUMBER);\n\n" +
+            "CREATE OR REPLACE FUNCTION \"f\" RETURN NUMBER IS\nBEGIN RETURN 1; END;\n/"
+    }
+
+    test("the terminator belongs to the script, never to the statement's SQL") {
+        // Ueber JDBC gesendet meldet ein angehaengtes `/` Erfolg und laesst die
+        // Routine INVALID zurueck.
+        plsql.statements.forEach { it.sql shouldNotContain "\n/" }
+    }
+
+    test("a statement terminator wins over the dialect's batch separator") {
+        DdlScript.render(plsql, DatabaseDialect.MSSQL) shouldContain
+            "BEGIN RETURN 1; END;\n/"
+    }
 })

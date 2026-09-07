@@ -4,6 +4,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.migration.ArtifactRelativePath
 import dev.dmigrate.migration.MigrationArtifact
 import dev.dmigrate.migration.MigrationBundle
+import dev.dmigrate.migration.MigrationDdlPayload
 import dev.dmigrate.migration.MigrationIdentity
 import dev.dmigrate.migration.MigrationRollback
 import dev.dmigrate.migration.MigrationTool
@@ -40,19 +41,13 @@ class LiquibaseMigrationExporter : ToolMigrationExporter {
             appendLine("""        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">""")
             appendLine()
             appendLine("""    <changeSet id="${RenderHelpers.escapeXmlAttribute(changeSetId)}" author="d-migrate">""")
-            appendLine("""        <sql$sqlAttributes>""")
-            append(indentSql(RenderHelpers.escapeXml(bundle.up.deterministicSql)))
-            appendLine()
-            appendLine("""        </sql>""")
+            append(sqlBlocks(bundle.up, sqlAttributes, indent = 8))
 
             when (val rollback = bundle.rollback) {
                 is MigrationRollback.NotRequested -> {}
                 is MigrationRollback.Requested -> {
                     appendLine("""        <rollback>""")
-                    appendLine("""            <sql$sqlAttributes>""")
-                    append(indentSql(RenderHelpers.escapeXml(rollback.down.deterministicSql), 16))
-                    appendLine()
-                    appendLine("""            </sql>""")
+                    append(sqlBlocks(rollback.down, sqlAttributes, indent = 12))
                     appendLine("""        </rollback>""")
                 }
             }
@@ -71,6 +66,39 @@ class LiquibaseMigrationExporter : ToolMigrationExporter {
                 )
             ),
         )
+    }
+
+    /**
+     * Die `<sql>`-Elemente eines Abschnitts.
+     *
+     * Normalerweise **ein** Element mit dem ganzen Skript darin; Liquibase
+     * zerlegt es an `;` (bei T-SQL an `GO`) und schickt jede Anweisung
+     * einzeln.
+     *
+     * Enthaelt das Skript aber einen Block, der seinen eigenen Trenner traegt
+     * — ein PL/SQL-Rumpf fuehrt Semikola, an denen der Splitter ihn
+     * zerschnitte —, dann bekommt **jede** Anweisung ihr eigenes Element mit
+     * `splitStatements="false"`. Die Grenzen kennt d-migrate; Liquibase muss
+     * sie dann nicht raten.
+     */
+    private fun sqlBlocks(payload: MigrationDdlPayload, attributes: String, indent: Int): String {
+        val pad = " ".repeat(indent)
+        if (payload.result.statements.none { it.scriptTerminator != null }) {
+            return buildString {
+                appendLine("$pad<sql$attributes>")
+                appendLine(indentSql(RenderHelpers.escapeXml(payload.deterministicSql), indent + 4))
+                appendLine("$pad</sql>")
+            }
+        }
+        return payload.deterministicStatements
+            .filter { it.isNotBlank() }
+            .joinToString("") { statement ->
+                buildString {
+                    appendLine("""$pad<sql splitStatements="false">""")
+                    appendLine(indentSql(RenderHelpers.escapeXml(statement), indent + 4))
+                    appendLine("$pad</sql>")
+                }
+            }
     }
 
     internal companion object {

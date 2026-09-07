@@ -192,11 +192,16 @@ internal object MysqlObjectRenamePolicy : ObjectRenamePolicy {
  * Anweisung ebenfalls, d-migrate rendert sie dort aber als
  * `ALTER TABLE … RENAME TO`, siehe `OracleDiffTableOps`.)
  *
- * Die uebrigen Objektarten blocken, und der Grund liegt bei d-migrate,
- * nicht bei Oracle: Routinen, Trigger und Materialized Views liest der
- * Oracle-Reader nicht und der Generator schreibt sie nicht (Slices 9
- * bzw. 10, ADR 0052). Ein Rename-Vertrag fuer Objekte, die auf keinem
- * anderen Pfad existieren, waere nicht pruefbar.
+ * Ein **Trigger** laesst sich ueber `ALTER TRIGGER … RENAME TO` ebenfalls
+ * nativ umbenennen. Fuer Funktionen und Prozeduren gibt es dagegen gar keine
+ * Anweisung: `RENAME f TO g` antwortet mit ORA-03001, `ALTER FUNCTION f
+ * RENAME TO g` mit ORA-00922. Sie blocken deshalb — der Grund liegt bei
+ * Oracle, nicht bei d-migrate.
+ *
+ * Materialized Views blocken weiterhin aus dem anderen Grund: der
+ * Oracle-Reader liest sie nicht und der Generator schreibt sie nicht
+ * (ADR 0052). Ein Rename-Vertrag fuer ein Objekt, das auf keinem anderen
+ * Pfad existiert, waere nicht pruefbar.
  */
 internal object OracleObjectRenamePolicy : ObjectRenamePolicy {
 
@@ -214,13 +219,14 @@ internal object OracleObjectRenamePolicy : ObjectRenamePolicy {
             )
         }
         return when (candidate.objectType) {
-            DiffObjectType.VIEW, DiffObjectType.SEQUENCE -> oracleNativeRename(candidate)
-            DiffObjectType.TRIGGER, DiffObjectType.FUNCTION, DiffObjectType.PROCEDURE ->
+            DiffObjectType.VIEW, DiffObjectType.SEQUENCE, DiffObjectType.TRIGGER ->
+                oracleNativeRename(candidate)
+            DiffObjectType.FUNCTION, DiffObjectType.PROCEDURE ->
                 RenameSupport.Blocked(
                     code = "OBJECT_RENAME_UNSUPPORTED",
-                    message = "d-migrate does not read or render Oracle " +
-                        "${candidate.objectType.name.lowercase()} objects yet (Oracle rollout, " +
-                        "ADR 0052); a rename contract for them would be untestable.",
+                    message = "Oracle has no rename for a standalone " +
+                        "${candidate.objectType.name.lowercase()}: RENAME answers ORA-03001 and " +
+                        "ALTER ${candidate.objectType.name} ... RENAME TO answers ORA-00922.",
                 )
             else -> RenameSupport.Blocked(
                 code = "OBJECT_RENAME_UNSUPPORTED",

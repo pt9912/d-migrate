@@ -6,6 +6,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -238,24 +239,17 @@ class OracleMetadataQueriesTest : FunSpec({
         views.single().text shouldBe "SELECT 1 AS ONE FROM DUAL"
     }
 
-    test("listUnreadObjects lists routines, triggers and packages") {
+    test("listUnreadPackages asks for packages only") {
         val sql = slot<String>()
         val jdbc = mockk<JdbcOperations> {
             every { queryList(capture(sql), any()) } returns listOf(
-                mapOf("object_type" to "PROCEDURE", "object_name" to "P_DO"),
-                mapOf("object_type" to "FUNCTION", "object_name" to "F_CALC"),
-                mapOf("object_type" to "TRIGGER", "object_name" to "TRG_AUDIT"),
-                mapOf("object_type" to "PACKAGE", "object_name" to "PKG_UTIL"),
+                mapOf("object_name" to "PKG_UTIL"),
             )
         }
-        val unread = OracleMetadataQueries.listUnreadObjects(jdbc, "APP")
-        unread shouldBe listOf(
-            OracleMetadataQueries.UnreadObject("PROCEDURE", "P_DO"),
-            OracleMetadataQueries.UnreadObject("FUNCTION", "F_CALC"),
-            OracleMetadataQueries.UnreadObject("TRIGGER", "TRG_AUDIT"),
-            OracleMetadataQueries.UnreadObject("PACKAGE", "PKG_UTIL"),
-        )
-        sql.captured shouldContain "'PROCEDURE', 'FUNCTION', 'TRIGGER', 'PACKAGE'"
+        OracleMetadataQueries.listUnreadPackages(jdbc, "APP") shouldBe listOf("PKG_UTIL")
+        // Routinen und Trigger stehen hier nicht mehr: sie werden gelesen.
+        sql.captured shouldContain "object_type = 'PACKAGE'"
+        sql.captured shouldNotContain "TRIGGER"
     }
 })
 

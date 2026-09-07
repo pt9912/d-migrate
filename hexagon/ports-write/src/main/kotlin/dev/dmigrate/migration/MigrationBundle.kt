@@ -15,6 +15,15 @@ import dev.dmigrate.driver.DdlResult
 data class MigrationDdlPayload(
     val result: DdlResult,
     val deterministicSql: String,
+    /**
+     * Dieselbe Normalisierung, aber je Anweisung statt zusammengehängt.
+     *
+     * Für Werkzeuge, die die Grenzen kennen müssen, statt sie zu erraten: ein
+     * PL/SQL-Block enthält Semikola, an denen ein Zeichen-Splitter ihn
+     * zerschneiden würde. Wer nur den Text nimmt, bekommt [deterministicSql]
+     * — die Verkettung dieser Liste mit Leerzeile dazwischen.
+     */
+    val deterministicStatements: List<String> = listOf(deterministicSql),
 )
 
 /**

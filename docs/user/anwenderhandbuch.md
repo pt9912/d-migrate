@@ -2379,9 +2379,9 @@ arbeiten `schema reverse`, `schema compare`, `schema generate`,
 `data profile` weist Oracle mit einer Meldung ab.
 
 `schema migrate` blockt für Oracle benannt, statt unvollständige DDL zu
-erzeugen, wenn eine Änderung Routinen, Trigger, Materialized Views oder
-Geometrie-Spalten betrifft. Ebenso beim Versuch, eine bestehende Spalte
-nachträglich zur Identity-Spalte zu machen — Oracle lässt das nicht zu.
+erzeugen, wenn eine Änderung Materialized Views oder Geometrie-Spalten
+betrifft. Ebenso beim Versuch, eine bestehende Spalte nachträglich zur
+Identity-Spalte zu machen — Oracle lässt das nicht zu.
 
 **Kann ich partitionierte Tabellen nach Oracle migrieren?**
 Ja, für `range`, `list` und `hash`. Zwei Dinge sehen auf Oracle anders aus
@@ -2438,6 +2438,53 @@ nach dem Einfügen von Daten nichts, bis jemand ihn von Hand synchronisiert.
 Beim Zurücklesen erkennt `schema reverse` diese Indizes wieder. Ein
 Domain-Index einer anderen Art — etwa ein räumlicher — wird ausgelassen und
 mit `R357` gemeldet, statt als gewöhnlicher Index missdeutet zu werden.
+
+**Kann ich Funktionen, Prozeduren und Trigger nach Oracle migrieren?**
+Ja, sofern der Rumpf schon PL/SQL ist. `schema reverse` liest sie aus einer
+Oracle-Datenbank, `schema generate` und `schema migrate` legen sie als
+`CREATE OR REPLACE FUNCTION`/`PROCEDURE`/`TRIGGER` wieder an. Der Rumpf wird
+dabei **nicht übersetzt**: stammt er aus PostgreSQL, MySQL oder SQL Server,
+meldet d-migrate ihn mit `E053` und Sie schreiben ihn selbst um.
+
+Drei Oracle-Eigenheiten sind dabei zu kennen:
+
+- **Parameter tragen keine Länge.** Aus `varchar(50)` wird in der Signatur
+  `VARCHAR2` ohne Angabe, aus `decimal(10,2)` schlicht `NUMBER` — PL/SQL
+  lässt einen beschränkten Parameter- oder Rückgabetyp nicht zu.
+- **Routinen lassen sich nicht umbenennen.** Ein Umbenennen einer Funktion
+  oder Prozedur bricht `schema migrate` benannt ab; Oracle hat dafür keine
+  Anweisung. Nur ein Trigger lässt sich umbenennen.
+- **Namen gelten schemaweit.** Zwei gleichnamige Trigger auf verschiedenen
+  Tabellen oder zwei überladene Funktionen gehen auf Oracle nicht; beides
+  wird gemeldet, statt dass die zweite die erste still ersetzt.
+
+In der von `schema generate` erzeugten Datei — und ebenso in einem
+`export flyway`/`liquibase`/`django`-Artefakt — steht hinter jedem PL/SQL-Block
+ein `/` in eigener Zeile; daran erkennt SQL\*Plus sein Ende. Bei der Ausführung
+über `schema migrate --execute` schickt d-migrate den Block **ohne** dieses
+Zeichen: mitgesendet meldete Oracle Erfolg und ließe die Routine trotzdem
+unbenutzbar zurück.
+
+Die Dateien aus `schema migrate --output` und `--rollback-output` sind davon
+ausgenommen: sie zeigen den Plan, statt ihn auszuführen, und tragen deshalb
+keinen Trenner. Wer sie von Hand anwenden will, fügt ihn hinter jedem
+PL/SQL-Block selbst ein.
+
+**Was liest `schema reverse` von den Oracle-Routinen nicht?**
+Alles, was das neutrale Modell nicht ausdrücken kann — jeweils gemeldet,
+nie stillschweigend:
+
+| Meldung | Was |
+| --- | --- |
+| `R358` | Der Rumpf ließ sich nicht von der Signatur trennen |
+| `R359` | `PIPELINED`, `AGGREGATE`, ein SQL-Makro oder eine polymorphe Tabellenfunktion — sie werden anders aufgerufen als eine gewöhnliche Routine |
+| `R360` | Ein Parameter hat einen `DEFAULT`-Wert |
+| `R361` | Ein Trigger, den es so nur in Oracle gibt: Compound-, System- und `CALL`-Trigger, abgeschaltete Trigger, Crossedition-Trigger, eigene `REFERENCING`-Namen |
+| `R362` | Ein `UPDATE OF spalte`-Trigger — er wird gelesen, feuert nach dem Wiederanlegen aber bei **jeder** Änderung |
+| `R363` | `PARALLEL_ENABLE` oder `RESULT_CACHE`; die Routine wird gelesen, läuft neu erzeugt aber ohne diese Angabe |
+
+PL/SQL-**Packages** bleiben ganz außen vor (`R342`): das neutrale Modell führt
+Routinen einzeln und kennt keine Gruppierung.
 
 **Kann ich einen Index über einem Ausdruck beschreiben?**
 Ja. Ein Indexschlüssel ist entweder eine Spalte oder ein Ausdruck:

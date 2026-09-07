@@ -778,7 +778,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **6b** ✅ | Indizes über echten Ausdrücken: `IndexColumn.expression` im neutralen Modell samt Wire-Format; Generate in allen fünf Dialekten (vier nativ, SQL Server `E057`); Reverse in Oracle **und** PostgreSQL | volle Index-Treue |
 | **7** ✅ | Partitionierung Range/List/Hash: Generate, Reverse und Diff über einen geteilten Builder; Grenzwert-Umsetzung (`TO_DATE`) und -Rückfaltung; Fingerabdruck-Projektion für die Felder, die Oracle nicht führt. Composite und INTERVAL werden gemeldet (`R355`/`R356`), nicht dargestellt | Partitionstabellen im Round-Trip |
 | **8** ✅ | Volltext: Oracle Text (`CTXSYS.CONTEXT`) für Generate, Reverse und Diff; `SYNC (ON COMMIT)` verpflichtend; mehrspaltig abgelehnt (`E057`); fremde Domain-Indizes gemeldet (`R357`) | Volltext-Indizes Generate + Reverse |
-| **9** | Routinen/Trigger: lesen, erzeugen und migrieren — **als ein Stück**, siehe Detailabschnitt | Routinen-Migration |
+| **9** ✅ | Routinen/Trigger: lesen, erzeugen und migrieren als ein Stück. `ALL_SOURCE` für alle drei Objektarten, Signatur aus `ALL_ARGUMENTS`; Generate und Diff über ein geteiltes Urteil (`OracleRoutineShape`); Trenner je Anweisung statt je Dialekt (`DdlStatement.scriptTerminator`). Was das Modell nicht trägt, wird gemeldet (`R358`–`R363`) | Routinen-Migration |
 | **10** | Materialized Views: Anschluss ans bestehende 0.9.7-D.3b-Modell (Refresh-Modi FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Materialized Views im Round-Trip |
 | **11** | Profiling-Modul `driver-oracle-profiling` | Live belegt; `DialectCommandGate` verliert seinen letzten Oracle-Eintrag |
 | **12** | Oracle Spatial: `SDO_GEOMETRY` als echter `NeutralType.Geometry` in Reverse, Generate und Diff, samt `USER_SDO_GEOM_METADATA` und Spatial-Index — siehe Detailabschnitt | Geometriespalten im Round-Trip statt als Text |
@@ -1188,7 +1188,7 @@ werden jetzt vorher gerendert und geprüft.
   selbst prüft ein Unit-Test auf denselben exakten Text; ein zusätzlicher
   einspaltiger Index in der Fixture änderte die Goldens aller fünf Dialekte.
 
-## Slice 9 im Detail — Routinen und Trigger (gemessen, nicht gebaut)
+## Slice 9 im Detail — Routinen und Trigger
 
 ### Was die Messung ergeben hat
 
@@ -1284,6 +1284,76 @@ Dazu drei Katalog-Fallen, die beim nächsten Anlauf zu berücksichtigen sind:
 PL/SQL im Original. Eine Übersetzung nach PL/pgSQL oder T-SQL wäre ein
 Transpiler, den es hier nicht gibt; ein Ziel, das den Dialekt nicht versteht,
 lehnt beim Erzeugen ab, statt eine Übersetzung zu erfinden.
+
+### Gebaut
+
+Reverse, Generate und Diff in einem Stück — getrennt gelieferte Teile hätten
+sich gegenseitig blockiert: ein Reverse, der Routinen liefert, während der
+Diff-Pfad sie `UNSUPPORTED` nennt, bricht `schema migrate` auf **jeder**
+Oracle-Datenbank mit einer Routine ab.
+
+| Teil | Wo |
+| --- | --- |
+| Kopf/Rumpf-Schnitt (PL/SQL-Scanner mit `q'…'`, Kommentaren, quotierten Bezeichnern) | `OracleRoutineBody` |
+| Katalogabfragen (`ALL_SOURCE`, `ALL_ARGUMENTS`, `ALL_PROCEDURES`, `ALL_TRIGGERS`, `ALL_TRIGGER_COLS`) | `OracleRoutineQueries` |
+| Zusammenbau ins neutrale Modell samt `R358`–`R363` | `OracleRoutineReader` |
+| Urteil „darstellbar?", geteilt von Generate und Diff | `OracleRoutineShape` |
+| PL/SQL-Hüllen | `OracleRoutineDdl` |
+| Diff-Operationen und ihre Sperren | `OracleDiffRoutineOps`, `OracleDiffRoutineGuards` |
+
+Zwei Entscheidungen darin gehen über Oracle hinaus:
+
+- **Der Trenner sitzt an der Anweisung, nicht am Dialekt.**
+  `DdlStatement.scriptTerminator` trägt das `/`, das SQL\*Plus hinter einem
+  PL/SQL-Block braucht; `DdlScript` hängt es an und lässt es dem
+  Batch-Trenner des Dialekts vorgehen. Im `sql`-Feld hat es nichts zu suchen:
+  über JDBC gesendet meldet `execute()` Erfolg und lässt die Routine `INVALID`
+  zurück. `DialectCapabilities` hatte genau diese Aufteilung vorgezeichnet.
+- **`ALL_PROCEDURES.SQL_MACRO`/`POLYMORPHIC` tragen die Zeichenkette `'NULL'`**,
+  kein SQL-NULL. Ein Test auf „nicht leer" hätte jede gewöhnliche Routine für
+  ein SQL-Makro gehalten und übergangen — die Funktion wäre unerreichbar
+  gewesen, ohne dass ein Test es gezeigt hätte.
+
+Nebenbefund, eigenes Ticket:
+[`oracle-drop-if-exists-verfuegbar.md`](../open/oracle-drop-if-exists-verfuegbar.md).
+
+### Was der Review gefunden hat
+
+Sieben Befunde, alle behoben — vier davon hätten ungültiges DDL oder eine
+nicht konvergierende Migration ergeben:
+
+| Befund | Warum es schiefging | Behoben durch |
+| --- | --- | --- |
+| `removeSurrounding("(", ")")` an der `WHEN`-Bedingung | Der Katalog liefert `(a) AND (b)`; das fängt mit `(` an und hört mit `)` auf, ohne von einem Paar umschlossen zu sein → `WHEN (a) AND (b)` | Klammern gar nicht mehr abziehen |
+| `ALL_ARGUMENTS.DATA_TYPE` bei benutzerdefinierten Typen | Dort steht die **Kategorie** (`OBJECT`, `VARRAY`, `REF CURSOR`), nicht der Name → `IN OBJECT`, kein gültiges PL/SQL | `TYPE_NAME` mitlesen; Kategorien ohne nennbaren Namen als `R360` melden |
+| `deterministic = false` aus `DETERMINISTIC = 'NO'` | `NO` ist Oracles Voreinstellung; als `false` abgelegt plante **jeder** Lauf erneut ein `ReplaceFunction` gegen eine Schemadatei, die die Angabe nicht führt | `NO` → `null` |
+| `OracleObjectRenamePolicy` blockte alle drei Objektarten | Damit war `ALTER TRIGGER … RENAME TO` — der einzige native Rename, den Oracle hat — unerreichbar, und die Meldung behauptete, d-migrate lese keine Trigger | Trigger auf den nativen Zweig; Funktion/Prozedur blocken jetzt mit dem Oracle-Grund (ORA-03001/ORA-00922) |
+| `MigrationFingerprint.ALGORITHM` blieb auf `v10` | Derselbe Fall, den der v10-Eintrag selbst beschreibt: der Reverse liest jetzt Objekte, die er vorher gar nicht meldete → dieselbe Datenbank hasht anders, und ein altes Artefakt meldet ein blankes `TARGET_STATE_MISMATCH` | Anhebung auf `v11` |
+| `FOLLOWS`/`PRECEDES` fiel stumm weg | Steht im Kopf, `ALL_TRIGGERS` führt es nicht — der wiedererzeugte Trigger feuerte in anderer Reihenfolge | `ALL_TRIGGER_ORDERING` abfragen, `R361` |
+| Trigger auf einer Tabelle eines fremden Schemas | Das Modell trägt nur den blanken Namen; `schema generate` meldete ihn danach als `E018 references non-existent table` — ein Reverse-Ergebnis, das an der eigenen Validierung scheitert | `tableOwner != schema` → `R361` |
+
+Dazu zwei Ausgabewege, die erst durch diesen Slice PL/SQL sehen konnten und es
+zerschnitten hätten:
+
+- **Liquibase** trennt ein `<sql>`-Element an `;`. Für T-SQL setzte der
+  Exporter `endDelimiter="GO"`, für Oracle nichts — ein PL/SQL-Rumpf wäre an
+  jedem inneren Semikolon zerlegt worden. Jetzt bekommt jede Anweisung ein
+  eigenes `<sql splitStatements="false">`, sobald ein Block seinen eigenen
+  Trenner trägt.
+- **Django** verkettete alle Anweisungen zu einem `RunSQL`-Text. Die
+  Listenform existierte bereits für SQL Server und greift jetzt auch hier.
+
+Flyway war korrekt: sein Oracle-Parser kennt `/`.
+
+Der Reverse hängt nicht mehr allein an handgeschriebenen Katalogzeilen —
+`OracleRoutineIntegrationTest` legt die Objekte in einem echten Oracle an,
+liest sie zurück und prüft nach dem Anwenden `ALL_OBJECTS.status`.
+
+Zwei Befunde blieben offen und haben eigene Tickets:
+[`oracle-routine-post-apply-status.md`](../open/oracle-routine-post-apply-status.md)
+(die Statusprüfung braucht einen neuen Port und zwei Entscheidungen) und
+[`oracle-routine-signature-type-narrowing.md`](../open/oracle-routine-signature-type-narrowing.md)
+(`CLOB`→`VARCHAR2` und Verwandte, ohne Meldung).
 
 ## Slice 12 im Detail — Oracle Spatial
 

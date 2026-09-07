@@ -23,13 +23,17 @@ object DdlNormalizer {
     )
 
     fun normalize(result: DdlResult, dialect: DatabaseDialect): MigrationDdlPayload {
-        val raw = DdlScript.render(result, dialect)
-        val deterministic = GENERATED_TIMESTAMP.replace(raw) { match ->
-            match.groupValues[1]
-        }
+        val deterministic = strip(DdlScript.render(result, dialect))
         return MigrationDdlPayload(
             result = result,
             deterministicSql = deterministic,
+            // Je Anweisung dieselbe Normalisierung: ein Werkzeug, das die
+            // Grenzen braucht, soll sie nicht aus dem Text zurueckraten
+            // muessen -- ein PL/SQL-Block traegt Semikola, an denen ein
+            // Zeichen-Splitter ihn zerschneiden wuerde.
+            deterministicStatements = result.statements.map { strip(DdlScript.renderStatement(it, dialect)) },
         )
     }
+
+    private fun strip(sql: String): String = GENERATED_TIMESTAMP.replace(sql) { it.groupValues[1] }
 }

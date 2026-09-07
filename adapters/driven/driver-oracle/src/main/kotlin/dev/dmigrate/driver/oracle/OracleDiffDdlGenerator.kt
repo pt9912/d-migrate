@@ -93,6 +93,7 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.OBJECT -> renderObjectOp(op, ctx)
             OpCategory.VIEW_OR_TYPE -> renderViewOrTypeOp(op, ctx)
             OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
+            OpCategory.ROUTINE -> renderRoutineOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -140,10 +141,6 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.SEQUENCE
 
-        is DiffOperation.AlterTablePartitions,
-        is DiffOperation.CreateMaterializedView,
-        is DiffOperation.ReplaceMaterializedView,
-        is DiffOperation.DropMaterializedView,
         is DiffOperation.CreateFunction,
         is DiffOperation.ReplaceFunction,
         is DiffOperation.DropFunction,
@@ -156,7 +153,31 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.ReplaceTrigger,
         is DiffOperation.DropTrigger,
         is DiffOperation.RenameTrigger,
+        -> OpCategory.ROUTINE
+
+        is DiffOperation.AlterTablePartitions,
+        is DiffOperation.CreateMaterializedView,
+        is DiffOperation.ReplaceMaterializedView,
+        is DiffOperation.DropMaterializedView,
         -> OpCategory.UNSUPPORTED
+    }
+
+    private fun renderRoutineOp(op: DiffOperation, ctx: OracleDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateFunction -> OracleDiffRoutineOps.renderCreateFunction(op, ctx)
+            is DiffOperation.ReplaceFunction -> OracleDiffRoutineOps.renderReplaceFunction(op, ctx)
+            is DiffOperation.DropFunction -> OracleDiffRoutineOps.renderDropFunction(op, ctx)
+            is DiffOperation.RenameFunction -> OracleDiffRoutineOps.renderRenameFunction(op, ctx)
+            is DiffOperation.CreateProcedure -> OracleDiffRoutineOps.renderCreateProcedure(op, ctx)
+            is DiffOperation.ReplaceProcedure -> OracleDiffRoutineOps.renderReplaceProcedure(op, ctx)
+            is DiffOperation.DropProcedure -> OracleDiffRoutineOps.renderDropProcedure(op, ctx)
+            is DiffOperation.RenameProcedure -> OracleDiffRoutineOps.renderRenameProcedure(op, ctx)
+            is DiffOperation.CreateTrigger -> OracleDiffRoutineOps.renderCreateTrigger(op, ctx)
+            is DiffOperation.ReplaceTrigger -> OracleDiffRoutineOps.renderReplaceTrigger(op, ctx)
+            is DiffOperation.DropTrigger -> OracleDiffRoutineOps.renderDropTrigger(op, ctx)
+            is DiffOperation.RenameTrigger -> OracleDiffRoutineOps.renderRenameTrigger(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised ROUTINE but renderRoutineOp does not handle it")
+        }
     }
 
     private fun renderTableOp(op: DiffOperation, ctx: OracleDiffRenderContext) {
@@ -216,5 +237,5 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OBJECT, VIEW_OR_TYPE, SEQUENCE, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OBJECT, VIEW_OR_TYPE, SEQUENCE, ROUTINE, UNSUPPORTED }
 }

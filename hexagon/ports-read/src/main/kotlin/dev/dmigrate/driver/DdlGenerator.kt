@@ -63,6 +63,20 @@ data class DdlStatement(
     val sql: String,
     val notes: List<TransformationNote> = emptyList(),
     val phase: DdlPhase = DdlPhase.PRE_DATA,
+    /**
+     * Ein Trenner, den **dieses** Statement in der Skriptdarstellung braucht —
+     * unabhaengig davon, ob der Dialekt einen Batch-Trenner fuehrt.
+     *
+     * Gebraucht von Anweisungen, deren Text selbst Semikola enthaelt und die
+     * ein Datei-Konsument daran sonst nicht mehr auseinanderhalten kann: ein
+     * PL/SQL-Block endet auf `END;`, und SQL*Plus erkennt sein Ende erst an
+     * einem `/` in eigener Zeile.
+     *
+     * Nur die Skriptdarstellung ([DdlScript]) haengt ihn an. In [sql] hat er
+     * nichts zu suchen: ueber JDBC gesendet meldet `execute()` zwar Erfolg,
+     * laesst die Routine aber `INVALID` zurueck.
+     */
+    val scriptTerminator: String? = null,
 ) {
     fun render(): String = buildString {
         for (note in notes) {

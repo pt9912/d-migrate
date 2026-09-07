@@ -58,13 +58,16 @@ class OracleSchemaGenerateE2ETest : FunSpec({
         ddl shouldContain "CONSTRAINT \"fk_orders_customer_id\" FOREIGN KEY (\"customer_id\") REFERENCES \"customers\" (\"id\")"
         ddl shouldContain "CREATE INDEX \"idx_orders_customer\" ON \"orders\" (\"customer_id\");"
         ddl shouldContain "CREATE OR REPLACE FORCE VIEW \"active_customers\" AS\nSELECT id, email FROM customers;"
-        // KEIN `/`-Trenner hinter den `;`-terminierten Anweisungen: in SQL*Plus
-        // fuehrt `/` den Puffer ein ZWEITES Mal aus, anders als T-SQLs `GO`, das
-        // nur einen Batch beendet. Frueher stand hier die umgekehrte Zusicherung
-        // -- der Fehler fiel erst auf, als der Sample-DB-Harness das Skript
-        // wirklich per sqlplus anwandte (jedes CREATE meldete beim zweiten
-        // Durchlauf ORA-00955).
-        ddl.lines().none { it.trim() == "/" } shouldBe true
+        // Der `/`-Trenner steht genau hinter dem PL/SQL-Block und nirgends
+        // sonst. Hinter einer `;`-terminierten Anweisung fuehrte er den Puffer
+        // ein ZWEITES Mal aus -- anders als T-SQLs `GO`, das nur einen Batch
+        // beendet; jedes CREATE meldete dann beim zweiten Durchlauf ORA-00955.
+        ddl shouldContain "CREATE OR REPLACE FUNCTION \"order_count\"(\"p_customer_id\" IN NUMBER)"
+        // Ohne Laenge: `IN NUMBER(9)` erzeugte die Routine INVALID.
+        ddl shouldNotContain "IN NUMBER(9)"
+        val lines = ddl.lines()
+        lines.count { it.trim() == "/" } shouldBe 1
+        lines[lines.indexOfFirst { it.trim() == "/" } - 1].trim() shouldBe "END;"
         ddl shouldNotContain "does not support dialect oracle"
         Files.exists(tmp.resolve("schema.report.yaml")) shouldBe true
     }
@@ -154,4 +157,19 @@ private val SCHEMA = """
         query: "SELECT id, email FROM customers"
         dependencies:
           tables: [customers]
+
+    functions:
+      "order_count(in:integer)":
+        parameters:
+          - name: p_customer_id
+            type: integer
+        returns:
+          type: integer
+        source_dialect: oracle
+        body: |-
+          v_n NUMBER;
+          BEGIN
+            SELECT COUNT(*) INTO v_n FROM orders WHERE customer_id = p_customer_id;
+            RETURN v_n;
+          END;
 """.trimIndent()

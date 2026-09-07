@@ -32,14 +32,28 @@ class OracleSchemaReaderTest : FunSpec({
         return OracleSchemaReader(jdbcFactory = { jdbc }) to pool
     }
 
+    /** Die fuenf Abfragen hinter [OracleRoutineReader], je leer. */
+    fun stubEmptyRoutineQueries(jdbc: JdbcOperations) {
+        every { jdbc.queryList(match { it.contains("FROM all_source") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_arguments") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_procedures") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_triggers") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_trigger_cols") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_trigger_ordering") }, any()) } returns emptyList()
+        every {
+            jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'FUNCTION'") }, any())
+        } returns emptyList()
+    }
+
     fun stubEmptyDefaults(jdbc: JdbcOperations) {
         every { jdbc.querySingle(match { it.contains("SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')") }) } returns
             mapOf("schema_name" to "APP")
         every { jdbc.queryList(match { it.contains("FROM all_tables") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_sequences") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_views") }, any()) } returns emptyList()
-        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'VIEW'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, any()) } returns emptyList()
+        stubEmptyRoutineQueries(jdbc)
     }
 
     fun stubTableQueries(jdbc: JdbcOperations) {
@@ -362,7 +376,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
             mapOf("view_name" to "V_JOIN", "text" to "SELECT 1 FROM ORDERS, ITEMS"),
         )
-        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns listOf(
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'VIEW'") }, "APP") } returns listOf(
             mapOf(
                 "name" to "V_JOIN", "referenced_owner" to "APP",
                 "referenced_name" to "ORDERS", "referenced_type" to "TABLE",
@@ -395,7 +409,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
             mapOf("view_name" to "V_HIDDEN", "text" to "SELECT 1 FROM SOMEWHERE"),
         )
-        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'VIEW'") }, "APP") } returns emptyList()
         val (reader, pool) = rig(jdbc)
         val deps = reader.read(pool).schema.views.getValue("V_HIDDEN").dependencies!!
         // Nicht als "keine Abhaengigkeiten" lesen -- das waere die
@@ -412,7 +426,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
             mapOf("view_name" to "V_SYN", "text" to "SELECT 1 FROM MY_SYN"),
         )
-        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns listOf(
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'VIEW'") }, "APP") } returns listOf(
             // Eigenes Schema, aber weder TABLE noch VIEW -- faellt aus
             // `tables`/`views` heraus, ohne dass die Sicht deshalb nichts
             // referenziert.
@@ -436,7 +450,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_views") }, "APP") } returns listOf(
             mapOf("view_name" to "V_CONST", "text" to "SELECT 1 FROM dual"),
         )
-        every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, "APP") } returns listOf(
+        every { jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'VIEW'") }, "APP") } returns listOf(
             mapOf(
                 "name" to "V_CONST", "referenced_owner" to "PUBLIC",
                 "referenced_name" to "DUAL", "referenced_type" to "SYNONYM",
@@ -450,40 +464,31 @@ class OracleSchemaReaderTest : FunSpec({
         deps.dependencyProjectionUsable() shouldBe true
     }
 
-    test("unread routines, functions, triggers and packages surface as skippedObjects plus R342 notes") {
+    test("packages surface as skippedObjects plus an R342 note; routines do not") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
         every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, "APP") } returns listOf(
-            mapOf("object_type" to "PROCEDURE", "object_name" to "P_DO"),
-            mapOf("object_type" to "FUNCTION", "object_name" to "F_CALC"),
-            mapOf("object_type" to "TRIGGER", "object_name" to "TRG_AUDIT"),
-            mapOf("object_type" to "PACKAGE", "object_name" to "PKG_UTIL"),
+            mapOf("object_name" to "PKG_UTIL"),
         )
         val (reader, pool) = rig(jdbc)
         val result = reader.read(pool)
-        result.skippedObjects.map { it.type to it.name } shouldBe listOf(
-            "procedure" to "P_DO", "function" to "F_CALC", "trigger" to "TRG_AUDIT", "procedure" to "PKG_UTIL",
-        )
+        result.skippedObjects.map { it.type to it.name } shouldBe listOf("procedure" to "PKG_UTIL")
         result.skippedObjects.forEach { it.code shouldBe "R342" }
-        result.notes shouldHaveSize 3
+        result.notes shouldHaveSize 1
         result.notes.forEach {
             it.code shouldBe "R342"
             it.severity shouldBe SchemaReadSeverity.WARNING
         }
     }
 
-    test("unread-object notes honour the read options") {
+    test("the package note honours includeProcedures") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
         every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, "APP") } returns listOf(
-            mapOf("object_type" to "PROCEDURE", "object_name" to "P_DO"),
-            mapOf("object_type" to "TRIGGER", "object_name" to "TRG_AUDIT"),
+            mapOf("object_name" to "PKG_UTIL"),
         )
         val (reader, pool) = rig(jdbc)
-        val result = reader.read(
-            pool,
-            SchemaReadOptions(includeProcedures = false, includeTriggers = false),
-        )
+        val result = reader.read(pool, SchemaReadOptions(includeProcedures = false))
         result.skippedObjects.shouldBeEmpty()
         result.notes.shouldBeEmpty()
     }

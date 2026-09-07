@@ -93,8 +93,6 @@ internal object OracleMetadataQueries {
         val unmappedInSchema: Int,
     )
 
-    data class UnreadObject(val type: String, val name: String)
-
     /** Identity-Spalte fuer den Datenpfad: Name, Erzeugungsmodus, Sequenzname, Increment. */
     data class IdentityColumnRow(
         val column: String,
@@ -451,17 +449,53 @@ internal object OracleMetadataQueries {
      * `WHERE`-Klausel: sonst liesse sich „keine Zeile im Schema" nicht von
      * „gar keine Zeile" (fehlende Rechte) unterscheiden.
      */
-    fun listViewDependencies(session: JdbcOperations, schema: String): Map<String, ViewDependencyRow> {
+    fun listViewDependencies(session: JdbcOperations, schema: String): Map<String, ViewDependencyRow> =
+        dependenciesOf(session, schema, listOf("VIEW"))
+
+    /**
+     * Abhaengigkeiten von Routinen und Triggern, je Objekt gebuendelt.
+     *
+     * Dieselbe Sicht und dieselbe Bündelung wie bei [listViewDependencies] —
+     * ein Rumpf zieht Kanten auf Tabellen und Sichten so gut wie eine
+     * `SELECT`-Definition. Der Schluessel traegt die Objektart mit, weil
+     * Trigger in Oracle einen eigenen Namensraum haben: eine Funktion und ein
+     * Trigger duerfen denselben Namen fuehren.
+     */
+    fun listRoutineDependencies(
+        session: JdbcOperations,
+        schema: String,
+    ): Map<Pair<String, String>, ViewDependencyRow> =
+        dependenciesOf(session, schema, ROUTINE_DEPENDENCY_TYPES, keyOf = { it.string("type") to it.string("name") })
+
+    private fun dependenciesOf(
+        session: JdbcOperations,
+        schema: String,
+        types: List<String>,
+    ): Map<String, ViewDependencyRow> = dependenciesOf(session, schema, types, keyOf = { it.string("name") })
+
+    /**
+     * Die Objektarten stehen im SQL-Text, nicht an Bind-Platzhaltern: sie sind
+     * Konstanten dieser Datei, und eine variable Zahl von Platzhaltern machte
+     * aus einer Abfrage mit einem Parameter je nach Aufrufer eine mit zwei
+     * oder vier.
+     */
+    private fun <K> dependenciesOf(
+        session: JdbcOperations,
+        schema: String,
+        types: List<String>,
+        keyOf: (Map<String, Any?>) -> K,
+    ): Map<K, ViewDependencyRow> {
+        val typeList = types.joinToString(", ") { "'$it'" }
         val rows = session.queryList(
             """
-            SELECT name, referenced_owner, referenced_name, referenced_type
+            SELECT name, type, referenced_owner, referenced_name, referenced_type
             FROM all_dependencies
-            WHERE owner = ? AND type = 'VIEW'
+            WHERE owner = ? AND type IN ($typeList)
             ORDER BY name, referenced_name
             """.trimIndent(),
             schema,
         )
-        return rows.groupBy { it.string("name") }.mapValues { (_, viewRows) ->
+        return rows.groupBy(keyOf).mapValues { (_, viewRows) ->
             val inSchema = viewRows.filter { it.stringOrNull("referenced_owner") == schema }
             val tables = inSchema.filter { it.stringOrNull("referenced_type") == "TABLE" }
                 .map { it.string("referenced_name") }
@@ -478,17 +512,23 @@ internal object OracleMetadataQueries {
         }
     }
 
-    /** Routinen/Trigger im Schema, die der Slice-1-Reader nicht liest. */
-    fun listUnreadObjects(session: JdbcOperations, schema: String): List<UnreadObject> =
+    /**
+     * PL/SQL-Packages im Schema.
+     *
+     * Sie bleiben ungelesen, weil das neutrale Modell Routinen einzeln fuehrt
+     * und keine Gruppierung dafuer hat; freistehende Funktionen, Prozeduren
+     * und Trigger liest dagegen [OracleRoutineReader].
+     */
+    fun listUnreadPackages(session: JdbcOperations, schema: String): List<String> =
         session.queryList(
             """
-            SELECT object_type, object_name
+            SELECT object_name
             FROM all_objects
-            WHERE owner = ? AND object_type IN ('PROCEDURE', 'FUNCTION', 'TRIGGER', 'PACKAGE')
-            ORDER BY object_type, object_name
+            WHERE owner = ? AND object_type = 'PACKAGE'
+            ORDER BY object_name
             """.trimIndent(),
             schema,
-        ).map { row -> UnreadObject(type = row.string("object_type"), name = row.string("object_name")) }
+        ).map { row -> row.string("object_name") }
 
     /** Identity-Spalten der Tabelle (Datenpfad: ALWAYS/BY-DEFAULT-Toggle, Reseed). */
     fun identityColumns(session: JdbcOperations, schema: String, table: String): List<IdentityColumnRow> =
@@ -545,6 +585,9 @@ internal object OracleMetadataQueries {
 
     /** Die `referenced_type`-Werte, die im neutralen Modell eine Entsprechung haben. */
     private val MAPPED_REFERENCED_TYPES = setOf("TABLE", "VIEW")
+
+    /** Die `ALL_DEPENDENCIES.TYPE`-Werte, die der Routinen-Reverse bündelt. */
+    private val ROUTINE_DEPENDENCY_TYPES = listOf("FUNCTION", "PROCEDURE", "TRIGGER")
 
 
     private fun Map<String, Any?>.long(key: String): Long? = (this[key] as? Number)?.toLong()

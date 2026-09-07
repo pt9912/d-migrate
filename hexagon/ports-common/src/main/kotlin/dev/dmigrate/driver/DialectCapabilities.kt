@@ -270,12 +270,11 @@ data class DialectCapabilities(
             // Konvention -- aber es bedeutet etwas anderes als T-SQLs `GO`:
             // `GO` beendet einen Batch, `/` fuehrt den Puffer ERNEUT aus.
             // Hinter einer mit `;` abgeschlossenen Anweisung laeuft sie damit
-            // zweimal (live im Sample-DB-Harness: jedes `CREATE SEQUENCE`
-            // meldete beim zweiten Durchlauf `ORA-00955`; bei einem
-            // Datenskript waere es ein doppelter INSERT gewesen).
-            // `/` gehoert erst zu PL/SQL-Bloecken (Slice 9) -- und dort
-            // ANSTELLE des `;`, nicht dahinter. Das braucht dann eine
-            // Trenner-Entscheidung je Anweisung, keine je Dialekt.
+            // zweimal; jedes `CREATE SEQUENCE` meldete beim zweiten Durchlauf
+            // `ORA-00955`, bei einem Datenskript waere es ein doppelter INSERT
+            // gewesen. `/` gehoert nur zu PL/SQL-Bloecken und dort ANSTELLE
+            // des `;` -- also an die einzelne Anweisung
+            // (`DdlStatement.scriptTerminator`), nicht an den Dialekt.
             // partitionChildrenAreTables=false: Oracle-Partitionen brauchen wie
             // bei MySQL die `PARTITION (name)`-Klausel, sind keine eigenstaendig
             // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-

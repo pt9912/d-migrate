@@ -1394,6 +1394,32 @@ ersten.
 
 ---
 
+### 10.6 Oracle
+
+```sql
+CREATE OR REPLACE TRIGGER "trg_orders_updated_at"
+BEFORE INSERT OR UPDATE ON "orders"
+FOR EACH ROW
+WHEN (NEW.amt > 10)
+BEGIN
+    :NEW.updated_at := SYSTIMESTAMP;
+END;
+```
+
+Die Bedingung steht ohne `:`-Präfix und wird beim Rendern geklammert; der
+Katalog liefert sie unverklammert zurück.
+
+`FOR EACH ROW` entfällt bei einem Anweisungs-Trigger und bei `INSTEAD OF` —
+Oracle feuert Letzteren stets zeilenweise. Was Oracle nicht annimmt, wird
+gemeldet statt gerendert:
+
+| Fall | Grund |
+|---|---|
+| `WHEN` an einem Anweisungs-Trigger | ORA-04077 |
+| `WHEN` an einem `INSTEAD OF`-Trigger | ORA-25004 |
+| `BEFORE`/`AFTER` auf einer Sicht, `INSTEAD OF` auf einer Tabelle | ORA-25001 |
+| zwei gleichnamige Trigger auf verschiedenen Tabellen | Triggernamen gelten schemaweit (ORA-04095) |
+
 ## 11. Function- und Procedure-DDL
 
 Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL/pgSQL, MySQL-Procedural SQL, etc.), die nicht rein regelbasiert transformiert werden kann.
@@ -1449,6 +1475,61 @@ Routine fehlt, wie schon bei den Sichten. Ein Umbenennen läuft über `sp_rename
 und lässt den **Rumpf** unberührt — in `sys.sql_modules` steht danach weiterhin
 der alte Name. Für SQL Server ist das folgenlos, für einen Reverse-Read nicht;
 der Lauf weist es deshalb als `MSSQL_RENAME_KEEPS_ROUTINE_BODY` aus.
+
+**Oracle**: Ein PL/SQL-Rumpf rendert als `CREATE OR REPLACE FUNCTION` bzw.
+`CREATE OR REPLACE PROCEDURE`, mit `IS` vor dem Rumpf.
+
+Parameter- und Rückgabetypen tragen **weder Länge noch Präzision**: PL/SQL
+lässt einen beschränkten Signaturtyp nicht zu, ein `IN VARCHAR2(10)` oder
+`RETURN NUMBER(10)` erzeugt die Routine als `INVALID`. `text` rendert deshalb
+als `VARCHAR2`, `decimal` als `NUMBER`, und `returns.precision`/`scale` fallen
+weg. Eine **leere** Parameterliste rendert ohne Klammern — `PROCEDURE p()` und
+`FUNCTION f()` sind ebenfalls Übersetzungsfehler.
+
+`AUTHID CURRENT_USER` rendert nur bei `security: invoker`; `DEFINER` ist
+Oracles Voreinstellung und bleibt implizit. `DETERMINISTIC` rendert aus dem
+gleichnamigen Feld. Ein neutraler Typname ohne Signaturform (`time`, `array`,
+`geometry`, `fulltext`) wird gemeldet statt geraten; ein unbekannter
+**nicht**-neutraler Name wird durchgereicht.
+
+`action_required` E053 bleiben: ein Rumpf aus einem fremden `source_dialect`,
+eine Funktion ohne Rückgabetyp, eine Routine ohne Rumpf, ein nicht abbildbarer
+neutraler Typ — und **überladene Routinen**: freistehende Oracle-Routinen
+lassen sich nicht überladen (nur Package-Routinen). Aggregate bleiben E054;
+Oracle verlangt dafür einen ODCI-Implementierungstyp.
+
+Der emittierte Block trägt **kein** abschließendes `;` und **kein** `/`. Beides
+lässt `execute()` über JDBC gelingen und die Routine `INVALID` zurück. Das `/`
+für SQL\*Plus gehört ausschließlich in die Skriptdarstellung und steht dort als
+Trenner je Anweisung (`DdlStatement.scriptTerminator`), nicht als Trenner je
+Dialekt.
+
+Beim **Zurücklesen** kommt die Signatur aus `ALL_ARGUMENTS` (`data_level = 0`,
+`package_name IS NULL`; Position 0 ist der Rückgabewert) und der Rumpf aus
+`ALL_SOURCE`, geschnitten am ersten `IS`/`AS` auf oberster Ebene. Trigger
+stehen ebenfalls in `ALL_SOURCE`; ihr Schnitt liegt vor dem ersten `DECLARE`
+oder `BEGIN`, ihre strukturierten Angaben kommen aus `ALL_TRIGGERS`. Was das
+neutrale Modell nicht trägt, meldet der Reverse:
+
+| Code | Fall |
+|---|---|
+| `R358` | Quelltext ohne oberstes `IS`/`AS` bzw. ohne `DECLARE`/`BEGIN` — Rumpf und Signatur sind nicht trennbar |
+| `R359` | `PIPELINED`, `AGGREGATE`, SQL-Makro oder polymorphe Tabellenfunktion — sie ändern die Aufrufform |
+| `R360` | Parameter mit `DEFAULT` |
+| `R361` | Trigger ohne neutrale Entsprechung: Compound, System-Ereignis, `CALL`-Aktion, `DISABLED`, Crossedition, eigene `REFERENCING`-Namen |
+| `R362` | `UPDATE OF spalte` — der Trigger wird gelesen, feuert wiedererzeugt aber bei jeder Änderung |
+| `R363` | `PARALLEL_ENABLE`/`RESULT_CACHE` — die Routine wird gelesen, läuft neu erzeugt aber ohne die Angabe |
+
+Die `UPDATE OF`-Spaltenliste steht in `ALL_TRIGGER_COLS` (`COLUMN_LIST = 'YES'`),
+**nicht** in `ALL_TRIGGERS.COLUMN_NAME`. PL/SQL-Packages bleiben ungelesen
+(`R342`): das neutrale Modell führt Routinen einzeln.
+
+Im **Migrations-Pfad** gelten dieselben Urteile. `CREATE OR REPLACE` macht das
+Ersetzen zu einem einzigen Statement. Ein **Umbenennen** freistehender Routinen
+gibt es in Oracle nicht (`RENAME` → ORA-03001, `ALTER FUNCTION … RENAME TO` →
+ORA-00922); nur `ALTER TRIGGER … RENAME TO` ist nativ. Nach dem Anwenden ist
+`ALL_OBJECTS.status` zu prüfen: ein Kompilierfehler lässt das DDL gelingen und
+das Objekt `INVALID`.
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
 

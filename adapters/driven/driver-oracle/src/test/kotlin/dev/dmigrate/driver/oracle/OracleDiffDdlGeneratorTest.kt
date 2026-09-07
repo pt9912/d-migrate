@@ -315,10 +315,10 @@ class OracleDiffDdlGeneratorTest : FunSpec({
     // Der Cross-Dialekt-Matrix-Sweep traegt fuer Oracle einen Carve-out
     // auf der E.2-Zelle und verweist als Deckung hierher -- die Zusage
     // muss belegt sein, nicht nur behauptet.
-    test("a family still ahead (triggers, Slice 9) blocks DIALECT_UNSUPPORTED_OPERATION") {
+    test("a trigger renders as PL/SQL, without a trailing semicolon after END;") {
         val op = DiffOperation.CreateTrigger(
             id = "create-trigger",
-            objectRef = DiffObjectRef(DiffObjectType.TRIGGER, listOf("trg_audit")),
+            objectRef = DiffObjectRef(DiffObjectType.TRIGGER, listOf("orders::trg_audit")),
             trigger = dev.dmigrate.core.model.TriggerDefinition(
                 table = "orders",
                 timing = dev.dmigrate.core.model.TriggerTiming.BEFORE,
@@ -333,9 +333,13 @@ class OracleDiffDdlGeneratorTest : FunSpec({
             operations = listOf(op),
         )
         val r = gen.generateUp(plan, DdlGenerationOptions())
-        r.isBlocked shouldBe true
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
-        r.statements.shouldBeEmpty()
+        r.isBlocked shouldBe false
+        val sql = r.statements.single().sql
+        sql shouldContain "CREATE OR REPLACE TRIGGER \"trg_audit\""
+        sql shouldContain "BEFORE INSERT ON \"orders\""
+        // Ein weiteres `;` hinter END; laesst execute() gelingen und die
+        // Routine INVALID zurueck -- live gegen JDBC gemessen.
+        sql.endsWith("END;") shouldBe true
     }
 
     test("a family still ahead (materialized views, Slice 10) blocks DIALECT_UNSUPPORTED_OPERATION") {

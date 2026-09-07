@@ -25,13 +25,15 @@ import java.sql.Connection
 
 /**
  * Oracle [SchemaReader]: Tabellen (Spalten, PK, FKs, Unique-/Nicht-Unique-
- * Indizes, CHECK-Constraints), native Sequenzen und Views des aktuellen
- * Schemas (= aktueller User), gelesen aus `all_*`-Katalogsichten.
+ * Indizes, CHECK-Constraints), native Sequenzen, Views sowie Funktionen,
+ * Prozeduren und Trigger des aktuellen Schemas (= aktueller User), gelesen aus
+ * `all_*`-Katalogsichten.
  *
- * Routinen, Trigger und Packages werden noch nicht gelesen; vorhandene
- * Objekte erscheinen als [SkippedObject]s plus einer `R342`-Notiz, damit
- * die Lücke sichtbar statt still ist (Rollout:
- * docs/planning/in-progress/oracle-dialect-scoping.md).
+ * PL/SQL-Packages bleiben aussen vor: das neutrale Modell fuehrt Routinen
+ * einzeln und kennt keine Gruppierung. Vorhandene Packages erscheinen als
+ * [SkippedObject]s plus einer `R342`-Notiz, damit die Luecke sichtbar statt
+ * still ist. Was [OracleRoutineReader] von den gelesenen Objektarten
+ * uebergeht, meldet er selbst.
  */
 class OracleSchemaReader(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
@@ -47,6 +49,7 @@ class OracleSchemaReader(
             val tables = readTables(session, schema, notes)
             val views = if (options.includeViews) readViews(session, schema) else emptyMap()
             val sequences = readSequences(session, schema, notes)
+            val routines = OracleRoutineReader.read(session, schema, options, notes, skipped)
             noteUnreadObjects(session, schema, options, notes, skipped)
 
             return SchemaReadResult(
@@ -56,6 +59,9 @@ class OracleSchemaReader(
                     tables = tables,
                     views = views,
                     sequences = sequences,
+                    functions = routines.functions,
+                    procedures = routines.procedures,
+                    triggers = routines.triggers,
                 ),
                 notes = notes,
                 skippedObjects = skipped,
@@ -314,37 +320,27 @@ class OracleSchemaReader(
         notes: MutableList<SchemaReadNote>,
         skipped: MutableList<SkippedObject>,
     ) {
-        val kindOf = mapOf(
-            "PROCEDURE" to "procedure",
-            "FUNCTION" to "function",
-            "TRIGGER" to "trigger",
-            "PACKAGE" to "procedure",
-        )
-        val wanted = { kind: String ->
-            when (kind) {
-                "procedure" -> options.includeProcedures
-                "function" -> options.includeFunctions
-                else -> options.includeTriggers
-            }
-        }
-        val unread = OracleMetadataQueries.listUnreadObjects(session, schema)
-            .mapNotNull { obj -> kindOf[obj.type]?.let { kind -> kind to obj.name } }
-            .filter { (kind, _) -> wanted(kind) }
-        unread.forEach { (kind, name) ->
+        // Nur noch Packages: Funktionen, Prozeduren und Trigger liest
+        // [OracleRoutineReader], der auch selbst meldet, was er von ihnen
+        // uebergeht. Ein Package hat dagegen keine Entsprechung im neutralen
+        // Modell — es gruppiert Routinen, die dort einzeln stehen.
+        if (!options.includeProcedures) return
+        val unread = OracleMetadataQueries.listUnreadPackages(session, schema)
+        unread.forEach { name ->
             skipped += SkippedObject(
-                type = kind,
+                type = "procedure",
                 name = name,
-                reason = "Not read for oracle (Oracle rollout, ADR 0052).",
+                reason = "PL/SQL packages have no neutral representation (ADR 0052).",
                 code = "R342",
             )
         }
-        unread.groupBy({ it.first }, { it.second }).forEach { (kind, names) ->
+        if (unread.isNotEmpty()) {
             notes += SchemaReadNote(
                 severity = SchemaReadSeverity.WARNING,
                 code = "R342",
                 objectName = schema,
-                message = "${names.size} $kind object(s) exist but are not read for oracle " +
-                    "(Oracle rollout, ADR 0052): ${names.joinToString(", ")}.",
+                message = "${unread.size} PL/SQL package(s) exist but are not read: the neutral model " +
+                    "groups no routines (ADR 0052): ${unread.joinToString(", ")}.",
             )
         }
     }

@@ -146,14 +146,18 @@ object MigrationFingerprint {
      * Datum und Mitternacht-Zeitstempel), kann sein Reverse nicht
      * zurueckgeben und wird weggerechnet.
      *
+     * v11: **Routinen und Trigger auf Oracle.** Dieselbe Lage wie bei v10:
+     * der Oracle-Reverse liest Funktionen, Prozeduren und Trigger, wo er
+     * vorher gar keine meldete. `appendFunctions`/`appendProcedures`/
+     * `appendTriggers` gehoeren zur Projektion, also hasht dieselbe
+     * unveraenderte Oracle-Datenbank vor und nach dem Slice verschieden.
+     *
      * Die Anhebung ist der Punkt: ohne sie passte ein vor dem Slice
      * erzeugtes Artefakt still nicht mehr, und der Betreiber saehe ein
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
-     *
-     * Plan: `docs/planning/done/postcompare-type-canonicalization-slice.md`.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v10"
+    const val ALGORITHM: String = "schema-fingerprint-v11"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP

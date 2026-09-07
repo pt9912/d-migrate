@@ -180,4 +180,36 @@ class LiquibaseMigrationExporterTest : FunSpec({
     test("non-mssql changelog keeps the plain sql element") {
         exporter.render(bundle()).artifacts.single().content shouldContain "<sql>\n"
     }
+
+    test("a PL/SQL block gets its own unsplittable sql element, and so does every statement beside it") {
+        // Liquibase trennt ein `<sql>`-Element an `;` -- ein PL/SQL-Rumpf
+        // fuehrt Semikola und wuerde dabei zerschnitten. d-migrate kennt die
+        // Grenzen und schreibt sie aus, statt sie Liquibase raten zu lassen.
+        val table = "CREATE TABLE \"t\" (\"id\" NUMBER);"
+        val routine = "CREATE OR REPLACE FUNCTION \"f\" RETURN NUMBER IS\nBEGIN RETURN 1; END;"
+        val up = MigrationDdlPayload(
+            result = DdlResult(
+                listOf(
+                    DdlStatement(table),
+                    DdlStatement(routine, scriptTerminator = "/"),
+                ),
+            ),
+            deterministicSql = "$table\n\n$routine\n/",
+            deterministicStatements = listOf(table, "$routine\n/"),
+        )
+        val xml = exporter.render(bundle(identity(dialect = DatabaseDialect.ORACLE), up = up))
+            .artifacts.single().content
+
+        xml.split("""<sql splitStatements="false">""").size - 1 shouldBe 2
+        xml shouldContain "BEGIN RETURN 1; END;"
+        // Kein Element ohne die Angabe: sonst zerschnitte Liquibase genau das.
+        xml shouldNotContain "<sql>"
+    }
+
+    test("without a PL/SQL block the changelog keeps its single sql element") {
+        val xml = exporter.render(bundle(identity(dialect = DatabaseDialect.ORACLE)))
+            .artifacts.single().content
+        xml shouldContain "<sql>"
+        xml shouldNotContain "splitStatements"
+    }
 })

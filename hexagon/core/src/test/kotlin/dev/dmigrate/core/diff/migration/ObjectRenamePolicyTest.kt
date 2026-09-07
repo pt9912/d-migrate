@@ -199,11 +199,17 @@ class ObjectRenamePolicyTest : FunSpec({
 
     // Trigger/Routinen/MVs liest und schreibt der Oracle-Pfad nicht
     // (Slices 9/10) -- ein Rename-Vertrag dafuer waere nicht pruefbar.
-    test("Oracle: trigger, routine and materialized-view renames are Blocked") {
-        OracleObjectRenamePolicy.classify(triggerCandidate(), capsOracle)
-            .shouldBeInstanceOf<RenameSupport.Blocked>()
-        OracleObjectRenamePolicy.classify(functionCandidate(), capsOracle)
-            .shouldBeInstanceOf<RenameSupport.Blocked>()
+    // `ALTER TRIGGER … RENAME TO` gibt es; fuer eine freistehende Routine
+    // dagegen gar keine Anweisung -- `RENAME f TO g` antwortet ORA-03001,
+    // `ALTER FUNCTION f RENAME TO g` ORA-00922 (live gemessen).
+    test("Oracle: a trigger rename is Native, a routine rename is Blocked") {
+        OracleObjectRenamePolicy.classify(triggerCandidate(), capsOracle) shouldBe RenameSupport.Native
+        val blocked = OracleObjectRenamePolicy.classify(functionCandidate(), capsOracle)
+        blocked.shouldBeInstanceOf<RenameSupport.Blocked>()
+        blocked.message shouldContain "ORA-03001"
+    }
+
+    test("Oracle: a materialized-view rename stays Blocked") {
         OracleObjectRenamePolicy.classify(viewCandidate(materialized = true), capsOracle)
             .shouldBeInstanceOf<RenameSupport.Blocked>()
     }
