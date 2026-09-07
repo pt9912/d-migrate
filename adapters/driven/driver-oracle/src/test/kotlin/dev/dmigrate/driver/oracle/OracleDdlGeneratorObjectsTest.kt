@@ -286,6 +286,35 @@ class OracleDdlGeneratorObjectsTest : FunSpec({
         rollback shouldNotContain "IF EXISTS"
     }
 
+    test("rollback drops the spatial index, whose CREATE is wrapped in a PL/SQL block") {
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1),
+                "geom" to ColumnDefinition(type = NeutralType.Geometry(), ordinal = 2),
+            ),
+            indices = listOf(
+                IndexDefinition(
+                    name = "sx_geom",
+                    columns = listOf(IndexColumn("geom")),
+                    type = dev.dmigrate.core.model.IndexType.SPATIAL,
+                ),
+            ),
+        )
+        val options = dev.dmigrate.driver.DdlGenerationOptions(
+            spatialProfile = dev.dmigrate.driver.SpatialProfile.NATIVE,
+        )
+        val forward = generator.generate(schema(tables = mapOf("t" to table)), options).render()
+        forward shouldContain "INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2"
+
+        // Der Vorwaerts-Block beginnt mit BEGIN, nicht mit CREATE -- der
+        // praefixbasierte Inverter griffe hier sonst nicht.
+        val rollback = generator.generateRollback(schema(tables = mapOf("t" to table)), options).render()
+        rollback shouldContain "DROP INDEX \"sx_geom\";"
+        // `FORCE` gehoert zum Aufraeumzweig des Blocks, nicht zur Ruecknahme
+        // eines erfolgreich angelegten Index.
+        rollback shouldNotContain "FORCE"
+    }
+
     test("rollback of a deferred foreign key drops the named constraint, no IF EXISTS") {
         val parent = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer, ordinal = 1)),

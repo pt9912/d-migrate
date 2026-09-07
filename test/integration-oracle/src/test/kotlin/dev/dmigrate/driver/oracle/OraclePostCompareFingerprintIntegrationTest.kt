@@ -59,8 +59,10 @@ class OraclePostCompareFingerprintIntegrationTest : FunSpec({
     // Identity-Test unten belegt die Oracle-Seite davon.
     // `f_plain_id` unten deckt `Identifier(autoIncrement=false)` bereits ab
     // (keine IDENTITY-Klausel, kein Sequenzname).
-    // Kein Geometry-Probe: Oracle Spatial ist unscoped (canGenerateSpatial()
-    // = false blockt jede Tabelle mit Geometrie-Spalten vor der Generierung).
+    // Kein Geometry-Probe: dieses Modul faehrt das slim-Image, und dort gibt
+    // es SDO_GEOMETRY nicht. Die Geometrie-Faltung -- die verlustreichste von
+    // allen, weil Oracle weder Subtyp noch SRID an der Spalte traegt -- belegt
+    // `OracleSpatialIntegrationTest` gegen das Vollbild.
     val typeProbe = SchemaDefinition(
         name = "fingerprint_types",
         version = "1.0",

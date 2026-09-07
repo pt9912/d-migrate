@@ -2,6 +2,7 @@ package dev.dmigrate.driver.oracle
 
 import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.metadata.JdbcOperations
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -174,16 +175,52 @@ class OracleMetadataQueriesTest : FunSpec({
         scan.foreignDomainIndexes shouldBe emptyList()
     }
 
-    test("a domain index of another index type is skipped, not read as a b-tree") {
-        // Ein raeumlicher Domain-Index als BTREE zu lesen ergaebe im Ziel
-        // einen Index, der etwas anderes tut.
+    test("both Oracle Spatial index types are recognised, not treated as foreign") {
+        // Der Vorgaenger MDSYS.SPATIAL_INDEX zaehlt genauso wie
+        // SPATIAL_INDEX_V2: sie unterscheiden sich in der Speicherform, nicht
+        // in dem, was das neutrale Modell von ihnen abbildet.
+        for (itypName in listOf("SPATIAL_INDEX_V2", "SPATIAL_INDEX")) {
+            val jdbc = indexMock(
+                rows = listOf(indexRow("SX_GEO", "DOMAIN", "SHAPE", itypOwner = "MDSYS", itypName = itypName)),
+            )
+            val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
+            withClue(itypName) {
+                scan.spatialIndexes shouldBe setOf("SX_GEO")
+                scan.indices.single().columns shouldBe listOf("SHAPE")
+                scan.foreignDomainIndexes shouldBe emptyList()
+                scan.fullTextIndexes shouldBe emptySet()
+            }
+        }
+    }
+
+    test("a domain index of an unknown index type is skipped, not read as a b-tree") {
+        // Ihn als BTREE zu lesen ergaebe im Ziel einen Index, der etwas
+        // anderes tut.
         val jdbc = indexMock(
-            rows = listOf(indexRow("SX_GEO", "DOMAIN", "SHAPE", itypOwner = "MDSYS", itypName = "SPATIAL_INDEX")),
+            rows = listOf(indexRow("UX_OWN", "DOMAIN", "SHAPE", itypOwner = "APP", itypName = "MY_INDEXTYPE")),
         )
         val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
         scan.indices shouldBe emptyList()
-        scan.foreignDomainIndexes shouldBe listOf("SX_GEO")
+        scan.foreignDomainIndexes shouldBe listOf("UX_OWN")
+        scan.spatialIndexes shouldBe emptySet()
         scan.fullTextIndexes shouldBe emptySet()
+    }
+
+    test("listGeometryMetadata reads the SRID per column and scopes to owner and table") {
+        val sql = slot<String>()
+        val jdbc = mockk<JdbcOperations> {
+            every { queryList(capture(sql), "APP", "PLACES") } returns listOf(
+                mapOf("column_name" to "GEOM", "srid" to 4326),
+                mapOf("column_name" to "OUTLINE", "srid" to null),
+            )
+        }
+        val rows = OracleMetadataQueries.listGeometryMetadata(jdbc, "APP", "PLACES")
+        rows.map { it.column to it.srid } shouldBe listOf("GEOM" to 4326, "OUTLINE" to null)
+        sql.captured shouldContain "FROM all_sdo_geom_metadata"
+        // Ohne den Eigner-Filter traefe die Abfrage gleichnamige Tabellen
+        // fremder Schemata mit.
+        sql.captured shouldContain "m.owner = ?"
+        sql.captured shouldContain "m.table_name = ?"
     }
 
     test("scanIndexes carries a genuine expression through as an expression key") {

@@ -1561,7 +1561,7 @@ d-migrate mcp serve --transport http --bind 0.0.0.0 --port 8080 \
 Spatial-DDL für das Zielsystem erzeugen.
 
 **Voraussetzungen:** Ein Zielsystem mit Spatial-Unterstützung (PostGIS,
-MySQL Spatial, SpatiaLite).
+MySQL Spatial, SpatiaLite, SQL Server, Oracle Spatial).
 
 **Vorgehen:**
 
@@ -1646,8 +1646,24 @@ SELECT AddGeometryColumn('places', 'area', 4326, 'POLYGON', 'XY');
 **Hinweise:**
 
 - Das Profil muss zum Ziel passen: `postgresql` → `postgis` (Default),
-  `mysql` → `native` (Default), `sqlite` → `spatialite`; `none` lässt Geometrie
-  aus. Unzulässige Kombination (z. B. `mysql` + `postgis`) → **Exit 2**.
+  `mysql`, `mssql` und `oracle` → `native` (Default), `sqlite` → `spatialite`;
+  `none` lässt Geometrie aus. Unzulässige Kombination (z. B. `mysql` +
+  `postgis`) → **Exit 2**.
+- **Oracle** kennt nur einen Geometrietyp (`SDO_GEOMETRY`) und trägt weder
+  Untertyp noch SRID an der Spalte — beides steckt im einzelnen Wert. Ein
+  angegebener `geometry_type` oder `srid` wird deshalb mit `[W120]` gemeldet
+  und nicht spaltenseitig erzwungen. **Beim Übertragen von Geodaten nach
+  Oracle** kommt die SRID deshalb nur dann mit, wenn die Zieltabelle eine
+  Zeile in `USER_SDO_GEOM_METADATA` hat — was für eine von d-migrate
+  angelegte Tabelle nicht möglich ist, weil Oracle die Namen in dieser Zeile
+  großschreibt. Die Geometrien sind danach räumlich weiterhin brauchbar,
+  tragen aber kein Koordinatensystem. Der räumliche Index landet in der
+  **post-data**-Phase: Oracle leitet das Koordinatensystem aus den
+  vorhandenen Zeilen ab und kann den Index auf einer leeren Tabelle nicht
+  anlegen. Erzeugen Sie das DDL deshalb mit `--split pre-post` und spielen Sie
+  `pre-data` → Daten → `post-data` in dieser Reihenfolge ein
+  ([3.2](#32-sql-für-eine-zieldatenbank-erzeugen)). Scheitert der Index doch,
+  räumt er sich selbst ab — die Tabelle bleibt beschreibbar.
 - PostGIS benötigt die PostGIS-Erweiterung in der Zieldatenbank (Hinweis
   `[I001]`); die SpatiaLite-`AddGeometryColumn()`-Aufrufe setzen die geladene
   SpatiaLite-Erweiterung voraus.
@@ -2394,10 +2410,16 @@ Server liegen und nicht an d-migrate:
 unquotierten Namen faltet. Wer ein wirklich klein geschriebenes Schema meint,
 setzt es in Anführungszeichen.
 
-`schema migrate` blockt für Oracle benannt, statt unvollständige DDL zu
-erzeugen, wenn eine Änderung Geometrie-Spalten betrifft. Ebenso beim Versuch,
-eine bestehende Spalte nachträglich zur Identity-Spalte zu machen — Oracle
-lässt das nicht zu.
+`schema migrate` blockt für Oracle benannt, statt DDL zu erzeugen, die in
+jedem Fall scheitert. Das betrifft drei Fälle: den Versuch, eine bestehende
+Spalte nachträglich zur Identity-Spalte zu machen; den Typwechsel einer Spalte
+**in** eine Geometrie hinein oder aus ihr heraus (Oracle lässt das auf einem
+Objekttyp nicht zu, auch nicht auf einer leeren Tabelle); und einen
+räumlichen Index auf einer Tabelle, die dieselbe Migration gerade erst anlegt
+— Oracle leitet das Koordinatensystem eines solchen Index aus den Zeilen ab,
+und die neue Tabelle hat noch keine. Legen Sie den Index nach dem
+Datentransfer an, oder erzeugen Sie das Schema mit
+`schema generate --split pre-post` ([3.16](#316-geodaten-spatial-modellieren-und-übertragen)).
 
 **Kann ich partitionierte Tabellen nach Oracle migrieren?**
 Ja, für `range`, `list` und `hash`. Zwei Dinge sehen auf Oracle anders aus
@@ -2451,8 +2473,9 @@ Drei Dinge sollten Sie dabei wissen:
 `SYNC (ON COMMIT)` setzt d-migrate immer: ohne die Angabe fände der Index
 nach dem Einfügen von Daten nichts, bis jemand ihn von Hand synchronisiert.
 
-Beim Zurücklesen erkennt `schema reverse` diese Indizes wieder. Ein
-Domain-Index einer anderen Art — etwa ein räumlicher — wird ausgelassen und
+Beim Zurücklesen erkennt `schema reverse` diese Indizes wieder, und ebenso
+die räumlichen (`MDSYS.SPATIAL_INDEX_V2` und den Vorgänger). Ein Domain-Index
+einer **anderen** Art — ein selbst definierter Indextyp — wird ausgelassen und
 mit `R357` gemeldet, statt als gewöhnlicher Index missdeutet zu werden.
 
 **Funktionieren Materialized Views auf Oracle?**
@@ -2549,6 +2572,7 @@ nie stillschweigend:
 | `R361` | Ein Trigger, den es so nur in Oracle gibt: Compound-, System- und `CALL`-Trigger, abgeschaltete Trigger, Crossedition-Trigger, eigene `REFERENCING`-Namen |
 | `R362` | Ein `UPDATE OF spalte`-Trigger — er wird gelesen, feuert nach dem Wiederanlegen aber bei **jeder** Änderung |
 | `R363` | `PARALLEL_ENABLE` oder `RESULT_CACHE`; die Routine wird gelesen, läuft neu erzeugt aber ohne diese Angabe |
+| `R365` | `ALL_SDO_GEOM_METADATA` ist nicht lesbar (Oracle Spatial fehlt oder das Recht darauf); Geometriespalten kommen ohne Koordinatensystem zurück |
 
 PL/SQL-**Packages** bleiben ganz außen vor (`R342`): das neutrale Modell führt
 Routinen einzeln und kennt keine Gruppierung.

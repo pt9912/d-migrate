@@ -20,6 +20,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 
 /**
  * Sub-Slice 5b: Constraints und Indizes. Die Oracle-Eigenheiten, auf denen
@@ -152,6 +153,29 @@ class OracleDiffObjectOpsTest : FunSpec({
         val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "users", indicesAdded = listOf(idx))))
         up(diff).statements.single().sql shouldBe "CREATE BITMAP INDEX \"bm_email\" ON \"users\" (\"email\");"
         down(diff).statements.single().sql shouldBe "DROP INDEX \"bm_email\";"
+    }
+
+    /**
+     * Auf einer **bestehenden** Tabelle darf der raeumliche Index entstehen:
+     * sie kann Zeilen tragen, aus denen Oracle das Koordinatensystem
+     * ableitet. Nur eine Tabelle, die dieselbe Migration erst anlegt, ist
+     * garantiert leer -- die blockt `OracleDiffTableOps`.
+     */
+    test("AddIndex: a spatial index renders as a self-cleaning PL/SQL block") {
+        val geoTable = usersTable.copy(
+            columns = usersTable.columns + ("geom" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val schema = SchemaDefinition(name = "App", version = "1", tables = mapOf("users" to geoTable))
+        val idx = IndexDefinition(name = "sx_users_geom", columns = listOf(IndexColumn("geom")), type = IndexType.SPATIAL)
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "users", indicesAdded = listOf(idx))))
+
+        val sql = up(diff, current = schema, desired = schema).statements.single().sql
+        sql shouldContain "INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2"
+        // Ein gescheiterter Spatial-Index sperrt sonst jedes INSERT auf der
+        // Tabelle (ORA-29861), bis ihn jemand von Hand wegraeumt.
+        sql shouldContain "DROP INDEX \"sx_users_geom\" FORCE"
+        down(diff, current = schema, desired = schema).statements.single().sql shouldBe
+            "DROP INDEX \"sx_users_geom\";"
     }
 
     test("AddIndex: a unique bitmap index falls back to a unique B-tree (there is no UNIQUE BITMAP)") {

@@ -7,6 +7,7 @@ import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.TableImportSession
+import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.loadTargetColumns
 import dev.dmigrate.driver.data.runSuppressing
@@ -93,6 +94,37 @@ class OracleDataWriter(
         failure?.let { throw it }
     }
 
+    /**
+     * Reichert Geometrie-Zielspalten mit ihrer SRID aus
+     * `ALL_SDO_GEOM_METADATA` an, damit der Import den WKB als
+     * `SDO_UTIL.FROM_WKBGEOMETRY(?, srid)` bindet -- WKB selbst traegt keine.
+     *
+     * Eine Zeile gibt es nur, wo jemand sie angelegt hat, und das kann
+     * d-migrate fuer seine eigenen Ziele nicht: Oracle hebt Tabellen- und
+     * Spaltennamen in dieser Zeile bedingungslos hoch, d-migrate quotiert
+     * wortgetreu und erzeugt kleingeschriebene Tabellen. Ohne Zeile bleibt
+     * die SRID `null` und die Werte kommen ohne Koordinatensystem an --
+     * raeumlich weiterhin brauchbar (auch der Spatial-Index gelingt darauf,
+     * gemessen), aber ohne die Zuordnung zu einem System. Der Generate-Pfad
+     * meldet das an der Spalte (W120).
+     */
+    private fun enrichGeometrySrid(
+        jdbc: JdbcOperations,
+        table: OracleQualifiedTableName,
+        columns: List<TargetColumn>,
+    ): List<TargetColumn> {
+        if (columns.none { it.sqlTypeName?.equals(OracleTypeMapping.GEOMETRY_TYPE, ignoreCase = true) == true }) {
+            return columns
+        }
+        val sridByColumn = runCatching {
+            OracleMetadataQueries.listGeometryMetadata(jdbc, table.schema, table.table)
+        }.getOrElse { return columns }
+            .mapNotNull { row -> row.srid?.let { row.column to it } }
+            .toMap()
+        if (sridByColumn.isEmpty()) return columns
+        return columns.map { col -> sridByColumn[col.name]?.let { col.copy(srid = it) } ?: col }
+    }
+
     override fun openTable(
         pool: ConnectionPool,
         table: String,
@@ -112,7 +144,11 @@ class OracleDataWriter(
             savedAutoCommit = conn.autoCommit
             val schema = OracleIdentifiers.currentSchema(jdbc)
             val qualified = OracleQualifiedTableName.parse(table, schema)
-            val targetColumns = loadTargetColumns(conn, qualified.quotedPath(), EMPTY_ROWS_CLAUSE)
+            val targetColumns = enrichGeometrySrid(
+                jdbc,
+                qualified,
+                loadTargetColumns(conn, qualified.quotedPath(), EMPTY_ROWS_CLAUSE),
+            )
             val identities = OracleMetadataQueries.identityColumns(jdbc, qualified.schema, qualified.table)
             val generatedAlwaysColumns = identities.filter { it.generation == "ALWAYS" }
                 .mapTo(mutableSetOf()) { it.column }

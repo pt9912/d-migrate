@@ -37,10 +37,10 @@ import dev.dmigrate.driver.ViewQueryTransformer
  * (`CREATE OR REPLACE VIEW`) sowie Funktionen, Prozeduren und Trigger als
  * PL/SQL. Aggregate landen als E054, ein Rumpf aus einem fremden Dialekt als
  * E053; Partitionierung als E055/E062 (Tabelle plain), Volltext ueber Oracle
- * Text (mehrspaltig E057); Composite-Typen als E054. Spatial ist nicht
- * gescoped (`canGenerateSpatial` bleibt `false`). Render-Regeln:
- * `spec/ddl-generation-rules.md` (Abschnitte Oracle), Typtabelle:
- * `spec/type-mapping.md`.
+ * Text (mehrspaltig E057); Composite-Typen als E054. Spatial ueber
+ * `SDO_GEOMETRY` samt raeumlichem Index, der in POST_DATA steht
+ * ([OracleSpatialIndexDdl]). Render-Regeln: `spec/ddl-generation-rules.md`
+ * (Abschnitte Oracle), Typtabelle: `spec/type-mapping.md`.
  */
 class OracleDdlGenerator private constructor(
     private val oracleTypeMapper: OracleTypeMapper,
@@ -67,9 +67,13 @@ class OracleDdlGenerator private constructor(
 
     // ── Spatial ──────────────────────────────────
 
-    // Nicht gescoped (SDO_GEOMETRY); jede Tabelle mit Geometry-Spalten wird
-    // vom generischen Ports-Default (E052) geblockt.
-    override fun canGenerateSpatial(profile: SpatialProfile): Boolean = false
+    /**
+     * Oracles Geometrietyp ist Teil des Kerns, nicht einer Erweiterung: eine
+     * Geometriespalte braucht kein Gegenstueck zu PostGIS oder SpatiaLite,
+     * sondern nur `SDO_GEOMETRY`. Damit gilt hier dasselbe wie fuer SQL
+     * Server -- das native Profil, und nur dieses.
+     */
+    override fun canGenerateSpatial(profile: SpatialProfile): Boolean = profile == SpatialProfile.NATIVE
 
     // ── Custom types ─────────────────────────────
 
@@ -332,7 +336,7 @@ class OracleDdlGenerator private constructor(
      * die Skriptdarstellung an.
      */
     private fun plsqlBlock(sql: String): DdlStatement =
-        DdlStatement(sql, scriptTerminator = PLSQL_SCRIPT_TERMINATOR)
+        DdlStatement(sql, scriptTerminator = OracleRoutineDdl.PLSQL_SCRIPT_TERMINATOR)
 
     override fun generateAggregates(
         aggregates: Map<String, AggregateDefinition>,
@@ -381,6 +385,7 @@ class OracleDdlGenerator private constructor(
      */
     override fun invertStatement(stmt: DdlStatement): DdlStatement? {
         val sql = stmt.sql.trim()
+        OracleSpatialIndexDdl.invertedDrop(sql)?.let { return DdlStatement(it) }
         return when {
             sql.startsWith("CREATE TABLE", ignoreCase = true) ->
                 DdlStatement("DROP TABLE ${nameAfter(sql, "CREATE TABLE")};")
@@ -414,9 +419,4 @@ class OracleDdlGenerator private constructor(
 
     private fun nameAfter(sql: String, keyword: String): String =
         sql.substring(keyword.length).trimStart().split(Regex("[\\s(]"), limit = 2).first()
-
-    private companion object {
-        /** SQL*Plus beendet einen PL/SQL-Block an einem `/` in eigener Zeile. */
-        const val PLSQL_SCRIPT_TERMINATOR = "/"
-    }
 }

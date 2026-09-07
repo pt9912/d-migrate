@@ -33,11 +33,21 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  * Aufloesung braucht die Custom Types des Schemas (siehe
  * [NeutralTypeCanonicalizer.canonicalize] mit Kontext-Parameter), eine
  * `(NeutralType) -> NeutralType`-Projektion sieht sie nicht.
- * [NeutralType.Geometry] bleibt ebenfalls Identitaet -- in der Praxis
- * unerreichbar, weil Geometrie-Spalten auf beiden Pfaden vorher blocken
- * (Generate ueber `canGenerateSpatial() = false`, Diff ueber
- * `OracleDiffTableOps.blockSpatial`), aber definiert fuer
- * Vollstaendigkeit, analog den anderen vier Treibern.
+ * **[NeutralType.Geometry] ist bewusst KEIN Carve-out** -- wie bei SQL
+ * Server und anders als bei PostgreSQL, MySQL und SQLite. Deren Reverse baut
+ * Subtyp und SRID aus dialekteigenen Metadaten wieder auf; Oracle kann das
+ * nicht. `SDO_GEOMETRY` traegt keinen Subtyp, und die SRID stuende in
+ * `USER_SDO_GEOM_METADATA` -- einer Zeile, die Oracle grossgeschrieben
+ * ablegt und die zu d-migrates quotiert kleingeschriebenen Tabellen deshalb
+ * nicht passt. Beides ist nach einem Round-Trip also weg.
+ *
+ * Die Faltung entsteht dabei nicht als Sonderfall, sondern aus der
+ * Komposition: `SDO_GEOMETRY` durch [OracleTypeMapping.mapColumn] ergibt
+ * `Geometry(GEOMETRY, srid = null)`. Identitaet meldete stattdessen auf
+ * jeder Geometriespalte eines verlustfreien Round-Trips Drift -- und zwar
+ * eine, die der Migrate-Pfad nicht einmal beheben koennte, weil Oracle den
+ * Typwechsel einer Spalte in einen Objekttyp verweigert
+ * (`OracleDiffTableOps.blockGeometryTypeChange`).
  */
 internal object OracleNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
 
@@ -66,7 +76,6 @@ internal object OracleNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
         type: NeutralType,
         customTypes: Map<String, CustomTypeDefinition>,
     ): NeutralType = when {
-        type is NeutralType.Geometry -> type
         type is NeutralType.Enum && type.refType != null ->
             canonicalize(resolveRefType(type, customTypes), customTypes)
         else -> {

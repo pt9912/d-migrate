@@ -23,11 +23,21 @@ import dev.dmigrate.driver.data.TargetColumn
  */
 internal object OracleInsertSql {
 
+    /**
+     * [placeholder] liefert den VALUES-Ausdruck einer Zielspalte -- `?` fuer
+     * die meisten, fuer eine Geometriespalte den WKB-Konstruktor um das `?`
+     * herum (`AbstractTableImportSession.valuePlaceholder`). Der Parameter ist
+     * bewusst **ohne** Vorbelegung: ein Default `{ "?" }` liesse einen
+     * Aufrufer die Geometrie stillschweigend als rohes WKB binden, und das
+     * ist genau der Fehler, den die Naht verhindern soll. Die Bindeposition
+     * bleibt dabei ein `?` je Spalte.
+     */
     fun build(
         table: OracleQualifiedTableName,
         columns: List<TargetColumn>,
         primaryKeyColumns: List<String>,
         onConflict: OnConflict,
+        placeholder: (TargetColumn) -> String,
     ): String {
         require(columns.isNotEmpty()) {
             "Import into '${table.quotedPath()}' requires at least one column"
@@ -35,14 +45,14 @@ internal object OracleInsertSql {
         return when (onConflict) {
             OnConflict.ABORT -> {
                 val columnList = columns.joinToString(", ") { OracleIdentifiers.quote(it.name) }
-                val placeholders = columns.joinToString(", ") { "?" }
+                val placeholders = columns.joinToString(", ") { placeholder(it) }
                 "INSERT INTO ${table.quotedPath()} ($columnList) VALUES ($placeholders)"
             }
             OnConflict.SKIP, OnConflict.UPDATE -> {
                 require(primaryKeyColumns.isNotEmpty()) {
                     "onConflict=${onConflict.name.lowercase()} needs primary key columns for the MERGE predicate"
                 }
-                merge(table, columns, primaryKeyColumns, onConflict)
+                merge(table, columns, primaryKeyColumns, onConflict, placeholder)
             }
         }
     }
@@ -52,14 +62,20 @@ internal object OracleInsertSql {
         columns: List<TargetColumn>,
         primaryKeyColumns: List<String>,
         onConflict: OnConflict,
+        placeholder: (TargetColumn) -> String,
     ): String {
         val pkSet = primaryKeyColumns.toSet()
         // Positionelle Aliase (c0, c1, ...) statt Zielspaltennamen: eine Zielspalte
         // koennte ein Oracle-reserviertes Wort sein, das als Quell-Alias in der
         // DUAL-Projektion Probleme machen wuerde -- die Aliase sind rein intern.
         val aliasOf = columns.mapIndexed { index, col -> col.name to "c$index" }.toMap()
-        val srcColumns = columns.mapIndexed { index, _ -> "? AS ${OracleIdentifiers.quote("c$index")}" }
-            .joinToString(", ")
+        // Der Konstruktor sitzt schon in der DUAL-Projektion, nicht erst im
+        // INSERT-Zweig: `src` traegt die Spalte damit bereits als
+        // SDO_GEOMETRY, und der MERGE vergleicht und schreibt denselben Typ,
+        // den die Zieltabelle fuehrt.
+        val srcColumns = columns.mapIndexed { index, col ->
+            "${placeholder(col)} AS ${OracleIdentifiers.quote("c$index")}"
+        }.joinToString(", ")
         val onClause = primaryKeyColumns.joinToString(" AND ") {
             "tgt.${OracleIdentifiers.quote(it)} = src.${OracleIdentifiers.quote(aliasOf.getValue(it))}"
         }

@@ -313,6 +313,7 @@ Konsequenzen:
 | `enum` (Werte) | `VARCHAR2(<längster Wert>)` + benannter `CHECK (… IN (…))` | kein Enum-Typ; `refType` auf eine `DOMAIN` faltet auf `CLOB` + E053 (Basistyp-Auflösung noch nicht gebaut) |
 | `fulltext` | `CLOB` | W132 (geteilter Cross-Dialekt-Pool) |
 | `sequence_nextval` | `DEFAULT <seq>.NEXTVAL` | native Sequenzen |
+| `geometry` (Profil `native`) | `SDO_GEOMETRY` | ein Typ für alle Subtypen; Subtyp und SRID sind Werteigenschaften (W120), siehe [DDL-Regeln §16.10](ddl-generation-rules.md) |
 
 String-Literale in Defaults werden mit `''`-Escaping als `'…'` gerendert
 (kein `N'…'`-Präfix wie bei MSSQL — Oracle kennt ihn nicht). `ON DELETE`
@@ -337,6 +338,7 @@ Oracle-Default (keine Klausel) und werden ohne Notiz weggelassen,
 | `TO_CHAR(SYSDATE, 'HH24:MI:SS')` (Default) | `current_time` | |
 | `RAWTOHEX(SYS_GUID())` (Default) | `gen_uuid` | |
 | `<seq>.NEXTVAL` (Default) | `sequence_nextval` | |
+| `SDO_GEOMETRY` | `geometry` ohne Subtyp | SRID aus `ALL_SDO_GEOM_METADATA`, sofern eine Zeile mit exakt passendem Tabellen- und Spaltennamen existiert; sonst ohne SRID (R365, wenn die Sicht nicht lesbar ist) |
 
 **Datenpfad (`data export`/`import`/`transfer`)**: Oracle-JDBC liefert
 `CLOB`/`BLOB`-Spalten über `getObject()` als live `java.sql.Clob`/
@@ -349,17 +351,18 @@ mehr sicher bindbar. `TIMESTAMP WITH TIME ZONE` liest als Standard-
 
 ### 7.3 Bekannte Lücken
 
-- Routinen, Trigger und Packages werden nicht gelesen; vorhandene
-  Objekte erscheinen als `skippedObjects` + R342-Notiz.
-- Materialized Views werden als reguläre Views gelesen.
+- **PL/SQL-Packages** werden nicht gelesen; vorhandene Packages erscheinen
+  als `skippedObjects` + R342-Notiz. Funktionen, Prozeduren und Trigger
+  dagegen schon.
 - `ALL_SEQUENCES` führt nur `LAST_NUMBER`, nicht den ursprünglichen
   `START WITH`-Wert (R345).
-- **Volltext-Indizes** werden gelesen: Oracle führt sie als
-  `INDEX_TYPE = DOMAIN` mit `ITYP_OWNER = CTXSYS` und `ITYP_NAME = CONTEXT`,
-  und `ALL_IND_COLUMNS` nennt die echte Quellspalte. Ein Domain-Index einer
-  **anderen** Indexart (räumlich, benutzereigen) wird ausgelassen und mit
-  `R357` gemeldet — ihn als B-Tree zu lesen ergäbe im Ziel einen Index, der
-  etwas anderes tut.
+- **Volltext- und räumliche Indizes** werden gelesen: Oracle führt beide als
+  `INDEX_TYPE = DOMAIN` und unterscheidet sie am Indextyp-Eigner
+  (`CTXSYS.CONTEXT` bzw. `MDSYS.SPATIAL_INDEX_V2` und der Vorgänger
+  `MDSYS.SPATIAL_INDEX`); `ALL_IND_COLUMNS` nennt die echte Quellspalte. Ein
+  Domain-Index einer **anderen** Indexart (benutzereigen) wird ausgelassen und
+  mit `R357` gemeldet — ihn als B-Tree zu lesen ergäbe im Ziel einen Index,
+  der etwas anderes tut.
 - Indizes über einem echten Ausdruck (`UPPER(nm)`) kommen als
   Ausdrucks-Schlüssel zurück (`ALL_IND_EXPRESSIONS`), nicht als die
   unsichtbare Systemspalte. Bitmap-Indizes werden als eigener Typ gelesen

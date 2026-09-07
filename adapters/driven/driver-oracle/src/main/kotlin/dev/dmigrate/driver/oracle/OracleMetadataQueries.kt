@@ -44,7 +44,14 @@ internal object OracleMetadataQueries {
          */
         val fullTextIndexes: Set<String> = emptySet(),
         /**
-         * Domain-Indizes einer **anderen** Indexart (raeumlich, benutzereigen).
+         * Namen der Indizes, die Oracle Spatial traegt (`INDEX_TYPE = DOMAIN`
+         * mit `MDSYS.SPATIAL_INDEX_V2` oder dem Vorgaenger
+         * `MDSYS.SPATIAL_INDEX`) — aus demselben Grund hier wie
+         * [fullTextIndexes].
+         */
+        val spatialIndexes: Set<String> = emptySet(),
+        /**
+         * Domain-Indizes einer **anderen** Indexart (benutzereigen).
          * Sie als B-Tree zu lesen ergaebe im Ziel einen Index, der etwas
          * anderes tut; sie werden ausgelassen und gemeldet (R357).
          */
@@ -146,6 +153,35 @@ internal object OracleMetadataQueries {
             """.trimIndent(),
             schema,
         ).map { row -> TableRef(name = row.string("table_name"), schema = schema) }
+
+    /** Die SRID einer Geometriespalte aus `USER_SDO_GEOM_METADATA`. */
+    data class GeometryMetadataRow(val column: String, val srid: Int?)
+
+    /**
+     * Die SRID je Geometriespalte.
+     *
+     * Oracle traegt sie **nicht** am Spaltentyp — `ALL_TAB_COLUMNS` meldet nur
+     * `SDO_GEOMETRY` mit `DATA_TYPE_OWNER = 'PUBLIC'`. Ohne diese Sicht kaeme
+     * jede Geometrie ohne Koordinatensystem zurueck.
+     *
+     * Ohne installiertes Oracle Spatial existiert die Sicht nicht; der
+     * Aufrufer faengt das ab und liest die Spalte dann ohne SRID.
+     */
+    fun listGeometryMetadata(
+        session: JdbcOperations,
+        schema: String,
+        table: String,
+    ): List<GeometryMetadataRow> = session.queryList(
+        """
+        SELECT m.column_name, m.srid
+        FROM all_sdo_geom_metadata m
+        WHERE m.owner = ? AND m.table_name = ?
+        """.trimIndent(),
+        schema,
+        table,
+    ).map { row ->
+        GeometryMetadataRow(column = row.string("column_name"), srid = row.int("srid"))
+    }
 
     fun listColumns(session: JdbcOperations, schema: String, table: String): List<ColumnRow> =
         session.queryList(
@@ -259,6 +295,7 @@ internal object OracleMetadataQueries {
         val expressions = indexExpressions(session, schema, table)
         val indices = mutableListOf<IndexProjection>()
         val fullTextIndexes = mutableSetOf<String>()
+        val spatialIndexes = mutableSetOf<String>()
         val foreignDomainIndexes = mutableListOf<String>()
         rows.groupBy { it.string("index_name") }
             .filterKeys { it !in primaryKeyIndexNames }
@@ -270,6 +307,7 @@ internal object OracleMetadataQueries {
                     return@forEach
                 }
                 if (domain == DomainKind.FULL_TEXT) fullTextIndexes += name
+                if (domain == DomainKind.SPATIAL) spatialIndexes += name
                 val keys = resolveIndexColumns(name, group, expressions)
                 indices += IndexProjection(
                     name = name,
@@ -292,24 +330,37 @@ internal object OracleMetadataQueries {
         return IndexScan(
             indices = indices,
             fullTextIndexes = fullTextIndexes,
+            spatialIndexes = spatialIndexes,
             foreignDomainIndexes = foreignDomainIndexes,
         )
     }
 
-    private enum class DomainKind { NONE, FULL_TEXT, FOREIGN }
+    private enum class DomainKind { NONE, FULL_TEXT, SPATIAL, FOREIGN }
 
     /**
      * Ein Domain-Index traegt seine Art nicht in `INDEX_TYPE`, sondern in
-     * `ITYP_OWNER`/`ITYP_NAME` — gemessen `CTXSYS`/`CONTEXT` fuer Oracle
-     * Text. Alles andere dort (`MDSYS.SPATIAL_INDEX`, benutzereigene
-     * Indextypen) hat im neutralen Modell keine Entsprechung.
+     * `ITYP_OWNER`/`ITYP_NAME` — gemessen `CTXSYS`/`CONTEXT` fuer Oracle Text
+     * und `MDSYS`/`SPATIAL_INDEX_V2` fuer Oracle Spatial. Benutzereigene
+     * Indextypen haben im neutralen Modell keine Entsprechung.
+     *
+     * Beide Spatial-Indextypen zaehlen: `SPATIAL_INDEX_V2` ist der heutige,
+     * `SPATIAL_INDEX` der Vorgaenger, den aeltere Bestaende tragen. Sie
+     * unterscheiden sich in Speicherform und Duldsamkeit, nicht in dem, was
+     * das neutrale Modell von ihnen abbildet — ein raeumlicher Index ueber
+     * eine Geometriespalte.
      */
     private fun domainKind(row: Map<String, Any?>): DomainKind {
         if (row.stringOrNull("index_type") != "DOMAIN") return DomainKind.NONE
         val owner = row.stringOrNull("ityp_owner")
         val name = row.stringOrNull("ityp_name")
-        return if (owner == "CTXSYS" && name == "CONTEXT") DomainKind.FULL_TEXT else DomainKind.FOREIGN
+        return when {
+            owner == "CTXSYS" && name == "CONTEXT" -> DomainKind.FULL_TEXT
+            owner == "MDSYS" && name in SPATIAL_INDEX_TYPES -> DomainKind.SPATIAL
+            else -> DomainKind.FOREIGN
+        }
     }
+
+    private val SPATIAL_INDEX_TYPES = setOf("SPATIAL_INDEX_V2", "SPATIAL_INDEX")
 
     /**
      * `ALL_IND_EXPRESSIONS.COLUMN_EXPRESSION` je (Indexname, Spaltenposition).

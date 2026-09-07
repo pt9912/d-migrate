@@ -6,7 +6,6 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.DdlStatement
-import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
@@ -42,18 +41,11 @@ internal class OracleIndexDdlBuilder(
         if (index.type == IndexType.FULLTEXT) {
             return OracleFullTextDdl.render(tableName, index, indexName, quoteIdentifier)
         }
-        // Spatial ist nicht gescoped; eine Tabelle mit Geometry-Spalten ist
-        // bereits vorher geblockt -- im Generate-Pfad ueber
-        // canGenerateSpatial=false, im Diff-Pfad ueber blockSpatial.
+        // Ebenfalls vor dem LOB-Waechter: eine Geometriespalte ist fuer einen
+        // gewoehnlichen Index kein zulaessiger Schluessel, fuer einen
+        // raeumlichen der Normalfall.
         if (index.isSpatialGeometryIndex { columns[it]?.type }) {
-            return actionRequired(
-                ManualActionRequired(
-                    code = "E052", objectType = "index", objectName = indexName,
-                    reason = "Spatial index '$indexName' on table '$tableName' is not rendered for Oracle: " +
-                        "SDO_GEOMETRY indexing is not scoped yet.",
-                    hint = "Create the spatial index manually once the column is migrated.",
-                ),
-            )
+            return OracleSpatialIndexDdl.render(tableName, index, indexName, quoteIdentifier)
         }
         index.columns.firstOrNull { it.name in unkeyableColumns }?.let { offending ->
             return DdlStatement(
@@ -105,6 +97,4 @@ internal class OracleIndexDdlBuilder(
             append(column.renderKey(quoteIdentifier))
             column.direction?.let { append(" ${it.name}") }
         }
-
-    private fun actionRequired(action: ManualActionRequired): DdlStatement = DdlStatement("", listOf(action.toNote()))
 }

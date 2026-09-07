@@ -3,6 +3,7 @@ package dev.dmigrate.driver.oracle
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FloatPrecision
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.SchemaReadNote
@@ -24,6 +25,25 @@ import dev.dmigrate.driver.SchemaReadSeverity
  */
 internal object OracleTypeMapping {
 
+    /**
+     * Oracles einziger Geometrietyp, wie ihn der Katalog und die
+     * JDBC-Metadaten fuehren. Geteilt mit dem Datenpfad, damit Lese- und
+     * Schreibseite dieselbe Spalte fuer raeumlich halten wie der Reverse.
+     */
+    const val GEOMETRY_TYPE = "SDO_GEOMETRY"
+
+    /**
+     * Ob [typeName] Oracles Geometrietyp bezeichnet.
+     *
+     * `SDO_GEOMETRY` ist ein Objekttyp, und JDBC meldet einen solchen je nach
+     * Kontext mit seinem Eigner davor (`MDSYS.SDO_GEOMETRY`), waehrend der
+     * Katalog den blossen Namen fuehrt. Verglichen wird deshalb das letzte
+     * Namenssegment -- ein Praefix zu verlangen schluege beim Katalog fehl,
+     * es zu verbieten beim Treiber.
+     */
+    fun isGeometryTypeName(typeName: String): Boolean =
+        typeName.trim().substringAfterLast('.').equals(GEOMETRY_TYPE, ignoreCase = true)
+
     data class ColumnInput(
         val typeName: String,
         val length: Int?,
@@ -32,6 +52,14 @@ internal object OracleTypeMapping {
         val isIdentity: Boolean,
         val identityGeneration: String?,
         val identitySequenceName: String?,
+        /**
+         * Die SRID aus `USER_SDO_GEOM_METADATA`, sofern die Spalte eine
+         * Geometrie ist. Oracle traegt sie **nicht** am Typ — anders als
+         * PostGIS, wo `geometry(Point,4326)` sie mitfuehrt; die Spalte selbst
+         * ist typlos-generisch. Ohne diese Naht kaeme jede Oracle-Geometrie
+         * ohne Koordinatensystem zurueck.
+         */
+        val geometrySrid: Int? = null,
     )
 
     data class MappingResult(
@@ -42,6 +70,7 @@ internal object OracleTypeMapping {
 
     fun mapColumn(columnName: String, input: ColumnInput): MappingResult {
         if (input.isIdentity) return mapIdentity(input)
+        if (isGeometryTypeName(input.typeName)) return mapGeometry(input)
         return MappingResult(
             type = mapBaseType(input),
             generation = null,
@@ -107,7 +136,10 @@ internal object OracleTypeMapping {
      *
      * Ein unbekannter Name bleibt er selbst: das ist ein benutzerdefinierter
      * Typ, den der Reverse namentlich gelesen hat.
+     *
+     * (Die Beschreibung gehoert zu [mapParamType] weiter unten.)
      */
+
     /**
      * Der neutrale Name eines Arguments, dessen Typ **benutzerdefiniert** ist.
      *
@@ -163,6 +195,18 @@ internal object OracleTypeMapping {
         else -> null
     }
 
+    /**
+     * Eine `SDO_GEOMETRY`-Spalte traegt **keinen** Subtyp: `SDO_GTYPE` steht
+     * am einzelnen Wert, und dieselbe Spalte kann einen Punkt und ein Polygon
+     * nebeneinander fuehren (live gemessen). Der neutrale Typ ist deshalb
+     * immer `geometry` — eine engere Angabe waere erfunden.
+     */
+    private fun mapGeometry(input: ColumnInput): MappingResult = MappingResult(
+        type = NeutralType.Geometry(geometryType = GeometryType.GEOMETRY, srid = input.geometrySrid),
+        generation = null,
+        note = null,
+    )
+
     private fun mapOpaque(typeName: String): NeutralType? = when (typeName.uppercase()) {
         "RAW", "LONG RAW", "BLOB" -> NeutralType.Binary
         // Native Oracle-21c+-Typen (OracleTypeMapper.simpleToSql rendert Json/Xml
@@ -178,7 +222,7 @@ internal object OracleTypeMapping {
     private val KNOWN_TYPES = setOf(
         "NUMBER", "FLOAT", "BINARY_DOUBLE", "BINARY_FLOAT", "VARCHAR2", "NVARCHAR2",
         "CHAR", "NCHAR", "CLOB", "NCLOB", "LONG", "DATE", "RAW", "LONG RAW", "BLOB",
-        "JSON", "XMLTYPE",
+        "JSON", "XMLTYPE", GEOMETRY_TYPE,
     )
 
     private fun unknownTypeNote(columnName: String, typeName: String): SchemaReadNote? {

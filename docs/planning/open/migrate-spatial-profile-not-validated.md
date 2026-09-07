@@ -27,19 +27,25 @@ Zwei Fehlszenarien, beide **still**:
    Meldung — der Anwender glaubt, das Profil sei aktiv.
 2. **Dialektfremdes Profil.** `--dialect oracle --spatial-profile postgis`
    wird angenommen und an den Renderer gereicht, obwohl Oracles Allowlist
-   nur `NONE` enthaelt.
+   es nicht fuehrt.
 
 Nicht Oracle-spezifisch — der Pfad ist fuer alle fuenf Dialekte gleich.
-Oracle ist nur der einzige Dialekt mit einelementiger Allowlist und
-faellt deshalb am staerksten auf.
 
 ## Aktivierungsbedingung
 
-Fall 1 wirkt fuer jeden Dialekt und jederzeit. Fall 2 wurde mit dem
-Oracle-Gate-Fall (Sub-Slice 5e-2) erreichbar; die Oracle-Renderer blocken
-Geometrie-Spalten seitdem eigenstaendig
-(`ORACLE_SPATIAL_UNSUPPORTED`), sodass kein `SDO_GEOMETRY` entsteht — die
-fehlende Optionspruefung bleibt davon unberuehrt.
+Fall 1 wirkt fuer jeden Dialekt und jederzeit.
+
+Fall 2 hat mit Oracle Spatial praktische Wirkung bekommen. Der
+Migrate-Pfad liest `options.spatialProfile` fuer Oracle **nirgends** — er
+rendert `SDO_GEOMETRY` unabhaengig vom Profil. `--spatial-profile none`
+bleibt auf `schema migrate` also wirkungslos, waehrend es auf
+`schema generate` die Tabelle mit `E052` blockt.
+
+Dasselbe gilt fuer SQL Server, dessen Migrate-Renderer den `native`-Typ
+ebenfalls profilunabhaengig schreibt; nur der SQLite-Renderer wertet das
+Profil im Diff-Pfad aus. Die beiden Teile — ungeprueftes Flag und ein
+Renderer, der das Flag nicht liest — gehoeren zusammen und sollten
+zusammen behoben werden.
 
 ## Moegliche Loesungsrichtung
 

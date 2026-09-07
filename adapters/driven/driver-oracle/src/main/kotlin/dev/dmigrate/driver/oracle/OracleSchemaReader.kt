@@ -89,6 +89,7 @@ class OracleSchemaReader(
         val foreignKeys = OracleMetadataQueries.listForeignKeys(session, schema, table)
         val indexScan = OracleMetadataQueries.scanIndexes(session, schema, table)
         val checks = OracleMetadataQueries.listCheckConstraints(session, schema, table)
+        val geometry = geometryMetadata(session, schema, table, notes)
 
         val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indexScan.indices)
         val pkColumns = primaryKey.toSet()
@@ -104,6 +105,7 @@ class OracleSchemaReader(
                     isIdentity = row.isIdentity,
                     identityGeneration = row.identityGeneration,
                     identitySequenceName = row.identitySequenceName,
+                    geometrySrid = geometry[row.name]?.srid,
                 ),
             )
             mapping.note?.let { notes += it }
@@ -136,10 +138,10 @@ class OracleSchemaReader(
                 IndexDefinition(
                     name = idx.name,
                     columns = idx.indexColumns,
-                    type = if (idx.name in indexScan.fullTextIndexes) {
-                        IndexType.FULLTEXT
-                    } else {
-                        indexTypeOf(idx.type)
+                    type = when (idx.name) {
+                        in indexScan.fullTextIndexes -> IndexType.FULLTEXT
+                        in indexScan.spatialIndexes -> IndexType.SPATIAL
+                        else -> indexTypeOf(idx.type)
                     },
                     unique = idx.isUnique,
                 )
@@ -150,7 +152,8 @@ class OracleSchemaReader(
                 code = "R357",
                 objectName = name,
                 message = "Index '$name' on table '$table' is a domain index of an index type other than " +
-                    "Oracle Text (CTXSYS.CONTEXT); the neutral model has no equivalent, so it was skipped.",
+                    "Oracle Text (CTXSYS.CONTEXT) or Oracle Spatial (MDSYS.SPATIAL_INDEX_V2); the neutral " +
+                    "model has no equivalent, so it was skipped.",
                 hint = "Recreate it manually on the target, where its index type exists.",
             )
         }
@@ -164,6 +167,33 @@ class OracleSchemaReader(
             constraints = constraints,
             partitioning = partitioning?.config,
         )
+    }
+
+    /**
+     * Ohne installiertes Oracle Spatial gibt es `ALL_SDO_GEOM_METADATA`
+     * nicht — die Abfrage scheitert dann mit ORA-00942. Eine Datenbank ohne
+     * Spatial hat auch keine Geometriespalten, der leere Fall ist also der
+     * richtige; er wird trotzdem gemeldet, damit ein fehlendes Spatial bei
+     * einer Datenbank, die welche haette, nicht still als „keine SRID"
+     * durchgeht.
+     */
+    private fun geometryMetadata(
+        session: JdbcOperations,
+        schema: String,
+        table: String,
+        notes: MutableList<SchemaReadNote>,
+    ): Map<String, OracleMetadataQueries.GeometryMetadataRow> = try {
+        OracleMetadataQueries.listGeometryMetadata(session, schema, table).associateBy { it.column }
+    } catch (e: Exception) {
+        notes += SchemaReadNote(
+            severity = SchemaReadSeverity.INFO,
+            code = "R365",
+            objectName = table,
+            message = "ALL_SDO_GEOM_METADATA is not readable (${e.message?.lineSequence()?.firstOrNull()}); " +
+                "geometry columns are read without a coordinate system.",
+            hint = "Install Oracle Spatial, or grant SELECT on the metadata view.",
+        )
+        emptyMap()
     }
 
     /**
@@ -205,8 +235,9 @@ class OracleSchemaReader(
      * davor -- der Praefix betrifft die Schluesseldarstellung, nicht die
      * Indexart, deshalb entscheidet allein das Vorkommen von `BITMAP`.
      * `DOMAIN` behandelt bereits [OracleMetadataQueries.scanIndexes]: Oracle
-     * Text kommt als [IndexType.FULLTEXT] zurueck, jede andere Indexart wird
-     * ausgelassen. Was hier ankommt, ist deshalb `NORMAL` oder `BITMAP`;
+     * Text kommt als [IndexType.FULLTEXT] zurueck, Oracle Spatial als
+     * [IndexType.SPATIAL], jede andere Indexart wird ausgelassen. Was hier
+     * ankommt, ist deshalb `NORMAL` oder `BITMAP`;
      * uebrige Arten (`IOT - TOP`, `CLUSTER`, `LOB`) sind keine neutral
      * darstellbaren Sekundaerindizes und fallen auf [IndexType.BTREE].
      */

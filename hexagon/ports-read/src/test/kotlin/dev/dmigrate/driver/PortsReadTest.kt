@@ -1,7 +1,9 @@
 package dev.dmigrate.driver
 
 import dev.dmigrate.core.model.SchemaDefinition
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeIn
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
@@ -51,6 +53,17 @@ class PortsReadTest : FunSpec({
         SpatialProfilePolicy.defaultFor(DatabaseDialect.MYSQL) shouldBe SpatialProfile.NATIVE
         SpatialProfilePolicy.defaultFor(DatabaseDialect.SQLITE) shouldBe SpatialProfile.NONE
         SpatialProfilePolicy.defaultFor(DatabaseDialect.MSSQL) shouldBe SpatialProfile.NATIVE
+        SpatialProfilePolicy.defaultFor(DatabaseDialect.ORACLE) shouldBe SpatialProfile.NATIVE
+    }
+
+    test("every dialect has a default that its own allowlist permits") {
+        // Ein Default ausserhalb der Allowlist waere ein Aufruf, den der
+        // Anwender nicht einmal von Hand nachstellen koennte.
+        for (dialect in DatabaseDialect.entries) {
+            withClue(dialect) {
+                SpatialProfilePolicy.defaultFor(dialect) shouldBeIn SpatialProfilePolicy.allowedFor(dialect)
+            }
+        }
     }
 
     test("SpatialProfilePolicy.allowedFor returns allowed sets") {
@@ -62,6 +75,13 @@ class PortsReadTest : FunSpec({
             setOf(SpatialProfile.SPATIALITE, SpatialProfile.NONE)
         SpatialProfilePolicy.allowedFor(DatabaseDialect.MSSQL) shouldBe
             setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
+        SpatialProfilePolicy.allowedFor(DatabaseDialect.ORACLE) shouldBe
+            setOf(SpatialProfile.NATIVE, SpatialProfile.NONE)
+    }
+
+    test("a dialect-foreign profile is refused for Oracle") {
+        SpatialProfilePolicy.resolve(DatabaseDialect.ORACLE, "postgis") shouldBe
+            SpatialProfilePolicy.Result.NotAllowedForDialect(SpatialProfile.POSTGIS, DatabaseDialect.ORACLE)
     }
 
     test("SpatialProfilePolicy.resolve returns default when rawProfile is null") {

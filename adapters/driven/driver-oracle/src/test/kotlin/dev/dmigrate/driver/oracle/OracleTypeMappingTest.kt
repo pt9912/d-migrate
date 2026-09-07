@@ -3,6 +3,7 @@ package dev.dmigrate.driver.oracle
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IdentityMode
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.SchemaReadSeverity
 import io.kotest.core.spec.style.FunSpec
@@ -101,11 +102,26 @@ class OracleTypeMappingTest : FunSpec({
     }
 
     test("an unknown type falls back to text and emits an R301 warning note") {
-        val result = OracleTypeMapping.mapColumn("weird_col", input("SDO_GEOMETRY"))
+        val result = OracleTypeMapping.mapColumn("weird_col", input("MY_OBJECT_TYPE"))
         result.type shouldBe NeutralType.Text(maxLength = null)
         result.note?.code shouldBe "R301"
         result.note?.severity shouldBe SchemaReadSeverity.WARNING
         result.note?.objectName shouldBe "weird_col"
+    }
+
+    test("SDO_GEOMETRY is a geometry, not text") {
+        // Faellt sie auf Text, traegt das Modell nichts Raeumliches mehr --
+        // und die Geometrie-Zweige aller uebrigen Pfade greifen nicht.
+        val result = OracleTypeMapping.mapColumn("geom", input("SDO_GEOMETRY").copy(geometrySrid = 4326))
+        result.type shouldBe NeutralType.Geometry(GeometryType.GEOMETRY, srid = 4326)
+        result.note.shouldBeNull()
+    }
+
+    test("a geometry column carries no subtype: Oracle binds it to the value, not the column") {
+        // Dieselbe Spalte kann einen Punkt und ein Polygon nebeneinander
+        // fuehren; ein Spalten-Subtyp waere deshalb erfunden.
+        val result = OracleTypeMapping.mapColumn("geom", input("SDO_GEOMETRY"))
+        result.type shouldBe NeutralType.Geometry(GeometryType.GEOMETRY, srid = null)
     }
 
     test("a known type emits no note") {

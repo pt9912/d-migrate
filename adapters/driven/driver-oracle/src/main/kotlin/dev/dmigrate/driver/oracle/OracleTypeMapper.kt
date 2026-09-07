@@ -37,10 +37,9 @@ class OracleTypeMapper : TypeMapper {
         // VARCHAR2 + CHECK; dieser Zweig ist nur der Fallback ohne Werte.
         is NeutralType.Enum -> "VARCHAR2($MAX_VARCHAR2_LENGTH)"
         is NeutralType.Array -> "JSON"
-        // Spatial ist fuer Oracle nicht gescoped (SpatialProfile bleibt NONE,
-        // der Generate-Pfad blockt sie ueber canGenerateSpatial(), der
-        // Diff-Pfad ueber OracleDiffTableOps.blockSpatial)
-        // -- dieser Zweig ist derzeit unerreichbar.
+        // Ein einziger Typ fuer alle Geometrien: Oracle kennt weder einen
+        // Subtyp (Point/Polygon/...) noch eine SRID an der Spalte. Beides
+        // steht im Wert bzw. in USER_SDO_GEOM_METADATA.
         is NeutralType.Geometry -> "SDO_GEOMETRY"
         else -> simpleToSql(type)
     }

@@ -365,14 +365,12 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         r.statements.single().hints.transactionBehavior shouldBe TransactionBehavior.IMPLICIT_COMMIT
     }
 
-    // ── Was bis zum Gate-Fall (5e-2) unerreichbar war ───────────────
+    // ── Wo Generate weich rendert und Migrate blocken muss ─────────
     //
-    // Beide Faelle rendert der GENERATE-Pfad bewusst weich: eine
-    // partitionierte Tabelle entsteht dort flach mit `E055`, und
-    // Geometry-Spalten faengt `canGenerateSpatial()` ab -- eine Faehigkeit,
-    // die nur `AbstractDdlGenerator` auswertet. Der Diff-Pfad fragt sie nie.
-    // Solange `DialectCommandGate` `schema migrate` fuer Oracle abwies, fiel
-    // das nicht auf; seit 5e-2 wuerde es ausgefuehrt.
+    // Der Generate-Pfad darf eine Tabelle notfalls anders anlegen, als das
+    // Modell sie beschreibt, und das melden. Auf dem Migrate-Pfad waere
+    // dieselbe Nachgiebigkeit eine stille Aenderung an einer bestehenden
+    // Datenbank -- dort wird stattdessen benannt geblockt.
 
     test("CreateTable renders the partitioning Oracle can express") {
         // Seit Slice 7 ist Partitionierung kein Pauschal-Blocker mehr. Der
@@ -438,37 +436,69 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         r.diagnostics.single().code shouldBe "ORACLE_PARTITIONING_UNSUPPORTED"
     }
 
-    test("a geometry column blocks on CreateTable, AddColumn and AlterColumnType") {
+    test("a geometry column renders as SDO_GEOMETRY on CreateTable and AddColumn") {
         val geo = ColumnDefinition(type = NeutralType.Geometry())
         val created = TableDefinition(columns = mapOf("shape" to geo))
         val onCreate = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("places", created))))
-        onCreate.statements.shouldBeEmpty()
-        onCreate.diagnostics.single().code shouldBe "ORACLE_SPATIAL_UNSUPPORTED"
+        onCreate.diagnostics.shouldBeEmpty()
+        onCreate.statements.single().sql shouldContain "\"shape\" SDO_GEOMETRY"
 
         val onAdd = planAndUp(
             SchemaDiff(
                 tablesChanged = listOf(TableDiff(name = "places", columnsAdded = mapOf("shape" to geo))),
             ),
         )
-        onAdd.statements.shouldBeEmpty()
-        onAdd.diagnostics.single().code shouldBe "ORACLE_SPATIAL_UNSUPPORTED"
+        onAdd.diagnostics.shouldBeEmpty()
+        onAdd.statements.single().sql shouldBe "ALTER TABLE \"places\" ADD (\"shape\" SDO_GEOMETRY);"
+    }
 
-        val onAlter = planAndUp(
+    /**
+     * Der Generate-Pfad legt den raeumlichen Index in die POST_DATA-Phase,
+     * weil Oracle sein Koordinatensystem aus den Zeilen ableitet. Der
+     * Migrate-Pfad hat keine Datenphase; eine Tabelle, die dieselbe Migration
+     * gerade anlegt, ist garantiert leer, und der Index scheiterte mit
+     * ORA-13199 -- bei jedem Folgelauf erneut.
+     */
+    test("CreateTable with a spatial index blocks instead of emitting DDL that always fails") {
+        val places = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "geom" to ColumnDefinition(NeutralType.Geometry()),
+            ),
+            primaryKey = listOf("id"),
+            indices = listOf(
+                IndexDefinition(name = "sx_places_geom", columns = listOf(IndexColumn("geom")), type = IndexType.SPATIAL),
+            ),
+        )
+        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("places", places))))
+        r.statements.shouldBeEmpty()
+        r.diagnostics.single().code shouldBe "ORACLE_SPATIAL_INDEX_NEEDS_ROWS"
+        r.isBlocked shouldBe true
+    }
+
+    /**
+     * Oracle verweigert den Typwechsel einer Spalte in einen Objekttyp und
+     * aus ihm heraus (ORA-22858/ORA-22859), auch auf leerer Tabelle -- ein
+     * `MODIFY` waere DDL, die in jedem Fall scheitert.
+     */
+    test("changing a column's type into or out of geometry stays blocked") {
+        fun alter(before: NeutralType, after: NeutralType) = planAndUp(
             SchemaDiff(
                 tablesChanged = listOf(
                     TableDiff(
                         name = "places",
-                        columnsChanged = listOf(
-                            ColumnDiff(
-                                name = "shape",
-                                type = ValueChange(NeutralType.Text(maxLength = 40), NeutralType.Geometry()),
-                            ),
-                        ),
+                        columnsChanged = listOf(ColumnDiff(name = "shape", type = ValueChange(before, after))),
                     ),
                 ),
             ),
         )
-        onAlter.statements.shouldBeEmpty()
-        onAlter.diagnostics.single().code shouldBe "ORACLE_SPATIAL_UNSUPPORTED"
+
+        val intoGeometry = alter(NeutralType.Text(maxLength = 40), NeutralType.Geometry())
+        intoGeometry.statements.shouldBeEmpty()
+        intoGeometry.diagnostics.single().code shouldBe "ORACLE_GEOMETRY_TYPE_CHANGE_UNSUPPORTED"
+
+        val outOfGeometry = alter(NeutralType.Geometry(), NeutralType.Text(maxLength = 40))
+        outOfGeometry.statements.shouldBeEmpty()
+        outOfGeometry.diagnostics.single().code shouldBe "ORACLE_GEOMETRY_TYPE_CHANGE_UNSUPPORTED"
     }
 })

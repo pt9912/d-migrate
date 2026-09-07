@@ -45,6 +45,31 @@ open class OracleDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataRe
     /** Server-Cursor-Fetching genuegt; eine offene Transaktion waere hier nur Ballast. */
     override val needsAutoCommitFalse: Boolean = false
 
+    /**
+     * Die Vorabfrage nach Geometriespalten kostet nichts, wo keine sind: eine
+     * `SDO_GEOMETRY`-Spalte kann es nur geben, wenn Oracle Spatial ueberhaupt
+     * installiert ist, und nur dann wird [geometryReadExpression] je
+     * angewandt. Auf einer Datenbank ohne Spatial faellt also kein Aufruf an,
+     * dessen Funktion dort fehlte.
+     */
+    override val supportsGeometryRead: Boolean = true
+
+    /** Oracle fuehrt alle Geometrien unter einem Typnamen. */
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        OracleTypeMapping.isGeometryTypeName(typeNameLower)
+
+    /**
+     * `SDO_GEOMETRY` ueber `getObject()` waere ein `oracle.sql.STRUCT` --
+     * ein Objekt, das kein anderer Dialekt lesen kann. Die neutrale
+     * Drahtform ist WKB, und `SDO_UTIL.TO_WKBGEOMETRY` liefert sie als
+     * `BLOB`, den [mapValue] wie jeden anderen zu `ByteArray` materialisiert.
+     *
+     * Die SRID traegt WKB nicht; sie steht am neutralen Spaltentyp und geht
+     * beim Schreiben ueber `OracleTableImportSession` wieder ein.
+     */
+    override fun geometryReadExpression(quotedColumn: String): String =
+        "SDO_UTIL.TO_WKBGEOMETRY($quotedColumn)"
+
     override fun mapValue(value: Any?, conn: Connection): Any? = when (value) {
         is Clob -> value.materialize()
         is Blob -> value.materialize()

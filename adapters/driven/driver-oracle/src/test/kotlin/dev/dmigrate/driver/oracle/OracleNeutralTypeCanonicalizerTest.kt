@@ -123,9 +123,18 @@ class OracleNeutralTypeCanonicalizerTest : FunSpec({
             NeutralType.Text(maxLength = null)
     }
 
-    test("geometry stays identity — unreachable in practice (canGenerateSpatial=false)") {
+    /**
+     * `SDO_GEOMETRY` traegt weder Subtyp noch SRID, und die Zeile in
+     * `USER_SDO_GEOM_METADATA`, die die SRID hielte, laesst sich zu einer
+     * quotiert kleingeschriebenen Tabelle nicht ablegen. Beides ist nach
+     * einem Round-Trip weg -- Identitaet meldete auf jeder Geometriespalte
+     * Drift, die keiner beheben koennte.
+     */
+    test("geometry folds onto what Oracle actually stores: no subtype, no SRID") {
         canon.canonicalize(NeutralType.Geometry(GeometryType.of("point"), srid = 4326)) shouldBe
-            NeutralType.Geometry(GeometryType.of("point"), srid = 4326)
+            NeutralType.Geometry(GeometryType.GEOMETRY, srid = null)
+        canon.canonicalize(NeutralType.Geometry(GeometryType.of("polygon"), srid = 3857)) shouldBe
+            NeutralType.Geometry(GeometryType.GEOMETRY, srid = null)
         canon.canonicalize(NeutralType.Geometry()) shouldBe NeutralType.Geometry()
     }
 

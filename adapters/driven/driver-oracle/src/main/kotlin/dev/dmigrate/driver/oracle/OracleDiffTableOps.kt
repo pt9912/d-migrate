@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.inOrdinalOrder
+import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.SqlIdentifiers
@@ -51,9 +52,6 @@ internal object OracleDiffTableOps {
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering the columns of '$tableName'")
         val table = op.table
-        geometryColumns(table.columns)
-            .takeIf { it.isNotEmpty() }
-            ?.let { return blockSpatial(op, ctx, tableName, it) }
         val notes = mutableListOf<TransformationNote>()
         val unkeyableColumns = table.columns.filterValues { typeMapper.isUnkeyable(it.type) }.keys
         val lines = mutableListOf<String>()
@@ -116,6 +114,8 @@ internal object OracleDiffTableOps {
         // `carryOverNotes` stufte ACTION_REQUIRED sonst zu einer Warnung
         // herab, und die Tabelle entstuende ohne den Index -- waehrend Spec
         // und Handbuch Abbruch zusagen.
+        table.indices.firstOrNull { it.isSpatialGeometryIndex { col -> table.columns[col]?.type } }
+            ?.let { return blockSpatialIndexOnNewTable(op, ctx, tableName, indexBuilder.effectiveName(tableName, it)) }
         val indexStatements = table.indices.map { indexBuilder.render(tableName, table, it, unkeyableColumns) }
         indexStatements.flatMap { it.notes }
             .firstOrNull { it.type == NoteType.ACTION_REQUIRED }
@@ -127,6 +127,38 @@ internal object OracleDiffTableOps {
             if (stmt.sql.isNotBlank()) ctx.emit(op, stmt.sql)
             ctx.carryOverNotes(op, stmt.notes)
         }
+    }
+
+    /**
+     * Ein raeumlicher Index auf einer **gerade erst angelegten** Tabelle kann
+     * nicht entstehen.
+     *
+     * `MDSYS.SPATIAL_INDEX_V2` bestimmt die SRID entweder aus einer Zeile in
+     * `USER_SDO_GEOM_METADATA` -- die d-migrate fuer seine quotiert
+     * kleingeschriebenen Tabellen nicht ablegen kann -- oder aus den Daten.
+     * Eine neue Tabelle hat keine, und ORA-13199 waere die Folge. Der
+     * Generate-Pfad loest das ueber [dev.dmigrate.driver.DdlPhase.POST_DATA];
+     * der Migrate-Pfad hat keine Datenphase, in die der Index rutschen
+     * koennte.
+     *
+     * Deshalb benannt blocken statt DDL zu emittieren, die auf einer neuen
+     * Tabelle in jedem Fall scheitert -- und bei jedem Folgelauf erneut, weil
+     * die Tabelle leer bleibt.
+     */
+    private fun blockSpatialIndexOnNewTable(
+        op: DiffOperation,
+        ctx: OracleDiffRenderContext,
+        table: String,
+        indexName: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} creates table '$table' with the spatial index '$indexName'. Oracle derives the " +
+                "coordinate system of a spatial index from the rows of the table, and a table created by this " +
+                "operation has none (ORA-13199); the index would fail and fail again on every later run.",
+            code = "ORACLE_SPATIAL_INDEX_NEEDS_ROWS",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
     }
 
     /** Siehe [blockPartitioning] -- dieselbe Erwaegung fuer einen Index der neuen Tabelle. */
@@ -195,7 +227,6 @@ internal object OracleDiffTableOps {
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
             return
         }
-        if (op.column.type is NeutralType.Geometry) return blockSpatial(op, ctx, table, listOf(column))
         val schema = ctx.schemaForDirection()
             ?: return blockMissingSchema(op, ctx, "rendering column '$table.$column'")
         val notes = mutableListOf<TransformationNote>()
@@ -250,7 +281,7 @@ internal object OracleDiffTableOps {
         val sourceType = if (up) op.before else op.after
         val targetType = if (up) op.after else op.before
         if (targetType is NeutralType.Geometry || sourceType is NeutralType.Geometry) {
-            return blockSpatial(op, ctx, table, listOf(column))
+            return blockGeometryTypeChange(op, ctx, table, column)
         }
         if (isIdentity(targetType) && !isIdentity(sourceType)) {
             return blockAddIdentity(op, ctx, table, column)
@@ -365,30 +396,31 @@ internal object OracleDiffTableOps {
     }
 
     /**
-     * Spatial ist fuer Oracle nicht gescoped -- `OracleDdlGenerator
-     * .canGenerateSpatial` liefert `false`. Diese Faehigkeit wertet aber nur
-     * der Generate-Pfad aus (`AbstractDdlGenerator`); der Diff-Pfad fragt sie
-     * nie und wuerde `SDO_GEOMETRY` aus der Typtabelle rendern. Solange das
-     * Gate `schema migrate` fuer Oracle abwies, war das unerreichbar.
+     * `SDO_GEOMETRY` ist ein Objekttyp, und Oracle laesst eine Spalte weder
+     * in einen Objekttyp hinein noch aus ihm heraus aendern -- gemessen
+     * ORA-22858 fuer `VARCHAR2 → SDO_GEOMETRY` und ORA-22859 fuer die
+     * Gegenrichtung, **auch auf leerer Tabelle**. Ein `MODIFY` zu emittieren
+     * hiesse also, DDL zu erzeugen, die in jedem Fall scheitert.
+     *
+     * Der Weg dorthin fuehrt ueber eine neue Spalte samt Umkopieren; das ist
+     * ein Tabellenumbau, den der Migrate-Renderer nicht vornimmt.
      */
-    private fun blockSpatial(
+    private fun blockGeometryTypeChange(
         op: DiffOperation,
         ctx: OracleDiffRenderContext,
         table: String,
-        columns: Collection<String>,
+        column: String,
     ) {
         ctx.skip(
             op,
-            "Operation ${op.id} touches geometry column(s) ${columns.sorted().joinToString(", ")} on " +
-                "'$table'. Spatial support is not scoped for Oracle, so the renderer will not emit " +
-                "SDO_GEOMETRY DDL.",
-            code = "ORACLE_SPATIAL_UNSUPPORTED",
+            "Operation ${op.id} changes the type of column '$table.$column' into or out of SDO_GEOMETRY. " +
+                "Oracle rejects that on any column (ORA-22858/ORA-22859), even when the table is empty, " +
+                "because SDO_GEOMETRY is an object type; the change needs a new column and a copy, which " +
+                "the migrate renderer does not perform.",
+            code = "ORACLE_GEOMETRY_TYPE_CHANGE_UNSUPPORTED",
         )
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
     }
-
-    private fun geometryColumns(columns: Map<String, ColumnDefinition>): Set<String> =
-        columns.filterValues { it.type is NeutralType.Geometry }.keys
 
     private fun blockAddIdentity(op: DiffOperation, ctx: OracleDiffRenderContext, table: String, column: String) {
         ctx.skip(

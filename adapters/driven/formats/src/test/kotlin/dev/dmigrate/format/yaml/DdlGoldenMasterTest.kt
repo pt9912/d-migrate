@@ -67,6 +67,7 @@ class DdlGoldenMasterTest : FunSpec({
         Triple("mysql", MysqlDdlGenerator(), DdlGenerationOptions(SpatialProfile.NATIVE)),
         Triple("sqlite", SqliteDdlGenerator(), DdlGenerationOptions(SpatialProfile.SPATIALITE)),
         Triple("mssql", MssqlDdlGenerator(), DdlGenerationOptions(SpatialProfile.NATIVE)),
+        Triple("oracle", OracleDdlGenerator(), DdlGenerationOptions(SpatialProfile.NATIVE)),
     )
 
     for ((dialectName, generator, options) in spatialProfiles) {

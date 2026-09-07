@@ -26,6 +26,14 @@ import dev.dmigrate.core.model.toSqlEventClause
  */
 internal object OracleRoutineDdl {
 
+    /**
+     * SQL*Plus beendet einen PL/SQL-Block an einem `/` in eigener Zeile.
+     * Geteilt von jeder Stelle, die einen Block emittiert -- Routinen,
+     * Trigger und der selbstaufraeumende Spatial-Index.
+     */
+    const val PLSQL_SCRIPT_TERMINATOR = "/"
+
+
     fun functionSql(
         name: String,
         fn: FunctionDefinition,

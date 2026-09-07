@@ -13,6 +13,7 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.Statement
+import java.sql.Types
 
 /**
  * Import-Session für Oracle.
@@ -85,10 +86,34 @@ internal class OracleTableImportSession(
         }
     }
 
+    /**
+     * Der gebundene WKB-Wert wird ueber `SDO_UTIL.FROM_WKBGEOMETRY` zur
+     * `SDO_GEOMETRY`. Traegt die Zielspalte eine SRID, geht sie als zweites
+     * Argument mit -- WKB selbst fuehrt keine, und ohne das Argument kaeme
+     * die Geometrie ohne Koordinatensystem an.
+     *
+     * Der gleichnamige **Typkonstruktor** `SDO_GEOMETRY(wkb, srid)` waere
+     * hier falsch: er ist nicht NULL-streng und macht aus einer NULL-Geometrie
+     * eine nicht-NULL Geistergeometrie mit leerem `SDO_GTYPE` (gemessen).
+     * `SDO_UTIL.FROM_WKBGEOMETRY` gibt fuer NULL auch mit SRID-Argument NULL
+     * zurueck.
+     */
+    override val geometryBindConstructor: String = "SDO_UTIL.FROM_WKBGEOMETRY"
+
+    /** Oracle fuehrt alle Geometrien unter einem Typnamen. */
+    override fun isGeometryTypeName(typeNameLower: String): Boolean =
+        OracleTypeMapping.isGeometryTypeName(typeNameLower)
+
     override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         rejectVirtualColumns(importedTargetColumns)
         toggleIdentityIfNeeded(importedTargetColumns)
-        return OracleInsertSql.build(qualifiedTable, importedTargetColumns, primaryKeyColumns, options.onConflict)
+        return OracleInsertSql.build(
+            qualifiedTable,
+            importedTargetColumns,
+            primaryKeyColumns,
+            options.onConflict,
+            ::valuePlaceholder,
+        )
     }
 
     override fun executeChunk(
@@ -107,10 +132,19 @@ internal class OracleTableImportSession(
     ) {
         importedTargetColumns.forEachIndexed { index, targetColumn ->
             val value = emptyStringSubstitute(targetColumn, row[index])
-            if (value == null) {
-                stmt.setNull(index + 1, targetColumn.jdbcType)
-            } else {
-                stmt.setObject(index + 1, JdbcForeignValueNormalizer.normalize(value))
+            when {
+                // An dieser Bindeposition steht nicht die Geometrie, sondern
+                // ihr WKB -- das Argument von SDO_UTIL.FROM_WKBGEOMETRY. Mit
+                // dem Spaltentyp (einem Objekttyp) lehnt Oracle-JDBC das
+                // Binden von NULL ab: ORA-17068 verlangt fuer Objekttypen die
+                // dreiargumentige `setNull`-Form, die hier gerade nicht
+                // gemeint ist.
+                value == null && isGeometryColumn(targetColumn) -> stmt.setNull(index + 1, Types.BLOB)
+                value == null -> stmt.setNull(index + 1, targetColumn.jdbcType)
+                // WKB ausdruecklich binaer binden, damit der Konstruktor das
+                // Blob bekommt und nicht eine Treiber-Vermutung.
+                isGeometryColumn(targetColumn) && value is ByteArray -> stmt.setBytes(index + 1, value)
+                else -> stmt.setObject(index + 1, JdbcForeignValueNormalizer.normalize(value))
             }
         }
     }

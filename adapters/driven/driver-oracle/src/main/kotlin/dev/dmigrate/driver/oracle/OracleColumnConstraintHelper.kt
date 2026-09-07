@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
@@ -204,6 +205,17 @@ internal class OracleColumnConstraintHelper(
                 type = NoteType.WARNING, code = "W132", objectName = objectName,
                 message = "Full-text column '$colName' degraded to CLOB; Oracle has no full-text vector column type.",
                 hint = "Declare a full-text index over the source text column(s); d-migrate renders it as an Oracle Text index.",
+            )
+        }
+        if (type is NeutralType.Geometry && (type.geometryType != GeometryType.GEOMETRY || type.srid != null)) {
+            notes += TransformationNote(
+                type = NoteType.WARNING, code = "W120", objectName = objectName,
+                message = "Geometry column '$colName' is rendered as SDO_GEOMETRY: Oracle carries neither the " +
+                    "subtype ('${type.geometryType}') nor the SRID (${type.srid ?: "none"}) on the column. The " +
+                    "SRID would live in USER_SDO_GEOM_METADATA, and Oracle upper-cases the table and column name " +
+                    "in that row, so it cannot describe a quoted lower-case table like '$tableName'.",
+                hint = "Insert the USER_SDO_GEOM_METADATA row manually if the coordinate system must be declared; " +
+                    "the spatial index and spatial queries work without it.",
             )
         }
         if (typeMapper.isPrecisionClamped(type)) {

@@ -3,6 +3,7 @@ package dev.dmigrate.driver.oracle
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.DependencyProjectionStatus
+import dev.dmigrate.core.model.GeometryType
 import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -68,6 +69,7 @@ class OracleSchemaReaderTest : FunSpec({
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_ind_expressions") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_sdo_geom_metadata") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("constraint_type = 'C'") }, any(), any()) } returns emptyList()
         // Unpartitioniert ist der Normalfall: keine Zeile in ALL_PART_TABLES.
         every { jdbc.querySingle(match { it.contains("FROM all_part_tables") }, any(), any()) } returns null
@@ -133,7 +135,7 @@ class OracleSchemaReaderTest : FunSpec({
         result.notes.none { it.code == "R354" } shouldBe true
     }
 
-    test("an Oracle Text index reads back as FULLTEXT; a foreign domain index is reported instead") {
+    test("Oracle Text reads back as FULLTEXT, Oracle Spatial as SPATIAL; an unknown index type is reported") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
         stubTableQueries(jdbc)
@@ -155,7 +157,12 @@ class OracleSchemaReaderTest : FunSpec({
             ),
             mapOf(
                 "index_name" to "SX_GEO", "index_type" to "DOMAIN", "uniqueness" to "NONUNIQUE",
-                "ityp_owner" to "MDSYS", "ityp_name" to "SPATIAL_INDEX",
+                "ityp_owner" to "MDSYS", "ityp_name" to "SPATIAL_INDEX_V2",
+                "column_name" to "BODY", "column_position" to 1, "descend" to "ASC",
+            ),
+            mapOf(
+                "index_name" to "UX_OWN", "index_type" to "DOMAIN", "uniqueness" to "NONUNIQUE",
+                "ityp_owner" to "APP", "ityp_name" to "MY_INDEXTYPE",
                 "column_name" to "BODY", "column_position" to 1, "descend" to "ASC",
             ),
         )
@@ -163,14 +170,77 @@ class OracleSchemaReaderTest : FunSpec({
         val (reader, pool) = rig(jdbc)
         val result = reader.read(pool)
 
-        val indices = result.schema.tables.getValue("DOCS").indices
-        indices.map { it.name } shouldBe listOf("FT_BODY")
-        indices.single().type shouldBe IndexType.FULLTEXT
-        // Einen raeumlichen Domain-Index als BTREE zu lesen ergaebe im Ziel
-        // einen Index, der etwas anderes tut.
+        val indices = result.schema.tables.getValue("DOCS").indices.associateBy { it.name }
+        indices.keys shouldBe setOf("FT_BODY", "SX_GEO")
+        indices.getValue("FT_BODY").type shouldBe IndexType.FULLTEXT
+        indices.getValue("SX_GEO").type shouldBe IndexType.SPATIAL
+        // Einen Domain-Index unbekannter Art als BTREE zu lesen ergaebe im
+        // Ziel einen Index, der etwas anderes tut.
         val note = result.notes.single { it.code == "R357" }
-        note.objectName shouldBe "SX_GEO"
+        note.objectName shouldBe "UX_OWN"
         note.severity shouldBe SchemaReadSeverity.WARNING
+    }
+
+    /** Ein Geometrie-Tabellenmock mit einer einzigen `SDO_GEOMETRY`-Spalte. */
+    fun geometryTable(jdbc: JdbcOperations) {
+        stubEmptyDefaults(jdbc)
+        stubTableQueries(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_tables") }, "APP") } returns
+            listOf(mapOf("table_name" to "PLACES"))
+        every { jdbc.queryList(match { it.contains("FROM all_tab_columns c") }, "APP", "PLACES") } returns listOf(
+            mapOf(
+                "column_name" to "GEOM", "data_type" to "SDO_GEOMETRY", "data_length" to null,
+                "data_precision" to null, "data_scale" to null, "nullable" to "Y",
+                "column_id" to 1, "data_default" to null,
+                "identity_generation" to null, "identity_sequence" to null,
+            ),
+        )
+    }
+
+    test("the SRID from ALL_SDO_GEOM_METADATA reaches the geometry column") {
+        val jdbc = mockk<JdbcOperations>()
+        geometryTable(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_sdo_geom_metadata") }, "APP", "PLACES") } returns
+            listOf(mapOf("column_name" to "GEOM", "srid" to 4326))
+
+        val (reader, pool) = rig(jdbc)
+        val column = reader.read(pool).schema.tables.getValue("PLACES").columns.getValue("GEOM")
+
+        // Oracle traegt die SRID nicht am Spaltentyp; ohne diese Naht kaeme
+        // jede Geometrie ohne Koordinatensystem zurueck.
+        column.type shouldBe NeutralType.Geometry(GeometryType.GEOMETRY, srid = 4326)
+    }
+
+    test("a geometry column without a metadata row reads without a SRID, not with a wrong one") {
+        val jdbc = mockk<JdbcOperations>()
+        geometryTable(jdbc)
+        // Die Zeile gehoert zu einer ANDEREN Spalte; ein unscharfer Treffer
+        // haenge der Geometrie ein fremdes Koordinatensystem an.
+        every { jdbc.queryList(match { it.contains("FROM all_sdo_geom_metadata") }, "APP", "PLACES") } returns
+            listOf(mapOf("column_name" to "OUTLINE", "srid" to 3857))
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+        result.schema.tables.getValue("PLACES").columns.getValue("GEOM").type shouldBe
+            NeutralType.Geometry(GeometryType.GEOMETRY, srid = null)
+        result.notes.none { it.code == "R365" } shouldBe true
+    }
+
+    test("an unreadable ALL_SDO_GEOM_METADATA is reported as R365, not treated as 'no SRID'") {
+        val jdbc = mockk<JdbcOperations>()
+        geometryTable(jdbc)
+        // Ohne installiertes Oracle Spatial gibt es die Sicht nicht.
+        every { jdbc.queryList(match { it.contains("FROM all_sdo_geom_metadata") }, "APP", "PLACES") } throws
+            RuntimeException("ORA-00942: table or view does not exist")
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+
+        result.schema.tables.getValue("PLACES").columns.getValue("GEOM").type shouldBe
+            NeutralType.Geometry(GeometryType.GEOMETRY, srid = null)
+        val note = result.notes.single { it.code == "R365" }
+        note.objectName shouldBe "PLACES"
+        note.severity shouldBe SchemaReadSeverity.INFO
     }
 
     test("a UNIQUE expression index stays an index instead of being lifted or lost") {

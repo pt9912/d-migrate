@@ -1,7 +1,7 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
 > **Status:** In Progress. Alle fünf Grundsatzentscheidungen getroffen (siehe
-> ADR 0052). **Geliefert: Slices 0 bis 11.** Oracle führt damit denselben
+> ADR 0052). **Geliefert: Slices 0 bis 12.** Oracle führt damit denselben
 > Befehlsumfang wie die vier anderen Dialekte: Reverse, Generate, Compare,
 > Migrate, der Datenpfad, die Werkzeug-Exporte und `data profile`. Der
 > Sample-DB-Harness fährt Pagila in **beide** Richtungen, Bitmap-,
@@ -11,8 +11,11 @@
 > Refresh-Einstellung. `DialectCommandGate` verliert seinen letzten Eintrag
 > und entfällt.
 >
-> Offen: Slice 12 (Spatial, geplant und gemessen, nicht gebaut) und
-> PL/SQL-Packages ohne Liefertermin.
+> Slice 12 bringt Oracle Spatial: `SDO_GEOMETRY` traegt im Modell wieder eine
+> Geometrie statt Text, der raeumliche Index wird gerendert und gelesen, und
+> der Datenpfad bewegt Geometrien als WKB.
+>
+> Offen: PL/SQL-Packages ohne Liefertermin.
 >
 > Die datierten Status-Blöcke unten sind **Momentaufnahmen** und werden nicht
 > rückwirkend umgeschrieben — was dort „bis Slice 5 gesperrt" heißt, war zum
@@ -784,7 +787,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **9** ✅ | Routinen/Trigger: lesen, erzeugen und migrieren als ein Stück. `ALL_SOURCE` für alle drei Objektarten, Signatur aus `ALL_ARGUMENTS`; Generate und Diff über ein geteiltes Urteil (`OracleRoutineShape`); Trenner je Anweisung statt je Dialekt (`DdlStatement.scriptTerminator`). Was das Modell nicht trägt, wird gemeldet (`R358`–`R363`) | Routinen-Migration |
 | **10** ✅ | Materialized Views: Reverse aus `ALL_MVIEWS`, Generate und Diff nativ; `refresh` bekommt ein Vokabular (Methode und/oder Auslöser); `fast` wird gemeldet, weil es ein MV-Log verlangt, das das Modell nicht führt. Dazu ein Defekt im ausgelieferten Stand behoben: MV und MV-Log wurden als Tabellen gelesen | Materialized Views im Round-Trip |
 | **11** ✅ | Profiling-Modul `driver-oracle-profiling` (drei Adapter analog den vier anderen Dialekten), live gegen einen Container belegt. `DialectCommandGate` verliert seinen letzten Eintrag und **entfällt** — zum zweiten Mal, siehe Detailabschnitt | `data profile` ist für Oracle nutzbar |
-| **12** | Oracle Spatial: `SDO_GEOMETRY` als echter `NeutralType.Geometry` in Reverse, Generate und Diff, samt `USER_SDO_GEOM_METADATA` und Spatial-Index — siehe Detailabschnitt | Geometriespalten im Round-Trip statt als Text |
+| **12** ✅ | Oracle Spatial: `SDO_GEOMETRY` als echter `NeutralType.Geometry` in Reverse, Generate und Diff, Spatial-Index in POST_DATA, WKB-Datenpfad — siehe Detailabschnitt | Geometriespalten im Round-Trip statt als Text |
 | **ohne Nummer** | PL/SQL Packages (Neutralmodell-Erweiterung um Routine-Gruppierung) — **zeitlich unbestimmt, bewusst kein Slice mit Liefertermin** (Entscheidung 4) | Package-Struktur im Round-Trip, sobald angegangen |
 
 Jeder nummerierte Slice endet CI-grün und einzeln nutzbar; die No-op-Defaults
@@ -1517,13 +1520,17 @@ Gemessen gegen `gvenzl/oracle-free:23-faststart`:
 | Befund | Messung | Warum es zählt |
 | --- | --- | --- |
 | **Spatial fehlt im slim-Image** | `23-slim-faststart`: `ALL_TYPES` kennt `SDO_GEOMETRY` nicht, `MDSYS.CS_SRS` und `USER_SDO_GEOM_METADATA` existieren nicht. `23-faststart`: alles vorhanden | Der sample-db-Harness **und** die meisten Integrationstests fahren das slim-Image. Slice 12 braucht dort einen Image-Wechsel oder einen eigenen Container — und `23-faststart` ist ~0,9 GB größer |
-| **Der Index verlangt einen Metadaten-Eintrag** | `CREATE INDEX … INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2` ohne Zeile in `USER_SDO_GEOM_METADATA` → ORA-13199 „cannot determine SRID" + ORA-13252 | Der Index ist **nicht** allein aus `IndexDefinition` renderbar. Vor ihm muss eine Zeile mit Bounding-Box und SRID stehen — eine DML-Anweisung als Vorbedingung eines DDL |
+| **Der Index verlangt die SRID, nicht die Metadatenzeile** | `MDSYS.SPATIAL_INDEX_V2` gelingt **entweder** mit einer Zeile in `USER_SDO_GEOM_METADATA` (auch auf leerer Tabelle) **oder** mit mindestens einer Geometriezeile, aus der er die SRID ableitet. Nur wenn beides fehlt, kommt ORA-13199 „cannot determine SRID" + ORA-13252 | Korrigiert eine frühere Messung, die nur den leeren Fall geprüft und daraus die Metadatenzeile als Pflicht gelesen hatte. Der Index ist damit auch ohne sie renderbar — sofern er **nach** den Daten läuft |
+| **Die Metadatenzeile wird großgeschrieben, bedingungslos** | `INSERT INTO user_sdo_geom_metadata … VALUES ('places','geom',…)` landet als `PLACES`/`GEOM`; auch `'my-tbl'`/`'geo-col'` — kein hochstellbarer Bezeichner — wird zu `MY-TBL`/`GEO-COL`. Verursacher ist `MDSYS.SDO_GEOM_TRIG_INS1` | d-migrate quotiert Bezeichner wortgetreu und erzeugt damit kleingeschriebene Tabellen (`CREATE TABLE "type_test"`, siehe DDL-Goldens). Für sie lässt sich **keine** Metadatenzeile ablegen: Oracle sucht sie unter dem echten Namen `places`, findet nur `PLACES` und meldet ORA-13252. Eine trotzdem geschriebene Zeile behauptete etwas über eine *andere* Tabelle |
+| **Ein fehlgeschlagener Index lässt sich einfangen** | Ein PL/SQL-Block, der `CREATE INDEX` per `EXECUTE IMMEDIATE` fährt und im `EXCEPTION`-Zweig `DROP INDEX … FORCE` nachschiebt, bevor er `RAISE`t, hinterlässt auf der leeren Tabelle **null** Index-Reste; die Tabelle bleibt beschreibbar, der Fehler wird weiterhin gemeldet | Nimmt der Reihenfolge ihre Schärfe: der Index ist danach entweder da oder ganz weg, nie halb. Der Block braucht `scriptTerminator = "/"` — dieselbe Naht, die Slice 9 für PL/SQL eingeführt hat |
 | **Die Bounding-Box ist Pflicht, aber ohne Zwangswirkung** | `SDO_DIM_ARRAY(SDO_DIM_ELEMENT('X', -180, 180, 0.005), …)` — je Dimension Unter-, Obergrenze und Toleranz. Ein Punkt **außerhalb** der deklarierten Grenzen wird eingefügt *und* von einer indizierten `SDO_FILTER`-Abfrage gefunden; der Index bleibt `VALID` | Sie muss dastehen, schneidet aber nichts weg. Eine zu enge Angabe verliert also keine Zeilen — das nimmt der Herleitungsfrage ihre Schärfe (siehe Entscheidung 1) |
 | **Auslesbar in beide Richtungen** | `SELECT d.sdo_dimname, d.sdo_lb, d.sdo_ub, d.sdo_tolerance FROM user_sdo_geom_metadata m, TABLE(m.diminfo) d` faltet die Nested Table auf; `SDO_TUNE.EXTENT_OF(tab, col)` misst die tatsächliche Datenausdehnung | Der Reverse-Pfad kann die deklarierte Box verlustfrei lesen, der Generate-Pfad sie notfalls messen lassen |
 | **Ohne Index braucht die Spalte keine Metadatenzeile** | Tabelle mit `SDO_GEOMETRY`, `INSERT` und `SELECT` funktionieren ohne Eintrag in `USER_SDO_GEOM_METADATA` | Slice 12a (Reverse) und ein reiner Spaltentransfer kommen ohne sie aus; erst der Index verlangt sie |
 | **Die SRID steht in der Metadatenzeile, nicht am Typ** | `USER_SDO_GEOM_METADATA.SRID = 4326`; die Spalte selbst ist typlos-generisch (`DATA_TYPE = 'SDO_GEOMETRY'`, `DATA_TYPE_OWNER = 'PUBLIC'`) | PostGIS trägt die SRID im Spaltentyp (`geometry(Point,4326)`), MySQL/SQL Server im Wert. Oracle ist die vierte Variante und braucht eine eigene Naht |
 | **Ein fehlgeschlagener Index sperrt die Datenspur** | `DOMIDX_OPSTATUS = FAILED` → jedes `INSERT` scheitert mit ORA-29861 | Reihenfolge im Migrate-Plan ist sicherheitsrelevant: ein halb gebauter Spatial-Index macht die Tabelle unbeschreibbar, statt nur die Abfrage zu verlangsamen |
 | **SRID-Katalog vorhanden** | `MDSYS.CS_SRS` führt 6194 Einträge, darunter 4326 und 3857 | Eine SRID lässt sich vor dem Schreiben prüfen, statt beim Anlegen des Index zu scheitern |
+| **Der Spatial-Index ist fallrichtig auslesbar** | `USER_SDO_INDEX_INFO` führt Index-, Tabellen- und Spaltennamen in der Schreibweise des Katalogs (`places`/`geom`), `ALL_INDEXES.ITYP_NAME` die Indexart | Der Reverse braucht keine eigene Namensnormalisierung. `OracleMetadataQueries.domainKind` klassifiziert Domain-Indizes bereits über `ITYP_OWNER`/`ITYP_NAME`; Spatial ist dort ein dritter Zweig neben `CTXSYS/CONTEXT` |
+| **WKB trägt die SRID nicht, der Konstruktor schon** | `SDO_UTIL.TO_WKBGEOMETRY` → BLOB; zurück über `SDO_UTIL.FROM_WKBGEOMETRY(wkb)` fällt die SRID auf `NULL`. Die **zweiargumentige** Überladung `FROM_WKBGEOMETRY(wkb, srid)` trägt sie, und beide Formen sind NULL-streng (`FROM_WKBGEOMETRY(NULL, 4326)` → `NULL`) | Trifft d-migrates vorhandene Naht exakt: `valuePlaceholder` rendert bereits `<ctor>(?, srid)`. Der Typkonstruktor `SDO_GEOMETRY(wkb, srid)` wäre die falsche Wahl — er ist **nicht** NULL-streng und macht aus einer NULL-Geometrie eine nicht-NULL Geistergeometrie mit leerem GTYPE |
 
 Die Toleranz der Bounding-Box ist gegen `MDSYS.SPATIAL_INDEX_V2` auf 23ai
 gemessen. Ältere Bestände tragen den Vorgänger `MDSYS.SPATIAL_INDEX`, für den
@@ -1540,51 +1547,83 @@ dieser Reihenfolge, weil jeder den nächsten trägt:
   `USER_SDO_GEOM_METADATA` beziehen. Damit hört die stille Umdeutung zu Text
   auf; Generate und Diff blocken weiterhin, aber jetzt sichtbar und auf einem
   Modell, das die Geometrie noch trägt.
-- **12b — Generate.** Spaltentyp plus die Metadatenzeile als eigenes,
-  geordnetes Artefakt vor dem Index. Hier ist zu entscheiden, woher die
-  Bounding-Box kommt (siehe unten) — ohne diese Entscheidung ist 12b nicht
-  baubar.
-- **12c — Index und Diff.** `MDSYS.SPATIAL_INDEX_V2` als Indexart, Abgleich
-  der Metadatenzeile im Diff, und die Reihenfolge-Zusicherung, dass ein
-  Spatial-Index nie zwischen Tabelle und Daten steht.
+- **12b — Generate und Diff.** `canGenerateSpatial` für das native Profil,
+  Spaltentyp `SDO_GEOMETRY`, Wegfall der Blocker in `OracleDiffTableOps`. Ohne
+  Metadatenzeile (siehe Entscheidung 1) ist das der kleinste der vier Teile.
+- **12c — Index.** `MDSYS.SPATIAL_INDEX_V2` als selbstaufräumender
+  PL/SQL-Block in POST_DATA, und der Reverse-Zweig über `ITYP_NAME`, damit ein
+  gelesener Spatial-Index nicht mehr als „fremder Domain-Index" durchfällt.
+- **12d — Datenpfad.** `SDO_UTIL.TO_WKBGEOMETRY` beim Lesen,
+  `SDO_UTIL.FROM_WKBGEOMETRY(?, srid)` beim Schreiben — zwei Überschreibungen
+  auf der vorhandenen WKB-Naht.
 
-### Vor dem Bau zu entscheiden
+### Vor dem Bau entschieden
 
-1. **Woher die Bounding-Box kommt.** Drei Wege, und die Messung oben
-   entschärft die Wahl erheblich: weil eine zu enge Box weder das Einfügen
-   noch das Finden verhindert, ist eine hergeleitete Angabe **nicht
-   datenverlustgefährlich**, sondern nur ungenau.
+1. **Woher die Bounding-Box kommt — die Frage entfällt.** Sie stand nur, weil
+   die Metadatenzeile als Pflicht galt. Nach der korrigierten Messung braucht
+   `SPATIAL_INDEX_V2` sie nicht, wenn er nach den Daten läuft, und für
+   d-migrates kleingeschriebene Bezeichner lässt sie sich ohnehin nicht
+   ablegen. Damit ist keine Box herzuleiten und kein Modellfeld zu erfinden:
+   **12b schreibt keine Metadatenzeile.**
 
-   - *Aus der SRID abgeleitet.* Für geodätische Systeme wie 4326 sind
-     ±180/±90 korrekt und aus `MDSYS.CS_SRS` bestimmbar; für ein projiziertes
-     System ist es geraten.
-   - *Aus den Daten gemessen* (`SDO_TUNE.EXTENT_OF`). Setzt voraus, dass die
-     Daten schon da sind — der Index kommt im Migrate-Plan aber davor. Als
-     nachgelagerter Schritt (Index nach dem Datentransfer) wäre es möglich,
-     ändert aber die Phasenordnung.
-   - *Als neues Feld im neutralen Modell.* Verlustfrei und der einzige Weg,
-     eine vom Autor **deklarierte** Box über einen Round-Trip zu erhalten.
-     Kostet einen Fingerabdruck-Sprung und eine Modellerweiterung, die vier
-     Dialekte nicht füllen können.
+   Der Reverse liest die deklarierte Box weiterhin nicht mit — nur die SRID
+   (12a). Ein Oracle→Oracle-Round-Trip über großgeschriebene Bezeichner
+   verlöre sie also; das bleibt die getrennte Entscheidung, die erst ansteht,
+   wenn dieser Fall gebaut wird.
 
-   Der Vergleich mit SpatiaLite zeigt, warum die dritte Option nicht
-   selbstverständlich ist: dort steht die Ausdehnung in
-   `geometry_columns_statistics` und wird von `UpdateLayerStatistics()` **aus
-   den Daten berechnet** (bis dahin `NULL`), der R*Tree-Index braucht sie
-   nicht. SpatiaLites Extent ist eine Beobachtung, Oracles DIMINFO eine
-   Deklaration — eine Quelle, die nur die Beobachtung führt, kann die
-   Deklaration nicht liefern.
+2. **Welches Testbild: `23-faststart` nur für die Spatial-Tests.** Es gibt
+   dafür bereits ein Vorbild im Repo — `OracleFullTextIntegrationTest` fährt
+   dasselbe größere Bild nur für sich, weil Oracle Text im slim-Bild fehlt.
+   Spatial hat dieselbe Lage und bekommt dieselbe Behandlung, statt allen
+   übrigen Oracle-Tests ~0,9 GB und die längere Startzeit aufzuladen.
 
-   Vorschlag: 12a liest die deklarierte Box (verlustfrei), 12b leitet sie beim
-   Erzeugen aus der SRID ab und meldet das; das Modellfeld bleibt eine
-   getrennte Entscheidung, die erst ansteht, wenn ein Oracle→Oracle-Round-Trip
-   sie tatsächlich verlieren würde.
-2. **Welches Testbild.** `23-faststart` für alle Oracle-Tests (langsamer,
-   größer) oder nur für die Spatial-Tests (zwei Images im Umlauf).
-3. **Ob der Datenpfad mitgeht.** `SDO_GEOMETRY` über `DataReader`/`DataWriter`
-   ist ein eigener Kostenpunkt (WKT über `SDO_UTIL.TO_WKTGEOMETRY` bzw.
-   `SDO_GEOMETRY`-Konstruktor). Ohne ihn migriert Slice 12 die Struktur, aber
-   nicht die Werte — was zu sagen wäre, nicht stillschweigend zu tun.
+3. **Der Datenpfad geht mit.** Er kostet fast nichts — die Messung oben zeigt,
+   dass `SDO_UTIL.TO_WKBGEOMETRY` / `FROM_WKBGEOMETRY(?, srid)` genau auf die
+   vorhandene Naht passt (`geometryReadExpression`,
+   `geometryBindConstructor`), ohne eine Zeile an der geteilten Naht zu
+   ändern. Vor allem aber wäre es **ohne ihn eine Verschlechterung**: erst 12a
+   macht aus der Geometrie einen echten `NeutralType.Geometry`, und ein
+   Transfer, der ihn nicht kennt, schriebe den Oracle-Locator als Text
+   fort.
+
+### Die Reihenfolge ist die tragende Entscheidung
+
+Aus den drei Messungen — Metadatenzeile unerreichbar, Index braucht die SRID
+aus den Daten, fehlgeschlagener Index sperrt die Tabelle — folgt eine Regel,
+die den Slice zusammenhält:
+
+> Der Spatial-Index steht in **POST_DATA**, nie zwischen Tabelle und Daten,
+> und wird als selbstaufräumender PL/SQL-Block gerendert.
+
+POST_DATA ist dafür der richtige Ort und kein Notbehelf: das
+Anwenderhandbuch sichert die Reihenfolge `pre-data → Daten → post-data`
+bereits zu, und `generateIndices` bekommt im geteilten Generator keine
+Phasen-Überschreibung — ein Statement behält seine eigene Phase. Oracle legt
+den Index also selbst nach hinten, ohne die vier anderen Dialekte zu
+berühren.
+
+### Was der Review gefunden hat
+
+Zehn Befunde, dazu zwei, die erst der Integrationstest gegen ein echtes
+Oracle zeigte. Die beiden schwersten hätten je einen dauerhaft
+nicht konvergierenden Zustand hinterlassen:
+
+| Befund | Warum es schiefging | Behoben durch |
+| --- | --- | --- |
+| `schema migrate` legte den Spatial-Index auf eine gerade erst angelegte Tabelle | Der Migrate-Pfad hat keine Datenphase; `DiffPhase` verwirft die `POST_DATA`-Angabe des Statements. Die neue Tabelle ist leer → ORA-13199, und der Folgelauf plant dieselbe Operation erneut | Benannter Blocker `ORACLE_SPATIAL_INDEX_NEEDS_ROWS` beim `CreateTable`; auf einer **bestehenden** Tabelle wird der Index weiter gerendert |
+| `setNull` band den Spaltentyp statt des WKB | An der Bindeposition steht das BLOB-Argument des Konstruktors, nicht die Geometrie. Oracle-JDBC lehnt das mit ORA-17068 ab — **vom Integrationstest gefunden, nicht vom Review** | `Types.BLOB` für Geometriespalten, WKB ausdrücklich über `setBytes` (dasselbe Muster wie SQL Server) |
+| Der Rollback ließ den Spatial-Index stehen | `invertStatement` prüft `CREATE`-Präfixe; der Block beginnt mit `BEGIN` und fiel durch — während die Spec ein `DROP INDEX` zusagte | `OracleSpatialIndexDdl.invertedDrop` hebt das `DROP` aus dem Aufräumzweig des Blocks |
+| Der JDBC-Typname ist eignerqualifiziert | `getColumnTypeName` meldet `MDSYS.SDO_GEOMETRY`, der Katalog dagegen `SDO_GEOMETRY`. Ein exakter Vergleich hätte den **gesamten** Datenpfad still übergangen — **vom Integrationstest gefunden** | Vergleich über das letzte Namenssegment, und der gemeldete Name ist im Test festgenagelt |
+| `--spatial-profile none` wirkte auf `schema migrate` nicht mehr | Diese Zusicherung trug allein der entfernte `blockSpatial`; der Migrate-Renderer liest das Profil nicht (wie bei SQL Server) | Nicht im Slice behoben — das bestehende Ticket [`migrate-spatial-profile-not-validated.md`](../open/migrate-spatial-profile-not-validated.md) trägt jetzt die richtige Aktivierungsbedingung |
+| Der Datenpfad verliert die SRID stumm | Sie käme aus `ALL_SDO_GEOM_METADATA` des Ziels, die es für eine von d-migrate angelegte Tabelle nie gibt. `W120` entsteht nur im Generate-Pfad | Nicht im Slice behoben: der Import-Port führt keinen Meldekanal. Eigenes Ticket [`data-path-loses-geometry-srid.md`](../open/data-path-loses-geometry-srid.md), im Handbuch benannt |
+| Drei Handbuch-Stellen beschrieben den abgelösten Stand | `schema migrate` blocke „Geometrie-Spalten"; ein räumlicher Domain-Index werde ausgelassen; `R365` fehlte in der Meldungstabelle | Alle drei nachgezogen |
+| Tote Abfrage im Reverse | `GeometryMetadataRow.dimensions` las niemand, die korrelierte `TABLE(m.diminfo)`-Unterabfrage lief bei jedem Reverse umsonst | Feld und Unterabfrage entfernt |
+| Verwaister KDoc | Der Einschub von `geometryMetadata` trennte den Partitions-KDoc von seiner Funktion | Wieder zusammengeführt |
+| Chronik in Kommentaren | Datum und Slice-Nummern in `OracleSpatialIndexDdl`, im Integrationstest und in zwei Unit-Tests | Entfernt; die Kommentare beschreiben jetzt die Funktion |
+
+Ungetestet waren außerdem `SpatialProfilePolicy` für Oracle,
+`listGeometryMetadata`, der SRID-Durchstich im Reader samt `R365`, der
+Diff-Blocker und die Rollback-Umkehrung — alle fünf haben jetzt Tests.
 
 ## Offene Punkte
 

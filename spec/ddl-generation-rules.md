@@ -1933,6 +1933,7 @@ Zulässige Werte und Defaults je Zieldialekt:
 | `mysql` | `native`, `none` | `native` |
 | `sqlite` | `spatialite`, `none` | `none` |
 | `mssql` | `native`, `none` | `native` |
+| `oracle` | `native`, `none` | `native` |
 
 Bedeutung der Profilwerte:
 
@@ -1940,6 +1941,7 @@ Bedeutung der Profilwerte:
 - `native`: MySQL-DDL wird mit den nativen Spatial Data Types von MySQL erzeugt.
 - `spatialite`: SQLite-DDL verwendet die `AddGeometryColumn()`-Strategie von SpatiaLite.
 - `native` (MSSQL): SQL-Server-DDL verwendet den eingebauten `geometry`-Typ (§16.9).
+- `native` (Oracle): Oracle-DDL verwendet den eingebauten `SDO_GEOMETRY`-Typ (§16.10).
 - `none`: `geometry`-Spalten werden nicht generiert; die gesamte Tabelle wird als `action_required` (E052) markiert. Das ist fuer PostgreSQL, MySQL und SQLite ein zulaessiger Generatorpfad, wenn Spatial-DDL bewusst unterdrueckt werden soll.
 
 Unzulaessige Dialekt/Profil-Kombinationen (z.B. `--target mysql --spatial-profile postgis`)
@@ -2145,6 +2147,69 @@ CREATE TABLE [places] (
   `geography` als `geometry` mit `srid: 4326` (SQL-Server-Default, R345) —
   so bleibt der Round-Trip mit der Generate-Regel stabil.
 
+### 16.10 Oracle (Profil: `native`)
+
+Oracle bringt `SDO_GEOMETRY` ohne Erweiterung mit. Anders als die vier
+uebrigen Dialekte kennt der Typ **weder Subtyp noch SRID an der Spalte**:
+
+```sql
+CREATE TABLE "places" (
+    "id" NUMBER(10) GENERATED ALWAYS AS IDENTITY NOT NULL,
+    "location" SDO_GEOMETRY,           -- geometry_type: point, srid: 4326
+    CONSTRAINT "pk_places" PRIMARY KEY ("id")
+);
+```
+
+**Regeln**:
+
+- Jeder `geometry_type` wird zu `SDO_GEOMETRY`. Subtyp und SRID stehen im
+  einzelnen Wert (`SDO_GTYPE`, `SDO_SRID`); eine Spalte kann einen Punkt und
+  ein Polygon nebeneinander fuehren. Traegt das Modell einen Subtyp oder eine
+  SRID, wird W120 gemeldet.
+- Die SRID einer Spalte stuende in `USER_SDO_GEOM_METADATA`. d-migrate
+  schreibt diese Zeile **nicht**: Oracle hebt Tabellen- und Spaltennamen darin
+  bedingungslos hoch, waehrend d-migrate Bezeichner wortgetreu quotiert und
+  damit kleingeschriebene Tabellen erzeugt. Eine solche Zeile benennte eine
+  andere Tabelle.
+- Raeumliche Indizes werden als `INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2`
+  gerendert, ueber genau eine Spalte (mehrspaltig: E052, ORA-29851). Sie
+  stehen **immer in der POST_DATA-Phase**, nie zwischen Tabelle und Daten:
+  ohne Metadatenzeile leitet Oracle die SRID aus den vorhandenen Zeilen ab,
+  und auf einer leeren Tabelle scheitert das (ORA-13199).
+- Der Index wird als PL/SQL-Block emittiert, der `CREATE INDEX` per
+  `EXECUTE IMMEDIATE` faehrt und im `EXCEPTION`-Zweig `DROP INDEX … FORCE`
+  nachschiebt, bevor er `RAISE`t. Grund: ein gescheiterter Spatial-Index
+  bleibt als `DOMIDX_OPSTATUS = FAILED` stehen und sperrt danach jedes
+  `INSERT` (ORA-29861). Der Block laesst den Index entweder ganz entstehen
+  oder gar nicht. Er traegt `/` als Skript-Trenner (§10.6).
+- `unique` an einem raeumlichen Index hat in Oracle keine Entsprechung und
+  wird mit W102 verworfen.
+- Profil `none`: die gesamte Tabelle wird wie bei PostgreSQL/SQLite mit E052
+  blockiert (§16.3).
+- Rollback: Spalten als Teil von `DROP TABLE "t"`; Spatial-Index als
+  `DROP INDEX "name"`.
+- Reverse: `SDO_GEOMETRY` wird als `geometry` ohne Subtyp gelesen; die SRID
+  kommt aus `ALL_SDO_GEOM_METADATA`, sofern dort eine Zeile mit exakt
+  passendem Tabellen- und Spaltennamen steht, sonst ohne SRID. Ein
+  `MDSYS.SPATIAL_INDEX_V2`- oder `MDSYS.SPATIAL_INDEX`-Domain-Index kommt als
+  `spatial` zurueck.
+- Der Typwechsel einer Spalte **in** `SDO_GEOMETRY` hinein oder aus ihm
+  heraus ist in Oracle nicht moeglich (ORA-22858/ORA-22859, auch auf leerer
+  Tabelle); `schema migrate` blockt ihn benannt statt DDL zu emittieren, die
+  in jedem Fall scheitert.
+- `schema migrate` hat keine Datenphase. Ein raeumlicher Index auf einer
+  Tabelle, die dieselbe Migration erst anlegt, ist deshalb ebenfalls ein
+  benannter Blocker (`ORACLE_SPATIAL_INDEX_NEEDS_ROWS`): die neue Tabelle ist
+  leer, und ohne Metadatenzeile bestimmt Oracle die SRID nur aus den Zeilen.
+  Auf einer **bestehenden** Tabelle wird er gerendert.
+- **Datenpfad**: Geometrien wandern als WKB (`SDO_UTIL.TO_WKBGEOMETRY` beim
+  Lesen, `SDO_UTIL.FROM_WKBGEOMETRY(?, srid)` beim Schreiben; die
+  zweiargumentige Form, weil WKB keine SRID traegt und der gleichnamige
+  Typkonstruktor eine NULL-Geometrie in eine nicht-NULL Geistergeometrie
+  verwandelte). Die SRID kommt aus `ALL_SDO_GEOM_METADATA` des Ziels; wo es
+  dort keine Zeile gibt — also bei jeder von d-migrate angelegten Tabelle —
+  kommen die Werte ohne Koordinatensystem an.
+
 ### 16.8 Fehler- und Warnungs-Codes fuer Spatial
 
 Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E020, E120 und E121
@@ -2170,7 +2235,7 @@ entstehen bei `schema generate` (Generator-/Report-Regeln).
 | W116 | Warnung | `schema reverse` | Sequence metadata reconstructed, but required support objects (routines/triggers) are missing or degraded (MySQL + SQLite) |
 | W117 | Warnung | `schema generate` | Sequence values are transaction-bound in helper-table mode; rollback retracts increments (MySQL + SQLite) |
 | W119 | Warnung | `schema generate` | SQLite (`helper_table`): NOT NULL und CHECK-`IS NOT NULL` auf sequence-getragener Spalte werden unterdrückt, weil der `_bi`-Trigger NULL injizieren muss; Wert wird vom `_ai`-Trigger garantiert |
-| W120 | Warnung | `schema generate` / `schema reverse` | MySQL: SRID could not be fully transferred. MSSQL: Subtyp/SRID einer `geometry`/`geography`-Spalte nicht spaltenseitig erzwungen. SQLite (`helper_table`-Reverse): Marker stimmt, aber Trigger-Body wurde modifiziert; Sequence-Zuordnung bleibt, aber Emulation evtl. nicht funktional |
+| W120 | Warnung | `schema generate` / `schema reverse` | MySQL: SRID could not be fully transferred. MSSQL: Subtyp/SRID einer `geometry`/`geography`-Spalte nicht spaltenseitig erzwungen. Oracle: dasselbe fuer `SDO_GEOMETRY`, zusaetzlich mit dem Grund, warum die `USER_SDO_GEOM_METADATA`-Zeile nicht geschrieben wird. SQLite (`helper_table`-Reverse): Marker stimmt, aber Trigger-Body wurde modifiziert; Sequence-Zuordnung bleibt, aber Emulation evtl. nicht funktional |
 | W121 | Info | `schema generate` | SQLite (`helper_table`): Conflict-Gap-INFO — `ON CONFLICT DO UPDATE`/`DO NOTHING`, `INSERT OR IGNORE`, `INSERT OR FAIL` (multi-row) verbrauchen einen Sequence-Wert ohne Insert |
 | W122 | Warnung | `schema generate` | SQLite (`helper_table`): AFTER INSERT-Sequence-Trigger führt `UPDATE` auf der Zieltabelle aus; bei `PRAGMA recursive_triggers = ON` feuern bestehende UPDATE-Trigger auf derselben Tabelle |
 | W123 | Warnung | `schema rollback` | SQLite (`helper_table`): ATTACHed Datenbanken detektiert; Rollback kann Abhängigkeiten über Schemen nicht prüfen — `--force-rollback` erforderlich |
