@@ -7,6 +7,9 @@ import dev.dmigrate.cli.commands.SchemaRollbackRequest
 import dev.dmigrate.cli.commands.SchemaRollbackRunner
 import dev.dmigrate.cli.commands.capabilityGenerationCanonicalizer
 import dev.dmigrate.cli.commands.testing.executeAgainstPool
+import dev.dmigrate.core.diff.TargetProjection
+import dev.dmigrate.driver.DialectCapabilities
+import io.kotest.assertions.withClue
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
@@ -221,6 +224,59 @@ class OracleMigrateRoundTripIntegrationTest : FunSpec({
             runCatching { execDdl("""DROP TABLE "round_trip" PURGE""") }
             tmp.toFile().deleteRecursively()
         }
+    }
+    test("the hand-written spelling of an identity column plans nothing") {
+        // Der Reverse legt eine IDENTITY-Spalte als numerischen Typ plus
+        // `generation` ab; ein von Hand geschriebenes Soll benutzt meist
+        // `identifier` + `auto_increment`. Oracle rendert beide zur selben
+        // Spalte -- der Unterschied ist dort also keiner. Vorher plante er
+        // einen `AlterColumnType`, der mit ORACLE_ADD_IDENTITY_UNSUPPORTED
+        // blockte: eine Blockade auf einer Spalte, an der sich nichts
+        // geaendert hat.
+        execDdl(
+            """BEGIN EXECUTE IMMEDIATE 'DROP TABLE "shape_probe" CASCADE CONSTRAINTS PURGE';
+               EXCEPTION WHEN OTHERS THEN NULL; END;""",
+            """CREATE TABLE "shape_probe" (
+                 "id" NUMBER(9) GENERATED ALWAYS AS IDENTITY
+                   CONSTRAINT "pk_shape_probe" PRIMARY KEY,
+                 "name" VARCHAR2(100) NOT NULL
+               )""",
+        )
+        val live = readSchema().let { read ->
+            SchemaDefinition(
+                name = read.name, version = read.version,
+                tables = mapOf("shape_probe" to read.tables.getValue("shape_probe")),
+            )
+        }
+        // Name und Version gehoeren nicht zur Frage: der Reverse traegt seinen
+        // Marker, ein Soll traegt einen eigenen Namen. Verglichen wird die
+        // Spalte.
+        val handWritten = SchemaDefinition(
+            name = live.name, version = live.version,
+            tables = mapOf(
+                "shape_probe" to TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(NeutralType.Identifier(autoIncrement = true)),
+                        "name" to ColumnDefinition(NeutralType.Text(maxLength = 100), required = true),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val projection = TargetProjection(
+            type = { type -> OracleDriver().typeCanonicalizer().canonicalize(type, emptyMap()) },
+            generation = capabilityGenerationCanonicalizer(DatabaseDialect.ORACLE),
+            foldsAutoIncrementOntoIdentity =
+                DialectCapabilities.forDialect(DatabaseDialect.ORACLE).rendersAutoIncrementAsIdentity,
+        )
+
+        val diff = SchemaComparator(projection).compare(live, handWritten)
+        withClue("geplante Aenderungen: ${diff.tablesChanged}") { diff.isEmpty() shouldBe true }
+
+        // Gegenprobe: ohne die Faltung ist es eine Aenderung -- genau die, die
+        // vorher blockte.
+        SchemaComparator(projection.copy(foldsAutoIncrementOntoIdentity = false))
+            .compare(live, handWritten).isEmpty() shouldBe false
     }
 })
 

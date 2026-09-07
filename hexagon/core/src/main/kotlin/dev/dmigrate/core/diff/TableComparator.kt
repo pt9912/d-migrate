@@ -201,8 +201,11 @@ internal class TableComparator(
         val refDiff = if (fkAbsorbed) null
             else if (left.references == right.references) null
             else ValueChange(left.references, right.references)
-        val generationDiff = if (projectGeneration(left.generation) == projectGeneration(right.generation)) null
-            else ValueChange(left.generation, right.generation)
+        val generationDiff = when {
+            projectGeneration(left.generation) == projectGeneration(right.generation) -> null
+            identitySpelledDifferently(left, right) -> null
+            else -> ValueChange(left.generation, right.generation)
+        }
         if (hasNoColumnDiff(typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff, generationDiff)) return null
         return ColumnDiff(
             name = name,
@@ -367,6 +370,36 @@ internal class TableComparator(
         type: ConstraintType,
         fallback: String,
     ): String = side.singleColumnNames[SingleColumnKey(column, type)] ?: fallback
+
+    /**
+     * Ob beide Seiten dieselbe Autowert-Spalte meinen und sie nur verschieden
+     * hinschreiben: einmal `identifier` + `auto_increment`, einmal der
+     * numerische Typ mit `generation: identity`.
+     *
+     * Der Reverse liefert immer die zweite Form, ein handgeschriebenes Soll
+     * meist die erste. Wo der Dialekt beide zum selben DDL rendert
+     * ([TargetProjection.foldsAutoIncrementOntoIdentity]), ist ihr Unterschied
+     * keine ausdrueckbare Aenderung — geplant wuerde sonst bei jedem Lauf
+     * dieselbe Aenderung an einer unveraenderten Spalte, und auf Oracle
+     * endete sie mit einem Blocker, weil sich eine Spalte dort nicht
+     * nachtraeglich zur Identity-Spalte machen laesst.
+     *
+     * Der **Modus** bleibt vergleichbar: die `auto_increment`-Schreibweise
+     * nennt keinen, also gibt es nichts zu vergleichen. Nennen ihn beide
+     * Seiten, faellt dieser Zweig gar nicht erst an.
+     */
+    private fun identitySpelledDifferently(left: ColumnDefinition, right: ColumnDefinition): Boolean {
+        if (targetProjection?.foldsAutoIncrementOntoIdentity != true) return false
+        return autoIncrementOnly(left) && identityOnly(right) ||
+            identityOnly(left) && autoIncrementOnly(right)
+    }
+
+    private fun autoIncrementOnly(column: ColumnDefinition): Boolean =
+        column.generation == null && (column.type as? NeutralType.Identifier)?.autoIncrement == true
+
+    private fun identityOnly(column: ColumnDefinition): Boolean =
+        column.generation is ColumnGeneration.Identity &&
+            (column.type as? NeutralType.Identifier)?.autoIncrement != true
 
     private fun syntheticUniqueConstraint(column: String, side: NormalizedConstraints) = ConstraintDefinition(
         name = nameFor(side, column, ConstraintType.UNIQUE, "_unique_$column"),

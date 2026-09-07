@@ -232,6 +232,45 @@ columns:
     srid: 4326                  # optional, positive Ganzzahl
 ```
 
+#### Zwei Schreibweisen fuer eine Autowert-Spalte
+
+Eine Spalte, die ihren Wert selbst vergibt, laesst sich auf zwei Arten
+hinschreiben:
+
+```yaml
+id: { type: identifier, auto_increment: true }          # (a)
+id: { type: integer, generation: { type: identity } }   # (b)
+```
+
+Beide sind gueltig. **(b) ist die Form, die jeder Reverse liefert** — die
+Datenbank fuehrt einen numerischen Typ plus die Identity-Eigenschaft, nicht
+einen eigenen Typ. **(a) ist die Form, die ein handgeschriebenes Schema
+meist benutzt.**
+
+Ob sie dasselbe bedeuten, entscheidet der Zieldialekt, und es ist gemessen:
+
+| Dialekt | (a) rendert als | (b) rendert als | gleich |
+|---|---|---|---|
+| PostgreSQL | `SERIAL` | `INTEGER GENERATED ALWAYS AS IDENTITY` | **nein** |
+| MySQL | `INT NOT NULL AUTO_INCREMENT` | dasselbe | ja |
+| SQLite | `INTEGER PRIMARY KEY AUTOINCREMENT` | dasselbe | ja |
+| SQL Server | `INT IDENTITY(1,1) NOT NULL` | dasselbe | ja |
+| Oracle | `NUMBER(9) GENERATED ALWAYS AS IDENTITY` | dasselbe | ja |
+
+Wo beide dasselbe DDL ergeben, behandelt der **ziel-bewusste** Vergleich sie
+als gleich (`DialectCapabilities.rendersAutoIncrementAsIdentity`); sonst
+plante jeder `schema migrate`-Lauf dieselbe Aenderung an einer
+unveraenderten Spalte. Auf PostgreSQL bleibt der Unterschied ein
+Unterschied: `SERIAL` ist eine Sequenz mit Default, `IDENTITY` etwas
+anderes.
+
+Der **Modus** (`always` / `by_default`) bleibt in jedem Fall vergleichbar:
+Schreibweise (a) nennt keinen, es gibt dort also nichts zu vergleichen;
+nennen ihn beide Seiten, greift die Faltung gar nicht.
+
+`schema compare` (strikt) meldet den Unterschied weiterhin — er soll jeden
+Unterschied zeigen, auch einen, den das Ziel nicht ausdruecken kann.
+
 #### Spatial-Typ-Attribute
 
 | Attribut        | Pflicht | Typ         | Default    | Beschreibung                                       |

@@ -38,6 +38,29 @@ data class TargetProjection(
     /** Typen, die das Ziel auf denselben deklarierten Typ faltet. */
     val type: (NeutralType) -> NeutralType,
     /**
+     * Ob der Dialekt `identifier` + `auto_increment` und den numerischen Typ
+     * mit `generation: identity` zu **derselben** Spalte rendert.
+     *
+     * Gemessen (2026-09-08) fuer alle fuenf Dialekte:
+     *
+     * | Dialekt | `identifier`+`auto_increment` | Typ + `generation` |
+     * | --- | --- | --- |
+     * | PostgreSQL | `SERIAL` | `INTEGER GENERATED ALWAYS AS IDENTITY` |
+     * | MySQL | `INT NOT NULL AUTO_INCREMENT` | dasselbe |
+     * | SQLite | `INTEGER PRIMARY KEY AUTOINCREMENT` | dasselbe |
+     * | SQL Server | `INT IDENTITY(1,1) NOT NULL` | dasselbe |
+     * | Oracle | `NUMBER(9) GENERATED ALWAYS AS IDENTITY` | dasselbe |
+     *
+     * Wo beide Schreibweisen dasselbe ergeben, ist ihr Unterschied keine
+     * ausdrueckbare Aenderung: der Reverse liefert immer die zweite, ein
+     * handgeschriebenes Soll meist die erste, und der Planer plante sonst bei
+     * jedem Lauf eine Aenderung an einer Spalte, an der sich nichts geaendert
+     * hat. Auf PostgreSQL sind es zwei verschiedene Dinge — `SERIAL` ist eine
+     * Sequenz mit Default, `IDENTITY` ist etwas anderes —, dort bleibt der
+     * Unterschied ein Unterschied.
+     */
+    val foldsAutoIncrementOntoIdentity: Boolean = false,
+    /**
      * Index-Eigenschaften, die das Ziel nicht fuehrt — etwa die
      * Text-Search-Konfiguration, `INCLUDE`-Spalten, die Bitmap-Zugriffsart
      * oder der Name eines Volltext-Index, den der Reverse synthetisiert.

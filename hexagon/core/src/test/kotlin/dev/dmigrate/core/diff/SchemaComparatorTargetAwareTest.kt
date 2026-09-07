@@ -252,4 +252,79 @@ class SchemaComparatorTargetAwareTest : FunSpec({
         )
         SchemaComparator(dropsHashModulus).compare(ranged("100"), ranged("200")).isEmpty() shouldBe false
     }
+
+    // ── Zwei Schreibweisen fuer dieselbe Autowert-Spalte ─────────
+    //
+    // Der Reverse legt eine IDENTITY-Spalte als numerischen Typ plus
+    // `generation` ab; ein handgeschriebenes Soll benutzt meist
+    // `identifier` + `auto_increment`. Wo der Dialekt beide zum selben DDL
+    // rendert, ist das kein Unterschied — sonst plant jeder Lauf dieselbe
+    // Aenderung an einer unveraenderten Spalte, und auf Oracle endet sie mit
+    // einem Blocker, weil sich eine Spalte dort nicht nachtraeglich zur
+    // Identity-Spalte machen laesst.
+
+    fun identityTable(column: ColumnDefinition) = SchemaDefinition(
+        name = "S", version = "1",
+        tables = mapOf(
+            "t" to TableDefinition(columns = mapOf("id" to column), primaryKey = listOf("id")),
+        ),
+    )
+
+    val autoIncrementSpelling = ColumnDefinition(NeutralType.Identifier(autoIncrement = true))
+    val generationSpelling = ColumnDefinition(
+        NeutralType.Integer,
+        generation = ColumnGeneration.Identity(mode = IdentityMode.ALWAYS),
+    )
+
+    test("where the dialect renders both spellings the same, they compare equal") {
+        val projection = TargetProjection(
+            type = { if (it is NeutralType.Identifier) NeutralType.Integer else it },
+            foldsAutoIncrementOntoIdentity = true,
+        )
+
+        SchemaComparator(projection).compare(
+            identityTable(autoIncrementSpelling), identityTable(generationSpelling),
+        ).isEmpty() shouldBe true
+    }
+
+    test("where it renders them differently, the difference stays a difference") {
+        // PostgreSQL: `SERIAL` ist eine Sequenz mit Default, `IDENTITY` etwas
+        // anderes -- gemessen an den Generatoren.
+        val projection = TargetProjection(
+            type = { if (it is NeutralType.Identifier) NeutralType.Integer else it },
+            foldsAutoIncrementOntoIdentity = false,
+        )
+
+        SchemaComparator(projection).compare(
+            identityTable(autoIncrementSpelling), identityTable(generationSpelling),
+        ).isEmpty() shouldBe false
+    }
+
+    test("a real mode change is still planned, in either spelling") {
+        val projection = TargetProjection(
+            type = { if (it is NeutralType.Identifier) NeutralType.Integer else it },
+            foldsAutoIncrementOntoIdentity = true,
+        )
+        val byDefault = ColumnDefinition(
+            NeutralType.Integer,
+            generation = ColumnGeneration.Identity(mode = IdentityMode.BY_DEFAULT),
+        )
+
+        // Nennen beide Seiten einen Modus, faellt der Faltungszweig nicht an.
+        SchemaComparator(projection).compare(
+            identityTable(generationSpelling), identityTable(byDefault),
+        ).isEmpty() shouldBe false
+    }
+
+    test("a column that is neither spelling is untouched by the fold") {
+        val projection = TargetProjection(
+            type = { it },
+            foldsAutoIncrementOntoIdentity = true,
+        )
+        val plain = ColumnDefinition(NeutralType.Integer)
+
+        SchemaComparator(projection).compare(
+            identityTable(plain), identityTable(generationSpelling),
+        ).isEmpty() shouldBe false
+    }
 })

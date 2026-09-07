@@ -14,6 +14,7 @@ import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.RoutineBodyDisplay
@@ -397,6 +398,8 @@ class SchemaMigrateRunner(
             index = capabilityIndexCanonicalizer(prep.effectiveDialect),
             generation = capabilityGenerationCanonicalizer(prep.effectiveDialect),
             partitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
+            foldsAutoIncrementOntoIdentity =
+                DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
         )
         val diff = targetAwareComparator
             ?.invoke(prep.targetNormalized.schema, prep.sourceNormalized.schema, projection)

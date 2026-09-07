@@ -132,6 +132,25 @@ data class DialectCapabilities(
      */
     val carriesPartialIndexPredicate: Boolean = true,
     /**
+     * Ob der Dialekt `identifier` + `auto_increment` und den numerischen Typ
+     * mit `generation: identity` zur **selben** Spalte rendert.
+     *
+     * Gemessen (2026-09-08) an allen fuenf Generatoren: MySQL, SQLite, SQL
+     * Server und Oracle schreiben in beiden Faellen dieselbe Spalte
+     * (`AUTO_INCREMENT`, `AUTOINCREMENT`, `IDENTITY(1,1)`,
+     * `GENERATED ALWAYS AS IDENTITY`). PostgreSQL nicht: dort wird aus der
+     * ersten Schreibweise `SERIAL` — eine Sequenz mit Default — und aus der
+     * zweiten `GENERATED ALWAYS AS IDENTITY`. Das sind zwei verschiedene
+     * Dinge, und der Unterschied bleibt dort ein Unterschied.
+     *
+     * Wo beide dasselbe ergeben, darf der Vergleich sie nicht auseinander
+     * halten: der Reverse liefert immer die zweite Form, ein
+     * handgeschriebenes Soll meist die erste, und der Planer plante sonst bei
+     * jedem Lauf eine Aenderung an einer unveraenderten Spalte — auf Oracle
+     * sogar eine, die dort gar nicht ausfuehrbar ist (`ORA-30673`).
+     */
+    val rendersAutoIncrementAsIdentity: Boolean = true,
+    /**
      * Ob der Dialekt die Refresh-Einstellung einer materialisierten Sicht
      * (`ViewDefinition.refresh`) tatsaechlich umsetzt.
      *
@@ -271,6 +290,9 @@ data class DialectCapabilities(
                 // er von keinem Dialekt, ein Soll-Schema kann ihn also nicht
                 // tragen.
                 namesIdentitySequences = false,
+                // `SERIAL` und `GENERATED ... AS IDENTITY` sind in PostgreSQL
+                // zwei verschiedene Dinge, nicht zwei Schreibweisen desselben.
+                rendersAutoIncrementAsIdentity = false,
             )
             DatabaseDialect.MYSQL -> DialectCapabilities(
                 supportsViews = true,
