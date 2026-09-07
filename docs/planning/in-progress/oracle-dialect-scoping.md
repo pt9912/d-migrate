@@ -1103,8 +1103,10 @@ Nicht-UTC-Offset.
 - **Der Partitionsbestand einer bestehenden Tabelle lässt sich nicht ändern**:
   `AlterTablePartitions` blockt für Oracle benannt. Neu ist, dass der Fall
   überhaupt erreichbar ist — vorher meldete der Reverse keine Partitionierung.
-- MySQL und SQL Server verlieren dieselben Felder wie Oracle, blenden sie im
-  Fingerabdruck aber nicht aus:
+- MySQL und SQL Server behalten diese Felder im Fingerabdruck — anders als
+  hier zunächst vermutet, und zu Recht: ihre Reverse-Leser rekonstruieren
+  untere Grenze und Modulus aus der Kontiguität bzw. aus `PARTITIONS n`.
+  Nachgemessen und geschlossen in
   [`partition-fingerprint-lossy-dialects.md`](../open/partition-fingerprint-lossy-dialects.md).
 
 ## Slice 8 im Detail — Oracle Text

@@ -1,6 +1,6 @@
 # Kapazitäts-Projektion: Fingerabdruck **und** Comparator
 
-> **Status:** Teile A, B und C gebaut. D offen.
+> **Status:** Erledigt (A bis D).
 >
 > **Herkunft:** drei Tickets, die als „derselbe Fehlertyp" zusammengelegt
 > werden sollten —
@@ -159,11 +159,17 @@ zurückgeben kann, statt es bei jedem Lauf erneut zu planen.
   stand bereits: sowohl der Migrate-Abschnitt als auch die Fehlerbehebung
   erklären `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` samt Lösung, und eine
   Versionsnummer, die veralten könnte, steht dort nirgends.
-- **D — Die falschen Aussagen einsammeln.** Der KDoc von
-  `carriesPartitionLowerBounds` behauptet, MySQLs Reverse könne die untere
-  Grenze „deshalb nicht zurückmelden" — das ist widerlegt und hat das
-  Partitions-Ticket verursacht. Ticket schließen, MSSQL-HASH→RANGE als
-  eigenen Befund anlegen.
+- **D — Die falschen Aussagen einsammeln.** ✅ Der KDoc von
+  `carriesPartitionLowerBounds` ist korrigiert (er war die Quelle des
+  Irrtums), das Partitions-Ticket steht auf `refuted` mit der Messung darin,
+  die beiden von B aufgelösten Tickets auf `resolved`, und der Verweis im
+  Oracle-Plan sagt jetzt das Gegenteil des alten Satzes.
+
+  Der echte SQL-Server-Befund ist eigenständig abgelegt:
+  [`mssql-hash-emulation-not-round-trippable.md`](../open/mssql-hash-emulation-not-round-trippable.md)
+  — eine emulierte HASH-Partitionierung kommt als RANGE zurück, mit anderem
+  Schlüssel und einer zusätzlichen Spalte im Modell. Drei Abweichungen
+  zugleich; keine Feld-Projektion hat dafür einen Griff.
 
 ## Akzeptanzkriterien
 

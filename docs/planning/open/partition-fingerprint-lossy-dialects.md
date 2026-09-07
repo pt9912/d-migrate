@@ -1,10 +1,42 @@
 ---
 id: partition-fingerprint-lossy-dialects
 title: "MySQL und SQL Server verlieren dieselben Partitionsangaben wie Oracle, ohne sie im Fingerabdruck auszublenden"
-status: open
+status: refuted
 ---
 
 # Partitions-Fingerabdruck: MySQL und SQL Server projizieren nicht
+
+> **Widerlegt — nicht umgesetzt.** Der Befund unten fragt, was der *Server*
+> ablegt. Fuer den Vergleich zaehlt aber, was sein *Reverse* zurueckgibt, und
+> beide Leser **rekonstruieren** die fehlenden Angaben:
+>
+> - `MysqlPartitionReader.reconstructNeutralBounds`: RANGE-`from` aus der
+>   Kontiguitaet (`fromₙ = toₙ₋₁`, erstes `from = MINVALUE`), HASH
+>   `modulus = n` und `remainder = Ordinalindex` aus `PARTITIONS n`.
+> - `MssqlSchemaReader`: `from = if (i == 0) MinValue else bounds[i - 1]` —
+>   dieselbe Rekonstruktion.
+> - `TableComparator` normalisiert zusaetzlich selbst
+>   (`PartitionBoundNormalizer.withDerivedLowerBounds`).
+>
+> `carriesPartitionLowerBounds` und `carriesPartitionHashModulus` bleiben
+> deshalb fuer beide Dialekte auf `true`. Sie wegzuprojizieren wuerde einen
+> **echten** Verlust verstecken: eine Luecke zwischen RANGE-Partitionen laesst
+> sich in MySQL und SQL Server gar nicht abbilden, der Zielbestand ist dann
+> ein anderer, und der Generate-Pfad warnt davor (`W112`).
+>
+> Die Quelle des Irrtums stand im Code: der KDoc von
+> `carriesPartitionLowerBounds` behauptete, MySQLs Reverse koenne die untere
+> Grenze „deshalb nicht zurueckmelden". Der Satz ist korrigiert.
+>
+> **Was bleibt**, ist ein anderer und groesserer Befund bei SQL Server:
+> eine emulierte HASH-Partitionierung kommt als RANGE zurueck, mit anderem
+> Schluessel und einer zusaetzlichen Spalte. Das kann keine Feld-Projektion
+> heilen — eigenes Ticket:
+> [`mssql-hash-emulation-not-round-trippable.md`](mssql-hash-emulation-not-round-trippable.md).
+>
+> Die dritte Frage unten (Artefakt-Kompatibilitaet) ist ebenfalls beantwortet:
+> der Rollback prueft `fingerprintAlgorithm` und meldet
+> `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` benannt.
 
 ## Befund
 
