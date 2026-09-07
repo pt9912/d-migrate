@@ -478,12 +478,25 @@ internal object OracleMetadataQueries {
             """.trimIndent(),
             schema,
         ).map { row ->
+            val increment = row.long("increment_by") ?: 1L
             SequenceRow(
                 name = row.string("sequence_name"),
                 lastNumber = row.long("last_number") ?: 1L,
-                increment = row.long("increment_by") ?: 1L,
-                minValue = row.long("min_value"),
-                maxValue = row.long("max_value"),
+                increment = increment,
+                // Die verbleibende Default-Grenze faellt auf `null` zurueck:
+                // aufsteigend ist `MINVALUE 1` Oracles Default, absteigend
+                // `MAXVALUE -1`. `ALL_SEQUENCES` fuehrt kein Kennzeichen
+                // dafuer, ob sie deklariert wurde — Oracle unterscheidet
+                // "nicht angegeben" und "genau auf den Default gesetzt" also
+                // selbst nicht, und der Reverse kann es folglich auch nicht.
+                // Sie stehen zu lassen hiesse, jeder Oracle-Sequenz dauerhaft
+                // eine `min_value: null -> 1`-Abweichung anzuhaengen: `schema
+                // compare` erreichte nie "keine Aenderungen", und `migrate`
+                // plante dasselbe `ALTER SEQUENCE` bei jedem Lauf erneut.
+                minValue = row.sequenceBound("min_value")
+                    ?.takeUnless { increment > 0 && it == ASCENDING_DEFAULT_MIN },
+                maxValue = row.sequenceBound("max_value")
+                    ?.takeUnless { increment < 0 && it == DESCENDING_DEFAULT_MAX },
                 cycle = row.string("cycle_flag") == "Y",
                 cache = row.int("cache_size")?.takeIf { it > 0 },
             )
@@ -705,5 +718,40 @@ internal object OracleMetadataQueries {
     private val ROUTINE_DEPENDENCY_TYPES = listOf("FUNCTION", "PROCEDURE", "TRIGGER")
 
 
+    /** Oracles Default-Untergrenze einer aufsteigenden Sequenz. */
+    private const val ASCENDING_DEFAULT_MIN = 1L
+
+    /** Oracles Default-Obergrenze einer absteigenden Sequenz. */
+    private const val DESCENDING_DEFAULT_MAX = -1L
+
     private fun Map<String, Any?>.long(key: String): Long? = (this[key] as? Number)?.toLong()
+
+    /**
+     * Eine Sequenzgrenze aus `ALL_SEQUENCES` — oder `null`, wenn sie
+     * „unbegrenzt" bedeutet.
+     *
+     * Oracle materialisiert `NOMINVALUE`/`NOMAXVALUE` als konkrete Zahlen
+     * ausserhalb des `Long`-Bereichs; gemessen am Server (23c):
+     *
+     * ```
+     * aufsteigend:  min = 1                            max = 9999999999999999999999999999
+     * absteigend:   min = -999999999999999999999999999 max = -1
+     * ```
+     *
+     * Der Treiber liefert sie als `BigDecimal`, und `toLong()` verkuerzt
+     * ausserhalb des Bereichs **still auf die unteren 64 Bit** — aus einer
+     * unbegrenzten Sequenz wurde so eine bei rund 4,5 Trillionen begrenzte,
+     * ohne Fehler und ohne Notiz. Was nicht in ein `Long` passt, ist deshalb
+     * `null`: unbegrenzt.
+     */
+    private fun Map<String, Any?>.sequenceBound(key: String): Long? {
+        val exact = when (val value = this[key]) {
+            null -> return null
+            is java.math.BigDecimal -> value
+            is java.math.BigInteger -> java.math.BigDecimal(value)
+            is Number -> java.math.BigDecimal.valueOf(value.toLong())
+            else -> return null
+        }
+        return runCatching { exact.longValueExact() }.getOrNull()
+    }
 }

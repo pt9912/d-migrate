@@ -897,6 +897,18 @@ voraus; auf ihm fortzusetzen laesst die reservierten Werte aus (eine
 Luecke), waehrend eine Rueckrechnung auf den zuletzt ausgegebenen Wert sie
 ein zweites Mal vergaebe.
 
+**Grenzen beim Reverse**: `NOMINVALUE`/`NOMAXVALUE` materialisieren in
+`ALL_SEQUENCES` als konkrete Zahlen — aufsteigend `1` und `10^28 - 1`,
+absteigend `-(10^27 - 1)` und `-1` (gemessen an 23c). Der Reverse faltet sie
+auf `null` zurueck: die ausserhalb des `Long`-Bereichs liegenden ueber ihren
+Betrag, die beiden verbleibenden Defaults ueber die Richtung der Sequenz.
+`ALL_SEQUENCES` fuehrt kein Kennzeichen dafuer, ob eine Grenze deklariert
+wurde — Oracle unterscheidet „nicht angegeben" und „genau auf den Default
+gesetzt" also selbst nicht, und der Reverse kann es folglich auch nicht.
+Ohne die Faltung traege jede Oracle-Sequenz dauerhaft eine
+`min_value: null → 1`-Abweichung, und `schema compare` erreichte nie „keine
+Aenderungen". Erklaerte Grenzen bleiben unveraendert stehen.
+
 Der Reverse kann den urspruenglichen Startwert nicht zurueckgewinnen, weil
 Oracle ihn nicht aufbewahrt: `ALL_SEQUENCES` hat keine entsprechende Spalte
 (gefuehrt werden `MIN_VALUE`, `MAX_VALUE`, `INCREMENT_BY`, `CYCLE_FLAG`,

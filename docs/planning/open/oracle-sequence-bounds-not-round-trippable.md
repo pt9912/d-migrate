@@ -1,10 +1,46 @@
 ---
 id: oracle-sequence-bounds-not-round-trippable
 title: "Oracle-Sequenzgrenzen round-trippen nicht — und NOMAXVALUE wird beim Lesen stillschweigend verfaelscht"
-status: open
+status: resolved
 ---
 
 # Sequenzgrenzen: kein Round-Trip, und `NOMAXVALUE` wird verfaelscht
+
+> **Erledigt, Richtung 1 + 2.**
+>
+> - **Befund 1** (Verkuerzung): die Katalogwerte werden als `BigDecimal`
+>   gelesen; was nicht exakt in ein `Long` passt, ist `null` — unbegrenzt.
+>   Statt `longValueExact()` auf gut Glueck zu rufen, faengt der Leser den
+>   Bereichsfehler ab; `toLong()` haette weiter still verkuerzt.
+> - **Befund 2** (Modellfrage): die beiden verbleibenden Default-Grenzen
+>   werden ueber die **Richtung** der Sequenz gefaltet — aufsteigend
+>   `MINVALUE 1`, absteigend `MAXVALUE -1` → `null`.
+>
+> **Warum Richtung 2 und nicht 3:** die Kosten, die das Ticket ihr
+> zuschreibt — der Verlust der Unterscheidung zwischen „nicht deklariert" und
+> „genau auf den Default gesetzt" — sind keine. `ALL_SEQUENCES` fuehrt kein
+> Kennzeichen dafuer; Oracle selbst unterscheidet die beiden Faelle nicht,
+> also kann kein Leser es. Richtung 3 haette ausserdem nur den
+> Post-Compare-Fall geloest und `schema compare` weiter falsch gelassen.
+>
+> **Gemessen, nicht abgeschrieben** (23c):
+>
+> ```
+> aufsteigend:  min = 1                            max = 9999999999999999999999999999
+> absteigend:   min = -999999999999999999999999999 max = -1
+> ```
+>
+> Der absteigende Fall traegt 27 Neunen, nicht 28 — ein weiterer Grund, das
+> nicht aus der Dokumentation zu uebernehmen.
+>
+> `OracleSequenceReverseIntegrationTest` haelt beides fest: die gelesenen
+> Grenzen **und** die Katalogwerte, auf denen die Behandlung ruht. Mit
+> `toLong()` statt der Bereichspruefung meldet er
+> `Expected null but actual was 4477988020393345023L` — genau die Zahl aus
+> dem Befund.
+>
+> Der irrefuehrende Stub (`Long.MAX_VALUE`, ein Wert, den Oracle an dieser
+> Stelle nie liefert) ist durch die gemessenen ersetzt.
 
 ## Zwei Befunde, derselbe Pfad
 

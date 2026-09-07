@@ -374,7 +374,12 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_sequences") }, "APP") } returns listOf(
             mapOf(
                 "sequence_name" to "ORDER_SEQ", "last_number" to 101L, "increment_by" to 1L,
-                "min_value" to 1L, "max_value" to Long.MAX_VALUE, "cycle_flag" to "N", "cache_size" to 20,
+                // Die Werte, die echtes Oracle fuer eine Sequenz ohne
+                // deklarierte Grenzen liefert (gemessen, 23c). Ein
+                // `Long.MAX_VALUE` stand hier einmal und kommt vom Server nie.
+                "min_value" to java.math.BigDecimal.ONE,
+                "max_value" to java.math.BigDecimal("9999999999999999999999999999"),
+                "cycle_flag" to "N", "cache_size" to 20,
             ),
         )
         val (reader, pool) = rig(jdbc)
@@ -386,6 +391,55 @@ class OracleSchemaReaderTest : FunSpec({
         note.code shouldBe "R345"
         note.severity shouldBe SchemaReadSeverity.INFO
         note.objectName shouldBe "ORDER_SEQ"
+    }
+
+    /**
+     * `NOMINVALUE`/`NOMAXVALUE` materialisieren in `ALL_SEQUENCES` als
+     * konkrete Zahlen. Die obere liegt ausserhalb des `Long`-Bereichs, und
+     * `BigDecimal.toLong()` verkuerzt dort **still auf die unteren 64 Bit** —
+     * aus einer unbegrenzten Sequenz wurde eine bei rund 4,5 Trillionen
+     * begrenzte, ohne Fehler und ohne Notiz.
+     */
+    test("an unbounded sequence comes back unbounded, not truncated") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_sequences") }, "APP") } returns listOf(
+            mapOf(
+                "sequence_name" to "UP_SEQ", "last_number" to 1L, "increment_by" to 1L,
+                "min_value" to java.math.BigDecimal.ONE,
+                "max_value" to java.math.BigDecimal("9999999999999999999999999999"),
+                "cycle_flag" to "N", "cache_size" to 20,
+            ),
+            mapOf(
+                "sequence_name" to "DOWN_SEQ", "last_number" to -1L, "increment_by" to -1L,
+                "min_value" to java.math.BigDecimal("-999999999999999999999999999"),
+                "max_value" to java.math.BigDecimal("-1"),
+                "cycle_flag" to "N", "cache_size" to 20,
+            ),
+            mapOf(
+                "sequence_name" to "BOUNDED_SEQ", "last_number" to 5L, "increment_by" to 1L,
+                "min_value" to java.math.BigDecimal("5"), "max_value" to java.math.BigDecimal("100"),
+                "cycle_flag" to "N", "cache_size" to 20,
+            ),
+        )
+        val (reader, pool) = rig(jdbc)
+        val sequences = reader.read(pool).schema.sequences
+
+        // 4477988020393345023 waere der verkuerzte Wert gewesen.
+        sequences.getValue("UP_SEQ").maxValue shouldBe null
+        // Und die Default-Untergrenze steht ebenso wenig im Modell: Oracle
+        // fuehrt kein Kennzeichen, ob sie deklariert wurde, also kann der
+        // Reverse "nicht angegeben" und "auf den Default gesetzt" nicht
+        // unterscheiden. Sie stehen zu lassen hiesse, jeder Sequenz dauerhaft
+        // eine Abweichung anzuhaengen.
+        sequences.getValue("UP_SEQ").minValue shouldBe null
+
+        sequences.getValue("DOWN_SEQ").minValue shouldBe null
+        sequences.getValue("DOWN_SEQ").maxValue shouldBe null
+
+        // Erklaerte Grenzen bleiben stehen -- gefaltet wird nur der Default.
+        sequences.getValue("BOUNDED_SEQ").minValue shouldBe 5L
+        sequences.getValue("BOUNDED_SEQ").maxValue shouldBe 100L
     }
 
     /**
