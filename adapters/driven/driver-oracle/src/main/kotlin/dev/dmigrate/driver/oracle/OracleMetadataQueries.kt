@@ -114,6 +114,14 @@ internal object OracleMetadataQueries {
      * schon (gemessen: `Y` fuer alle sieben, `N` fuer die echte Tabelle).
      * Ueber den Namen zu filtern waere die schlechtere Loesung — `DR${'$'}`
      * ist keine reservierte Zeichenfolge.
+     *
+     * Ohne **Materialized Views und ihre Logs**, aus demselben Grund und mit
+     * derselben Folge. Beide stehen als gewoehnliche Zeilen in `ALL_TABLES`
+     * (gemessen: eine MV traegt dort ihren eigenen Namen, ein Log den Namen
+     * `MLOG${'$'}_<tabelle>`), und `SECONDARY` ist bei beiden `N` — der
+     * Sekundaerobjekt-Filter greift also nicht. Ausgeschlossen werden sie
+     * ueber die Katalogsichten, die den Begriff fuehren, statt ueber ein
+     * Namensmuster.
      */
     fun listTableRefs(session: JdbcOperations, schema: String): List<TableRef> =
         session.queryList(
@@ -125,6 +133,14 @@ internal object OracleMetadataQueries {
                 SELECT 1 FROM all_objects o
                 WHERE o.owner = t.owner AND o.object_name = t.table_name
                   AND o.object_type = 'TABLE' AND o.secondary = 'Y'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM all_mviews m
+                WHERE m.owner = t.owner AND m.mview_name = t.table_name
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM all_mview_logs l
+                WHERE l.log_owner = t.owner AND l.log_table = t.table_name
               )
             ORDER BY t.table_name
             """.trimIndent(),

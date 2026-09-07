@@ -25,6 +25,11 @@ class OracleMetadataQueriesTest : FunSpec({
         sql.captured shouldContain "FROM all_tables"
         sql.captured shouldContain "owner = ?"
         sql.captured shouldContain "BIN\$"
+        // Materialized Views und ihre Logs stehen als gewoehnliche Zeilen in
+        // ALL_TABLES, mit SECONDARY = 'N' -- der Sekundaerobjekt-Filter
+        // greift bei ihnen nicht.
+        sql.captured shouldContain "FROM all_mviews"
+        sql.captured shouldContain "FROM all_mview_logs"
     }
 
     test("listColumns maps identity metadata via the joined identity-cols sight") {
