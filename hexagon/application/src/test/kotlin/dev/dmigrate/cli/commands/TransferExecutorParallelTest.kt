@@ -18,6 +18,7 @@ import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.chunkSchemaOf
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import java.util.Collections
@@ -179,5 +180,44 @@ class TransferExecutorParallelTest : FunSpec({
                 ctx(reader, writer, layers = listOf(listOf("t1", "t2", "t3"))),
             ) { }
         }
+    }
+
+    /**
+     * Die SRID der Quelle muss die **richtige** Tabelle treffen. Sie steht
+     * je Tabelle und Spalte im Kontext; die Import-Sitzung bekommt sie ueber
+     * die Optionen, weil `openTable` das Quellschema nicht kennt.
+     */
+    test("each table gets the source SRIDs of its own columns, not those of another") {
+        val seen = Collections.synchronizedMap(mutableMapOf<String, Map<String, Int>>())
+        val writer = object : DataWriter {
+            override val dialect = DatabaseDialect.POSTGRESQL
+            override fun schemaSync() = throw UnsupportedOperationException()
+            override fun openTable(
+                pool: ConnectionPool,
+                table: String,
+                options: ImportOptions,
+            ): TableImportSession {
+                seen[table] = options.sourceGeometrySrids
+                return RecordingSession(table, Collections.synchronizedSet(mutableSetOf()))
+            }
+        }
+        val reader = BarrierReader(emptyMap(), Collections.synchronizedSet(mutableSetOf()), CopyOnWriteArrayList())
+        val base = ctx(reader, writer, layers = listOf(listOf("a", "b", "c")))
+
+        TransferExecutor().execute(
+            base.copy(
+                parallelism = 1,
+                sourceGeometrySrids = mapOf(
+                    "a" to mapOf("geom" to 4326),
+                    "b" to mapOf("shape" to 3857),
+                ),
+            ),
+        ) { }
+
+        seen["a"] shouldBe mapOf("geom" to 4326)
+        seen["b"] shouldBe mapOf("shape" to 3857)
+        // `c` traegt keine Geometrie -- ein fehlender Eintrag darf nicht den
+        // einer anderen Tabelle erben.
+        seen["c"] shouldBe emptyMap()
     }
 })

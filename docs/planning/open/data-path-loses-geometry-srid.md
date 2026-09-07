@@ -1,10 +1,24 @@
 ---
 id: data-path-loses-geometry-srid
 title: "Der Datenpfad verliert die SRID einer Geometrie, ohne es zu melden"
-status: open
+status: resolved
 ---
 
 # SRID-Verlust im Datenpfad bleibt unbemerkt
+
+> **Erledigt, ueber Loesungsrichtung 2** — und die erwies sich als die
+> kleinere: `DataTransferRunner` liest das Quellschema ohnehin schon, die
+> SRID stand also bereits zur Verfuegung. Sie wandert jetzt ueber
+> `ImportOptions.sourceGeometrySrids` je Tabelle zur Import-Sitzung und tritt
+> dort ein, wo die Zielspalte keine fuehrt.
+>
+> **Der Zielwert hat Vorrang**: steht am Ziel eine SRID, ist sie die
+> verbindliche Aussage ueber die Spalte, in die geschrieben wird.
+>
+> Richtung 1 (ein Diagnosekanal am Import-Port) wurde damit nicht noetig —
+> es gibt nichts mehr zu melden, wo die Angabe nicht mehr verloren geht. Fuer
+> `data import` aus einer Datei ohne Schemaangabe bleibt es beim bisherigen
+> Verhalten; dort gibt es keine Quelle, aus der die SRID kaeme.
 
 ## Befund
 

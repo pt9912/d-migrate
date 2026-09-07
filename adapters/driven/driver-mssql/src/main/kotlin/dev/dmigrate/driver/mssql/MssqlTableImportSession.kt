@@ -76,7 +76,13 @@ internal class MssqlTableImportSession(
         // Computed-Column-Pruefung und die IDENTITY_INSERT-Entscheidung.
         rejectComputedColumns(importedTargetColumns)
         enableIdentityInsertIfNeeded(importedTargetColumns)
-        return MssqlInsertSql.build(qualifiedTable, importedTargetColumns, primaryKeyColumns, options.onConflict)
+        return MssqlInsertSql.build(
+            qualifiedTable,
+            importedTargetColumns,
+            primaryKeyColumns,
+            options.onConflict,
+            options.sourceGeometrySrids,
+        )
     }
 
     override fun executeChunk(

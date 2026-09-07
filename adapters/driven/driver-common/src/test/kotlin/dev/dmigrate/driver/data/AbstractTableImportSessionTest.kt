@@ -486,6 +486,36 @@ class AbstractTableImportSessionTest : FunSpec({
         s.testValuePlaceholder(plainWithSrid) shouldBe "?"
     }
 
+    // ── Die SRID der Quelle, wo das Ziel keine fuehrt ──────────────
+    //
+    // WKB traegt keine SRID. Zwei der fuenf Ziele koennen sie an der Spalte
+    // nicht fuehren -- ohne die Angabe der Quelle kaemen die Werte dort ohne
+    // Koordinatensystem an.
+
+    test("the source SRID steps in where the target column carries none") {
+        val s = session(
+            geometryBindCtor = "ST_GeomFromWKB",
+            options = ImportOptions(sourceGeometrySrids = mapOf("g" to 4326)),
+        )
+        s.testValuePlaceholder(geomCol) shouldBe "ST_GeomFromWKB(?, 4326)"
+    }
+
+    test("the target SRID wins — it describes the column being written to") {
+        val s = session(
+            geometryBindCtor = "ST_GeomFromWKB",
+            options = ImportOptions(sourceGeometrySrids = mapOf("g" to 3857)),
+        )
+        s.testValuePlaceholder(sridGeomCol) shouldBe "ST_GeomFromWKB(?, 4326)"
+    }
+
+    test("a source SRID for another column does not leak into this one") {
+        val s = session(
+            geometryBindCtor = "ST_GeomFromWKB",
+            options = ImportOptions(sourceGeometrySrids = mapOf("other" to 4326)),
+        )
+        s.testValuePlaceholder(geomCol) shouldBe "ST_GeomFromWKB(?)"
+    }
+
     test("VA2: SRID is ignored without a geometryBindConstructor") {
         val s = session(geometryBindCtor = null)
         s.testValuePlaceholder(sridGeomCol) shouldBe "?"

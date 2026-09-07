@@ -21,12 +21,13 @@ internal object MssqlInsertSql {
         columns: List<TargetColumn>,
         primaryKeyColumns: List<String>,
         onConflict: OnConflict,
+        sourceSrids: Map<String, Int> = emptyMap(),
     ): String {
         require(columns.isNotEmpty()) {
             "Import into '${table.quotedPath()}' requires at least one column"
         }
         val columnList = columns.joinToString(", ") { MssqlIdentifiers.bracket(it.name) }
-        val placeholders = columns.joinToString(", ") { placeholder(it) }
+        val placeholders = columns.joinToString(", ") { placeholder(it, sourceSrids) }
         return when (onConflict) {
             OnConflict.ABORT -> "INSERT INTO ${table.quotedPath()} ($columnList) VALUES ($placeholders)"
             OnConflict.SKIP, OnConflict.UPDATE -> {
@@ -75,14 +76,19 @@ internal object MssqlInsertSql {
      * `geometry`/`geography`. T-SQL kennt dafür nur die statische Methodenform
      * **mit** SRID. [TargetColumn.srid] ist auf SQL Server nie gesetzt — die
      * SRID ist dort Werteigenschaft, nicht Spaltenmetadatum (siehe
-     * [MssqlDataReader]); es gilt daher 0 (`geometry`) bzw. 4326 (`geography`,
-     * WGS 84 — dieselbe Annahme wie Reverse/Generate). Das Feld bleibt
-     * ausgewertet, damit eine spätere SRID-Quelle ohne Umbau greifen kann.
+     * [MssqlDataReader]).
+     *
+     * Deshalb tritt [sourceSrids] ein: die SRID, die die **Quelle** an der
+     * Spalte fuehrt. Erst wenn auch die schweigt, gilt der Typ-Default —
+     * 0 (`geometry`) bzw. 4326 (`geography`, WGS 84, dieselbe Annahme wie
+     * Reverse und Generate).
      */
-    fun placeholder(column: TargetColumn): String {
+    fun placeholder(column: TargetColumn, sourceSrids: Map<String, Int> = emptyMap()): String {
         val typeName = column.sqlTypeName?.lowercase()
         if (!isGeometryTypeName(typeName)) return "?"
-        val srid = column.srid ?: if (typeName == "geography") GEOGRAPHY_DEFAULT_SRID else 0
+        val srid = column.srid
+            ?: sourceSrids[column.name]
+            ?: if (typeName == "geography") GEOGRAPHY_DEFAULT_SRID else 0
         return "$typeName::STGeomFromWKB(?, $srid)"
     }
 

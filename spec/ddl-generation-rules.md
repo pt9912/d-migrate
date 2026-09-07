@@ -2219,7 +2219,8 @@ CREATE TABLE "places" (
   Typkonstruktor eine NULL-Geometrie in eine nicht-NULL Geistergeometrie
   verwandelte). Die SRID kommt aus `ALL_SDO_GEOM_METADATA` des Ziels; wo es
   dort keine Zeile gibt — also bei jeder von d-migrate angelegten Tabelle —
-  kommen die Werte ohne Koordinatensystem an.
+  tritt die SRID der Quelle ein, die `data transfer` aus dem Quellschema
+  mitgibt.
 
 ### 16.8 Fehler- und Warnungs-Codes fuer Spatial
 

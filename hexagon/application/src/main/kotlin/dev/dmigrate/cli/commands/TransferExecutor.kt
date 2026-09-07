@@ -27,6 +27,16 @@ data class TransferExecutionContext(
     val partitionChildren: Map<String, List<String>> = emptyMap(),
     /** LN-007/LN-008: max concurrent tables/partitions; 1 = the sequential path. */
     val parallelism: Int = 1,
+    /**
+     * Die SRID je Tabelle und Geometriespalte, wie die **Quelle** sie fuehrt.
+     *
+     * Der Schreibpfad bindet Geometrien als WKB, und WKB traegt keine SRID —
+     * sie kommt als Argument des Konstruktors mit. Wo die Zielseite sie nicht
+     * fuehren kann (SQL Server haelt sie am Wert, Oracle in einer Zeile, die
+     * zu einer quotiert kleingeschriebenen Tabelle nicht passt), tritt diese
+     * Angabe ein, statt die Werte ohne Koordinatensystem zu schreiben.
+     */
+    val sourceGeometrySrids: Map<String, Map<String, Int>> = emptyMap(),
 )
 
 open class TransferExecutor(
@@ -88,7 +98,9 @@ open class TransferExecutor(
         table = table,
         filter = context.filter,
         chunkSize = context.chunkSize,
-        options = context.importOptions,
+        options = context.importOptions.copy(
+            sourceGeometrySrids = context.sourceGeometrySrids[table].orEmpty(),
+        ),
         cancellationToken = context.cancellationToken,
     )
 

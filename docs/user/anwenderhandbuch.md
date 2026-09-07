@@ -1653,11 +1653,9 @@ SELECT AddGeometryColumn('places', 'area', 4326, 'POLYGON', 'XY');
   Untertyp noch SRID an der Spalte — beides steckt im einzelnen Wert. Ein
   angegebener `geometry_type` oder `srid` wird deshalb mit `[W120]` gemeldet
   und nicht spaltenseitig erzwungen. **Beim Übertragen von Geodaten nach
-  Oracle** kommt die SRID deshalb nur dann mit, wenn die Zieltabelle eine
-  Zeile in `USER_SDO_GEOM_METADATA` hat — was für eine von d-migrate
-  angelegte Tabelle nicht möglich ist, weil Oracle die Namen in dieser Zeile
-  großschreibt. Die Geometrien sind danach räumlich weiterhin brauchbar,
-  tragen aber kein Koordinatensystem. Der räumliche Index landet in der
+  Oracle** nimmt `data transfer` die SRID deshalb aus dem Quellschema, wenn
+  die Zieltabelle keine führt — sonst kämen die Geometrien ohne
+  Koordinatensystem an. Der räumliche Index landet in der
   **post-data**-Phase: Oracle leitet das Koordinatensystem aus den
   vorhandenen Zeilen ab und kann den Index auf einer leeren Tabelle nicht
   anlegen. Erzeugen Sie das DDL deshalb mit `--split pre-post` und spielen Sie

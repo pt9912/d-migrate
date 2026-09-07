@@ -66,6 +66,25 @@ data class ImportOptions(
      * Dialekte ignorieren das Feld -- sie unterscheiden `''` von NULL.
      */
     val oracleEmptyString: OracleEmptyString = OracleEmptyString.Error,
+
+    /**
+     * Die SRID je Geometriespalte, wie die **Quelle** sie fuehrt.
+     *
+     * WKB traegt keine SRID; sie kommt beim Schreiben als Argument des
+     * Geometrie-Konstruktors mit. Die Zielseite kann sie aber nicht immer
+     * liefern: Oracle fuehrt sie in `USER_SDO_GEOM_METADATA` — einer Zeile,
+     * die zu einer quotiert kleingeschriebenen Tabelle nicht passt —, und
+     * SQL Server fuehrt sie ueberhaupt nicht an der Spalte. Ohne diese Angabe
+     * kaemen die Werte dort ohne Koordinatensystem an.
+     *
+     * Der Zielwert hat Vorrang: steht am Ziel eine SRID, ist sie die
+     * verbindliche Aussage ueber die Spalte, in die geschrieben wird. Diese
+     * Karte greift nur, wo das Ziel schweigt.
+     *
+     * Leer fuer `data import` aus einer Datei ohne Schemaangabe — dann bleibt
+     * es beim heutigen Verhalten.
+     */
+    val sourceGeometrySrids: Map<String, Int> = emptyMap(),
 )
 
 /** Trigger-Modus für den Import (§6.7). */

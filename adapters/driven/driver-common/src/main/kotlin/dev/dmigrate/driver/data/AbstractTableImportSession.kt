@@ -277,7 +277,10 @@ abstract class AbstractTableImportSession(
     protected fun valuePlaceholder(column: TargetColumn): String {
         val constructor = geometryBindConstructor
         if (constructor == null || !isGeometryColumn(column)) return "?"
-        val srid = column.srid ?: return "$constructor(?)"
+        // Der Zielwert zuerst: er beschreibt die Spalte, in die geschrieben
+        // wird. Wo das Ziel die SRID nicht fuehren kann, tritt die der Quelle
+        // ein -- sonst kaemen die Werte ohne Koordinatensystem an.
+        val srid = column.srid ?: options.sourceGeometrySrids[column.name] ?: return "$constructor(?)"
         val options = geometryBindOptions
         return if (options != null) "$constructor(?, $srid, $options)" else "$constructor(?, $srid)"
     }

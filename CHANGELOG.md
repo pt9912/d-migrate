@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bisher nur auf den Fingerabdruck, nicht auf den Vergleich: wo ein Dialekt
   eine Angabe nicht zurückmelden kann, meldete der Post-Compare zwar keine
   Drift, der nächste Lauf plante aber dieselbe Änderung erneut.
+- **Die SRID einer Geometrie überlebt `data transfer`.** Sie kommt aus dem
+  Quellschema, wo die Zielspalte keine führen kann — Oracle hält sie in einer
+  Metadatenzeile, die zu einer quotiert kleingeschriebenen Tabelle nicht
+  passt, SQL Server am Wert statt an der Spalte. Bisher landeten die
+  Geometrien dort ohne Koordinatensystem, ohne dass es jemand meldete.
 - **SQL Server: HASH-Emulation und Partitionsnamen.** Eine über
   `--mssql-hash-partitions computed_column` erzeugte Partitionierung kam als
   `range` zurück, mit anderem Schlüssel und einer zusätzlichen Spalte im
