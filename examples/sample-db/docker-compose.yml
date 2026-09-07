@@ -158,6 +158,26 @@ services:
       retries: 30
       start_period: 60s
 
+  # Phase 5 (Spatial, Oracle-Leg): eigener Oracle-Dienst auf der VOLLvariante.
+  # Der oracle-Service oben faehrt das schlanke Image, und das bringt Spatial
+  # nicht mit -- `SDO_GEOMETRY` gibt es dort nicht. Die Vollvariante ist rund
+  # 1 GB groesser, deshalb bleibt sie diesem Leg vorbehalten; eigenes Volume
+  # und eigener Port, damit beide Varianten nebeneinander laufen koennen.
+  oracle-spatial:
+    image: gvenzl/oracle-free@sha256:33322969a450d72c507b08d7f690d9e1d9b60aebaebc35a75b7c0b8ab4baac77
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${SAMPLE_DB_ORACLE_SPATIAL_PORT}:1521"
+    volumes:
+      - sample-db-oracle-spatial-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/oracle/healthcheck.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
   dmigrate:
     # Standard: das JVM-Image d-migrate:dev. Ueberschreibbar auf das Native-Runtime-Image
     # (make native-runtime-build → d-migrate:native-dev), um dieselbe E2E-Harness gegen das
@@ -220,3 +240,4 @@ volumes:
   sample-db-postgis-data:
   sample-db-mssql-data:
   sample-db-oracle-data:
+  sample-db-oracle-spatial-data:

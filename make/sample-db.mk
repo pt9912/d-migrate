@@ -9,7 +9,7 @@
 # docs/adr/0014-sample-db-harness-fetch-and-compose.md. Voraussetzung:
 # einmaliger `make docker-build IMAGE_TAG=dev`.
 
-.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-cross-smoke-pg2ms sample-db-cross-smoke-ms2pg sample-db-cross-smoke-pg2ora sample-db-cross-smoke-ora2pg sample-db-3hop-smoke sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
+.PHONY: sample-db-fetch sample-db-up sample-db-down sample-db-purge sample-db-smoke sample-db-cross-smoke sample-db-cross-smoke-pg2my sample-db-cross-smoke-pg2ms sample-db-cross-smoke-ms2pg sample-db-cross-smoke-pg2ora sample-db-cross-smoke-ora2pg sample-db-3hop-smoke sample-db-sqlite-smoke sample-db-verify-sqlite-smoke sample-db-atomic-sqlite-smoke sample-db-parallel-pg-smoke sample-db-fulltext-sqlite-smoke sample-db-scale-smoke sample-db-spatial-smoke sample-db-spatial-ora-smoke sample-db-types-smoke sample-db-tpch-gen sample-db-tpch-smoke sample-db-tpch-perf sample-db-tpcds-gen sample-db-tpcds-smoke sample-db-tool-compare
 
 SAMPLE_DB_COMPOSE := docker compose -f examples/sample-db/docker-compose.yml
 
@@ -105,6 +105,13 @@ sample-db-scale-smoke:
 # Spatial-VA1-Kette live gegen echte DBs. Voraussetzung: docker-build IMAGE_TAG=dev.
 sample-db-spatial-smoke:
 	./examples/sample-db/scripts/smoke-spatial.sh
+
+# Spatial-Leg Oracle — SRID-Transfer PostGIS->Oracle ueber das ausgelieferte
+# Image: reverse -> generate --target oracle -> pre-data per sqlplus -> data
+# transfer -> SDO_SRID am Ziel. Eigener Oracle-Dienst (oracle-spatial, ~6 GB,
+# Kaltstart mehrere Minuten), deshalb nicht Teil des Spatial-Standard-Smokes.
+sample-db-spatial-ora-smoke:
+	./examples/sample-db/scripts/smoke-spatial-ora.sh
 
 # Typ-Kanonisierungs-Smoke (postcompare-type-canonicalization slice, AP5) — permanenter
 # Sensor für die Post-Compare-Drift-Familie: SQLite-Typ-Matrix (21 Neutraltypen, je

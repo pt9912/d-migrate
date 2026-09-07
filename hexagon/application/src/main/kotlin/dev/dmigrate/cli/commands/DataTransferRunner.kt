@@ -2,7 +2,6 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.OperationCancelledException
-import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
@@ -226,7 +225,7 @@ class DataTransferRunner(
                     layers = layers,
                     partitionChildren = partitionChildren,
                     parallelism = degree,
-                    sourceGeometrySrids = geometrySridsOf(srcSchema),
+                    sourceGeometrySrids = TransferExecutionContext.geometrySridsOf(srcSchema),
                 )
             ) { table ->
                 if (!request.quiet && !request.noProgress) userFacingStderr("  Transferred: $table")
@@ -379,19 +378,5 @@ class DataTransferRunner(
         return null
     }
 
-    /**
-     * Die SRID je Tabelle und Geometriespalte aus dem Quellschema.
-     *
-     * Sie beim Schreiben mitzugeben ist der einzige Weg, sie zu erhalten: WKB
-     * traegt keine, und zwei der fuenf Ziele koennen sie an der Spalte nicht
-     * fuehren. Spalten ohne SRID stehen nicht in der Karte -- ein fehlender
-     * Eintrag ist etwas anderes als eine SRID 0.
-     */
-    private fun geometrySridsOf(schema: SchemaDefinition): Map<String, Map<String, Int>> =
-        schema.tables.mapValues { (_, table) ->
-            table.columns.mapNotNull { (name, column) ->
-                (column.type as? NeutralType.Geometry)?.srid?.let { name to it }
-            }.toMap()
-        }.filterValues { it.isNotEmpty() }
 
 }

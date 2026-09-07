@@ -171,16 +171,61 @@ Die Oracle-Integrationstests (`test/integration-oracle`) starten
 `gvenzl/oracle-free:23-slim-faststart` via Testcontainers. Anders als das
 MSSQL-Image verlangt dieses Image **keine** programmatische EULA-Akzeptanz.
 
-**Eine Ausnahme:** die Volltext-Spezifikation
-(`OracleFullTextIntegrationTest`) fährt `gvenzl/oracle-free:23-faststart` —
-die `slim`-Variante enthält Oracle Text nicht, und ein Text-Index scheitert
-dort mit `ORA-29833`. Das Abbild ist deutlich größer und startet langsamer;
-nur diese eine Spezifikation nutzt es, damit die Laufzeit der übrigen
-Oracle-Tests unverändert bleibt. Sie verbindet sich zusätzlich einmal als
-`system`, um dem Testnutzer die Rolle `CTXAPP` zu geben — ohne sie lässt
-Oracle keinen Text-Index anlegen.
+**Ausnahmen:** drei Spezifikationen fahren `gvenzl/oracle-free:23-faststart`,
+weil die `slim`-Variante die benötigte Option nicht enthält — ein Text-Index
+scheitert dort mit `ORA-29833`, `SDO_GEOMETRY` gibt es gar nicht:
+
+| Spezifikation | Option |
+| ------------- | ------ |
+| `OracleFullTextIntegrationTest` | Oracle Text |
+| `OracleSpatialIntegrationTest` | Oracle Spatial |
+| `OracleSpatialTransferE2ETest` (`test/e2e-cli`) | Oracle Spatial |
+
+Das Abbild ist deutlich größer und startet langsamer; nur diese
+Spezifikationen nutzen es, damit die Laufzeit der übrigen Oracle-Tests
+unverändert bleibt. Die Volltext-Spezifikation verbindet sich zusätzlich
+einmal als `system`, um dem Testnutzer die Rolle `CTXAPP` zu geben — ohne
+sie lässt Oracle keinen Text-Index anlegen.
 Der Treiber `com.oracle.database.jdbc:ojdbc11` steht unter den Oracle Free
 Use Terms and Conditions (FUTC), nicht MIT — Weiterverbreitung des
 unmodifizierten Treibers ist erlaubt, verlangt aber, den Lizenztext
 mitzuführen und Oracle-Eigentumsvermerke nicht zu entfernen
 ([ADR 0052](../adr/0052-oracle-fuenfter-dialekt-scoping.md)).
+
+### Sample-DB-Smokes
+
+Die Integrations- und E2E-Tests oben starten ihre Container selbst und
+prüfen d-migrate als Bibliothek beziehungsweise als CLI-Prozess aus dem
+Test-Klassenpfad. Die **Sample-DB-Harness** unter
+[`examples/sample-db/`](../../examples/sample-db/) prüft eine Ebene
+darüber: sie fährt das **ausgelieferte Runtime-Image** gegen
+Compose-Dienste mit gepinnten Beispiel-Datenbanken. Was dort schiefgeht,
+ginge auch beim Anwender schief — Einstiegspunkt, Nutzerkennung im
+Container, Konfigurationsdatei, Netzwerknamen.
+
+Voraussetzung ist ein lokal gebautes Image:
+
+```bash
+make docker-build IMAGE_TAG=dev
+```
+
+Jeder Smoke hat ein eigenes `make`-Ziel; `make help` listet sie mit einer
+Zeile Zweck. Sie sind bewusst **nicht** Teil des PR-Gates: einige laden
+externe Datensätze, andere starten Container mit mehreren Gigabyte. Zwei
+Beispiele:
+
+```bash
+make sample-db-spatial-smoke        # Geometrie + SRID, PostGIS und MySQL
+make sample-db-spatial-ora-smoke    # SRID PostGIS -> Oracle (eigener Dienst)
+```
+
+Die Zugangsdaten stehen in `examples/sample-db/.env`; fehlt die Datei,
+legt der jeweilige Smoke sie aus `.env.example` an. Es sind
+**Testzugangsdaten** — nicht für den Produktivbetrieb.
+
+Aufräumen — `-v` verwirft auch die Datenvolumes, der nächste Lauf beginnt
+mit leeren Datenbanken:
+
+```bash
+make sample-db-purge
+```

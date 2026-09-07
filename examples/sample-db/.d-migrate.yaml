@@ -40,6 +40,11 @@ database:
     postgis_geo_target: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/geo_pg_target"
     geo_my_src: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_src"
     geo_my_target: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/geo_my_target"
+    # Spatial-Leg Oracle — Ziel auf dem oracle-spatial-Service (Vollimage;
+    # das schlanke Oracle-Image kennt SDO_GEOMETRY nicht). Quelle ist
+    # postgis_geo_ora_src; beide DBs legt smoke-spatial-ora.sh an.
+    postgis_geo_ora_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/geo_ora_src"
+    ora_geo_target: "oracle://${APP_USER}:${APP_USER_PASSWORD}@oracle-spatial:1521/FREEPDB1"
     # 5a (echtes PostGIS-nyc): dedizierte DBs, damit der Reverse (kein --tables-Filter)
     # nur nyc_neighborhoods sieht — keine Kollision mit den geo_pg_*-Tabellen oben.
     nyc_pg_src: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/nyc_src"

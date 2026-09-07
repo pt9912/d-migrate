@@ -19,6 +19,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.asJdbc
+import dev.dmigrate.cli.commands.TransferExecutionContext
 import dev.dmigrate.driver.data.ImportOptions
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
@@ -323,6 +324,67 @@ class OracleSpatialIntegrationTest : FunSpec({
         queryOne(
             """SELECT SDO_UTIL.TO_WKTGEOMETRY(t."geom") FROM "wkb_dst" t WHERE t."id" = 2""",
         ) { it.getString(1) } shouldContain "POLYGON"
+    }
+
+    /**
+     * Die Kette, die kein Unit-Test schliessen kann: Quellschema lesen →
+     * SRID mitgeben → schreiben → in der Datenbank nachsehen.
+     *
+     * Die **Quelle** traegt eine Zeile in `USER_SDO_GEOM_METADATA` (nur mit
+     * grossgeschriebenem, unquotiert angelegtem Namen moeglich), das **Ziel**
+     * nicht — es ist quotiert kleingeschrieben, wie d-migrate Tabellen
+     * anlegt. Ohne die Angabe der Quelle kaemen die Werte dort ohne
+     * Koordinatensystem an.
+     */
+    test("data transfer carries the source SRID into a target that cannot hold one") {
+        dropTable("tgt_places")
+        dropTable("tgt_bare")
+        exec("BEGIN EXECUTE IMMEDIATE 'DROP TABLE SRC_PLACES PURGE'; EXCEPTION WHEN OTHERS THEN NULL; END;")
+        exec(
+            "DELETE FROM user_sdo_geom_metadata WHERE table_name = 'SRC_PLACES'",
+            "COMMIT",
+            "CREATE TABLE SRC_PLACES (ID NUMBER(9) PRIMARY KEY, GEOM SDO_GEOMETRY)",
+            """
+            INSERT INTO user_sdo_geom_metadata (table_name, column_name, diminfo, srid) VALUES (
+                'SRC_PLACES', 'GEOM',
+                SDO_DIM_ARRAY(SDO_DIM_ELEMENT('X', -180, 180, 0.005), SDO_DIM_ELEMENT('Y', -90, 90, 0.005)),
+                4326)
+            """.trimIndent(),
+            "COMMIT",
+            "INSERT INTO SRC_PLACES VALUES (1, SDO_GEOMETRY(2001, 4326, SDO_POINT_TYPE(9.9, 53.5, NULL), NULL, NULL))",
+            "COMMIT",
+            """CREATE TABLE "tgt_places" ("ID" NUMBER(9) PRIMARY KEY, "GEOM" SDO_GEOMETRY)""",
+        )
+
+        val sourceSchema = OracleSchemaReader().read(pool).schema
+        withClue("der Reverse liest die SRID der Quelle nicht — dann kann sie auch nichts weitergeben") {
+            (sourceSchema.tables.getValue("SRC_PLACES").columns.getValue("GEOM").type as NeutralType.Geometry)
+                .srid shouldBe 4326
+        }
+
+        // Genau die Optionen, die der Runner baut -- aus derselben Funktion.
+        val srids = TransferExecutionContext.geometrySridsOf(sourceSchema)
+        val chunks = OracleDataReader().streamTable(pool, "SRC_PLACES", null, 100).use { it.toList() }
+
+        fun loadInto(target: String, options: ImportOptions) {
+            OracleDataWriter().openTable(pool, target, options).use { session ->
+                chunks.forEach { session.write(it.copy(table = target)) }
+                session.commitChunk()
+                session.finishTable()
+            }
+        }
+
+        loadInto("tgt_places", ImportOptions(sourceGeometrySrids = srids.getValue("SRC_PLACES")))
+
+        // Gegenprobe: ohne die Angabe der Quelle kommt der Wert ohne
+        // Koordinatensystem an -- das war der Zustand vor diesem Slice.
+        exec("""CREATE TABLE "tgt_bare" ("ID" NUMBER(9) PRIMARY KEY, "GEOM" SDO_GEOMETRY)""")
+        loadInto("tgt_bare", ImportOptions())
+        queryOne("""SELECT NVL(TO_CHAR(t."GEOM".SDO_SRID), 'keine') FROM "tgt_bare" t""") {
+            it.getString(1)
+        } shouldBe "keine"
+
+        queryOne("""SELECT t."GEOM".SDO_SRID FROM "tgt_places" t""") { it.getInt(1) } shouldBe 4326
     }
 })
 

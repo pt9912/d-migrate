@@ -20,6 +20,20 @@ status: resolved
 > `data import` aus einer Datei ohne Schemaangabe bleibt es beim bisherigen
 > Verhalten; dort gibt es keine Quelle, aus der die SRID kaeme.
 
+## Live verifiziert
+
+Auf drei Ebenen, weil jede eine andere Naht traegt:
+
+| Ebene | Spezifikation |
+| ----- | ------------- |
+| Adapter gegen echtes Oracle | `OracleSpatialIntegrationTest` — Reverse liest die SRID einer Quelltabelle MIT Metadatenzeile, die Import-Sitzung schreibt sie in eine quoted-lowercase Zieltabelle OHNE; eine Kontrolltabelle ohne die Angabe bleibt SRID-los |
+| Kommando als eigener Prozess | `OracleSpatialTransferE2ETest` (`test/e2e-cli`) — `schema reverse` gegen PostGIS, `schema generate --target oracle`, Anwenden, `data transfer`; danach `SDO_SRID` am Ziel |
+| Ausgeliefertes Image | `make sample-db-spatial-ora-smoke` — dieselbe Kette ueber `d-migrate:dev` gegen die Compose-Dienste, zusaetzlich mit einer SRID-losen Quellspalte als Gegenprobe |
+
+Der Adaptertest wurde gegengeprueft, indem der Rueckgriff auf
+`options.sourceGeometrySrids` entfernt wurde: genau diese eine Spezifikation
+schlug fehl, die uebrigen sieben blieben gruen.
+
 ## Befund
 
 `data transfer`/`data import` binden eine Geometrie als WKB und bauen sie

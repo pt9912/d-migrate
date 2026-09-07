@@ -8,6 +8,8 @@ import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.data.ImportOptions
 
 data class TransferExecutionContext(
@@ -37,7 +39,22 @@ data class TransferExecutionContext(
      * Angabe ein, statt die Werte ohne Koordinatensystem zu schreiben.
      */
     val sourceGeometrySrids: Map<String, Map<String, Int>> = emptyMap(),
-)
+) {
+    companion object {
+        /**
+         * Die SRID je Tabelle und Geometriespalte aus einem Schema.
+         *
+         * Eine Spalte ohne SRID steht **nicht** in der Karte — ein fehlender
+         * Eintrag ist etwas anderes als eine SRID 0.
+         */
+        fun geometrySridsOf(schema: SchemaDefinition): Map<String, Map<String, Int>> =
+            schema.tables.mapValues { (_, table) ->
+                table.columns.mapNotNull { (name, column) ->
+                    (column.type as? NeutralType.Geometry)?.srid?.let { name to it }
+                }.toMap()
+            }.filterValues { it.isNotEmpty() }
+    }
+}
 
 open class TransferExecutor(
     private val parallelExecutor: ParallelWorkExecutor = ParallelWorkExecutor("transfer-worker"),
