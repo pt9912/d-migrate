@@ -2379,9 +2379,9 @@ arbeiten `schema reverse`, `schema compare`, `schema generate`,
 `data profile` weist Oracle mit einer Meldung ab.
 
 `schema migrate` blockt für Oracle benannt, statt unvollständige DDL zu
-erzeugen, wenn eine Änderung Materialized Views oder Geometrie-Spalten
-betrifft. Ebenso beim Versuch, eine bestehende Spalte nachträglich zur
-Identity-Spalte zu machen — Oracle lässt das nicht zu.
+erzeugen, wenn eine Änderung Geometrie-Spalten betrifft. Ebenso beim Versuch,
+eine bestehende Spalte nachträglich zur Identity-Spalte zu machen — Oracle
+lässt das nicht zu.
 
 **Kann ich partitionierte Tabellen nach Oracle migrieren?**
 Ja, für `range`, `list` und `hash`. Zwei Dinge sehen auf Oracle anders aus
@@ -2438,6 +2438,57 @@ nach dem Einfügen von Daten nichts, bis jemand ihn von Hand synchronisiert.
 Beim Zurücklesen erkennt `schema reverse` diese Indizes wieder. Ein
 Domain-Index einer anderen Art — etwa ein räumlicher — wird ausgelassen und
 mit `R357` gemeldet, statt als gewöhnlicher Index missdeutet zu werden.
+
+**Funktionieren Materialized Views auf Oracle?**
+Ja — mit einer Ausnahme, die gleich als Erstes kommt. `schema reverse` liest
+sie mitsamt ihrer Refresh-Einstellung, `schema generate` und `schema migrate`
+legen sie wieder an; **außer** wenn die Sicht schnell auffrischt
+(`refresh: fast`), dann meldet d-migrate sie und legt sie nicht an (siehe
+unten). Die Einstellung schreiben Sie zweiteilig:
+
+```yaml
+views:
+  monthly_revenue:
+    materialized: true
+    refresh: "complete on demand"
+    query: "SELECT month, SUM(amount) AS total FROM orders GROUP BY month"
+```
+
+Erlaubt sind `complete`, `force`, `fast` und `never`, jeweils optional gefolgt
+von `on demand` oder `on commit`. Auch der Auslöser allein ist zulässig
+(`on commit`) — dann sagen Sie *wann*, nicht *wie*. Lassen Sie die Angabe weg,
+gilt die Voreinstellung Ihrer Datenbank — auf Oracle `force on demand`.
+
+d-migrate legt die Angabe **in einer Schreibweise** ab: `on_demand`,
+`on demand` und `force on demand` bedeuten dasselbe und werden zur
+Voreinstellung zusammengezogen, also zu gar keiner Angabe. Ohne das
+verglichen sich zwei gleichbedeutende Sichten als verschieden, und jeder
+Migrationslauf hätte die Sicht erneut ersetzt — samt ihres Inhalts.
+
+Vier Dinge sollten Sie wissen:
+
+- **`fast` wird nicht erzeugt.** Ein schneller Refresh verlangt in Oracle ein
+  *Materialized View Log* auf jeder Basistabelle; ohne es lehnt der Server ab
+  (`ORA-23413`). d-migrate führt kein Log im Schema und rät seine Form nicht,
+  sondern meldet die Sicht mit `E053`. Legen Sie das Log von Hand an — oder
+  nehmen Sie `force`, das ohne Log auskommt und bei Bedarf auf einen
+  vollständigen Refresh zurückfällt.
+- **Ersetzen heißt löschen und neu anlegen.** Oracle kennt kein
+  `CREATE OR REPLACE MATERIALIZED VIEW`. Beide Schritte stehen einzeln im
+  Plan, und der Inhalt der Sicht wird dabei neu aufgebaut: das `CREATE` füllt
+  sie sofort, liest also alle Zeilen der Basistabellen. Der Plan weist die
+  Operation deshalb als datenverlustfähig aus — zwischen den beiden
+  Anweisungen ist die Sicht weg, und Oracle kann das nicht zurückrollen.
+- **Aus einer Sicht eine materialisierte zu machen (oder umgekehrt) geht
+  nicht** und wird benannt abgelehnt. Löschen und neu anlegen Sie das
+  bewusst selbst.
+- **Beim Zurücklesen fehlt die Voreinstellung.** Steht Ihre Sicht auf
+  `force on demand`, kommt sie ohne `refresh:`-Zeile zurück — das ist
+  dieselbe Aussage, nur ohne die Wiederholung des Defaults, und der Vergleich
+  behandelt beides gleich.
+- **Einen Modus, den d-migrate nicht kennt** — etwa Oracles `on statement` —
+  liest `schema reverse` unverändert mit und meldet ihn (`R364`). Erzeugen
+  lässt sich die Sicht damit nicht.
 
 **Kann ich Funktionen, Prozeduren und Trigger nach Oracle migrieren?**
 Ja, sofern der Rumpf schon PL/SQL ist. `schema reverse` liest sie aus einer

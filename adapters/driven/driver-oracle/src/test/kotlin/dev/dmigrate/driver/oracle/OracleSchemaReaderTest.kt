@@ -51,6 +51,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_tables") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_sequences") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_views") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_mviews") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_dependencies") && it.contains("'VIEW'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, any()) } returns emptyList()
         stubEmptyRoutineQueries(jdbc)

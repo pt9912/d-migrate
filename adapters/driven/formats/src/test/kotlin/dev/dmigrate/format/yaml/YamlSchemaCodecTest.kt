@@ -7,6 +7,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldHaveSize
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
@@ -293,7 +294,10 @@ class YamlSchemaCodecTest : FunSpec({
         activeOrders.query shouldNotBe null
         val monthlyStats = schema.views["monthly_stats"]!!
         monthlyStats.materialized shouldBe true
-        monthlyStats.refresh shouldBe "on_demand"
+        // `on_demand` ist die Voreinstellung in kanonischer Form -- und die
+        // ist `null`. Sonst verglichen sich zwei gleichbedeutende Angaben als
+        // verschieden, und jeder Migrate-Lauf ersetzte die Sicht erneut.
+        monthlyStats.refresh.shouldBeNull()
 
         // Triggers
         schema.triggers shouldHaveSize 2

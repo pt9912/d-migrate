@@ -18,6 +18,11 @@ views:
   order_count:
     description: "Materialized count of all orders"
     materialized: true
+    # `fast` traegt die Blocker-Zelle auf JEDEM Dialekt: MySQL, SQLite und
+    # SQL Server blocken schon an der Objektart, Oracle am fehlenden
+    # Materialized View Log (ORA-23413). Ohne die Angabe waere die Zelle fuer
+    # Oracle unanwendbar, seit es MVs nativ rendert.
+    refresh: "fast on commit"
     query: |
       SELECT COUNT(*) AS total FROM orders
     dependencies:

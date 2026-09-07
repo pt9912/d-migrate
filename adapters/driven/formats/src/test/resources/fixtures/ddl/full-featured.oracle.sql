@@ -43,9 +43,8 @@ CREATE OR REPLACE FORCE VIEW "active_orders" AS
 SELECT * FROM orders WHERE status != 'delivered'
 ;
 
--- [W103] Materialized views are not rendered for Oracle yet. Created as a regular view instead.
--- Hint: Oracle materialized views (Slice 10) will restore refresh semantics once built.
-CREATE OR REPLACE FORCE VIEW "monthly_stats" AS
+CREATE MATERIALIZED VIEW "monthly_stats"
+AS
 SELECT COUNT(*) FROM orders
 ;
 

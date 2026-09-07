@@ -164,11 +164,33 @@ class OracleDdlGeneratorObjectsTest : FunSpec({
         sql shouldContain "CREATE OR REPLACE FORCE VIEW \"v\" AS\nSELECT 1 AS one;"
     }
 
-    test("a materialized view is rendered as a regular view with a W103 warning") {
-        val view = ViewDefinition(query = "SELECT 1", materialized = true, sourceDialect = "oracle")
+    test("a materialized view renders natively; the refresh default stays implicit") {
+        val view = ViewDefinition(query = "SELECT 1 FROM dual", materialized = true, sourceDialect = "oracle")
         val result = generator.generate(schema(views = mapOf("v" to view)))
-        result.render() shouldContain "CREATE OR REPLACE FORCE VIEW \"v\""
-        result.notes.single().code shouldBe "W103"
+        result.render() shouldContain "CREATE MATERIALIZED VIEW \"v\"\nAS\nSELECT 1 FROM dual;"
+        // Oracles Voreinstellung ist FORCE ON DEMAND; sie auszuschreiben
+        // behauptete einen Unterschied, wo keiner ist.
+        result.render() shouldNotContain "REFRESH"
+        result.skippedObjects.shouldBeEmpty()
+    }
+
+    test("an explicit refresh setting is rendered") {
+        val view = ViewDefinition(
+            query = "SELECT 1 FROM dual", materialized = true, refresh = "complete on demand",
+            sourceDialect = "oracle",
+        )
+        generator.generate(schema(views = mapOf("v" to view))).render() shouldContain
+            "CREATE MATERIALIZED VIEW \"v\"\nREFRESH COMPLETE ON DEMAND\nAS"
+    }
+
+    test("REFRESH FAST is reported: Oracle needs a materialized view log the model does not carry") {
+        val view = ViewDefinition(
+            query = "SELECT 1 FROM dual", materialized = true, refresh = "fast on commit",
+            sourceDialect = "oracle",
+        )
+        val result = generator.generate(schema(views = mapOf("v" to view)))
+        result.skippedObjects.single().code shouldBe "E053"
+        result.render() shouldContain "ORA-23413"
     }
 
     test("a view without a query is skipped, not rendered as broken DDL") {

@@ -1050,17 +1050,58 @@ CREATE OR ALTER VIEW [active_orders] AS
 CREATE MATERIALIZED VIEW "monthly_revenue" AS
     SELECT ...;
 
+-- Oracle (native Unterstützung, mit Refresh-Klausel)
+CREATE MATERIALIZED VIEW "monthly_revenue"
+REFRESH COMPLETE ON DEMAND
+AS
+    SELECT ...;
+
 -- MySQL/SQLite/MSSQL: Nicht unterstützt → Standard-View + W103
 ```
 
-Im diff-basierten `schema migrate`-Pfad werden Materialized Views nicht als
-normale Views gerendert. Operationen mit `materialized: true` blockieren, bis
-ein ausführbarer Refresh-/Staleness-Vertrag existiert. Der Migrationsreport
-weist diese Operationen als `MATERIALIZED_VIEW` aus und enthält unter
-`materializedViews[]` die Felder `stalenessAfterUp`, `refreshSteps`,
-`locking` und `rollback`; vor einem ausführbaren Vertrag steht
-`stalenessAfterUp` auf `UNKNOWN_BLOCKED` und der einzige geplante
-Refresh-Schritt ist `BLOCKED_REFRESH_CONTRACT_REQUIRED`.
+**Refresh-Angabe.** `ViewDefinition.refresh` trägt zwei Teile: die Methode
+(`complete`, `force`, `fast`, `never`) und optional den Auslöser
+(`on demand`, `on commit`). Fehlt der Auslöser, gilt `on demand`; fehlt die
+Angabe ganz, gilt die Voreinstellung des Dialekts. PostgreSQL kennt keine
+Refresh-Modi und ignoriert das Feld.
+
+**Oracle-Besonderheiten:**
+
+- `REFRESH FAST` verlangt ein **Materialized View Log** auf jeder
+  Basistabelle; ohne es lehnt Oracle das Anlegen mit `ORA-23413` ab. Das
+  neutrale Modell führt kein Log — und seine Form entscheidet mit, ob ein
+  schneller Refresh für die konkrete Abfrage überhaupt möglich ist. `fast`
+  wird deshalb gemeldet (`E053`), nicht gerendert. `force` braucht kein Log:
+  es fällt auf einen vollständigen Refresh zurück, auch mit `on commit`.
+- Oracles Voreinstellung ist `FORCE ON DEMAND`. Beim Zurücklesen wird sie
+  **nicht** abgelegt — sonst trüge jede gelesene MV eine Angabe, die der Autor
+  nie geschrieben hat.
+- Es gibt **kein `CREATE OR REPLACE MATERIALIZED VIEW`** (`ORA-00922`). Ein
+  Ersetzen ist deshalb ein `DROP` plus ein `CREATE`, beide als eigene
+  Anweisung im Plan; der Bestand der Sicht entsteht dabei neu.
+- Ein Wechsel zwischen Sicht und materialisierter Sicht wird abgelehnt
+  (`ORACLE_MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED`): Oracle hat keine
+  Umwandlung dafür.
+- Beim Zurücklesen kommt die Abfrage aus `ALL_MVIEWS.QUERY` — einer
+  `LONG`-Spalte, die deshalb **zuletzt** in der Auswahl stehen muss. Anders
+  als `ALL_VIEWS.TEXT` kommt der Text unverändert zurück.
+- Eine Materialized View und ihr Log stehen als gewöhnliche Zeilen in
+  `ALL_TABLES` (`SECONDARY = 'N'`); der Tabellen-Reverse schließt sie über
+  `ALL_MVIEWS`/`ALL_MVIEW_LOGS` aus, sonst entstünden Phantom-Tabellen und
+  `data transfer` kopierte den Inhalt einer MV.
+
+Im diff-basierten `schema migrate`-Pfad werden Materialized Views nie als
+normale Views gerendert: ein Wechsel zwischen beiden Objektarten wird
+abgelehnt. Dialekte mit nativer Unterstützung (PostgreSQL, Oracle) rendern
+sie als eigene Operation; die übrigen blockieren sie mit
+`MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`.
+
+Der Migrationsreport weist diese Operationen als `MATERIALIZED_VIEW` aus und
+enthält unter `materializedViews[]` die Felder `stalenessAfterUp`,
+`refreshSteps`, `locking` und `rollback`. Ein **ausführbarer Refresh-Vertrag**
+— also ein eigener `refresh`-Schritt im Plan — existiert weiterhin nicht:
+`schema refresh materialized-view` gibt es nicht, und der Report führt das als
+eigenen Blocker.
 
 ### 8.3 View-Query-Transformation
 

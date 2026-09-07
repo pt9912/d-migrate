@@ -236,14 +236,23 @@ class OracleDdlGenerator private constructor(
         }
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
-            notes += TransformationNote(
-                type = NoteType.WARNING, code = "W103", objectName = name,
-                message = "Materialized views are not rendered for Oracle yet. Created as a regular view instead.",
-                hint = "Oracle materialized views (Slice 10) will restore refresh semantics once built.",
-            )
+            OracleMaterializedViewDdl.unsupportedShape(name, view)?.let { problem ->
+                val action = ManualActionRequired(
+                    code = "E053", objectType = "materialized_view", objectName = name,
+                    reason = problem.reason, hint = problem.hint, sourceDialect = view.sourceDialect,
+                )
+                skipped += action.toSkipped()
+                return actionRequired(action)
+            }
         }
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
         notes += queryNotes
+        if (view.materialized) {
+            return DdlStatement(
+                OracleMaterializedViewDdl.createSql(name, view, transformedQuery, ::quoteIdentifier),
+                notes,
+            )
+        }
         // FORCE: eine Sicht kann Objekte referenzieren, die als E053/E054/E055
         // uebersprungen wurden (z.B. eine abhaengige Sicht/Routine). Ohne
         // FORCE lehnt Oracle CREATE VIEW sofort ab (anders als MSSQLs

@@ -779,7 +779,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **7** ✅ | Partitionierung Range/List/Hash: Generate, Reverse und Diff über einen geteilten Builder; Grenzwert-Umsetzung (`TO_DATE`) und -Rückfaltung; Fingerabdruck-Projektion für die Felder, die Oracle nicht führt. Composite und INTERVAL werden gemeldet (`R355`/`R356`), nicht dargestellt | Partitionstabellen im Round-Trip |
 | **8** ✅ | Volltext: Oracle Text (`CTXSYS.CONTEXT`) für Generate, Reverse und Diff; `SYNC (ON COMMIT)` verpflichtend; mehrspaltig abgelehnt (`E057`); fremde Domain-Indizes gemeldet (`R357`) | Volltext-Indizes Generate + Reverse |
 | **9** ✅ | Routinen/Trigger: lesen, erzeugen und migrieren als ein Stück. `ALL_SOURCE` für alle drei Objektarten, Signatur aus `ALL_ARGUMENTS`; Generate und Diff über ein geteiltes Urteil (`OracleRoutineShape`); Trenner je Anweisung statt je Dialekt (`DdlStatement.scriptTerminator`). Was das Modell nicht trägt, wird gemeldet (`R358`–`R363`) | Routinen-Migration |
-| **10** | Materialized Views: Anschluss ans bestehende 0.9.7-D.3b-Modell (Refresh-Modi FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Materialized Views im Round-Trip |
+| **10** ✅ | Materialized Views: Reverse aus `ALL_MVIEWS`, Generate und Diff nativ; `refresh` bekommt ein Vokabular (Methode und/oder Auslöser); `fast` wird gemeldet, weil es ein MV-Log verlangt, das das Modell nicht führt. Dazu ein Defekt im ausgelieferten Stand behoben: MV und MV-Log wurden als Tabellen gelesen | Materialized Views im Round-Trip |
 | **11** | Profiling-Modul `driver-oracle-profiling` | Live belegt; `DialectCommandGate` verliert seinen letzten Oracle-Eintrag |
 | **12** | Oracle Spatial: `SDO_GEOMETRY` als echter `NeutralType.Geometry` in Reverse, Generate und Diff, samt `USER_SDO_GEOM_METADATA` und Spatial-Index — siehe Detailabschnitt | Geometriespalten im Round-Trip statt als Text |
 | **ohne Nummer** | PL/SQL Packages (Neutralmodell-Erweiterung um Routine-Gruppierung) — **zeitlich unbestimmt, bewusst kein Slice mit Liefertermin** (Entscheidung 4) | Package-Struktur im Round-Trip, sobald angegangen |
@@ -1354,6 +1354,85 @@ Zwei Befunde blieben offen und haben eigene Tickets:
 (die Statusprüfung braucht einen neuen Port und zwei Entscheidungen) und
 [`oracle-routine-signature-type-narrowing.md`](../open/oracle-routine-signature-type-narrowing.md)
 (`CLOB`→`VARCHAR2` und Verwandte, ohne Meldung).
+
+## Slice 10 im Detail — Materialized Views
+
+### Was die Messung ergeben hat
+
+| Frage | Messung | Folge |
+| --- | --- | --- |
+| Braucht jeder Refresh-Modus ein MV-Log? | Nur `FAST` (ORA-23413 ohne Log). `FORCE` nicht — auch nicht mit `ON COMMIT`; es fällt auf einen vollständigen Refresh zurück | `fast` wird gemeldet (`E053`), alles andere gerendert |
+| Was gilt ohne `REFRESH`-Klausel? | `FORCE ON DEMAND` | Die Voreinstellung wird beim Lesen **nicht** abgelegt und beim Erzeugen nicht ausgeschrieben |
+| Gibt es `CREATE OR REPLACE MATERIALIZED VIEW`? | Nein (ORA-00922) | Ersetzen ist ein `DROP` plus ein `CREATE`, beide als eigene Anweisung im Plan |
+| Wo steht die Abfrage? | `ALL_MVIEWS.QUERY`, eine `LONG`-Spalte — und unverändert, anders als `ALL_VIEWS.TEXT` | Die Spalte steht **zuletzt** in der Auswahl; der Round-Trip hat keine Deparse-Drift |
+| Steht eine MV in `ALL_TABLES`? | Ja, unter ihrem eigenen Namen; ihr Log als `MLOG$_<tabelle>`; `SECONDARY` ist bei beiden `N` | Siehe unten — ein Defekt im ausgelieferten Stand |
+| Steht eine MV in `ALL_VIEWS`? | Nein | Der Sichten-Reverse braucht keinen Ausschluss, der MV-Reverse eine eigene Abfrage |
+
+### Der Defekt, den die Messung nebenbei aufdeckte
+
+Der Sekundaerobjekt-Filter aus Slice 8 (`ALL_OBJECTS.SECONDARY = 'Y'`) greift
+bei Materialized Views und ihren Logs **nicht** — beide stehen mit `N` in
+`ALL_TABLES`. Im ausgelieferten Stand las `schema reverse` sie deshalb als
+Tabellen, und weil `OracleTableLister` dieselbe Abfrage nutzt, kopierte
+`data transfer` den Inhalt einer MV, als wäre er eine Tabelle. Gemessen:
+`[MLOG$_sales, mv_rows, mv_totals, sales]` statt `[sales]`.
+
+Behoben über `ALL_MVIEWS`/`ALL_MVIEW_LOGS` — die Katalogsichten, die den
+Begriff führen — statt über ein Namensmuster; `MLOG$` ist keine reservierte
+Zeichenfolge.
+
+### Der Refresh-Vertrag
+
+`ViewDefinition.refresh` war bis hierher ein Freitextfeld, das kein Dialekt
+auswertete. Es bekommt jetzt ein Vokabular, ohne dass das Modell sich ändert:
+eine Methode (`complete`, `force`, `fast`, `never`), ein Auslöser
+(`on demand`, `on commit`) oder beides. Wer nur den Auslöser nennt, sagt
+*wann*, nicht *wie* — die Methode bleibt die Voreinstellung des Dialekts. Die
+Bestandsfixture schreibt `on_demand`; Unterstrich und Leerzeichen sind
+dieselbe Angabe.
+
+Was nicht in dieses Vokabular fällt, wird gemeldet statt ignoriert — sonst
+verschwände eine Absicht des Autors zwischen Lesen und Schreiben.
+
+### Der Zellentausch in der Cross-Dialekt-Matrix
+
+`D.3/oracle/positive` war provisorisch gecarvt, mit der Begründung, dass die
+Zelle mit Slice 10 pinnbar wird **und** `D.3/oracle/blocker` dann permanent zu
+carven ist. Genau das ist passiert: Oracle rendert MVs nativ, also gibt es
+keinen Dialekt-Blocker-Pfad mehr — dieselbe Lage, die PostgreSQL schon führt.
+
+### Was der Review gefunden hat
+
+Sechs Befunde, alle behoben — der erste hätte bei **jedem** Lauf Daten
+verworfen:
+
+| Befund | Warum es schiefging | Behoben durch |
+| --- | --- | --- |
+| Der Round-Trip konvergierte nicht | Der Reverse unterdrückte die Voreinstellung (`null`), das Rendern schrieb sie aus. Eine Schemadatei mit `refresh: on_demand` verglich sich damit dauerhaft als verschieden — und jeder Lauf plante ein `DROP` + `CREATE`, das den materialisierten Bestand verwarf | `ViewRefreshSetting` im Modell: der Parser legt **eine** Schreibweise ab, gleichbedeutende Angaben fallen zusammen |
+| `REFRESH NEVER` ist kein gültiges Oracle | ORA-00905; die Klausel heißt `NEVER REFRESH` und steht vor dem Wort | Eigener Renderzweig, gemessen |
+| MVs kamen ohne Abhängigkeiten zurück | `ALL_DEPENDENCIES` wurde nur nach `type = 'VIEW'` gefragt; eine MV trägt dort `MATERIALIZED VIEW`. Damit liefen die Wächter leer, die eine verwaiste Sicht verhindern | Beide Objektarten abfragen |
+| Der Report nannte ausgeführte Operationen „blockiert" | `BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED` feuert dialektblind, sobald `refresh` gesetzt ist — für einen Dialekt, der sie rendert, eine falsche Auskunft über einen erfolgreichen Lauf | Neue Fähigkeit `rendersViewRefreshSetting`; die Regel greift nur noch, wo sie zutrifft |
+| Ein Ersetzen wies keinen Datenverlust aus | `ReplaceMaterializedView`/`DropMaterializedView` trugen nur `destructive`; der Rücknahme-Bericht meldete `dataLossPossible = false` für einen Plan, der den ganzen Bestand wegwirft | `dataLossPossible = true` an beiden |
+| MV-DDL trug Metadaten-Hinweise | `CREATE MATERIALIZED VIEW … AS` liest beim Erstaufbau alle Basiszeilen, `DROP` vernichtet Daten — „fasst keine Nutzdaten an" stimmt dort nicht | Die gewöhnlichen Oracle-DDL-Hinweise |
+
+Dazu der Zellentausch in der Matrix, den der Review korrigiert hat: die
+Blocker-Zelle ist **nicht** unanwendbar geworden, denn `refresh: fast` ist
+weiterhin ein echter Oracle-Blocker-Pfad. Die Blocker-Fixture nennt ihn jetzt,
+womit **beide** D.3-Oracle-Zellen gepinnt sind statt einer gepinnten und einer
+gecarvten.
+
+Offen geblieben und ticketiert:
+[`materialized-view-refresh-contract.md`](../open/materialized-view-refresh-contract.md).
+
+### Was offen bleibt
+
+- **Materialized View Logs** haben im neutralen Modell kein Zuhause. Ihre Form
+  (`WITH PRIMARY KEY`, `ROWID`, Spaltenliste, `INCLUDING NEW VALUES`)
+  entscheidet mit, ob ein schneller Refresh für eine konkrete Abfrage
+  überhaupt möglich ist; sie zu erraten hieße, eine Zusicherung zu erfinden.
+  Solange sie fehlen, ist `refresh: fast` nicht erzeugbar.
+- **`schema refresh materialized-view`** gibt es nicht; der repo-weite
+  D.3b-Vertrag führt es als eigenen OOS-Blocker.
 
 ## Slice 12 im Detail — Oracle Spatial
 

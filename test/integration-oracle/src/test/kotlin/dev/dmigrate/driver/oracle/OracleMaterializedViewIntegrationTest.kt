@@ -7,6 +7,7 @@ import dev.dmigrate.driver.connection.asJdbc
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import org.testcontainers.oracle.OracleContainer
 import java.time.Duration
 
@@ -50,12 +51,19 @@ class OracleMaterializedViewIntegrationTest : FunSpec({
            AS SELECT "id", "amt" FROM "sales" """,
     )
 
-    test("neither a materialized view nor its log is read as a table") {
+    beforeSpec {
         HikariConnectionPoolFactory.create(config).use { pool ->
             pool.borrow().asJdbc().use { conn ->
                 conn.createStatement().use { stmt ->
                     setup.forEach { sql -> withClue("setup failed:\n$sql") { stmt.execute(sql) } }
                 }
+            }
+        }
+    }
+
+    test("neither a materialized view nor its log is read as a table") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            pool.borrow().asJdbc().use { conn ->
                 // Der Beleg, dass die Vorbedingung des Tests wirklich gilt:
                 // beide MVs und das Log stehen in ALL_TABLES.
                 conn.createStatement().use { stmt ->
@@ -78,6 +86,52 @@ class OracleMaterializedViewIntegrationTest : FunSpec({
             // Der Datenpfad haengt an derselben Abfrage.
             withClue("gelistete Tabellen: ${OracleTableLister().listTables(pool)}") {
                 OracleTableLister().listTables(pool) shouldBe listOf("sales")
+            }
+        }
+    }
+
+    test("materialized views read back with their refresh setting and re-apply") {
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val schema = OracleSchemaReader().read(pool).schema
+
+            // Beide MVs stehen als Sichten im Modell, nicht als Tabellen.
+            withClue("gelesene Sichten: ${schema.views.keys}") {
+                schema.views.keys shouldBe setOf("mv_totals", "mv_rows")
+            }
+            val totals = schema.views.getValue("mv_totals")
+            totals.materialized shouldBe true
+            totals.refresh shouldBe "complete on demand"
+            // ALL_MVIEWS.QUERY ist eine LONG-Spalte; sie kommt unveraendert
+            // zurueck, so wie der Autor sie geschrieben hat.
+            withClue("Abfrage: ${totals.query}") {
+                totals.query!!.contains("SUM(\"amt\")") shouldBe true
+            }
+            schema.views.getValue("mv_rows").refresh shouldBe "fast on commit"
+
+            // Die FAST-MV laesst sich nicht erzeugen: sie braucht ein Log,
+            // das das neutrale Modell nicht traegt. Die andere schon.
+            val ddl = OracleDdlGenerator().generate(schema)
+            withClue("uebergangen: ${ddl.skippedObjects.map { it.name to it.code }}") {
+                ddl.skippedObjects.single { it.name == "mv_rows" }.code shouldBe "E053"
+            }
+            val create = ddl.statements.map { it.sql }.single { it.startsWith("CREATE MATERIALIZED VIEW") }
+            create shouldContain "REFRESH COMPLETE ON DEMAND"
+
+            // Und sie laesst sich wirklich anwenden.
+            pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("""DROP MATERIALIZED VIEW "mv_totals" """)
+                    withClue("statement failed:\n$create") { stmt.execute(create.removeSuffix(";")) }
+                }
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery(
+                        """SELECT refresh_method || ' ' || refresh_mode FROM user_mviews
+                           WHERE mview_name = 'mv_totals'""",
+                    ).use { rs ->
+                        rs.next() shouldBe true
+                        rs.getString(1) shouldBe "COMPLETE DEMAND"
+                    }
+                }
             }
         }
     }

@@ -71,7 +71,13 @@ internal fun parseViews(node: JsonNode?): Map<String, ViewDefinition> =
         ViewDefinition(
             description = childNode.optionalText("description"),
             materialized = childNode.boolOrDefault("materialized", false),
-            refresh = childNode.optionalText("refresh"),
+            // Kanonisch statt woertlich: `on_demand`, `on demand` und
+            // `force on demand` sagen dasselbe, und ein Modell, das die
+            // Schreibweise des Autors traegt, laesst den Planer sie als
+            // verschieden vergleichen -- bei jedem Lauf ein Ersetzen der
+            // Sicht, das ihren Bestand verwirft. Ein unlesbarer Text bleibt
+            // stehen, damit der Dialekt ihn melden kann.
+            refresh = ViewRefreshSetting.canonical(childNode.optionalText("refresh")),
             query = childNode.optionalText("query"),
             columns = parseViewColumns(childNode["columns"]),
             dependencies = parseDependencies(childNode["dependencies"]),

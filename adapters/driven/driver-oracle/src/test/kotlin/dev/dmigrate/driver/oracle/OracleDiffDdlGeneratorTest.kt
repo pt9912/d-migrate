@@ -342,7 +342,7 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         sql.endsWith("END;") shouldBe true
     }
 
-    test("a family still ahead (materialized views, Slice 10) blocks DIALECT_UNSUPPORTED_OPERATION") {
+    test("a materialized view renders natively in the diff path") {
         val op = DiffOperation.CreateMaterializedView(
             id = "create-mv",
             objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("mv_x")),
@@ -355,8 +355,8 @@ class OracleDiffDdlGeneratorTest : FunSpec({
             operations = listOf(op),
         )
         val r = gen.generateUp(plan, DdlGenerationOptions())
-        r.isBlocked shouldBe true
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContain "CREATE MATERIALIZED VIEW \"mv_x\""
     }
 
     test("Oracle DDL carries IMPLICIT_COMMIT (no cross-statement rollback), unlike PostgreSQL/MSSQL") {

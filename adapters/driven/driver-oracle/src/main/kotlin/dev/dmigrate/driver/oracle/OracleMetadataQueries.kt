@@ -439,6 +439,50 @@ internal object OracleMetadataQueries {
         }
 
     /** `ALL_VIEWS.TEXT` ist bereits der reine SELECT-Text -- kein CREATE-VIEW-Wrapper. */
+    /** Eine Materialized View: Refresh-Angaben und die Abfrage dahinter. */
+    data class MaterializedViewRow(
+        val name: String,
+        /** `COMPLETE`, `FAST`, `FORCE` oder `NEVER`. */
+        val refreshMethod: String?,
+        /** `DEMAND`, `COMMIT` oder `NEVER`. */
+        val refreshMode: String?,
+        /** `null`, wenn der Katalog keinen Text fuehrt — nicht der Leerstring. */
+        val query: String?,
+    )
+
+    /**
+     * Die Materialized Views eines Schemas.
+     *
+     * `QUERY` steht **zuletzt** in der Auswahl, weil es eine `LONG`-Spalte
+     * ist: der Oracle-Treiber streamt sie und schliesst den Strom, sobald
+     * eine spaeter stehende Spalte gelesen wird. Der generische Zeilenleser
+     * geht die Spalten aufsteigend durch, damit passt es — die Reihenfolge
+     * hier ist die Bedingung dafuer, nicht Geschmack.
+     *
+     * Anders als `ALL_VIEWS.TEXT` kommt der Text unveraendert zurueck, so wie
+     * der Autor ihn geschrieben hat (gemessen).
+     */
+    fun listMaterializedViews(session: JdbcOperations, schema: String): List<MaterializedViewRow> =
+        session.queryList(
+            """
+            SELECT mview_name, refresh_method, refresh_mode, query
+            FROM all_mviews
+            WHERE owner = ?
+            ORDER BY mview_name
+            """.trimIndent(),
+            schema,
+        ).map { row ->
+            MaterializedViewRow(
+                name = row.string("mview_name"),
+                refreshMethod = row.stringOrNull("refresh_method"),
+                refreshMode = row.stringOrNull("refresh_mode"),
+                // `null` bleibt `null`: der Planer unterscheidet „keine
+                // Abfrage" von „leere Abfrage", und ein Leerstring liesse
+                // seine Waechter ins Leere laufen.
+                query = row.stringOrNull("query")?.trim()?.ifEmpty { null },
+            )
+        }
+
     fun listViews(session: JdbcOperations, schema: String): List<ViewRow> =
         session.queryList(
             """
@@ -466,7 +510,11 @@ internal object OracleMetadataQueries {
      * „gar keine Zeile" (fehlende Rechte) unterscheiden.
      */
     fun listViewDependencies(session: JdbcOperations, schema: String): Map<String, ViewDependencyRow> =
-        dependenciesOf(session, schema, listOf("VIEW"))
+        // Auch `MATERIALIZED VIEW`: der Katalog fuehrt eine MV unter dieser
+        // Objektart. Ohne sie kaeme jede Oracle-MV ohne Abhaengigkeiten
+        // zurueck, und die Waechter, die eine verwaiste Sicht verhindern,
+        // liefen leer.
+        dependenciesOf(session, schema, listOf("VIEW", "MATERIALIZED VIEW"))
 
     /**
      * Abhaengigkeiten von Routinen und Triggern, je Objekt gebuendelt.

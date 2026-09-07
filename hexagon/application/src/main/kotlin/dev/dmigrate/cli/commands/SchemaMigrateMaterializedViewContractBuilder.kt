@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MaterializedViewDependencyBlocker
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.migration.MigrationDdlResult
 
 /**
@@ -91,6 +92,7 @@ internal object SchemaMigrateMaterializedViewContractBuilder {
                 rendered = rendered,
                 planCodes = planCodes,
                 renderCodes = renderCodesByOpId[op.id].orEmpty(),
+                dialect = dialect,
             )
             contracts += SchemaMigrateMaterializedViewContractView(
                 operationId = op.id,
@@ -137,8 +139,18 @@ internal object SchemaMigrateMaterializedViewContractBuilder {
         rendered: MigrationDdlResult,
         planCodes: Set<String>,
         renderCodes: Set<String>,
+        dialect: DatabaseDialect,
     ): MaterializedViewContractDecision {
-        precedenceLookup(planCodes, renderCodes)?.let { return it }
+        // Der Planer meldet die Refresh-Angabe dialektblind als nicht
+        // ausgewertet -- er kennt den Zieldialekt nicht. Wo der Dialekt sie
+        // rendert, waere das eine falsche Auskunft ueber einen Lauf, der die
+        // Sicht mit genau dieser Einstellung angelegt hat.
+        val relevant = if (DialectCapabilities.forDialect(dialect).rendersViewRefreshSetting) {
+            planCodes - "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED"
+        } else {
+            planCodes
+        }
+        precedenceLookup(relevant, renderCodes)?.let { return it }
         return readyDecisionFor(op, rendered)
     }
 

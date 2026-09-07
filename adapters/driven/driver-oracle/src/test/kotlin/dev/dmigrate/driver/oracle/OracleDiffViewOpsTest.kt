@@ -18,6 +18,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 
 /**
  * Sub-Slice 5c, View-Haelfte. Die Erwartungen beruhen auf live gemessenen
@@ -81,20 +82,19 @@ class OracleDiffViewOpsTest : FunSpec({
         r.diagnostics.any { it.code == "E053" } shouldBe true
     }
 
-    test("the planner routes a materialized view to its own operation, which is not supported either") {
+    test("the planner routes a materialized view to its own operation, which renders natively") {
         // Ueber den Planner erreicht eine materialisierte Sicht `renderCreateView`
         // gar nicht: OperationMapper macht daraus `CreateMaterializedView`.
         val mv = ViewDefinition(query = "SELECT id FROM users", materialized = true)
         val r = up(SchemaDiff(viewsAdded = listOf(NamedView("mv_users", mv))))
-        r.statements.shouldBeEmpty()
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.statements.single().sql shouldContain "CREATE MATERIALIZED VIEW \"mv_users\""
     }
 
-    test("a materialized view reaching the view renderer directly blocks — temporarily, until Slice 10") {
-        // Der Waechter ist ueber den Planner unerreichbar (siehe oben), aber der
-        // Renderer muss auch fuer handgebaute DiffResults (Artefakt-
-        // Deserialisierung) richtig antworten, statt die Refresh-Semantik still
-        // zu verlieren. Deshalb hier direkt konstruiert.
+    test("a materialized view reaching the plain-view renderer blocks as an unsupported conversion") {
+        // Ueber den Planner unerreichbar (siehe oben), aber der Renderer muss
+        // auch fuer handgebaute DiffResults (Artefakt-Deserialisierung) richtig
+        // antworten: eine MV auf dem View-Pfad ist ein View-/MV-Wechsel, und
+        // den kennt Oracle nicht.
         val mv = ViewDefinition(query = "SELECT id FROM users", materialized = true)
         val op = DiffOperation.CreateView(
             id = "create-mv",
@@ -109,7 +109,7 @@ class OracleDiffViewOpsTest : FunSpec({
         )
         val r = gen.generateUp(plan, DdlGenerationOptions())
         r.statements.shouldBeEmpty()
-        r.diagnostics.any { it.code == "ORACLE_MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+        r.diagnostics.any { it.code == "ORACLE_MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED" } shouldBe true
     }
 
     test("view DDL is metadata-only — lighter lock than table DDL, no exclusive access") {
@@ -158,6 +158,26 @@ class OracleDiffViewOpsTest : FunSpec({
         )
         val r = gen.generateUp(plan, DdlGenerationOptions())
         r.statements.shouldBeEmpty()
-        r.diagnostics.any { it.code == "ORACLE_MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+        r.diagnostics.any { it.code == "ORACLE_MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED" } shouldBe true
+    }
+
+    test("a materialized view is replaced by dropping and creating it: Oracle has no CREATE OR REPLACE") {
+        val op = DiffOperation.ReplaceMaterializedView(
+            id = "replace-mv",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("mv_x")),
+            before = ViewDefinition(query = "SELECT id FROM users", materialized = true),
+            after = ViewDefinition(query = "SELECT id, name FROM users", materialized = true),
+        )
+        val plan = DiffResult(
+            current = DiffEndpoint(schemaName = "App"),
+            desired = DiffEndpoint(schemaName = "App"),
+            schemaDiff = SchemaDiff(),
+            operations = listOf(op),
+        )
+        val r = gen.generateUp(plan, DdlGenerationOptions())
+        r.statements.map { it.sql } shouldBe listOf(
+            "DROP MATERIALIZED VIEW \"mv_x\";",
+            "CREATE MATERIALIZED VIEW \"mv_x\"\nAS\nSELECT id, name FROM users;",
+        )
     }
 })

@@ -555,9 +555,11 @@ sealed interface DiffOperation {
         override val phase: DiffPhase = DiffPhase.VIEWS,
         override val dependencies: Set<String> = emptySet(),
         override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        // Der materialisierte Bestand geht in beiden Richtungen verloren: die
+        // Sicht wird neu aufgebaut, nicht fortgeschrieben.
         override val risks: OperationRisks = OperationRisks(
-            up = OperationRisk(destructive = true),
-            down = OperationRisk(destructive = true),
+            up = OperationRisk(destructive = true, dataLossPossible = true),
+            down = OperationRisk(destructive = true, dataLossPossible = true),
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
@@ -571,8 +573,10 @@ sealed interface DiffOperation {
         override val phase: DiffPhase = DiffPhase.VIEWS,
         override val dependencies: Set<String> = emptySet(),
         override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        // Ein Rueckbau legt die Sicht wieder an, aber leer: der
+        // materialisierte Bestand ist beim Loeschen weg.
         override val risks: OperationRisks = OperationRisks(
-            up = OperationRisk(destructive = true),
+            up = OperationRisk(destructive = true, dataLossPossible = true),
             down = OperationRisk.SAFE,
         ),
     ) : DiffOperation {

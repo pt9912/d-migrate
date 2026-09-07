@@ -136,14 +136,6 @@ carve_outs:
       - adapters/driven/driver-mssql/src/test/kotlin/dev/dmigrate/driver/mssql/MssqlDiffViewOpsTest.kt
       - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
   - workstream: D.3
-    dialect: oracle
-    kind: positive
-    permanent: false
-    reason: "Oracle HAT Materialized Views -- anders als MySQL, SQLite und SQL Server ist das keine strukturelle Luecke, sondern eine noch nicht gebaute (Oracle-Rollout Slice 10, ADR 0052). Der Diff-Pfad blockt CreateMaterializedView benannt mit DIALECT_UNSUPPORTED_OPERATION, statt unvollstaendige DDL zu erzeugen. Mit Slice 10 wird diese Zelle gepinnt UND `D.3/oracle/blocker` permanent gecarvt -- ein Zellentausch, kein blosses Pinning: die blocker-Zelle ist heute nur gruen, weil Oracle MVs als nicht-gebaut blockt, und liefert danach Exit 0 (dieselbe Lage, die PostgreSQL bereits mit `permanent: true` festhaelt)."
-    planRef: docs/adr/0052-oracle-fuenfter-dialekt-scoping.md
-    ownerTests:
-      - adapters/driven/driver-oracle/src/test/kotlin/dev/dmigrate/driver/oracle/OracleDiffDdlGeneratorTest.kt
-  - workstream: D.3
     dialect: postgresql
     kind: blocker
     permanent: true

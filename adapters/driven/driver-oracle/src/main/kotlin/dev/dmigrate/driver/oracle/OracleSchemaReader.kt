@@ -47,7 +47,7 @@ class OracleSchemaReader(
             val skipped = mutableListOf<SkippedObject>()
 
             val tables = readTables(session, schema, notes)
-            val views = if (options.includeViews) readViews(session, schema) else emptyMap()
+            val views = if (options.includeViews) readViews(session, schema, notes) else emptyMap()
             val sequences = readSequences(session, schema, notes)
             val routines = OracleRoutineReader.read(session, schema, options, notes, skipped)
             noteUnreadObjects(session, schema, options, notes, skipped)
@@ -216,15 +216,40 @@ class OracleSchemaReader(
     private fun readViews(
         session: JdbcOperations,
         schema: String,
+        notes: MutableList<SchemaReadNote>,
     ): Map<String, ViewDefinition> {
         val dependencies = OracleMetadataQueries.listViewDependencies(session, schema)
-        return OracleMetadataQueries.listViews(session, schema).associate { view ->
+        val views = OracleMetadataQueries.listViews(session, schema).associate { view ->
             view.name to ViewDefinition(
                 query = view.text.trim(),
                 dependencies = dependencyInfo(dependencies[view.name]),
                 sourceDialect = "oracle",
             )
         }
+        // Materialized Views stehen NICHT in ALL_VIEWS (gemessen) -- sie
+        // kommen aus ALL_MVIEWS und tragen dieselbe neutrale Form mit
+        // `materialized = true`.
+        val materialized = OracleMetadataQueries.listMaterializedViews(session, schema).associate { mv ->
+            if (!OracleMaterializedViewDdl.isReadable(mv.refreshMethod, mv.refreshMode)) {
+                notes += SchemaReadNote(
+                    severity = SchemaReadSeverity.WARNING,
+                    code = "R364",
+                    objectName = mv.name,
+                    message = "Materialized view '${mv.name}' refreshes as " +
+                        "'${mv.refreshMethod} ON ${mv.refreshMode}', which the neutral model has no term " +
+                        "for; the setting is carried through verbatim and cannot be regenerated.",
+                    hint = "Recreate the view manually on the target with that refresh mode.",
+                )
+            }
+            mv.name to ViewDefinition(
+                materialized = true,
+                refresh = OracleMaterializedViewDdl.readRefresh(mv.refreshMethod, mv.refreshMode),
+                query = mv.query,
+                dependencies = dependencyInfo(dependencies[mv.name]),
+                sourceDialect = "oracle",
+            )
+        }
+        return views + materialized
     }
 
     /**

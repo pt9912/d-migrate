@@ -23,9 +23,8 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * the sequence family (5d): `CreateSequence`, `AlterSequence`,
  * `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue`.
  *
- * Everything else surfaces as `DIALECT_UNSUPPORTED_OPERATION` — partitioning
- * (Slice 7), materialized views (Slice 10), routines and triggers (Slice 9)
- * per `docs/planning/in-progress/oracle-dialect-scoping.md`.
+ * Was uebrig bleibt, meldet sich als `DIALECT_UNSUPPORTED_OPERATION`: eine
+ * Aenderung am Partitionsbestand einer bestehenden Tabelle.
  *
  * Seit Sub-Slice 5e-2 in `MigrateRendererRegistry` verdrahtet und damit
  * ueber `schema migrate` erreichbar; `DialectCommandGate` fuehrt das
@@ -94,6 +93,7 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.VIEW_OR_TYPE -> renderViewOrTypeOp(op, ctx)
             OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.ROUTINE -> renderRoutineOp(op, ctx)
+            OpCategory.MATERIALIZED_VIEW -> renderMaterializedViewOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -155,11 +155,25 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameTrigger,
         -> OpCategory.ROUTINE
 
-        is DiffOperation.AlterTablePartitions,
         is DiffOperation.CreateMaterializedView,
         is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
+        -> OpCategory.MATERIALIZED_VIEW
+
+        is DiffOperation.AlterTablePartitions,
         -> OpCategory.UNSUPPORTED
+    }
+
+    private fun renderMaterializedViewOp(op: DiffOperation, ctx: OracleDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateMaterializedView -> OracleDiffMaterializedViewOps.renderCreate(op, ctx)
+            is DiffOperation.ReplaceMaterializedView -> OracleDiffMaterializedViewOps.renderReplace(op, ctx)
+            is DiffOperation.DropMaterializedView -> OracleDiffMaterializedViewOps.renderDrop(op, ctx)
+            else -> error(
+                "Op ${op::class.simpleName} is categorised MATERIALIZED_VIEW but " +
+                    "renderMaterializedViewOp does not handle it",
+            )
+        }
     }
 
     private fun renderRoutineOp(op: DiffOperation, ctx: OracleDiffRenderContext) {
@@ -237,5 +251,7 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OBJECT, VIEW_OR_TYPE, SEQUENCE, ROUTINE, UNSUPPORTED }
+    private enum class OpCategory {
+        TABLE, OBJECT, VIEW_OR_TYPE, SEQUENCE, ROUTINE, MATERIALIZED_VIEW, UNSUPPORTED
+    }
 }

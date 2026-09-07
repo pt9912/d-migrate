@@ -113,6 +113,18 @@ data class DialectCapabilities(
      */
     val carriesFullTextConfiguration: Boolean = true,
     /**
+     * Ob der Dialekt die Refresh-Einstellung einer materialisierten Sicht
+     * (`ViewDefinition.refresh`) tatsaechlich umsetzt.
+     *
+     * PostgreSQL kennt nur den Refresh auf Anforderung und hat keine Klausel
+     * dafuer; die Angabe bleibt dort ohne Wirkung. Oracle setzt sie um. Der
+     * Migrationsreport haengt daran, ob er die Operation als „Refresh-Semantik
+     * nicht ausgewertet" ausweist — fuer einen Dialekt, der sie ausweislich
+     * rendert, waere das eine falsche Auskunft ueber einen Lauf, der genau das
+     * getan hat.
+     */
+    val rendersViewRefreshSetting: Boolean = false,
+    /**
      * Ob der Dialekt die **untere** Grenze einer RANGE-Partition fuehrt.
      * PostgreSQL tut es (`FOR VALUES FROM … TO …`); Oracle und MySQL kennen
      * nur `VALUES LESS THAN` und leiten die untere Grenze aus der
@@ -280,6 +292,7 @@ data class DialectCapabilities(
             // adressierbaren Relationen. namesFullTextIndexes=true: Oracle-Text-
             // Indizes (CONTEXT/CTXCAT) tragen anders als MSSQL einen Namen.
             DatabaseDialect.ORACLE -> DialectCapabilities(
+                rendersViewRefreshSetting = true,
                 supportsViews = true,
                 supportsFunctions = true,
                 supportsProcedures = true,

@@ -198,10 +198,9 @@ internal object MysqlObjectRenamePolicy : ObjectRenamePolicy {
  * RENAME TO g` mit ORA-00922. Sie blocken deshalb — der Grund liegt bei
  * Oracle, nicht bei d-migrate.
  *
- * Materialized Views blocken weiterhin aus dem anderen Grund: der
- * Oracle-Reader liest sie nicht und der Generator schreibt sie nicht
- * (ADR 0052). Ein Rename-Vertrag fuer ein Objekt, das auf keinem anderen
- * Pfad existiert, waere nicht pruefbar.
+ * Materialized Views blocken weiterhin: sie werden zwar gelesen und
+ * geschrieben, aber ein Rename-Vertrag muesste zusichern, in welchem
+ * Auffrisch-Zustand die Sicht danach steht — und das ist nicht gemessen.
  */
 internal object OracleObjectRenamePolicy : ObjectRenamePolicy {
 

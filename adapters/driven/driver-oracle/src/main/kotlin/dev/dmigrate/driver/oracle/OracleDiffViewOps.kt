@@ -130,18 +130,13 @@ internal object OracleDiffViewOps {
     }
 
     /**
-     * Fuer eine durchgehend materialisierte Sicht macht `OperationMapper`
-     * `CreateMaterializedView`/`DropMaterializedView`/`ReplaceMaterializedView`
-     * -- die fuehrt der Dispatcher ohnehin als nicht unterstuetzt. **Nicht** so
-     * beim View-/MV-Wechsel: dort entsteht ein gewoehnliches `ReplaceView` mit
-     * materialisierter Seite, und genau dafuer greift dieser Waechter. Er hilft
-     * zusaetzlich bei handgebauten `DiffResult`s (Artefakt-Deserialisierung).
+     * Blockt eine materialisierte Sicht auf dem **gewoehnlichen** View-Pfad.
      *
-     * Anders als bei MSSQL ist das ein **vorlaeufiger** Block: Oracle kennt
-     * materialisierte Sichten nativ, nur baut der Dialekt sie noch nicht
-     * (Slice 10). Der Generate-Pfad degradiert sie zur gewoehnlichen View
-     * (W103) -- im Migrationspfad waere das ein stiller Verlust der
-     * Refresh-Semantik, deshalb hier ein Blocker.
+     * Die eigenen MV-Operationen laufen ueber [OracleDiffMaterializedViewOps];
+     * was hier ankommt, ist ein View-/MV-Wechsel — dafuer hat Oracle keine
+     * Umwandlung. Der Waechter steht in jedem der vier Renderer, damit die
+     * Down-Richtung kein `DROP VIEW` auf eine materialisierte Sicht absetzt
+     * (ORA-00942).
      */
     private fun blockMaterialized(
         op: DiffOperation,
@@ -150,12 +145,16 @@ internal object OracleDiffViewOps {
         view: ViewDefinition,
     ): Boolean {
         if (!view.materialized) return false
+        // Eine materialisierte Sicht, die den GEWOEHNLICHEN View-Pfad
+        // erreicht, ist ein View-/MV-Wechsel: die eigenen MV-Operationen
+        // laufen ueber [OracleDiffMaterializedViewOps]. Oracle kennt dafuer
+        // keine Umwandlung -- es waere ein Loeschen und ein Anlegen unter
+        // demselben Namen, und der Bestand der MV entstuende neu.
         ctx.skip(
             op,
-            "Operation ${op.id}: '$name' is a materialized view. Oracle supports them natively, but the " +
-                "dialect does not render them yet (Slice 10); migrating it as a plain view would silently " +
-                "drop the refresh semantics.",
-            code = "ORACLE_MATERIALIZED_VIEW_DIFF_UNSUPPORTED",
+            "Operation ${op.id}: '$name' changes between a plain and a materialized view. Oracle has no " +
+                "conversion for that; drop the one and create the other explicitly.",
+            code = "ORACLE_MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
         return true
