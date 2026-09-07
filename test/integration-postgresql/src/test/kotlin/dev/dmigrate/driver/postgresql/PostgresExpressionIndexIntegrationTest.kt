@@ -149,7 +149,7 @@ class PostgresExpressionIndexIntegrationTest : FunSpec({
         // deparst zurueck (`upper(nm)` -> `upper(nm::text)`). Der
         // Fingerabdruck hasht den Text, also driftet ein Ausdrucks-Index nach
         // `migrate --execute` dauerhaft. Siehe
-        // docs/planning/open/index-expression-text-drift.md.
+        // docs/planning/open/raw-sql-text-drift.md.
         HikariConnectionPoolFactory.create(config).use { pool ->
             val expression = PostgresSchemaReader().read(pool)
                 .schema.tables.getValue("people").indices

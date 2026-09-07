@@ -1006,7 +1006,7 @@ gilt eine Regel für alle vier statt einer MySQL-Sonderbehandlung.
   `migrate --execute` nicht. Ausblenden hilft hier **nicht** — der Ausdruck
   ist die Aussage des Index; es braucht eine Kanonisierung, und das ist ein
   eigener Entwurf:
-  [`index-expression-text-drift.md`](../open/index-expression-text-drift.md).
+  [`raw-sql-text-drift.md`](../open/raw-sql-text-drift.md).
 - **SQLite liest sie unvollständig zurück.** Der Katalog führt den
   Ausdruckstext nicht; er steht nur im ursprünglichen `CREATE`-Text:
   [`sqlite-expression-index-reverse.md`](../open/sqlite-expression-index-reverse.md).
