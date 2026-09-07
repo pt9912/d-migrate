@@ -26,9 +26,8 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * Was uebrig bleibt, meldet sich als `DIALECT_UNSUPPORTED_OPERATION`: eine
  * Aenderung am Partitionsbestand einer bestehenden Tabelle.
  *
- * Seit Sub-Slice 5e-2 in `MigrateRendererRegistry` verdrahtet und damit
- * ueber `schema migrate` erreichbar; `DialectCommandGate` fuehrt das
- * Kommando fuer oracle nicht mehr.
+ * In `MigrateRendererRegistry` verdrahtet und damit ueber `schema migrate`
+ * erreichbar.
  *
  * Implementation is split across helpers to satisfy Detekt's
  * `TooManyFunctions` threshold while keeping the dispatch focused:

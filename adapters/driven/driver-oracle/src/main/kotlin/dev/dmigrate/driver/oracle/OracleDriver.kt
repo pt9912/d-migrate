@@ -15,12 +15,11 @@ import dev.dmigrate.driver.data.TableLister
 /**
  * [DatabaseDriver]-Implementierung für Oracle.
  *
- * Reverse-Read (Slice 1), DDL-Generate (Slice 2), Datenpfad (Slice 3,
- * `data export`/`import`/`transfer`) und Postcompare-Vergleichssubstrat
- * (Slice 4a, `typeCanonicalizer()`) und Diff/Migrate (Slice 5). Einzig
- * `data profile` bleibt unerreichbar, weil `DialectCommandGate` (ADR 0052)
- * oracle dort an der Kommando-Grenze abweist; die übrigen
- * Fähigkeitsmethoden behalten ihre konservativen Interface-Defaults.
+ * Reverse-Read, DDL-Generate, Datenpfad (`data export`/`import`/`transfer`),
+ * Postcompare-Vergleichssubstrat (`typeCanonicalizer()`) und Diff/Migrate.
+ * `data profile` haengt an eigenen Ports und liegt deshalb in einem eigenen
+ * Modul (`driver-oracle-profiling`); die uebrigen Faehigkeitsmethoden
+ * behalten ihre konservativen Interface-Defaults.
  */
 class OracleDriver : DatabaseDriver {
     override val dialect = DatabaseDialect.ORACLE

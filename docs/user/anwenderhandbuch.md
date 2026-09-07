@@ -2373,10 +2373,26 @@ beginnen Sie ohne `--resume` neu.
 ## 6. Häufige Fragen (FAQ)
 
 **Welche Datenbanken unterstützt d-migrate?**
-PostgreSQL, MySQL/MariaDB, SQLite und MS SQL Server vollständig. Für Oracle
-arbeiten `schema reverse`, `schema compare`, `schema generate`,
-`schema migrate`, `export <tool>` sowie `data export`/`import`/`transfer`;
-`data profile` weist Oracle mit einer Meldung ab.
+PostgreSQL, MySQL/MariaDB, SQLite, MS SQL Server und Oracle — alle fünf mit
+demselben Befehlsumfang. Wo ein Dialekt etwas nicht ausdrücken kann, meldet
+d-migrate es, statt es zu umgehen.
+
+Beim Profilieren einer Oracle-Datenbank gibt es drei Besonderheiten, die am
+Server liegen und nicht an d-migrate:
+
+- **Ein Leerstring ist dort NULL.** Die Zählung leerer Zeichenketten steht
+  deshalb immer auf 0, und die Werte erscheinen unter den NULL-Werten. Eine
+  Zeichenkette aus lauter Leerzeichen wird dagegen normal ausgewiesen.
+- **Große Objekte werden über ihre ersten 4000 Zeichen verglichen.** Zwei
+  CLOB-Werte, die sich erst danach unterscheiden, zählen als einer — Oracle
+  lässt `COUNT(DISTINCT)` auf einem LOB nicht zu.
+- **`LONG`, `LONG RAW`, `BFILE` und Objektspalten ohne Vergleichsordnung
+  lassen sich nicht profilieren.** d-migrate benennt sie und bricht den Lauf
+  ab, statt eine Zahl zu melden, die es nicht ermitteln konnte.
+
+`--schema` wird für Oracle groß geschrieben, so wie der Server einen
+unquotierten Namen faltet. Wer ein wirklich klein geschriebenes Schema meint,
+setzt es in Anführungszeichen.
 
 `schema migrate` blockt für Oracle benannt, statt unvollständige DDL zu
 erzeugen, wenn eine Änderung Geometrie-Spalten betrifft. Ebenso beim Versuch,
@@ -2817,7 +2833,7 @@ Fortschritt/Warnungen nach stderr.
 | ------ | ------------ |
 | `--source` | URL oder benannte Verbindung (Pflicht) |
 | `--tables` | Tabellen (Standard: alle) |
-| `--schema` | Datenbankschema (nur PostgreSQL, Standard `public`) |
+| `--schema` | Datenbankschema — für PostgreSQL (Standard `public`), SQL Server und Oracle; die übrigen Dialekte führen keine Schemata |
 | `--top-n` | häufigste Werte je Spalte (Standard 10, Max 1000) |
 | `--format` | `json` (Standard) oder `yaml` |
 | `--output` | Ausgabedatei (Standard: stdout) |

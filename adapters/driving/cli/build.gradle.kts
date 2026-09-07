@@ -169,6 +169,7 @@ dependencies {
     implementation(project(":adapters:driven:driver-sqlite"))
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:driver-mssql-profiling"))
+    implementation(project(":adapters:driven:driver-oracle-profiling"))
     implementation(project(":adapters:driven:driver-mssql"))
     implementation(project(":adapters:driven:driver-oracle"))
     implementation(project(":adapters:driven:formats"))

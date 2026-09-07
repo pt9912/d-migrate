@@ -23,6 +23,7 @@ dependencies {
     runtimeOnly(project(":adapters:driven:driver-sqlite"))
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:driver-mssql-profiling"))
+    implementation(project(":adapters:driven:driver-oracle-profiling"))
     runtimeOnly(project(":adapters:driven:driver-mssql"))
     runtimeOnly(project(":adapters:driven:driver-oracle"))
 

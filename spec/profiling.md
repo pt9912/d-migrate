@@ -550,6 +550,22 @@ Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeReso
 | PostgreSQL | Standard-SQL-Aggregate + `pg_stats`                                                | PG-Typen → `LogicalType`        |
 | MySQL      | Standard-SQL-Aggregate                                                             | MySQL-Typen → `LogicalType`     |
 | SQLite     | Standard-SQL-Aggregate + Kotlin-Fallbacks für fehlende Funktionen (z. B. `stddev`) | SQLite Affinity → `LogicalType` |
+| SQL Server | Standard-SQL-Aggregate; nicht vergleichbare Typen (`geometry`, `xml`, LOB-Alttypen) über eine Textprojektion | T-SQL-Typen → `LogicalType` |
+| Oracle     | Standard-SQL-Aggregate; LOB/XML/JSON über eine `VARCHAR2`-Projektion, Typverträglichkeit über `VALIDATE_CONVERSION` | Oracle-Typen → `LogicalType` |
+
+**Oracle-Besonderheiten**, die im Bericht sichtbar werden:
+
+- Ein **Leerstring ist NULL**. `emptyStringCount` steht deshalb immer auf 0;
+  die Werte erscheinen unter `nullCount`. Eine Zeichenkette aus Leerraum wird
+  dagegen normal als solche ausgewiesen.
+- **LOBs sind nicht vergleichbar** (`COUNT(DISTINCT clob)` ist ORA-22849).
+  Sie werden über ihre ersten 4000 Zeichen als `VARCHAR2` verglichen; jenseits
+  davon fallen Werte zusammen.
+- **`LONG`, `LONG RAW`, `BFILE` und Objekttypen ohne Vergleichsordnung lassen
+  sich gar nicht profilieren.** Sie werden benannt abgewiesen, statt den
+  Serverfehler durchzureichen.
+- Alle **Zeit- und Zahlmasken** stehen ausgeschrieben, damit dasselbe Profil
+  nicht je nach Sitzungs-NLS anders ausfällt.
 
 ### 6.2 Profilierungsablauf
 

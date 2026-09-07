@@ -36,11 +36,13 @@ import dev.dmigrate.server.ports.memory.InMemoryProfileStore
 import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
@@ -168,11 +170,11 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
         }.message shouldBe "connectionRef not found: dmigrate://tenants/acme/connections/c1"
     }
 
-    test("McpCoreJobWorkerFactory profile worker rejects oracle via DialectCommandGate before opening a pool") {
-        // ADR 0052 / oracle-dialect-scoping.md, Slice 10 offen: data profile
-        // ist fuer oracle noch nicht gebaut. Der Gate-Check muss VOR
-        // HikariConnectionPoolFactory.create(...) greifen -- eine echte
-        // Oracle-URL, die nie verbunden wird, belegt das.
+    test("McpCoreJobWorkerFactory profile worker reaches the connection attempt for oracle") {
+        // Bis zum Profiling-Modul wies ein Kommando-Gate oracle hier ab,
+        // BEVOR ein Pool entstand. Jetzt muss der Worker bis zum
+        // Verbindungsaufbau kommen -- der Host ist unerreichbar, der Fehler
+        // also ein Verbindungs- und kein Kommando-Grenz-Fehler.
         val connectionStore = InMemoryConnectionReferenceStore()
         connectionStore.save(
             ConnectionReference(
@@ -212,9 +214,12 @@ class McpCoreJobWorkerFactoryTest : FunSpec({
             connectionRequest(DataProfileStartHandler.TOOL_NAME),
         ).shouldNotBeNull()
 
-        shouldThrow<IllegalArgumentException> {
+        val failure = shouldThrow<Throwable> {
             profile.execute(operationRecord("job-profile", DataProfileStartHandler.OPERATION), token)
-        }.message shouldStartWith "data profile does not support dialect oracle yet"
+        }
+        withClue("Fehler: ${failure::class.simpleName}: ${failure.message}") {
+            failure.message.orEmpty() shouldNotContain "does not support dialect oracle"
+        }
     }
 
     test("McpCoreJobWorkerFactory compare worker rejects unsupported refs") {

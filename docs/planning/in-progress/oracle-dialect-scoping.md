@@ -1,15 +1,18 @@
 # Vorabklärung: Oracle als fünfter Dialekt (Milestone 1.8.0)
 
-> **Status:** In Progress (Stand 2026-09-06). Alle fünf
-> Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0,
-> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e), 6 (6a+6b), 7 und 8.** `schema migrate` ist damit
-> für Oracle nutzbar, der Sample-DB-Harness fährt Pagila in **beide**
-> Richtungen, Bitmap-Indizes gehen über alle fünf Dialekte durch, und
-> partitionierte Tabellen entstehen und werden zurückgelesen, und
-> Volltext-Indizes laufen über Oracle Text, und Indizes über Ausdrücken sind
-> im neutralen Modell darstellbar. Offen sind die Ausbau-Slices **9–11**
-> (Routinen/Trigger, Materialized Views, Profiling); `DialectCommandGate`
-> führt nur noch `data profile`.
+> **Status:** In Progress. Alle fünf Grundsatzentscheidungen getroffen (siehe
+> ADR 0052). **Geliefert: Slices 0 bis 11.** Oracle führt damit denselben
+> Befehlsumfang wie die vier anderen Dialekte: Reverse, Generate, Compare,
+> Migrate, der Datenpfad, die Werkzeug-Exporte und `data profile`. Der
+> Sample-DB-Harness fährt Pagila in **beide** Richtungen, Bitmap-,
+> Ausdrucks- und Volltext-Indizes gehen durch, partitionierte Tabellen
+> entstehen und werden zurückgelesen, Routinen und Trigger laufen als
+> PL/SQL, und Materialized Views round-trippen mit ihrer
+> Refresh-Einstellung. `DialectCommandGate` verliert seinen letzten Eintrag
+> und entfällt.
+>
+> Offen: Slice 12 (Spatial, geplant und gemessen, nicht gebaut) und
+> PL/SQL-Packages ohne Liefertermin.
 >
 > Die datierten Status-Blöcke unten sind **Momentaufnahmen** und werden nicht
 > rückwirkend umgeschrieben — was dort „bis Slice 5 gesperrt" heißt, war zum
@@ -780,7 +783,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **8** ✅ | Volltext: Oracle Text (`CTXSYS.CONTEXT`) für Generate, Reverse und Diff; `SYNC (ON COMMIT)` verpflichtend; mehrspaltig abgelehnt (`E057`); fremde Domain-Indizes gemeldet (`R357`) | Volltext-Indizes Generate + Reverse |
 | **9** ✅ | Routinen/Trigger: lesen, erzeugen und migrieren als ein Stück. `ALL_SOURCE` für alle drei Objektarten, Signatur aus `ALL_ARGUMENTS`; Generate und Diff über ein geteiltes Urteil (`OracleRoutineShape`); Trenner je Anweisung statt je Dialekt (`DdlStatement.scriptTerminator`). Was das Modell nicht trägt, wird gemeldet (`R358`–`R363`) | Routinen-Migration |
 | **10** ✅ | Materialized Views: Reverse aus `ALL_MVIEWS`, Generate und Diff nativ; `refresh` bekommt ein Vokabular (Methode und/oder Auslöser); `fast` wird gemeldet, weil es ein MV-Log verlangt, das das Modell nicht führt. Dazu ein Defekt im ausgelieferten Stand behoben: MV und MV-Log wurden als Tabellen gelesen | Materialized Views im Round-Trip |
-| **11** | Profiling-Modul `driver-oracle-profiling` | Live belegt; `DialectCommandGate` verliert seinen letzten Oracle-Eintrag |
+| **11** ✅ | Profiling-Modul `driver-oracle-profiling` (drei Adapter analog den vier anderen Dialekten), live gegen einen Container belegt. `DialectCommandGate` verliert seinen letzten Eintrag und **entfällt** — zum zweiten Mal, siehe Detailabschnitt | `data profile` ist für Oracle nutzbar |
 | **12** | Oracle Spatial: `SDO_GEOMETRY` als echter `NeutralType.Geometry` in Reverse, Generate und Diff, samt `USER_SDO_GEOM_METADATA` und Spatial-Index — siehe Detailabschnitt | Geometriespalten im Round-Trip statt als Text |
 | **ohne Nummer** | PL/SQL Packages (Neutralmodell-Erweiterung um Routine-Gruppierung) — **zeitlich unbestimmt, bewusst kein Slice mit Liefertermin** (Entscheidung 4) | Package-Struktur im Round-Trip, sobald angegangen |
 
@@ -800,7 +803,7 @@ verstecktes else, aber auch keine falsche Terminzusage.
 | `export flyway/liquibase/django/knex` | **Slice 2** | — |
 | `data export` / `data import` / `data transfer` | **Slice 3** | — |
 | `schema migrate` | **Slice 5** | — |
-| `data profile` (CLI + MCP-Job) | Slice 11 | Gate |
+| `data profile` (CLI + MCP-Job) | **Slice 11** | — |
 
 ## Slice 5 im Detail — Diff/Migrate für Oracle
 
@@ -1433,6 +1436,60 @@ Offen geblieben und ticketiert:
   Solange sie fehlen, ist `refresh: fast` nicht erzeugbar.
 - **`schema refresh materialized-view`** gibt es nicht; der repo-weite
   D.3b-Vertrag führt es als eigenen OOS-Blocker.
+
+## Slice 11 im Detail — Profiling
+
+### Was Oracle anders macht
+
+| Frage | Messung | Folge |
+| --- | --- | --- |
+| Zählt ein Leerstring? | `''` **ist** NULL in Oracle | `emptyStringCount` kann nur 0 sein; die Werte stehen unter `nullCount`. Das ist die einzige wahrheitsgemäße Antwort, keine Lücke |
+| `COUNT(DISTINCT clob)`? | ORA-22849 | LOBs werden über die ersten 4000 Zeichen verglichen — jenseits davon fallen Werte zusammen. Ohne die Projektion gäbe es für LOB-Spalten gar keine Kennzahlen |
+| Wie erkennt man reinen Leerraum? | `TRIM('  ')` ergibt den Leerstring und damit NULL | Leerraum ist genau das, was selbst nicht NULL ist, dessen getrimmter Wert aber schon |
+| Typverträglichkeit? | `VALIDATE_CONVERSION` liefert 1/0 | Vollständig geprüft ohne Cast-und-Fangen — dieselbe Zusicherung wie `TRY_CONVERT` bei SQL Server |
+| Top-N? | Kein `LIMIT`; `FETCH FIRST n ROWS ONLY` | Serverseitig begrenzt, nicht im Speicher |
+| Zeitformate? | `TO_CHAR` ohne Maske folgt `NLS_DATE_FORMAT` | Alle Masken stehen ausgeschrieben, sonst fiele dasselbe Profil je nach Anmeldung anders aus |
+
+### Was der Review gefunden hat
+
+Neun Befunde, alle behoben. Drei davon hätten einen Profillauf **ganz**
+abgebrochen — es gibt keine Toleranz je Spalte, ein Fehler beendet den Bericht
+für die gesamte Datenbank:
+
+| Befund | Warum es schiefging | Behoben durch |
+| --- | --- | --- |
+| XMLTYPE-Projektion lieferte einen CLOB | `SUBSTR` auf einem CLOB gibt wieder einen CLOB — genau der ORA-22849, den die Projektion vermeiden soll | `XMLSERIALIZE(… AS VARCHAR2(4000))` |
+| `LONG`, `LONG RAW`, `BFILE`, Objekttypen | Der Resolver sagte sie zu, das SQL konnte sie nicht anfassen (ORA-00997) | Benannt abgewiesen, statt den Serverfehler durchzureichen |
+| `VALIDATE_CONVERSION` auf LOB und TIMESTAMP | Nimmt beide nicht (ORA-43909) — vom Integrationstest gefunden, nicht vom Review | Zeitspalten brauchen keine Prüfung, LOB/RAW gehen über ihre Textform |
+| Zeitmaske ohne Bruchteilsekunden | Zwei verschiedene `TIMESTAMP`-Werte fanden denselben Text: `topValues` zeigte ihn zweimal, die Sortierung war bei Gleichstand unbestimmt. `.FF` an einem `DATE` ist dagegen ORA-01821 | Maske je Typ |
+| `TO_CHAR` auf Zahlen ohne Maske | Folgt `NLS_NUMERIC_CHARACTERS`; in einer Sitzung mit Dezimalkomma galt `10,5` als ganzzahlig, weil die Prüfung auf `'.'` sah | Zahlenspalten ohne Text-Umweg (`MOD(x,1)=0`); Textspalten schließen **beide** Trennzeichen aus |
+| `--schema hr` lieferte einen leeren Bericht | `ALL_TABLES.OWNER` ist gefaltet; der exakte Vergleich fand nichts, ohne Meldung | Groß geschrieben wie Oracle selbst; ein quotierter Name bleibt stehen |
+| Eigenes Quoting | Vierte Kopie derselben Regel, und die einzige ohne gemeinsamen Test | `ProfilingSqlNames` aus `driver-common` |
+| Der Oracle-Zweig der Verdrahtung hatte keinen Test | Beide Wiring-Tests schlossen Oracle aus; die neuen E2E können den Unterschied nicht sehen, weil der Pool **vor** der Adapter-Auswahl entsteht | `DataProfileWiringTest` prüft alle fünf Dialekte und Oracle namentlich |
+| Modul nur in Gradle registriert | Fehlte im `Dockerfile` (deps-Stage, beide Kover-Listen) und in `.a-check.yml` | ergänzt |
+
+Der Integrationstest deckt jetzt dieselben Typen ab, für die der
+MSSQL-Vorgänger eine eigene Tabelle anlegt — XML, JSON, LOB, binär und beide
+zeitlichen Formen. Genau dort saßen zwei der drei Abbrüche.
+
+### Das Gate entfällt — zum zweiten Mal
+
+`DialectCommandGate` trug mit `DATA_PROFILE` seinen letzten Eintrag. Beim
+MSSQL-Rollout wurde die Klasse aus demselben Grund gelöscht und musste für
+Oracle neu gebaut werden (Slice 1). Sie erneut zu löschen ist trotzdem
+richtig: eine leere Aufzählung macht `refusal()` unaufrufbar, und eine
+Kommando-Grenze, die kein Kommando mehr führt, ist toter Code. Der nächste
+Dialekt-Rollout baut sie wieder — das ist billiger als eine Attrappe zu
+pflegen.
+
+**Was nur das Gate trug**, und wo es jetzt steht:
+
+| Zusicherung | vorher | jetzt |
+| --- | --- | --- |
+| `data profile` weist Oracle an der Kommando-Grenze ab, **bevor** eine Verbindung entsteht | `OracleCommandGateE2ETest` | `OracleDataProfileE2ETest` prüft das Gegenteil: der Lauf muss den Verbindungsaufbau erreichen, also **nicht** mit Exit 2 enden |
+| Derselbe Riegel im MCP-Worker | `McpCoreJobWorkerFactoryTest` | derselbe Test, umgedreht: der Fehler darf kein Kommando-Grenz-Fehler mehr sein |
+| „`data profile` weist Oracle mit einer Meldung ab" | Anwenderhandbuch | ersetzt durch den Hinweis auf die Leerstring-Semantik — die einzige Oracle-Besonderheit, die ein Anwender im Profil sieht |
+| „Einzig `data profile` bleibt unerreichbar" | `OracleDriver`-KDoc | entfernt |
 
 ## Slice 12 im Detail — Oracle Spatial
 

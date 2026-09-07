@@ -1511,7 +1511,7 @@ d-migrate data profile --source <url-or-name> [--tables <t1,t2,...>]
 |---|---|---|---|
 | `--source` | Ja | String | Datenbank-URL oder Named Connection |
 | `--tables` | Nein | String | Komma-getrennte Tabellenliste (Default: alle) |
-| `--schema` | Nein | String | Datenbankschema (nur PostgreSQL, Default: `public`) |
+| `--schema` | Nein | String | Datenbankschema. Wirksam bei den Dialekten, die Schemata als Namensraum führen (`DialectCapabilities.supportsSchemaParameter`): PostgreSQL (Default `public`), SQL Server (Default `SCHEMA_NAME()`) und Oracle (Default: das aktuelle Schema). Oracle faltet einen unquotierten Namen groß, wie der Server selbst |
 | `--top-n` | Nein | Int | Anzahl Top-Werte pro Spalte (Default: 10, Max: 1000) |
 | `--format` | Nein | String | Ausgabeformat: `json` (Default), `yaml` |
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |

@@ -15,6 +15,9 @@ import dev.dmigrate.driver.mysql.profiling.MysqlLogicalTypeResolver
 import dev.dmigrate.driver.mssql.profiling.MssqlLogicalTypeResolver
 import dev.dmigrate.driver.mssql.profiling.MssqlProfilingDataAdapter
 import dev.dmigrate.driver.mssql.profiling.MssqlSchemaIntrospectionAdapter
+import dev.dmigrate.driver.oracle.profiling.OracleLogicalTypeResolver
+import dev.dmigrate.driver.oracle.profiling.OracleProfilingDataAdapter
+import dev.dmigrate.driver.oracle.profiling.OracleSchemaIntrospectionAdapter
 import dev.dmigrate.driver.mysql.profiling.MysqlProfilingDataAdapter
 import dev.dmigrate.driver.mysql.profiling.MysqlSchemaIntrospectionAdapter
 import dev.dmigrate.driver.postgresql.profiling.PostgresLogicalTypeResolver
@@ -106,9 +109,10 @@ internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
             MssqlProfilingDataAdapter(),
             MssqlLogicalTypeResolver(),
         )
-        DatabaseDialect.ORACLE -> error(
-            "unreachable: DataProfileRunner weist oracle vor der Adapter-Auswahl ab " +
-                "(DialectCommandGate, ADR 0052)",
+        DatabaseDialect.ORACLE -> ProfilingAdapterSet(
+            OracleSchemaIntrospectionAdapter(),
+            OracleProfilingDataAdapter(),
+            OracleLogicalTypeResolver(),
         )
     }
 }

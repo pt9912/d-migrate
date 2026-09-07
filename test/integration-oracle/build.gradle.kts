@@ -7,6 +7,8 @@
 
 dependencies {
     testImplementation(project(":adapters:driven:driver-oracle"))
+    testImplementation(project(":adapters:driven:driver-oracle-profiling"))
+    testImplementation(project(":hexagon:profiling"))
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))

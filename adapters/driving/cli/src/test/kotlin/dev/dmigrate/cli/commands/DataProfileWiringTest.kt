@@ -18,6 +18,7 @@ import dev.dmigrate.profiling.port.SchemaIntrospectionPort
 import dev.dmigrate.profiling.port.TableSchema
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -46,9 +47,7 @@ class DataProfileWiringTest : FunSpec({
     )
 
     context("happy path by dialect") {
-        // Oracle: DialectCommandGate weist data profile an der Kommando-
-        // Grenze ab (ADR 0052, Slice 10 offen) -- kein "happy path" bis dahin.
-        (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
+        DatabaseDialect.entries.forEach { dialect ->
             test("wires fake profiling adapters for ${dialect.name.lowercase()}") {
                 val tableName = tableNameFor(dialect)
                 val configPath = Path.of(".d-migrate-test.yaml")
@@ -138,16 +137,25 @@ class DataProfileWiringTest : FunSpec({
         bundle.dialectResolver("sqlite::memory:") shouldBe DatabaseDialect.SQLITE
 
         bundle.dialectResolver("mssql://localhost/profile") shouldBe DatabaseDialect.MSSQL
+        bundle.dialectResolver("oracle://localhost:1521/profile") shouldBe DatabaseDialect.ORACLE
 
-        // Jeder Dialekt traegt jetzt ein vollstaendiges Adapter-Trio -- ausser
-        // Oracle: DialectCommandGate weist data profile bislang ab (ADR 0052,
-        // Slice 10 offen), profilingAdaptersFor(ORACLE) ist ein "unreachable"-Stub.
-        (DatabaseDialect.entries - DatabaseDialect.ORACLE).forEach { dialect ->
+        // Jeder Dialekt traegt ein vollstaendiges Adapter-Trio. Ueber die
+        // Aufzaehlung statt ueber eine Liste: ein neuer Dialekt faellt hier
+        // auf, statt still ohne Adapter zu bleiben.
+        DatabaseDialect.entries.forEach { dialect ->
             val adapters = bundle.adapterLookup(dialect)
-            adapters.introspection::class.simpleName?.isNotBlank() shouldBe true
-            adapters.data::class.simpleName?.isNotBlank() shouldBe true
-            adapters.typeResolver::class.simpleName?.isNotBlank() shouldBe true
+            withClue("dialect=$dialect") {
+                adapters.introspection::class.simpleName?.isNotBlank() shouldBe true
+                adapters.data::class.simpleName?.isNotBlank() shouldBe true
+                adapters.typeResolver::class.simpleName?.isNotBlank() shouldBe true
+            }
         }
+        // Namentlich, damit ein versehentlich falsch verdrahteter Dialekt
+        // nicht als "irgendein Adapter" durchgeht.
+        val oracle = bundle.adapterLookup(DatabaseDialect.ORACLE)
+        oracle.introspection::class.simpleName shouldBe "OracleSchemaIntrospectionAdapter"
+        oracle.data::class.simpleName shouldBe "OracleProfilingDataAdapter"
+        oracle.typeResolver::class.simpleName shouldBe "OracleLogicalTypeResolver"
     }
 
     test("default factory report writer writes deterministic file output") {
