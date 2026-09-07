@@ -781,6 +781,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **9** | Routinen/Trigger: lesen, erzeugen und migrieren — **als ein Stück**, siehe Detailabschnitt | Routinen-Migration |
 | **10** | Materialized Views: Anschluss ans bestehende 0.9.7-D.3b-Modell (Refresh-Modi FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Materialized Views im Round-Trip |
 | **11** | Profiling-Modul `driver-oracle-profiling` | Live belegt; `DialectCommandGate` verliert seinen letzten Oracle-Eintrag |
+| **12** | Oracle Spatial: `SDO_GEOMETRY` als echter `NeutralType.Geometry` in Reverse, Generate und Diff, samt `USER_SDO_GEOM_METADATA` und Spatial-Index — siehe Detailabschnitt | Geometriespalten im Round-Trip statt als Text |
 | **ohne Nummer** | PL/SQL Packages (Neutralmodell-Erweiterung um Routine-Gruppierung) — **zeitlich unbestimmt, bewusst kein Slice mit Liefertermin** (Entscheidung 4) | Package-Struktur im Round-Trip, sobald angegangen |
 
 Jeder nummerierte Slice endet CI-grün und einzeln nutzbar; die No-op-Defaults
@@ -1261,15 +1262,92 @@ Dazu drei Katalog-Fallen, die beim nächsten Anlauf zu berücksichtigen sind:
 - `base_object_type = 'TABLE'` schließt **INSTEAD-OF-Trigger auf Sichten**
   aus. Das Modell kennt `INSTEAD_OF`, PostgreSQL und SQL Server liefern es —
   Oracle wäre der einzige Dialekt, der sie stumm verliert.
-- `UPDATE OF a, b` steht in `ALL_TRIGGERS.COLUMN_NAME`, nicht in
-  `TRIGGERING_EVENT`. Ohne diese Spalte feuert der wiedererzeugte Trigger auf
-  jede Änderung.
+- `UPDATE OF a, b` steht **nicht** in `ALL_TRIGGERS.COLUMN_NAME` — die Spalte
+  ist dort leer, und `TRIGGERING_EVENT` sagt nur `INSERT OR UPDATE`. Die
+  Spaltenliste steht in `ALL_TRIGGER_COLS` mit `COLUMN_LIST = 'YES'`; ohne
+  diese Sicht feuert der wiedererzeugte Trigger auf jede Änderung.
+
+### Nachgemessen — was den Entwurf ändert
+
+| Frage | Messung | Folge |
+| --- | --- | --- |
+| Trägt `RETURN`/Parameter eine Länge? | `RETURN NUMBER(10)` und `IN VARCHAR2(10)` erzeugen die Routine **INVALID** | Generate rendert Parameter- und Rückgabetypen ausnahmslos unbeschränkt; `ReturnType.precision`/`scale` fallen für Oracle weg |
+| Lässt sich eine Routine umbenennen? | `RENAME f TO g` → ORA-03001, `ALTER FUNCTION f RENAME TO g` → ORA-00922 | `RenameFunction`/`RenameProcedure` **blocken**; nur `ALTER TRIGGER … RENAME TO` ist nativ |
+| Wo steht der Trigger-Rumpf? | `ALL_TRIGGERS.TRIGGER_BODY` ist `LONG` und in SQL nicht verkettbar; Trigger stehen aber ebenso in `ALL_SOURCE` (`TYPE = 'TRIGGER'`) | Ein Lesepfad für alle drei Objektarten, kein LONG-Sonderweg |
+| Was steht in `ALL_SOURCE` Zeile 1? | `FUNCTION p9_calc(…)` — ohne `CREATE OR REPLACE`, in der Schreibweise des Autors | Der Schnitt sucht das erste `IS`/`AS` auf oberster Klammerebene, nicht ein `CREATE` |
+| Bleibt der Rumpf wortgleich? | Ja, samt Einrückung und `--`-Kommentar | Anders als bei Sichten und CHECK-Ausdrücken konvergiert der Round-Trip; [ADR 0053](../../adr/0053-vergleich-rohen-sql-texts.md) betrifft Routinen nicht |
+| Meldet `execute()` einen Kompilierfehler? | Nein — das DDL gilt als erfolgreich, das Objekt steht auf `INVALID` | Nach dem Anwenden ist `ALL_OBJECTS.status` zu prüfen |
+| Sind Triggernamen schemaweit? | Ja: ein zweiter Trigger gleichen Namens auf anderer Tabelle → ORA-04095 | Dieselbe Kollisionsprüfung wie bei SQL Server (`collidingNames`) |
 
 ### Was der Rumpf bleibt
 
 PL/SQL im Original. Eine Übersetzung nach PL/pgSQL oder T-SQL wäre ein
 Transpiler, den es hier nicht gibt; ein Ziel, das den Dialekt nicht versteht,
 lehnt beim Erzeugen ab, statt eine Übersetzung zu erfinden.
+
+## Slice 12 im Detail — Oracle Spatial
+
+### Ausgangslage
+
+Oracle ist der einzige der fünf Dialekte ohne Spatial-Unterstützung. Der
+Zustand ist in allen vier Pfaden verschieden, und der Reverse-Pfad ist der
+schlechteste:
+
+| Pfad | heute |
+| --- | --- |
+| `schema generate` | `OracleDdlGenerator.canGenerateSpatial()` liefert `false` → Geometriespalte blockt mit `E052` |
+| `schema migrate` | `OracleDiffTableOps.blockSpatial` bei `CreateTable`, `AddColumn`, `AlterColumnType` |
+| Spatial-Index | `OracleIndexDdlBuilder` überspringt ihn mit eigener Begründung |
+| `schema reverse` | `SDO_GEOMETRY` trifft keinen Zweig in `OracleTypeMapping` und fällt über `mapOpaque` auf `NeutralType.Text(maxLength = null)`, mit `R301`. Die Geometrie ist danach Text — der Blocker der anderen drei Pfade greift nicht mehr, weil das Modell nichts Räumliches mehr trägt |
+
+Der Typ**name** ist in `OracleTypeMapper` bereits abgebildet
+(`NeutralType.Geometry → "SDO_GEOMETRY"`), damit die Blocker-Meldungen den
+richtigen Namen nennen. Mehr steckt nicht dahinter.
+
+### Was Oracle anders macht als die vier anderen
+
+Gemessen gegen `gvenzl/oracle-free:23-faststart`:
+
+| Befund | Messung | Warum es zählt |
+| --- | --- | --- |
+| **Spatial fehlt im slim-Image** | `23-slim-faststart`: `ALL_TYPES` kennt `SDO_GEOMETRY` nicht, `MDSYS.CS_SRS` und `USER_SDO_GEOM_METADATA` existieren nicht. `23-faststart`: alles vorhanden | Der sample-db-Harness **und** die meisten Integrationstests fahren das slim-Image. Slice 12 braucht dort einen Image-Wechsel oder einen eigenen Container — und `23-faststart` ist ~0,9 GB größer |
+| **Der Index verlangt einen Metadaten-Eintrag** | `CREATE INDEX … INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2` ohne Zeile in `USER_SDO_GEOM_METADATA` → ORA-13199 „cannot determine SRID" + ORA-13252 | Der Index ist **nicht** allein aus `IndexDefinition` renderbar. Vor ihm muss eine Zeile mit Bounding-Box und SRID stehen — eine DML-Anweisung als Vorbedingung eines DDL |
+| **Die Bounding-Box hat kein neutrales Gegenstück** | `SDO_DIM_ARRAY(SDO_DIM_ELEMENT('X', -180, 180, 0.005), …)` — je Dimension Unter-, Obergrenze und Toleranz | PostGIS, MySQL und SQL Server kennen nichts davon. Ohne Modellerweiterung müsste Slice 12 sie aus der SRID ableiten oder vorgeben — beides ist eine Erfindung, keine Migration |
+| **Die SRID steht in der Metadatenzeile, nicht am Typ** | `USER_SDO_GEOM_METADATA.SRID = 4326`; die Spalte selbst ist typlos-generisch (`DATA_TYPE = 'SDO_GEOMETRY'`, `DATA_TYPE_OWNER = 'PUBLIC'`) | PostGIS trägt die SRID im Spaltentyp (`geometry(Point,4326)`), MySQL/SQL Server im Wert. Oracle ist die vierte Variante und braucht eine eigene Naht |
+| **Ein fehlgeschlagener Index sperrt die Datenspur** | `DOMIDX_OPSTATUS = FAILED` → jedes `INSERT` scheitert mit ORA-29861 | Reihenfolge im Migrate-Plan ist sicherheitsrelevant: ein halb gebauter Spatial-Index macht die Tabelle unbeschreibbar, statt nur die Abfrage zu verlangsamen |
+| **SRID-Katalog vorhanden** | `MDSYS.CS_SRS` führt 6194 Einträge, darunter 4326 und 3857 | Eine SRID lässt sich vor dem Schreiben prüfen, statt beim Anlegen des Index zu scheitern |
+
+### Schnitt
+
+Der Slice ist damit größer als „noch ein Typ". Vorschlag in drei Teilen, in
+dieser Reihenfolge, weil jeder den nächsten trägt:
+
+- **12a — Reverse ohne Verlust.** `SDO_GEOMETRY` in `OracleTypeMapping` als
+  `NeutralType.Geometry` erkennen, SRID und Dimensionszahl aus
+  `USER_SDO_GEOM_METADATA` beziehen. Damit hört die stille Umdeutung zu Text
+  auf; Generate und Diff blocken weiterhin, aber jetzt sichtbar und auf einem
+  Modell, das die Geometrie noch trägt.
+- **12b — Generate.** Spaltentyp plus die Metadatenzeile als eigenes,
+  geordnetes Artefakt vor dem Index. Hier ist zu entscheiden, woher die
+  Bounding-Box kommt (siehe unten) — ohne diese Entscheidung ist 12b nicht
+  baubar.
+- **12c — Index und Diff.** `MDSYS.SPATIAL_INDEX_V2` als Indexart, Abgleich
+  der Metadatenzeile im Diff, und die Reihenfolge-Zusicherung, dass ein
+  Spatial-Index nie zwischen Tabelle und Daten steht.
+
+### Vor dem Bau zu entscheiden
+
+1. **Woher die Bounding-Box kommt.** Aus der SRID abgeleitet (für 4326 ist
+   ±180/±90 richtig, für ein projiziertes System nicht), aus den Daten
+   gemessen (setzt voraus, dass sie schon da sind — der Index kommt aber
+   davor), oder als neues Feld im neutralen Modell. Nur die dritte Option ist
+   verlustfrei, und sie kostet einen Fingerabdruck-Sprung.
+2. **Welches Testbild.** `23-faststart` für alle Oracle-Tests (langsamer,
+   größer) oder nur für die Spatial-Tests (zwei Images im Umlauf).
+3. **Ob der Datenpfad mitgeht.** `SDO_GEOMETRY` über `DataReader`/`DataWriter`
+   ist ein eigener Kostenpunkt (WKT über `SDO_UTIL.TO_WKTGEOMETRY` bzw.
+   `SDO_GEOMETRY`-Konstruktor). Ohne ihn migriert Slice 12 die Struktur, aber
+   nicht die Werte — was zu sagen wäre, nicht stillschweigend zu tun.
 
 ## Offene Punkte
 
