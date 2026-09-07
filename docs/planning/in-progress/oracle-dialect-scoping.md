@@ -778,7 +778,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **6b** ✅ | Indizes über echten Ausdrücken: `IndexColumn.expression` im neutralen Modell samt Wire-Format; Generate in allen fünf Dialekten (vier nativ, SQL Server `E057`); Reverse in Oracle **und** PostgreSQL | volle Index-Treue |
 | **7** ✅ | Partitionierung Range/List/Hash: Generate, Reverse und Diff über einen geteilten Builder; Grenzwert-Umsetzung (`TO_DATE`) und -Rückfaltung; Fingerabdruck-Projektion für die Felder, die Oracle nicht führt. Composite und INTERVAL werden gemeldet (`R355`/`R356`), nicht dargestellt | Partitionstabellen im Round-Trip |
 | **8** ✅ | Volltext: Oracle Text (`CTXSYS.CONTEXT`) für Generate, Reverse und Diff; `SYNC (ON COMMIT)` verpflichtend; mehrspaltig abgelehnt (`E057`); fremde Domain-Indizes gemeldet (`R357`) | Volltext-Indizes Generate + Reverse |
-| **9** | Routinen/Trigger (standalone PL/SQL, `CREATE OR REPLACE`) | Routinen-Migration |
+| **9** | Routinen/Trigger: lesen, erzeugen und migrieren — **als ein Stück**, siehe Detailabschnitt | Routinen-Migration |
 | **10** | Materialized Views: Anschluss ans bestehende 0.9.7-D.3b-Modell (Refresh-Modi FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Materialized Views im Round-Trip |
 | **11** | Profiling-Modul `driver-oracle-profiling` | Live belegt; `DialectCommandGate` verliert seinen letzten Oracle-Eintrag |
 | **ohne Nummer** | PL/SQL Packages (Neutralmodell-Erweiterung um Routine-Gruppierung) — **zeitlich unbestimmt, bewusst kein Slice mit Liefertermin** (Entscheidung 4) | Package-Struktur im Round-Trip, sobald angegangen |
@@ -1186,6 +1186,90 @@ werden jetzt vorher gerendert und geprüft.
   weil die geteilte Fixture zwei Quellspalten führt. Die erzeugte Anweisung
   selbst prüft ein Unit-Test auf denselben exakten Text; ein zusätzlicher
   einspaltiger Index in der Fixture änderte die Goldens aller fünf Dialekte.
+
+## Slice 9 im Detail — Routinen und Trigger (gemessen, nicht gebaut)
+
+### Was die Messung ergeben hat
+
+Gemessen gegen `gvenzl/oracle-free:23`:
+
+| Versuch | JDBC meldet | Objektstatus |
+| --- | --- | --- |
+| `CREATE ... END;` | OK | **VALID** |
+| `CREATE ... END;` + `/` | OK | **INVALID** |
+| Routine mit echtem Kompilierfehler | OK | **INVALID** |
+
+Das ist der wichtigste Befund für 9b/9c: **`execute()` meldet Erfolg, obwohl
+die Routine nicht übersetzt hat.** Ein angehängter `/` — im Skript nötig,
+weil ein PL/SQL-Rumpf selbst `;` enthält — macht sie über JDBC kaputt, und
+ein echter Kompilierfehler kommt gar nicht erst an. Ohne Statusprüfung nach
+dem Anlegen wäre das eine Migration, die scheinbar gelingt und eine defekte
+Routine hinterlässt.
+
+Daraus folgt für 9b eine Entwurfsfrage, die den Slice bestimmt: der
+Anweisungstrenner ist **keine Dialekt-Eigenschaft**, sondern eine
+Eigenschaft der einzelnen Anweisung. Gewöhnliches SQL endet mit `;` und
+verträgt kein `/`; ein PL/SQL-Block braucht im Skript `/` und verträgt es
+über JDBC nicht. `DialectCapabilities.batchSeparator` ist global und kann
+das nicht ausdrücken.
+
+Der Katalog liefert weiter:
+
+- `ALL_SOURCE` **zeilenweise**, jede Zeile mit ihrem Zeilenumbruch, erste
+  Zeile beginnt mit `PROCEDURE`/`FUNCTION` — **ohne** `CREATE OR REPLACE`.
+- `ALL_ARGUMENTS` führt den Rückgabewert einer Funktion als Position `0`
+  mit `IN_OUT = 'OUT'`.
+- `ALL_TRIGGERS.TRIGGER_TYPE` trägt Zeitpunkt und Granularität zusammen
+  (`BEFORE EACH ROW`), `WHEN_CLAUSE` kommt **ohne** umschließende Klammern,
+  `TRIGGER_BODY` ist eine LONG-Spalte.
+
+### Warum der Slice nicht in Lese- und Schreibteil zerfällt
+
+Der Versuch, zuerst nur den **Rückweg** zu bauen, wurde gebaut und wieder
+zurückgenommen. Er bricht `schema migrate`:
+
+Der leere Reverse trug bisher eine **Zusicherung**, auf die sich der
+Diff-Pfad verließ — er lieferte keine Routinen, also entstanden nie
+Routine-Operationen. Liefert er sie, stuft `OracleDiffDdlGenerator` jede
+davon als `UNSUPPORTED` ein, und das ist ein harter Blocker. Der Alltagsfall
+genügt: eine Schemadatei ohne Routinen gegen eine Oracle-Datenbank, die eine
+hat — der Diff will `DropFunction`, und der Lauf bricht ab.
+
+**Slice 9 muss deshalb in einem Stück landen**: lesen, erzeugen, migrieren.
+
+### Was der Modellvertrag verlangt (vor dem nächsten Anlauf zu lesen)
+
+Der zurückgenommene Versuch hat drei normative Vorgaben verfehlt, weil er
+vom Katalog statt vom Modell aus gebaut war. Alle vier anderen Leser halten
+sie ein:
+
+- **Kanonische Map-Schlüssel.** `name(richtung:typ,…)` für Routinen,
+  `tabelle::name` für Trigger (`spec/neutral-model-spec.md`). Ein Schema mit
+  blanken Namen passt zu keinem aus einem anderen Dialekt — jede Routine
+  liest sich als Löschen + Anlegen.
+- **`body` trägt nur den Rumpf**, nicht die Signatur. Oracle liefert in
+  `ALL_SOURCE` beides zusammen; MSSQL hat dafür einen eigenen Scanner
+  (`MssqlRoutineBody`).
+- **Neutrale Parametertypen**, nicht `NUMBER`/`VARCHAR2` — sie gehen in den
+  Schlüssel ein.
+
+Dazu drei Katalog-Fallen, die beim nächsten Anlauf zu berücksichtigen sind:
+
+- `ALL_ARGUMENTS` braucht `data_level = 0`. Ohne das werden die Felder eines
+  RECORD- oder `%ROWTYPE`-Arguments zu eigenen Parametern, weil sie eigene
+  Positionen ab 1 tragen.
+- `base_object_type = 'TABLE'` schließt **INSTEAD-OF-Trigger auf Sichten**
+  aus. Das Modell kennt `INSTEAD_OF`, PostgreSQL und SQL Server liefern es —
+  Oracle wäre der einzige Dialekt, der sie stumm verliert.
+- `UPDATE OF a, b` steht in `ALL_TRIGGERS.COLUMN_NAME`, nicht in
+  `TRIGGERING_EVENT`. Ohne diese Spalte feuert der wiedererzeugte Trigger auf
+  jede Änderung.
+
+### Was der Rumpf bleibt
+
+PL/SQL im Original. Eine Übersetzung nach PL/pgSQL oder T-SQL wäre ein
+Transpiler, den es hier nicht gibt; ein Ziel, das den Dialekt nicht versteht,
+lehnt beim Erzeugen ab, statt eine Übersetzung zu erfinden.
 
 ## Offene Punkte
 
