@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.TargetProjection
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
@@ -69,15 +70,17 @@ class SchemaMigrateRunner(
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand = CompareOperandNormalizer::normalize,
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
     /**
-     * AP7 (Plan-Konvergenz): target-aware Comparator für den Migrate-Diff —
-     * unterdrückt Unterschiede, die der Ziel-Dialekt nicht ausdrücken kann
-     * (Typ-Faltung, PK-implizites required, effektiver PK), damit ein zweiter
-     * Lauf gegen ein frisch migriertes Ziel 0 Operationen plant statt eines
-     * ewigen No-Op-Rebuilds. Fällt auf [comparator] (strikt) zurück, wenn
-     * nicht gesetzt (Test-Verdrahtungen).
+     * Ziel-bewusster Comparator für den Migrate-Diff: er unterdrückt
+     * Unterschiede, die der Ziel-Dialekt nicht ausdrücken **und** sein
+     * Reverse nicht zurückmelden kann — was [TargetProjection] im Einzelnen
+     * faltet, steht dort. Damit plant ein zweiter Lauf gegen ein frisch
+     * migriertes Ziel 0 Operationen statt eines ewigen No-Op-Rebuilds.
+     *
+     * Fällt auf [comparator] (strikt) zurück, wenn nicht gesetzt
+     * (Test-Verdrahtungen).
      */
     private val targetAwareComparator: (
-        (SchemaDefinition, SchemaDefinition, canonicalizeType: (NeutralType) -> NeutralType) -> SchemaDiff
+        (SchemaDefinition, SchemaDefinition, projection: TargetProjection) -> SchemaDiff
     )? = null,
     private val planner: DiffPlanner = DiffPlanner(),
     private val rendererFor: (DatabaseDialect) -> DiffDdlGenerator?,
@@ -360,8 +363,19 @@ class SchemaMigrateRunner(
         desiredFingerprint: String,
         canonicalizeType: (NeutralType) -> NeutralType,
     ): Pair<DiffResult, MigrationOverlayPreflightResult> {
+        // Dieselben Projektionen, die in den Fingerabdruck eingehen
+        // (`endpointFingerprints`). Nur den Typ zu projizieren heilte die
+        // Drift-MELDUNG und liesse den Planer dieselbe Aenderung dennoch bei
+        // jedem Lauf erneut planen -- eine Migration, die gesund aussieht und
+        // nie fertig wird.
+        val projection = TargetProjection(
+            type = canonicalizeType,
+            index = capabilityIndexCanonicalizer(prep.effectiveDialect),
+            generation = capabilityGenerationCanonicalizer(prep.effectiveDialect),
+            partitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
+        )
         val diff = targetAwareComparator
-            ?.invoke(prep.targetNormalized.schema, prep.sourceNormalized.schema, canonicalizeType)
+            ?.invoke(prep.targetNormalized.schema, prep.sourceNormalized.schema, projection)
             ?: comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
             documents = mergedOverlays,

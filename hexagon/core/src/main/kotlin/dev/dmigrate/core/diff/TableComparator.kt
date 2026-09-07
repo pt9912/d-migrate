@@ -14,15 +14,18 @@ import dev.dmigrate.core.model.*
  */
 internal class TableComparator(
     /**
-     * AP7 (postcompare-type-canonicalization slice): target-aware mode. When
-     * set, the comparison suppresses differences the TARGET dialect cannot
-     * express — column types that canonicalise onto the same declared type,
-     * PK-implied `required`, and the implicit-`identifier` effective PK —
-     * mirroring the v7 fingerprint so the migrate plan CONVERGES (a second
-     * run against a freshly migrated target plans zero operations instead of
-     * an eternal no-op rebuild). `schema compare` stays strict (null).
+     * Ziel-bewusster Modus: der Vergleich unterdrueckt Unterschiede, die der
+     * ZIEL-Dialekt nicht ausdruecken kann — Spaltentypen, die auf denselben
+     * deklarierten Typ falten, PK-impliziertes `required`, der
+     * implizit-`identifier`-PK, dazu Index-Eigenschaften und die
+     * Erzeugungsart ueber [TargetProjection]. Dieselben Projektionen, die
+     * auch in den Fingerabdruck eingehen, damit der Migrationsplan
+     * KONVERGIERT: ein zweiter Lauf gegen ein frisch migriertes Ziel plant
+     * null Operationen statt eines ewigen No-Op-Rebuilds.
+     *
+     * `schema compare` bleibt strikt (null).
      */
-    private val targetCanonicalization: ((NeutralType) -> NeutralType)? = null,
+    private val targetProjection: TargetProjection? = null,
 ) {
 
     fun compareTables(left: SchemaDefinition, right: SchemaDefinition): TableDiffs {
@@ -50,10 +53,10 @@ internal class TableComparator(
         val leftNorm = normalizeConstraints(left)
         val rightNorm = normalizeConstraints(right)
 
-        // AP7: im target-aware Modus zählt der EFFEKTIVE PK (v3-Regel) für
+        // Im ziel-bewussten Modus zählt der EFFEKTIVE PK (v3-Regel) für
         // PK-Vergleich und PK-implizites required — sonst leere Sets (strikt).
-        val leftPk = if (targetCanonicalization != null) EffectivePrimaryKey.of(left).toSet() else emptySet()
-        val rightPk = if (targetCanonicalization != null) EffectivePrimaryKey.of(right).toSet() else emptySet()
+        val leftPk = if (targetProjection != null) EffectivePrimaryKey.of(left).toSet() else emptySet()
+        val rightPk = if (targetProjection != null) EffectivePrimaryKey.of(right).toSet() else emptySet()
         val absorbedColumns = AbsorbedColumns(
             uniqueLeft = leftNorm.singleColumnUnique,
             uniqueRight = rightNorm.singleColumnUnique,
@@ -65,7 +68,7 @@ internal class TableComparator(
 
         val columnDiffs = compareColumns(left, right, absorbedColumns)
         val pkDiff = when {
-            targetCanonicalization != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
+            targetProjection != null && EffectivePrimaryKey.of(left) == EffectivePrimaryKey.of(right) -> null
             left.primaryKey == right.primaryKey -> null
             else -> ValueChange(left.primaryKey, right.primaryKey)
         }
@@ -141,7 +144,7 @@ internal class TableComparator(
      * the equalisation the same table compares unequal to itself.
      */
     private fun canonicalPartitions(config: PartitionConfig): Set<PartitionDefinition> =
-        PartitionBoundNormalizer.withDerivedLowerBounds(config).partitions.map { partition ->
+        PartitionBoundNormalizer.withDerivedLowerBounds(projectPartitioning(config)).partitions.map { partition ->
             // ADR 0025: project child-local indices too (drop the generate-only FULLTEXT
             // hints) so a partition's FULLTEXT index does not phantom-diff authored-vs-reversed
             // — same exclusion the table-level compareIndices applies.
@@ -153,7 +156,7 @@ internal class TableComparator(
     private data class AbsorbedColumns(
         val uniqueLeft: Set<String>, val uniqueRight: Set<String>,
         val fkLeft: Set<String>, val fkRight: Set<String>,
-        /** AP7: effektive PK-Spalten je Seite (leer im strikten Modus). */
+        /** Effektive PK-Spalten je Seite (leer im strikten Modus). */
         val pkLeft: Set<String> = emptySet(), val pkRight: Set<String> = emptySet(),
     )
 
@@ -181,13 +184,13 @@ internal class TableComparator(
     private fun compareColumn(
         name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
     ): ColumnDiff? {
-        val canon = targetCanonicalization
-        // AP7: Typen, die der Ziel-Dialekt auf denselben deklarierten Typ faltet,
+        val canon = targetProjection?.type
+        // Typen, die der Ziel-Dialekt auf denselben deklarierten Typ faltet,
         // sind dort keine ausdrückbare Änderung — ein geplanter Alter wäre ein
         // ewiger No-Op-Rebuild (Post-Compare wäre per v7 clean).
         val typeDiff = if (canon != null && canon(left.type) == canon(right.type)) null
             else diffValueChangeOrNull(left.type, right.type)
-        // AP7: PK ⇒ NOT NULL — required vergleicht im target-aware Modus effektiv.
+        // PK ⇒ NOT NULL — required vergleicht im ziel-bewussten Modus effektiv.
         val requiredDiff = if (canon != null && effectiveRequiredEqual(name, left, right, absorbed)) null
             else diffValueChangeOrNull(left.required, right.required)
         val defaultDiff = if (left.default == right.default) null
@@ -198,7 +201,7 @@ internal class TableComparator(
         val refDiff = if (fkAbsorbed) null
             else if (left.references == right.references) null
             else ValueChange(left.references, right.references)
-        val generationDiff = if (left.generation == right.generation) null
+        val generationDiff = if (projectGeneration(left.generation) == projectGeneration(right.generation)) null
             else ValueChange(left.generation, right.generation)
         if (hasNoColumnDiff(typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff, generationDiff)) return null
         return ColumnDiff(
@@ -212,7 +215,7 @@ internal class TableComparator(
         )
     }
 
-    /** AP7: `required` unter Einrechnung der effektiven PK-Mitgliedschaft je Seite. */
+    /** `required` unter Einrechnung der effektiven PK-Mitgliedschaft je Seite. */
     private fun effectiveRequiredEqual(
         name: String, left: ColumnDefinition, right: ColumnDefinition, absorbed: AbsorbedColumns,
     ): Boolean {
@@ -343,8 +346,8 @@ internal class TableComparator(
     )
 
     private fun compareIndices(left: List<IndexDefinition>, right: List<IndexDefinition>): IndexDiffResult {
-        val leftByKey = left.associateBy { indexKey(it) }
-        val rightByKey = right.associateBy { indexKey(it) }
+        val leftByKey = byProjectedKey(left)
+        val rightByKey = byProjectedKey(right)
         val leftKeys = leftByKey.keys
         val rightKeys = rightByKey.keys
         val added = (rightKeys - leftKeys).sorted().map { rightByKey.getValue(it) }
@@ -371,9 +374,62 @@ internal class TableComparator(
      * field must be added to both allowlists; a new generate-only *hint* must be added to the
      * `copy` here. `SchemaComparatorFullTextHintsTest` pins the hint exclusion across all three.
      */
-    private fun projectIndex(index: IndexDefinition): IndexDefinition =
-        if (index.type != IndexType.FULLTEXT) index
-        else index.copy(fullTextVectorColumn = null, fullTextAccessMethod = null)
+    private fun projectIndex(index: IndexDefinition): IndexDefinition {
+        // Erst die Faehigkeits-Projektion des Ziels (sie kann den Indextyp
+        // falten und den synthetisierten Volltext-Namen nullen), dann die
+        // dialekt-unabhaengige Hinweis-Denylist unten -- sonst pruefte deren
+        // FULLTEXT-Bedingung einen Typ, den das Ziel gar nicht ablegt.
+        val projected = targetProjection?.index?.invoke(index) ?: index
+        return if (projected.type != IndexType.FULLTEXT) projected
+        else projected.copy(fullTextVectorColumn = null, fullTextAccessMethod = null)
+    }
+
+    /**
+     * Die Partitionierung durch die Ziel-Projektion -- vor der Ableitung der
+     * unteren Grenzen, damit die Ableitung auf den bereits gefalteten
+     * Grenzliteralen arbeitet.
+     */
+    private fun projectPartitioning(config: PartitionConfig): PartitionConfig =
+        targetProjection?.partitioning?.invoke(config) ?: config
+
+    /**
+     * Die Erzeugungsart durch die Ziel-Projektion.
+     *
+     * Bewusst kein `?:`-Fallback auf den Eingabewert: die Projektion **darf**
+     * `null` liefern (sie blendet etwa den system-vergebenen Sequenznamen
+     * aus), und ein Elvis machte daraus wieder den unprojizierten Wert.
+     */
+    private fun projectGeneration(generation: ColumnGeneration?): ColumnGeneration? {
+        val project = targetProjection?.generation ?: return generation
+        return project(generation)
+    }
+
+    /**
+     * Indizes unter dem Schluessel, den das **Ziel** von ihnen sieht.
+     *
+     * Der Schluessel entscheidet, ob zwei Indizes ueberhaupt einander
+     * zugeordnet werden — vor jedem Feldvergleich. Ihn ungefaltet zu bilden
+     * machte die Projektion an genau der Stelle wirkungslos, an der sie am
+     * meisten zaehlt: wo ein Dialekt den Namen gar nicht ablegt, synthetisiert
+     * sein Reverse einen anderen, die Schluesselmengen waeren disjunkt, und
+     * aus einem unveraenderten Index wuerden `DropIndex` + `AddIndex` — bei
+     * jedem Lauf erneut, obwohl der Fingerabdruck (der dieselbe Projektion
+     * schon nutzt) Ruhe meldet.
+     *
+     * Fallen zwei Indizes derselben Seite auf denselben gefalteten Schluessel,
+     * kann das Ziel sie nicht unterscheiden. Der zweite bleibt dann unter
+     * seinem **ungefalteten** Schluessel stehen, statt still aus dem Vergleich
+     * zu verschwinden.
+     */
+    private fun byProjectedKey(indices: List<IndexDefinition>): Map<String, IndexDefinition> {
+        val byKey = LinkedHashMap<String, IndexDefinition>()
+        for (index in indices) {
+            if (byKey.putIfAbsent(indexKey(projectIndex(index)), index) != null) {
+                byKey[indexKey(index)] = index
+            }
+        }
+        return byKey
+    }
 
     private fun indexKey(index: IndexDefinition): String =
         index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}:${index.where.orEmpty()}"

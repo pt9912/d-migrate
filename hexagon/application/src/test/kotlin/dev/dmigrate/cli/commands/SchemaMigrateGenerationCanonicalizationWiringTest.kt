@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.TargetProjection
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.RenameProjectionCapabilities
@@ -94,6 +95,9 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
         }
     }
 
+    /** Was der Runner dem ziel-bewussten Comparator mitgibt. */
+    var capturedProjection: TargetProjection? = null
+
     fun runnerFor(planner: CapturingPlanner): Pair<SchemaMigrateRunner, StringBuilder> {
         val stdout = StringBuilder()
         val runner = SchemaMigrateRunner(
@@ -115,6 +119,10 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
             dbLoader = null,
             normalizer = { it },
             comparator = { a, b -> SchemaComparator().compare(a, b) },
+            targetAwareComparator = { a, b, projection ->
+                capturedProjection = projection
+                SchemaComparator(projection).compare(a, b)
+            },
             planner = planner,
             rendererFor = { d ->
                 object : DiffDdlGenerator {
@@ -201,5 +209,46 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
             schemaWithIdentity(ColumnGeneration.Identity(mode = IdentityMode.ALWAYS, sequenceName = null)),
             canonicalizeGeneration = capabilityGenerationCanonicalizer(DatabaseDialect.ORACLE),
         )
+    }
+
+    /**
+     * Dieselbe Erwaegung wie oben, eine Naht weiter: `TargetProjection`
+     * traegt fuer drei seiner vier Felder den Default `{ it }`. Wer beim
+     * Bauen des Buendels eines weglaesst, kompiliert — und ein Test, der nur
+     * den Comparator mit handgeschriebenen Lambdas prueft, bliebe gruen.
+     *
+     * Hier zaehlt deshalb, was der Runner **tatsaechlich** uebergibt.
+     */
+    test("the runner builds the comparator projection from the dialect capabilities, not from defaults") {
+        capturedProjection = null
+        runnerFor(CapturingPlanner()).first.execute(request(DatabaseDialect.ORACLE))
+
+        val projection = capturedProjection.shouldNotBeNull()
+
+        // Oracle liest den system-vergebenen Sequenznamen zurueck, ein Soll
+        // kann ihn nicht tragen.
+        (projection.generation(systemGenerated) as ColumnGeneration.Identity).sequenceName.shouldBeNull()
+
+        // Oracle legt keine Bitmap-Zugriffsart ab, die es nicht kann, und
+        // fuehrt die Text-Search-Konfiguration nicht.
+        projection.index(
+            IndexDefinition(
+                name = "ft",
+                columns = listOf(dev.dmigrate.core.model.IndexColumn("body")),
+                type = dev.dmigrate.core.model.IndexType.FULLTEXT,
+                textSearchConfig = "english",
+            ),
+        ).textSearchConfig.shouldBeNull()
+
+        // Und Oracle meldet weder Modulus noch Remainder einer HASH-Partition.
+        projection.partitioning(
+            dev.dmigrate.core.model.PartitionConfig(
+                type = dev.dmigrate.core.model.PartitionType.HASH,
+                key = listOf("id"),
+                partitions = listOf(
+                    dev.dmigrate.core.model.PartitionDefinition(name = "p0", modulus = 4, remainder = 0),
+                ),
+            ),
+        ).partitions.single().modulus.shouldBeNull()
     }
 })
