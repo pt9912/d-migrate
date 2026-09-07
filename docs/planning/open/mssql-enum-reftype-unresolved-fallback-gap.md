@@ -1,10 +1,26 @@
 ---
 id: mssql-enum-reftype-unresolved-fallback-gap
 title: "MssqlNeutralTypeCanonicalizer.resolveRefType stimmt nicht mit enumColumns echtem Fallback ueberein"
-status: open
+status: resolved
 ---
 
 # `MssqlNeutralTypeCanonicalizer.resolveRefType` vs. `enumColumn`s echter Fallback
+
+> **Erledigt.** `resolveRefType` liefert nie mehr `null`, sondern bildet den
+> Fallback von `MssqlColumnConstraintHelper.enumColumn` vollstaendig nach:
+> DOMAIN → Basistyp (ohne Basistyp: `text`, ohne Abbildung: `NVARCHAR(MAX)`),
+> sonst `Enum(values = customType?.values ?: type.values)`. Ein wertloser
+> `Enum` projiziert ueber `renderedColumnType` auf genau die ungebundene
+> Spalte, die der Helfer schreibt. Dieselbe Form wie beim Oracle-Pendant.
+>
+> **Live belegt** in `MssqlNeutralTypeCanonicalizerIntegrationTest`: eine
+> Spalte mit `refType` auf einen `COMPOSITE` und eine mit `refType` ins Leere
+> werden erzeugt, angewendet und zurueckgelesen; die Projektion muss
+> zeichengleich dasselbe liefern. Gegengeprueft, indem der alte Zweig
+> wiederhergestellt wurde — genau diese Spezifikation faellt.
+>
+> Vier Unit-Tests pinnten das alte Verhalten („bleibt unveraendert") und sind
+> auf die neue Zusicherung umgeschrieben.
 
 ## Befund
 

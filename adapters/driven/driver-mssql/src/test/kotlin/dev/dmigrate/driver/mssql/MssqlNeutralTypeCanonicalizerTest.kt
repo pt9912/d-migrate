@@ -72,13 +72,16 @@ class MssqlNeutralTypeCanonicalizerTest : FunSpec({
         canon.canonicalize(NeutralType.Enum()) shouldBe NeutralType.Text()
     }
 
-    test("enum with a refType stays identity (needs the schema's custom types)") {
-        val referenced = NeutralType.Enum(refType = "mood")
-        canon.canonicalize(referenced) shouldBe referenced
-        // Auch mit Inline-Werten: der Helfer bevorzugt den Custom-Type und
-        // koennte auf dem Domain-Pfad landen — das entscheidet nur das Schema.
-        val both = NeutralType.Enum(values = listOf("a"), refType = "mood")
-        canon.canonicalize(both) shouldBe both
+    test("enum with a refType folds to what the column helper writes, with or without the schema") {
+        // Ohne Schema kennt der Helfer keine Werte und schreibt ein
+        // ungebundenes NVARCHAR(MAX); den `refType` stehen zu lassen
+        // behauptete eine Drift, die der Server nicht hat.
+        canon.canonicalize(NeutralType.Enum(refType = "mood")) shouldBe
+            canon.canonicalize(NeutralType.Enum())
+        // Mit Inline-Werten und ohne aufloesbaren Custom-Type greift derselbe
+        // letzte Schritt wie im Helfer: die Werte am Typ selbst.
+        canon.canonicalize(NeutralType.Enum(values = listOf("a"), refType = "mood")) shouldBe
+            canon.canonicalize(NeutralType.Enum(values = listOf("a")))
     }
 
     test("geometry folds onto geometry/geography — SQL Server carries SRID per value") {

@@ -2,6 +2,11 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.core.model.FloatPrecision
 import dev.dmigrate.core.model.GeometryType
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -112,6 +117,48 @@ class MssqlNeutralTypeCanonicalizerIntegrationTest : FunSpec({
                     .schema.tables.getValue("probe").columns.getValue("val").type
                 withClue("$type rendered as $rendered") {
                     reversed shouldBe canon.canonicalize(type)
+                }
+            }
+        }
+    }
+
+    test("a refType the schema cannot resolve to values projects like the column really renders") {
+        // Der schmale Fall: `refType` gesetzt, aber weder der aufgeloeste
+        // Custom Type noch der Typ selbst liefern eine Werteliste. Der
+        // Spalten-Helfer faellt dann auf `plainColumn` zurueck -- ungebundenes
+        // NVARCHAR(MAX) -- und der Reverse liest `Text(null)`. Blieb die
+        // Projektion bei `Enum(refType = …)` stehen, meldete der Post-Compare
+        // Drift fuer eine Migration, die genau das Verlangte getan hat.
+        val composite = CustomTypeDefinition(kind = CustomTypeKind.COMPOSITE)
+        val cases = mapOf(
+            "on_composite" to NeutralType.Enum(refType = "addr"),
+            "on_missing" to NeutralType.Enum(refType = "nowhere"),
+        )
+        val schema = SchemaDefinition(
+            name = "canon", version = "1",
+            customTypes = mapOf("addr" to composite),
+            tables = mapOf(
+                "ref_probe" to TableDefinition(
+                    columns = cases.mapValues { (_, type) -> ColumnDefinition(type = type) },
+                ),
+            ),
+        )
+
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("IF OBJECT_ID('ref_probe', 'U') IS NOT NULL DROP TABLE ref_probe")
+                    MssqlDdlGenerator().generate(schema).statements
+                        .map { it.sql.lines().filterNot { line -> line.trimStart().startsWith("--") } }
+                        .map { it.joinToString("\n").trim().removeSuffix(";") }
+                        .filter { it.isNotBlank() && !it.equals("GO", ignoreCase = true) }
+                        .forEach { sql -> withClue("statement failed:\n$sql") { stmt.execute(sql) } }
+                }
+            }
+            val reversed = MssqlSchemaReader().read(pool).schema.tables.getValue("ref_probe").columns
+            for ((column, type) in cases) {
+                withClue(column) {
+                    reversed.getValue(column).type shouldBe canon.canonicalize(type, schema.customTypes)
                 }
             }
         }

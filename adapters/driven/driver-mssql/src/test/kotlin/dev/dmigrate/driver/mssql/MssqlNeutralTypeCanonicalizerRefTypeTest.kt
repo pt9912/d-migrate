@@ -11,14 +11,21 @@ import io.kotest.matchers.shouldBe
  * T-SQL hat keinen Enum-Typ, der Reverse kann den `refType` also nie
  * zurueckgeben; ohne Aufloesung meldete der Post-Compare Drift auf einem
  * verlustfreien Round-Trip.
+ *
+ * Die Projektion bildet ab, was `MssqlColumnConstraintHelper.enumColumn`
+ * **wirklich** tut — und die kennt kein „unbekannt bleiben": findet sie keine
+ * Werteliste, schreibt sie ein ungebundenes `NVARCHAR(MAX)`.
  */
 class MssqlNeutralTypeCanonicalizerRefTypeTest : FunSpec({
 
     val canonicalizer = MssqlNeutralTypeCanonicalizer
 
-    test("without schema context a refType stays as it is — the conservative default") {
-        val type = NeutralType.Enum(refType = "mood")
-        canonicalizer.canonicalize(type) shouldBe type
+    test("without schema context a refType folds to the unbounded column the helper writes") {
+        // Ohne Schema gibt es keine Werte, also auch keine Breite. Den
+        // `refType` stehen zu lassen hiesse, eine Drift gegen `Text(null)` zu
+        // behaupten, die der Server nicht hat.
+        canonicalizer.canonicalize(NeutralType.Enum(refType = "mood")) shouldBe
+            canonicalizer.canonicalize(NeutralType.Enum())
     }
 
     test("with the custom type at hand it folds to what the column helper writes") {
@@ -38,15 +45,29 @@ class MssqlNeutralTypeCanonicalizerRefTypeTest : FunSpec({
             canonicalizer.canonicalize(NeutralType.Text(20))
     }
 
-    test("an unknown refType is not guessed at") {
-        val type = NeutralType.Enum(refType = "nowhere")
-        canonicalizer.canonicalize(type, mapOf("other" to CustomTypeDefinition(kind = CustomTypeKind.ENUM))) shouldBe
-            type
+    test("a domain without a base type folds like the helper's `text` default") {
+        val types = mapOf("bare" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN))
+        canonicalizer.canonicalize(NeutralType.Enum(refType = "bare"), types) shouldBe
+            canonicalizer.canonicalize(NeutralType.Text())
     }
 
-    test("a composite type has no column form and stays untouched") {
-        val type = NeutralType.Enum(refType = "addr")
-        canonicalizer.canonicalize(type, mapOf("addr" to CustomTypeDefinition(kind = CustomTypeKind.COMPOSITE))) shouldBe
-            type
+    test("an unknown refType folds to the unbounded column, not to itself") {
+        val types = mapOf("other" to CustomTypeDefinition(kind = CustomTypeKind.ENUM))
+        canonicalizer.canonicalize(NeutralType.Enum(refType = "nowhere"), types) shouldBe
+            canonicalizer.canonicalize(NeutralType.Enum())
+    }
+
+    test("a composite type has no column form — the helper writes NVARCHAR(MAX), so does the projection") {
+        val types = mapOf("addr" to CustomTypeDefinition(kind = CustomTypeKind.COMPOSITE))
+        canonicalizer.canonicalize(NeutralType.Enum(refType = "addr"), types) shouldBe
+            canonicalizer.canonicalize(NeutralType.Enum())
+    }
+
+    test("values on the type itself win when the schema knows nothing") {
+        // `enumColumn` prueft `type.values` als letzten Schritt vor dem
+        // Rueckfall; die Projektion muss denselben Schritt kennen.
+        val bounded = NeutralType.Enum(refType = "nowhere", values = listOf("a", "bb"))
+        canonicalizer.canonicalize(bounded, emptyMap()) shouldBe
+            canonicalizer.canonicalize(NeutralType.Enum(values = listOf("a", "bb")))
     }
 })

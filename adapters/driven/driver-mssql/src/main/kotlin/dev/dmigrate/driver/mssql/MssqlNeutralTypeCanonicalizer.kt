@@ -73,7 +73,7 @@ internal object MssqlNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
         customTypes: Map<String, CustomTypeDefinition>,
     ): NeutralType = when {
         type is NeutralType.Enum && type.refType != null ->
-            resolveRefType(type, customTypes)?.let { canonicalize(it, customTypes) } ?: type
+            canonicalize(resolveRefType(type, customTypes), customTypes)
         else -> {
             val mapped = MssqlTypeMapping.mapColumn(
                 columnName = "",
@@ -84,25 +84,33 @@ internal object MssqlNeutralTypeCanonicalizer : NeutralTypeCanonicalizer {
     }
 
     /**
-     * Der Typ, in den der Spalten-Helfer einen `refType` aufloest — oder
-     * `null`, wenn das Schema ihn nicht kennt (dann bleibt er stehen, statt
-     * geraten zu werden).
+     * Der Typ, in den der Spalten-Helfer einen `refType` **tatsaechlich**
+     * aufloest.
+     *
+     * Nie `null`: `MssqlColumnConstraintHelper.enumColumn` kennt kein
+     * "unbekannt bleiben". Findet sie keine Werteliste — der Custom Type fehlt
+     * im Schema, oder er ist ein `COMPOSITE` ohne `values` —, faellt sie auf
+     * `plainColumn` zurueck, also ungebundenes `NVARCHAR(MAX)`. Ein wertloser
+     * `Enum` projiziert ueber [renderedColumnType] genau darauf.
+     *
+     * Lieferte diese Stelle stattdessen `null`, bliebe `Enum(refType = …)`
+     * stehen, waehrend der Reverse `Text(null)` liest: eine Drift im
+     * Post-Compare fuer eine Migration, die genau das Verlangte getan hat.
      */
     private fun resolveRefType(
         type: NeutralType.Enum,
         customTypes: Map<String, CustomTypeDefinition>,
-    ): NeutralType? {
-        val custom = customTypes[type.refType] ?: return null
-        return when (custom.kind) {
-            CustomTypeKind.ENUM -> custom.values?.let { NeutralType.Enum(values = it) }
-            // Eine Domain wird zu ihrem Basistyp; kennt der Resolver ihn nicht,
-            // rendert der Helfer NVARCHAR(MAX) (E053) — dieselbe Entscheidung.
-            CustomTypeKind.DOMAIN -> custom.baseType?.let { base ->
-                MssqlColumnTypeResolver(typeMapper).resolveDomainBaseType(base, custom.precision, custom.scale)
-                    ?: NeutralType.Text()
-            }
-            CustomTypeKind.COMPOSITE -> null
+    ): NeutralType {
+        val custom = type.refType?.let { customTypes[it] }
+        if (custom?.kind == CustomTypeKind.DOMAIN) {
+            // Wie `domainColumn`: ohne Basistyp gilt `text`, und was der
+            // Resolver nicht kennt, wird NVARCHAR(MAX) (E053).
+            val base = custom.baseType ?: "text"
+            return MssqlColumnTypeResolver(typeMapper)
+                .resolveDomainBaseType(base, custom.precision, custom.scale)
+                ?: NeutralType.Text()
         }
+        return NeutralType.Enum(values = custom?.values ?: type.values)
     }
 
     /** Die Spalte, die der Generator schreibt — fuer Enums der Spalten-Helfer, sonst der Typmapper. */
