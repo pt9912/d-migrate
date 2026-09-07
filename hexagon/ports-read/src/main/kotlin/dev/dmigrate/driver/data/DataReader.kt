@@ -86,4 +86,24 @@ interface DataReader {
             "${this::class.simpleName} does not support mid-table resume (ResumeMarker)"
         )
     }
+
+    /**
+     * Die Bezugssysteme, die die Geometriespalten [columns] von [table] in
+     * ihren **Werten** fuehren — je Spalte alle vorgefundenen SRIDs.
+     *
+     * Fuer Dialekte, die die SRID an der Spalte fuehren, steht sie schon im
+     * gelesenen Schema; deren Reader liefern hier nichts. SQL Server fuehrt
+     * sie ausschliesslich am Wert, dort ist dies die einzige Quelle.
+     *
+     * Die Methode beschreibt nur, was da ist. Was eine Spalte mit mehr als
+     * einem Bezugssystem bedeutet, entscheidet der Aufrufer — ein Ziel traegt
+     * eine SRID je Spalte, also gibt es dort keine richtige Wahl.
+     *
+     * Spalten ohne einen einzigen nicht-leeren Wert fehlen im Ergebnis.
+     */
+    fun geometrySrids(
+        pool: ConnectionPool,
+        table: String,
+        columns: List<String>,
+    ): Map<String, List<Int>> = emptyMap()
 }

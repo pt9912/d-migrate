@@ -138,6 +138,12 @@ dialect", „Database does not exist") steht im
   inkompatibel (Format/Filter/Tabellen/Optionen weichen vom Erst-Lauf ab). Nehmen Sie
   denselben Aufruf wie beim unterbrochenen Lauf; Details im
   [Anwenderhandbuch, Abschnitt 5](anwenderhandbuch.md#5-fehlerbehebung).
+- **Preflight lehnt eine Geometriespalte mit mehreren Bezugssystemen ab (Exit 3).**
+  Nur bei SQL Server als Quelle: dort ist die SRID Eigenschaft des Werts, eine Spalte
+  darf also Werte in mehreren Systemen halten. Das Ziel trägt eine SRID je Spalte —
+  jede Wahl verschöbe einen Teil der Werte, ohne dass es jemand sähe. Prüfen Sie die
+  Spalte mit `SELECT DISTINCT <spalte>.STSrid FROM <tabelle>` und vereinheitlichen Sie
+  sie (z. B. per `STTransform`), oder trennen Sie sie in eine Spalte je System.
 
 ---
 

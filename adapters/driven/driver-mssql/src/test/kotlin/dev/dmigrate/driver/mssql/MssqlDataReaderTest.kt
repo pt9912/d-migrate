@@ -1,8 +1,17 @@
 package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.JdbcDatabaseConnection
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import java.sql.Connection
+import java.sql.ResultSet
+import java.sql.Statement
 
 /**
  * Die Streaming-Politik des Readers (Quoting, fetchSize, Transaktions- und
@@ -63,4 +72,64 @@ class MssqlDataReaderTest : FunSpec({
         reader.probeMapValue("text") shouldBe "text"
         reader.probeMapValue(null) shouldBe null
     }
+
+    test("the SRID probe reads DISTINCT over the values, per column") {
+        val captured = mutableListOf<String>()
+        val (reader, pool) = sridRig(captured, mapOf("loc" to listOf(25832), "area" to listOf(4326, 25832)))
+
+        reader.geometrySrids(pool, "sales.orders", listOf("loc", "area")) shouldBe
+            mapOf("loc" to listOf(25832), "area" to listOf(4326, 25832))
+
+        // Ein `TOP (1)` saehe eine gemischte Spalte einheitlich; nur DISTINCT
+        // ueber alle Werte belegt, dass es wirklich nur eine SRID gibt.
+        captured shouldContainExactly listOf(
+            "SELECT DISTINCT [loc].STSrid AS srid FROM [sales].[orders] WHERE [loc] IS NOT NULL",
+            "SELECT DISTINCT [area].STSrid AS srid FROM [sales].[orders] WHERE [area] IS NOT NULL",
+        )
+    }
+
+    test("a column without a single non-empty value is absent, and no column means no query") {
+        val captured = mutableListOf<String>()
+        val (reader, pool) = sridRig(captured, mapOf("loc" to emptyList()))
+        reader.geometrySrids(pool, "orders", listOf("loc")) shouldBe emptyMap()
+
+        val untouched = mutableListOf<String>()
+        val (bare, barePool) = sridRig(untouched, emptyMap())
+        bare.geometrySrids(barePool, "orders", emptyList()) shouldBe emptyMap()
+        untouched.shouldBeEmpty()
+    }
 })
+
+/**
+ * Stellt eine Verbindung, deren `createStatement().executeQuery(sql)` das in
+ * [answers] hinterlegte Ergebnis der abgefragten Spalte liefert, und schreibt
+ * jedes ausgefuehrte SQL nach [captured].
+ */
+private fun sridRig(
+    captured: MutableList<String>,
+    answers: Map<String, List<Int>>,
+): Pair<MssqlDataReader, ConnectionPool> {
+    val statement = mockk<Statement>(relaxUnitFun = true)
+    every { statement.executeQuery(any()) } answers {
+        val sql = firstArg<String>()
+        captured += sql
+        val column = answers.keys.first { sql.contains("[$it].STSrid") }
+        resultSetOf(answers.getValue(column))
+    }
+    val conn = mockk<Connection>(relaxUnitFun = true) {
+        every { createStatement() } returns statement
+    }
+    val pool = mockk<ConnectionPool> {
+        every { borrow() } returns JdbcDatabaseConnection(conn)
+    }
+    return MssqlDataReader() to pool
+}
+
+private fun resultSetOf(srids: List<Int>): ResultSet {
+    var index = -1
+    return mockk<ResultSet>(relaxUnitFun = true) {
+        every { next() } answers { ++index < srids.size }
+        every { getInt("srid") } answers { srids[index] }
+        every { wasNull() } returns false
+    }
+}

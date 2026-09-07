@@ -2,7 +2,10 @@ package dev.dmigrate.driver.mssql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.connection.asJdbc
 import dev.dmigrate.driver.data.AbstractJdbcDataReader
+import java.sql.Connection
 
 /**
  * MSSQL [dev.dmigrate.driver.data.DataReader] (Slice 3, [ADR 0047]).
@@ -19,14 +22,10 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  * (`.STAsBinary()`, OGC-Reihenfolge long-lat — dieselbe wie PostGIS/MySQL mit
  * `axis-order=long-lat`).
  *
- * **SRID-Grenze:** WKB trägt keine SRID, und in SQL Server ist sie
- * Eigenschaft des *Werts*, nicht der Spalte — es gibt also (anders als bei
- * PostGIS/MySQL) keine Spaltenmetadaten, aus denen der Import sie zurückholen
- * könnte. Übertragene Werte landen deshalb mit dem Spalten-Default des Ziels
- * (`geometry` → 0, `geography` → 4326); abweichende Wert-SRIDs gehen dabei
- * verloren. Dokumentiert in `spec/type-mapping.md` (Abschnitt Spatial);
- * eine SRID-treue Übertragung braucht eine eigene Projektion und ist als
- * Folgearbeit im Slice-Plan vermerkt.
+ * **SRID:** WKB trägt keine SRID, und in SQL Server ist sie Eigenschaft des
+ * *Werts*, nicht der Spalte — es gibt also (anders als bei PostGIS/MySQL)
+ * keine Spaltenmetadaten, aus denen der Import sie zurückholen könnte. Sie
+ * kommt deshalb aus den Werten selbst ([geometrySrids]).
  */
 open class MssqlDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataReader() {
 
@@ -63,5 +62,44 @@ open class MssqlDataReader(fetchSizeOverride: Int? = null) : AbstractJdbcDataRea
     override fun mapValue(value: Any?, conn: java.sql.Connection): Any? = when (value) {
         is microsoft.sql.DateTimeOffset -> value.offsetDateTime
         else -> value
+    }
+
+    /**
+     * Liest je Spalte die vorkommenden Bezugssysteme aus den Werten.
+     *
+     * Ein voller `DISTINCT`-Durchlauf, kein `TOP (1)`: die erste Zeile
+     * verriete nur, dass es *eine* SRID gibt, nicht dass es *nur* diese gibt.
+     * Eine Spalte mit gemischten Bezugssystemen sähe damit einheitlich aus
+     * und käme am Ziel geschlossen im falschen System an — genau der stumme
+     * Schaden, den die Übertragung vermeiden soll. Der Durchlauf liest eine
+     * `int`-Projektion einer Spalte und wiegt gegen den Transfer selbst,
+     * der gleich alle Spalten aller Zeilen liest, wenig.
+     */
+    override fun geometrySrids(
+        pool: ConnectionPool,
+        table: String,
+        columns: List<String>,
+    ): Map<String, List<Int>> {
+        if (columns.isEmpty()) return emptyMap()
+        val path = quoteTablePath(table)
+        return pool.borrow().asJdbc().use { conn ->
+            columns.associateWith { column -> distinctSrids(conn, path, column) }
+                .filterValues { it.isNotEmpty() }
+        }
+    }
+
+    private fun distinctSrids(conn: Connection, quotedTablePath: String, column: String): List<Int> {
+        val quoted = quoteIdentifier(column)
+        val sql = "SELECT DISTINCT $quoted.STSrid AS srid FROM $quotedTablePath WHERE $quoted IS NOT NULL"
+        return conn.createStatement().use { stmt ->
+            stmt.executeQuery(sql).use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        val srid = rs.getInt("srid")
+                        if (!rs.wasNull()) add(srid)
+                    }
+                }
+            }
+        }.sorted()
     }
 }

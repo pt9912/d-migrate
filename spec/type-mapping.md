@@ -284,9 +284,15 @@ Konsequenzen:
 - **Datenpfad (`data export`/`import`/`transfer`)**: Werte werden als WKB
   gelesen (`.STAsBinary()`) und als `geometry::STGeomFromWKB(?, srid)` bzw.
   `geography::STGeomFromWKB(?, srid)` geschrieben. WKB trägt keine SRID, und
-  SQL Server führt sie am Wert statt an der Spalte — beim Schreiben gilt
-  deshalb 0 (`geometry`) bzw. 4326 (`geography`). Abweichende Wert-SRIDs
-  gehen dabei verloren.
+  SQL Server führt sie am Wert statt an der Spalte — es gibt also keine
+  Spaltenmetadaten, aus denen sie käme. `data transfer` liest sie deshalb aus
+  den **Werten** der Quelle (`.STSrid`, ein `DISTINCT` je Geometriespalte)
+  und bindet sie am Ziel. Führt eine Spalte Werte in mehr als einem
+  Bezugssystem, bricht der Transfer im Preflight ab: das Ziel trägt eine SRID
+  je Spalte, jede Wahl verschöbe einen Teil der Werte unsichtbar.
+  Der Spalten-Default (0 für `geometry`, 4326 für `geography`) gilt nur noch,
+  wo die Quelle gar keine Angabe hat — bei `data import` aus einer Datei, die
+  kein Quellschema mitführt.
 
 ---
 

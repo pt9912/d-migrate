@@ -179,17 +179,7 @@ class DataTransferRunner(
             tables = plan.tables
         } catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
 
-        // LN-008: fan a partitioned parent out per child only when BOTH dialects address
-        // partition children as standalone relations (PostgreSQL); else transparent parent.
-        val partitionChildren = if (
-            degree > 1 &&
-            DialectCapabilities.forDialect(srcCfg.dialect).partitionChildrenAreTables &&
-            DialectCapabilities.forDialect(tgtCfg.dialect).partitionChildrenAreTables
-        ) {
-            PartitionTransferExpansion.plan(srcSchema, tgtSchema, tables)
-        } else {
-            emptyMap()
-        }
+        val partitionChildren = partitionChildrenFor(srcCfg, tgtCfg, degree, srcSchema, tgtSchema, tables)
 
         val caps = DialectCapabilities.forDialect(tgtCfg.dialect)
         val triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase())
@@ -209,6 +199,13 @@ class DataTransferRunner(
         )
         val reader = srcDrv.dataReader(request.fetchSize); val writer = tgtDrv.dataWriter()
 
+        val geometrySrids: Map<String, Map<String, Int>>
+        try {
+            geometrySrids = GeometrySridResolver.resolve(
+                srcSchema, reader, srcPool, tables + partitionChildren.values.flatten(),
+            )
+        } catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
+
         cancellationToken.throwIfCancellationRequested()
         try {
             transferExecutor.execute(
@@ -225,7 +222,7 @@ class DataTransferRunner(
                     layers = layers,
                     partitionChildren = partitionChildren,
                     parallelism = degree,
-                    sourceGeometrySrids = TransferExecutionContext.geometrySridsOf(srcSchema),
+                    sourceGeometrySrids = geometrySrids,
                 )
             ) { table ->
                 if (!request.quiet && !request.noProgress) userFacingStderr("  Transferred: $table")
@@ -266,6 +263,28 @@ class DataTransferRunner(
      * + `--atomic` fällt auf 1 zurück (CLI-explizit fängt [validate] hart ab), danach die
      * SQLite-Klemme. Extrahiert, damit `executeWithConnections` unter der detekt-LongMethod-Grenze bleibt.
      */
+    /**
+     * Die Kinder einer partitionierten Tabelle, wenn sie einzeln uebertragen
+     * werden sollen, sonst nichts.
+     *
+     * Nur wenn **beide** Dialekte Partitionskinder als eigenstaendige
+     * Relationen ansprechen (PostgreSQL) und nebenlaeufig uebertragen wird;
+     * sonst bleibt der Elternteil das, was der Transfer sieht.
+     */
+    private fun partitionChildrenFor(
+        srcCfg: ConnectionConfig,
+        tgtCfg: ConnectionConfig,
+        degree: Int,
+        srcSchema: SchemaDefinition,
+        tgtSchema: SchemaDefinition,
+        tables: List<String>,
+    ): Map<String, List<String>> {
+        val expandable = degree > 1 &&
+            DialectCapabilities.forDialect(srcCfg.dialect).partitionChildrenAreTables &&
+            DialectCapabilities.forDialect(tgtCfg.dialect).partitionChildrenAreTables
+        return if (expandable) PartitionTransferExpansion.plan(srcSchema, tgtSchema, tables) else emptyMap()
+    }
+
     /** Die Schreib-Optionen eines Transfers -- alles, was das Ziel beim Schreiben steuert. */
     private fun importOptionsFor(request: DataTransferRequest, triggerMode: TriggerMode): ImportOptions =
         ImportOptions(
