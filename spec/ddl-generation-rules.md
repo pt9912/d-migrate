@@ -743,6 +743,21 @@ einem **Reverse** stammen können, also aus einer fremden Datenbank.) In einen
 Bezeichner geht der Ausdruck nie roh ein: für die Namensbildung wird er auf
 Buchstaben, Ziffern und Unterstriche verkürzt.
 
+**Zurücklesen.** Woher der Ausdruckstext stammt, ist je Dialekt verschieden,
+und der Reverse muss ihn vollständig liefern — ein Index, dem eine
+Schlüsselposition fehlt, ist kein kürzerer Index, sondern ein anderer:
+
+| Dialekt | Quelle des Ausdruckstexts |
+|---|---|
+| PostgreSQL | `pg_get_indexdef` |
+| Oracle | `ALL_IND_EXPRESSIONS` (eine `LONG`-Spalte) |
+| MySQL | `information_schema.statistics.EXPRESSION` |
+| SQLite | **kein Katalogeintrag** — `PRAGMA index_xinfo` meldet für eine Ausdrucksposition `name = NULL`. Der Text steht allein im ursprünglichen `CREATE INDEX` in `sqlite_master.sql` und wird von dort positionsweise den Schlüsselzeilen zugeordnet |
+| SQL Server | entfällt (nicht renderbar, siehe oben) |
+
+Lässt sich eine Ausdrucksposition nicht auflösen, fällt der **ganze** Index
+aus dem gelesenen Schema, statt verkürzt darin zu stehen.
+
 Ein Ausdrucks-Schlüssel zählt **nicht** als Spalte: Typ-Nachschläge
 (Geometrie, LOB) und die Volltext-Quellspalten sehen ihn nicht. Ein
 **eindeutiger** Ausdrucks-Index wird beim Zurücklesen auch nicht zu einer

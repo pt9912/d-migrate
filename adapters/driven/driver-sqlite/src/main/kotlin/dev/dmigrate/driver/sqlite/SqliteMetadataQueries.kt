@@ -94,20 +94,32 @@ object SqliteMetadataQueries {
             // [listUniqueConstraintIndexes] and fold onto columns/constraints.
             if (indexName.startsWith("sqlite_autoindex_")) return@mapNotNull null
             val colRows = keyColumnRows(session, indexName)
-            val cols = colRows.mapNotNull { it["name"] as? String }
-            if (cols.isEmpty()) return@mapNotNull null
             val createSql = session.querySingle(
                 "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
                 indexName,
             )?.get("sql") as? String
+            // `index_xinfo` meldet fuer eine Ausdrucksposition `name = NULL`.
+            // Der Text steht nur im Erzeugungs-SQL; er tritt positionsweise
+            // ein, weil die Schluesselzeilen in Deklarationsreihenfolge kommen.
+            val declaredKeys = createSql?.let { SqliteIndexKeyScanner.keysOf(it) }
+            val keys = colRows.mapIndexed { position, row ->
+                (row["name"] as? String) ?: declaredKeys?.getOrNull(position)
+            }
+            // Bleibt eine Ausdrucksposition unaufgeloest, waere der Index
+            // verkuerzt statt unvollstaendig gemeldet -- lieber gar nicht.
+            if (keys.isEmpty() || keys.any { it == null }) return@mapNotNull null
             IndexProjection(
                 name = indexName,
-                columns = cols,
+                columns = keys.filterNotNull(),
                 isUnique = (idx["unique"] as Number).toInt() == 1,
                 directions = colRows.map { row ->
                     if (((row["desc"] as? Number)?.toInt() ?: 0) == 1) IndexSortDirection.DESC else null
                 },
                 where = extractIndexWhere(createSql),
+                expressionPositions = colRows.withIndex()
+                    .filter { (_, row) -> row["name"] as? String == null }
+                    .map { (position, _) -> position }
+                    .toSet(),
             )
         }
     }

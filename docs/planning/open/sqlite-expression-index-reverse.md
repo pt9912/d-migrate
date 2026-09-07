@@ -1,10 +1,37 @@
 ---
 id: sqlite-expression-index-reverse
 title: "SQLite liest einen Index über einem Ausdruck unvollständig zurück"
-status: open
+status: resolved
 ---
 
 # SQLite: Ausdrucks-Index kommt unvollstaendig zurueck
+
+> **Erledigt.** Der Reverse liest den Ausdruckstext jetzt aus
+> `sqlite_master.sql` und ordnet ihn **positionsweise** den Schluesselzeilen
+> von `PRAGMA index_xinfo` zu: wo der Katalog einen Namen liefert, gilt der
+> Name; wo er schweigt, tritt der Text ein.
+>
+> **Zu Frage 1 (vorhandener Parser):** nein, aber es brauchte auch keinen
+> vollen DDL-Parser. Der Erzeugungstext wurde ohnehin schon geholt — der
+> Reverse gewinnt daraus die `WHERE`-Klausel —, und noetig ist nur die
+> **Schluesselliste**: die erste Klammer auf oberster Ebene bis zu ihrer
+> Entsprechung, an Kommas auf oberster Ebene geteilt.
+> `SqliteIndexKeyScanner` ueberspringt dafuer Zeichenketten, geklammerte
+> Bezeichner und Kommentare — dieselbe Bauart wie
+> `MssqlViewDefinitionScanner` und `MssqlRoutineBody`. Richtung und `COLLATE`
+> werden abgetragen; beides sind eigene Felder des Modells.
+>
+> **Zu Frage 2 (Meldung statt Verkuerzung):** die Frage hat sich erledigt,
+> weil der Text erreichbar war. Bleibt eine Position dennoch unaufgeloest —
+> unausgewogene Klammern in `sqlite_master.sql` —, faellt der **ganze** Index
+> aus dem gelesenen Schema, statt verkuerzt darin zu stehen. Ein Index, dem
+> eine Schluesselposition fehlt, ist kein kuerzerer Index, sondern ein
+> anderer.
+>
+> Live belegt (`SqliteExpressionIndexReverseIntegrationTest`) fuer den
+> gemischten Index, den reinen Ausdrucks-Index, `DESC` + `COLLATE` und die
+> `WHERE`-Klausel. Ohne die Aufloesung verschwinden die beiden reinen
+> Ausdrucks-Indizes ganz — genau der Befund unten.
 
 ## Befund
 
