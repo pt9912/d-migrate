@@ -322,9 +322,13 @@ internal class SchemaMigrateRenderPipeline(
                 else -> preflightPlan.sqliteCastPreflights
             },
         )
-        // VA4: `--spatial-profile` (z. B. spatialite) hat Vorrang; null → Default.
-        val spatialProfile = request.spatialProfile?.let { SpatialProfile.fromCliName(it) }
-            ?: SpatialProfilePolicy.defaultFor(dialect)
+        // `--spatial-profile` (z. B. spatialite) hat Vorrang; null → Default.
+        // Unbekannte und dialektfremde Werte lehnt `SchemaMigrateRunner` vorher
+        // mit Exit 2 ab; hier bleibt der Default nur als Rueckfall stehen.
+        val spatialProfile = when (val resolved = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)) {
+            is SpatialProfilePolicy.Result.Resolved -> resolved.profile
+            else -> SpatialProfilePolicy.defaultFor(dialect)
+        }
         return DdlGenerationOptions(
             spatialProfile = spatialProfile,
             extensionAvailability = spatialiteExtensionDeclarations(dialect, spatialProfile, request.target),
@@ -390,6 +394,7 @@ internal class SchemaMigrateRenderPipeline(
         val castPreflightOutcome = outcomes.cast
         val checkPreflightOutcome = outcomes.check
         val mysqlSequenceOutcome = outcomes.mysqlSequence
+        val spatialOutcome = SpatialProfileStage.run(plan, renderOptions.spatialProfile)
         return when {
             overlayPreflight.hasBlockers ->
                 MigrationOverlayPreflight.buildFailureResult(plan, overlayPreflight)
@@ -412,6 +417,8 @@ internal class SchemaMigrateRenderPipeline(
                 )
             outcomes.preserve is SequencePreserveStage.Outcome.Failed ->
                 SequencePreserveStage.buildFailureResult(outcomes.preserve.diagnostics)
+            spatialOutcome is SpatialProfileStage.Outcome.Refused ->
+                SpatialProfileStage.buildFailureResult(spatialOutcome.operations)
             else -> {
                 val rendered = renderer.generateUp(plan, renderOptions)
                 val withCheckPreflights = if (rendered.checkPreflights.isEmpty()) {

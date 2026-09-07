@@ -14,6 +14,7 @@ import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.SqliteLiveCatalog
@@ -219,6 +220,25 @@ class SchemaMigrateRunner(
         )
     }
 
+    /**
+     * Die Meldung, mit der `--spatial-profile` abzulehnen ist, oder `null`.
+     *
+     * Dieselbe Pruefung wie auf dem Generate-Pfad: ein Tippfehler fiel hier
+     * bisher auf den Dialekt-Default zurueck, ohne dass jemand es erfuhr, und
+     * ein dialektfremdes Profil wurde angenommen.
+     */
+    private fun spatialProfileError(raw: String?, dialect: DatabaseDialect): String? {
+        val allowed = SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }
+        return when (val result = SpatialProfilePolicy.resolve(dialect, raw)) {
+            is SpatialProfilePolicy.Result.Resolved -> null
+            is SpatialProfilePolicy.Result.UnknownProfile ->
+                "Unknown spatial profile '${result.raw}'. Allowed: $allowed"
+            is SpatialProfilePolicy.Result.NotAllowedForDialect ->
+                "Spatial profile '${result.profile.cliName}' is not allowed for " +
+                    "${result.dialect.name.lowercase(java.util.Locale.ROOT)}. Allowed: $allowed"
+        }
+    }
+
     fun execute(
         request: SchemaMigrateRequest,
         cancellationToken: CancellationToken = CancellationToken.none(),
@@ -229,6 +249,10 @@ class SchemaMigrateRunner(
             is SchemaMigratePreparationResult.Ready -> r.prepared
         }
         cancellationToken.throwIfCancellationRequested()
+
+        spatialProfileError(request.spatialProfile, prepared.effectiveDialect)?.let {
+            userFacingPrintError(it, "--spatial-profile"); return 2
+        }
 
         // F.4 cli-inline-overlay slice §3.3: build the synthetic
         // `cli-inline` overlay BEFORE plan() so it joins the normal

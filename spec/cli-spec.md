@@ -408,8 +408,10 @@ Das Profil ist Generator-Konfiguration und kein Teil des neutralen Schemas.
 | `postgresql` | `postgis`, `none` | `postgis` |
 | `mysql` | `native`, `none` | `native` |
 | `sqlite` | `spatialite`, `none` | `none` |
+| `mssql` | `native`, `none` | `native` |
+| `oracle` | `native`, `none` | `native` |
 
-Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--target mysql --spatial-profile postgis`) erzeugt einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung. Enthält das Schema keine `geometry`-Spalten, hat `--spatial-profile` keine Wirkung.
+Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--target mysql --spatial-profile postgis`) erzeugt einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung. Ein unbekannter Profilname ebenso. Enthält das Schema keine `geometry`-Spalten, hat `--spatial-profile` keine Wirkung.
 
 **Ausgabeverhalten**:
 - **stdout**: DDL-Output (wenn kein `--output`)
@@ -654,6 +656,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--report-format` | Nein | `json` / `yaml` | Format des Report-Artefakts aus `--report` (Default: `json`). |
 | `--partition-storage` | Nein | String | Wie bei `schema generate`: die Filegroup fuer Partitionen (nur `mssql`). |
 | `--mssql-hash-partitions` | Nein | `action_required` / `computed_column` | Wie bei `schema generate`, hier auf der Migrate-Seite. |
+| `--spatial-profile` | Nein | String | Wie bei `schema generate`, mit denselben Werten je Dialekt. Unbekannter Name oder ein Profil, das der Dialekt nicht fuehrt: Exit `2` vor jedem Datenbankzugriff. Mit `none` blockt ein Plan, der Geometrie einfuehrt (`CreateTable` mit Geometriespalte, `AddColumn`, `AlterColumnType` **nach** Geometrie), vollstaendig mit `E052` und `primaryBlockedReason = MANUAL_ACTION_REQUIRED` (Exit `8`) — nicht nur die betroffene Tabelle: ein Migrationsplan ist abhaengigkeitssortiert, eine Tabelle daraus zu entfernen liesse die uebrigen Anweisungen auf etwas verweisen, das nicht entsteht. |
 
 Begriffe:
 
