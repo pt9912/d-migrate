@@ -42,7 +42,7 @@ neuen Version.
 |---------|-----------|
 | E001 - E020 | Schema-Validierung (SchemaValidator) |
 | E052 - E056 | Dialekt-Inkompatibilitaeten (Composite, Routine, Sequence) |
-| E057 | Multi-Dialekt action_required: MySQL Partial-Index-Predicate, SQLite-helper_table `WITHOUT ROWID` + `SequenceNextVal`, Oracle LOB-Schlüsselspalte (UNIQUE/PRIMARY KEY, ORA-02329) + mehrspaltiger Oracle-Volltext-Index (ein Oracle-Text-Index deckt genau eine Spalte, ORA-29851) |
+| E057 | Multi-Dialekt action_required: MySQL Partial-Index-Predicate, SQLite-helper_table `WITHOUT ROWID` + `SequenceNextVal`, Oracle LOB-Schlüsselspalte (UNIQUE/PRIMARY KEY, ORA-02329) + mehrspaltiger Oracle-Volltext-Index (ein Oracle-Text-Index deckt genau eine Spalte, ORA-29851) + Ausdrucks-Index auf SQL Server (T-SQL indiziert nur eine persistierte berechnete Spalte) |
 | E058 | SQLite-helper_table: externe Objekte referenzieren `dmg_sequences`; Rollback-Preflight bricht ab |
 | E059 | SQLite-helper_table: Sequence-backed column im PRIMARY KEY |
 | E060 | Split-Diagnostik (Phasenkonflikt); SQLite-helper_table-Rollback zusätzlich: ATTACHed Datenbanken detektiert |

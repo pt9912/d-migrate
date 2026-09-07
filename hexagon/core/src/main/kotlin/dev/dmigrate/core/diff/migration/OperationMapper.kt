@@ -708,7 +708,11 @@ internal object OperationMapper {
     }
 
     private fun anonIndexKey(idx: IndexDefinition): String {
-        val cols = idx.columns.joinToString("_") { it.name }
+        // Mit Praefix fuer Ausdruecke: `{expression: "nm"}` und die Spalte
+        // `nm` ergaeben sonst denselben Schluessel fuer zwei verschiedene
+        // anonyme Indizes. Bestehende Schemata sind unberuehrt -- sie haben
+        // keine Ausdrucks-Schluessel.
+        val cols = idx.columns.joinToString("_") { if (it.expression != null) "expr:${it.name}" else it.name }
         val whereHash = idx.where?.hashCode()?.toString(16) ?: "0"
         return "anon_${cols}_${idx.type.name}_${idx.unique}_$whereHash"
     }

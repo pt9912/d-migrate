@@ -73,7 +73,7 @@ class OracleSchemaReaderTest : FunSpec({
         result.notes.shouldBeEmpty()
     }
 
-    test("a bitmap index keeps its type, an expression index is reported instead of guessed") {
+    test("a bitmap index keeps its type; an expression index comes back as an expression key") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
         stubTableQueries(jdbc)
@@ -104,14 +104,18 @@ class OracleSchemaReaderTest : FunSpec({
         val (reader, pool) = rig(jdbc)
         val result = reader.read(pool)
 
-        val indices = result.schema.tables.getValue("FACTS").indices
-        indices.map { it.name } shouldBe listOf("BM_STATUS")
-        indices.single().type shouldBe IndexType.BITMAP
-        // Der Ausdrucks-Index verschwindet nicht stumm: ohne die Meldung
-        // stuende im Ziel eine Tabelle ohne ihn, ohne dass es irgendwo steht.
-        val note = result.notes.single { it.code == "R354" }
-        note.objectName shouldBe "IX_FN"
-        note.severity shouldBe SchemaReadSeverity.WARNING
+        val indices = result.schema.tables.getValue("FACTS").indices.associateBy { it.name }
+        indices.keys shouldBe setOf("BM_STATUS", "IX_FN")
+        indices.getValue("BM_STATUS").type shouldBe IndexType.BITMAP
+
+        // Seit 6b traegt das Modell den Ausdruck; vorher wurde der Index
+        // ausgelassen und gemeldet (R354).
+        val expressionKey = indices.getValue("IX_FN").columns.single()
+        expressionKey.expression shouldBe "UPPER(\"STATUS\")"
+        // Und er zaehlt NICHT als Spalte: der Typ-Nachschlag darf ihn nicht
+        // als Spaltennamen sehen.
+        indices.getValue("IX_FN").columnNames shouldBe emptyList()
+        result.notes.none { it.code == "R354" } shouldBe true
     }
 
     test("an Oracle Text index reads back as FULLTEXT; a foreign domain index is reported instead") {
@@ -152,6 +156,48 @@ class OracleSchemaReaderTest : FunSpec({
         val note = result.notes.single { it.code == "R357" }
         note.objectName shouldBe "SX_GEO"
         note.severity shouldBe SchemaReadSeverity.WARNING
+    }
+
+    test("a UNIQUE expression index stays an index instead of being lifted or lost") {
+        // `CREATE UNIQUE INDEX … (UPPER(nm))` ist ein verbreitetes
+        // Oracle-Idiom. Gehoben wuerde daraus eine UNIQUE-Constraint ueber
+        // einer Spalte `UPPER("NM")`, die es nicht gibt; ungehoben und
+        // gefiltert verschwaende der Index ganz.
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        stubTableQueries(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_tables") }, "APP") } returns
+            listOf(mapOf("table_name" to "T"))
+        every { jdbc.queryList(match { it.contains("FROM all_tab_columns c") }, "APP", "T") } returns listOf(
+            mapOf(
+                "column_name" to "NM", "data_type" to "VARCHAR2", "data_length" to 50,
+                "data_precision" to null, "data_scale" to null, "nullable" to "Y",
+                "column_id" to 1, "data_default" to null,
+                "identity_generation" to null, "identity_sequence" to null,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, "APP", "T") } returns listOf(
+            mapOf(
+                "index_name" to "UX_FN", "index_type" to "FUNCTION-BASED NORMAL", "uniqueness" to "UNIQUE",
+                "ityp_owner" to null, "ityp_name" to null,
+                "column_name" to "SYS_NC00002\$", "column_position" to 1, "descend" to "ASC",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_ind_expressions") }, "APP", "T") } returns listOf(
+            mapOf("index_name" to "UX_FN", "column_position" to 1, "column_expression" to "UPPER(\"NM\")"),
+        )
+
+        val (reader, pool) = rig(jdbc)
+        val table = reader.read(pool).schema.tables.getValue("T")
+
+        val index = table.indices.single()
+        index.name shouldBe "UX_FN"
+        index.unique shouldBe true
+        index.columns.single().expression shouldBe "UPPER(\"NM\")"
+        // Weder auf die Spalte gehoben ...
+        table.columns.getValue("NM").unique shouldBe false
+        // ... noch zu einer Constraint ueber dem Ausdruckstext.
+        table.constraints.none { it.type == dev.dmigrate.core.model.ConstraintType.UNIQUE } shouldBe true
     }
 
     test("single table with identity pk, fk, unique and non-unique index, check constraint") {

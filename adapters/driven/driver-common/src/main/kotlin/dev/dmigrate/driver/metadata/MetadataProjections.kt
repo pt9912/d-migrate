@@ -52,6 +52,12 @@ data class IndexProjection(
     /** MySQL `SUB_PART` per column (prefix-index key length); index-parallel to [columns]. */
     val prefixLengths: List<Int?> = emptyList(),
     /**
+     * Die Positionen in [columns], die einen **Ausdruck** tragen statt eines
+     * Spaltennamens (Oracle: function-based Index). Als Positionsmenge statt
+     * als paralleler Liste, damit der Normalfall — gar keine — nichts kostet.
+     */
+    val expressionPositions: Set<Int> = emptySet(),
+    /**
      * Nicht-Schluesselspalten eines abdeckenden Index (`INCLUDE (…)`), in der
      * Reihenfolge, die der Katalog fuehrt. Sie stehen bewusst NEBEN [columns]
      * und nicht darin -- angehaengt waeren sie Schluesselspalten, und bei einem
@@ -63,7 +69,12 @@ data class IndexProjection(
 ) {
     val indexColumns: List<IndexColumn>
         get() = columns.mapIndexed { index, column ->
-            IndexColumn(column, directions.getOrNull(index), prefixLengths.getOrNull(index))
+            IndexColumn(
+                name = column,
+                direction = directions.getOrNull(index),
+                prefixLength = prefixLengths.getOrNull(index),
+                expression = if (index in expressionPositions) column else null,
+            )
         }
 }
 

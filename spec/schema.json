@@ -323,10 +323,18 @@
     },
     "indexColumn": {
       "type": "object",
-      "required": ["name"],
       "additionalProperties": false,
+      "oneOf": [
+        { "required": ["name"], "not": { "required": ["expression"] } },
+        { "required": ["expression"], "not": { "required": ["name"] } }
+      ],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
+        "expression": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SQL expression to index instead of a column (UPPER(name)). Rendered verbatim; PostgreSQL, MySQL 8, SQLite and Oracle carry expression indexes natively, SQL Server refuses them (E057) because it needs a persisted computed column. Mutually exclusive with 'name'; 'prefix_length' does not apply."
+        },
         "direction": {
           "type": "string",
           "enum": ["asc", "desc"]

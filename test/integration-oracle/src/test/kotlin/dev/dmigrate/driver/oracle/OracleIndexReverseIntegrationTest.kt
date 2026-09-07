@@ -1,5 +1,11 @@
 package dev.dmigrate.driver.oracle
 
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.driver.DatabaseDialect
@@ -71,7 +77,7 @@ class OracleIndexReverseIntegrationTest : FunSpec({
             val indices = result.schema.tables.getValue("facts").indices.associateBy { it.name }
 
             withClue("gelesene Indizes: ${indices.keys}") {
-                indices.keys shouldBe setOf("bm_status", "bm_multi", "ix_plain", "ix_desc")
+                indices.keys shouldBe setOf("bm_status", "bm_multi", "ix_plain", "ix_desc", "ix_fn")
             }
             indices.getValue("bm_status").type shouldBe IndexType.BITMAP
             indices.getValue("bm_multi").type shouldBe IndexType.BITMAP
@@ -87,10 +93,69 @@ class OracleIndexReverseIntegrationTest : FunSpec({
             desc.columnNames shouldBe listOf("amt")
             desc.columns.single().direction shouldBe IndexSortDirection.DESC
 
-            // Der echte Ausdrucks-Index ist ausgelassen, aber nicht stumm.
-            val note = result.notes.single { it.code == "R354" }
-            note.objectName shouldBe "ix_fn"
-            note.severity shouldBe SchemaReadSeverity.WARNING
+            // Seit 6b traegt das Modell den Ausdruck selbst.
+            val fn = indices.getValue("ix_fn")
+            fn.columns.single().expression shouldBe "UPPER(\"nm\")"
+            fn.columnNames shouldBe emptyList()
+            result.notes.none { it.code == "R354" } shouldBe true
+        }
+    }
+
+    test("an expression index generated from the reversed model is valid Oracle DDL again") {
+        // Der Rundschluss: Reverse liefert `UPPER("nm")`, der Generator
+        // schreibt es wortgleich zurueck, Oracle nimmt es an. Wuerde der
+        // Ausdruck als Bezeichner gequotet, liefe die Anweisung auf eine
+        // Spalte, die es nicht gibt.
+        val schema = SchemaDefinition(
+            name = "S", version = "1",
+            tables = mapOf(
+                "expr_target" to TableDefinition(
+                    columns = mapOf("nm" to ColumnDefinition(NeutralType.Text(maxLength = 50))),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "ix_upper",
+                            columns = listOf(IndexColumn.expression("UPPER(\"nm\")")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute(
+                        "BEGIN EXECUTE IMMEDIATE 'DROP TABLE \"expr_target\"'; EXCEPTION WHEN OTHERS THEN NULL; END;",
+                    )
+                    OracleDdlGenerator().generate(schema).statements
+                        .map { it.sql.lines().filterNot { line -> line.trimStart().startsWith("--") } }
+                        .map { it.joinToString("\n").trim().removeSuffix(";") }
+                        .filter { it.isNotBlank() }
+                        .forEach { sql -> withClue("statement failed:\n$sql") { stmt.execute(sql) } }
+                }
+            }
+            val readBack = OracleSchemaReader().read(pool)
+                .schema.tables.getValue("expr_target").indices.single()
+            readBack.columns.single().expression shouldBe "UPPER(\"nm\")"
+        }
+    }
+
+    test("Oracle accepts a parenthesised expression key and reports it without the parentheses") {
+        // Belegt die Regel, die `renderKey` fuer ALLE Dialekte anwendet:
+        // klammern ist ueberall zulaessig -- PostgreSQL verlangt es sogar fuer
+        // jeden Ausdruck, der kein blosser Funktionsaufruf ist.
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            pool.borrow().asJdbc().use { c ->
+                c.createStatement().use {
+                    it.execute("BEGIN EXECUTE IMMEDIATE 'DROP TABLE \"pp\"'; EXCEPTION WHEN OTHERS THEN NULL; END;")
+                    it.execute("""CREATE TABLE "pp" ("nm" VARCHAR2(50), "amt" NUMBER(9))""")
+                    it.execute("""CREATE INDEX "p2" ON "pp" ((LOWER("nm")))""")
+                    it.execute("""CREATE INDEX "p4" ON "pp" (("amt" + 2))""")
+                }
+            }
+            val read = OracleSchemaReader().read(pool).schema.tables.getValue("pp").indices
+                .associate { it.name to it.columns.single().expression }
+            read["p2"] shouldBe "LOWER(\"nm\")"
+            read["p4"] shouldBe "\"amt\"+2"
         }
     }
 })

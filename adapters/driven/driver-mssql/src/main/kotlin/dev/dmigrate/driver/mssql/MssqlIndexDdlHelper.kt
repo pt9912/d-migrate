@@ -46,8 +46,10 @@ internal class MssqlIndexDdlHelper(
         index: IndexDefinition,
         lobColumns: Set<String>,
     ): DdlStatement {
-        val indexName = index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+        val indexName = index.name ?: "idx_${tableName}_${index.keyLabels.joinToString("_")}"
         val columns = table.columns
+
+        expressionRefusal(tableName, index, indexName)?.let { return it }
 
         // ADR 0025: Volltext braucht in SQL Server einen Katalog und einen
         // Schluesselindex — beides traegt das Modell nicht. Der Katalog wird je
@@ -187,6 +189,30 @@ internal class MssqlIndexDdlHelper(
 
     private fun isGeodeticColumn(type: NeutralType?): Boolean =
         type is NeutralType.Geometry && typeMapper.isGeodeticSrid(type.srid)
+
+    /**
+     * SQL Server indiziert keinen Ausdruck direkt: es braucht dafuer eine
+     * **persistierte berechnete Spalte**, die das neutrale Modell nicht
+     * traegt. Sie hier zu erfinden aenderte die Tabelle, nicht nur den Index
+     * -- deshalb abgelehnt statt geraten. Die uebrigen vier Dialekte tragen
+     * Ausdruecke nativ.
+     */
+    private fun expressionRefusal(
+        tableName: String,
+        index: IndexDefinition,
+        indexName: String,
+    ): DdlStatement? {
+        val key = index.columns.firstOrNull { it.expression != null } ?: return null
+        return actionRequired(
+            ManualActionRequired(
+                code = "E057", objectType = "index", objectName = indexName,
+                reason = "Index '$indexName' on table '$tableName' is defined over the expression " +
+                    "'${key.expression}'; SQL Server can only index a persisted computed column, " +
+                    "which the neutral model does not carry.",
+                hint = "Add a persisted computed column for the expression and index that instead.",
+            ),
+        )
+    }
 
     private fun renderIndexColumn(column: IndexColumn): String = buildString {
         append(quoteIdentifier(column.name))

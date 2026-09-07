@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
+import dev.dmigrate.driver.renderKey
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -108,7 +109,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         // Zugriffsmethode emittiert (PostgreSQL kennt kein `USING SPATIAL`).
         val using = pgUsingClause(idx.type)
         val cols = idx.columns.joinToString(", ") { col ->
-            quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
+            col.renderKey(::quote) + (col.direction?.let { " ${it.name}" } ?: "")
         }
         val name = effectiveIndexName(table, idx)
         val includeClause = PostgresIndexClauses.include(idx, ::quote)
@@ -160,7 +161,7 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
     }
 
     fun anonIndexName(table: String, idx: IndexDefinition): String =
-        "${table}_${idx.columns.joinToString("_") { it.name }}_idx"
+        "${table}_${idx.keyLabels.joinToString("_")}_idx"
 
     fun toSql(type: NeutralType): String = typeMapper.toSql(type)
 

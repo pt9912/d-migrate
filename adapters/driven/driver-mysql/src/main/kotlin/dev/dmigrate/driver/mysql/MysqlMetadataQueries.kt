@@ -137,7 +137,8 @@ object MysqlMetadataQueries {
     fun listIndices(session: JdbcOperations, schemaName: String, table: String): List<IndexProjection> {
         val rows = session.queryList(
             """
-            SELECT index_name, column_name, non_unique, seq_in_index, index_type, collation, sub_part
+            SELECT index_name, column_name, expression, non_unique, seq_in_index,
+                   index_type, collation, sub_part
             FROM information_schema.statistics
             WHERE table_schema = ? AND table_name = ?
               AND index_name != 'PRIMARY'
@@ -148,13 +149,24 @@ object MysqlMetadataQueries {
             val ordered = idxRows.sortedBy { (it["seq_in_index"] as Number).toInt() }
             IndexProjection(
                 name = name,
-                columns = ordered.map { it["column_name"] as String },
+                // MySQL 8 setzt COLUMN_NAME bei einem FUNKTIONALEN Schluessel
+                // auf NULL und legt den Text nach EXPRESSION. Blind gecastet
+                // war das ein NPE mitten im `schema reverse`.
+                columns = ordered.map { row ->
+                    row["column_name"] as? String
+                        ?: row["expression"] as? String
+                        ?: error("index column has neither COLUMN_NAME nor EXPRESSION")
+                },
                 isUnique = (idxRows.first()["non_unique"] as Number).toInt() == 0,
                 type = idxRows.first()["index_type"] as? String,
                 directions = ordered.map { row ->
                     if ((row["collation"] as? String) == "D") IndexSortDirection.DESC else null
                 },
                 prefixLengths = ordered.map { (it["sub_part"] as? Number)?.toInt() },
+                expressionPositions = ordered.withIndex()
+                    .filter { it.value["column_name"] == null }
+                    .map { it.index }
+                    .toSet(),
             )
         }
     }

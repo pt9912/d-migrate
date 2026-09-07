@@ -177,7 +177,15 @@ private fun buildIndexColumns(
     for (column in columns) {
         val direction = column.direction
         val prefixLength = column.prefixLength
-        if (direction == null && prefixLength == null) {
+        val expression = column.expression
+        if (expression != null) {
+            // Als Objekt mit `expression`, nie als blosser Text: ein Ausdruck
+            // in Textform waere beim Wiedereinlesen ein Spaltenname.
+            val columnNode = mapper.createObjectNode()
+            columnNode.put("expression", expression)
+            if (direction != null) columnNode.put("direction", direction.name.lowercase())
+            arrayNode.add(columnNode)
+        } else if (direction == null && prefixLength == null) {
             arrayNode.add(column.name)
         } else {
             val columnNode = mapper.createObjectNode()

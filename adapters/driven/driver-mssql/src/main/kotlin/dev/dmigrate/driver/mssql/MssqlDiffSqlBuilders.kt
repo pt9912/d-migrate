@@ -251,7 +251,7 @@ internal class MssqlDiffSqlBuilders(private val typeMapper: MssqlTypeMapper) {
     ): DdlStatement = indexHelper.generateIndex(table, tableDef, index, typeResolver.lobColumns(tableDef, schema))
 
     fun dropIndexSql(table: String, index: IndexDefinition): String {
-        val name = index.name ?: "idx_${table}_${index.columnNames.joinToString("_")}"
+        val name = index.name ?: "idx_${table}_${index.keyLabels.joinToString("_")}"
         // T-SQL braucht die Tabelle im DROP INDEX — anders als PostgreSQL, wo
         // Indexnamen schema-global eindeutig sind.
         return "DROP INDEX IF EXISTS ${quote(name)} ON ${quote(table)};"

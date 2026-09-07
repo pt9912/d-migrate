@@ -106,7 +106,16 @@ internal object CanonicalPayload {
 
     fun index(i: IndexDefinition): String = buildString {
         append("index=").append(i.name ?: "")
-            .append(SEP).append("columns=").append(i.columns.joinToString(",") { it.name })
+            // Bewusst nicht `toString()`: das traegt Richtung und
+            // Prefix-Laenge mit, und die Operations-ID JEDES bestehenden Index
+            // mit `DESC` oder `col(n)` aenderte sich damit -- bestehende
+            // Overlays passten nicht mehr. Ein Ausdrucks-Schluessel bekommt
+            // dagegen ein Praefix: `{expression: "nm"}` und die Spalte `nm`
+            // ergaeben sonst dieselbe Operations-ID fuer zwei verschiedene
+            // Indizes. Bestehende Schemata sind davon nicht betroffen -- sie
+            // haben keine Ausdrucks-Schluessel.
+            .append(SEP).append("columns=")
+            .append(i.columns.joinToString(",") { if (it.expression != null) "expr:${it.name}" else it.name })
             .append(SEP).append("type=").append(i.type.name)
             .append(SEP).append("unique=").append(i.unique)
             .append(SEP).append("where=").append(i.where ?: "")

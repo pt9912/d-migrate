@@ -137,4 +137,42 @@ class SchemaStructureValidationRulesTest : FunSpec({
         result.errors.map { it.code } shouldBe listOf("E018")
         result.warnings.isEmpty() shouldBe true
     }
+
+    test("an expression index key is not checked against the column list") {
+        // Ohne die Ausnahme lehnte E005 JEDEN Ausdrucks-Index ab, und zwar im
+        // Validator -- also vor jedem Generator und unabhaengig vom Ziel.
+        // `schema generate` bricht bei ungueltiger Validierung mit Exit 3 ab;
+        // das Feature waere ueber die CLI nicht erreichbar gewesen.
+        val schema = SchemaDefinition(
+            name = "s", version = "1.0.0",
+            tables = mapOf(
+                "t" to TableDefinition(
+                    columns = mapOf("nm" to ColumnDefinition(NeutralType.Text(maxLength = 50))),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "ix_upper",
+                            columns = listOf(IndexColumn.expression("UPPER(nm)")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        SchemaValidator().validate(schema).errors.none { it.code == "E005" } shouldBe true
+    }
+
+    test("a plain column key is still checked") {
+        // Gegenprobe: die Ausnahme darf nicht die ganze Regel abschalten.
+        val schema = SchemaDefinition(
+            name = "s", version = "1.0.0",
+            tables = mapOf(
+                "t" to TableDefinition(
+                    columns = mapOf("nm" to ColumnDefinition(NeutralType.Text(maxLength = 50))),
+                    indices = listOf(
+                        IndexDefinition(name = "ix_ghost", columns = listOf(IndexColumn("nope"))),
+                    ),
+                ),
+            ),
+        )
+        SchemaValidator().validate(schema).errors.any { it.code == "E005" } shouldBe true
+    }
 })

@@ -141,7 +141,6 @@ class OracleMetadataQueriesTest : FunSpec({
             "BM_STATUS" to "BITMAP",
             "IX_PLAIN" to "NORMAL",
         )
-        scan.expressionIndexes shouldBe emptyList()
     }
 
     test("scanIndexes folds a DESC index back onto its real column") {
@@ -154,7 +153,6 @@ class OracleMetadataQueriesTest : FunSpec({
         // Generate-Pfad schriebe einen Index auf eine nicht existente Spalte.
         scan.indices.single().columns shouldBe listOf("AMT")
         scan.indices.single().directions shouldBe listOf(IndexSortDirection.DESC)
-        scan.expressionIndexes shouldBe emptyList()
     }
 
     // Gemessen: ein Oracle-Text-Index erscheint als INDEX_TYPE=DOMAIN mit
@@ -182,14 +180,18 @@ class OracleMetadataQueriesTest : FunSpec({
         scan.fullTextIndexes shouldBe emptySet()
     }
 
-    test("scanIndexes reports an index over a genuine expression instead of emitting it") {
+    test("scanIndexes carries a genuine expression through as an expression key") {
         val jdbc = indexMock(
             rows = listOf(indexRow("IX_FN", "FUNCTION-BASED NORMAL", "SYS_NC00006\$")),
             expressions = listOf(expressionRow("IX_FN", "UPPER(\"NM\")")),
         )
         val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
-        scan.indices shouldBe emptyList()
-        scan.expressionIndexes shouldBe listOf("IX_FN")
+        val key = scan.indices.single().indexColumns.single()
+        // Der Ausdruck, nicht die unsichtbare Systemspalte -- die als
+        // Spaltenname weiterzureichen ergaebe DDL auf eine Spalte, die es
+        // nirgends gibt.
+        key.expression shouldBe "UPPER(\"NM\")"
+        scan.indices.single().columns shouldBe listOf("UPPER(\"NM\")")
     }
 
     test("listCheckConstraints drops Oracle's implicit NOT-NULL checks") {

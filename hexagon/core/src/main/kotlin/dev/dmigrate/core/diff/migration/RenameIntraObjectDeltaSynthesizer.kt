@@ -356,8 +356,9 @@ internal object RenameIntraObjectDeltaSynthesizer {
         return DiffObjectRef(DiffObjectType.INDEX, listOf(tableName, name))
     }
 
+    /** Muss byte-gleich zu `OperationMapper.anonIndexKey` bleiben. */
     private fun anonIndexKey(idx: IndexDefinition): String {
-        val cols = idx.columns.joinToString("_") { it.name }
+        val cols = idx.columns.joinToString("_") { if (it.expression != null) "expr:${it.name}" else it.name }
         val whereHash = idx.where?.hashCode()?.toString(16) ?: "0"
         return "anon_${cols}_${idx.type.name}_${idx.unique}_$whereHash"
     }

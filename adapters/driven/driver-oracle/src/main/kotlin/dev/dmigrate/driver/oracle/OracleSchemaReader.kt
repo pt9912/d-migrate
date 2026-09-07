@@ -118,10 +118,14 @@ class OracleSchemaReader(
             SchemaReaderUtils.buildCheckConstraints(checks)
 
         // Einspaltige, ungefilterte Unique-Indizes sind bereits auf
-        // column.unique gehoben, mehrspaltige auf eine UNIQUE-Constraint.
+        // column.unique gehoben, mehrspaltige auf eine UNIQUE-Constraint --
+        // aber nur, wenn sie ueber SPALTEN gehen. Ein eindeutiger
+        // Ausdrucks-Index (`UNIQUE INDEX … (UPPER(nm))`, ein verbreitetes
+        // Oracle-Idiom) wird nirgends gehoben und muss deshalb hier bleiben,
+        // sonst verschwaende er ganz.
         val indices = indexScan.indices
-            .filterNot { it.isUnique && it.columns.size == 1 }
-            .filterNot { it.isUnique && it.columns.size > 1 }
+            .filterNot { it.isUnique && it.columns.size == 1 && it.expressionPositions.isEmpty() }
+            .filterNot { it.isUnique && it.columns.size > 1 && it.expressionPositions.isEmpty() }
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,
@@ -144,17 +148,6 @@ class OracleSchemaReader(
                 hint = "Recreate it manually on the target, where its index type exists.",
             )
         }
-        indexScan.expressionIndexes.forEach { name ->
-            notes += SchemaReadNote(
-                severity = SchemaReadSeverity.WARNING,
-                code = "R354",
-                objectName = name,
-                message = "Index '$name' on table '$table' is function-based over an expression, " +
-                    "which the neutral model cannot represent; the index was skipped.",
-                hint = "Recreate it manually on the target, or index a generated column instead.",
-            )
-        }
-
         val partitioning = OraclePartitionReader.read(session, schema, table)
         partitioning?.let { notePartitionGaps(table, it, notes) }
 

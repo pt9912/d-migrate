@@ -1,6 +1,13 @@
 package dev.dmigrate.core.model
 
 data class IndexColumn(
+    /**
+     * Der Schluessel: ein Spaltenname — oder, wenn [expression] gesetzt ist,
+     * derselbe Ausdruck noch einmal, als **Etikett**. Das Etikett dient nur
+     * der Namensbildung anonymer Indizes und den Meldungen; als Spaltenname
+     * darf es nirgends gelesen werden, dafuer gibt es
+     * [IndexDefinition.columnNames], das Ausdruecke auslaesst.
+     */
     val name: String,
     val direction: IndexSortDirection? = null,
     /**
@@ -9,11 +16,32 @@ data class IndexColumn(
      * have no prefix-index concept and drop it (with a note) on generate.
      */
     val prefixLength: Int? = null,
+    /**
+     * Der SQL-Ausdruck, ueber dem indiziert wird (`UPPER(nm)`), statt einer
+     * Spalte. Null = gewoehnliche Spalte.
+     *
+     * Wie [IndexDefinition.where], der Rumpf einer Sicht und der Ausdruck
+     * einer CHECK-Constraint ist das **roher SQL-Text** im neutralen Modell:
+     * ein Ausdruck ist nichts, was sich in Bausteine zerlegen liesse, ohne
+     * eine eigene Sprache zu erfinden. Er wird deshalb wortgleich gerendert,
+     * und Dialekte, die ihn nicht tragen koennen, lehnen ab statt zu raten.
+     */
+    val expression: String? = null,
 ) {
     override fun toString(): String = buildString {
+        // Ein Ausdruck traegt sich selbst als Etikett; ohne die Kennzeichnung
+        // waere er von einer gleichnamigen Spalte nicht zu unterscheiden --
+        // in den Projektionen, die diese Form hashen, ist das ein Unterschied.
+        if (expression != null) append("expr:")
         append(name)
         if (prefixLength != null) append("($prefixLength)")
         if (direction != null) append(" ${direction.name}")
+    }
+
+    companion object {
+        /** Ein Ausdrucks-Schluessel; das Etikett ist der Ausdruck selbst. */
+        fun expression(sql: String, direction: IndexSortDirection? = null): IndexColumn =
+            IndexColumn(name = sql, direction = direction, expression = sql)
     }
 }
 
@@ -75,9 +103,51 @@ data class IndexDefinition(
      */
     val clustered: Boolean = false,
 ) {
+    /**
+     * Die **Spalten**, ueber die dieser Index geht — Ausdruecke bleiben
+     * aussen vor. Genau darauf verlassen sich die Aufrufer: Typ-Nachschlag
+     * (Geometrie, LOB), das Heben einspaltiger UNIQUE-Indizes, die
+     * Volltext-Quellspalten. Einen Ausdruck als Spaltennamen durchzureichen
+     * ergaebe dort einen Nachschlag ins Leere und im Ziel DDL auf eine
+     * Spalte, die es nicht gibt.
+     */
     val columnNames: List<String>
-        get() = columns.map { it.name }
+        get() = columns.filter { it.expression == null }.map { it.name }
+
+    /**
+     * Alle Schluessel als Etikett — Spaltennamen und Ausdruecke. Fuer die
+     * Namensbildung anonymer Indizes, wo auch ein Ausdrucks-Index einen
+     * Namen braucht.
+     *
+     * Spaltennamen bleiben **wortgleich**; nur ein Ausdruck wird auf
+     * bezeichner-taugliche Zeichen verkuerzt (`UPPER(nm)` → `UPPER_nm`).
+     * Auch Spaltennamen zu verkuerzen aenderte die Namen bereits erzeugter
+     * anonymer Indizes ueberall dort, wo eine Spalte ein Sonderzeichen
+     * traegt — und damit Fingerabdruecke und Rollback-Artefakte.
+     */
+    val keyLabels: List<String>
+        get() = columns.map { column ->
+            if (column.expression == null) column.name else identifierSlug(column.name)
+        }
 }
+
+/**
+ * Ein Ausdruck auf die Zeichen, die ein Bezeichner tragen darf. Mehrere
+ * unzulaessige Zeichen fallen zu EINEM Unterstrich zusammen, damit
+ * `UPPER(nm)` nicht `UPPER_nm_` ergibt.
+ */
+private fun identifierSlug(expression: String): String =
+    expression.map { if (it.isLetterOrDigit() || it == '_') it else ' ' }
+        .joinToString("")
+        .trim()
+        .replace(Regex("\\s+"), "_")
+        // Gekuerzt, weil jeder Dialekt eine Bezeichnerlaenge hat und ein
+        // `CASE`-Ausdruck sie sonst sprengte. Der Name eines anonymen Index
+        // ist ohnehin nur eine Verlegenheitsloesung -- wer ihn braucht,
+        // benennt den Index.
+        .take(MAX_SLUG_LENGTH)
+
+private const val MAX_SLUG_LENGTH = 30
 
 /**
  * ADR 0025: whether this index is a spatial index over a geometry column — true when a

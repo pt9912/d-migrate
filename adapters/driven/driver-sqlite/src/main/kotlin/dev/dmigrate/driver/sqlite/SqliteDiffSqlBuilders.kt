@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.driver.renderKey
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -121,7 +122,7 @@ internal class SqliteDiffSqlBuilders {
         val unique = if (idx.unique) "UNIQUE " else ""
         // SQLite always uses btree internally; USING clauses are unsupported.
         val cols = idx.columns.joinToString(", ") { col ->
-            quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
+            col.renderKey(::quote) + (col.direction?.let { " ${it.name}" } ?: "")
         }
         val name = effectiveIndexName(table, idx)
         val whereClause = idx.where?.let { " WHERE $it" } ?: ""
@@ -186,7 +187,7 @@ internal class SqliteDiffSqlBuilders {
     }
 
     fun anonIndexName(table: String, idx: IndexDefinition): String =
-        "${table}_${idx.columns.joinToString("_") { it.name }}_idx"
+        "${table}_${idx.keyLabels.joinToString("_")}_idx"
 
     fun toSql(type: NeutralType): String = typeMapper.toSql(type)
 

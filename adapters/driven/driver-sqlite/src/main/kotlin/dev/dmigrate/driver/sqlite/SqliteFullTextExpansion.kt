@@ -43,7 +43,7 @@ internal object SqliteFullTextExpansion {
      * recognise them. The trigger names derive from it via [triggerNames].
      */
     fun ftsName(table: String, index: IndexDefinition): String =
-        index.name ?: "${table}_${index.columnNames.joinToString("_")}_idx"
+        index.name ?: "${table}_${index.keyLabels.joinToString("_")}_idx"
 
     /**
      * Why external-content FTS5 cannot be built for [index] on this base table (→ conservative

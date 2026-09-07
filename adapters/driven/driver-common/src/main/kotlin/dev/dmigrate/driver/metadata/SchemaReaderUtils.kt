@@ -84,11 +84,20 @@ object SchemaReaderUtils {
     /**
      * Builds multi-column UNIQUE constraints from index projections
      * (MySQL/SQLite style: unique indices with >1 column).
+     *
+     * **Ausdrucks-Schluessel schliessen das Heben aus.** Ein `UNIQUE INDEX …
+     * (UPPER(nm))` ist keine Constraint ueber einer Spalte `UPPER(nm)` — die
+     * gibt es nicht. Ihn zu heben schriebe der Generate-Pfad als
+     * `UNIQUE ("UPPER(nm)")` zurueck, also DDL auf eine Spalte, die es
+     * nirgends gibt. Er bleibt deshalb ein Index (mit `unique`), und das ist
+     * auch die treuere Abbildung.
      */
     fun buildMultiColumnUniqueFromIndices(
         indices: List<IndexProjection>,
     ): List<ConstraintDefinition> =
-        indices.filter { it.isUnique && it.columns.size > 1 && it.where == null }.map { idx ->
+        indices.filter {
+            it.isUnique && it.columns.size > 1 && it.where == null && it.expressionPositions.isEmpty()
+        }.map { idx ->
             ConstraintDefinition(name = idx.name, type = ConstraintType.UNIQUE, columns = idx.columns)
         }
 
@@ -109,8 +118,9 @@ object SchemaReaderUtils {
      * (MySQL/SQLite pattern).
      */
     fun singleColumnUniqueFromIndices(indices: List<IndexProjection>): Set<String> =
-        indices.filter { it.isUnique && it.columns.size == 1 && it.where == null }
-            .map { it.columns[0] }.toSet()
+        indices.filter {
+            it.isUnique && it.columns.size == 1 && it.where == null && it.expressionPositions.isEmpty()
+        }.map { it.columns[0] }.toSet()
 
     /**
      * Extracts single-column unique column names from named unique

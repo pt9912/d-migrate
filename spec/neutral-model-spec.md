@@ -327,6 +327,7 @@ tables:
           - customer_id
           - name: order_date
             direction: desc              # optional: asc | desc
+          - expression: "UPPER(status)"  # Ausdruck statt Spalte; schliesst `name` aus
         type: btree                      # btree | hash | gin | gist | brin | spgist | spatial | fulltext | bitmap
         unique: false
       - name: idx_orders_status

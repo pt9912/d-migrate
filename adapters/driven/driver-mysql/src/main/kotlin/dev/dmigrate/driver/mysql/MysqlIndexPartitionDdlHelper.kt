@@ -15,6 +15,7 @@ import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.ManualActionRequired
+import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
@@ -298,7 +299,7 @@ internal class MysqlIndexPartitionDdlHelper(
         "${index.type}|${index.unique}|${index.where.orEmpty()}|" + index.columns.joinToString(",") { it.toString() }
 
     private fun generatedIndexName(index: IndexDefinition, tableName: String): String =
-        index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+        index.name ?: "idx_${tableName}_${index.keyLabels.joinToString("_")}"
 
     /** Kollidiert der (explizite) Name eines gehobenen Index, eindeutig suffigieren + W131. Generierte Namen: weiter unten disambiguiert. */
     private fun uniqueLiftName(
@@ -517,9 +518,11 @@ internal class MysqlIndexPartitionDdlHelper(
 
     private fun renderIndexColumn(column: IndexColumn): String =
         buildString {
-            append(quoteIdentifier(column.name))
-            val prefixLength = column.prefixLength
-            if (prefixLength != null) append("($prefixLength)")
+            append(column.renderKey(quoteIdentifier))
+            if (column.expression == null) {
+                val prefixLength = column.prefixLength
+                if (prefixLength != null) append("($prefixLength)")
+            }
             val direction = column.direction
             if (direction != null) append(" ${direction.name}")
         }

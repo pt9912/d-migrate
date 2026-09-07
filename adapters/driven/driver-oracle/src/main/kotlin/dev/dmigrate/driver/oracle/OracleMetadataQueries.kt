@@ -29,17 +29,13 @@ internal object OracleMetadataQueries {
     )
 
     /**
-     * [indices] traegt die darstellbaren Indizes; [expressionIndexes] die Namen
-     * derer, deren Schluessel ein echter Ausdruck ist (`UPPER(nm)`). Fuer die
-     * gibt es im neutralen Modell noch keine Spaltendarstellung, und Oracle
-     * fuehrt an ihrer Stelle eine unsichtbare Systemspalte (`SYS_NC00006$`) --
-     * die als Spaltenname weiterzureichen ergaebe DDL, die auf keinem Ziel
-     * lauffaehig ist. Sie werden deshalb ausgelassen und gemeldet (R354),
-     * nicht stumm verfaelscht.
+     * Seit Slice 6b traegt [indices] auch Indizes ueber einem Ausdruck: das
+     * neutrale Modell kennt sie jetzt (`IndexColumn.expression`). Oracle
+     * fuehrt an ihrer Stelle eine unsichtbare Systemspalte (`SYS_NC00006$`);
+     * den echten Ausdruck liefert `ALL_IND_EXPRESSIONS`.
      */
     data class IndexScan(
         val indices: List<IndexProjection>,
-        val expressionIndexes: List<String> = emptyList(),
         /**
          * Namen der Indizes, die Oracle Text traegt (`INDEX_TYPE = DOMAIN`
          * mit `CTXSYS.CONTEXT`). Der Katalog fuehrt sie nicht als eigene
@@ -248,7 +244,6 @@ internal object OracleMetadataQueries {
         )
         val expressions = indexExpressions(session, schema, table)
         val indices = mutableListOf<IndexProjection>()
-        val expressionIndexes = mutableListOf<String>()
         val fullTextIndexes = mutableSetOf<String>()
         val foreignDomainIndexes = mutableListOf<String>()
         rows.groupBy { it.string("index_name") }
@@ -261,28 +256,27 @@ internal object OracleMetadataQueries {
                     return@forEach
                 }
                 if (domain == DomainKind.FULL_TEXT) fullTextIndexes += name
-                val columns = resolveIndexColumns(name, group, expressions)
-                if (columns == null) {
-                    expressionIndexes += name
-                } else {
-                    indices += IndexProjection(
-                        name = name,
-                        columns = columns,
-                        isUnique = group.first().string("uniqueness") == "UNIQUE",
-                        type = group.first().string("index_type"),
-                        directions = group.map { row ->
-                            if (row["descend"] as? String == "DESC") {
-                                dev.dmigrate.core.model.IndexSortDirection.DESC
-                            } else {
-                                null
-                            }
-                        },
-                    )
-                }
+                val keys = resolveIndexColumns(name, group, expressions)
+                indices += IndexProjection(
+                    name = name,
+                    columns = keys.map { it.text },
+                    isUnique = head.string("uniqueness") == "UNIQUE",
+                    type = head.string("index_type"),
+                    directions = group.map { row ->
+                        if (row["descend"] as? String == "DESC") {
+                            dev.dmigrate.core.model.IndexSortDirection.DESC
+                        } else {
+                            null
+                        }
+                    },
+                    expressionPositions = keys.withIndex()
+                        .filter { it.value.isExpression }
+                        .map { it.index }
+                        .toSet(),
+                )
             }
         return IndexScan(
             indices = indices,
-            expressionIndexes = expressionIndexes,
             fullTextIndexes = fullTextIndexes,
             foreignDomainIndexes = foreignDomainIndexes,
         )
@@ -327,25 +321,29 @@ internal object OracleMetadataQueries {
         (row.string("index_name") to (row["column_position"] as Number).toInt()) to expression
     }.toMap()
 
+    /** Ein aufgeloester Indexschluessel: entweder eine Spalte oder ein Ausdruck. */
+    data class ResolvedKey(val text: String, val isExpression: Boolean)
+
     /**
-     * Loest die Schluesselspalten eines Index auf; `null`, wenn mindestens eine
-     * davon ein echter Ausdruck ist (siehe [IndexScan.expressionIndexes]).
+     * Loest die Schluesselspalten eines Index auf. Ein Ausdruck, der nur aus
+     * einem zitierten Bezeichner besteht, IST die Spalte — so sieht ein
+     * DESC-Index von innen aus; alles andere bleibt ein Ausdruck.
      */
     private fun resolveIndexColumns(
         indexName: String,
         group: List<Map<String, Any?>>,
         expressions: Map<Pair<String, Int>, String>,
-    ): List<String>? {
-        val columns = group.map { row ->
-            val position = (row["column_position"] as Number).toInt()
-            val expression = expressions[indexName to position]
-                ?: return@map row.string("column_name")
-            // Ein Ausdruck, der nur aus einem zitierten Bezeichner besteht, IST
-            // die Spalte -- so sieht ein DESC-Index von innen aus. Alles andere
-            // ist ein echter Ausdruck und im Modell (noch) nicht darstellbar.
-            PLAIN_COLUMN_EXPRESSION.matchEntire(expression.trim())?.groupValues?.get(1)?.replace("\"\"", "\"")
+    ): List<ResolvedKey> = group.map { row ->
+        val position = (row["column_position"] as Number).toInt()
+        val expression = expressions[indexName to position]
+            ?: return@map ResolvedKey(row.string("column_name"), isExpression = false)
+        val plainColumn = PLAIN_COLUMN_EXPRESSION.matchEntire(expression.trim())
+            ?.groupValues?.get(1)?.replace("\"\"", "\"")
+        if (plainColumn != null) {
+            ResolvedKey(plainColumn, isExpression = false)
+        } else {
+            ResolvedKey(expression.trim(), isExpression = true)
         }
-        return if (columns.any { it == null }) null else columns.filterNotNull()
     }
 
     /**
@@ -353,7 +351,8 @@ internal object OracleMetadataQueries {
      * verdoppelt ein Anfuehrungszeichen im Namen (`A"B` steht als `"A""B"`),
      * deshalb erlaubt das Muster `""` innerhalb — sonst gaelte ein
      * DESC-Index auf einer so benannten Spalte faelschlich als
-     * Ausdrucks-Index und verschwaende mit R354.
+     * Ausdrucks-Index -- und der Reverse gaebe seinen Ausdruck statt der Spalte
+     * zurueck, obwohl es dieselbe Spalte ist.
      */
     private val PLAIN_COLUMN_EXPRESSION = Regex("""^"((?:[^"]|"")+)"$""")
 

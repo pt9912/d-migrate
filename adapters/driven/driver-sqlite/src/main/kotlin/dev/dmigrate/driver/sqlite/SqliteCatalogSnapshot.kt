@@ -104,7 +104,7 @@ internal data class SqliteCatalogSnapshot(
         private fun anonIndexName(
             table: String,
             idx: dev.dmigrate.core.model.IndexDefinition,
-        ): String = "${table}_${idx.columns.joinToString("_") { it.name }}_idx"
+        ): String = "${table}_${idx.keyLabels.joinToString("_")}_idx"
 
         /**
          * Plan-2 §A.2: lift a port-level [SqliteLiveCatalog] (read by

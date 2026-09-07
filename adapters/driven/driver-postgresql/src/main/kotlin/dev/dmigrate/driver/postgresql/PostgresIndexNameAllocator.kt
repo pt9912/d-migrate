@@ -33,7 +33,7 @@ internal class PostgresIndexNameAllocator {
      */
     fun namesFor(tableName: String, indices: List<IndexDefinition>): List<String> {
         val baseNames = indices.map { index ->
-            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+            index.name ?: "idx_${tableName}_${index.keyLabels.joinToString("_")}"
         }
         val baseCounts = baseNames.groupingBy { it }.eachCount()
         val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()

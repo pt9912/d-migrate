@@ -201,13 +201,31 @@ private fun parseIndexColumns(node: JsonNode?): List<IndexColumn> {
     return node.map { columnNode ->
         when {
             columnNode.isTextual -> IndexColumn(columnNode.asText())
+            // Ein Ausdruck traegt keinen Spaltennamen; `expression` und `name`
+            // schliessen einander aus.
+            columnNode.isObject && columnNode.has("expression") -> {
+                require(!columnNode.has("name")) {
+                    "Index column carries both 'name' and 'expression'; they are mutually exclusive"
+                }
+                // Still zu verwerfen waere die schlechtere Antwort: der
+                // Anwender haette eine Prefix-Laenge geschrieben und bekaeme
+                // einen Index ohne sie, ohne dass es irgendwo steht.
+                require(!columnNode.has("prefix_length")) {
+                    "Index column carries 'prefix_length' on an expression; it applies to columns only"
+                }
+                IndexColumn.expression(
+                    sql = columnNode.requiredText("expression"),
+                    direction = columnNode.optionalText("direction")?.toIndexSortDirection(),
+                )
+            }
             columnNode.isObject -> IndexColumn(
                 name = columnNode.requiredText("name"),
                 direction = columnNode.optionalText("direction")?.toIndexSortDirection(),
                 prefixLength = columnNode.optionalInt("prefix_length"),
             )
             else -> throw IllegalArgumentException(
-                "Index columns must be strings or objects with 'name', optional 'direction' and 'prefix_length'"
+                "Index columns must be strings or objects with either 'name' (plus optional 'direction' " +
+                    "and 'prefix_length') or 'expression' (plus optional 'direction')"
             )
         }
     }

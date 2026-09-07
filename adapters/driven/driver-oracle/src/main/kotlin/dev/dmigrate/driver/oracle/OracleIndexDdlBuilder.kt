@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.isSpatialGeometryIndex
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.ManualActionRequired
+import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 
@@ -29,7 +30,7 @@ internal class OracleIndexDdlBuilder(
      * treffen als das `CREATE INDEX` vergeben hat.
      */
     fun effectiveName(tableName: String, index: IndexDefinition): String =
-        index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+        index.name ?: "idx_${tableName}_${index.keyLabels.joinToString("_")}"
 
     fun render(tableName: String, table: TableDefinition, index: IndexDefinition, unkeyableColumns: Set<String>): DdlStatement {
         val indexName = effectiveName(tableName, index)
@@ -101,7 +102,7 @@ internal class OracleIndexDdlBuilder(
 
     private fun renderIndexColumn(column: IndexColumn): String =
         buildString {
-            append(quoteIdentifier(column.name))
+            append(column.renderKey(quoteIdentifier))
             column.direction?.let { append(" ${it.name}") }
         }
 

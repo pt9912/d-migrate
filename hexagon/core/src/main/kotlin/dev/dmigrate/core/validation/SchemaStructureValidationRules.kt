@@ -70,6 +70,11 @@ internal object SchemaStructureValidationRules {
                         "Index '$indexName' contains an empty column name",
                         "tables.$tableName.indices",
                     )
+                    // Ein Ausdrucks-Schluessel nennt keine Spalte; ihn gegen die
+                    // Spaltenliste zu pruefen lehnte JEDEN solchen Index ab --
+                    // und zwar vor dem Generator, also unabhaengig vom Ziel.
+                } else if (column.expression != null) {
+                    continue
                 } else if (column.name !in table.columns) {
                     val indexName = index.name ?: index.columns.joinToString(",")
                     errors += ValidationError(

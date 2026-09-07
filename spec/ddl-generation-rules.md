@@ -556,12 +556,13 @@ Besonderheiten:
   zurück. Ein Bitmap-Index ist in Oracle **nie eindeutig** — `UNIQUE BITMAP`
   ist keine gültige Syntax (`ORA-00968`); ein als `unique` deklarierter
   Bitmap-Index wird deshalb als eindeutiger B-Tree gerendert, mit W102.
-- **Function-based-Indizes** kennt das neutrale Modell nicht. Oracle führt
-  an der Stelle des Ausdrucks eine unsichtbare Systemspalte (`SYS_NC…$`);
-  die als Spaltenname zu übernehmen ergäbe DDL, die auf keinem Ziel läuft.
-  Der Reverse lässt einen solchen Index deshalb aus und meldet `R354`.
-  Ausgenommen ist der Sonderfall, in dem der „Ausdruck" nur der
-  Spaltenname selbst ist: **ein absteigender Index (`… DESC`) ist in Oracle
+- **Function-based-Indizes** trägt das neutrale Modell als
+  Ausdrucks-Schlüssel (`expression`, Abschnitt 5.1a). Oracle führt an der
+  Stelle des Ausdrucks eine unsichtbare Systemspalte (`SYS_NC…$`); den
+  Ausdruckstext liefert `ALL_IND_EXPRESSIONS`, und der Reverse setzt ihn
+  dort ein — die Systemspalte als Spaltenname zu übernehmen ergäbe DDL, die
+  auf keinem Ziel läuft. Ein Sonderfall bleibt der, in dem der „Ausdruck"
+  nur der Spaltenname selbst ist: **ein absteigender Index (`… DESC`) ist in Oracle
   intern function-based** (`INDEX_TYPE = FUNCTION-BASED NORMAL`), sein
   Ausdruck ist `"SPALTE"`. Der wird auf die Spalte zurückgefaltet und
   behält seine Richtung, statt als Ausdruck zu gelten.
@@ -697,6 +698,48 @@ CREATE INDEX "<name>" ON "<table>" ("<col1>" DESC, "<col2>" ASC);
 Ohne explizite Richtung wird nur der Identifier gerendert. Reverse-Reader
 normalisieren aufsteigende/default Metadaten zu keiner expliziten Richtung und
 transportieren `DESC` verlustarm.
+
+### 5.1a Ausdrucks-Schlüssel
+
+Ein Indexschlüssel ist entweder eine Spalte oder ein **SQL-Ausdruck**:
+
+```yaml
+columns:
+  - name: nm
+  - expression: "UPPER(nm)"
+    direction: desc
+```
+
+`expression` und `name` schließen einander aus, und `prefix_length` gilt nur
+für Spalten. Wie `where`, der Rumpf einer Sicht und der Ausdruck einer
+CHECK-Constraint ist der Text **roh** — ein Ausdruck lässt sich nicht in
+Bausteine zerlegen, ohne eine eigene Sprache zu erfinden. Er wird deshalb
+wortgleich gerendert und **nie als Bezeichner gequotet**; gequotet wäre er
+ein Spaltenname, den es nicht gibt.
+
+| Dialekt | Rendern |
+|---|---|
+| PostgreSQL | `(UPPER(nm))` — nativ |
+| SQLite | `(UPPER(nm))` — nativ |
+| Oracle | `(UPPER(nm))` — nativ |
+| MySQL | `((UPPER(nm)))` — **zwei** Klammernpaare; einfach geklammert liest MySQL 8 den Ausdruck als Spaltenliste und lehnt ab (live gemessen) |
+| SQL Server | nicht renderbar → `E057`; T-SQL indiziert nur eine **persistierte berechnete Spalte**, und die ist eine Änderung an der Tabelle, nicht am Index |
+
+Der Text wird **nicht** gegen Ausbruchszeichen geprüft — dieselbe Haltung wie
+bei `where`, dem Rumpf einer Sicht und dem Ausdruck einer CHECK-Constraint:
+eine Schemadatei ist eine Beschreibung des Eigentümers, kein Nutzereingabe.
+(Partitionsgrenzen behandelt `PartitionLiteralGuard` strenger, weil sie aus
+einem **Reverse** stammen können, also aus einer fremden Datenbank.) In einen
+Bezeichner geht der Ausdruck nie roh ein: für die Namensbildung wird er auf
+Buchstaben, Ziffern und Unterstriche verkürzt.
+
+Ein Ausdrucks-Schlüssel zählt **nicht** als Spalte: Typ-Nachschläge
+(Geometrie, LOB) und die Volltext-Quellspalten sehen ihn nicht. Ein
+**eindeutiger** Ausdrucks-Index wird beim Zurücklesen auch nicht zu einer
+UNIQUE-Constraint gehoben — die stünde über einer Spalte, die es nicht gibt;
+er bleibt ein Index mit `unique`. Für die Namensbildung eines anonymen
+Index wird er auf bezeichner-taugliche Zeichen verkürzt (`UPPER(nm)` →
+`UPPER_nm`); Spaltennamen bleiben dabei wortgleich.
 
 ### 5.2 Index-Typen pro Dialekt
 

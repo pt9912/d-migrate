@@ -2439,6 +2439,31 @@ Beim Zurücklesen erkennt `schema reverse` diese Indizes wieder. Ein
 Domain-Index einer anderen Art — etwa ein räumlicher — wird ausgelassen und
 mit `R357` gemeldet, statt als gewöhnlicher Index missdeutet zu werden.
 
+**Kann ich einen Index über einem Ausdruck beschreiben?**
+Ja. Ein Indexschlüssel ist entweder eine Spalte oder ein Ausdruck:
+
+```yaml
+indices:
+  - name: ix_people_upper
+    columns:
+      - expression: "UPPER(name)"
+```
+
+PostgreSQL, MySQL, SQLite und Oracle legen ihn nativ an. Beim Zurücklesen
+mit `schema reverse` erkennen ihn **PostgreSQL, Oracle und MySQL**; für
+**SQLite** ist das noch offen — dort kommt ein Index über einem Ausdruck
+unvollständig zurück, weil der Katalog den Ausdruckstext nicht führt (er
+steht nur im ursprünglichen `CREATE`-Text). **SQL Server kann es gar
+nicht** — T-SQL
+indiziert nur eine persistierte berechnete Spalte, und die anzulegen wäre
+eine Änderung an Ihrer Tabelle, nicht am Index. Für SQL Server als Ziel
+meldet d-migrate deshalb `E057` und legt den Index nicht an.
+
+Der Ausdruck wird wortgleich übernommen. Er muss also auf dem Ziel gültig
+sein: `UPPER(name)` kennen alle vier, eine dialektspezifische Funktion
+dagegen nicht. Ein Ausdruck zählt nicht als Spalte — er taucht in
+Spaltenlisten nicht auf, und ein `prefix_length` gilt für ihn nicht.
+
 **Was passiert mit Oracle-Bitmap-Indizes?**
 Sie bleiben erhalten. `schema reverse` liest sie als eigenen Indextyp, und
 `schema generate` legt sie auf einem Oracle-Ziel wieder als
@@ -2446,11 +2471,8 @@ Sie bleiben erhalten. `schema reverse` liest sie als eigenen Indextyp, und
 Index über denselben Spalten — die Meldung `W102` sagt Ihnen, wo das
 geschehen ist.
 
-Ein Index über einem **Ausdruck** (etwa `UPPER(name)`) lässt sich dagegen
-nicht übertragen; `schema reverse` lässt ihn aus und meldet ihn mit `R354`,
-damit Sie ihn auf dem Ziel von Hand nachziehen können. Ein absteigender
-Index (`… DESC`) ist davon nicht betroffen: er kommt mitsamt seiner
-Sortierrichtung zurück.
+Ein absteigender Index (`… DESC`) kommt mitsamt seiner Sortierrichtung
+zurück, obwohl Oracle ihn intern als Ausdruck führt.
 
 **Brauche ich ein JDK?**
 Nein, wenn Sie das Docker-Image verwenden. Für die Installation ohne Docker
@@ -2981,6 +3003,7 @@ Spalten-Fremdschlüssel über `references`:
 | `name` | Indexname |
 | `columns` | Liste aus Spaltennamen **oder** `{ name, direction: asc\|desc, prefix_length: n }` |
 | `type` | `btree` (Default), `hash`, `gin`, `gist`, `brin`, `spgist`, `spatial`, `fulltext`, `bitmap` |
+| `columns[].expression` | SQL-Ausdruck statt eines Spaltennamens; schließt `name` aus, `prefix_length` gilt nicht |
 | `unique` | `true` für Unique-Index |
 | `where` | Prädikat für Partial-Index (Raw-SQL) |
 | `include_columns` | Nicht-Schlüsselspalten eines abdeckenden Index (`INCLUDE`) |

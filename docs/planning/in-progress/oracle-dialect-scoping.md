@@ -2,14 +2,14 @@
 
 > **Status:** In Progress (Stand 2026-09-06). Alle fünf
 > Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0,
-> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e), 6a, 7 und 8.** `schema migrate` ist damit
+> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e), 6 (6a+6b), 7 und 8.** `schema migrate` ist damit
 > für Oracle nutzbar, der Sample-DB-Harness fährt Pagila in **beide**
 > Richtungen, Bitmap-Indizes gehen über alle fünf Dialekte durch, und
 > partitionierte Tabellen entstehen und werden zurückgelesen, und
-> Volltext-Indizes laufen über Oracle Text. Offen sind **6b** (Indizes über
-> echten Ausdrücken) und die Ausbau-Slices **9–11** (Routinen/Trigger,
-> Materialized Views, Profiling); `DialectCommandGate` führt nur noch
-> `data profile`.
+> Volltext-Indizes laufen über Oracle Text, und Indizes über Ausdrücken sind
+> im neutralen Modell darstellbar. Offen sind die Ausbau-Slices **9–11**
+> (Routinen/Trigger, Materialized Views, Profiling); `DialectCommandGate`
+> führt nur noch `data profile`.
 >
 > Die datierten Status-Blöcke unten sind **Momentaufnahmen** und werden nicht
 > rückwirkend umgeschrieben — was dort „bis Slice 5 gesperrt" heißt, war zum
@@ -775,7 +775,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **5e-2** ✅ | Verdrahtung: `MigrateRendererRegistry`, `DialectCommandGate`, CHECK-Preflight-Sonde, `ColumnGeneration`-Kanonisierung im Fingerprint, `SequenceCapabilityDefaults` | **`schema migrate` ist nutzbar** |
 | **5e-3** ✅ | Cross-Dialekt-Matrix-Sweep-Beitritt, Live-Round-Trip, Handbücher (der CLI-E2E kam bereits mit 5e-2) | Matrix-Abdeckung + Live-Beleg + Doku |
 | **6a** ✅ | Bitmap-Indizes als eigener neutraler Typ: Reverse (`INDEX_TYPE`), Generate + Diff (`CREATE BITMAP INDEX`), Rückfall + `W102` auf den vier anderen Dialekten, Wire-Format (`schema.json`, Parser). Dazu die Rückfaltung des DESC-Index, der in Oracle intern function-based ist | Bitmap-Treue über alle Dialekte |
-| **6b** | Indizes über echten Ausdrücken (`UPPER(nm)`): Darstellung im neutralen Modell (`IndexColumn` trägt heute keinen Ausdruck), Generate je Dialekt (PG/SQLite/MySQL 8 können es nativ, MSSQL braucht eine berechnete Spalte). Bis dahin lässt der Reverse sie aus und meldet `R354` | volle Index-Treue |
+| **6b** ✅ | Indizes über echten Ausdrücken: `IndexColumn.expression` im neutralen Modell samt Wire-Format; Generate in allen fünf Dialekten (vier nativ, SQL Server `E057`); Reverse in Oracle **und** PostgreSQL | volle Index-Treue |
 | **7** ✅ | Partitionierung Range/List/Hash: Generate, Reverse und Diff über einen geteilten Builder; Grenzwert-Umsetzung (`TO_DATE`) und -Rückfaltung; Fingerabdruck-Projektion für die Felder, die Oracle nicht führt. Composite und INTERVAL werden gemeldet (`R355`/`R356`), nicht dargestellt | Partitionstabellen im Round-Trip |
 | **8** ✅ | Volltext: Oracle Text (`CTXSYS.CONTEXT`) für Generate, Reverse und Diff; `SYNC (ON COMMIT)` verpflichtend; mehrspaltig abgelehnt (`E057`); fremde Domain-Indizes gemeldet (`R357`) | Volltext-Indizes Generate + Reverse |
 | **9** | Routinen/Trigger (standalone PL/SQL, `CREATE OR REPLACE`) | Routinen-Migration |
@@ -924,7 +924,7 @@ entfernt).
 - **Reverse:** `OracleMetadataQueries.scanIndexes` liest `INDEX_TYPE` mit und
   löst `ALL_IND_EXPRESSIONS` auf. Ein Ausdruck, der nur aus einem zitierten
   Bezeichner besteht, ist die Spalte selbst und wird zurückgefaltet; jeder
-  andere macht den Index undarstellbar → ausgelassen, `R354`.
+  andere ist ein Ausdruck; seit 6b traegt ihn das Modell.
 - **Neutrales Modell:** `IndexType.BITMAP`, dazu `spec/schema.json` und
   `toIndexType()`. Beide Listen waren handgepflegt — ein neuer Enum-Wert war
   schreibbar, aber nicht lesbar. Zwei erschöpfende Tests über
@@ -938,12 +938,78 @@ entfernt).
   lässt es weg, weil sie ohne ihre Zugriffsmethode nichts mehr leisten — ein
   Bitmap-Index dagegen liegt über gewöhnlichen Spalten.
 
-### Was 6b offen lässt
+### Was 6b gebracht hat
 
-Indizes über echten Ausdrücken. Bis dahin sind sie nicht still verloren,
-sondern gemeldet (`R354`). PostgreSQL, SQLite und MySQL 8 können sie nativ,
-SQL Server braucht eine berechnete Spalte — der Schnitt liegt also im
-Generate-Pfad, nicht im Reverse.
+`IndexColumn` traegt jetzt einen Ausdruck (`expression`), wie
+`IndexDefinition.where` rohen SQL-Text. Entscheidend war die Trennung von
+`columnNames` und `keyLabels`: ein Ausdruck darf **nicht** als Spaltenname
+gelesen werden — genau die Fehlerklasse, die 6a im Oracle-Reverse gefunden
+hat. Typ-Nachschläge sehen ihn deshalb nicht; für die Namensbildung eines
+anonymen Index wird er verkürzt.
+
+Zwei Annahmen hat der Live-Test widerlegt bzw. bestätigt:
+
+- **MySQL** braucht wirklich zwei Klammernpaare; einfach geklammert lehnt
+  der Server ab (beide Richtungen gemessen).
+- **PostgreSQL verlor einen Ausdrucks-Index bisher vollständig.** Die
+  Abfrage verband `pg_attribute` über `attnum`, und eine Ausdrucks-Position
+  trägt dort `0` — der INNER JOIN liess den ganzen Index wegfallen, ohne
+  Fehler (`null` statt eines Index, live gemessen). Da PostgreSQL der
+  Herkunftsdialekt ist, aus dem ein solcher Index am ehesten stammt, ist der
+  Lesepfad hier mitgeändert worden statt vertagt.
+
+SQL Server bleibt außen vor: T-SQL indiziert nur eine persistierte
+berechnete Spalte, und die anzulegen wäre eine Änderung an der Tabelle statt
+am Index — abgelehnt mit `E057`, nicht geraten.
+
+### Was die unabhängige Prüfung gefunden hat
+
+Ein Blocker und vier ernste Befunde — der Blocker ist der lehrreichste:
+
+**Das Feature war über die CLI gar nicht erreichbar.** Die
+Schema-Validierung prüft jeden Indexschlüssel gegen die Spaltenliste, und
+ein Ausdruck steht dort nie — `E005`, Exit 3, **vor** jedem Generator. Grün
+war der Bau, weil sämtliche neuen Tests die Generatoren direkt aufriefen und
+keiner den Runner. Das Beispiel aus dem Handbuch wäre nicht ausführbar
+gewesen.
+
+Die übrigen vier haben eine gemeinsame Ursache: die Naht wurde im **Modell**
+gezogen, aber nicht überall dort nachgezogen, wo das Modell gelesen wird.
+
+- **Jeder Dialekt hat zwei Index-Renderer** — einen für `schema generate`,
+  einen für den Diff-Pfad. Umgestellt war nur der erste; der zweite quotete
+  den Ausdruck als Bezeichner (PG, SQLite, MySQL) und legte damit einen
+  Index auf eine Spalte, die es nicht gibt. Es gibt jetzt **eine** geteilte
+  Quelle (`renderKey`).
+- **Vier weitere Stellen bilden anonyme Indexnamen** im Diff-Pfad und trugen
+  den rohen Ausdruck in den Bezeichner.
+- **Ein eindeutiger Ausdrucks-Index ging verloren.** Die Hebe-Helfer lesen
+  `IndexProjection.columns` roh: einspaltig wurde er herausgefiltert (als
+  „schon gehoben"), mehrspaltig zu einer UNIQUE-Constraint über dem
+  Ausdruckstext. `CREATE UNIQUE INDEX … (UPPER(nm))` ist ein verbreitetes
+  Oracle-Idiom.
+- **MySQLs Reverse stürzte ab** (`COLUMN_NAME` ist bei einem funktionalen
+  Schlüssel `NULL`, blind gecastet) — ein bestehender Fehler, den das
+  Handbuch aber als funktionierend beschrieben hätte.
+
+Zwei Messungen kamen aus der Prüfung und haben das Rendern verändert:
+PostgreSQL **verlangt** Klammern für jeden Ausdruck, der kein bloßer
+Funktionsaufruf ist (`(nm || 'x')` ist ein Syntaxfehler), und Oracle nimmt
+die geklammerte Form ebenfalls an und gibt sie ohne Klammern zurück. Damit
+gilt eine Regel für alle vier statt einer MySQL-Sonderbehandlung.
+
+### Was offen bleibt (6b)
+
+- **Der Ausdruckstext driftet.** PostgreSQL gibt `upper(nm)` als
+  `upper(nm::text)` zurück, Oracle normiert Klammern und Leerzeichen weg.
+  Der Fingerabdruck hasht den Text, also konvergiert ein wiederholter
+  `migrate --execute` nicht. Ausblenden hilft hier **nicht** — der Ausdruck
+  ist die Aussage des Index; es braucht eine Kanonisierung, und das ist ein
+  eigener Entwurf:
+  [`index-expression-text-drift.md`](../open/index-expression-text-drift.md).
+- **SQLite liest sie unvollständig zurück.** Der Katalog führt den
+  Ausdruckstext nicht; er steht nur im ursprünglichen `CREATE`-Text:
+  [`sqlite-expression-index-reverse.md`](../open/sqlite-expression-index-reverse.md).
 
 ## Slice 7 im Detail — Partitionierung
 

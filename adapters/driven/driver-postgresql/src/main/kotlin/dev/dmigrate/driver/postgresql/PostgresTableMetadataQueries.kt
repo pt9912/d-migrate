@@ -185,10 +185,22 @@ internal object PostgresTableMetadataQueries {
                    -- `(a) INCLUDE (b)` als zusammengesetzter Index `(a, b)`
                    -- zurueck -- bei `unique` mit anderer Aussage darueber, welche
                    -- Zeilen erlaubt sind.
-                   array_agg(a.attname ORDER BY k.n)
-                       FILTER (WHERE k.n <= ix.indnkeyatts) AS columns,
-                   array_agg(a.attname ORDER BY k.n)
-                       FILTER (WHERE k.n > ix.indnkeyatts) AS include_columns,
+                   -- `indkey` traegt fuer eine AUSDRUCKS-Position eine 0, zu der
+                   -- es keine Spalte gibt. Ueber einen INNER JOIN fiel eine solche
+                   -- Position still weg -- und ein Index, dessen Schluessel NUR
+                   -- ein Ausdruck ist, verschwand ganz (live gemessen). Der
+                   -- Ausdruckstext steht in `pg_get_indexdef` je Position.
+                   array_agg(
+                       COALESCE(a.attname, pg_get_indexdef(ix.indexrelid, k.n::int, true))
+                       ORDER BY k.n
+                   ) FILTER (WHERE k.n <= ix.indnkeyatts) AS columns,
+                   array_agg(
+                       CASE WHEN a.attname IS NULL THEN 'y' ELSE 'n' END ORDER BY k.n
+                   ) FILTER (WHERE k.n <= ix.indnkeyatts) AS expression_flags,
+                   array_agg(
+                       COALESCE(a.attname, pg_get_indexdef(ix.indexrelid, k.n::int, true))
+                       ORDER BY k.n
+                   ) FILTER (WHERE k.n > ix.indnkeyatts) AS include_columns,
                    array_agg(
                        CASE WHEN (ix.indoption[k.n - 1] & 1) = 1 THEN 'DESC' ELSE NULL END
                        ORDER BY k.n
@@ -202,7 +214,7 @@ internal object PostgresTableMetadataQueries {
             JOIN pg_namespace n ON n.oid = t.relnamespace
             JOIN pg_am am ON am.oid = i.relam
             CROSS JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, n)
-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+            LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND k.attnum <> 0
             WHERE n.nspname = ? AND t.relname = ?
               AND NOT ix.indisprimary
               AND NOT EXISTS (
@@ -222,6 +234,8 @@ internal object PostgresTableMetadataQueries {
                 directions = parseDirectionArrayColumn(row["directions"]),
                 where = row["predicate"] as? String,
                 includeColumns = parseArrayColumn(row["include_columns"]),
+                expressionPositions = parseArrayColumn(row["expression_flags"])
+                    .withIndex().filter { it.value == "y" }.map { it.index }.toSet(),
             )
         }
     }

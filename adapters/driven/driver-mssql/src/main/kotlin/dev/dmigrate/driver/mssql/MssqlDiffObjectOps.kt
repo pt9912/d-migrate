@@ -106,7 +106,7 @@ internal object MssqlDiffObjectOps {
         if (statement.sql.isBlank()) {
             ctx.skip(
                 op,
-                "Index '${index.name ?: index.columnNames.joinToString("_")}' on '$table' is not renderable " +
+                "Index '${index.name ?: index.keyLabels.joinToString("_")}' on '$table' is not renderable " +
                     "in T-SQL: " + statement.notes.joinToString("; ") { it.message },
                 code = "DIALECT_UNSUPPORTED_OPERATION",
             )

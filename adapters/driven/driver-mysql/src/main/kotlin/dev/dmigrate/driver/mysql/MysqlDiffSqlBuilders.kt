@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.driver.renderKey
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
@@ -135,7 +136,7 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             ""
         }
         val cols = idx.columns.joinToString(", ") { col ->
-            quote(col.name) +
+            col.renderKey(::quote) +
                 (col.prefixLength?.let { "($it)" } ?: "") +
                 (col.direction?.let { " ${it.name}" } ?: "")
         }
@@ -166,7 +167,7 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
     }
 
     fun anonIndexName(table: String, idx: IndexDefinition): String =
-        "${table}_${idx.columns.joinToString("_") { it.name }}_idx"
+        "${table}_${idx.keyLabels.joinToString("_")}_idx"
 
     fun toSql(type: NeutralType): String = typeMapper.toSql(type)
 

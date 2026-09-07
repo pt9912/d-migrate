@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.SqlIdentifiers
 
 class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), DeferredForeignKeyDdlSupport {
@@ -321,7 +322,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
     private fun renderIndexColumn(column: IndexColumn): String =
         buildString {
             val direction = column.direction
-            append(quoteIdentifier(column.name))
+            append(column.renderKey(::quoteIdentifier))
             if (direction != null) append(" ${direction.name}")
         }
 

@@ -360,9 +360,9 @@ mehr sicher bindbar. `TIMESTAMP WITH TIME ZONE` liest als Standard-
   **anderen** Indexart (räumlich, benutzereigen) wird ausgelassen und mit
   `R357` gemeldet — ihn als B-Tree zu lesen ergäbe im Ziel einen Index, der
   etwas anderes tut.
-- Indizes über einem echten Ausdruck (`UPPER(nm)`) haben im neutralen
-  Modell keine Entsprechung; sie werden ausgelassen und mit `R354`
-  gemeldet. Bitmap-Indizes dagegen werden als eigener Typ gelesen
+- Indizes über einem echten Ausdruck (`UPPER(nm)`) kommen als
+  Ausdrucks-Schlüssel zurück (`ALL_IND_EXPRESSIONS`), nicht als die
+  unsichtbare Systemspalte. Bitmap-Indizes werden als eigener Typ gelesen
   (`INDEX_TYPE` enthält `BITMAP`), und ein absteigender Index — in Oracle
   intern ebenfalls function-based — wird auf seine Spalte zurückgefaltet.
 - **INTERVAL-Partitionierung** (`PARTITION BY RANGE … INTERVAL (…)`) hat im
