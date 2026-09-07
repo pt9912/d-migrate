@@ -236,7 +236,27 @@ internal class TableComparator(
         val singleColumnUnique: Set<String>,
         val singleColumnForeignKeys: Map<String, ForeignKeySignature>,
         val multiColumnConstraints: Map<String, ConstraintDefinition>,
+        /**
+         * Der Katalog- bzw. Deklarationsname eines einspaltigen Constraints,
+         * sofern die Seite ihn traegt — er kommt aus einem **benannten**
+         * Tabellen-Constraint.
+         *
+         * Ein `DropConstraint` braucht ihn: kein Dialekt ausser Oracle kennt
+         * eine Form, die einen Constraint ueber seine Spalte statt ueber
+         * seinen Namen abbaut. Ohne ihn erfand der Vergleich einen Namen
+         * (`_unique_<spalte>`), und das gerenderte `ALTER TABLE … DROP
+         * CONSTRAINT` traf an keiner echten Datenbank etwas.
+         *
+         * Leer bleibt er, wo die Seite den Constraint als Spalteneigenschaft
+         * fuehrt (`column.unique`, `column.references`) — dort gibt es im
+         * Modell keinen Namen. Was daraus folgt, steht in
+         * `docs/planning/open/single-column-constraint-synthetic-name.md`.
+         */
+        val singleColumnNames: Map<SingleColumnKey, String> = emptyMap(),
     )
+
+    /** Spalte plus Art — ein UNIQUE und ein FK derselben Spalte sind zweierlei. */
+    private data class SingleColumnKey(val column: String, val type: ConstraintType)
 
     private data class ForeignKeySignature(
         val column: String, val refTable: String, val refColumn: String,
@@ -247,6 +267,7 @@ internal class TableComparator(
         val singleUnique = mutableSetOf<String>()
         val singleFk = mutableMapOf<String, ForeignKeySignature>()
         val multi = mutableMapOf<String, ConstraintDefinition>()
+        val names = mutableMapOf<SingleColumnKey, String>()
 
         for ((colName, col) in table.columns) {
             if (col.unique) singleUnique.add(colName)
@@ -257,8 +278,11 @@ internal class TableComparator(
 
         for (constraint in table.constraints) {
             when {
-                constraint.type == ConstraintType.UNIQUE && constraint.columns?.size == 1 ->
-                    singleUnique.add(constraint.columns.first())
+                constraint.type == ConstraintType.UNIQUE && constraint.columns?.size == 1 -> {
+                    val colName = constraint.columns.first()
+                    singleUnique.add(colName)
+                    names[SingleColumnKey(colName, ConstraintType.UNIQUE)] = constraint.name
+                }
 
                 constraint.type == ConstraintType.FOREIGN_KEY && constraint.columns?.size == 1 &&
                     constraint.references != null && constraint.references.columns.size == 1 -> {
@@ -272,6 +296,7 @@ internal class TableComparator(
                         multi[constraint.name] = constraint
                     } else {
                         singleFk[colName] = sig
+                        names[SingleColumnKey(colName, ConstraintType.FOREIGN_KEY)] = constraint.name
                     }
                 }
 
@@ -282,7 +307,7 @@ internal class TableComparator(
             }
         }
 
-        return NormalizedConstraints(singleUnique, singleFk, multi)
+        return NormalizedConstraints(singleUnique, singleFk, multi, names)
     }
 
     // ── Constraints ──────────────────────────────
@@ -298,20 +323,22 @@ internal class TableComparator(
         val changed = mutableListOf<ValueChange<ConstraintDefinition>>()
 
         for (col in (right.singleColumnUnique - left.singleColumnUnique).sorted())
-            added.add(syntheticUniqueConstraint(col))
+            added.add(syntheticUniqueConstraint(col, right))
+        // Beim Entfernen zaehlt der Name der LINKEN Seite: sie beschreibt, was
+        // in der Datenbank steht, und genau das wird abgebaut.
         for (col in (left.singleColumnUnique - right.singleColumnUnique).sorted())
-            removed.add(syntheticUniqueConstraint(col))
+            removed.add(syntheticUniqueConstraint(col, left))
 
         val fkLeftCols = left.singleColumnForeignKeys.keys
         val fkRightCols = right.singleColumnForeignKeys.keys
         for (col in (fkRightCols - fkLeftCols).sorted())
-            added.add(syntheticFkConstraint(right.singleColumnForeignKeys.getValue(col)))
+            added.add(syntheticFkConstraint(right.singleColumnForeignKeys.getValue(col), right))
         for (col in (fkLeftCols - fkRightCols).sorted())
-            removed.add(syntheticFkConstraint(left.singleColumnForeignKeys.getValue(col)))
+            removed.add(syntheticFkConstraint(left.singleColumnForeignKeys.getValue(col), left))
         for (col in (fkLeftCols intersect fkRightCols).sorted()) {
             val l = left.singleColumnForeignKeys.getValue(col)
             val r = right.singleColumnForeignKeys.getValue(col)
-            if (l != r) changed.add(ValueChange(syntheticFkConstraint(l), syntheticFkConstraint(r)))
+            if (l != r) changed.add(ValueChange(syntheticFkConstraint(l, left), syntheticFkConstraint(r, right)))
         }
 
         val multiLeftNames = left.multiColumnConstraints.keys
@@ -329,12 +356,28 @@ internal class TableComparator(
         return ConstraintDiffResult(added, removed, changed)
     }
 
-    private fun syntheticUniqueConstraint(column: String) = ConstraintDefinition(
-        name = "_unique_$column", type = ConstraintType.UNIQUE, columns = listOf(column),
+    /**
+     * Der Name, unter dem die Seite den Constraint fuehrt — oder ein
+     * gebildeter, wenn sie ihn als Spalteneigenschaft fuehrt und im Modell
+     * keiner steht.
+     */
+    private fun nameFor(
+        side: NormalizedConstraints,
+        column: String,
+        type: ConstraintType,
+        fallback: String,
+    ): String = side.singleColumnNames[SingleColumnKey(column, type)] ?: fallback
+
+    private fun syntheticUniqueConstraint(column: String, side: NormalizedConstraints) = ConstraintDefinition(
+        name = nameFor(side, column, ConstraintType.UNIQUE, "_unique_$column"),
+        type = ConstraintType.UNIQUE,
+        columns = listOf(column),
     )
 
-    private fun syntheticFkConstraint(sig: ForeignKeySignature) = ConstraintDefinition(
-        name = "_fk_${sig.column}", type = ConstraintType.FOREIGN_KEY, columns = listOf(sig.column),
+    private fun syntheticFkConstraint(sig: ForeignKeySignature, side: NormalizedConstraints) = ConstraintDefinition(
+        name = nameFor(side, sig.column, ConstraintType.FOREIGN_KEY, "_fk_${sig.column}"),
+        type = ConstraintType.FOREIGN_KEY,
+        columns = listOf(sig.column),
         references = ConstraintReferenceDefinition(sig.refTable, listOf(sig.refColumn), sig.onDelete, sig.onUpdate),
     )
 
