@@ -121,6 +121,12 @@ anwendet). Dafuer gibt es den Praeferenz-Mechanismus
 rohen SQL-Feld als Warnung statt als Aenderung behandeln — deklariert, nicht
 geraten.
 
+## Stand
+
+Der Entwurf liegt als [ADR 0053](../../adr/0053-vergleich-rohen-sql-texts.md)
+(`proposed`) vor: Server-Form gegen Server-Form, Herkunft fuer die Planung,
+kein Parser. Gebaut wird davor nichts.
+
 ## Zu entscheiden
 
 1. Ob Richtung 1 sofort gebaut wird (sie steht Richtung 2 nicht im Weg).
