@@ -120,9 +120,8 @@ durch dieselbe Objektart normalisieren, die man vergleicht. Und bei
 `schema compare` gegen ein fremdes Zielsystem Objekte anzulegen ist eine
 Nebenwirkung, die niemand erwartet.
 
-Nicht grundsätzlich verworfen, aber nachrangig: er wäre erst nötig, wenn ein
-Datei-gegen-Datenbank-Vergleich **ohne vorherige Anwendung** den Textabgleich
-wirklich braucht.
+Nicht grundsätzlich verworfen, aber von Option D abgelöst: ein eigenes
+Sandkasten-Schema hat dieselbe Wirkung ohne die Nebenwirkung.
 
 ### C — Textfelder aus dem Vergleich nehmen
 
@@ -131,6 +130,44 @@ Ausdrucks-Index; ihn auszublenden hieße, eine echte Änderung nicht mehr zu
 sehen. Anders als bei Fähigkeits-Unterschieden (Bitmap-Zugriffsmethode,
 untere Partitionsgrenze) gibt es hier nichts, das der Zielserver „nicht
 ausdrücken kann" — er drückt es aus, nur anders geschrieben.
+
+### D — Sandkasten-Schema: das Soll anwenden und zurücklesen
+
+Statt Wegwerf-Objekte im Schema des Anwenders anzulegen (Option B), ein
+eigenes Schema auf demselben Server: dort das Soll-Schema anwenden, die
+Katalogform lesen, das Schema verwerfen. Beide Seiten des Vergleichs stehen
+dann in Server-Form, ohne dass das Ziel berührt wird.
+
+Das nimmt Option B ihren Haupteinwand — die Nebenwirkung auf dem Zielsystem
+— und löst zugleich die Frage nach der richtigen Deparse-Form, weil dasselbe
+Objekt derselben Art auf demselben Server entsteht.
+
+**Der nicht offensichtliche Teil:** die Deparse-Form hängt an den
+**Spaltentypen**. `upper(nm)` wird genau deshalb zu `upper(nm::text)`, weil
+`nm` den Typ `text` hat. Ein Ausdruck lässt sich also nicht freistehend
+normalisieren; der Sandkasten braucht die Tabellenskelette, auf die der
+Ausdruck sich bezieht. Aus „einen Ausdruck normalisieren" wird damit „das
+Soll-Schema (oder den Teil davon, der rohen SQL-Text trägt, samt der
+Tabellen, auf die er verweist) anwenden".
+
+**Dafür:**
+
+- Kein Parser, keine Nebenwirkung auf dem Zielsystem, dieselbe Server-Version
+  und damit dieselbe Deparse-Form.
+- Die erzeugte DDL wird nebenbei **geprüft**, bevor das Zielsystem sie sieht.
+- Funktioniert auch für den Vergleich Datei gegen Datenbank ohne vorherige
+  Anwendung — genau die Lücke, die Richtung 2b offenlässt.
+
+**Dagegen / zu tragen:**
+
+- Braucht Rechte, ein Schema anzulegen. Auf vielen Zielsystemen hat der
+  Migrations-Nutzer die nicht.
+- Kostet eine Anwendung je Lauf. Begrenzbar auf die Objekte mit rohem
+  SQL-Text plus ihre Tabellen, und über den Texthash zwischenspeicherbar,
+  aber nicht umsonst.
+- Aufräumen ist Pflicht, und in Oracle committet DDL implizit — ein
+  abgebrochener Lauf hinterlässt das Schema. Es braucht einen erkennbaren
+  Namen und einen Aufräumpfad.
 
 ## Konsequenzen
 
@@ -161,7 +198,11 @@ ausdrücken kann" — er drückt es aus, nur anders geschrieben.
 3. **Ob der Fingerabdruck-Algorithmus angehoben werden muss.** Er steht auf
    `v10`; ändert sich die Projektion der Textfelder, ändern sich alle
    Abdrücke von Schemata mit Sicht oder CHECK.
-4. **Ob `CanonicalPayload` mitgeht.** Die Index-Identität hängt an drei
+4. **Ob Option D dazukommt.** Sie schließt die Lücke, die der Vorschlag
+   offenlässt (Vergleich ohne vorherige Anwendung), kostet aber Rechte und
+   Laufzeit. Denkbar als *Zusatz*, der greift, wenn Herkunft fehlt — dann
+   trüge er genau den Fall, der sonst unentschieden bliebe.
+5. **Ob `CanonicalPayload` mitgeht.** Die Index-Identität hängt an drei
    Projektionen (Comparator, Fingerabdruck, `CanonicalPayload`); zwei zu
    ändern und die dritte nicht bricht den dort dokumentierten Vertrag — und
    die dritte trägt die Operations-IDs, deren Änderung bestehende Overlays
