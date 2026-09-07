@@ -1312,10 +1312,17 @@ Gemessen gegen `gvenzl/oracle-free:23-faststart`:
 | --- | --- | --- |
 | **Spatial fehlt im slim-Image** | `23-slim-faststart`: `ALL_TYPES` kennt `SDO_GEOMETRY` nicht, `MDSYS.CS_SRS` und `USER_SDO_GEOM_METADATA` existieren nicht. `23-faststart`: alles vorhanden | Der sample-db-Harness **und** die meisten Integrationstests fahren das slim-Image. Slice 12 braucht dort einen Image-Wechsel oder einen eigenen Container — und `23-faststart` ist ~0,9 GB größer |
 | **Der Index verlangt einen Metadaten-Eintrag** | `CREATE INDEX … INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2` ohne Zeile in `USER_SDO_GEOM_METADATA` → ORA-13199 „cannot determine SRID" + ORA-13252 | Der Index ist **nicht** allein aus `IndexDefinition` renderbar. Vor ihm muss eine Zeile mit Bounding-Box und SRID stehen — eine DML-Anweisung als Vorbedingung eines DDL |
-| **Die Bounding-Box hat kein neutrales Gegenstück** | `SDO_DIM_ARRAY(SDO_DIM_ELEMENT('X', -180, 180, 0.005), …)` — je Dimension Unter-, Obergrenze und Toleranz | PostGIS, MySQL und SQL Server kennen nichts davon. Ohne Modellerweiterung müsste Slice 12 sie aus der SRID ableiten oder vorgeben — beides ist eine Erfindung, keine Migration |
+| **Die Bounding-Box ist Pflicht, aber ohne Zwangswirkung** | `SDO_DIM_ARRAY(SDO_DIM_ELEMENT('X', -180, 180, 0.005), …)` — je Dimension Unter-, Obergrenze und Toleranz. Ein Punkt **außerhalb** der deklarierten Grenzen wird eingefügt *und* von einer indizierten `SDO_FILTER`-Abfrage gefunden; der Index bleibt `VALID` | Sie muss dastehen, schneidet aber nichts weg. Eine zu enge Angabe verliert also keine Zeilen — das nimmt der Herleitungsfrage ihre Schärfe (siehe Entscheidung 1) |
+| **Auslesbar in beide Richtungen** | `SELECT d.sdo_dimname, d.sdo_lb, d.sdo_ub, d.sdo_tolerance FROM user_sdo_geom_metadata m, TABLE(m.diminfo) d` faltet die Nested Table auf; `SDO_TUNE.EXTENT_OF(tab, col)` misst die tatsächliche Datenausdehnung | Der Reverse-Pfad kann die deklarierte Box verlustfrei lesen, der Generate-Pfad sie notfalls messen lassen |
+| **Ohne Index braucht die Spalte keine Metadatenzeile** | Tabelle mit `SDO_GEOMETRY`, `INSERT` und `SELECT` funktionieren ohne Eintrag in `USER_SDO_GEOM_METADATA` | Slice 12a (Reverse) und ein reiner Spaltentransfer kommen ohne sie aus; erst der Index verlangt sie |
 | **Die SRID steht in der Metadatenzeile, nicht am Typ** | `USER_SDO_GEOM_METADATA.SRID = 4326`; die Spalte selbst ist typlos-generisch (`DATA_TYPE = 'SDO_GEOMETRY'`, `DATA_TYPE_OWNER = 'PUBLIC'`) | PostGIS trägt die SRID im Spaltentyp (`geometry(Point,4326)`), MySQL/SQL Server im Wert. Oracle ist die vierte Variante und braucht eine eigene Naht |
 | **Ein fehlgeschlagener Index sperrt die Datenspur** | `DOMIDX_OPSTATUS = FAILED` → jedes `INSERT` scheitert mit ORA-29861 | Reihenfolge im Migrate-Plan ist sicherheitsrelevant: ein halb gebauter Spatial-Index macht die Tabelle unbeschreibbar, statt nur die Abfrage zu verlangsamen |
 | **SRID-Katalog vorhanden** | `MDSYS.CS_SRS` führt 6194 Einträge, darunter 4326 und 3857 | Eine SRID lässt sich vor dem Schreiben prüfen, statt beim Anlegen des Index zu scheitern |
+
+Die Toleranz der Bounding-Box ist gegen `MDSYS.SPATIAL_INDEX_V2` auf 23ai
+gemessen. Ältere Bestände tragen den Vorgänger `MDSYS.SPATIAL_INDEX`, für den
+diese Duldsamkeit nicht mitgemessen ist — der Reverse-Pfad muss die Indexart
+deshalb aus `ALL_INDEXES.ITYP_NAME` lesen und darf sie nicht annehmen.
 
 ### Schnitt
 
@@ -1337,11 +1344,35 @@ dieser Reihenfolge, weil jeder den nächsten trägt:
 
 ### Vor dem Bau zu entscheiden
 
-1. **Woher die Bounding-Box kommt.** Aus der SRID abgeleitet (für 4326 ist
-   ±180/±90 richtig, für ein projiziertes System nicht), aus den Daten
-   gemessen (setzt voraus, dass sie schon da sind — der Index kommt aber
-   davor), oder als neues Feld im neutralen Modell. Nur die dritte Option ist
-   verlustfrei, und sie kostet einen Fingerabdruck-Sprung.
+1. **Woher die Bounding-Box kommt.** Drei Wege, und die Messung oben
+   entschärft die Wahl erheblich: weil eine zu enge Box weder das Einfügen
+   noch das Finden verhindert, ist eine hergeleitete Angabe **nicht
+   datenverlustgefährlich**, sondern nur ungenau.
+
+   - *Aus der SRID abgeleitet.* Für geodätische Systeme wie 4326 sind
+     ±180/±90 korrekt und aus `MDSYS.CS_SRS` bestimmbar; für ein projiziertes
+     System ist es geraten.
+   - *Aus den Daten gemessen* (`SDO_TUNE.EXTENT_OF`). Setzt voraus, dass die
+     Daten schon da sind — der Index kommt im Migrate-Plan aber davor. Als
+     nachgelagerter Schritt (Index nach dem Datentransfer) wäre es möglich,
+     ändert aber die Phasenordnung.
+   - *Als neues Feld im neutralen Modell.* Verlustfrei und der einzige Weg,
+     eine vom Autor **deklarierte** Box über einen Round-Trip zu erhalten.
+     Kostet einen Fingerabdruck-Sprung und eine Modellerweiterung, die vier
+     Dialekte nicht füllen können.
+
+   Der Vergleich mit SpatiaLite zeigt, warum die dritte Option nicht
+   selbstverständlich ist: dort steht die Ausdehnung in
+   `geometry_columns_statistics` und wird von `UpdateLayerStatistics()` **aus
+   den Daten berechnet** (bis dahin `NULL`), der R*Tree-Index braucht sie
+   nicht. SpatiaLites Extent ist eine Beobachtung, Oracles DIMINFO eine
+   Deklaration — eine Quelle, die nur die Beobachtung führt, kann die
+   Deklaration nicht liefern.
+
+   Vorschlag: 12a liest die deklarierte Box (verlustfrei), 12b leitet sie beim
+   Erzeugen aus der SRID ab und meldet das; das Modellfeld bleibt eine
+   getrennte Entscheidung, die erst ansteht, wenn ein Oracle→Oracle-Round-Trip
+   sie tatsächlich verlieren würde.
 2. **Welches Testbild.** `23-faststart` für alle Oracle-Tests (langsamer,
    größer) oder nur für die Spatial-Tests (zwei Images im Umlauf).
 3. **Ob der Datenpfad mitgeht.** `SDO_GEOMETRY` über `DataReader`/`DataWriter`
