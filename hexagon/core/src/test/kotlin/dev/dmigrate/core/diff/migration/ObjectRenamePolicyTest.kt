@@ -18,6 +18,7 @@ class ObjectRenamePolicyTest : FunSpec({
     val capsMysql = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL)
     val capsSqlite = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.SQLITE)
     val capsOracle = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.ORACLE)
+    val capsMssql = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MSSQL)
 
     fun viewCandidate(materialized: Boolean = false, sourceBody: String? = "h1", targetBody: String? = "h1") =
         ObjectRenameCandidate(
@@ -239,10 +240,47 @@ class ObjectRenamePolicyTest : FunSpec({
     // NoSuchElementException -- ein Abbruch ohne Diagnose-Code, wo der
     // Vertrag einen Blocker vorsieht. Betrifft heute MSSQL.
     test("a dialect without a policy yields a Blocked classification, not an exception") {
-        val policy = ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.MSSQL)
-        val support = policy.classify(viewCandidate(), capsPostgres)
+        // Alle fuenf Dialekte tragen inzwischen eine Politik; geprueft wird
+        // deshalb der Rueckfall selbst. Er ist das, was den sechsten Dialekt
+        // vor einer NoSuchElementException mitten im Planer schuetzt.
+        val support = UnsupportedObjectRenamePolicy(RenameProjectionDialect.SQLITE)
+            .classify(viewCandidate(), capsPostgres)
         support.shouldBeInstanceOf<RenameSupport.Blocked>()
         support.code shouldBe "OBJECT_RENAME_UNSUPPORTED"
-        support.message shouldContain "MSSQL"
+        support.message shouldContain "SQLITE"
+    }
+
+    test("every dialect the projection knows has a policy of its own") {
+        for (dialect in RenameProjectionDialect.entries) {
+            ObjectRenamePolicyRegistry.forDialect(dialect).dialect shouldBe dialect
+        }
+    }
+
+    // ── SQL Server ─────────────────────────────────────────────────
+
+    test("MSSQL: view, sequence, trigger, function and procedure all rename natively (sp_rename)") {
+        val policy = ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.MSSQL)
+        policy.classify(viewCandidate(), capsMssql) shouldBe RenameSupport.Native
+        policy.classify(sequenceCandidate(), capsMssql) shouldBe RenameSupport.Native
+        policy.classify(triggerCandidate(), capsMssql) shouldBe RenameSupport.Native
+        policy.classify(functionCandidate(), capsMssql) shouldBe RenameSupport.Native
+        policy.classify(
+            functionCandidate().copy(objectType = DiffObjectType.PROCEDURE),
+            capsMssql,
+        ) shouldBe RenameSupport.Native
+    }
+
+    test("MSSQL: a rename that also changes the body blocks — sp_rename would swallow the change") {
+        val policy = ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.MSSQL)
+        val support = policy.classify(viewCandidate(sourceBody = "h1", targetBody = "h2"), capsMssql)
+        support.shouldBeInstanceOf<RenameSupport.Blocked>()
+        support.message shouldContain "Body-drift"
+    }
+
+    test("MSSQL: a materialized view has no counterpart at all") {
+        val policy = ObjectRenamePolicyRegistry.forDialect(RenameProjectionDialect.MSSQL)
+        val support = policy.classify(viewCandidate(materialized = true), capsMssql)
+        support.shouldBeInstanceOf<RenameSupport.Blocked>()
+        support.message shouldContain "no materialized views"
     }
 })

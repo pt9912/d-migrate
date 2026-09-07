@@ -971,6 +971,23 @@ Workflow für Renames jenseits von Tabelle/Spalte:
     Body-Bekanntheits-Regeln wie MySQL. Function/Procedure blockieren
     (SQLite hat kein Routinen-Modell). Sequence-Rename bleibt blockiert,
     bis der SQLite-Sequence-Vertrag steht.
+  - **SQL Server**: View, Sequence, Trigger, Function und Procedure
+    benennt `sp_rename` nativ um. Der gespeicherte Text in
+    `sys.sql_modules` trägt danach weiter den **alten** Namen; für das
+    neutrale Modell folgenlos, weil der Reverse alles vor dem `AS`
+    wegschneidet, aber der Renderer sagt es an
+    (`MSSQL_RENAME_KEEPS_VIEW_BODY`). Body-Drift blockiert wie überall:
+    `sp_rename` fasst den Rumpf nicht an, die Änderung ginge verloren.
+    Materialisierte Sichten gibt es in SQL Server nicht.
+  - **Oracle**: View, Sequence und Trigger benennt Oracle nativ um
+    (`RENAME alt TO neu` bzw. `ALTER TRIGGER … RENAME TO`). Für
+    Function und Procedure gibt es keine Anweisung — `RENAME` antwortet
+    mit `ORA-03001`, `ALTER FUNCTION … RENAME TO` mit `ORA-00922` —, sie
+    blockieren. Materialized-View-Rename bleibt blockiert, solange
+    d-migrate Oracle-MVs nicht liest. Body-Drift blockiert wie überall.
+- Ein Dialekt ohne eigene Politik liefert `OBJECT_RENAME_UNSUPPORTED`
+  als Blocker, keinen Abbruch: `ObjectRenamePolicyRegistry.forDialect`
+  ist total.
 - Sequence-Default-Reprojection: `RenameSequence(old → new)` schreibt
   `DefaultValue.SequenceNextVal("old")`-Referenzen in
   `CreateTable`/`AddColumn`/`AlterColumnDefault`-Ops desselben Plans

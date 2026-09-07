@@ -41,6 +41,7 @@ internal object ObjectRenamePolicyRegistry {
         RenameProjectionDialect.MYSQL to MysqlObjectRenamePolicy,
         RenameProjectionDialect.SQLITE to SqliteObjectRenamePolicy,
         RenameProjectionDialect.ORACLE to OracleObjectRenamePolicy,
+        RenameProjectionDialect.MSSQL to MssqlObjectRenamePolicy,
     )
 
     /**
@@ -246,6 +247,68 @@ internal object OracleObjectRenamePolicy : ObjectRenamePolicy {
                 message = "Body-drift detected for Oracle ${candidate.objectType} rename " +
                     "'${candidate.fromName}' → '${candidate.toName}': source and target bodies differ. " +
                     "Oracle's `RENAME` leaves the body untouched, so the body change would be lost. " +
+                    "Split the change into a body-change Replace plus a separate rename.",
+            )
+        }
+        return RenameSupport.Native
+    }
+}
+
+/**
+ * SQL Server benennt jede dieser Objektarten mit `sp_rename` um — Sicht,
+ * Sequenz, Trigger, Funktion und Prozedur gleichermassen. Gemessen am
+ * Container (2026-09-07): das Objekt traegt danach den neuen Namen, und eine
+ * Sequenz behaelt Startwert und Schrittweite.
+ *
+ * **Der Rumpf bleibt dabei unberuehrt:** `sys.sql_modules.definition` sagt
+ * nach dem Rename weiterhin `CREATE VIEW <alterName>` (ebenso fuer Trigger,
+ * Funktion, Prozedur). Fuer das neutrale Modell ist das folgenlos —
+ * `MssqlViewDefinitionScanner` und `MssqlRoutineBody` schneiden alles vor dem
+ * `AS` weg und behalten nur den Rumpf; Signatur, Tabelle und Ereignis kommen
+ * aus den Katalogsichten, nicht aus dem Text. Der Renderer sagt es trotzdem
+ * an (`MSSQL_RENAME_KEEPS_VIEW_BODY`), weil fremde Werkzeuge den Text lesen.
+ *
+ * Ein Rename, der **zugleich** den Rumpf aendert, blockt: `sp_rename` fasst
+ * ihn nicht an, die Rumpfaenderung ginge also still verloren.
+ *
+ * Materialisierte Sichten gibt es in SQL Server nicht (eine indizierte Sicht
+ * ist etwas anderes und wird nicht als solche modelliert).
+ */
+internal object MssqlObjectRenamePolicy : ObjectRenamePolicy {
+
+    override val dialect: RenameProjectionDialect = RenameProjectionDialect.MSSQL
+
+    override fun classify(
+        candidate: ObjectRenameCandidate,
+        capabilities: RenameProjectionCapabilities,
+    ): RenameSupport {
+        if (candidate.objectType == DiffObjectType.VIEW && candidate.materializedView) {
+            return RenameSupport.Blocked(
+                code = "OBJECT_RENAME_UNSUPPORTED",
+                message = "SQL Server has no materialized views; rename is undefined.",
+            )
+        }
+        return when (candidate.objectType) {
+            DiffObjectType.VIEW,
+            DiffObjectType.SEQUENCE,
+            DiffObjectType.TRIGGER,
+            DiffObjectType.FUNCTION,
+            DiffObjectType.PROCEDURE,
+            -> mssqlNativeRename(candidate)
+            else -> RenameSupport.Blocked(
+                code = "OBJECT_RENAME_UNSUPPORTED",
+                message = "SQL Server policy: object type ${candidate.objectType} is not a rename target.",
+            )
+        }
+    }
+
+    private fun mssqlNativeRename(candidate: ObjectRenameCandidate): RenameSupport {
+        if (candidate.objectType.isBodyBearing() && candidate.hasBodyDrift()) {
+            return RenameSupport.Blocked(
+                code = "OBJECT_RENAME_UNSUPPORTED",
+                message = "Body-drift detected for SQL Server ${candidate.objectType} rename " +
+                    "'${candidate.fromName}' → '${candidate.toName}': source and target bodies differ. " +
+                    "`sp_rename` leaves the body untouched, so the body change would be lost. " +
                     "Split the change into a body-change Replace plus a separate rename.",
             )
         }
