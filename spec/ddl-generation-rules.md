@@ -566,6 +566,18 @@ Besonderheiten:
   intern function-based** (`INDEX_TYPE = FUNCTION-BASED NORMAL`), sein
   Ausdruck ist `"SPALTE"`. Der wird auf die Spalte zurückgefaltet und
   behält seine Richtung, statt als Ausdruck zu gelten.
+- **Roher SQL-Text** (CHECK-Ausdruck, Sichten-Rumpf) wird durchgereicht, aber
+  seine **Bezeichner werden gequotet**, soweit das Schema sie kennt. Oracle
+  faltet einen unquotierten Bezeichner auf GROSSSCHREIBUNG — als einzige der
+  fünf Ziel-Engines —, und d-migrate legt Tabellen und Spalten wortgetreu
+  gequotet an: `CHECK (total_amount >= 0)` suchte dort `TOTAL_AMOUNT` und
+  fände `"total_amount"` nicht (`ORA-00904`; für einen Sichten-Rumpf
+  `ORA-00942`). Angefasst wird nur ein Wort, das zeichenweise einem Tabellen-
+  oder Spaltennamen des Schemas entspricht; Zeichenketten, bereits gequotete
+  Bezeichner, Kommentare, Funktionsaufrufe (Wort vor `(`) und Schlüsselwörter
+  bleiben unverändert. Was nicht sicher erkennbar ist, bleibt stehen — roher
+  Text ist die Aussage des Eigentümers, und ein falsch gesetztes
+  Anführungszeichen wäre schlimmer als ein fehlendes.
 - **Partielle Indizes** kennt Oracle nicht: an einer Index-Anweisung gibt es
   kein `WHERE`. Der Index wird trotzdem angelegt — als **voller** —, und der
   Verlust wird mit W155 gemeldet. Bei `unique` ändert sich damit die

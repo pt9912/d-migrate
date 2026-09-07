@@ -134,7 +134,10 @@ class OracleDdlGenerator private constructor(
         for (constraint in table.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue
-            columnHelper.generateConstraintClause(name, constraint, unkeyableColumns, notes)?.let { lines += it }
+            columnHelper.generateConstraintClause(
+                name, constraint, unkeyableColumns, notes,
+                OracleIdentifierRequoter.knownIdentifiers(schema),
+            )?.let { lines += it }
         }
 
         if (table.primaryKey.isNotEmpty()) {
@@ -217,9 +220,15 @@ class OracleDdlGenerator private constructor(
     override fun generateViews(
         views: Map<String, ViewDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> = views.mapNotNull { (name, view) -> generateView(name, view, skipped) }
+        schema: SchemaDefinition,
+    ): List<DdlStatement> = views.mapNotNull { (name, view) -> generateView(name, view, skipped, schema) }
 
-    private fun generateView(name: String, view: ViewDefinition, skipped: MutableList<SkippedObject>): DdlStatement? {
+    private fun generateView(
+        name: String,
+        view: ViewDefinition,
+        skipped: MutableList<SkippedObject>,
+        schema: SchemaDefinition,
+    ): DdlStatement? {
         val query = view.query
         if (query == null) {
             skipped += SkippedObject("view", name, "No query defined")
@@ -249,8 +258,14 @@ class OracleDdlGenerator private constructor(
                 return actionRequired(action)
             }
         }
-        val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
+        val (portableQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
         notes += queryNotes
+        // Dieselbe Faltrichtung wie beim CHECK-Ausdruck: unquotiert sucht
+        // Oracle GROSSSCHREIBUNG und findet die wortgetreu angelegte Tabelle
+        // oder Spalte nicht (ORA-00942 / ORA-00904).
+        val transformedQuery = OracleIdentifierRequoter.requote(
+            portableQuery, OracleIdentifierRequoter.knownIdentifiers(schema), ::quoteIdentifier,
+        )
         if (view.materialized) {
             return DdlStatement(
                 OracleMaterializedViewDdl.createSql(name, view, transformedQuery, ::quoteIdentifier),

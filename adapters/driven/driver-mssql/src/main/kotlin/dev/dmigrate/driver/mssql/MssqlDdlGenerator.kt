@@ -263,6 +263,7 @@ class MssqlDdlGenerator private constructor(
     override fun generateViews(
         views: Map<String, ViewDefinition>,
         skipped: MutableList<SkippedObject>,
+        schema: SchemaDefinition,
     ): List<DdlStatement> = views.mapNotNull { (name, view) -> generateView(name, view, skipped) }
 
     private fun generateView(name: String, view: ViewDefinition, skipped: MutableList<SkippedObject>): DdlStatement? {

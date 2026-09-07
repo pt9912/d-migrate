@@ -120,7 +120,14 @@ internal object OracleDiffViewOps {
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
             return
         }
-        val (transformedQuery, notes) = transformer.transform(query, view.sourceDialect)
+        val (portableQuery, notes) = transformer.transform(query, view.sourceDialect)
+        // Wie im Generate-Pfad: unquotiert sucht Oracle GROSSSCHREIBUNG und
+        // findet die wortgetreu angelegte Tabelle nicht (ORA-00942).
+        val transformedQuery = OracleIdentifierRequoter.requote(
+            portableQuery,
+            ctx.schemaForDirection()?.let(OracleIdentifierRequoter::knownIdentifiers).orEmpty(),
+            ctx.sql::quote,
+        )
         ctx.emit(
             op,
             "CREATE OR REPLACE FORCE VIEW ${ctx.sql.quote(name)} AS\n$transformedQuery;",

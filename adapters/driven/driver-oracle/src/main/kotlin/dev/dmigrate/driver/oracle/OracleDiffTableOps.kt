@@ -66,7 +66,10 @@ internal object OracleDiffTableOps {
             )
         }
         for (constraint in table.constraints.sortedBy { it.name }) {
-            columnHelper.generateConstraintClause(tableName, constraint, unkeyableColumns, notes)?.let { lines += it }
+            columnHelper.generateConstraintClause(
+                tableName, constraint, unkeyableColumns, notes,
+                OracleIdentifierRequoter.knownIdentifiers(schema),
+            )?.let { lines += it }
         }
         if (table.primaryKey.isNotEmpty()) {
             val lobKeys = table.primaryKey.filter { it in unkeyableColumns }

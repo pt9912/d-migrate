@@ -83,7 +83,7 @@ abstract class AbstractDdlGenerator(
         globalNotes += viewDiagNotes
 
         preSkipCount = skipped.size
-        statements += generateViews(preDataViews, skipped)
+        statements += generateViews(preDataViews, skipped, schema)
         tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
 
         // ─── POST_DATA ───────────────────────────────────────────
@@ -111,7 +111,7 @@ abstract class AbstractDdlGenerator(
         // like group_concat); emitting the views first made PostgreSQL reject them
         // with "function ... does not exist".
         preSkipCount = skipped.size
-        statements += generateViews(postDataViews, skipped).withPhase(DdlPhase.POST_DATA)
+        statements += generateViews(postDataViews, skipped, schema).withPhase(DdlPhase.POST_DATA)
         tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
         preSkipCount = skipped.size
@@ -146,7 +146,19 @@ abstract class AbstractDdlGenerator(
         options: DdlGenerationOptions = DdlGenerationOptions(),
     ): List<DdlStatement>
     abstract fun handleCircularReferences(edges: List<CircularFkEdge>, skipped: MutableList<SkippedObject>): List<DdlStatement>
-    abstract fun generateViews(views: Map<String, ViewDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
+    /**
+     * @param schema das Schema, aus dem die Sichten stammen. Ein Sichten-Rumpf
+     *   ist roher SQL-Text, und wer ihn fuer ein Ziel rendert, muss die
+     *   Bezeichner kennen, auf die er verweist — Oracle faltet einen
+     *   unquotierten Bezeichner auf GROSSSCHREIBUNG und findet die wortgetreu
+     *   angelegte Tabelle sonst nicht. Die uebrigen vier Dialekte brauchen
+     *   die Angabe nicht und lassen sie liegen.
+     */
+    abstract fun generateViews(
+        views: Map<String, ViewDefinition>,
+        skipped: MutableList<SkippedObject>,
+        schema: SchemaDefinition,
+    ): List<DdlStatement>
     abstract fun generateFunctions(functions: Map<String, FunctionDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateAggregates(aggregates: Map<String, AggregateDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateProcedures(procedures: Map<String, ProcedureDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>

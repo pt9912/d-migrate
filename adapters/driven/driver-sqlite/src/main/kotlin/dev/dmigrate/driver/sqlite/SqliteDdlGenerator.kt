@@ -96,7 +96,8 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
 
     override fun generateViews(
         views: Map<String, ViewDefinition>,
-        skipped: MutableList<SkippedObject>
+        skipped: MutableList<SkippedObject>,
+        schema: SchemaDefinition,
     ): List<DdlStatement> = routineHelper.generateViews(views, skipped)
 
     override fun generateFunctions(

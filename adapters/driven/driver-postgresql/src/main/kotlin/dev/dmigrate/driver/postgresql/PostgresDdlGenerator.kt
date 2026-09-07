@@ -374,7 +374,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
 
     override fun generateViews(
         views: Map<String, ViewDefinition>,
-        skipped: MutableList<SkippedObject>
+        skipped: MutableList<SkippedObject>,
+        schema: SchemaDefinition,
     ): List<DdlStatement> {
         return routineHelper.generateViews(views, skipped)
     }

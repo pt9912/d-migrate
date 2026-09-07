@@ -448,6 +448,7 @@ internal class TestDdlGenerator(
     override fun generateViews(
         views: Map<String, ViewDefinition>,
         skipped: MutableList<SkippedObject>,
+        schema: SchemaDefinition,
     ): List<DdlStatement> {
         callOrder += "views"
         viewOrder += views.keys

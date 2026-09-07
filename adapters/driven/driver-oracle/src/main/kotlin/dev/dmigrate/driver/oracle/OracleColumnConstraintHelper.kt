@@ -314,14 +314,29 @@ internal class OracleColumnConstraintHelper(
         }
     }
 
+    /**
+     * @param knownIdentifiers Tabellen- und Spaltennamen des Schemas, klein
+     *   geschrieben auf ihre wirkliche Schreibweise abgebildet. Der
+     *   CHECK-Ausdruck ist roher Text; Oracle faltet einen unquotierten
+     *   Bezeichner darin auf GROSSSCHREIBUNG und findet die wortgetreu
+     *   angelegte Spalte nicht (`ORA-00904`). [OracleIdentifierRequoter]
+     *   setzt deshalb die Bezeichner, die das Schema kennt, in
+     *   Anfuehrungszeichen. Leer heisst: es gibt nichts zu erkennen — kein
+     *   Rueckfall, sondern die Aussage, dass kein Schema vorliegt.
+     */
     fun generateConstraintClause(
         tableName: String,
         constraint: ConstraintDefinition,
         unkeyableColumns: Set<String>,
         notes: MutableList<TransformationNote>,
+        knownIdentifiers: Map<String, String>,
     ): String? = when (constraint.type) {
-        ConstraintType.CHECK ->
-            "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
+        ConstraintType.CHECK -> {
+            val expression = OracleIdentifierRequoter.requote(
+                constraint.expression.orEmpty(), knownIdentifiers, quoteIdentifier,
+            )
+            "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK ($expression)"
+        }
         ConstraintType.UNIQUE -> {
             val columns = constraint.columns.orEmpty()
             val lob = columns.filter { it in unkeyableColumns }

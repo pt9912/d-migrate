@@ -1,10 +1,40 @@
 ---
 id: oracle-uppercase-folding-unquoted-identifier-references
 title: "Rohtext-Passthrough (CHECK-Ausdrücke, View-/Routinen-Bodies) bricht bei Oracle an unquoted Bezeichnern"
-status: open
+status: resolved
 ---
 
 # Rohtext-Passthrough bricht bei Oracle an unquoted Bezeichnern
+
+> **Erledigt.** `OracleIdentifierRequoter` setzt in CHECK-Ausdruecken und
+> Sichten-Ruempfen die Bezeichner in Anfuehrungszeichen, die das Schema kennt
+> — im Generate- **und** im Diff-Pfad, inklusive materialisierter Sichten.
+>
+> **Zu den drei Fragen des Tickets:**
+>
+> - *Ob ueberhaupt geparst werden kann.* Es braucht keinen Parser. Angefasst
+>   wird nur ein Wort, das zeichenweise einem Tabellen- oder Spaltennamen des
+>   Schemas entspricht; Zeichenketten, bereits gequotete Bezeichner,
+>   Kommentare, Funktionsaufrufe (Wort vor `(`) und Schluesselwoerter bleiben
+>   unveraendert. Was nicht sicher erkennbar ist, bleibt stehen.
+> - *Ob eine Warnung genuegt.* Nein — sie haette den Anwender vor ein Skript
+>   gestellt, das nicht laeuft, ohne ihm zu sagen, wie es laufen wuerde.
+> - *Ob eine schema-weite Lowercase-Policy die Wurzel trifft.* Sie traefe sie,
+>   traegt aber eigene Folgen (reservierte Woerter, Sonderzeichen) und aendert
+>   jeden erzeugten Bezeichner. Der Requoter kommt ohne das aus.
+>
+> **Nebenbefund, mitbehoben:** `AbstractDdlGenerator.generateViews` bekam das
+> Schema gar nicht — ein Sichten-Rumpf wurde also gerendert, ohne dass der
+> Renderer die Bezeichner kannte, auf die er verweist. Die Signatur traegt es
+> jetzt; die vier uebrigen Dialekte lassen es liegen.
+>
+> **Die Goldens waren wirklich kaputt**, nicht nur theoretisch:
+> `OracleRawTextIdentifierIntegrationTest` erzeugt dieselbe Form und wendet
+> sie gegen ein echtes Oracle an — mit dem Quoting laeuft sie, ohne scheitert
+> genau diese Anweisung an `ORA-00904`. Die betroffenen Goldens
+> (`e-commerce.oracle.sql`, `full-featured.oracle.sql` und die beiden
+> pre-data-Faelle) sind neu erzeugt; der Unterschied besteht ausschliesslich
+> aus den vier gequoteten Stellen.
 
 ## Befund
 

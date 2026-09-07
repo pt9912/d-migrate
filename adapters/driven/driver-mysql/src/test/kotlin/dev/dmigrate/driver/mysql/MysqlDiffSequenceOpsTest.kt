@@ -645,4 +645,33 @@ class MysqlDiffSequenceOpsTest : FunSpec({
                 it.contains("`dmg_nextval`('old_seq')")
         } shouldBe true
     }
+
+    test("DropTable in the DOWN direction is booked without a statement") {
+        // NOT_REVERSIBLE: der Dispatcher filtert das vorher, aber der Pfad
+        // bleibt total. Frueher stand hier ein SQL-Kommentar als ANWEISUNG im
+        // Strom -- und der Executor schickte ihn an die Datenbank.
+        val ctx = MysqlDiffRenderContext(
+            direction = MysqlRenderDirection.DOWN,
+            sql = MysqlDiffSqlBuilders(MysqlTypeMapper()),
+            options = helperOptions,
+        )
+        val op = DiffOperation.DropTable(
+            id = "drop-orders",
+            objectRef = DiffObjectRef(DiffObjectType.TABLE, listOf("orders")),
+            table = dev.dmigrate.core.model.TableDefinition(),
+        )
+        MysqlDiffTableOps.renderDropTable(op, ctx)
+
+        val plan = dev.dmigrate.core.diff.migration.DiffResult(
+            current = dev.dmigrate.core.diff.migration.DiffEndpoint(schemaName = "App"),
+            desired = dev.dmigrate.core.diff.migration.DiffEndpoint(schemaName = "App"),
+            schemaDiff = SchemaDiff(),
+            operations = listOf(op),
+        )
+        val result = ctx.toResult(plan)
+        result.statements.isEmpty() shouldBe true
+        result.operationsRendered shouldBe setOf("drop-orders")
+        result.diagnostics.single { it.code == "MYSQL_DROP_TABLE_NOT_REVERSIBLE" }
+            .message shouldContainStr "NOT_REVERSIBLE"
+    }
 })

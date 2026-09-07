@@ -245,7 +245,10 @@ class OracleDdlGeneratorTableTest : FunSpec({
             ),
         )
         val sql = tableSql(schema(mapOf("t" to table)))
-        sql shouldContain "CONSTRAINT \"ck_pos\" CHECK (a > 0)"
+        // Der Spaltenverweis im CHECK-Ausdruck wird gequotet: Oracle faltet
+        // ein unquotiertes `a` auf `A` und findet die wortgetreu angelegte
+        // Spalte `"a"` nicht (ORA-00904, live gemessen).
+        sql shouldContain "CONSTRAINT \"ck_pos\" CHECK (\"a\" > 0)"
         sql shouldContain "CONSTRAINT \"uq_ab\" UNIQUE (\"a\", \"b\")"
     }
 

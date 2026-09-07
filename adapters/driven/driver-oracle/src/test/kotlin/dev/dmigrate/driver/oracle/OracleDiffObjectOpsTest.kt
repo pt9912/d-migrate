@@ -81,10 +81,13 @@ class OracleDiffObjectOpsTest : FunSpec({
             "ALTER TABLE \"users\" DROP CONSTRAINT \"uq_users_email\";"
     }
 
-    test("AddConstraint CHECK renders the expression verbatim") {
+    test("AddConstraint CHECK quotes the identifiers the schema knows") {
+        // Der Ausdruck bleibt roher Text -- bis auf die Bezeichner, die das
+        // Schema kennt. Unquotiert faltet Oracle sie auf GROSSSCHREIBUNG und
+        // findet die wortgetreu angelegte Spalte nicht (ORA-00904).
         val c = ConstraintDefinition(name = "ck_users_email", type = ConstraintType.CHECK, expression = "email IS NOT NULL")
         up(constraintAdded(c)).statements.single().sql shouldBe
-            "ALTER TABLE \"users\" ADD CONSTRAINT \"ck_users_email\" CHECK (email IS NOT NULL);"
+            "ALTER TABLE \"users\" ADD CONSTRAINT \"ck_users_email\" CHECK (\"email\" IS NOT NULL);"
     }
 
     test("AddConstraint FOREIGN KEY emits REFERENCES") {

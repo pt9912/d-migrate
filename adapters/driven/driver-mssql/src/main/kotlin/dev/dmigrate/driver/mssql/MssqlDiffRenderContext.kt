@@ -151,10 +151,21 @@ internal class MssqlDiffRenderContext(
      */
     fun markRendered(op: DiffOperation) {
         rendered += op.id
-        if (riskFor(op).destructive) destructive += op.id
+        // `riskFor` verlangt ein Risiko der aktiven Richtung und bricht ab,
+        // wenn keines da ist. Genau das ist hier der Normalfall: eine
+        // NOT_REVERSIBLE-Operation hat in der DOWN-Richtung keines. Sie
+        // trotzdem zu verlangen machte den Pfad, der total sein soll, zum
+        // Absturz -- was der alte Kommentar-Platzhalter ebenso tat, nur
+        // unbemerkt, weil der Dispatcher ihn nie erreichte.
+        val risk = riskOrNull(op)
+        if (risk?.destructive == true) destructive += op.id
         if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
-        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+        if (risk?.requiresManualConfirmation == true) manualActions += op.id
     }
+
+    /** Das Risiko der aktiven Richtung, oder `null`, wenn es keines gibt. */
+    private fun riskOrNull(op: DiffOperation): OperationRisk? =
+        if (direction == MssqlRenderDirection.UP) op.risks.up else op.risks.down
 
     /**
      * Ein Statement des Tabellen-Neubaus. Anders als [emit] gehoert es nicht zu

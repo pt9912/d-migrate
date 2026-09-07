@@ -19,7 +19,7 @@ CREATE TABLE "orders" (
     "status" VARCHAR2(10) DEFAULT 'pending' CONSTRAINT "ck_orders_status" CHECK ("status" IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled')),
     "notes" CLOB,
     CONSTRAINT "fk_orders_customer_id" FOREIGN KEY ("customer_id") REFERENCES "customers" ("id"),
-    CONSTRAINT "chk_total_positive" CHECK (total_amount >= 0),
+    CONSTRAINT "chk_total_positive" CHECK ("total_amount" >= 0),
     CONSTRAINT "pk_orders" PRIMARY KEY ("id")
 );
 

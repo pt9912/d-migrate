@@ -78,7 +78,12 @@ internal object OracleDiffMaterializedViewOps {
         alreadyChecked: Boolean = false,
     ) {
         if (!alreadyChecked && blocked(op, ctx, name, view)) return
-        val (query, _) = transformer.transform(checkNotNull(view.query), view.sourceDialect)
+        val (portableQuery, _) = transformer.transform(checkNotNull(view.query), view.sourceDialect)
+        val query = OracleIdentifierRequoter.requote(
+            portableQuery,
+            ctx.schemaForDirection()?.let(OracleIdentifierRequoter::knownIdentifiers).orEmpty(),
+            ctx.sql::quote,
+        )
         ctx.emit(
             op,
             OracleMaterializedViewDdl.createSql(name, view, query) { ctx.sql.quote(it) },

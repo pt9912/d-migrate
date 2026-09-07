@@ -29,7 +29,7 @@ CREATE TABLE "orders" (
     "amount" NUMBER(10,2) DEFAULT 0,
     "invoice_number" NUMBER(18) DEFAULT "invoice_seq".NEXTVAL,
     CONSTRAINT "fk_orders_customer_id" FOREIGN KEY ("customer_id") REFERENCES "customers" ("id") ON DELETE CASCADE,
-    CONSTRAINT "chk_amount" CHECK (amount >= 0),
+    CONSTRAINT "chk_amount" CHECK ("amount" >= 0),
     CONSTRAINT "uq_uuid" UNIQUE ("uuid_field"),
     CONSTRAINT "fk_composite" FOREIGN KEY ("customer_id") REFERENCES "customers" ("id"),
     CONSTRAINT "pk_orders" PRIMARY KEY ("id")
@@ -40,12 +40,12 @@ CREATE TABLE "orders" (
 CREATE INDEX "idx_customer" ON "orders" ("customer_id");
 
 CREATE OR REPLACE FORCE VIEW "active_orders" AS
-SELECT * FROM orders WHERE status != 'delivered'
+SELECT * FROM "orders" WHERE "status" != 'delivered'
 ;
 
 CREATE MATERIALIZED VIEW "monthly_stats"
 AS
-SELECT COUNT(*) FROM orders
+SELECT COUNT(*) FROM "orders"
 ;
 
 -- [E053] Function 'calc_total' was written for 'postgresql' and must be manually rewritten for Oracle.

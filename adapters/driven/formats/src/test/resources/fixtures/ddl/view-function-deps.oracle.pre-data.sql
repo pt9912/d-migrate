@@ -9,4 +9,4 @@ CREATE TABLE "orders" (
 );
 
 CREATE OR REPLACE FORCE VIEW "simple_view" AS
-SELECT * FROM orders WHERE amount > 0;
+SELECT * FROM "orders" WHERE "amount" > 0;

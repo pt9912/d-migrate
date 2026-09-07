@@ -147,7 +147,10 @@ internal object OracleDiffObjectOps {
             )
         }
         val notes = mutableListOf<TransformationNote>()
-        val clause = columnHelper.generateConstraintClause(table, constraint, tableDef?.let(::unkeyableColumns).orEmpty(), notes)
+        val clause = columnHelper.generateConstraintClause(
+            table, constraint, tableDef?.let(::unkeyableColumns).orEmpty(), notes,
+            ctx.schemaForDirection()?.let(OracleIdentifierRequoter::knownIdentifiers).orEmpty(),
+        )
             ?: return blockConstraint(
                 op, ctx,
                 "Constraint '${constraint.name}' on '$table' is not renderable for Oracle" +
