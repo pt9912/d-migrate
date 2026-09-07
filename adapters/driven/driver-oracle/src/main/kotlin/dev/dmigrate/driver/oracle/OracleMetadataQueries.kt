@@ -40,6 +40,19 @@ internal object OracleMetadataQueries {
     data class IndexScan(
         val indices: List<IndexProjection>,
         val expressionIndexes: List<String> = emptyList(),
+        /**
+         * Namen der Indizes, die Oracle Text traegt (`INDEX_TYPE = DOMAIN`
+         * mit `CTXSYS.CONTEXT`). Der Katalog fuehrt sie nicht als eigene
+         * Indexart, sondern ueber den Indextyp-Eigner — die Unterscheidung
+         * gehoert deshalb hierher, nicht in die Typabbildung des Lesers.
+         */
+        val fullTextIndexes: Set<String> = emptySet(),
+        /**
+         * Domain-Indizes einer **anderen** Indexart (raeumlich, benutzereigen).
+         * Sie als B-Tree zu lesen ergaebe im Ziel einen Index, der etwas
+         * anderes tut; sie werden ausgelassen und gemeldet (R357).
+         */
+        val foreignDomainIndexes: List<String> = emptyList(),
     )
 
     data class SequenceRow(
@@ -94,13 +107,32 @@ internal object OracleMetadataQueries {
         val increment: Long,
     )
 
+    /**
+     * Ohne **Sekundaerobjekte**. Ein Oracle-Text-Index legt im selben Schema
+     * eigene Tabellen an — live gemessen sieben Stueck je Index
+     * (`DR${'$'}<index>${'$'}B/C/I/K/N/Q/U`), gewoehnliche Zeilen in `ALL_TABLES`.
+     * Sie mitzulesen ergaebe Phantom-Tabellen im Reverse, Drift nach jedem
+     * `migrate --execute` und — ueber [OracleTableLister], der dieselbe
+     * Abfrage nutzt — einen Datenpfad, der Oracle-interne Token-Tabellen
+     * kopiert.
+     *
+     * `ALL_TABLES` fuehrt kein Kennzeichen dafuer; `ALL_OBJECTS.SECONDARY`
+     * schon (gemessen: `Y` fuer alle sieben, `N` fuer die echte Tabelle).
+     * Ueber den Namen zu filtern waere die schlechtere Loesung — `DR${'$'}`
+     * ist keine reservierte Zeichenfolge.
+     */
     fun listTableRefs(session: JdbcOperations, schema: String): List<TableRef> =
         session.queryList(
             """
-            SELECT table_name
-            FROM all_tables
-            WHERE owner = ? AND table_name NOT LIKE 'BIN${'$'}%'
-            ORDER BY table_name
+            SELECT t.table_name
+            FROM all_tables t
+            WHERE t.owner = ? AND t.table_name NOT LIKE 'BIN${'$'}%'
+              AND NOT EXISTS (
+                SELECT 1 FROM all_objects o
+                WHERE o.owner = t.owner AND o.object_name = t.table_name
+                  AND o.object_type = 'TABLE' AND o.secondary = 'Y'
+              )
+            ORDER BY t.table_name
             """.trimIndent(),
             schema,
         ).map { row -> TableRef(name = row.string("table_name"), schema = schema) }
@@ -203,7 +235,8 @@ internal object OracleMetadataQueries {
 
         val rows = session.queryList(
             """
-            SELECT i.index_name, i.index_type, i.uniqueness, ic.column_name, ic.column_position, ic.descend
+            SELECT i.index_name, i.index_type, i.uniqueness, i.ityp_owner, i.ityp_name,
+                   ic.column_name, ic.column_position, ic.descend
             FROM all_indexes i
             JOIN all_ind_columns ic
                 ON ic.index_owner = i.owner AND ic.index_name = i.index_name
@@ -216,9 +249,18 @@ internal object OracleMetadataQueries {
         val expressions = indexExpressions(session, schema, table)
         val indices = mutableListOf<IndexProjection>()
         val expressionIndexes = mutableListOf<String>()
+        val fullTextIndexes = mutableSetOf<String>()
+        val foreignDomainIndexes = mutableListOf<String>()
         rows.groupBy { it.string("index_name") }
             .filterKeys { it !in primaryKeyIndexNames }
             .forEach { (name, group) ->
+                val head = group.first()
+                val domain = domainKind(head)
+                if (domain == DomainKind.FOREIGN) {
+                    foreignDomainIndexes += name
+                    return@forEach
+                }
+                if (domain == DomainKind.FULL_TEXT) fullTextIndexes += name
                 val columns = resolveIndexColumns(name, group, expressions)
                 if (columns == null) {
                     expressionIndexes += name
@@ -238,7 +280,27 @@ internal object OracleMetadataQueries {
                     )
                 }
             }
-        return IndexScan(indices = indices, expressionIndexes = expressionIndexes)
+        return IndexScan(
+            indices = indices,
+            expressionIndexes = expressionIndexes,
+            fullTextIndexes = fullTextIndexes,
+            foreignDomainIndexes = foreignDomainIndexes,
+        )
+    }
+
+    private enum class DomainKind { NONE, FULL_TEXT, FOREIGN }
+
+    /**
+     * Ein Domain-Index traegt seine Art nicht in `INDEX_TYPE`, sondern in
+     * `ITYP_OWNER`/`ITYP_NAME` — gemessen `CTXSYS`/`CONTEXT` fuer Oracle
+     * Text. Alles andere dort (`MDSYS.SPATIAL_INDEX`, benutzereigene
+     * Indextypen) hat im neutralen Modell keine Entsprechung.
+     */
+    private fun domainKind(row: Map<String, Any?>): DomainKind {
+        if (row.stringOrNull("index_type") != "DOMAIN") return DomainKind.NONE
+        val owner = row.stringOrNull("ityp_owner")
+        val name = row.stringOrNull("ityp_name")
+        return if (owner == "CTXSYS" && name == "CONTEXT") DomainKind.FULL_TEXT else DomainKind.FOREIGN
     }
 
     /**

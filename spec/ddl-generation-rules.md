@@ -473,8 +473,10 @@ Besonderheiten:
   dem Limit, `binary`, `fulltext`, wertelose Enums): Oracle erlaubt sie
   nicht als Schlüsselspalten (ORA-02329). `UNIQUE` (Spalte oder
   Constraint) und `PRIMARY KEY` darauf werden **nicht** gerendert, sondern
-  als `action_required` E057 ausgewiesen; ein Index darauf wird mit W152
-  übersprungen
+  als `action_required` E057 ausgewiesen; ein **gewöhnlicher** Index darauf
+  wird mit W152 übersprungen. Ein **Volltext-Index** dagegen wird gerendert:
+  Oracle Text indiziert gerade große Textspalten, das ist dort der Normalfall
+  (siehe den Volltext-Abschnitt unten)
 - `ON DELETE` kennt nur `CASCADE`/`SET NULL`; `RESTRICT`/`NO_ACTION`
   entsprechen dem Oracle-Default (keine Klausel) und werden ohne Notiz
   weggelassen, `SET_DEFAULT` wird verworfen + W153. Oracle kennt kein
@@ -520,8 +522,35 @@ Besonderheiten:
   und lehnt sonst eine Sicht ab, die auf eine übersprungene Abhängigkeit
   (E053/E054/E055) verweist — anders als MSSQLs Deferred Name Resolution
 - Materialized Views werden als reguläre View gerendert → W103
-- Volltext-Indizes werden nicht gerendert (Oracle Text) →
-  `action_required` E057
+- **Volltext-Indizes** werden als Oracle Text gerendert:
+
+  ```sql
+  CREATE INDEX "ft_docs_body" ON "docs" ("body")
+      INDEXTYPE IS CTXSYS.CONTEXT PARAMETERS ('SYNC (ON COMMIT)');
+  ```
+
+  `SYNC (ON COMMIT)` steht dabei **immer** und ist keine Wahl: ohne die
+  Klausel ist der Index nach einem `INSERT` leer und bleibt es, bis jemand
+  `CTX_DDL.SYNC_INDEX` ruft (live gemessen: null Treffer gegenüber einem mit
+  der Klausel). Ein migriertes Schema hätte sonst einen Index, der nichts
+  findet.
+
+  Ein Oracle-Text-Index deckt **genau eine** Spalte (`ORA-29851`); das
+  neutrale Modell lässt mehrere Quellspalten zu. Mehrspaltig wird deshalb
+  mit `E057` abgelehnt und **nicht** in mehrere Einzelindizes zerlegt — eine
+  Suche über zwei getrennte Indizes trifft etwas anderes als eine über beide
+  Spalten. Für den Oracle-Weg dorthin bräuchte es einen
+  `MULTI_COLUMN_DATASTORE`, also eine benannte, schema-globale
+  `CTX_DDL`-Preference — dieselbe Art Objekt, die das neutrale Modell auch
+  bei SQL Servers Volltext-Katalog nicht trägt.
+
+  Die Text-Search-Konfiguration (ADR 0025) hat keine Entsprechung in der
+  Anweisung — sie wäre ein `LEXER`, ebenfalls eine Preference — und fällt
+  mit `W154` weg; der Default-Lexer der Datenbank greift.
+
+  **Voraussetzung beim Betreiber:** der ausführende Nutzer braucht die Rolle
+  `CTXAPP`. Ohne sie lehnt Oracle die Anweisung ab (`ORA-29833`, wenn Oracle
+  Text ganz fehlt).
 - **Bitmap-Indizes** sind ein eigener neutraler Indextyp (`bitmap`). Oracle
   rendert `CREATE BITMAP INDEX` und liest `USER_INDEXES.INDEX_TYPE = 'BITMAP'`
   zurück. Ein Bitmap-Index ist in Oracle **nie eindeutig** — `UNIQUE BITMAP`

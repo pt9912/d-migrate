@@ -354,6 +354,12 @@ mehr sicher bindbar. `TIMESTAMP WITH TIME ZONE` liest als Standard-
 - Materialized Views werden als reguläre Views gelesen.
 - `ALL_SEQUENCES` führt nur `LAST_NUMBER`, nicht den ursprünglichen
   `START WITH`-Wert (R345).
+- **Volltext-Indizes** werden gelesen: Oracle führt sie als
+  `INDEX_TYPE = DOMAIN` mit `ITYP_OWNER = CTXSYS` und `ITYP_NAME = CONTEXT`,
+  und `ALL_IND_COLUMNS` nennt die echte Quellspalte. Ein Domain-Index einer
+  **anderen** Indexart (räumlich, benutzereigen) wird ausgelassen und mit
+  `R357` gemeldet — ihn als B-Tree zu lesen ergäbe im Ziel einen Index, der
+  etwas anderes tut.
 - Indizes über einem echten Ausdruck (`UPPER(nm)`) haben im neutralen
   Modell keine Entsprechung; sie werden ausgelassen und mit `R354`
   gemeldet. Bitmap-Indizes dagegen werden als eigener Typ gelesen

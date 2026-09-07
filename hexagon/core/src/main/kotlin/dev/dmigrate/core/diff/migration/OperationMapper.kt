@@ -9,6 +9,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -647,13 +648,33 @@ internal object OperationMapper {
             OperationIdFactory.makeId("DropIndex", indexRef(table.name, idx), CanonicalPayload.index(idx))
         }.toSet()
 
+        // [ORDERING] Dieselbe Lage fuer Volltext-Indizes, aus einem anderen
+        // Grund: manche Dialekte lassen ueber denselben Spalten nur EINEN
+        // zu (Oracle: `ORA-29879: cannot create multiple domain indexes on a
+        // column list using same indextype`). Wird einer umbenannt, erscheint
+        // das als Entfernen + Hinzufuegen mit verschiedenen Objektnamen -- die
+        // Kante bei [ORDERING] greift dann nicht, und das Anlegen liefe,
+        // waehrend der alte noch auf den Spalten sitzt. Dialekte, die mehrere
+        // dulden, kostet die Kante nur eine Reihenfolge.
+        val fullTextReleaseIds = table.indicesRemoved
+            .filter { it.type == IndexType.FULLTEXT }
+            .associate { idx ->
+                idx.columnNames to
+                    OperationIdFactory.makeId("DropIndex", indexRef(table.name, idx), CanonicalPayload.index(idx))
+            }
+
         for (idx in table.indicesAdded) {
             val ref = indexRef(table.name, idx)
             ops += DiffOperation.AddIndex(
                 id = OperationIdFactory.makeId("AddIndex", ref, CanonicalPayload.index(idx)),
                 objectRef = ref,
                 index = idx,
-                dependencies = if (idx.clustered) storageReleaseIds else emptySet(),
+                dependencies = when {
+                    idx.clustered -> storageReleaseIds
+                    idx.type == IndexType.FULLTEXT ->
+                        setOfNotNull(fullTextReleaseIds[idx.columnNames])
+                    else -> emptySet()
+                },
             )
         }
         for (idx in table.indicesRemoved) {

@@ -203,7 +203,7 @@ internal class OracleColumnConstraintHelper(
             notes += TransformationNote(
                 type = NoteType.WARNING, code = "W132", objectName = objectName,
                 message = "Full-text column '$colName' degraded to CLOB; Oracle has no full-text vector column type.",
-                hint = "To restore full-text search, create an Oracle Text index over the source text column(s) manually.",
+                hint = "Declare a full-text index over the source text column(s); d-migrate renders it as an Oracle Text index.",
             )
         }
         if (typeMapper.isPrecisionClamped(type)) {

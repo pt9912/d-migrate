@@ -35,16 +35,11 @@ internal class OracleIndexDdlBuilder(
         val indexName = effectiveName(tableName, index)
         val columns = table.columns
 
-        // Oracle Text (Slice 8) baut Volltext-Indizes noch nicht.
+        // Volltext VOR dem LOB-Waechter unten: eine CLOB-Spalte ist fuer einen
+        // gewoehnlichen Index kein zulaessiger Schluessel, fuer einen
+        // Oracle-Text-Index dagegen der Normalfall.
         if (index.type == IndexType.FULLTEXT) {
-            return actionRequired(
-                ManualActionRequired(
-                    code = "E057", objectType = "index", objectName = indexName,
-                    reason = "Full-text index '$indexName' on table '$tableName' is not rendered for Oracle: " +
-                        "Oracle Text indexing is not carried by the neutral model yet.",
-                    hint = "Create an Oracle Text index (CTXSYS.CONTEXT) manually on the target.",
-                ),
-            )
+            return OracleFullTextDdl.render(tableName, index, indexName, quoteIdentifier)
         }
         // Spatial ist nicht gescoped; eine Tabelle mit Geometry-Spalten ist
         // bereits vorher geblockt -- im Generate-Pfad ueber

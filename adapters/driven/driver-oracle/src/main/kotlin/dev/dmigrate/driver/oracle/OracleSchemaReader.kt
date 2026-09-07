@@ -126,10 +126,24 @@ class OracleSchemaReader(
                 IndexDefinition(
                     name = idx.name,
                     columns = idx.indexColumns,
-                    type = indexTypeOf(idx.type),
+                    type = if (idx.name in indexScan.fullTextIndexes) {
+                        IndexType.FULLTEXT
+                    } else {
+                        indexTypeOf(idx.type)
+                    },
                     unique = idx.isUnique,
                 )
             }
+        indexScan.foreignDomainIndexes.forEach { name ->
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R357",
+                objectName = name,
+                message = "Index '$name' on table '$table' is a domain index of an index type other than " +
+                    "Oracle Text (CTXSYS.CONTEXT); the neutral model has no equivalent, so it was skipped.",
+                hint = "Recreate it manually on the target, where its index type exists.",
+            )
+        }
         indexScan.expressionIndexes.forEach { name ->
             notes += SchemaReadNote(
                 severity = SchemaReadSeverity.WARNING,
@@ -191,9 +205,11 @@ class OracleSchemaReader(
      * vier Werte vor: `NORMAL`, `BITMAP` und beide mit `FUNCTION-BASED `
      * davor -- der Praefix betrifft die Schluesseldarstellung, nicht die
      * Indexart, deshalb entscheidet allein das Vorkommen von `BITMAP`.
-     * Andere Arten (`DOMAIN`, `IOT - TOP`, `CLUSTER`, `LOB`) fuehrt Oracle zwar
-     * ebenfalls, keine davon ist ein neutral darstellbarer Sekundaerindex; sie
-     * fallen auf [IndexType.BTREE].
+     * `DOMAIN` behandelt bereits [OracleMetadataQueries.scanIndexes]: Oracle
+     * Text kommt als [IndexType.FULLTEXT] zurueck, jede andere Indexart wird
+     * ausgelassen. Was hier ankommt, ist deshalb `NORMAL` oder `BITMAP`;
+     * uebrige Arten (`IOT - TOP`, `CLUSTER`, `LOB`) sind keine neutral
+     * darstellbaren Sekundaerindizes und fallen auf [IndexType.BTREE].
      */
     private fun indexTypeOf(catalogType: String?): IndexType =
         if (catalogType?.contains("BITMAP") == true) IndexType.BITMAP else IndexType.BTREE

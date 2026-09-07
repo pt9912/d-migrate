@@ -95,6 +95,24 @@ data class DialectCapabilities(
      */
     val supportsBitmapIndexes: Boolean = false,
     /**
+     * Ob der Dialekt die Text-Search-Konfiguration eines Volltext-Index
+     * **speichert** (ADR 0025, z. B. `english`).
+     *
+     * Oracle nicht: der Analyzer haengt dort an einer benannten
+     * `CTX_DDL`-Lexer-Preference, nicht an der Index-Anweisung — der
+     * Generate-Pfad verwirft die Angabe mit `W154`, und der Reverse kann sie
+     * folglich nicht zurueckgeben. Ohne die Projektion meldete der
+     * Post-Compare nach jedem `migrate --execute` Drift, **und** der naechste
+     * Lauf plante erneut `DropIndex` + `AddIndex` — dauerhaft.
+     *
+     * **Der Default `true` ist fuer MySQL, SQLite und SQL Server nicht
+     * geprueft**; auch sie verwerfen die Angabe. Vor diesem Slice war der
+     * Pfad fuer Oracle geblockt, hier wird er erstmals erreichbar. Ihre
+     * Fingerabdruecke zu aendern entwertet bestehende Rollback-Artefakte:
+     * `docs/planning/open/fulltext-config-fingerprint-lossy-dialects.md`.
+     */
+    val carriesFullTextConfiguration: Boolean = true,
+    /**
      * Ob der Dialekt die **untere** Grenze einer RANGE-Partition fuehrt.
      * PostgreSQL tut es (`FOR VALUES FROM … TO …`); Oracle und MySQL kennen
      * nur `VALUES LESS THAN` und leiten die untere Grenze aus der
@@ -283,6 +301,7 @@ data class DialectCapabilities(
                 namesFullTextIndexes = true,
                 namesIdentitySequences = false,
                 supportsBitmapIndexes = true,
+                carriesFullTextConfiguration = false,
                 carriesPartitionLowerBounds = false,
                 carriesPartitionHashModulus = false,
                 separatesDateFromDateTime = false,

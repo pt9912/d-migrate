@@ -36,7 +36,7 @@ import dev.dmigrate.driver.ViewQueryTransformer
  * (`CREATE SEQUENCE`, `.NEXTVAL`), Views (`CREATE OR REPLACE VIEW`).
  * Routinen, Trigger und Aggregate werden nicht als PL/SQL gerendert und
  * landen als E053/E054-`skipped_objects` (Slice 9); Partitionierung als
- * E055 (Tabelle plain, Slice 7); Volltext-Indizes als E057 (Slice 8);
+ * E055/E062 (Tabelle plain), Volltext ueber Oracle Text (mehrspaltig E057);
  * Composite-Typen als E054. Spatial ist nicht gescoped (`canGenerateSpatial`
  * bleibt `false`). Render-Regeln: `spec/ddl-generation-rules.md`
  * (Abschnitte Oracle), Typtabelle: `spec/type-mapping.md`.

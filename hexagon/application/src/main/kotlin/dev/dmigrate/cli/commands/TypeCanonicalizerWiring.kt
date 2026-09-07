@@ -88,6 +88,7 @@ private val DialectCapabilities.carriesEveryIndexProperty: Boolean
         supportsClusteredIndexes,
         namesFullTextIndexes,
         supportsBitmapIndexes,
+        carriesFullTextConfiguration,
     ).all { it }
 
 fun capabilityIndexCanonicalizer(
@@ -112,6 +113,11 @@ fun capabilityIndexCanonicalizer(
             } else {
                 index.type
             },
+            // Ein Dialekt, der die Text-Search-Konfiguration nicht speichert,
+            // kann sie auch nicht zurueckmelden. Ohne diese Projektion driftet
+            // nicht nur der Post-Compare -- der naechste Lauf plante denselben
+            // Index immer wieder neu.
+            textSearchConfig = if (caps.carriesFullTextConfiguration) index.textSearchConfig else null,
         )
     }
 }

@@ -396,6 +396,29 @@ class OracleDiffDdlGeneratorTest : FunSpec({
         sql shouldContain "PARTITION \"l_rest\" VALUES (DEFAULT)"
     }
 
+    test("CreateTable with an unrenderable index blocks instead of dropping it silently") {
+        // Ohne den Blocker stufte `carryOverNotes` das ACTION_REQUIRED zu
+        // einer Warnung herab, die Tabelle entstuende ohne den Index -- und
+        // Spec wie Handbuch sagen Abbruch zu.
+        val table = TableDefinition(
+            columns = mapOf(
+                "a" to ColumnDefinition(type = NeutralType.Text(maxLength = 100)),
+                "b" to ColumnDefinition(type = NeutralType.Text(maxLength = 100)),
+            ),
+            indices = listOf(
+                IndexDefinition(
+                    name = "ft_multi",
+                    columns = listOf(IndexColumn("a"), IndexColumn("b")),
+                    type = IndexType.FULLTEXT,
+                ),
+            ),
+        )
+        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("docs", table))))
+        r.statements.shouldBeEmpty()
+        r.diagnostics.any { it.code == "ORACLE_INDEX_NOT_RENDERABLE" } shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+    }
+
     test("CreateTable with partitioning Oracle cannot express blocks instead of creating a flat table") {
         val table = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier())),

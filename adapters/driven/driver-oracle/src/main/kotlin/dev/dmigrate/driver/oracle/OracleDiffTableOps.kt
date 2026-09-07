@@ -109,13 +109,41 @@ internal object OracleDiffTableOps {
             if (partitionClause.isNotEmpty()) append("\n$partitionClause")
             append(";")
         }
+        // Die Indizes werden VOR dem Emittieren der Tabelle gerendert: was der
+        // Renderer als ACTION_REQUIRED zurueckgibt (etwa ein mehrspaltiger
+        // Volltext-Index, E057), ist auf dem Migrate-Pfad ein Blocker, und
+        // eine Operation kann nicht zugleich emittiert und uebersprungen sein.
+        // `carryOverNotes` stufte ACTION_REQUIRED sonst zu einer Warnung
+        // herab, und die Tabelle entstuende ohne den Index -- waehrend Spec
+        // und Handbuch Abbruch zusagen.
+        val indexStatements = table.indices.map { indexBuilder.render(tableName, table, it, unkeyableColumns) }
+        indexStatements.flatMap { it.notes }
+            .firstOrNull { it.type == NoteType.ACTION_REQUIRED }
+            ?.let { note -> return blockIndex(op, ctx, tableName, note.message) }
+
         ctx.emit(op, sql)
         ctx.carryOverNotes(op, notes)
-        for (index in table.indices) {
-            val stmt = indexBuilder.render(tableName, table, index, unkeyableColumns)
+        for (stmt in indexStatements) {
             if (stmt.sql.isNotBlank()) ctx.emit(op, stmt.sql)
             ctx.carryOverNotes(op, stmt.notes)
         }
+    }
+
+    /** Siehe [blockPartitioning] -- dieselbe Erwaegung fuer einen Index der neuen Tabelle. */
+    private fun blockIndex(
+        op: DiffOperation,
+        ctx: OracleDiffRenderContext,
+        table: String,
+        reason: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} creates table '$table' with an index the Oracle renderer cannot express: " +
+                "$reason Creating the table without it would silently drop the index, so the operation " +
+                "is blocked; create it manually and re-run.",
+            code = "ORACLE_INDEX_NOT_RENDERABLE",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))
     }
 
     /**

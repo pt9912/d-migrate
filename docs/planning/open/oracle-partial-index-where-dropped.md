@@ -21,6 +21,20 @@ je Schluessel ueberhaupt".
 Gefunden als Nebenbefund beim Review von Slice 6a (2026-09-06); nicht von
 diesem Slice verursacht, sondern seit Slice 2 vorhanden.
 
+## Zweite Haelfte: Drift
+
+Der Verlust ist nicht nur still, er **driftet** auch. `IndexDefinition.where`
+geht in den Fingerabdruck ein (`MigrationFingerprint`), und
+`capabilityIndexCanonicalizer` blendet es nicht aus. Ein Soll-Schema mit
+einem partiellen Index gegen ein Oracle-Ziel meldet deshalb nach jedem
+`migrate --execute` Drift — und weil `TableComparator` das Feld ebenfalls
+fuehrt, plant der naechste Lauf denselben Index erneut.
+
+Das ist dieselbe Familie wie
+[`fulltext-config-fingerprint-lossy-dialects.md`](fulltext-config-fingerprint-lossy-dialects.md)
+und die Bitmap-/Partitions-Projektionen: die Loesung ist eine Faehigkeit in
+`DialectCapabilities` plus ein Eintrag in `carriesEveryIndexProperty`.
+
 ## Warum es zaehlt
 
 Die uebrigen Dialekte melden solche Verluste. MySQL kennt partielle Indizes

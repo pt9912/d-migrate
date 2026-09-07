@@ -3,7 +3,7 @@
 -- Target: oracle
 
 -- [W132] Full-text column 'search_vector' degraded to CLOB; Oracle has no full-text vector column type.
--- Hint: To restore full-text search, create an Oracle Text index over the source text column(s) manually.
+-- Hint: Declare a full-text index over the source text column(s); d-migrate renders it as an Oracle Text index.
 CREATE TABLE "articles" (
     "id" NUMBER(9) GENERATED ALWAYS AS IDENTITY,
     "title" VARCHAR2(200) NOT NULL,
@@ -12,5 +12,5 @@ CREATE TABLE "articles" (
     CONSTRAINT "pk_articles" PRIMARY KEY ("id")
 );
 
--- [E057] Full-text index 'ft_articles' on table 'articles' is not rendered for Oracle: Oracle Text indexing is not carried by the neutral model yet.
--- Hint: Create an Oracle Text index (CTXSYS.CONTEXT) manually on the target.
+-- [E057] Full-text index 'ft_articles' on table 'articles' covers 2 columns; an Oracle Text index covers exactly one (ORA-29851), and splitting it would change what a search matches.
+-- Hint: Index a single column, or create a MULTI_COLUMN_DATASTORE preference and the index manually on the target.

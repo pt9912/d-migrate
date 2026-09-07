@@ -39,7 +39,7 @@ class OracleSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("FROM all_sequences") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_views") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM all_dependencies") }, any()) } returns emptyList()
-        every { jdbc.queryList(match { it.contains("FROM all_objects") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, any()) } returns emptyList()
     }
 
     fun stubTableQueries(jdbc: JdbcOperations) {
@@ -111,6 +111,46 @@ class OracleSchemaReaderTest : FunSpec({
         // stuende im Ziel eine Tabelle ohne ihn, ohne dass es irgendwo steht.
         val note = result.notes.single { it.code == "R354" }
         note.objectName shouldBe "IX_FN"
+        note.severity shouldBe SchemaReadSeverity.WARNING
+    }
+
+    test("an Oracle Text index reads back as FULLTEXT; a foreign domain index is reported instead") {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        stubTableQueries(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM all_tables") }, "APP") } returns
+            listOf(mapOf("table_name" to "DOCS"))
+        every { jdbc.queryList(match { it.contains("FROM all_tab_columns c") }, "APP", "DOCS") } returns listOf(
+            mapOf(
+                "column_name" to "BODY", "data_type" to "CLOB", "data_length" to 4000,
+                "data_precision" to null, "data_scale" to null, "nullable" to "Y",
+                "column_id" to 1, "data_default" to null,
+                "identity_generation" to null, "identity_sequence" to null,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("FROM all_indexes i") }, "APP", "DOCS") } returns listOf(
+            mapOf(
+                "index_name" to "FT_BODY", "index_type" to "DOMAIN", "uniqueness" to "NONUNIQUE",
+                "ityp_owner" to "CTXSYS", "ityp_name" to "CONTEXT",
+                "column_name" to "BODY", "column_position" to 1, "descend" to "ASC",
+            ),
+            mapOf(
+                "index_name" to "SX_GEO", "index_type" to "DOMAIN", "uniqueness" to "NONUNIQUE",
+                "ityp_owner" to "MDSYS", "ityp_name" to "SPATIAL_INDEX",
+                "column_name" to "BODY", "column_position" to 1, "descend" to "ASC",
+            ),
+        )
+
+        val (reader, pool) = rig(jdbc)
+        val result = reader.read(pool)
+
+        val indices = result.schema.tables.getValue("DOCS").indices
+        indices.map { it.name } shouldBe listOf("FT_BODY")
+        indices.single().type shouldBe IndexType.FULLTEXT
+        // Einen raeumlichen Domain-Index als BTREE zu lesen ergaebe im Ziel
+        // einen Index, der etwas anderes tut.
+        val note = result.notes.single { it.code == "R357" }
+        note.objectName shouldBe "SX_GEO"
         note.severity shouldBe SchemaReadSeverity.WARNING
     }
 
@@ -367,7 +407,7 @@ class OracleSchemaReaderTest : FunSpec({
     test("unread routines, functions, triggers and packages surface as skippedObjects plus R342 notes") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM all_objects") }, "APP") } returns listOf(
+        every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, "APP") } returns listOf(
             mapOf("object_type" to "PROCEDURE", "object_name" to "P_DO"),
             mapOf("object_type" to "FUNCTION", "object_name" to "F_CALC"),
             mapOf("object_type" to "TRIGGER", "object_name" to "TRG_AUDIT"),
@@ -389,7 +429,7 @@ class OracleSchemaReaderTest : FunSpec({
     test("unread-object notes honour the read options") {
         val jdbc = mockk<JdbcOperations>()
         stubEmptyDefaults(jdbc)
-        every { jdbc.queryList(match { it.contains("FROM all_objects") }, "APP") } returns listOf(
+        every { jdbc.queryList(match { it.contains("FROM all_objects") && !it.contains("FROM all_tables") }, "APP") } returns listOf(
             mapOf("object_type" to "PROCEDURE", "object_name" to "P_DO"),
             mapOf("object_type" to "TRIGGER", "object_name" to "TRG_AUDIT"),
         )

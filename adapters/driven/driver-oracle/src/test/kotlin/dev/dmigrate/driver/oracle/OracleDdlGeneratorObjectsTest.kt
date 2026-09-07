@@ -82,10 +82,66 @@ class OracleDdlGeneratorObjectsTest : FunSpec({
         result.notes.single { it.objectName == "ix_hash" }.code shouldBe "W102"
     }
 
-    test("a FULLTEXT index is rejected with E057 (Oracle Text is Slice 8)") {
+    test("a single-column FULLTEXT index renders an Oracle Text index that syncs on commit") {
         val table = tableWith(IndexDefinition(name = "ix_ft", columns = listOf(IndexColumn("a")), type = IndexType.FULLTEXT))
         val result = generator.generate(schema(tables = mapOf("t" to table)))
-        result.notes.single { it.objectName == "ix_ft" }.code shouldBe "E057"
+        val sql = result.render()
+        sql shouldContain "CREATE INDEX \"ix_ft\" ON \"t\" (\"a\") INDEXTYPE IS CTXSYS.CONTEXT"
+        // Live gemessen: ohne SYNC (ON COMMIT) findet der Index nach einem
+        // INSERT nichts und bleibt leer, bis jemand CTX_DDL.SYNC_INDEX ruft.
+        sql shouldContain "PARAMETERS ('SYNC (ON COMMIT)')"
+        result.notes.none { it.objectName == "ix_ft" } shouldBe true
+    }
+
+    test("a FULLTEXT index on a CLOB column renders — the LOB guard must not catch it first") {
+        // Der Normalfall: Oracle Text indiziert gerade grosse Textspalten.
+        // Stuende der Volltext-Zweig hinter dem W152-Waechter, verschwaende
+        // dieser Index -- und die drei anderen Faelle hier merkten es nicht,
+        // weil ihre Spalte ein INTEGER ist.
+        val table = tableWith(
+            IndexDefinition(name = "ix_ft_lob", columns = listOf(IndexColumn("a")), type = IndexType.FULLTEXT),
+            columnType = NeutralType.Text(null),
+        )
+        val result = generator.generate(schema(tables = mapOf("t" to table)))
+        result.render() shouldContain "INDEXTYPE IS CTXSYS.CONTEXT"
+        result.notes.none { it.code == "W152" } shouldBe true
+    }
+
+    test("a unique declaration on a FULLTEXT index is reported, not silently dropped") {
+        val table = tableWith(
+            IndexDefinition(
+                name = "ix_ft_uq", columns = listOf(IndexColumn("a")),
+                type = IndexType.FULLTEXT, unique = true,
+            ),
+        )
+        val result = generator.generate(schema(tables = mapOf("t" to table)))
+        result.notes.single { it.objectName == "ix_ft_uq" }.code shouldBe "W102"
+    }
+
+    test("a multi-column FULLTEXT index is refused, not split into several") {
+        // ORA-29851: ein Domain-Index deckt genau eine Spalte. Ihn zu
+        // zerlegen aenderte, was eine Suche trifft.
+        val table = tableWith(
+            IndexDefinition(
+                name = "ix_ft2",
+                columns = listOf(IndexColumn("a"), IndexColumn("b")),
+                type = IndexType.FULLTEXT,
+            ),
+        )
+        val result = generator.generate(schema(tables = mapOf("t" to table)))
+        result.notes.single { it.objectName == "ix_ft2" }.code shouldBe "E057"
+        result.render() shouldNotContain "INDEXTYPE IS"
+    }
+
+    test("a dropped text search configuration is reported") {
+        val table = tableWith(
+            IndexDefinition(
+                name = "ix_ft3", columns = listOf(IndexColumn("a")),
+                type = IndexType.FULLTEXT, textSearchConfig = "german",
+            ),
+        )
+        val result = generator.generate(schema(tables = mapOf("t" to table)))
+        result.notes.single { it.objectName == "ix_ft3" }.code shouldBe "W154"
     }
 
     test("an index on a CLOB column is skipped with W152 (not key/index-eligible)") {

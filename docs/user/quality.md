@@ -168,8 +168,17 @@ akzeptiert damit die Lizenzbedingungen des Microsoft-Container-Images. Mit
 ([ADR 0047](../adr/0047-mssql-vierter-dialekt-scoping.md)).
 
 Die Oracle-Integrationstests (`test/integration-oracle`) starten
-`gvenzl/oracle-free:slim-faststart` via Testcontainers. Anders als das
+`gvenzl/oracle-free:23-slim-faststart` via Testcontainers. Anders als das
 MSSQL-Image verlangt dieses Image **keine** programmatische EULA-Akzeptanz.
+
+**Eine Ausnahme:** die Volltext-Spezifikation
+(`OracleFullTextIntegrationTest`) fährt `gvenzl/oracle-free:23-faststart` —
+die `slim`-Variante enthält Oracle Text nicht, und ein Text-Index scheitert
+dort mit `ORA-29833`. Das Abbild ist deutlich größer und startet langsamer;
+nur diese eine Spezifikation nutzt es, damit die Laufzeit der übrigen
+Oracle-Tests unverändert bleibt. Sie verbindet sich zusätzlich einmal als
+`system`, um dem Testnutzer die Rolle `CTXAPP` zu geben — ohne sie lässt
+Oracle keinen Text-Index anlegen.
 Der Treiber `com.oracle.database.jdbc:ojdbc11` steht unter den Oracle Free
 Use Terms and Conditions (FUTC), nicht MIT — Weiterverbreitung des
 unmodifizierten Treibers ist erlaubt, verlangt aber, den Lizenztext

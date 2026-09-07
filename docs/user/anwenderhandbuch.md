@@ -2379,10 +2379,9 @@ arbeiten `schema reverse`, `schema compare`, `schema generate`,
 `data profile` weist Oracle mit einer Meldung ab.
 
 `schema migrate` blockt für Oracle benannt, statt unvollständige DDL zu
-erzeugen, wenn eine Änderung Routinen, Trigger, Materialized Views,
-Volltext-Indizes oder Geometrie-Spalten betrifft. Ebenso beim Versuch, eine
-bestehende Spalte nachträglich zur Identity-Spalte zu machen — Oracle lässt
-das nicht zu.
+erzeugen, wenn eine Änderung Routinen, Trigger, Materialized Views oder
+Geometrie-Spalten betrifft. Ebenso beim Versuch, eine bestehende Spalte
+nachträglich zur Identity-Spalte zu machen — Oracle lässt das nicht zu.
 
 **Kann ich partitionierte Tabellen nach Oracle migrieren?**
 Ja, für `range`, `list` und `hash`. Zwei Dinge sehen auf Oracle anders aus
@@ -2411,6 +2410,34 @@ Beim Zurücklesen mit `schema reverse` gibt es zwei Oracle-Formen, für die
 d-migrate keinen Begriff hat: **INTERVAL**-Partitionierung, die neue
 Partitionen selbsttätig anlegt (`R355`, gelesen werden nur die vorhandenen),
 und **Subpartitionen** (`R356`, nur die oberste Ebene wird gelesen).
+
+**Funktionieren Volltext-Indizes auf Oracle?**
+Ja, über Oracle Text. Aus einem Volltext-Index Ihrer Schemadatei entsteht
+
+```sql
+CREATE INDEX "ft_docs_body" ON "docs" ("body")
+    INDEXTYPE IS CTXSYS.CONTEXT PARAMETERS ('SYNC (ON COMMIT)');
+```
+
+Drei Dinge sollten Sie dabei wissen:
+
+- **Der ausführende Nutzer braucht die Rolle `CTXAPP`.** Vergeben Sie sie
+  vor der Migration (`GRANT CTXAPP TO <nutzer>`); ohne sie lehnt Oracle das
+  Anlegen ab. Fehlt Oracle Text in Ihrer Installation ganz — etwa in
+  abgespeckten Container-Abbildern —, meldet der Server `ORA-29833`.
+- **Ein Oracle-Text-Index deckt genau eine Spalte.** Ein Volltext-Index über
+  mehrere Spalten wird deshalb mit `E057` abgelehnt, statt in mehrere
+  Einzelindizes zerlegt zu werden — die fänden nicht dasselbe.
+- **Eine Text-Search-Konfiguration** (etwa `english`) lässt sich nicht
+  mitgeben; Oracle wählt den Analyzer über ein benanntes Konfigurationsobjekt.
+  Der Default der Datenbank greift, und `W154` sagt Ihnen, wo.
+
+`SYNC (ON COMMIT)` setzt d-migrate immer: ohne die Angabe fände der Index
+nach dem Einfügen von Daten nichts, bis jemand ihn von Hand synchronisiert.
+
+Beim Zurücklesen erkennt `schema reverse` diese Indizes wieder. Ein
+Domain-Index einer anderen Art — etwa ein räumlicher — wird ausgelassen und
+mit `R357` gemeldet, statt als gewöhnlicher Index missdeutet zu werden.
 
 **Was passiert mit Oracle-Bitmap-Indizes?**
 Sie bleiben erhalten. `schema reverse` liest sie als eigenen Indextyp, und

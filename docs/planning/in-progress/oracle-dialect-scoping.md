@@ -2,13 +2,14 @@
 
 > **Status:** In Progress (Stand 2026-09-06). Alle fünf
 > Grundsatzentscheidungen getroffen (siehe ADR 0052). **Geliefert: Slices 0,
-> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e), 6a und 7.** `schema migrate` ist damit
+> 1, 1a, 2, 3, 3b, 4a, 4b, 5 (5a–5e), 6a, 7 und 8.** `schema migrate` ist damit
 > für Oracle nutzbar, der Sample-DB-Harness fährt Pagila in **beide**
 > Richtungen, Bitmap-Indizes gehen über alle fünf Dialekte durch, und
-> partitionierte Tabellen entstehen und werden zurückgelesen. Offen sind
-> **6b** (Indizes über echten Ausdrücken) und die Ausbau-Slices **8–11**
-> (Volltext, Routinen/Trigger, Materialized Views, Profiling);
-> `DialectCommandGate` führt nur noch `data profile`.
+> partitionierte Tabellen entstehen und werden zurückgelesen, und
+> Volltext-Indizes laufen über Oracle Text. Offen sind **6b** (Indizes über
+> echten Ausdrücken) und die Ausbau-Slices **9–11** (Routinen/Trigger,
+> Materialized Views, Profiling); `DialectCommandGate` führt nur noch
+> `data profile`.
 >
 > Die datierten Status-Blöcke unten sind **Momentaufnahmen** und werden nicht
 > rückwirkend umgeschrieben — was dort „bis Slice 5 gesperrt" heißt, war zum
@@ -721,7 +722,7 @@ trägt bislang **keinen** `ORACLE`-Wert, auch nicht vorbereitend.
 | Indizes | Bitmap-Indizes (Slice 6a, gebaut), Function-based-Indizes | Ausbau-Slice (6b) |
 | Partitionierung | Range/List/Hash (Slice 7, gebaut); Composite und INTERVAL gemeldet, nicht dargestellt | ✅ |
 | Materialized Views | **nativ vorhanden**, echtes Refresh-Modell (FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Ausbau-Slice (10) — Anschluss ans bestehende Modell, keine Lücke |
-| Volltext | Oracle Text, eigene Indextypen (`CONTEXT`/`CTXCAT`) | Ausbau-Slice — Muster aus dem Fulltext-Slice |
+| Volltext | Oracle Text, `CTXSYS.CONTEXT` (Slice 8, gebaut); `CTXCAT` nicht gescoped | ✅ |
 | Routinen/Trigger (standalone) | PL/SQL, `CREATE OR REPLACE` | Ausbau-Slice |
 | **PL/SQL Packages** | Prozedur-/Funktions-Gruppierung, kein Äquivalent in PG/MySQL/SQLite/MSSQL | **Zeitlich unbestimmte Einschränkung** (ADR 0052 Punkt 4/Konsequenzen) — braucht Neutralmodell-Erweiterung, kein Slice mit Liefertermin |
 
@@ -776,7 +777,7 @@ Dem gewachsenen Muster folgend (Kern zuerst, Ausbau als eigene Slices):
 | **6a** ✅ | Bitmap-Indizes als eigener neutraler Typ: Reverse (`INDEX_TYPE`), Generate + Diff (`CREATE BITMAP INDEX`), Rückfall + `W102` auf den vier anderen Dialekten, Wire-Format (`schema.json`, Parser). Dazu die Rückfaltung des DESC-Index, der in Oracle intern function-based ist | Bitmap-Treue über alle Dialekte |
 | **6b** | Indizes über echten Ausdrücken (`UPPER(nm)`): Darstellung im neutralen Modell (`IndexColumn` trägt heute keinen Ausdruck), Generate je Dialekt (PG/SQLite/MySQL 8 können es nativ, MSSQL braucht eine berechnete Spalte). Bis dahin lässt der Reverse sie aus und meldet `R354` | volle Index-Treue |
 | **7** ✅ | Partitionierung Range/List/Hash: Generate, Reverse und Diff über einen geteilten Builder; Grenzwert-Umsetzung (`TO_DATE`) und -Rückfaltung; Fingerabdruck-Projektion für die Felder, die Oracle nicht führt. Composite und INTERVAL werden gemeldet (`R355`/`R356`), nicht dargestellt | Partitionstabellen im Round-Trip |
-| **8** | Volltext: Oracle Text (`CONTEXT`/`CTXCAT`, Muster aus dem Fulltext-Slice) | Volltext-Indizes Generate + Reverse |
+| **8** ✅ | Volltext: Oracle Text (`CTXSYS.CONTEXT`) für Generate, Reverse und Diff; `SYNC (ON COMMIT)` verpflichtend; mehrspaltig abgelehnt (`E057`); fremde Domain-Indizes gemeldet (`R357`) | Volltext-Indizes Generate + Reverse |
 | **9** | Routinen/Trigger (standalone PL/SQL, `CREATE OR REPLACE`) | Routinen-Migration |
 | **10** | Materialized Views: Anschluss ans bestehende 0.9.7-D.3b-Modell (Refresh-Modi FAST/COMPLETE/FORCE, ON COMMIT/ON DEMAND) | Materialized Views im Round-Trip |
 | **11** | Profiling-Modul `driver-oracle-profiling` | Live belegt; `DialectCommandGate` verliert seinen letzten Oracle-Eintrag |
@@ -1032,6 +1033,93 @@ Nicht-UTC-Offset.
 - MySQL und SQL Server verlieren dieselben Felder wie Oracle, blenden sie im
   Fingerabdruck aber nicht aus:
   [`partition-fingerprint-lossy-dialects.md`](../open/partition-fingerprint-lossy-dialects.md).
+
+## Slice 8 im Detail — Oracle Text
+
+### Was die Messung entschieden hat
+
+Gemessen gegen `gvenzl/oracle-free:23-faststart` (2026-09-07):
+
+| Versuch | Ergebnis |
+| --- | --- |
+| `INDEXTYPE IS CTXSYS.CONTEXT` auf einer Spalte | OK |
+| … auf zwei Spalten | `ORA-29851: cannot build a domain index on more than one column` |
+| zweiter CONTEXT-Index auf derselben Spalte | `ORA-29879` |
+| `INSERT` + `COMMIT`, dann `CONTAINS` **ohne** `SYNC (ON COMMIT)` | **0 Treffer** |
+| dasselbe **mit** `SYNC (ON COMMIT)` | 1 Treffer |
+| Katalog | `INDEX_TYPE=DOMAIN`, `ITYP_OWNER=CTXSYS`, `ITYP_NAME=CONTEXT`, `PARAMETERS` trägt die Klausel wörtlich |
+
+Die vierte Zeile ist die wichtigste: ein Volltext-Index ohne
+`SYNC (ON COMMIT)` ist nach einer Migration **stumm funktionslos**. Die
+Klausel steht deshalb immer, nicht auf Wunsch — die Sabotage-Gegenprobe
+lässt den Live-Test mit „0 statt 1 Treffer" fallen.
+
+Die erste Grenze bestimmt den Umfang: das neutrale Modell lässt mehrere
+Quellspalten zu (MySQL und SQL Server tragen sie nativ), Oracle nicht. Das
+in mehrere Einzelindizes zu zerlegen wäre kein Rückfall, sondern eine andere
+Bedeutung — abgelehnt mit `E057`.
+
+### Warum ein zweites Container-Abbild
+
+Die `slim`-Variante hat **kein** Oracle Text: im Oracle-Home fehlt das
+`ctx`-Verzeichnis, `CTXSYS` existiert nicht, und die Anweisung scheitert mit
+`ORA-29833`. Die Vollvariante bringt es mit, ist aber deutlich größer und
+startet langsamer. Nur die Volltext-Spezifikation fährt sie deshalb; alle
+übrigen Oracle-Tests bleiben auf `slim`, damit deren Laufzeit unverändert
+bleibt.
+
+Dazu kommt eine Betreiber-Voraussetzung, die kein anderer Dialekt hat: der
+ausführende Nutzer braucht die Rolle **`CTXAPP`**. Der von Testcontainers
+angelegte Nutzer hat sie nicht — der Test vergibt sie als `system`, so wie
+ein Betreiber es täte, und das Handbuch nennt sie.
+
+### Was die unabhängige Prüfung gefunden hat
+
+Ein Blocker, und es ist der, den die Prüfung selbst **nicht** verifizieren
+konnte, sondern nur vermutete — die Messung gab ihr recht und übertraf sie:
+
+**Ein Oracle-Text-Index legt im selben Schema sieben eigene Tabellen an**
+(`DR$<index>$B/C/I/K/N/Q/U`), gewöhnliche Zeilen in `ALL_TABLES`. Der Reverse
+hätte für eine Tabelle mit einem Volltext-Index **acht** zurückgegeben. Das
+wäre nicht nur kosmetisch gewesen: der Post-Compare hätte nach jedem
+`migrate --execute` Drift gemeldet, und `OracleTableLister` — dieselbe
+Abfrage — hätte dem Datenpfad Oracle-interne Token-Tabellen zum Kopieren
+gegeben. `ALL_TABLES` führt kein Kennzeichen dafür; `ALL_OBJECTS.SECONDARY`
+schon (gemessen: `Y` für alle sieben, `N` für die echte Tabelle). Über den
+Namen zu filtern wäre die schlechtere Lösung — `DR$` ist keine reservierte
+Zeichenfolge.
+
+Zwei weitere Befunde derselben Art wie in Slice 7:
+
+- **`textSearchConfig` fiel beim Rendern weg, ging aber in den Fingerabdruck
+  ein.** Das hätte nicht nur Drift gemeldet, sondern den Index bei jedem Lauf
+  erneut eingeplant — `TableComparator` führt das Feld ebenfalls. Neue
+  Fähigkeit `carriesFullTextConfiguration`.
+- **Eine Umbenennung emittierte `CREATE` vor `DROP`.** Für einen
+  Volltext-Index ist das auf Oracle fatal (`ORA-29879`: nur ein Domain-Index
+  je Spaltenliste), für gewöhnliche Indizes nicht — deshalb fehlte die Kante.
+  Sie hängt jetzt an den Spalten, nicht am Namen.
+
+Dazu ein Fehler in meiner eigenen Korrektur: der Blocker für einen nicht
+renderbaren Index stand **hinter** dem Emittieren der Tabelle, und dieselbe
+Operation kann nicht zugleich gerendert und übersprungen sein
+(`operationsRendered and operationsSkipped must be disjoint`). Die Indizes
+werden jetzt vorher gerendert und geprüft.
+
+### Was offen bleibt
+
+- `CTXCAT`- und `CTXRULE`-Indextypen sind nicht gescoped; nur `CONTEXT`.
+- Mehrspaltiger Volltext über `MULTI_COLUMN_DATASTORE` — verlangt eine
+  benannte `CTX_DDL`-Preference, also ein Objekt, das das neutrale Modell
+  nicht kennt (dieselbe Lage wie SQL Servers Volltext-Katalog).
+- Die Text-Search-Konfiguration wird verworfen (`W154`), nicht auf einen
+  Lexer abgebildet — aus demselben Grund; im Fingerabdruck ist sie für
+  Oracle ausgeblendet, für MySQL/SQLite/SQL Server noch nicht
+  ([Ticket](../open/fulltext-config-fingerprint-lossy-dialects.md)).
+- Das `fulltext`-Golden deckt nur den mehrspaltigen **Ablehnungs**-Fall ab,
+  weil die geteilte Fixture zwei Quellspalten führt. Die erzeugte Anweisung
+  selbst prüft ein Unit-Test auf denselben exakten Text; ein zusätzlicher
+  einspaltiger Index in der Fixture änderte die Goldens aller fünf Dialekte.
 
 ## Offene Punkte
 

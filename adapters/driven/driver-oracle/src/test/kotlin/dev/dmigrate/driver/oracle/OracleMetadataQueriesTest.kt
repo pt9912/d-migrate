@@ -157,6 +157,31 @@ class OracleMetadataQueriesTest : FunSpec({
         scan.expressionIndexes shouldBe emptyList()
     }
 
+    // Gemessen: ein Oracle-Text-Index erscheint als INDEX_TYPE=DOMAIN mit
+    // ITYP_OWNER=CTXSYS und ITYP_NAME=CONTEXT; ALL_IND_COLUMNS nennt die
+    // echte Spalte (keine Systemspalte).
+    test("scanIndexes recognises an Oracle Text index by its index type owner") {
+        val jdbc = indexMock(
+            rows = listOf(indexRow("FT_BODY", "DOMAIN", "BODY", itypOwner = "CTXSYS", itypName = "CONTEXT")),
+        )
+        val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
+        scan.fullTextIndexes shouldBe setOf("FT_BODY")
+        scan.indices.single().columns shouldBe listOf("BODY")
+        scan.foreignDomainIndexes shouldBe emptyList()
+    }
+
+    test("a domain index of another index type is skipped, not read as a b-tree") {
+        // Ein raeumlicher Domain-Index als BTREE zu lesen ergaebe im Ziel
+        // einen Index, der etwas anderes tut.
+        val jdbc = indexMock(
+            rows = listOf(indexRow("SX_GEO", "DOMAIN", "SHAPE", itypOwner = "MDSYS", itypName = "SPATIAL_INDEX")),
+        )
+        val scan = OracleMetadataQueries.scanIndexes(jdbc, "APP", "T")
+        scan.indices shouldBe emptyList()
+        scan.foreignDomainIndexes shouldBe listOf("SX_GEO")
+        scan.fullTextIndexes shouldBe emptySet()
+    }
+
     test("scanIndexes reports an index over a genuine expression instead of emitting it") {
         val jdbc = indexMock(
             rows = listOf(indexRow("IX_FN", "FUNCTION-BASED NORMAL", "SYS_NC00006\$")),
@@ -239,9 +264,12 @@ private fun indexRow(
     position: Int = 1,
     descend: String = "ASC",
     uniqueness: String = "NONUNIQUE",
+    itypOwner: String? = null,
+    itypName: String? = null,
 ): Map<String, Any?> = mapOf(
     "index_name" to name, "index_type" to type, "uniqueness" to uniqueness,
     "column_name" to column, "column_position" to position, "descend" to descend,
+    "ityp_owner" to itypOwner, "ityp_name" to itypName,
 )
 
 private fun expressionRow(name: String, expression: String, position: Int = 1): Map<String, Any?> =

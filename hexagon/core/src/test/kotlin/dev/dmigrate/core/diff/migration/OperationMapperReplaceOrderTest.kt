@@ -159,6 +159,68 @@ class OperationMapperReplaceOrderTest : FunSpec({
         (plan.operations.indexOf(add) > plan.operations.indexOf(drop)) shouldBe true
     }
 
+    test("a renamed full-text index gives up its columns before the new one takes them") {
+        // Dieselbe Lage wie beim clustered Index, anderer Grund: manche
+        // Dialekte lassen ueber denselben Spalten nur EINEN Volltext-Index zu
+        // (Oracle: ORA-29879, gemessen). Ein Namenswechsel erscheint als
+        // Entfernen + Hinzufuegen mit verschiedenen Objektnamen, die Kante
+        // oben greift also nicht.
+        fun withFullText(name: String) = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                    "label" to ColumnDefinition(NeutralType.Text()),
+                ),
+                primaryKey = listOf("id"),
+                indices = listOf(IndexDefinition(
+                    name = name,
+                    columns = listOf(IndexColumn("label")),
+                    type = dev.dmigrate.core.model.IndexType.FULLTEXT,
+                )),
+            )),
+        )
+        val current = withFullText("ft_z")
+        val desired = withFullText("ft_a")
+        val plan = planner.plan(current, desired, comparator.compare(current, desired))
+
+        val drop = plan.operations.first { it is DiffOperation.DropIndex }
+        val add = plan.operations.first { it is DiffOperation.AddIndex }
+        add.dependencies.contains(drop.id) shouldBe true
+        (plan.operations.indexOf(add) > plan.operations.indexOf(drop)) shouldBe true
+    }
+
+    test("a full-text index on OTHER columns needs no such edge") {
+        // Die Kante haengt an den Spalten, nicht am Indextyp: zwei
+        // Volltext-Indizes ueber verschiedenen Spalten stehen sich nicht im Weg.
+        val current = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf(
+                    "a" to ColumnDefinition(NeutralType.Text()),
+                    "b" to ColumnDefinition(NeutralType.Text()),
+                ),
+                indices = listOf(IndexDefinition(
+                    name = "ft_a", columns = listOf(IndexColumn("a")),
+                    type = dev.dmigrate.core.model.IndexType.FULLTEXT,
+                )),
+            )),
+        )
+        val desired = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = current.tables.getValue("t").columns,
+                indices = listOf(IndexDefinition(
+                    name = "ft_b", columns = listOf(IndexColumn("b")),
+                    type = dev.dmigrate.core.model.IndexType.FULLTEXT,
+                )),
+            )),
+        )
+        val plan = planner.plan(current, desired, comparator.compare(current, desired))
+        val add = plan.operations.first { it is DiffOperation.AddIndex }
+        add.dependencies shouldBe emptySet()
+    }
+
     test("a plain renamed index needs no storage edge") {
         fun withIndex(name: String) = SchemaDefinition(
             name = "App", version = "1",
