@@ -67,6 +67,31 @@ class MssqlCommandGateE2ETest : FunSpec({
         }
     }
 
+    test("--on-conflict skip without a primary key is refused before the connection") {
+        // Der Beleg liegt im Exit-Code: 2 (Usage) kommt vor dem
+        // Verbindungsversuch, 4 danach. Die mssql-URL zeigt auf einen Port,
+        // an dem niemand lauscht -- kaeme die Meldung erst beim Oeffnen der
+        // Tabelle, endete der Lauf mit 4.
+        val noKeySchema = tmp.resolve("no-key.yaml").apply { writeText(SCHEMA_WITHOUT_PRIMARY_KEY) }
+        val data = tmp.resolve("users.json").apply { writeText("[]") }
+        val run = runRealCli(
+            listOf(
+                "data", "import",
+                "--target", UNREACHABLE_MSSQL_URL,
+                "--source", data.absolutePathString(),
+                "--schema", noKeySchema.absolutePathString(),
+                "--table", "users",
+                "--on-conflict", "skip",
+            ),
+        )
+
+        withClue("--- stdout ---\n${run.stdout}\n--- stderr ---\n${run.stderr}") {
+            run.exitCode shouldBe 2
+            (run.stdout + run.stderr) shouldContain "--on-conflict skip needs a primary key"
+            (run.stdout + run.stderr) shouldContain "users"
+        }
+    }
+
     test("data profile against an mssql source reaches the connection instead of being refused") {
         // Der Gegenbeweis zur frueheren Ablehnung: kein Exit 2 mit
         // Gate-Meldung mehr, sondern der Verbindungsfehler des Ports, an dem
@@ -78,6 +103,22 @@ class MssqlCommandGateE2ETest : FunSpec({
         }
     }
 })
+
+/** Dasselbe Schema ohne Primaerschluessel — fuer den `--on-conflict skip`-Waechter. */
+private val SCHEMA_WITHOUT_PRIMARY_KEY = """
+    schema_format: "1.0"
+    name: "mssql-gate-e2e"
+    version: "1.0.0"
+
+    tables:
+      users:
+        columns:
+          id:
+            type: integer
+          name:
+            type: text
+            max_length: 100
+""".trimIndent()
 
 /** Port 1 lauscht nirgends — ein Verbindungsversuch wuerde sichtbar scheitern (Exit 4/7). */
 private const val UNREACHABLE_MSSQL_URL = "mssql://sa:Gate_E2E_Pa55word@127.0.0.1:1/dmigrate_gate"

@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -410,8 +411,18 @@ internal object DataImportHelpers {
         request: DataImportRequest,
         dialect: DatabaseDialect,
         stderr: (String) -> Unit,
+        schema: SchemaDefinition? = null,
     ): Int? {
         val caps = DialectCapabilities.forDialect(dialect)
+
+        missingPrimaryKeyForSkip(request, caps, schema)?.let { tables ->
+            stderr(
+                "Error: --on-conflict skip needs a primary key on $dialect, and the schema declares " +
+                    "none for: ${tables.joinToString()}. Use --on-conflict abort, or add the primary " +
+                    "key to the schema."
+            )
+            return 2
+        }
 
         if (request.disableFkChecks && !caps.supportsDisableFkChecks) {
             val dialectName = dialect.name.lowercase()
@@ -434,5 +445,31 @@ internal object DataImportHelpers {
         }
 
         return null
+    }
+
+    /**
+     * Die Tabellen, denen fuer `--on-conflict skip` der Primaerschluessel
+     * fehlt — oder `null`, wenn nichts zu beanstanden ist.
+     *
+     * SQL Server und Oracle brauchen fuer `skip` ein `MERGE` mit einem
+     * Schluesselpraedikat; ohne Schluessel gibt es keines. Der Transfer lehnt
+     * das im Preflight ab, der Import merkte es erst beim Oeffnen der
+     * Tabelle — ein Lauf ueber viele Tabellen brach damit mittendrin ab,
+     * nachdem die vorherigen schon geladen waren.
+     *
+     * Grundlage ist die `--schema`-Datei; ohne sie gibt es vor der ersten
+     * Verbindung nichts zu pruefen, und es bleibt bei der spaeten Meldung.
+     */
+    private fun missingPrimaryKeyForSkip(
+        request: DataImportRequest,
+        caps: DialectCapabilities,
+        schema: SchemaDefinition?,
+    ): List<String>? {
+        if (!caps.requiresPrimaryKeyForSkip) return null
+        if (!request.onConflict.equals("skip", ignoreCase = true)) return null
+        val without = schema?.tables.orEmpty()
+            .filterValues { it.primaryKey.isEmpty() }
+            .keys.sorted()
+        return without.ifEmpty { null }
     }
 }

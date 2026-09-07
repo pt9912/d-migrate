@@ -143,8 +143,9 @@ internal class ImportPreflightResolver(
             is ImportStep.Exit -> return ImportPreflightResolution.Exit(result.code)
         }
 
-        DataImportHelpers.validateDialectCapabilities(request, targetContext.connectionConfig.dialect, stderr)
-            ?.let { return ImportPreflightResolution.Exit(it) }
+        DataImportHelpers.validateDialectCapabilities(
+            request, targetContext.connectionConfig.dialect, stderr, preparedImport.schema,
+        )?.let { return ImportPreflightResolution.Exit(it) }
 
         return ImportPreflightResolution.Ok(
             ImportPreflightContext(

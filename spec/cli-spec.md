@@ -1635,8 +1635,11 @@ einen Primärschlüssel — und dass die übertragenen Spalten ihn enthalten
 (T-SQL hat keine schlüsselfreie Form wie `ON CONFLICT DO NOTHING`/
 `INSERT IGNORE`; d-migrate baut ein `MERGE`, dessen Prädikat die
 Schlüsselwerte bindet). Der Transfer-Preflight lehnt eine Tabelle ohne
-Schlüssel mit Exit 3 ab; fehlt der Schlüssel nur im Chunk, meldet es der
-Import benennend statt als Treiberfehler.
+Schlüssel mit Exit 3 ab. Der **Import** prüft es mit `--schema` ebenfalls
+vorab (Exit 2, vor der ersten Verbindung, alle betroffenen Tabellen auf
+einmal); ohne `--schema` gibt es dort nichts zu prüfen, und es bleibt bei der
+Meldung beim Öffnen der Tabelle. Fehlt der Schlüssel nur im Chunk, meldet es
+der Import benennend statt als Treiberfehler.
 Computed Columns kann SQL Server nicht beschreiben — enthält der Chunk eine,
 bricht der Import mit einer benennenden Meldung ab, statt den Treiberfehler
 durchzureichen. Schlüsselwerte einer IDENTITY-Spalte werden mit

@@ -3,7 +3,13 @@ package dev.dmigrate.cli.commands
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DatabaseDialect
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Path
 
 /**
@@ -227,5 +233,74 @@ class DataImportFlagValidationTest : FunSpec({
 
         exit shouldBe 2
         stderr.single() shouldContain "--no-checkpoint and --checkpoint-dir are mutually exclusive"
+    }
+
+    // ── --on-conflict skip ohne Primaerschluessel ────────────────
+    //
+    // SQL Server und Oracle brauchen dafuer ein MERGE mit
+    // Schluesselpraedikat. Der Transfer lehnt das im Preflight ab; der Import
+    // merkte es erst beim Oeffnen der Tabelle, also mitten im Lauf, nachdem
+    // die vorherigen Tabellen schon geladen waren.
+
+    fun schemaWith(vararg tables: Pair<String, List<String>>) = SchemaDefinition(
+        name = "S", version = "1",
+        tables = tables.associate { (name, pk) ->
+            name to TableDefinition(
+                columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer)),
+                primaryKey = pk,
+            )
+        },
+    )
+
+    test("skip without a primary key is refused before the first table opens") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateDialectCapabilities(
+            request().copy(onConflict = "skip"),
+            DatabaseDialect.MSSQL,
+            stderr::add,
+            schemaWith("orders" to emptyList(), "users" to listOf("id"), "audit" to emptyList()),
+        )
+
+        exit shouldBe 2
+        // Alle betroffenen Tabellen auf einmal, nicht die erste, an der es scheitert.
+        stderr.single() shouldContain "audit, orders"
+        stderr.single() shouldNotContain "users"
+    }
+
+    test("skip is fine when every table declares a key, and on dialects that need none") {
+        val stderr = mutableListOf<String>()
+        val allKeyed = schemaWith("orders" to listOf("id"))
+
+        DataImportHelpers.validateDialectCapabilities(
+            request().copy(onConflict = "skip"), DatabaseDialect.MSSQL, stderr::add, allKeyed,
+        ) shouldBe null
+        // PostgreSQL kommt mit `ON CONFLICT DO NOTHING` ohne Schluessel aus.
+        DataImportHelpers.validateDialectCapabilities(
+            request().copy(onConflict = "skip"), DatabaseDialect.POSTGRESQL, stderr::add,
+            schemaWith("orders" to emptyList()),
+        ) shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
+    test("without a --schema file there is nothing to check this early") {
+        val stderr = mutableListOf<String>()
+
+        // Der Dateiweg traegt dann kein Schema; es bleibt bei der spaeten
+        // Meldung beim Oeffnen der Tabelle.
+        DataImportHelpers.validateDialectCapabilities(
+            request().copy(onConflict = "skip"), DatabaseDialect.MSSQL, stderr::add, null,
+        ) shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
+    test("another conflict mode needs no key at all") {
+        val stderr = mutableListOf<String>()
+
+        DataImportHelpers.validateDialectCapabilities(
+            request().copy(onConflict = "abort"), DatabaseDialect.MSSQL, stderr::add,
+            schemaWith("orders" to emptyList()),
+        ) shouldBe null
+        stderr.shouldBeEmpty()
     }
 })
