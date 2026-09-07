@@ -276,17 +276,18 @@ internal object MysqlDiffSequenceOps {
         // managed shape).
         if (canonicityBlocks(op, MysqlSequenceCanonicityGate.OpIntent.ALTER, ctx)) return
         if (ctx.direction == MysqlRenderDirection.UP) {
-            // Atomic-Preserve follow-up (Finding #2, 2026-06-01): the
-            // sentinel current-value (0L) marks the op as runtime-
-            // probed by `MysqlAtomicSequencePreserveExecutor`. Emit an
-            // audit comment instead of an `UPDATE` that would set
-            // `next_value = 0` if copy-pasted out of a report.
+            // Atomic-Preserve: der Sentinel-Wert (0L) markiert die Operation
+            // als zur Ausfuehrungszeit gesondert behandelt
+            // (`MysqlAtomicSequencePreserveExecutor`). Ein `UPDATE` waere hier
+            // falsch -- es setzte `next_value = 0`, wenn jemand es aus dem
+            // Bericht kopiert. Die Auskunft gehoert in die Diagnosen.
             if (op.currentValue == DiffOperation.AlterSequenceCurrentValue.ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE) {
-                ctx.emit(
+                ctx.markRendered(op)
+                ctx.info(
                     op,
-                    "-- atomic-preserve audit: UPDATE dmg_sequences for ${op.applySequenceRef.name} " +
-                        "is probed + restored at execute time inside the lock " +
-                        "(value not yet known at render time).",
+                    "atomic-preserve: UPDATE dmg_sequences for ${op.applySequenceRef.name} is probed " +
+                        "and restored at execute time inside the lock (value not yet known at render time).",
+                    "MYSQL_ATOMIC_PRESERVE_DEFERRED",
                 )
                 return
             }
@@ -295,13 +296,16 @@ internal object MysqlDiffSequenceOps {
         }
         val restoreValue = op.restoreValue
         if (op.rollbackImpossible || restoreValue == null) {
-            // Down without a deterministic restore snapshot cannot
-            // run — emit a structured comment so the report still
-            // tracks the op without a half-built `UPDATE`.
-            ctx.emit(
+            // Ohne deterministische Momentaufnahme laesst sich der Down-Weg
+            // nicht bauen. Die Operation gilt als erledigt, die Begruendung
+            // steht in den Diagnosen -- ein halb gebautes `UPDATE` waere
+            // schlimmer als keines.
+            ctx.markRendered(op)
+            ctx.info(
                 op,
-                "-- preserve-current-value down skipped for ${op.applySequenceRef.name}: " +
+                "preserve-current-value down skipped for ${op.applySequenceRef.name}: " +
                     (op.rollbackImpossibleReason ?: "no deterministic restore snapshot"),
+                "MYSQL_PRESERVE_DOWN_SKIPPED",
             )
             return
         }

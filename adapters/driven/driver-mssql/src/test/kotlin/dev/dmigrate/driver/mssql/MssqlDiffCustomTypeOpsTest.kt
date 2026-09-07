@@ -59,7 +59,12 @@ class MssqlDiffCustomTypeOpsTest : FunSpec({
             schema(mapOf("mood" to mood)),
         )
         r.blockers.shouldBeEmpty()
-        r.statements.single().sql shouldContainStr "is created at its columns, not as an object"
+        // Erledigt, aber ohne Anweisung: die Erklaerung gehoert in die
+        // Diagnosen. Als SQL-Kommentar im Anweisungsstrom ginge sie an die
+        // Datenbank -- Oracle lehnt so etwas mit ORA-00900 ab.
+        r.statements.shouldBeEmpty()
+        r.operationsRendered.size shouldBe 1
+        r.diagnostics.single().message shouldContainStr "is created at its columns, not as an object"
     }
 
     test("dropping an enum type likewise leaves nothing to drop") {
@@ -69,7 +74,9 @@ class MssqlDiffCustomTypeOpsTest : FunSpec({
             schema(emptyMap()),
         )
         r.blockers.shouldBeEmpty()
-        r.statements.single().sql shouldContainStr "is dropped at its columns"
+        r.statements.shouldBeEmpty()
+        r.operationsRendered.size shouldBe 1
+        r.diagnostics.single().message shouldContainStr "is dropped at its columns"
     }
 
     test("a composite type is blocked — SQL Server has no equivalent, as in the generate path") {
@@ -124,7 +131,9 @@ class MssqlDiffCustomTypeOpsTest : FunSpec({
                 CustomTypeDiff(name = "mood", values = ValueChange(mood.values!!, moodWide.values!!)),
             ),
         )
-        up(diff, current, desired).statements.single().sql shouldContainStr "no column uses it"
+        val r = up(diff, current, desired)
+        r.statements.shouldBeEmpty()
+        r.diagnostics.single().message shouldContainStr "no column uses it"
     }
 
     test("down of a type change is blocked: the planner defines no inverse for it") {
@@ -191,6 +200,7 @@ class MssqlDiffCustomTypeOpsTest : FunSpec({
             schema(emptyMap()),
             schema(mapOf("mood" to mood)),
         )
-        r.statements.single().sql shouldContainStr "is dropped at its columns"
+        r.statements.shouldBeEmpty()
+        r.diagnostics.single().message shouldContainStr "is dropped at its columns"
     }
 })

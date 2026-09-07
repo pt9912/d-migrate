@@ -31,14 +31,15 @@ object JdbcMigrationStatementExecutor {
         pool: ConnectionPool,
         statements: List<MigrationDdlStatement>,
     ): MigrationExecutionTrace {
-        if (statements.isEmpty()) {
+        val executable = statements.filter(::isExecutable)
+        if (executable.isEmpty()) {
             return MigrationExecutionTrace(
                 executionStarted = true,
                 executionCompleted = true,
                 statementsAttempted = 0,
             )
         }
-        val runs = splitByExecutionModel(statements)
+        val runs = splitByExecutionModel(executable)
         var attempted = 0
         var lastIds: Set<String> = emptySet()
         var committedRuns = 0
@@ -85,12 +86,49 @@ object JdbcMigrationStatementExecutor {
         return runs
     }
 
-    fun runAll(conn: Connection, statements: List<MigrationDdlStatement>): MigrationExecutionTrace =
-        when (MigrationStreamClassifier.executionModel(statements)) {
-            StreamExecutionModel.NO_TRANSACTION -> runWithoutTransaction(conn, statements)
-            StreamExecutionModel.STREAM_TRANSACTION -> runStreamOwnedTransaction(conn, statements)
-            StreamExecutionModel.RUNNER_TRANSACTION -> runRunnerOwnedTransaction(conn, statements)
+    fun runAll(conn: Connection, statements: List<MigrationDdlStatement>): MigrationExecutionTrace {
+        val executable = statements.filter(::isExecutable)
+        if (executable.isEmpty()) {
+            return MigrationExecutionTrace(
+                executionStarted = true,
+                executionCompleted = true,
+                statementsAttempted = 0,
+            )
         }
+        return when (MigrationStreamClassifier.executionModel(executable)) {
+            StreamExecutionModel.NO_TRANSACTION -> runWithoutTransaction(conn, executable)
+            StreamExecutionModel.STREAM_TRANSACTION -> runStreamOwnedTransaction(conn, executable)
+            StreamExecutionModel.RUNNER_TRANSACTION -> runRunnerOwnedTransaction(conn, executable)
+        }
+    }
+
+    /**
+     * Ob eine Anweisung ueberhaupt etwas auszufuehren hat.
+     *
+     * Ein Text, der nur aus Kommentar- und Leerzeilen besteht, geht nicht an
+     * die Datenbank: Oracle lehnt ihn mit `ORA-00900` ab, die uebrigen vier
+     * nehmen ihn klaglos an — und in beiden Faellen ist er keine Anweisung,
+     * sondern eine Erklaerung, die in die Diagnosen gehoert.
+     *
+     * Die Renderer erzeugen so etwas nicht mehr; dies ist das Netz fuer einen
+     * artefakt-deserialisierten Plan aelteren Ursprungs. Die Pruefung ist
+     * bewusst grob: sie sucht **eine** Zeile mit Inhalt, die nicht mit `--`
+     * beginnt. Eine echte Anweisung hat sie immer, egal wie viele
+     * Kommentarzeilen davor stehen.
+     *
+     * **Eine Ausnahme:** ein Runner-Hook (`-- dmigrate:runner-hook=…`) ist
+     * ebenfalls ein reiner Kommentar, aber er geht gar nicht erst an die
+     * Datenbank — [JdbcRunnerHookHandler] fängt ihn ab und löst stattdessen
+     * einen Seiteneffekt aus. Ihn hier auszusortieren nähme dem Lauf zum
+     * Beispiel das Sichern und Wiederherstellen des Fremdschlüssel-PRAGMA.
+     */
+    private fun isExecutable(statement: MigrationDdlStatement): Boolean {
+        if (JdbcRunnerHookHandler.parseHook(statement.sql) != null) return true
+        return statement.sql.lineSequence().any { line ->
+            val trimmed = line.trim()
+            trimmed.isNotEmpty() && !trimmed.startsWith("--")
+        }
+    }
 
     /**
      * Anweisungen, die die Datenbank in einer offenen Transaktion ablehnt —

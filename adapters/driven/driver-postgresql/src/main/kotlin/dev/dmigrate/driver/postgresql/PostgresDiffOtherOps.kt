@@ -173,7 +173,9 @@ internal object PostgresDiffOtherOps {
         noteStorageDegradation(op, ctx, table, index)
         // CREATE INDEX (non-CONCURRENTLY): SHARE lock — writes block,
         // reads proceed. Plan-2 §A.1.
-        ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
+        PostgresDiffTableOps.emitIndexOrNote(
+            op, ctx, table, index, PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS,
+        )
     }
 
     /**
@@ -217,7 +219,9 @@ internal object PostgresDiffOtherOps {
             // Die DOWN-Richtung LEGT den Index an; sie meldet den Verlust
             // deshalb genauso wie die UP-Richtung.
             noteStorageDegradation(op, ctx, table, index)
-            ctx.emit(op, ctx.sql.createIndexSql(table, index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
+            PostgresDiffTableOps.emitIndexOrNote(
+                op, ctx, table, index, PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS,
+            )
             return
         }
         ctx.emit(op, "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};")

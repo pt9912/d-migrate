@@ -107,12 +107,15 @@ internal object SqliteDiffSimpleOps {
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: SqliteDiffRenderContext) {
         val tableName = op.objectRef.rootName
-        val text = if (ctx.direction == SqliteRenderDirection.DOWN) {
-            "-- DropTable is NOT_REVERSIBLE; refusing to render an inverse."
-        } else {
-            "DROP TABLE ${ctx.sql.quote(tableName)};"
+        if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // NOT_REVERSIBLE -- der Dispatcher filtert das vorher; hier bleibt
+            // der Pfad total, ohne eine Anweisung zu erfinden.
+            ctx.markRendered(op)
+            ctx.info(op, "DropTable is NOT_REVERSIBLE; no inverse statement is rendered.",
+                "SQLITE_DROP_TABLE_NOT_REVERSIBLE")
+            return
         }
-        ctx.emit(op, text)
+        ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
     }
 
     fun renderAddColumn(op: DiffOperation.AddColumn, ctx: SqliteDiffRenderContext) {

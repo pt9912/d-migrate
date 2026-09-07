@@ -134,6 +134,29 @@ internal class MssqlDiffRenderContext(
     }
 
     /**
+     * Bucht eine Operation als erledigt, OHNE eine Anweisung zu erzeugen.
+     *
+     * Fuer Faelle, in denen dieser Dialekt strukturell nichts auszufuehren
+     * hat. Der Vertrag laesst das ausdruecklich zu: [MigrationDdlResult]
+     * verlangt nur, dass jede ANWEISUNG eine gerenderte Operation hat, nicht
+     * umgekehrt. Die Begruendung gehoert in die Diagnosen, nicht als
+     * Pseudo-Anweisung ins SQL-Skript -- `statements` traegt auszufuehrendes
+     * SQL, `diagnostics` traegt Erklaerungen. Ein reiner Kommentar dort ginge
+     * ausserdem als Anweisung an die Datenbank; Oracle lehnt ihn mit
+     * `ORA-00900` ab.
+     *
+     * Die Risiko-Buchfuehrung laeuft wie bei [emit] weiter: die Risiken
+     * stehen an der Operation, nicht am Dialekt, und duerfen nicht dadurch
+     * verschwinden, dass dieser Dialekt nichts auszufuehren hat.
+     */
+    fun markRendered(op: DiffOperation) {
+        rendered += op.id
+        if (riskFor(op).destructive) destructive += op.id
+        if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
+        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+    }
+
+    /**
      * Ein Statement des Tabellen-Neubaus. Anders als [emit] gehoert es nicht zu
      * EINER Operation, sondern zum ganzen Eimer: der Neubau erledigt alles, was
      * an der Tabelle haengt, in einer Sequenz. Wuerde nur die ausloesende

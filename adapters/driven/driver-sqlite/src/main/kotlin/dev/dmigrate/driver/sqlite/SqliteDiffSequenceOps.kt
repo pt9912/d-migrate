@@ -147,19 +147,19 @@ internal object SqliteDiffSequenceOps {
                 // targets `applySequenceRef` (the new name after a
                 // rename; the same name as the parent op otherwise).
                 //
-                // Atomic-Preserve follow-up (Finding #2, 2026-06-01):
-                // the sentinel current-value (0L) marks the op as
-                // runtime-probed by `SqliteAtomicSequencePreserveExecutor`.
-                // Emit an audit comment instead of an `UPDATE` that
-                // would set `next_value = 0` if copy-pasted out of a
-                // report.
+                // Atomic-Preserve: der Sentinel-Wert (0L) markiert die
+                // Operation als zur Ausfuehrungszeit gesondert behandelt
+                // (`SqliteAtomicSequencePreserveExecutor`). Ein `UPDATE` waere
+                // hier falsch -- es setzte `next_value = 0`, wenn jemand es
+                // aus dem Bericht kopiert.
                 if (op.currentValue == DiffOperation.AlterSequenceCurrentValue.ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE) {
-                    ctx.emit(
+                    ctx.markRendered(op)
+                    ctx.info(
                         op,
-                        "-- atomic-preserve audit: UPDATE dmg_sequences for " +
-                            "${op.applySequenceRef.name} is probed + restored at " +
-                            "execute time inside the lock " +
+                        "atomic-preserve: UPDATE dmg_sequences for ${op.applySequenceRef.name} is " +
+                            "probed and restored at execute time inside the lock " +
                             "(value not yet known at render time).",
+                        "SQLITE_ATOMIC_PRESERVE_DEFERRED",
                     )
                 } else {
                     ctx.emit(op, updateNextValueSql(op.applySequenceRef.name, op.currentValue))

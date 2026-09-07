@@ -102,6 +102,29 @@ internal class SqliteDiffRenderContext(
         if (riskFor(op).requiresManualConfirmation) manualActions += op.id
     }
 
+    /**
+     * Bucht eine Operation als erledigt, OHNE eine Anweisung zu erzeugen.
+     *
+     * Fuer Faelle, in denen dieser Dialekt strukturell nichts auszufuehren
+     * hat. Der Vertrag laesst das ausdruecklich zu: [MigrationDdlResult]
+     * verlangt nur, dass jede ANWEISUNG eine gerenderte Operation hat, nicht
+     * umgekehrt. Die Begruendung gehoert in die Diagnosen, nicht als
+     * Pseudo-Anweisung ins SQL-Skript -- `statements` traegt auszufuehrendes
+     * SQL, `diagnostics` traegt Erklaerungen. Ein reiner Kommentar dort ginge
+     * ausserdem als Anweisung an die Datenbank; Oracle lehnt ihn mit
+     * `ORA-00900` ab.
+     *
+     * Die Risiko-Buchfuehrung laeuft wie bei [emit] weiter: die Risiken
+     * stehen an der Operation, nicht am Dialekt, und duerfen nicht dadurch
+     * verschwinden, dass dieser Dialekt nichts auszufuehren hat.
+     */
+    fun markRendered(op: DiffOperation) {
+        rendered += op.id
+        if (riskFor(op).destructive) destructive += op.id
+        if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
+        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+    }
+
     private fun riskFor(op: DiffOperation): OperationRisk =
         if (direction == SqliteRenderDirection.UP) {
             op.risks.up
@@ -135,6 +158,18 @@ internal class SqliteDiffRenderContext(
      * `MysqlDiffRenderContext.warning(...)` convenience so dialect
      * helpers can share the same call site.
      */
+    /** Eine Erklaerung zu einer Operation — dieselbe Form wie [warning], nur INFO. */
+    fun info(op: DiffOperation, message: String, code: String) {
+        addDiagnostic(
+            DiffDiagnostic(
+                code = code,
+                message = message,
+                severity = DiffDiagnostic.Severity.INFO,
+                operationId = op.id,
+            ),
+        )
+    }
+
     fun warning(op: DiffOperation, message: String, code: String) {
         diagnostics += DiffDiagnostic(
             code = code,
@@ -296,8 +331,17 @@ internal class SqliteDiffRenderContext(
         )
     }
 
-    /** Mark an op as rendered without emitting a separate statement (rebuild absorbs it). */
-    fun markRendered(op: DiffOperation) {
+    /**
+     * Bucht eine Operation als erledigt, die der Tabellen-Neubau **mit**
+     * erledigt.
+     *
+     * Ohne Risiko-Buchfuehrung, anders als [markRendered]: die Risiken des
+     * ganzen Eimers stehen an der Neubau-Anweisung, die
+     * [emitRebuildStatement] schreibt. Sie hier ein zweites Mal einzutragen
+     * hiesse, sie einer Operation zuzuschreiben, die fuer sich genommen
+     * nichts tut.
+     */
+    fun markAbsorbedByRebuild(op: DiffOperation) {
         rendered += op.id
     }
 

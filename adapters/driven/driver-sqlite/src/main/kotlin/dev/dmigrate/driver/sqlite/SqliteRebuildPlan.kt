@@ -45,7 +45,7 @@ internal data class SqliteRebuildPlan(
 
     /**
      * The full bucket of operations this rebuild absorbs — required
-     * for context-side book-keeping (`ctx.markRendered(op)` keys on
+     * for context-side book-keeping (`ctx.markAbsorbedByRebuild(op)` keys on
      * `op` itself, not just its id). The planner attaches the bucket
      * here from `SqliteRebuildPlanner.classify`'s output.
      */

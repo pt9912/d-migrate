@@ -90,16 +90,20 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         }
     }
 
-    fun createIndexSql(table: String, idx: IndexDefinition): String {
+    /**
+     * `null`, wenn es nichts auszufuehren gibt — ein FULLTEXT-Index ohne die
+     * `tsvector`-Spalte, ueber der er entstuende. Der Aufrufer bucht die
+     * Operation dann als erledigt und legt die Begruendung in die Diagnosen;
+     * ein SQL-Kommentar an dieser Stelle ginge als Anweisung an die Datenbank.
+     */
+    fun createIndexSql(table: String, idx: IndexDefinition): String? {
         val unique = if (idx.unique) "UNIQUE " else ""
         // ADR 0025: a neutral FULLTEXT index expands to a GiST index over the precomputed
         // `tsvector` column (recorded in fullTextVectorColumn); `columns` holds the human
         // source columns that MySQL/SQLite index. The caller's FULLTEXT guard resolves /
         // blocks the vector column, so it is normally present here.
         if (idx.type == IndexType.FULLTEXT) {
-            val vec = idx.fullTextVectorColumn
-                ?: return "-- FULLTEXT index ${quote(effectiveIndexName(table, idx))} skipped: " +
-                    "no backing tsvector column"
+            val vec = idx.fullTextVectorColumn ?: return null
             // ADR 0025: restore the recorded access method, clamped to GIN/GiST.
             val method = pgFullTextAccessMethod(idx.fullTextAccessMethod).name
             return "CREATE ${unique}INDEX ${quote(effectiveIndexName(table, idx))} " +

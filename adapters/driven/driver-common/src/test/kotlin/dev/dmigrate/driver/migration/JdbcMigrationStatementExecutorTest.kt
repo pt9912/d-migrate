@@ -289,6 +289,62 @@ class JdbcMigrationStatementExecutorTest : FunSpec({
             }
         }
     }
+
+    test("a comment-only statement never reaches the database") {
+        openSqlite().use { conn ->
+            // Der Diff-Pfad erzeugt so etwas nicht mehr -- Erklaerungen stehen
+            // in den Diagnosen. Ein artefakt-deserialisierter Plan aelteren
+            // Ursprungs kann es aber tragen, und Oracle lehnt einen reinen
+            // Kommentar mit ORA-00900 ab.
+            val trace = JdbcMigrationStatementExecutor.runAll(
+                conn,
+                listOf(
+                    stmt("-- DropTable is NOT_REVERSIBLE; refusing to render an inverse.", id = "note"),
+                    stmt("CREATE TABLE kept (id INTEGER);", id = "real"),
+                ),
+            )
+
+            trace.statementsAttempted shouldBe 1
+            trace.lastStatementOperationIds shouldBe setOf("real")
+            trace.executionError shouldBe null
+        }
+    }
+
+    test("a plan of nothing but comments completes without touching the connection") {
+        openSqlite().use { conn ->
+            val trace = JdbcMigrationStatementExecutor.runAll(
+                conn,
+                listOf(stmt("-- nothing to do here", id = "note")),
+            )
+
+            trace.executionCompleted shouldBe true
+            trace.statementsAttempted shouldBe 0
+        }
+    }
+
+    test("a runner hook is a comment WITH an effect and stays in the stream") {
+        openSqlite().use { conn ->
+            conn.createStatement().use { it.execute("PRAGMA foreign_keys = ON;") }
+            // Der Filter darf ihn nicht mitnehmen: der Hook geht ohnehin nie an
+            // die Datenbank, er loest einen Seiteneffekt aus. Ohne ihn verloere
+            // der Lauf das Sichern und Wiederherstellen des PRAGMA.
+            val trace = JdbcMigrationStatementExecutor.runAll(
+                conn,
+                listOf(
+                    stmt("BEGIN IMMEDIATE;", id = "begin", scope = TransactionScope.STREAM_OWNED),
+                    stmt(
+                        "-- dmigrate:runner-hook=save-fk-state-before-pragma-off",
+                        id = "save",
+                        scope = TransactionScope.STREAM_OWNED,
+                    ),
+                    stmt("COMMIT;", id = "commit", scope = TransactionScope.STREAM_OWNED),
+                ),
+            )
+
+            trace.statementsAttempted shouldBe 3
+            trace.executionError shouldBe null
+        }
+    }
 })
 
 private fun defaultValue(type: Class<*>): Any? =

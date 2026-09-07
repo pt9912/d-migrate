@@ -1,6 +1,8 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.driver.migration.DialectExecutionHints
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.NeutralType
@@ -85,20 +87,50 @@ internal object PostgresDiffTableOps {
         }
         for ((colName, col) in op.table.columns.inOrdinalOrder()) warnIfDegradingEnum(op, ctx, colName, col)
         for (index in resolvedIndices) {
-            ctx.emit(op, ctx.sql.createIndexSql(tableName, index))
+            emitIndexOrNote(op, ctx, tableName, index)
         }
+    }
+
+    /**
+     * Ein FULLTEXT-Index ohne `tsvector`-Spalte hat nichts auszufuehren. Die
+     * Operation gilt trotzdem als erledigt; die Begruendung steht in den
+     * Diagnosen statt als Kommentar im Anweisungsstrom.
+     */
+    internal fun emitIndexOrNote(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+        index: IndexDefinition,
+        hints: DialectExecutionHints = PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
+    ) {
+        val sql = ctx.sql.createIndexSql(table, index)
+        if (sql == null) {
+            ctx.markRendered(op)
+            ctx.addInfoDiagnostic(
+                code = "POSTGRES_FULLTEXT_INDEX_WITHOUT_VECTOR",
+                operationId = op.id,
+                message = "FULLTEXT index '${ctx.sql.effectiveIndexName(table, index)}' has no backing " +
+                    "tsvector column; nothing is created for it.",
+            )
+            return
+        }
+        ctx.emit(op, sql, hints)
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: PostgresDiffRenderContext) {
         val tableName = op.objectRef.rootName
-        val text = if (ctx.direction == PostgresRenderDirection.DOWN) {
-            // DropTable is NOT_REVERSIBLE — render-down is filtered upstream;
-            // the placeholder keeps the emit path total.
-            "-- DropTable is NOT_REVERSIBLE; refusing to render an inverse."
-        } else {
-            "DROP TABLE ${ctx.sql.quote(tableName)};"
+        if (ctx.direction == PostgresRenderDirection.DOWN) {
+            // NOT_REVERSIBLE -- der Dispatcher filtert das vorher; hier bleibt
+            // der Pfad total, ohne eine Anweisung zu erfinden.
+            ctx.markRendered(op)
+            ctx.addInfoDiagnostic(
+                code = "POSTGRES_DROP_TABLE_NOT_REVERSIBLE",
+                operationId = op.id,
+                message = "DropTable is NOT_REVERSIBLE; no inverse statement is rendered.",
+            )
+            return
         }
-        ctx.emit(op, text)
+        ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
     }
 
     fun renderAddColumn(op: DiffOperation.AddColumn, ctx: PostgresDiffRenderContext) {

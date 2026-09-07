@@ -14,6 +14,8 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain as shouldContainElement
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
@@ -302,17 +304,14 @@ class SqliteDiffSequenceOpsTest : FunSpec({
                 .ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE,
         )
         val result = runUp(listOf(op))
-        val sql = result.statements.first().sql
-        sql shouldContain "atomic-preserve audit"
-        sql shouldContain "s"
-        // The avoided destructive form — `UPDATE ... SET next_value = 0`
-        // — must not appear as executable SQL. The audit comment text
-        // itself names UPDATE descriptively, which is fine; only the
-        // executable SQL shape must be absent.
-        result.statements.none { it.sql.contains("\"next_value\" = 0") } shouldBe true
-        result.statements.none { it.sql.contains("SET ") } shouldBe true
-        // And the line must be entirely a comment.
-        sql.trim().startsWith("-- ") shouldBe true
+        // Gar keine Anweisung: der Wert steht zur Renderzeit nicht fest, und
+        // die Erklaerung gehoert in die Diagnosen -- als SQL-Kommentar im
+        // Anweisungsstrom ginge sie an die Datenbank.
+        result.statements.shouldBeEmpty()
+        val note = result.diagnostics.single { it.code == "SQLITE_ATOMIC_PRESERVE_DEFERRED" }
+        note.message shouldContain "atomic-preserve"
+        note.message shouldContain "s"
+        result.operationsRendered shouldContainElement "acv-sentinel"
     }
 
     test("AlterSequenceCurrentValue DOWN — rollbackImpossible (no restoreValue) emits skip") {

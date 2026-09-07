@@ -14,6 +14,7 @@ import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 
@@ -98,10 +99,14 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
             )),
             helperOptions,
         )
-        val sql = down.statements.single().sql
-        sql shouldContain "preserve-current-value down skipped"
-        sql shouldContain "new sequence has no prior state"
-        sql shouldNotContain "UPDATE"
+        // Erledigt, aber ohne Anweisung: ein halb gebautes `UPDATE` waere
+        // schlimmer als keines, und die Erklaerung gehoert in die Diagnosen --
+        // als SQL-Kommentar ginge sie an die Datenbank.
+        down.statements.shouldBeEmpty()
+        val note = down.diagnostics.single { it.code == "MYSQL_PRESERVE_DOWN_SKIPPED" }
+        note.message shouldContain "preserve-current-value down skipped"
+        note.message shouldContain "new sequence has no prior state"
+        note.message shouldNotContain "UPDATE"
     }
 
     test("Down skipped when restoreValue is null even without explicit rollbackImpossible flag") {
@@ -109,7 +114,9 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
             synthesiseDiff(preserveOp(restoreValue = null)),
             helperOptions,
         )
-        down.statements.single().sql shouldContain "no deterministic restore snapshot"
+        down.statements.shouldBeEmpty()
+        down.diagnostics.single { it.code == "MYSQL_PRESERVE_DOWN_SKIPPED" }
+            .message shouldContain "no deterministic restore snapshot"
     }
 
     test("sequence name literal is single-quote-escaped (no SQL injection through identifier)") {
@@ -181,16 +188,13 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
             ),
             helperOptions,
         )
-        val sql = up.statements.single().sql
-        sql.shouldContain("atomic-preserve audit")
-        sql.shouldContain("order_seq")
-        // The avoided destructive forms — `UPDATE ... SET next_value = 0`
-        // — must not appear as executable SQL. The audit comment text
-        // itself names them descriptively, which is fine; only the
-        // executable SQL shape must be absent.
-        sql.shouldNotContain("`next_value` = 0")
-        sql.shouldNotContain("SET ")
-        // And the line must be entirely a comment (starts with `-- `).
-        sql.trim().startsWith("-- ") shouldBe true
+        // Gar keine Anweisung: der Wert steht zur Renderzeit nicht fest, und
+        // `UPDATE ... SET next_value = 0` waere destruktiv, wenn jemand es aus
+        // dem Bericht kopiert. Die Auskunft steht in den Diagnosen.
+        up.statements.shouldBeEmpty()
+        val note = up.diagnostics.single { it.code == "MYSQL_ATOMIC_PRESERVE_DEFERRED" }
+        note.message.shouldContain("atomic-preserve")
+        note.message.shouldContain("order_seq")
+        note.message.shouldNotContain("`next_value` = 0")
     }
 })

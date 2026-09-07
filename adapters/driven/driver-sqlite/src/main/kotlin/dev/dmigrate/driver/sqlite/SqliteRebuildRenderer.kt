@@ -191,7 +191,7 @@ internal class SqliteRebuildRenderer(
         }
         if (blocked) {
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, required.map { it.operationId }.toSet())
-            for (op in plan.bucketOperations) ctx.markRendered(op)
+            for (op in plan.bucketOperations) ctx.markAbsorbedByRebuild(op)
         }
         return blocked
     }
@@ -323,7 +323,7 @@ internal class SqliteRebuildRenderer(
             MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
             operationIds = plan.sourceOperationIds,
         )
-        for (op in plan.bucketOperations) ctx.markRendered(op)
+        for (op in plan.bucketOperations) ctx.markAbsorbedByRebuild(op)
     }
 
     private fun SqliteRebuildPlan.hasMaterializedDependentViews(): Boolean =
@@ -458,7 +458,7 @@ internal class SqliteRebuildRenderer(
 
         emitCleanupPhase(plan, ctx, opIds, safe)
 
-        for (op in plan.bucketOperations) ctx.markRendered(op)
+        for (op in plan.bucketOperations) ctx.markAbsorbedByRebuild(op)
         ctx.applyBucketRisk(opIds, bucketRisk)
     }
 

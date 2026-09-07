@@ -78,10 +78,12 @@ internal object MssqlDiffCustomTypeOps {
                     .map { (column, col) -> Triple(table, column, col) }
             }
         if (users.isEmpty()) {
-            ctx.emit(
-                op,
-                "-- Custom type '$name' changed, but no column uses it; T-SQL keeps no object for it.",
-                MssqlDiffRenderContext.MSSQL_METADATA_DDL_HINTS,
+            ctx.markRendered(op)
+            ctx.addInfoDiagnostic(
+                code = "MSSQL_CUSTOM_TYPE_UNUSED",
+                operationId = op.id,
+                message = "Custom type '$name' changed, but no column uses it; " +
+                    "SQL Server keeps no object for it, so there is nothing to run.",
             )
             return
         }
@@ -118,11 +120,12 @@ internal object MssqlDiffCustomTypeOps {
         verb: String,
     ) {
         val kind = type.kind.name.lowercase()
-        ctx.emit(
-            op,
-            "-- The $kind type '$name' is $verb at its columns, not as an object: SQL Server has no " +
-                "equivalent, so the generate and migrate paths both render it inline.",
-            MssqlDiffRenderContext.MSSQL_METADATA_DDL_HINTS,
+        ctx.markRendered(op)
+        ctx.addInfoDiagnostic(
+            code = "MSSQL_CUSTOM_TYPE_RESOLVED_AT_COLUMN",
+            operationId = op.id,
+            message = "The $kind type '$name' is $verb at its columns, not as an object: SQL Server has " +
+                "no equivalent, so the generate and migrate paths both render it inline.",
         )
     }
 

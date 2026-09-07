@@ -137,12 +137,18 @@ internal object MssqlDiffTableOps {
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: MssqlDiffRenderContext) {
         val table = op.objectRef.rootName
-        val text = if (ctx.direction == MssqlRenderDirection.DOWN) {
-            "-- DropTable is NOT_REVERSIBLE; refusing to render an inverse."
-        } else {
-            "DROP TABLE ${ctx.sql.quote(table)};"
+        if (ctx.direction == MssqlRenderDirection.DOWN) {
+            // NOT_REVERSIBLE -- der Dispatcher filtert das vorher; hier bleibt
+            // der Pfad total, ohne eine Anweisung zu erfinden.
+            ctx.markRendered(op)
+            ctx.addInfoDiagnostic(
+                code = "MSSQL_DROP_TABLE_NOT_REVERSIBLE",
+                operationId = op.id,
+                message = "DropTable is NOT_REVERSIBLE; no inverse statement is rendered.",
+            )
+            return
         }
-        ctx.emit(op, text)
+        ctx.emit(op, "DROP TABLE ${ctx.sql.quote(table)};")
     }
 
     /**
@@ -190,8 +196,13 @@ internal object MssqlDiffTableOps {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         if (ctx.direction == MssqlRenderDirection.DOWN) {
             // DropColumn ist NOT_REVERSIBLE — der Dispatcher filtert das vorher;
-            // der Platzhalter haelt den emit-Pfad total.
-            ctx.emit(op, "-- DropColumn is NOT_REVERSIBLE; refusing to render an inverse.")
+            // hier bleibt der Pfad total, ohne eine Anweisung zu erfinden.
+            ctx.markRendered(op)
+            ctx.addInfoDiagnostic(
+                code = "MSSQL_DROP_COLUMN_NOT_REVERSIBLE",
+                operationId = op.id,
+                message = "DropColumn is NOT_REVERSIBLE; no inverse statement is rendered.",
+            )
             return
         }
         dropColumnStatements(op, ctx, table, column)

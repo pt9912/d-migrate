@@ -10,6 +10,7 @@ import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.DdlGenerationOptions
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -96,10 +97,14 @@ class PostgresDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
             )),
             DdlGenerationOptions(),
         )
-        val sql = down.statements.single().sql
-        sql shouldContain "preserve-current-value down skipped"
-        sql shouldContain "new sequence has no prior state"
-        sql shouldNotContain "setval"
+        // Erledigt, aber ohne Anweisung: ein halb gebautes `setval(NULL)`
+        // waere schlimmer als keines, und die Erklaerung gehoert in die
+        // Diagnosen -- als SQL-Kommentar ginge sie an die Datenbank.
+        down.statements.shouldBeEmpty()
+        val note = down.diagnostics.single { it.code == "POSTGRES_PRESERVE_DOWN_SKIPPED" }
+        note.message shouldContain "preserve-current-value down skipped"
+        note.message shouldContain "new sequence has no prior state"
+        note.message shouldNotContain "setval"
     }
 
     test("Down skipped when restoreValue is null even without explicit rollbackImpossible flag") {
@@ -107,7 +112,9 @@ class PostgresDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
             synthesiseDiff(preserveOp(restoreValue = null, restoreIsCalled = null)),
             DdlGenerationOptions(),
         )
-        down.statements.single().sql shouldContain "no deterministic restore snapshot"
+        down.statements.shouldBeEmpty()
+        down.diagnostics.single { it.code == "POSTGRES_PRESERVE_DOWN_SKIPPED" }
+            .message shouldContain "no deterministic restore snapshot"
     }
 
     test("Up requires non-null isCalled — PG cannot render setval without it") {
@@ -153,10 +160,11 @@ class PostgresDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
             ),
             DdlGenerationOptions(),
         )
-        val sql = up.statements.single().sql
-        sql.shouldContain("atomic-preserve audit")
-        sql.shouldContain("order_seq")
-        sql.shouldNotContain("setval(")
-        sql.shouldNotContain(", 0, ")
+        up.statements.shouldBeEmpty()
+        val note = up.diagnostics.single { it.code == "POSTGRES_ATOMIC_PRESERVE_DEFERRED" }
+        note.message.shouldContain("atomic-preserve")
+        note.message.shouldContain("order_seq")
+        note.message.shouldNotContain("setval(")
+        note.message.shouldNotContain(", 0, ")
     }
 })

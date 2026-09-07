@@ -94,12 +94,12 @@ internal object PostgresDiffSequenceOps {
             // emit an audit comment instead — the live-execute path
             // already filters this op out via `internalFollowUpIds`.
             if (op.currentValue == DiffOperation.AlterSequenceCurrentValue.ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE) {
-                ctx.emit(
-                    op,
-                    "-- atomic-preserve audit: setval for ${op.applySequenceRef.name} is " +
-                        "probed + restored at execute time inside the lock " +
-                        "(value not yet known at render time).",
-                    PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+                ctx.markRendered(op)
+                ctx.addInfoDiagnostic(
+                    code = "POSTGRES_ATOMIC_PRESERVE_DEFERRED",
+                    operationId = op.id,
+                    message = "atomic-preserve: setval for ${op.applySequenceRef.name} is probed and " +
+                        "restored at execute time inside the lock (value not yet known at render time).",
                 )
                 return
             }
@@ -122,11 +122,12 @@ internal object PostgresDiffSequenceOps {
             // renderer falls back to a structured note so the operator
             // still sees the op in the report without a half-built
             // `setval(seq, NULL, NULL)`.
-            ctx.emit(
-                op,
-                "-- preserve-current-value down skipped for ${op.applySequenceRef.name}: " +
+            ctx.markRendered(op)
+            ctx.addInfoDiagnostic(
+                code = "POSTGRES_PRESERVE_DOWN_SKIPPED",
+                operationId = op.id,
+                message = "preserve-current-value down skipped for ${op.applySequenceRef.name}: " +
                     (op.rollbackImpossibleReason ?: "no deterministic restore snapshot"),
-                PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
             )
             return
         }
