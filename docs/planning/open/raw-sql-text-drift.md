@@ -48,17 +48,53 @@ mehr zu sehen.
 
 ## Loesungsrichtungen
 
-### 1. Konservativer Normalisierer (klein, sicher, sofort)
+### 1. Konservativer Normalisierer — **versucht und zurueckgenommen**
 
-Nur Umformungen, die die Bedeutung **nicht** aendern koennen:
+Die naheliegende Idee: nur Umformungen, die die Bedeutung nicht aendern
+koennen — Leerraum-Folgen auf ein Zeichen, ein vollstaendig redundantes
+aeusseres Klammernpaar, ein abschliessendes Semikolon.
 
-- Leerraum-Folgen auf ein Zeichen, aussen getrimmt
-- ein vollstaendig redundantes aeusseres Klammernpaar entfernen
-- ein abschliessendes `;` entfernen
+**Sie traegt nicht**, und der Grund stand bereits im Repo. `RoutineBodyNormalizer`
+haelt fuer dieselbe Textklasse fest, dass innerer Leerraum und Kommentare
+bedeutungstragend bleiben, weil ein sicheres Zusammenziehen semantisches
+Verstaendnis braeuchte. Genau daran scheitert der Ansatz:
 
-Das erledigt `((age >= 18))` gegen `age >= 18` und den Zeilenumbruch der
-Sicht. Es erledigt **nicht** `upper(nm)` gegen `upper(nm::text)`. Eine
-gemeinsame Quelle fuer alle vier Felder, kein Parser, Risiko praktisch null.
+- Ein `--`-Kommentar reicht bis zum Zeilenende. Den Zeilenumbruch zu einem
+  Leerzeichen zu machen kommentiert **den Rest der Bedingung aus**:
+
+  ```
+  status = 'A'   -- nur aktive
+  AND deleted = false
+  ```
+
+  wird zu `status = 'A' -- nur aktive AND deleted = false`.
+
+- Das bleibt nicht im Vergleich. Der kanonisierte CHECK-Ausdruck wandert
+  ueber `AddConstraint` bis in die **erzeugte DDL** — aus einer
+  Vergleichs-Projektion wird eine Textverfaelschung.
+
+- Umgekehrt verschluckt es einen echten Unterschied: `a --x\nAND b` und
+  `a --x AND b` fielen auf dieselbe Form.
+
+- PostgreSQLs Dollar-Quoting (`${'$'}${'$'}…${'$'}${'$'}`) ist ebenfalls eine Zeichenkette, die
+  ein einfacher Quote-Scanner nicht sieht.
+
+Ein Normalisierer muesste also Kommentare und Dollar-Quoting kennen — und
+waere damit kein Zeichen-Scanner mehr, sondern der Anfang eines Parsers.
+Genau davor stand die Ueberlegung schon einmal.
+
+**Was daraus folgt:** wenn ueberhaupt normalisiert wird, dann nur auf einer
+Form, die **niemals** in die DDL zurueckfliesst — also als reiner
+Vergleichsschluessel, nicht als Objekt im Diff. Und selbst dann bleibt die
+Frage, ob der Gewinn (Klammern, Leerraum) den Aufwand rechtfertigt, wo
+Richtung 2 die Ursache trifft.
+
+Ein zweiter Befund derselben Runde: die Index-Identitaet haengt laut
+`TableComparator` an **drei** Projektionen (Comparator, `MigrationFingerprint`,
+`CanonicalPayload`). Zwei davon zu kanonisieren und die dritte nicht bricht
+den Vertrag — und `CanonicalPayload` traegt die Operations-IDs, deren
+Aenderung bestehende Overlays entwertet. Wer hier ansetzt, muss alle drei
+zugleich bewegen.
 
 ### 2. Der Server als Kanonisierer (der eigentliche Schnitt)
 

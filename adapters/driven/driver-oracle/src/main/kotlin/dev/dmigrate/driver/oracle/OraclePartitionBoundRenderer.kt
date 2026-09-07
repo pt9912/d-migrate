@@ -49,7 +49,7 @@ internal class OraclePartitionBoundRenderer {
             return safe
         }
         if (parts.hasFraction) {
-            // Live gemessen: Oracle NIMMT die Anweisung an und schneidet die
+            // Oracle NIMMT die Anweisung an und schneidet die
             // Bruchteilsekunde ab -- die Grenze verschiebt sich still um
             // weniger als eine Sekunde, und Zeilen wechseln die Partition.
             // Unumgesetzt scheitert die Anweisung stattdessen laut

@@ -123,7 +123,7 @@ data class DialectCapabilities(
     /**
      * Ob der Dialekt Modulus und Remainder einer HASH-Partition fuehrt.
      * PostgreSQL tut es; Oracle verteilt selbst und fuehrt nur die Anzahl
-     * (live gemessen: `ALL_TAB_PARTITIONS.HIGH_VALUE` ist bei HASH `null`).
+     * (`ALL_TAB_PARTITIONS.HIGH_VALUE` ist bei HASH `null`).
      *
      * Wie [namesFullTextIndexes]: was der Zielserver nicht fuehrt, kann sein
      * Reverse nicht zurueckgeben, und ohne die Projektion meldete der
@@ -156,13 +156,11 @@ data class DialectCapabilities(
      * Ob der Fingerabdruck sich auf den Namen der Sequenz hinter einer
      * IDENTITY-Spalte stuetzen darf.
      *
-     * Fuer Oracle **nein**, und das ist gemessen (2026-09-06), nicht
-     * angenommen — vier Belege:
+     * Fuer Oracle **nein**, aus vier Gruenden:
      * - `GENERATED ALWAYS AS IDENTITY (SEQUENCE NAME s)` scheitert mit
      *   `ORA-02000`, `… USING <eigene_sequenz>` mit `ORA-03076`;
      * - der vergebene Name ist **nicht einmal stabil**: dieselbe Tabelle
-     *   geloescht und identisch neu angelegt bekam `ISEQ${'$'}${'$'}_73345`
-     *   und danach `ISEQ${'$'}${'$'}_73349`;
+     *   geloescht und identisch neu angelegt bekommt einen anderen;
      * - nachtraeglich umbenennen geht auch nicht
      *   (`ORA-32799: cannot rename a system-generated sequence`).
      *

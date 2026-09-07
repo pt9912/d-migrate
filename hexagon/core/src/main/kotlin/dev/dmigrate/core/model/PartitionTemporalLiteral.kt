@@ -14,7 +14,7 @@ package dev.dmigrate.core.model
  * String-Chirurgie: der Offset sitzt INNERHALB der zeit-tragenden Gruppe und
  * wird nur erkannt, wenn eine Zeitkomponente vorausgeht. Ein unverankertes
  * Muster frass sonst das `-DD` einer reinen Datumsgrenze als Phantom-Zone und
- * verschob die Grenze still (AP6-Review #1).
+ * verschob die Grenze still.
  *
  * Gemeinsame Quelle statt zweier gleichlautender Kopien — dieselbe Erwaegung
  * wie bei `PartitionBoundScanner`, der aus demselben Grund zusammengelegt

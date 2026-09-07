@@ -188,7 +188,7 @@ internal object PostgresTableMetadataQueries {
                    -- `indkey` traegt fuer eine AUSDRUCKS-Position eine 0, zu der
                    -- es keine Spalte gibt. Ueber einen INNER JOIN fiel eine solche
                    -- Position still weg -- und ein Index, dessen Schluessel NUR
-                   -- ein Ausdruck ist, verschwand ganz (live gemessen). Der
+                   -- ein Ausdruck ist, faellt ganz weg. Der
                    -- Ausdruckstext steht in `pg_get_indexdef` je Position.
                    array_agg(
                        COALESCE(a.attname, pg_get_indexdef(ix.indexrelid, k.n::int, true))

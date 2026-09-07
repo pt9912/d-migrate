@@ -171,7 +171,7 @@ enum class IndexType {
      * verbreitet.
      *
      * **Nie eindeutig**: `UNIQUE BITMAP INDEX` ist keine gueltige Oracle-Syntax
-     * (live gemessen, `ORA-00968`). Ein als `unique` deklarierter Bitmap-Index
+     * . Ein als `unique` deklarierter Bitmap-Index
      * wird deshalb als eindeutiger B-Tree gerendert, mit `W102`.
      *
      * Die uebrigen Dialekte kennen ihn nicht und fallen auf ihren Standardtyp

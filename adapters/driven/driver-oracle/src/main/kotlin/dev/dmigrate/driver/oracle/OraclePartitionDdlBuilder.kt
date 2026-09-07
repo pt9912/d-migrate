@@ -12,7 +12,7 @@ import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
 
 /**
- * Die `PARTITION BY`-Klausel fuer Oracle (ADR 0052, Slice 7). Einzige Quelle
+ * Die `PARTITION BY`-Klausel fuer Oracle (ADR 0052). Einzige Quelle
  * fuer Generate- **und** Diff-Pfad, damit eine Tabelle auf beiden Wegen
  * gleich partitioniert entsteht (`spec/ddl-generation-rules.md`, Abschnitt 9).
  *
@@ -101,9 +101,8 @@ internal class OraclePartitionDdlBuilder(
     }
 
     /**
-     * Live gemessen (2026-09-06): Oracle lehnt zwei Schluesseltypen ab —
-     * `TIMESTAMP WITH TIME ZONE` mit `ORA-03001` (unimplemented feature) und
-     * `CLOB`/`BLOB` mit `ORA-14135`. `TIMESTAMP WITH LOCAL TIME ZONE` ist
+     * Oracle laesst zwei Schluesseltypen nicht zu: `TIMESTAMP WITH TIME ZONE`
+     * (`ORA-03001`) und `CLOB`/`BLOB` (`ORA-14135`). `TIMESTAMP WITH LOCAL TIME ZONE` ist
      * dagegen zulaessig, spielt hier aber keine Rolle: das neutrale Modell
      * unterscheidet die beiden Zeitzonen-Formen nicht.
      *

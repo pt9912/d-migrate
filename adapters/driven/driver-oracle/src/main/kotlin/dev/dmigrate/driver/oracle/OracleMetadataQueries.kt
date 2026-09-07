@@ -29,8 +29,8 @@ internal object OracleMetadataQueries {
     )
 
     /**
-     * Seit Slice 6b traegt [indices] auch Indizes ueber einem Ausdruck: das
-     * neutrale Modell kennt sie jetzt (`IndexColumn.expression`). Oracle
+     * [indices] traegt auch Indizes ueber einem Ausdruck, den das neutrale
+     * Modell als `IndexColumn.expression` fuehrt. Oracle
      * fuehrt an ihrer Stelle eine unsichtbare Systemspalte (`SYS_NC00006$`);
      * den echten Ausdruck liefert `ALL_IND_EXPRESSIONS`.
      */
@@ -73,8 +73,8 @@ internal object OracleMetadataQueries {
      * neutralen Modell keine Entsprechung haben.
      *
      * Eine View, die im Ergebnis GAR NICHT vorkommt, ist etwas anderes als
-     * eine mit leeren Listen: **gemessen (2026-09-06) traegt jede View
-     * mindestens eine `ALL_DEPENDENCIES`-Zeile** — selbst die ueber `dual`.
+     * eine mit leeren Listen: **jede View traegt mindestens eine
+     * `ALL_DEPENDENCIES`-Zeile** — selbst die ueber `dual`.
      * Fehlt sie ganz, sieht der lesende Nutzer die Abhaengigkeiten nicht
      * (fehlende Rechte auf die referenzierten Objekte).
      *
@@ -301,7 +301,7 @@ internal object OracleMetadataQueries {
      * `ALL_IND_EXPRESSIONS.COLUMN_EXPRESSION` je (Indexname, Spaltenposition).
      * Gefuellt fuer jede Spalte eines Function-based-Index -- und das ist
      * Oracle auch bei `CREATE INDEX … (spalte DESC)`: absteigende Indizes sind
-     * intern function-based (live gemessen: `INDEX_TYPE = FUNCTION-BASED
+     * intern function-based (`INDEX_TYPE = FUNCTION-BASED
      * NORMAL`), ihr Ausdruck ist dann aber nur der Spaltenname selbst.
      */
     private fun indexExpressions(

@@ -397,7 +397,7 @@ internal class MysqlIndexPartitionDdlHelper(
         // (ERROR 1170). When none is carried, the index cannot be rendered as
         // valid DDL — skip it with a note rather than guess a length. Only the
         // emitted types are affected; GIN/GIST/BRIN/SP-GiST are skipped below.
-        // BITMAP gehört seit Slice 6a dazu: es rendert einen echten Index und
+        // BITMAP gehört dazu: es rendert einen echten Index und
         // liefe sonst am Wächter vorbei in ERROR 1170 — die Liste hier muss
         // deckungsgleich mit den Zweigen sein, die unten `plainIndexSql` rufen.
         val emitsBtree = index.type == IndexType.BTREE || index.type == IndexType.HASH ||

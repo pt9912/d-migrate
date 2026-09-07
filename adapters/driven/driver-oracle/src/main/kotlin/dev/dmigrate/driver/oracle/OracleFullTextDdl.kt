@@ -7,7 +7,7 @@ import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
 
 /**
- * Volltext-Indizes fuer Oracle Text (ADR 0052, Slice 8).
+ * Volltext-Indizes fuer Oracle Text (ADR 0052).
  *
  * ```sql
  * CREATE INDEX "ft_docs_body" ON "docs" ("body")
@@ -28,7 +28,7 @@ import dev.dmigrate.driver.TransformationNote
  * - **Je Spalte hoechstens einer.** `ORA-29879: cannot create multiple domain
  *   indexes on a column list using same indextype`.
  * - **`SYNC (ON COMMIT)` ist nicht optional.** Ohne die Klausel ist der Index
- *   nach `INSERT` + `COMMIT` leer (live gemessen: 0 Treffer, mit der Klausel
+ *   nach `INSERT` + `COMMIT` leer (0 Treffer, mit der Klausel
  *   1) und bleibt es, bis jemand `CTX_DDL.SYNC_INDEX` ruft. Ein migriertes
  *   Schema haette damit einen Index, der nichts findet — die Klausel steht
  *   deshalb immer.

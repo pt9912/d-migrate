@@ -71,7 +71,7 @@ internal class OracleIndexDdlBuilder(
 
         val notes = mutableListOf<TransformationNote>()
         // Bitmap ist der einzige Nicht-BTREE-Typ, den Oracle nativ rendert.
-        // `UNIQUE BITMAP` gibt es aber nicht (live gemessen: `ORA-00968`) --
+        // `UNIQUE BITMAP` gibt es aber nicht (`ORA-00968`) --
         // ein als eindeutig deklarierter Bitmap-Index wird deshalb ein
         // eindeutiger B-Tree, denn die Eindeutigkeit ist die staerkere Zusage.
         val bitmap = index.type == IndexType.BITMAP && !index.unique

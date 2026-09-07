@@ -9,7 +9,7 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 
 /**
  * Liest die Partitionierung einer Oracle-Tabelle aus `ALL_PART_TABLES`,
- * `ALL_PART_KEY_COLUMNS` und `ALL_TAB_PARTITIONS` (ADR 0052, Slice 7).
+ * `ALL_PART_KEY_COLUMNS` und `ALL_TAB_PARTITIONS` (ADR 0052).
  *
  * Alle Formen unten sind gegen `gvenzl/oracle-free:23` gemessen, nicht der
  * Dokumentation entnommen:
