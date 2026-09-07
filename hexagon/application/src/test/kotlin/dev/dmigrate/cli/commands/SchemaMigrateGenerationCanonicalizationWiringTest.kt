@@ -182,9 +182,19 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
         captured(withLowerBound).partitions.single().from.shouldBeNull()
     }
 
-    test("for PostgreSQL the runner hands through the identity projection") {
+    test("PostgreSQL folds the identity sequence name away as well") {
         val planner = CapturingPlanner()
         runnerFor(planner).first.execute(request(DatabaseDialect.POSTGRESQL))
+
+        // Der PG-Reverse liest den Namen schema-qualifiziert; ein Soll-Schema
+        // kann ihn nicht tragen, auch nicht unqualifiziert von Hand.
+        val projected = planner.captured.shouldNotBeNull()(systemGenerated)
+        (projected as ColumnGeneration.Identity).sequenceName.shouldBeNull()
+    }
+
+    test("a dialect whose reverse never reads the name keeps it untouched") {
+        val planner = CapturingPlanner()
+        runnerFor(planner).first.execute(request(DatabaseDialect.MYSQL))
 
         planner.captured.shouldNotBeNull()(systemGenerated) shouldBe systemGenerated
     }

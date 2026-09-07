@@ -152,12 +152,20 @@ object MigrationFingerprint {
      * `appendTriggers` gehoeren zur Projektion, also hasht dieselbe
      * unveraenderte Oracle-Datenbank vor und nach dem Slice verschieden.
      *
+     * v12: **die verlustbehafteten Angaben dreier weiterer Dialekte.** Die
+     * Text-Search-Konfiguration eines Volltext-Index kann der Reverse von
+     * MySQL, SQLite und SQL Server nicht zurueckgeben, und PostgreSQL liest
+     * den system-vergebenen Sequenznamen einer IDENTITY-Spalte zurueck, den
+     * ein Soll-Schema nicht tragen kann. Beide Angaben fallen jetzt aus der
+     * Projektion dieser Dialekte — ihre Abdruecke aendern sich damit auch
+     * fuer eine unveraenderte Datenbank.
+     *
      * Die Anhebung ist der Punkt: ohne sie passte ein vor dem Slice
      * erzeugtes Artefakt still nicht mehr, und der Betreiber saehe ein
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v11"
+    const val ALGORITHM: String = "schema-fingerprint-v12"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP

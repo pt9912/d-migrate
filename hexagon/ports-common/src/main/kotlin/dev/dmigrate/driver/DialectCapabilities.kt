@@ -105,11 +105,10 @@ data class DialectCapabilities(
      * Post-Compare nach jedem `migrate --execute` Drift, **und** der naechste
      * Lauf plante erneut `DropIndex` + `AddIndex` — dauerhaft.
      *
-     * **Der Default `true` ist fuer MySQL, SQLite und SQL Server nicht
-     * geprueft**; auch sie verwerfen die Angabe. Vor diesem Slice war der
-     * Pfad fuer Oracle geblockt, hier wird er erstmals erreichbar. Ihre
-     * Fingerabdruecke zu aendern entwertet bestehende Rollback-Artefakte:
-     * `docs/planning/open/fulltext-config-fingerprint-lossy-dialects.md`.
+     * MySQL, SQLite und SQL Server ebenso wenig: keiner der drei emittiert
+     * die Angabe und keiner liest sie zurueck. `true` bleibt allein
+     * PostgreSQL, dessen Reverse sie aus den `to_tsvector`-Argumenten
+     * rekonstruiert.
      */
     val carriesFullTextConfiguration: Boolean = true,
     /**
@@ -126,10 +125,19 @@ data class DialectCapabilities(
     val rendersViewRefreshSetting: Boolean = false,
     /**
      * Ob der Dialekt die **untere** Grenze einer RANGE-Partition fuehrt.
-     * PostgreSQL tut es (`FOR VALUES FROM … TO …`); Oracle und MySQL kennen
-     * nur `VALUES LESS THAN` und leiten die untere Grenze aus der
-     * vorhergehenden Partition ab — ihr Reverse kann sie deshalb nicht
-     * zurueckmelden.
+     * PostgreSQL tut es (`FOR VALUES FROM … TO …`); Oracle, MySQL und SQL
+     * Server kennen nur die obere und leiten die untere aus der
+     * vorhergehenden Partition ab.
+     *
+     * Entscheidend ist nicht, was der Server ablegt, sondern was sein
+     * Reverse zurueckgibt: MySQL (`MysqlPartitionReader`) und SQL Server
+     * (`MssqlSchemaReader`) **rekonstruieren** die untere Grenze aus der
+     * Kontiguitaet und stehen deshalb auf `true`. Oracle tut das nicht.
+     *
+     * Die Rekonstruktion trifft, solange die Partitionen lueckenlos sind.
+     * Sind sie es nicht, ist der Unterschied echt — diese Dialekte koennen
+     * eine Luecke gar nicht abbilden (der Generate-Pfad meldet es mit
+     * `W112`), und ihn wegzuprojizieren verstecke einen wirklichen Verlust.
      */
     val carriesPartitionLowerBounds: Boolean = true,
     /**
@@ -141,11 +149,11 @@ data class DialectCapabilities(
      * Reverse nicht zurueckgeben, und ohne die Projektion meldete der
      * Post-Compare nach jedem `migrate --execute` Drift.
      *
-     * **Der Default `true` ist fuer MySQL und SQL Server nicht geprueft** —
-     * beide verlieren dieselben Angaben, ihre Fingerabdruecke jetzt zu
-     * aendern entwertete aber bereits erzeugte Rollback-Artefakte. Das ist
-     * eine eigene Entscheidung, kein Beifang des Oracle-Rollouts:
-     * `docs/planning/open/partition-fingerprint-lossy-dialects.md`.
+     * MySQL steht auf `true`: sein Reverse leitet `modulus = n` und
+     * `remainder = Ordinalindex` aus `PARTITIONS n` ab. SQL Server ebenso —
+     * dort ist der Verlust ein anderer und groesserer, weil eine emulierte
+     * HASH-Partitionierung als RANGE zurueckkommt; das kann keine
+     * Feld-Projektion heilen.
      */
     val carriesPartitionHashModulus: Boolean = true,
     /**
@@ -180,16 +188,16 @@ data class DialectCapabilities(
      * Soll-Schema nicht stehen kann, der Reverse aber liest, driftet nach
      * jedem `migrate --execute`.
      *
-     * **Der Default `true` ist fuer MySQL/SQLite/MSSQL wirkungslos** —
-     * deren Reverse setzt `ColumnGeneration.Identity.sequenceName` nie.
-     * Fuer **PostgreSQL** ist er eine offene Frage, keine Zusicherung: der
-     * PG-Renderer schreibt den Namen ebenfalls nie (`GENERATED … AS
-     * IDENTITY` ohne `SEQUENCE NAME`), der PG-Reverse liest ihn aber
-     * schema-qualifiziert. PG auf `false` zu stellen aendert bestehende
-     * PG-Fingerabdruecke und damit die Gueltigkeit bereits erzeugter
-     * Rollback-Artefakte — das ist eine eigene Entscheidung, kein Beifang
-     * des Oracle-Rollouts:
-     * `docs/planning/open/pg-identity-sequence-name-fingerprint.md`.
+     * Fuer **PostgreSQL** ebenfalls `false`, aus demselben Grund in
+     * milderer Form: der PG-Renderer schreibt den Namen nie (`GENERATED …
+     * AS IDENTITY` ohne `SEQUENCE NAME`), der PG-Reverse liest ihn aber
+     * schema-qualifiziert zurueck. Ein Soll-Schema kann ihn nicht tragen —
+     * auch ein von Hand geschriebener unqualifizierter Name driftete gegen
+     * den qualifizierten.
+     *
+     * Der Default `true` bleibt fuer MySQL, SQLite und SQL Server stehen und
+     * ist dort wirkungslos: deren Reverse setzt
+     * `ColumnGeneration.Identity.sequenceName` nie.
      */
     val namesIdentitySequences: Boolean = true,
 ) {
@@ -224,6 +232,11 @@ data class DialectCapabilities(
                 supportsSchemaParameter = true,
                 partitionChildrenAreTables = true,
                 supportsIndexIncludeColumns = true,
+                // Der Reverse liest den system-vergebenen Sequenznamen einer
+                // IDENTITY-Spalte schema-qualifiziert zurueck; gerendert wird
+                // er von keinem Dialekt, ein Soll-Schema kann ihn also nicht
+                // tragen.
+                namesIdentitySequences = false,
             )
             DatabaseDialect.MYSQL -> DialectCapabilities(
                 supportsViews = true,
@@ -237,6 +250,7 @@ data class DialectCapabilities(
                 supportsTriggerDisable = false,
                 supportsTriggerStrict = false,
                 supportsSchemaParameter = true,
+                carriesFullTextConfiguration = false,
             )
             DatabaseDialect.SQLITE -> DialectCapabilities(
                 supportsViews = true,
@@ -250,6 +264,7 @@ data class DialectCapabilities(
                 supportsTriggerDisable = false,
                 supportsTriggerStrict = false,
                 supportsSchemaParameter = false,
+                carriesFullTextConfiguration = false,
             )
             // Objekttyp-Flags = Faehigkeiten von SQL Server (2017+, ADR 0047);
             // die Import-Modus-Flags (FK-/Trigger-Disable) beschreiben den
@@ -273,11 +288,11 @@ data class DialectCapabilities(
                 supportsIndexIncludeColumns = true,
                 supportsClusteredIndexes = true,
                 namesFullTextIndexes = false,
+                carriesFullTextConfiguration = false,
             )
-            // Objekttyp-Flags nach heutigem Oracle-Inventar
-            // (docs/planning/in-progress/oracle-dialect-scoping.md, ADR 0052).
+            // Objekttyp-Flags nach dem Oracle-Inventar (ADR 0052).
             // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen
-            // (CREATE TYPE) sind nicht Teil des heutigen Slice-Schnitts.
+            // (CREATE TYPE) bildet d-migrate nicht ab.
             // batchSeparator bleibt null. `/` ist zwar die SQL*Plus/SQLcl-
             // Konvention -- aber es bedeutet etwas anderes als T-SQLs `GO`:
             // `GO` beendet einen Batch, `/` fuehrt den Puffer ERNEUT aus.

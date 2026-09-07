@@ -97,4 +97,40 @@ class CapabilityIndexCanonicalizerTest : FunSpec({
             }
         }
     }
+
+    // ── Text-Search-Konfiguration ─────────────────────────────────
+    //
+    // Sie ist semantisch (ADR 0025) — aber nur PostgreSQL kann sie
+    // zurueckgeben: sein Reverse liest sie aus den `to_tsvector`-Argumenten.
+    // Die uebrigen vier emittieren sie nicht und lesen sie nicht.
+
+    val fullText = IndexDefinition(
+        name = "ft",
+        columns = listOf(IndexColumn("body")),
+        type = IndexType.FULLTEXT,
+        textSearchConfig = "english",
+    )
+
+    test("only PostgreSQL keeps the text-search configuration") {
+        capabilityIndexCanonicalizer(DatabaseDialect.POSTGRESQL)(fullText).textSearchConfig shouldBe "english"
+        for (dialect in listOf(
+            DatabaseDialect.MYSQL, DatabaseDialect.SQLITE, DatabaseDialect.MSSQL, DatabaseDialect.ORACLE,
+        )) {
+            withClue(dialect) {
+                capabilityIndexCanonicalizer(dialect)(fullText).textSearchConfig shouldBe null
+            }
+        }
+    }
+
+    test("the configuration of a non-fulltext index is untouched everywhere") {
+        // Sie hat dort keine Bedeutung; sie zu falten waere eine Aenderung
+        // ohne Anlass.
+        val plain = index.copy(textSearchConfig = "english")
+        for (dialect in DatabaseDialect.entries) {
+            withClue(dialect) {
+                capabilityIndexCanonicalizer(dialect)(plain).textSearchConfig shouldBe
+                    if (dialect == DatabaseDialect.POSTGRESQL) "english" else null
+            }
+        }
+    }
 })

@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -53,13 +54,22 @@ class CapabilityGenerationCanonicalizerTest : FunSpec({
         projected.sequenceName.shouldBeNull()
     }
 
-    // Kein Gutbefund, sondern der heutige Stand: der PG-Renderer schreibt
-    // den Namen ebenfalls nie, der PG-Reverse liest ihn aber. PG zu falten
-    // aendert bestehende PG-Fingerabdruecke und damit die Gueltigkeit
-    // erzeugter Rollback-Artefakte -- eigene Entscheidung, siehe
-    // docs/planning/open/pg-identity-sequence-name-fingerprint.md.
-    test("PostgreSQL keeps it today -- folding it there is a separate decision") {
-        capabilityGenerationCanonicalizer(DatabaseDialect.POSTGRESQL)(identity) shouldBe identity
+    // Dieselbe Lage wie bei Oracle, nur milder: der PG-Renderer schreibt den
+    // Namen nie, der PG-Reverse liest ihn schema-qualifiziert zurueck. Auch
+    // ein von Hand geschriebener unqualifizierter Name driftete dagegen.
+    test("PostgreSQL folds the identity sequence name away, too") {
+        val projected = capabilityGenerationCanonicalizer(DatabaseDialect.POSTGRESQL)(identity)
+        (projected as ColumnGeneration.Identity).sequenceName.shouldBeNull()
+    }
+
+    // MySQL, SQLite und SQL Server setzen den Namen im Reverse gar nicht --
+    // dort ist die Projektion wirkungslos und bleibt Identitaet.
+    test("the dialects whose reverse never sets a sequence name keep the value untouched") {
+        for (dialect in listOf(DatabaseDialect.MYSQL, DatabaseDialect.SQLITE, DatabaseDialect.MSSQL)) {
+            withClue(dialect) {
+                capabilityGenerationCanonicalizer(dialect)(identity) shouldBe identity
+            }
+        }
     }
 
     test("a column without generation stays null in every dialect") {

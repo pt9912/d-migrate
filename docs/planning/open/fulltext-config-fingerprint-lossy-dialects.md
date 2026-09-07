@@ -1,10 +1,23 @@
 ---
 id: fulltext-config-fingerprint-lossy-dialects
 title: "MySQL, SQLite und SQL Server verwerfen die Text-Search-Konfiguration, blenden sie im Fingerabdruck aber nicht aus"
-status: open
+status: resolved
 ---
 
 # Volltext-Konfiguration: drei Dialekte projizieren nicht
+
+> **Erledigt.** `carriesFullTextConfiguration` steht fuer MySQL, SQLite und
+> SQL Server auf `false`; `MigrationFingerprint.ALGORITHM` ist auf
+> `schema-fingerprint-v12` angehoben. Beide unten offenen Fragen sind
+> beantwortet: die Anhebung war noetig, und PostgreSQL liest die
+> Konfiguration tatsaechlich verlustfrei zurueck
+> (`PostgresFullTextIndexSynthesis` rekonstruiert sie aus den
+> `to_tsvector`-Argumenten) — sein `true` bleibt deshalb stehen.
+>
+> Die Sorge um bestehende Rollback-Artefakte traegt nicht: der Rollback
+> prueft `fingerprintAlgorithm` und meldet
+> `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` mit beiden Versionen und dem
+> Ausweg — er bricht benannt, nicht still.
 
 ## Befund
 

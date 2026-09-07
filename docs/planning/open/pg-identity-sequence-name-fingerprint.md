@@ -1,10 +1,21 @@
 ---
 id: pg-identity-sequence-name-fingerprint
 title: "PostgreSQL-IDENTITY-Spalten koennen nach `migrate --execute` falsche Drift melden (Sequenzname im Fingerabdruck)"
-status: open
+status: resolved
 ---
 
 # Der PG-Sequenzname einer IDENTITY-Spalte geht in den Fingerabdruck ein
+
+> **Erledigt, ueber Loesungsrichtung 1.** `namesIdentitySequences` steht fuer
+> PostgreSQL auf `false`, und `MigrationFingerprint.ALGORITHM` ist auf
+> `schema-fingerprint-v12` angehoben.
+>
+> Der Einwand gegen Richtung 1 („entwertet **alle** bestehenden Artefakte")
+> und der gegen Richtung 2 („bricht dort still") heben sich gegenseitig auf:
+> der Rollback prueft `fingerprintAlgorithm` und meldet
+> `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` mit beiden Versionsnamen und der
+> Aufforderung, das Artefakt neu zu erzeugen. Genau die Meldung, deren Fehlen
+> Richtung 2 disqualifizierte — es gibt sie.
 
 ## Befund
 

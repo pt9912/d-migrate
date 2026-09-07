@@ -1,6 +1,6 @@
 # Kapazitäts-Projektion: Fingerabdruck **und** Comparator
 
-> **Status:** Teil A gebaut. B, C und D offen.
+> **Status:** Teile A, B und C gebaut. D offen.
 >
 > **Herkunft:** drei Tickets, die als „derselbe Fehlertyp" zusammengelegt
 > werden sollten —
@@ -151,11 +151,14 @@ zurückgeben kann, statt es bei jedem Lauf erneut zu planen.
     einen anderen, die Schlüsselmengen waren disjunkt, und aus einem
     unveränderten Index wurden `DropIndex` + `AddIndex` — bei sauberem
     Fingerabdruck. Die Zuordnung läuft jetzt über den gefalteten Schlüssel.
-- **B — Die belegten Flags.** `carriesFullTextConfiguration = false` für
+- **B — Die belegten Flags.** ✅ `carriesFullTextConfiguration = false` für
   MySQL, SQLite und SQL Server; `namesIdentitySequences = false` für
-  PostgreSQL. Beides erst nach A, sonst heilt es wieder nur die Meldung.
-- **C — `MigrationFingerprint.ALGORITHM` v11 → v12** und die Zusicherung im
-  Handbuch, dass Artefakte älterer Versionen neu erzeugt werden müssen.
+  PostgreSQL. Die KDocs der vier Fähigkeiten sagen jetzt, was gemessen wurde,
+  statt „nicht geprüft".
+- **C — `MigrationFingerprint.ALGORITHM` v11 → v12.** ✅ Die Handbuch-Zusage
+  stand bereits: sowohl der Migrate-Abschnitt als auch die Fehlerbehebung
+  erklären `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` samt Lösung, und eine
+  Versionsnummer, die veralten könnte, steht dort nirgends.
 - **D — Die falschen Aussagen einsammeln.** Der KDoc von
   `carriesPartitionLowerBounds` behauptet, MySQLs Reverse könne die untere
   Grenze „deshalb nicht zurückmelden" — das ist widerlegt und hat das
