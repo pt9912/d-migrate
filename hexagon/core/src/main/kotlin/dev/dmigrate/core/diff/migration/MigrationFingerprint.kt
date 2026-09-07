@@ -172,7 +172,7 @@ object MigrationFingerprint {
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v13"
+    const val ALGORITHM: String = "schema-fingerprint-v14"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP

@@ -112,6 +112,26 @@ data class DialectCapabilities(
      */
     val carriesFullTextConfiguration: Boolean = true,
     /**
+     * Ob der Dialekt das Praedikat eines partiellen Index
+     * (`IndexDefinition.where`) traegt.
+     *
+     * Oracle nicht: es kennt kein `WHERE` an einer Index-Anweisung. Der
+     * Generate-Pfad legt den Index trotzdem an — als **vollen**, und meldet
+     * das mit `W155`. Sein Reverse liest folglich einen Index ohne Praedikat
+     * zurueck; ohne die Projektion meldete der Post-Compare nach jedem
+     * `migrate --execute` Drift, und der naechste Lauf plante denselben Index
+     * erneut.
+     *
+     * MySQL traegt es ebenso wenig, steht hier aber auf `true`: es legt den
+     * Index gar nicht erst an, sondern ueberspringt ihn mit `E057`. Es gibt
+     * dort also nichts zu versoehnen — und die Projektion haette einen
+     * Schaden: ein von Hand angelegter voller Index saehe aus wie der
+     * verlangte partielle.
+     *
+     * PostgreSQL, SQLite und SQL Server rendern und lesen das Praedikat.
+     */
+    val carriesPartialIndexPredicate: Boolean = true,
+    /**
      * Ob der Dialekt die Refresh-Einstellung einer materialisierten Sicht
      * (`ViewDefinition.refresh`) tatsaechlich umsetzt.
      *
@@ -342,6 +362,7 @@ data class DialectCapabilities(
                 namesIdentitySequences = false,
                 supportsBitmapIndexes = true,
                 carriesFullTextConfiguration = false,
+                carriesPartialIndexPredicate = false,
                 carriesPartitionLowerBounds = false,
                 carriesPartitionHashModulus = false,
                 separatesDateFromDateTime = false,

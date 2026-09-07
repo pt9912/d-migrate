@@ -7,15 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Oracle: partieller Index verlor sein Prädikat stumm.** Oracle kennt kein
+  `WHERE` an einer Index-Anweisung; der Index entstand deshalb als **voller**,
+  ohne Meldung — bei `unique` wurde damit aus „höchstens eine passende Zeile
+  je Schlüssel" ein „höchstens eine Zeile je Schlüssel überhaupt". Der
+  Generate-Pfad meldet das jetzt mit `W155`, und der Fingerabdruck blendet
+  die Angabe für Oracle aus, damit der Post-Compare nicht nach jedem
+  `migrate --execute` Drift meldet und der nächste Lauf denselben Index
+  erneut plant.
+
 ### Changed
 
-- **Fingerabdruck-Verfahren auf `schema-fingerprint-v13`** (von `v11`). Zwei
+- **Fingerabdruck-Verfahren auf `schema-fingerprint-v14`** (von `v11`). Drei
   Schritte: `v12` blendet die Text-Search-Konfiguration eines Volltext-Index
   bei MySQL, SQLite und SQL Server aus sowie den system-vergebenen
   Sequenznamen einer PostgreSQL-IDENTITY-Spalte — keiner der Dialekte kann
   diese Angaben zurückmelden. `v13` nimmt SQL Servers Partitionsnamen dazu
   (der Server nummeriert, sein Reverse synthetisiert `p1…pn`) und ordnet die
-  Partitionen im Abdruck nach Inhalt statt nach Namen.
+  Partitionen im Abdruck nach Inhalt statt nach Namen. `v14` blendet das
+  Prädikat eines partiellen Index bei Oracle aus, das dort keine
+  Index-Anweisung trägt.
 
   **Bestehende Rollback-Artefakte und Overlays müssen neu erzeugt werden.**
   `schema rollback` lehnt ein älteres Artefakt mit

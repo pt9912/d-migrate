@@ -89,6 +89,7 @@ private val DialectCapabilities.carriesEveryIndexProperty: Boolean
         namesFullTextIndexes,
         supportsBitmapIndexes,
         carriesFullTextConfiguration,
+        carriesPartialIndexPredicate,
     ).all { it }
 
 fun capabilityIndexCanonicalizer(
@@ -118,6 +119,10 @@ fun capabilityIndexCanonicalizer(
             // nicht nur der Post-Compare -- der naechste Lauf plante denselben
             // Index immer wieder neu.
             textSearchConfig = if (caps.carriesFullTextConfiguration) index.textSearchConfig else null,
+            // Wo kein Index-Praedikat ablegbar ist, legt der Generate-Pfad
+            // einen vollen Index an (mit W155), und genau den liest der
+            // Reverse zurueck.
+            where = if (caps.carriesPartialIndexPredicate) index.where else null,
         )
     }
 }

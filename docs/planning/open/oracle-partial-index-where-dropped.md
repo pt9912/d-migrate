@@ -1,15 +1,41 @@
 ---
 id: oracle-partial-index-where-dropped
 title: "Oracle verwirft die WHERE-Klausel eines partiellen Index stillschweigend"
-status: open
+status: resolved
 ---
 
 # Partieller Index verliert seine WHERE-Klausel auf Oracle
 
+> **Erledigt, ueber Richtung 1** — beide Haelften.
+>
+> - **Gemeldet.** Der Generate-Pfad schreibt `W155`, wenn ein partieller
+>   Index als voller angelegt wird, und nennt bei `unique` ausdruecklich,
+>   dass sich die Zusicherung inhaltlich aendert.
+> - **Nicht mehr driftend.** `carriesPartialIndexPredicate` blendet das
+>   Praedikat fuer Oracle aus dem Fingerabdruck und dem Vergleich aus —
+>   dieselbe Mechanik wie bei der Text-Search-Konfiguration und den
+>   Bitmap-/Partitions-Projektionen. `MigrationFingerprint.ALGORITHM` geht
+>   damit auf `schema-fingerprint-v14`.
+>
+> **MySQL bleibt bewusst auf `true`.** Es traegt das Praedikat ebenso wenig,
+> ueberspringt den Index aber **ganz** (`E057`) statt einen schwaecheren
+> anzulegen. Es gibt dort nichts zu versoehnen, und die Projektion haette
+> einen Schaden: ein von Hand angelegter voller Index saehe aus wie der
+> verlangte partielle.
+>
+> Richtung 2 (ausdrucksbasierte Nachbildung ueber
+> `CASE WHEN … THEN … END`) bleibt offen und haengt weiter an der
+> Ausdrucksdarstellung aus Slice 6b. Sie ist jetzt aber eine Verbesserung,
+> keine Reparatur: der Verlust ist gemeldet und driftet nicht mehr.
+>
+> Nebenbefund mitbehoben: die Oracle-Regeln in `ddl-generation-rules.md`
+> behaupteten noch, jede Tabelle mit Geometriespalten werde vor der
+> Generierung geblockt (`E052`) — seit Slice 12 falsch.
+
 ## Befund
 
-`OracleIndexDdlBuilder.render` wertet `IndexDefinition.where` nicht aus. Ein
-partieller Index — in PostgreSQL und SQLite ein gewoehnliches Mittel — wird
+`OracleIndexDdlBuilder.render` wertete `IndexDefinition.where` nicht aus. Ein
+partieller Index — in PostgreSQL und SQLite ein gewoehnliches Mittel — wurde
 auf Oracle deshalb als **voller** Index angelegt, ohne Meldung.
 
 Das ist kein Fehler in der erzeugten DDL (sie laeuft), aber ein stiller
@@ -23,33 +49,22 @@ diesem Slice verursacht, sondern seit Slice 2 vorhanden.
 
 ## Zweite Haelfte: Drift
 
-Der Verlust ist nicht nur still, er **driftet** auch. `IndexDefinition.where`
+Der Verlust war nicht nur still, er **driftete** auch. `IndexDefinition.where`
 geht in den Fingerabdruck ein (`MigrationFingerprint`), und
-`capabilityIndexCanonicalizer` blendet es nicht aus. Ein Soll-Schema mit
-einem partiellen Index gegen ein Oracle-Ziel meldet deshalb nach jedem
+`capabilityIndexCanonicalizer` blendete es nicht aus. Ein Soll-Schema mit
+einem partiellen Index gegen ein Oracle-Ziel meldete deshalb nach jedem
 `migrate --execute` Drift — und weil `TableComparator` das Feld ebenfalls
-fuehrt, plant der naechste Lauf denselben Index erneut.
+fuehrt, plante der naechste Lauf denselben Index erneut.
 
-Das ist dieselbe Familie wie
+Dieselbe Familie wie
 [`fulltext-config-fingerprint-lossy-dialects.md`](fulltext-config-fingerprint-lossy-dialects.md)
-und die Bitmap-/Partitions-Projektionen: die Loesung ist eine Faehigkeit in
-`DialectCapabilities` plus ein Eintrag in `carriesEveryIndexProperty`.
+und die Bitmap-/Partitions-Projektionen.
 
-## Warum es zaehlt
+## Live verifiziert
 
-Die uebrigen Dialekte melden solche Verluste. MySQL kennt partielle Indizes
-ebenfalls nicht und meldet es (`W128`); SQL Server kann sie (`WHERE`) und
-rendert sie. Oracle ist damit der einzige Dialekt, der hier **still**
-verliert — und die Hausregel ist „nicht stumm".
-
-## Moegliche Richtungen
-
-1. **Melden statt schweigen** (klein): `W102`/eigener Code beim Rendern,
-   Index bleibt voll. Loest den Stille-Befund, nicht den Bedeutungsverlust.
-2. **Ausdrucksbasiert nachbilden** (gross): Oracle kann einen partiellen
-   Index ueber einen function-based Index simulieren
-   (`CASE WHEN <bedingung> THEN <spalte> END`), weil NULL-Schluessel nicht
-   im B-Tree landen. Das setzt aber die Ausdrucksdarstellung aus **Slice 6b**
-   voraus und ist ohne sie nicht baubar.
-
-Empfehlung: Richtung 1 sofort, Richtung 2 als Frage an Slice 6b anhaengen.
+`OracleIndexReverseIntegrationTest` gegen echtes Oracle: das erzeugte DDL
+traegt `W155`, Oracle nimmt es an, der Reverse liest den Index **ohne**
+Praedikat zurueck, und beide Seiten sind unter der Oracle-Projektion gleich.
+Gegengeprueft, indem `carriesPartialIndexPredicate` fuer Oracle auf `true`
+gesetzt wurde: genau diese Spezifikation faellt, die uebrigen drei bleiben
+gruen.

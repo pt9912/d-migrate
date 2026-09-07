@@ -156,6 +156,37 @@ class OracleDdlGeneratorObjectsTest : FunSpec({
         result.notes.single { it.objectName == "ix_big" }.code shouldBe "W152"
     }
 
+    test("a partial index is created in full and says so with W155") {
+        val table = tableWith(
+            IndexDefinition(name = "ix_active", columns = listOf(IndexColumn("a")), where = "a IS NOT NULL"),
+        )
+        val result = generator.generate(schema(tables = mapOf("t" to table)))
+
+        val note = result.notes.single { it.objectName == "ix_active" }
+        note.code shouldBe "W155"
+        note.message shouldContain "a IS NOT NULL"
+        // Der Index entsteht -- er ist nur weiter als verlangt. Ihn
+        // wegzulassen naehme dem Ziel einen Index ohne Not.
+        result.render() shouldContain "CREATE INDEX \"ix_active\" ON \"t\" (\"a\");"
+        result.render() shouldNotContain "WHERE"
+    }
+
+    test("a unique partial index says that the promise itself changed") {
+        val table = tableWith(
+            IndexDefinition(
+                name = "ix_one_active", columns = listOf(IndexColumn("a")),
+                unique = true, where = "active",
+            ),
+        )
+        val result = generator.generate(schema(tables = mapOf("t" to table)))
+
+        // Aus "hoechstens eine aktive Zeile je Schluessel" wird "hoechstens
+        // eine Zeile je Schluessel ueberhaupt" -- ein Bedeutungswechsel, kein
+        // blosser Groessenunterschied.
+        result.notes.single { it.objectName == "ix_one_active" }.message shouldContain "every row"
+        result.render() shouldContain "CREATE UNIQUE INDEX \"ix_one_active\" ON \"t\" (\"a\");"
+    }
+
     // ── Views ────────────────────────────────────
 
     test("a simple view renders CREATE OR REPLACE FORCE VIEW") {

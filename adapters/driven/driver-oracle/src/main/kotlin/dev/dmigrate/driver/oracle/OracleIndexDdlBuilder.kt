@@ -82,6 +82,21 @@ internal class OracleIndexDdlBuilder(
                 hint = "Oracle B-tree indexes cover most access patterns; review whether the index is still useful.",
             )
         }
+        // Oracle kennt kein `WHERE` an einer Index-Anweisung. Der Index
+        // entsteht trotzdem, deckt dann aber mehr Zeilen ab als verlangt --
+        // und bei `unique` aendert sich die Zusicherung inhaltlich: aus
+        // "hoechstens eine passende Zeile je Schluessel" wird "hoechstens
+        // eine Zeile je Schluessel ueberhaupt".
+        index.where?.let { predicate ->
+            notes += TransformationNote(
+                type = NoteType.WARNING, code = "W155", objectName = indexName,
+                message = "Partial index '$indexName' was created as a full index: Oracle has no index " +
+                    "predicate, so the condition '$predicate' is not part of it." +
+                    if (index.unique) " The uniqueness now covers every row, not only the matching ones." else "",
+                hint = "Model the condition as a function-based index (CASE WHEN … THEN … END) if the " +
+                    "restriction matters.",
+            )
+        }
         val cols = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")

@@ -122,6 +122,26 @@ class CapabilityIndexCanonicalizerTest : FunSpec({
         }
     }
 
+    test("only Oracle loses the predicate of a partial index") {
+        val partial = index.copy(where = "active")
+
+        // Oracle legt den Index als vollen an (W155) und liest ihn genau so
+        // zurueck -- ohne die Projektion driftete jeder Round-Trip.
+        capabilityIndexCanonicalizer(DatabaseDialect.ORACLE)(partial).where shouldBe null
+        for (dialect in listOf(
+            DatabaseDialect.POSTGRESQL, DatabaseDialect.SQLITE, DatabaseDialect.MSSQL,
+        )) {
+            withClue(dialect) {
+                capabilityIndexCanonicalizer(dialect)(partial).where shouldBe "active"
+            }
+        }
+        // MySQL traegt es ebenso wenig, ueberspringt den Index aber ganz
+        // (E057). Es gibt dort nichts zu versoehnen, und die Projektion
+        // liesse einen von Hand angelegten vollen Index wie den verlangten
+        // partiellen aussehen.
+        capabilityIndexCanonicalizer(DatabaseDialect.MYSQL)(partial).where shouldBe "active"
+    }
+
     test("the configuration of a non-fulltext index is untouched everywhere") {
         // Sie hat dort keine Bedeutung; sie zu falten waere eine Aenderung
         // ohne Anlass.

@@ -276,6 +276,7 @@ W200 - W299: Performance-Warnungen
 | W113 | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
 | W114 | Sequence cache value persisted as metadata only; helper-table mode does not emulate runtime preallocation |
 | W120 | SRID could not be fully transferred to target dialect (spatial best-effort, `schema generate`) |
+| W155 | Partial index created as a full index: the target dialect has no index predicate (Oracle) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 

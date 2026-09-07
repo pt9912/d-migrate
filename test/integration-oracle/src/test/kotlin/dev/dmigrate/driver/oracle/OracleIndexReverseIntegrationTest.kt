@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.oracle
 
+import dev.dmigrate.cli.commands.capabilityIndexCanonicalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
@@ -136,6 +137,61 @@ class OracleIndexReverseIntegrationTest : FunSpec({
             val readBack = OracleSchemaReader().read(pool)
                 .schema.tables.getValue("expr_target").indices.single()
             readBack.columns.single().expression shouldBe "UPPER(\"nm\")"
+        }
+    }
+
+    test("a partial index arrives as a full one, and the projection reconciles both sides") {
+        // Der Verlust ist nicht nur still, er DRIFTET: `where` geht in den
+        // Fingerabdruck ein. Ohne die Oracle-Projektion meldete der
+        // Post-Compare nach jedem `migrate --execute` Drift, und der naechste
+        // Lauf plante denselben Index erneut.
+        val desired = SchemaDefinition(
+            name = "S", version = "1",
+            tables = mapOf(
+                "partial_target" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(NeutralType.Integer),
+                        "active" to ColumnDefinition(NeutralType.Integer),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "ix_partial",
+                            columns = listOf(IndexColumn("id")),
+                            where = "\"active\" = 1",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        HikariConnectionPoolFactory.create(config).use { pool ->
+            val generated = OracleDdlGenerator().generate(desired)
+            generated.notes.single { it.objectName == "ix_partial" }.code shouldBe "W155"
+
+            pool.borrow().asJdbc().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute(
+                        "BEGIN EXECUTE IMMEDIATE 'DROP TABLE \"partial_target\"'; " +
+                            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+                    )
+                    generated.statements
+                        .map { it.sql.lines().filterNot { line -> line.trimStart().startsWith("--") } }
+                        .map { it.joinToString("\n").trim().removeSuffix(";") }
+                        .filter { it.isNotBlank() }
+                        .forEach { sql -> withClue("statement failed:\n$sql") { stmt.execute(sql) } }
+                }
+            }
+
+            val readBack = OracleSchemaReader().read(pool).schema.tables.getValue("partial_target")
+            withClue("Oracle traegt kein Index-Praedikat -- der Reverse kann keines liefern") {
+                readBack.indices.single { it.name == "ix_partial" }.where shouldBe null
+            }
+
+            val project = capabilityIndexCanonicalizer(DatabaseDialect.ORACLE)
+            project(desired.tables.getValue("partial_target").indices.single()) shouldBe
+                project(readBack.indices.single { it.name == "ix_partial" })
+            // Gegenprobe: ungeprojiziert sind es zwei verschiedene Indizes,
+            // und genau daran driftete der Post-Compare.
+            desired.tables.getValue("partial_target").indices.single().where shouldBe "\"active\" = 1"
         }
     }
 

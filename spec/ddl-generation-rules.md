@@ -566,8 +566,18 @@ Besonderheiten:
   intern function-based** (`INDEX_TYPE = FUNCTION-BASED NORMAL`), sein
   Ausdruck ist `"SPALTE"`. Der wird auf die Spalte zurückgefaltet und
   behält seine Richtung, statt als Ausdruck zu gelten.
-- Spatial ist nicht gescoped — jede Tabelle mit `geometry`-Spalten wird
-  vor der Generierung geblockt (E052)
+- **Partielle Indizes** kennt Oracle nicht: an einer Index-Anweisung gibt es
+  kein `WHERE`. Der Index wird trotzdem angelegt — als **voller** —, und der
+  Verlust wird mit W155 gemeldet. Bei `unique` ändert sich damit die
+  Zusicherung inhaltlich: aus „höchstens eine passende Zeile je Schlüssel"
+  wird „höchstens eine Zeile je Schlüssel überhaupt". Weil Oracles Reverse
+  das Prädikat folglich nicht zurückgibt, blendet der Fingerabdruck es für
+  Oracle aus (`carriesPartialIndexPredicate`); sonst meldete der
+  Post-Compare nach jedem `migrate --execute` Drift. MySQL überspringt einen
+  partiellen Index stattdessen ganz (E057) und behält das Prädikat deshalb
+  im Abdruck.
+- Spatial: `SDO_GEOMETRY` und `MDSYS.SPATIAL_INDEX_V2`, siehe Abschnitt
+  Spatial
 - Keine Tabellenoptionen (kein Tablespace/Storage-Clause)
 - Skript-Darstellung mit `/`-Batch-Trennern nach jedem Statement (siehe
   §13.1) — kein Präambel-Batch wie bei MSSQL
@@ -2258,6 +2268,7 @@ entstehen bei `schema generate` (Generator-/Report-Regeln).
 | W139 | Warnung | `schema generate` | MSSQL: `DECIMAL`-Präzision > 38 auf 38 gekappt |
 | W140 | Warnung | `schema generate` | MSSQL: Identity `BY DEFAULT` bzw. Default auf Identity-Spalte nicht abbildbar (`SET IDENTITY_INSERT`) |
 | W141 | Warnung | `schema generate` | MSSQL: Index auf LOB-Schlüsselspalte (`NVARCHAR(MAX)`/`VARBINARY(MAX)`/`XML`) übersprungen |
+| W155 | Warnung | `schema generate` | Oracle: partieller Index als voller Index angelegt — Oracle trägt kein Index-Prädikat; bei `unique` gilt die Eindeutigkeit danach für jede Zeile |
 
 **E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in
 der zulaessigen Wertemenge liegt: `geometry`, `point`, `linestring`, `polygon`,
