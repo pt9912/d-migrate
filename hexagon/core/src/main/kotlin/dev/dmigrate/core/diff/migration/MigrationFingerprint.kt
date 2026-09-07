@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.ProcedureDefinition
@@ -160,12 +161,18 @@ object MigrationFingerprint {
      * Projektion dieser Dialekte — ihre Abdruecke aendern sich damit auch
      * fuer eine unveraenderte Datenbank.
      *
+     * v13: **SQL Servers Partitionierung.** Der Server nummeriert Partitionen,
+     * sein Reverse vergibt `p1…pn` — der Name faellt deshalb aus der
+     * Projektion (`namesPartitions`), wie es `CanonicalPayload` schon immer
+     * tat. Dazu wird die HASH-Emulation ueber die berechnete Eimerspalte
+     * wiedererkannt und kommt als `HASH` statt als `RANGE` zurueck.
+     *
      * Die Anhebung ist der Punkt: ohne sie passte ein vor dem Slice
      * erzeugtes Artefakt still nicht mehr, und der Betreiber saehe ein
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v12"
+    const val ALGORITHM: String = "schema-fingerprint-v13"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -465,7 +472,14 @@ object MigrationFingerprint {
         sb.append("  partitioning=").append(partitioning.type.name)
             .append(SEP).append("key=").append(partitioning.key.joinToString(","))
             .append(SEP).append("partitions[").append(partitioning.partitions.size).append("]\n")
-        for (part in partitioning.partitions.sortedBy { it.name }) {
+        // Nach INHALT ordnen, nicht nach Namen: wo ein Dialekt Partitionen
+        // nummeriert, faellt der Name aus der Projektion, und ein konstanter
+        // Sortierschluessel ordnet gar nicht mehr -- die Reihenfolge waere
+        // dann die der Liste, und Soll und Ist bringen sie verschieden mit
+        // (der PG-Reverse liest nach Kindnamen, ein Reverse ueber Grenzen
+        // oder Reste in seiner eigenen Folge). `CanonicalPayload` sortiert
+        // aus demselben Grund schon immer ueber die kodierten Grenzen.
+        for (part in partitioning.partitions.sortedWith(compareBy({ partitionOrder(it) }, { it.name }))) {
             sb.append("    partition=").append(part.name)
                 .append(SEP).append("default=").append(part.isDefault)
                 .append(SEP).append("from=").append(bounds(part.from))
@@ -481,6 +495,17 @@ object MigrationFingerprint {
             // which compares partition.indices as a set.
             for (idx in part.indices.sortedWith(indexOrder)) appendIndex(sb, "      ", "partition_index", idx)
         }
+    }
+
+    /**
+     * Der inhaltliche Ordnungsschluessel einer Partition: alles, was sie
+     * ausmacht, ausser ihrem Namen. Der Name entscheidet nur noch den
+     * Gleichstand.
+     */
+    private fun partitionOrder(part: PartitionDefinition): String = buildString {
+        append(part.isDefault).append(SEP).append(bounds(part.from)).append(SEP).append(bounds(part.to))
+            .append(SEP).append(part.values?.joinToString(",") ?: "")
+            .append(SEP).append(part.modulus ?: "").append(SEP).append(part.remainder ?: "")
     }
 
     /** Shared index projection — same field shape for table-level and partition-local indices. */

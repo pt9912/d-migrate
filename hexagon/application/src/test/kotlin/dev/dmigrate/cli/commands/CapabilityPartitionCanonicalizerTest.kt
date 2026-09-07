@@ -141,4 +141,65 @@ class CapabilityPartitionCanonicalizerTest : FunSpec({
                 )
         }
     }
+
+    // ── Partitionsnamen ───────────────────────────────────────────
+    //
+    // SQL Server nummeriert Partitionen; die Namen des Soll-Schemas gibt es
+    // dort nicht, und sein Reverse vergibt `p1…pn`.
+
+    test("SQL Server folds the partition name away; the naming dialects keep it") {
+        capabilityPartitionCanonicalizer(DatabaseDialect.MSSQL)(ranged)
+            .partitions.single().name shouldBe ""
+        for (dialect in listOf(
+            DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL, DatabaseDialect.SQLITE, DatabaseDialect.ORACLE,
+        )) {
+            withClue(dialect) {
+                capabilityPartitionCanonicalizer(dialect)(ranged).partitions.single().name shouldBe "p1"
+            }
+        }
+    }
+
+    test("a desired schema and what SQL Server reports back hash identically despite the names") {
+        fun schema(partitioning: PartitionConfig) = SchemaDefinition(
+            name = "S", version = "1",
+            tables = mapOf(
+                "t" to TableDefinition(
+                    columns = mapOf("d" to ColumnDefinition(NeutralType.Date)),
+                    partitioning = partitioning,
+                ),
+            ),
+        )
+        val authored = ranged.partitions.single().copy(name = "partition_2024")
+        val desired = schema(ranged.copy(partitions = listOf(authored)))
+        val observed = schema(ranged)
+        val mssql = capabilityPartitionCanonicalizer(DatabaseDialect.MSSQL)
+
+        withClue("ohne die Projektion driftet jeder partitionierte SQL-Server-Round-Trip") {
+            MigrationFingerprint.compute(desired, canonicalizePartitioning = mssql) shouldBe
+                MigrationFingerprint.compute(observed, canonicalizePartitioning = mssql)
+        }
+        MigrationFingerprint.compute(desired) shouldNotBe MigrationFingerprint.compute(observed)
+    }
+
+    test("the fingerprint orders partitions by content, so a folded name cannot make it order-dependent") {
+        // Der Sortierschluessel war einmal der Name. Faellt der weg, ordnete
+        // eine stabile Sortierung gar nicht mehr -- und Soll und Ist bringen
+        // ihre Partitionen in verschiedener Folge mit.
+        val a = PartitionDefinition(name = "a", modulus = 2, remainder = 0)
+        val b = PartitionDefinition(name = "b", modulus = 2, remainder = 1)
+        fun schema(parts: List<PartitionDefinition>) = SchemaDefinition(
+            name = "S", version = "1",
+            tables = mapOf(
+                "t" to TableDefinition(
+                    columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
+                    partitioning = PartitionConfig(
+                        type = PartitionType.HASH, key = listOf("id"), partitions = parts,
+                    ),
+                ),
+            ),
+        )
+        val mssql = capabilityPartitionCanonicalizer(DatabaseDialect.MSSQL)
+        MigrationFingerprint.compute(schema(listOf(a, b)), canonicalizePartitioning = mssql) shouldBe
+            MigrationFingerprint.compute(schema(listOf(b, a)), canonicalizePartitioning = mssql)
+    }
 })

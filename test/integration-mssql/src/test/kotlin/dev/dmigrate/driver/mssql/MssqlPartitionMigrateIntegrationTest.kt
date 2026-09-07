@@ -116,11 +116,12 @@ class MssqlPartitionMigrateIntegrationTest : FunSpec({
                 "migrate meldete $migrateExit\nausgefuehrt:\n" + executed.joinToString("\n") +
                     "\nmeldungen:\n" + errors.joinToString("\n"),
             ) {
-                // Exit 5 waere hier NICHT der Ausfuehrungsfehler, sondern der
-                // Post-Compare: die Kindnamen ueberleben SQL Server nicht (R346),
-                // der Server nummeriert sie. Genau der Fall, fuer den das
-                // partition-mapping-Overlay geplant ist.
-                (migrateExit == 0 || migrateExit == 5) shouldBe true
+                // Der Post-Compare muss durchgehen: SQL Server nummeriert
+                // Partitionen (R346), und die Faehigkeit `namesPartitions`
+                // blendet den Namen deshalb aus dem Abdruck aus. Ohne sie
+                // meldete dieser Lauf Drift fuer eine Migration, die genau
+                // das getan hat, was verlangt war.
+                migrateExit shouldBe 0
             }
             executed.any { it.contains("CREATE PARTITION FUNCTION") } shouldBe true
 
@@ -223,9 +224,9 @@ class MssqlPartitionMigrateIntegrationTest : FunSpec({
                 "migrate meldete $migrateExit\nausgefuehrt:\n" + executed.joinToString("\n") +
                     "\nmeldungen:\n" + errors.joinToString("\n"),
             ) {
-                // Exit 5 = Post-Compare-Rest: die Kindnamen ueberleben SQL Server
-                // nicht (R346), der Server nummeriert sie.
-                (migrateExit == 0 || migrateExit == 5) shouldBe true
+                // Auch hier muss der Post-Compare durchgehen -- der
+                // Partitionsname faellt aus dem Abdruck (`namesPartitions`).
+                migrateExit shouldBe 0
                 executed.any { it.contains("SPLIT RANGE (200)") } shouldBe true
                 executed.none { it.startsWith("CREATE TABLE") || it.startsWith("DROP TABLE") } shouldBe true
             }

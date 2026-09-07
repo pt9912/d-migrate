@@ -524,4 +524,100 @@ class MssqlSchemaReaderTest : FunSpec({
     test("driver exposes this reader") {
         MssqlDriver().schemaReader()::class.simpleName shouldBe "MssqlSchemaReader"
     }
+
+    // ── HASH-Emulation im Reverse ─────────────────────────────────
+
+    /** Kopf- und Grenzabfrage der Partitionierung, auf die Eimerspalte gestellt. */
+    fun stubHashPartitioning(jdbc: JdbcOperations, column: String, boundaries: List<String>) {
+        every {
+            jdbc.queryList(match { it.contains("sys.partition_schemes ps") }, any())
+        } returns listOf(
+            mapOf(
+                "function_name" to "pf_orders", "scheme_name" to "ps_orders", "function_id" to 1,
+                "boundary_value_on_right" to true, "column_name" to column,
+            ),
+        )
+        every {
+            jdbc.queryList(match { it.contains("sys.partition_range_values prv") }, any())
+        } returns boundaries.map { mapOf("value" to it.toInt()) }
+    }
+
+    fun hashTableRig(
+        computedDefinition: String?,
+        boundaries: List<String> = listOf("1", "2", "3"),
+        indexRows: List<Map<String, Any?>> = emptyList(),
+    ): Pair<MssqlSchemaReader, ConnectionPool> {
+        val jdbc = mockk<JdbcOperations>()
+        stubEmptyDefaults(jdbc)
+        stubTableQueries(jdbc)
+        every { jdbc.queryList(match { it.contains("FROM sys.tables t") && !it.contains("partition") }, any()) } returns
+            listOf(mapOf("table_name" to "orders"))
+        every { jdbc.queryList(match { it.contains("FROM sys.columns c") }, any()) } returns listOf(
+            columnRow("customer_id", ordinal = 1),
+            columnRow(
+                MssqlHashPartitionEmulation.BUCKET_COLUMN,
+                computed = true, computedDefinition = computedDefinition, ordinal = 2,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("kc.type = 'PK'") }, any()) } returns listOf(
+            mapOf("column_name" to "customer_id"),
+            mapOf("column_name" to MssqlHashPartitionEmulation.BUCKET_COLUMN),
+        )
+        if (indexRows.isNotEmpty()) {
+            every { jdbc.queryList(match { it.contains("FROM sys.indexes i") }, any()) } returns indexRows
+        }
+        stubHashPartitioning(jdbc, MssqlHashPartitionEmulation.BUCKET_COLUMN, boundaries)
+        return rig(jdbc)
+    }
+
+    fun indexRow(name: String, column: String, included: Boolean = false, ordinal: Int = 1): Map<String, Any?> = mapOf(
+        "index_name" to name, "is_unique" to false, "has_filter" to false, "filter_definition" to null,
+        "type" to 2, "column_name" to column, "key_ordinal" to ordinal,
+        "is_descending_key" to false, "is_included_column" to included,
+    )
+
+    test("the emulated HASH partitioning is read back as HASH, and the bucket column disappears") {
+        val (reader, pool) = hashTableRig("(abs(checksum([customer_id])%(4)))")
+        val table = reader.read(pool).schema.tables.getValue("orders")
+
+        table.partitioning!!.type shouldBe dev.dmigrate.core.model.PartitionType.HASH
+        table.partitioning!!.key shouldBe listOf("customer_id")
+        table.partitioning!!.partitions.map { it.remainder } shouldBe listOf(0, 1, 2, 3)
+        // Die Eimerspalte ist ein Hilfsobjekt, kein Teil des Schemas.
+        table.columns.keys shouldBe setOf("customer_id")
+        table.primaryKey shouldBe listOf("customer_id")
+    }
+
+    test("an expression that is not the emulation leaves the table as RANGE, bucket column and all") {
+        val (reader, pool) = hashTableRig("([customer_id]%(4))")
+        val table = reader.read(pool).schema.tables.getValue("orders")
+
+        table.partitioning!!.type shouldBe dev.dmigrate.core.model.PartitionType.RANGE
+        table.columns.keys shouldBe setOf("customer_id", MssqlHashPartitionEmulation.BUCKET_COLUMN)
+    }
+
+    test("boundaries that disagree with the modulus are not treated as the emulation") {
+        val (reader, pool) = hashTableRig("(abs(checksum([customer_id])%(4)))", boundaries = listOf("1", "2"))
+        reader.read(pool).schema.tables.getValue("orders").partitioning!!.type shouldBe
+            dev.dmigrate.core.model.PartitionType.RANGE
+    }
+
+    test("the bucket column leaves an aligned index; an index over it alone is dropped with R366") {
+        val (reader, pool) = hashTableRig(
+            "(abs(checksum([customer_id])%(4)))",
+            indexRows = listOf(
+                // SQL Server haengt die Partitionsspalte mit key_ordinal 0 an.
+                indexRow("ix_aligned", MssqlHashPartitionEmulation.BUCKET_COLUMN, ordinal = 0),
+                indexRow("ix_aligned", "customer_id", ordinal = 1),
+                indexRow("ix_bucket_only", MssqlHashPartitionEmulation.BUCKET_COLUMN, ordinal = 0),
+            ),
+        )
+        val result = reader.read(pool)
+        val indices = result.schema.tables.getValue("orders").indices.associateBy { it.name }
+
+        indices.getValue("ix_aligned").columnNames shouldBe listOf("customer_id")
+        // Leer stehen zu lassen ergaebe `CREATE INDEX … ON [t] ()`.
+        indices.keys shouldBe setOf("ix_aligned")
+        result.notes.single { it.code == "R366" }.objectName shouldBe "ix_bucket_only"
+    }
 })

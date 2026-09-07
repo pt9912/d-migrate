@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Fingerabdruck-Verfahren auf `schema-fingerprint-v13`** (von `v11`). Zwei
+  Schritte: `v12` blendet die Text-Search-Konfiguration eines Volltext-Index
+  bei MySQL, SQLite und SQL Server aus sowie den system-vergebenen
+  Sequenznamen einer PostgreSQL-IDENTITY-Spalte — keiner der Dialekte kann
+  diese Angaben zurückmelden. `v13` nimmt SQL Servers Partitionsnamen dazu
+  (der Server nummeriert, sein Reverse synthetisiert `p1…pn`) und ordnet die
+  Partitionen im Abdruck nach Inhalt statt nach Namen.
+
+  **Bestehende Rollback-Artefakte und Overlays müssen neu erzeugt werden.**
+  `schema rollback` lehnt ein älteres Artefakt mit
+  `ROLLBACK_FINGERPRINT_ALGORITHM_MISMATCH` (Exit 8) ab und nennt beide
+  Versionen; erzeugen Sie es mit `migrate --generate-rollback` neu.
+
+### Fixed
+
+- **`schema migrate` konvergiert.** Die dialekt-abhängige Projektion wirkte
+  bisher nur auf den Fingerabdruck, nicht auf den Vergleich: wo ein Dialekt
+  eine Angabe nicht zurückmelden kann, meldete der Post-Compare zwar keine
+  Drift, der nächste Lauf plante aber dieselbe Änderung erneut.
+- **SQL Server: HASH-Emulation und Partitionsnamen.** Eine über
+  `--mssql-hash-partitions computed_column` erzeugte Partitionierung kam als
+  `range` zurück, mit anderem Schlüssel und einer zusätzlichen Spalte im
+  Modell. Sie wird jetzt wiedererkannt.
+
 ## [1.2.0] - 2026-09-05
 
 ### Added

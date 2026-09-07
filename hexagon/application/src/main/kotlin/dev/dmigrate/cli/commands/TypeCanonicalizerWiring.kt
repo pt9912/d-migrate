@@ -123,31 +123,54 @@ fun capabilityIndexCanonicalizer(
 }
 
 /**
+ * Ob der Dialekt jede Angabe einer Partitionierung fuehrt — dann ist die
+ * Projektion unten die Identitaet. Aus demselben Grund eine eigene
+ * Eigenschaft wie [carriesEveryIndexProperty]: die Liste waechst mit jeder
+ * neuen Faehigkeit, und eine vergessene Ergaenzung faellt hier auf, statt
+ * sich in einem `&&`-Ausdruck zu verstecken.
+ */
+private val DialectCapabilities.carriesEveryPartitionProperty: Boolean
+    get() = listOf(
+        carriesPartitionLowerBounds,
+        carriesPartitionHashModulus,
+        separatesDateFromDateTime,
+        namesPartitions,
+    ).all { it }
+
+/**
  * Projiziert die Partitionierung auf das, was der Ziel-Dialekt davon
  * zurueckmelden **kann**.
  *
- * Zwei Angaben stehen im neutralen Modell, die nicht jeder Dialekt fuehrt:
- * die **untere** Grenze einer RANGE-Partition (Oracle und MySQL kennen nur
- * `VALUES LESS THAN`) und Modulus/Remainder einer HASH-Partition (Oracle
- * verteilt selbst). Wo der Zielserver sie nicht ablegt, liest sein Reverse
- * sie auch nicht zurueck — ohne diese Projektion meldete der Post-Compare
- * nach jedem `migrate --execute` Drift fuer eine Migration, die genau das
- * getan hat, was verlangt war. Dieselbe Naht wie
- * [capabilityIndexCanonicalizer].
+ * Vier Angaben des neutralen Modells fuehrt nicht jeder Dialekt zurueck: die
+ * **untere** Grenze einer RANGE-Partition, Modulus und Remainder einer
+ * HASH-Partition, die Unterscheidung von Datum und Mitternacht-Zeitstempel,
+ * und den **Namen** einer Partition (SQL Server nummeriert sie).
+ *
+ * Was zaehlt, ist der Rueckweg, nicht die Ablage: MySQL und SQL Server
+ * speichern die untere Grenze zwar nicht, ihre Reverse-Leser rekonstruieren
+ * sie aber aus der Kontiguitaet — ihre Flags stehen deshalb auf `true`. Wo
+ * ein Reverse eine Angabe wirklich nicht zurueckgeben kann, meldete der
+ * Post-Compare ohne diese Projektion nach jedem `migrate --execute` Drift
+ * fuer eine Migration, die genau das getan hat, was verlangt war. Dieselbe
+ * Naht wie [capabilityIndexCanonicalizer].
  */
 fun capabilityPartitionCanonicalizer(
     dialect: DatabaseDialect,
 ): (PartitionConfig) -> PartitionConfig {
     val caps = DialectCapabilities.forDialect(dialect)
-    if (caps.carriesPartitionLowerBounds && caps.carriesPartitionHashModulus &&
-        caps.separatesDateFromDateTime
-    ) {
-        return { it }
-    }
+    if (caps.carriesEveryPartitionProperty) return { it }
     return { config ->
         config.copy(
             partitions = config.partitions.map { part ->
                 part.copy(
+                    // Wo der Server Partitionen nummeriert, synthetisiert sein
+                    // Reverse die Namen -- beide Seiten auf denselben Wert,
+                    // sonst driftete der Round-Trip an einem Namen, den
+                    // niemand vergeben hat. Unterschieden werden die
+                    // Partitionen ueber ihre Grenzen, nicht ueber den Namen;
+                    // `CanonicalPayload.partitionConfig` sortiert aus genau
+                    // diesem Grund schon danach.
+                    name = if (caps.namesPartitions) part.name else "",
                     from = if (caps.carriesPartitionLowerBounds) foldBounds(part.from, caps) else null,
                     to = foldBounds(part.to, caps),
                     values = part.values?.map { foldMidnight(it, caps) },

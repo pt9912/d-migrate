@@ -20,6 +20,7 @@ import dev.dmigrate.core.model.PartitionBound
 import dev.dmigrate.core.model.PartitionConfig
 import dev.dmigrate.core.model.PartitionDefinition
 import dev.dmigrate.core.model.PartitionType
+import dev.dmigrate.driver.metadata.IndexProjection
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -100,10 +101,22 @@ class MssqlSchemaReader(
         notes: MutableList<SchemaReadNote>,
     ): TableDefinition {
         val qualified = MssqlIdentifiers.qualified(schema, table)
-        val columnRows = MssqlMetadataQueries.listColumns(session, qualified)
+        val allColumnRows = MssqlMetadataQueries.listColumns(session, qualified)
+        val partitionScan = MssqlMetadataQueries.scanPartitioning(session, qualified)
+        val emulatedHash = recognizeEmulatedHash(partitionScan, allColumnRows)
+
+        // Die Eimerspalte ist ein Hilfsobjekt der Emulation, kein Teil des
+        // Schemas. Sie steht auch in Primaerschluessel und UNIQUE-Keys, weil
+        // SQL Server das fuer eine Partitionsspalte verlangt -- ueberall
+        // heraus, sonst truege das gelesene Modell etwas, das im Soll nie
+        // stand.
+        val bucket = emulatedHash?.let { MssqlHashPartitionEmulation.BUCKET_COLUMN }
+        val columnRows = allColumnRows.filterNot { it.name.equals(bucket, ignoreCase = true) }
         val primaryKey = MssqlMetadataQueries.listPrimaryKeyColumns(session, qualified)
+            .filterNot { it.equals(bucket, ignoreCase = true) }
         val foreignKeys = MssqlMetadataQueries.listForeignKeys(session, qualified)
         val indexScan = MssqlMetadataQueries.scanIndexes(session, qualified)
+            .let { scan -> if (bucket == null) scan else stripBucketFromIndices(scan, table, notes) }
         val checks = MssqlMetadataQueries.listCheckConstraints(session, qualified)
 
         // Ein ungefilterter Unique-Index wird zu `column.unique` bzw. einem
@@ -192,7 +205,7 @@ class MssqlSchemaReader(
             primaryKey = primaryKey,
             indices = indices + readFullText(session, qualified, table, notes),
             constraints = constraints,
-            partitioning = readPartitioning(session, qualified, table, notes),
+            partitioning = readPartitioning(partitionScan, emulatedHash, table, notes),
         )
     }
 
@@ -257,13 +270,89 @@ class MssqlSchemaReader(
         )
     }
 
+    /**
+     * Die Emulation hinter [scan], oder `null` — dann liest der Reverse die
+     * Tabelle wie jede andere RANGE-partitionierte.
+     *
+     * Beide Haelften muessen zusammenpassen: die Partitionsspalte traegt den
+     * reservierten Namen, **und** ihr Ausdruck hat die erzeugte Form. Eine
+     * gleichnamige, von Hand angelegte Spalte kommt so nicht durch.
+     */
+    private fun recognizeEmulatedHash(
+        scan: MssqlMetadataQueries.PartitionScan?,
+        columnRows: List<MssqlMetadataQueries.ColumnRow>,
+    ): MssqlHashPartitionRecognition.Recognized? {
+        // Ohne Ruecksicht auf Gross-/Kleinschreibung, wie die Emulation den
+        // Namen auch reserviert -- SQL-Server-Bezeichner vergleichen sich so.
+        if (scan == null || !scan.column.equals(MssqlHashPartitionEmulation.BUCKET_COLUMN, ignoreCase = true)) {
+            return null
+        }
+        if (!scan.boundaryOnRight) return null
+        val definition = columnRows
+            .firstOrNull { it.name.equals(MssqlHashPartitionEmulation.BUCKET_COLUMN, ignoreCase = true) && it.isComputed }
+            ?.computedDefinition
+        return MssqlHashPartitionRecognition.recognize(definition, scan.boundaries)
+    }
+
+    /**
+     * Die Eimerspalte aus allen Indizes.
+     *
+     * Ein Index, der **nur** ueber ihr liegt, hat danach keinen Schluessel
+     * mehr. Ihn leer stehen zu lassen ergaebe `CREATE INDEX … ON [t] ()`;
+     * ihn stillschweigend zu verwerfen verschwiege einen Index, den jemand
+     * angelegt hat. Er faellt deshalb heraus und wird gemeldet.
+     *
+     * SQL Server haengt die Partitionsspalte an jeden ausgerichteten Index —
+     * als Schluesselspalte mit `key_ordinal = 0`, die deshalb sogar
+     * **vorne** einsortiert. Ohne diese Bereinigung laese der Reverse
+     * `(dmg_hash_bucket, amount)`, wo der Autor `(amount)` geschrieben hat.
+     */
+    private fun stripBucketFromIndices(
+        scan: MssqlMetadataQueries.IndexScan,
+        table: String,
+        notes: MutableList<SchemaReadNote>,
+    ): MssqlMetadataQueries.IndexScan {
+        val stripped = scan.indices.map { it.withoutBucket() }
+        stripped.filter { it.columns.isEmpty() }.forEach { index ->
+            notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "R366",
+                objectName = index.name,
+                message = "Index '${index.name}' on table '$table' covers only the bucket column of the " +
+                    "emulated HASH partitioning; that column is a helper object and has no place in the " +
+                    "neutral model, so the index was skipped.",
+                hint = "Index a column of the schema instead; the partitioning itself is read back as HASH.",
+            )
+        }
+        return scan.copy(indices = stripped.filterNot { it.columns.isEmpty() })
+    }
+
+    /** Die Eimerspalte aus einem Index, samt ihrer positionsparallelen Angaben. */
+    private fun IndexProjection.withoutBucket(): IndexProjection {
+        val at = columns.indexOfFirst { it.equals(MssqlHashPartitionEmulation.BUCKET_COLUMN, ignoreCase = true) }
+        if (at < 0) return this
+        return copy(
+            columns = columns.filterIndexed { i, _ -> i != at },
+            directions = directions.filterIndexed { i, _ -> i != at },
+            prefixLengths = prefixLengths.filterIndexed { i, _ -> i != at },
+            expressionPositions = expressionPositions.mapNotNull {
+                when {
+                    it == at -> null
+                    it > at -> it - 1
+                    else -> it
+                }
+            }.toSet(),
+        )
+    }
+
     private fun readPartitioning(
-        session: JdbcOperations,
-        qualified: String,
+        scan: MssqlMetadataQueries.PartitionScan?,
+        emulatedHash: MssqlHashPartitionRecognition.Recognized?,
         table: String,
         notes: MutableList<SchemaReadNote>,
     ): PartitionConfig? {
-        val scan = MssqlMetadataQueries.scanPartitioning(session, qualified) ?: return null
+        if (scan == null) return null
+        if (emulatedHash != null) return emulatedHashConfig(emulatedHash)
 
         if (!scan.boundaryOnRight) {
             notes += SchemaReadNote(
@@ -300,6 +389,27 @@ class MssqlSchemaReader(
         }
         return PartitionConfig(type = PartitionType.RANGE, key = listOf(scan.column), partitions = partitions)
     }
+
+    /**
+     * Die wiedererkannte Emulation als das, was der Autor geschrieben hat:
+     * eine HASH-Partitionierung ueber dem Fachschluessel, mit einem Eimer je
+     * Rest. Die Namen tragen dieselbe `p…`-Form wie im RANGE-Fall — SQL
+     * Server fuehrt keine, und die Faehigkeit `namesPartitions` blendet sie
+     * im Vergleich ohnehin aus.
+     */
+    private fun emulatedHashConfig(
+        recognized: MssqlHashPartitionRecognition.Recognized,
+    ): PartitionConfig = PartitionConfig(
+        type = PartitionType.HASH,
+        key = recognized.key,
+        partitions = (0 until recognized.modulus).map { remainder ->
+            PartitionDefinition(
+                name = "p${remainder + 1}",
+                modulus = recognized.modulus,
+                remainder = remainder,
+            )
+        },
+    )
 
     private fun readViews(
         session: JdbcOperations,

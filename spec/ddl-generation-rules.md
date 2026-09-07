@@ -1254,9 +1254,20 @@ Regeln:
   die Ablage nicht.
 
 Beim Zurücklesen gilt: Kindnamen vergibt SQL Server nicht, sie werden als
-`p1`, `p2`, … synthetisiert (R346). Eine `RANGE LEFT`-Funktion liefert keine
-Grenzen, weil sich das geschlossene obere Intervall nicht als `[from, to)`
-ausdrücken lässt; die Tabelle bleibt als partitioniert vermerkt (R347).
+`p1`, `p2`, … synthetisiert (R346) und fallen deshalb aus dem
+Fingerabdruck-Vergleich heraus (`namesPartitions`). Eine `RANGE LEFT`-Funktion
+liefert keine Grenzen, weil sich das geschlossene obere Intervall nicht als
+`[from, to)` ausdrücken lässt; die Tabelle bleibt als partitioniert vermerkt
+(R347).
+
+Die **HASH-Emulation** wird wiedererkannt: trägt die Partitionsspalte den
+reservierten Namen und ihr Ausdruck die erzeugte Form
+(`(abs(checksum([…])%(n)))`, so schreibt der Server ihn um), liest der Reverse
+`hash` mit dem Fachschlüssel und einem Eimer je Rest. Die Eimerspalte fällt
+dabei aus Spaltenbestand, Primärschlüssel und Indizes heraus — SQL Server
+hängt sie an jeden eindeutigen Schlüssel und an jeden ausgerichteten Index an,
+im Soll-Schema steht sie nie. Passt der Ausdruck nicht, bleibt es bei `range`;
+ein Index, der ausschließlich über der Eimerspalte liegt, entfällt mit R366.
 
 ### 9.5 Partitionstypen
 

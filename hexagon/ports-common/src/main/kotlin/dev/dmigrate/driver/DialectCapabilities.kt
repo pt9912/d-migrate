@@ -157,6 +157,20 @@ data class DialectCapabilities(
      */
     val carriesPartitionHashModulus: Boolean = true,
     /**
+     * Ob der Dialekt Partitionen **benennt**.
+     *
+     * Vier der fuenf tun es. SQL Server nicht: es nummeriert sie, die Namen
+     * des Soll-Schemas gibt es dort nicht, und der Reverse vergibt `p1…pn`
+     * in Grenzreihenfolge (`R346`).
+     *
+     * Dieselbe Erwaegung wie bei [namesFullTextIndexes] — und dieselbe, die
+     * `CanonicalPayload.partitionConfig` bereits trifft: den Namen laesst es
+     * ausdruecklich aus dem Operations-ID-Schluessel heraus. Ohne die
+     * Projektion sagte die Payload „derselbe Vorgang", waehrend der Vergleich
+     * bei jedem Lauf eine Aenderung meldete.
+     */
+    val namesPartitions: Boolean = true,
+    /**
      * Ob der Dialekt einen reinen Datumswert von einem Zeitstempel um
      * Mitternacht unterscheiden kann.
      *
@@ -289,6 +303,7 @@ data class DialectCapabilities(
                 supportsClusteredIndexes = true,
                 namesFullTextIndexes = false,
                 carriesFullTextConfiguration = false,
+                namesPartitions = false,
             )
             // Objekttyp-Flags nach dem Oracle-Inventar (ADR 0052).
             // supportsCustomTypes bleibt bewusst false: Oracle-Objekttypen

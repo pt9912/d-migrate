@@ -1973,7 +1973,12 @@ Vier Dinge dazu:
   - **Die Zeilen liegen in anderen Partitionen als in der Quelle** (**W145**).
     SQL Server hasht anders. Für getrennte Ablage und Partition Elimination ist
     das gleichwertig; verlassen Sie sich nicht auf eine bestimmte Zuordnung.
-  - **Ein Reverse liest die Tabelle als `range` zurück**, nicht als `hash`.
+  - **Ein Reverse liest die Emulation wieder als `hash`.** d-migrate erkennt
+    die Eimerspalte an ihrem Namen und ihrem Ausdruck; sie erscheint nicht im
+    zurückgelesenen Schema, und Primärschlüssel und Indizes kommen ohne sie
+    zurück. Passt der Ausdruck nicht — etwa nach einer Änderung von Hand —,
+    bleibt es beim `range`, und ein Index, der **nur** über der Eimerspalte
+    liegt, entfällt mit **R366**.
   - Die Partitionen müssen einen vollständigen Eimersatz bilden: ein `modulus`,
     die `remainder` von `0` bis `modulus − 1` je einmal. Sonst **E068**.
   - Verweist eine andere Tabelle per Fremdschlüssel auf die partitionierte,

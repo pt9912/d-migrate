@@ -1,10 +1,20 @@
 ---
 id: mssql-hash-emulation-not-round-trippable
 title: "SQL Servers HASH-Emulation kommt als RANGE zurueck — der Migrate-Plan konvergiert nicht"
-status: open
+status: resolved
 ---
 
 # Die emulierte HASH-Partitionierung round-trippt nicht
+
+> **Erledigt, ueber Loesungsrichtung 1.** Der Reverse erkennt die Emulation
+> an Spaltenname und Ausdruck wieder und liefert `HASH` mit dem
+> Fachschluessel; die Eimerspalte faellt aus Spaltenbestand, Primaerschluessel
+> und Indizes heraus.
+>
+> Beim Messen kam ein **zweiter** Grund dazu, aus dem auch RANGE nicht
+> konvergierte: SQL Server nummeriert Partitionen, und der Name ging trotzdem
+> in den Vergleich ein. Beides zusammen in
+> [`mssql-partitionierung-round-trip.md`](../done/mssql-partitionierung-round-trip.md).
 
 ## Befund
 
