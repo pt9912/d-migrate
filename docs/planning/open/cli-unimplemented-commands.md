@@ -1,6 +1,9 @@
 # Tracker: In cli-spec.md spezifizierte, noch nicht implementierte CLI-Befehle
 
-> **Status:** Sammlung/Tracker (2026-06-15)
+> **Status:** Sammlung/Tracker (2026-06-15; Aussagen zuletzt gegen den Code
+> geprüft am 2026-09-08 — unverändert zutreffend: registriert sind
+> `schema`/`data`/`export`/`config`/`mcp`, eine Gruppe `transform` gibt es
+> nicht, und `validate data`/`validate procedure` sind keine Befehle)
 > **Trigger:** `spec/cli-spec.md` ist das **Zielbild** und beschreibt die
 > Befehls-Oberfläche herstellerunabhängig vom Implementierungsstand. Der
 > Implementierungs-Status („implementiert/geplant") gehört nicht in die Spec

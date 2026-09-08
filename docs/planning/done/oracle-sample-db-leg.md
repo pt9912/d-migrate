@@ -1,6 +1,6 @@
 # Oracle-Leg im Sample-DB-Harness (Slice 3b)
 
-> **Status:** Draft mit Scope (2026-09-06).
+> **Status:** erledigt (2026-09-08).
 > **Trigger:** Oracle Slice 3 (`data export`/`import`/`transfer`, ADR 0052)
 > hat den Datenpfad geliefert, aber die im Slice-Schnitt vorgesehene
 > **3b** (sample-db-Oracle-Leg im Harness) bewusst nicht mitgezogen —
@@ -155,3 +155,24 @@ bestehenden Harness-Phasen).
   — Oracle Spatial ist laut ADR 0052 gar nicht gescoped.
 - CI-Standard-Gate-Aufnahme, falls der Ressourcenbedarf das PR-Gate zu sehr
   verlangsamt — dann opt-in/nightly wie Phase 3.
+
+## Closure (2026-09-08)
+
+P0–P3 lagen bereits vor (Compose-Service, `.env`, beide Smoke-Skripte,
+gepinnte Baselines, Make-Targets). Offen waren die beiden letzten Pakete, und
+sie waren es wirklich, nicht nur auf dem Papier:
+
+- **P4 — README.** Die Phasentabelle in `examples/sample-db/README.md` kannte
+  weder Oracle noch SQL Server; beim Nachtragen fiel auf, dass dieselbe
+  Tabelle für das MSSQL-Leg seit Slice 3b falsch war. Beide stehen jetzt drin,
+  samt Skript-Tabelle.
+- **P5 — CI.** Es gab keinen Lauf für die Oracle-Legs. Die im Plan offene
+  Frage („Standard-Gate oder opt-in/nightly?") ist mit dem MSSQL-Vorbild
+  beantwortet: eigener Workflow auf `main`, pfadgefiltert und
+  `continue-on-error`. Beide Richtungen haben jetzt einen
+  (`sample-db-cross-smoke-pg2ora.yml`, `…-ora2pg.yml`) — der Container ist
+  mit ~2 GB RAM und 2–3 Minuten Kaltstart der schwerste der Harness und
+  gehört damit nicht ins PR-Gate.
+
+Die im Nicht-Scope offengelassene Rückrichtung ist gebaut (Slice 4b, siehe
+Status-Update oben); ein Trigger-Eintrag in `open/` erübrigt sich.

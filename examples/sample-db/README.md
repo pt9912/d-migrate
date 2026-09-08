@@ -17,11 +17,23 @@ Gradle-Testmodul. Läuft **lokal *und* in CI**.
 | 2 | Sakila MySQL→PG Cross-Dialect | `make sample-db-cross-smoke` | PR |
 | 2 | Pagila PG→MySQL Cross-Dialect | `make sample-db-cross-smoke-pg2my` | PR |
 | 2b | Chinook SQLite Round-Trip | `make sample-db-sqlite-smoke` | PR |
+| 2 | Pagila PG→SQL Server / SQL Server→PG | `make sample-db-cross-smoke-pg2ms` / `…-ms2pg` | main, best-effort |
+| 2 | Pagila PG→Oracle / Oracle→PG | `make sample-db-cross-smoke-pg2ora` / `…-ora2pg` | main, best-effort |
 | 3 | Employees Scale (export-resume + Chunking, MySQL→MySQL **und** MySQL→PG) | `make sample-db-scale-smoke` | **opt-in/nightly** |
 
 Phase 3 ist wegen Laufzeit/Volumen (~4 Mio Zeilen) **nicht** im PR-Gate — nur
 lokal opt-in oder nächtlich
 ([`sample-db-scale.yml`](../../.github/workflows/sample-db-scale.yml)).
+
+Die SQL-Server- und Oracle-Legs laufen aus demselben Grund nicht im PR-Gate,
+nur schwächer: ihre Container sind die schwersten der Harness (SQL Server
+~1,5 GB Image, Oracle ~2 GB RAM und 2–3 Minuten Kaltstart). Sie fahren auf
+`main`, pfadgefiltert und `continue-on-error`, damit eine wackelige Registry
+den Hauptbau nicht rot macht
+([`pg2ms`](../../.github/workflows/sample-db-cross-smoke-pg2ms.yml),
+[`ms2pg`](../../.github/workflows/sample-db-cross-smoke-ms2pg.yml),
+[`pg2ora`](../../.github/workflows/sample-db-cross-smoke-pg2ora.yml),
+[`ora2pg`](../../.github/workflows/sample-db-cross-smoke-ora2pg.yml)).
 
 ## Sourcing (ADR 0014)
 
@@ -70,6 +82,8 @@ Stack bleibt nach dem Lauf stehen (Inspektion); Ports binden nur an `127.0.0.1`.
 | `scripts/smoke.sh` | Phase 1 — Pagila PG→PG Round-Trip + Baseline-Vergleich |
 | `scripts/smoke-cross.sh`, `scripts/smoke-cross-pg2my.sh` | Phase 2 — Cross-Dialect (Sakila MySQL→PG, Pagila PG→MySQL) |
 | `scripts/smoke-sqlite.sh` | Phase 2b — Chinook SQLite Round-Trip |
+| `scripts/smoke-cross-pg2ms.sh`, `scripts/smoke-cross-ms2pg.sh` | Phase 2 — Cross-Dialect (Pagila PG→SQL Server und zurück) |
+| `scripts/smoke-cross-pg2ora.sh`, `scripts/smoke-cross-ora2pg.sh` | Phase 2 — Cross-Dialect (Pagila PG→Oracle und zurück) |
 | `scripts/smoke-scale.sh` | Phase 3 — Employees export-resume + Chunking + Dual-Target-Import |
 | `expected/` | gepinnte Baselines + Diff-Erklärung je Flow |
 | `.cache/`, `out/` | gitignored (Dumps bzw. CLI-Artefakte) |

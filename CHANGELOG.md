@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Die Oracle-Legs des Sample-DB-Harness laufen in CI.** Beide Richtungen
+  (Pagila PG→Oracle und zurück) hatten Skripte, Baselines und Make-Targets,
+  aber keinen Lauf — sie fahren jetzt wie die SQL-Server-Legs auf `main`,
+  pfadgefiltert und best-effort (der Oracle-Container ist mit ~2 GB RAM und
+  2–3 Minuten Kaltstart der schwerste der Harness und gehört nicht ins
+  PR-Gate). Die Phasentabelle in `examples/sample-db/README.md` führt jetzt
+  auch die SQL-Server- und Oracle-Legs — sie fehlten dort seit Slice 3b.
 - **Die Drittanbieter-Hinweise reisen mit den Artefakten**, nicht nur im
   Repository. Der ausgelieferte Bundle enthält `ojdbc11` unter den Oracle Free
   Use Terms and Conditions; die Pflicht trifft die Weiterverbreitung, und eine

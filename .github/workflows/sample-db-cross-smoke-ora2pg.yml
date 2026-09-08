@@ -1,0 +1,58 @@
+name: Sample-DB Cross-Dialect Smoke Oracle→PG (Best-Effort)
+
+# Oracle-Leg der Sample-DB-Harness, Gegenrichtung (ADR 0052, Slice 4b): Oracle
+# als QUELLE, gegen das echte d-migrate:dev-CLI — symmetrisch zu
+# sample-db-cross-smoke-ms2pg.yml (SQL Server -> PG).
+# Plan: docs/planning/done/oracle-sample-db-leg.md
+# ADR:  docs/adr/0014-sample-db-harness-fetch-and-compose.md
+#
+# Faehrt `make sample-db-cross-smoke-ora2pg`: Hop 0 saet Oracle mit der
+# pg2ora-Mechanik, Hop 1 liest Oracle zurueck, erzeugt PostgreSQL-DDL und
+# transferiert — geprueft wird die dreifache Zeilen-Paritaet
+# (Original == Oracle == Rueckziel) gegen
+# examples/sample-db/expected/pagila-cross-ora2pg.notes.txt.
+#
+# Das Oracle-Image (`gvenzl/oracle-free:23-slim-faststart`, digest-gepinnt im
+# Compose-Service) braucht ~2 GB RAM und ~2-3 Minuten Kaltstart — der langsamste
+# Container der Harness. Deshalb wie das MSSQL-Leg nur auf `main` und
+# pfadgefiltert, nicht im PR-Gate.
+#
+# Best-Effort: continue-on-error, damit transiente Netz-/Registry-Instabilitaeten
+# den Hauptbuild nicht rot machen.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/sample-db/**'
+      - 'adapters/driven/driver-oracle/**'
+      - 'adapters/driven/driver-common/**'
+      - 'Makefile'
+      - 'make/**'
+      - 'Dockerfile'
+      - '.github/workflows/sample-db-cross-smoke-ora2pg.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cross-smoke-ora2pg:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify docker compose available
+        run: docker compose version
+
+      - name: Build d-migrate:dev runtime image
+        run: make docker-build IMAGE_TAG=dev
+
+      - name: Run Sample-DB cross-dialect smoke (Oracle -> PostgreSQL)
+        run: make sample-db-cross-smoke-ora2pg
+
+      - name: Cleanup (best-effort)
+        if: always()
+        run: make sample-db-purge || true
