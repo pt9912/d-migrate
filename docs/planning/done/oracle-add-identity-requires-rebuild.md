@@ -1,7 +1,7 @@
 ---
 id: oracle-add-identity-requires-rebuild
 title: "Identity nachtraeglich hinzufuegen braucht in Oracle einen Tabellen-Neubau"
-status: open
+status: resolved
 ---
 
 # Identity nachtraeglich hinzufuegen braucht in Oracle einen Tabellen-Neubau
@@ -35,7 +35,39 @@ Identity-Spalte macht — ein stiller Fehlschlag). Die Blockade ist
 richtungsabhaengig: die Down-Seite derselben Operation ist der
 Entfernen-Fall und rendert sauber.
 
-## Moegliche Loesung
+## Geloest: der Neubau steht
+
+`OracleRebuildPlanner` erkennt den Ausloeser (eine Typaenderung, die Identity
+**hinzufuegt** — richtungsabhaengig, die Gegenrichtung entfernt sie und geht
+in-place) und sammelt alles ein, was mit der Tabelle zusammen laufen muss;
+`OracleRebuildRenderer` schreibt die Folge. Die Reihenfolge ist gegen Oracle
+23 gemessen, nicht abgeleitet — die Regel steht in
+[`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md)
+(Abschnitt Oracle).
+
+Zwei Dinge, die erst die Messung zeigte:
+
+- Die Zwischentabelle muss **nackt** entstehen. Benannte Constraints (auch
+  das inline gerenderte `UNIQUE` und der Enum-CHECK) tragen schema-globale
+  Namen, die die noch bestehende alte Tabelle belegt; sie kommen erst nach
+  dem Umbenennen unter ihren echten Namen dazu.
+- Der Post-Compare drifteter danach trotzdem — nicht wegen des Neubaus,
+  sondern weil der **Fingerabdruck** die beiden Schreibweisen einer
+  Autowert-Spalte nicht zusammenfaltete, obwohl der Comparator es tat
+  (`schema-fingerprint-v15`).
+
+Abgenommen live gegen `gvenzl/oracle-free:23-slim-faststart`
+(`OracleIdentityRebuildIntegrationTest`): `schema migrate --execute` geht mit
+Exit 0 durch, die Schluessel 7 und 42 ueberleben, der naechste Insert bekommt
+43, und Index, UNIQUE-Constraint sowie der eingehende Fremdschluessel sind
+danach wieder da und greifen.
+
+**Offen geblieben** — eigener Befund, eigenes Ticket:
+[`column-generation-diff-unmapped`](../open/column-generation-diff-unmapped.md). Der
+zweite Weg, dasselbe zu wollen (`generation: identity` auf einem numerischen
+Typ statt `identifier` + `auto_increment`), plant gar keine Operation.
+
+## Urspruengliche Loesungsskizze
 
 Ein Tabellen-Neubau nach dem Muster von `MssqlRebuildPlanner`/
 `MssqlRebuildRenderer` bzw. der SQLite-Rebuild-Sequenz: neue Tabelle mit

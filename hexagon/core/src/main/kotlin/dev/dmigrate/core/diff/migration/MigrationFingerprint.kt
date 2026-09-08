@@ -10,6 +10,7 @@ import dev.dmigrate.core.model.ConstraintReferenceDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.PartitionDefinition
@@ -172,7 +173,7 @@ object MigrationFingerprint {
      * blankes `TARGET_STATE_MISMATCH` statt des Hinweises, das Artefakt neu
      * zu erzeugen.
      */
-    const val ALGORITHM: String = "schema-fingerprint-v14"
+    const val ALGORITHM: String = "schema-fingerprint-v15"
 
     /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
     private const val SEP: Char = CanonicalEncoding.SEP
@@ -188,8 +189,12 @@ object MigrationFingerprint {
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
+        foldsAutoIncrementOntoIdentity: Boolean = false,
     ): String = sha256Hex(
-        project(schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning),
+        project(
+            schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+            foldsAutoIncrementOntoIdentity,
+        ),
     )
 
     /**
@@ -213,13 +218,17 @@ object MigrationFingerprint {
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition = { it },
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
+        foldsAutoIncrementOntoIdentity: Boolean = false,
     ): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
         appendCustomTypes(sb, schema.customTypes)
         appendTables(
             sb,
-            canonicalizedTables(schema.tables, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning),
+            canonicalizedTables(
+                schema.tables, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+                foldsAutoIncrementOntoIdentity,
+            ),
             canonicalizeType,
         )
         appendViews(sb, schema.views)
@@ -264,10 +273,15 @@ object MigrationFingerprint {
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
+        foldsAutoIncrementOntoIdentity: Boolean,
     ): Map<String, TableDefinition> = tables.mapValues { (_, table) ->
         table.copy(
             columns = table.columns.mapValues { (_, col) ->
-                col.copy(generation = canonicalizeGeneration(col.generation))
+                col.copy(
+                    generation = canonicalizeGeneration(
+                        impliedGeneration(col, foldsAutoIncrementOntoIdentity),
+                    ),
+                )
             },
             indices = table.indices.map(canonicalizeIndex),
             partitioning = table.partitioning?.let { config ->
@@ -280,6 +294,27 @@ object MigrationFingerprint {
                 }
             },
         )
+    }
+
+    /**
+     * Die Erzeugungsart, wie der Ziel-Dialekt sie fuehren wird.
+     *
+     * `identifier` + `auto_increment` und der numerische Typ mit
+     * `generation: identity` sind zwei Schreibweisen fuer dieselbe Spalte.
+     * Wo der Dialekt beide zum selben DDL rendert
+     * ([DialectCapabilities.rendersAutoIncrementAsIdentity], im Comparator
+     * als `TargetProjection.foldsAutoIncrementOntoIdentity`), muss der
+     * Abdruck sie gleich sehen — sonst meldet der Post-Compare Drift auf
+     * einer Spalte, die genau so angewendet wurde, wie das Soll sie wollte.
+     *
+     * Gefaltet wird auf `ALWAYS`, weil die `auto_increment`-Schreibweise
+     * keinen Modus nennt und die Renderer sie als `GENERATED ALWAYS`
+     * ausgeben.
+     */
+    private fun impliedGeneration(col: ColumnDefinition, foldsAutoIncrementOntoIdentity: Boolean): ColumnGeneration? {
+        if (col.generation != null || !foldsAutoIncrementOntoIdentity) return col.generation
+        val autoIncrement = (col.type as? NeutralType.Identifier)?.autoIncrement == true
+        return if (autoIncrement) ColumnGeneration.Identity(mode = IdentityMode.ALWAYS) else null
     }
 
     private fun appendTables(

@@ -96,11 +96,13 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
                 dev.dmigrate.core.model.ColumnGeneration?,
                 canonicalizePartitioning: (dev.dmigrate.core.model.PartitionConfig) ->
                 dev.dmigrate.core.model.PartitionConfig,
+                foldsAutoIncrementOntoIdentity: Boolean,
             ): DiffResult {
                 plannerCallCount[0]++
                 return super.plan(
                     current, desired, schemaDiff, migrationOverlays, capabilities, triggerPlanningContext,
                     canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+                    foldsAutoIncrementOntoIdentity,
                 )
             }
         }

@@ -39,15 +39,17 @@ internal class OracleColumnConstraintHelper(
         col: ColumnDefinition,
         schema: SchemaDefinition,
         notes: MutableList<TransformationNote>,
+        identityModeOverride: IdentityMode? = null,
+        inlineNamedConstraints: Boolean = true,
     ): String {
         val type = col.type
-        val ctx = ColumnContext(tableName, colName, col, notes)
+        val ctx = ColumnContext(tableName, colName, col, notes, inlineNamedConstraints)
         val generation = col.generation
         return when {
             generation is ColumnGeneration.Identity && supportsIdentity(type) ->
-                identityColumn(ctx, generation.mode)
+                identityColumn(ctx, identityModeOverride ?: generation.mode)
             type is NeutralType.Identifier && type.autoIncrement ->
-                identityColumn(ctx, IdentityMode.ALWAYS)
+                identityColumn(ctx, identityModeOverride ?: IdentityMode.ALWAYS)
             type is NeutralType.Enum -> enumColumn(ctx, type, schema)
             else -> {
                 if (generation is ColumnGeneration.Identity) {
@@ -67,6 +69,13 @@ internal class OracleColumnConstraintHelper(
         val colName: String,
         val col: ColumnDefinition,
         val notes: MutableList<TransformationNote>,
+        /**
+         * Ob `UNIQUE` und der Enum-CHECK inline an der Spalte stehen duerfen.
+         * Ihre Namen sind schema-global; wer die Spalte auf einer
+         * Zwischentabelle rendert, laesst sie weg und holt sie ueber
+         * [columnLevelConstraintClauses] nach.
+         */
+        val inlineNamedConstraints: Boolean = true,
     )
 
     // ── Identity ─────────────────────────────────
@@ -84,7 +93,7 @@ internal class OracleColumnConstraintHelper(
         }
         val parts = mutableListOf(quoteIdentifier(ctx.colName), typeMapper.toSql(ctx.col.type))
         parts += "GENERATED $modeSql AS IDENTITY"
-        if (ctx.col.unique) parts += uniqueClause(ctx.tableName, ctx.colName)
+        if (ctx.col.unique && ctx.inlineNamedConstraints) parts += uniqueClause(ctx.tableName, ctx.colName)
         if (ctx.col.default != null) {
             ctx.notes += identityDroppedNote(
                 ctx.tableName, ctx.colName,
@@ -114,30 +123,63 @@ internal class OracleColumnConstraintHelper(
      */
     private fun enumColumn(ctx: ColumnContext, type: NeutralType.Enum, schema: SchemaDefinition): String {
         val refType = type.refType
-        if (refType != null) {
-            val customType = schema.customTypes[refType]
-            if (customType?.kind == CustomTypeKind.DOMAIN) {
-                ctx.notes += ManualActionRequired(
-                    code = "E053", objectType = "domain", objectName = "${ctx.tableName}.${ctx.colName}",
-                    reason = "Domain '$refType' has no Oracle base-type resolution yet; column '${ctx.colName}' " +
-                        "was rendered as CLOB.",
-                    hint = "Declare the column with a neutral type directly, or adjust the value manually.",
-                ).toNote()
-                val parts = mutableListOf(quoteIdentifier(ctx.colName), "CLOB")
-                parts += nullabilityDefaultUnique(ctx, lob = true)
-                return parts.joinToString(" ")
-            }
-            (customType?.values ?: type.values)?.let { return boundedEnumColumn(ctx, it) }
+        val customType = refType?.let { schema.customTypes[it] }
+        if (customType?.kind == CustomTypeKind.DOMAIN) {
+            ctx.notes += ManualActionRequired(
+                code = "E053", objectType = "domain", objectName = "${ctx.tableName}.${ctx.colName}",
+                reason = "Domain '$refType' has no Oracle base-type resolution yet; column '${ctx.colName}' " +
+                    "was rendered as CLOB.",
+                hint = "Declare the column with a neutral type directly, or adjust the value manually.",
+            ).toNote()
+            val parts = mutableListOf(quoteIdentifier(ctx.colName), "CLOB")
+            parts += nullabilityDefaultUnique(ctx, lob = true)
+            return parts.joinToString(" ")
         }
-        val values = type.values ?: return plainColumn(ctx)
+        val values = enumValuesOf(type, schema) ?: return plainColumn(ctx)
         return boundedEnumColumn(ctx, values)
     }
 
     private fun boundedEnumColumn(ctx: ColumnContext, values: List<String>): String {
         val parts = mutableListOf(quoteIdentifier(ctx.colName), "VARCHAR2(${OracleTypeMapper.enumWidth(values)})")
         parts += nullabilityDefaultUnique(ctx, lob = false)
-        parts += enumCheckClause(ctx.tableName, ctx.colName, values)
+        if (ctx.inlineNamedConstraints) parts += enumCheckClause(ctx.tableName, ctx.colName, values)
         return parts.joinToString(" ")
+    }
+
+    /**
+     * Die Werte, gegen die eine Enum-Spalte ihren CHECK haelt — aufgeloest wie
+     * beim Rendern der Spalte selbst. Ein `refType` auf eine DOMAIN hat keine
+     * (die Spalte wird CLOB), ebenso eine Enum ohne Werte.
+     */
+    private fun enumValuesOf(type: NeutralType, schema: SchemaDefinition): List<String>? {
+        val enum = type as? NeutralType.Enum ?: return null
+        val customType = enum.refType?.let { schema.customTypes[it] }
+        if (customType?.kind == CustomTypeKind.DOMAIN) return null
+        return customType?.values ?: enum.values
+    }
+
+    /**
+     * Die benannten Constraints, die [generateColumnSql] sonst inline an die
+     * Spalte haengt — hier als Klauseln fuer `ALTER TABLE … ADD`.
+     *
+     * Der Tabellen-Neubau braucht diesen Weg: seine Zwischentabelle traegt
+     * die Namen noch nicht (die alte Tabelle belegt sie), und nach dem
+     * Umbenennen muessen sie unter ihren echten Namen dastehen — nicht unter
+     * einem, der den Zwischennamen enthaelt.
+     */
+    fun columnLevelConstraintClauses(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        schema: SchemaDefinition,
+    ): List<String> = buildList {
+        if (col.unique && !typeMapper.isUnkeyable(col.type)) {
+            add(
+                "CONSTRAINT ${quoteIdentifier("uq_${tableName}_$colName")} " +
+                    "UNIQUE (${quoteIdentifier(colName)})",
+            )
+        }
+        enumValuesOf(col.type, schema)?.let { add(enumCheckClause(tableName, colName, it)) }
     }
 
     /**
@@ -253,7 +295,7 @@ internal class OracleColumnConstraintHelper(
             parts += "DEFAULT ${typeMapper.toDefaultSql(default, ctx.col.type)}"
         }
         if (ctx.col.required) parts += "NOT NULL"
-        if (ctx.col.unique) {
+        if (ctx.col.unique && ctx.inlineNamedConstraints) {
             if (lob) {
                 ctx.notes += unkeyableKeyNote(ctx.tableName, "uq_${ctx.tableName}_${ctx.colName}", "UNIQUE", listOf(ctx.colName))
             } else {

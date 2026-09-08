@@ -542,6 +542,14 @@ Zustand.
   ist; bei Abweichung bricht es ab (Exit 8), statt blind etwas zu zerstören.
 - Bei `file:`-Ziel (Datei-gegen-Datei) müssen Sie `--dialect` angeben, und
   `--execute` ist nicht möglich.
+- **Oracle, bestehende Spalte zur Auto-Schlüsselspalte machen:** Oracle kann
+  das nicht per `ALTER`; d-migrate baut die Tabelle dafür neu (anlegen,
+  kopieren, alte löschen, umbenennen). Vorhandene Schlüsselwerte und Daten
+  überleben, der Zähler steht danach über dem größten davon, und Indizes,
+  Constraints sowie eingehende Fremdschlüssel kommen zurück. Der Lauf gilt
+  aber als destruktiv (`--allow-destructive` nötig) und die Tabelle ist
+  kurzzeitig nicht vorhanden — planen Sie ihn wie eine Wartung, nicht wie
+  eine beiläufige Änderung.
 
 **Weitere Optionen — jeweils mit Beispiel:**
 

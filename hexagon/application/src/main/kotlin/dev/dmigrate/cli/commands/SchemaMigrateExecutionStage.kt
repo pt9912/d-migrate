@@ -156,6 +156,7 @@ internal class SchemaMigrateExecutionStage(
         canonicalizerFor: (SchemaDefinition) -> ((NeutralType) -> NeutralType) = { { it } },
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration? = { it },
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
+        foldsAutoIncrementOntoIdentity: Boolean = false,
     ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
         val dbOperand = target as? CompareOperand.Database ?: return null
@@ -181,9 +182,11 @@ internal class SchemaMigrateExecutionStage(
             canonicalizeIndex,
             canonicalizeGeneration,
             canonicalizePartitioning,
+            foldsAutoIncrementOntoIdentity,
         )
         val desiredFp = fingerprint(
             desired, canonicalizerFor(desired), canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+            foldsAutoIncrementOntoIdentity,
         )
         return if (observed == desiredFp) {
             PostCompareOutcome.Clean(observed)

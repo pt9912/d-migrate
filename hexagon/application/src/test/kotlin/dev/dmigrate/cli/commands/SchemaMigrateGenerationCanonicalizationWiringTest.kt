@@ -85,12 +85,14 @@ class SchemaMigrateGenerationCanonicalizationWiringTest : FunSpec({
             canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
             canonicalizePartitioning: (dev.dmigrate.core.model.PartitionConfig) ->
             dev.dmigrate.core.model.PartitionConfig,
+            foldsAutoIncrementOntoIdentity: Boolean,
         ): DiffResult {
             captured = canonicalizeGeneration
             capturedPartitioning = canonicalizePartitioning
             return super.plan(
                 current, desired, schemaDiff, migrationOverlays, capabilities, triggerPlanningContext,
                 canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+                foldsAutoIncrementOntoIdentity,
             )
         }
     }

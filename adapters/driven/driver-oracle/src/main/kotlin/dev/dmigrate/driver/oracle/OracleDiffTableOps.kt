@@ -188,8 +188,7 @@ internal object OracleDiffTableOps {
      * handgebautes `DiffResult` koennte sie erreichen, und dann waere ein
      * Kommentar die falsche Antwort: `JdbcMigrationStatementExecutor` fuehrt
      * JEDE Anweisung aus, und Oracle lehnt eine reine Kommentar-Anweisung ab
-     * (`ORA-00900`, gemessen). Siehe
-     * `docs/planning/open/diff-comment-as-statement.md`.
+     * (`ORA-00900`, gemessen).
      */
     fun renderDropTable(op: DiffOperation.DropTable, ctx: OracleDiffRenderContext) {
         if (ctx.direction == OracleRenderDirection.DOWN) {
@@ -285,9 +284,6 @@ internal object OracleDiffTableOps {
         val targetType = if (up) op.after else op.before
         if (targetType is NeutralType.Geometry || sourceType is NeutralType.Geometry) {
             return blockGeometryTypeChange(op, ctx, table, column)
-        }
-        if (isIdentity(targetType) && !isIdentity(sourceType)) {
-            return blockAddIdentity(op, ctx, table, column)
         }
         // Identity zuerst loesen: die anschliessende Typaenderung laeuft dann
         // auf einer gewoehnlichen Spalte. Zwei Anweisungen fuer eine
@@ -421,17 +417,6 @@ internal object OracleDiffTableOps {
                 "because SDO_GEOMETRY is an object type; the change needs a new column and a copy, which " +
                 "the migrate renderer does not perform.",
             code = "ORACLE_GEOMETRY_TYPE_CHANGE_UNSUPPORTED",
-        )
-        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
-    }
-
-    private fun blockAddIdentity(op: DiffOperation, ctx: OracleDiffRenderContext, table: String, column: String) {
-        ctx.skip(
-            op,
-            "Operation ${op.id} would turn the existing column '$table.$column' into an identity column. " +
-                "Oracle rejects that on any column that is not already an identity column (ORA-30673); the " +
-                "change needs a table rebuild, which the migrate renderer does not perform.",
-            code = "ORACLE_ADD_IDENTITY_UNSUPPORTED",
         )
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, setOf(op.id))
     }

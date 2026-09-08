@@ -121,6 +121,10 @@ open class DiffPlanner {
         // Post-Compare zwei VERSCHIEDEN projizierte Abdruecke -- schlimmer als
         // gar keine Projektion.
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig = { it },
+        // Und dieselbe Faltung der beiden Autowert-Schreibweisen wie im
+        // Comparator: sonst traegt das Artefakt einen Abdruck, den ein
+        // Post-Compare gegen dieselbe Spalte nie erreicht.
+        foldsAutoIncrementOntoIdentity: Boolean = false,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         // F.5 Sub-Slice A (2026-05-19): the planner-level block
@@ -224,9 +228,11 @@ open class DiffPlanner {
         return DiffResult(
             current = endpoint(
                 current, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+                foldsAutoIncrementOntoIdentity,
             ),
             desired = endpoint(
                 desired, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+                foldsAutoIncrementOntoIdentity,
             ),
             schemaDiff = schemaDiff,
             operations = sortResult.sorted,
@@ -245,12 +251,14 @@ open class DiffPlanner {
         canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
         canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
+        foldsAutoIncrementOntoIdentity: Boolean,
     ): DiffEndpoint =
         DiffEndpoint(
             schemaName = schema.name,
             schemaVersion = schema.version,
             fingerprint = MigrationFingerprint.compute(
                 schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration, canonicalizePartitioning,
+                foldsAutoIncrementOntoIdentity,
             ),
         )
 

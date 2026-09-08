@@ -191,6 +191,7 @@ class SchemaMigrateRunner(
         val canonicalizeIndex: (IndexDefinition) -> IndexDefinition,
         val canonicalizeGeneration: (ColumnGeneration?) -> ColumnGeneration?,
         val canonicalizePartitioning: (PartitionConfig) -> PartitionConfig,
+        val foldsAutoIncrementOntoIdentity: Boolean,
     )
 
     // Schemagebunden: ein `Enum(refType)` loest gegen die Custom Types
@@ -200,6 +201,7 @@ class SchemaMigrateRunner(
         val canonicalizeIndex = capabilityIndexCanonicalizer(dialect)
         val canonicalizeGeneration = capabilityGenerationCanonicalizer(dialect)
         val canonicalizePartitioning = capabilityPartitionCanonicalizer(dialect)
+        val foldsAutoIncrement = capabilityFoldsAutoIncrementOntoIdentity(dialect)
         return EndpointFingerprints(
             current = MigrationFingerprint.compute(
                 prepared.targetNormalized.schema,
@@ -207,6 +209,7 @@ class SchemaMigrateRunner(
                 canonicalizeIndex,
                 canonicalizeGeneration,
                 canonicalizePartitioning,
+                foldsAutoIncrement,
             ),
             desired = MigrationFingerprint.compute(
                 prepared.sourceNormalized.schema,
@@ -214,10 +217,12 @@ class SchemaMigrateRunner(
                 canonicalizeIndex,
                 canonicalizeGeneration,
                 canonicalizePartitioning,
+                foldsAutoIncrement,
             ),
             canonicalizeIndex = canonicalizeIndex,
             canonicalizeGeneration = canonicalizeGeneration,
             canonicalizePartitioning = canonicalizePartitioning,
+            foldsAutoIncrementOntoIdentity = foldsAutoIncrement,
         )
     }
 
@@ -330,6 +335,7 @@ class SchemaMigrateRunner(
                 { schema -> registrySchemaAwareCanonicalizer(prepared.effectiveDialect, schema) },
                 endpoints.canonicalizeGeneration,
                 endpoints.canonicalizePartitioning,
+                endpoints.foldsAutoIncrementOntoIdentity,
             )
         } else {
             null
@@ -435,6 +441,8 @@ class SchemaMigrateRunner(
                 canonicalizeIndex = capabilityIndexCanonicalizer(prep.effectiveDialect),
                 canonicalizeGeneration = capabilityGenerationCanonicalizer(prep.effectiveDialect),
                 canonicalizePartitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
+                foldsAutoIncrementOntoIdentity =
+                    capabilityFoldsAutoIncrementOntoIdentity(prep.effectiveDialect),
             )
         }
         return plan to overlayPreflight

@@ -58,9 +58,9 @@ import kotlin.io.path.createTempDirectory
  *
  * Der Reverse legt eine IDENTITY-Spalte als **numerischen Typ plus
  * `generation`** ab, nicht als `Identifier(autoIncrement = true)`. Das Soll
- * folgt dem; die andere Schreibweise plant eine Typaenderung auf einer
- * unveraenderten Spalte, siehe
- * `docs/planning/open/identity-column-shape-mismatch.md`.
+ * folgt dem. Dass die andere Schreibweise dasselbe meint, faltet der
+ * Comparator ueber `foldsAutoIncrementOntoIdentity` — der zweite Test
+ * unten belegt es.
  */
 class OracleMigrateRoundTripIntegrationTest : FunSpec({
 

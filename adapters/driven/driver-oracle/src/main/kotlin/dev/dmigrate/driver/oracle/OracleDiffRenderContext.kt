@@ -62,6 +62,40 @@ internal class OracleDiffRenderContext(
     }
 
     /**
+     * Eine Anweisung des Tabellen-Neubaus. Sie gehoert nicht zu EINER
+     * Operation, sondern zum ganzen Eimer: der Neubau erledigt alles, was an
+     * der Tabelle haengt, in einer Folge. Wuerde nur die ausloesende Operation
+     * als gerendert gelten, fiele der Rest aus der Buchhaltung.
+     */
+    fun emitRebuild(bucket: List<DiffOperation>, trigger: DiffOperation, sqlText: String) {
+        val ids = bucket.map { it.id }.toSet()
+        statements += MigrationDdlStatement(
+            sql = sqlText,
+            operationIds = ids,
+            risk = rebuildRisk(bucket),
+            phase = trigger.phase,
+            transactionScope = TransactionScope.RUNNER_OWNED,
+            hints = ORACLE_IMPLICIT_COMMIT_DDL_HINTS,
+        )
+        rendered += ids
+        destructive += ids
+        if (rebuildRisk(bucket).requiresManualConfirmation) manualActions += ids
+        nonReversible += bucket.filter { it.reversibility == Reversibility.NOT_REVERSIBLE }.map { it.id }
+    }
+
+    /**
+     * Das Risiko des ganzen Eimers. Der Neubau loescht und legt neu an, ist
+     * also immer destruktiv und immer ein Tabellen-Neuschreiben; Datenverlust
+     * und Bestaetigungspflicht erbt er von den Operationen darin.
+     */
+    private fun rebuildRisk(bucket: List<DiffOperation>): OperationRisk = OperationRisk(
+        destructive = true,
+        dataLossPossible = bucket.any { riskOrNull(it)?.dataLossPossible == true },
+        requiresTableRewrite = true,
+        requiresManualConfirmation = bucket.any { riskOrNull(it)?.requiresManualConfirmation == true },
+    )
+
+    /**
      * Bucht eine Operation als erledigt, OHNE eine Anweisung zu erzeugen.
      *
      * Fuer Faelle, in denen Oracle strukturell nichts zu tun hat -- ein

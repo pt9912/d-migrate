@@ -62,7 +62,17 @@ class OracleDiffDdlGenerator : DiffDdlGenerator {
             desiredSchema = diff.desiredSchema,
         )
         val ops = if (direction == OracleRenderDirection.UP) diff.operations else diff.operations.reversed()
-        for (op in ops) renderOp(op, ctx)
+        // Eine Spalte laesst sich in Oracle nicht nachtraeglich zur
+        // Identity-Spalte machen (ORA-30673). Der Neubau erledigt sie und
+        // alles, was an derselben Tabelle haengt, in einer Folge; einzeln
+        // gerendert liefe der Rest gegen eine Tabelle, die es so nicht mehr
+        // gibt.
+        val rebuilds = OracleRebuildPlanner.classify(ops, diff.currentSchema, diff.desiredSchema, direction)
+        for (rebuild in rebuilds.rebuilds) OracleRebuildRenderer.render(rebuild, ctx)
+        for (op in ops) {
+            if (rebuilds.isAbsorbed(op)) continue
+            renderOp(op, ctx)
+        }
         return ctx.toResult(diff)
     }
 

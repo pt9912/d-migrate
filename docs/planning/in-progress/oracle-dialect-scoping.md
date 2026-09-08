@@ -862,7 +862,7 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
   `ORA-30673` — bei leerer, gefüllter und NULL-behafteter Spalte
   gleichermaßen. Dieser eine Fall bräuchte einen Tabellen-Neubau und blockt
   in 5a benannt (`ORACLE_ADD_IDENTITY_UNSUPPORTED`), siehe
-  [`oracle-add-identity-requires-rebuild.md`](../open/oracle-add-identity-requires-rebuild.md).
+  [`oracle-add-identity-requires-rebuild.md`](../done/oracle-add-identity-requires-rebuild.md).
 - **Sequenzen: zwei getrennte Welten, nicht verwechseln.** Sub-Slice 5ds
   `CreateSequence`/`AlterSequence`/`AlterSequenceCurrentValue` betreffen
   eigenständige, benannte `SequenceDefinition`-Objekte (Slice 2 rendert sie
@@ -889,7 +889,7 @@ Reihenfolge. Renderer implementieren `DiffDdlGenerator`
 | Sub-Slice | Operationen | Kern der Arbeit | Abnahme |
 | --- | --- | --- | --- |
 | **5a** ✅ | `CreateTable`, `DropTable`, `RenameTable`, `AddColumn`, `DropColumn`, `RenameColumn`, `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`, `AddPrimaryKey`, `DropPrimaryKey` | Gerüst (Dispatch UP/DOWN, RenderContext, SqlBuilders). Kein Default-Dreischritt nötig. `RENAME TO`/`RENAME COLUMN` sind native Syntax. Identity-Typ-/Modus-Änderungen live bestätigt in-place — kein Rebuild-Zweig; das *Hinzufügen* von Identity blockt benannt (siehe oben) | Unit-Tests je Operation und Richtung |
-| ~~5a-2~~ | — | **Entfällt** — die Live-Sonde bestätigte, dass Oracle Identity-Typänderungen per `ALTER TABLE ... MODIFY` in-place erlaubt (siehe oben); MSSQLs Rebuild-Sub-Slice hat kein Oracle-Äquivalent. Der einzige Rest-Fall (Identity *hinzufügen*) ist in [`oracle-add-identity-requires-rebuild.md`](../open/oracle-add-identity-requires-rebuild.md) ausgelagert | — |
+| ~~5a-2~~ | — | **Entfällt** — die Live-Sonde bestätigte, dass Oracle Identity-Typänderungen per `ALTER TABLE ... MODIFY` in-place erlaubt (siehe oben); MSSQLs Rebuild-Sub-Slice hat kein Oracle-Äquivalent. Der einzige Rest-Fall (Identity *hinzufügen*) ist in [`oracle-add-identity-requires-rebuild.md`](../done/oracle-add-identity-requires-rebuild.md) ausgelagert | — |
 | **5b** ✅ | `AddConstraint`, `DropConstraint`, `AddIndex`, `DropIndex` | Nur B-Tree-Indizes — ein nicht-BTREE-Indextyp rendert als B-Tree mit `W102` (so wie im Generate-Pfad, `spec/ddl-generation-rules.md`); Constraint-Namen kommen aus dem Operations-Payload, kein Katalog-Lookup nötig. Kein `WITH CHECK`-Äquivalent: Oracle validiert per Default gegen den Bestand (siehe oben) | Unit-Tests je Operation und Richtung |
 | **5c** ✅ | `CreateView`, `ReplaceView`, `DropView`, `RenameView`, `CreateCustomType`, `AlterCustomType`, `DropCustomType` | `CREATE OR REPLACE VIEW FORCE`; `AlterCustomType` fächert auf nutzende Spalten auf, DOMAIN aber immer → CLOB | Unit-Tests je Operation und Richtung |
 | **5d** ✅ | `CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`, `AlterSequenceCurrentValue` | `ALTER SEQUENCE ... RESTART START WITH n` (live verifizieren); `supportsCurrentValuePreserve` → `true`; explizit NICHT identity-backed Sequenzen (bleibt Slice 3s Domäne) | Live-Test pinnt die gemessene Sequenz-Semantik; `neutral-model-spec.md` §9 bekommt die Oracle-Spalte |

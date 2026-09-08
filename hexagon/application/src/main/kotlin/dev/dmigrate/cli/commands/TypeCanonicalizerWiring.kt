@@ -24,6 +24,7 @@ internal typealias FingerprintOfSchema = (
     (IndexDefinition) -> IndexDefinition,
     (ColumnGeneration?) -> ColumnGeneration?,
     (PartitionConfig) -> PartitionConfig,
+    Boolean,
 ) -> String
 
 /**
@@ -222,6 +223,15 @@ private const val MIDNIGHT = "00:00:00"
  * bleibt streng und zeigt den Namen, nur der Fingerabdruck-Pfad faltet ihn
  * weg.
  */
+/**
+ * Ob dieser Dialekt `identifier` + `auto_increment` und den numerischen Typ
+ * mit `generation: identity` zum selben DDL rendert — dann sind beide
+ * Schreibweisen dieselbe Spalte, und Abdruck wie Vergleich muessen sie gleich
+ * sehen.
+ */
+fun capabilityFoldsAutoIncrementOntoIdentity(dialect: DatabaseDialect): Boolean =
+    DialectCapabilities.forDialect(dialect).rendersAutoIncrementAsIdentity
+
 fun capabilityGenerationCanonicalizer(
     dialect: DatabaseDialect,
 ): (ColumnGeneration?) -> ColumnGeneration? {

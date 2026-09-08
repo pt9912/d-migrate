@@ -216,9 +216,11 @@ class SchemaRollbackRunner(
         // Und dieselbe Projektion der Partitionierung -- Oracle meldet weder
         // untere RANGE-Grenzen noch HASH-Modulus zurueck.
         val canonicalizePartitioning = dialect?.let(::capabilityPartitionCanonicalizer) ?: { it }
+        // Und dieselbe Faltung der beiden Autowert-Schreibweisen.
+        val foldsAutoIncrement = dialect?.let(::capabilityFoldsAutoIncrementOntoIdentity) == true
         val targetFingerprint = fingerprint(
             targetResolved.schema, canonicalizeType, canonicalizeIndex, canonicalizeGeneration,
-            canonicalizePartitioning,
+            canonicalizePartitioning, foldsAutoIncrement,
         )
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()
