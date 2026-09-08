@@ -16,6 +16,8 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.RawSqlExpressionPortability
+import dev.dmigrate.driver.DatabaseDialect
 
 /**
  * Spalten- und Constraint-Rendering für T-SQL, aus [MssqlDdlGenerator]
@@ -463,8 +465,7 @@ internal class MssqlColumnConstraintHelper(
         lobColumns: Set<String>,
         notes: MutableList<TransformationNote>,
     ): String? = when (constraint.type) {
-        ConstraintType.CHECK ->
-            "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
+        ConstraintType.CHECK -> checkClauseOrNull(constraint, notes)
         ConstraintType.UNIQUE -> {
             val columns = constraint.columns.orEmpty()
             val lob = columns.filter { it in lobColumns }
@@ -508,4 +509,23 @@ internal class MssqlColumnConstraintHelper(
         if (type is NeutralType.Identifier && type.autoIncrement) return false
         return !definition.required
     }
+    /**
+     * Ein CHECK-Ausdruck reist als roher Dialekt-Text. Was T-SQL nicht parsen
+     * kann, wird benannt verworfen statt ungueltig gerendert — sonst faellt es
+     * erst dem Zielserver auf.
+     */
+    private fun checkClauseOrNull(
+        constraint: ConstraintDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String? {
+        val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.MSSQL)
+        if (!verdict.portable) {
+            notes += RawSqlExpressionPortability.notPortableNote(
+                "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.MSSQL,
+            )
+            return null
+        }
+        return "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
+    }
+
 }

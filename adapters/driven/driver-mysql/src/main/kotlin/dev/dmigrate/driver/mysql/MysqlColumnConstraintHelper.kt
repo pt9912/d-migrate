@@ -141,8 +141,7 @@ internal class MysqlColumnConstraintHelper(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>,
     ): String? = when (constraint.type) {
-        ConstraintType.CHECK ->
-            "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
+        ConstraintType.CHECK -> checkClauseOrNull(constraint, notes)
         ConstraintType.UNIQUE -> {
             val cols = constraint.columns?.joinToString(", ") { quoteIdentifier(it) } ?: ""
             "CONSTRAINT ${quoteIdentifier(constraint.name)} UNIQUE ($cols)"
@@ -162,4 +161,22 @@ internal class MysqlColumnConstraintHelper(
                 ref.table, ref.columns, ref.onDelete, ref.onUpdate)
         }
     }
+    /**
+     * Ein CHECK-Ausdruck reist als roher Dialekt-Text. Was MySQL nicht parsen
+     * kann, wird benannt verworfen statt ungueltig gerendert.
+     */
+    private fun checkClauseOrNull(
+        constraint: ConstraintDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String? {
+        val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.MYSQL)
+        if (!verdict.portable) {
+            notes += RawSqlExpressionPortability.notPortableNote(
+                "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.MYSQL,
+            )
+            return null
+        }
+        return "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
+    }
+
 }

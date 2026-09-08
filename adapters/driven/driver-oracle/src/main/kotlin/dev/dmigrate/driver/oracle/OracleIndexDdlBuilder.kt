@@ -9,6 +9,8 @@ import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.RawSqlExpressionPortability
 
 /**
  * Index-DDL fuer Oracle, aus [OracleDdlGenerator] ausgelagert (Slice 5a):
@@ -33,6 +35,7 @@ internal class OracleIndexDdlBuilder(
 
     fun render(tableName: String, table: TableDefinition, index: IndexDefinition, unkeyableColumns: Set<String>): DdlStatement {
         val indexName = effectiveName(tableName, index)
+        RawSqlExpressionPortability.indexRefusal(index, indexName, DatabaseDialect.ORACLE)?.let { return it }
         val columns = table.columns
 
         // Volltext VOR dem LOB-Waechter unten: eine CLOB-Spalte ist fuer einen
@@ -112,4 +115,5 @@ internal class OracleIndexDdlBuilder(
             append(column.renderKey(quoteIdentifier))
             column.direction?.let { append(" ${it.name}") }
         }
+
 }

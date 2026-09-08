@@ -112,7 +112,27 @@ internal class PostgresColumnConstraintHelper(
         return sql
     }
 
-    fun generateConstraintClause(constraint: ConstraintDefinition): String {
+    /**
+     * `null`, wenn der rohe Ausdruck auf PostgreSQL nicht gilt. Der Fall ist
+     * seltener als andersherum — `::` und `~~` sind hier zu Hause —, aber
+     * MySQLs Backtick-Quoting ist es nicht, und ein von dort stammender CHECK
+     * ginge sonst unveraendert in die DDL.
+     */
+    fun generateConstraintClause(
+        constraint: ConstraintDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String? {
+        if (constraint.type == ConstraintType.CHECK || constraint.type == ConstraintType.EXCLUDE) {
+            val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.POSTGRESQL)
+            if (!verdict.portable) {
+                notes += RawSqlExpressionPortability.notPortableNote(
+                    "constraint", constraint.name,
+                    if (constraint.type == ConstraintType.CHECK) "CHECK expression" else "EXCLUDE expression",
+                    verdict.reason, DatabaseDialect.POSTGRESQL,
+                )
+                return null
+            }
+        }
         return when (constraint.type) {
             ConstraintType.CHECK -> {
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"

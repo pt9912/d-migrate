@@ -16,6 +16,7 @@ import dev.dmigrate.driver.ViewQueryTransformer
 import dev.dmigrate.driver.asDiffDiagnostic
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
+import dev.dmigrate.driver.RawSqlExpressionPortability
 
 /**
  * Per-operation renderers for constraint / index / view / custom-
@@ -165,6 +166,7 @@ internal object PostgresDiffOtherOps {
         }
         if (!guardSpatialIndex(op, op.index, ctx, table)) return
         if (!guardIndexOpClass(op, op.index, ctx, table)) return
+        if (!guardRawIndexText(op, op.index, ctx)) return
         // ADR 0025: a FULLTEXT index whose tsvector column can't be resolved is blocked
         // (FULLTEXT_VECTOR_UNKNOWN) — see ctx.resolveFullTextIndex. A block here means UP
         // never creates a phantom index, so the DOWN `DROP INDEX` below stays symmetric.
@@ -255,6 +257,28 @@ internal object PostgresDiffOtherOps {
      * class (e.g. tsvector degraded to text) instead of emitting invalid
      * `USING gist (text_col)` DDL. Returns false (and blocks) when unrenderable.
      */
+    /**
+     * Praedikat und Ausdrucks-Schluessel reisen als roher Dialekt-Text. Was
+     * PostgreSQL nicht parsen kann — MySQLs Backtick-Quoting etwa —, wird
+     * benannt verworfen statt ungueltig gerendert.
+     */
+    private fun guardRawIndexText(
+        op: DiffOperation,
+        index: IndexDefinition,
+        ctx: PostgresDiffRenderContext,
+    ): Boolean {
+        val verdict = RawSqlExpressionPortability.assessIndex(index, DatabaseDialect.POSTGRESQL)
+        if (verdict.portable) return true
+        ctx.skip(
+            op,
+            "Operation ${op.id} carries raw SQL text that PostgreSQL cannot parse (${verdict.reason}); " +
+                "d-migrate does not translate raw SQL expressions between dialects.",
+            code = "INDEX_RAW_TEXT_NOT_PORTABLE",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return false
+    }
+
     private fun guardIndexOpClass(
         op: DiffOperation,
         index: IndexDefinition,

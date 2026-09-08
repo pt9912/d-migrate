@@ -1241,6 +1241,38 @@ Funktionen, die T-SQL nicht kennt (`NOW()`, `DATE_TRUNC`, `EXTRACT`,
 Umgekehrt ist ein `mssql`-stämmiger Body mit Klammer-Quoting
 (`[dbo].[users]`) für PostgreSQL/MySQL/SQLite nicht portabel (E053).
 
+#### Roher Ausdruckstext: CHECK, Index-Prädikat, Index-Ausdruck
+
+Drei weitere Felder tragen rohen SQL-Text, der kein `SELECT` ist, sondern ein
+**skalarer Ausdruck**: `ConstraintDefinition.expression` (CHECK/EXCLUDE),
+`IndexDefinition.where` und `IndexColumn.expression`. Sie werden nach
+denselben Regeln beurteilt wie ein View-Body und bei fehlender Portabilität
+mit `action_required` E053 **nicht gerendert** — statt ungültige DDL zu
+erzeugen, die erst der Zielserver ablehnt. Ein CHECK fällt dabei weg, ein
+Index als Ganzes (Prädikat und Ausdrucks-Schlüssel gehören zu derselben
+`CREATE INDEX`-Anweisung).
+
+Beurteilt wird das **Ziel**, nicht die Herkunft: `ConstraintDefinition` trägt
+kein `source_dialect`, und die Marker sind ohnehin Eigenschaften der
+Ziel-Grammatik — `::` ist in T-SQL ein Syntaxfehler, gleichgültig wer es
+geschrieben hat. Gemeldet werden nur **harte** Fehler:
+
+| Marker | Nicht portabel für |
+| --- | --- |
+| `::` (Cast) | alle außer PostgreSQL |
+| `~~` (PostgreSQLs interner `LIKE`-Operator) | alle außer PostgreSQL |
+| Backtick-Quoting | alle außer MySQL |
+| `\|\|` | SQL Server (dort überhaupt kein Operator) |
+
+Bewusst **nicht** gemeldet, weil ohne Herkunft nicht sicher zu entscheiden:
+T-SQL-Klammer-Quoting (`[` steht ebenso in JSON-Pfaden und Array-Ausdrücken)
+und `||` gegen MySQL (dort gültig — als logisches ODER; ob der Autor nicht
+genau das meinte, sagt nur die Herkunft). Ein Marker **innerhalb eines
+Zeichenketten-Literals** ist Text, kein Syntaxelement.
+
+Umgeschrieben wird nichts: `~~` → `LIKE` wäre eine Regel, keine Übersetzung,
+aber sie flösse bis in die erzeugte DDL. Das bleibt eine eigene Entscheidung.
+
 #### Identifier-Quoting in View-Queries
 
 Identifier in View-Queries werden gemäß Ziel-Dialekt gequotet (§2). Der Query-String wird dafür nicht vollständig geparst, sondern nur die bekannten Tabellen- und Spaltennamen (aus `dependencies`) werden ersetzt.

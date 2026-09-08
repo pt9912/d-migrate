@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Rohe Ausdrücke landen nicht mehr ungeprüft in fremder DDL.**
+  CHECK-Ausdrücke, Index-Prädikate und Index-Ausdrücke reisten als roher
+  Dialekt-Text: ein zurückgelesener PostgreSQL-CHECK `((email ~~ '%@%'::text))`
+  ging wörtlich nach T-SQL, MySQL, SQLite und Oracle, wo weder `~~` noch `::`
+  existiert — der Fehler fiel erst dem Zielserver auf. View-Bodies wurden seit
+  jeher beurteilt, Routinen-Rümpfe an ihrer Herkunft; diese drei Felder gar
+  nicht. Jetzt werden sie mit `E053` benannt verworfen statt ungültig
+  gerendert.
+
+  Beurteilt wird das **Ziel**, nicht die Herkunft — ein CHECK trägt kein
+  `source_dialect`, und `::` ist in T-SQL ein Syntaxfehler, gleichgültig wer
+  es geschrieben hat. Gemeldet werden nur harte Fehler; T-SQL-Klammern und
+  `||` gegen MySQL bleiben bewusst draußen, weil sie ohne Herkunft nicht
+  sicher zu entscheiden sind.
 - **Berechnete Spalten fallen nicht mehr stumm weg.** Eine Spalte mit
   `GENERATED ALWAYS AS (…)` kommt als gewöhnliche Spalte zurück — das neutrale
   Modell führt dafür keine Form. Gemeldet hat das bisher nur SQL Server

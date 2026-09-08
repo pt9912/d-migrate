@@ -10,6 +10,8 @@ import dev.dmigrate.driver.BitmapIndexFallbackNote
 import dev.dmigrate.driver.CoveringIndexDropNote
 import dev.dmigrate.driver.asDiffDiagnostic
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.RawSqlExpressionPortability
 
 /**
  * Per-operation renderers for SQLite operations that *don't* need a
@@ -216,6 +218,7 @@ internal object SqliteDiffSimpleOps {
 
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
+        if (!guardRawIndexText(op, op.index, ctx)) return
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             // ADR 0025 (Slice P4): the UP expanded the FULLTEXT index to an FTS5 virtual table +
             // three sync triggers, so the DOWN tears exactly those down (not a `DROP INDEX` — no
@@ -350,4 +353,26 @@ internal object SqliteDiffSimpleOps {
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
+    /**
+     * Praedikat und Ausdrucks-Schluessel reisen als roher Dialekt-Text. Was
+     * SQLite nicht parsen kann, wird benannt verworfen statt ungueltig
+     * gerendert.
+     */
+    private fun guardRawIndexText(
+        op: DiffOperation,
+        index: IndexDefinition,
+        ctx: SqliteDiffRenderContext,
+    ): Boolean {
+        val verdict = RawSqlExpressionPortability.assessIndex(index, DatabaseDialect.SQLITE)
+        if (verdict.portable) return true
+        ctx.skip(
+            op,
+            "Operation ${op.id} carries raw SQL text that SQLite cannot parse (${verdict.reason}); " +
+                "d-migrate does not translate raw SQL expressions between dialects.",
+            code = "INDEX_RAW_TEXT_NOT_PORTABLE",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return false
+    }
+
 }

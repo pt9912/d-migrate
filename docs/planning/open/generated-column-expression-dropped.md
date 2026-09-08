@@ -87,7 +87,7 @@ mit `VIRTUAL_COLUMN = 'YES'`), SQLite (aus `sqlite_master`).
   jedes Problem, das
   [`raw-sql-text-drift.md`](raw-sql-text-drift.md) beschreibt (der Server
   gibt ihn anders zurueck, als er hineinging) und
-  [`check-expression-cross-dialect-portability.md`](check-expression-cross-dialect-portability.md)
+  [`check-expression-cross-dialect-portability.md`](../done/check-expression-cross-dialect-portability.md)
   (er ist nicht ohne Weiteres portabel). Wer diesen Slice schneidet, schneidet
   ihn hinter oder mit jenen — sonst entsteht eine dritte Baustelle derselben
   Art.

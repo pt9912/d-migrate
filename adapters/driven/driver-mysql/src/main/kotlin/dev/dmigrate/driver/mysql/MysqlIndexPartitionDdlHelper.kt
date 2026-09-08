@@ -19,6 +19,8 @@ import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.PartitionLiteralGuard
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.RawSqlExpressionPortability
 
 internal class MysqlIndexPartitionDdlHelper(
     private val quoteIdentifier: (String) -> String,
@@ -367,6 +369,7 @@ internal class MysqlIndexPartitionDdlHelper(
         indexName: String,
         columns: Map<String, ColumnDefinition>,
     ): DdlStatement? {
+        RawSqlExpressionPortability.indexRefusal(index, indexName, DatabaseDialect.MYSQL)?.let { return it }
         if (index.where != null) {
             return DdlStatement(
                 "",
@@ -555,4 +558,5 @@ internal class MysqlIndexPartitionDdlHelper(
         val wherePart = index.where?.let { "_where_${Integer.toUnsignedString(it.hashCode(), 36)}" }.orEmpty()
         return "$directionPart$wherePart"
     }
+
 }

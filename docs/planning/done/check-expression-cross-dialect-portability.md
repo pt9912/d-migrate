@@ -1,7 +1,7 @@
 ---
 id: check-expression-cross-dialect-portability
 title: "CHECK-Ausdruecke reisen als roher Dialekt-Text, ungeprueft"
-status: open
+status: resolved
 ---
 
 # CHECK-Ausdruecke reisen als roher Dialekt-Text, ungeprueft
@@ -52,7 +52,45 @@ T-SQL-Klammern). Der `ViewQueryTokenizer` steht ebenfalls schon.
 Die naheliegende Richtung ist deshalb, `assessPortability` auf die drei
 uebrigen Textfelder auszudehnen, statt einen zweiten Mechanismus zu bauen.
 
-## Was der Schnitt klaeren muss
+## Geloest (2026-09-08)
+
+`RawSqlExpressionPortability` beurteilt alle drei Felder und verwirft sie mit
+`E053`, statt ungueltige DDL zu erzeugen. Verdrahtet in allen fuenf Dialekten,
+im Generate- **und** im Diff-Pfad; die Regel steht in
+[`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md).
+
+Die vier Fragen unten sind beantwortet:
+
+- **Wo es greift:** `schema generate` (dort entstand die ungueltige DDL) und
+  der Diff-Pfad. `schema compare` bleibt streng — es rendert nichts.
+- **Was geschieht:** `E053` wie bei Sichten. Ein CHECK faellt weg, ein Index
+  als Ganzes; Praedikat und Ausdrucks-Schluessel gehoeren zu derselben
+  `CREATE INDEX`-Anweisung, sie einzeln zu retten hiesse, den Index still zu
+  einem anderen zu machen.
+- **Ob `~~` umgeschrieben wird: nein, und zwar bewusst.** `~~` → `LIKE` und
+  `(0)::numeric` → `0` waeren Regeln, keine Uebersetzung — aber sie floessen
+  bis in die erzeugte DDL, und damit ist es eine eigene Entscheidung mit
+  eigener Abnahme. Die Beurteilung steht ihr nicht im Weg: wo eine Regel
+  spaeter greift, faellt die Absage weg. Der Unterschied zur Beurteilung
+  steht im Punkt darunter.
+- **Verhaeltnis zu ADR 0053:** eine Beurteilung aendert den Text nicht, sie
+  lehnt ihn ab — das ist keine Normalisierung. Eine Umschreibregel aendert ihn,
+  und genau deshalb ist sie nicht mitgebaut.
+
+**Beurteilt wird das Ziel, nicht die Herkunft.** Das loest das Problem, dass
+`ConstraintDefinition` kein `sourceDialect` traegt: die Marker sind
+Eigenschaften der Ziel-Grammatik. Gemeldet werden nur harte Fehler; was ohne
+Herkunft nicht sicher zu entscheiden ist (T-SQL-Klammern, `||` gegen MySQL),
+bleibt draussen und ist im Code begruendet.
+
+**Architektonische Anmerkung:** die Pruefung liegt als `when (target)` in
+`driver-common`, wie `ViewQueryTransformer.assessPortability`. Das ist genau
+das Muster, das
+[`view-query-transformer-per-dialect-rules`](../next/view-query-transformer-per-dialect-rules.md)
+aufloesen will. Bewusst so gebaut: eine zweite Architektur neben der
+bestehenden waere schlechter als eine, die mit ihr zusammen wandert.
+
+## Was der Schnitt klaeren musste
 
 - **Wo die Beurteilung greift.** `schema generate` (dort entsteht die
   ungueltige DDL) und der Diff-Pfad; `schema compare` bleibt streng, wie
@@ -76,6 +114,6 @@ uebrigen Textfelder auszudehnen, statt einen zweiten Mechanismus zu bauen.
 
 Externe Durchsicht der neutralen Form (2026-09-08), am PostgreSQL-Reverse
 nachgemessen. Verwandt, aber nicht dasselbe:
-[`raw-sql-text-drift.md`](raw-sql-text-drift.md) fragt, warum derselbe Text
+[`raw-sql-text-drift.md`](../open/raw-sql-text-drift.md) fragt, warum derselbe Text
 gegen **denselben** Server driftet; hier geht es um seine Gueltigkeit auf
 einem **anderen**.

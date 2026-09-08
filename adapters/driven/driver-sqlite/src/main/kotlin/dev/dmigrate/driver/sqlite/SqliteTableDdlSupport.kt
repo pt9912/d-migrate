@@ -227,6 +227,7 @@ internal class SqliteTableDdlSupport(
             )
         }
 
+        RawSqlExpressionPortability.indexRefusal(index, indexName, DatabaseDialect.SQLITE)?.let { return listOf(it) }
         val columns = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")
@@ -338,4 +339,5 @@ internal class SqliteTableDdlSupport(
             column.default != null ||
             column.references != null ||
             columnName in table.primaryKey
+
 }

@@ -14,6 +14,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.RawSqlExpressionPortability
+import dev.dmigrate.driver.DatabaseDialect
 
 /**
  * Spalten- und Constraint-Rendering fuer Oracle-DDL, aus [OracleDdlGenerator]
@@ -374,10 +376,21 @@ internal class OracleColumnConstraintHelper(
         knownIdentifiers: Map<String, String>,
     ): String? = when (constraint.type) {
         ConstraintType.CHECK -> {
-            val expression = OracleIdentifierRequoter.requote(
-                constraint.expression.orEmpty(), knownIdentifiers, quoteIdentifier,
-            )
-            "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK ($expression)"
+            // Vor dem Requoten geprueft: das Requoten fasst nur Bezeichner an,
+            // ein `~~` oder `::` bliebe stehen und ginge unveraendert in die
+            // DDL.
+            val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.ORACLE)
+            if (!verdict.portable) {
+                notes += RawSqlExpressionPortability.notPortableNote(
+                    "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.ORACLE,
+                )
+                null
+            } else {
+                val expression = OracleIdentifierRequoter.requote(
+                    constraint.expression.orEmpty(), knownIdentifiers, quoteIdentifier,
+                )
+                "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK ($expression)"
+            }
         }
         ConstraintType.UNIQUE -> {
             val columns = constraint.columns.orEmpty()

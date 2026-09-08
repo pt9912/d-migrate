@@ -110,7 +110,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         for (constraint in table.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue
-            columnLines += generateConstraintClause(constraint)
+            generateConstraintClause(constraint, notes)?.let { columnLines += it }
         }
 
         // Primary key
@@ -174,8 +174,10 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         onUpdate: ReferentialAction?
     ): String = columnConstraintHelper.buildForeignKeyClause(constraintName, fromColumns, toTable, toColumns, onDelete, onUpdate)
 
-    private fun generateConstraintClause(constraint: ConstraintDefinition): String =
-        columnConstraintHelper.generateConstraintClause(constraint)
+    private fun generateConstraintClause(
+        constraint: ConstraintDefinition,
+        notes: MutableList<TransformationNote>,
+    ): String? = columnConstraintHelper.generateConstraintClause(constraint, notes)
 
     // ── Indices ──────────────────────────────────
 
@@ -233,6 +235,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
                 )
             )
         }
+        RawSqlExpressionPortability.indexRefusal(index, indexName, DatabaseDialect.POSTGRESQL)?.let { return it }
         val cols = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")

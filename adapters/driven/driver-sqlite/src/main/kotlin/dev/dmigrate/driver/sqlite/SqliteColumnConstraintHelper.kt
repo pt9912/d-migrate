@@ -169,6 +169,16 @@ internal class SqliteColumnConstraintHelper(
                 ) {
                     return null
                 }
+                // Ein CHECK-Ausdruck reist als roher Dialekt-Text; was SQLite
+                // nicht parsen kann, wird benannt verworfen statt ungueltig
+                // gerendert.
+                val verdict = RawSqlExpressionPortability.assess(constraint.expression, DatabaseDialect.SQLITE)
+                if (!verdict.portable) {
+                    notes += RawSqlExpressionPortability.notPortableNote(
+                        "constraint", constraint.name, "CHECK expression", verdict.reason, DatabaseDialect.SQLITE,
+                    )
+                    return null
+                }
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
             }
             ConstraintType.UNIQUE -> {

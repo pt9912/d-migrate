@@ -13,6 +13,8 @@ import dev.dmigrate.driver.IndexPrefixDropNote
 import dev.dmigrate.driver.ManualActionRequired
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.RawSqlExpressionPortability
 
 /**
  * `CREATE INDEX` für T-SQL. Indexnamen sind in SQL Server tabellenlokal
@@ -133,6 +135,7 @@ internal class MssqlIndexDdlHelper(
                 hint = "SQL Server rowstore indexes are B-tree based; review whether the index is still useful.",
             )
         }
+        RawSqlExpressionPortability.indexRefusal(index, indexName, DatabaseDialect.MSSQL)?.let { return it }
         val cols = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")
@@ -221,4 +224,5 @@ internal class MssqlIndexDdlHelper(
 
     private fun actionRequired(action: ManualActionRequired): DdlStatement =
         DdlStatement("", listOf(action.toNote()))
+
 }
