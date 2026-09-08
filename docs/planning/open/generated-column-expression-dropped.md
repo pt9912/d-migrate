@@ -134,6 +134,74 @@ nachzutragen waere schlimmer als sie wegzulassen — sie waere dann
 beschreibbar, und der naechste Import schriebe hinein, was der Server selbst
 berechnen wollte.
 
+## Gemessen: was die fuenf Server wirklich annehmen (2026-09-08)
+
+Vor dem Schnitt einmal alle fuenf gefragt, statt der Doku zu glauben. Zwei
+Zeilen dieser Tabelle haette ich aus dem Gedaechtnis falsch geschrieben.
+
+| Server | `VIRTUAL` | `STORED` | Vorgabe ohne Angabe | Katalog |
+| --- | --- | --- | --- | --- |
+| PostgreSQL 16 | **Syntaxfehler** | ja | keine — `STORED` ist **Pflicht** | `attgenerated='s'`, `pg_get_expr` |
+| MySQL 8.0 | ja | ja | `VIRTUAL` | `extra` = `VIRTUAL GENERATED` / `STORED GENERATED` |
+| SQLite | ja | ja | `VIRTUAL` | `table_xinfo.hidden` = 2 / 3 |
+| SQL Server 2022 | ja (ohne `PERSISTED`) | ja (`PERSISTED`) | virtuell | `sys.computed_columns.is_persisted` |
+| Oracle 23 | ja | ja (**„MATERIALIZED"**) | `VIRTUAL` | `user_tab_cols.virtual_column` — **nur fuer die virtuelle Form** |
+
+Zwei Formfragen, die den Renderer betreffen:
+
+- **SQL Server duldet keinen Typ.** `b AS (a*2)` ist gueltig, `b INT AS (a*2)`
+  ist ein Syntaxfehler. Die berechnete Spalte bekommt ihren Typ aus dem
+  Ausdruck; eine Typangabe zu rendern bricht das Statement.
+- **PostgreSQL verlangt `STORED`.** Weder `VIRTUAL` noch das Weglassen ist
+  gueltig. Das Feld `stored` ist dort also keine Wahl, sondern eine Konstante —
+  ein Fall fuer die Faehigkeits-Projektion, sonst driftete jeder Round-Trip.
+
+## Schwerer als der gemeldete Verlust: Oracle liest gespeicherte generierte Spalten als DEFAULT
+
+Oracle 23 nimmt `GENERATED ALWAYS AS (a*2) STORED` an, und die Spalte
+**rechnet** (`a=21` eingefuegt → `b=42`). `dbms_metadata` schreibt sie als
+`GENERATED ALWAYS AS ("A"*2) MATERIALIZED` zurueck. Im Katalog steht sie aber
+mit `virtual_column = 'NO'`, und ihr Ausdruck liegt in `data_default` — genau
+dort, wo auch ein gewoehnlicher DEFAULT steht.
+
+`OracleSchemaReader` haengt seine Erkennung an `virtual_column`. Eine
+gespeicherte generierte Spalte kommt deshalb als **gewoehnliche Spalte mit
+DEFAULT** zurueck. Das ist kein Darstellungsverlust wie bei den uebrigen vier,
+sondern ein **falsches Modell**: ein `schema generate` daraus erzeugt eine
+beschreibbare Spalte mit Default-Ausdruck, und der Import schreibt hinein,
+was der Server selbst berechnen wollte. Auch die Schreibsperre des
+Oracle-Importpfads greift nicht — sie fragt dieselbe Abfrage.
+
+**Und es gibt keinen sauberen Weg, das zu erkennen** (gemessen):
+
+| Versuch | Ergebnis |
+| --- | --- |
+| Alle Spalten von `user_tab_cols` zwischen gespeicherter generierter Spalte und `DEFAULT 42` vergleichen | Unterschied **nur** in `DATA_DEFAULT`/`DEFAULT_LENGTH` — kein Merkmal |
+| `dictionary` nach einer View mit `GENERAT` im Namen durchsuchen | keine Zeile |
+| `sys.col$.property` (dort steht das Bit) | `ORA-00942` — mit den Rechten des Migrationsnutzers nicht lesbar |
+| `dbms_metadata.get_ddl` | nennt `MATERIALIZED` — aber als DDL-Text, den zu lesen einen Parser braeuchte |
+
+Damit ist die gespeicherte Form auf Oracle **nicht round-trip-faehig**, und
+zwar prinzipiell, nicht aus Nachlaessigkeit. Wer den Slice schneidet, muss das
+benennen statt es zu uebergehen — und sollte pruefen, ob wenigstens der
+Schreibpfad sich schuetzen laesst (eine `INSERT`-Ablehnung des Servers benannt
+weiterreichen, statt sie als gewoehnlichen Fehler durchzulassen).
+
+## Warum der Slice hinter `raw-sql-text-drift` gehoert (2026-09-08)
+
+Der Generierungsausdruck ist roher SQL-Text und waere das **fuenfte** Feld
+dieser Art. [ADR 0053](../../adr/0053-vergleich-rohen-sql-texts.md) verwirft
+die naheliegende Abkuerzung ausdruecklich (Option C, „Textfelder aus dem
+Vergleich nehmen"): der Text **ist** die Aussage. Ohne den dort entschiedenen
+Mechanismus — Post-Compare gegen die zurueckgelesene Form, Planung aus der
+Herkunft — plante jeder `schema migrate`-Lauf gegen eine Datei dieselbe
+Spaltenaenderung erneut.
+
+Der heutige Zustand ist ein **stiller Verlust**; ohne jenen Mechanismus wuerde
+daraus eine **nicht konvergierende Migration**. Das ist kein Fortschritt,
+sondern ein Tausch nach unten. Der Slice wartet deshalb auf
+[`raw-sql-text-drift.md`](raw-sql-text-drift.md).
+
 ## Herkunft
 
 Externe Durchsicht der neutralen Form (2026-09-08), am PostgreSQL- und
