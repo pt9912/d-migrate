@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
+import dev.dmigrate.core.diff.migration.overlay.PartitionMappingOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.UsingExpressionOverlayEntry
 import io.kotest.assertions.throwables.shouldThrow
@@ -136,6 +137,19 @@ class MigrationOverlayJsonCodecTest : FunSpec({
         ex.path shouldBe "$.sourceFingerprint"
     }
 
+    test("a partition mapping survives write and read with an identical hash") {
+        // Beide Auspraegungen in einem Dokument: der Namensfall und der
+        // nachpruefbare LIST-Fall.
+        val original = signedPartitionOverlay()
+        val out = ByteArrayOutputStream()
+        codec.write(out, original)
+        val read = codec.read(out.toByteArray().inputStream())
+
+        read shouldBe original
+        MigrationOverlayCanonicalJson.computeHash(read) shouldBe original.overlayHash
+        read.binding shouldBe MigrationOverlayBinding.Representation("schema-fp")
+    }
+
     test("a representation binding in a v1 document is rejected at read time") {
         // Diese Formatversion kennt die Bindung nicht — sie kann sie also auch
         // nicht meinen.
@@ -146,6 +160,30 @@ class MigrationOverlayJsonCodecTest : FunSpec({
         ex.path shouldBe "$.schemaFingerprint"
     }
 })
+
+private fun signedPartitionOverlay(): MigrationOverlay =
+    MigrationOverlay(
+        overlayKind = MigrationOverlayKinds.PARTITION_MAPPING,
+        binding = MigrationOverlayBinding.Representation("schema-fp"),
+        dialect = "mssql",
+        entries = listOf(
+            PartitionMappingOverlayEntry(
+                id = "name-2024",
+                table = "orders",
+                sourcePartition = "p_2024",
+                targetPartition = "1",
+            ),
+            PartitionMappingOverlayEntry(
+                id = "list-low",
+                table = "invoices",
+                sourcePartition = "p_low",
+                values = listOf("1", "2"),
+                rangeUpperBound = "3",
+            ),
+        ),
+        createdAt = "2026-09-08T10:00:00Z",
+        createdByVersion = "d-migrate-test",
+    ).withComputedHash()
 
 private const val BINDING_FLAT = "\"sourceFingerprint\": \"src-fp\",\n  \"targetFingerprint\": \"dst-fp\""
 private const val BINDING_SCHEMA = "\"schemaFingerprint\": \"schema-fp\""

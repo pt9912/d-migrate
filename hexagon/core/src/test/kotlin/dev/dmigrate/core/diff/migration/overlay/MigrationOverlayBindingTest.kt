@@ -20,8 +20,8 @@ import io.kotest.matchers.string.shouldNotContain as shouldNotContainText
  */
 class MigrationOverlayBindingTest : FunSpec({
 
-    /** Eine erfundene Art, die keine Bindungsart verlangt — die Kinder kommen spaeter. */
-    val representationKind = "partition-mapping"
+    /** Die eine Art, die eine Darstellung beschreibt statt eines Uebergangs. */
+    val representationKind = MigrationOverlayKinds.PARTITION_MAPPING
 
     fun renameEntry() = RenameMappingOverlayEntry(
         id = "r1", objectType = "table", fromName = "kunde", toName = "customer",

@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-08-28
 decision-makers: pt9912
-consulted: docs/planning/next/partition-mapping-overlay.md
+consulted: docs/planning/in-progress/partition-mapping-overlay.md
 informed: hexagon/core (MigrationOverlay, MigrationOverlayValidator), hexagon/application (MigrationOverlayPreflight), adapters/driving/cli (schema migrate, schema reverse, schema generate)
 ---
 

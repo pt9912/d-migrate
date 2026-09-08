@@ -72,6 +72,23 @@ object MigrationOverlayCanonicalJson {
                 },
             )
 
+            is PartitionMappingOverlayEntry -> JsonObject(
+                buildList {
+                    add("kind" to JsonString(entry.kind))
+                    add("id" to JsonString(entry.id))
+                    add("table" to JsonString(entry.table))
+                    add("sourcePartition" to JsonString(entry.sourcePartition))
+                    entry.targetPartition?.let { add("targetPartition" to JsonString(it)) }
+                    // Die Wertemenge in DEKLARIERTER Reihenfolge: sie ist Teil
+                    // der Aussage, nicht bloss eine Menge. Die Pruefung
+                    // sortiert selbst, das Dokument bleibt, wie es geschrieben
+                    // wurde.
+                    entry.values?.let { add("values" to stringArray(it)) }
+                    entry.rangeUpperBound?.let { add("rangeUpperBound" to JsonString(it)) }
+                    add("requiredFeatures" to stringArray(entry.requiredFeatures.sorted()))
+                },
+            )
+
             is RenameMappingOverlayEntry -> JsonObject(
                 buildList {
                     add("kind" to JsonString(entry.kind))

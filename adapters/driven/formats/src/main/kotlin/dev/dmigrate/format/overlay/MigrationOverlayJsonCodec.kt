@@ -13,6 +13,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
+import dev.dmigrate.core.diff.migration.overlay.PartitionMappingOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.UsingExpressionOverlayEntry
 import java.io.InputStream
@@ -123,6 +124,7 @@ class MigrationOverlayJsonCodec {
         return when (val kind = node.requiredText("kind", path)) {
             MigrationOverlayKinds.USING_EXPRESSION -> parseUsingEntry(node, path)
             MigrationOverlayKinds.RENAME_MAPPING -> parseRenameEntry(node, path)
+            MigrationOverlayKinds.PARTITION_MAPPING -> parsePartitionEntry(node, path)
             else -> decode(
                 MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND,
                 "$path.kind",
@@ -151,6 +153,35 @@ class MigrationOverlayJsonCodec {
             ),
             expressionSource = node.requiredText("expressionSource", path),
             reviewedByUser = node.requiredBoolean("reviewedByUser", path),
+            requiredFeatures = parseRequiredFeatures(node.get("requiredFeatures"), "$path.requiredFeatures"),
+        )
+    }
+
+    private fun parsePartitionEntry(node: JsonNode, path: String): PartitionMappingOverlayEntry {
+        requireOnlyFields(node, PARTITION_ENTRY_FIELDS, path)
+        return PartitionMappingOverlayEntry(
+            id = node.requiredText("id", path),
+            table = node.requiredText("table", path),
+            sourcePartition = node.requiredText("sourcePartition", path),
+            targetPartition = node.optionalText("targetPartition", path),
+            // Die Reihenfolge bleibt, wie sie geschrieben wurde: sie ist Teil
+            // des Dokuments und geht in den Hash ein. Sortiert wird erst in der
+            // Pruefung.
+            values = node.get("values")?.let { values ->
+                if (!values.isArray) {
+                    decode(MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH, "$path.values", "Expected array")
+                }
+                values.mapIndexed { index, element ->
+                    if (!element.isTextual) {
+                        decode(
+                            MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
+                            "$path.values[$index]", "Expected string",
+                        )
+                    }
+                    element.asText()
+                }
+            },
+            rangeUpperBound = node.optionalText("rangeUpperBound", path),
             requiredFeatures = parseRequiredFeatures(node.get("requiredFeatures"), "$path.requiredFeatures"),
         )
     }
@@ -309,6 +340,16 @@ class MigrationOverlayJsonCodec {
             "reversibility",
             "expressionSource",
             "reviewedByUser",
+            "requiredFeatures",
+        )
+        private val PARTITION_ENTRY_FIELDS = setOf(
+            "kind",
+            "id",
+            "table",
+            "sourcePartition",
+            "targetPartition",
+            "values",
+            "rangeUpperBound",
             "requiredFeatures",
         )
         private val RENAME_ENTRY_FIELDS = setOf(

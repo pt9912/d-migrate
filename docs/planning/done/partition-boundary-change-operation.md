@@ -9,7 +9,7 @@
 > Migrations-Operation ausgeführt statt als Warnung gemeldet. Der Wechsel der
 > Strategie oder des Schlüssels bleibt, was er ist: nur über Neubau erreichbar.
 > **Vorbedingungen:** keine. Berührt sich mit
-> [`partition-mapping-overlay.md`](../next/partition-mapping-overlay.md), hängt aber
+> [`partition-mapping-overlay.md`](../in-progress/partition-mapping-overlay.md), hängt aber
 > nicht davon ab — siehe Abschnitt 3.
 > **Live belegt:** SQL Server (`SPLIT` behält die Zeilen), MySQL (`ADD` hinter
 > der letzten Grenze, `REORGANIZE` beim Neuschnitt), PostgreSQL (Kindtabelle
@@ -64,7 +64,7 @@ oder das `isDefault`-Flag. Der Name ist Beiwerk; er wird gerendert, aber nicht
 verglichen.
 
 Das ist zugleich der Grund, warum dieser Plan **nicht** auf
-[`partition-mapping-overlay.md`](../next/partition-mapping-overlay.md) wartet: das
+[`partition-mapping-overlay.md`](../in-progress/partition-mapping-overlay.md) wartet: das
 Overlay stellt Namensidentität her, die ein signaturbasierter Abgleich gar
 nicht braucht. Beide Pläne bleiben unabhängig gültig — wo das Overlay
 Kindnamen beisteuert, rendert diese Operation sie, statt `p3` zu erfinden.

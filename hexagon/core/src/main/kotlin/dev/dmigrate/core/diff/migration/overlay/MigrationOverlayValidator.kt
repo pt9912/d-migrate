@@ -22,6 +22,7 @@ data class MigrationOverlayValidationContext(
     val supportedOverlayKinds: Set<String> = setOf(
         MigrationOverlayKinds.USING_EXPRESSION,
         MigrationOverlayKinds.RENAME_MAPPING,
+        MigrationOverlayKinds.PARTITION_MAPPING,
     ),
     val supportedRequiredFeatures: Set<String> = emptySet(),
     /**
@@ -138,6 +139,12 @@ object MigrationOverlayDiagnostics {
     const val RENAME_MAPPING_CHAIN_UNSUPPORTED: String = "OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED"
     const val RENAME_MAPPING_DUPLICATE: String = "OVERLAY_RENAME_MAPPING_DUPLICATE"
 
+    /** Eine LIST-nach-RANGE-Zuordnung wuerde Zeilen falsch routen oder ist nicht ausdrueckbar. */
+    const val PARTITION_MAPPING_INVALID: String = "OVERLAY_PARTITION_MAPPING_INVALID"
+
+    /** Ein `partition-mapping`-Eintrag beschreibt weder einen Namen noch eine Grenze. */
+    const val PARTITION_MAPPING_INCOMPLETE: String = "OVERLAY_PARTITION_MAPPING_INCOMPLETE"
+
     /** Die Bindungsart des Dokuments passt nicht zu seiner Overlay-Art. */
     const val BINDING_MISMATCH: String = "OVERLAY_BINDING_MISMATCH"
 
@@ -251,6 +258,7 @@ object MigrationOverlayValidator {
             }
         }
         validateRenameMappings(overlay, context, ::blockEntry)
+        validatePartitionMappings(overlay, ::blockEntry)
 
         for (key in overlay.producerMetadata.keys) {
             if (key.isReservedExecutionField()) {
@@ -413,6 +421,33 @@ object MigrationOverlayValidator {
                 }
             }
 
+            is PartitionMappingOverlayEntry -> {
+                requireEntryNonBlank("table", entry.table)
+                requireEntryNonBlank("sourcePartition", entry.sourcePartition)
+                entry.targetPartition?.let { requireEntryNonBlank("targetPartition", it) }
+                entry.rangeUpperBound?.let { requireEntryNonBlank("rangeUpperBound", it) }
+                // Ein Eintrag, der weder einen Zielbezeichner noch eine Grenze
+                // nennt, sagt nichts — er waere ein stiller Platzhalter.
+                if (entry.targetPartition == null && entry.rangeUpperBound == null) {
+                    block(
+                        MigrationOverlayDiagnostics.PARTITION_MAPPING_INCOMPLETE,
+                        "Partition mapping for '${entry.table}.${entry.sourcePartition}' names neither a target " +
+                            "partition identifier nor a RANGE upper bound",
+                        entry,
+                    )
+                }
+                // Wertemenge und Grenze gehoeren zusammen: die eine ohne die
+                // andere liesse sich nicht nachpruefen.
+                if ((entry.values != null) != (entry.rangeUpperBound != null)) {
+                    block(
+                        MigrationOverlayDiagnostics.PARTITION_MAPPING_INCOMPLETE,
+                        "Partition mapping for '${entry.table}.${entry.sourcePartition}' carries only one of " +
+                            "`values` and `rangeUpperBound`; a LIST-to-RANGE mapping needs both to be verifiable",
+                        entry,
+                    )
+                }
+            }
+
             is RenameMappingOverlayEntry -> {
                 requireEntryNonBlank("objectType", entry.objectType)
                 requireEntryNonBlank("fromName", entry.fromName)
@@ -439,6 +474,45 @@ object MigrationOverlayValidator {
 
         if (entry.requiredFeatures.any { it.isBlank() }) {
             block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "requiredFeatures entries must be non-blank", entry)
+        }
+    }
+
+    /**
+     * Die LIST-nach-RANGE-Zuordnung wird **nachgeprueft**, nicht geglaubt —
+     * je Tabelle, denn nur innerhalb einer Partitionierung muessen sich die
+     * Mengen vertragen.
+     *
+     * Der Befund haengt an allen Eintraegen der Tabelle, nicht an einem: die
+     * Verschraenkung ist eine Eigenschaft des Satzes, und einen einzelnen
+     * herauszugreifen legte dem Anwender eine Ursache nahe, die es nicht gibt.
+     */
+    private fun validatePartitionMappings(
+        overlay: MigrationOverlay,
+        block: (String, String, MigrationOverlayEntry) -> Unit,
+    ) {
+        val entries = overlay.entries.filterIsInstance<PartitionMappingOverlayEntry>()
+        if (entries.isEmpty()) return
+        for ((table, group) in entries.groupBy { it.table }) {
+            val listCase = group.filter { it.values != null && it.rangeUpperBound != null }
+            if (listCase.isEmpty()) continue
+            val result = PartitionMappingVerifier.verify(
+                listCase.map {
+                    PartitionMappingVerifier.Mapping(
+                        partition = it.sourcePartition,
+                        values = it.values.orEmpty(),
+                        upperBound = it.rangeUpperBound.orEmpty(),
+                    )
+                },
+            )
+            if (result is PartitionMappingVerifier.Result.Invalid) {
+                listCase.forEach { entry ->
+                    block(
+                        MigrationOverlayDiagnostics.PARTITION_MAPPING_INVALID,
+                        "Partition mapping for table '$table' is not expressible as RANGE bounds: ${result.reason}",
+                        entry,
+                    )
+                }
+            }
         }
     }
 

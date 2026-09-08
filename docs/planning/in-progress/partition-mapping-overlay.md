@@ -1,6 +1,6 @@
 # `partition-mapping`-Overlay
 
-> **Status:** Draft mit Scope (28.08.2026)
+> **Status:** In Arbeit seit 2026-09-08 (P0/P1 erledigt).
 > **Ziel:** Eine dritte Overlay-Art, mit der ein Anwender Partitions-Identität
 > beisteuert, die das Werkzeug nicht ableiten kann — Kindnamen, die ein Ziel
 > nicht trägt, und LIST-Wertemengen, die als RANGE-Grenzen ausdrückbar sind.
@@ -10,7 +10,11 @@
 > `Transition`/`Representation`, `migration-overlay.v2`, v1-Dokumente
 > unveraendert lesbar. Dieser Slice bringt nur noch die Overlay-**Art**
 > `partition-mapping` mit ihrer Darstellungsbindung.
-> **Aktivierung:** Beim ersten Implementierungs-Commit → `../in-progress/`.
+> **Stand:** P0-P3 geliefert (Bindungsfrage, sealed Bindung, Overlay-Art samt
+> Eintragsform, Nachpruefung des LIST-Falls). Offen: P4-P7 — die Diagnose muss
+> den Fingerabdruck nennen, und die Naehte in Reverse, Diff/Generate und CLI
+> fehlen noch. Das Overlay ist damit vollstaendig **beschreibbar und
+> pruefbar**, aber noch von keinem Befehl konsumiert.
 
 Absorbiert die Vorabklärung `open/partition-mapping-overlay.md`.
 
@@ -102,7 +106,7 @@ sortiert werden.
   über die vorhandenen Fixtures); ein `partition-mapping` mit Paarbindung wird
   abgelehnt; ein `rename-mapping` mit Einschema-Bindung ebenso.
 
-### P2 — Overlay-Art und Eintragsform
+### P2 — Overlay-Art und Eintragsform ✅ geliefert (2026-09-08)
 - `MigrationOverlayKinds.PARTITION_MAPPING` und ein
   `PartitionMappingOverlayEntry` mit beiden Eintragsarten: Kind ↔ Bezeichner
   des Ziels sowie Wertemenge ↔ Grenze.
@@ -111,7 +115,7 @@ sortiert werden.
 - **Abnahme:** Round-Trip-Test (schreiben → lesen → identischer Hash); ein
   Overlay mit unbekannter `kind` wird weiterhin abgelehnt, nicht ignoriert.
 
-### P3 — Verifikation des LIST-Falls
+### P3 — Verifikation des LIST-Falls ✅ geliefert (2026-09-08)
 - Prüfung: Wertemengen sortieren, auf Zusammenhang und
   Überschneidungsfreiheit prüfen, Grenzen daraus ableiten und mit den
   angegebenen vergleichen.

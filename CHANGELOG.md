@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Overlay-Art `partition-mapping`** (Format, Prüfung; die Verdrahtung an die
+  Befehle folgt). Trägt Partitions-Identität, die das Werkzeug nicht ableiten
+  kann: welchen Bezeichner das Ziel für eine Kind-Partition führt (SQL Server
+  nummeriert, ein Reverse kann `p_2024` nicht zurückgeben), und welche
+  LIST-Wertemenge welcher RANGE-Grenze entspricht.
+
+  **Der LIST-Fall wird nachgeprüft, nicht geglaubt** — und das ist sein Wert
+  gegenüber dem Namensfall: die Mengen werden sortiert, auf Überschneidung und
+  Verschränkung geprüft, und die Grenzen müssen `max(Menge) < Grenze <=
+  min(nächste Menge)` erfüllen. Eine Zuordnung, die eine Zeile in die falsche
+  Partition routen würde, kommt nicht durch.
 - **Rohe Ausdrücke landen nicht mehr ungeprüft in fremder DDL.**
   CHECK-Ausdrücke, Index-Prädikate und Index-Ausdrücke reisten als roher
   Dialekt-Text: ein zurückgelesener PostgreSQL-CHECK `((email ~~ '%@%'::text))`

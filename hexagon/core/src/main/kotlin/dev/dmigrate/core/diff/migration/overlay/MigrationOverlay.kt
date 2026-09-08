@@ -85,6 +85,7 @@ data class MigrationOverlay(
          */
         fun requiredBindingFor(overlayKind: String): BindingKind? = when (overlayKind) {
             MigrationOverlayKinds.USING_EXPRESSION, MigrationOverlayKinds.RENAME_MAPPING -> BindingKind.TRANSITION
+            MigrationOverlayKinds.PARTITION_MAPPING -> BindingKind.REPRESENTATION
             else -> null
         }
     }
@@ -107,6 +108,16 @@ data class MigrationOverlayDocument(
 object MigrationOverlayKinds {
     const val USING_EXPRESSION: String = "using-expression"
     const val RENAME_MAPPING: String = "rename-mapping"
+
+    /**
+     * Partitions-Identitaet, die das Werkzeug nicht ableiten kann: welcher
+     * Bezeichner des Ziels welche Kind-Partition meint, und welche
+     * LIST-Wertemenge welcher RANGE-Grenze entspricht.
+     *
+     * Eine Aussage ueber die **Darstellung** eines Schemas, nicht ueber einen
+     * Uebergang — deshalb `Representation`-gebunden.
+     */
+    const val PARTITION_MAPPING: String = "partition-mapping"
 }
 
 sealed interface MigrationOverlayEntry {
@@ -149,6 +160,43 @@ data class UsingExpressionOverlayEntry(
     override val requiredFeatures: Set<String> = emptySet(),
 ) : MigrationOverlayEntry {
     override val kind: String = MigrationOverlayKinds.USING_EXPRESSION
+}
+
+/**
+ * Ein Eintrag der Overlay-Art `partition-mapping` — beide Faelle in einem Typ,
+ * weil beide dieselbe Frage beantworten: **welche Partition des Ziels meint
+ * welche der Quelle?**
+ *
+ * - **Kindname** ([targetPartition] gesetzt, [rangeUpperBound] nicht): „die
+ *   Partition, die das Ziel `1` nennt, heisst in Wahrheit `p_2024`". SQL
+ *   Server nummeriert Partitionen; ein Reverse kann den Namen nicht
+ *   zurueckgeben und vergibt `p1`, `p2`, … (`R346`).
+ * - **LIST → RANGE** ([values] und [rangeUpperBound] gesetzt): „die
+ *   Wertemenge `(1, 2)` entspricht der oberen Grenze `3`". Ein Ziel ohne
+ *   LIST-Partitionierung bricht sonst mit `E055` ab.
+ *
+ * Der zweite Fall ist **nachpruefbar**, und das ist sein Wert: die Mengen
+ * lassen sich sortieren und auf Zusammenhang pruefen, die Grenzen daraus
+ * ableiten und mit den angegebenen vergleichen. Eine Zuordnung, die eine
+ * Zeile in die falsche Partition routen wuerde, kommt nicht durch. Ein
+ * Namens-Mapping kann das nicht leisten — dort ist die Angabe des Anwenders
+ * die einzige Quelle.
+ */
+data class PartitionMappingOverlayEntry(
+    override val id: String,
+    /** Die Tabelle, deren Partitionierung gemeint ist. */
+    val table: String,
+    /** Der Name, den die Partition im Soll-Schema traegt. */
+    val sourcePartition: String,
+    /** Der Bezeichner, unter dem das Ziel sie fuehrt — der Kindnamen-Fall. */
+    val targetPartition: String? = null,
+    /** Die LIST-Wertemenge dieser Partition — der LIST-Fall. */
+    val values: List<String>? = null,
+    /** Die RANGE-Obergrenze, die [values] entspricht — der LIST-Fall. */
+    val rangeUpperBound: String? = null,
+    override val requiredFeatures: Set<String> = emptySet(),
+) : MigrationOverlayEntry {
+    override val kind: String = MigrationOverlayKinds.PARTITION_MAPPING
 }
 
 data class RenameMappingOverlayEntry(

@@ -1119,7 +1119,7 @@ sagen die vorhandenen Felder — nicht die Formatversion:
 | Bindung | Felder | Aussage |
 |---|---|---|
 | Uebergang | `sourceFingerprint`, `targetFingerprint` | Eine Aussage ueber **zwei** Zustaende, die ohne beide sinnlos ist (`using-expression`, `rename-mapping`) |
-| Darstellung | `schemaFingerprint` | Eine Aussage ueber die Schreibweise **eines** Schemas; der IST-Zustand einer laufenden Datenbank ist dafuer belanglos |
+| Darstellung | `schemaFingerprint` | Eine Aussage ueber die Schreibweise **eines** Schemas; der IST-Zustand einer laufenden Datenbank ist dafuer belanglos (`partition-mapping`) |
 
 Regeln:
 
@@ -1133,6 +1133,40 @@ Regeln:
   Widerspruch und wird beim Lesen abgelehnt.
 - Ein Befehl, der Darstellungs-Overlays nicht pruefen kann, lehnt sie ab
   (`OVERLAY_REPRESENTATION_NOT_APPLICABLE`), statt zu raten.
+
+### Overlay-Art `partition-mapping`
+
+Traegt Partitions-Identitaet, die das Werkzeug nicht ableiten kann, in zwei
+Auspraegungen — beide beantworten dieselbe Frage: welche Partition des Ziels
+meint welche der Quelle?
+
+| Feld | Pflicht | Inhalt |
+| --- | --- | --- |
+| `table` | ja | Die Tabelle, deren Partitionierung gemeint ist |
+| `sourcePartition` | ja | Der Name, den die Partition im Soll-Schema traegt |
+| `targetPartition` | — | Der Bezeichner, unter dem das Ziel sie fuehrt (**Kindnamen-Fall**) |
+| `values` | — | Die LIST-Wertemenge dieser Partition (**LIST-Fall**) |
+| `rangeUpperBound` | — | Die RANGE-Obergrenze, die `values` entspricht (**LIST-Fall**) |
+
+Mindestens eine der beiden Auspraegungen muss vorliegen, sonst sagt der
+Eintrag nichts (`OVERLAY_PARTITION_MAPPING_INCOMPLETE`); `values` und
+`rangeUpperBound` gelten nur zusammen, weil die Zuordnung sonst nicht
+nachpruefbar waere.
+
+**Der LIST-Fall wird nachgeprueft, nicht geglaubt.** Je Tabelle gilt:
+
+1. Kein Wert steht in zwei Mengen — die Zielpartition waere sonst nicht
+   eindeutig.
+2. Die Mengen verschraenken sich nicht: in der Ordnung der Werte belegt jede
+   einen zusammenhaengenden Lauf. `(1,2), (3,4)` tut das,
+   `('DE','FR'), ('US','CA')` nicht.
+3. Die Grenzen routen richtig: `max(Menge) < Grenze <= min(naechste Menge)`.
+   Die linke Haelfte haelt die eigenen Zeilen drin (`VALUES LESS THAN` ist
+   exklusiv), die rechte die der naechsten Menge draussen.
+
+Verstoesse melden `OVERLAY_PARTITION_MAPPING_INVALID` und blocken. Lassen sich
+alle beteiligten Literale als Zahl lesen, wird numerisch verglichen, sonst
+lexikografisch — `'10'` liegt numerisch hinter `'9'`, alphabetisch davor.
 
 Top-Level-Felder (kanonisierte JSON-Reihenfolge):
 
