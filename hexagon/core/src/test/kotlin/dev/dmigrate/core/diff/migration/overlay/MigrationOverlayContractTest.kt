@@ -63,7 +63,9 @@ class MigrationOverlayContractTest : FunSpec({
 
     test("rejects stale fingerprints dialect mismatch unknown version unknown kind and hash mismatch") {
         val overlay = unsignedUsingOverlay(
-            formatVersion = "migration-overlay.v2",
+            // v2 ist inzwischen eine BEKANNTE Version; gemeint war hier immer
+            // „eine, die dieser Stand nicht kennt".
+            formatVersion = "migration-overlay.v99",
             overlayKind = "not-a-kind",
             sourceFingerprint = "old-src",
             targetFingerprint = "old-dst",
@@ -300,7 +302,7 @@ private fun validationContext(): MigrationOverlayValidationContext =
     )
 
 private fun unsignedUsingOverlay(
-    formatVersion: String = MigrationOverlay.FORMAT_VERSION,
+    formatVersion: String = MigrationOverlay.FORMAT_VERSION_V1,
     overlayKind: String = MigrationOverlayKinds.USING_EXPRESSION,
     sourceFingerprint: String = "src-fp",
     targetFingerprint: String = "dst-fp",
@@ -311,8 +313,7 @@ private fun unsignedUsingOverlay(
     MigrationOverlay(
         formatVersion = formatVersion,
         overlayKind = overlayKind,
-        sourceFingerprint = sourceFingerprint,
-        targetFingerprint = targetFingerprint,
+        binding = MigrationOverlayBinding.Transition(sourceFingerprint, targetFingerprint),
         dialect = dialect,
         entries = entries,
         createdAt = "2026-05-12T10:15:30Z",

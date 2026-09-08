@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Migrations-Overlays tragen eine benannte Bindung** (`migration-overlay.v2`).
+  Bisher trug jedes Dokument `sourceFingerprint` **und** `targetFingerprint`
+  und galt damit für ein Schema*paar*. Das passt für Aussagen über einen
+  Übergang (`using-expression`, `rename-mapping`), nicht aber für eine Aussage
+  über die Schreibweise **eines** Schemas — die gäbe es nur, wenn IST und SOLL
+  gleich wären, also genau dann, wenn nichts zu migrieren ist. Ein Dokument
+  trägt jetzt entweder eine Übergangs- oder eine Darstellungsbindung
+  (`schemaFingerprint`), und welche eine Overlay-Art verlangt, steht fest;
+  die falsche wird abgelehnt statt umgedeutet.
+
+  **Bestehende Overlays bleiben gültig und unverändert lesbar.** Eine
+  Übergangsbindung steht weiterhin flach auf dem Draht, und ein solches
+  Dokument bleibt `migration-overlay.v1` — es benutzt nichts, was v2
+  hinzufügt. Nur die neue Darstellungsbindung verlangt `.v2`.
 - **SQL Server: Bulk-Pfad für den Import.** `data import`/`data transfer` gegen
   SQL Server schreiben mit `--on-conflict abort` über `SQLServerBulkCopy` statt
   über gebatchte `INSERT`s — gemessen an 200 000 Zeilen 43 773 → 94 473

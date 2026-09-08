@@ -177,9 +177,10 @@ unterlaufen.
 
 ## Schnitt
 
-1. **Overlay v2** (ADR 0050) — sealed Bindung `Transition`/`Representation`,
-   v1-Dokumente lesen sich weiter als `Transition`. Vorbedingung fuer alles
-   Weitere; teilt sich der Slice mit `partition-mapping`.
+1. ~~**Overlay v2** (ADR 0050)~~ — **gebaut.** Sealed Bindung
+   `Transition`/`Representation`, `migration-overlay.v2`; ein
+   Uebergangs-Dokument bleibt v1 und unveraendert lesbar. Die Vorbedingung
+   steht damit; sie kam ohnehin auch `partition-mapping` zugute.
 2. **Herkunfts-Overlay** `raw-text-provenance`, `Representation`-gebunden: je
    Objekt und Feld der zuletzt **angewandte Autorentext** und die daraufhin
    beobachtete **Katalogform**. Erzeugt von `migrate --execute`, gelesen ueber

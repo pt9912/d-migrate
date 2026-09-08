@@ -19,6 +19,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Oracle laesst abhaengige Sichten beim SPALTEN-Rename invalid zurueck
@@ -55,8 +56,7 @@ class OracleColumnRenameViewAbsorptionTest : FunSpec({
     fun columnRenameOverlay(): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "oracle",
             entries = listOf(
                 RenameMappingOverlayEntry(

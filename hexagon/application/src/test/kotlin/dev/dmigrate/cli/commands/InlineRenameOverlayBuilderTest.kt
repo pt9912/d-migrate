@@ -6,6 +6,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * F.4 cli-inline-overlay §3.2 pins for the
@@ -43,8 +44,7 @@ class InlineRenameOverlayBuilderTest : FunSpec({
         built.document.source shouldBe InlineRenameOverlayBuilder.INLINE_SOURCE
         val overlay = built.document.overlay
         overlay.overlayKind shouldBe MigrationOverlayKinds.RENAME_MAPPING
-        overlay.sourceFingerprint shouldBe "src-fp"
-        overlay.targetFingerprint shouldBe "dst-fp"
+        overlay.binding shouldBe MigrationOverlayBinding.Transition("src-fp", "dst-fp")
         overlay.dialect shouldBe "postgresql"
         overlay.createdAt shouldBe InlineRenameOverlayBuilder.INLINE_CREATED_AT_SENTINEL
         overlay.overlayHash?.isNotBlank() shouldBe true

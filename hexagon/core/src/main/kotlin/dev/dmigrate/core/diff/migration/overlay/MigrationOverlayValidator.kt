@@ -6,7 +6,19 @@ data class MigrationOverlayValidationContext(
     val expectedSourceFingerprint: String,
     val expectedTargetFingerprint: String,
     val expectedDialect: String,
-    val supportedFormatVersions: Set<String> = setOf(MigrationOverlay.FORMAT_VERSION),
+    /**
+     * Der Abdruck des Schemas, das ein **Darstellungs**-Overlay beschreiben
+     * muss — `null`, wenn dieser Aufrufer keine solchen Overlays annehmen
+     * kann.
+     *
+     * Anders als ein nullables Feld am Dokument (das der Bindungs-Trennung
+     * gerade gewichen ist) haengt hier keine Bedeutung an einem
+     * Geschwisterfeld: das ist eine Erwartung des Aufrufers, keine Aussage
+     * ueber die Welt. Wer sie nicht setzt, sagt „ich pruefe keine Darstellung"
+     * — und ein Darstellungs-Dokument wird dann abgelehnt, nicht geraten.
+     */
+    val expectedRepresentationFingerprint: String? = null,
+    val supportedFormatVersions: Set<String> = MigrationOverlay.SUPPORTED_FORMAT_VERSIONS,
     val supportedOverlayKinds: Set<String> = setOf(
         MigrationOverlayKinds.USING_EXPRESSION,
         MigrationOverlayKinds.RENAME_MAPPING,
@@ -126,6 +138,18 @@ object MigrationOverlayDiagnostics {
     const val RENAME_MAPPING_CHAIN_UNSUPPORTED: String = "OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED"
     const val RENAME_MAPPING_DUPLICATE: String = "OVERLAY_RENAME_MAPPING_DUPLICATE"
 
+    /** Die Bindungsart des Dokuments passt nicht zu seiner Overlay-Art. */
+    const val BINDING_MISMATCH: String = "OVERLAY_BINDING_MISMATCH"
+
+    /** Eine Darstellungs-Bindung in einem Dokument, dessen Formatversion sie nicht kennt. */
+    const val BINDING_NOT_IN_FORMAT_VERSION: String = "OVERLAY_BINDING_NOT_IN_FORMAT_VERSION"
+
+    /** Der Abdruck einer Darstellungs-Bindung passt nicht zum beschriebenen Schema. */
+    const val STALE_SCHEMA_FINGERPRINT: String = "OVERLAY_STALE_SCHEMA_FINGERPRINT"
+
+    /** Ein Darstellungs-Dokument dort, wo der Aufrufer keine Darstellung pruefen kann. */
+    const val REPRESENTATION_NOT_APPLICABLE: String = "OVERLAY_REPRESENTATION_NOT_APPLICABLE"
+
     /**
      * F.4 cli-inline-overlay slice §3.4 INFO-severity provenance
      * row: an overlay entry passed every per-entry contract check
@@ -190,24 +214,11 @@ object MigrationOverlayValidator {
         }
 
         val blockDocument: (String, String) -> Unit = { c, m -> block(c, m) }
-        requireNonBlank("sourceFingerprint", overlay.sourceFingerprint, blockDocument)
-        requireNonBlank("targetFingerprint", overlay.targetFingerprint, blockDocument)
         requireNonBlank("dialect", overlay.dialect, blockDocument)
         requireNonBlank("createdAt", overlay.createdAt, blockDocument)
         requireNonBlank("createdByVersion", overlay.createdByVersion, blockDocument)
+        validateBinding(overlay, context, blockDocument)
 
-        if (overlay.sourceFingerprint != context.expectedSourceFingerprint) {
-            block(
-                MigrationOverlayDiagnostics.STALE_SOURCE_FINGERPRINT,
-                "Overlay sourceFingerprint does not match the current schema fingerprint",
-            )
-        }
-        if (overlay.targetFingerprint != context.expectedTargetFingerprint) {
-            block(
-                MigrationOverlayDiagnostics.STALE_TARGET_FINGERPRINT,
-                "Overlay targetFingerprint does not match the desired schema fingerprint",
-            )
-        }
         if (overlay.dialect != context.expectedDialect) {
             block(MigrationOverlayDiagnostics.DIALECT_MISMATCH, "Overlay dialect '${overlay.dialect}' is not applicable")
         }
@@ -281,6 +292,72 @@ object MigrationOverlayValidator {
             diagnostics = diagnostics,
             acceptedEntries = accepted,
         )
+    }
+
+    /**
+     * Die Bindung: die richtige Art fuer diese Overlay-Art, in einer
+     * Formatversion, die sie kennt, mit Abdruecken, die zum Lauf passen.
+     *
+     * Die Reihenfolge ist Absicht — passt die Art nicht, sagen die
+     * Abdruck-Meldungen nichts Sinnvolles mehr, weil sie ueber verschiedene
+     * Dinge sprechen.
+     */
+    private fun validateBinding(
+        overlay: MigrationOverlay,
+        context: MigrationOverlayValidationContext,
+        block: (String, String) -> Unit,
+    ) {
+        val required = MigrationOverlay.requiredBindingFor(overlay.overlayKind)
+        val actual = overlay.binding.kindOf
+        if (required != null && required != actual) {
+            block(
+                MigrationOverlayDiagnostics.BINDING_MISMATCH,
+                "Overlay kind '${overlay.overlayKind}' requires a $required binding, but the document " +
+                    "carries a $actual binding",
+            )
+            return
+        }
+        when (val binding = overlay.binding) {
+            is MigrationOverlayBinding.Transition -> {
+                requireNonBlank("sourceFingerprint", binding.sourceFingerprint, block)
+                requireNonBlank("targetFingerprint", binding.targetFingerprint, block)
+                if (binding.sourceFingerprint != context.expectedSourceFingerprint) {
+                    block(
+                        MigrationOverlayDiagnostics.STALE_SOURCE_FINGERPRINT,
+                        "Overlay sourceFingerprint does not match the current schema fingerprint",
+                    )
+                }
+                if (binding.targetFingerprint != context.expectedTargetFingerprint) {
+                    block(
+                        MigrationOverlayDiagnostics.STALE_TARGET_FINGERPRINT,
+                        "Overlay targetFingerprint does not match the desired schema fingerprint",
+                    )
+                }
+            }
+
+            is MigrationOverlayBinding.Representation -> {
+                if (overlay.formatVersion == MigrationOverlay.FORMAT_VERSION_V1) {
+                    block(
+                        MigrationOverlayDiagnostics.BINDING_NOT_IN_FORMAT_VERSION,
+                        "A representation binding requires formatVersion " +
+                            "'${MigrationOverlay.FORMAT_VERSION_V2}'",
+                    )
+                }
+                requireNonBlank("schemaFingerprint", binding.schemaFingerprint, block)
+                val expected = context.expectedRepresentationFingerprint
+                if (expected == null) {
+                    block(
+                        MigrationOverlayDiagnostics.REPRESENTATION_NOT_APPLICABLE,
+                        "This command does not accept representation-bound overlays",
+                    )
+                } else if (binding.schemaFingerprint != expected) {
+                    block(
+                        MigrationOverlayDiagnostics.STALE_SCHEMA_FINGERPRINT,
+                        "Overlay schemaFingerprint does not match the schema it describes",
+                    )
+                }
+            }
+        }
     }
 
     private fun requireNonBlank(
@@ -372,8 +449,12 @@ object MigrationOverlayValidator {
     ) {
         val entries = overlay.entries.filterIsInstance<RenameMappingOverlayEntry>()
         if (entries.isEmpty()) return
-        if (overlay.sourceFingerprint != context.expectedSourceFingerprint ||
-            overlay.targetFingerprint != context.expectedTargetFingerprint
+        // `rename-mapping` verlangt eine Uebergangs-Bindung; eine andere hat
+        // `validateBinding` bereits benannt abgelehnt, und ein Abdruck-Befund
+        // obendrauf sagte nichts.
+        val binding = overlay.binding as? MigrationOverlayBinding.Transition ?: return
+        if (binding.sourceFingerprint != context.expectedSourceFingerprint ||
+            binding.targetFingerprint != context.expectedTargetFingerprint
         ) {
             entries.forEach { entry ->
                 block(

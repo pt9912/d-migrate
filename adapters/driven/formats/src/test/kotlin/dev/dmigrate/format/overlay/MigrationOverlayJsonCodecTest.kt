@@ -13,6 +13,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.io.ByteArrayOutputStream
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 class MigrationOverlayJsonCodecTest : FunSpec({
 
@@ -98,13 +99,79 @@ class MigrationOverlayJsonCodecTest : FunSpec({
         ex.code shouldBe MigrationOverlayDiagnostics.UNKNOWN_REQUIRED_FIELD
         ex.path shouldBe "$.entries[0].risk"
     }
+
+    // ── Bindung aus der Draht-Form ───────────────────────────────
+    //
+    // Welche Bindung ein Dokument traegt, sagen die vorhandenen Felder — nicht
+    // die Formatversion. Ein Uebergang steht flach, wie seit jeher; eine
+    // Darstellung bringt `schemaFingerprint` mit.
+
+    test("a flat document reads as a transition") {
+        val overlay = codec.read(rawOverlay(BINDING_FLAT, MigrationOverlay.FORMAT_VERSION_V1).byteInputStream())
+        overlay.binding shouldBe MigrationOverlayBinding.Transition("src-fp", "dst-fp")
+    }
+
+    test("a schemaFingerprint reads as a representation") {
+        val overlay = codec.read(
+            rawOverlay(BINDING_SCHEMA, MigrationOverlay.FORMAT_VERSION_V2).byteInputStream(),
+        )
+        overlay.binding shouldBe MigrationOverlayBinding.Representation("schema-fp")
+    }
+
+    test("both bindings at once is a contradiction, not a preference") {
+        val ex = shouldThrow<MigrationOverlayJsonDecodeException> {
+            codec.read(
+                rawOverlay(BINDING_FLAT + ",\n  " + BINDING_SCHEMA, MigrationOverlay.FORMAT_VERSION_V2)
+                    .byteInputStream(),
+            )
+        }
+        ex.code shouldBe MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH
+    }
+
+    test("neither binding is a missing field, named as such") {
+        val ex = shouldThrow<MigrationOverlayJsonDecodeException> {
+            codec.read(rawOverlay(NO_BINDING, MigrationOverlay.FORMAT_VERSION_V2).byteInputStream())
+        }
+        ex.code shouldBe MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING
+        ex.path shouldBe "$.sourceFingerprint"
+    }
+
+    test("a representation binding in a v1 document is rejected at read time") {
+        // Diese Formatversion kennt die Bindung nicht — sie kann sie also auch
+        // nicht meinen.
+        val ex = shouldThrow<MigrationOverlayJsonDecodeException> {
+            codec.read(rawOverlay(BINDING_SCHEMA, MigrationOverlay.FORMAT_VERSION_V1).byteInputStream())
+        }
+        ex.code shouldBe MigrationOverlayDiagnostics.UNKNOWN_FORMAT_VERSION
+        ex.path shouldBe "$.schemaFingerprint"
+    }
 })
+
+private const val BINDING_FLAT = "\"sourceFingerprint\": \"src-fp\",\n  \"targetFingerprint\": \"dst-fp\""
+private const val BINDING_SCHEMA = "\"schemaFingerprint\": \"schema-fp\""
+private const val NO_BINDING = ""
+
+/**
+ * Ein Dokument mit frei gewaehlten Bindungsfeldern — der Hash ist hier nicht
+ * die Frage, sondern was der Leser aus den vorhandenen Feldern macht.
+ */
+private fun rawOverlay(bindingFields: String, formatVersion: String): String {
+    val binding = if (bindingFields.isBlank()) "" else "  $bindingFields,\n"
+    return "{\n" +
+        "  \"formatVersion\": \"$formatVersion\",\n" +
+        "  \"overlayKind\": \"rename-mapping\",\n" +
+        binding +
+        "  \"dialect\": \"postgresql\",\n" +
+        "  \"entries\": [],\n" +
+        "  \"createdAt\": \"2026-09-08T10:00:00Z\",\n" +
+        "  \"createdByVersion\": \"d-migrate-test\"\n" +
+        "}\n"
+}
 
 private fun signedOverlay(): MigrationOverlay =
     MigrationOverlay(
         overlayKind = MigrationOverlayKinds.USING_EXPRESSION,
-        sourceFingerprint = "src-fp",
-        targetFingerprint = "dst-fp",
+        binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
         dialect = "postgresql",
         entries = listOf(
             UsingExpressionOverlayEntry(
@@ -127,8 +194,7 @@ private fun signedOverlay(): MigrationOverlay =
 private fun signedRenameOverlay(): MigrationOverlay =
     MigrationOverlay(
         overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-        sourceFingerprint = "src-fp",
-        targetFingerprint = "dst-fp",
+        binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
         dialect = "postgresql",
         entries = listOf(
             RenameMappingOverlayEntry(

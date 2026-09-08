@@ -28,6 +28,7 @@ import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as stringShouldContain
 import java.nio.file.Files
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Plan-2 §F.4 dependency-projection T1: pins that the migration
@@ -57,8 +58,7 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
     fun staleRenameOverlay(): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "stale-source-fp",
-            targetFingerprint = "stale-target-fp",
+            binding = MigrationOverlayBinding.Transition("stale-source-fp", "stale-target-fp"),
             dialect = "postgresql",
             entries = listOf(
                 RenameMappingOverlayEntry(
@@ -306,8 +306,7 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
         val desiredFingerprint = dev.dmigrate.core.diff.migration.MigrationFingerprint.compute(schemaWithTable("orders"))
         val fileOverlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = currentFingerprint,
-            targetFingerprint = desiredFingerprint,
+            binding = MigrationOverlayBinding.Transition(currentFingerprint, desiredFingerprint),
             dialect = "postgresql",
             entries = listOf(
                 RenameMappingOverlayEntry(

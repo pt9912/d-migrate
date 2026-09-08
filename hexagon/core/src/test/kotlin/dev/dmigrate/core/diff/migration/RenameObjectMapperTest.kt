@@ -26,6 +26,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * F.4 Sub-Slice A.2 Teil 2 mapper tests: the dialect-neutral fold from
@@ -48,8 +49,7 @@ class RenameObjectMapperTest : FunSpec({
     ): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = dialect,
             entries = entries,
             createdAt = "2026-05-19T08:00:00Z",

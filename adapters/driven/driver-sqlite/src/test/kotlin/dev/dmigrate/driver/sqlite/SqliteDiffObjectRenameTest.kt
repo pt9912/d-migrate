@@ -30,6 +30,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * F.4 Sub-Slice C (2026-05-19): per-dialect pins for the SQLite
@@ -64,8 +65,7 @@ class SqliteDiffObjectRenameTest : FunSpec({
     fun renameOverlay(objectType: String, from: String, to: String): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "sqlite",
             entries = listOf(
                 RenameMappingOverlayEntry(

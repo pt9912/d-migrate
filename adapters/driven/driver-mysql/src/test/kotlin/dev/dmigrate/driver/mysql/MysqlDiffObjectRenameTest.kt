@@ -34,6 +34,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * F.4 Sub-Slice B (2026-05-19) + E.3 Sub-Slice C (2026-05-20):
@@ -63,8 +64,7 @@ class MysqlDiffObjectRenameTest : FunSpec({
     fun renameOverlay(objectType: String, from: String, to: String): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "mysql",
             entries = listOf(
                 RenameMappingOverlayEntry(

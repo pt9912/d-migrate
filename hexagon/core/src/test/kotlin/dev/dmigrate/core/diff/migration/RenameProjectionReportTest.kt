@@ -17,6 +17,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Plan-2 §F.4 dependency-projection T6: pins the
@@ -47,8 +48,7 @@ class RenameProjectionReportTest : FunSpec({
     ): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "postgresql",
             entries = entries,
             createdAt = "2026-05-15T08:00:00Z",

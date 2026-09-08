@@ -20,6 +20,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Plan-2 §F.4 dependency-projection T5: pins the explicit view-
@@ -55,8 +56,7 @@ class RenameOverlayMapperT5Test : FunSpec({
     ): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "postgresql",
             entries = listOf(
                 RenameMappingOverlayEntry(

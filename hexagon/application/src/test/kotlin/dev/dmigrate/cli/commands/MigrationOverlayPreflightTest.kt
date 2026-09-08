@@ -21,6 +21,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 class MigrationOverlayPreflightTest : FunSpec({
 
@@ -143,7 +144,9 @@ class MigrationOverlayPreflightTest : FunSpec({
         // (rename-bound) — the latter is the structured trigger for the
         // new reason, so the result must list TWO blockers and pin the
         // primary to RENAME_MAPPING_INVALID.
-        val overlay = renameOverlay().copy(sourceFingerprint = "drifted").withComputedHash()
+        val overlay = renameOverlay()
+            .copy(binding = MigrationOverlayBinding.Transition("drifted", "dst-fp"))
+            .withComputedHash()
         val plan = planWith(overlay, "overlays/rename.json")
 
         val result = MigrationOverlayPreflight.validate(plan, DatabaseDialect.POSTGRESQL)
@@ -647,8 +650,7 @@ private fun planWithoutOverlays(): DiffResult =
 private fun renameOverlay(): MigrationOverlay =
     MigrationOverlay(
         overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-        sourceFingerprint = "src-fp",
-        targetFingerprint = "dst-fp",
+        binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
         dialect = "postgresql",
         entries = listOf(
             RenameMappingOverlayEntry(
@@ -668,8 +670,7 @@ private fun usingOverlay(
 ): MigrationOverlay =
     MigrationOverlay(
         overlayKind = overlayKind,
-        sourceFingerprint = "src-fp",
-        targetFingerprint = "dst-fp",
+        binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
         dialect = "postgresql",
         entries = listOf(
             UsingExpressionOverlayEntry(

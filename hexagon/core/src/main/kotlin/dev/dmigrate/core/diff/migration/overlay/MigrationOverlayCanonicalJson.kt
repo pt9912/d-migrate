@@ -8,8 +8,7 @@ object MigrationOverlayCanonicalJson {
         val fields = mutableListOf<Pair<String, JsonValue>>()
         fields += "formatVersion" to JsonString(overlay.formatVersion)
         fields += "overlayKind" to JsonString(overlay.overlayKind)
-        fields += "sourceFingerprint" to JsonString(overlay.sourceFingerprint)
-        fields += "targetFingerprint" to JsonString(overlay.targetFingerprint)
+        fields += bindingFields(overlay.binding)
         fields += "dialect" to JsonString(overlay.dialect)
         fields += "entries" to JsonArray(overlay.entries.map(::entryValue))
         fields += "createdAt" to JsonString(overlay.createdAt)
@@ -26,6 +25,26 @@ object MigrationOverlayCanonicalJson {
         }
         return render(JsonObject(fields))
     }
+
+    /**
+     * Die Bindung auf dem Draht. Ein [MigrationOverlayBinding.Transition]
+     * steht **flach** unter `sourceFingerprint`/`targetFingerprint` — genau
+     * wie vor der Bindungs-Trennung. Das ist kein Ueberbleibsel, sondern
+     * Absicht: die Form haengt an der Bindung, nicht an der Formatversion, und
+     * so behaelt jedes bestehende v1-Dokument seinen Hash. Nur die neue
+     * Darstellungs-Bindung bringt ein neues Feld mit.
+     */
+    private fun bindingFields(binding: MigrationOverlayBinding): List<Pair<String, JsonValue>> =
+        when (binding) {
+            is MigrationOverlayBinding.Transition -> listOf(
+                "sourceFingerprint" to JsonString(binding.sourceFingerprint),
+                "targetFingerprint" to JsonString(binding.targetFingerprint),
+            )
+
+            is MigrationOverlayBinding.Representation -> listOf(
+                "schemaFingerprint" to JsonString(binding.schemaFingerprint),
+            )
+        }
 
     fun encodeUnsigned(overlay: MigrationOverlay): String =
         encode(overlay.copy(overlayHash = null), includeOverlayHash = false)

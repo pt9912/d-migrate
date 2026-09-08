@@ -19,6 +19,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 class PostgresUsingOverlayResolverTest : FunSpec({
 
@@ -102,8 +103,7 @@ private fun usingOverlay(
 ): MigrationOverlay =
     MigrationOverlay(
         overlayKind = MigrationOverlayKinds.USING_EXPRESSION,
-        sourceFingerprint = planned.current.fingerprint!!,
-        targetFingerprint = planned.desired.fingerprint!!,
+        binding = MigrationOverlayBinding.Transition(planned.current.fingerprint!!, planned.desired.fingerprint!!),
         dialect = "postgresql",
         entries = listOf(
             UsingExpressionOverlayEntry(

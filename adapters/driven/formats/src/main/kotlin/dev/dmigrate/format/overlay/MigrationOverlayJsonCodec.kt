@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayCanonicalJson
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayConversionReversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
@@ -42,11 +43,11 @@ class MigrationOverlayJsonCodec {
         }
         requireOnlyFields(root, TOP_LEVEL_FIELDS, "$")
 
+        val formatVersion = root.requiredText("formatVersion", "$")
         return MigrationOverlay(
-            formatVersion = root.requiredText("formatVersion", "$"),
+            formatVersion = formatVersion,
             overlayKind = root.requiredText("overlayKind", "$"),
-            sourceFingerprint = root.requiredText("sourceFingerprint", "$"),
-            targetFingerprint = root.requiredText("targetFingerprint", "$"),
+            binding = parseBinding(root, formatVersion),
             dialect = root.requiredText("dialect", "$"),
             entries = parseEntries(root.requiredArray("entries", "$")),
             createdAt = root.requiredText("createdAt", "$"),
@@ -70,6 +71,44 @@ class MigrationOverlayJsonCodec {
             )
         }
         output.write(MigrationOverlayCanonicalJson.encode(overlay).toByteArray(Charsets.UTF_8))
+    }
+
+    /**
+     * Die Bindung aus der Draht-Form. Welche es ist, sagen die vorhandenen
+     * Felder — nicht die Formatversion: ein Uebergang steht flach unter
+     * `sourceFingerprint`/`targetFingerprint`, wie seit jeher, eine
+     * Darstellung unter `schemaFingerprint`.
+     *
+     * Beide zugleich oder keines von beiden wird abgelehnt, nicht umgedeutet.
+     * Und `schemaFingerprint` in einem v1-Dokument ist ein Widerspruch: diese
+     * Formatversion kennt die Bindung nicht, also kann sie sie auch nicht
+     * meinen.
+     */
+    private fun parseBinding(root: JsonNode, formatVersion: String): MigrationOverlayBinding {
+        val schemaFingerprint = root.optionalText("schemaFingerprint", "$")
+        val hasTransitionFields = root.has("sourceFingerprint") || root.has("targetFingerprint")
+        if (schemaFingerprint != null && hasTransitionFields) {
+            decode(
+                MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
+                "$",
+                "Overlay carries both a representation binding (schemaFingerprint) and a transition " +
+                    "binding (sourceFingerprint/targetFingerprint)",
+            )
+        }
+        if (schemaFingerprint == null) {
+            return MigrationOverlayBinding.Transition(
+                sourceFingerprint = root.requiredText("sourceFingerprint", "$"),
+                targetFingerprint = root.requiredText("targetFingerprint", "$"),
+            )
+        }
+        if (formatVersion == MigrationOverlay.FORMAT_VERSION_V1) {
+            decode(
+                MigrationOverlayDiagnostics.UNKNOWN_FORMAT_VERSION,
+                "$.schemaFingerprint",
+                "A representation binding requires formatVersion '${MigrationOverlay.FORMAT_VERSION_V2}'",
+            )
+        }
+        return MigrationOverlayBinding.Representation(schemaFingerprint)
     }
 
     private fun parseEntries(node: JsonNode): List<MigrationOverlayEntry> =
@@ -249,6 +288,7 @@ class MigrationOverlayJsonCodec {
             "overlayKind",
             "sourceFingerprint",
             "targetFingerprint",
+            "schemaFingerprint",
             "dialect",
             "entries",
             "createdAt",

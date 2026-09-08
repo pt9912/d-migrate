@@ -6,7 +6,10 @@
 > nicht trägt, und LIST-Wertemengen, die als RANGE-Grenzen ausdrückbar sind.
 > **Vorbedingungen:** keine offenen mehr — die Bindungsfrage ist mit
 > [ADR 0050](../../adr/0050-overlay-bindung-uebergang-vs-darstellung.md)
-> entschieden.
+> entschieden **und gebaut**: `MigrationOverlayBinding` mit
+> `Transition`/`Representation`, `migration-overlay.v2`, v1-Dokumente
+> unveraendert lesbar. Dieser Slice bringt nur noch die Overlay-**Art**
+> `partition-mapping` mit ihrer Darstellungsbindung.
 > **Aktivierung:** Beim ersten Implementierungs-Commit → `../in-progress/`.
 
 Absorbiert die Vorabklärung `open/partition-mapping-overlay.md`.

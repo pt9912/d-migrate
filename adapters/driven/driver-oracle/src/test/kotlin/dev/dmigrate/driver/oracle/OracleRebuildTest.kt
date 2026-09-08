@@ -37,6 +37,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldEndWith
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Der Tabellen-Neubau, mit dem Oracle eine bestehende Spalte doch noch zur
@@ -190,8 +191,7 @@ class OracleRebuildTest : FunSpec({
             source = "ovl/rename.json",
             overlay = MigrationOverlay(
                 overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-                sourceFingerprint = "src-fp",
-                targetFingerprint = "dst-fp",
+                binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
                 dialect = "oracle",
                 entries = listOf(
                     RenameMappingOverlayEntry(

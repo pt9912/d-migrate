@@ -19,6 +19,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * F.4 Sub-Slice D: column-default `SequenceNextVal` references that
@@ -41,8 +42,7 @@ class SequenceDefaultReprojectorTest : FunSpec({
     fun renameOverlay(from: String, to: String, source: String = "ovl/seq.json"): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "postgresql",
             entries = listOf(
                 RenameMappingOverlayEntry(

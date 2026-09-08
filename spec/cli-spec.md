@@ -646,7 +646,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--lock-timeout-ms` | Nein | Millisekunden | Atomic-Preserve Lock-Acquire-Budget fuer den `--execute`-Pfad. Default: `5000`. Gueltiger Bereich: `10` bis `60000`; Werte ausserhalb des Bereichs beenden den Lauf vor der Pipeline mit Exit `2` |
 | `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
 | `--allow-extension-install` | Nein | Boolean | PostgreSQL darf benoetigte `CREATE EXTENSION IF NOT EXISTS ...`-Prerequisites fuer extension-abhaengige Migrationen rendern; ohne Flag blockieren nicht verifizierte Extensions |
-| `--migration-overlay` | Nein | Pfad, wiederholbar | Versioniertes Migrations-Overlay-JSON nach `migration-overlay.v1`; vor dem Rendern gegen Quell-/Ziel-Fingerprint, Dialekt und `overlayHash` validiert |
+| `--migration-overlay` | Nein | Pfad, wiederholbar | Versioniertes Migrations-Overlay-JSON (`migration-overlay.v1` oder `.v2`); vor dem Rendern gegen seine **Bindung**, den Dialekt und `overlayHash` validiert — siehe unten |
 | `--rename-table` | Nein | `<from>:<to>`, wiederholbar | Inline-Shortcut fuer Tabellen-Rename; CLI baut daraus ein synthetisches `rename-mapping`-Overlay mit `source = "cli-inline"`. Bewusst NICHT artefaktstabil — Inline-Overlays werden nicht in `migration-plan.v1` serialisiert. Fuer langlebige Plaene `--migration-overlay` mit Datei nutzen |
 | `--rename-column` | Nein | `<table>.<from>:<table>.<to>`, wiederholbar | Inline-Shortcut fuer Spalten-Rename; gleiche Bedingungen wie `--rename-table`. Tabellen-Prefix muss beidseitig identisch sein, sonst Exit 2 |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
@@ -1110,6 +1110,29 @@ opt-in und additiv zu `--report` / `--output` / `--rollback-output`;
 der Artefakt wird auch im `--plan-only`- und Exit-8-Pfad emittiert,
 sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler
 beendet mit Exit `7` (lokaler I/O-Fehler).
+
+### Bindung eines Migrations-Overlays
+
+Ein Overlay-Dokument traegt genau **eine** von zwei Bindungen, und welche,
+sagen die vorhandenen Felder — nicht die Formatversion:
+
+| Bindung | Felder | Aussage |
+|---|---|---|
+| Uebergang | `sourceFingerprint`, `targetFingerprint` | Eine Aussage ueber **zwei** Zustaende, die ohne beide sinnlos ist (`using-expression`, `rename-mapping`) |
+| Darstellung | `schemaFingerprint` | Eine Aussage ueber die Schreibweise **eines** Schemas; der IST-Zustand einer laufenden Datenbank ist dafuer belanglos |
+
+Regeln:
+
+- Die verlangte Bindungsart ergibt sich aus `overlayKind`. Ein Dokument mit
+  der falschen wird abgelehnt (`OVERLAY_BINDING_MISMATCH`), nicht umgedeutet.
+- Beide Bindungen zugleich oder keine von beiden ist ein Formatfehler, keine
+  Vorliebe.
+- Ein Uebergangs-Dokument bleibt `migration-overlay.v1` — es benutzt nichts,
+  was v2 hinzufuegt, und bleibt damit fuer aeltere Staende lesbar. Eine
+  Darstellung verlangt `.v2`; sie in einem v1-Dokument zu fuehren ist ein
+  Widerspruch und wird beim Lesen abgelehnt.
+- Ein Befehl, der Darstellungs-Overlays nicht pruefen kann, lehnt sie ab
+  (`OVERLAY_REPRESENTATION_NOT_APPLICABLE`), statt zu raten.
 
 Top-Level-Felder (kanonisierte JSON-Reihenfolge):
 

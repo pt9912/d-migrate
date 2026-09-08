@@ -20,6 +20,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.shouldBe
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Plan-2 §F.4 second slice — dependency-edge & topological-sort
@@ -44,8 +45,7 @@ class RenameOverlayDependencyTest : FunSpec({
     fun renameOverlay(objectType: String, from: String, to: String): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "postgresql",
             entries = listOf(
                 RenameMappingOverlayEntry(

@@ -16,6 +16,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Plan-2 §F.4-style rename projection, mirrored from
@@ -35,8 +36,7 @@ class OracleDiffRenameTest : FunSpec({
     fun renameOverlay(objectType: String, from: String, to: String): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "oracle",
             entries = listOf(RenameMappingOverlayEntry(id = "$from->$to", objectType = objectType, fromName = from, toName = to)),
             createdAt = "2026-09-06T08:00:00Z",

@@ -20,6 +20,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * Plan-2 §F.4 second slice: verifies that the [OperationMapper]
@@ -54,8 +55,7 @@ class RenameOverlayMapperTest : FunSpec({
     ): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = sourceFingerprint,
-            targetFingerprint = targetFingerprint,
+            binding = MigrationOverlayBinding.Transition(sourceFingerprint, targetFingerprint),
             dialect = dialect,
             entries = listOf(
                 RenameMappingOverlayEntry(

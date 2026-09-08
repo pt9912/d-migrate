@@ -42,6 +42,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 class PostgresDiffDdlGeneratorTest : FunSpec({
 
@@ -734,8 +735,7 @@ private fun usingOverlay(
 ): MigrationOverlay =
     MigrationOverlay(
         overlayKind = MigrationOverlayKinds.USING_EXPRESSION,
-        sourceFingerprint = planned.current.fingerprint!!,
-        targetFingerprint = planned.desired.fingerprint!!,
+        binding = MigrationOverlayBinding.Transition(planned.current.fingerprint!!, planned.desired.fingerprint!!),
         dialect = "postgresql",
         entries = buildList {
             add(

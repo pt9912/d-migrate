@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
@@ -97,8 +98,7 @@ internal object InlineRenameOverlayBuilder {
 
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = sourceFingerprint,
-            targetFingerprint = targetFingerprint,
+            binding = MigrationOverlayBinding.Transition(sourceFingerprint, targetFingerprint),
             dialect = dialect,
             entries = entries,
             createdAt = INLINE_CREATED_AT_SENTINEL,

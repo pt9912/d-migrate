@@ -33,6 +33,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayBinding
 
 /**
  * F.4 Sub-Slice A.2 Teil 2 renderer pins. The PostgreSQL renderer
@@ -51,8 +52,7 @@ class PostgresDiffObjectRenameTest : FunSpec({
     fun renameOverlay(objectType: String, from: String, to: String): MigrationOverlayDocument {
         val overlay = MigrationOverlay(
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-            sourceFingerprint = "src-fp",
-            targetFingerprint = "dst-fp",
+            binding = MigrationOverlayBinding.Transition("src-fp", "dst-fp"),
             dialect = "postgresql",
             entries = listOf(
                 RenameMappingOverlayEntry(
