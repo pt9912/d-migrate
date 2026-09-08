@@ -88,6 +88,12 @@ und [Abschnitt 4.3](administrationshandbuch.md#43-connection-pool-defaults-hikar
 - **`fetch_size`:** bei **sehr breiten Zeilen** (viele/große Spalten) **kleiner** wählen,
   um den Lese-Heap zu begrenzen; bei schmalen Zeilen ruhig größer für mehr Durchsatz.
   Für SQLite ist der Wert nur ein Hint.
+- **SQL Server: `--on-conflict abort` ist der schnelle Weg.** Nur dort nimmt der
+  Import den BulkCopy-Pfad (gemessen rund doppelt so schnell wie gebatchte
+  `INSERT`s); `skip` und `update` brauchen `MERGE` und bleiben beim bisherigen
+  Weg, ebenso Tabellen mit Geometriespalten. An der Semantik ändert sich nichts —
+  Constraints greifen und Trigger feuern wie zuvor. Wer ohnehin in eine leere
+  Zieltabelle lädt, wählt also `abort` statt `skip`.
 - **Artefakt statt Direkt-Transfer für große/Produktions-Läufe.** Nur der
   artefaktbasierte Pfad (`data export` → `data import`) unterstützt `--resume` nach
   Abbruch und ein prüf-/aufbewahrbares Zwischenformat; für sehr große Datenmengen ist

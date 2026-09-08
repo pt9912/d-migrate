@@ -1005,7 +1005,7 @@ ausgeschnitten, damit sie auffindbar bleiben.
 - [`neutral-default-function-fidelity.md`](neutral-default-function-fidelity.md)
   — fremde Funktions-Defaults werden beim Round-Trip zum String-Literal.
   Dialektübergreifend, am MSSQL-Leg aufgefallen.
-- [`mssql-bulk-import-fast-path.md`](../open/mssql-bulk-import-fast-path.md) —
+- [`mssql-bulk-import-fast-path.md`](mssql-bulk-import-fast-path.md) —
   der Import läuft über gebatchte `INSERT`s, ohne `BULK INSERT`-Weg.
 - [`mssql-import-skip-without-pk-preflight.md`](mssql-import-skip-without-pk-preflight.md)
   — `--on-conflict skip` ohne Primärschlüssel meldet sich im Import-Pfad später
@@ -1032,7 +1032,7 @@ ausgeschnitten und einzeln nachhaltbar:
 | --- | --- |
 | [`neutral-default-function-fidelity.md`](neutral-default-function-fidelity.md) | Fremde Funktions-Defaults werden beim Round-Trip zu String-Literalen. Dialektübergreifend. |
 | [`mssql-srid-fidelity-data-path.md`](mssql-srid-fidelity-data-path.md) | Der Datenpfad schreibt Geometrien mit der Typ-Default-SRID; Wert-SRIDs gehen verloren. |
-| [`mssql-bulk-import-fast-path.md`](../open/mssql-bulk-import-fast-path.md) | Der Import schreibt gebatchte `INSERT`s, ohne `BULK INSERT`-Weg. Durchsatz, kein Defekt. |
+| [`mssql-bulk-import-fast-path.md`](mssql-bulk-import-fast-path.md) | Der Import schreibt gebatchte `INSERT`s, ohne `BULK INSERT`-Weg. Durchsatz, kein Defekt. |
 | [`mssql-import-skip-without-pk-preflight.md`](mssql-import-skip-without-pk-preflight.md) | `--on-conflict skip` ohne Primärschlüssel meldet sich im Import-Pfad später als im Transfer-Pfad. |
 | [`routine-body-cross-dialect-portability.md`](routine-body-cross-dialect-portability.md) | Routinen-Rümpfe werden nach Herkunft übersprungen statt inhaltlich beurteilt. Cross-dialektal. |
 | [`enum-inline-check-fidelity.md`](../open/enum-inline-check-fidelity.md) | Enum-CHECK-Kante aus Slice 5; wartet auf eine Eigner-Entscheidung zwischen drei Varianten. |

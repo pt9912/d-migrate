@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **SQL Server: Bulk-Pfad für den Import.** `data import`/`data transfer` gegen
+  SQL Server schreiben mit `--on-conflict abort` über `SQLServerBulkCopy` statt
+  über gebatchte `INSERT`s — gemessen an 200 000 Zeilen 43 773 → 94 473
+  Zeilen/s (Faktor 2,16). Der Pfad greift nur, wo er dasselbe tut wie vorher:
+  `skip`/`update` brauchen `MERGE`, Geometriewerte werden per SQL konstruiert,
+  und Typen außerhalb einer konservativen Skalar-Menge bleiben beim bisherigen
+  Weg. `SQLServerBulkCopy` prüft per Voreinstellung **keine** Constraints und
+  feuert **keine** Trigger — beides wird erzwungen, sonst wäre es ein anderer
+  Import und kein schnellerer.
 - **Oracle: `schema migrate` macht eine bestehende Spalte zur
   Auto-Schlüsselspalte.** Oracle lehnt das per `ALTER` ab (`ORA-30673`); bisher
   blockte der Lauf deshalb benannt. Jetzt baut d-migrate die Tabelle dafür neu

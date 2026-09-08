@@ -45,6 +45,9 @@ class MssqlDataWriterTest : FunSpec({
 
         init {
             every { pool.borrow() } returns JdbcDatabaseConnection(conn)
+            // Eine Attrappe traegt keine BulkCopy-Naht — diese Tests belegen den
+            // INSERT-/MERGE-Weg, und genau dorthin faellt der Fast-Path zurueck.
+            every { conn.isWrapperFor(any<Class<*>>()) } returns false
             every { conn.autoCommit } answers { autoCommit }
             every { conn.autoCommit = any() } answers { autoCommit = firstArg() }
             every { jdbc.querySingle(match { it.contains("SCHEMA_NAME()") }) } returns

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mssql
 
+import com.microsoft.sqlserver.jdbc.ISQLServerConnection
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.ImportOptions
@@ -88,9 +89,36 @@ internal class MssqlTableImportSession(
     override fun executeChunk(
         importedTargetColumns: List<TargetColumn>,
         rows: List<Array<Any?>>,
-    ): WriteResult = when (options.onConflict) {
-        OnConflict.ABORT -> executeBatchChunk(importedTargetColumns, rows)
-        OnConflict.SKIP, OnConflict.UPDATE -> executeMergeChunk(importedTargetColumns, rows)
+    ): WriteResult = when {
+        // BulkCopy, wo er dasselbe tut wie der INSERT-Weg — gemessen rund
+        // doppelt so schnell. Wo nicht (MERGE-Konfliktmodi, Geometrie, Typen
+        // ausserhalb der sicheren Menge, Verbindung ohne BulkCopy-Naht), bleibt
+        // es beim gebatchten INSERT.
+        conn.isWrapperFor(ISQLServerConnection::class.java) &&
+            MssqlBulkCopyFastPath.isEligible(importedTargetColumns, options.onConflict) {
+                isGeometryColumn(it)
+            } -> executeBulkChunk(importedTargetColumns, rows)
+
+        options.onConflict == OnConflict.ABORT -> executeBatchChunk(importedTargetColumns, rows)
+        else -> executeMergeChunk(importedTargetColumns, rows)
+    }
+
+    /**
+     * Praezision und Skala der Zielspalten — einmal je Tabelle erfragt, nicht je
+     * Chunk. Sie aendern sich waehrend eines Imports nicht.
+     */
+    private var bulkColumnMeta: List<MssqlBulkCopyFastPath.ColumnMeta>? = null
+
+    private fun executeBulkChunk(
+        importedTargetColumns: List<TargetColumn>,
+        rows: List<Array<Any?>>,
+    ): WriteResult {
+        val meta = bulkColumnMeta
+            ?: MssqlBulkCopyFastPath.columnMeta(conn, qualifiedTable.quotedPath(), importedTargetColumns)
+                .also { bulkColumnMeta = it }
+        return MssqlBulkCopyFastPath.execute(
+            conn, qualifiedTable.quotedPath(), meta, rows, keepIdentity = identityInsertEnabled,
+        )
     }
 
     override fun bindRow(
