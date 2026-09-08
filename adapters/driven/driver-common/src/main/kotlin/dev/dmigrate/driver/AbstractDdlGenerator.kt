@@ -3,6 +3,7 @@ package dev.dmigrate.driver
 import dev.dmigrate.core.model.*
 import dev.dmigrate.core.version.VersionInfo
 import java.time.Instant
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 abstract class AbstractDdlGenerator(
     protected val typeMapper: TypeMapper
@@ -232,7 +233,7 @@ abstract class AbstractDdlGenerator(
                 parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
             }
         }
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
 

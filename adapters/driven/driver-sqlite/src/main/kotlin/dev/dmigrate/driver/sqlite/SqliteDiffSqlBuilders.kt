@@ -15,6 +15,7 @@ import dev.dmigrate.core.model.toSqlEventClause
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.RoutineBodyOrigin
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
  * Stateless SQL fragment builders for the SQLite diff renderer.
@@ -47,7 +48,7 @@ internal class SqliteDiffSqlBuilders {
         // INTEGER instead (W135, SqliteCompositePkIdentity — warned by the emitting op).
         parts += if (col.type is NeutralType.Identifier && !isSolePrimaryKey) "INTEGER" else typeMapper.toSql(col.type)
         if (col.required) parts += "NOT NULL"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         col.default?.let { parts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
         col.references?.let { ref ->
             val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""

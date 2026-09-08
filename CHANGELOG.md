@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hinterlässt einen `INVALID`-Index, den der nächste Lauf selbst wegräumt
   (`DROP INDEX CONCURRENTLY IF EXISTS` vor jedem `CREATE`). Eine Option des
   Laufs, kein Feld am Index.
+- **Der Name eines einspaltigen UNIQUE-Constraints bleibt erhalten.** Der
+  Reverse faltete ihn bisher auf `column.unique` und verwarf den Katalognamen;
+  ein `DROP CONSTRAINT` bekam dann einen **erfundenen** (`_unique_email`) und
+  traf an keiner echten Datenbank etwas. Das neutrale Modell fuehrt ihn jetzt
+  (`unique_constraint` an der Spalte, `constraint` am `references`-Block), und
+  alle fuenf Leser fuellen ihn — **aus der Constraint-Abfrage, nicht aus der
+  Indexliste**: ein gewoehnlicher Unique-Index ist kein Constraint und laesst
+  sich nur mit `DROP INDEX` abbauen.
+
+  Damit meldet `schema compare` auch einen **abweichenden** UNIQUE-Namen,
+  statt zu schweigen — aber nur, wenn **beide** Seiten einen nennen und der
+  Dialekt Namen ueberhaupt fuehrt (`namesSingleColumnConstraints`; SQLite legt
+  `sqlite_autoindex_…` an und nennt nichts). Ein handgeschriebenes
+  `unique: true` macht ueber den Namen keine Aussage, und daraus eine
+  Aenderung zu machen hiesse, dem Autor einen Namen zu unterstellen.
+
+  Beim Erzeugen wird ein benannter UNIQUE als **Tabellen**-Constraint
+  gerendert. Auch das ist gemessen: MySQL 8.0 lehnt die inline benannte Form
+  als Syntaxfehler ab.
 - **`schema migrate --migration-overlay`** nimmt dasselbe
   `partition-mapping`-Overlay entgegen und uebersetzt das SOLL-Schema **vor**
   dem Vergleich. Ohne das war ein mit `schema generate` erzeugtes Schema nicht

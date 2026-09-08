@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 internal class SqliteTableDdlSupport(
     private val quoteIdentifier: (String) -> String,
@@ -113,6 +114,7 @@ internal class SqliteTableDdlSupport(
             val isSolePrimaryKey = solePrimaryKey == columnName
             lines += columnConstraintHelper.generateColumnSql(columnName, col, schema, name, notes, deferredFks, isSolePrimaryKey)
         }
+        lines += NamedUniqueConstraints.clauses(table) { quoteIdentifier(it) }
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
             val clause = columnConstraintHelper.generateConstraintClause(constraint, notes, name)

@@ -89,6 +89,7 @@ private fun buildColumn(mapper: ObjectMapper, column: ColumnDefinition): ObjectN
     if (column.ordinal != null) node.put("ordinal", column.ordinal)
     if (column.required) node.put("required", true)
     if (column.unique) node.put("unique", true)
+    column.uniqueConstraintName?.let { node.put("unique_constraint", it) }
     if (column.default != null) buildDefault(node, column.default!!)
     if (column.references != null) {
         node.set<ObjectNode>("references", buildReference(mapper, column.references!!))
@@ -144,6 +145,7 @@ private fun buildReference(mapper: ObjectMapper, reference: ReferenceDefinition)
     node.put("column", reference.column)
     if (reference.onDelete != null) node.put("on_delete", reference.onDelete!!.name.lowercase())
     if (reference.onUpdate != null) node.put("on_update", reference.onUpdate!!.name.lowercase())
+    reference.constraintName?.let { node.put("constraint", it) }
     return node
 }
 

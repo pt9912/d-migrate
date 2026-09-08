@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
  * Shared MySQL inline-`ENUM` column renderer.
@@ -38,7 +39,7 @@ internal object MysqlEnumColumnRenderer {
         val parts = mutableListOf(quotedName, "ENUM($enumDef)")
         if (col.required) parts += "NOT NULL"
         col.default?.let { parts += "DEFAULT ${toDefaultSql(it, col.type)}" }
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
 }

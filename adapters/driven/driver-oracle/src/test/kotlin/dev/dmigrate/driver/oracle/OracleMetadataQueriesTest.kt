@@ -68,7 +68,7 @@ class OracleMetadataQueriesTest : FunSpec({
                 mapOf("column_name" to "ID"),
             )
         }
-        OracleMetadataQueries.listPrimaryKeyColumns(jdbc, "APP", "T") shouldBe listOf("TENANT", "ID")
+        OracleConstraintQueries.listPrimaryKeyColumns(jdbc, "APP", "T") shouldBe listOf("TENANT", "ID")
     }
 
     test("listForeignKeys groups composite FKs and resolves the referenced table via r_owner/r_constraint_name") {
@@ -86,7 +86,7 @@ class OracleMetadataQueriesTest : FunSpec({
                 ),
             )
         }
-        val fks = OracleMetadataQueries.listForeignKeys(jdbc, "APP", "T")
+        val fks = OracleConstraintQueries.listForeignKeys(jdbc, "APP", "T")
         fks.size shouldBe 1
         fks[0].columns shouldBe listOf("A1", "A2")
         fks[0].referencedColumns shouldBe listOf("P1", "P2")
@@ -244,7 +244,7 @@ class OracleMetadataQueriesTest : FunSpec({
                 mapOf("constraint_name" to "CK_POS", "search_condition_vc" to "\"AMOUNT\" > 0"),
             )
         }
-        val checks = OracleMetadataQueries.listCheckConstraints(jdbc, "APP", "T")
+        val checks = OracleConstraintQueries.listCheckConstraints(jdbc, "APP", "T")
         checks.map { it.name } shouldBe listOf("CK_POS")
         checks[0].expression shouldBe "\"AMOUNT\" > 0"
         checks[0].type shouldBe "CHECK"

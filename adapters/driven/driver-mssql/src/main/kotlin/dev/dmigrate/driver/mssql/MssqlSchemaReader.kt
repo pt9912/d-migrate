@@ -129,6 +129,12 @@ class MssqlSchemaReader(
         val liftable = indexScan.indices.filter { !it.clustered && it.includeColumns.isEmpty() }
 
         val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(liftable)
+        // Der Name kommt aus `sys.key_constraints`, nicht aus der Indexliste:
+        // ein gewoehnlicher Unique-Index ist kein Constraint, und `DROP
+        // CONSTRAINT` traefe ihn nicht.
+        val singleColumnUniqueNames = SchemaReaderUtils.singleColumnUniqueNamesFromConstraints(
+            MssqlMetadataQueries.listUniqueConstraintColumns(session, qualified),
+        )
         val pkColumns = primaryKey.toSet()
 
         val columns = columnRows.associate { row ->
@@ -161,6 +167,8 @@ class MssqlSchemaReader(
                 // unique=false — PK impliziert beides (MySQL-Präzedenz).
                 required = !row.nullable && row.name !in pkColumns,
                 unique = row.name in singleColumnUnique && row.name !in pkColumns,
+                uniqueConstraintName = singleColumnUniqueNames[row.name]
+                    ?.takeIf { row.name in singleColumnUnique && row.name !in pkColumns },
                 default = if (row.isIdentity || row.isComputed) {
                     null
                 } else {

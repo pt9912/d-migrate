@@ -457,6 +457,7 @@ class SchemaMigrateRunner(
             partitioning = capabilityPartitionCanonicalizer(prep.effectiveDialect),
             foldsAutoIncrementOntoIdentity =
                 DialectCapabilities.forDialect(prep.effectiveDialect).rendersAutoIncrementAsIdentity,
+            constraintName = capabilityConstraintNameCanonicalizer(prep.effectiveDialect),
         )
         val diff = targetAwareComparator
             ?.invoke(prep.targetNormalized.schema, prep.sourceNormalized.schema, projection)

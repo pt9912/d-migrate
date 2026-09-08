@@ -213,52 +213,7 @@ internal object OracleMetadataQueries {
             )
         }
 
-    fun listPrimaryKeyColumns(session: JdbcOperations, schema: String, table: String): List<String> =
-        session.queryList(
-            """
-            SELECT cc.column_name
-            FROM all_constraints con
-            JOIN all_cons_columns cc
-                ON cc.owner = con.owner AND cc.constraint_name = con.constraint_name
-            WHERE con.owner = ? AND con.table_name = ? AND con.constraint_type = 'P'
-            ORDER BY cc.position
-            """.trimIndent(),
-            schema,
-            table,
-        ).map { it.string("column_name") }
 
-    fun listForeignKeys(session: JdbcOperations, schema: String, table: String): List<ForeignKeyProjection> {
-        val rows = session.queryList(
-            """
-            SELECT fk.constraint_name, fkc.column_name, fkc.position,
-                   rt.table_name AS referenced_table, rcc.column_name AS referenced_column,
-                   fk.delete_rule
-            FROM all_constraints fk
-            JOIN all_cons_columns fkc
-                ON fkc.owner = fk.owner AND fkc.constraint_name = fk.constraint_name
-            JOIN all_constraints rt
-                ON rt.owner = fk.r_owner AND rt.constraint_name = fk.r_constraint_name
-            JOIN all_cons_columns rcc
-                ON rcc.owner = rt.owner AND rcc.constraint_name = rt.constraint_name
-                    AND rcc.position = fkc.position
-            WHERE fk.owner = ? AND fk.table_name = ? AND fk.constraint_type = 'R'
-            ORDER BY fk.constraint_name, fkc.position
-            """.trimIndent(),
-            schema,
-            table,
-        )
-        return rows.groupBy { it.string("constraint_name") }.map { (name, group) ->
-            ForeignKeyProjection(
-                name = name,
-                columns = group.map { it.string("column_name") },
-                referencedTable = group.first().string("referenced_table"),
-                referencedColumns = group.map { it.string("referenced_column") },
-                onDelete = deleteRuleToAction(group.first()["delete_rule"] as? String),
-                // Oracle kennt kein ON UPDATE fuer Fremdschluessel.
-                onUpdate = null,
-            )
-        }
-    }
 
     /**
      * Indizes ohne die, die bereits die PK-Constraint tragen
@@ -421,31 +376,7 @@ internal object OracleMetadataQueries {
      */
     private val PLAIN_COLUMN_EXPRESSION = Regex("""^"((?:[^"]|"")+)"$""")
 
-    /**
-     * CHECK-Constraints ohne die von Oracle implizit fuer jede NOT-NULL-
-     * Spalte erzeugten (`"COL" IS NOT NULL`) -- sonst erschiene jede
-     * NOT-NULL-Spalte zusaetzlich als explizite CHECK-Constraint.
-     */
-    fun listCheckConstraints(session: JdbcOperations, schema: String, table: String): List<ConstraintProjection> =
-        session.queryList(
-            """
-            SELECT constraint_name, search_condition_vc
-            FROM all_constraints
-            WHERE owner = ? AND table_name = ? AND constraint_type = 'C'
-              AND generated = 'USER NAME'
-            ORDER BY constraint_name
-            """.trimIndent(),
-            schema,
-            table,
-        ).mapNotNull { row ->
-            val expr = row["search_condition_vc"] as? String ?: return@mapNotNull null
-            if (IMPLICIT_NOT_NULL_CHECK.matches(expr.trim())) return@mapNotNull null
-            ConstraintProjection(
-                name = row.string("constraint_name"),
-                type = "CHECK",
-                expression = expr.trim(),
-            )
-        }
+
 
     /**
      * Benannte Sequenzen des Schemas -- **ohne** die Sequenzen hinter
@@ -699,17 +630,6 @@ internal object OracleMetadataQueries {
             )?.get("max_value") as? Number
             )?.toLong()
 
-    private fun deleteRuleToAction(rule: String?): String? = when (rule) {
-        "CASCADE" -> "CASCADE"
-        "SET NULL" -> "SET NULL"
-        "NO ACTION" -> "NO ACTION"
-        else -> null
-    }
-
-    // Oracle generiert diese Form woertlich fuer jede NOT-NULL-Spalte; ein
-    // gleichlautender expliziter Check waere davon nicht unterscheidbar
-    // (seltener Grenzfall, dokumentiert statt verschwiegen).
-    private val IMPLICIT_NOT_NULL_CHECK = Regex("""(?i)^"?[A-Za-z0-9_$#]+"?\s+IS\s+NOT\s+NULL$""")
 
     /** Die `referenced_type`-Werte, die im neutralen Modell eine Entsprechung haben. */
     private val MAPPED_REFERENCED_TYPES = setOf("TABLE", "VIEW")

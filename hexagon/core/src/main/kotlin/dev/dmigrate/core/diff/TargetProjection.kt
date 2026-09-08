@@ -91,4 +91,18 @@ data class TargetProjection(
      * Oracle ohnehin nicht ablegen kann.
      */
     val partitioning: (PartitionConfig) -> PartitionConfig = { it },
+    /**
+     * Der Name eines einspaltigen Constraints, den der Reverse des Ziels
+     * nicht zurueckgeben kann.
+     *
+     * SQLite vergibt fuer einen `UNIQUE`-Constraint einen Auto-Index
+     * (`sqlite_autoindex_…`); der Name ist dort eine Erfindung des Servers,
+     * kein Zustand, den ein Soll-Schema treffen koennte. Ihn zu vergleichen
+     * meldete bei jedem Lauf eine Aenderung, die niemand machen kann.
+     *
+     * Wo der Server den Namen fuehrt (PostgreSQL, MySQL, SQL Server, Oracle),
+     * bleibt er stehen — dort ist ein abweichender Name ein echter
+     * Unterschied, und `schema compare` soll ihn zeigen.
+     */
+    val constraintName: (String?) -> String? = { it },
 )

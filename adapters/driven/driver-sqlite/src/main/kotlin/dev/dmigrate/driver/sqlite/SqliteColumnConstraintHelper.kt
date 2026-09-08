@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 internal class SqliteColumnConstraintHelper(
     private val quoteIdentifier: (String) -> String,
@@ -69,14 +70,14 @@ internal class SqliteColumnConstraintHelper(
 
     private fun generateRowidIdentityColumn(colName: String, col: ColumnDefinition): String {
         val parts = mutableListOf(quoteIdentifier(colName), "INTEGER PRIMARY KEY AUTOINCREMENT")
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
 
     private fun generateAutoIncrementColumn(colName: String, col: ColumnDefinition, type: NeutralType): String {
         val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(type))
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
 
@@ -103,7 +104,7 @@ internal class SqliteColumnConstraintHelper(
         val parts = mutableListOf(quoteIdentifier(colName), "INTEGER")
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
 
@@ -115,7 +116,7 @@ internal class SqliteColumnConstraintHelper(
         val parts = mutableListOf(quoteIdentifier(colName), "TEXT")
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         if (customType != null && customType.kind == CustomTypeKind.ENUM && customType.values != null) {
             val allowed = customType.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
             parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
@@ -131,7 +132,7 @@ internal class SqliteColumnConstraintHelper(
         val parts = mutableListOf(quoteIdentifier(colName), "TEXT")
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         val allowed = type.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
         parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
         if (col.references != null && (tableName to colName) !in deferredFks) parts += inlineForeignKey(col.references!!)

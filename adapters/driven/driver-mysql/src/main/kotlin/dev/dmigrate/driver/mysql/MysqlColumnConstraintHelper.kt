@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
  * Column and constraint DDL helpers for MySQL, extracted from
@@ -37,7 +38,7 @@ internal class MysqlColumnConstraintHelper(
     private fun columnAutoIncrement(colName: String, col: ColumnDefinition): String {
         val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(col.type))
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
 
@@ -47,7 +48,7 @@ internal class MysqlColumnConstraintHelper(
             else -> "INT"
         }
         val parts = mutableListOf(quoteIdentifier(colName), "$sqlType NOT NULL AUTO_INCREMENT")
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
 
@@ -76,7 +77,7 @@ internal class MysqlColumnConstraintHelper(
         val parts = mutableListOf(quoteIdentifier(colName), customType.baseType ?: "TEXT")
         if (col.required) parts += "NOT NULL"
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         if (customType.check != null) parts += "CHECK (${customType.check})"
         return parts.joinToString(" ")
     }

@@ -54,6 +54,7 @@ class MssqlDataWriterTest : FunSpec({
                 mapOf("schema_name" to "dbo")
             every { jdbc.queryList(match { it.contains("sys.identity_columns") }, any()) } returns emptyList()
             every { jdbc.queryList(match { it.contains("kc.type = 'PK'") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("kc.type = 'UQ'") }, any()) } returns emptyList()
         }
 
         fun withColumns(vararg columns: TargetColumn) = apply {

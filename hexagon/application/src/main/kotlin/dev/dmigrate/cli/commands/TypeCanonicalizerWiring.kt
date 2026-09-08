@@ -232,6 +232,21 @@ private const val MIDNIGHT = "00:00:00"
 fun capabilityFoldsAutoIncrementOntoIdentity(dialect: DatabaseDialect): Boolean =
     DialectCapabilities.forDialect(dialect).rendersAutoIncrementAsIdentity
 
+/**
+ * Der Name eines einspaltigen Constraints — oder `null`, wo der Dialekt ihn
+ * nicht fuehrt.
+ *
+ * SQLite legt einen `UNIQUE`-Constraint als Auto-Index ab und vergibt den
+ * Namen selbst. Zwei Erfindungen zu vergleichen meldete eine Aenderung, die
+ * niemand machen kann; dieselbe Naht wie [capabilityIndexCanonicalizer].
+ */
+fun capabilityConstraintNameCanonicalizer(
+    dialect: DatabaseDialect,
+): (String?) -> String? {
+    if (DialectCapabilities.forDialect(dialect).namesSingleColumnConstraints) return { it }
+    return { null }
+}
+
 fun capabilityGenerationCanonicalizer(
     dialect: DatabaseDialect,
 ): (ColumnGeneration?) -> ColumnGeneration? {

@@ -644,6 +644,25 @@ Besonderheiten:
 | Composite | `PRIMARY KEY ("a", "b")` | `PRIMARY KEY (\`a\`, \`b\`)` | `PRIMARY KEY ("a", "b")` |
 | Mit Name | `CONSTRAINT "pk_orders" PRIMARY KEY ("id")` | — (MySQL ignoriert PK-Name) | — |
 
+### 4.1a UNIQUE auf einer Spalte
+
+Ohne Namen steht es inline: `"email" VARCHAR(254) NOT NULL UNIQUE`.
+
+**Traegt die Spalte einen Namen** (`unique_constraint`), wird daraus ein
+**Tabellen**-Constraint — in jedem Dialekt dieselbe Form:
+
+```sql
+CONSTRAINT "uq_users_email" UNIQUE ("email")
+```
+
+Das ist nicht Geschmack, sondern gemessen: MySQL 8.0 lehnt die inline benannte
+Form ab (`email VARCHAR(50) CONSTRAINT uq UNIQUE` ist ein Syntaxfehler) und
+nimmt die Tabellenform an. Statt zwei Formen ueber fuenf Dialekte zu pflegen,
+rendern alle dieselbe.
+
+SQL Server benennt einen UNIQUE-Constraint ohnehin (`uq_<tabelle>_<spalte>`,
+als eigenes Objekt); traegt das Modell einen Namen, gilt dieser.
+
 ### 4.2 Foreign Key
 
 ```sql

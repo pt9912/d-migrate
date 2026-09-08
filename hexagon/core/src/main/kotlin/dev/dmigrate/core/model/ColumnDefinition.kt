@@ -4,6 +4,21 @@ data class ColumnDefinition(
     val type: NeutralType,
     val required: Boolean = false,
     val unique: Boolean = false,
+    /**
+     * Der Name des einspaltigen UNIQUE-Constraints, wo die Quelle ihn fuehrt.
+     *
+     * `unique` sagt, **dass** die Spalte eindeutig ist; dieses Feld sagt,
+     * **wie der Constraint heisst**, der das durchsetzt. Beides gehoert
+     * zusammen: ein `DROP CONSTRAINT` braucht den Namen, und kein Dialekt
+     * ausser Oracle kennt eine Form, die einen Constraint ueber seine Spalte
+     * statt ueber seinen Namen abbaut.
+     *
+     * `null`, wo es keinen gibt oder keiner bekannt ist — ein handgeschriebenes
+     * Schema mit `unique: true`, und jeder Dialekt, dessen Reverse den Namen
+     * nicht zurueckgeben kann. Ob der Name zur **Identitaet** gehoert,
+     * entscheidet nicht dieses Feld, sondern die Faehigkeit des Zieldialekts.
+     */
+    val uniqueConstraintName: String? = null,
     val default: DefaultValue? = null,
     val references: ReferenceDefinition? = null,
     val generation: ColumnGeneration? = null,

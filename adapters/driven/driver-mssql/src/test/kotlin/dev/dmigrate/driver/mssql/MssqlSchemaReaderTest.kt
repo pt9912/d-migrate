@@ -60,6 +60,7 @@ class MssqlSchemaReaderTest : FunSpec({
     fun stubTableQueries(jdbc: JdbcOperations) {
         every { jdbc.queryList(match { it.contains("FROM sys.columns c") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("kc.type = 'PK'") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("kc.type = 'UQ'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.foreign_keys fk") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.indexes i") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.check_constraints cc") }, any()) } returns emptyList()

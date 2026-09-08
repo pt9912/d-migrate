@@ -273,9 +273,13 @@ internal class TableComparator(
         val names = mutableMapOf<SingleColumnKey, String>()
 
         for ((colName, col) in table.columns) {
-            if (col.unique) singleUnique.add(colName)
+            if (col.unique) {
+                singleUnique.add(colName)
+                col.uniqueConstraintName?.let { names[SingleColumnKey(colName, ConstraintType.UNIQUE)] = it }
+            }
             col.references?.let { ref ->
                 singleFk[colName] = ForeignKeySignature(colName, ref.table, ref.column, ref.onDelete, ref.onUpdate)
+                ref.constraintName?.let { names[SingleColumnKey(colName, ConstraintType.FOREIGN_KEY)] = it }
             }
         }
 
@@ -331,6 +335,16 @@ internal class TableComparator(
         // in der Datenbank steht, und genau das wird abgebaut.
         for (col in (left.singleColumnUnique - right.singleColumnUnique).sorted())
             removed.add(syntheticUniqueConstraint(col, left))
+        // Beide Seiten fuehren den Constraint, nennen ihn aber verschieden.
+        // Umbenennen ist Abbau und Aufbau: kein Dialekt kennt eine portable
+        // Form, die einen Constraint umbenennt, und der Name ist Teil des
+        // Vertrags — Anwendungen lesen ihn in der Fehlerbehandlung.
+        for (col in (left.singleColumnUnique intersect right.singleColumnUnique).sorted()) {
+            if (renamedConstraint(left, right, col, ConstraintType.UNIQUE)) {
+                removed.add(syntheticUniqueConstraint(col, left))
+                added.add(syntheticUniqueConstraint(col, right))
+            }
+        }
 
         val fkLeftCols = left.singleColumnForeignKeys.keys
         val fkRightCols = right.singleColumnForeignKeys.keys
@@ -357,6 +371,30 @@ internal class TableComparator(
         }
 
         return ConstraintDiffResult(added, removed, changed)
+    }
+
+    /**
+     * Ob beide Seiten denselben Constraint verschieden **nennen**.
+     *
+     * Nur wo beide einen Namen tragen: ein handgeschriebenes `unique: true`
+     * nennt keinen, und dann erfuellt jeder Name die Zusicherung — eine
+     * Aenderung daraus zu machen hiesse, dem Autor einen Namen zu
+     * unterstellen, den er nicht genannt hat.
+     *
+     * Und nur wo der Zieldialekt Namen ueberhaupt fuehrt: wo sein Reverse sie
+     * synthetisiert, verglichen sich zwei Erfindungen
+     * ([TargetProjection.constraintName]).
+     */
+    private fun renamedConstraint(
+        left: NormalizedConstraints,
+        right: NormalizedConstraints,
+        column: String,
+        type: ConstraintType,
+    ): Boolean {
+        val project = targetProjection?.constraintName ?: { it }
+        val l = project(left.singleColumnNames[SingleColumnKey(column, type)])
+        val r = project(right.singleColumnNames[SingleColumnKey(column, type)])
+        return l != null && r != null && l != r
     }
 
     /**

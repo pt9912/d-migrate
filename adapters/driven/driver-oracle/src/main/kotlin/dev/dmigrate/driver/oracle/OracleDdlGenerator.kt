@@ -27,6 +27,7 @@ import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.driver.ViewQueryTransformer
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
  * Oracle-[dev.dmigrate.driver.DdlGenerator] (ADR 0052).
@@ -131,6 +132,7 @@ class OracleDdlGenerator private constructor(
             )
         }
 
+        lines += NamedUniqueConstraints.clauses(table, ::quoteIdentifier)
         for (constraint in table.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             if ((name to constraint.name) in deferredConstraints) continue

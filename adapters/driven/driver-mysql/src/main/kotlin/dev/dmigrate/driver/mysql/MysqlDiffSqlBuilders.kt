@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
  * Stateless SQL fragment builders for the MySQL diff renderer.
@@ -44,7 +45,7 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
         parts += quote(name)
         parts += typeMapper.toSql(col.type)
         if (col.required) parts += "NOT NULL"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         col.default?.let { default ->
             // E.3 Sub-Slice F: `SequenceNextVal`-Defaults emit no
             // inline `DEFAULT` clause on MySQL — the helper-table

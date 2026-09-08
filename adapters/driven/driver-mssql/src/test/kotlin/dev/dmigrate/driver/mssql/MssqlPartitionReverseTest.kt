@@ -64,6 +64,7 @@ class MssqlPartitionReverseTest : FunSpec({
             ),
         )
         every { jdbc.queryList(match { it.contains("kc.type = 'PK'") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("kc.type = 'UQ'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.foreign_keys fk") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("FROM sys.indexes i") && !it.contains("partition_schemes") }, any()) } returns
             emptyList()

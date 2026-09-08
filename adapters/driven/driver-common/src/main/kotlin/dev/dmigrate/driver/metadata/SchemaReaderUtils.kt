@@ -131,6 +131,24 @@ object SchemaReaderUtils {
     ): Set<String> =
         uniqueConstraints.values.filter { it.size == 1 }.map { it[0] }.toSet()
 
+    /**
+     * Dieselbe Faltung, aber mit dem Namen: Spalte -> Name des UNIQUE-Constraints.
+     *
+     * Der Name muss der eines **Constraints** sein, nicht der eines Index. Nur
+     * ein Constraint laesst sich mit `ALTER TABLE … DROP CONSTRAINT` abbauen;
+     * ein gewoehnlicher Unique-Index braucht `DROP INDEX`, und die Quellen, die
+     * Indizes liefern, unterscheiden das nicht. Wer diese Abbildung fuellt,
+     * fuellt sie deshalb aus der Constraint-Abfrage seines Dialekts.
+     *
+     * Traegt eine Spalte mehrere, gewinnt der zuletzt gelesene — welcher es ist,
+     * ist gleich: beide setzen dieselbe Zusicherung durch, und das Modell
+     * fuehrt sie als eine.
+     */
+    fun singleColumnUniqueNamesFromConstraints(
+        uniqueConstraints: Map<String, List<String>>,
+    ): Map<String, String> =
+        uniqueConstraints.filterValues { it.size == 1 }.entries.associate { (name, columns) -> columns[0] to name }
+
     private val PAREN_LENGTH = Regex("""\((\d+)\)""")
     private val PAREN_PRECISION_SCALE = Regex("""\((\d+)\s*,\s*(\d+)\)""")
 

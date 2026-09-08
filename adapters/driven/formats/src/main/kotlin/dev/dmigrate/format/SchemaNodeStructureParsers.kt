@@ -31,6 +31,7 @@ private fun parseColumn(node: JsonNode): ColumnDefinition = ColumnDefinition(
     type = parseNeutralType(node),
     required = node.boolOrDefault("required", false),
     unique = node.boolOrDefault("unique", false),
+    uniqueConstraintName = node.optionalText("unique_constraint"),
     default = parseDefault(node["default"]),
     references = parseReference(node["references"]),
     generation = parseGeneration(node["generation"]),
@@ -152,6 +153,7 @@ private fun parseReference(node: JsonNode?): ReferenceDefinition? {
         column = node.requiredText("column"),
         onDelete = node.optionalText("on_delete")?.toReferentialAction(),
         onUpdate = node.optionalText("on_update")?.toReferentialAction(),
+        constraintName = node.optionalText("constraint"),
     )
 }
 

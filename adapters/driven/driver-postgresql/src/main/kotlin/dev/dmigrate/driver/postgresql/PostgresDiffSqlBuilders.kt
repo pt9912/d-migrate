@@ -13,6 +13,7 @@ import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 /**
  * Stateless SQL fragment builders for the PostgreSQL diff renderer.
@@ -39,14 +40,14 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
             val refParts = mutableListOf(quote(name), quote(refType))
             if (col.required) refParts += "NOT NULL"
             col.default?.let { refParts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
-            if (col.unique) refParts += "UNIQUE"
+            if (NamedUniqueConstraints.rendersInline(col)) refParts += "UNIQUE"
             return refParts.joinToString(" ")
         }
         val parts = mutableListOf<String>()
         parts += quote(name)
         parts += typeMapper.toSql(col.type)
         if (col.required) parts += "NOT NULL"
-        if (col.unique) parts += "UNIQUE"
+        if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
         col.default?.let { parts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
         col.references?.let { ref ->
             val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""

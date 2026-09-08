@@ -86,13 +86,19 @@ class OracleSchemaReader(
         notes: MutableList<SchemaReadNote>,
     ): TableDefinition {
         val columnRows = OracleMetadataQueries.listColumns(session, schema, table)
-        val primaryKey = OracleMetadataQueries.listPrimaryKeyColumns(session, schema, table)
-        val foreignKeys = OracleMetadataQueries.listForeignKeys(session, schema, table)
+        val primaryKey = OracleConstraintQueries.listPrimaryKeyColumns(session, schema, table)
+        val foreignKeys = OracleConstraintQueries.listForeignKeys(session, schema, table)
         val indexScan = OracleMetadataQueries.scanIndexes(session, schema, table)
-        val checks = OracleMetadataQueries.listCheckConstraints(session, schema, table)
+        val checks = OracleConstraintQueries.listCheckConstraints(session, schema, table)
         val geometry = geometryMetadata(session, schema, table, notes)
 
         val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indexScan.indices)
+        // Der Name kommt aus `all_constraints`, nicht aus der Indexliste: nur
+        // einen Constraint baut `DROP CONSTRAINT` ab. Ein `SYS_C…` ist dabei
+        // ein gueltiger Name — er ist der, unter dem die Datenbank ihn fuehrt.
+        val singleColumnUniqueNames = SchemaReaderUtils.singleColumnUniqueNamesFromConstraints(
+            OracleConstraintQueries.listUniqueConstraintColumns(session, schema, table),
+        )
         val pkColumns = primaryKey.toSet()
         // Dieselbe Abfrage, die der Schreibpfad benutzt, um nicht in virtuelle
         // Spalten zu schreiben. Der Lesepfad wusste bisher nichts von ihnen.
@@ -123,6 +129,8 @@ class OracleSchemaReader(
                 // unique=false -- PK impliziert beides (MySQL-Praezedenz).
                 required = !row.nullable && row.name !in pkColumns,
                 unique = row.name in singleColumnUnique && row.name !in pkColumns,
+                uniqueConstraintName = singleColumnUniqueNames[row.name]
+                    ?.takeIf { row.name in singleColumnUnique && row.name !in pkColumns },
                 default = if (row.isIdentity) null else OracleTypeMapping.parseDefault(row.defaultDefinition, mapping.type),
                 generation = mapping.generation,
                 ordinal = row.ordinal,

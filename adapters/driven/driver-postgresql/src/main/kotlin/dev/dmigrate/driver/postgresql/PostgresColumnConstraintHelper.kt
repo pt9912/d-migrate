@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 internal class PostgresColumnConstraintHelper(
     private val quoteIdentifier: (String) -> String,
@@ -25,7 +26,7 @@ internal class PostgresColumnConstraintHelper(
                 val parts = mutableListOf<String>()
                 parts += quoteIdentifier(colName)
                 parts += generatedSql
-                if (col.unique) parts += "UNIQUE"
+                if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
                 return parts.joinToString(" ")
             }
         }
@@ -36,7 +37,7 @@ internal class PostgresColumnConstraintHelper(
             parts += quoteIdentifier(colName)
             parts += typeMapper.toSql(type)
             if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-            if (col.unique) parts += "UNIQUE"
+            if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
             return parts.joinToString(" ")
         }
 
@@ -49,7 +50,7 @@ internal class PostgresColumnConstraintHelper(
                 parts += quoteIdentifier(refType)
                 if (col.required) parts += "NOT NULL"
                 if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-                if (col.unique) parts += "UNIQUE"
+                if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
                 return parts.joinToString(" ")
             }
         }
@@ -63,7 +64,7 @@ internal class PostgresColumnConstraintHelper(
                 parts += "TEXT"
                 if (col.required) parts += "NOT NULL"
                 if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-                if (col.unique) parts += "UNIQUE"
+                if (NamedUniqueConstraints.rendersInline(col)) parts += "UNIQUE"
                 val allowed = enumValues.joinToString(", ") { "'${it.replace("'", "''")}'" }
                 parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
                 return parts.joinToString(" ")

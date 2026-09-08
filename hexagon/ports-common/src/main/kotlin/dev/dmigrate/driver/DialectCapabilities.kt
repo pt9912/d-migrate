@@ -225,6 +225,21 @@ data class DialectCapabilities(
      */
     val supportsListPartitioning: Boolean = true,
     /**
+     * Ob der Dialekt den **Namen** eines einspaltigen UNIQUE-Constraints
+     * fuehrt und zurueckgibt.
+     *
+     * Vier der fuenf tun es. SQLite nicht: ein `UNIQUE`-Constraint wird dort
+     * als Auto-Index `sqlite_autoindex_<tabelle>_<n>` abgelegt — der Name ist
+     * eine Erfindung des Servers und kein Zustand, den ein Soll-Schema
+     * treffen koennte.
+     *
+     * Dieselbe Familie wie [namesFullTextIndexes], [namesPartitions] und
+     * [namesIdentitySequences], und aus demselben Grund: was der Server nicht
+     * fuehrt, kann sein Reverse nicht zurueckgeben, und ein Vergleich darauf
+     * meldete eine Aenderung, die niemand machen kann.
+     */
+    val namesSingleColumnConstraints: Boolean = true,
+    /**
      * Ob der Dialekt einen reinen Datumswert von einem Zeitstempel um
      * Mitternacht unterscheiden kann.
      *
@@ -331,6 +346,7 @@ data class DialectCapabilities(
                 supportsSequences = false,
                 supportsCustomTypes = false,
                 supportsPartitioning = false,
+                namesSingleColumnConstraints = false,
                 supportsDisableFkChecks = true,
                 supportsTriggerDisable = false,
                 supportsTriggerStrict = false,

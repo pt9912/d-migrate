@@ -69,6 +69,7 @@ class OracleSchemaReaderTest : FunSpec({
             jdbc.queryList(match { it.contains("JOIN all_cons_columns cc") && it.contains("constraint_type = 'P'") }, any(), any())
         } returns emptyList()
         every { jdbc.queryList(match { it.contains("constraint_type = 'R'") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("constraint_type = 'U'") }, any(), any()) } returns emptyList()
         every {
             jdbc.queryList(match { it.contains("SELECT index_name") && it.contains("constraint_type = 'P'") }, any(), any())
         } returns emptyList()
@@ -319,6 +320,7 @@ class OracleSchemaReaderTest : FunSpec({
         every {
             jdbc.queryList(match { it.contains("JOIN all_cons_columns cc") && it.contains("constraint_type = 'P'") }, "APP", "ORDERS")
         } returns listOf(mapOf("column_name" to "ID"))
+        every { jdbc.queryList(match { it.contains("constraint_type = 'U'") }, "APP", "ORDERS") } returns emptyList()
         every { jdbc.queryList(match { it.contains("constraint_type = 'R'") }, "APP", "ORDERS") } returns listOf(
             mapOf(
                 "constraint_name" to "FK_ORDERS_CUSTOMER", "column_name" to "CUSTOMER", "position" to 1,

@@ -33,6 +33,9 @@ private fun readPostgresTable(
     val indexRows = PostgresMetadataQueries.listIndices(session, schema, tableName)
 
     val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromConstraints(uniqueConstraints)
+    // Der Name kommt aus `pg_constraint`, nicht aus der Indexliste: nur ein
+    // Constraint laesst sich als Constraint abbauen.
+    val singleColumnUniqueNames = SchemaReaderUtils.singleColumnUniqueNamesFromConstraints(uniqueConstraints)
 
     // VA2 (Spatial): PostGIS-Subtyp + SRID je Geometriespalte (leer ohne PostGIS).
     // srid 0 (= keine SRID) → null, damit das Modell sauber bleibt.
@@ -90,6 +93,7 @@ private fun readPostgresTable(
             type = mapping.type,
             required = required,
             unique = unique,
+            uniqueConstraintName = if (unique) singleColumnUniqueNames[columnName] else null,
             default = defaultValue,
             generation = mapping.generation,
             // information_schema.columns.ordinal_position ist 1-basiert + dicht (Drop-Lücken

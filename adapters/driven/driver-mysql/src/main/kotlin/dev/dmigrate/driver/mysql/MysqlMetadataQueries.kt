@@ -113,6 +113,32 @@ object MysqlMetadataQueries {
         }
     }
 
+    /**
+     * Die UNIQUE-**Constraints** der Tabelle, Name -> Spalten.
+     *
+     * Bewusst aus `table_constraints`, nicht aus der Indexliste: MySQL legt
+     * einen UNIQUE-Constraint zwar als Index ab, aber nicht jeder Unique-Index
+     * ist ein Constraint. Nur einen Constraint baut `DROP CONSTRAINT` ab.
+     */
+    fun listUniqueConstraintColumns(
+        session: JdbcOperations,
+        schemaName: String,
+        table: String,
+    ): Map<String, List<String>> =
+        session.queryList(
+            """
+            SELECT tc.constraint_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON kcu.constraint_schema = tc.constraint_schema
+              AND kcu.constraint_name = tc.constraint_name
+              AND kcu.table_name = tc.table_name
+            WHERE tc.constraint_type = 'UNIQUE'
+              AND tc.table_schema = ? AND tc.table_name = ?
+            ORDER BY tc.constraint_name, kcu.ordinal_position
+            """.trimIndent(), schemaName, table,
+        ).groupBy({ it["constraint_name"] as String }, { it["column_name"] as String })
+
     fun listCheckConstraints(session: JdbcOperations, schemaName: String, table: String): List<ConstraintProjection> {
         return session.queryList(
             """

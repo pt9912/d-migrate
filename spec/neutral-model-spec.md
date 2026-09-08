@@ -102,7 +102,7 @@ SchemaDefinition
 ├── tables
 │   └── TableDefinition
 │       ├── columns
-│       │   └── ColumnDefinition (name, type, ordinal, required, unique, default, references, typ-spezifische Attribute)
+│       │   └── ColumnDefinition (name, type, ordinal, required, unique, unique_constraint, default, references, typ-spezifische Attribute)
 │       ├── primary_key
 │       ├── indices
 │       │   └── IndexDefinition (name, columns, type, unique)
@@ -339,6 +339,11 @@ tables:
           column: id
           on_delete: restrict            # restrict | cascade | set_null | set_default | no_action
           on_update: cascade             # (gleiche Optionen)
+          constraint: fk_orders_customer # optional: Name des Constraints
+      email:
+        type: text
+        unique: true                     # UNIQUE
+        unique_constraint: uq_orders_email  # optional: Name des UNIQUE-Constraints
       order_date:
         type: datetime
         required: true
@@ -418,6 +423,23 @@ tables:
       engine: InnoDB                     # MySQL-Tabellen-Engine (InnoDB, MyISAM, etc.)
       without_rowid: false               # SQLite WITHOUT ROWID-Tabelle
 ```
+
+**Der Name eines einspaltigen UNIQUE-Constraints.** `unique: true` sagt,
+**dass** die Spalte eindeutig ist; `unique_constraint` sagt, **wie der
+Constraint heisst**, der das durchsetzt. Beides gehoert zusammen: ein
+`DROP CONSTRAINT` braucht den Namen, und kein Dialekt ausser Oracle kennt eine
+Form, die einen Constraint ueber seine Spalte statt ueber seinen Namen abbaut.
+
+Das Feld ist optional. Fehlt es, macht das Schema ueber den Namen keine
+Aussage — ein Vergleich meldet dann keinen Unterschied, gleich wie der
+Constraint in der Datenbank heisst. Nennen ihn **beide** Seiten verschieden,
+ist das eine Aenderung: der Constraint wird unter dem alten Namen abgebaut und
+unter dem neuen angelegt. Ob der Name ueberhaupt beobachtbar ist, sagt die
+Faehigkeit `namesSingleColumnConstraints` des Zieldialekts; SQLite legt einen
+UNIQUE-Constraint als `sqlite_autoindex_…` ab und fuehrt keinen Namen, den ein
+Soll-Schema treffen koennte.
+
+Dasselbe gilt fuer `references.constraint` beim einspaltigen Fremdschluessel.
 
 Jede Spalte traegt optional ein `ordinal` (1-basierte physische Position der Quelle).
 Reverse befuellt es; Serialisierung und DDL-Generierung emittieren die Spalten in

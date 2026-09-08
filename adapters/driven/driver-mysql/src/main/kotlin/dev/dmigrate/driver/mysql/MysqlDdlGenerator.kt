@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
@@ -143,6 +144,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         }
 
         // Explicit constraints
+        columnLines += NamedUniqueConstraints.clauses(table, ::quoteIdentifier)
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
             if (constraint.type == ConstraintType.FOREIGN_KEY &&

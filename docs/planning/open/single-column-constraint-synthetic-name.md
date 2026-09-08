@@ -1,13 +1,15 @@
 ---
 id: single-column-constraint-synthetic-name
 title: "Einspaltige UNIQUE-/FK-Constraints werden mit erfundenen Namen gedroppt (dialektuebergreifend)"
-status: decided
+status: done
 ---
 
 # Einspaltige UNIQUE-/FK-Constraints werden mit erfundenen Namen gedroppt
 
-> **Richtung 1 gebaut; der Rest ist entschieden (2026-09-08) und wartet nur
-> noch auf den Bau.**
+> **Gebaut (2026-09-08).** Der Name steht im Modell (`unique_constraint` an
+> der Spalte, `constraint` am `references`-Block), alle fuenf Leser fuellen
+> ihn, der Vergleich meldet einen abweichenden Namen, und der Renderer
+> erhaelt ihn. Was beim Bauen dazukam, steht unter „Beim Bauen gemessen".
 >
 > **Entschieden: der Name wird im Modell gefuehrt, und ob er zur Identitaet
 > gehoert, sagt eine Dialekt-Faehigkeit.** Nicht der Katalog-Lookup zur
@@ -157,3 +159,32 @@ gleichwertigen Tabellen-Constraint vergleichbar).
 Aktivierungsbedingung: ein `schema migrate --execute`, das einen
 einspaltigen UNIQUE-/FK-Constraint entfernt. Bis dahin blockt nichts —
 der Fehler entsteht erst beim Ausfuehren.
+
+## Beim Bauen gemessen (2026-09-08)
+
+Zwei Dinge, die der Entwurf so nicht vorhergesehen hatte:
+
+- **Der Name muss der eines Constraints sein, nicht der eines Index.** SQL
+  Server und Oracle heben auch gewoehnliche Unique-*Indizes* auf
+  `column.unique`; deren Namen mit `DROP CONSTRAINT` abzubauen scheitert. Die
+  Leser fuellen das Feld deshalb aus der **Constraint**-Abfrage ihres Dialekts
+  (`pg_constraint`, `information_schema.table_constraints`,
+  `sys.key_constraints` mit `type = 'UQ'`, `all_constraints` mit
+  `constraint_type = 'U'`) — drei davon gab es noch nicht. Wo der Unique aus
+  einem blossen Index stammt, bleibt das Feld leer, und es bleibt beim alten
+  Verhalten.
+- **Die inline benannte Form gibt es in MySQL nicht.** `email VARCHAR(50)
+  CONSTRAINT uq UNIQUE` ist dort ein Syntaxfehler (live gemessen), die
+  Tabellenform geht. Ein benannter einspaltiger UNIQUE wird deshalb in **allen**
+  Dialekten als Tabellen-Constraint gerendert statt in zwei Formen gepflegt.
+
+**Der Fingerabdruck bleibt, wie er war** — und das ist Absicht, kein
+Versaeumnis: er projiziert **ein** Schema fuer sich und kann die Regel „nur
+vergleichen, wenn beide Seiten einen Namen nennen" gar nicht ausdruecken.
+Naehme er den Namen auf, driftete jedes handgeschriebene `unique: true` gegen
+jede echte Datenbank. Die Faltung des Namens bleibt dort also stehen; der
+Vergleich, der beide Seiten sieht, entscheidet ueber den Namen.
+
+Live abgenommen gegen PostgreSQL 16: der gelesene Katalogname landet im
+Modell, der erfundene Name scheitert am Server, der gelesene trifft, und ein
+erzeugtes `CONSTRAINT … UNIQUE (…)` kommt unter demselben Namen zurueck.

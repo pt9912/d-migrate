@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.renderKey
 import dev.dmigrate.driver.SqlIdentifiers
+import dev.dmigrate.driver.metadata.NamedUniqueConstraints
 
 class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), DeferredForeignKeyDdlSupport {
 
@@ -105,6 +106,11 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
             val fkName = "fk_${name}_${colName}"
             columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
         }
+
+        // Ein benannter einspaltiger UNIQUE steht als Tabellen-Constraint, nicht
+        // inline: nur so bleibt der Name erhalten (MySQL kennt die inline
+        // benannte Form gar nicht, gemessen).
+        columnLines += NamedUniqueConstraints.clauses(table, ::quoteIdentifier)
 
         // Explicit constraints
         for (constraint in table.constraints) {

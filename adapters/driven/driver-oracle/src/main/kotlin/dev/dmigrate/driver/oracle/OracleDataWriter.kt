@@ -77,7 +77,7 @@ class OracleDataWriter(
         var failure: Throwable? = null
         try {
             for (t in tables) {
-                val fks = OracleMetadataQueries.listForeignKeys(jdbc, t.schema, t.table).map { it.name }
+                val fks = OracleConstraintQueries.listForeignKeys(jdbc, t.schema, t.table).map { it.name }
                 for (fk in fks) disableConstraint(jdbc, t, fk)
                 suspended += t to fks
             }
@@ -156,7 +156,7 @@ class OracleDataWriter(
             val primaryKeyColumns = if (options.onConflict == OnConflict.ABORT) {
                 emptyList()
             } else {
-                OracleMetadataQueries.listPrimaryKeyColumns(jdbc, qualified.schema, qualified.table).also {
+                OracleConstraintQueries.listPrimaryKeyColumns(jdbc, qualified.schema, qualified.table).also {
                     require(it.isNotEmpty()) {
                         "Target table '$table' has no primary key; " +
                             "onConflict=${options.onConflict.name.lowercase()} requires a primary key on Oracle"
@@ -166,7 +166,7 @@ class OracleDataWriter(
 
             if (!conn.autoCommit) conn.autoCommit = true
             if (options.disableFkChecks) {
-                val fks = OracleMetadataQueries.listForeignKeys(jdbc, qualified.schema, qualified.table).map { it.name }
+                val fks = OracleConstraintQueries.listForeignKeys(jdbc, qualified.schema, qualified.table).map { it.name }
                 for (fk in fks) disableConstraint(jdbc, qualified, fk)
                 disabledTable = qualified
                 disabledFkConstraints = fks

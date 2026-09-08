@@ -337,7 +337,7 @@ internal class MssqlColumnConstraintHelper(
             if (lob) {
                 ctx.notes += lobKeyNote(
                     ctx.tableName,
-                    MssqlConstraintNames.unique(ctx.tableName, ctx.colName),
+                    ctx.col.uniqueConstraintName ?: MssqlConstraintNames.unique(ctx.tableName, ctx.colName),
                     "UNIQUE",
                     listOf(ctx.colName),
                 )
@@ -351,9 +351,15 @@ internal class MssqlColumnConstraintHelper(
         return parts
     }
 
+    /**
+     * SQL Server benennt einen UNIQUE-Constraint ohnehin — bisher immer
+     * abgeleitet. Traegt das Modell einen Namen, gilt er: sonst hiesse die
+     * Zusicherung nach dem Erzeugen anders als im Schema, und der naechste
+     * Vergleich meldete eine Umbenennung.
+     */
     private fun uniqueObject(ctx: ColumnContext) = MssqlColumnObject(
         MssqlColumnObject.Kind.UNIQUE,
-        MssqlConstraintNames.unique(ctx.tableName, ctx.colName),
+        ctx.col.uniqueConstraintName ?: MssqlConstraintNames.unique(ctx.tableName, ctx.colName),
         body = "",
     )
 

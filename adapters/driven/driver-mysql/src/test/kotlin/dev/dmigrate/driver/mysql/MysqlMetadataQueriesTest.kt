@@ -311,6 +311,7 @@ class MysqlMetadataQueriesTest : FunSpec({
 
     test("listCheckConstraints returns empty list when no checks") {
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("constraint_type = 'UNIQUE'") }, any(), any()) } returns emptyList()
         MysqlMetadataQueries.listCheckConstraints(jdbc, "mydb", "t").shouldBeEmpty()
     }
 

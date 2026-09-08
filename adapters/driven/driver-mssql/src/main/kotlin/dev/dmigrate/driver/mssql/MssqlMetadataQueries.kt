@@ -134,6 +134,31 @@ internal object MssqlMetadataQueries {
             qualifiedTable,
         ).map { it.string("column_name") }
 
+    /**
+     * Die UNIQUE-**Constraints** der Tabelle, Name -> Spalten.
+     *
+     * `sys.key_constraints` mit `type = 'UQ'`, nicht die Indexliste: SQL Server
+     * legt einen UNIQUE-Constraint als eindeutigen Index ab, aber ein
+     * gewoehnlicher `CREATE UNIQUE INDEX` ist kein Constraint und laesst sich
+     * nur mit `DROP INDEX` abbauen. Wer den Namen aus der Indexliste naehme,
+     * schriebe fuer die Haelfte der Faelle ein Statement, das der Server
+     * ablehnt.
+     */
+    fun listUniqueConstraintColumns(session: JdbcOperations, qualifiedTable: String): Map<String, List<String>> =
+        session.queryList(
+            """
+            SELECT kc.name AS constraint_name, col.name AS column_name
+            FROM sys.key_constraints kc
+            JOIN sys.index_columns ic
+                ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+            JOIN sys.columns col
+                ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+            WHERE kc.parent_object_id = OBJECT_ID(?) AND kc.type = 'UQ'
+            ORDER BY kc.name, ic.key_ordinal
+            """.trimIndent(),
+            qualifiedTable,
+        ).groupBy({ it.string("constraint_name") }, { it.string("column_name") })
+
     fun listForeignKeys(session: JdbcOperations, qualifiedTable: String): List<ForeignKeyProjection> {
         val rows = session.queryList(
             """

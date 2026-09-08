@@ -153,6 +153,11 @@ class MysqlSchemaReader(
         }
 
         val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices)
+        // Der Name kommt aus der Constraint-Abfrage, nicht aus der Indexliste:
+        // nur einen Constraint baut `DROP CONSTRAINT` ab.
+        val singleColUniqueNames = SchemaReaderUtils.singleColumnUniqueNamesFromConstraints(
+            MysqlMetadataQueries.listUniqueConstraintColumns(session, database, metaTable),
+        )
 
         val columns = LinkedHashMap<String, ColumnDefinition>()
         for (row in colRows) {
@@ -190,6 +195,7 @@ class MysqlSchemaReader(
                 type = neutralType,
                 required = required,
                 unique = unique,
+                uniqueConstraintName = if (unique) singleColUniqueNames[colName] else null,
                 default = defaultVal,
                 generation = mapping.generation,
                 // information_schema.columns.ordinal_position ist 1-basiert + dicht.
